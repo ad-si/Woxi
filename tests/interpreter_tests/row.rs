@@ -695,3 +695,67 @@ mod labeled_text_layout {
     assert!(!r.result.contains("Labeled["), "{}", r.result);
   }
 }
+
+mod traditional_row_layout {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  /// The plain contents of the `<text>` elements, in document order.
+  fn texts(svg: &str) -> Vec<String> {
+    svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|t| {
+        let body = t.split_once('>')?.1;
+        Some(body.split('<').next()?.to_string())
+      })
+      .collect()
+  }
+
+  /// `RawBoxes["("]` is an already typeset box: inside a TraditionalForm
+  /// row it draws as a bare parenthesis, not as `RawBoxes[(]`.
+  #[test]
+  fn raw_boxes_item_draws_its_boxes() {
+    let out = svg(
+      "Text[TraditionalForm[Row[{\"at \", RawBoxes[\"(\"], 1, \", \", 2, \
+       RawBoxes[\")\"]}]]]",
+    );
+    assert!(!out.contains("RawBoxes"), "{out}");
+    let t = texts(&out);
+    assert!(t.iter().any(|s| s == "("), "{t:?}");
+    assert!(t.iter().any(|s| s == ")"), "{t:?}");
+  }
+
+  /// A product with a line-breaking string factor flows into a
+  /// TraditionalForm row factor by factor: its newline breaks the row and
+  /// what follows continues on the next line.
+  #[test]
+  fn product_with_newline_string_breaks_traditional_row() {
+    let out = svg(
+      "Text[TraditionalForm[Row[{\"The \", \"real\" \" roots are \\n\", x, \
+       \" = 1\"}]]]",
+    );
+    assert!(out.starts_with("<svg width=\"") && out.contains("height=\"44\""));
+    let t = texts(&out);
+    let pos = |s: &str| t.iter().position(|x| x == s).unwrap();
+    assert!(pos("real") < pos(" roots are "), "{t:?}");
+    assert!(pos(" roots are ") < pos(" = 1"), "{t:?}");
+  }
+
+  /// A polynomial item of a row is typeset in descending powers, the same
+  /// as on its own: `x² + 2 x`, not `2 x + x²`.
+  #[test]
+  fn polynomial_item_keeps_descending_powers() {
+    let t = texts(&svg("Row[{TraditionalForm[x^2 + 2 x], \"a\"}]"));
+    let visible: Vec<&str> = t
+      .iter()
+      .map(String::as_str)
+      .filter(|s| !s.trim().is_empty())
+      .collect();
+    assert_eq!(visible, ["x", "2", "+", "2", "x", "a"]);
+  }
+}

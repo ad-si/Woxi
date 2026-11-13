@@ -419,3 +419,26 @@ mod geo_location {
     );
   }
 }
+
+mod geo_styling {
+  use super::*;
+
+  /// Regression: the inert GeoStyling directive (as saved in a GeoGraphics'
+  /// `GeoBackground` option) was reported as unimplemented.
+  #[test]
+  fn geo_styling_stays_inert_without_warning() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ToString[{GeoStyling["StreetMap"], GeoStyling[Red]}, InputForm]"#
+      )
+      .unwrap(),
+      r#"{GeoStyling["StreetMap"], GeoStyling[RGBColor[1, 0, 0]]}"#
+    );
+    let warnings = woxi::get_captured_warnings();
+    assert!(
+      !warnings.iter().any(|w| w.contains("not yet implemented")),
+      "unexpected unimplemented warning: {warnings:?}"
+    );
+  }
+}

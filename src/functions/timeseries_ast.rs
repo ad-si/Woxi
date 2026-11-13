@@ -258,6 +258,19 @@ fn build_pairs_from_temporal(fields: &[Expr]) -> Option<Vec<Expr>> {
         _ => return None,
       }
     }
+    // A saved series of quantities stores its path as one QuantityArray.
+    Expr::List(items)
+      if items.len() == 1
+        && crate::functions::quantity_ast::quantity_array_parts(&items[0])
+          .is_some_and(|(dims, _, _)| dims.len() == 1) =>
+    {
+      let list =
+        crate::functions::quantity_ast::quantity_array_to_list(&items[0])?;
+      match &list {
+        Expr::List(p) => p.iter().cloned().collect(),
+        _ => return None,
+      }
+    }
     Expr::List(items) => items.iter().cloned().collect(),
     _ => return None,
   };

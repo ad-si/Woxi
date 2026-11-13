@@ -5434,6 +5434,30 @@ fn grid_item_width_chars(options: &[Expr]) -> Option<usize> {
   (ems >= 1.0).then(|| (ems * 2.0).round() as usize)
 }
 
+/// The text a layout item shows when it is plain prose: a string, or a
+/// `Row` of strings and integers (possibly under `Text`/`TraditionalForm`,
+/// which set them the same way), such as `Row[{"b", " = ", 0, ", so …"}]`.
+/// `None` for anything else, which keeps its own typesetting.
+fn plain_text_item(item: &Expr) -> Option<String> {
+  match item {
+    Expr::String(s) => Some(s.clone()),
+    Expr::Integer(n) => Some(n.to_string()),
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Text" | "TraditionalForm")
+        && args.len() == 1 =>
+    {
+      plain_text_item(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Row" && args.len() == 1 => {
+      let Expr::List(parts) = &args[0] else {
+        return None;
+      };
+      parts.iter().map(plain_text_item).collect()
+    }
+    _ => None,
+  }
+}
+
 /// Break `text` into lines of at most `width` characters at word
 /// boundaries (a longer word keeps its own line); existing line breaks stay.
 fn wrap_text_to_width(text: &str, width: usize) -> String {
@@ -11258,6 +11282,8 @@ enum GridSpec {
   None,
   /// Automatic tick positions.
   Automatic,
+  /// `Full`: every major and minor tick position.
+  Full,
   /// Explicit positions (each with an optional style).
   Explicit(Vec<GridLine>),
 }
@@ -11276,6 +11302,7 @@ fn parse_grid_spec(expr: &Expr) -> GridSpec {
     Expr::Identifier(s) if s == "Automatic" || s == "All" => {
       GridSpec::Automatic
     }
+    Expr::Identifier(s) if s == "Full" => GridSpec::Full,
     Expr::List(entries) => {
       GridSpec::Explicit(entries.iter().filter_map(parse_grid_line).collect())
     }
@@ -11307,12 +11334,22 @@ fn parse_grid_line(entry: &Expr) -> Option<GridLine> {
 fn grid_positions(
   spec: &GridSpec,
   ticks: &[f64],
+  (min, max): (f64, f64),
   default_style: &StyleState,
 ) -> Vec<(f64, StyleState)> {
   match spec {
     GridSpec::None => Vec::new(),
     GridSpec::Automatic => {
       ticks.iter().map(|&p| (p, default_style.clone())).collect()
+    }
+    GridSpec::Full => {
+      let mut all = ticks.to_vec();
+      all.extend(axis_minor_ticks(&TickSpec::Automatic, min, max));
+      all.sort_by(f64::total_cmp);
+      all
+        .into_iter()
+        .map(|p| (p, default_style.clone()))
+        .collect()
     }
     GridSpec::Explicit(lines) => lines
       .iter()
@@ -11344,7 +11381,9 @@ fn render_grid_lines(
   let x_ticks = generate_ticks(bb.x_min, bb.x_max);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max);
 
-  for (pos, style) in grid_positions(grid_x, &x_ticks, default_style) {
+  for (pos, style) in
+    grid_positions(grid_x, &x_ticks, (bb.x_min, bb.x_max), default_style)
+  {
     let x = coord_x(pos, bb, svg_w);
     if !x.is_finite() {
       continue;
@@ -11359,7 +11398,9 @@ fn render_grid_lines(
       dash_attr(style.dashing.as_ref(), bb, svg_w),
     ));
   }
-  for (pos, style) in grid_positions(grid_y, &y_ticks, default_style) {
+  for (pos, style) in
+    grid_positions(grid_y, &y_ticks, (bb.y_min, bb.y_max), default_style)
+  {
     let y = coord_y(pos, bb, svg_h);
     if !y.is_finite() {
       continue;
@@ -11598,6 +11639,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
     .replace('>', "&gt;")
     .replace('"', "&quot;");
   let escaped = render_math_letterlike_glyphs(&escaped);
+  let escaped = render_combining_overlines(&escaped);
   if escaped.contains(SUBSCRIPT_START) {
     escaped
       .replace(
@@ -11803,6 +11845,42 @@ fn render_math_letterlike_glyphs(s: &str) -> String {
     match letter_for_double_struck_glyph(c) {
       Some(letter) => out.push_str(&double_struck_tspan(letter)),
       None => out.push(c),
+    }
+  }
+  out
+}
+
+/// Draw the characters a combining overline (U+0305) bars — an accent
+/// `Overscript[x, "_"]` or `OverBar[x]` in a label — under one rule, as a
+/// `<tspan>` with an overline decoration. The embedded fonts lack the
+/// combining mark, and a renderer falling back to another face for it
+/// draws the whole run in that face with the bar misplaced. Safe to run
+/// after XML-escaping: a barred character is never part of an entity.
+fn render_combining_overlines(s: &str) -> String {
+  const BAR: char = '\u{0305}';
+  if !s.contains(BAR) {
+    return s.to_string();
+  }
+  let chars: Vec<char> = s.chars().collect();
+  let barred = |i: usize| chars[i] != BAR && chars.get(i + 1) == Some(&BAR);
+  let mut out = String::with_capacity(s.len() + 48);
+  let mut i = 0;
+  while i < chars.len() {
+    if barred(i) {
+      out.push_str("<tspan text-decoration=\"overline\">");
+      while i < chars.len() && barred(i) {
+        out.push(chars[i]);
+        i += 1;
+        while chars.get(i) == Some(&BAR) {
+          i += 1;
+        }
+      }
+      out.push_str("</tspan>");
+    } else {
+      if chars[i] != BAR {
+        out.push(chars[i]);
+      }
+      i += 1;
     }
   }
   out
@@ -13676,6 +13754,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Whether `ImageSize -> {w, h}` named the height itself (as opposed to an
   // `AspectRatio` implying it).
   let mut size_names_height = false;
+  // Whether `ImageSize -> {Automatic, h}` left the width to the aspect
+  // ratio.
+  let mut auto_width = false;
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
@@ -13759,6 +13840,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           {
             explicit_height = true;
             size_names_height = true;
+            // `{Automatic, h}`: the width follows from the picture's own
+            // aspect ratio, worked out once that is known.
+            auto_width =
+              matches!(&items[0], Expr::Identifier(n) if n == "Automatic");
+          } else {
+            auto_width = false;
           }
           if let Some((w, h, fw)) =
             parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
@@ -13922,6 +14009,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             grid_x = GridSpec::None;
             grid_y = GridSpec::None;
           }
+          Expr::Identifier(s) if s == "Full" => {
+            grid_x = GridSpec::Full;
+            grid_y = GridSpec::Full;
+          }
           // {xspec, yspec}: each side is Automatic, None, or an explicit list
           // of positions (a position may be `{pos, style}` for a per-line
           // style).
@@ -13988,6 +14079,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     svg_height = ((svg_width as f64 * r).round() as u32).max(1);
     explicit_height = true;
+  }
+  // `ImageSize -> {Automatic, h}` with an explicit `AspectRatio -> r` is
+  // h / r wide.
+  if auto_width && let Some(r) = aspect_ratio {
+    svg_width = ((svg_height as f64 / r).round() as u32).max(1);
+    auto_width = false;
   }
 
   // Collect primitives. `DefaultBaseStyle` and then `BaseStyle` directives
@@ -14286,6 +14383,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // The data's own shape, before the drawing size rounds it.
   let data_aspect_exact = bb.height() / bb.width();
+  // `ImageSize -> {Automatic, h}` under an automatic aspect ratio: the
+  // height stays and the width follows the data's shape.
+  if auto_width && !aspect_ratio_full {
+    let data_aspect = bb.height() / bb.width();
+    if data_aspect.is_finite() && data_aspect > 0.0 {
+      svg_width = ((svg_height as f64 / data_aspect).round() as u32).max(1);
+    }
+  }
   // Adjust aspect ratio to match data unless explicitly set via ImageSize -> {w, h}
   if !explicit_height {
     let data_aspect = bb.height() / bb.width();
@@ -14794,10 +14899,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // edge) must spill past the box rather than be cut off.
   let has_explicit_range = plot_range_x.is_some() || plot_range_y.is_some();
   // Wolfram's default (`PlotRangeClipping -> False`) cuts primitives off
-  // only at the image's edge: past a frame or axes they spill into the
-  // margins.
+  // only at the image's edge: past a frame or axes, or into an explicit
+  // `ImagePadding`, they spill into the margins.
+  let has_explicit_padding =
+    image_padding.is_some_and(|p| p.iter().any(|&m| m > 0.0));
   let clip_primitives = clip_primitives
-    && (clipping_requested || !(frame || axes.0 || axes.1))
+    && (clipping_requested
+      || !(frame || axes.0 || axes.1 || has_explicit_padding))
     && (has_explicit_range
       || !primitives
         .iter()
@@ -15101,6 +15209,25 @@ pub struct BoxLayout {
 /// estimate must match this, or successive atoms (e.g. a function name and its
 /// opening `[`) overlap.
 pub(crate) const MONO_ADVANCE: f64 = 0.632;
+
+/// Average character advance of the proportional (sans-serif) text face, as
+/// a fraction of the font size; used to size plain `Text[…]` items.
+pub(crate) const SANS_ADVANCE: f64 = 0.55;
+
+/// Whether a layout item is a plain-text `Text[expr]` display, possibly
+/// dressed in `Style`/`Invisible` wrappers.
+fn is_text_display_item(item: &Expr) -> bool {
+  match item {
+    Expr::FunctionCall { name, args } if name == "Text" => args.len() == 1,
+    Expr::FunctionCall { name, args }
+      if (is_style_wrapper(name) || name == "Invisible")
+        && !args.is_empty() =>
+    {
+      is_text_display_item(&args[0])
+    }
+    _ => false,
+  }
+}
 
 /// If `s` is a single n-ary/large operator glyph (∑ ∏ ∫ …), return the font
 /// scale factor at which it should be drawn so it reads as a display-size
@@ -21535,8 +21662,16 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         "AbsoluteThickness",
         Expr::Real(sd.thickness.unwrap_or(1.5)),
       ));
+      // Like the opacity above: once any series is dashed, a solid one
+      // says so, or the previous series' dashes would carry over to it.
       if let Some(dashing) = series_dashing_expr(sd, ps.image_size.0) {
         series_prims.push(dashing);
+      } else if ps
+        .series
+        .iter()
+        .any(|s| !s.is_scatter && s.dashing.is_some())
+      {
+        series_prims.push(call1("Dashing", Expr::List(Vec::new().into())));
       }
       let segments = crate::functions::plot::split_into_segments(&sd.points);
       for seg in &segments {
@@ -22568,6 +22703,37 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Show", args));
   }
 
+  // A plot kept only as a picture that recorded its data frame (a density
+  // plot) under primitives: draw them in that plot's coordinates.
+  if !is_3d
+    && leading_rendered >= 1
+    && let Some(Expr::Graphics { svg: base, .. }) = rendered_graphics.first()
+    && let Some(mut svg) = overlay_primitives_on_plot_frame(
+      base,
+      Expr::List(merged_primitives.clone().into()),
+    )
+  {
+    let image_size = merged_options.iter().find_map(|opt| {
+      option_name_value(opt)
+        .filter(|(name, _)| *name == "ImageSize")
+        .map(|(_, value)| value.into_owned())
+    });
+    if let Some(size) = image_size
+      && let Some(resized) = svg_with_image_size(&svg, &size)
+    {
+      svg = resized;
+    }
+    if rendered_graphics.len() == 1 {
+      return Ok(crate::graphics_result(svg));
+    }
+    let mut layers = vec![crate::graphics_result(svg)];
+    layers.extend(rendered_graphics.iter().skip(1).cloned());
+    if let Some(stacked) = overlay_rendered_graphics_svgs(&layers) {
+      return Ok(crate::graphics_result(stacked));
+    }
+    return Ok(layers.swap_remove(0));
+  }
+
   let content = Expr::List(merged_primitives.into());
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
@@ -23012,7 +23178,9 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
     let mut color: Option<Color> = None;
     let mut decoration = TextDecoration::default();
     let mut background: Option<Color> = None;
-    for directive in splice_directives(&args[1..]) {
+    // A named style ("Label", "Section", …) is the base the explicit
+    // directives sit on, wherever it was written.
+    for directive in style_directives_in_application_order(&args[1..]) {
       if decoration.apply(directive) {
         continue;
       }
@@ -23021,6 +23189,25 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
         Expr::Identifier(s) if s == "Italic" => fst = "italic",
         Expr::Integer(n) => fs = Some(*n as f64),
         Expr::Real(f) => fs = Some(*f),
+        // `Style[x, Small]` — a named size, relative ones scaling the
+        // size already set (or the default cell size).
+        Expr::Identifier(s) | Expr::Constant(s)
+          if named_font_size(s, 0.0).is_some() =>
+        {
+          fs = named_font_size(s, fs.unwrap_or(14.0));
+        }
+        // `Style[x, "Label"]` — the stylesheet entry's size and color.
+        Expr::String(name) if named_style_appearance(name).is_some() => {
+          let (size, rgb) = named_style_appearance(name).unwrap();
+          fs = Some(size);
+          if let Some((r, g, b)) = rgb {
+            color = Some(Color::new(
+              r as f64 / 255.0,
+              g as f64 / 255.0,
+              b as f64 / 255.0,
+            ));
+          }
+        }
         // The long option spellings, which `StyleForm` cells are written
         // with: `FontWeight -> Bold`, `FontSlant -> Italic`,
         // `FontColor -> GrayLevel[1]`, …
@@ -23473,10 +23660,30 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       });
     }
     Expr::Graphics { svg, .. } => svg.clone(),
-    // A styled graphic is still a graphic.
+    // A styled graphic is still a graphic. A styled nested layout
+    // (`Style[Column[{Grid[…]}], 16]` in a cell) keeps its directives: they
+    // are distributed over the layout's items before it is drawn, just as
+    // for the same `Style` at top level.
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
+      // A styled `Grid` is drawn whole, the way it is at top level, so the
+      // directives also reach its frame and dividers, not only its cells.
+      if args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+          if (n == "Grid" || n == "TextGrid")
+            && matches!(a.first(), Some(Expr::List(_))))
+      {
+        let svg = crate::evaluator::expr_to_svg(cell);
+        if svg.starts_with("<svg")
+          && let Some(d) = parse_svg_dimensions(&svg)
+        {
+          return Some((svg, d.nat_w, d.nat_h));
+        }
+      }
+      if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
+        return grid_cell_graphic(&inner);
+      }
       return grid_cell_graphic(&args[0]);
     }
     // `Invisible[graphic]` keeps the picture's footprint but paints
@@ -24737,6 +24944,12 @@ fn grid_svg_styled_internal_reporting(
           Expr::Identifier(val) => match val.as_str() {
             "Left" => alignment_h = "start",
             "Right" => alignment_h = "end",
+            // A lone vertical value (`Alignment -> Top`) places every
+            // row's cells vertically and keeps the centered columns.
+            "Top" | "Bottom" => {
+              row_valigns =
+                row_vertical_alignments(replacement.as_ref(), rows.len());
+            }
             _ => alignment_h = "middle",
           },
           Expr::List(items) => {
@@ -25064,12 +25277,16 @@ fn grid_svg_styled_internal_reporting(
   let item_size_at = |spec: &Option<Expr>, pos: usize, n: usize| {
     item_size_entry_at(spec.as_ref(), pos, n)
   };
-  // Text wider than a fixed column wraps onto further lines.
+  // Text wider than a fixed column wraps onto further lines. A string
+  // carrying inline linear syntax (`\!\(…\)`) is a typeset formula: its
+  // markup is far longer than what is shown, and breaking it at a space
+  // would split the box structure, so it is left whole.
   if item_size_w.is_some() {
     for row in &mut rows {
       for (j, cell) in row.iter_mut().enumerate() {
         if let Some(w) = item_size_at(&item_size_w, j, num_cols)
           && let Expr::String(text) = &*cell
+          && !text.contains(crate::functions::string_ast::BOX_START)
         {
           // An average character is about half an em wide.
           let max_chars = (w * 2.0).round().max(1.0) as usize;
@@ -26566,6 +26783,85 @@ pub(crate) struct ParsedSvg {
 /// the root `<svg ...>` tag. Trailing unit suffixes (px, pt) are stripped.
 /// Find an attribute's value in `header`, accepting either quote style
 /// (image SVG wrappers use single quotes). Returns the raw value text.
+/// Root-tag attribute (with a leading space) recording that the data range
+/// `{x_range, y_range}` of a plot kept only as a picture fills the canvas
+/// rectangle `rect = (x, y, w, h)` (in viewBox units).
+pub(crate) fn plot_frame_attr(
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  rect: (f64, f64, f64, f64),
+) -> String {
+  format!(
+    " data-plot-frame=\"{} {} {} {} {:.3} {:.3} {:.3} {:.3}\"",
+    x_range.0, x_range.1, y_range.0, y_range.1, rect.0, rect.1, rect.2, rect.3
+  )
+}
+
+/// The data range and canvas rectangle recorded by [`plot_frame_attr`].
+type PlotFrame = ((f64, f64), (f64, f64), (f64, f64, f64, f64));
+
+fn parse_plot_frame_attr(svg: &str) -> Option<PlotFrame> {
+  let raw = find_svg_attr(svg_root_header(svg)?, "data-plot-frame")?;
+  let v: Vec<f64> = raw
+    .split_whitespace()
+    .map(|s| s.parse().ok())
+    .collect::<Option<_>>()?;
+  if v.len() != 8 || !v.iter().all(|x| x.is_finite()) {
+    return None;
+  }
+  if v[1] <= v[0] || v[3] <= v[2] || v[6] <= 0.0 || v[7] <= 0.0 {
+    return None;
+  }
+  Some(((v[0], v[1]), (v[2], v[3]), (v[4], v[5], v[6], v[7])))
+}
+
+/// `Show[plot, Graphics[prims], …]` where `plot` is kept only as a picture
+/// that recorded its data frame: draw `prims` against the plot's data range
+/// and place them over the plot's data rectangle, so they line up with its
+/// axes as they do in Wolfram (the shown graphic takes the first graphic's
+/// `PlotRange`).
+fn overlay_primitives_on_plot_frame(
+  base_svg: &str,
+  primitives: Expr,
+) -> Option<String> {
+  let ((x0, x1), (y0, y1), (px, py, pw, ph)) = parse_plot_frame_attr(base_svg)?;
+  let (nat_w, _) = svg_natural_size(base_svg)?;
+  let base = parse_svg_dimensions(base_svg)?;
+  let vb_w: f64 = base.view_box.split_whitespace().nth(2)?.parse().ok()?;
+  // viewBox units per displayed point.
+  let scale = if nat_w > 0.0 { vb_w / nat_w } else { 1.0 };
+  let range =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let none = || id_expr("None");
+  let layer = graphics_ast(&[
+    primitives,
+    rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(vec![range(x0, x1), range(y0, y1)].into()),
+    ),
+    rule_expr(id_expr("PlotRangePadding"), none()),
+    rule_expr(id_expr("ImagePadding"), none()),
+    rule_expr(id_expr("AspectRatio"), Expr::Real(ph / pw)),
+    rule_expr(id_expr("ImageSize"), Expr::Real(pw / scale)),
+  ])
+  .ok()?;
+  let Expr::Graphics { svg: layer_svg, .. } = &layer else {
+    return None;
+  };
+  let layer = parse_svg_dimensions(layer_svg)?;
+  let end = base_svg.rfind("</svg>")?;
+  let mut out = String::with_capacity(base_svg.len() + layer_svg.len() + 128);
+  out.push_str(&base_svg[..end]);
+  out.push_str(&format!(
+    "<svg x=\"{px:.3}\" y=\"{py:.3}\" width=\"{pw:.3}\" height=\"{ph:.3}\" \
+     viewBox=\"{}\" preserveAspectRatio=\"none\">\n",
+    layer.view_box
+  ));
+  out.push_str(&layer.inner_content);
+  out.push_str("</svg>\n</svg>");
+  Some(out)
+}
+
 fn find_svg_attr<'a>(header: &'a str, attr: &str) -> Option<&'a str> {
   for quote in ['"', '\''] {
     let needle = format!("{attr}={quote}");
@@ -29532,8 +29828,23 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
     {
       let mut new_args = args.clone();
       if let Expr::List(items) = &args[0] {
-        new_args[0] =
-          Expr::List(items.iter().map(traditionalize_layout_items).collect());
+        // A row's product with a line-breaking string factor (`"real" *
+        // " roots are \n"`) flows into the row factor by factor, so its
+        // string still breaks the line rather than being typeset inside
+        // one opaque `TraditionalForm[…]` item.
+        let flows = name == "Row" && args.len() == 1;
+        new_args[0] = Expr::List(
+          items
+            .iter()
+            .flat_map(|i| {
+              flows
+                .then(|| times_flow_factors(i))
+                .flatten()
+                .unwrap_or_else(|| vec![i.clone()])
+            })
+            .map(|i| traditionalize_layout_items(&i))
+            .collect(),
+        );
       }
       Expr::FunctionCall {
         name: name.clone(),
@@ -30452,10 +30763,56 @@ fn decorate_layout_svg(svg: String, opts: &[Expr]) -> String {
   svg
 }
 
+/// A `Column` whose `ItemSize` fixes its width breaks a text item that is
+/// wider than the column onto further lines at word boundaries, as a
+/// one-column `Grid` does; the lines stack as a nested column. The
+/// arguments with those items replaced, or `None` when none needed it.
+pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  let width = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ItemSize")
+    .and_then(|(_, v)| match v {
+      Expr::List(dims) if dims.len() == 2 => {
+        item_size_entry_at(Some(&dims[0]), 0, 1)
+      }
+      other => item_size_entry_at(Some(other), 0, 1),
+    })?;
+  // The column sets its text in the monospace face at 14pt.
+  let max_chars =
+    ((width * 14.0) / (14.0 * MONO_ADVANCE)).floor().max(1.0) as usize;
+  let mut changed = false;
+  let new_items: Vec<Expr> = items
+    .iter()
+    .map(|item| match plain_text_item(item) {
+      Some(text) if text.chars().count() > max_chars => {
+        changed = true;
+        let lines = wrap_text_to_width(&text, max_chars)
+          .split('\n')
+          .map(str_expr)
+          .collect::<Vec<_>>();
+        call1("Column", Expr::List(lines.into()))
+      }
+      _ => item.clone(),
+    })
+    .collect();
+  if !changed {
+    return None;
+  }
+  let mut new_args = args.to_vec();
+  new_args[0] = Expr::List(new_items.into());
+  Some(new_args)
+}
+
 fn column_layout_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
   }
+  let wrapped = wrap_fixed_width_column_text(args);
+  let args = wrapped.as_deref().unwrap_or(args);
 
   // Extract items from the first argument (must be a List)
   let items = match &args[0] {
@@ -30535,6 +30892,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
   let gap = spacing_ems * font_size;
+
   let frame_all = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
     k == "Frame" && matches!(v, Expr::Identifier(s) if s == "All")
   });
@@ -30549,7 +30907,9 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       width: f64,
       height: f64,
     },
-    Text(Expr),
+    /// The item, and whether it is a plain `Text[…]` display (set in the
+    /// proportional text face rather than the column's monospace default).
+    Text(Expr, bool),
   }
 
   let cells: Vec<Cell> = items
@@ -30588,7 +30948,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
               height: h,
             }
           }
-          None => Cell::Text(resolved),
+          None => Cell::Text(resolved, is_text_display_item(item)),
         },
       }
     })
@@ -30607,9 +30967,17 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .iter()
     .map(|c| match c {
       Cell::Svg { width, .. } => *width,
-      Cell::Text(e) => {
+      Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
-        estimate_display_width(style.content) * char_width * (fs / font_size)
+        let advance = if *plain && style.font_family.is_none() {
+          SANS_ADVANCE / MONO_ADVANCE
+        } else {
+          1.0
+        };
+        estimate_display_width(style.content)
+          * char_width
+          * advance
+          * (fs / font_size)
           + pad_x
       }
     })
@@ -30625,7 +30993,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .map(|(i, c)| {
       let natural = match c {
         Cell::Svg { height, .. } => *height,
-        Cell::Text(e) => text_style(e, font_size).1 + pad_y,
+        Cell::Text(e, _) => text_style(e, font_size).1 + pad_y,
       };
       item_size_entry_at(item_size_h, i, n_items)
         .map_or(natural, |h| natural.max(h * font_size + pad_y))
@@ -30658,7 +31026,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   for (i, cell) in cells.iter().enumerate() {
     let h = row_heights[i];
     match cell {
-      Cell::Text(expr) => {
+      Cell::Text(expr, plain) => {
         let cy = y_cursor + h / 2.0;
         let (style, fs) = text_style(expr, font_size);
         let (fw, fst) = (style.font_weight, style.font_style);
@@ -30673,12 +31041,18 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             .map_or_else(|| text_fill.to_string(), Color::to_svg_rgb)
         };
         // `Style[…, FontFamily -> "Times"]` picks the face; without one the
-        // column keeps its monospace default.
-        let ff = style.font_family.as_deref().unwrap_or("monospace");
+        // column keeps its monospace default, except that a plain
+        // `Text[…]` item is set in the proportional text face.
+        let (ff, advance) = match style.font_family.as_deref() {
+          Some(ff) => (ff, 1.0),
+          None if *plain => ("sans-serif", SANS_ADVANCE / MONO_ADVANCE),
+          None => ("monospace", 1.0),
+        };
         // `Style[…, Background -> c]` paints a panel just behind the text.
         if let Some(bg) = style.background.filter(|_| !style.hidden) {
           let tw = estimate_display_width(style.content)
             * char_width
+            * advance
             * (fs / font_size);
           let left = match alignment {
             "middle" => text_x - tw / 2.0,
@@ -31265,22 +31639,36 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           }
           // `Spacer[n]` between items is blank horizontal space, the same
           // as in separator position — not something to print.
-          None => match crate::syntax::spacer_width_pts(&resolved) {
-            Some(width) => Cell::Text {
-              markup: String::new(),
-              width,
-              height: font_size + pad_y,
-              fill: theme().text_primary.to_string(),
-              size: font_size,
-              weight: "normal".to_string(),
-              slant: "normal".to_string(),
-              family: String::new(),
-              decoration: TextDecoration::default(),
-              background: None,
-              opacity: 1.0,
-            },
-            None => make_text_cell(&resolved),
-          },
+          None => {
+            if let Some(width) = crate::syntax::spacer_width_pts(&resolved) {
+              Cell::Text {
+                markup: String::new(),
+                width,
+                height: font_size + pad_y,
+                fill: theme().text_primary.to_string(),
+                size: font_size,
+                weight: "normal".to_string(),
+                slant: "normal".to_string(),
+                family: String::new(),
+                decoration: TextDecoration::default(),
+                background: None,
+                opacity: 1.0,
+              }
+            } else {
+              let mut cell = make_text_cell(&resolved);
+              // `Text[expr]` displays `expr` in plain text format, set in
+              // the proportional text face rather than the row's monospace
+              // default, and so narrower.
+              if let Cell::Text { family, width, .. } = &mut cell
+                && family.is_empty()
+                && is_text_display_item(item)
+              {
+                *family = "sans-serif".to_string();
+                *width *= SANS_ADVANCE / MONO_ADVANCE;
+              }
+              cell
+            }
+          }
         },
       }
     })
@@ -35308,7 +35696,27 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
     }
   }
+  // Like any Wolfram option list, the first of several settings for the same
+  // widget-level option wins: `ControlPlacement -> Left, …,
+  // ControlPlacement -> Top` lays the controls out on the left. Remember
+  // which options were already given so later repeats are skipped below.
+  let mut seen_options: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
   for spec in &arg_items {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = spec
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && !is_initialization_option(pattern, replacement)
+      && !seen_options.insert(name.clone())
+    {
+      continue;
+    }
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
     // the rest rather than failing the whole extraction.
@@ -48597,6 +49005,49 @@ mod manipulate_control_placement_tests {
          ControlPlacement -> {Left}]"
       ),
       ControlPlacement::Left
+    );
+  }
+
+  /// When the same option is given twice, the first setting wins, as for
+  /// any Wolfram option list (`Manipulate` lays the controls out on the left
+  /// for `ControlPlacement -> Left, …, ControlPlacement -> Top`).
+  #[test]
+  fn first_of_repeated_placements_wins() {
+    for (first, second, expected) in [
+      ("Left", "Top", ControlPlacement::Left),
+      ("Top", "Left", ControlPlacement::Top),
+      ("Right", "Bottom", ControlPlacement::Right),
+    ] {
+      let code = format!(
+        "Manipulate[a, {{{{a, 1}}, 1, 5}}, ControlPlacement -> {first}, \
+         ContentSize -> {{390, 250}}, ControlPlacement -> {second}]"
+      );
+      assert_eq!(placement(&code), expected, "{first} then {second}");
+    }
+  }
+
+  /// A repeated option other than the placement is likewise decided by its
+  /// first setting: `AnimationRunning -> False` keeps an `Animate` paused
+  /// even when a later `AnimationRunning -> True` follows.
+  #[test]
+  fn first_of_repeated_options_wins() {
+    let spec = |code: &str| {
+      extract_manipulate_spec(&crate::parse_to_expr(code).expect("parse"))
+        .expect("extract spec")
+    };
+    assert!(
+      !spec(
+        "Animate[a, {a, 0, 1}, AnimationRunning -> False, \
+         AnimationRunning -> True]"
+      )
+      .animation_running
+    );
+    assert!(
+      spec(
+        "Animate[a, {a, 0, 1}, AnimationRunning -> True, \
+         AnimationRunning -> False]"
+      )
+      .animation_running
     );
   }
 

@@ -1558,6 +1558,35 @@ impl ManipulateState {
     }
   }
 
+  /// Move the `Continuous` slider at `ctrl_idx` to `value` (a user drag).
+  /// Returns `true` if such a control was found.
+  ///
+  /// A Wolfram slider whose spec omits the step is continuous: dragging it
+  /// binds a machine real (`-10.`, `2260.`) even when its bounds and initial
+  /// value are exact integers. Only the untouched initial value stays exact.
+  /// So the first drag of a step-less slider marks it real, while its
+  /// increment stays as it was; an explicit step (`{n, 1, 10, 1}`) keeps the
+  /// exact values that step produces.
+  pub fn slide_continuous(&mut self, ctrl_idx: usize, value: f64) -> bool {
+    let Some(ControlState::Continuous {
+      name,
+      current,
+      is_real,
+      exact_value,
+      ..
+    }) = self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    *current = value;
+    // A moved slider binds machine reals from now on.
+    *exact_value = None;
+    if self.default_step_controls.iter().any(|n| n == name) {
+      *is_real = true;
+    }
+    true
+  }
+
   /// Select `choice_label` on the `Discrete` control at `ctrl_idx` (a
   /// SetterBar/RadioButtonBar/PopupMenu/checkbox click sends its choice's
   /// display label). Returns `true` if the control was found and the label
@@ -1921,6 +1950,30 @@ impl ManipulateState {
           .any(|w| code.trim_start().starts_with(w))
         && let Ok(table) =
           woxi::interpret_with_stdout(&format!("Text[{}]", code.trim()))
+        && table.graphics.is_some()
+      {
+        render = Ok(table);
+      }
+      // The same holds when the pane is only the body's *value* — a
+      // `Block[{x}, …; Pane[Grid[…], size]]` that computes its table
+      // first — and the table holds typeset or nested layouts (a framed
+      // sub-table, `Text@Row[…]` of formulas) that plain text cannot show.
+      // Draw that value rather than re-running the body, which would
+      // repeat its side effects (`SeedRandom`, assignments).
+      if let Ok(r) = &render
+        && r.graphics.is_none()
+        && let Some(woxi::syntax::Expr::FunctionCall { name, args }) = &r.expr
+        && matches!(name.as_str(), "Pane" | "Panel" | "Framed")
+        && let Some(woxi::syntax::Expr::FunctionCall {
+          name: layout,
+          args: cells,
+        }) = args.first()
+        && layout == "Grid"
+        && cells.first().is_some_and(holds_typeset_layout)
+        && let Ok(table) = woxi::interpret_with_stdout(&format!(
+          "Text[{}]",
+          woxi::syntax::expr_to_input_form(r.expr.as_ref().unwrap())
+        ))
         && table.graphics.is_some()
       {
         render = Ok(table);
@@ -2622,8 +2675,74 @@ fn format_f64(v: f64) -> String {
   }
 }
 
+/// Whether `expr` contains a layout or typeset piece (`Text`,
+/// `TraditionalForm`, a nested `Grid`/`Pane`/`Framed`/…) that the plain-text
+/// rendering of a table cannot show.
+fn holds_typeset_layout(expr: &woxi::syntax::Expr) -> bool {
+  match expr {
+    woxi::syntax::Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "Text"
+          | "TraditionalForm"
+          | "Grid"
+          | "Pane"
+          | "Panel"
+          | "Framed"
+          | "Column"
+          | "Row"
+      ) || args.iter().any(holds_typeset_layout)
+    }
+    woxi::syntax::Expr::List(items) => items.iter().any(holds_typeset_layout),
+    _ => false,
+  }
+}
+
 #[cfg(test)]
 mod tests {
+
+  /// Dragging a step-less slider with whole-number bounds binds a machine
+  /// real, as in Wolfram (a caption shows `-10.`, not `-10`), while the
+  /// untouched initial value stays exact.
+  #[test]
+  fn dragging_stepless_integer_slider_binds_machine_real() {
+    let code = r#"Manipulate[{v}, {{v, -50}, -100, 90}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.text_output.as_deref(), Some("{-50}"));
+    assert!(state.slide_continuous(0, -10.0));
+    state.reevaluate();
+    assert_eq!(state.controls[0].current_code(), "-10.");
+    assert_eq!(state.text_output.as_deref(), Some("{-10.}"));
+    // A fractional drag position stays real too.
+    assert!(state.slide_continuous(0, 22.5));
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("{22.5}"));
+  }
+
+  /// An explicit step keeps the exact values that step produces.
+  #[test]
+  fn dragging_slider_with_explicit_integer_step_stays_exact() {
+    let code = r#"Manipulate[{n}, {{n, 2}, 1, 10, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(state.slide_continuous(0, 7.0));
+    state.reevaluate();
+    assert_eq!(state.controls[0].current_code(), "7");
+    assert_eq!(state.text_output.as_deref(), Some("{7}"));
+  }
+
+  /// `slide_continuous` only moves a continuous slider.
+  #[test]
+  fn slide_continuous_ignores_other_controls() {
+    let code = r#"Manipulate[c, {c, {1, 2, 3}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(!state.slide_continuous(0, 2.0));
+  }
 
   /// An Initialization that loads `ComputationalGeometry`` and then uses the
   /// bare `ConvexHull` in a helper (the whole code is one expression) must
@@ -3207,6 +3326,38 @@ mod tests {
     );
     state.reevaluate();
     assert_eq!(state.error, None);
+  }
+
+  /// A body that computes its table inside a scoping construct and only
+  /// *returns* a sized `Pane[Grid[…]]` draws the whole table, header and
+  /// footer rows included — not just a nested framed table measured while
+  /// fitting the grid into the pane.
+  #[test]
+  fn scoped_body_returning_pane_of_grid_draws_the_whole_table() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Block[{x}, SeedRandom[s]; r = RandomInteger[{-5, 5}, 2];
+        Pane[Grid[{
+          {Text@Row[{"head ", TraditionalForm[Expand[(x - r[[1]]) (x - r[[2]])]]}]},
+          {Pane[Grid[{{"inner", 1}, {2, 3}}, Frame -> All]]},
+          {Text@Row[{"foot ", TraditionalForm[(x - r[[1]]) (x - r[[2]])]}]}},
+          Alignment -> Left], ImageSize -> {240, 350}]],
+      {{s, 1, "seed"}, {1, 2, 3}, ControlType -> PopupMenu}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    let handle = state
+      .graphics_handle
+      .as_ref()
+      .expect("the table is drawn as a picture");
+    let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+      panic!("graphic should be in-memory SVG data");
+    };
+    let svg = String::from_utf8_lossy(bytes);
+    for label in ["head", "inner", "foot"] {
+      assert!(svg.contains(label), "{label} row missing: {svg}");
+    }
   }
 
   /// A body that is `Text@Style[TraditionalForm[Column[…]]]` of held
@@ -6808,5 +6959,51 @@ mod bare_tabview_tests {
     state.reevaluate();
     assert_eq!(state.error, None);
     assert!(state.body.contains("Dynamic[tab]"), "{}", state.body);
+  }
+}
+
+#[cfg(test)]
+mod repeated_option_tests {
+  use super::*;
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a Euclidean-algorithm
+  /// walkthrough in a quadratic integer ring). Its saved widget lists
+  /// `ControlPlacement` twice — the author's `Left` first, then a stray
+  /// `Top` — and the panel has to land on the side the first setting names,
+  /// as it does for any Wolfram option list.
+  #[test]
+  fn first_of_repeated_placements_decides_the_panel_side() {
+    let code = "Manipulate[a + b, \
+       {{a, 1}, -10, 10, 1}, {{b, 2}, -10, 10, 1}, \
+       ControlPlacement -> Left, ContentSize -> {390, 250}, \
+       ControlPlacement -> Top]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.control_placement, ControlPlacement::Left);
+    assert_eq!(state.placement_of(0), ControlPlacement::Left);
+  }
+
+  /// A style a pure function applies in the body survives the round trip
+  /// through source text that rebuilding the widget performs: the rows of
+  /// the same Demonstration are headed by `Text[Style[#, 16]] &` applied to
+  /// a `Grid`, which used to reach the renderer as a bare `Text[#] &` and so
+  /// drew at the default size instead of the size the author set.
+  #[test]
+  fn a_pure_functions_style_survives_into_the_body() {
+    let code = "Manipulate[\
+       Text[Style[#, 16]] & @ Grid[{{a, b}}, Frame -> All], \
+       {{a, 1}, -10, 10, 1}, {{b, 2}, -10, 10, 1}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.body.contains("Style[#1, 16]"),
+      "the body lost the style it applies: {}",
+      state.body
+    );
   }
 }

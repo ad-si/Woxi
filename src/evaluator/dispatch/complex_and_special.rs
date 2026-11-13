@@ -4042,6 +4042,15 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       str_expr("\u{F762}"),
     ]);
   }
+  // `RawBoxes[boxes]` is already typeset: wolframscript's
+  // `ToBoxes[RawBoxes["("]]` is the bare `"("` box, so a Demonstration's
+  // `Row[{RawBoxes["("], x, RawBoxes[")"]}]` shows plain parentheses.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "RawBoxes"
+    && args.len() == 1
+  {
+    return args[0].clone();
+  }
   match expr {
     // wolframscript: positive integers render as a single String
     // (`"14"`); negative integers decompose into
@@ -5990,6 +5999,45 @@ impl TfProduct {
 /// a fraction bar, so the evaluated `Times[a, Power[b, -1]]` sets as `a/b`
 /// rather than `a b⁻¹`.
 fn tf_times(expr: &Expr) -> Expr {
+  // A positive rational coefficient of a product holding a sum (or a power
+  // of one) is set as a fraction in front of it, as in StandardForm:
+  // `6/5 (x² - 7x/4)` and `6/5 (x - 7/8)²` rather than one fraction bar
+  // over the whole product. Another divisor keeps the whole product over
+  // the bar.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Times"
+    && args.len() >= 2
+    && let Expr::FunctionCall {
+      name: coeff_head,
+      args: coeff,
+    } = &args[0]
+    && coeff_head == "Rational"
+    && let [Expr::Integer(p), Expr::Integer(q)] = coeff.as_slice()
+    && *p > 0
+    && *q > 1
+  {
+    let rest = &args[1..];
+    let sum_like = |f: &Expr| {
+      tf_is_additive(f)
+        || matches!(crate::functions::graphics::as_power(f),
+          Some((base, exp)) if tf_is_additive(base)
+            && matches!(exp, Expr::Integer(n) if *n > 0))
+    };
+    if rest.iter().any(sum_like)
+      && rest.iter().all(|f| tf_reciprocal_factor(f).is_none())
+    {
+      let fraction = tf_box(
+        "FractionBox",
+        vec![tf_string(&p.to_string()), tf_string(&q.to_string())],
+      );
+      let product = if let [only] = rest {
+        tf_factor_boxed(only)
+      } else {
+        tf_times(&unevaluated("Times", rest))
+      };
+      return tf_row(vec![fraction, tf_thin_space(), product]);
+    }
+  }
   let mut product = TfProduct::default();
   product.collect(expr);
   let TfProduct {
@@ -6413,7 +6461,9 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
         | "\u{2148}"
         | "\u{213D}"
     ) && (s.is_empty()
-      || !s.chars().all(|c| "0123456789.`*^-+/() ".contains(c)))
+      || !s
+        .chars()
+        .all(|c| c.is_whitespace() || "0123456789.`*^-+/()".contains(c)))
   };
   // `offsetFunc`: Greek and some private-use letters sort as Latin ones.
   let offset = |c: u32| -> u32 {
@@ -7212,6 +7262,8 @@ fn tf_series_data(args: &[Expr]) -> Option<Expr> {
 
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
   match name {
+    // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
+    "RawBoxes" if args.len() == 1 => args[0].clone(),
     "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
     // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
     "Inequality"
@@ -17892,6 +17944,7 @@ fn compute_region_set_op(
       "RegionIntersection" => match region_box_intersection(&acc, next)
         .or_else(|| region_line_intersection(&acc, next))
         .or_else(|| region_flat_line_intersection(&acc, next))
+        .or_else(|| region_infinite_lines_intersection(&acc, next))
         .or_else(|| region_polygon_intersection(&acc, next))
       {
         Some(region) => region,
@@ -19465,6 +19518,94 @@ fn affine_flat_nearest(region: &Expr, point: &Expr) -> Option<Expr> {
     .map(|(o, p)| plus2(o.clone(), p))
     .collect();
   crate::evaluator::evaluate_expr_to_expr(&Expr::List(nearest.into())).ok()
+}
+
+/// `RegionIntersection` of two `InfiniteLine`s in any dimension: the
+/// single crossing as `Point[p]`, or `EmptyRegion[n]` when the lines are
+/// parallel or skew. Coincident lines (and anything symbolic) are left to
+/// `BooleanRegion`.
+fn region_infinite_lines_intersection(a: &Expr, b: &Expr) -> Option<Expr> {
+  let line = |r: &Expr| -> Option<(Vec<Expr>, Vec<Expr>)> {
+    match r {
+      Expr::FunctionCall { name, .. } if name == "InfiniteLine" => {
+        let (origin, mut dirs) = affine_flat(r)?;
+        (dirs.len() == 1).then(|| (origin, dirs.remove(0)))
+      }
+      _ => None,
+    }
+  };
+  let (p, d) = line(a)?;
+  let (q, e) = line(b)?;
+  let dims = p.len();
+  if q.len() != dims {
+    return None;
+  }
+
+  let ev = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).ok();
+  let dot = |u: &[Expr], v: &[Expr]| -> Option<Expr> {
+    ev(plus(
+      u.iter()
+        .zip(v)
+        .map(|(x, y)| times2(x.clone(), y.clone()))
+        .collect(),
+    ))
+  };
+  let is_true = |e: Expr| -> Option<bool> {
+    match ev(e)? {
+      Expr::Identifier(ref s) if s == "True" => Some(true),
+      Expr::Identifier(ref s) if s == "False" => Some(false),
+      _ => None,
+    }
+  };
+  // `Chop` absorbs the rounding noise of inexact input.
+  let is_zero =
+    |e: Expr| is_true(call("Equal", vec![call1("Chop", e), Expr::Integer(0)]));
+
+  let w: Vec<Expr> = q
+    .iter()
+    .zip(&p)
+    .map(|(x, y)| minus2(x.clone(), y.clone()))
+    .collect();
+  let (dd, de, ee) = (dot(&d, &d)?, dot(&d, &e)?, dot(&e, &e)?);
+  let (wd, we) = (dot(&w, &d)?, dot(&w, &e)?);
+  // Normal equations of p + t d == q + s e:
+  //   t (d.d) - s (d.e) == w.d,  t (d.e) - s (e.e) == w.e.
+  let det = ev(minus2(
+    times2(de.clone(), de.clone()),
+    times2(dd.clone(), ee.clone()),
+  ))?;
+  if is_zero(det.clone())? {
+    // Parallel: distinct lines never meet, coincident ones overlap.
+    let wd2 = ev(minus2(
+      times2(dd.clone(), dot(&w, &w)?),
+      times2(wd.clone(), wd.clone()),
+    ))?;
+    if is_zero(wd2)? {
+      return None;
+    }
+    return Some(call1("EmptyRegion", Expr::Integer(dims as i128)));
+  }
+  let t = ev(div2(minus2(times2(de, we), times2(ee.clone(), wd)), det))?;
+  let pt: Vec<Expr> = p
+    .iter()
+    .zip(&d)
+    .map(|(x, y)| ev(plus2(x.clone(), times2(t.clone(), y.clone()))))
+    .collect::<Option<_>>()?;
+  // Skew lines (3D and up): the closest point of one is off the other.
+  let off: Vec<Expr> = pt
+    .iter()
+    .zip(&q)
+    .map(|(x, y)| minus2(x.clone(), y.clone()))
+    .collect();
+  let off_e = dot(&off, &e)?;
+  let residual = ev(minus2(
+    times2(ee, dot(&off, &off)?),
+    times2(off_e.clone(), off_e),
+  ))?;
+  if !is_zero(residual)? {
+    return Some(call1("EmptyRegion", Expr::Integer(dims as i128)));
+  }
+  Some(call1("Point", Expr::List(pt.into())))
 }
 
 /// `RegionIntersection` of an `InfiniteLine` / `InfinitePlane` with a

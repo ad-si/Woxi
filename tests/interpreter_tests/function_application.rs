@@ -4373,3 +4373,72 @@ mod functional_fuzz_edge_cases {
     );
   }
 }
+
+/// A pure function's body is written in InputForm like any other
+/// sub-expression: the display wrappers it applies (`Style`, `Row`, …) stay
+/// in the text, so the rendered function reads back as the same function.
+mod pure_function_input_form {
+  use super::*;
+
+  /// `Style[…]` is only unwrapped by OutputForm; a function that applies it
+  /// keeps it, or a round trip through InputForm would silently drop every
+  /// style the function sets.
+  #[test]
+  fn keeps_style_in_the_body() {
+    assert_eq!(
+      interpret("ToString[Hold[Style[x, 16] &], InputForm]").unwrap(),
+      "Hold[Style[x, 16] & ]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[Text[Style[#, 16]] &], InputForm]").unwrap(),
+      "Hold[Text[Style[#1, 16]] & ]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[{Style[x, Red], Style[y, Bold]} &], InputForm]")
+        .unwrap(),
+      "Hold[{Style[x, Red], Style[y, Bold]} & ]"
+    );
+  }
+
+  /// The other display wrappers OutputForm collapses — `Row` concatenates
+  /// its items there — likewise survive the body of a pure function.
+  #[test]
+  fn keeps_layout_wrappers_in_the_body() {
+    assert_eq!(
+      interpret(r#"ToString[Hold[Row[{"a = ", #}] &], InputForm]"#).unwrap(),
+      r#"Hold[Row[{"a = ", #1}] & ]"#
+    );
+    assert_eq!(
+      interpret("ToString[Hold[Column[{#, #2}] &], InputForm]").unwrap(),
+      "Hold[Column[{#1, #2}] & ]"
+    );
+  }
+
+  /// A body binding looser than `&` is still parenthesized on this path, so
+  /// the text re-parses as the same function rather than as a `;` sequence.
+  #[test]
+  fn parenthesizes_a_loose_body() {
+    assert_eq!(
+      interpret("ToString[Hold[(a = Style[x, 16]; #) &], InputForm]").unwrap(),
+      "Hold[(a = Style[x, 16]; #1) & ]"
+    );
+    assert_eq!(
+      interpret("ToString[Hold[(Style[#, 16] &) &], InputForm]").unwrap(),
+      "Hold[(Style[#1, 16] & ) & ]"
+    );
+  }
+
+  /// Rendering a function is a display, not an evaluation: the body is not
+  /// computed, and applying the function still yields the styled result.
+  #[test]
+  fn renders_without_evaluating_the_body() {
+    assert_eq!(
+      interpret("ToString[Hold[1 + 1 &], InputForm]").unwrap(),
+      "Hold[1 + 1 & ]"
+    );
+    assert_eq!(
+      interpret("FullForm[(Style[#, 16] &)[x]]").unwrap(),
+      "FullForm[Style[x, 16]]"
+    );
+  }
+}

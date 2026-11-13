@@ -32,6 +32,18 @@ pub fn dispatch_quantity_functions(
     "UnitDimensions" if args.len() == 1 => {
       return Some(crate::functions::quantity_ast::unit_dimensions_ast(args));
     }
+    // The canonical structured form stays as written, like wolframscript's
+    // own atomic QuantityArray object.
+    "QuantityArray"
+      if args.len() == 1
+        && crate::functions::quantity_ast::quantity_array_parts(&call(
+          "QuantityArray",
+          args.to_vec(),
+        ))
+        .is_some() =>
+    {
+      return Some(Ok(unevaluated("QuantityArray", args)));
+    }
     _ => {}
   }
   None

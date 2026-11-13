@@ -1698,6 +1698,108 @@ fn multiply_magnitude_by_rational(
   }
 }
 
+// ─── QuantityArray ──────────────────────────────────────────────────────────
+
+/// The pieces of a canonical single-unit `QuantityArray`:
+/// `QuantityArray[StructuredArray`StructuredData[dims, {mags, unit, {{1, …, r}}}]]`,
+/// the form wolframscript stores (e.g. as the value path of a saved
+/// `TimeSeries`). Returns the dimensions, the magnitude array and the unit when
+/// `mags` is a rectangular array of rank `r` matching `dims` and every level
+/// shares the one unit.
+pub fn quantity_array_parts(expr: &Expr) -> Option<(Vec<usize>, &Expr, &Expr)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "QuantityArray" || args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: sd,
+    args: sd_args,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if sd != "StructuredArray`StructuredData" || sd_args.len() != 2 {
+    return None;
+  }
+  let Expr::List(dims) = &sd_args[0] else {
+    return None;
+  };
+  let dims: Vec<usize> = dims
+    .iter()
+    .map(|d| match d {
+      Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  if dims.is_empty() {
+    return None;
+  }
+  let Expr::List(payload) = &sd_args[1] else {
+    return None;
+  };
+  if payload.len() != 3 {
+    return None;
+  }
+  let (mags, unit, groups) = (&payload[0], &payload[1], &payload[2]);
+  // One unit shared by all levels: the grouping is `{{1, 2, …, r}}`.
+  let expected_group: Vec<Expr> =
+    (1..=dims.len()).map(|i| Expr::Integer(i as i128)).collect();
+  let one_group = match groups {
+    Expr::List(gs) if gs.len() == 1 => match &gs[0] {
+      Expr::List(g) => {
+        g.len() == expected_group.len()
+          && g
+            .iter()
+            .zip(&expected_group)
+            .all(|(a, b)| matches!((a, b), (Expr::Integer(x), Expr::Integer(y)) if x == y))
+      }
+      _ => false,
+    },
+    _ => false,
+  };
+  if !one_group {
+    return None;
+  }
+  if !matches!(
+    unit,
+    Expr::String(_) | Expr::Identifier(_) | Expr::FunctionCall { .. }
+  ) {
+    return None;
+  }
+  fn has_shape(e: &Expr, dims: &[usize]) -> bool {
+    match dims.split_first() {
+      None => !matches!(e, Expr::List(_)),
+      Some((n, rest)) => match e {
+        Expr::List(items) => {
+          items.len() == *n && items.iter().all(|i| has_shape(i, rest))
+        }
+        _ => false,
+      },
+    }
+  }
+  if !has_shape(mags, &dims) {
+    return None;
+  }
+  Some((dims, mags, unit))
+}
+
+/// The explicit array of `Quantity[m, unit]` elements a canonical
+/// `QuantityArray` stands for (what `Normal` gives).
+pub fn quantity_array_to_list(expr: &Expr) -> Option<Expr> {
+  let (_, mags, unit) = quantity_array_parts(expr)?;
+  fn wrap(e: &Expr, unit: &Expr) -> Expr {
+    match e {
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|i| wrap(i, unit)).collect())
+      }
+      m => make_quantity(m.clone(), unit.clone()),
+    }
+  }
+  Some(wrap(mags, unit))
+}
+
 // ─── Quantity[mag, unit] constructor ────────────────────────────────────────
 
 pub fn quantity_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {

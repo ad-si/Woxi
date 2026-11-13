@@ -805,6 +805,23 @@ mod country_data_tests {
     );
   }
 
+  /// Overseas landmasses that are countries of their own (French Guiana)
+  /// are not part of their sovereign's outline, while a country's other
+  /// landmasses (Corsica, Borneo) stay.
+  #[test]
+  fn country_polygon_leaves_out_separately_listed_territories() {
+    clear_state();
+    let centers = |country: &str| {
+      interpret(&format!(
+        "p = CountryData[\"{country}\", \"SchematicPolygon\"]; \
+         Map[Round[Mean[#[[1]]]] &, If[ListQ[p], p, {{p}}]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(centers("France"), "{{3, 47}, {9, 42}}");
+    assert_eq!(centers("Malaysia"), "{{102, 4}, {115, 4}}");
+  }
+
   #[test]
   fn country_data_flag_is_an_image_for_every_country() {
     clear_state();

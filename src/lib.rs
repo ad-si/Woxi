@@ -4703,6 +4703,22 @@ fn render_labeled_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
 /// unchanged.
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // `Text[content]` displays `content` in plain text format: a picture
+  // inside is still drawn, but text keeps the wrapper so the layout sets it
+  // in the proportional text face rather than its monospace default.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Text"
+    && args.len() == 1
+  {
+    let inner = render_inline_display_wrapper(&args[0]);
+    return match inner {
+      syntax::Expr::Graphics { .. } => inner,
+      other => syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![other].into(),
+      },
+    };
+  }
   // The top-level pipeline transformations don't recurse into nested
   // wrapper arguments, so we apply the relevant ones here for a single
   // sub-expression.
@@ -4896,18 +4912,14 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box
     .and_then(|(w, _, _, _)| {
-      functions::graphics::fit_grid_to_pane_width(&expr, w, &|c| {
-        functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
-      })
+      functions::graphics::fit_grid_to_pane_width(&expr, w, &measured_width)
     })
     .unwrap_or(expr);
   // An automatically sized tree wider than the box is squeezed to its width
   // rather than clipped.
   let expr = pane_box
     .and_then(|(w, _, _, _)| {
-      functions::graphics::fit_tree_to_pane_width(&expr, w, &|c| {
-        functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(c)).0
-      })
+      functions::graphics::fit_tree_to_pane_width(&expr, w, &measured_width)
     })
     .unwrap_or(expr);
   // A picture the wrapper held (`Pane[Image[…], {w, h}]`) only becomes the
@@ -4921,6 +4933,19 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
       &html, w, h, align, false, shrink,
     ));
     return helpers::id_expr("-Image-");
+  }
+  // A list of pictures in the pane breaks into lines at the pane's width,
+  // not the page's, and then fills the pane's box like any other picture.
+  if let Some((w, h, align, shrink)) = pane_box
+    && let Some(svg) =
+      functions::container_layout::with_line_width_limit(w, || {
+        evaluator::graphics_list_layout_svg(&expr)
+      })
+  {
+    clear_captured_graphics();
+    return graphics_result(functions::graphics::clip_svg_to_pane_box(
+      &svg, w, h, align, false, shrink,
+    ));
   }
   let expr = render_image_if_needed(expr);
   let expr = render_interactive_pane_if_needed(expr);
@@ -4960,6 +4985,19 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     }
     _ => result,
   }
+}
+
+/// The width `content` takes up when drawn on its own. Only a measurement:
+/// whatever picture drawing it captured is dropped again, so a cell sized
+/// while fitting a layout into its `Pane` never stands in for the cell's
+/// output (a `Pane[Grid[{…, {Pane[Grid[…, Frame -> All]]}, …}], size]`
+/// otherwise showed just the nested framed table).
+fn measured_width(content: &syntax::Expr) -> f64 {
+  let captured = captured_graphics_count();
+  let width =
+    functions::graphics::parse_svg_wh(&evaluator::expr_to_svg(content)).0;
+  truncate_captured_graphics(captured);
+  width
 }
 
 /// Rewrite `TraditionalForm[Row[…]]` / `TraditionalForm[Column[…]]` (looking
@@ -5107,8 +5145,12 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn column_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
-  let mut new_args: Vec<syntax::Expr> = args.to_vec();
-  if let syntax::Expr::List(items) = &args[0] {
+  // Text too wide for a fixed-width column is broken into lines before
+  // the items are pre-rendered (which would freeze it as one long line).
+  let mut new_args: Vec<syntax::Expr> =
+    functions::graphics::wrap_fixed_width_column_text(args)
+      .unwrap_or_else(|| args.to_vec());
+  if let syntax::Expr::List(items) = &new_args[0] {
     let new_items: Vec<syntax::Expr> =
       items.iter().map(render_inline_display_wrapper).collect();
     new_args[0] = syntax::Expr::List(new_items.into());

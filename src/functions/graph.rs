@@ -1046,6 +1046,7 @@ fn graph_render(
       pts
     }
   } else {
+    layout_choice.plain_lines = !draw_directed;
     layout_choice.positions(&graph, &index_map)
   };
   if let Some(directed) = legacy_plot {
@@ -2555,10 +2556,51 @@ fn layered_layout(
   scale_tree: bool,
   close_up: bool,
   layer_size: Option<&Expr>,
+  plain_lines: bool,
 ) -> Vec<(f64, f64)> {
   let n = graph.node_count();
   if n == 0 {
     return vec![];
+  }
+
+  // Disconnected pieces are layered one by one, each from its own
+  // sources, and the drawings are packed into a near-square block.
+  let components = weakly_connected_components(graph);
+  if components.len() > 1 {
+    let mut pts = vec![(0.0, 0.0); n];
+    for comp in &components {
+      let mut local = vec![usize::MAX; n];
+      let mut sub: DiGraph<usize, RenderEdgeData> = DiGraph::new();
+      for (k, &v) in comp.iter().enumerate() {
+        local[v] = k;
+        sub.add_node(k);
+      }
+      for edge in graph.edge_references() {
+        let (s, d) =
+          (local[edge.source().index()], local[edge.target().index()]);
+        if s != usize::MAX && d != usize::MAX {
+          sub.add_edge(
+            NodeIndex::new(s),
+            NodeIndex::new(d),
+            edge.weight().clone(),
+          );
+        }
+      }
+      let sub_root = root.map(|r| local[r]).filter(|&r| r != usize::MAX);
+      let sub_pts = layered_layout(
+        &sub,
+        dir,
+        sub_root,
+        scale_tree,
+        close_up,
+        layer_size,
+        plain_lines,
+      );
+      for (&v, p) in comp.iter().zip(sub_pts) {
+        pts[v] = p;
+      }
+    }
+    return pack_square_components(&components, pts);
   }
 
   let mut successors: Vec<Vec<usize>> = vec![Vec::new(); n];
@@ -2584,7 +2626,16 @@ fn layered_layout(
     [only] => *only,
     _ => graph_center(graph),
   });
-  if let Some(children) = tree_children(graph, tree_root) {
+  // A directed tree with several sources (`{a -> c, b -> c}`) drawn with
+  // arrows does not hang from any one of them: its edges point down
+  // through the layers, so it is layered by them like any other digraph.
+  let several_directed_sources = root.is_none()
+    && !plain_lines
+    && sources.len() > 1
+    && graph.edge_references().all(|e| e.weight().directed);
+  if !several_directed_sources
+    && let Some(children) = tree_children(graph, tree_root)
+  {
     let tidy = tidy_tree(&children, tree_root);
     let deepest = tidy.iter().map(|p| p.1 as usize).max().unwrap_or(0);
     let offsets = layer_offsets(layer_size, deepest);
@@ -2750,12 +2801,42 @@ fn layered_layout(
     }
   }
 
-  let width = rows
+  // Across a layer the vertices keep their order, one unit apart at
+  // least, each as close as that allows to the median of its neighbors
+  // in the layer above (the right one of the middle two for an even
+  // count), so a vertex with many parents sits under them. Where that
+  // would make the drawing wider than its widest layer, the layers stay
+  // packed from the left instead.
+  let packed_width = rows
     .iter()
-    .map(std::vec::Vec::len)
+    .map(Vec::len)
     .max()
     .unwrap_or(1)
     .saturating_sub(1) as f64;
+  let packed = slot.clone();
+  for l in 1..layers {
+    let mut prev: Option<f64> = None;
+    for &v in &rows[l] {
+      let mut above: Vec<f64> = up[v].iter().map(|&u| slot[u]).collect();
+      above.sort_by(f64::total_cmp);
+      let wanted = above
+        .get(above.len() / 2)
+        .copied()
+        .unwrap_or_else(|| prev.map_or(0.0, |p| p + 1.0));
+      let x = prev.map_or(wanted, |p| wanted.max(p + 1.0));
+      slot[v] = x;
+      prev = Some(x);
+    }
+  }
+  let width = (0..total)
+    .map(|v| slot[v])
+    .fold(f64::NEG_INFINITY, f64::max)
+    - (0..total).map(|v| slot[v]).fold(f64::INFINITY, f64::min);
+  let (slot, width) = if width > packed_width + 1e-9 {
+    (packed, packed_width)
+  } else {
+    (slot, width)
+  };
   let offsets = layer_offsets(layer_size, layers - 1);
   let depth_span = offsets[layers - 1].max(0.0);
   let step = if close_up && width > 0.0 && depth_span > 0.0 {
@@ -2774,6 +2855,10 @@ fn layered_layout(
 #[derive(Clone, Debug, Default)]
 #[allow(clippy::struct_excessive_bools)]
 struct LayoutChoice {
+  /// The edges are drawn as plain lines (`DirectedEdges -> False`, or a
+  /// `TreePlot`), so a layered tree may hang from any vertex rather than
+  /// read its layers off the edge directions.
+  plain_lines: bool,
   /// A layered embedding (`"LayeredEmbedding"`, `"LayeredDigraphEmbedding"`,
   /// …), stacking the vertices in layers from a root.
   layered: Option<LayerDirection>,
@@ -2827,6 +2912,7 @@ impl LayoutChoice {
       _ => false,
     };
     Self {
+      plain_lines: false,
       layered_digraph: names(value, "LayeredDigraphEmbedding"),
       circular: layered.is_none() && layout_is_circular(value),
       linear: layered.is_none() && layout_is_linear(value),
@@ -2859,6 +2945,7 @@ impl LayoutChoice {
         !self.layered_digraph,
         true,
         self.layer_size.as_ref(),
+        self.plain_lines,
       );
     }
     if self.circular {
@@ -3004,6 +3091,7 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
           false,
           false,
           None,
+          false,
         );
       }
       let comp: Vec<usize> = (0..n).collect();
@@ -3677,7 +3765,48 @@ fn weakly_connected_components(
 /// distributed after each rectangle, keeping the first rectangle at the top.
 fn pack_grid_components(
   components: &[Vec<usize>],
+  pts: Vec<(f64, f64)>,
+) -> Vec<(f64, f64)> {
+  pack_component_columns(components, pts, false)
+}
+
+/// Pack separately laid-out components (of a layered drawing, say) the
+/// way [`pack_grid_components`] does, but with the columns as tall as
+/// makes the whole block closest to a square, and each component
+/// centered across its column.
+fn pack_square_components(
+  components: &[Vec<usize>],
+  pts: Vec<(f64, f64)>,
+) -> Vec<(f64, f64)> {
+  pack_component_columns(components, pts, true)
+}
+
+/// Fill columns of height `column_height` first-fit with rectangles of
+/// the given heights: the indices in each column and the height used.
+fn fill_columns(
+  heights: &[f64],
+  column_height: f64,
+) -> (Vec<Vec<usize>>, Vec<f64>) {
+  let mut columns: Vec<Vec<usize>> = Vec::new();
+  let mut used: Vec<f64> = Vec::new();
+  for (i, &height) in heights.iter().enumerate() {
+    if let Some(col) =
+      used.iter().position(|h| h + height <= column_height + 1e-9)
+    {
+      columns[col].push(i);
+      used[col] += height;
+    } else {
+      columns.push(vec![i]);
+      used.push(height);
+    }
+  }
+  (columns, used)
+}
+
+fn pack_component_columns(
+  components: &[Vec<usize>],
   mut pts: Vec<(f64, f64)>,
+  square: bool,
 ) -> Vec<(f64, f64)> {
   if components.len() <= 1 {
     return pts;
@@ -3707,34 +3836,53 @@ fn pack_grid_components(
     + 1e-5;
   let heights: Vec<_> =
     bounds.iter().map(|b| b.3 - b.2 + 2.0 * padding).collect();
-  let column_height = heights.iter().copied().fold(0.0_f64, f64::max);
-  let mut columns: Vec<Vec<usize>> = Vec::new();
-  let mut used: Vec<f64> = Vec::new();
-  for (i, &height) in heights.iter().enumerate() {
-    if let Some(col) =
-      used.iter().position(|h| h + height <= column_height + 1e-9)
-    {
-      columns[col].push(i);
-      used[col] += height;
-    } else {
-      columns.push(vec![i]);
-      used.push(height);
+  let widths: Vec<_> =
+    bounds.iter().map(|b| b.1 - b.0 + 2.0 * padding).collect();
+  let tallest = heights.iter().copied().fold(0.0_f64, f64::max);
+  let column_height = if square {
+    // Try every column height a run of components could fill and keep
+    // the one whose block needs the smallest enclosing square.
+    let mut best = (f64::INFINITY, tallest);
+    let mut run = 0.0;
+    for &h in &heights {
+      run += h;
+      if run + 1e-9 < tallest {
+        continue;
+      }
+      let (columns, used) = fill_columns(&heights, run);
+      let width: f64 = columns
+        .iter()
+        .map(|col| col.iter().map(|&i| widths[i]).fold(0.0_f64, f64::max))
+        .sum();
+      let height = used.iter().copied().fold(0.0_f64, f64::max);
+      let side = width.max(height);
+      if side < best.0 - 1e-9 {
+        best = (side, height);
+      }
     }
-  }
+    best.1
+  } else {
+    tallest
+  };
+  let (columns, used) = fill_columns(&heights, column_height);
   let mut x = 0.0;
   for (col, &height) in columns.iter().zip(&used) {
     let slack = (column_height - height) / col.len() as f64;
+    let width = col.iter().map(|&i| widths[i]).fold(0.0_f64, f64::max);
     let mut y = 0.0;
-    let mut width = 0.0_f64;
     for &i in col {
-      let (xmin, xmax, _, ymax) = bounds[i];
+      let (xmin, _, _, ymax) = bounds[i];
+      let inset = if square {
+        (width - widths[i]) / 2.0
+      } else {
+        0.0
+      };
       for &v in &components[i] {
         pts[v] = (
-          x + padding + pts[v].0 - xmin,
+          x + inset + padding + pts[v].0 - xmin,
           -y - padding + pts[v].1 - ymax,
         );
       }
-      width = width.max(xmax - xmin + 2.0 * padding);
       y += heights[i] + slack;
     }
     x += width;

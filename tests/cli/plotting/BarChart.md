@@ -45,6 +45,9 @@ Graphics
   `"DarkRainbow"`, `"Aquamarine"`, `"StarryNightColors"`, `"AvocadoColors"`,
   `"SunsetColors"`, `"FruitPunchColors"`, `"CherryTones"`.
 - **`ChartElementFunction`** — custom shape for each bar.
+- **`ChartElements`** — pictures (`Graphics` or `Image`) drawn in place of
+  the bars: each copy is as wide as its bar and the copies are stacked from
+  the axis up, cut off at the bar's end.
 - **`BarSpacing`** — gap between bars.
 - **`ImageSize`**, **`PlotLabel`**, **`AxesLabel`**, **`Frame`**,
   **`FrameLabel`**, **`PlotRange`** — as for `Plot`.

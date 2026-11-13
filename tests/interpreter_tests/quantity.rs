@@ -3287,3 +3287,49 @@ mod quantity_text_forms {
     );
   }
 }
+
+mod quantity_array {
+  use super::*;
+
+  const QA: &str = r#"QuantityArray[StructuredArray`StructuredData[{3}, {{1, 2.5, 3}, "Meters", {{1}}}]]"#;
+
+  #[test]
+  fn canonical_form_normalizes_to_quantities() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!("ToString[Normal[{QA}], InputForm]")).unwrap(),
+      r#"{Quantity[1, "Meters"], Quantity[2.5, "Meters"], Quantity[3, "Meters"]}"#
+    );
+  }
+
+  #[test]
+  fn matrix_form_normalizes_element_wise() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"ToString[Normal[QuantityArray[StructuredArray`StructuredData[{2, 2}, {{{1, 2}, {3, 4}}, "Seconds", {{1, 2}}}]]], InputForm]"#
+      )
+      .unwrap(),
+      r#"{{Quantity[1, "Seconds"], Quantity[2, "Seconds"]}, {Quantity[3, "Seconds"], Quantity[4, "Seconds"]}}"#
+    );
+  }
+
+  #[test]
+  fn length_counts_the_elements() {
+    clear_state();
+    assert_eq!(interpret(&format!("Length[{QA}]")).unwrap(), "3");
+  }
+
+  /// Regression: the canonical form was reported as an unimplemented
+  /// built-in function.
+  #[test]
+  fn canonical_form_is_inert_without_warning() {
+    clear_state();
+    assert_eq!(interpret(&format!("Head[{QA}]")).unwrap(), "QuantityArray");
+    let warnings = woxi::get_captured_warnings();
+    assert!(
+      !warnings.iter().any(|w| w.contains("not yet implemented")),
+      "unexpected unimplemented warning: {warnings:?}"
+    );
+  }
+}
