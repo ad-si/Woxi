@@ -506,6 +506,17 @@ const MAX_SPLIT_PLANES: usize = 256;
 /// Most pieces one triangle is cut into.
 const MAX_PIECES_PER_TRIANGLE: usize = 64;
 
+/// How many times larger one of two interpenetrating triangles has to be
+/// than the other for `split_interpenetrating` to cut only the smaller one.
+const SPLIT_AREA_RATIO: f64 = 4.0;
+
+/// Area of a triangle in 3-D.
+fn triangle_area(t: &[Point3D; 3]) -> f64 {
+  let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
+  let e2 = [t[2].x - t[0].x, t[2].y - t[0].y, t[2].z - t[0].z];
+  0.5 * v_len(v_cross(e1, e2))
+}
+
 /// Cuts a convex polygon (corner, flag of the edge to the next corner) by
 /// the plane through `plane`, returning the parts on its near and far side.
 /// Edges created by the cut carry a `false` flag.
@@ -668,15 +679,24 @@ fn split_interpenetrating(
     return;
   }
   let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
+  let areas: Vec<f64> = verts.iter().map(triangle_area).collect();
   let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(&projected, |i, j| {
     if side_of_plane(&verts[i], &verts[j], camera).is_none()
       && side_of_plane(&verts[j], &verts[i], camera).is_none()
     {
-      if planes[i].len() < MAX_SPLIT_PLANES {
+      // Cutting either triangle by the other's plane is enough to order
+      // the pair, so of two very differently sized triangles only the
+      // smaller one is cut. Otherwise a large face pierced by a thin
+      // tessellated cylinder is cut along the plane of every facet around
+      // the piercing point, fanning it into slivers whose seams show.
+      let (ai, aj) = (areas[i], areas[j]);
+      let split_i = ai < aj * SPLIT_AREA_RATIO;
+      let split_j = aj < ai * SPLIT_AREA_RATIO;
+      if split_i && planes[i].len() < MAX_SPLIT_PLANES {
         planes[i].push(j);
       }
-      if planes[j].len() < MAX_SPLIT_PLANES {
+      if split_j && planes[j].len() < MAX_SPLIT_PLANES {
         planes[j].push(i);
       }
     }
