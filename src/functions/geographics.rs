@@ -131,11 +131,98 @@ fn country_polygons(query: &str) -> Option<&'static [Polygon]> {
       .find(|c| c.name.eq_ignore_ascii_case(query))
       .map(|c| c.polygons.as_slice());
   };
-  world_countries().iter().find_map(|c| {
+  world_countries().iter().enumerate().find_map(|(i, c)| {
     let ne_canon =
       crate::functions::country_data::canonical_name(fixup_ne_name(&c.name))?;
-    (ne_canon == canon).then_some(c.polygons.as_slice())
+    (ne_canon == canon).then(|| own_territory_polygons()[i].as_slice())
   })
+}
+
+/// Each Natural Earth country's polygons without the overseas landmasses
+/// the knowledge base lists as countries of their own: Natural Earth draws
+/// French Guiana as part of France, while `Entity["Country",
+/// "FrenchGuiana"]` is a separate country, so France's own outline leaves
+/// it out. A landmass (other than the country's largest) is dropped when it
+/// holds the center of a gazetteer country that has no outline of its own
+/// and not the country's own center.
+fn own_territory_polygons() -> &'static Vec<Vec<Polygon>> {
+  static CACHE: OnceLock<Vec<Vec<Polygon>>> = OnceLock::new();
+  CACHE.get_or_init(|| {
+    let g = gazetteer();
+    let index_of = |name: &str| g.by_name.get(&name.to_lowercase()).copied();
+    let outlined: std::collections::HashSet<usize> = world_countries()
+      .iter()
+      .filter_map(|c| index_of(fixup_ne_name(&c.name)))
+      .collect();
+    let centers: Vec<(f64, f64)> = g
+      .countries
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| !outlined.contains(i))
+      .map(|(_, c)| (c.lon, c.lat))
+      .collect();
+    world_countries()
+      .iter()
+      .map(|c| {
+        let own_center = index_of(fixup_ne_name(&c.name))
+          .map(|k| (g.countries[k].lon, g.countries[k].lat));
+        let largest = c
+          .polygons
+          .iter()
+          .enumerate()
+          .filter_map(|(i, p)| p.first().map(|r| (i, ring_area(r))))
+          .fold(None, |best: Option<(usize, f64)>, (i, a)| match best {
+            Some((_, b)) if b >= a => best,
+            _ => Some((i, a)),
+          })
+          .map(|(i, _)| i);
+        c.polygons
+          .iter()
+          .enumerate()
+          .filter(|(i, p)| {
+            let Some(ring) = p.first() else {
+              return true;
+            };
+            Some(*i) == largest
+              || own_center.is_some_and(|pt| ring_contains(ring, pt))
+              || !centers.iter().any(|&pt| ring_contains(ring, pt))
+          })
+          .map(|(_, p)| p.clone())
+          .collect()
+      })
+      .collect()
+  })
+}
+
+/// The unsigned area of a `(lon, lat)` ring, in square degrees.
+fn ring_area(ring: &Ring) -> f64 {
+  let n = ring.len();
+  (0..n)
+    .map(|i| {
+      let (x0, y0) = ring[i];
+      let (x1, y1) = ring[(i + 1) % n];
+      x0 as f64 * y1 as f64 - x1 as f64 * y0 as f64
+    })
+    .sum::<f64>()
+    .abs()
+    / 2.0
+}
+
+/// Whether the `(lon, lat)` point lies inside the ring (even-odd rule).
+fn ring_contains(ring: &Ring, (x, y): (f64, f64)) -> bool {
+  let n = ring.len();
+  let mut inside = false;
+  for i in 0..n {
+    let (xi, yi) = (ring[i].0 as f64, ring[i].1 as f64);
+    let (xj, yj) = (
+      ring[(i + n - 1) % n].0 as f64,
+      ring[(i + n - 1) % n].1 as f64,
+    );
+    if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
+      inside = !inside;
+    }
+  }
+  inside
 }
 
 /// The outer ring of every landmass of a country (`None` for the whole world),

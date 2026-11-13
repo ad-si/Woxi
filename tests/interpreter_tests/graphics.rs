@@ -17837,6 +17837,78 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("stop-color=\"#0000FF\""), "{svg}");
     }
 
+    /// `ChartElements -> {g1, g2, …}` draws each bar as copies of its
+    /// picture, as wide as the bar and stacked from the axis up, clipped
+    /// at the bar's end; a shape without a color of its own takes the
+    /// bar's color.
+    #[test]
+    fn bar_chart_chart_elements_tile_pictures() {
+      let svg = export_svg(
+        "BarChart[{1, 3}, ChartElements -> {Graphics[Disk[]], \
+         Graphics[{Red, Rectangle[]}]}, ChartStyle -> Blue]",
+      );
+      // No plain bars, one clipped group per bar.
+      assert!(!svg.contains("fill=\"#0000FF\""), "{svg}");
+      assert_eq!(svg.matches("<clipPath id=\"chartElement").count(), 2);
+      // Square pictures as wide as the bars: the short bar holds one
+      // (clipped) copy, the bar three times as tall two.
+      let groups: Vec<&str> =
+        svg.split("<clipPath id=\"chartElement").skip(1).collect();
+      let copies = |g: &str| g.matches("<svg x=").count();
+      assert_eq!((copies(groups[0]), copies(groups[1])), (1, 2), "{svg}");
+      assert!(
+        groups[0].contains("#0000FF") || groups[0].contains("rgb(0,0,255)"),
+        "{svg}"
+      );
+      assert!(
+        groups[1].contains("#FF0000") || groups[1].contains("rgb(255,0,0)"),
+        "{svg}"
+      );
+    }
+
+    /// `ChartElements` pictures cycle over the bars, and images are drawn
+    /// as rasters.
+    #[test]
+    fn bar_chart_chart_elements_cycle_images() {
+      let svg = export_svg(
+        "BarChart[{1, 2, 3}, ChartElements -> \
+         {Image[{{{1, 0, 0}}, {{0, 0, 1}}}]}]",
+      );
+      assert_eq!(svg.matches("<clipPath id=\"chartElement").count(), 3);
+      assert!(svg.contains("data:image/png;base64,"), "{svg}");
+    }
+
+    /// A lone `AxesLabel -> label` names the value axis.
+    #[test]
+    fn bar_chart_single_axes_label_names_value_axis() {
+      let lone =
+        export_svg("BarChart[{3, 5, 2}, AxesLabel -> Style[\"Millions\", 12]]");
+      let pair = export_svg(
+        "BarChart[{3, 5, 2}, AxesLabel -> {None, Style[\"Millions\", 12]}]",
+      );
+      assert!(lone.contains(">Millions<"), "{lone}");
+      assert_eq!(lone, pair);
+    }
+
+    /// A rotated chart label hangs as far below the axis as it reaches,
+    /// and a `Pane[text, w]` label wraps to the pane's width.
+    #[test]
+    fn bar_chart_long_rotated_labels_fit() {
+      let svg = export_svg(
+        "BarChart[{3, 5}, ChartLabels -> {Rotate[\"A\", Pi/2.5], \
+         Rotate[Style[Pane[\"Democratic Republic of the Congo\", 115], 12], \
+         Pi/2.5]}, ImageSize -> {300, 300}]",
+      );
+      assert!(
+        svg.contains(">Democratic Republic<") || svg.contains(">Democratic<"),
+        "{svg}"
+      );
+      assert!(!svg.contains(">Democratic Republic of the Congo<"), "{svg}");
+      // The axis sits high enough for the label's rotated extent.
+      let axis_y = bar_rects(&svg).iter().map(|r| r.1 + r.2).max().unwrap();
+      assert!(axis_y < 2400, "{axis_y} {svg}");
+    }
+
     /// `BarSpacing -> {0, s}` leaves `s` bar widths between groups (WL's
     /// `{0, 1}` puts three-bar groups four widths apart).
     #[test]
