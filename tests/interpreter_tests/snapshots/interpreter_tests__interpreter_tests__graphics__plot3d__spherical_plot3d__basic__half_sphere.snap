@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 6658
 expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi/2}, {phi, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="302" viewBox="0 0 360 302" xmlns="http://www.w3.org/2000/svg">
@@ -23292,11 +23293,11 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi/2}, {phi, 0, 2 Pi}]\"
 <line x1="321.6" y1="183.1" x2="323.7" y2="184.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="329.5" y1="170.8" x2="331.6" y2="172.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="337.1" y1="159.0" x2="339.2" y2="160.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<line x1="255.4" y1="285.5" x2="258.7" y2="287.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="255.4" y1="285.5" x2="252.0" y2="283.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="260.4" y="288.7" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">-1</text>
-<line x1="304.7" y1="209.3" x2="308.0" y2="211.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="304.7" y1="209.3" x2="301.3" y2="207.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="309.7" y="212.5" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">0</text>
-<line x1="344.5" y1="147.7" x2="347.8" y2="149.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
+<line x1="344.5" y1="147.7" x2="341.1" y2="145.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <text x="349.5" y="150.9" font-size="10" fill="rgb(102,102,102)" text-anchor="start" dominant-baseline="middle" font-family="Atkinson Hyperlegible Next, sans-serif">1</text>
 <line x1="39.4" y1="202.5" x2="23.4" y2="104.9" stroke="rgb(102,102,102)" stroke-width="1"/>
 <line x1="37.7" y1="192.1" x2="40.2" y2="191.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>

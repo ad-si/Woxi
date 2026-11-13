@@ -80,13 +80,14 @@ PowGap = _{ (" " | "\t" | "\r" | "\n")* }
 
 // What can follow a number and bind tighter than unary minus (Wolfram
 // precedence 480): `-2^2` is `-(2^2)`, `-2 . a` is `-(2 . a)`, `-2!` is
-// `-(2!)`. A signed literal must not take the `-` before any of these — it
+// `-(2!)`, `-2--` is `-(2--)`. A signed literal must not take the `-` before any of these — it
 // is released to LeadingMinus instead. A `.` needs whitespace in front, as
 // `-2.a` is the real `-2.` times `a`.
 NegLiteralTail = _{
     PowGap ~ (
         "^" ~ !("=" | ":=")
       | "**" | "@" | "/@" | "//@" | "<>" | "~" ~ !"~" | "/*" ~ !")"
+      | "++" | "--"
       | "\\[TensorProduct]" | "\u{F3DA}"
       | "\\[Cross]" | "\u{F4A0}" | "\u{2A2F}"
       | "\\[CircleDot]" | "\u{2299}" | "\\[SmallCircle]" | "\u{2218}"

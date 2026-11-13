@@ -323,9 +323,222 @@ pub fn triangulate_with_holes(
   }
 }
 
+/// A vertex of a self-intersecting polygon's arrangement: it lies on the
+/// polygon's edge `edge` (from corner `edge` to the next corner), a
+/// fraction `t` of the way along it, so a caller can place it in its own
+/// space (in 3D, between the two corners it was flattened from).
+#[derive(Clone, Copy, Debug)]
+pub struct EdgePoint {
+  pub edge: usize,
+  pub t: f64,
+}
+
+/// The pieces of a self-intersecting polygon that the even-odd rule fills.
+///
+/// The polygon's edges are cut wherever they cross one another, the plane
+/// regions bounded by those pieces are traced, and the regions an odd
+/// number of edges away from the outside are kept. A pentagram comes back
+/// as its five tips, without the pentagon in the middle — exactly what
+/// `Graphics` draws for it with SVG's `evenodd` fill.
+///
+/// Returns the arrangement's vertices (first the polygon's own corners,
+/// then the crossing points) and the kept regions as counterclockwise
+/// rings of indices into them, or `None` when no two edges cross, so the
+/// polygon is simple and needs none of this.
+pub fn even_odd_regions(
+  pts: &[(f64, f64)],
+) -> Option<(Vec<((f64, f64), EdgePoint)>, Vec<Vec<usize>>)> {
+  let n = pts.len();
+  if n < 4 {
+    return None;
+  }
+  let scale = pts
+    .iter()
+    .fold(0.0f64, |m, p| m.max(p.0.abs()).max(p.1.abs()))
+    .max(f64::MIN_POSITIVE);
+  let eps = scale * 1e-10;
+  let mut verts: Vec<((f64, f64), EdgePoint)> = pts
+    .iter()
+    .enumerate()
+    .map(|(i, &p)| (p, EdgePoint { edge: i, t: 0.0 }))
+    .collect();
+  // The points along each edge, as (fraction, vertex index).
+  let mut along: Vec<Vec<(f64, usize)>> =
+    (0..n).map(|i| vec![(0.0, i), (1.0, (i + 1) % n)]).collect();
+  let find_or_add =
+    |verts: &mut Vec<((f64, f64), EdgePoint)>, p: (f64, f64), at: EdgePoint| {
+      if let Some(k) = verts
+        .iter()
+        .position(|(q, _)| (q.0 - p.0).abs() <= eps && (q.1 - p.1).abs() <= eps)
+      {
+        k
+      } else {
+        verts.push((p, at));
+        verts.len() - 1
+      }
+    };
+  let mut crossed = false;
+  for i in 0..n {
+    let (a, b) = (pts[i], pts[(i + 1) % n]);
+    for j in i + 1..n {
+      // Neighboring edges share a corner and cannot cross properly.
+      if j == i + 1 || (i == 0 && j == n - 1) {
+        continue;
+      }
+      let (c, d) = (pts[j], pts[(j + 1) % n]);
+      let r = (b.0 - a.0, b.1 - a.1);
+      let s = (d.0 - c.0, d.1 - c.1);
+      let denom = r.0 * s.1 - r.1 * s.0;
+      if denom.abs() <= eps * eps {
+        continue;
+      }
+      let t = ((c.0 - a.0) * s.1 - (c.1 - a.1) * s.0) / denom;
+      let u = ((c.0 - a.0) * r.1 - (c.1 - a.1) * r.0) / denom;
+      let inside = |x: f64| x > 1e-9 && x < 1.0 - 1e-9;
+      if !inside(t) || !inside(u) {
+        continue;
+      }
+      crossed = true;
+      let p = (a.0 + t * r.0, a.1 + t * r.1);
+      let k = find_or_add(&mut verts, p, EdgePoint { edge: i, t });
+      along[i].push((t, k));
+      along[j].push((u, k));
+    }
+  }
+  if !crossed {
+    return None;
+  }
+  // The undirected pieces between consecutive points along every edge.
+  let mut neighbors: Vec<Vec<usize>> = vec![Vec::new(); verts.len()];
+  for list in &mut along {
+    list.sort_by(|x, y| x.0.total_cmp(&y.0));
+    for w in list.windows(2) {
+      let (p, q) = (w[0].1, w[1].1);
+      if p != q && !neighbors[p].contains(&q) {
+        neighbors[p].push(q);
+        neighbors[q].push(p);
+      }
+    }
+  }
+  let angle = |from: usize, to: usize| {
+    let (p, q) = (verts[from].0, verts[to].0);
+    (q.1 - p.1).atan2(q.0 - p.0)
+  };
+  for (v, list) in neighbors.iter_mut().enumerate() {
+    list.sort_by(|&x, &y| angle(v, x).total_cmp(&angle(v, y)));
+  }
+  // Trace every region with it on the left: arriving at `v` from `u`, the
+  // region continues along the first piece clockwise from `v -> u`.
+  let mut used = std::collections::HashSet::new();
+  let mut regions = Vec::new();
+  for start in 0..verts.len() {
+    for &first in &neighbors[start] {
+      if used.contains(&(start, first)) {
+        continue;
+      }
+      let mut ring = Vec::new();
+      let (mut u, mut v) = (start, first);
+      while used.insert((u, v)) {
+        ring.push(u);
+        let list = &neighbors[v];
+        let back = list.iter().position(|&w| w == u).unwrap_or(0);
+        let next = list[(back + list.len() - 1) % list.len()];
+        (u, v) = (v, next);
+      }
+      let flat: Vec<(f64, f64)> = ring.iter().map(|&k| verts[k].0).collect();
+      // Clockwise rings trace the outside of the whole arrangement.
+      if ring.len() < 3
+        || signed_area(&flat, &(0..flat.len()).collect::<Vec<_>>()) <= 0.0
+      {
+        continue;
+      }
+      // Probe just inside the region, off the middle of its first side.
+      let (a, b) = (flat[0], flat[1]);
+      let len = (b.0 - a.0).hypot(b.1 - a.1).max(f64::MIN_POSITIVE);
+      let step = len * 1e-6;
+      let probe = (
+        f64::midpoint(a.0, b.0) - (b.1 - a.1) / len * step,
+        f64::midpoint(a.1, b.1) + (b.0 - a.0) / len * step,
+      );
+      let mut odd = false;
+      for i in 0..n {
+        let (p, q) = (pts[i], pts[(i + 1) % n]);
+        if (p.1 > probe.1) != (q.1 > probe.1)
+          && probe.0 < p.0 + (probe.1 - p.1) / (q.1 - p.1) * (q.0 - p.0)
+        {
+          odd = !odd;
+        }
+      }
+      if odd {
+        regions.push(ring);
+      }
+    }
+  }
+  Some((verts, regions))
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// Five corners of a regular pentagon, visited in pentagram order.
+  fn pentagram() -> Vec<(f64, f64)> {
+    (0..5)
+      .map(|k| {
+        let a = std::f64::consts::FRAC_PI_2
+          + 4.0 * std::f64::consts::PI * k as f64 / 5.0;
+        (a.cos(), a.sin())
+      })
+      .collect()
+  }
+
+  #[test]
+  fn even_odd_regions_of_a_pentagram_are_its_tips() {
+    let pts = pentagram();
+    let (verts, regions) = even_odd_regions(&pts).unwrap();
+    // Five corners plus the five points where the chords cross.
+    assert_eq!(verts.len(), 10);
+    // The five tips are kept; the pentagon in the middle, covered twice,
+    // is not.
+    assert_eq!(regions.len(), 5);
+    assert!(regions.iter().all(|r| r.len() == 3));
+    let center_hit = regions.iter().any(|r| {
+      let flat: Vec<(f64, f64)> = r.iter().map(|&k| verts[k].0).collect();
+      point_in_triangle((0.0, 0.0), flat[0], flat[1], flat[2])
+    });
+    assert!(!center_hit);
+    // Every crossing point lies on the edge it reports, where it says.
+    for (p, at) in &verts {
+      let a = pts[at.edge];
+      let b = pts[(at.edge + 1) % pts.len()];
+      let q = (a.0 + at.t * (b.0 - a.0), a.1 + at.t * (b.1 - a.1));
+      assert!((p.0 - q.0).abs() < 1e-12 && (p.1 - q.1).abs() < 1e-12);
+    }
+  }
+
+  #[test]
+  fn even_odd_regions_of_a_bow_tie_are_its_two_triangles() {
+    let pts = vec![(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)];
+    let (_, regions) = even_odd_regions(&pts).unwrap();
+    assert_eq!(regions.len(), 2);
+  }
+
+  #[test]
+  fn even_odd_regions_skip_simple_polygons() {
+    let square = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
+    assert!(even_odd_regions(&square).is_none());
+    let notch = vec![
+      (0.0, 0.0),
+      (3.0, 0.0),
+      (3.0, 1.0),
+      (1.0, 1.0),
+      (1.0, 2.0),
+      (3.0, 2.0),
+      (3.0, 3.0),
+      (0.0, 3.0),
+    ];
+    assert!(even_odd_regions(&notch).is_none());
+  }
 
   fn area(pts: &[(f64, f64)], tris: &HoledTriangulation) -> f64 {
     tris

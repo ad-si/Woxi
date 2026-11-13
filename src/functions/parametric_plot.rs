@@ -122,6 +122,49 @@ enum CurveSrc<'a> {
   Whole(&'a Expr),
 }
 
+/// Look through the wrappers that only add hover or click behavior to a
+/// curve (`Tooltip[{fx, fy}, label]`, `PopupWindow[…]`, `StatusArea[…]`,
+/// …) at every grouping level of a curve specification, since they draw
+/// the wrapped curve unchanged. Coordinate expressions are left alone.
+fn strip_hover_wrappers(expr: &Expr) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if !args.is_empty() && is_hover_wrapper(name) =>
+    {
+      strip_hover_wrappers(&args[0])
+    }
+    Expr::List(items) if items.iter().any(has_hover_wrapper) => {
+      Expr::List(items.iter().map(strip_hover_wrappers).collect())
+    }
+    _ => expr.clone(),
+  }
+}
+
+/// Heads that only add hover or click behavior around what they display.
+fn is_hover_wrapper(head: &str) -> bool {
+  matches!(
+    head,
+    "Tooltip"
+      | "PopupWindow"
+      | "StatusArea"
+      | "Annotation"
+      | "Hyperlink"
+      | "Mouseover"
+      | "EventHandler"
+  )
+}
+
+/// Whether a hover-only wrapper occurs at some grouping level of `expr`.
+fn has_hover_wrapper(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      !args.is_empty() && is_hover_wrapper(name)
+    }
+    Expr::List(items) => items.iter().any(has_hover_wrapper),
+    _ => false,
+  }
+}
+
 /// Whether a list node can be read as a curve or as a grouping of curves.
 /// Wolfram lets the curve specification be nested to any depth — the
 /// grouping only steers styling — so `{{fx, fy}, …}` and
@@ -734,7 +777,10 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
-  let body = &args[0];
+  // Hover-only wrappers around curves (`Tooltip[{fx, fy}, label]`, …) draw
+  // the curve itself, so they are looked through.
+  let unwrapped_body = strip_hover_wrappers(&args[0]);
+  let body = &unwrapped_body;
   let iter_spec = &args[1];
 
   // Two iterators make the plot a *region*: the image of the parameter
@@ -786,8 +832,8 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // an ambiguous `{fx, fy}`-shaped syntactic parse may really be a group of
   // curves that only evaluation can reveal.
   let evaluated_body: Option<Expr> = if is_list_body && !body_is_group {
-    Some(crate::functions::plot::eval_body_var_symbolic(
-      body, &var_name,
+    Some(strip_hover_wrappers(
+      &crate::functions::plot::eval_body_var_symbolic(body, &var_name),
     ))
   } else {
     None
@@ -810,8 +856,8 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let evaluated_nonlist: Option<Expr> = if is_list_body {
     None
   } else {
-    Some(crate::functions::plot::eval_body_var_symbolic(
-      body, &var_name,
+    Some(strip_hover_wrappers(
+      &crate::functions::plot::eval_body_var_symbolic(body, &var_name),
     ))
     .filter(|ev| matches!(ev, Expr::List(_)))
   };

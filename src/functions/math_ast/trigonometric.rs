@@ -685,11 +685,31 @@ fn exact_tan(k: i64, n: i64) -> Option<Expr> {
   }
 }
 
+/// Wolfram's forms of `Sec[11 Pi/12]` and `Sec[23 Pi/12]`: the same values
+/// as `-Sec[Pi/12]` and `Sec[Pi/12]`, written as `Sqrt[2]*(1 - Sqrt[3])`
+/// (negated for the second). `m` is the angle in twelfths of Pi, reduced
+/// to [0, 24). `Csc[x]` takes them through `Sec[Pi/2 - x]`.
+fn sec_twelfth_special(m: i64) -> Option<Expr> {
+  match m {
+    11 => Some(lit("Sqrt[2]*(1 - Sqrt[3])")),
+    23 => Some(lit("-(Sqrt[2]*(1 - Sqrt[3]))")),
+    _ => None,
+  }
+}
+
+/// `k Pi/n` (with `k` already reduced to [0, 2n)) in twelfths of Pi.
+fn in_twelfths(k_mod: i64, n: i64) -> Option<i64> {
+  (12 * k_mod % n == 0).then(|| 12 * k_mod / n)
+}
+
 fn exact_sec(k: i64, n: i64) -> Option<Expr> {
   let k_orig = k;
   // Sec has period 2*Pi, and Sec(-x) = Sec(x), Sec(Pi-x) = -Sec(x)
   // Reduce to [0, 2*Pi)
   let k_mod = ((k % (2 * n)) + 2 * n) % (2 * n);
+  if let Some(special) = in_twelfths(k_mod, n).and_then(sec_twelfth_special) {
+    return Some(special);
+  }
   // Use Sec(x) = Sec(2*Pi - x) symmetry to reduce to [0, Pi]
   let k2 = if k_mod > n { 2 * n - k_mod } else { k_mod };
   // In [0, Pi]: Sec(Pi - x) = -Sec(x), so reduce to [0, Pi/2]
@@ -744,6 +764,11 @@ fn exact_csc(k: i64, n: i64) -> Option<Expr> {
   // Csc(0) and Csc(Pi) are ComplexInfinity
   if k_mod == 0 || k_mod == n {
     return Some(id_expr("ComplexInfinity"));
+  }
+  if let Some(special) = in_twelfths(k_mod, n)
+    .and_then(|m| sec_twelfth_special((6 - m).rem_euclid(24)))
+  {
+    return Some(special);
   }
   // Use Csc(2*Pi - x) = -Csc(x) to reduce to [0, Pi]
   let (k2, sign1) = if k_mod > n {
@@ -2259,6 +2284,15 @@ pub fn sec_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = circular_at_infinity("Sec", &args[0]) {
     return r;
   }
+  // Wolfram reduces a multiple of Pi/12 modulo 2 Pi rather than folding
+  // its sign away first: `Sec[-Pi/12]` takes the form of `Sec[23 Pi/12]`,
+  // `-(Sqrt[2]*(1 - Sqrt[3]))`.
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && in_twelfths(k.rem_euclid(2 * n), n).is_some()
+    && let Some(exact) = exact_sec(k, n)
+  {
+    return canonicalize_exact_trig_value(&exact);
+  }
   // Sec[-x] → Sec[x] (even function)
   if let Some(neg) = try_extract_negated(&args[0]) {
     return crate::evaluator::evaluate_function_call_ast("Sec", &[neg]);
@@ -2313,6 +2347,13 @@ pub fn csc_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Csc[±Infinity] → Interval[{-Infinity, -1}, {1, Infinity}]
   if let Some(r) = circular_at_infinity("Csc", &args[0]) {
     return r;
+  }
+  // As for Sec: a multiple of Pi/12 is reduced modulo 2 Pi first.
+  if let Some((k, n)) = try_symbolic_pi_fraction(&args[0])
+    && in_twelfths(k.rem_euclid(2 * n), n).is_some()
+    && let Some(exact) = exact_csc(k, n)
+  {
+    return canonicalize_exact_trig_value(&exact);
   }
   // Csc[-x] → -Csc[x] (odd function)
   if let Some(neg) = try_extract_negated(&args[0]) {

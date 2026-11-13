@@ -6623,17 +6623,42 @@ fn make_binary_op_owned(left: Expr, op_str: &str, right: Expr) -> Expr {
   }
   match op_str {
     "+" => plus2(left, right),
-    "-" => minus2(left, right),
+    "-" => parsed_subtraction(left, right),
     "*" | "\\[Times]" | "\u{00D7}" => times2(left, right),
     "/" | "\\[Divide]" | "\u{00F7}" => div2(left, right),
     "^" => pow2(left, right),
     "&&" | "\\[And]" | "\u{2227}" => binop(BinaryOperator::And, left, right),
     "||" | "\\[Or]" | "\u{2228}" => binop(BinaryOperator::Or, left, right),
     "<>" => binop(BinaryOperator::StringJoin, left, right),
-    "+_NEG" => plus2(left, neg1(right)),
-    "-_NEG" => minus2(left, neg1(right)),
-    "*_NEG" => times2(left, neg1(right)),
+    "+_NEG" => plus2(left, parsed_negation(right)),
+    "-_NEG" => parsed_subtraction(left, parsed_negation(right)),
+    "*_NEG" => times2(left, parsed_negation(right)),
     _ => make_binary_op(&left, op_str, &right),
+  }
+}
+
+/// The parsed `-x`. Like Wolfram's parser, a number literal takes the sign
+/// (`-(2)` is the number `-2`, `-(0)` is `0`); anything else is negated.
+fn parsed_negation(x: Expr) -> Expr {
+  match crate::functions::expr_form::negated_term(&x) {
+    Expr::BinaryOp { .. } => neg1(x),
+    folded => folded,
+  }
+}
+
+/// The parsed `a - b`. A subtracted zero literal has no sign to fold in, so
+/// `a - 0` is `Plus[a, 0]` (and prints `a + 0`).
+fn parsed_subtraction(left: Expr, right: Expr) -> Expr {
+  if matches!(right, Expr::Integer(0))
+    || matches!(right, Expr::Real(r) if r == 0.0)
+  {
+    let zero = match right {
+      Expr::Real(_) => Expr::Real(0.0),
+      other => other,
+    };
+    plus2(left, zero)
+  } else {
+    minus2(left, right)
   }
 }
 
@@ -6670,11 +6695,11 @@ fn make_binary_op(left: &Expr, op_str: &str, right: &Expr) -> Expr {
       call1("Unset", left.clone())
     }
     "+" => plus2(left.clone(), right.clone()),
-    "-" => minus2(left.clone(), right.clone()),
+    "-" => parsed_subtraction(left.clone(), right.clone()),
     // A leading minus is parsed with a synthetic `0` on the left so the
     // precedence climb can place it between Times and Power; the node itself
     // is the unary one, so that a held `-x` prints as `-x` and not `0 - x`.
-    "NEGATE" => neg1(right.clone()),
+    "NEGATE" => parsed_negation(right.clone()),
     "*" => times2(left.clone(), right.clone()),
     // `a × b` and `a ÷ b` are `Times`/`Divide` written with their named
     // characters; a Demonstration's typeset formula uses them where it
@@ -10462,9 +10487,13 @@ pub(crate) fn assignment_lhs(lhs: &Expr, formatted: String) -> String {
 
 /// The left side of `+=`, `-=`, `*=`, `/=` (Precedence 100): bracketed like
 /// an assignment's, and also when it is a pure function (90), which binds
-/// looser: `(f & ) += 3`.
+/// looser: `(f & ) += 3`. The family groups to the right, so one of them on
+/// the left is bracketed too: `(a += b) += c`.
 fn op_assign_lhs(lhs: &Expr, formatted: String) -> String {
-  if matches!(lhs, Expr::Function { .. }) {
+  let same_level = matches!(lhs, Expr::FunctionCall { name, args }
+    if args.len() == 2
+      && matches!(name.as_str(), "AddTo" | "SubtractFrom" | "TimesBy" | "DivideBy"));
+  if same_level || matches!(lhs, Expr::Function { .. }) {
     format!("({formatted})")
   } else {
     assignment_lhs(lhs, formatted)
@@ -11839,17 +11868,11 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let parts: Vec<String> = args
           .iter()
           .map(|a| {
-            // Wrap nested Alternatives in parentheses
-            if let Expr::FunctionCall {
-              name: inner_name,
-              args: inner_args,
-            } = a
-              && inner_name == "Alternatives"
-              && inner_args.len() >= 2
+            // Wrap nested Alternatives and anything looser (`->`, `/;`,
+            // `=`, …) in parentheses: `(x -> a) | b`.
+            if printed_infix_precedence(a).is_some_and(|p| p <= 15)
+              || is_bare_pattern(a)
             {
-              return format!("({})", fmt(a));
-            }
-            if is_bare_pattern(a) {
               return format!("({})", fmt(a));
             }
             fmt(a)
@@ -12362,6 +12385,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               format!("{rest_str}*-Infinity")
             };
           }
+          // A held `-1*6` keeps its literal factors apart: printing `-6`
+          // would read back as the number -6.
+          if in_held_format()
+            && args.len() == 2
+            && match &args[1] {
+              Expr::Integer(n) => *n >= 0,
+              Expr::BigInteger(n) => n.sign() != Sign::Minus,
+              Expr::Real(r) => *r >= 0.0,
+              _ => false,
+            }
+          {
+            return format!("-1*{}", fmt(&args[1]));
+          }
           // If the rest is a single Power[symbolic_base, negative_int], use -base^(-n)
           // notation instead of -(1/base^n), matching wolframscript output
           let is_single_symbolic_neg_power =
@@ -12436,6 +12472,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
                 || matches!(&args[1], Expr::Function { .. })))
             // A lone factor looser than `*` is parenthesized already.
             && !(args.len() == 2 && is_looser_than_times_infix(&args[1]));
+          // A held product of several factors is always bracketed
+          // (`-(6*x)`), and a negated negative is too: `--x` would read
+          // back as a decrement. (Not one with an `I` factor: Woxi's Times
+          // keeps `-I*x` as `Times[-1, I, x]` where Wolfram folds it into
+          // `Times[Complex[0, -1], x]`, which prints `-I*x`.)
+          let needs_neg_parens = needs_neg_parens
+            || (in_held_format()
+              && rest_factors.len() >= 2
+              && !rest_factors.iter().any(is_i_unit_factor))
+            || rest.starts_with('-');
           if needs_neg_parens {
             return format!("-({rest})");
           }
@@ -12883,6 +12929,21 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
               result.push_str(" + ");
               result.push_str(&fmt_plus_term(arg));
             }
+          } else if let Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: num,
+            right: den,
+          } = arg
+            && in_held_format()
+            && matches!(num.as_ref(), Expr::Integer(-1))
+          {
+            // A held parsed `-1/x` is Times[-1, Power[x, -1]] → `- x^(-1)`.
+            result.push_str(" - ");
+            result.push_str(&fmt(&Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: den.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            }));
           } else if let Expr::Integer(n) = arg {
             if *n < 0 {
               result.push_str(" - ");
@@ -12914,7 +12975,19 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           } else if !is_output {
             // InputForm: Fallback check if the rendered form starts with "-"
             let s = fmt_plus_term(arg);
-            if let Some(rest) = s.strip_prefix('-') {
+            // A held quotient `n/d` is `Times[n, Power[d, -1]]`: it is a
+            // subtraction only when `n` is a negative number itself, so
+            // `9 + -2/5/3` (a quotient of a quotient) keeps its `+`.
+            let held_unsigned_quotient = in_held_format()
+              && matches!(arg, Expr::BinaryOp {
+                op: BinaryOperator::Divide,
+                left,
+                ..
+              } if !matches!(left.as_ref(), Expr::Integer(n) if *n < 0)
+                && !matches!(left.as_ref(), Expr::Real(r) if *r < 0.0));
+            if let Some(rest) = s.strip_prefix('-')
+              && !held_unsigned_quotient
+            {
               result.push_str(" - ");
               result.push_str(rest);
             } else {
@@ -13200,6 +13273,29 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           let inner_str = expr_to_string(&inner_div);
           return format!("-({inner_str})");
         }
+        // A held Times[-1, …] numerator is a factor of its own:
+        // `Hold[Times[-1, x]/3]` prints `-x/3`, `-(x*y)/3`.
+        if in_held_format()
+          && matches!(left.as_ref(), Expr::FunctionCall { name, args }
+            if name == "Times" && args.len() >= 2
+              && matches!(&args[0], Expr::Integer(-1)))
+        {
+          let den = expr_to_string(right);
+          let den = if printed_infix_precedence(right).is_some_and(|p| p <= 33)
+          {
+            format!("({den})")
+          } else {
+            den
+          };
+          // `-1*6` (see the held Times printing) is a product: `(-1*6)/3`.
+          let num = expr_to_string(left);
+          let num = if num.starts_with("-1*") {
+            format!("({num})")
+          } else {
+            num
+          };
+          return format!("{num}/{den}");
+        }
         // Handle FunctionCall Times[-1, ...] as numerator
         if let Expr::FunctionCall { name, args } = left.as_ref()
           && name == "Times"
@@ -13369,17 +13465,39 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         };
       }
 
-      // A held `a + -3` (a negative number literal) prints as `a - 3`.
+      // An unevaluated `a + -3` (a negative number literal, or a parsed
+      // `-1/x`) prints as `a - 3`, `a - x^(-1)`. Only an unevaluated sum
+      // (held, or inside a held argument such as If's) keeps that shape.
       if matches!(op, BinaryOperator::Plus)
-        && in_held_format()
         && let Some(magnitude) = match right.as_ref() {
           Expr::Integer(n) if *n < 0 => Some(Expr::Integer(-n)),
           Expr::Real(r) if *r < 0.0 => Some(Expr::Real(-r)),
+          Expr::BinaryOp {
+            op: BinaryOperator::Divide,
+            left: num,
+            right: den,
+          } if in_held_format()
+            && matches!(num.as_ref(), Expr::Integer(-1)) =>
+          {
+            Some(Expr::BinaryOp {
+              op: BinaryOperator::Power,
+              left: den.clone(),
+              right: Box::new(Expr::Integer(-1)),
+            })
+          }
           _ => None,
         }
       {
         let left_text = expr_to_string(left);
-        let left_text = if plus_term_needs_parens(left) {
+        // The sum the chain continues (`a + b + -3`) prints bare.
+        let continues_chain = matches!(
+          left.as_ref(),
+          Expr::BinaryOp {
+            op: BinaryOperator::Plus | BinaryOperator::Minus,
+            ..
+          }
+        );
+        let left_text = if plus_term_needs_parens(left) && !continues_chain {
           format!("({left_text})")
         } else {
           left_text
@@ -13845,8 +13963,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             }
           ));
       // (A nested sum keeps them even in call form: `a + (Plus[b])`.)
-      let nested_sum = matches!(op, BinaryOperator::Plus)
-        && matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus");
+      let nested_sum = matches!(
+        op,
+        BinaryOperator::Plus | BinaryOperator::Minus
+      ) && matches!(right.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus");
       let needs_right_parens =
         needs_right_parens && (nested_sum || !prints_as_call(&right_str));
       let right_formatted = if needs_right_parens {

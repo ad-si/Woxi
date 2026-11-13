@@ -10875,9 +10875,10 @@ mod cases {
   fn to_boxes_fraction_sum_numerator() {
     // Issue #299: (1+x)/10 rendered as `1 (1+x)` over 10 — the unit factor
     // from Rational[1,10]'s numerator leaked into the box-form numerator.
+    // A rational coefficient of a sum is set in front of it: `1/10 (1 + x)`.
     assert_case(
       r#"ToBoxes[(1 + x)/10]"#,
-      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
+      r#"RowBox[{FractionBox["1", "10"], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
     );
   }
   #[test]
@@ -10892,7 +10893,7 @@ mod cases {
   fn to_boxes_fraction_explicit_one_times_sum() {
     assert_case(
       r#"ToBoxes[1 (1 + x)/10]"#,
-      r#"FractionBox[RowBox[{"1", "+", "x"}], "10"]"#,
+      r#"RowBox[{FractionBox["1", "10"], " ", RowBox[{"(", RowBox[{"1", "+", "x"}], ")"}]}]"#,
     );
   }
   // A negative product inside a sum puts its sign on the operator, with no
@@ -14143,8 +14144,8 @@ mod demonstration_round_trips {
         "Hold[Plus[a, Integrate[b, x]]]",
       ),
       ("\u{2200} x", "Hold[ForAll[x]]"),
-      ("3 \u{2212} 1", "Hold[Plus[3, Times[-1, 1]]]"),
-      ("x^(\u{2212}2)", "Hold[Power[x, Times[-1, 2]]]"),
+      ("3 \u{2212} 1", "Hold[Plus[3, -1]]"),
+      ("x^(\u{2212}2)", "Hold[Power[x, -2]]"),
     ];
     for (input, expected) in cases {
       assert_eq!(
@@ -15495,4 +15496,215 @@ fn two_way_rule_grouping_single_plus_and_paren_part_decrement() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
   assert_eq!(interpret("x = {1, 2}; (x)[[1]]++; x").unwrap(), "{2, 2}");
+}
+
+// An unevaluated sum with a negative literal or a parsed `-1/x` term prints
+// it as a subtraction, whether it is held by Hold or by If's held branches.
+#[test]
+fn unevaluated_sum_with_negative_literal_term() {
+  for (input, expected) in [
+    ("If[x, {0, 1} + -2, 1]", "If[x, {0, 1} - 2, 1]"),
+    ("Hold[a + -3]", "Hold[a - 3]"),
+    ("Hold[Plus[a, -1/2]]", "Hold[a - 2^(-1)]"),
+    ("Hold[Plus[a, -1/x, b]]", "Hold[a - x^(-1) + b]"),
+    ("Hold[a + -1/x + b]", "Hold[a - x^(-1) + b]"),
+    ("Hold[Plus[-1/x, b]]", "Hold[-x^(-1) + b]"),
+    ("Hold[Plus[a, -x/2]]", "Hold[a + -x/2]"),
+    ("f[a + -3]", "f[-3 + a]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// `-2--` is `-(2--)`: a signed literal does not take the `-` before `++`/`--`.
+#[test]
+fn negative_literal_before_increment_decrement() {
+  for (input, expected) in [
+    ("Hold[-2--]", "Hold[Times[-1, Decrement[2]]]"),
+    ("Hold[-2++]", "Hold[Times[-1, Increment[2]]]"),
+    ("Hold[-2.5--]", "Hold[Times[-1, Decrement[2.5`]]]"),
+    ("Hold[-2 --]", "Hold[Times[-1, Decrement[2]]]"),
+    ("Hold[x-2--]", "Hold[Plus[x, Times[-1, Decrement[2]]]]"),
+    ("Hold[-2--3]", "Hold[Times[Times[-1, Decrement[2]], 3]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(interpret("Hold[-2--]").unwrap(), "Hold[-2--]");
+}
+
+// The parser folds the sign of a subtracted or negated number literal into
+// it: `x - 2` is `Plus[x, -2]`, `-(2)` is `-2`.
+#[test]
+fn subtracted_number_literal_is_negative_literal() {
+  for (input, expected) in [
+    ("Hold[x - 2 + 1]", "Hold[Plus[x, -2, 1]]"),
+    ("Hold[x - 2.5]", "Hold[Plus[x, -2.5`]]"),
+    ("Hold[x - 1*^3]", "Hold[Plus[x, -1000]]"),
+    ("Hold[x - 16^^F]", "Hold[Plus[x, -15]]"),
+    ("Hold[x - (2)]", "Hold[Plus[x, -2]]"),
+    (
+      "Hold[x - 2/3]",
+      "Hold[Plus[x, Times[-1, Times[2, Power[3, -1]]]]]",
+    ),
+    ("Hold[x - 2^2]", "Hold[Plus[x, Times[-1, Power[2, 2]]]]"),
+    ("Hold[x - Pi]", "Hold[Plus[x, Times[-1, Pi]]]"),
+    ("Hold[-(2)]", "Hold[-2]"),
+    ("Hold[-(x)]", "Hold[Times[-1, x]]"),
+  ] {
+    assert_eq!(
+      interpret(&format!("ToString[FullForm[{input}]]")).unwrap(),
+      expected,
+      "{input}"
+    );
+  }
+  assert_eq!(interpret("Hold[x - 2][[1, 2]]").unwrap(), "-2");
+  assert_eq!(interpret("Hold[-(2)]").unwrap(), "Hold[-2]");
+}
+
+// ReplaceAll sees a held `a - b` as `Plus[a, Times[-1, b]]`.
+#[test]
+fn replace_all_in_held_subtraction() {
+  for (input, expected) in [
+    ("Hold[x - y] /. -y -> q", "Hold[x + q]"),
+    ("Hold[x - y] /. Times[-1, y] -> q", "Hold[x + q]"),
+    ("Hold[x - 2] /. 2 -> q", "Hold[x - 2]"),
+    ("Hold[x - 2] /. -2 -> q", "Hold[x + q]"),
+    ("Hold[x - 2] /. x -> q", "Hold[q - 2]"),
+    ("Hold[x - y] /. HoldPattern[x - y] -> q", "Hold[q]"),
+    (
+      "Hold[x - y] /. HoldPattern[a_ - b_] :> {a, b}",
+      "Hold[{x, y}]",
+    ),
+    ("Hold[-y] /. Times[-1, y] -> q", "Hold[q]"),
+    ("Hold[x - y z] /. y -> 2", "Hold[x - 2*z]"),
+    ("Hold[x - y - z] /. q -> 1", "Hold[x - y - z]"),
+    ("Hold[x - y] /. Plus -> List", "Hold[{x, -y}]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// An Alternatives operand that binds looser than `|` is bracketed, and a
+// `+=`-family operator on the left of another is bracketed (they group to
+// the right).
+#[test]
+fn alternatives_operand_and_op_assign_lhs_brackets() {
+  for (input, expected) in [
+    (
+      "Hold[Alternatives[Condition[x, a], b]]",
+      "Hold[(x /; a) | b]",
+    ),
+    (
+      "Hold[Alternatives[b, RuleDelayed[x, a]]]",
+      "Hold[b | (x :> a)]",
+    ),
+    ("Hold[Alternatives[b, Set[x, a]]]", "Hold[b | (x = a)]"),
+    ("Alternatives[x -> a, b]", "(x -> a) | b"),
+    ("Hold[Alternatives[Or[a, c], b]]", "Hold[a || c | b]"),
+    ("Hold[AddTo[AddTo[x, y], z]]", "Hold[(x += y) += z]"),
+    (
+      "Hold[SubtractFrom[TimesBy[x, y], z]]",
+      "Hold[(x *= y) -= z]",
+    ),
+    ("Hold[x += (y += z)]", "Hold[x += y += z]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// A held Times[-1, …] keeps a lone literal factor apart (`-1*6`), brackets
+// a product of several factors and a negated negative, and a sum chain ending
+// in a negative literal prints bare.
+#[test]
+fn held_negation_and_sum_chain_forms() {
+  for (input, expected) in [
+    ("Hold[Times[-1, 6]]", "Hold[-1*6]"),
+    ("Hold[-1 * 6]", "Hold[-1*6]"),
+    ("Hold[Times[-1, 2.5]]", "Hold[-1*2.5]"),
+    ("Hold[Times[-1, 6]^2]", "Hold[(-1*6)^2]"),
+    ("Hold[b ^:= (-1 * 6)]", "Hold[b ^:= -1*6]"),
+    ("Hold[Times[-1, 6, x]]", "Hold[-(6*x)]"),
+    ("Hold[Times[-1, -x]]", "Hold[-(-x)]"),
+    ("Hold[Times[-1, -6.5]]", "Hold[-(-6.5)]"),
+    ("Hold[-x y]", "Hold[-x*y]"),
+    ("Hold[a + Times[-1, 6]]", "Hold[a - 6]"),
+    ("Hold[a + b + -3]", "Hold[a + b - 3]"),
+    ("Hold[(a + b) + -3]", "Hold[(a + b) - 3]"),
+    (
+      "Hold[(b + 9) + (x @* y) + -3]",
+      "Hold[(b + 9) + x @* y - 3]",
+    ),
+    ("Hold[a - Plus[s] + 1]", "Hold[a - (Plus[s]) + 1]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// A held `a - 0` is `Plus[a, 0]` and `-(0)` is `0`: zero has no sign.
+#[test]
+fn held_subtracted_and_negated_zero() {
+  for (input, expected) in [
+    ("Hold[b - 0]", "Hold[b + 0]"),
+    ("Hold[b - 0.]", "Hold[b + 0.]"),
+    ("Hold[b - 0 - 0]", "Hold[b + 0 + 0]"),
+    ("Hold[-(0)]", "Hold[0]"),
+    ("Hold[-(0.)]", "Hold[0.]"),
+    ("Hold[{5, 3}++ @* (b - 0)]", "Hold[{5, 3}++ @* (b + 0)]"),
+    ("ToString[FullForm[Hold[b - 0.]]]", "Hold[Plus[b, 0.`]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// Only an unsigned literal takes a parsed minus sign: `-(-2)` stays
+// `Times[-1, -2]`, and a held `Minus[0]` or `Subtract[a, 0]` keeps its sign.
+#[test]
+fn parsed_minus_folds_only_unsigned_literals() {
+  for (input, expected) in [
+    ("ToString[FullForm[Hold[-(-2)]]]", "Hold[Times[-1, -2]]"),
+    (
+      "ToString[FullForm[Hold[a - -2]]]",
+      "Hold[Plus[a, Times[-1, -2]]]",
+    ),
+    ("Hold[-(-2)]", "Hold[-(-2)]"),
+    ("Hold[Minus[0]]", "Hold[-0]"),
+    ("Hold[Minus[-2]]", "Hold[-(-2)]"),
+    ("Hold[Subtract[a, 0]]", "Hold[a - 0]"),
+    ("ToString[FullForm[Hold[a^-(2)]]]", "Hold[Power[a, -2]]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
+}
+
+// A held quotient is `Times[n, Power[d, -1]]`: inside a sum it subtracts
+// only when `n` is a negative number, and a held Times[-1, …] numerator
+// prints as its own factor.
+#[test]
+fn held_quotient_terms_and_negated_numerators() {
+  for (input, expected) in [
+    ("Hold[c && Plus[9, -2/5/3]]", "Hold[c && 9 + -2/5/3]"),
+    (
+      "Hold[c && Plus[9, (Divide[-2, 5] / 3)]]",
+      "Hold[c && 9 + -2/5/3]",
+    ),
+    (
+      "Hold[Plus[9, (Divide[-2, 5] / Divide[-1, 3])] | c]",
+      "Hold[9 + -2/5/(-1/3) | c]",
+    ),
+    ("Hold[c && Plus[9, -2/x]]", "Hold[c && 9 - 2/x]"),
+    ("Hold[c && Plus[9, -x/3]]", "Hold[c && 9 + -x/3]"),
+    ("Hold[Times[-1, x]/3]", "Hold[-x/3]"),
+    ("Hold[Times[-1, x, y]/3]", "Hold[-(x*y)/3]"),
+    ("Hold[Times[-1, x]/(a+b)]", "Hold[-x/(a + b)]"),
+    ("Hold[Times[-1, x]/y^2]", "Hold[-x/y^2]"),
+    ("Hold[Times[-1, x]/(-3)]", "Hold[-x/-3]"),
+    ("Hold[Times[-1, 6]/3]", "Hold[(-1*6)/3]"),
+    ("Hold[c && Plus[9, Times[-1, x]/3]]", "Hold[c && 9 + -x/3]"),
+  ] {
+    assert_eq!(interpret(input).unwrap(), expected, "{input}");
+  }
 }

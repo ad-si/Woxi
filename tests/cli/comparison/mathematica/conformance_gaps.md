@@ -426,6 +426,23 @@ message (`Plus[x] &`, `Hold[Plus[x]]`) both engines print `Plus[x]`.
 
 ## Canonical ordering of Plus and Times
 
+### Times does not fold a real coefficient into an imaginary one
+
+```sh
+wolframscript -code 'ToString[FullForm[-2 I x]]'
+# Times[Complex[0, -2], x]
+woxi eval 'ToString[FullForm[-2 I x]]'
+# Times[-2, Complex[0, 1], x]
+```
+
+Wolfram multiplies all numeric factors of a product into one coefficient,
+complex ones included; Woxi keeps the real coefficient and the imaginary
+unit apart whenever a symbolic factor is present (`-I` alone is
+`Complex[0, -1]` in both). The printed form agrees, but `Length`, `Part` and
+patterns see three factors instead of two. Held printing compensates: a held
+`Times[-1, I, x]` prints `-I*x` (Wolfram brackets the literal call as
+`-(I*x)`) because in Woxi it is also the evaluated form of `-I x`.
+
 ### A rational multiple of a sum is ordered against a product by its own rule
 
 `Rescale[x, {-1, 1}, {a, b}]` is `((-a + b)*x)/2 + (a + b)/2` in Woxi and
@@ -578,6 +595,27 @@ woxi eval 'ToString[1/x + Sqrt[1 - x^(-2)], InputForm]'            # x^(-1) + Sq
 
 Only the *reciprocal* monomial diverges — `x + Sqrt[1 - x^2]` agrees, and the
 `Times` counterpart of the rule is implemented.
+
+### A symbol against a sum with a fractional multiple of it
+
+```sh
+wolframscript -code 'Order[x, 1 + x/2]'                # -1
+woxi eval 'Order[x, 1 + x/2]'                          # 1
+wolframscript -code 'Order[x^2, 1 + x^2/2]'            # 1
+woxi eval 'Order[x^2, 1 + x^2/2]'                      # -1
+wolframscript -code 'Sort[{Pi, 95 + Pi/78}]'           # {95 + Pi/78, Pi}
+woxi eval 'Sort[{Pi, 95 + Pi/78}]'                     # {Pi, 95 + Pi/78}
+wolframscript -code '(95 + Pi/78)/19 - Pi'             # (95 + Pi/78)/19 - Pi
+woxi eval '(95 + Pi/78)/19 - Pi'                       # -Pi + (95 + Pi/78)/19
+```
+
+Found by diff-fuzz seed 9707 (2026-11-13). Wolfram compares `x` with the
+sum's last term `x/2` (so the sum goes first), and `x^2` as a power with the
+sum as a base (`x` before `1 + x^2/2`). `Sort` gets the first two right and
+`Order` does not; making `Order` delegate to `Sort` for a sum against a
+non-sum fixes them but reorders `Times` factors elsewhere (`Pi*r^2*Sqrt[…]`),
+since that comparator serves `Times` too, and `Sort` itself misplaces the
+constant `Pi` against `95 + Pi/78`.
 
 ### `x^2 + (a + b) x` keeps Woxi's order
 
@@ -2146,6 +2184,11 @@ uses individual denominators. For
 outer `-2` and Woxi an outer `1/2`, with compensating inner coefficients.
 Wolfram verifies that differentiating either Woxi result recovers its
 integrand exactly.
+
+Diff-fuzz seed 9303 (2026-11-13) shows it with a monomial denominator:
+`Integrate[(5 + 2 x)/(-2 x), x]` is `-x - (5*Log[x])/2` there and
+`(-2*x - 5*Log[x])/2` here, yet both agree on
+`Integrate[(1 + x^2)/(3 x), x]` = `(x^2/2 + Log[x])/3`.
 
 ### `Integrate[f[a*x + b], x]` is not angle-expanded for Sin and Cos
 
@@ -8817,7 +8860,11 @@ returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
 1:110m outlines, coarser than WL's and with their own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
-borders too short for that scale. `"Flag"` is `Missing["NotAvailable"]`.
+borders too short for that scale. `"Flag"` is a 160 px wide `Image` of the
+public-domain Wikimedia Commons flag (via flagcdn.com, see
+`scripts/gen_country_flags.py`), so its pixels and `ImageDimensions` differ
+from WL's own flag images (the Gaza Strip and the West Bank show the flag of
+Palestine).
 
 ### CityData beyond the verified cities
 
