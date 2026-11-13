@@ -16117,3 +16117,80 @@ fn string_count_and_position_with_empty_matches() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+mod typeset_boxes_regressions {
+  use super::*;
+
+  #[test]
+  fn raw_boxes_to_boxes_is_its_boxes() {
+    clear_state();
+    assert_eq!(interpret("ToBoxes[RawBoxes[\"(\"]]").unwrap(), "(");
+  }
+
+  /// The fixed-digit `NumberForm[x, {n, f}]` box keeps the sign of a
+  /// negative value that has to be rounded, and shows no negative zero.
+  #[test]
+  fn fixed_number_form_box_keeps_sign() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[NumberForm[-1.17539, {5, 3}]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[-1.175, ShowStringCharacters -> \
+       False], -1.17539, AutoDelete -> True], NumberForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[NumberForm[-0.4251, {5, 2}]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[-0.43, ShowStringCharacters -> \
+       False], -0.4251, AutoDelete -> True], NumberForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[NumberForm[-(0/2.), {5, 3}]]").unwrap(),
+      "TagBox[InterpretationBox[StyleBox[0.000, ShowStringCharacters -> \
+       False], 0., AutoDelete -> True], NumberForm]"
+    );
+  }
+
+  /// Strings compare with their whitespace left out first, so a product of
+  /// strings keeps `"complex" " roots"` in reading order.
+  #[test]
+  fn string_order_ignores_whitespace_first() {
+    clear_state();
+    assert_eq!(
+      interpret("Times[\" roots\", \"complex\"]").unwrap(),
+      "complex* roots"
+    );
+    assert_eq!(
+      interpret("Sort[{\" roots\", \"complex\", \" b\", \"a\"}]").unwrap(),
+      "{a,  b, complex,  roots}"
+    );
+    // Strings equal up to whitespace still order consistently.
+    assert_eq!(
+      interpret("Sort[{\"ab\", \"a b\"}] === Sort[{\"a b\", \"ab\"}]").unwrap(),
+      "True"
+    );
+  }
+
+  /// TraditionalForm sets a positive rational coefficient of a sum (or of a
+  /// power of one) as a fraction in front of it; a monomial still goes over
+  /// one bar.
+  #[test]
+  fn traditional_rational_coefficient_of_sum() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[6/5 (x^2 - 7 x/4), TraditionalForm]").unwrap(),
+      "FormBox[RowBox[{FractionBox[6, 5],  , RowBox[{(, \
+       RowBox[{SuperscriptBox[x, 2], -, FractionBox[RowBox[{7,  , x}], \
+       4]}], )}]}], TraditionalForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[6/5 (x - 7/8)^2, TraditionalForm]").unwrap(),
+      "FormBox[RowBox[{FractionBox[6, 5],  , \
+       SuperscriptBox[RowBox[{(, RowBox[{x, -, FractionBox[7, 8]}], )}], \
+       2]}], TraditionalForm]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[6/5 x^2, TraditionalForm]").unwrap(),
+      "FormBox[FractionBox[RowBox[{6,  , SuperscriptBox[x, 2]}], 5], \
+       TraditionalForm]"
+    );
+  }
+}

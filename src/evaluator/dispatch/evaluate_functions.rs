@@ -12874,6 +12874,15 @@ fn evaluate_function_call_ast_inner(
       | "SystemsModelDelay"
       | "BoxData"
       | "TextData"
+      // Notebook file structure: `Get` on a `.nb` file evaluates these and
+      // they stay as written, like `Cell` and the other boxes.
+      | "Notebook"
+      | "CellGroupData"
+      | "StyleData"
+      | "ButtonBox"
+      | "AdjustmentBox"
+      | "DynamicModuleBox"
+      | "FormBox"
       | "ComplexRegionPlot"
       | "LongRightArrow"
       | "GeoGridPosition"

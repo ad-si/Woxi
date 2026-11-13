@@ -451,6 +451,32 @@ const COMMA_ADVANCE: f64 = 12.48;
 const COMMA_INK: f64 = 5.2;
 const CONTINUATION_INDENT: f64 = 8.3;
 const MAX_LINE_WIDTH: f64 = 1008.5;
+
+thread_local! {
+  /// The widest line a list of pictures may take before it wraps, when an
+  /// enclosing box (a `Pane` of fixed width) narrows it from the page's
+  /// [`MAX_LINE_WIDTH`].
+  static LINE_WIDTH_LIMIT: std::cell::Cell<Option<f64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// Runs `f` with lists of pictures wrapping at `width` points instead of
+/// the page width, the way the front end breaks a list inside a
+/// `Pane[list, {w, h}]` at the pane's width.
+pub fn with_line_width_limit<R>(width: f64, f: impl FnOnce() -> R) -> R {
+  let previous = LINE_WIDTH_LIMIT.with(|l| l.replace(Some(width)));
+  let result = f();
+  LINE_WIDTH_LIMIT.with(|l| l.set(previous));
+  result
+}
+
+/// The widest line a list of pictures may currently take.
+fn max_line_width() -> f64 {
+  LINE_WIDTH_LIMIT
+    .with(std::cell::Cell::get)
+    .filter(|w| w.is_finite() && *w > 0.0)
+    .unwrap_or(MAX_LINE_WIDTH)
+}
 const LINE_SPACING: f64 = 1.25;
 // How far the text baseline sits below the center line the pictures are
 // centered on (the math axis of the surrounding text).
@@ -570,11 +596,12 @@ fn line_end_adjustment(i: usize, n: usize) -> f64 {
 }
 
 /// The lines a list of `widths` units is set in: as few as fit in
-/// [`MAX_LINE_WIDTH`], with the units spread over them as evenly as the
+/// [`max_line_width`], with the units spread over them as evenly as the
 /// widest line allows (six equal pictures that need two lines go three and
 /// three, seven go four and three).
 fn balanced_lines(widths: &[f64]) -> Vec<usize> {
-  let fewest = pack_lines(widths, MAX_LINE_WIDTH);
+  let max_width = max_line_width();
+  let fewest = pack_lines(widths, max_width);
   if fewest.len() == 1 {
     return fewest;
   }
@@ -589,7 +616,7 @@ fn balanced_lines(widths: &[f64]) -> Vec<usize> {
     for (b, unit) in widths.iter().enumerate().skip(a) {
       w += unit;
       let line = w + line_end_adjustment(b, widths.len());
-      if line <= MAX_LINE_WIDTH {
+      if line <= max_width {
         candidates.push(line);
       }
     }

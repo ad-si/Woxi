@@ -779,3 +779,39 @@ mod row_option_in_separator_position {
     assert!(!svg.contains("BaseStyle"), "{svg}");
   }
 }
+
+mod column_item_size_wrapping {
+  use super::*;
+
+  /// A fixed `ItemSize` width breaks prose wider than the column into
+  /// lines at word boundaries, for a string item and for a `Row` of text.
+  #[test]
+  fn wide_text_wraps_to_item_width() {
+    for item in [
+      "\"b = 0, so the square is already complete.\"",
+      "Row[{\"b\", \" = \", 0, \", so the square is already complete.\"}]",
+    ] {
+      clear_state();
+      let out = interpret(&format!(
+        "ExportString[TraditionalForm[Column[{{{item}}}, \
+         Alignment -> {{Left, Top}}, ItemSize -> {{{{18}}, Automatic}}]], \
+         \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(out.contains(">b = 0, so the square is</text>"), "{out}");
+      assert!(out.contains(">already complete.</text>"), "{out}");
+    }
+  }
+
+  /// Text that fits keeps its single line.
+  #[test]
+  fn narrow_text_stays_on_one_line() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Column[{Row[{\"b\", \" = \", 0}]}, ItemSize -> 18], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(out.contains(">b</text>"), "{out}");
+    assert!(out.contains("height=\"22\""), "{out}");
+  }
+}

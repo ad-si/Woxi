@@ -2414,6 +2414,30 @@ mod tests {
     }
 
     #[test]
+    fn styled_nested_layout_in_a_grid_cell_keeps_its_style() {
+      // A `Style` around a nested `Grid` or `Column` sitting in a grid cell
+      // (a readout panel above a picture) reaches the nested cells: the
+      // wrapper used to be dropped, setting them at the default size.
+      for code in [
+        "Grid[{{Style[Grid[{{\"ab\", \"c\"}}], 16]}}]",
+        "Grid[{{Style[Column[{Grid[{{\"ab\", \"c\"}}]}], 16]}}]",
+        "Grid[{{Style[Column[{\"ab\", \"c\"}], 16]}, {Graphics[Disk[]]}}]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"16\""), "{code}: {svg}");
+        assert!(!svg.contains("font-size=\"14\""), "{code}: {svg}");
+      }
+      let svg = svg_of("Grid[{{Style[Grid[{{\"ab\", \"c\"}}], Red]}}]");
+      assert!(svg.contains("rgb(255,0,0)"), "red cells: {svg}");
+      // The directives also reach a nested grid's frame, as at top level.
+      let svg = svg_of("Grid[{{Style[Grid[{{a, b}}, Frame -> True], Red]}}]");
+      assert!(
+        svg.contains("stroke=\"rgb(255,0,0)\""),
+        "red frame lines: {svg}"
+      );
+    }
+
+    #[test]
     fn grid_spans_a_picture_across_its_columns() {
       // A picture merged over two columns with `SpanFromLeft` is centered
       // across both, instead of widening the first column on its own and
@@ -4310,6 +4334,22 @@ mod tests {
       assert!(
         clip_width <= 300.0,
         "tree is {clip_width} wide in a 300 pane"
+      );
+    }
+
+    /// Fitting a grid into a sized `Pane` measures its cells by drawing
+    /// them; those measurements must not linger as the cell's picture, or a
+    /// nested framed table stands in for the whole layout.
+    #[test]
+    fn sized_pane_cell_measurement_captures_no_picture() {
+      let result = woxi::interpret_with_stdout(
+        r#"Pane[Grid[{{"top"}, {Pane[Grid[{{1, 2}}, Frame -> All]]}, {"bottom"}}], ImageSize -> {240, 350}]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        result.graphics.is_none(),
+        "a measured cell is not the output: {:?}",
+        result.graphics
       );
     }
 

@@ -5434,6 +5434,30 @@ fn grid_item_width_chars(options: &[Expr]) -> Option<usize> {
   (ems >= 1.0).then(|| (ems * 2.0).round() as usize)
 }
 
+/// The text a layout item shows when it is plain prose: a string, or a
+/// `Row` of strings and integers (possibly under `Text`/`TraditionalForm`,
+/// which set them the same way), such as `Row[{"b", " = ", 0, ", so …"}]`.
+/// `None` for anything else, which keeps its own typesetting.
+fn plain_text_item(item: &Expr) -> Option<String> {
+  match item {
+    Expr::String(s) => Some(s.clone()),
+    Expr::Integer(n) => Some(n.to_string()),
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Text" | "TraditionalForm")
+        && args.len() == 1 =>
+    {
+      plain_text_item(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Row" && args.len() == 1 => {
+      let Expr::List(parts) = &args[0] else {
+        return None;
+      };
+      parts.iter().map(plain_text_item).collect()
+    }
+    _ => None,
+  }
+}
+
 /// Break `text` into lines of at most `width` characters at word
 /// boundaries (a longer word keeps its own line); existing line breaks stay.
 fn wrap_text_to_width(text: &str, width: usize) -> String {
@@ -22591,6 +22615,37 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(unevaluated("Show", args));
   }
 
+  // A plot kept only as a picture that recorded its data frame (a density
+  // plot) under primitives: draw them in that plot's coordinates.
+  if !is_3d
+    && leading_rendered >= 1
+    && let Some(Expr::Graphics { svg: base, .. }) = rendered_graphics.first()
+    && let Some(mut svg) = overlay_primitives_on_plot_frame(
+      base,
+      Expr::List(merged_primitives.clone().into()),
+    )
+  {
+    let image_size = merged_options.iter().find_map(|opt| {
+      option_name_value(opt)
+        .filter(|(name, _)| *name == "ImageSize")
+        .map(|(_, value)| value.into_owned())
+    });
+    if let Some(size) = image_size
+      && let Some(resized) = svg_with_image_size(&svg, &size)
+    {
+      svg = resized;
+    }
+    if rendered_graphics.len() == 1 {
+      return Ok(crate::graphics_result(svg));
+    }
+    let mut layers = vec![crate::graphics_result(svg)];
+    layers.extend(rendered_graphics.iter().skip(1).cloned());
+    if let Some(stacked) = overlay_rendered_graphics_svgs(&layers) {
+      return Ok(crate::graphics_result(stacked));
+    }
+    return Ok(layers.swap_remove(0));
+  }
+
   let content = Expr::List(merged_primitives.into());
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
@@ -23496,10 +23551,30 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       });
     }
     Expr::Graphics { svg, .. } => svg.clone(),
-    // A styled graphic is still a graphic.
+    // A styled graphic is still a graphic. A styled nested layout
+    // (`Style[Column[{Grid[…]}], 16]` in a cell) keeps its directives: they
+    // are distributed over the layout's items before it is drawn, just as
+    // for the same `Style` at top level.
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
+      // A styled `Grid` is drawn whole, the way it is at top level, so the
+      // directives also reach its frame and dividers, not only its cells.
+      if args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: n, args: a }
+          if (n == "Grid" || n == "TextGrid")
+            && matches!(a.first(), Some(Expr::List(_))))
+      {
+        let svg = crate::evaluator::expr_to_svg(cell);
+        if svg.starts_with("<svg")
+          && let Some(d) = parse_svg_dimensions(&svg)
+        {
+          return Some((svg, d.nat_w, d.nat_h));
+        }
+      }
+      if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
+        return grid_cell_graphic(&inner);
+      }
       return grid_cell_graphic(&args[0]);
     }
     // `Invisible[graphic]` keeps the picture's footprint but paints
@@ -26589,6 +26664,85 @@ pub(crate) struct ParsedSvg {
 /// the root `<svg ...>` tag. Trailing unit suffixes (px, pt) are stripped.
 /// Find an attribute's value in `header`, accepting either quote style
 /// (image SVG wrappers use single quotes). Returns the raw value text.
+/// Root-tag attribute (with a leading space) recording that the data range
+/// `{x_range, y_range}` of a plot kept only as a picture fills the canvas
+/// rectangle `rect = (x, y, w, h)` (in viewBox units).
+pub(crate) fn plot_frame_attr(
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  rect: (f64, f64, f64, f64),
+) -> String {
+  format!(
+    " data-plot-frame=\"{} {} {} {} {:.3} {:.3} {:.3} {:.3}\"",
+    x_range.0, x_range.1, y_range.0, y_range.1, rect.0, rect.1, rect.2, rect.3
+  )
+}
+
+/// The data range and canvas rectangle recorded by [`plot_frame_attr`].
+type PlotFrame = ((f64, f64), (f64, f64), (f64, f64, f64, f64));
+
+fn parse_plot_frame_attr(svg: &str) -> Option<PlotFrame> {
+  let raw = find_svg_attr(svg_root_header(svg)?, "data-plot-frame")?;
+  let v: Vec<f64> = raw
+    .split_whitespace()
+    .map(|s| s.parse().ok())
+    .collect::<Option<_>>()?;
+  if v.len() != 8 || !v.iter().all(|x| x.is_finite()) {
+    return None;
+  }
+  if v[1] <= v[0] || v[3] <= v[2] || v[6] <= 0.0 || v[7] <= 0.0 {
+    return None;
+  }
+  Some(((v[0], v[1]), (v[2], v[3]), (v[4], v[5], v[6], v[7])))
+}
+
+/// `Show[plot, Graphics[prims], …]` where `plot` is kept only as a picture
+/// that recorded its data frame: draw `prims` against the plot's data range
+/// and place them over the plot's data rectangle, so they line up with its
+/// axes as they do in Wolfram (the shown graphic takes the first graphic's
+/// `PlotRange`).
+fn overlay_primitives_on_plot_frame(
+  base_svg: &str,
+  primitives: Expr,
+) -> Option<String> {
+  let ((x0, x1), (y0, y1), (px, py, pw, ph)) = parse_plot_frame_attr(base_svg)?;
+  let (nat_w, _) = svg_natural_size(base_svg)?;
+  let base = parse_svg_dimensions(base_svg)?;
+  let vb_w: f64 = base.view_box.split_whitespace().nth(2)?.parse().ok()?;
+  // viewBox units per displayed point.
+  let scale = if nat_w > 0.0 { vb_w / nat_w } else { 1.0 };
+  let range =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let none = || id_expr("None");
+  let layer = graphics_ast(&[
+    primitives,
+    rule_expr(
+      id_expr("PlotRange"),
+      Expr::List(vec![range(x0, x1), range(y0, y1)].into()),
+    ),
+    rule_expr(id_expr("PlotRangePadding"), none()),
+    rule_expr(id_expr("ImagePadding"), none()),
+    rule_expr(id_expr("AspectRatio"), Expr::Real(ph / pw)),
+    rule_expr(id_expr("ImageSize"), Expr::Real(pw / scale)),
+  ])
+  .ok()?;
+  let Expr::Graphics { svg: layer_svg, .. } = &layer else {
+    return None;
+  };
+  let layer = parse_svg_dimensions(layer_svg)?;
+  let end = base_svg.rfind("</svg>")?;
+  let mut out = String::with_capacity(base_svg.len() + layer_svg.len() + 128);
+  out.push_str(&base_svg[..end]);
+  out.push_str(&format!(
+    "<svg x=\"{px:.3}\" y=\"{py:.3}\" width=\"{pw:.3}\" height=\"{ph:.3}\" \
+     viewBox=\"{}\" preserveAspectRatio=\"none\">\n",
+    layer.view_box
+  ));
+  out.push_str(&layer.inner_content);
+  out.push_str("</svg>\n</svg>");
+  Some(out)
+}
+
 fn find_svg_attr<'a>(header: &'a str, attr: &str) -> Option<&'a str> {
   for quote in ['"', '\''] {
     let needle = format!("{attr}={quote}");
@@ -29555,8 +29709,23 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
     {
       let mut new_args = args.clone();
       if let Expr::List(items) = &args[0] {
-        new_args[0] =
-          Expr::List(items.iter().map(traditionalize_layout_items).collect());
+        // A row's product with a line-breaking string factor (`"real" *
+        // " roots are \n"`) flows into the row factor by factor, so its
+        // string still breaks the line rather than being typeset inside
+        // one opaque `TraditionalForm[…]` item.
+        let flows = name == "Row" && args.len() == 1;
+        new_args[0] = Expr::List(
+          items
+            .iter()
+            .flat_map(|i| {
+              flows
+                .then(|| times_flow_factors(i))
+                .flatten()
+                .unwrap_or_else(|| vec![i.clone()])
+            })
+            .map(|i| traditionalize_layout_items(&i))
+            .collect(),
+        );
       }
       Expr::FunctionCall {
         name: name.clone(),
@@ -30475,10 +30644,56 @@ fn decorate_layout_svg(svg: String, opts: &[Expr]) -> String {
   svg
 }
 
+/// A `Column` whose `ItemSize` fixes its width breaks a text item that is
+/// wider than the column onto further lines at word boundaries, as a
+/// one-column `Grid` does; the lines stack as a nested column. The
+/// arguments with those items replaced, or `None` when none needed it.
+pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  let width = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ItemSize")
+    .and_then(|(_, v)| match v {
+      Expr::List(dims) if dims.len() == 2 => {
+        item_size_entry_at(Some(&dims[0]), 0, 1)
+      }
+      other => item_size_entry_at(Some(other), 0, 1),
+    })?;
+  // The column sets its text in the monospace face at 14pt.
+  let max_chars =
+    ((width * 14.0) / (14.0 * MONO_ADVANCE)).floor().max(1.0) as usize;
+  let mut changed = false;
+  let new_items: Vec<Expr> = items
+    .iter()
+    .map(|item| match plain_text_item(item) {
+      Some(text) if text.chars().count() > max_chars => {
+        changed = true;
+        let lines = wrap_text_to_width(&text, max_chars)
+          .split('\n')
+          .map(str_expr)
+          .collect::<Vec<_>>();
+        call1("Column", Expr::List(lines.into()))
+      }
+      _ => item.clone(),
+    })
+    .collect();
+  if !changed {
+    return None;
+  }
+  let mut new_args = args.to_vec();
+  new_args[0] = Expr::List(new_items.into());
+  Some(new_args)
+}
+
 fn column_layout_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
   }
+  let wrapped = wrap_fixed_width_column_text(args);
+  let args = wrapped.as_deref().unwrap_or(args);
 
   // Extract items from the first argument (must be a List)
   let items = match &args[0] {
@@ -30558,6 +30773,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
   let gap = spacing_ems * font_size;
+
   let frame_all = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
     k == "Frame" && matches!(v, Expr::Identifier(s) if s == "All")
   });
@@ -35326,7 +35542,27 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
     }
   }
+  // Like any Wolfram option list, the first of several settings for the same
+  // widget-level option wins: `ControlPlacement -> Left, …,
+  // ControlPlacement -> Top` lays the controls out on the left. Remember
+  // which options were already given so later repeats are skipped below.
+  let mut seen_options: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
   for spec in &arg_items {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } = spec
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && !is_initialization_option(pattern, replacement)
+      && !seen_options.insert(name.clone())
+    {
+      continue;
+    }
     // Options such as `Initialization :> …` or `TrackedSymbols :> …`
     // are not variable specs; extract what we understand and ignore
     // the rest rather than failing the whole extraction.
@@ -48595,6 +48831,49 @@ mod manipulate_control_placement_tests {
          ControlPlacement -> {Left}]"
       ),
       ControlPlacement::Left
+    );
+  }
+
+  /// When the same option is given twice, the first setting wins, as for
+  /// any Wolfram option list (`Manipulate` lays the controls out on the left
+  /// for `ControlPlacement -> Left, …, ControlPlacement -> Top`).
+  #[test]
+  fn first_of_repeated_placements_wins() {
+    for (first, second, expected) in [
+      ("Left", "Top", ControlPlacement::Left),
+      ("Top", "Left", ControlPlacement::Top),
+      ("Right", "Bottom", ControlPlacement::Right),
+    ] {
+      let code = format!(
+        "Manipulate[a, {{{{a, 1}}, 1, 5}}, ControlPlacement -> {first}, \
+         ContentSize -> {{390, 250}}, ControlPlacement -> {second}]"
+      );
+      assert_eq!(placement(&code), expected, "{first} then {second}");
+    }
+  }
+
+  /// A repeated option other than the placement is likewise decided by its
+  /// first setting: `AnimationRunning -> False` keeps an `Animate` paused
+  /// even when a later `AnimationRunning -> True` follows.
+  #[test]
+  fn first_of_repeated_options_wins() {
+    let spec = |code: &str| {
+      extract_manipulate_spec(&crate::parse_to_expr(code).expect("parse"))
+        .expect("extract spec")
+    };
+    assert!(
+      !spec(
+        "Animate[a, {a, 0, 1}, AnimationRunning -> False, \
+         AnimationRunning -> True]"
+      )
+      .animation_running
+    );
+    assert!(
+      spec(
+        "Animate[a, {a, 0, 1}, AnimationRunning -> True, \
+         AnimationRunning -> False]"
+      )
+      .animation_running
     );
   }
 

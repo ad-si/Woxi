@@ -1871,6 +1871,37 @@ mod plot {
     assert_eq!(content, "hello world");
     std::fs::remove_file(path).ok();
   }
+
+  // Regression: non-ASCII text was UTF-8 encoded twice ("↓" came out as
+  // "â\u{86}\u{93}"), because `ExportString` hands back the bytes as
+  // characters and those were encoded again on write.
+  #[test]
+  fn export_non_ascii_text_and_csv_as_utf8() {
+    clear_state();
+    for (name, data, expected) in [
+      (
+        "woxi_test_export_utf8.txt",
+        "\"a\u{2193}b\u{e9}\"",
+        "a\u{2193}b\u{e9}",
+      ),
+      (
+        "woxi_test_export_utf8.csv",
+        "{{\"\u{e9}\", \"\u{3b1}\"}}",
+        "\"\u{e9}\",\"\u{3b1}\"\n",
+      ),
+      (
+        "woxi_test_export_utf8_lines.txt",
+        "{\"\u{3b1}\", \"\u{3b2}\"}",
+        "\u{3b1}\n\u{3b2}",
+      ),
+    ] {
+      let path = temp_file(name);
+      interpret(&format!("Export[\"{path}\", {data}]")).unwrap();
+      let content = std::fs::read_to_string(&path).unwrap();
+      assert_eq!(content, expected, "{name}");
+      std::fs::remove_file(path).ok();
+    }
+  }
 }
 
 mod echo {
@@ -1936,6 +1967,22 @@ mod echo {
 
 mod unimplemented_warnings {
   use super::*;
+
+  // The structure of a notebook file stays as written, so `Get` on a `.nb`
+  // file does not report its heads as unimplemented built-ins.
+  #[test]
+  fn notebook_structure_heads_are_inert() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Notebook[{Cell[CellGroupData[{Cell[BoxData[FormBox[ButtonBox[\"b\"], \
+       TraditionalForm]], \"Input\"], Cell[BoxData[AdjustmentBox[\"x\"]], \
+       \"Output\"], Cell[BoxData[DynamicModuleBox[{}, \"y\"]], \"Output\"]}, \
+       Open]]}, StyleDefinitions -> Notebook[{Cell[StyleData[\"Input\"]]}]]",
+    )
+    .unwrap();
+    assert!(result.warnings.is_empty(), "warnings={:?}", result.warnings);
+    assert!(result.result.starts_with("Notebook[{Cell[CellGroupData["));
+  }
 
   #[test]
   fn known_wolfram_function_produces_warning() {
