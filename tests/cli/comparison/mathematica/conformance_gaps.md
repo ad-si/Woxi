@@ -5500,7 +5500,10 @@ With the same scene both engines place every primitive identically, but:
   eye `|ViewPoint|` box sides from the box center; a `ViewPoint` with an
   infinite component is orthographic). An explicit `ViewAngle` still sets the
   scale from the orthographic law above, so a wide angle (≳30°) can leave the
-  silhouette a few percent off. The 3D charts (`chart.rs`) keep their own
+  silhouette a few percent off. The surface plots (`Plot3D`,
+  `ParametricPlot3D`, …) apply the same law about the box middle; their
+  `ViewAngle` scale is derived from the `Graphics3D` measurements, not
+  measured on the plots themselves. The 3D charts (`chart.rs`) keep their own
   orthographic camera.
 
 ### `Specularity`

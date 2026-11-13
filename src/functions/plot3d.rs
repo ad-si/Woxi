@@ -2683,6 +2683,31 @@ fn generate_svg(
   svg_width = w;
   svg_height = h;
 
+  // An explicit `ViewAngle` fixes the camera's field of view, exactly as in
+  // `Graphics3D`: the frame spans `2 · d · tan(θ/2)` about the middle of the
+  // box, where `d` is the eye's distance (already in the box's normalized
+  // units), instead of being fitted to the box's outline.
+  let (scale, p_cx, p_cy) =
+    match (view_angle_option(options), camera.perspective) {
+      (Some(theta), Some(eye)) => {
+        let span = 2.0 * eye.distance * (theta / 2.0).tan();
+        if span > 0.0 && span.is_finite() {
+          let (bcx, bcy) = project(
+            Point3D {
+              x: eye.center[0],
+              y: eye.center[1],
+              z: eye.center[2],
+            },
+            camera,
+          );
+          (svg_width.min(svg_height) as f64 / span, bcx, bcy)
+        } else {
+          (scale, p_cx, p_cy)
+        }
+      }
+      _ => (scale, p_cx, p_cy),
+    };
+
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
     let sy = cy - (py - p_cy) * scale; // flip Y for SVG
@@ -7171,6 +7196,35 @@ impl Affine3 {
 /// `expr` — Dynamic is HoldFirst, so the generic evaluator leaves it
 /// symbolic. Release the hold before evaluating so the option reads the
 /// control's value instead of silently falling back to the default.
+/// The field of view a `ViewAngle -> θ` value asks for, in radians (θ may
+/// be a `Degree` product or any expression evaluating to a number), or
+/// `None` for `Automatic` and anything outside `(0, π)`.
+fn parse_view_angle(value: &Expr) -> Option<f64> {
+  let value = strip_dynamic(value);
+  try_eval_to_f64(
+    &evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone()),
+  )
+  .filter(|a| *a > 0.0 && *a < std::f64::consts::PI)
+}
+
+/// The last `ViewAngle` among a plot's options, parsed by
+/// [`parse_view_angle`].
+fn view_angle_option(options: &[Expr]) -> Option<f64> {
+  options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ViewAngle") => {
+      Some(parse_view_angle(replacement))
+    }
+    _ => None,
+  })?
+}
+
 fn strip_dynamic(expr: &Expr) -> &Expr {
   match expr {
     Expr::FunctionCall { name, args }
@@ -11055,13 +11109,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // `ViewAngle -> θ` (radians, or a `Quantity`/`Degree` product).
         "ViewAngle" => {
-          let replacement = strip_dynamic(replacement);
-          if let Some(a) = try_eval_to_f64(
-            &evaluate_expr_to_expr(replacement)
-              .unwrap_or_else(|_| replacement.clone()),
-          ) && a > 0.0
-            && a < std::f64::consts::PI
-          {
+          if let Some(a) = parse_view_angle(replacement) {
             view_angle = Some(a);
           }
         }

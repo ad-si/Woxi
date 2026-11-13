@@ -9567,6 +9567,57 @@ mod plot3d {
       );
     }
 
+    /// Surface plots honor an explicit `ViewAngle` the same way
+    /// `Graphics3D` does, instead of always fitting the box to the frame.
+    /// A unit sphere seen from the default `ViewPoint` (`|ViewPoint|` ≈
+    /// 3.38 box sides) under an 18° field of view spans about 1.01 / 1.07
+    /// of the frame, and a wider angle shrinks it by the ratio of the
+    /// half-angle tangents.
+    #[test]
+    fn surface_plots_honor_an_explicit_view_angle() {
+      let sphere = |angle: &str| {
+        drawn_extent(&format!(
+          "ParametricPlot3D[{{Cos[u] Cos[v], Sin[u] Cos[v], Sin[v]}}, \
+           {{u, 0, 2 Pi}}, {{v, -Pi/2, Pi/2}}, Mesh -> None, \
+           Boxed -> False, Axes -> False, ImageSize -> 400{angle}]"
+        ))
+      };
+      let narrow = sphere(", ViewAngle -> 18 Degree");
+      assert!(
+        (narrow.0 - 378.0).abs() < 8.0 && (narrow.1 - 378.0).abs() < 8.0,
+        "expected the sphere to nearly fill the frame, got {narrow:?}"
+      );
+      let wide = sphere(", ViewAngle -> 36 Degree");
+      let ratio = (9.0_f64.to_radians().tan()) / (18.0_f64.to_radians().tan());
+      assert!(
+        (wide.0 - narrow.0 * ratio).abs() < 3.0,
+        "expected {} px at 36°, got {wide:?}",
+        narrow.0 * ratio
+      );
+      // Without a ViewAngle the box (not the sphere) is fitted to the
+      // frame, so the sphere is smaller than under the narrow angle.
+      let fitted = sphere("");
+      assert!(fitted.0 < narrow.0 - 50.0, "got {fitted:?} vs {narrow:?}");
+      // The same holds for `Plot3D`, which renders through the same
+      // surface pipeline.
+      let plot = |angle: &str| {
+        drawn_extent(&format!(
+          "Plot3D[x y, {{x, -1, 1}}, {{y, -1, 1}}, Mesh -> None, \
+           Boxed -> False, Axes -> False, ImageSize -> 400{angle}]"
+        ))
+      };
+      let (p1, p2) = (
+        plot(", ViewAngle -> 20 Degree"),
+        plot(", ViewAngle -> 40 Degree"),
+      );
+      let ratio = (10.0_f64.to_radians().tan()) / (20.0_f64.to_radians().tan());
+      assert!(
+        (p2.0 - p1.0 * ratio).abs() < 3.0,
+        "expected {} px at 40°, got {p2:?}",
+        p1.0 * ratio
+      );
+    }
+
     /// A Manipulate whose body opens with a run of assignments has them
     /// run once to resolve any control bounds they define. That probe
     /// happens before the control variables are bound, so it must stay
