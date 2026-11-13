@@ -8110,6 +8110,56 @@ fn try_integrate_rational(
   try_integrate_rational_impl(num_expr, den_expr, var)
 }
 
+/// `∫ num/den` through `Apart`, when the denominator factors over the
+/// rationals into pieces each of degree at most two; `None` otherwise.
+fn integrate_via_partial_fractions(
+  num: &[i128],
+  den: &[i128],
+  var: &str,
+) -> Option<Expr> {
+  use crate::functions::polynomial_ast::coeffs_to_expr;
+  let quotient = div2(coeffs_to_expr(num, var), coeffs_to_expr(den, var));
+  let parts = crate::evaluator::evaluate_function_call_ast(
+    "Apart",
+    &[quotient, id_expr(var)],
+  )
+  .ok()?;
+  let terms = crate::functions::collect_additive_terms(&parts);
+  if terms.len() < 2 {
+    return None;
+  }
+  // Every piece must have a denominator of degree at most two, or the
+  // term-by-term integration would recurse back here.
+  let small = |t: &Expr| {
+    let den = crate::evaluator::evaluate_function_call_ast(
+      "Denominator",
+      std::slice::from_ref(t),
+    )
+    .ok();
+    den
+      .and_then(|d| {
+        crate::functions::polynomial_ast::extract_poly_coeffs(
+          &crate::functions::polynomial_ast::expand_and_combine(&d),
+          var,
+        )
+      })
+      .is_some_and(|c| c.len() <= 3)
+  };
+  if !terms.iter().all(small) {
+    return None;
+  }
+  // Each piece's constant is distributed over its antiderivative, as
+  // wolframscript writes it: `-1/5*ArcTan[x] + Log[1 + x^2]/5`.
+  let integrals = terms
+    .iter()
+    .map(|t| {
+      let primitive = integrate(t, var)?;
+      crate::evaluator::evaluate_function_call_ast("Expand", &[primitive]).ok()
+    })
+    .collect::<Option<Vec<_>>>()?;
+  crate::evaluator::evaluate_expr_to_expr(&plus(integrals)).ok()
+}
+
 fn try_integrate_rational_impl(
   num_expr: &Expr,
   den_expr: &Expr,
@@ -8217,6 +8267,18 @@ fn try_integrate_rational_impl(
   // A single coefficient (zero or not) is a constant, i.e. degree 0.
   let remaining_deg = remaining.len().saturating_sub(1);
   if remaining_deg > 2 {
+    // A cubic or higher factor without an integer root may still split
+    // over the rationals (`-1 - 2 x - x^2 - 2 x^3` is `-(1 + 2 x)(1 + x^2)`):
+    // integrate Apart's partial fractions term by term, and keep RootSum
+    // for a denominator that is irreducible.
+    if let Some(result) =
+      integrate_via_partial_fractions(&proper_num, &den_coeffs, var)
+    {
+      return Some(match quotient_integral {
+        Some(qi) => plus2(qi, result),
+        None => result,
+      });
+    }
     let result = integrate_polynomial_residues(&proper_num, &den_coeffs, var)?;
     return Some(match quotient_integral {
       Some(qi) => plus2(qi, result),

@@ -28082,3 +28082,41 @@ mod integrate_cancels_rational_integrands {
     );
   }
 }
+
+// A denominator whose linear factors have rational, non-integer roots
+// splits through Apart instead of falling back to RootSum. Found by the
+// differential fuzzer.
+mod integrate_rational_roots {
+  use super::*;
+
+  #[test]
+  fn factors_over_the_rationals() {
+    for (input, expected) in [
+      (
+        "Integrate[1/(-1 - 2 x - x^2 - 2 x^3), x]",
+        "-1/5*ArcTan[x] - (2*Log[1 + 2*x])/5 + Log[1 + x^2]/5",
+      ),
+      (
+        "Integrate[1/((1 + 2 x) (1 + x^2)), x]",
+        "ArcTan[x]/5 + (2*Log[1 + 2*x])/5 - Log[1 + x^2]/5",
+      ),
+      (
+        "Integrate[1/((3 x + 1) (x^2 + x + 1)), x]",
+        "-1/7*ArcTan[(1 + 2*x)/Sqrt[3]]/Sqrt[3] + (3*Log[1 + 3*x])/7 - \
+         (3*Log[1 + x + x^2])/14",
+      ),
+      (
+        "Integrate[x^2/(6 x^3 + 11 x^2 + 6 x + 1), x]",
+        "Log[1 + x]/2 - Log[1 + 2*x]/2 + Log[1 + 3*x]/6",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+    // An irreducible quartic keeps its RootSum.
+    assert!(
+      interpret("Integrate[1/(1 + x + x^2 + x^3 + x^4), x]")
+        .unwrap()
+        .starts_with("RootSum[")
+    );
+  }
+}
