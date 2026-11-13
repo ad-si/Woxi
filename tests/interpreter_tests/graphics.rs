@@ -11422,6 +11422,64 @@ mod plot3d {
       assert!(line.contains("<tspan font-size=\"120\">"), "{line}");
     }
 
+    /// The image-space `x` of the `<text>` element whose first child is the
+    /// sized `<tspan>` holding `label`: its `x` attribute plus the offset
+    /// of a `translate(…)` group the drawing sits in, if any.
+    fn styled_label_x(svg: &str, label: &str) -> f64 {
+      let line = svg
+        .lines()
+        .find(|l| l.contains(&format!("\">{label}</tspan>")))
+        .unwrap_or_else(|| panic!("no {label} label in {svg}"));
+      let rest = &line[line.find(" x=\"").expect("an x attribute") + 4..];
+      let x: f64 = rest[..rest.find('"').unwrap()].parse().unwrap();
+      let offset = svg.find("<g transform=\"translate(").map_or(0.0, |at| {
+        let rest = &svg[at + 24..];
+        rest[..rest.find(',').unwrap()].parse::<f64>().unwrap()
+      });
+      x + offset
+    }
+
+    /// The width of a `viewBox="0 0 w h"` SVG.
+    fn view_box_width(svg: &str) -> f64 {
+      let rest = &svg[svg.find("viewBox=\"0 0 ").expect("a viewBox") + 13..];
+      rest[..rest.find(' ').unwrap()].parse().unwrap()
+    }
+
+    // The automatic padding makes room for a `Style[label, size, Bold]`
+    // axes label at its own size and weight, so neither label is clipped
+    // by the image edge.
+    #[test]
+    fn styled_bold_axes_labels_get_room_at_their_own_size() {
+      let labels = r#"AxesLabel -> {Style["Time t", 15, Bold],
+           Style["Displacement x", 15, Bold]}, ImageSize -> 375"#;
+      // Bold widths at 15 pt, in points: Arial Bold sets "Time t" 2.79 em
+      // and "Displacement x" 7.34 em wide.
+      let (x_width, y_width) = (2.79 * 15.0, 7.34 * 15.0);
+      for (code, scale) in [
+        (format!("Plot[x, {{x, 0, 3}}, {labels}]"), 10.0),
+        (
+          format!(
+            "Graphics[Line[{{{{0, 0}}, {{3, 3}}}}], Axes -> True, {labels}]"
+          ),
+          1.0,
+        ),
+      ] {
+        let svg = export_svg(&code);
+        let width = view_box_width(&svg);
+        let x_start = styled_label_x(&svg, "Time t");
+        assert!(
+          x_start + x_width * scale <= width,
+          "x label from {x_start} runs past {width}: {code}"
+        );
+        // The y label is centered over the y axis.
+        let y_center = styled_label_x(&svg, "Displacement x");
+        assert!(
+          y_center - y_width * scale / 2.0 >= 0.0,
+          "y label centered at {y_center} runs past the left edge: {code}"
+        );
+      }
+    }
+
     /// A `PointSize` in `PlotStyle` has to resize the dots, not just get
     /// parsed and dropped: `PointSize[f]` is the fraction `f` of the image
     /// width the dot's *diameter* spans, so at the 500px-wide image below
