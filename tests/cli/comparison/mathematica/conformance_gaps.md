@@ -903,6 +903,22 @@ woxi eval 'TrigExpand[1 + Tan[2 x]]'
 Found by the differential fuzzer (2026-11-12). WL puts the whole sum over
 the common denominator and splits it by the numerator's monomials.
 
+### `Series` leading terms and coefficient forms
+
+```sh
+wolframscript -code 'Series[Cos[y], y -> 0]'          # SeriesData[y, 0, {1}, 0, 2, 1]
+woxi eval 'Series[Cos[y], y -> 0]'                    # SeriesData[y, 0, {1}, 0, 1, 1]
+wolframscript -code 'Series[y^2 + Sin[y], {y, 1, 2}]' # SeriesData[y, 1, {1 + Sin[1], 2 + Cos[1], 1 - Sin[1]/2}, 0, 3, 1]
+woxi eval 'Series[y^2 + Sin[y], {y, 1, 2}]'           # SeriesData[y, 1, {1 + Sin[1], 2 + Cos[1], (2 - Sin[1])/2}, 0, 3, 1]
+```
+
+The leading term of an even function carries wolframscript's knowledge that
+the next power vanishes; Woxi puts the order term one power past the leading
+one. The coefficient values agree. A `SeriesData` times an unevaluated
+`Series[f, {q x, 0, n}]` (after `Series::ivar`) comes out as the series of
+`f` in wolframscript; Woxi expands the unevaluated `Series[…]` as an unknown
+function.
+
 ### `PolynomialExtendedGCD` cofactor forms
 
 ```sh

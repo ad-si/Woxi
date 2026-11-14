@@ -515,38 +515,39 @@ fn replace_derivative_form(
   }
 }
 
+/// A bare number (3) or an arithmetic-compound expression (2 x, x + 1, x^2,
+/// x/2, a b) is not a valid variable to differentiate or expand in —
+/// wolframscript reports `D::ivar` / `Series::ivar` and leaves the call
+/// unevaluated. Symbol-headed forms such as x[k] or Sin[x] stay valid.
+pub(crate) fn is_invalid_calculus_variable(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::Real(_)
+    | Expr::BigInteger(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+    ),
+    Expr::FunctionCall { name, .. } => matches!(
+      name.as_str(),
+      "Plus" | "Minus" | "Times" | "Divide" | "Power" | "Rational"
+    ),
+    _ => false,
+  }
+}
+
 /// Differentiate an expression with respect to a non-symbol expression (e.g., x[k]).
 /// For symbolic indexed variables, D[f[x[i]], x[k]] = 0 when we can't determine equality.
 fn differentiate_wrt_expr(
   expr: &Expr,
   var_expr: &Expr,
 ) -> Result<Expr, InterpreterError> {
-  // A bare number (3) or an arithmetic-compound expression (2 x, x + 1, x^2,
-  // x/2, a b) is not a valid symbol to differentiate against — Wolfram emits
-  // `D::ivar` and returns the call unevaluated. Symbol-headed forms such as
-  // x[k] or Sin[x] stay valid and fall through.
-  fn is_invalid_dvar(e: &Expr) -> bool {
-    match e {
-      Expr::Integer(_)
-      | Expr::Real(_)
-      | Expr::BigInteger(_)
-      | Expr::BigFloat(_, _) => true,
-      Expr::BinaryOp { op, .. } => matches!(
-        op,
-        BinaryOperator::Plus
-          | BinaryOperator::Minus
-          | BinaryOperator::Times
-          | BinaryOperator::Divide
-          | BinaryOperator::Power
-      ),
-      Expr::FunctionCall { name, .. } => matches!(
-        name.as_str(),
-        "Plus" | "Minus" | "Times" | "Divide" | "Power" | "Rational"
-      ),
-      _ => false,
-    }
-  }
-  if is_invalid_dvar(var_expr) {
+  if is_invalid_calculus_variable(var_expr) {
     crate::emit_message(&format!(
       "D::ivar: {} is not a valid variable.",
       crate::syntax::expr_to_message_form(var_expr)
@@ -17290,6 +17291,132 @@ fn empty_series_at_valuation(
 }
 
 pub fn series_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A number or an arithmetic combination is no expansion variable
+  // (`Series[f, {q x, 0, 4}]`): Series::ivar, and the call stays as it is.
+  // wolframscript evaluates the call twice before giving up, so the message
+  // shows twice.
+  for spec in args.iter().skip(1) {
+    let var = match spec {
+      Expr::List(items) if !items.is_empty() => &items[0],
+      Expr::Rule { pattern, .. } => pattern.as_ref(),
+      _ => continue,
+    };
+    if is_invalid_calculus_variable(var) {
+      for _ in 0..2 {
+        crate::emit_message(&format!(
+          "Series::ivar: {} is not a valid variable.",
+          crate::syntax::expr_to_message_form(var)
+        ));
+      }
+      return Ok(unevaluated("Series", args));
+    }
+  }
+  // A non-symbol variable (`f[x]`, `Sin[x]`, `x[1]`) stands for an atom:
+  // expand in a fresh symbol put in its place, then put it back
+  // (`Series[Sin[f[x]], {f[x], 0, 3}]`).
+  if args.len() == 2 {
+    let (var, rebuild): (&Expr, Box<dyn Fn(Expr) -> Expr>) = match &args[1] {
+      Expr::List(items) if !items.is_empty() => {
+        let rest = items[1..].to_vec();
+        (
+          &items[0],
+          Box::new(move |v| {
+            let mut spec = vec![v];
+            spec.extend(rest.iter().cloned());
+            Expr::List(spec.into())
+          }),
+        )
+      }
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        let point = replacement.as_ref().clone();
+        (
+          pattern.as_ref(),
+          Box::new(move |v| Expr::Rule {
+            pattern: Box::new(v),
+            replacement: Box::new(point.clone()),
+          }),
+        )
+      }
+      _ => (&args[1], Box::new(|v| v)),
+    };
+    if matches!(var, Expr::FunctionCall { .. } | Expr::CurriedCall { .. }) {
+      let fresh = Expr::Identifier("$__SeriesKernelVar__".to_string());
+      let body = replace_subexpr_simple(&args[0], var, &fresh);
+      let result = series_ast(&[body, rebuild(fresh.clone())])?;
+      if matches!(&result, Expr::FunctionCall { name, .. } if name == "Series")
+      {
+        return Ok(unevaluated("Series", args));
+      }
+      return crate::evaluator::evaluate_expr_to_expr(&replace_subexpr_simple(
+        &result, &fresh, var,
+      ));
+    }
+  }
+  // Series[f, x -> x0] is the leading term of the expansion: the first
+  // nonzero coefficient, with the order term right after it
+  // (`Series[1 - Cos[y], y -> 0]` is `y^2/2 + O[y]^3`).
+  if args.len() == 2
+    && let Expr::Rule {
+      pattern,
+      replacement,
+    } = &args[1]
+    && !matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Infinity")
+  {
+    for n in 0..=24 {
+      let spec = Expr::List(
+        vec![
+          pattern.as_ref().clone(),
+          replacement.as_ref().clone(),
+          Expr::Integer(n),
+        ]
+        .into(),
+      );
+      let expansion = series_ast(&[args[0].clone(), spec])?;
+      let Expr::FunctionCall { name, args: sd } = &expansion else {
+        // A constant in the variable is its own leading term.
+        return Ok(expansion);
+      };
+      if name == "Series" {
+        return Ok(unevaluated("Series", args));
+      }
+      if name != "SeriesData" || sd.len() != 6 {
+        return Ok(expansion);
+      }
+      let (Expr::List(coeffs), Expr::Integer(nmin)) = (&sd[2], &sd[3]) else {
+        return Ok(unevaluated("Series", args));
+      };
+      if let Some((i, lead)) = coeffs
+        .iter()
+        .enumerate()
+        .find(|(_, c)| !matches!(c, Expr::Integer(0)))
+      {
+        let order = nmin + i as i128;
+        // The order term is one whole power past the leading one (`den`
+        // steps of `x^(1/den)`: `Series[Sqrt[y], y -> 0]` is
+        // `Sqrt[y] + O[y]^(3/2)`).
+        let den = match &sd[5] {
+          Expr::Integer(d) => *d,
+          _ => 1,
+        };
+        return Ok(Expr::FunctionCall {
+          name: "SeriesData".into(),
+          args: vec![
+            sd[0].clone(),
+            sd[1].clone(),
+            Expr::List(vec![lead.clone()].into()),
+            Expr::Integer(order),
+            Expr::Integer(order + den),
+            sd[5].clone(),
+          ]
+          .into(),
+        });
+      }
+    }
+    return Ok(unevaluated("Series", args));
+  }
   let result = series_ast_impl(args)?;
   // An expansion about Infinity whose coefficients still mention an infinite
   // quantity (`BesselJ[0, Infinity]`, `Derivative[0, 1][LegendreP][1/2,

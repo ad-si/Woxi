@@ -28242,3 +28242,63 @@ mod find_minimum_free_parameters {
     );
   }
 }
+
+// Series validates its variable (Series::ivar, twice, as wolframscript
+// evaluates the call twice), expands in a non-symbol variable such as f[x]
+// as an atom, and gives the leading term for a rule spec. All
+// wolframscript-verified; the invalid variable used to produce pages of
+// Derivative[…][Series] terms (found by the interpret fuzzer).
+mod series_variable_forms {
+  use super::*;
+
+  #[test]
+  fn invalid_variable_is_ivar() {
+    clear_state();
+    let r = interpret_with_stdout("Series[Cos[x], {q x, 0, 4}]").unwrap();
+    assert_eq!(r.result, "Series[Cos[x], {q*x, 0, 4}]");
+    let ivar = "Series::ivar: q x is not a valid variable.";
+    assert_eq!(r.warnings, vec![ivar, ivar]);
+    clear_state();
+    let r = interpret_with_stdout("Series[x, {x, 0, 2}, {2 y, 0, 2}]").unwrap();
+    assert_eq!(r.result, "Series[x, {x, 0, 2}, {2*y, 0, 2}]");
+  }
+
+  #[test]
+  fn non_symbol_variables_are_atoms() {
+    for (code, expected) in [
+      (
+        "Series[Sin[f[x]], {f[x], 0, 3}]",
+        "SeriesData[f[x], 0, {1, 0, -1/6}, 1, 4, 1]",
+      ),
+      (
+        "Series[Exp[Sin[x]], {Sin[x], 0, 2}]",
+        "SeriesData[Sin[x], 0, {1, 1, 1/2}, 0, 3, 1]",
+      ),
+      ("Series[Cos[x], {Sin[x], 0, 2}]", "Cos[x]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn rule_spec_gives_the_leading_term() {
+    for (code, expected) in [
+      ("Series[Sin[y], y -> 0]", "SeriesData[y, 0, {1}, 1, 2, 1]"),
+      ("Series[1/y + 1, y -> 0]", "SeriesData[y, 0, {1}, -1, 0, 1]"),
+      (
+        "Series[1 - Cos[y], y -> 0]",
+        "SeriesData[y, 0, {1/2}, 2, 3, 1]",
+      ),
+      ("Series[Exp[y], y -> 1]", "SeriesData[y, 1, {E}, 0, 1, 1]"),
+      ("Series[Sqrt[y], y -> 0]", "SeriesData[y, 0, {1}, 1, 3, 2]"),
+      ("Series[Log[y], y -> 1]", "SeriesData[y, 1, {1}, 1, 2, 1]"),
+      (
+        "Series[Sin[x[1]], x[1] -> 0]",
+        "SeriesData[x[1], 0, {1}, 1, 2, 1]",
+      ),
+      ("Series[a, y -> 0]", "a"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}
