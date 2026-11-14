@@ -37632,7 +37632,7 @@ mod manipulate {
     fn texts(node: &DisplayNode, out: &mut Vec<String>) {
       match node {
         DisplayNode::Text { runs } => {
-          out.push(runs.iter().map(|r| r.text.as_str()).collect())
+          out.push(runs.iter().map(|r| r.text.as_str()).collect());
         }
         DisplayNode::Static { text, .. } => out.push(text.clone()),
         DisplayNode::Panel(child) => texts(child, out),

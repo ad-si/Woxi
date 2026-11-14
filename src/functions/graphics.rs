@@ -23747,18 +23747,18 @@ fn has_stacked_inline_box(s: &str) -> bool {
     .any(|head| s.contains(head))
 }
 
-/// Whether a string's inline box notation stacks an over/underscript (an
-/// arrow with its rate above it) and nothing else vertical. Such a label has
-/// no faithful one-line reading, whereas fractions and roots keep their
-/// linear `(a)/(b)` text in a graphic.
 /// Whether a label expression typesets as a built-up fraction: an
 /// arithmetic expression whose box form holds a `FractionBox`, possibly
 /// inside a `Row` or a style wrapper. Strings and other layouts are drawn as
 /// ordinary text.
 fn label_typesets_fraction(expr: &Expr) -> bool {
   match expr {
+    // A bare rational number (`-7/4`) is drawn by the numeric fraction
+    // label path, which puts a proper minus sign before the stacked
+    // fraction.
+    Expr::FunctionCall { name, .. } if name == "Rational" => false,
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Times" | "Power" | "Rational" | "Plus")
+      if matches!(name.as_str(), "Times" | "Power" | "Plus")
         && !has_string_operand(expr) =>
     {
       box_has_fraction(
@@ -23793,6 +23793,10 @@ fn has_string_operand(expr: &Expr) -> bool {
   }
 }
 
+/// Whether a string's inline box notation stacks an over/underscript (an
+/// arrow with its rate above it) and nothing else vertical. Such a label has
+/// no faithful one-line reading, whereas fractions and roots keep their
+/// linear `(a)/(b)` text in a graphic.
 fn has_script_stacked_inline_box(s: &str) -> bool {
   has_stacked_inline_box(s)
     && ["OverscriptBox", "UnderscriptBox", "UnderoverscriptBox"]
