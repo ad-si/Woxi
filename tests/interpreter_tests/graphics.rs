@@ -47632,6 +47632,31 @@ fn graphics3d_view_vertical_turns_the_picture() {
   assert!(dy < 1e-6 && dx > 1.0, "tilted: {dx} {dy}");
 }
 
+/// `ViewVertical` is given in scaled coordinates, where each side of the
+/// box runs from 0 to 1: in a box three times as deep as it is wide,
+/// `{1, 1, 0}` points along `{1, 3, 0}`, so a line along y leans a third
+/// of the way off vertical instead of the 45° the unscaled vector gives.
+#[test]
+fn graphics3d_view_vertical_is_in_scaled_coordinates() {
+  let svg = export_svg(
+    "Graphics3D[Line[{{0, 0, 0}, {0, 3, 0}}], Boxed -> False, \
+       PlotRange -> {{0, 1}, {0, 3}, {0, 1}}, ViewPoint -> Top, \
+       ViewVertical -> {1, 1, 0}]",
+  );
+  let line = svg.lines().find(|l| l.starts_with("<line ")).unwrap();
+  let attr = |name: &str| -> f64 {
+    let rest = line.split(&format!("{name}=\"")).nth(1).unwrap();
+    rest.split('"').next().unwrap().parse().unwrap()
+  };
+  let dx = (attr("x1") - attr("x2")).abs();
+  let dy = (attr("y1") - attr("y2")).abs();
+  assert!(
+    (dx / dy - 1.0 / 3.0).abs() < 0.02,
+    "slope {dx}/{dy} = {}",
+    dx / dy
+  );
+}
+
 /// `GosperCurve` is not a Wolfram Language function (Wolfram 15 has no
 /// `*Gosper*` symbol at all), so it stays unevaluated and a notebook can
 /// define it itself.
