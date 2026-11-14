@@ -49,6 +49,10 @@ pub enum ControlState {
     /// The range runs along the imaginary axis; `min`/`max`/`current` hold
     /// imaginary coefficients and the variable binds `Complex[0, current]`.
     imaginary: bool,
+    /// The range was written high-to-low (see
+    /// `ManipulateControl::Continuous::reversed`): `min`/`max` stay sorted,
+    /// and the widget mirrors its track so the first bound sits on the left.
+    reversed: bool,
   },
   Discrete {
     name: String,
@@ -171,6 +175,9 @@ pub enum ControlState {
     label: String,
     label_runs: Vec<LabelRun>,
     action: String,
+    /// Drawn on the same line as the button before it (both from one
+    /// `Row[{Button[…], Button[…]}]` or one `ButtonBar`).
+    joins_previous: bool,
   },
   /// A static heading row between controls (a string or `Style[…]`
   /// Manipulate argument). Binds no variable.
@@ -2359,6 +2366,50 @@ fn explicit_step(step: Option<f64>) -> Option<f64> {
   step.map(f64::abs).filter(|s| *s > 0.0)
 }
 
+/// Where the thumb of a `Continuous` slider sits on the widget's rail
+/// (always the ascending `min..=max`) for the control's `value`. A
+/// `reversed` control (spec written high-to-low, `{u, 2, 0}`) mirrors the
+/// value, so its `max` sits at the rail's start the way Wolfram draws it.
+pub fn slider_rail_position(
+  min: f64,
+  max: f64,
+  reversed: bool,
+  value: f64,
+) -> f64 {
+  // The rail's ends map exactly onto the bounds, free of the rounding
+  // `min + max - value` leaves.
+  if !reversed {
+    value
+  } else if value <= min {
+    max
+  } else if value >= max {
+    min
+  } else {
+    (min + max - value).clamp(min, max)
+  }
+}
+
+/// The control value for a thumb moved to rail position `position` — the
+/// inverse of `slider_rail_position`. A reversed slider's steps count down
+/// from `max`, so the mirrored value is snapped onto that grid
+/// (`max - k step`) rather than carrying the float drift of `min + max - p`.
+pub fn slider_value_at_rail_position(
+  min: f64,
+  max: f64,
+  step: f64,
+  reversed: bool,
+  position: f64,
+) -> f64 {
+  if !reversed {
+    return position;
+  }
+  if !(step > 0.0) {
+    return slider_rail_position(min, max, true, position);
+  }
+  let k = ((position - min) / step).round();
+  (max - k * step).clamp(min, max)
+}
+
 /// The increment of a slider whose spec gives no step.
 fn default_slider_step(min: f64, max: f64, is_real: bool) -> f64 {
   let span = (max - min).abs();
@@ -2411,6 +2462,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         exact_initial,
         orientation,
         imaginary,
+        reversed,
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
         // step like an omitted one.
@@ -2428,6 +2480,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           exact_value: exact_initial.then_some(*initial),
           orientation: *orientation,
           imaginary: *imaginary,
+          reversed: *reversed,
         }
       }
       ManipulateControl::Discrete {
@@ -2565,10 +2618,12 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         action,
         enabled: _,
         label_code: _,
+        joins_previous,
       } => ControlState::Button {
         label: label.clone(),
         label_runs: label_runs.clone(),
         action: action.clone(),
+        joins_previous: *joins_previous,
       },
       ManipulateControl::Heading { label, label_runs } => {
         ControlState::Heading {
@@ -3267,6 +3322,47 @@ mod tests {
     );
   }
 
+  /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
+  /// control state, so they are drawn side by side on one line, and a
+  /// `Style[…, FontSize -> n]` caption keeps its size.
+  #[test]
+  fn row_of_buttons_is_drawn_on_one_line() {
+    let code = r#"Manipulate[
+      t,
+      Row[{Button[Style["one", FontSize -> 15], t = 1], Button["two", t = 2]}],
+      Row[{Button["three", t = 3]}],
+      {{t, 0, "time"}, 0, 5, Animator, AnimationRunning -> False}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let buttons: Vec<(&str, bool, Option<f64>)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ControlState::Button {
+          label,
+          label_runs,
+          joins_previous,
+          ..
+        } => Some((
+          label.as_str(),
+          *joins_previous,
+          label_runs.first().and_then(|r| r.size),
+        )),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      buttons,
+      vec![
+        ("one", false, Some(15.0)),
+        ("two", true, None),
+        ("three", false, None)
+      ]
+    );
+  }
+
   /// `Button[Dynamic[caption], ImageSize -> n]` has an option where the
   /// action would be: it is an inert caption that follows the live
   /// bindings, not a pressable button whose "action" is `ImageSize -> n`.
@@ -3939,6 +4035,47 @@ mod tests {
     assert_eq!(labels.len(), 1);
     assert!(!labels[0].contains("SubscriptBox"), "{}", labels[0]);
     assert!(labels[0].starts_with("C(CH\u{2083}"), "{}", labels[0]);
+  }
+
+  /// A high-to-low range (`{{w, 0, "…"}, 2, 0}`) keeps an ascending
+  /// `min..=max` for the widget but is flagged `reversed`, so the thumb of
+  /// the initial `0` sits at the rail's *end* (Wolfram draws the slider
+  /// running from 2 down to 0), and dragging toward the start raises the
+  /// value back onto the grid counted down from `max`.
+  #[test]
+  fn reversed_range_slider_runs_from_max_to_min() {
+    let expr =
+      woxi::interpret_to_expr(r#"Manipulate[w, {{w, 0, "push"}, 2, 0}]"#)
+        .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let Some(ControlState::Continuous {
+      min,
+      max,
+      step,
+      current,
+      reversed,
+      ..
+    }) = state.controls.first()
+    else {
+      panic!("expected a continuous control");
+    };
+    assert_eq!((*min, *max, *current), (0.0, 2.0, 0.0));
+    assert!(*reversed);
+    // The initial value sits at the rail's end, the maximum at its start.
+    assert_eq!(slider_rail_position(*min, *max, true, *current), 2.0);
+    assert_eq!(slider_rail_position(*min, *max, true, 2.0), 0.0);
+    // A thumb dragged to rail positions maps back to the counted-down grid.
+    let value = |p| slider_value_at_rail_position(*min, *max, *step, true, p);
+    assert_eq!(value(0.0), 2.0);
+    assert_eq!(value(2.0), 0.0);
+    assert_eq!(value(*min + 80.0 * *step), 2.0 - 80.0 * *step);
+    // An ascending slider passes positions through unchanged.
+    assert_eq!(slider_rail_position(0.0, 2.0, false, 0.5), 0.5);
+    assert_eq!(
+      slider_value_at_rail_position(0.0, 2.0, 0.02, false, 0.5),
+      0.5
+    );
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
@@ -5791,6 +5928,22 @@ mod tests {
     assert!(!dump.contains("DifferentialD"), "{dump}");
     assert!(dump.contains("label: \"ⅆ/ⅆx\""), "{dump}");
     assert!(dump.contains("label: \"ⅆ²/ⅆx²\""), "{dump}");
+  }
+
+  /// A unit caption typeset as a fraction of powers
+  /// (`\!\(\*FractionBox[SuperscriptBox[\(m\), \(3\)], \(s\)]\)`) reads
+  /// `m³/s`: the `SuperscriptBox` is a superscript, not an OutputForm
+  /// `m^3` exponent.
+  #[test]
+  fn control_label_typesets_superscript_inside_plain_fraction() {
+    let code = r#"Manipulate[q, {{q, 1, "rate \!\(\*FractionBox[SuperscriptBox[\(m\), \(3\)], \(s\)]\)"}, 0, 2},
+      {{r, 1, "\!\(\*FractionBox[\(1\), SuperscriptBox[\(k\), \(2\)]]\)"}, 0, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains('^'), "{dump}");
+    assert!(dump.contains("label: \"rate m³/s\""), "{dump}");
+    assert!(dump.contains("label: \"1/k²\""), "{dump}");
   }
 
   /// A caption can apply a compound head to an argument —

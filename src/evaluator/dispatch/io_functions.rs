@@ -7411,6 +7411,39 @@ fn is_display_box(expr: &Expr) -> bool {
     if matches!(name.as_str(), "Framed" | "Panel" | "Text") && !args.is_empty())
 }
 
+/// The lines a sized `Pane` broke its text into follow the pane's
+/// horizontal `Alignment`: `Alignment -> Center` (or `{Center, Top}`)
+/// centers every line in the pane, `Right` sets them flush right.
+pub(crate) fn align_pane_lines(
+  lines: Expr,
+  alignment: Option<(f64, f64)>,
+) -> Expr {
+  let anchor = match alignment {
+    Some((0.5, _)) => "Center",
+    Some((1.0, _)) => "Right",
+    _ => return lines,
+  };
+  match &lines {
+    Expr::FunctionCall { name, args }
+      if name == "Column" && args.len() == 1 =>
+    {
+      call(
+        "Column",
+        vec![args[0].clone(), Expr::Identifier(anchor.to_string())],
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "TraditionalForm")
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = align_pane_lines(args[0].clone(), alignment);
+      call(name.as_str(), new_args)
+    }
+    _ => lines,
+  }
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
@@ -7474,7 +7507,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       let pane_size = pane_fixed_size(args);
       let wrapped = match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => pane_size_component(&size[0])
-          .and_then(|w| wrap_pane_text(&args[0], w, 14.0)),
+          .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
+          .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
         _ => None,
       };
       // A grid wider than the pane squeezes its automatically sized
