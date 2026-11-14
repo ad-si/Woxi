@@ -270,6 +270,26 @@ fn anchor_component(expr: &Expr, min: f64, max: f64) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
+/// A text `Inset[label, pos, …, Background -> color]` rendered as its
+/// `Text[…]`: the inset's `Background` goes along as the text's own.
+fn with_inset_background(text: Expr, inset_args: &[Expr]) -> Expr {
+  let background = inset_args.iter().find(|o| {
+    matches!(
+      o,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background")
+    )
+  });
+  match (&text, background) {
+    (Expr::FunctionCall { name, args }, Some(rule)) if name == "Text" => {
+      let mut args = args.to_vec();
+      args.push(rule.clone());
+      call("Text", args)
+    }
+    _ => text,
+  }
+}
+
 /// The value of option `key` among a primitive's trailing `opt -> value`
 /// arguments.
 fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
@@ -1005,6 +1025,30 @@ fn render_item(
             || svg_escape_text(&expr_to_output(body)),
             |s| s.svg_scaled_stacked(area.scale, px, line_height),
           );
+          // `Text[label, pos, …, Background -> color]` (or an `Inset`'s
+          // `Background`, carried over onto its text) lays a borderless
+          // panel behind the label, so a curve running under it is hidden.
+          let text_background = option_value(args, "Background")
+            .and_then(parse_color)
+            .filter(|_| !is_framed && direction.is_none());
+          if let Some(color) = text_background {
+            let chars = styled.as_ref().map_or_else(
+              || expr_to_output(body).chars().count(),
+              super::chart::StyledLabel::max_line_chars,
+            ) as f64;
+            let text_w = chars * font_size * 0.6;
+            let left = match text_anchor {
+              "start" => px,
+              "end" => px - text_w,
+              _ => px - text_w / 2.0,
+            };
+            out.push_str(&format!(
+              "<rect x=\"{left:.1}\" y=\"{:.1}\" width=\"{text_w:.1}\" height=\"{:.1}\" fill=\"{}\" stroke=\"none\"/>\n",
+              py - font_size / 2.0,
+              extra_lines * line_height + font_size,
+              color.to_svg_rgb(),
+            ));
+          }
           if is_framed {
             let text_w = styled
               .as_ref()
@@ -1058,11 +1102,11 @@ fn render_item(
         if let Some(text) =
           crate::functions::graphics::text_primitive_inset(args) =>
       {
-        render_item(&text, style, area, out);
+        render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
         let text = call("Text", vec![args[0].clone(), args[1].clone()]);
-        render_item(&text, style, area, out);
+        render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if !args.is_empty() => {
         let anchor = args.get(1).and_then(|p| anchor2(p, area)).unwrap_or((

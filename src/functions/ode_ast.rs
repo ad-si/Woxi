@@ -7,6 +7,7 @@ use super::*;
 use crate::functions::calculus_ast::differentiate_expr;
 use crate::functions::math_ast::{make_sqrt, rat_reduce};
 use crate::syntax::{expr_children, map_children};
+use std::cell::Cell;
 
 mod complex_ode;
 mod complex_pde;
@@ -8701,6 +8702,7 @@ fn integrate_leg(
       }
     }
   }
+  let diverged = Cell::new(false);
   let mut i = 0;
   while i < n_steps {
     let target = grid(i + 1);
@@ -8717,13 +8719,17 @@ fn integrate_leg(
       Refinement::START,
       &mut refined,
       cached_m,
+      &diverged,
     )?;
-    // The step failed even after refinement. A stiff system or a transient
-    // faster than the grid makes RK4 diverge: the leg is integrated again
-    // with adaptive steps (the whole leg without events to locate; with
-    // state events from here, finding them afterwards on the adaptive
-    // points).
-    if stepped.is_none() && can_go_adaptive && !adaptive_tried {
+    let diverging = diverged.replace(false);
+    // The step failed even after refinement, or its refinement stalled
+    // with an error estimate that no bisection reduced. A stiff system or a
+    // transient faster than the grid makes RK4 diverge: the leg is
+    // integrated again with adaptive steps (the whole leg without events to
+    // locate; with state events from here, finding them afterwards on the
+    // adaptive points). A diverging step the adaptive methods cannot take
+    // either is kept as RK4 took it.
+    if (stepped.is_none() || diverging) && can_go_adaptive && !adaptive_tried {
       adaptive_tried = true;
       if state_events.events.is_empty() {
         if let Some(leg) = adaptive(&points[0].1, x_from, x_to)? {
@@ -8751,6 +8757,7 @@ fn integrate_leg(
         Refinement::START,
         &mut refined,
         cached_m,
+        &diverged,
       )?;
     }
     let new_x = if halvings == 0 {
@@ -8870,6 +8877,7 @@ fn integrate_leg(
             Refinement::START,
             &mut after,
             cached_m,
+            &Cell::new(false),
           )? {
             Some(s) => s,
             None if can_go_adaptive => {
@@ -9037,14 +9045,26 @@ const MAX_STEP_BISECTIONS: u32 = 32;
 /// at RK4's rate before the step is taken as it is.
 const MAX_STALLED_BISECTIONS: u32 = 4;
 
+/// A stalled refinement whose error estimate is still this many times the
+/// tolerance is a candidate for divergence rather than a jump in the
+/// right-hand side (see [`Refinement::run_error`]).
+const DIVERGING_STALL_ERROR: f64 = 1e3;
+
 /// Where a step-doubling refinement stands: its bisection depth, the error
-/// estimate of the enclosing step (relative to the tolerance) and how many
-/// bisections in a row barely reduced it.
+/// estimate of the enclosing step (relative to the tolerance), how many
+/// bisections in a row barely reduced it, and the error estimate when that
+/// run of stalled bisections began.
 #[derive(Clone, Copy)]
 struct Refinement {
   depth: u32,
   error: f64,
   stalls: u32,
+  /// A jump in the right-hand side inside the step still shrinks the error
+  /// estimate about twofold per bisection, so a whole run of stalled
+  /// bisections cuts it well over fourfold. An estimate that barely moves
+  /// over the run means RK4 is unstable at every step size tried: a stiff
+  /// system whose fastest rate needs steps many bisections shorter.
+  run_error: f64,
 }
 
 impl Refinement {
@@ -9052,6 +9072,7 @@ impl Refinement {
     depth: 0,
     error: f64::INFINITY,
     stalls: 0,
+    run_error: f64::INFINITY,
   };
 }
 
@@ -9079,6 +9100,7 @@ fn rk4_step_refined(
   level: Refinement,
   out: &mut Vec<(f64, Vec<f64>)>,
   cached_m: Option<&MassLu>,
+  diverged: &Cell<bool>,
 ) -> Result<Option<Vec<f64>>, InterpreterError> {
   let Some(full) =
     rk4_system_step(residuals, funcs, state_offset, state, x, h, cached_m)?
@@ -9141,13 +9163,22 @@ fn rk4_step_refined(
   } else {
     0
   };
+  let run_error = match stalls {
+    0 => f64::INFINITY,
+    1 => level.error,
+    _ => level.run_error,
+  };
   if stalls >= MAX_STALLED_BISECTIONS {
+    if error > DIVERGING_STALL_ERROR && error > run_error / 4.0 {
+      diverged.set(true);
+    }
     return accept(full, out);
   }
   let next = Refinement {
     depth: level.depth + 1,
     error,
     stalls,
+    run_error,
   };
 
   let Some(mid) = rk4_step_refined(
@@ -9160,6 +9191,7 @@ fn rk4_step_refined(
     next,
     out,
     cached_m,
+    diverged,
   )?
   else {
     return Ok(None);
@@ -9174,6 +9206,7 @@ fn rk4_step_refined(
     next,
     out,
     cached_m,
+    diverged,
   )
 }
 

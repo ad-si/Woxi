@@ -1433,6 +1433,23 @@ mod graphics {
       assert!(!svg.contains("Dynamic"), "{svg}");
     }
 
+    /// `Background -> color` on a plot's `Epilog` text — given on the `Text`
+    /// itself or on the `Inset` around a label — lays a borderless panel of
+    /// that color behind the label, drawn before the text.
+    #[test]
+    fn a_plot_epilog_text_background_is_drawn_behind_the_label() {
+      for prim in [
+        "Inset[Style[\"zzlabel\", 14], {0.5, 0.5}, Background -> Yellow]",
+        "Text[\"zzlabel\", {0.5, 0.5}, Background -> Yellow]",
+      ] {
+        let svg =
+          export_svg(&format!("Plot[t, {{t, 0, 1}}, Epilog -> {{{prim}}}]"));
+        let panel = svg.find("fill=\"rgb(255,255,0)\"").expect(&svg);
+        let label = svg.find(">zzlabel</text>").expect(&svg);
+        assert!(panel < label, "panel must sit under the label: {svg}");
+      }
+    }
+
     /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
     /// as it does in `Graphics`, instead of being dropped.
     #[test]

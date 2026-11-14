@@ -25196,6 +25196,26 @@ mod nintegrate_limits_numeric_after_n {
 mod ndsolve_stiff_system {
   use super::*;
 
+  // Regression: a radical intermediate consumed at a rate ~10^7 times its
+  // formation made every bisection of the fixed RK4 step equally unstable.
+  // The refinement gave up as if the right-hand side jumped and kept the
+  // diverged step, so the solution grew to ~10^8 instead of the slow
+  // manifold y ≈ 10^-10 x (x + y + z). The leg now goes to the stiff method.
+  #[test]
+  fn stalled_unstable_refinement_goes_to_the_stiff_method() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -10^3 x[t] y[t]/(x[t] + y[t] + z[t]), \
+         y'[t] == 10^-3 x[t] - 10^7 y[t]/(x[t] + y[t] + z[t]), \
+         z'[t] == 10^7 y[t]/(x[t] + y[t] + z[t]), \
+         x[0] == 1, y[0] == 0, z[0] == 0}, {x, y, z}, {t, 0, 100}]; \
+         Round[{10^5 x[100], 10^12 y[100], 10^5 z[100]} /. First[s]]"
+      )
+      .unwrap(),
+      "{99999, 110, 10000}"
+    );
+  }
+
   // A right-hand side with I in it but real values compiles with complex
   // arithmetic, its tangents and reciprocal functions included, instead of
   // being split into real and imaginary parts symbolically.
