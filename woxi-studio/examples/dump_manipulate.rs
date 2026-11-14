@@ -210,12 +210,14 @@ fn main() {
             }
           }
         }
-        let code = match state.initialization.as_deref() {
-          Some(init) => format!("{init}; {}", state.body),
-          None => state.body.clone(),
-        };
+        // The Studio ran the `Initialization` once already (with a control
+        // that is also one of its pattern variables left unbound) and its
+        // definitions persist, so only the body is re-evaluated here, as the
+        // Studio does. Re-running the Initialization under the control
+        // bindings would differentiate with respect to a control's *value*
+        // (`f[z_] = D[g[z], z]` with `z = 20` bound gives `D::ivar`).
         let render = woxi::with_scoped_globals(&bindings, || {
-          woxi::interpret_with_stdout(&code)
+          woxi::interpret_with_stdout(&state.body)
         });
         if let Ok(res) = render
           && let Some(svg) = res.graphics
