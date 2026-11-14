@@ -495,26 +495,19 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let result = crate::evaluator::apply_function_to_arg(func, &rule)?;
         applied.push((rule, result));
       }
-      // If every result is a plain rule, build the association directly.
+      // If every result is a plain rule, they form the association — built
+      // by the Association constructor, so a repeated key keeps its first
+      // position and its last value
+      // (`AssociationMap[Reverse, <|a -> 1, b -> 1|>]` is `<|1 -> b|>`).
       if applied
         .iter()
         .all(|(_, r)| matches!(r, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
       {
-        let new_items: Vec<(Expr, Expr)> = applied
-          .iter()
-          .map(|(_, r)| match r {
-            Expr::Rule {
-              pattern,
-              replacement,
-            }
-            | Expr::RuleDelayed {
-              pattern,
-              replacement,
-            } => ((**pattern).clone(), (**replacement).clone()),
-            _ => unreachable!(),
-          })
-          .collect();
-        return Ok(Expr::Association(new_items));
+        let rules: Vec<Expr> = applied.into_iter().map(|(_, r)| r).collect();
+        return crate::evaluator::evaluate_function_call_ast(
+          "Association",
+          &[Expr::List(rules.into())],
+        );
       }
       // Otherwise the results don't form a valid association: emit
       // AssociationMap::invrlf for each invalid result (matching
@@ -537,13 +530,18 @@ pub fn association_map_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ))
     }
     Expr::List(items) => {
-      // AssociationMap[f, {e1, e2, ...}] creates <|e1 -> f[e1], e2 -> f[e2], ...|>
-      let mut new_items = Vec::new();
+      // AssociationMap[f, {e1, e2, ...}] creates <|e1 -> f[e1], e2 -> f[e2], ...|>;
+      // a repeated element is one key (`AssociationMap[f, {0, 0, 2}]` is
+      // `<|0 -> f[0], 2 -> f[2]|>`).
+      let mut rules = Vec::new();
       for item in items {
         let result = crate::evaluator::apply_function_to_arg(func, item)?;
-        new_items.push((item.clone(), result));
+        rules.push(rule_expr(item.clone(), result));
       }
-      Ok(Expr::Association(new_items))
+      crate::evaluator::evaluate_function_call_ast(
+        "Association",
+        &[Expr::List(rules.into())],
+      )
     }
     _ => Ok(invalid_subject_message(
       "AssociationMap",
