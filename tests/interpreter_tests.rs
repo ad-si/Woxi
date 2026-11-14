@@ -3632,7 +3632,10 @@ mod interpreter_tests {
        FrameLabel -> {\"abc\", \"def\"}], \"SVG\"]",
     )
     .unwrap();
-    assert!(framed.contains(">abc<") && framed.contains(">def<"), "{framed}");
+    assert!(
+      framed.contains(">abc<") && framed.contains(">def<"),
+      "{framed}"
+    );
   }
 
   #[test]
