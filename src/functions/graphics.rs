@@ -35226,6 +35226,12 @@ pub struct ManipulateSpec {
   /// form (`ControlPlacement -> n`, for a `Place[n]` layout template) is
   /// not a side and is ignored.
   pub control_placements: Vec<(String, ControlPlacement)>,
+  /// Names of the controls that share a line of the control panel with the
+  /// control before them, because a `Row[{Control[…], Spacer[…],
+  /// Control[…]}]` argument places both side by side (see
+  /// `collect_row_joined_controls`). The first control of each such row
+  /// does not appear here.
+  pub row_joined_controls: Vec<String>,
   /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
   /// promoted from a plain body-local `var = expr;` assignment (see
   /// `collect_body_locator_pane_vars`), where `expr` references another
@@ -36127,6 +36133,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // before it in a `Row[{Button[…], Button[…], …}]` argument (see
   // `collect_row_joined_buttons`).
   let mut row_joined_buttons: Vec<(String, String)> = Vec::new();
+  // Names of the controls placed right after another control in a
+  // `Row[{Control[…], Control[…]}]` argument (see
+  // `collect_row_joined_controls`).
+  let mut row_joined_controls: Vec<String> = Vec::new();
   // An evaluated `Animate[…, AnimationRunning -> False]` carries the option
   // in its control specification (`{x, 0, 1, AnimationRunning -> False,
   // …}`), not among the Manipulate's own options.
@@ -36188,6 +36198,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // up the condition under which they are on screen.
     collect_pane_visibility(spec, &place_map, &mut control_visible, None);
     collect_row_joined_buttons(spec, &mut row_joined_buttons);
+    collect_row_joined_controls(spec, &mut row_joined_controls);
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -37360,6 +37371,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values,
     dynamic_labels,
     control_placements,
+    row_joined_controls,
     dynamic_locator_defaults,
     animation_var,
     animated,
@@ -39357,6 +39369,66 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
   }
 }
 
+/// Record the name of each `Control[spec]` that a `Row[{…}]` places
+/// directly after another `Control[…]`, so the two share one line of the
+/// control panel the way Wolfram lays such a row out (e.g. a setter bar
+/// with a 2D slider beside it). Layout containers (`Column[{Row[…],
+/// Row[…]}]`, …) are searched for such rows. `Spacer[…]` and string items
+/// between two controls keep them on the same line; any other item breaks
+/// the run.
+fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
+  match spec {
+    Expr::FunctionCall { name, args } if name == "Row" => {
+      let Some(Expr::List(items)) = args.first() else {
+        return;
+      };
+      let mut after_control = false;
+      for item in items {
+        let item = match item {
+          Expr::FunctionCall { name, args: inner }
+            if name == "Item" && !inner.is_empty() =>
+          {
+            &inner[0]
+          }
+          _ => item,
+        };
+        match item {
+          Expr::FunctionCall { name, args: c }
+            if name == "Control" && !c.is_empty() =>
+          {
+            match control_spec_variable(&c[0]) {
+              Some(var) => {
+                if after_control {
+                  out.push(var);
+                }
+                after_control = true;
+              }
+              None => after_control = false,
+            }
+          }
+          Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+          Expr::String(_) => {}
+          other => {
+            after_control = false;
+            collect_row_joined_controls(other, out);
+          }
+        }
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_row_joined_controls(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        collect_row_joined_controls(a, out);
+      }
+    }
+    _ => {}
+  }
+}
+
 /// Replace each bare symbol inside a `Row`/`Column`/`Grid` control-layout
 /// argument whose value is a button (`Button[…]` or `ButtonBar[…]`) by
 /// that value. Demonstrations often build their buttons up front
@@ -41167,6 +41239,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -41246,6 +41319,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -41340,6 +41414,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -41542,6 +41617,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -41604,6 +41680,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -41676,6 +41753,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
     animated: animate.is_some(),
@@ -50740,6 +50818,27 @@ mod manipulate_button_enabled_tests {
     .map(|(l, j)| (l.to_string(), *j))
     .collect();
     assert_eq!(joins, expected);
+  }
+
+  /// Controls written side by side in one `Row[{Control[…], Spacer[…],
+  /// Control[…]}]` argument share one line of the control panel: every
+  /// control after the first of a row is recorded as joining the one
+  /// before it. A plain control spec, a new `Row`, and a non-control item
+  /// between two controls each start a new line.
+  #[test]
+  fn row_of_controls_shares_one_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{p, q, r, s, t, u, v}, \
+       Row[{Control[{{p, 1, \"first\"}, {1, 2, 3}}], Spacer[20], \
+       Control @ {{q, {0.5, 0.5}}, {0, 0}, {1, 1}}, \"\", \
+       Control[{r, 0, 1}]}], \
+       {s, 0, 1}, \
+       Row[{Control[{t, 0, 1}], Graphics[{}], Control[{u, 0, 1}]}], \
+       Column[{Row[{Control[{v, 0, 1}], Control[{{w, 2}, {1, 2}}]}]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.row_joined_controls, vec!["q", "r", "w"]);
   }
 
   #[test]
