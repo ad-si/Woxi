@@ -4196,18 +4196,14 @@ mod graphics {
       #[test]
       fn array_plot_value_range_sets_the_gray_scale() {
         assert_eq!(
-          interpret(
-            "First[ArrayPlot[{{0, 1}, {1, 2}}, PlotRange -> {0, 2}]]"
-          )
-          .unwrap(),
+          interpret("First[ArrayPlot[{{0, 1}, {1, 2}}, PlotRange -> {0, 2}]]")
+            .unwrap(),
           "Raster[{{0.5, 0.}, {1., 0.5}}, {{0, 0}, {2, 2}}, {0, 1}]"
         );
         // A single bound is the top of a range starting at 0.
         assert_eq!(
-          interpret(
-            "First[ArrayPlot[{{0, 1}, {1, 4}}, PlotRange -> 2]]"
-          )
-          .unwrap(),
+          interpret("First[ArrayPlot[{{0, 1}, {1, 4}}, PlotRange -> 2]]")
+            .unwrap(),
           "Raster[{{0.5, 1}, {1., 0.5}}, {{0, 0}, {2, 2}}, {0, 1}]"
         );
       }
