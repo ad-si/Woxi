@@ -445,6 +445,30 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
+  /// A heading merged across fixed-width columns with `SpanFromLeft` wraps
+  /// to the width of the whole span, not to that of its first column.
+  #[test]
+  fn grid_item_size_span_wraps_to_span_width() {
+    let svg = svg_of(
+      "Grid[{{\"a heading of some words\", SpanFromLeft}, {\"x\", \"y\"}}, \
+       ItemSize -> {{6, 10}}]",
+    );
+    assert!(svg.contains(">a heading of some words<"), "{svg}");
+    assert!(!svg.contains("<tspan"), "{svg}");
+    // Narrower than the text, the span still wraps it.
+    let svg = svg_of(
+      "Grid[{{\"a heading of some words\", SpanFromLeft}, {\"x\", \"y\"}}, \
+       ItemSize -> {{3, 4}}]",
+    );
+    assert!(svg.contains("<tspan"), "{svg}");
+    // A span over a content-sized column is not wrapped.
+    let svg = svg_of(
+      "Grid[{{\"a heading of some words\", SpanFromLeft}, {\"x\", \"y\"}}, \
+       ItemSize -> {{3, Automatic}}]",
+    );
+    assert!(!svg.contains("<tspan"), "{svg}");
+  }
+
   /// A string holding inline linear syntax (`\!\(…\)`) in a fixed-width
   /// `ItemSize` column is a typeset formula: it is not word-wrapped at its
   /// markup's spaces, which would split the box structure.

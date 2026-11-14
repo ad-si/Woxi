@@ -2815,7 +2815,9 @@ pub fn factor_integer_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       factor_integer_rational(&rat_args[0], &rat_args[1])
     }
     // A Gaussian integer argument factors over ℤ[i] directly.
-    e if extract_gaussian_integer(e).is_some_and(|(_, im)| im != 0) => {
+    e if extract_gaussian_integer_big(e)
+      .is_some_and(|(_, im)| !im.is_zero()) =>
+    {
       factor_integer_gaussian(&args[0])
     }
     _ => Ok(unevaluated("FactorInteger", args)),
@@ -2838,15 +2840,9 @@ fn extract_gaussian_integer(expr: &Expr) -> Option<(i128, i128)> {
 /// `FactorInteger[n, GaussianIntegers -> True]` — factorization over the
 /// Gaussian integers ℤ[i]. The result is `{{unit, 1}, {prime, exp}, …}` where
 /// the optional leading unit (one of ±1, ±I) is shown only when it is not 1,
-/// and the Gaussian primes are sorted by norm then by real part.
-///
-/// Each rational prime `p` of `|n|` lifts as:
-///   * `p = 2`:        the ramified prime `(1 + I)`, exponent doubled,
-///     contributing a unit factor `(-I)^e`.
-///   * `p ≡ 1 (mod 4)`: splits into conjugates `(a + b I)` and `(b + a I)`
-///     where `a² + b² = p`, `0 < a < b`, contributing `(-I)^e`.
-///   * `p ≡ 3 (mod 4)`: inert — the rational prime `p` itself, unit unchanged.
-///     A negative `n` contributes an extra `-1` to the unit.
+/// and the Gaussian primes are sorted by real part, then imaginary part.
+/// Works for Gaussian integers of arbitrary size (see
+/// [`gaussian_factorization_big`]).
 fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
   let unevaluated = || {
     Ok(call(
@@ -2858,99 +2854,201 @@ fn factor_integer_gaussian(n_expr: &Expr) -> Result<Expr, InterpreterError> {
     ))
   };
 
-  let Some((n, n_im)) = extract_gaussian_integer(n_expr) else {
+  let Some((a, b)) = extract_gaussian_integer_big(n_expr) else {
     return unevaluated();
   };
-  if n_im != 0 {
-    return factor_gaussian_complex(n, n_im, &unevaluated);
+  // Zero is returned as a single {0, 1} entry.
+  if a.is_zero() && b.is_zero() {
+    return Ok(Expr::List(
+      vec![Expr::List(vec![Expr::Integer(0), Expr::Integer(1)].into())].into(),
+    ));
   }
-
-  let single = |re: i128, im: i128| -> Result<Expr, InterpreterError> {
-    Ok(Expr::List(
-      vec![Expr::List(
-        vec![gaussian_to_expr(re, im)?, Expr::Integer(1)].into(),
-      )]
-      .into(),
-    ))
-  };
-  // Units and zero are returned as a single {value, 1} entry.
-  if n == 0 || n == 1 || n == -1 {
-    return single(n, 0);
-  }
-
-  let mut num = n.unsigned_abs();
-  // Restrict to the trial-division-friendly range; larger inputs would need
-  // the BigInt path and are left unevaluated.
-  if num > (1u128 << 53) {
+  let Some((unit, gprimes)) = gaussian_factorization_big(&a, &b) else {
     return unevaluated();
-  }
+  };
 
-  // Factor |n| into rational primes (prime, exponent).
-  let mut rational: Vec<(i128, i128)> = Vec::new();
-  let mut c2 = 0i128;
-  while num.is_multiple_of(2) {
-    c2 += 1;
-    num /= 2;
-  }
-  if c2 > 0 {
-    rational.push((2, c2));
-  }
-  let mut i: u128 = 3;
-  while i * i <= num {
-    let mut c = 0i128;
-    while num.is_multiple_of(i) {
-      c += 1;
-      num /= i;
-    }
-    if c > 0 {
-      rational.push((i as i128, c));
-    }
-    i += 2;
-  }
-  if num > 1 {
-    rational.push((num as i128, 1));
-  }
-
-  // Lift each rational prime, accumulating the unit (re, im) ∈ {±1, ±i}.
-  // Multiplication by -i sends (re, im) → (im, -re).
-  let mut unit = (if n < 0 { -1i128 } else { 1i128 }, 0i128);
-  let mut gprimes: Vec<((i128, i128), i128)> = Vec::new();
-  for (p, e) in rational {
-    if p == 2 {
-      gprimes.push(((1, 1), 2 * e));
-      for _ in 0..e {
-        unit = (unit.1, -unit.0);
-      }
-    } else if p % 4 == 1 {
-      let Some((a, b)) = sum_of_two_squares(p) else {
-        return unevaluated();
-      };
-      gprimes.push(((a, b), e));
-      gprimes.push(((b, a), e));
-      for _ in 0..e {
-        unit = (unit.1, -unit.0);
-      }
-    } else {
-      gprimes.push(((p, 0), e));
-    }
-  }
-
-  // Sort by real part, then by imaginary part (wolframscript's order: e.g.
-  // the inert prime 3 sorts between 2 + 3 I and 3 + 2 I).
-  gprimes.sort_by_key(|&((re, im), _)| (re, im));
-
+  let one = (BigInt::from(1), BigInt::zero());
   let mut factors: Vec<Expr> = Vec::new();
-  if unit != (1, 0) {
+  if unit != one || gprimes.is_empty() {
     factors.push(Expr::List(
-      vec![gaussian_to_expr(unit.0, unit.1)?, Expr::Integer(1)].into(),
+      vec![gaussian_big_to_expr(&unit.0, &unit.1)?, Expr::Integer(1)].into(),
     ));
   }
   for ((re, im), e) in gprimes {
     factors.push(Expr::List(
-      vec![gaussian_to_expr(re, im)?, Expr::Integer(e)].into(),
+      vec![gaussian_big_to_expr(&re, &im)?, Expr::Integer(e)].into(),
     ));
   }
   Ok(Expr::List(factors.into()))
+}
+
+/// Recognize an exact Gaussian integer `re + im I` with arbitrarily large
+/// parts.
+fn extract_gaussian_integer_big(expr: &Expr) -> Option<(BigInt, BigInt)> {
+  match expr {
+    Expr::Integer(n) => return Some((BigInt::from(*n), BigInt::zero())),
+    Expr::BigInteger(n) => return Some((n.clone(), BigInt::zero())),
+    _ => {}
+  }
+  let ((rn, rd), (in_, id)) = try_extract_complex_exact_big(expr)?;
+  let one = BigInt::from(1);
+  if rd == one && id == one {
+    Some((rn, in_))
+  } else {
+    None
+  }
+}
+
+/// Render a Gaussian integer `re + im·I` with BigInt parts as an `Expr`.
+fn gaussian_big_to_expr(
+  re: &BigInt,
+  im: &BigInt,
+) -> Result<Expr, InterpreterError> {
+  if im.is_zero() {
+    return Ok(bigint_to_expr(re.clone()));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Complex",
+    vec![bigint_to_expr(re.clone()), bigint_to_expr(im.clone())],
+  ))
+}
+
+/// Exact quotient z/w in ℤ[i] (BigInt parts), or None when w does not
+/// divide z.
+fn gaussian_div_big(
+  z: &(BigInt, BigInt),
+  w: &(BigInt, BigInt),
+) -> Option<(BigInt, BigInt)> {
+  let n = &w.0 * &w.0 + &w.1 * &w.1;
+  if n.is_zero() {
+    return None;
+  }
+  let re = &z.0 * &w.0 + &z.1 * &w.1;
+  let im = &z.1 * &w.0 - &z.0 * &w.1;
+  if (&re % &n).is_zero() && (&im % &n).is_zero() {
+    Some((re / &n, im / &n))
+  } else {
+    None
+  }
+}
+
+/// Rational prime factorization `[(p, e)]` of `|n|` (n != 0), sorted by p.
+fn rational_prime_factors_big(n: &BigInt) -> Vec<(BigInt, i128)> {
+  let mut out = Vec::new();
+  if let Expr::List(pairs) = &factor_integer_bigint(&n.abs()) {
+    for pair in pairs {
+      if let Expr::List(pe) = pair
+        && let (Some(p), Expr::Integer(e)) = (expr_to_bigint(&pe[0]), &pe[1])
+        && p > BigInt::from(1)
+      {
+        out.push((p, *e));
+      }
+    }
+  }
+  out
+}
+
+/// Canonical Gaussian factorization of a nonzero Gaussian integer `a + b I`:
+/// `(unit, [(first-quadrant prime, exponent)])` sorted by (re, im), the
+/// order wolframscript uses (e.g. the inert prime 3 sorts between 2 + 3 I
+/// and 3 + 2 I).
+///
+/// The norm a² + b² is factored into rational primes (for a real input the
+/// factorization of |a| with doubled exponents), then `a + b I` is
+/// trial-divided by the canonical prime representatives:
+///   * `p = 2`:         the ramified prime `1 + I`, once per factor 2 of the
+///     norm;
+///   * `p ≡ 3 (mod 4)`: inert — the rational prime `p`, with half the norm
+///     exponent;
+///   * `p ≡ 1 (mod 4)`: splits into `s + t I` and `t + s I` with
+///     `s² + t² = p`, `0 < s < t`.
+///
+/// Whatever remains after all divisions is the leading unit.
+fn gaussian_factorization_big(
+  a: &BigInt,
+  b: &BigInt,
+) -> Option<((BigInt, BigInt), Vec<((BigInt, BigInt), i128)>)> {
+  if a.is_zero() && b.is_zero() {
+    return None;
+  }
+  let rational: Vec<(BigInt, i128)> = if b.is_zero() {
+    rational_prime_factors_big(a)
+      .into_iter()
+      .map(|(p, e)| (p, 2 * e))
+      .collect()
+  } else if a.is_zero() {
+    rational_prime_factors_big(b)
+      .into_iter()
+      .map(|(p, e)| (p, 2 * e))
+      .collect()
+  } else {
+    rational_prime_factors_big(&(a * a + b * b))
+  };
+
+  let zero = BigInt::zero();
+  let one = BigInt::from(1);
+  let two = BigInt::from(2);
+  let four = BigInt::from(4);
+  let mut z = (a.clone(), b.clone());
+  let mut gprimes: Vec<((BigInt, BigInt), i128)> = Vec::new();
+  for (p, e) in rational {
+    if p == two {
+      let w = (one.clone(), one.clone());
+      for _ in 0..e {
+        z = gaussian_div_big(&z, &w)?;
+      }
+      gprimes.push((w, e));
+    } else if &p % &four == BigInt::from(3) {
+      if e % 2 != 0 {
+        return None;
+      }
+      let w = (p.clone(), zero.clone());
+      for _ in 0..(e / 2) {
+        z = gaussian_div_big(&z, &w)?;
+      }
+      gprimes.push((w, e / 2));
+    } else {
+      let (s, t) = sum_of_two_squares_big(&p)?;
+      let w1 = (s.clone(), t.clone());
+      let w2 = (t, s);
+      let mut k1 = 0i128;
+      while k1 < e {
+        let Some(q) = gaussian_div_big(&z, &w1) else {
+          break;
+        };
+        z = q;
+        k1 += 1;
+      }
+      for _ in 0..(e - k1) {
+        z = gaussian_div_big(&z, &w2)?;
+      }
+      if k1 > 0 {
+        gprimes.push((w1, k1));
+      }
+      if e - k1 > 0 {
+        gprimes.push((w2, e - k1));
+      }
+    }
+  }
+  gprimes.sort_by(|x, y| x.0.cmp(&y.0));
+  Some((z, gprimes))
+}
+
+/// [`gaussian_factorization_big`] restricted to i128 inputs and outputs.
+fn gaussian_factorization(
+  a: i128,
+  b: i128,
+) -> Option<((i128, i128), Vec<((i128, i128), i128)>)> {
+  use num_traits::ToPrimitive;
+  let (unit, gprimes) =
+    gaussian_factorization_big(&BigInt::from(a), &BigInt::from(b))?;
+  let small = |z: &(BigInt, BigInt)| Some((z.0.to_i128()?, z.1.to_i128()?));
+  let unit = small(&unit)?;
+  let gprimes = gprimes
+    .iter()
+    .map(|(p, e)| Some((small(p)?, *e)))
+    .collect::<Option<Vec<_>>>()?;
+  Some((unit, gprimes))
 }
 
 /// Exact quotient z/w in ℤ[i], or None when w does not divide z.
@@ -2963,198 +3061,6 @@ fn gaussian_div(z: (i128, i128), w: (i128, i128)) -> Option<(i128, i128)> {
   } else {
     None
   }
-}
-
-/// Factorization of a proper Gaussian integer `a + b I` (b != 0): factor
-/// the norm a² + b² into rational primes, then trial-divide by the
-/// canonical prime representatives (first quadrant: 1 + I for 2, the
-/// {s + t I, t + s I} pair for split primes, the rational prime itself
-/// for inert ones); whatever remains is the leading unit.
-fn factor_gaussian_complex(
-  a: i128,
-  b: i128,
-  unevaluated: &dyn Fn() -> Result<Expr, InterpreterError>,
-) -> Result<Expr, InterpreterError> {
-  let Some(norm) = a
-    .checked_mul(a)
-    .and_then(|x| b.checked_mul(b).and_then(|y| x.checked_add(y)))
-    .filter(|&n| n <= (1i128 << 53))
-  else {
-    return unevaluated();
-  };
-
-  // Factor the norm into rational primes.
-  let mut num = norm as u128;
-  let mut rational: Vec<(i128, i128)> = Vec::new();
-  let mut c2 = 0i128;
-  while num.is_multiple_of(2) {
-    c2 += 1;
-    num /= 2;
-  }
-  if c2 > 0 {
-    rational.push((2, c2));
-  }
-  let mut i: u128 = 3;
-  while i * i <= num {
-    let mut c = 0i128;
-    while num.is_multiple_of(i) {
-      c += 1;
-      num /= i;
-    }
-    if c > 0 {
-      rational.push((i as i128, c));
-    }
-    i += 2;
-  }
-  if num > 1 {
-    rational.push((num as i128, 1));
-  }
-
-  let mut z = (a, b);
-  let mut gprimes: Vec<((i128, i128), i128)> = Vec::new();
-  for (p, e) in rational {
-    if p == 2 {
-      // Each factor 2 of the norm is one ramified prime 1 + I in z.
-      for _ in 0..e {
-        let Some(w) = gaussian_div(z, (1, 1)) else {
-          return unevaluated();
-        };
-        z = w;
-      }
-      gprimes.push(((1, 1), e));
-    } else if p % 4 == 3 {
-      // Inert: the norm exponent is twice the multiplicity in z.
-      if e % 2 != 0 {
-        return unevaluated();
-      }
-      for _ in 0..(e / 2) {
-        let Some(w) = gaussian_div(z, (p, 0)) else {
-          return unevaluated();
-        };
-        z = w;
-      }
-      gprimes.push(((p, 0), e / 2));
-    } else {
-      let Some((s, t)) = sum_of_two_squares(p) else {
-        return unevaluated();
-      };
-      let mut k1 = 0i128;
-      while k1 < e {
-        let Some(w) = gaussian_div(z, (s, t)) else {
-          break;
-        };
-        z = w;
-        k1 += 1;
-      }
-      for _ in 0..(e - k1) {
-        let Some(w) = gaussian_div(z, (t, s)) else {
-          return unevaluated();
-        };
-        z = w;
-      }
-      if k1 > 0 {
-        gprimes.push(((s, t), k1));
-      }
-      if e - k1 > 0 {
-        gprimes.push(((t, s), e - k1));
-      }
-    }
-  }
-
-  // The fully divided z is one of the four units.
-  gprimes.sort_by_key(|&((re, im), _)| (re, im));
-  let mut factors: Vec<Expr> = Vec::new();
-  if z != (1, 0) || gprimes.is_empty() {
-    factors.push(Expr::List(
-      vec![gaussian_to_expr(z.0, z.1)?, Expr::Integer(1)].into(),
-    ));
-  }
-  for ((re, im), e) in gprimes {
-    factors.push(Expr::List(
-      vec![gaussian_to_expr(re, im)?, Expr::Integer(e)].into(),
-    ));
-  }
-  Ok(Expr::List(factors.into()))
-}
-
-/// Canonical Gaussian factorization of a nonzero Gaussian integer:
-/// (unit, [(first-quadrant prime, exponent)]) sorted by (re, im). Uses the
-/// same norm-factorization + trial-division construction as
-/// `factor_gaussian_complex` (with which it agrees for real inputs too).
-fn gaussian_factorization(
-  a: i128,
-  b: i128,
-) -> Option<((i128, i128), Vec<((i128, i128), i128)>)> {
-  let norm = a
-    .checked_mul(a)
-    .and_then(|x| b.checked_mul(b).and_then(|y| x.checked_add(y)))
-    .filter(|&n| n > 0 && n <= (1i128 << 53))?;
-
-  let mut num = norm as u128;
-  let mut rational: Vec<(i128, i128)> = Vec::new();
-  let mut c2 = 0i128;
-  while num.is_multiple_of(2) {
-    c2 += 1;
-    num /= 2;
-  }
-  if c2 > 0 {
-    rational.push((2, c2));
-  }
-  let mut i: u128 = 3;
-  while i * i <= num {
-    let mut c = 0i128;
-    while num.is_multiple_of(i) {
-      c += 1;
-      num /= i;
-    }
-    if c > 0 {
-      rational.push((i as i128, c));
-    }
-    i += 2;
-  }
-  if num > 1 {
-    rational.push((num as i128, 1));
-  }
-
-  let mut z = (a, b);
-  let mut gprimes: Vec<((i128, i128), i128)> = Vec::new();
-  for (p, e) in rational {
-    if p == 2 {
-      for _ in 0..e {
-        z = gaussian_div(z, (1, 1))?;
-      }
-      gprimes.push(((1, 1), e));
-    } else if p % 4 == 3 {
-      if e % 2 != 0 {
-        return None;
-      }
-      for _ in 0..(e / 2) {
-        z = gaussian_div(z, (p, 0))?;
-      }
-      gprimes.push(((p, 0), e / 2));
-    } else {
-      let (s, t) = sum_of_two_squares(p)?;
-      let mut k1 = 0i128;
-      while k1 < e {
-        let Some(w) = gaussian_div(z, (s, t)) else {
-          break;
-        };
-        z = w;
-        k1 += 1;
-      }
-      for _ in 0..(e - k1) {
-        z = gaussian_div(z, (t, s))?;
-      }
-      if k1 > 0 {
-        gprimes.push(((s, t), k1));
-      }
-      if e - k1 > 0 {
-        gprimes.push(((t, s), e - k1));
-      }
-    }
-  }
-  gprimes.sort_by_key(|&((re, im), _)| (re, im));
-  Some((z, gprimes))
 }
 
 fn gaussian_mul_checked(
@@ -3259,24 +3165,44 @@ fn gaussian_to_expr(re: i128, im: i128) -> Result<Expr, InterpreterError> {
 
 /// For a prime `p ≡ 1 (mod 4)`, return `(a, b)` with `a² + b² = p` and
 /// `0 < a < b` (unique up to order by Fermat's two-square theorem).
-fn sum_of_two_squares(p: i128) -> Option<(i128, i128)> {
-  let mut a = 1i128;
-  while a * a * 2 < p {
-    let r = p - a * a;
-    // Integer square root of r, robust against f64 rounding.
-    let mut b = (r as f64).sqrt() as i128;
-    while b * b > r {
-      b -= 1;
-    }
-    while (b + 1) * (b + 1) <= r {
-      b += 1;
-    }
-    if b * b == r && b > a {
-      return Some((a, b));
-    }
-    a += 1;
+///
+/// Uses the Hermite–Serret / Cornacchia method: find x with x² ≡ -1 (mod p)
+/// from a quadratic non-residue c as x = c^((p-1)/4), then run the Euclidean
+/// algorithm on (p, x) until the remainder drops below √p.
+fn sum_of_two_squares_big(p: &BigInt) -> Option<(BigInt, BigInt)> {
+  let one = BigInt::from(1);
+  let four = BigInt::from(4);
+  if p <= &one || p % &four != one {
+    return None;
   }
-  None
+  let p_minus_1 = p - &one;
+  let half = &p_minus_1 / BigInt::from(2);
+  let quarter = &p_minus_1 / &four;
+  // Find x with x² ≡ -1 (mod p).
+  let mut c = BigInt::from(2);
+  let x = loop {
+    if &c >= p {
+      return None;
+    }
+    if c.modpow(&half, p) == p_minus_1 {
+      break c.modpow(&quarter, p);
+    }
+    c += &one;
+  };
+  let root = p.sqrt();
+  let (mut r0, mut r1) = (p.clone(), x);
+  while r1 > root {
+    let r2 = &r0 % &r1;
+    r0 = r1;
+    r1 = r2;
+  }
+  let s = r1;
+  let rest = p - &s * &s;
+  let t = rest.sqrt();
+  if &t * &t != rest || s.is_zero() {
+    return None;
+  }
+  Some(if s < t { (s, t) } else { (t, s) })
 }
 
 /// `FactorInteger[n, k]` — partial factorization that pulls out at most `k`

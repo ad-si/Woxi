@@ -4706,3 +4706,42 @@ mod date_current {
     );
   }
 }
+
+// Date normalization is closed-form: it used to sum year lengths one year at
+// a time and never finished for a year like 10^20 (found by the interpret
+// fuzzer). A year beyond 2^53 cannot travel as an f64 component and stays
+// unevaluated; weekdays follow Wolfram's BC convention (no year zero).
+mod far_dates {
+  use super::*;
+
+  #[test]
+  fn far_years_are_fast_and_exact() {
+    for (code, expected) in [
+      (
+        "DateList[{10^15, 14, 1}]",
+        "{1000000000000001, 2, 1, 0, 0, 0.}",
+      ),
+      ("DayName[{10^15, 1, 1}]", "Saturday"),
+      ("DateList[{2026, 13, 45}]", "{2027, 2, 14, 0, 0, 0.}"),
+      ("DateList[{2026, 1, 0}]", "{2025, 12, 31, 0, 0, 0.}"),
+      (
+        "DateString[{1600, 3, 1, 10, 5, 3}]",
+        "Wed 1 Mar 1600 10:05:03",
+      ),
+      ("AbsoluteTime[{1, 1, 1}]", "-59926608000"),
+      ("DayName[{1, 1, 1}]", "Monday"),
+      ("DayName[{-44, 3, 15}]", "Friday"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn years_beyond_two_to_the_53_stay_unevaluated() {
+    assert_eq!(
+      interpret("DateString[{200000000000000000007, 4, 15}, \"ISODate\"]")
+        .unwrap(),
+      "DateString[{200000000000000000007, 4, 15}, ISODate]"
+    );
+  }
+}

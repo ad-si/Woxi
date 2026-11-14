@@ -2487,7 +2487,7 @@ pub fn exp_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let r = f.exp();
       // A result past the machine range is promoted to an arbitrary-
       // precision number (`Exp[1000.]` is `1.97…*^434`) rather than
-      // collapsing to `Infinity`.
+      // collapsing to `Infinity` (up to MAX_PROMOTED_DECIMAL_EXPONENT).
       if r.is_infinite()
         && f.abs() * std::f64::consts::LOG10_E
           <= super::numerical::MAX_PROMOTED_DECIMAL_EXPONENT

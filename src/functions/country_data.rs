@@ -546,6 +546,10 @@ fn record_property(
       Some(png) => crate::functions::image_ast::import_image_from_bytes(&png)?,
       None => missing("NotAvailable", property),
     },
+    "FlagDescription" => match FLAG_DESCRIPTIONS.get(r.entity) {
+      Some(text) => str_expr(text),
+      None => missing("NotAvailable", property),
+    },
     _ => return Ok(None),
   }))
 }
@@ -562,6 +566,28 @@ static FLAGS: std::sync::LazyLock<
   GzDecoder::new(&compressed[..])
     .read_to_string(&mut text)
     .expect("country_flags.tsv.gz is valid gzip");
+  let text: &'static str = Box::leak(text.into_boxed_str());
+  text
+    .lines()
+    .filter(|l| !l.starts_with('#'))
+    .filter_map(|l| l.split_once('\t'))
+    .collect()
+});
+
+/// Plain-text flag descriptions keyed by entity name, from
+/// `resources/country_flag_descriptions.tsv.gz` (the CIA World Factbook,
+/// see `scripts/gen_country_flag_descriptions.py`).
+static FLAG_DESCRIPTIONS: std::sync::LazyLock<
+  std::collections::HashMap<&'static str, &'static str>,
+> = std::sync::LazyLock::new(|| {
+  use flate2::read::GzDecoder;
+  use std::io::Read;
+  let compressed =
+    include_bytes!("../../resources/country_flag_descriptions.tsv.gz");
+  let mut text = String::new();
+  GzDecoder::new(&compressed[..])
+    .read_to_string(&mut text)
+    .expect("country_flag_descriptions.tsv.gz is valid gzip");
   let text: &'static str = Box::leak(text.into_boxed_str());
   text
     .lines()
