@@ -7825,7 +7825,7 @@ wolframscript -code 'FindMaximum[Log[x] - x, {x, 3}]'
 # FindMaximum::nrnum: The function value -1. - 3.14159 I is not a real number at {x} = {-1.}.
 # {-1.3068528194400546, {x -> 2.}}
 woxi eval 'FindMaximum[Log[x] - x, {x, 3}]'
-# FindMaximum::nrnum: The function value 4.09861 + 3.14159 I is not a real number at {x} = {-3.}.
+# FindMaximum::nrnum: The function value -4.09861 - 3.14159 I is not a real number at {x} = {-3.}.
 # {-1.9013877113318902, {x -> 3.}}
 ```
 

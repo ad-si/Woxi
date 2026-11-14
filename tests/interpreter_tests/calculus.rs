@@ -28187,3 +28187,58 @@ mod d_variable_list_edges {
     );
   }
 }
+
+// A constrained FindMinimum whose objective carries a free parameter stays
+// unevaluated with its arguments as written; it used to search over the
+// parameter too (8 s and a wrong answer, found by the interpret fuzzer). The
+// FindMinimum family is HoldAll, and a non-numeric starting value reports
+// nrnum three times before General::stop, with FindMaximum showing the
+// negated objective. wolframscript-verified.
+mod find_minimum_free_parameters {
+  use super::*;
+
+  #[test]
+  fn constrained_free_parameter_stays_unevaluated() {
+    for code in [
+      "FindMinimum[{3*x + 2*p*y, x + y == 1, 1 + 1 > 0}, {x, y}]",
+      "vars = {c[1, 1], c[1, 2]}; FindMinimum[{3 c[1, 1] + 2 pp c[1, 2], c[1, 1] + c[1, 2] == 1, Thread[vars >= 0]}, vars]",
+    ] {
+      clear_state();
+      let r = interpret_with_stdout(code).unwrap();
+      let shown = code
+        .rsplit("; ")
+        .next()
+        .unwrap()
+        .replace("3 c", "3*c")
+        .replace("2 pp c", "2*pp*c");
+      assert_eq!(r.result, shown, "{code}");
+      assert!(r.warnings.is_empty(), "{code}");
+    }
+    assert_eq!(
+      interpret("FindMinimum[{x + 2 y, x + y == 1, x >= 0, y >= 0}, {x, y}]")
+        .unwrap(),
+      "{1., {x -> 1., y -> 0.}}"
+    );
+    assert_eq!(
+      interpret("Attributes[FindArgMax]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+
+  #[test]
+  fn nonnumeric_start_reports_nrnum_thrice() {
+    clear_state();
+    let r = interpret_with_stdout("FindMaximum[Sin[x] q, {x, 1}]").unwrap();
+    assert_eq!(r.result, "FindMaximum[Sin[x]*q, {x, 1}]");
+    let nrnum = "FindMaximum::nrnum: The function value -0.841471 q is not a real number at {x} = {1.}.";
+    assert_eq!(
+      r.warnings,
+      vec![
+        nrnum,
+        nrnum,
+        nrnum,
+        "General::stop: Further output of FindMaximum::nrnum will be suppressed during this calculation."
+      ]
+    );
+  }
+}

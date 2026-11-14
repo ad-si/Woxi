@@ -739,6 +739,10 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     // FindRoot holds its iterator `{var, x0}` so the variable name doesn't
     // get substituted by an OwnValue before the iteration starts.
     | "FindRoot"
+    // The FindMinimum family holds its arguments too; they are evaluated
+    // on entry, and an unevaluated call shows them as written.
+    | "FindMinimum" | "FindMaximum" | "FindMinValue" | "FindMaxValue"
+    | "FindArgMin" | "FindArgMax"
     // MaxMemoryUsed[expr] measures the evaluation of its held argument.
     | "MaxMemoryUsed" => A::HoldAll | A::Protected,
 

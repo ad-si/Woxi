@@ -3514,6 +3514,15 @@ fn evaluate_expr_to_expr_uncached(
           if name == "NIntegrate" {
             return Ok(result);
           }
+          // A search that stays unevaluated shows its arguments as written
+          // (`FindMinimum[{…, Thread[vars >= 0]}, vars]`), not as evaluated.
+          if matches!(&result, Expr::FunctionCall { name: h, .. } if h == name)
+          {
+            return Ok(Expr::FunctionCall {
+              name: name.clone(),
+              args: args.clone(),
+            });
+          }
           let names = local_iterator_names(name, args);
           return Ok(crate::functions::string_ast::map_expr_tree(
             &result,
