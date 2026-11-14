@@ -7426,7 +7426,112 @@ pub(crate) fn layout_grid_picture(expr: &Expr) -> Option<(String, f64, f64)> {
   Some((svg, dims.nat_w, dims.nat_h))
 }
 
+/// `expr` with every `StringForm` whose slots hold a matrix (`MatrixForm`,
+/// `TableForm`, `Grid`) rewritten as the `Row` of its literal runs and
+/// values — `None` when there is none. Filling the template as one string
+/// would flatten the matrix into lines of text; as a `Row` it is laid out
+/// as the parenthesized grid the front end typesets.
+fn string_form_grids_as_rows(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "StringForm"
+        && args.len() > 1
+        && args[1..].iter().any(expr_holds_grid) =>
+    {
+      let Expr::String(template) = &args[0] else {
+        return None;
+      };
+      let parts =
+        crate::functions::string_ast::string_form_parts(template, &args[1..]);
+      let parts = parts
+        .iter()
+        .map(|p| string_form_grids_as_rows(p).unwrap_or_else(|| p.clone()))
+        .collect();
+      Some(call("Row", vec![Expr::List(parts)]))
+    }
+    Expr::FunctionCall { name, args } => {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(string_form_grids_as_rows).collect();
+      rewritten.iter().any(Option::is_some).then(|| {
+        let args = rewritten
+          .into_iter()
+          .zip(args.iter())
+          .map(|(r, a)| r.unwrap_or_else(|| a.clone()))
+          .collect();
+        call(name, args)
+      })
+    }
+    Expr::List(items) => {
+      let rewritten: Vec<Option<Expr>> =
+        items.iter().map(string_form_grids_as_rows).collect();
+      rewritten.iter().any(Option::is_some).then(|| {
+        Expr::List(
+          rewritten
+            .into_iter()
+            .zip(items.iter())
+            .map(|(r, a)| r.unwrap_or_else(|| a.clone()))
+            .collect(),
+        )
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Whether `expr` is or holds a grid picture: a `Grid`, or a
+/// `MatrixForm`/`TableForm` layout.
+fn expr_holds_grid(expr: &Expr) -> bool {
+  if crate::evaluator::is_table_form_layout(expr) {
+    return true;
+  }
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Grid" || args.iter().any(expr_holds_grid)
+    }
+    Expr::List(items) => items.iter().any(expr_holds_grid),
+    _ => false,
+  }
+}
+
+/// A picture of natural size `w`×`h` padded so that, drawn centered on a
+/// `Text` anchor, it sits where `Text[…, pos, {ox, oy}]` places it: the
+/// point `{ox, oy}` of the label's box (each from -1 to 1, `{-1, 0}` the
+/// middle of its left edge) on the anchor.
+fn align_inset_picture(
+  svg: String,
+  w: f64,
+  h: f64,
+  offset: (f64, f64),
+) -> (String, f64, f64) {
+  let (ox, oy) = offset;
+  if ox == 0.0 && oy == 0.0 {
+    return (svg, w, h);
+  }
+  // Pad the side the anchor moves away from by the shift's full width, so
+  // the padded picture's center falls on the requested point of the label.
+  let (pad_x, pad_y) = (ox.abs() * w, oy.abs() * h);
+  let left = if ox < 0.0 { pad_x } else { 0.0 };
+  // Screen y runs down: a positive `oy` anchors the top part of the label,
+  // so the padding goes above it.
+  let top = if oy > 0.0 { pad_y } else { 0.0 };
+  let (pw, ph) = (w + pad_x, h + pad_y);
+  let padded = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw:.2}\" \
+     height=\"{ph:.2}\" viewBox=\"0 0 {pw:.2} {ph:.2}\">\
+     <g transform=\"translate({left:.2},{top:.2})\">{svg}</g></svg>"
+  );
+  (padded, pw, ph)
+}
+
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
+  // A `StringForm` label with a matrix among its values is typeset as the
+  // `Row` of its parts, so the matrix keeps its rows (see
+  // `string_form_grids_as_rows`).
+  if let Some(label) = args.first().and_then(string_form_grids_as_rows) {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = label;
+    return parse_text(&rewritten, style, prims);
+  }
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
   //
   // `Invisible[…]` paints nothing — a Demonstration wraps one item's label
@@ -7552,11 +7657,17 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         ],
       )
     };
+  let picture_offset = match args.get(2) {
+    None => Some((0.0, 0.0)),
+    Some(o) if args.len() == 3 => text_offset(o),
+    Some(_) => None,
+  };
   if frame_opts.is_empty()
-    && args.len() == 2
+    && let Some(offset) = picture_offset
     && let Some((svg, w, h)) = layout_grid_picture(&colored_body)
-    && let Some((x, y, scaled)) = expr_to_anchor(&args[1])
+    && let Some((x, y, scaled)) = args.get(1).and_then(expr_to_anchor)
   {
+    let (svg, w, h) = align_inset_picture(svg, w, h, offset);
     prims.push(Primitive::InsetGraphic {
       svg,
       x,
@@ -30071,7 +30182,7 @@ pub(crate) fn style_pushed_into_layout(
       || is_span_marker(e)
       || matches!(e, Expr::Identifier(n) if n == "Null")
       || (crate::evaluator::lays_out_a_graphic(e)
-        && !crate::evaluator::is_table_form_layout(e))
+        && !crate::evaluator::styled_table_core(e))
     {
       return e.clone();
     }
