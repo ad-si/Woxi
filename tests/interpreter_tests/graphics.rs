@@ -34999,6 +34999,43 @@ mod manipulate {
     }
   }
 
+  // A `Locator[Dynamic[p, cb]]` inside a `Dynamic[Graphics[…]]` display
+  // element placed among the controls (a 2D "controller" picture) drags the
+  // hidden `ControlType -> None` point, so the point becomes a 2D control
+  // carrying the Dynamic's write-back callback.
+  #[test]
+  fn spec_display_element_locator_promotes_hidden_point() {
+    let expr = interpret_to_expr(
+      "Manipulate[p + n, {{p, {1, 2}}, {0, 0}, {5, 4}, ControlType -> None}, \
+       Dynamic[Graphics[{Locator[Dynamic[p, (p = Round[#]) &]]}, \
+       PlotRange -> {{0, 5}, {0, 4}}]], {n, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match spec.controls.iter().find(|c| c.name() == "p") {
+      Some(ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        write_callback,
+        ..
+      }) => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 5.0, 0.0, 4.0));
+        assert_eq!((*x_initial, *y_initial), (1.0, 2.0));
+        assert!(
+          write_callback
+            .as_deref()
+            .is_some_and(|cb| cb.contains("Round")),
+          "got {write_callback:?}"
+        );
+      }
+      other => panic!("expected Slider2D for p, got {other:?}"),
+    }
+  }
+
   // A hidden point driven by an in-body `LocatorPane[Dynamic[p, cb], …]` is
   // promoted to a 2D control; corner bounds referencing another control
   // (`{-n, -n}`, `{n, 0}`) resolve against that control's initial value.
@@ -36793,6 +36830,52 @@ mod manipulate {
   /// must turn a click into a selection list. The write-back used to
   /// `Append` to the scalar, leaving `Append[0, 1]` behind so a body
   /// testing `MemberQ[v, 1]` never saw the tick.
+  /// A number-formatting wrapper around an exact fraction in a Dynamic
+  /// control-area grid shows the fraction, not its stacked 2-D `ToString`
+  /// layout run together on one line (`9 -- 10`).
+  #[test]
+  fn spec_display_number_form_of_fraction_shows_the_fraction() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn texts(node: &DisplayNode, out: &mut Vec<String>) {
+      match node {
+        DisplayNode::Text { runs } => {
+          out.push(runs.iter().map(|r| r.text.as_str()).collect())
+        }
+        DisplayNode::Static { text, .. } => out.push(text.clone()),
+        DisplayNode::Panel(child) => texts(child, out),
+        DisplayNode::Grid(rows) => {
+          for c in rows.iter().flatten() {
+            texts(c, out);
+          }
+        }
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            texts(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    let grid = "Grid[{{AccountingForm[1 - x/10, {8, 7}], NumberForm[3/4, 2], \
+                AccountingForm[0.25, {4, 2}]}}, Dividers -> All]";
+    // A bare grid, and one sized in a `Pane` (drawn as typeset text runs).
+    for display in [grid.to_string(), format!("Pane[{grid}, {{300, 40}}]")] {
+      let expr = interpret_to_expr(&format!(
+        "Manipulate[x, {{x, 1, 2}}, Dynamic[{display}]]"
+      ))
+      .unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("manipulate");
+      assert_eq!(spec.displays.len(), 1);
+      let bindings = manipulate_initial_bindings(&spec);
+      let node = woxi::with_scoped_globals(&bindings, || {
+        build_manipulate_display(&spec.displays[0], &bindings)
+      });
+      let mut found = Vec::new();
+      texts(&node, &mut found);
+      assert_eq!(found, ["9/10", "3/4", "0.25"], "{display}: {node:?}");
+    }
+  }
+
   #[test]
   fn spec_checkbox_bar_click_on_non_list_value_starts_a_list() {
     use woxi::functions::graphics::{DisplayNode, build_manipulate_display};

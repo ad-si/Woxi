@@ -37,3 +37,15 @@ $ wo 'Log[E^(2 + 3 I)]'
 $ wo 'Log[E^(5 I)]'
 5*I - (2*I)*Pi
 ```
+
+Raising the base to `Log[b, x]` undoes the logarithm:
+
+```scrut
+$ wo '10^Log[10, 300]'
+300
+```
+
+```scrut
+$ wo '2^Log[2, x]'
+x
+```
