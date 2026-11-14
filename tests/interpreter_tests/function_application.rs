@@ -4479,7 +4479,7 @@ mod operator_form_subject_count {
     ] {
       clear_state();
       let r = interpret_with_stdout(code).unwrap();
-      assert_eq!(r.result, code.replace(", ", ", "), "{code}");
+      assert_eq!(r.result, code, "{code}");
       assert_eq!(r.warnings, vec![message.to_string()], "{code}");
     }
   }
