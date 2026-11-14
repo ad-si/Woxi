@@ -81,6 +81,22 @@ mod chemical_data_tests {
     );
   }
 
+  // Amino acids such as phenylalanine are part of the bundled table.
+  #[test]
+  fn phenylalanine_is_known() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"{ChemicalData["Phenylalanine", "Name"],
+           ChemicalData["Phenylalanine", "ElementTally"],
+           Head /@ {ChemicalData["Phenylalanine", "StructureDiagram"],
+             ChemicalData["Phenylalanine", "MoleculePlot"]}}"#
+      )
+      .unwrap(),
+      "{phenylalanine, {{C, 9}, {H, 11}, {N, 1}, {O, 2}}, {Graphics, Graphics3D}}"
+    );
+  }
+
   #[test]
   fn unknown_compound_stays_unevaluated() {
     clear_state();
