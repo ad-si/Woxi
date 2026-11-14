@@ -56456,8 +56456,9 @@ mod styled_math_typesetting {
   #[test]
   fn nested_style_runs_keep_the_line_baseline() {
     // resvg resets the baseline of a doubly nested tspan, so the inner
-    // italic run carries the text's central baseline itself.
-    let svg = export_svg("Style[2 Style[m, Italic] + 1, 18]");
+    // italic run carries the text's central baseline itself. (The outer
+    // size is set on the `<text>`; the color is the span the run nests in.)
+    let svg = export_svg("Style[Style[2 Style[m, Italic] + 1, Red], 18]");
     assert!(
       svg.contains(
         "<tspan dominant-baseline=\"central\" font-style=\"italic\">m</tspan>"
