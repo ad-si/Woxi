@@ -5993,6 +5993,10 @@ struct StyleState3D {
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
+  /// The panel `Background -> color` paints behind the `Text` labels, as
+  /// a `Style[Text[…], Background -> color]` wrapper or the label's own
+  /// option gives it. `None` draws the label straight on the scene.
+  text_background: Option<(u8, u8, u8)>,
 }
 
 impl Default for StyleState3D {
@@ -6018,6 +6022,7 @@ impl Default for StyleState3D {
       vertex_colors: None,
       arrowhead: None,
       font_size: None,
+      text_background: None,
     }
   }
 }
@@ -6126,6 +6131,8 @@ enum Primitive3D {
   /// labeled 3D schematic readable from any view.
   Text3D {
     /// The label as SVG `<text>` content (already typeset and escaped).
+    /// A stacked fraction is the plain `num\n--\nden` text instead, which
+    /// the renderer typesets (and escapes) itself.
     label: String,
     pos: Point3D,
     /// Which point of the label's own box sits at `pos`, from -1
@@ -7942,6 +7949,33 @@ fn parse_text3d_offset(spec: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// The `Background -> color` a `Text` option or `Style` directive gives a
+/// 3D label: `Some(Some(rgb))` for a color, `Some(None)` for
+/// `Background -> None`, and `None` when `opt` is not a `Background` rule.
+fn text3d_background_option(opt: &Expr) -> Option<Option<(u8, u8, u8)>> {
+  let value = match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background") => {
+      replacement.as_ref()
+    }
+    _ => return None,
+  };
+  let rgb = crate::functions::graphics::parse_color(value).map(|c| {
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  });
+  Some(rgb)
+}
+
 /// Typesets `label_expr` (a `Text`/`Inset` label, e.g. a plain string or
 /// `Style[…]`) and pushes a `Text3D` primitive for it at `pos`, if it
 /// renders to non-empty text.
@@ -7976,6 +8010,17 @@ fn push_text3d_label(
   let (bold, italic) = styled
     .as_ref()
     .map_or((false, false), |s| (s.bold, s.italic));
+  // A number that typesets as a stacked fraction (`1/30`) keeps the
+  // flattened `num\n--\nden` form the 2D labels draw it from, so the
+  // renderer stacks it the same way instead of writing `1/30` on one line.
+  let fraction = {
+    let text = crate::functions::graphics::graphics_text_content(label_expr);
+    let chars =
+      crate::functions::graphics::fraction_label_parts(&text).map(|f| {
+        f.num.chars().count().max(f.den.chars().count()) + f.negative as usize
+      });
+    chars.map(|chars| (text, chars))
+  };
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
       // A stacked label keeps its lines apart by newlines; the renderer
@@ -7990,6 +8035,7 @@ fn push_text3d_label(
     ),
     None => (String::new(), 0, 12.0, None),
   };
+  let (label, width_chars) = fraction.unwrap_or((label, width_chars));
   if label.is_empty() {
     return;
   }
@@ -8425,7 +8471,15 @@ fn collect_3d_primitives(
               .get(2)
               .and_then(parse_text3d_offset)
               .unwrap_or((0.0, 0.0));
-            push_text3d_label(&args[0], pos, offset, style, prims);
+            // `Text[expr, pos, …, Background -> color]`: the label's own
+            // option wins over a background its `Style` wrapper gives.
+            let mut text_style = style.clone();
+            if let Some(bg) =
+              args[2..].iter().find_map(text3d_background_option)
+            {
+              text_style.text_background = bg;
+            }
+            push_text3d_label(&args[0], pos, offset, &text_style, prims);
           }
         }
         // `Inset[obj, {x, y, z}]` places `obj` at a point of the scene.
@@ -8841,6 +8895,10 @@ fn collect_3d_primitives(
           for directive in &args[1..] {
             let evaluated =
               evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
+            if let Some(bg) = text3d_background_option(&evaluated) {
+              style.text_background = bg;
+              continue;
+            }
             match try_eval_to_f64(&evaluated) {
               Some(size) if size > 0.0 => style.font_size = Some(size),
               _ => {
@@ -11775,6 +11833,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vertex_colors: None,
             arrowhead: None,
             font_size: None,
+            text_background: None,
           },
         ),
       };
@@ -12834,23 +12893,46 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // per unit across, half its height per unit up (and the vertical
         // sign flips, SVG counting y downwards).
         let text_w = *width_chars as f64 * font_size * 0.6;
-        let x = sx - offset.0 * text_w / 2.0;
-        let y = sy + offset.1 * font_size / 2.0;
-        let lines = crate::functions::graphics::split_markup_lines(label);
-        let line_height = font_size * 1.2;
-        let mut body = String::new();
-        if lines.len() == 1 {
-          body.push_str(&lines[0]);
+        let fraction = crate::functions::graphics::fraction_label_parts(label);
+        let text_h = if fraction.is_some() {
+          // A stacked fraction is about two lines tall.
+          font_size * 2.4
         } else {
-          // The block of lines is centered on the anchor point.
-          let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
-          for (i, line) in lines.iter().enumerate() {
-            let dy = if i == 0 { first_dy } else { line_height };
-            let line = crate::functions::graphics::tspan_line(line);
-            body.push_str(&format!(
-              "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
-            ));
-          }
+          font_size * 1.2 * label.split('\n').count() as f64
+        };
+        let x = sx - offset.0 * text_w / 2.0;
+        let y = sy + offset.1 * text_h / 2.0;
+        let mut style_attrs = String::new();
+        if *bold {
+          style_attrs.push_str(" font-weight=\"bold\"");
+        }
+        if *italic {
+          style_attrs.push_str(" font-style=\"italic\"");
+        }
+        // `Background -> color` paints a panel behind the label, hugging
+        // its glyphs, which keeps it legible over the edges it labels.
+        if let Some((r, g, b)) = style.text_background {
+          let panel_w = match fraction {
+            Some(f) => {
+              2.0
+                * crate::functions::graphics::label_fraction_bar_half(
+                  f.num, f.den, *font_size,
+                )
+                + if f.negative {
+                  crate::functions::graphics::label_fraction_minus_width(
+                    *font_size,
+                  )
+                } else {
+                  0.0
+                }
+            }
+            None => text_w,
+          };
+          svg.push_str(&format!(
+            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{panel_w:.1}\" height=\"{text_h:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
+            x - panel_w / 2.0,
+            y - text_h / 2.0,
+          ));
         }
         // A `Framed` label sits on its panel, laid out as a 2-D
         // `Text[Framed[…]]` one is: the panel hugs the glyphs' advance
@@ -12861,7 +12943,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             crate::functions::plot_padding::text_width(label, *font_size)
           };
-          let panel_h = lines.len() as f64 * font_size;
+          let panel_h = crate::functions::graphics::split_markup_lines(label)
+            .len() as f64
+            * font_size;
           let (fill, fill_opacity) = match panel.background {
             Some(bg) if bg.a < 1.0 => {
               (bg.to_svg_rgb(), format!(" fill-opacity=\"{}\"", bg.a))
@@ -12879,12 +12963,42 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             y - panel_h / 2.0,
           ));
         }
-        let mut style_attrs = String::new();
-        if *bold {
-          style_attrs.push_str(" font-weight=\"bold\"");
+        if let Some(f) = fraction {
+          let text_at = |tx: f64, ty: f64, anchor: &str, markup: &str| {
+            format!(
+              "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
+               dominant-baseline=\"middle\" font-family=\"sans-serif\" \
+               font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{markup}</text>"
+            )
+          };
+          svg.push_str(
+            &crate::functions::graphics::label_stacked_fraction_svg(
+              x,
+              y,
+              f,
+              *font_size,
+              &fill_color,
+              &text_at,
+            ),
+          );
+          svg.push('\n');
+          continue;
         }
-        if *italic {
-          style_attrs.push_str(" font-style=\"italic\"");
+        let lines = crate::functions::graphics::split_markup_lines(label);
+        let line_height = font_size * 1.2;
+        let mut body = String::new();
+        if lines.len() == 1 {
+          body.push_str(&lines[0]);
+        } else {
+          // The block of lines is centered on the anchor point.
+          let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
+          for (i, line) in lines.iter().enumerate() {
+            let dy = if i == 0 { first_dy } else { line_height };
+            let line = crate::functions::graphics::tspan_line(line);
+            body.push_str(&format!(
+              "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+            ));
+          }
         }
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \

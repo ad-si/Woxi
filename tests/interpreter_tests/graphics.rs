@@ -3650,6 +3650,28 @@ mod graphics {
       assert!(svg.contains(">7<") && svg.contains(">3<"), "{svg}");
     }
 
+    /// Regression: a negative rational label in a picture was drawn as
+    /// the three text lines of its `OutputForm` (`7` over `-(-)` over
+    /// `4`) instead of a minus sign before a stacked fraction.
+    #[test]
+    fn negative_rational_text_label_is_a_signed_stacked_fraction() {
+      let svg = export_svg("Graphics[{Text[-7/4, {0, 0}]}]");
+      assert!(!svg.contains("-(-)"), "OutputForm bar: {svg}");
+      assert!(svg.contains("<line "), "fraction bar: {svg}");
+      assert!(svg.contains(">7<") && svg.contains(">4<"), "{svg}");
+      let minus = svg.find(">\u{2212}<").expect("minus sign");
+      let x_of = |at: usize| -> f64 {
+        let tag = &svg[svg[..at].rfind("<text ").unwrap()..at];
+        let x = tag.split("x=\"").nth(1).unwrap();
+        x[..x.find('"').unwrap()].parse().unwrap()
+      };
+      let seven = svg.find(">7<").unwrap();
+      assert!(
+        x_of(minus) < x_of(seven),
+        "minus before the fraction: {svg}"
+      );
+    }
+
     /// A styled expression without a fraction stays inline text.
     #[test]
     fn styled_power_stays_inline_text() {
