@@ -1597,6 +1597,46 @@ fn is_subject_first_operator(name: &str) -> bool {
   )
 }
 
+/// One-argument operator forms whose application to anything but a single
+/// subject is an `argx` error in wolframscript (verified for zero and two
+/// subjects). Operator forms with their own message (`Lookup::luarg`,
+/// `MaximalBy::argb`, `MapThread::argt`) or none (`ContainsAll`, `SplitBy`)
+/// are not listed.
+fn is_one_subject_operator(name: &str) -> bool {
+  (is_subject_first_operator(name)
+    && !matches!(
+      name,
+      "Lookup"
+        | "MaximalBy"
+        | "MinimalBy"
+        | "SubsetReplace"
+        | "ContainsAll"
+        | "ContainsAny"
+        | "ContainsNone"
+        | "ContainsOnly"
+        | "ContainsExactly"
+        | "SplitBy"
+        | "CountDistinctBy"
+        | "ReplaceList"
+        | "AllSameBy"
+        | "DateSelect"
+    ))
+    || matches!(
+      name,
+      "Map"
+        | "Apply"
+        | "MapIndexed"
+        | "MapApply"
+        | "Scan"
+        | "Comap"
+        | "ComapApply"
+        | "KeyMap"
+        | "AssociationMap"
+        | "KeyValueMap"
+        | "IntervalMemberQ"
+    )
+}
+
 /// `DateObject[…]["Granularity"]`, and the clock components of a
 /// `TimeObject[{h, m, s}, …]`. `None` for anything the caller should resolve
 /// through `DateValue` instead.
@@ -2054,6 +2094,27 @@ pub fn apply_curried_call(
   {
     let spliced = splice_sequence_args(args);
     return apply_curried_call(func, &spliced);
+  }
+  // An operator form takes exactly one subject: `Map[f][]` and
+  // `Select[p][a, b]` report Map::argx / Select::argx and stay unevaluated
+  // (flattening them into `Map[f, a, b]` would read `b` as a level spec).
+  if let Expr::FunctionCall {
+    name,
+    args: func_args,
+  } = func
+    && func_args.len() == 1
+    && args.len() != 1
+    && is_one_subject_operator(name)
+  {
+    crate::emit_message(&format!(
+      "{name}::argx: {} called with {} arguments; 1 argument is expected.",
+      crate::syntax::format_expr(func, crate::syntax::ExprForm::Output),
+      args.len()
+    ));
+    return Ok(Expr::CurriedCall {
+      func: Box::new(func.clone()),
+      args: args.to_vec(),
+    });
   }
   if let Some(result) = try_apply_curry(func, args) {
     return result;
@@ -3764,7 +3825,8 @@ pub fn apply_curried_call(
           func: Box::new(func.clone()),
           args: args.to_vec(),
         })
-      } else if matches!(
+      } else if !args.is_empty()
+        && matches!(
         name.as_str(),
         "Derivative"
           | "Apply"
@@ -4470,6 +4532,11 @@ fn apply_transformation_function(
     });
   }
   let point = &args[0];
+  if let Expr::FunctionCall { name, args: prim } = point
+    && let Some(mapped) = transform_geometric_region(matrix, name, prim)?
+  {
+    return Ok(mapped);
+  }
   let Expr::List(coords) = point else {
     return Ok(Expr::CurriedCall {
       func: Box::new(call1("TransformationFunction", matrix.clone())),
@@ -4561,6 +4628,145 @@ fn apply_transformation_function(
   }
 
   Ok(Expr::List(result.into()))
+}
+
+/// The uniform scale factor `s` of a numeric affine matrix whose linear
+/// part is `s` times an orthogonal matrix (a rotation, reflection or
+/// translation, possibly combined with a uniform scaling), so that a round
+/// primitive stays round under it. `None` for a shearing, non-uniform or
+/// projective transform, or a symbolic matrix.
+fn similarity_scale(matrix: &Expr) -> Option<f64> {
+  let Expr::List(rows) = matrix else {
+    return None;
+  };
+  let n = rows.len().checked_sub(1).filter(|&n| n > 0)?;
+  let mut m = vec![vec![0.0; n + 1]; n + 1];
+  for (i, row) in rows.iter().enumerate() {
+    let Expr::List(cells) = row else {
+      return None;
+    };
+    if cells.len() != n + 1 {
+      return None;
+    }
+    for (j, c) in cells.iter().enumerate() {
+      m[i][j] = crate::functions::math_ast::try_eval_to_f64(c)?;
+    }
+  }
+  // An affine (not projective) last row: {0, …, 0, 1}.
+  let tol = 1e-9;
+  if (0..n).any(|j| m[n][j].abs() > tol) || (m[n][n] - 1.0).abs() > tol {
+    return None;
+  }
+  // Columns of the linear part must be mutually orthogonal with equal norms.
+  let dot = |a: usize, b: usize| (0..n).map(|k| m[k][a] * m[k][b]).sum::<f64>();
+  let s2 = dot(0, 0);
+  if s2 <= tol {
+    return None;
+  }
+  for a in 0..n {
+    for b in 0..n {
+      let expected = if a == b { s2 } else { 0.0 };
+      if (dot(a, b) - expected).abs() > tol * s2.max(1.0) {
+        return None;
+      }
+    }
+  }
+  Some(s2.sqrt())
+}
+
+/// `TransformationFunction[m][region]` for a geometric region primitive:
+/// the same primitive with its points mapped through the transform, as
+/// Wolfram does (e.g. `RotationTransform[θ, axis][Cylinder[{p1, p2}, r]]`
+/// is the cylinder between the rotated end points). Primitives defined by
+/// points only (`Point`, `Line`, `Polygon`, `Triangle`, `Simplex`,
+/// `Tetrahedron`) map under any affine transform; round ones (`Sphere`,
+/// `Ball`, `Disk`, `Circle`, `Cylinder`, `Cone`, `CapsuleShape`) only under
+/// a similarity, which scales their radius uniformly. `Ok(None)` leaves
+/// anything else applied unevaluated.
+fn transform_geometric_region(
+  matrix: &Expr,
+  name: &str,
+  prim: &[Expr],
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::List(rows) = matrix else {
+    return Ok(None);
+  };
+  let dim = rows.len().saturating_sub(1);
+  let is_point = |e: &Expr| matches!(e, Expr::List(v) if v.len() == dim && !v.iter().any(|c| matches!(c, Expr::List(_))));
+  let is_point_list = |e: &Expr| matches!(e, Expr::List(v) if !v.is_empty() && v.iter().all(is_point));
+  let map = |e: &Expr| -> Result<Expr, InterpreterError> {
+    apply_transformation_function(matrix, std::slice::from_ref(e))
+  };
+  let rebuild = |args: Vec<Expr>| -> Result<Option<Expr>, InterpreterError> {
+    Ok(Some(evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.into(),
+    })?))
+  };
+  // The exact scale factor: the norm of the linear part's first column.
+  let scale_radius = |r: &Expr, s: f64| -> Result<Expr, InterpreterError> {
+    if (s - 1.0).abs() < 1e-12 {
+      return Ok(r.clone());
+    }
+    let column: Vec<Expr> = rows[..dim]
+      .iter()
+      .filter_map(|row| match row {
+        Expr::List(cells) => cells.first().cloned(),
+        _ => None,
+      })
+      .map(|c| Expr::FunctionCall {
+        name: "Power".to_string(),
+        args: vec![c, Expr::Integer(2)].into(),
+      })
+      .collect();
+    let norm = Expr::FunctionCall {
+      name: "Sqrt".to_string(),
+      args: vec![plus(column)].into(),
+    };
+    evaluate_expr_to_expr(&times(vec![norm, r.clone()]))
+  };
+  match name {
+    "Point" | "Line" | "Polygon" | "Triangle" | "Simplex" | "Tetrahedron"
+      if prim.len() == 1 && (is_point(&prim[0]) || is_point_list(&prim[0])) =>
+    {
+      rebuild(vec![map(&prim[0])?])
+    }
+    "Sphere" | "Ball" | "Disk" | "Circle"
+      if (name == "Disk" || name == "Circle") == (dim == 2)
+        && (dim == 2 || dim == 3)
+        && prim.len() <= 2 =>
+    {
+      let center = match prim.first() {
+        Some(c) if is_point(c) => c.clone(),
+        Some(_) => return Ok(None),
+        None => Expr::List(vec![Expr::Integer(0); dim].into()),
+      };
+      let radius = prim.get(1).cloned().unwrap_or(Expr::Integer(1));
+      if matches!(radius, Expr::List(_)) {
+        return Ok(None);
+      }
+      let Some(s) = similarity_scale(matrix) else {
+        return Ok(None);
+      };
+      rebuild(vec![map(&center)?, scale_radius(&radius, s)?])
+    }
+    "Cylinder" | "Cone" | "CapsuleShape"
+      if dim == 3
+        && (1..=2).contains(&prim.len())
+        && matches!(&prim[0], Expr::List(v) if v.len() == 2)
+        && is_point_list(&prim[0]) =>
+    {
+      let radius = prim.get(1).cloned().unwrap_or(Expr::Integer(1));
+      if matches!(radius, Expr::List(_)) {
+        return Ok(None);
+      }
+      let Some(s) = similarity_scale(matrix) else {
+        return Ok(None);
+      };
+      rebuild(vec![map(&prim[0])?, scale_radius(&radius, s)?])
+    }
+    _ => Ok(None),
+  }
 }
 
 /// A `NearestFunction` applied to a target it cannot measure (a symbolic

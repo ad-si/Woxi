@@ -14191,6 +14191,37 @@ mod recurrence_table {
 mod inverse_laplace_transform {
   use super::*;
 
+  /// Machine-precision complex poles (as a product of `1./(s - pole)`
+  /// factors) used to stay unevaluated; they invert numerically now.
+  #[test]
+  fn machine_complex_pole_product() {
+    let f = "InverseLaplaceTransform[1.*(1./(s - -1. - I*1.))*\
+      (1./(s - -1. - I*(-1.)))*(1./(s - -2. - I*0.)), s, t]";
+    assert_eq!(
+      interpret(&format!("FreeQ[{f}, InverseLaplaceTransform]")).unwrap(),
+      "True"
+    );
+    // (E^(-2 t) - E^(-t) Cos[t] + E^(-t) Sin[t])/2 at t = 1.3
+    assert_eq!(
+      interpret(&format!("Round[10^8 Re[{f} /. t -> 1.3]]")).unwrap(),
+      "13198594"
+    );
+  }
+
+  #[test]
+  fn machine_poles_and_zeros_with_step_and_sine_inputs() {
+    let f = "Times @@ (1./(s - {-1 + I, -1 - I, -2, -0.74 + 0.3 I, \
+      -0.74 - 0.3 I})) * Times @@ (s - {0.41 + 0.5 I, 0.41 - 0.5 I, -0.16})";
+    assert_eq!(
+      interpret(&format!(
+        "Table[Round[10^8 Re[InverseLaplaceTransform[in {f}, s, t] \
+          /. t -> 1.3]], {{in, {{1., 1./s, 1./(s^2 + 1.)}}}}]"
+      ))
+      .unwrap(),
+      "{-9439865, 906229, 3030957}"
+    );
+  }
+
   #[test]
   fn shifted_inverse_square_root() {
     assert_eq!(
@@ -18498,6 +18529,87 @@ mod integrate_piecewise_definite {
       )
       .unwrap(),
       "5/6"
+    );
+  }
+
+  // A non-zero default holds on the complement of the cases; subtracting the
+  // discontinuous piecewise antiderivative gave 2 and 1/2 here.
+  #[test]
+  fn nonzero_default() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{4 x, x < 1/2}}, 4 - 4 x], {x, 0, 1}]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{0, x < 1/2}}, x], {x, 0, 1}]").unwrap(),
+      "3/8"
+    );
+    assert_eq!(
+      interpret("Integrate[x Piecewise[{{4 x, x < 1/2}}, 4 - 4 x], {x, 0, 1}]")
+        .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, x < 0}}, E^-x], {x, -1, Infinity}]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  // The first case whose condition holds wins, so overlapping conditions
+  // must not add up.
+  #[test]
+  fn overlapping_conditions() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, x < 1}, {2, x < 2}}], {x, 0, 3}]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn if_integrand() {
+    assert_eq!(
+      interpret("Integrate[If[x < 1/2, 4 x, 4 - 4 x], {x, 0, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[If[x > 0, x, -x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[If[x < 1/2, 4 x, 4 - 4 x], {x, 1, 0}]").unwrap(),
+      "-1"
+    );
+    // A pure function with an `If` body, as `Derivative` gives it.
+    assert_eq!(
+      interpret(
+        "f = If[# < 1/2, 2 #^2, 4 # - 2 #^2 - 1] &; \
+         Integrate[x f'[x], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn products_of_switches() {
+    assert_eq!(
+      interpret(
+        "Integrate[If[x < 1/2, 1, 2] Piecewise[{{3, x < 1/4}}, 5], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "7"
+    );
+    // Mean of the larger of two draws from the tent density.
+    assert_eq!(
+      interpret(
+        "F = If[x < 1/2, 2 x^2, 4 x - 2 x^2 - 1]; \
+         Integrate[2 x F If[x < 1/2, 4 x, 4 - 4 x], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "37/60"
     );
   }
 }
@@ -23757,6 +23869,43 @@ mod ndsolve_complex_periodic_pde {
     );
   }
 
+  /// A complex Ginzburg–Landau equation started from the uniform state
+  /// settles on a plane wave `E^(-2 I t)` of modulus 1. Its phase turns
+  /// about 2 radians per default output row spacing, so the stored time
+  /// rows must follow the rotation: otherwise `Abs` of the interpolated
+  /// solution dips between rows.
+  #[test]
+  fn rotating_phase_keeps_modulus_between_time_rows() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == 1, u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 60}, {x, -10, 10}]; \
+         Min[Table[Abs[u[t, 3.]], {t, 0, 60, 0.37}] /. First[s]] > 0.999"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// `Abs` of a complex PDE solution, substituted into a plot body with
+  /// `Evaluate`, samples to a density plot (the solution's tables are
+  /// carried through every sample point unchanged).
+  #[test]
+  fn density_plot_of_complex_pde_solution() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == E^(-x^2), u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 20}, {x, -10, 10}]; \
+         Head[DensityPlot[Evaluate[Abs[u[t, x]] /. s], {t, 0, 20}, {x, -10, 10}, \
+           PlotPoints -> 10, MaxRecursion -> 1]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
   /// The forcing term and initial profile may be complex expressions of
   /// `x`, and the result is complex (not just its absolute value).
   #[test]
@@ -25195,6 +25344,26 @@ mod nintegrate_limits_numeric_after_n {
 
 mod ndsolve_stiff_system {
   use super::*;
+
+  // Regression: a radical intermediate consumed at a rate ~10^7 times its
+  // formation made every bisection of the fixed RK4 step equally unstable.
+  // The refinement gave up as if the right-hand side jumped and kept the
+  // diverged step, so the solution grew to ~10^8 instead of the slow
+  // manifold y ≈ 10^-10 x (x + y + z). The leg now goes to the stiff method.
+  #[test]
+  fn stalled_unstable_refinement_goes_to_the_stiff_method() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -10^3 x[t] y[t]/(x[t] + y[t] + z[t]), \
+         y'[t] == 10^-3 x[t] - 10^7 y[t]/(x[t] + y[t] + z[t]), \
+         z'[t] == 10^7 y[t]/(x[t] + y[t] + z[t]), \
+         x[0] == 1, y[0] == 0, z[0] == 0}, {x, y, z}, {t, 0, 100}]; \
+         Round[{10^5 x[100], 10^12 y[100], 10^5 z[100]} /. First[s]]"
+      )
+      .unwrap(),
+      "{99999, 110, 10000}"
+    );
+  }
 
   // A right-hand side with I in it but real values compiles with complex
   // arithmetic, its tangents and reciprocal functions included, instead of
@@ -28149,4 +28318,175 @@ mod integrate_rational_roots {
         .starts_with("RootSum[")
     );
   }
+}
+
+// D[f] is f (no variables, derivative of order zero), and a variable D
+// rejects stops the whole chain unevaluated instead of differentiating its
+// own unevaluated form against the rest (wolframscript-verified).
+mod d_variable_list_edges {
+  use super::*;
+
+  #[test]
+  fn no_variables() {
+    assert_eq!(interpret("D[a]").unwrap(), "a");
+    assert_eq!(interpret("D[{a, b}]").unwrap(), "{a, b}");
+    assert_eq!(interpret("D[f, NonConstants -> {x}]").unwrap(), "f");
+    clear_state();
+    let r = interpret_with_stdout("D[]").unwrap();
+    assert_eq!(r.result, "D[]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "D::argm: D called with 0 arguments; 1 or more arguments are expected."
+      ]
+    );
+  }
+
+  #[test]
+  fn invalid_variable_stops_the_chain() {
+    clear_state();
+    let r = interpret_with_stdout("D[x^2, 2, x]").unwrap();
+    assert_eq!(r.result, "D[x^2, 2, x]");
+    assert_eq!(r.warnings, vec!["D::ivar: 2 is not a valid variable."]);
+    clear_state();
+    let r = interpret_with_stdout("D[m a'[] a'[t], D[a]^2, a'[t]]").unwrap();
+    assert_eq!(
+      r.result,
+      "D[m*Derivative[1][a][]*Derivative[1][a][t], a^2, Derivative[1][a][t]]"
+    );
+  }
+}
+
+// A constrained FindMinimum whose objective carries a free parameter stays
+// unevaluated with its arguments as written; it used to search over the
+// parameter too (8 s and a wrong answer, found by the interpret fuzzer). The
+// FindMinimum family is HoldAll, and a non-numeric starting value reports
+// nrnum three times before General::stop, with FindMaximum showing the
+// negated objective. wolframscript-verified.
+mod find_minimum_free_parameters {
+  use super::*;
+
+  #[test]
+  fn constrained_free_parameter_stays_unevaluated() {
+    for code in [
+      "FindMinimum[{3*x + 2*p*y, x + y == 1, 1 + 1 > 0}, {x, y}]",
+      "vars = {c[1, 1], c[1, 2]}; FindMinimum[{3 c[1, 1] + 2 pp c[1, 2], c[1, 1] + c[1, 2] == 1, Thread[vars >= 0]}, vars]",
+    ] {
+      clear_state();
+      let r = interpret_with_stdout(code).unwrap();
+      let shown = code
+        .rsplit("; ")
+        .next()
+        .unwrap()
+        .replace("3 c", "3*c")
+        .replace("2 pp c", "2*pp*c");
+      assert_eq!(r.result, shown, "{code}");
+      assert!(r.warnings.is_empty(), "{code}");
+    }
+    assert_eq!(
+      interpret("FindMinimum[{x + 2 y, x + y == 1, x >= 0, y >= 0}, {x, y}]")
+        .unwrap(),
+      "{1., {x -> 1., y -> 0.}}"
+    );
+    assert_eq!(
+      interpret("Attributes[FindArgMax]").unwrap(),
+      "{HoldAll, Protected}"
+    );
+  }
+
+  #[test]
+  fn nonnumeric_start_reports_nrnum_thrice() {
+    clear_state();
+    let r = interpret_with_stdout("FindMaximum[Sin[x] q, {x, 1}]").unwrap();
+    assert_eq!(r.result, "FindMaximum[Sin[x]*q, {x, 1}]");
+    let nrnum = "FindMaximum::nrnum: The function value -0.841471 q is not a real number at {x} = {1.}.";
+    assert_eq!(
+      r.warnings,
+      vec![
+        nrnum,
+        nrnum,
+        nrnum,
+        "General::stop: Further output of FindMaximum::nrnum will be suppressed during this calculation."
+      ]
+    );
+  }
+}
+
+// Series validates its variable (Series::ivar, twice, as wolframscript
+// evaluates the call twice), expands in a non-symbol variable such as f[x]
+// as an atom, and gives the leading term for a rule spec. All
+// wolframscript-verified; the invalid variable used to produce pages of
+// Derivative[…][Series] terms (found by the interpret fuzzer).
+mod series_variable_forms {
+  use super::*;
+
+  #[test]
+  fn invalid_variable_is_ivar() {
+    clear_state();
+    let r = interpret_with_stdout("Series[Cos[x], {q x, 0, 4}]").unwrap();
+    assert_eq!(r.result, "Series[Cos[x], {q*x, 0, 4}]");
+    let ivar = "Series::ivar: q x is not a valid variable.";
+    assert_eq!(r.warnings, vec![ivar, ivar]);
+    clear_state();
+    let r = interpret_with_stdout("Series[x, {x, 0, 2}, {2 y, 0, 2}]").unwrap();
+    assert_eq!(r.result, "Series[x, {x, 0, 2}, {2*y, 0, 2}]");
+  }
+
+  #[test]
+  fn non_symbol_variables_are_atoms() {
+    for (code, expected) in [
+      (
+        "Series[Sin[f[x]], {f[x], 0, 3}]",
+        "SeriesData[f[x], 0, {1, 0, -1/6}, 1, 4, 1]",
+      ),
+      (
+        "Series[Exp[Sin[x]], {Sin[x], 0, 2}]",
+        "SeriesData[Sin[x], 0, {1, 1, 1/2}, 0, 3, 1]",
+      ),
+      ("Series[Cos[x], {Sin[x], 0, 2}]", "Cos[x]"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn rule_spec_gives_the_leading_term() {
+    for (code, expected) in [
+      ("Series[Sin[y], y -> 0]", "SeriesData[y, 0, {1}, 1, 2, 1]"),
+      ("Series[1/y + 1, y -> 0]", "SeriesData[y, 0, {1}, -1, 0, 1]"),
+      (
+        "Series[1 - Cos[y], y -> 0]",
+        "SeriesData[y, 0, {1/2}, 2, 3, 1]",
+      ),
+      ("Series[Exp[y], y -> 1]", "SeriesData[y, 1, {E}, 0, 1, 1]"),
+      ("Series[Sqrt[y], y -> 0]", "SeriesData[y, 0, {1}, 1, 3, 2]"),
+      ("Series[Log[y], y -> 1]", "SeriesData[y, 1, {1}, 1, 2, 1]"),
+      (
+        "Series[Sin[x[1]], x[1] -> 0]",
+        "SeriesData[x[1], 0, {1}, 1, 2, 1]",
+      ),
+      ("Series[a, y -> 0]", "a"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}
+
+// An NMinimize objective that is symbolic at a probe point can never become
+// a number: NMinimize::nnum comes right away instead of after a whole search
+// (25 s for an interpret-fuzzer input). wolframscript-verified shape.
+#[test]
+fn nminimize_symbolic_objective_reports_nnum_quickly() {
+  clear_state();
+  let start = std::time::Instant::now();
+  let r =
+    interpret_with_stdout("NMinimize[Total[q /@ {1, 2}] + a + b, {a, b}]")
+      .unwrap();
+  assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  assert_eq!(r.result, "NMinimize[a + b + q[1] + q[2], {a, b}]");
+  assert!(r.warnings.iter().any(|w| w.starts_with("NMinimize::nnum")));
+  assert_eq!(
+    interpret("NMinimize[(a - 1)^2 + 1, a]").unwrap(),
+    "{1., {a -> 1.}}"
+  );
 }

@@ -5936,6 +5936,74 @@ mod translation_transform {
 mod transformation_function_apply {
   use super::*;
 
+  // A transformation applied to a geometric region maps the region's
+  // points, keeping the primitive (so it can still be drawn).
+  #[test]
+  fn rotation_of_cylinder_rotates_its_axis() {
+    assert_eq!(
+      interpret(
+        "RotationTransform[Pi/2, {1, 0, 0}][Cylinder[{{0, 0, 0}, {0, 0, 1}}, 2]]"
+      )
+      .unwrap(),
+      "Cylinder[{{0, 0, 0}, {0, -1, 0}}, 2]"
+    );
+  }
+
+  #[test]
+  fn nested_rotations_of_cylinder() {
+    assert_eq!(
+      interpret(
+        "RotationTransform[Pi/2, {0, 0, 1}][RotationTransform[Pi/2, {1, 0, 0}][\
+         Cylinder[{{0, 0, 0}, {0, 0, 1}}]]]"
+      )
+      .unwrap(),
+      "Cylinder[{{0, 0, 0}, {1, 0, 0}}, 1]"
+    );
+  }
+
+  #[test]
+  fn rotation_of_sphere_moves_its_center() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2, {1, 0, 0}][Sphere[{1, 1, 0}]]")
+        .unwrap(),
+      "Sphere[{1, 0, 1}, 1]"
+    );
+  }
+
+  #[test]
+  fn uniform_scaling_scales_radius_exactly() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 2}][Disk[{1, 0}, 1]]").unwrap(),
+      "Disk[{2, 0}, 2]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[{3, 3, 3}][Ball[{1, 0, 0}, r]]").unwrap(),
+      "Ball[{3, 0, 0}, 3*r]"
+    );
+  }
+
+  #[test]
+  fn translation_of_point_primitives() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}][Line[{{0, 0}, {1, 1}}]]")
+        .unwrap(),
+      "Line[{{1, 2}, {2, 3}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[t][Point[{1, 0}]]").unwrap(),
+      "Point[{Cos[t], Sin[t]}]"
+    );
+  }
+
+  // A non-uniform scaling does not keep a disk round, so it stays applied.
+  #[test]
+  fn non_uniform_scaling_of_disk_stays_applied() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 1}][Disk[{1, 0}, 1]]").unwrap(),
+      "TransformationFunction[{{2, 0, 0}, {0, 1, 0}, {0, 0, 1}}][Disk[{1, 0}, 1]]"
+    );
+  }
+
   #[test]
   fn rotation_apply() {
     assert_eq!(
@@ -13065,5 +13133,68 @@ fn exact_complex_eigenvalues_extract_common_radical_content() {
     ("Eigenvalues[{{4,4},{-2,0}}]", "{2 + 2*I, 2 - 2*I}"),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// Fits of empty data (`Table[…, {t, 5, 3, 0.25}]` is `{}`) used to index an
+// empty list and panic (found by the interpret fuzzer); Fit also takes a
+// fourth property argument. All wolframscript-verified.
+mod fit_empty_data_and_properties {
+  use super::*;
+
+  #[test]
+  fn empty_data() {
+    for (code, expected) in [
+      ("FindFit[{}, a x + b, {a, b}, x]", "{a -> 0, b -> 0}"),
+      (
+        "FindFit[{}, a Exp[b x], {{a, 1.5}, {b, 2}}, x]",
+        "{a -> 0, b -> 0}",
+      ),
+      ("Fit[{}, {1, x}, x]", "0"),
+      ("Fit[{}, {1, x}, x, \"BestFitParameters\"]", "0"),
+      (
+        "NonlinearModelFit[{}, a x, {a}, x]",
+        "NonlinearModelFit[{}, a*x, {a}, x]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn properties() {
+    for (code, expected) in [
+      (
+        "Round[Fit[{1, 2, 4}, {1, x}, x, \"BestFitParameters\"], 1/1000]",
+        "{-667/1000, 3/2}",
+      ),
+      ("Fit[{1, 2, 4}, {1, x}, x, \"BasisFunctions\"]", "{1, x}"),
+      (
+        "Round[Fit[{{0, 1}, {1, 3}, {2, 2}}, {1, x}, x, \"FitResiduals\"], 1/1000]",
+        "{1/2, -1, 1/2}",
+      ),
+      (
+        "Round[Last[Fit[{1, 2, 4}, {1, x}, x, {\"BestFit\", \"BestFitParameters\"}]], 1/1000]",
+        "{-667/1000, 3/2}",
+      ),
+      (
+        "Head[First[Fit[{1, 2, 4}, {1, x}, x, {\"BestFit\", \"BestFitParameters\"}]]]",
+        "Plus",
+      ),
+      (
+        "Head[Fit[{{0, 1}, {1, 3}}, {1, x}, x, \"Function\"]]",
+        "Function",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+    clear_state();
+    let r =
+      interpret_with_stdout("Fit[{1, 2, 4}, {1, x}, x, \"Foo\"]").unwrap();
+    assert_eq!(r.result, "Missing[NotApplicable]");
+    assert_eq!(
+      r.warnings,
+      vec!["Fit::noprop: Foo is not a valid property."]
+    );
   }
 }

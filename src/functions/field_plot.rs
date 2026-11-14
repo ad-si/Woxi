@@ -3736,6 +3736,7 @@ fn contour_plot_equations(
           opacity: style.and_then(|s| s.opacity).filter(|o| *o < 1.0),
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
+          extra_fills: Vec::new(),
         });
       }
     }
@@ -5474,17 +5475,16 @@ fn stream_primitives(
     Some(Expr::Identifier(s)) if s == "False"
   );
 
-  // Each streamline is drawn as a run of arrows, each 8% of the plot range
-  // long with its head at the end (shorter at a streamline's end, with a
-  // proportionally smaller head). `StreamScale -> None` draws whole
-  // streamlines without heads instead, split into short pieces only so the
-  // color can follow the flow along them.
-  let headless = matches!(
-    option_rule(options, "StreamScale"),
-    Some(Expr::Identifier(s)) if s == "None"
-  );
+  // Each streamline is drawn as a run of arrows with its head at the end
+  // (shorter at a streamline's end, with a proportionally smaller head).
+  // `StreamScale` sets the arrow length: 8% of the plot range by default,
+  // a named size, or a fraction of the range. `StreamScale -> None` draws
+  // whole streamlines without heads instead, split into short pieces only
+  // so the color can follow the flow along them.
+  let scale = option_rule(options, "StreamScale");
+  let headless = matches!(scale, Some(Expr::Identifier(s)) if s == "None");
   let segment = match (headless, uniform_color) {
-    (false, _) => 0.08,
+    (false, _) => stream_segment_length(scale),
     (true, false) => 0.02,
     (true, true) => f64::INFINITY,
   };
@@ -5595,6 +5595,32 @@ fn stream_primitives(
       )
     })
     .collect()
+}
+
+/// The length of each streamline arrow, as a fraction of the plot range,
+/// for a `StreamScale` setting: a named size (`Tiny` … `Large`, doubling
+/// from one to the next with `Medium` the default length), a positive
+/// number, or a list whose first element is either of those. Anything
+/// else (`Automatic`, a missing option) gives the default.
+fn stream_segment_length(scale: Option<&Expr>) -> f64 {
+  const DEFAULT: f64 = 0.08;
+  let named = |s: &str| match s {
+    "Tiny" => Some(DEFAULT / 4.0),
+    "Small" => Some(DEFAULT / 2.0),
+    "Medium" => Some(DEFAULT),
+    "Large" => Some(DEFAULT * 2.0),
+    _ => None,
+  };
+  let length = |e: &Expr| match e {
+    Expr::Identifier(s) => named(s),
+    other => try_eval_to_f64(other).filter(|v| v.is_finite() && *v > 0.0),
+  };
+  match scale {
+    Some(Expr::List(items)) => items.first().and_then(length),
+    Some(e) => length(e),
+    None => None,
+  }
+  .unwrap_or(DEFAULT)
 }
 
 /// StreamDensityPlot: StreamPlot overlaid on DensityPlot background
@@ -7248,7 +7274,13 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .unwrap_or(Expr::Real(max_abs));
 
-  let (svg_width, svg_height, full_width) = parse_field_options(args, 1);
+  let (svg_width, mut svg_height, full_width) = parse_field_options(args, 1);
+  // A single `ImageSize -> w` is the picture's width, as for any graphics:
+  // a tall array grows downward from it instead of shrinking into a
+  // `w` x `w` square.
+  if image_size_is_single_width(args, 1) {
+    svg_height = u32::MAX;
+  }
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
 
@@ -7781,6 +7813,29 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     _ => buf,
   };
   Ok(crate::graphics_result_with_structure(buf, structure))
+}
+
+/// Whether the `ImageSize` option among `args[start..]` is a single width
+/// (a number or a named size), which fixes only the picture's width.
+fn image_size_is_single_width(args: &[Expr], start: usize) -> bool {
+  args.iter().skip(start).any(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      match &value {
+        Expr::Identifier(n) => {
+          matches!(n.as_str(), "Tiny" | "Small" | "Medium" | "Large")
+        }
+        Expr::List(_) => false,
+        Expr::FunctionCall { .. } => false,
+        other => try_eval_to_f64(other).is_some_and(|v| v > 0.0),
+      }
+    }
+    _ => false,
+  })
 }
 
 /// The `{w, h}` of an `ImageSize -> {w, h}` option among `args[start..]`

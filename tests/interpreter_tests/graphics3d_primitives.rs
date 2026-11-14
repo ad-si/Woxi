@@ -130,6 +130,60 @@ mod solids {
     assert!(polygon_count(&s) > 100, "got: {s}");
   }
 
+  /// The solid head of `Arrow[Tube[…]]` is sized by the scene's box (the
+  /// diagonal of its `PlotRange`), not by the arrow itself: a short axis
+  /// arrow in a large scene keeps a visible head.
+  #[test]
+  fn arrow_tube_head_is_sized_by_the_scene() {
+    let d = 0.05 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[{{Arrow[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}, 0.01]]}}, {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
+         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+        b = 1.0 - d,
+        r = 0.22 * d
+      ))
+    );
+  }
+
+  /// The head covers the last stretch of the curve measured along it, so a
+  /// finely sampled curve (an arc) still gets a full-size head instead of
+  /// one clipped to its last tiny segment.
+  #[test]
+  fn arrow_tube_head_spans_several_segments() {
+    let len = 0.1 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[{{Arrowheads[0.1], Arrow[Tube[{{{{0, 0, 0}}, \
+         {{0.5, 0, 0}}, {{0.75, 0, 0}}, {{1, 0, 0}}}}, 0.01]]}}, {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
+         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+        b = 1.0 - len,
+        r = 0.22 * len
+      ))
+    );
+  }
+
+  /// `Style[Text[…], Italic]` (the style outside the `Text`) slants the
+  /// label, as `Style[…, Bold]` makes it bold.
+  #[test]
+  fn styled_text_label_font_face() {
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], 17, Italic]}]");
+    assert!(s.contains("font-style=\"italic\""), "got: {s}");
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], Bold]}]");
+    assert!(s.contains("font-weight=\"bold\""), "got: {s}");
+    let s =
+      svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], FontSlant -> Italic]}]");
+    assert!(s.contains("font-style=\"italic\""), "got: {s}");
+  }
+
   #[test]
   fn arrow_tube_is_drawn() {
     let s = svg(
@@ -481,6 +535,69 @@ mod plot_range_clipping {
     assert!(!plain.contains("font-style=\"italic\""), "{plain}");
   }
 
+  // A rational label is typeset as a stacked fraction in 3D, as it is in
+  // 2D graphics: numerator and denominator on their own lines with a bar
+  // between them, not `1/30` written on one line.
+  #[test]
+  fn rational_label_is_a_stacked_fraction() {
+    for code in [
+      "Graphics3D[{Text[1/30, {0, 0, 0}]}]",
+      "Graphics3D[{Text[-7/4, {1, 2, 3}]}, Boxed -> False]",
+    ] {
+      let out = svg(code);
+      assert!(!out.contains("/30<") && !out.contains("/4<"), "{out}");
+      let texts: Vec<&str> = out
+        .split("<text ")
+        .skip(1)
+        .map(|t| t.split('>').nth(1).unwrap_or("").split('<').next().unwrap())
+        .collect();
+      let (num, den) = if code.contains("1/30") {
+        ("1", "30")
+      } else {
+        // A negative fraction sets its minus sign before the bar.
+        assert!(texts.contains(&"\u{2212}"), "no minus: {texts:?}");
+        ("7", "4")
+      };
+      assert!(texts.contains(&num) && texts.contains(&den), "{texts:?}");
+      assert!(out.contains("<line "), "no fraction bar: {out}");
+    }
+  }
+
+  // `Background -> color` paints a panel behind a 3D label, whether it is
+  // the `Text`'s own option or a directive of a `Style` around the `Text`.
+  #[test]
+  fn label_background_paints_a_panel() {
+    for code in [
+      "Graphics3D[{Style[Text[1/2, {0, 0, 0}], 12, Background -> Yellow]}]",
+      "Graphics3D[{Text[\"lbl\", {0, 0, 0}, Background -> Yellow]}]",
+      "Graphics3D[{Text[Style[\"lbl\", 14], {0, 0, 0}, {0, 0}, \
+       Background -> Yellow]}]",
+    ] {
+      let out = svg(code);
+      let rect = out
+        .find("fill=\"rgb(255,255,0)\"")
+        .unwrap_or_else(|| panic!("no panel for {code}: {out}"));
+      // The panel is drawn under the label, not over it.
+      let text = out.rfind("<text ").unwrap();
+      assert!(rect < text, "panel drawn over the label: {out}");
+    }
+    // The label's own option overrides the `Style` around it, and
+    // `Background -> None` draws no panel.
+    let own = svg(
+      "Graphics3D[{Style[Text[\"a\", {0, 0, 0}, Background -> Red], \
+       Background -> Yellow]}]",
+    );
+    assert!(own.contains("fill=\"rgb(255,0,0)\""), "{own}");
+    assert!(!own.contains("fill=\"rgb(255,255,0)\""), "{own}");
+    let none = svg(
+      "Graphics3D[{Style[Text[\"a\", {0, 0, 0}, Background -> None], \
+       Background -> Yellow]}]",
+    );
+    assert!(!none.contains("fill=\"rgb(255,255,0)\""), "{none}");
+    let plain = svg("Graphics3D[{Text[\"a\", {0, 0, 0}]}]");
+    assert!(!plain.contains("<rect x="), "{plain}");
+  }
+
   // Text and points anchored outside an explicit range are not drawn.
   #[test]
   fn text_and_points_outside_the_range_are_dropped() {
@@ -696,6 +813,55 @@ mod plot3d_options {
     assert!(!s.contains("fill=\"rgb(178,178,178)\""));
   }
 
+  // A numeric filling level outside the surface's own values widens the
+  // automatic vertical range so the wall reaches it.
+  #[test]
+  fn filling_level_below_the_surface_extends_the_range() {
+    clear_state();
+    let out = interpret(
+      "Cases[Plot3D[x^2, {x, -1, 1}, {y, -1, 1}, Mesh -> None, \
+       Filling -> -3], Polygon[q_?(ArrayDepth[#] == 3 &)] :> \
+       Min[q[[All, All, 3]]], Infinity]",
+    )
+    .unwrap();
+    assert_eq!(out, "{-3.}");
+  }
+
+  // `FillingStyle` colors the wall, which travels into `Show` with the
+  // surface as polygons in data coordinates.
+  #[test]
+  fn filling_style_colors_the_wall_and_survives_show() {
+    clear_state();
+    let out = interpret(
+      "Cases[Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> Red], {EdgeForm[], c_RGBColor, Polygon[_]} :> c, \
+       Infinity]",
+    )
+    .unwrap();
+    assert_eq!(out, "{RGBColor[1., 0., 0.]}");
+    let red = svg(
+      "Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> Red]",
+    );
+    assert!(!red.contains("fill=\"rgb(178,178,178)\""));
+    // The lit wall is red-dominated.
+    assert!(fills(&red).iter().any(|c| {
+      let v: Vec<u32> = c.split(',').filter_map(|x| x.parse().ok()).collect();
+      v.len() == 3 && v[0] > 150 && v[1] < 100 && v[2] < 100
+    }));
+    let shown = svg(
+      "Show[Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom], \
+       Graphics3D[Sphere[{0, 0, 0}, 0.1]]]",
+    );
+    assert!(
+      polygon_count(&shown)
+        > polygon_count(&svg(
+          "Show[Plot3D[y, {x, 0, 1}, {y, 0, 1}], \
+       Graphics3D[Sphere[{0, 0, 0}, 0.1]]]"
+        ))
+    );
+  }
+
   #[test]
   fn plot_legends_expressions() {
     let s = svg(
@@ -878,6 +1044,18 @@ mod fields_and_graphs {
 
 mod arrows_and_box {
   use super::*;
+
+  // `Opacity` fades a `Text` label in a 3-D scene; `Opacity[0]` hides it.
+  #[test]
+  fn opacity_applies_to_text_labels() {
+    let shown = svg("Graphics3D[{Text[\"Qz\", {0, 0, 0}], Sphere[]}]");
+    assert!(shown.contains(">Qz<"));
+    let hidden =
+      svg("Graphics3D[{Opacity[0], Text[\"Qz\", {0, 0, 0}], Sphere[]}]");
+    assert!(!hidden.contains(">Qz<"));
+    let faded = svg("Graphics3D[{Opacity[0.3], Text[\"Qz\", {0, 0, 0}]}]");
+    assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
+  }
 
   /// The area of the first filled arrowhead `<polygon>` (the triangle after
   /// a `<polyline>`).

@@ -1021,6 +1021,39 @@ mod tests {
       );
     }
 
+    /// Regression: the subscript of an accented base (`OverDot[θ]`, as in
+    /// a `θ̇₁` plot label) was placed at 0.4 of the base's full height, so
+    /// the accent stacked on top lifted it above the base's baseline. It
+    /// sits as far below the baseline as on a plain base.
+    #[test]
+    fn subscript_of_accented_base_keeps_its_drop_below_baseline() {
+      let str_box = |s: &str| Expr::String(s.to_string());
+      let sub_drop = |base: Expr| {
+        let layout =
+          layout_box(&call("SubscriptBox", vec![base, str_box("1")]), 14.0);
+        // The subscript is the last translated group.
+        let y: f64 = layout
+          .elements
+          .rsplit("translate(")
+          .next()
+          .and_then(|t| t.split(')').next())
+          .and_then(|t| t.split(',').nth(1))
+          .and_then(|y| y.parse().ok())
+          .expect("subscript translate");
+        layout.baseline - y
+      };
+      let plain = sub_drop(str_box("x"));
+      for accent in [".", "^", "~"] {
+        let accented =
+          sub_drop(call("OverscriptBox", vec![str_box("x"), str_box(accent)]));
+        assert!(
+          (accented - plain).abs() < 0.2,
+          "accent {accent:?}: subscript {accented} above baseline, \
+           plain base {plain}"
+        );
+      }
+    }
+
     #[test]
     fn rule_arrow_renders_as_unicode_not_private_use() {
       // Regression: `x -> 0.5` rendered in the playground/Studio SVG used the

@@ -213,6 +213,23 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
     })
     .fold(0.0, f64::max)
     * size
+    * weight_scale(markup)
+}
+
+/// How much wider Arial Bold sets a run of text than Arial Regular, on
+/// average over mixed-case labels (`"Displacement x"` widens from 6.84 em
+/// to 7.34 em).
+const BOLD_WIDTH_SCALE: f64 = 1.075;
+
+/// The width factor the weight of label markup gives it: a bold label
+/// (`Style[label, Bold]`, which typesets as `font-weight="bold"`) is wider
+/// than the regular glyph widths [`char_width_em`] adds up.
+fn weight_scale(markup: &str) -> f64 {
+  if markup.contains("font-weight=\"bold\"") {
+    BOLD_WIDTH_SCALE
+  } else {
+    1.0
+  }
 }
 
 /// Break a line of plain label text (no tags; entities allowed) into lines
@@ -1055,11 +1072,11 @@ pub(crate) fn plot_decorations(
         let k = label_font / LABEL_FONT;
         return Some((w * k, h * k));
       }
+      // A `Style[label, size]` label is set (and so needs room) at its
+      // own size, like a frame label.
       (!t.is_empty()).then(|| {
-        (
-          label_width(t, label_font),
-          block_height(label_lines(t), label_font),
-        )
+        let size = font_of(t);
+        (label_width(t, size), block_height(label_lines(t), size))
       })
     };
     d.axes_labels = (

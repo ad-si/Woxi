@@ -96,6 +96,16 @@ pub(crate) fn plot_theme()
   }
 }
 
+/// `InterpolatingFunction[domain, data, …]` as NDSolve or Interpolation
+/// returns it: numeric tables with no variable to substitute, which can be
+/// large enough that rebuilding them for every sample point dominates a
+/// plot.
+fn is_finished_interpolating_function(name: &str, args: &[Expr]) -> bool {
+  name == "InterpolatingFunction"
+    && (2..=4).contains(&args.len())
+    && matches!(args[0], Expr::List(_))
+}
+
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);
@@ -103,7 +113,8 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
     Expr::Identifier(name) if name == var => value.clone(),
     // Numeric data with nothing to substitute (see `is_structured_bspline`).
     Expr::FunctionCall { name, args }
-      if crate::syntax::is_structured_bspline(name, args) =>
+      if crate::syntax::is_structured_bspline(name, args)
+        || is_finished_interpolating_function(name, args) =>
     {
       expr.clone()
     }
@@ -3005,7 +3016,7 @@ pub(crate) enum FillTarget {
 /// index, so `{0, style}` doesn't get mistaken for "fill to series 0"
 /// (which isn't even a valid 1-based series index) and silently drop the
 /// whole option. Each rule's style, when given, is returned alongside its
-/// target — the caller stores it by series index for `series_filling_style`
+/// target — the caller stores it by series index for `series_fills`
 /// to pick up.
 /// Returns `None` when `replacement` is not a list of rules keyed by
 /// 1-based series indices, so the caller can fall back to `parse_filling`.
@@ -3089,9 +3100,8 @@ fn parse_filling_rules(
 }
 
 /// Apply a `Filling` option value to `opts`: either the per-series rule
-/// list `{i -> spec, …}` (stored in `filling_rules`, with any per-rule
-/// style stored in the corresponding slot of `filling_styles`) or a global
-/// mode (stored in `filling`).
+/// list `{i -> spec, …}` (stored in `filling_rules`, each rule with its own
+/// style) or a global mode (stored in `filling`).
 pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
   // The value may be computed rather than named — a Demonstration switches
   // its shading with `Filling -> If[b === Axis, Axis, None]` — so read it
@@ -3100,48 +3110,33 @@ pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
   if let Some(rules) = parse_filling_rules(&value) {
-    if let Some(max_idx) = rules.iter().map(|(i, ..)| *i).max() {
-      let mut styles = vec![None; max_idx + 1];
-      for (i, _, style) in &rules {
-        if style.is_some() {
-          styles[*i] = *style;
-        }
-      }
-      opts.filling_styles = styles;
-    }
-    opts.filling_rules = rules
-      .into_iter()
-      .map(|(i, target, _)| (i, target))
-      .collect();
+    opts.filling_rules = rules;
   } else {
     opts.filling = parse_filling(&value);
   }
 }
 
-/// The `FillingStyle` that applies to series `idx`: its own when `Show`
-/// merged several plots, else the one style the plot was given.
-fn series_filling_style(opts: &PlotOptions, idx: usize) -> Option<FillStyle> {
-  opts
-    .filling_styles
-    .get(idx)
-    .copied()
-    .flatten()
-    .or(opts.filling_style)
-}
-
-/// Effective fill target for series `idx`: its entry in the rule list when
-/// `Filling -> {i -> spec, …}` was given (series without a rule stay
+/// The fills of series `idx` in drawing order, each with the
+/// `FillingStyle` it is painted in: every entry of the rule list naming the
+/// series when `Filling -> {i -> spec, …}` was given (a rule's own style
+/// wins over the plot-wide `FillingStyle`; series without a rule stay
 /// unfilled), otherwise the global filling mode.
-fn series_fill_target(opts: &PlotOptions, idx: usize) -> FillTarget {
+fn series_fills(
+  opts: &PlotOptions,
+  idx: usize,
+) -> Vec<(FillTarget, Option<FillStyle>)> {
   if opts.filling_rules.is_empty() {
-    FillTarget::Level(opts.filling)
-  } else {
-    opts
-      .filling_rules
-      .iter()
-      .find(|(i, _)| *i == idx)
-      .map_or(FillTarget::Level(Filling::None), |&(_, t)| t)
+    if opts.filling == Filling::None {
+      return Vec::new();
+    }
+    return vec![(FillTarget::Level(opts.filling), opts.filling_style)];
   }
+  opts
+    .filling_rules
+    .iter()
+    .filter(|(i, ..)| *i == idx)
+    .map(|&(_, target, style)| (target, style.or(opts.filling_style)))
+    .collect()
 }
 
 /// Linearly interpolate a polyline (in data order) at `x`. Returns `None`
@@ -3377,7 +3372,7 @@ pub(crate) fn adjust_y_range_for_filling_opts(
   mut y_range: (f64, f64),
 ) -> (f64, f64) {
   y_range = adjust_y_range_for_filling(opts.filling, y_range);
-  for (_, target) in &opts.filling_rules {
+  for (_, target, _) in &opts.filling_rules {
     if let FillTarget::Level(level) = target {
       y_range = adjust_y_range_for_filling(*level, y_range);
     }
@@ -3393,7 +3388,7 @@ pub(crate) fn include_filling_levels(
 ) -> (f64, f64) {
   let levels =
     std::iter::once(opts.filling).chain(opts.filling_rules.iter().filter_map(
-      |(_, target)| match target {
+      |(_, target, _)| match target {
         FillTarget::Level(level) => Some(*level),
         FillTarget::Series(_) => None,
       },
@@ -3515,17 +3510,14 @@ pub(crate) struct PlotOptions {
   pub full_width: bool,
   pub filling: Filling,
   /// Per-series filling from `Filling -> {i -> spec, …}` (0-based series
-  /// index → target). When non-empty this replaces the global `filling`:
-  /// series without a rule are not filled.
-  pub filling_rules: Vec<(usize, FillTarget)>,
+  /// index → target, with the rule's own style). When non-empty this
+  /// replaces the global `filling`: series without a rule are not filled,
+  /// and a series named by several rules gets every one of their fills.
+  pub filling_rules: Vec<(usize, FillTarget, Option<FillStyle>)>,
   /// `FillingStyle -> …`: color/opacity for the filled regions (applies to
   /// every filled series). `None` keeps the default appearance (series
   /// color at 0.2 opacity).
   pub filling_style: Option<FillStyle>,
-  /// Per-series `FillingStyle`, as `Show` collects it from the plots it
-  /// merges: each curve keeps the fill its own plot asked for. Empty means
-  /// the single `filling_style` applies to every series.
-  pub filling_styles: Vec<Option<FillStyle>>,
   pub mesh: Mesh,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
@@ -3553,6 +3545,10 @@ pub(crate) struct PlotOptions {
   /// position and the text drawn at it. `None` = the automatic ticks.
   pub ticks_x: Option<Vec<(f64, String)>>,
   pub ticks_y: Option<Vec<(f64, String)>>,
+  /// Per axis (x, y): `ticks_x` / `ticks_y` holds the explicit list of the
+  /// `Ticks` option. Those belong to the axes only, so a framed plot keeps
+  /// its automatic frame ticks (see [`without_axis_only_ticks`]).
+  pub ticks_from_axes_option: (bool, bool),
   /// `FrameTicks`: what each frame edge (bottom, left, top, right) carries.
   /// The labels of an explicit bottom / left list are also in `ticks_x` /
   /// `ticks_y`.
@@ -3967,7 +3963,6 @@ impl Default for PlotOptions {
       filling: Filling::None,
       filling_rules: Vec::new(),
       filling_style: None,
-      filling_styles: Vec::new(),
       mesh: Mesh::None,
       plot_label: None,
       axes_label: None,
@@ -4003,6 +3998,7 @@ impl Default for PlotOptions {
       evaluated: false,
       ticks_x: None,
       ticks_y: None,
+      ticks_from_axes_option: (false, false),
       frame_tick_edges: FrameEdgeTicks::defaults(),
       frame_tick_spec: None,
       invalid_frame_ticks: false,
@@ -5516,6 +5512,27 @@ fn with_frame_tick_functions(
   std::borrow::Cow::Owned(out)
 }
 
+/// `Ticks` sets the ticks of the axes, not of the frame: a framed plot
+/// (`Frame -> True, Ticks -> {Range[0, 2, 0.2]}`) keeps its automatic frame
+/// ticks, so drop the explicit lists that came from `Ticks`.
+fn without_axis_only_ticks(
+  opts: &PlotOptions,
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let (from_x, from_y) = opts.ticks_from_axes_option;
+  if !opts.frame || !(from_x || from_y) {
+    return std::borrow::Cow::Borrowed(opts);
+  }
+  let mut out = opts.clone();
+  if from_x {
+    out.ticks_x = None;
+  }
+  if from_y {
+    out.ticks_y = None;
+  }
+  out.ticks_from_axes_option = (false, false);
+  std::borrow::Cow::Owned(out)
+}
+
 fn with_labeling_size(opts: &PlotOptions) -> std::borrow::Cow<'_, PlotOptions> {
   let Some(width) = opts.labeling_size else {
     return std::borrow::Cow::Borrowed(opts);
@@ -5540,6 +5557,7 @@ fn generate_svg_with_options(
     return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
   }
   let opts = &*with_labeling_size(opts);
+  let opts = &*without_axis_only_ticks(opts);
   let opts = &*with_frame_tick_functions(opts, x_range, y_range);
   let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let opts = &*with_simple_ticks(opts, x_range, y_range);
@@ -5684,8 +5702,11 @@ fn generate_svg_with_options(
   // instead of shrinking it to fit a canvas sized by the default ratio.
   // An explicit image height (`ImageSize -> {w, h}`) is kept instead: the
   // plotting area keeps its ratio and is centered in what the padding
-  // leaves (see `padded_margins`).
-  if let Some(ar) = opts.aspect_ratio
+  // leaves (see `padded_margins`). Without an `AspectRatio` the default
+  // 1/GoldenRatio applies the same way.
+  if let Some(ar) = opts
+    .aspect_ratio
+    .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
     && !opts.image_size_explicit.1
     && let Some([pad_left, pad_right, pad_bottom, pad_top]) = opts.image_padding
   {
@@ -6262,9 +6283,9 @@ fn generate_svg_with_options(
               continue;
             }
             let (r, g, b) = series_color(&opts.plot_style, series_idx);
-            let paint =
-              fill_paint(series_filling_style(opts, series_idx), (r, g, b));
-            match series_fill_target(opts, series_idx) {
+            for (target, fill_style) in series_fills(opts, series_idx) {
+            let paint = fill_paint(fill_style, (r, g, b));
+            match target {
               FillTarget::Level(level) => {
                 // Fills stop at the plot range, not in its padding.
                 let (fill_min, fill_max) =
@@ -6288,7 +6309,7 @@ fn generate_svg_with_options(
                     let tinted = opts
                       .color_function
                       .as_ref()
-                      .filter(|_| series_filling_style(opts, series_idx).is_none());
+                      .filter(|_| fill_style.is_none());
                     let pieces: Vec<(plotters::style::RGBAColor, Vec<(f64, f64)>)> =
                       match tinted {
                         Some(cf) if let Some(stops) = color_function_gradient_stops(
@@ -6333,7 +6354,7 @@ fn generate_svg_with_options(
                       };
                     // `FillingStyle -> {below, above}`: split the area at
                     // the reference level and paint each side in its color.
-                    let below_paint = series_filling_style(opts, series_idx)
+                    let below_paint = fill_style
                       .filter(|_| tinted.is_none())
                       .and_then(|fs| fs.below_color.map(|c| (fs, c)))
                       .map(|(fs, (br, bg, bb))| {
@@ -6385,7 +6406,7 @@ fn generate_svg_with_options(
                   && let Some(target) = all_points.get(target_idx)
                   && let Some(polygon) = fill_between_polygon(points, target)
                 {
-                  let below_paint = series_filling_style(opts, series_idx)
+                  let below_paint = fill_style
                     .and_then(|fs| fs.below_color.map(|c| (fs, c)))
                     .map(|(fs, (br, bg, bb))| {
                       RGBColor(br, bg, bb).mix(fs.effective_opacity().unwrap_or(0.2))
@@ -6412,6 +6433,7 @@ fn generate_svg_with_options(
                   }
                 }
               }
+            }
             }
           }
         }
@@ -8086,6 +8108,7 @@ pub(crate) fn build_plot_source(
         opacity,
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
+        extra_fills: Vec::new(),
       }
     })
     .collect();
@@ -8639,37 +8662,31 @@ pub(crate) fn render_merged_plot_source(
     opts.mesh_full_points =
       drawn.iter().map(|s| s.mesh_full_points.clone()).collect();
   }
+  // Each merged plot keeps the fills it asked for: three normal curves
+  // filled to the axis in three colors stay three colors, rather than all
+  // taking the first plot's, and a curve filled by several rules keeps
+  // every one of them.
   opts.filling_rules = drawn
     .iter()
     .enumerate()
-    .filter_map(|(i, s)| match s.filling {
-      crate::syntax::SeriesFilling::Series(j) => {
-        Some((i, FillTarget::Series(j)))
-      }
-      other => {
-        series_filling_to_filling(other).map(|f| (i, FillTarget::Level(f)))
-      }
+    .flat_map(|(i, s)| {
+      s.fills().into_iter().filter_map(move |fill| {
+        let target = match fill.filling {
+          crate::syntax::SeriesFilling::Series(j) => FillTarget::Series(j),
+          other => FillTarget::Level(series_filling_to_filling(other)?),
+        };
+        let style = (fill.color.is_some() || fill.opacity.is_some()).then_some(
+          FillStyle {
+            color: fill.color,
+            opacity: fill.opacity,
+            below_color: None,
+            dashing: None,
+          },
+        );
+        Some((i, target, style))
+      })
     })
     .collect();
-  // Each merged plot keeps the fill it asked for: three normal curves
-  // filled to the axis in three colors stay three colors, rather than all
-  // taking the first plot's.
-  opts.filling_styles = drawn
-    .iter()
-    .map(|s| {
-      (s.fill_color.is_some() || s.fill_opacity.is_some()).then_some(
-        FillStyle {
-          color: s.fill_color,
-          opacity: s.fill_opacity,
-          below_color: None,
-          dashing: None,
-        },
-      )
-    })
-    .collect();
-  if opts.filling_styles.iter().all(Option::is_none) {
-    opts.filling_styles.clear();
-  }
   opts.epilog.extend(
     source
       .series
@@ -8846,6 +8863,9 @@ pub(crate) struct BarChartLook {
   pub bar_spacing: BarSpacing,
   /// `AspectRatio -> r`: height / width of the plotting area.
   pub aspect_ratio: Option<f64>,
+  /// `ImageSize -> {w, h}` fixes the image's height: an `aspect_ratio`
+  /// then centers the plotting area in the box instead of resizing it.
+  pub fixed_height: bool,
   /// `ChartLayout`: how the bars of a group share its slot.
   pub layout: BarLayout,
   /// Per-bar colors from `Style[v, color]` data wrappers, in drawing
@@ -8937,6 +8957,7 @@ impl Default for BarChartLook {
       frame_width: None,
       bar_spacing: BarSpacing::default(),
       aspect_ratio: None,
+      fixed_height: false,
       layout: BarLayout::Grouped,
       bar_colors: Vec::new(),
       error_bars: Vec::new(),
@@ -9473,12 +9494,12 @@ pub(crate) fn generate_bar_svg(
   }
   // The bars' group ticks hang 6 points below the axis. An explicit
   // `ImagePadding` replaces the whole margin (and the side margins below).
-  let margin_bottom = if explicit_pad(2).is_some() {
+  let mut margin_bottom = if explicit_pad(2).is_some() {
     0.0
   } else {
     BAR_SIDE_MARGIN * sf
   };
-  let margin_left = if explicit_pad(0).is_some() {
+  let mut margin_left = if explicit_pad(0).is_some() {
     0.0
   } else {
     BAR_SIDE_MARGIN * sf
@@ -9600,7 +9621,7 @@ pub(crate) fn generate_bar_svg(
       (ch(c.r), ch(c.g), ch(c.b))
     }
   };
-  let legend_margin_right = match explicit_pad(1) {
+  let mut legend_margin_right = match explicit_pad(1) {
     Some(r) => (x_axis_overrun + r) as u32,
     None => (x_axis_overrun + 1.5 * sf) as u32 + axes_label_margin_right,
   };
@@ -9668,9 +9689,26 @@ pub(crate) fn generate_bar_svg(
       - legend_margin_right as f64
       - y_label_area as f64;
     let margins_v = top_margin as f64 + margin_bottom + x_label_area as f64;
-    let target = area_w.max(1.0) * r + margins_v;
-    svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
-    render_height = svg_height * RESOLUTION_SCALE;
+    if look.fixed_height {
+      // As in WL, a fixed `ImageSize -> {w, h}` box keeps its size: the
+      // plotting area keeps its ratio, as large as fits, and is centered
+      // in the room the margins leave.
+      let area_w = area_w.max(1.0);
+      let area_h = (render_height as f64 - margins_v).max(1.0);
+      if area_w * r <= area_h {
+        let extra = (area_h - area_w * r) / 2.0;
+        top_margin += extra.round() as i32;
+        margin_bottom += extra;
+      } else {
+        let extra = (area_w - area_h / r) / 2.0;
+        margin_left += extra;
+        legend_margin_right += extra.round() as u32;
+      }
+    } else {
+      let target = area_w.max(1.0) * r + margins_v;
+      svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
+      render_height = svg_height * RESOLUTION_SCALE;
+    }
   }
   // `AxesStyle` recolors the axes; `Axes -> False` hides them.
   let axis_color = look.axes_color.unwrap_or(dark_gray);
@@ -12255,6 +12293,7 @@ pub(crate) fn histogram_plot_source(
       opacity: Some(0.66),
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
+      extra_fills: Vec::new(),
     });
   }
 
@@ -14138,29 +14177,28 @@ where
   // irregularly spaced datasets fill correctly.
   // WL 15 draws the stems of a filled scatter at Opacity[0.3], a little
   // stronger than the 0.2 of a filled curve's area.
-  let fill_style = series_filling_style(opts, series_idx);
-  let stem_style = match fill_style {
-    None => RGBColor(r, g, b).mix(0.3),
-    fs => fill_paint(fs, (r, g, b)),
-  }
-  .stroke_width(RESOLUTION_SCALE);
-  // A two-color `{below, above}` style paints the stems of points under
-  // their reference in the first color.
-  let below_style =
-    fill_style
-      .and_then(|fs| fs.below_color)
-      .map(|(br, bg, bb)| {
-        RGBColor(br, bg, bb)
-          .mix(
-            fill_style
-              .and_then(|fs| fs.effective_opacity())
-              .unwrap_or(1.0),
-          )
-          .stroke_width(RESOLUTION_SCALE)
-      });
-  let stem_dashes = fill_style.and_then(|fs| fs.dashing);
-  let stem_targets: Vec<((f64, f64), f64)> =
-    match series_fill_target(opts, series_idx) {
+  for (fill_target, fill_style) in series_fills(opts, series_idx) {
+    let stem_style = match fill_style {
+      None => RGBColor(r, g, b).mix(0.3),
+      fs => fill_paint(fs, (r, g, b)),
+    }
+    .stroke_width(RESOLUTION_SCALE);
+    // A two-color `{below, above}` style paints the stems of points under
+    // their reference in the first color.
+    let below_style =
+      fill_style
+        .and_then(|fs| fs.below_color)
+        .map(|(br, bg, bb)| {
+          RGBColor(br, bg, bb)
+            .mix(
+              fill_style
+                .and_then(|fs| fs.effective_opacity())
+                .unwrap_or(1.0),
+            )
+            .stroke_width(RESOLUTION_SCALE)
+        });
+    let stem_dashes = fill_style.and_then(|fs| fs.dashing);
+    let stem_targets: Vec<((f64, f64), f64)> = match fill_target {
       FillTarget::Level(level) => {
         level.reference_y(y_min, y_max).map_or_default(|ref_y| {
           finite_pts.iter().map(|&p| (p, ref_y)).collect()
@@ -14182,32 +14220,35 @@ where
         }
       }
     };
-  for ((x, y), ref_y) in stem_targets {
-    let style = match below_style {
-      Some(below) if y < ref_y => below,
-      _ => stem_style,
-    };
-    let stem = vec![(x, y), (x, ref_y)];
-    let drawn = match stem_dashes {
-      Some((dash, gap)) => {
-        // A named dashing (`Dashed`) is absolute points, a `Dashing[{…}]`
-        // a fraction of the plot width (see `dash_len`).
-        let scale = RESOLUTION_SCALE as f64;
-        let width = chart.plotting_area().dim_in_pixel().0 as f64;
-        let len = |d: f64| dash_len(d, width, scale).round().max(1.0) as u32;
-        chart.draw_series(std::iter::once(
-          plotters::element::DashedPathElement::new(
-            stem,
-            len(dash),
-            len(gap),
-            style,
-          ),
-        ))
-      }
-      None => chart.draw_series(std::iter::once(PathElement::new(stem, style))),
-    };
-    drawn
-      .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    for ((x, y), ref_y) in stem_targets {
+      let style = match below_style {
+        Some(below) if y < ref_y => below,
+        _ => stem_style,
+      };
+      let stem = vec![(x, y), (x, ref_y)];
+      let drawn = match stem_dashes {
+        Some((dash, gap)) => {
+          // A named dashing (`Dashed`) is absolute points, a `Dashing[{…}]`
+          // a fraction of the plot width (see `dash_len`).
+          let scale = RESOLUTION_SCALE as f64;
+          let width = chart.plotting_area().dim_in_pixel().0 as f64;
+          let len = |d: f64| dash_len(d, width, scale).round().max(1.0) as u32;
+          chart.draw_series(std::iter::once(
+            plotters::element::DashedPathElement::new(
+              stem,
+              len(dash),
+              len(gap),
+              style,
+            ),
+          ))
+        }
+        None => {
+          chart.draw_series(std::iter::once(PathElement::new(stem, style)))
+        }
+      };
+      drawn
+        .map_err(|e| InterpreterError::EvaluationError(format!("Plot: {e}")))?;
+    }
   }
 
   // `PlotMarkers` replaces the round dot with its glyph, drawn
@@ -16345,9 +16386,11 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.frame_ticks = edges.iter().any(|e| !e.is_none());
       if let Some(t) = edges[0].explicit_labels() {
         plot_opts.ticks_x = Some(t);
+        plot_opts.ticks_from_axes_option.0 = false;
       }
       if let Some(t) = edges[1].explicit_labels() {
         plot_opts.ticks_y = Some(t);
+        plot_opts.ticks_from_axes_option.1 = false;
       }
       plot_opts.frame_tick_edges = edges;
     }
@@ -16406,8 +16449,10 @@ pub(crate) fn apply_common_plot_option(
       // and leaves the y axis to its default.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
         plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        plot_opts.ticks_from_axes_option.0 = plot_opts.ticks_x.is_some();
         if let Some(y) = items.get(1) {
           plot_opts.ticks_y = parse_explicit_ticks(y);
+          plot_opts.ticks_from_axes_option.1 = plot_opts.ticks_y.is_some();
         }
       }
       _ => {}
@@ -16953,6 +16998,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut automatic_labels: Vec<String> = Vec::new();
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
+  // `PlotRangePadding -> spec`: the margin around the automatic range,
+  // in place of the default `Scaled[0.02]` (x) / `Scaled[0.05]` (y).
+  let mut range_padding: Option<Expr> = None;
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
   plot_opts.simple_ticks = simple_ticks;
   // A function plot samples just inside its domain: a mesh value taken at
@@ -16991,6 +17039,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       if name == "PlotLabels" {
         labels_expressions = plot_labels_from_expressions(replacement);
+      }
+      if name == "PlotRangePadding" {
+        range_padding = Some(
+          evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone()),
+        );
       }
       if name == "ScalingFunctions" {
         let value = evaluate_expr_to_expr(replacement)
@@ -17511,25 +17565,38 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // …}, {Scaled[0.05], …}}`: that fraction of the padded span, i.e. 1/48
   // of the x span and 1/18 of the y span on each side. An explicit
   // `PlotRange` is not padded.
+  // An explicit `PlotRangePadding` replaces those defaults, side by side.
   let y_span = y_data_max - y_data_min;
-  let padding =
-    if y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs()) {
-      1.0
+  let y_degenerate =
+    y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
+  let x_span = x_max - x_min;
+  let ((x_pad_lo, x_pad_hi), (y_pad_lo, y_pad_hi)) =
+    if let Some(spec) = &range_padding {
+      let spec = crate::functions::graphics::parse_plot_range_padding(spec);
+      (
+        spec.x.resolve(x_span, 1.0 / 48.0),
+        if y_degenerate {
+          // A flat curve has no span to take a fraction of.
+          let (lo, hi) = spec.y.resolve(1.0, 1.0);
+          (lo.min(1.0), hi.min(1.0))
+        } else {
+          spec.y.resolve(y_span, 1.0 / 18.0)
+        },
+      )
     } else {
-      y_span / 18.0
+      let y_pad = if y_degenerate { 1.0 } else { y_span / 18.0 };
+      ((x_span / 48.0, x_span / 48.0), (y_pad, y_pad))
     };
-  let y_auto_min = y_data_min - padding;
-  let y_auto_max = y_data_max + padding;
+  let y_auto_min = y_data_min - y_pad_lo;
+  let y_auto_max = y_data_max + y_pad_hi;
   let (y_auto_min, y_auto_max) =
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
-  let x_padding = (x_max - x_min) / 48.0;
+  let x_auto = (x_min - x_pad_lo, x_max + x_pad_hi);
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
-  let plot_range_x =
-    fill_range(plot_range_x, (x_min - x_padding, x_max + x_padding));
+  let plot_range_x = fill_range(plot_range_x, x_auto);
   let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max));
-  let (x_display_min, x_display_max) =
-    plot_range_x.unwrap_or((x_min - x_padding, x_max + x_padding));
+  let (x_display_min, x_display_max) = plot_range_x.unwrap_or(x_auto);
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
     // Labels placed above or below their curves get room inside the
     // plot range, as WL widens the automatic `PlotRangePadding`.
@@ -17684,17 +17751,30 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // reconstitute the plot's primitives, and which `Show` reads to re-render
   // it) reflects each series' own target rather than staying unfilled.
   // A curve-to-curve target (`{i -> {j}}`) is kept as `SeriesFilling::Series`.
+  // A series named by several rules keeps the later fills in
+  // `extra_fills`.
   if !plot_opts.filling_rules.is_empty() {
     for (i, s) in source.series.iter_mut().enumerate() {
-      let target = series_fill_target(&plot_opts, i);
-      s.filling = match target {
-        FillTarget::Level(level) => level.to_series_filling(),
-        FillTarget::Series(j) => crate::syntax::SeriesFilling::Series(j),
-      };
-      if let Some(style) = series_filling_style(&plot_opts, i) {
-        s.fill_color = style.color;
-        s.fill_opacity = style.effective_opacity();
-      }
+      let mut fills =
+        series_fills(&plot_opts, i)
+          .into_iter()
+          .map(|(target, style)| crate::syntax::SeriesFill {
+            filling: match target {
+              FillTarget::Level(level) => level.to_series_filling(),
+              FillTarget::Series(j) => crate::syntax::SeriesFilling::Series(j),
+            },
+            color: style.and_then(|fs| fs.color),
+            opacity: style.and_then(|fs| fs.effective_opacity()),
+          });
+      let main = fills.next().unwrap_or(crate::syntax::SeriesFill {
+        filling: crate::syntax::SeriesFilling::None,
+        color: s.fill_color,
+        opacity: s.fill_opacity,
+      });
+      s.filling = main.filling;
+      s.fill_color = main.color.or(s.fill_color);
+      s.fill_opacity = main.opacity.or(s.fill_opacity);
+      s.extra_fills = fills.collect();
     }
   }
 

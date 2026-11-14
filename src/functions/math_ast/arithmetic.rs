@@ -14559,9 +14559,18 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
   // `|b| == 1` never leaves the range however large the exponent — and with
   // an `inf` exponent that product is `NaN`, which the negated comparison
   // (rather than `<=`) correctly treats as "not an overflow".
+  // An inexact power past Woxi's own arbitrary-precision range (see
+  // MAX_BIGFLOAT_DECIMAL_EXPONENT) would overflow to infinity (a hard error
+  // when printed) or flush to zero. An exact power stays exact.
+  let inexact = |x: &Expr| matches!(x, Expr::Real(_) | Expr::BigFloat(..));
+  let limit = if inexact(base) || inexact(exp) {
+    crate::functions::math_ast::numerical::MAX_BIGFLOAT_DECIMAL_EXPONENT
+  } else {
+    MAX_LOG10
+  };
   let magnitude = e * b.abs().log10();
   #[allow(clippy::neg_cmp_op_on_partial_ord)]
-  if !(magnitude.abs() > MAX_LOG10) {
+  if !(magnitude.abs() > limit) {
     return None;
   }
   let (head, message) = if magnitude > 0.0 {
@@ -14586,6 +14595,66 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
 fn is_big_zero(e: &Expr) -> bool {
   matches!(e, Expr::BigFloat(d, _)
     if crate::functions::math_ast::numeric_utils::bigfloat_digits_are_zero(d))
+}
+
+/// When `exp` is `Log[x]/Log[base]` (the evaluated form of `Log[base, x]`),
+/// the `x` it takes the logarithm of.
+fn log_quotient_for_base(base: &Expr, exp: &Expr) -> Option<Expr> {
+  let factors: Vec<&Expr> = match exp {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+  // `Log[5/7]` evaluates to `-Log[7/5]`, so `Log[b, 5/7]` carries a
+  // leading `-1`: the power is then the reciprocal of the log's argument.
+  let (negated, factors) = match factors.as_slice() {
+    [Expr::Integer(-1), rest @ ..] => (true, rest.to_vec()),
+    _ => (false, factors),
+  };
+  if factors.len() != 2 {
+    return None;
+  }
+  let log_arg = |e: &Expr| match e {
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
+  };
+  let reciprocal_log_arg = |e: &Expr| match e {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(-1)) =>
+    {
+      log_arg(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => log_arg(left),
+    _ => None,
+  };
+  let same = |a: &Expr, b: &Expr| {
+    crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  };
+  for (num, den) in [(factors[0], factors[1]), (factors[1], factors[0])] {
+    if let (Some(x), Some(b)) = (log_arg(num), reciprocal_log_arg(den))
+      && same(&b, base)
+    {
+      if negated {
+        return power_two(&x, &Expr::Integer(-1)).ok();
+      }
+      return Some(x);
+    }
+  }
+  None
 }
 
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
@@ -15073,6 +15142,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && log_args.len() == 1
   {
     return Ok(log_args[0].clone());
+  }
+
+  // b^Log[b, x] -> x: `Log[b, x]` evaluates to `Log[x]/Log[b]`, so a power
+  // whose exponent is exactly that quotient undoes the logarithm.
+  if let Some(x) = log_quotient_for_base(base, exp) {
+    return Ok(x);
   }
 
   // E^(n*Log[x]) -> x^n (generalized inverse)
