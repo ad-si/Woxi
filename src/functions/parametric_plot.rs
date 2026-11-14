@@ -344,6 +344,68 @@ where
   samples
 }
 
+/// Bisection steps used to locate the edge of a curve's real domain.
+const DOMAIN_EDGE_BISECTIONS: usize = 40;
+
+/// Whether a sample has a finite coordinate pair for every curve.
+fn sample_is_defined(row: Option<&[(f64, f64)]>) -> bool {
+  row.is_some_and(|r| {
+    !r.is_empty() && r.iter().all(|p| p.0.is_finite() && p.1.is_finite())
+  })
+}
+
+/// Pin down where a sampled curve stops being real. Between each pair of
+/// neighboring samples of which only one evaluated (a radicand turning
+/// negative, as in `Sqrt[c - t^2]`), the parameter is bisected toward the
+/// last value that still evaluates, and that point is added. Without it a
+/// curve stops at the last grid sample instead of at the edge of its
+/// domain, which leaves a visible gap wherever the curve meets another
+/// branch there with a vertical tangent (the two halves of a Cassini oval
+/// drawn as `r = Sqrt[a ± Sqrt[b]]`).
+fn extend_to_domain_edges<F>(samples: &[Sample], sample_at: &F) -> Vec<Sample>
+where
+  F: Fn(f64) -> Option<Vec<(f64, f64)>>,
+{
+  let mut out: Vec<Sample> = Vec::with_capacity(samples.len() + 8);
+  for (i, s) in samples.iter().enumerate() {
+    if i > 0 {
+      let prev = &samples[i - 1];
+      let (prev_ok, cur_ok) = (
+        sample_is_defined(prev.1.as_deref()),
+        sample_is_defined(s.1.as_deref()),
+      );
+      if prev_ok != cur_ok {
+        // `good` always evaluates, `bad` never does.
+        let (mut good, mut bad) = if prev_ok {
+          (prev.0, s.0)
+        } else {
+          (s.0, prev.0)
+        };
+        let mut edge: Option<Sample> = None;
+        for _ in 0..DOMAIN_EDGE_BISECTIONS {
+          let mid = f64::midpoint(good, bad);
+          if mid == good || mid == bad {
+            break;
+          }
+          let row = sample_at(mid);
+          if sample_is_defined(row.as_deref()) {
+            good = mid;
+            edge = Some((mid, row));
+          } else {
+            bad = mid;
+          }
+        }
+        if let Some(edge) = edge {
+          out.push(edge);
+        }
+      }
+    }
+    out.push(s.clone());
+  }
+  out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+  out
+}
+
 /// Split the per-parameter samples into one point series per curve, keeping
 /// a gap (as a non-finite point) wherever the body did not evaluate.
 fn samples_to_series(samples: Vec<Sample>) -> (Vec<Vec<(f64, f64)>>, Vec<f64>) {
@@ -1014,6 +1076,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       num_samples,
       max_total,
     );
+    samples = extend_to_domain_edges(&samples, &sample_at);
     if let Some(region) = &region_function {
       samples = clip_samples_to_region(samples, region, &sample_at);
     }
@@ -2069,23 +2132,23 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
   }
 
+  // A polar curve is the parametric curve `r(θ) {Cos[θ], Sin[θ]}`, so it is
+  // sampled the same way: a uniform grid refined where the polyline bends,
+  // and carried out to the edges of the radius's real domain.
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
-  let step = (t_max - t_min) / (num_samples - 1) as f64;
+  let max_total = num_samples.saturating_mul(MAX_REFINED_SAMPLES_FACTOR);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
 
   for func_body in &bodies {
-    let mut points = Vec::with_capacity(num_samples);
-    for i in 0..num_samples {
-      let theta = t_min + i as f64 * step;
-      if let Some(r) = evaluate_at_point(func_body, &var_name, theta) {
-        let x = r * theta.cos();
-        let y = r * theta.sin();
-        points.push((x, y));
-      } else {
-        points.push((f64::NAN, f64::NAN));
-      }
-    }
-    all_points.push(points);
+    let sample_at = |theta: f64| {
+      evaluate_at_point(func_body, &var_name, theta)
+        .map(|r| vec![(r * theta.cos(), r * theta.sin())])
+    };
+    let samples =
+      adaptive_samples(sample_at, t_min, t_max, num_samples, max_total);
+    let samples = extend_to_domain_edges(&samples, &sample_at);
+    let (series, _) = samples_to_series(samples);
+    all_points.extend(series);
   }
 
   let (mut data_x, mut data_y) = compute_data_ranges(&all_points);

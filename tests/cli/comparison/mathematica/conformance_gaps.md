@@ -10086,3 +10086,11 @@ in a monospace face regardless of the grid's `BaseStyle -> {FontFamily ->
 Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
+
+### `Plot` runs the cells of a multi-column `Grid` title together
+
+`PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
+lines its columns up as a table in `Graphics` and `Show` (the way Wolfram
+draws it), but `Plot` and the other charts with their own title pipeline
+(`src/functions/plot.rs`) still join each row's cells with a space into a
+single centered line of text.

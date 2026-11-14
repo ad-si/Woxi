@@ -14088,10 +14088,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             other
               if plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
+                .or_else(|| plot_label_grid_svg(other))
                 .is_some() =>
             {
               let (svg, w, h) = plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
+                .or_else(|| plot_label_grid_svg(other))
                 .expect("checked by the guard");
               // Reserve as many title lines as the picture is tall.
               let mut lines = 1;
@@ -20529,6 +20531,116 @@ fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   let svg = layout_to_svg(&layout, "currentColor");
   let (w, h) = svg_natural_size(&svg)?;
   Some((svg, w, h))
+}
+
+/// A `PlotLabel` that is a `Grid` of two or more columns
+/// (`Grid[{{"sum:", 6.}, {"product:", 9.}}]`): set as a table whose columns
+/// line up, in the title's font, the way Wolfram draws it, instead of
+/// running each row's cells together into one line of text. Each cell is
+/// typeset like any other title text and measured with proportional glyph
+/// widths; columns are `0.8` em apart (Wolfram's default `Spacings`) and
+/// placed by the grid's horizontal `Alignment` (`Center` by default). A
+/// single-column `Grid` stays a block of title lines.
+fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  use crate::functions::plot_padding::{ascent, line_pitch, text_width};
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Grid" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(rows) = &args[0] else {
+    return None;
+  };
+  let rows: Vec<&[Expr]> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => Some(cells.as_slice()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  // A cell that stacks its own lines (a nested `Column`) has no single
+  // line to align, so such a grid keeps the line-based layout.
+  if num_cols < 2
+    || rows
+      .iter()
+      .flat_map(|r| r.iter())
+      .any(|c| expr_to_svg_markup_lines(c).len() > 1)
+  {
+    return None;
+  }
+  // The horizontal alignment of each column: one symbol for all of them,
+  // or a list cycled over the columns, possibly inside `{h, v}`.
+  let mut aligns = vec!["Center"];
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(&**pattern, Expr::Identifier(n) if n == "Alignment")
+    {
+      let h = match &**replacement {
+        Expr::List(items) if items.len() == 2 => &items[0],
+        other => other,
+      };
+      let names: Vec<&str> = match h {
+        Expr::Identifier(n) => vec![n.as_str()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|i| match i {
+            Expr::Identifier(n) => Some(n.as_str()),
+            _ => None,
+          })
+          .collect(),
+        _ => Vec::new(),
+      };
+      if !names.is_empty() {
+        aligns = names;
+      }
+    }
+  }
+  let size = TITLE_FONT;
+  let markup: Vec<Vec<String>> = rows
+    .iter()
+    .map(|r| r.iter().map(expr_to_svg_markup).collect())
+    .collect();
+  let mut col_w = vec![0.0_f64; num_cols];
+  for row in &markup {
+    for (j, cell) in row.iter().enumerate() {
+      col_w[j] = col_w[j].max(text_width(cell, size));
+    }
+  }
+  let gap = 0.8 * size;
+  let width = col_w.iter().sum::<f64>() + gap * (num_cols - 1) as f64;
+  let pitch = line_pitch(size);
+  let height = pitch * markup.len() as f64;
+  let mut body = String::new();
+  for (i, row) in markup.iter().enumerate() {
+    let y = i as f64 * pitch + ascent(size);
+    let mut x0 = 0.0;
+    for (j, w) in col_w.iter().enumerate() {
+      if let Some(cell) = row.get(j).filter(|c| !c.is_empty()) {
+        let (x, anchor) = match aligns[j % aligns.len()] {
+          "Left" => (x0, "start"),
+          "Right" => (x0 + w, "end"),
+          _ => (x0 + w / 2.0, "middle"),
+        };
+        body.push_str(&format!(
+          "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" \
+           xml:space=\"preserve\">{cell}</text>\n"
+        ));
+      }
+      x0 += w + gap;
+    }
+  }
+  let svg = format!(
+    "<svg width=\"{width:.2}\" height=\"{height:.2}\" \
+     viewBox=\"0 0 {width:.2} {height:.2}\" \
+     xmlns=\"http://www.w3.org/2000/svg\" font-family=\"sans-serif\" \
+     font-size=\"{size}\">\n{body}</svg>"
+  );
+  (width > 0.0).then_some((svg, width, height))
 }
 
 /// Whether a label sets a matrix inline: a `MatrixForm` of a list of rows,
