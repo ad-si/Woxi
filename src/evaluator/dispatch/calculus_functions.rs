@@ -423,6 +423,10 @@ pub fn dispatch_calculus_functions(
     "Derivative" if args.len() == 1 => {
       return Some(Ok(unevaluated("Derivative", args)));
     }
+    // D[f] is f itself: the derivative with respect to no variables.
+    "D" if args.len() == 1 => {
+      return Some(Ok(args[0].clone()));
+    }
     "D" if args.len() >= 2 => {
       return Some(crate::functions::calculus_ast::d_ast(args));
     }

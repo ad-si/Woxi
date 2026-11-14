@@ -20863,7 +20863,7 @@ mod riffle_specs_and_messages {
     let msgs = woxi::get_captured_messages_raw();
     assert!(
       msgs.iter().any(|m| m.contains(
-        "Riffle::listrp: List, SparseArray object, or structured array expected at position 1 in Riffle[y, x]."
+        "Riffle::listrp: List, SparseArray object or structured array expected at position 1 in Riffle[y, x]."
       )),
       "expected listrp message, got {msgs:?}"
     );
@@ -26764,5 +26764,163 @@ mod linear_solve_matrix_message {
     // A symbolic argument stays unevaluated silently.
     let r = woxi::interpret_with_stdout("LinearSolve[f, {1, 2}]").unwrap();
     assert_eq!(r.warnings, Vec::<String>::new());
+  }
+}
+
+// A failed SparseArray construction (`SparseArray[{0 -> 1}, 2]`) is an inert
+// expression, not an array: densifying it gives it back unchanged, so the
+// densify-and-retry paths used to recurse until the stack overflowed (found
+// by the interpret fuzzer). All wolframscript-verified.
+mod failed_sparse_array_is_not_an_array {
+  use super::*;
+
+  const BAD: &str = "SparseArray[{0 -> 1}, 2]";
+
+  fn run(code: &str) -> woxi::InterpretResult {
+    clear_state();
+    interpret_with_stdout(&code.replace("BAD", BAD)).unwrap()
+  }
+
+  #[test]
+  fn join_reports_mismatched_heads() {
+    let r = run("Join[BAD, SparseArray[{1 -> 3}, 2]]");
+    assert_eq!(
+      r.result,
+      "Join[SparseArray[{0 -> 1}, 2], SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {3}}]]"
+    );
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Join::heads: Heads SparseArray and SparseArray at positions 1 and 2 are expected to be the same."
+    )));
+    let r = run("Normal[Join[BAD, SparseArray[{1 -> 3}, 2]]]");
+    assert_eq!(r.result, "Join[SparseArray[{0 -> 1}, 2], {3, 0}]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Join::heads: Heads SparseArray and List at positions 1 and 2 are expected to be the same."
+    )));
+    assert_eq!(run("Join[BAD]").result, BAD);
+  }
+
+  #[test]
+  fn normal_flatten_and_array_flatten_leave_it_alone() {
+    assert_eq!(run("Normal[f[BAD]]").result, "f[SparseArray[{0 -> 1}, 2]]");
+    assert_eq!(run("Flatten[{{BAD}}]").result, "{SparseArray[{0 -> 1}, 2]}");
+    let r = run("ArrayFlatten[BAD]");
+    assert_eq!(r.result, "ArrayFlatten[SparseArray[{0 -> 1}, 2]]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("ArrayFlatten::depth"))
+    );
+    assert_eq!(
+      run("BAD + {1, 2}").result,
+      "{1 + SparseArray[{0 -> 1}, 2], 2 + SparseArray[{0 -> 1}, 2]}"
+    );
+  }
+
+  #[test]
+  fn riffle_and_array_reshape_expect_an_array() {
+    let r = run("Riffle[BAD, x]");
+    assert_eq!(r.result, "Riffle[SparseArray[{0 -> 1}, 2], x]");
+    assert!(r.warnings.iter().any(|w| w.contains(
+      "Riffle::listrp: List, SparseArray object or structured array expected at position 1 in Riffle[SparseArray[{0 -> 1}, 2], x]."
+    )));
+    let r = run("ArrayReshape[BAD, {2}]");
+    assert_eq!(r.result, "ArrayReshape[SparseArray[{0 -> 1}, 2], {2}]");
+    assert!(
+      r.warnings
+        .iter()
+        .any(|w| w.starts_with("ArrayReshape::listrp"))
+    );
+  }
+}
+
+// ArrayReshape validates its arguments like wolframscript: a non-array first
+// argument is ArrayReshape::listrp, bad dimensions ArrayReshape::ilsmn; a
+// single integer is a one-dimensional shape and {} reshapes to a scalar.
+mod array_reshape_argument_validation {
+  use super::*;
+
+  #[test]
+  fn shapes() {
+    for (code, expected) in [
+      ("ArrayReshape[{1, 2, 3, 4}, 2]", "{1, 2}"),
+      ("ArrayReshape[{1, 2}, {}]", "1"),
+      ("ArrayReshape[{}, {}]", "0"),
+      ("ArrayReshape[{}, {2}]", "{0, 0}"),
+      ("ArrayReshape[{1, 2}, 3, x]", "{1, 2, x}"),
+      ("ArrayReshape[{{1, 2}, {3}}, {3}]", "{1, 2, 3}"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn messages() {
+    clear_state();
+    let r = interpret_with_stdout("ArrayReshape[x, {2}]").unwrap();
+    assert_eq!(r.result, "ArrayReshape[x, {2}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "ArrayReshape::listrp: List, SparseArray object or structured array expected at position 1 in ArrayReshape[x, {2}]."
+      ]
+    );
+    clear_state();
+    let r = interpret_with_stdout("ArrayReshape[{1, 2}, {2.}]").unwrap();
+    assert_eq!(r.result, "ArrayReshape[{1, 2}, {2.}]");
+    assert_eq!(
+      r.warnings,
+      vec![
+        "ArrayReshape::ilsmn: Single or list of non-negative machine-sized integers expected at position {2.} of ArrayReshape[{1, 2}, {2.}]."
+      ]
+    );
+  }
+}
+
+// A matrix routine that stays unevaluated on a SparseArray keeps the sparse
+// argument instead of echoing its densified form: a 3600x3600 system with a
+// symbolic right-hand side used to print 13 million zeros and run out of
+// memory (found by the interpret fuzzer). wolframscript-verified.
+#[test]
+fn unevaluated_linear_solve_keeps_its_sparse_matrix() {
+  assert_eq!(
+    interpret("LinearSolve[SparseArray[{{1, 1} -> 2., {2, 2} -> 3.}], x]")
+      .unwrap(),
+    "LinearSolve[SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, {2., 3.}}], x]"
+  );
+  assert_eq!(
+    interpret("LinearSolve[SparseArray[{{1, 1} -> 2., {2, 2} -> 3.}], {1, 2}]")
+      .unwrap(),
+    "{0.5, 0.6666666666666666}"
+  );
+}
+
+// Dot of a SparseArray with a non-array stays unevaluated as written (it used
+// to densify first, which for a 3600x3600 matrix took gigabytes — found by
+// the interpret fuzzer); the product of two SparseArrays is a SparseArray.
+// wolframscript-verified.
+#[test]
+fn sparse_array_dot_products() {
+  let a = "SparseArray[{{1, 1} -> 2, {2, 2} -> 3}]";
+  let shown =
+    "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, {2, 3}}]";
+  for (code, expected) in [
+    (format!("{a} . q"), format!("{shown} . q")),
+    (format!("q . {a}"), format!("q . {shown}")),
+    (format!("{a} . 5"), format!("{shown} . 5")),
+    (
+      format!("{a} . {a}"),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, {4, 9}}]".to_string(),
+    ),
+    (
+      format!("{a} . SparseArray[{{1 -> 1}}, 2]"),
+      "SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {2}}]".to_string(),
+    ),
+    (format!("{a} . {{{{1, 0}}, {{0, 1}}}}"), "{{2, 0}, {0, 3}}".to_string()),
+    (
+      "SparseArray[{{1, 1} -> 2.}, {2, 2}] . SparseArray[{{1, 1} -> 1}, {2, 2}]".to_string(),
+      "SparseArray[Automatic, {2, 2}, 0., {1, {{0, 1, 1}, {{1}}}, {2.}}]".to_string(),
+    ),
+  ] {
+    assert_eq!(interpret(&code).unwrap(), expected, "{code}");
   }
 }

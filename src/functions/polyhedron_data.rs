@@ -1350,8 +1350,21 @@ fn net_image(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
 
 /// Evaluate a stored exact WL value.
 fn eval_wl(src: &str) -> Result<Expr, InterpreterError> {
+  // The sources are constant tables (coordinates, class lists, metrics), and
+  // a lookup can scan all of them — an unknown entity checked every
+  // polyhedron's class list, re-parsing each one, which cost ~30 ms per
+  // call. Each source is parsed and evaluated once.
+  thread_local! {
+    static CACHE: std::cell::RefCell<std::collections::HashMap<String, Expr>> =
+      std::cell::RefCell::new(std::collections::HashMap::new());
+  }
+  if let Some(hit) = CACHE.with(|c| c.borrow().get(src).cloned()) {
+    return Ok(hit);
+  }
   let parsed = crate::functions::string_ast::parse_program_to_expr(src)?;
-  crate::evaluator::evaluate_expr_to_expr(&parsed)
+  let value = crate::evaluator::evaluate_expr_to_expr(&parsed)?;
+  CACHE.with(|c| c.borrow_mut().insert(src.to_string(), value.clone()));
+  Ok(value)
 }
 
 /// Metric/count properties exposed by `PolyhedronData[name, property]`,
