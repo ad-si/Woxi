@@ -462,3 +462,54 @@ fn graphics_axes_and_frames_use_gray_unless_explicitly_styled() {
     }
   }
 }
+
+/// A `Style[label, …, Background -> color]` inside a `Plot` `Epilog`
+/// `Text` paints a panel behind the label, as it does in `Graphics`, so
+/// the curve running under the label is hidden.
+mod epilog_text_style_background {
+  use super::*;
+
+  fn panel_count(svg: &str, fill: &str) -> usize {
+    svg
+      .split("<rect ")
+      .skip(1)
+      .filter(|rest| {
+        rest[..rest.find('>').unwrap()].contains(&format!("fill=\"{fill}\""))
+      })
+      .count()
+  }
+
+  #[test]
+  fn style_background_paints_a_panel() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> {Text[Style[Row[{Style[\"L\", \
+       Italic], \" = 2\"}], 18, Blue, Background -> Yellow], {0.5, 0.5}, \
+       {0, 0}]}]",
+    );
+    assert_eq!(panel_count(&svg, "rgb(255,255,0)"), 1, "{svg}");
+  }
+
+  #[test]
+  fn innermost_style_background_wins() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Text[Style[Style[\"ab\", \
+       Directive[Background -> Yellow]], Background -> Red], {0.5, 0.5}]]",
+    );
+    assert_eq!(panel_count(&svg, "rgb(255,255,0)"), 1, "{svg}");
+    assert_eq!(panel_count(&svg, "rgb(255,0,0)"), 0, "{svg}");
+  }
+
+  #[test]
+  fn no_background_draws_no_panel() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Text[Style[\"ab\", 18, Blue], \
+       {0.5, 0.5}]]",
+    );
+    let bare = svg_of("Plot[x, {x, 0, 1}]");
+    assert_eq!(
+      svg.matches("<rect ").count(),
+      bare.matches("<rect ").count(),
+      "{svg}"
+    );
+  }
+}

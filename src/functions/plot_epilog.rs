@@ -308,6 +308,35 @@ fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
   })
 }
 
+/// The `Background -> color` that `Style` wrappers around a label set
+/// (`Style[Row[…], 18, Blue, Background -> White]`), the innermost one
+/// winning, with directives grouped in lists or `Directive[…]` included.
+/// `None` when no wrapper gives a background.
+fn style_wrapper_background(label: &Expr) -> Option<Color> {
+  fn in_directives(ds: &[Expr]) -> Option<Color> {
+    ds.iter().rev().find_map(|d| match d {
+      Expr::List(items) => in_directives(items),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        in_directives(args)
+      }
+      _ => option_value(std::slice::from_ref(d), "Background")
+        .and_then(parse_color),
+    })
+  }
+  let mut found = None;
+  let mut cur = label;
+  while let Expr::FunctionCall { name, args } = cur
+    && crate::functions::graphics::is_style_wrapper(name)
+    && !args.is_empty()
+  {
+    if let Some(color) = in_directives(&args[1..]) {
+      found = Some(color);
+    }
+    cur = &args[0];
+  }
+  found
+}
+
 /// Try to interpret an expression as a `{x, y}` coordinate pair.
 fn point2(expr: &Expr) -> Option<(f64, f64)> {
   if let Expr::List(items) = expr
@@ -1028,8 +1057,11 @@ fn render_item(
           // `Text[label, pos, …, Background -> color]` (or an `Inset`'s
           // `Background`, carried over onto its text) lays a borderless
           // panel behind the label, so a curve running under it is hidden.
+          // A `Style[…, Background -> color]` around the label asks for the
+          // same panel, as it does in `Graphics`.
           let text_background = option_value(args, "Background")
             .and_then(parse_color)
+            .or_else(|| style_wrapper_background(body))
             .filter(|_| !is_framed && direction.is_none());
           if let Some(color) = text_background {
             let chars = styled.as_ref().map_or_else(
