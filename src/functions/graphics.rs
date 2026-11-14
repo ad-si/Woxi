@@ -6078,15 +6078,9 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       if matches!(name.as_str(), "ScientificForm" | "EngineeringForm")
         && !args.is_empty() =>
     {
-      let n = format_precision_arg(args.get(1), 6);
-      let parts = if name == "ScientificForm" {
-        crate::functions::string_ast::scientific_form_parts(&args[0], n)
-      } else {
-        crate::functions::string_ast::engineering_form_parts(&args[0], n)
-      };
-      match parts {
+      match exponent_form_display_parts(name, args) {
         Some((mantissa, Some(exp))) => {
-          format!("{mantissa}×10{}", to_unicode_script_digits(&exp.to_string(), true))
+          format!("{mantissa}×10{}", to_unicode_script_digits(&exp, true))
         }
         Some((mantissa, None)) => mantissa,
         None => graphics_text_content(&args[0]),
@@ -17333,6 +17327,54 @@ fn digit_group_extra_width(digit_count: usize) -> f64 {
 
 /// Read an optional precision/`n` argument of a display form, defaulting to
 /// `default` when it is absent or non-integer.
+/// The `(mantissa, exponent)` a `ScientificForm[x, …]`/`EngineeringForm[x, …]`
+/// call displays, the exponent `None` when the number sets without a
+/// `× 10^e` factor. An `ExponentFunction` or `NumberFormat` option is
+/// honored through the `ToString` renderer: `ScientificForm[12.3,
+/// ExponentFunction -> (If[-3 < # < 3, Null, #] &)]` reads `12.3`.
+fn exponent_form_display_parts(
+  name: &str,
+  args: &[Expr],
+) -> Option<(String, Option<String>)> {
+  let first = args.first()?;
+  let has_custom_option = args[1..].iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s)
+        if s == "ExponentFunction" || s == "NumberFormat"))
+  });
+  if has_custom_option {
+    let call_expr = Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    };
+    let rendered = crate::functions::string_ast::to_string_ast(&[call_expr]);
+    let Ok(Expr::String(text)) = &rendered else {
+      return None;
+    };
+    if text.starts_with(name) {
+      return None;
+    }
+    return Some(match split_scientific_2d(text) {
+      Some((base, exp)) => (
+        base
+          .strip_suffix("\u{00d7} 10")
+          .unwrap_or(&base)
+          .trim_end()
+          .to_string(),
+        Some(exp),
+      ),
+      None => (text.clone(), None),
+    });
+  }
+  let n = format_precision_arg(args.get(1), 6);
+  let parts = if name == "ScientificForm" {
+    crate::functions::string_ast::scientific_form_parts(first, n)
+  } else {
+    crate::functions::string_ast::engineering_form_parts(first, n)
+  }?;
+  Some((parts.0, parts.1.map(|e| e.to_string())))
+}
+
 fn format_precision_arg(arg: Option<&Expr>, default: i64) -> i64 {
   match arg {
     Some(Expr::Integer(n)) => *n as i64,
@@ -18631,27 +18673,8 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
         // ScientificForm[x] / [x, n] → mantissa × 10^exp with a superscript
         // exponent (matching the number's notebook typesetting).
-        "ScientificForm" if !args.is_empty() => {
-          let n = format_precision_arg(args.get(1), 6);
-          match crate::functions::string_ast::scientific_form_parts(&args[0], n)
-          {
-            Some((mantissa, Some(exp))) => format!(
-              "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-              svg_escape(&mantissa),
-              exp
-            ),
-            Some((mantissa, None)) => svg_escape(&mantissa),
-            None => expr_to_svg_markup(&args[0]),
-          }
-        }
-
-        // EngineeringForm[x] / [x, n] → like ScientificForm but exp is a
-        // multiple of 3.
-        "EngineeringForm" if !args.is_empty() => {
-          let n = format_precision_arg(args.get(1), 6);
-          match crate::functions::string_ast::engineering_form_parts(
-            &args[0], n,
-          ) {
+        "ScientificForm" | "EngineeringForm" if !args.is_empty() => {
+          match exponent_form_display_parts(name, args) {
             Some((mantissa, Some(exp))) => format!(
               "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
               svg_escape(&mantissa),
@@ -19509,16 +19532,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // (mantissa × 10^exp, base digits, padded number) rather than the raw
       // `Head[...]` text, so table columns aren't wildly over-sized.
       "ScientificForm" | "EngineeringForm" if !args.is_empty() => {
-        let n = format_precision_arg(args.get(1), 6);
-        let parts = if name == "ScientificForm" {
-          crate::functions::string_ast::scientific_form_parts(&args[0], n)
-        } else {
-          crate::functions::string_ast::engineering_form_parts(&args[0], n)
-        };
-        match parts {
+        match exponent_form_display_parts(name, args) {
           Some((mantissa, Some(exp))) => {
             // mantissa + "×10" (3) + exponent as a 70%-width superscript
-            mantissa.len() as f64 + 3.0 + exp.to_string().len() as f64 * 0.7
+            mantissa.len() as f64 + 3.0 + exp.len() as f64 * 0.7
           }
           Some((mantissa, None)) => mantissa.len() as f64,
           None => estimate_display_width(&args[0]),

@@ -3385,6 +3385,25 @@ mod graphics {
     }
 
     #[test]
+    fn scientific_form_with_exponent_function_in_grid() {
+      // Regression: a `ScientificForm[x, ExponentFunction -> f]` cell —
+      // alone or wrapped in `NumberForm[…, n]` — printed its raw
+      // `ScientificForm[…]` source instead of the formatted number.
+      let suppress = "ExponentFunction -> (If[-3 < # < 3, Null, #] &)";
+      let svg = export_svg(&format!(
+        "Graphics[Text[Grid[{{{{\"a\", NumberForm[ScientificForm[0.58234, {suppress}], 3]}}, \
+         {{\"b\", NumberForm[ScientificForm[0.000123456, {suppress}], 3]}}, \
+         {{\"c\", ScientificForm[12.25, {suppress}]}}}}]]]"
+      ));
+      assert!(!svg.contains("ScientificForm"), "{svg}");
+      assert!(!svg.contains("ExponentFunction"), "{svg}");
+      assert!(svg.contains(">0.582<"), "{svg}");
+      assert!(svg.contains("1.23×10"), "{svg}");
+      assert!(svg.contains(">-4<"), "{svg}");
+      assert!(svg.contains(">12.25<"), "{svg}");
+    }
+
+    #[test]
     fn text_grid_with_merged_cells_is_a_table() {
       // Regression: `Text[Grid[{{"", SpanFromLeft, …}, …}, Dividers -> All],
       // pos]` in a `Graphics` printed the flattened cell text, including the
