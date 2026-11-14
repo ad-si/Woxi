@@ -993,6 +993,19 @@ no evaluated mark yet.
 
 ## Numeric precision and floating point
 
+### High-precision logarithms and powers are quadratic in the precision
+
+```sh
+wolframscript -code 'AbsoluteTiming[Precision[10^-15.95`100000]]'   # {0.0895, 99998.43961339409}
+woxi eval 'Precision[10^-15.95`100000]'                             # 99998.43502362391 (10 s)
+```
+
+astro-float computes `ln` by a series whose cost grows with the square of the
+precision (0.15 s at 10^4 digits, 10 s at 10^5), where wolframscript's grows
+nearly linearly. The interpret fuzzer keeps producing such literals (a
+precision tag of `395301709`), which then time out. The reported precision
+differs slightly at this size too.
+
 ### A machine real divided by an exact quotient differs in the last digit
 
 ```sh
