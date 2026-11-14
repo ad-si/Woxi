@@ -5979,10 +5979,9 @@ struct StyleState3D {
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
-  /// `Style[…, Bold]` (or `FontWeight -> Bold`) around `Text` labels.
-  font_bold: bool,
-  /// `Style[…, Italic]` (or `FontSlant -> Italic`) around `Text` labels.
-  font_italic: bool,
+  /// `(bold, italic)`: `Style[…, Bold]` / `Style[…, Italic]` (or
+  /// `FontWeight -> Bold` / `FontSlant -> Italic`) around `Text` labels.
+  font_face: (bool, bool),
 }
 
 impl Default for StyleState3D {
@@ -6008,8 +6007,7 @@ impl Default for StyleState3D {
       vertex_colors: None,
       arrowhead: None,
       font_size: None,
-      font_bold: false,
-      font_italic: false,
+      font_face: (false, false),
     }
   }
 }
@@ -7935,7 +7933,7 @@ fn push_text3d_label(
   let (bold, italic) = styled
     .as_ref()
     .map_or((false, false), |s| (s.bold, s.italic));
-  let (bold, italic) = (bold || style.font_bold, italic || style.font_italic);
+  let (bold, italic) = (bold || style.font_face.0, italic || style.font_face.1);
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
       // A stacked label keeps its lines apart by newlines; the renderer
@@ -8830,8 +8828,8 @@ fn collect_3d_primitives(
             let evaluated =
               evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
             if let Some((bold, italic)) = font_face_directive(&evaluated) {
-              style.font_bold |= bold;
-              style.font_italic |= italic;
+              style.font_face.0 |= bold;
+              style.font_face.1 |= italic;
               continue;
             }
             match try_eval_to_f64(&evaluated) {
@@ -11803,8 +11801,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vertex_colors: None,
             arrowhead: None,
             font_size: None,
-            font_bold: false,
-            font_italic: false,
+            font_face: (false, false),
           },
         ),
       };
