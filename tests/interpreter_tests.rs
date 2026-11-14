@@ -4841,6 +4841,66 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_control_caption_picture_renders_as_svg_icon() {
+    // A caption `Framed@Graphics[{Disk[{0, 0}, 1, {0, t}]}, …]` is a
+    // picture, not text: it yields an SVG icon and no text runs, and the
+    // icon follows the variable it reads.
+    clear_state();
+    let caption = |t: &str| {
+      interpret(&format!("t = {t}")).unwrap();
+      woxi::functions::graphics::manipulate_eval_caption(
+        "Framed[Graphics[{Red, Disk[{0, 0}, 1, {0, t}]}, PlotRange -> 1, ImageSize -> 30]]",
+      )
+      .unwrap()
+    };
+    let (runs, quarter) = caption("Pi/2");
+    assert!(runs.is_empty(), "a picture caption has no text: {runs:?}");
+    let quarter = quarter.expect("a picture caption renders to SVG");
+    assert!(quarter.starts_with("<svg"), "not an SVG: {quarter}");
+    assert!(!quarter.contains("Graphics["), "source leaked: {quarter}");
+    let (_, half) = caption("Pi");
+    assert_ne!(Some(quarter), half, "the icon must follow t");
+
+    // A text caption stays text.
+    let (runs, svg) =
+      woxi::functions::graphics::manipulate_eval_caption("\"angle\"").unwrap();
+    assert!(svg.is_none());
+    assert_eq!(
+      woxi::functions::graphics::manipulate_label_text(&runs),
+      "angle"
+    );
+    interpret("Clear[t]").unwrap();
+  }
+
+  #[test]
+  fn test_manipulate_picture_captions_are_caption_code() {
+    // Both a `Dynamic[…]` picture caption and a static `Graphics[…]` one
+    // travel as caption code, since neither has text to store on the
+    // control; a plain string caption does not.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a + b + c, {{a, 1, Dynamic[Framed@Graphics[{Disk[{0, 0}, 1, {0, a}]}, ImageSize -> 30]]}, 0.1, 3}, {{b, 0, Graphics[{Disk[]}, ImageSize -> 20]}, 0, 1}, {{c, 0, \"c\"}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let names: Vec<&str> = spec
+      .dynamic_labels
+      .iter()
+      .map(|(n, _)| n.as_str())
+      .collect();
+    assert_eq!(names, ["a", "b"]);
+    interpret("a = 1").unwrap();
+    for (_, code) in &spec.dynamic_labels {
+      let (runs, svg) =
+        woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+      assert!(runs.is_empty());
+      assert!(svg.is_some_and(|s| s.starts_with("<svg")), "{code}");
+    }
+    interpret("Clear[a]").unwrap();
+  }
+
+  #[test]
   fn test_plot_label_matrix_form_typesets_entries_not_source() {
     // `MatrixForm[{{…}}]` in a `PlotLabel` is typeset as a matrix (a
     // picture above the drawing), not printed as the wrapper's source, and
