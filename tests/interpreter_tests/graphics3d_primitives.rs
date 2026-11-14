@@ -696,6 +696,55 @@ mod plot3d_options {
     assert!(!s.contains("fill=\"rgb(178,178,178)\""));
   }
 
+  // A numeric filling level outside the surface's own values widens the
+  // automatic vertical range so the wall reaches it.
+  #[test]
+  fn filling_level_below_the_surface_extends_the_range() {
+    clear_state();
+    let out = interpret(
+      "Cases[Plot3D[x^2, {x, -1, 1}, {y, -1, 1}, Mesh -> None, \
+       Filling -> -3], Polygon[q_?(ArrayDepth[#] == 3 &)] :> \
+       Min[q[[All, All, 3]]], Infinity]",
+    )
+    .unwrap();
+    assert_eq!(out, "{-3.}");
+  }
+
+  // `FillingStyle` colors the wall, which travels into `Show` with the
+  // surface as polygons in data coordinates.
+  #[test]
+  fn filling_style_colors_the_wall_and_survives_show() {
+    clear_state();
+    let out = interpret(
+      "Cases[Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> Red], {EdgeForm[], c_RGBColor, Polygon[_]} :> c, \
+       Infinity]",
+    )
+    .unwrap();
+    assert_eq!(out, "{RGBColor[1., 0., 0.]}");
+    let red = svg(
+      "Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> Red]",
+    );
+    assert!(!red.contains("fill=\"rgb(178,178,178)\""));
+    // The lit wall is red-dominated.
+    assert!(fills(&red).iter().any(|c| {
+      let v: Vec<u32> = c.split(',').filter_map(|x| x.parse().ok()).collect();
+      v.len() == 3 && v[0] > 150 && v[1] < 100 && v[2] < 100
+    }));
+    let shown = svg(
+      "Show[Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom], \
+       Graphics3D[Sphere[{0, 0, 0}, 0.1]]]",
+    );
+    assert!(
+      polygon_count(&shown)
+        > polygon_count(&svg(
+          "Show[Plot3D[y, {x, 0, 1}, {y, 0, 1}], \
+       Graphics3D[Sphere[{0, 0, 0}, 0.1]]]"
+        ))
+    );
+  }
+
   #[test]
   fn plot_legends_expressions() {
     let s = svg(
@@ -878,6 +927,18 @@ mod fields_and_graphs {
 
 mod arrows_and_box {
   use super::*;
+
+  // `Opacity` fades a `Text` label in a 3-D scene; `Opacity[0]` hides it.
+  #[test]
+  fn opacity_applies_to_text_labels() {
+    let shown = svg("Graphics3D[{Text[\"Qz\", {0, 0, 0}], Sphere[]}]");
+    assert!(shown.contains(">Qz<"));
+    let hidden =
+      svg("Graphics3D[{Opacity[0], Text[\"Qz\", {0, 0, 0}], Sphere[]}]");
+    assert!(!hidden.contains(">Qz<"));
+    let faded = svg("Graphics3D[{Opacity[0.3], Text[\"Qz\", {0, 0, 0}]}]");
+    assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
+  }
 
   /// The area of the first filled arrowhead `<polygon>` (the triangle after
   /// a `<polyline>`).
