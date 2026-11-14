@@ -23869,6 +23869,43 @@ mod ndsolve_complex_periodic_pde {
     );
   }
 
+  /// A complex Ginzburg–Landau equation started from the uniform state
+  /// settles on a plane wave `E^(-2 I t)` of modulus 1. Its phase turns
+  /// about 2 radians per default output row spacing, so the stored time
+  /// rows must follow the rotation: otherwise `Abs` of the interpolated
+  /// solution dips between rows.
+  #[test]
+  fn rotating_phase_keeps_modulus_between_time_rows() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == 1, u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 60}, {x, -10, 10}]; \
+         Min[Table[Abs[u[t, 3.]], {t, 0, 60, 0.37}] /. First[s]] > 0.999"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// `Abs` of a complex PDE solution, substituted into a plot body with
+  /// `Evaluate`, samples to a density plot (the solution's tables are
+  /// carried through every sample point unchanged).
+  #[test]
+  fn density_plot_of_complex_pde_solution() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == E^(-x^2), u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 20}, {x, -10, 10}]; \
+         Head[DensityPlot[Evaluate[Abs[u[t, x]] /. s], {t, 0, 20}, {x, -10, 10}, \
+           PlotPoints -> 10, MaxRecursion -> 1]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
   /// The forcing term and initial profile may be complex expressions of
   /// `x`, and the result is complex (not just its absolute value).
   #[test]

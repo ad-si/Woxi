@@ -5387,6 +5387,14 @@ Woxi renders its own SVG; `wolframscript` prints `-Graphics-` and exports
 cairo-rendered SVG, so pixel or markup equality is never the goal. What follows
 is where the *drawn* result differs.
 
+### Products inside picture-label scripts keep an explicit `*`
+
+A symbolic product used as a sub- or superscript of a picture label
+(`Text[Superscript[e, j k L], {0, 0}]`, `Text[Subscript[e, 2 x], …]`) is
+written `j*k*L` / `2*x`, the OutputForm spelling widget labels use, where
+the front end typesets the factors separated by spaces (`j k L`, `2 x`).
+A string script (`Superscript[e, "j k L"]`) reads correctly.
+
 ### Legacy `VectorFieldPlots`` plots carry fewer options
 
 The package's `Graphics` gets `FilterRules[{opts, Options[ListVectorFieldPlot]},
@@ -5631,6 +5639,27 @@ contents' own enclosing sphere (radius 3). The cube- and bar-shaped
 calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
+
+### A long explicit `PlotRange` box at a fixed `ImageSize` draws smaller in Wolfram
+
+Without `SphericalRegion`, Woxi fits the projected outline of the displayed
+box into an `ImageSize -> {w, h}` picture. A Demonstration drawing a long,
+thin `Graphics3D` scene through `Show[g, PlotRange -> {{-11, 11},
+{-4.25, 4.25}, {-4.25, 4.25}}, ImageSize -> {575, 350}]` (with `Boxed ->
+False` and the default view) behaves differently. In all four of its Wolfram
+snapshots, a cylinder from `{-10, 0, 0}` to `{10, 0, 0}` is about 246 px
+wide. In Woxi it is 357 px wide: the box's outline fills the 350 px height.
+
+Wolfram's size matches what Woxi draws with `SphericalRegion -> True`. That
+gives 250 px, with the same slope and centering, as if the sphere around the
+displayed box were fit into the shorter image side.
+
+This conflicts with the calibration in the entry above. There a
+`SphericalRegion -> False` cylinder at `ImageSize -> {550, 350}` without a
+`PlotRange` fills the width (532/550). So the explicit `PlotRange`, `Show`,
+or `Boxed -> False` may trigger the different framing. This could not be
+checked without wolframscript: no snapshot of a box-filling scene with
+an explicit `PlotRange` and a fixed image size was available to compare.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -8697,6 +8726,8 @@ Found comparing the graphics-tests renders (2026-11):
     `ListPlot` with `FrameTicks -> All` matches.
   - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
     in italics (TraditionalForm), and writes `-a` with a minus sign.
+  - A symbol used as an axes or frame label (`FrameLabel -> {Z, X}`) is
+    likewise set upright; WL sets it in italics (TraditionalForm).
   - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
     draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
@@ -8972,7 +9003,12 @@ populations, GDPs and areas differ from WL's own curated values (US area:
 WL 9.63142*^6 km^2, World Bank 9.83151*^6), and `"Population"` is the latest
 World Bank year rather than WL's rounded estimate. Yearly series are
 returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
-`DateObject`s). The shape and polygon properties come from Natural Earth's
+`DateObject`s). The further indicators (`"BirthRateFraction"`,
+`"LifeExpectancy"`, `"PovertyFraction"`, sub-populations, trade and
+national-account figures, …; see `scripts/gen_country_indicators.py`) are
+the latest World Bank year and so also differ from WL's curated values;
+WL properties without a World Bank counterpart (radio stations, airports,
+military, …) return `Missing["NotAvailable", prop]`. The shape and polygon properties come from Natural Earth's
 1:110m outlines, coarser than WL's and with their own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
@@ -10094,3 +10130,13 @@ lines its columns up as a table in `Graphics` and `Show` (the way Wolfram
 draws it), but `Plot` and the other charts with their own title pipeline
 (`src/functions/plot.rs`) still join each row's cells with a space into a
 single centered line of text.
+
+### `Show[plots, PlotRange -> {xr, Automatic}]` keeps the plots' explicit y range
+
+When `Show` merges plots that were drawn with an explicit
+`PlotRange -> {0, 100}` and is itself given `PlotRange -> {{x0, x1},
+Automatic}`, Wolfram recomputes the vertical range from the merged graphics,
+dropping outlying vertices such as the `Top` corners of `Filling -> {i -> Top}`
+polygons (a saved snapshot shows roughly 2.5–29.5 for curves spanning
+4–22), while Woxi keeps the first plot's 0–100. The exact outlier rule
+for an `Automatic` range of merged graphics is not yet known.

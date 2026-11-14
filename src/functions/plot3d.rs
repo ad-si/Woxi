@@ -1636,6 +1636,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Filling -> Bottom | Top | Axis | z`: the height the surface is filled
   // down (or up) to.
   let mut filling: Option<Expr> = None;
+  // `FillingStyle`: how the filling wall is drawn. Unset, it is WL's
+  // translucent gray.
+  let mut filling_style: Option<StyleState3D> = None;
   // `BoundaryStyle`: the outline along the surface's edges, black by
   // default; `None` turns it off.
   let mut boundary_style: Option<StyleState3D> = Some(StyleState3D {
@@ -1665,7 +1668,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             other => mesh_levels = parse_mesh_levels(other),
           }
@@ -1691,6 +1696,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           filling = match replacement.as_ref() {
             Expr::Identifier(n) if n == "None" => None,
             other => Some(other.clone()),
+          };
+        }
+        Expr::Identifier(name) if name == "FillingStyle" => {
+          filling_style = match replacement.as_ref() {
+            Expr::Identifier(n) if n == "Automatic" => None,
+            other => parse_plot_style_3d(other, 1).into_iter().next(),
           };
         }
         Expr::Identifier(name) if name == "BoundaryStyle" => {
@@ -1845,6 +1856,17 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A numeric `Filling` level is part of the picture: the automatic
+  // vertical range reaches down (or up) to it.
+  let filling_level = filling.as_ref().and_then(|spec| match spec {
+    Expr::Identifier(_) => None,
+    other => try_eval_to_f64(other),
+  });
+  if let Some(level) = filling_level.filter(|l| l.is_finite()) {
+    global_z_min = global_z_min.min(level);
+    global_z_max = global_z_max.max(level);
+  }
+
   // Use PlotRange if specified, otherwise the global data range
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
@@ -1897,7 +1919,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // together with a `Graphics3D`. Emitting the sampled surface in world
   // coordinates — styled with the directives the standalone render
   // shades it by — lets `Show[Plot3D[…], Graphics3D[…]]` draw both.
-  let structure = {
+  let mut structure = {
     let complexes: Vec<Expr> = grids
       .iter()
       .enumerate()
@@ -2383,21 +2405,49 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  // `Filling` hangs a translucent gray wall from the surface's outer edge
-  // down (or up) to the filling height.
+  // `Filling` hangs a wall from the surface's outer edge down (or up) to
+  // the filling height: translucent gray by default, or lit in the color
+  // of a `FillingStyle`.
   if let Some(spec) = &filling {
     let to = match spec {
       Expr::Identifier(n) if n == "Bottom" => Some(z_lo),
       Expr::Identifier(n) if n == "Top" => Some(z_hi),
       Expr::Identifier(n) if n == "Axis" => Some(0.0),
-      other => try_eval_to_f64(other),
+      _ => filling_level,
     };
+    let lit_style = filling_style.as_ref().filter(|s| s.color.is_some());
     if let Some(to) = to {
       let to = to.clamp(z_lo, z_hi);
+      let mut wall_quads: Vec<Expr> = Vec::new();
       for [a, b] in &edge_segments {
         let quad = [*a, *b, [b[0], b[1], to], [a[0], a[1], to]];
+        wall_quads.push(Expr::List(
+          quad
+            .iter()
+            .map(|p| {
+              Expr::List(
+                p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        ));
         for tri in [[quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]]] {
           let [v0, v1, v2] = tri.map(to_box);
+          let (color, opacity) = match lit_style {
+            Some(style) => shade_facet(
+              SurfaceDefault::Plain(style.color.unwrap_or((178, 178, 178))),
+              None,
+              Some(style),
+              triangle_normal(v0, v1, v2),
+              tri_center(v0, v1, v2),
+              &scene,
+            ),
+            // Wolfram's `FillingStyle -> Opacity[0.5]` gray, flattened onto
+            // the white page: neighboring translucent pieces would leave
+            // seams where their edges overlap.
+            None => ((178, 178, 178), 1.0),
+          };
           all_triangles.push(Triangle {
             boundary: [false; 3],
             edge_color: None,
@@ -2405,15 +2455,40 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_dashing: None,
             projected: [v0, v1, v2].map(|v| project(v, &camera)),
             depth: depth(tri_center(v0, v1, v2), &camera),
-            // Wolfram's `FillingStyle -> Opacity[0.5]` gray, flattened onto
-            // the white page: neighboring translucent pieces would leave
-            // seams where their edges overlap.
-            color: (178, 178, 178),
-            opacity: 1.0,
+            color,
+            opacity,
             texture: None,
             vertex_colors: None,
           });
         }
+      }
+      // The wall travels with the surface into `Show`, in data coordinates
+      // and with the filling's own style.
+      if !wall_quads.is_empty()
+        && let Expr::FunctionCall { args: sargs, .. } = &mut structure
+        && let Some(content) = sargs.first_mut()
+      {
+        let mut wall = vec![call0("EdgeForm")];
+        match lit_style {
+          Some(style) => {
+            if style.opacity < 1.0 {
+              wall.push(call1("Opacity", Expr::Real(style.opacity)));
+            }
+            let (r, g, b) = style.color.unwrap_or((178, 178, 178));
+            wall.push(call(
+              "RGBColor",
+              vec![
+                Expr::Real(r as f64 / 255.0),
+                Expr::Real(g as f64 / 255.0),
+                Expr::Real(b as f64 / 255.0),
+              ],
+            ));
+          }
+          None => wall.push(call1("GrayLevel", Expr::Real(0.7))),
+        }
+        wall.push(call1("Polygon", Expr::List(wall_quads.into())));
+        let surface = std::mem::replace(content, Expr::List(vec![].into()));
+        *content = Expr::List(vec![surface, Expr::List(wall.into())].into());
       }
     }
   }
@@ -5993,6 +6068,9 @@ struct StyleState3D {
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
+  /// `(bold, italic)`: `Style[…, Bold]` / `Style[…, Italic]` (or
+  /// `FontWeight -> Bold` / `FontSlant -> Italic`) around `Text` labels.
+  font_face: (bool, bool),
   /// The panel `Background -> color` paints behind the `Text` labels, as
   /// a `Style[Text[…], Background -> color]` wrapper or the label's own
   /// option gives it. `None` draws the label straight on the scene.
@@ -6022,6 +6100,7 @@ impl Default for StyleState3D {
       vertex_colors: None,
       arrowhead: None,
       font_size: None,
+      font_face: (false, false),
       text_background: None,
     }
   }
@@ -7979,6 +8058,32 @@ fn text3d_background_option(opt: &Expr) -> Option<Option<(u8, u8, u8)>> {
 /// Typesets `label_expr` (a `Text`/`Inset` label, e.g. a plain string or
 /// `Style[…]`) and pushes a `Text3D` primitive for it at `pos`, if it
 /// renders to non-empty text.
+/// The `(bold, italic)` a font-face `Style` directive turns on: `Bold`,
+/// `Italic`, `FontWeight -> Bold` or `FontSlant -> Italic`.
+fn font_face_directive(directive: &Expr) -> Option<(bool, bool)> {
+  match directive {
+    Expr::Identifier(n) if n == "Bold" => Some((true, false)),
+    Expr::Identifier(n) if n == "Italic" => Some((false, true)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "FontWeight" && v == "Bold" =>
+      {
+        Some((true, false))
+      }
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "FontSlant" && v == "Italic" =>
+      {
+        Some((false, true))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 fn push_text3d_label(
   label_expr: &Expr,
   pos: Point3D,
@@ -8010,6 +8115,7 @@ fn push_text3d_label(
   let (bold, italic) = styled
     .as_ref()
     .map_or((false, false), |s| (s.bold, s.italic));
+  let (bold, italic) = (bold || style.font_face.0, italic || style.font_face.1);
   // A number that typesets as a stacked fraction (`1/30`) keeps the
   // flattened `num\n--\nden` form the 2D labels draw it from, so the
   // renderer stacks it the same way instead of writing `1/30` on one line.
@@ -8366,9 +8472,10 @@ fn collect_3d_primitives(
         }
         // `Arrow[Tube[curve, r]]` is a solid arrow: the tube, stopped short
         // of the curve's end, and a slim cone head whose tip sits on that
-        // end. Wolfram sizes the head by the arrow (a twentieth of the
-        // curve's extent), not by the tube, so a thick tube hides most of
-        // it.
+        // end. Wolfram sizes the head by the picture, not by the tube (so a
+        // thick tube hides most of it): `Arrowheads[s]` (default a
+        // twentieth) is a fraction of the diagonal of the scene's box.
+        // Before that box is known, the curve's own extent stands in.
         "Arrow"
           if matches!(args.first(), Some( Expr::FunctionCall { name: n, args: ta })
             if n == "Tube" && !ta.is_empty()) =>
@@ -8384,12 +8491,19 @@ fn collect_3d_primitives(
             other => other.clone(),
           };
           let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+          // The head covers the last `len` of the curve (measured along
+          // it, so a finely sampled arc still gets a full-size head): the
+          // shaft stops where it begins and the cone points from there to
+          // the tip.
           let head = parse_point3d_list(&curve)
             .filter(|pts| pts.len() >= 2)
             .and_then(|pts| {
               let tip = pts[pts.len() - 1];
-              let prev = pts[pts.len() - 2];
-              let seg = v_len([tip.x - prev.x, tip.y - prev.y, tip.z - prev.z]);
+              let dist = |a: Point3D, b: Point3D| {
+                v_len([a.x - b.x, a.y - b.y, a.z - b.z])
+              };
+              let curve_len: f64 =
+                pts.windows(2).map(|w| dist(w[0], w[1])).sum();
               let (mut lo, mut hi) =
                 ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
               for p in &pts {
@@ -8398,20 +8512,41 @@ fn collect_3d_primitives(
                   hi[k] = hi[k].max(c);
                 }
               }
-              let diag = v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]);
-              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(seg);
-              (seg > 0.0 && len > 0.0).then(|| {
-                let base = Point3D {
-                  x: tip.x + (prev.x - tip.x) / seg * len,
-                  y: tip.y + (prev.y - tip.y) / seg * len,
-                  z: tip.z + (prev.z - tip.z) / seg * len,
-                };
-                let mut shaft = pts.clone();
-                if let Some(last) = shaft.last_mut() {
-                  *last = base;
+              let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
+                v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
+              });
+              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(curve_len);
+              if !(curve_len > 0.0 && len > 0.0) {
+                return None;
+              }
+              // Walk back from the tip until `len` of the curve is used up.
+              let mut remaining = len;
+              let mut shaft = pts.clone();
+              let mut base = pts[0];
+              while shaft.len() >= 2 {
+                let end = shaft[shaft.len() - 1];
+                let prev = shaft[shaft.len() - 2];
+                let seg = dist(end, prev);
+                if seg >= remaining {
+                  let t = if seg > 0.0 { remaining / seg } else { 0.0 };
+                  base = Point3D {
+                    x: end.x + (prev.x - end.x) * t,
+                    y: end.y + (prev.y - end.y) * t,
+                    z: end.z + (prev.z - end.z) * t,
+                  };
+                  if let Some(last) = shaft.last_mut() {
+                    *last = base;
+                  }
+                  break;
                 }
-                (shaft, base, tip, len)
-              })
+                remaining -= seg;
+                shaft.pop();
+              }
+              if shaft.len() < 2 {
+                shaft = vec![pts[0], base];
+              }
+              let chord = dist(base, tip);
+              (chord > 0.0).then_some((shaft, base, tip, chord))
             });
           match head {
             Some((shaft, base, tip, len)) => {
@@ -8895,6 +9030,11 @@ fn collect_3d_primitives(
           for directive in &args[1..] {
             let evaluated =
               evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
+            if let Some((bold, italic)) = font_face_directive(&evaluated) {
+              style.font_face.0 |= bold;
+              style.font_face.1 |= italic;
+              continue;
+            }
             if let Some(bg) = text3d_background_option(&evaluated) {
               style.text_background = bg;
               continue;
@@ -10091,6 +10231,29 @@ thread_local! {
 /// 4 pixels wide).
 fn scene_image_width() -> f64 {
   SCENE_IMAGE_WIDTH.get()
+}
+
+thread_local! {
+  /// Diagonal of the box of the `Graphics3D` currently being collected (its
+  /// explicit `PlotRange`, else the extent of its contents), which an
+  /// `Arrowheads[s]` size on an `Arrow[Tube[…]]` is a fraction of. `None`
+  /// until the box is known: a first collection pass measures it.
+  static SCENE_ARROW_EXTENT: std::cell::Cell<Option<f64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// True when a 3D scene holds an `Arrow[Tube[…]]`, whose solid head is
+/// sized by the box of the whole scene.
+fn contains_tube_arrow(expr: &Expr) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().any(contains_tube_arrow),
+    Expr::FunctionCall { name, args } => {
+      (name == "Arrow"
+        && matches!(args.first(), Some(Expr::FunctionCall { name: n, .. }) if n == "Tube"))
+        || args.iter().any(contains_tube_arrow)
+    }
+    _ => false,
+  }
 }
 
 thread_local! {
@@ -11366,7 +11529,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
   SCENE_IMAGE_WIDTH.set(svg_width as f64);
+  SCENE_ARROW_EXTENT.set(None);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
+
+  // Solid `Arrow[Tube[…]]` heads are sized by the scene's box, so once the
+  // first pass has measured it the scene is collected again.
+  if contains_tube_arrow(&content) {
+    let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    let diag = v_len([b[0].1 - b[0].0, b[1].1 - b[1].0, b[2].1 - b[2].0]);
+    if diag.is_finite() && diag > 0.0 {
+      SCENE_ARROW_EXTENT.set(Some(diag));
+      prims.clear();
+      style3d = StyleState3D::default();
+      collect_3d_primitives(&content, &mut style3d, &mut prims);
+    }
+  }
 
   if plot_range.is_none()
     && let Some(partial) = partial_range
@@ -11843,6 +12020,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vertex_colors: None,
             arrowhead: None,
             font_size: None,
+            font_face: (false, false),
             text_background: None,
           },
         ),
@@ -12907,6 +13085,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           default_prim_color.to_string()
         };
+        // An `Opacity` in force fades the label like any other primitive;
+        // `Opacity[0]` hides it.
+        if style.opacity <= 0.0 {
+          continue;
+        }
+        let opacity_attr = if style.opacity < 1.0 {
+          format!(" opacity=\"{}\"", style.opacity)
+        } else {
+          String::new()
+        };
         let (px, py) = project(*pos, &camera);
         let (sx, sy) = to_svg(px, py);
         if let Some((pic, w, h)) = picture {
@@ -12914,7 +13102,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let y = sy - h / 2.0 + offset.1 * h / 2.0;
           svg.push_str(&pic.replacen(
             "<svg ",
-            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\" "),
+            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\"{opacity_attr} "),
             1,
           ));
           svg.push('\n');
@@ -13035,7 +13223,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
@@ -13829,7 +14017,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -14917,7 +15107,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -15728,7 +15920,9 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -18515,7 +18709,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -20670,7 +20866,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             Expr::Integer(n) if *n >= 0 => mesh_count = Some(*n as usize),
             Expr::List(items) => {

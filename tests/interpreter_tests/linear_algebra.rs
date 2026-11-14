@@ -5936,6 +5936,74 @@ mod translation_transform {
 mod transformation_function_apply {
   use super::*;
 
+  // A transformation applied to a geometric region maps the region's
+  // points, keeping the primitive (so it can still be drawn).
+  #[test]
+  fn rotation_of_cylinder_rotates_its_axis() {
+    assert_eq!(
+      interpret(
+        "RotationTransform[Pi/2, {1, 0, 0}][Cylinder[{{0, 0, 0}, {0, 0, 1}}, 2]]"
+      )
+      .unwrap(),
+      "Cylinder[{{0, 0, 0}, {0, -1, 0}}, 2]"
+    );
+  }
+
+  #[test]
+  fn nested_rotations_of_cylinder() {
+    assert_eq!(
+      interpret(
+        "RotationTransform[Pi/2, {0, 0, 1}][RotationTransform[Pi/2, {1, 0, 0}][\
+         Cylinder[{{0, 0, 0}, {0, 0, 1}}]]]"
+      )
+      .unwrap(),
+      "Cylinder[{{0, 0, 0}, {1, 0, 0}}, 1]"
+    );
+  }
+
+  #[test]
+  fn rotation_of_sphere_moves_its_center() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2, {1, 0, 0}][Sphere[{1, 1, 0}]]")
+        .unwrap(),
+      "Sphere[{1, 0, 1}, 1]"
+    );
+  }
+
+  #[test]
+  fn uniform_scaling_scales_radius_exactly() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 2}][Disk[{1, 0}, 1]]").unwrap(),
+      "Disk[{2, 0}, 2]"
+    );
+    assert_eq!(
+      interpret("ScalingTransform[{3, 3, 3}][Ball[{1, 0, 0}, r]]").unwrap(),
+      "Ball[{3, 0, 0}, 3*r]"
+    );
+  }
+
+  #[test]
+  fn translation_of_point_primitives() {
+    assert_eq!(
+      interpret("TranslationTransform[{1, 2}][Line[{{0, 0}, {1, 1}}]]")
+        .unwrap(),
+      "Line[{{1, 2}, {2, 3}}]"
+    );
+    assert_eq!(
+      interpret("RotationTransform[t][Point[{1, 0}]]").unwrap(),
+      "Point[{Cos[t], Sin[t]}]"
+    );
+  }
+
+  // A non-uniform scaling does not keep a disk round, so it stays applied.
+  #[test]
+  fn non_uniform_scaling_of_disk_stays_applied() {
+    assert_eq!(
+      interpret("ScalingTransform[{2, 1}][Disk[{1, 0}, 1]]").unwrap(),
+      "TransformationFunction[{{2, 0, 0}, {0, 1, 0}, {0, 0, 1}}][Disk[{1, 0}, 1]]"
+    );
+  }
+
   #[test]
   fn rotation_apply() {
     assert_eq!(

@@ -5572,6 +5572,18 @@ mod plot3d {
       ));
     }
 
+    /// `Mesh -> False` draws no mesh lines, exactly like `Mesh -> None`.
+    #[test]
+    fn mesh_false_is_mesh_none() {
+      let plot = |mesh: &str| {
+        export_svg(&format!(
+          "Plot3D[Sin[x] Cos[y], {{x, -3, 3}}, {{y, -3, 3}}, Mesh -> {mesh}]"
+        ))
+      };
+      assert_eq!(plot("False"), plot("None"));
+      assert_ne!(plot("False"), plot("Automatic"));
+    }
+
     #[test]
     fn mesh_all() {
       insta::assert_snapshot!(export_svg(
@@ -6405,6 +6417,56 @@ mod plot3d {
         svg("ColorFunction -> Function[{x, y, t}, If[t < 0.5, Red, Blue]]");
       assert!(scaled.contains("stroke=\"#FF0000\""));
       assert!(scaled.contains("stroke=\"#0000FF\""));
+    }
+
+    /// Regression: a `ColorFunction` returning `Directive[color,
+    /// Opacity[a]]` was not read as a color, so the curve was drawn black
+    /// and opaque. The color applies and the opacity makes it translucent,
+    /// also in the primitives taken out of the plot with `Part`.
+    #[test]
+    fn parametric_plot_color_function_directive_with_opacity() {
+      clear_state();
+      let plot = "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+                  ColorFunction -> (Directive[Red, Opacity[#3]] &)]";
+      let svg = interpret(&format!("ExportString[{plot}, \"SVG\"]")).unwrap();
+      assert!(svg.contains("stroke=\"#FF0000\""), "{svg}");
+      assert!(!svg.contains("stroke=\"#000000\""), "{svg}");
+      assert!(svg.contains("opacity=\"0.5"), "{svg}");
+      // The extracted runs: red throughout, fading in along the parameter.
+      assert_eq!(
+        interpret(&format!(
+          "dirs = Cases[{plot}[[1]], Directive[__], Infinity]; \
+           {{Union[Cases[dirs, _RGBColor, Infinity]], \
+           First[Cases[First[dirs], Opacity[a_] :> a]] < 0.01, \
+           Max[Cases[dirs, Opacity[a_] :> a, Infinity]] > 0.98}}"
+        ))
+        .unwrap(),
+        "{{RGBColor[1., 0., 0.]}, True, True}"
+      );
+      // `Opacity[a, color]` is read the same way.
+      let svg = interpret(
+        "ExportString[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+         ColorFunction -> (Opacity[0.5, Blue] &)], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("stroke=\"#0000FF\""), "{svg}");
+      assert!(svg.contains("opacity=\"0.50"), "{svg}");
+    }
+
+    /// Regression: the primitives of a translucent plot curve (`PlotStyle ->
+    /// Opacity[a]`) taken out with `Part` lost the opacity.
+    #[test]
+    fn plot_part_keeps_curve_opacity() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[Plot[x, {x, 0, 1}, PlotStyle -> Opacity[0.5]][[1]], \
+           Directive[__], Infinity]"
+        )
+        .unwrap(),
+        "{Directive[Opacity[0.5], RGBColor[0.24, 0.6, 0.8], \
+         AbsoluteThickness[2.]]}"
+      );
     }
 
     /// Regression: `Axes -> None` was ignored, so the axes were still drawn.
@@ -11546,6 +11608,53 @@ mod plot3d {
       assert!(!svg.contains("N[0.5"), "{svg}");
     }
 
+    /// The text of every `<text>` element, trimmed.
+    fn svg_text_labels(svg: &str) -> Vec<String> {
+      svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| {
+          let body = &t[t.find('>')? + 1..];
+          Some(body[..body.find("</text>")?].trim().to_string())
+        })
+        .filter(|t| !t.is_empty())
+        .collect()
+    }
+
+    // `Ticks` sets the ticks of the axes only: a framed plot keeps its
+    // automatic frame ticks, also when re-rendered by `Show`, and an
+    // explicit `FrameTicks` list still labels the frame.
+    #[test]
+    fn ticks_option_does_not_relabel_the_frame() {
+      for code in [
+        "Plot[x, {x, 0, 2}, Ticks -> {{0.3, 1.3}, {0.35}}, \
+         Frame -> True, PlotRange -> {{0, 2.1}, {0, 1.1}}]",
+        "Show[Plot[x, {x, 0, 2}, Frame -> True, \
+         Ticks -> {{0.3, 1.3}, {0.35}}, \
+         PlotRange -> {{0, 2.1}, {0, 1.1}}], ImageSize -> 300]",
+      ] {
+        let labels = svg_text_labels(&export_svg(code));
+        for label in ["0.0", "0.5", "1.0", "1.5", "2.0", "0.2", "0.8"] {
+          assert!(labels.iter().any(|l| l == label), "{label}: {labels:?}");
+        }
+        for label in ["0.3", "1.3", "0.35"] {
+          assert!(!labels.iter().any(|l| l == label), "{label}: {labels:?}");
+        }
+      }
+      // Unframed, the explicit ticks label the axes.
+      let labels = svg_text_labels(&export_svg(
+        "Plot[x, {x, 0, 2}, Ticks -> {{0.4, 1.2}}]",
+      ));
+      assert!(labels.iter().any(|l| l == "1.2"), "{labels:?}");
+      // `FrameTicks` given after `Ticks` labels the frame.
+      let labels = svg_text_labels(&export_svg(
+        "Plot[x, {x, 0, 2}, Frame -> True, Ticks -> {{0.4}}, \
+         FrameTicks -> {{{0.7, \"m\"}}, Automatic}]",
+      ));
+      assert!(labels.iter().any(|l| l == "m"), "{labels:?}");
+      assert!(!labels.iter().any(|l| l == "0.4"), "{labels:?}");
+    }
+
     // `ListPlot` honors explicit `{position, label}` ticks on the bottom
     // and left frame edges, as `Plot` does, instead of the automatic ones.
     #[test]
@@ -16022,6 +16131,65 @@ mod plot3d {
       assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
     }
 
+    /// Several rules may name the same curve: `{1 -> {{2}, c1}, 1 -> {Top,
+    /// c2}}` shades between curves 1 and 2 in `c1` *and* from curve 1 up to
+    /// the top in `c2`. Only one fill per curve used to survive, with the
+    /// first rule's target painted in the last rule's color.
+    #[test]
+    fn plot_filling_repeated_series_rules_all_fill() {
+      let code = "Plot[{x, 2 x}, {x, 0, 1}, \
+                  Filling -> {1 -> {{2}, Blue}, 1 -> {Top, Orange}}]";
+      for svg in [
+        export_svg(code),
+        export_svg(&format!("Show[{code}]")),
+        export_svg(&format!("Show[{code}, PlotRange -> {{0, 3}}]")),
+      ] {
+        assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+        assert!(svg.contains("fill=\"#FF8000\""), "{svg}");
+      }
+      // The plot's primitives hold both shaded regions, in rule order.
+      assert_eq!(
+        interpret(&format!(
+          "Cases[{code}, {{Opacity[_, c_], _Polygon}} :> c, Infinity]"
+        ))
+        .unwrap(),
+        "{RGBColor[0., 0., 1.], RGBColor[1., 0.5019607843137255, 0.]}"
+      );
+    }
+
+    /// `Show` lists the curves of all its plots one after another, so a
+    /// curve-to-curve fill of the second plot has to name its partner by
+    /// the merged position. It used to keep its index within its own plot
+    /// and fill between curves of the first plot instead (or not at all).
+    #[test]
+    fn show_shifts_curve_to_curve_filling_targets() {
+      let svg = export_svg(
+        "Show[Plot[{x, 2 x, 3 x}, {x, 0, 1}, Filling -> {2 -> {{3}, Red}}], \
+         Plot[{x, 2 x}, {x, 1, 2}, Filling -> {1 -> {{2}, Blue}}]]",
+      );
+      let polygons: Vec<&str> =
+        svg.split("<polygon").skip(1).collect::<Vec<_>>();
+      assert_eq!(polygons.len(), 2, "{svg}");
+      let blue = polygons
+        .iter()
+        .find(|p| p.contains("fill=\"#0000FF\""))
+        .unwrap_or_else(|| panic!("no blue fill: {svg}"));
+      let red = polygons
+        .iter()
+        .find(|p| p.contains("fill=\"#FF0000\""))
+        .unwrap_or_else(|| panic!("no red fill: {svg}"));
+      // The blue region lies right of the red one (x in 1..2, not 0..1).
+      let min_x = |p: &str| {
+        let pts = p.split("points=\"").nth(1).unwrap();
+        let pts = &pts[..pts.find('"').unwrap()];
+        pts
+          .split_whitespace()
+          .map(|xy| xy.split(',').next().unwrap().parse::<f64>().unwrap())
+          .fold(f64::INFINITY, f64::min)
+      };
+      assert!(min_x(blue) > min_x(red), "{svg}");
+    }
+
     // Curves that meet exactly on a sample point still split into two colors.
     #[test]
     fn plot_filling_between_curves_two_colors_touch_on_sample() {
@@ -18060,6 +18228,48 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     #[test]
     fn polar_plot_rose() {
       insta::assert_snapshot!(export_svg("PolarPlot[Cos[3 t], {t, 0, 2 Pi}]"));
+    }
+
+    /// A spiral winding many times is refined adaptively, so each turn is
+    /// drawn smoothly rather than as a coarse polygon of grid samples.
+    #[test]
+    fn polar_plot_many_turn_spiral_is_refined() {
+      let n = interpret(
+        "Cases[Show[PolarPlot[t, {t, 0, 100 Pi}]], \
+         Line[p_] :> Length[p], Infinity][[1]]",
+      )
+      .unwrap()
+      .parse::<usize>()
+      .unwrap();
+      // 50 turns need far more than the 500-point initial grid.
+      assert!(n > 1500, "only {n} samples");
+    }
+
+    /// `ColorFunction` colors a PolarPlot curve along its length, with
+    /// `f[x, y, θ, r]` scaled over the plot by default.
+    #[test]
+    fn polar_plot_color_function_by_angle() {
+      let svg = export_svg(
+        "PolarPlot[t, {t, 0, 4 Pi}, ColorFunction -> Function[{x, y, t}, Hue[t]]]",
+      );
+      // Starts red (Hue[0]), passes through green (Hue[1/3]) and blue
+      // (Hue[2/3]), in many runs of constant color.
+      assert!(svg.contains("stroke=\"#FF0"), "{svg}");
+      assert!(svg.contains("stroke=\"#00FF"), "{svg}");
+      assert!(
+        svg.contains("stroke=\"#00") && svg.contains("FF\""),
+        "{svg}"
+      );
+      assert!(svg.matches("<polyline").count() > 100, "{svg}");
+      // The fourth argument is the radius, scaled to [0, 1].
+      let svg = export_svg(
+        "PolarPlot[2 + Cos[t], {t, 0, 2 Pi}, \
+         ColorFunction -> Function[{x, y, t, r}, GrayLevel[r]]]",
+      );
+      // r runs from 1 (black) to 3 (white).
+      assert!(svg.contains("stroke=\"#010101\""), "{svg}");
+      assert!(svg.contains("stroke=\"#FEFEFE\""), "{svg}");
+      assert!(!svg.contains("stroke=\"#3D99CC\""), "{svg}");
     }
   }
 
@@ -24864,6 +25074,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .and_then(|v| v.parse::<f64>().ok())
         .expect("first text y");
       assert!(big_y >= 20.0, "40pt row is too short, y={big_y}: {svg}");
+    }
+
+    // A styled layout nested in another styled layout keeps both styles —
+    // the inner color and the outer size — and draws its items instead of
+    // the source text `Column[{b, c}]`.
+    #[test]
+    fn styled_column_inside_styled_column_is_laid_out() {
+      for expr in [
+        "Style[Column[{\"a\", Style[Column[{\"b\", \"c\"}], Blue]}], 12]",
+        "Style[Style[Column[{\"b\", \"c\"}], Blue], 12]",
+        "Column[{\"a\", Style[Style[Column[{\"b\", \"c\"}], Blue], 12]}]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(!svg.contains("Column["), "{expr} dumped source: {svg}");
+        for part in ["b", "c"] {
+          let blue_12 = svg.split("<text").any(|t| {
+            t.contains("font-size=\"12\"")
+              && t.contains("fill=\"rgb(0,0,255)\"")
+              && t.contains(&format!(">{part}<"))
+          });
+          assert!(blue_12, "{expr}: `{part}` not blue at 12pt: {svg}");
+        }
+      }
     }
 
     // A `Spacer[n]` *between* a row's items is blank horizontal space, the
@@ -35595,6 +35828,43 @@ mod manipulate {
     }
   }
 
+  // A `Locator[Dynamic[p, cb]]` inside a `Dynamic[Graphics[…]]` display
+  // element placed among the controls (a 2D "controller" picture) drags the
+  // hidden `ControlType -> None` point, so the point becomes a 2D control
+  // carrying the Dynamic's write-back callback.
+  #[test]
+  fn spec_display_element_locator_promotes_hidden_point() {
+    let expr = interpret_to_expr(
+      "Manipulate[p + n, {{p, {1, 2}}, {0, 0}, {5, 4}, ControlType -> None}, \
+       Dynamic[Graphics[{Locator[Dynamic[p, (p = Round[#]) &]]}, \
+       PlotRange -> {{0, 5}, {0, 4}}]], {n, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match spec.controls.iter().find(|c| c.name() == "p") {
+      Some(ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        x_initial,
+        y_initial,
+        write_callback,
+        ..
+      }) => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 5.0, 0.0, 4.0));
+        assert_eq!((*x_initial, *y_initial), (1.0, 2.0));
+        assert!(
+          write_callback
+            .as_deref()
+            .is_some_and(|cb| cb.contains("Round")),
+          "got {write_callback:?}"
+        );
+      }
+      other => panic!("expected Slider2D for p, got {other:?}"),
+    }
+  }
+
   // A hidden point driven by an in-body `LocatorPane[Dynamic[p, cb], …]` is
   // promoted to a 2D control; corner bounds referencing another control
   // (`{-n, -n}`, `{n, 0}`) resolve against that control's initial value.
@@ -37440,6 +37710,52 @@ mod manipulate {
   /// must turn a click into a selection list. The write-back used to
   /// `Append` to the scalar, leaving `Append[0, 1]` behind so a body
   /// testing `MemberQ[v, 1]` never saw the tick.
+  /// A number-formatting wrapper around an exact fraction in a Dynamic
+  /// control-area grid shows the fraction, not its stacked 2-D `ToString`
+  /// layout run together on one line (`9 -- 10`).
+  #[test]
+  fn spec_display_number_form_of_fraction_shows_the_fraction() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn texts(node: &DisplayNode, out: &mut Vec<String>) {
+      match node {
+        DisplayNode::Text { runs } => {
+          out.push(runs.iter().map(|r| r.text.as_str()).collect());
+        }
+        DisplayNode::Static { text, .. } => out.push(text.clone()),
+        DisplayNode::Panel(child) => texts(child, out),
+        DisplayNode::Grid(rows) => {
+          for c in rows.iter().flatten() {
+            texts(c, out);
+          }
+        }
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            texts(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    let grid = "Grid[{{AccountingForm[1 - x/10, {8, 7}], NumberForm[3/4, 2], \
+                AccountingForm[0.25, {4, 2}]}}, Dividers -> All]";
+    // A bare grid, and one sized in a `Pane` (drawn as typeset text runs).
+    for display in [grid.to_string(), format!("Pane[{grid}, {{300, 40}}]")] {
+      let expr = interpret_to_expr(&format!(
+        "Manipulate[x, {{x, 1, 2}}, Dynamic[{display}]]"
+      ))
+      .unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("manipulate");
+      assert_eq!(spec.displays.len(), 1);
+      let bindings = manipulate_initial_bindings(&spec);
+      let node = woxi::with_scoped_globals(&bindings, || {
+        build_manipulate_display(&spec.displays[0], &bindings)
+      });
+      let mut found = Vec::new();
+      texts(&node, &mut found);
+      assert_eq!(found, ["9/10", "3/4", "0.25"], "{display}: {node:?}");
+    }
+  }
+
   #[test]
   fn spec_checkbox_bar_click_on_non_list_value_starts_a_list() {
     use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
@@ -39113,6 +39429,43 @@ mod manipulate {
         ("c".to_string(), "(q) == (2)".to_string()),
       ]
     );
+  }
+
+  /// Bare front-end controls bound with `Dynamic[var]` inside `PaneSelector`
+  /// panes — `Manipulator[Dynamic[x], …]` in one pane, a
+  /// `Slider2D[Dynamic[p], …]` in the other — become control rows that are
+  /// shown only while their pane is selected.
+  #[test]
+  fn pane_selector_dynamic_bound_controls_carry_pane_visibility() {
+    let expr = interpret_to_expr(
+      "Manipulate[{x, p}, {{s, False, \"s\"}, {True, False}}, \
+       Row[{PaneSelector[{True -> Column[{Row[{\"x \", \
+       Manipulator[Dynamic[x], {-2, 2}]}]}], \
+       False -> Row[{\"p \", Slider2D[Dynamic[p], {{-2, -2}, {2, 2}}]}]}, \
+       Dynamic[s]]}], \
+       {{x, 0}, ControlType -> None}, \
+       {{p, {0, 0}}, {-2, -2}, {2, 2}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let slider2d = spec.controls.iter().find(|c| {
+      matches!(c, woxi::functions::ManipulateControl::Slider2D { name, .. }
+        if name == "p")
+    });
+    assert!(slider2d.is_some(), "controls: {:?}", spec.controls);
+    let cond = |var: &str| {
+      spec
+        .control_visible
+        .iter()
+        .find(|(n, _)| n == var)
+        .map(|(_, c)| c.clone())
+    };
+    assert_eq!(cond("x").as_deref(), Some("(s) == (True)"));
+    assert_eq!(cond("p").as_deref(), Some("(s) == (False)"));
+    // The caption leading into each pane's control is shown with it.
+    let heading = woxi::functions::graphics::heading_visibility_key;
+    assert_eq!(cond(&heading("x ")).as_deref(), Some("(s) == (True)"));
+    assert_eq!(cond(&heading("p ")).as_deref(), Some("(s) == (False)"));
   }
 
   #[test]
@@ -51239,14 +51592,21 @@ mod generalized_bar_chart {
   }
 
   /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
-  /// base, not the `SuperStar[d]` expression the box reads back as.
+  /// base (the star raised as a script), not the `SuperStar[d]` expression
+  /// the box reads back as.
   #[test]
   fn text_label_with_star_superscript_box() {
     let svg = export_svg(
       r#"Graphics[Text["\!\(\*SubscriptBox[SuperscriptBox[\(d\), \(*\)], \(hkl\)]\)", {0, 0}]]"#,
     );
     assert!(!svg.contains("SuperStar"), "{svg}");
-    assert!(svg.contains("d^*"), "{svg}");
+    assert!(
+      svg.contains(
+        "d<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>\
+         <tspan baseline-shift=\"sub\" font-size=\"70%\">hkl</tspan>"
+      ),
+      "{svg}"
+    );
   }
 
   #[test]

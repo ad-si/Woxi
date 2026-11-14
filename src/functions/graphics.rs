@@ -1687,6 +1687,41 @@ pub(crate) fn parse_color_function_result(expr: &Expr) -> Option<Color> {
     );
     return Some(c.with_alpha(ch.get(3).copied().unwrap_or(1.0)));
   }
+  // `Directive[color, Opacity[a]]` (or `Opacity[a, color]`): the color the
+  // directive sets, with the opacity folded into its alpha. A directive
+  // that sets no color does not color the curve.
+  if let Expr::FunctionCall { name, args } = expr {
+    match name.as_str() {
+      "Directive" => {
+        let mut color: Option<Color> = None;
+        let mut alpha: Option<f64> = None;
+        for d in args {
+          if let Expr::FunctionCall { name, args: oa } = d
+            && name == "Opacity"
+            && !oa.is_empty()
+          {
+            if let Some(c) = parse_color_function_result(d) {
+              color = Some(c);
+            }
+            alpha = expr_to_f64(&oa[0]).or(alpha);
+          } else if let Some(c) = parse_color_function_result(d) {
+            color = Some(c);
+          }
+        }
+        let c = color?;
+        return Some(match alpha {
+          Some(a) => c.with_alpha(a.clamp(0.0, 1.0)),
+          None => c,
+        });
+      }
+      "Opacity" if args.len() == 2 => {
+        let a = expr_to_f64(&args[0])?;
+        return parse_color_function_result(&args[1])
+          .map(|c| c.with_alpha(a.clamp(0.0, 1.0)));
+      }
+      _ => {}
+    }
+  }
   parse_color(expr)
 }
 
@@ -7784,10 +7819,26 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A string whose inline box notation stacks material (an arrow with its
   // rate above it, a fraction) cannot be set as one line of text: lay the
   // boxes out and embed the result centered on the anchor.
+  //
+  // An expression that typesets as a built-up fraction (`x^2/y`, or a
+  // `Row` holding a `Row[…]/Row[…]` quotient such as `dθ/dξ`) is laid out
+  // the same way, so the fraction stacks inline with the rest of the label
+  // instead of being printed as a multi-line text picture.
+  let stacked_boxes = match content {
+    Expr::String(s) if has_script_stacked_inline_box(s) => {
+      inline_box_string_to_box_expr(s)
+    }
+    _ if label_typesets_fraction(content) => {
+      Some(crate::strip_number_precision_markers(
+        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          content,
+        ),
+      ))
+    }
+    _ => None,
+  };
   if frame_opts.is_empty()
-    && let Expr::String(s) = content
-    && has_script_stacked_inline_box(s)
-    && let Some(boxes) = inline_box_string_to_box_expr(s)
+    && let Some(boxes) = stacked_boxes
     && let Some((x, y, scaled)) = match args.get(1) {
       Some(pos) => expr_to_anchor(pos),
       None => Some((0.0, 0.0, false)),
@@ -11192,7 +11243,11 @@ fn graphics_decorations(
           || {
             let size = crate::functions::plot_padding::markup_font_size(s)
               .unwrap_or(LABEL_FONT);
-            crate::functions::plot_padding::label_width(s, size)
+            // The label is SVG markup already (typeset when the option
+            // was read), so it is measured as drawn rather than parsed
+            // as box notation again, which read the quotes of its
+            // attributes as string literals and counted the tags.
+            crate::functions::plot_padding::text_width(s, size)
           },
           |(w, _)| w,
         )
@@ -11818,13 +11873,17 @@ pub(crate) fn svg_escape(s: &str) -> String {
     .replace('"', "&quot;");
   let escaped = render_math_letterlike_glyphs(&escaped);
   let escaped = render_combining_overlines(&escaped);
-  if escaped.contains(SUBSCRIPT_START) {
+  if escaped.contains(SUBSCRIPT_START) || escaped.contains(SUPERSCRIPT_START) {
     escaped
       .replace(
         SUBSCRIPT_START,
         "<tspan baseline-shift=\"sub\" font-size=\"70%\">",
       )
-      .replace(SUBSCRIPT_END, "</tspan>")
+      .replace(
+        SUPERSCRIPT_START,
+        "<tspan baseline-shift=\"super\" font-size=\"70%\">",
+      )
+      .replace([SUBSCRIPT_END, SUPERSCRIPT_END], "</tspan>")
   } else {
     escaped
   }
@@ -16350,7 +16409,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       "SubscriptBox" if args.len() == 2 => {
         let base = layout_box(&args[0], font_size);
         let sub = layout_box_nested(&args[1], font_size * 0.7);
-        let sub_y = base.height * 0.4;
+        // A text base (ascent 0.8 em, height 1.05 em) drops its subscript
+        // to 0.4 of its height, i.e. 0.38 em above the base's baseline. A
+        // base with an accent stacked on it (`OverDot[θ]`) keeps that
+        // distance from its baseline rather than from its taller top, so
+        // the subscript is not lifted to the accent.
+        let sub_y = (base.height * 0.4).max(base.baseline - 0.38 * font_size);
         let elements = format!(
           "{}{}",
           base.translate(0.0, 0.0),
@@ -20735,10 +20799,51 @@ pub fn axes_label_entry(e: &Expr) -> Option<String> {
 }
 
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
+  // The styling stays on the outside while the expressions it wraps are
+  // set in traditional notation, like an unstyled label: `Style[θ[ξ], 14]`
+  // reads `θ(ξ)`.
   if contains_visible_style(e) {
-    return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));
+    return Some(format!(
+      "{STYLED_LABEL_MARKER}{}",
+      expr_to_svg_markup(&traditionalize_styled_label(e))
+    ));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Wrap the unstyled expressions of a styled label in `TraditionalForm`,
+/// leaving the `Style`/`Text`/`Row` layout around them and any part that
+/// carries styling of its own (`Subscript[Style["T", Italic], "r"]`) as is.
+fn traditionalize_styled_label(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args }
+      if (name == "Style" || (name == "Text" && args.len() == 1))
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.clone();
+      new_args[0] = traditionalize_styled_label(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Row" && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let mut new_args = args.clone();
+      if let Some(Expr::List(items)) = args.first() {
+        new_args[0] =
+          Expr::List(items.iter().map(traditionalize_styled_label).collect());
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
+    _ if contains_visible_style(e) => e.clone(),
+    _ => traditionalize_layout_items(e),
+  }
 }
 
 /// Whether `e` is, or (inside a `Row`) holds, a `Style[label, …]` whose
@@ -20754,6 +20859,11 @@ fn contains_visible_style(e: &Expr) -> bool {
       Some(Expr::List(items)) => items.iter().any(contains_visible_style),
       _ => false,
     },
+    // `Text[Style["ξ", 14]]`: a one-argument `Text` is just its label, so
+    // the styling of what it wraps still shows.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      contains_visible_style(&args[0])
+    }
     // `Subscript[Style["T", Italic], "r"]`: the script's base (or the
     // script itself) carries the styling.
     Expr::FunctionCall { name, args }
@@ -21804,64 +21914,70 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     // don't leak onto the line drawn after it. FillingStyle appearance
     // travels on the series (fill_color/fill_opacity); the defaults
     // match the standalone plot render (series color at 0.2 opacity).
-    let between = match sd.filling {
-      crate::syntax::SeriesFilling::Series(j) if !sd.is_scatter => {
-        ps.series.get(j).and_then(|t| {
-          crate::functions::plot::fill_between_polygon(&sd.points, &t.points)
-        })
-      }
-      _ => None,
-    };
-    let level_ref_y = if sd.is_scatter {
-      None
-    } else {
-      sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
-    };
-    if between.is_some() || level_ref_y.is_some() {
-      let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
-      let mut fill_prims: Vec<Expr> = vec![
-        call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(fr as f64 / 255.0),
-            Expr::Real(fg as f64 / 255.0),
-            Expr::Real(fb as f64 / 255.0),
-          ],
-        ),
-      ];
-      let segments = if between.is_some() {
-        Vec::new()
-      } else {
-        crate::functions::plot::split_into_segments(&sd.points)
-      };
-      if let Some(poly) = &between {
-        let coords: Vec<Expr> = poly
-          .iter()
-          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-          .collect();
-        fill_prims.push(call1("Polygon", Expr::List(coords.into())));
-      }
-      let ref_y = level_ref_y.unwrap_or(0.0);
-      for seg in &segments {
-        if seg.len() < 2 {
-          continue;
+    for fill in sd.fills() {
+      let between = match fill.filling {
+        crate::syntax::SeriesFilling::Series(j) if !sd.is_scatter => {
+          ps.series.get(j).and_then(|t| {
+            crate::functions::plot::fill_between_polygon(&sd.points, &t.points)
+          })
         }
-        let mut coords: Vec<Expr> = seg
-          .iter()
-          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-          .collect();
-        let (x_last, _) = seg[seg.len() - 1];
-        let (x_first, _) = seg[0];
-        coords.push(Expr::List(
-          vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
-        ));
-        coords.push(Expr::List(
-          vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
-        ));
-        fill_prims.push(call1("Polygon", Expr::List(coords.into())));
+        _ => None,
+      };
+      let level_ref_y = if sd.is_scatter {
+        None
+      } else {
+        fill.filling.reference_y(ps.y_range.0, ps.y_range.1)
+      };
+      if between.is_some() || level_ref_y.is_some() {
+        let (fr, fg, fb) = fill.color.unwrap_or(sd.color);
+        let mut fill_prims: Vec<Expr> = vec![
+          call1("Opacity", Expr::Real(fill.opacity.unwrap_or(0.2))),
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(fr as f64 / 255.0),
+              Expr::Real(fg as f64 / 255.0),
+              Expr::Real(fb as f64 / 255.0),
+            ],
+          ),
+        ];
+        let segments = if between.is_some() {
+          Vec::new()
+        } else {
+          crate::functions::plot::split_into_segments(&sd.points)
+        };
+        if let Some(poly) = &between {
+          let coords: Vec<Expr> = poly
+            .iter()
+            .map(|&(x, y)| {
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+            })
+            .collect();
+          fill_prims.push(call1("Polygon", Expr::List(coords.into())));
+        }
+        let ref_y = level_ref_y.unwrap_or(0.0);
+        for seg in &segments {
+          if seg.len() < 2 {
+            continue;
+          }
+          let mut coords: Vec<Expr> = seg
+            .iter()
+            .map(|&(x, y)| {
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+            })
+            .collect();
+          let (x_last, _) = seg[seg.len() - 1];
+          let (x_first, _) = seg[0];
+          coords.push(Expr::List(
+            vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
+          ));
+          coords.push(Expr::List(
+            vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
+          ));
+          fill_prims.push(call1("Polygon", Expr::List(coords.into())));
+        }
+        series_prims.push(Expr::List(fill_prims.into()));
       }
-      series_prims.push(Expr::List(fill_prims.into()));
     }
     // Scattered points with a `Filling` carry a stem from each point to the
     // fill level, drawn under the points at the filling opacity.
@@ -22688,7 +22804,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if any_curves && ps.series.is_empty() {
         continue;
       }
-      all_series.extend(ps.series.iter().cloned());
+      // A curve-to-curve fill names its partner by index within its own
+      // plot; in the merged list that plot's curves start further on.
+      let offset = all_series.len();
+      let shift = |f: &mut crate::syntax::SeriesFilling| {
+        if let crate::syntax::SeriesFilling::Series(j) = f {
+          *j += offset;
+        }
+      };
+      all_series.extend(ps.series.iter().cloned().map(|mut s| {
+        shift(&mut s.filling);
+        s.extra_fills.iter_mut().for_each(|f| shift(&mut f.filling));
+        s
+      }));
       x_min = x_min.min(ps.x_range.0);
       x_max = x_max.max(ps.x_range.1);
       y_min = y_min.min(ps.y_range.0);
@@ -23729,6 +23857,52 @@ fn has_stacked_inline_box(s: &str) -> bool {
     ]
     .iter()
     .any(|head| s.contains(head))
+}
+
+/// Whether a label expression typesets as a built-up fraction: an
+/// arithmetic expression whose box form holds a `FractionBox`, possibly
+/// inside a `Row` or a style wrapper. Strings and other layouts are drawn as
+/// ordinary text.
+fn label_typesets_fraction(expr: &Expr) -> bool {
+  match expr {
+    // A bare rational number (`-7/4`) is drawn by the numeric fraction
+    // label path, which puts a proper minus sign before the stacked
+    // fraction.
+    Expr::FunctionCall { name, .. } if name == "Rational" => false,
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Times" | "Power" | "Plus")
+        && !has_string_operand(expr) =>
+    {
+      box_has_fraction(
+        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          expr,
+        ),
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      matches!(&args[0], Expr::List(items) if items.iter().any(label_typesets_fraction))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      label_typesets_fraction(&args[0])
+    }
+    _ => false,
+  }
+}
+
+/// Whether an arithmetic expression has a bare string among its operands
+/// (`"7"/100`): such a quotient is drawn on one line, as `7/100`.
+fn has_string_operand(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(_) => true,
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
+    {
+      args.iter().any(has_string_operand)
+    }
+    _ => false,
+  }
 }
 
 /// Whether a string's inline box notation stacks an over/underscript (an
@@ -30495,6 +30669,24 @@ pub(crate) fn style_pushed_into_layout(
       );
       return call(name.as_str(), new_args);
     }
+    // An already styled vertical layout (`Style[Column[…], Blue]`) takes the
+    // inherited directives into its own `Style`, ahead of its own so those
+    // still win: a doubly nested `Style[Style[Column[…], Blue], 12]` would
+    // hide the inner layout from the renderer and be typeset as its source.
+    // (A styled `Row` item is already set inline as it is.)
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Style"
+      && let Some(Expr::FunctionCall { name: content, .. }) = args.first()
+      && matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
+    {
+      return call(
+        "Style",
+        std::iter::once(args[0].clone())
+          .chain(directives.iter().cloned())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+    }
     call(
       "Style",
       std::iter::once(e.clone())
@@ -30961,6 +31153,28 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
+        // `Style[Style[Column[…], Blue], 12]`: the directives of both
+        // wrappers apply to the vertical layout, the inner ones taking
+        // precedence.
+        if name == "Style"
+          && let Expr::FunctionCall {
+            name: n,
+            args: inner,
+          } = &args[0]
+          && n == "Style"
+          && matches!(inner.first(), Some(Expr::FunctionCall { name: c, .. })
+            if matches!(c.as_str(), "Column" | "Grid" | "TextGrid"))
+          && style_pushed_into_layout(&inner[0], &inner[1..]).is_some()
+        {
+          let merged = call(
+            "Style",
+            std::iter::once(inner[0].clone())
+              .chain(args[1..].iter().cloned())
+              .chain(inner[1..].iter().cloned())
+              .collect(),
+          );
+          return nested_layout_svg(&merged);
+        }
         if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
           return nested_layout_svg(&inner);
         }
@@ -35936,6 +36150,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Dynamic[{a, b}], …] &]}`) can draw the pane over *other* hidden state
   // variables; those are driven interactively exactly like a pane in the body.
   for spec in &args[1..] {
+    // A display element placed among the controls (`Dynamic[Graphics[{
+    // Locator[Dynamic[p, cb]], …}]]`, a Demonstration's 2D "controller"
+    // picture) drags its hidden variable just like a marker in the body.
+    if matches!(spec, Expr::FunctionCall { name, .. } if name == "Dynamic") {
+      for (var, callback) in collect_body_locator_callbacks(spec) {
+        if !body_locators.iter().any(|(n, _)| *n == var) {
+          body_locators.push((var, callback));
+        }
+      }
+      continue;
+    }
     let Expr::List(items) = spec else { continue };
     for item in items.iter().skip(1) {
       let item = unwrap_dynamic_control(item);
@@ -35987,6 +36212,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
+  // successive controls, applied once the controls are known.
+  let mut successive_placements: Vec<ControlPlacement> = Vec::new();
   let mut bookmarks: Vec<(String, String)> = Vec::new();
   // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
   // cannot be bound by name; each is renamed to a synthesized plain symbol,
@@ -36242,6 +36470,21 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // `ControlPlacement -> {Top, Top, Left, Right}` places successive
+      // controls on the listed sides, one entry per control.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement")
+        && let Expr::List(items) = replacement.as_ref()
+        && items.len() > 1
+      {
+        successive_placements = items
+          .iter()
+          .map(|item| match item {
+            Expr::Identifier(s) => ControlPlacement::from_symbol(s),
+            _ => None,
+          })
+          .collect::<Option<Vec<_>>>()
+          .unwrap_or_default();
       }
       // A widget-level `FrameLabel -> label` (a string, `Style`, `Column`, …
       // rather than the `{bottom, left}` pair a plot takes) is a caption
@@ -37196,6 +37439,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   for (name, value) in &fixed {
     if !state.iter().any(|(n, _)| n == name) {
       state.push((name.clone(), value.clone()));
+    }
+  }
+
+  // Hand out the successive placements to the named controls in order; a
+  // control's own `ControlPlacement` option keeps precedence.
+  if !successive_placements.is_empty() {
+    let mut names: Vec<&str> = Vec::new();
+    for c in &controls {
+      if !c.name().is_empty() && !names.contains(&c.name()) {
+        names.push(c.name());
+      }
+    }
+    for (name, side) in names.into_iter().zip(successive_placements) {
+      if !control_placements.iter().any(|(n, _)| n == name) {
+        control_placements.push((name.to_string(), side));
+      }
     }
   }
 
@@ -38958,6 +39217,32 @@ fn dynamic_control_spec(e: &Expr) -> Option<Expr> {
       spec.push(control_type("Manipulator"));
       spec
     }
+    // `Slider2D[Dynamic[pt], {{xmin, ymin}, {xmax, ymax}}]` (optionally with
+    // a `{dx, dy}` step after the corners); with no range it spans the unit
+    // square, like the front end's default.
+    "Slider2D" => {
+      let corners: Vec<Expr> = match args.get(1) {
+        Some(Expr::List(range))
+          if range.len() >= 2
+            && range.iter().all(|c| matches!(c, Expr::List(_))) =>
+        {
+          range.iter().cloned().collect()
+        }
+        None => vec![
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into()),
+        ],
+        Some(x) if rule_opt(x) => vec![
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into()),
+        ],
+        _ => return None,
+      };
+      let mut spec = vec![var];
+      spec.extend(corners);
+      spec.push(control_type("Slider2D"));
+      spec
+    }
     "SetterBar" => {
       let Some(Expr::List(choices)) = args.get(1) else {
         return None;
@@ -40199,6 +40484,19 @@ fn pane_control_variables(
   pane: &Expr,
   place_map: &[Option<String>],
 ) -> Vec<String> {
+  /// Whether `e` declares a control row somewhere: a `Control[…]` or a bare
+  /// `Dynamic`-bound front-end control.
+  fn holds_control(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == "Control"
+          || dynamic_control_spec(e).is_some()
+          || args.iter().any(holds_control)
+      }
+      Expr::List(items) => items.iter().any(holds_control),
+      _ => false,
+    }
+  }
   fn walk(e: &Expr, place_map: &[Option<String>], out: &mut Vec<String>) {
     match e {
       Expr::FunctionCall { name, .. } if name == "Invisible" => {}
@@ -40227,6 +40525,54 @@ fn pane_control_variables(
           && let Some(var) = control_spec_variable(spec)
         {
           out.push(var);
+          return;
+        }
+        // A bare front-end control bound with `Dynamic[var]`
+        // (`Manipulator[Dynamic[x], {lo, hi}]`, `Slider2D[Dynamic[pt], …]`)
+        // becomes that variable's control row, shown under the pane's
+        // condition like a `Control[…]` is.
+        if let Some(control) = dynamic_control_spec(e)
+          && let Expr::FunctionCall { args: cargs, .. } = &control
+          && let Some(spec) = cargs.first()
+          && let Some(var) = control_spec_variable(spec)
+        {
+          out.push(var);
+          return;
+        }
+        // In a `Row[{Subscript["x", 0], " ", Manipulator[…]}]` the label
+        // pieces leading into a control merge into one caption row (see
+        // `control_group_items`), so they are filed under that caption.
+        if name == "Row"
+          && let Some(Expr::List(items)) = args.first()
+          && items.iter().any(holds_control)
+        {
+          let mut caption: Vec<Expr> = Vec::new();
+          let flush = |caption: &mut Vec<Expr>, out: &mut Vec<String>| {
+            let label = match caption.as_slice() {
+              [] => String::new(),
+              [Expr::String(s)] => s.clone(),
+              [one] => flatten_label_runs(&manipulate_label_runs(one, false)),
+              _ => flatten_label_runs(&manipulate_label_runs(
+                &call1("Row", Expr::List(caption.clone().into())),
+                false,
+              )),
+            };
+            if !label.is_empty() {
+              out.push(heading_visibility_key(&label));
+            }
+            caption.clear();
+          };
+          for it in items {
+            if !holds_control(it)
+              && !matches!(it, Expr::FunctionCall { name: n, .. } if n == "Spacer")
+            {
+              caption.push(it.clone());
+              continue;
+            }
+            flush(&mut caption, out);
+            walk(it, place_map, out);
+          }
+          flush(&mut caption, out);
           return;
         }
         // Static text next to a pane's controls (`Style[" +", 15]` in a
@@ -42001,8 +42347,19 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       | "CForm"
         if number_form_text(expr).is_some() =>
       {
+        let text = number_form_text(expr).unwrap_or_default();
+        // An exact value the wrapper leaves as a stacked 2-D layout
+        // (`AccountingForm[9/10, {8, 7}]` is the fraction `9/10` drawn over
+        // three lines) would run together as `9 -- 10` on one line; typeset
+        // the value itself instead.
+        if text.contains('\n')
+          && split_scientific_2d(&text).is_none()
+          && !args.is_empty()
+        {
+          return manipulate_label_runs_inner(&args[0], italic);
+        }
         vec![LabelRun {
-          text: number_form_text(expr).unwrap_or_default(),
+          text,
           italic,
           ..Default::default()
         }]
@@ -42886,6 +43243,11 @@ fn picture_subscript_needs_lowering(script: &str) -> bool {
 
 const SUBSCRIPT_START: char = '\u{E0F2}';
 const SUBSCRIPT_END: char = '\u{E0F3}';
+/// Like [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`], for an exponent with no
+/// Unicode superscript form (`θ^*`): the SVG writer raises it with a
+/// `<tspan>`.
+const SUPERSCRIPT_START: char = '\u{E0F4}';
+const SUPERSCRIPT_END: char = '\u{E0F5}';
 
 /// A string box is stored as its quoted source (`"\"*\""`) but drawn without
 /// the quotes; a script made of one (`Subsuperscript[q, 1, "*"]` typeset
@@ -42945,20 +43307,12 @@ fn script_runs(
       && marking
       && text.chars().any(|c| unicode_script_char(c, true).is_none())
     {
-      // No superscript glyphs for this exponent (`e^(j k L)`): write it
-      // out after a caret rather than as a garble of half-mapped letters.
-      let grouped = text.chars().count() > 1
-        && !args[1..].iter().all(|a| !label_is_compound(a));
-      let plain = |t: &str| LabelRun {
-        text: t.to_string(),
-        italic: false,
-        ..Default::default()
-      };
-      runs.push(plain(if grouped { "^(" } else { "^" }));
-      restyle(&mut runs, &|t| t.to_string());
-      if grouped {
-        runs.push(plain(")"));
-      }
+      // No superscript glyphs for this exponent (`θ^*`, `e^(j k L)`):
+      // raise it as a real, smaller script rather than writing a garble of
+      // half-mapped letters.
+      restyle(&mut runs, &|t| {
+        format!("{SUPERSCRIPT_START}{t}{SUPERSCRIPT_END}")
+      });
     } else {
       restyle(&mut runs, &|t| to_unicode_script(t, superscript));
     }
@@ -47973,10 +48327,17 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
         && let Some(formatted) =
           crate::functions::string_ast::number_form_family_to_string(name, args)
       {
-        DisplayNode::Static {
-          svg: None,
-          text: formatted.replace('\n', " ").trim().to_string(),
-        }
+        // An exact value left as a stacked 2-D layout (a fraction over
+        // three lines) shows as the value itself (`9/10`), not its lines
+        // run together (`9 -- 10`).
+        let text = if formatted.contains('\n')
+          && split_scientific_2d(&formatted).is_none()
+        {
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        } else {
+          formatted.replace('\n', " ").trim().to_string()
+        };
+        DisplayNode::Static { svg: None, text }
       } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
         && name == "StringForm"
         && let Some(Expr::String(template)) = args.first()
@@ -49751,8 +50112,8 @@ mod manipulate_control_placement_tests {
     );
   }
 
-  /// A list of more than one side is not a recognized form (there is only
-  /// one control panel to place), so it leaves the default standing.
+  /// A list of more than one side places successive controls rather than
+  /// the whole panel, so the widget-level default stays standing.
   #[test]
   fn multi_element_list_placement_keeps_the_default() {
     assert_eq!(
@@ -49761,6 +50122,30 @@ mod manipulate_control_placement_tests {
          ControlPlacement -> {Left, Right}]"
       ),
       ControlPlacement::Top
+    );
+  }
+
+  /// `ControlPlacement -> {pos1, pos2, …}` gives the sides of successive
+  /// controls in order; a control's own `ControlPlacement` still wins, and
+  /// controls beyond the end of the list keep the widget default.
+  #[test]
+  fn successive_placements_list_assigns_controls_in_order() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Plot[a Sin[b x] + c + d, {x, 0, 6}], \
+       {a, 1, 2}, {b, 1, 3, ControlPlacement -> Bottom}, \
+       {c, 0, 1, ControlType -> VerticalSlider}, {d, 0, 1}, \
+       ControlPlacement -> {Top, Left, Right}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.control_placement, ControlPlacement::Top);
+    assert_eq!(
+      spec.control_placements,
+      vec![
+        ("b".to_string(), ControlPlacement::Bottom),
+        ("a".to_string(), ControlPlacement::Top),
+        ("c".to_string(), ControlPlacement::Right),
+      ]
     );
   }
 
