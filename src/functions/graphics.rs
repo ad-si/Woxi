@@ -20683,7 +20683,29 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
 /// [`styled_axis_label`] for an `AxesLabel` entry, which may also be a
 /// stacked-fraction picture (see [`fraction_label_svg`]).
 pub fn axes_label_entry(e: &Expr) -> Option<String> {
-  fraction_label_svg(e, LABEL_FONT).or_else(|| styled_axis_label(e))
+  fraction_label_svg(e, LABEL_FONT)
+    .or_else(|| traditional_math_axis_label(e))
+    .or_else(|| styled_axis_label(e))
+}
+
+/// An `AxesLabel` entry that is a plain mathematical expression, typeset as
+/// marked-up text. A graphic's `FormatType` is `TraditionalForm`, so such a
+/// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
+/// italics — `x(t)` with an italic x and t — the way Wolfram draws it.
+/// `None` for any other label (see [`is_traditional_math_label`]).
+fn traditional_math_axis_label(e: &Expr) -> Option<String> {
+  if !is_traditional_math_label(e) {
+    return None;
+  }
+  let inner = match e {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    other => other,
+  };
+  Some(traditional_label(inner))
 }
 
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
@@ -20697,6 +20719,94 @@ pub fn styled_axis_label(e: &Expr) -> Option<String> {
     ));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Whether an axis label is a plain mathematical expression that
+/// `TraditionalForm` typesets with italic letters: a symbol, an application
+/// of a user function or a mathematical built-in (`x[t]`, `Sin[x]`, `y'[t]`),
+/// arithmetic, scripts and powers of those, or any of them wrapped in an
+/// explicit `TraditionalForm`. Strings, numbers and layout, styling or
+/// number-format wrappers (`Row`, `Style`, `NumberForm`, …) keep the plain
+/// label text.
+fn is_traditional_math_label(e: &Expr) -> bool {
+  fn part_ok(e: &Expr) -> bool {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::Constant(_)
+        | Expr::String(_)
+    ) || is_math(e)
+  }
+  fn is_math(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(s) => {
+        !matches!(s.as_str(), "None" | "Automatic" | "All" | "Null")
+          && typeset_constant_glyph(s).is_none()
+      }
+      Expr::CurriedCall { func, args } => {
+        as_derivative_of(e).is_some()
+          || (part_ok(func) && args.iter().all(part_ok))
+      }
+      Expr::BinaryOp { left, right, .. } => part_ok(left) && part_ok(right),
+      Expr::UnaryOp { operand, .. } => part_ok(operand),
+      // Display, layout and hover wrappers are no functions, even where
+      // the evaluator registers no built-in for them.
+      Expr::FunctionCall { name, .. }
+        if name.ends_with("Form")
+          || matches!(
+            name.as_str(),
+            "Style"
+              | "Text"
+              | "Row"
+              | "Column"
+              | "Grid"
+              | "Labeled"
+              | "Spacer"
+              | "Quantity"
+              | "Tooltip"
+              | "Annotation"
+              | "Pane"
+              | "Rotate"
+              | "Framed"
+              | "Highlighted"
+              | "Defer"
+              | "RawBoxes"
+              | "TextCell"
+          ) =>
+      {
+        false
+      }
+      Expr::FunctionCall { name, args } if !args.is_empty() => {
+        let math_head = matches!(
+          name.as_str(),
+          "Subscript"
+            | "Superscript"
+            | "Subsuperscript"
+            | "Power"
+            | "Times"
+            | "Plus"
+            | "Derivative"
+        )
+          || crate::evaluator::dispatch::complex_and_special::tf_known_func(
+            name,
+          )
+          .is_some()
+          || !crate::evaluator::functions::is_builtin_symbol(name);
+        math_head && args.iter().all(part_ok)
+      }
+      _ => false,
+    }
+  }
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      is_math(&args[0])
+    }
+    _ => is_math(e),
+  }
 }
 
 /// Wrap the unstyled expressions of a styled label in `TraditionalForm`,
@@ -30619,7 +30729,17 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
 pub(crate) fn axes_label_markup(expr: &Expr) -> String {
   inline_fraction_string_svg(expr)
     .or_else(|| fraction_label_svg(expr, LABEL_FONT))
-    .unwrap_or_else(|| expr_to_svg_markup(expr))
+    .unwrap_or_else(|| {
+      // A mathematical label is set in TraditionalForm (italic letters),
+      // the same as on a plot (see `axes_label_entry`).
+      if let Some(label) = traditional_math_axis_label(expr) {
+        return label
+          .strip_prefix(STYLED_LABEL_MARKER)
+          .map(str::to_string)
+          .unwrap_or(label);
+      }
+      expr_to_svg_markup(expr)
+    })
 }
 
 /// An axis label expression that TraditionalForm typesets as a stacked
