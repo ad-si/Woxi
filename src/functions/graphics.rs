@@ -6014,6 +6014,52 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         .collect::<Vec<_>>()
         .join("\n")
     }
+    // A number-format wrapper around a value with no number in it shows
+    // that value unchanged (`NumberForm[Subscript["6c", "36"], Infinity]`).
+    Expr::FunctionCall { name, args }
+      if crate::functions::string_ast::number_form_numberless_value(
+        name, args,
+      )
+      .is_some() =>
+    {
+      graphics_text_content(
+        crate::functions::string_ast::number_form_numberless_value(name, args)
+          .unwrap(),
+      )
+    }
+    // `BaseForm[x, b]` (or a `NumberForm[BaseForm[x, b], Infinity]` that
+    // keeps all its digits) sets its digits with the base as a subscript,
+    // not as the two-line OutputForm box `ToString` gives. Base 10 is the
+    // default and shows no subscript.
+    Expr::FunctionCall { name, args }
+      if (name == "BaseForm" && args.len() == 2)
+        || crate::functions::string_ast::number_form_unlimited_base_form(
+          name, args,
+        )
+        .is_some() =>
+    {
+      let base_form = if name == "BaseForm" {
+        expr
+      } else {
+        crate::functions::string_ast::number_form_unlimited_base_form(
+          name, args,
+        )
+        .unwrap()
+      };
+      let Expr::FunctionCall { args: bf, .. } = base_form else {
+        unreachable!()
+      };
+      match (base_form_digits(&bf[0], &bf[1]), &bf[1]) {
+        (Some(digits), Expr::Integer(10)) => digits,
+        (Some(digits), base @ Expr::Integer(_)) => graphics_text_content(
+          &Expr::FunctionCall {
+            name: "Subscript".to_string(),
+            args: vec![Expr::String(digits), base.clone()].into(),
+          },
+        ),
+        _ => graphics_text_content(&bf[0]),
+      }
+    }
     // `Subscript`/`Superscript`/`Subsuperscript` typeset as scripts, not as
     // the two-line OutputForm box `ToString` would give: a label reading `N`
     // over ` D` is not what the picture is meant to show. `expr_to_label`
@@ -18711,6 +18757,24 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // the wrapper can't format its argument (e.g. a nested BaseForm that
         // ToString leaves intact), fall back to rendering the inner value so a
         // grid of numbers still appears rather than raw wrapper text.
+        // `NumberForm[BaseForm[x, b], Infinity]` keeps every base-b digit:
+        // it typesets like the bare `BaseForm`, with a subscripted base.
+        "NumberForm"
+          if let Some(base_form) =
+            crate::functions::string_ast::number_form_unlimited_base_form(
+              name, args,
+            ) =>
+        {
+          expr_to_svg_markup(base_form)
+        }
+        "NumberForm" | "PaddedForm" | "AccountingForm"
+          if let Some(value) =
+            crate::functions::string_ast::number_form_numberless_value(
+              name, args,
+            ) =>
+        {
+          expr_to_svg_markup(value)
+        }
         "NumberForm" | "PaddedForm" | "AccountingForm" if !args.is_empty() => {
           match crate::functions::string_ast::number_form_family_to_string(
             name, args,
@@ -19553,6 +19617,22 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           base.to_string().len()
         };
         shown.chars().count() as f64 + base_len as f64 * 0.7
+      }
+      "NumberForm"
+        if let Some(base_form) =
+          crate::functions::string_ast::number_form_unlimited_base_form(
+            name, args,
+          ) =>
+      {
+        estimate_display_width(base_form)
+      }
+      "NumberForm" | "PaddedForm" | "AccountingForm"
+        if let Some(value) =
+          crate::functions::string_ast::number_form_numberless_value(
+            name, args,
+          ) =>
+      {
+        estimate_display_width(value)
       }
       "NumberForm" | "PaddedForm" | "AccountingForm" if !args.is_empty() => {
         match crate::functions::string_ast::number_form_family_to_string(
@@ -23997,6 +24077,20 @@ fn typeset_constant_box_tokens(boxes: &Expr) -> Expr {
     },
     _ => boxes.clone(),
   }
+}
+
+/// The lines of a text item's SVG markup that holds line breaks, or `None`
+/// for a single line (or when a styled span crosses a break, so splitting
+/// would leave unbalanced tags).
+fn markup_lines(markup: &str) -> Option<Vec<&str>> {
+  if !markup.contains('\n') {
+    return None;
+  }
+  let lines: Vec<&str> = markup.split('\n').collect();
+  lines
+    .iter()
+    .all(|l| l.matches("<tspan").count() == l.matches("</tspan>").count())
+    .then_some(lines)
 }
 
 fn contains_base_form(expr: &Expr) -> bool {
@@ -31530,7 +31624,12 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .map(|(i, c)| {
       let natural = match c {
         Cell::Svg { height, .. } => *height,
-        Cell::Text(e, _) => text_style(e, font_size).1 + pad_y,
+        Cell::Text(e, _) => {
+          let (style, fs) = text_style(e, font_size);
+          let lines = markup_lines(&expr_to_svg_markup(style.content))
+            .map_or(1, |l| l.len());
+          fs * lines as f64 + pad_y
+        }
       };
       item_size_entry_at(item_size_h, i, n_items)
         .map_or(natural, |h| natural.max(h * font_size + pad_y))
@@ -31602,15 +31701,22 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             top = cy - fs / 2.0,
           ));
         }
-        svg.push_str(&format!(
-          "<text x=\"{text_x:.1}\" y=\"{cy:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
-          ff = svg_escape(ff),
-          deco = style.decoration.svg_attrs(),
-          // Spans inside the run carry their own `Style` colors; the
-          // opacity (inherited by them) is what keeps those unpainted too.
-          hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
-          content = style.decoration.markup(&expr_to_svg_markup(style.content)),
-        ));
+        // A line break starts a new line: each line is its own `<text>`,
+        // the block centered on the row.
+        let markup = expr_to_svg_markup(style.content);
+        let lines = markup_lines(&markup).unwrap_or_else(|| vec![&markup]);
+        for (k, line) in lines.iter().enumerate() {
+          let line_y = cy + (k as f64 - (lines.len() - 1) as f64 / 2.0) * fs;
+          svg.push_str(&format!(
+            "<text x=\"{text_x:.1}\" y=\"{line_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+            ff = svg_escape(ff),
+            deco = style.decoration.svg_attrs(),
+            // Spans inside the run carry their own `Style` colors; the
+            // opacity (inherited by them) is what keeps those unpainted too.
+            hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
+            content = style.decoration.markup(line),
+          ));
+        }
       }
       Cell::Svg {
         svg: child,
@@ -40148,6 +40254,17 @@ fn splice_sequence_applies(expr: &Expr) -> Expr {
     // taken, so splicing it here would change the call's argument count.
     Expr::FunctionCall { name, .. }
       if matches!(name.as_str(), "Switch" | "If" | "Which") =>
+    {
+      expr.clone()
+    }
+    // `Dynamic` holds its content until the front end displays it with the
+    // controls bound: a `Sequence @@ (f /@ items[[1 ;; n]])` inside a
+    // keypad display must not run here, before `n` has a value (it would
+    // map over the unevaluated `Part` and print `Part::pkspec1`). Only a
+    // `Dynamic` that declares controls itself is looked into.
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic"
+        && !args.iter().any(|a| expr_contains_call(a, &["Control"])) =>
     {
       expr.clone()
     }
