@@ -1328,6 +1328,17 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || structured_matrix_to_dense(&args[0]).is_some()
     || structured_matrix_to_dense(&args[1]).is_some()
   {
+    // A product with a non-array operand (`A . q`, `A . 5`) stays
+    // unevaluated as written: densifying a large sparse matrix only to give
+    // up would print (and allocate) every one of its zeros.
+    let array_like = |e: &Expr| {
+      matches!(e, Expr::List(_))
+        || crate::functions::list_helpers_ast::is_sparse_array_object(e)
+        || structured_matrix_to_dense(e).is_some()
+    };
+    if !array_like(&args[0]) || !array_like(&args[1]) {
+      return Ok(unevaluated("Dot", args));
+    }
     let densify = |e: &Expr| -> Expr {
       if let Expr::FunctionCall { name, args: sa } = e
         && name == "SparseArray"
@@ -1348,7 +1359,32 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(unevaluated("Dot", args));
     }
-    return dot_ast(&[a, b]);
+    let product = dot_ast(&[a, b])?;
+    // The product of two SparseArrays is a SparseArray again (a scalar
+    // stays a scalar), with a machine zero background when the entries are
+    // machine numbers (wolframscript-verified).
+    if crate::functions::list_helpers_ast::is_sparse_array_object(&args[0])
+      && crate::functions::list_helpers_ast::is_sparse_array_object(&args[1])
+      && matches!(&product, Expr::List(_))
+    {
+      let background =
+        if crate::functions::math_ast::numeric_utils::contains_inexact_real(
+          &product,
+        ) {
+          Expr::Real(0.0)
+        } else {
+          Expr::Integer(0)
+        };
+      if let Some(sparse) =
+        crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+          &product,
+          &background,
+        )
+      {
+        return Ok(sparse);
+      }
+    }
+    return Ok(product);
   }
 
   // TransformationFunction[M1] . TransformationFunction[M2] →

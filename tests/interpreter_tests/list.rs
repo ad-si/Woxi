@@ -26875,3 +26875,52 @@ mod array_reshape_argument_validation {
     );
   }
 }
+
+// A matrix routine that stays unevaluated on a SparseArray keeps the sparse
+// argument instead of echoing its densified form: a 3600x3600 system with a
+// symbolic right-hand side used to print 13 million zeros and run out of
+// memory (found by the interpret fuzzer). wolframscript-verified.
+#[test]
+fn unevaluated_linear_solve_keeps_its_sparse_matrix() {
+  assert_eq!(
+    interpret("LinearSolve[SparseArray[{{1, 1} -> 2., {2, 2} -> 3.}], x]")
+      .unwrap(),
+    "LinearSolve[SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, {2., 3.}}], x]"
+  );
+  assert_eq!(
+    interpret("LinearSolve[SparseArray[{{1, 1} -> 2., {2, 2} -> 3.}], {1, 2}]")
+      .unwrap(),
+    "{0.5, 0.6666666666666666}"
+  );
+}
+
+// Dot of a SparseArray with a non-array stays unevaluated as written (it used
+// to densify first, which for a 3600x3600 matrix took gigabytes — found by
+// the interpret fuzzer); the product of two SparseArrays is a SparseArray.
+// wolframscript-verified.
+#[test]
+fn sparse_array_dot_products() {
+  let a = "SparseArray[{{1, 1} -> 2, {2, 2} -> 3}]";
+  let shown =
+    "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, {2, 3}}]";
+  for (code, expected) in [
+    (format!("{a} . q"), format!("{shown} . q")),
+    (format!("q . {a}"), format!("q . {shown}")),
+    (format!("{a} . 5"), format!("{shown} . 5")),
+    (
+      format!("{a} . {a}"),
+      "SparseArray[Automatic, {2, 2}, 0, {1, {{0, 1, 2}, {{1}, {2}}}, {4, 9}}]".to_string(),
+    ),
+    (
+      format!("{a} . SparseArray[{{1 -> 1}}, 2]"),
+      "SparseArray[Automatic, {2}, 0, {1, {{0, 1}, {{1}}}, {2}}]".to_string(),
+    ),
+    (format!("{a} . {{{{1, 0}}, {{0, 1}}}}"), "{{2, 0}, {0, 3}}".to_string()),
+    (
+      "SparseArray[{{1, 1} -> 2.}, {2, 2}] . SparseArray[{{1, 1} -> 1}, {2, 2}]".to_string(),
+      "SparseArray[Automatic, {2, 2}, 0., {1, {{0, 1, 1}, {{1}}}, {2.}}]".to_string(),
+    ),
+  ] {
+    assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+  }
+}
