@@ -1821,7 +1821,16 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect()
     };
     let mol_options = pde_mol::MolOptions::from_rules(&args[n_pos..]);
-    return match ndsolve_pde(&positional, &mol_options) {
+    // The solution's tables are finished data that every later lookup or
+    // substitution (a plot sampling `u[t, x]` point by point) carries
+    // along: shared lists make those copies O(1).
+    let share = |result: Result<Expr, InterpreterError>| {
+      result.map(|mut e| {
+        crate::evaluator::share_large_lists(&mut e, 0);
+        e
+      })
+    };
+    return share(match ndsolve_pde(&positional, &mol_options) {
       Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
       Ok(None) => match ndsolve_pde_hyperbolic(&positional) {
         Ok(Some(result)) => Ok(restore_compound_heads(&result, &renames)),
@@ -1833,7 +1842,7 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Err(e) => Err(e),
       },
       Err(e) => Err(e),
-    };
+    });
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));

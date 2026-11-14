@@ -23776,6 +23776,24 @@ mod ndsolve_complex_periodic_pde {
     );
   }
 
+  /// `Abs` of a complex PDE solution, substituted into a plot body with
+  /// `Evaluate`, samples to a density plot (the solution's tables are
+  /// carried through every sample point unchanged).
+  #[test]
+  fn density_plot_of_complex_pde_solution() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == E^(-x^2), u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 20}, {x, -10, 10}]; \
+         Head[DensityPlot[Evaluate[Abs[u[t, x]] /. s], {t, 0, 20}, {x, -10, 10}, \
+           PlotPoints -> 10, MaxRecursion -> 1]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
   /// The forcing term and initial profile may be complex expressions of
   /// `x`, and the result is complex (not just its absolute value).
   #[test]
