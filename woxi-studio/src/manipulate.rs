@@ -5793,6 +5793,22 @@ mod tests {
     assert!(dump.contains("label: \"ⅆ²/ⅆx²\""), "{dump}");
   }
 
+  /// A unit caption typeset as a fraction of powers
+  /// (`\!\(\*FractionBox[SuperscriptBox[\(m\), \(3\)], \(s\)]\)`) reads
+  /// `m³/s`: the `SuperscriptBox` is a superscript, not an OutputForm
+  /// `m^3` exponent.
+  #[test]
+  fn control_label_typesets_superscript_inside_plain_fraction() {
+    let code = r#"Manipulate[q, {{q, 1, "rate \!\(\*FractionBox[SuperscriptBox[\(m\), \(3\)], \(s\)]\)"}, 0, 2},
+      {{r, 1, "\!\(\*FractionBox[\(1\), SuperscriptBox[\(k\), \(2\)]]\)"}, 0, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains('^'), "{dump}");
+    assert!(dump.contains("label: \"rate m³/s\""), "{dump}");
+    assert!(dump.contains("label: \"1/k²\""), "{dump}");
+  }
+
   /// A caption can apply a compound head to an argument —
   /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
   /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.

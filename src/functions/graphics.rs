@@ -42148,8 +42148,33 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
         // This is frozen source reconstructed from boxes, not an evaluated
         // Times expression. Keep its multiplication operators visible even
         // when parentheses made the parser preserve a Times call boundary.
+        // Likewise a power here was a `SuperscriptBox`: it is a typeset
+        // superscript (`m³` in `FractionBox[SuperscriptBox[m, 3], s]`),
+        // not an exponent to print in OutputForm as `m^3`.
         fn source_products(expr: &Expr) -> Expr {
           let mapped = crate::syntax::map_children(expr, &source_products);
+          match &mapped {
+            Expr::BinaryOp {
+              op: crate::syntax::BinaryOperator::Power,
+              left,
+              right,
+            } => {
+              return Expr::FunctionCall {
+                name: "Superscript".to_string(),
+                args: vec![left.as_ref().clone(), right.as_ref().clone()]
+                  .into(),
+              };
+            }
+            Expr::FunctionCall { name, args }
+              if name == "Power" && args.len() == 2 =>
+            {
+              return Expr::FunctionCall {
+                name: "Superscript".to_string(),
+                args: args.clone(),
+              };
+            }
+            _ => {}
+          }
           if let Expr::FunctionCall { name, args } = &mapped
             && name == "Times"
             && args.len() >= 2
