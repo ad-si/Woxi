@@ -35886,6 +35886,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
+  // successive controls, applied once the controls are known.
+  let mut successive_placements: Vec<ControlPlacement> = Vec::new();
   let mut bookmarks: Vec<(String, String)> = Vec::new();
   // Compound (non-symbol) control variables such as `Subscript[signal, 1]`
   // cannot be bound by name; each is renamed to a synthesized plain symbol,
@@ -36141,6 +36144,21 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // `ControlPlacement -> {Top, Top, Left, Right}` places successive
+      // controls on the listed sides, one entry per control.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement")
+        && let Expr::List(items) = replacement.as_ref()
+        && items.len() > 1
+      {
+        successive_placements = items
+          .iter()
+          .map(|item| match item {
+            Expr::Identifier(s) => ControlPlacement::from_symbol(s),
+            _ => None,
+          })
+          .collect::<Option<Vec<_>>>()
+          .unwrap_or_default();
       }
       // A widget-level `FrameLabel -> label` (a string, `Style`, `Column`, …
       // rather than the `{bottom, left}` pair a plot takes) is a caption
@@ -37095,6 +37113,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   for (name, value) in &fixed {
     if !state.iter().any(|(n, _)| n == name) {
       state.push((name.clone(), value.clone()));
+    }
+  }
+
+  // Hand out the successive placements to the named controls in order; a
+  // control's own `ControlPlacement` option keeps precedence.
+  if !successive_placements.is_empty() {
+    let mut names: Vec<&str> = Vec::new();
+    for c in &controls {
+      if !c.name().is_empty() && !names.contains(&c.name()) {
+        names.push(c.name());
+      }
+    }
+    for (name, side) in names.into_iter().zip(successive_placements) {
+      if !control_placements.iter().any(|(n, _)| n == name) {
+        control_placements.push((name.to_string(), side));
+      }
     }
   }
 
@@ -49668,8 +49702,8 @@ mod manipulate_control_placement_tests {
     );
   }
 
-  /// A list of more than one side is not a recognized form (there is only
-  /// one control panel to place), so it leaves the default standing.
+  /// A list of more than one side places successive controls rather than
+  /// the whole panel, so the widget-level default stays standing.
   #[test]
   fn multi_element_list_placement_keeps_the_default() {
     assert_eq!(
@@ -49678,6 +49712,30 @@ mod manipulate_control_placement_tests {
          ControlPlacement -> {Left, Right}]"
       ),
       ControlPlacement::Top
+    );
+  }
+
+  /// `ControlPlacement -> {pos1, pos2, …}` gives the sides of successive
+  /// controls in order; a control's own `ControlPlacement` still wins, and
+  /// controls beyond the end of the list keep the widget default.
+  #[test]
+  fn successive_placements_list_assigns_controls_in_order() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[Plot[a Sin[b x] + c + d, {x, 0, 6}], \
+       {a, 1, 2}, {b, 1, 3, ControlPlacement -> Bottom}, \
+       {c, 0, 1, ControlType -> VerticalSlider}, {d, 0, 1}, \
+       ControlPlacement -> {Top, Left, Right}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.control_placement, ControlPlacement::Top);
+    assert_eq!(
+      spec.control_placements,
+      vec![
+        ("b".to_string(), ControlPlacement::Bottom),
+        ("a".to_string(), ControlPlacement::Top),
+        ("c".to_string(), ControlPlacement::Right),
+      ]
     );
   }
 
