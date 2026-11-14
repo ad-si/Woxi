@@ -24861,8 +24861,7 @@ fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if let Some(color) = style.color {
     directives.push(color.to_expr());
   }
-  if directives.is_empty() || standard_fraction_cell_svg(cell, 14.0).is_none()
-  {
+  if directives.is_empty() || standard_fraction_cell_svg(cell, 14.0).is_none() {
     return cell.clone();
   }
   let mut args = vec![cell.clone()];
