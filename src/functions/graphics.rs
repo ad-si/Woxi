@@ -32101,10 +32101,15 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     // `Style[…, Opacity[a]]` fades the text, the way the directive fades
     // a graphics primitive.
     let mut opacity: f64 = 1.0;
+    // The text a `Style[…]` item sets: its directives go onto the cell's
+    // own `<text>` element, so typesetting the whole wrapper would apply
+    // them a second time (a relative `Larger` compounding to 156%).
+    let mut text_item = item;
     if let Expr::FunctionCall { name, args: sargs } = item
       && is_style_wrapper(name)
       && !sargs.is_empty()
     {
+      text_item = &sargs[0];
       for d in style_directives_in_application_order(&sargs[1..]) {
         if let Some(a) = text_opacity_directive(d) {
           opacity = a;
@@ -32116,7 +32121,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
-    let markup = st.text_decoration.markup(&expr_to_svg_markup(item));
+    let markup = st.text_decoration.markup(&expr_to_svg_markup(text_item));
     // A markup string carrying its own `\n` (e.g. `ToString[1/3,
     // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
     // line's worth of height per line, or the cell is sized for a single

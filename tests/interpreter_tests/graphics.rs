@@ -19734,6 +19734,20 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn histogram_probability_density_height_spec() {
+      // "ProbabilityDensity" is Wolfram's long name for the "PDF" height
+      // spec; it used to fall back to raw counts.
+      let data = "{0.1, 0.15, 0.3, 0.32, 0.35, 0.5, 0.55, 0.7}";
+      let long = export_svg(&format!(
+        r#"Histogram[{data}, 10, "ProbabilityDensity"]"#
+      ));
+      let short = export_svg(&format!(r#"Histogram[{data}, 10, "PDF"]"#));
+      let counts = export_svg(&format!("Histogram[{data}, 10]"));
+      assert_eq!(long, short);
+      assert_ne!(long, counts);
+    }
+
+    #[test]
     fn box_whisker_chart() {
       insta::assert_snapshot!(export_svg(
         "BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]"
@@ -56918,4 +56932,15 @@ mod repeated_graphics_options {
     );
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
   }
+}
+
+/// A `Style[…, Larger]` part of a `Row` is sized once: its `<text>` gets the
+/// scaled font size and the text inside carries no second relative size.
+/// It used to nest a `125%` tspan inside the already-enlarged text, which
+/// grew the part past the width measured for it and clipped it.
+#[test]
+fn row_styled_part_applies_relative_size_once() {
+  let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
+  assert!(svg.contains("font-size=\"17.5\""), "{svg}");
+  assert!(!svg.contains("125%"), "{svg}");
 }
