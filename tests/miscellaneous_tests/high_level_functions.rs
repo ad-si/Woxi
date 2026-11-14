@@ -3561,6 +3561,37 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_style_grid_size_reaches_fraction_cell() {
+      // Regression: a stacked-fraction cell was typeset at the default
+      // 14 pt while the grid's text cells took the outer style's size.
+      let svg = interpret(
+        "ExportString[Style[Grid[{{a, 7/11 + 6 x/11}}, Frame -> All], 16], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-size=\"16.0\""),
+        "fraction should be typeset at 16 pt: {svg}"
+      );
+      assert!(
+        !svg.contains("font-size=\"14.0\""),
+        "no glyph should keep the default 14 pt: {svg}"
+      );
+      // The same holds through `BaseStyle`, along with the color.
+      let svg = interpret(
+        "ExportString[Grid[{{1/2}}, BaseStyle -> {20, Red}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-size=\"20.0\""),
+        "BaseStyle size should reach the fraction: {svg}"
+      );
+      assert!(
+        svg.contains("rgb(255,0,0)"),
+        "BaseStyle color should reach the fraction: {svg}"
+      );
+    }
+
+    #[test]
     fn test_style_grid_color_propagates() {
       // All cells should have red fill when Style[..., Red]
       let svg =
