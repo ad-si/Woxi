@@ -130,6 +130,60 @@ mod solids {
     assert!(polygon_count(&s) > 100, "got: {s}");
   }
 
+  /// The solid head of `Arrow[Tube[…]]` is sized by the scene's box (the
+  /// diagonal of its `PlotRange`), not by the arrow itself: a short axis
+  /// arrow in a large scene keeps a visible head.
+  #[test]
+  fn arrow_tube_head_is_sized_by_the_scene() {
+    let d = 0.05 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[{{Arrow[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}, 0.01]]}}, {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
+         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+        b = 1.0 - d,
+        r = 0.22 * d
+      ))
+    );
+  }
+
+  /// The head covers the last stretch of the curve measured along it, so a
+  /// finely sampled curve (an arc) still gets a full-size head instead of
+  /// one clipped to its last tiny segment.
+  #[test]
+  fn arrow_tube_head_spans_several_segments() {
+    let len = 0.1 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[{{Arrowheads[0.1], Arrow[Tube[{{{{0, 0, 0}}, \
+         {{0.5, 0, 0}}, {{0.75, 0, 0}}, {{1, 0, 0}}}}, 0.01]]}}, {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
+         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+        b = 1.0 - len,
+        r = 0.22 * len
+      ))
+    );
+  }
+
+  /// `Style[Text[…], Italic]` (the style outside the `Text`) slants the
+  /// label, as `Style[…, Bold]` makes it bold.
+  #[test]
+  fn styled_text_label_font_face() {
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], 17, Italic]}]");
+    assert!(s.contains("font-style=\"italic\""), "got: {s}");
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], Bold]}]");
+    assert!(s.contains("font-weight=\"bold\""), "got: {s}");
+    let s =
+      svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], FontSlant -> Italic]}]");
+    assert!(s.contains("font-style=\"italic\""), "got: {s}");
+  }
+
   #[test]
   fn arrow_tube_is_drawn() {
     let s = svg(
