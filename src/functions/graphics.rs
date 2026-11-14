@@ -16183,7 +16183,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             {
               // Keep the part quoted, so it is still drawn as a literal.
               let text = match crate::syntax::string_to_expr(s) {
-                Ok(Expr::String(t)) => t,
+                Ok(Expr::String(ref t)) => t.clone(),
                 _ => s[1..s.len() - 1].to_string(),
               };
               str_expr(&format!("\"{text}\""))
