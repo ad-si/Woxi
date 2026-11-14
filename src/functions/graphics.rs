@@ -34801,6 +34801,10 @@ pub enum ManipulateControl {
     /// button reads e.g. "next" or "show solution" depending on the state.
     /// `None` for a static caption.
     label_code: Option<String>,
+    /// The button sits on the same line as the button before it, because
+    /// both come from one `Row[{Button[…], Button[…], …}]` argument (or one
+    /// `ButtonBar`), the way Wolfram lays such a row out side by side.
+    joins_previous: bool,
   },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
@@ -35833,6 +35837,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     args[1..].iter().map(control_spec_variable).collect();
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
+  // `(label, action)` of every button that shares a line with the button
+  // before it in a `Row[{Button[…], Button[…], …}]` argument (see
+  // `collect_row_joined_buttons`).
+  let mut row_joined_buttons: Vec<(String, String)> = Vec::new();
   // An evaluated `Animate[…, AnimationRunning -> False]` carries the option
   // in its control specification (`{x, 0, 1, AnimationRunning -> False,
   // …}`), not among the Manipulate's own options.
@@ -35893,6 +35901,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // flattened list holds every pane's, so each pane's controls also pick
     // up the condition under which they are on screen.
     collect_pane_visibility(spec, &place_map, &mut control_visible, None);
+    collect_row_joined_buttons(spec, &mut row_joined_buttons);
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -36227,12 +36236,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         {
           continue;
         }
+        let joins_previous =
+          matches!(controls.last(), Some(ManipulateControl::Button { .. }))
+            && row_joined_buttons
+              .iter()
+              .any(|(l, a)| *l == label && *a == action);
         controls.push(ManipulateControl::Button {
           label,
           label_runs,
           action,
           enabled,
           label_code,
+          joins_previous,
         });
         continue;
       }
@@ -36266,6 +36281,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
               action: crate::syntax::expr_to_source_form(replacement),
               enabled: None,
               label_code: dynamic_button_label_code(pattern),
+              // A `ButtonBar` is one line of buttons.
+              joins_previous: any,
             });
             any = true;
           }
@@ -38940,12 +38957,63 @@ fn split_implicit_product(e: &Expr) -> Vec<Expr> {
   }
 }
 
-/// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
-/// Manipulate argument that lays several controls out in one row (the
-/// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
-/// Button[…]}]`). Returns `None` when the argument contains no
-/// `Control[…]`/`Button[…]` anywhere, so plain `Row[…]` display
-/// expressions keep flowing to the display path.
+/// Record the `(label, action)` of each `Button[label, action, …]` that a
+/// `Row[{…}]` places directly after another button, so the two share one
+/// line of the control panel instead of each getting a row of its own.
+/// Layout containers (`Column[{Row[…], Row[…]}]`, …) are searched for such
+/// rows. `Spacer[…]` and string items between two buttons keep them on the
+/// same line; any other item (a slider, a picture) breaks the run.
+fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
+  match spec {
+    Expr::FunctionCall { name, args } if name == "Row" => {
+      let Some(Expr::List(items)) = args.first() else {
+        return;
+      };
+      let mut after_button = false;
+      for item in items {
+        let item = match item {
+          Expr::FunctionCall { name, args: inner }
+            if name == "Item" && !inner.is_empty() =>
+          {
+            &inner[0]
+          }
+          _ => item,
+        };
+        match item {
+          Expr::FunctionCall { name, args: b }
+            if name == "Button" && b.len() >= 2 =>
+          {
+            if after_button {
+              let label =
+                flatten_label_runs(&manipulate_label_runs(&b[0], false));
+              let action = crate::syntax::expr_to_source_form(&b[1]);
+              out.push((label, action));
+            }
+            after_button = true;
+          }
+          Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+          Expr::String(_) => {}
+          other => {
+            after_button = false;
+            collect_row_joined_buttons(other, out);
+          }
+        }
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_row_joined_buttons(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        collect_row_joined_buttons(a, out);
+      }
+    }
+    _ => {}
+  }
+}
+
 /// Replace each bare symbol inside a `Row`/`Column`/`Grid` control-layout
 /// argument whose value is a button (`Button[…]` or `ButtonBar[…]`) by
 /// that value. Demonstrations often build their buttons up front
@@ -38993,6 +39061,12 @@ fn resolve_layout_button_symbols(spec: &Expr) -> Expr {
   }
 }
 
+/// The flattened control items of a `Row[…]`/`Column[…]`/`Grid[…]`
+/// Manipulate argument that lays several controls out in one row (the
+/// Wolfram Demonstrations pattern `Row[{Control[…], Spacer[20],
+/// Button[…]}]`). Returns `None` when the argument contains no
+/// `Control[…]`/`Button[…]` anywhere, so plain `Row[…]` display
+/// expressions keep flowing to the display path.
 fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   let spec = strip_empty_string_factor(spec);
   fn contains_control(e: &Expr) -> bool {
@@ -43962,6 +44036,7 @@ fn parse_manipulate_control(
         action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
         label_code: dynamic_button_label_code(&built_args[0]),
+        joins_previous: false,
       },
     });
   }
@@ -45737,6 +45812,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         action,
         enabled: _,
         label_code: _,
+        joins_previous: _,
       } => {
         ctrl_parts.push(format!(
           r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"}}"#,
@@ -50134,6 +50210,52 @@ mod manipulate_button_enabled_tests {
   /// `control_enabled` lookup every other control type uses could never
   /// find it (and two buttons with different conditions would collide on
   /// that one shared empty-string key).
+  /// Buttons written side by side in one `Row[{…}]` argument share one line
+  /// of the control panel; a second `Row` starts a new line, and a slider
+  /// between two buttons breaks the run. Each `ButtonBar` is one line too.
+  #[test]
+  fn row_of_buttons_shares_one_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[x, \
+       Row[{Button[Style[\"a\", FontSize -> 15], x = 1], Spacer[5], \
+       Button[\"b\", x = 2], Button[\"c\", x = 3]}], \
+       Row[{Button[\"d\", x = 4], Button[\"e\", x = 5]}], \
+       Row[{Button[\"f\", x = 6], Control[{x, 0, 10}], Button[\"g\", x = 7]}], \
+       ButtonBar[{\"h\" :> (x = 8), \"i\" :> (x = 9)}], \
+       Button[\"j\", x = 10]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let joins: Vec<(String, bool)> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Button {
+          label,
+          joins_previous,
+          ..
+        } => Some((label.clone(), *joins_previous)),
+        _ => None,
+      })
+      .collect();
+    let expected: Vec<(String, bool)> = [
+      ("a", false),
+      ("b", true),
+      ("c", true),
+      ("d", false),
+      ("e", true),
+      ("f", false),
+      ("g", false),
+      ("h", false),
+      ("i", true),
+      ("j", false),
+    ]
+    .iter()
+    .map(|(l, j)| (l.to_string(), *j))
+    .collect();
+    assert_eq!(joins, expected);
+  }
+
   #[test]
   fn button_enabled_condition_is_parsed_and_exported_per_button() {
     let expr = crate::parse_to_expr(

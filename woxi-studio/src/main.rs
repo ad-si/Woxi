@@ -4399,6 +4399,38 @@ fn placement_slot(placement: manipulate::ControlPlacement) -> usize {
   }
 }
 
+/// One pressable Manipulate `Button`, captioned with its label runs (italic
+/// and `FontSize` from a `Style[…]` label are kept).
+fn manipulate_button<'a>(
+  label: &str,
+  label_runs: &[woxi::functions::graphics::LabelRun],
+  on_press: Message,
+) -> Element<'a, Message> {
+  let spans: Vec<iced::widget::text::Span<Message>> = label_runs
+    .iter()
+    .map(|run| {
+      let mut font = Font::MONOSPACE;
+      if run.italic {
+        font.style = iced::font::Style::Italic;
+      }
+      let span = iced::widget::span(run.text.clone()).font(font);
+      match run.size {
+        Some(size) => span.size(size as f32),
+        None => span,
+      }
+    })
+    .collect();
+  let btn_label: Element<Message> = if spans.is_empty() {
+    text(label.to_string())
+      .size(11)
+      .font(Font::MONOSPACE)
+      .into()
+  } else {
+    rich_text(spans).size(11).into()
+  };
+  button(btn_label).padding([3, 10]).on_press(on_press).into()
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
@@ -4454,7 +4486,13 @@ fn render_manipulate_widget<'a>(
         *current = to;
       }
     };
+  // The last button already drawn on the line of an earlier button (see
+  // `ControlState::Button::joins_previous`).
+  let mut joined_through: Option<usize> = None;
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    if joined_through.is_some_and(|last| ctrl_idx <= last) {
+      continue;
+    }
     for tree in panel_trees_at(ctrl_idx) {
       controls_col = controls_col.push(render_display_node(cell_idx, tree));
     }
@@ -5071,31 +5109,45 @@ fn render_manipulate_widget<'a>(
           .spacing(8);
         controls_col = controls_col.push(control_row);
       }
-      manipulate::ControlState::Button {
-        label, label_runs, ..
-      } => {
-        // A pressable action row (`Button["reset", …]`).
-        let spans: Vec<iced::widget::text::Span<Message>> = label_runs
-          .iter()
-          .map(|run| {
-            let mut font = Font::MONOSPACE;
-            if run.italic {
-              font.style = iced::font::Style::Italic;
+      manipulate::ControlState::Button { .. } => {
+        // A pressable action row (`Button["reset", …]`). The buttons right
+        // after it that share its `Row[{…}]` (or `ButtonBar`) go on the
+        // same line.
+        let mut btn_row = Row::new().spacing(6).align_y(Center);
+        let mut idx = ctrl_idx;
+        loop {
+          if let manipulate::ControlState::Button {
+            label, label_runs, ..
+          } = &visible_controls[idx]
+          {
+            let on = state.control_is_enabled.get(idx).copied().unwrap_or(true);
+            btn_row = btn_row.push(manipulate_button(
+              label,
+              label_runs,
+              if on {
+                Message::ManipulateButtonPressed(cell_idx, idx)
+              } else {
+                Message::Noop
+              },
+            ));
+          }
+          match visible_controls.get(idx + 1) {
+            Some(manipulate::ControlState::Button {
+              joins_previous: true,
+              ..
+            }) if state
+              .control_is_visible
+              .get(idx + 1)
+              .copied()
+              .unwrap_or(true) =>
+            {
+              idx += 1;
             }
-            iced::widget::span(run.text.clone()).font(font)
-          })
-          .collect();
-        let btn_label: Element<Message> = if spans.is_empty() {
-          text(label.clone()).size(11).font(Font::MONOSPACE).into()
-        } else {
-          rich_text(spans).size(11).into()
-        };
-        let btn = button(btn_label).padding([3, 10]).on_press(if enabled {
-          Message::ManipulateButtonPressed(cell_idx, ctrl_idx)
-        } else {
-          Message::Noop
-        });
-        controls_col = controls_col.push(row![btn].align_y(Center));
+            _ => break,
+          }
+        }
+        joined_through = Some(idx);
+        controls_col = controls_col.push(btn_row);
       }
       manipulate::ControlState::Heading { label, label_runs } => {
         // A static heading row (a string or `Style[…]` Manipulate argument,

@@ -175,6 +175,9 @@ pub enum ControlState {
     label: String,
     label_runs: Vec<LabelRun>,
     action: String,
+    /// Drawn on the same line as the button before it (both from one
+    /// `Row[{Button[…], Button[…]}]` or one `ButtonBar`).
+    joins_previous: bool,
   },
   /// A static heading row between controls (a string or `Style[…]`
   /// Manipulate argument). Binds no variable.
@@ -2615,10 +2618,12 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         action,
         enabled: _,
         label_code: _,
+        joins_previous,
       } => ControlState::Button {
         label: label.clone(),
         label_runs: label_runs.clone(),
         action: action.clone(),
+        joins_previous: *joins_previous,
       },
       ManipulateControl::Heading { label, label_runs } => {
         ControlState::Heading {
@@ -3314,6 +3319,47 @@ mod tests {
         .iter()
         .any(|c| matches!(c, ControlState::Heading { .. })),
       "the button must not be frozen into a heading"
+    );
+  }
+
+  /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
+  /// control state, so they are drawn side by side on one line, and a
+  /// `Style[…, FontSize -> n]` caption keeps its size.
+  #[test]
+  fn row_of_buttons_is_drawn_on_one_line() {
+    let code = r#"Manipulate[
+      t,
+      Row[{Button[Style["one", FontSize -> 15], t = 1], Button["two", t = 2]}],
+      Row[{Button["three", t = 3]}],
+      {{t, 0, "time"}, 0, 5, Animator, AnimationRunning -> False}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let buttons: Vec<(&str, bool, Option<f64>)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ControlState::Button {
+          label,
+          label_runs,
+          joins_previous,
+          ..
+        } => Some((
+          label.as_str(),
+          *joins_previous,
+          label_runs.first().and_then(|r| r.size),
+        )),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      buttons,
+      vec![
+        ("one", false, Some(15.0)),
+        ("two", true, None),
+        ("three", false, None)
+      ]
     );
   }
 
