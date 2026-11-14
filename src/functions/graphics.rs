@@ -30091,6 +30091,24 @@ pub(crate) fn style_pushed_into_layout(
       );
       return call(name.as_str(), new_args);
     }
+    // An already styled vertical layout (`Style[Column[…], Blue]`) takes the
+    // inherited directives into its own `Style`, ahead of its own so those
+    // still win: a doubly nested `Style[Style[Column[…], Blue], 12]` would
+    // hide the inner layout from the renderer and be typeset as its source.
+    // (A styled `Row` item is already set inline as it is.)
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Style"
+      && let Some(Expr::FunctionCall { name: content, .. }) = args.first()
+      && matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
+    {
+      return call(
+        "Style",
+        std::iter::once(args[0].clone())
+          .chain(directives.iter().cloned())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+    }
     call(
       "Style",
       std::iter::once(e.clone())
@@ -30557,6 +30575,28 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
+        // `Style[Style[Column[…], Blue], 12]`: the directives of both
+        // wrappers apply to the vertical layout, the inner ones taking
+        // precedence.
+        if name == "Style"
+          && let Expr::FunctionCall {
+            name: n,
+            args: inner,
+          } = &args[0]
+          && n == "Style"
+          && matches!(inner.first(), Some(Expr::FunctionCall { name: c, .. })
+            if matches!(c.as_str(), "Column" | "Grid" | "TextGrid"))
+          && style_pushed_into_layout(&inner[0], &inner[1..]).is_some()
+        {
+          let merged = call(
+            "Style",
+            std::iter::once(inner[0].clone())
+              .chain(args[1..].iter().cloned())
+              .chain(inner[1..].iter().cloned())
+              .collect(),
+          );
+          return nested_layout_svg(&merged);
+        }
         if let Some(inner) = style_pushed_into_layout(&args[0], &args[1..]) {
           return nested_layout_svg(&inner);
         }
@@ -38461,6 +38501,32 @@ fn dynamic_control_spec(e: &Expr) -> Option<Expr> {
       spec.push(control_type("Manipulator"));
       spec
     }
+    // `Slider2D[Dynamic[pt], {{xmin, ymin}, {xmax, ymax}}]` (optionally with
+    // a `{dx, dy}` step after the corners); with no range it spans the unit
+    // square, like the front end's default.
+    "Slider2D" => {
+      let corners: Vec<Expr> = match args.get(1) {
+        Some(Expr::List(range))
+          if range.len() >= 2
+            && range.iter().all(|c| matches!(c, Expr::List(_))) =>
+        {
+          range.iter().cloned().collect()
+        }
+        None => vec![
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into()),
+        ],
+        Some(x) if rule_opt(x) => vec![
+          Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()),
+          Expr::List(vec![Expr::Integer(1), Expr::Integer(1)].into()),
+        ],
+        _ => return None,
+      };
+      let mut spec = vec![var];
+      spec.extend(corners);
+      spec.push(control_type("Slider2D"));
+      spec
+    }
     "SetterBar" => {
       let Some(Expr::List(choices)) = args.get(1) else {
         return None;
@@ -39555,6 +39621,19 @@ fn pane_control_variables(
   pane: &Expr,
   place_map: &[Option<String>],
 ) -> Vec<String> {
+  /// Whether `e` declares a control row somewhere: a `Control[…]` or a bare
+  /// `Dynamic`-bound front-end control.
+  fn holds_control(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == "Control"
+          || dynamic_control_spec(e).is_some()
+          || args.iter().any(holds_control)
+      }
+      Expr::List(items) => items.iter().any(holds_control),
+      _ => false,
+    }
+  }
   fn walk(e: &Expr, place_map: &[Option<String>], out: &mut Vec<String>) {
     match e {
       Expr::FunctionCall { name, .. } if name == "Invisible" => {}
@@ -39583,6 +39662,54 @@ fn pane_control_variables(
           && let Some(var) = control_spec_variable(spec)
         {
           out.push(var);
+          return;
+        }
+        // A bare front-end control bound with `Dynamic[var]`
+        // (`Manipulator[Dynamic[x], {lo, hi}]`, `Slider2D[Dynamic[pt], …]`)
+        // becomes that variable's control row, shown under the pane's
+        // condition like a `Control[…]` is.
+        if let Some(control) = dynamic_control_spec(e)
+          && let Expr::FunctionCall { args: cargs, .. } = &control
+          && let Some(spec) = cargs.first()
+          && let Some(var) = control_spec_variable(spec)
+        {
+          out.push(var);
+          return;
+        }
+        // In a `Row[{Subscript["x", 0], " ", Manipulator[…]}]` the label
+        // pieces leading into a control merge into one caption row (see
+        // `control_group_items`), so they are filed under that caption.
+        if name == "Row"
+          && let Some(Expr::List(items)) = args.first()
+          && items.iter().any(holds_control)
+        {
+          let mut caption: Vec<Expr> = Vec::new();
+          let flush = |caption: &mut Vec<Expr>, out: &mut Vec<String>| {
+            let label = match caption.as_slice() {
+              [] => String::new(),
+              [Expr::String(s)] => s.clone(),
+              [one] => flatten_label_runs(&manipulate_label_runs(one, false)),
+              _ => flatten_label_runs(&manipulate_label_runs(
+                &call1("Row", Expr::List(caption.clone().into())),
+                false,
+              )),
+            };
+            if !label.is_empty() {
+              out.push(heading_visibility_key(&label));
+            }
+            caption.clear();
+          };
+          for it in items {
+            if !holds_control(it)
+              && !matches!(it, Expr::FunctionCall { name: n, .. } if n == "Spacer")
+            {
+              caption.push(it.clone());
+              continue;
+            }
+            flush(&mut caption, out);
+            walk(it, place_map, out);
+          }
+          flush(&mut caption, out);
           return;
         }
         // Static text next to a pane's controls (`Style[" +", 15]` in a
