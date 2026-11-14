@@ -96,6 +96,16 @@ pub(crate) fn plot_theme()
   }
 }
 
+/// `InterpolatingFunction[domain, data, …]` as NDSolve or Interpolation
+/// returns it: numeric tables with no variable to substitute, which can be
+/// large enough that rebuilding them for every sample point dominates a
+/// plot.
+fn is_finished_interpolating_function(name: &str, args: &[Expr]) -> bool {
+  name == "InterpolatingFunction"
+    && (2..=4).contains(&args.len())
+    && matches!(args[0], Expr::List(_))
+}
+
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);
@@ -103,7 +113,8 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
     Expr::Identifier(name) if name == var => value.clone(),
     // Numeric data with nothing to substitute (see `is_structured_bspline`).
     Expr::FunctionCall { name, args }
-      if crate::syntax::is_structured_bspline(name, args) =>
+      if crate::syntax::is_structured_bspline(name, args)
+        || is_finished_interpolating_function(name, args) =>
     {
       expr.clone()
     }

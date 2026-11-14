@@ -30,8 +30,15 @@ const VARS: [&str; 6] = [
 const TARGET_SPACING: f64 = 0.25;
 const MIN_POINTS: usize = 32;
 const MAX_POINTS: usize = 4096;
-/// Number of time rows kept in the output `InterpolatingFunction`.
+/// Number of time rows kept in the output `InterpolatingFunction` when
+/// the solution's phase turns slowly.
 const OUTPUT_ROWS: usize = 60;
+/// Largest phase rotation (in radians) of any grid value between two
+/// stored time rows. A solution rotating like `E^(-I w t)` must be sampled
+/// densely enough in time that interpolating its real and imaginary parts
+/// separately keeps `Abs[u]` intact: rows a sizable fraction of a period
+/// apart would make `Abs` of the interpolated value dip between rows.
+const MAX_ROW_ROTATION: f64 = 0.3;
 
 pub(super) fn ndsolve_pde_complex(
   args: &[Expr],
@@ -323,7 +330,12 @@ fn try_solve(
     if wr.iter().chain(&wi).any(|v| !v.is_finite()) {
       return Ok(None);
     }
-    if (step + 1) % stride == 0 || step + 1 == n_steps {
+    if (step + 1) % stride == 0
+      || step + 1 == n_steps
+      || rows.last().is_some_and(|(_, sr, si)| {
+        max_phase_rotation(sr, si, &wr, &wi) > MAX_ROW_ROTATION
+      })
+    {
       let t_row = if step + 1 == n_steps { t_dom.max } else { t };
       rows.push((t_row, wr.clone(), wi.clone()));
     }
@@ -413,6 +425,30 @@ fn try_solve(
     )]
     .into(),
   )))
+}
+
+/// The largest phase angle between corresponding values of two complex
+/// grids `a` and `b` (given as real and imaginary parts), ignoring values
+/// too small, relative to the grid's largest, for their phase to matter.
+fn max_phase_rotation(ar: &[f64], ai: &[f64], br: &[f64], bi: &[f64]) -> f64 {
+  let scale = ar
+    .iter()
+    .zip(ai)
+    .chain(br.iter().zip(bi))
+    .map(|(r, i)| r.hypot(*i))
+    .fold(0.0, f64::max);
+  let floor = 1e-3 * scale;
+  let mut max = 0.0_f64;
+  for j in 0..ar.len() {
+    if ar[j].hypot(ai[j]) <= floor || br[j].hypot(bi[j]) <= floor {
+      continue;
+    }
+    // arg(b conj(a))
+    let re = br[j] * ar[j] + bi[j] * ai[j];
+    let im = bi[j] * ar[j] - br[j] * ai[j];
+    max = max.max(im.atan2(re).abs());
+  }
+  max
 }
 
 /// In-place radix-2 FFT of a power-of-two length sequence; the inverse
