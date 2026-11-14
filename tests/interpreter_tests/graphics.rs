@@ -3805,6 +3805,38 @@ mod graphics {
       assert!(svg.contains("<text"), "{svg}");
     }
 
+    /// `None` or `False` on one side of `Ticks -> {xspec, yspec}` hides only
+    /// that axis's ticks; the other axis keeps its automatic labels.
+    #[test]
+    fn ticks_none_on_one_side_hides_only_that_axis() {
+      let labels = |svg: &str| -> Vec<String> {
+        svg
+          .split("<text")
+          .skip(1)
+          .filter_map(|t| {
+            let body = &t[t.find('>')? + 1..];
+            Some(body[..body.find('<')?].to_string())
+          })
+          .collect()
+      };
+      // x runs over 0..5 and y over 10..20, so the two axes' labels differ.
+      let plot = |spec: &str| {
+        export_svg(&format!("Plot[10 + 2 x, {{x, 0, 5}}, Ticks -> {spec}]"))
+      };
+      let all = labels(&plot("Automatic"));
+      for side in ["None", "False"] {
+        let y_only = labels(&plot(&format!("{{{side}, Automatic}}")));
+        assert!(!y_only.is_empty(), "{side}: {y_only:?}");
+        assert!(y_only.iter().all(|l| l.parse::<f64>().unwrap() >= 10.0));
+        assert!(y_only.len() < all.len(), "{side}: {y_only:?} vs {all:?}");
+
+        let x_only = labels(&plot(&format!("{{Automatic, {side}}}")));
+        assert!(!x_only.is_empty(), "{side}: {x_only:?}");
+        assert!(x_only.iter().all(|l| l.parse::<f64>().unwrap() <= 5.0));
+        assert!(x_only.len() < all.len(), "{side}: {x_only:?} vs {all:?}");
+      }
+    }
+
     /// A machine real inside a `TraditionalForm` caption of a labeled plot
     /// is shown to six significant figures, not with its full digits.
     #[test]
