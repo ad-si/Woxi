@@ -1086,10 +1086,19 @@ fn render_item(
               px - text_w / 2.0,
             ));
           }
+          // `Style[…, Bold, Italic]` weights and slants the whole label,
+          // as it does a `Text` in `Graphics`.
+          let mut weight_attrs = String::new();
+          if styled.as_ref().is_some_and(|s| s.bold) {
+            weight_attrs.push_str(" font-weight=\"bold\"");
+          }
+          if styled.as_ref().is_some_and(|s| s.italic) {
+            weight_attrs.push_str(" font-style=\"italic\"");
+          }
           out.push_str(&format!(
             "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-             font-size=\"{font_size:.0}\" {fill}{rotate_attr}>{label}</text>\n",
+             font-size=\"{font_size:.0}\" {fill}{weight_attrs}{rotate_attr}>{label}</text>\n",
           ));
         }
       }

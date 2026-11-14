@@ -16447,11 +16447,19 @@ pub(crate) fn apply_common_plot_option(
       // explicit list of positions (each optionally `{pos, label}`).
       // The y side may be left off — `Ticks -> {xspec}` states the x ticks
       // and leaves the y axis to its default.
+      // A side set to `None` / `False` (`Ticks -> {Automatic, False}`)
+      // carries no ticks, the same as an empty explicit list.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
-        plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        let side_ticks = |spec: &Expr| match spec {
+          Expr::Identifier(s) if s == "None" || s == "False" => {
+            Some(Vec::new())
+          }
+          other => parse_explicit_ticks(other),
+        };
+        plot_opts.ticks_x = side_ticks(&items[0]);
         plot_opts.ticks_from_axes_option.0 = plot_opts.ticks_x.is_some();
         if let Some(y) = items.get(1) {
-          plot_opts.ticks_y = parse_explicit_ticks(y);
+          plot_opts.ticks_y = side_ticks(y);
           plot_opts.ticks_from_axes_option.1 = plot_opts.ticks_y.is_some();
         }
       }

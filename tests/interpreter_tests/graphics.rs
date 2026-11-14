@@ -1450,6 +1450,30 @@ mod graphics {
       }
     }
 
+    /// `Style[…, Italic]` / `Style[…, Bold]` around a plot's `Prolog` or
+    /// `Epilog` text slants or weights the label, as in `Graphics`.
+    #[test]
+    fn a_plot_overlay_text_keeps_its_italic_and_bold_style() {
+      for opt in ["Prolog", "Epilog"] {
+        let svg = export_svg(&format!(
+          "Plot[t, {{t, 0, 1}}, {opt} -> {{\
+           Text[Style[\"zzital\", Medium, Italic], {{0.5, 0.5}}], \
+           Text[Style[\"zzbold\", Bold, Blue], {{0.2, 0.8}}], \
+           Text[\"zzplain\", {{0.8, 0.2}}]}}]"
+        ));
+        let tag = |label: &str| {
+          let end = svg.find(&format!(">{label}</text>")).expect(&svg);
+          let start = svg[..end].rfind("<text").expect(&svg);
+          svg[start..end].to_string()
+        };
+        assert!(tag("zzital").contains("font-style=\"italic\""), "{svg}");
+        assert!(tag("zzbold").contains("font-weight=\"bold\""), "{svg}");
+        let plain = tag("zzplain");
+        assert!(!plain.contains("font-style=\"italic\""), "{svg}");
+        assert!(!plain.contains("font-weight=\"bold\""), "{svg}");
+      }
+    }
+
     /// A positionless `Text[label]` in a plot's `Epilog` sits at the origin,
     /// as it does in `Graphics`, instead of being dropped.
     #[test]
@@ -3833,6 +3857,23 @@ mod graphics {
       }
       let svg = export_svg("Plot[x^2, {x, 0, 1}]");
       assert!(svg.contains("<text"), "{svg}");
+    }
+
+    /// `None` / `False` on one side of `Ticks -> {xspec, yspec}` hides
+    /// only that axis's tick labels; the other side keeps its own.
+    #[test]
+    fn ticks_none_or_false_on_one_side_hides_only_that_axis() {
+      for (spec, x_shown) in [
+        ("{Automatic, False}", true),
+        ("{Automatic, None}", true),
+        ("{False, Automatic}", false),
+        ("{None, Automatic}", false),
+      ] {
+        let svg =
+          export_svg(&format!("Plot[100 x, {{x, 0, 1}}, Ticks -> {spec}]"));
+        assert_eq!(svg.contains(">0.4</text>"), x_shown, "{spec}: {svg}");
+        assert_eq!(svg.contains(">40</text>"), !x_shown, "{spec}: {svg}");
+      }
     }
 
     /// An empty tick list means "no ticks on that axis", not "automatic".
