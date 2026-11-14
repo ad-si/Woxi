@@ -23815,14 +23815,20 @@ fn has_script_stacked_inline_box(s: &str) -> bool {
 fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   let mut content = cell;
   let mut size = 14.0;
+  // The outermost of the innermost run of style wrappers: a stacked
+  // fraction is typeset from it, so its color, weight and slant reach the
+  // numerator and denominator, not only its size.
+  let mut styled: Option<&Expr> = None;
   loop {
     match content {
       Expr::FunctionCall { name, args }
         if name == "Text" && args.len() == 1 =>
       {
         content = &args[0];
+        styled = None;
       }
       Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
+        styled = styled.or(Some(content));
         let style = extract_cell_style(content);
         size = style.font_size.unwrap_or(size);
         content = style.content;
@@ -23845,7 +23851,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     return Some(layout_to_svg(&layout, theme().text_primary));
   }
   let Expr::FunctionCall { name, args } = content else {
-    return standard_fraction_cell_svg(content, size);
+    return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   };
   // A `Row[{…}]` cell with a quotient in it (`Row[{2 a b/(a + b), S}]`, a
   // Demonstration's formula readout) is typeset 2-D, the fraction stacked,
@@ -23869,7 +23875,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     || args.len() != 1
     || matches!(args[0], Expr::String(_))
   {
-    return standard_fraction_cell_svg(content, size);
+    return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   }
   let boxes = if name == "StandardForm" {
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&args[0])
@@ -24837,6 +24843,32 @@ fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
 /// (which defaults to monospace at the base size). A column of plain text
 /// takes the grid's style directives, with the sans face as the default
 /// family. Other cells are returned unchanged.
+/// A grid cell that is drawn as a stacked fraction, wrapped in the grid's
+/// base style (`Style[Grid[…], 16]`, `BaseStyle -> …`) so the fraction is
+/// typeset at that size, weight, slant and color instead of the default
+/// 14 pt. Any other cell, or a grid without such a style, is returned as is.
+fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  if directives.is_empty() || standard_fraction_cell_svg(cell, 14.0).is_none() {
+    return cell.clone();
+  }
+  let mut args = vec![cell.clone()];
+  args.extend(directives);
+  call("Style", args)
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -25070,6 +25102,10 @@ fn grid_svg_styled_internal_reporting(
       {
         *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
       }
+      // So is a quotient typeset as a stacked fraction (`7/11 + 6 x/11`):
+      // the grid's size, weight, slant and color reach its numerator and
+      // denominator, like the text cells beside it.
+      *cell = fraction_cell_in_grid_style(cell, default_style);
     }
   }
 
