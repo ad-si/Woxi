@@ -15708,3 +15708,41 @@ fn held_quotient_terms_and_negated_numerators() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+/// `Rational[a, b]` with arguments other than integers is an ordinary,
+/// unevaluated call. Printing it as `a/b` lost the grouping of a compound
+/// denominator: `Rational[a, b c]` came out as `a/b*c`, which reads back
+/// as `(a/b) c` (a Manipulate body re-read from its printed form then
+/// computed the wrong value).
+mod symbolic_rational_output {
+  use super::*;
+
+  #[test]
+  fn compound_denominator_keeps_its_head() {
+    assert_eq!(interpret("Rational[a, b c]").unwrap(), "Rational[a, b*c]");
+    assert_eq!(
+      interpret("Hold[Rational[m, o 7^n]]").unwrap(),
+      "Hold[Rational[m, o*7^n]]"
+    );
+  }
+
+  #[test]
+  fn printed_form_reads_back_to_the_same_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ReleaseHold[ToExpression[ToString[Hold[Rational[a, b c]], \
+         InputForm]] /. {a -> 13, b -> 6, c -> 7}]"
+      )
+      .unwrap(),
+      "13/42"
+    );
+  }
+
+  #[test]
+  fn integer_rationals_still_print_as_fractions() {
+    assert_eq!(interpret("Hold[Rational[1, 2]]").unwrap(), "Hold[1/2]");
+    assert_eq!(interpret("Hold[Rational[-3, 4]]").unwrap(), "Hold[-3/4]");
+    assert_eq!(interpret("Rational[6, 8]").unwrap(), "3/4");
+  }
+}

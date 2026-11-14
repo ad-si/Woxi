@@ -23556,7 +23556,12 @@ fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
   }
   let arithmetic = matches!(held, Expr::BinaryOp { .. } | Expr::UnaryOp { .. })
     || matches!(held, Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"));
+      if matches!(name.as_str(), "Rational" | "Times" | "Plus" | "Power"))
+    // An inert call of a user-defined or undefined head (`f[3/8]`) is
+    // typeset like any StandardForm expression, its arguments stacked; a
+    // built-in head is left alone, as it may have a drawing of its own.
+    || matches!(held, Expr::FunctionCall { name, .. }
+      if !crate::evaluator::functions::is_builtin_symbol(name));
   if !arithmetic {
     return None;
   }
@@ -23569,11 +23574,34 @@ fn standard_fraction_cell_svg(cell: &Expr, size: f64) -> Option<String> {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
+  let boxes = typeset_constant_box_tokens(&boxes);
   let layout = layout_box(&boxes, size);
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// Replace the bare symbol tokens of a value's boxes that name a
+/// mathematical constant (`Pi`, `I`, `E`, …) by the glyph Wolfram sets them
+/// in, so `I/(2 Sqrt[3])` stacks `ⅈ` over its denominator rather than the
+/// letter `I`. A string literal's token keeps its quotes, so `"Pi"` is left
+/// untouched; no user symbol can carry one of these protected names.
+fn typeset_constant_box_tokens(boxes: &Expr) -> Expr {
+  match boxes {
+    Expr::String(s) => match typeset_constant_glyph(s) {
+      Some(glyph) => Expr::String(glyph.to_string()),
+      None => boxes.clone(),
+    },
+    Expr::List(items) => {
+      Expr::List(items.iter().map(typeset_constant_box_tokens).collect())
+    }
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(typeset_constant_box_tokens).collect(),
+    },
+    _ => boxes.clone(),
+  }
 }
 
 fn contains_base_form(expr: &Expr) -> bool {
@@ -30598,6 +30626,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
               expr,
             );
           let boxes = crate::strip_number_precision_markers(&boxes);
+          let boxes = typeset_constant_box_tokens(&boxes);
           let layout = layout_box(&boxes, 14.0);
           if layout.width > 0.0 && layout.height > 0.0 {
             return Some(layout_to_svg(&layout, theme().text_primary));

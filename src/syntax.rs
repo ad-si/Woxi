@@ -11160,8 +11160,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if is_output && name == "BaseForm" && args.len() == 2 {
         return format!("BaseForm[{}, {}]", fmt(&args[0]), fmt(&args[1]));
       }
-      // Special case: Rational[num, denom] displays as num/denom
-      if name == "Rational" && args.len() == 2 {
+      // Special case: Rational[num, denom] displays as num/denom. Only an
+      // integer numerator and denominator make the atom; an unevaluated
+      // `Rational[a, b c]` (held, or not yet substituted) is an ordinary
+      // call and keeps its head, as `a/b*c` would read back as `(a/b) c`.
+      if name == "Rational"
+        && args.len() == 2
+        && args
+          .iter()
+          .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_)))
+      {
         return format!("{}/{}", fmt(&args[0]), fmt(&args[1]));
       }
       // `Expr::Association` (the evaluated form) displays as `<|...|>`;
