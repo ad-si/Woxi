@@ -2396,7 +2396,9 @@ fn extract_rational_coeff(term: &Expr) -> Option<(i128, i128)> {
 /// A term's exponent per symbolic factor (variables by name, other
 /// non-numeric factors like Sin[theta] by their display form) — the
 /// lex-order comparison key for the content-sign rule.
-fn term_lex_exponents(term: &Expr) -> std::collections::BTreeMap<String, i128> {
+type LexKey = std::collections::BTreeMap<String, (Expr, f64)>;
+
+fn term_lex_exponents(term: &Expr) -> LexKey {
   let inner = match term {
     Expr::UnaryOp {
       op: UnaryOperator::Minus,
@@ -2404,61 +2406,70 @@ fn term_lex_exponents(term: &Expr) -> std::collections::BTreeMap<String, i128> {
     } => operand.as_ref(),
     other => other,
   };
-  let mut exps: std::collections::BTreeMap<String, i128> =
-    std::collections::BTreeMap::new();
+  // Rational exponents count with their value, so `x` outranks `Sqrt[x]`
+  // (FactorTermsList[Sqrt[x] - x] is {-1, -Sqrt[x] + x}); a symbolic
+  // exponent counts 1.
+  let numeric_exponent = |e: &Expr| -> f64 {
+    match e {
+      Expr::Integer(n) => *n as f64,
+      Expr::FunctionCall { name, args }
+        if name == "Rational" && args.len() == 2 =>
+      {
+        match (&args[0], &args[1]) {
+          (Expr::Integer(n), Expr::Integer(d)) if *d != 0 => {
+            *n as f64 / *d as f64
+          }
+          _ => 1.0,
+        }
+      }
+      _ => 1.0,
+    }
+  };
+  let mut exps: LexKey = std::collections::BTreeMap::new();
   for f in collect_multiplicative_factors(inner) {
     let (base, e) = match &f {
       Expr::BinaryOp {
         op: BinaryOperator::Power,
         left,
         right,
-      } => (
-        left.as_ref().clone(),
-        match right.as_ref() {
-          Expr::Integer(n) => *n,
-          _ => 1,
-        },
-      ),
+      } => (left.as_ref().clone(), numeric_exponent(right)),
       Expr::FunctionCall { name, args }
         if name == "Power" && args.len() == 2 =>
       {
-        (
-          args[0].clone(),
-          match &args[1] {
-            Expr::Integer(n) => *n,
-            _ => 1,
-          },
-        )
+        (args[0].clone(), numeric_exponent(&args[1]))
       }
-      other => ((*other).clone(), 1),
+      other => ((*other).clone(), 1.0),
     };
     let is_numeric = matches!(
       &base,
       Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_)
     ) || matches!(&base, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2);
     if !is_numeric {
-      *exps.entry(expr_to_string(&base)).or_insert(0) += e;
+      exps.entry(expr_to_string(&base)).or_insert((base, 0.0)).1 += e;
     }
   }
   exps
 }
 
-/// Lexicographic order on exponent maps: variables compare alphabetically,
-/// missing exponents count as 0, and the first differing exponent decides.
-fn lex_exponents_greater(
-  a: &std::collections::BTreeMap<String, i128>,
-  b: &std::collections::BTreeMap<String, i128>,
-  priority: &[String],
-) -> bool {
-  let mut vars: Vec<&String> = a.keys().chain(b.keys()).collect();
-  vars.sort();
-  vars.dedup();
-  vars.sort_by_key(|v| {
+/// Lexicographic order on exponent maps: variables compare in canonical
+/// expression order (`a` before `Cos[x]` before `Sin[x]`, so
+/// FactorTermsList[a - Sin[x]] keeps its sign while
+/// FactorTermsList[Sin[x] - Cos[x]] flips it), missing exponents count as
+/// 0, and the first differing exponent decides.
+fn lex_exponents_greater(a: &LexKey, b: &LexKey, priority: &[String]) -> bool {
+  let mut vars: Vec<(&String, &Expr)> =
+    a.iter().chain(b.iter()).map(|(k, (e, _))| (k, e)).collect();
+  vars.sort_by(|x, y| {
+    crate::functions::list_helpers_ast::canonical_cmp(x.1, y.1)
+      .then_with(|| x.0.cmp(y.0))
+  });
+  vars.dedup_by(|x, y| x.0 == y.0);
+  vars.sort_by_key(|(v, _)| {
     priority.iter().position(|p| p == *v).unwrap_or(usize::MAX)
   });
-  for v in vars {
-    let ea = a.get(v).copied().unwrap_or(0);
-    let eb = b.get(v).copied().unwrap_or(0);
+  for (v, _) in vars {
+    let ea = a.get(v).map_or(0.0, |x| x.1);
+    let eb = b.get(v).map_or(0.0, |x| x.1);
     if ea != eb {
       return ea > eb;
     }
@@ -2505,7 +2516,7 @@ fn rational_content_with_priority(
   // Factor[2*x^2 - 3*x*y^2] → x*(2*x - 3*y^2) because the x-major lex
   // leading term is +2x^2, even though -3*x*y^2 has the higher total
   // degree (wolframscript-verified; differential fuzzer follow-up case).
-  let mut best_key: Option<std::collections::BTreeMap<String, i128>> = None;
+  let mut best_key: Option<LexKey> = None;
   let mut sign: i128 = 1;
   for (term, (n, _)) in terms.iter().zip(coeffs.iter()) {
     if *n == 0 {
@@ -2526,7 +2537,7 @@ fn rational_content_with_priority(
 }
 
 /// Divide each term by num_gcd/den_lcm and rebuild the term list.
-fn divide_terms_by(
+pub(super) fn divide_terms_by(
   terms: &[Expr],
   coeffs: &[(i128, i128)],
   num_gcd: i128,
@@ -3749,6 +3760,19 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
     }
   }
 
+  // Rational coefficients: the content is gcd/lcm with the lex-leading
+  // term's sign (FactorTermsList[-x/2 - y/3] is {-1/6, 3*x + 2*y}).
+  if let Some((n, d, term_coeffs)) = rational_content(&summands)
+    && d != 1
+  {
+    return Expr::List(
+      vec![
+        make_rational(n, d),
+        build_sum(divide_terms_by(&summands, &term_coeffs, n, d)),
+      ]
+      .into(),
+    );
+  }
   let coeffs: Vec<i128> = summands.iter().filter_map(term_coeff).collect();
   if coeffs.is_empty() {
     return Expr::List(vec![Expr::Integer(1), expanded.clone()].into());
@@ -3771,7 +3795,12 @@ fn extract_multi_var_content(expanded: &Expr) -> Expr {
   //   `FactorTermsList[3*(-1+2x)*(-1+y)*(1-a)]` →
   //     `{-3, -1 + a + 2*x - ...}`
   //     (first term is `3` constant, second is `-3*a`; sign −; content −3)
-  let sign = {
+  // The lex-leading term decides when the coefficients are rational
+  // (FactorTermsList[x - x^2 y] is {-1, -x + x^2*y}: x^2*y leads).
+  let lex_sign = rational_content(&summands).map(|(n, _, _)| n.signum());
+  let sign = if let Some(s) = lex_sign.filter(|s| *s != 0) {
+    s
+  } else {
     let mut found = None;
     for (i, c) in coeffs.iter().enumerate() {
       if *c == 0 {
@@ -3900,6 +3929,41 @@ fn collect_plus(expr: &Expr, out: &mut Vec<Expr>) {
 }
 
 /// FactorTermsList[poly] - returns {content, primitive_part}
+/// Whether `e` mentions a non-rational numeric constant such as E, Pi or
+/// Sqrt[2].
+fn contains_numeric_constant(e: &Expr) -> bool {
+  match e {
+    Expr::Constant(_) => true,
+    Expr::Identifier(s) => matches!(
+      s.as_str(),
+      "E" | "Pi" | "Degree" | "GoldenRatio" | "EulerGamma" | "Catalan"
+    ),
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      crate::functions::predicate_ast::is_numeric_q(&args[0])
+        && !matches!(&args[1], Expr::Integer(_))
+        || args.iter().any(contains_numeric_constant)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      crate::functions::predicate_ast::is_numeric_q(left)
+        && !matches!(right.as_ref(), Expr::Integer(_))
+        || contains_numeric_constant(left)
+        || contains_numeric_constant(right)
+    }
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_numeric_constant)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_numeric_constant(left) || contains_numeric_constant(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_numeric_constant(operand),
+    _ => false,
+  }
+}
+
 pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -4015,7 +4079,13 @@ pub fn factor_terms_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // FactorTermsList[x/2 - x^2/2] → {-1/2, -x + x^2}.
     let terms = collect_additive_terms(&expanded);
     if let Some((num_gcd, den_lcm, term_coeffs)) = rational_content(&terms)
-      && (num_gcd.abs() != 1 || den_lcm != 1)
+      && (num_gcd.abs() != 1
+        || den_lcm != 1
+        // A unit content still moves the sign out when every coefficient
+        // is rational (FactorTermsList[1 - Sin[x]] is {-1, -1 + Sin[x]});
+        // wolframscript leaves the sign of sums with constant factors such
+        // as E or Pi alone (FactorTermsList[1 - E x] is {1, 1 - E*x}).
+        || (num_gcd == -1 && !contains_numeric_constant(&expanded)))
     {
       let inner =
         build_sum(divide_terms_by(&terms, &term_coeffs, num_gcd, den_lcm));

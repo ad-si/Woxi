@@ -1747,7 +1747,7 @@ fn numeric_array_payload(expr: &Expr) -> Option<&Expr> {
 
 fn contains_sparse_array(e: &Expr) -> bool {
   match e {
-    Expr::FunctionCall { name, .. } if name == "SparseArray" => true,
+    e if list_helpers_ast::is_sparse_array_object(e) => true,
     Expr::List(items) => items.iter().any(contains_sparse_array),
     _ => false,
   }
@@ -1756,7 +1756,7 @@ fn contains_sparse_array(e: &Expr) -> bool {
 /// `e` with every SparseArray inside its lists replaced by its dense form.
 fn densify_nested_sparse_arrays(e: &Expr) -> Result<Expr, InterpreterError> {
   match e {
-    Expr::FunctionCall { name, .. } if name == "SparseArray" => {
+    e if list_helpers_ast::is_sparse_array_object(e) => {
       crate::evaluator::evaluate_function_call_ast(
         "Normal",
         std::slice::from_ref(e),
@@ -1935,9 +1935,9 @@ pub fn dispatch_list_operations(
   // `Flatten[{{s, s}}, {{1, 3}, {2, 4}}]`) is an array like any other: its
   // blocks are densified first, and a glued block array is sparse again.
   if (name == "ArrayFlatten"
-    && args.first().is_some_and(
-      |a| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray"),
-    ))
+    && args
+      .first()
+      .is_some_and(list_helpers_ast::is_sparse_array_object))
     || matches!(name, "Flatten" | "ArrayFlatten")
       && matches!(args.first(), Some(Expr::List(items)) if items.iter().any(contains_sparse_array))
   {
@@ -4368,7 +4368,7 @@ pub fn dispatch_list_operations(
     {
       let call = unevaluated("Differences", args);
       crate::emit_message(&format!(
-        "Differences::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
+        "Differences::listrp: List, SparseArray object or structured array expected at position 1 in {}.",
         crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
       ));
       return Some(Ok(call));
@@ -4424,7 +4424,7 @@ pub fn dispatch_list_operations(
     {
       let call = unevaluated("Ratios", args);
       crate::emit_message(&format!(
-        "Ratios::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
+        "Ratios::listrp: List, SparseArray object or structured array expected at position 1 in {}.",
         crate::syntax::format_expr(&call, crate::syntax::ExprForm::Output)
       ));
       return Some(Ok(call));
@@ -4728,8 +4728,7 @@ pub fn dispatch_list_operations(
     "Riffle" if args.len() == 2 || args.len() == 3 => {
       // A SparseArray first argument is riffled by its dense elements; the
       // result is a plain List (wolframscript does not keep it sparse).
-      if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "SparseArray")
-      {
+      if list_helpers_ast::is_sparse_array_object(&args[0]) {
         let normal = match crate::evaluator::evaluate_function_call_ast(
           "Normal",
           &[args[0].clone()],
@@ -4753,7 +4752,7 @@ pub fn dispatch_list_operations(
       // SparseArray arguments join by their dense elements. Densify any sparse
       // argument, join, then re-wrap as a SparseArray only when every argument
       // was a SparseArray (a mixed join yields a plain List in wolframscript).
-      let is_sparse = |a: &Expr| matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray");
+      let is_sparse = list_helpers_ast::is_sparse_array_object;
       let is_level_spec =
         args.len() >= 2 && matches!(&args[args.len() - 1], Expr::Integer(_));
       let arrays = if is_level_spec {
@@ -4761,7 +4760,14 @@ pub fn dispatch_list_operations(
       } else {
         args
       };
-      if arrays.iter().any(is_sparse) {
+      // A failed SparseArray construction is no array: with one present the
+      // heads cannot match, and plain Join reports that on the original
+      // arguments (Join::heads names SparseArray against SparseArray).
+      let failed_sparse = |a: &Expr| {
+        matches!(a, Expr::FunctionCall { name, .. } if name == "SparseArray")
+          && !is_sparse(a)
+      };
+      if arrays.iter().any(is_sparse) && !arrays.iter().any(failed_sparse) {
         let all_sparse = arrays.iter().all(is_sparse);
         let mut dense = Vec::with_capacity(args.len());
         for a in args {
@@ -9695,7 +9701,13 @@ fn normal_convert_associations(expr: &Expr) -> Expr {
     // A SparseArray nested inside a container densifies, then we keep recursing
     // (Normal acts at all levels, so `Normal[{SparseArray[..], ..}]` returns a
     // list of dense lists — e.g. Normal[CoefficientArrays[...]]).
-    Expr::FunctionCall { name, args } if name == "SparseArray" => {
+    // Only an evaluated SparseArray object densifies: a failed construction
+    // (`SparseArray[{0 -> 1}, 2]`) "densifies" to itself, and recursing on
+    // that never ends.
+    Expr::FunctionCall { name, args }
+      if name == "SparseArray"
+        && list_helpers_ast::is_sparse_array_object(expr) =>
+    {
       match list_helpers_ast::sparse_array_ast(args) {
         Ok(dense) => normal_convert_associations(&dense),
         Err(_) => Expr::FunctionCall {
@@ -10356,7 +10368,42 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A SparseArray input is reshaped by its dense elements, not its internal
   // representation, so densify it via Normal first. The reshaped result is
   // re-wrapped as a SparseArray below to match wolframscript's head.
-  let is_sparse = matches!(&args[0], Expr::FunctionCall { name, .. } if name == "SparseArray");
+  let is_sparse = list_helpers_ast::is_sparse_array_object(&args[0]);
+  if !is_sparse && !matches!(&args[0], Expr::List(_)) {
+    crate::emit_message(&format!(
+      "ArrayReshape::listrp: List, SparseArray object or structured array expected at position 1 in {}.",
+      crate::syntax::format_expr(
+        &unevaluated("ArrayReshape", args),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    return Ok(unevaluated("ArrayReshape", args));
+  }
+  // The dimensions are one non-negative integer or a list of them. A zero
+  // dimension is valid: the reshaped array has an empty axis there
+  // (ArrayReshape[src, {2, 0}] = {{}, {}}).
+  let dims: Option<Vec<usize>> = match &args[1] {
+    Expr::Integer(n) if *n >= 0 => Some(vec![*n as usize]),
+    Expr::List(items) => items
+      .iter()
+      .map(|item| match item {
+        Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+        _ => None,
+      })
+      .collect(),
+    _ => None,
+  };
+  let Some(dims) = dims else {
+    crate::emit_message(&format!(
+      "ArrayReshape::ilsmn: Single or list of non-negative machine-sized integers expected at position {} of {}.",
+      crate::syntax::format_expr(&args[1], crate::syntax::ExprForm::Output),
+      crate::syntax::format_expr(
+        &unevaluated("ArrayReshape", args),
+        crate::syntax::ExprForm::Output
+      )
+    ));
+    return Ok(unevaluated("ArrayReshape", args));
+  };
   let source = if is_sparse {
     crate::evaluator::evaluate_function_call_ast("Normal", &[args[0].clone()])?
   } else {
@@ -10364,31 +10411,6 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // Flatten the input list
   let flat = flatten_to_vec(&source);
-
-  // Parse dimensions
-  let dims = match &args[1] {
-    Expr::List(items) => {
-      let mut d = Vec::new();
-      for item in items {
-        match item {
-          // A zero dimension is valid: the reshaped array has an empty axis
-          // there (ArrayReshape[src, {2, 0}] = {{}, {}}).
-          Expr::Integer(n) if *n >= 0 => d.push(*n as usize),
-          _ => {
-            return Ok(unevaluated("ArrayReshape", args));
-          }
-        }
-      }
-      d
-    }
-    _ => {
-      return Ok(unevaluated("ArrayReshape", args));
-    }
-  };
-
-  if dims.is_empty() {
-    return Ok(Expr::List(vec![].into()));
-  }
 
   // Optional padding: a scalar or a list of elements to cycle through.
   // `ArrayReshape[list, dims, pad]` fills trailing slots with the padding
@@ -10403,6 +10425,12 @@ fn array_reshape_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     vec![Expr::Integer(0)]
   };
 
+  // Empty dimensions reshape to a scalar: the first element, or the padding
+  // when there is none (ArrayReshape[{1, 2}, {}] = 1, ArrayReshape[{}, {}]
+  // = 0).
+  if dims.is_empty() {
+    return Ok(flat.first().cloned().unwrap_or_else(|| pad[0].clone()));
+  }
   // Build the reshaped array, padding with `pad` if needed
   let mut idx = 0;
   let reshaped = build_reshaped(&flat, &dims, 0, &mut idx, &pad);

@@ -619,10 +619,75 @@ fn row_of_buttons_in_grid_cell_draws_plates() {
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
   assert!(!svg.contains("Button["), "button source leaked: {svg}");
   assert_eq!(
-    svg.matches("<rect").count(),
+    svg.matches("<rect").count() - svg.matches("id=\"woxi-btn-").count(),
     2,
     "one plate per button: {svg}"
   );
+}
+
+/// A text-labeled `Button[label, action]` drawn as a `Row` item (an
+/// on-screen keyboard of letter keys) carries the invisible hit region a
+/// live widget presses, encoding the button's own action — not just an
+/// inert plate.
+#[test]
+fn row_of_text_buttons_carries_pressable_hit_regions() {
+  let svg = interpret(
+    r#"ExportString[Row[Map[Button[#, typed = typed <> #] &, {"p", "q", "r"}]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert_eq!(
+    svg.matches("id=\"woxi-btn-").count(),
+    3,
+    "one hit region per key: {svg}"
+  );
+  for key in ["p", "q", "r"] {
+    let action = format!("typed = StringJoin[typed, \"{key}\"]");
+    let hex: String = action
+      .bytes()
+      .flat_map(|b| {
+        let digits = b"0123456789abcdef";
+        [
+          digits[(b >> 4) as usize] as char,
+          digits[(b & 15) as usize] as char,
+        ]
+      })
+      .collect();
+    assert!(
+      svg.contains(&format!("id=\"woxi-btn-{hex}\"")),
+      "key {key} should press {action:?}: {svg}"
+    );
+  }
+}
+
+/// A `Button` without an action has nothing to press, so it gets no hit
+/// region.
+#[test]
+fn row_of_action_less_buttons_has_no_hit_regions() {
+  let svg =
+    interpret(r#"ExportString[Row[{Button["a"], Button["b"]}], "SVG"]"#)
+      .unwrap();
+  assert!(!svg.contains("woxi-btn-"), "{svg}");
+}
+
+/// Regression: SVG trims edge whitespace unless told not to, so a styled
+/// `Row` part with a trailing or doubled space (`Style["sum   = ", 14]`)
+/// lost those spaces — its `<tspan>` wrapper hid them from the check that
+/// adds `xml:space="preserve"`.
+#[test]
+fn styled_row_part_keeps_edge_and_doubled_spaces() {
+  let svg = interpret(
+    r#"ExportString[Row[{Style["sum   = ", 14], Style["7", 16, Bold]}], "SVG"]"#,
+  )
+  .unwrap();
+  let part = svg
+    .lines()
+    .find(|l| l.contains("sum   = "))
+    .unwrap_or_else(|| panic!("the part's spaces must be kept: {svg}"));
+  assert!(part.contains("xml:space=\"preserve\""), "{part}");
+  // A part without edge or doubled spaces needs no preserve attribute.
+  let seven = svg.lines().find(|l| l.contains(">7<")).expect("7 part");
+  assert!(!seven.contains("xml:space"), "{seven}");
 }
 
 /// Regression: a `Panel` in a `Grid` cell (a readout beside plots) printed
@@ -758,4 +823,106 @@ mod traditional_row_layout {
       .collect();
     assert_eq!(visible, ["x", "2", "+", "2", "x", "a"]);
   }
+}
+
+/// Row items are typeset like StandardForm values: an inert call of an
+/// undefined head stacks the fractions among its arguments, and the
+/// constants `I`, `Pi`, … are set as their glyphs inside stacked values.
+mod row_standard_typesetting {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  fn texts(svg: &str) -> Vec<String> {
+    svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|t| {
+        let body = t.split_once('>')?.1;
+        let body = body
+          .strip_prefix("<tspan")
+          .map_or(body, |b| b.split_once('>').map_or(b, |(_, rest)| rest));
+        Some(body.split('<').next()?.to_string())
+      })
+      .filter(|s| !s.trim().is_empty())
+      .collect()
+  }
+
+  #[test]
+  fn undefined_head_call_stacks_its_fraction_argument() {
+    let t = texts(&svg("Row[{g[3/8], \"=\", x}]"));
+    assert!(t.iter().any(|s| s == "3"), "{t:?}");
+    assert!(t.iter().any(|s| s == "8"), "{t:?}");
+    assert!(!t.iter().any(|s| s.contains("3/8")), "{t:?}");
+  }
+
+  #[test]
+  fn styled_undefined_head_call_stacks_its_fraction_argument() {
+    let t = texts(&svg("Style[Row[{g[13/42], \"=\", 5/7}], 24]"));
+    assert!(t.iter().any(|s| s == "13"), "{t:?}");
+    assert!(t.iter().any(|s| s == "42"), "{t:?}");
+  }
+
+  #[test]
+  fn imaginary_unit_in_a_stacked_value_is_the_glyph() {
+    for code in [
+      "Row[{I/2}]",
+      "Row[{5/7 + (4 I)/(7 Sqrt[3])}]",
+      "Style[Row[{5/7 + (4 I)/(7 Sqrt[3])}], 24]",
+    ] {
+      let t = texts(&svg(code));
+      assert!(!t.iter().any(|s| s == "I"), "{code}: {t:?}");
+    }
+  }
+
+  #[test]
+  fn pi_in_a_stacked_row_item_is_the_glyph() {
+    let t = texts(&svg("Row[{Pi/2, x}]"));
+    assert!(t.iter().any(|s| s == "\u{03C0}"), "{t:?}");
+    assert!(!t.iter().any(|s| s == "Pi"), "{t:?}");
+  }
+
+  #[test]
+  fn string_literal_is_not_replaced_by_a_glyph() {
+    let t = texts(&svg("Row[{g[\"Pi\", 1/2]}]"));
+    assert!(t.iter().any(|s| s.contains("Pi")), "{t:?}");
+  }
+}
+
+/// Regression: a `Row` holding a nested `Grid` (a binomial-style `N` over
+/// `k` between parentheses) inside a framed `Grid` cell printed the inner
+/// grid's `Grid[{{…}}]` source text instead of stacking its rows.
+#[test]
+fn row_with_nested_grid_in_grid_cell_stacks_rows() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{x, Row[{a, "(", Grid[{{"n"}, {"k"}}], ")"}]}}, Frame -> True], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains("Grid["), "grid source leaked: {svg}");
+  let y_of = |s: &str| -> f64 {
+    let at = svg.find(&format!(">{s}</text>")).unwrap();
+    let head = &svg[..at];
+    let tag = &head[head.rfind("<text").unwrap()..];
+    let y = tag.split(" y=\"").nth(1).unwrap();
+    y.split('"').next().unwrap().parse().unwrap()
+  };
+  assert!(y_of("n") < y_of("k"), "n is not above k: {svg}");
+}
+
+/// The same row typeset in TraditionalForm stacks the grid's rows too,
+/// instead of writing `Grid[` around a parenthesized matrix.
+#[test]
+fn traditional_row_with_nested_grid_stacks_rows() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Grid[{{x, TraditionalForm[Row[{a, Grid[{{"n"}, {"k"}}]}]]}}, Frame -> True], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains(">Grid<"), "grid head leaked: {svg}");
+  assert!(!svg.contains(">(<"), "matrix parentheses leaked: {svg}");
 }

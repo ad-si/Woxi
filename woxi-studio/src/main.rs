@@ -4399,6 +4399,38 @@ fn placement_slot(placement: manipulate::ControlPlacement) -> usize {
   }
 }
 
+/// One pressable Manipulate `Button`, captioned with its label runs (italic
+/// and `FontSize` from a `Style[…]` label are kept).
+fn manipulate_button<'a>(
+  label: &str,
+  label_runs: &[woxi::functions::graphics::LabelRun],
+  on_press: Message,
+) -> Element<'a, Message> {
+  let spans: Vec<iced::widget::text::Span<Message>> = label_runs
+    .iter()
+    .map(|run| {
+      let mut font = Font::MONOSPACE;
+      if run.italic {
+        font.style = iced::font::Style::Italic;
+      }
+      let span = iced::widget::span(run.text.clone()).font(font);
+      match run.size {
+        Some(size) => span.size(size as f32),
+        None => span,
+      }
+    })
+    .collect();
+  let btn_label: Element<Message> = if spans.is_empty() {
+    text(label.to_string())
+      .size(11)
+      .font(Font::MONOSPACE)
+      .into()
+  } else {
+    rich_text(spans).size(11).into()
+  };
+  button(btn_label).padding([3, 10]).on_press(on_press).into()
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
@@ -4454,7 +4486,13 @@ fn render_manipulate_widget<'a>(
         *current = to;
       }
     };
+  // The last button already drawn on the line of an earlier button (see
+  // `ControlState::Button::joins_previous`).
+  let mut joined_through: Option<usize> = None;
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    if joined_through.is_some_and(|last| ctrl_idx <= last) {
+      continue;
+    }
     for tree in panel_trees_at(ctrl_idx) {
       controls_col = controls_col.push(render_display_node(cell_idx, tree));
     }
@@ -4490,10 +4528,30 @@ fn render_manipulate_widget<'a>(
         current,
         is_real,
         orientation,
+        reversed,
         ..
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        // A high-to-low range (`{u, 2, 0}`) runs its rail from `max` to
+        // `min`; the widget itself only takes an ascending range, so the
+        // thumb position and the reported value are mirrored.
+        let (min, max, step, reversed) = (*min, *max, *step, *reversed);
+        let position =
+          manipulate::slider_rail_position(min, max, reversed, *current);
+        let on_slide = move |v: f64| {
+          if enabled {
+            Message::ManipulateContinuousChanged(
+              cell_idx,
+              ctrl_idx,
+              manipulate::slider_value_at_rail_position(
+                min, max, step, reversed, v,
+              ),
+            )
+          } else {
+            Message::Noop
+          }
+        };
         let value_widget = text(format_slider_value(*current, *is_real))
           .size(11)
           .font(Font::MONOSPACE)
@@ -4501,16 +4559,10 @@ fn render_manipulate_widget<'a>(
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
-              iced::widget::vertical_slider(*min..=*max, *current, move |v| {
-                if enabled {
-                  Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
-                } else {
-                  Message::Noop
-                }
-              })
-              .step(*step)
-              // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
-              .height(120.0);
+              iced::widget::vertical_slider(min..=max, position, on_slide)
+                .step(step)
+                // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
+                .height(120.0);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -4518,15 +4570,8 @@ fn render_manipulate_widget<'a>(
               .align_y(Center)
               .spacing(8)
           } else {
-            let mut s = slider(*min..=*max, *current, move |v| {
-              if enabled {
-                Message::ManipulateContinuousChanged(cell_idx, ctrl_idx, v)
-              } else {
-                Message::Noop
-              }
-            })
-            .step(*step)
-            .width(Fill);
+            let mut s =
+              slider(min..=max, position, on_slide).step(step).width(Fill);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -5064,31 +5109,45 @@ fn render_manipulate_widget<'a>(
           .spacing(8);
         controls_col = controls_col.push(control_row);
       }
-      manipulate::ControlState::Button {
-        label, label_runs, ..
-      } => {
-        // A pressable action row (`Button["reset", …]`).
-        let spans: Vec<iced::widget::text::Span<Message>> = label_runs
-          .iter()
-          .map(|run| {
-            let mut font = Font::MONOSPACE;
-            if run.italic {
-              font.style = iced::font::Style::Italic;
+      manipulate::ControlState::Button { .. } => {
+        // A pressable action row (`Button["reset", …]`). The buttons right
+        // after it that share its `Row[{…}]` (or `ButtonBar`) go on the
+        // same line.
+        let mut btn_row = Row::new().spacing(6).align_y(Center);
+        let mut idx = ctrl_idx;
+        loop {
+          if let manipulate::ControlState::Button {
+            label, label_runs, ..
+          } = &visible_controls[idx]
+          {
+            let on = state.control_is_enabled.get(idx).copied().unwrap_or(true);
+            btn_row = btn_row.push(manipulate_button(
+              label,
+              label_runs,
+              if on {
+                Message::ManipulateButtonPressed(cell_idx, idx)
+              } else {
+                Message::Noop
+              },
+            ));
+          }
+          match visible_controls.get(idx + 1) {
+            Some(manipulate::ControlState::Button {
+              joins_previous: true,
+              ..
+            }) if state
+              .control_is_visible
+              .get(idx + 1)
+              .copied()
+              .unwrap_or(true) =>
+            {
+              idx += 1;
             }
-            iced::widget::span(run.text.clone()).font(font)
-          })
-          .collect();
-        let btn_label: Element<Message> = if spans.is_empty() {
-          text(label.clone()).size(11).font(Font::MONOSPACE).into()
-        } else {
-          rich_text(spans).size(11).into()
-        };
-        let btn = button(btn_label).padding([3, 10]).on_press(if enabled {
-          Message::ManipulateButtonPressed(cell_idx, ctrl_idx)
-        } else {
-          Message::Noop
-        });
-        controls_col = controls_col.push(row![btn].align_y(Center));
+            _ => break,
+          }
+        }
+        joined_through = Some(idx);
+        controls_col = controls_col.push(btn_row);
       }
       manipulate::ControlState::Heading { label, label_runs } => {
         // A static heading row (a string or `Style[…]` Manipulate argument,
@@ -13171,6 +13230,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
     }
   }
 
+  /// Wolfram draws a slider written high-to-low (`{{h, -0.09}, -0.05,
+  /// -0.5, 0.001}`) from its first bound on the left: the thumb for -0.09
+  /// sits near the left end, and dragging right makes `h` more negative.
+  /// The range is stored sorted, so the control must remember it was
+  /// reversed and the widget must mirror the track position.
+  #[test]
+  fn reversed_range_slider_runs_from_its_first_bound() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[h, {{h, -0.09}, -0.05, -0.5, 0.001}, {{k, 2}, 1, 5}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("build Manipulate widget");
+    let (lo, hi, current, reversed) = match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        min,
+        max,
+        current,
+        reversed,
+        ..
+      } => (*min, *max, *current, *reversed),
+      other => panic!("unexpected control: {other:?}"),
+    };
+    assert_eq!((lo, hi, current), (-0.5, -0.05, -0.09));
+    assert!(reversed, "a high-to-low range must be flagged as reversed");
+    // The thumb for -0.09 sits close to the track's start (-0.05 end).
+    let pos = manipulate::slider_rail_position(lo, hi, reversed, current);
+    let fraction = (pos - lo) / (hi - lo);
+    assert!((fraction - 0.04 / 0.45).abs() < 1e-9, "fraction {fraction}");
+    // The track's start and end map back to the first and second bounds.
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, lo), hi);
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, hi), lo);
+
+    match &state.controls[1] {
+      manipulate::ControlState::Continuous { reversed, .. } => {
+        assert!(!reversed, "an ascending range is not reversed")
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+    assert_eq!(manipulate::slider_rail_position(1.0, 5.0, false, 2.0), 2.0);
+  }
+
   #[test]
   fn text_cell_holding_graphics_renders_as_stored_graphic() {
     let nb = woxi::notebook::parse_notebook(
@@ -17846,6 +17947,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
+      reversed: false,
     };
     let empty = manipulate::ControlState::Continuous {
       name: "theta".to_string(),
@@ -17859,6 +17961,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: false,
+      reversed: false,
     };
     assert_eq!(manipulate_label_char_count(&m1), 2);
     assert_eq!(manipulate_label_char_count(&empty), 0);
@@ -17880,6 +17983,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       exact_value: None,
       orientation: manipulate::ControlOrientation::Horizontal,
       imaginary: true,
+      reversed: false,
     };
     assert_eq!(c.current_code(), "Complex[0, 1]");
     if let manipulate::ControlState::Continuous { imaginary, .. } = &mut c {
