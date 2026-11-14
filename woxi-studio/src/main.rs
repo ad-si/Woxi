@@ -21449,7 +21449,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`NumTrials$$ = 10}, \"\\[Ellipsis]\"
       svg.contains("probability associated with each value"),
       "{svg}"
     );
-    assert!(svg.contains(">x</text>"), "{svg}");
+    // The symbol label `x` is set in TraditionalForm, in italics.
+    assert!(
+      svg.contains("><tspan font-style=\"italic\">x</tspan></text>"),
+      "{svg}"
+    );
     assert!(
       svg.contains("baseline-shift=\"sub\""),
       "the y label's subscript must typeset: {svg}"

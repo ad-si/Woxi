@@ -5701,10 +5701,16 @@ mod plot3d {
       );
       assert!(!svg.contains("Rotate"), "{svg}");
       assert!(svg.contains("<svg xmlns"), "{svg}");
-      // A plain expression label keeps its text rendering.
+      // A plain expression label keeps its text rendering, in italics.
       let svg = export_svg("Plot[u, {u, 0, 1}, AxesLabel -> {u, v}]");
-      assert!(svg.contains(">u</text>"), "{svg}");
-      assert!(svg.contains(">v</text>"), "{svg}");
+      assert!(
+        svg.contains("><tspan font-style=\"italic\">u</tspan></text>"),
+        "{svg}"
+      );
+      assert!(
+        svg.contains("><tspan font-style=\"italic\">v</tspan></text>"),
+        "{svg}"
+      );
     }
 
     // A `Rotate`-wrapped expression label typesets its content rather than
@@ -13473,6 +13479,47 @@ mod plot3d {
       }
     }
 
+    /// A graphic's `FormatType` is `TraditionalForm`, so a mathematical
+    /// axis label — bare or in an explicit `TraditionalForm` — sets its
+    /// letters in italics, the way Wolfram draws `x(t)`. As part of a
+    /// scheduled QA routine, Woxi Studio was tested against a randomly
+    /// sampled Wolfram Demonstration notebook whose phase-plane
+    /// `ParametricPlot` labeled its axes `TraditionalForm[x[t]]`; they were
+    /// drawn upright. This is a self-authored, construct-equivalent example.
+    #[test]
+    fn mathematical_axes_labels_set_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let applied = format!("{}({})", italic("p"), italic("s"));
+      for code in [
+        "ParametricPlot[{Cos[s], Sin[s]}, {s, 0, 1}, \
+         AxesLabel -> {TraditionalForm[p[s]], TraditionalForm[q[s]]}]",
+        "Plot[s, {s, 0, 1}, AxesLabel -> {p[s], q[s]}]",
+        "ListPlot[{1, 2, 3}, AxesLabel -> {p[s], q[s]}]",
+        "Graphics[Line[{{0, 0}, {1, 1}}], Axes -> True, \
+         AxesLabel -> {p[s], q[s]}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(&applied), "{code}: {svg}");
+        assert!(svg.contains(&italic("q")), "{code}: {svg}");
+        assert!(!svg.contains("p[s]"), "{code}: {svg}");
+      }
+      // A bare symbol is italic too; a built-in function keeps its upright
+      // traditional name around the italic argument.
+      let svg = export_svg("Plot[s, {s, 0, 1}, AxesLabel -> {s, Sinc[s]}]");
+      assert!(svg.contains(&format!(">{}</text>", italic("s"))), "{svg}");
+      assert!(
+        svg.contains(&format!(">sinc({})</text>", italic("s"))),
+        "{svg}"
+      );
+      // Strings and layout wrappers are drawn as written.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> {\"p[s]\", Row[{\"a\", \"b\"}]}]",
+      );
+      assert!(svg.contains(">p[s]</text>"), "{svg}");
+      assert!(svg.contains(">ab</text>"), "{svg}");
+    }
+
     /// A list is a perfectly good label — it is typeset as the list itself,
     /// which is how a Demonstration names the four curves it draws on one
     /// axis.
@@ -14153,7 +14200,10 @@ mod plot3d {
         "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> {Sin[x], Cos[x]}, \
          AxesLabel -> {x, Sinc[x]}, PlotLabel -> Sin[x]]",
       );
-      assert!(svg.contains(">sinc(x)</text>"), "{svg}");
+      assert!(
+        svg.contains(">sinc(<tspan font-style=\"italic\">x</tspan>)</text>"),
+        "{svg}"
+      );
       assert_eq!(svg.matches(">sin(x)</text>").count(), 2, "{svg}");
       assert!(svg.contains(">cos(x)</text>"), "{svg}");
       assert!(!svg.contains("Sin["), "{svg}");
@@ -21914,7 +21964,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     fn automatic_axes_and_frame_labels_name_the_variable() {
       let axes =
         export_svg("Plot[Sinc[u], {u, 0, 10}, AxesLabel -> Automatic]");
-      assert_eq!(axes.matches(">u</text>").count(), 1, "{axes}");
+      // The axis label is set in TraditionalForm, with an italic letter.
+      assert_eq!(
+        axes
+          .matches("><tspan font-style=\"italic\">u</tspan></text>")
+          .count(),
+        1,
+        "{axes}"
+      );
       let frame = export_svg(
         "Plot[Sinc[u], {u, 0, 10}, Frame -> True, FrameLabel -> Automatic]",
       );
@@ -46352,7 +46409,7 @@ mod demonstration_plot_layout {
     let svg = export_svg(
       "Plot[Sin[x], {x, 0, 10}, AxesLabel -> {t, y[t]}, ImageSize -> 300]",
     );
-    assert!(svg.contains(">y(t)<"), "the y axis label is missing: {svg}");
+    assert!(svg.contains("><tspan font-style=\"italic\">y</tspan>(<tspan font-style=\"italic\">t</tspan>)<"), "the y axis label is missing: {svg}");
     let svg = export_svg(
       "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
        FrameLabel -> {y[t], y'[t]}, ImageSize -> 250]",
