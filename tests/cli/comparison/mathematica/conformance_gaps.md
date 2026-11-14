@@ -8972,7 +8972,12 @@ populations, GDPs and areas differ from WL's own curated values (US area:
 WL 9.63142*^6 km^2, World Bank 9.83151*^6), and `"Population"` is the latest
 World Bank year rather than WL's rounded estimate. Yearly series are
 returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
-`DateObject`s). The shape and polygon properties come from Natural Earth's
+`DateObject`s). The further indicators (`"BirthRateFraction"`,
+`"LifeExpectancy"`, `"PovertyFraction"`, sub-populations, trade and
+national-account figures, …; see `scripts/gen_country_indicators.py`) are
+the latest World Bank year and so also differ from WL's curated values;
+WL properties without a World Bank counterpart (radio stations, airports,
+military, …) return `Missing["NotAvailable", prop]`. The shape and polygon properties come from Natural Earth's
 1:110m outlines, coarser than WL's and with their own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
