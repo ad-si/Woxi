@@ -8,26 +8,26 @@ expression: "export_svg(\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}, {5
 </defs>
 <g transform="translate(14.96,0.50)">
 <g>
-<circle cx="17.18" cy="201.70" r="2.06" fill="rgb(0,0,0)" opacity="0"/>
-<circle cx="326.36" cy="10.62" r="2.06" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="17.18" cy="201.70" r="1.37" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="326.36" cy="10.62" r="1.37" fill="rgb(0,0,0)" opacity="0"/>
 <polygon points="45.41,39.74 94.60,39.74 94.60,106.16 45.41,106.16" fill="rgb(255,213,64)"/>
-<polyline points="94.60,75.50 45.41,75.50" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="94.60,75.50 45.41,75.50" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 <polyline points="70.01,106.16 70.01,121.49" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="70.01,39.74 70.01,19.30" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="82.30,121.49 57.71,121.49" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="82.30,19.30 57.71,19.30" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="82.30,121.49 57.71,121.49" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
+<polyline points="82.30,19.30 57.71,19.30" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 <polygon points="147.18,90.83 196.36,90.83 196.36,152.14 147.18,152.14" fill="rgb(255,213,64)"/>
-<polyline points="196.36,121.49 147.18,121.49" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="196.36,121.49 147.18,121.49" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 <polyline points="171.77,152.14 171.77,162.36" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="171.77,90.83 171.77,80.61" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="184.07,162.36 159.47,162.36" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="184.07,80.61 159.47,80.61" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="184.07,162.36 159.47,162.36" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
+<polyline points="184.07,80.61 159.47,80.61" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 <polygon points="248.94,106.16 298.13,106.16 298.13,172.58 248.94,172.58" fill="rgb(255,213,64)"/>
-<polyline points="298.13,136.82 248.94,136.82" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="298.13,136.82 248.94,136.82" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 <polyline points="273.53,172.58 273.53,193.02" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="273.53,106.16 273.53,90.83" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="285.83,193.02 261.24,193.02" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="285.83,90.83 261.24,90.83" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="285.83,193.02 261.24,193.02" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
+<polyline points="285.83,90.83 261.24,90.83" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 </g>
 <rect x="0" y="0" width="343.54" height="212.32" fill="none" stroke="#666666" stroke-width="0.5"/>
 <line x1="70.01" y1="212.32" x2="70.01" y2="208.32" stroke="#666666" stroke-width="0.5"/>

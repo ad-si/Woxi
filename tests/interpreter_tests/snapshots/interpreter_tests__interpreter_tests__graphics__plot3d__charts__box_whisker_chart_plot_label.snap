@@ -9,14 +9,14 @@ expression: "export_svg(r#\"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> \"My T
 <text x="183.8" y="10.86" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="12" fill="#333333" xml:space="preserve">My Title</text>
 <g transform="translate(9.14,13.91)">
 <g>
-<circle cx="17.47" cy="205.12" r="2.10" fill="rgb(0,0,0)" opacity="0"/>
-<circle cx="331.89" cy="10.80" r="2.10" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="17.47" cy="205.12" r="1.40" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="331.89" cy="10.80" r="1.40" fill="rgb(0,0,0)" opacity="0"/>
 <polygon points="148.91,52.75 200.45,52.75 200.45,163.16 148.91,163.16" fill="rgb(255,213,64)"/>
-<polyline points="200.45,107.96 148.91,107.96" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="200.45,107.96 148.91,107.96" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 <polyline points="174.68,163.16 174.68,196.29" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="174.68,52.75 174.68,19.63" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="187.56,196.29 161.80,196.29" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="187.56,19.63 161.80,19.63" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="187.56,196.29 161.80,196.29" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
+<polyline points="187.56,19.63 161.80,19.63" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 </g>
 <rect x="0" y="0" width="349.36" height="215.92" fill="none" stroke="#666666" stroke-width="0.5"/>
 <line x1="174.68" y1="215.92" x2="174.68" y2="211.92" stroke="#666666" stroke-width="0.5"/>

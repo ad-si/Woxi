@@ -9297,8 +9297,7 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `Text` in `Graphics` defaults to 14 pt in Woxi; wolframscript's SVG
   export sets it at 10 pt. Changing the default touches most Graphics
   snapshots, so it is left for a dedicated pass.
-- `Line` strokes use butt caps; wolframscript draws `stroke-linecap:square`
-  (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
+- `Thin` is clamped to 0.5 pt (WL 0.25).
 - Graphics frames are drawn 1 pt wide in the theme gray; wolframscript uses
   0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
 - `GraphicsGrid[…, ImageSize -> 400]` of labeled graphics is 456 pt tall

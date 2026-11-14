@@ -310,7 +310,7 @@ struct StyleState {
   face_opacity: Option<f64>,
   opacity: f64,
   thickness: f64, // fraction of plot width; negative = absolute pixels
-  point_size: f64, // fraction of plot width, default ~0.012
+  point_size: f64, // fraction of plot width, default 0.008
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
   halo: Option<Halo>, // Haloing[...] contrasting outline behind primitives
@@ -644,7 +644,10 @@ impl Default for StyleState {
       // default is absolute (the negative encoding), not a fraction of the
       // width the way an explicit `Thickness` is.
       thickness: -1.0,
-      point_size: 0.012,
+      // A bare `Point` in 2-D `Graphics` is `PointSize[0.008]` of the image
+      // width (a 4-pixel dot at 500 pixels wide); plots set their own,
+      // larger size explicitly.
+      point_size: 0.008,
       dashing: None,
       edge_form: None,
       halo: None,
@@ -10442,14 +10445,24 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
   }
 }
 
-/// The `stroke-linecap` value for a `Line`/`Arrow` stroke, from its
-/// `CapForm[…]` directive. Unset (`None`) keeps Woxi's pre-existing butt
-/// cap, which is also what `CapForm["Butt"]` — Wolfram's default — asks for.
+/// The `stroke-linecap` value for an `Arrow`/curve stroke, from its
+/// `CapForm[…]` directive. Unset (`None`) keeps the butt cap.
 fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
   match cap_form {
     Some(LineCapKind::Round) => "round",
     Some(LineCapKind::Square) => "square",
     Some(LineCapKind::Butt) | None => "butt",
+  }
+}
+
+/// The `stroke-linecap` value for a `Line` stroke. Wolfram draws a `Line`
+/// with square caps unless a `CapForm` says otherwise: each end extends
+/// half the line's thickness past its endpoint, so a short thick segment
+/// (a tick mark) is as wide as its stroke plus its length.
+fn line_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+  match cap_form {
+    None => "square",
+    some => stroke_linecap_attr(some),
   }
 }
 
@@ -12273,7 +12286,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = line_linecap_attr(style.cap_form);
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
       // `VertexColors` assigns one color per point, in order, across all
       // segments concatenated — only usable when the count actually lines

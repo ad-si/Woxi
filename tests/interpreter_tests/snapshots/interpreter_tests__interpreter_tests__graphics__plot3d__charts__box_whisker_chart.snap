@@ -8,14 +8,14 @@ expression: "export_svg(\"BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]\")"
 </defs>
 <g transform="translate(14.12,0.50)">
 <g>
-<circle cx="17.22" cy="202.19" r="2.07" fill="rgb(0,0,0)" opacity="0"/>
-<circle cx="327.16" cy="10.64" r="2.07" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="17.22" cy="202.19" r="1.38" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="327.16" cy="10.64" r="1.38" fill="rgb(0,0,0)" opacity="0"/>
 <polygon points="146.79,58.05 197.59,58.05 197.59,154.79 146.79,154.79" fill="rgb(255,213,64)"/>
-<polyline points="197.59,106.42 146.79,106.42" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="197.59,106.42 146.79,106.42" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 <polyline points="172.19,154.79 172.19,193.49" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="172.19,58.05 172.19,19.35" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="184.89,193.49 159.49,193.49" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
-<polyline points="184.89,19.35 159.49,19.35" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="184.89,193.49 159.49,193.49" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
+<polyline points="184.89,19.35 159.49,19.35" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 </g>
 <rect x="0" y="0" width="344.38" height="212.84" fill="none" stroke="#666666" stroke-width="0.5"/>
 <line x1="172.19" y1="212.84" x2="172.19" y2="208.84" stroke="#666666" stroke-width="0.5"/>
