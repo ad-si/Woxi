@@ -15828,6 +15828,15 @@ fn sqrt_radical(
 impl BoxLayout {
   /// Create a layout for a simple text atom.
   fn text(s: &str, font_size: f64) -> Self {
+    Self::text_with(s, font_size, true)
+  }
+
+  /// A string literal's text: it is set upright, never as a math variable.
+  fn literal_text(s: &str, font_size: f64) -> Self {
+    Self::text_with(s, font_size, false)
+  }
+
+  fn text_with(s: &str, font_size: f64, math_italic: bool) -> Self {
     let ch = font_size * MONO_ADVANCE; // monospace char advance
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
@@ -16040,7 +16049,7 @@ impl BoxLayout {
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
     // slanted), so surrounding layout is unaffected.
-    let style_attr = if is_math_italic_atom(s) {
+    let style_attr = if math_italic && is_math_italic_atom(s) {
       " font-style=\"italic\""
     } else {
       ""
@@ -16138,11 +16147,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     // A string box is stored as its quoted source but drawn without quotes.
     Expr::String(s) => {
       let s = strip_precision_marker(s);
-      let unquoted = s
-        .strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'))
-        .unwrap_or(s);
-      BoxLayout::text(unquoted, font_size)
+      // A quoted string is a literal (`"A"` in `Row[{x, "A"}]`), which is
+      // drawn upright rather than as an italic math variable.
+      match s.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) {
+        Some(unquoted) => BoxLayout::literal_text(unquoted, font_size),
+        None => BoxLayout::text(s, font_size),
+      }
     }
     Expr::Identifier(s) => {
       BoxLayout::text(strip_precision_marker(s), font_size)
@@ -16171,10 +16181,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             Expr::String(s)
               if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
             {
-              crate::syntax::string_to_expr(s)
-                .ok()
-                .filter(|e| matches!(e, Expr::String(_)))
-                .unwrap_or_else(|| str_expr(&s[1..s.len() - 1]))
+              // Keep the part quoted, so it is still drawn as a literal.
+              let text = match crate::syntax::string_to_expr(s) {
+                Ok(Expr::String(t)) => t,
+                _ => s[1..s.len() - 1].to_string(),
+              };
+              str_expr(&format!("\"{text}\""))
             }
             other => other.clone(),
           })
