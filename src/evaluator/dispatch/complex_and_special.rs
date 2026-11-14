@@ -4527,6 +4527,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
+    Expr::FunctionCall { name, args }
+      if name == "Subsuperscript" && args.len() == 3 =>
+    {
+      call(
+        "SubsuperscriptBox",
+        args.iter().map(expr_to_box_form).collect(),
+      )
+    }
     // `Overscript[a, b]` / `Underscript[a, b]` place `b` as an annotation
     // above/below `a` — the box form is a direct `OverscriptBox`/
     // `UnderscriptBox`, matching how the FrontEnd stores an

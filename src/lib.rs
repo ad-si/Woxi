@@ -5161,6 +5161,13 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn column_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
+  // A `BaseStyle` reaches every item, nested layouts too, so it is pushed
+  // onto the items before they are pre-rendered.
+  if let Some(styled) =
+    functions::graphics::base_style_pushed_args("Column", args)
+  {
+    return column_svg_with_rendered_items(&styled);
+  }
   // Text too wide for a fixed-width column is broken into lines before
   // the items are pre-rendered (which would freeze it as one long line).
   let mut new_args: Vec<syntax::Expr> =
@@ -5310,6 +5317,10 @@ fn render_row_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn row_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
+  if let Some(styled) = functions::graphics::base_style_pushed_args("Row", args)
+  {
+    return row_svg_with_rendered_items(&styled);
+  }
   let mut new_args: Vec<syntax::Expr> = args.to_vec();
   if let syntax::Expr::List(items) = &args[0] {
     // A product with a line-breaking string factor flows into the row
