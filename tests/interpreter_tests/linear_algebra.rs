@@ -13135,3 +13135,66 @@ fn exact_complex_eigenvalues_extract_common_radical_content() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+// Fits of empty data (`Table[…, {t, 5, 3, 0.25}]` is `{}`) used to index an
+// empty list and panic (found by the interpret fuzzer); Fit also takes a
+// fourth property argument. All wolframscript-verified.
+mod fit_empty_data_and_properties {
+  use super::*;
+
+  #[test]
+  fn empty_data() {
+    for (code, expected) in [
+      ("FindFit[{}, a x + b, {a, b}, x]", "{a -> 0, b -> 0}"),
+      (
+        "FindFit[{}, a Exp[b x], {{a, 1.5}, {b, 2}}, x]",
+        "{a -> 0, b -> 0}",
+      ),
+      ("Fit[{}, {1, x}, x]", "0"),
+      ("Fit[{}, {1, x}, x, \"BestFitParameters\"]", "0"),
+      (
+        "NonlinearModelFit[{}, a x, {a}, x]",
+        "NonlinearModelFit[{}, a*x, {a}, x]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn properties() {
+    for (code, expected) in [
+      (
+        "Round[Fit[{1, 2, 4}, {1, x}, x, \"BestFitParameters\"], 1/1000]",
+        "{-667/1000, 3/2}",
+      ),
+      ("Fit[{1, 2, 4}, {1, x}, x, \"BasisFunctions\"]", "{1, x}"),
+      (
+        "Round[Fit[{{0, 1}, {1, 3}, {2, 2}}, {1, x}, x, \"FitResiduals\"], 1/1000]",
+        "{1/2, -1, 1/2}",
+      ),
+      (
+        "Round[Last[Fit[{1, 2, 4}, {1, x}, x, {\"BestFit\", \"BestFitParameters\"}]], 1/1000]",
+        "{-667/1000, 3/2}",
+      ),
+      (
+        "Head[First[Fit[{1, 2, 4}, {1, x}, x, {\"BestFit\", \"BestFitParameters\"}]]]",
+        "Plus",
+      ),
+      (
+        "Head[Fit[{{0, 1}, {1, 3}}, {1, x}, x, \"Function\"]]",
+        "Function",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+    clear_state();
+    let r =
+      interpret_with_stdout("Fit[{1, 2, 4}, {1, x}, x, \"Foo\"]").unwrap();
+    assert_eq!(r.result, "Missing[NotApplicable]");
+    assert_eq!(
+      r.warnings,
+      vec!["Fit::noprop: Foo is not a valid property."]
+    );
+  }
+}

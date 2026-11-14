@@ -1328,6 +1328,17 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     || structured_matrix_to_dense(&args[0]).is_some()
     || structured_matrix_to_dense(&args[1]).is_some()
   {
+    // A product with a non-array operand (`A . q`, `A . 5`) stays
+    // unevaluated as written: densifying a large sparse matrix only to give
+    // up would print (and allocate) every one of its zeros.
+    let array_like = |e: &Expr| {
+      matches!(e, Expr::List(_))
+        || crate::functions::list_helpers_ast::is_sparse_array_object(e)
+        || structured_matrix_to_dense(e).is_some()
+    };
+    if !array_like(&args[0]) || !array_like(&args[1]) {
+      return Ok(unevaluated("Dot", args));
+    }
     let densify = |e: &Expr| -> Expr {
       if let Expr::FunctionCall { name, args: sa } = e
         && name == "SparseArray"
@@ -1348,7 +1359,32 @@ pub fn dot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       return Ok(unevaluated("Dot", args));
     }
-    return dot_ast(&[a, b]);
+    let product = dot_ast(&[a, b])?;
+    // The product of two SparseArrays is a SparseArray again (a scalar
+    // stays a scalar), with a machine zero background when the entries are
+    // machine numbers (wolframscript-verified).
+    if crate::functions::list_helpers_ast::is_sparse_array_object(&args[0])
+      && crate::functions::list_helpers_ast::is_sparse_array_object(&args[1])
+      && matches!(&product, Expr::List(_))
+    {
+      let background =
+        if crate::functions::math_ast::numeric_utils::contains_inexact_real(
+          &product,
+        ) {
+          Expr::Real(0.0)
+        } else {
+          Expr::Integer(0)
+        };
+      if let Some(sparse) =
+        crate::evaluator::dispatch::list_operations::dense_to_sparse_array_with_default(
+          &product,
+          &background,
+        )
+      {
+        return Ok(sparse);
+      }
+    }
+    return Ok(product);
   }
 
   // TransformationFunction[M1] . TransformationFunction[M2] →
@@ -4109,6 +4145,8 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Extract data points: either {y1, y2, ...} or {{x1, y1}, {x2, y2}, ...}
   let data_list = match &args[0] {
     Expr::List(items) if !items.is_empty() => items,
+    // No data fits as 0 (wolframscript-verified, for every result form).
+    Expr::List(_) => return Ok(Expr::Integer(0)),
     _ => {
       return Err(InterpreterError::EvaluationError(
         "Fit: first argument must be a non-empty list".into(),
@@ -4154,6 +4192,11 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Solve via QR decomposition (Householder reflections)
   let coeffs = solve_least_squares_qr(&a_matrix, &y_vals)?;
+  if let Some(property) = FIT_PROPERTY.with(|p| p.borrow().clone()) {
+    return numeric_fit_property(
+      &property, &basis, &var_names, &a_matrix, &y_vals, &coeffs,
+    );
+  }
 
   // Build result: c[0]*basis[0] + c[1]*basis[1] + ...
   // We construct the expression using Times and Plus function calls
@@ -4174,6 +4217,115 @@ pub fn fit_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Ok(terms.into_iter().next().unwrap())
   } else {
     Ok(plus(terms))
+  }
+}
+
+thread_local! {
+  /// The property `Fit[data, funs, vars, prop]` asks for, while the numeric
+  /// fit it is read from runs.
+  static FIT_PROPERTY: std::cell::RefCell<Option<String>> =
+    const { std::cell::RefCell::new(None) };
+}
+
+/// `Fit[data, funs, vars, prop]`: a property of the least-squares fit, or a
+/// list of them. Unknown names report `Fit::noprop` and give
+/// `Missing["NotApplicable"]`.
+pub fn fit_with_property_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let names: Vec<&Expr> = match &args[3] {
+    Expr::List(items) => items.iter().collect(),
+    one => vec![one],
+  };
+  let mut values = Vec::with_capacity(names.len());
+  for name in &names {
+    let Expr::String(prop) = name else {
+      return Ok(unevaluated("Fit", args));
+    };
+    let valid = matches!(
+      prop.as_str(),
+      "BestFit"
+        | "BestFitParameters"
+        | "BasisFunctions"
+        | "FitResiduals"
+        | "Function"
+    );
+    if !valid {
+      crate::emit_message(&format!(
+        "Fit::noprop: {prop} is not a valid property."
+      ));
+      values.push(call1("Missing", Expr::String("NotApplicable".into())));
+      continue;
+    }
+    if matches!(&args[0], Expr::List(items) if items.is_empty()) {
+      values.push(Expr::Integer(0));
+      continue;
+    }
+    if prop == "BasisFunctions" {
+      values.push(args[1].clone());
+      continue;
+    }
+    let previous = FIT_PROPERTY.with(|p| p.replace(Some(prop.clone())));
+    let value = fit_ast(&args[..3]);
+    FIT_PROPERTY.with(|p| p.replace(previous));
+    values.push(value?);
+  }
+  Ok(match &args[3] {
+    Expr::List(_) => Expr::List(values.into()),
+    _ => values.into_iter().next().unwrap_or(Expr::Integer(0)),
+  })
+}
+
+/// One property of a solved numeric fit (see [`fit_with_property_ast`]).
+fn numeric_fit_property(
+  property: &str,
+  basis: &[Expr],
+  var_names: &[String],
+  a_matrix: &[Vec<f64>],
+  y_vals: &[f64],
+  coeffs: &[f64],
+) -> Result<Expr, InterpreterError> {
+  let best_fit = || {
+    let terms: Vec<Expr> = coeffs
+      .iter()
+      .zip(basis)
+      .map(|(c, b)| {
+        if matches!(b, Expr::Integer(1)) {
+          Expr::Real(*c)
+        } else {
+          times(vec![Expr::Real(*c), b.clone()])
+        }
+      })
+      .collect();
+    evaluate_expr_to_expr(&plus(terms))
+  };
+  match property {
+    "BestFitParameters" => {
+      Ok(Expr::List(coeffs.iter().map(|c| Expr::Real(*c)).collect()))
+    }
+    // Fit's residuals are the fitted values less the data — the opposite
+    // sign of LinearModelFit's (wolframscript-verified).
+    "FitResiduals" => Ok(Expr::List(
+      a_matrix
+        .iter()
+        .zip(y_vals)
+        .map(|(row, y)| {
+          let fitted: f64 = row.iter().zip(coeffs).map(|(a, c)| a * c).sum();
+          Expr::Real(fitted - y)
+        })
+        .collect(),
+    )),
+    "Function" => {
+      let body =
+        var_names
+          .iter()
+          .enumerate()
+          .fold(best_fit()?, |e, (k, name)| {
+            crate::syntax::substitute_variable(&e, name, &Expr::Slot(k + 1))
+          });
+      Ok(Expr::Function {
+        body: Box::new(body),
+      })
+    }
+    _ => best_fit(),
   }
 }
 
@@ -4404,8 +4556,13 @@ fn extract_fit_data(
   data: &[Expr],
   caller: &str,
 ) -> Result<(Vec<f64>, Vec<f64>), InterpreterError> {
+  // No data points (`Table[…, {t, 5, 3, 0.25}]` is `{}`): nothing to read,
+  // and no first element to inspect.
+  let Some(first) = data.first() else {
+    return Ok((Vec::new(), Vec::new()));
+  };
   // Check if first element is a list (=> {x, y} pair form)
-  if let Expr::List(first_pair) = &data[0]
+  if let Expr::List(first_pair) = first
     && first_pair.len() == 2
   {
     // {{x1, y1}, {x2, y2}, ...} form
@@ -10803,6 +10960,19 @@ fn find_fit_weighted(
   };
 
   let (x_vals, y_vals) = extract_fit_data_multi(data_list, vars.len(), caller)?;
+  // With no data every parameter fits as 0 (wolframscript-verified:
+  // `FindFit[{}, a x + b, {a, b}, x]` is `{a -> 0, b -> 0}`).
+  if x_vals.is_empty() {
+    return Ok(Expr::List(
+      param_names
+        .iter()
+        .map(|p| Expr::Rule {
+          pattern: Box::new(Expr::Identifier(p.clone())),
+          replacement: Box::new(Expr::Integer(0)),
+        })
+        .collect(),
+    ));
+  }
   let at_point = |x: &[f64]| -> Expr {
     let mut e = model.clone();
     for (var, v) in vars.iter().zip(x) {
@@ -12409,6 +12579,11 @@ pub fn nonlinear_model_fit_ast(
     };
   }
   let (data, spec, params, var) = (&args[0], &args[1], &args[2], &args[3]);
+  // No data points: nothing to fit, the call stays as it is
+  // (wolframscript-verified).
+  if matches!(data, Expr::List(items) if items.is_empty()) {
+    return uneval();
+  }
   // A constrained model is written `{model, cons…}`; the fitted function
   // that comes back is the model alone.
   let (model, constraints) = split_fit_model_spec(spec);

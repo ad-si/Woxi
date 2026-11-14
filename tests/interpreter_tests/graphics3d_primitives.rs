@@ -535,6 +535,69 @@ mod plot_range_clipping {
     assert!(!plain.contains("font-style=\"italic\""), "{plain}");
   }
 
+  // A rational label is typeset as a stacked fraction in 3D, as it is in
+  // 2D graphics: numerator and denominator on their own lines with a bar
+  // between them, not `1/30` written on one line.
+  #[test]
+  fn rational_label_is_a_stacked_fraction() {
+    for code in [
+      "Graphics3D[{Text[1/30, {0, 0, 0}]}]",
+      "Graphics3D[{Text[-7/4, {1, 2, 3}]}, Boxed -> False]",
+    ] {
+      let out = svg(code);
+      assert!(!out.contains("/30<") && !out.contains("/4<"), "{out}");
+      let texts: Vec<&str> = out
+        .split("<text ")
+        .skip(1)
+        .map(|t| t.split('>').nth(1).unwrap_or("").split('<').next().unwrap())
+        .collect();
+      let (num, den) = if code.contains("1/30") {
+        ("1", "30")
+      } else {
+        // A negative fraction sets its minus sign before the bar.
+        assert!(texts.contains(&"\u{2212}"), "no minus: {texts:?}");
+        ("7", "4")
+      };
+      assert!(texts.contains(&num) && texts.contains(&den), "{texts:?}");
+      assert!(out.contains("<line "), "no fraction bar: {out}");
+    }
+  }
+
+  // `Background -> color` paints a panel behind a 3D label, whether it is
+  // the `Text`'s own option or a directive of a `Style` around the `Text`.
+  #[test]
+  fn label_background_paints_a_panel() {
+    for code in [
+      "Graphics3D[{Style[Text[1/2, {0, 0, 0}], 12, Background -> Yellow]}]",
+      "Graphics3D[{Text[\"lbl\", {0, 0, 0}, Background -> Yellow]}]",
+      "Graphics3D[{Text[Style[\"lbl\", 14], {0, 0, 0}, {0, 0}, \
+       Background -> Yellow]}]",
+    ] {
+      let out = svg(code);
+      let rect = out
+        .find("fill=\"rgb(255,255,0)\"")
+        .unwrap_or_else(|| panic!("no panel for {code}: {out}"));
+      // The panel is drawn under the label, not over it.
+      let text = out.rfind("<text ").unwrap();
+      assert!(rect < text, "panel drawn over the label: {out}");
+    }
+    // The label's own option overrides the `Style` around it, and
+    // `Background -> None` draws no panel.
+    let own = svg(
+      "Graphics3D[{Style[Text[\"a\", {0, 0, 0}, Background -> Red], \
+       Background -> Yellow]}]",
+    );
+    assert!(own.contains("fill=\"rgb(255,0,0)\""), "{own}");
+    assert!(!own.contains("fill=\"rgb(255,255,0)\""), "{own}");
+    let none = svg(
+      "Graphics3D[{Style[Text[\"a\", {0, 0, 0}, Background -> None], \
+       Background -> Yellow]}]",
+    );
+    assert!(!none.contains("fill=\"rgb(255,255,0)\""), "{none}");
+    let plain = svg("Graphics3D[{Text[\"a\", {0, 0, 0}]}]");
+    assert!(!plain.contains("<rect x="), "{plain}");
+  }
+
   // Text and points anchored outside an explicit range are not drawn.
   #[test]
   fn text_and_points_outside_the_range_are_dropped() {

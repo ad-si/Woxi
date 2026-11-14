@@ -903,6 +903,54 @@ woxi eval 'TrigExpand[1 + Tan[2 x]]'
 Found by the differential fuzzer (2026-11-12). WL puts the whole sum over
 the common denominator and splits it by the numerator's monomials.
 
+### `Series` leading terms and coefficient forms
+
+```sh
+wolframscript -code 'Series[Cos[y], y -> 0]'          # SeriesData[y, 0, {1}, 0, 2, 1]
+woxi eval 'Series[Cos[y], y -> 0]'                    # SeriesData[y, 0, {1}, 0, 1, 1]
+wolframscript -code 'Series[y^2 + Sin[y], {y, 1, 2}]' # SeriesData[y, 1, {1 + Sin[1], 2 + Cos[1], 1 - Sin[1]/2}, 0, 3, 1]
+woxi eval 'Series[y^2 + Sin[y], {y, 1, 2}]'           # SeriesData[y, 1, {1 + Sin[1], 2 + Cos[1], (2 - Sin[1])/2}, 0, 3, 1]
+```
+
+The leading term of an even function carries wolframscript's knowledge that
+the next power vanishes; Woxi puts the order term one power past the leading
+one. The coefficient values agree. A `SeriesData` times an unevaluated
+`Series[f, {q x, 0, n}]` (after `Series::ivar`) comes out as the series of
+`f` in wolframscript; Woxi expands the unevaluated `Series[…]` as an unknown
+function.
+
+### `Solve` with a symbolic coefficient: radical form of the roots
+
+```sh
+wolframscript -code 'Solve[{ez a ex + ez == 0, ex^2 + ez^2 == 1}, {ex, ez}]'
+# {{ex -> -a^(-1), ez -> -(Sqrt[-1 + a^2]/a)}, {ex -> -a^(-1), ez -> Sqrt[-1 + a^2]/a}, {ex -> -1, ez -> 0}, {ex -> 1, ez -> 0}}
+woxi eval 'Solve[{ez a ex + ez == 0, ex^2 + ez^2 == 1}, {ex, ez}]'
+# {{ex -> -a^(-1), ez -> -Sqrt[1 - a^(-2)]}, {ex -> -a^(-1), ez -> Sqrt[1 - a^(-2)]}, {ex -> -1, ez -> 0}, {ex -> 1, ez -> 0}}
+```
+
+Woxi back-substitutes `ex` into `ex^2 + ez^2 == 1` and keeps the radical of
+the result; wolframscript pulls the parameter out of the square root. The two
+agree for `a > 0` only, and the solutions are ordered differently when the
+parameter is a product (`a q`).
+
+### `PolynomialExtendedGCD` cofactor forms
+
+```sh
+wolframscript -code 'PolynomialExtendedGCD[a x + b, c x + d, x]'
+# {1, {-(c/(-(b*c) + a*d)), a/(-(b*c) + a*d)}}
+woxi eval 'PolynomialExtendedGCD[a x + b, c x + d, x]'
+# {1, {c/(b*c - a*d), -(a/(b*c - a*d))}}
+wolframscript -code 'PolynomialExtendedGCD[2 x^5 - 2 x, (x^2 - 1)^2, x]'
+# {-1 + x^2, {x/4, (-4 - 2*x^2)/4}}
+woxi eval 'PolynomialExtendedGCD[2 x^5 - 2 x, (x^2 - 1)^2, x]'
+# {-1 + x^2, {x/4, (-2 - x^2)/2}}
+```
+
+The values are equal. Woxi passes each cofactor through `Together` (which
+agrees with wolframscript's `Together` on them); wolframscript returns the
+cofactors in forms its `Together` would not produce, including the unreduced
+`(-4 - 2*x^2)/4`.
+
 ### `Simplify` expands factored denominators that wolframscript keeps
 
 ```sh
@@ -958,6 +1006,19 @@ Wolfram marks an expression as evaluated and skips it the next time. At
 no evaluated mark yet.
 
 ## Numeric precision and floating point
+
+### High-precision logarithms and powers are quadratic in the precision
+
+```sh
+wolframscript -code 'AbsoluteTiming[Precision[10^-15.95`100000]]'   # {0.0895, 99998.43961339409}
+woxi eval 'Precision[10^-15.95`100000]'                             # 99998.43502362391 (10 s)
+```
+
+astro-float computes `ln` by a series whose cost grows with the square of the
+precision (0.15 s at 10^4 digits, 10 s at 10^5), where wolframscript's grows
+nearly linearly. The interpret fuzzer keeps producing such literals (a
+precision tag of `395301709`), which then time out. The reported precision
+differs slightly at this size too.
 
 ### A machine real divided by an exact quotient differs in the last digit
 
@@ -1159,15 +1220,24 @@ is promoted to an arbitrary-precision number (up to a decimal exponent of
 wolframscript -code 'Exp[1000] // N'   # 1.97007111401704699388887935224`12.95…*^434
 woxi eval 'Exp[1000] // N'             # Infinity
 
-wolframscript -code 'Exp[-1000.]'      # 5.07595889754946`12.95*^-435
-woxi eval 'Exp[-1000.]'                # 0.  (underflow is not promoted)
+wolframscript -code 'Exp[-1000.]'      # General::munfl: Exp[-1000.] is too small to represent as a normalized machine number; precision may be lost.
+                                       # 0.
+woxi eval 'Exp[-1000.]'                # 0.  (no General::munfl)
 
 wolframscript -code 'Exp[1000.] > 10^433'   # True
 woxi eval 'Exp[1000.] > 10^433'             # False (comparison goes through f64)
 ```
 
 Exact input made inexact by `N` and underflow still collapse to `Infinity` /
-`0.`, and results beyond the 10000-digit bound stay `Infinity`.
+`0.`, and machine results beyond a decimal exponent of 10000 stay `Infinity`:
+numeric routines (limits, `NMaximize`, `FindRoot`) sample far outside the
+machine range and rely on that staying cheap. For the same reason Woxi emits
+no `General::munfl` — wolframscript's own numeric routines do not either,
+but a top-level `Exp[-1000.]` or `0.5^2000.` does. Arbitrary-precision input
+is promoted up to a decimal exponent of 10^8 (`Exp[10.`30^5]` is
+`2.8066…*^43429` in both); past that Woxi returns `Overflow[]`/`Underflow[]`
+with `General::ovfl`/`General::unfl` where wolframscript still shows a number
+(`Exp[10.`30^9]`, `10^-1100329811.`30`).
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 
@@ -1686,6 +1756,26 @@ resolution near 1.7e9 is ~2.4e-7 s, so averaging instants that carry fractional
 seconds differs from wolframscript's exact mean in the 8th decimal. A midpoint
 that lands on a whole second *is* reported exactly, as an integer, matching
 wolframscript.
+
+### Dates before year 1 and beyond 2^53
+
+```sh
+wolframscript -code 'DateString[{-500, 3, 1}]'   # Fri 1 Mar 500 BC 00:00:00
+woxi eval 'DateString[{-500, 3, 1}]'             # Fri 1 Mar -500 00:00:00
+wolframscript -code 'DateList[-10^12]'           # {-29790, 4, 6, 22, 13, 20.}
+woxi eval 'DateList[-10^12]'                     # {-29789, 4, 6, 22, 13, 20.}
+```
+
+Wolfram has no year zero: year `-n` is n BC (astronomical `1 - n`), and 0 reads
+as -1. Woxi's date arithmetic treats negative years as astronomical, so only
+`JulianDate` and the weekday (`DayName`, `DateString`'s day name) follow the BC
+convention; day counts across year 0 and the "BC" spelling do not.
+
+Date components travel as `f64`, so a year beyond 2^53 is not read at all:
+`DateString[{200000000000000000007, 4, 15}, "ISODate"]` stays unevaluated where
+wolframscript prints `+200000000000000000007-04-15` (found by the interpret
+fuzzer, which used to hang on it). Past 2^31 wolframscript's own weekday
+formats wrap (`DateString[{10^12, 4, 15}]` prints year `-727379968`).
 
 ### Image filters accumulate in a different width
 
@@ -5377,6 +5467,9 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
   of `{RGBColor[…], Polygon[…]}` pairs as in Woxi.
 - `ListPlot3D` of scattered `{x, y, z}` points interpolates a refined
   triangulation in wolframscript; Woxi draws one polygon over the points.
+- `ContourPlot3D` meshes its `PlotPoints` grid only, while wolframscript
+  refines it adaptively (`MaxRecursion`): with `PlotPoints -> 15` an
+  ellipsoid shows a 2–3× finer mesh in wolframscript.
 - `RevolutionPlot3D` samples a hair inside the parameter range
   (`1.0000001428…`), and an explicit `RevolutionAxis -> {0, 0, 1}` gives a
   different (rotated) mesh than the default axis.
@@ -7491,12 +7584,13 @@ The `All Real Roots of a Nonlinear System of Equations` Demonstration relies
 on this to mark its roots: the contour curves render, but the red root points
 and the root table are missing.
 
-### `InverseLaplaceTransform` of a product of symbolic-pole factors
+### `InverseLaplaceTransform` of machine-precision rational functions
 
-`InverseLaplaceTransform` of a product of many `1/(s - pole)` factors with
-numeric complex poles returns unevaluated, so the time-response plot in the
-`Poles and Zeros of Time Domain Response Functions` Demonstration stays empty
-(its pole/zero plane renders fine).
+When the exact rules don't apply directly to machine-precision input (e.g. a
+product of `1./(s - pole)` factors with numeric complex poles), Woxi inverts
+the `Rationalize`d expression exactly and applies `N` to the result. The
+values agree with WL, but the form follows Woxi's exact answer (real
+`Cos`/`Sin` damping terms) where WL may return a sum of complex exponentials.
 
 
 ### `ReplaceAll` of many call sites by a large `InterpolatingFunction`
@@ -7787,7 +7881,7 @@ wolframscript -code 'FindMaximum[Log[x] - x, {x, 3}]'
 # FindMaximum::nrnum: The function value -1. - 3.14159 I is not a real number at {x} = {-1.}.
 # {-1.3068528194400546, {x -> 2.}}
 woxi eval 'FindMaximum[Log[x] - x, {x, 3}]'
-# FindMaximum::nrnum: The function value 4.09861 + 3.14159 I is not a real number at {x} = {-3.}.
+# FindMaximum::nrnum: The function value -4.09861 - 3.14159 I is not a real number at {x} = {-3.}.
 # {-1.9013877113318902, {x -> 3.}}
 ```
 
@@ -8878,7 +8972,12 @@ populations, GDPs and areas differ from WL's own curated values (US area:
 WL 9.63142*^6 km^2, World Bank 9.83151*^6), and `"Population"` is the latest
 World Bank year rather than WL's rounded estimate. Yearly series are
 returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
-`DateObject`s). The shape and polygon properties come from Natural Earth's
+`DateObject`s). The further indicators (`"BirthRateFraction"`,
+`"LifeExpectancy"`, `"PovertyFraction"`, sub-populations, trade and
+national-account figures, …; see `scripts/gen_country_indicators.py`) are
+the latest World Bank year and so also differ from WL's curated values;
+WL properties without a World Bank counterpart (radio stations, airports,
+military, …) return `Missing["NotAvailable", prop]`. The shape and polygon properties come from Natural Earth's
 1:110m outlines, coarser than WL's and with their own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
@@ -8886,7 +8985,12 @@ borders too short for that scale. `"Flag"` is a 160 px wide `Image` of the
 public-domain Wikimedia Commons flag (via flagcdn.com, see
 `scripts/gen_country_flags.py`), so its pixels and `ImageDimensions` differ
 from WL's own flag images (the Gaza Strip and the West Bank show the flag of
-Palestine).
+Palestine). `"FlagDescription"` is the "description" part of the current CIA
+World Factbook flag entry (see `scripts/gen_country_flag_descriptions.py`),
+so its wording can differ from WL's older curated text, and territories the
+Factbook does not describe (French overseas departments, the Gaza Strip, the
+West Bank, Western Sahara, the Aland Islands) give `Missing["NotAvailable",
+"FlagDescription"]`.
 
 ### CityData beyond the verified cities
 
