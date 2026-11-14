@@ -2163,8 +2163,7 @@ mod graphics {
     }
 
     /// `CapForm[…]` sets the SVG `stroke-linecap` a `Line` is drawn with;
-    /// left unset, Woxi keeps its existing butt cap (also Wolfram's
-    /// default). A random Wolfram Demonstration notebook ("Styling Line
+    /// left unset, a `Line` gets Wolfram's square cap. A random Wolfram Demonstration notebook ("Styling Line
     /// Caps and Line Joins") builds its whole `Manipulate` around switching
     /// this per line, so a missing implementation left every cap butt no
     /// matter what the control picked.
@@ -2184,6 +2183,58 @@ mod graphics {
       assert_eq!(linecap("Butt"), "butt");
       assert_eq!(linecap("Round"), "round");
       assert_eq!(linecap("Square"), "square");
+    }
+
+    /// Without a `CapForm`, Wolfram extends each end of a `Line` by half its
+    /// thickness (square caps), so a short, thick segment such as a
+    /// thermometer tick mark stays visible; with butt caps it shrank to a
+    /// sliver as short as the segment itself.
+    #[test]
+    fn line_defaults_to_square_caps() {
+      for line in [
+        "Line[{{0, 0}, {1, 1}}]",
+        "Line[{{0, 0}, {1, 0}, {1, 1}}]",
+        "Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]",
+      ] {
+        for directives in ["", "Thickness[0.02], ", "Red, Dashed, "] {
+          let svg = export_svg(&format!("Graphics[{{{directives}{line}}}]"));
+          assert!(svg.contains("stroke-linecap=\"square\""), "{line}: {svg}");
+          assert!(!svg.contains("stroke-linecap=\"butt\""), "{line}: {svg}");
+        }
+      }
+      let svg = export_svg(
+        "Graphics[{Thickness[0.1], Line[{{0, 0}, {1, 0}}]}, \
+         PlotRange -> {{-1, 2}, {-1, 1}}]",
+      );
+      assert!(svg.contains("stroke-linecap=\"square\""), "{svg}");
+    }
+
+    /// A bare `Point` in 2-D `Graphics` is `PointSize[0.008]`: a dot 0.8 %
+    /// of the image width across at every `ImageSize`.
+    #[test]
+    fn point_default_size_is_0_008_of_width() {
+      for width in [200, 360, 500, 1000] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Point[{{{{0, 0}}, {{1, 1}}}}]}}, ImageSize -> {width}]"
+        ));
+        let r: f64 = svg
+          .split("<circle")
+          .nth(1)
+          .and_then(|c| c.split("r=\"").nth(1))
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no point radius: {svg}"));
+        let expected = 0.008 * width as f64 / 2.0;
+        assert!((r - expected).abs() < 0.02, "{width}: r = {r}, {svg}");
+      }
+      // An explicit PointSize still wins.
+      let svg = export_svg(
+        "Graphics[{PointSize[0.02], Point[{0, 0}]}, ImageSize -> 500]",
+      );
+      assert!(
+        svg.contains("r=\"4.99\"") || svg.contains("r=\"5.00\""),
+        "{svg}"
+      );
     }
 
     /// `JoinForm[…]` sets the SVG `stroke-linejoin` a multi-segment `Line`
