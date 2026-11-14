@@ -4151,6 +4151,12 @@ fn handle_event(
 /// once by `woxi::functions::graphics` is honored consistently everywhere it
 /// is shown, rather than each call site re-implementing (and potentially
 /// dropping) part of it.
+/// Font size (px) of a [`LabelRun`] flagged as a subscript: about three
+/// quarters of the 11–12 px the captions it appears in are set at.
+///
+/// [`LabelRun`]: woxi::functions::graphics::LabelRun
+const SUBSCRIPT_SPAN_SIZE: f32 = 9.0;
+
 fn label_run_spans<'a, L>(
   runs: &[woxi::functions::graphics::LabelRun],
   base_font: Font,
@@ -4166,6 +4172,11 @@ fn label_run_spans<'a, L>(
         font.weight = iced::font::Weight::Bold;
       }
       let mut span = iced::widget::span(r.text.clone()).font(font);
+      // A subscript Unicode has no glyphs for (`Subscript["V", "y"]`) is set
+      // smaller than the text around it, as Wolfram typesets a script.
+      if r.subscript {
+        span = span.size(SUBSCRIPT_SPAN_SIZE);
+      }
       if let Some((red, green, blue)) = r.color {
         span = span.color(Color::from_rgb(red, green, blue));
       }
@@ -8915,6 +8926,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       bold: true,
       color: Some((1.0, 0.0, 0.0)),
       size: None,
+      subscript: false,
     }];
     let spans: Vec<text::Span<'_, ()>> =
       label_run_spans(&runs, Font::MONOSPACE);
@@ -8923,6 +8935,52 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(
       spans[0].font.map(|f| f.weight),
       Some(iced::font::Weight::Bold)
+    );
+  }
+
+  /// A control caption `Row[{"viewpoint ", Subscript["V", "y"]}]` must set
+  /// its `y` as a smaller script: Unicode has no subscript `y`, so the run
+  /// keeps the plain letter and is flagged as a subscript, which
+  /// `label_run_spans` has to honor. Regression: the `y` (and `z`) rendered
+  /// at full size, so the caption read "Vy" next to a correctly scripted
+  /// "Vₓ" in the slider above it.
+  #[test]
+  fn unmappable_subscript_caption_renders_smaller() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[{u, w}, {{u, 1, Row[{"view ", Subscript["V", "y"]}]}, 0, 2},
+        {{w, 1, Row[{"view ", Subscript["V", "x"]}]}, 0, 2}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let widget = manipulate::ManipulateState::from_expr(&expr)
+      .expect("build Manipulate widget");
+    let runs_of = |name: &str| {
+      widget
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .map(|c| match c {
+          manipulate::ControlState::Continuous { label_runs, .. } => {
+            label_runs.clone()
+          }
+          other => panic!("unexpected control: {other:?}"),
+        })
+        .expect("control present")
+    };
+    let u = runs_of("u");
+    let script = u.last().expect("caption runs");
+    assert_eq!(script.text, "y");
+    assert!(script.subscript, "{u:?}");
+    let spans: Vec<text::Span<'_, ()>> = label_run_spans(&u, Font::MONOSPACE);
+    assert_eq!(
+      spans.last().and_then(|s| s.size),
+      Some(SUBSCRIPT_SPAN_SIZE.into())
+    );
+    assert!(spans[..spans.len() - 1].iter().all(|s| s.size.is_none()));
+    // A script with a Unicode subscript glyph keeps it and needs no flag.
+    let w = runs_of("w");
+    assert_eq!(
+      w.last().map(|r| (r.text.as_str(), r.subscript)),
+      Some(("\u{2093}", false))
     );
   }
 

@@ -34499,6 +34499,10 @@ pub struct LabelRun {
   /// The run's font size in points, when `Style` gave it one
   /// (`Style["t", 16]` or `FontSize -> 16`).
   pub size: Option<f64>,
+  /// The run is a subscript Unicode has no glyphs for (`Subscript["V",
+  /// "y"]`): its text stays plain and the UI must set it lowered and
+  /// smaller, as Wolfram typesets a script.
+  pub subscript: bool,
 }
 
 /// The font size a `Style`'s directives set: a bare number or
@@ -42746,6 +42750,21 @@ fn script_runs(
       if grouped {
         runs.push(plain(")"));
       }
+    } else if !superscript
+      && text
+        .chars()
+        .any(|c| unicode_script_char(c, false).is_none())
+    {
+      // No subscript glyphs for some letter (`Subscript["V", "y"]`): keep
+      // the whole script as plain text flagged as a subscript, so the UI
+      // sets it lowered and smaller instead of drawing it full size next
+      // to the base (or as a half-mapped mix of glyphs and letters).
+      runs.extend(script_runs.iter().filter(|r| !r.text.is_empty()).map(|r| {
+        LabelRun {
+          subscript: true,
+          ..r.clone()
+        }
+      }));
     } else {
       restyle(&mut runs, &|t| to_unicode_script(t, superscript));
     }
@@ -48299,6 +48318,45 @@ mod manipulate_label_tests {
     assert_eq!(runs(&sup), vec![run("x", false), run("\u{1D5D}", false)]);
     let sub = call("Subscript", vec![id_expr("x"), str_expr("\u{03C7}")]);
     assert_eq!(runs(&sub), vec![run("x", false), run("\u{1D6A}", false)]);
+  }
+
+  /// A subscript letter with no Unicode subscript glyph (`y`, `z`, a
+  /// capital) keeps its plain text but is flagged as a subscript so the UI
+  /// sets it smaller, instead of drawing `Subscript["V", "y"]` as a
+  /// full-size "Vy". Mappable scripts keep their Unicode glyphs.
+  #[test]
+  fn unmappable_subscript_is_flagged_as_subscript_run() {
+    let sub_run = |t: &str| LabelRun {
+      subscript: true,
+      ..run(t, false)
+    };
+    for letter in ["y", "z", "N", "q"] {
+      let label = call("Subscript", vec![str_expr("V"), str_expr(letter)]);
+      assert_eq!(runs(&label), vec![run("V", false), sub_run(letter)]);
+    }
+    // A script mixing mappable and unmappable letters stays whole rather
+    // than becoming a half-mapped mix of glyphs and plain letters.
+    let label = call("Subscript", vec![id_expr("v"), str_expr("xy")]);
+    assert_eq!(runs(&label), vec![run("v", false), sub_run("xy")]);
+    // Fully mappable scripts still fold into Unicode subscript glyphs.
+    let label = call("Subscript", vec![str_expr("V"), str_expr("x")]);
+    assert_eq!(runs(&label), vec![run("V", false), run("\u{2093}", false)]);
+    // Inside a `Row` caption, as a Manipulate control label writes it.
+    let row = call1(
+      "Row",
+      Expr::List(
+        vec![
+          str_expr("viewpoint "),
+          call("Subscript", vec![str_expr("V"), str_expr("z")]),
+        ]
+        .into(),
+      ),
+    );
+    assert_eq!(
+      runs(&row),
+      vec![run("viewpoint ", false), run("V", false), sub_run("z")]
+    );
+    assert_eq!(flatten_label_runs(&runs(&row)), "viewpoint Vz");
   }
 
   #[test]
