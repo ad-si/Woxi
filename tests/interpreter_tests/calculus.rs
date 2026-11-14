@@ -23757,6 +23757,25 @@ mod ndsolve_complex_periodic_pde {
     );
   }
 
+  /// A complex Ginzburg–Landau equation started from the uniform state
+  /// settles on a plane wave `E^(-2 I t)` of modulus 1. Its phase turns
+  /// about 2 radians per default output row spacing, so the stored time
+  /// rows must follow the rotation: otherwise `Abs` of the interpolated
+  /// solution dips between rows.
+  #[test]
+  fn rotating_phase_keeps_modulus_between_time_rows() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == 1, u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 60}, {x, -10, 10}]; \
+         Min[Table[Abs[u[t, 3.]], {t, 0, 60, 0.37}] /. First[s]] > 0.999"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   /// The forcing term and initial profile may be complex expressions of
   /// `x`, and the result is complex (not just its absolute value).
   #[test]
