@@ -12810,6 +12810,37 @@ mod plot3d {
       assert!(plain.contains("font-size=\"14\""), "{plain}");
     }
 
+    /// The "Label" style sets its text in the sans-serif face, whatever
+    /// size is written next to it, while plain graphics text keeps the
+    /// default face. An explicit `FontFamily` still wins over the style.
+    #[test]
+    fn label_style_sets_text_in_the_sans_serif_face() {
+      let text_line = |code: &str| {
+        let svg = export_svg(code);
+        svg
+          .lines()
+          .find(|l| l.starts_with("<text"))
+          .unwrap_or_else(|| panic!("no text in {svg}"))
+          .to_string()
+      };
+      for style in ["\"Label\"", "20, \"Label\"", "\"Label\", 20"] {
+        let line = text_line(&format!(
+          "Graphics[{{Text[Style[\"A\", {style}], {{0, 0}}]}}]"
+        ));
+        assert!(line.contains("font-family=\"sans-serif\""), "{line}");
+      }
+      let plain = text_line("Graphics[{Text[\"A\", {0, 0}]}]");
+      assert!(!plain.contains("font-family"), "{plain}");
+      let section =
+        text_line("Graphics[{Text[Style[\"A\", \"Section\"], {0, 0}]}]");
+      assert!(!section.contains("font-family"), "{section}");
+      let explicit = text_line(
+        "Graphics[{Text[Style[\"A\", FontFamily -> \"Courier\", \"Label\"], \
+         {0, 0}]}]",
+      );
+      assert!(explicit.contains("font-family=\"Courier\""), "{explicit}");
+    }
+
     /// A stored box expression typesets rather than printing itself: the
     /// balanced-ternary digit `UnderscriptBox["1", "_"]` is an underlined
     /// 1, not the text `UnderscriptBox[1, _]`.

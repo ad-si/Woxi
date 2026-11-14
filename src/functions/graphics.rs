@@ -2569,6 +2569,17 @@ fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
   })
 }
 
+/// The font family a named style carries in Wolfram's default stylesheet,
+/// where it sets one. `"Label"` text is set in the sans-serif face, so a
+/// graphics `Text[Style["A", "Label"]]` is not drawn in the serif face plain
+/// graphics text gets.
+fn named_style_font_family(name: &str) -> Option<&'static str> {
+  match name {
+    "Label" => Some("sans-serif"),
+    _ => None,
+  }
+}
+
 /// The point size a named font size stands for. `Tiny`, `Small`, `Medium`
 /// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
 /// `Smaller` scale whatever size is in force. Measured from wolframscript's
@@ -2893,6 +2904,9 @@ fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
         if let Some((r, g, b)) = color {
           style.color =
             Color::new(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+        }
+        if let Some(family) = named_style_font_family(name) {
+          style.font_family = family.to_string();
         }
         true
       }
