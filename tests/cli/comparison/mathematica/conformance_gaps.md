@@ -4378,7 +4378,14 @@ unevaluated, because the package is not loaded. Woxi has no package system for
 `Needs` to load into, so the qualified names are always live. With the package
 loaded the results agree.
 
-`Needs` also does not put such a context on `$ContextPath`, so where
+`PolyhedronOperations`Truncate` of a closed solid appends one cap face per
+cut-off vertex after the corner-cut faces (as `{cutFaces, {caps…}}`); the
+geometry is that of a truncation, but the order and nesting of those faces
+have not been checked against wolframscript.
+
+`Needs["PolyhedronOperations`"]` does put that context on `$ContextPath` (so a
+bare `Truncate` read afterwards is the package's), but for `Combinatorica`` and
+`HypothesisTesting`` `Needs` does not, so where
 wolframscript prints `OneSidedPValue -> …` after
 `Needs["HypothesisTesting`"]`, Woxi prints the qualified
 `HypothesisTesting`OneSidedPValue -> …` — the same expression, spelled in
@@ -10132,3 +10139,12 @@ dropping outlying vertices such as the `Top` corners of `Filling -> {i -> Top}`
 polygons (a saved snapshot shows roughly 2.5–29.5 for curves spanning
 4–22), while Woxi keeps the first plot's 0–100. The exact outlier rule
 for an `Automatic` range of merged graphics is not yet known.
+
+### `ViewAngle` with `SphericalRegion -> True`
+
+`Graphics3D[…, SphericalRegion -> True, ViewAngle -> 0.1,
+ViewPoint -> {0, 10, 0}]` of an icosahedron ringed by small solids draws the
+scene about 4% larger than wolframscript, so the outermost solids touch the
+picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
+from the view volume alone (calibrated without `SphericalRegion`); how
+wolframscript combines the two has not been measured.
