@@ -7383,7 +7383,7 @@ fn parse_histogram_height(arg: &Expr) -> Option<HistogramHeight> {
     "Probability" | "Relative" | "Fraction" | "PMF" => {
       HistogramHeight::Probability
     }
-    "PDF" => HistogramHeight::Pdf,
+    "PDF" | "ProbabilityDensity" => HistogramHeight::Pdf,
     "CDF" => HistogramHeight::Cdf,
     _ => return None,
   })

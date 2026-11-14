@@ -4456,6 +4456,35 @@ mod tests {
     }
   }
 
+  /// A custom control `{{v, 0, ""}, Button[If[…], …]&}` is wrapped in
+  /// `Dynamic` by Wolfram, so its computed caption follows the other
+  /// controls. It used to show the unevaluated `If[…]` source as its text.
+  #[test]
+  fn custom_control_button_with_computed_label_follows_live_bindings() {
+    let code = r#"Manipulate[
+      {mode, seed},
+      {{mode, 1, ""}, {1 -> "one", 2 -> "two"}, ControlType -> PopupMenu},
+      {{seed, 0, ""}, Button[If[mode == 2, "restart", "add more"],
+        seed = seed + 1] &}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Button { .. }))
+      .expect("a Button control");
+    let label = |s: &ManipulateState| match &s.controls[idx] {
+      ControlState::Button { label, .. } => label.clone(),
+      _ => unreachable!(),
+    };
+    assert_eq!(label(&state), "add more");
+    assert!(state.select_discrete(0, "two"));
+    state.reevaluate();
+    assert_eq!(label(&state), "restart");
+  }
+
   #[test]
   fn button_with_own_enabled_condition_disables_independently_of_sibling() {
     let code = r#"Manipulate[

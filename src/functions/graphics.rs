@@ -32101,10 +32101,15 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     // `Style[…, Opacity[a]]` fades the text, the way the directive fades
     // a graphics primitive.
     let mut opacity: f64 = 1.0;
+    // The text a `Style[…]` item sets: its directives go onto the cell's
+    // own `<text>` element, so typesetting the whole wrapper would apply
+    // them a second time (a relative `Larger` compounding to 156%).
+    let mut text_item = item;
     if let Expr::FunctionCall { name, args: sargs } = item
       && is_style_wrapper(name)
       && !sargs.is_empty()
     {
+      text_item = &sargs[0];
       for d in style_directives_in_application_order(&sargs[1..]) {
         if let Some(a) = text_opacity_directive(d) {
           opacity = a;
@@ -32116,7 +32121,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
-    let markup = st.text_decoration.markup(&expr_to_svg_markup(item));
+    let markup = st.text_decoration.markup(&expr_to_svg_markup(text_item));
     // A markup string carrying its own `\n` (e.g. `ToString[1/3,
     // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
     // line's worth of height per line, or the cell is sized for a single
@@ -40932,6 +40937,24 @@ fn dynamic_button_label_code(label: &Expr) -> Option<String> {
   }
 }
 
+/// The code of a computed (non-literal) button label of a custom control
+/// (`If[…]`, `Switch[…]`, a symbol), or `None` for literal text and the
+/// typesetting wrappers around it.
+fn computed_button_label_code(label: &Expr) -> Option<String> {
+  match label {
+    Expr::Identifier(_) => Some(crate::syntax::expr_to_source_form(label)),
+    Expr::FunctionCall { name, .. }
+      if !matches!(
+        name.as_str(),
+        "Style" | "Row" | "Column" | "Text" | "Graphics" | "Pane" | "Dynamic"
+      ) =>
+    {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
+    _ => None,
+  }
+}
+
 /// The side a single control spec asks to sit on with its own
 /// `ControlPlacement -> Top | Bottom | Left | Right` option (bare or as a
 /// singleton list). `None` when the spec states no side.
@@ -44490,7 +44513,11 @@ fn parse_manipulate_control(
         label_runs: button_runs,
         action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
-        label_code: dynamic_button_label_code(&built_args[0]),
+        // Wolfram wraps a custom control in `Dynamic`, so a computed label
+        // (`If[mode == 2, "new test", "add samples"]`) follows the other
+        // controls just like an explicit `Dynamic[label]`.
+        label_code: dynamic_button_label_code(&built_args[0])
+          .or_else(|| computed_button_label_code(&built_args[0])),
         joins_previous: false,
       },
     });

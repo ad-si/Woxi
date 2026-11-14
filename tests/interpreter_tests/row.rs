@@ -414,7 +414,7 @@ mod row_visual_mode {
   fn row_styled_subscript_flattens_nested_shift_tspan() {
     clear_state();
     let svg = interpret_with_stdout(
-      "Row[{x, Style[Subscript[\"log\", 2], Red, 16], y}]",
+      "Row[{x, Style[Style[Subscript[\"log\", 2], Red, 16], Bold], y}]",
     )
     .unwrap()
     .graphics
