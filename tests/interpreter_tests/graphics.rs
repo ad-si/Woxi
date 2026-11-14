@@ -9265,6 +9265,52 @@ mod plot3d {
       assert_eq!(literal_angle, dynamic_angle);
     }
 
+    // `ImagePadding` keeps the scene out of a band around the picture: the
+    // contents are laid out in the region inside the padding (as they would
+    // be in a picture of that size) and moved past the left and top bands,
+    // while the picture keeps its full `ImageSize`.
+    #[test]
+    fn graphics3d_image_padding_lays_out_the_scene_inside_the_band() {
+      // The extent of all polygon corners: (min x, max x, min y, max y).
+      fn polygon_extent(svg: &str) -> (f64, f64, f64, f64) {
+        let mut ext = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for chunk in svg.split("<polygon points=\"").skip(1) {
+          let points = chunk.split('"').next().unwrap();
+          for pair in points.split_whitespace() {
+            let (x, y) = pair.split_once(',').unwrap();
+            let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+            ext = (ext.0.min(x), ext.1.max(x), ext.2.min(y), ext.3.max(y));
+          }
+        }
+        ext
+      }
+      for camera in ["", ", ViewAngle -> Pi/10, SphericalRegion -> True"] {
+        let padded = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, ImageSize -> {{300, 200}}, \
+           ImagePadding -> {{{{30, 10}}, {{0, 40}}}}{camera}]"
+        ));
+        let inner = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, \
+           ImageSize -> {{260, 160}}{camera}]"
+        ));
+        assert!(
+          padded.starts_with("<svg width=\"300\" height=\"200\""),
+          "{}",
+          &padded[..80]
+        );
+        let (p, q) = (polygon_extent(&padded), polygon_extent(&inner));
+        let close = |a: f64, b: f64| (a - b).abs() < 0.15;
+        assert!(
+          close(p.0, q.0 + 30.0) && close(p.1, q.1 + 30.0),
+          "{p:?} {q:?}"
+        );
+        assert!(
+          close(p.2, q.2 + 40.0) && close(p.3, q.3 + 40.0),
+          "{p:?} {q:?}"
+        );
+      }
+    }
+
     // `ViewCenter` moves the point the camera looks at; the box middle is
     // the default, so naming it changes nothing.
     #[test]

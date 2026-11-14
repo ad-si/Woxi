@@ -5377,6 +5377,9 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
   of `{RGBColor[…], Polygon[…]}` pairs as in Woxi.
 - `ListPlot3D` of scattered `{x, y, z}` points interpolates a refined
   triangulation in wolframscript; Woxi draws one polygon over the points.
+- `ContourPlot3D` meshes its `PlotPoints` grid only, while wolframscript
+  refines it adaptively (`MaxRecursion`): with `PlotPoints -> 15` an
+  ellipsoid shows a 2–3× finer mesh in wolframscript.
 - `RevolutionPlot3D` samples a hair inside the parameter range
   (`1.0000001428…`), and an explicit `RevolutionAxis -> {0, 0, 1}` gives a
   different (rotated) mesh than the default axis.
