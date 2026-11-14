@@ -29504,7 +29504,7 @@ pub fn graphics_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Expr::List(items) = &array else {
     return Ok(Expr::FunctionCall {
       name: "GraphicsArray".to_string(),
-      args: args.to_vec(),
+      args: args.to_vec().into(),
     });
   };
   let grid = if items.iter().any(|item| matches!(item, Expr::List(_))) {
@@ -29522,7 +29522,7 @@ pub fn graphics_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       {
         let scaled = |e: &Expr| Expr::FunctionCall {
           name: "Scaled".to_string(),
-          args: vec![e.clone()],
+          args: vec![e.clone()].into(),
         };
         let value = match replacement.as_ref() {
           Expr::List(pair) => Expr::List(pair.iter().map(scaled).collect()),
