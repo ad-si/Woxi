@@ -3233,6 +3233,89 @@ pub fn with_evaluated_options(
   result.map(|()| out)
 }
 
+/// Samples per axis of a 2-D plot's initial grid when its `PlotPoints` is
+/// `Automatic` (Wolfram's default for `ContourPlot` and `DensityPlot`).
+const DEFAULT_FIELD_PLOT_POINTS: usize = 15;
+
+/// The per-axis sample count of a plot told not to refine its initial grid
+/// (`MaxRecursion -> 0`): its `PlotPoints` (the first of a `{nx, ny}`
+/// pair), or the default. `None` when the plot may refine.
+fn unrefined_plot_points(opts: &[Expr]) -> Option<usize> {
+  let option = |key: &str| {
+    opts.iter().rev().find_map(|opt| {
+      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+      (name == key).then(|| {
+        evaluate_expr_to_expr(&value).unwrap_or_else(|_| value.into_owned())
+      })
+    })
+  };
+  if !matches!(option("MaxRecursion"), Some(Expr::Integer(0))) {
+    return None;
+  }
+  let points = |e: &Expr| match e {
+    Expr::Integer(k) if *k >= 2 => Some((*k).min(1000) as usize),
+    _ => None,
+  };
+  Some(
+    match option("PlotPoints") {
+      Some(Expr::List(ref ks)) => ks.first().and_then(points),
+      Some(other) => points(&other),
+      None => None,
+    }
+    .unwrap_or(DEFAULT_FIELD_PLOT_POINTS),
+  )
+}
+
+/// `body` evaluated on an `m` × `m` grid spanning the plot range, corners
+/// included (`grid[i][j]` at the `i`-th x and `j`-th y); NaN where it is not
+/// a real number.
+fn sample_coarse_grid(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  m: usize,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> Vec<Vec<f64>> {
+  let step = |lo: f64, hi: f64, k: usize| lo + k as f64 / (m - 1) as f64 * (hi - lo);
+  (0..m)
+    .map(|i| {
+      let x = step(x_min, x_max, i);
+      (0..m)
+        .map(|j| {
+          evaluate_at_xy(body, xvar, yvar, x, step(y_min, y_max, j))
+            .unwrap_or(f64::NAN)
+        })
+        .collect()
+    })
+    .collect()
+}
+
+/// The bilinear interpolation of a coarse grid (from [`sample_coarse_grid`])
+/// at fractional position `(u, v)` ∈ [0, 1]² of the plot range. A cell
+/// with a missing corner gives `None`, leaving a hole as a failed sample
+/// would.
+fn bilinear_from_coarse(grid: &[Vec<f64>], u: f64, v: f64) -> Option<f64> {
+  let m = grid.len();
+  if m < 2 {
+    return None;
+  }
+  let locate = |t: f64| {
+    let pos = t.clamp(0.0, 1.0) * (m - 1) as f64;
+    let k = (pos.floor() as usize).min(m - 2);
+    (k, pos - k as f64)
+  };
+  let (i, fu) = locate(u);
+  let (j, fv) = locate(v);
+  let (a, b) = (grid[i][j], grid[i + 1][j]);
+  let (c, d) = (grid[i][j + 1], grid[i + 1][j + 1]);
+  let value = (1.0 - fu) * (1.0 - fv) * a
+    + fu * (1.0 - fv) * b
+    + (1.0 - fu) * fv * c
+    + fu * fv * d;
+  value.is_finite().then_some(value)
+}
+
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A body that names its function indirectly (`f = x^2 + y^2;
   // ContourPlot[f, …]`) is evaluated once first — see
@@ -3335,6 +3418,24 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let n = cells + 1;
 
+  // `MaxRecursion -> 0` keeps Wolfram from refining its initial
+  // `PlotPoints` grid, so the function is evaluated only there; the fine
+  // grid the contours are traced on interpolates between those samples.
+  // This is what makes a costly body (an `NIntegrate` per point) plot in
+  // a few hundred evaluations rather than ten thousand.
+  let coarse = unrefined_plot_points(&args[3..])
+    .map(|m| sample_coarse_grid(body, &xvar, &yvar, m, (x_min, x_max), (y_min, y_max)));
+  let value_at = |i: usize, j: usize, x: f64, y: f64| -> Option<f64> {
+    match &coarse {
+      Some(c) => bilinear_from_coarse(
+        c,
+        i as f64 / cells as f64,
+        j as f64 / cells as f64,
+      ),
+      None => evaluate_at_xy(body, &xvar, &yvar, x, y),
+    }
+  };
+
   // Sample grid
   let mut grid = vec![vec![f64::NAN; n]; n];
   let mut samples = Vec::with_capacity(n * n);
@@ -3353,7 +3454,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // As in Wolfram, the levels are chosen over the whole plot range and
       // the colors over the part a `RegionFunction` keeps.
-      if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+      if let Some(v) = value_at(i, j, x, y)
         && v.is_finite()
       {
         all_samples.push(v);

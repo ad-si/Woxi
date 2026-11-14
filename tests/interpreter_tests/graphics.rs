@@ -21686,6 +21686,33 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `MaxRecursion -> 0` keeps a contour plot on its initial
+    /// `PlotPoints` grid (15 per axis by default), so a costly body is
+    /// evaluated a few hundred times rather than on the fine tracing grid.
+    #[test]
+    fn contour_plot_max_recursion_zero_samples_plot_points_grid() {
+      let count = |opts: &str| {
+        interpret(&format!(
+          "cnt = 0; fc[u_?NumericQ, w_?NumericQ] := (cnt++; u w); \
+           ContourPlot[fc[u, w], {{u, 0, 1}}, {{w, 0, 1}}{opts}]; cnt"
+        ))
+        .unwrap()
+      };
+      assert_eq!(count(", MaxRecursion -> 0"), "225");
+      assert_eq!(count(", MaxRecursion -> 0, PlotPoints -> 6"), "36");
+      assert_eq!(count(", MaxRecursion -> 0, PlotPoints -> {4, 4}"), "16");
+    }
+
+    /// The unrefined grid still yields the requested contour levels.
+    #[test]
+    fn contour_plot_max_recursion_zero_draws_contours() {
+      let svg = export_svg(
+        "ContourPlot[u^2 + w^2, {u, -1, 1}, {w, -1, 1}, MaxRecursion -> 0, \
+         Contours -> {0.5}, ContourShading -> None]",
+      );
+      assert!(svg.contains("<polyline") || svg.contains("<path"), "{svg}");
+    }
+
     /// `FrameLabel -> Automatic` labels the frame with the plot's two
     /// iterator variables instead of printing the word `Automatic`.
     #[test]
