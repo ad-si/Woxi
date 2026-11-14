@@ -5576,7 +5576,97 @@ fn has_quotient_power(e: &Expr) -> bool {
   }
 }
 
-fn graphics_text_content(expr: &Expr) -> String {
+/// A label whose text spells a stacked fraction, as [`fraction_label_parts`]
+/// reads it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct LabelFraction<'a> {
+  /// Whether the fraction is negated: `-7/4` flattens to `"  7\n-(-)\n  4"`,
+  /// a minus sign set before the bar.
+  pub negative: bool,
+  pub num: &'a str,
+  pub den: &'a str,
+}
+
+/// The parts of a label whose text spells a stacked fraction — the
+/// `"num\n--\nden"` form [`graphics_text_content`] gives a positive
+/// `Rational`, or the `"  num\n-(--)\n  den"` form of a negative one — or
+/// `None` for any other label.
+pub(crate) fn fraction_label_parts(text: &str) -> Option<LabelFraction<'_>> {
+  let lines: Vec<&str> = text.split('\n').collect();
+  if lines.len() != 3
+    || lines[0].trim().is_empty()
+    || lines[2].trim().is_empty()
+  {
+    return None;
+  }
+  let bar = lines[1].trim();
+  let is_bar = |b: &str| !b.is_empty() && b.chars().all(|c| c == '-');
+  let negative = match bar.strip_prefix("-(").and_then(|b| b.strip_suffix(')'))
+  {
+    Some(inner) if is_bar(inner) => true,
+    _ if is_bar(bar) => false,
+    _ => return None,
+  };
+  Some(LabelFraction {
+    negative,
+    num: lines[0].trim(),
+    den: lines[2].trim(),
+  })
+}
+
+/// The width of the minus sign set before a negative stacked fraction
+/// label at font size `fs`.
+pub(crate) fn label_fraction_minus_width(fs: f64) -> f64 {
+  fs * 0.7
+}
+
+/// Half the width of the bar of a stacked fraction label set at font size
+/// `fs`.
+pub(crate) fn label_fraction_bar_half(num: &str, den: &str, fs: f64) -> f64 {
+  let widest = num.chars().count().max(den.chars().count()) as f64;
+  widest * fs * 0.55 / 2.0 + fs * 0.15
+}
+
+/// A stacked fraction label centered on `(cx, cy)`: numerator and
+/// denominator set compactly close to the bar, not three full text lines
+/// apart, with a negative fraction's minus sign before the bar.
+/// `text_at(x, y, anchor, markup)` draws one (escaped) line of text
+/// centered on `(x, y)` in the label's font; the bar is stroked in
+/// `stroke_rgb`. 2D and 3D labels share it so fractions read the same in
+/// both.
+pub(crate) fn label_stacked_fraction_svg(
+  cx: f64,
+  cy: f64,
+  fraction: LabelFraction,
+  fs: f64,
+  stroke_rgb: &str,
+  text_at: &dyn Fn(f64, f64, &str, &str) -> String,
+) -> String {
+  let LabelFraction { negative, num, den } = fraction;
+  let gap = fs * 0.6;
+  let bar_half = label_fraction_bar_half(num, den, fs);
+  let mut svg = String::new();
+  // The minus and the fraction together are centered on `(cx, cy)`.
+  let cx = if negative {
+    let minus_w = label_fraction_minus_width(fs);
+    svg.push_str(&text_at(cx - bar_half, cy, "middle", "\u{2212}"));
+    cx + minus_w / 2.0
+  } else {
+    cx
+  };
+  for (line, y) in [(num, cy - gap), (den, cy + gap)] {
+    svg.push_str(&text_at(cx, y, "middle", &svg_escape(line)));
+  }
+  svg.push_str(&format!(
+    "<line x1=\"{:.2}\" y1=\"{cy:.2}\" x2=\"{:.2}\" y2=\"{cy:.2}\" stroke=\"{stroke_rgb}\" stroke-width=\"{:.2}\"/>",
+    cx - bar_half,
+    cx + bar_half,
+    (fs / 18.0).max(0.5),
+  ));
+  svg
+}
+
+pub(crate) fn graphics_text_content(expr: &Expr) -> String {
   if let Some(styled) = hoist_style_out_of_number_form(expr) {
     return graphics_text_content(&styled);
   }
@@ -12899,15 +12989,7 @@ fn render_primitive(
         format!(" font-family=\"{}\"", svg_escape(&style.font_family))
       };
 
-      let fraction_lines: Option<Vec<&str>> = {
-        let lines: Vec<&str> = text.split('\n').collect();
-        (lines.len() == 3
-          && !lines[1].is_empty()
-          && lines[1].trim().chars().all(|c| c == '-')
-          && !lines[0].trim().is_empty()
-          && !lines[2].trim().is_empty())
-        .then_some(lines)
-      };
+      let fraction_lines = fraction_label_parts(text);
       // Draws `<text>` at the center `(x, y)` in the label's font, with
       // the given (already escaped) markup.
       let text_at = |x: f64, y: f64, anchor: &str, markup: &str| {
@@ -12919,39 +13001,21 @@ fn render_primitive(
           color.opacity_attr(),
         )
       };
-      // A stacked fraction is typeset compactly: numerator and denominator
-      // close to a bar centered on `(cx, cy)`, not three full text lines
-      // apart.
-      let gap = fs * 0.6;
-      let fraction_bar_half = |num: &str, den: &str| {
-        let widest = num.chars().count().max(den.chars().count()) as f64;
-        widest * fs * 0.55 / 2.0 + fs * 0.15
-      };
-      let stacked_fraction = |cx: f64, cy: f64, num: &str, den: &str| {
-        let bar_half = fraction_bar_half(num, den);
-        let mut svg = String::new();
-        for (line, y) in [(num, cy - gap), (den, cy + gap)] {
-          svg.push_str(&text_at(cx, y, "middle", &svg_escape(line)));
-        }
-        svg.push_str(&format!(
-          "<line x1=\"{:.2}\" y1=\"{cy:.2}\" x2=\"{:.2}\" y2=\"{cy:.2}\" stroke=\"{}\" stroke-width=\"{:.2}\"/>",
-          cx - bar_half,
-          cx + bar_half,
-          color.to_svg_rgb(),
-          (fs / 18.0).max(0.5),
-        ));
-        svg
+      let fraction_bar_half =
+        |num: &str, den: &str| label_fraction_bar_half(num, den, fs);
+      let stroke_rgb = color.to_svg_rgb();
+      let stacked_fraction = |cx: f64, cy: f64, fraction: LabelFraction| {
+        label_stacked_fraction_svg(cx, cy, fraction, fs, &stroke_rgb, &text_at)
       };
       let label_rows = if fraction_lines.is_none() {
         stacked_label_rows(text)
       } else {
         None
       };
-      if let Some(lines) = fraction_lines {
-        let (num, den) = (lines[0].trim(), lines[2].trim());
+      if let Some(fraction) = fraction_lines {
         out.push_str(&format!(
           "<g{rotate_attr}>{}</g>\n",
-          stacked_fraction(sx, sy, num, den)
+          stacked_fraction(sx, sy, fraction)
         ));
       } else if let Some(rows) = label_rows {
         // A multi-line label whose items include fractions (`Column[{0,
@@ -12959,7 +13023,7 @@ fn render_primitive(
         // compactly in its own row, and the block is centered on the anchor.
         let row_height = |row: &LabelRow| match row {
           LabelRow::Line(..) => fs,
-          LabelRow::Fraction(..) => 2.0 * gap + fs,
+          LabelRow::Fraction(..) => 2.2 * fs,
         };
         let total: f64 = rows.iter().map(row_height).sum();
         let half_width = longest as f64 * fs * 0.5 / 2.0;
@@ -12991,7 +13055,15 @@ fn render_primitive(
                 Some(_) => sx + half_width - bar_half,
                 None => sx,
               };
-              out.push_str(&stacked_fraction(cx, cy, num, den));
+              out.push_str(&stacked_fraction(
+                cx,
+                cy,
+                LabelFraction {
+                  negative: false,
+                  num,
+                  den,
+                },
+              ));
             }
           }
           y += h;
