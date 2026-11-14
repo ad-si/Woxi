@@ -11144,6 +11144,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotRangePadding -> spec`: the margin added around the displayed range
   // on each side of each axis. `None` here is `Automatic`.
   let mut range_padding: Option<[(RangePad, RangePad); 3]> = None;
+  // `ImagePadding -> {{left, right}, {bottom, top}}` (or one number for all
+  // sides): a band of the given width around the picture that the scene is
+  // kept out of, so the contents are laid out in the region inside it.
+  let mut image_padding: Option<[f64; 4]> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -11190,6 +11194,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
             background = Some((r, g, b));
           }
+        }
+        "ImagePadding" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          image_padding = crate::functions::plot::parse_image_padding(&value)
+            .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0));
         }
         "ViewPoint" => {
           // Symbolic viewpoints stand for axis-aligned directions
@@ -12341,19 +12351,34 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     })
   };
+  // With an `ImagePadding` the scene is fitted into the region inside the
+  // padding band; the picture keeps its full size around it.
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    image_padding.unwrap_or([0.0; 4]);
+  let pad_w = (pad_left + pad_right).round() as u32;
+  let pad_h = (pad_bottom + pad_top).round() as u32;
+  let padded = image_padding.is_some()
+    && !full_width
+    && svg_width > pad_w
+    && (!explicit_height || svg_height > pad_h);
+  if padded {
+    svg_width -= pad_w;
+    svg_height = svg_height.saturating_sub(pad_h).max(1);
+  }
   // An explicit `AspectRatio` stretches the projected box to the picture's
   // shape (unless the view volume fixes the scale instead).
   let stretch = aspect_ratio.is_some()
     && view_angle.is_none()
     && !spherical_region
     && !perspective;
-  let ((fit_scale, stretch_scale_y), cx, cy, fit_w, fit_h) = fit_3d_frame(
-    svg_width,
-    (!fitted_height || full_width).then_some(svg_height),
-    (px_min, px_max, py_min, py_max),
-    stretch,
-    &axes_extent,
-  );
+  let ((fit_scale, stretch_scale_y), mut cx, mut cy, fit_w, fit_h) =
+    fit_3d_frame(
+      svg_width,
+      (!fitted_height || full_width).then_some(svg_height),
+      (px_min, px_max, py_min, py_max),
+      stretch,
+      &axes_extent,
+    );
   let mut scale = fit_scale;
   svg_width = fit_w;
   svg_height = fit_h;
@@ -12430,6 +12455,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     scale = svg_width.min(svg_height) as f64 / (2.0 * (theta / 2.0).tan());
     p_cx = 0.0;
     p_cy = 0.0;
+  }
+
+  if padded {
+    cx += pad_left;
+    cy += pad_top;
+    svg_width += pad_w;
+    svg_height += pad_h;
   }
 
   let scale_y = if stretch { stretch_scale_y } else { scale };
