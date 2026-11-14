@@ -4458,6 +4458,67 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         ],
       )
     }
+    // `Grid[{{a, b}, …}]` is the FrontEnd's grid box, its items boxed as
+    // expressions and tagged so it reads back as a `Grid`:
+    // `TagBox[GridBox[{{a, b}, …}, AutoDelete -> False,
+    // GridBoxItemSize -> {…}], "Grid"]`.
+    Expr::FunctionCall { name, args }
+      if name == "Grid"
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(rows)
+          if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
+    {
+      let Expr::List(rows) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let rows: Vec<Expr> = rows
+        .iter()
+        .map(|row| match row {
+          Expr::List(cells) => {
+            Expr::List(cells.iter().map(expr_to_box_form).collect())
+          }
+          _ => unreachable!("guarded by the match arm"),
+        })
+        .collect();
+      let rule = |k: Expr, v: Expr| Expr::Rule {
+        pattern: Box::new(k),
+        replacement: Box::new(v),
+      };
+      let automatic = || {
+        Expr::List(
+          vec![Expr::List(
+            vec![Expr::Identifier("Automatic".into())].into(),
+          )]
+          .into(),
+        )
+      };
+      call(
+        "TagBox",
+        vec![
+          call(
+            "GridBox",
+            vec![
+              Expr::List(rows.into()),
+              rule(
+                Expr::Identifier("AutoDelete".into()),
+                Expr::Identifier("False".into()),
+              ),
+              rule(
+                Expr::Identifier("GridBoxItemSize".into()),
+                Expr::List(
+                  vec![
+                    rule(str_expr("Columns"), automatic()),
+                    rule(str_expr("Rows"), automatic()),
+                  ]
+                  .into(),
+                ),
+              ),
+            ],
+          ),
+          str_expr("Grid"),
+        ],
+      )
+    }
     Expr::FunctionCall { name, args }
       if name == "Subscript" && args.len() == 2 =>
     {
@@ -6851,6 +6912,53 @@ fn tf_derivand_is_tall(expr: &Expr) -> bool {
   }
 }
 
+/// `TraditionalForm` boxes of a number-display form (`NumberForm`, …) whose
+/// first argument is a matrix: wolframscript's
+/// `TagBox[RowBox[{"(", GridBox[cells], ")"}], head]`, each cell the display
+/// box the form gives that entry on its own.
+fn tf_number_display_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
+  let Some(Expr::List(rows)) = args.first() else {
+    return None;
+  };
+  let cell_box = |value: &Expr| -> Option<Expr> {
+    let mut cell_args = args.to_vec();
+    cell_args[0] = value.clone();
+    let boxed = number_display_form_box(name, &cell_args)?;
+    if let Expr::FunctionCall {
+      name: tag,
+      args: inner,
+    } = &boxed
+      && tag == "TagBox"
+      && !inner.is_empty()
+    {
+      return Some(inner[0].clone());
+    }
+    Some(boxed)
+  };
+  let grid_rows = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => cells
+        .iter()
+        .map(cell_box)
+        .collect::<Option<Vec<_>>>()
+        .map(|c| Expr::List(c.into())),
+      _ => None,
+    })
+    .collect::<Option<Vec<_>>>()?;
+  Some(call(
+    "TagBox",
+    vec![
+      tf_row(vec![
+        tf_string("("),
+        tf_box("GridBox", vec![Expr::List(grid_rows.into())]),
+        tf_string(")"),
+      ]),
+      id_expr(name),
+    ],
+  ))
+}
+
 /// Build a GridBox from a matrix (list of row-lists), boxing each cell.
 fn tf_matrix_grid(rows: &[Expr]) -> Expr {
   let grid_rows: Vec<Expr> = rows
@@ -7289,6 +7397,17 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf(&args[1]),
       ])
     }
+    // A number-display form around a matrix typesets like the matrix does
+    // in `TraditionalForm` — a parenthesized grid — with each entry shown
+    // as the form formats it (`TraditionalForm[NumberForm[m, {3, 2}]]`).
+    "NumberForm" | "ScientificForm" | "EngineeringForm"
+      if matches!(args.first(), Some(Expr::List(items)) if tf_is_matrix(items))
+        && number_display_form_box(name, args).is_some() =>
+    {
+      tf_number_display_matrix(name, args)
+        .or_else(|| number_display_form_box(name, args))
+        .unwrap()
+    }
     // Number-display forms typeset as the formatted number itself, not as a
     // `NumberForm(…)` call — `TraditionalForm[NumberForm[x, {4, 1}]]` is how a
     // Demonstration labels a readout.
@@ -7426,6 +7545,28 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       let rows: Vec<Expr> = items
         .iter()
         .map(|item| Expr::List(vec![tf_display(item)].into()))
+        .collect();
+      tf_box("GridBox", vec![Expr::List(rows.into())])
+    }
+    // `Grid[{{a, b}, {c, d}}]` lays its items out in rows and columns, each
+    // typeset in place (a string item contributes its text), instead of
+    // printing the call around a parenthesized matrix.
+    "Grid"
+      if !TF_BOX_TEXT.get()
+        && args.len() == 1
+        && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let Some(Expr::List(rows)) = args.first() else {
+        unreachable!("guarded by the match arm")
+      };
+      let rows: Vec<Expr> = rows
+        .iter()
+        .map(|row| match row {
+          Expr::List(cells) => {
+            Expr::List(cells.iter().map(tf_display).collect())
+          }
+          other => Expr::List(vec![tf_display(other)].into()),
+        })
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
     }

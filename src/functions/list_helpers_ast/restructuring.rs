@@ -1379,7 +1379,7 @@ pub fn riffle_unified_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     items.as_slice()
   } else {
     crate::emit_message(&format!(
-      "Riffle::listrp: List, SparseArray object, or structured array expected at position 1 in {}.",
+      "Riffle::listrp: List, SparseArray object or structured array expected at position 1 in {}.",
       show(&original())
     ));
     return Ok(original());
@@ -2142,7 +2142,12 @@ pub fn join_ast(lists: &[Expr]) -> Result<Expr, InterpreterError> {
   for (i, list) in lists.iter().enumerate() {
     match (list, head) {
       (Expr::List(items), None) => result.extend(items.iter().cloned()),
-      (Expr::FunctionCall { name, args }, Some(h)) if name == h => {
+      // A SparseArray is an atomic object, never joined by its arguments
+      // (the canonical ones were densified by the caller): even two of them
+      // mismatch, as in wolframscript's "Heads SparseArray and SparseArray".
+      (Expr::FunctionCall { name, args }, Some(h))
+        if name == h && (name != "SparseArray" || i == 0) =>
+      {
         result.extend(args.iter().cloned());
       }
       _ => {

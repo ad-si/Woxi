@@ -624,6 +624,13 @@ pub fn poly_divide_symbolic(
 
   let p_deg = max_power_int(&p_expanded, var).unwrap_or(0);
   let q_deg = max_power_int(&q_expanded, var).unwrap_or(0);
+  // A negative top power (`ez/ex` in `ex`) is no polynomial to divide by,
+  // and it would leave no coefficients to lead with.
+  if p_deg < 0 || q_deg < 0 {
+    return Err(InterpreterError::EvaluationError(format!(
+      "PolynomialRemainder: not a polynomial in {var}"
+    )));
+  }
 
   if q_deg == 0 {
     // Dividing by a constant - check if it's zero

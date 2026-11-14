@@ -4442,3 +4442,59 @@ mod pure_function_input_form {
     );
   }
 }
+
+// An operator form takes exactly one subject. Zero or several subjects are
+// an argx error that leaves the call unevaluated — `Map[f][1, 2]` used to
+// flatten into `Map[f, 1, 2]` and return 1 (wolframscript-verified).
+mod operator_form_subject_count {
+  use super::*;
+
+  #[test]
+  fn zero_or_two_subjects_are_argx() {
+    for (code, message) in [
+      (
+        "Map[f][]",
+        "Map::argx: Map[f] called with 0 arguments; 1 argument is expected.",
+      ),
+      (
+        "Map[f][1, 2]",
+        "Map::argx: Map[f] called with 2 arguments; 1 argument is expected.",
+      ),
+      (
+        "Apply[f][]",
+        "Apply::argx: Apply[f] called with 0 arguments; 1 argument is expected.",
+      ),
+      (
+        "Select[p][a, b]",
+        "Select::argx: Select[p] called with 2 arguments; 1 argument is expected.",
+      ),
+      (
+        "Cases[p][]",
+        "Cases::argx: Cases[p] called with 0 arguments; 1 argument is expected.",
+      ),
+      (
+        "KeyValueMap[f][]",
+        "KeyValueMap::argx: KeyValueMap[f] called with 0 arguments; 1 argument is expected.",
+      ),
+    ] {
+      clear_state();
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, code.replace(", ", ", "), "{code}");
+      assert_eq!(r.warnings, vec![message.to_string()], "{code}");
+    }
+  }
+
+  #[test]
+  fn one_subject_still_applies() {
+    assert_eq!(interpret("Map[f][{1, 2}]").unwrap(), "{f[1], f[2]}");
+    assert_eq!(interpret("Select[EvenQ][{1, 2, 4}]").unwrap(), "{2, 4}");
+  }
+
+  // `a'[]` applies a derivative to no arguments; it used to index past
+  // the empty argument list and panic (found by the interpret fuzzer).
+  #[test]
+  fn derivative_applied_to_nothing() {
+    assert_eq!(interpret("a'[]").unwrap(), "Derivative[1][a][]");
+    assert_eq!(interpret("D[a'[], x]").unwrap(), "0");
+  }
+}

@@ -163,6 +163,35 @@ pub fn dispatch_linear_algebra_functions(
       | "MatrixPower"
   ) {
     let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+    // LinearSolve[m, b] with a right-hand side that is no array stays
+    // unevaluated whatever m is; densifying a large sparse m first only to
+    // find that out costs a dense copy of every zero.
+    if name == "LinearSolve"
+      && args.len() >= 2
+      && match &args[1] {
+        // A symbol or an inert expression (`v[[perm]]` with `v` undefined)
+        // is silently left alone; arrays, numbers and strings take the
+        // dense path, which solves them or reports LinearSolve::matrix.
+        Expr::List(_)
+        | Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::BigFloat(..)
+        | Expr::String(_)
+        | Expr::Rule { .. }
+        | Expr::RuleDelayed { .. } => false,
+        Expr::FunctionCall { name: h, .. } => {
+          !matches!(h.as_str(), "SparseArray" | "Rational" | "Complex")
+        }
+        _ => true,
+      }
+      && args.first().is_some_and(is_sparse)
+    {
+      return Some(Ok(Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      }));
+    }
     if args.iter().any(is_sparse) {
       // Only an evaluated (canonical) SparseArray is an array; a failed
       // construction such as `SparseArray[{{3, 1} -> 1}, {2, 2}]` stays as
@@ -202,6 +231,25 @@ pub fn dispatch_linear_algebra_functions(
             )
         {
           return Some(Ok(sparse));
+        }
+        // A call that stays unevaluated on the dense form keeps the sparse
+        // arguments it was given: echoing the densified matrix back would
+        // print (and allocate) every zero of it, as wolframscript does not.
+        if let Some(Ok(Expr::FunctionCall {
+          name: result_name,
+          args: result_args,
+        })) = &result
+          && result_name == name
+          && result_args.len() == dense.len()
+          && result_args
+            .iter()
+            .zip(&dense)
+            .all(|(r, d)| crate::evaluator::pattern_matching::expr_equal(r, d))
+        {
+          return Some(Ok(Expr::FunctionCall {
+            name: name.to_string(),
+            args: args.to_vec().into(),
+          }));
         }
         return result;
       }
@@ -1483,6 +1531,15 @@ pub fn dispatch_linear_algebra_functions(
     }
     "Fit" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::fit_ast(args));
+    }
+    // Fit[data, funs, vars, prop]: a property of the fit.
+    "Fit"
+      if args.len() == 4
+        && matches!(&args[3], Expr::String(_) | Expr::List(_)) =>
+    {
+      return Some(
+        crate::functions::linear_algebra_ast::fit_with_property_ast(args),
+      );
     }
     // Fit's options (`WorkingPrecision`, …) do not change a machine fit.
     "Fit"
