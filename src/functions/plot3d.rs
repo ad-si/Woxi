@@ -1668,7 +1668,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             other => mesh_levels = parse_mesh_levels(other),
           }
@@ -14015,7 +14017,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -15103,7 +15107,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -15914,7 +15920,9 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -18701,7 +18709,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -20856,7 +20866,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             Expr::Integer(n) if *n >= 0 => mesh_count = Some(*n as usize),
             Expr::List(items) => {

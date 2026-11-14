@@ -5534,6 +5534,18 @@ mod plot3d {
       ));
     }
 
+    /// `Mesh -> False` draws no mesh lines, exactly like `Mesh -> None`.
+    #[test]
+    fn mesh_false_is_mesh_none() {
+      let plot = |mesh: &str| {
+        export_svg(&format!(
+          "Plot3D[Sin[x] Cos[y], {{x, -3, 3}}, {{y, -3, 3}}, Mesh -> {mesh}]"
+        ))
+      };
+      assert_eq!(plot("False"), plot("None"));
+      assert_ne!(plot("False"), plot("Automatic"));
+    }
+
     #[test]
     fn mesh_all() {
       insta::assert_snapshot!(export_svg(
@@ -24977,6 +24989,29 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(big_y >= 20.0, "40pt row is too short, y={big_y}: {svg}");
     }
 
+    // A styled layout nested in another styled layout keeps both styles —
+    // the inner color and the outer size — and draws its items instead of
+    // the source text `Column[{b, c}]`.
+    #[test]
+    fn styled_column_inside_styled_column_is_laid_out() {
+      for expr in [
+        "Style[Column[{\"a\", Style[Column[{\"b\", \"c\"}], Blue]}], 12]",
+        "Style[Style[Column[{\"b\", \"c\"}], Blue], 12]",
+        "Column[{\"a\", Style[Style[Column[{\"b\", \"c\"}], Blue], 12]}]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(!svg.contains("Column["), "{expr} dumped source: {svg}");
+        for part in ["b", "c"] {
+          let blue_12 = svg.split("<text").any(|t| {
+            t.contains("font-size=\"12\"")
+              && t.contains("fill=\"rgb(0,0,255)\"")
+              && t.contains(&format!(">{part}<"))
+          });
+          assert!(blue_12, "{expr}: `{part}` not blue at 12pt: {svg}");
+        }
+      }
+    }
+
     // A `Spacer[n]` *between* a row's items is blank horizontal space, the
     // same as one used as the separator — the typeset row used to print it
     // as the literal text "Spacer[50]".
@@ -39307,6 +39342,43 @@ mod manipulate {
         ("c".to_string(), "(q) == (2)".to_string()),
       ]
     );
+  }
+
+  /// Bare front-end controls bound with `Dynamic[var]` inside `PaneSelector`
+  /// panes — `Manipulator[Dynamic[x], …]` in one pane, a
+  /// `Slider2D[Dynamic[p], …]` in the other — become control rows that are
+  /// shown only while their pane is selected.
+  #[test]
+  fn pane_selector_dynamic_bound_controls_carry_pane_visibility() {
+    let expr = interpret_to_expr(
+      "Manipulate[{x, p}, {{s, False, \"s\"}, {True, False}}, \
+       Row[{PaneSelector[{True -> Column[{Row[{\"x \", \
+       Manipulator[Dynamic[x], {-2, 2}]}]}], \
+       False -> Row[{\"p \", Slider2D[Dynamic[p], {{-2, -2}, {2, 2}}]}]}, \
+       Dynamic[s]]}], \
+       {{x, 0}, ControlType -> None}, \
+       {{p, {0, 0}}, {-2, -2}, {2, 2}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let slider2d = spec.controls.iter().find(|c| {
+      matches!(c, woxi::functions::ManipulateControl::Slider2D { name, .. }
+        if name == "p")
+    });
+    assert!(slider2d.is_some(), "controls: {:?}", spec.controls);
+    let cond = |var: &str| {
+      spec
+        .control_visible
+        .iter()
+        .find(|(n, _)| n == var)
+        .map(|(_, c)| c.clone())
+    };
+    assert_eq!(cond("x").as_deref(), Some("(s) == (True)"));
+    assert_eq!(cond("p").as_deref(), Some("(s) == (False)"));
+    // The caption leading into each pane's control is shown with it.
+    let heading = woxi::functions::graphics::heading_visibility_key;
+    assert_eq!(cond(&heading("x ")).as_deref(), Some("(s) == (True)"));
+    assert_eq!(cond(&heading("p ")).as_deref(), Some("(s) == (False)"));
   }
 
   #[test]
