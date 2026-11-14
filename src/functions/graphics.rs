@@ -29489,6 +29489,57 @@ fn alignment_axis_fraction(expr: &Expr, horizontal: bool) -> Option<f64> {
   }
 }
 
+/// GraphicsArray[{g1, g2, …}, opts…] / GraphicsArray[{{g11, …}, …}, opts…]
+///
+/// The obsolete (pre-6.0) layout head superseded by `GraphicsGrid`. A flat
+/// list is one row of pictures and a nested list a 2D array, so it is
+/// rewritten into the equivalent `GraphicsGrid` call instead of keeping a
+/// second layout implementation. `GraphicsSpacing -> s` (a fraction of a
+/// cell, default 0.1) becomes the `Spacings -> Scaled[s]` it was replaced by.
+pub fn graphics_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let array = match &args[0] {
+    Expr::List(_) => args[0].clone(),
+    other => evaluate_expr_to_expr(other)?,
+  };
+  let Expr::List(items) = &array else {
+    return Ok(Expr::FunctionCall {
+      name: "GraphicsArray".to_string(),
+      args: args.to_vec(),
+    });
+  };
+  let grid = if items.iter().any(|item| matches!(item, Expr::List(_))) {
+    array.clone()
+  } else {
+    Expr::List(vec![array.clone()])
+  };
+  let mut grid_args = vec![grid];
+  for opt in &args[1..] {
+    let rewritten = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphicsSpacing") =>
+      {
+        let scaled = |e: &Expr| Expr::FunctionCall {
+          name: "Scaled".to_string(),
+          args: vec![e.clone()],
+        };
+        let value = match replacement.as_ref() {
+          Expr::List(pair) => Expr::List(pair.iter().map(scaled).collect()),
+          other => scaled(other),
+        };
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("Spacings".to_string())),
+          replacement: Box::new(value),
+        }
+      }
+      other => other.clone(),
+    };
+    grid_args.push(rewritten);
+  }
+  graphics_grid_ast(&grid_args)
+}
+
 /// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]
 /// Arranges graphics in a 2D grid.
 pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
