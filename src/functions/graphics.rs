@@ -376,7 +376,8 @@ fn parse_cap_form(expr: &Expr) -> Option<LineCapKind> {
     _ => return None,
   };
   match name {
-    "Butt" => Some(LineCapKind::Butt),
+    // `CapForm[None]` is documented as equivalent to `CapForm["Butt"]`.
+    "Butt" | "None" => Some(LineCapKind::Butt),
     "Round" => Some(LineCapKind::Round),
     "Square" => Some(LineCapKind::Square),
     _ => None,
@@ -10443,8 +10444,8 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
 }
 
 /// The `stroke-linecap` value for a `Line`/`Arrow` stroke, from its
-/// `CapForm[…]` directive. Unset (`None`) keeps Woxi's pre-existing butt
-/// cap, which is also what `CapForm["Butt"]` — Wolfram's default — asks for.
+/// `CapForm[…]` directive. Unset (`None`) gives a butt cap; a `Line`
+/// passes its own square default in instead.
 fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
   match cap_form {
     Some(LineCapKind::Round) => "round",
@@ -12273,7 +12274,12 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      // Wolfram strokes a `Line` with square caps unless a `CapForm`
+      // says otherwise: a thick segment reaches half its width past each
+      // end point.
+      let cap = stroke_linecap_attr(Some(
+        style.cap_form.unwrap_or(LineCapKind::Square),
+      ));
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
       // `VertexColors` assigns one color per point, in order, across all
       // segments concatenated — only usable when the count actually lines
