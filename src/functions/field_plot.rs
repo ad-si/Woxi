@@ -463,6 +463,30 @@ impl DensityContourOptions {
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
 /// MeshFunctions, ContourStyle, FrameLabel and Epilog options.
+/// `FrameLabel -> Automatic` on a plot over two ranges `{x, …}, {y, …}`
+/// (the arguments just before the options at `start`) labels the bottom and
+/// left frame edges with the two variable names.
+fn automatic_frame_label(
+  value: &Expr,
+  args: &[Expr],
+  start: usize,
+) -> Option<Expr> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if !matches!(&val, Expr::Identifier(v) if v == "Automatic") || start < 3 {
+    return None;
+  }
+  let var_name = |e: &Expr| match e {
+    Expr::List(items) if items.len() >= 2 => match &items[0] {
+      Expr::Identifier(v) => Some(Expr::String(v.clone())),
+      _ => None,
+    },
+    _ => None,
+  };
+  Some(Expr::List(
+    vec![var_name(&args[start - 2])?, var_name(&args[start - 1])?].into(),
+  ))
+}
+
 fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
@@ -633,10 +657,18 @@ fn parse_density_contour_options(
           };
         }
         "FrameLabel" => {
-          frame_labels = crate::functions::plot::parse_frame_label(replacement);
+          frame_labels = match automatic_frame_label(replacement, args, start)
+          {
+            Some(labels) => crate::functions::plot::parse_frame_label(&labels),
+            None => crate::functions::plot::parse_frame_label(replacement),
+          };
         }
+        // `Frame -> None` draws no frame, like `Frame -> False`.
         "Frame" => {
-          frame = !matches!(replacement, Expr::Identifier(v) if v == "False");
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          frame = !matches!(&val, Expr::Identifier(v)
+            if v == "False" || v == "None");
         }
         "FrameTicks" => {
           frame_ticks =
