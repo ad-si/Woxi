@@ -1695,12 +1695,53 @@ fn inverse_laplace_transform(
   }
   if let Some(result) = inverse_laplace_inner(&normalized, s, t) {
     crate::evaluator::evaluate_expr_to_expr(&result)
+  } else if let Some(result) = inverse_laplace_inexact(&normalized, s, t)? {
+    Ok(result)
   } else {
-    Ok(call(
-      "InverseLaplaceTransform",
-      vec![expr.clone(), s_expr.clone(), t_expr.clone()],
-    ))
+    Ok(unevaluated())
   }
+}
+
+/// Machine-precision input whose exact rules don't apply directly (e.g. a
+/// product of `1./(s - p)` factors with numeric complex poles): invert the
+/// rationalized expression exactly and return the numericized result.
+/// Rationalization first tries the default tolerance, which recovers the
+/// short decimals a machine number was typed or computed as, and then the
+/// exact binary value.
+fn inverse_laplace_inexact(
+  expr: &Expr,
+  s: &str,
+  t: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  if !crate::syntax::contains_inexact(expr) {
+    return Ok(None);
+  }
+  let mut seen = Vec::new();
+  for tolerance in [None, Some(Expr::Integer(0))] {
+    let mut rationalize_args = vec![expr.clone()];
+    rationalize_args.extend(tolerance);
+    let exact = crate::evaluator::evaluate_expr_to_expr(&call(
+      "Rationalize",
+      rationalize_args,
+    ))?;
+    if crate::syntax::contains_inexact(&exact)
+      || seen.contains(&format!("{exact:?}"))
+    {
+      continue;
+    }
+    let transformed = inverse_laplace_transform(
+      &exact,
+      &Expr::Identifier(s.to_string()),
+      &Expr::Identifier(t.to_string()),
+    )?;
+    if !matches!(&transformed, Expr::FunctionCall { name, .. } if name == "InverseLaplaceTransform")
+    {
+      return crate::evaluator::evaluate_expr_to_expr(&call1("N", transformed))
+        .map(Some);
+    }
+    seen.push(format!("{exact:?}"));
+  }
+  Ok(None)
 }
 
 /// The second shift theorem: `E^(-a s) G(s)` with `a > 0` transforms to
