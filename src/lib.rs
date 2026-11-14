@@ -5208,11 +5208,21 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   };
   if !matches!(
     inner_name,
-    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic" | "Labeled"
+    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic" | "Labeled" | "Framed"
   ) {
     return expr;
   }
   let rendered = match inner_name {
+    // `Style[Framed[…], directives…]` draws the frame around the styled
+    // content.
+    "Framed" => {
+      let Some(styled) =
+        functions::graphics::style_pushed_into_layout(&inner, &args[1..])
+      else {
+        return expr;
+      };
+      render_framed_if_needed(styled)
+    }
     // `Style[Labeled[content, caption, pos…], directives…]` — the directives
     // set the font of the content and of its caption alike.
     "Labeled" => {
