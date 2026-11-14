@@ -2052,10 +2052,11 @@ mod graphics {
       assert!(!svg.contains(">5000<"), "linear y ticks: {svg}");
       // The label sits halfway up the 0..10 decades of the axis' range,
       // not on the bottom edge.
-      let text = svg.split(">mid<").next().unwrap();
-      let y: f64 = text
-        .rsplit("y=\"")
-        .next()
+      let before = &svg[..svg.find("mid<").unwrap()];
+      let tag = &before[before.rfind("<text").unwrap()..];
+      let y: f64 = tag
+        .split(" y=\"")
+        .nth(1)
         .and_then(|s| s.split('"').next())
         .unwrap()
         .parse()
