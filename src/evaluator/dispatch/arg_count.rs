@@ -565,7 +565,7 @@ fn arg_count_range_table(name: &str) -> Option<(usize, usize)> {
     "FirstCase" => Some((1, 4)),
     // FirstPosition[pattern] is the operator form.
     "FirstPosition" => Some((1, usize::MAX)),
-    "Fit" => Some((1, 3)),
+    "Fit" => Some((1, 4)),
     "FixedPoint" => Some((2, usize::MAX)),
     "FixedPointList" => Some((2, usize::MAX)),
     "Flatten" => Some((1, 3)),

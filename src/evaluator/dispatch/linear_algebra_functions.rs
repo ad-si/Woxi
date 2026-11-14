@@ -1532,6 +1532,15 @@ pub fn dispatch_linear_algebra_functions(
     "Fit" if args.len() == 3 => {
       return Some(crate::functions::linear_algebra_ast::fit_ast(args));
     }
+    // Fit[data, funs, vars, prop]: a property of the fit.
+    "Fit"
+      if args.len() == 4
+        && matches!(&args[3], Expr::String(_) | Expr::List(_)) =>
+    {
+      return Some(
+        crate::functions::linear_algebra_ast::fit_with_property_ast(args),
+      );
+    }
     // Fit's options (`WorkingPrecision`, …) do not change a machine fit.
     "Fit"
       if args.len() > 3
