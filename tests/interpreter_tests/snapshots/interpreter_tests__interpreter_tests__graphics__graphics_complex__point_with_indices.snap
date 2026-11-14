@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 32098
 expression: "export_svg(\"Graphics[GraphicsComplex[{{0,0},{1,0},{0.5,0.5}}, Point[{1,2,3}]]]\")"
 ---
 <svg width="360" height="188" viewBox="0 0 360 188" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -7,8 +8,8 @@ expression: "export_svg(\"Graphics[GraphicsComplex[{{0,0},{1,0},{0.5,0.5}}, Poin
 <clipPath id="plotClip_359x186"><rect x="0" y="0" width="359.00" height="186.11"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_359x186)">
-<circle cx="7.18" cy="179.21" r="2.15" fill="rgb(0,0,0)"/>
-<circle cx="351.82" cy="179.21" r="2.15" fill="rgb(0,0,0)"/>
-<circle cx="179.50" cy="6.89" r="2.15" fill="rgb(0,0,0)"/>
+<circle cx="7.18" cy="179.21" r="1.44" fill="rgb(0,0,0)"/>
+<circle cx="351.82" cy="179.21" r="1.44" fill="rgb(0,0,0)"/>
+<circle cx="179.50" cy="6.89" r="1.44" fill="rgb(0,0,0)"/>
 </g>
 </svg>

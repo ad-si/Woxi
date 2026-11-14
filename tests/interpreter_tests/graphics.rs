@@ -607,6 +607,36 @@ mod graphics {
     }
 
     #[test]
+    fn point_default_size_is_0_008_of_width() {
+      // `PointSize[0.008]` is Wolfram's 2-D default: at the default 360
+      // image (359 drawable pixels) a dot is 2.87 pixels across.
+      let svg = export_svg("Graphics[Point[{0, 0}]]");
+      assert!(svg.contains("r=\"1.44\""), "{svg}");
+    }
+
+    #[test]
+    fn point_size_follows_letterboxed_graphic_width() {
+      // A square range in a 500 × 400 image is drawn 400 wide; a relative
+      // point size is a fraction of that width, not of the image's.
+      let svg = export_svg(
+        "Graphics[Point[{{0, 0}, {1, 1}}], PlotRange -> {{0, 1}, {0, 1}}, \
+         ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"1.60\""), "{svg}");
+      let svg = export_svg(
+        "Graphics[{PointSize[0.02], Point[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"3.99\""), "{svg}");
+      // Absolute sizes do not depend on the graphic's width.
+      let svg = export_svg(
+        "Graphics[{AbsolutePointSize[6], Point[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"3.00\""), "{svg}");
+    }
+
+    #[test]
     fn point_multi_vertex_colors() {
       let svg = export_svg(
         "Graphics[{PointSize[0.03], Point[{{0, 0}, {1, 1}}, \

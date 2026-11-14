@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 19745
 expression: "export_svg(\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}, {5, 9, 12, 15}}]\")"
 ---
 <svg width="360" height="215" viewBox="0 0 360 215" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -8,8 +9,8 @@ expression: "export_svg(\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}, {5
 </defs>
 <g transform="translate(14.96,0.50)">
 <g>
-<circle cx="17.18" cy="201.70" r="2.06" fill="rgb(0,0,0)" opacity="0"/>
-<circle cx="326.36" cy="10.62" r="2.06" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="17.18" cy="201.70" r="1.37" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="326.36" cy="10.62" r="1.37" fill="rgb(0,0,0)" opacity="0"/>
 <polygon points="45.41,39.74 94.60,39.74 94.60,106.16 45.41,106.16" fill="rgb(255,213,64)"/>
 <polyline points="94.60,75.50 45.41,75.50" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="70.01,106.16 70.01,121.49" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>

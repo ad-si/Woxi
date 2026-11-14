@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 19811
 expression: "export_svg(r##\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, PlotLabel -> Style[\"Test\", Bold], ChartLabels -> {\"A\", \"B\"}, FrameLabel -> {\"X\", \"Y\"}, ChartStyle -> RGBColor[\"#2a9d8f\"]]\"##)"
 ---
 <svg width="360" height="248" viewBox="0 0 360 248" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -9,8 +10,8 @@ expression: "export_svg(r##\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}
 <text x="195.3" y="10.86" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="12" fill="#333333" xml:space="preserve"><tspan font-weight="bold">Test</tspan></text>
 <g transform="translate(32.13,13.91)">
 <g>
-<circle cx="16.32" cy="191.62" r="1.96" fill="rgb(0,0,0)" opacity="0"/>
-<circle cx="310.05" cy="10.09" r="1.96" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="16.32" cy="191.62" r="1.31" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="310.05" cy="10.09" r="1.31" fill="rgb(0,0,0)" opacity="0"/>
 <polygon points="68.31,41.91 126.42,41.91 126.42,118.54 68.31,118.54" fill="rgb(42,157,143)"/>
 <polyline points="126.42,83.17 68.31,83.17" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="97.37,118.54 97.37,136.22" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
