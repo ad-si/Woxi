@@ -688,6 +688,12 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
           }
         };
         let mut style = vec![crate::functions::plot::series_color_expr(s)];
+        // A translucent curve (`PlotStyle -> Opacity[a]`, or a
+        // `ColorFunction` returning `Directive[c, Opacity[a]]`) stays
+        // translucent wherever its extracted primitives are drawn.
+        if let Some(a) = s.opacity {
+          style.insert(0, call1("Opacity", Expr::Real(a)));
+        }
         // A curve keeps its weight and dashes: the plot draws it with
         // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
         // extracted line is drawn the same way wherever it is placed.
