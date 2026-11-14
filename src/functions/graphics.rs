@@ -35824,6 +35824,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Dynamic[{a, b}], …] &]}`) can draw the pane over *other* hidden state
   // variables; those are driven interactively exactly like a pane in the body.
   for spec in &args[1..] {
+    // A display element placed among the controls (`Dynamic[Graphics[{
+    // Locator[Dynamic[p, cb]], …}]]`, a Demonstration's 2D "controller"
+    // picture) drags its hidden variable just like a marker in the body.
+    if matches!(spec, Expr::FunctionCall { name, .. } if name == "Dynamic") {
+      for (var, callback) in collect_body_locator_callbacks(spec) {
+        if !body_locators.iter().any(|(n, _)| *n == var) {
+          body_locators.push((var, callback));
+        }
+      }
+      continue;
+    }
     let Expr::List(items) = spec else { continue };
     for item in items.iter().skip(1) {
       let item = unwrap_dynamic_control(item);
@@ -41889,8 +41900,19 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       | "CForm"
         if number_form_text(expr).is_some() =>
       {
+        let text = number_form_text(expr).unwrap_or_default();
+        // An exact value the wrapper leaves as a stacked 2-D layout
+        // (`AccountingForm[9/10, {8, 7}]` is the fraction `9/10` drawn over
+        // three lines) would run together as `9 -- 10` on one line; typeset
+        // the value itself instead.
+        if text.contains('\n')
+          && split_scientific_2d(&text).is_none()
+          && !args.is_empty()
+        {
+          return manipulate_label_runs_inner(&args[0], italic);
+        }
         vec![LabelRun {
-          text: number_form_text(expr).unwrap_or_default(),
+          text,
           italic,
           ..Default::default()
         }]
@@ -47861,10 +47883,17 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
         && let Some(formatted) =
           crate::functions::string_ast::number_form_family_to_string(name, args)
       {
-        DisplayNode::Static {
-          svg: None,
-          text: formatted.replace('\n', " ").trim().to_string(),
-        }
+        // An exact value left as a stacked 2-D layout (a fraction over
+        // three lines) shows as the value itself (`9/10`), not its lines
+        // run together (`9 -- 10`).
+        let text = if formatted.contains('\n')
+          && split_scientific_2d(&formatted).is_none()
+        {
+          crate::syntax::format_expr(&args[0], crate::syntax::ExprForm::Output)
+        } else {
+          formatted.replace('\n', " ").trim().to_string()
+        };
+        DisplayNode::Static { svg: None, text }
       } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
         && name == "StringForm"
         && let Some(Expr::String(template)) = args.first()
