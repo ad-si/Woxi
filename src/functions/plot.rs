@@ -1176,9 +1176,27 @@ fn has_conditional_jump(body: &Expr, var: &str) -> bool {
       .into_iter()
       .any(calls_user_function)
   }
-  conditional(body)
-    || (calls_user_function(body)
-      && conditional(&eval_body_var_symbolic(body, var)))
+  // WL finds the jumps of a conditional symbolically, and gives up on a
+  // curve that runs through an `InterpolatingFunction` (an NDSolve
+  // solution): such a `Piecewise` is drawn joined across its jumps.
+  fn interpolates(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
+        true
+      }
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(interpolates),
+    }
+  }
+  if conditional(body) {
+    return !interpolates(body);
+  }
+  if !calls_user_function(body) {
+    return false;
+  }
+  let expanded = eval_body_var_symbolic(body, var);
+  conditional(&expanded) && !interpolates(&expanded)
 }
 
 /// The x positions where the sampled curve `points` of `body` jumps: each
@@ -4654,6 +4672,19 @@ pub(crate) fn plot_labels_svg(
     }
     attrs
   };
+  // A `FrameLabel` takes the color of its edge's `FrameStyle`, else of
+  // the `LabelStyle`, like the edge's tick labels.
+  let edge_fill_owned: [Option<String>; 4] = std::array::from_fn(|edge| {
+    opts.frame_styles[edge]
+      .as_ref()
+      .and_then(|s| s.color)
+      .map(|c| {
+        let (r, g, b) = color_to_rgb8(c);
+        format!("rgb({r},{g},{b})")
+      })
+  });
+  let edge_fill =
+    |edge: usize| edge_fill_owned[edge].as_deref().unwrap_or(label_fill);
   let title_default_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let title_default_fill = title_default_fill_owned
@@ -4686,8 +4717,9 @@ pub(crate) fn plot_labels_svg(
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\">{}</text>\n",
-      text_svg(x_label, cx)
+         fill=\"{fill}\">{}</text>\n",
+      text_svg(x_label, cx),
+      fill = edge_fill(0),
     ));
   }
   // A `FrameLabel` that is a `Grid[…]`/`TableForm[…]` is embedded as a
@@ -4725,8 +4757,9 @@ pub(crate) fn plot_labels_svg(
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(y_label, lx)
+         fill=\"{fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
+      text_svg(y_label, lx),
+      fill = edge_fill(1),
     ));
   }
 
@@ -4807,8 +4840,9 @@ pub(crate) fn plot_labels_svg(
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-           fill=\"{label_fill}\">{}</text>\n",
-        text_svg(line, cx)
+           fill=\"{fill}\">{}</text>\n",
+              text_svg(line, cx),
+      fill = edge_fill(2),
       ));
     }
   }
@@ -4837,8 +4871,9 @@ pub(crate) fn plot_labels_svg(
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(right_label, rx)
+         fill=\"{fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
+      text_svg(right_label, rx),
+      fill = edge_fill(3),
     ));
   }
 

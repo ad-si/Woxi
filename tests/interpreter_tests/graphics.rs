@@ -53124,6 +53124,38 @@ mod plot_content_regressions {
     );
   }
 
+  /// A conditional whose branches run through an `InterpolatingFunction`
+  /// (an NDSolve solution) is drawn joined across its jumps, as Wolfram's
+  /// symbolic jump detection gives up on it; a plain conditional plotted
+  /// beside it is still broken.
+  #[test]
+  fn conditional_jumps_through_interpolating_functions_are_joined() {
+    let pieces = |code: &str, color: &str| {
+      clear_state();
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains(color))
+        .count()
+    };
+    let setup = "sol = First[NDSolve[{y'[t] == 1, y[0] == 0}, y, {t, 0, 3}]]; ";
+    assert_eq!(
+      pieces(
+        &format!(
+          "{setup}Plot[Evaluate[Piecewise[{{{{0, t < 1}}, {{y[t] + 2, t >= 1}}}}] \
+           /. sol], {{t, 0, 3}}]"
+        ),
+        "#3D99CC"
+      ),
+      1
+    );
+    let both = format!(
+      "{setup}Plot[Evaluate[{{Piecewise[{{{{0, t < 1}}, {{y[t] + 2, t >= 1}}}}], \
+       Piecewise[{{{{0, t < 2}}, {{1, t >= 2}}}}]}} /. sol], {{t, 0, 3}}]"
+    );
+    assert_eq!(pieces(&both, "#3D99CC"), 1);
+    assert_eq!(pieces(&both, "#F2A024"), 2);
+  }
+
   /// `PlotLabels -> Placed[{…}, pos]`, `Callout[{…}, pos]` and per-curve
   /// `Callout`/`Placed` entries label the curves instead of being printed.
   #[test]

@@ -462,3 +462,32 @@ fn graphics_axes_and_frames_use_gray_unless_explicitly_styled() {
     }
   }
 }
+
+/// A `FrameLabel` takes the color of its edge's `FrameStyle`, also when
+/// the style sets a font size too; an edge without one keeps the default
+/// gray.
+#[test]
+fn frame_labels_take_their_frame_style_color() {
+  let label_fill = |svg: &str, text: &str| -> String {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let at = tag.find(" fill=\"").unwrap() + 7;
+    tag[at..at + tag[at..].find('"').unwrap()].to_string()
+  };
+  let svg = svg_of(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"},
+       FrameStyle -> Directive[12, Black]]"#,
+  );
+  assert_eq!(label_fill(&svg, "tb"), "rgb(0,0,0)");
+  assert_eq!(label_fill(&svg, "tl"), "rgb(0,0,0)");
+  let svg = svg_of(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"},
+       FrameStyle -> {{Red, Automatic}, {Blue, Automatic}}]"#,
+  );
+  assert_eq!(label_fill(&svg, "tb"), "rgb(0,0,255)");
+  assert_eq!(label_fill(&svg, "tl"), "rgb(255,0,0)");
+  let svg =
+    svg_of(r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"}]"#);
+  assert_eq!(label_fill(&svg, "tb"), "#666");
+}
