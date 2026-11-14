@@ -787,7 +787,7 @@ GeoGraphics,"Creates geographic maps and visualizations",✅,pure,10.0,741
 Annotation,"Attach an annotation to an expression",✅,none,6.0,742
 Short,"Short output format",✅,pure,1.0,743
 SphericalPlot3D,"3D plot in spherical coordinates",✅,pure,6.0,744
-ProteinData,"",🚫,,7.0,745
+ProteinData,"Returns names, amino acid sequences and Gene Ontology classes of a bundled slice of human proteins (UniProtKB, HGNC, GO)",✅,pure,7.0,745
 CompanyData,"",🚫,,10.0,746
 Raster,"Graphics primitive representing raster image data",✅,none,2.0,747
 VertexSize,"Option for vertex size in graphs",✅,none,8.0,748
