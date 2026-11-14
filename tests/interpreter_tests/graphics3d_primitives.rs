@@ -275,6 +275,40 @@ mod contour_plot3d {
     );
   }
 
+  /// `ColorFunction` colors each facet by `f[x, y, z, value]` with every
+  /// argument scaled to 0..1, so a function of the scaled height paints
+  /// the lower and upper half of a sphere differently. A named gradient
+  /// colors by height too.
+  #[test]
+  fn color_function() {
+    let sphere = "ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, \
+                  {z, -1, 1}, Contours -> {0.8}, Mesh -> None";
+    let reddish = |c: &String| {
+      let v: Vec<u16> = c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[0] > v[1] + 60 && v[0] > v[2] + 60
+    };
+    let bluish = |c: &String| {
+      let v: Vec<u16> = c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[2] > v[0] + 60 && v[2] > v[1] + 60
+    };
+    let halves = fills(&svg(&format!(
+      "{sphere}, ColorFunction -> Function[{{x, y, z, f}}, \
+       If[z > 0.5, Red, Blue]]]"
+    )));
+    assert!(halves.iter().any(reddish), "{halves:?}");
+    assert!(halves.iter().any(bluish), "{halves:?}");
+    // The value argument is passed too: one level gives one color.
+    let by_value = fills(&svg(&format!(
+      "{sphere}, ColorFunction -> Function[{{x, y, z, f}}, \
+       If[f >= 0, Blue, Red]]]"
+    )));
+    assert!(by_value.iter().any(bluish) && !by_value.iter().any(reddish));
+    let plain = fills(&svg(&format!("{sphere}]")));
+    let rainbow = fills(&svg(&format!("{sphere}, ColorFunction -> \"Rainbow\"]")));
+    assert!(!plain.iter().any(bluish));
+    assert!(rainbow.iter().any(bluish) && rainbow.iter().any(reddish));
+  }
+
   /// While the plot looks at its body with the variables still free, a
   /// compiled function given those variables in a vector stays
   /// unevaluated, instead of iterating its `FixedPoint` symbolically

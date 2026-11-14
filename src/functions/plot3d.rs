@@ -6618,6 +6618,18 @@ impl FacetColorFunction {
     point: [f64; 3],
     ranges: [(f64, f64); 3],
   ) -> Option<StyleState3D> {
+    self.style_with_extra_args(point, ranges, &[])
+  }
+
+  /// As [`Self::style_at`], with further arguments after the coordinates,
+  /// each a value and the `(lo, hi)` range it is scaled over (the function
+  /// value `f` of `ContourPlot3D`'s `ColorFunction[x, y, z, f]`).
+  fn style_with_extra_args(
+    &self,
+    point: [f64; 3],
+    ranges: [(f64, f64); 3],
+    extra: &[(f64, (f64, f64))],
+  ) -> Option<StyleState3D> {
     if let Some(name) = &self.scheme {
       let (lo, hi) = ranges[2];
       let t = if (hi - lo).abs() < 1e-15 {
@@ -6633,16 +6645,16 @@ impl FacetColorFunction {
       });
     }
     let function = self.function.as_ref()?;
+    let scale = |v: f64, (lo, hi): (f64, f64)| {
+      if self.unscaled || (hi - lo).abs() < 1e-15 {
+        v
+      } else {
+        (v - lo) / (hi - lo)
+      }
+    };
     let args = (0..3)
-      .map(|k| {
-        let (lo, hi) = ranges[k];
-        let t = if self.unscaled || (hi - lo).abs() < 1e-15 {
-          point[k]
-        } else {
-          (point[k] - lo) / (hi - lo)
-        };
-        Expr::Real(t)
-      })
+      .map(|k| Expr::Real(scale(point[k], ranges[k])))
+      .chain(extra.iter().map(|&(v, range)| Expr::Real(scale(v, range))))
       .collect();
     let value = evaluate_expr_to_expr(&Expr::CurriedCall {
       func: Box::new(function.clone()),
@@ -16544,6 +16556,9 @@ fn contour3d_render(
   // lines); `MeshStyle -> None` hides the mesh.
   let mut mesh_styles: Vec<Expr> = Vec::new();
   let mut mesh_style_none = false;
+  // `ColorFunction -> f`: each facet colored by `f[x, y, z, value]`, the
+  // value being the level of the surface it lies on.
+  let mut color_fn = FacetColorFunction::default();
 
   for opt in opts {
     if let Expr::Rule {
@@ -16551,6 +16566,7 @@ fn contour3d_render(
       replacement,
     } = opt
     {
+      color_fn.read_option(pattern, replacement);
       match pattern.as_ref() {
         Expr::Identifier(name) if name == "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -16676,6 +16692,11 @@ fn contour3d_render(
   let mut world_triangles: Vec<([Point3D; 3], usize)> = Vec::new();
   // The body (surface) each of `world_triangles` was cut from.
   let mut triangle_body: Vec<usize> = Vec::new();
+  // The level each of `world_triangles` lies on, and the range of the
+  // sampled values (what a `ColorFunction`'s value argument is scaled
+  // over).
+  let mut triangle_level: Vec<f64> = Vec::new();
+  let mut value_range = (f64::INFINITY, f64::NEG_INFINITY);
   // The surfaces' vertices, shared between the triangles that meet at them
   // (keyed by their exact coordinates), with accumulated face normals.
   let mut points: Vec<[f64; 3]> = Vec::new();
@@ -16718,13 +16739,16 @@ fn contour3d_render(
       _ => Vec::new(),
     };
 
+    for v in field.iter().flatten().flatten().filter(|v| v.is_finite()) {
+      value_range = (value_range.0.min(*v), value_range.1.max(*v));
+    }
     let style = if styles.is_empty() {
       None
     } else {
       Some(&styles[surf_idx % styles.len()])
     };
     let color_directives =
-      surface_style_directives(surf_idx, style, false, &scene);
+      surface_style_directives(surf_idx, style, color_fn.is_set(), &scene);
 
     let levels: Vec<f64> = if let Some(explicit) = &contour_levels {
       explicit.clone()
@@ -16837,6 +16861,7 @@ fn contour3d_render(
                   emitted = true;
                   world_triangles.push((tri_world, theme_idx));
                   triangle_body.push(surf_idx);
+                  triangle_level.push(level);
 
                   // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
                   let wn =
@@ -16989,7 +17014,7 @@ fn contour3d_render(
   let mut all_triangles: Vec<Triangle> =
     Vec::with_capacity(world_triangles.len());
   let mut facets: Vec<SmoothFacet> = Vec::with_capacity(world_triangles.len());
-  for (tri_world, surf_idx) in &world_triangles {
+  for (t, (tri_world, surf_idx)) in world_triangles.iter().enumerate() {
     let style = if styles.is_empty() {
       None
     } else {
@@ -17000,10 +17025,19 @@ fn contour3d_render(
       y: ny(p.y),
       z: nz(p.z),
     });
+    // The `ColorFunction` style at the facet's center.
+    let cf_style = color_fn.is_set().then(|| {
+      let mid = |f: fn(&Point3D) -> f64| tri_world.iter().map(f).sum::<f64>() / 3.0;
+      color_fn.style_with_extra_args(
+        [mid(|p| p.x), mid(|p| p.y), mid(|p| p.z)],
+        plot_range,
+        &[(triangle_level[t], value_range)],
+      )
+    }).flatten();
     let normal = triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
     let (color, opacity) = shade_facet(
       SurfaceDefault::Theme(*surf_idx),
-      None,
+      cf_style.as_ref(),
       style,
       normal,
       tri_center(tri_norm[0], tri_norm[1], tri_norm[2]),
@@ -17029,7 +17063,7 @@ fn contour3d_render(
     facets.push(SmoothFacet {
       index: facets.len(),
       world: tri_norm,
-      style: None,
+      style: cf_style,
       plot_style: style.cloned(),
     });
   }
@@ -17082,7 +17116,7 @@ fn contour3d_render(
     |facet, normal, at| {
       shade_facet(
         SurfaceDefault::Theme(world_triangles[facet.index].1),
-        None,
+        facet.style.as_ref(),
         facet.plot_style.as_ref(),
         normal,
         at,
