@@ -10959,6 +10959,42 @@ mod plot3d {
       assert_eq!(svg.matches("stroke=\"#FF00FF\"").count(), 1, "{svg}");
     }
 
+    /// With an explicit `ImagePadding` and no `AspectRatio`, the default
+    /// 1/GoldenRatio shapes the plotting area the padding leaves, so the
+    /// image is `(w - left - right)/GoldenRatio + bottom + top` high. It
+    /// used to apply to the whole image instead.
+    #[test]
+    fn image_padding_with_default_aspect_ratio_sizes_the_plot_area() {
+      for code in [
+        "ListPlot[Range[10], ImageSize -> 360, \
+         ImagePadding -> {{25, 25}, {25, 25}}]",
+        "Plot[x, {x, 0, 1}, ImageSize -> 360, ImagePadding -> 25]",
+        "ListLinePlot[Range[10], ImageSize -> 300, \
+         ImagePadding -> {{40, 20}, {30, 10}}]",
+      ] {
+        let svg = export_svg(code);
+        let expected_h = if code.starts_with("ListLinePlot") {
+          // (300 - 60) / GoldenRatio + 40
+          188
+        } else {
+          // (360 - 50) / GoldenRatio + 50
+          242
+        };
+        let w = if code.starts_with("ListLinePlot") {
+          300
+        } else {
+          360
+        };
+        assert!(
+          svg.starts_with(&format!(
+            "<svg width=\"{w}\" height=\"{expected_h}\""
+          )),
+          "{code}: {}",
+          &svg[..80]
+        );
+      }
+    }
+
     /// `ImageSize -> {w, h}` with `ImagePadding` keeps the image size
     /// asked for; an `AspectRatio` shapes the plotting area inside it
     /// rather than resizing the image.
@@ -22918,6 +22954,51 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         !single.starts_with("<svg width=\"100\" height=\"100\""),
         "{single}"
       );
+    }
+
+    #[test]
+    fn array_plot_single_image_size_is_width() {
+      // Regression: a single `ImageSize -> w` was treated as a `w` x `w`
+      // box, so a tall array shrank to a narrow picture `w` high instead
+      // of being `w` wide like any other graphics.
+      let tall = export_svg(
+        "ArrayPlot[Table[Mod[i + j, 2], {i, 41}, {j, 25}], ImageSize -> 144]",
+      );
+      assert!(
+        tall.starts_with("<svg width=\"144\" height=\"230\""),
+        "{tall}"
+      );
+      let named = export_svg(
+        "ArrayPlot[Table[Mod[i + j, 2], {i, 41}, {j, 25}], ImageSize -> Small]",
+      );
+      assert!(
+        named.starts_with("<svg width=\"180\" height=\"287\""),
+        "{named}"
+      );
+      // A wide array keeps the width too.
+      let wide = export_svg(
+        "ArrayPlot[Table[Mod[i + j, 2], {i, 10}, {j, 25}], ImageSize -> 144]",
+      );
+      assert!(
+        wide.starts_with("<svg width=\"144\" height=\"61\""),
+        "{wide}"
+      );
+    }
+
+    #[test]
+    fn bare_grid_of_pictures_displays_like_exported_grid() {
+      // Regression: a `Grid` of pictures without options was displayed
+      // (notebook / Studio output) with `GraphicsGrid`'s spacing, a tenth
+      // of a cell between columns, while `ExportString` of the same grid
+      // spaced them like a table.
+      clear_state();
+      let code = "Grid[{{Graphics[Disk[], ImageSize -> 100], \
+                  Graphics[Disk[], ImageSize -> 250]}}]";
+      let shown = woxi::interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let exported = export_svg(code);
+      let head = |s: &str| s.lines().next().unwrap_or_default().to_string();
+      assert_eq!(head(&shown), head(&exported));
+      assert!(shown.starts_with("<svg width=\"356\""), "{shown}");
     }
 
     #[test]
