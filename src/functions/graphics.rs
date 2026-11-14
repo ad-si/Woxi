@@ -40996,12 +40996,16 @@ pub fn manipulate_eval_caption(
 ) -> Option<(Vec<LabelRun>, Option<String>)> {
   let expr = crate::interpret_to_expr(code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
-  let svg = control_caption_svg(&evaluated);
-  let runs = if svg.is_some() {
-    Vec::new()
+  let runs = manipulate_label_runs(&evaluated, false);
+  // Only a caption with no words of its own becomes an icon; one that
+  // pairs a picture with words (`Row[{Pane[ArrayPlot[…]], "multiplier"}]`)
+  // keeps being labeled by the words.
+  let svg = if flatten_label_runs(&runs).trim().is_empty() {
+    control_caption_svg(&evaluated)
   } else {
-    manipulate_label_runs(&evaluated, false)
+    None
   };
+  let runs = if svg.is_some() { Vec::new() } else { runs };
   Some((runs, svg))
 }
 
