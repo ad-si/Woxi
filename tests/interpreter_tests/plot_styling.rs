@@ -505,11 +505,9 @@ mod epilog_text_style_background {
       "Plot[x, {x, 0, 1}, Epilog -> Text[Style[\"ab\", 18, Blue], \
        {0.5, 0.5}]]",
     );
-    let bare = svg_of("Plot[x, {x, 0, 1}]");
-    assert_eq!(
-      svg.matches("<rect ").count(),
-      bare.matches("<rect ").count(),
-      "{svg}"
-    );
+    // The epilog's own group (after its clip path) holds only the text.
+    let group = &svg[svg.find("</defs><g clip-path").unwrap()..];
+    assert!(group.contains(">ab</text>"), "{svg}");
+    assert!(!group.contains("<rect"), "{svg}");
   }
 }
