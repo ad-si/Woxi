@@ -274,6 +274,25 @@ mod contour_plot3d {
       plot("2. (x^2 + 4 y^2 + 0.25)")
     );
   }
+
+  /// While the plot looks at its body with the variables still free, a
+  /// compiled function given those variables in a vector stays
+  /// unevaluated, instead of iterating its `FixedPoint` symbolically
+  /// without end.
+  #[test]
+  fn compiled_vector_argument_iteration_is_not_run_symbolically() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cf = Compile[{{p, _Real, 1}}, FixedPoint[(# + p.p/#)/2 &, 1., \
+         SameTest -> (Abs[#1 - #2] < 10^-6 &)]]; \
+         Head[ContourPlot3D[cf[{x, y, z}], {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}, Contours -> {0.5}, PlotPoints -> 8]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
 }
 
 mod stream_plot3d {
