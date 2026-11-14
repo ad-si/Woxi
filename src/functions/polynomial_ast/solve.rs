@@ -23160,7 +23160,44 @@ pub fn nminimize_ast(
     rewritten[0] = Expr::List(threaded.into());
     return nminimize_ast(&rewritten, maximize);
   }
-  match nminimize_ast_checked(args, maximize) {
+  // An objective that is not even a numeric expression at a point (a free
+  // symbol or an undefined head) can never become a number: report it right
+  // away instead of after a whole search (25 s for a fuzzer input), as
+  // wolframscript does.
+  let symbolic_at_probe = (|| {
+    let vars: Vec<String> = match args.get(1)? {
+      Expr::List(v) => v
+        .iter()
+        .map(|e| match e {
+          Expr::Identifier(n) => Some(n.clone()),
+          _ => None,
+        })
+        .collect::<Option<_>>()?,
+      Expr::Identifier(n) => vec![n.clone()],
+      _ => return None,
+    };
+    let objective = match args.first()? {
+      Expr::List(items) if !items.is_empty() => items[0].clone(),
+      Expr::List(_) => return None,
+      o => o.clone(),
+    };
+    let mut value = objective;
+    for v in &vars {
+      value = crate::syntax::substitute_variable(&value, v, &Expr::Real(0.5));
+    }
+    let _quiet = QuietGuard::new();
+    let value = crate::evaluator::evaluate_expr_to_expr(&value).ok()?;
+    Some(!crate::functions::predicate_ast::is_numeric_q(&value))
+  })()
+  .unwrap_or(false);
+  let checked = if symbolic_at_probe {
+    Err(InterpreterError::EvaluationError(
+      "cannot evaluate expression numerically".into(),
+    ))
+  } else {
+    nminimize_ast_checked(args, maximize)
+  };
+  match checked {
     // An objective that never evaluates to a number (an undefined `f[r]`)
     // is NMinimize::nnum and the call stays as it is, not a hard error.
     Err(InterpreterError::EvaluationError(msg))

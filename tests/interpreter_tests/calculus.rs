@@ -28302,3 +28302,22 @@ mod series_variable_forms {
     }
   }
 }
+
+// An NMinimize objective that is symbolic at a probe point can never become
+// a number: NMinimize::nnum comes right away instead of after a whole search
+// (25 s for an interpret-fuzzer input). wolframscript-verified shape.
+#[test]
+fn nminimize_symbolic_objective_reports_nnum_quickly() {
+  clear_state();
+  let start = std::time::Instant::now();
+  let r =
+    interpret_with_stdout("NMinimize[Total[q /@ {1, 2}] + a + b, {a, b}]")
+      .unwrap();
+  assert!(start.elapsed().as_secs() < 5, "took {:?}", start.elapsed());
+  assert_eq!(r.result, "NMinimize[a + b + q[1] + q[2], {a, b}]");
+  assert!(r.warnings.iter().any(|w| w.starts_with("NMinimize::nnum")));
+  assert_eq!(
+    interpret("NMinimize[(a - 1)^2 + 1, a]").unwrap(),
+    "{1., {a -> 1.}}"
+  );
+}
