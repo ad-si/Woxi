@@ -10757,6 +10757,32 @@ fn cone_edge_flags(n: usize, capped: bool) -> Vec<[bool; 3]> {
   }
 }
 
+/// A `ViewVertical` direction, given in scaled coordinates (each side of
+/// the box spanning `bounds` runs from 0 to 1), as a direction in the
+/// coordinates of the box itself. The default `{0, 0, 1}` and boxes with
+/// a degenerate or non-finite side are left as they are.
+fn scaled_view_vertical(
+  vertical: [f64; 3],
+  bounds: &[(f64, f64); 3],
+) -> [f64; 3] {
+  if vertical == Camera::DEFAULT_VERTICAL {
+    return vertical;
+  }
+  let sides = bounds.map(|(lo, hi)| hi - lo);
+  if sides.iter().any(|s| !s.is_finite() || *s <= 0.0) {
+    return vertical;
+  }
+  let scaled = [
+    vertical[0] * sides[0],
+    vertical[1] * sides[1],
+    vertical[2] * sides[2],
+  ];
+  if scaled == [0.0; 3] {
+    return vertical;
+  }
+  scaled
+}
+
 /// Moves the contents into the screen space of a perspective camera at
 /// `eye` looking at `target`: a point at camera-space `(x, y, z)` (`z`
 /// the distance along the view axis) becomes `(x/z, -1/z, y/z)`. What lies
@@ -11725,7 +11751,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       camera.azimuth = direction[1].atan2(direction[0]);
       camera.elevation = direction[2].atan2(direction[0].hypot(direction[1]));
     } else {
-      perspective_warp(&mut prims, eye, target, camera.vertical);
+      let bounds = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+      let vertical = scaled_view_vertical(camera.vertical, &bounds);
+      perspective_warp(&mut prims, eye, target, vertical);
       camera.azimuth = -std::f64::consts::FRAC_PI_2;
       camera.elevation = 0.0;
       camera.vertical = Camera::DEFAULT_VERTICAL;
@@ -11788,6 +11816,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the displayed box from `|ViewPoint|` times its longest side away. A
   // `ViewPoint` at infinity (and the already warped `ViewVector` scene)
   // is drawn orthographically.
+  // `ViewVertical` is given in scaled coordinates (each side of the
+  // displayed box runs from 0 to 1), so it is stretched by the box's
+  // sides to become a direction in the coordinates drawn here.
+  if !perspective {
+    let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    camera.vertical = scaled_view_vertical(camera.vertical, &b);
+  }
   camera.perspective = None;
   if !perspective && !view_point_at_infinity && !orthographic {
     let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
