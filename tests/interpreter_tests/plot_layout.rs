@@ -1358,3 +1358,70 @@ mod traditional_plot_label {
     assert_eq!(title(&svg), "g = x2+x");
   }
 }
+
+mod typeset_labels {
+  use super::*;
+
+  // A label expression that typesets as a fraction is laid out as a
+  // stacked picture inline with the rest of the label, not as a multi-line
+  // text block of `-`-ruled rows.
+  #[test]
+  fn text_fraction_label_stacks_inline() {
+    let svg = svg_of(
+      "Graphics[Text[Row[{-x^2, Row[{\"d\", \"t\"}]/Row[{\"d\", \"x\"}], \
+       \" = \", 1.5}], {0, 0}]]",
+    );
+    assert!(!svg.contains("---"), "{svg}");
+    assert!(!svg.contains("dy=\"14\""), "{svg}");
+    // The fraction is drawn with a rule between numerator and denominator.
+    assert!(svg.contains("<line") || svg.contains("<rect"), "{svg}");
+    assert!(svg.contains("1.5"), "{svg}");
+  }
+
+  #[test]
+  fn text_quotient_label_stacks() {
+    let svg = svg_of("Graphics[Text[a^2/b, {0, 0}]]");
+    assert!(!svg.contains("dy=\"14\""), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+  }
+
+  // `Text[Style[label, size]]` as a frame label keeps the style's size.
+  #[test]
+  fn frame_label_text_style_keeps_size() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {Text[Style[\"a\", 14]], \"b\"}]",
+    );
+    assert!(svg.contains("<tspan font-size=\"140\">a</tspan>"), "{svg}");
+  }
+
+  // A styled frame label still sets its expression in traditional notation.
+  #[test]
+  fn styled_frame_label_is_traditional() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", Style[f[x], 14]}]",
+    );
+    assert!(svg.contains(">f</tspan>(<tspan"), "{svg}");
+    assert!(!svg.contains("f[x]"), "{svg}");
+  }
+
+  // Re-rendering a plot through `Show` measures a styled top frame label by
+  // its visible text, not its markup, so the frame keeps its margins.
+  #[test]
+  fn show_styled_top_frame_label_keeps_margins() {
+    let plain = svg_of(
+      "Show[Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {{\"a\", \" \"}, \
+       {\"x\", \"L n = 5\"}}, ImageSize -> {500, 350}], Graphics[Point[{0, 0}]]]",
+    );
+    let styled = svg_of(
+      "Show[Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {{\"a\", \" \"}, \
+       {\"x\", Style[Row[{\"L \", Style[\"n\", Italic], \" = \", 5}], 16]}}, \
+       ImageSize -> {500, 350}], Graphics[Point[{0, 0}]]]",
+    );
+    let translate = |svg: &str| {
+      let start = svg.find("translate(").unwrap() + "translate(".len();
+      let end = start + svg[start..].find(',').unwrap();
+      svg[start..end].parse::<f64>().unwrap()
+    };
+    assert!((translate(&plain) - translate(&styled)).abs() < 1.0);
+  }
+}

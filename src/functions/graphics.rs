@@ -7819,10 +7819,26 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A string whose inline box notation stacks material (an arrow with its
   // rate above it, a fraction) cannot be set as one line of text: lay the
   // boxes out and embed the result centered on the anchor.
+  //
+  // An expression that typesets as a built-up fraction (`x^2/y`, or a
+  // `Row` holding a `Row[…]/Row[…]` quotient such as `dθ/dξ`) is laid out
+  // the same way, so the fraction stacks inline with the rest of the label
+  // instead of being printed as a multi-line text picture.
+  let stacked_boxes = match content {
+    Expr::String(s) if has_script_stacked_inline_box(s) => {
+      inline_box_string_to_box_expr(s)
+    }
+    _ if label_typesets_fraction(content) => {
+      Some(crate::strip_number_precision_markers(
+        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          content,
+        ),
+      ))
+    }
+    _ => None,
+  };
   if frame_opts.is_empty()
-    && let Expr::String(s) = content
-    && has_script_stacked_inline_box(s)
-    && let Some(boxes) = inline_box_string_to_box_expr(s)
+    && let Some(boxes) = stacked_boxes
     && let Some((x, y, scaled)) = match args.get(1) {
       Some(pos) => expr_to_anchor(pos),
       None => Some((0.0, 0.0, false)),
@@ -11227,7 +11243,11 @@ fn graphics_decorations(
           || {
             let size = crate::functions::plot_padding::markup_font_size(s)
               .unwrap_or(LABEL_FONT);
-            crate::functions::plot_padding::label_width(s, size)
+            // The label is SVG markup already (typeset when the option
+            // was read), so it is measured as drawn rather than parsed
+            // as box notation again, which read the quotes of its
+            // attributes as string literals and counted the tags.
+            crate::functions::plot_padding::text_width(s, size)
           },
           |(w, _)| w,
         )
@@ -20667,10 +20687,51 @@ pub fn axes_label_entry(e: &Expr) -> Option<String> {
 }
 
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
+  // The styling stays on the outside while the expressions it wraps are
+  // set in traditional notation, like an unstyled label: `Style[θ[ξ], 14]`
+  // reads `θ(ξ)`.
   if contains_visible_style(e) {
-    return Some(format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e)));
+    return Some(format!(
+      "{STYLED_LABEL_MARKER}{}",
+      expr_to_svg_markup(&traditionalize_styled_label(e))
+    ));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Wrap the unstyled expressions of a styled label in `TraditionalForm`,
+/// leaving the `Style`/`Text`/`Row` layout around them and any part that
+/// carries styling of its own (`Subscript[Style["T", Italic], "r"]`) as is.
+fn traditionalize_styled_label(e: &Expr) -> Expr {
+  match e {
+    Expr::FunctionCall { name, args }
+      if (name == "Style" || (name == "Text" && args.len() == 1))
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.clone();
+      new_args[0] = traditionalize_styled_label(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Row" && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let mut new_args = args.clone();
+      if let Some(Expr::List(items)) = args.first() {
+        new_args[0] =
+          Expr::List(items.iter().map(traditionalize_styled_label).collect());
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args,
+      }
+    }
+    Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
+    _ if contains_visible_style(e) => e.clone(),
+    _ => traditionalize_layout_items(e),
+  }
 }
 
 /// Whether `e` is, or (inside a `Row`) holds, a `Style[label, …]` whose
@@ -20686,6 +20747,11 @@ fn contains_visible_style(e: &Expr) -> bool {
       Some(Expr::List(items)) => items.iter().any(contains_visible_style),
       _ => false,
     },
+    // `Text[Style["ξ", 14]]`: a one-argument `Text` is just its label, so
+    // the styling of what it wraps still shows.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      contains_visible_style(&args[0])
+    }
     // `Subscript[Style["T", Italic], "r"]`: the script's base (or the
     // script itself) carries the styling.
     Expr::FunctionCall { name, args }
@@ -23685,6 +23751,48 @@ fn has_stacked_inline_box(s: &str) -> bool {
 /// arrow with its rate above it) and nothing else vertical. Such a label has
 /// no faithful one-line reading, whereas fractions and roots keep their
 /// linear `(a)/(b)` text in a graphic.
+/// Whether a label expression typesets as a built-up fraction: an
+/// arithmetic expression whose box form holds a `FractionBox`, possibly
+/// inside a `Row` or a style wrapper. Strings and other layouts are drawn as
+/// ordinary text.
+fn label_typesets_fraction(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Times" | "Power" | "Rational" | "Plus")
+        && !has_string_operand(expr) =>
+    {
+      box_has_fraction(
+        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          expr,
+        ),
+      )
+    }
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      matches!(&args[0], Expr::List(items) if items.iter().any(label_typesets_fraction))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      label_typesets_fraction(&args[0])
+    }
+    _ => false,
+  }
+}
+
+/// Whether an arithmetic expression has a bare string among its operands
+/// (`"7"/100`): such a quotient is drawn on one line, as `7/100`.
+fn has_string_operand(expr: &Expr) -> bool {
+  match expr {
+    Expr::String(_) => true,
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
+    {
+      args.iter().any(has_string_operand)
+    }
+    _ => false,
+  }
+}
+
 fn has_script_stacked_inline_box(s: &str) -> bool {
   has_stacked_inline_box(s)
     && ["OverscriptBox", "UnderscriptBox", "UnderoverscriptBox"]
