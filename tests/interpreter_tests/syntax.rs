@@ -15708,3 +15708,30 @@ fn held_quotient_terms_and_negated_numerators() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// `<->` (125) binds looser than `/;` (130); the printer used to put both at
+// the same level. A one-argument `Times[s]` base prints as a call and needs
+// no brackets. All wolframscript-verified (found by the differential fuzzer).
+#[test]
+fn two_way_rule_and_condition_precedence_in_print() {
+  for (code, expected) in [
+    ("HoldForm[(a <-> b) /; c]", "HoldForm[(a <-> b) /; c]"),
+    ("HoldForm[(a /; b) <-> c]", "HoldForm[a /; b <-> c]"),
+    ("HoldForm[a <-> (b /; c)]", "HoldForm[a <-> b /; c]"),
+    ("HoldForm[a /; (b <-> c)]", "HoldForm[a /; (b <-> c)]"),
+    ("HoldForm[a <-> (b -> c)]", "HoldForm[a <-> (b -> c)]"),
+    ("HoldForm[a <-> (b <-> c)]", "HoldForm[a <-> b <-> c]"),
+    (
+      "ToString[HoldForm[(a <-> b) /; c], InputForm]",
+      "HoldForm[(a <-> b) /; c]",
+    ),
+    ("Hold[Power[Times[a], c]]", "Hold[Times[a]^c]"),
+    (
+      "Hold[f /* Power[Times[\"s\"], c]]",
+      "Hold[f /* (Times[s]^c)]",
+    ),
+    ("Hold[Power[Times[a, b], c]]", "Hold[(a*b)^c]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

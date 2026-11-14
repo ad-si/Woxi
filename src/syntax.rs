@@ -9970,6 +9970,17 @@ fn prints_as_negation(e: &Expr) -> bool {
 /// of an infix shorthand (`@@`, `/@`, `@@@`, `.`) needs parentheses so the
 /// printed form re-parses to the same tree — e.g. `Plus @@ (x*y)` must not
 /// print as `Plus @@ x*y`, which re-parses as `(Plus @@ x)*y`.
+/// [`printed_infix_precedence`] on wolframscript's own scale, which tells
+/// `<->` (125) apart from `/;` (130) — the coarse scale puts both at 13.
+fn wl_infix_precedence(e: &Expr) -> Option<u16> {
+  if matches!(e, Expr::FunctionCall { name, args }
+    if name == "TwoWayRule" && args.len() == 2)
+  {
+    return Some(125);
+  }
+  printed_infix_precedence(e).map(|p| u16::from(p) * 10)
+}
+
 fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   match e {
     Expr::BinaryOp { op, .. } => Some(match op {
@@ -10115,12 +10126,9 @@ fn is_negative_or_fraction_literal(e: &Expr) -> bool {
 /// self-delimiting (atoms, `f[…]`, and heads like `Span` that print infix
 /// only in InputForm but bind tighter than the heads using this helper)
 /// never need parentheses.
-fn input_form_infix(args: &[Expr], sep: &str, prec: u8) -> String {
-  input_form_infix_forcing(args, sep, prec, |_| false)
-}
-
-/// `input_form_infix` with an extra escape hatch: `force_parens` brackets an
-/// operand the precedence rule alone would leave bare. Needed for heads that
+///
+/// `force_parens` brackets an operand the precedence rule alone would leave
+/// bare. Needed for heads that
 /// are *not* Flat, where the leading operand's own parentheses carry meaning
 /// (`Alternatives[Alternatives[a, b], c]` must print `(a | b) | c`, since a
 /// bare `a | b | c` re-parses to the flat three-argument form).
@@ -11210,8 +11218,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // but `a <-> b <-> c` for a right-nested one.
         let operand = |e: &Expr, right: bool| {
           let text = fmt(e);
-          let looser = printed_infix_precedence(e)
-            .is_some_and(|p| if right { p < 13 } else { p <= 13 });
+          let looser = wl_infix_precedence(e)
+            .is_some_and(|p| if right { p < 125 } else { p <= 125 });
           if looser && !prints_as_call(&text) {
             format!("({text})")
           } else {
@@ -11443,8 +11451,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // (`a /; (b /; c)`), the same rule InputForm uses.
         let condition_operand = |e: &Expr, right: bool| -> String {
           let text = fmt(e);
-          let looser = printed_infix_precedence(e)
-            .is_some_and(|p| if right { p <= 13 } else { p < 13 });
+          let looser = wl_infix_precedence(e)
+            .is_some_and(|p| if right { p <= 130 } else { p < 130 });
           if looser && !prints_as_call(&text) {
             format!("({text})")
           } else {
@@ -13025,7 +13033,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let base_str = fmt(&args[0]);
         let exp_str = fmt(&args[1]);
         // Wrap base in parens if it's lower precedence than Power or is a negative number
-        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+        // A one-argument `Times[s]`/`Plus[s]` prints as the call itself and
+        // needs no brackets: `Times[s]^c`.
+        let base = if (matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+          && !prints_as_call(&base_str))
           || is_infix_display_call(&args[0])
           || matches!(
             &args[0],
@@ -16208,7 +16219,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Condition" && args.len() == 2 =>
     {
-      input_form_infix(args, " /; ", 13)
+      // `<->` (125) binds looser than `/;` (130), which the coarse scale
+      // cannot tell apart: `(a <-> b) /; c`.
+      input_form_infix_forcing(args, " /; ", 13, |e| {
+        matches!(e, Expr::FunctionCall { name, args }
+          if name == "TwoWayRule" && args.len() == 2)
+      })
     }
     // Inequality[...] in InputForm always uses the head form Inequality[a, Less, b, Less, c],
     // even when all operators are the same (infix is only used in OutputForm).
