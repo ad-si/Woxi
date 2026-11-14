@@ -204,34 +204,44 @@ pub fn day_count_weekday_ast(
 
 /// Convert a date {y,m,d} to absolute days since 1900-01-01 (day 0)
 fn date_to_absolute_days(year: i64, month: i64, day: i64) -> i64 {
-  let mut total_days: i64 = 0;
-
   // Months outside 1..=12 roll the year over, in either direction, so that
   // e.g. month 0 is the previous December and month 25 is January two years on.
-  let (year, month) = {
-    let zero_based = month - 1;
-    (
-      year + zero_based.div_euclid(12),
-      zero_based.rem_euclid(12) + 1,
-    )
-  };
+  let zero_based = month - 1;
+  let year = year as i128 + zero_based.div_euclid(12) as i128;
+  let month = zero_based.rem_euclid(12) as i128 + 1;
+  // Closed form (proleptic Gregorian, 400-year eras) instead of summing year
+  // lengths one by one, which never finished for a year like 10^20.
+  let days = days_from_civil(year, month, 1) - days_from_civil(1900, 1, 1)
+    + (day as i128 - 1);
+  days.clamp(i64::MIN as i128, i64::MAX as i128) as i64
+}
 
-  if year >= 1900 {
-    for y in 1900..year {
-      total_days += days_in_year(y);
-    }
-  } else {
-    for y in year..1900 {
-      total_days -= days_in_year(y);
-    }
-  }
+/// Days from 1970-01-01 to the first-of-month-normalized date
+/// `{year, month, day}` in the proleptic Gregorian calendar (Hinnant's
+/// `days_from_civil`).
+fn days_from_civil(year: i128, month: i128, day: i128) -> i128 {
+  let y = if month <= 2 { year - 1 } else { year };
+  let era = y.div_euclid(400);
+  let yoe = y - era * 400;
+  let mp = (month + 9) % 12;
+  let doy = (153 * mp + 2) / 5 + day - 1;
+  let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  era * 146097 + doe - 719468
+}
 
-  for m in 1..month {
-    total_days += days_in_month(year, m);
-  }
-
-  total_days += day - 1; // day 1 of month = 0 additional days
-  total_days
+/// Inverse of [`days_from_civil`]: the `{year, month, day}` that lies `z`
+/// days after 1970-01-01.
+fn civil_from_days(z: i128) -> (i128, i128, i128) {
+  let z = z + 719468;
+  let era = z.div_euclid(146097);
+  let doe = z - era * 146097;
+  let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  let mp = (5 * doy + 2) / 153;
+  let day = doy - (153 * mp + 2) / 5 + 1;
+  let month = if mp < 10 { mp + 3 } else { mp - 9 };
+  let year = yoe + era * 400 + i128::from(month <= 2);
+  (year, month, day)
 }
 
 /// Julian Day Number (JDN) for a proleptic-Gregorian calendar date. Standard
@@ -388,36 +398,14 @@ pub fn calendar_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// Convert absolute days since 1900-01-01 to {year, month, day}
-fn absolute_days_to_date(mut days: i64) -> (i64, i64, i64) {
-  let mut year: i64 = 1900;
-
-  if days >= 0 {
-    loop {
-      let dy = days_in_year(year);
-      if days < dy {
-        break;
-      }
-      days -= dy;
-      year += 1;
-    }
-  } else {
-    while days < 0 {
-      year -= 1;
-      days += days_in_year(year);
-    }
-  }
-
-  let mut month: i64 = 1;
-  loop {
-    let dm = days_in_month(year, month);
-    if days < dm {
-      break;
-    }
-    days -= dm;
-    month += 1;
-  }
-
-  (year, month, days + 1)
+fn absolute_days_to_date(days: i64) -> (i64, i64, i64) {
+  let (year, month, day) =
+    civil_from_days(days as i128 + days_from_civil(1900, 1, 1));
+  (
+    year.clamp(i64::MIN as i128, i64::MAX as i128) as i64,
+    month as i64,
+    day as i64,
+  )
 }
 
 /// Convert {y,m,d,h,min,sec} to total seconds since 1900-01-01 00:00:00
@@ -487,21 +475,16 @@ fn normalize_date(components: &[f64]) -> (i64, i64, i64, i64, i64, f64) {
     0.0
   };
 
-  // Convert everything to seconds, then back
-  // First handle integer month (can overflow)
-  let mut y = year;
-  let mut m = month.floor() as i64;
+  // The Gregorian calendar repeats every 400 years (146097 days, a whole
+  // number of weeks), so the date is normalized in the cycle starting at
+  // 2000 and shifted back: the seconds round trip below stays exact for
+  // any year instead of losing precision (or overflowing) far from 1900.
+  let cycle_shift = year.div_euclid(400) * 400 - 2000;
+  // Integer months roll into years in one step, whatever their size.
+  let whole_month = month.floor() as i64;
   let frac_month = month - month.floor();
-
-  // Normalize month to 1-12
-  while m < 1 {
-    m += 12;
-    y -= 1;
-  }
-  while m > 12 {
-    m -= 12;
-    y += 1;
-  }
+  let y = year - cycle_shift + (whole_month - 1).div_euclid(12);
+  let m = (whole_month - 1).rem_euclid(12) + 1;
 
   // Convert fractional month to days
   let extra_days_from_month = frac_month * (days_in_month(y, m) as f64);
@@ -518,7 +501,8 @@ fn normalize_date(components: &[f64]) -> (i64, i64, i64, i64, i64, f64) {
       + second,
   );
 
-  absolute_seconds_to_date(total_seconds)
+  let (ny, nm, nd, nh, nmin, nsec) = absolute_seconds_to_date(total_seconds);
+  (ny.saturating_add(cycle_shift), nm, nd, nh, nmin, nsec)
 }
 
 /// Extract a date component list from an Expr
@@ -529,6 +513,10 @@ pub(crate) fn extract_date_components(expr: &Expr) -> Option<Vec<f64>> {
       for item in items {
         let evaluated = crate::evaluator::evaluate_expr_to_expr(item).ok()?;
         match &evaluated {
+          // Components travel as f64; one beyond 2^53 would silently lose
+          // digits (and a year that large saturates the day arithmetic), so
+          // such a date is not read at all.
+          Expr::Integer(n) if n.unsigned_abs() > 1 << 53 => return None,
           Expr::Integer(n) => components.push(*n as f64),
           Expr::Real(f) => components.push(*f),
           _ => return None,
@@ -839,7 +827,12 @@ fn parse_date_with_format(
 pub(crate) fn day_of_week(year: i64, month: i64, day: i64) -> i64 {
   // Zeller's / Tomohiko Sakamoto's algorithm
   let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
-  let mut y = year;
+  // Weekdays repeat every 400 years, so a year in [2000, 2400) with the same
+  // cycle position gives the same answer without overflowing for huge years
+  // or truncating the wrong way for negative ones.
+  // Wolfram has no year zero: year -n is n BC, astronomical year 1 - n.
+  let astronomical = if year < 0 { year + 1 } else { year };
+  let mut y = 2000 + astronomical.rem_euclid(400);
   if month < 3 {
     y -= 1;
   }
