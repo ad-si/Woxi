@@ -2197,7 +2197,7 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some(vec![(r * theta.cos(), r * theta.sin())])
     };
     let samples =
-      adaptive_samples(&sample_at, t_min, t_max, num_samples, max_total);
+      adaptive_samples(sample_at, t_min, t_max, num_samples, max_total);
     let samples = extend_to_domain_edges(&samples, &sample_at);
     let (series, params) = samples_to_series(samples);
     let points = series.into_iter().next().unwrap_or_default();
