@@ -11818,13 +11818,17 @@ pub(crate) fn svg_escape(s: &str) -> String {
     .replace('"', "&quot;");
   let escaped = render_math_letterlike_glyphs(&escaped);
   let escaped = render_combining_overlines(&escaped);
-  if escaped.contains(SUBSCRIPT_START) {
+  if escaped.contains(SUBSCRIPT_START) || escaped.contains(SUPERSCRIPT_START) {
     escaped
       .replace(
         SUBSCRIPT_START,
         "<tspan baseline-shift=\"sub\" font-size=\"70%\">",
       )
-      .replace(SUBSCRIPT_END, "</tspan>")
+      .replace(
+        SUPERSCRIPT_START,
+        "<tspan baseline-shift=\"super\" font-size=\"70%\">",
+      )
+      .replace([SUBSCRIPT_END, SUPERSCRIPT_END], "</tspan>")
   } else {
     escaped
   }
@@ -42830,6 +42834,11 @@ fn picture_subscript_needs_lowering(script: &str) -> bool {
 
 const SUBSCRIPT_START: char = '\u{E0F2}';
 const SUBSCRIPT_END: char = '\u{E0F3}';
+/// Like [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`], for an exponent with no
+/// Unicode superscript form (`θ^*`): the SVG writer raises it with a
+/// `<tspan>`.
+const SUPERSCRIPT_START: char = '\u{E0F4}';
+const SUPERSCRIPT_END: char = '\u{E0F5}';
 
 /// A string box is stored as its quoted source (`"\"*\""`) but drawn without
 /// the quotes; a script made of one (`Subsuperscript[q, 1, "*"]` typeset
@@ -42889,20 +42898,12 @@ fn script_runs(
       && marking
       && text.chars().any(|c| unicode_script_char(c, true).is_none())
     {
-      // No superscript glyphs for this exponent (`e^(j k L)`): write it
-      // out after a caret rather than as a garble of half-mapped letters.
-      let grouped = text.chars().count() > 1
-        && !args[1..].iter().all(|a| !label_is_compound(a));
-      let plain = |t: &str| LabelRun {
-        text: t.to_string(),
-        italic: false,
-        ..Default::default()
-      };
-      runs.push(plain(if grouped { "^(" } else { "^" }));
-      restyle(&mut runs, &|t| t.to_string());
-      if grouped {
-        runs.push(plain(")"));
-      }
+      // No superscript glyphs for this exponent (`θ^*`, `e^(j k L)`):
+      // raise it as a real, smaller script rather than writing a garble of
+      // half-mapped letters.
+      restyle(&mut runs, &|t| {
+        format!("{SUPERSCRIPT_START}{t}{SUPERSCRIPT_END}")
+      });
     } else {
       restyle(&mut runs, &|t| to_unicode_script(t, superscript));
     }

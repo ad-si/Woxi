@@ -5387,6 +5387,14 @@ Woxi renders its own SVG; `wolframscript` prints `-Graphics-` and exports
 cairo-rendered SVG, so pixel or markup equality is never the goal. What follows
 is where the *drawn* result differs.
 
+### Products inside picture-label scripts keep an explicit `*`
+
+A symbolic product used as a sub- or superscript of a picture label
+(`Text[Superscript[e, j k L], {0, 0}]`, `Text[Subscript[e, 2 x], …]`) is
+written `j*k*L` / `2*x`, the OutputForm spelling widget labels use, where
+the front end typesets the factors separated by spaces (`j k L`, `2 x`).
+A string script (`Superscript[e, "j k L"]`) reads correctly.
+
 ### Legacy `VectorFieldPlots`` plots carry fewer options
 
 The package's `Graphics` gets `FilterRules[{opts, Options[ListVectorFieldPlot]},

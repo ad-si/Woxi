@@ -51282,14 +51282,21 @@ mod generalized_bar_chart {
   }
 
   /// A `Text` label typeset with `SuperscriptBox[d, "*"]` draws the starred
-  /// base, not the `SuperStar[d]` expression the box reads back as.
+  /// base (the star raised as a script), not the `SuperStar[d]` expression
+  /// the box reads back as.
   #[test]
   fn text_label_with_star_superscript_box() {
     let svg = export_svg(
       r#"Graphics[Text["\!\(\*SubscriptBox[SuperscriptBox[\(d\), \(*\)], \(hkl\)]\)", {0, 0}]]"#,
     );
     assert!(!svg.contains("SuperStar"), "{svg}");
-    assert!(svg.contains("d^*"), "{svg}");
+    assert!(
+      svg.contains(
+        "d<tspan baseline-shift=\"super\" font-size=\"70%\">*</tspan>\
+         <tspan baseline-shift=\"sub\" font-size=\"70%\">hkl</tspan>"
+      ),
+      "{svg}"
+    );
   }
 
   #[test]
