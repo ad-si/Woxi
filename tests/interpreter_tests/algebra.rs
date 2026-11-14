@@ -26737,3 +26737,27 @@ fn factor_terms_list_sign_follows_canonical_variable_order() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+// With symbolic coefficients the Euclidean remainders are rational functions
+// whose zero coefficients only show after canceling; uncanceled, the loop
+// never saw a zero remainder and ran on with growing expressions (a hang
+// found by the interpret fuzzer). wolframscript-verified.
+#[test]
+fn polynomial_extended_gcd_symbolic_coefficients_terminate() {
+  for (code, expected) in [
+    (
+      "PolynomialExtendedGCD[x^3 a + 1, x^2 + 1, x]",
+      "{1, {(1 + a*x)/(1 + a^2), (a^2 - a*x - a^2*x^2)/(1 + a^2)}}",
+    ),
+    (
+      "PolynomialExtendedGCD[(x - a) (x - b), (x - a) (x + b), x]",
+      "{-a + x, {-1/2*1/b, 1/(2*b)}}",
+    ),
+    (
+      "PolynomialExtendedGCD[x^2 + a, x + 1, x]",
+      "{1, {(1 + a)^(-1), (1 - x)/(1 + a)}}",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

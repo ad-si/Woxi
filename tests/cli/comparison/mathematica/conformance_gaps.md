@@ -903,6 +903,24 @@ woxi eval 'TrigExpand[1 + Tan[2 x]]'
 Found by the differential fuzzer (2026-11-12). WL puts the whole sum over
 the common denominator and splits it by the numerator's monomials.
 
+### `PolynomialExtendedGCD` cofactor forms
+
+```sh
+wolframscript -code 'PolynomialExtendedGCD[a x + b, c x + d, x]'
+# {1, {-(c/(-(b*c) + a*d)), a/(-(b*c) + a*d)}}
+woxi eval 'PolynomialExtendedGCD[a x + b, c x + d, x]'
+# {1, {c/(b*c - a*d), -(a/(b*c - a*d))}}
+wolframscript -code 'PolynomialExtendedGCD[2 x^5 - 2 x, (x^2 - 1)^2, x]'
+# {-1 + x^2, {x/4, (-4 - 2*x^2)/4}}
+woxi eval 'PolynomialExtendedGCD[2 x^5 - 2 x, (x^2 - 1)^2, x]'
+# {-1 + x^2, {x/4, (-2 - x^2)/2}}
+```
+
+The values are equal. Woxi passes each cofactor through `Together` (which
+agrees with wolframscript's `Together` on them); wolframscript returns the
+cofactors in forms its `Together` would not produce, including the unreduced
+`(-4 - 2*x^2)/4`.
+
 ### `Simplify` expands factored denominators that wolframscript keeps
 
 ```sh
@@ -1686,6 +1704,26 @@ resolution near 1.7e9 is ~2.4e-7 s, so averaging instants that carry fractional
 seconds differs from wolframscript's exact mean in the 8th decimal. A midpoint
 that lands on a whole second *is* reported exactly, as an integer, matching
 wolframscript.
+
+### Dates before year 1 and beyond 2^53
+
+```sh
+wolframscript -code 'DateString[{-500, 3, 1}]'   # Fri 1 Mar 500 BC 00:00:00
+woxi eval 'DateString[{-500, 3, 1}]'             # Fri 1 Mar -500 00:00:00
+wolframscript -code 'DateList[-10^12]'           # {-29790, 4, 6, 22, 13, 20.}
+woxi eval 'DateList[-10^12]'                     # {-29789, 4, 6, 22, 13, 20.}
+```
+
+Wolfram has no year zero: year `-n` is n BC (astronomical `1 - n`), and 0 reads
+as -1. Woxi's date arithmetic treats negative years as astronomical, so only
+`JulianDate` and the weekday (`DayName`, `DateString`'s day name) follow the BC
+convention; day counts across year 0 and the "BC" spelling do not.
+
+Date components travel as `f64`, so a year beyond 2^53 is not read at all:
+`DateString[{200000000000000000007, 4, 15}, "ISODate"]` stays unevaluated where
+wolframscript prints `+200000000000000000007-04-15` (found by the interpret
+fuzzer, which used to hang on it). Past 2^31 wolframscript's own weekday
+formats wrap (`DateString[{10^12, 4, 15}]` prints year `-727379968`).
 
 ### Image filters accumulate in a different width
 
