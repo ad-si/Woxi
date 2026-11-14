@@ -2410,7 +2410,8 @@ mod graphics {
     /// Under `ImageSize -> {w, h}` with an explicit `AspectRatio` the drawing
     /// area is letterboxed; a label that fits into the spare room beside it
     /// does not widen the plot range (the range is just the anchors and the
-    /// rectangle, padded by 1/48 of the width on each side).
+    /// rectangle, padded by 1/48 of the width on each side and by the same
+    /// margin in pixels above and below).
     #[test]
     fn letterboxed_label_spills_into_spare_room() {
       let svg = export_svg(
@@ -2418,9 +2419,45 @@ mod graphics {
          AspectRatio -> 1, ImageSize -> {400, 200}]",
       );
       assert!(
-        svg.contains("<rect x=\"3.98\" y=\"5.63\" width=\"127.36\""),
+        svg.contains("<rect x=\"3.98\" y=\"3.82\" width=\"127.36\""),
         "{svg}"
       );
+    }
+
+    /// With an explicit `AspectRatio` the axes are scaled independently, so
+    /// the default padding must leave the same margin in pixels above and
+    /// below the data as beside it, whatever the ratio of the data spans.
+    /// It used to take the vertical margin from the horizontal data span,
+    /// burying a 0..180 high bar under a ±2*10^7 range when the bars were
+    /// 10^9 wide, and clipping tall bars when they were narrow.
+    #[test]
+    fn explicit_aspect_ratio_pads_axes_by_equal_pixel_margins() {
+      let margins = |code: &str| {
+        let svg = export_svg(code);
+        let num = |s: &str, key: &str| -> f64 {
+          let start = s.find(&format!("{key}=\"")).unwrap() + key.len() + 2;
+          let rest = &s[start..];
+          rest[..rest.find('"').unwrap()].parse().unwrap()
+        };
+        let rects: Vec<&str> = svg.split("<rect ").skip(1).collect();
+        let (area, data) = (rects[0], rects[1]);
+        let (aw, ah) = (num(area, "width"), num(area, "height"));
+        let (x, y) = (num(data, "x"), num(data, "y"));
+        let (w, h) = (num(data, "width"), num(data, "height"));
+        (x, aw - x - w, y, ah - y - h)
+      };
+      for code in [
+        "Graphics[Rectangle[{0, 0}, {1.*^9, 180}], Frame -> True, \
+         AspectRatio -> 0.7]",
+        "Graphics[Rectangle[{0, 0}, {0.04, 47}], Frame -> True, \
+         AspectRatio -> 0.7]",
+        "Graphics[Rectangle[{-3, 2}, {5, 2.5}], AspectRatio -> 2]",
+      ] {
+        let (left, right, top, bottom) = margins(code);
+        assert!(left > 1.0 && (left - right).abs() < 0.02, "{code}");
+        assert!((top - bottom).abs() < 0.02, "{code}");
+        assert!((top - 0.96 * left).abs() < 0.05, "{code}: {top} {left}");
+      }
     }
 
     /// A label's inline box notation is measured by the characters it
