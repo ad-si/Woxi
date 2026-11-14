@@ -5085,6 +5085,60 @@ mod plot_body_with_large_shared_data {
   }
 }
 
+// A held plot body naming symbols whose values are expressions in the plot
+// variables (`c = Sqrt[9 v^2 - a^2]` with `a` itself in `u` and `v`) is
+// compiled through those values instead of evaluating every sample
+// symbolically, which made a surface plot of such a body ~70x slower.
+mod plot_body_symbols_holding_variable_expressions {
+  use super::*;
+
+  const DEFS: &str = "Clear[u, v]; a = 3 v Cos[2 u]; b = a Sin[1/3]; \
+    c = Sqrt[9 v^2 - a^2]; d = ArcSin[b/c] + u;";
+
+  #[test]
+  fn held_body_matches_evaluated_body() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{DEFS} ParametricPlot3D[{{c Cos[d], c Sin[d], 2 - a}}, \
+         {{u, 0, 1}}, {{v, 0, 1}}] === ParametricPlot3D[\
+         Evaluate[{{c Cos[d], c Sin[d], 2 - a}}], {{u, 0, 1}}, {{v, 0, 1}}]"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn held_body_is_as_fast_as_evaluated_body() {
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "{DEFS} held = First[AbsoluteTiming[ParametricPlot3D[\
+         {{c Cos[d], c Sin[d], 2 - a}}, {{u, 0, 1}}, {{v, 0, 1}}];]]; \
+         evaluated = First[AbsoluteTiming[ParametricPlot3D[\
+         Evaluate[{{c Cos[d], c Sin[d], 2 - a}}], {{u, 0, 1}}, {{v, 0, 1}}];]]; \
+         held < 5 evaluated + 0.5"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn plot_of_symbol_chain_in_the_variable() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Clear[x]; p = x^2; q = p + 1; \
+         Plot[q, {x, 0, 1}] === Plot[Evaluate[q], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 // A plot evaluates its options once, so the body of a
 // `ColorFunction -> (Evaluate[…] &)` is computed once, not per sample
 // point (Demonstration PositionDependentOpacity ran an NIntegrate there).
