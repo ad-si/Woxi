@@ -10952,10 +10952,13 @@ fn graphics_decorations(
       .map(|v| (v, svg_escape(&format_tick_in_sequence(v, step))))
       .collect::<Vec<_>>()
   };
-  // A text label's size, or a picture label's own.
+  // A text label's size (a `Style[label, size]` label at its own size),
+  // or a picture label's own.
   let measure = |markup: &str| {
     axes_label_picture_size(markup).unwrap_or_else(|| {
-      (text_width(markup, LABEL_FONT), line_height(LABEL_FONT))
+      let size = crate::functions::plot_padding::markup_font_size(markup)
+        .unwrap_or(LABEL_FONT);
+      (text_width(markup, size), line_height(size))
     })
   };
   let axis_x_data = origin.0.unwrap_or(if bb.x_min <= 0.0 && 0.0 <= bb.x_max {
