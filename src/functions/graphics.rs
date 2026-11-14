@@ -25532,10 +25532,17 @@ fn grid_svg_styled_internal_reporting(
   // carrying inline linear syntax (`\!\(…\)`) is a typeset formula: its
   // markup is far longer than what is shown, and breaking it at a space
   // would split the box structure, so it is left whole.
+  // A cell merged across further columns (`SpanFromLeft`) wraps to the
+  // width of the whole span; a span over a content-sized column is not
+  // wrapped at all, since that column grows with its contents.
   if item_size_w.is_some() {
     for row in &mut rows {
-      for (j, cell) in row.iter_mut().enumerate() {
-        if let Some(w) = item_size_at(&item_size_w, j, num_cols)
+      for j in 0..row.len() {
+        let span_w: Option<f64> = (j..j + span_width(row, j))
+          .map(|k| item_size_at(&item_size_w, k, num_cols))
+          .sum();
+        let cell = &mut row[j];
+        if let Some(w) = span_w
           && let Expr::String(text) = &*cell
           && !text.contains(crate::functions::string_ast::BOX_START)
         {
