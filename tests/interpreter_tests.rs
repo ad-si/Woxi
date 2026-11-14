@@ -4894,7 +4894,7 @@ mod interpreter_tests {
     for (_, code) in &spec.dynamic_labels {
       let (runs, svg) =
         woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
-      assert!(runs.is_empty());
+      assert!(runs.is_empty(), "a picture caption has no text: {runs:?}");
       assert!(svg.is_some_and(|s| s.starts_with("<svg")), "{code}");
     }
     interpret("Clear[a]").unwrap();
