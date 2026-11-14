@@ -546,8 +546,162 @@ fn record_property(
       Some(png) => crate::functions::image_ast::import_image_from_bytes(&png)?,
       None => missing("NotAvailable", property),
     },
-    _ => return Ok(None),
+    _ => match indicator_unit(property) {
+      Some(unit) => match indicator_value(r.entity, property) {
+        Some(v) => indicator_quantity(unit, v)?,
+        None => missing("NotAvailable", property),
+      },
+      None => return Ok(None),
+    },
   }))
+}
+
+/// How the value of a property of `resources/country_indicators.tsv.gz`
+/// is expressed.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum IndicatorUnit {
+  /// `Quantity[n, "People"]`
+  People,
+  /// `Quantity[n, "People"/"Years"]`
+  PeoplePerYear,
+  /// `Quantity[x, 1/"Years"]` — a yearly rate as a fraction.
+  PerYear,
+  /// `Quantity[x, "Years"]`
+  Years,
+  /// `Quantity[x, "USDollars"/"Years"]`
+  DollarsPerYear,
+  /// `Quantity[x, "USDollars"]`
+  Dollars,
+  /// `Quantity[x, "Kilometers"]`
+  Kilometers,
+  /// A plain integer count.
+  Count,
+  /// A plain real number (fractions, indices, fertility rates).
+  Number,
+}
+
+/// The unit of a property answered from the indicator table, or `None`
+/// for properties the table does not cover.
+fn indicator_unit(property: &str) -> Option<IndicatorUnit> {
+  use IndicatorUnit::{
+    Count, Dollars, DollarsPerYear, Kilometers, Number, People, PeoplePerYear,
+    PerYear, Years,
+  };
+  Some(match property {
+    "ChildPopulation"
+    | "AdultPopulation"
+    | "ElderlyPopulation"
+    | "FemalePopulation"
+    | "FemaleChildPopulation"
+    | "FemaleAdultPopulation"
+    | "FemaleElderlyPopulation"
+    | "MalePopulation"
+    | "MaleChildPopulation"
+    | "MaleAdultPopulation"
+    | "MaleElderlyPopulation"
+    | "LaborForce"
+    | "InternetUsers" => People,
+    "AnnualBirths" | "AnnualDeaths" => PeoplePerYear,
+    "PopulationGrowth"
+    | "BirthRateFraction"
+    | "DeathRateFraction"
+    | "MigrationRateFraction"
+    | "GDPRealGrowth"
+    | "IndustrialProductionGrowth"
+    | "InflationRate" => PerYear,
+    "LifeExpectancy" | "FemaleLifeExpectancy" | "MaleLifeExpectancy" => Years,
+    "CurrentAccountBalance"
+    | "EconomicAid"
+    | "GDPAtParity"
+    | "ManufacturingValueAdded"
+    | "NationalIncome"
+    | "AgriculturalValueAdded"
+    | "IndustrialValueAdded"
+    | "TotalConsumption"
+    | "HouseholdConsumption"
+    | "GovernmentConsumption"
+    | "GrossInvestment"
+    | "FixedInvestment"
+    | "ExportValue"
+    | "ImportValue"
+    | "InventoryChange" => DollarsPerYear,
+    "ExternalDebt" | "ForeignExchangeReserves" => Dollars,
+    "RailwayLength" => Kilometers,
+    "PhoneLines" | "CellularPhones" => Count,
+    "TotalFertilityRate"
+    | "InfantMortalityFraction"
+    | "FemaleInfantMortalityFraction"
+    | "MaleInfantMortalityFraction"
+    | "HIVAIDSFraction"
+    | "LiteracyFraction"
+    | "FemaleLiteracyFraction"
+    | "MaleLiteracyFraction"
+    | "UnemploymentFraction"
+    | "PovertyFraction"
+    | "GiniIndex" => Number,
+    _ => return None,
+  })
+}
+
+fn indicator_quantity(
+  unit: IndicatorUnit,
+  v: f64,
+) -> Result<Expr, InterpreterError> {
+  use IndicatorUnit::{
+    Count, Dollars, DollarsPerYear, Kilometers, Number, People, PeoplePerYear,
+    PerYear, Years,
+  };
+  let int = || Expr::Integer(v.round() as i128);
+  Ok(match unit {
+    People => make_quantity(int(), "People"),
+    PeoplePerYear => quantity_in(int(), "\"People\"/\"Years\"")?,
+    PerYear => quantity_in(Expr::Real(v), "1/\"Years\"")?,
+    Years => make_quantity(Expr::Real(v), "Years"),
+    DollarsPerYear => quantity_in(Expr::Real(v), "\"USDollars\"/\"Years\"")?,
+    Dollars => make_quantity(Expr::Real(v), "USDollars"),
+    Kilometers => make_quantity(Expr::Real(v), "Kilometers"),
+    Count => int(),
+    Number => Expr::Real(v),
+  })
+}
+
+/// The indicator table: property names from its header line, and each
+/// country's latest values (see `scripts/gen_country_indicators.py`).
+struct Indicators {
+  properties: Vec<&'static str>,
+  rows: std::collections::HashMap<&'static str, Vec<Option<f64>>>,
+}
+
+static INDICATORS: std::sync::LazyLock<Indicators> =
+  std::sync::LazyLock::new(|| {
+    use flate2::read::GzDecoder;
+    use std::io::Read;
+    let compressed =
+      include_bytes!("../../resources/country_indicators.tsv.gz");
+    let mut text = String::new();
+    GzDecoder::new(&compressed[..])
+      .read_to_string(&mut text)
+      .expect("country_indicators.tsv.gz is valid gzip");
+    let text: &'static str = Box::leak(text.into_boxed_str());
+    let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+    let properties = lines
+      .next()
+      .map_or_default(|h| h.split('\t').skip(1).collect());
+    let rows = lines
+      .filter_map(|line| {
+        let mut f = line.split('\t');
+        let entity = f.next().filter(|e| !e.is_empty())?;
+        Some((entity, f.map(|v| v.parse().ok()).collect()))
+      })
+      .collect();
+    Indicators { properties, rows }
+  });
+
+/// The latest value of an indicator-table property of a country.
+fn indicator_value(entity: &str, property: &str) -> Option<f64> {
+  let table = &*INDICATORS;
+  let col = table.properties.iter().position(|p| *p == property)?;
+  table.rows.get(entity)?.get(col).copied().flatten()
 }
 
 /// Base64-encoded PNG flags keyed by entity name, from
