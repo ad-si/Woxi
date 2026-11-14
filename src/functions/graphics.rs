@@ -8083,47 +8083,11 @@ fn parse_bspline(
   if let Some(pts) = expr_to_point_list(&args[0])
     && pts.len() >= 2
   {
-    // Check for SplineClosed -> True option
-    let closed = args.iter().skip(1).any(|arg| {
-      matches!(arg,
-        Expr::Rule { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineClosed")
-          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
-      )
-    });
-
-    let degree = spline_degree_from_args(&args[1..], pts.len());
-    // `SplineWeights -> {w1, …}`: one weight per control point, making the
-    // curve rational (a heavier point pulls the curve toward itself).
-    let weights: Option<Vec<f64>> = args[1..].iter().find_map(|a| {
-      let (name, value) = option_name_value(a)?;
-      match value.as_ref() {
-        Expr::List(ws) if name == "SplineWeights" && ws.len() == pts.len() => {
-          ws.iter().map(expr_to_f64).collect()
-        }
-        _ => None,
-      }
-    });
-    // A closed spline is periodic: the leading control points wrap onto
-    // the end and the knots are uniform, so no control point is
-    // interpolated. `SplineKnots -> "Unclamped"` gives an open curve the
-    // same uniform knots.
-    let wrap = |n: usize| if closed { n + degree } else { n };
-    let control: Vec<(f64, f64)> =
-      (0..wrap(pts.len())).map(|i| pts[i % pts.len()]).collect();
-    let weights: Option<Vec<f64>> =
-      weights.map(|ws| (0..wrap(ws.len())).map(|i| ws[i % ws.len()]).collect());
-    let clamped = !closed && !spline_knots_unclamped(&args[1..]);
-
-    // An explicit numeric knot vector (`SplineKnots -> {u0, ..., um}`) fixes
-    // the basis; it needs exactly n + degree + 1 non-decreasing knots.
-    let basis = match spline_knots_list(&args[1..]) {
-      Some(knots) if !closed && knots.len() == control.len() + degree + 1 => {
-        bspline_sample_weights_with_knots(control.len(), degree, 200, &knots)
-      }
-      _ => bspline_sample_weights(control.len(), degree, 200, clamped),
-    };
-    let sampled = combine_bspline(&control, weights.as_deref(), &basis);
+    let control: Vec<Vec<f64>> = pts.iter().map(|&(x, y)| vec![x, y]).collect();
+    let sampled = sample_bspline_curve(&control, &args[1..], 200)
+      .into_iter()
+      .map(|p| (p[0], p[1]))
+      .collect();
     prims.push(Primitive::Line {
       segments: vec![sampled],
       vertex_colors: None,
@@ -8132,28 +8096,73 @@ fn parse_bspline(
   }
 }
 
-/// The curve points of B-spline basis rows over `control_points`, made
-/// rational by the per-point `weights` when given.
-fn combine_bspline(
-  control_points: &[(f64, f64)],
-  weights: Option<&[f64]>,
-  basis: &[Vec<f64>],
-) -> Vec<(f64, f64)> {
+/// Sample the curve a `BSplineCurve[control, opts…]` stands for at
+/// `samples` parameter values. Works for control points of any dimension
+/// (2-D and 3-D curves share it) and honors the spline options:
+///
+/// - `SplineDegree -> d` (default `min(3, n - 1)`),
+/// - `SplineClosed -> True`: the curve is periodic, the leading control
+///   points wrap onto the end and the knots are uniform,
+/// - `SplineWeights -> {w1, …}`: one weight per control point, making the
+///   curve rational (a heavier point pulls the curve toward itself),
+/// - `SplineKnots -> "Unclamped"` (uniform knots on an open curve) or an
+///   explicit knot vector of `n + d + 1` non-decreasing values.
+pub(crate) fn sample_bspline_curve(
+  control: &[Vec<f64>],
+  opts: &[Expr],
+  samples: usize,
+) -> Vec<Vec<f64>> {
+  if control.len() < 2 {
+    return control.to_vec();
+  }
+  let closed = spline_closed(opts);
+  let degree = spline_degree_from_args(opts, control.len());
+  let weights: Option<Vec<f64>> = opts.iter().find_map(|a| {
+    let (name, value) = option_name_value(a)?;
+    match value.as_ref() {
+      Expr::List(ws)
+        if name == "SplineWeights" && ws.len() == control.len() =>
+      {
+        ws.iter()
+          .map(|w| expr_to_f64(w).or_else(|| try_eval_to_f64(w)))
+          .collect()
+      }
+      _ => None,
+    }
+  });
+  let wrap = |n: usize| if closed { n + degree } else { n };
+  let points: Vec<&Vec<f64>> = (0..wrap(control.len()))
+    .map(|i| &control[i % control.len()])
+    .collect();
+  let weights: Option<Vec<f64>> =
+    weights.map(|ws| (0..wrap(ws.len())).map(|i| ws[i % ws.len()]).collect());
+  let clamped = !closed && !spline_knots_unclamped(opts);
+  let basis = match spline_knots_list(opts) {
+    Some(knots) if !closed && knots.len() == points.len() + degree + 1 => {
+      bspline_sample_weights_with_knots(points.len(), degree, samples, &knots)
+    }
+    _ => bspline_sample_weights(points.len(), degree, samples, clamped),
+  };
+  let dim = control[0].len();
   basis
     .iter()
     .map(|row| {
-      let (mut x, mut y, mut total) = (0.0, 0.0, 0.0);
-      for (j, (b, p)) in row.iter().zip(control_points).enumerate() {
-        let w = b * weights.map_or(1.0, |ws| ws[j]);
-        x += w * p.0;
-        y += w * p.1;
+      let mut acc = vec![0.0; dim];
+      let mut total = 0.0;
+      for (j, (b, p)) in row.iter().zip(&points).enumerate() {
+        let w = b * weights.as_ref().map_or(1.0, |ws| ws[j]);
+        if w == 0.0 {
+          continue;
+        }
+        for (a, c) in acc.iter_mut().zip(p.iter()) {
+          *a += w * c;
+        }
         total += w;
       }
       if weights.is_some() && total != 0.0 {
-        (x / total, y / total)
-      } else {
-        (x, y)
+        acc.iter_mut().for_each(|a| *a /= total);
       }
+      acc
     })
     .collect()
 }
@@ -8286,6 +8295,16 @@ pub(crate) fn spline_knots_list(args: &[Expr]) -> Option<Vec<f64>> {
       }
     }
     _ => None,
+  })
+}
+
+/// Whether an option list asks for a periodic `SplineClosed -> True` curve.
+pub(crate) fn spline_closed(opts: &[Expr]) -> bool {
+  opts.iter().any(|arg| {
+    matches!(arg,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineClosed")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
   })
 }
 
