@@ -7,6 +7,6 @@ expression: "export_svg(\"Graphics[{Line[{{0, 0}, {1, 1}, {2, 0}}]}]\")"
 <clipPath id="plotClip_359x186"><rect x="0" y="0" width="359.00" height="186.11"/></clipPath>
 </defs>
 <g clip-path="url(#plotClip_359x186)">
-<polyline points="7.18,179.21 179.50,6.89 351.82,179.21" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
+<polyline points="7.18,179.21 179.50,6.89 351.82,179.21" fill="none" stroke="rgb(0,0,0)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="square"/>
 </g>
 </svg>
