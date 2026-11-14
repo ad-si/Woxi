@@ -5440,6 +5440,25 @@ mod symbolic_equal {
     );
   }
 
+  // Thousands of memoized values whose every argument holds machine reals
+  // (a shared real polygon plus a distinct real point, as a Demonstration's
+  // saved `f[poly, pt] = …` definitions are): each new one is told apart
+  // from the stored ones by its reals, not by formatting every stored key.
+  #[test]
+  fn many_memoized_all_real_arguments() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "poly = N[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]; \
+         Do[k[poly, {i/10., 0.5}] = i, {i, 4000}]; \
+         {Length[DownValues[k]], k[poly, {0.7000000000000001, 0.5}], \
+          k[poly, {0.7, 0.5000000000000002}], k[poly + 1., {0.7, 0.5}]}"
+      )
+      .unwrap(),
+      "{4000, 7, k[{{0., 0.}, {1., 0.}, {1., 1.}, {0., 1.}}, {0.7, 0.5000000000000002}], k[{{1., 1.}, {2., 1.}, {2., 2.}, {1., 2.}}, {0.7, 0.5}]}"
+    );
+  }
+
   #[test]
   fn same_q_deeply_nested_no_overflow() {
     // Depth 600 is comfortably past the old ~500-deep stack-overflow point

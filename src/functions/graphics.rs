@@ -23757,8 +23757,13 @@ fn has_stacked_inline_box(s: &str) -> bool {
 /// ordinary text.
 fn label_typesets_fraction(expr: &Expr) -> bool {
   match expr {
+    // A bare rational number has a label layout of its own (a signed
+    // stacked fraction drawn with a typeset minus sign), so it is not
+    // routed through the generic box layout, which set `-7/4` with an
+    // ASCII hyphen.
+    Expr::FunctionCall { name, .. } if name == "Rational" => false,
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Times" | "Power" | "Rational" | "Plus")
+      if matches!(name.as_str(), "Times" | "Power" | "Plus")
         && !has_string_operand(expr) =>
     {
       box_has_fraction(

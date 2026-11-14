@@ -2301,23 +2301,28 @@ pub fn memo_key<S: std::hash::BuildHasher>(
   if cache.contains_key(&key) || !real_at.iter().any(|&r| r) {
     return key;
   }
+  // Check the positions holding reals first, shortest spelling first, on
+  // the stored expressions themselves: most entries differ there, and
+  // rejecting them that way touches a few numbers instead of splitting
+  // and comparing every stored key (thousands of saved memoized values
+  // made each new definition quadratic). The other positions are compared
+  // by spelling only for the entries that survive.
+  let mut real_positions: Vec<usize> =
+    (0..args.len()).filter(|&i| real_at[i]).collect();
+  real_positions.sort_by_key(|&i| parts[i].len());
   cache
     .iter()
     .find(|(k, (stored, _))| {
       stored.len() == args.len()
+        && real_positions.iter().all(|&i| {
+          functions::boolean_ast::same_with_tolerant_reals(&stored[i], &args[i])
+        })
         && k.split('\u{1}').count() == parts.len()
         && k
           .split('\u{1}')
           .zip(&parts)
           .zip(&real_at)
-          .zip(stored.iter().zip(args))
-          .all(|(((kp, p), &real), (s, a))| {
-            if real {
-              kp == p || functions::boolean_ast::same_with_tolerant_reals(s, a)
-            } else {
-              kp == p
-            }
-          })
+          .all(|((kp, p), &real)| real || kp == p)
     })
     .map(|(k, _)| k.clone())
     .unwrap_or(key)
@@ -2444,7 +2449,7 @@ thread_local! {
   /// a 200 KB image literal each time cost seconds per frame. Only the parse
   /// is cached; the statements are still evaluated on every install.
   static BINDING_PARSE_CACHE: std::cell::RefCell<
-    std::collections::HashMap<String, std::rc::Rc<Vec<syntax::Expr>>>,
+    std::collections::HashMap<String, std::rc::Rc<Vec<(usize, syntax::Expr)>>>,
   > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -2459,7 +2464,8 @@ fn scoped_binding_value(source: &str) -> Option<syntax::Expr> {
   let statements = if let Some(statements) = cached {
     statements
   } else {
-    let statements = std::rc::Rc::new(parse_statements(source).ok()?);
+    let statements =
+      std::rc::Rc::new(parse_statements_with_lines(source).ok()?);
     BINDING_PARSE_CACHE.with(|c| {
       let mut cache = c.borrow_mut();
       if cache.len() >= 64 {
@@ -7561,6 +7567,20 @@ pub(crate) fn normalize_source(input: &str) -> String {
 fn parse_statements(
   input: &str,
 ) -> Result<Vec<syntax::Expr>, InterpreterError> {
+  Ok(
+    parse_statements_with_lines(input)?
+      .into_iter()
+      .map(|(_, expr)| expr)
+      .collect(),
+  )
+}
+
+/// Parse source text into its statements, each with the source line it
+/// starts on (the input unit its names are resolved in, see
+/// [`evaluate_statements`]).
+fn parse_statements_with_lines(
+  input: &str,
+) -> Result<Vec<(usize, syntax::Expr)>, InterpreterError> {
   let normalized = normalize_source(input);
   // A large literal — the data matrix a Manipulate control holds, or a
   // table a notebook defines — parses directly; pest's per-character rule
@@ -7568,7 +7588,7 @@ fn parse_statements(
   if normalized.len() > 512
     && let Some(expr) = syntax::parse_literal_data(&normalized)
   {
-    return Ok(vec![expr]);
+    return Ok(vec![(1, expr)]);
   }
   let (normalized, hoisted_keys) =
     match syntax::hoist_large_literals(&normalized) {
@@ -7590,7 +7610,12 @@ fn parse_statements(
       program
         .into_inner()
         .filter(|node| is_statement_rule(node.as_rule()))
-        .map(syntax::pair_to_expr)
+        .map(|node| {
+          (
+            node.as_span().start_pos().line_col().0,
+            syntax::pair_to_expr(node),
+          )
+        })
         .collect(),
     )
   })();
@@ -7617,17 +7642,40 @@ pub fn interpret_to_expr(
   // Returning at the first `Expression` made `"a = 1; {a}"` come back as `1`,
   // and skipping the other `Statement` alternatives dropped a definition
   // whose left side carries a pattern (`f[x_] := …`) on the floor.
-  evaluate_statements(&parse_statements(input)?)
+  evaluate_statements(&parse_statements_with_lines(input)?)
 }
 
 /// Evaluate parsed statements in order and return the last value.
+///
+/// Names are resolved as `interpret` resolves them: a whole source line at
+/// once, against the contexts open when that line starts. So a symbol a
+/// package loaded on an earlier line exports (`ConvexHull` after
+/// `Needs["ComputationalGeometry`"]`) is that package's symbol, not a fresh
+/// `Global`` one.
 fn evaluate_statements(
-  statements: &[syntax::Expr],
+  statements: &[(usize, syntax::Expr)],
 ) -> Result<syntax::Expr, InterpreterError> {
   with_entry_stack(|| {
     let mut last: Option<syntax::Expr> = None;
-    for expr in statements {
-      last = Some(settle_termination(evaluator::evaluate_expr_to_expr(expr))?);
+    let mut resolved: Vec<syntax::Expr> = Vec::new();
+    let mut idx = 0;
+    while idx < statements.len() {
+      let line = statements[idx].0;
+      let line_end = statements[idx..]
+        .iter()
+        .position(|(l, _)| *l != line)
+        .map_or(statements.len(), |n| idx + n);
+      resolved.clear();
+      resolved.extend(
+        statements[idx..line_end]
+          .iter()
+          .map(|(_, expr)| evaluator::contexts::rewrite(expr)),
+      );
+      for expr in &resolved {
+        last =
+          Some(settle_termination(evaluator::evaluate_expr_to_expr(expr))?);
+      }
+      idx = line_end;
     }
     last.ok_or(InterpreterError::EmptyInput)
   })

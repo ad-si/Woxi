@@ -162,3 +162,32 @@ fn character_escapes_expand_to_their_characters() {
   // 1) — a Demonstration data literal's usual way of writing one.
   assert_eq!(run(r#"StringLength["\|013362"]"#), "1");
 }
+
+/// Names are resolved against the contexts open when their line is read, as
+/// `interpret` resolves them. A symbol a package loaded by an earlier input
+/// exports used to come back as a fresh `Global`` symbol here, so a
+/// Studio `Manipulate` whose body calls the package's `ConvexHull` built
+/// its controls from a body that called an undefined function.
+#[test]
+fn package_exports_resolve_to_the_package_symbol() {
+  woxi::clear_state();
+  run("Needs[\"ComputationalGeometry`\"]");
+  assert_eq!(run("Context[ConvexHull]"), "\"ComputationalGeometry`\"");
+  assert_eq!(run("Hold[ConvexHull[x]]"), "Hold[ConvexHull[x]]");
+  assert_eq!(
+    run("ConvexHull[{{0, 0}, {2, 0}, {1, 1}, {2, 2}, {0, 2}}]"),
+    "{2, 4, 5, 1}"
+  );
+  // A later line of one input sees what an earlier line loaded; the same
+  // line does not (it was read before the package was).
+  woxi::clear_state();
+  assert_eq!(
+    run("Needs[\"ComputationalGeometry`\"]\nContext[ConvexHull]"),
+    "\"ComputationalGeometry`\""
+  );
+  woxi::clear_state();
+  assert_eq!(
+    run("Needs[\"ComputationalGeometry`\"]; Context[ConvexHull]"),
+    "\"Global`\""
+  );
+}
