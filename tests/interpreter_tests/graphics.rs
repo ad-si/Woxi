@@ -56919,3 +56919,31 @@ mod repeated_graphics_options {
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
   }
 }
+
+/// A `Text` label offset past its edge (`{2, -1}`) is moved by its own
+/// width. A subscript (`H_C`) is set at a smaller size and its lowering
+/// markers draw nothing, so it moves less than two full characters; it was
+/// measured as four characters and landed far from its point.
+#[test]
+fn text_offset_measures_a_subscripted_label_by_its_drawn_width() {
+  let center_x = |label: &str| -> f64 {
+    let svg = export_svg(&format!(
+      "Graphics[{{Text[{label}, {{0, 0}}, {{2, -1}}]}}, \
+       PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}, ImageSize -> 200]"
+    ));
+    let start = svg.rfind("<text").unwrap();
+    let tag = &svg[start..];
+    let x = tag.split("x=\"").nth(1).unwrap();
+    x[..x.find('"').unwrap()].parse().unwrap()
+  };
+  let plain_one = 100.0 - center_x("\"H\"");
+  let plain_two = 100.0 - center_x("\"HC\"");
+  let subscripted = 100.0 - center_x("Subscript[\"H\", \"C\"]");
+  assert!(
+    subscripted > plain_one && subscripted < plain_two,
+    "shift {subscripted} should lie between {plain_one} and {plain_two}"
+  );
+  // A digit subscript drawn as a Unicode script glyph (`X₅`) is small too.
+  let digit = 100.0 - center_x("Subscript[\"X\", \"5\"]");
+  assert!(digit > plain_one && digit < plain_two, "{digit}");
+}

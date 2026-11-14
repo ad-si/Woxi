@@ -13030,11 +13030,9 @@ fn render_primitive(
       // vertical sign flips, SVG counting y downwards).
       let longest = text
         .split('\n')
-        .map(str::chars)
-        .map(Iterator::count)
-        .max()
-        .unwrap_or(0);
-      let text_w = longest as f64 * fs * 0.6;
+        .map(label_line_width_units)
+        .fold(0.0, f64::max);
+      let text_w = longest * fs * 0.6;
       let text_h = text.split('\n').count() as f64 * fs;
       let (ax, ay) = resolve_anchor(*x, *y, *scaled, bb);
       let ax = ax + style.text_scaled_shift.0 * bb.width();
@@ -13173,7 +13171,7 @@ fn render_primitive(
           LabelRow::Fraction(..) => 2.2 * fs,
         };
         let total: f64 = rows.iter().map(row_height).sum();
-        let half_width = longest as f64 * fs * 0.5 / 2.0;
+        let half_width = longest * fs * 0.5 / 2.0;
         let mut y = sy - total / 2.0;
         out.push_str(&format!("<g{rotate_attr}>"));
         for row in &rows {
@@ -13222,8 +13220,8 @@ fn render_primitive(
         // Left/right-aligned lines hang from the block's edge, half of its
         // (estimated) width either side of the anchor.
         let (line_anchor, sx) = match style.text_line_anchor {
-          Some("start") => ("start", sx - longest as f64 * fs * 0.5 / 2.0),
-          Some(_) => ("end", sx + longest as f64 * fs * 0.5 / 2.0),
+          Some("start") => ("start", sx - longest * fs * 0.5 / 2.0),
+          Some(_) => ("end", sx + longest * fs * 0.5 / 2.0),
           None => ("middle", sx),
         };
         out.push_str(&format!(
@@ -43127,6 +43125,35 @@ fn picture_subscript_needs_lowering(script: &str) -> bool {
   script
     .chars()
     .any(|c| c.is_alphabetic() || unicode_script_char(c, false).is_none())
+}
+
+/// How many full-size characters a one-line picture label is wide: the
+/// [`SUBSCRIPT_START`]-style markers draw nothing, and a lowered or raised
+/// script (a marked run, or a Unicode sub-/superscript glyph such as `₅`)
+/// is set at 70 % of the label's size. Counting the markers and scripts as
+/// full characters overestimated a label like `H_C` at almost twice its
+/// width, pushing a label offset by its edge (`{2, -1}`) far off its point.
+fn label_line_width_units(line: &str) -> f64 {
+  let mut depth = 0i32;
+  let mut units = 0.0;
+  for c in line.chars() {
+    match c {
+      SUBSCRIPT_START | SUPERSCRIPT_START => depth += 1,
+      SUBSCRIPT_END | SUPERSCRIPT_END => depth = (depth - 1).max(0),
+      _ => {
+        let unicode_script = matches!(
+          c,
+          '\u{2070}'..='\u{209F}' | '\u{00B9}' | '\u{00B2}' | '\u{00B3}'
+        );
+        units += if depth > 0 || unicode_script {
+          0.7f64.powi(depth.max(1))
+        } else {
+          1.0
+        };
+      }
+    }
+  }
+  units
 }
 
 const SUBSCRIPT_START: char = '\u{E0F2}';
