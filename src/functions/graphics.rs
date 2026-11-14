@@ -23882,7 +23882,8 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
           if !args.is_empty()
             && (contains_body_button(cell)
               || contains_popup_menu(cell)
-              || contains_stacked_traditional_string(cell)) =>
+              || contains_stacked_traditional_string(cell)
+              || row_holds_block_layout(&args[0])) =>
         {
           row_to_svg(&args)?
         }
@@ -23896,6 +23897,32 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
   }
   let parsed = parse_svg_dimensions(&svg)?;
   Some((svg, parsed.nat_w, parsed.nat_h))
+}
+
+/// Whether a `Row`'s items include a nested `Grid` or `Column` (possibly
+/// styled), a block the one-line text pass cannot set: `Row[{"(",
+/// Grid[{{n}, {k}}], ")"}]` stacks `n` over `k` between the parentheses.
+fn row_holds_block_layout(items: &Expr) -> bool {
+  let Expr::List(items) = items else {
+    return false;
+  };
+  fn is_block(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args }
+        if (name == "Grid" || name == "Column")
+          && matches!(args.first(), Some(Expr::List(_))) =>
+      {
+        true
+      }
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        is_block(&args[0])
+      }
+      _ => false,
+    }
+  }
+  items.iter().any(is_block)
 }
 
 /// The per-position half of a `Spacings` spec: `{i1 -> s1, i2 -> s2, …}`
