@@ -3589,6 +3589,14 @@ mod high_level_functions {
         svg.contains("rgb(255,0,0)"),
         "BaseStyle color should reach the fraction: {svg}"
       );
+      // A fraction cell's own `Style` keeps its color, not only its size.
+      let svg =
+        interpret("ExportString[Grid[{{Style[1/2, 20, Red]}}], \"SVG\"]")
+          .unwrap();
+      assert!(
+        svg.contains("rgb(255,0,0)") && svg.contains("font-size=\"20.0\""),
+        "styled fraction cell should be red at 20 pt: {svg}"
+      );
     }
 
     #[test]

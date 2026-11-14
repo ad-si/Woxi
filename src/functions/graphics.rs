@@ -23815,14 +23815,20 @@ fn has_script_stacked_inline_box(s: &str) -> bool {
 fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   let mut content = cell;
   let mut size = 14.0;
+  // The outermost of the innermost run of style wrappers: a stacked
+  // fraction is typeset from it, so its color, weight and slant reach the
+  // numerator and denominator, not only its size.
+  let mut styled: Option<&Expr> = None;
   loop {
     match content {
       Expr::FunctionCall { name, args }
         if name == "Text" && args.len() == 1 =>
       {
         content = &args[0];
+        styled = None;
       }
       Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
+        styled = styled.or(Some(content));
         let style = extract_cell_style(content);
         size = style.font_size.unwrap_or(size);
         content = style.content;
@@ -23845,7 +23851,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     return Some(layout_to_svg(&layout, theme().text_primary));
   }
   let Expr::FunctionCall { name, args } = content else {
-    return standard_fraction_cell_svg(content, size);
+    return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   };
   // A `Row[{…}]` cell with a quotient in it (`Row[{2 a b/(a + b), S}]`, a
   // Demonstration's formula readout) is typeset 2-D, the fraction stacked,
@@ -23869,7 +23875,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     || args.len() != 1
     || matches!(args[0], Expr::String(_))
   {
-    return standard_fraction_cell_svg(content, size);
+    return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   }
   let boxes = if name == "StandardForm" {
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&args[0])
