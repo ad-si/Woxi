@@ -11508,6 +11508,53 @@ mod plot3d {
       assert!(!svg.contains("N[0.5"), "{svg}");
     }
 
+    /// The text of every `<text>` element, trimmed.
+    fn svg_text_labels(svg: &str) -> Vec<String> {
+      svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| {
+          let body = &t[t.find('>')? + 1..];
+          Some(body[..body.find("</text>")?].trim().to_string())
+        })
+        .filter(|t| !t.is_empty())
+        .collect()
+    }
+
+    // `Ticks` sets the ticks of the axes only: a framed plot keeps its
+    // automatic frame ticks, also when re-rendered by `Show`, and an
+    // explicit `FrameTicks` list still labels the frame.
+    #[test]
+    fn ticks_option_does_not_relabel_the_frame() {
+      for code in [
+        "Plot[x, {x, 0, 2}, Ticks -> {{0.3, 1.3}, {0.35}}, \
+         Frame -> True, PlotRange -> {{0, 2.1}, {0, 1.1}}]",
+        "Show[Plot[x, {x, 0, 2}, Frame -> True, \
+         Ticks -> {{0.3, 1.3}, {0.35}}, \
+         PlotRange -> {{0, 2.1}, {0, 1.1}}], ImageSize -> 300]",
+      ] {
+        let labels = svg_text_labels(&export_svg(code));
+        for label in ["0.0", "0.5", "1.0", "1.5", "2.0", "0.2", "0.8"] {
+          assert!(labels.iter().any(|l| l == label), "{label}: {labels:?}");
+        }
+        for label in ["0.3", "1.3", "0.35"] {
+          assert!(!labels.iter().any(|l| l == label), "{label}: {labels:?}");
+        }
+      }
+      // Unframed, the explicit ticks label the axes.
+      let labels = svg_text_labels(&export_svg(
+        "Plot[x, {x, 0, 2}, Ticks -> {{0.4, 1.2}}]",
+      ));
+      assert!(labels.iter().any(|l| l == "1.2"), "{labels:?}");
+      // `FrameTicks` given after `Ticks` labels the frame.
+      let labels = svg_text_labels(&export_svg(
+        "Plot[x, {x, 0, 2}, Frame -> True, Ticks -> {{0.4}}, \
+         FrameTicks -> {{{0.7, \"m\"}}, Automatic}]",
+      ));
+      assert!(labels.iter().any(|l| l == "m"), "{labels:?}");
+      assert!(!labels.iter().any(|l| l == "0.4"), "{labels:?}");
+    }
+
     // `ListPlot` honors explicit `{position, label}` ticks on the bottom
     // and left frame edges, as `Plot` does, instead of the automatic ones.
     #[test]
