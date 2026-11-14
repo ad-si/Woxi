@@ -643,7 +643,16 @@ fn row_of_text_buttons_carries_pressable_hit_regions() {
   );
   for key in ["p", "q", "r"] {
     let action = format!("typed = StringJoin[typed, \"{key}\"]");
-    let hex: String = action.bytes().map(|b| format!("{b:02x}")).collect();
+    let hex: String = action
+      .bytes()
+      .flat_map(|b| {
+        let digits = b"0123456789abcdef";
+        [
+          digits[(b >> 4) as usize] as char,
+          digits[(b & 15) as usize] as char,
+        ]
+      })
+      .collect();
     assert!(
       svg.contains(&format!("id=\"woxi-btn-{hex}\"")),
       "key {key} should press {action:?}: {svg}"
