@@ -657,8 +657,7 @@ fn parse_density_contour_options(
           };
         }
         "FrameLabel" => {
-          frame_labels = match automatic_frame_label(replacement, args, start)
-          {
+          frame_labels = match automatic_frame_label(replacement, args, start) {
             Some(labels) => crate::functions::plot::parse_frame_label(&labels),
             None => crate::functions::plot::parse_frame_label(replacement),
           };
@@ -3239,7 +3238,10 @@ pub fn with_evaluated_options(
 /// The number of samples per axis of the initial grid when the options
 /// among `args[start..]` set `MaxRecursion -> 0`: the explicit
 /// `PlotPoints -> n` (at least 2), else 15. `None` when the plot refines.
-fn initial_grid_without_recursion(args: &[Expr], start: usize) -> Option<usize> {
+fn initial_grid_without_recursion(
+  args: &[Expr],
+  start: usize,
+) -> Option<usize> {
   let option = |key: &str| {
     args.get(start..)?.iter().rev().find_map(|o| match o {
       Expr::Rule {
@@ -3249,12 +3251,10 @@ fn initial_grid_without_recursion(args: &[Expr], start: usize) -> Option<usize> 
       | Expr::RuleDelayed {
         pattern,
         replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => {
-        Some(
-          evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone()),
-        )
-      }
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      ),
       _ => None,
     })
   };

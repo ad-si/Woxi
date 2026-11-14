@@ -790,8 +790,7 @@ pub fn dispatch_plotting(
     }
     // The pre-6 `GraphicsArray` is laid out by `GraphicsGrid`, which
     // superseded it: a flat list of graphics is one row.
-    "GraphicsArray"
-      if matches!(args.first(), Some(Expr::List(items)) if !items.is_empty()) =>
+    "GraphicsArray" if matches!(args.first(), Some(Expr::List(items)) if !items.is_empty()) =>
     {
       let Some(Expr::List(items)) = args.first() else {
         unreachable!()
