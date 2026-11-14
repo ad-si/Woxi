@@ -17651,6 +17651,48 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     fn polar_plot_rose() {
       insta::assert_snapshot!(export_svg("PolarPlot[Cos[3 t], {t, 0, 2 Pi}]"));
     }
+
+    /// A spiral winding many times is refined adaptively, so each turn is
+    /// drawn smoothly rather than as a coarse polygon of grid samples.
+    #[test]
+    fn polar_plot_many_turn_spiral_is_refined() {
+      let n = interpret(
+        "Cases[Show[PolarPlot[t, {t, 0, 100 Pi}]], \
+         Line[p_] :> Length[p], Infinity][[1]]",
+      )
+      .unwrap()
+      .parse::<usize>()
+      .unwrap();
+      // 50 turns need far more than the 500-point initial grid.
+      assert!(n > 1500, "only {n} samples");
+    }
+
+    /// `ColorFunction` colors a PolarPlot curve along its length, with
+    /// `f[x, y, θ, r]` scaled over the plot by default.
+    #[test]
+    fn polar_plot_color_function_by_angle() {
+      let svg = export_svg(
+        "PolarPlot[t, {t, 0, 4 Pi}, ColorFunction -> Function[{x, y, t}, Hue[t]]]",
+      );
+      // Starts red (Hue[0]), passes through green (Hue[1/3]) and blue
+      // (Hue[2/3]), in many runs of constant color.
+      assert!(svg.contains("stroke=\"#FF0"), "{svg}");
+      assert!(svg.contains("stroke=\"#00FF"), "{svg}");
+      assert!(
+        svg.contains("stroke=\"#00") && svg.contains("FF\""),
+        "{svg}"
+      );
+      assert!(svg.matches("<polyline").count() > 100, "{svg}");
+      // The fourth argument is the radius, scaled to [0, 1].
+      let svg = export_svg(
+        "PolarPlot[2 + Cos[t], {t, 0, 2 Pi}, \
+         ColorFunction -> Function[{x, y, t, r}, GrayLevel[r]]]",
+      );
+      // r runs from 1 (black) to 3 (white).
+      assert!(svg.contains("stroke=\"#010101\""), "{svg}");
+      assert!(svg.contains("stroke=\"#FEFEFE\""), "{svg}");
+      assert!(!svg.contains("stroke=\"#3D99CC\""), "{svg}");
+    }
   }
 
   mod charts {
