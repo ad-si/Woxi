@@ -10110,6 +10110,45 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 0.1}, \"\\[Ellipsis]\"]"], "O
     let _ = render_manipulate_widget(0, widget, false);
   }
 
+  /// A widget-level `ControlPlacement -> {Top, Top, Left, Right}` lists the
+  /// sides of successive controls: two labeled sliders above the output,
+  /// one vertical slider on its left and another on its right. The body
+  /// plots a cubic together with a horizontal line through each of two
+  /// marked abscissas (independently written, not copied from any notebook).
+  /// Regression: the list form was ignored, so every row landed on top.
+  #[test]
+  fn manipulate_successive_control_placements_list() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nh[t_] := p t^3 + q t;\nGrid[{{Plot[{h[t], h[u], h[v]}, {t, -3, 3}, PlotRange -> {-30, 30}]}, {Style[\"cubic\", 14]}}],\n{{p, 1, \"p\"}, -2, 2, Appearance -> \"Labeled\"},\n{{q, 0, \"q\"}, -5, 5, Appearance -> \"Labeled\"},\n{{u, -1, \"u\"}, -3, 0, ControlType -> VerticalSlider},\n{{v, 2, \"v\"}, 0, 3, ControlType -> VerticalSlider},\nControlPlacement -> {Top, Top, Left, Right},\nTrackedSymbols :> {p, q, u, v}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`p$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let sides: Vec<(&str, manipulate::ControlPlacement)> = widget
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| (c.name(), widget.placement_of(i)))
+      .collect();
+    assert_eq!(
+      sides,
+      [
+        ("p", manipulate::ControlPlacement::Top),
+        ("q", manipulate::ControlPlacement::Top),
+        ("u", manipulate::ControlPlacement::Left),
+        ("v", manipulate::ControlPlacement::Right),
+      ]
+    );
+    let _ = render_manipulate_widget(0, widget, false);
+  }
+
   /// A slider written with a negative step (`{t, 0, Pi, -0.1}`) must step
   /// by its magnitude, and a revolved-solid body must still draw.
   #[test]
