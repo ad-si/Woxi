@@ -65,24 +65,6 @@ fn main() -> iced::Result {
     .run()
 }
 
-/// Map between a continuous control's value and its slider's track
-/// position. The two coincide for an ordinary `min..max` range; a reversed
-/// range (written high-to-low, stored sorted) mirrors the track so its
-/// first bound sits at the start, as Wolfram draws it. The mapping is its
-/// own inverse, so it converts in both directions. The track's ends map
-/// exactly onto the bounds, free of the rounding `min + max - v` leaves.
-fn slider_track_position(min: f64, max: f64, reversed: bool, v: f64) -> f64 {
-  if !reversed {
-    v
-  } else if v <= min {
-    max
-  } else if v >= max {
-    min
-  } else {
-    (min + max - v).clamp(min, max)
-  }
-}
-
 /// Application id used as the X11 `WM_CLASS` and the Wayland `app_id`.
 /// Matches the basename of `woxi-studio/linux/woxi-studio.desktop`
 /// so desktop environments can associate windows with the launcher.
@@ -4513,10 +4495,25 @@ fn render_manipulate_widget<'a>(
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
-        // A high-to-low range (`{h, -0.05, -0.5}`) runs its track from the
-        // first bound, so the widget shows and reports mirrored positions.
-        let (lo, hi, reversed) = (*min, *max, *reversed);
-        let position = slider_track_position(lo, hi, reversed, *current);
+        // A high-to-low range (`{u, 2, 0}`) runs its rail from `max` to
+        // `min`; the widget itself only takes an ascending range, so the
+        // thumb position and the reported value are mirrored.
+        let (min, max, step, reversed) = (*min, *max, *step, *reversed);
+        let position =
+          manipulate::slider_rail_position(min, max, reversed, *current);
+        let on_slide = move |v: f64| {
+          if enabled {
+            Message::ManipulateContinuousChanged(
+              cell_idx,
+              ctrl_idx,
+              manipulate::slider_value_at_rail_position(
+                min, max, step, reversed, v,
+              ),
+            )
+          } else {
+            Message::Noop
+          }
+        };
         let value_widget = text(format_slider_value(*current, *is_real))
           .size(11)
           .font(Font::MONOSPACE)
@@ -4524,20 +4521,10 @@ fn render_manipulate_widget<'a>(
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
-              iced::widget::vertical_slider(lo..=hi, position, move |v| {
-                if enabled {
-                  Message::ManipulateContinuousChanged(
-                    cell_idx,
-                    ctrl_idx,
-                    slider_track_position(lo, hi, reversed, v),
-                  )
-                } else {
-                  Message::Noop
-                }
-              })
-              .step(*step)
-              // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
-              .height(120.0);
+              iced::widget::vertical_slider(min..=max, position, on_slide)
+                .step(step)
+                // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
+                .height(120.0);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -4545,19 +4532,8 @@ fn render_manipulate_widget<'a>(
               .align_y(Center)
               .spacing(8)
           } else {
-            let mut s = slider(lo..=hi, position, move |v| {
-              if enabled {
-                Message::ManipulateContinuousChanged(
-                  cell_idx,
-                  ctrl_idx,
-                  slider_track_position(lo, hi, reversed, v),
-                )
-              } else {
-                Message::Noop
-              }
-            })
-            .step(*step)
-            .width(Fill);
+            let mut s =
+              slider(min..=max, position, on_slide).step(step).width(Fill);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -13228,12 +13204,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
     assert_eq!((lo, hi, current), (-0.5, -0.05, -0.09));
     assert!(reversed, "a high-to-low range must be flagged as reversed");
     // The thumb for -0.09 sits close to the track's start (-0.05 end).
-    let pos = slider_track_position(lo, hi, reversed, current);
+    let pos = manipulate::slider_rail_position(lo, hi, reversed, current);
     let fraction = (pos - lo) / (hi - lo);
     assert!((fraction - 0.04 / 0.45).abs() < 1e-9, "fraction {fraction}");
     // The track's start and end map back to the first and second bounds.
-    assert_eq!(slider_track_position(lo, hi, reversed, lo), hi);
-    assert_eq!(slider_track_position(lo, hi, reversed, hi), lo);
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, lo), hi);
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, hi), lo);
 
     match &state.controls[1] {
       manipulate::ControlState::Continuous { reversed, .. } => {
@@ -13241,7 +13217,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
       }
       other => panic!("unexpected control: {other:?}"),
     }
-    assert_eq!(slider_track_position(1.0, 5.0, false, 2.0), 2.0);
+    assert_eq!(manipulate::slider_rail_position(1.0, 5.0, false, 2.0), 2.0);
   }
 
   #[test]

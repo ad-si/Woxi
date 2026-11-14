@@ -49080,6 +49080,28 @@ mod manipulate_reversed_range_tests {
     );
   }
 
+  /// The sorted pair remembers that the spec ran high-to-low, so the
+  /// slider can still be drawn from the written start (`2`, left) to the
+  /// written end (`0`, right) as Wolfram does; an ascending range and a
+  /// single dynamic bound that has not settled yet are not reversed.
+  #[test]
+  fn reversed_bounds_mark_the_control_reversed() {
+    let reversed = |code: &str| {
+      let expr = crate::parse_to_expr(code).expect("parse");
+      let spec = extract_manipulate_spec(&expr).expect("extract spec");
+      match spec.controls.first() {
+        Some(ManipulateControl::Continuous { reversed, .. }) => *reversed,
+        other => panic!("expected a continuous control, got {other:?}"),
+      }
+    };
+    assert!(reversed(r#"Manipulate[w, {{w, 0, "push"}, 2, 0}]"#));
+    assert!(reversed(r#"Manipulate[u, {u, 5, -5, 0.5}]"#));
+    assert!(!reversed(r#"Manipulate[w, {{w, 0, "push"}, 0, 2}]"#));
+    assert!(!reversed(
+      r#"Manipulate[{n, total}, {{n, 1}, 1, Dynamic[total], 1}, {{total, 0}, None}]"#
+    ));
+  }
+
   /// The ordinary (already increasing) case is unaffected by the sort.
   #[test]
   fn forward_bounds_are_unchanged() {

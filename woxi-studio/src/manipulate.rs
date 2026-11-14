@@ -2363,6 +2363,50 @@ fn explicit_step(step: Option<f64>) -> Option<f64> {
   step.map(f64::abs).filter(|s| *s > 0.0)
 }
 
+/// Where the thumb of a `Continuous` slider sits on the widget's rail
+/// (always the ascending `min..=max`) for the control's `value`. A
+/// `reversed` control (spec written high-to-low, `{u, 2, 0}`) mirrors the
+/// value, so its `max` sits at the rail's start the way Wolfram draws it.
+pub fn slider_rail_position(
+  min: f64,
+  max: f64,
+  reversed: bool,
+  value: f64,
+) -> f64 {
+  // The rail's ends map exactly onto the bounds, free of the rounding
+  // `min + max - value` leaves.
+  if !reversed {
+    value
+  } else if value <= min {
+    max
+  } else if value >= max {
+    min
+  } else {
+    (min + max - value).clamp(min, max)
+  }
+}
+
+/// The control value for a thumb moved to rail position `position` — the
+/// inverse of `slider_rail_position`. A reversed slider's steps count down
+/// from `max`, so the mirrored value is snapped onto that grid
+/// (`max - k step`) rather than carrying the float drift of `min + max - p`.
+pub fn slider_value_at_rail_position(
+  min: f64,
+  max: f64,
+  step: f64,
+  reversed: bool,
+  position: f64,
+) -> f64 {
+  if !reversed {
+    return position;
+  }
+  if !(step > 0.0) {
+    return slider_rail_position(min, max, true, position);
+  }
+  let k = ((position - min) / step).round();
+  (max - k * step).clamp(min, max)
+}
+
 /// The increment of a slider whose spec gives no step.
 fn default_slider_step(min: f64, max: f64, is_real: bool) -> f64 {
   let span = (max - min).abs();
@@ -3945,6 +3989,47 @@ mod tests {
     assert_eq!(labels.len(), 1);
     assert!(!labels[0].contains("SubscriptBox"), "{}", labels[0]);
     assert!(labels[0].starts_with("C(CH\u{2083}"), "{}", labels[0]);
+  }
+
+  /// A high-to-low range (`{{w, 0, "…"}, 2, 0}`) keeps an ascending
+  /// `min..=max` for the widget but is flagged `reversed`, so the thumb of
+  /// the initial `0` sits at the rail's *end* (Wolfram draws the slider
+  /// running from 2 down to 0), and dragging toward the start raises the
+  /// value back onto the grid counted down from `max`.
+  #[test]
+  fn reversed_range_slider_runs_from_max_to_min() {
+    let expr =
+      woxi::interpret_to_expr(r#"Manipulate[w, {{w, 0, "push"}, 2, 0}]"#)
+        .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let Some(ControlState::Continuous {
+      min,
+      max,
+      step,
+      current,
+      reversed,
+      ..
+    }) = state.controls.first()
+    else {
+      panic!("expected a continuous control");
+    };
+    assert_eq!((*min, *max, *current), (0.0, 2.0, 0.0));
+    assert!(*reversed);
+    // The initial value sits at the rail's end, the maximum at its start.
+    assert_eq!(slider_rail_position(*min, *max, true, *current), 2.0);
+    assert_eq!(slider_rail_position(*min, *max, true, 2.0), 0.0);
+    // A thumb dragged to rail positions maps back to the counted-down grid.
+    let value = |p| slider_value_at_rail_position(*min, *max, *step, true, p);
+    assert_eq!(value(0.0), 2.0);
+    assert_eq!(value(2.0), 0.0);
+    assert_eq!(value(*min + 80.0 * *step), 2.0 - 80.0 * *step);
+    // An ascending slider passes positions through unchanged.
+    assert_eq!(slider_rail_position(0.0, 2.0, false, 0.5), 0.5);
+    assert_eq!(
+      slider_value_at_rail_position(0.0, 2.0, 0.02, false, 0.5),
+      0.5
+    );
   }
 
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
