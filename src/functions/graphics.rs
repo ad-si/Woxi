@@ -21819,7 +21819,9 @@ pub(crate) fn log_scaled_plot_source(
     s.points.iter_mut().for_each(|p| *p = point(*p));
     s.mesh_full_points.iter_mut().for_each(|p| *p = point(*p));
     filling(&mut s.filling);
-    s.extra_fills.iter_mut().for_each(|f| filling(&mut f.filling));
+    s.extra_fills
+      .iter_mut()
+      .for_each(|f| filling(&mut f.filling));
   }
   scaled.x_range = range_x(ps.x_range);
   scaled.y_range = range_y(ps.y_range);
@@ -21841,13 +21843,18 @@ fn log_scaled_plot_range(range: &Expr, log_x: bool, log_y: bool) -> Expr {
   let axis = |e: &Expr, log: bool| match e {
     Expr::List(items) if items.len() == 2 && !log => e.clone(),
     Expr::List(items) if items.len() == 2 => Expr::List(
-      items.iter().map(|b| bound(b, log)).collect::<Vec<_>>().into(),
+      items
+        .iter()
+        .map(|b| bound(b, log))
+        .collect::<Vec<_>>()
+        .into(),
     ),
     _ => e.clone(),
   };
   match range {
     Expr::List(items)
-      if items.len() == 2 && items.iter().any(|i| matches!(i, Expr::List(_))) =>
+      if items.len() == 2
+        && items.iter().any(|i| matches!(i, Expr::List(_))) =>
     {
       Expr::List(vec![axis(&items[0], log_x), axis(&items[1], log_y)].into())
     }
@@ -21901,9 +21908,8 @@ fn add_log_axis_ticks(
         .map(|(_, v)| v.into_owned())
     })
   };
-  let (rx, ry) = value(opts, "PlotRange")
-    .map(|r| parse_plot_range(&r))
-    .unwrap_or((None, None));
+  let (rx, ry) =
+    value(opts, "PlotRange").map_or((None, None), |r| parse_plot_range(&r));
   let x_range = rx.unwrap_or(ps.x_range);
   let y_range = ry.unwrap_or(ps.y_range);
   let axis = |log: bool, (lo, hi): (f64, f64), labeled: bool| {
@@ -21913,9 +21919,7 @@ fn add_log_axis_ticks(
       id_expr("Automatic")
     }
   };
-  let is_automatic = |v: &Expr| {
-    matches!(v, Expr::Identifier(s) if s == "Automatic" || s == "True")
-  };
+  let is_automatic = |v: &Expr| matches!(v, Expr::Identifier(s) if s == "Automatic" || s == "True");
   if value(opts, "Ticks").is_none_or(|v| is_automatic(&v)) {
     opts.retain(|o| !matches!(option_name_value(o), Some(("Ticks", _))));
     opts.push(rule_expr(
@@ -21929,9 +21933,7 @@ fn add_log_axis_ticks(
     opts.retain(|o| !matches!(option_name_value(o), Some(("FrameTicks", _))));
     let sides = |log: bool, range: (f64, f64)| {
       // The opposite frame edge mirrors the ticks without their labels.
-      Expr::List(
-        vec![axis(log, range, true), axis(log, range, false)].into(),
-      )
+      Expr::List(vec![axis(log, range, true), axis(log, range, false)].into())
     };
     opts.push(rule_expr(
       id_expr("FrameTicks"),
@@ -21942,8 +21944,7 @@ fn add_log_axis_ticks(
     opts.retain(|o| !matches!(option_name_value(o), Some(("GridLines", _))));
     let lines = |log: bool, (lo, hi): (f64, f64)| {
       if log && lo.is_finite() && hi.is_finite() && lo < hi {
-        let ticks =
-          crate::functions::plot_scaling::Scaling::Log.ticks(lo, hi);
+        let ticks = crate::functions::plot_scaling::Scaling::Log.ticks(lo, hi);
         Expr::List(
           ticks
             .majors
@@ -21974,14 +21975,10 @@ fn svg_tick_label_expr(label: &str) -> Expr {
   let exponent = rest.trim_end_matches("</tspan>");
   let exponent = exponent
     .parse::<i128>()
-    .map(Expr::Integer)
-    .unwrap_or_else(|_| Expr::String(exponent.to_string()));
+    .map_or_else(|_| Expr::String(exponent.to_string()), Expr::Integer);
   let head = head.replace("&#215;", "\u{00d7}");
   let base = head.strip_suffix("10").unwrap_or(&head);
-  let power = call(
-    "Superscript",
-    vec![Expr::Integer(10), exponent],
-  );
+  let power = call("Superscript", vec![Expr::Integer(10), exponent]);
   if base.is_empty() {
     power
   } else {
