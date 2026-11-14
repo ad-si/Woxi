@@ -6912,6 +6912,53 @@ fn tf_derivand_is_tall(expr: &Expr) -> bool {
   }
 }
 
+/// `TraditionalForm` boxes of a number-display form (`NumberForm`, …) whose
+/// first argument is a matrix: wolframscript's
+/// `TagBox[RowBox[{"(", GridBox[cells], ")"}], head]`, each cell the display
+/// box the form gives that entry on its own.
+fn tf_number_display_matrix(name: &str, args: &[Expr]) -> Option<Expr> {
+  let Some(Expr::List(rows)) = args.first() else {
+    return None;
+  };
+  let cell_box = |value: &Expr| -> Option<Expr> {
+    let mut cell_args = args.to_vec();
+    cell_args[0] = value.clone();
+    let boxed = number_display_form_box(name, &cell_args)?;
+    if let Expr::FunctionCall {
+      name: tag,
+      args: inner,
+    } = &boxed
+      && tag == "TagBox"
+      && !inner.is_empty()
+    {
+      return Some(inner[0].clone());
+    }
+    Some(boxed)
+  };
+  let grid_rows = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => cells
+        .iter()
+        .map(cell_box)
+        .collect::<Option<Vec<_>>>()
+        .map(|c| Expr::List(c.into())),
+      _ => None,
+    })
+    .collect::<Option<Vec<_>>>()?;
+  Some(call(
+    "TagBox",
+    vec![
+      tf_row(vec![
+        tf_string("("),
+        tf_box("GridBox", vec![Expr::List(grid_rows.into())]),
+        tf_string(")"),
+      ]),
+      id_expr(name),
+    ],
+  ))
+}
+
 /// Build a GridBox from a matrix (list of row-lists), boxing each cell.
 fn tf_matrix_grid(rows: &[Expr]) -> Expr {
   let grid_rows: Vec<Expr> = rows
@@ -7349,6 +7396,17 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf_string(assignment_operator(name).unwrap()),
         tf(&args[1]),
       ])
+    }
+    // A number-display form around a matrix typesets like the matrix does
+    // in `TraditionalForm` — a parenthesized grid — with each entry shown
+    // as the form formats it (`TraditionalForm[NumberForm[m, {3, 2}]]`).
+    "NumberForm" | "ScientificForm" | "EngineeringForm"
+      if matches!(args.first(), Some(Expr::List(items)) if tf_is_matrix(items))
+        && number_display_form_box(name, args).is_some() =>
+    {
+      tf_number_display_matrix(name, args)
+        .or_else(|| number_display_form_box(name, args))
+        .unwrap()
     }
     // Number-display forms typeset as the formatted number itself, not as a
     // `NumberForm(…)` call — `TraditionalForm[NumberForm[x, {4, 1}]]` is how a
