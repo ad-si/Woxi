@@ -5299,6 +5299,65 @@ mod nintegrate {
     );
   }
 
+  // A multi-dimensional integral over an integrand with a free symbol is
+  // reported once for the whole region and left unevaluated — reducing it
+  // one dimension at a time used to collapse it to `0.`.
+  #[test]
+  fn non_numeric_integrand_multidimensional() {
+    let result =
+      interpret_with_stdout("NIntegrate[a + x y, {x, 0, 1}, {y, -1, 2}]")
+        .unwrap();
+    assert_eq!(result.result, "NIntegrate[a + x*y, {x, 0, 1}, {y, -1, 2}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand a + x*y has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{0, 1}, {-1, 2}}."
+      ]
+    );
+  }
+
+  #[test]
+  fn non_numeric_integrand_three_dimensional_stays_unevaluated() {
+    assert_eq!(
+      interpret(
+        "Quiet[NIntegrate[1/Sqrt[(p - x)^2 + y^2 + z^2 + 1], {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}]] // Head"
+      )
+      .unwrap(),
+      "NIntegrate"
+    );
+  }
+
+  // The unevaluated integral still evaluates once the free symbol gets a
+  // value (as a plot body wrapped in Evaluate does per sample point).
+  #[test]
+  fn non_numeric_multidimensional_integral_evaluates_after_substitution() {
+    assert_eq!(
+      interpret(
+        "Quiet[NIntegrate[a + x y, {x, 0, 1}, {y, 0, 1}]] /. a -> 2"
+      )
+      .unwrap(),
+      "2.25"
+    );
+  }
+
+  #[test]
+  fn non_numeric_integrand_with_dependent_inner_bound() {
+    let result =
+      interpret_with_stdout("NIntegrate[a x y, {x, 0, 1}, {y, 0, x}]").unwrap();
+    assert_eq!(result.result, "NIntegrate[a*x*y, {x, 0, 1}, {y, 0, x}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand a*x*y has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{0, 1}, {0, x}}."
+      ]
+    );
+  }
+
   // An inner Integrate without a closed form is a number under N, so it is
   // integrated as an iterated integral — it was reported as non-numeric,
   // and before that silently integrated as 0.

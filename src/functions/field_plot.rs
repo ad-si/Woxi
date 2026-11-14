@@ -461,6 +461,26 @@ impl DensityContourOptions {
   }
 }
 
+/// For a label option set to `Automatic`, the `{x, y}` list of the plot's
+/// two iterator variables (`{x, xmin, xmax}`, `{y, ymin, ymax}` following
+/// the body in `leading`); `None` for any other setting or when the plot
+/// has no such pair of iterators.
+fn automatic_iterator_labels(value: &Expr, leading: &[Expr]) -> Option<Expr> {
+  if !matches!(value, Expr::Identifier(v) if v == "Automatic") {
+    return None;
+  }
+  let var = |e: Option<&Expr>| match e {
+    Some(Expr::List(items)) if items.len() >= 3 => match &items[0] {
+      v @ Expr::Identifier(_) => Some(v.clone()),
+      _ => None,
+    },
+    _ => None,
+  };
+  let x = var(leading.get(1))?;
+  let y = var(leading.get(2))?;
+  Some(Expr::List(vec![x, y].into()))
+}
+
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
 /// MeshFunctions, ContourStyle, FrameLabel and Epilog options.
 fn parse_density_contour_options(
@@ -633,7 +653,16 @@ fn parse_density_contour_options(
           };
         }
         "FrameLabel" => {
-          frame_labels = crate::functions::plot::parse_frame_label(replacement);
+          // `FrameLabel -> Automatic` labels the frame with the plot's
+          // variables: the first iterator's along the bottom, the second's
+          // up the left edge — the same as `FrameLabel -> {x, y}`.
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          let label = match automatic_iterator_labels(&value, &args[..start]) {
+            Some(vars) => vars,
+            None => value,
+          };
+          frame_labels = crate::functions::plot::parse_frame_label(&label);
         }
         "Frame" => {
           frame = !matches!(replacement, Expr::Identifier(v) if v == "False");

@@ -21686,6 +21686,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `FrameLabel -> Automatic` labels the frame with the plot's two
+    /// iterator variables instead of printing the word `Automatic`.
+    #[test]
+    fn contour_plot_frame_label_automatic_uses_variables() {
+      let auto = export_svg(
+        "ContourPlot[Sin[u] Cos[w], {u, 0, 3}, {w, 0, 3}, \
+         FrameLabel -> Automatic]",
+      );
+      assert!(!auto.contains(">Automatic</text>"), "{auto}");
+      let explicit = export_svg(
+        "ContourPlot[Sin[u] Cos[w], {u, 0, 3}, {w, 0, 3}, \
+         FrameLabel -> {u, w}]",
+      );
+      assert_eq!(auto, explicit);
+    }
+
+    #[test]
+    fn density_plot_frame_label_automatic_uses_variables() {
+      let auto = export_svg(
+        "DensityPlot[u w, {u, 0, 1}, {w, 0, 1}, FrameLabel -> Automatic]",
+      );
+      assert!(auto.contains(">u</text>") && auto.contains(">w</text>"));
+    }
+
     /// Regression: `ContourPlot` used to ignore `PlotLabel` entirely (no
     /// text drawn, no headroom reserved), unlike `Plot`/`Plot3D`/`PieChart`.
     /// A `Framed[…]` label must also typeset its content rather than

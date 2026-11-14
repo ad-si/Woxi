@@ -18958,6 +18958,85 @@ fn integrand_numeric_somewhere(
   })
 }
 
+/// For an iterated integral over `ranges` (`{x, lo, hi}`, outermost first),
+/// the region's boundaries `{{lo1, hi1}, {lo2, hi2}, …}` when `integrand`
+/// is non-numeric at every sampled point of the region, else `None`.
+///
+/// Inner bounds may depend on outer variables (`{y, 0, x}`), so each sample
+/// point is built outside-in, substituting the coordinates chosen so far.
+/// A region whose bounds are not all numbers yields `None`: the regular
+/// reduction decides about it.
+fn region_with_no_numeric_integrand(
+  integrand: &Expr,
+  ranges: &[Expr],
+) -> Option<Expr> {
+  let mut boundaries: Option<Vec<Expr>> = None;
+  let mut numeric_somewhere = false;
+  for t in [0.27, 0.5, 0.61, 0.83] {
+    let mut point: Vec<(String, Expr)> = Vec::new();
+    let mut region: Vec<Expr> = Vec::new();
+    for range in ranges {
+      let Expr::List(items) = range else {
+        return None;
+      };
+      let Expr::Identifier(var) = &items[0] else {
+        return None;
+      };
+      let bound = |e: &Expr| -> Option<f64> {
+        let mut e = e.clone();
+        for (v, x) in &point {
+          e = crate::syntax::substitute_variable(&e, v, x);
+        }
+        expr_to_bound(&crate::evaluator::evaluate_expr_to_expr(&e).ok()?)
+      };
+      let lo = bound(&items[1])?;
+      let hi = bound(&items[items.len() - 1])?;
+      // The message names the bounds as written (evaluated), so a bound
+      // that depends on an outer variable shows that variable, not the
+      // coordinate sampled for it.
+      if boundaries.is_none() {
+        let shown = |e: &Expr| {
+          crate::evaluator::evaluate_expr_to_expr(e)
+            .unwrap_or_else(|_| e.clone())
+        };
+        region.push(Expr::List(
+          vec![shown(&items[1]), shown(&items[items.len() - 1])].into(),
+        ));
+      }
+      let x = match (lo.is_finite(), hi.is_finite()) {
+        (true, true) => lo + (hi - lo) * t,
+        (true, false) => lo + 0.7 + 4.0 * t,
+        (false, true) => hi - 0.7 - 4.0 * t,
+        (false, false) => 4.0 * t - 1.7,
+      };
+      point.push((var.clone(), Expr::Real(x)));
+    }
+    boundaries.get_or_insert(region);
+    let mut sample = integrand.clone();
+    for (v, x) in &point {
+      sample = crate::syntax::substitute_variable(&sample, v, x);
+    }
+    let snapshot = crate::snapshot_warnings();
+    crate::push_quiet();
+    let value = crate::evaluator::evaluate_expr_to_expr(&call1("N", sample));
+    crate::pop_quiet();
+    crate::restore_warnings(snapshot);
+    if value.is_ok_and(|v| {
+      crate::functions::math_ast::try_eval_to_f64(&v).is_some()
+        || crate::functions::math_ast::try_extract_complex_float(&v).is_some()
+        || matches!(&v, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+    }) {
+      numeric_somewhere = true;
+      break;
+    }
+  }
+  if numeric_somewhere {
+    None
+  } else {
+    boundaries.map(|b| Expr::List(b.into()))
+  }
+}
+
 /// The base of a fractional power, whose zero can be a branch point or an
 /// endpoint with an unbounded derivative even when the value stays finite.
 fn fractional_power_base(expr: &Expr) -> Option<&Expr> {
@@ -19391,6 +19470,25 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("NIntegrate", args));
     }
     let integrand0 = args[0].clone();
+    // An integrand that is not a number anywhere in the region (it still
+    // holds a free symbol, as `Evaluate[f[x, y]]` of an integral with `x`
+    // and `y` symbolic does) is reported once for the whole region and the
+    // call left unevaluated, as Wolfram does — reducing it dimension by
+    // dimension would instead drop every non-numeric inner integral and
+    // collapse the result to `0.`.
+    let mut all_ranges = vec![args[1].clone()];
+    all_ranges.extend(inner_ranges.iter().cloned());
+    if let Some(boundaries) =
+      region_with_no_numeric_integrand(&integrand0, &all_ranges)
+    {
+      crate::emit_message(&format!(
+        "NIntegrate::inumr: The integrand {} has evaluated to non-numerical \
+         values for all sampling points in the region with boundaries {}.",
+        crate::syntax::expr_to_output(&integrand0),
+        crate::syntax::expr_to_output(&boundaries),
+      ));
+      return Ok(unevaluated_nintegrate(args));
+    }
     // A complex-valued integrand (`1/Sqrt[Cos[x y]]` where the cosine is
     // negative) is integrated as its real and imaginary parts: the
     // reduction below works with real samples.
