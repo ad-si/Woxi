@@ -46641,6 +46641,47 @@ fn the_default_stroke_is_one_pixel_at_every_size() {
   );
 }
 
+/// Under `ImageSize -> {w, h}` a bare drawing taller than the box is
+/// centered at its own, narrower width, and `Thickness`, `PointSize` and
+/// `Dashing` are fractions of that width, not of the box's.
+#[test]
+fn relative_sizes_follow_the_drawing_width_in_a_wider_image_size_box() {
+  // A 1 x 2 range in a 400 x 200 box is drawn about 100 px wide.
+  let tall_line = export_svg(
+    "Graphics[{Thickness[0.01], Line[{{0, 0}, {0, 2}}]}, \
+     PlotRange -> {{0, 1}, {0, 2}}, ImageSize -> {400, 200}]",
+  );
+  assert!(
+    tall_line.contains("stroke-width=\"0.99\""),
+    "Thickness follows the narrow drawing: {tall_line}"
+  );
+  let tall_point = export_svg(
+    "Graphics[{PointSize[0.1], Point[{0, 0}]}, \
+     PlotRange -> {{-1, 1}, {-2, 2}}, ImageSize -> {400, 200}]",
+  );
+  assert!(
+    tall_point.contains("r=\"4.98\""),
+    "PointSize follows the narrow drawing: {tall_point}"
+  );
+  let tall_dash = export_svg(
+    "Graphics[{Dashing[{0.1, 0.05}], Line[{{0, 0}, {0, 2}}]}, \
+     PlotRange -> {{0, 1}, {0, 2}}, ImageSize -> {400, 200}]",
+  );
+  assert!(
+    tall_dash.contains("stroke-dasharray=\"10.0,5.0\""),
+    "Dashing follows the narrow drawing: {tall_dash}"
+  );
+  // A drawing wider than the box spans its whole width.
+  let wide_line = export_svg(
+    "Graphics[{Thickness[0.01], Line[{{0, 0}, {2, 0}}]}, \
+     PlotRange -> {{0, 2}, {0, 1}}, ImageSize -> {400, 400}]",
+  );
+  assert!(
+    wide_line.contains("stroke-width=\"3.99\""),
+    "a wide drawing uses the full width: {wide_line}"
+  );
+}
+
 /// Regression coverage for the combination of constructs a Wolfram
 /// Demonstrations "region transform" widget uses together: a `Manipulate`
 /// whose body is a `Module`/`Which` that picks an `AffineTransform` from the
