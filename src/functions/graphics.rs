@@ -21830,6 +21830,33 @@ pub(crate) fn log_scaled_plot_source(
   std::borrow::Cow::Owned(scaled)
 }
 
+/// A plot's `PlotRange` value with the numeric bounds of its log axes
+/// mapped to `Log` space: `{1, 10^14}` (the y range) of a `LogPlot` becomes
+/// `{0., 32.236…}`. Symbolic bounds (`All`, `Automatic`, `Full`) stay.
+fn log_scaled_plot_range(range: &Expr, log_x: bool, log_y: bool) -> Expr {
+  let bound = |e: &Expr, log: bool| match try_eval_to_f64(e) {
+    Some(v) if log && v > 0.0 => Expr::Real(v.ln()),
+    _ => e.clone(),
+  };
+  let axis = |e: &Expr, log: bool| match e {
+    Expr::List(items) if items.len() == 2 && !log => e.clone(),
+    Expr::List(items) if items.len() == 2 => Expr::List(
+      items.iter().map(|b| bound(b, log)).collect::<Vec<_>>().into(),
+    ),
+    _ => e.clone(),
+  };
+  match range {
+    Expr::List(items)
+      if items.len() == 2 && items.iter().any(|i| matches!(i, Expr::List(_))) =>
+    {
+      Expr::List(vec![axis(&items[0], log_x), axis(&items[1], log_y)].into())
+    }
+    // `{min, max}` alone is the y range.
+    Expr::List(items) if items.len() == 2 => axis(range, log_y),
+    _ => range.clone(),
+  }
+}
+
 /// The explicit ticks of a log axis over the `Log`-space range `min..max`,
 /// as a `Ticks` list: decade labels at their `Log` positions plus the
 /// unlabeled minor ticks between them — what Wolfram's
@@ -22826,6 +22853,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {}
     }
   }
+  let show_sets_plot_range = own_plot_range.is_some();
   if let Some(range) = own_plot_range {
     merged_options.retain(|existing| {
       !matches!(option_name_value(existing), Some(("PlotRange", _)))
@@ -23002,6 +23030,20 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     for ps in &mut plot_sources {
       if ps.log_x || ps.log_y {
         *ps = log_scaled_plot_source(ps).into_owned();
+      }
+    }
+    // The `PlotRange` the log plot was given names data values; a range
+    // given to `Show` itself is already in the picture's `Log` space.
+    if (log_x || log_y) && !show_sets_plot_range {
+      for opt in &mut merged_options {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && option_name(pattern) == Some("PlotRange")
+        {
+          **replacement = log_scaled_plot_range(replacement, log_x, log_y);
+        }
       }
     }
     // One primitive list per plot source, kept aside so the layers can be
