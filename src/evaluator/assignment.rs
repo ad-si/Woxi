@@ -3757,13 +3757,11 @@ pub fn set_ast(lhs: &Expr, rhs: &Expr) -> Result<Expr, InterpreterError> {
       });
     } else if !matches!(
       &rhs_value,
-      Expr::Identifier(_)
-        | Expr::Integer(_)
-        | Expr::BigInteger(_)
-        | Expr::BigFloat(_, _)
-        | Expr::Constant(_)
+      Expr::Identifier(_) | Expr::Integer(_) | Expr::Constant(_)
     ) {
       // Store every compound value as ExprVal for a faithful roundtrip.
+      // Big numbers too: as text, every read of `x = 10^8092733` parsed its
+      // eight million digits again (quadratic in the length).
       // A machine real is kept as a value too: its text (`6.328*^-7`) is
       // not a literal the reader's fast path takes, so every read of the
       // symbol went through the full parser.

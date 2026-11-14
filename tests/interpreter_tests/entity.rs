@@ -915,6 +915,32 @@ mod country_data_tests {
   }
 
   #[test]
+  fn country_data_flag_description() {
+    clear_state();
+    // A plain-text description of the flag, through either entry point.
+    assert_eq!(
+      interpret("CountryData[\"France\", \"FlagDescription\"]").unwrap(),
+      "three equal vertical bands of blue (left side), white, and red"
+    );
+    assert_eq!(
+      interpret("StringQ[Entity[\"Country\", \"Japan\"][\"FlagDescription\"]]")
+        .unwrap(),
+      "True"
+    );
+    // Nearly every country has one; a territory flying another country's
+    // flag without a description of its own is Missing.
+    assert_eq!(
+      interpret("Count[CountryData[All, \"FlagDescription\"], _String] > 230")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CountryData[\"Reunion\", \"FlagDescription\"]").unwrap(),
+      "Missing[NotAvailable, FlagDescription]"
+    );
+  }
+
+  #[test]
   fn country_data_flags_have_their_own_shape_and_colors() {
     clear_state();
     // Flags keep their proportions: the US flag is wider than tall,

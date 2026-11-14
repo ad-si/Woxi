@@ -2864,3 +2864,21 @@ mod listable_threads_over_associations {
     assert_eq!(r.result, "{1, 2}^{1, 2, 3}");
   }
 }
+
+// AssociationMap builds its result with the Association constructor, so a
+// repeated key keeps its first position and its last value
+// (wolframscript-verified; found by the differential fuzzer).
+#[test]
+fn association_map_merges_repeated_keys() {
+  for (code, expected) in [
+    ("AssociationMap[f, {0, 0, 2}]", "<|0 -> f[0], 2 -> f[2]|>"),
+    ("AssociationMap[f, {a, b, a}]", "<|a -> f[a], b -> f[b]|>"),
+    ("AssociationMap[Reverse, <|a -> 1, b -> 1|>]", "<|1 -> b|>"),
+    (
+      "AssociationMap[#^2 &, {1, 2, 3}]",
+      "<|1 -> 1, 2 -> 4, 3 -> 9|>",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

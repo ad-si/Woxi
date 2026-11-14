@@ -106,6 +106,13 @@ pub fn polynomial_extended_gcd_ast(
     let new_r = poly_sub_mul(&old_r, &quot, &r, &var)?;
     let new_s = poly_sub_mul(&old_s, &quot, &s, &var)?;
     let new_t = poly_sub_mul(&old_t, &quot, &t, &var)?;
+    // A remainder whose degree did not drop means its leading coefficient
+    // is a symbolic zero that was not recognized; carrying on would only
+    // grow the expressions for the remaining iterations.
+    let degree = |e: &Expr| max_power_int(&expand_and_combine(e), &var);
+    if !is_zero_poly(&new_r)? && degree(&new_r) >= degree(&r) {
+      return Ok(unevaluated("PolynomialExtendedGCD", args));
+    }
 
     old_r = r;
     r = new_r;
@@ -146,17 +153,52 @@ fn together(expr: &Expr) -> Result<Expr, InterpreterError> {
   crate::functions::polynomial_ast::together_ast(std::slice::from_ref(expr))
 }
 
-/// Compute `a - quot*b` and return it expanded/combined.
+fn is_zero_poly(e: &Expr) -> Result<bool, InterpreterError> {
+  Ok(expr_to_string(&crate::evaluator::evaluate_expr_to_expr(e)?) == "0")
+}
+
+/// Compute `a - quot*b` as a polynomial in `var` whose coefficients are each
+/// brought over a common denominator and canceled. With symbolic
+/// coefficients (`PolynomialExtendedGCD[a x^3 + 1, x^2 + 1, x]`) the plain
+/// expanded form keeps uncanceled rational functions such as
+/// `1 - a^2/a^2`, so a zero remainder was never recognized and the loop ran
+/// on with ever larger expressions.
 fn poly_sub_mul(
   a: &Expr,
   quot: &Expr,
   b: &Expr,
-  _var: &str,
+  var: &str,
 ) -> Result<Expr, InterpreterError> {
   let prod = build_mul(quot, b);
   let expr = build_sub(a, &prod);
   let result = crate::evaluator::evaluate_expr_to_expr(&expr)?;
-  crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&result))?;
+  let Some(degree) = max_power_int(&expanded, var) else {
+    return Ok(expanded);
+  };
+  let mut terms = Vec::new();
+  for k in 0..=degree {
+    let coeff = coefficient_ast(&[
+      expanded.clone(),
+      Expr::Identifier(var.to_string()),
+      Expr::Integer(k),
+    ])?;
+    let coeff = crate::functions::polynomial_ast::cancel_ast(&[together(
+      &crate::evaluator::evaluate_expr_to_expr(&coeff)?,
+    )?])?;
+    if expr_to_string(&coeff) == "0" {
+      continue;
+    }
+    terms.push(build_mul(
+      &coeff,
+      &pow(Expr::Identifier(var.to_string()), Expr::Integer(k)),
+    ));
+  }
+  if terms.is_empty() {
+    return Ok(Expr::Integer(0));
+  }
+  crate::evaluator::evaluate_expr_to_expr(&plus(terms))
 }
 
 /// Divide a polynomial by a (nonzero) constant and expand the result.

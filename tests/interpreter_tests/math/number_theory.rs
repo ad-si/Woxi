@@ -176,6 +176,58 @@ mod factor_integer {
     );
   }
 
+  // Regression: inputs beyond 2^53 used to stay unevaluated. Large split
+  // primes need a fast sum-of-two-squares decomposition (Cornacchia).
+  #[test]
+  fn gaussian_big() {
+    for (input, expected) in [
+      // 10^89 + 81 is a prime ≡ 1 (mod 4).
+      (
+        "FactorInteger[10^89 + 81, GaussianIntegers -> True]",
+        "{{-I, 1}, {132030265880273952462448610462422176060076884 + \
+         287346496222912326279069848536662728000002975*I, 1}, \
+         {287346496222912326279069848536662728000002975 + \
+         132030265880273952462448610462422176060076884*I, 1}}",
+      ),
+      // Large ramified exponents: 10^30 = 2^30 5^30.
+      (
+        "FactorInteger[10^30, GaussianIntegers -> True]",
+        "{{1 + I, 60}, {1 + 2*I, 30}, {2 + I, 30}}",
+      ),
+      // Large inert primes (2^61 - 1 and 2^31 - 1 are ≡ 3 (mod 4)).
+      (
+        "FactorInteger[(2^61 - 1) (2^31 - 1), GaussianIntegers -> True]",
+        "{{2147483647, 1}, {2305843009213693951, 1}}",
+      ),
+      // Negative input with several large split primes.
+      (
+        "FactorInteger[-(10^40 + 1), GaussianIntegers -> True]",
+        "{{-1, 1}, {1 + 4*I, 1}, {4 + I, 1}, {240 + 2239*I, 1}, \
+         {588 + 2353*I, 1}, {2239 + 240*I, 1}, {2353 + 588*I, 1}, \
+         {472863913440 + 4415592925759*I, 1}, \
+         {4415592925759 + 472863913440*I, 1}}",
+      ),
+      // A Gaussian integer whose norm exceeds 2^53.
+      (
+        "FactorInteger[(10^12 + 3) + (10^13 + 7) I]",
+        "{{-I, 1}, {1 + I, 1}, {799 + 2776*I, 1}, \
+         {1398812666 + 2023649611*I, 1}}",
+      ),
+    ] {
+      assert_eq!(interpret(input).unwrap(), expected, "{input}");
+    }
+    // The factors multiply back to the input.
+    assert_eq!(
+      interpret(
+        "Table[Times @@ (#[[1]]^#[[2]] & /@ \
+         FactorInteger[n, GaussianIntegers -> True]) == n, \
+         {n, {10^89 + 81, -2^70 3^5, 12345678901234567890}}]"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
   // A Gaussian integer argument factors over ℤ[i] directly, without the
   // GaussianIntegers option.
   #[test]
