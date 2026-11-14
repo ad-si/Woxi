@@ -919,6 +919,20 @@ one. The coefficient values agree. A `SeriesData` times an unevaluated
 `f` in wolframscript; Woxi expands the unevaluated `Series[…]` as an unknown
 function.
 
+### `Solve` with a symbolic coefficient: radical form of the roots
+
+```sh
+wolframscript -code 'Solve[{ez a ex + ez == 0, ex^2 + ez^2 == 1}, {ex, ez}]'
+# {{ex -> -a^(-1), ez -> -(Sqrt[-1 + a^2]/a)}, {ex -> -a^(-1), ez -> Sqrt[-1 + a^2]/a}, {ex -> -1, ez -> 0}, {ex -> 1, ez -> 0}}
+woxi eval 'Solve[{ez a ex + ez == 0, ex^2 + ez^2 == 1}, {ex, ez}]'
+# {{ex -> -a^(-1), ez -> -Sqrt[1 - a^(-2)]}, {ex -> -a^(-1), ez -> Sqrt[1 - a^(-2)]}, {ex -> -1, ez -> 0}, {ex -> 1, ez -> 0}}
+```
+
+Woxi back-substitutes `ex` into `ex^2 + ez^2 == 1` and keeps the radical of
+the result; wolframscript pulls the parameter out of the square root. The two
+agree for `a > 0` only, and the solutions are ordered differently when the
+parameter is a product (`a q`).
+
 ### `PolynomialExtendedGCD` cofactor forms
 
 ```sh

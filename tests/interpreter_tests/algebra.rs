@@ -26761,3 +26761,31 @@ fn polynomial_extended_gcd_symbolic_coefficients_terminate() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+// Equation systems with nothing to solve for, or a divisor that is no
+// polynomial, used to index past an empty list and panic (found by the
+// interpret fuzzer). All wolframscript-verified except the last, which
+// wolframscript does not finish.
+#[test]
+fn solve_degenerate_systems() {
+  for (code, expected) in [
+    ("Solve[{}, x]", "{{}}"),
+    ("Solve[{}, {x, y}]", "{{}}"),
+    ("Solve[{}]", "{{}}"),
+    ("NSolve[{}, x]", "{{}}"),
+    ("NSolve[{}]", "{{}}"),
+    ("NSolve[{0. == 0}]", "{{}}"),
+    ("NSolve[True]", "{{}}"),
+    ("NSolve[False]", "{}"),
+    ("NSolve[{x}]", "{{x -> 0.}}"),
+    // `ey` is defined by the others; it used to stall the elimination. The
+    // radical form of `ez` differs from wolframscript's (see
+    // conformance_gaps.md), so only the rest is checked.
+    (
+      "Sort[{ex, ey} /. Solve[{ey == ez a q ex + ez == 0, ex^2 + ey^2 + ez^2 == 1}, {ex, ey, ez}] /. a -> 2]",
+      "{{-1, 0}, {1, 0}, {-1/2*1/q, 0}, {-1/2*1/q, 0}}",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

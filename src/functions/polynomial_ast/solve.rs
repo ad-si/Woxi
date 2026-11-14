@@ -519,6 +519,12 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An empty equation list is `True` (see solve_ast).
+  if matches!(args.first(), Some(Expr::List(items)) if items.is_empty()) {
+    let mut truth = args.to_vec();
+    truth[0] = Expr::Identifier("True".into());
+    return nsolve_ast(&truth);
+  }
   if let Some(expanded) = args.first().and_then(expand_region_membership) {
     let mut normalized = args.to_vec();
     normalized[0] = expanded;
@@ -576,6 +582,16 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(vars) = auto_detect_solve_vars(&args[0])
   {
     return nsolve_ast(&[args[0].clone(), vars]);
+  }
+  // With no unknown to solve for (`NSolve[{0. == 0}]`, `NSolve[True]`) the
+  // answer is Solve's — `{{}}` for a truth, `{}` for a falsehood; the
+  // solvers below all need a variable list (indexing it used to panic).
+  if args.len() == 1 {
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+    return match solve_ast(&[evaluated])? {
+      solved @ Expr::List(_) => nsolve_numerize(&solved),
+      _ => Ok(unevaluated("NSolve", args)),
+    };
   }
   // An unknown that is a call (`f''[0]`, `a[1]`) is solved for as a fresh
   // symbol: numericizing the equations would turn its `0` into `0.`.
@@ -3086,6 +3102,13 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An empty equation list asserts nothing: it is `True`, solved by the one
+  // empty substitution (`Solve[{}, x]` is `{{}}`).
+  if matches!(args.first(), Some(Expr::List(items)) if items.is_empty()) {
+    let mut truth = args.to_vec();
+    truth[0] = Expr::Identifier("True".into());
+    return solve_ast(&truth);
+  }
   let previous = crate::functions::polynomial_ast::reduce::REDUCE_PRESENTATION
     .with(|f| f.replace(false));
   let result = solve_ast_inner(args);
@@ -3095,6 +3118,43 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A chained equation `a == b == c` states `a == b` and `b == c`.
+  if args.len() == 2 {
+    let split = |eq: &Expr| -> Option<Vec<Expr>> {
+      let Expr::Comparison {
+        operands,
+        operators,
+      } = eq
+      else {
+        return None;
+      };
+      (operands.len() > 2
+        && operators.iter().all(|o| matches!(o, ComparisonOp::Equal)))
+      .then(|| {
+        operands
+          .windows(2)
+          .map(|w| Expr::Comparison {
+            operands: vec![w[0].clone(), w[1].clone()],
+            operators: vec![ComparisonOp::Equal],
+          })
+          .collect()
+      })
+    };
+    let eqs: Vec<Expr> = match &args[0] {
+      Expr::List(items) => items.to_vec(),
+      one => vec![one.clone()],
+    };
+    if eqs.iter().any(|e| split(e).is_some()) {
+      let expanded: Vec<Expr> = eqs
+        .iter()
+        .flat_map(|e| split(e).unwrap_or_else(|| vec![e.clone()]))
+        .collect();
+      return solve_ast_inner(&[Expr::List(expanded.into()), args[1].clone()]);
+    }
+    if let Some(solved) = solve_by_substituting_definition(args) {
+      return Ok(solved);
+    }
+  }
   // A system with a part that is no equation, inequality or logical
   // combination — `{x^2 == 2, f[x]}` — is rejected as a whole, as in
   // Wolfram, instead of solving the equations and ignoring the rest.
@@ -6456,6 +6516,120 @@ fn inexact_cleared_numerator_uncached(poly: &Expr, var: &str) -> Option<Expr> {
   let numeric =
     crate::evaluator::evaluate_expr_to_expr(&call1("N", numerator)).ok()?;
   Some(expand_and_combine(&numeric))
+}
+
+/// `Solve[{…, v == e, …}, vars]` with `v` a variable that `e` does not
+/// mention: `v` is determined by the others, so it is substituted into the
+/// remaining equations, those are solved, and `v -> e` is filled in per
+/// solution. Elimination over the full system can otherwise stall on such a
+/// definition (`ey == ez a q ex + ez` beside `ez a q ex + ez == 0`).
+/// `None` when no such equation applies or the reduced system stays
+/// unsolved.
+fn solve_by_substituting_definition(args: &[Expr]) -> Option<Expr> {
+  if args.len() != 2 {
+    return None;
+  }
+  let Expr::List(eqs) = &args[0] else {
+    return None;
+  };
+  let Expr::List(vars) = &args[1] else {
+    return None;
+  };
+  // Only exact equations: an inequality keeps the system for Reduce, and a
+  // machine number has to reach the path that reports Solve::ratnz.
+  if eqs.len() < 3
+    || vars.len() < 2
+    || eqs.iter().any(|e| {
+      !matches!(e, Expr::Comparison { operators, .. }
+        if operators.iter().all(|o| matches!(o, ComparisonOp::Equal)))
+    })
+    || crate::functions::math_ast::contains_inexact_real(&args[0])
+  {
+    return None;
+  }
+  let var_names: Vec<&str> = vars
+    .iter()
+    .map(|v| match v {
+      Expr::Identifier(n) => Some(n.as_str()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let definition = eqs.iter().enumerate().find_map(|(i, eq)| {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = eq
+    else {
+      return None;
+    };
+    if operands.len() != 2 || !matches!(operators.as_slice(), [ComparisonOp::Equal]) {
+      return None;
+    }
+    let (lhs, rhs) = (&operands[0], &operands[1]);
+    for (v, e) in [(lhs, rhs), (rhs, lhs)] {
+      if let Expr::Identifier(name) = v
+        && var_names.contains(&name.as_str())
+        && !crate::syntax::mentions_symbol(e, name)
+        // A bare alias `z == x` ties two variables, which count as one
+        // root of the system's multiplicity; substituting it would not.
+        && !matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::Identifier(_))
+        && var_names
+          .iter()
+          .any(|other| *other != name && crate::syntax::mentions_symbol(e, other))
+      {
+        return Some((i, name.clone(), e.clone()));
+      }
+    }
+    None
+  })?;
+  let (index, name, value) = definition;
+  let rest: Vec<Expr> = eqs
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != index)
+    .map(|(_, eq)| crate::syntax::substitute_variable(eq, &name, &value))
+    .collect();
+  let rest_vars: Vec<Expr> = vars
+    .iter()
+    .filter(|v| !matches!(v, Expr::Identifier(n) if *n == name))
+    .cloned()
+    .collect();
+  let reduced =
+    solve_ast(&[Expr::List(rest.into()), Expr::List(rest_vars.into())]).ok()?;
+  let Expr::List(solutions) = &reduced else {
+    return None;
+  };
+  let position = var_names.iter().position(|n| *n == name)?;
+  let mut completed = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return None;
+    };
+    let v = crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+      expr: Box::new(value.clone()),
+      rules: Box::new(sol.clone()),
+    })
+    .ok()?;
+    let mut rules: Vec<Expr> = rules.to_vec();
+    // The rules list the variables in the order they were asked for.
+    let at = rules
+      .iter()
+      .position(|r| {
+        matches!(r, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n)
+            if var_names.iter().position(|x| x == n).is_some_and(|p| p > position)))
+      })
+      .unwrap_or(rules.len());
+    rules.insert(
+      at,
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(name.clone())),
+        replacement: Box::new(v),
+      },
+    );
+    completed.push(Expr::List(rules.into()));
+  }
+  Some(Expr::List(completed.into()))
 }
 
 fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
