@@ -9048,7 +9048,7 @@ const MAX_STALLED_BISECTIONS: u32 = 4;
 /// A stalled refinement whose error estimate is still this many times the
 /// tolerance is a candidate for divergence rather than a jump in the
 /// right-hand side (see [`Refinement::run_error`]).
-const DIVERGING_STALL_ERROR: f64 = 1e3;
+const DIVERGING_STALL_ERROR: f64 = 1e4;
 
 /// Where a step-doubling refinement stands: its bisection depth, the error
 /// estimate of the enclosing step (relative to the tolerance), how many
@@ -9059,11 +9059,11 @@ struct Refinement {
   depth: u32,
   error: f64,
   stalls: u32,
-  /// A jump in the right-hand side inside the step still shrinks the error
-  /// estimate about twofold per bisection, so a whole run of stalled
-  /// bisections cuts it well over fourfold. An estimate that barely moves
-  /// over the run means RK4 is unstable at every step size tried: a stiff
-  /// system whose fastest rate needs steps many bisections shorter.
+  /// A jump in the right-hand side inside the step (dry friction sticking
+  /// at a belt speed) still shrinks the error estimate over a whole run of
+  /// stalled bisections, by threefold or more. An estimate that not even
+  /// halves over the run means RK4 is unstable at every step size tried: a
+  /// stiff system whose fastest rate needs steps many bisections shorter.
   run_error: f64,
 }
 
@@ -9169,7 +9169,7 @@ fn rk4_step_refined(
     _ => level.run_error,
   };
   if stalls >= MAX_STALLED_BISECTIONS {
-    if error > DIVERGING_STALL_ERROR && error > run_error / 4.0 {
+    if error > DIVERGING_STALL_ERROR && error > run_error / 2.0 {
       diverged.set(true);
     }
     return accept(full, out);
