@@ -7104,7 +7104,10 @@ mod interpreter_tests {
       ("TogglerBar[{1}, {1, 2}]", "TogglerBar[{1}, {1, 2}]"),
       ("RadioButton[1]", "RadioButton[1]"),
       ("ProgressIndicator[0.5]", "ProgressIndicator[0.5]"),
-      ("PaneSelector[{1 -> a}, 1]", "PaneSelector[{1 -> a}, 1]"),
+      // PaneSelector displays the pane its selector picks in visual mode;
+      // the script-mode echo is covered by
+      // pane_selector_display::stays_symbolic_in_text_output.
+      ("PaneSelector[{1 -> a}, 1]", "a"),
       ("PopupView[{a, b}]", "PopupView[{a, b}]"),
       ("IntervalSlider[{2, 4}]", "IntervalSlider[{2, 4}]"),
       ("Slider2D[{0, 0}]", "Slider2D[{0, 0}]"),

@@ -7449,6 +7449,13 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::container_layout::resized_graphic_svg(expr)
         .unwrap_or_else(|| svg_data.clone())
     }
+    // `PaneSelector[{v1 -> e1, …}, sel, default]` displays only the pane
+    // whose key matches `sel`, so exporting one exports that pane.
+    Expr::FunctionCall { name, args }
+      if name == "PaneSelector" && args.len() >= 2 =>
+    {
+      expr_to_svg(&crate::functions::graphics::selected_pane_content(args))
+    }
     // `Pane[content, opts…]` only constrains its content's size; the
     // FrontEnd displays the content, so exporting one exports what it
     // wraps. (The notebook display pipeline already unwraps it — without
