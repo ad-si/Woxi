@@ -7305,6 +7305,141 @@ mod plot3d {
       assert_ne!(with_default, with_degree_2);
     }
 
+    // Regression: a 3-D `BSplineCurve` ignored `SplineWeights` and an
+    // explicit `SplineKnots` vector, so a rational spline (the usual way to
+    // draw an exact circle or a rounded ring) was drawn as a plain one.
+    #[test]
+    fn graphics3d_bspline_curve_spline_weights_make_it_rational() {
+      let pts = "{{1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {-1, 1, 0}, {-1, 0, 0}}";
+      let plain = export_svg(&format!(
+        "Graphics3D[BSplineCurve[{pts}, SplineDegree -> 2]]"
+      ));
+      let unit = export_svg(&format!(
+        "Graphics3D[BSplineCurve[{pts}, SplineDegree -> 2, \
+        SplineWeights -> {{1, 1, 1, 1, 1}}]]"
+      ));
+      let weighted = export_svg(&format!(
+        "Graphics3D[BSplineCurve[{pts}, SplineDegree -> 2, \
+        SplineWeights -> {{1, 0.707, 1, 0.707, 1}}]]"
+      ));
+      assert_eq!(plain, unit);
+      assert_ne!(plain, weighted);
+    }
+
+    #[test]
+    fn graphics3d_bspline_curve_explicit_spline_knots() {
+      let pts = "{{0, 0, 0}, {1, 2, 0}, {2, 0, 1}, {3, 1, 0}, {4, 0, 0}}";
+      let default = export_svg(&format!(
+        "Graphics3D[BSplineCurve[{pts}, SplineDegree -> 2]]"
+      ));
+      let uniform = export_svg(&format!(
+        "Graphics3D[BSplineCurve[{pts}, SplineDegree -> 2, \
+        SplineKnots -> {{0, 0, 0, 1, 2, 3, 3, 3}}]]"
+      ));
+      let doubled = export_svg(&format!(
+        "Graphics3D[BSplineCurve[{pts}, SplineDegree -> 2, \
+        SplineKnots -> {{0, 0, 0, 1, 1, 2, 2, 2}}]]"
+      ));
+      assert_eq!(default, uniform);
+      assert_ne!(default, doubled);
+    }
+
+    /// The horizontal extent, in SVG units, of everything `prims` draws seen
+    /// from the front in a fixed plot range.
+    fn front_width(prims: &str) -> f64 {
+      let svg = export_svg(&format!(
+        "Graphics3D[{prims}, ViewPoint -> Front, Boxed -> False, \
+        PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{0, 2}}}}]"
+      ));
+      let xs: Vec<f64> = svg
+        .split("<polygon points=\"")
+        .skip(1)
+        .flat_map(|rest| {
+          rest[..rest.find('"').unwrap()]
+            .split_whitespace()
+            .filter_map(|pt| pt.split(',').next()?.parse::<f64>().ok())
+            .collect::<Vec<_>>()
+        })
+        .collect();
+      assert!(!xs.is_empty(), "{prims} must draw");
+      let max = xs.iter().cloned().fold(f64::MIN, f64::max);
+      let min = xs.iter().cloned().fold(f64::MAX, f64::min);
+      max - min
+    }
+
+    // Regression: a tube's radius list with one radius per spline control
+    // point was interpolated in straight steps between the control points,
+    // so `{0, 0.4, 0}` swelled to the full 0.4. Wolfram carries the radii
+    // through the spline's own basis: on a quadratic spline the middle
+    // radius only pulls the tube out to half of it, 0.2.
+    #[test]
+    fn graphics3d_tube_bspline_radii_follow_the_spline_basis() {
+      let tube = front_width(
+        "Tube[BSplineCurve[{{0, 0, 0}, {0, 0, 1}, {0, 0, 2}}], \
+        {0.001, 0.4, 0.001}]",
+      );
+      let half = front_width("Cylinder[{{0, 0, 0.9}, {0, 0, 1.1}}, 0.2]");
+      let full = front_width("Cylinder[{{0, 0, 0.9}, {0, 0, 1.1}}, 0.4]");
+      assert!((tube - half).abs() < 1.0, "{tube} vs {half}");
+      assert!(full - tube > 10.0, "{tube} vs {full}");
+    }
+
+    // A radius list written as the curve's second argument
+    // (`Tube[BSplineCurve[pts, {r1, …}]]`) sets the tube's radii; it used to
+    // be dropped, leaving a hair-thin default tube.
+    #[test]
+    fn graphics3d_tube_takes_radii_from_bspline_curve_argument() {
+      let pts = "{{0, 0, 0}, {0, 0, 1}, {0, 0, 2}}";
+      assert_eq!(
+        export_svg(&format!(
+          "Graphics3D[Tube[BSplineCurve[{pts}, {{0.05, 0.3, 0.05}}]]]"
+        )),
+        export_svg(&format!(
+          "Graphics3D[Tube[BSplineCurve[{pts}], {{0.05, 0.3, 0.05}}]]"
+        ))
+      );
+    }
+
+    // Regression: a radius list on `Cylinder`/`Cone` fell back to radius 1.
+    // Each axis of a collection takes its own radius from the list.
+    #[test]
+    fn graphics3d_cylinder_and_cone_radius_list() {
+      for head in ["Cylinder", "Cone"] {
+        assert_eq!(
+          export_svg(&format!(
+            "Graphics3D[{head}[{{{{{{0, 0, 0}}, {{0, 0, 1}}}}, \
+            {{{{3, 0, 0}}, {{3, 0, 1}}}}}}, {{0.5, 0.25}}]]"
+          )),
+          export_svg(&format!(
+            "Graphics3D[{{{head}[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 0.5], \
+            {head}[{{{{3, 0, 0}}, {{3, 0, 1}}}}, 0.25]}}]"
+          )),
+          "{head}"
+        );
+      }
+      assert!(
+        front_width("Cone[{{0, 0, 0.5}, {0, 0, 0.6}}, {0.1, 0.2}]")
+          < front_width("Cone[{{0, 0, 0.5}, {0, 0, 0.6}}, 0.5]")
+      );
+    }
+
+    // `TubeBSplineCurveBox[pts, r, opts…]` (the box form of a tube along a
+    // spline) appearing in a Graphics3D primitive list drew nothing.
+    #[test]
+    fn graphics3d_tube_bspline_curve_box_draws_like_tube_of_bspline() {
+      let pts = "{{1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {-1, 1, 0}, {-1, 0, 0}}";
+      let opts = "SplineDegree -> 2, SplineWeights -> {1, 0.707, 1, 0.707, 1}, \
+        SplineKnots -> {0, 0, 0, 1, 1, 2, 2, 2}";
+      let tube = export_svg(&format!(
+        "Graphics3D[Tube[BSplineCurve[{pts}, {opts}], 0.1]]"
+      ));
+      let tube_box = export_svg(&format!(
+        "Graphics3D[TubeBSplineCurveBox[{pts}, 0.1, {opts}]]"
+      ));
+      assert!(tube.contains("<polygon"));
+      assert_eq!(tube, tube_box);
+    }
+
     // Regression: a radius list whose length differs from the number of
     // curve points (one radius per spline control point) collapsed the tube
     // to radius 0, so it drew no surface at all.
@@ -44339,73 +44474,62 @@ mod tube_and_cap_form {
     );
   }
 
-  /// `Cylinder`/`Cone` are solid by default, exactly like `Tube`: `CapForm`
-  /// closes their flat ends. Regression: `tessellate_cylinder` never emitted
-  /// end-cap triangles at all (`tessellate_cone` never emitted a base cap),
-  /// so every cylinder and cone rendered as an open, hollow shell — a bare
-  /// side wall with nothing across either end. Most visible on a short,
-  /// wide cylinder (a Demonstration's trick for drawing a flat disk in
-  /// space, e.g. a saw cut through a solid): instead of a filled disk it
-  /// showed as a hollow ring with a hole straight through the middle.
+  /// `Cylinder`/`Cone` are solid regions: flat disks close their ends.
+  /// Regression: `tessellate_cylinder` never emitted end-cap triangles at
+  /// all (`tessellate_cone` never emitted a base cap), so every cylinder and
+  /// cone rendered as an open, hollow shell. Most visible on a short, wide
+  /// cylinder (a Demonstration's trick for drawing a flat disk in space):
+  /// instead of a filled disk it showed as a hollow ring.
+  ///
+  /// `CapForm` styles the ends of lines and tubes only, so `CapForm[None]`
+  /// (often set for a `Tube` earlier in the same primitive list) leaves a
+  /// `Cylinder` and a `Cone` solid. Regression: it used to open them too,
+  /// drawing a solid piston as a hollow ring.
   #[test]
-  fn cylinder_default_is_capped_at_both_ends() {
+  fn cylinder_is_capped_at_both_ends_whatever_the_cap_form() {
     clear_state();
     let capped =
       export_svg("Graphics3D[{Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
-    let open = export_svg(
-      "Graphics3D[{CapForm[None], Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]}]",
-    );
-    assert!(
-      open.contains("<polygon"),
-      "the open cylinder must still draw"
-    );
-    assert_ne!(capped, open, "CapForm[None] must drop the end disks");
+    for form in ["None", "\"Butt\""] {
+      assert_eq!(
+        export_svg(&format!(
+          "Graphics3D[{{CapForm[{form}], Cylinder[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1]}}]"
+        )),
+        capped,
+        "CapForm[{form}] must not change a Cylinder"
+      );
+    }
     // Each end's disk fans into 24 triangles (`CYLINDER_SIDES`), same as a
     // `Tube`'s cap. (Translucent, so the far side of the closed solid is
-    // not culled and every facet is counted.)
-    let see_through = |caps: &str| {
-      export_svg(&format!(
-        "Graphics3D[{{Opacity[0.5], {caps}Cylinder[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1]}}]"
-      ))
-      .matches("<polygon")
-      .count()
+    // not culled and every facet is counted.) The open tube of the same
+    // size has the same side wall without those disks.
+    let see_through = |prim: &str| {
+      export_svg(&format!("Graphics3D[{{Opacity[0.5], {prim}}}]"))
+        .matches("<polygon")
+        .count()
     };
-    assert_eq!(
-      see_through(""),
-      see_through("CapForm[None], ") + 2 * 24,
-      "both end disks must each add a 24-triangle fan"
-    );
-    // Naming a cap form puts them back.
-    assert_eq!(
-      export_svg(
-        "Graphics3D[{CapForm[\"Butt\"], Cylinder[{{0, 0, 0}, {0, 0, 1}}, \
-         1]}]"
-      ),
-      capped
+    assert!(
+      see_through("Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]")
+        > see_through("CapForm[None], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]"),
+      "the cylinder must draw its end disks"
     );
   }
 
   #[test]
-  fn cone_default_is_capped_at_the_base() {
+  fn cone_is_capped_at_the_base_whatever_the_cap_form() {
     clear_state();
     let capped = export_svg("Graphics3D[{Cone[{{0, 0, 0}, {0, 0, 1}}, 1]}]");
-    let open = export_svg(
+    let with_none = export_svg(
       "Graphics3D[{CapForm[None], Cone[{{0, 0, 0}, {0, 0, 1}}, 1]}]",
     );
-    assert!(open.contains("<polygon"), "the open cone must still draw");
-    assert_ne!(capped, open, "CapForm[None] must drop the base disk");
-    let see_through = |caps: &str| {
-      export_svg(&format!(
-        "Graphics3D[{{Opacity[0.5], {caps}Cone[{{{{0, 0, 0}}, {{0, 0, 1}}}}, 1]}}]"
-      ))
-      .matches("<polygon")
-      .count()
-    };
-    assert_eq!(
-      see_through(""),
-      see_through("CapForm[None], ") + 48,
-      "the base disk must add a 48-triangle fan"
-    );
+    assert!(capped.contains("<polygon"));
+    assert_eq!(capped, with_none, "CapForm[None] must not open a Cone");
+    // 48 lateral triangles (`CONE_SIDES`) plus a 48-triangle base fan.
+    let see_through =
+      export_svg("Graphics3D[{Opacity[0.5], Cone[{{0, 0, 0}, {0, 0, 1}}, 1]}]")
+        .matches("<polygon")
+        .count();
+    assert!(see_through >= 2 * 48, "the base disk must be drawn");
   }
 }
 
