@@ -5244,6 +5244,82 @@ mod plot3d {
     assert!(rect < square, "{rect} !< {square}");
   }
 
+  /// Counts `needle` in the SVG of a flat `ParametricPlot3D` patch drawn
+  /// with `opts`.
+  fn count_in_flat_patch(needle: &str, opts: &str) -> usize {
+    clear_state();
+    interpret(&format!(
+      "StringCount[ExportString[ParametricPlot3D[{{s, t, s t}}, {{s, 0, 1}}, \
+       {{t, 0, 2}}, Axes -> False, Boxed -> False, {opts}], \"SVG\"], \
+       \"{needle}\"]"
+    ))
+    .unwrap()
+    .parse::<usize>()
+    .unwrap()
+  }
+
+  /// `MaxRecursion -> r` without `PlotPoints` starts from Wolfram's 15
+  /// samples per direction and refines at most `r` times, instead of
+  /// always using the dense default grid.
+  #[test]
+  fn parametric_plot3d_max_recursion_bounds_the_grid() {
+    let polygons = |opts: &str| count_in_flat_patch("<polygon", opts);
+    // 14 × 14 cells, two triangles each.
+    assert_eq!(polygons("MaxRecursion -> 0"), 2 * 14 * 14);
+    assert_eq!(polygons("MaxRecursion -> 1"), 2 * 28 * 28);
+    let default = polygons("Mesh -> None");
+    assert!(polygons("MaxRecursion -> 1") < default);
+    // An explicit `PlotPoints` still sets the grid.
+    assert_eq!(polygons("PlotPoints -> 5, MaxRecursion -> 0"), 2 * 4 * 4);
+  }
+
+  /// `Mesh -> {nu, nv}` draws `nu` lines of constant first parameter and
+  /// `nv` of constant second one; `{0, 0}` keeps only the outline, like
+  /// `Mesh -> 0`.
+  #[test]
+  fn parametric_plot3d_mesh_counts_per_direction() {
+    let lines = |opts: &str| {
+      count_in_flat_patch("<line ", &format!("PlotPoints -> 9, {opts}"))
+    };
+    let outline = lines("Mesh -> 0");
+    assert_eq!(lines("Mesh -> {0, 0}"), outline);
+    let both = lines("Mesh -> 3");
+    let u_only = lines("Mesh -> {3, 0}");
+    let v_only = lines("Mesh -> {0, 3}");
+    assert!(
+      outline < u_only && u_only < both,
+      "{outline} {u_only} {both}"
+    );
+    assert!(
+      outline < v_only && v_only < both,
+      "{outline} {v_only} {both}"
+    );
+    assert_eq!(lines("Mesh -> {3, 3}"), both);
+  }
+
+  /// A translucent surface's facets are not stroked in their own color:
+  /// the overlapping hairlines would darken every seam and trace the
+  /// triangulation across the surface.
+  #[test]
+  fn translucent_surface_facets_have_no_seam_stroke() {
+    for plot in [
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotStyle -> Opacity[0.5], \
+       Mesh -> None]",
+      "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+       PlotStyle -> Directive[Yellow, Opacity[0.6]], Mesh -> None]",
+    ] {
+      let svg = export_svg(plot);
+      let faces: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon") && l.contains(" opacity=\""))
+        .collect();
+      assert!(!faces.is_empty(), "{plot}");
+      for face in faces {
+        assert!(face.contains("stroke=\"none\""), "{plot}: {face}");
+      }
+    }
+  }
+
   /// `ColorFunction -> Function[{x, y, z}, Directive[Opacity[o], color]]`
   /// colors and thins out the surface, both when drawn on its own and when
   /// `Show` re-renders it from its symbolic form.
