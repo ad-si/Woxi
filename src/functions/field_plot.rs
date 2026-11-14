@@ -2899,6 +2899,21 @@ fn field_plot_structure(
   // and labels placed beyond it (`PlotRangeClipping -> False`) lie outside
   // the frame instead of stretching it.
   explicit.retain(|o| name_of(o) != Some("PlotRange"));
+  // `FrameLabel -> Automatic` names the plot's iterator variables; the
+  // returned `Graphics` no longer knows them, so it carries them explicitly
+  // (a `GraphicsGrid` cell or a `Show` re-renders from these options).
+  for opt in explicit.iter_mut() {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameLabel")
+      && let Some(vars) =
+        automatic_iterator_labels(replacement, &args[..args.len().min(3)])
+    {
+      **replacement = vars;
+    }
+  }
   let pair =
     |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
   if pin_range {

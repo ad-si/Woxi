@@ -4065,12 +4065,13 @@ fn substitute_complex_indices(
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball"
+        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball" | "Text"
       ) =>
     {
       let point_slots: &[usize] = match name.as_str() {
         "Rectangle" | "Cuboid" => &[0, 1],
-        "Inset" => &[1],
+        // A contour label `Text[c, k]` sits at vertex `k`.
+        "Inset" | "Text" => &[1],
         _ => &[0],
       };
       let new_args: Vec<Expr> = args
@@ -6070,6 +6071,19 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       } else {
         text
       }
+    }
+    // A machine real too large or small for plain digits (a contour label
+    // `-1.247*^-7`) typesets as `mantissa×10ⁿ` on one line, as the front end
+    // shows it — not as the two-line OutputForm layout.
+    Expr::Real(f)
+      if machine_real_display_parts(*f).exponent.is_some() =>
+    {
+      let parts = machine_real_display_parts(*f);
+      format!(
+        "{}×10{}",
+        parts.mantissa,
+        to_unicode_script_digits(&parts.exponent.unwrap_or(0).to_string(), true)
+      )
     }
     // `ScientificForm`/`EngineeringForm` typeset as `mantissa×10ⁿ` on one
     // line, with the exponent as a superscript — not the two-line OutputForm
