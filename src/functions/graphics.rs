@@ -22941,16 +22941,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           **replacement = id_expr("All");
         }
       }
-      // A framed plot draws no interior axes, so the merged graphic must
-      // not grow a set of them either: `Show[ParametricPlot[…, Frame ->
-      // True], …]` keeps the frame it was given and nothing more.
-      let framed = merged_options.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, replacement }
-          if option_name(pattern) == Some("Frame")
-            && !matches!(replacement.as_ref(),
-              Expr::Identifier(s) if s == "False" || s == "None"))
-      });
-      if !has_option(&merged_options, "Axes") && !framed {
+      // The leading plot's axes stay on. In a framed plot they are drawn as
+      // plain lines through the origin (the frame carries the ticks), just
+      // as `Plot[…, Frame -> True]` draws them on its own.
+      if !has_option(&merged_options, "Axes") {
         merged_options.push(rule_expr(id_expr("Axes"), bool_expr(true)));
       }
       // The shape the leading plot drew itself in, unless the options
