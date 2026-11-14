@@ -47231,6 +47231,37 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Invisible"), "{svg}");
   }
 
+  /// A framed `Grid` of pictures pads every cell by 4.5 pixels on each
+  /// side, with the dividers in the middle of the gaps. Regression: the
+  /// frame lines ran along the pictures' edges.
+  #[test]
+  fn framed_grid_pads_picture_cells() {
+    let svg = interpret(
+      r#"g = Graphics[Disk[], ImageSize -> {100, 100}]; ExportString[Grid[{{g, g}, {g, g}}, Frame -> All], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"218\" height=\"218\""),
+      "{svg}"
+    );
+    for (x, y) in [(4, 4), (114, 4), (4, 114), (114, 114)] {
+      assert!(
+        svg.contains(&format!(
+          "<svg x=\"{x}\" y=\"{y}\" width=\"100\" height=\"100\""
+        )),
+        "{svg}"
+      );
+    }
+    assert!(
+      svg.contains("x1=\"109.00\" y1=\"0.00\" x2=\"109.00\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("x1=\"0.00\" y1=\"109.00\" x2=\"218.00\""),
+      "{svg}"
+    );
+  }
+
   #[test]
   fn grid_background_accepts_index_rules_for_rows() {
     let svg = interpret(
