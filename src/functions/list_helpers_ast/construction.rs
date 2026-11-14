@@ -3626,6 +3626,15 @@ pub fn densify_sparse_array(expr: &Expr) -> Option<Expr> {
 }
 
 /// The background (default) element of a canonical SparseArray.
+/// True for an evaluated (canonical) `SparseArray[Automatic, dims, default,
+/// data]` object. A construction that failed (`SparseArray[{0 -> 1}, 2]`)
+/// stays an inert expression with head SparseArray — densifying it returns
+/// it unchanged, so callers that densify and retry must not treat it as an
+/// array (they would recurse forever).
+pub(crate) fn is_sparse_array_object(expr: &Expr) -> bool {
+  sparse_array_background(expr).is_some()
+}
+
 pub(crate) fn sparse_array_background(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;

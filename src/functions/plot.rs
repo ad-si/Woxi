@@ -5684,8 +5684,11 @@ fn generate_svg_with_options(
   // instead of shrinking it to fit a canvas sized by the default ratio.
   // An explicit image height (`ImageSize -> {w, h}`) is kept instead: the
   // plotting area keeps its ratio and is centered in what the padding
-  // leaves (see `padded_margins`).
-  if let Some(ar) = opts.aspect_ratio
+  // leaves (see `padded_margins`). Without an `AspectRatio` the default
+  // 1/GoldenRatio applies the same way.
+  if let Some(ar) = opts
+    .aspect_ratio
+    .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
     && !opts.image_size_explicit.1
     && let Some([pad_left, pad_right, pad_bottom, pad_top]) = opts.image_padding
   {
@@ -16953,6 +16956,9 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut automatic_labels: Vec<String> = Vec::new();
   let mut seen: std::collections::HashSet<String> =
     std::collections::HashSet::new();
+  // `PlotRangePadding -> spec`: the margin around the automatic range,
+  // in place of the default `Scaled[0.02]` (x) / `Scaled[0.05]` (y).
+  let mut range_padding: Option<Expr> = None;
   let (options, simple_ticks) = expand_plot_theme(&args[2..], false);
   plot_opts.simple_ticks = simple_ticks;
   // A function plot samples just inside its domain: a mesh value taken at
@@ -16991,6 +16997,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       if name == "PlotLabels" {
         labels_expressions = plot_labels_from_expressions(replacement);
+      }
+      if name == "PlotRangePadding" {
+        range_padding = Some(
+          evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone()),
+        );
       }
       if name == "ScalingFunctions" {
         let value = evaluate_expr_to_expr(replacement)
@@ -17511,25 +17523,38 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // …}, {Scaled[0.05], …}}`: that fraction of the padded span, i.e. 1/48
   // of the x span and 1/18 of the y span on each side. An explicit
   // `PlotRange` is not padded.
+  // An explicit `PlotRangePadding` replaces those defaults, side by side.
   let y_span = y_data_max - y_data_min;
-  let padding =
-    if y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs()) {
-      1.0
+  let y_degenerate =
+    y_span.abs() <= f64::EPSILON * y_data_min.abs().max(y_data_max.abs());
+  let x_span = x_max - x_min;
+  let ((x_pad_lo, x_pad_hi), (y_pad_lo, y_pad_hi)) =
+    if let Some(spec) = &range_padding {
+      let spec = crate::functions::graphics::parse_plot_range_padding(spec);
+      (
+        spec.x.resolve(x_span, 1.0 / 48.0),
+        if y_degenerate {
+          // A flat curve has no span to take a fraction of.
+          let (lo, hi) = spec.y.resolve(1.0, 1.0);
+          (lo.min(1.0), hi.min(1.0))
+        } else {
+          spec.y.resolve(y_span, 1.0 / 18.0)
+        },
+      )
     } else {
-      y_span / 18.0
+      let y_pad = if y_degenerate { 1.0 } else { y_span / 18.0 };
+      ((x_span / 48.0, x_span / 48.0), (y_pad, y_pad))
     };
-  let y_auto_min = y_data_min - padding;
-  let y_auto_max = y_data_max + padding;
+  let y_auto_min = y_data_min - y_pad_lo;
+  let y_auto_max = y_data_max + y_pad_hi;
   let (y_auto_min, y_auto_max) =
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
-  let x_padding = (x_max - x_min) / 48.0;
+  let x_auto = (x_min - x_pad_lo, x_max + x_pad_hi);
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
-  let plot_range_x =
-    fill_range(plot_range_x, (x_min - x_padding, x_max + x_padding));
+  let plot_range_x = fill_range(plot_range_x, x_auto);
   let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max));
-  let (x_display_min, x_display_max) =
-    plot_range_x.unwrap_or((x_min - x_padding, x_max + x_padding));
+  let (x_display_min, x_display_max) = plot_range_x.unwrap_or(x_auto);
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
     // Labels placed above or below their curves get room inside the
     // plot range, as WL widens the automatic `PlotRangePadding`.

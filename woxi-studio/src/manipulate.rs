@@ -49,9 +49,9 @@ pub enum ControlState {
     /// The range runs along the imaginary axis; `min`/`max`/`current` hold
     /// imaginary coefficients and the variable binds `Complex[0, current]`.
     imaginary: bool,
-    /// The spec wrote the range high-to-low (`{u, 2, 0}`): `min <= max`
-    /// still holds, but the slider is drawn running from `max` to `min`
-    /// (see `ManipulateControl::Continuous::reversed`).
+    /// The range was written high-to-low (see
+    /// `ManipulateControl::Continuous::reversed`): `min`/`max` stay sorted,
+    /// and the widget mirrors its track so the first bound sits on the left.
     reversed: bool,
   },
   Discrete {
@@ -2373,7 +2373,17 @@ pub fn slider_rail_position(
   reversed: bool,
   value: f64,
 ) -> f64 {
-  if reversed { min + max - value } else { value }
+  // The rail's ends map exactly onto the bounds, free of the rounding
+  // `min + max - value` leaves.
+  if !reversed {
+    value
+  } else if value <= min {
+    max
+  } else if value >= max {
+    min
+  } else {
+    (min + max - value).clamp(min, max)
+  }
 }
 
 /// The control value for a thumb moved to rail position `position` — the
@@ -2391,7 +2401,7 @@ pub fn slider_value_at_rail_position(
     return position;
   }
   if !(step > 0.0) {
-    return min + max - position;
+    return slider_rail_position(min, max, true, position);
   }
   let k = ((position - min) / step).round();
   (max - k * step).clamp(min, max)

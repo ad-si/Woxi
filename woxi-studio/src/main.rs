@@ -13178,6 +13178,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
     }
   }
 
+  /// Wolfram draws a slider written high-to-low (`{{h, -0.09}, -0.05,
+  /// -0.5, 0.001}`) from its first bound on the left: the thumb for -0.09
+  /// sits near the left end, and dragging right makes `h` more negative.
+  /// The range is stored sorted, so the control must remember it was
+  /// reversed and the widget must mirror the track position.
+  #[test]
+  fn reversed_range_slider_runs_from_its_first_bound() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[h, {{h, -0.09}, -0.05, -0.5, 0.001}, {{k, 2}, 1, 5}]",
+    )
+    .expect("parse Manipulate expr");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("build Manipulate widget");
+    let (lo, hi, current, reversed) = match &state.controls[0] {
+      manipulate::ControlState::Continuous {
+        min,
+        max,
+        current,
+        reversed,
+        ..
+      } => (*min, *max, *current, *reversed),
+      other => panic!("unexpected control: {other:?}"),
+    };
+    assert_eq!((lo, hi, current), (-0.5, -0.05, -0.09));
+    assert!(reversed, "a high-to-low range must be flagged as reversed");
+    // The thumb for -0.09 sits close to the track's start (-0.05 end).
+    let pos = manipulate::slider_rail_position(lo, hi, reversed, current);
+    let fraction = (pos - lo) / (hi - lo);
+    assert!((fraction - 0.04 / 0.45).abs() < 1e-9, "fraction {fraction}");
+    // The track's start and end map back to the first and second bounds.
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, lo), hi);
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, hi), lo);
+
+    match &state.controls[1] {
+      manipulate::ControlState::Continuous { reversed, .. } => {
+        assert!(!reversed, "an ascending range is not reversed")
+      }
+      other => panic!("unexpected control: {other:?}"),
+    }
+    assert_eq!(manipulate::slider_rail_position(1.0, 5.0, false, 2.0), 2.0);
+  }
+
   #[test]
   fn text_cell_holding_graphics_renders_as_stored_graphic() {
     let nb = woxi::notebook::parse_notebook(
