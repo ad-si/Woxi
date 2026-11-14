@@ -27519,8 +27519,20 @@ pub fn combine_layout_svgs(
   if !opts.spacings_explicit {
     // `Points` counts printer's points at 96 dpi; the layout works in the
     // pictures' own units, which are points already.
-    opts.h_spacing = SpacingSpec::Points(gap * 0.75);
-    opts.v_spacing = SpacingSpec::Points(gap * 0.75);
+    let gap = gap * 0.75;
+    if opts.frame == FrameSetting::None {
+      opts.h_spacing = SpacingSpec::Points(gap);
+      opts.v_spacing = SpacingSpec::Points(gap);
+    } else {
+      // A framed `Grid` pads every cell by three quarters of that gap
+      // (4.5 pixels) on each side, so the frame lines run between the
+      // cells instead of touching them: a 250 × 300 plot sits in a
+      // 259 × 309 framed cell.
+      opts.h_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.v_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.outer_margin = true;
+      opts.spacings_explicit = true;
+    }
   }
   combine_svgs_grid(rows, &opts)
 }
@@ -27764,6 +27776,10 @@ struct GridLayout {
   v_gap: f64,
   /// Space above the first row (`LayoutOptions::outer_margin`).
   top_pad: f64,
+  /// Where each column starts, and the gap between two columns: a
+  /// `Frame -> All` divider runs down the middle of that gap.
+  col_x: Vec<f64>,
+  h_gap: f64,
 }
 
 /// Compute a natural-dimension grid layout for a 2-D array of SVG cells.
@@ -27982,7 +27998,7 @@ fn compute_grid_layout(
     }
   }
   let left_pad = if opts.outer_margin { h_gap / 2.0 } else { 0.0 };
-  let col_x: Vec<f64> = col_w
+  let mut col_x: Vec<f64> = col_w
     .iter()
     .scan(left_pad, |x, w| {
       let here = *x;
@@ -28074,6 +28090,9 @@ fn compute_grid_layout(
         cell.x += dx;
       }
     }
+    for x in &mut col_x {
+      *x += dx;
+    }
     top_pad += ((th - total_height) / 2.0).max(0.0);
     total_width = total_width.max(tw);
     total_height = total_height.max(th);
@@ -28085,6 +28104,8 @@ fn compute_grid_layout(
     total_height,
     v_gap,
     top_pad,
+    col_x,
+    h_gap,
   })
 }
 
@@ -28188,28 +28209,20 @@ fn draw_frame_lines(
     return;
   }
 
-  // Inner row dividers: draw at the top of each row after the first
+  // Inner row dividers: in the middle of the gap above each row after
+  // the first.
   for (i, row) in layout.rows.iter().enumerate() {
     if i == 0 || row.row_h <= 0.0 {
       continue;
     }
-    let y = row_y_starts[i];
+    let y = row_y_starts[i] - layout.v_gap / 2.0;
     line(out, 0.0, y, total_w, y);
   }
 
-  // Inner column dividers: use the widest row to place vertical lines
-  // at every cell boundary. Cells share an x-coordinate scheme inside
-  // a row, so taking max-cells row gives the most granular boundaries.
-  let widest_row = layout
-    .rows
-    .iter()
-    .max_by_key(|r| r.cells.len())
-    .map_or(&[][..], |r| &r.cells[..]);
-  for (i, cell) in widest_row.iter().enumerate() {
-    if i == 0 {
-      continue;
-    }
-    let x = cell.x;
+  // Inner column dividers: in the middle of the gap before each column
+  // after the first.
+  for x in layout.col_x.iter().skip(1) {
+    let x = x - layout.h_gap / 2.0;
     line(out, x, 0.0, x, total_h);
   }
 }
