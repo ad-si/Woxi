@@ -402,6 +402,44 @@ mod graphics {
       assert!(svg.contains("<svg width=\"360\" height=\"360\""));
     }
 
+    /// A curve whose radicand turns negative is drawn out to the edge of
+    /// its real domain, not just to the last grid sample before it.
+    #[test]
+    fn polar_and_parametric_curves_reach_the_edge_of_their_domain() {
+      let ends = |plot: &str| {
+        interpret(&format!(
+          "p = {plot}; pts = Cases[Normal[p], Line[l_] :> l, Infinity]; \
+           {{Length[pts], First[First[pts]], Last[Last[pts]]}}"
+        ))
+        .unwrap()
+      };
+      let parse = |s: &str| -> Vec<f64> {
+        s.trim_matches(|c| c == '{' || c == '}')
+          .split(", ")
+          .map(|v| {
+            let v = v.trim_matches(|c| c == '{' || c == '}');
+            match v.split_once("*^") {
+              Some((m, e)) => {
+                m.parse::<f64>().unwrap() * 10f64.powi(e.parse().unwrap())
+              }
+              None => v.parse().unwrap(),
+            }
+          })
+          .collect()
+      };
+      // r = Sqrt[0.83 - t^2] is real for |t| <= Sqrt[0.83], where r = 0.
+      let polar = parse(&ends("PolarPlot[Sqrt[0.83 - t^2], {t, -2, 2}]"));
+      assert_eq!(polar[0], 1.0);
+      assert!(polar[1..].iter().all(|v| v.abs() < 1e-6), "got {polar:?}");
+      let edge = 0.83f64.sqrt();
+      let param =
+        parse(&ends("ParametricPlot[{t, Sqrt[0.83 - t^2]}, {t, -2, 2}]"));
+      assert_eq!(param[0], 1.0);
+      assert!((param[1] + edge).abs() < 1e-9, "got {param:?}");
+      assert!((param[3] - edge).abs() < 1e-9, "got {param:?}");
+      assert!(param[2].abs() < 1e-6 && param[4].abs() < 1e-6);
+    }
+
     #[test]
     fn parametric_plot_call_slots_each_return_a_point() {
       // Slots written as products/dot products/calls (`k*c[t]`, `m . c[t]`)
@@ -18063,6 +18101,55 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         column.contains("bottom</tspan>"),
         "expected a stacked Column title: {column}"
       );
+    }
+
+    /// A `Grid` title of two or more columns lines its columns up instead
+    /// of running each row's cells together into one line of text.
+    #[test]
+    fn plot_label_multi_column_grid_aligns_columns() {
+      let svg = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Grid[{{\"distance:\", \
+         Style[1.5, Blue, Bold]}, {\"sum of all distances:\", 3}}, \
+         Alignment -> Left]]",
+      );
+      assert!(
+        !svg.contains("distance: <tspan") && !svg.contains("distances: 3"),
+        "the cells of a row should not be joined into one line: {svg}"
+      );
+      // Left-aligned cells of the first column all start at x = 0.
+      let first_col = svg.matches("<text x=\"0.00\"").count();
+      assert_eq!(first_col, 2, "got: {svg}");
+      // Both cells of the second column start at the same x, past the
+      // widest cell of the first.
+      let xs: Vec<f64> = svg
+        .split("<text x=\"")
+        .skip(1)
+        .filter_map(|t| t.split('"').next()?.parse().ok())
+        .filter(|&x: &f64| x > 0.0)
+        .collect();
+      assert!(
+        xs.len() >= 2 && xs.windows(2).all(|w| w[0] == w[1]) && xs[0] > 50.0,
+        "second-column cells should share one x: {xs:?}\n{svg}"
+      );
+      assert!(svg.contains("font-weight=\"bold\""), "got: {svg}");
+    }
+
+    /// Without `Alignment`, a `Grid` title centers each column.
+    #[test]
+    fn plot_label_multi_column_grid_centers_by_default() {
+      let svg = export_svg(
+        "Show[Graphics[Circle[]], PlotLabel -> Grid[{{\"a\", \"b\"}, \
+         {\"long text\", 2}}]]",
+      );
+      // Each of the four cells is centered in its column.
+      assert_eq!(
+        svg
+          .matches("text-anchor=\"middle\" xml:space=\"preserve\"")
+          .count(),
+        4,
+        "got: {svg}"
+      );
+      assert!(svg.contains(">long text<"), "got: {svg}");
     }
 
     #[test]
