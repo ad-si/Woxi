@@ -7674,6 +7674,32 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       expr_to_svg(&unquoted_display_string(&args[0]))
     }
+    // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
+    // (an outer label size around an inner color) takes both: merge them
+    // into one `Style`, the inner directives after (so overriding) the
+    // outer ones.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
+          if inner == "Style"
+            && inner_args.len() >= 2
+            && styled_table_core(&inner_args[0])) =>
+    {
+      let Expr::FunctionCall {
+        args: inner_args, ..
+      } = &args[0]
+      else {
+        unreachable!()
+      };
+      let mut merged = vec![inner_args[0].clone()];
+      merged.extend(args[1..].iter().cloned());
+      merged.extend(inner_args[1..].iter().cloned());
+      expr_to_svg(&Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: merged.into(),
+      })
+    }
     // `Style[content, directives…]` shows `content`; the directives only
     // change how it is set. The picture path has to look through the
     // wrapper, or a styled layout — `Style[Row[{n, " leaves, ", …}],
@@ -8524,6 +8550,25 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       }
     }
     other => expr_text_svg(other),
+  }
+}
+
+/// Whether `expr` is a table layout a `Style` draws as a styled grid,
+/// possibly under further `Style` wrappers.
+pub(crate) fn styled_table_core(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
+      styled_table_core(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "TableForm" || name == "MatrixForm") && !args.is_empty() =>
+    {
+      true
+    }
+    _ => {
+      is_traditional_matrix_form(expr)
+        || distribute_format_over_tableform(expr).is_some()
+    }
   }
 }
 

@@ -5007,6 +5007,87 @@ mod grid_item_style_tests {
   }
 
   #[test]
+  fn test_string_form_with_matrix_in_graphics_text_is_a_matrix() {
+    // A `StringForm` label whose slots hold matrices typesets each as a
+    // parenthesized column, not as its entries flattened into text lines.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Blue, Text[StringForm["`` = `` + t ``", MatrixForm[{"x", "y"}], MatrixForm[{1., 3.}], MatrixForm[{1., -2.}]], {0, 0}], Circle[]}], "SVG"]"#,
+    )
+    .unwrap();
+    let parens = paren_paths(&svg);
+    assert_eq!(parens.len(), 6, "{svg}");
+    assert!(
+      parens.iter().all(|p| p.contains("stroke=\"rgb(0,0,255)\"")),
+      "{svg}"
+    );
+    for entry in [">x</text>", ">y</text>", ">3.</text>", ">-2.</text>"] {
+      assert!(svg.contains(entry), "{entry} missing: {svg}");
+    }
+    assert!(!svg.contains("<tspan x="), "{svg}");
+    assert!(!svg.contains("StringForm"), "{svg}");
+  }
+
+  /// The `(x, width)` of the first nested picture an inset label embeds,
+  /// and the x shift of its content within that picture.
+  fn first_inset_geometry(svg: &str) -> (f64, f64) {
+    let attr = |s: &str, key: &str| -> f64 {
+      let start = s.find(key).unwrap() + key.len();
+      let rest = &s[start..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    let inset = &svg[svg.find("<svg x=").unwrap()..];
+    let shift = &inset[inset.find("translate(").unwrap() + 10..];
+    let shift: f64 = shift[..shift.find(',').unwrap()].parse().unwrap();
+    (attr(inset, "<svg x=\""), shift)
+  }
+
+  #[test]
+  fn test_text_offset_places_a_matrix_label() {
+    // `Text[label, pos, {-1, 0}]` puts the left edge of a label drawn as a
+    // picture (here a matrix) on `pos`, as it does for a plain text label.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Point[{0, 0}], Text[Row[{"v = ", MatrixForm[{1, 2}]}], {0, 0}, {-1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 400], "SVG"]"#,
+    )
+    .unwrap();
+    let cx: f64 = {
+      let s = &svg[svg.find("<circle cx=\"").unwrap() + 12..];
+      s[..s.find('"').unwrap()].parse().unwrap()
+    };
+    let (x, shift) = first_inset_geometry(&svg);
+    assert!(
+      (x + shift - cx).abs() < 0.01,
+      "{x} + {shift} vs {cx}: {svg}"
+    );
+    assert_eq!(paren_paths(&svg).len(), 2, "{svg}");
+  }
+
+  #[test]
+  fn test_nested_style_around_matrix_keeps_outer_size() {
+    // An inner `Style` coloring a matrix keeps the font size of the
+    // `Style` around it, alone or as an item of a styled `Row`.
+    for code in [
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], Red], 30], "SVG"]"#,
+      r#"ExportString[Style[Row[{"a ", Style[MatrixForm[{1, 2}], Red]}], 30], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("font-size=\"14\""), "{code}: {svg}");
+      assert!(svg.contains("font-size=\"30\""), "{code}: {svg}");
+      assert_eq!(
+        svg.matches("fill=\"rgb(255,0,0)\"").count(),
+        2,
+        "{code}: {svg}"
+      );
+    }
+    // The inner directives win over the outer ones.
+    let svg = woxi::interpret(
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], 12, Red], 30], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("font-size=\"12\""), "{svg}");
+    assert!(!svg.contains("font-size=\"30\""), "{svg}");
+  }
+
+  #[test]
   fn test_style_around_style_sets_one_tspan() {
     // Nested `Style`s merge into one run (the inner directives win), so no
     // doubly nested `tspan` loses its baseline in renderers like resvg.
