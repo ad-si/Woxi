@@ -50642,13 +50642,17 @@ mod stacked_text_and_scientific_form_labels {
 mod traditional_form_matrix_text {
   use super::*;
 
-  /// A `TraditionalForm` matrix in a `Text` label keeps one line per row
-  /// instead of running all its entries together.
+  /// A `TraditionalForm` matrix in a `Text` label is typeset as a grid —
+  /// each entry its own cell between drawn parentheses — instead of running
+  /// all its entries together.
   #[test]
-  fn text_matrix_has_one_line_per_row() {
+  fn text_matrix_is_a_parenthesized_grid() {
     let svg = export_svg("Graphics[Text[TraditionalForm[{{a, b}, {c, d}}]]]");
-    assert!(svg.contains(">(a  b</tspan>"), "{svg}");
-    assert!(svg.contains(">c  d)</tspan>"), "{svg}");
+    for entry in ["a", "b", "c", "d"] {
+      assert!(svg.contains(&format!(">{entry}</text>")), "{svg}");
+    }
+    assert_eq!(svg.matches("<path d=").count(), 2, "{svg}");
+    assert!(!svg.contains("(a"), "{svg}");
   }
 }
 
