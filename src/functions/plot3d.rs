@@ -5993,6 +5993,9 @@ struct StyleState3D {
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
+  /// `(bold, italic)`: `Style[…, Bold]` / `Style[…, Italic]` (or
+  /// `FontWeight -> Bold` / `FontSlant -> Italic`) around `Text` labels.
+  font_face: (bool, bool),
   /// The panel `Background -> color` paints behind the `Text` labels, as
   /// a `Style[Text[…], Background -> color]` wrapper or the label's own
   /// option gives it. `None` draws the label straight on the scene.
@@ -6022,6 +6025,7 @@ impl Default for StyleState3D {
       vertex_colors: None,
       arrowhead: None,
       font_size: None,
+      font_face: (false, false),
       text_background: None,
     }
   }
@@ -7979,6 +7983,32 @@ fn text3d_background_option(opt: &Expr) -> Option<Option<(u8, u8, u8)>> {
 /// Typesets `label_expr` (a `Text`/`Inset` label, e.g. a plain string or
 /// `Style[…]`) and pushes a `Text3D` primitive for it at `pos`, if it
 /// renders to non-empty text.
+/// The `(bold, italic)` a font-face `Style` directive turns on: `Bold`,
+/// `Italic`, `FontWeight -> Bold` or `FontSlant -> Italic`.
+fn font_face_directive(directive: &Expr) -> Option<(bool, bool)> {
+  match directive {
+    Expr::Identifier(n) if n == "Bold" => Some((true, false)),
+    Expr::Identifier(n) if n == "Italic" => Some((false, true)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "FontWeight" && v == "Bold" =>
+      {
+        Some((true, false))
+      }
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "FontSlant" && v == "Italic" =>
+      {
+        Some((false, true))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 fn push_text3d_label(
   label_expr: &Expr,
   pos: Point3D,
@@ -8010,6 +8040,7 @@ fn push_text3d_label(
   let (bold, italic) = styled
     .as_ref()
     .map_or((false, false), |s| (s.bold, s.italic));
+  let (bold, italic) = (bold || style.font_face.0, italic || style.font_face.1);
   // A number that typesets as a stacked fraction (`1/30`) keeps the
   // flattened `num\n--\nden` form the 2D labels draw it from, so the
   // renderer stacks it the same way instead of writing `1/30` on one line.
@@ -8366,9 +8397,10 @@ fn collect_3d_primitives(
         }
         // `Arrow[Tube[curve, r]]` is a solid arrow: the tube, stopped short
         // of the curve's end, and a slim cone head whose tip sits on that
-        // end. Wolfram sizes the head by the arrow (a twentieth of the
-        // curve's extent), not by the tube, so a thick tube hides most of
-        // it.
+        // end. Wolfram sizes the head by the picture, not by the tube (so a
+        // thick tube hides most of it): `Arrowheads[s]` (default a
+        // twentieth) is a fraction of the diagonal of the scene's box.
+        // Before that box is known, the curve's own extent stands in.
         "Arrow"
           if matches!(args.first(), Some( Expr::FunctionCall { name: n, args: ta })
             if n == "Tube" && !ta.is_empty()) =>
@@ -8384,12 +8416,19 @@ fn collect_3d_primitives(
             other => other.clone(),
           };
           let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+          // The head covers the last `len` of the curve (measured along
+          // it, so a finely sampled arc still gets a full-size head): the
+          // shaft stops where it begins and the cone points from there to
+          // the tip.
           let head = parse_point3d_list(&curve)
             .filter(|pts| pts.len() >= 2)
             .and_then(|pts| {
               let tip = pts[pts.len() - 1];
-              let prev = pts[pts.len() - 2];
-              let seg = v_len([tip.x - prev.x, tip.y - prev.y, tip.z - prev.z]);
+              let dist = |a: Point3D, b: Point3D| {
+                v_len([a.x - b.x, a.y - b.y, a.z - b.z])
+              };
+              let curve_len: f64 =
+                pts.windows(2).map(|w| dist(w[0], w[1])).sum();
               let (mut lo, mut hi) =
                 ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
               for p in &pts {
@@ -8398,20 +8437,41 @@ fn collect_3d_primitives(
                   hi[k] = hi[k].max(c);
                 }
               }
-              let diag = v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]);
-              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(seg);
-              (seg > 0.0 && len > 0.0).then(|| {
-                let base = Point3D {
-                  x: tip.x + (prev.x - tip.x) / seg * len,
-                  y: tip.y + (prev.y - tip.y) / seg * len,
-                  z: tip.z + (prev.z - tip.z) / seg * len,
-                };
-                let mut shaft = pts.clone();
-                if let Some(last) = shaft.last_mut() {
-                  *last = base;
+              let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
+                v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
+              });
+              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(curve_len);
+              if !(curve_len > 0.0 && len > 0.0) {
+                return None;
+              }
+              // Walk back from the tip until `len` of the curve is used up.
+              let mut remaining = len;
+              let mut shaft = pts.clone();
+              let mut base = pts[0];
+              while shaft.len() >= 2 {
+                let end = shaft[shaft.len() - 1];
+                let prev = shaft[shaft.len() - 2];
+                let seg = dist(end, prev);
+                if seg >= remaining {
+                  let t = if seg > 0.0 { remaining / seg } else { 0.0 };
+                  base = Point3D {
+                    x: end.x + (prev.x - end.x) * t,
+                    y: end.y + (prev.y - end.y) * t,
+                    z: end.z + (prev.z - end.z) * t,
+                  };
+                  if let Some(last) = shaft.last_mut() {
+                    *last = base;
+                  }
+                  break;
                 }
-                (shaft, base, tip, len)
-              })
+                remaining -= seg;
+                shaft.pop();
+              }
+              if shaft.len() < 2 {
+                shaft = vec![pts[0], base];
+              }
+              let chord = dist(base, tip);
+              (chord > 0.0).then_some((shaft, base, tip, chord))
             });
           match head {
             Some((shaft, base, tip, len)) => {
@@ -8895,6 +8955,11 @@ fn collect_3d_primitives(
           for directive in &args[1..] {
             let evaluated =
               evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
+            if let Some((bold, italic)) = font_face_directive(&evaluated) {
+              style.font_face.0 |= bold;
+              style.font_face.1 |= italic;
+              continue;
+            }
             if let Some(bg) = text3d_background_option(&evaluated) {
               style.text_background = bg;
               continue;
@@ -10091,6 +10156,29 @@ thread_local! {
 /// 4 pixels wide).
 fn scene_image_width() -> f64 {
   SCENE_IMAGE_WIDTH.get()
+}
+
+thread_local! {
+  /// Diagonal of the box of the `Graphics3D` currently being collected (its
+  /// explicit `PlotRange`, else the extent of its contents), which an
+  /// `Arrowheads[s]` size on an `Arrow[Tube[…]]` is a fraction of. `None`
+  /// until the box is known: a first collection pass measures it.
+  static SCENE_ARROW_EXTENT: std::cell::Cell<Option<f64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// True when a 3D scene holds an `Arrow[Tube[…]]`, whose solid head is
+/// sized by the box of the whole scene.
+fn contains_tube_arrow(expr: &Expr) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().any(contains_tube_arrow),
+    Expr::FunctionCall { name, args } => {
+      (name == "Arrow"
+        && matches!(args.first(), Some(Expr::FunctionCall { name: n, .. }) if n == "Tube"))
+        || args.iter().any(contains_tube_arrow)
+    }
+    _ => false,
+  }
 }
 
 thread_local! {
@@ -11366,7 +11454,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
   SCENE_IMAGE_WIDTH.set(svg_width as f64);
+  SCENE_ARROW_EXTENT.set(None);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
+
+  // Solid `Arrow[Tube[…]]` heads are sized by the scene's box, so once the
+  // first pass has measured it the scene is collected again.
+  if contains_tube_arrow(&content) {
+    let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    let diag = v_len([b[0].1 - b[0].0, b[1].1 - b[1].0, b[2].1 - b[2].0]);
+    if diag.is_finite() && diag > 0.0 {
+      SCENE_ARROW_EXTENT.set(Some(diag));
+      prims.clear();
+      style3d = StyleState3D::default();
+      collect_3d_primitives(&content, &mut style3d, &mut prims);
+    }
+  }
 
   if plot_range.is_none()
     && let Some(partial) = partial_range
@@ -11843,6 +11945,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vertex_colors: None,
             arrowhead: None,
             font_size: None,
+            font_face: (false, false),
             text_background: None,
           },
         ),

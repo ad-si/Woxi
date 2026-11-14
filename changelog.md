@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- A `TransformationFunction` applied to a geometric region (`Cylinder`,
+    `Sphere`, `Ball`, `Disk`, `Circle`, `Cone`, `Line`, `Polygon`, …) maps the
+    region's points and keeps the primitive, so a rotated `Cylinder` is drawn.
+- The solid head of `Arrow[Tube[…]]` is sized by the scene's box and runs
+    along the curve, so short axis arrows and finely sampled arcs keep a
+    visible head. `Style[Text[…], Italic]` slants 3D labels.
+
 # 2026-11-08 - 0.4.0
 
 Version 0.4.0 improves package and notebook compatibility: contexts keep
