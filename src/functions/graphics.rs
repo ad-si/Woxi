@@ -3527,9 +3527,19 @@ fn collect_primitives(
           } else {
             match inset_primitives(args, errors) {
               Some(inner) => prims.extend(inner),
-              None => parse_text(args, style, prims),
+              None => parse_text(&inset_as_text_args(args), style, prims),
             }
           }
+        }
+        // `InsetBox[boxes, pos, …]` is the box form of `Inset`: a label a
+        // Demonstration's hand-drawn diagram carries as typeset boxes (often
+        // a `Cell["text", …]`). Its arguments follow `Inset`'s, so it is
+        // drawn as `Inset[RawBoxes[boxes], …]` — the boxes read as the text
+        // they typeset.
+        "InsetBox" if !args.is_empty() => {
+          let mut inset_args = args.to_vec();
+          inset_args[0] = call("RawBoxes", vec![args[0].clone()]);
+          collect_primitives(&call("Inset", inset_args), style, prims, errors);
         }
         // `RasterBox` is the box form of `Raster` — the shape a stored
         // Demonstration image arrives in.
@@ -6880,6 +6890,37 @@ fn inset_text(obj: &Expr, pos: &Expr, inset_args: &[Expr]) -> Expr {
     ),
     None => call("Text", vec![obj.clone(), pos.clone()]),
   }
+}
+
+/// The `Text` arguments that place `Inset[obj, pos, opos, size, dirs, opts…]`
+/// when `obj` is drawn as a label. `Text`'s fourth slot is a direction, but
+/// `Inset`'s is a size, so it must not be passed through: the label's
+/// baseline follows the first vector of `dirs` (the direction of the object's
+/// x axis) instead. Options such as `Background -> …` are kept.
+fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
+  let is_option =
+    |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let positional: Vec<&Expr> =
+    args.iter().take_while(|e| !is_option(e)).collect();
+  let mut text_args: Vec<Expr> =
+    positional.iter().take(3).map(|e| (*e).clone()).collect();
+  let x_direction = match positional.get(4) {
+    Some(Expr::List(rows)) if rows.len() == 2 => match &rows[0] {
+      Expr::List(v) if v.len() == 2 => Some(rows[0].clone()),
+      _ => None,
+    },
+    _ => None,
+  };
+  if let Some(dir) = x_direction {
+    // `opos` defaults to the center, which is `Text`'s zero offset.
+    while text_args.len() < 3 {
+      text_args
+        .push(Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into()));
+    }
+    text_args.push(dir);
+  }
+  text_args.extend(args.iter().filter(|e| is_option(e)).cloned());
+  text_args
 }
 
 /// A symbolic alignment as a `Text` offset: `Left`/`Bottom` are -1,
@@ -20948,7 +20989,9 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
       ),
       // The trailing arguments of these are a tag, a form or display
       // options — they are not part of the drawn text.
-      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" => args
+      // A `Cell[content, style, opts…]` inside boxes shows only its
+      // content; the style name is not drawn.
+      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" | "Cell" => args
         .first()
         .map_or_default(|a| box_expr_to_plain_in(a, spaced)),
       // A grid of boxes (a matrix in `TraditionalForm`) is drawn as lines:
