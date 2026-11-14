@@ -6256,6 +6256,56 @@ mod plot3d {
       assert!(scaled.contains("stroke=\"#0000FF\""));
     }
 
+    /// Regression: a `ColorFunction` returning `Directive[color,
+    /// Opacity[a]]` was not read as a color, so the curve was drawn black
+    /// and opaque. The color applies and the opacity makes it translucent,
+    /// also in the primitives taken out of the plot with `Part`.
+    #[test]
+    fn parametric_plot_color_function_directive_with_opacity() {
+      clear_state();
+      let plot = "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+                  ColorFunction -> (Directive[Red, Opacity[#3]] &)]";
+      let svg = interpret(&format!("ExportString[{plot}, \"SVG\"]")).unwrap();
+      assert!(svg.contains("stroke=\"#FF0000\""), "{svg}");
+      assert!(!svg.contains("stroke=\"#000000\""), "{svg}");
+      assert!(svg.contains("opacity=\"0.5"), "{svg}");
+      // The extracted runs: red throughout, fading in along the parameter.
+      assert_eq!(
+        interpret(&format!(
+          "dirs = Cases[{plot}[[1]], Directive[__], Infinity]; \
+           {{Union[Cases[dirs, _RGBColor, Infinity]], \
+           First[Cases[First[dirs], Opacity[a_] :> a]] < 0.01, \
+           Max[Cases[dirs, Opacity[a_] :> a, Infinity]] > 0.98}}"
+        ))
+        .unwrap(),
+        "{{RGBColor[1., 0., 0.]}, True, True}"
+      );
+      // `Opacity[a, color]` is read the same way.
+      let svg = interpret(
+        "ExportString[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+         ColorFunction -> (Opacity[0.5, Blue] &)], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(svg.contains("stroke=\"#0000FF\""), "{svg}");
+      assert!(svg.contains("opacity=\"0.50"), "{svg}");
+    }
+
+    /// Regression: the primitives of a translucent plot curve (`PlotStyle ->
+    /// Opacity[a]`) taken out with `Part` lost the opacity.
+    #[test]
+    fn plot_part_keeps_curve_opacity() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Cases[Plot[x, {x, 0, 1}, PlotStyle -> Opacity[0.5]][[1]], \
+           Directive[__], Infinity]"
+        )
+        .unwrap(),
+        "{Directive[Opacity[0.5], RGBColor[0.24, 0.6, 0.8], \
+         AbsoluteThickness[2.]]}"
+      );
+    }
+
     /// Regression: `Axes -> None` was ignored, so the axes were still drawn.
     #[test]
     fn axes_none_hides_axes() {

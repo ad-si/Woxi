@@ -1687,6 +1687,41 @@ pub(crate) fn parse_color_function_result(expr: &Expr) -> Option<Color> {
     );
     return Some(c.with_alpha(ch.get(3).copied().unwrap_or(1.0)));
   }
+  // `Directive[color, Opacity[a]]` (or `Opacity[a, color]`): the color the
+  // directive sets, with the opacity folded into its alpha. A directive
+  // that sets no color does not color the curve.
+  if let Expr::FunctionCall { name, args } = expr {
+    match name.as_str() {
+      "Directive" => {
+        let mut color: Option<Color> = None;
+        let mut alpha: Option<f64> = None;
+        for d in args {
+          if let Expr::FunctionCall { name, args: oa } = d
+            && name == "Opacity"
+            && !oa.is_empty()
+          {
+            if let Some(c) = parse_color_function_result(d) {
+              color = Some(c);
+            }
+            alpha = expr_to_f64(&oa[0]).or(alpha);
+          } else if let Some(c) = parse_color_function_result(d) {
+            color = Some(c);
+          }
+        }
+        let c = color?;
+        return Some(match alpha {
+          Some(a) => c.with_alpha(a.clamp(0.0, 1.0)),
+          None => c,
+        });
+      }
+      "Opacity" if args.len() == 2 => {
+        let a = expr_to_f64(&args[0])?;
+        return parse_color_function_result(&args[1])
+          .map(|c| c.with_alpha(a.clamp(0.0, 1.0)));
+      }
+      _ => {}
+    }
+  }
   parse_color(expr)
 }
 
@@ -16136,7 +16171,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       "SubscriptBox" if args.len() == 2 => {
         let base = layout_box(&args[0], font_size);
         let sub = layout_box_nested(&args[1], font_size * 0.7);
-        let sub_y = base.height * 0.4;
+        // A text base (ascent 0.8 em, height 1.05 em) drops its subscript
+        // to 0.4 of its height, i.e. 0.38 em above the base's baseline. A
+        // base with an accent stacked on it (`OverDot[θ]`) keeps that
+        // distance from its baseline rather than from its taller top, so
+        // the subscript is not lifted to the accent.
+        let sub_y = (base.height * 0.4).max(base.baseline - 0.38 * font_size);
         let elements = format!(
           "{}{}",
           base.translate(0.0, 0.0),

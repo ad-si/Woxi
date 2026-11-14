@@ -376,7 +376,7 @@ fn samples_to_series(samples: Vec<Sample>) -> (Vec<Vec<(f64, f64)>>, Vec<f64>) {
 /// with `ColorFunctionScaling` on, `x` and `y` are rescaled over the plot
 /// range and `t` over the parameter range first. A named gradient colors by
 /// the scaled `x`. Consecutive runs share their boundary point so the curve
-/// stays connected. Returns the run polylines and the color of each.
+/// stays connected. Returns the run polylines and the RGBA color of each.
 fn color_function_series(
   curves: &[Vec<(f64, f64)>],
   params: &[Vec<f64>],
@@ -385,21 +385,21 @@ fn color_function_series(
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   (t_min, t_max): (f64, f64),
-) -> (Vec<Vec<(f64, f64)>>, Vec<(u8, u8, u8)>, Vec<usize>) {
+) -> (Vec<Vec<(f64, f64)>>, Vec<(u8, u8, u8, u8)>, Vec<usize>) {
   let scale = |v: f64, lo: f64, hi: f64| {
     if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
   };
   let scheme = crate::functions::field_plot::color_function_scheme_name(cf);
-  let color_at = |x: f64, y: f64, t: f64| -> (u8, u8, u8) {
+  let color_at = |x: f64, y: f64, t: f64| -> (u8, u8, u8, u8) {
     let (sx, sy, st) = (
       scale(x, x_min, x_max),
       scale(y, y_min, y_max),
       scale(t, t_min, t_max),
     );
     if let Some(name) = &scheme {
-      return crate::functions::field_plot::apply_named_color_function(
-        name, sx,
-      );
+      let (r, g, b) =
+        crate::functions::field_plot::apply_named_color_function(name, sx);
+      return (r, g, b, 255);
     }
     // `{True, False}` scales x alone; the parameter follows x.
     let args = vec![
@@ -415,10 +415,10 @@ fn color_function_series(
     evaluate_expr_to_expr(&call)
       .ok()
       .and_then(|r| crate::functions::graphics::parse_color_function_result(&r))
-      .map_or((0, 0, 0), |c| (ch(c.r), ch(c.g), ch(c.b)))
+      .map_or((0, 0, 0, 255), |c| (ch(c.r), ch(c.g), ch(c.b), ch(c.a)))
   };
   let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
-  let mut colors: Vec<(u8, u8, u8)> = Vec::new();
+  let mut colors: Vec<(u8, u8, u8, u8)> = Vec::new();
   let mut owners: Vec<usize> = Vec::new();
   for (ci, (curve, ts)) in curves.iter().zip(params).enumerate() {
     // Index of the run still being extended (None after a gap).
@@ -1070,7 +1070,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.plot_style = colors
       .iter()
       .zip(&owners)
-      .map(|(&(r, g, b), &curve)| {
+      .map(|(&(r, g, b, a), &curve)| {
         // Runs keep the weight and opacity of the curve they came from.
         let mut st = if base.is_empty() {
           SeriesStyle::default()
@@ -1082,6 +1082,12 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           f64::from(g) / 255.0,
           f64::from(b) / 255.0,
         ));
+        // `Directive[color, Opacity[a]]` results make the run translucent,
+        // on top of any opacity the curve's own style gives it.
+        if a < 255 {
+          let alpha = f64::from(a) / 255.0;
+          st.opacity = Some(st.opacity.unwrap_or(1.0) * alpha);
+        }
         st
       })
       .collect();
