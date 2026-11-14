@@ -2402,9 +2402,38 @@ pub fn expr_to_bigfloat(
   match expr {
     Expr::Integer(n) => Ok(BigFloat::from_i128(*n, bits)),
     Expr::BigInteger(n) => {
-      // Convert BigInt to BigFloat by parsing its decimal string
-      let s = n.to_string();
-      Ok(BigFloat::parse(&s, astro_float::Radix::Dec, bits, rm, cc))
+      // Only the leading `bits` (plus guard) bits can matter. Converting the
+      // whole number to decimal is quadratic in its length (seconds for
+      // `10^8092733`), so the top bits are converted and the binary
+      // exponent shifted back afterwards.
+      let total = n.bits() as usize;
+      let keep = bits + 64;
+      if total <= keep {
+        let s = n.to_string();
+        return Ok(BigFloat::parse(&s, astro_float::Radix::Dec, bits, rm, cc));
+      }
+      let shift = total - keep;
+      let top: num_bigint::BigInt = n >> shift;
+      let mut value = BigFloat::parse(
+        &top.to_string(),
+        astro_float::Radix::Dec,
+        bits,
+        rm,
+        cc,
+      );
+      match (value.exponent(), astro_float::Exponent::try_from(shift)) {
+        (Some(e), Ok(s)) if e.checked_add(s).is_some() => {
+          value.set_exponent(e + s);
+          Ok(value)
+        }
+        _ => Ok(BigFloat::parse(
+          &n.to_string(),
+          astro_float::Radix::Dec,
+          bits,
+          rm,
+          cc,
+        )),
+      }
     }
     Expr::Real(f) => Ok(
       crate::functions::math_ast::numerical::bigfloat_from_f64(*f, bits),

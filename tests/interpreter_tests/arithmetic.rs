@@ -16538,3 +16538,21 @@ fn signed_precision_literals_release_the_minus() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+// A huge integer is assigned and multiplied by a real without a decimal
+// round trip of all its digits (quadratic: seconds for 10^8092733, found by
+// the interpret fuzzer); the conversion keeps only the leading bits.
+#[test]
+fn huge_integer_times_real_keeps_its_leading_digits() {
+  for (code, expected) in [
+    ("x = 10^80000; x * 2.5", "2.5`15.954589770191005*^80000"),
+    (
+      "(3^5000 + 1) * 1.5`30",
+      "6.058496444680733009551295114722627167591747250163964562`30.*^2385",
+    ),
+    ("(10^500 + 7) * 1.`60", "1.`60.*^500"),
+    ("2^100 * 1.5", "1.901475900342344*^30"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
