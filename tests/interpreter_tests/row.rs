@@ -760,6 +760,73 @@ mod traditional_row_layout {
   }
 }
 
+/// Row items are typeset like StandardForm values: an inert call of an
+/// undefined head stacks the fractions among its arguments, and the
+/// constants `I`, `Pi`, … are set as their glyphs inside stacked values.
+mod row_standard_typesetting {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  fn texts(svg: &str) -> Vec<String> {
+    svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|t| {
+        let body = t.split_once('>')?.1;
+        let body = body
+          .strip_prefix("<tspan")
+          .map_or(body, |b| b.split_once('>').map_or(b, |(_, rest)| rest));
+        Some(body.split('<').next()?.to_string())
+      })
+      .filter(|s| !s.trim().is_empty())
+      .collect()
+  }
+
+  #[test]
+  fn undefined_head_call_stacks_its_fraction_argument() {
+    let t = texts(&svg("Row[{g[3/8], \"=\", x}]"));
+    assert!(t.iter().any(|s| s == "3"), "{t:?}");
+    assert!(t.iter().any(|s| s == "8"), "{t:?}");
+    assert!(!t.iter().any(|s| s.contains("3/8")), "{t:?}");
+  }
+
+  #[test]
+  fn styled_undefined_head_call_stacks_its_fraction_argument() {
+    let t = texts(&svg("Style[Row[{g[13/42], \"=\", 5/7}], 24]"));
+    assert!(t.iter().any(|s| s == "13"), "{t:?}");
+    assert!(t.iter().any(|s| s == "42"), "{t:?}");
+  }
+
+  #[test]
+  fn imaginary_unit_in_a_stacked_value_is_the_glyph() {
+    for code in [
+      "Row[{I/2}]",
+      "Row[{5/7 + (4 I)/(7 Sqrt[3])}]",
+      "Style[Row[{5/7 + (4 I)/(7 Sqrt[3])}], 24]",
+    ] {
+      let t = texts(&svg(code));
+      assert!(!t.iter().any(|s| s == "I"), "{code}: {t:?}");
+    }
+  }
+
+  #[test]
+  fn pi_in_a_stacked_row_item_is_the_glyph() {
+    let t = texts(&svg("Row[{Pi/2, x}]"));
+    assert!(t.iter().any(|s| s == "\u{03C0}"), "{t:?}");
+    assert!(!t.iter().any(|s| s == "Pi"), "{t:?}");
+  }
+
+  #[test]
+  fn string_literal_is_not_replaced_by_a_glyph() {
+    let t = texts(&svg("Row[{g[\"Pi\", 1/2]}]"));
+    assert!(t.iter().any(|s| s.contains("Pi")), "{t:?}");
+  }
+}
+
 /// Regression: a `Row` holding a nested `Grid` (a binomial-style `N` over
 /// `k` between parentheses) inside a framed `Grid` cell printed the inner
 /// grid's `Grid[{{…}}]` source text instead of stacking its rows.
