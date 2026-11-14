@@ -3736,6 +3736,7 @@ fn contour_plot_equations(
           opacity: style.and_then(|s| s.opacity).filter(|o| *o < 1.0),
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
+          extra_fills: Vec::new(),
         });
       }
     }

@@ -9987,3 +9987,13 @@ in a monospace face regardless of the grid's `BaseStyle -> {FontFamily ->
 Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
+
+### `Show[plots, PlotRange -> {xr, Automatic}]` keeps the plots' explicit y range
+
+When `Show` merges plots that were drawn with an explicit
+`PlotRange -> {0, 100}` and is itself given `PlotRange -> {{x0, x1},
+Automatic}`, Wolfram recomputes the vertical range from the merged graphics,
+dropping outlying vertices such as the `Top` corners of `Filling -> {i -> Top}`
+polygons (a saved snapshot shows roughly 2.5–29.5 for curves spanning
+4–22), while Woxi keeps the first plot's 0–100. The exact outlier rule
+for an `Automatic` range of merged graphics is not yet known.

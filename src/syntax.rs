@@ -267,6 +267,35 @@ pub struct PlotSeriesData {
   /// The curve's initial sampling grid, the points `Mesh -> Full` marks
   /// (empty when the plot has none), so a redraw marks the same points.
   pub mesh_full_points: Vec<(f64, f64)>,
+  /// Fills beyond the first when several `Filling` rules name this series
+  /// (`Filling -> {1 -> {{2}, c1}, 1 -> {Top, c2}}`), drawn after the main
+  /// one in rule order. Each carries its own target and appearance.
+  pub extra_fills: Vec<SeriesFill>,
+}
+
+/// One additional fill of a series: its target and its `FillingStyle`
+/// color/opacity overrides (see [`PlotSeriesData::extra_fills`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SeriesFill {
+  pub filling: SeriesFilling,
+  pub color: Option<(u8, u8, u8)>,
+  pub opacity: Option<f64>,
+}
+
+impl PlotSeriesData {
+  /// Every fill of the series in drawing order: the main `filling` (when
+  /// it is not `None`) followed by `extra_fills`.
+  pub fn fills(&self) -> Vec<SeriesFill> {
+    let main = SeriesFill {
+      filling: self.filling,
+      color: self.fill_color,
+      opacity: self.fill_opacity,
+    };
+    std::iter::once(main)
+      .filter(|f| f.filling != SeriesFilling::None)
+      .chain(self.extra_fills.iter().copied())
+      .collect()
+  }
 }
 
 /// Convert a Wolfram named character name (e.g. "Pi", "Alpha", "Sum") to its
