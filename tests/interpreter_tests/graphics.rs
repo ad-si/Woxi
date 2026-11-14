@@ -26327,6 +26327,27 @@ mod graphics_list {
     );
   }
 
+  /// `GraphicsArray` (superseded by `GraphicsGrid`) lays out its graphics
+  /// like `GraphicsGrid`: a flat list is one row, a nested list a grid. It
+  /// used to stay symbolic and export as its text.
+  #[test]
+  fn graphics_array_lays_out_like_graphics_grid() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g1 = Graphics[Disk[]]; g2 = Graphics[Circle[]]; \
+         {Head[GraphicsArray[{g1, g2}]], \
+          ExportString[GraphicsArray[{g1, g2}], \"SVG\"] === \
+            ExportString[GraphicsGrid[{{g1, g2}}], \"SVG\"], \
+          ExportString[GraphicsArray[{{g1}, {g2}}, Spacings -> 5], \"SVG\"] \
+            === ExportString[GraphicsGrid[{{g1}, {g2}}, Spacings -> 5], \
+              \"SVG\"]}"
+      )
+      .unwrap(),
+      "{Graphics, True, True}"
+    );
+  }
+
   /// Regression: a `Disk` in a `GraphicsRow`/`GraphicsGrid` cell used to be
   /// stretched into an ellipse because the layout pinned the cell shape with
   /// an `AspectRatio` rule; the cell shape must letterbox the data instead.

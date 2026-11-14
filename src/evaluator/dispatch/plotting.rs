@@ -788,6 +788,20 @@ pub fn dispatch_plotting(
     "GraphicsGrid" if !args.is_empty() => {
       Some(crate::functions::graphics::graphics_grid_ast(args))
     }
+    // The pre-6 `GraphicsArray` is laid out by `GraphicsGrid`, which
+    // superseded it: a flat list of graphics is one row.
+    "GraphicsArray"
+      if matches!(args.first(), Some(Expr::List(items)) if !items.is_empty()) =>
+    {
+      let Some(Expr::List(items)) = args.first() else {
+        unreachable!()
+      };
+      let mut grid_args = args.to_vec();
+      if !items.iter().all(|item| matches!(item, Expr::List(_))) {
+        grid_args[0] = Expr::List(vec![args[0].clone()].into());
+      }
+      Some(crate::functions::graphics::graphics_grid_ast(&grid_args))
+    }
     // Overlay is a display wrapper, not a picture: `Head[Overlay[…]]` is
     // `Overlay`, and it echoes as `Overlay[{-Graphics-, …}]`. Returning
     // None keeps it symbolic; the output stage composes the stacked
