@@ -31066,6 +31066,26 @@ pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
   Some(new_args)
 }
 
+/// The box a `Pane[content, {w, h}]` with a numeric width and height
+/// draws: exactly `w`×`h`, the content aligned inside it. `None` for any
+/// other expression (an unsized pane only shows its content).
+fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
+  use crate::evaluator::dispatch::io_functions::{
+    pane_fixed_size, pane_size_component,
+  };
+  let Expr::FunctionCall { name, args } = item else {
+    return None;
+  };
+  if name != "Pane" || args.len() < 2 {
+    return None;
+  }
+  let size = pane_fixed_size(args)?;
+  pane_size_component(&size[0])?;
+  pane_size_component(&size[1])?;
+  let svg = crate::evaluator::expr_to_svg(item);
+  svg.starts_with("<svg").then_some(svg)
+}
+
 fn column_layout_svg(args: &[Expr]) -> Option<String> {
   if args.is_empty() {
     return None;
@@ -31174,6 +31194,16 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   let cells: Vec<Cell> = items
     .iter()
     .map(|item| {
+      // A `Pane[content, {w, h}]` item reserves its whole `w`×`h` area,
+      // with the content placed in it by the pane's `Alignment`.
+      if let Some(svg) = fixed_size_pane_svg(item) {
+        let (w, h) = parse_svg_wh(&svg);
+        return Cell::Svg {
+          svg,
+          width: w,
+          height: h,
+        };
+      }
       let resolved = resolve_display_item(item);
       match &resolved {
         Expr::Graphics { svg, .. } => {
@@ -31881,6 +31911,18 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           let (w, h) = parse_svg_wh(svg);
           Cell::Svg {
             svg: svg.clone(),
+            width: w,
+            height: h,
+          }
+        }
+        // A raster image is a picture drawn at its own size, as in a
+        // `Column` — not the `-Image (w×h)-` placeholder text.
+        Expr::Image { .. } => {
+          let svg = crate::evaluator::expr_to_svg(&resolved);
+          let (w, h) =
+            svg_natural_size(&svg).unwrap_or_else(|| parse_svg_wh(&svg));
+          Cell::Svg {
+            svg,
             width: w,
             height: h,
           }

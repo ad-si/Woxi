@@ -8980,7 +8980,12 @@ borders too short for that scale. `"Flag"` is a 160 px wide `Image` of the
 public-domain Wikimedia Commons flag (via flagcdn.com, see
 `scripts/gen_country_flags.py`), so its pixels and `ImageDimensions` differ
 from WL's own flag images (the Gaza Strip and the West Bank show the flag of
-Palestine).
+Palestine). `"FlagDescription"` is the "description" part of the current CIA
+World Factbook flag entry (see `scripts/gen_country_flag_descriptions.py`),
+so its wording can differ from WL's older curated text, and territories the
+Factbook does not describe (French overseas departments, the Gaza Strip, the
+West Bank, Western Sahara, the Aland Islands) give `Missing["NotAvailable",
+"FlagDescription"]`.
 
 ### CityData beyond the verified cities
 

@@ -4762,6 +4762,18 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       return rendered;
     }
   }
+  // A fixed-size `Pane` of text keeps its box as well: the text is set in
+  // it by the Pane's `Alignment`, and the box is as tall as the Pane says,
+  // not as tall as the text.
+  if let syntax::Expr::FunctionCall { name, .. } = expr
+    && name == "Pane"
+    && pane_fixed_size(expr).is_some()
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      return graphics_result(svg);
+    }
+  }
   let expr = unwrap_display_pass_through(expr);
   let expr = render_interactive_pane_if_needed(expr);
   let expr = render_dynamic_if_needed(expr);
@@ -4904,8 +4916,12 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // Prose built from a `Row` of strings re-flows to the box width rather
   // than running off its right edge.
   let expr = pane_box
-    .and_then(|(w, _, _, _)| {
-      evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0)
+    .and_then(|(w, _, align, _)| {
+      evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0).map(
+        |lines| {
+          evaluator::dispatch::io_functions::align_pane_lines(lines, align)
+        },
+      )
     })
     .unwrap_or(expr);
   // A grid wider than that box squeezes its automatically sized pictures

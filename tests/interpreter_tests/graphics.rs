@@ -28566,6 +28566,75 @@ mod graphics_grid {
     assert!(text_tag(&svg, "alpha").contains("Times"), "{svg}");
   }
 
+  /// A raster image inside a `Row` that is itself an item of a `Column`
+  /// with options is drawn as the picture, not as `-Image (w×h)-` text.
+  #[test]
+  fn image_in_row_inside_aligned_column_is_drawn() {
+    clear_state();
+    for code in [
+      "Column[{Row[{Graphics[Disk[]], Image[{{0, 1}, {1, 0}}]}], \"x\"}, Center]",
+      "Column[{Row[{Image[{{0, 1}, {1, 0}}], \"y\"}, Spacer[5]]}, Spacings -> 2]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      assert!(
+        svg.contains("<image"),
+        "{code} should embed the image: {svg}"
+      );
+      assert!(
+        !svg.contains("-Image ("),
+        "{code} drew a placeholder: {svg}"
+      );
+    }
+  }
+
+  /// A `Pane[content, {w, h}]` item of a `Column` reserves its whole
+  /// `w`×`h` area, so the column is as wide as the pane and the panes and
+  /// the gap between them add up to the column's height.
+  #[test]
+  fn fixed_size_pane_in_column_keeps_its_size() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Column[{Pane[Graphics[Disk[]], {300, 80}, Alignment -> Center], \
+       Pane[\"abc\", {300, 40}]}, Center, Spacings -> 2]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"300\" height=\"148\""),
+      "column should be 300 × (80 + 28 + 40): {}",
+      &svg[..svg.len().min(200)]
+    );
+  }
+
+  /// The lines a sized `Pane` wraps its text into follow its horizontal
+  /// `Alignment`: centered lines are set with a middle text anchor.
+  #[test]
+  fn wrapped_pane_text_follows_pane_alignment() {
+    clear_state();
+    let text = "one two three four five six seven eight nine ten eleven";
+    let centered = interpret_with_stdout(&format!(
+      "Pane[\"{text}\", {{120, 200}}, Alignment -> {{Center, Top}}]"
+    ))
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      centered.contains("text-anchor=\"middle\""),
+      "centered pane lines: {centered}"
+    );
+    let left = interpret_with_stdout(&format!(
+      "Pane[\"{text}\", {{120, 200}}, Alignment -> {{Left, Top}}]"
+    ))
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      !left.contains("text-anchor=\"middle\""),
+      "left-aligned pane lines: {left}"
+    );
+  }
+
   /// A sound in a layout draws the sound box a notebook shows for it — a
   /// play button and the waveform — instead of the `Play[…]` source text.
   #[test]
