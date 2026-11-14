@@ -4197,21 +4197,97 @@ mod tests {
       );
     }
 
+    /// The `<text …>label` element that draws `label` in `svg`.
+    fn text_element<'a>(svg: &'a str, label: &str) -> &'a str {
+      let end = svg
+        .find(&format!(">{label}</text"))
+        .unwrap_or_else(|| panic!("{label} should be drawn: {svg}"));
+      let start = svg[..end].rfind("<text").expect("a text element");
+      &svg[start..end]
+    }
+
+    /// The `y` coordinate of a `<text>` element.
+    fn text_y(element: &str) -> f64 {
+      element
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|y| y.parse().ok())
+        .expect("a y coordinate")
+    }
+
     /// `ArrayPlot` sits in a frame, so it takes a `FrameLabel` on any of
-    /// the four edges. Left and right labels run along their edge.
+    /// the four edges. Its axes are rows and columns, so the nested form
+    /// lists `{{bottom, top}, {left, right}}`, the other way around from
+    /// a framed plot. Left and right labels run along their edge.
     #[test]
     fn array_plot_draws_its_frame_labels() {
       let svg = svg_of(
         r#"ArrayPlot[{{0, 1}, {1, 0}},
-           FrameLabel -> {{"lft", "rgt"}, {"btm", "top"}}]"#,
+           FrameLabel -> {{"btm", "top"}, {"lft", "rgt"}}]"#,
       );
-      for label in ["lft", "rgt", "btm", "top"] {
-        assert!(svg.contains(label), "{label} should be drawn: {svg}");
-      }
+      let (btm, top) = (text_element(&svg, "btm"), text_element(&svg, "top"));
+      let (lft, rgt) = (text_element(&svg, "lft"), text_element(&svg, "rgt"));
+      assert!(lft.contains("rotate(-90"), "left runs up its edge: {lft}");
       assert!(
-        svg.contains("rotate(-90") && svg.contains("rotate(90"),
-        "the side labels are rotated onto their edges: {svg}"
+        rgt.contains("rotate(90"),
+        "right runs along its edge: {rgt}"
       );
+      assert!(
+        !btm.contains("rotate") && !top.contains("rotate"),
+        "bottom and top labels stay horizontal: {btm} / {top}"
+      );
+      assert!(text_y(btm) > text_y(top), "btm is below top: {svg}");
+    }
+
+    /// The flat two-label form names the rows (the left edge) first and
+    /// the columns (the bottom edge) second.
+    #[test]
+    fn array_plot_flat_frame_label_names_rows_then_columns() {
+      let svg = svg_of(
+        r#"ArrayPlot[{{1, 2}, {3, 4}}, FrameLabel -> {"rows", "cols"}]"#,
+      );
+      let rows = text_element(&svg, "rows");
+      let cols = text_element(&svg, "cols");
+      assert!(
+        rows.contains("rotate(-90"),
+        "rows label the left edge: {rows}"
+      );
+      assert!(
+        !cols.contains("rotate"),
+        "cols label the bottom edge: {cols}"
+      );
+    }
+
+    /// Cells beyond an explicit `PlotRange` show the background by default
+    /// and take the `ClippingStyle` colors (`{below, above}`) otherwise.
+    #[test]
+    fn array_plot_clips_cells_outside_its_plot_range() {
+      let fills = |svg: &str| -> Vec<String> {
+        svg
+          .split("fill=\"")
+          .skip(1)
+          .filter_map(|rest| rest.split('"').next())
+          .map(str::to_string)
+          .collect()
+      };
+      let plain = svg_of(
+        "ArrayPlot[{{-5, 1, 9}}, PlotRange -> {0, 2}, \
+         ColorFunction -> (Hue[0.7 (1 - #)] &)]",
+      );
+      let red_blue = |svg: &str| {
+        let f = fills(svg);
+        (
+          f.iter().any(|c| c.eq_ignore_ascii_case("#FF0000")),
+          f.iter().any(|c| c.eq_ignore_ascii_case("#0000FF")),
+        )
+      };
+      assert_eq!(red_blue(&plain), (false, false), "{plain}");
+      let styled = svg_of(
+        "ArrayPlot[{{-5, 1, 9}}, PlotRange -> {0, 2}, \
+         ClippingStyle -> {Blue, Red}]",
+      );
+      assert_eq!(red_blue(&styled), (true, true), "{styled}");
     }
 
     /// Only the labeled edges take room: an unlabeled array plot keeps
@@ -4220,7 +4296,7 @@ mod tests {
     fn array_plot_without_frame_labels_is_unpadded() {
       let plain = svg_of(r#"ArrayPlot[{{0, 1}, {1, 0}}]"#);
       let labeled = svg_of(
-        r#"ArrayPlot[{{0, 1}, {1, 0}}, FrameLabel -> {{"", ""}, {"", "top"}}]"#,
+        r#"ArrayPlot[{{0, 1}, {1, 0}}, FrameLabel -> {{"", "top"}, {"", ""}}]"#,
       );
       let width = |svg: &str| -> u32 {
         svg
