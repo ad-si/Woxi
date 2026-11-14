@@ -45843,6 +45843,58 @@ mod list_plot_markers_and_epilog {
     assert!(text.contains("fill=\"rgb(255,0,0)\""), "{text}");
     assert!(text.contains("font-size=\"200\""), "{text}");
   }
+
+  fn epilog_text_tag(svg: &str, label: &str) -> String {
+    svg
+      .split("<text ")
+      .skip(1)
+      .find(|tag| {
+        tag
+          .split_once('>')
+          .is_some_and(|(_, rest)| rest.trim_start().starts_with(label))
+      })
+      .expect("the epilog text")
+      .to_string()
+  }
+
+  /// `Style[Text[…], color, Bold, size]` styles the text primitive it
+  /// wraps: its weight and size reach the label along with its color.
+  #[test]
+  fn a_styled_epilog_text_primitive_takes_weight_and_size() {
+    clear_state();
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, \
+       Epilog -> {Style[Text[\"hi\", {0.5, 0.5}], Red, Bold, 14]}]",
+    );
+    let text = epilog_text_tag(&svg, "hi");
+    assert!(text.contains("fill=\"rgb(255,0,0)\""), "{text}");
+    assert!(text.contains("font-weight=\"bold\""), "{text}");
+    assert!(text.contains("font-size=\"140\""), "{text}");
+  }
+
+  /// Font rules and `Directive[…]` wrappers work the same way, and the
+  /// weight and slant of a `Style` inside the label are kept too.
+  #[test]
+  fn epilog_text_font_rules_and_inner_style_apply() {
+    clear_state();
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, Epilog -> {\
+       Style[Text[\"aa\", {0.2, 0.5}], \
+         Directive[FontSlant -> Italic, FontSize -> 20]], \
+       Text[Style[\"bb\", Bold], {0.8, 0.5}], \
+       Text[\"cc\", {0.5, 0.2}]}]",
+    );
+    let aa = epilog_text_tag(&svg, "aa");
+    assert!(aa.contains("font-style=\"italic\""), "{aa}");
+    assert!(aa.contains("font-size=\"200\""), "{aa}");
+    assert!(!aa.contains("font-weight"), "{aa}");
+    let bb = epilog_text_tag(&svg, "bb");
+    assert!(bb.contains("font-weight=\"bold\""), "{bb}");
+    let cc = epilog_text_tag(&svg, "cc");
+    assert!(!cc.contains("font-weight"), "{cc}");
+    assert!(!cc.contains("font-style"), "{cc}");
+    assert!(cc.contains("font-size=\"130\""), "{cc}");
+  }
 }
 
 /// The layout a Demonstration builds its output with: a `Column` whose rows
