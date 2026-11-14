@@ -1061,9 +1061,9 @@ impl Program {
       match (v, ty) {
         (V::R(x), Ty::Integer) if x.fract() == 0.0 => V::I(x as i64),
         (V::R(x), Ty::Complex) => V::Z(C::new(x, 0.0)),
-        (V::L(xs), _) => V::L(Rc::new(
-          xs.iter().map(|x| coerce(x.clone(), ty)).collect(),
-        )),
+        (V::L(xs), _) => {
+          V::L(Rc::new(xs.iter().map(|x| coerce(x.clone(), ty)).collect()))
+        }
         (v, _) => v,
       }
     }

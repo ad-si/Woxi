@@ -24549,9 +24549,9 @@ impl CompiledArg {
     match self {
       Self::Node(n) => V::R(n.eval_plain(point)),
       Self::Value(v) => v.clone(),
-      Self::List(xs) => {
-        V::L(std::rc::Rc::new(xs.iter().map(|x| x.value_at(point)).collect()))
-      }
+      Self::List(xs) => V::L(std::rc::Rc::new(
+        xs.iter().map(|x| x.value_at(point)).collect(),
+      )),
     }
   }
 }

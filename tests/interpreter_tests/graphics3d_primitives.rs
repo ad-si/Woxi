@@ -284,11 +284,13 @@ mod contour_plot3d {
     let sphere = "ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, \
                   {z, -1, 1}, Contours -> {0.8}, Mesh -> None";
     let reddish = |c: &String| {
-      let v: Vec<u16> = c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      let v: Vec<u16> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
       v[0] > v[1] + 60 && v[0] > v[2] + 60
     };
     let bluish = |c: &String| {
-      let v: Vec<u16> = c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      let v: Vec<u16> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
       v[2] > v[0] + 60 && v[2] > v[1] + 60
     };
     let halves = fills(&svg(&format!(
@@ -304,7 +306,8 @@ mod contour_plot3d {
     )));
     assert!(by_value.iter().any(bluish) && !by_value.iter().any(reddish));
     let plain = fills(&svg(&format!("{sphere}]")));
-    let rainbow = fills(&svg(&format!("{sphere}, ColorFunction -> \"Rainbow\"]")));
+    let rainbow =
+      fills(&svg(&format!("{sphere}, ColorFunction -> \"Rainbow\"]")));
     assert!(!plain.iter().any(bluish));
     assert!(rainbow.iter().any(bluish) && rainbow.iter().any(reddish));
   }

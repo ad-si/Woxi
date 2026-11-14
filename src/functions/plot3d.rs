@@ -17026,14 +17026,18 @@ fn contour3d_render(
       z: nz(p.z),
     });
     // The `ColorFunction` style at the facet's center.
-    let cf_style = color_fn.is_set().then(|| {
-      let mid = |f: fn(&Point3D) -> f64| tri_world.iter().map(f).sum::<f64>() / 3.0;
-      color_fn.style_with_extra_args(
-        [mid(|p| p.x), mid(|p| p.y), mid(|p| p.z)],
-        plot_range,
-        &[(triangle_level[t], value_range)],
-      )
-    }).flatten();
+    let cf_style = color_fn
+      .is_set()
+      .then(|| {
+        let mid =
+          |f: fn(&Point3D) -> f64| tri_world.iter().map(f).sum::<f64>() / 3.0;
+        color_fn.style_with_extra_args(
+          [mid(|p| p.x), mid(|p| p.y), mid(|p| p.z)],
+          plot_range,
+          &[(triangle_level[t], value_range)],
+        )
+      })
+      .flatten();
     let normal = triangle_normal(tri_norm[0], tri_norm[1], tri_norm[2]);
     let (color, opacity) = shade_facet(
       SurfaceDefault::Theme(*surf_idx),
