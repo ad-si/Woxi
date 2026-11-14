@@ -37359,6 +37359,51 @@ mod manipulate {
     assert_eq!(woxi::interpret(&code).unwrap(), "10");
   }
 
+  /// A `Row` caption's text parts flow into each other, so a string with
+  /// an embedded newline breaks the line where it stands. Regression: the
+  /// newline string was laid out as a two-line block, and every other part
+  /// was centered on its first line ("index pq = 1)" over "(set ").
+  #[test]
+  fn spec_row_label_breaks_at_embedded_newline() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, \
+       Row[{Control@{{a, 1, Row[{\"index \", Style[\"p\", Italic], \
+         \"\\n(set \", Style[\"q\", Italic], \" = 1)\"}]}, 1, 5, 1, \
+         Setter, Enabled -> (b === 1)}, Spacer[20], \
+       Control@{{b, 1}, 1, 5, 1, Setter}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let (label, runs) = match &spec.controls[0] {
+      ManipulateControl::Discrete {
+        label, label_runs, ..
+      } => (label.clone(), label_runs.clone()),
+      other => panic!("expected discrete control, got {other:?}"),
+    };
+    assert_eq!(label, "index p\n(set q = 1)");
+    let texts: Vec<(&str, bool)> =
+      runs.iter().map(|r| (r.text.as_str(), r.italic)).collect();
+    assert_eq!(
+      texts,
+      vec![
+        ("index ", false),
+        ("p", true),
+        ("\n", false),
+        ("(set ", false),
+        ("q", true),
+        (" = 1)", false),
+      ]
+    );
+    assert!(
+      spec
+        .control_enabled
+        .iter()
+        .any(|(n, cond)| n == "a" && cond.contains("b === 1")),
+      "missing Enabled condition: {:?}",
+      spec.control_enabled
+    );
+  }
+
   #[test]
   fn spec_continuous_basic() {
     let expr = interpret_to_expr("Manipulate[x^2, {x, 0, 10}]").unwrap();

@@ -40981,9 +40981,28 @@ fn split_label_run_lines(runs: Vec<LabelRun>) -> Vec<Vec<LabelRun>> {
 /// text with the middle of a `Column` beside it. So
 /// `Row[{"text", Column[{Spacer[1], Spacer[1], Spacer[1]}]}]` (vertical
 /// padding around a slider caption) puts the text on the middle line.
-fn row_label_runs(pieces: Vec<Vec<LabelRun>>, italic: bool) -> Vec<LabelRun> {
+///
+/// Only a part that is itself a block layout (`blocks[i]` set) keeps its
+/// lines apart. Text parts flow into one another, so a string with an
+/// embedded newline breaks the line in place:
+/// `Row[{"index ", Style["p", Italic], "\n(set ", Style["q", Italic], " = 1)"}]`
+/// reads "index p" over "(set q = 1)".
+fn row_label_runs(
+  pieces: Vec<(Vec<LabelRun>, bool)>,
+  italic: bool,
+) -> Vec<LabelRun> {
+  let mut merged: Vec<Vec<LabelRun>> = Vec::new();
+  let mut flowing = false;
+  for (runs, block) in pieces {
+    if !block && flowing {
+      merged.last_mut().unwrap().extend(runs);
+    } else {
+      merged.push(runs);
+    }
+    flowing = !block;
+  }
   let pieces: Vec<Vec<Vec<LabelRun>>> =
-    pieces.into_iter().map(split_label_run_lines).collect();
+    merged.into_iter().map(split_label_run_lines).collect();
   let height = pieces.iter().map(Vec::len).max().unwrap_or(1);
   let mut lines: Vec<Vec<LabelRun>> = vec![Vec::new(); height];
   for piece in pieces {
@@ -41004,6 +41023,23 @@ fn row_label_runs(pieces: Vec<Vec<LabelRun>>, italic: bool) -> Vec<LabelRun> {
     out.extend(line);
   }
   out
+}
+
+/// Whether a `Row` part lays its content out as a block of lines of its
+/// own (a `Column`, `Grid`, …, possibly inside `Style`), rather than being
+/// text that flows into its neighbors.
+fn is_label_block(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Column" | "GraphicsColumn" | "Grid" | "TableForm" | "TextGrid"
+      | "GridBox" | "MatrixForm" => true,
+      "Style" | "Framed" | "Pane" | "Item" => {
+        args.first().is_some_and(is_label_block)
+      }
+      _ => false,
+    },
+    _ => false,
+  }
 }
 
 /// Renders a `Grid`/`TableForm`/`TextGrid` row list as label runs: each
@@ -41466,9 +41502,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           let mut pieces = Vec::new();
           for (i, p) in parts.iter().enumerate() {
             if i > 0 && !separator.is_empty() {
-              pieces.push(separator.clone());
+              pieces.push((separator.clone(), false));
             }
-            pieces.push(manipulate_label_runs(p, italic));
+            pieces.push((manipulate_label_runs(p, italic), is_label_block(p)));
           }
           row_label_runs(pieces, italic)
         }
