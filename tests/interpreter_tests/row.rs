@@ -826,3 +826,38 @@ mod row_standard_typesetting {
     assert!(t.iter().any(|s| s.contains("Pi")), "{t:?}");
   }
 }
+
+/// Regression: a `Row` holding a nested `Grid` (a binomial-style `N` over
+/// `k` between parentheses) inside a framed `Grid` cell printed the inner
+/// grid's `Grid[{{…}}]` source text instead of stacking its rows.
+#[test]
+fn row_with_nested_grid_in_grid_cell_stacks_rows() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{x, Row[{a, "(", Grid[{{"n"}, {"k"}}], ")"}]}}, Frame -> True], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains("Grid["), "grid source leaked: {svg}");
+  let y_of = |s: &str| -> f64 {
+    let at = svg.find(&format!(">{s}</text>")).unwrap();
+    let head = &svg[..at];
+    let tag = &head[head.rfind("<text").unwrap()..];
+    let y = tag.split(" y=\"").nth(1).unwrap();
+    y.split('"').next().unwrap().parse().unwrap()
+  };
+  assert!(y_of("n") < y_of("k"), "n is not above k: {svg}");
+}
+
+/// The same row typeset in TraditionalForm stacks the grid's rows too,
+/// instead of writing `Grid[` around a parenthesized matrix.
+#[test]
+fn traditional_row_with_nested_grid_stacks_rows() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Grid[{{x, TraditionalForm[Row[{a, Grid[{{"n"}, {"k"}}]}]]}}, Frame -> True], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert!(!svg.contains(">Grid<"), "grid head leaked: {svg}");
+  assert!(!svg.contains(">(<"), "matrix parentheses leaked: {svg}");
+}

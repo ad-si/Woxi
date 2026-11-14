@@ -26655,3 +26655,137 @@ fn full_simplify_returns_a_canonical_sum() {
     "2 - 5/x - 5*x + 5*x^2"
   );
 }
+
+// Together orients every sum factor of a *product* numerator by its
+// FactorTerms content (the lex-leading term's sign moves out), while a lone
+// sum numerator keeps its form. All wolframscript-verified.
+mod together_product_numerator_orientation {
+  use super::*;
+
+  #[test]
+  fn sum_factors_of_a_product_are_oriented() {
+    for (code, expected) in [
+      ("Together[x (3 - 4 x)/(1 + y)]", "-((x*(-3 + 4*x))/(1 + y))"),
+      ("Together[x (3 - 4 x)]", "-(x*(-3 + 4*x))"),
+      ("Together[(1 - x) (2 - x)]", "(-2 + x)*(-1 + x)"),
+      ("Together[2 (3 - 4 x)/(1 + y)]", "(-2*(-3 + 4*x))/(1 + y)"),
+      ("Together[(1/2 - x) y/z]", "-1/2*((-1 + 2*x)*y)/z"),
+      ("Together[(b - a) (c - d)/e]", "-(((a - b)*(c - d))/e)"),
+      ("Together[(-a - b) c/e]", "-(((a + b)*c)/e)"),
+      (
+        "Together[x (3 - x (4 + 5 x))/y]",
+        "-((x*(-3 + 4*x + 5*x^2))/y)",
+      ),
+      ("Together[a (b (c + d) + 1)/y]", "(a*(1 + b*c + b*d))/y"),
+      ("Together[y (1 - Sin[x])/z]", "-((y*(-1 + Sin[x]))/z)"),
+      ("Together[x (3 - 4 x)/(1 + x)]", "-((x*(-3 + 4*x))/(1 + x))"),
+      (
+        "Together[x (3 - 4 x)/(4 + 2 y)]",
+        "-1/2*(x*(-3 + 4*x))/(2 + y)",
+      ),
+      (
+        "Together[x (3 - 4 x)/(4 + 2 x)]",
+        "-1/2*(x*(-3 + 4*x))/(2 + x)",
+      ),
+      ("Together[x (1 + x)/(4 + 2 x)]", "(x*(1 + x))/(2*(2 + x))"),
+      (
+        "Together[x (3 - 4 x)/(y (1 - y))]",
+        "(x*(-3 + 4*x))/((-1 + y)*y)",
+      ),
+      (
+        "Together[x (3 - x (4 + 5 x))/(-4 + 2 x)]",
+        "-1/2*(x*(-3 + 4*x + 5*x^2))/(-2 + x)",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+
+  #[test]
+  fn lone_sums_and_inexact_or_complex_factors_keep_their_form() {
+    for (code, expected) in [
+      ("Together[(3 - 4 x)/(1 + y)]", "(3 - 4*x)/(1 + y)"),
+      ("Together[(1 - x)/x]", "(1 - x)/x"),
+      ("Together[y (a - Sin[x])/z]", "(y*(a - Sin[x]))/z"),
+      ("Together[(1 - 2 I x) y/z]", "((1 - (2*I)*x)*y)/z"),
+      ("Together[(x (3 - 4 x))^k]", "((3 - 4*x)*x)^k"),
+      ("Together[(1 - x)^k x/y]", "((1 - x)^k*x)/y"),
+    ] {
+      assert_eq!(interpret(code).unwrap(), expected, "{code}");
+    }
+  }
+}
+
+// FactorTermsList takes its sign from the lex-leading term, with variables
+// in canonical expression order (symbols before Cos[x] before Sin[x]) and a
+// rational exponent counting by value (x outranks Sqrt[x]).
+#[test]
+fn factor_terms_list_sign_follows_canonical_variable_order() {
+  for (code, expected) in [
+    ("FactorTermsList[a - Sin[x]]", "{1, a - Sin[x]}"),
+    ("FactorTermsList[Cos[x] - Sin[x]]", "{1, Cos[x] - Sin[x]}"),
+    ("FactorTermsList[Sin[x] - Cos[x]]", "{-1, Cos[x] - Sin[x]}"),
+    ("FactorTermsList[b - a]", "{-1, a - b}"),
+    ("FactorTermsList[x y - x^2]", "{-1, x^2 - x*y}"),
+    ("FactorTermsList[x - x^2 y]", "{-1, -x + x^2*y}"),
+    ("FactorTermsList[Sqrt[x] - x]", "{-1, -Sqrt[x] + x}"),
+    ("FactorTermsList[1 - Sin[x]]", "{-1, -1 + Sin[x]}"),
+    ("FactorTermsList[-x/2 - y/3]", "{-1/6, 3*x + 2*y}"),
+    ("FactorTermsList[1 - E x]", "{1, 1 - E*x}"),
+    ("FactorTermsList[-Pi + x]", "{1, -Pi + x}"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// With symbolic coefficients the Euclidean remainders are rational functions
+// whose zero coefficients only show after canceling; uncanceled, the loop
+// never saw a zero remainder and ran on with growing expressions (a hang
+// found by the interpret fuzzer). wolframscript-verified.
+#[test]
+fn polynomial_extended_gcd_symbolic_coefficients_terminate() {
+  for (code, expected) in [
+    (
+      "PolynomialExtendedGCD[x^3 a + 1, x^2 + 1, x]",
+      "{1, {(1 + a*x)/(1 + a^2), (a^2 - a*x - a^2*x^2)/(1 + a^2)}}",
+    ),
+    (
+      "PolynomialExtendedGCD[(x - a) (x - b), (x - a) (x + b), x]",
+      "{-a + x, {-1/2*1/b, 1/(2*b)}}",
+    ),
+    (
+      "PolynomialExtendedGCD[x^2 + a, x + 1, x]",
+      "{1, {(1 + a)^(-1), (1 - x)/(1 + a)}}",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// Equation systems with nothing to solve for, or a divisor that is no
+// polynomial, used to index past an empty list and panic (found by the
+// interpret fuzzer). All wolframscript-verified except the last, which
+// wolframscript does not finish.
+#[test]
+fn solve_degenerate_systems() {
+  for (code, expected) in [
+    ("Solve[{}, x]", "{{}}"),
+    ("Solve[{}, {x, y}]", "{{}}"),
+    ("Solve[{}]", "{{}}"),
+    ("NSolve[{}, x]", "{{}}"),
+    ("NSolve[{}]", "{{}}"),
+    ("NSolve[{0. == 0}]", "{{}}"),
+    ("NSolve[True]", "{{}}"),
+    ("NSolve[False]", "{}"),
+    ("NSolve[{x}]", "{{x -> 0.}}"),
+    // `ey` is defined by the others; it used to stall the elimination. The
+    // radical form of `ez` differs from wolframscript's (see
+    // conformance_gaps.md), so only the rest is checked.
+    (
+      "Sort[{ex, ey} /. Solve[{ey == ez a q ex + ez == 0, ex^2 + ey^2 + ez^2 == 1}, {ex, ey, ez}] /. a -> 2]",
+      "{{-1, 0}, {1, 0}, {-1/2*1/q, 0}, {-1/2*1/q, 0}}",
+    ),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
