@@ -40932,6 +40932,24 @@ fn dynamic_button_label_code(label: &Expr) -> Option<String> {
   }
 }
 
+/// The code of a computed (non-literal) button label of a custom control
+/// (`If[…]`, `Switch[…]`, a symbol), or `None` for literal text and the
+/// typesetting wrappers around it.
+fn computed_button_label_code(label: &Expr) -> Option<String> {
+  match label {
+    Expr::Identifier(_) => Some(crate::syntax::expr_to_source_form(label)),
+    Expr::FunctionCall { name, .. }
+      if !matches!(
+        name.as_str(),
+        "Style" | "Row" | "Column" | "Text" | "Graphics" | "Pane" | "Dynamic"
+      ) =>
+    {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
+    _ => None,
+  }
+}
+
 /// The side a single control spec asks to sit on with its own
 /// `ControlPlacement -> Top | Bottom | Left | Right` option (bare or as a
 /// singleton list). `None` when the spec states no side.
@@ -44490,7 +44508,11 @@ fn parse_manipulate_control(
         label_runs: button_runs,
         action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
-        label_code: dynamic_button_label_code(&built_args[0]),
+        // Wolfram wraps a custom control in `Dynamic`, so a computed label
+        // (`If[mode == 2, "new test", "add samples"]`) follows the other
+        // controls just like an explicit `Dynamic[label]`.
+        label_code: dynamic_button_label_code(&built_args[0])
+          .or_else(|| computed_button_label_code(&built_args[0])),
         joins_previous: false,
       },
     });
