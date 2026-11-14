@@ -35105,6 +35105,57 @@ mod manipulate {
     );
   }
 
+  // A range written high-to-low is stored sorted but flagged as reversed,
+  // so a widget can draw the first bound at the start of the track as
+  // Wolfram does. That holds for a top-level slider and for a list
+  // element's slider alike; an ascending range is not reversed.
+  #[test]
+  fn spec_high_to_low_range_is_flagged_reversed() {
+    let expr = interpret_to_expr(
+      "Manipulate[{h, k}, {{h, -0.09}, -0.05, -0.5, 0.001}, {{k, 2}, 1, 5}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let sliders: Vec<_> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous {
+          name,
+          min,
+          max,
+          initial,
+          reversed,
+          ..
+        } => Some((name.as_str(), *min, *max, *initial, *reversed)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      sliders,
+      vec![("h", -0.5, -0.05, -0.09, true), ("k", 1.0, 5.0, 2.0, false)]
+    );
+
+    let expr = interpret_to_expr(
+      "Manipulate[w, {{w, {3, 1}, \"w1\"}, \
+       Dynamic[Manipulator[Dynamic[w[[1]]], {5, 0, 1}]] &}, \
+       {{w, {3, 1}, \"w2\"}, Dynamic[Manipulator[Dynamic[w[[2]]], {0, 5, 1}]] &}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let elements: Vec<_> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous {
+          min, max, reversed, ..
+        } => Some((*min, *max, *reversed)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(elements, vec![(0.0, 5.0, true), (0.0, 5.0, false)]);
+  }
+
   // A slider whose range runs along the imaginary axis is a control over the
   // imaginary coefficient; the variable binds the complex number.
   #[test]

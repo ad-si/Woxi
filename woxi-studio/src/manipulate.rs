@@ -49,6 +49,10 @@ pub enum ControlState {
     /// The range runs along the imaginary axis; `min`/`max`/`current` hold
     /// imaginary coefficients and the variable binds `Complex[0, current]`.
     imaginary: bool,
+    /// The range was written high-to-low (see
+    /// `ManipulateControl::Continuous::reversed`): `min`/`max` stay sorted,
+    /// and the widget mirrors its track so the first bound sits on the left.
+    reversed: bool,
   },
   Discrete {
     name: String,
@@ -2411,6 +2415,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         exact_initial,
         orientation,
         imaginary,
+        reversed,
       } => {
         // Wolfram treats a negative step like its magnitude, and a zero
         // step like an omitted one.
@@ -2428,6 +2433,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           exact_value: exact_initial.then_some(*initial),
           orientation: *orientation,
           imaginary: *imaginary,
+          reversed: *reversed,
         }
       }
       ManipulateControl::Discrete {
