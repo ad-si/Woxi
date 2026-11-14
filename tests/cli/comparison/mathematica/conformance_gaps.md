@@ -1177,15 +1177,24 @@ is promoted to an arbitrary-precision number (up to a decimal exponent of
 wolframscript -code 'Exp[1000] // N'   # 1.97007111401704699388887935224`12.95…*^434
 woxi eval 'Exp[1000] // N'             # Infinity
 
-wolframscript -code 'Exp[-1000.]'      # 5.07595889754946`12.95*^-435
-woxi eval 'Exp[-1000.]'                # 0.  (underflow is not promoted)
+wolframscript -code 'Exp[-1000.]'      # General::munfl: Exp[-1000.] is too small to represent as a normalized machine number; precision may be lost.
+                                       # 0.
+woxi eval 'Exp[-1000.]'                # 0.  (no General::munfl)
 
 wolframscript -code 'Exp[1000.] > 10^433'   # True
 woxi eval 'Exp[1000.] > 10^433'             # False (comparison goes through f64)
 ```
 
 Exact input made inexact by `N` and underflow still collapse to `Infinity` /
-`0.`, and results beyond the 10000-digit bound stay `Infinity`.
+`0.`, and machine results beyond a decimal exponent of 10000 stay `Infinity`:
+numeric routines (limits, `NMaximize`, `FindRoot`) sample far outside the
+machine range and rely on that staying cheap. For the same reason Woxi emits
+no `General::munfl` — wolframscript's own numeric routines do not either,
+but a top-level `Exp[-1000.]` or `0.5^2000.` does. Arbitrary-precision input
+is promoted up to a decimal exponent of 10^8 (`Exp[10.`30^5]` is
+`2.8066…*^43429` in both); past that Woxi returns `Overflow[]`/`Underflow[]`
+with `General::ovfl`/`General::unfl` where wolframscript still shows a number
+(`Exp[10.`30^9]`, `10^-1100329811.`30`).
 
 ### `Overflow[]` is not absorbing, and its head is not `Real`
 

@@ -620,7 +620,35 @@ pub(crate) fn bigfloat_from_f64(x: f64, bits: usize) -> astro_float::BigFloat {
 }
 
 /// Largest decimal exponent an overflowed machine real is promoted to.
+/// Numeric routines sample functions far outside the machine range and rely
+/// on such values staying a cheap `Infinity`.
 pub const MAX_PROMOTED_DECIMAL_EXPONENT: f64 = 10_000.0;
+
+/// Largest decimal exponent of an arbitrary-precision result. The type
+/// itself (a 32-bit binary exponent) ends near 10^646456993, and converting
+/// such a number to decimal costs time in proportion to its exponent (about
+/// 0.4 s at 10^8), so results past this bound are `Overflow[]`/`Underflow[]`
+/// — wolframscript, whose `$MaxNumber` is near 10^1355718576299609, still
+/// shows them as numbers.
+pub const MAX_BIGFLOAT_DECIMAL_EXPONENT: f64 = 1.0e8;
+
+/// `Overflow[]` or `Underflow[]` with its message, for a result whose decimal
+/// exponent is past [`MAX_PROMOTED_DECIMAL_EXPONENT`].
+pub fn out_of_range_result(overflow: bool) -> Expr {
+  if overflow {
+    crate::emit_message("General::ovfl: Overflow occurred in computation.");
+    Expr::FunctionCall {
+      name: "Overflow".into(),
+      args: vec![].into(),
+    }
+  } else {
+    crate::emit_message("General::unfl: Underflow occurred in computation.");
+    Expr::FunctionCall {
+      name: "Underflow".into(),
+      args: vec![].into(),
+    }
+  }
+}
 
 /// `a^b` for a positive machine real `a` whose machine result overflowed:
 /// WL promotes it to an arbitrary-precision number whose precision is the
@@ -762,14 +790,10 @@ pub fn bigfloat_exp(
   if x_val == 0.0 {
     return None;
   }
-  // Past the representable decimal exponent the result is a machine
-  // overflow or underflow, as for a machine real.
-  if x_val.abs() * std::f64::consts::LOG10_E > MAX_PROMOTED_DECIMAL_EXPONENT {
-    return Some(Ok(if x_val > 0.0 {
-      Expr::Identifier("Infinity".to_string())
-    } else {
-      Expr::Real(0.0)
-    }));
+  // Past the representable decimal exponent the result is Overflow[] or
+  // Underflow[].
+  if x_val.abs() * std::f64::consts::LOG10_E > MAX_BIGFLOAT_DECIMAL_EXPONENT {
+    return Some(Ok(out_of_range_result(x_val > 0.0)));
   }
   let rm = RoundingMode::ToEven;
   let bits = nominal_bits(prec.ceil() as usize);

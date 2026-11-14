@@ -14671,8 +14671,11 @@ pub fn expr_to_message_form(expr: &Expr) -> String {
   let s = expr_to_string(expr);
   // Replace Derivative[n][f][args] with shorthand notation
   let s = replace_derivative_shorthand(&s);
-  // Replace * with space for OutputForm-style multiplication
-  s.replace('*', " ")
+  // Replace * with space for OutputForm-style multiplication, but keep the
+  // `*^` of a scientific-notation number (`1.*^6`, not `1. ^6`).
+  s.replace("*^", "\u{0}")
+    .replace('*', " ")
+    .replace('\u{0}', "*^")
 }
 
 /// Replace Derivative[n][f][args] patterns with short form: f'[args], f''[args], etc.

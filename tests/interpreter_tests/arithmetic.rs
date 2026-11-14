@@ -16474,3 +16474,67 @@ fn sec_csc_at_twelfths_of_pi() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+// An arbitrary-precision exponential is promoted to a number with a large
+// decimal exponent instead of `Infinity`, and a power past Woxi's own
+// arbitrary-precision range is Overflow[]/Underflow[] — it used to be a hard
+// "N: format error" or a silent 0. (found by the interpret fuzzer).
+mod arbitrary_precision_range {
+  use super::*;
+
+  #[test]
+  fn exp_of_a_large_bigfloat_is_promoted() {
+    assert_eq!(
+      interpret("Exp[10.`30^5]").unwrap(),
+      "2.806663360426123179318385818571742708536366`24.30102999566398*^43429"
+    );
+    assert_eq!(
+      interpret("Exp[-10.`30^5]").unwrap(),
+      "3.5629495653093731210711744187486524`24.30102999566398*^-43430"
+    );
+  }
+
+  #[test]
+  fn powers_past_the_range_overflow_with_a_message() {
+    for (code, head, message) in [
+      (
+        "10^1100329811.`30",
+        "Overflow[]",
+        "General::ovfl: Overflow occurred in computation.",
+      ),
+      (
+        "10^-1100329811.`30",
+        "Underflow[]",
+        "General::unfl: Underflow occurred in computation.",
+      ),
+      (
+        "2.`30^(4*10^9)",
+        "Overflow[]",
+        "General::ovfl: Overflow occurred in computation.",
+      ),
+    ] {
+      clear_state();
+      let r = interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, head, "{code}");
+      assert_eq!(r.warnings, vec![message.to_string()], "{code}");
+    }
+  }
+}
+
+// A signed precision-tagged or scientific literal releases its `-` before an
+// operator that binds tighter than unary minus, like a plain real:
+// `-10.`30^2` is `-(10.`30^2)`, not `(-10.`30)^2`. A precision-tagged real
+// can head a call. All wolframscript-verified.
+#[test]
+fn signed_precision_literals_release_the_minus() {
+  for (code, expected) in [
+    ("-10.`30^10", "-1.`29.*^10"),
+    ("Hold[-10.`30^2]", "Hold[-10.`30.^2]"),
+    ("Hold[-10``5^2]", "Hold[-10.`6.^2]"),
+    ("Hold[-2*^3^2]", "Hold[-2000^2]"),
+    ("Hold[-2.`30[x]]", "Hold[-2.`30.[x]]"),
+    ("{-1.5`20, a -2.`10}", "{-1.5`20., -2.`10. + a}"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

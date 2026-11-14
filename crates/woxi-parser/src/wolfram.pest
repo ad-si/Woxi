@@ -99,7 +99,13 @@ Integer = @{ ("-" ~ !(ASCII_DIGIT+ ~ NegLiteralTail))? ~ ASCII_DIGIT+ }
 // Integer with scientific notation: 5*^3 → 5000, 5*^-13 → Rational[1, 2000000000000]
 // The exponent may carry an explicit sign: Wolfram reads `1*^+150` too.
 ExponentSign = _{ "-" | "+" }
-IntegerScientific = @{ ("-")? ~ ASCII_DIGIT+ ~ "*^" ~ ExponentSign? ~ ASCII_DIGIT+ }
+// Like Integer, a scientific integer releases its `-` before an operator
+// that binds tighter than unary minus: `-2*^3^2` is `-(2000^2)`.
+IntegerScientificBody = _{ ASCII_DIGIT+ ~ "*^" ~ ExponentSign? ~ ASCII_DIGIT+ }
+IntegerScientific = @{
+    ("-" ~ !(IntegerScientificBody ~ NegLiteralTail))?
+    ~ IntegerScientificBody
+}
 // Real: digits followed by a single `.` (optionally more digits). The `!"."`
 // guards prevent `0..` and `0...` from being consumed as `0. ...` — those
 // must fall through so the Repeated/RepeatedNull suffix handlers can see
@@ -139,12 +145,17 @@ UnsignedPrecisionReal = @{
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
     ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
 }
-PrecisionReal = @{
-    ("-")?
-    ~ (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
+PrecisionRealBody = _{
+    (ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* | "." ~ ASCII_DIGIT+ | ASCII_DIGIT+)
     ~ ("``" | "`")
     ~ (ASCII_DIGIT+ ~ ("." ~ ASCII_DIGIT*)? | "." ~ ASCII_DIGIT+)?
     ~ ("*^" ~ ExponentSign? ~ ASCII_DIGIT+)?
+}
+// The `-` is released before a tighter-binding operator, as for Real:
+// `-10.`30^2` is `-(10.`30^2)`, not `(-10.`30)^2`.
+PrecisionReal = @{
+    ("-" ~ !(PrecisionRealBody ~ NegLiteralTail))?
+    ~ PrecisionRealBody
 }
 // A constant's name ends where a symbol name would: `Eδ`, `Pi$`, `E\[Phi]d`
 // are symbols of their own, not `E δ`.
@@ -314,7 +325,7 @@ ListCall = { List ~ BracketArgs+ }
 // NumericCall handles a numeric literal used as a function head, e.g.
 // `1[2, 3]` (an expression with an integer head, used for labeled trees).
 // Restricted to numeric literals (not Constants) and mirrors `(1)[2, 3]`.
-NumericCall = { (Real | IntegerScientific | Integer) ~ BracketArgs+ }
+NumericCall = { (PrecisionReal | Real | IntegerScientific | Integer) ~ BracketArgs+ }
 // StringCall handles a string literal used as a function head, e.g.
 // `"f"[x]`, which stays unevaluated just like `1[2, 3]`. Typeset labels
 // built by hand use it to apply a box-notation string to an argument:
@@ -628,7 +639,7 @@ AnonymousFunctionSuffix = { "&" ~ !"&" ~ BracketArgs* }
 // Real rules have a matching lookahead to release the `-`.
 // `\[Minus]` (U+2212) is the typeset minus sign; it never starts a
 // number literal, so it is always the unary operator.
-LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(RealBody ~ NegLiteralTail) | &(ASCII_DIGIT+ ~ NegLiteralTail)) | "\u{2212}" | "\\[Minus]" }
+LeadingMinus = @{ "-" ~ !"-" ~ ((!ASCII_DIGIT) | &(PrecisionRealBody ~ NegLiteralTail) | &(RealBody ~ NegLiteralTail) | &(IntegerScientificBody ~ NegLiteralTail) | &(ASCII_DIGIT+ ~ NegLiteralTail)) | "\u{2212}" | "\\[Minus]" }
 // LeadingPlus marks a leading "+" in an expression: +x, +f[x], +(a+b), etc.
 // Only matches when NOT followed by a digit or "+" (so +3 parses as positive Integer,
 // ++ would be Increment). Semantically +expr is just expr.
