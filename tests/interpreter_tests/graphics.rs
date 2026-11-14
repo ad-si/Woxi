@@ -17681,6 +17681,54 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(upright.contains(">b</tspan>"), "{upright}");
     }
 
+    /// Regression: `ImageSize -> {w, h}` stretched a BarChart's plotting
+    /// area to fill the whole box (clipping the top tick label). As in WL,
+    /// the box keeps its size while the plotting area keeps its default
+    /// `1/GoldenRatio` and is centered in it, vertically in a wide box and
+    /// horizontally in a tall one.
+    #[test]
+    fn bar_chart_fixed_image_size_centers_golden_plot_area() {
+      let bar = |svg: &str| -> [f64; 4] {
+        let line = svg
+          .lines()
+          .find(|l| l.contains("<title>1</title>"))
+          .expect("bar");
+        let attr = |name: &str| -> f64 {
+          let key = format!(" {name}=\"");
+          line
+            .split_once(key.as_str())
+            .unwrap()
+            .1
+            .split_once('"')
+            .unwrap()
+            .0
+            .parse()
+            .unwrap()
+        };
+        [attr("x"), attr("y"), attr("width"), attr("height")]
+      };
+
+      let wide = export_svg("BarChart[{1}, ImageSize -> {450, 350}]");
+      assert!(wide.starts_with("<svg width=\"450\" height=\"350\""));
+      let [_, y, w, h] = bar(&wide);
+      assert!((0.5..0.7).contains(&(h / w)), "ratio {}", h / w);
+      let below = 3500.0 - (y + h);
+      assert!(y > 400.0 && below > 300.0, "y {y}, below {below}");
+
+      let tall = export_svg("BarChart[{1}, ImageSize -> {200, 350}]");
+      assert!(tall.starts_with("<svg width=\"200\" height=\"350\""));
+      let [_, y, w, h] = bar(&tall);
+      assert!((0.5..0.7).contains(&(h / w)), "ratio {}", h / w);
+      assert!(y > 1000.0, "y {y}");
+
+      // `AspectRatio -> Full` still fills the box.
+      let full = export_svg(
+        "BarChart[{1}, ImageSize -> {450, 350}, AspectRatio -> Full]",
+      );
+      let [_, y, _, h] = bar(&full);
+      assert!(y < 300.0 && h > 2800.0, "y {y}, h {h}");
+    }
+
     /// A `PlotLabel` above a tight explicit top `ImagePadding` stays on the
     /// image, and rotated labels below a tight bottom padding are not cut
     /// off at the image's lower edge.

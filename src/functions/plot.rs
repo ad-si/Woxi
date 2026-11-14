@@ -8846,6 +8846,9 @@ pub(crate) struct BarChartLook {
   pub bar_spacing: BarSpacing,
   /// `AspectRatio -> r`: height / width of the plotting area.
   pub aspect_ratio: Option<f64>,
+  /// `ImageSize -> {w, h}` fixes the image's height: an `aspect_ratio`
+  /// then centers the plotting area in the box instead of resizing it.
+  pub fixed_height: bool,
   /// `ChartLayout`: how the bars of a group share its slot.
   pub layout: BarLayout,
   /// Per-bar colors from `Style[v, color]` data wrappers, in drawing
@@ -8937,6 +8940,7 @@ impl Default for BarChartLook {
       frame_width: None,
       bar_spacing: BarSpacing::default(),
       aspect_ratio: None,
+      fixed_height: false,
       layout: BarLayout::Grouped,
       bar_colors: Vec::new(),
       error_bars: Vec::new(),
@@ -9473,12 +9477,12 @@ pub(crate) fn generate_bar_svg(
   }
   // The bars' group ticks hang 6 points below the axis. An explicit
   // `ImagePadding` replaces the whole margin (and the side margins below).
-  let margin_bottom = if explicit_pad(2).is_some() {
+  let mut margin_bottom = if explicit_pad(2).is_some() {
     0.0
   } else {
     BAR_SIDE_MARGIN * sf
   };
-  let margin_left = if explicit_pad(0).is_some() {
+  let mut margin_left = if explicit_pad(0).is_some() {
     0.0
   } else {
     BAR_SIDE_MARGIN * sf
@@ -9600,7 +9604,7 @@ pub(crate) fn generate_bar_svg(
       (ch(c.r), ch(c.g), ch(c.b))
     }
   };
-  let legend_margin_right = match explicit_pad(1) {
+  let mut legend_margin_right = match explicit_pad(1) {
     Some(r) => (x_axis_overrun + r) as u32,
     None => (x_axis_overrun + 1.5 * sf) as u32 + axes_label_margin_right,
   };
@@ -9668,9 +9672,26 @@ pub(crate) fn generate_bar_svg(
       - legend_margin_right as f64
       - y_label_area as f64;
     let margins_v = top_margin as f64 + margin_bottom + x_label_area as f64;
-    let target = area_w.max(1.0) * r + margins_v;
-    svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
-    render_height = svg_height * RESOLUTION_SCALE;
+    if look.fixed_height {
+      // As in WL, a fixed `ImageSize -> {w, h}` box keeps its size: the
+      // plotting area keeps its ratio, as large as fits, and is centered
+      // in the room the margins leave.
+      let area_w = area_w.max(1.0);
+      let area_h = (render_height as f64 - margins_v).max(1.0);
+      if area_w * r <= area_h {
+        let extra = (area_h - area_w * r) / 2.0;
+        top_margin += extra.round() as i32;
+        margin_bottom += extra;
+      } else {
+        let extra = (area_w - area_h / r) / 2.0;
+        margin_left += extra;
+        legend_margin_right += extra.round() as u32;
+      }
+    } else {
+      let target = area_w.max(1.0) * r + margins_v;
+      svg_height = ((target / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
+      render_height = svg_height * RESOLUTION_SCALE;
+    }
   }
   // `AxesStyle` recolors the axes; `Axes -> False` hides them.
   let axis_color = look.axes_color.unwrap_or(dark_gray);
