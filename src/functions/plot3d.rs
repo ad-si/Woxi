@@ -1636,6 +1636,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Filling -> Bottom | Top | Axis | z`: the height the surface is filled
   // down (or up) to.
   let mut filling: Option<Expr> = None;
+  // `FillingStyle`: how the filling wall is drawn. Unset, it is WL's
+  // translucent gray.
+  let mut filling_style: Option<StyleState3D> = None;
   // `BoundaryStyle`: the outline along the surface's edges, black by
   // default; `None` turns it off.
   let mut boundary_style: Option<StyleState3D> = Some(StyleState3D {
@@ -1691,6 +1694,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           filling = match replacement.as_ref() {
             Expr::Identifier(n) if n == "None" => None,
             other => Some(other.clone()),
+          };
+        }
+        Expr::Identifier(name) if name == "FillingStyle" => {
+          filling_style = match replacement.as_ref() {
+            Expr::Identifier(n) if n == "Automatic" => None,
+            other => parse_plot_style_3d(other, 1).into_iter().next(),
           };
         }
         Expr::Identifier(name) if name == "BoundaryStyle" => {
@@ -1845,6 +1854,17 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A numeric `Filling` level is part of the picture: the automatic
+  // vertical range reaches down (or up) to it.
+  let filling_level = filling.as_ref().and_then(|spec| match spec {
+    Expr::Identifier(_) => None,
+    other => try_eval_to_f64(other),
+  });
+  if let Some(level) = filling_level.filter(|l| l.is_finite()) {
+    global_z_min = global_z_min.min(level);
+    global_z_max = global_z_max.max(level);
+  }
+
   // Use PlotRange if specified, otherwise the global data range
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
@@ -1897,7 +1917,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // together with a `Graphics3D`. Emitting the sampled surface in world
   // coordinates — styled with the directives the standalone render
   // shades it by — lets `Show[Plot3D[…], Graphics3D[…]]` draw both.
-  let structure = {
+  let mut structure = {
     let complexes: Vec<Expr> = grids
       .iter()
       .enumerate()
@@ -2383,21 +2403,49 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  // `Filling` hangs a translucent gray wall from the surface's outer edge
-  // down (or up) to the filling height.
+  // `Filling` hangs a wall from the surface's outer edge down (or up) to
+  // the filling height: translucent gray by default, or lit in the color
+  // of a `FillingStyle`.
   if let Some(spec) = &filling {
     let to = match spec {
       Expr::Identifier(n) if n == "Bottom" => Some(z_lo),
       Expr::Identifier(n) if n == "Top" => Some(z_hi),
       Expr::Identifier(n) if n == "Axis" => Some(0.0),
-      other => try_eval_to_f64(other),
+      _ => filling_level,
     };
+    let lit_style = filling_style.as_ref().filter(|s| s.color.is_some());
     if let Some(to) = to {
       let to = to.clamp(z_lo, z_hi);
+      let mut wall_quads: Vec<Expr> = Vec::new();
       for [a, b] in &edge_segments {
         let quad = [*a, *b, [b[0], b[1], to], [a[0], a[1], to]];
+        wall_quads.push(Expr::List(
+          quad
+            .iter()
+            .map(|p| {
+              Expr::List(
+                p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        ));
         for tri in [[quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]]] {
           let [v0, v1, v2] = tri.map(to_box);
+          let (color, opacity) = match lit_style {
+            Some(style) => shade_facet(
+              SurfaceDefault::Plain(style.color.unwrap_or((178, 178, 178))),
+              None,
+              Some(style),
+              triangle_normal(v0, v1, v2),
+              tri_center(v0, v1, v2),
+              &scene,
+            ),
+            // Wolfram's `FillingStyle -> Opacity[0.5]` gray, flattened onto
+            // the white page: neighboring translucent pieces would leave
+            // seams where their edges overlap.
+            None => ((178, 178, 178), 1.0),
+          };
           all_triangles.push(Triangle {
             boundary: [false; 3],
             edge_color: None,
@@ -2405,15 +2453,40 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_dashing: None,
             projected: [v0, v1, v2].map(|v| project(v, &camera)),
             depth: depth(tri_center(v0, v1, v2), &camera),
-            // Wolfram's `FillingStyle -> Opacity[0.5]` gray, flattened onto
-            // the white page: neighboring translucent pieces would leave
-            // seams where their edges overlap.
-            color: (178, 178, 178),
-            opacity: 1.0,
+            color,
+            opacity,
             texture: None,
             vertex_colors: None,
           });
         }
+      }
+      // The wall travels with the surface into `Show`, in data coordinates
+      // and with the filling's own style.
+      if !wall_quads.is_empty()
+        && let Expr::FunctionCall { args: sargs, .. } = &mut structure
+        && let Some(content) = sargs.first_mut()
+      {
+        let mut wall = vec![call0("EdgeForm")];
+        match lit_style {
+          Some(style) => {
+            if style.opacity < 1.0 {
+              wall.push(call1("Opacity", Expr::Real(style.opacity)));
+            }
+            let (r, g, b) = style.color.unwrap_or((178, 178, 178));
+            wall.push(call(
+              "RGBColor",
+              vec![
+                Expr::Real(r as f64 / 255.0),
+                Expr::Real(g as f64 / 255.0),
+                Expr::Real(b as f64 / 255.0),
+              ],
+            ));
+          }
+          None => wall.push(call1("GrayLevel", Expr::Real(0.7))),
+        }
+        wall.push(call1("Polygon", Expr::List(wall_quads.into())));
+        let surface = std::mem::replace(content, Expr::List(vec![].into()));
+        *content = Expr::List(vec![surface, Expr::List(wall.into())].into());
       }
     }
   }
@@ -13010,6 +13083,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           default_prim_color.to_string()
         };
+        // An `Opacity` in force fades the label like any other primitive;
+        // `Opacity[0]` hides it.
+        if style.opacity <= 0.0 {
+          continue;
+        }
+        let opacity_attr = if style.opacity < 1.0 {
+          format!(" opacity=\"{}\"", style.opacity)
+        } else {
+          String::new()
+        };
         let (px, py) = project(*pos, &camera);
         let (sx, sy) = to_svg(px, py);
         if let Some((pic, w, h)) = picture {
@@ -13017,7 +13100,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let y = sy - h / 2.0 + offset.1 * h / 2.0;
           svg.push_str(&pic.replacen(
             "<svg ",
-            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\" "),
+            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\"{opacity_attr} "),
             1,
           ));
           svg.push('\n');
@@ -13138,7 +13221,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
