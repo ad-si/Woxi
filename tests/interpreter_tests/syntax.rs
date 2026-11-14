@@ -15735,3 +15735,28 @@ fn two_way_rule_and_condition_precedence_in_print() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+// A prime may follow a part or call on any base: `(a)[[1]]'`, `{a}[[1]]'`
+// and `f[x][[1]]'` are Derivative[1][…] of the whole expression (they were
+// parse errors). A string-exponent power keeps a negative or fractional base
+// bracketed, and a one-argument `Plus[b]` leading a sum prints bare. All
+// wolframscript-verified (found by the differential fuzzer).
+#[test]
+fn prime_after_part_and_held_print_forms() {
+  for (code, expected) in [
+    ("Hold[(a)[[1]]']", "Hold[Derivative[1][a[[1]]]]"),
+    ("Hold[{a}[[1]]']", "Hold[Derivative[1][{a}[[1]]]]"),
+    ("Hold[(a)[x]']", "Hold[Derivative[1][a[x]]]"),
+    ("Hold[(a)[[1]]''[y]]", "Hold[Derivative[2][a[[1]]][y]]"),
+    ("Hold[f[x][[1]]']", "Hold[Derivative[1][f[x][[1]]]]"),
+    ("Hold[f[x][[1]]'[y]]", "Hold[Derivative[1][f[x][[1]]][y]]"),
+    ("Hold[f[x]'[[1]]]", "Hold[Derivative[1][f[x]][[1]]]"),
+    ("Hold[x /. Power[-3, \"ab\"]]", "Hold[x /. (-3)^ab]"),
+    ("Hold[x /. Power[1/2, \"ab\"]]", "Hold[x /. (1/2)^ab]"),
+    ("HoldForm[a + (Plus[9] + s)]", "HoldForm[a + (Plus[9] + s)]"),
+    ("HoldForm[Plus[Plus[9], s]]", "HoldForm[Plus[9] + s]"),
+    ("HoldForm[Plus[s, Plus[9]]]", "HoldForm[s + (Plus[9])]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

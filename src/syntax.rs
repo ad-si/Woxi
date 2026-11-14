@@ -4412,6 +4412,16 @@ fn parse_list_extended(pair: &Pair<Rule>) -> Expr {
           func: Box::new(func),
           args: bracket.into_inner().map(pair_to_expr).collect(),
         }),
+      Rule::DerivativePrime => {
+        let order = suffix.as_str().chars().filter(|c| *c == '\'').count();
+        Expr::CurriedCall {
+          func: Box::new(call(
+            "Derivative",
+            vec![Expr::Integer(order as i128)],
+          )),
+          args: vec![acc],
+        }
+      }
       _ => acc,
     }
   })
@@ -4447,8 +4457,14 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
   });
   // The prime after the brackets, plus any arguments it is applied to:
   // `f[data]'[x]` is `Derivative[1][f[data]][x]`.
+  // Only a prime before any `[[…]]` belongs to the call itself; one after a
+  // part (`f[x][[1]]'`) is applied with the part suffixes below.
+  let first_part_idx = inner_pairs
+    .iter()
+    .position(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+    .unwrap_or(inner_pairs.len());
   let trailing_prime_idx = first_bracket_idx_fce.and_then(|fb| {
-    inner_pairs[fb..]
+    inner_pairs[fb..first_part_idx.max(fb)]
       .iter()
       .position(|p| matches!(p.as_rule(), Rule::DerivativePrime))
       .map(|offset| fb + offset)
@@ -4637,6 +4653,13 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
         Rule::BracketArgs => Expr::CurriedCall {
           func: Box::new(acc),
           args: p.clone().into_inner().map(pair_to_expr).collect(),
+        },
+        Rule::DerivativePrime => Expr::CurriedCall {
+          func: Box::new(call(
+            "Derivative",
+            vec![Expr::Integer(p.as_str().len() as i128)],
+          )),
+          args: vec![acc],
         },
         _ => acc,
       })
@@ -12760,7 +12783,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             s
           }
         };
-        let mut result = fmt_plus_term(&args[0]);
+        // A one-argument `Plus[b]` leading the sum prints as the call
+        // itself: `Plus[9] + s` (it is bracketed only after a `+`).
+        let mut result = if matches!(&args[0], Expr::FunctionCall { name, args: inner }
+          if name == "Plus" && inner.len() == 1)
+          && !needs_pattern_parens(&args[0])
+        {
+          fmt(&args[0])
+        } else {
+          fmt_plus_term(&args[0])
+        };
         for arg in args.iter().skip(1) {
           if let Some(positive) = negated_complex_coefficient_term(arg) {
             // `x + (-1 - 2 I) y` is written `x - (1 + 2 I) y`.
@@ -16738,13 +16770,20 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       if name == "Power" && args.len() == 2 && contains_string(expr) =>
     {
       let base = expr_to_input_form(&args[0]);
+      // A negative or fractional base prints as a looser operator too:
+      // `x /. (-3)^"ab"`.
       let base_str = if matches!(&args[0], Expr::FunctionCall { name, .. }
-        if name == "Times" || name == "Plus" || name == "Power")
+        if name == "Times" || name == "Plus" || name == "Power" || name == "Rational")
         || is_infix_display_call(&args[0])
+        || matches!(&args[0], Expr::Integer(n) if *n < 0)
+        || matches!(&args[0], Expr::BigInteger(n) if n.sign() == Sign::Minus)
+        || matches!(&args[0], Expr::Real(f) if *f < 0.0)
+        || prints_as_negation(&args[0])
         || matches!(
           &args[0],
           Expr::BinaryOp {
             op: BinaryOperator::Times
+              | BinaryOperator::Divide
               | BinaryOperator::Plus
               | BinaryOperator::Minus
               | BinaryOperator::Power,

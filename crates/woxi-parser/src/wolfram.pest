@@ -343,6 +343,7 @@ ListExtended = {
     List ~ (
         PartIndexSuffix   // List[[...]]
       | ListCallSuffix    // List[...] (ListCall)
+      | DerivativePrime   // {a}[[1]]' is Derivative[1][{a}[[1]]]
     )*
 }
 // ParenExtended handles Part extraction, bracket-call, and derivative
@@ -360,7 +361,8 @@ ParenExtended = {
     &(BalancedParens ~ (DerivativePrime | PartOpen | "["))
     ~ "(" ~ (&HasSemicolon ~ CompoundExpression | Expression) ~ ")"
     ~ (DerivativePrime ~ ParenCallSuffix? | PartIndexSuffix | ParenCallSuffix)
-    ~ (PartIndexSuffix | ParenCallSuffix)*
+    // A prime may follow any suffix: `(a)[[1]]'` is Derivative[1][a[[1]]].
+    ~ (PartIndexSuffix | ParenCallSuffix | DerivativePrime)*
 }
 // RuleAnonymousFunction handles ReplacementRule& - for expressions like {#, First@#2} -> "Q" &
 RuleAnonymousFunction = { ReplacementRule ~ "&" ~ !"&" }
@@ -781,7 +783,7 @@ FunctionCallExtended = {
     (Identifier | NamedCharIdentifier) ~ DerivativePrime? ~ BracketArgs+
     ~ (DerivativePrime ~ BracketArgs*)?
     ~ (
-        (PartIndexSuffix ~ BracketArgs*)+ ~ (ImplicitPowerSuffix? ~ FactorialSuffix? ~ FunctionCallImplicitSuffix)?
+        (PartIndexSuffix ~ DerivativePrime? ~ BracketArgs*)+ ~ (ImplicitPowerSuffix? ~ FactorialSuffix? ~ FunctionCallImplicitSuffix)?
       | ImplicitPowerSuffix? ~ FactorialSuffix? ~ FunctionCallImplicitSuffix
     )?
     // `x[a]++` / `x[a]--` on an indexed variable. Matched here, not as a
