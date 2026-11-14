@@ -18,6 +18,41 @@ use woxi::functions::graphics::{
 };
 use woxi::syntax::Expr;
 
+/// A control caption drawn as a picture, at the size its SVG states.
+#[derive(Debug, Clone)]
+pub struct LabelIcon {
+  pub handle: svg::Handle,
+  pub width: f32,
+  pub height: f32,
+}
+
+impl LabelIcon {
+  pub fn from_svg(svg: String) -> Self {
+    let (width, height) = svg_root_size(&svg).unwrap_or((24.0, 24.0));
+    LabelIcon {
+      handle: svg::Handle::from_memory(svg.into_bytes()),
+      width,
+      height,
+    }
+  }
+}
+
+/// The `width`/`height` attributes of an SVG document's root element.
+fn svg_root_size(svg: &str) -> Option<(f32, f32)> {
+  let root = &svg[svg.find("<svg")?..];
+  let root = &root[..root.find('>')?];
+  let attr = |key: &str| -> Option<f32> {
+    let start = root.find(&format!(" {key}=\""))? + key.len() + 3;
+    let rest = &root[start..];
+    rest[..rest.find('"')?]
+      .trim_end_matches("px")
+      .parse::<f32>()
+      .ok()
+      .filter(|v| *v > 0.0)
+  };
+  Some((attr("width")?, attr("height")?))
+}
+
 /// Runtime state for a single control inside a Manipulate cell.
 #[derive(Debug, Clone)]
 pub enum ControlState {
@@ -823,6 +858,10 @@ pub struct ManipulateState {
   /// Per-control captions that follow another control's variable (InputForm
   /// code), re-typeset on every change like `dynamic_values` are.
   dynamic_labels: Vec<(String, String)>,
+  /// Rendered icons of the captions in `dynamic_labels` that are pictures
+  /// (a `Dynamic[Framed@Graphics[…]]` sector showing a slider's angle), as
+  /// `(control name, icon)`. Re-rendered with the captions on every change.
+  pub label_svgs: Vec<(String, LabelIcon)>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -905,6 +944,15 @@ thread_local! {
 }
 
 impl ManipulateState {
+  /// The rendered icon of a control whose caption is a picture.
+  pub fn label_svg(&self, name: &str) -> Option<&LabelIcon> {
+    self
+      .label_svgs
+      .iter()
+      .find(|(n, _)| n == name)
+      .map(|(_, handle)| handle)
+  }
+
   /// Which side of the output the control at `ctrl_idx` sits on: its own
   /// `ControlPlacement -> side` option when it states one, otherwise the
   /// widget-level placement shared by the rest of the panel.
@@ -1028,6 +1076,7 @@ impl ManipulateState {
       default_step_controls,
       dynamic_values: spec.dynamic_values,
       dynamic_labels: spec.dynamic_labels,
+      label_svgs: Vec::new(),
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
       dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
@@ -2066,8 +2115,8 @@ impl ManipulateState {
       let labels: Vec<(String, _)> = dynamic_labels
         .iter()
         .filter_map(|(name, code)| {
-          woxi::functions::graphics::manipulate_eval_label_code(code)
-            .map(|runs| (name.clone(), runs))
+          woxi::functions::graphics::manipulate_eval_caption(code)
+            .map(|caption| (name.clone(), caption))
         })
         .collect();
       // And `Button[Dynamic[label], …]` captions ("next" / "show
@@ -2294,8 +2343,17 @@ impl ManipulateState {
   }
 
   /// Retitle each named control with its freshly typeset caption.
-  fn apply_dynamic_labels(&mut self, resolved: Vec<(String, Vec<LabelRun>)>) {
-    for (name, runs) in resolved {
+  fn apply_dynamic_labels(
+    &mut self,
+    resolved: Vec<(String, (Vec<LabelRun>, Option<String>))>,
+  ) {
+    for (name, (runs, svg)) in resolved {
+      self.label_svgs.retain(|(n, _)| *n != name);
+      if let Some(svg) = svg {
+        self
+          .label_svgs
+          .push((name.clone(), LabelIcon::from_svg(svg)));
+      }
       let Some(
         ControlState::Continuous {
           label, label_runs, ..
@@ -4425,6 +4483,39 @@ mod tests {
   /// A `Button[Dynamic[label], action]` caption follows the live bindings
   /// (a "next" button that turns into "show solution" on the last step).
   /// It used to show the `Dynamic`'s source code as its text.
+  /// A slider captioned by a picture — `Dynamic[Framed@Graphics[…]]`
+  /// drawing a sector of the slider's own angle, or a static `Graphics[…]`
+  /// — carries a rendered icon sized from the picture, and a plain string
+  /// caption does not.
+  #[test]
+  fn picture_caption_renders_as_label_icon() {
+    let code = r#"Manipulate[a + b + c,
+      {{a, 1, Dynamic[Framed@Graphics[{Disk[{0, 0}, 1, {0, a}]},
+        PlotRange -> 1, ImageSize -> 30]]}, 0.1, 3},
+      {{b, 0, Graphics[{Disk[]}, ImageSize -> 20]}, 0, 1},
+      {{c, 0, "c"}, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let a = state.label_svg("a").expect("a sector icon for a");
+    assert!(
+      a.width >= 30.0 && a.height >= 30.0,
+      "{}x{}",
+      a.width,
+      a.height
+    );
+    let b = state.label_svg("b").expect("an icon for b");
+    assert!((b.width - 20.0).abs() < 1.0, "width {}", b.width);
+    assert!(state.label_svg("c").is_none());
+    // Moving the slider re-renders its icon (still present, not dropped).
+    let idx = state.controls.iter().position(|c| c.name() == "a").unwrap();
+    state.slide_continuous(idx, 2.5);
+    state.reevaluate();
+    assert!(state.label_svg("a").is_some());
+    assert_eq!(state.label_svgs.iter().filter(|(n, _)| n == "a").count(), 1);
+  }
+
   #[test]
   fn button_with_dynamic_label_follows_live_bindings() {
     let code = r#"Manipulate[

@@ -4220,6 +4220,20 @@ fn manipulate_label_widget<'a>(
     .into()
 }
 
+/// A picture caption, drawn at its own size in the shared label column.
+fn manipulate_label_icon<'a>(
+  icon: &manipulate::LabelIcon,
+  width: f32,
+) -> Element<'a, Message> {
+  container(
+    svg::Svg::new(icon.handle.clone())
+      .width(iced::Length::Fixed(icon.width))
+      .height(iced::Length::Fixed(icon.height)),
+  )
+  .width(iced::Length::Fixed(width))
+  .into()
+}
+
 /// Approximate rendered width (px) of a Manipulate label at the caption font
 /// size, from its character count. Used to size the shared label column to
 /// the widest label so it sits snug against the sliders instead of leaving a
@@ -4454,7 +4468,19 @@ fn render_manipulate_widget<'a>(
     .map(|(_, c)| manipulate_label_char_count(c))
     .max()
     .unwrap_or(0);
-  let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
+  // A picture caption (a sector icon naming an angle slider) claims its own
+  // drawn width instead of a character count.
+  let max_icon_width = state
+    .controls
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| state.control_is_visible.get(*i).copied().unwrap_or(true))
+    .filter_map(|(_, c)| state.label_svg(c.name()))
+    .map(|icon| icon.width + 6.0)
+    .fold(0.0_f32, f32::max);
+  let label_col_width = (max_label_chars as f32 * 7.3 + 6.0)
+    .max(max_icon_width)
+    .clamp(20.0, 220.0);
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
   // A display standing in for a declared control (a `ControlType ->
@@ -4519,7 +4545,7 @@ fn render_manipulate_widget<'a>(
       .unwrap_or(true);
     match ctrl {
       manipulate::ControlState::Continuous {
-        name: _,
+        name,
         label,
         label_runs,
         min,
@@ -4531,8 +4557,12 @@ fn render_manipulate_widget<'a>(
         reversed,
         ..
       } => {
-        let label_widget =
-          manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        let label_widget = match state.label_svg(name) {
+          Some(icon) => manipulate_label_icon(icon, label_col_width),
+          None => {
+            manipulate_label_widget(label_runs, label, label_col_width, enabled)
+          }
+        };
         // A high-to-low range (`{u, 2, 0}`) runs its rail from `max` to
         // `min`; the widget itself only takes an ascending range, so the
         // thumb position and the reported value are mirrored.
@@ -4582,7 +4612,7 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Discrete {
-        name: _,
+        name,
         label,
         label_runs,
         values,
@@ -4602,8 +4632,12 @@ fn render_manipulate_widget<'a>(
         // value is one none of *this* row's own choices represent, no
         // button/checkbox/dropdown entry here should show as selected.
         let has_overflow = overflow.is_some();
-        let label_widget =
-          manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        let label_widget = match state.label_svg(name) {
+          Some(icon) => manipulate_label_icon(icon, label_col_width),
+          None => {
+            manipulate_label_widget(label_runs, label, label_col_width, enabled)
+          }
+        };
         // `ControlType -> Slider` over a discrete domain: a slider that
         // steps through the choices by index, which is how Wolfram draws a
         // twenty-entry color-scheme picker. Dragging sends the choice at

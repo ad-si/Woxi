@@ -40966,6 +40966,15 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
     {
       Some(crate::syntax::expr_to_source_form(&args[0]))
     }
+    // A static picture caption (`{{t, 1, Graphics[…]}, 0, 1}`) has no text
+    // to store on the control, so it travels as caption code too and the
+    // frontend renders it to an icon (see `manipulate_eval_caption`).
+    label
+      if !matches!(label, Expr::Graphics { .. } | Expr::Image { .. })
+        && crate::evaluator::lays_out_a_graphic(label) =>
+    {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
     _ => None,
   }
 }
@@ -40973,9 +40982,39 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
 /// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
 /// current bindings and typeset it into label runs.
 pub fn manipulate_eval_label_code(code: &str) -> Option<Vec<LabelRun>> {
+  manipulate_eval_caption(code).map(|(runs, _)| runs)
+}
+
+/// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
+/// current bindings, returning its label runs together with the rendered
+/// SVG of a caption that is a picture. `{{t, 1, Dynamic[Framed@Graphics[
+/// {Disk[{0, 0}, 1, {0, t}]}]]}, 0, 2 Pi}` names a slider with a sector
+/// icon showing the current angle; such a caption has no text (its runs
+/// are empty), so the frontend draws the icon in the label column instead.
+pub fn manipulate_eval_caption(
+  code: &str,
+) -> Option<(Vec<LabelRun>, Option<String>)> {
   let expr = crate::interpret_to_expr(code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
-  Some(manipulate_label_runs(&evaluated, false))
+  let runs = manipulate_label_runs(&evaluated, false);
+  // Only a caption with no words of its own becomes an icon; one that
+  // pairs a picture with words (`Row[{Pane[ArrayPlot[…]], "multiplier"}]`)
+  // keeps being labeled by the words.
+  let svg = if flatten_label_runs(&runs).trim().is_empty() {
+    control_caption_svg(&evaluated)
+  } else {
+    None
+  };
+  let runs = if svg.is_some() { Vec::new() } else { runs };
+  Some((runs, svg))
+}
+
+/// The SVG of a control caption that is a picture, or a layout wrapper
+/// (`Framed`, `Pane`, `Row`, …) holding one; `None` for a text caption.
+fn control_caption_svg(caption: &Expr) -> Option<String> {
+  crate::evaluator::lays_out_a_graphic(caption)
+    .then(|| crate::evaluator::expr_to_svg(caption))
+    .filter(|svg| svg.starts_with("<svg"))
 }
 
 /// Flatten label runs to the plain text a styling-blind consumer shows.
