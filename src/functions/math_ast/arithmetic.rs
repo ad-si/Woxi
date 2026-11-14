@@ -14559,9 +14559,18 @@ fn try_power_overflow(base: &Expr, exp: &Expr) -> Option<Expr> {
   // `|b| == 1` never leaves the range however large the exponent — and with
   // an `inf` exponent that product is `NaN`, which the negated comparison
   // (rather than `<=`) correctly treats as "not an overflow".
+  // An inexact power past Woxi's own arbitrary-precision range (see
+  // MAX_BIGFLOAT_DECIMAL_EXPONENT) would overflow to infinity (a hard error
+  // when printed) or flush to zero. An exact power stays exact.
+  let inexact = |x: &Expr| matches!(x, Expr::Real(_) | Expr::BigFloat(..));
+  let limit = if inexact(base) || inexact(exp) {
+    crate::functions::math_ast::numerical::MAX_BIGFLOAT_DECIMAL_EXPONENT
+  } else {
+    MAX_LOG10
+  };
   let magnitude = e * b.abs().log10();
   #[allow(clippy::neg_cmp_op_on_partial_ord)]
-  if !(magnitude.abs() > MAX_LOG10) {
+  if !(magnitude.abs() > limit) {
     return None;
   }
   let (head, message) = if magnitude > 0.0 {

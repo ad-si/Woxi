@@ -1597,6 +1597,46 @@ fn is_subject_first_operator(name: &str) -> bool {
   )
 }
 
+/// One-argument operator forms whose application to anything but a single
+/// subject is an `argx` error in wolframscript (verified for zero and two
+/// subjects). Operator forms with their own message (`Lookup::luarg`,
+/// `MaximalBy::argb`, `MapThread::argt`) or none (`ContainsAll`, `SplitBy`)
+/// are not listed.
+fn is_one_subject_operator(name: &str) -> bool {
+  (is_subject_first_operator(name)
+    && !matches!(
+      name,
+      "Lookup"
+        | "MaximalBy"
+        | "MinimalBy"
+        | "SubsetReplace"
+        | "ContainsAll"
+        | "ContainsAny"
+        | "ContainsNone"
+        | "ContainsOnly"
+        | "ContainsExactly"
+        | "SplitBy"
+        | "CountDistinctBy"
+        | "ReplaceList"
+        | "AllSameBy"
+        | "DateSelect"
+    ))
+    || matches!(
+      name,
+      "Map"
+        | "Apply"
+        | "MapIndexed"
+        | "MapApply"
+        | "Scan"
+        | "Comap"
+        | "ComapApply"
+        | "KeyMap"
+        | "AssociationMap"
+        | "KeyValueMap"
+        | "IntervalMemberQ"
+    )
+}
+
 /// `DateObject[…]["Granularity"]`, and the clock components of a
 /// `TimeObject[{h, m, s}, …]`. `None` for anything the caller should resolve
 /// through `DateValue` instead.
@@ -2054,6 +2094,27 @@ pub fn apply_curried_call(
   {
     let spliced = splice_sequence_args(args);
     return apply_curried_call(func, &spliced);
+  }
+  // An operator form takes exactly one subject: `Map[f][]` and
+  // `Select[p][a, b]` report Map::argx / Select::argx and stay unevaluated
+  // (flattening them into `Map[f, a, b]` would read `b` as a level spec).
+  if let Expr::FunctionCall {
+    name,
+    args: func_args,
+  } = func
+    && func_args.len() == 1
+    && args.len() != 1
+    && is_one_subject_operator(name)
+  {
+    crate::emit_message(&format!(
+      "{name}::argx: {} called with {} arguments; 1 argument is expected.",
+      crate::syntax::format_expr(func, crate::syntax::ExprForm::Output),
+      args.len()
+    ));
+    return Ok(Expr::CurriedCall {
+      func: Box::new(func.clone()),
+      args: args.to_vec(),
+    });
   }
   if let Some(result) = try_apply_curry(func, args) {
     return result;
@@ -3764,7 +3825,8 @@ pub fn apply_curried_call(
           func: Box::new(func.clone()),
           args: args.to_vec(),
         })
-      } else if matches!(
+      } else if !args.is_empty()
+        && matches!(
         name.as_str(),
         "Derivative"
           | "Apply"
