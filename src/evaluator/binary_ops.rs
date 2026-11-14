@@ -175,7 +175,7 @@ pub fn thread_binary_op(
   // A SparseArray combined with a dense list threads element-wise as its dense
   // form (`SparseArray[{1->5,2->3},3] + {1,1,1}` == `{6,4,1}`); otherwise the
   // opaque SparseArray would be broadcast whole against each list element.
-  let is_sparse = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "SparseArray");
+  let is_sparse = crate::functions::list_helpers_ast::is_sparse_array_object;
   let densify = |e: &Expr| -> Expr {
     match e {
       Expr::FunctionCall { name, args: sa } if name == "SparseArray" => {

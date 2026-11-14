@@ -6141,6 +6141,45 @@ fn expr_exceeds_token_budget_depth(
       *budget = budget.saturating_sub(1);
       expr_exceeds_token_budget_depth(operand, budget, d)
     }
+    // Every other compound form counts its children too: a `v[[perm]]` or a
+    // rule holding a 3600-element list is as large as the list itself.
+    Expr::Comparison { operands, .. } | Expr::CompoundExpr(operands) => {
+      *budget = budget.saturating_sub(1);
+      operands
+        .iter()
+        .any(|e| expr_exceeds_token_budget_depth(e, budget, d))
+    }
+    Expr::Rule {
+      pattern: a,
+      replacement: b,
+    }
+    | Expr::RuleDelayed {
+      pattern: a,
+      replacement: b,
+    }
+    | Expr::ReplaceAll { expr: a, rules: b }
+    | Expr::ReplaceRepeated { expr: a, rules: b }
+    | Expr::Map { func: a, list: b }
+    | Expr::Apply { func: a, list: b }
+    | Expr::MapApply { func: a, list: b }
+    | Expr::PrefixApply { func: a, arg: b }
+    | Expr::Postfix { expr: a, func: b }
+    | Expr::Part { expr: a, index: b } => {
+      *budget = budget.saturating_sub(1);
+      expr_exceeds_token_budget_depth(a, budget, d)
+        || expr_exceeds_token_budget_depth(b, budget, d)
+    }
+    Expr::CurriedCall { func, args } => {
+      *budget = budget.saturating_sub(1);
+      expr_exceeds_token_budget_depth(func, budget, d)
+        || args
+          .iter()
+          .any(|e| expr_exceeds_token_budget_depth(e, budget, d))
+    }
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => {
+      *budget = budget.saturating_sub(1);
+      expr_exceeds_token_budget_depth(body, budget, d)
+    }
     _ => {
       *budget = budget.saturating_sub(1);
       false

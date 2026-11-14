@@ -519,6 +519,12 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An empty equation list is `True` (see solve_ast).
+  if matches!(args.first(), Some(Expr::List(items)) if items.is_empty()) {
+    let mut truth = args.to_vec();
+    truth[0] = Expr::Identifier("True".into());
+    return nsolve_ast(&truth);
+  }
   if let Some(expanded) = args.first().and_then(expand_region_membership) {
     let mut normalized = args.to_vec();
     normalized[0] = expanded;
@@ -576,6 +582,16 @@ pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(vars) = auto_detect_solve_vars(&args[0])
   {
     return nsolve_ast(&[args[0].clone(), vars]);
+  }
+  // With no unknown to solve for (`NSolve[{0. == 0}]`, `NSolve[True]`) the
+  // answer is Solve's — `{{}}` for a truth, `{}` for a falsehood; the
+  // solvers below all need a variable list (indexing it used to panic).
+  if args.len() == 1 {
+    let evaluated = crate::evaluator::evaluate_expr_to_expr(&args[0])?;
+    return match solve_ast(&[evaluated])? {
+      solved @ Expr::List(_) => nsolve_numerize(&solved),
+      _ => Ok(unevaluated("NSolve", args)),
+    };
   }
   // An unknown that is a call (`f''[0]`, `a[1]`) is solved for as a fresh
   // symbol: numericizing the equations would turn its `0` into `0.`.
@@ -3086,6 +3102,13 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // An empty equation list asserts nothing: it is `True`, solved by the one
+  // empty substitution (`Solve[{}, x]` is `{{}}`).
+  if matches!(args.first(), Some(Expr::List(items)) if items.is_empty()) {
+    let mut truth = args.to_vec();
+    truth[0] = Expr::Identifier("True".into());
+    return solve_ast(&truth);
+  }
   let previous = crate::functions::polynomial_ast::reduce::REDUCE_PRESENTATION
     .with(|f| f.replace(false));
   let result = solve_ast_inner(args);
@@ -3095,6 +3118,43 @@ pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 fn solve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // A chained equation `a == b == c` states `a == b` and `b == c`.
+  if args.len() == 2 {
+    let split = |eq: &Expr| -> Option<Vec<Expr>> {
+      let Expr::Comparison {
+        operands,
+        operators,
+      } = eq
+      else {
+        return None;
+      };
+      (operands.len() > 2
+        && operators.iter().all(|o| matches!(o, ComparisonOp::Equal)))
+      .then(|| {
+        operands
+          .windows(2)
+          .map(|w| Expr::Comparison {
+            operands: vec![w[0].clone(), w[1].clone()],
+            operators: vec![ComparisonOp::Equal],
+          })
+          .collect()
+      })
+    };
+    let eqs: Vec<Expr> = match &args[0] {
+      Expr::List(items) => items.to_vec(),
+      one => vec![one.clone()],
+    };
+    if eqs.iter().any(|e| split(e).is_some()) {
+      let expanded: Vec<Expr> = eqs
+        .iter()
+        .flat_map(|e| split(e).unwrap_or_else(|| vec![e.clone()]))
+        .collect();
+      return solve_ast_inner(&[Expr::List(expanded.into()), args[1].clone()]);
+    }
+    if let Some(solved) = solve_by_substituting_definition(args) {
+      return Ok(solved);
+    }
+  }
   // A system with a part that is no equation, inequality or logical
   // combination — `{x^2 == 2, f[x]}` — is rejected as a whole, as in
   // Wolfram, instead of solving the equations and ignoring the rest.
@@ -6456,6 +6516,120 @@ fn inexact_cleared_numerator_uncached(poly: &Expr, var: &str) -> Option<Expr> {
   let numeric =
     crate::evaluator::evaluate_expr_to_expr(&call1("N", numerator)).ok()?;
   Some(expand_and_combine(&numeric))
+}
+
+/// `Solve[{…, v == e, …}, vars]` with `v` a variable that `e` does not
+/// mention: `v` is determined by the others, so it is substituted into the
+/// remaining equations, those are solved, and `v -> e` is filled in per
+/// solution. Elimination over the full system can otherwise stall on such a
+/// definition (`ey == ez a q ex + ez` beside `ez a q ex + ez == 0`).
+/// `None` when no such equation applies or the reduced system stays
+/// unsolved.
+fn solve_by_substituting_definition(args: &[Expr]) -> Option<Expr> {
+  if args.len() != 2 {
+    return None;
+  }
+  let Expr::List(eqs) = &args[0] else {
+    return None;
+  };
+  let Expr::List(vars) = &args[1] else {
+    return None;
+  };
+  // Only exact equations: an inequality keeps the system for Reduce, and a
+  // machine number has to reach the path that reports Solve::ratnz.
+  if eqs.len() < 3
+    || vars.len() < 2
+    || eqs.iter().any(|e| {
+      !matches!(e, Expr::Comparison { operators, .. }
+        if operators.iter().all(|o| matches!(o, ComparisonOp::Equal)))
+    })
+    || crate::functions::math_ast::contains_inexact_real(&args[0])
+  {
+    return None;
+  }
+  let var_names: Vec<&str> = vars
+    .iter()
+    .map(|v| match v {
+      Expr::Identifier(n) => Some(n.as_str()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let definition = eqs.iter().enumerate().find_map(|(i, eq)| {
+    let Expr::Comparison {
+      operands,
+      operators,
+    } = eq
+    else {
+      return None;
+    };
+    if operands.len() != 2 || !matches!(operators.as_slice(), [ComparisonOp::Equal]) {
+      return None;
+    }
+    let (lhs, rhs) = (&operands[0], &operands[1]);
+    for (v, e) in [(lhs, rhs), (rhs, lhs)] {
+      if let Expr::Identifier(name) = v
+        && var_names.contains(&name.as_str())
+        && !crate::syntax::mentions_symbol(e, name)
+        // A bare alias `z == x` ties two variables, which count as one
+        // root of the system's multiplicity; substituting it would not.
+        && !matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::Identifier(_))
+        && var_names
+          .iter()
+          .any(|other| *other != name && crate::syntax::mentions_symbol(e, other))
+      {
+        return Some((i, name.clone(), e.clone()));
+      }
+    }
+    None
+  })?;
+  let (index, name, value) = definition;
+  let rest: Vec<Expr> = eqs
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| *i != index)
+    .map(|(_, eq)| crate::syntax::substitute_variable(eq, &name, &value))
+    .collect();
+  let rest_vars: Vec<Expr> = vars
+    .iter()
+    .filter(|v| !matches!(v, Expr::Identifier(n) if *n == name))
+    .cloned()
+    .collect();
+  let reduced =
+    solve_ast(&[Expr::List(rest.into()), Expr::List(rest_vars.into())]).ok()?;
+  let Expr::List(solutions) = &reduced else {
+    return None;
+  };
+  let position = var_names.iter().position(|n| *n == name)?;
+  let mut completed = Vec::with_capacity(solutions.len());
+  for sol in solutions {
+    let Expr::List(rules) = sol else {
+      return None;
+    };
+    let v = crate::evaluator::evaluate_expr_to_expr(&Expr::ReplaceAll {
+      expr: Box::new(value.clone()),
+      rules: Box::new(sol.clone()),
+    })
+    .ok()?;
+    let mut rules: Vec<Expr> = rules.to_vec();
+    // The rules list the variables in the order they were asked for.
+    let at = rules
+      .iter()
+      .position(|r| {
+        matches!(r, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n)
+            if var_names.iter().position(|x| x == n).is_some_and(|p| p > position)))
+      })
+      .unwrap_or(rules.len());
+    rules.insert(
+      at,
+      Expr::Rule {
+        pattern: Box::new(Expr::Identifier(name.clone())),
+        replacement: Box::new(v),
+      },
+    );
+    completed.push(Expr::List(rules.into()));
+  }
+  Some(Expr::List(completed.into()))
 }
 
 fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -21416,7 +21590,19 @@ pub fn find_minimum_ast(
       other => other.clone(),
     }
   }
-  find_minimum_inner(args, maximize).map(|r| nan_free(&r))
+  let head = if maximize {
+    "FindMaximum"
+  } else {
+    "FindMinimum"
+  };
+  let result = find_minimum_inner(args, maximize)?;
+  // A call that stays unevaluated is shown as it was written: the variables
+  // resolved from a symbol or renamed from indexed forms on the way are
+  // internal (`FindMinimum[{…, Thread[vars >= 0]}, vars]`).
+  if matches!(&result, Expr::FunctionCall { name, .. } if name == head) {
+    return Ok(unevaluated(head, args));
+  }
+  Ok(nan_free(&result))
 }
 
 /// A local minimum of `f` near the starting values `a` and `b`: the
@@ -21585,6 +21771,41 @@ fn find_minimum_inner(
   if single_var_spec(&args[1]) {
     while var_args_end < args.len() && single_var_spec(&args[var_args_end]) {
       var_args_end += 1;
+    }
+  }
+  // A constrained objective that is not a number at a numeric point (a free
+  // parameter such as `3 x + 2 p y`) leaves the call unevaluated, as in
+  // wolframscript — the solvers below would otherwise treat the parameter
+  // as a variable and search over it.
+  if let Expr::List(items) = &args[0]
+    && items.len() >= 2
+    && let Some(vars) = args[1..var_args_end]
+      .iter()
+      .map(optimization_variable_names)
+      .collect::<Option<Vec<_>>>()
+      .map(|names| names.concat())
+    && !vars.is_empty()
+  {
+    let rules: Vec<Expr> = vars
+      .iter()
+      .enumerate()
+      .map(|(i, v)| Expr::Rule {
+        pattern: Box::new(Expr::Identifier(v.clone())),
+        replacement: Box::new(Expr::Real(0.3 + 0.17 * i as f64)),
+      })
+      .collect();
+    let probe = crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "N".into(),
+      args: vec![Expr::ReplaceAll {
+        expr: Box::new(items[0].clone()),
+        rules: Box::new(Expr::List(rules.into())),
+      }]
+      .into(),
+    });
+    if let Ok(value) = probe
+      && !crate::functions::predicate_ast::is_numeric_q(&value)
+    {
+      return Ok(unevaluated(func_name, args));
     }
   }
   if let Expr::List(items) = &args[0]
@@ -21942,56 +22163,17 @@ fn find_minimum_inner(
       .iter()
       .all(|row| row.iter().all(|h| eval_at(h, &x).is_ok()));
 
-  // Pre-flight: if f doesn't reduce to a real number at the starting
-  // point (e.g. contains an unbound symbol like phi[x]), emit
-  // {func_name}::nrnum and return the call unevaluated. Matches
-  // wolframscript's behavior and lets script chains keep flowing
-  // instead of aborting with a hard "Cannot evaluate numerically".
-  if eval_obj(f, &x).is_err() {
-    let mut substituted = f.clone();
-    for (i, var) in vars.iter().enumerate() {
-      substituted = crate::syntax::substitute_variable(
-        &substituted,
-        var,
-        &Expr::Real(x[i]),
-      );
-    }
-    let value_str = expr_to_output(&substituted);
-    let var_str: String = if vars.len() == 1 {
-      format!("{{{}}} = {{{}}}", vars[0], x[0])
-    } else {
-      let names = vars.join(", ");
-      let vals = x
-        .iter()
-        .map(std::string::ToString::to_string)
-        .collect::<Vec<_>>()
-        .join(", ");
-      format!("{{{names}}} = {{{vals}}}")
-    };
-    crate::emit_message(&format!(
-      "{func_name}::nrnum: The function value {value_str} is not a real number at {var_str}.",
-    ));
-    return Ok(unevaluated(func_name, args));
-  }
-
-  let sign = if maximize { -1.0 } else { 1.0 };
-  // `MaxIterations -> n` caps the iterations (default 200).
-  let max_iter = match find_option(&args[2..], "MaxIterations") {
-    Some(Expr::Integer(n)) if *n > 0 => *n as usize,
-    _ => 200,
-  };
-  let tol = 1e-15;
-
   // Like wolframscript, a trial point where the objective is not a real
   // number ends the search with FindMinimum::nrnum / FindMaximum::nrnum
-  // and the last point reached.
+  // and the last point reached. FindMaximum minimizes the negated
+  // objective and reports that value (`-0.841471 q`).
   let head = if maximize {
     "FindMaximum"
   } else {
     "FindMinimum"
   };
   let report_nonreal = |point: &[f64]| {
-    let mut e = f.clone();
+    let mut e = if maximize { neg1(f.clone()) } else { f.clone() };
     for (i, var) in vars.iter().enumerate() {
       e = crate::syntax::substitute_variable(&e, var, &Expr::Real(point[i]));
     }
@@ -22014,6 +22196,26 @@ fn find_minimum_inner(
       fmt(&Expr::List(point.iter().map(|v| Expr::Real(*v)).collect()))
     ));
   };
+
+  // Pre-flight: if f doesn't reduce to a real number at the starting
+  // point (e.g. contains an unbound symbol like phi[x]), report it and
+  // return the call unevaluated. wolframscript evaluates the starting point
+  // repeatedly before giving up, so the message shows three times and is
+  // then suppressed (General::stop).
+  if eval_obj(f, &x).is_err() {
+    for _ in 0..4 {
+      report_nonreal(&x);
+    }
+    return Ok(unevaluated(func_name, args));
+  }
+
+  let sign = if maximize { -1.0 } else { 1.0 };
+  // `MaxIterations -> n` caps the iterations (default 200).
+  let max_iter = match find_option(&args[2..], "MaxIterations") {
+    Some(Expr::Integer(n)) if *n > 0 => *n as usize,
+    _ => 200,
+  };
+  let tol = 1e-15;
 
   if let Some(node) = &compiled_objective {
     let phi = |z: &[f64]| -> f64 {
@@ -23132,7 +23334,44 @@ pub fn nminimize_ast(
     rewritten[0] = Expr::List(threaded.into());
     return nminimize_ast(&rewritten, maximize);
   }
-  match nminimize_ast_checked(args, maximize) {
+  // An objective that is not even a numeric expression at a point (a free
+  // symbol or an undefined head) can never become a number: report it right
+  // away instead of after a whole search (25 s for a fuzzer input), as
+  // wolframscript does.
+  let symbolic_at_probe = (|| {
+    let vars: Vec<String> = match args.get(1)? {
+      Expr::List(v) => v
+        .iter()
+        .map(|e| match e {
+          Expr::Identifier(n) => Some(n.clone()),
+          _ => None,
+        })
+        .collect::<Option<_>>()?,
+      Expr::Identifier(n) => vec![n.clone()],
+      _ => return None,
+    };
+    let objective = match args.first()? {
+      Expr::List(items) if !items.is_empty() => items[0].clone(),
+      Expr::List(_) => return None,
+      o => o.clone(),
+    };
+    let mut value = objective;
+    for v in &vars {
+      value = crate::syntax::substitute_variable(&value, v, &Expr::Real(0.5));
+    }
+    let _quiet = QuietGuard::new();
+    let value = crate::evaluator::evaluate_expr_to_expr(&value).ok()?;
+    Some(!crate::functions::predicate_ast::is_numeric_q(&value))
+  })()
+  .unwrap_or(false);
+  let checked = if symbolic_at_probe {
+    Err(InterpreterError::EvaluationError(
+      "cannot evaluate expression numerically".into(),
+    ))
+  } else {
+    nminimize_ast_checked(args, maximize)
+  };
+  match checked {
     // An objective that never evaluates to a number (an undefined `f[r]`)
     // is NMinimize::nnum and the call stays as it is, not a hard error.
     Err(InterpreterError::EvaluationError(msg))
