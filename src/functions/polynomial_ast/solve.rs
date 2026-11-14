@@ -24530,6 +24530,30 @@ pub(crate) enum NumNode {
 pub(crate) enum CompiledArg {
   Node(NumNode),
   Value(crate::functions::compile_vm::V),
+  /// A literal list (`{x, y, z}`) passed for a vector or array argument,
+  /// each entry compiled on its own.
+  List(Vec<CompiledArg>),
+}
+
+impl CompiledArg {
+  fn has_fallback(&self) -> bool {
+    match self {
+      Self::Node(n) => n.has_fallback(),
+      Self::Value(_) => false,
+      Self::List(xs) => xs.iter().any(Self::has_fallback),
+    }
+  }
+
+  fn value_at(&self, point: &[f64]) -> crate::functions::compile_vm::V {
+    use crate::functions::compile_vm::V;
+    match self {
+      Self::Node(n) => V::R(n.eval_plain(point)),
+      Self::Value(v) => v.clone(),
+      Self::List(xs) => {
+        V::L(std::rc::Rc::new(xs.iter().map(|x| x.value_at(point)).collect()))
+      }
+    }
+  }
 }
 
 impl NumNode {
@@ -24553,10 +24577,7 @@ impl NumNode {
       Self::Interpolation(_, _, xs) => xs.iter().any(Self::has_fallback),
       Self::Fallback(..) => true,
       Self::ComplexPart(_, z, _) => z.has_fallback(),
-      Self::Compiled(_, xs) => xs.iter().any(|x| match x {
-        CompiledArg::Node(n) => n.has_fallback(),
-        CompiledArg::Value(_) => false,
-      }),
+      Self::Compiled(_, xs) => xs.iter().any(CompiledArg::has_fallback),
     }
   }
 
@@ -24619,15 +24640,7 @@ impl NumNode {
         }
       }
       Self::Compiled(program, xs) => {
-        let values = xs
-          .iter()
-          .map(|x| match x {
-            CompiledArg::Node(n) => {
-              crate::functions::compile_vm::V::R(n.eval_plain(point))
-            }
-            CompiledArg::Value(v) => v.clone(),
-          })
-          .collect();
+        let values = xs.iter().map(|x| x.value_at(point)).collect();
         program.call_real(values)
       }
     }
@@ -25274,10 +25287,10 @@ fn compile_compiled_call(expr: &Expr, vars: &[String]) -> Option<NumNode> {
       .iter()
       .any(|v| super::coefficient::expr_contains_identifier(a, v));
     if mentions {
-      if rank != 0 || ty == crate::functions::compile_vm::Ty::Boolean {
+      if ty == crate::functions::compile_vm::Ty::Boolean {
         return None;
       }
-      out.push(CompiledArg::Node(compile_numeric(a, vars)?));
+      out.push(compile_compiled_arg(a, rank, vars)?);
     } else {
       let value = crate::evaluator::evaluate_expr_to_expr(a).ok()?;
       out.push(CompiledArg::Value(
@@ -25286,6 +25299,28 @@ fn compile_compiled_call(expr: &Expr, vars: &[String]) -> Option<NumNode> {
     }
   }
   Some(NumNode::Compiled(std::rc::Rc::new(program), out))
+}
+
+/// A compiled-function argument of array depth `rank` that mentions the
+/// variables: a scalar is compiled as is; a vector or array must be spelled
+/// out as a literal list of that depth (`{x, y, z}` for a `_Real, 1`
+/// argument), whose entries are compiled one by one.
+fn compile_compiled_arg(
+  arg: &Expr,
+  rank: usize,
+  vars: &[String],
+) -> Option<CompiledArg> {
+  if rank == 0 {
+    return Some(CompiledArg::Node(compile_numeric(arg, vars)?));
+  }
+  let Expr::List(items) = arg else {
+    return None;
+  };
+  items
+    .iter()
+    .map(|item| compile_compiled_arg(item, rank - 1, vars))
+    .collect::<Option<Vec<_>>>()
+    .map(CompiledArg::List)
 }
 
 /// An atomic comparison split out of a (possibly chained / And-joined)

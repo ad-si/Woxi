@@ -251,6 +251,29 @@ mod contour_plot3d {
       "{1, 1, 1}"
     );
   }
+
+  /// A compiled function taking the point as one vector argument
+  /// (`cf[{x, y, z}]`) is sampled through its compiled body, and draws the
+  /// same surface as the expression it computes.
+  #[test]
+  fn compiled_vector_argument_body() {
+    let plot = |body: &str| {
+      clear_state();
+      interpret(&format!(
+        "cf = Compile[{{{{p, _Real, 1}}, {{s, _Real}}}}, s p.p]; \
+         ExportString[ContourPlot3D[{body}, {{x, -1, 1}}, {{y, -1, 1}}, \
+         {{z, -1, 1}}, Contours -> {{0.5}}, Mesh -> None, PlotPoints -> 12], \
+         \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(plot("cf[{x, y, z}, 1.]"), plot("x^2 + y^2 + z^2"));
+    // Entries may be constants or expressions in the variables.
+    assert_eq!(
+      plot("cf[{x, 2 y, 0.5}, 2.]"),
+      plot("2. (x^2 + 4 y^2 + 0.25)")
+    );
+  }
 }
 
 mod stream_plot3d {

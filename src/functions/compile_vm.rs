@@ -1055,16 +1055,24 @@ impl Program {
   /// Run on machine reals (each argument scalar and real-typed, or given as
   /// a value), giving a real result.
   pub(crate) fn call_real(&self, values: Vec<V>) -> f64 {
-    let bound: Option<Vec<V>> = values
+    // A machine real bound to an integer or complex argument (or to an
+    // element of an integer or complex array) takes that argument's type.
+    fn coerce(v: V, ty: Ty) -> V {
+      match (v, ty) {
+        (V::R(x), Ty::Integer) if x.fract() == 0.0 => V::I(x as i64),
+        (V::R(x), Ty::Complex) => V::Z(C::new(x, 0.0)),
+        (V::L(xs), _) => V::L(Rc::new(
+          xs.iter().map(|x| coerce(x.clone(), ty)).collect(),
+        )),
+        (v, _) => v,
+      }
+    }
+    let bound: Vec<V> = values
       .into_iter()
       .zip(&self.args)
-      .map(|(v, (_, ty, _))| match (v, ty) {
-        (V::R(x), Ty::Integer) if x.fract() == 0.0 => Some(V::I(x as i64)),
-        (V::R(x), Ty::Complex) => Some(V::Z(C::new(x, 0.0))),
-        (v, _) => Some(v),
-      })
+      .map(|(v, (_, ty, _))| coerce(v, *ty))
       .collect();
-    match bound.and_then(|b| self.call(b)) {
+    match self.call(bound) {
       Some(V::R(x)) => x,
       Some(V::I(n)) => n as f64,
       _ => f64::NAN,
