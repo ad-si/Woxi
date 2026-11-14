@@ -3553,6 +3553,10 @@ pub(crate) struct PlotOptions {
   /// position and the text drawn at it. `None` = the automatic ticks.
   pub ticks_x: Option<Vec<(f64, String)>>,
   pub ticks_y: Option<Vec<(f64, String)>>,
+  /// Per axis (x, y): `ticks_x` / `ticks_y` holds the explicit list of the
+  /// `Ticks` option. Those belong to the axes only, so a framed plot keeps
+  /// its automatic frame ticks (see [`without_axis_only_ticks`]).
+  pub ticks_from_axes_option: (bool, bool),
   /// `FrameTicks`: what each frame edge (bottom, left, top, right) carries.
   /// The labels of an explicit bottom / left list are also in `ticks_x` /
   /// `ticks_y`.
@@ -4003,6 +4007,7 @@ impl Default for PlotOptions {
       evaluated: false,
       ticks_x: None,
       ticks_y: None,
+      ticks_from_axes_option: (false, false),
       frame_tick_edges: FrameEdgeTicks::defaults(),
       frame_tick_spec: None,
       invalid_frame_ticks: false,
@@ -5516,6 +5521,27 @@ fn with_frame_tick_functions(
   std::borrow::Cow::Owned(out)
 }
 
+/// `Ticks` sets the ticks of the axes, not of the frame: a framed plot
+/// (`Frame -> True, Ticks -> {Range[0, 2, 0.2]}`) keeps its automatic frame
+/// ticks, so drop the explicit lists that came from `Ticks`.
+fn without_axis_only_ticks(
+  opts: &PlotOptions,
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let (from_x, from_y) = opts.ticks_from_axes_option;
+  if !opts.frame || !(from_x || from_y) {
+    return std::borrow::Cow::Borrowed(opts);
+  }
+  let mut out = opts.clone();
+  if from_x {
+    out.ticks_x = None;
+  }
+  if from_y {
+    out.ticks_y = None;
+  }
+  out.ticks_from_axes_option = (false, false);
+  std::borrow::Cow::Owned(out)
+}
+
 fn with_labeling_size(opts: &PlotOptions) -> std::borrow::Cow<'_, PlotOptions> {
   let Some(width) = opts.labeling_size else {
     return std::borrow::Cow::Borrowed(opts);
@@ -5540,6 +5566,7 @@ fn generate_svg_with_options(
     return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
   }
   let opts = &*with_labeling_size(opts);
+  let opts = &*without_axis_only_ticks(opts);
   let opts = &*with_frame_tick_functions(opts, x_range, y_range);
   let opts = &*with_automatic_aspect(opts, x_range, y_range);
   let opts = &*with_simple_ticks(opts, x_range, y_range);
@@ -16345,9 +16372,11 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.frame_ticks = edges.iter().any(|e| !e.is_none());
       if let Some(t) = edges[0].explicit_labels() {
         plot_opts.ticks_x = Some(t);
+        plot_opts.ticks_from_axes_option.0 = false;
       }
       if let Some(t) = edges[1].explicit_labels() {
         plot_opts.ticks_y = Some(t);
+        plot_opts.ticks_from_axes_option.1 = false;
       }
       plot_opts.frame_tick_edges = edges;
     }
@@ -16406,8 +16435,10 @@ pub(crate) fn apply_common_plot_option(
       // and leaves the y axis to its default.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
         plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        plot_opts.ticks_from_axes_option.0 = plot_opts.ticks_x.is_some();
         if let Some(y) = items.get(1) {
           plot_opts.ticks_y = parse_explicit_ticks(y);
+          plot_opts.ticks_from_axes_option.1 = plot_opts.ticks_y.is_some();
         }
       }
       _ => {}

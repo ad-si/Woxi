@@ -8603,6 +8603,8 @@ Found comparing the graphics-tests renders (2026-11):
     `ListPlot` with `FrameTicks -> All` matches.
   - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
     in italics (TraditionalForm), and writes `-a` with a minus sign.
+  - A symbol used as an axes or frame label (`FrameLabel -> {Z, X}`) is
+    likewise set upright; WL sets it in italics (TraditionalForm).
   - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
     draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
