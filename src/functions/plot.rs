@@ -15149,6 +15149,16 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
     .map(|ticks| ticks.into_iter().map(|t| (t.pos, t.label)).collect())
 }
 
+/// One side of `Ticks -> {xspec, yspec}`: `None` or `False` leaves that
+/// axis without ticks (an empty explicit list), a list gives the explicit
+/// ticks, and anything else (`Automatic`, `All`) keeps the automatic ones.
+pub(crate) fn parse_axis_tick_side(value: &Expr) -> Option<Vec<(f64, String)>> {
+  match value {
+    Expr::Identifier(s) if s == "None" || s == "False" => Some(Vec::new()),
+    other => parse_explicit_ticks(other),
+  }
+}
+
 /// A `MultiaxisArrangement` y axis drawn outside the frame: a spine
 /// parallel to the left (`edge` 1) or right (3) frame edge carrying its own
 /// ticks (in the plot's y coordinates), colored in stretches like
@@ -16424,14 +16434,14 @@ pub(crate) fn apply_common_plot_option(
       {
         plot_opts.ticks = false;
       }
-      // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
-      // explicit list of positions (each optionally `{pos, label}`).
+      // `Ticks -> {xspec, yspec}`: each side is None (no ticks on that
+      // axis), Automatic, or an explicit list of positions (each optionally `{pos, label}`).
       // The y side may be left off — `Ticks -> {xspec}` states the x ticks
       // and leaves the y axis to its default.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
-        plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        plot_opts.ticks_x = parse_axis_tick_side(&items[0]);
         if let Some(y) = items.get(1) {
-          plot_opts.ticks_y = parse_explicit_ticks(y);
+          plot_opts.ticks_y = parse_axis_tick_side(y);
         }
       }
       _ => {}
