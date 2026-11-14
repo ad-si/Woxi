@@ -19738,9 +19738,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // "ProbabilityDensity" is Wolfram's long name for the "PDF" height
       // spec; it used to fall back to raw counts.
       let data = "{0.1, 0.15, 0.3, 0.32, 0.35, 0.5, 0.55, 0.7}";
-      let long = export_svg(&format!(
-        r#"Histogram[{data}, 10, "ProbabilityDensity"]"#
-      ));
+      let long =
+        export_svg(&format!(r#"Histogram[{data}, 10, "ProbabilityDensity"]"#));
       let short = export_svg(&format!(r#"Histogram[{data}, 10, "PDF"]"#));
       let counts = export_svg(&format!("Histogram[{data}, 10]"));
       assert_eq!(long, short);
