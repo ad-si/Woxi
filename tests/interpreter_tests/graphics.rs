@@ -16081,6 +16081,65 @@ mod plot3d {
       assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
     }
 
+    /// Several rules may name the same curve: `{1 -> {{2}, c1}, 1 -> {Top,
+    /// c2}}` shades between curves 1 and 2 in `c1` *and* from curve 1 up to
+    /// the top in `c2`. Only one fill per curve used to survive, with the
+    /// first rule's target painted in the last rule's color.
+    #[test]
+    fn plot_filling_repeated_series_rules_all_fill() {
+      let code = "Plot[{x, 2 x}, {x, 0, 1}, \
+                  Filling -> {1 -> {{2}, Blue}, 1 -> {Top, Orange}}]";
+      for svg in [
+        export_svg(code),
+        export_svg(&format!("Show[{code}]")),
+        export_svg(&format!("Show[{code}, PlotRange -> {{0, 3}}]")),
+      ] {
+        assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+        assert!(svg.contains("fill=\"#FF8000\""), "{svg}");
+      }
+      // The plot's primitives hold both shaded regions, in rule order.
+      assert_eq!(
+        interpret(&format!(
+          "Cases[{code}, {{Opacity[_, c_], _Polygon}} :> c, Infinity]"
+        ))
+        .unwrap(),
+        "{RGBColor[0., 0., 1.], RGBColor[1., 0.5019607843137255, 0.]}"
+      );
+    }
+
+    /// `Show` lists the curves of all its plots one after another, so a
+    /// curve-to-curve fill of the second plot has to name its partner by
+    /// the merged position. It used to keep its index within its own plot
+    /// and fill between curves of the first plot instead (or not at all).
+    #[test]
+    fn show_shifts_curve_to_curve_filling_targets() {
+      let svg = export_svg(
+        "Show[Plot[{x, 2 x, 3 x}, {x, 0, 1}, Filling -> {2 -> {{3}, Red}}], \
+         Plot[{x, 2 x}, {x, 1, 2}, Filling -> {1 -> {{2}, Blue}}]]",
+      );
+      let polygons: Vec<&str> =
+        svg.split("<polygon").skip(1).collect::<Vec<_>>();
+      assert_eq!(polygons.len(), 2, "{svg}");
+      let blue = polygons
+        .iter()
+        .find(|p| p.contains("fill=\"#0000FF\""))
+        .unwrap_or_else(|| panic!("no blue fill: {svg}"));
+      let red = polygons
+        .iter()
+        .find(|p| p.contains("fill=\"#FF0000\""))
+        .unwrap_or_else(|| panic!("no red fill: {svg}"));
+      // The blue region lies right of the red one (x in 1..2, not 0..1).
+      let min_x = |p: &str| {
+        let pts = p.split("points=\"").nth(1).unwrap();
+        let pts = &pts[..pts.find('"').unwrap()];
+        pts
+          .split_whitespace()
+          .map(|xy| xy.split(',').next().unwrap().parse::<f64>().unwrap())
+          .fold(f64::INFINITY, f64::min)
+      };
+      assert!(min_x(blue) > min_x(red), "{svg}");
+    }
+
     // Curves that meet exactly on a sample point still split into two colors.
     #[test]
     fn plot_filling_between_curves_two_colors_touch_on_sample() {

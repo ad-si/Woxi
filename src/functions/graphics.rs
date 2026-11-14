@@ -21736,64 +21736,70 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     // don't leak onto the line drawn after it. FillingStyle appearance
     // travels on the series (fill_color/fill_opacity); the defaults
     // match the standalone plot render (series color at 0.2 opacity).
-    let between = match sd.filling {
-      crate::syntax::SeriesFilling::Series(j) if !sd.is_scatter => {
-        ps.series.get(j).and_then(|t| {
-          crate::functions::plot::fill_between_polygon(&sd.points, &t.points)
-        })
-      }
-      _ => None,
-    };
-    let level_ref_y = if sd.is_scatter {
-      None
-    } else {
-      sd.filling.reference_y(ps.y_range.0, ps.y_range.1)
-    };
-    if between.is_some() || level_ref_y.is_some() {
-      let (fr, fg, fb) = sd.fill_color.unwrap_or(sd.color);
-      let mut fill_prims: Vec<Expr> = vec![
-        call1("Opacity", Expr::Real(sd.fill_opacity.unwrap_or(0.2))),
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(fr as f64 / 255.0),
-            Expr::Real(fg as f64 / 255.0),
-            Expr::Real(fb as f64 / 255.0),
-          ],
-        ),
-      ];
-      let segments = if between.is_some() {
-        Vec::new()
-      } else {
-        crate::functions::plot::split_into_segments(&sd.points)
-      };
-      if let Some(poly) = &between {
-        let coords: Vec<Expr> = poly
-          .iter()
-          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-          .collect();
-        fill_prims.push(call1("Polygon", Expr::List(coords.into())));
-      }
-      let ref_y = level_ref_y.unwrap_or(0.0);
-      for seg in &segments {
-        if seg.len() < 2 {
-          continue;
+    for fill in sd.fills() {
+      let between = match fill.filling {
+        crate::syntax::SeriesFilling::Series(j) if !sd.is_scatter => {
+          ps.series.get(j).and_then(|t| {
+            crate::functions::plot::fill_between_polygon(&sd.points, &t.points)
+          })
         }
-        let mut coords: Vec<Expr> = seg
-          .iter()
-          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
-          .collect();
-        let (x_last, _) = seg[seg.len() - 1];
-        let (x_first, _) = seg[0];
-        coords.push(Expr::List(
-          vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
-        ));
-        coords.push(Expr::List(
-          vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
-        ));
-        fill_prims.push(call1("Polygon", Expr::List(coords.into())));
+        _ => None,
+      };
+      let level_ref_y = if sd.is_scatter {
+        None
+      } else {
+        fill.filling.reference_y(ps.y_range.0, ps.y_range.1)
+      };
+      if between.is_some() || level_ref_y.is_some() {
+        let (fr, fg, fb) = fill.color.unwrap_or(sd.color);
+        let mut fill_prims: Vec<Expr> = vec![
+          call1("Opacity", Expr::Real(fill.opacity.unwrap_or(0.2))),
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(fr as f64 / 255.0),
+              Expr::Real(fg as f64 / 255.0),
+              Expr::Real(fb as f64 / 255.0),
+            ],
+          ),
+        ];
+        let segments = if between.is_some() {
+          Vec::new()
+        } else {
+          crate::functions::plot::split_into_segments(&sd.points)
+        };
+        if let Some(poly) = &between {
+          let coords: Vec<Expr> = poly
+            .iter()
+            .map(|&(x, y)| {
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+            })
+            .collect();
+          fill_prims.push(call1("Polygon", Expr::List(coords.into())));
+        }
+        let ref_y = level_ref_y.unwrap_or(0.0);
+        for seg in &segments {
+          if seg.len() < 2 {
+            continue;
+          }
+          let mut coords: Vec<Expr> = seg
+            .iter()
+            .map(|&(x, y)| {
+              Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
+            })
+            .collect();
+          let (x_last, _) = seg[seg.len() - 1];
+          let (x_first, _) = seg[0];
+          coords.push(Expr::List(
+            vec![Expr::Real(x_last), Expr::Real(ref_y)].into(),
+          ));
+          coords.push(Expr::List(
+            vec![Expr::Real(x_first), Expr::Real(ref_y)].into(),
+          ));
+          fill_prims.push(call1("Polygon", Expr::List(coords.into())));
+        }
+        series_prims.push(Expr::List(fill_prims.into()));
       }
-      series_prims.push(Expr::List(fill_prims.into()));
     }
     // Scattered points with a `Filling` carry a stem from each point to the
     // fill level, drawn under the points at the filling opacity.
@@ -22620,7 +22626,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if any_curves && ps.series.is_empty() {
         continue;
       }
-      all_series.extend(ps.series.iter().cloned());
+      // A curve-to-curve fill names its partner by index within its own
+      // plot; in the merged list that plot's curves start further on.
+      let offset = all_series.len();
+      let shift = |f: &mut crate::syntax::SeriesFilling| {
+        if let crate::syntax::SeriesFilling::Series(j) = f {
+          *j += offset;
+        }
+      };
+      all_series.extend(ps.series.iter().cloned().map(|mut s| {
+        shift(&mut s.filling);
+        s.extra_fills.iter_mut().for_each(|f| shift(&mut f.filling));
+        s
+      }));
       x_min = x_min.min(ps.x_range.0);
       x_max = x_max.max(ps.x_range.1);
       y_min = y_min.min(ps.y_range.0);
