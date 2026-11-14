@@ -216,10 +216,27 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   }
   let (num, den) = extract_num_den(expr);
   if matches!(&den, Expr::Integer(1)) {
-    return expr.clone();
+    let oriented = normalize_numerator_power_signs(
+      &orient_product_sum_factors(expr).unwrap_or_else(|| expr.clone()),
+    );
+    return oriented;
   }
+  let oriented = orient_product_sum_factors(&num);
+  // An oriented numerator is a canonical product: the quotient is the
+  // evaluated Times, so its sign and the denominator's content merge
+  // (`-1/2*(x*(-3 + 4*x))/(2 + y)`, wolframscript-verified).
+  let finish = |e: Expr| -> Expr {
+    if oriented.is_some() {
+      crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
+    } else {
+      e
+    }
+  };
+  let original_num = num.clone();
+  let num = oriented.clone().unwrap_or(num);
   let normalized_num = normalize_numerator_power_signs(&num);
-  let unchanged = expr_to_string(&normalized_num) == expr_to_string(&num);
+  let unchanged =
+    expr_to_string(&normalized_num) == expr_to_string(&original_num);
   let num = normalized_num;
   let result =
     canonicalize_quotient_sign(&num, &den, false).unwrap_or_else(|| {
@@ -240,17 +257,100 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   // 1783631489573774000).
   let (rnum, rden) = extract_num_den(&result);
   if matches!(&rden, Expr::Integer(1)) {
-    return result;
+    return finish(result);
   }
   if let Some((rn, rd)) = reduce_shared_integer_content(&rnum, &rden) {
     if matches!(&rd, Expr::Integer(1)) {
-      return rn;
+      return finish(rn);
     }
-    return hoist_numerator_content(&distribute_unit_negative_numerator(
-      &div2(rn, rd),
+    return finish(hoist_numerator_content(
+      &distribute_unit_negative_numerator(&div2(rn, rd)),
     ));
   }
-  hoist_numerator_content(&distribute_unit_negative_numerator(&result))
+  finish(hoist_numerator_content(
+    &distribute_unit_negative_numerator(&result),
+  ))
+}
+
+/// In a product, every bare sum factor is expanded and split into its
+/// FactorTerms content and an oriented primitive (the sign of the
+/// lex-leading term goes to the content), as wolframscript's Together does:
+/// `Together[x (3 - 4 x)/(1 + y)]` → `-((x*(-3 + 4*x))/(1 + y))`,
+/// `Together[(1/2 - x) y/z]` → `-1/2*((-1 + 2*x)*y)/z`,
+/// `Together[(1 - x)(2 - x)]` → `(-2 + x)*(-1 + x)`. A lone sum is not a
+/// product and keeps its form (`Together[(3 - 4 x)/(1 + y)]`), and sums
+/// with complex or inexact coefficients are left alone. `None` when nothing
+/// changed.
+fn orient_product_sum_factors(expr: &Expr) -> Option<Expr> {
+  let factors = flatten_times_args(std::slice::from_ref(expr));
+  if factors.len() < 2 {
+    return None;
+  }
+  let mut changed = false;
+  let mut out: Vec<Expr> = Vec::with_capacity(factors.len() + 1);
+  for factor in factors {
+    if !is_sum(&factor)
+      || super::reduce::contains_imaginary(&factor)
+      || contains_inexact_number(&factor)
+    {
+      out.push(factor);
+      continue;
+    }
+    let expanded = expand_and_combine(&factor);
+    let terms = collect_additive_terms(&expanded);
+    let mut vars = std::collections::HashSet::new();
+    super::simplify::collect_variables(&expanded, &mut vars);
+    let Some((n, d, coeffs)) = (terms.len() >= 2 && !vars.is_empty())
+      .then(|| super::factor::rational_content(&terms))
+      .flatten()
+    else {
+      out.push(factor);
+      continue;
+    };
+    let primitive = if n == 1 && d == 1 {
+      expanded
+    } else {
+      plus(super::factor::divide_terms_by(&terms, &coeffs, n, d))
+    };
+    if expr_to_string(&primitive) == expr_to_string(&factor) {
+      out.push(factor);
+      continue;
+    }
+    changed = true;
+    if n != 1 || d != 1 {
+      out.push(if d == 1 {
+        Expr::Integer(n)
+      } else {
+        call("Rational", vec![Expr::Integer(n), Expr::Integer(d)])
+      });
+    }
+    out.push(primitive);
+  }
+  if !changed {
+    return None;
+  }
+  let product = build_product(out);
+  Some(crate::evaluator::evaluate_expr_to_expr(&product).unwrap_or(product))
+}
+
+/// A product (two or more factors) with at least one bare sum factor.
+fn has_sum_factor(e: &Expr) -> bool {
+  let factors = flatten_times_args(std::slice::from_ref(e));
+  factors.len() >= 2 && factors.iter().any(is_sum)
+}
+
+fn contains_inexact_number(e: &Expr) -> bool {
+  match e {
+    Expr::Real(_) | Expr::BigFloat(_, _) => true,
+    Expr::BinaryOp { left, right, .. } => {
+      contains_inexact_number(left) || contains_inexact_number(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_inexact_number(operand),
+    Expr::FunctionCall { args, .. } | Expr::List(args) => {
+      args.iter().any(contains_inexact_number)
+    }
+    _ => false,
+  }
 }
 
 /// Orient existing powers of sums without factoring a previously expanded
@@ -1439,8 +1539,19 @@ pub(super) fn canonicalize_quotient_sign(
     build_product(new_factors)
   };
 
+  let factored_with_sum = has_sum_factor(num);
   let new_num = if sign >= 0 {
     num.clone()
+  } else if !require_negative_numerator
+    && factored_with_sum
+    && additive_content_sign(num) == Some(-1)
+  {
+    // A product numerator with a sum factor absorbs the flip in its
+    // coefficient instead of being expanded:
+    // Together[x (3 - 4 x)/(y (1 - y))] → (x*(-3 + 4*x))/((-1 + y)*y)
+    // (wolframscript-verified).
+    let product = times2(Expr::Integer(-1), num.clone());
+    crate::evaluator::evaluate_expr_to_expr(&product).unwrap_or(product)
   } else if collect_additive_terms(num).len() >= 2
     || matches!(num, Expr::Integer(_) | Expr::Real(_) | Expr::UnaryOp { .. })
     || matches!(num, Expr::FunctionCall { name, args } if name == "Rational" && args.len() == 2)
@@ -1980,7 +2091,16 @@ pub fn together_expr(expr: &Expr) -> Expr {
       }
       // A lone fraction over a bare polynomial denominator may still share a
       // polynomial factor (e.g. (x^2+x)/(x^2-1) -> x/(x-1)); cancel the GCD.
-      if is_plus_polynomial(&ed) && single_variable_fraction(&en, &ed) {
+      // A factored numerator with nothing to cancel keeps its factors:
+      // Together[x (3 - 4 x)/(1 + x)] → -((x*(-3 + 4*x))/(1 + x)), not the
+      // expanded (3*x - 4*x^2)/(1 + x) the GCD pass would rebuild
+      // (wolframscript-verified).
+      let factored_without_gcd =
+        || has_sum_factor(&en) && !fraction_has_polynomial_gcd(&en, &ed);
+      if is_plus_polynomial(&ed)
+        && single_variable_fraction(&en, &ed)
+        && !factored_without_gcd()
+      {
         let canceled = super::cancel::cancel_expr_keep_quotient_sign(&expr_rec);
         if expr_to_string(&canceled) != expr_to_string(&expr_rec) {
           return canceled;
@@ -2015,6 +2135,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
       // 1/(4*x*(1 + x)) and Together[(x + x^2)/(4*x^2 + 4*x^3)] = 1/(4*x).
       if let Some(ed_bare) = expand_numeric_content_denominator(&ed)
         && single_variable_fraction(&en, &ed_bare)
+        && !(has_sum_factor(&en) && !fraction_has_polynomial_gcd(&en, &ed_bare))
       {
         let frac = div2(en.clone(), ed_bare.clone());
         let canceled = super::cancel::cancel_expr_keep_quotient_sign(&frac);
@@ -2197,7 +2318,21 @@ pub fn together_expr(expr: &Expr) -> Expr {
   }
 
   let combined_num = if new_num_terms.len() == 1 {
-    expand_and_combine(&new_num_terms.remove(0))
+    let single = new_num_terms.remove(0);
+    // A lone fraction's factored numerator stays factored (its sum factors
+    // are oriented later): Together[(1/2 - x) y/z] is
+    // -1/2*((-1 + 2*x)*y)/z, not (y - 2*x*y)/(2*z) (wolframscript-verified).
+    if terms.len() == 1
+      && has_sum_factor(&single)
+      && fractions
+        .first()
+        .is_some_and(|(_, den)| !shares_cancelable_factor(&single, den))
+    {
+      crate::evaluator::evaluate_expr_to_expr(&single)
+        .unwrap_or_else(|_| expand_and_combine(&single))
+    } else {
+      expand_and_combine(&single)
+    }
   } else {
     expand_and_combine(&build_sum(new_num_terms))
   };

@@ -7471,6 +7471,50 @@ fn apply_agreed_row_part_styles(content: &Expr, style: &mut StyleState) {
   }
 }
 
+/// Whether a `Text` label is, or has among the items of a `Row`, a
+/// `TraditionalForm` matrix — a list of equally long rows, possibly under a
+/// number-display form (`TraditionalForm[NumberForm[m, {3, 2}]]`) — which
+/// typesets as a parenthesized grid.
+fn label_holds_traditional_matrix(expr: &Expr) -> bool {
+  fn is_matrix(e: &Expr) -> bool {
+    match e {
+      Expr::List(rows) => {
+        let mut cols = None;
+        !rows.is_empty()
+          && rows.iter().all(|r| {
+            matches!(r, Expr::List(cells)
+              if !cells.is_empty()
+                && *cols.get_or_insert(cells.len()) == cells.len())
+          })
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(
+          name.as_str(),
+          "NumberForm" | "ScientificForm" | "EngineeringForm"
+        ) =>
+      {
+        args.first().is_some_and(is_matrix)
+      }
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      is_matrix(&args[0])
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => {
+      matches!(args.first(), Some(Expr::List(items))
+        if items.iter().any(label_holds_traditional_matrix))
+    }
+    Expr::FunctionCall { name, args } if is_style_wrapper(name) => {
+      args.first().is_some_and(label_holds_traditional_matrix)
+    }
+    _ => false,
+  }
+}
+
 /// Whether `expr` is a `Row`/`Column`/`TableForm` (possibly under a `Style`) that has a
 /// `Grid` somewhere among its items.
 fn layout_holds_grid(expr: &Expr) -> bool {
@@ -7659,6 +7703,39 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       source: None,
     });
     return;
+  }
+  // A label that shows a matrix in `TraditionalForm` (`Row[{"A = ",
+  // TraditionalForm[NumberForm[m, {3, 2}]]}]`) sets it as a parenthesized
+  // grid beside the rest of the row, so it is typeset as a picture.
+  if frame_opts.is_empty()
+    && label_holds_traditional_matrix(content)
+    && let Some((x, y, scaled)) = match args.get(1) {
+      Some(pos) => expr_to_anchor(pos),
+      None => Some((0.0, 0.0, false)),
+    }
+  {
+    let boxes = crate::strip_number_precision_markers(
+      &crate::evaluator::dispatch::complex_and_special::
+        expr_to_box_form_traditional(content),
+    );
+    let layout = layout_box(&boxes, local_style.font_size);
+    if layout.width > 0.0 && layout.height > 0.0 {
+      prims.push(Primitive::InsetGraphic {
+        svg: layout_to_svg(
+          &layout,
+          &local_style.effective_color().to_svg_rgb(),
+        ),
+        x,
+        y,
+        w: layout.width.ceil().max(1.0),
+        h: layout.height.ceil().max(1.0),
+        scaled,
+        size: None,
+        size_scaled: false,
+        source: None,
+      });
+      return;
+    }
   }
   // A label whose layout shows a typeset fraction box (`Column[{Row[{
   // DisplayForm[FractionBox[1, 2]], …}]}]`) is composed to a picture the
@@ -11042,10 +11119,13 @@ fn graphics_decorations(
       .map(|v| (v, svg_escape(&format_tick_in_sequence(v, step))))
       .collect::<Vec<_>>()
   };
-  // A text label's size, or a picture label's own.
+  // A text label's size (a `Style[label, size]` label at its own size),
+  // or a picture label's own.
   let measure = |markup: &str| {
     axes_label_picture_size(markup).unwrap_or_else(|| {
-      (text_width(markup, LABEL_FONT), line_height(LABEL_FONT))
+      let size = crate::functions::plot_padding::markup_font_size(markup)
+        .unwrap_or(LABEL_FONT);
+      (text_width(markup, size), line_height(size))
     })
   };
   let axis_x_data = origin.0.unwrap_or(if bb.x_min <= 0.0 && 0.0 <= bb.x_max {
@@ -13787,8 +13867,43 @@ pub fn splice_option_lists(args: &[Expr]) -> Vec<Expr> {
   out
 }
 
+/// The arguments of a `Graphics`/`Graphics3D` with option lists spliced in
+/// and every repeated option after its first occurrence dropped. As
+/// everywhere in Wolfram, the first setting of an option is the one in
+/// force: `Show[g, PlotRange -> All]` yields
+/// `Graphics[…, {PlotRange -> All, PlotRange -> {…}}]`, whose range is
+/// `All`, not the shown graphic's own range listed after it.
+pub fn graphics_option_args(args: &[Expr]) -> Vec<Expr> {
+  let mut seen: Vec<String> = Vec::new();
+  splice_option_lists(args)
+    .into_iter()
+    .enumerate()
+    .filter(|(i, arg)| {
+      if *i == 0 {
+        return true;
+      }
+      let name = match arg {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          match pattern.as_ref() {
+            Expr::Identifier(n) | Expr::Constant(n) => n,
+            _ => return true,
+          }
+        }
+        _ => return true,
+      };
+      if seen.iter().any(|s| s == name) {
+        false
+      } else {
+        seen.push(name.clone());
+        true
+      }
+    })
+    .map(|(_, arg)| arg)
+    .collect()
+}
+
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let args = &splice_option_lists(args)[..];
+  let args = &graphics_option_args(args)[..];
   // First arg is the content (primitives + directives)
   // Evaluate it so that Table/Map/etc. produce concrete lists
   // Remaining args are options as Rule expressions
@@ -22230,7 +22345,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // graphic only: an `AxesLabel` that just one of the later layers
         // carries does not label the merged picture.
         if graphic_count == 1 {
-          for opt in gargs.iter().skip(1) {
+          // An option list (`Graphics[prims, {opts…}]`) is spliced so its
+          // entries merge one by one: kept whole, it would sit ahead of a
+          // later `Show` option and its settings would win.
+          for opt in splice_option_lists(gargs).iter().skip(1) {
             merge_option(&mut merged_options, opt);
           }
         }
@@ -22274,7 +22392,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           merged_primitives.push(gargs[0].clone());
         }
         if graphic_count == 1 {
-          for opt in gargs.iter().skip(1) {
+          // An option list (`Graphics[prims, {opts…}]`) is spliced so its
+          // entries merge one by one: kept whole, it would sit ahead of a
+          // later `Show` option and its settings would win.
+          for opt in splice_option_lists(gargs).iter().skip(1) {
             merge_option(&mut merged_options, opt);
           }
         }
@@ -22896,14 +23017,17 @@ fn grid_ast_internal(
     && !has_item_alignment(args)
     && let Some(rows) = grid_of_graphics_svgs(args)
   {
-    // Options (`Frame -> All`, `FrameStyle`, `Spacings`, `Alignment`, …)
-    // are honored by the one layout `expr_to_svg` gives a `Grid` holding
-    // pictures; the bare composition below would silently drop them.
-    if args.len() > 1 {
-      let grid = Expr::FunctionCall {
-        name: "Grid".to_string(),
-        args: args.to_vec().into(),
-      };
+    // `expr_to_svg` gives a `Grid` holding pictures its one layout: it
+    // honors options (`Frame -> All`, `Spacings`, `Alignment`, …) and
+    // spaces the cells the way the front end spaces a table. The bare
+    // composition below is `GraphicsGrid`'s (a tenth of a cell apart), so
+    // it is only a fallback — also for a grid that layout does not take
+    // as one of pictures (it would hand that back here).
+    let grid = Expr::FunctionCall {
+      name: "Grid".to_string(),
+      args: args.to_vec().into(),
+    };
+    if crate::evaluator::lays_out_a_graphic(&grid) {
       let svg = crate::evaluator::expr_to_svg(&grid);
       if !svg.is_empty() {
         crate::clear_captured_graphics();
@@ -23913,7 +24037,8 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
           if !args.is_empty()
             && (contains_body_button(cell)
               || contains_popup_menu(cell)
-              || contains_stacked_traditional_string(cell)) =>
+              || contains_stacked_traditional_string(cell)
+              || row_holds_block_layout(&args[0])) =>
         {
           row_to_svg(&args)?
         }
@@ -23927,6 +24052,32 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
   }
   let parsed = parse_svg_dimensions(&svg)?;
   Some((svg, parsed.nat_w, parsed.nat_h))
+}
+
+/// Whether a `Row`'s items include a nested `Grid` or `Column` (possibly
+/// styled), a block the one-line text pass cannot set: `Row[{"(",
+/// Grid[{{n}, {k}}], ")"}]` stacks `n` over `k` between the parentheses.
+fn row_holds_block_layout(items: &Expr) -> bool {
+  let Expr::List(items) = items else {
+    return false;
+  };
+  fn is_block(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args }
+        if (name == "Grid" || name == "Column")
+          && matches!(args.first(), Some(Expr::List(_))) =>
+      {
+        true
+      }
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        is_block(&args[0])
+      }
+      _ => false,
+    }
+  }
+  items.iter().any(is_block)
 }
 
 /// The per-position half of a `Spacings` spec: `{i1 -> s1, i2 -> s2, …}`
@@ -34404,6 +34555,11 @@ pub enum ManipulateControl {
     /// `min`/`max`/`initial` hold the imaginary coefficients, and the
     /// variable binds the complex number `Complex[0, value]`.
     imaginary: bool,
+    /// The spec wrote its range high-to-low (`{h, -0.05, -0.5}`). `min`
+    /// and `max` are stored sorted, but Wolfram draws such a slider from
+    /// its first bound on the left to its second on the right, so the
+    /// widget must mirror the track (dragging right *decreases* the value).
+    reversed: bool,
   },
   Discrete {
     name: String,
@@ -35638,6 +35794,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // it so the panes' controls are visible to everything below.
     let spliced_spec = splice_sequence_applies(spec);
     let spec = &spliced_spec;
+    // `Row[{confirm, reset}]` where `confirm = Button[…]` was assigned
+    // beforehand: the symbols stand for the buttons they hold.
+    let resolved_spec = resolve_layout_button_symbols(spec);
+    let spec = &resolved_spec;
     // `If[cond, Identity, Invisible][Control[…]]`: the control itself is the
     // spec, shown only under `cond`.
     let switched = visibility_switched_control(spec);
@@ -38708,6 +38868,53 @@ fn split_implicit_product(e: &Expr) -> Vec<Expr> {
 /// Button[…]}]`). Returns `None` when the argument contains no
 /// `Control[…]`/`Button[…]` anywhere, so plain `Row[…]` display
 /// expressions keep flowing to the display path.
+/// Replace each bare symbol inside a `Row`/`Column`/`Grid` control-layout
+/// argument whose value is a button (`Button[…]` or `ButtonBar[…]`) by
+/// that value. Demonstrations often build their buttons up front
+/// (`go = Button["go", …]`) and list only the names in the panel
+/// (`Row[{go, reset}]`); Wolfram evaluates the layout, so the buttons are
+/// what it shows. Symbols holding anything else are left alone.
+fn resolve_layout_button_symbols(spec: &Expr) -> Expr {
+  fn resolve(e: &Expr) -> Expr {
+    match e {
+      Expr::Identifier(name) => {
+        let value = crate::ENV.with(|env| env.borrow().get(name).cloned());
+        match value {
+          Some(crate::StoredValue::ExprVal(v))
+            if matches!(&v, Expr::FunctionCall { name: h, .. }
+              if h == "Button" || h == "ButtonBar") =>
+          {
+            v
+          }
+          _ => e.clone(),
+        }
+      }
+      Expr::List(items) => Expr::List(items.iter().map(resolve).collect()),
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Row" | "Column" | "Grid" | "Item") =>
+      {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args
+            .iter()
+            .enumerate()
+            .map(|(i, a)| if i == 0 { resolve(a) } else { a.clone() })
+            .collect(),
+        }
+      }
+      _ => e.clone(),
+    }
+  }
+  match spec {
+    Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Row" | "Column" | "Grid") =>
+    {
+      resolve(spec)
+    }
+    _ => spec.clone(),
+  }
+}
+
 fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
   let spec = strip_empty_string_factor(spec);
   fn contains_control(e: &Expr) -> bool {
@@ -40345,6 +40552,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     exact_initial: false,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
+    reversed: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -40517,6 +40725,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     exact_initial: false,
     orientation: ControlOrientation::Horizontal,
     imaginary: false,
+    reversed: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -43934,6 +44143,7 @@ fn parse_manipulate_control(
   // the static one; re-resolving it against the live bindings opens the
   // range up, instead of sorting the unsettled value into the *lower* end.
   let counts_down = step.is_some_and(|s| s < 0.0);
+  let mut reversed = false;
   let (min_code, max_code) = if min > max {
     match (min_code.is_some(), max_code.is_some()) {
       (false, true) if !counts_down => {
@@ -43946,6 +44156,7 @@ fn parse_manipulate_control(
       }
       _ => {
         std::mem::swap(&mut min, &mut max);
+        reversed = true;
         (max_code, min_code)
       }
     }
@@ -43966,6 +44177,7 @@ fn parse_manipulate_control(
       exact_initial,
       orientation,
       imaginary,
+      reversed,
     },
     enabled,
     min_code,
@@ -44068,7 +44280,8 @@ fn parse_list_element_manipulator(
     .as_ref()
     .and_then(crate::functions::math_ast::try_eval_to_f64)
     .unwrap_or(min);
-  if min > max {
+  let reversed = min > max;
+  if reversed {
     std::mem::swap(&mut min, &mut max);
   }
   let synth_name = format!("{name}\u{2983}{idx}\u{2984}");
@@ -44087,6 +44300,7 @@ fn parse_list_element_manipulator(
       exact_initial: false,
       orientation: ControlOrientation::Horizontal,
       imaginary: false,
+      reversed,
     },
   })
 }
@@ -49015,6 +49229,28 @@ mod manipulate_reversed_range_tests {
     );
   }
 
+  /// The sorted pair remembers that the spec ran high-to-low, so the
+  /// slider can still be drawn from the written start (`2`, left) to the
+  /// written end (`0`, right) as Wolfram does; an ascending range and a
+  /// single dynamic bound that has not settled yet are not reversed.
+  #[test]
+  fn reversed_bounds_mark_the_control_reversed() {
+    let reversed = |code: &str| {
+      let expr = crate::parse_to_expr(code).expect("parse");
+      let spec = extract_manipulate_spec(&expr).expect("extract spec");
+      match spec.controls.first() {
+        Some(ManipulateControl::Continuous { reversed, .. }) => *reversed,
+        other => panic!("expected a continuous control, got {other:?}"),
+      }
+    };
+    assert!(reversed(r#"Manipulate[w, {{w, 0, "push"}, 2, 0}]"#));
+    assert!(reversed(r#"Manipulate[u, {u, 5, -5, 0.5}]"#));
+    assert!(!reversed(r#"Manipulate[w, {{w, 0, "push"}, 0, 2}]"#));
+    assert!(!reversed(
+      r#"Manipulate[{n, total}, {{n, 1}, 1, Dynamic[total], 1}, {{total, 0}, None}]"#
+    ));
+  }
+
   /// The ordinary (already increasing) case is unaffected by the sort.
   #[test]
   fn forward_bounds_are_unchanged() {
@@ -50287,5 +50523,58 @@ mod review_layout_tests {
     assert!(cells.len() >= 2);
     assert!(cells[0].starts_with("<svg x=\"0.0\""), "{}", cells[0]);
     assert!(cells[1].starts_with("<svg x=\"0.0\""), "{}", cells[1]);
+  }
+}
+
+#[cfg(test)]
+mod manipulate_layout_button_symbol_tests {
+  use super::*;
+
+  fn spec(code: &str) -> ManipulateSpec {
+    let expr = crate::parse_to_expr(code).expect("parse");
+    extract_manipulate_spec(&expr).expect("extract spec")
+  }
+
+  /// Buttons assigned to symbols beforehand and listed by name in a
+  /// `Row[{…}]` panel argument are the buttons they hold, not a static
+  /// heading made of the symbol names.
+  #[test]
+  fn row_of_button_symbols_becomes_buttons() {
+    crate::interpret(
+      r#"goBtn = Button["go on", n = n + 1]; resetBtn = Button["reset", n = 0]; other = 7;"#,
+    )
+    .unwrap();
+    let s = spec(
+      r#"Manipulate[n, Row[{goBtn, resetBtn}], {{n, 0}, ControlType -> None}]"#,
+    );
+    let buttons: Vec<(&str, &str)> = s
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Button { label, action, .. } => {
+          Some((label.as_str(), action.as_str()))
+        }
+        _ => None,
+      })
+      .collect();
+    assert_eq!(buttons, vec![("go on", "n = n + 1"), ("reset", "n = 0")]);
+    assert!(
+      !s.controls
+        .iter()
+        .any(|c| matches!(c, ManipulateControl::Heading { .. }))
+    );
+  }
+
+  /// A symbol in the row that holds something other than a button is
+  /// not replaced.
+  #[test]
+  fn non_button_symbol_in_row_is_kept() {
+    crate::interpret("someValue = 7;").unwrap();
+    let s = spec(r#"Manipulate[n, Row[{"a", someValue}], {n, 0, 1}]"#);
+    assert!(
+      s.controls
+        .iter()
+        .all(|c| !matches!(c, ManipulateControl::Button { .. }))
+    );
   }
 }
