@@ -7419,8 +7419,8 @@ pub(crate) fn align_pane_lines(
   alignment: Option<(f64, f64)>,
 ) -> Expr {
   let anchor = match alignment {
-    Some((h, _)) if h == 0.5 => "Center",
-    Some((h, _)) if h == 1.0 => "Right",
+    Some((0.5, _)) => "Center",
+    Some((1.0, _)) => "Right",
     _ => return lines,
   };
   match &lines {
