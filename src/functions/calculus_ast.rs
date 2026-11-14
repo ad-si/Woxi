@@ -1526,10 +1526,18 @@ fn try_definite_integral(
   lo: &Expr,
   hi: &Expr,
 ) -> Option<Expr> {
-  // Definite integral of a Piecewise: split [lo, hi] at the piece boundaries
-  // and integrate each piece over the sub-interval where its condition holds.
-  // The antiderivative path uses a discontinuous default-0 antiderivative, so
-  // a bounded-support condition like `0 < x < 1` otherwise integrates to 0.
+  // A `Piecewise`/`If` switching in `var` (any default, overlapping cases,
+  // `If`, products and nests of them) over numeric bounds: split at the
+  // switching points and integrate the branch active on each sub-interval.
+  // The antiderivative path would subtract a discontinuous piecewise
+  // antiderivative and get the wrong value.
+  if let Some(result) =
+    try_split_piecewise_definite_integral(integrand, var, lo, hi)
+  {
+    return Some(result);
+  }
+  // Otherwise (symbolic bounds, conditions like `Abs[x] < 1`) integrate each
+  // zero-default piece over the sub-interval where its condition holds.
   if let Some(result) = try_piecewise_definite_integral(integrand, var, lo, hi)
   {
     return Some(result);
@@ -13126,6 +13134,213 @@ fn try_piecewise_definite_integral(
   }
   if terms.is_empty() {
     return Some(Expr::Integer(0));
+  }
+  let sum = plus(terms);
+  Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
+}
+
+/// The conditions of a `Piecewise` or `If` node that depend on `var`, if
+/// `e` is such a switch.
+fn var_switch_conditions<'a>(e: &'a Expr, var: &str) -> Option<Vec<&'a Expr>> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  let conds: Vec<&Expr> = match name.as_str() {
+    "Piecewise" => match args.first() {
+      Some(Expr::List(cases)) => cases
+        .iter()
+        .filter_map(|c| match c {
+          Expr::List(p) if p.len() == 2 => Some(&p[1]),
+          _ => None,
+        })
+        .collect(),
+      _ => return None,
+    },
+    "If" if !args.is_empty() => vec![&args[0]],
+    _ => return None,
+  };
+  conds.iter().any(|c| contains_var(c, var)).then_some(conds)
+}
+
+/// Whether a `Piecewise` or `If` switching in `var` occurs in `e`.
+fn has_var_switch(e: &Expr, var: &str) -> bool {
+  var_switch_conditions(e, var).is_some()
+    || crate::syntax::expr_children(e)
+      .into_iter()
+      .any(|c| has_var_switch(c, var))
+}
+
+/// Collect the exact points where the `var` conditions of every
+/// `Piecewise`/`If` in `e` can change truth value. `false` when a condition
+/// compares a non-isolated expression in `var` (such as `x^2 < 1`), whose
+/// switching points are not read off directly.
+fn collect_switch_points(
+  e: &Expr,
+  var: &str,
+  out: &mut Vec<(f64, Expr)>,
+) -> bool {
+  fn chain(operands: &[Expr], var: &str, out: &mut Vec<(f64, Expr)>) -> bool {
+    let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+    for pair in operands.windows(2) {
+      let other = if is_var(&pair[0]) {
+        &pair[1]
+      } else if is_var(&pair[1]) {
+        &pair[0]
+      } else if contains_var(&pair[0], var) || contains_var(&pair[1], var) {
+        return false;
+      } else {
+        continue;
+      };
+      if contains_var(other, var) {
+        return false;
+      }
+      match crate::functions::math_ast::try_eval_to_f64(other) {
+        Some(v) if v.is_finite() => out.push((v, other.clone())),
+        _ => return false,
+      }
+    }
+    true
+  }
+  fn condition(c: &Expr, var: &str, out: &mut Vec<(f64, Expr)>) -> bool {
+    if !contains_var(c, var) {
+      return true;
+    }
+    match c {
+      Expr::Comparison { operands, .. } => chain(operands, var, out),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Inequality" => {
+          let operands: Vec<Expr> = args.iter().step_by(2).cloned().collect();
+          chain(&operands, var, out)
+        }
+        "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Equal"
+        | "Unequal" => chain(args, var, out),
+        "And" | "Or" | "Not" => args.iter().all(|a| condition(a, var, out)),
+        _ => false,
+      },
+      Expr::BinaryOp {
+        op: BinaryOperator::And | BinaryOperator::Or,
+        left,
+        right,
+      } => condition(left, var, out) && condition(right, var, out),
+      Expr::UnaryOp {
+        op: UnaryOperator::Not,
+        operand,
+      } => condition(operand, var, out),
+      _ => false,
+    }
+  }
+  if let Some(conds) = var_switch_conditions(e, var)
+    && !conds.into_iter().all(|c| condition(c, var, out))
+  {
+    return false;
+  }
+  crate::syntax::expr_children(e)
+    .into_iter()
+    .all(|c| collect_switch_points(c, var, out))
+}
+
+/// Replace every `Piecewise`/`If` switching in `var` by the branch that is
+/// active at `var = at`. `None` when a condition does not evaluate to
+/// `True` or `False` there.
+fn select_active_branches(e: &Expr, var: &str, at: &Expr) -> Option<Expr> {
+  let truth = |c: &Expr| -> Option<bool> {
+    let c = crate::syntax::substitute_variable(c, var, at);
+    match &crate::evaluator::evaluate_expr_to_expr(&c).ok()? {
+      Expr::Identifier(t) if t == "True" => Some(true),
+      Expr::Identifier(t) if t == "False" => Some(false),
+      _ => None,
+    }
+  };
+  if var_switch_conditions(e, var).is_some()
+    && let Expr::FunctionCall { name, args } = e
+  {
+    if name == "If" {
+      if args.len() != 3 {
+        return None;
+      }
+      let branch = if truth(&args[0])? { &args[1] } else { &args[2] };
+      return select_active_branches(branch, var, at);
+    }
+    let Some(Expr::List(cases)) = args.first() else {
+      return None;
+    };
+    for case in cases {
+      let Expr::List(p) = case else {
+        return None;
+      };
+      if p.len() == 2 && truth(&p[1])? {
+        return select_active_branches(&p[0], var, at);
+      }
+    }
+    let default = args.get(1).cloned().unwrap_or(Expr::Integer(0));
+    return select_active_branches(&default, var, at);
+  }
+  let failed = std::cell::Cell::new(false);
+  let rebuilt = crate::syntax::map_children(e, &|c| {
+    select_active_branches(c, var, at).unwrap_or_else(|| {
+      failed.set(true);
+      c.clone()
+    })
+  });
+  (!failed.get()).then_some(rebuilt)
+}
+
+/// Definite integral over real numeric bounds of an integrand holding
+/// `Piecewise`/`If` switches in `var`: split the range at every switching
+/// point, integrate the branch active on each sub-interval, and add up.
+/// `None` when the bounds are not numeric, a switching point cannot be
+/// read off, or a branch does not integrate.
+fn try_split_piecewise_definite_integral(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Option<Expr> {
+  if !has_var_switch(integrand, var) {
+    return None;
+  }
+  let to_f64 = crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  let (lo_f, hi_f) = (to_f64(lo)?, to_f64(hi)?);
+  if lo_f.is_nan() || hi_f.is_nan() || lo_f == hi_f {
+    return None;
+  }
+  if lo_f > hi_f {
+    let swapped =
+      try_split_piecewise_definite_integral(integrand, var, hi, lo)?;
+    let negated = neg1(swapped);
+    return Some(
+      crate::evaluator::evaluate_expr_to_expr(&negated).unwrap_or(negated),
+    );
+  }
+  let mut points = Vec::new();
+  if !collect_switch_points(integrand, var, &mut points) {
+    return None;
+  }
+  points.retain(|(v, _)| lo_f < *v && *v < hi_f);
+  points.sort_by(|a, b| a.0.total_cmp(&b.0));
+  points.dedup_by(|a, b| (a.0 - b.0).abs() <= 1e-12 * (1.0 + b.0.abs()));
+  let mut edges = vec![(lo_f, lo.clone())];
+  edges.extend(points);
+  edges.push((hi_f, hi.clone()));
+  let mut terms = Vec::with_capacity(edges.len() - 1);
+  for w in edges.windows(2) {
+    let ((af, a), (bf, b)) = (&w[0], &w[1]);
+    let probe = match (af.is_finite(), bf.is_finite()) {
+      (true, true) => f64::midpoint(*af, *bf),
+      (false, true) => bf - 1.0,
+      (true, false) => af + 1.0,
+      (false, false) => 0.0,
+    };
+    let branch = select_active_branches(integrand, var, &Expr::Real(probe))?;
+    let sub = integrate_ast(&[
+      branch,
+      Expr::List(vec![id_expr(var), a.clone(), b.clone()].into()),
+    ])
+    .ok()?;
+    if expr_mentions_head(&sub, "Integrate") {
+      return None;
+    }
+    terms.push(sub);
   }
   let sum = plus(terms);
   Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))

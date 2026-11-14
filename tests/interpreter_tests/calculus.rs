@@ -18500,6 +18500,87 @@ mod integrate_piecewise_definite {
       "5/6"
     );
   }
+
+  // A non-zero default holds on the complement of the cases; subtracting the
+  // discontinuous piecewise antiderivative gave 2 and 1/2 here.
+  #[test]
+  fn nonzero_default() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{4 x, x < 1/2}}, 4 - 4 x], {x, 0, 1}]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{0, x < 1/2}}, x], {x, 0, 1}]").unwrap(),
+      "3/8"
+    );
+    assert_eq!(
+      interpret("Integrate[x Piecewise[{{4 x, x < 1/2}}, 4 - 4 x], {x, 0, 1}]")
+        .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, x < 0}}, E^-x], {x, -1, Infinity}]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  // The first case whose condition holds wins, so overlapping conditions
+  // must not add up.
+  #[test]
+  fn overlapping_conditions() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, x < 1}, {2, x < 2}}], {x, 0, 3}]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn if_integrand() {
+    assert_eq!(
+      interpret("Integrate[If[x < 1/2, 4 x, 4 - 4 x], {x, 0, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[If[x > 0, x, -x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[If[x < 1/2, 4 x, 4 - 4 x], {x, 1, 0}]").unwrap(),
+      "-1"
+    );
+    // A pure function with an `If` body, as `Derivative` gives it.
+    assert_eq!(
+      interpret(
+        "f = If[# < 1/2, 2 #^2, 4 # - 2 #^2 - 1] &; \
+         Integrate[x f'[x], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn products_of_switches() {
+    assert_eq!(
+      interpret(
+        "Integrate[If[x < 1/2, 1, 2] Piecewise[{{3, x < 1/4}}, 5], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "7"
+    );
+    // Mean of the larger of two draws from the tent density.
+    assert_eq!(
+      interpret(
+        "F = If[x < 1/2, 2 x^2, 4 x - 2 x^2 - 1]; \
+         Integrate[2 x F If[x < 1/2, 4 x, 4 - 4 x], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "37/60"
+    );
+  }
 }
 
 mod cases {

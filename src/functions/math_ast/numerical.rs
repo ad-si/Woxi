@@ -28,6 +28,15 @@ pub fn n_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && p > 0.0
       && (a > 0.0 || p.is_infinite())
     {
+      // The accuracy caps each element by its own magnitude:
+      // `N[{1/2, 3/7}, {3, 3}]` tags them 2.69… and 2.63…, not both 3.
+      if let Expr::List(items) = &args[0] {
+        let results: Result<Vec<Expr>, _> = items
+          .iter()
+          .map(|e| n_ast(&[e.clone(), args[1].clone()]))
+          .collect();
+        return Ok(Expr::List(results?.into()));
+      }
       let magnitude = try_eval_to_f64(&args[0]).map(f64::abs).or_else(|| {
         try_extract_complex_float(&args[0]).map(|(re, im)| re.hypot(im))
       });
