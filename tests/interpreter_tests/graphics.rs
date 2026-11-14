@@ -55830,3 +55830,52 @@ fn notebook_pane_wraps_list_of_pictures_at_its_width() {
   assert!(svg.contains("<svg width=\"442\" height=\"169\""), "{svg}");
   assert!(svg.contains("<svg x=\"8.30\" y=\"93.75\""), "{svg}");
 }
+
+mod repeated_graphics_options {
+  use super::*;
+
+  /// The first setting of a repeated option is the one in force, as it
+  /// is everywhere in Wolfram.
+  #[test]
+  fn first_setting_of_a_repeated_option_wins() {
+    let svg = export_svg(
+      "Graphics[Disk[], ImageSize -> 200, ImageSize -> 100, \
+       ImageSize -> 50]",
+    );
+    assert!(svg.starts_with("<svg width=\"200\""), "{svg}");
+    let svg =
+      export_svg("Graphics[Disk[], {ImageSize -> 120, ImageSize -> 300}]");
+    assert!(svg.starts_with("<svg width=\"120\""), "{svg}");
+    let svg =
+      export_svg("Graphics3D[Sphere[], ImageSize -> 150, ImageSize -> 300]");
+    assert!(svg.starts_with("<svg width=\"150\""), "{svg}");
+  }
+
+  /// `Show[g, PlotRange -> All]` lists its own `PlotRange` before the one
+  /// the shown graphic carries, so the picture spans everything with the
+  /// usual padding instead of keeping the graphic's explicit range.
+  #[test]
+  fn show_plot_range_all_overrides_the_shown_graphics_range() {
+    let code = "Show[Graphics[Rectangle[{0, 0}, {712, 267}], \
+                PlotRange -> {{0, 712}, {0, 267}}], \
+                Graphics[Point[{3, 3}]], ImageSize -> 600, PlotRange -> All]";
+    let shown = export_svg(code);
+    let padded = export_svg(
+      "Graphics[{Rectangle[{0, 0}, {712, 267}], Point[{3, 3}]}, \
+       ImageSize -> 600, PlotRange -> All]",
+    );
+    assert_eq!(shown, padded);
+    assert!(!shown.contains("<rect x=\"0.00\" y=\"0.00\""), "{shown}");
+  }
+
+  /// A shown graphic whose options come as a list still yields to the
+  /// options given to `Show` itself.
+  #[test]
+  fn show_option_overrides_a_graphics_option_list() {
+    let svg = export_svg(
+      "Show[Graphics[Disk[], {ImageSize -> 250, AspectRatio -> 1/2}], \
+       ImageSize -> 100]",
+    );
+    assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+  }
+}

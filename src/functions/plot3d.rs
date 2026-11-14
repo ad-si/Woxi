@@ -10944,7 +10944,7 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
 
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let args = &crate::functions::graphics::splice_option_lists(args)[..];
+  let args = &crate::functions::graphics::graphics_option_args(args)[..];
   let content = evaluate_expr_to_expr(&args[0])?;
 
   // Parse options
