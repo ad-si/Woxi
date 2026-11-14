@@ -56461,6 +56461,56 @@ fn notebook_pane_wraps_list_of_pictures_at_its_width() {
   assert!(svg.contains("<svg x=\"8.30\" y=\"93.75\""), "{svg}");
 }
 
+mod pane_selector_display {
+  use super::*;
+
+  /// `PaneSelector[{v1 -> e1, …}, sel]` evaluates to itself, so the CLI
+  /// echo stays symbolic, like wolframscript's.
+  #[test]
+  fn stays_symbolic_in_text_output() {
+    assert_eq!(
+      interpret(r#"PaneSelector[{1 -> "a", 2 -> "b"}, 2]"#).unwrap(),
+      "PaneSelector[{1 -> a, 2 -> b}, 2]"
+    );
+  }
+
+  /// Regression: a notebook result (a Manipulate body) that is a
+  /// `PaneSelector` switching between whole layouts printed the call's
+  /// source text — every pane at once — instead of drawing the pane the
+  /// selector picks.
+  #[test]
+  fn notebook_output_draws_only_the_selected_pane() {
+    clear_state();
+    let r = interpret_with_stdout(
+      r#"mode = 2; PaneSelector[{1 -> Column[{"first", "pane"}], 2 -> Column[{"second", Row[{"x", " = ", 3}]}]}, mode]"#,
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the selected pane should draw a picture");
+    assert!(svg.contains(">second<"), "{svg}");
+    assert!(!svg.contains(">first<"), "an unselected pane leaked: {svg}");
+    assert!(!svg.contains("PaneSelector"), "source text leaked: {svg}");
+  }
+
+  /// The selector may be wrapped in `Dynamic[…]`; an unmatched selector
+  /// shows the third argument (the default pane).
+  #[test]
+  fn export_draws_the_selected_or_default_pane() {
+    let svg = interpret(
+      r#"ExportString[PaneSelector[{"a" -> Column[{"alpha", "beta"}], "b" -> "gamma"}, Dynamic["a"]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">alpha<") && svg.contains(">beta<"), "{svg}");
+    assert!(!svg.contains(">gamma<"), "{svg}");
+
+    let svg = interpret(
+      r#"ExportString[PaneSelector[{1 -> "one", 2 -> "two"}, 7, "neither"], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">neither<"), "{svg}");
+    assert!(!svg.contains(">one<") && !svg.contains(">two<"), "{svg}");
+  }
+}
+
 mod repeated_graphics_options {
   use super::*;
 

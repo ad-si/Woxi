@@ -6334,7 +6334,15 @@ fn button_cell_svg(args: &[Expr]) -> String {
       return with_button_cell_chrome(svg, args);
     }
   }
-  button_text_plate_svg(args)
+  // A text label (a keyboard of letter keys, a "SPACE"/"BACKSPACE" pair)
+  // draws as the plate, which carries the same hit region so a live
+  // widget can press it.
+  let plate = button_text_plate_svg(args);
+  if args.len() >= 2 {
+    with_button_cell_chrome(plate, args)
+  } else {
+    plate
+  }
 }
 
 /// The plate of a text-labeled `Button`: stretched to a requested
@@ -15396,6 +15404,23 @@ pub struct BoxLayout {
 /// estimate must match this, or successive atoms (e.g. a function name and its
 /// opening `[`) overlap.
 pub(crate) const MONO_ADVANCE: f64 = 0.632;
+
+/// Whether a `FontFamily` name is a fixed-width face (`"Courier"`,
+/// `"Source Code Pro"`, `"Menlo"`, any `"… Mono"`, …).
+pub(crate) fn is_monospace_font_family(family: &str) -> bool {
+  let f = family.to_ascii_lowercase();
+  [
+    "mono",
+    "courier",
+    "consolas",
+    "menlo",
+    "code",
+    "typewriter",
+    "fixed",
+  ]
+  .iter()
+  .any(|k| f.contains(k))
+}
 
 /// Average character advance of the proportional (sans-serif) text face, as
 /// a fraction of the font size; used to size plain `Text[…]` items.
@@ -29902,6 +29927,15 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
           None => false,
         }
       }
+      // `PaneSelector[{v1 -> e1, v2 -> e2, …}, sel, default]` displays only
+      // the pane whose key matches the (already evaluated) selector — or
+      // `default` (blank when not given) if none does — so a body that
+      // switches between whole layouts draws the chosen one, not the
+      // call's source text.
+      "PaneSelector" if args.len() >= 2 => {
+        current = selected_pane_content(args);
+        continue;
+      }
       // `Style[picture, Magnification -> m]` draws the picture `m` times
       // its size.
       "Style" => match magnified_picture(&current) {
@@ -30778,9 +30812,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // button and the waveform — rather than the `Play[…]` source text.
       "Sound" | "Play" => return crate::functions::sound::sound_svg(expr),
       // A bare `Button[label, action]` drawn directly as a layout item
-      // (not wrapped in `Inset[…]`, which already draws it as a plate) —
-      // the action is never run outside a live widget, so only the plate
-      // matters here. Without this a `Column`/`Row` item holding one
+      // (not wrapped in `Inset[…]`, which already draws it as a plate)
+      // draws as its plate, carrying a hit region a live widget presses
+      // (see `with_button_cell_chrome`). Without this a `Column`/`Row` item holding one
       // printed as its raw `Button[…]` source text instead of a button.
       "Button" if args.len() >= 2 => {
         return Some(button_cell_svg(&args));
@@ -31882,9 +31916,29 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     } else {
       estimate_display_width(item)
     };
+    // A proportional face asked for by name (`FontFamily -> "Helvetica"`)
+    // is measured by its own per-character advances: the row's monospace
+    // advance would leave a centered part floating in a gap (and a bold
+    // capital run would still overflow an average-advance estimate).
+    let width = if line_count == 1
+      && !st.font_family.is_empty()
+      && !is_monospace_font_family(&st.font_family)
+    {
+      // The named face may not be installed; the viewer then falls back
+      // to the default proportional face, so take the wider of the two
+      // estimates (the Arial-metric per-character one and the default
+      // face's average advance).
+      let bold = if st.font_weight == "bold" { 1.1 } else { 1.0 };
+      let per_char =
+        crate::functions::plot_padding::text_width(&markup, st.font_size);
+      let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
+      per_char.max(average) * bold
+    } else {
+      chars * char_width * scale
+    };
     Cell::Text {
       markup,
-      width: chars * char_width * scale,
+      width,
       height: line_count as f64 * st.font_size + pad_y,
       fill: if hidden {
         "none".to_string()
@@ -32127,9 +32181,13 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         } else {
           // A part like `" is"` is laid out with its leading space, but SVG
           // trims edge whitespace (and collapses runs) unless told not to.
-          let space_attr = if markup.contains("  ")
-            || markup.starts_with(char::is_whitespace)
-            || markup.ends_with(char::is_whitespace)
+          // The check is on the drawn characters, so a styled part
+          // (`Style["x = ", 14]`, whose markup wraps the text in a
+          // `<tspan>`) keeps its edge spaces too.
+          let visible = svg_markup_visible_text(markup);
+          let space_attr = if visible.contains("  ")
+            || visible.starts_with(char::is_whitespace)
+            || visible.ends_with(char::is_whitespace)
           {
             " xml:space=\"preserve\""
           } else {
@@ -38439,8 +38497,8 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     // `Table`'s generator body untouched instead: `Table` then expands it
     // into real per-cell `Button` calls with `i`/`j` substituted, which
     // the picture renderer draws as button plates with their real labels
-    // (see `nested_layout_svg`/`grid_cell_graphic`) — not yet clickable,
-    // but visible and correct, rather than an invisible gap. Iterator
+    // (see `nested_layout_svg`/`grid_cell_graphic`), each carrying the
+    // hit region a live widget presses, rather than an invisible gap. Iterator
     // specs are still walked normally, the same as any other argument.
     Expr::FunctionCall { name, args }
       if name == "Table" && !args.is_empty() =>
@@ -39376,6 +39434,49 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
 /// all). The wrapper is only a FrontEnd update hint here, exactly as for
 /// `Dynamic[Control[…]]` in `unwrap_control_wrapper` below, so it is
 /// stripped before the selector is evaluated or compared.
+/// The content an evaluated `PaneSelector[{v1 -> e1, …}, sel, default]`
+/// displays: the `ei` whose key `vi` equals `sel`, else `default`, else an
+/// empty string (the front end draws nothing for an unmatched selector).
+pub(crate) fn selected_pane_content(args: &[Expr]) -> Expr {
+  let selector =
+    crate::syntax::expr_to_source_form(unwrap_pane_selector(&args[1]));
+  let matched = match &args[0] {
+    Expr::List(panes) => panes.iter().find_map(|pane| match pane {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if crate::syntax::expr_to_source_form(pattern) == selector => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    }),
+    _ => None,
+  };
+  matched
+    .or_else(|| args.get(2).cloned())
+    .unwrap_or_else(|| Expr::String(String::new()))
+}
+
+/// The characters an SVG text markup fragment draws: `markup` with its
+/// `<tspan …>`/`</tspan>` (and any other) tags removed.
+fn svg_markup_visible_text(markup: &str) -> String {
+  let mut out = String::with_capacity(markup.len());
+  let mut in_tag = false;
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' if in_tag => in_tag = false,
+      _ if !in_tag => out.push(c),
+      _ => {}
+    }
+  }
+  out
+}
+
 pub(crate) fn unwrap_pane_selector(selector: &Expr) -> &Expr {
   match selector {
     Expr::FunctionCall { name, args }
