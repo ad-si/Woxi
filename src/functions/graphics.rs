@@ -36162,8 +36162,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // used below (via `pane_control_variables`) to resolve a `PaneSelector`
   // pane written as `Place[n]`/`Invisible[Place[n]]` rather than a literal
   // control spec.
-  let place_map: Vec<Option<String>> =
-    args[1..].iter().map(control_spec_variable).collect();
+  let place_map = place_slot_variables(&args[1..]);
   let mut arg_items: Vec<Expr> =
     Vec::with_capacity(args.len().saturating_sub(1));
   // `(label, action)` of every button that shares a line with the button
@@ -40232,11 +40231,11 @@ fn splice_sequence_applies(expr: &Expr) -> Expr {
 /// sense for some steps: `PaneSelector[{True -> Place[2], False ->
 /// Invisible[Place[3]]}, Dynamic[cond]]` swaps between two identical specs
 /// for the same variable declared at Specifications positions 2 and 3)
-/// back to the variable declared at that 1-indexed Specifications position
-/// — see `pane_control_variables`.
+/// back to the variables of that 1-indexed slot (see
+/// `place_slot_variables` and `pane_control_variables`).
 fn collect_pane_visibility(
   spec: &Expr,
-  place_map: &[Option<String>],
+  place_map: &[Vec<String>],
   out: &mut Vec<(String, String)>,
   outer: Option<&str>,
 ) {
@@ -40348,11 +40347,11 @@ fn collect_pane_visibility(
 /// `place_map` is as in `collect_pane_visibility`.
 fn pane_or_tab_governed_names(
   args: &[Expr],
-  place_map: &[Option<String>],
+  place_map: &[Vec<String>],
 ) -> std::collections::HashSet<String> {
   fn walk(
     e: &Expr,
-    place_map: &[Option<String>],
+    place_map: &[Vec<String>],
     out: &mut std::collections::HashSet<String>,
   ) {
     if let Some(selector) = switch_as_pane_selector(e) {
@@ -40397,10 +40396,10 @@ fn pane_or_tab_governed_names(
 /// The control variables a `PaneSelector` pane declares: the variable of
 /// every `Control[…]` in it, plus — when the pane *is* a bare variable
 /// specification — that spec's own variable, plus — when the pane is a
-/// `Manipulate\`Place[n]` reference — the variable declared at the nth
-/// Specifications position in `place_map` (`None` when that position
-/// declares no control, e.g. a layout template argument, in which case the
-/// reference contributes nothing).
+/// `Manipulate\`Place[n]` reference — the variables of slot `n` in
+/// `place_map` (see `place_slot_variables`; empty when the slot holds no
+/// control, e.g. a layout template argument, in which case the reference
+/// contributes nothing).
 ///
 /// Anything under an `Invisible[…]` wrapper contributes nothing at all —
 /// Wolfram's explicit-layout idiom pairs a real `Place[n]` in one pane with
@@ -40413,7 +40412,7 @@ fn pane_or_tab_governed_names(
 /// instead of hidden in this one.
 fn pane_control_variables(
   pane: &Expr,
-  place_map: &[Option<String>],
+  place_map: &[Vec<String>],
 ) -> Vec<String> {
   /// Whether `e` declares a control row somewhere: a `Control[…]` or a bare
   /// `Dynamic`-bound front-end control.
@@ -40428,16 +40427,17 @@ fn pane_control_variables(
       _ => false,
     }
   }
-  fn walk(e: &Expr, place_map: &[Option<String>], out: &mut Vec<String>) {
+  fn walk(e: &Expr, place_map: &[Vec<String>], out: &mut Vec<String>) {
     match e {
       Expr::FunctionCall { name, .. } if name == "Invisible" => {}
       Expr::FunctionCall { name, args } => {
         if is_place_head(name)
           && let [Expr::Integer(n)] = args.as_slice()
           && *n >= 1
-          && let Some(Some(var)) = place_map.get(*n as usize - 1)
+          && let Some(vars) = place_map.get(*n as usize - 1)
+          && !vars.is_empty()
         {
-          out.push(var.clone());
+          out.extend(vars.iter().cloned());
           return;
         }
         // A pane holding a `Button` is on screen under the pane's condition
@@ -40978,6 +40978,70 @@ fn dynamic_button_label_code(label: &Expr) -> Option<String> {
 /// The side a single control spec asks to sit on with its own
 /// `ControlPlacement -> Top | Bottom | Left | Right` option (bare or as a
 /// singleton list). `None` when the spec states no side.
+/// The integer of a control spec's `ControlPlacement -> n` option: the
+/// `Manipulate\`Place[n]` slot of a custom layout the control goes into.
+fn numbered_control_placement(spec: &Expr) -> Option<usize> {
+  let Expr::List(items) = spec else { return None };
+  items.iter().skip(1).find_map(|item| match item {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement") => {
+      match replacement.as_ref() {
+        Expr::Integer(n) if *n >= 1 => usize::try_from(*n).ok(),
+        _ => None,
+      }
+    }
+    _ => None,
+  })
+}
+
+/// The control variables each `Manipulate\`Place[n]` slot of a custom
+/// layout shows, indexed by `n - 1`. A `Place[n]` refers to the control
+/// declared at the nth Specifications argument, unless controls name their
+/// slot themselves with `ControlPlacement -> n`: those go into slot `n`
+/// instead (and leave their positional slot).
+fn place_slot_variables(specs: &[Expr]) -> Vec<Vec<String>> {
+  let mut slots: Vec<Vec<String>> = specs
+    .iter()
+    .map(|s| control_spec_variable(s).into_iter().collect())
+    .collect();
+  let numbered: Vec<(usize, String)> = specs
+    .iter()
+    .filter_map(|s| {
+      Some((numbered_control_placement(s)?, control_spec_variable(s)?))
+    })
+    .collect();
+  if numbered.is_empty() {
+    return slots;
+  }
+  for (_, var) in &numbered {
+    for slot in &mut slots {
+      slot.retain(|v| v != var);
+    }
+  }
+  for (n, _) in &numbered {
+    if slots.len() < *n {
+      slots.resize(*n, Vec::new());
+    }
+  }
+  let mut claimed: Vec<usize> = Vec::new();
+  for (n, var) in numbered {
+    // A slot named by `ControlPlacement` shows only the controls placed
+    // there, not the control declared at that position.
+    if !claimed.contains(&n) {
+      slots[n - 1].clear();
+      claimed.push(n);
+    }
+    slots[n - 1].push(var);
+  }
+  slots
+}
+
 fn per_control_placement(spec: &Expr) -> Option<ControlPlacement> {
   let Expr::List(items) = spec else { return None };
   items.iter().skip(1).find_map(|item| match item {
