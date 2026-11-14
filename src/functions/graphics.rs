@@ -29510,7 +29510,7 @@ pub fn graphics_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let grid = if items.iter().any(|item| matches!(item, Expr::List(_))) {
     array.clone()
   } else {
-    Expr::List(vec![array.clone()])
+    Expr::List(vec![array.clone()].into())
   };
   let mut grid_args = vec![grid];
   for opt in &args[1..] {
