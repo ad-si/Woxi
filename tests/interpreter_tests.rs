@@ -4059,6 +4059,33 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_superscript_without_unicode_glyph_is_raised() {
+    // Regression: an exponent with no Unicode superscript glyph (`θ^*`,
+    // a letter like `q`, or several words) was written out after a caret
+    // ("θ^*") instead of being typeset as a raised, smaller script.
+    let raised = "<tspan baseline-shift=\"super\" font-size=\"70%\">";
+    for (code, base, script) in [
+      (
+        "Text[\"\\!\\(\\*SuperscriptBox[\\(θ\\), \\(*\\)]\\)\", {0, 0}]",
+        "θ",
+        "*",
+      ),
+      ("Text[Superscript[\"θ\", \"*\"], {0, 0}]", "θ", "*"),
+      ("Text[Superscript[e, \"j k L\"], {0, 0}]", "e", "j k L"),
+    ] {
+      clear_state();
+      let svg =
+        interpret(&format!("ExportString[Graphics[{{{code}}}], \"SVG\"]"))
+          .unwrap();
+      assert!(
+        svg.contains(&format!(">{base}{raised}{script}</tspan></text>")),
+        "expected a raised superscript for {code}: {svg}"
+      );
+      assert!(!svg.contains('^'), "caret leaked for {code}: {svg}");
+    }
+  }
+
+  #[test]
   fn test_graphics_inset_text_grid_and_column_labels() {
     // Regression: `Inset[Style[Grid[{{"…"}}, opts], size], pos]` (how a
     // Demonstration captions a diagram) drew the literal `Grid[{{…}}, …]`
