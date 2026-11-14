@@ -17185,12 +17185,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// A framed plot draws no interior axes, and merging other graphics
-    /// into it with `Show` must not add a set. Regression: `Show` filled in
-    /// `Axes -> True` for every leading plot, so a framed one came back
-    /// with a second, duplicated scale through the middle.
+    /// Counts the long horizontal and vertical lines of an SVG (longer than
+    /// 100 units, so frame ticks don't count): the plain axes a framed plot
+    /// draws through the origin.
+    fn spanning_axis_lines(svg: &str) -> (usize, usize) {
+      let attr = |tag: &str, name: &str| -> Option<String> {
+        let key = format!(" {name}=\"");
+        let start = tag.find(&key)? + key.len();
+        let len = tag[start..].find('"')?;
+        Some(tag[start..start + len].to_string())
+      };
+      let (mut horizontal, mut vertical) = (0, 0);
+      for tag in svg.split("<line").skip(1) {
+        let tag = &tag[..tag.find('>').unwrap_or(tag.len())];
+        let (Some(x1), Some(y1), Some(x2), Some(y2)) = (
+          attr(tag, "x1"),
+          attr(tag, "y1"),
+          attr(tag, "x2"),
+          attr(tag, "y2"),
+        ) else {
+          continue;
+        };
+        let num = |v: &str| v.parse::<f64>().unwrap_or(f64::NAN);
+        if y1 == y2 && (num(&x2) - num(&x1)).abs() > 100.0 {
+          horizontal += 1;
+        }
+        if x1 == x2 && (num(&y2) - num(&y1)).abs() > 100.0 {
+          vertical += 1;
+        }
+      }
+      (horizontal, vertical)
+    }
+
+    /// A framed plot draws its axes as plain lines through the origin and
+    /// leaves the ticks to the frame; merging other graphics into it with
+    /// `Show` must keep exactly that. Regressions: `Show` once added a
+    /// second, duplicated scale through the middle, and later dropped the
+    /// axes of a framed plot entirely.
     #[test]
-    fn show_adds_no_interior_axes_to_a_framed_plot() {
+    fn show_keeps_plain_axes_of_a_framed_plot() {
       let svg = export_svg(
         "Show[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
            PlotRange -> {{-1.1, 1.1}, {-1.1, 1.1}}, Frame -> True], \
@@ -17200,6 +17233,27 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         svg.matches(">0.5</text>").count(),
         2,
         "the frame labels 0.5 once per axis and nothing else does: {svg}"
+      );
+      assert_eq!(
+        spanning_axis_lines(&svg),
+        (1, 1),
+        "one plain axis line in each direction: {svg}"
+      );
+    }
+
+    /// `Show[ListPlot[…, Frame -> True], Graphics[…]]` keeps the zero lines
+    /// the framed list plot draws on its own.
+    #[test]
+    fn show_keeps_plain_axes_of_a_framed_list_plot() {
+      let shown = export_svg(
+        "Show[ListPlot[{{-1, -1}, {1, 2}}, Joined -> True, Frame -> True], \
+         Graphics[Point[{0, 0}]]]",
+      );
+      assert_eq!(spanning_axis_lines(&shown), (1, 1), "{shown}");
+      assert_eq!(
+        shown.matches(">0.5</text>").count(),
+        2,
+        "0.5 is labeled once per labeled frame edge, not on the axes: {shown}"
       );
     }
 
