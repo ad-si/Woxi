@@ -4412,6 +4412,16 @@ fn parse_list_extended(pair: &Pair<Rule>) -> Expr {
           func: Box::new(func),
           args: bracket.into_inner().map(pair_to_expr).collect(),
         }),
+      Rule::DerivativePrime => {
+        let order = suffix.as_str().chars().filter(|c| *c == '\'').count();
+        Expr::CurriedCall {
+          func: Box::new(call(
+            "Derivative",
+            vec![Expr::Integer(order as i128)],
+          )),
+          args: vec![acc],
+        }
+      }
       _ => acc,
     }
   })
@@ -4447,8 +4457,14 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
   });
   // The prime after the brackets, plus any arguments it is applied to:
   // `f[data]'[x]` is `Derivative[1][f[data]][x]`.
+  // Only a prime before any `[[…]]` belongs to the call itself; one after a
+  // part (`f[x][[1]]'`) is applied with the part suffixes below.
+  let first_part_idx = inner_pairs
+    .iter()
+    .position(|p| matches!(p.as_rule(), Rule::PartIndexSuffix))
+    .unwrap_or(inner_pairs.len());
   let trailing_prime_idx = first_bracket_idx_fce.and_then(|fb| {
-    inner_pairs[fb..]
+    inner_pairs[fb..first_part_idx.max(fb)]
       .iter()
       .position(|p| matches!(p.as_rule(), Rule::DerivativePrime))
       .map(|offset| fb + offset)
@@ -4637,6 +4653,13 @@ fn parse_function_call_extended(pair: &Pair<Rule>) -> Expr {
         Rule::BracketArgs => Expr::CurriedCall {
           func: Box::new(acc),
           args: p.clone().into_inner().map(pair_to_expr).collect(),
+        },
+        Rule::DerivativePrime => Expr::CurriedCall {
+          func: Box::new(call(
+            "Derivative",
+            vec![Expr::Integer(p.as_str().len() as i128)],
+          )),
+          args: vec![acc],
         },
         _ => acc,
       })
@@ -9970,6 +9993,17 @@ fn prints_as_negation(e: &Expr) -> bool {
 /// of an infix shorthand (`@@`, `/@`, `@@@`, `.`) needs parentheses so the
 /// printed form re-parses to the same tree — e.g. `Plus @@ (x*y)` must not
 /// print as `Plus @@ x*y`, which re-parses as `(Plus @@ x)*y`.
+/// [`printed_infix_precedence`] on wolframscript's own scale, which tells
+/// `<->` (125) apart from `/;` (130) — the coarse scale puts both at 13.
+fn wl_infix_precedence(e: &Expr) -> Option<u16> {
+  if matches!(e, Expr::FunctionCall { name, args }
+    if name == "TwoWayRule" && args.len() == 2)
+  {
+    return Some(125);
+  }
+  printed_infix_precedence(e).map(|p| u16::from(p) * 10)
+}
+
 fn printed_infix_precedence(e: &Expr) -> Option<u8> {
   match e {
     Expr::BinaryOp { op, .. } => Some(match op {
@@ -10115,12 +10149,9 @@ fn is_negative_or_fraction_literal(e: &Expr) -> bool {
 /// self-delimiting (atoms, `f[…]`, and heads like `Span` that print infix
 /// only in InputForm but bind tighter than the heads using this helper)
 /// never need parentheses.
-fn input_form_infix(args: &[Expr], sep: &str, prec: u8) -> String {
-  input_form_infix_forcing(args, sep, prec, |_| false)
-}
-
-/// `input_form_infix` with an extra escape hatch: `force_parens` brackets an
-/// operand the precedence rule alone would leave bare. Needed for heads that
+///
+/// `force_parens` brackets an operand the precedence rule alone would leave
+/// bare. Needed for heads that
 /// are *not* Flat, where the leading operand's own parentheses carry meaning
 /// (`Alternatives[Alternatives[a, b], c]` must print `(a | b) | c`, since a
 /// bare `a | b | c` re-parses to the flat three-argument form).
@@ -11160,8 +11191,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       if is_output && name == "BaseForm" && args.len() == 2 {
         return format!("BaseForm[{}, {}]", fmt(&args[0]), fmt(&args[1]));
       }
-      // Special case: Rational[num, denom] displays as num/denom
-      if name == "Rational" && args.len() == 2 {
+      // Special case: Rational[num, denom] displays as num/denom. Only an
+      // integer numerator and denominator make the atom; an unevaluated
+      // `Rational[a, b c]` (held, or not yet substituted) is an ordinary
+      // call and keeps its head, as `a/b*c` would read back as `(a/b) c`.
+      if name == "Rational"
+        && args.len() == 2
+        && args
+          .iter()
+          .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_)))
+      {
         return format!("{}/{}", fmt(&args[0]), fmt(&args[1]));
       }
       // `Expr::Association` (the evaluated form) displays as `<|...|>`;
@@ -11210,8 +11249,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // but `a <-> b <-> c` for a right-nested one.
         let operand = |e: &Expr, right: bool| {
           let text = fmt(e);
-          let looser = printed_infix_precedence(e)
-            .is_some_and(|p| if right { p < 13 } else { p <= 13 });
+          let looser = wl_infix_precedence(e)
+            .is_some_and(|p| if right { p < 125 } else { p <= 125 });
           if looser && !prints_as_call(&text) {
             format!("({text})")
           } else {
@@ -11443,8 +11482,8 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         // (`a /; (b /; c)`), the same rule InputForm uses.
         let condition_operand = |e: &Expr, right: bool| -> String {
           let text = fmt(e);
-          let looser = printed_infix_precedence(e)
-            .is_some_and(|p| if right { p <= 13 } else { p < 13 });
+          let looser = wl_infix_precedence(e)
+            .is_some_and(|p| if right { p <= 130 } else { p < 130 });
           if looser && !prints_as_call(&text) {
             format!("({text})")
           } else {
@@ -12752,7 +12791,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             s
           }
         };
-        let mut result = fmt_plus_term(&args[0]);
+        // A one-argument `Plus[b]` leading the sum prints as the call
+        // itself: `Plus[9] + s` (it is bracketed only after a `+`).
+        let mut result = if matches!(&args[0], Expr::FunctionCall { name, args: inner }
+          if name == "Plus" && inner.len() == 1)
+          && !needs_pattern_parens(&args[0])
+        {
+          fmt(&args[0])
+        } else {
+          fmt_plus_term(&args[0])
+        };
         for arg in args.iter().skip(1) {
           if let Some(positive) = negated_complex_coefficient_term(arg) {
             // `x + (-1 - 2 I) y` is written `x - (1 + 2 I) y`.
@@ -13025,7 +13073,10 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
         let base_str = fmt(&args[0]);
         let exp_str = fmt(&args[1]);
         // Wrap base in parens if it's lower precedence than Power or is a negative number
-        let base = if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+        // A one-argument `Times[s]`/`Plus[s]` prints as the call itself and
+        // needs no brackets: `Times[s]^c`.
+        let base = if (matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
+          && !prints_as_call(&base_str))
           || is_infix_display_call(&args[0])
           || matches!(
             &args[0],
@@ -14671,8 +14722,11 @@ pub fn expr_to_message_form(expr: &Expr) -> String {
   let s = expr_to_string(expr);
   // Replace Derivative[n][f][args] with shorthand notation
   let s = replace_derivative_shorthand(&s);
-  // Replace * with space for OutputForm-style multiplication
-  s.replace('*', " ")
+  // Replace * with space for OutputForm-style multiplication, but keep the
+  // `*^` of a scientific-notation number (`1.*^6`, not `1. ^6`).
+  s.replace("*^", "\u{0}")
+    .replace('*', " ")
+    .replace('\u{0}', "*^")
 }
 
 /// Replace Derivative[n][f][args] patterns with short form: f'[args], f''[args], etc.
@@ -16205,7 +16259,12 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Condition" && args.len() == 2 =>
     {
-      input_form_infix(args, " /; ", 13)
+      // `<->` (125) binds looser than `/;` (130), which the coarse scale
+      // cannot tell apart: `(a <-> b) /; c`.
+      input_form_infix_forcing(args, " /; ", 13, |e| {
+        matches!(e, Expr::FunctionCall { name, args }
+          if name == "TwoWayRule" && args.len() == 2)
+      })
     }
     // Inequality[...] in InputForm always uses the head form Inequality[a, Less, b, Less, c],
     // even when all operators are the same (infix is only used in OutputForm).
@@ -16719,13 +16778,20 @@ fn expr_to_input_form_impl(expr: &Expr) -> String {
       if name == "Power" && args.len() == 2 && contains_string(expr) =>
     {
       let base = expr_to_input_form(&args[0]);
+      // A negative or fractional base prints as a looser operator too:
+      // `x /. (-3)^"ab"`.
       let base_str = if matches!(&args[0], Expr::FunctionCall { name, .. }
-        if name == "Times" || name == "Plus" || name == "Power")
+        if name == "Times" || name == "Plus" || name == "Power" || name == "Rational")
         || is_infix_display_call(&args[0])
+        || matches!(&args[0], Expr::Integer(n) if *n < 0)
+        || matches!(&args[0], Expr::BigInteger(n) if n.sign() == Sign::Minus)
+        || matches!(&args[0], Expr::Real(f) if *f < 0.0)
+        || prints_as_negation(&args[0])
         || matches!(
           &args[0],
           Expr::BinaryOp {
             op: BinaryOperator::Times
+              | BinaryOperator::Divide
               | BinaryOperator::Plus
               | BinaryOperator::Minus
               | BinaryOperator::Power,

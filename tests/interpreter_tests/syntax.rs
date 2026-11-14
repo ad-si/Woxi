@@ -15708,3 +15708,93 @@ fn held_quotient_terms_and_negated_numerators() {
     assert_eq!(interpret(input).unwrap(), expected, "{input}");
   }
 }
+
+/// `Rational[a, b]` with arguments other than integers is an ordinary,
+/// unevaluated call. Printing it as `a/b` lost the grouping of a compound
+/// denominator: `Rational[a, b c]` came out as `a/b*c`, which reads back
+/// as `(a/b) c` (a Manipulate body re-read from its printed form then
+/// computed the wrong value).
+mod symbolic_rational_output {
+  use super::*;
+
+  #[test]
+  fn compound_denominator_keeps_its_head() {
+    assert_eq!(interpret("Rational[a, b c]").unwrap(), "Rational[a, b*c]");
+    assert_eq!(
+      interpret("Hold[Rational[m, o 7^n]]").unwrap(),
+      "Hold[Rational[m, o*7^n]]"
+    );
+  }
+
+  #[test]
+  fn printed_form_reads_back_to_the_same_value() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ReleaseHold[ToExpression[ToString[Hold[Rational[a, b c]], \
+         InputForm]] /. {a -> 13, b -> 6, c -> 7}]"
+      )
+      .unwrap(),
+      "13/42"
+    );
+  }
+
+  #[test]
+  fn integer_rationals_still_print_as_fractions() {
+    assert_eq!(interpret("Hold[Rational[1, 2]]").unwrap(), "Hold[1/2]");
+    assert_eq!(interpret("Hold[Rational[-3, 4]]").unwrap(), "Hold[-3/4]");
+    assert_eq!(interpret("Rational[6, 8]").unwrap(), "3/4");
+  }
+}
+
+// `<->` (125) binds looser than `/;` (130); the printer used to put both at
+// the same level. A one-argument `Times[s]` base prints as a call and needs
+// no brackets. All wolframscript-verified (found by the differential fuzzer).
+#[test]
+fn two_way_rule_and_condition_precedence_in_print() {
+  for (code, expected) in [
+    ("HoldForm[(a <-> b) /; c]", "HoldForm[(a <-> b) /; c]"),
+    ("HoldForm[(a /; b) <-> c]", "HoldForm[a /; b <-> c]"),
+    ("HoldForm[a <-> (b /; c)]", "HoldForm[a <-> b /; c]"),
+    ("HoldForm[a /; (b <-> c)]", "HoldForm[a /; (b <-> c)]"),
+    ("HoldForm[a <-> (b -> c)]", "HoldForm[a <-> (b -> c)]"),
+    ("HoldForm[a <-> (b <-> c)]", "HoldForm[a <-> b <-> c]"),
+    (
+      "ToString[HoldForm[(a <-> b) /; c], InputForm]",
+      "HoldForm[(a <-> b) /; c]",
+    ),
+    ("Hold[Power[Times[a], c]]", "Hold[Times[a]^c]"),
+    (
+      "Hold[f /* Power[Times[\"s\"], c]]",
+      "Hold[f /* (Times[s]^c)]",
+    ),
+    ("Hold[Power[Times[a, b], c]]", "Hold[(a*b)^c]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// A prime may follow a part or call on any base: `(a)[[1]]'`, `{a}[[1]]'`
+// and `f[x][[1]]'` are Derivative[1][…] of the whole expression (they were
+// parse errors). A string-exponent power keeps a negative or fractional base
+// bracketed, and a one-argument `Plus[b]` leading a sum prints bare. All
+// wolframscript-verified (found by the differential fuzzer).
+#[test]
+fn prime_after_part_and_held_print_forms() {
+  for (code, expected) in [
+    ("Hold[(a)[[1]]']", "Hold[Derivative[1][a[[1]]]]"),
+    ("Hold[{a}[[1]]']", "Hold[Derivative[1][{a}[[1]]]]"),
+    ("Hold[(a)[x]']", "Hold[Derivative[1][a[x]]]"),
+    ("Hold[(a)[[1]]''[y]]", "Hold[Derivative[2][a[[1]]][y]]"),
+    ("Hold[f[x][[1]]']", "Hold[Derivative[1][f[x][[1]]]]"),
+    ("Hold[f[x][[1]]'[y]]", "Hold[Derivative[1][f[x][[1]]][y]]"),
+    ("Hold[f[x]'[[1]]]", "Hold[Derivative[1][f[x]][[1]]]"),
+    ("Hold[x /. Power[-3, \"ab\"]]", "Hold[x /. (-3)^ab]"),
+    ("Hold[x /. Power[1/2, \"ab\"]]", "Hold[x /. (1/2)^ab]"),
+    ("HoldForm[a + (Plus[9] + s)]", "HoldForm[a + (Plus[9] + s)]"),
+    ("HoldForm[Plus[Plus[9], s]]", "HoldForm[Plus[9] + s]"),
+    ("HoldForm[Plus[s, Plus[9]]]", "HoldForm[s + (Plus[9])]"),
+  ] {
+    assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}

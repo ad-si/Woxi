@@ -2674,10 +2674,11 @@ fn generate_svg(
       )
     })
   };
-  let (scale, cx, cy, w, h) = fit_3d_frame(
+  let ((scale, _), cx, cy, w, h) = fit_3d_frame(
     svg_width,
     (!auto_height || full_width).then_some(svg_height),
     (px_min, px_max, py_min, py_max),
+    false,
     &axes_extent,
   );
   svg_width = w;
@@ -3771,17 +3772,24 @@ impl AxesExtent {
 /// the box spanning `p` (projected units), this returns the scale and the
 /// pixel position of the box's projected center, and the final size.
 /// `extent_at` reports where the axes land for a trial framing.
+///
+/// With `stretch` (an explicit `AspectRatio`), the projected box is scaled
+/// separately along each direction to fill the whole room, as Wolfram
+/// stretches a 3-D picture to the requested shape; the returned scales are
+/// then the horizontal and vertical ones. Otherwise both are the same
+/// uniform scale.
 fn fit_3d_frame(
   width: u32,
   height: Option<u32>,
   p: (f64, f64, f64, f64),
+  stretch: bool,
   extent_at: &dyn Fn(f64, f64, f64) -> Option<AxesExtent>,
-) -> (f64, f64, f64, u32, u32) {
+) -> ((f64, f64), f64, f64, u32, u32) {
   let (px_min, px_max, py_min, py_max) = p;
   let p_width = (px_max - px_min).max(1e-15);
   let p_height = (py_max - py_min).max(1e-15);
   let mut pads = [1.0_f64; 4]; // left, right, top, bottom
-  let mut result = (1.0, 0.0, 0.0, width, height.unwrap_or(width));
+  let mut result = ((1.0, 1.0), 0.0, 0.0, width, height.unwrap_or(width));
   for _ in 0..3 {
     let pad_w = pads[0] + pads[1];
     let pad_h = pads[2] + pads[3];
@@ -3789,20 +3797,26 @@ fn fit_3d_frame(
       Some(h) => (width, h),
       None => fitted_image_size(width, p_height / p_width, pad_w, pad_h),
     };
-    let scale =
-      ((w as f64 - pad_w) / p_width).min((h as f64 - pad_h) / p_height);
+    let fill_x = (w as f64 - pad_w) / p_width;
+    let fill_y = (h as f64 - pad_h) / p_height;
+    let (sx, sy) = if stretch {
+      (fill_x, fill_y)
+    } else {
+      let s = fill_x.min(fill_y);
+      (s, s)
+    };
     // The box is centered in the room the pads leave.
     let cx = pads[0] + (w as f64 - pad_w) / 2.0;
     let cy = pads[2] + (h as f64 - pad_h) / 2.0;
-    result = (scale, cx, cy, w, h);
-    let Some(ext) = extent_at(scale, cx, cy) else {
+    result = ((sx, sy), cx, cy, w, h);
+    let Some(ext) = extent_at(sx.min(sy), cx, cy) else {
       break;
     };
     // How far the axes reach beyond the box on each side.
-    let box_l = cx - p_width / 2.0 * scale;
-    let box_r = cx + p_width / 2.0 * scale;
-    let box_t = cy - p_height / 2.0 * scale;
-    let box_b = cy + p_height / 2.0 * scale;
+    let box_l = cx - p_width / 2.0 * sx;
+    let box_r = cx + p_width / 2.0 * sx;
+    let box_t = cy - p_height / 2.0 * sy;
+    let box_b = cy + p_height / 2.0 * sy;
     let next = [
       1.0 + (box_l - ext.x_min).max(0.0),
       1.0 + (ext.x_max - box_r).max(0.0),
@@ -5979,6 +5993,10 @@ struct StyleState3D {
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
+  /// The panel `Background -> color` paints behind the `Text` labels, as
+  /// a `Style[Text[…], Background -> color]` wrapper or the label's own
+  /// option gives it. `None` draws the label straight on the scene.
+  text_background: Option<(u8, u8, u8)>,
 }
 
 impl Default for StyleState3D {
@@ -6004,7 +6022,60 @@ impl Default for StyleState3D {
       vertex_colors: None,
       arrowhead: None,
       font_size: None,
+      text_background: None,
     }
+  }
+}
+
+/// The box a `Framed[content, opts…]` label in a 3-D scene is drawn in:
+/// `Background -> color` paints a panel behind the text and the border is
+/// drawn unless `FrameStyle -> None`. Both are `None` for a plain label.
+#[derive(Clone, Debug, Default)]
+struct TextPanel3D {
+  background: Option<crate::functions::graphics::Color>,
+  frame: Option<crate::functions::graphics::Color>,
+}
+
+impl TextPanel3D {
+  /// The panel of `Framed[content, opts…]` (`None` for any other label)
+  /// and the content it frames.
+  fn of(label: &Expr) -> (Self, &Expr) {
+    let Expr::FunctionCall { name, args } = label else {
+      return (Self::default(), label);
+    };
+    if name != "Framed" || args.is_empty() {
+      return (Self::default(), label);
+    }
+    let option = |key: &str| {
+      args[1..].iter().find_map(|o| match o {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
+          Some(replacement.as_ref())
+        }
+        _ => None,
+      })
+    };
+    let background =
+      option("Background").and_then(crate::functions::graphics::parse_color);
+    let black = crate::functions::graphics::Color::new(0.0, 0.0, 0.0);
+    let frame = match option("FrameStyle") {
+      Some(Expr::Identifier(s)) if s == "None" => None,
+      Some(spec) => {
+        crate::functions::graphics::parse_color(spec).or(Some(black))
+      }
+      None => Some(black),
+    };
+    (Self { background, frame }, &args[0])
+  }
+
+  fn is_empty(&self) -> bool {
+    self.background.is_none() && self.frame.is_none()
   }
 }
 
@@ -6060,6 +6131,8 @@ enum Primitive3D {
   /// labeled 3D schematic readable from any view.
   Text3D {
     /// The label as SVG `<text>` content (already typeset and escaped).
+    /// A stacked fraction is the plain `num\n--\nden` text instead, which
+    /// the renderer typesets (and escapes) itself.
     label: String,
     pos: Point3D,
     /// Which point of the label's own box sits at `pos`, from -1
@@ -6076,6 +6149,9 @@ enum Primitive3D {
     /// `Style[…, Bold]` / `Style[…, Italic]` on the label.
     bold: bool,
     italic: bool,
+    /// The panel a `Framed[…]` label is drawn on: its `Background` fill
+    /// and its border.
+    panel: TextPanel3D,
     style: StyleState3D,
   },
   /// A pre-tessellated triangle surface (Torus, FilledTorus, BSplineSurface,
@@ -7873,6 +7949,33 @@ fn parse_text3d_offset(spec: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// The `Background -> color` a `Text` option or `Style` directive gives a
+/// 3D label: `Some(Some(rgb))` for a color, `Some(None)` for
+/// `Background -> None`, and `None` when `opt` is not a `Background` rule.
+fn text3d_background_option(opt: &Expr) -> Option<Option<(u8, u8, u8)>> {
+  let value = match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background") => {
+      replacement.as_ref()
+    }
+    _ => return None,
+  };
+  let rgb = crate::functions::graphics::parse_color(value).map(|c| {
+    (
+      (c.r.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.g.clamp(0.0, 1.0) * 255.0).round() as u8,
+      (c.b.clamp(0.0, 1.0) * 255.0).round() as u8,
+    )
+  });
+  Some(rgb)
+}
+
 /// Typesets `label_expr` (a `Text`/`Inset` label, e.g. a plain string or
 /// `Style[…]`) and pushes a `Text3D` primitive for it at `pos`, if it
 /// renders to non-empty text.
@@ -7895,14 +7998,29 @@ fn push_text3d_label(
       picture: Some(picture),
       bold: false,
       italic: false,
+      panel: TextPanel3D::default(),
       style: style.clone(),
     });
     return;
   }
+  // `Framed[content, opts…]` draws `content` on a panel; peel it off so the
+  // `Style` it usually wraps still reaches the label.
+  let (panel, label_expr) = TextPanel3D::of(label_expr);
   let styled = crate::functions::chart::parse_styled_label(label_expr);
   let (bold, italic) = styled
     .as_ref()
     .map_or((false, false), |s| (s.bold, s.italic));
+  // A number that typesets as a stacked fraction (`1/30`) keeps the
+  // flattened `num\n--\nden` form the 2D labels draw it from, so the
+  // renderer stacks it the same way instead of writing `1/30` on one line.
+  let fraction = {
+    let text = crate::functions::graphics::graphics_text_content(label_expr);
+    let chars =
+      crate::functions::graphics::fraction_label_parts(&text).map(|f| {
+        f.num.chars().count().max(f.den.chars().count()) + f.negative as usize
+      });
+    chars.map(|chars| (text, chars))
+  };
   let (label, width_chars, font_size, color) = match styled {
     Some(s) => (
       // A stacked label keeps its lines apart by newlines; the renderer
@@ -7917,6 +8035,7 @@ fn push_text3d_label(
     ),
     None => (String::new(), 0, 12.0, None),
   };
+  let (label, width_chars) = fraction.unwrap_or((label, width_chars));
   if label.is_empty() {
     return;
   }
@@ -7937,6 +8056,7 @@ fn push_text3d_label(
     picture: None,
     bold,
     italic,
+    panel,
     style: text_style,
   });
 }
@@ -8351,7 +8471,15 @@ fn collect_3d_primitives(
               .get(2)
               .and_then(parse_text3d_offset)
               .unwrap_or((0.0, 0.0));
-            push_text3d_label(&args[0], pos, offset, style, prims);
+            // `Text[expr, pos, …, Background -> color]`: the label's own
+            // option wins over a background its `Style` wrapper gives.
+            let mut text_style = style.clone();
+            if let Some(bg) =
+              args[2..].iter().find_map(text3d_background_option)
+            {
+              text_style.text_background = bg;
+            }
+            push_text3d_label(&args[0], pos, offset, &text_style, prims);
           }
         }
         // `Inset[obj, {x, y, z}]` places `obj` at a point of the scene.
@@ -8767,6 +8895,10 @@ fn collect_3d_primitives(
           for directive in &args[1..] {
             let evaluated =
               evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
+            if let Some(bg) = text3d_background_option(&evaluated) {
+              style.text_background = bg;
+              continue;
+            }
             match try_eval_to_f64(&evaluated) {
               Some(size) if size > 0.0 => style.font_size = Some(size),
               _ => {
@@ -10637,6 +10769,7 @@ fn perspective_warp(
         picture,
         bold,
         italic,
+        panel,
         style,
       } => {
         if let Some(pos) = warp(&pos) {
@@ -10649,6 +10782,7 @@ fn perspective_warp(
             picture,
             bold,
             italic,
+            panel,
             style,
           });
         }
@@ -10944,7 +11078,7 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
 
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  let args = &crate::functions::graphics::splice_option_lists(args)[..];
+  let args = &crate::functions::graphics::graphics_option_args(args)[..];
   let content = evaluate_expr_to_expr(&args[0])?;
 
   // Parse options
@@ -11010,6 +11144,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotRangePadding -> spec`: the margin added around the displayed range
   // on each side of each axis. `None` here is `Automatic`.
   let mut range_padding: Option<[(RangePad, RangePad); 3]> = None;
+  // `ImagePadding -> {{left, right}, {bottom, top}}` (or one number for all
+  // sides): a band of the given width around the picture that the scene is
+  // kept out of, so the contents are laid out in the region inside it.
+  let mut image_padding: Option<[f64; 4]> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -11056,6 +11194,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let b = (color.b.clamp(0.0, 1.0) * 255.0).round() as u8;
             background = Some((r, g, b));
           }
+        }
+        "ImagePadding" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          image_padding = crate::functions::plot::parse_image_padding(&value)
+            .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0));
         }
         "ViewPoint" => {
           // Symbolic viewpoints stand for axis-aligned directions
@@ -11699,6 +11843,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vertex_colors: None,
             arrowhead: None,
             font_size: None,
+            text_background: None,
           },
         ),
       };
@@ -12206,12 +12351,34 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     })
   };
-  let (fit_scale, cx, cy, fit_w, fit_h) = fit_3d_frame(
-    svg_width,
-    (!fitted_height || full_width).then_some(svg_height),
-    (px_min, px_max, py_min, py_max),
-    &axes_extent,
-  );
+  // With an `ImagePadding` the scene is fitted into the region inside the
+  // padding band; the picture keeps its full size around it.
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    image_padding.unwrap_or([0.0; 4]);
+  let pad_w = (pad_left + pad_right).round() as u32;
+  let pad_h = (pad_bottom + pad_top).round() as u32;
+  let padded = image_padding.is_some()
+    && !full_width
+    && svg_width > pad_w
+    && (!explicit_height || svg_height > pad_h);
+  if padded {
+    svg_width -= pad_w;
+    svg_height = svg_height.saturating_sub(pad_h).max(1);
+  }
+  // An explicit `AspectRatio` stretches the projected box to the picture's
+  // shape (unless the view volume fixes the scale instead).
+  let stretch = aspect_ratio.is_some()
+    && view_angle.is_none()
+    && !spherical_region
+    && !perspective;
+  let ((fit_scale, stretch_scale_y), mut cx, mut cy, fit_w, fit_h) =
+    fit_3d_frame(
+      svg_width,
+      (!fitted_height || full_width).then_some(svg_height),
+      (px_min, px_max, py_min, py_max),
+      stretch,
+      &axes_extent,
+    );
   let mut scale = fit_scale;
   svg_width = fit_w;
   svg_height = fit_h;
@@ -12290,8 +12457,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     p_cy = 0.0;
   }
 
+  if padded {
+    cx += pad_left;
+    cy += pad_top;
+    svg_width += pad_w;
+    svg_height += pad_h;
+  }
+
+  let scale_y = if stretch { stretch_scale_y } else { scale };
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
-    (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale)
+    (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale_y)
   };
 
   let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
@@ -12724,6 +12899,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         picture,
         bold,
         italic,
+        panel,
         style,
       } => {
         let fill_color = if let Some((r, g, b)) = style.color {
@@ -12749,8 +12925,97 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // per unit across, half its height per unit up (and the vertical
         // sign flips, SVG counting y downwards).
         let text_w = *width_chars as f64 * font_size * 0.6;
+        let fraction = crate::functions::graphics::fraction_label_parts(label);
+        let text_h = if fraction.is_some() {
+          // A stacked fraction is about two lines tall.
+          font_size * 2.4
+        } else {
+          font_size * 1.2 * label.split('\n').count() as f64
+        };
         let x = sx - offset.0 * text_w / 2.0;
-        let y = sy + offset.1 * font_size / 2.0;
+        let y = sy + offset.1 * text_h / 2.0;
+        let mut style_attrs = String::new();
+        if *bold {
+          style_attrs.push_str(" font-weight=\"bold\"");
+        }
+        if *italic {
+          style_attrs.push_str(" font-style=\"italic\"");
+        }
+        // `Background -> color` paints a panel behind the label, hugging
+        // its glyphs, which keeps it legible over the edges it labels.
+        if let Some((r, g, b)) = style.text_background {
+          let panel_w = match fraction {
+            Some(f) => {
+              2.0
+                * crate::functions::graphics::label_fraction_bar_half(
+                  f.num, f.den, *font_size,
+                )
+                + if f.negative {
+                  crate::functions::graphics::label_fraction_minus_width(
+                    *font_size,
+                  )
+                } else {
+                  0.0
+                }
+            }
+            None => text_w,
+          };
+          svg.push_str(&format!(
+            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{panel_w:.1}\" height=\"{text_h:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
+            x - panel_w / 2.0,
+            y - text_h / 2.0,
+          ));
+        }
+        // A `Framed` label sits on its panel, laid out as a 2-D
+        // `Text[Framed[…]]` one is: the panel hugs the glyphs' advance
+        // width, and a border keeps its margin round the text.
+        if !panel.is_empty() {
+          let panel_w = if panel.frame.is_some() {
+            text_w
+          } else {
+            crate::functions::plot_padding::text_width(label, *font_size)
+          };
+          let panel_h = crate::functions::graphics::split_markup_lines(label)
+            .len() as f64
+            * font_size;
+          let (fill, fill_opacity) = match panel.background {
+            Some(bg) if bg.a < 1.0 => {
+              (bg.to_svg_rgb(), format!(" fill-opacity=\"{}\"", bg.a))
+            }
+            Some(bg) => (bg.to_svg_rgb(), String::new()),
+            None => ("none".to_string(), String::new()),
+          };
+          let stroke = match panel.frame {
+            Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
+            None => String::new(),
+          };
+          svg.push_str(&format!(
+            "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{panel_w:.1}\" height=\"{panel_h:.1}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
+            x - panel_w / 2.0,
+            y - panel_h / 2.0,
+          ));
+        }
+        if let Some(f) = fraction {
+          let text_at = |tx: f64, ty: f64, anchor: &str, markup: &str| {
+            format!(
+              "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
+               dominant-baseline=\"middle\" font-family=\"sans-serif\" \
+               font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{markup}</text>"
+            )
+          };
+          svg.push_str(
+            &crate::functions::graphics::label_stacked_fraction_svg(
+              x,
+              y,
+              f,
+              *font_size,
+              &fill_color,
+              &text_at,
+            ),
+          );
+          svg.push('\n');
+          continue;
+        }
         let lines = crate::functions::graphics::split_markup_lines(label);
         let line_height = font_size * 1.2;
         let mut body = String::new();
@@ -12766,13 +13031,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
             ));
           }
-        }
-        let mut style_attrs = String::new();
-        if *bold {
-          style_attrs.push_str(" font-weight=\"bold\"");
-        }
-        if *italic {
-          style_attrs.push_str(" font-style=\"italic\"");
         }
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
