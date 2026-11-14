@@ -6851,6 +6851,21 @@ mod expand_threading {
       "33.3333333333333333333`5."
     );
   }
+
+  // Each list element is capped by its own magnitude, as for a lone number.
+  #[test]
+  fn n_precision_accuracy_spec_list() {
+    assert_eq!(
+      interpret("N[{1/3, 100/3, {1/100}}, {5, 5}]").unwrap(),
+      format!(
+        "{{{}, {}, {{{}}}}}",
+        interpret("N[1/3, {5, 5}]").unwrap(),
+        interpret("N[100/3, {5, 5}]").unwrap(),
+        interpret("N[1/100, {5, 5}]").unwrap()
+      )
+    );
+    assert_eq!(interpret("N[{1/100}, {5, 5}]").unwrap(), "{0.01`3.}");
+  }
 }
 
 /// Regression tests for unary minus after operators (issues 2 & 5)
