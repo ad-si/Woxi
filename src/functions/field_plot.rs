@@ -2902,7 +2902,7 @@ fn field_plot_structure(
   // `FrameLabel -> Automatic` names the plot's iterator variables; the
   // returned `Graphics` no longer knows them, so it carries them explicitly
   // (a `GraphicsGrid` cell or a `Show` re-renders from these options).
-  for opt in explicit.iter_mut() {
+  for opt in &mut explicit {
     if let Expr::Rule {
       pattern,
       replacement,
@@ -3292,7 +3292,8 @@ fn sample_coarse_grid(
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
 ) -> Vec<Vec<f64>> {
-  let step = |lo: f64, hi: f64, k: usize| lo + k as f64 / (m - 1) as f64 * (hi - lo);
+  let step =
+    |lo: f64, hi: f64, k: usize| lo + k as f64 / (m - 1) as f64 * (hi - lo);
   (0..m)
     .map(|i| {
       let x = step(x_min, x_max, i);
@@ -3438,8 +3439,9 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // grid the contours are traced on interpolates between those samples.
   // This is what makes a costly body (an `NIntegrate` per point) plot in
   // a few hundred evaluations rather than ten thousand.
-  let coarse = unrefined_plot_points(&args[3..])
-    .map(|m| sample_coarse_grid(body, &xvar, &yvar, m, (x_min, x_max), (y_min, y_max)));
+  let coarse = unrefined_plot_points(&args[3..]).map(|m| {
+    sample_coarse_grid(body, &xvar, &yvar, m, (x_min, x_max), (y_min, y_max))
+  });
   let value_at = |i: usize, j: usize, x: f64, y: f64| -> Option<f64> {
     match &coarse {
       Some(c) => bilinear_from_coarse(

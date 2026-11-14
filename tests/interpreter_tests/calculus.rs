@@ -5335,10 +5335,8 @@ mod nintegrate {
   #[test]
   fn non_numeric_multidimensional_integral_evaluates_after_substitution() {
     assert_eq!(
-      interpret(
-        "Quiet[NIntegrate[a + x y, {x, 0, 1}, {y, 0, 1}]] /. a -> 2"
-      )
-      .unwrap(),
+      interpret("Quiet[NIntegrate[a + x y, {x, 0, 1}, {y, 0, 1}]] /. a -> 2")
+        .unwrap(),
       "2.25"
     );
   }
