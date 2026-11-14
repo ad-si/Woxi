@@ -10647,9 +10647,10 @@ fn clamp_tick_label_x(
   label: &str,
   svg_w: f64,
   margins: (f64, f64),
+  tick_font: f64,
 ) -> f64 {
   let half =
-    crate::functions::plot_padding::tick_label_width(label, TICK_FONT) / 2.0;
+    crate::functions::plot_padding::tick_label_width(label, tick_font) / 2.0;
   let (left, right) = margins;
   let lo = -left + half;
   let hi = svg_w + right - half;
@@ -10768,6 +10769,7 @@ fn render_axes(
   ticks_style: Option<(AxisLineStyle, AxisLineStyle)>,
   origin: (Option<f64>, Option<f64>),
   label_fill: Option<Color>,
+  tick_font: f64,
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -10845,11 +10847,11 @@ fn render_axes(
       // edge would read as `1.0`. Nudge such a label inwards just far enough
       // to clear the margin, the way Wolfram's image padding keeps the
       // outermost labels whole.
-      let x = clamp_tick_label_x(x, &label, svg_w, x_margins);
+      let x = clamp_tick_label_x(x, &label, svg_w, x_margins, tick_font);
       // The top of the label 3 pt below the axis.
       svg.push_str(&format!(
-        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
-        axis_y_px + TICK_LABEL_GAP + ascent(TICK_FONT),
+        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
+        axis_y_px + TICK_LABEL_GAP + ascent(tick_font),
       ));
     }
   }
@@ -10894,9 +10896,9 @@ fn render_axes(
       }
       // 3 pt left of the axis, centered on the tick.
       svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"end\">{label}</text>\n",
+        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"end\">{label}</text>\n",
         axis_x_px - TICK_LABEL_GAP,
-        y + center_to_baseline(TICK_FONT),
+        y + center_to_baseline(tick_font),
       ));
     }
   }
@@ -11156,6 +11158,7 @@ fn graphics_decorations(
   title_lines: usize,
   title_font: f64,
   frame_label_font: f64,
+  tick_font: f64,
 ) -> crate::functions::plot_padding::Decorations {
   use crate::functions::plot_padding::{
     Decorations, LabelBox, block_height, text_width, tick_label_width,
@@ -11164,10 +11167,10 @@ fn graphics_decorations(
   let frac_y = |v: f64| (v - bb.y_min) / (bb.y_max - bb.y_min);
   let label_box = |frac: f64, label: &str| LabelBox {
     frac,
-    width: tick_label_width(label, TICK_FONT).max(
-      crate::functions::plot_padding::exported_text_extent(label, TICK_FONT).1,
+    width: tick_label_width(label, tick_font).max(
+      crate::functions::plot_padding::exported_text_extent(label, tick_font).1,
     ),
-    height: line_height(TICK_FONT),
+    height: line_height(tick_font),
     at_crossing: false,
   };
   let auto_labels = |lo: f64, hi: f64| {
@@ -11320,6 +11323,7 @@ fn render_frame(
   frame_styles: &[AxisLineStyle; 4],
   ticks_style: Option<AxisLineStyle>,
   label_fill: Option<Color>,
+  tick_font: f64,
 ) {
   let t = theme();
   // `FrameStyle` paints each edge; `FrameTicksStyle` (else the edge's own
@@ -11403,9 +11407,9 @@ fn render_frame(
       0usize,
       svg_h,
       -1.0,
-      svg_h + TICK_LABEL_GAP + ascent(TICK_FONT),
+      svg_h + TICK_LABEL_GAP + ascent(tick_font),
     ),
-    (2usize, 0.0, 1.0, -TICK_LABEL_GAP - descent(TICK_FONT)),
+    (2usize, 0.0, 1.0, -TICK_LABEL_GAP - descent(tick_font)),
   ] {
     if ticks[i] == EdgeTicks::None {
       continue;
@@ -11440,7 +11444,7 @@ fn render_frame(
         && ticks[i] == EdgeTicks::Labels
       {
         svg.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
+          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
         ));
       }
     }
@@ -11484,8 +11488,8 @@ fn render_frame(
         && ticks[i] == EdgeTicks::Labels
       {
         svg.push_str(&format!(
-          "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
-          y + center_to_baseline(TICK_FONT),
+          "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
+          y + center_to_baseline(tick_font),
         ));
       }
     }
@@ -14744,6 +14748,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let label_font =
     GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
   let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
+  // The same size sets the tick labels of the frame and of the axes.
+  let tick_font = label_font.size.unwrap_or(TICK_FONT);
   let title_font = plot_label
     .iter()
     .flatten()
@@ -14760,6 +14766,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_label.as_ref().map_or(0, Vec::len),
     title_font,
     frame_label_font,
+    tick_font,
   );
   // The shape of the drawing area: what the data (or `AspectRatio`) asks
   // for, unless `ImageSize -> {w, h}` fixed the height outright.
@@ -15206,6 +15213,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|spec| AxisLineStyle::parse_pair(spec, &bb, svg_w)),
     axes_origin,
     label_color,
+    tick_font,
   );
 
   if frame {
@@ -15222,6 +15230,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .as_ref()
         .map(|spec| AxisLineStyle::from_directive(spec, &bb, svg_w)),
       label_color,
+      tick_font,
     );
   }
 
@@ -51181,6 +51190,7 @@ mod review_layout_tests {
       0,
       TITLE_FONT,
       LABEL_FONT,
+      TICK_FONT,
     );
     for (label, measured) in labels.iter().zip(&d.axis_ticks.1) {
       let width =

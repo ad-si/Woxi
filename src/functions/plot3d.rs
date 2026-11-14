@@ -11301,6 +11301,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
   // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
   let mut aspect_ratio: Option<f64> = None;
+  let mut aspect_full = false;
   // `Lighting -> spec`: the lights every surface without its own
   // `Lighting` directive is shaded under. `None` is `Automatic`.
   let mut scene_lighting: Option<Lighting> = None;
@@ -11470,10 +11471,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tick_spec = parse_ticks_3d(&value);
         }
         "AspectRatio" => {
-          if let Some(r) = try_eval_to_f64(
-            &evaluate_expr_to_expr(replacement)
-              .unwrap_or_else(|_| replacement.as_ref().clone()),
-          ) && r > 0.0
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          aspect_full = matches!(&value, Expr::Identifier(s) if s == "Full");
+          if let Some(r) = try_eval_to_f64(&value)
+            && r > 0.0
             && r.is_finite()
           {
             aspect_ratio = Some(r);
@@ -11520,6 +11522,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `AspectRatio -> Full` stretches the scene to fill the width and height
+  // `ImageSize` gives it.
+  if aspect_full && explicit_height && svg_width > 0 {
+    aspect_ratio = Some(svg_height as f64 / svg_width as f64);
+  }
   if let Some(r) = aspect_ratio {
     svg_height = ((svg_width as f64 * r).round() as u32).max(1);
   }
