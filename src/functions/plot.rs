@@ -13400,6 +13400,17 @@ fn inject_drop_shadows(
   }
 }
 
+/// A positive numeric size that is neither an integer nor a machine real
+/// (a `Rational`, or an exact expression such as `100 Pi`), rounded to
+/// whole pixels.
+fn positive_exact_size(e: &Expr) -> Option<u32> {
+  if !matches!(e, Expr::FunctionCall { .. } | Expr::BinaryOp { .. }) {
+    return None;
+  }
+  let f = crate::functions::math_ast::try_eval_to_f64(e)?;
+  (f.is_finite() && f > 0.0).then(|| f.round() as u32)
+}
+
 /// Parse ImageSize option value into (width, height, full_width).
 /// Supports: integer, {w, h}, and named sizes (Tiny, Small, Medium, Large, Full).
 /// Full uses a 720px render resolution but emits `width="100%"` in SVG.
@@ -13454,6 +13465,15 @@ pub(crate) fn parse_image_size(
       let h = (w as f64 * aspect).round() as u32;
       Some((w, h, false))
     }
+    // Any other positive number — a rational such as `1200/7` or an exact
+    // multiple like `100 Pi` — is a width in printer's points as well.
+    Expr::FunctionCall { .. } | Expr::BinaryOp { .. }
+      if positive_exact_size(value).is_some() =>
+    {
+      let w = positive_exact_size(value)?;
+      let h = (w as f64 * aspect).round() as u32;
+      Some((w, h, false))
+    }
     // `{w}` is the same as `w`.
     Expr::List(items) if items.len() == 1 => {
       parse_image_size(&items[0], def_w, def_h)
@@ -13502,7 +13522,9 @@ pub(crate) fn parse_image_size(
             (v > 0).then_some(Some(v))
           }
           Expr::Real(f) if *f > 0.0 => Some(Some(f.round() as u32)),
-          _ => None,
+          // `{600, 590*13/30}` evaluates its height to the rational
+          // `767/3`, which is a size just as much as `255.67` is.
+          _ => positive_exact_size(e).map(Some),
         }
       };
       match (dim(&items[0])?, dim(&items[1])?) {
