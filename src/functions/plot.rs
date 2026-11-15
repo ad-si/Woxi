@@ -1390,6 +1390,18 @@ fn clip_segments_to_y_range(
   y_max: f64,
   join_across_jumps: bool,
 ) -> Vec<Vec<(f64, f64)>> {
+  // A sample that overshoots a range edge only by floating-point noise
+  // (e.g. a running total ending at 100.00000000000003 under
+  // `PlotRange -> {0, 100}`) lies on the edge, so a curve running along the
+  // edge stays drawn instead of vanishing. Matches the tolerance of the
+  // `Show` clipper (`clip_segment_to_y_range` in graphics.rs).
+  let (y_min, y_max) =
+    if y_min.is_finite() && y_max.is_finite() && y_min < y_max {
+      let pad = (y_max - y_min) * 1e-9;
+      (y_min - pad, y_max + pad)
+    } else {
+      (y_min, y_max)
+    };
   let mut result: Vec<Vec<(f64, f64)>> = Vec::new();
 
   for segment in segments {
