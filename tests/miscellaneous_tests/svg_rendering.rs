@@ -5442,4 +5442,79 @@ mod grid_item_style_tests {
       "{svg}"
     );
   }
+
+  // ── Font fallback keeps the text's style ──
+
+  #[test]
+  fn test_fallback_face_rank_prefers_same_slant_then_weight() {
+    use resvg::usvg::fontdb::{Stretch, Style};
+    use woxi::functions::image_ast::fallback_face_rank;
+    let base = (Style::Normal, 400, Stretch::Normal);
+    let regular =
+      fallback_face_rank((Style::Normal, 400, Stretch::Normal), base);
+    let medium =
+      fallback_face_rank((Style::Normal, 500, Stretch::Normal), base);
+    let bold = fallback_face_rank((Style::Normal, 700, Stretch::Normal), base);
+    let italic =
+      fallback_face_rank((Style::Italic, 400, Stretch::Normal), base);
+    let bold_italic =
+      fallback_face_rank((Style::Italic, 800, Stretch::Normal), base);
+    let condensed =
+      fallback_face_rank((Style::Normal, 400, Stretch::Condensed), base);
+    assert!(regular < condensed);
+    assert!(condensed < medium);
+    assert!(medium < bold);
+    assert!(bold < italic);
+    assert!(italic < bold_italic);
+  }
+
+  #[test]
+  fn test_font_fallback_keeps_regular_weight() {
+    // A regular face lacking a glyph must not fall back to a bold (or
+    // italic) face just because one of its other attributes matches,
+    // as usvg's built-in selector does.
+    use resvg::usvg::fontdb::{Database, Style};
+    let mut db = Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let base = db
+      .faces()
+      .find(|f| {
+        f.families
+          .iter()
+          .any(|(n, _)| n == "Atkinson Hyperlegible Mono")
+          && f.weight.0 == 400
+      })
+      .expect("embedded regular mono face")
+      .id;
+    let mut db = std::sync::Arc::new(db);
+    let resolver = woxi::functions::image_ast::font_resolver();
+    let chosen = (resolver.select_fallback)('A', &[base], &mut db)
+      .expect("a fallback face");
+    let face = db.face(chosen).unwrap();
+    assert_eq!(face.style, Style::Normal);
+    assert!(
+      face.weight.0 < 600,
+      "fell back to a bold face: {:?} {:?}",
+      face.families,
+      face.weight
+    );
+  }
+
+  #[test]
+  fn test_svg_options_use_style_preserving_fallback() {
+    use resvg::usvg::fontdb::{Database, Style};
+    let mut db = Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let base = db
+      .faces()
+      .find(|f| f.weight.0 == 400 && f.style == Style::Normal)
+      .unwrap()
+      .id;
+    let mut opts =
+      woxi::functions::image_ast::svg_options(std::sync::Arc::new(db));
+    let chosen =
+      (opts.font_resolver.select_fallback)('A', &[base], &mut opts.fontdb)
+        .unwrap();
+    assert!(opts.fontdb.face(chosen).unwrap().weight.0 < 600);
+  }
 }
