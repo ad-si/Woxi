@@ -18244,6 +18244,21 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
   if let Some((base, exp)) = as_power(expr) {
+    // A power of a one-index subscript (`Subscript[x, 1]^k`) typesets as a
+    // `SubsuperscriptBox`: the exponent stacks over the index.
+    if let Expr::FunctionCall { name, args } = base
+      && name == "Subscript"
+      && args.len() == 2
+    {
+      return format!(
+        "{}{}",
+        expr_to_svg_markup(&args[0]),
+        stacked_scripts_markup(
+          &expr_to_svg_markup(&args[1]),
+          &expr_to_svg_markup(exp),
+        ),
+      );
+    }
     let base_markup = expr_to_svg_markup(base);
     let exp_markup = expr_to_svg_markup(exp);
     // Wrap base in parens if it's a lower-precedence additive expression
@@ -18924,11 +18939,12 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // &, …]`), and each level's base recurses back into this same arm.
         "Subsuperscript" if args.len() == 3 => {
           format!(
-            "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
-             <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+            "{}{}",
             expr_to_svg_markup(&args[0]),
-            expr_to_svg_markup(&args[1]),
-            expr_to_svg_markup(&args[2]),
+            stacked_scripts_markup(
+              &expr_to_svg_markup(&args[1]),
+              &expr_to_svg_markup(&args[2]),
+            ),
           )
         }
 
@@ -19222,8 +19238,53 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 /// Estimate the display width of an expression in character units,
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
+/// A subscript and a superscript stacked over one another after their
+/// base, the way a `SubsuperscriptBox` sets them (`x₁` with `ᵏ` right above
+/// the `1`, not after it). SVG text has no stacking, so the narrower script
+/// is drawn first and the wider one is pulled back over it by the narrower
+/// one's width; the text after the pair then continues from the end of the
+/// wider script. The width is an estimate of half an em per character,
+/// slightly under most faces' advance, so a mismatch leaves the upper
+/// script a touch to the right rather than over the base.
+pub(crate) fn stacked_scripts_markup(sub: &str, sup: &str) -> String {
+  let sub_chars = markup_visible_chars(sub);
+  let sup_chars = markup_visible_chars(sup);
+  let tspan = |shift: &str, dx: Option<usize>, content: &str| {
+    let dx =
+      dx.map_or_else(String::new, |n| format!(" dx=\"-{}em\"", n as f64 * 0.5));
+    format!(
+      "<tspan{dx} baseline-shift=\"{shift}\" font-size=\"70%\">{content}</tspan>"
+    )
+  };
+  if sub_chars == 0 || sup_chars == 0 {
+    return format!("{}{}", tspan("sub", None, sub), tspan("super", None, sup));
+  }
+  if sup_chars <= sub_chars {
+    format!(
+      "{}{}",
+      tspan("super", None, sup),
+      tspan("sub", Some(sup_chars), sub)
+    )
+  } else {
+    format!(
+      "{}{}",
+      tspan("sub", None, sub),
+      tspan("super", Some(sub_chars), sup)
+    )
+  }
+}
+
 pub fn estimate_display_width(expr: &Expr) -> f64 {
   if let Some((base, exp)) = as_power(expr) {
+    // `Subscript[x, i]^k` stacks the exponent over the index.
+    if let Expr::FunctionCall { name, args } = base
+      && name == "Subscript"
+      && args.len() == 2
+    {
+      return estimate_display_width(&args[0])
+        + estimate_display_width(&args[1]).max(estimate_display_width(exp))
+          * 0.7;
+    }
     let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
     return estimate_display_width(base)
       + parens
@@ -19501,12 +19562,12 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         let seps = (args.len() - 2) as f64;
         estimate_display_width(&args[0]) + (scripts + seps) * 0.7
       }
-      // Subsuperscript[base, sub, sup] — the sub and super tspans sit side
-      // by side (not stacked), so both add to the width at 70% size.
+      // Subsuperscript[base, sub, sup] — the scripts stack, so the wider
+      // one sets the width, at 70% size.
       "Subsuperscript" if args.len() == 3 => {
         estimate_display_width(&args[0])
-          + (estimate_display_width(&args[1])
-            + estimate_display_width(&args[2]))
+          + estimate_display_width(&args[1])
+            .max(estimate_display_width(&args[2]))
             * 0.7
       }
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
@@ -19863,10 +19924,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let base_svg = boxes_to_svg(&args[0]);
         let sub_svg = boxes_to_svg(&args[1]);
         let sup_svg = boxes_to_svg(&args[2]);
-        format!(
-          "{base_svg}<tspan baseline-shift=\"sub\" font-size=\"70%\">{sub_svg}</tspan>\
-           <tspan baseline-shift=\"super\" font-size=\"70%\">{sup_svg}</tspan>"
-        )
+        format!("{base_svg}{}", stacked_scripts_markup(&sub_svg, &sup_svg))
       }
 
       // FractionBox[num, den] → stacked fraction
@@ -31172,6 +31230,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
+  if let Some(styled) = base_style_pushed_args("Column", args) {
+    return column_to_svg(&styled);
+  }
   if let Some(grid_args) = column_as_grid_args(args) {
     return grid_svg_with_gaps(&grid_args, &[]).ok();
   }
@@ -31239,6 +31300,22 @@ fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
   Some(grid_args)
 }
 
+/// The stroke color and width the `FrameStyle` among a layout's options
+/// `opts` asks for, the default frame stroke without one.
+fn frame_style_stroke(opts: &[Expr]) -> (String, f64) {
+  let style = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "FrameStyle")
+    .and_then(|(_, v)| crate::functions::plot::parse_style_directives(v));
+  crate::functions::plot::style_stroke(
+    style.as_ref(),
+    theme().stroke_default,
+    1.0,
+    1.0,
+  )
+}
+
 /// Paint the box options of a `Column`/`Row` around its laid-out `svg`:
 /// `Background -> color` fills the whole box behind the items, and
 /// `Frame -> True` draws a border round it, in the `FrameStyle` given.
@@ -31276,14 +31353,7 @@ fn decorate_layout_svg(svg: String, opts: &[Expr]) -> String {
     );
   }
   if framed && let Some(end) = svg.rfind("</svg>") {
-    let style = option("FrameStyle")
-      .and_then(crate::functions::plot::parse_style_directives);
-    let (color, width) = crate::functions::plot::style_stroke(
-      style.as_ref(),
-      theme().stroke_default,
-      1.0,
-      1.0,
-    );
+    let (color, width) = frame_style_stroke(opts);
     svg.insert_str(
       end,
       &format!(
@@ -31548,8 +31618,18 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       }
     })
     .fold(0.0_f64, f64::max);
+  // A fixed `ItemSize` width sets the column's width, but a laid-out item
+  // (a nested row or grid, set as a picture) cannot be broken onto further
+  // lines, so the column still widens to hold it rather than clipping it.
+  let widest_picture = cells
+    .iter()
+    .map(|c| match c {
+      Cell::Svg { width, .. } => *width,
+      Cell::Text(..) => 0.0,
+    })
+    .fold(0.0_f64, f64::max);
   let col_width = item_size_entry_at(item_size_w, 0, 1)
-    .map_or(col_width, |w| w * font_size + pad_x);
+    .map_or(col_width, |w| (w * font_size + pad_x).max(widest_picture));
 
   // Per-row heights
   let n_items = cells.len();
@@ -31667,11 +31747,12 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     y_cursor += h + gap;
     // `Frame -> All` rules a line between every two items, midway through
     // the gap that separates them.
+    // The rules are drawn in the `FrameStyle`, like the outer frame.
     if frame_all && i + 1 < n {
       let y = y_cursor - gap / 2.0;
+      let (color, width) = frame_style_stroke(&args[1..]);
       svg.push_str(&format!(
-        "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{}\" stroke-width=\"1\"/>\n",
-        theme().stroke_default
+        "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{width}\"/>\n"
       ));
     }
   }
@@ -31949,7 +32030,41 @@ fn markup_visible_chars(markup: &str) -> usize {
   count
 }
 
+/// The arguments of a `Row`/`Column` (`head`) with its `BaseStyle ->
+/// directives` option taken out and the directives pushed onto the items,
+/// the way an enclosing `Style[…, directives]` sets them. `None` when the
+/// layout has no `BaseStyle`.
+pub(crate) fn base_style_pushed_args(
+  head: &str,
+  args: &[Expr],
+) -> Option<Vec<Expr>> {
+  let base = args
+    .get(1..)?
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "BaseStyle")
+    .map(|(_, v)| v.clone())?;
+  let directives: Vec<Expr> = match &base {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
+  };
+  let rest: Vec<Expr> = args
+    .iter()
+    .filter(|a| !matches!(option_kv(a), Some(("BaseStyle", _))))
+    .cloned()
+    .collect();
+  let plain = call(head, rest.clone());
+  match &style_pushed_into_layout(&plain, &directives) {
+    Some(Expr::FunctionCall { args, .. }) => Some(args.to_vec()),
+    // No directives to apply: the layout without the empty option.
+    _ => Some(rest),
+  }
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
+  if let Some(styled) = base_style_pushed_args("Row", args) {
+    return row_to_svg(&styled);
+  }
   let svg = row_layout_svg(args)?;
   let opts: Vec<Expr> = args
     .iter()

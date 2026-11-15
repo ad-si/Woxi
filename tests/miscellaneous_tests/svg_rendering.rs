@@ -1528,8 +1528,10 @@ mod tests {
       );
       assert_eq!(
         svg,
-        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">i</tspan>\
-         <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"
+        // The scripts stack: the exponent first, the index pulled back
+        // under it.
+        "x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>\
+         <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">i</tspan>"
       );
     }
 
