@@ -15425,7 +15425,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     _ => (svg_width as f64, svg_height as f64, 0.0, 0.0),
   };
-  for _ in 0..3 {
+  // Widening the range shrinks the scale, which makes every label take a
+  // larger share of the range again: iterate until the range settles (the
+  // loop stops as soon as nothing grows), since labels overhanging both
+  // sides need more than a couple of rounds to fit.
+  for _ in 0..24 {
     let kx = plot_w / bb.width();
     let ky = if explicit_height {
       plot_h / bb.height()
