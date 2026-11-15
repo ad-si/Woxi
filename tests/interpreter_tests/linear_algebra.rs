@@ -5644,7 +5644,7 @@ mod nonlinear_model_fit {
           Round[10^6 fm[\"RSquared\"]]}"
       )
       .unwrap(),
-      "{{2434483, -637931}, 6027586, {210317, 257584}, 983448}"
+      "{{2434483, -637931}, 6027586, {210317, 257584}, 995656}"
     );
     assert_eq!(
       interpret(
@@ -5838,6 +5838,23 @@ mod nonlinear_model_fit {
       )
       .unwrap(),
       "1"
+    );
+  }
+
+  // Nonlinear fits are measured against the uncorrected total sum of
+  // squares (Σ y²), and AdjustedRSquared uses n (not n - 1) degrees of
+  // freedom for that total: R² = 1 - SSE/Σy², adj = 1 - (1 - R²) n/(n - p).
+  #[test]
+  fn r_squared_uses_the_uncorrected_total_sum_of_squares() {
+    assert_eq!(
+      interpret(
+        "fm = NonlinearModelFit[{{1, 2.1}, {2, 3.9}, {3, 6.2}, {4, 7.8}}, \
+         a x^b, {a, b}, x]; \
+         {Round[10^8 fm[\"RSquared\"]], Round[10^8 fm[\"AdjustedRSquared\"]], \
+          Round[10^8 (1 - Total[fm[\"FitResiduals\"]^2]/Total[{2.1, 3.9, 6.2, 7.8}^2])]}"
+      )
+      .unwrap(),
+      "{99934064, 99868127, 99934064}"
     );
   }
 

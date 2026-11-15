@@ -2496,6 +2496,9 @@ fn enumerate_list_sequence_matches(
     min: usize,
     max: Option<usize>,
     head: Option<&'a str>,
+    /// A structural element (`{x__}`, `f[y_]`, a literal) that takes
+    /// exactly one element, matched with the general pattern matcher.
+    single: Option<&'a Expr>,
   }
   // Map a blank_type (1=Blank, 2=BlankSequence, 3=BlankNullSequence) to
   // (min, max).
@@ -2521,6 +2524,7 @@ fn enumerate_list_sequence_matches(
           min,
           max,
           head: head.as_deref(),
+          single: None,
         }
       }
       Expr::FunctionCall {
@@ -2539,18 +2543,29 @@ fn enumerate_list_sequence_matches(
           min,
           max,
           head,
+          single: None,
         }
       }
-      _ => {
-        let (blank_kind, head) = parse_blank_fc(p)?;
-        let (min, max) = bounds(blank_kind)?;
-        Slot {
+      _ => match parse_blank_fc(p) {
+        Some((blank_kind, head)) => {
+          let (min, max) = bounds(blank_kind)?;
+          Slot {
+            name: "",
+            min,
+            max,
+            head,
+            single: None,
+          }
+        }
+        None if is_single_element_pattern(p) => Slot {
           name: "",
-          min,
-          max,
-          head,
-        }
-      }
+          min: 1,
+          max: Some(1),
+          head: None,
+          single: Some(p),
+        },
+        None => return None,
+      },
     };
     slots.push(slot);
   }
@@ -2574,11 +2589,13 @@ fn enumerate_list_sequence_matches(
   // constraints on the consumed elements.
   let mut results: Vec<Vec<(String, Expr)>> = Vec::new();
   let mut counts = vec![0usize; k];
+  let mut single_bindings: Vec<Vec<(String, Expr)>> = vec![Vec::new(); k];
   #[allow(clippy::too_many_arguments)]
   fn recurse(
     idx: usize,
     pos: usize,
     counts: &mut Vec<usize>,
+    single_bindings: &mut Vec<Vec<(String, Expr)>>,
     slots: &[Slot<'_>],
     expr_elems: &[Expr],
     results: &mut Vec<Vec<(String, Expr)>>,
@@ -2588,20 +2605,31 @@ fn enumerate_list_sequence_matches(
       if pos != n {
         return;
       }
-      // Build the binding set from the chosen counts.
+      // Build the binding set from the chosen counts. A name bound by
+      // more than one slot must get the same value from each.
       let mut p = 0;
       let mut bindings: Vec<(String, Expr)> = Vec::new();
       for (i, slot) in slots.iter().enumerate() {
         let len = counts[i];
         let slice = &expr_elems[p..p + len];
         p += len;
-        if !slot.name.is_empty() {
+        let new = if slot.single.is_some() {
+          single_bindings[i].clone()
+        } else if !slot.name.is_empty() {
           let value = if len == 1 {
             slice[0].clone()
           } else {
             unevaluated("Sequence", slice)
           };
-          bindings.push((slot.name.to_string(), value));
+          vec![(slot.name.to_string(), value)]
+        } else {
+          Vec::new()
+        };
+        if !crate::evaluator::pattern_matching::merge_bindings(
+          &mut bindings,
+          new,
+        ) {
+          return;
         }
       }
       results.push(bindings);
@@ -2625,13 +2653,72 @@ fn enumerate_list_sequence_matches(
       {
         continue;
       }
+      if let Some(pattern) = slot.single {
+        match crate::evaluator::pattern_matching::match_pattern(
+          &expr_elems[pos],
+          pattern,
+        ) {
+          Some(b) => single_bindings[idx] = b,
+          None => continue,
+        }
+      }
       counts[idx] = take;
-      recurse(idx + 1, pos + take, counts, slots, expr_elems, results);
+      recurse(
+        idx + 1,
+        pos + take,
+        counts,
+        single_bindings,
+        slots,
+        expr_elems,
+        results,
+      );
     }
     counts[idx] = 0;
   }
-  recurse(0, 0, &mut counts, &slots, expr_elems, &mut results);
+  recurse(
+    0,
+    0,
+    &mut counts,
+    &mut single_bindings,
+    &slots,
+    expr_elems,
+    &mut results,
+  );
   Some(results)
+}
+
+/// Whether a list-pattern element always matches exactly one element of
+/// the list: a structural pattern such as `{x__}` or `f[y_, 1]`, or a
+/// literal. Anything that can stand for a varying number of elements
+/// (`Repeated`, `PatternSequence`, `Optional`, `Alternatives` of such
+/// things, …) or that the enumerator would otherwise misread is excluded.
+fn is_single_element_pattern(p: &Expr) -> bool {
+  match p {
+    Expr::List(_) => true,
+    Expr::FunctionCall { name, .. } => !matches!(
+      name.as_str(),
+      "Pattern"
+        | "Blank"
+        | "BlankSequence"
+        | "BlankNullSequence"
+        | "Repeated"
+        | "RepeatedNull"
+        | "PatternSequence"
+        | "OrderlessPatternSequence"
+        | "Optional"
+        | "Alternatives"
+        | "Condition"
+        | "PatternTest"
+        | "Except"
+        | "Longest"
+        | "Shortest"
+        | "HoldPattern"
+        | "Verbatim"
+        | "KeyValuePattern"
+        | "Sequence"
+    ),
+    _ => !crate::evaluator::pattern_matching::contains_pattern(p),
+  }
 }
 
 /// Parse a blank-like expression into (blank_type, head-constraint).
@@ -3955,6 +4042,94 @@ fn derivative_boxes(expr: &Expr) -> Option<Expr> {
   Some(row_box(parts))
 }
 
+/// The box a notebook shows for an exact `Root[f, k]` object: a light
+/// rounded frame around its value to three significant digits followed by
+/// an ellipsis (`-0.424…`, or `0.341… - 1.16… ⅈ` for a complex root),
+/// interpreting as the `Root` itself. `None` for a `Root` that has no
+/// numeric value.
+fn root_approximation_box(name: &str, args: &[Expr]) -> Option<Expr> {
+  if name != "Root"
+    || !(args.len() == 2 || args.len() == 3)
+    || !matches!(&args[0], Expr::Function { .. })
+    || !matches!(&args[1], Expr::Integer(_))
+  {
+    return None;
+  }
+  let root = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  let part = |f: &str| -> Option<f64> {
+    let value = crate::evaluator::evaluate_expr_to_expr(&call1(
+      f,
+      call1("N", root.clone()),
+    ))
+    .ok()?;
+    match value {
+      Expr::Real(r) if r.is_finite() => Some(r),
+      Expr::Integer(n) => Some(n as f64),
+      _ => None,
+    }
+  };
+  let (re, im) = (part("Re")?, part("Im")?);
+  let approx = |x: f64| format!("{}\u{2026}", three_significant_digits(x));
+  let text = if im == 0.0 {
+    approx(re)
+  } else {
+    let imaginary = format!("{} \u{2148}", approx(im.abs()));
+    match (re == 0.0, im < 0.0) {
+      (true, true) => format!("-{imaginary}"),
+      (true, false) => imaginary,
+      (false, true) => format!("{} - {imaginary}", approx(re)),
+      (false, false) => format!("{} + {imaginary}", approx(re)),
+    }
+  };
+  Some(Expr::FunctionCall {
+    name: "InterpretationBox".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "FrameBox".to_string(),
+        args: vec![
+          Expr::String(text),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("FrameStyle".to_string())),
+            replacement: Box::new(call1("GrayLevel", Expr::Real(0.75))),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("RoundingRadius".to_string())),
+            replacement: Box::new(Expr::Integer(3)),
+          },
+        ]
+        .into(),
+      },
+      root,
+    ]
+    .into(),
+  })
+}
+
+/// `x` rounded to three significant digits, written with the trailing
+/// zeros that keep that many (`-1.35`, `0.424`, `2.00`, `12.3`).
+fn three_significant_digits(x: f64) -> String {
+  if x == 0.0 {
+    return "0.".to_string();
+  }
+  let magnitude = x.abs().log10().floor() as i32;
+  let decimals = 2 - magnitude;
+  if decimals > 0 {
+    let s = format!("{:.*}", decimals as usize, x);
+    // Rounding may carry into a new leading digit (`9.996` -> `10.00`).
+    let rounded: f64 = s.parse().unwrap_or(x);
+    if rounded.abs() >= 10f64.powi(magnitude + 1) && decimals > 1 {
+      return format!("{:.*}", decimals as usize - 1, x);
+    }
+    s
+  } else {
+    let scale = 10f64.powi(-decimals);
+    format!("{}.", (x / scale).round() * scale)
+  }
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // A number format around a `Style` typesets as the style around the
   // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
@@ -4042,6 +4217,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       str_expr("\u{F762}"),
     ]);
   }
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(boxed) = root_approximation_box(name, args)
+  {
+    return boxed;
+  }
   // `RawBoxes[boxes]` is already typeset: wolframscript's
   // `ToBoxes[RawBoxes["("]]` is the bare `"("` box, so a Demonstration's
   // `Row[{RawBoxes["("], x, RawBoxes[")"]}]` shows plain parentheses.
@@ -4107,6 +4287,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         Expr::String(text)
       }
+    }
+    // StandardForm writes the named constants as their glyphs
+    // (`ToBoxes[Pi]` is `"\[Pi]"`), so a typeset `7 Pi/10` shows `π`.
+    // `EulerGamma` and `GoldenRatio` keep their names in StandardForm.
+    Expr::Identifier(s) | Expr::Constant(s)
+      if matches!(s.as_str(), "Pi" | "E" | "I" | "Infinity" | "Degree") =>
+    {
+      Expr::String(tf_symbol(s))
     }
     Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
     Expr::String(s) => Expr::String(format!("\"{s}\"")),
@@ -4525,6 +4713,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       call(
         "SubscriptBox",
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Subsuperscript" && args.len() == 3 =>
+    {
+      call(
+        "SubsuperscriptBox",
+        args.iter().map(expr_to_box_form).collect(),
       )
     }
     // `Overscript[a, b]` / `Underscript[a, b]` place `b` as an annotation
@@ -7369,6 +7565,9 @@ fn tf_series_data(args: &[Expr]) -> Option<Expr> {
 }
 
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
+  if let Some(boxed) = root_approximation_box(name, args) {
+    return boxed;
+  }
   match name {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
     "RawBoxes" if args.len() == 1 => args[0].clone(),

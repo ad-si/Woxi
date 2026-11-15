@@ -848,6 +848,14 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "PolyhedronOperations`" {
+    // Its exports, so a bare `Truncate` read after loading is
+    // `PolyhedronOperations`Truncate` (the dispatch entry Woxi implements).
+    for name in ["Geodesate", "OpenTruncate", "Stellate", "Truncate"] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "Polytopes`" {
     // Its functions are dispatch entries on the names it exports, active
     // while it is on `$ContextPath`; the symbols are created so a bare
@@ -2436,7 +2444,7 @@ fn evaluate_function_call_ast_inner(
       },
       None => crate::functions::polyhedron_operations::DEFAULT_TRUNCATE_RATIO,
     };
-    if !(ratio > 0.0 && ratio < 0.5) {
+    if !(0.0..0.5).contains(&ratio) {
       return Ok(unevaluated(name, args));
     }
     return Ok(crate::functions::polyhedron_operations::truncate(
@@ -2544,6 +2552,9 @@ fn evaluate_function_call_ast_inner(
     }
     "ChemicalData" => {
       return crate::functions::chemical_data::chemical_data_ast(args);
+    }
+    "ProteinData" => {
+      return crate::functions::protein_data::protein_data_ast(args);
     }
     "GraphData" => {
       return crate::functions::graph_data::graph_data_ast(args);
