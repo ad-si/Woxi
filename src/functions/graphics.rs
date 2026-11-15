@@ -20683,7 +20683,9 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
 /// [`styled_axis_label`] for an `AxesLabel` entry, which may also be a
 /// stacked-fraction picture (see [`fraction_label_svg`]).
 pub fn axes_label_entry(e: &Expr) -> Option<String> {
-  fraction_label_svg(e, LABEL_FONT).or_else(|| styled_axis_label(e))
+  inline_fraction_string_svg(e)
+    .or_else(|| fraction_label_svg(e, LABEL_FONT))
+    .or_else(|| styled_axis_label(e))
 }
 
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
@@ -30691,12 +30693,12 @@ pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
 /// or a `DisplayForm`/`RawBoxes` box tree holding one, typeset through the
 /// box layout so the numerator stacks over the denominator. `None` for any other item, which keeps its text rendering.
 fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
-  let (content, size) = match expr {
+  let (content, size, color) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
       let style = extract_cell_style(expr);
-      (style.content, style.font_size.unwrap_or(14.0))
+      (style.content, style.font_size.unwrap_or(14.0), style.color)
     }
-    other => (other, 14.0),
+    other => (other, 14.0, None),
   };
   // The boxes are spelled either as inline `\!\(\*…\)` notation in a
   // string or as a box tree shown through `DisplayForm`/`RawBoxes`
@@ -30716,7 +30718,10 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
-  Some(layout_to_svg(&layout, theme().text_primary))
+  // A `Style[…, color]` wrapper paints the whole fraction, bar included.
+  let fill =
+    color.map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
+  Some(layout_to_svg(&layout, &fill))
 }
 
 /// Whether `expr` — a label, possibly a `Row`/`Column` layout under `Style`
@@ -40895,7 +40900,14 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);
-      svgs.push(None);
+      // A bare arithmetic choice (`{1/2, 1, 2}`, `{Pi/4, Pi/2}`) is shown
+      // the way the FrontEnd typesets the value — a stacked fraction —
+      // just like an arithmetic `value -> label` rule label.
+      svgs.push(if is_arithmetic_label(item) {
+        discrete_choice_label_svg(item)
+      } else {
+        None
+      });
     }
   }
   (values, labels, svgs, label_runs)
