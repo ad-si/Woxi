@@ -7803,8 +7803,8 @@ mod plot3d {
         })
         .collect();
       assert!(!xs.is_empty(), "{prims} must draw");
-      let max = xs.iter().cloned().fold(f64::MIN, f64::max);
-      let min = xs.iter().cloned().fold(f64::MAX, f64::min);
+      let max = xs.iter().copied().fold(f64::MIN, f64::max);
+      let min = xs.iter().copied().fold(f64::MAX, f64::min);
       max - min
     }
 
@@ -57969,7 +57969,7 @@ mod plot_label_number_form_held_assignment {
        NumberForm[HoldForm[w = g[c x]], {3, 1}]]]",
     );
     assert!(svg.contains(">w = Sin[-1.3 x]</text>"), "{svg}");
-    assert!(!svg.contains("*"), "{svg}");
+    assert!(!svg.contains('*'), "{svg}");
   }
 }
 
