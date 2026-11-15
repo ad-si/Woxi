@@ -834,8 +834,16 @@ impl BBox {
 
   /// Pad each axis by `frac` of its span; with `uniform` both axes get
   /// `frac` of the horizontal span, i.e. the same margin in pixels all
-  /// round.
-  fn with_padding_shaped(self, frac: f64, uniform: bool) -> Self {
+  /// round. An explicit `aspect` (height / width of the drawing area)
+  /// stretches the axes independently, so the vertical margin that keeps
+  /// the pixel margins equal is worked out from the picture's shape
+  /// instead of the horizontal data span.
+  fn with_padding_shaped(
+    self,
+    frac: f64,
+    uniform: bool,
+    aspect: Option<f64>,
+  ) -> Self {
     if self.is_empty() {
       return self;
     }
@@ -870,6 +878,19 @@ impl BBox {
       // `Graphics[Rectangle[{0, 0}, {1, 3}]]` is padded by 1/48 across and
       // 1/50 up and down.
       dy = dx * 0.96;
+      if let Some(a) = aspect.filter(|a| a.is_finite() && *a > 0.0)
+        && dx >= 1e-10
+      {
+        // The same pixel margin as above, as a share `k` of the drawing
+        // area's height: the margin is `0.96 frac / (1 + 2 frac)` of the
+        // padded width, and the height is `a` times that width. The
+        // vertical span then grows to `y_span / (1 - 2 k)`.
+        let k = 0.96 * frac / (1.0 + 2.0 * frac) / a;
+        let y_span = bb.y_max - bb.y_min;
+        if k < 0.5 && y_span >= 1e-10 {
+          dy = k * y_span / (1.0 - 2.0 * k);
+        }
+      }
     }
     // Ensure non-zero range
     let dx = if dx < 1e-10 { 0.5 } else { dx };
@@ -14587,7 +14608,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Default: a margin of 2% of the picture's width all round (1/48 of
     // the horizontal span on each side, as in Wolfram); an axis
     // pinned by an explicit `PlotRange` is drawn exactly, with no padding.
-    bb = bb.with_padding_shaped(1.0 / 48.0, true);
+    bb = bb.with_padding_shaped(1.0 / 48.0, true, aspect_ratio);
     if let Some((lo, hi)) = plot_range_x {
       bb.x_min = lo;
       bb.x_max = hi;
