@@ -41392,6 +41392,14 @@ fn control_group_items(spec: &Expr) -> Option<Vec<Expr>> {
       // `Column` grouping further controls (the Demonstrations idiom of a
       // custom Grid-based control panel), not just a bare `Control`/`Button`.
       Expr::List(row) if name == "Grid" => {
+        let cells: Vec<Expr> = row.iter().cloned().collect();
+        if let Some(cell) = grid_row_captioned_control(&cells) {
+          match control_group_items(&cell) {
+            Some(nested) => out.extend(nested),
+            None => out.push(layout_control_leaf(&cell)),
+          }
+          continue;
+        }
         for cell in row {
           // A cell like `Control[…] Spacer[8]` (implicit product) lists
           // each factor on its own, as in a `Row` item.
@@ -41552,6 +41560,83 @@ pub(crate) fn tabview_pane_parts(item: &Expr) -> (Option<Expr>, &Expr, &Expr) {
 /// A leaf item of a control layout as the control it stands for: a bare
 /// `Dynamic[v]` front-end control, or a `If[cond, Identity, Invisible]@
 /// Control[…]` conditionally shown control, else the item itself.
+/// A custom control panel laid out as a `Grid` puts each caption in its
+/// own cell beside the control it names: `{"count", Control[{{n, 18, ""},
+/// 1, 200, 1}]}`. Wolfram draws that row as one line, the caption to the
+/// left of the slider, and the control's own `""` label only keeps it from
+/// repeating the caption. So when a two-cell row pairs a caption (a cell
+/// with no control and something to show) with controls labeled `""`,
+/// return the control cell with the caption moved into those labels.
+/// A `PaneSelector` cell gets the caption on every pane's control, since
+/// whichever pane shows sits beside the same caption cell. `None` when the
+/// row has any other shape, so it is flattened cell by cell as before.
+fn grid_row_captioned_control(row: &[Expr]) -> Option<Expr> {
+  let [caption, cell] = row else {
+    return None;
+  };
+  if matches!(caption, Expr::String(s) if s.trim().is_empty())
+    || expr_contains_call(caption, &["Control", "Button"])
+  {
+    return None;
+  }
+  relabel_unlabeled_controls(cell, caption)
+}
+
+/// `cell` with the `""` label of each of its `Control[…]` specs replaced by
+/// `caption` (see [`grid_row_captioned_control`]). `None` when `cell` is not
+/// a `Control[…]` (or a `PaneSelector` of them), or when any of its
+/// controls carries a label of its own.
+fn relabel_unlabeled_controls(cell: &Expr, caption: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = cell else {
+    return None;
+  };
+  match name.as_str() {
+    "Control" => {
+      let Some(Expr::List(spec)) = args.first() else {
+        return None;
+      };
+      let Some(Expr::List(head)) = spec.first() else {
+        return None;
+      };
+      if !matches!(head.get(2), Some(Expr::String(s)) if s.is_empty()) {
+        return None;
+      }
+      let mut head = head.clone();
+      *head.get_mut(2)? = caption.clone();
+      let mut spec = spec.clone();
+      *spec.get_mut(0)? = Expr::List(head);
+      let mut args = args.clone();
+      *args.get_mut(0)? = Expr::List(spec);
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args,
+      })
+    }
+    "PaneSelector" => {
+      let Some(Expr::List(panes)) = args.first() else {
+        return None;
+      };
+      let mut panes = panes.clone();
+      for pane in &mut panes {
+        match pane {
+          Expr::Rule { replacement, .. }
+          | Expr::RuleDelayed { replacement, .. } => {
+            **replacement = relabel_unlabeled_controls(replacement, caption)?;
+          }
+          _ => return None,
+        }
+      }
+      let mut args = args.clone();
+      *args.get_mut(0)? = Expr::List(panes);
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args,
+      })
+    }
+    _ => None,
+  }
+}
+
 fn layout_control_leaf(item: &Expr) -> Expr {
   dynamic_control_spec(item)
     .or_else(|| visibility_switched_control(item).map(|(control, _)| control))
@@ -51468,6 +51553,71 @@ mod manipulate_dynamic_control_list_tests {
         ("big".to_string(), "{r = 5}".to_string()),
       ]
     );
+  }
+
+  /// A custom `Grid` control panel captions each control from the cell
+  /// beside it (`{"count", Control[{{n, 5, ""}, 1, 9, 1}]}`), and Wolfram
+  /// draws that row as one line. Regression: every cell became its own
+  /// panel row, so the caption sat above its slider as a separate heading.
+  #[test]
+  fn grid_row_caption_cell_labels_the_unlabeled_control_beside_it() {
+    let s = spec(
+      r#"Manipulate[Graphics[Circle[{0, 0}, r]], Grid[{ \
+           {Style["shape", Bold], ""}, \
+           {"count", Control[{{n, 5, ""}, 1, 9, 1}]}, \
+           {Style["size", 9], Control[{{r, 1, ""}, 0.5, 2}]}, \
+           {Dynamic[If[sq, "edge", "radius"]], PaneSelector[{ \
+             True -> Control[{{e, 1, ""}, 0, 2}], \
+             False -> Control[{{q, 1, ""}, 0, 3}]}, Dynamic[sq]]}, \
+           {"kept", Control[{{k, 0, "own"}, 0, 1}]} \
+         }]]"#,
+    );
+    let summary: Vec<String> = s
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Continuous { name, label, .. } => {
+          format!("{name}:{label}")
+        }
+        ManipulateControl::Heading { label, .. } => format!("heading:{label}"),
+        other => format!("other:{}", other.name()),
+      })
+      .collect();
+    assert_eq!(
+      summary,
+      vec![
+        // A bold section caption with an empty neighbor stays a heading.
+        "heading:shape",
+        "heading:",
+        "n:count",
+        "r:size",
+        // Both panes' controls take the live caption beside the selector
+        // (re-evaluated against the bindings via `dynamic_labels`).
+        "e:If[sq, edge, radius]",
+        "q:If[sq, edge, radius]",
+        // A control with a label of its own keeps both captions.
+        "heading:kept",
+        "k:own",
+      ]
+    );
+    let dynamic: Vec<&str> =
+      s.dynamic_labels.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(dynamic, vec!["e", "q"]);
+    assert!(
+      s.dynamic_labels
+        .iter()
+        .all(|(_, code)| code == r#"If[sq, "edge", "radius"]"#),
+      "{:?}",
+      s.dynamic_labels
+    );
+    // The styled caption keeps its size on the control's label.
+    let r_runs = s.controls.iter().find_map(|c| match c {
+      ManipulateControl::Continuous {
+        name, label_runs, ..
+      } if name == "r" => Some(label_runs.clone()),
+      _ => None,
+    });
+    assert_eq!(r_runs.unwrap()[0].size, Some(9.0));
   }
 
   /// A `Bookmarks` menu with no matching option is simply absent —
