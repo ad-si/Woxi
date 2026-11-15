@@ -29,6 +29,19 @@ pub(crate) fn point_radius(point_size: f64, svg_w: f64) -> f64 {
   r.max(MIN_POINT_RADIUS)
 }
 
+/// Scale every relative (non-negative) point size by `factor`, leaving
+/// absolute sizes (stored negative) alone.
+fn rescale_relative_point_sizes(primitives: &mut [Primitive], factor: f64) {
+  for prim in primitives {
+    if let Primitive::PointSingle { style, .. }
+    | Primitive::PointMulti { style, .. } = prim
+      && style.point_size > 0.0
+    {
+      style.point_size *= factor;
+    }
+  }
+}
+
 /// Half of the one-pixel minimum diameter of a drawn point.
 pub(crate) const MIN_POINT_RADIUS: f64 = 0.5;
 
@@ -310,7 +323,7 @@ struct StyleState {
   face_opacity: Option<f64>,
   opacity: f64,
   thickness: f64, // fraction of plot width; negative = absolute pixels
-  point_size: f64, // fraction of plot width, default ~0.012
+  point_size: f64, // fraction of the graphic's width, default 0.008
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
   halo: Option<Halo>, // Haloing[...] contrasting outline behind primitives
@@ -644,7 +657,10 @@ impl Default for StyleState {
       // default is absolute (the negative encoding), not a fraction of the
       // width the way an explicit `Thickness` is.
       thickness: -1.0,
-      point_size: 0.012,
+      // Wolfram's default 2-D point is `PointSize[0.008]`: a dot 0.008 of
+      // the graphic's width across (measured from a stored front-end
+      // snapshot of a 400-wide graphic, whose dots are 3.2 pixels across).
+      point_size: 0.008,
       dashing: None,
       edge_form: None,
       halo: None,
@@ -15168,6 +15184,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.push_str(&format!("<g clip-path=\"url(#{clip_id})\">\n"));
   } else {
     svg.push_str("<g>\n");
+  }
+  // A relative `PointSize` is a fraction of the width of the graphic
+  // itself. Under `ImageSize -> {w, h}` a graphic of another shape is
+  // letterboxed: the range is widened to the image's shape, but the
+  // graphic only spans the requested part of it (e.g. a square
+  // `PlotRange` in a 500 × 400 image is 400 wide).
+  let graphic_share = if requested_bb.width() > 0.0 && bb.width() > 0.0 {
+    (requested_bb.width() / bb.width()).min(1.0)
+  } else {
+    1.0
+  };
+  if graphic_share < 1.0 {
+    rescale_relative_point_sizes(&mut primitives, graphic_share);
   }
   for (prim_index, prim) in primitives.iter().enumerate() {
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
