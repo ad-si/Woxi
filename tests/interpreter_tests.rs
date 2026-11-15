@@ -4138,6 +4138,59 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_inset_box_draws_its_cell_and_row_box_text() {
+    // Regression: `InsetBox[…]` (the box form of `Inset`, as a hand-drawn
+    // diagram stores its labels) was dropped from the picture.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Blue, \
+         InsetBox[Cell[\"pump\", \"Text\", GeneratedCell -> False], {0.2, 0.3}, {-1, 0}], \
+         InsetBox[RowBox[{\"Q\", Cell[\"\"]}], {0.6, 0.6}], \
+         InsetBox[SubscriptBox[\"T\", \"in\"], {0.8, 0.2}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">pump<"), "Cell label missing: {svg}");
+    assert!(!svg.contains(">Text<"), "Cell style drawn as text: {svg}");
+    assert!(svg.contains(">Q<"), "RowBox label missing: {svg}");
+    assert!(svg.contains("in"), "SubscriptBox label missing: {svg}");
+    assert!(!svg.contains("InsetBox"), "box source leaked: {svg}");
+  }
+
+  #[test]
+  fn test_graphics_text_inset_size_is_not_a_direction() {
+    // Regression: the 4th argument of `Inset[text, pos, opos, size]` was
+    // passed on as `Text`'s direction, turning the label by the size
+    // vector; the label's direction is the first vector of the 5th
+    // argument instead.
+    clear_state();
+    let sized = interpret(
+      "ExportString[Graphics[{Inset[\"abc\", {0, 0}, Center, {3, 1}]}, \
+         PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    let plain = interpret(
+      "ExportString[Graphics[{Inset[\"abc\", {0, 0}, Center]}, \
+         PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!sized.contains("rotate("), "size turned the label: {sized}");
+    assert_eq!(sized, plain);
+
+    let turned = interpret(
+      "ExportString[Graphics[{Inset[\"abc\", {0, 0}, Center, Automatic, \
+         {{0, 1}, {-1, 0}}]}, PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    let text_turned = interpret(
+      "ExportString[Graphics[{Text[\"abc\", {0, 0}, {0, 0}, {0, 1}]}, \
+         PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(turned, text_turned);
+  }
+
+  #[test]
   fn test_graphics_inset_text_grid_and_column_labels() {
     // Regression: `Inset[Style[Grid[{{"…"}}, opts], size], pos]` (how a
     // Demonstration captions a diagram) drew the literal `Grid[{{…}}, …]`
