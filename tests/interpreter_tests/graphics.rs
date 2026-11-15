@@ -607,6 +607,36 @@ mod graphics {
     }
 
     #[test]
+    fn point_default_size_is_0_008_of_width() {
+      // `PointSize[0.008]` is Wolfram's 2-D default: at the default 360
+      // image (359 drawable pixels) a dot is 2.87 pixels across.
+      let svg = export_svg("Graphics[Point[{0, 0}]]");
+      assert!(svg.contains("r=\"1.44\""), "{svg}");
+    }
+
+    #[test]
+    fn point_size_follows_letterboxed_graphic_width() {
+      // A square range in a 500 × 400 image is drawn 400 wide; a relative
+      // point size is a fraction of that width, not of the image's.
+      let svg = export_svg(
+        "Graphics[Point[{{0, 0}, {1, 1}}], PlotRange -> {{0, 1}, {0, 1}}, \
+         ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"1.60\""), "{svg}");
+      let svg = export_svg(
+        "Graphics[{PointSize[0.02], Point[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"3.99\""), "{svg}");
+      // Absolute sizes do not depend on the graphic's width.
+      let svg = export_svg(
+        "Graphics[{AbsolutePointSize[6], Point[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"3.00\""), "{svg}");
+    }
+
+    #[test]
     fn point_multi_vertex_colors() {
       let svg = export_svg(
         "Graphics[{PointSize[0.03], Point[{{0, 0}, {1, 1}}, \
@@ -4188,6 +4218,23 @@ mod graphics {
           (28.0..39.0).contains(&cx),
           "expected the point ~1/3 into the image (padded {{-1,2}} span), \
            cx={cx}"
+        );
+      }
+
+      // An explicit `PlotRange -> {amin, amax}` sets the gray scale of an
+      // `ArrayPlot`: white at `amin`, black at `amax` (here 1 is mid-gray).
+      #[test]
+      fn array_plot_value_range_sets_the_gray_scale() {
+        assert_eq!(
+          interpret("First[ArrayPlot[{{0, 1}, {1, 2}}, PlotRange -> {0, 2}]]")
+            .unwrap(),
+          "Raster[{{0.5, 0.}, {1., 0.5}}, {{0, 0}, {2, 2}}, {0, 1}]"
+        );
+        // A single bound is the top of a range starting at 0.
+        assert_eq!(
+          interpret("First[ArrayPlot[{{0, 1}, {1, 4}}, PlotRange -> 2]]")
+            .unwrap(),
+          "Raster[{{0.5, 1}, {1., 0.5}}, {{0, 0}, {2, 2}}, {0, 1}]"
         );
       }
 
@@ -21822,6 +21869,40 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// are bisected on the predicate rather than left on the sample grid,
     /// and the corner where the two lines meet (inside a grid cell) is
     /// restored instead of beveled.
+    /// A plot binds its variables like `Block`, so a function whose own
+    /// parameters share their names keeps them. Regression: sampling a
+    /// saved `CompiledFunction[…]` whose embedded `Function[{x, y}, …]`
+    /// reused the plot variables rewrote it to `Function[{1., y}, …]`,
+    /// and the region came out empty.
+    #[test]
+    fn region_plot_keeps_function_parameters_named_like_plot_variables() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "cf = CompiledFunction[{11, 15., 5470}, {_Real, _Real}, \
+           {{3, 0, 0}, {3, 0, 1}, {3, 0, 2}}, {}, {0, 0, 3, 0, 0}, {{1}}, \
+           Function[{x, y}, x^2 + y^2], Evaluate]; \
+           Count[RegionPlot[cf[x, y] < 1, {x, -2, 2}, {y, -2, 2}], \
+           _Polygon, Infinity]"
+        )
+        .unwrap(),
+        "1"
+      );
+      // The inner function's parameter shadows the plot variable while a
+      // free occurrence of the other plot variable is still substituted.
+      assert_eq!(
+        interpret(
+          "cg = CompiledFunction[{11, 15., 5470}, {_Real, _Real}, \
+           {{3, 0, 0}, {3, 0, 1}, {3, 0, 2}}, {}, {0, 0, 3, 0, 0}, {{1}}, \
+           Function[{x, t}, x - t], Evaluate]; \
+           Cases[RegionPlot[cg[x, 0] < cg[y, 0], {x, -1, 1}, {y, -1, 1}][[1]], \
+           Polygon[p_] :> Length[p], Infinity] =!= {}"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     #[test]
     fn region_plot_linear_region_is_exact() {
       clear_state();

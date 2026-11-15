@@ -29,6 +29,19 @@ pub(crate) fn point_radius(point_size: f64, svg_w: f64) -> f64 {
   r.max(MIN_POINT_RADIUS)
 }
 
+/// Scale every relative (non-negative) point size by `factor`, leaving
+/// absolute sizes (stored negative) alone.
+fn rescale_relative_point_sizes(primitives: &mut [Primitive], factor: f64) {
+  for prim in primitives {
+    if let Primitive::PointSingle { style, .. }
+    | Primitive::PointMulti { style, .. } = prim
+      && style.point_size > 0.0
+    {
+      style.point_size *= factor;
+    }
+  }
+}
+
 /// Half of the one-pixel minimum diameter of a drawn point.
 pub(crate) const MIN_POINT_RADIUS: f64 = 0.5;
 
@@ -300,6 +313,10 @@ struct StyleState {
   /// The `Texture[…]` directive in force, if any.
   texture: Option<std::sync::Arc<TextureFill>>,
   color: Color,
+  /// Whether a color directive has set `color`, as opposed to it still
+  /// being the default black. Primitives with a default color of their own
+  /// (the `MultivariateStatistics`` ellipsoid) only yield to an explicit one.
+  color_set: bool,
   /// `FaceForm[…]` sets only this — the fill color of area primitives
   /// (Disk, Polygon, Rectangle, …) — leaving `color` (which Text, Line,
   /// Point and everything else read) untouched. `None` means those
@@ -310,7 +327,7 @@ struct StyleState {
   face_opacity: Option<f64>,
   opacity: f64,
   thickness: f64, // fraction of plot width; negative = absolute pixels
-  point_size: f64, // fraction of plot width, default ~0.012
+  point_size: f64, // fraction of the graphic's width, default 0.008
   dashing: Option<Vec<f64>>, // dash lengths in coordinate-space fractions
   edge_form: Option<EdgeForm>,
   halo: Option<Halo>, // Haloing[...] contrasting outline behind primitives
@@ -636,6 +653,7 @@ impl Default for StyleState {
     Self {
       texture: None,
       color: BLACK,
+      color_set: false,
       face_color: None,
       face_opacity: None,
       opacity: 1.0,
@@ -644,7 +662,10 @@ impl Default for StyleState {
       // default is absolute (the negative encoding), not a fraction of the
       // width the way an explicit `Thickness` is.
       thickness: -1.0,
-      point_size: 0.012,
+      // Wolfram's default 2-D point is `PointSize[0.008]`: a dot 0.008 of
+      // the graphic's width across (measured from a stored front-end
+      // snapshot of a 400-wide graphic, whose dots are 3.2 pixels across).
+      point_size: 0.008,
       dashing: None,
       edge_form: None,
       halo: None,
@@ -2190,6 +2211,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
   // Named color
   if let Some(color) = parse_color(expr) {
     style.color = color;
+    style.color_set = true;
     return true;
   }
 
@@ -2246,6 +2268,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
             && let Some(c) = parse_color(&args[1])
           {
             style.color = c;
+            style.color_set = true;
           }
         }
         true
@@ -3285,7 +3308,22 @@ fn collect_primitives(
         "Sphere" | "Ball" => {
           parse_sphere(name == "Ball", args, style, prims);
         }
-        "Ellipsoid" if args.len() == 2 || args.len() == 3 => {
+        // The `MultivariateStatistics`` package's own `Ellipsoid` (which
+        // `EllipsoidQuantile` returns, and which shadows the built-in once
+        // the package is loaded) draws as the ellipse's outline. Its
+        // `Ellipsoid[c, radii, directions]` form exists only there.
+        "Ellipsoid"
+          if args.len() == 3
+            || (args.len() == 2
+              && matches!(&args[1], Expr::List(r)
+                if r.iter().all(|e| !matches!(e, Expr::List(_))))
+              && crate::packages_list()
+                .iter()
+                .any(|p| p == "MultivariateStatistics`")) =>
+        {
+          parse_package_ellipsoid(args, style, prims);
+        }
+        "Ellipsoid" if args.len() == 2 => {
           parse_ellipsoid(args, style, prims);
         }
         // A fitted model's parameter confidence region, `ParameterEllipsoid[
@@ -4421,44 +4459,6 @@ fn parse_ellipsoid(
   let Expr::List(second) = &args[1] else {
     return;
   };
-  // `Ellipsoid[c, {r1, r2}, {d1, d2}]`: semi-axes r1, r2 along the
-  // directions d1, d2.
-  if args.len() == 3 {
-    let radii: Option<Vec<f64>> = second.iter().map(expr_to_f64).collect();
-    let directions: Option<Vec<(f64, f64)>> = match &args[2] {
-      Expr::List(dirs) => dirs.iter().map(expr_to_point).collect(),
-      _ => None,
-    };
-    let (Some(radii), Some(dirs)) = (radii, directions) else {
-      return;
-    };
-    if radii.len() != 2 || dirs.len() != 2 {
-      return;
-    }
-    let unit = |(x, y): (f64, f64)| {
-      let n = x.hypot(y);
-      if n > 0.0 { (x / n, y / n) } else { (x, y) }
-    };
-    let (u, v) = (unit(dirs[0]), unit(dirs[1]));
-    const STEPS: usize = 120;
-    let points = (0..STEPS)
-      .map(|i| {
-        let t = std::f64::consts::TAU * i as f64 / STEPS as f64;
-        let (s, c) = t.sin_cos();
-        (
-          cx + radii[0] * c * u.0 + radii[1] * s * v.0,
-          cy + radii[0] * c * u.1 + radii[1] * s * v.1,
-        )
-      })
-      .collect();
-    prims.push(Primitive::PolygonPrim {
-      points,
-      holes: Vec::new(),
-      vertex_colors: None,
-      style: style.clone(),
-    });
-    return;
-  }
   // Semi-axes: an axis-aligned ellipse is exactly a `Disk`.
   if second.len() == 2 && second.iter().all(|e| !matches!(e, Expr::List(_))) {
     if let (Some(rx), Some(ry)) =
@@ -4508,6 +4508,71 @@ fn parse_ellipsoid(
     holes: Vec::new(),
     vertex_colors: None,
     style: style.clone(),
+  });
+}
+
+/// The color the `MultivariateStatistics`` package outlines its ellipsoids
+/// in unless a color directive says otherwise: the first default plot color.
+const PACKAGE_ELLIPSOID_COLOR: Color = Color {
+  r: 0.368417,
+  g: 0.506779,
+  b: 0.709798,
+  a: 1.0,
+};
+
+/// The `MultivariateStatistics`` package's `Ellipsoid[c, {r1, r2}]` and
+/// `Ellipsoid[c, {r1, r2}, {d1, d2}]` (semi-axes r1, r2 along the directions
+/// d1, d2; axis-aligned without them) inside a two-dimensional `Graphics`:
+/// the closed outline of the ellipse. Other dimensions draw nothing here.
+fn parse_package_ellipsoid(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let Some((cx, cy)) = expr_to_point(&args[0]) else {
+    return;
+  };
+  let radii: Option<Vec<f64>> = match &args[1] {
+    Expr::List(items) => items.iter().map(expr_to_f64).collect(),
+    _ => None,
+  };
+  let Some(radii) = radii.filter(|r| r.len() == 2) else {
+    return;
+  };
+  let dirs: Vec<(f64, f64)> = match args.get(2) {
+    Some(Expr::List(dirs)) => {
+      match dirs.iter().map(expr_to_point).collect::<Option<Vec<_>>>() {
+        Some(d) if d.len() == 2 => d,
+        _ => return,
+      }
+    }
+    Some(_) => return,
+    None => vec![(1.0, 0.0), (0.0, 1.0)],
+  };
+  let unit = |(x, y): (f64, f64)| {
+    let n = x.hypot(y);
+    if n > 0.0 { (x / n, y / n) } else { (x, y) }
+  };
+  let (u, v) = (unit(dirs[0]), unit(dirs[1]));
+  const STEPS: usize = 120;
+  let points = (0..=STEPS)
+    .map(|i| {
+      let t = std::f64::consts::TAU * (i % STEPS) as f64 / STEPS as f64;
+      let (s, c) = t.sin_cos();
+      (
+        cx + radii[0] * c * u.0 + radii[1] * s * v.0,
+        cy + radii[0] * c * u.1 + radii[1] * s * v.1,
+      )
+    })
+    .collect();
+  let mut style = style.clone();
+  if !style.color_set {
+    style.color = PACKAGE_ELLIPSOID_COLOR;
+  }
+  prims.push(Primitive::Line {
+    segments: vec![points],
+    vertex_colors: None,
+    style,
   });
 }
 
@@ -14764,6 +14829,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if frame {
     ticks_x = TickSpec::None;
     ticks_y = TickSpec::None;
+  } else {
+    // `FrameLabel` captions the frame's edges; without a frame there is
+    // nothing to caption, so the labels are not drawn.
+    frame_label = None;
   }
   // Only an edge that is drawn can carry tick marks or labels.
   for (mode, &drawn) in frame_tick_modes.iter_mut().zip(&frame_edges) {
@@ -15209,6 +15278,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg.push_str(&format!("<g clip-path=\"url(#{clip_id})\">\n"));
   } else {
     svg.push_str("<g>\n");
+  }
+  // A relative `PointSize` is a fraction of the width of the graphic
+  // itself. Under `ImageSize -> {w, h}` a graphic of another shape is
+  // letterboxed: the range is widened to the image's shape, but the
+  // graphic only spans the requested part of it (e.g. a square
+  // `PlotRange` in a 500 × 400 image is 400 wide).
+  let graphic_share = if requested_bb.width() > 0.0 && bb.width() > 0.0 {
+    (requested_bb.width() / bb.width()).min(1.0)
+  } else {
+    1.0
+  };
+  if graphic_share < 1.0 {
+    rescale_relative_point_sizes(&mut primitives, graphic_share);
   }
   for (prim_index, prim) in primitives.iter().enumerate() {
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
@@ -15869,6 +15951,15 @@ fn sqrt_radical(
 impl BoxLayout {
   /// Create a layout for a simple text atom.
   fn text(s: &str, font_size: f64) -> Self {
+    Self::text_with(s, font_size, true)
+  }
+
+  /// A string literal's text: it is set upright, never as a math variable.
+  fn literal_text(s: &str, font_size: f64) -> Self {
+    Self::text_with(s, font_size, false)
+  }
+
+  fn text_with(s: &str, font_size: f64, math_italic: bool) -> Self {
     let ch = font_size * MONO_ADVANCE; // monospace char advance
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
@@ -16081,7 +16172,7 @@ impl BoxLayout {
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
     // slanted), so surrounding layout is unaffected.
-    let style_attr = if is_math_italic_atom(s) {
+    let style_attr = if math_italic && is_math_italic_atom(s) {
       " font-style=\"italic\""
     } else {
       ""
@@ -16179,11 +16270,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     // A string box is stored as its quoted source but drawn without quotes.
     Expr::String(s) => {
       let s = strip_precision_marker(s);
-      let unquoted = s
-        .strip_prefix('"')
-        .and_then(|rest| rest.strip_suffix('"'))
-        .unwrap_or(s);
-      BoxLayout::text(unquoted, font_size)
+      // A quoted string is a literal (`"A"` in `Row[{x, "A"}]`), which is
+      // drawn upright rather than as an italic math variable.
+      match s.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) {
+        Some(unquoted) => BoxLayout::literal_text(unquoted, font_size),
+        None => BoxLayout::text(s, font_size),
+      }
     }
     Expr::Identifier(s) => {
       BoxLayout::text(strip_precision_marker(s), font_size)
@@ -16212,10 +16304,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             Expr::String(s)
               if s.len() >= 2 && s.starts_with('"') && s.ends_with('"') =>
             {
-              crate::syntax::string_to_expr(s)
-                .ok()
-                .filter(|e| matches!(e, Expr::String(_)))
-                .unwrap_or_else(|| str_expr(&s[1..s.len() - 1]))
+              // Keep the part quoted, so it is still drawn as a literal.
+              let text = match crate::syntax::string_to_expr(s) {
+                Ok(Expr::String(ref t)) => t.clone(),
+                _ => s[1..s.len() - 1].to_string(),
+              };
+              str_expr(&format!("\"{text}\""))
             }
             other => other.clone(),
           })
@@ -16662,8 +16756,33 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let inner_h = content.height + pad * 2.0;
         let w = inner_w + margin * 2.0;
         let h = inner_h + margin * 2.0;
+        // `FrameStyle -> color` and `RoundingRadius -> r` options.
+        let mut stroke = "currentColor".to_string();
+        let mut radius = 0.0;
+        for opt in &args[1..] {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = opt
+            && let Expr::Identifier(key) = pattern.as_ref()
+          {
+            match key.as_str() {
+              "FrameStyle" => {
+                if let Some(color) = parse_color(replacement) {
+                  stroke = color.to_svg_rgb();
+                }
+              }
+              "RoundingRadius" => {
+                if let Some(r) = try_eval_to_f64(replacement) {
+                  radius = r.max(0.0);
+                }
+              }
+              _ => {}
+            }
+          }
+        }
         let elements = format!(
-          "<rect x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{stroke_w}\"/>\
+          "<rect x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\" rx=\"{radius:.1}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w}\"/>\
            {}",
           content.translate(margin + pad, margin + pad),
         );
@@ -18256,6 +18375,21 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
   // Power → superscript (handles both BinaryOp and FunctionCall forms)
   if let Some((base, exp)) = as_power(expr) {
+    // A power of a one-index subscript (`Subscript[x, 1]^k`) typesets as a
+    // `SubsuperscriptBox`: the exponent stacks over the index.
+    if let Expr::FunctionCall { name, args } = base
+      && name == "Subscript"
+      && args.len() == 2
+    {
+      return format!(
+        "{}{}",
+        expr_to_svg_markup(&args[0]),
+        stacked_scripts_markup(
+          &expr_to_svg_markup(&args[1]),
+          &expr_to_svg_markup(exp),
+        ),
+      );
+    }
     let base_markup = expr_to_svg_markup(base);
     let exp_markup = expr_to_svg_markup(exp);
     // Wrap base in parens if it's a lower-precedence additive expression
@@ -18936,11 +19070,12 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         // &, …]`), and each level's base recurses back into this same arm.
         "Subsuperscript" if args.len() == 3 => {
           format!(
-            "{}<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>\
-             <tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
+            "{}{}",
             expr_to_svg_markup(&args[0]),
-            expr_to_svg_markup(&args[1]),
-            expr_to_svg_markup(&args[2]),
+            stacked_scripts_markup(
+              &expr_to_svg_markup(&args[1]),
+              &expr_to_svg_markup(&args[2]),
+            ),
           )
         }
 
@@ -19234,8 +19369,53 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 /// Estimate the display width of an expression in character units,
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
+/// A subscript and a superscript stacked over one another after their
+/// base, the way a `SubsuperscriptBox` sets them (`x₁` with `ᵏ` right above
+/// the `1`, not after it). SVG text has no stacking, so the narrower script
+/// is drawn first and the wider one is pulled back over it by the narrower
+/// one's width; the text after the pair then continues from the end of the
+/// wider script. The width is an estimate of half an em per character,
+/// slightly under most faces' advance, so a mismatch leaves the upper
+/// script a touch to the right rather than over the base.
+pub(crate) fn stacked_scripts_markup(sub: &str, sup: &str) -> String {
+  let sub_chars = markup_visible_chars(sub);
+  let sup_chars = markup_visible_chars(sup);
+  let tspan = |shift: &str, dx: Option<usize>, content: &str| {
+    let dx =
+      dx.map_or_else(String::new, |n| format!(" dx=\"-{}em\"", n as f64 * 0.5));
+    format!(
+      "<tspan{dx} baseline-shift=\"{shift}\" font-size=\"70%\">{content}</tspan>"
+    )
+  };
+  if sub_chars == 0 || sup_chars == 0 {
+    return format!("{}{}", tspan("sub", None, sub), tspan("super", None, sup));
+  }
+  if sup_chars <= sub_chars {
+    format!(
+      "{}{}",
+      tspan("super", None, sup),
+      tspan("sub", Some(sup_chars), sub)
+    )
+  } else {
+    format!(
+      "{}{}",
+      tspan("sub", None, sub),
+      tspan("super", Some(sub_chars), sup)
+    )
+  }
+}
+
 pub fn estimate_display_width(expr: &Expr) -> f64 {
   if let Some((base, exp)) = as_power(expr) {
+    // `Subscript[x, i]^k` stacks the exponent over the index.
+    if let Expr::FunctionCall { name, args } = base
+      && name == "Subscript"
+      && args.len() == 2
+    {
+      return estimate_display_width(&args[0])
+        + estimate_display_width(&args[1]).max(estimate_display_width(exp))
+          * 0.7;
+    }
     let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
     return estimate_display_width(base)
       + parens
@@ -19513,12 +19693,12 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
         let seps = (args.len() - 2) as f64;
         estimate_display_width(&args[0]) + (scripts + seps) * 0.7
       }
-      // Subsuperscript[base, sub, sup] — the sub and super tspans sit side
-      // by side (not stacked), so both add to the width at 70% size.
+      // Subsuperscript[base, sub, sup] — the scripts stack, so the wider
+      // one sets the width, at 70% size.
       "Subsuperscript" if args.len() == 3 => {
         estimate_display_width(&args[0])
-          + (estimate_display_width(&args[1])
-            + estimate_display_width(&args[2]))
+          + estimate_display_width(&args[1])
+            .max(estimate_display_width(&args[2]))
             * 0.7
       }
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
@@ -19875,10 +20055,7 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
         let base_svg = boxes_to_svg(&args[0]);
         let sub_svg = boxes_to_svg(&args[1]);
         let sup_svg = boxes_to_svg(&args[2]);
-        format!(
-          "{base_svg}<tspan baseline-shift=\"sub\" font-size=\"70%\">{sub_svg}</tspan>\
-           <tspan baseline-shift=\"super\" font-size=\"70%\">{sup_svg}</tspan>"
-        )
+        format!("{base_svg}{}", stacked_scripts_markup(&sub_svg, &sup_svg))
       }
 
       // FractionBox[num, den] → stacked fraction
@@ -20991,7 +21168,8 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
       // options — they are not part of the drawn text.
       // A `Cell[content, style, opts…]` inside boxes shows only its
       // content; the style name is not drawn.
-      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" | "Cell" => args
+      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" | "FrameBox"
+      | "Cell" => args
         .first()
         .map_or_default(|a| box_expr_to_plain_in(a, spaced)),
       // A grid of boxes (a matrix in `TraditionalForm`) is drawn as lines:
@@ -31186,6 +31364,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
+  if let Some(styled) = base_style_pushed_args("Column", args) {
+    return column_to_svg(&styled);
+  }
   if let Some(grid_args) = column_as_grid_args(args) {
     return grid_svg_with_gaps(&grid_args, &[]).ok();
   }
@@ -31253,6 +31434,22 @@ fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
   Some(grid_args)
 }
 
+/// The stroke color and width the `FrameStyle` among a layout's options
+/// `opts` asks for, the default frame stroke without one.
+fn frame_style_stroke(opts: &[Expr]) -> (String, f64) {
+  let style = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "FrameStyle")
+    .and_then(|(_, v)| crate::functions::plot::parse_style_directives(v));
+  crate::functions::plot::style_stroke(
+    style.as_ref(),
+    theme().stroke_default,
+    1.0,
+    1.0,
+  )
+}
+
 /// Paint the box options of a `Column`/`Row` around its laid-out `svg`:
 /// `Background -> color` fills the whole box behind the items, and
 /// `Frame -> True` draws a border round it, in the `FrameStyle` given.
@@ -31290,14 +31487,7 @@ fn decorate_layout_svg(svg: String, opts: &[Expr]) -> String {
     );
   }
   if framed && let Some(end) = svg.rfind("</svg>") {
-    let style = option("FrameStyle")
-      .and_then(crate::functions::plot::parse_style_directives);
-    let (color, width) = crate::functions::plot::style_stroke(
-      style.as_ref(),
-      theme().stroke_default,
-      1.0,
-      1.0,
-    );
+    let (color, width) = frame_style_stroke(opts);
     svg.insert_str(
       end,
       &format!(
@@ -31562,8 +31752,18 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       }
     })
     .fold(0.0_f64, f64::max);
+  // A fixed `ItemSize` width sets the column's width, but a laid-out item
+  // (a nested row or grid, set as a picture) cannot be broken onto further
+  // lines, so the column still widens to hold it rather than clipping it.
+  let widest_picture = cells
+    .iter()
+    .map(|c| match c {
+      Cell::Svg { width, .. } => *width,
+      Cell::Text(..) => 0.0,
+    })
+    .fold(0.0_f64, f64::max);
   let col_width = item_size_entry_at(item_size_w, 0, 1)
-    .map_or(col_width, |w| w * font_size + pad_x);
+    .map_or(col_width, |w| (w * font_size + pad_x).max(widest_picture));
 
   // Per-row heights
   let n_items = cells.len();
@@ -31681,11 +31881,12 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     y_cursor += h + gap;
     // `Frame -> All` rules a line between every two items, midway through
     // the gap that separates them.
+    // The rules are drawn in the `FrameStyle`, like the outer frame.
     if frame_all && i + 1 < n {
       let y = y_cursor - gap / 2.0;
+      let (color, width) = frame_style_stroke(&args[1..]);
       svg.push_str(&format!(
-        "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{}\" stroke-width=\"1\"/>\n",
-        theme().stroke_default
+        "<line x1=\"0\" y1=\"{y:.1}\" x2=\"{total_width:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{width}\"/>\n"
       ));
     }
   }
@@ -31963,7 +32164,41 @@ fn markup_visible_chars(markup: &str) -> usize {
   count
 }
 
+/// The arguments of a `Row`/`Column` (`head`) with its `BaseStyle ->
+/// directives` option taken out and the directives pushed onto the items,
+/// the way an enclosing `Style[…, directives]` sets them. `None` when the
+/// layout has no `BaseStyle`.
+pub(crate) fn base_style_pushed_args(
+  head: &str,
+  args: &[Expr],
+) -> Option<Vec<Expr>> {
+  let base = args
+    .get(1..)?
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "BaseStyle")
+    .map(|(_, v)| v.clone())?;
+  let directives: Vec<Expr> = match &base {
+    Expr::List(items) => items.to_vec(),
+    single => vec![single.clone()],
+  };
+  let rest: Vec<Expr> = args
+    .iter()
+    .filter(|a| !matches!(option_kv(a), Some(("BaseStyle", _))))
+    .cloned()
+    .collect();
+  let plain = call(head, rest.clone());
+  match &style_pushed_into_layout(&plain, &directives) {
+    Some(Expr::FunctionCall { args, .. }) => Some(args.to_vec()),
+    // No directives to apply: the layout without the empty option.
+    _ => Some(rest),
+  }
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
+  if let Some(styled) = base_style_pushed_args("Row", args) {
+    return row_to_svg(&styled);
+  }
   let svg = row_layout_svg(args)?;
   let opts: Vec<Expr> = args
     .iter()
