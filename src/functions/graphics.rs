@@ -393,7 +393,8 @@ fn parse_cap_form(expr: &Expr) -> Option<LineCapKind> {
     _ => return None,
   };
   match name {
-    "Butt" => Some(LineCapKind::Butt),
+    // `CapForm[None]` is documented as equivalent to `CapForm["Butt"]`.
+    "Butt" | "None" => Some(LineCapKind::Butt),
     "Round" => Some(LineCapKind::Round),
     "Square" => Some(LineCapKind::Square),
     _ => None,

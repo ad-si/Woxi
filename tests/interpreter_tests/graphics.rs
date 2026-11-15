@@ -2348,6 +2348,33 @@ mod graphics {
       assert_eq!(linecap("Butt"), "butt");
       assert_eq!(linecap("Round"), "round");
       assert_eq!(linecap("Square"), "square");
+      assert!(
+        export_svg("Graphics[{CapForm[None], Line[{{0, 0}, {1, 1}}]}]")
+          .contains("stroke-linecap=\"butt\"")
+      );
+    }
+
+    /// Without a `CapForm`, Wolfram ends a `Line` with a square cap, so a
+    /// thick segment overshoots each end point by half its width — with or
+    /// without other directives, and for every segment of a multi-line.
+    /// A Demonstration notebook drew thick vertical bars between y = -2 and
+    /// y = 2 that visibly overshoot both ends in Wolfram's rendering but
+    /// stopped flush in Woxi's.
+    #[test]
+    fn line_defaults_to_square_cap() {
+      for code in [
+        "Graphics[Line[{{0, 0}, {1, 1}}]]",
+        "Graphics[{Thickness[0.05], Red, Line[{{0, 0}, {0, 2}}]}]",
+        "Graphics[{Thickness -> 0.025, Green, Line[{{1, 2}, {1, -2}}]}]",
+        "Graphics[{Dashed, Line[{{{0, 0}, {1, 0}}, {{0, 1}, {1, 1}}}]}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(
+          svg.contains("stroke-linecap=\"square\"")
+            && !svg.contains("stroke-linecap=\"butt\""),
+          "{code} should draw square caps: {svg}"
+        );
+      }
     }
 
     /// Without a `CapForm`, Wolfram extends each end of a `Line` by half its
