@@ -17385,6 +17385,55 @@ enum ContourBox {
 /// overrides the box the axes span (e.g. the extent of the surfaces).
 /// `opts` are the plot's options and `label_args` the arguments a
 /// `PlotLabel` is read from.
+/// Cuts a triangle down to the part where `inside` holds, assuming the
+/// region's edge crosses each triangle edge at most once (true at the
+/// sampling resolution). Returns the kept triangles and, when the region's
+/// edge passes through the triangle, the segment along which it was cut.
+/// Each crossing point is located by bisecting the edge it lies on.
+fn clip_triangle_to_region(
+  tri: [Point3D; 3],
+  inside: &dyn Fn(Point3D) -> bool,
+) -> (Vec<[Point3D; 3]>, Option<[Point3D; 2]>) {
+  let flags = tri.map(inside);
+  let kept = flags.iter().filter(|&&f| f).count();
+  match kept {
+    3 => return (vec![tri], None),
+    0 => return (Vec::new(), None),
+    _ => {}
+  }
+  let lerp = |a: Point3D, b: Point3D, t: f64| Point3D {
+    x: a.x + (b.x - a.x) * t,
+    y: a.y + (b.y - a.y) * t,
+    z: a.z + (b.z - a.z) * t,
+  };
+  // The point where the edge from the inside vertex `a` to the outside
+  // vertex `b` leaves the region.
+  let crossing = |a: Point3D, b: Point3D| {
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..20 {
+      let mid = f64::midpoint(lo, hi);
+      if inside(lerp(a, b, mid)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    lerp(a, b, f64::midpoint(lo, hi))
+  };
+  // Rotate so that the odd vertex out (the lone inside one when one is
+  // kept, the lone outside one when two are) comes first, keeping the
+  // triangle's orientation.
+  let odd = (0..3).find(|&i| flags[i] == (kept == 1)).unwrap_or(0);
+  let [a, b, c] = [tri[odd], tri[(odd + 1) % 3], tri[(odd + 2) % 3]];
+  if kept == 1 {
+    let (pab, pac) = (crossing(a, b), crossing(a, c));
+    (vec![[a, pab, pac]], Some([pab, pac]))
+  } else {
+    let (pba, pca) = (crossing(b, a), crossing(c, a));
+    (vec![[pba, b, c], [pba, c, pca]], Some([pba, pca]))
+  }
+}
+
 fn contour3d_render(
   field_source: &ContourField,
   ranges: [(f64, f64); 3],
@@ -17426,6 +17475,14 @@ fn contour3d_render(
   // lines); `MeshStyle -> None` hides the mesh.
   let mut mesh_styles: Vec<Expr> = Vec::new();
   let mut mesh_style_none = false;
+  // `RegionFunction -> f`: only the parts of the surfaces where
+  // `f[x, y, z]` is True are drawn, cut cleanly along the region's edge.
+  let mut region_function: Option<Expr> = None;
+  // `BoundaryStyle -> s`: the surfaces' rims (where they meet the plot box
+  // or a `RegionFunction` cut) are outlined in `s`.
+  let mut boundary_style: Option<StyleState3D> = None;
+  // The original directive, kept for the extracted `Graphics3D` structure.
+  let mut boundary_directive: Option<Expr> = None;
   // `ColorFunction -> f`: each facet colored by `f[x, y, z, value]`, the
   // value being the level of the surface it lies on.
   let mut color_fn = FacetColorFunction::default();
@@ -17529,6 +17586,33 @@ fn contour3d_render(
             _ => {}
           }
         }
+        Expr::Identifier(name) if name == "RegionFunction" => {
+          region_function = match replacement.as_ref() {
+            Expr::Identifier(n) if n == "Automatic" || n == "None" => None,
+            other => Some(other.clone()),
+          };
+        }
+        Expr::Identifier(name) if name == "BoundaryStyle" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          match &value {
+            Expr::Identifier(n)
+              if n == "None" || n == "Automatic" || n == "False" =>
+            {
+              boundary_style = None;
+              boundary_directive = None;
+            }
+            other => {
+              let mut style = StyleState3D {
+                color: Some((0, 0, 0)),
+                ..StyleState3D::default()
+              };
+              apply_3d_directive(other, &mut style);
+              boundary_style = Some(style);
+              boundary_directive = Some(other.clone());
+            }
+          }
+        }
         _ => {}
       }
     }
@@ -17575,6 +17659,9 @@ fn contour3d_render(
     std::collections::HashMap::new();
   let mut content: Vec<Expr> = Vec::new();
   let mut refinement_budget = CONTOUR3D_REFINE_BUDGET;
+  // The segments along which a `RegionFunction` cut the surfaces, in plot
+  // coordinates: part of the surfaces' boundary.
+  let mut region_cuts: Vec<[Point3D; 2]> = Vec::new();
 
   for surf_idx in 0..surface_count {
     // The body sampled (and, where a sheet may hide, resampled) for this
@@ -17727,29 +17814,45 @@ fn contour3d_render(
                 ];
 
                 let mut emitted = false;
-                march_cube(&corners_world, &cvals, level, &mut |tri_world| {
+                march_cube(&corners_world, &cvals, level, &mut |tri_raw| {
                   emitted = true;
-                  world_triangles.push((tri_world, theme_idx));
-                  triangle_body.push(surf_idx);
-                  triangle_level.push(level);
-
-                  // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
-                  let wn =
-                    triangle_normal(tri_world[0], tri_world[1], tri_world[2]);
-                  let mut tri = [0usize; 3];
-                  for (slot, p) in tri.iter_mut().zip(&tri_world) {
-                    let key = [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
-                    let idx = *point_index.entry(key).or_insert_with(|| {
-                      points.push([p.x, p.y, p.z]);
-                      normals.push([0.0; 3]);
-                      points.len() - 1
-                    });
-                    for d in 0..3 {
-                      normals[idx][d] += wn[d];
+                  let pieces = match &region_function {
+                    Some(region) => {
+                      let inside = |p: Point3D| {
+                        crate::functions::field_plot::region_allows(
+                          region, p.x, p.y, p.z,
+                        )
+                      };
+                      let (pieces, cut) =
+                        clip_triangle_to_region(tri_raw, &inside);
+                      region_cuts.extend(cut);
+                      pieces
                     }
-                    *slot = idx;
+                    None => vec![tri_raw],
+                  };
+                  for tri_world in pieces {
+                    world_triangles.push((tri_world, theme_idx));
+                    triangle_body.push(surf_idx);
+                    triangle_level.push(level);
+
+                    // World-coordinate copy for `Show[]` to merge via GraphicsComplex.
+                    let wn =
+                      triangle_normal(tri_world[0], tri_world[1], tri_world[2]);
+                    let mut tri = [0usize; 3];
+                    for (slot, p) in tri.iter_mut().zip(&tri_world) {
+                      let key = [p.x.to_bits(), p.y.to_bits(), p.z.to_bits()];
+                      let idx = *point_index.entry(key).or_insert_with(|| {
+                        points.push([p.x, p.y, p.z]);
+                        normals.push([0.0; 3]);
+                        points.len() - 1
+                      });
+                      for d in 0..3 {
+                        normals[idx][d] += wn[d];
+                      }
+                      *slot = idx;
+                    }
+                    level_triangles.push(tri);
                   }
-                  level_triangles.push(tri);
                 });
                 if let Some((body, [xvar, yvar, zvar])) = body
                   && refine
@@ -18104,6 +18207,47 @@ fn contour3d_render(
     }
   }
 
+  // `BoundaryStyle`: the surfaces' rims, i.e. their edges lying on a face
+  // of the sampled box, plus the cuts a `RegionFunction` made.
+  let mut boundary_world: Vec<[[f64; 3]; 2]> = Vec::new();
+  if let Some(style) = &boundary_style {
+    let bounds = [(x_min, x_max), (y_min, y_max), (z_min, z_max)];
+    let tol: [f64; 3] = std::array::from_fn(|d| {
+      1e-9 * (bounds[d].1 - bounds[d].0).abs().max(1.0)
+    });
+    let on_face = |p: [f64; 3], d: usize, v: f64| (p[d] - v).abs() <= tol[d];
+    for (tri, _) in &world_triangles {
+      let t = tri.map(|p| [p.x, p.y, p.z]);
+      for e in 0..3 {
+        let (a, b, other) = (t[e], t[(e + 1) % 3], t[(e + 2) % 3]);
+        let rim = (0..3).any(|d| {
+          [bounds[d].0, bounds[d].1].into_iter().any(|v| {
+            on_face(a, d, v) && on_face(b, d, v) && !on_face(other, d, v)
+          })
+        });
+        if rim {
+          boundary_world.push([a, b]);
+        }
+      }
+    }
+    boundary_world
+      .extend(region_cuts.iter().map(|s| s.map(|p| [p.x, p.y, p.z])));
+    let to_norm = |p: [f64; 3]| Point3D {
+      x: nx(p[0]),
+      y: ny(p[1]),
+      z: nz(p[2]),
+    };
+    for [a, b] in &boundary_world {
+      mesh_lines.push(styled_mesh_segment(
+        to_norm(*a),
+        to_norm(*b),
+        &camera,
+        Some(style),
+        ("#000000", SURFACE_BOUNDARY_THICKNESS),
+      ));
+    }
+  }
+
   let svg = generate_svg(
     &all_triangles,
     &mesh_lines,
@@ -18163,6 +18307,23 @@ fn contour3d_render(
       }
       group.push(call1("Line", Expr::List(lines.into())));
       content.push(Expr::List(group.into()));
+    }
+    if let Some(directive) = &boundary_directive
+      && !boundary_world.is_empty()
+    {
+      let point = |p: &[f64; 3]| Expr::List(p.map(Expr::Real).to_vec().into());
+      let lines: Vec<Expr> = boundary_world
+        .iter()
+        .map(|[a, b]| Expr::List(vec![point(a), point(b)].into()))
+        .collect();
+      content.push(Expr::List(
+        vec![
+          boundary_thickness_expr(),
+          directive.clone(),
+          call1("Line", Expr::List(lines.into())),
+        ]
+        .into(),
+      ));
     }
     let complex = call(
       "GraphicsComplex",

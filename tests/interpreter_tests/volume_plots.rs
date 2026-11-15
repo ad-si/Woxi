@@ -119,3 +119,91 @@ mod slice_contour_plot3d {
     );
   }
 }
+
+mod contour_plot3d_region_and_boundary {
+  use super::*;
+
+  // The surface is cut along the region's edge, not left with the jagged
+  // outline of whole grid cells: its vertices reach the edge but never
+  // leave the region.
+  #[test]
+  fn region_function_clips_the_surface_at_its_edge() {
+    assert_eq!(
+      interpret(
+        "{PTS}r = Norm[Most[#]] & /@ pts[ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, RegionFunction -> Function[{x, y, z}, x^2 + y^2 < 1/2]]]; {Max[r] <= Sqrt[0.5] + 10^-6, Max[r] > Sqrt[0.5] - 10^-3}"
+          .replace("{PTS}", PTS)
+          .as_str()
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn region_function_receives_positional_coordinates() {
+    assert_eq!(
+      interpret(
+        "{PTS}p = pts[ContourPlot3D[x == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, RegionFunction -> (#2 > 0 && #3 > 0 &)]]; {Min[p[[All, 2]]] >= 0, Min[p[[All, 3]]] >= 0}"
+          .replace("{PTS}", PTS)
+          .as_str()
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  // `BoundaryStyle` outlines where the surface meets the plot box.
+  #[test]
+  fn boundary_style_outlines_the_rim_on_the_box() {
+    assert_eq!(
+      interpret(
+        "g = ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, BoundaryStyle -> Directive[Red, Thick]]; ls = Cases[g, {___, Directive[Red, Thick], Line[l_]} :> l, Infinity]; e = Flatten[ls, 2]; {Length[ls], Length[e] > 0, AllTrue[e, Abs[#[[1]]] == 1 || Abs[#[[2]]] == 1 &], AllTrue[e, #[[3]] == 0 &]}"
+      )
+      .unwrap(),
+      "{1, True, True, True}"
+    );
+  }
+
+  // A `RegionFunction` cut is part of the boundary too.
+  #[test]
+  fn boundary_style_follows_region_cuts() {
+    assert_eq!(
+      interpret(
+        "g = ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, BoundaryStyle -> Blue, RegionFunction -> Function[{x, y, z}, x^2 + y^2 < 1/4]]; e = Flatten[Cases[g, {___, Blue, Line[l_]} :> l, Infinity], 2]; {Length[e] > 0, AllTrue[e, Abs[Norm[Most[#]] - 1/2] < 10^-4 &]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn no_boundary_without_boundary_style() {
+    assert_eq!(
+      interpret(
+        "Count[ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None], _Line, Infinity]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn boundary_style_none_draws_nothing() {
+    assert_eq!(
+      interpret(
+        "Count[ContourPlot3D[z == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, BoundaryStyle -> None], _Line, Infinity]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn boundary_style_is_drawn_in_the_svg() {
+    let svg = interpret(
+      "ExportString[ContourPlot3D[x^2 + y^2 + z^2 == 2, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, Mesh -> None, BoundaryStyle -> Red], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("stroke=\"rgb(255,0,0)\""));
+  }
+}
