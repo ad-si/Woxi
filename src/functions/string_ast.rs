@@ -9885,6 +9885,20 @@ pub(crate) fn format_string_form_with(
   format_slots(template, values, fmt, true)
 }
 
+/// The parts a `StringForm` typesets: its template's literal runs as strings
+/// and, between them, the values its slots pick — the items of the `Row`
+/// the filled template reads as. Empty literal runs are left out.
+pub(crate) fn string_form_parts(template: &str, values: &[Expr]) -> Vec<Expr> {
+  slot_pieces(template, values, false)
+    .into_iter()
+    .filter_map(|piece| match piece {
+      MessagePiece::Text(t) if t.is_empty() => None,
+      MessagePiece::Text(t) => Some(Expr::String(t)),
+      MessagePiece::Expr(e) => Some(e.clone()),
+    })
+    .collect()
+}
+
 /// Substitute `` `` `` / `` `n` `` slots, warning with `StringForm::sfr` on
 /// an out-of-range one only when `warn` is set.
 fn format_slots(
