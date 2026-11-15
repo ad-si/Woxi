@@ -157,6 +157,22 @@ pub(crate) fn resolve_transforms(expr: &Expr) -> Expr {
         .collect::<Vec<_>>()
         .into(),
     ),
+    // `GraphicsComplex[pts, prims]` holds its faces as vertex indices;
+    // spell them out (as `Normal` does) so each face is a list of points.
+    Expr::FunctionCall { name, args }
+      if name == "GraphicsComplex" && args.len() >= 2 =>
+    {
+      match &args[0] {
+        Expr::List(pts) => resolve_transforms(
+          &crate::functions::graphics::graphics_complex_to_normal_form(
+            pts,
+            &args[1],
+            &args[2..],
+          ),
+        ),
+        _ => expr.clone(),
+      }
+    }
     Expr::FunctionCall { name, args }
       if (name == "Rotate" || name == "Translate") && !args.is_empty() =>
     {
@@ -258,9 +274,102 @@ fn stellate_face(pts: &[Vec3], ratio: f64) -> Expr {
   Expr::List(triangles.into())
 }
 
-/// `` PolyhedronOperations`Truncate[expr, ratio] ``.
+/// Every `Polygon[…]` face inside an already-resolved `expr`, as points.
+fn collect_faces(expr: &Expr, out: &mut Vec<Vec<Vec3>>) {
+  match expr {
+    Expr::List(items) => items.iter().for_each(|e| collect_faces(e, out)),
+    Expr::FunctionCall { name, args }
+      if name == "Polygon" && args.len() == 1 =>
+    {
+      if let Some(pts) = face_points(&args[0])
+        && pts.len() >= 3
+      {
+        out.push(pts);
+      }
+    }
+    _ => {}
+  }
+}
+
+/// A hashable key for a point, so faces that share a vertex (or a cut
+/// point) up to floating-point noise are recognized as sharing it.
+fn point_key(p: Vec3) -> [i64; 3] {
+  p.map(|c| (c * 1e8).round() as i64)
+}
+
+/// The new faces that cap the corners a truncation cuts off: around every
+/// vertex shared by a closed ring of faces, the cut points `ratio` of the
+/// way along its edges. Each face meeting the vertex contributes one side
+/// of the cap — from the cut on its edge toward the next vertex to the cut
+/// on its edge toward the previous one — and chaining those sides end to
+/// start walks around the vertex. A vertex on an open boundary (a lone
+/// polygon, a surface with holes) has no closed ring and gets no cap, and
+/// a cap that collapses to a point (`ratio = 0`) is dropped.
+fn corner_faces(faces: &[Vec<Vec3>], ratio: f64) -> Vec<Expr> {
+  use std::collections::HashMap;
+  // vertex key -> (vertex, [(side start, side end)])
+  let mut sides: HashMap<[i64; 3], (Vec3, Vec<(Vec3, Vec3)>)> = HashMap::new();
+  let mut order: Vec<[i64; 3]> = Vec::new();
+  for face in faces {
+    let n = face.len();
+    for i in 0..n {
+      let v = face[i];
+      let next = face[(i + 1) % n];
+      let prev = face[(i + n - 1) % n];
+      let key = point_key(v);
+      let entry = sides.entry(key).or_insert_with(|| {
+        order.push(key);
+        (v, Vec::new())
+      });
+      entry.1.push((lerp(v, next, ratio), lerp(v, prev, ratio)));
+    }
+  }
+  let mut caps = Vec::new();
+  for key in order {
+    let (_, ring) = &sides[&key];
+    if ring.len() < 3 {
+      continue;
+    }
+    let mut cap = vec![ring[0].0];
+    let mut used = vec![false; ring.len()];
+    used[0] = true;
+    let mut end = ring[0].1;
+    let closed = loop {
+      if point_key(end) == point_key(cap[0]) {
+        break used.iter().all(|&u| u);
+      }
+      let Some(j) = (0..ring.len())
+        .find(|&j| !used[j] && point_key(ring[j].0) == point_key(end))
+      else {
+        break false;
+      };
+      used[j] = true;
+      cap.push(ring[j].0);
+      end = ring[j].1;
+    };
+    let degenerate = cap.iter().all(|&p| point_key(p) == point_key(cap[0]));
+    if closed && !degenerate {
+      // Within a counterclockwise face the side runs counterclockwise
+      // around the vertex, so the cap has the solid's orientation.
+      caps.push(polygon_expr(&cap));
+    }
+  }
+  caps
+}
+
+/// `` PolyhedronOperations`Truncate[expr, ratio] ``: corner-cut every face
+/// and, for a closed solid, cap each cut-off vertex with a new face.
 pub(crate) fn truncate(expr: &Expr, ratio: f64) -> Expr {
-  map_faces(&resolve_transforms(expr), &|pts| truncate_face(pts, ratio))
+  let resolved = resolve_transforms(expr);
+  let cut = map_faces(&resolved, &|pts| truncate_face(pts, ratio));
+  let mut faces = Vec::new();
+  collect_faces(&resolved, &mut faces);
+  let caps = corner_faces(&faces, ratio);
+  if caps.is_empty() {
+    cut
+  } else {
+    Expr::List(vec![cut, Expr::List(caps.into())].into())
+  }
 }
 
 /// `` PolyhedronOperations`Stellate[expr, ratio] ``.

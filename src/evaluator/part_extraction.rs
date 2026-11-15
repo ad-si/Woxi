@@ -651,6 +651,10 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
     ..
   } = expr
   {
+    // A log axis is drawn in `Log` space: `First[LogPlot[E^x, {x, 0, 3}]]`
+    // is a line with `y = x`.
+    let source = crate::functions::graphics::log_scaled_plot_source(source);
+    let source = source.as_ref();
     let series: Vec<Expr> = source
       .series
       .iter()

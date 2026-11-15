@@ -9195,6 +9195,77 @@ mod log_normal_distribution_random_variate {
   }
 }
 
+mod skew_normal_distribution_random_variate {
+  use super::*;
+
+  #[test]
+  fn single_sample_is_real() {
+    assert_eq!(
+      interpret("Head[RandomVariate[SkewNormalDistribution[2, 3, -1]]]")
+        .unwrap(),
+      "Real"
+    );
+  }
+
+  #[test]
+  fn random_real_delegates_and_dimension_list() {
+    assert_eq!(
+      interpret(
+        "Dimensions[RandomReal[SkewNormalDistribution[0, 1, 8], {3, 4}]]"
+      )
+      .unwrap(),
+      "{3, 4}"
+    );
+  }
+
+  #[test]
+  fn sample_moments_match_theory() {
+    // Mean, variance and skewness of 40000 draws agree with the
+    // distribution's own moments.
+    assert_eq!(
+      interpret(
+        "d = SkewNormalDistribution[1, 2, 4]; s = RandomVariate[d, 40000]; \
+         {Abs[Mean[s] - N[Mean[d]]] < 0.05, \
+          Abs[Variance[s]/N[Variance[d]] - 1] < 0.05, \
+          Skewness[s] > 0.5}"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
+  #[test]
+  fn negative_shape_skews_left() {
+    assert_eq!(
+      interpret(
+        "Skewness[RandomVariate[SkewNormalDistribution[0, 1, -6], 20000]] < -0.5"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn zero_shape_is_normal() {
+    assert_eq!(
+      interpret(
+        "s = RandomVariate[SkewNormalDistribution[3, 2, 0], 20000]; \
+         {Abs[Mean[s] - 3] < 0.1, Abs[StandardDeviation[s] - 2] < 0.1}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
+  #[test]
+  fn symbolic_parameter_stays_unevaluated() {
+    assert_eq!(
+      interpret("RandomVariate[SkewNormalDistribution[0, 1, a]]").unwrap(),
+      "RandomVariate[SkewNormalDistribution[0, 1, a]]"
+    );
+  }
+}
+
 mod distribution_parameter_assumptions {
   use super::*;
 

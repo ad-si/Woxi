@@ -46,6 +46,53 @@ mod solids {
     );
   }
 
+  /// A solid wholly inside an opaque sphere or capped cylinder can never be
+  /// seen, so it draws nothing. Regression: a two-tone ball (a sphere just
+  /// inside another, offset a little) showed the inner sphere's facet
+  /// seams streaking across the outer one where the painter's sort
+  /// interleaved them.
+  #[test]
+  fn solid_inside_an_opaque_solid_draws_nothing() {
+    let outer = svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let nested = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Red, Sphere[{0, 0, 0.1}, 0.5], \
+       Cylinder[{{0, -0.3, 0}, {0, 0.3, 0}}, 0.2]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&nested), polygon_count(&outer));
+
+    let cylinder =
+      svg("Graphics3D[{Cylinder[{{0, -1, 0}, {0, 1, 0}}, 1]}, Boxed -> False]");
+    let in_cylinder = svg(
+      "Graphics3D[{Cylinder[{{0, -1, 0}, {0, 1, 0}}, 1], Red, \
+       Sphere[{0, 0.2, 0}, 0.5]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&in_cylinder), polygon_count(&cylinder));
+  }
+
+  /// Only the part of a sphere poking out of another stays; a see-through
+  /// enclosing solid hides nothing.
+  #[test]
+  fn solid_culling_keeps_visible_and_see_through_parts() {
+    let outer = svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let poking = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Red, Sphere[{0, 0, 0.6}, 0.5]}, \
+       Boxed -> False]",
+    );
+    assert!(polygon_count(&poking) > polygon_count(&outer));
+    assert!(fills(&poking).iter().any(|f| {
+      let c: Vec<u8> = f.split(',').filter_map(|v| v.parse().ok()).collect();
+      c.len() == 3 && c[0] > 2 * c[1].max(c[2]).max(1)
+    }));
+
+    let glass =
+      svg("Graphics3D[{Opacity[0.5], Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let glass_nested = svg(
+      "Graphics3D[{Opacity[0.5], Sphere[{0, 0, 0}, 1], Opacity[1], Red, \
+       Sphere[{0, 0, 0}, 0.5]}, Boxed -> False]",
+    );
+    assert!(polygon_count(&glass_nested) > polygon_count(&glass));
+  }
+
   #[test]
   fn ellipsoid_with_semi_axes_is_drawn() {
     let s = svg("Graphics3D[Ellipsoid[{0, 0, 0}, {2, 1, 0.5}]]");
@@ -393,6 +440,28 @@ fn size(svg: &str) -> (f64, f64) {
 
 mod framing {
   use super::*;
+
+  /// `AspectRatio -> Full` stretches the scene to the width and height
+  /// `ImageSize` gives it, whatever the box's own proportions.
+  #[test]
+  fn aspect_ratio_full_fills_the_image_size() {
+    let s = svg(
+      "Graphics3D[{EdgeForm[Black], Cuboid[{-2, -2, 0}, {2, 2, 1}]}, \
+       Boxed -> False, ViewPoint -> {0, -100, 0}, ImageSize -> {250, 350}, \
+       AspectRatio -> Full, PlotRange -> {{-2, 2}, All, {0, 1}}]",
+    );
+    assert_eq!(size(&s), (250.0, 350.0));
+    let ys: Vec<f64> = s
+      .split(" y1=\"")
+      .skip(1)
+      .chain(s.split(" y2=\"").skip(1))
+      .filter_map(|r| r.split('"').next()?.parse().ok())
+      .collect();
+    let lo = ys.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    // The unit-high slab fills nearly the whole height, not a quarter.
+    assert!(hi - lo > 300.0, "{lo}..{hi}\n{s}");
+  }
 
   /// The x range of the drawn `<line>` endpoints in an SVG.
   fn line_x_extent(svg: &str) -> (f64, f64) {

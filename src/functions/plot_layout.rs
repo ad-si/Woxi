@@ -289,12 +289,7 @@ pub(crate) fn render_plot_layout(
     opts.grid_lines_x = base.grid_lines_x;
     opts.plot_label = None;
     opts.axes_label = None;
-    opts.frame_label_bottom = None;
-    opts.frame_label_left = None;
-    opts.frame_label_top = None;
-    opts.frame_label_right = None;
-    opts.frame_label_bottom_graphic = None;
-    opts.frame_label_top_graphic = None;
+    opts.clear_frame_labels();
     opts.plot_legends = Vec::new();
     opts.image_padding = Some([0.0; 4]);
     opts.aspect_ratio = Some(ar);
