@@ -4822,12 +4822,62 @@ mod transformation_function_compose {
     );
   }
 
+  // RightComposition (/*) applies its first transform first, so it folds
+  // to the same transform as the reversed Composition.
+  #[test]
+  fn right_composition_folds_into_one_transform() {
+    assert_eq!(
+      interpret("RotationTransform[Pi/2] /* TranslationTransform[{1, 2}]")
+        .unwrap(),
+      "TransformationFunction[{{0, -1, 1}, {1, 0, 2}, {0, 0, 1}}]"
+    );
+    assert_eq!(
+      interpret(
+        "RightComposition[TranslationTransform[{1, 2}], \
+         RotationTransform[Pi/2]]"
+      )
+      .unwrap(),
+      "TransformationFunction[{{0, -1, -2}, {1, 0, 1}, {0, 0, 1}}]"
+    );
+    // Three transforms fold too, and the result still applies in order.
+    assert_eq!(
+      interpret(
+        "(RotationTransform[Pi/2] /* TranslationTransform[{1, 0}] /* \
+         ScalingTransform[{2, 3}])[{1, 0}]"
+      )
+      .unwrap(),
+      "{2, 3}"
+    );
+  }
+
+  // GeometricTransformation renders a /* chain of transforms.
+  #[test]
+  fn geometric_transformation_with_right_composition() {
+    let composed = interpret(
+      "ExportString[Graphics[{Point[{0, 0}], GeometricTransformation[\
+       Point[{1, 0}], RotationTransform[Pi/2] /* \
+       TranslationTransform[{1, 0}]]}, PlotRange -> {{-2, 2}, {-2, 2}}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    let direct = interpret(
+      "ExportString[Graphics[{Point[{0, 0}], Point[{1, 1}]}, \
+       PlotRange -> {{-2, 2}, {-2, 2}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(composed, direct);
+  }
+
   // A chain that is not all transforms stays an ordinary composition.
   #[test]
   fn a_mixed_chain_is_left_alone() {
     assert_eq!(
       interpret("Composition[TranslationTransform[{1, 2}], f]").unwrap(),
       "TransformationFunction[{{1, 0, 1}, {0, 1, 2}, {0, 0, 1}}] @* f"
+    );
+    assert_eq!(
+      interpret("RightComposition[TranslationTransform[{1, 2}], f]").unwrap(),
+      "TransformationFunction[{{1, 0, 1}, {0, 1, 2}, {0, 0, 1}}] /* f"
     );
   }
 }

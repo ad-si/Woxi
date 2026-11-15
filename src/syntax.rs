@@ -19467,6 +19467,12 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
   if let Some(short) = derivative_shorthand(expr) {
     return TextBox::atom(&short);
   }
+  // Infix comparisons, rules and assignments lay their operands out in 2D
+  // too: `ToString[z == 2 x]` is `z == 2 x` (not the 1D `2*x`), and a
+  // fraction operand stacks around the operator's baseline.
+  if let Some(tb) = infix_operator_textbox(expr) {
+    return tb;
+  }
   match expr {
     Expr::Integer(n) => TextBox::atom(&n.to_string()),
     Expr::BigInteger(n) => TextBox::atom(&n.to_string()),
@@ -19696,6 +19702,83 @@ fn expr_to_textbox(expr: &Expr) -> TextBox {
 
     // For everything else, fall back to 1D rendering
     _ => TextBox::atom(&expr_to_output(expr)),
+  }
+}
+
+/// The 2D layout of an infix comparison (`a == b`, `a < b < c`), rule
+/// (`a -> b`, `a :> b`) or assignment (`a = b`, `a := b`): each operand is
+/// laid out in 2D and joined by the operator on the shared baseline. The
+/// bracketing follows the 1D renderer. `None` for anything else, and for a
+/// chain of differing comparison operators (printed as `Inequality[…]`).
+fn infix_operator_textbox(expr: &Expr) -> Option<TextBox> {
+  let paren_if = |e: &Expr, needs: bool| {
+    let tb = expr_to_textbox(e);
+    if needs { parenthesize(&tb) } else { tb }
+  };
+  let join = |lhs: TextBox, op: &str, rhs: TextBox| {
+    TextBox::hconcat(&[lhs, TextBox::atom(&format!(" {op} ")), rhs])
+  };
+  let rule = |lhs: &Expr, op: &str, rhs: &Expr| {
+    join(
+      paren_if(lhs, rule_lhs_needs_parens(lhs)),
+      op,
+      paren_if(rhs, binds_looser_than_rule(rhs)),
+    )
+  };
+  match expr {
+    Expr::Comparison {
+      operands,
+      operators,
+    } if !operators.is_empty()
+      && operands.len() == operators.len() + 1
+      && operators.windows(2).all(|w| w[0] == w[1]) =>
+    {
+      let op = match &operators[0] {
+        ComparisonOp::Equal => "==",
+        ComparisonOp::NotEqual => "!=",
+        ComparisonOp::Less => "<",
+        ComparisonOp::LessEqual => "<=",
+        ComparisonOp::Greater => ">",
+        ComparisonOp::GreaterEqual => ">=",
+        ComparisonOp::SameQ => "===",
+        ComparisonOp::UnsameQ => "=!=",
+      };
+      let mut parts = Vec::with_capacity(2 * operands.len());
+      for (i, e) in operands.iter().enumerate() {
+        if i > 0 {
+          parts.push(TextBox::atom(&format!(" {op} ")));
+        }
+        parts.push(paren_if(e, comparison_operand_parens(operators, e)));
+      }
+      Some(TextBox::hconcat(&parts))
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Some(rule(pattern, "->", replacement)),
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Some(rule(pattern, ":>", replacement)),
+    Expr::FunctionCall { name, args } if args.len() == 2 => {
+      let op = match name.as_str() {
+        "Rule" => return Some(rule(&args[0], "->", &args[1])),
+        "RuleDelayed" => return Some(rule(&args[0], ":>", &args[1])),
+        "Set" => "=",
+        "SetDelayed" => ":=",
+        "UpSet" => "^=",
+        "UpSetDelayed" => "^:=",
+        _ => return None,
+      };
+      // The left side brackets exactly when the 1D form does.
+      let lhs_needs = !assignment_lhs(&args[0], String::new()).is_empty();
+      Some(join(
+        paren_if(&args[0], lhs_needs),
+        op,
+        paren_if(&args[1], assignment_rhs_needs_parens(&args[1])),
+      ))
+    }
+    _ => None,
   }
 }
 

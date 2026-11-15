@@ -1021,6 +1021,25 @@ mod tests {
       );
     }
 
+    /// `StyleBox[x, FontSlant -> "Plain"]` sets a one-letter atom upright,
+    /// the way a notebook writes `V₁` in a typeset fraction; without it the
+    /// letter is a math variable in italics.
+    #[test]
+    fn stylebox_plain_slant_keeps_single_letter_upright() {
+      let letter = Expr::String("V".to_string());
+      let plain = call(
+        "StyleBox",
+        vec![
+          letter.clone(),
+          rule_expr(id_expr("FontSlant"), Expr::String("Plain".to_string())),
+        ],
+      );
+      let svg = layout_to_svg(&layout_box(&plain, 14.0), "currentColor");
+      assert!(!svg.contains("italic"), "upright: {svg}");
+      let svg = layout_to_svg(&layout_box(&letter, 14.0), "currentColor");
+      assert!(svg.contains("font-style=\"italic\""), "italic: {svg}");
+    }
+
     /// Regression: the subscript of an accented base (`OverDot[θ]`, as in
     /// a `θ̇₁` plot label) was placed at 0.4 of the base's full height, so
     /// the accent stacked on top lifted it above the base's baseline. It
@@ -1528,8 +1547,10 @@ mod tests {
       );
       assert_eq!(
         svg,
-        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">i</tspan>\
-         <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>"
+        // The scripts stack: the exponent first, the index pulled back
+        // under it.
+        "x<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>\
+         <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">i</tspan>"
       );
     }
 
@@ -2468,6 +2489,63 @@ mod tests {
         svg.contains("stroke=\"rgb(255,0,0)\""),
         "red frame lines: {svg}"
       );
+    }
+
+    #[test]
+    fn named_style_sets_the_size_of_a_styled_grid() {
+      // `Style[Grid[…], "Label"]` sets the grid in the stylesheet's small
+      // label size, as `Style["ab", "Label"]` does a lone string; the named
+      // style used to be ignored, leaving the cells at the default 14.
+      let svg = svg_of("Style[Grid[{{\"ab\", 3}}], \"Label\"]");
+      assert!(svg.contains("font-size=\"9\""), "{svg}");
+      assert!(!svg.contains("font-size=\"14\""), "{svg}");
+      // Explicit directives sit on top of the named style, on either side.
+      for code in [
+        "Style[Grid[{{\"ab\", 3}}], \"Label\", 20]",
+        "Style[Grid[{{\"ab\", 3}}], 20, \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"20\""), "{code}: {svg}");
+      }
+      // A named style's color reaches the cells too.
+      let svg = svg_of("Style[Grid[{{\"ab\"}}], \"Section\"]");
+      assert!(svg.contains("font-size=\"28\""), "{svg}");
+      assert!(svg.contains("rgb(202,81,25)"), "{svg}");
+    }
+
+    #[test]
+    fn fraction_cell_takes_the_styled_grid_size() {
+      // A quotient cell typeset as a built-up fraction is set at the styled
+      // grid's size, like the text cells beside it, not at the default 14.
+      for code in [
+        "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
+        "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
+      }
+    }
+
+    #[test]
+    fn string_letters_in_a_fraction_stay_upright() {
+      // A string is literal text: its single letters are not math
+      // variables, so they stay upright in a typeset fraction, while a
+      // one-letter symbol is still set in italics.
+      let svg = svg_of("Grid[{{\"a\"/\"b\"}}]");
+      assert!(svg.contains(">a</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "string letters upright: {svg}");
+      let svg = svg_of("Grid[{{a/b}}]");
+      assert!(
+        svg.contains("font-style=\"italic\""),
+        "symbols italic: {svg}"
+      );
+      // Inline subscript boxes inside a string are literal text too.
+      let svg = svg_of(
+        "Grid[{{\"\\!\\(\\*SubscriptBox[\\(V\\), \\(1\\)]\\)\"/\"xy\"}}]",
+      );
+      assert!(svg.contains(">V</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "inline-box letters upright: {svg}");
     }
 
     #[test]
@@ -4197,21 +4275,97 @@ mod tests {
       );
     }
 
+    /// The `<text …>label` element that draws `label` in `svg`.
+    fn text_element<'a>(svg: &'a str, label: &str) -> &'a str {
+      let end = svg
+        .find(&format!(">{label}</text"))
+        .unwrap_or_else(|| panic!("{label} should be drawn: {svg}"));
+      let start = svg[..end].rfind("<text").expect("a text element");
+      &svg[start..end]
+    }
+
+    /// The `y` coordinate of a `<text>` element.
+    fn text_y(element: &str) -> f64 {
+      element
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|y| y.parse().ok())
+        .expect("a y coordinate")
+    }
+
     /// `ArrayPlot` sits in a frame, so it takes a `FrameLabel` on any of
-    /// the four edges. Left and right labels run along their edge.
+    /// the four edges. Its axes are rows and columns, so the nested form
+    /// lists `{{bottom, top}, {left, right}}`, the other way around from
+    /// a framed plot. Left and right labels run along their edge.
     #[test]
     fn array_plot_draws_its_frame_labels() {
       let svg = svg_of(
         r#"ArrayPlot[{{0, 1}, {1, 0}},
-           FrameLabel -> {{"lft", "rgt"}, {"btm", "top"}}]"#,
+           FrameLabel -> {{"btm", "top"}, {"lft", "rgt"}}]"#,
       );
-      for label in ["lft", "rgt", "btm", "top"] {
-        assert!(svg.contains(label), "{label} should be drawn: {svg}");
-      }
+      let (btm, top) = (text_element(&svg, "btm"), text_element(&svg, "top"));
+      let (lft, rgt) = (text_element(&svg, "lft"), text_element(&svg, "rgt"));
+      assert!(lft.contains("rotate(-90"), "left runs up its edge: {lft}");
       assert!(
-        svg.contains("rotate(-90") && svg.contains("rotate(90"),
-        "the side labels are rotated onto their edges: {svg}"
+        rgt.contains("rotate(90"),
+        "right runs along its edge: {rgt}"
       );
+      assert!(
+        !btm.contains("rotate") && !top.contains("rotate"),
+        "bottom and top labels stay horizontal: {btm} / {top}"
+      );
+      assert!(text_y(btm) > text_y(top), "btm is below top: {svg}");
+    }
+
+    /// The flat two-label form names the rows (the left edge) first and
+    /// the columns (the bottom edge) second.
+    #[test]
+    fn array_plot_flat_frame_label_names_rows_then_columns() {
+      let svg = svg_of(
+        r#"ArrayPlot[{{1, 2}, {3, 4}}, FrameLabel -> {"rows", "cols"}]"#,
+      );
+      let rows = text_element(&svg, "rows");
+      let cols = text_element(&svg, "cols");
+      assert!(
+        rows.contains("rotate(-90"),
+        "rows label the left edge: {rows}"
+      );
+      assert!(
+        !cols.contains("rotate"),
+        "cols label the bottom edge: {cols}"
+      );
+    }
+
+    /// Cells beyond an explicit `PlotRange` show the background by default
+    /// and take the `ClippingStyle` colors (`{below, above}`) otherwise.
+    #[test]
+    fn array_plot_clips_cells_outside_its_plot_range() {
+      let fills = |svg: &str| -> Vec<String> {
+        svg
+          .split("fill=\"")
+          .skip(1)
+          .filter_map(|rest| rest.split('"').next())
+          .map(str::to_string)
+          .collect()
+      };
+      let plain = svg_of(
+        "ArrayPlot[{{-5, 1, 9}}, PlotRange -> {0, 2}, \
+         ColorFunction -> (Hue[0.7 (1 - #)] &)]",
+      );
+      let red_blue = |svg: &str| {
+        let f = fills(svg);
+        (
+          f.iter().any(|c| c.eq_ignore_ascii_case("#FF0000")),
+          f.iter().any(|c| c.eq_ignore_ascii_case("#0000FF")),
+        )
+      };
+      assert_eq!(red_blue(&plain), (false, false), "{plain}");
+      let styled = svg_of(
+        "ArrayPlot[{{-5, 1, 9}}, PlotRange -> {0, 2}, \
+         ClippingStyle -> {Blue, Red}]",
+      );
+      assert_eq!(red_blue(&styled), (true, true), "{styled}");
     }
 
     /// Only the labeled edges take room: an unlabeled array plot keeps
@@ -4220,7 +4374,7 @@ mod tests {
     fn array_plot_without_frame_labels_is_unpadded() {
       let plain = svg_of(r#"ArrayPlot[{{0, 1}, {1, 0}}]"#);
       let labeled = svg_of(
-        r#"ArrayPlot[{{0, 1}, {1, 0}}, FrameLabel -> {{"", ""}, {"", "top"}}]"#,
+        r#"ArrayPlot[{{0, 1}, {1, 0}}, FrameLabel -> {{"", "top"}, {"", ""}}]"#,
       );
       let width = |svg: &str| -> u32 {
         svg
@@ -4666,6 +4820,71 @@ mod tests {
         y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
     }
+
+    /// `Style[TraditionalForm[Labeled[…]], size]` is drawn as the captioned
+    /// picture: the size reaches the text of the content and of the label,
+    /// and the label's polynomial is typeset in TraditionalForm (falling
+    /// powers). Regression: the wrappers left the whole layout as text.
+    #[test]
+    fn styled_traditional_form_labeled_is_drawn() {
+      let result = woxi::interpret_with_stdout(
+        r#"Style[TraditionalForm[Labeled[Pane[Text[a == b/2], {300, 200}], Framed[Text[Row[{3 + y + y^2, " = 0"}]], Background -> LightYellow], {Top}]], 20]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the labeled layout is a graphic");
+      assert!(!svg.contains("Labeled"), "{svg}");
+      assert!(!svg.contains("TraditionalForm"), "{svg}");
+      assert!(svg.contains("font-size=\"20"), "{svg}");
+      assert!(!svg.contains("font-size=\"14\""), "{svg}");
+      // Falling powers: y² comes before the constant term.
+      let y = svg.find(">y</text>").expect("the variable is drawn");
+      let three = svg.find(">3</text>").expect("the constant is drawn");
+      assert!(y < three, "{svg}");
+    }
+
+    /// Each wrapper alone also reaches the captioned picture.
+    #[test]
+    fn style_or_traditional_form_around_labeled_is_drawn() {
+      for code in [
+        r#"Style[Labeled[Pane[Text[a + b], {200, 100}], Framed[Text["cap"]], Top], 18]"#,
+        r#"TraditionalForm[Labeled[Pane[Text[a + b], {200, 100}], Framed[Text["cap"]], Top]]"#,
+      ] {
+        let result =
+          woxi::interpret_with_stdout(code).expect("interpret should succeed");
+        let svg = result.graphics.expect("the labeled layout is a graphic");
+        assert!(svg.contains(">cap</text>"), "{code}: {svg}");
+        assert!(!svg.contains("Labeled"), "{code}: {svg}");
+      }
+    }
+
+    /// An exact `Root` object is typeset as its value to three significant
+    /// digits with an ellipsis, in a light rounded frame, as a notebook
+    /// shows it — not as the `Root[f, k, 0]` source.
+    #[test]
+    fn root_object_is_typeset_as_its_approximation() {
+      let svg = woxi::interpret(
+        r#"ExportString[TraditionalForm[x == Root[1 + 2 #1 + 2 #1^3 &, 1]], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains("-0.424\u{2026}"), "{svg}");
+      assert!(!svg.contains("Root"), "{svg}");
+      assert!(svg.contains("rx=\"3.0\""), "{svg}");
+
+      let svg = woxi::interpret(
+        r#"ExportString[Root[2 + #1 + #1^2 + #1^3 &, 1], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains("-1.35\u{2026}"), "{svg}");
+
+      // A complex root shows both parts.
+      let svg =
+        woxi::interpret(r#"ExportString[Root[1 + #1 + #1^3 &, 2], "SVG"]"#)
+          .unwrap();
+      assert!(svg.contains("0.341\u{2026} - 1.16\u{2026}"), "{svg}");
+      // The imaginary unit is drawn as a bold `i`.
+      assert!(svg.contains("font-weight=\"800\""), "{svg}");
+      assert!(svg.contains(">i</tspan>"), "{svg}");
+    }
   }
 
   // ── Display-only wrappers in text markup ──
@@ -5075,6 +5294,87 @@ mod grid_item_style_tests {
     );
     assert!(svg.contains(">0.50</text>"), "{svg}");
     assert!(!svg.contains("<tspan x="), "{svg}");
+  }
+
+  #[test]
+  fn test_string_form_with_matrix_in_graphics_text_is_a_matrix() {
+    // A `StringForm` label whose slots hold matrices typesets each as a
+    // parenthesized column, not as its entries flattened into text lines.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Blue, Text[StringForm["`` = `` + t ``", MatrixForm[{"x", "y"}], MatrixForm[{1., 3.}], MatrixForm[{1., -2.}]], {0, 0}], Circle[]}], "SVG"]"#,
+    )
+    .unwrap();
+    let parens = paren_paths(&svg);
+    assert_eq!(parens.len(), 6, "{svg}");
+    assert!(
+      parens.iter().all(|p| p.contains("stroke=\"rgb(0,0,255)\"")),
+      "{svg}"
+    );
+    for entry in [">x</text>", ">y</text>", ">3.</text>", ">-2.</text>"] {
+      assert!(svg.contains(entry), "{entry} missing: {svg}");
+    }
+    assert!(!svg.contains("<tspan x="), "{svg}");
+    assert!(!svg.contains("StringForm"), "{svg}");
+  }
+
+  /// The `(x, width)` of the first nested picture an inset label embeds,
+  /// and the x shift of its content within that picture.
+  fn first_inset_geometry(svg: &str) -> (f64, f64) {
+    let attr = |s: &str, key: &str| -> f64 {
+      let start = s.find(key).unwrap() + key.len();
+      let rest = &s[start..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    let inset = &svg[svg.find("<svg x=").unwrap()..];
+    let shift = &inset[inset.find("translate(").unwrap() + 10..];
+    let shift: f64 = shift[..shift.find(',').unwrap()].parse().unwrap();
+    (attr(inset, "<svg x=\""), shift)
+  }
+
+  #[test]
+  fn test_text_offset_places_a_matrix_label() {
+    // `Text[label, pos, {-1, 0}]` puts the left edge of a label drawn as a
+    // picture (here a matrix) on `pos`, as it does for a plain text label.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Point[{0, 0}], Text[Row[{"v = ", MatrixForm[{1, 2}]}], {0, 0}, {-1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 400], "SVG"]"#,
+    )
+    .unwrap();
+    let cx: f64 = {
+      let s = &svg[svg.find("<circle cx=\"").unwrap() + 12..];
+      s[..s.find('"').unwrap()].parse().unwrap()
+    };
+    let (x, shift) = first_inset_geometry(&svg);
+    assert!(
+      (x + shift - cx).abs() < 0.01,
+      "{x} + {shift} vs {cx}: {svg}"
+    );
+    assert_eq!(paren_paths(&svg).len(), 2, "{svg}");
+  }
+
+  #[test]
+  fn test_nested_style_around_matrix_keeps_outer_size() {
+    // An inner `Style` coloring a matrix keeps the font size of the
+    // `Style` around it, alone or as an item of a styled `Row`.
+    for code in [
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], Red], 30], "SVG"]"#,
+      r#"ExportString[Style[Row[{"a ", Style[MatrixForm[{1, 2}], Red]}], 30], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("font-size=\"14\""), "{code}: {svg}");
+      assert!(svg.contains("font-size=\"30\""), "{code}: {svg}");
+      assert_eq!(
+        svg.matches("fill=\"rgb(255,0,0)\"").count(),
+        2,
+        "{code}: {svg}"
+      );
+    }
+    // The inner directives win over the outer ones.
+    let svg = woxi::interpret(
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], 12, Red], 30], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("font-size=\"12\""), "{svg}");
+    assert!(!svg.contains("font-size=\"30\""), "{svg}");
   }
 
   #[test]

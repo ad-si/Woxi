@@ -116,7 +116,7 @@ const ATKINSON_ASCII: [u16; 95] = [
   460, 344, 237, 344, 555,
 ];
 
-fn char_width_em(c: char) -> f64 {
+pub(crate) fn char_width_em(c: char) -> f64 {
   match c {
     ' '..='~' => ARIAL_ASCII[c as usize - 0x20] as f64 / 2048.0,
     '\u{2212}' => 1196.0 / 2048.0,

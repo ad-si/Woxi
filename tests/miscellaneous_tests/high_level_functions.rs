@@ -3707,6 +3707,67 @@ mod high_level_functions {
     }
   }
 
+  mod graphics_array_tests {
+    use super::*;
+
+    #[test]
+    fn graphics_array_flat_list_is_one_row() {
+      assert_eq!(
+        interpret(
+          "ExportString[GraphicsArray[{Graphics[Disk[]], Graphics[Circle[]], \
+           Graphics[Point[{0, 0}]]}], \"SVG\"] === \
+           ExportString[GraphicsGrid[{{Graphics[Disk[]], Graphics[Circle[]], \
+           Graphics[Point[{0, 0}]]}}], \"SVG\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn graphics_array_nested_list_is_a_grid() {
+      assert_eq!(
+        interpret(
+          "ExportString[GraphicsArray[{{Graphics[Disk[]]}, {Graphics[Circle[]]}}], \
+           \"SVG\"] === ExportString[GraphicsGrid[{{Graphics[Disk[]]}, \
+           {Graphics[Circle[]]}}], \"SVG\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn graphics_array_graphics_spacing_is_scaled_spacings() {
+      assert_eq!(
+        interpret(
+          "ExportString[GraphicsArray[{Graphics[Disk[]], Graphics[Circle[]]}, \
+           GraphicsSpacing -> 0.4], \"SVG\"] === \
+           ExportString[GraphicsGrid[{{Graphics[Disk[]], Graphics[Circle[]]}}, \
+           Spacings -> Scaled[0.4]], \"SVG\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn graphics_array_evaluated_list_argument() {
+      assert_eq!(
+        interpret(
+          "Head[GraphicsArray[Table[Graphics[Disk[{0, 0}, r]], {r, 3}]]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
+    fn graphics_array_non_list_stays_unevaluated() {
+      assert_eq!(interpret("GraphicsArray[x]").unwrap(), "GraphicsArray[x]");
+    }
+  }
+
   mod graphics_grid_frame_tests {
     use super::*;
 
