@@ -35736,6 +35736,12 @@ pub enum ManipulateControl {
     /// Only affects the SetterBar/RadioButtonBar bar layout; a dropdown or
     /// index slider ignores it.
     vertical: bool,
+    /// `ControlType -> Checkbox` over a two-choice domain (`{{k, 1}, {1, 0},
+    /// Checkbox}`): draw a checkbox whatever the choices are, like
+    /// `Checkbox[x, {v1, v2}]` — unchecked sets the first choice, checked
+    /// the second. Without it only a bare `{True, False}` domain is a
+    /// checkbox and `{1, 0}` would become a two-button SetterBar.
+    checkbox: bool,
   },
   /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
   /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
@@ -42156,6 +42162,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     radio: false,
     slider: false,
     vertical: false,
+    checkbox: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -45368,6 +45375,8 @@ fn parse_manipulate_control(
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
+      let forced_checkbox =
+        control_type.as_deref() == Some("Checkbox") && values.len() == 2;
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
           name,
@@ -45402,6 +45411,7 @@ fn parse_manipulate_control(
             Some("Slider" | "VerticalSlider" | "Manipulator")
           ),
           vertical: appearance_vertical,
+          checkbox: forced_checkbox,
         },
         enabled,
         min_code: None,
@@ -47107,6 +47117,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         radio,
         slider,
         vertical,
+        checkbox,
       } => {
         let value_parts: Vec<String> = values
           .iter()
@@ -47125,6 +47136,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         let radio_json = if *radio { r#","radio":true"# } else { "" };
         let slider_json = if *slider { r#","slider":true"# } else { "" };
         let vertical_json = if *vertical { r#","vertical":true"# } else { "" };
+        let checkbox_json = if *checkbox { r#","checkbox":true"# } else { "" };
         // Icon labels (rule right sides that are graphics) ride along as
         // rendered SVG, parallel to `values`; omitted when all-text.
         let svg_json = if value_label_svgs.iter().any(Option::is_some) {
@@ -47157,7 +47169,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           String::new()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -47169,6 +47181,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           radio_json,
           slider_json,
           vertical_json,
+          checkbox_json,
           svg_json,
           runs_json,
         ));
@@ -51699,6 +51712,50 @@ mod manipulate_traditional_form_choice_svg_tests {
       json.contains(r#""italic":true"#),
       "the italic flag itself must survive into the JSON: {json}"
     );
+  }
+
+  /// An explicit `Checkbox` control type over a two-choice, non-boolean
+  /// domain (`{{k, 1, "label"}, {1, 0}, Checkbox}`) is still a checkbox —
+  /// unchecked binds the first choice, checked the second — so the spec
+  /// must flag it (and export the flag) instead of leaving it to the
+  /// boolean-only checkbox heuristic, which would draw two buttons.
+  #[test]
+  fn explicit_checkbox_over_numeric_choices_is_flagged() {
+    for code in [
+      "Manipulate[k, {{k, 1, \"drop term\"}, {1, 0}, Checkbox}]",
+      "Manipulate[k, {{k, 0, \"show\"}, {0, 1}, ControlType -> Checkbox}]",
+    ] {
+      let expr = crate::parse_to_expr(code).expect("parse");
+      let spec = extract_manipulate_spec(&expr).expect("extract spec");
+      match &spec.controls[..] {
+        [
+          ManipulateControl::Discrete {
+            values,
+            initial_index,
+            checkbox,
+            setter_bar,
+            ..
+          },
+        ] => {
+          assert_eq!(values.len(), 2, "{code}");
+          assert_eq!(*initial_index, 0, "{code}");
+          assert!(*checkbox, "{code} must be a checkbox");
+          assert!(!*setter_bar, "{code}");
+        }
+        other => panic!("expected one discrete control, got {other:?}"),
+      }
+      let json = manipulate_spec_to_json(&spec);
+      assert!(json.contains(r#""checkbox":true"#), "{json}");
+    }
+
+    // Without the control type, a numeric pair stays a setter.
+    let expr =
+      crate::parse_to_expr("Manipulate[k, {{k, 1}, {1, 0}}]").expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    match &spec.controls[..] {
+      [ManipulateControl::Discrete { checkbox, .. }] => assert!(!*checkbox),
+      other => panic!("expected one discrete control, got {other:?}"),
+    }
   }
 }
 

@@ -100,6 +100,10 @@ pub enum ControlState {
     /// choices in a column instead of a row. Ignored by the dropdown and
     /// index-slider layouts.
     vertical: bool,
+    /// `ControlType -> Checkbox` over two choices: draw a checkbox that
+    /// binds the first choice when unchecked and the second when checked
+    /// (see `ManipulateControl::Discrete::checkbox`).
+    checkbox: bool,
   },
   /// A 2D slider binding its variable to a `{x, y}` pair.
   Slider2D {
@@ -2523,6 +2527,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         radio,
         slider,
         vertical,
+        checkbox,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
@@ -2544,6 +2549,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         radio: *radio,
         slider: *slider,
         vertical: *vertical,
+        checkbox: *checkbox,
       },
       ManipulateControl::Slider2D {
         name,
