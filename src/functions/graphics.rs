@@ -313,6 +313,10 @@ struct StyleState {
   /// The `Texture[…]` directive in force, if any.
   texture: Option<std::sync::Arc<TextureFill>>,
   color: Color,
+  /// Whether a color directive has set `color`, as opposed to it still
+  /// being the default black. Primitives with a default color of their own
+  /// (the `MultivariateStatistics`` ellipsoid) only yield to an explicit one.
+  color_set: bool,
   /// `FaceForm[…]` sets only this — the fill color of area primitives
   /// (Disk, Polygon, Rectangle, …) — leaving `color` (which Text, Line,
   /// Point and everything else read) untouched. `None` means those
@@ -649,6 +653,7 @@ impl Default for StyleState {
     Self {
       texture: None,
       color: BLACK,
+      color_set: false,
       face_color: None,
       face_opacity: None,
       opacity: 1.0,
@@ -2206,6 +2211,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
   // Named color
   if let Some(color) = parse_color(expr) {
     style.color = color;
+    style.color_set = true;
     return true;
   }
 
@@ -2262,6 +2268,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
             && let Some(c) = parse_color(&args[1])
           {
             style.color = c;
+            style.color_set = true;
           }
         }
         true
@@ -3301,7 +3308,22 @@ fn collect_primitives(
         "Sphere" | "Ball" => {
           parse_sphere(name == "Ball", args, style, prims);
         }
-        "Ellipsoid" if args.len() == 2 || args.len() == 3 => {
+        // The `MultivariateStatistics`` package's own `Ellipsoid` (which
+        // `EllipsoidQuantile` returns, and which shadows the built-in once
+        // the package is loaded) draws as the ellipse's outline. Its
+        // `Ellipsoid[c, radii, directions]` form exists only there.
+        "Ellipsoid"
+          if args.len() == 3
+            || (args.len() == 2
+              && matches!(&args[1], Expr::List(r)
+                if r.iter().all(|e| !matches!(e, Expr::List(_))))
+              && crate::packages_list()
+                .iter()
+                .any(|p| p == "MultivariateStatistics`")) =>
+        {
+          parse_package_ellipsoid(args, style, prims);
+        }
+        "Ellipsoid" if args.len() == 2 => {
           parse_ellipsoid(args, style, prims);
         }
         // A fitted model's parameter confidence region, `ParameterEllipsoid[
@@ -4427,44 +4449,6 @@ fn parse_ellipsoid(
   let Expr::List(second) = &args[1] else {
     return;
   };
-  // `Ellipsoid[c, {r1, r2}, {d1, d2}]`: semi-axes r1, r2 along the
-  // directions d1, d2.
-  if args.len() == 3 {
-    let radii: Option<Vec<f64>> = second.iter().map(expr_to_f64).collect();
-    let directions: Option<Vec<(f64, f64)>> = match &args[2] {
-      Expr::List(dirs) => dirs.iter().map(expr_to_point).collect(),
-      _ => None,
-    };
-    let (Some(radii), Some(dirs)) = (radii, directions) else {
-      return;
-    };
-    if radii.len() != 2 || dirs.len() != 2 {
-      return;
-    }
-    let unit = |(x, y): (f64, f64)| {
-      let n = x.hypot(y);
-      if n > 0.0 { (x / n, y / n) } else { (x, y) }
-    };
-    let (u, v) = (unit(dirs[0]), unit(dirs[1]));
-    const STEPS: usize = 120;
-    let points = (0..STEPS)
-      .map(|i| {
-        let t = std::f64::consts::TAU * i as f64 / STEPS as f64;
-        let (s, c) = t.sin_cos();
-        (
-          cx + radii[0] * c * u.0 + radii[1] * s * v.0,
-          cy + radii[0] * c * u.1 + radii[1] * s * v.1,
-        )
-      })
-      .collect();
-    prims.push(Primitive::PolygonPrim {
-      points,
-      holes: Vec::new(),
-      vertex_colors: None,
-      style: style.clone(),
-    });
-    return;
-  }
   // Semi-axes: an axis-aligned ellipse is exactly a `Disk`.
   if second.len() == 2 && second.iter().all(|e| !matches!(e, Expr::List(_))) {
     if let (Some(rx), Some(ry)) =
@@ -4514,6 +4498,71 @@ fn parse_ellipsoid(
     holes: Vec::new(),
     vertex_colors: None,
     style: style.clone(),
+  });
+}
+
+/// The color the `MultivariateStatistics`` package outlines its ellipsoids
+/// in unless a color directive says otherwise: the first default plot color.
+const PACKAGE_ELLIPSOID_COLOR: Color = Color {
+  r: 0.368417,
+  g: 0.506779,
+  b: 0.709798,
+  a: 1.0,
+};
+
+/// The `MultivariateStatistics`` package's `Ellipsoid[c, {r1, r2}]` and
+/// `Ellipsoid[c, {r1, r2}, {d1, d2}]` (semi-axes r1, r2 along the directions
+/// d1, d2; axis-aligned without them) inside a two-dimensional `Graphics`:
+/// the closed outline of the ellipse. Other dimensions draw nothing here.
+fn parse_package_ellipsoid(
+  args: &[Expr],
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) {
+  let Some((cx, cy)) = expr_to_point(&args[0]) else {
+    return;
+  };
+  let radii: Option<Vec<f64>> = match &args[1] {
+    Expr::List(items) => items.iter().map(expr_to_f64).collect(),
+    _ => None,
+  };
+  let Some(radii) = radii.filter(|r| r.len() == 2) else {
+    return;
+  };
+  let dirs: Vec<(f64, f64)> = match args.get(2) {
+    Some(Expr::List(dirs)) => {
+      match dirs.iter().map(expr_to_point).collect::<Option<Vec<_>>>() {
+        Some(d) if d.len() == 2 => d,
+        _ => return,
+      }
+    }
+    Some(_) => return,
+    None => vec![(1.0, 0.0), (0.0, 1.0)],
+  };
+  let unit = |(x, y): (f64, f64)| {
+    let n = x.hypot(y);
+    if n > 0.0 { (x / n, y / n) } else { (x, y) }
+  };
+  let (u, v) = (unit(dirs[0]), unit(dirs[1]));
+  const STEPS: usize = 120;
+  let points = (0..=STEPS)
+    .map(|i| {
+      let t = std::f64::consts::TAU * (i % STEPS) as f64 / STEPS as f64;
+      let (s, c) = t.sin_cos();
+      (
+        cx + radii[0] * c * u.0 + radii[1] * s * v.0,
+        cy + radii[0] * c * u.1 + radii[1] * s * v.1,
+      )
+    })
+    .collect();
+  let mut style = style.clone();
+  if !style.color_set {
+    style.color = PACKAGE_ELLIPSOID_COLOR;
+  }
+  prims.push(Primitive::Line {
+    segments: vec![points],
+    vertex_colors: None,
+    style,
   });
 }
 
@@ -14739,6 +14788,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if frame {
     ticks_x = TickSpec::None;
     ticks_y = TickSpec::None;
+  } else {
+    // `FrameLabel` captions the frame's edges; without a frame there is
+    // nothing to caption, so the labels are not drawn.
+    frame_label = None;
   }
   // Only an edge that is drawn can carry tick marks or labels.
   for (mode, &drawn) in frame_tick_modes.iter_mut().zip(&frame_edges) {

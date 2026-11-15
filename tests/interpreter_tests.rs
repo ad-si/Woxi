@@ -3578,12 +3578,64 @@ mod interpreter_tests {
 
   #[test]
   fn test_graphics_draws_ellipsoid_with_directions() {
+    // Regression: the `MultivariateStatistics`` ellipsoid (what
+    // `EllipsoidQuantile` returns) was filled black, hiding everything
+    // drawn under it; it is an outline in the first default plot color.
+    clear_state();
     let svg = interpret(
       "ExportString[Graphics[Ellipsoid[{0, 0}, {2, 1}, \
        {{1, 1}, {-1, 1}}]], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains("<polygon"), "{svg}");
+    assert!(!svg.contains("<polygon"), "{svg}");
+    assert!(svg.contains("<polyline"), "{svg}");
+    assert!(svg.contains("fill=\"none\""), "{svg}");
+    assert!(svg.contains("rgb(94,129,181)"), "{svg}");
+    // An explicit color directive still applies.
+    let red = interpret(
+      "ExportString[Graphics[{Red, Ellipsoid[{0, 0}, {2, 1}, \
+       {{1, 1}, {-1, 1}}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(red.contains("rgb(255,0,0)"), "{red}");
+    assert!(!red.contains("rgb(94,129,181)"), "{red}");
+  }
+
+  #[test]
+  fn test_graphics_package_ellipsoid_is_outline() {
+    // Once `MultivariateStatistics`` is loaded its `Ellipsoid` shadows the
+    // built-in, so an axis-aligned quantile ellipse is outlined too.
+    clear_state();
+    let svg = interpret(
+      "Needs[\"MultivariateStatistics`\"]; ExportString[Graphics[\
+       MultivariateStatistics`EllipsoidQuantile[\
+       MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], 0.5]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("<ellipse"), "{svg}");
+    assert!(svg.contains("<polyline"), "{svg}");
+    clear_state();
+  }
+
+  #[test]
+  fn test_graphics_frame_label_needs_frame() {
+    // Regression: `FrameLabel` captions were drawn although no frame was.
+    clear_state();
+    let bare = interpret(
+      "ExportString[Graphics[Circle[], FrameLabel -> {\"abc\", \"def\"}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!bare.contains(">abc<") && !bare.contains(">def<"), "{bare}");
+    let framed = interpret(
+      "ExportString[Graphics[Circle[], Frame -> True, \
+       FrameLabel -> {\"abc\", \"def\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      framed.contains(">abc<") && framed.contains(">def<"),
+      "{framed}"
+    );
   }
 
   #[test]
