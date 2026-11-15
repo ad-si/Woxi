@@ -3321,7 +3321,10 @@ mod graphics {
       let svg = export_svg(
         "Graphics[{Text[Style[Column[{\"a\", \"b\", \"c\"}], 10], {0, 0}]}]",
       );
-      assert!(svg.contains("dy=\"-10\">a</tspan>"), "{svg}");
+      assert!(
+        svg.contains("dy=\"-10\" dominant-baseline=\"central\">a</tspan>"),
+        "{svg}"
+      );
     }
 
     /// A `Framed` item stacked in a label's `Column` sets its content
