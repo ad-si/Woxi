@@ -462,6 +462,29 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_refines_bends_as_drawn_in_a_stretched_frame() {
+      // The x range is 100× narrower than the y range, but `AspectRatio ->
+      // 1` draws the curve in a square frame, so refinement must judge
+      // bends in display coordinates: rescaled to the frame, no two visible
+      // consecutive segments turn by more than ~15°. The spiral also
+      // settles into a sub-pixel tail, which must not swallow the sample
+      // budget (it used to take every one of the 4000 allowed samples).
+      assert_eq!(
+        interpret(
+          "l = First[Cases[ParametricPlot[{Exp[-t/20] Cos[t]/100, \
+             Exp[-t/20] Sin[t]}, {t, 0, 2000}, AspectRatio -> 1], \
+             Line[l_] :> l, Infinity]]; \
+           d = Differences[{100 #[[1]], #[[2]]} & /@ l]; \
+           {Max[MapThread[If[Norm[#1] > 0.01 && Norm[#2] > 0.01, \
+             VectorAngle[#1, #2], 0] &, {Most[d], Rest[d]}]] < 0.27, \
+            Length[l] < 3000}"
+        )
+        .unwrap(),
+        "{True, True}"
+      );
+    }
+
+    #[test]
     fn parametric_plot_draws_tooltip_wrapped_curves() {
       // Hover-only wrappers around curves draw the curves themselves.
       let svg = export_svg(
