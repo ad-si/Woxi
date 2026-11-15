@@ -14676,16 +14676,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
   // Skipped when AspectRatio -> Full (plots need independent axis scaling).
-  // Under Wolfram's default (`PlotRangeClipping -> False`) the extra room
-  // this adds shows whatever lies past an explicit `PlotRange` — only the
-  // image edge cuts it off. `PlotRangeClipping -> True` keeps the
-  // requested range as the bound, so remember it for the clip rectangle.
-  let clip_x = plot_range_x
-    .filter(|_| clipping_requested)
-    .map(|_| (bb.x_min, bb.x_max));
-  let clip_y = plot_range_y
-    .filter(|_| clipping_requested)
-    .map(|_| (bb.y_min, bb.y_max));
+  // The extra room this adds is letterbox space beside the picture, not
+  // part of it: the front end draws only the background there, so a bare
+  // picture still cuts primitives off at an explicit `PlotRange` (the
+  // Wolfram snapshots of `ImageSize -> {w, h}` pictures whose content runs
+  // past the range show straight cuts at the range's edges). Remember the
+  // requested range for the clip rectangle. Spilling into a frame's, the
+  // axes' or an explicit `ImagePadding`'s margins (`PlotRangeClipping ->
+  // False`, the default) is decided where the clip is applied.
+  let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
+  let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
   // A frame or axes under `ImageSize -> {w, h}` with an automatic aspect
   // ratio hug the data instead: the frame keeps the shape of the plot range and
   // sits centered in the requested size, rather than the range being
