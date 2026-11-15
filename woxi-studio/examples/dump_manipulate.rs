@@ -216,6 +216,13 @@ fn main() {
         let render = woxi::with_scoped_globals(&bindings, || {
           woxi::interpret_with_stdout(&state.body)
         });
+        // Lay the output out in the `ContentSize` area, as the Studio does.
+        let render = render.map(|res| {
+          state
+            .content_width
+            .and_then(|w| manipulate::flow_to_content_width(&res, w))
+            .unwrap_or(res)
+        });
         if let Ok(res) = render
           && let Some(svg) = res.graphics
         {

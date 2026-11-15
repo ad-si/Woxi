@@ -4036,6 +4036,38 @@ mod graphics {
       assert!(svg.contains("<text"), "{svg}");
     }
 
+    /// `None` or `False` on one side of `Ticks -> {xspec, yspec}` hides only
+    /// that axis's ticks; the other axis keeps its automatic labels.
+    #[test]
+    fn ticks_none_on_one_side_hides_only_that_axis() {
+      let labels = |svg: &str| -> Vec<String> {
+        svg
+          .split("<text")
+          .skip(1)
+          .filter_map(|t| {
+            let body = &t[t.find('>')? + 1..];
+            Some(body[..body.find('<')?].to_string())
+          })
+          .collect()
+      };
+      // x runs over 0..5 and y over 10..20, so the two axes' labels differ.
+      let plot = |spec: &str| {
+        export_svg(&format!("Plot[10 + 2 x, {{x, 0, 5}}, Ticks -> {spec}]"))
+      };
+      let all = labels(&plot("Automatic"));
+      for side in ["None", "False"] {
+        let y_only = labels(&plot(&format!("{{{side}, Automatic}}")));
+        assert!(!y_only.is_empty(), "{side}: {y_only:?}");
+        assert!(y_only.iter().all(|l| l.parse::<f64>().unwrap() >= 10.0));
+        assert!(y_only.len() < all.len(), "{side}: {y_only:?} vs {all:?}");
+
+        let x_only = labels(&plot(&format!("{{Automatic, {side}}}")));
+        assert!(!x_only.is_empty(), "{side}: {x_only:?}");
+        assert!(x_only.iter().all(|l| l.parse::<f64>().unwrap() <= 5.0));
+        assert!(x_only.len() < all.len(), "{side}: {x_only:?} vs {all:?}");
+      }
+    }
+
     /// A machine real inside a `TraditionalForm` caption of a labeled plot
     /// is shown to six significant figures, not with its full digits.
     #[test]
@@ -9847,6 +9879,43 @@ mod plot3d {
           "{p:?} {q:?}"
         );
       }
+    }
+
+    /// A `Manipulate` frame frames its 3D graphics by the sphere around
+    /// the box, as Wolfram does: a Demonstration's snapshots of a
+    /// `Show[Plot3D[…], Graphics3D[…]]` cube of side 15 at `ImageSize ->
+    /// 400` measured 332 px (skew view) and 277 px (`ViewPoint -> Below`,
+    /// near face) across, exactly what `SphericalRegion -> True` draws. An
+    /// explicit `SphericalRegion -> False` still wins.
+    #[test]
+    fn manipulate_frame_defaults_graphics3d_to_spherical_region() {
+      for view in ["{1.3, -2.4, 2}", "Below", "Left"] {
+        let scene = |opts: &str| {
+          format!(
+            "Show[Graphics3D[Sphere[{{0, 0, 5}}, 2]], PlotRange -> \
+             {{{{-7.5, 7.5}}, {{-7.5, 7.5}}, {{0, 15}}}}, ViewPoint -> \
+             {view}, ImageSize -> {{400, 400}}{opts}]"
+          )
+        };
+        let plain = export_svg(&scene(""));
+        let spherical = export_svg(&scene(", SphericalRegion -> True"));
+        assert_ne!(plain, spherical, "{view}");
+        let in_frame = woxi::with_manipulate_frame(|| export_svg(&scene("")));
+        assert_eq!(in_frame, spherical, "{view}");
+        let forced_off = woxi::with_manipulate_frame(|| {
+          export_svg(&scene(", SphericalRegion -> False"))
+        });
+        assert_eq!(forced_off, plain, "{view}");
+        // Installing control values is rendering a frame.
+        let bound = woxi::with_scoped_globals(
+          &[("r".to_string(), "2".to_string())],
+          || export_svg(&scene("").replace(", 2]", ", r]")),
+        );
+        assert_eq!(bound, spherical, "{view}");
+      }
+      // The frame ends with the closure.
+      let _ = woxi::with_manipulate_frame(|| ());
+      assert!(!woxi::in_manipulate_frame());
     }
 
     // `ViewCenter` moves the point the camera looks at; the box middle is
@@ -17779,12 +17848,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
-    /// A framed plot draws no interior axes, and merging other graphics
-    /// into it with `Show` must not add a set. Regression: `Show` filled in
-    /// `Axes -> True` for every leading plot, so a framed one came back
-    /// with a second, duplicated scale through the middle.
+    /// Counts the long horizontal and vertical lines of an SVG (longer than
+    /// 100 units, so frame ticks don't count): the plain axes a framed plot
+    /// draws through the origin.
+    fn spanning_axis_lines(svg: &str) -> (usize, usize) {
+      let attr = |tag: &str, name: &str| -> Option<String> {
+        let key = format!(" {name}=\"");
+        let start = tag.find(&key)? + key.len();
+        let len = tag[start..].find('"')?;
+        Some(tag[start..start + len].to_string())
+      };
+      let (mut horizontal, mut vertical) = (0, 0);
+      for tag in svg.split("<line").skip(1) {
+        let tag = &tag[..tag.find('>').unwrap_or(tag.len())];
+        let (Some(x1), Some(y1), Some(x2), Some(y2)) = (
+          attr(tag, "x1"),
+          attr(tag, "y1"),
+          attr(tag, "x2"),
+          attr(tag, "y2"),
+        ) else {
+          continue;
+        };
+        let num = |v: &str| v.parse::<f64>().unwrap_or(f64::NAN);
+        if y1 == y2 && (num(&x2) - num(&x1)).abs() > 100.0 {
+          horizontal += 1;
+        }
+        if x1 == x2 && (num(&y2) - num(&y1)).abs() > 100.0 {
+          vertical += 1;
+        }
+      }
+      (horizontal, vertical)
+    }
+
+    /// A framed plot draws its axes as plain lines through the origin and
+    /// leaves the ticks to the frame; merging other graphics into it with
+    /// `Show` must keep exactly that. Regressions: `Show` once added a
+    /// second, duplicated scale through the middle, and later dropped the
+    /// axes of a framed plot entirely.
     #[test]
-    fn show_adds_no_interior_axes_to_a_framed_plot() {
+    fn show_keeps_plain_axes_of_a_framed_plot() {
       let svg = export_svg(
         "Show[ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
            PlotRange -> {{-1.1, 1.1}, {-1.1, 1.1}}, Frame -> True], \
@@ -17794,6 +17896,27 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         svg.matches(">0.5</text>").count(),
         2,
         "the frame labels 0.5 once per axis and nothing else does: {svg}"
+      );
+      assert_eq!(
+        spanning_axis_lines(&svg),
+        (1, 1),
+        "one plain axis line in each direction: {svg}"
+      );
+    }
+
+    /// `Show[ListPlot[…, Frame -> True], Graphics[…]]` keeps the zero lines
+    /// the framed list plot draws on its own.
+    #[test]
+    fn show_keeps_plain_axes_of_a_framed_list_plot() {
+      let shown = export_svg(
+        "Show[ListPlot[{{-1, -1}, {1, 2}}, Joined -> True, Frame -> True], \
+         Graphics[Point[{0, 0}]]]",
+      );
+      assert_eq!(spanning_axis_lines(&shown), (1, 1), "{shown}");
+      assert_eq!(
+        shown.matches(">0.5</text>").count(),
+        2,
+        "0.5 is labeled once per labeled frame edge, not on the axes: {shown}"
       );
     }
 
@@ -48166,6 +48289,37 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Invisible"), "{svg}");
   }
 
+  /// A framed `Grid` of pictures pads every cell by 4.5 pixels on each
+  /// side, with the dividers in the middle of the gaps. Regression: the
+  /// frame lines ran along the pictures' edges.
+  #[test]
+  fn framed_grid_pads_picture_cells() {
+    let svg = interpret(
+      r#"g = Graphics[Disk[], ImageSize -> {100, 100}]; ExportString[Grid[{{g, g}, {g, g}}, Frame -> All], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"218\" height=\"218\""),
+      "{svg}"
+    );
+    for (x, y) in [(4, 4), (114, 4), (4, 114), (114, 114)] {
+      assert!(
+        svg.contains(&format!(
+          "<svg x=\"{x}\" y=\"{y}\" width=\"100\" height=\"100\""
+        )),
+        "{svg}"
+      );
+    }
+    assert!(
+      svg.contains("x1=\"109.00\" y1=\"0.00\" x2=\"109.00\""),
+      "{svg}"
+    );
+    assert!(
+      svg.contains("x1=\"0.00\" y1=\"109.00\" x2=\"218.00\""),
+      "{svg}"
+    );
+  }
+
   #[test]
   fn grid_background_accepts_index_rules_for_rows() {
     let svg = interpret(
@@ -57918,6 +58072,20 @@ mod repeated_graphics_options {
        ImageSize -> 100]",
     );
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+  }
+}
+
+mod plot_label_number_form_held_assignment {
+  use super::*;
+
+  #[test]
+  fn label_reads_as_output_form() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, PlotLabel -> With[{c = -1.27, g = Sin}, \
+       NumberForm[HoldForm[w = g[c x]], {3, 1}]]]",
+    );
+    assert!(svg.contains(">w = Sin[-1.3 x]</text>"), "{svg}");
+    assert!(!svg.contains("*"), "{svg}");
   }
 }
 

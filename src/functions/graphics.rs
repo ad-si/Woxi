@@ -16231,15 +16231,6 @@ fn sqrt_radical(
 impl BoxLayout {
   /// Create a layout for a simple text atom.
   fn text(s: &str, font_size: f64) -> Self {
-    Self::text_with(s, font_size, true)
-  }
-
-  /// A string literal's text: it is set upright, never as a math variable.
-  fn literal_text(s: &str, font_size: f64) -> Self {
-    Self::text_with(s, font_size, false)
-  }
-
-  fn text_with(s: &str, font_size: f64, math_italic: bool) -> Self {
     let ch = font_size * MONO_ADVANCE; // monospace char advance
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
@@ -16466,7 +16457,9 @@ impl BoxLayout {
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
     // slanted), so surrounding layout is unaffected.
-    let style_attr = if math_italic && is_math_italic_atom(s) {
+    let style_attr = if is_math_italic_atom(s)
+      && !BOX_UPRIGHT_TEXT.with(std::cell::Cell::get)
+    {
       " font-style=\"italic\""
     } else {
       ""
@@ -16512,6 +16505,23 @@ thread_local! {
   /// sets inline: `∑`, `∏` and `lim` carry their limits as scripts there,
   /// the way they do inside a fraction.
   static BOX_INLINE_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while typesetting the text of a quoted string box (and any inline
+  /// `\!\(\*…\)` boxes it carries) or a `StyleBox[…, FontSlant -> Plain]`:
+  /// a string is literal text, so its single letters are not math variables
+  /// and stay upright.
+  static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
+fn with_box_upright_text<R>(upright: bool, f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_UPRIGHT_TEXT.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(BOX_UPRIGHT_TEXT.with(|c| c.replace(upright)));
+  f()
 }
 
 /// How much narrower a proportional face sets text than the Arial metrics
@@ -16590,19 +16600,25 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         .strip_prefix('"')
         .and_then(|t| t.strip_suffix('"'))
         .unwrap_or(s);
-      layout_box(
-        &inline_box_string_to_box_expr(text).expect("checked by the guard"),
-        font_size,
-      )
+      let boxes =
+        inline_box_string_to_box_expr(text).expect("checked by the guard");
+      if text.len() == s.len() {
+        layout_box(&boxes, font_size)
+      } else {
+        with_box_upright_text(true, || layout_box(&boxes, font_size))
+      }
     }
     // A string box is stored as its quoted source but drawn without quotes.
     Expr::String(s) => {
       let s = strip_precision_marker(s);
-      // A quoted string is a literal (`"A"` in `Row[{x, "A"}]`), which is
-      // drawn upright rather than as an italic math variable.
-      match s.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) {
-        Some(unquoted) => BoxLayout::literal_text(unquoted, font_size),
-        None => BoxLayout::text(s, font_size),
+      let unquoted = s
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(s);
+      if unquoted.len() == s.len() {
+        BoxLayout::text(unquoted, font_size)
+      } else {
+        with_box_upright_text(true, || BoxLayout::text(unquoted, font_size))
       }
     }
     Expr::Identifier(s) => {
@@ -17142,6 +17158,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut bold = false;
         let mut show_contents = true;
         let mut italic = false;
+        let mut upright = false;
         let mut opacity: Option<f64> = None;
         let mut font_family: Option<String> = None;
         // Scan style options (Rule expressions) in args[1..]. A directive can
@@ -17192,6 +17209,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               "FontSlant" => {
                 italic = matches!(val, Expr::Identifier(v) | Expr::String(v)
                   if v == "Italic" || v == "Oblique");
+                upright = matches!(val, Expr::Identifier(v) | Expr::String(v)
+                  if v == "Plain");
               }
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
@@ -17219,11 +17238,16 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             }
           }
         }
-        let content = match font_family.as_deref() {
+        let layout_content = || match font_family.as_deref() {
           Some(ff) => with_box_font_family(Some(ff), || {
             layout_box(&args[0], effective_font_size)
           }),
           None => layout_box(&args[0], effective_font_size),
+        };
+        let content = if upright {
+          with_box_upright_text(true, layout_content)
+        } else {
+          layout_content()
         };
         if !show_contents {
           return BoxLayout {
@@ -23809,16 +23833,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           **replacement = id_expr("All");
         }
       }
-      // A framed plot draws no interior axes, so the merged graphic must
-      // not grow a set of them either: `Show[ParametricPlot[…, Frame ->
-      // True], …]` keeps the frame it was given and nothing more.
-      let framed = merged_options.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, replacement }
-          if option_name(pattern) == Some("Frame")
-            && !matches!(replacement.as_ref(),
-              Expr::Identifier(s) if s == "False" || s == "None"))
-      });
-      if !has_option(&merged_options, "Axes") && !framed {
+      // The leading plot's axes stay on. In a framed plot they are drawn as
+      // plain lines through the origin (the frame carries the ticks), just
+      // as `Plot[…, Frame -> True]` draws them on its own.
+      if !has_option(&merged_options, "Axes") {
         merged_options.push(rule_expr(id_expr("Axes"), bool_expr(true)));
       }
       // The shape the leading plot drew itself in, unless the options
@@ -24538,10 +24556,13 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
   }
 }
 
-/// Parse Style directives into a GridStyle.
+/// Parse Style directives into a GridStyle. A named style ("Label",
+/// "Section", …) supplies the base size and color, and the explicit
+/// directives sit on top of it, wherever they were written; directive
+/// lists and `Directive[…]` are spliced in place.
 pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
   let mut gs = GridStyle::default();
-  for d in directives {
+  for d in style_directives_in_application_order(directives) {
     match d {
       Expr::Identifier(s) if s == "Bold" => gs.font_weight = Some("bold"),
       Expr::Identifier(s) if s == "Italic" => gs.font_style = Some("italic"),
@@ -24553,6 +24574,19 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
       Expr::Identifier(s) if s == "Huge" => gs.font_size = Some(26.0),
       Expr::Integer(n) => gs.font_size = Some(*n as f64),
       Expr::Real(f) => gs.font_size = Some(*f),
+      // `Style[Grid[…], "Label"]` — the stylesheet entry's size and color.
+      Expr::String(name) => {
+        if let Some((size, rgb)) = named_style_appearance(name) {
+          gs.font_size = Some(size);
+          if let Some((r, g, b)) = rgb {
+            gs.color = Some(Color::new(
+              r as f64 / 255.0,
+              g as f64 / 255.0,
+              b as f64 / 255.0,
+            ));
+          }
+        }
+      }
       Expr::Rule {
         pattern,
         replacement,
@@ -24573,25 +24607,6 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
             }
             _ => {}
           }
-        }
-      }
-      // Directives grouped in a list, e.g. Style[expr, {Large, Bold, Orange}].
-      Expr::List(items) => {
-        let inner = parse_grid_style(items);
-        if inner.font_weight.is_some() {
-          gs.font_weight = inner.font_weight;
-        }
-        if inner.font_style.is_some() {
-          gs.font_style = inner.font_style;
-        }
-        if inner.font_size.is_some() {
-          gs.font_size = inner.font_size;
-        }
-        if inner.font_family.is_some() {
-          gs.font_family = inner.font_family;
-        }
-        if inner.color.is_some() {
-          gs.color = inner.color;
         }
       }
       _ => {
@@ -24633,14 +24648,9 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     // fraction.
     Expr::FunctionCall { name, .. } if name == "Rational" => false,
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Times" | "Power" | "Plus")
-        && !has_string_operand(expr) =>
+      if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
     {
-      box_has_fraction(
-        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          expr,
-        ),
-      )
+      !has_string_operand(expr) && typesets_fraction_box(expr)
     }
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       matches!(&args[0], Expr::List(items) if items.iter().any(label_typesets_fraction))
@@ -24652,6 +24662,17 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// Whether an arithmetic expression (`Times`, `Power` or `Plus`, strings
+/// among its operands included) has a `FractionBox` in its box form, i.e.
+/// is laid out as a built-up fraction rather than as a line of text.
+fn typesets_fraction_box(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Times" | "Power" | "Plus"))
+    && box_has_fraction(
+      &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    )
 }
 
 /// Whether an arithmetic expression has a bare string among its operands
@@ -25970,10 +25991,12 @@ fn grid_svg_styled_internal_reporting(
       }
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
-      // A string with inline box notation is typeset at the grid's size.
-      if let Expr::String(text) = &*cell
-        && let Some(size) = default_style.font_size
-        && has_stacked_inline_box(text)
+      // A string with inline box notation, or an arithmetic cell that
+      // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
+      // grid's size, like the plain text cells around it.
+      if let Some(size) = default_style.font_size
+        && (matches!(&*cell, Expr::String(text) if has_stacked_inline_box(text))
+          || typesets_fraction_box(cell))
       {
         *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
       }
@@ -28618,8 +28641,20 @@ pub fn combine_layout_svgs(
   if !opts.spacings_explicit {
     // `Points` counts printer's points at 96 dpi; the layout works in the
     // pictures' own units, which are points already.
-    opts.h_spacing = SpacingSpec::Points(gap * 0.75);
-    opts.v_spacing = SpacingSpec::Points(gap * 0.75);
+    let gap = gap * 0.75;
+    if opts.frame == FrameSetting::None {
+      opts.h_spacing = SpacingSpec::Points(gap);
+      opts.v_spacing = SpacingSpec::Points(gap);
+    } else {
+      // A framed `Grid` pads every cell by three quarters of that gap
+      // (4.5 pixels) on each side, so the frame lines run between the
+      // cells instead of touching them: a 250 × 300 plot sits in a
+      // 259 × 309 framed cell.
+      opts.h_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.v_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.outer_margin = true;
+      opts.spacings_explicit = true;
+    }
   }
   combine_svgs_grid(rows, &opts)
 }
@@ -28863,6 +28898,10 @@ struct GridLayout {
   v_gap: f64,
   /// Space above the first row (`LayoutOptions::outer_margin`).
   top_pad: f64,
+  /// Where each column starts, and the gap between two columns: a
+  /// `Frame -> All` divider runs down the middle of that gap.
+  col_x: Vec<f64>,
+  h_gap: f64,
 }
 
 /// Compute a natural-dimension grid layout for a 2-D array of SVG cells.
@@ -29081,7 +29120,7 @@ fn compute_grid_layout(
     }
   }
   let left_pad = if opts.outer_margin { h_gap / 2.0 } else { 0.0 };
-  let col_x: Vec<f64> = col_w
+  let mut col_x: Vec<f64> = col_w
     .iter()
     .scan(left_pad, |x, w| {
       let here = *x;
@@ -29173,6 +29212,9 @@ fn compute_grid_layout(
         cell.x += dx;
       }
     }
+    for x in &mut col_x {
+      *x += dx;
+    }
     top_pad += ((th - total_height) / 2.0).max(0.0);
     total_width = total_width.max(tw);
     total_height = total_height.max(th);
@@ -29184,6 +29226,8 @@ fn compute_grid_layout(
     total_height,
     v_gap,
     top_pad,
+    col_x,
+    h_gap,
   })
 }
 
@@ -29287,28 +29331,20 @@ fn draw_frame_lines(
     return;
   }
 
-  // Inner row dividers: draw at the top of each row after the first
+  // Inner row dividers: in the middle of the gap above each row after
+  // the first.
   for (i, row) in layout.rows.iter().enumerate() {
     if i == 0 || row.row_h <= 0.0 {
       continue;
     }
-    let y = row_y_starts[i];
+    let y = row_y_starts[i] - layout.v_gap / 2.0;
     line(out, 0.0, y, total_w, y);
   }
 
-  // Inner column dividers: use the widest row to place vertical lines
-  // at every cell boundary. Cells share an x-coordinate scheme inside
-  // a row, so taking max-cells row gives the most granular boundaries.
-  let widest_row = layout
-    .rows
-    .iter()
-    .max_by_key(|r| r.cells.len())
-    .map_or(&[][..], |r| &r.cells[..]);
-  for (i, cell) in widest_row.iter().enumerate() {
-    if i == 0 {
-      continue;
-    }
-    let x = cell.x;
+  // Inner column dividers: in the middle of the gap before each column
+  // after the first.
+  for x in layout.col_x.iter().skip(1) {
+    let x = x - layout.h_gap / 2.0;
     line(out, x, 0.0, x, total_h);
   }
 }
@@ -34116,7 +34152,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 }
 
 /// Parse width and height from an SVG's root element attributes.
-pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
+pub fn parse_svg_wh(svg: &str) -> (f64, f64) {
   // Only the root `<svg …>` tag states the picture's size; a raster
   // `Image` writes its attributes in single quotes (`width='20'`).
   let root = svg.find("<svg").unwrap_or(0);
@@ -34384,31 +34420,123 @@ pub(crate) fn fit_tree_to_pane_width(
   Some(with_default_image_size(content, width as i128))
 }
 
-/// Break the text cells of `Pane[Grid[rows], width]` that are wider than
-/// the pane — a long list such as the rules of a graph — into lines that
-/// fit, the way the FrontEnd's line breaking does once the pane fixes the
-/// width. Returns the grid with those cells re-flowed, or `None` when no
-/// cell needed it.
+/// Break the text cells of `Pane[Grid[rows], width]` (or the items of a
+/// `Column`, looked at through `Text` and `Style`) that are wider than the
+/// pane — a long list such as the rules of a graph — into lines that fit,
+/// the way the FrontEnd's line breaking does once the pane fixes the width.
+/// Returns the layout with those cells re-flowed, or `None` when no cell
+/// needed it.
 pub(crate) fn wrap_wide_grid_text(
   grid: &Expr,
   width: f64,
   cell_width: &dyn Fn(&Expr) -> f64,
 ) -> Option<Expr> {
-  let (opts, mut rows) = grid_rows_of(grid)?;
-  // A cell keeps its padding on either side of the text.
-  let line_width = (width - 12.0).max(1.0);
-  let mut changed = false;
-  for row in &mut rows {
-    for cell in row.iter_mut() {
-      if cell_width(cell) > width + 0.5
-        && let Some(flowed) = wrap_list_text(cell, line_width, &[], cell_width)
-      {
-        *cell = flowed;
-        changed = true;
-      }
+  wrap_wide_layout_text(grid, width, &[], cell_width)
+}
+
+/// [`wrap_wide_grid_text`] measuring each cell by its rendered SVG: the
+/// layout `expr` with any text cell wider than `width` re-flowed into lines
+/// that fit, or `None` when nothing needed breaking. A Manipulate's
+/// `ContentSize` width is applied to its output this way.
+pub fn wrap_wide_text_to_width(expr: &Expr, width: f64) -> Option<Expr> {
+  wrap_wide_grid_text(expr, width, &|c| {
+    parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+  })
+}
+
+fn wrap_wide_layout_text(
+  layout: &Expr,
+  width: f64,
+  styles: &[Expr],
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = layout else {
+    return None;
+  };
+  // Measure a cell the way it is drawn: under the enclosing `Style`s.
+  let styled_width = |cell: &Expr| {
+    if styles.is_empty() {
+      cell_width(cell)
+    } else {
+      cell_width(&call(
+        "Style",
+        std::iter::once(cell.clone())
+          .chain(styles.iter().cloned())
+          .collect(),
+      ))
     }
+  };
+  let rebuilt = |first: Expr| {
+    let mut new_args = vec![first];
+    new_args.extend(args[1..].iter().cloned());
+    call(name, new_args)
+  };
+  match name.as_str() {
+    "Text" if args.len() == 1 => {
+      wrap_wide_layout_text(&args[0], width, styles, cell_width).map(rebuilt)
+    }
+    _ if is_style_wrapper(name) && !args.is_empty() => {
+      let mut inner_styles = styles.to_vec();
+      inner_styles.extend(args[1..].iter().cloned());
+      wrap_wide_layout_text(&args[0], width, &inner_styles, cell_width)
+        .map(rebuilt)
+    }
+    "Grid" => {
+      let (opts, mut rows) = grid_rows_of(layout)?;
+      // A cell keeps its padding on either side of the text.
+      let line_width = (width - 12.0).max(1.0);
+      let mut changed = false;
+      for row in &mut rows {
+        for cell in row.iter_mut() {
+          if styled_width(cell) > width + 0.5
+            && let Some(flowed) =
+              wrap_list_text(cell, line_width, styles, cell_width)
+          {
+            *cell = flowed;
+            changed = true;
+          }
+        }
+      }
+      changed.then(|| rebuild_grid(opts, rows))
+    }
+    // A `Column`'s items share the full width; one wider than it breaks
+    // into lines the same way. Its lines are measured as the column draws
+    // them, which sets text tighter than a bare expression on its own.
+    "Column" if !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let in_column = |e: &Expr| {
+        cell_width(&call1("Column", Expr::List(vec![e.clone()].into())))
+      };
+      let mut changed = false;
+      let flowed: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          let styled = if styles.is_empty() {
+            item.clone()
+          } else {
+            call(
+              "Style",
+              std::iter::once(item.clone())
+                .chain(styles.iter().cloned())
+                .collect(),
+            )
+          };
+          if in_column(&styled) > width + 0.5
+            && let Some(lines) = wrap_list_text(item, width, styles, &in_column)
+          {
+            changed = true;
+            lines
+          } else {
+            item.clone()
+          }
+        })
+        .collect();
+      changed.then(|| rebuilt(Expr::List(flowed.into())))
+    }
+    _ => None,
   }
-  changed.then(|| rebuild_grid(opts, rows))
 }
 
 /// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`
@@ -35832,6 +35960,10 @@ pub struct LabelRun {
   /// The run's font size in points, when `Style` gave it one
   /// (`Style["t", 16]` or `FontSize -> 16`).
   pub size: Option<f64>,
+  /// The run is a subscript Unicode has no glyphs for (`Subscript["V",
+  /// "y"]`): its text stays plain and the UI must set it lowered and
+  /// smaller, as Wolfram typesets a script.
+  pub subscript: bool,
 }
 
 /// The font size a `Style`'s directives set: a bare number or
@@ -36351,6 +36483,11 @@ pub struct ManipulateSpec {
   /// usually asks for `Left` so the controls run down beside the picture
   /// instead of pushing it off screen.
   pub control_placement: ControlPlacement,
+  /// The width of `ContentSize -> w | {w, h}`: the content area the body is
+  /// shown in. Text wider than it (a long list) breaks into lines at this
+  /// width, as the FrontEnd lays it out. `None` when no numeric width is
+  /// given (the area then grows with its content).
+  pub content_width: Option<f64>,
   /// `(synthesized control name, parent variable, 1-based index)` for every
   /// `ParsedControl::ListElement` control — a slider generated by
   /// `Evaluate[Sequence @@ Table[…]]` for one `Part` of a shared list
@@ -37173,6 +37310,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  let mut content_width: Option<f64> = None;
   // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
   // successive controls, applied once the controls are known.
   let mut successive_placements: Vec<ControlPlacement> = Vec::new();
@@ -37435,6 +37573,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // `ContentSize -> w` or `{w, h}` (possibly computed, as in
+      // `1.25 {400, 300}`) fixes the width of the content area.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContentSize") {
+        content_width = manipulate_content_width(replacement);
       }
       // `ControlPlacement -> {Top, Top, Left, Right}` places successive
       // controls on the listed sides, one entry per control.
@@ -38446,9 +38589,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols,
     tracking,
     control_placement,
+    content_width,
     list_elements,
     bookmarks,
   })
+}
+
+/// The numeric width of a `ContentSize` setting: `w` or the first entry of
+/// `{w, h}`, evaluated first so a computed size such as `1.25 {400, 300}`
+/// counts. `None` for `Automatic` and other non-numeric widths.
+fn manipulate_content_width(setting: &Expr) -> Option<f64> {
+  let value = evaluate_expr_to_expr(setting).ok()?;
+  let width = match &value {
+    Expr::List(items) => items.first()?.clone(),
+    other => other.clone(),
+  };
+  try_eval_to_f64(&width).filter(|w| w.is_finite() && *w > 0.0)
 }
 
 /// Whether `s` names one of Wolfram's control types, i.e. a value
@@ -42398,6 +42554,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42479,6 +42636,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42574,6 +42732,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42777,6 +42936,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42840,6 +43000,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42913,6 +43074,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -44549,6 +44711,21 @@ fn script_runs(
       restyle(&mut runs, &|t| {
         format!("{SUPERSCRIPT_START}{t}{SUPERSCRIPT_END}")
       });
+    } else if !superscript
+      && text
+        .chars()
+        .any(|c| unicode_script_char(c, false).is_none())
+    {
+      // No subscript glyphs for some letter (`Subscript["V", "y"]`): keep
+      // the whole script as plain text flagged as a subscript, so the UI
+      // sets it lowered and smaller instead of drawing it full size next
+      // to the base (or as a half-mapped mix of glyphs and letters).
+      runs.extend(script_runs.iter().filter(|r| !r.text.is_empty()).map(|r| {
+        LabelRun {
+          subscript: true,
+          ..r.clone()
+        }
+      }));
     } else {
       restyle(&mut runs, &|t| to_unicode_script(t, superscript));
     }
@@ -50122,6 +50299,45 @@ mod manipulate_label_tests {
     assert_eq!(runs(&sup), vec![run("x", false), run("\u{1D5D}", false)]);
     let sub = call("Subscript", vec![id_expr("x"), str_expr("\u{03C7}")]);
     assert_eq!(runs(&sub), vec![run("x", false), run("\u{1D6A}", false)]);
+  }
+
+  /// A subscript letter with no Unicode subscript glyph (`y`, `z`, a
+  /// capital) keeps its plain text but is flagged as a subscript so the UI
+  /// sets it smaller, instead of drawing `Subscript["V", "y"]` as a
+  /// full-size "Vy". Mappable scripts keep their Unicode glyphs.
+  #[test]
+  fn unmappable_subscript_is_flagged_as_subscript_run() {
+    let sub_run = |t: &str| LabelRun {
+      subscript: true,
+      ..run(t, false)
+    };
+    for letter in ["y", "z", "N", "q"] {
+      let label = call("Subscript", vec![str_expr("V"), str_expr(letter)]);
+      assert_eq!(runs(&label), vec![run("V", false), sub_run(letter)]);
+    }
+    // A script mixing mappable and unmappable letters stays whole rather
+    // than becoming a half-mapped mix of glyphs and plain letters.
+    let label = call("Subscript", vec![id_expr("v"), str_expr("xy")]);
+    assert_eq!(runs(&label), vec![run("v", false), sub_run("xy")]);
+    // Fully mappable scripts still fold into Unicode subscript glyphs.
+    let label = call("Subscript", vec![str_expr("V"), str_expr("x")]);
+    assert_eq!(runs(&label), vec![run("V", false), run("\u{2093}", false)]);
+    // Inside a `Row` caption, as a Manipulate control label writes it.
+    let row = call1(
+      "Row",
+      Expr::List(
+        vec![
+          str_expr("viewpoint "),
+          call("Subscript", vec![str_expr("V"), str_expr("z")]),
+        ]
+        .into(),
+      ),
+    );
+    assert_eq!(
+      runs(&row),
+      vec![run("viewpoint ", false), run("V", false), sub_run("z")]
+    );
+    assert_eq!(flatten_label_runs(&runs(&row)), "viewpoint Vz");
   }
 
   #[test]
