@@ -7511,6 +7511,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
         _ => None,
       };
+      // A list in a grid or column wider than the pane breaks into lines
+      // that fit it.
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            crate::functions::graphics::wrap_wide_grid_text(
+              &args[0],
+              pane_size_component(&size[0])?,
+              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+            )
+          }
+          _ => None,
+        });
       // A grid wider than the pane squeezes its automatically sized
       // pictures to fit.
       let wrapped =

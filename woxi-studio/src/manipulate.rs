@@ -791,6 +791,9 @@ pub struct ManipulateState {
   /// Per-control `ControlPlacement -> side` overrides, as `(control name,
   /// side)` (see `ManipulateSpec::control_placements`).
   control_placements: Vec<(String, ControlPlacement)>,
+  /// The width of `ContentSize -> {w, h}`: output text wider than it (a
+  /// long list) breaks into lines at this width.
+  pub content_width: Option<f64>,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -1019,6 +1022,7 @@ impl ManipulateState {
       appearance_none: spec.appearance_none,
       control_placement: spec.control_placement,
       control_placements: spec.control_placements,
+      content_width: spec.content_width,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
@@ -1920,6 +1924,7 @@ impl ManipulateState {
     let dynamic_values = self.dynamic_values.clone();
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
+    let content_width = self.content_width;
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
@@ -2010,6 +2015,15 @@ impl ManipulateState {
         {
           render = Ok(content);
         }
+      }
+      // The content area is `ContentSize` wide: a list or other text wider
+      // than that breaks into lines there, as the FrontEnd lays it out,
+      // rather than running off in one long line.
+      if let Some(width) = content_width
+        && let Ok(r) = &render
+        && let Some(flowed) = flow_to_content_width(r, width)
+      {
+        render = Ok(flowed);
       }
       let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
@@ -7204,6 +7218,27 @@ mod bare_tabview_tests {
   }
 }
 
+/// The output `render` re-laid out for a content area `width` wide
+/// (`ContentSize -> {width, h}`): a list or other text wider than the area
+/// breaks into lines that fit, as the FrontEnd lays it out. `None` when the
+/// output already fits or has no text to break.
+pub fn flow_to_content_width(
+  render: &woxi::InterpretResult,
+  width: f64,
+) -> Option<woxi::InterpretResult> {
+  let svg = render.graphics.as_ref()?;
+  if woxi::functions::graphics::parse_svg_wh(svg).0 <= width + 0.5 {
+    return None;
+  }
+  let flowed = woxi::functions::graphics::wrap_wide_text_to_width(
+    render.expr.as_ref()?,
+    width,
+  )?;
+  woxi::interpret_with_stdout(&woxi::syntax::expr_to_input_form(&flowed))
+    .ok()
+    .filter(|r| r.graphics.is_some())
+}
+
 #[cfg(test)]
 mod repeated_option_tests {
   use super::*;
@@ -7226,6 +7261,44 @@ mod repeated_option_tests {
     assert_eq!(state.error, None);
     assert_eq!(state.control_placement, ControlPlacement::Left);
     assert_eq!(state.placement_of(0), ControlPlacement::Left);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a table of values of
+  /// a recursively defined function). Its `ContentSize` is a computed size
+  /// (`scale {w, h}`), and the long list of values in its output has to
+  /// break into lines at that width instead of running off in one line.
+  #[test]
+  fn content_size_width_breaks_a_long_list_into_lines() {
+    let code = "Manipulate[\
+       Text[Column[{\"Values\", \
+         Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {k, 1, n}]}]], \
+       {{n, 60}, 10, 100, 1}, ContentSize -> 1.5 {200, 100}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.content_width, Some(300.0));
+
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    let wide = woxi::functions::graphics::parse_svg_wh(
+      body.graphics.as_ref().expect("the column is a picture"),
+    )
+    .0;
+    assert!(wide > 300.0, "the unbroken list is {wide} wide");
+    let flowed =
+      flow_to_content_width(&body, 300.0).expect("the list is re-flowed");
+    let svg = flowed.graphics.expect("the re-flowed column is a picture");
+    let (w, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(w <= 300.5, "the re-flowed list is {w} wide: {svg}");
+    // Every value is still shown, bold ones included.
+    assert!(svg.contains(">3600<"), "{svg}");
+    assert!(svg.contains(r#"font-weight="bold">4<"#), "{svg}");
+    // Output that already fits is left alone.
+    assert!(flow_to_content_width(&body, 1.0e6).is_none());
   }
 
   /// A style a pure function applies in the body survives the round trip

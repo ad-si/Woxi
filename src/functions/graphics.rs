@@ -33055,7 +33055,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 }
 
 /// Parse width and height from an SVG's root element attributes.
-pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
+pub fn parse_svg_wh(svg: &str) -> (f64, f64) {
   // Only the root `<svg …>` tag states the picture's size; a raster
   // `Image` writes its attributes in single quotes (`width='20'`).
   let root = svg.find("<svg").unwrap_or(0);
@@ -33323,31 +33323,123 @@ pub(crate) fn fit_tree_to_pane_width(
   Some(with_default_image_size(content, width as i128))
 }
 
-/// Break the text cells of `Pane[Grid[rows], width]` that are wider than
-/// the pane — a long list such as the rules of a graph — into lines that
-/// fit, the way the FrontEnd's line breaking does once the pane fixes the
-/// width. Returns the grid with those cells re-flowed, or `None` when no
-/// cell needed it.
+/// Break the text cells of `Pane[Grid[rows], width]` (or the items of a
+/// `Column`, looked at through `Text` and `Style`) that are wider than the
+/// pane — a long list such as the rules of a graph — into lines that fit,
+/// the way the FrontEnd's line breaking does once the pane fixes the width.
+/// Returns the layout with those cells re-flowed, or `None` when no cell
+/// needed it.
 pub(crate) fn wrap_wide_grid_text(
   grid: &Expr,
   width: f64,
   cell_width: &dyn Fn(&Expr) -> f64,
 ) -> Option<Expr> {
-  let (opts, mut rows) = grid_rows_of(grid)?;
-  // A cell keeps its padding on either side of the text.
-  let line_width = (width - 12.0).max(1.0);
-  let mut changed = false;
-  for row in &mut rows {
-    for cell in row.iter_mut() {
-      if cell_width(cell) > width + 0.5
-        && let Some(flowed) = wrap_list_text(cell, line_width, &[], cell_width)
-      {
-        *cell = flowed;
-        changed = true;
-      }
+  wrap_wide_layout_text(grid, width, &[], cell_width)
+}
+
+/// [`wrap_wide_grid_text`] measuring each cell by its rendered SVG: the
+/// layout `expr` with any text cell wider than `width` re-flowed into lines
+/// that fit, or `None` when nothing needed breaking. A Manipulate's
+/// `ContentSize` width is applied to its output this way.
+pub fn wrap_wide_text_to_width(expr: &Expr, width: f64) -> Option<Expr> {
+  wrap_wide_grid_text(expr, width, &|c| {
+    parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+  })
+}
+
+fn wrap_wide_layout_text(
+  layout: &Expr,
+  width: f64,
+  styles: &[Expr],
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = layout else {
+    return None;
+  };
+  // Measure a cell the way it is drawn: under the enclosing `Style`s.
+  let styled_width = |cell: &Expr| {
+    if styles.is_empty() {
+      cell_width(cell)
+    } else {
+      cell_width(&call(
+        "Style",
+        std::iter::once(cell.clone())
+          .chain(styles.iter().cloned())
+          .collect(),
+      ))
     }
+  };
+  let rebuilt = |first: Expr| {
+    let mut new_args = vec![first];
+    new_args.extend(args[1..].iter().cloned());
+    call(name, new_args)
+  };
+  match name.as_str() {
+    "Text" if args.len() == 1 => {
+      wrap_wide_layout_text(&args[0], width, styles, cell_width).map(rebuilt)
+    }
+    _ if is_style_wrapper(name) && !args.is_empty() => {
+      let mut inner_styles = styles.to_vec();
+      inner_styles.extend(args[1..].iter().cloned());
+      wrap_wide_layout_text(&args[0], width, &inner_styles, cell_width)
+        .map(rebuilt)
+    }
+    "Grid" => {
+      let (opts, mut rows) = grid_rows_of(layout)?;
+      // A cell keeps its padding on either side of the text.
+      let line_width = (width - 12.0).max(1.0);
+      let mut changed = false;
+      for row in &mut rows {
+        for cell in row.iter_mut() {
+          if styled_width(cell) > width + 0.5
+            && let Some(flowed) =
+              wrap_list_text(cell, line_width, styles, cell_width)
+          {
+            *cell = flowed;
+            changed = true;
+          }
+        }
+      }
+      changed.then(|| rebuild_grid(opts, rows))
+    }
+    // A `Column`'s items share the full width; one wider than it breaks
+    // into lines the same way. Its lines are measured as the column draws
+    // them, which sets text tighter than a bare expression on its own.
+    "Column" if !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let in_column = |e: &Expr| {
+        cell_width(&call1("Column", Expr::List(vec![e.clone()].into())))
+      };
+      let mut changed = false;
+      let flowed: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          let styled = if styles.is_empty() {
+            item.clone()
+          } else {
+            call(
+              "Style",
+              std::iter::once(item.clone())
+                .chain(styles.iter().cloned())
+                .collect(),
+            )
+          };
+          if in_column(&styled) > width + 0.5
+            && let Some(lines) = wrap_list_text(item, width, styles, &in_column)
+          {
+            changed = true;
+            lines
+          } else {
+            item.clone()
+          }
+        })
+        .collect();
+      changed.then(|| rebuilt(Expr::List(flowed.into())))
+    }
+    _ => None,
   }
-  changed.then(|| rebuild_grid(opts, rows))
 }
 
 /// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`
@@ -35278,6 +35370,11 @@ pub struct ManipulateSpec {
   /// usually asks for `Left` so the controls run down beside the picture
   /// instead of pushing it off screen.
   pub control_placement: ControlPlacement,
+  /// The width of `ContentSize -> w | {w, h}`: the content area the body is
+  /// shown in. Text wider than it (a long list) breaks into lines at this
+  /// width, as the FrontEnd lays it out. `None` when no numeric width is
+  /// given (the area then grows with its content).
+  pub content_width: Option<f64>,
   /// `(synthesized control name, parent variable, 1-based index)` for every
   /// `ParsedControl::ListElement` control — a slider generated by
   /// `Evaluate[Sequence @@ Table[…]]` for one `Part` of a shared list
@@ -36100,6 +36197,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  let mut content_width: Option<f64> = None;
   // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
   // successive controls, applied once the controls are known.
   let mut successive_placements: Vec<ControlPlacement> = Vec::new();
@@ -36358,6 +36456,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // `ContentSize -> w` or `{w, h}` (possibly computed, as in
+      // `1.25 {400, 300}`) fixes the width of the content area.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContentSize") {
+        content_width = manipulate_content_width(replacement);
       }
       // `ControlPlacement -> {Top, Top, Left, Right}` places successive
       // controls on the listed sides, one entry per control.
@@ -37368,9 +37471,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols,
     tracking,
     control_placement,
+    content_width,
     list_elements,
     bookmarks,
   })
+}
+
+/// The numeric width of a `ContentSize` setting: `w` or the first entry of
+/// `{w, h}`, evaluated first so a computed size such as `1.25 {400, 300}`
+/// counts. `None` for `Automatic` and other non-numeric widths.
+fn manipulate_content_width(setting: &Expr) -> Option<f64> {
+  let value = evaluate_expr_to_expr(setting).ok()?;
+  let width = match &value {
+    Expr::List(items) => items.first()?.clone(),
+    other => other.clone(),
+  };
+  try_eval_to_f64(&width).filter(|w| w.is_finite() && *w > 0.0)
 }
 
 /// Whether `s` names one of Wolfram's control types, i.e. a value
@@ -41175,6 +41291,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -41254,6 +41371,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -41348,6 +41466,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -41550,6 +41669,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -41612,6 +41732,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -41684,6 +41805,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
