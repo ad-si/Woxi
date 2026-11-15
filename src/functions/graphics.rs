@@ -10865,6 +10865,43 @@ fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
   }
 }
 
+/// The filled shape (an unterminated `<rect …`/`<circle …` tag) that
+/// stands in for a zero-length `Line` segment — one whose points all
+/// coincide, such as `Line[{p, p}]`.
+///
+/// Wolfram draws such a segment as its end caps alone: a square dot one
+/// stroke width across (lines are drawn with projecting square caps), a
+/// round dot under `CapForm["Round"]`, and nothing under
+/// `CapForm["Butt"]` (returns `None`, as for a segment with length). The
+/// dot is emitted as a filled shape rather than a capped zero-length
+/// stroke, which SVG renderers are free to drop.
+fn degenerate_line_dot(
+  screen_pts: &[(f64, f64)],
+  stroke_width: f64,
+  cap_form: Option<LineCapKind>,
+) -> Option<String> {
+  let (&(x0, y0), rest) = screen_pts.split_first()?;
+  if rest.is_empty()
+    || rest
+      .iter()
+      .any(|&(x, y)| (x - x0).abs() > 1e-9 || (y - y0).abs() > 1e-9)
+  {
+    return None;
+  }
+  let half = stroke_width / 2.0;
+  match cap_form {
+    Some(LineCapKind::Butt) => None,
+    Some(LineCapKind::Round) => Some(format!(
+      "<circle cx=\"{x0:.2}\" cy=\"{y0:.2}\" r=\"{half:.2}\""
+    )),
+    Some(LineCapKind::Square) | None => Some(format!(
+      "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{stroke_width:.2}\" height=\"{stroke_width:.2}\"",
+      x0 - half,
+      y0 - half,
+    )),
+  }
+}
+
 /// The `stroke-linecap` value for a `Line` stroke. Wolfram draws a `Line`
 /// with square caps unless a `CapForm` says otherwise: each end extends
 /// half the line's thickness past its endpoint, so a short thick segment
@@ -12756,6 +12793,14 @@ fn render_primitive(
             ));
           }
           point_idx += screen_pts.len();
+        } else if let Some(dot) =
+          degenerate_line_dot(&screen_pts, sw, style.cap_form)
+        {
+          out.push_str(&format!(
+            "{dot} fill=\"{}\"{}/>\n",
+            color.to_svg_rgb(),
+            color.opacity_attr(),
+          ));
         } else {
           out.push_str(&format!(
             "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",

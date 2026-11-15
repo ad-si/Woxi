@@ -2453,6 +2453,51 @@ mod graphics {
       );
     }
 
+    /// A zero-length `Line` (every point the same, e.g. `Line[{p, p}]`)
+    /// is drawn by Wolfram as its caps alone: a square dot one stroke
+    /// width across, a round dot under `CapForm["Round"]`, and nothing
+    /// under `CapForm["Butt"]`. Woxi emitted a capped zero-length
+    /// polyline that rendered invisibly, so diagrams that mark one-point
+    /// blocks with such lines lost those blocks.
+    #[test]
+    fn zero_length_line_draws_cap_dot() {
+      let svg = |prims: &str| {
+        export_svg(&format!(
+          "Graphics[{{Thickness[0.1], {prims}, Point[{{{{-1, -1}}, {{1, 1}}}}]}}, \
+           ImageSize -> 200, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}]"
+        ))
+      };
+      for (p, (cx, cy)) in
+        [("{0, 0}", (99.5, 99.5)), ("{0.5, 0}", (149.25, 99.5))]
+      {
+        let out = svg(&format!("Line[{{{p}, {p}, {p}}}]"));
+        let rect = out
+          .split("<rect ")
+          .find(|s| s.contains(" width=\"19.90\""))
+          .unwrap_or_else(|| panic!("no square dot for {p}: {out}"));
+        let attr = |name: &str| -> f64 {
+          rect
+            .split(&format!(" {name}=\""))
+            .nth(1)
+            .or_else(|| rect.strip_prefix(&format!("{name}=\"")))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap()
+        };
+        assert!((attr("x") - (cx - 9.95)).abs() < 0.05, "{rect}");
+        assert!((attr("y") - (cy - 9.95)).abs() < 0.05, "{rect}");
+        assert!(rect.contains("height=\"19.90\""), "{rect}");
+      }
+      let round = svg("CapForm[\"Round\"], Line[{{0, 0}, {0, 0}}]");
+      assert!(round.contains("r=\"9.95\""), "{round}");
+      let butt = svg("CapForm[\"Butt\"], Line[{{0, 0}, {0, 0}}]");
+      assert!(!butt.contains(" width=\"19.90\""), "{butt}");
+      // A line with length is still a stroked polyline.
+      let line = svg("Line[{{0, 0}, {0.5, 0}}]");
+      assert!(line.contains("<polyline "), "{line}");
+      assert!(!line.contains(" width=\"19.90\""), "{line}");
+    }
+
     /// `JoinForm[…]` sets the SVG `stroke-linejoin` a multi-segment `Line`
     /// is drawn with, and `JoinForm[{"Miter", limit}]` also sets
     /// `stroke-miterlimit`. Left unset, Woxi keeps its existing rounded
