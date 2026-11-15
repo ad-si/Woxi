@@ -25562,6 +25562,7 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
 /// Whether a `Row`'s items include a nested `Grid` or `Column` (possibly
 /// styled), a block the one-line text pass cannot set: `Row[{"(",
 /// Grid[{{n}, {k}}], ")"}]` stacks `n` over `k` between the parentheses.
+/// So is a `Framed`/`Panel` item, whose box the text pass would drop.
 fn row_holds_block_layout(items: &Expr) -> bool {
   let Expr::List(items) = items else {
     return false;
@@ -25571,6 +25572,11 @@ fn row_holds_block_layout(items: &Expr) -> bool {
       Expr::FunctionCall { name, args }
         if (name == "Grid" || name == "Column")
           && matches!(args.first(), Some(Expr::List(_))) =>
+      {
+        true
+      }
+      Expr::FunctionCall { name, args }
+        if (name == "Framed" || name == "Panel") && !args.is_empty() =>
       {
         true
       }
@@ -26141,6 +26147,94 @@ fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   call("Style", args)
 }
 
+/// The font family a grid sets its text cells in: its `FontFamily`
+/// directive, else the proportional face every grid text cell uses.
+fn grid_text_family(style: &GridStyle) -> String {
+  style
+    .font_family
+    .clone()
+    .unwrap_or_else(|| "Atkinson Hyperlegible Next, sans-serif".to_string())
+}
+
+/// Whether a grid cell frames text: a `Framed`/`Panel`, possibly inside the
+/// `Style`/`Column`/`Row` layout the cell is.
+fn cell_frames_text(cell: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = cell else {
+    return false;
+  };
+  match name.as_str() {
+    "Framed" | "Panel" => args.first().is_some_and(|c| {
+      !matches!(c, Expr::Graphics { .. } | Expr::Image { .. })
+        && !crate::evaluator::lays_out_a_graphic(c)
+    }),
+    "Style" | "Column" | "Row" => match args.first() {
+      Some(Expr::List(items)) if name != "Style" => {
+        items.iter().any(cell_frames_text)
+      }
+      Some(inner) if name == "Style" => cell_frames_text(inner),
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+/// A grid cell framing text (`Framed["msg"]`, or a styled `Column` holding
+/// one) sets the framed text in the grid's face, size, weight, slant and
+/// color, like the plain text cells beside it — not in the monospace face a
+/// standalone `Framed` uses. Explicit directives in the cell still win.
+fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !cell_frames_text(cell) {
+    return cell.clone();
+  }
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  directives.push(rule_expr(
+    id_expr("FontFamily"),
+    Expr::String(grid_text_family(style)),
+  ));
+  // The grid's directives come first so the cell's own ones override them.
+  let restyle = |content: &Expr| match content {
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      call(
+        "Style",
+        std::iter::once(args[0].clone())
+          .chain(directives.iter().cloned())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      )
+    }
+    other => call(
+      "Style",
+      std::iter::once(other.clone())
+        .chain(directives.iter().cloned())
+        .collect(),
+    ),
+  };
+  match cell {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Framed" | "Panel") =>
+    {
+      let mut new_args: Vec<Expr> = args.iter().cloned().collect();
+      new_args[0] = restyle(&args[0]);
+      call(name.as_str(), new_args)
+    }
+    other => restyle(other),
+  }
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -26158,11 +26252,10 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if let Some(color) = style.color {
     directives.push(color.to_expr());
   }
-  let family = style
-    .font_family
-    .clone()
-    .unwrap_or_else(|| "Atkinson Hyperlegible Next, sans-serif".to_string());
-  directives.push(rule_expr(id_expr("FontFamily"), Expr::String(family)));
+  directives.push(rule_expr(
+    id_expr("FontFamily"),
+    Expr::String(grid_text_family(style)),
+  ));
   // A column of plain text lines sets as one text run, the way a `Row` cell
   // does: a line break between the items, with no per-item boxes whose
   // widths are only estimated.
@@ -26366,6 +26459,7 @@ fn grid_svg_styled_internal_reporting(
         }
       }
       *cell = resolve_display_item(cell);
+      *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
@@ -34398,12 +34492,15 @@ fn framed_box_to_svg(
       crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
         style.content,
       );
-    let layout =
-      layout_box(&crate::strip_number_precision_markers(&boxes), size);
+    // A `FontFamily` sets (and measures) the framed text in that face, so
+    // the frame fits a proportional text as tightly as a monospace one.
+    let layout = with_box_font_family(style.font_family.as_deref(), || {
+      layout_box(&crate::strip_number_precision_markers(&boxes), size)
+    });
     let fill = style
       .color
       .map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
-    let mut svg = layout_to_svg(&layout, &fill).replacen(
+    let svg = layout_to_svg(&layout, &fill).replacen(
       "<g fill=",
       &format!(
         "<g font-weight=\"{}\" font-style=\"{}\" opacity=\"{}\" fill=",
@@ -34413,10 +34510,6 @@ fn framed_box_to_svg(
       ),
       1,
     );
-    if let Some(family) = &style.font_family {
-      svg = svg
-        .replace("Atkinson Hyperlegible Mono, monospace", &svg_escape(family));
-    }
     (svg, layout.width, layout.height)
   };
   let (area_w, area_h) =
