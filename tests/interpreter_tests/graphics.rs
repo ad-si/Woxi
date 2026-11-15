@@ -56919,3 +56919,17 @@ mod repeated_graphics_options {
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
   }
 }
+
+mod plot_label_number_form_held_assignment {
+  use super::*;
+
+  #[test]
+  fn label_reads_as_output_form() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, PlotLabel -> With[{c = -1.27, g = Sin}, \
+       NumberForm[HoldForm[w = g[c x]], {3, 1}]]]",
+    );
+    assert!(svg.contains(">w = Sin[-1.3 x]</text>"), "{svg}");
+    assert!(!svg.contains("*"), "{svg}");
+  }
+}
