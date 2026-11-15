@@ -9913,6 +9913,44 @@ mod plot3d {
       );
     }
 
+    /// With `Boxed -> False` in a picture whose width and height are both
+    /// given, Wolfram frames the scene by the sphere around its box (as
+    /// `SphericalRegion -> True` does) rather than fitting the invisible
+    /// box's outline to the frame, so the scene keeps wide margins.
+    /// Demonstration snapshots of a `Show` of a `Graphics3D` and a
+    /// `ParametricPlot3D` draw it about 0.86 times the fitted-box size.
+    #[test]
+    fn an_invisible_box_in_a_pinned_picture_is_framed_by_its_sphere() {
+      let scene = |opts: &str| {
+        drawn_extent(&format!(
+          "Show[Graphics3D[{{Cuboid[{{0, 0, 0}}, {{1, 0.5, 0.9}}], \
+           Cylinder[{{{{0.5, -0.35, 0.5}}, {{0.5, -0.55, 0.5}}}}, 0.1]}}, \
+           Boxed -> False], \
+           ParametricPlot3D[{{s, 0.5, s / 2}}, {{s, 0, 1}}], \
+           ViewPoint -> {{-2.7, 1.1, 1.7}}, {opts}]"
+        ))
+      };
+      let pinned = scene("ImageSize -> {400, 400}");
+      let sphere = scene("ImageSize -> {400, 400}, SphericalRegion -> True");
+      assert_eq!(
+        (pinned.0.round(), pinned.1.round()),
+        (sphere.0.round(), sphere.1.round())
+      );
+      // The visible box is still fitted to the frame, filling more of it.
+      let boxed = scene("ImageSize -> {400, 400}, Boxed -> True");
+      let ratio = pinned.1 / boxed.1;
+      assert!(
+        (0.8..0.92).contains(&ratio),
+        "expected the sphere framing at about 0.86 of the box fit, got \
+         {pinned:?} vs {boxed:?}"
+      );
+      // A bare width leaves the picture to follow the projected box, so
+      // nothing changes there.
+      let free = scene("ImageSize -> 400");
+      let free_boxed = scene("ImageSize -> 400, Boxed -> True");
+      assert_eq!(free.0.round(), free_boxed.0.round());
+    }
+
     /// Surface plots honor an explicit `ViewAngle` the same way
     /// `Graphics3D` does, instead of always fitting the box to the frame.
     /// A unit sphere seen from the default `ViewPoint` (`|ViewPoint|` ≈

@@ -11248,6 +11248,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_width = DEFAULT_SIZE;
   let mut svg_height = DEFAULT_SIZE;
   let mut explicit_height = false;
+  // `ImageSize -> {w, h}`: both sides of the picture are given.
+  let mut pinned_size = false;
   let mut full_width = false;
   let mut show_box = true;
   let mut axes_edge: Option<AxesEdges> = None;
@@ -11329,8 +11331,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             full_width = fw;
             // Only `{w, h}` pins the height; a bare width leaves it to
             // follow the projected box.
-            explicit_height = fw
-              || matches!(replacement.as_ref(), Expr::List(items) if items.len() == 2);
+            pinned_size = matches!(
+              replacement.as_ref(),
+              Expr::List(items) if items.len() == 2
+            );
+            explicit_height = fw || pinned_size;
           }
         }
         "Boxed" => match replacement.as_ref() {
@@ -12472,6 +12477,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wolfram widens the camera's field of view until that sphere just fits
   // (see `spherical_region_span`); the resulting span replaces the fitted
   // scale below.
+  //
+  // An invisible box (`Boxed -> False`) in a picture whose width and
+  // height are both given is framed the same way: Wolfram leaves the
+  // margins the sphere needs instead of fitting the projected box
+  // outline. Two Demonstrations measured this — a `Show` of a
+  // `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}`
+  // seen from a custom `ViewPoint`, and a long scene with a pinned
+  // `PlotRange` at `ImageSize -> {575, 350}` — both within 3 % of the
+  // sphere framing and 14 % to 30 % smaller than the fitted box.
+  let spherical_region = spherical_region || (!show_box && pinned_size);
   let mut sphere_span: Option<f64> = None;
   if spherical_region && !perspective {
     let center = Point3D {

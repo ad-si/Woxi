@@ -5640,26 +5640,21 @@ calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
 
-### A long explicit `PlotRange` box at a fixed `ImageSize` draws smaller in Wolfram
+### An invisible box at a fixed `ImageSize` is framed by its sphere
 
-Without `SphericalRegion`, Woxi fits the projected outline of the displayed
-box into an `ImageSize -> {w, h}` picture. A Demonstration drawing a long,
-thin `Graphics3D` scene through `Show[g, PlotRange -> {{-11, 11},
-{-4.25, 4.25}, {-4.25, 4.25}}, ImageSize -> {575, 350}]` (with `Boxed ->
-False` and the default view) behaves differently. In all four of its Wolfram
-snapshots, a cylinder from `{-10, 0, 0}` to `{10, 0, 0}` is about 246 px
-wide. In Woxi it is 357 px wide: the box's outline fills the 350 px height.
-
-Wolfram's size matches what Woxi draws with `SphericalRegion -> True`. That
-gives 250 px, with the same slope and centering, as if the sphere around the
-displayed box were fit into the shorter image side.
-
-This conflicts with the calibration in the entry above. There a
-`SphericalRegion -> False` cylinder at `ImageSize -> {550, 350}` without a
-`PlotRange` fills the width (532/550). So the explicit `PlotRange`, `Show`,
-or `Boxed -> False` may trigger the different framing. This could not be
-checked without wolframscript: no snapshot of a box-filling scene with
-an explicit `PlotRange` and a fixed image size was available to compare.
+Woxi frames a `Boxed -> False` scene in an `ImageSize -> {w, h}` picture
+by the sphere around its box, as `SphericalRegion -> True` does, instead
+of fitting the projected box outline. This was inferred from two
+Demonstrations, not checked with wolframscript: a long scene drawn through
+`Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25, 4.25}},
+ImageSize -> {575, 350}]` (Wolfram 246 px, sphere framing 250 px, box fit
+357 px), and a `Show` of a `Graphics3D` and a `ParametricPlot3D` at
+`ImageSize -> {400, 400}` from a custom `ViewPoint` (Wolfram about 1.02×
+the sphere framing and 0.86× the box fit). Which option actually triggers
+it — `Boxed -> False`, the pinned size, or `Show` — is unverified, and a
+`Boxed -> False` picture given only a width still fits the box outline.
+The surface plots (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are
+unchanged.
 
 ### `Texture` and `VertexTextureCoordinates`
 
