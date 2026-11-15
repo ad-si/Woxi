@@ -2750,7 +2750,36 @@ fn generate_svg(
       )
     })
   };
-  let ((scale, _), cx, cy, w, h) = fit_3d_frame(
+  // `ImagePadding`: as in `Graphics3D`, the scene is fitted into the region
+  // inside the padding band and the picture keeps its full size around it.
+  let image_padding = options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(name) if name == "ImagePadding") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      Some(
+        crate::functions::plot::parse_image_padding(&value)
+          .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0)),
+      )
+    }
+    _ => None,
+  });
+  let image_padding = image_padding.flatten();
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    image_padding.unwrap_or([0.0; 4]);
+  let pad_w = (pad_left + pad_right).round() as u32;
+  let pad_h = (pad_bottom + pad_top).round() as u32;
+  let padded = image_padding.is_some()
+    && !full_width
+    && svg_width > pad_w
+    && (auto_height || svg_height > pad_h);
+  if padded {
+    svg_width -= pad_w;
+    svg_height = svg_height.saturating_sub(pad_h).max(1);
+  }
+  let ((scale, _), mut cx, mut cy, w, h) = fit_3d_frame(
     svg_width,
     (!auto_height || full_width).then_some(svg_height),
     (px_min, px_max, py_min, py_max),
@@ -2759,6 +2788,15 @@ fn generate_svg(
   );
   svg_width = w;
   svg_height = h;
+  // The field of view of an explicit `ViewAngle` spans the region inside
+  // the padding.
+  let inner_side = w.min(h) as f64;
+  if padded {
+    cx += pad_left;
+    cy += pad_top;
+    svg_width += pad_w;
+    svg_height += pad_h;
+  }
 
   // An explicit `ViewAngle` fixes the camera's field of view, exactly as in
   // `Graphics3D`: the frame spans `2 · d · tan(θ/2)` about the middle of the
@@ -2777,7 +2815,7 @@ fn generate_svg(
             },
             camera,
           );
-          (svg_width.min(svg_height) as f64 / span, bcx, bcy)
+          (inner_side / span, bcx, bcy)
         } else {
           (scale, p_cx, p_cy)
         }
