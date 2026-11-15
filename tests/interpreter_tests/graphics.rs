@@ -49198,6 +49198,40 @@ mod static_dynamic_controls {
     assert!(svg.contains("rotate(90"), "the picture is rotated: {svg}");
   }
 
+  /// A rotated plot keeps its own scaled coordinate system: the plot draws
+  /// in a `viewBox` larger than its pixel size, so its root `<svg>` must stay
+  /// nested inside the rotation group — dropping it drew the curve and axes
+  /// at the raw coordinates, far outside the rotated canvas (a blank cell
+  /// in a `Column`).
+  #[test]
+  fn rotating_a_plot_keeps_its_scaled_view_box() {
+    let plot = "Plot[x, {x, 0, 1}, ImageSize -> {200, 120}]";
+    let upright = export_svg(plot);
+    let root = &upright[..upright.find('>').expect("root tag")];
+    let view_box = root
+      .split("viewBox=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .expect("plot viewBox")
+      .to_string();
+    for angle in ["Pi/2", "3 Pi/2", "Pi/5"] {
+      let rotated = export_svg(&format!("Rotate[{plot}, {angle}]"));
+      let group = rotated.find("rotate(").expect("rotation group");
+      assert!(
+        rotated[group..].contains(&format!("viewBox=\"{view_box}\"")),
+        "rotated by {angle}, the plot keeps viewBox {view_box}: {rotated}"
+      );
+    }
+    let in_column = export_svg(&format!(
+      "Column[{{Graphics[Disk[]], Rotate[{plot}, 3 Pi/2]}}, Center]"
+    ));
+    let group = in_column.find("rotate(").expect("rotation group");
+    assert!(
+      in_column[group..].contains(&format!("viewBox=\"{view_box}\"")),
+      "a rotated plot in a Column keeps viewBox {view_box}: {in_column}"
+    );
+  }
+
   /// `Show[Plot[…, AspectRatio -> Full, PlotRange -> {0, 10}], g]` keeps the
   /// plot's own shape instead of sizing itself from the data aspect (which
   /// made a wide-range plot ten times taller than wide).

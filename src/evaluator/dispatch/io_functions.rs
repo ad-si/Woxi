@@ -6898,7 +6898,13 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
   if w <= 0.0 || h <= 0.0 {
     return inner_svg;
   }
-  let inner = crate::functions::graphics::strip_svg_wrapper(&inner_svg);
+  // Keep the picture's own root `<svg>` nested inside the rotation: a plot
+  // draws in a scaled coordinate system (its `viewBox` is larger than its
+  // `width`/`height`), and stripping that root would draw its content at
+  // the raw, unscaled coordinates — far outside the rotated canvas.
+  let inner = inner_svg
+    .find("<svg")
+    .map_or(inner_svg.as_str(), |root| &inner_svg[root..]);
   let deg = -angle.to_degrees();
   // The canvas grows to the rotated bounding box, so a quarter turn swaps
   // width and height instead of clipping the picture.
