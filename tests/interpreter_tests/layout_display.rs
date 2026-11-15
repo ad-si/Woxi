@@ -381,6 +381,28 @@ mod layout_display {
     assert!(!svg.contains("stroke-dasharray"), "{svg}");
   }
 
+  /// Regression: `Style[Framed[…], directives…]` was set as plain text and
+  /// lost its frame; the directives now style the framed content instead.
+  #[test]
+  fn styled_framed_keeps_its_frame() {
+    for expr in [
+      "Style[Framed[\"ab\"], \"Label\", 14]",
+      "Pane[Style[Framed[\"ab\"], 14], ImageSize -> {200, 50}]",
+      "Row[{Style[Framed[\"ab\"], 14], \"c\"}]",
+      "Column[{Style[Framed[\"ab\"], Red], \"c\"}]",
+      "Grid[{{Style[Framed[\"ab\"], Red], \"c\"}}]",
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(rects(&svg).len(), 1, "{expr}: {svg}");
+      assert!(svg.contains(">ab</text>"), "{expr}: {svg}");
+    }
+    // The color reaches the framed text, not just the frame.
+    let svg = svg_of("Grid[{{Style[Framed[\"ab\"], Red], \"c\"}}]");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+    let svg = svg_of("Column[{Style[Framed[\"ab\"], Red], \"c\"}]");
+    assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+  }
+
   /// Regression: a `Dividers` entry's thickness and dashing were dropped;
   /// only its color was drawn.
   #[test]

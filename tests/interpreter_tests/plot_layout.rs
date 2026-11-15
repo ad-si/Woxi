@@ -186,7 +186,11 @@ mod image_size {
         "Plot[x, {{x, 0, 15}}, AspectRatio -> 1, AxesLabel -> {{t, v}}, \
          PlotRange -> {{{{0, 30}}, {{0, {y_max}}}}}, ImageSize -> {{195, 200}}]"
       ));
-      assert_eq!(x_axis_label_font(&svg, "t"), 100.0, "PlotRange max {y_max}");
+      assert_eq!(
+        x_axis_label_font(&svg, "<tspan font-style=\"italic\">t</tspan>"),
+        100.0,
+        "PlotRange max {y_max}"
+      );
     }
   }
 }
@@ -1310,6 +1314,33 @@ mod clipped_plot_range_sampling {
     let svg = svg_of("Plot[x^2 + 5, {x, -20, 20}, PlotRange -> {0, 10}]");
     let n = curve_points(&svg);
     assert!(n >= 35, "only {n} curve points: {svg}");
+  }
+
+  // Samples that overshoot the PlotRange edge only by rounding noise (a
+  // running total of floats that should end exactly at the edge) lie on
+  // the edge: the curve keeps running along it instead of being cut off.
+  #[test]
+  fn rounding_overshoot_stays_on_edge() {
+    let svg = svg_of(
+      "ListPlot[{0, 50, 100.00000000000003, 100.00000000000003, \
+       100.00000000000003}, PlotRange -> {0, 100}, Joined -> True]",
+    );
+    assert_eq!(curve_points(&svg), 5, "{svg}");
+    let svg = svg_of(
+      "ListPlot[{0, 0.5, 1.0000000000000002, 1.0000000000000002}, \
+       PlotRange -> {0, 1}, Joined -> True]",
+    );
+    assert_eq!(curve_points(&svg), 4, "{svg}");
+  }
+
+  // A real overshoot is still clipped at the edge.
+  #[test]
+  fn real_overshoot_still_clipped() {
+    let svg = svg_of(
+      "ListPlot[{0, 50, 120, 120, 50}, PlotRange -> {0, 100}, Joined -> True]",
+    );
+    let polylines = svg.matches("stroke=\"#3D99CC\"").count();
+    assert_eq!(polylines, 2, "{svg}");
   }
 }
 

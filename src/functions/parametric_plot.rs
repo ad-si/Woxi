@@ -243,25 +243,35 @@ const MAX_REFINED_SAMPLES_FACTOR: usize = 8;
 /// curve there (`None` when the body did not evaluate to coordinates).
 type Sample = (f64, Option<Vec<(f64, f64)>>);
 
-/// Whether the middle of a sampled triple is far enough off the straight
-/// line between its neighbors that the interval needs more points. The
-/// measure is the deviation relative to the neighbors' separation, so it
-/// is independent of the coordinate scale.
-fn needs_refinement(a: &Sample, b: &Sample, c: &Sample) -> bool {
+/// How far the middle of a sampled triple lies off the straight line
+/// between its neighbors, or `None` when that is close enough that the
+/// interval needs no more points. Coordinates are first multiplied by the
+/// per-axis `scale` (see [`display_scale`]) so bends are judged as they
+/// will be drawn. The decision uses the deviation relative to the
+/// neighbors' separation, so it is independent of the overall size; the returned score is the absolute deviation (infinite for a gap
+/// or a non-finite point), which ranks the flagged intervals by how visibly
+/// the polyline departs from the curve.
+fn refinement_score(
+  a: &Sample,
+  b: &Sample,
+  c: &Sample,
+  (sx, sy): (f64, f64),
+) -> Option<f64> {
   let (Some(ra), Some(rb), Some(rc)) = (&a.1, &b.1, &c.1) else {
     // A gap in the samples is a discontinuity (or a domain boundary);
     // refining pins down where it actually starts.
-    return true;
+    return Some(f64::INFINITY);
   };
   if ra.len() != rb.len() || rb.len() != rc.len() {
-    return true;
+    return Some(f64::INFINITY);
   }
   let span = c.0 - a.0;
   if span == 0.0 {
-    return false;
+    return None;
   }
   let u = (b.0 - a.0) / span;
-  ra.iter().zip(rb).zip(rc).any(|((p0, p1), p2)| {
+  let mut score: Option<f64> = None;
+  for ((p0, p1), p2) in ra.iter().zip(rb).zip(rc) {
     if !p0.0.is_finite()
       || !p0.1.is_finite()
       || !p1.0.is_finite()
@@ -269,13 +279,77 @@ fn needs_refinement(a: &Sample, b: &Sample, c: &Sample) -> bool {
       || !p2.0.is_finite()
       || !p2.1.is_finite()
     {
-      return true;
+      return Some(f64::INFINITY);
     }
+    let (p0, p1, p2) = (
+      (p0.0 * sx, p0.1 * sy),
+      (p1.0 * sx, p1.1 * sy),
+      (p2.0 * sx, p2.1 * sy),
+    );
     let interp = (p0.0 + (p2.0 - p0.0) * u, p0.1 + (p2.1 - p0.1) * u);
     let deviation = (p1.0 - interp.0).hypot(p1.1 - interp.1);
     let separation = (p2.0 - p0.0).hypot(p2.1 - p0.1).max(1e-10);
-    deviation / separation > 0.05
-  })
+    // A deviation under ~1/10000 of the frame is invisible; without this
+    // floor a curve settling into a sub-pixel spiral would be refined at
+    // every sample.
+    if deviation / separation > 0.05 && deviation > 1e-4 {
+      score = Some(score.map_or(deviation, |s: f64| s.max(deviation)));
+    }
+  }
+  score
+}
+
+/// How the plot will map the sampled curve onto its frame, so refinement
+/// judges bends as they will be drawn.
+#[derive(Clone, Copy, Default)]
+struct DisplayFrame {
+  /// Explicit `PlotRange` component of each axis, if any; an axis without
+  /// one shows the full extent of the samples.
+  x: Option<(f64, f64)>,
+  y: Option<(f64, f64)>,
+  /// An explicit `AspectRatio` stretches each axis independently to fill
+  /// the frame; otherwise (`Automatic`) both axes share one scale.
+  stretch: bool,
+}
+
+/// Per-axis factors that map the sampled coordinates onto the unit-sized
+/// frame of `frame`. Without this, a curve whose x range is much narrower
+/// than its y range but which is drawn in a square frame looks nearly
+/// straight in data coordinates even where it visibly bends once drawn.
+fn display_scale(samples: &[Sample], frame: DisplayFrame) -> (f64, f64) {
+  let mut lo = (f64::INFINITY, f64::INFINITY);
+  let mut hi = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+  for (_, row) in samples {
+    for &(x, y) in row.iter().flatten() {
+      if x.is_finite() && y.is_finite() {
+        lo = (lo.0.min(x), lo.1.min(y));
+        hi = (hi.0.max(x), hi.1.max(y));
+      }
+    }
+  }
+  let width = |explicit: Option<(f64, f64)>, lo: f64, hi: f64| {
+    let w = match explicit {
+      Some((a, b)) => (b - a).abs(),
+      None => hi - lo,
+    };
+    if w.is_finite() && w > 0.0 {
+      Some(w)
+    } else {
+      None
+    }
+  };
+  let wx = width(frame.x, lo.0, hi.0);
+  let wy = width(frame.y, lo.1, hi.1);
+  match (wx, wy) {
+    (Some(wx), Some(wy)) if frame.stretch => (1.0 / wx, 1.0 / wy),
+    (Some(wx), Some(wy)) => {
+      let w = wx.max(wy);
+      (1.0 / w, 1.0 / w)
+    }
+    // A curve flat along one axis: keep both axes on the other's scale.
+    (Some(w), None) | (None, Some(w)) => (1.0 / w, 1.0 / w),
+    (None, None) => (1.0, 1.0),
+  }
 }
 
 /// Adaptively sample a parametric curve: lay down a uniform grid, then
@@ -290,6 +364,7 @@ fn adaptive_samples<F>(
   t_max: f64,
   initial_n: usize,
   max_total: usize,
+  frame: DisplayFrame,
 ) -> Vec<Sample>
 where
   F: Fn(f64) -> Option<Vec<(f64, f64)>>,
@@ -303,23 +378,36 @@ where
     })
     .collect();
 
+  let scale = display_scale(&samples, frame);
   let min_span = (t_max - t_min).abs() * 1e-10;
   for _ in 0..MAX_REFINEMENT_DEPTH {
     if samples.len() >= max_total {
       break;
     }
     let budget = max_total - samples.len();
+    let mut flagged: Vec<(usize, f64)> = samples
+      .windows(3)
+      .enumerate()
+      .filter(|(_, triple)| (triple[2].0 - triple[0].0).abs() >= min_span)
+      .filter_map(|(i, triple)| {
+        refinement_score(&triple[0], &triple[1], &triple[2], scale)
+          .map(|s| (i, s))
+      })
+      .collect();
+    // Each flagged triple adds up to two samples. When the budget cannot
+    // cover them all, spend it on the intervals that deviate most: a curve
+    // that settles into a tiny spiral (an ODE trajectory approaching a
+    // fixed point) bends at every sample, and refining that sub-pixel tail
+    // first would leave the large, visible bends polygonal.
+    let capacity = (budget / 2).max(1);
+    if flagged.len() > capacity {
+      flagged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+      flagged.truncate(capacity);
+      flagged.sort_by_key(|&(i, _)| i);
+    }
     let mut added: Vec<Sample> = Vec::new();
-    for triple in samples.windows(3) {
-      if added.len() >= budget {
-        break;
-      }
-      if (triple[2].0 - triple[0].0).abs() < min_span {
-        continue;
-      }
-      if !needs_refinement(&triple[0], &triple[1], &triple[2]) {
-        continue;
-      }
+    for (i, _) in flagged {
+      let triple = &samples[i..i + 3];
       for (left, right) in [(&triple[0], &triple[1]), (&triple[1], &triple[2])]
       {
         let mid = f64::midpoint(left.0, right.0);
@@ -342,6 +430,68 @@ where
   }
 
   samples
+}
+
+/// Bisection steps used to locate the edge of a curve's real domain.
+const DOMAIN_EDGE_BISECTIONS: usize = 40;
+
+/// Whether a sample has a finite coordinate pair for every curve.
+fn sample_is_defined(row: Option<&[(f64, f64)]>) -> bool {
+  row.is_some_and(|r| {
+    !r.is_empty() && r.iter().all(|p| p.0.is_finite() && p.1.is_finite())
+  })
+}
+
+/// Pin down where a sampled curve stops being real. Between each pair of
+/// neighboring samples of which only one evaluated (a radicand turning
+/// negative, as in `Sqrt[c - t^2]`), the parameter is bisected toward the
+/// last value that still evaluates, and that point is added. Without it a
+/// curve stops at the last grid sample instead of at the edge of its
+/// domain, which leaves a visible gap wherever the curve meets another
+/// branch there with a vertical tangent (the two halves of a Cassini oval
+/// drawn as `r = Sqrt[a ± Sqrt[b]]`).
+fn extend_to_domain_edges<F>(samples: &[Sample], sample_at: &F) -> Vec<Sample>
+where
+  F: Fn(f64) -> Option<Vec<(f64, f64)>>,
+{
+  let mut out: Vec<Sample> = Vec::with_capacity(samples.len() + 8);
+  for (i, s) in samples.iter().enumerate() {
+    if i > 0 {
+      let prev = &samples[i - 1];
+      let (prev_ok, cur_ok) = (
+        sample_is_defined(prev.1.as_deref()),
+        sample_is_defined(s.1.as_deref()),
+      );
+      if prev_ok != cur_ok {
+        // `good` always evaluates, `bad` never does.
+        let (mut good, mut bad) = if prev_ok {
+          (prev.0, s.0)
+        } else {
+          (s.0, prev.0)
+        };
+        let mut edge: Option<Sample> = None;
+        for _ in 0..DOMAIN_EDGE_BISECTIONS {
+          let mid = f64::midpoint(good, bad);
+          if mid == good || mid == bad {
+            break;
+          }
+          let row = sample_at(mid);
+          if sample_is_defined(row.as_deref()) {
+            good = mid;
+            edge = Some((mid, row));
+          } else {
+            bad = mid;
+          }
+        }
+        if let Some(edge) = edge {
+          out.push(edge);
+        }
+      }
+    }
+    out.push(s.clone());
+  }
+  out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+  out
 }
 
 /// Split the per-parameter samples into one point series per curve, keeping
@@ -1030,7 +1180,13 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       t_max,
       num_samples,
       max_total,
+      DisplayFrame {
+        x: overrides.x,
+        y: overrides.y,
+        stretch: overrides.aspect_ratio.is_some(),
+      },
     );
+    samples = extend_to_domain_edges(&samples, &sample_at);
     if let Some(region) = &region_function {
       samples = clip_samples_to_region(samples, region, &sample_at);
     }
@@ -2118,8 +2274,10 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
   }
 
-  // Sampled like ParametricPlot: a uniform grid, refined where the curve
-  // bends faster than the grid resolves (a spiral winding many times).
+  // A polar curve is the parametric curve `r(θ) {Cos[θ], Sin[θ]}`, so it is
+  // sampled the same way: a uniform grid refined where the curve bends
+  // faster than the grid resolves (a spiral winding many times), and
+  // carried out to the edges of the radius's real domain.
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
   let max_total = num_samples.saturating_mul(MAX_REFINED_SAMPLES_FACTOR);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
@@ -2127,16 +2285,23 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_radii: Vec<Vec<f64>> = Vec::with_capacity(bodies.len());
 
   for func_body in &bodies {
+    let sample_at = |theta: f64| {
+      let r = evaluate_at_point(func_body, &var_name, theta)?;
+      Some(vec![(r * theta.cos(), r * theta.sin())])
+    };
     let samples = adaptive_samples(
-      |theta| {
-        let r = evaluate_at_point(func_body, &var_name, theta)?;
-        Some(vec![(r * theta.cos(), r * theta.sin())])
-      },
+      sample_at,
       t_min,
       t_max,
       num_samples,
       max_total,
+      DisplayFrame {
+        x: overrides.x,
+        y: overrides.y,
+        stretch: overrides.aspect_ratio.is_some(),
+      },
     );
+    let samples = extend_to_domain_edges(&samples, &sample_at);
     let (series, params) = samples_to_series(samples);
     let points = series.into_iter().next().unwrap_or_default();
     // The signed radius of each sample, recovered from its point and angle.

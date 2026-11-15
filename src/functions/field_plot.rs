@@ -344,6 +344,9 @@ struct DensityContourOptions {
   /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
   /// range): the values the colors span, instead of the sampled ones.
   value_range: Option<(f64, f64)>,
+  /// `PlotRange -> All` (or an `All` value part of a three-axis range):
+  /// the colors span every sampled value, outliers included.
+  full_value_range: bool,
   /// `ClippingStyle`: how a cell outside `value_range` is drawn.
   clipping: Clipping,
   /// The `PlotRangePadding` between the frame and the data, as a fraction
@@ -404,6 +407,16 @@ fn plot_value_range(value: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Whether a density or contour plot's `PlotRange` asks for every value
+/// (`All`, or `{xr, yr, All}`), so no sample is dropped as an outlier.
+fn plot_value_range_is_all(value: &Expr) -> bool {
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(v) if v == "All");
+  match value {
+    Expr::List(parts) if parts.len() == 3 => is_all(&parts[2]),
+    other => is_all(other),
+  }
+}
+
 /// The per-contour styles of a `ContourStyle` value whose entries are all
 /// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
 /// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
@@ -459,6 +472,30 @@ impl DensityContourOptions {
       shading: &self.contour_shading_colors,
     }
   }
+}
+
+/// `FrameLabel -> Automatic` on a plot over two ranges `{x, …}, {y, …}`
+/// (the arguments just before the options at `start`) labels the bottom and
+/// left frame edges with the two variable names.
+fn automatic_frame_label(
+  value: &Expr,
+  args: &[Expr],
+  start: usize,
+) -> Option<Expr> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if !matches!(&val, Expr::Identifier(v) if v == "Automatic") || start < 3 {
+    return None;
+  }
+  let var_name = |e: &Expr| match e {
+    Expr::List(items) if items.len() >= 2 => match &items[0] {
+      Expr::Identifier(v) => Some(Expr::String(v.clone())),
+      _ => None,
+    },
+    _ => None,
+  };
+  Some(Expr::List(
+    vec![var_name(&args[start - 2])?, var_name(&args[start - 1])?].into(),
+  ))
 }
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
@@ -521,6 +558,7 @@ fn parse_density_contour_options(
   let mut contour_level_exprs: Vec<(f64, Expr)> = Vec::new();
   let mut bar_legend = false;
   let mut value_range: Option<(f64, f64)> = None;
+  let mut full_value_range = false;
   let mut clipping = Clipping::Blank;
   for opt in &args[start..] {
     if let Expr::Rule {
@@ -633,10 +671,17 @@ fn parse_density_contour_options(
           };
         }
         "FrameLabel" => {
-          frame_labels = crate::functions::plot::parse_frame_label(replacement);
+          frame_labels = match automatic_frame_label(replacement, args, start) {
+            Some(labels) => crate::functions::plot::parse_frame_label(&labels),
+            None => crate::functions::plot::parse_frame_label(replacement),
+          };
         }
+        // `Frame -> None` draws no frame, like `Frame -> False`.
         "Frame" => {
-          frame = !matches!(replacement, Expr::Identifier(v) if v == "False");
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          frame = !matches!(&val, Expr::Identifier(v)
+            if v == "False" || v == "None");
         }
         "FrameTicks" => {
           frame_ticks =
@@ -661,7 +706,10 @@ fn parse_density_contour_options(
           contour_labels = !matches!(replacement, Expr::Identifier(v)
             if v == "False" || v == "None");
         }
-        "PlotRange" => value_range = plot_value_range(replacement),
+        "PlotRange" => {
+          value_range = plot_value_range(replacement);
+          full_value_range = plot_value_range_is_all(replacement);
+        }
         "ClippingStyle" => clipping = Clipping::parse(replacement),
         "PlotLegends" => {
           bar_legend = matches!(replacement, Expr::Identifier(v)
@@ -703,6 +751,7 @@ fn parse_density_contour_options(
     contour_level_exprs,
     bar_legend,
     value_range,
+    full_value_range,
     clipping,
     range_padding: FIELD_RANGE_PADDING,
   }
@@ -1689,6 +1738,17 @@ fn scaled_color(
 /// pole in the plotted function) can't collapse the color scale and contour
 /// levels onto a handful of pixels around it, leaving the rest of the plot a
 /// single flat color.
+/// The smallest and largest finite sample.
+fn full_value_range(values: &[f64]) -> (f64, f64) {
+  values
+    .iter()
+    .copied()
+    .filter(|v| v.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+      (lo.min(v), hi.max(v))
+    })
+}
+
 fn robust_value_range(values: &[f64]) -> (f64, f64) {
   let mut vs: Vec<f64> =
     values.iter().copied().filter(|v| v.is_finite()).collect();
@@ -2870,6 +2930,22 @@ fn field_plot_structure(
   // and labels placed beyond it (`PlotRangeClipping -> False`) lie outside
   // the frame instead of stretching it.
   explicit.retain(|o| name_of(o) != Some("PlotRange"));
+  // `FrameLabel -> Automatic` names the plot's iterator variables; the
+  // returned `Graphics` no longer knows them, so it carries them explicitly
+  // (a `GraphicsGrid` cell or a `Show` re-renders from these options).
+  if args.len() >= 3 {
+    for opt in &mut explicit {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameLabel")
+        && let Some(labels) = automatic_frame_label(replacement, args, 3)
+      {
+        **replacement = labels;
+      }
+    }
+  }
   let pair =
     |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
   if pin_range {
@@ -2883,6 +2959,16 @@ fn field_plot_structure(
   }
   if !explicit.iter().any(|o| name_of(o) == Some("AspectRatio")) {
     structure_args.push(rule_expr(id_expr("AspectRatio"), Expr::Integer(1)));
+  }
+  // Like every Wolfram plot, a field plot clips what it draws to its range,
+  // so under `Show[…, PlotRange -> narrower]` the density raster (and any
+  // layer merged over it) is cut at the frame instead of spilling past it.
+  if !explicit
+    .iter()
+    .any(|o| name_of(o) == Some("PlotRangeClipping"))
+  {
+    structure_args
+      .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
   }
   structure_args.extend(explicit);
   call("Graphics", structure_args)
@@ -2924,9 +3010,13 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colors
   // span; cells beyond it follow `ClippingStyle` (blank by default).
   // Otherwise the colors span the sampled values.
-  let (v_min, v_max) = opts
-    .value_range
-    .unwrap_or_else(|| robust_value_range(&samples));
+  let (v_min, v_max) = opts.value_range.unwrap_or_else(|| {
+    if opts.full_value_range {
+      full_value_range(&samples)
+    } else {
+      robust_value_range(&samples)
+    }
+  });
   let clipping = if opts.value_range.is_some() {
     opts.clipping
   } else {
@@ -3204,6 +3294,57 @@ pub fn with_evaluated_options(
   result.map(|()| out)
 }
 
+/// The number of samples per axis of the initial grid when the options
+/// among `args[start..]` set `MaxRecursion -> 0`: the explicit
+/// `PlotPoints -> n` (or the first of `{nx, ny}`, at least 2), else 15. `None` when the plot refines.
+fn initial_grid_without_recursion(
+  args: &[Expr],
+  start: usize,
+) -> Option<usize> {
+  let option = |key: &str| {
+    args.get(start..)?.iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      ),
+      _ => None,
+    })
+  };
+  if !matches!(option("MaxRecursion")?, Expr::Integer(0)) {
+    return None;
+  }
+  // A `{nx, ny}` pair samples the grid at its first count.
+  let points = match option("PlotPoints") {
+    Some(Expr::List(ref ks)) => ks.first().cloned(),
+    other => other,
+  };
+  match points {
+    Some(Expr::Integer(k)) if k >= 2 => usize::try_from(k.min(400)).ok(),
+    _ => Some(15),
+  }
+}
+
+/// The value at fractional position `(u, v)` (each in [0, 1]) of a grid
+/// `grid[col][row]` whose nodes span the unit square, interpolated
+/// bilinearly between the four surrounding nodes (NaN if one is missing).
+fn bilinear_grid_value(grid: &[Vec<f64>], u: f64, v: f64) -> f64 {
+  let (nc, nr) = (grid.len(), grid[0].len());
+  let fx = u.clamp(0.0, 1.0) * (nc - 1) as f64;
+  let fy = v.clamp(0.0, 1.0) * (nr - 1) as f64;
+  let (i, j) = ((fx as usize).min(nc - 2), (fy as usize).min(nr - 2));
+  let (tx, ty) = (fx - i as f64, fy - j as f64);
+  let bottom = grid[i][j] * (1.0 - tx) + grid[i + 1][j] * tx;
+  let top = grid[i][j + 1] * (1.0 - tx) + grid[i + 1][j + 1] * tx;
+  bottom * (1.0 - ty) + top * ty
+}
+
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A body that names its function indirectly (`f = x^2 + y^2;
   // ContourPlot[f, …]`) is evaluated once first — see
@@ -3311,7 +3452,45 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut samples = Vec::with_capacity(n * n);
   let mut all_samples = Vec::with_capacity(n * n);
 
-  for i in 0..n {
+  // `MaxRecursion -> 0` asks for no refinement beyond the initial
+  // `PlotPoints` grid: only that grid is evaluated (a body that is costly
+  // per point, like a numerical integral, then stays fast) and the render
+  // grid is interpolated from it.
+  let coarse = if opts.region_function.is_none() && y_bounds.is_none() {
+    initial_grid_without_recursion(args, 3)
+  } else {
+    None
+  };
+  if let Some(m) = coarse {
+    let mut coarse_grid = vec![vec![f64::NAN; m]; m];
+    for (i, column) in coarse_grid.iter_mut().enumerate() {
+      let x = x_min + i as f64 / (m - 1) as f64 * (x_max - x_min);
+      for (j, cell) in column.iter_mut().enumerate() {
+        let y = y_min + j as f64 / (m - 1) as f64 * (y_max - y_min);
+        if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+          && v.is_finite()
+        {
+          *cell = v;
+        }
+      }
+    }
+    for (i, column) in grid.iter_mut().enumerate() {
+      for (j, cell) in column.iter_mut().enumerate() {
+        let v = bilinear_grid_value(
+          &coarse_grid,
+          i as f64 / cells as f64,
+          j as f64 / cells as f64,
+        );
+        if v.is_finite() {
+          *cell = v;
+          all_samples.push(v);
+          samples.push(v);
+        }
+      }
+    }
+  }
+
+  for i in 0..if coarse.is_some() { 0 } else { n } {
     let x = x_min + i as f64 / cells as f64 * (x_max - x_min);
     let (row_lo, row_hi) = match &y_bounds {
       Some(b) => b.at(x),

@@ -1021,6 +1021,25 @@ mod tests {
       );
     }
 
+    /// `StyleBox[x, FontSlant -> "Plain"]` sets a one-letter atom upright,
+    /// the way a notebook writes `V₁` in a typeset fraction; without it the
+    /// letter is a math variable in italics.
+    #[test]
+    fn stylebox_plain_slant_keeps_single_letter_upright() {
+      let letter = Expr::String("V".to_string());
+      let plain = call(
+        "StyleBox",
+        vec![
+          letter.clone(),
+          rule_expr(id_expr("FontSlant"), Expr::String("Plain".to_string())),
+        ],
+      );
+      let svg = layout_to_svg(&layout_box(&plain, 14.0), "currentColor");
+      assert!(!svg.contains("italic"), "upright: {svg}");
+      let svg = layout_to_svg(&layout_box(&letter, 14.0), "currentColor");
+      assert!(svg.contains("font-style=\"italic\""), "italic: {svg}");
+    }
+
     /// Regression: the subscript of an accented base (`OverDot[θ]`, as in
     /// a `θ̇₁` plot label) was placed at 0.4 of the base's full height, so
     /// the accent stacked on top lifted it above the base's baseline. It
@@ -2470,6 +2489,63 @@ mod tests {
         svg.contains("stroke=\"rgb(255,0,0)\""),
         "red frame lines: {svg}"
       );
+    }
+
+    #[test]
+    fn named_style_sets_the_size_of_a_styled_grid() {
+      // `Style[Grid[…], "Label"]` sets the grid in the stylesheet's small
+      // label size, as `Style["ab", "Label"]` does a lone string; the named
+      // style used to be ignored, leaving the cells at the default 14.
+      let svg = svg_of("Style[Grid[{{\"ab\", 3}}], \"Label\"]");
+      assert!(svg.contains("font-size=\"9\""), "{svg}");
+      assert!(!svg.contains("font-size=\"14\""), "{svg}");
+      // Explicit directives sit on top of the named style, on either side.
+      for code in [
+        "Style[Grid[{{\"ab\", 3}}], \"Label\", 20]",
+        "Style[Grid[{{\"ab\", 3}}], 20, \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"20\""), "{code}: {svg}");
+      }
+      // A named style's color reaches the cells too.
+      let svg = svg_of("Style[Grid[{{\"ab\"}}], \"Section\"]");
+      assert!(svg.contains("font-size=\"28\""), "{svg}");
+      assert!(svg.contains("rgb(202,81,25)"), "{svg}");
+    }
+
+    #[test]
+    fn fraction_cell_takes_the_styled_grid_size() {
+      // A quotient cell typeset as a built-up fraction is set at the styled
+      // grid's size, like the text cells beside it, not at the default 14.
+      for code in [
+        "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
+        "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
+      }
+    }
+
+    #[test]
+    fn string_letters_in_a_fraction_stay_upright() {
+      // A string is literal text: its single letters are not math
+      // variables, so they stay upright in a typeset fraction, while a
+      // one-letter symbol is still set in italics.
+      let svg = svg_of("Grid[{{\"a\"/\"b\"}}]");
+      assert!(svg.contains(">a</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "string letters upright: {svg}");
+      let svg = svg_of("Grid[{{a/b}}]");
+      assert!(
+        svg.contains("font-style=\"italic\""),
+        "symbols italic: {svg}"
+      );
+      // Inline subscript boxes inside a string are literal text too.
+      let svg = svg_of(
+        "Grid[{{\"\\!\\(\\*SubscriptBox[\\(V\\), \\(1\\)]\\)\"/\"xy\"}}]",
+      );
+      assert!(svg.contains(">V</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "inline-box letters upright: {svg}");
     }
 
     #[test]
@@ -4525,6 +4601,44 @@ mod tests {
       assert!(grid.graphics.is_some(), "{:?}", grid.graphics);
     }
 
+    /// A list in a `Column` wider than the `Pane` around it breaks into
+    /// lines at the pane's width, after the commas between its elements,
+    /// whether the pane gives only a width or a fixed `{w, h}` box, and
+    /// through the `Text` and `Style` wrapped around the column.
+    #[test]
+    fn pane_breaks_a_long_list_in_a_column_into_lines() {
+      fn svg_width(svg: &str) -> f64 {
+        svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|w| w.parse().ok())
+          .expect("svg width")
+      }
+      for pane in ["300", "{300, 400}"] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Pane[Text[Style[Column[{{"Squares:",
+            Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {{k, 1, 60}}]}}],
+            12]], {pane}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        let width = svg_width(&svg);
+        assert!(width <= 300.5, "Pane[…, {pane}] is {width} wide: {svg}");
+        assert!(svg.contains("Squares:"), "{svg}");
+        assert!(svg.contains(r#"font-weight="bold">3600<"#), "{svg}");
+        // The list takes several lines, each starting where the last one
+        // ended: the first line opens the brace, the last one closes it.
+        assert!(svg.matches("<text").count() > 3, "{svg}");
+      }
+      // Without a pane the same column is one long line.
+      let svg = woxi::interpret(
+        r#"ExportString[Column[{"Squares:",
+          Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {k, 1, 60}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg_width(&svg) > 300.0, "{svg}");
+    }
+
     /// `Text` around a `Pane` of a plain table draws the table: the pane
     /// only sizes it.
     #[test]
@@ -5180,6 +5294,87 @@ mod grid_item_style_tests {
     );
     assert!(svg.contains(">0.50</text>"), "{svg}");
     assert!(!svg.contains("<tspan x="), "{svg}");
+  }
+
+  #[test]
+  fn test_string_form_with_matrix_in_graphics_text_is_a_matrix() {
+    // A `StringForm` label whose slots hold matrices typesets each as a
+    // parenthesized column, not as its entries flattened into text lines.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Blue, Text[StringForm["`` = `` + t ``", MatrixForm[{"x", "y"}], MatrixForm[{1., 3.}], MatrixForm[{1., -2.}]], {0, 0}], Circle[]}], "SVG"]"#,
+    )
+    .unwrap();
+    let parens = paren_paths(&svg);
+    assert_eq!(parens.len(), 6, "{svg}");
+    assert!(
+      parens.iter().all(|p| p.contains("stroke=\"rgb(0,0,255)\"")),
+      "{svg}"
+    );
+    for entry in [">x</text>", ">y</text>", ">3.</text>", ">-2.</text>"] {
+      assert!(svg.contains(entry), "{entry} missing: {svg}");
+    }
+    assert!(!svg.contains("<tspan x="), "{svg}");
+    assert!(!svg.contains("StringForm"), "{svg}");
+  }
+
+  /// The `(x, width)` of the first nested picture an inset label embeds,
+  /// and the x shift of its content within that picture.
+  fn first_inset_geometry(svg: &str) -> (f64, f64) {
+    let attr = |s: &str, key: &str| -> f64 {
+      let start = s.find(key).unwrap() + key.len();
+      let rest = &s[start..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    let inset = &svg[svg.find("<svg x=").unwrap()..];
+    let shift = &inset[inset.find("translate(").unwrap() + 10..];
+    let shift: f64 = shift[..shift.find(',').unwrap()].parse().unwrap();
+    (attr(inset, "<svg x=\""), shift)
+  }
+
+  #[test]
+  fn test_text_offset_places_a_matrix_label() {
+    // `Text[label, pos, {-1, 0}]` puts the left edge of a label drawn as a
+    // picture (here a matrix) on `pos`, as it does for a plain text label.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Point[{0, 0}], Text[Row[{"v = ", MatrixForm[{1, 2}]}], {0, 0}, {-1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 400], "SVG"]"#,
+    )
+    .unwrap();
+    let cx: f64 = {
+      let s = &svg[svg.find("<circle cx=\"").unwrap() + 12..];
+      s[..s.find('"').unwrap()].parse().unwrap()
+    };
+    let (x, shift) = first_inset_geometry(&svg);
+    assert!(
+      (x + shift - cx).abs() < 0.01,
+      "{x} + {shift} vs {cx}: {svg}"
+    );
+    assert_eq!(paren_paths(&svg).len(), 2, "{svg}");
+  }
+
+  #[test]
+  fn test_nested_style_around_matrix_keeps_outer_size() {
+    // An inner `Style` coloring a matrix keeps the font size of the
+    // `Style` around it, alone or as an item of a styled `Row`.
+    for code in [
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], Red], 30], "SVG"]"#,
+      r#"ExportString[Style[Row[{"a ", Style[MatrixForm[{1, 2}], Red]}], 30], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("font-size=\"14\""), "{code}: {svg}");
+      assert!(svg.contains("font-size=\"30\""), "{code}: {svg}");
+      assert_eq!(
+        svg.matches("fill=\"rgb(255,0,0)\"").count(),
+        2,
+        "{code}: {svg}"
+      );
+    }
+    // The inner directives win over the outer ones.
+    let svg = woxi::interpret(
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], 12, Red], 30], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("font-size=\"12\""), "{svg}");
+    assert!(!svg.contains("font-size=\"30\""), "{svg}");
   }
 
   #[test]
