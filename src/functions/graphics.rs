@@ -41516,7 +41516,15 @@ fn dynamic_step_code(spec: &Expr) -> Option<String> {
     })
     .nth(2)?;
   let (stripped, found) = manipulate_bound_expr_deep(step);
-  found.then(|| crate::syntax::expr_to_source_form(&stripped))
+  // A step naming another control's variable (`{{time, 0}, 0, tMax, step,
+  // Trigger}` with a speed setter for `step`) only resolves through the
+  // live bindings, so it follows that control too.
+  let follows_binding = !found
+    && crate::functions::math_ast::try_eval_to_f64_with_infinity(&stripped)
+      .is_none()
+    && matches!(eval_manipulate_bound(step), Some((_, true)));
+  (found || follows_binding)
+    .then(|| crate::syntax::expr_to_source_form(&stripped))
 }
 
 /// `Animate[expr, {var, min, max, …}, opts…]` nested inside a static
@@ -42926,6 +42934,40 @@ fn number_form_text(expr: &Expr) -> Option<String> {
   }
 }
 
+/// The string factors of a `Times` (held `BinaryOp` or `FunctionCall`
+/// form) whose every factor is a string; `None` for any other expression.
+fn string_product_factors(expr: &Expr) -> Option<Vec<String>> {
+  fn collect(expr: &Expr, out: &mut Vec<String>) -> bool {
+    match expr {
+      Expr::String(s) => {
+        out.push(s.clone());
+        true
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().all(|a| collect(a, out))
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => collect(left, out) && collect(right, out),
+      _ => false,
+    }
+  }
+  let is_product = matches!(
+    expr,
+    Expr::FunctionCall { name, .. } if name == "Times"
+  ) || matches!(
+    expr,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      ..
+    }
+  );
+  let mut out = Vec::new();
+  (is_product && collect(expr, &mut out)).then_some(out)
+}
+
 fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let output_run = |italic: bool| {
     let text =
@@ -42962,6 +43004,26 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       ..Default::default()
     });
     return runs;
+  }
+  // A product of strings — a caption written as juxtaposed literals like
+  // `"viewpoint" ""` — is set side by side the way the notebook shows a
+  // product, not joined with the `*` of its InputForm.
+  if let Some(texts) = string_product_factors(expr) {
+    let text = texts
+      .iter()
+      .filter(|s| !s.is_empty())
+      .cloned()
+      .collect::<Vec<_>>()
+      .join(" ");
+    return if text.is_empty() {
+      vec![]
+    } else {
+      vec![LabelRun {
+        text,
+        italic: false,
+        ..Default::default()
+      }]
+    };
   }
   // A quantity reads with its unit abbreviated (`286 K`), as the notebook
   // typesets it, not spelled out the way `ToString` writes it.
@@ -45000,7 +45062,14 @@ fn parse_manipulate_control(
         )
       })
       .filter(|_| max.is_finite());
-    let step = bounds.get(2).and_then(|e| expr_to_f64(e)).unwrap_or(1.0);
+    // The step may name another control's variable (a speed setter), so
+    // it is resolved against the bindings like the bounds are.
+    let step = bounds
+      .get(2)
+      .and_then(|e| eval_manipulate_bound(e))
+      .map(|(v, _)| v)
+      .filter(|v| v.is_finite() && *v != 0.0)
+      .unwrap_or(1.0);
     let initial = explicit_initial
       .as_ref()
       .and_then(crate::functions::math_ast::try_eval_to_f64)

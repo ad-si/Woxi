@@ -9926,6 +9926,139 @@ fn cuboid_face_keys(
 /// of another opaque box (same plane, same rectangle). They are interior
 /// to the union and never visible, but a grid of many boxes (e.g. a
 /// fractal built from unit cubes) would otherwise emit them all.
+/// An opaque convex solid of the scene that hides whatever lies wholly
+/// inside it (see the culling in the `Graphics3D` renderer).
+struct SolidOccluder<'a> {
+  prim: &'a Primitive3D,
+  shape: OccluderShape,
+  /// Bounding sphere, for skipping pairs of primitives far apart.
+  center: Point3D,
+  reach: f64,
+}
+
+enum OccluderShape {
+  Sphere {
+    center: Point3D,
+    radius: f64,
+  },
+  Cylinder {
+    p1: Point3D,
+    p2: Point3D,
+    radius: f64,
+  },
+}
+
+impl SolidOccluder<'_> {
+  /// Whether `p` lies strictly inside the solid. The small margin keeps a
+  /// facet that touches the surface (a shared cap, a tangent point)
+  /// visible.
+  fn contains(&self, p: &Point3D) -> bool {
+    match &self.shape {
+      OccluderShape::Sphere { center, radius } => {
+        let d = ((p.x - center.x).powi(2)
+          + (p.y - center.y).powi(2)
+          + (p.z - center.z).powi(2))
+        .sqrt();
+        d < radius * (1.0 - 1e-6)
+      }
+      OccluderShape::Cylinder { p1, p2, radius } => {
+        let axis = [p2.x - p1.x, p2.y - p1.y, p2.z - p1.z];
+        let len2 = v_dot(axis, axis);
+        if len2 <= 0.0 {
+          return false;
+        }
+        let rel = [p.x - p1.x, p.y - p1.y, p.z - p1.z];
+        let t = v_dot(rel, axis) / len2;
+        let margin = 1e-6;
+        if t <= margin || t >= 1.0 - margin {
+          return false;
+        }
+        let radial = [
+          rel[0] - t * axis[0],
+          rel[1] - t * axis[1],
+          rel[2] - t * axis[2],
+        ];
+        v_dot(radial, radial).sqrt() < radius * (1.0 - margin)
+      }
+    }
+  }
+
+  /// Whether the bounding spheres of this solid and `prim` overlap, so
+  /// that `prim` may have facets inside it.
+  fn may_enclose(&self, prim: &Primitive3D) -> bool {
+    let Some((c, r)) = solid_bounding_sphere(prim) else {
+      return false;
+    };
+    let d = ((c.x - self.center.x).powi(2)
+      + (c.y - self.center.y).powi(2)
+      + (c.z - self.center.z).powi(2))
+    .sqrt();
+    d < self.reach + r
+  }
+}
+
+/// Bounding sphere of a sphere, cylinder or cone primitive.
+fn solid_bounding_sphere(prim: &Primitive3D) -> Option<(Point3D, f64)> {
+  match prim {
+    Primitive3D::Sphere { center, radius, .. } => Some((*center, *radius)),
+    Primitive3D::Cylinder { p1, p2, radius, .. }
+    | Primitive3D::Cone { p1, p2, radius, .. } => {
+      let c = Point3D {
+        x: f64::midpoint(p1.x, p2.x),
+        y: f64::midpoint(p1.y, p2.y),
+        z: f64::midpoint(p1.z, p2.z),
+      };
+      let half =
+        ((p2.x - p1.x).powi(2) + (p2.y - p1.y).powi(2) + (p2.z - p1.z).powi(2))
+          .sqrt()
+          / 2.0;
+      Some((c, (half * half + radius * radius).sqrt()))
+    }
+    _ => None,
+  }
+}
+
+/// The opaque, closed spheres and capped cylinders of a scene, which hide
+/// facets of other solids lying wholly inside them.
+fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
+  prims
+    .iter()
+    .filter_map(|prim| {
+      let shape = match prim {
+        Primitive3D::Sphere {
+          center,
+          radius,
+          style,
+          ..
+        } if style.opacity >= 1.0 && style.faces => OccluderShape::Sphere {
+          center: *center,
+          radius: *radius,
+        },
+        Primitive3D::Cylinder {
+          p1,
+          p2,
+          radius,
+          style,
+        } if style.opacity >= 1.0 && style.faces && style.capped => {
+          OccluderShape::Cylinder {
+            p1: *p1,
+            p2: *p2,
+            radius: *radius,
+          }
+        }
+        _ => return None,
+      };
+      let (center, reach) = solid_bounding_sphere(prim)?;
+      (reach.is_finite() && reach > 0.0).then_some(SolidOccluder {
+        prim,
+        shape,
+        center,
+        reach,
+      })
+    })
+    .collect()
+}
+
 fn hidden_cuboid_faces(
   prims: &[Primitive3D],
 ) -> std::collections::HashSet<(u8, [i64; 5])> {
@@ -11925,6 +12058,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let hidden_faces = hidden_cuboid_faces(&prims);
+  let occluders = solid_occluders(&prims);
 
   for prim in &prims {
     // Per-triangle edge flags for a polygon with holes; the ordinary
@@ -12074,6 +12208,43 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           },
         ),
       };
+    // A curved solid's facets that lie wholly inside another opaque convex
+    // solid can never be seen. Left in, the painter's sort interleaves
+    // them with the enclosing surface's facets wherever the two nearly
+    // coincide — a two-tone ball drawn as a sphere just inside another —
+    // and their seams streak across the visible surface.
+    let mut tris = tris;
+    if matches!(
+      prim,
+      Primitive3D::Sphere { .. }
+        | Primitive3D::Cylinder { .. }
+        | Primitive3D::Cone { .. }
+    ) && !occluders.is_empty()
+      && (holed_boundaries.is_empty() || holed_boundaries.len() == tris.len())
+    {
+      let enclosing: Vec<&SolidOccluder> = occluders
+        .iter()
+        .filter(|o| !std::ptr::eq(o.prim, prim) && o.may_enclose(prim))
+        .collect();
+      if !enclosing.is_empty() {
+        let keep: Vec<bool> = tris
+          .iter()
+          .map(|(a, b, c)| {
+            !enclosing
+              .iter()
+              .any(|o| o.contains(a) && o.contains(b) && o.contains(c))
+          })
+          .collect();
+        if keep.iter().any(|k| !k) {
+          let mut it = keep.iter();
+          tris.retain(|_| *it.next().unwrap_or(&true));
+          if !holed_boundaries.is_empty() {
+            let mut it = keep.iter();
+            holed_boundaries.retain(|_| *it.next().unwrap_or(&true));
+          }
+        }
+      }
+    }
     // `FaceForm[None]` leaves a face unfilled: it is still emitted, fully
     // transparent, so its outline is drawn where its edges lie.
     let prim_opacity = if prim_style.faces {
@@ -15858,13 +16029,17 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     reset_scalar_3d_cache();
     const CELLS: usize = 24;
     let ranges = [(x_min, x_max), (y_min, y_max), (z_min, z_max)];
-    let at = |d: usize, k: usize| {
-      let (lo, hi) = ranges[d];
-      lo + (hi - lo) * k as f64 / CELLS as f64
-    };
     // One layer beyond each face, outside the region, so the surface
     // closes on the face itself.
     let n = CELLS + 3;
+    let samples = sample_region_field(
+      &field,
+      [xvar.as_str(), yvar.as_str(), zvar.as_str()],
+      ranges,
+      CELLS,
+      false,
+    );
+    let m = CELLS + 1;
     let mut grid = vec![vec![vec![f64::NAN; n]; n]; n];
     let mut inside_any = false;
     for (i, plane) in grid.iter_mut().enumerate() {
@@ -15872,16 +16047,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for (k, cell) in row.iter_mut().enumerate() {
           let pad = [i, j, k].iter().any(|&q| q == 0 || q == n - 1);
           let [a, b, c] = [i, j, k].map(|q| q.clamp(1, n - 2) - 1);
-          let v = evaluate_scalar_3d(
-            &field,
-            &xvar,
-            &yvar,
-            &zvar,
-            at(0, a),
-            at(1, b),
-            at(2, c),
-          )
-          .unwrap_or(f64::NAN);
+          let v = samples[(a * m + b) * m + c];
           inside_any |= v > 0.0;
           // A sample exactly on the boundary would make the surface pass
           // through a grid vertex, leaving sliver triangles.
@@ -16863,6 +17029,131 @@ fn region_signed_field(cond: &Expr) -> Option<Expr> {
       _ => None,
     },
     _ => None,
+  }
+}
+
+/// Sample a `region_signed_field` on the `(cells + 1)³` grid corners of
+/// `ranges`, flattened as `[x][y][z]`. Each inequality (a leaf of the
+/// `Min`/`Max`/`Minus` tree) is divided by its numerical gradient length,
+/// turning it into an approximate signed distance before the leaves are
+/// combined. Without that, a steep condition (`(x-5)^2 + (z-5)^2 > 25`)
+/// combined with shallow ones (`x > -1/2`) has its zero crossing clipped by
+/// whichever leaf happens to be smaller at the inside sample, and the
+/// level surface comes out as a staircase instead of a smooth wall.
+///
+/// A lone condition (`normalize` false at the top) keeps its raw values:
+/// there is nothing for it to be clipped against.
+fn sample_region_field(
+  field: &Expr,
+  vars: [&str; 3],
+  ranges: [(f64, f64); 3],
+  cells: usize,
+  normalize: bool,
+) -> Vec<f64> {
+  let m = cells + 1;
+  let h: [f64; 3] =
+    [0, 1, 2].map(|d| (ranges[d].1 - ranges[d].0) / cells as f64);
+  let idx = |i: usize, j: usize, k: usize| (i * m + j) * m + k;
+  match field {
+    Expr::FunctionCall { name, args }
+      if (name == "Min" || name == "Max") && !args.is_empty() =>
+    {
+      let mut parts = args
+        .iter()
+        .map(|a| sample_region_field(a, vars, ranges, cells, true));
+      let first = parts.next().unwrap_or_default();
+      parts.fold(first, |acc, p| {
+        acc
+          .iter()
+          .zip(&p)
+          .map(|(&a, &b)| {
+            // A NaN sample (the condition failed to evaluate) counts as
+            // outside, as the boolean test would.
+            let (a, b) = (
+              if a.is_nan() { f64::NEG_INFINITY } else { a },
+              if b.is_nan() { f64::NEG_INFINITY } else { b },
+            );
+            if name == "Min" { a.min(b) } else { a.max(b) }
+          })
+          .collect()
+      })
+    }
+    Expr::FunctionCall { name, args } if name == "Minus" && args.len() == 1 => {
+      sample_region_field(&args[0], vars, ranges, cells, normalize)
+        .into_iter()
+        .map(|v| -v)
+        .collect()
+    }
+    leaf => {
+      let mut raw = vec![f64::NAN; m * m * m];
+      let at = |d: usize, k: usize| {
+        let (lo, hi) = ranges[d];
+        lo + (hi - lo) * k as f64 / cells as f64
+      };
+      for i in 0..m {
+        let x = at(0, i);
+        for j in 0..m {
+          let y = at(1, j);
+          for k in 0..m {
+            let z = at(2, k);
+            raw[idx(i, j, k)] =
+              evaluate_scalar_3d(leaf, vars[0], vars[1], vars[2], x, y, z)
+                .unwrap_or(f64::NAN);
+          }
+        }
+      }
+      if !normalize {
+        return raw;
+      }
+      // Finite-difference derivative along one axis, one-sided at the box
+      // faces and wherever a neighbor is missing.
+      let diff = |i: usize, j: usize, k: usize, d: usize| -> f64 {
+        let at = |q: [usize; 3]| raw[idx(q[0], q[1], q[2])];
+        let p = [i, j, k];
+        let here = at(p);
+        let mut lo = p;
+        let mut hi = p;
+        if p[d] > 0 {
+          lo[d] -= 1;
+        }
+        if p[d] + 1 < m {
+          hi[d] += 1;
+        }
+        let (vl, vh) = (at(lo), at(hi));
+        let (vl, sl) = if vl.is_finite() {
+          (vl, lo[d])
+        } else {
+          (here, p[d])
+        };
+        let (vh, sh) = if vh.is_finite() {
+          (vh, hi[d])
+        } else {
+          (here, p[d])
+        };
+        if sh == sl {
+          0.0
+        } else {
+          (vh - vl) / ((sh - sl) as f64 * h[d])
+        }
+      };
+      let mut out = raw.clone();
+      for i in 0..m {
+        for j in 0..m {
+          for k in 0..m {
+            let v = raw[idx(i, j, k)];
+            if !v.is_finite() {
+              continue;
+            }
+            let g =
+              (0..3).map(|d| diff(i, j, k, d).powi(2)).sum::<f64>().sqrt();
+            if g.is_finite() && g > 1e-12 {
+              out[idx(i, j, k)] = v / g;
+            }
+          }
+        }
+      }
+      out
+    }
   }
 }
 
