@@ -5659,6 +5659,33 @@ calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
 
+### Sphere framing of an unboxed pinned box at a fixed `ImageSize`
+
+Under the default `SphericalRegion -> Automatic`, Woxi frames a
+`Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
+displayed box) when the box is invisible (`Boxed -> False`), pinned by an
+explicit `PlotRange`, and drawn at `ImageSize -> {w, h}`. Two
+Demonstrations' snapshots motivate this: a cylinder from `{-10, 0, 0}` to
+`{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
+4.25}}, ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
+box-outline fit gave 357 px), and a tube from `{-6, 0, 0}` to `{6, 0, 0}`
+in a `{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
+244.5 px wide (Woxi: 243 px; the outline fit gave 295 px).
+
+Which of the three conditions really triggers the sphere framing could not
+be told apart without wolframscript. A `SphericalRegion -> False` cylinder
+without a `PlotRange` at `ImageSize -> {550, 350}` still fills the width
+(532/550), so the rule is kept to scenes that meet all three conditions.
+
+### `PointSize` in `Graphics3D` draws larger than Wolfram
+
+Woxi draws a `Graphics3D` point with diameter `PointSize` × the picture's
+width, as in 2D. A Demonstration's snapshot of `PointSize[1/60]` atoms at
+`ImageSize -> {595, 375}` shows dots about 6–6.5 px wide, where Woxi draws
+9.9 px. That fits a base of either the shorter image side (6.25 px) or the
+default 360 px width (6 px). One snapshot can't tell these apart, so the
+2D rule stays.
+
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle

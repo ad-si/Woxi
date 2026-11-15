@@ -50237,36 +50237,51 @@ fn graphics_grid_of_tooltipped_plots_draws_the_plots_not_source() {
 }
 
 #[test]
-fn explicit_plot_range_shows_content_in_widened_drawing_area() {
+fn explicit_plot_range_clips_content_in_widened_drawing_area() {
   // Regression: the wide picture widens the x range to keep circles round,
-  // and under the default `PlotRangeClipping -> False` that extra room shows
-  // what lies past the requested range (only the image edge cuts it off),
-  // as the front end draws it. Woxi clipped to the narrower range, leaving
-  // blank bands at the sides.
-  let svg = export_svg(
-    "Graphics[{Rectangle[{-12, 0}, {12, 1}]}, \
-     PlotRange -> {{-10, 10}, {-7, 12}}, ImageSize -> {550, 396}]",
-  );
-  assert!(
-    svg.contains("<rect x=\"0\" y=\"0\" width=\"549.00\" height=\"395.00\"/>"),
-    "{svg}"
-  );
-  // `PlotRangeClipping -> True` keeps the requested range as the bound.
-  let clipped = export_svg(
-    "Graphics[{Rectangle[{-12, 0}, {12, 1}]}, \
-     PlotRange -> {{-10, 10}, {-7, 12}}, ImageSize -> {550, 396}, \
-     PlotRangeClipping -> True]",
-  );
-  assert!(
-    clipped.contains(
-      "<rect x=\"66.61\" y=\"0.00\" width=\"415.79\" height=\"395.00\"/>"
-    ),
-    "{clipped}"
-  );
+  // but that extra room is letterbox space the front end leaves blank —
+  // primitives past the explicit range are cut off at the range's edges
+  // (Wolfram's snapshots show straight cuts there). Woxi drew them across
+  // the whole image width.
+  let code = |extra: &str| {
+    format!(
+      "Graphics[{{Rectangle[{{-12, 0}}, {{12, 1}}]}}, \
+       PlotRange -> {{{{-10, 10}}, {{-7, 12}}}}, ImageSize -> {{550, 396}}{extra}]"
+    )
+  };
+  let clip_rect =
+    "<rect x=\"66.61\" y=\"0.00\" width=\"415.79\" height=\"395.00\"/>";
+  let svg = export_svg(&code(""));
+  assert!(svg.contains(clip_rect), "{svg}");
+  assert!(svg.contains("clip-path=\"url("), "{svg}");
+  // `PlotRangeClipping -> True` keeps the same bound.
+  let clipped = export_svg(&code(", PlotRangeClipping -> True"));
+  assert!(clipped.contains(clip_rect), "{clipped}");
+  // `PlotRangeClipping -> False` lets the content run to the image edge.
+  let unclipped = export_svg(&code(", PlotRangeClipping -> False"));
+  assert!(!unclipped.contains("clip-path=\"url("), "{unclipped}");
   // Without an explicit range the whole drawing area stays visible.
   let auto = export_svg("Graphics[{Rectangle[{-12, 0}, {12, 1}]}]");
   assert!(auto.contains("<clipPath id=\"plotClip_"), "{auto}");
   assert!(auto.contains("<rect x=\"0\" y=\"0\" width="), "{auto}");
+}
+
+#[test]
+fn explicit_plot_range_clips_lattice_in_wide_image_on_both_sides() {
+  // A lattice of points and lines far wider than a narrow-ish explicit
+  // range, in an image wider than the range's shape: everything past the
+  // range's x bounds is cut off, leaving blank bands left and right.
+  let svg = export_svg(
+    "Graphics[{Table[{Point[{x, y}], Line[{{x, y}, {x + 1, y}}]}, \
+     {x, -20, 20}, {y, -5, 5}]}, PlotRange -> {{-4, 4}, {-5, 5}}, \
+     ImageSize -> {500, 250}]",
+  );
+  // 24.9 px per unit: the range spans the middle 199.2 px of the image.
+  assert!(
+    svg.contains("<rect x=\"149.90\" y=\"0.00\" width=\"199.20\""),
+    "{svg}"
+  );
+  assert!(svg.contains("clip-path=\"url("), "{svg}");
 }
 
 #[test]
@@ -58286,6 +58301,42 @@ mod repeated_graphics_options {
        ImageSize -> 100]",
     );
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+  }
+}
+
+#[test]
+fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
+  // Regression: under the default `SphericalRegion -> Automatic`, an
+  // invisible box pinned by an explicit `PlotRange` in an
+  // `ImageSize -> {w, h}` picture is framed by the sphere around the box,
+  // as Wolfram's snapshots show (a long tube along x drawn at about 0.8×
+  // the size its box outline would give). Woxi fitted the outline.
+  let scene = |extra: &str| {
+    export_svg(&format!(
+      "Graphics3D[{{Cylinder[{{{{-6, 0, 0}}, {{6, 0, 0}}}}, 0.9]}}, \
+       Boxed -> False, PlotRange -> {{{{-6.5, 6.5}}, {{-4, 4}}, {{-4, 4}}}}, \
+       ImageSize -> {{595, 375}}{extra}]"
+    ))
+  };
+  let automatic = scene("");
+  let sphere = scene(", SphericalRegion -> True");
+  let outline = scene(", SphericalRegion -> False");
+  assert_eq!(automatic, sphere);
+  assert_ne!(automatic, outline);
+
+  // A visible box, an automatic range or a bare width keep the outline fit.
+  for code in [
+    "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
+     PlotRange -> {{-6.5, 6.5}, {-4, 4}, {-4, 4}}, ImageSize -> {595, 375}",
+    "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
+     Boxed -> False, ImageSize -> {595, 375}",
+    "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, Boxed -> False, \
+     PlotRange -> {{-6.5, 6.5}, {-4, 4}, {-4, 4}}, ImageSize -> 595",
+  ] {
+    let default = export_svg(&format!("{code}]"));
+    let explicit_off =
+      export_svg(&format!("{code}, SphericalRegion -> False]"));
+    assert_eq!(default, explicit_off, "{code}");
   }
 }
 

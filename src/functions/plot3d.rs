@@ -11494,6 +11494,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // scale stays put as the view turns or the contents move. A
   // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
   let mut spherical_region = crate::in_manipulate_frame();
+  // `SphericalRegion -> False` given outright (rather than the default
+  // `Automatic`), which rules out the automatic sphere framing below.
+  let mut spherical_region_off = false;
   // `ViewAngle -> θ`: the field of view of the camera, in radians. With one
   // given the picture is no longer scaled to fit its contents — the view
   // volume sets the scale, so a small object stays small. `view_distance`
@@ -11576,8 +11579,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           scene_lighting = Lighting::parse(replacement);
         }
         "SphericalRegion" => match replacement.as_ref() {
-          Expr::Identifier(s) if s == "False" => spherical_region = false,
-          Expr::Identifier(s) if s == "True" => spherical_region = true,
+          Expr::Identifier(s) if s == "False" => {
+            spherical_region = false;
+            spherical_region_off = true;
+          }
+          Expr::Identifier(s) if s == "True" => {
+            spherical_region = true;
+            spherical_region_off = false;
+          }
           _ => {}
         },
         "Background" => {
@@ -11966,6 +11975,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // orthographic pipeline below draw them: x and z carry the screen
   // position and y the depth.
   let perspective = view_vector.is_some() && !orthographic;
+  // Under the default `SphericalRegion -> Automatic`, an invisible
+  // (`Boxed -> False`) box pinned by an explicit `PlotRange` in a picture of
+  // fixed width and height is framed like `SphericalRegion -> True`: by the
+  // sphere around the box, not by the box's projected outline. Wolfram's
+  // snapshots of such scenes (long tubes along x in a 13 × 8 × 8 and a
+  // 22 × 8.5 × 8.5 box) draw them at the sphere-framed size, about 0.8× the
+  // outline-fitted one.
+  // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  let spherical_region = spherical_region
+    || (!spherical_region_off
+      && plot_range.is_some()
+      && !show_box
+      && explicit_height
+      && !full_width
+      && !aspect_full
+      && view_angle.is_none());
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
       let b = primitives_bounds(&prims);
