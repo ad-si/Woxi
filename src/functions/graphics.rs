@@ -13540,6 +13540,17 @@ fn render_primitive(
       // A rotated label is turned about that same edge point, so the
       // renderer's anchoring holds along its tilted baseline too — unless
       // a panel is painted behind it, which is laid out unrotated.
+      // The box the offset positions is the one a background panel paints:
+      // the glyphs' advance width, or — framed — the text with its margin.
+      let box_w = if frame.is_some() {
+        text_w
+      } else {
+        text
+          .split('\n')
+          .map(label_line_width_em)
+          .fold(0.0, f64::max)
+          * fs
+      };
       let edge_anchorable = !text.contains('\n')
         && (!has_direction || (background.is_none() && frame.is_none()));
       let (anchor_attr, edge_shift) = if offset.0 == -1.0 && edge_anchorable {
@@ -13547,7 +13558,7 @@ fn render_primitive(
       } else if offset.0 == 1.0 && edge_anchorable {
         ("end", 0.0)
       } else {
-        ("middle", offset.0 * text_w / 2.0)
+        ("middle", offset.0 * box_w / 2.0)
       };
       let sx = anchor_x - edge_shift * ux + offset.1 * text_h / 2.0 * vx;
       let sy = anchor_y - edge_shift * uy + offset.1 * text_h / 2.0 * vy;
@@ -13587,11 +13598,7 @@ fn render_primitive(
         };
         // The panel hugs the glyphs' advance width, as Wolfram's does.
         // A frame keeps its margin round the text.
-        let panel_w = if frame.is_some() {
-          text_w
-        } else {
-          crate::functions::plot_padding::text_width(&svg_escape(text), fs)
-        };
+        let panel_w = box_w;
         out.push_str(&format!(
           "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
           match anchor_attr {
@@ -45097,6 +45104,22 @@ fn picture_subscript_needs_lowering(script: &str) -> bool {
 /// full characters overestimated a label like `H_C` at almost twice its
 /// width, pushing a label offset by its edge (`{2, -1}`) far off its point.
 fn label_line_width_units(line: &str) -> f64 {
+  label_line_width(line, |_| 1.0)
+}
+
+/// The width of a one-line picture label in ems, each glyph measured by its
+/// own proportional advance ([`char_width_em`]) and scripts scaled the way
+/// [`label_line_width_units`] scales them.
+///
+/// [`char_width_em`]: crate::functions::plot_padding::char_width_em
+fn label_line_width_em(line: &str) -> f64 {
+  label_line_width(line, crate::functions::plot_padding::char_width_em)
+}
+
+/// Sum `char_width` over the drawn characters of a one-line label: the
+/// sub-/superscript markers add nothing and each script level is set at
+/// 70 % of the size around it.
+fn label_line_width(line: &str, char_width: impl Fn(char) -> f64) -> f64 {
   let mut depth = 0i32;
   let mut units = 0.0;
   for c in line.chars() {
@@ -45108,11 +45131,12 @@ fn label_line_width_units(line: &str) -> f64 {
           c,
           '\u{2070}'..='\u{209F}' | '\u{00B9}' | '\u{00B2}' | '\u{00B3}'
         );
-        units += if depth > 0 || unicode_script {
-          0.7f64.powi(depth.max(1))
-        } else {
-          1.0
-        };
+        units += char_width(c)
+          * if depth > 0 || unicode_script {
+            0.7f64.powi(depth.max(1))
+          } else {
+            1.0
+          };
       }
     }
   }
