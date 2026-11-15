@@ -7572,6 +7572,18 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
     "RawBoxes" if args.len() == 1 => args[0].clone(),
     "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
+    // `a | b | c` keeps its infix bar (`P(X | A)` for a conditional
+    // probability) instead of falling back to `Alternatives(a, b, c)`.
+    "Alternatives" if args.len() > 1 => {
+      let mut parts = Vec::new();
+      for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(tf_string("|"));
+        }
+        parts.push(tf_operand(a));
+      }
+      tf_row(parts)
+    }
     // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
     "Inequality"
       if args.len() >= 5

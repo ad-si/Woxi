@@ -5817,7 +5817,7 @@ pub(crate) fn label_stacked_fraction_svg(
 }
 
 pub(crate) fn graphics_text_content(expr: &Expr) -> String {
-  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+  if let Some(styled) = normalize_display_style(expr) {
     return graphics_text_content(&styled);
   }
   match expr {
@@ -6338,6 +6338,32 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         den
       };
       format!("{}/{den}", graphics_text_content(left))
+    }
+    // A rule is typeset with its arrow glyph (`a → 0`, `a ⧴ 0`), as the
+    // front end shows it, rather than the ASCII `->` of its printed form.
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      let arrow = if matches!(expr, Expr::Rule { .. }) {
+        "\u{2192}"
+      } else {
+        "\u{29F4}"
+      };
+      let lhs = graphics_text_content(pattern);
+      let lhs = if matches!(
+        pattern.as_ref(),
+        Expr::Rule { .. } | Expr::RuleDelayed { .. }
+      ) {
+        format!("({lhs})")
+      } else {
+        lhs
+      };
+      format!("{lhs} {arrow} {}", graphics_text_content(replacement))
     }
     _ => {
       let text = match crate::functions::string_ast::to_string_ast(
@@ -16104,6 +16130,8 @@ fn operator_space(s: &str) -> f64 {
     | "\u{2285}" | "\u{2288}" | "\u{2289}" => 0.44,
     "\u{2192}" | "\u{29F4}" => 0.60,
     "+" | "-" | "\u{00B1}" | "\u{2213}" => 0.44,
+    // An infix bar (`X | A`); the delimiters of `|x|` are never infix.
+    "|" => 0.34,
     "\u{2227}" | "\u{2228}" | "\u{22C5}" | "\u{222A}" | "\u{2229}"
     | "\u{F3D3}" => 0.34,
     "\u{F432}" => 0.2,
@@ -18284,7 +18312,7 @@ fn pane_markup_lines(args: &[Expr]) -> Vec<String> {
 }
 
 pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
-  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+  if let Some(styled) = normalize_display_style(expr) {
     return expr_to_svg_markup_lines(&styled);
   }
   // `Framed[content]`/`Highlighted[content]` draws no box in a running
@@ -18718,6 +18746,51 @@ pub(crate) fn shallow_for_display(expr: &Expr, spec: Option<&Expr>) -> Expr {
   go(expr, 0, elide_level, length)
 }
 
+/// The display preprocessing every typeset label goes through: a number
+/// format hoisted out of a `Style` (see [`hoist_style_out_of_number_form`])
+/// and the `"TraditionalForm"` style name turned into its form wrapper
+/// (see [`style_form_name_as_wrapper`]). `None` when neither applies.
+fn normalize_display_style(expr: &Expr) -> Option<Expr> {
+  hoist_style_out_of_number_form(expr)
+    .or_else(|| style_form_name_as_wrapper(expr))
+}
+
+/// `Style[expr, …, "TraditionalForm", …]` names the TraditionalForm style,
+/// which sets `expr` in traditional notation (`P(X | A)` for `P[X | A]`):
+/// it typesets as `Style[TraditionalForm[expr], …]` with the other
+/// directives kept. `None` for anything else.
+fn style_form_name_as_wrapper(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if !is_style_wrapper(name) || args.len() < 2 {
+    return None;
+  }
+  let is_form =
+    |a: &Expr| matches!(a, Expr::String(s) if s == "TraditionalForm");
+  if !args[1..].iter().any(is_form) {
+    return None;
+  }
+  let body = match &args[0] {
+    Expr::String(_) => args[0].clone(),
+    Expr::FunctionCall { name: n, .. } if n == "TraditionalForm" => {
+      args[0].clone()
+    }
+    other => call1("TraditionalForm", other.clone()),
+  };
+  let rest: Vec<Expr> =
+    args[1..].iter().filter(|a| !is_form(a)).cloned().collect();
+  if rest.is_empty() {
+    return Some(body);
+  }
+  let mut styled = vec![body];
+  styled.extend(rest);
+  Some(Expr::FunctionCall {
+    name: name.clone(),
+    args: styled.into(),
+  })
+}
+
 /// A number format around a `Style` typesets as the style around the
 /// formatted number: `NumberForm[Style[x, Red], {4, 2}]` draws `x` to two
 /// decimals in red. `None` for anything else.
@@ -18830,7 +18903,7 @@ fn pin_nested_tspan_baselines(markup: &str, baseline: &str) -> String {
 }
 
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
-  if let Some(styled) = hoist_style_out_of_number_form(expr) {
+  if let Some(styled) = normalize_display_style(expr) {
     return expr_to_svg_markup(&styled);
   }
   // `StringForm["template", args…]` substitutes its placeholders wherever
@@ -20472,7 +20545,8 @@ fn is_single_letter_symbol(s: &str) -> bool {
 }
 
 /// Infix box tokens drawn with a space on either side: relations,
-/// assignments, rule arrows and the `mod` word operator.
+/// assignments, rule arrows, the `mod` word operator and the bar of
+/// `X | A`.
 fn is_spaced_box_operator(token: &str) -> bool {
   matches!(
     token,
@@ -20495,6 +20569,7 @@ fn is_spaced_box_operator(token: &str) -> bool {
       | "\u{F522}"
       | "\u{F51F}"
       | "mod"
+      | "|"
   )
 }
 
@@ -21883,9 +21958,16 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
     Expr::BigInteger(n) => n.to_string(),
     // A relation reads with a space either side (`x = 1`), the way it is
     // laid out, though its box holds the bare operator.
+    // An infix bar (`X | A`, never the delimiters of `|x|`) is spaced too.
     Expr::List(items) => items
       .iter()
-      .map(|item| match item {
+      .enumerate()
+      .map(|(i, item)| match item {
+        Expr::String(op)
+          if spaced && op == "|" && i > 0 && i + 1 < items.len() =>
+        {
+          " | ".to_string()
+        }
         Expr::String(op)
           if spaced
             && matches!(
