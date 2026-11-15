@@ -25623,6 +25623,99 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`view$$ = 1, $CellContext`k$$ = 0.2}
     );
   }
 
+  /// A sampling-distribution Demonstration shape: a hidden seed reseeded
+  /// by a `Button`, labeled sliders with "reset" buttons whose action is a
+  /// list of assignments, and a body that draws a population from a
+  /// `SkewNormalDistribution` via `RandomReal[dist, n]` and stacks two
+  /// histograms in a `GraphicsColumn` (independently written, not copied
+  /// from any specific notebook). `RandomReal[SkewNormalDistribution[…], n]`
+  /// used to stay unevaluated, so both histograms rendered blank.
+  #[test]
+  fn manipulate_skew_normal_population_histograms_with_reset_buttons() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[\
+       SeedRandom[seed]; \
+       Module[{data = RandomReal[SkewNormalDistribution[1, 2, 5], 2000]}, \
+         GraphicsColumn[{Histogram[{data}, PlotLabel -> \"data\"], \
+           Histogram[Table[Mean[RandomChoice[data, k]], {m}]]}, \
+           ImageSize -> {300, 400}]], \
+       Button[\"reseed\", seed = RandomInteger[1000]], \
+       Delimiter, \
+       {{k, 20, \"\"}, 5, 100, 5, Appearance -> \"Labeled\"}, \
+       Button[\"reset k\", {k = 20}], \
+       {{m, 30, \"\"}, 10, 500, 10, Appearance -> \"Labeled\"}, \
+       {{seed, 7}, ControlType -> None}, \
+       ControlPlacement -> Left]",
+    )
+    .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("buttons + labeled sliders should build a ManipulateState");
+    assert!(state.error.is_none(), "initial render: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "histograms must render");
+
+    // The handle alone does not prove the bars were drawn (an unevaluated
+    // sample once yielded an empty `<svg>`), so re-render the body with the
+    // widget's bindings and count the histogram bars.
+    let mut bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    bindings.extend(state.state.iter().cloned());
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("body yields graphics");
+    let bars = svg.matches("<rect").count();
+    assert!(bars > 10, "expected histogram bars, found {bars} rects");
+
+    let buttons: Vec<String> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(buttons.len(), 2, "reseed and reset buttons: {buttons:?}");
+
+    // Reseeding draws a new population and still renders.
+    state.apply_button_action(&buttons[0]);
+    assert!(state.error.is_none(), "after reseed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // Move the sample-size slider, then reset it through the button whose
+    // action is a list `{k = 20}`.
+    let k_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "k")
+      .expect("a slider for k");
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[k_idx]
+    {
+      *current = 60.0;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "after slider move: {:?}",
+      state.error
+    );
+    state.apply_button_action(&buttons[1]);
+    match &state.controls[k_idx] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        assert_eq!(*current, 20.0, "reset button must restore k")
+      }
+      other => panic!("k should stay a slider, got {other:?}"),
+    }
+    assert!(state.error.is_none(), "after reset: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+  }
+
   /// A Diophantine-style Demonstration shape: two `ControlType -> None`
   /// integer coefficients randomized by a "new example" `Button`, a
   /// `{{var, False, label}, {True, False}}` checkbox toggling whether a
