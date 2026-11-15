@@ -31090,6 +31090,20 @@ pub fn styled_inline_text_svg(text: &str, max_width: f64) -> Option<String> {
   ))
 }
 
+/// Whether `expr` is or contains a picture (`Graphics`, `Graphics3D`,
+/// `Image`), evaluated or still a call.
+fn holds_picture(expr: &Expr) -> bool {
+  match &resolve_display_item(expr) {
+    Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Graphics" | "Graphics3D" | "Image")
+        || args.iter().any(holds_picture)
+    }
+    Expr::List(items) => items.iter().any(holds_picture),
+    _ => false,
+  }
+}
+
 /// A text `Overscript`/`Underscript` (optionally inside `Style`) whose
 /// script is a stretchy brace or itself a compound expression — the
 /// `Underscript[digits, Underscript[\[UnderBrace], n]]` idiom labeling the
@@ -31132,12 +31146,7 @@ fn typeset_script_svg(expr: &Expr) -> Option<String> {
   // A picture over or under a caption is stacked by `nested_layout_svg`.
   if args.len() != 2
     || crate::evaluator::lays_out_a_graphic(inner)
-    || args.iter().any(|a| {
-      matches!(
-        resolve_display_item(a),
-        Expr::Graphics { .. } | Expr::Image { .. }
-      )
-    })
+    || args.iter().any(holds_picture)
   {
     return None;
   }
