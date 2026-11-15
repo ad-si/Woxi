@@ -37129,6 +37129,74 @@ mod manipulate {
     assert_eq!(names, vec!["a", "on", "b", "m"]);
   }
 
+  // Corner vectors of three or more components (`{{v, init}, {0, 0, 0},
+  // {3, 3, 3}}`) make a vector control: one slider per component, the
+  // variable bound to the whole list. A pair stays a `Slider2D`.
+  #[test]
+  fn spec_vector_range_is_vector_slider() {
+    let expr = interpret_to_expr(
+      "Manipulate[v, {{v, {0, 0, 1}, \"normal\"}, {-1, -1, -1}, {1, 1, 1}}, \
+       {{w, {0, 0, 0, 0}}, {0, 0, 0, 0}, {4, 4, 4, 4}, {1, 1, 1, 2}}, \
+       {u, {0, 0, 0}, {2, 2, 2}, 1/2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.controls.len(), 3);
+    match &spec.controls[0] {
+      ManipulateControl::VectorSlider {
+        name,
+        mins,
+        maxs,
+        steps,
+        initial,
+        label,
+        exact_initial,
+        ..
+      } => {
+        assert_eq!(name, "v");
+        assert_eq!(label, "normal");
+        assert_eq!(mins, &[-1.0, -1.0, -1.0]);
+        assert_eq!(maxs, &[1.0, 1.0, 1.0]);
+        assert_eq!(steps, &None);
+        assert_eq!(initial, &[0.0, 0.0, 1.0]);
+        assert!(exact_initial);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    match &spec.controls[1] {
+      ManipulateControl::VectorSlider { steps, initial, .. } => {
+        assert_eq!(steps, &Some(vec![1.0, 1.0, 1.0, 2.0]));
+        assert_eq!(initial.len(), 4);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    // Without an explicit initial value the vector starts at its minimum
+    // corner, and a scalar step applies to every component.
+    match &spec.controls[2] {
+      ManipulateControl::VectorSlider { steps, initial, .. } => {
+        assert_eq!(steps, &Some(vec![0.5, 0.5, 0.5]));
+        assert_eq!(initial, &[0.0, 0.0, 0.0]);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    let bindings =
+      woxi::functions::graphics::manipulate_initial_bindings(&spec);
+    assert!(bindings.contains(&("v".to_string(), "{0, 0, 1}".to_string())));
+    assert!(bindings.contains(&("u".to_string(), "{0, 0, 0}".to_string())));
+    let json = woxi::functions::graphics::manipulate_spec_to_json(&spec);
+    assert!(json.contains(r#""kind":"vector","name":"v""#), "got {json}");
+  }
+
+  #[test]
+  fn vector_binding_code_is_exact_until_moved() {
+    use woxi::functions::graphics::vector_binding_code;
+    assert_eq!(vector_binding_code(&[0.0, 0.0, 1.0], true), "{0, 0, 1}");
+    assert_eq!(
+      vector_binding_code(&[0.0, 0.5, 1.0], false),
+      "{0., 0.5, 1.}"
+    );
+  }
+
   // A control function that calls a user-defined helper building the
   // `LocatorPane` (`{{p, init, label}, makeDial[#1, …] &}`, how a dial is
   // written in a Demonstration's initialization code) is still a draggable
@@ -37602,11 +37670,11 @@ mod manipulate {
     );
   }
 
-  // A spec Woxi draws no widget for — a 3-vector `{{u, init}, min, max}`,
-  // here inside the `"XYZ" -> spec` controller form — still binds its
-  // variable to the initial value, as Wolfram does.
+  // A 3-vector `{{u, init}, min, max}` inside the `"XYZ" -> spec` form is a
+  // vector control and binds its variable to the initial value, as Wolfram
+  // does.
   #[test]
-  fn spec_without_widget_binds_initial_value() {
+  fn grouped_vector_spec_binds_initial_value() {
     let expr = interpret_to_expr(
       "Manipulate[rgb[[1]] + r, {{r, 2}, 0, 3}, \
        \"XYZ\" -> {{rgb, {1, 1, 1}}, {0, 0, 0}, {1, 1, 1}}]",
@@ -37615,12 +37683,18 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
     assert!(spec.displays.is_empty(), "displays: {:?}", spec.displays);
     assert!(
-      spec
-        .state
-        .iter()
-        .any(|(name, value)| name == "rgb" && value == "{1, 1, 1}"),
-      "state: {:?}",
-      spec.state
+      spec.controls.iter().any(|c| matches!(
+        c,
+        ManipulateControl::VectorSlider { name, .. } if name == "rgb"
+      )),
+      "controls: {:?}",
+      spec.controls
+    );
+    let bindings =
+      woxi::functions::graphics::manipulate_initial_bindings(&spec);
+    assert!(
+      bindings.contains(&("rgb".to_string(), "{1, 1, 1}".to_string())),
+      "bindings: {bindings:?}"
     );
   }
 
