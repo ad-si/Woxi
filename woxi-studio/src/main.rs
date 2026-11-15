@@ -4306,6 +4306,40 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
     && value_labels.iter().zip(values).all(|(label, v)| label == v)
 }
 
+/// How a discrete control draws as a checkbox, if it does: whether the box
+/// is checked, and the display label a toggle sends (the other choice).
+///
+/// A bare `{True, False}` domain (see `renders_as_checkbox`) is checked on
+/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`).
+/// An explicit `ControlType -> Checkbox` over any two choices (`{1, 0}`) is
+/// a checkbox too, following `Checkbox[x, {v1, v2}]`: the first choice is
+/// unchecked and the second checked. While the bound value is none of the
+/// choices (`has_overflow`) the box shows unchecked.
+fn discrete_checkbox_state(
+  values: &[String],
+  value_labels: &[String],
+  current_index: usize,
+  forced_checkbox: bool,
+  other_type: bool,
+  has_overflow: bool,
+) -> Option<(bool, Option<String>)> {
+  if forced_checkbox && value_labels.len() == 2 {
+    let checked = !has_overflow && current_index == 1;
+    return Some((checked, value_labels.get(usize::from(!checked)).cloned()));
+  }
+  if other_type || !renders_as_checkbox(values, value_labels) {
+    return None;
+  }
+  let checked =
+    !has_overflow && values.get(current_index).is_some_and(|v| v == "True");
+  let other_label = value_labels
+    .iter()
+    .zip(values)
+    .find(|(_, v)| (*v == "True") != checked)
+    .map(|(l, _)| l.clone());
+  Some((checked, other_label))
+}
+
 /// Whether a discrete control's choices render as a segmented SetterBar (a row
 /// of toggle buttons) rather than a dropdown.
 ///
@@ -4431,6 +4465,35 @@ fn manipulate_button<'a>(
   button(btn_label).padding([3, 10]).on_press(on_press).into()
 }
 
+/// Finish the column the current control was drawn into (see the `line`
+/// bookkeeping in `render_manipulate_widget`): put the panel column back
+/// into `controls_col` and queue the control's column on the current line.
+fn close_line_item<'a>(
+  controls_col: &mut Column<'a, Message>,
+  outer: &mut Option<Column<'a, Message>>,
+  line: &mut Vec<Element<'a, Message>>,
+) {
+  if let Some(panel) = outer.take() {
+    let item = std::mem::replace(controls_col, panel);
+    line.push(item.into());
+  }
+}
+
+/// Add the queued controls of one panel line to `controls_col`: a single
+/// control as its own row, several side by side.
+fn flush_control_line<'a>(
+  controls_col: &mut Column<'a, Message>,
+  line: &mut Vec<Element<'a, Message>>,
+) {
+  let items = std::mem::take(line);
+  let panel = std::mem::replace(controls_col, Column::new());
+  *controls_col = match items.len() {
+    0 => panel,
+    1 => panel.extend(items),
+    _ => panel.push(Row::with_children(items).spacing(20).align_y(Center)),
+  };
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
@@ -4489,11 +4552,23 @@ fn render_manipulate_widget<'a>(
   // The last button already drawn on the line of an earlier button (see
   // `ControlState::Button::joins_previous`).
   let mut joined_through: Option<usize> = None;
+  // Controls sharing one line of the panel (see
+  // `ManipulateState::joins_previous_control`): each control is drawn into
+  // a column of its own, kept in `line` until a control that starts a new
+  // line flushes them as one row. `line_outer` holds the panel column while
+  // `controls_col` stands in for the current control's own column.
+  let mut line: Vec<Element<'a, Message>> = Vec::new();
+  let mut line_outer: Option<Column<'a, Message>> = None;
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    close_line_item(&mut controls_col, &mut line_outer, &mut line);
     if joined_through.is_some_and(|last| ctrl_idx <= last) {
       continue;
     }
-    for tree in panel_trees_at(ctrl_idx) {
+    let mut trees = panel_trees_at(ctrl_idx).peekable();
+    if trees.peek().is_some() {
+      flush_control_line(&mut controls_col, &mut line);
+    }
+    for tree in trees {
       controls_col = controls_col.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
@@ -4508,8 +4583,18 @@ fn render_manipulate_widget<'a>(
       continue;
     }
     let slot = placement_slot(state.placement_of(ctrl_idx));
+    let joins_line = !line.is_empty()
+      && slot == current_slot
+      && state.joins_previous_control(ctrl_idx);
+    if !joins_line {
+      flush_control_line(&mut controls_col, &mut line);
+    }
     switch_slot(&mut controls_col, &mut current_slot, slot);
     side_used[slot] = true;
+    line_outer = Some(std::mem::replace(
+      &mut controls_col,
+      Column::new().spacing(6).width(Fill),
+    ));
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -4596,6 +4681,7 @@ fn render_manipulate_widget<'a>(
         radio: as_radio,
         slider: as_slider,
         vertical: is_vertical,
+        checkbox: forced_checkbox,
       } => {
         // A shared variable can have several disjoint SetterBar rows (see
         // `ControlState::Discrete::overflow`'s doc comment); while the true
@@ -4647,22 +4733,17 @@ fn render_manipulate_widget<'a>(
           controls_col = controls_col.push(control_row);
           continue;
         }
-        // A bare boolean domain renders as a checkbox; see
-        // `renders_as_checkbox`.
-        let bool_values: &[String] = values;
-        if !*popup
-          && !*force_setter_bar
-          && renders_as_checkbox(bool_values, value_labels)
-        {
-          let checked = !has_overflow
-            && bool_values.get(*current_index).is_some_and(|v| v == "True");
-          // Toggling selects the other entry; the update handler maps the
-          // sent display label back to its index.
-          let other_label = value_labels
-            .iter()
-            .zip(bool_values.iter())
-            .find(|(_, v)| (*v == "True") != checked)
-            .map(|(l, _)| l.clone());
+        // A bare boolean domain, or any two choices under an explicit
+        // `ControlType -> Checkbox`, renders as a checkbox; see
+        // `discrete_checkbox_state`.
+        if let Some((checked, other_label)) = discrete_checkbox_state(
+          values,
+          value_labels,
+          *current_index,
+          *forced_checkbox,
+          *popup || *force_setter_bar,
+          has_overflow,
+        ) {
           let mut cb = checkbox(checked);
           if enabled && let Some(target) = other_label {
             cb = cb.on_toggle(move |_| {
@@ -5175,6 +5256,8 @@ fn render_manipulate_widget<'a>(
       }
     }
   }
+  close_line_item(&mut controls_col, &mut line_outer, &mut line);
+  flush_control_line(&mut controls_col, &mut line);
   // The widget-level extras (bookmarks, play toggle) join the main panel.
   switch_slot(&mut controls_col, &mut current_slot, main_slot);
   // Bars declared after the last control close the panel.
@@ -10122,6 +10205,56 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       svg.matches("<line ").count() >= 3,
       "the three extended edge lines must be drawn: {svg}"
     );
+  }
+
+  /// A Manipulate that switches the view point of a boxed 3D scene with
+  /// an explicit `PlotRange` (a `Show` of a surface and a `Graphics3D`, the
+  /// shape of a cone-section Demonstration; written independently here).
+  /// Wolfram frames a Manipulate's 3D graphics by the sphere around the
+  /// box, so every view keeps one scale. Regression: the widget fitted the
+  /// projected box instead, so an axis-aligned view (`Below`) blew its near
+  /// face up to the full picture, about 1.44 times Wolfram's size.
+  #[test]
+  fn manipulate_3d_view_switch_frames_by_the_bounding_sphere() {
+    let code = r#"Manipulate[
+      Show[{Plot3D[s x + 3, {x, -4, 4}, {y, -4, 4}, Mesh -> False],
+        Graphics3D[{Sphere[{0, 0, 4}, 2], Line[{{0, 0, 0}, {0, 0, 9}}]}]},
+        PlotRange -> {{-6, 6}, {-6, 6}, {0, 12}}, ViewPoint -> vp,
+        ImageSize -> {300, 300}],
+      {{s, 0.5, "slope"}, 0, 1},
+      {{vp, {1.3, -2.4, 2}, "view"}, {{1.3, -2.4, 2} -> "skew",
+        Below -> "below", Left -> "left"}}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a view-switching 3D Manipulate should build a ManipulateState");
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    for (index, view) in ["{1.3, -2.4, 2}", "Below", "Left"].iter().enumerate()
+    {
+      if let Some(manipulate::ControlState::Discrete {
+        current_index, ..
+      }) = state.controls.iter_mut().find(|c| c.name() == "vp")
+      {
+        *current_index = index;
+      } else {
+        panic!("the view control must be discrete");
+      }
+      state.reevaluate();
+      let svg = state
+        .check_render()
+        .expect("the body must evaluate")
+        .graphics
+        .expect("the body must render a graphic");
+      let spherical = woxi::interpret_with_stdout(&format!(
+        "Block[{{s = 0.5, vp = {view}}}, Show[{}, SphericalRegion -> True]]",
+        state.body
+      ))
+      .expect("the reference must evaluate")
+      .graphics
+      .expect("the reference must render");
+      assert_eq!(svg, spherical, "view {view}");
+    }
   }
 
   /// A Manipulate whose controls ask for different sides one by one: the
@@ -23045,6 +23178,77 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
     assert!(renders_as_setter_bar(&icons, &handles));
   }
 
+  /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,
+  /// "label"}, {1, 0}, Checkbox}`) draws a checkbox, like `Checkbox[k, {1,
+  /// 0}]`: unchecked binds the first choice and checking it binds the
+  /// second. Regression: only a `{True, False}` domain became a checkbox,
+  /// so this drew a two-button `1 | 0` SetterBar.
+  #[test]
+  fn explicit_checkbox_over_numeric_choices_toggles_between_them() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[10 + 5 k, {{k, 1, \"drop term\"}, {1, 0}, Checkbox}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let state_of = |state: &manipulate::ManipulateState| match &state.controls[..]
+    {
+      [
+        manipulate::ControlState::Discrete {
+          values,
+          value_labels,
+          current_index,
+          checkbox,
+          popup,
+          setter_bar,
+          overflow,
+          ..
+        },
+      ] => {
+        assert!(*checkbox, "the control must be a checkbox");
+        discrete_checkbox_state(
+          values,
+          value_labels,
+          *current_index,
+          *checkbox,
+          *popup || *setter_bar,
+          overflow.is_some(),
+        )
+        .expect("draws as a checkbox")
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    };
+    // Starts unchecked on the first choice; a toggle sends the second.
+    assert_eq!(state_of(&state), (false, Some("0".to_string())));
+    assert!(state.select_discrete(0, "0"));
+    assert_eq!(state_of(&state), (true, Some("1".to_string())));
+
+    // The reversed `{0, 1}` order checks on `1`.
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["0", "1"]),
+        &s(&["0", "1"]),
+        1,
+        true,
+        false,
+        false
+      ),
+      Some((true, Some("0".to_string())))
+    );
+    // Without the explicit type a numeric pair is no checkbox.
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["1", "0"]),
+        &s(&["1", "0"]),
+        0,
+        false,
+        false,
+        false
+      ),
+      None
+    );
+  }
+
   /// A bare `{True, False}` domain (either order) is a checkbox, but one
   /// whose choices carry labels — `{False -> "scaling function", True ->
   /// "wavelet"}`, inside a `Row[{Control[…]}]` as Demonstrations write it —
@@ -25621,6 +25825,99 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`view$$ = 1, $CellContext`k$$ = 0.2}
       intensity_view, mismatched_view,
       "moving the phase-mismatch slider must change the rendered picture"
     );
+  }
+
+  /// A sampling-distribution Demonstration shape: a hidden seed reseeded
+  /// by a `Button`, labeled sliders with "reset" buttons whose action is a
+  /// list of assignments, and a body that draws a population from a
+  /// `SkewNormalDistribution` via `RandomReal[dist, n]` and stacks two
+  /// histograms in a `GraphicsColumn` (independently written, not copied
+  /// from any specific notebook). `RandomReal[SkewNormalDistribution[…], n]`
+  /// used to stay unevaluated, so both histograms rendered blank.
+  #[test]
+  fn manipulate_skew_normal_population_histograms_with_reset_buttons() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[\
+       SeedRandom[seed]; \
+       Module[{data = RandomReal[SkewNormalDistribution[1, 2, 5], 2000]}, \
+         GraphicsColumn[{Histogram[{data}, PlotLabel -> \"data\"], \
+           Histogram[Table[Mean[RandomChoice[data, k]], {m}]]}, \
+           ImageSize -> {300, 400}]], \
+       Button[\"reseed\", seed = RandomInteger[1000]], \
+       Delimiter, \
+       {{k, 20, \"\"}, 5, 100, 5, Appearance -> \"Labeled\"}, \
+       Button[\"reset k\", {k = 20}], \
+       {{m, 30, \"\"}, 10, 500, 10, Appearance -> \"Labeled\"}, \
+       {{seed, 7}, ControlType -> None}, \
+       ControlPlacement -> Left]",
+    )
+    .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("buttons + labeled sliders should build a ManipulateState");
+    assert!(state.error.is_none(), "initial render: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "histograms must render");
+
+    // The handle alone does not prove the bars were drawn (an unevaluated
+    // sample once yielded an empty `<svg>`), so re-render the body with the
+    // widget's bindings and count the histogram bars.
+    let mut bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    bindings.extend(state.state.iter().cloned());
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("body yields graphics");
+    let bars = svg.matches("<rect").count();
+    assert!(bars > 10, "expected histogram bars, found {bars} rects");
+
+    let buttons: Vec<String> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(buttons.len(), 2, "reseed and reset buttons: {buttons:?}");
+
+    // Reseeding draws a new population and still renders.
+    state.apply_button_action(&buttons[0]);
+    assert!(state.error.is_none(), "after reseed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // Move the sample-size slider, then reset it through the button whose
+    // action is a list `{k = 20}`.
+    let k_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "k")
+      .expect("a slider for k");
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[k_idx]
+    {
+      *current = 60.0;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "after slider move: {:?}",
+      state.error
+    );
+    state.apply_button_action(&buttons[1]);
+    match &state.controls[k_idx] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        assert_eq!(*current, 20.0, "reset button must restore k")
+      }
+      other => panic!("k should stay a slider, got {other:?}"),
+    }
+    assert!(state.error.is_none(), "after reset: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
   }
 
   /// A Diophantine-style Demonstration shape: two `ControlType -> None`
