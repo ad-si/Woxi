@@ -106,6 +106,18 @@ fn is_finished_interpolating_function(name: &str, args: &[Expr]) -> bool {
     && matches!(args[0], Expr::List(_))
 }
 
+/// Whether the parameter spec of `Function[params, body]` (a symbol or a
+/// list of symbols) names `var`.
+fn function_params_bind(params: &Expr, var: &str) -> bool {
+  match params {
+    Expr::Identifier(p) => p == var,
+    Expr::List(items) => items
+      .iter()
+      .any(|p| matches!(p, Expr::Identifier(n) if n == var)),
+    _ => false,
+  }
+}
+
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);
@@ -117,6 +129,33 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
         || is_finished_interpolating_function(name, args) =>
     {
       expr.clone()
+    }
+    // A plot binds its variables dynamically (as `Block` does), so a
+    // `Function` whose own parameters reuse a plot variable's name keeps
+    // them: `Function[{x}, x^2]` inside `Plot[…, {x, …}]` — or the
+    // uncompiled fallback embedded in a saved `CompiledFunction[…]` — must
+    // not become `Function[{1.}, 1.^2]`.
+    Expr::FunctionCall { name, args }
+      if name == "Function"
+        && args.len() >= 2
+        && function_params_bind(&args[0], var) =>
+    {
+      expr.clone()
+    }
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      if params.iter().any(|p| p == var) {
+        expr.clone()
+      } else {
+        Expr::NamedFunction {
+          params: params.clone(),
+          body: Box::new(sub(body)),
+          bracketed: *bracketed,
+        }
+      }
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
@@ -1176,9 +1215,27 @@ fn has_conditional_jump(body: &Expr, var: &str) -> bool {
       .into_iter()
       .any(calls_user_function)
   }
-  conditional(body)
-    || (calls_user_function(body)
-      && conditional(&eval_body_var_symbolic(body, var)))
+  // WL finds the jumps of a conditional symbolically, and gives up on a
+  // curve that runs through an `InterpolatingFunction` (an NDSolve
+  // solution): such a `Piecewise` is drawn joined across its jumps.
+  fn interpolates(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, .. } if name == "InterpolatingFunction" => {
+        true
+      }
+      _ => crate::syntax::expr_children(e)
+        .into_iter()
+        .any(interpolates),
+    }
+  }
+  if conditional(body) {
+    return !interpolates(body);
+  }
+  if !calls_user_function(body) {
+    return false;
+  }
+  let expanded = eval_body_var_symbolic(body, var);
+  conditional(&expanded) && !interpolates(&expanded)
 }
 
 /// The x positions where the sampled curve `points` of `body` jumps: each
@@ -1333,6 +1390,18 @@ fn clip_segments_to_y_range(
   y_max: f64,
   join_across_jumps: bool,
 ) -> Vec<Vec<(f64, f64)>> {
+  // A sample that overshoots a range edge only by floating-point noise
+  // (e.g. a running total ending at 100.00000000000003 under
+  // `PlotRange -> {0, 100}`) lies on the edge, so a curve running along the
+  // edge stays drawn instead of vanishing. Matches the tolerance of the
+  // `Show` clipper (`clip_segment_to_y_range` in graphics.rs).
+  let (y_min, y_max) =
+    if y_min.is_finite() && y_max.is_finite() && y_min < y_max {
+      let pad = (y_max - y_min) * 1e-9;
+      (y_min - pad, y_max + pad)
+    } else {
+      (y_min, y_max)
+    };
   let mut result: Vec<Vec<(f64, f64)>> = Vec::new();
 
   for segment in segments {
@@ -3913,6 +3982,16 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Drop every `FrameLabel` edge, plain text and picture alike.
+  pub(crate) fn clear_frame_labels(&mut self) {
+    self.frame_label_bottom = None;
+    self.frame_label_left = None;
+    self.frame_label_top = None;
+    self.frame_label_right = None;
+    self.frame_label_bottom_graphic = None;
+    self.frame_label_top_graphic = None;
+  }
+
   /// The plotting area's height / width when `ImageSize -> {w, h}` fixed
   /// the image height: the area then keeps its own shape (the
   /// `AspectRatio`, the data's shape under `AspectRatio -> Automatic`, else
@@ -4520,6 +4599,17 @@ fn grid_line_props(
   (rgb, stroke_w, style.dashing.clone())
 }
 
+/// The attribute that keeps a run of blanks a label asks for
+/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
+/// space; empty when the markup has no such run.
+fn preserve_blanks_attr(markup: &str) -> &'static str {
+  if markup.contains("  ") {
+    " xml:space=\"preserve\""
+  } else {
+    ""
+  }
+}
+
 /// A label that spans several lines (a `Column[…]` tick label) as one
 /// `<tspan>` per line, each re-anchored at `x` and `line_height` below the
 /// previous one. A single-line label is returned unchanged.
@@ -4654,6 +4744,19 @@ pub(crate) fn plot_labels_svg(
     }
     attrs
   };
+  // A `FrameLabel` takes the color of its edge's `FrameStyle`, else of
+  // the `LabelStyle`, like the edge's tick labels.
+  let edge_fill_owned: [Option<String>; 4] = std::array::from_fn(|edge| {
+    opts.frame_styles[edge]
+      .as_ref()
+      .and_then(|s| s.color)
+      .map(|c| {
+        let (r, g, b) = color_to_rgb8(c);
+        format!("rgb({r},{g},{b})")
+      })
+  });
+  let edge_fill =
+    |edge: usize| edge_fill_owned[edge].as_deref().unwrap_or(label_fill);
   let title_default_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
   let title_default_fill = title_default_fill_owned
@@ -4663,15 +4766,17 @@ pub(crate) fn plot_labels_svg(
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
   let mut labels_svg = String::new();
+  // The label's `xml:space` attribute (kept blank runs) and its content.
   let text_svg = |label: &str, x: f64| {
-    stacked_lines_svg(
+    let markup = stacked_lines_svg(
       &crate::functions::graphics::box_string_to_svg_scaled(
         label,
         RESOLUTION_SCALE as f64,
       ),
       x,
       pitch,
-    )
+    );
+    (preserve_blanks_attr(&markup), markup)
   };
   // Bottom/left FrameLabel: centered outside the plot area, 6 pt beyond
   // the tick labels of their edge.
@@ -4683,11 +4788,12 @@ pub(crate) fn plot_labels_svg(
     let cx = plot_x0 + plot_w / 2.0;
     let base_y = bottom_label_top + ascent(label_pt) * sf;
     bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
+    let (keep, markup) = text_svg(x_label, cx);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\">{}</text>\n",
-      text_svg(x_label, cx)
+         fill=\"{fill}\"{keep}>{markup}</text>\n",
+      fill = edge_fill(0),
     ));
   }
   // A `FrameLabel` that is a `Grid[…]`/`TableForm[…]` is embedded as a
@@ -4722,11 +4828,12 @@ pub(crate) fn plot_labels_svg(
       - gap
       - block_height(lines_of(y_label), label_pt) * sf;
     let lx = box_left + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(y_label, lx);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(y_label, lx)
+         fill=\"{fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
+      fill = edge_fill(1),
     ));
   }
 
@@ -4804,11 +4911,12 @@ pub(crate) fn plot_labels_svg(
     // One element per line, so no renderer collapses the breaks.
     for (i, line) in top_label.split('\n').enumerate() {
       let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
+      let (keep, markup) = text_svg(line, cx);
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-           fill=\"{label_fill}\">{}</text>\n",
-        text_svg(line, cx)
+           fill=\"{fill}\"{keep}>{markup}</text>\n",
+      fill = edge_fill(2),
       ));
     }
   }
@@ -4834,11 +4942,12 @@ pub(crate) fn plot_labels_svg(
   {
     let cy = margin_top + plot_h / 2.0;
     let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(right_label, rx);
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(right_label, rx)
+         fill=\"{fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
+      fill = edge_fill(3),
     ));
   }
 
@@ -4925,13 +5034,8 @@ pub(crate) fn plot_labels_svg(
       ));
       return labels_svg;
     }
-    // A run of blanks the label asks for (`Row[{a, "    ", b}]`) is kept
-    // instead of collapsing into one space.
-    let preserve_attr = if body.contains("  ") {
-      " xml:space=\"preserve\""
-    } else {
-      ""
-    };
+    // A run of blanks the label asks for is kept.
+    let preserve_attr = preserve_blanks_attr(&body);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
@@ -5533,6 +5637,26 @@ fn without_axis_only_ticks(
   std::borrow::Cow::Owned(out)
 }
 
+/// `FrameLabel` captions the frame's edges, so a plot without a frame
+/// (`Frame -> False`, the default for `Plot`/`ListPlot`) shows none of
+/// them, just as Wolfram ignores the option there.
+fn without_unframed_frame_labels(
+  opts: &PlotOptions,
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let has_label = opts.frame_label_bottom.is_some()
+    || opts.frame_label_left.is_some()
+    || opts.frame_label_top.is_some()
+    || opts.frame_label_right.is_some()
+    || opts.frame_label_bottom_graphic.is_some()
+    || opts.frame_label_top_graphic.is_some();
+  if opts.frame || !has_label {
+    return std::borrow::Cow::Borrowed(opts);
+  }
+  let mut out = opts.clone();
+  out.clear_frame_labels();
+  std::borrow::Cow::Owned(out)
+}
+
 fn with_labeling_size(opts: &PlotOptions) -> std::borrow::Cow<'_, PlotOptions> {
   let Some(width) = opts.labeling_size else {
     return std::borrow::Cow::Borrowed(opts);
@@ -5553,6 +5677,7 @@ fn generate_svg_with_options(
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
+  let opts = &*without_unframed_frame_labels(opts);
   if let Some(caps) = opts.image_size_value.as_ref().and_then(image_size_caps) {
     return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
   }
@@ -15166,6 +15291,16 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
     .map(|ticks| ticks.into_iter().map(|t| (t.pos, t.label)).collect())
 }
 
+/// One side of `Ticks -> {xspec, yspec}`: `None` or `False` leaves that
+/// axis without ticks (an empty explicit list), a list gives the explicit
+/// ticks, and anything else (`Automatic`, `All`) keeps the automatic ones.
+pub(crate) fn parse_axis_tick_side(value: &Expr) -> Option<Vec<(f64, String)>> {
+  match value {
+    Expr::Identifier(s) if s == "None" || s == "False" => Some(Vec::new()),
+    other => parse_explicit_ticks(other),
+  }
+}
+
 /// A `MultiaxisArrangement` y axis drawn outside the frame: a spine
 /// parallel to the left (`edge` 1) or right (3) frame edge carrying its own
 /// ticks (in the plot's y coordinates), colored in stretches like
@@ -16443,15 +16578,17 @@ pub(crate) fn apply_common_plot_option(
       {
         plot_opts.ticks = false;
       }
-      // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
-      // explicit list of positions (each optionally `{pos, label}`).
+      // `Ticks -> {xspec, yspec}`: each side is None (no ticks on that
+      // axis), Automatic, or an explicit list of positions (each optionally `{pos, label}`).
       // The y side may be left off — `Ticks -> {xspec}` states the x ticks
       // and leaves the y axis to its default.
+      // A side set to `None` / `False` (`Ticks -> {Automatic, False}`)
+      // carries no ticks, the same as an empty explicit list.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
-        plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        plot_opts.ticks_x = parse_axis_tick_side(&items[0]);
         plot_opts.ticks_from_axes_option.0 = plot_opts.ticks_x.is_some();
         if let Some(y) = items.get(1) {
-          plot_opts.ticks_y = parse_explicit_ticks(y);
+          plot_opts.ticks_y = parse_axis_tick_side(y);
           plot_opts.ticks_from_axes_option.1 = plot_opts.ticks_y.is_some();
         }
       }

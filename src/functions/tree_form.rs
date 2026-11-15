@@ -495,30 +495,290 @@ pub fn tree_graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   tree_to_graphics(&tree)
 }
 
-/// `GraphUtilities\`ExpressionTreePlot[expr]`: the expression's tree drawn as
-/// a `Graphics` whose single `Line` holds one segment per parent-child edge.
-/// Shares the tree construction and layout with `TreeForm`.
+/// One vertex of an expression tree as `ExpressionTreePlot` numbers them:
+/// depth-first, the root being vertex 1.
+struct EtpVertex {
+  /// What the vertex shows: the head of a subexpression, or
+  /// `HoldForm[leaf]` for an atom (or a subexpression cut off at the level
+  /// limit).
+  label: Expr,
+  depth: usize,
+  children: Vec<usize>,
+  /// Horizontal slot before the orientation is applied.
+  x: f64,
+}
+
+fn etp_build(
+  expr: &Expr,
+  depth: usize,
+  max_depth: Option<usize>,
+  out: &mut Vec<EtpVertex>,
+  next_leaf: &mut f64,
+) -> usize {
+  let idx = out.len();
+  let leaf = |out: &mut Vec<EtpVertex>, next_leaf: &mut f64| {
+    out.push(EtpVertex {
+      label: call1("HoldForm", expr.clone()),
+      depth,
+      children: vec![],
+      x: *next_leaf,
+    });
+    *next_leaf += 1.0;
+    idx
+  };
+  if max_depth.is_some_and(|m| depth >= m) {
+    return leaf(out, next_leaf);
+  }
+  match decompose_expr(expr) {
+    ExprForm::Composite { head, children } if !children.is_empty() => {
+      out.push(EtpVertex {
+        label: id_expr(&head),
+        depth,
+        children: vec![],
+        x: 0.0,
+      });
+      let kids: Vec<usize> = children
+        .iter()
+        .map(|c| etp_build(c, depth + 1, max_depth, out, next_leaf))
+        .collect();
+      out[idx].x = f64::midpoint(out[kids[0]].x, out[kids[kids.len() - 1]].x);
+      out[idx].children = kids;
+      idx
+    }
+    // A head with no arguments (`f[]`) or an atom ends the branch.
+    _ => leaf(out, next_leaf),
+  }
+}
+
+/// Options of `ExpressionTreePlot` that steer the tree drawing itself
+/// rather than the resulting `Graphics`.
+const ETP_OWN_OPTIONS: &[&str] = &[
+  "DirectedEdges",
+  "EdgeLabeling",
+  "EdgeRenderingFunction",
+  "LayerSizeFunction",
+  "Method",
+  "MultiedgeStyle",
+  "PackingMethod",
+  "PlotStyle",
+  "SelfLoopStyle",
+  "VertexCoordinateRules",
+  "VertexLabeling",
+  "VertexRenderingFunction",
+];
+
+/// `GraphUtilities\`ExpressionTreePlot[e]`, `[e, pos]` and `[e, pos, lev]`:
+/// the tree of `e` (heads at the inner vertices, the atoms held at the
+/// leaves) laid out in layers from the root at side `pos` (`Top` by
+/// default), down to level `lev`.
+///
+/// Like the package's other plots it is a `GraphicsComplex` of the vertex
+/// coordinates holding one `Line` of the edges as index pairs and the
+/// vertices — `Text[Framed[Style[label], …], i]` under the default
+/// `VertexLabeling -> True`, `Tooltip[Point[i], label]` otherwise.
+/// `VertexRenderingFunction -> f` draws vertex `i` at `p` as
+/// `f[p, label, i]` and `EdgeRenderingFunction -> g` the edge from `i` to
+/// `j` as `g[{pi, pj}, {labeli, labelj}, None, {i, j}]`, with explicit
+/// coordinates. Graphics options are passed on to the `Graphics`.
 pub fn expression_tree_plot_ast(
   args: &[Expr],
 ) -> Result<Expr, InterpreterError> {
-  let tree = build_tree(&args[0], None, 0);
-  let layout = layout_tree(&tree, 1.0);
-  let point =
-    |n: &LayoutNode| Expr::List(vec![Expr::Real(n.x), Expr::Real(n.y)].into());
-  let mut segments: Vec<Expr> = Vec::new();
-  for node in &layout {
-    for &child_idx in &node.children_indices {
-      segments.push(Expr::List(
-        vec![point(node), point(&layout[child_idx])].into(),
+  let args = &crate::functions::graphics::splice_option_lists(args)[..];
+  let is_option =
+    |a: &Expr| matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. });
+  let positional: Vec<&Expr> =
+    args[1..].iter().filter(|a| !is_option(a)).collect();
+  let options: Vec<(String, Expr)> = args[1..]
+    .iter()
+    .filter_map(|a| match a {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(n) | Expr::String(n) => {
+          Some((n.clone(), replacement.as_ref().clone()))
+        }
+        _ => None,
+      },
+      _ => None,
+    })
+    .collect();
+  // The first setting of an option wins.
+  let option = |key: &str| {
+    options
+      .iter()
+      .find(|(k, _)| k == key)
+      .map(|(_, v)| v.clone())
+  };
+  let side = match positional.first() {
+    Some(Expr::Identifier(s))
+      if matches!(s.as_str(), "Top" | "Bottom" | "Left" | "Right") =>
+    {
+      s.as_str()
+    }
+    _ => "Top",
+  };
+  let max_depth = match positional.get(1) {
+    Some(Expr::Integer(n)) if *n >= 0 => Some(*n as usize),
+    _ => None,
+  };
+
+  let mut vertices = Vec::new();
+  etp_build(&args[0], 0, max_depth, &mut vertices, &mut 0.0);
+  let max_depth_seen = vertices.iter().map(|v| v.depth).max().unwrap_or(0);
+  let max_x = vertices.iter().map(|v| v.x).fold(0.0, f64::max);
+  // Layer `d` lies at distance `d` from the root's side; the coordinates
+  // start at 0 like those of the package's other plots.
+  let coord = |v: &EtpVertex| {
+    let layer = v.depth as f64;
+    let deepest = max_depth_seen as f64;
+    match side {
+      "Bottom" => (v.x, layer),
+      "Left" => (layer, max_x - v.x),
+      "Right" => (deepest - layer, max_x - v.x),
+      _ => (v.x, deepest - layer),
+    }
+  };
+  let num = |f: f64| Expr::Real(f);
+  let point = |v: &EtpVertex| {
+    let (x, y) = coord(v);
+    Expr::List(vec![num(x), num(y)].into())
+  };
+  let index = |i: usize| Expr::Integer(i as i128 + 1);
+  let edges: Vec<(usize, usize)> = vertices
+    .iter()
+    .enumerate()
+    .flat_map(|(i, v)| v.children.iter().map(move |&c| (i, c)))
+    .collect();
+
+  let is_function = |f: &Option<Expr>| {
+    f.as_ref().is_some_and(
+      |f| !matches!(f, Expr::Identifier(s) if s == "None" || s == "Automatic"),
+    )
+  };
+  let vertex_fn = option("VertexRenderingFunction");
+  let edge_fn = option("EdgeRenderingFunction");
+  let labeling = !matches!(
+    option("VertexLabeling"),
+    Some(Expr::Identifier(ref s)) if s == "False" || s == "None"
+  );
+
+  let rgb = |r: f64, g: f64, b: f64| {
+    let c = |v: f64| {
+      if v == 0.0 || v == 1.0 {
+        Expr::Integer(v as i128)
+      } else {
+        Expr::Real(v)
+      }
+    };
+    call("RGBColor", vec![c(r), c(g), c(b)])
+  };
+  let edge_color = || call("RGBColor", vec![num(0.5), num(0.0), num(0.0)]);
+
+  let content = if is_function(&vertex_fn) || is_function(&edge_fn) {
+    let eval = crate::evaluator::evaluate_expr_to_expr;
+    let mut edge_prims = vec![edge_color()];
+    for &(i, j) in &edges {
+      let ends =
+        Expr::List(vec![point(&vertices[i]), point(&vertices[j])].into());
+      edge_prims.push(match &edge_fn {
+        Some(f) if is_function(&edge_fn) => eval(&Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args: vec![
+            ends,
+            Expr::List(
+              vec![vertices[i].label.clone(), vertices[j].label.clone()].into(),
+            ),
+            id_expr("None"),
+            Expr::List(vec![index(i), index(j)].into()),
+          ],
+        })?,
+        _ => call1("Line", ends),
+      });
+    }
+    let mut vertex_prims = Vec::new();
+    for (i, v) in vertices.iter().enumerate() {
+      vertex_prims.push(match &vertex_fn {
+        Some(f) if is_function(&vertex_fn) => eval(&Expr::CurriedCall {
+          func: Box::new(f.clone()),
+          args: vec![point(v), v.label.clone(), index(i)],
+        })?,
+        _ if labeling => crate::functions::graph::framed_vertex_label(
+          call1("Style", v.label.clone()),
+          point(v),
+        ),
+        _ => call1("Point", point(v)),
+      });
+    }
+    Expr::List(
+      vec![
+        Expr::List(edge_prims.into()),
+        Expr::List(vertex_prims.into()),
+      ]
+      .into(),
+    )
+  } else {
+    let lines: Vec<Expr> = edges
+      .iter()
+      .map(|&(i, j)| Expr::List(vec![index(i), index(j)].into()))
+      .collect();
+    let vertex_group: Vec<Expr> = if labeling {
+      vertices
+        .iter()
+        .enumerate()
+        .map(|(i, v)| {
+          crate::functions::graph::framed_vertex_label(
+            call1("Style", v.label.clone()),
+            index(i),
+          )
+        })
+        .collect()
+    } else {
+      std::iter::once(rgb(0.0, 0.0, 0.7))
+        .chain(vertices.iter().enumerate().map(|(i, v)| {
+          call("Tooltip", vec![call1("Point", index(i)), v.label.clone()])
+        }))
+        .collect()
+    };
+    let mut groups = Vec::new();
+    if !lines.is_empty() {
+      groups.push(Expr::List(
+        vec![edge_color(), call1("Line", Expr::List(lines.into()))].into(),
       ));
     }
-  }
-  let primitives = if segments.is_empty() {
-    Expr::List(vec![].into())
-  } else {
-    Expr::List(vec![call("Line", vec![Expr::List(segments.into())])].into())
+    groups.push(Expr::List(vertex_group.into()));
+    call(
+      "GraphicsComplex",
+      vec![
+        Expr::List(vertices.iter().map(point).collect()),
+        Expr::List(groups.into()),
+      ],
+    )
   };
-  graphics_ast(&[primitives])
+
+  let mut graphics_args = vec![content];
+  let mut seen: Vec<&str> = Vec::new();
+  for (k, v) in &options {
+    if ETP_OWN_OPTIONS.contains(&k.as_str()) || seen.contains(&k.as_str()) {
+      continue;
+    }
+    seen.push(k);
+    graphics_args.push(rule_expr(id_expr(k), v.clone()));
+  }
+  for (k, v) in [
+    ("AspectRatio", id_expr("Automatic")),
+    ("PlotRange", id_expr("All")),
+    ("PlotRangePadding", call1("Scaled", num(0.1))),
+  ] {
+    if !seen.contains(&k) {
+      graphics_args.push(rule_expr(id_expr(k), v));
+    }
+  }
+  Ok(call("Graphics", graphics_args))
 }
 
 /// Shared rendering logic: take a TreeNode and produce Graphics SVG

@@ -462,3 +462,81 @@ fn graphics_axes_and_frames_use_gray_unless_explicitly_styled() {
     }
   }
 }
+
+/// A `FrameLabel` takes the color of its edge's `FrameStyle`, also when
+/// the style sets a font size too; an edge without one keeps the default
+/// gray.
+#[test]
+fn frame_labels_take_their_frame_style_color() {
+  let label_fill = |svg: &str, text: &str| -> String {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let at = tag.find(" fill=\"").unwrap() + 7;
+    tag[at..at + tag[at..].find('"').unwrap()].to_string()
+  };
+  let svg = svg_of(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"},
+       FrameStyle -> Directive[12, Black]]"#,
+  );
+  assert_eq!(label_fill(&svg, "tb"), "rgb(0,0,0)");
+  assert_eq!(label_fill(&svg, "tl"), "rgb(0,0,0)");
+  let svg = svg_of(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"},
+       FrameStyle -> {{Red, Automatic}, {Blue, Automatic}}]"#,
+  );
+  assert_eq!(label_fill(&svg, "tb"), "rgb(0,0,255)");
+  assert_eq!(label_fill(&svg, "tl"), "rgb(255,0,0)");
+  let svg =
+    svg_of(r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"tb", "tl"}]"#);
+  assert_eq!(label_fill(&svg, "tb"), "#666");
+}
+
+/// A `Style[label, …, Background -> color]` inside a `Plot` `Epilog`
+/// `Text` paints a panel behind the label, as it does in `Graphics`, so
+/// the curve running under the label is hidden.
+mod epilog_text_style_background {
+  use super::*;
+
+  fn panel_count(svg: &str, fill: &str) -> usize {
+    svg
+      .split("<rect ")
+      .skip(1)
+      .filter(|rest| {
+        rest[..rest.find('>').unwrap()].contains(&format!("fill=\"{fill}\""))
+      })
+      .count()
+  }
+
+  #[test]
+  fn style_background_paints_a_panel() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> {Text[Style[Row[{Style[\"L\", \
+       Italic], \" = 2\"}], 18, Blue, Background -> Yellow], {0.5, 0.5}, \
+       {0, 0}]}]",
+    );
+    assert_eq!(panel_count(&svg, "rgb(255,255,0)"), 1, "{svg}");
+  }
+
+  #[test]
+  fn innermost_style_background_wins() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Text[Style[Style[\"ab\", \
+       Directive[Background -> Yellow]], Background -> Red], {0.5, 0.5}]]",
+    );
+    assert_eq!(panel_count(&svg, "rgb(255,255,0)"), 1, "{svg}");
+    assert_eq!(panel_count(&svg, "rgb(255,0,0)"), 0, "{svg}");
+  }
+
+  #[test]
+  fn no_background_draws_no_panel() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Text[Style[\"ab\", 18, Blue], \
+       {0.5, 0.5}]]",
+    );
+    // The epilog's own group (after its clip path) holds only the text.
+    let group = &svg[svg.find("</defs><g clip-path").unwrap()..];
+    assert!(group.contains(">ab</text>"), "{svg}");
+    assert!(!group.contains("<rect"), "{svg}");
+  }
+}
