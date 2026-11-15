@@ -3672,10 +3672,13 @@ mod tests {
         woxi::interpret_with_stdout(&state.body)
       })
       .expect("evaluate body");
-    let first = woxi::interpret(
-      "ExportString[Graphics3D[{Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 1}}]}, \
-       Boxed -> False], \"SVG\"]",
-    )
+    // Drawn as a Manipulate frame, so framed like the body's picture.
+    let first = woxi::with_manipulate_frame(|| {
+      woxi::interpret(
+        "ExportString[Graphics3D[{Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 1}}]}, \
+         Boxed -> False], \"SVG\"]",
+      )
+    })
     .expect("render first frame");
     assert_eq!(render.graphics.expect("body draws a graphic"), first);
   }
