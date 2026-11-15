@@ -787,7 +787,7 @@ GeoGraphics,"Creates geographic maps and visualizations",✅,pure,10.0,741
 Annotation,"Attach an annotation to an expression",✅,none,6.0,742
 Short,"Short output format",✅,pure,1.0,743
 SphericalPlot3D,"3D plot in spherical coordinates",✅,pure,6.0,744
-ProteinData,"",🚫,,7.0,745
+ProteinData,"Returns names, amino acid sequences and Gene Ontology classes of a bundled slice of human proteins (UniProtKB, HGNC, GO)",✅,pure,7.0,745
 CompanyData,"",🚫,,10.0,746
 Raster,"Graphics primitive representing raster image data",✅,none,2.0,747
 VertexSize,"Option for vertex size in graphs",✅,none,8.0,748
@@ -6463,3 +6463,4 @@ Combinatorica`RadialEmbedding,"A Combinatorica graph with its vertices laid out 
 Combinatorica`ConnectedQ,"Whether a Combinatorica graph is (weakly or strongly) connected",✅,pure,6.0,
 Combinatorica`Vertices,"The vertex coordinates of a Combinatorica graph (with All the vertices with their options)",✅,pure,6.0,
 TetGenLink`TetGenConvexHull,"Convex hull of a 3D point set as the points and the inward-wound boundary triangles (after Get[TetGenLink`])",✅,pure,8.0,
+GraphicsArray,"Arranges graphics in a row or grid (superseded by GraphicsGrid)",✅,pure,1.0,

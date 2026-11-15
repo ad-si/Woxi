@@ -4700,9 +4700,8 @@ fn decimal_string_to_base_string(
   let denominator = BigInt::from(10u32).pow(frac_str.len() as u32);
   let big_base = BigInt::from(base);
 
-  let significant = (decimal_digits * 10f64.ln() / (base as f64).ln())
-    .round()
-    .max(1.0) as i64;
+  let magnitude = format!("{int_str}.{frac_str}0").parse::<f64>().ok();
+  let frac_count = fraction_digit_count(magnitude, base, decimal_digits);
 
   let mut int_part = &numerator / &denominator;
   let mut remainder = &numerator % &denominator;
@@ -4715,25 +4714,21 @@ fn decimal_string_to_base_string(
   int_digits.reverse();
 
   let mut frac_digits: Vec<u8> = Vec::new();
-  let mut seen_significant = !int_digits.is_empty();
-  let mut used = int_digits.len() as i64;
-  while (used < significant || !seen_significant) && !remainder.is_zero() {
+  // Unlike a machine real, an arbitrary-precision one keeps its trailing
+  // zeros: they are digits its precision vouches for.
+  while (frac_digits.len() as i64) < frac_count {
     remainder *= &big_base;
     let d = (&remainder / &denominator)
       .to_string()
       .parse::<usize>()
       .ok()?;
     remainder %= &denominator;
-    if d > 0 {
-      seen_significant = true;
-    }
-    if seen_significant {
-      used += 1;
-    }
     frac_digits.push(DIGITS[d.min(base as usize - 1)]);
   }
-  while frac_digits.last() == Some(&b'0') {
-    frac_digits.pop();
+  // Round the last digit from what remains; a tie rounds down, as for
+  // machine reals.
+  if !remainder.is_zero() && remainder * 2 > denominator {
+    round_up_base_digits(&mut int_digits, &mut frac_digits, base);
   }
 
   let int_out = if int_digits.is_empty() {
@@ -4748,6 +4743,61 @@ fn decimal_string_to_base_string(
   } else {
     format!("{sign}{int_out}.{frac_out}")
   })
+}
+
+/// How many base-`b` digits after the point `BaseForm` shows for a real of
+/// magnitude `x` carrying `decimal_digits` of precision: its accuracy in
+/// that base, rounded down. In base 2, `N[Sqrt[2], 20]` (accuracy ≈ 65.9
+/// bits) and `N[Sqrt[7], 20]` (≈ 65.0 bits) both show 65 fraction digits,
+/// and `0.1` (6 displayed digits, ≈ 23.3 bits) shows 23.
+fn fraction_digit_count(
+  x: Option<f64>,
+  base: i128,
+  decimal_digits: f64,
+) -> i64 {
+  let b = base as f64;
+  let precision = decimal_digits * 10f64.ln() / b.ln();
+  let magnitude = match x {
+    Some(x) if x.is_finite() && x > 0.0 => x.ln() / b.ln(),
+    _ => 0.0,
+  };
+  (precision - magnitude).floor().max(0.0) as i64
+}
+
+/// Add one unit in the last place to a base-`base` digit string split at
+/// the point, carrying through the fraction into the integer part.
+fn round_up_base_digits(
+  int_digits: &mut Vec<u8>,
+  frac_digits: &mut [u8],
+  base: i128,
+) {
+  const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+  let bump = |digit: &mut u8| -> bool {
+    let d = DIGITS.iter().position(|c| c == digit).unwrap_or(0);
+    if d + 1 < base as usize {
+      *digit = DIGITS[d + 1];
+      false
+    } else {
+      *digit = DIGITS[0];
+      true
+    }
+  };
+  let mut carry = true;
+  for digit in frac_digits.iter_mut().rev() {
+    if !carry {
+      break;
+    }
+    carry = bump(digit);
+  }
+  for digit in int_digits.iter_mut().rev() {
+    if !carry {
+      break;
+    }
+    carry = bump(digit);
+  }
+  if carry {
+    int_digits.insert(0, DIGITS[1]);
+  }
 }
 
 /// Render a real `x` in base `b`, to as many base-`b` digits as the
@@ -4766,7 +4816,7 @@ fn real_to_base_string(
   }
   const DIGITS: &[u8] = b"0123456789abcdefghijklmnopqrstuvwxyz";
   let b = base as f64;
-  let significant = (decimal_digits * 10f64.ln() / b.ln()).round().max(1.0);
+  let frac_count = fraction_digit_count(Some(x.abs()), base, decimal_digits);
   let neg = x < 0.0;
   let mut value = x.abs();
 
@@ -4781,72 +4831,19 @@ fn real_to_base_string(
   }
   int_digits.reverse();
 
-  // Fraction digits, up to the precision budget left after the integer
-  // part (a leading run of zeros costs nothing — precision counts from
-  // the first significant digit).
+  // Fraction digits, as many as the number's accuracy justifies; the
+  // last one is rounded from what remains. A tie rounds *down*, which is
+  // what Wolfram shows for a value whose tail is exactly half a unit in
+  // the last place (`BaseForm[1.5, 3]` is `1.111111111111`, not `…112`).
   let mut frac_digits: Vec<u8> = Vec::new();
-  let mut seen_significant = !int_digits.is_empty();
-  let mut used = int_digits.len() as f64;
-  let mut carry_from = None;
-  while used < significant || !seen_significant {
-    if value == 0.0 {
-      break;
-    }
+  while (frac_digits.len() as i64) < frac_count && value != 0.0 {
     value *= b;
     let d = value.trunc() as usize;
     value -= value.trunc();
-    if d > 0 {
-      seen_significant = true;
-    }
-    if seen_significant {
-      used += 1.0;
-    }
     frac_digits.push(DIGITS[d.min(base as usize - 1)]);
-    if used >= significant {
-      // Round the last digit from what remains — a tie rounds *down*,
-      // which is what Wolfram shows for a value whose tail is exactly
-      // half a unit in the last place (`BaseForm[1.5, 3]` is
-      // `1.111111111111`, not `…112`).
-      if value > 0.5 {
-        carry_from = Some(frac_digits.len());
-      }
-      break;
-    }
   }
-
-  // Propagate the rounding carry through the fraction, then the integer.
-  if carry_from.is_some() {
-    let mut i = frac_digits.len();
-    let mut carry = true;
-    while carry && i > 0 {
-      i -= 1;
-      let d = DIGITS
-        .iter()
-        .position(|&c| c == frac_digits[i])
-        .unwrap_or(0);
-      if d + 1 < base as usize {
-        frac_digits[i] = DIGITS[d + 1];
-        carry = false;
-      } else {
-        frac_digits[i] = DIGITS[0];
-      }
-    }
-    if carry {
-      let mut j = int_digits.len();
-      while carry && j > 0 {
-        j -= 1;
-        let d = DIGITS.iter().position(|&c| c == int_digits[j]).unwrap_or(0);
-        if d + 1 < base as usize {
-          int_digits[j] = DIGITS[d + 1];
-          carry = false;
-        } else {
-          int_digits[j] = DIGITS[0];
-        }
-      }
-      if carry {
-        int_digits.insert(0, DIGITS[1]);
-      }
-    }
+  if value > 0.5 {
+    round_up_base_digits(&mut int_digits, &mut frac_digits, base);
   }
 
   while frac_digits.last() == Some(&b'0') {
@@ -9883,6 +9880,20 @@ pub(crate) fn format_string_form_with(
   fmt: impl Fn(&Expr) -> String,
 ) -> String {
   format_slots(template, values, fmt, true)
+}
+
+/// The parts a `StringForm` typesets: its template's literal runs as strings
+/// and, between them, the values its slots pick — the items of the `Row`
+/// the filled template reads as. Empty literal runs are left out.
+pub(crate) fn string_form_parts(template: &str, values: &[Expr]) -> Vec<Expr> {
+  slot_pieces(template, values, false)
+    .into_iter()
+    .filter_map(|piece| match piece {
+      MessagePiece::Text(t) if t.is_empty() => None,
+      MessagePiece::Text(t) => Some(Expr::String(t)),
+      MessagePiece::Expr(e) => Some(e.clone()),
+    })
+    .collect()
 }
 
 /// Substitute `` `` `` / `` `n` `` slots, warning with `StringForm::sfr` on
@@ -17752,6 +17763,93 @@ pub(crate) struct NumberFormOptions {
 /// with spaces, `NumberForm` does not pad it at all, and `AccountingForm`
 /// pads neither side (so `AccountingForm[12.345, {5, 2}]` is "12.35", not
 /// "12.35" padded out to the field).
+/// The value a `NumberForm` / `PaddedForm` / `AccountingForm` displays
+/// unchanged because there is no number in it to format: these wrappers
+/// only rewrite numbers, so `NumberForm[Subscript["6c", "36"], Infinity]`
+/// typesets exactly like the subscript it wraps. A `BaseForm` value is left
+/// to the dedicated base-form paths.
+pub fn number_form_numberless_value<'a>(
+  head: &str,
+  args: &'a [Expr],
+) -> Option<&'a Expr> {
+  fn has_number(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => true,
+      Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_) => false,
+      Expr::List(items) => items.iter().any(has_number),
+      Expr::FunctionCall { name, args } => {
+        name == "BaseForm" || args.iter().any(has_number)
+      }
+      // Anything else (an operator form, a rule, …) may hold a number.
+      _ => true,
+    }
+  }
+  if !matches!(head, "NumberForm" | "PaddedForm" | "AccountingForm") {
+    return None;
+  }
+  let value = args.first()?;
+  if matches!(value, Expr::String(_) | Expr::List(_)) || has_number(value) {
+    return None;
+  }
+  Some(value)
+}
+
+/// The `BaseForm[x, b]` that `NumberForm[BaseForm[x, b], Infinity, opts…]`
+/// shows unchanged: unlimited precision keeps every base-b digit, so the
+/// number typesets exactly like the bare `BaseForm` (digits with a
+/// subscripted base). A nested `NumberForm[…, Infinity]` of the same kind
+/// is seen through. `None` when a `NumberFormat` or an exponent-choosing
+/// `ExponentFunction` takes over the formatting.
+pub fn number_form_unlimited_base_form<'a>(
+  head: &str,
+  args: &'a [Expr],
+) -> Option<&'a Expr> {
+  if head != "NumberForm" {
+    return None;
+  }
+  let positional: Vec<&Expr> = args
+    .iter()
+    .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .collect();
+  let [value, Expr::Identifier(spec)] = positional.as_slice() else {
+    return None;
+  };
+  if spec != "Infinity" {
+    return None;
+  }
+  // An outer `NumberForm[…, Infinity]` around one that already keeps every
+  // digit (a formatting helper applied twice) changes nothing.
+  let value: &Expr = match value {
+    Expr::FunctionCall {
+      name,
+      args: inner_args,
+    } if name == "NumberForm" => {
+      number_form_unlimited_base_form(name, inner_args)?
+    }
+    _ => value,
+  };
+  if !matches!(value, Expr::FunctionCall { name, args }
+    if name == "BaseForm" && args.len() == 2)
+  {
+    return None;
+  }
+  let has_option = |opt: &str| {
+    args.iter().any(|a| {
+      matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == opt))
+    })
+  };
+  if has_option("NumberFormat")
+    || (has_option("ExponentFunction") && !exponent_function_suppresses(args))
+  {
+    return None;
+  }
+  Some(value)
+}
+
 /// Whether an `ExponentFunction` option maps every exponent to `Null` —
 /// Wolfram's way of asking for a number to be written out rather than put
 /// in scientific notation. Probed at two exponents, which tells a
@@ -18188,7 +18286,11 @@ pub(crate) fn number_form_family_to_string(
   }) = inner.first()
     && matches!(
       inner_head.as_str(),
-      "NumberForm" | "PaddedForm" | "AccountingForm"
+      "NumberForm"
+        | "PaddedForm"
+        | "AccountingForm"
+        | "ScientificForm"
+        | "EngineeringForm"
     )
   {
     let is_rule =
@@ -18205,6 +18307,22 @@ pub(crate) fn number_form_family_to_string(
       );
     }
     merged.extend(inner[1..].iter().filter(|a| is_rule(a)).cloned());
+    // An inner `ScientificForm`/`EngineeringForm` keeps its notation (and
+    // any `ExponentFunction`) while the outer wrapper supplies the digit
+    // count it left out: `NumberForm[ScientificForm[0.000123456], 3]` is
+    // "1.23 × 10^-4".
+    if matches!(inner_head.as_str(), "ScientificForm" | "EngineeringForm") {
+      let merged_call = Expr::FunctionCall {
+        name: inner_head.clone(),
+        args: merged.into(),
+      };
+      return match to_string_ast(&[merged_call]) {
+        Ok(Expr::String(ref s)) if !s.starts_with(inner_head.as_str()) => {
+          Some(s.clone())
+        }
+        _ => None,
+      };
+    }
     // The inner wrapper alone decides how the number is laid out, its sign
     // included: `AccountingForm[NumberForm[-1234.5, {12, 2}], 12]` is
     // "-1234.50", not "(1234.50)".
