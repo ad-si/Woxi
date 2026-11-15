@@ -5015,8 +5015,8 @@ mod interpreter_tests {
     .unwrap();
     let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
       .expect("a Manipulate spec");
-    assert!(spec.panel_displays.is_empty());
-    assert!(spec.displays.is_empty());
+    assert_eq!(spec.panel_displays, Vec::<(usize, usize)>::new());
+    assert_eq!(spec.displays, Vec::<String>::new());
     interpret("Clear[pic]").unwrap();
   }
 

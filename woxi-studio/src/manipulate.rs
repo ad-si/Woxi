@@ -948,6 +948,10 @@ pub struct ManipulateState {
   last_render: Option<Result<woxi::InterpretResult, String>>,
 }
 
+/// A typeset control caption: its label runs and, for a picture caption,
+/// the rendered SVG.
+type Caption = (Vec<LabelRun>, Option<String>);
+
 thread_local! {
   /// Set while [`ManipulateState::from_expr_unrendered`] builds a widget.
   static UNRENDERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -2386,10 +2390,7 @@ impl ManipulateState {
   }
 
   /// Retitle each named control with its freshly typeset caption.
-  fn apply_dynamic_labels(
-    &mut self,
-    resolved: Vec<(String, (Vec<LabelRun>, Option<String>))>,
-  ) {
+  fn apply_dynamic_labels(&mut self, resolved: Vec<(String, Caption)>) {
     for (name, (runs, svg)) in resolved {
       self.label_svgs.retain(|(n, _)| *n != name);
       if let Some(svg) = svg {
