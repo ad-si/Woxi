@@ -1409,6 +1409,30 @@ mod alternatives {
 mod pattern_constructs {
   use super::*;
 
+  // `..` binds tighter than `->`, `|` and `:`, so a repeated rule,
+  // alternative or named pattern prints in parentheses; without them the
+  // text re-reads as `a -> (b..)`, which no longer matches a list of rules.
+  #[test]
+  fn repeated_looser_operand_is_parenthesized() {
+    assert_eq!(
+      interpret(
+        "ToString[Hold[Repeated[a -> b], RepeatedNull[a :> b], \
+         Repeated[a | b], Repeated[x : {_}], Repeated[f[x]], Repeated[x_]], \
+         InputForm]"
+      )
+      .unwrap(),
+      "Hold[(a -> b).., (a :> b)..., (a | b).., (x:{_}).., f[x].., (x_)..]"
+    );
+    assert_eq!(
+      interpret(
+        "MatchQ[{1 -> 2, 3 -> 4}, ToExpression[ToString[\
+         Hold[{Repeated[_Integer -> _Integer]}], InputForm]][[1]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn pattern_sequence() {
     assert_eq!(

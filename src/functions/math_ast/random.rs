@@ -2279,6 +2279,42 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
     Expr::FunctionCall { name, args: dargs }
+      if name == "SkewNormalDistribution" && dargs.len() == 3 =>
+    {
+      // Azzalini's construction: with δ = α/√(1+α²) and independent
+      // standard normals U, V, Z = δ|U| + √(1-δ²) V is skew-normal(α),
+      // and μ + σ Z has location μ and scale σ.
+      let (Some(mu), Some(sigma), Some(alpha)) = (
+        try_eval_to_f64(&dargs[0]),
+        try_eval_to_f64(&dargs[1]),
+        try_eval_to_f64(&dargs[2]),
+      ) else {
+        return Ok(unevaluated("RandomVariate", args));
+      };
+      if !(mu.is_finite()
+        && sigma > 0.0
+        && sigma.is_finite()
+        && alpha.is_finite())
+      {
+        return Ok(unevaluated("RandomVariate", args));
+      }
+      let delta = alpha / (1.0 + alpha * alpha).sqrt();
+      let rest = (1.0 - delta * delta).sqrt();
+      let std_normal: Normal<f64> = Normal::new(0.0, 1.0).unwrap();
+      let sample = || -> Expr {
+        let (u, v) = crate::with_rng(|rng| {
+          (std_normal.sample(rng), std_normal.sample(rng))
+        });
+        Expr::Real(mu + sigma * (delta * u.abs() + rest * v))
+      };
+      match n {
+        None => Ok(sample()),
+        Some(count) => Ok(Expr::List(
+          (0..count).map(|_| sample()).collect::<Vec<_>>().into(),
+        )),
+      }
+    }
+    Expr::FunctionCall { name, args: dargs }
       if (name == "GammaDistribution" && dargs.len() == 2)
         || (name == "WeibullDistribution"
           && (dargs.len() == 2 || dargs.len() == 3)) =>

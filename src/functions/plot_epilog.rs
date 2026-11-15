@@ -66,6 +66,11 @@ struct EpilogStyle {
   /// `EdgeForm[…]`: the outline drawn around filled primitives
   /// (`Rectangle`, `Polygon`, `Disk`). `None` = no outline.
   edge: Option<Box<EpilogStyle>>,
+  /// Font weight, slant and size a `Style[prim, Bold, Italic, 14, …]`
+  /// around a `Text` primitive sets (the label's own `Style` wins).
+  bold: bool,
+  italic: bool,
+  font_size: Option<f64>,
 }
 
 impl EpilogStyle {
@@ -86,6 +91,9 @@ impl EpilogStyle {
       arrowheads: None,
       cap_form: Expr::String("Round".into()),
       edge: None,
+      bold: false,
+      italic: false,
+      font_size: None,
     }
   }
 
@@ -308,6 +316,35 @@ fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
   })
 }
 
+/// The `Background -> color` that `Style` wrappers around a label set
+/// (`Style[Row[…], 18, Blue, Background -> White]`), the innermost one
+/// winning, with directives grouped in lists or `Directive[…]` included.
+/// `None` when no wrapper gives a background.
+fn style_wrapper_background(label: &Expr) -> Option<Color> {
+  fn in_directives(ds: &[Expr]) -> Option<Color> {
+    ds.iter().rev().find_map(|d| match d {
+      Expr::List(items) => in_directives(items),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        in_directives(args)
+      }
+      _ => option_value(std::slice::from_ref(d), "Background")
+        .and_then(parse_color),
+    })
+  }
+  let mut found = None;
+  let mut cur = label;
+  while let Expr::FunctionCall { name, args } = cur
+    && crate::functions::graphics::is_style_wrapper(name)
+    && !args.is_empty()
+  {
+    if let Some(color) = in_directives(&args[1..]) {
+      found = Some(color);
+    }
+    cur = &args[0];
+  }
+  found
+}
+
 /// Try to interpret an expression as a `{x, y}` coordinate pair.
 fn point2(expr: &Expr) -> Option<(f64, f64)> {
   if let Expr::List(items) = expr
@@ -378,6 +415,66 @@ fn polyline_points(pts: &[(f64, f64)], area: &PlotArea) -> String {
 
 /// Apply a single style directive to `style`. Returns `true` when the
 /// expression was a directive (and thus produces no visible output).
+/// Apply a font directive of a `Style[prim, …]` (`Bold`, `Italic`,
+/// `Plain`, a font size, or a `FontWeight`/`FontSlant`/`FontSize`/
+/// `FontColor` rule) to the text primitives it wraps.
+fn apply_font_directive(expr: &Expr, style: &mut EpilogStyle) {
+  fn word(e: &Expr) -> Option<&str> {
+    match e {
+      Expr::Identifier(s) | Expr::String(s) => Some(s.as_str()),
+      _ => None,
+    }
+  }
+  match expr {
+    Expr::Identifier(s) => match s.as_str() {
+      "Bold" => style.bold = true,
+      "Italic" => style.italic = true,
+      "Plain" => {
+        style.bold = false;
+        style.italic = false;
+      }
+      _ => {}
+    },
+    Expr::Integer(_) | Expr::Real(_) => {
+      if let Some(size) = try_eval_to_f64(expr).filter(|s| *s > 0.0) {
+        style.font_size = Some(size);
+      }
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => match word(pattern) {
+      Some("FontWeight") => {
+        if let Some(w) = word(replacement) {
+          style.bold =
+            matches!(w, "Bold" | "SemiBold" | "Heavy" | "Black" | "ExtraBold");
+        }
+      }
+      Some("FontSlant") => {
+        if let Some(w) = word(replacement) {
+          style.italic = matches!(w, "Italic" | "Oblique");
+        }
+      }
+      Some("FontSize") => {
+        if let Some(size) = try_eval_to_f64(replacement).filter(|s| *s > 0.0) {
+          style.font_size = Some(size);
+        }
+      }
+      Some("FontColor") => {
+        if let Some(c) = parse_color(replacement) {
+          style.color = c;
+        }
+      }
+      _ => {}
+    },
+    _ => {}
+  }
+}
+
 fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
   if let Some(c) = parse_color(expr) {
     style.color = c;
@@ -395,7 +492,9 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Directive" => {
         for a in args {
-          apply_directive(a, style);
+          if !apply_directive(a, style) {
+            apply_font_directive(a, style);
+          }
         }
       }
       // `EdgeForm[]` / `EdgeForm[None]` draw no outline; otherwise the
@@ -943,9 +1042,22 @@ fn render_item(
           // `Style[…]` around the content sets the text's own size and
           // color; without one the epilog's directives still apply.
           let styled = crate::functions::chart::parse_styled_label(body);
-          let font_size =
-            styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
-              * area.scale;
+          let font_size = styled
+            .as_ref()
+            .and_then(|s| s.font_size)
+            .or(style.font_size)
+            .unwrap_or(13.0)
+            * area.scale;
+          let bold = style.bold || styled.as_ref().is_some_and(|s| s.bold);
+          let italic =
+            style.italic || styled.as_ref().is_some_and(|s| s.italic);
+          let mut font_attrs = String::new();
+          if bold {
+            font_attrs.push_str(" font-weight=\"bold\"");
+          }
+          if italic {
+            font_attrs.push_str(" font-style=\"italic\"");
+          }
           let fill = match styled.as_ref().and_then(|s| s.color) {
             // A translucent color (`Transparent` placeholder text, say)
             // keeps its alpha instead of drawing opaque.
@@ -1028,8 +1140,11 @@ fn render_item(
           // `Text[label, pos, …, Background -> color]` (or an `Inset`'s
           // `Background`, carried over onto its text) lays a borderless
           // panel behind the label, so a curve running under it is hidden.
+          // A `Style[…, Background -> color]` around the label asks for the
+          // same panel, as it does in `Graphics`.
           let text_background = option_value(args, "Background")
             .and_then(parse_color)
+            .or_else(|| style_wrapper_background(body))
             .filter(|_| !is_framed && direction.is_none());
           if let Some(color) = text_background {
             let chars = styled.as_ref().map_or_else(
@@ -1086,19 +1201,10 @@ fn render_item(
               px - text_w / 2.0,
             ));
           }
-          // `Style[…, Bold, Italic]` weights and slants the whole label,
-          // as it does a `Text` in `Graphics`.
-          let mut weight_attrs = String::new();
-          if styled.as_ref().is_some_and(|s| s.bold) {
-            weight_attrs.push_str(" font-weight=\"bold\"");
-          }
-          if styled.as_ref().is_some_and(|s| s.italic) {
-            weight_attrs.push_str(" font-style=\"italic\"");
-          }
           out.push_str(&format!(
             "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-             font-size=\"{font_size:.0}\" {fill}{weight_attrs}{rotate_attr}>{label}</text>\n",
+             font-size=\"{font_size:.0}\"{font_attrs} {fill}{rotate_attr}>{label}</text>\n",
           ));
         }
       }
@@ -1172,7 +1278,9 @@ fn render_item(
       "Style" if !args.is_empty() => {
         let mut scoped = style.clone();
         for d in &args[1..] {
-          apply_directive(d, &mut scoped);
+          if !apply_directive(d, &mut scoped) {
+            apply_font_directive(d, &mut scoped);
+          }
         }
         render_item(&args[0], &mut scoped, area, out);
       }
