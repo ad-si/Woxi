@@ -7861,6 +7861,40 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     content = peel_label_rotate(&sargs[0], &mut rotation);
   }
   let content = peel_label_rotate(content, &mut rotation);
+  // `Row[items, BaseStyle -> dirs]` styles the whole label the way an
+  // enclosing `Style[Row[items], dirs]` does (a colored `ln(a)` caption);
+  // the parts' own `Style`s still refine it below.
+  let row_without_base_style;
+  let content = match content {
+    Expr::FunctionCall { name, args: rargs }
+      if name == "Row"
+        && let Some(base) = rargs
+          .iter()
+          .skip(1)
+          .filter_map(option_kv)
+          .find(|(k, _)| *k == "BaseStyle")
+          .map(|(_, v)| v) =>
+    {
+      let directives: Vec<Expr> = match base {
+        Expr::List(items) => items.to_vec(),
+        single => vec![single.clone()],
+      };
+      for d in style_directives_in_application_order(&directives) {
+        apply_directive(d, &mut local_style);
+        apply_text_style_directive(d, &mut local_style);
+      }
+      row_without_base_style = call(
+        "Row",
+        rargs
+          .iter()
+          .filter(|a| !matches!(option_kv(a), Some(("BaseStyle", _))))
+          .cloned()
+          .collect(),
+      );
+      &row_without_base_style
+    }
+    other => other,
+  };
   // `Style[Invisible[…], dirs…]` — the wrapper inside the styling.
   let content = match peel_invisible(content) {
     Some(inner) => {
@@ -22589,13 +22623,14 @@ pub(crate) fn series_dashing_expr(
 /// Clip a polyline to the horizontal band `lo <= y <= hi`, interpolating the
 /// crossing points. Returns the pieces inside the band (a curve that leaves
 /// and re-enters yields several).
-fn clip_segment_to_y_range(
+pub(crate) fn clip_segment_to_y_range(
   seg: &[(f64, f64)],
   (lo, hi): (f64, f64),
 ) -> Vec<Vec<(f64, f64)>> {
   if !(lo.is_finite() && hi.is_finite()) || lo >= hi {
     return vec![seg.to_vec()];
   }
+  let (band_lo, band_hi) = (lo, hi);
   let pad = (hi - lo) * 1e-9;
   let (lo, hi) = (lo - pad, hi + pad);
   let mut pieces: Vec<Vec<(f64, f64)>> = Vec::new();
@@ -22620,7 +22655,13 @@ fn clip_segment_to_y_range(
       }
       continue;
     }
-    let at = |t: f64| (q.0 + (p.0 - q.0) * t, q.1 + dy * t);
+    // A crossing lies on the band's edge itself, not on its padding.
+    let at = |t: f64| {
+      (
+        q.0 + (p.0 - q.0) * t,
+        (q.1 + dy * t).clamp(band_lo, band_hi),
+      )
+    };
     if t0 > 0.0 && !cur.is_empty() {
       pieces.push(std::mem::take(&mut cur));
     }
@@ -24349,8 +24390,67 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     {
       label_typesets_fraction(&args[0])
     }
+    // A held formula (`HoldForm[y = 1/x]`), an equation or a relation
+    // (`y == 1/x`, `a -> 1/x`) typesets its sides in place, so a quotient
+    // on either side stacks just as it does on its own. A held quotient is
+    // still an unevaluated `Divide`, hence the box-form test rather than
+    // the arithmetic heads above.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "HoldForm" | "Set" | "SetDelayed")
+        || is_relation_head(name) =>
+    {
+      args.iter().any(label_typesets_fraction)
+    }
+    Expr::Comparison { operands, .. } => {
+      operands.iter().any(label_typesets_fraction)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      label_typesets_fraction(pattern) || label_typesets_fraction(replacement)
+    }
+    Expr::BinaryOp { op, .. }
+      if matches!(
+        op,
+        crate::syntax::BinaryOperator::Plus
+          | crate::syntax::BinaryOperator::Minus
+          | crate::syntax::BinaryOperator::Times
+          | crate::syntax::BinaryOperator::Divide
+          | crate::syntax::BinaryOperator::Power
+      ) && !has_string_operand(expr) =>
+    {
+      box_has_fraction(
+        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
+          expr,
+        ),
+      )
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => label_typesets_fraction(operand),
     _ => false,
   }
+}
+
+/// Heads of the equations and relations a formula label typesets infix.
+fn is_relation_head(name: &str) -> bool {
+  matches!(
+    name,
+    "Equal"
+      | "Unequal"
+      | "Less"
+      | "LessEqual"
+      | "Greater"
+      | "GreaterEqual"
+      | "Rule"
+      | "RuleDelayed"
+  )
 }
 
 /// Whether an arithmetic expression has a bare string among its operands
@@ -24363,6 +24463,10 @@ fn has_string_operand(expr: &Expr) -> bool {
     {
       args.iter().any(has_string_operand)
     }
+    Expr::BinaryOp { left, right, .. } => {
+      has_string_operand(left) || has_string_operand(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_string_operand(operand),
     _ => false,
   }
 }
