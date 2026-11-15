@@ -11041,8 +11041,42 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       };
       // An anonymous blank keeps a space before the dots (`_ ..`), which
       // would otherwise read as the optional `_.` followed by `.`.
+      // An operand binding more loosely than `..` (precedence 170) — a
+      // rule, an alternative, a named pattern, a condition — is
+      // parenthesized, or `(a -> b)..` would re-read as `a -> (b..)`.
+      let looser_than_repeated = |e: &Expr| -> bool {
+        matches!(
+          e,
+          Expr::Rule { .. }
+            | Expr::RuleDelayed { .. }
+            | Expr::ReplaceAll { .. }
+            | Expr::ReplaceRepeated { .. }
+            | Expr::Function { .. }
+            | Expr::NamedFunction { .. }
+            | Expr::BinaryOp {
+              op: BinaryOperator::Alternatives,
+              ..
+            }
+        ) || matches!(
+          e,
+          Expr::FunctionCall { name: n, args: a }
+            if matches!(
+              n.as_str(),
+              "Rule"
+                | "RuleDelayed"
+                | "Alternatives"
+                | "Condition"
+                | "ReplaceAll"
+                | "ReplaceRepeated"
+                | "StringExpression"
+                | "Set"
+                | "SetDelayed"
+                | "Function"
+            ) || n == "Pattern" && a.len() == 2 && !is_bare_pattern(e)
+        )
+      };
       let repeated = |inner: String, dots: &str, e: &Expr| {
-        if is_pattern_arg(e) {
+        if is_pattern_arg(e) || looser_than_repeated(e) {
           format!("({inner}){dots}")
         } else if inner.ends_with('_') {
           format!("{inner} {dots}")
