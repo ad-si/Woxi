@@ -9029,10 +9029,8 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   fontdb.load_system_fonts();
   crate::functions::image_ast::load_embedded_fonts(&mut fontdb);
 
-  let opt = svg2pdf::usvg::Options {
-    fontdb: StdArc::new(fontdb),
-    ..Default::default()
-  };
+  let opt =
+    crate::functions::image_ast::svg_render_options(StdArc::new(fontdb));
 
   let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
