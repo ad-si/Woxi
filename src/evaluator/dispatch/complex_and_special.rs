@@ -4201,6 +4201,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         Expr::String(text)
       }
     }
+    // StandardForm writes the named constants as their glyphs
+    // (`ToBoxes[Pi]` is `"\[Pi]"`), so a typeset `7 Pi/10` shows `π`.
+    // `EulerGamma` and `GoldenRatio` keep their names in StandardForm.
+    Expr::Identifier(s) | Expr::Constant(s)
+      if matches!(s.as_str(), "Pi" | "E" | "I" | "Infinity" | "Degree") =>
+    {
+      Expr::String(tf_symbol(s))
+    }
     Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
     Expr::String(s) => Expr::String(format!("\"{s}\"")),
     // Part[expr, indices…] (Expr::Part / chained Part) →
