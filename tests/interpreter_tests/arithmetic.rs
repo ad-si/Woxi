@@ -5651,6 +5651,37 @@ mod expand_threading {
   }
 
   #[test]
+  fn floor_ceiling_symbolic_exact_step() {
+    // An exact symbolic step yields an exact multiple of the step.
+    assert_eq!(interpret("Floor[3 Pi/5, Pi/2]").unwrap(), "Pi/2");
+    assert_eq!(interpret("Ceiling[E, Pi/4]").unwrap(), "Pi");
+    assert_eq!(interpret("Floor[Sqrt[8], Sqrt[2]]").unwrap(), "2*Sqrt[2]");
+    assert_eq!(interpret("Floor[-Pi, Pi/2]").unwrap(), "-Pi");
+    assert_eq!(interpret("Floor[2.5, Pi]").unwrap(), "0");
+    assert_eq!(interpret("Floor[x, Pi]").unwrap(), "Floor[x, Pi]");
+    // A machine step keeps the machine result.
+    assert_eq!(interpret("Floor[Pi, 0.5]").unwrap(), "3.");
+  }
+
+  #[test]
+  fn floor_ceiling_symbolic_step_exact_boundaries() {
+    // Exact multiples of the step land on themselves; a machine division
+    // used to drop some of them one step below.
+    assert_eq!(interpret("Floor[Pi, Pi/2]").unwrap(), "Pi");
+    assert_eq!(interpret("Ceiling[Pi, Pi/2]").unwrap(), "Pi");
+    assert_eq!(
+      interpret("Table[Floor[8 j Pi/100, Pi/2]/(Pi/2), {j, 0, 100, 25/2}]")
+        .unwrap(),
+      "{0, 2, 4, 6, 8, 10, 12, 14, 16}"
+    );
+    assert_eq!(
+      interpret("Table[Mod[Floor[8 t, Pi/2], Pi], {t, 0, Pi/4, Pi/40}]")
+        .unwrap(),
+      "{0, 0, 0, Pi/2, Pi/2, 0, 0, 0, Pi/2, Pi/2, 0}"
+    );
+  }
+
+  #[test]
   fn fractional_part_of_infinity() {
     // FractionalPart of an infinity is the full unit interval in that
     // direction.

@@ -3561,6 +3561,45 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_style_grid_size_reaches_fraction_cell() {
+      // Regression: a stacked-fraction cell was typeset at the default
+      // 14 pt while the grid's text cells took the outer style's size.
+      let svg = interpret(
+        "ExportString[Style[Grid[{{a, 7/11 + 6 x/11}}, Frame -> All], 16], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-size=\"16.0\""),
+        "fraction should be typeset at 16 pt: {svg}"
+      );
+      assert!(
+        !svg.contains("font-size=\"14.0\""),
+        "no glyph should keep the default 14 pt: {svg}"
+      );
+      // The same holds through `BaseStyle`, along with the color.
+      let svg = interpret(
+        "ExportString[Grid[{{1/2}}, BaseStyle -> {20, Red}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains("font-size=\"20.0\""),
+        "BaseStyle size should reach the fraction: {svg}"
+      );
+      assert!(
+        svg.contains("rgb(255,0,0)"),
+        "BaseStyle color should reach the fraction: {svg}"
+      );
+      // A fraction cell's own `Style` keeps its color, not only its size.
+      let svg =
+        interpret("ExportString[Grid[{{Style[1/2, 20, Red]}}], \"SVG\"]")
+          .unwrap();
+      assert!(
+        svg.contains("rgb(255,0,0)") && svg.contains("font-size=\"20.0\""),
+        "styled fraction cell should be red at 20 pt: {svg}"
+      );
+    }
+
+    #[test]
     fn test_style_grid_color_propagates() {
       // All cells should have red fill when Style[..., Red]
       let svg =
@@ -3704,6 +3743,67 @@ mod high_level_functions {
         svg.contains("font-weight=\"500\""),
         "missing font-weight: {svg}"
       );
+    }
+  }
+
+  mod graphics_array_tests {
+    use super::*;
+
+    #[test]
+    fn graphics_array_flat_list_is_one_row() {
+      assert_eq!(
+        interpret(
+          "ExportString[GraphicsArray[{Graphics[Disk[]], Graphics[Circle[]], \
+           Graphics[Point[{0, 0}]]}], \"SVG\"] === \
+           ExportString[GraphicsGrid[{{Graphics[Disk[]], Graphics[Circle[]], \
+           Graphics[Point[{0, 0}]]}}], \"SVG\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn graphics_array_nested_list_is_a_grid() {
+      assert_eq!(
+        interpret(
+          "ExportString[GraphicsArray[{{Graphics[Disk[]]}, {Graphics[Circle[]]}}], \
+           \"SVG\"] === ExportString[GraphicsGrid[{{Graphics[Disk[]]}, \
+           {Graphics[Circle[]]}}], \"SVG\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn graphics_array_graphics_spacing_is_scaled_spacings() {
+      assert_eq!(
+        interpret(
+          "ExportString[GraphicsArray[{Graphics[Disk[]], Graphics[Circle[]]}, \
+           GraphicsSpacing -> 0.4], \"SVG\"] === \
+           ExportString[GraphicsGrid[{{Graphics[Disk[]], Graphics[Circle[]]}}, \
+           Spacings -> Scaled[0.4]], \"SVG\"]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    #[test]
+    fn graphics_array_evaluated_list_argument() {
+      assert_eq!(
+        interpret(
+          "Head[GraphicsArray[Table[Graphics[Disk[{0, 0}, r]], {r, 3}]]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
+    #[test]
+    fn graphics_array_non_list_stays_unevaluated() {
+      assert_eq!(interpret("GraphicsArray[x]").unwrap(), "GraphicsArray[x]");
     }
   }
 

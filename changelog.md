@@ -8,6 +8,8 @@
 - The solid head of `Arrow[Tube[…]]` is sized by the scene's box and runs
     along the curve, so short axis arrows and finely sampled arcs keep a
     visible head. `Style[Text[…], Italic]` slants 3D labels.
+- `RandomVariate` and `RandomReal` draw samples from
+    `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
 
