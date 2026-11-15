@@ -18981,6 +18981,89 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">long text<"), "got: {svg}");
     }
 
+    /// `Frame -> All` rules every cell of a `Grid` title: a vertical line
+    /// at both edges and between each pair of columns, and a horizontal
+    /// line above, between and below the rows, in the title's color.
+    #[test]
+    fn plot_label_grid_frame_all_rules_every_cell() {
+      let svg = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Grid[{{\"label\", 1, 2, 3}, \
+         {\"other\", 4, 5, 6}}, Frame -> All]]",
+      );
+      let lines: Vec<&str> = svg
+        .split("<line ")
+        .skip(1)
+        .filter(|l| l.contains("stroke=\"currentColor\""))
+        .collect();
+      let vertical = lines
+        .iter()
+        .filter(|l| {
+          let attr = |k: &str| {
+            l.split(&format!("{k}=\""))
+              .nth(1)
+              .and_then(|v| v.split('"').next())
+              .map(str::to_string)
+          };
+          attr("x1") == attr("x2")
+        })
+        .count();
+      // 4 columns: 5 vertical rules; 2 rows: 3 horizontal rules.
+      assert_eq!(vertical, 5, "got: {svg}");
+      assert_eq!(lines.len() - vertical, 3, "got: {svg}");
+      assert!(svg.contains(">label<") && svg.contains(">6<"), "got: {svg}");
+    }
+
+    /// `Frame -> True` boxes the whole `Grid` title without inner rules,
+    /// and frames even a single-column grid.
+    #[test]
+    fn plot_label_grid_frame_true_draws_outer_box() {
+      let svg = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Grid[{{\"a\", 1}, {\"b\", 2}, \
+         {\"c\", 3}}, Frame -> True]]",
+      );
+      assert_eq!(
+        svg
+          .matches("stroke=\"currentColor\" stroke-width=\"1\"")
+          .count(),
+        4,
+        "got: {svg}"
+      );
+      let single = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Grid[{{\"top\"}, {\"bottom\"}}, \
+         Frame -> True]]",
+      );
+      assert_eq!(
+        single
+          .matches("stroke=\"currentColor\" stroke-width=\"1\"")
+          .count(),
+        4,
+        "got: {single}"
+      );
+    }
+
+    /// A `Text[Grid[…]]` title is laid out as the grid it wraps, with its
+    /// columns aligned and its frame drawn, instead of being flattened into
+    /// lines of space-separated cells.
+    #[test]
+    fn plot_label_text_wrapped_grid_keeps_layout() {
+      let svg = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Text[Grid[{{\"x\", 10}, \
+         {\"y\", 20}}, Frame -> All]]]",
+      );
+      assert!(
+        !svg.contains("x 10") && !svg.contains("y 20"),
+        "the cells should not be joined into one line: {svg}"
+      );
+      assert!(svg.contains(">x<") && svg.contains(">20<"), "got: {svg}");
+      assert_eq!(
+        svg
+          .matches("stroke=\"currentColor\" stroke-width=\"1\"")
+          .count(),
+        6,
+        "got: {svg}"
+      );
+    }
+
     #[test]
     fn show_keeps_symbolic_tick_labels() {
       let svg = export_svg(
