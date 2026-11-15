@@ -772,10 +772,8 @@ mod accounting_form {
       "          3\n123.5 × 10"
     );
     assert_eq!(
-      interpret(
-        "ToString[NumberForm[ScientificForm[0.0001236, 4], 2]]"
-      )
-      .unwrap(),
+      interpret("ToString[NumberForm[ScientificForm[0.0001236, 4], 2]]")
+        .unwrap(),
       "          -4\n1.236 × 10"
     );
     let suppress = "ExponentFunction -> (If[-3 < # < 3, Null, #] &)";
