@@ -2229,11 +2229,17 @@ impl ManipulateState {
       // Trigger (a projectile's flight Trigger capped by another control's
       // computed range, e.g. `Dynamic[range[angle, speed]]`, follows that
       // control the same way a Continuous slider's dynamic bound does).
-      if let Some(v) = new_step.filter(|v| *v != 0.0)
-        && let Some(ControlState::Continuous { step, .. }) =
-          self.controls.iter_mut().find(|c| {
-            matches!(c, ControlState::Continuous { name: n, .. } if n == name)
-          })
+      if let Some(v) = new_step.filter(|v| *v != 0.0 && v.is_finite())
+        && let Some(
+          ControlState::Continuous { step, .. }
+          | ControlState::Trigger { step, .. },
+        ) = self.controls.iter_mut().find(|c| {
+          matches!(
+            c,
+            ControlState::Continuous { name: n, .. }
+            | ControlState::Trigger { name: n, .. } if n == name
+          )
+        })
       {
         *step = v.abs();
       }
@@ -2403,7 +2409,7 @@ pub fn slider_value_at_rail_position(
   if !reversed {
     return position;
   }
-  if !(step > 0.0) {
+  if step.is_nan() || step <= 0.0 {
     return slider_rail_position(min, max, true, position);
   }
   let k = ((position - min) / step).round();
@@ -6406,6 +6412,56 @@ mod tests {
     assert!(state.select_discrete(big_idx, "True"));
     state.reevaluate();
     assert_eq!(bounds(&state), Some((0.0, 19.0, 1.0)));
+  }
+
+  /// A Trigger whose step names another control's variable (a speed
+  /// setter) advances by that control's value, and follows it when the
+  /// setter changes. Regression: the step fell back to 1, so the animation
+  /// jumped in whole units no matter which speed was picked.
+  #[test]
+  fn trigger_step_follows_other_control() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{time, step},
+        {{time, 0}, 0, 10, step, ControlType -> Trigger},
+        {{step, 0.05}, {0.01 -> \"slow\", 0.05 -> \"normal\", 0.1 -> \"fast\"}}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let trigger_step = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Trigger { name, step, .. } if name == "time" => {
+          Some(*step)
+        }
+        _ => None,
+      })
+    };
+    assert_eq!(trigger_step(&state), Some(0.05));
+    let speed_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "step")
+      .unwrap();
+    assert!(state.select_discrete(speed_idx, "fast"));
+    state.reevaluate();
+    assert_eq!(trigger_step(&state), Some(0.1));
+  }
+
+  /// A control caption written as juxtaposed strings (`"viewpoint" ""`, a
+  /// `Times` of strings) reads as the text side by side, as the notebook
+  /// shows it, not with the `*` of its InputForm.
+  #[test]
+  fn control_label_string_product_reads_as_text() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[vp, {{vp, 1, \"viewpoint\" \"\"}, {1, 2, 3}}]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"viewpoint\""), "{dump}");
+    assert!(!dump.contains('*'), "{dump}");
   }
 
   /// A slider with no step whose range runs between two other controls

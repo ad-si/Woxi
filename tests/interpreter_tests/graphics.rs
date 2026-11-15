@@ -6265,6 +6265,25 @@ mod plot3d {
         );
       }
 
+      /// A steep condition combined with shallow ones keeps its curved
+      /// boundary on the true surface. Regression: the shallow conditions
+      /// clipped the combined field near the curve, so the well's wall came
+      /// out as a staircase, its vertices up to ~0.2 off the circle.
+      #[test]
+      fn combined_conditions_keep_the_curved_boundary_smooth() {
+        let out = interpret(
+          "r = RegionPlot3D[x > -1/2 && x < 21/2 && y > -4 && y < 4 && \
+           (x - 5)^2 + (z - 5)^2 > 25, {x, -.5, 10.5}, {y, -5, 5}, \
+           {z, -.5, 5}]; \
+           pts = Select[First[First[r]], -3.5 < #[[2]] < 3.5 && \
+           0.5 < #[[1]] < 9.5 && -0.2 < #[[3]] < 4 &]; \
+           {Length[pts] > 1000, \
+           Max[Abs[Norm[{#[[1]] - 5, #[[3]] - 5}] - 5] & /@ pts] < 0.08}",
+        )
+        .unwrap();
+        assert_eq!(out, "{True, True}");
+      }
+
       #[test]
       fn empty_region_draws_the_empty_box() {
         assert_eq!(
