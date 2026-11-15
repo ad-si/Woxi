@@ -2830,6 +2830,42 @@ mod tests {
     }
 
     #[test]
+    fn parametric_plot3d_first_repeated_plot_style_wins() {
+      // A repeated option takes its first setting, so the later
+      // `PlotStyle -> Specularity[…]` must not replace the `Tube` style.
+      let tube = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> {Tube[0.2]}, PlotStyle -> Specularity[White, 20]]",
+      );
+      assert!(
+        tube.matches("<polygon").count() > 100,
+        "expected the first PlotStyle's tube: {tube}"
+      );
+      // And the other way round: a later `Tube` style is ignored.
+      let line = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> Red, PlotStyle -> {Tube[0.2]}]",
+      );
+      assert!(
+        !line.contains("<polygon"),
+        "a later Tube PlotStyle is ignored: {line}"
+      );
+    }
+
+    #[test]
+    fn parametric_plot3d_surface_first_repeated_plot_style_wins() {
+      let first = svg_of(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotStyle -> Red, PlotStyle -> Blue, Mesh -> None]",
+      );
+      let only = svg_of(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotStyle -> Red, Mesh -> None]",
+      );
+      assert_eq!(first, only);
+    }
+
+    #[test]
     fn graphics3d_draws_its_plot_label() {
       // A 3-D picture carries a `PlotLabel` above it, exactly as a 2-D one
       // does — the canvas grows by the label strip rather than the drawing

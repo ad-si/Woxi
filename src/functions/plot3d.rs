@@ -21434,6 +21434,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ParametricPlot3D requires at least 2 arguments: ParametricPlot3D[{fx, fy, fz}, {t, tmin, tmax}]".into(),
     ));
   }
+  // As everywhere in Wolfram, the first setting of a repeated option is
+  // the one in force (`PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws
+  // tubes), so drop every later repetition before reading the options.
+  let args = &crate::functions::graphics::graphics_option_args(args);
 
   // `Legended[curve, label]` curves are plotted as the curves themselves.
   let unlegend = |e: &Expr| match e {
