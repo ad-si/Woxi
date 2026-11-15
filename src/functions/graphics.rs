@@ -8117,6 +8117,11 @@ fn scale_label_spacers(expr: &Expr, font_size: f64) -> Expr {
   }
 }
 
+/// The attribute marking an inset picture as a `Text` label laid out on its
+/// own (see `framed_label_picture`): like any label, it widens an automatic
+/// plot range to fit, which an ordinary inset does not.
+const TEXT_LABEL_PICTURE_MARK: &str = "data-text-label=\"1\"";
+
 /// The picture of a `Text[Framed[content, opts…], …]` label: its lines (or,
 /// for a `Grid`, its cells in columns, honoring `SpanFromLeft` merges and
 /// `ItemSize` widths) set in the label's font, framed in `frame_color` with
@@ -8297,8 +8302,8 @@ fn framed_label_picture(
     None => ("none".to_string(), String::new()),
   };
   let mut svg = format!(
-    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.2}\" \
-     height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">\
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" {TEXT_LABEL_PICTURE_MARK} \
+     width=\"{w:.2}\" height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">\
      <rect x=\"0.5\" y=\"0.5\" width=\"{:.2}\" height=\"{:.2}\" \
      fill=\"{fill}\"{fill_opacity} stroke=\"{}\"{}/>",
     w - 1.0,
@@ -15549,6 +15554,36 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             grown.y_max = grown.y_max.max(y + r / ky);
           }
         }
+      }
+    }
+    // A label laid out as its own picture (a framed one) takes its room
+    // the same way, centered on its (already offset) anchor.
+    for prim in &primitives {
+      let Primitive::InsetGraphic {
+        svg,
+        x,
+        y,
+        w,
+        h,
+        scaled: false,
+        size: None,
+        ..
+      } = prim
+      else {
+        continue;
+      };
+      if !svg.contains(TEXT_LABEL_PICTURE_MARK) {
+        continue;
+      }
+      let (half_w, half_h) = (w / 2.0 / kx, h / 2.0 / ky);
+      let (room_x, room_y) = (slack_x / kx, slack_y / ky);
+      if plot_range_x.is_none() && *w < svg_width as f64 {
+        grown.x_min = grown.x_min.min(x - half_w + room_x);
+        grown.x_max = grown.x_max.max(x + half_w - room_x);
+      }
+      if plot_range_y.is_none() && *h < svg_height as f64 {
+        grown.y_min = grown.y_min.min(y - half_h + room_y);
+        grown.y_max = grown.y_max.max(y + half_h - room_y);
       }
     }
     for prim in &primitives {
