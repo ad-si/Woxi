@@ -16,6 +16,14 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### `DownValues` shows a named list pattern as `name_List`
+
+A definition such as `h[g : {__}, n_] := …` matches exactly like Wolfram's
+(`h[{}, 1]` stays unevaluated), but `DownValues[h]` and `Definition[h]` print
+its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
+named list pattern is compiled into a `List` head plus an element condition,
+and the display rebuilds the pattern from the head alone.
+
 ### `Rationalize[x, dx]` sometimes picks a different approximation
 
 Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200

@@ -5980,6 +5980,13 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         held @ (Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_)) => {
           graphics_text_content(held)
         }
+        // A held `Tooltip` (a label put into a held leaf by a replacement)
+        // still shows only its content.
+        Expr::FunctionCall { name: t, args: targs }
+          if t == "Tooltip" && !targs.is_empty() =>
+        {
+          graphics_text_content(&call1("HoldForm", targs[0].clone()))
+        }
         held => box_expr_to_plain(
           &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
             &release_dynamics(held),
@@ -6743,6 +6750,79 @@ pub(crate) fn setter_bar_svg(args: &[Expr]) -> Option<String> {
   Some(format!(
     "<svg width=\"{x:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {x:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n{body}</svg>\n"
   ))
+}
+
+/// A static `CheckboxBar[value, {v1, v2, …}, opts]` (or `{v1 -> label1,
+/// …}`): each choice as whether it is among the selected values (`value`
+/// being a list of them or a single one) and its label, whether the bar
+/// stacks its choices (`Appearance -> "Vertical"`) and whether it is
+/// enabled. `None` unless the choices are a non-empty list.
+pub(crate) fn checkbox_bar_choices(
+  args: &[Expr],
+) -> Option<(Vec<(bool, Expr)>, bool, bool)> {
+  let Some(Expr::List(choices)) = args.get(1) else {
+    return None;
+  };
+  if choices.is_empty() {
+    return None;
+  }
+  let selected: Vec<String> = match &dynamic_current_value(args.first()?) {
+    Expr::List(items) => items.iter().map(expr_to_string).collect(),
+    other => vec![expr_to_string(other)],
+  };
+  let items = choices
+    .iter()
+    .map(|choice| {
+      let (value, label) = match choice {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => (pattern.as_ref(), replacement.as_ref()),
+        other => (other, other),
+      };
+      (selected.contains(&expr_to_string(value)), label.clone())
+    })
+    .collect();
+  let mut vertical = false;
+  let mut enabled = true;
+  for (k, v) in args[2..].iter().filter_map(option_kv) {
+    match k {
+      "Appearance" => {
+        vertical =
+          matches!(v, Expr::String(s) | Expr::Identifier(s) if s == "Vertical");
+      }
+      "Enabled" => {
+        enabled = !matches!(v, Expr::Identifier(s) if s == "False");
+      }
+      _ => {}
+    }
+  }
+  Some((items, vertical, enabled))
+}
+
+/// One checkbox of a static `Checkbox`/`CheckboxBar`, ticked when
+/// `checked`; a disabled one is drawn grayed out.
+pub(crate) fn checkbox_svg(checked: bool, enabled: bool) -> String {
+  let (stroke, tick) = if enabled {
+    ("#7F7F7F", "#2E6DB4")
+  } else {
+    ("#BFBFBF", "#9F9F9F")
+  };
+  let mut svg = format!(
+    "<svg width=\"18\" height=\"18\" viewBox=\"0 0 18 18\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect x=\"2.5\" y=\"2.5\" width=\"13\" height=\"13\" rx=\"2\" fill=\"#FDFDFD\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n"
+  );
+  if checked {
+    svg.push_str(&format!(
+      "<polyline points=\"5,9 8,12 13,6\" fill=\"none\" stroke=\"{tick}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n"
+    ));
+  }
+  svg.push_str("</svg>\n");
+  svg
 }
 
 /// A static `ProgressIndicator[x]` / `ProgressIndicator[x, {min, max}]`: a
@@ -25309,6 +25389,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       let args: Vec<Expr> = args.iter().cloned().collect();
       progress_indicator_svg(&args)?
     }
+    // A static `CheckboxBar` cell draws its checkboxes and labels.
+    Expr::FunctionCall { name, args }
+      if name == "CheckboxBar" && checkbox_bar_choices(args).is_some() =>
+    {
+      crate::evaluator::expr_to_svg(cell)
+    }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
     Expr::FunctionCall { .. } if crate::evaluator::lays_out_a_graphic(cell) => {
@@ -32261,6 +32347,10 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A progress bar drawn as a track with its filled fraction rather
       // than as `ProgressIndicator[…]` source text.
       "ProgressIndicator" => return progress_indicator_svg(&args),
+      // A static `CheckboxBar` shows its checkboxes and labels.
+      "CheckboxBar" if checkbox_bar_choices(&args).is_some() => {
+        return Some(crate::evaluator::expr_to_svg(expr));
+      }
       // `TraditionalForm[expr]` is typeset in conventional notation —
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level

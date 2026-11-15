@@ -58413,6 +58413,44 @@ mod repeated_graphics_options {
   }
 }
 
+/// A static `CheckboxBar` in a layout draws one checkbox per choice, ticked
+/// for the selected values, with its label (a tooltip showing only its
+/// content) beside it — instead of printing `CheckboxBar[…]` as text. This
+/// holds in a plain cell, under `Labeled` and in a `Grid` with `Dividers`.
+#[test]
+fn static_checkbox_bar_draws_checkboxes() {
+  let ticks = |s: &str| s.matches("<polyline points=\"5,9 8,12 13,6\"").count();
+  let boxes = |s: &str| s.matches("width=\"13\" height=\"13\"").count();
+  for code in [
+    r#"CheckboxBar[{1, 3}, {1 -> "one", 2 -> "two", 3 -> Tooltip["three", "tip"]}]"#,
+    r#"Grid[{{Labeled[CheckboxBar[{1, 3}, {1 -> "one", 2 -> "two", 3 -> Tooltip["three", "tip"]}, Appearance -> "Vertical", Enabled -> False], "label", Top], Graphics[Circle[]]}}, Dividers -> All]"#,
+    r#"Grid[{{CheckboxBar[{1, 3}, {1 -> "one", 2 -> "two", 3 -> Tooltip["three", "tip"]}], Graphics[Circle[]]}}]"#,
+  ] {
+    let svg = export_svg(code);
+    assert!(!svg.contains("CheckboxBar"), "{svg}");
+    assert!(!svg.contains("Tooltip"), "{svg}");
+    assert!(!svg.contains("tip<"), "{svg}");
+    assert_eq!(boxes(&svg), 3, "{svg}");
+    assert_eq!(ticks(&svg), 2, "{svg}");
+    assert!(svg.contains("three"), "{svg}");
+  }
+  // A single selected value works as well as a list of them.
+  let single = export_svg(r#"CheckboxBar[2, {1, 2, 3}]"#);
+  assert_eq!(ticks(&single), 1, "{single}");
+}
+
+/// A held `Tooltip` in a picture's text (a label put into a `HoldForm` leaf by
+/// a replacement) shows only its content.
+#[test]
+fn text_of_held_tooltip_shows_its_content() {
+  let svg = export_svg(
+    r#"Graphics[{Point[{0, 0}], Text[HoldForm[Tooltip["abc", "hint"]], {0, 0}]}]"#,
+  );
+  assert!(svg.contains(">abc</text>"), "{svg}");
+  assert!(!svg.contains("Tooltip"), "{svg}");
+  assert!(!svg.contains("hint"), "{svg}");
+}
+
 #[test]
 fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   // Regression: under the default `SphericalRegion -> Automatic`, an
