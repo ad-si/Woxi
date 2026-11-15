@@ -4306,6 +4306,40 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
     && value_labels.iter().zip(values).all(|(label, v)| label == v)
 }
 
+/// How a discrete control draws as a checkbox, if it does: whether the box
+/// is checked, and the display label a toggle sends (the other choice).
+///
+/// A bare `{True, False}` domain (see `renders_as_checkbox`) is checked on
+/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`).
+/// An explicit `ControlType -> Checkbox` over any two choices (`{1, 0}`) is
+/// a checkbox too, following `Checkbox[x, {v1, v2}]`: the first choice is
+/// unchecked and the second checked. While the bound value is none of the
+/// choices (`has_overflow`) the box shows unchecked.
+fn discrete_checkbox_state(
+  values: &[String],
+  value_labels: &[String],
+  current_index: usize,
+  forced_checkbox: bool,
+  other_type: bool,
+  has_overflow: bool,
+) -> Option<(bool, Option<String>)> {
+  if forced_checkbox && value_labels.len() == 2 {
+    let checked = !has_overflow && current_index == 1;
+    return Some((checked, value_labels.get(usize::from(!checked)).cloned()));
+  }
+  if other_type || !renders_as_checkbox(values, value_labels) {
+    return None;
+  }
+  let checked =
+    !has_overflow && values.get(current_index).is_some_and(|v| v == "True");
+  let other_label = value_labels
+    .iter()
+    .zip(values)
+    .find(|(_, v)| (*v == "True") != checked)
+    .map(|(l, _)| l.clone());
+  Some((checked, other_label))
+}
+
 /// Whether a discrete control's choices render as a segmented SetterBar (a row
 /// of toggle buttons) rather than a dropdown.
 ///
@@ -4596,6 +4630,7 @@ fn render_manipulate_widget<'a>(
         radio: as_radio,
         slider: as_slider,
         vertical: is_vertical,
+        checkbox: forced_checkbox,
       } => {
         // A shared variable can have several disjoint SetterBar rows (see
         // `ControlState::Discrete::overflow`'s doc comment); while the true
@@ -4647,22 +4682,17 @@ fn render_manipulate_widget<'a>(
           controls_col = controls_col.push(control_row);
           continue;
         }
-        // A bare boolean domain renders as a checkbox; see
-        // `renders_as_checkbox`.
-        let bool_values: &[String] = values;
-        if !*popup
-          && !*force_setter_bar
-          && renders_as_checkbox(bool_values, value_labels)
-        {
-          let checked = !has_overflow
-            && bool_values.get(*current_index).is_some_and(|v| v == "True");
-          // Toggling selects the other entry; the update handler maps the
-          // sent display label back to its index.
-          let other_label = value_labels
-            .iter()
-            .zip(bool_values.iter())
-            .find(|(_, v)| (*v == "True") != checked)
-            .map(|(l, _)| l.clone());
+        // A bare boolean domain, or any two choices under an explicit
+        // `ControlType -> Checkbox`, renders as a checkbox; see
+        // `discrete_checkbox_state`.
+        if let Some((checked, other_label)) = discrete_checkbox_state(
+          values,
+          value_labels,
+          *current_index,
+          *forced_checkbox,
+          *popup || *force_setter_bar,
+          has_overflow,
+        ) {
           let mut cb = checkbox(checked);
           if enabled && let Some(target) = other_label {
             cb = cb.on_toggle(move |_| {
@@ -23043,6 +23073,77 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       .map(|_| Some(svg::Handle::from_memory(Vec::new())))
       .collect();
     assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,
+  /// "label"}, {1, 0}, Checkbox}`) draws a checkbox, like `Checkbox[k, {1,
+  /// 0}]`: unchecked binds the first choice and checking it binds the
+  /// second. Regression: only a `{True, False}` domain became a checkbox,
+  /// so this drew a two-button `1 | 0` SetterBar.
+  #[test]
+  fn explicit_checkbox_over_numeric_choices_toggles_between_them() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[10 + 5 k, {{k, 1, \"drop term\"}, {1, 0}, Checkbox}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let state_of = |state: &manipulate::ManipulateState| match &state.controls[..]
+    {
+      [
+        manipulate::ControlState::Discrete {
+          values,
+          value_labels,
+          current_index,
+          checkbox,
+          popup,
+          setter_bar,
+          overflow,
+          ..
+        },
+      ] => {
+        assert!(*checkbox, "the control must be a checkbox");
+        discrete_checkbox_state(
+          values,
+          value_labels,
+          *current_index,
+          *checkbox,
+          *popup || *setter_bar,
+          overflow.is_some(),
+        )
+        .expect("draws as a checkbox")
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    };
+    // Starts unchecked on the first choice; a toggle sends the second.
+    assert_eq!(state_of(&state), (false, Some("0".to_string())));
+    assert!(state.select_discrete(0, "0"));
+    assert_eq!(state_of(&state), (true, Some("1".to_string())));
+
+    // The reversed `{0, 1}` order checks on `1`.
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["0", "1"]),
+        &s(&["0", "1"]),
+        1,
+        true,
+        false,
+        false
+      ),
+      Some((true, Some("0".to_string())))
+    );
+    // Without the explicit type a numeric pair is no checkbox.
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["1", "0"]),
+        &s(&["1", "0"]),
+        0,
+        false,
+        false,
+        false
+      ),
+      None
+    );
   }
 
   /// A bare `{True, False}` domain (either order) is a checkbox, but one
