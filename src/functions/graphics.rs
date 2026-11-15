@@ -16040,7 +16040,9 @@ impl BoxLayout {
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
     // slanted), so surrounding layout is unaffected.
-    let style_attr = if is_math_italic_atom(s) {
+    let style_attr = if is_math_italic_atom(s)
+      && !BOX_UPRIGHT_TEXT.with(std::cell::Cell::get)
+    {
       " font-style=\"italic\""
     } else {
       ""
@@ -16082,6 +16084,23 @@ thread_local! {
   /// sets inline: `∑`, `∏` and `lim` carry their limits as scripts there,
   /// the way they do inside a fraction.
   static BOX_INLINE_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while typesetting the text of a quoted string box (and any inline
+  /// `\!\(\*…\)` boxes it carries) or a `StyleBox[…, FontSlant -> Plain]`:
+  /// a string is literal text, so its single letters are not math variables
+  /// and stay upright.
+  static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
+fn with_box_upright_text<R>(upright: bool, f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_UPRIGHT_TEXT.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(BOX_UPRIGHT_TEXT.with(|c| c.replace(upright)));
+  f()
 }
 
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
@@ -16130,10 +16149,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         .strip_prefix('"')
         .and_then(|t| t.strip_suffix('"'))
         .unwrap_or(s);
-      layout_box(
-        &inline_box_string_to_box_expr(text).expect("checked by the guard"),
-        font_size,
-      )
+      let boxes =
+        inline_box_string_to_box_expr(text).expect("checked by the guard");
+      if text.len() == s.len() {
+        layout_box(&boxes, font_size)
+      } else {
+        with_box_upright_text(true, || layout_box(&boxes, font_size))
+      }
     }
     // A string box is stored as its quoted source but drawn without quotes.
     Expr::String(s) => {
@@ -16142,7 +16164,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         .strip_prefix('"')
         .and_then(|rest| rest.strip_suffix('"'))
         .unwrap_or(s);
-      BoxLayout::text(unquoted, font_size)
+      if unquoted.len() == s.len() {
+        BoxLayout::text(unquoted, font_size)
+      } else {
+        with_box_upright_text(true, || BoxLayout::text(unquoted, font_size))
+      }
     }
     Expr::Identifier(s) => {
       BoxLayout::text(strip_precision_marker(s), font_size)
@@ -16654,6 +16680,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut bold = false;
         let mut show_contents = true;
         let mut italic = false;
+        let mut upright = false;
         let mut opacity: Option<f64> = None;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
@@ -16703,6 +16730,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               "FontSlant" => {
                 italic = matches!(val, Expr::Identifier(v) | Expr::String(v)
                   if v == "Italic" || v == "Oblique");
+                upright = matches!(val, Expr::Identifier(v) | Expr::String(v)
+                  if v == "Plain");
               }
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
@@ -16725,7 +16754,13 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             }
           }
         }
-        let content = layout_box(&args[0], effective_font_size);
+        let content = if upright {
+          with_box_upright_text(true, || {
+            layout_box(&args[0], effective_font_size)
+          })
+        } else {
+          layout_box(&args[0], effective_font_size)
+        };
         if !show_contents {
           return BoxLayout {
             elements: String::new(),
@@ -23663,10 +23698,13 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
   }
 }
 
-/// Parse Style directives into a GridStyle.
+/// Parse Style directives into a GridStyle. A named style ("Label",
+/// "Section", …) supplies the base size and color, and the explicit
+/// directives sit on top of it, wherever they were written; directive
+/// lists and `Directive[…]` are spliced in place.
 pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
   let mut gs = GridStyle::default();
-  for d in directives {
+  for d in style_directives_in_application_order(directives) {
     match d {
       Expr::Identifier(s) if s == "Bold" => gs.font_weight = Some("bold"),
       Expr::Identifier(s) if s == "Italic" => gs.font_style = Some("italic"),
@@ -23678,6 +23716,19 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
       Expr::Identifier(s) if s == "Huge" => gs.font_size = Some(26.0),
       Expr::Integer(n) => gs.font_size = Some(*n as f64),
       Expr::Real(f) => gs.font_size = Some(*f),
+      // `Style[Grid[…], "Label"]` — the stylesheet entry's size and color.
+      Expr::String(name) => {
+        if let Some((size, rgb)) = named_style_appearance(name) {
+          gs.font_size = Some(size);
+          if let Some((r, g, b)) = rgb {
+            gs.color = Some(Color::new(
+              r as f64 / 255.0,
+              g as f64 / 255.0,
+              b as f64 / 255.0,
+            ));
+          }
+        }
+      }
       Expr::Rule {
         pattern,
         replacement,
@@ -23698,25 +23749,6 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
             }
             _ => {}
           }
-        }
-      }
-      // Directives grouped in a list, e.g. Style[expr, {Large, Bold, Orange}].
-      Expr::List(items) => {
-        let inner = parse_grid_style(items);
-        if inner.font_weight.is_some() {
-          gs.font_weight = inner.font_weight;
-        }
-        if inner.font_style.is_some() {
-          gs.font_style = inner.font_style;
-        }
-        if inner.font_size.is_some() {
-          gs.font_size = inner.font_size;
-        }
-        if inner.font_family.is_some() {
-          gs.font_family = inner.font_family;
-        }
-        if inner.color.is_some() {
-          gs.color = inner.color;
         }
       }
       _ => {
@@ -23758,14 +23790,9 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     // fraction.
     Expr::FunctionCall { name, .. } if name == "Rational" => false,
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Times" | "Power" | "Plus")
-        && !has_string_operand(expr) =>
+      if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
     {
-      box_has_fraction(
-        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          expr,
-        ),
-      )
+      !has_string_operand(expr) && typesets_fraction_box(expr)
     }
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       matches!(&args[0], Expr::List(items) if items.iter().any(label_typesets_fraction))
@@ -23777,6 +23804,17 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// Whether an arithmetic expression (`Times`, `Power` or `Plus`, strings
+/// among its operands included) has a `FractionBox` in its box form, i.e.
+/// is laid out as a built-up fraction rather than as a line of text.
+fn typesets_fraction_box(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Times" | "Power" | "Plus"))
+    && box_has_fraction(
+      &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    )
 }
 
 /// Whether an arithmetic expression has a bare string among its operands
@@ -25063,10 +25101,12 @@ fn grid_svg_styled_internal_reporting(
       }
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
-      // A string with inline box notation is typeset at the grid's size.
-      if let Expr::String(text) = &*cell
-        && let Some(size) = default_style.font_size
-        && has_stacked_inline_box(text)
+      // A string with inline box notation, or an arithmetic cell that
+      // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
+      // grid's size, like the plain text cells around it.
+      if let Some(size) = default_style.font_size
+        && (matches!(&*cell, Expr::String(text) if has_stacked_inline_box(text))
+          || typesets_fraction_box(cell))
       {
         *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
       }
