@@ -4681,7 +4681,7 @@ fn render_manipulate_widget<'a>(
         let value_widget = text(format_slider_value(*current, *is_real))
           .size(11)
           .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(64.0));
+          .width(iced::Length::Fixed(72.0));
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -5229,7 +5229,7 @@ fn render_manipulate_widget<'a>(
         let value_widget = text(format_manipulate_number(*current))
           .size(11)
           .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(64.0));
+          .width(iced::Length::Fixed(72.0));
         let control_row = row![label_widget, play_btn, value_widget]
           .align_y(Center)
           .spacing(8);
@@ -6051,7 +6051,7 @@ fn format_manipulate_number(v: f64) -> String {
     return format!("{v}");
   }
   if v.fract() == 0.0 && v.abs() < 1e15 {
-    return format!("{}", v as i64);
+    return group_integer_digits(&format!("{}", v as i64));
   }
   let s = format!("{:.3}", v);
   // Trim trailing zeros and a lone decimal point.
@@ -6059,8 +6059,35 @@ fn format_manipulate_number(v: f64) -> String {
   if trimmed.is_empty() {
     "0".to_string()
   } else {
-    trimmed.to_string()
+    group_integer_digits(trimmed)
   }
+}
+
+/// Split the integer part of a formatted number into blocks of three
+/// digits separated by a thin space, the way Wolfram's control readouts
+/// show large values (`1 000 000`, `-2 000 000`). Like the front end, runs
+/// of fewer than five digits stay unbroken (`4000`), and the fractional
+/// part is left as is.
+fn group_integer_digits(s: &str) -> String {
+  let (sign, rest) = match s.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", s),
+  };
+  let (int_part, frac_part) = match rest.find('.') {
+    Some(i) => rest.split_at(i),
+    None => (rest, ""),
+  };
+  if int_part.len() < 5 || !int_part.bytes().all(|b| b.is_ascii_digit()) {
+    return s.to_string();
+  }
+  let mut grouped = String::with_capacity(s.len() + int_part.len() / 3 * 3);
+  for (i, c) in int_part.chars().enumerate() {
+    if i > 0 && (int_part.len() - i) % 3 == 0 {
+      grouped.push('\u{2009}');
+    }
+    grouped.push(c);
+  }
+  format!("{sign}{grouped}{frac_part}")
 }
 
 /// Convert a hue fraction (`0.0..=1.0`) to an `iced::Color` at full
@@ -8703,6 +8730,22 @@ mod tests {
     assert_eq!(format_slider_value(-500.0, false), "-500");
     assert_eq!(format_slider_value(0.25, true), "0.25");
     assert_eq!(format_slider_value(0.25, false), "0.25");
+    // Large readouts are grouped in blocks of three digits from five
+    // digits on, as in Wolfram's labeled sliders.
+    assert_eq!(format_slider_value(4000.0, false), "4000");
+    assert_eq!(format_slider_value(-4000.0, false), "-4000");
+    assert_eq!(format_slider_value(12345.0, false), "12\u{2009}345");
+    assert_eq!(
+      format_slider_value(1_000_000.0, false),
+      "1\u{2009}000\u{2009}000"
+    );
+    assert_eq!(
+      format_slider_value(-2_000_000.0, false),
+      "-2\u{2009}000\u{2009}000"
+    );
+    assert_eq!(format_slider_value(100_000.0, true), "100\u{2009}000.");
+    assert_eq!(format_slider_value(12345.5, false), "12\u{2009}345.5");
+    assert_eq!(format_slider_value(-0.125, false), "-0.125");
   }
 
   /// A Manipulate's helper variables written with Gothic letters
