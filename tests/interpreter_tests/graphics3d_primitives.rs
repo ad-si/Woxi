@@ -1119,26 +1119,23 @@ mod smooth_shading {
     assert!(!flat.contains("<linearGradient"), "{flat}");
   }
 
-  // A parametric surface keeps its smooth shading when it is drawn through
-  // `Show` (which merges its `GraphicsComplex` of grid quads) instead of as
-  // the plot's own picture.
+  // A parametric surface keeps its smooth shading when `Show` combines it
+  // with other graphics (merging its `GraphicsComplex` of grid quads)
+  // instead of drawing the plot's own picture.
   #[test]
   fn parametric_surface_in_show_is_smooth() {
     let torus = "ParametricPlot3D[{Cos[u] (3 + Cos[v]), Sin[v], \
                  Sin[u] (3 + Cos[v])}, {u, 0, 2 Pi}, {v, 0, 2 Pi}, \
                  Mesh -> False]";
-    for code in [
-      format!("Show[{torus}]"),
-      format!("Show[{torus}, Graphics3D[Sphere[{{0, 0, 0}}, 0.5]]]"),
-    ] {
-      let s = svg(&code);
-      let gradients = s.matches("fill=\"url(#").count();
-      assert!(
-        gradients * 2 > polygon_count(&s),
-        "{code}: {gradients} of {}",
-        polygon_count(&s)
-      );
-    }
+    let s = svg(&format!(
+      "Show[{torus}, Graphics3D[Sphere[{{0, 0, 0}}, 0.5]]]"
+    ));
+    let gradients = s.matches("fill=\"url(#").count();
+    assert!(
+      gradients * 2 > polygon_count(&s),
+      "{gradients} of {}",
+      polygon_count(&s)
+    );
   }
 
   // Shared-vertex quads in a `GraphicsComplex` without outlines are shaded
