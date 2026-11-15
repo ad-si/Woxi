@@ -5559,6 +5559,19 @@ fn display_node_plain_text(
   }
 }
 
+/// Whether a display grid holds only text cells (styled text or a plain text
+/// leaf, never a picture), so it can be laid out column by column.
+fn is_text_table(rows: &[Vec<woxi::functions::graphics::DisplayNode>]) -> bool {
+  use woxi::functions::graphics::DisplayNode;
+  rows.len() > 1
+    && rows.iter().flatten().all(|cell| {
+      matches!(
+        cell,
+        DisplayNode::Text { .. } | DisplayNode::Static { svg: None, .. }
+      )
+    })
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -5573,6 +5586,26 @@ fn render_display_node<'a>(
         .padding(6)
         .style(container::rounded_box)
         .into()
+    }
+    // A table of plain text cells (a `TableForm` readout, with its heading
+    // row and column) is laid out column by column, so every column lines
+    // up under its heading: text rows share one height, while text widths
+    // differ from row to row. Grids holding widgets or pictures keep the
+    // row-by-row layout, where a spanning cell cannot widen a whole column.
+    DisplayNode::Grid(rows) if is_text_table(rows) => {
+      let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
+      let mut r = Row::new().spacing(12);
+      for c in 0..columns {
+        let mut col = Column::new().spacing(2).align_x(Center);
+        for row_cells in rows {
+          col = col.push(match row_cells.get(c) {
+            Some(cell) => render_display_node(cell_idx, cell),
+            None => text("").into(),
+          });
+        }
+        r = r.push(col);
+      }
+      r.into()
     }
     DisplayNode::Grid(rows) => {
       let mut col = Column::new().spacing(2);
@@ -9053,6 +9086,35 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       spans[0].font.map(|f| f.weight),
       Some(iced::font::Weight::Bold)
     );
+  }
+
+  /// A `TableForm` readout with `TableHeadings` (a blank corner cell, then
+  /// the column headings) is a text table, laid out by column so the
+  /// headings stay over their columns; a grid holding a picture or a widget
+  /// keeps the row-by-row layout.
+  #[test]
+  fn tableform_with_headings_is_laid_out_as_text_table() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let node = build_manipulate_display(
+      r#"TableForm[{{"0 , 0", "3 , 1"}, {"1 , 3", "2 , 2"}},
+        TableHeadings -> {{Text@Style["H", Italic], "D"}, {"H", "D"}}]"#,
+      &[],
+    );
+    let DisplayNode::Grid(rows) = &node else {
+      panic!("expected a grid, got {node:?}");
+    };
+    assert_eq!(rows.len(), 3);
+    assert!(rows.iter().all(|r| r.len() == 3), "{rows:?}");
+    assert!(is_text_table(rows), "{rows:?}");
+
+    let mixed = build_manipulate_display(
+      r#"Grid[{{"a", Checkbox[False]}, {"b", "c"}}]"#,
+      &[],
+    );
+    let DisplayNode::Grid(rows) = &mixed else {
+      panic!("expected a grid, got {mixed:?}");
+    };
+    assert!(!is_text_table(rows), "{rows:?}");
   }
 
   /// A control caption `Row[{"viewpoint ", Subscript["V", "y"]}]` must set

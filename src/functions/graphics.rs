@@ -45422,6 +45422,26 @@ fn unicode_script_char(c: char, superscript: bool) -> Option<char> {
       'x' => '\u{02E3}',
       'y' => '\u{02B8}',
       'z' => '\u{1DBB}',
+      // The capital modifier letters; C, F, Q, S, X, Y and Z have none.
+      'A' => '\u{1D2C}',
+      'B' => '\u{1D2E}',
+      'D' => '\u{1D30}',
+      'E' => '\u{1D31}',
+      'G' => '\u{1D33}',
+      'H' => '\u{1D34}',
+      'I' => '\u{1D35}',
+      'J' => '\u{1D36}',
+      'K' => '\u{1D37}',
+      'L' => '\u{1D38}',
+      'M' => '\u{1D39}',
+      'N' => '\u{1D3A}',
+      'O' => '\u{1D3C}',
+      'P' => '\u{1D3E}',
+      'R' => '\u{1D3F}',
+      'T' => '\u{1D40}',
+      'U' => '\u{1D41}',
+      'V' => '\u{2C7D}',
+      'W' => '\u{1D42}',
       // The five Greek letters with a modifier-letter superscript.
       '\u{03B2}' => '\u{1D5D}',
       '\u{03B3}' => '\u{1D5E}',
@@ -48912,8 +48932,14 @@ fn display_expr_to_node(
       {
         display_expr_to_node(&chosen, bindings, probes, ons)
       }
-      // A cell around an expression shows just the expression.
+      // A cell around an expression shows just the expression. So does a
+      // one-argument `Text[expr]` outside a picture (a table heading written
+      // `Text@Style["H", Italic]`): it is text-styled `expr`, not a graphics
+      // primitive to draw as a picture.
       "ExpressionCell" if !args.is_empty() => {
+        display_expr_to_node(&args[0], bindings, probes, ons)
+      }
+      "Text" if args.len() == 1 => {
         display_expr_to_node(&args[0], bindings, probes, ons)
       }
       "Panel" | "Framed" | "Deploy" | "Item" | "Pane" | "Labeled"
@@ -48924,8 +48950,8 @@ fn display_expr_to_node(
         )))
       }
       "Grid" | "GridBox" | "TableForm" if !args.is_empty() => match &args[0] {
-        Expr::List(rows) => DisplayNode::Grid(
-          rows
+        Expr::List(rows) => {
+          let mut grid: Vec<Vec<DisplayNode>> = rows
             .iter()
             .map(|row| match row {
               Expr::List(cs) => cs
@@ -48947,8 +48973,14 @@ fn display_expr_to_node(
                 vec![display_expr_to_node(other, bindings, probes, ons)]
               }
             })
-            .collect(),
-        ),
+            .collect();
+          if name == "TableForm" {
+            add_table_headings(&mut grid, &args[1..], |e| {
+              display_expr_to_node(e, bindings, probes, ons)
+            });
+          }
+          DisplayNode::Grid(grid)
+        }
         _ => static_leaf_node(expr, bindings),
       },
       "Column" if !args.is_empty() => {
@@ -50147,6 +50179,76 @@ fn assign_checkbox_state(
   }
 }
 
+/// Frame a `TableForm` display grid with its `TableHeadings -> {rows,
+/// cols}`: column headings become a leading row and row headings a leading
+/// column (with a blank corner cell when both are present). `Automatic`
+/// numbers the rows or columns from 1 and `None` leaves that side bare; a
+/// heading list shorter than the table leaves the remaining cells blank.
+fn add_table_headings(
+  grid: &mut Vec<Vec<DisplayNode>>,
+  options: &[Expr],
+  mut node: impl FnMut(&Expr) -> DisplayNode,
+) {
+  let Some(spec) = options.iter().rev().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "TableHeadings") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  }) else {
+    return;
+  };
+  let blank = || DisplayNode::Static {
+    svg: None,
+    text: String::new(),
+  };
+  // One side's headings for `count` rows or columns, `None` for no headings.
+  let mut side =
+    |spec: Option<&Expr>, count: usize| -> Option<Vec<DisplayNode>> {
+      match spec? {
+        Expr::Identifier(n) if n == "Automatic" => Some(
+          (1..=count)
+            .map(|i| DisplayNode::Static {
+              svg: None,
+              text: i.to_string(),
+            })
+            .collect(),
+        ),
+        Expr::List(items) => Some(
+          (0..count)
+            .map(|i| items.get(i).map_or_else(blank, &mut node))
+            .collect(),
+        ),
+        _ => None,
+      }
+    };
+  let (row_spec, col_spec) = match spec {
+    Expr::List(sides) => (sides.first(), sides.get(1)),
+    _ => (None, None),
+  };
+  let columns = grid.iter().map(Vec::len).max().unwrap_or(0);
+  let row_heads = side(row_spec, grid.len());
+  let col_heads = side(col_spec, columns);
+  let has_row_heads = row_heads.is_some();
+  if let Some(heads) = row_heads {
+    for (row, head) in grid.iter_mut().zip(heads) {
+      row.insert(0, head);
+    }
+  }
+  if let Some(mut heads) = col_heads {
+    if has_row_heads {
+      heads.insert(0, blank());
+    }
+    grid.insert(0, heads);
+  }
+}
+
 /// Render an unrecognized display leaf by evaluating it in scope and
 /// capturing its SVG (graphics) or text output.
 ///
@@ -50775,6 +50877,25 @@ mod manipulate_label_tests {
   fn superscript_renders_unicode() {
     let label = call("Superscript", vec![id_expr("x"), Expr::Integer(2)]);
     assert_eq!(runs(&label), vec![run("x", false), run("\u{00B2}", false)]);
+  }
+
+  /// A capital superscript (`X` with `H` above, as in a Demonstration's
+  /// population-share caption) uses Unicode's capital modifier letters, so
+  /// it reads as a raised script instead of a full-size letter on the line.
+  /// Capitals without a modifier form keep the plain letter.
+  #[test]
+  fn capital_superscripts_use_modifier_letters() {
+    let sup = call("Superscript", vec![id_expr("X"), str_expr("HTW")]);
+    assert_eq!(
+      runs(&sup),
+      vec![run("X", false), run("\u{1D34}\u{1D40}\u{1D42}", false)]
+    );
+    let sub_sup = call(
+      "Subsuperscript",
+      vec![id_expr("X"), Expr::Integer(0), str_expr("V")],
+    );
+    assert_eq!(flatten_label_runs(&runs(&sub_sup)), "X\u{2080}\u{2C7D}");
+    assert_eq!(to_unicode_script("ABCS", true), "\u{1D2C}\u{1D2E}CS");
   }
 
   #[test]
@@ -51638,6 +51759,73 @@ mod manipulate_named_control_group_tests {
     let state: Vec<&str> = s.state.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(state, vec!["a", "n"]);
     assert_eq!(s.initialization.as_deref(), Some("n = 3"));
+  }
+}
+
+#[cfg(test)]
+mod manipulate_display_table_headings_tests {
+  use super::*;
+
+  fn cell_text(node: &DisplayNode) -> String {
+    match node {
+      DisplayNode::Text { runs } => flatten_label_runs(runs),
+      DisplayNode::Static { text, .. } => text.clone(),
+      other => panic!("unexpected cell {other:?}"),
+    }
+  }
+
+  fn grid_text(node: &DisplayNode) -> Vec<Vec<String>> {
+    match node {
+      DisplayNode::Grid(rows) => rows
+        .iter()
+        .map(|row| row.iter().map(cell_text).collect())
+        .collect(),
+      other => panic!("expected a grid, got {other:?}"),
+    }
+  }
+
+  /// A `TableForm` display with `TableHeadings -> {rows, cols}` shows the
+  /// column headings above the table and the row headings to its left,
+  /// with a blank corner, rather than dropping both. A `Text[…]` heading is
+  /// set as text, not drawn as a graphics primitive.
+  #[test]
+  fn tableform_shows_row_and_column_headings() {
+    let code = r#"TableForm[{{a, b}, {c, d}},
+      TableHeadings -> {{"r1", Text@Style["r2", Italic]}, {"c1", "c2"}}]"#;
+    let node = build_manipulate_display(code, &[("a".into(), "1".into())]);
+    assert_eq!(
+      grid_text(&node),
+      vec![
+        vec!["", "c1", "c2"],
+        vec!["r1", "1", "b"],
+        vec!["r2", "c", "d"],
+      ]
+    );
+  }
+
+  /// `Automatic` numbers a side from 1, `None` leaves it bare, and a short
+  /// heading list leaves the remaining headings blank.
+  #[test]
+  fn tableform_automatic_none_and_short_headings() {
+    let auto_rows = build_manipulate_display(
+      r#"TableForm[{{1, 2, 3}, {4, 5, 6}}, TableHeadings -> {Automatic, {"x"}}]"#,
+      &[],
+    );
+    assert_eq!(
+      grid_text(&auto_rows),
+      vec![
+        vec!["", "x", "", ""],
+        vec!["1", "1", "2", "3"],
+        vec!["2", "4", "5", "6"],
+      ]
+    );
+    let cols_only = build_manipulate_display(
+      r#"TableForm[{{1, 2}}, TableHeadings -> {None, Automatic}]"#,
+      &[],
+    );
+    assert_eq!(grid_text(&cols_only), vec![vec!["1", "2"], vec!["1", "2"]]);
+    let plain = build_manipulate_display(r#"TableForm[{{1, 2}}]"#, &[]);
+    assert_eq!(grid_text(&plain), vec![vec!["1", "2"]]);
   }
 }
 
