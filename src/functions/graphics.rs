@@ -24662,10 +24662,10 @@ fn contains_control_call(expr: &Expr) -> bool {
 /// each already-declared control by number with `Place[n]` (e.g.
 /// `Column[{Row[{Place[1], Spacer[20], Place[2]}], …}]`), the documented
 /// alternative to per-control `ControlPlacement -> n` for arranging a
-/// Manipulate's panel by hand. Woxi renders one flat control panel rather
-/// than reproducing such a custom arrangement (see the per-control
-/// `ControlPlacement` handling above), so this template must be recognized
-/// and dropped silently — not misread as a `Row[{Style[…], …}]`-style text
+/// Manipulate's panel by hand. Markers naming a `ControlPlacement -> n`
+/// spec are filled in up front (see `place_numbered_controls`); any
+/// template still holding a `Place[n]` must be recognized and dropped
+/// silently — not misread as a `Row[{Style[…], …}]`-style text
 /// heading, which would add a spurious blank-labeled control row.
 fn annotation_contains_place(expr: &Expr) -> bool {
   match expr {
