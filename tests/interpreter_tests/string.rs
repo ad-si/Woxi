@@ -16200,3 +16200,66 @@ mod typeset_boxes_regressions {
     );
   }
 }
+
+mod to_string_infix_operators_2d {
+  use super::*;
+
+  #[test]
+  fn comparison_operands_use_output_form() {
+    assert_eq!(interpret("ToString[z == 2 x]").unwrap(), "z == 2 x");
+    assert_eq!(
+      interpret("ToString[a < 2 x < 3 y]").unwrap(),
+      "a < 2 x < 3 y"
+    );
+    assert_eq!(interpret("ToString[f[z != 2 x]]").unwrap(), "f[z != 2 x]");
+  }
+
+  #[test]
+  fn rule_operands_use_output_form() {
+    assert_eq!(interpret("ToString[z -> 2 x]").unwrap(), "z -> 2 x");
+    assert_eq!(interpret("ToString[a :> 2 b]").unwrap(), "a :> 2 b");
+    assert_eq!(
+      interpret("ToString[(a -> b) -> 2 c]").unwrap(),
+      "(a -> b) -> 2 c"
+    );
+  }
+
+  #[test]
+  fn held_assignment_operands_use_output_form() {
+    assert_eq!(interpret("ToString[HoldForm[z = 2 x]]").unwrap(), "z = 2 x");
+    assert_eq!(
+      interpret("ToString[HoldForm[a := 2 b]]").unwrap(),
+      "a := 2 b"
+    );
+    assert_eq!(
+      interpret("ToString[{HoldForm[z = 2 x]}]").unwrap(),
+      "{z = 2 x}"
+    );
+  }
+
+  #[test]
+  fn fraction_operand_stacks_around_the_operator() {
+    assert_eq!(
+      interpret("ToString[z == x/2]").unwrap(),
+      "     x\nz == -\n     2"
+    );
+    assert_eq!(
+      interpret("ToString[{x -> 1/2}]").unwrap(),
+      "      1\n{x -> -}\n      2"
+    );
+  }
+
+  #[test]
+  fn number_form_of_held_assignment() {
+    // The reals inside are formatted by NumberForm, the product keeps its
+    // OutputForm spacing and the negative coefficient its sign.
+    assert_eq!(
+      interpret(
+        "ToString[NumberForm[HoldForm[z = f[-3.27 g[x]]], {3, 1}, \
+         NumberPadding -> {\"\", \"0\"}]]"
+      )
+      .unwrap(),
+      "z = f[-3.3 g[x]]"
+    );
+  }
+}
