@@ -7342,6 +7342,12 @@ mod to_boxes {
       interpret("ToBoxes[Subscript[x, 0]^n]").unwrap(),
       "SubsuperscriptBox[x, 0, n]"
     );
+    // Regression: `Subsuperscript` itself boxes the same way (it used to
+    // fall through to the `RowBox` of its source call).
+    assert_eq!(
+      interpret("ToBoxes[Subsuperscript[a, 1, 23]]").unwrap(),
+      "SubsuperscriptBox[a, 1, 23]"
+    );
     // Special rational exponents still use SqrtBox/FractionBox with SubscriptBox
     assert_eq!(
       interpret("ToBoxes[Subscript[a, b]^(1/2)]").unwrap(),

@@ -127,6 +127,7 @@ pub mod polyhedron_data;
 pub mod polyhedron_operations;
 pub mod polynomial_ast;
 pub mod predicate_ast;
+pub mod protein_data;
 pub mod quantile_plot;
 pub mod quantity_ast;
 pub mod query_ast;

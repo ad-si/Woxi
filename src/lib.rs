@@ -3574,6 +3574,141 @@ fn is_display_wrapper(expr: &syntax::Expr) -> bool {
   }
 }
 
+/// `Style[Labeled[…], dirs…]` and `TraditionalForm[Labeled[…]]` (in any
+/// nesting) style the whole captioned picture: the directives and the form
+/// reach the text inside the content and every label. Rewrites such a
+/// wrapper into the `Labeled` with the wrapper moved onto that text, which
+/// the `Labeled` composition can draw; `None` for anything else.
+fn distribute_wrapper_into_labeled(
+  expr: &syntax::Expr,
+) -> Option<syntax::Expr> {
+  let syntax::Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let inner = args.first()?;
+  let labeled = match inner {
+    syntax::Expr::FunctionCall { name: n, args: a }
+      if n == "Labeled" && a.len() >= 2 =>
+    {
+      inner.clone()
+    }
+    _ => distribute_wrapper_into_labeled(inner)?,
+  };
+  let syntax::Expr::FunctionCall {
+    args: labeled_args, ..
+  } = &labeled
+  else {
+    return None;
+  };
+  let wrap: Box<dyn Fn(&syntax::Expr) -> syntax::Expr> = match name.as_str() {
+    "TraditionalForm" if args.len() == 1 => {
+      Box::new(|e: &syntax::Expr| push_form_to_text(e, "TraditionalForm"))
+    }
+    "Style" if args.len() >= 2 => {
+      let directives = args[1..].to_vec();
+      Box::new(move |e: &syntax::Expr| push_style_to_text(e, &directives))
+    }
+    _ => return None,
+  };
+  let mut new_args = labeled_args.to_vec();
+  new_args[0] = wrap(&labeled_args[0]);
+  new_args[1] = match &labeled_args[1] {
+    syntax::Expr::List(labels) => {
+      syntax::Expr::List(labels.iter().map(&wrap).collect())
+    }
+    label => wrap(label),
+  };
+  Some(syntax::Expr::FunctionCall {
+    name: "Labeled".to_string(),
+    args: new_args.into(),
+  })
+}
+
+/// `expr` with `Style[…, directives…]` moved inside the `Pane`, `Framed`,
+/// `Panel`, `Text` and `Item` boxes around its text, so the boxes keep
+/// their own size and frame while the text takes the style.
+fn push_style_to_text(
+  expr: &syntax::Expr,
+  directives: &[syntax::Expr],
+) -> syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Pane" | "Framed" | "Panel" | "Text" | "Item"
+      ) && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = push_style_to_text(&args[0], directives);
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => {
+      let mut style_args = vec![expr.clone()];
+      style_args.extend(directives.iter().cloned());
+      syntax::Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: style_args.into(),
+      }
+    }
+  }
+}
+
+/// `expr` with the display form `form` (`TraditionalForm`) applied to each
+/// piece of math inside its layout boxes (`Pane`, `Framed`, `Text`, `Row`,
+/// `Column`, `Style`, …). Strings show the same in every form and pieces
+/// already in a form keep it.
+fn push_form_to_text(expr: &syntax::Expr, form: &str) -> syntax::Expr {
+  match expr {
+    syntax::Expr::String(_) => expr.clone(),
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "TraditionalForm" | "StandardForm" | "InputForm" | "OutputForm"
+      ) =>
+    {
+      expr.clone()
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Pane" | "Framed" | "Panel" | "Text" | "Item" | "Style" | "Labeled"
+      ) && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = push_form_to_text(&args[0], form);
+      if name == "Labeled" && new_args.len() >= 2 {
+        new_args[1] = push_form_to_text(&args[1], form);
+      }
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Row" | "Column")
+        && matches!(args.first(), Some(syntax::Expr::List(_))) =>
+    {
+      let mut new_args = args.to_vec();
+      if let syntax::Expr::List(items) = &args[0] {
+        new_args[0] = syntax::Expr::List(
+          items.iter().map(|i| push_form_to_text(i, form)).collect(),
+        );
+      }
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => syntax::Expr::FunctionCall {
+      name: form.to_string(),
+      args: vec![expr.clone()].into(),
+    },
+  }
+}
+
 /// Whether `expr` is an image, possibly under `Pane`/`Panel` wrappers.
 fn wraps_a_raster_image(expr: &syntax::Expr) -> bool {
   match expr {
@@ -3744,6 +3879,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
     // through the one-cell `Grid` pipeline so its font matches the table
     // it labels; `RotateLabel` is not honored — a `Left`/`Right` caption
     // renders upright rather than rotated.
+    // `Style[TraditionalForm[Labeled[…]], 20]`: the style and the form
+    // apply to the text of the captioned picture.
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Style" | "TraditionalForm")
+        && let Some(labeled) = distribute_wrapper_into_labeled(&expr) =>
+    {
+      match render_grid_if_needed(labeled) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     syntax::Expr::FunctionCall { name, args }
       if name == "Labeled" && args.len() >= 2 =>
     {
@@ -5161,6 +5307,13 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn column_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
+  // A `BaseStyle` reaches every item, nested layouts too, so it is pushed
+  // onto the items before they are pre-rendered.
+  if let Some(styled) =
+    functions::graphics::base_style_pushed_args("Column", args)
+  {
+    return column_svg_with_rendered_items(&styled);
+  }
   // Text too wide for a fixed-width column is broken into lines before
   // the items are pre-rendered (which would freeze it as one long line).
   let mut new_args: Vec<syntax::Expr> =
@@ -5310,6 +5463,10 @@ fn render_row_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn row_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
+  if let Some(styled) = functions::graphics::base_style_pushed_args("Row", args)
+  {
+    return row_svg_with_rendered_items(&styled);
+  }
   let mut new_args: Vec<syntax::Expr> = args.to_vec();
   if let syntax::Expr::List(items) = &args[0] {
     // A product with a line-breaking string factor flows into the row
