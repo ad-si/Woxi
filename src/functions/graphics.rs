@@ -1282,6 +1282,23 @@ thread_local! {
     const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+  /// The width, in pixels, that relative sizes (`Thickness`, `PointSize`,
+  /// `Dashing`) are fractions of while a picture's primitives are drawn,
+  /// when that is narrower than the canvas: under `ImageSize -> {w, h}` a
+  /// drawing taller than the box is centered in it at its own width, and
+  /// its line widths and point sizes follow that width, not the box's.
+  static RELATIVE_WIDTH: std::cell::Cell<Option<f64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// The width relative sizes are measured against on a canvas `svg_w` wide.
+fn relative_width(svg_w: f64) -> f64 {
+  RELATIVE_WIDTH
+    .with(std::cell::Cell::get)
+    .map_or(svg_w, |w| w.min(svg_w))
+}
+
 /// Runs `f` with `mode` in force for coordinate resolution, restoring the
 /// enclosing picture's afterwards (a nested `Inset` picture has its own).
 /// Also returns whether a coordinate needed the frame while `f` ran.
@@ -10291,7 +10308,7 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
     // (measured from wolframscript in both aspects). Scaling it by the data
     // range's taller side made a portrait picture's lines twice too heavy.
     let _ = bb;
-    t * svg_w
+    t * relative_width(svg_w)
   }
 }
 
@@ -10584,7 +10601,11 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
       .map(|d| {
         // Negative = absolute pixels (a named size); positive = a fraction
         // of the image width; zero = the dot Wolfram draws as one pixel.
-        let px = if *d < 0.0 { -*d } else { *d * svg_w };
+        let px = if *d < 0.0 {
+          -*d
+        } else {
+          *d * relative_width(svg_w)
+        };
         format!("{:.1}", if px <= 0.0 { 1.0 } else { px })
       })
       .collect();
@@ -12380,7 +12401,7 @@ fn render_primitive(
     Primitive::PointSingle { x, y, style } => {
       let cx = coord_x(*x, bb, svg_w);
       let cy = coord_y(*y, bb, svg_h);
-      let r = point_radius(style.point_size, svg_w);
+      let r = point_radius(style.point_size, relative_width(svg_w));
       let color = style.effective_color();
       if let Some(ref halo) = style.halo {
         out.push_str(&format!(
@@ -12397,7 +12418,7 @@ fn render_primitive(
       ));
     }
     Primitive::PointMulti { points, style } => {
-      let r = point_radius(style.point_size, svg_w);
+      let r = point_radius(style.point_size, relative_width(svg_w));
       let color = style.effective_color();
       for &(x, y) in points {
         let cx = coord_x(x, bb, svg_w);
@@ -15023,6 +15044,18 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     bb = requested_bb;
     expand_bbox_to_aspect(&mut bb, svg_w / svg_h);
   }
+  // A bare drawing taller than an `ImageSize -> {w, h}` box keeps its own
+  // shape, centered at a narrower width than the box; relative sizes are
+  // fractions of that width. (A framed one has its area narrowed above.)
+  let requested_aspect = requested_bb.height() / requested_bb.width();
+  let drawing_width = (explicit_size
+    && size_names_height
+    && aspect_ratio.is_none()
+    && !aspect_ratio_full
+    && requested_aspect.is_finite()
+    && requested_aspect > 0.0)
+    .then(|| svg_h / requested_aspect)
+    .filter(|&w| w < svg_w);
   let total_width = svg_w + margin_left + margin_right;
   let total_width = if capped_tall {
     (total_width - 4e-3).ceil()
@@ -15333,9 +15366,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     1.0
   };
-  if graphic_share < 1.0 {
+  // A drawing already measured at its own narrower width (see
+  // `RELATIVE_WIDTH`) has its point sizes scaled there.
+  if graphic_share < 1.0 && drawing_width.is_none() {
     rescale_relative_point_sizes(&mut primitives, graphic_share);
   }
+  let saved_relative_width = RELATIVE_WIDTH.with(|c| c.replace(drawing_width));
   for (prim_index, prim) in primitives.iter().enumerate() {
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
     if let Some(ds) = shadow {
@@ -15346,6 +15382,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       svg.push_str("</g>\n");
     }
   }
+  RELATIVE_WIDTH.with(|c| c.set(saved_relative_width));
   svg.push_str("</g>\n");
 
   // Wolfram paints axes after the primitives with a thin default stroke.
