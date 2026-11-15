@@ -4130,12 +4130,13 @@ fn substitute_complex_indices(
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball"
+        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball" | "Text"
       ) =>
     {
       let point_slots: &[usize] = match name.as_str() {
         "Rectangle" | "Cuboid" => &[0, 1],
-        "Inset" => &[1],
+        // A contour label `Text[c, k]` sits at vertex `k`.
+        "Inset" | "Text" => &[1],
         _ => &[0],
       };
       let new_args: Vec<Expr> = args
@@ -6208,6 +6209,19 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       } else {
         text
       }
+    }
+    // A machine real too large or small for plain digits (a contour label
+    // `-1.247*^-7`) typesets as `mantissa×10ⁿ` on one line, as the front end
+    // shows it — not as the two-line OutputForm layout.
+    Expr::Real(f)
+      if machine_real_display_parts(*f).exponent.is_some() =>
+    {
+      let parts = machine_real_display_parts(*f);
+      format!(
+        "{}×10{}",
+        parts.mantissa,
+        to_unicode_script_digits(&parts.exponent.unwrap_or(0).to_string(), true)
+      )
     }
     // `ScientificForm`/`EngineeringForm` typeset as `mantissa×10ⁿ` on one
     // line, with the exponent as a superscript — not the two-line OutputForm
@@ -30084,6 +30098,57 @@ fn alignment_axis_fraction(expr: &Expr, horizontal: bool) -> Option<f64> {
     },
     _ => try_eval_to_f64(expr),
   }
+}
+
+/// GraphicsArray[{g1, g2, …}, opts…] / GraphicsArray[{{g11, …}, …}, opts…]
+///
+/// The obsolete (pre-6.0) layout head superseded by `GraphicsGrid`. A flat
+/// list is one row of pictures and a nested list a 2D array, so it is
+/// rewritten into the equivalent `GraphicsGrid` call instead of keeping a
+/// second layout implementation. `GraphicsSpacing -> s` (a fraction of a
+/// cell, default 0.1) becomes the `Spacings -> Scaled[s]` it was replaced by.
+pub fn graphics_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let array = match &args[0] {
+    Expr::List(_) => args[0].clone(),
+    other => evaluate_expr_to_expr(other)?,
+  };
+  let Expr::List(items) = &array else {
+    return Ok(Expr::FunctionCall {
+      name: "GraphicsArray".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let grid = if items.iter().any(|item| matches!(item, Expr::List(_))) {
+    array.clone()
+  } else {
+    Expr::List(vec![array.clone()].into())
+  };
+  let mut grid_args = vec![grid];
+  for opt in &args[1..] {
+    let rewritten = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphicsSpacing") =>
+      {
+        let scaled = |e: &Expr| Expr::FunctionCall {
+          name: "Scaled".to_string(),
+          args: vec![e.clone()].into(),
+        };
+        let value = match replacement.as_ref() {
+          Expr::List(pair) => Expr::List(pair.iter().map(scaled).collect()),
+          other => scaled(other),
+        };
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("Spacings".to_string())),
+          replacement: Box::new(value),
+        }
+      }
+      other => other.clone(),
+    };
+    grid_args.push(rewritten);
+  }
+  graphics_grid_ast(&grid_args)
 }
 
 /// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]

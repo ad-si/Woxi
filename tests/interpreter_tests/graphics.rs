@@ -21942,6 +21942,115 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// The returned `Graphics` carries the iterator names for
+    /// `FrameLabel -> Automatic`, so a `GraphicsGrid` cell or a `Show` that
+    /// re-renders it from its options labels the frame the same way.
+    #[test]
+    fn contour_plot_frame_label_automatic_survives_rerendering() {
+      assert_eq!(
+        interpret(
+          "FrameLabel /. Options[ContourPlot[u w, {u, 0, 1}, {w, 0, 1}, \
+           FrameLabel -> Automatic]]"
+        )
+        .unwrap(),
+        "{u, w}"
+      );
+      let grid = export_svg(
+        "GraphicsGrid[{{ContourPlot[u w, {u, 0, 1}, {w, 0, 1}, \
+         FrameLabel -> Automatic]}}]",
+      );
+      assert!(!grid.contains(">Automatic</text>"), "{grid}");
+      assert!(grid.contains(">u</text>") && grid.contains(">w</text>"));
+    }
+
+    /// Contour labels are `Text[level, vertex]` inside the plot's
+    /// `GraphicsComplex`; re-rendering the plot (as a `GraphicsGrid` cell)
+    /// must put them at that vertex, not at the origin of the picture.
+    #[test]
+    fn contour_labels_keep_their_place_when_rerendered() {
+      let grid = export_svg(
+        "GraphicsGrid[{{ContourPlot[u^2 + w^2, {u, -1, 1}, {w, -1, 1}, \
+         Contours -> {0.25, 0.5}, ContourLabels -> Automatic]}}]",
+      );
+      let xs: Vec<f64> = grid
+        .split("<text")
+        .filter(|t| t.contains(">0.25<") || t.contains(">0.5<"))
+        .filter_map(|t| {
+          let rest = t.split("x=\"").nth(1)?;
+          rest.split('"').next()?.parse().ok()
+        })
+        .collect();
+      assert!(xs.len() >= 2, "expected contour labels in: {grid}");
+      assert!(
+        xs.iter().any(|x| (x - xs[0]).abs() > 1.0),
+        "labels collapsed onto one spot: {xs:?}"
+      );
+    }
+
+    /// `MaxRecursion -> 0` keeps a contour plot on its initial
+    /// `PlotPoints` grid (15 per axis by default), so a costly body is
+    /// evaluated a few hundred times rather than on the fine tracing grid.
+    #[test]
+    fn contour_plot_max_recursion_zero_samples_plot_points_grid() {
+      let count = |opts: &str| {
+        interpret(&format!(
+          "cnt = 0; fc[u_?NumericQ, w_?NumericQ] := (cnt++; u w); \
+           ContourPlot[fc[u, w], {{u, 0, 1}}, {{w, 0, 1}}{opts}]; cnt"
+        ))
+        .unwrap()
+      };
+      assert_eq!(count(", MaxRecursion -> 0"), "225");
+      assert_eq!(count(", MaxRecursion -> 0, PlotPoints -> 6"), "36");
+      assert_eq!(count(", MaxRecursion -> 0, PlotPoints -> {4, 4}"), "16");
+    }
+
+    /// The unrefined grid still yields the requested contour levels.
+    #[test]
+    fn contour_plot_max_recursion_zero_draws_contours() {
+      let svg = export_svg(
+        "ContourPlot[u^2 + w^2, {u, -1, 1}, {w, -1, 1}, MaxRecursion -> 0, \
+         Contours -> {0.5}, ContourShading -> None]",
+      );
+      assert!(svg.contains("<polyline") || svg.contains("<path"), "{svg}");
+    }
+
+    /// A machine real too large or small for plain digits typesets in a
+    /// picture as one line, `mantissa×10ⁿ`, like the notebook front end
+    /// shows it — not as the two-line OutputForm layout.
+    #[test]
+    fn text_of_scientific_machine_real_is_one_line() {
+      let svg = export_svg("Graphics[Text[-1.247*^-7, {0, 0}]]");
+      assert!(svg.contains(">-1.247×10⁻⁷</text>"), "{svg}");
+      let svg = export_svg("Graphics[Text[1234567.8, {0, 0}]]");
+      assert!(svg.contains(">1.23457×10⁶</text>"), "{svg}");
+      let svg = export_svg("Graphics[Text[3.14159265, {0, 0}]]");
+      assert!(svg.contains(">3.14159</text>"), "{svg}");
+    }
+
+    /// `FrameLabel -> Automatic` labels the frame with the plot's two
+    /// iterator variables instead of printing the word `Automatic`.
+    #[test]
+    fn contour_plot_frame_label_automatic_uses_variables() {
+      let auto = export_svg(
+        "ContourPlot[Sin[u] Cos[w], {u, 0, 3}, {w, 0, 3}, \
+         FrameLabel -> Automatic]",
+      );
+      assert!(!auto.contains(">Automatic</text>"), "{auto}");
+      let explicit = export_svg(
+        "ContourPlot[Sin[u] Cos[w], {u, 0, 3}, {w, 0, 3}, \
+         FrameLabel -> {u, w}]",
+      );
+      assert_eq!(auto, explicit);
+    }
+
+    #[test]
+    fn density_plot_frame_label_automatic_uses_variables() {
+      let auto = export_svg(
+        "DensityPlot[u w, {u, 0, 1}, {w, 0, 1}, FrameLabel -> Automatic]",
+      );
+      assert!(auto.contains(">u</text>") && auto.contains(">w</text>"));
+    }
+
     /// Regression: `ContourPlot` used to ignore `PlotLabel` entirely (no
     /// text drawn, no headroom reserved), unlike `Plot`/`Plot3D`/`PieChart`.
     /// A `Framed[…]` label must also typeset its content rather than
@@ -32491,6 +32600,21 @@ mod graphics_complex_normal {
       )
       .unwrap(),
       "{{Point[{0, 0}]}, Line[{{0, 0}, {Sqrt[3], Sqrt[3]/2}}]}"
+    );
+  }
+
+  // A `Text` positioned by a vertex index (how contour labels are stored)
+  // is placed at that vertex; its label is left alone even when it is an
+  // integer itself.
+  #[test]
+  fn text_position_index() {
+    assert_eq!(
+      interpret(
+        "Normal[GraphicsComplex[{{0, 0}, {1, 2}, {3, 4}}, \
+         {Text[\"a\", 3], Text[2, 2, {-1, 0}]}]]"
+      )
+      .unwrap(),
+      "{Text[a, {3, 4}], Text[2, {1, 2}, {-1, 0}]}"
     );
   }
 

@@ -474,8 +474,6 @@ impl DensityContourOptions {
   }
 }
 
-/// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
-/// MeshFunctions, ContourStyle, FrameLabel and Epilog options.
 /// `FrameLabel -> Automatic` on a plot over two ranges `{x, …}, {y, …}`
 /// (the arguments just before the options at `start`) labels the bottom and
 /// left frame edges with the two variable names.
@@ -500,6 +498,8 @@ fn automatic_frame_label(
   ))
 }
 
+/// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
+/// MeshFunctions, ContourStyle, FrameLabel and Epilog options.
 fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
@@ -2930,6 +2930,22 @@ fn field_plot_structure(
   // and labels placed beyond it (`PlotRangeClipping -> False`) lie outside
   // the frame instead of stretching it.
   explicit.retain(|o| name_of(o) != Some("PlotRange"));
+  // `FrameLabel -> Automatic` names the plot's iterator variables; the
+  // returned `Graphics` no longer knows them, so it carries them explicitly
+  // (a `GraphicsGrid` cell or a `Show` re-renders from these options).
+  if args.len() >= 3 {
+    for opt in &mut explicit {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameLabel")
+        && let Some(labels) = automatic_frame_label(replacement, args, 3)
+      {
+        **replacement = labels;
+      }
+    }
+  }
   let pair =
     |lo: f64, hi: f64| Expr::List(vec![Expr::Real(lo), Expr::Real(hi)].into());
   if pin_range {
@@ -3280,7 +3296,7 @@ pub fn with_evaluated_options(
 
 /// The number of samples per axis of the initial grid when the options
 /// among `args[start..]` set `MaxRecursion -> 0`: the explicit
-/// `PlotPoints -> n` (at least 2), else 15. `None` when the plot refines.
+/// `PlotPoints -> n` (or the first of `{nx, ny}`, at least 2), else 15. `None` when the plot refines.
 fn initial_grid_without_recursion(
   args: &[Expr],
   start: usize,
@@ -3304,7 +3320,12 @@ fn initial_grid_without_recursion(
   if !matches!(option("MaxRecursion")?, Expr::Integer(0)) {
     return None;
   }
-  match option("PlotPoints") {
+  // A `{nx, ny}` pair samples the grid at its first count.
+  let points = match option("PlotPoints") {
+    Some(Expr::List(ref ks)) => ks.first().cloned(),
+    other => other,
+  };
+  match points {
     Some(Expr::Integer(k)) if k >= 2 => usize::try_from(k.min(400)).ok(),
     _ => Some(15),
   }
