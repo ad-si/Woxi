@@ -184,6 +184,37 @@ mod solids {
     assert!(s.contains("font-style=\"italic\""), "got: {s}");
   }
 
+  /// `BaseStyle` acts like a `Style` round the whole scene: a size (bare or
+  /// as `FontSize -> n`) and a font face reach every `Text` label, also
+  /// through `Show`, while a label's own size still wins.
+  #[test]
+  fn base_style_sizes_and_styles_text_labels() {
+    for expr in [
+      "Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> 14]",
+      "Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {14}]",
+      "Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {FontSize -> 14}]",
+      "Show[Graphics3D[{Text[\"X\", {0, 0, 0}]}], BaseStyle -> 14]",
+    ] {
+      let s = svg(expr);
+      assert!(s.contains("font-size=\"14.0\""), "{expr}: {s}");
+      assert!(!s.contains("font-size=\"12.0\""), "{expr}: {s}");
+    }
+    let s =
+      svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], 20]}, BaseStyle -> 14]");
+    assert!(s.contains("font-size=\"20.0\""), "got: {s}");
+    let s = svg("Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {Bold}]");
+    assert!(s.contains("font-weight=\"bold\""), "got: {s}");
+    let s = svg("Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {}]");
+    assert!(s.contains("font-size=\"12.0\""), "got: {s}");
+  }
+
+  /// `Style[Text[…], FontSize -> n]` sizes the label like `Style[…, n]`.
+  #[test]
+  fn styled_text_label_font_size_rule() {
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], FontSize -> 18]}]");
+    assert!(s.contains("font-size=\"18.0\""), "got: {s}");
+  }
+
   #[test]
   fn arrow_tube_is_drawn() {
     let s = svg(

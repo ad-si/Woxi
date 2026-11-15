@@ -8060,6 +8060,19 @@ fn text3d_background_option(opt: &Expr) -> Option<Option<(u8, u8, u8)>> {
 /// renders to non-empty text.
 /// The `(bold, italic)` a font-face `Style` directive turns on: `Bold`,
 /// `Italic`, `FontWeight -> Bold` or `FontSlant -> Italic`.
+/// The size a `FontSize -> n` directive gives text.
+fn font_size_rule(directive: &Expr) -> Option<f64> {
+  match directive {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontSize") => {
+      try_eval_to_f64(replacement).filter(|size| *size > 0.0)
+    }
+    _ => None,
+  }
+}
+
 fn font_face_directive(directive: &Expr) -> Option<(bool, bool)> {
   match directive {
     Expr::Identifier(n) if n == "Bold" => Some((true, false)),
@@ -9037,6 +9050,10 @@ fn collect_3d_primitives(
             }
             if let Some(bg) = text3d_background_option(&evaluated) {
               style.text_background = bg;
+              continue;
+            }
+            if let Some(size) = font_size_rule(&evaluated) {
+              style.font_size = Some(size);
               continue;
             }
             match try_eval_to_f64(&evaluated) {
@@ -11312,6 +11329,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // sides): a band of the given width around the picture that the scene is
   // kept out of, so the contents are laid out in the region inside it.
   let mut image_padding: Option<[f64; 4]> = None;
+  // `BaseStyle -> spec`: directives in force before any of the scene's own,
+  // like a `Style` wrapped round the whole content (`BaseStyle -> 14` sizes
+  // every `Text` label).
+  let mut base_style: Option<Expr> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -11343,6 +11364,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           orthographic = matches!(replacement.as_ref(), Expr::String(s) if s == "Orthographic");
         }
         "AxesEdge" => axes_edge = parse_axes_edge(replacement),
+        "BaseStyle" => base_style = Some(replacement.as_ref().clone()),
         "Lighting" => {
           scene_lighting = Lighting::parse(replacement);
         }
@@ -11530,6 +11552,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(r) = aspect_ratio {
     svg_height = ((svg_width as f64 * r).round() as u32).max(1);
   }
+
+  let content = match base_style {
+    Some(base) => {
+      let directives = match base {
+        Expr::List(ref items) => items.to_vec(),
+        other => vec![other],
+      };
+      if directives.is_empty() {
+        content
+      } else {
+        let mut style_args = vec![content];
+        style_args.extend(directives);
+        Expr::FunctionCall {
+          name: "Style".to_string(),
+          args: style_args.into(),
+        }
+      }
+    }
+    None => content,
+  };
 
   // Collect primitives
   let mut prims = Vec::new();
