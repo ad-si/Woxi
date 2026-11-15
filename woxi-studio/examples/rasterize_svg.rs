@@ -11,10 +11,8 @@ fn main() {
   let mut fontdb = resvg::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
-  let opts = resvg::usvg::Options {
-    fontdb: std::sync::Arc::new(fontdb),
-    ..Default::default()
-  };
+  let opts =
+    woxi::functions::image_ast::svg_options(std::sync::Arc::new(fontdb));
   let tree = resvg::usvg::Tree::from_data(&data, &opts).expect("parse svg");
   let size = tree.size();
   let (w, h) = (

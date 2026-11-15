@@ -262,6 +262,54 @@ mod layout_display {
     }
   }
 
+  /// Regression: a label with a character the requested face lacks (such
+  /// as "ρ") was redrawn entirely in the first database face that had
+  /// it, even when that face's weight or style differed (e.g. a bold
+  /// oblique system font for a regular label).
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn svg_font_fallback_prefers_the_same_kind_of_face() {
+    use resvg::usvg::fontdb::{Database, Weight};
+    let mut db = Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let face = |family: &str, weight: u16| {
+      db.faces()
+        .find(|f| {
+          f.weight == Weight(weight) && f.families.iter().any(|n| n.0 == family)
+        })
+        .unwrap_or_else(|| panic!("missing embedded {family} {weight}"))
+        .id
+    };
+    let mono_bold = face("Atkinson Hyperlegible Mono", 700);
+    let mono_regular = face("Atkinson Hyperlegible Mono", 400);
+    let next_bold = face("Atkinson Hyperlegible Next", 700);
+    let next_regular = face("Atkinson Hyperlegible Next", 400);
+    assert!(db.face(mono_regular).unwrap().monospaced);
+    assert!(!db.face(next_regular).unwrap().monospaced);
+    let mut db = std::sync::Arc::new(db);
+    let select = woxi::functions::image_ast::same_style_fallback_selector();
+    // The Mono faces come first in the database, but a proportional base
+    // falls back to a proportional face and a monospaced to a monospaced.
+    assert_eq!(select('a', &[next_bold], &mut db), Some(next_regular));
+    assert_eq!(select('a', &[next_regular], &mut db), Some(next_bold));
+    assert_eq!(select('a', &[mono_bold], &mut db), Some(mono_regular));
+    // Among faces of another kind, the same weight wins over the
+    // database order (Mono Regular precedes Mono Bold).
+    assert_eq!(
+      select('a', &[next_bold, next_regular], &mut db),
+      Some(mono_bold)
+    );
+    // A character no face has yields no fallback.
+    assert_eq!(select('\u{E000}', &[next_bold], &mut db), None);
+
+    // The options used for rasterizing carry this selector.
+    let opts = woxi::functions::image_ast::svg_options(db.clone());
+    assert_eq!(
+      (opts.font_resolver.select_fallback)('a', &[next_bold], &mut db),
+      Some(next_regular)
+    );
+  }
+
   #[test]
   fn dataset_records_have_vertical_column_separators() {
     for expr in [

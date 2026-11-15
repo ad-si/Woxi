@@ -13521,6 +13521,78 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
 }
 
+/// usvg options that draw text with `fontdb` and pick fallback faces of
+/// the same style (see [`same_style_fallback_selector`]). Use these for
+/// every SVG rasterization or PDF conversion of Woxi output.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn svg_options(
+  fontdb: Arc<resvg::usvg::fontdb::Database>,
+) -> resvg::usvg::Options<'static> {
+  resvg::usvg::Options {
+    fontdb,
+    font_resolver: resvg::usvg::FontResolver {
+      select_font: resvg::usvg::FontResolver::default_font_selector(),
+      select_fallback: same_style_fallback_selector(),
+    },
+    ..Default::default()
+  }
+}
+
+/// Fallback face selection for characters missing from the requested
+/// font (e.g. Greek letters, which the embedded Atkinson faces lack).
+///
+/// usvg's default selector takes the first face in the database that has
+/// the character unless its style, weight *and* stretch all differ, and
+/// when that face covers the whole text run, usvg reshapes the entire run
+/// with it. A label like "at ρ = 0" could thus come out entirely in some
+/// bold oblique system face. This selector instead prefers faces whose
+/// style matches exactly, then the same kind of family (monospaced or
+/// proportional, serif or sans-serif), then the closest weight, then the
+/// same stretch.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn same_style_fallback_selector()
+-> resvg::usvg::FallbackSelectionFn<'static> {
+  Box::new(|c, exclude_fonts, fontdb| {
+    // Font metadata has no serif flag, so go by the family names
+    // ("DejaVu Serif", "Noto Serif", but not "PT Sans Serif").
+    let is_serif = |face: &resvg::usvg::fontdb::FaceInfo| {
+      face
+        .families
+        .iter()
+        .any(|(name, _)| name.contains("Serif") && !name.contains("Sans"))
+    };
+    let base = fontdb.face(*exclude_fonts.first()?)?;
+    let (style, weight, stretch) = (base.style, base.weight, base.stretch);
+    let (monospaced, serif) = (base.monospaced, is_serif(base));
+    let mut candidates: Vec<_> = fontdb
+      .faces()
+      .filter(|face| !exclude_fonts.contains(&face.id))
+      .map(|face| {
+        let rank = (
+          face.style != style,
+          face.monospaced != monospaced,
+          is_serif(face) != serif,
+          face.weight.0.abs_diff(weight.0),
+          face.stretch != stretch,
+        );
+        (rank, face.id)
+      })
+      .collect();
+    // Stable sort: ties keep the database order.
+    candidates.sort_by_key(|(rank, _)| *rank);
+    candidates.into_iter().map(|(_, id)| id).find(|&id| {
+      fontdb
+        .with_face_data(id, |data, index| {
+          ttf_parser::Face::parse(data, index)
+            .ok()
+            .and_then(|face| face.glyph_index(c))
+            .is_some()
+        })
+        .unwrap_or(false)
+    })
+  })
+}
+
 /// Extract an SVG rendering of `expr` when it is a `Graphics`/`Graphics3D`
 /// expression, evaluated or still a bare `FunctionCall`. Returns `None`
 /// for anything else.
@@ -13802,10 +13874,7 @@ fn rasterize_svg_with(
   load_embedded_fonts(&mut fontdb);
 
   // Parse SVG
-  let opt = resvg::usvg::Options {
-    fontdb: StdArc::new(fontdb),
-    ..Default::default()
-  };
+  let opt = svg_options(StdArc::new(fontdb));
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
@@ -13969,10 +14038,7 @@ fn rasterize_mask_svg(
   let mut fontdb = resvg::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   load_embedded_fonts(&mut fontdb);
-  let opt = resvg::usvg::Options {
-    fontdb: StdArc::new(fontdb),
-    ..Default::default()
-  };
+  let opt = svg_options(StdArc::new(fontdb));
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
