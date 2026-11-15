@@ -344,6 +344,9 @@ struct DensityContourOptions {
   /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
   /// range): the values the colors span, instead of the sampled ones.
   value_range: Option<(f64, f64)>,
+  /// `PlotRange -> All` (or an `All` value part of a three-axis range):
+  /// the colors span every sampled value, outliers included.
+  full_value_range: bool,
   /// `ClippingStyle`: how a cell outside `value_range` is drawn.
   clipping: Clipping,
   /// The `PlotRangePadding` between the frame and the data, as a fraction
@@ -404,6 +407,16 @@ fn plot_value_range(value: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Whether a density or contour plot's `PlotRange` asks for every value
+/// (`All`, or `{xr, yr, All}`), so no sample is dropped as an outlier.
+fn plot_value_range_is_all(value: &Expr) -> bool {
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(v) if v == "All");
+  match value {
+    Expr::List(parts) if parts.len() == 3 => is_all(&parts[2]),
+    other => is_all(other),
+  }
+}
+
 /// The per-contour styles of a `ContourStyle` value whose entries are all
 /// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
 /// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
@@ -461,24 +474,28 @@ impl DensityContourOptions {
   }
 }
 
-/// For a label option set to `Automatic`, the `{x, y}` list of the plot's
-/// two iterator variables (`{x, xmin, xmax}`, `{y, ymin, ymax}` following
-/// the body in `leading`); `None` for any other setting or when the plot
-/// has no such pair of iterators.
-fn automatic_iterator_labels(value: &Expr, leading: &[Expr]) -> Option<Expr> {
-  if !matches!(value, Expr::Identifier(v) if v == "Automatic") {
+/// `FrameLabel -> Automatic` on a plot over two ranges `{x, …}, {y, …}`
+/// (the arguments just before the options at `start`) labels the bottom and
+/// left frame edges with the two variable names.
+fn automatic_frame_label(
+  value: &Expr,
+  args: &[Expr],
+  start: usize,
+) -> Option<Expr> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if !matches!(&val, Expr::Identifier(v) if v == "Automatic") || start < 3 {
     return None;
   }
-  let var = |e: Option<&Expr>| match e {
-    Some(Expr::List(items)) if items.len() >= 3 => match &items[0] {
-      v @ Expr::Identifier(_) => Some(v.clone()),
+  let var_name = |e: &Expr| match e {
+    Expr::List(items) if items.len() >= 2 => match &items[0] {
+      Expr::Identifier(v) => Some(Expr::String(v.clone())),
       _ => None,
     },
     _ => None,
   };
-  let x = var(leading.get(1))?;
-  let y = var(leading.get(2))?;
-  Some(Expr::List(vec![x, y].into()))
+  Some(Expr::List(
+    vec![var_name(&args[start - 2])?, var_name(&args[start - 1])?].into(),
+  ))
 }
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
@@ -541,6 +558,7 @@ fn parse_density_contour_options(
   let mut contour_level_exprs: Vec<(f64, Expr)> = Vec::new();
   let mut bar_legend = false;
   let mut value_range: Option<(f64, f64)> = None;
+  let mut full_value_range = false;
   let mut clipping = Clipping::Blank;
   for opt in &args[start..] {
     if let Expr::Rule {
@@ -653,19 +671,17 @@ fn parse_density_contour_options(
           };
         }
         "FrameLabel" => {
-          // `FrameLabel -> Automatic` labels the frame with the plot's
-          // variables: the first iterator's along the bottom, the second's
-          // up the left edge — the same as `FrameLabel -> {x, y}`.
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.clone());
-          let label = match automatic_iterator_labels(&value, &args[..start]) {
-            Some(vars) => vars,
-            None => value,
+          frame_labels = match automatic_frame_label(replacement, args, start) {
+            Some(labels) => crate::functions::plot::parse_frame_label(&labels),
+            None => crate::functions::plot::parse_frame_label(replacement),
           };
-          frame_labels = crate::functions::plot::parse_frame_label(&label);
         }
+        // `Frame -> None` draws no frame, like `Frame -> False`.
         "Frame" => {
-          frame = !matches!(replacement, Expr::Identifier(v) if v == "False");
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          frame = !matches!(&val, Expr::Identifier(v)
+            if v == "False" || v == "None");
         }
         "FrameTicks" => {
           frame_ticks =
@@ -690,7 +706,10 @@ fn parse_density_contour_options(
           contour_labels = !matches!(replacement, Expr::Identifier(v)
             if v == "False" || v == "None");
         }
-        "PlotRange" => value_range = plot_value_range(replacement),
+        "PlotRange" => {
+          value_range = plot_value_range(replacement);
+          full_value_range = plot_value_range_is_all(replacement);
+        }
         "ClippingStyle" => clipping = Clipping::parse(replacement),
         "PlotLegends" => {
           bar_legend = matches!(replacement, Expr::Identifier(v)
@@ -732,6 +751,7 @@ fn parse_density_contour_options(
     contour_level_exprs,
     bar_legend,
     value_range,
+    full_value_range,
     clipping,
     range_padding: FIELD_RANGE_PADDING,
   }
@@ -1718,6 +1738,17 @@ fn scaled_color(
 /// pole in the plotted function) can't collapse the color scale and contour
 /// levels onto a handful of pixels around it, leaving the rest of the plot a
 /// single flat color.
+/// The smallest and largest finite sample.
+fn full_value_range(values: &[f64]) -> (f64, f64) {
+  values
+    .iter()
+    .copied()
+    .filter(|v| v.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+      (lo.min(v), hi.max(v))
+    })
+}
+
 fn robust_value_range(values: &[f64]) -> (f64, f64) {
   let mut vs: Vec<f64> =
     values.iter().copied().filter(|v| v.is_finite()).collect();
@@ -2902,16 +2933,17 @@ fn field_plot_structure(
   // `FrameLabel -> Automatic` names the plot's iterator variables; the
   // returned `Graphics` no longer knows them, so it carries them explicitly
   // (a `GraphicsGrid` cell or a `Show` re-renders from these options).
-  for opt in &mut explicit {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = opt
-      && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameLabel")
-      && let Some(vars) =
-        automatic_iterator_labels(replacement, &args[..args.len().min(3)])
-    {
-      **replacement = vars;
+  if args.len() >= 3 {
+    for opt in &mut explicit {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = opt
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameLabel")
+        && let Some(labels) = automatic_frame_label(replacement, args, 3)
+      {
+        **replacement = labels;
+      }
     }
   }
   let pair =
@@ -2927,6 +2959,16 @@ fn field_plot_structure(
   }
   if !explicit.iter().any(|o| name_of(o) == Some("AspectRatio")) {
     structure_args.push(rule_expr(id_expr("AspectRatio"), Expr::Integer(1)));
+  }
+  // Like every Wolfram plot, a field plot clips what it draws to its range,
+  // so under `Show[…, PlotRange -> narrower]` the density raster (and any
+  // layer merged over it) is cut at the frame instead of spilling past it.
+  if !explicit
+    .iter()
+    .any(|o| name_of(o) == Some("PlotRangeClipping"))
+  {
+    structure_args
+      .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
   }
   structure_args.extend(explicit);
   call("Graphics", structure_args)
@@ -2968,9 +3010,13 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colors
   // span; cells beyond it follow `ClippingStyle` (blank by default).
   // Otherwise the colors span the sampled values.
-  let (v_min, v_max) = opts
-    .value_range
-    .unwrap_or_else(|| robust_value_range(&samples));
+  let (v_min, v_max) = opts.value_range.unwrap_or_else(|| {
+    if opts.full_value_range {
+      full_value_range(&samples)
+    } else {
+      robust_value_range(&samples)
+    }
+  });
   let clipping = if opts.value_range.is_some() {
     opts.clipping
   } else {
@@ -3248,88 +3294,55 @@ pub fn with_evaluated_options(
   result.map(|()| out)
 }
 
-/// Samples per axis of a 2-D plot's initial grid when its `PlotPoints` is
-/// `Automatic` (Wolfram's default for `ContourPlot` and `DensityPlot`).
-const DEFAULT_FIELD_PLOT_POINTS: usize = 15;
-
-/// The per-axis sample count of a plot told not to refine its initial grid
-/// (`MaxRecursion -> 0`): its `PlotPoints` (the first of a `{nx, ny}`
-/// pair), or the default. `None` when the plot may refine.
-fn unrefined_plot_points(opts: &[Expr]) -> Option<usize> {
+/// The number of samples per axis of the initial grid when the options
+/// among `args[start..]` set `MaxRecursion -> 0`: the explicit
+/// `PlotPoints -> n` (or the first of `{nx, ny}`, at least 2), else 15. `None` when the plot refines.
+fn initial_grid_without_recursion(
+  args: &[Expr],
+  start: usize,
+) -> Option<usize> {
   let option = |key: &str| {
-    opts.iter().rev().find_map(|opt| {
-      let (name, value) = crate::functions::graphics::option_name_value(opt)?;
-      (name == key).then(|| {
-        evaluate_expr_to_expr(&value).unwrap_or_else(|_| value.into_owned())
-      })
+    args.get(start..)?.iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      ),
+      _ => None,
     })
   };
-  if !matches!(option("MaxRecursion"), Some(Expr::Integer(0))) {
+  if !matches!(option("MaxRecursion")?, Expr::Integer(0)) {
     return None;
   }
-  let points = |e: &Expr| match e {
-    Expr::Integer(k) if *k >= 2 => Some((*k).min(1000) as usize),
-    _ => None,
+  // A `{nx, ny}` pair samples the grid at its first count.
+  let points = match option("PlotPoints") {
+    Some(Expr::List(ref ks)) => ks.first().cloned(),
+    other => other,
   };
-  Some(
-    match option("PlotPoints") {
-      Some(Expr::List(ref ks)) => ks.first().and_then(points),
-      Some(other) => points(&other),
-      None => None,
-    }
-    .unwrap_or(DEFAULT_FIELD_PLOT_POINTS),
-  )
-}
-
-/// `body` evaluated on an `m` × `m` grid spanning the plot range, corners
-/// included (`grid[i][j]` at the `i`-th x and `j`-th y); NaN where it is not
-/// a real number.
-fn sample_coarse_grid(
-  body: &Expr,
-  xvar: &str,
-  yvar: &str,
-  m: usize,
-  (x_min, x_max): (f64, f64),
-  (y_min, y_max): (f64, f64),
-) -> Vec<Vec<f64>> {
-  let step =
-    |lo: f64, hi: f64, k: usize| lo + k as f64 / (m - 1) as f64 * (hi - lo);
-  (0..m)
-    .map(|i| {
-      let x = step(x_min, x_max, i);
-      (0..m)
-        .map(|j| {
-          evaluate_at_xy(body, xvar, yvar, x, step(y_min, y_max, j))
-            .unwrap_or(f64::NAN)
-        })
-        .collect()
-    })
-    .collect()
-}
-
-/// The bilinear interpolation of a coarse grid (from [`sample_coarse_grid`])
-/// at fractional position `(u, v)` ∈ [0, 1]² of the plot range. A cell
-/// with a missing corner gives `None`, leaving a hole as a failed sample
-/// would.
-fn bilinear_from_coarse(grid: &[Vec<f64>], u: f64, v: f64) -> Option<f64> {
-  let m = grid.len();
-  if m < 2 {
-    return None;
+  match points {
+    Some(Expr::Integer(k)) if k >= 2 => usize::try_from(k.min(400)).ok(),
+    _ => Some(15),
   }
-  let locate = |t: f64| {
-    let pos = t.clamp(0.0, 1.0) * (m - 1) as f64;
-    let k = (pos.floor() as usize).min(m - 2);
-    (k, pos - k as f64)
-  };
-  let (i, fu) = locate(u);
-  let (j, fv) = locate(v);
-  let (a, b) = (grid[i][j], grid[i + 1][j]);
-  let (c, d) = (grid[i][j + 1], grid[i + 1][j + 1]);
-  let value = (1.0 - fu) * (1.0 - fv) * a
-    + fu * (1.0 - fv) * b
-    + (1.0 - fu) * fv * c
-    + fu * fv * d;
-  value.is_finite().then_some(value)
+}
+
+/// The value at fractional position `(u, v)` (each in [0, 1]) of a grid
+/// `grid[col][row]` whose nodes span the unit square, interpolated
+/// bilinearly between the four surrounding nodes (NaN if one is missing).
+fn bilinear_grid_value(grid: &[Vec<f64>], u: f64, v: f64) -> f64 {
+  let (nc, nr) = (grid.len(), grid[0].len());
+  let fx = u.clamp(0.0, 1.0) * (nc - 1) as f64;
+  let fy = v.clamp(0.0, 1.0) * (nr - 1) as f64;
+  let (i, j) = ((fx as usize).min(nc - 2), (fy as usize).min(nr - 2));
+  let (tx, ty) = (fx - i as f64, fy - j as f64);
+  let bottom = grid[i][j] * (1.0 - tx) + grid[i + 1][j] * tx;
+  let top = grid[i][j + 1] * (1.0 - tx) + grid[i + 1][j + 1] * tx;
+  bottom * (1.0 - ty) + top * ty
 }
 
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -3434,31 +3447,50 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   let n = cells + 1;
 
-  // `MaxRecursion -> 0` keeps Wolfram from refining its initial
-  // `PlotPoints` grid, so the function is evaluated only there; the fine
-  // grid the contours are traced on interpolates between those samples.
-  // This is what makes a costly body (an `NIntegrate` per point) plot in
-  // a few hundred evaluations rather than ten thousand.
-  let coarse = unrefined_plot_points(&args[3..]).map(|m| {
-    sample_coarse_grid(body, &xvar, &yvar, m, (x_min, x_max), (y_min, y_max))
-  });
-  let value_at = |i: usize, j: usize, x: f64, y: f64| -> Option<f64> {
-    match &coarse {
-      Some(c) => bilinear_from_coarse(
-        c,
-        i as f64 / cells as f64,
-        j as f64 / cells as f64,
-      ),
-      None => evaluate_at_xy(body, &xvar, &yvar, x, y),
-    }
-  };
-
   // Sample grid
   let mut grid = vec![vec![f64::NAN; n]; n];
   let mut samples = Vec::with_capacity(n * n);
   let mut all_samples = Vec::with_capacity(n * n);
 
-  for i in 0..n {
+  // `MaxRecursion -> 0` asks for no refinement beyond the initial
+  // `PlotPoints` grid: only that grid is evaluated (a body that is costly
+  // per point, like a numerical integral, then stays fast) and the render
+  // grid is interpolated from it.
+  let coarse = if opts.region_function.is_none() && y_bounds.is_none() {
+    initial_grid_without_recursion(args, 3)
+  } else {
+    None
+  };
+  if let Some(m) = coarse {
+    let mut coarse_grid = vec![vec![f64::NAN; m]; m];
+    for (i, column) in coarse_grid.iter_mut().enumerate() {
+      let x = x_min + i as f64 / (m - 1) as f64 * (x_max - x_min);
+      for (j, cell) in column.iter_mut().enumerate() {
+        let y = y_min + j as f64 / (m - 1) as f64 * (y_max - y_min);
+        if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+          && v.is_finite()
+        {
+          *cell = v;
+        }
+      }
+    }
+    for (i, column) in grid.iter_mut().enumerate() {
+      for (j, cell) in column.iter_mut().enumerate() {
+        let v = bilinear_grid_value(
+          &coarse_grid,
+          i as f64 / cells as f64,
+          j as f64 / cells as f64,
+        );
+        if v.is_finite() {
+          *cell = v;
+          all_samples.push(v);
+          samples.push(v);
+        }
+      }
+    }
+  }
+
+  for i in 0..if coarse.is_some() { 0 } else { n } {
     let x = x_min + i as f64 / cells as f64 * (x_max - x_min);
     let (row_lo, row_hi) = match &y_bounds {
       Some(b) => b.at(x),
@@ -3471,7 +3503,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       // As in Wolfram, the levels are chosen over the whole plot range and
       // the colors over the part a `RegionFunction` keeps.
-      if let Some(v) = value_at(i, j, x, y)
+      if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
         && v.is_finite()
       {
         all_samples.push(v);
@@ -7133,6 +7165,56 @@ pub(crate) fn apply_named_color_function(name: &str, t: f64) -> (u8, u8, u8) {
 
 /// The rows `ArrayPlot` draws from `data`: SparseArrays (the whole array
 /// or its rows) densified. `None` when `data` is not a list of lists.
+/// An `ArrayPlot` `FrameLabel` rewritten in the edge order of a framed
+/// plot: its `{left, bottom}` becomes `{bottom, left}` (likewise for the
+/// flat four-label form) and its `{{bottom, top}, {left, right}}` becomes
+/// `{{left, right}, {bottom, top}}`. A bare label stays on the bottom.
+fn transposed_frame_label(value: &Expr) -> Expr {
+  match value {
+    Expr::List(items)
+      if items.len() == 2
+        && matches!((&items[0], &items[1]), (Expr::List(_), Expr::List(_))) =>
+    {
+      Expr::List(vec![items[1].clone(), items[0].clone()].into())
+    }
+    Expr::List(items) if items.len() >= 2 => {
+      let mut swapped: Vec<Expr> = items.to_vec();
+      swapped.swap(0, 1);
+      if swapped.len() >= 4 {
+        swapped.swap(2, 3);
+      }
+      Expr::List(swapped.into())
+    }
+    other => other.clone(),
+  }
+}
+
+/// The value range of an `ArrayPlot` `PlotRange`: `amax` (from 0),
+/// `{amin, amax}` (either end may be `All`), or the third part of
+/// `{rows, cols, values}`. `None` for an end left to the data.
+fn array_plot_value_range(value: &Expr) -> Option<(Option<f64>, Option<f64>)> {
+  let end = |e: &Expr| match e {
+    Expr::Identifier(s) if s == "All" || s == "Automatic" => Some(None),
+    other => try_eval_to_f64(other).map(Some),
+  };
+  match value {
+    Expr::List(parts) if parts.len() == 3 => array_plot_value_range(&parts[2]),
+    Expr::List(ends) if ends.len() == 2 => {
+      let (lo, hi) = (end(&ends[0])?, end(&ends[1])?);
+      if let (Some(lo), Some(hi)) = (lo, hi)
+        && lo >= hi
+      {
+        return None;
+      }
+      Some((lo, hi))
+    }
+    Expr::Identifier(_) => None,
+    other => try_eval_to_f64(other)
+      .filter(|hi| *hi > 0.0)
+      .map(|hi| (Some(0.0), Some(hi))),
+  }
+}
+
 fn array_plot_matrix(data: &Expr) -> Option<Vec<Expr>> {
   let densify = |e: &Expr| {
     crate::functions::list_helpers_ast::densify_sparse_array(e)
@@ -7240,6 +7322,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // pixels (`n`, or the largest count that fits in the `ImageSize` box),
   // and the picture is exactly the grid, without padding.
   let mut pixel_constrained: Option<Option<u32>> = None;
+  // `PlotRange -> amax`, `{amin, amax}` or `{rows, cols, {amin, amax}}`:
+  // the values the colors span. Cells outside it follow `ClippingStyle`,
+  // which by default leaves them showing the background.
+  let mut value_range_spec: Option<(Option<f64>, Option<f64>)> = None;
+  let mut clipping = Clipping::Blank;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -7312,10 +7399,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             color_function_scaling = false;
           }
         }
-        // An array plot is drawn inside a frame, so it takes the same
-        // `FrameLabel` a framed plot does — on any of the four edges.
+        // An array plot is drawn inside a frame, so it takes a
+        // `FrameLabel` on any of the four edges. Its axes are rows and
+        // columns, so the edges are listed the other way around from a
+        // framed plot: `{left, bottom}` and `{{bottom, top}, {left, right}}`.
         "FrameLabel" => {
-          frame_labels = crate::functions::plot::parse_frame_label(replacement);
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          frame_labels = crate::functions::plot::parse_frame_label(
+            &transposed_frame_label(&val),
+          );
         }
         "FrameTicks" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -7335,6 +7428,16 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Identifier(n) if n == "False" || n == "None"
           );
           frame_forced = matches!(&val, Expr::Identifier(n) if n == "True");
+        }
+        "PlotRange" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          value_range_spec = array_plot_value_range(&val);
+        }
+        "ClippingStyle" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          clipping = Clipping::parse(&val);
         }
         "PixelConstrained" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -7420,6 +7523,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => None,
     })
     .unwrap_or(Expr::Real(max_abs));
+  // An explicit value range replaces the data's own on the color scale.
+  let value_range =
+    value_range_spec.map(|(lo, hi)| (lo.unwrap_or(v_min), hi.unwrap_or(v_max)));
+  let (v_min, v_max) = value_range.unwrap_or((v_min, v_max));
 
   let (svg_width, mut svg_height, full_width) = parse_field_options(args, 1);
   // A single `ImageSize -> w` is the picture's width, as for any graphics:
@@ -7521,7 +7628,34 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 )
               })
             });
-            found.unwrap_or_else(|| {
+            // Beyond an explicit `PlotRange`, the cell takes its
+            // `ClippingStyle` color, or else shows the background.
+            let clipped = value_range.and_then(|_| {
+              let above = if *val > v_max {
+                true
+              } else if *val < v_min {
+                false
+              } else {
+                return None;
+              };
+              let to_rgb = |c: Option<(u8, u8, u8)>| {
+                c.unwrap_or((bg_color.0, bg_color.1, bg_color.2))
+              };
+              match clipping {
+                Clipping::Saturate => None,
+                Clipping::Blank => Some(to_rgb(None)),
+                Clipping::Colors(below_c, above_c) => {
+                  Some(to_rgb(if above { above_c } else { below_c }))
+                }
+              }
+            });
+            if clipped.is_some() {
+              // Shown as the background, which is white, unless styled.
+              if matches!(clipping, Clipping::Blank) {
+                scalar = Some(Expr::Integer(1));
+              }
+            }
+            found.or(clipped).unwrap_or_else(|| {
               let range = v_max - v_min;
               let t = if range.abs() < f64::EPSILON {
                 0.5
@@ -7570,6 +7704,12 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     )
                   },
                 )
+              } else if value_range.is_some() {
+                // With an explicit `PlotRange`, the gray scale runs from
+                // white at its minimum to black at its maximum.
+                scalar = Some(Expr::Real(1.0 - t));
+                let gray = ((1.0 - t) * 255.0).round() as u8;
+                (gray, gray, gray)
               } else {
                 // The default gray scale runs from white at 0 to black at
                 // the largest magnitude (sign ignored), not from the
@@ -7833,7 +7973,10 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     raster_args.push(Expr::List(
       vec![
         Expr::Integer(0),
-        if color_function_expr.is_some() || max_abs == 0.0 {
+        if color_function_expr.is_some()
+          || value_range.is_some()
+          || max_abs == 0.0
+        {
           Expr::Integer(1)
         } else {
           max_abs_expr

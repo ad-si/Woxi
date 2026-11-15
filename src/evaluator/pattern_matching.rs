@@ -3269,10 +3269,13 @@ fn apply_replace_all_ast_impl(
             let pair = |(a, b): (f64, f64)| {
               Expr::List(vec![Expr::Real(a), Expr::Real(b)].into())
             };
+            // A log axis is drawn in `Log` space, as its primitives are.
+            let scaled =
+              crate::functions::graphics::log_scaled_plot_source(source);
             opts.push(rule_expr(
               id_expr("PlotRange"),
               Expr::List(
-                vec![pair(source.x_range), pair(source.y_range)].into(),
+                vec![pair(scaled.x_range), pair(scaled.y_range)].into(),
               ),
             ));
             opts.push(rule_expr(id_expr("PlotRangePadding"), id_expr("None")));

@@ -18958,85 +18958,6 @@ fn integrand_numeric_somewhere(
   })
 }
 
-/// For an iterated integral over `ranges` (`{x, lo, hi}`, outermost first),
-/// the region's boundaries `{{lo1, hi1}, {lo2, hi2}, …}` when `integrand`
-/// is non-numeric at every sampled point of the region, else `None`.
-///
-/// Inner bounds may depend on outer variables (`{y, 0, x}`), so each sample
-/// point is built outside-in, substituting the coordinates chosen so far.
-/// A region whose bounds are not all numbers yields `None`: the regular
-/// reduction decides about it.
-fn region_with_no_numeric_integrand(
-  integrand: &Expr,
-  ranges: &[Expr],
-) -> Option<Expr> {
-  let mut boundaries: Option<Vec<Expr>> = None;
-  let mut numeric_somewhere = false;
-  for t in [0.27, 0.5, 0.61, 0.83] {
-    let mut point: Vec<(String, Expr)> = Vec::new();
-    let mut region: Vec<Expr> = Vec::new();
-    for range in ranges {
-      let Expr::List(items) = range else {
-        return None;
-      };
-      let Expr::Identifier(var) = &items[0] else {
-        return None;
-      };
-      let bound = |e: &Expr| -> Option<f64> {
-        let mut e = e.clone();
-        for (v, x) in &point {
-          e = crate::syntax::substitute_variable(&e, v, x);
-        }
-        expr_to_bound(&crate::evaluator::evaluate_expr_to_expr(&e).ok()?)
-      };
-      let lo = bound(&items[1])?;
-      let hi = bound(&items[items.len() - 1])?;
-      // The message names the bounds as written (evaluated), so a bound
-      // that depends on an outer variable shows that variable, not the
-      // coordinate sampled for it.
-      if boundaries.is_none() {
-        let shown = |e: &Expr| {
-          crate::evaluator::evaluate_expr_to_expr(e)
-            .unwrap_or_else(|_| e.clone())
-        };
-        region.push(Expr::List(
-          vec![shown(&items[1]), shown(&items[items.len() - 1])].into(),
-        ));
-      }
-      let x = match (lo.is_finite(), hi.is_finite()) {
-        (true, true) => lo + (hi - lo) * t,
-        (true, false) => lo + 0.7 + 4.0 * t,
-        (false, true) => hi - 0.7 - 4.0 * t,
-        (false, false) => 4.0 * t - 1.7,
-      };
-      point.push((var.clone(), Expr::Real(x)));
-    }
-    boundaries.get_or_insert(region);
-    let mut sample = integrand.clone();
-    for (v, x) in &point {
-      sample = crate::syntax::substitute_variable(&sample, v, x);
-    }
-    let snapshot = crate::snapshot_warnings();
-    crate::push_quiet();
-    let value = crate::evaluator::evaluate_expr_to_expr(&call1("N", sample));
-    crate::pop_quiet();
-    crate::restore_warnings(snapshot);
-    if value.is_ok_and(|v| {
-      crate::functions::math_ast::try_eval_to_f64(&v).is_some()
-        || crate::functions::math_ast::try_extract_complex_float(&v).is_some()
-        || matches!(&v, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
-    }) {
-      numeric_somewhere = true;
-      break;
-    }
-  }
-  if numeric_somewhere {
-    None
-  } else {
-    boundaries.map(|b| Expr::List(b.into()))
-  }
-}
-
 /// The base of a fractional power, whose zero can be a branch point or an
 /// endpoint with an unbounded derivative even when the value stays finite.
 fn fractional_power_base(expr: &Expr) -> Option<&Expr> {
@@ -19176,6 +19097,73 @@ fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
 }
 
 /// A limit of integration that is not a number: wolframscript reports
+/// The interior point at fraction `t` (in (0, 1)) of the range [lo, hi],
+/// stepping a fixed distance in from a finite end of a half-infinite range.
+fn region_sample_point(lo: f64, hi: f64, t: f64) -> f64 {
+  match (lo.is_finite(), hi.is_finite()) {
+    (true, true) => lo + (hi - lo) * t,
+    (true, false) => lo + 0.5 + 6.0 * t,
+    (false, true) => hi - 0.5 - 6.0 * t,
+    (false, false) => -2.0 + 4.0 * t,
+  }
+}
+
+/// Whether `integrand` evaluates to a number at any of a few interior
+/// points of the iterated region `outer` × `inner` (each a `{var, lo, hi}`
+/// range; inner bounds may depend on the variables before them).
+fn integrand_numeric_somewhere_in_region(
+  integrand: &Expr,
+  outer: &Expr,
+  inner: &[Expr],
+) -> bool {
+  let ranges: Vec<&Expr> = std::iter::once(outer).chain(inner).collect();
+  // A few diagonal points plus a couple of staggered ones, so a singular
+  // line through the region does not hide the integrand's values.
+  let fractions: [&[f64]; 6] = [
+    &[0.5],
+    &[0.27],
+    &[0.61],
+    &[0.83],
+    &[0.27, 0.61, 0.83],
+    &[0.83, 0.38, 0.17],
+  ];
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let numeric = fractions.iter().any(|fr| {
+    let mut expr = integrand.clone();
+    let mut subs: Vec<(String, Expr)> = Vec::new();
+    for (k, r) in ranges.iter().enumerate() {
+      let Expr::List(items) = r else { return false };
+      let Expr::Identifier(var) = &items[0] else {
+        return false;
+      };
+      let bound = |e: &Expr| -> Option<f64> {
+        let mut e = e.clone();
+        for (v, val) in &subs {
+          e = crate::syntax::substitute_variable(&e, v, val);
+        }
+        expr_to_bound(&crate::evaluator::evaluate_expr_to_expr(&e).ok()?)
+      };
+      let (Some(lo), Some(hi)) = (bound(&items[1]), bound(&items[items.len() - 1]))
+      else {
+        // A bound that is no number is reported by the inner integral.
+        return true;
+      };
+      let x = Expr::Real(region_sample_point(lo, hi, fr[k % fr.len()]));
+      expr = crate::syntax::substitute_variable(&expr, var, &x);
+      subs.push((var.clone(), x));
+    }
+    crate::evaluator::evaluate_expr_to_expr(&call1("N", expr)).is_ok_and(|v| {
+      crate::functions::math_ast::try_eval_to_f64(&v).is_some()
+        || crate::functions::math_ast::try_extract_complex_float(&v).is_some()
+        || matches!(&v, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+    })
+  });
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  numeric
+}
+
 /// `NIntegrate::nlim` for the first such limit and leaves the call
 /// unevaluated.
 fn nintegrate_bad_limit(args: &[Expr], var: &str, bounds: &[Expr]) -> Expr {
@@ -19470,24 +19458,41 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("NIntegrate", args));
     }
     let integrand0 = args[0].clone();
-    // An integrand that is not a number anywhere in the region (it still
-    // holds a free symbol, as `Evaluate[f[x, y]]` of an integral with `x`
-    // and `y` symbolic does) is reported once for the whole region and the
-    // call left unevaluated, as Wolfram does — reducing it dimension by
-    // dimension would instead drop every non-numeric inner integral and
-    // collapse the result to `0.`.
-    let mut all_ranges = vec![args[1].clone()];
-    all_ranges.extend(inner_ranges.iter().cloned());
-    if let Some(boundaries) =
-      region_with_no_numeric_integrand(&integrand0, &all_ranges)
+    // An integrand that still holds a free symbol (`x + X + Y` integrated
+    // over X and Y only) is not a number anywhere in the region: report it
+    // once for the whole region and leave the call unevaluated, instead of
+    // letting every inner integral fail and reading the failures as 0.
+    if !matches!(&integrand0, Expr::List(_))
+      && !integrand_numeric_somewhere_in_region(
+        &integrand0,
+        &args[1],
+        &inner_ranges,
+      )
     {
+      let bounds: Vec<String> = std::iter::once(&args[1])
+        .chain(inner_ranges.iter())
+        .filter_map(|r| match r {
+          Expr::List(items) => Some(format!(
+            "{{{}, {}}}",
+            crate::syntax::expr_to_output(
+              &crate::evaluator::evaluate_expr_to_expr(&items[1])
+                .unwrap_or_else(|_| items[1].clone())
+            ),
+            crate::syntax::expr_to_output(
+              &crate::evaluator::evaluate_expr_to_expr(&items[items.len() - 1])
+                .unwrap_or_else(|_| items[items.len() - 1].clone())
+            ),
+          )),
+          _ => None,
+        })
+        .collect();
       crate::emit_message(&format!(
         "NIntegrate::inumr: The integrand {} has evaluated to non-numerical \
-         values for all sampling points in the region with boundaries {}.",
+         values for all sampling points in the region with boundaries {{{}}}.",
         crate::syntax::expr_to_output(&integrand0),
-        crate::syntax::expr_to_output(&boundaries),
+        bounds.join(", "),
       ));
-      return Ok(unevaluated_nintegrate(args));
+      return Ok(unevaluated("NIntegrate", args));
     }
     // A complex-valued integrand (`1/Sqrt[Cos[x y]]` where the cosine is
     // negative) is integrated as its real and imaginary parts: the
@@ -20164,24 +20169,47 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let b_inf = b.is_infinite() && b > 0.0;
     let half_pi = std::f64::consts::FRAC_PI_2;
     let eps = 1e-10;
+    // Integrate a mapped integrand `g` over [lo, hi]. Adaptive
+    // Gauss-Kronrod on a few starting panels estimates its error from the
+    // whole panel, so an integrand that oscillates (a product of Hermite
+    // polynomials under a Gaussian) is not accepted early, as Simpson's
+    // three-point comparison can do when the samples happen to agree.
+    // Simpson is kept as the fallback for integrands GK cannot sample.
+    let mapped = |g: &dyn Fn(f64) -> Option<f64>, lo: f64, hi: f64| {
+      const START_PANELS: usize = 8;
+      let width = (hi - lo) / START_PANELS as f64;
+      (0..START_PANELS)
+        .map(|k| {
+          let a = lo + width * k as f64;
+          let b = if k + 1 == START_PANELS { hi } else { a + width };
+          gk11_panel(&g, a, b, 0)
+        })
+        .collect::<Option<Vec<_>>>()
+        .and_then(|panels| {
+          adaptive_gk11(
+            &g,
+            &|endpoint: f64, offset: f64| g(endpoint + offset),
+            panels,
+            &|t: f64| t == lo || t == hi,
+            gk_tolerance,
+            max_recursion,
+            max_points,
+          )
+        })
+        .or_else(|| adaptive_simpson(g, lo, hi, tolerance, max_recursion))
+    };
     if a_inf && b_inf {
       // (-∞, ∞): x = tan(t), dx = sec²(t) dt over (-π/2, π/2).
       let g = |t: f64| eval_at(t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(
-        &g,
-        -half_pi + eps,
-        half_pi - eps,
-        tolerance,
-        max_recursion,
-      )
+      mapped(&g, -half_pi + eps, half_pi - eps)
     } else if a_inf {
       // (-∞, b): x = b - tan(t), t in (0, π/2).
       let g = |t: f64| eval_at(b - t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+      mapped(&g, eps, half_pi - eps)
     } else if b_inf {
       // (a, ∞): x = a + tan(t), t in (0, π/2).
       let g = |t: f64| eval_at(a + t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+      mapped(&g, eps, half_pi - eps)
     } else {
       // Projecting across a complex branch cut creates interior kinks; the
       // double-exponential rule is more robust for these component functions.

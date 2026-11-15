@@ -3955,6 +3955,94 @@ fn derivative_boxes(expr: &Expr) -> Option<Expr> {
   Some(row_box(parts))
 }
 
+/// The box a notebook shows for an exact `Root[f, k]` object: a light
+/// rounded frame around its value to three significant digits followed by
+/// an ellipsis (`-0.424…`, or `0.341… - 1.16… ⅈ` for a complex root),
+/// interpreting as the `Root` itself. `None` for a `Root` that has no
+/// numeric value.
+fn root_approximation_box(name: &str, args: &[Expr]) -> Option<Expr> {
+  if name != "Root"
+    || !(args.len() == 2 || args.len() == 3)
+    || !matches!(&args[0], Expr::Function { .. })
+    || !matches!(&args[1], Expr::Integer(_))
+  {
+    return None;
+  }
+  let root = Expr::FunctionCall {
+    name: name.to_string(),
+    args: args.to_vec().into(),
+  };
+  let part = |f: &str| -> Option<f64> {
+    let value = crate::evaluator::evaluate_expr_to_expr(&call1(
+      f,
+      call1("N", root.clone()),
+    ))
+    .ok()?;
+    match value {
+      Expr::Real(r) if r.is_finite() => Some(r),
+      Expr::Integer(n) => Some(n as f64),
+      _ => None,
+    }
+  };
+  let (re, im) = (part("Re")?, part("Im")?);
+  let approx = |x: f64| format!("{}\u{2026}", three_significant_digits(x));
+  let text = if im == 0.0 {
+    approx(re)
+  } else {
+    let imaginary = format!("{} \u{2148}", approx(im.abs()));
+    match (re == 0.0, im < 0.0) {
+      (true, true) => format!("-{imaginary}"),
+      (true, false) => imaginary,
+      (false, true) => format!("{} - {imaginary}", approx(re)),
+      (false, false) => format!("{} + {imaginary}", approx(re)),
+    }
+  };
+  Some(Expr::FunctionCall {
+    name: "InterpretationBox".to_string(),
+    args: vec![
+      Expr::FunctionCall {
+        name: "FrameBox".to_string(),
+        args: vec![
+          Expr::String(text),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("FrameStyle".to_string())),
+            replacement: Box::new(call1("GrayLevel", Expr::Real(0.75))),
+          },
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("RoundingRadius".to_string())),
+            replacement: Box::new(Expr::Integer(3)),
+          },
+        ]
+        .into(),
+      },
+      root,
+    ]
+    .into(),
+  })
+}
+
+/// `x` rounded to three significant digits, written with the trailing
+/// zeros that keep that many (`-1.35`, `0.424`, `2.00`, `12.3`).
+fn three_significant_digits(x: f64) -> String {
+  if x == 0.0 {
+    return "0.".to_string();
+  }
+  let magnitude = x.abs().log10().floor() as i32;
+  let decimals = 2 - magnitude;
+  if decimals > 0 {
+    let s = format!("{:.*}", decimals as usize, x);
+    // Rounding may carry into a new leading digit (`9.996` -> `10.00`).
+    let rounded: f64 = s.parse().unwrap_or(x);
+    if rounded.abs() >= 10f64.powi(magnitude + 1) && decimals > 1 {
+      return format!("{:.*}", decimals as usize - 1, x);
+    }
+    s
+  } else {
+    let scale = 10f64.powi(-decimals);
+    format!("{}.", (x / scale).round() * scale)
+  }
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // A number format around a `Style` typesets as the style around the
   // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
@@ -4042,6 +4130,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       str_expr("\u{F762}"),
     ]);
   }
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(boxed) = root_approximation_box(name, args)
+  {
+    return boxed;
+  }
   // `RawBoxes[boxes]` is already typeset: wolframscript's
   // `ToBoxes[RawBoxes["("]]` is the bare `"("` box, so a Demonstration's
   // `Row[{RawBoxes["("], x, RawBoxes[")"]}]` shows plain parentheses.
@@ -4107,6 +4200,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       } else {
         Expr::String(text)
       }
+    }
+    // StandardForm writes the named constants as their glyphs
+    // (`ToBoxes[Pi]` is `"\[Pi]"`), so a typeset `7 Pi/10` shows `π`.
+    // `EulerGamma` and `GoldenRatio` keep their names in StandardForm.
+    Expr::Identifier(s) | Expr::Constant(s)
+      if matches!(s.as_str(), "Pi" | "E" | "I" | "Infinity" | "Degree") =>
+    {
+      Expr::String(tf_symbol(s))
     }
     Expr::Identifier(s) | Expr::Constant(s) => Expr::String(s.clone()),
     Expr::String(s) => Expr::String(format!("\"{s}\"")),
@@ -4525,6 +4626,14 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       call(
         "SubscriptBox",
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Subsuperscript" && args.len() == 3 =>
+    {
+      call(
+        "SubsuperscriptBox",
+        args.iter().map(expr_to_box_form).collect(),
       )
     }
     // `Overscript[a, b]` / `Underscript[a, b]` place `b` as an annotation
@@ -7369,6 +7478,9 @@ fn tf_series_data(args: &[Expr]) -> Option<Expr> {
 }
 
 fn tf_call(name: &str, args: &[Expr]) -> Expr {
+  if let Some(boxed) = root_approximation_box(name, args) {
+    return boxed;
+  }
   match name {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
     "RawBoxes" if args.len() == 1 => args[0].clone(),
