@@ -1649,6 +1649,55 @@ mod tests {
     }
 
     #[test]
+    fn frame_label_keeps_runs_of_spaces() {
+      // SVG collapses consecutive blanks unless told otherwise, which
+      // squashed a frame label spaced apart with a "    " string.
+      for (plot, expected) in [
+        (
+          r#"Plot[x, {x, 0, 1}, Frame -> True,
+          FrameLabel -> {t, Row[{x, ",", "    ", y}]}]"#,
+          "xml:space=\"preserve\">x,    y</text>",
+        ),
+        (
+          r#"ListLinePlot[{1, 2, 3}, Frame -> True,
+          FrameLabel -> {"a   b", "c"}]"#,
+          "xml:space=\"preserve\">a   b</text>",
+        ),
+        (
+          r#"Plot[x, {x, 0, 1}, Frame -> True,
+          FrameLabel -> {{"l", "r  s"}, {"b", "u  v"}}]"#,
+          "xml:space=\"preserve\">r  s</text>",
+        ),
+        (
+          r#"StreamPlot[{x, -y}, {x, -1, 1}, {y, -1, 1},
+          FrameLabel -> {"m  n", "y"}]"#,
+          "xml:space=\"preserve\">m  n</text>",
+        ),
+        (
+          r#"Plot[x, {x, 0, 1}, PlotLabel -> "p  q"]"#,
+          "xml:space=\"preserve\">p  q</text>",
+        ),
+      ] {
+        let svg = woxi::interpret(&format!(r#"ExportString[{plot}, "SVG"]"#))
+          .expect("interpret should succeed");
+        assert!(
+          svg.contains(expected),
+          "space run collapsed in {plot}: {svg}"
+        );
+      }
+    }
+
+    #[test]
+    fn single_spaces_in_labels_stay_plain() {
+      let svg = woxi::interpret(
+        r#"ExportString[Plot[x, {x, 0, 1}, PlotLabel -> "p q r"], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains(">p q r</text>"), "label changed: {svg}");
+      assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
+    }
+
+    #[test]
     fn list_line_plot_frame_label_renders_box_notation() {
       // FrameLabel with a SqrtBox renders as a radical, not raw box text.
       let svg = woxi::interpret(

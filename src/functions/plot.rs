@@ -4520,6 +4520,17 @@ fn grid_line_props(
   (rgb, stroke_w, style.dashing.clone())
 }
 
+/// The attribute that keeps a run of blanks a label asks for
+/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
+/// space; empty when the markup has no such run.
+fn preserve_blanks_attr(markup: &str) -> &'static str {
+  if markup.contains("  ") {
+    " xml:space=\"preserve\""
+  } else {
+    ""
+  }
+}
+
 /// A label that spans several lines (a `Column[…]` tick label) as one
 /// `<tspan>` per line, each re-anchored at `x` and `line_height` below the
 /// previous one. A single-line label is returned unchanged.
@@ -4663,15 +4674,17 @@ pub(crate) fn plot_labels_svg(
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
   let mut labels_svg = String::new();
+  // The label's `xml:space` attribute (kept blank runs) and its content.
   let text_svg = |label: &str, x: f64| {
-    stacked_lines_svg(
+    let markup = stacked_lines_svg(
       &crate::functions::graphics::box_string_to_svg_scaled(
         label,
         RESOLUTION_SCALE as f64,
       ),
       x,
       pitch,
-    )
+    );
+    (preserve_blanks_attr(&markup), markup)
   };
   // Bottom/left FrameLabel: centered outside the plot area, 6 pt beyond
   // the tick labels of their edge.
@@ -4683,11 +4696,11 @@ pub(crate) fn plot_labels_svg(
     let cx = plot_x0 + plot_w / 2.0;
     let base_y = bottom_label_top + ascent(label_pt) * sf;
     bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
+    let (keep, markup) = text_svg(x_label, cx);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\">{}</text>\n",
-      text_svg(x_label, cx)
+         fill=\"{label_fill}\"{keep}>{markup}</text>\n",
     ));
   }
   // A `FrameLabel` that is a `Grid[…]`/`TableForm[…]` is embedded as a
@@ -4722,11 +4735,11 @@ pub(crate) fn plot_labels_svg(
       - gap
       - block_height(lines_of(y_label), label_pt) * sf;
     let lx = box_left + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(y_label, lx);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(y_label, lx)
+         fill=\"{label_fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
     ));
   }
 
@@ -4804,11 +4817,11 @@ pub(crate) fn plot_labels_svg(
     // One element per line, so no renderer collapses the breaks.
     for (i, line) in top_label.split('\n').enumerate() {
       let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
+      let (keep, markup) = text_svg(line, cx);
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-           fill=\"{label_fill}\">{}</text>\n",
-        text_svg(line, cx)
+           fill=\"{label_fill}\"{keep}>{markup}</text>\n",
       ));
     }
   }
@@ -4834,11 +4847,11 @@ pub(crate) fn plot_labels_svg(
   {
     let cy = margin_top + plot_h / 2.0;
     let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(right_label, rx);
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{label_fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(right_label, rx)
+         fill=\"{label_fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
     ));
   }
 
@@ -4925,13 +4938,8 @@ pub(crate) fn plot_labels_svg(
       ));
       return labels_svg;
     }
-    // A run of blanks the label asks for (`Row[{a, "    ", b}]`) is kept
-    // instead of collapsing into one space.
-    let preserve_attr = if body.contains("  ") {
-      " xml:space=\"preserve\""
-    } else {
-      ""
-    };
+    // A run of blanks the label asks for is kept.
+    let preserve_attr = preserve_blanks_attr(&body);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
