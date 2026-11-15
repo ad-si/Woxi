@@ -1274,3 +1274,36 @@ fn review_colored_background_keeps_black_tick_labels() {
     assert!(svg.contains("fill=\"#000000\""));
   }
 }
+
+/// `Style[Framed[…], …]` styles the framed content and keeps the frame:
+/// typeset as styled text, the box border was dropped.
+#[test]
+fn styled_framed_keeps_its_frame() {
+  clear_state();
+  for code in [
+    r#"ExportString[Style[Framed["degenerate"], 12, "Label"], "SVG"]"#,
+    r#"ExportString[Style[Framed["degenerate"], Red], "SVG"]"#,
+    r#"ExportString[Pane[Style[If[False, 1, Framed["degenerate"]], 12], ImageSize -> {200, 100}], "SVG"]"#,
+  ] {
+    let svg = interpret(code).unwrap();
+    assert!(svg.contains("<rect"), "{code}: no frame in {svg}");
+    assert!(svg.contains("degenerate"), "{code}: no text in {svg}");
+    assert!(!svg.contains("Framed"), "{code}: raw call in {svg}");
+  }
+  // The directives still reach the content: 12 pt red text.
+  let svg =
+    interpret(r#"ExportString[Style[Framed["degenerate"], 12, Red], "SVG"]"#)
+      .unwrap();
+  assert!(svg.contains("font-size=\"12"), "{svg}");
+  assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+}
+
+/// `Style[Panel[…], …]` likewise keeps the panel box around the content.
+#[test]
+fn styled_panel_keeps_its_box() {
+  clear_state();
+  let svg =
+    interpret(r#"ExportString[Style[Panel["inside"], Bold], "SVG"]"#).unwrap();
+  assert!(svg.contains("<rect"), "{svg}");
+  assert!(svg.contains("inside") && !svg.contains("Panel"), "{svg}");
+}
