@@ -462,6 +462,29 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_refines_bends_as_drawn_in_a_stretched_frame() {
+      // The x range is 100× narrower than the y range, but `AspectRatio ->
+      // 1` draws the curve in a square frame, so refinement must judge
+      // bends in display coordinates: rescaled to the frame, no two visible
+      // consecutive segments turn by more than ~15°. The spiral also
+      // settles into a sub-pixel tail, which must not swallow the sample
+      // budget (it used to take every one of the 4000 allowed samples).
+      assert_eq!(
+        interpret(
+          "l = First[Cases[ParametricPlot[{Exp[-t/20] Cos[t]/100, \
+             Exp[-t/20] Sin[t]}, {t, 0, 2000}, AspectRatio -> 1], \
+             Line[l_] :> l, Infinity]]; \
+           d = Differences[{100 #[[1]], #[[2]]} & /@ l]; \
+           {Max[MapThread[If[Norm[#1] > 0.01 && Norm[#2] > 0.01, \
+             VectorAngle[#1, #2], 0] &, {Most[d], Rest[d]}]] < 0.27, \
+            Length[l] < 3000}"
+        )
+        .unwrap(),
+        "{True, True}"
+      );
+    }
+
+    #[test]
     fn parametric_plot_draws_tooltip_wrapped_curves() {
       // Hover-only wrappers around curves draw the curves themselves.
       let svg = export_svg(
@@ -604,6 +627,36 @@ mod graphics {
       insta::assert_snapshot!(export_svg(
         "Graphics[{Point[{{0, 0}, {1, 1}, {2, 0}}]}]"
       ));
+    }
+
+    #[test]
+    fn point_default_size_is_0_008_of_width() {
+      // `PointSize[0.008]` is Wolfram's 2-D default: at the default 360
+      // image (359 drawable pixels) a dot is 2.87 pixels across.
+      let svg = export_svg("Graphics[Point[{0, 0}]]");
+      assert!(svg.contains("r=\"1.44\""), "{svg}");
+    }
+
+    #[test]
+    fn point_size_follows_letterboxed_graphic_width() {
+      // A square range in a 500 × 400 image is drawn 400 wide; a relative
+      // point size is a fraction of that width, not of the image's.
+      let svg = export_svg(
+        "Graphics[Point[{{0, 0}, {1, 1}}], PlotRange -> {{0, 1}, {0, 1}}, \
+         ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"1.60\""), "{svg}");
+      let svg = export_svg(
+        "Graphics[{PointSize[0.02], Point[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"3.99\""), "{svg}");
+      // Absolute sizes do not depend on the graphic's width.
+      let svg = export_svg(
+        "Graphics[{AbsolutePointSize[6], Point[{{0, 0}, {1, 1}}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> {500, 400}]",
+      );
+      assert!(svg.contains("r=\"3.00\""), "{svg}");
     }
 
     #[test]
@@ -2011,6 +2064,80 @@ mod graphics {
       assert!(
         !svg.contains(">200<") && !svg.contains(">400<"),
         "{plot}: {svg}"
+      );
+    }
+
+    /// A log plot's primitives live in `Log` space, as in Wolfram:
+    /// `First[LogPlot[E^x, …]]` is a line with `y = x`, not `y = E^x`.
+    #[test]
+    fn log_plot_primitives_are_in_log_space() {
+      assert_eq!(
+        interpret(
+          "Max[Abs[Subtract @@@ Cases[First[LogPlot[Exp[x], {x, 0, 3}]], \
+           Line[p_] :> p, Infinity][[1]]]] < 10^-6"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "Max[Abs[Subtract @@@ Cases[First[LogLogPlot[x, {x, 1, 10}]], \
+           Line[p_] :> p, Infinity][[1]]]] < 10^-6"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    /// `Show` layering a `Graphics` over a log plot used to redraw the
+    /// curve at its raw values on a linear axis, so a label placed at
+    /// `Log[100]` (Wolfram's coordinates for the height of the 100 tick)
+    /// sank to the bottom. The picture now stays in `Log` space with the
+    /// plot's decade ticks, and the plot's own `PlotRange` is mapped there.
+    #[test]
+    fn show_graphics_over_log_plot_keeps_the_log_axis() {
+      let svg = export_svg(
+        "Show[LogPlot[Exp[x], {x, 0, 10}], Graphics[Text[\"mid\", {5, Log[100]}]]]",
+      );
+      for label in [">10<", ">100<", ">1000<"] {
+        assert!(svg.contains(label), "missing {label}: {svg}");
+      }
+      assert!(!svg.contains(">5000<"), "linear y ticks: {svg}");
+      // The label sits halfway up the 0..10 decades of the axis' range,
+      // not on the bottom edge.
+      let before = &svg[..svg.find("mid<").unwrap()];
+      let tag = &before[before.rfind("<text").unwrap()..];
+      let y: f64 = tag
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!((80.0..160.0).contains(&y), "label at y = {y}: {svg}");
+
+      assert_eq!(
+        interpret(
+          "PlotRange[Show[LogPlot[Exp[x], {x, 0, 3}, PlotRange -> {1, 10}], \
+           Graphics[Point[{1, 1}]]]][[2]]"
+        )
+        .unwrap(),
+        "{0., 2.302585092994046}"
+      );
+    }
+
+    /// `GridLines -> Automatic` on a log plot shown with other graphics
+    /// draws its horizontal lines at the log ticks.
+    #[test]
+    fn show_over_log_plot_puts_grid_lines_at_decades() {
+      assert_eq!(
+        interpret(
+          "Round[Exp[Cases[Options[Show[LogPlot[Exp[x], {x, 0, 7}, \
+           GridLines -> Automatic], Graphics[Point[{1, 1}]]], GridLines], \
+           {_, y_List} :> y, Infinity][[1]]]]"
+        )
+        .unwrap(),
+        "{1, 5, 10, 50, 100, 500, 1000}"
       );
     }
 
@@ -4188,6 +4315,23 @@ mod graphics {
           (28.0..39.0).contains(&cx),
           "expected the point ~1/3 into the image (padded {{-1,2}} span), \
            cx={cx}"
+        );
+      }
+
+      // An explicit `PlotRange -> {amin, amax}` sets the gray scale of an
+      // `ArrayPlot`: white at `amin`, black at `amax` (here 1 is mid-gray).
+      #[test]
+      fn array_plot_value_range_sets_the_gray_scale() {
+        assert_eq!(
+          interpret("First[ArrayPlot[{{0, 1}, {1, 2}}, PlotRange -> {0, 2}]]")
+            .unwrap(),
+          "Raster[{{0.5, 0.}, {1., 0.5}}, {{0, 0}, {2, 2}}, {0, 1}]"
+        );
+        // A single bound is the top of a range starting at 0.
+        assert_eq!(
+          interpret("First[ArrayPlot[{{0, 1}, {1, 4}}, PlotRange -> 2]]")
+            .unwrap(),
+          "Raster[{{0.5, 1}, {1., 0.5}}, {{0, 0}, {2, 2}}, {0, 1}]"
         );
       }
 
@@ -21822,6 +21966,40 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// are bisected on the predicate rather than left on the sample grid,
     /// and the corner where the two lines meet (inside a grid cell) is
     /// restored instead of beveled.
+    /// A plot binds its variables like `Block`, so a function whose own
+    /// parameters share their names keeps them. Regression: sampling a
+    /// saved `CompiledFunction[…]` whose embedded `Function[{x, y}, …]`
+    /// reused the plot variables rewrote it to `Function[{1., y}, …]`,
+    /// and the region came out empty.
+    #[test]
+    fn region_plot_keeps_function_parameters_named_like_plot_variables() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "cf = CompiledFunction[{11, 15., 5470}, {_Real, _Real}, \
+           {{3, 0, 0}, {3, 0, 1}, {3, 0, 2}}, {}, {0, 0, 3, 0, 0}, {{1}}, \
+           Function[{x, y}, x^2 + y^2], Evaluate]; \
+           Count[RegionPlot[cf[x, y] < 1, {x, -2, 2}, {y, -2, 2}], \
+           _Polygon, Infinity]"
+        )
+        .unwrap(),
+        "1"
+      );
+      // The inner function's parameter shadows the plot variable while a
+      // free occurrence of the other plot variable is still substituted.
+      assert_eq!(
+        interpret(
+          "cg = CompiledFunction[{11, 15., 5470}, {_Real, _Real}, \
+           {{3, 0, 0}, {3, 0, 1}, {3, 0, 2}}, {}, {0, 0, 3, 0, 0}, {{1}}, \
+           Function[{x, t}, x - t], Evaluate]; \
+           Cases[RegionPlot[cg[x, 0] < cg[y, 0], {x, -1, 1}, {y, -1, 1}][[1]], \
+           Polygon[p_] :> Length[p], Infinity] =!= {}"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     #[test]
     fn region_plot_linear_region_is_exact() {
       clear_state();
@@ -35654,6 +35832,25 @@ mod manipulate {
     );
   }
 
+  // A `Sequence @@ (f /@ items[[1 ;; n]])` inside a control-area
+  // `Dynamic[…]` (a keypad of buttons, one per allowed digit) is held until
+  // the display runs with `n` bound. Extracting the spec used to evaluate
+  // it with `n` unset, mapping `f` over the unevaluated `Part` and printing
+  // `Part::pkspec1`.
+  #[test]
+  fn spec_extraction_leaves_dynamic_sequence_applies_held() {
+    clear_state();
+    interpret("hits = 0; tap[k_] := (hits++; Button[k, x = k])").unwrap();
+    let expr = interpret_to_expr(
+      r#"Manipulate[x, {x, "", ControlType -> None}, {{n, 3}, 1, 5, 1},
+        Dynamic[Grid[{{Sequence @@ (tap /@ Part[{"a", "b", "c", "d", "e"}, 1 ;; n])}}]]]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("keypad Manipulate");
+    assert_eq!(spec.displays.len(), 1);
+    assert_eq!(interpret("hits").unwrap(), "0");
+  }
+
   // A Manipulate whose trailing arguments are all options shows its body
   // with no controls; it used to fall back to an unrendered Manipulate.
   #[test]
@@ -46641,6 +46838,47 @@ fn the_default_stroke_is_one_pixel_at_every_size() {
   );
 }
 
+/// Under `ImageSize -> {w, h}` a bare drawing taller than the box is
+/// centered at its own, narrower width, and `Thickness`, `PointSize` and
+/// `Dashing` are fractions of that width, not of the box's.
+#[test]
+fn relative_sizes_follow_the_drawing_width_in_a_wider_image_size_box() {
+  // A 1 x 2 range in a 400 x 200 box is drawn about 100 px wide.
+  let tall_line = export_svg(
+    "Graphics[{Thickness[0.01], Line[{{0, 0}, {0, 2}}]}, \
+     PlotRange -> {{0, 1}, {0, 2}}, ImageSize -> {400, 200}]",
+  );
+  assert!(
+    tall_line.contains("stroke-width=\"0.99\""),
+    "Thickness follows the narrow drawing: {tall_line}"
+  );
+  let tall_point = export_svg(
+    "Graphics[{PointSize[0.1], Point[{0, 0}]}, \
+     PlotRange -> {{-1, 1}, {-2, 2}}, ImageSize -> {400, 200}]",
+  );
+  assert!(
+    tall_point.contains("r=\"4.98\""),
+    "PointSize follows the narrow drawing: {tall_point}"
+  );
+  let tall_dash = export_svg(
+    "Graphics[{Dashing[{0.1, 0.05}], Line[{{0, 0}, {0, 2}}]}, \
+     PlotRange -> {{0, 1}, {0, 2}}, ImageSize -> {400, 200}]",
+  );
+  assert!(
+    tall_dash.contains("stroke-dasharray=\"10.0,5.0\""),
+    "Dashing follows the narrow drawing: {tall_dash}"
+  );
+  // A drawing wider than the box spans its whole width.
+  let wide_line = export_svg(
+    "Graphics[{Thickness[0.01], Line[{{0, 0}, {2, 0}}]}, \
+     PlotRange -> {{0, 2}, {0, 1}}, ImageSize -> {400, 400}]",
+  );
+  assert!(
+    wide_line.contains("stroke-width=\"3.99\""),
+    "a wide drawing uses the full width: {wide_line}"
+  );
+}
+
 /// Regression coverage for the combination of constructs a Wolfram
 /// Demonstrations "region transform" widget uses together: a `Manipulate`
 /// whose body is a `Module`/`Which` that picks an `AffineTransform` from the
@@ -56949,5 +57187,113 @@ mod repeated_graphics_options {
        ImageSize -> 100]",
     );
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+  }
+}
+
+/// A `Text` label offset past its edge (`{2, -1}`) is moved by its own
+/// width. A subscript (`H_C`) is set at a smaller size and its lowering
+/// markers draw nothing, so it moves less than two full characters; it was
+/// measured as four characters and landed far from its point.
+#[test]
+fn text_offset_measures_a_subscripted_label_by_its_drawn_width() {
+  let center_x = |label: &str| -> f64 {
+    let svg = export_svg(&format!(
+      "Graphics[{{Text[{label}, {{0, 0}}, {{2, -1}}]}}, \
+       PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}, ImageSize -> 200]"
+    ));
+    let start = svg.rfind("<text").unwrap();
+    let tag = &svg[start..];
+    let x = tag.split("x=\"").nth(1).unwrap();
+    x[..x.find('"').unwrap()].parse().unwrap()
+  };
+  let plain_one = 100.0 - center_x("\"H\"");
+  let plain_two = 100.0 - center_x("\"HC\"");
+  let subscripted = 100.0 - center_x("Subscript[\"H\", \"C\"]");
+  assert!(
+    subscripted > plain_one && subscripted < plain_two,
+    "shift {subscripted} should lie between {plain_one} and {plain_two}"
+  );
+  // A digit subscript drawn as a Unicode script glyph (`X₅`) is small too.
+  let digit = 100.0 - center_x("Subscript[\"X\", \"5\"]");
+  assert!(digit > plain_one && digit < plain_two, "{digit}");
+}
+
+mod number_form_base_form_svg {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  const SUB: &str = "<tspan baseline-shift=\"sub\" font-size=\"70%\">";
+
+  // `NumberForm[BaseForm[x, b], Infinity]` keeps every base-b digit, so a
+  // grid cell typesets it like the bare `BaseForm`: digits with the base as
+  // a subscript, not the two-line text form run together on one line.
+  #[test]
+  fn unlimited_number_form_of_base_form_has_subscript_base() {
+    for code in [
+      "Grid[{{NumberForm[BaseForm[228., 3], Infinity]}}]",
+      "Grid[{{Pane[Style[NumberForm[BaseForm[228., 3], Infinity, \
+       ExponentFunction -> (Null &)], 10]]}}, Alignment -> Left]",
+      // A formatting helper applied twice nests the wrapper.
+      "Grid[{{NumberForm[NumberForm[BaseForm[228., 3], Infinity], \
+       Infinity]}}]",
+    ] {
+      let out = svg(code);
+      assert!(
+        out.contains(&format!("22110.{SUB}3</tspan>")),
+        "{code}: {out}"
+      );
+    }
+    // Base 10 shows no subscript.
+    let out = svg("Grid[{{NumberForm[BaseForm[228., 10], Infinity]}}]");
+    assert!(out.contains(">228.</text>"), "{out}");
+  }
+
+  // `Graphics` text (the layout Woxi Studio uses for a Manipulate body)
+  // sets a base-form number with Unicode subscript digits.
+  #[test]
+  fn graphics_text_of_base_form_uses_subscript_digits() {
+    let out = svg(
+      "Graphics[Text[NumberForm[NumberForm[BaseForm[228., 16], Infinity], \
+       Infinity]]]",
+    );
+    assert!(out.contains(">e4.₁₆</text>"), "{out}");
+    let out = svg("Graphics[Text[BaseForm[5, 2]]]");
+    assert!(out.contains(">101₂</text>"), "{out}");
+  }
+
+  // `NumberForm` only rewrites numbers: around a value with none in it (a
+  // subscript of strings) it shows that value unchanged.
+  #[test]
+  fn number_form_of_numberless_value_shows_it_unchanged() {
+    let out = svg(
+      "Grid[{{NumberForm[Subscript[\"6c\", \"36\"], Infinity, \
+       ExponentFunction -> (Null &)]}}]",
+    );
+    assert!(out.contains(&format!("6c{SUB}36</tspan>")), "{out}");
+    let out = svg("Graphics[Text[NumberForm[Subscript[\"6c\", \"36\"], 5]]]");
+    assert!(out.contains(">6c₃₆</text>"), "{out}");
+    // A value holding a number is still formatted.
+    assert_eq!(
+      interpret("ToString[NumberForm[{1.23456}, 3]]").unwrap(),
+      "{1.23}"
+    );
+  }
+
+  // A `Column` text item with a line break sets each line on its own row
+  // line, keeping the scripts inside a line.
+  #[test]
+  fn column_text_item_breaks_lines() {
+    let out = svg(
+      "Column[{Style[StringForm[\"`` =\\n``\", Subscript[\"a\", 7], \"cd\"], \
+       18], \"x\"}]",
+    );
+    let texts: Vec<&str> = out.matches("<text ").collect();
+    assert_eq!(texts.len(), 3, "{out}");
+    assert!(out.contains(&format!(">a{SUB}7</tspan> =</text>")), "{out}");
+    assert!(out.contains(">cd</text>"), "{out}");
   }
 }

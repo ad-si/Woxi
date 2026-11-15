@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 19752
 expression: "export_svg(r#\"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> \"My Title\"]\"#)"
 ---
 <svg width="360" height="232" viewBox="0 0 360 232" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -9,8 +10,8 @@ expression: "export_svg(r#\"BoxWhiskerChart[{1, 2, 3, 4, 5}, PlotLabel -> \"My T
 <text x="183.8" y="10.86" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="12" fill="#333333" xml:space="preserve">My Title</text>
 <g transform="translate(9.14,13.91)">
 <g>
-<circle cx="17.47" cy="205.12" r="2.10" fill="rgb(0,0,0)" opacity="0"/>
-<circle cx="331.89" cy="10.80" r="2.10" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="17.47" cy="205.12" r="1.40" fill="rgb(0,0,0)" opacity="0"/>
+<circle cx="331.89" cy="10.80" r="1.40" fill="rgb(0,0,0)" opacity="0"/>
 <polygon points="148.91,52.75 200.45,52.75 200.45,163.16 148.91,163.16" fill="rgb(255,213,64)"/>
 <polyline points="200.45,107.96 148.91,107.96" fill="none" stroke="rgb(255,255,255)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>
 <polyline points="174.68,163.16 174.68,196.29" fill="none" stroke="rgb(128,128,128)" stroke-width="1.00" stroke-linejoin="round" stroke-linecap="butt"/>

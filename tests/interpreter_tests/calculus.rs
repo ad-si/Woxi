@@ -5175,6 +5175,61 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // Infinite ranges are integrated with adaptive Gauss-Kronrod on the
+  // mapped interval. Adaptive Simpson accepted oscillating integrands
+  // (Hermite polynomials under a Gaussian) too early, e.g. giving 0.0011
+  // instead of E^-2 2^8/8! = 0.00086 for a displaced-oscillator overlap.
+  #[test]
+  fn oscillating_integrand_over_infinite_range() {
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^(-x^2) HermiteH[n, x]^2, \
+         {x, -Infinity, Infinity}]/(Sqrt[Pi] 2^n n!), 10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^(-(x^2 + (x - 2)^2)/2) HermiteH[m, x - 2], \
+         {x, -Infinity, Infinity}]^2/(Pi 2^m m!) - E^-2 2^m/m!, 10^-8], \
+         {m, 0, 10}]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+    );
+    // Overlap of the n = 2 and m = 7 states: (2!/7!) E^-2 2^5 L_2^5(2)^2.
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[E^(-(x^2 + (x - 2)^2)/2) HermiteH[7, x - 2] \
+         HermiteH[2, x], {x, -Infinity, Infinity}]^2/(Pi 2^9 7! 2!) - \
+         2!/7! E^-2 2^5 LaguerreL[2, 5, 2]^2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn oscillating_integrand_over_half_infinite_ranges() {
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^-x LaguerreL[n, x]^2, {x, 0, Infinity}], \
+         10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^x LaguerreL[n, -x]^2, {x, -Infinity, 0}], \
+         10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+  }
+
   // A tail where E^(huge) meets an underflowed factor: the compiled
   // integrand retries the overflow with an unbounded exponent (0, not
   // Infinity times 0), and Gamma far off the real axis underflows instead

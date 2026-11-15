@@ -2545,6 +2545,9 @@ fn evaluate_function_call_ast_inner(
     "ChemicalData" => {
       return crate::functions::chemical_data::chemical_data_ast(args);
     }
+    "ProteinData" => {
+      return crate::functions::protein_data::protein_data_ast(args);
+    }
     "GraphData" => {
       return crate::functions::graph_data::graph_data_ast(args);
     }
