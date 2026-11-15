@@ -10478,6 +10478,59 @@ thread_local! {
     const { std::cell::Cell::new(None) };
 }
 
+/// The corners whose projected convex hull outlines the cone head of a
+/// line `Arrow` in 3D: the tip (the arrow's last point) followed by a ring
+/// of points around the cone's base. The cone is `len` long, points along
+/// the arrow's last segment and is as slim as the head of an
+/// `Arrow[Tube[…]]`. Like Wolfram's, the head keeps its size on an arrow
+/// shorter than itself. `None` when the last segment has no length.
+fn arrow3d_head_outline(points: &[Point3D], len: f64) -> Option<Vec<Point3D>> {
+  const RING: usize = 24;
+  let n = points.len();
+  if n < 2 || !(len.is_finite() && len > 0.0) {
+    return None;
+  }
+  let tip = points[n - 1];
+  let prev = points[n - 2];
+  let d = [tip.x - prev.x, tip.y - prev.y, tip.z - prev.z];
+  let seg = v_len(d);
+  if !(seg > 0.0 && seg.is_finite()) {
+    return None;
+  }
+  let u = [d[0] / seg, d[1] / seg, d[2] / seg];
+  // Two unit vectors spanning the plane of the base.
+  let helper = if u[0].abs() < 0.9 {
+    [1.0, 0.0, 0.0]
+  } else {
+    [0.0, 1.0, 0.0]
+  };
+  let cross = |a: [f64; 3], b: [f64; 3]| {
+    [
+      a[1] * b[2] - a[2] * b[1],
+      a[2] * b[0] - a[0] * b[2],
+      a[0] * b[1] - a[1] * b[0],
+    ]
+  };
+  let e1 = cross(u, helper);
+  let l1 = v_len(e1);
+  let e1 = [e1[0] / l1, e1[1] / l1, e1[2] / l1];
+  let e2 = cross(u, e1);
+  let radius = 0.22 * len;
+  let base = [tip.x - u[0] * len, tip.y - u[1] * len, tip.z - u[2] * len];
+  let mut out = Vec::with_capacity(RING + 1);
+  out.push(tip);
+  for k in 0..RING {
+    let a = std::f64::consts::TAU * k as f64 / RING as f64;
+    let (s, c) = a.sin_cos();
+    out.push(Point3D {
+      x: base[0] + radius * (c * e1[0] + s * e2[0]),
+      y: base[1] + radius * (c * e1[1] + s * e2[1]),
+      z: base[2] + radius * (c * e1[2] + s * e2[2]),
+    });
+  }
+  Some(out)
+}
+
 /// True when a 3D scene holds an `Arrow[Tube[…]]`, whose solid head is
 /// sized by the box of the whole scene.
 fn contains_tube_arrow(expr: &Expr) -> bool {
@@ -13567,31 +13620,36 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"{}/>\n",
           pts.join(" "), stroke_color, opacity_attr
         ));
-        // Arrowhead
-        let last = points.len() - 1;
-        let (sx1, sy1) = to_svg(
-          project(points[last - 1], &camera).0,
-          project(points[last - 1], &camera).1,
-        );
-        let (sx2, sy2) = to_svg(
-          project(points[last], &camera).0,
-          project(points[last], &camera).1,
-        );
-        let dx = sx2 - sx1;
-        let dy = sy2 - sy1;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len > 1.0 {
-          let ux = dx / len;
-          let uy = dy / len;
-          let hl = style.arrowhead.map_or(8.0, |s| s * svg_width as f64);
-          let hw = 3.0 * hl / 8.0;
-          let bx1 = sx2 - ux * hl + (-uy) * hw;
-          let by1 = sy2 - uy * hl + ux * hw;
-          let bx2 = sx2 - ux * hl - (-uy) * hw;
-          let by2 = sy2 - uy * hl - ux * hw;
-          svg.push_str(&format!(
-            "<polygon points=\"{sx2:.1},{sy2:.1} {bx1:.1},{by1:.1} {bx2:.1},{by2:.1}\" fill=\"{stroke_color}\"{opacity_attr}/>\n"
-          ));
+        // Arrowhead: a cone in the scene, like the head of an
+        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
+        // length as a fraction of the diagonal of the scene's box, so it
+        // foreshortens with the view like the rest of the scene.
+        let scene_diag =
+          v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
+        if let Some(head) = arrow3d_head_outline(
+          points,
+          style.arrowhead.unwrap_or(0.05) * scene_diag,
+        ) {
+          let screen: Vec<(f64, f64, usize)> = head
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+              let (px, py) = project(*p, &camera);
+              let (sx, sy) = to_svg(px, py);
+              (sx, sy, i)
+            })
+            .collect();
+          let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
+          if hull.len() >= 3 {
+            let pts: Vec<String> = hull
+              .iter()
+              .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
+              .collect();
+            svg.push_str(&format!(
+              "<polygon points=\"{}\" fill=\"{stroke_color}\"{opacity_attr}/>\n",
+              pts.join(" ")
+            ));
+          }
         }
       }
       _ => {}
