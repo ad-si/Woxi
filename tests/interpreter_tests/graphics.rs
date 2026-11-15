@@ -30813,6 +30813,69 @@ mod line_legend {
   }
 
   #[test]
+  fn line_legend_relative_sizes_follow_default_picture_width() {
+    clear_state();
+    // A relative `Thickness`/`Dashing` on a legend sample is a fraction of
+    // the 360-point default picture width, so a `Thickness[0.01]` curve
+    // keeps its weight in the legend instead of thinning to a hairline.
+    let svg = export_svg(
+      "LineLegend[{{Thickness[0.01], Blue}, \
+       {Thickness[0.02], Dashing[{0.04, 0.05}], Red}}, {\"a\", \"b\"}]",
+    );
+    assert!(svg.contains("stroke-width=\"3.60\""), "{svg}");
+    assert!(svg.contains("stroke-width=\"7.20\""), "{svg}");
+    assert!(svg.contains("stroke-dasharray=\"14.4,18.0\""), "{svg}");
+  }
+
+  #[test]
+  fn line_legend_honors_label_style() {
+    clear_state();
+    let svg = export_svg(
+      "LineLegend[{Red, Blue}, {\"a\", \"b\"}, LabelStyle -> {FontSize -> 11}]",
+    );
+    assert_eq!(svg.matches("font-size=\"11\"").count(), 2, "{svg}");
+    let svg = export_svg("LineLegend[{Red}, {\"a\"}, LabelStyle -> 9]");
+    assert!(svg.contains("font-size=\"9\""), "{svg}");
+  }
+
+  #[test]
+  fn line_legend_labels_use_proportional_face() {
+    clear_state();
+    let svg = export_svg("LineLegend[{Red, Blue}, {\"a\", \"b\"}]");
+    let label_tags: Vec<&str> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|t| t.split('>').next())
+      .collect();
+    assert_eq!(label_tags.len(), 2, "{svg}");
+    assert!(
+      label_tags
+        .iter()
+        .all(|t| t.contains("sans-serif") && !t.contains("monospace")),
+      "{label_tags:?}"
+    );
+  }
+
+  #[test]
+  fn line_legend_multiline_label_continues_under_itself() {
+    clear_state();
+    // A label broken with `\n` continues under its own first line, not
+    // under the line sample at the start of the entry.
+    let svg =
+      export_svg("LineLegend[{Red, Blue}, {\"first\\n second\", \"b\"}]");
+    let xs: Vec<f64> = svg
+      .split("<tspan x=\"")
+      .skip(1)
+      .filter_map(|t| t.split('"').next())
+      .filter_map(|v| v.parse().ok())
+      .collect();
+    assert_eq!(xs.len(), 2, "{svg}");
+    assert_eq!(xs[0], xs[1], "{svg}");
+    assert!(xs[0] > 30.0, "The label starts after the sample: {svg}");
+    assert!(svg.contains(" second"));
+  }
+
+  #[test]
   fn line_legend_nested_in_grid_cell_renders_inline() {
     clear_state();
     let result = interpret_with_stdout(

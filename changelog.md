@@ -12,6 +12,10 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- A standalone `LineLegend` draws relative `Thickness`/`Dashing` samples at
+    the weight of the plotted curves, honors `LabelStyle`, sets its labels in
+    a proportional face, and continues a multi-line label under its own
+    first line.
 
 # 2026-11-08 - 0.4.0
 
