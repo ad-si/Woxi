@@ -1057,8 +1057,8 @@ mod arrows_and_box {
     assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
   }
 
-  /// The area of the first filled arrowhead `<polygon>` (the triangle after
-  /// a `<polyline>`).
+  /// The area of the first filled arrowhead `<polygon>` (the outline after
+  /// a `<polyline>`), by the shoelace formula.
   fn head_area(svg: &str) -> f64 {
     let after = svg.split("<polyline").nth(1).unwrap();
     let pts = after.split("<polygon points=\"").nth(1).unwrap();
@@ -1072,20 +1072,59 @@ mod arrows_and_box {
         (it.next().unwrap(), it.next().unwrap())
       })
       .collect();
-    ((p[1].0 - p[0].0) * (p[2].1 - p[0].1)
-      - (p[2].0 - p[0].0) * (p[1].1 - p[0].1))
+    let n = p.len();
+    (0..n)
+      .map(|i| {
+        let (a, b) = (p[i], p[(i + 1) % n]);
+        a.0 * b.1 - b.0 * a.1
+      })
+      .sum::<f64>()
       .abs()
       / 2.0
   }
 
   // `Arrowheads[s]` sizes the heads of 3D arrows as a fraction of the
-  // picture's width.
+  // diagonal of the scene's box; the default is a twentieth.
   #[test]
   fn arrowheads_size_3d_arrow_heads() {
-    let small = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
-    let large =
+    let default = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    let same =
       svg("Graphics3D[{Arrowheads[0.05], Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
-    assert!(head_area(&large) > 3.0 * head_area(&small));
+    let large =
+      svg("Graphics3D[{Arrowheads[0.15], Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    assert!((head_area(&default) - head_area(&same)).abs() < 1.0);
+    assert!(head_area(&large) > 6.0 * head_area(&default));
+  }
+
+  // The head of a 3D line arrow is a cone sized by the scene, not a fixed
+  // number of pixels, so it stays about as large on screen however big the
+  // scene is.
+  #[test]
+  fn arrow3d_head_scales_with_the_scene() {
+    let small = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    let big = svg(
+      "Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}], \
+       Point[{{-10, -10, -10}, {10, 10, 10}}]}]",
+    );
+    // A twentieth of the 1-unit scene is visibly more than a few pixels.
+    assert!(head_area(&small) > 150.0, "{}", head_area(&small));
+    // In the 35-times larger scene the 1-unit arrow shrinks on screen but
+    // its head (a twentieth of the scene) stays about as large.
+    assert!(head_area(&big) > 0.3 * head_area(&small));
+  }
+
+  // A head keeps its size on an arrow shorter than the head itself.
+  #[test]
+  fn arrow3d_head_not_clamped_to_short_arrow() {
+    let scene = |tip: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrow[{{{{0, 0, 0}}, {tip}}}], \
+         Point[{{{{-1, -1, -1}}, {{1, 1, 1}}}}]}}]"
+      ))
+    };
+    let short = head_area(&scene("{0.01, 0, 0}"));
+    let long = head_area(&scene("{0.9, 0, 0}"));
+    assert!((short - long).abs() < 0.05 * long, "{short} vs {long}");
   }
 
   // The bounding box is drawn opaque, in the axis gray.
