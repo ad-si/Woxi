@@ -58752,3 +58752,91 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+/// Regression: a trailing `VertexTextureCoordinates -> …` option of
+/// `FilledCurve[curves, opts]` was read as the coordinate list of the
+/// compact segment form, so the picture turned into an error box.
+#[test]
+fn filled_curve_with_texture_coordinates_option_draws() {
+  let svg = export_svg(
+    "Graphics[{FilledCurve[{{Line[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]}}, \
+     VertexTextureCoordinates -> {{{0}, {0}, {1}, {1}}}]}]",
+  );
+  assert!(!svg.contains("is not valid"), "{svg}");
+  assert!(!svg.contains("fill-opacity=\"0.08\""), "no error box: {svg}");
+}
+
+/// `Texture[{c1, c2, …}]` is a one-dimensional color ramp, laid on a
+/// polygon by its `u` texture coordinates — drawn as a linear gradient.
+#[test]
+fn one_dimensional_texture_fills_with_a_gradient() {
+  let svg = export_svg(
+    "Graphics[{Texture[{{1, 1, 1}, {0, 0, 1}}], \
+     Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}, \
+     VertexTextureCoordinates -> {{0}, {0}, {1}, {1}}]}]",
+  );
+  assert!(svg.contains("<linearGradient"), "{svg}");
+  assert!(svg.contains("stop-color=\"rgb(255,255,255)\""), "{svg}");
+  assert!(svg.contains("stop-color=\"rgb(0,0,255)\""), "{svg}");
+  assert!(svg.contains("fill=\"url(#ramp"), "{svg}");
+  // The same for the components of a `FilledCurve`.
+  let svg = export_svg(
+    "Graphics[{Texture[{RGBColor[1, 1, 1], RGBColor[0, 0, 1]}], \
+     FilledCurve[{{Line[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}]}}, \
+     VertexTextureCoordinates -> {{{0}, {0}, {1}, {1}}}]}]",
+  );
+  assert!(svg.contains("fill=\"url(#ramp"), "{svg}");
+}
+
+/// A framed label's box takes the label's color, honors `FrameMargins`
+/// and a `FrameStyle` given as a list, and is as wide as its text.
+#[test]
+fn framed_label_box_uses_label_color_and_margins() {
+  let svg = export_svg(
+    "Graphics[{Style[Text[Framed[\"ab\", FrameMargins -> 10], {0, 0}], \
+     17, Red], Point[{1, 1}]}]",
+  );
+  assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+  let rect = svg
+    .split("<rect ")
+    .find(|r| r.contains("stroke=\"rgb(255,0,0)\""))
+    .unwrap();
+  let attr = |name: &str| -> f64 {
+    rect
+      .split_once(&format!(" {name}=\""))
+      .and_then(|(_, r)| r.split_once('"'))
+      .and_then(|(v, _)| v.parse().ok())
+      .unwrap()
+  };
+  // "ab" is about 19 points wide at 17 points; 10-point margins each side.
+  let w = attr("width");
+  assert!(w > 35.0 && w < 45.0, "width {w}: {svg}");
+  let svg = export_svg(
+    "Graphics[{Text[Framed[\"ab\", FrameStyle -> {Blue}], {0, 0}], \
+     Point[{1, 1}]}]",
+  );
+  assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
+}
+
+/// A `SpanFromLeft` cell of a grid label merges into its neighbor rather
+/// than printing its own name.
+#[test]
+fn grid_label_span_marker_is_not_printed() {
+  let svg = export_svg(
+    "Graphics[{Text[Grid[{{\"feed\", SpanFromLeft}, {\"a\", \"b\"}}], \
+     {0, 0}], Text[Framed[Grid[{{\"top\", SpanFromLeft}, {\"c\", \"d\"}}], \
+     FrameMargins -> 4], {1, 1}]}]",
+  );
+  assert!(!svg.contains("SpanFromLeft"), "{svg}");
+  assert!(svg.contains(">top<"), "{svg}");
+}
+
+/// A `Spacer[w]` in a label is `w` points of space, not `w` blanks.
+#[test]
+fn label_spacer_is_sized_in_points() {
+  let svg = export_svg(
+    "Graphics[{Style[Text[Row[{\"a\", Spacer[20], \"b\"}], {0, 0}], 17]}]",
+  );
+  // A blank is about 4.7 points wide at 17 points: four blanks.
+  assert!(svg.contains(">a    b<"), "{svg}");
+}

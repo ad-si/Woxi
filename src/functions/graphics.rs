@@ -52371,6 +52371,20 @@ mod manipulate_display_number_form_tests {
     assert!(dbg.contains('\u{b3}'), "exponent missing: {dbg}");
   }
 
+  /// `NumberForm[Dynamic[x], spec]` — a control's value readout — shows
+  /// the live value of `x` as it is, the formatting not reaching inside
+  /// the `Dynamic` (a notebook shows `2.`, not `2.0`, for `{3, 1}`).
+  #[test]
+  fn numberform_around_dynamic_shows_the_live_value() {
+    let bindings = vec![("p".to_string(), "2.".to_string())];
+    let node =
+      build_manipulate_display("NumberForm[Dynamic[p], {3, 1}]", &bindings);
+    match node {
+      DisplayNode::Static { text, svg: None } => assert_eq!(text, "2."),
+      other => panic!("expected a static text node, got {other:?}"),
+    }
+  }
+
   #[test]
   fn dynamic_paddedform_caption_renders_formatted_digits() {
     // The leading padding is trimmed, matching how a `NumberForm`/`PaddedForm`
