@@ -30040,7 +30040,7 @@ fn button_picture_cell_width(item: &Expr) -> Option<f64> {
     return None;
   }
   Some(
-    button_image_size(&args)
+    button_image_size(args)
       .map_or(BUTTON_PICTURE_LABEL_SIZE as f64, |(w, _)| w),
   )
 }
