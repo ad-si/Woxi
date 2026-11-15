@@ -13833,6 +13833,21 @@ mod plot3d {
       assert!(!svg.contains("</tspan>"), "{svg}");
     }
 
+    /// A `Plot`'s `AxesLabel` given as a `Style`d string of inline
+    /// `FractionBox` notation is drawn stacked in the style's color and
+    /// size, like the same label on a plain `Graphics`.
+    #[test]
+    fn plot_axes_label_stacks_styled_inline_fraction_string() {
+      let svg = export_svg(
+        r#"Plot[t, {t, 0, 1}, AxesLabel -> {"t",
+          Style["\!\(\*FractionBox[\(dy\), \(dt\)]\)", Large, Purple]}]"#,
+      );
+      assert!(!svg.contains("dy/dt"), "flattened: {svg}");
+      assert!(svg.contains(">dy<") && svg.contains(">dt<"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(128,0,128)\""), "purple: {svg}");
+      assert!(svg.contains("font-size=\"24.0\""), "Large size: {svg}");
+    }
+
     /// An `AxesLabel` written as a stacked fraction (`FractionBox`) is drawn
     /// as numerator over denominator, not flattened to a wide `a/b` line
     /// that squeezes the plotting area; a `PlotLabel` sits above the
@@ -36999,6 +37014,34 @@ mod manipulate {
       ),
       "f[xs_] -> x"
     );
+  }
+
+  // A bare arithmetic choice (`1/2`, `Pi/4`) is typeset the way the
+  // FrontEnd shows the value — a stacked fraction — on its setter button,
+  // while plain integers and strings stay text.
+  #[test]
+  fn bare_arithmetic_setter_choices_are_typeset_as_fractions() {
+    let expr =
+      interpret_to_expr(r#"Manipulate[b, {b, {1/2, 1, Pi/4, -3, "x"}}]"#)
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let ManipulateControl::Discrete {
+      values,
+      value_label_svgs,
+      ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected a discrete control, got {:?}", spec.controls[0]);
+    };
+    assert_eq!(values[0], "1/2");
+    for i in [0, 2] {
+      let svg = value_label_svgs[i].as_deref().unwrap_or_default();
+      assert!(svg.starts_with("<svg"), "choice {i}: {svg:?}");
+      assert!(svg.contains("<line"), "fraction bar for choice {i}: {svg}");
+    }
+    for i in [1, 3, 4] {
+      assert!(value_label_svgs[i].is_none(), "choice {i} stays text");
+    }
   }
 
   // A `Sequence @@ (f /@ items[[1 ;; n]])` inside a control-area
