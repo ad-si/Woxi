@@ -4856,6 +4856,15 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     && name == "Text"
     && args.len() == 1
   {
+    // A picture is drawn from the content set in the text face, so the
+    // text of a layout inside (`Text[Row[{"Depth = ", x, " m"}]]`) is
+    // proportional too.
+    let in_face = render_inline_display_wrapper(
+      &functions::graphics::in_text_face(&args[0]),
+    );
+    if matches!(in_face, syntax::Expr::Graphics { .. }) {
+      return in_face;
+    }
     let inner = render_inline_display_wrapper(&args[0]);
     return match inner {
       syntax::Expr::Graphics { .. } => inner,

@@ -15567,6 +15567,27 @@ pub(crate) fn is_monospace_font_family(family: &str) -> bool {
 /// a fraction of the font size; used to size plain `Text[…]` items.
 pub(crate) const SANS_ADVANCE: f64 = 0.55;
 
+/// `content` set in the proportional text face, the way `Text[content]`
+/// displays it outside a `Graphics`: a `Style[…, FontFamily -> "sans-serif"]`
+/// around it, merged into a `Style` it already wears. The default face goes
+/// first, so a `FontFamily` of the content's own still takes precedence.
+pub(crate) fn in_text_face(content: &Expr) -> Expr {
+  let family = Expr::Rule {
+    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+    replacement: Box::new(Expr::String("sans-serif".to_string())),
+  };
+  match content {
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      let mut new_args = vec![args[0].clone(), family];
+      new_args.extend(args[1..].iter().cloned());
+      call("Style", new_args)
+    }
+    _ => call("Style", vec![content.clone(), family]),
+  }
+}
+
 /// Whether a layout item is a plain-text `Text[expr]` display, possibly
 /// dressed in `Style`/`Invisible` wrappers.
 fn is_text_display_item(item: &Expr) -> bool {
@@ -30707,7 +30728,23 @@ pub(crate) fn style_pushed_into_layout(
   // A picture takes no text style: wrapping it would only hide it from the
   // row/column renderer, which recognizes a graphic by its own head and
   // would fall back to the `-Graphics-` placeholder text.
-  let restyle = |e: &Expr| {
+  fn restyle(e: &Expr, directives: &[Expr]) -> Expr {
+    // A product with a picture among its factors (`"Label: " g`) is laid
+    // out as its factors side by side: the style goes onto each factor, so
+    // the picture is still recognized as one.
+    if let Expr::FunctionCall { name, args } = e
+      && name == "Times"
+      && args.iter().any(|f| {
+        matches!(f, Expr::Graphics { .. } | Expr::Image { .. })
+          || crate::evaluator::lays_out_a_graphic(f)
+      })
+      && grid_cell_graphic(e).is_some()
+    {
+      return call(
+        "Times",
+        args.iter().map(|f| restyle(f, directives)).collect(),
+      );
+    }
     // A `Grid` span marker holds no content and is only recognized bare:
     // inside a `Style` it would be drawn as its own name.
     // `Null` (an `If[cond, …]` whose condition failed) draws as nothing,
@@ -30760,7 +30797,8 @@ pub(crate) fn style_pushed_into_layout(
         .chain(directives.iter().cloned())
         .collect(),
     )
-  };
+  }
+  let restyle = |e: &Expr| restyle(e, directives);
   // A `Grid`'s items are rows of cells; everything else is a flat list.
   let styled: Vec<Expr> = items
     .iter()
@@ -32381,8 +32419,14 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       let bold = if st.font_weight == "bold" { 1.1 } else { 1.0 };
       let per_char =
         crate::functions::plot_padding::text_width(&markup, st.font_size);
-      let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
-      per_char.max(average) * bold
+      // The generic `sans-serif` is the default face itself, which is
+      // always there, so its own advances alone measure it.
+      if st.font_family == "sans-serif" {
+        per_char * bold
+      } else {
+        let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
+        per_char.max(average) * bold
+      }
     } else {
       chars * char_width * scale
     };
