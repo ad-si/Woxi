@@ -2286,7 +2286,8 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
           channels,
           ref data,
           ..
-        }) = crate::functions::image_ast::texture_source_image(&args[0])
+        }) =
+          crate::functions::image_ast::texture_source_image(&args[0])
         {
           use base64::Engine;
           let img = crate::functions::image_ast::expr_to_dynamic_image(
@@ -4310,8 +4311,7 @@ fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
       | Expr::RuleDelayed {
         pattern,
         replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") =>
-      {
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") => {
         texture_coordinate_list(replacement)
       }
       Expr::List(inner) => inner.iter().find_map(from_rule),
@@ -8154,19 +8154,21 @@ fn framed_label_picture(
         && let Some(Expr::List(grid_rows)) = args.first()
         && grid_rows.iter().all(|r| matches!(r, Expr::List(_))) =>
     {
-      for row in grid_rows.iter() {
+      for row in grid_rows {
         let Expr::List(cells) = row else { continue };
         let mut out: Vec<(String, usize)> = Vec::new();
-        for cell in cells.iter() {
+        for cell in cells {
           match cell {
-            Expr::Identifier(s) if s == "SpanFromLeft" || s == "SpanFromBoth" => {
+            Expr::Identifier(s)
+              if s == "SpanFromLeft" || s == "SpanFromBoth" =>
+            {
               match out.last_mut() {
                 Some(last) => last.1 += 1,
                 None => out.push((String::new(), 1)),
               }
             }
             Expr::Identifier(s) if s == "SpanFromAbove" => {
-              out.push((String::new(), 1))
+              out.push((String::new(), 1));
             }
             other => out.push((svg_escape(&graphics_text_content(other)), 1)),
           }
@@ -8332,8 +8334,8 @@ fn framed_label_picture(
     for (cell, span) in row {
       let span = (*span).min(ncols - c.min(ncols)).max(1);
       let end = (c + span).min(ncols);
-      let cell_w: f64 = col_w[c.min(ncols)..end].iter().sum::<f64>()
-        + gap * (span - 1) as f64;
+      let cell_w: f64 =
+        col_w[c.min(ncols)..end].iter().sum::<f64>() + gap * (span - 1) as f64;
       // A lone line spans the whole block.
       let cell_w = if ncols == 1 { content_w } else { cell_w };
       let (text_anchor, x) = match anchor {
@@ -50747,11 +50749,13 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
     // live value as it is: the front end updates the `Dynamic` on its own,
     // outside the number formatting, so `2.` stays `2.`, not `2.0`.
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "NumberForm" | "PaddedForm" | "AccountingForm")
-        && let Some(Expr::FunctionCall {
-          name: dynamic,
-          args: inner,
-        }) = args.first()
+      if matches!(
+        name.as_str(),
+        "NumberForm" | "PaddedForm" | "AccountingForm"
+      ) && let Some(Expr::FunctionCall {
+        name: dynamic,
+        args: inner,
+      }) = args.first()
         && dynamic == "Dynamic"
         && !inner.is_empty() =>
     {

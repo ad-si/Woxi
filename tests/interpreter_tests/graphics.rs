@@ -58763,7 +58763,10 @@ fn filled_curve_with_texture_coordinates_option_draws() {
      VertexTextureCoordinates -> {{{0}, {0}, {1}, {1}}}]}]",
   );
   assert!(!svg.contains("is not valid"), "{svg}");
-  assert!(!svg.contains("fill-opacity=\"0.08\""), "no error box: {svg}");
+  assert!(
+    !svg.contains("fill-opacity=\"0.08\""),
+    "no error box: {svg}"
+  );
 }
 
 /// `Texture[{c1, c2, …}]` is a one-dimensional color ramp, laid on a
