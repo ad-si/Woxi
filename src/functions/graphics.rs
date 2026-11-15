@@ -23432,8 +23432,9 @@ fn with_default_graphics_options(expr: &Expr, defaults: &[Expr]) -> Expr {
         .iter()
         .filter(|o| {
           rule_option_name(o).is_some_and(|n| {
-            !own.contains(&n)
-              && !(is_plot && PLOT_EXPLICIT_GRAPHICS_OPTIONS.contains(&n))
+            let plot_sets_it =
+              is_plot && PLOT_EXPLICIT_GRAPHICS_OPTIONS.contains(&n);
+            !(own.contains(&n) || plot_sets_it)
           })
         })
         .cloned()
