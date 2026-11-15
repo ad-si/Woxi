@@ -2844,8 +2844,9 @@ mod graphics {
         .collect();
       assert_eq!(texts.len(), 2, "{svg}");
       assert!(texts[0] > lines[0][1].0, "{svg}");
-      // "first label text" is about 100 points wide at 14 pt.
-      assert!(texts[0] + 95.0 <= 200.0, "{svg}");
+      // "first label text" is about 82 points wide at 14 pt (Arial), so
+      // the drawing gives up that much of the width.
+      assert!(texts[0] > 100.0 && texts[0] + 80.0 <= 200.0, "{svg}");
       // The narrowed drawing is shorter than half the full width.
       assert!(num(header, "height") < 80.0, "{svg}");
     }
