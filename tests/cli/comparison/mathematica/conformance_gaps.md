@@ -16,6 +16,14 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### `DownValues` shows a named list pattern as `name_List`
+
+A definition such as `h[g : {__}, n_] := …` matches exactly like Wolfram's
+(`h[{}, 1]` stays unevaluated), but `DownValues[h]` and `Definition[h]` print
+its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
+named list pattern is compiled into a `List` head plus an element condition,
+and the display rebuilds the pattern from the head alone.
+
 ### `Rationalize[x, dx]` sometimes picks a different approximation
 
 Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200
@@ -4378,7 +4386,14 @@ unevaluated, because the package is not loaded. Woxi has no package system for
 `Needs` to load into, so the qualified names are always live. With the package
 loaded the results agree.
 
-`Needs` also does not put such a context on `$ContextPath`, so where
+`PolyhedronOperations`Truncate` of a closed solid appends one cap face per
+cut-off vertex after the corner-cut faces (as `{cutFaces, {caps…}}`); the
+geometry is that of a truncation, but the order and nesting of those faces
+have not been checked against wolframscript.
+
+`Needs["PolyhedronOperations`"]` does put that context on `$ContextPath` (so a
+bare `Truncate` read afterwards is the package's), but for `Combinatorica`` and
+`HypothesisTesting`` `Needs` does not, so where
 wolframscript prints `OneSidedPValue -> …` after
 `Needs["HypothesisTesting`"]`, Woxi prints the qualified
 `HypothesisTesting`OneSidedPValue -> …` — the same expression, spelled in
@@ -5617,6 +5632,18 @@ given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
 colors — wolframscript draws no highlight even though the plot's style names
 `Specularity[White, 3]`, so Woxi leaves it out there too.
 
+### Standalone 3D plots ignore the camera options
+
+`Plot3D` and most other 3D plot functions (`ParametricPlot3D`,
+`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
+the plot call itself change nothing:
+`Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
+picture as without the option. The options are kept on the result, so
+`Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
+re-renders the scene through `Graphics3D` and honors them, including the
+`SphericalRegion -> True` framing a `Manipulate` frame defaults to.
+
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
 Woxi frames the picture by the sphere around the (2 %-padded) bounding box
@@ -5640,26 +5667,37 @@ calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
 
-### A long explicit `PlotRange` box at a fixed `ImageSize` draws smaller in Wolfram
+### Sphere framing of an unboxed box at a fixed `ImageSize`
 
-Without `SphericalRegion`, Woxi fits the projected outline of the displayed
-box into an `ImageSize -> {w, h}` picture. A Demonstration drawing a long,
-thin `Graphics3D` scene through `Show[g, PlotRange -> {{-11, 11},
-{-4.25, 4.25}, {-4.25, 4.25}}, ImageSize -> {575, 350}]` (with `Boxed ->
-False` and the default view) behaves differently. In all four of its Wolfram
-snapshots, a cylinder from `{-10, 0, 0}` to `{10, 0, 0}` is about 246 px
-wide. In Woxi it is 357 px wide: the box's outline fills the 350 px height.
+Under the default `SphericalRegion -> Automatic`, Woxi frames a
+`Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
+displayed box) when the box is invisible (`Boxed -> False`) and the picture
+is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate
+this, none checked with wolframscript: a cylinder from `{-10, 0, 0}` to
+`{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
+4.25}}, ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
+box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
+`{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
+244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), and a `Show` of
+a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
+custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
+and 0.86× the box fit.
 
-Wolfram's size matches what Woxi draws with `SphericalRegion -> True`. That
-gives 250 px, with the same slope and centering, as if the sphere around the
-displayed box were fit into the shorter image side.
+Which conditions really trigger the sphere framing — `Boxed -> False`, the
+pinned size, an explicit `PlotRange` or `Show` — is unverified. A
+`Boxed -> False` picture given only a width still fits the box outline, and
+`SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
+`ViewAngle` turn the sphere framing off. The surface plots
+(`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
-This conflicts with the calibration in the entry above. There a
-`SphericalRegion -> False` cylinder at `ImageSize -> {550, 350}` without a
-`PlotRange` fills the width (532/550). So the explicit `PlotRange`, `Show`,
-or `Boxed -> False` may trigger the different framing. This could not be
-checked without wolframscript: no snapshot of a box-filling scene with
-an explicit `PlotRange` and a fixed image size was available to compare.
+### `PointSize` in `Graphics3D` draws larger than Wolfram
+
+Woxi draws a `Graphics3D` point with diameter `PointSize` × the picture's
+width, as in 2D. A Demonstration's snapshot of `PointSize[1/60]` atoms at
+`ImageSize -> {595, 375}` shows dots about 6–6.5 px wide, where Woxi draws
+9.9 px. That fits a base of either the shorter image side (6.25 px) or the
+default 360 px width (6 px). One snapshot can't tell these apart, so the
+2D rule stays.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -8726,8 +8764,9 @@ Found comparing the graphics-tests renders (2026-11):
     `ListPlot` with `FrameTicks -> All` matches.
   - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
     in italics (TraditionalForm), and writes `-a` with a minus sign.
-  - A symbol used as an axes or frame label (`FrameLabel -> {Z, X}`) is
-    likewise set upright; WL sets it in italics (TraditionalForm).
+  - A symbol used as a frame label (`FrameLabel -> {Z, X}`) or a plot
+    legend entry is likewise set upright; WL sets it in italics
+    (TraditionalForm). `AxesLabel` entries already follow WL.
   - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
     draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
@@ -9310,8 +9349,7 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `Text` in `Graphics` defaults to 14 pt in Woxi; wolframscript's SVG
   export sets it at 10 pt. Changing the default touches most Graphics
   snapshots, so it is left for a dedicated pass.
-- `Line` strokes use butt caps; wolframscript draws `stroke-linecap:square`
-  (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
+- `Thin` is clamped to 0.5 pt (WL 0.25).
 - Graphics frames are drawn 1 pt wide in the theme gray; wolframscript uses
   0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
 - `GraphicsGrid[…, ImageSize -> 400]` of labeled graphics is 456 pt tall
@@ -10136,6 +10174,14 @@ Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
 
+### `Plot` runs the cells of a multi-column `Grid` title together
+
+`PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
+lines its columns up as a table in `Graphics` and `Show` (the way Wolfram
+draws it), but `Plot` and the other charts with their own title pipeline
+(`src/functions/plot.rs`) still join each row's cells with a space into a
+single centered line of text.
+
 ### `Show[plots, PlotRange -> {xr, Automatic}]` keeps the plots' explicit y range
 
 When `Show` merges plots that were drawn with an explicit
@@ -10145,3 +10191,12 @@ dropping outlying vertices such as the `Top` corners of `Filling -> {i -> Top}`
 polygons (a saved snapshot shows roughly 2.5–29.5 for curves spanning
 4–22), while Woxi keeps the first plot's 0–100. The exact outlier rule
 for an `Automatic` range of merged graphics is not yet known.
+
+### `ViewAngle` with `SphericalRegion -> True`
+
+`Graphics3D[…, SphericalRegion -> True, ViewAngle -> 0.1,
+ViewPoint -> {0, 10, 0}]` of an icosahedron ringed by small solids draws the
+scene about 4% larger than wolframscript, so the outermost solids touch the
+picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
+from the view volume alone (calibrated without `SphericalRegion`); how
+wolframscript combines the two has not been measured.

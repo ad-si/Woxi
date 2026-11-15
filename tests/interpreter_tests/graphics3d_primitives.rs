@@ -46,6 +46,53 @@ mod solids {
     );
   }
 
+  /// A solid wholly inside an opaque sphere or capped cylinder can never be
+  /// seen, so it draws nothing. Regression: a two-tone ball (a sphere just
+  /// inside another, offset a little) showed the inner sphere's facet
+  /// seams streaking across the outer one where the painter's sort
+  /// interleaved them.
+  #[test]
+  fn solid_inside_an_opaque_solid_draws_nothing() {
+    let outer = svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let nested = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Red, Sphere[{0, 0, 0.1}, 0.5], \
+       Cylinder[{{0, -0.3, 0}, {0, 0.3, 0}}, 0.2]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&nested), polygon_count(&outer));
+
+    let cylinder =
+      svg("Graphics3D[{Cylinder[{{0, -1, 0}, {0, 1, 0}}, 1]}, Boxed -> False]");
+    let in_cylinder = svg(
+      "Graphics3D[{Cylinder[{{0, -1, 0}, {0, 1, 0}}, 1], Red, \
+       Sphere[{0, 0.2, 0}, 0.5]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&in_cylinder), polygon_count(&cylinder));
+  }
+
+  /// Only the part of a sphere poking out of another stays; a see-through
+  /// enclosing solid hides nothing.
+  #[test]
+  fn solid_culling_keeps_visible_and_see_through_parts() {
+    let outer = svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let poking = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Red, Sphere[{0, 0, 0.6}, 0.5]}, \
+       Boxed -> False]",
+    );
+    assert!(polygon_count(&poking) > polygon_count(&outer));
+    assert!(fills(&poking).iter().any(|f| {
+      let c: Vec<u8> = f.split(',').filter_map(|v| v.parse().ok()).collect();
+      c.len() == 3 && c[0] > 2 * c[1].max(c[2]).max(1)
+    }));
+
+    let glass =
+      svg("Graphics3D[{Opacity[0.5], Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let glass_nested = svg(
+      "Graphics3D[{Opacity[0.5], Sphere[{0, 0, 0}, 1], Opacity[1], Red, \
+       Sphere[{0, 0, 0}, 0.5]}, Boxed -> False]",
+    );
+    assert!(polygon_count(&glass_nested) > polygon_count(&glass));
+  }
+
   #[test]
   fn ellipsoid_with_semi_axes_is_drawn() {
     let s = svg("Graphics3D[Ellipsoid[{0, 0, 0}, {2, 1, 0.5}]]");
@@ -336,6 +383,85 @@ mod contour_plot3d {
       "{1, 1, 1}"
     );
   }
+
+  /// A compiled function taking the point as one vector argument
+  /// (`cf[{x, y, z}]`) is sampled through its compiled body, and draws the
+  /// same surface as the expression it computes.
+  #[test]
+  fn compiled_vector_argument_body() {
+    let plot = |body: &str| {
+      clear_state();
+      interpret(&format!(
+        "cf = Compile[{{{{p, _Real, 1}}, {{s, _Real}}}}, s p.p]; \
+         ExportString[ContourPlot3D[{body}, {{x, -1, 1}}, {{y, -1, 1}}, \
+         {{z, -1, 1}}, Contours -> {{0.5}}, Mesh -> None, PlotPoints -> 12], \
+         \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(plot("cf[{x, y, z}, 1.]"), plot("x^2 + y^2 + z^2"));
+    // Entries may be constants or expressions in the variables.
+    assert_eq!(
+      plot("cf[{x, 2 y, 0.5}, 2.]"),
+      plot("2. (x^2 + 4 y^2 + 0.25)")
+    );
+  }
+
+  /// `ColorFunction` colors each facet by `f[x, y, z, value]` with every
+  /// argument scaled to 0..1, so a function of the scaled height paints
+  /// the lower and upper half of a sphere differently. A named gradient
+  /// colors by height too.
+  #[test]
+  fn color_function() {
+    let sphere = "ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, \
+                  {z, -1, 1}, Contours -> {0.8}, Mesh -> None";
+    let reddish = |c: &String| {
+      let v: Vec<u16> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[0] > v[1] + 60 && v[0] > v[2] + 60
+    };
+    let bluish = |c: &String| {
+      let v: Vec<u16> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[2] > v[0] + 60 && v[2] > v[1] + 60
+    };
+    let halves = fills(&svg(&format!(
+      "{sphere}, ColorFunction -> Function[{{x, y, z, f}}, \
+       If[z > 0.5, Red, Blue]]]"
+    )));
+    assert!(halves.iter().any(reddish), "{halves:?}");
+    assert!(halves.iter().any(bluish), "{halves:?}");
+    // The value argument is passed too: one level gives one color.
+    let by_value = fills(&svg(&format!(
+      "{sphere}, ColorFunction -> Function[{{x, y, z, f}}, \
+       If[f >= 0, Blue, Red]]]"
+    )));
+    assert!(by_value.iter().any(bluish) && !by_value.iter().any(reddish));
+    let plain = fills(&svg(&format!("{sphere}]")));
+    let rainbow =
+      fills(&svg(&format!("{sphere}, ColorFunction -> \"Rainbow\"]")));
+    assert!(!plain.iter().any(bluish));
+    assert!(rainbow.iter().any(bluish) && rainbow.iter().any(reddish));
+  }
+
+  /// While the plot looks at its body with the variables still free, a
+  /// compiled function given those variables in a vector stays
+  /// unevaluated, instead of iterating its `FixedPoint` symbolically
+  /// without end.
+  #[test]
+  fn compiled_vector_argument_iteration_is_not_run_symbolically() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cf = Compile[{{p, _Real, 1}}, FixedPoint[(# + p.p/#)/2 &, 1., \
+         SameTest -> (Abs[#1 - #2] < 10^-6 &)]]; \
+         Head[ContourPlot3D[cf[{x, y, z}], {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}, Contours -> {0.5}, PlotPoints -> 8]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
 }
 
 mod stream_plot3d {
@@ -393,6 +519,28 @@ fn size(svg: &str) -> (f64, f64) {
 
 mod framing {
   use super::*;
+
+  /// `AspectRatio -> Full` stretches the scene to the width and height
+  /// `ImageSize` gives it, whatever the box's own proportions.
+  #[test]
+  fn aspect_ratio_full_fills_the_image_size() {
+    let s = svg(
+      "Graphics3D[{EdgeForm[Black], Cuboid[{-2, -2, 0}, {2, 2, 1}]}, \
+       Boxed -> False, ViewPoint -> {0, -100, 0}, ImageSize -> {250, 350}, \
+       AspectRatio -> Full, PlotRange -> {{-2, 2}, All, {0, 1}}]",
+    );
+    assert_eq!(size(&s), (250.0, 350.0));
+    let ys: Vec<f64> = s
+      .split(" y1=\"")
+      .skip(1)
+      .chain(s.split(" y2=\"").skip(1))
+      .filter_map(|r| r.split('"').next()?.parse().ok())
+      .collect();
+    let lo = ys.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    // The unit-high slab fills nearly the whole height, not a quarter.
+    assert!(hi - lo > 300.0, "{lo}..{hi}\n{s}");
+  }
 
   /// The x range of the drawn `<line>` endpoints in an SVG.
   fn line_x_extent(svg: &str) -> (f64, f64) {
@@ -1088,8 +1236,8 @@ mod arrows_and_box {
     assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
   }
 
-  /// The area of the first filled arrowhead `<polygon>` (the triangle after
-  /// a `<polyline>`).
+  /// The area of the first filled arrowhead `<polygon>` (the outline after
+  /// a `<polyline>`), by the shoelace formula.
   fn head_area(svg: &str) -> f64 {
     let after = svg.split("<polyline").nth(1).unwrap();
     let pts = after.split("<polygon points=\"").nth(1).unwrap();
@@ -1103,20 +1251,61 @@ mod arrows_and_box {
         (it.next().unwrap(), it.next().unwrap())
       })
       .collect();
-    ((p[1].0 - p[0].0) * (p[2].1 - p[0].1)
-      - (p[2].0 - p[0].0) * (p[1].1 - p[0].1))
+    let n = p.len();
+    (0..n)
+      .map(|i| {
+        let (a, b) = (p[i], p[(i + 1) % n]);
+        a.0 * b.1 - b.0 * a.1
+      })
+      .sum::<f64>()
       .abs()
       / 2.0
   }
 
   // `Arrowheads[s]` sizes the heads of 3D arrows as a fraction of the
-  // picture's width.
+  // diagonal of the scene's box; the default is a twentieth.
   #[test]
   fn arrowheads_size_3d_arrow_heads() {
-    let small = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
-    let large =
+    let default = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    let same =
       svg("Graphics3D[{Arrowheads[0.05], Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
-    assert!(head_area(&large) > 3.0 * head_area(&small));
+    let large =
+      svg("Graphics3D[{Arrowheads[0.15], Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    assert!((head_area(&default) - head_area(&same)).abs() < 1.0);
+    assert!(head_area(&large) > 6.0 * head_area(&default));
+  }
+
+  // The head of a 3D line arrow is a cone sized by the scene, not a fixed
+  // number of pixels, so it stays about as large on screen however big the
+  // scene is.
+  #[test]
+  fn arrow3d_head_scales_with_the_scene() {
+    let small = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    let big = svg(
+      "Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}], \
+       Point[{{-10, -10, -10}, {10, 10, 10}}]}]",
+    );
+    // A twentieth of the 1-unit scene is well over the old fixed 8-pixel
+    // head (an area of 24).
+    assert!(head_area(&small) > 60.0, "{}", head_area(&small));
+    // In the 35-times larger scene the 1-unit arrow shrinks on screen but
+    // its head (a twentieth of the scene) stays about as large.
+    assert!(head_area(&big) > 0.3 * head_area(&small));
+  }
+
+  // A head keeps its size on an arrow shorter than the head itself (up to
+  // the perspective of its slightly different place in the scene).
+  #[test]
+  fn arrow3d_head_not_clamped_to_short_arrow() {
+    let scene = |tip: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrow[{{{{0, 0, 0}}, {tip}}}], \
+         Point[{{{{-1, -1, -1}}, {{1, 1, 1}}}}]}}]"
+      ))
+    };
+    let short = head_area(&scene("{0.01, 0, 0}"));
+    let long = head_area(&scene("{0.9, 0, 0}"));
+    assert!((short - long).abs() < 0.2 * long, "{short} vs {long}");
   }
 
   // The bounding box is drawn opaque, in the axis gray.
@@ -1148,6 +1337,60 @@ mod smooth_shading {
     }
     let flat = svg("Graphics3D[Cuboid[]]");
     assert!(!flat.contains("<linearGradient"), "{flat}");
+  }
+
+  // A parametric surface keeps its smooth shading when `Show` combines it
+  // with other graphics (merging its `GraphicsComplex` of grid quads)
+  // instead of drawing the plot's own picture.
+  #[test]
+  fn parametric_surface_in_show_is_smooth() {
+    let torus = "ParametricPlot3D[{Cos[u] (3 + Cos[v]), Sin[v], \
+                 Sin[u] (3 + Cos[v])}, {u, 0, 2 Pi}, {v, 0, 2 Pi}, \
+                 Mesh -> False]";
+    let s = svg(&format!(
+      "Show[{torus}, Graphics3D[Sphere[{{0, 0, 0}}, 0.5]]]"
+    ));
+    let gradients = s.matches("fill=\"url(#").count();
+    assert!(
+      gradients * 2 > polygon_count(&s),
+      "{gradients} of {}",
+      polygon_count(&s)
+    );
+  }
+
+  // Shared-vertex quads in a `GraphicsComplex` without outlines are shaded
+  // as one smooth surface; the hard fold of a box keeps flat faces.
+  #[test]
+  fn graphics_complex_quads_are_smooth() {
+    let n = 12;
+    let pts = (0..=n)
+      .flat_map(|i| {
+        (0..=1).map(move |j| {
+          let a = std::f64::consts::PI * i as f64 / n as f64;
+          format!("{{{:.6}, {:.6}, {j}}}", a.cos(), a.sin())
+        })
+      })
+      .collect::<Vec<_>>()
+      .join(", ");
+    let quads = (0..n)
+      .map(|i| {
+        let k = 2 * i + 1;
+        format!("{{{}, {}, {}, {}}}", k, k + 2, k + 3, k + 1)
+      })
+      .collect::<Vec<_>>()
+      .join(", ");
+    let s = svg(&format!(
+      "Graphics3D[GraphicsComplex[{{{pts}}}, {{EdgeForm[], \
+       Polygon[{{{quads}}}]}}]]"
+    ));
+    assert!(s.contains("<linearGradient"), "{s}");
+    let cube = svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, \
+       {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}}, \
+       {EdgeForm[], Polygon[{{1, 2, 3, 4}, {5, 6, 7, 8}, {1, 2, 6, 5}, \
+       {2, 3, 7, 6}, {3, 4, 8, 7}, {4, 1, 5, 8}}]}]]",
+    );
+    assert!(!cube.contains("<linearGradient"), "{cube}");
   }
 
   // The far side of a closed convex surface (a capsule) is hidden, so a
