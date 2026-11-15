@@ -16532,7 +16532,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // A horizontal brace (`︷`, `⎴`, `︵`) over the base stretches to
         // span it, carrying any label of its own above it.
         if let Some(brace) = stretchy_brace_script(&args[1], true, font_size) {
-          return brace.attach(base, true);
+          return brace.attach(&base, true);
         }
         let over = layout_box_nested(&args[1], font_size * 0.7);
         let base_y = over.height;
@@ -16584,7 +16584,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         // A horizontal brace (`︸`, `⎵`, `︶`) under the base stretches to
         // span it, carrying any label of its own below it.
         if let Some(brace) = stretchy_brace_script(&args[1], false, font_size) {
-          return brace.attach(base, false);
+          return brace.attach(&base, false);
         }
         let under = layout_box_nested(&args[1], font_size * 0.7);
         let under_y = base.height;
@@ -20983,7 +20983,7 @@ fn stretchy_brace_script(
 impl StretchyBrace {
   /// Stack the brace (and its label) over (`over`) or under `base`,
   /// stretched to the base's width.
-  fn attach(self, base: BoxLayout, over: bool) -> BoxLayout {
+  fn attach(self, base: &BoxLayout, over: bool) -> BoxLayout {
     let w = base.width.max(self.font_size);
     let h = self.font_size * 0.45;
     let sw = (self.font_size * 0.07).max(0.6);
