@@ -35832,6 +35832,25 @@ mod manipulate {
     );
   }
 
+  // A `Sequence @@ (f /@ items[[1 ;; n]])` inside a control-area
+  // `Dynamic[…]` (a keypad of buttons, one per allowed digit) is held until
+  // the display runs with `n` bound. Extracting the spec used to evaluate
+  // it with `n` unset, mapping `f` over the unevaluated `Part` and printing
+  // `Part::pkspec1`.
+  #[test]
+  fn spec_extraction_leaves_dynamic_sequence_applies_held() {
+    clear_state();
+    interpret("hits = 0; tap[k_] := (hits++; Button[k, x = k])").unwrap();
+    let expr = interpret_to_expr(
+      r#"Manipulate[x, {x, "", ControlType -> None}, {{n, 3}, 1, 5, 1},
+        Dynamic[Grid[{{Sequence @@ (tap /@ Part[{"a", "b", "c", "d", "e"}, 1 ;; n])}}]]]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("keypad Manipulate");
+    assert_eq!(spec.displays.len(), 1);
+    assert_eq!(interpret("hits").unwrap(), "0");
+  }
+
   // A Manipulate whose trailing arguments are all options shows its body
   // with no controls; it used to fall back to an unrendered Manipulate.
   #[test]
@@ -57095,5 +57114,85 @@ mod repeated_graphics_options {
        ImageSize -> 100]",
     );
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+  }
+}
+
+mod number_form_base_form_svg {
+  use super::*;
+
+  fn svg(code: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  const SUB: &str = "<tspan baseline-shift=\"sub\" font-size=\"70%\">";
+
+  // `NumberForm[BaseForm[x, b], Infinity]` keeps every base-b digit, so a
+  // grid cell typesets it like the bare `BaseForm`: digits with the base as
+  // a subscript, not the two-line text form run together on one line.
+  #[test]
+  fn unlimited_number_form_of_base_form_has_subscript_base() {
+    for code in [
+      "Grid[{{NumberForm[BaseForm[228., 3], Infinity]}}]",
+      "Grid[{{Pane[Style[NumberForm[BaseForm[228., 3], Infinity, \
+       ExponentFunction -> (Null &)], 10]]}}, Alignment -> Left]",
+      // A formatting helper applied twice nests the wrapper.
+      "Grid[{{NumberForm[NumberForm[BaseForm[228., 3], Infinity], \
+       Infinity]}}]",
+    ] {
+      let out = svg(code);
+      assert!(
+        out.contains(&format!("22110.{SUB}3</tspan>")),
+        "{code}: {out}"
+      );
+    }
+    // Base 10 shows no subscript.
+    let out = svg("Grid[{{NumberForm[BaseForm[228., 10], Infinity]}}]");
+    assert!(out.contains(">228.</text>"), "{out}");
+  }
+
+  // `Graphics` text (the layout Woxi Studio uses for a Manipulate body)
+  // sets a base-form number with Unicode subscript digits.
+  #[test]
+  fn graphics_text_of_base_form_uses_subscript_digits() {
+    let out = svg(
+      "Graphics[Text[NumberForm[NumberForm[BaseForm[228., 16], Infinity], \
+       Infinity]]]",
+    );
+    assert!(out.contains(">e4.₁₆</text>"), "{out}");
+    let out = svg("Graphics[Text[BaseForm[5, 2]]]");
+    assert!(out.contains(">101₂</text>"), "{out}");
+  }
+
+  // `NumberForm` only rewrites numbers: around a value with none in it (a
+  // subscript of strings) it shows that value unchanged.
+  #[test]
+  fn number_form_of_numberless_value_shows_it_unchanged() {
+    let out = svg(
+      "Grid[{{NumberForm[Subscript[\"6c\", \"36\"], Infinity, \
+       ExponentFunction -> (Null &)]}}]",
+    );
+    assert!(out.contains(&format!("6c{SUB}36</tspan>")), "{out}");
+    let out = svg("Graphics[Text[NumberForm[Subscript[\"6c\", \"36\"], 5]]]");
+    assert!(out.contains(">6c₃₆</text>"), "{out}");
+    // A value holding a number is still formatted.
+    assert_eq!(
+      interpret("ToString[NumberForm[{1.23456}, 3]]").unwrap(),
+      "{1.23}"
+    );
+  }
+
+  // A `Column` text item with a line break sets each line on its own row
+  // line, keeping the scripts inside a line.
+  #[test]
+  fn column_text_item_breaks_lines() {
+    let out = svg(
+      "Column[{Style[StringForm[\"`` =\\n``\", Subscript[\"a\", 7], \"cd\"], \
+       18], \"x\"}]",
+    );
+    let texts: Vec<&str> = out.matches("<text ").collect();
+    assert_eq!(texts.len(), 3, "{out}");
+    assert!(out.contains(&format!(">a{SUB}7</tspan> =</text>")), "{out}");
+    assert!(out.contains(">cd</text>"), "{out}");
   }
 }
