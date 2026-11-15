@@ -9464,6 +9464,77 @@ mod plot3d {
       assert_eq!(bare.lines().filter(|l| l.starts_with("<line ")).count(), 0);
     }
 
+    /// A rim outline is a chain of short `<line>` pieces. Regression: they
+    /// had butt ends, which leave a notch at every bend, so the rim of a
+    /// small cylinder or cone read as a dashed circle. Solid outline
+    /// pieces get round ends; a dashed `EdgeForm` keeps its butt ends.
+    #[test]
+    fn graphics3d_rim_outline_pieces_join_with_round_caps() {
+      for code in [
+        "Graphics3D[Cylinder[{{0,0,0},{0,0.1,0}}, 0.2], Boxed -> False]",
+        "Graphics3D[Cone[{{0,0,0},{0,0,1}}, 0.3], Boxed -> False]",
+        "Graphics3D[{Opacity[0.3], Cylinder[]}, Boxed -> False]",
+      ] {
+        let svg = export_svg(code);
+        let rims: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<line ")).collect();
+        assert!(!rims.is_empty(), "{code}: {svg}");
+        assert!(
+          rims.iter().all(|l| l.contains("stroke-linecap=\"round\"")),
+          "{code}: {rims:?}"
+        );
+      }
+      let dashed = export_svg(
+        "Graphics3D[{EdgeForm[Dashed], Cylinder[]}, Boxed -> False]",
+      );
+      let rims: Vec<&str> =
+        dashed.lines().filter(|l| l.starts_with("<line ")).collect();
+      assert!(!rims.is_empty(), "{dashed}");
+      assert!(
+        rims
+          .iter()
+          .all(|l| l.contains("stroke-dasharray") && !l.contains("linecap")),
+        "{rims:?}"
+      );
+    }
+
+    /// The facets of a translucent face are drawn without a seam stroke:
+    /// neighboring facets' strokes overlap and trace the tessellation as
+    /// lighter or darker lines. Regression: a facet with one outlined edge
+    /// (the fan triangles of a cylinder cap, the halves of a cuboid face)
+    /// still got a stroke in its own color, so a translucent disk showed
+    /// radial spokes.
+    #[test]
+    fn graphics3d_translucent_facets_have_no_seam_stroke() {
+      for code in [
+        "Graphics3D[{Opacity[0.2], Cylinder[{{0,0,0},{0,0.1,0}}, 1]}, \
+         Boxed -> False]",
+        "Graphics3D[{Opacity[0.5], Cuboid[]}, Boxed -> False]",
+      ] {
+        let svg = export_svg(code);
+        let faces: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.starts_with("<polygon ") && l.contains("opacity="))
+          .collect();
+        assert!(!faces.is_empty(), "{code}: {svg}");
+        assert!(
+          faces.iter().all(|l| l.contains("stroke=\"none\"")),
+          "{code}: {faces:?}"
+        );
+      }
+      // An opaque face still closes its anti-aliasing seams.
+      let opaque = export_svg(
+        "Graphics3D[Cylinder[{{0,0,0},{0,0.1,0}}, 1], Boxed -> False]",
+      );
+      assert!(
+        opaque
+          .lines()
+          .filter(|l| l.starts_with("<polygon "))
+          .all(|l| !l.contains("stroke=\"none\"")),
+        "{opaque}"
+      );
+    }
+
     /// `Dashed`/`Dotted`/`DotDashed`/`Dashing`/`AbsoluteDashing` used to be
     /// silently ignored inside `Graphics3D`: a `Line3D` primitive always
     /// drew as a solid stroke regardless of the style directives in force,

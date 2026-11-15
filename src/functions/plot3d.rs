@@ -13397,7 +13397,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let (ax, ay) = corners[e];
             let (bx, by) = corners[(e + 1) % 3];
             svg.push_str(&format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"/>\n",
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\" stroke-linecap=\"round\"/>\n",
             ));
           }
           continue;
@@ -13442,7 +13442,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // neighbors' and darkens every shared seam, tracing the
         // tessellation across what should be a smooth surface. Only an
         // opaque triangle needs it to close the anti-aliasing gap.
-        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+        // That holds for the internal cuts of a partly outlined triangle
+        // (a fan-triangulated cylinder cap, the diagonal of a quad) too:
+        // its outlined edges get their own line below.
+        let seam_stroke = if tri.opacity < 1.0 {
           "none"
         } else {
           paint.as_str()
@@ -13468,8 +13471,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let ((ax, ay), (bx, by)) = (a, b);
           let dash =
             dash3d_attr(tri.edge_dashing.as_ref(), svg_width as f64, 0.0);
+          // A curved outline (a cylinder or cone rim) is a chain of such
+          // pieces. Butt ends leave a wedge-shaped notch at every bend, so
+          // a small rim reads as dashed; round ends join the pieces into
+          // one continuous outline. A dashed outline keeps butt ends so
+          // its dash pattern stays as specified.
+          let cap = if dash.is_empty() {
+            " stroke-linecap=\"round\""
+          } else {
+            ""
+          };
           svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{dash}/>\n",
+            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}{dash}/>\n",
           ));
         }
       }
