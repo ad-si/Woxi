@@ -11553,6 +11553,41 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
   }
 }
 
+/// Radius of the smallest sphere around `center` that encloses every drawn
+/// point of the scene: the corners of its (tessellated) faces and the
+/// vertices of its lines, points, arrows and text anchors.
+fn contents_sphere_radius(
+  triangles: &[[Point3D; 3]],
+  prims: &[Primitive3D],
+  center: Point3D,
+) -> f64 {
+  let dist = |p: &Point3D| {
+    ((p.x - center.x).powi(2)
+      + (p.y - center.y).powi(2)
+      + (p.z - center.z).powi(2))
+    .sqrt()
+  };
+  let mut radius = triangles.iter().flatten().map(dist).fold(0.0_f64, f64::max);
+  for prim in prims {
+    match prim {
+      Primitive3D::Line3D { segments, .. } => {
+        for pt in segments.iter().flatten() {
+          radius = radius.max(dist(pt));
+        }
+      }
+      Primitive3D::Text3D { pos, .. } => radius = radius.max(dist(pos)),
+      Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
+        for pt in points {
+          radius = radius.max(dist(pt));
+        }
+      }
+      _ => {}
+    }
+  }
+  radius
+}
+
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::graphics_option_args(args)[..];
@@ -12896,11 +12931,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y: f64::midpoint(y3_min, y3_max),
       z: f64::midpoint(z3_min, z3_max),
     };
-    let radius = ((x3_max - x3_min).powi(2)
+    let box_radius = ((x3_max - x3_min).powi(2)
       + (y3_max - y3_min).powi(2)
       + (z3_max - z3_min).powi(2))
     .sqrt()
       / 2.0;
+    // An automatic range is framed by the sphere around the box center
+    // that just encloses the contents, which for a rounded solid is much
+    // smaller than the sphere through the box corners. Wolfram's
+    // snapshots of closed polyhedra (a ring of triangles capped by two
+    // pyramids, 2 × 2 × 1.5 to 2 × 2 × 2.3 boxes) at
+    // `ImageSize -> {400, 400}` draw them 1.55–1.63× as large as the
+    // box-sphere framing, which the contents sphere reproduces to within
+    // 1 %. Contents filling the box (a cuboid, a long cylinder) reach its
+    // corners, so both spheres nearly agree there. A pinned `PlotRange` (or an
+    // explicit `PlotRangePadding`) keeps the sphere around its box. The
+    // contents sphere is widened by 2 %, which fits those snapshots best
+    // (unwidened it draws them 2.3 % too large).
+    let contents_radius = (plot_range.is_none() && range_padding.is_none())
+      .then(|| {
+        1.02 * contents_sphere_radius(&triangle_vertices, &prims, center)
+      })
+      .filter(|r| *r > 0.0 && r.is_finite());
+    let radius = contents_radius.map_or(box_radius, |r| r.min(box_radius));
     if radius > 0.0 && radius.is_finite() {
       let span = spherical_region_span(
         radius,

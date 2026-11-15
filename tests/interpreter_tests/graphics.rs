@@ -10667,6 +10667,53 @@ mod plot3d {
       assert_eq!(free.0.round(), free_boxed.0.round());
     }
 
+    /// `SphericalRegion -> True` with an automatic range frames the scene
+    /// by the sphere around the box center that encloses the contents,
+    /// not by the sphere through the box corners. Wolfram's snapshots of
+    /// closed polyhedra drawn at `ImageSize -> {400, 400}` are 1.55–1.63×
+    /// the size the box sphere gives. A regular octahedron reaches only
+    /// the face centers of its cube, so its contents sphere is √3 times
+    /// smaller than the box sphere; a pinned `PlotRange` keeps the box
+    /// sphere, and a cuboid filling its box is framed about the same either
+    /// way.
+    #[test]
+    fn spherical_region_frames_an_automatic_range_by_its_contents() {
+      let octahedron = "Polygon[{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}}], \
+         Polygon[{{-1, 0, 0}, {0, -1, 0}, {0, 0, -1}}], \
+         Polygon[{{1, 0, 0}, {0, -1, 0}, {0, 0, 1}}], \
+         Polygon[{{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}}]";
+      let scene = |prims: &str, opts: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[{{{prims}}}, Boxed -> False, SphericalRegion -> True, \
+           ImageSize -> {{400, 400}}{opts}]"
+        ))
+      };
+      let auto = scene(octahedron, "");
+      let pinned =
+        scene(octahedron, ", PlotRange -> {{-1, 1}, {-1, 1}, {-1, 1}}");
+      let ratio = auto.0 / pinned.0;
+      assert!(
+        (1.65..1.8).contains(&ratio),
+        "expected the contents sphere to draw the octahedron about 1.7× \
+         the box-sphere size, got {auto:?} vs {pinned:?}"
+      );
+      // The octahedron's contents sphere has radius 1 (2 % padded), so it
+      // fills most of the frame.
+      assert!(auto.1 > 300.0 && auto.1 < 400.0, "got {auto:?}");
+
+      // A cuboid reaches its box corners, so its contents sphere is about
+      // the box sphere: the same 2 % padding given explicitly (which keeps
+      // the box sphere) draws it within a few percent of the same size.
+      let cuboid = "Cuboid[{0, 0, 0}, {2, 1, 1}]";
+      let auto = scene(cuboid, "");
+      let padded = scene(cuboid, ", PlotRangePadding -> Scaled[0.02]");
+      let ratio = auto.0 / padded.0;
+      assert!(
+        (1.0..1.04).contains(&ratio),
+        "expected the cuboid nearly unchanged, got {auto:?} vs {padded:?}"
+      );
+    }
+
     /// Surface plots honor an explicit `ViewAngle` the same way
     /// `Graphics3D` does, instead of always fitting the box to the frame.
     /// A unit sphere seen from the default `ViewPoint` (`|ViewPoint|` ≈
