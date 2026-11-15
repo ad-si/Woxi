@@ -22163,6 +22163,44 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("rgb(255,0,0)"));
     }
 
+    /// The density merged by `Show` keeps the smooth shading of the
+    /// standalone plot: its `Raster` carries `Resampling -> "Linear"`, so
+    /// the embedded image is not marked for pixelated (blocky) scaling.
+    /// A plain `Raster` still shows its cells as blocks.
+    #[test]
+    fn density_plot_shades_smoothly_in_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Resampling /. Cases[First[DensityPlot[x y, {x, 0, 1}, {y, 0, 1}]], \
+           r_Raster :> Last[r], Infinity]"
+        )
+        .unwrap(),
+        "Linear"
+      );
+      let svg = export_svg(
+        "Show[DensityPlot[x y, {x, -3, 3}, {y, -2, 2}], \
+         Graphics[{Red, Point[{0, 0}]}]]",
+      );
+      assert_eq!(svg.matches("<image").count(), 1, "{svg:.300}");
+      assert!(!svg.contains("pixelated"), "{svg:.300}");
+
+      // Small smooth rasters are embedded as an image too, so the
+      // renderer can blend them; without the option they stay blocks.
+      let smooth = export_svg(
+        "Graphics[Raster[{{0, 1}, {1, 0}}, Resampling -> \"Linear\"]]",
+      );
+      assert_eq!(smooth.matches("<image").count(), 1, "{smooth:.300}");
+      assert!(!smooth.contains("pixelated"), "{smooth:.300}");
+      let blocky = export_svg("Graphics[Raster[{{0, 1}, {1, 0}}]]");
+      assert_eq!(blocky.matches("<image").count(), 0, "{blocky:.300}");
+      let nearest = export_svg(
+        "Graphics[Raster[Table[Mod[i + j, 2], {i, 80}, {j, 80}], \
+         Resampling -> \"Nearest\"]]",
+      );
+      assert!(nearest.contains("pixelated"), "{nearest:.300}");
+    }
+
     /// `PlotLegends -> Automatic` makes `DensityPlot` a `Legended` plot
     /// with a color bar over the plotted value range, as in Wolfram;
     /// `Show` keeps the legend when merging, and the bar is drawn beside
