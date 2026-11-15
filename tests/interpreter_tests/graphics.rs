@@ -10117,7 +10117,7 @@ mod plot3d {
         assert_eq!(bound, spherical, "{view}");
       }
       // The frame ends with the closure.
-      let _ = woxi::with_manipulate_frame(|| ());
+      woxi::with_manipulate_frame(|| ());
       assert!(!woxi::in_manipulate_frame());
     }
 
