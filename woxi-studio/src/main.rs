@@ -6163,6 +6163,11 @@ fn plain_text_svg(text: &str) -> String {
   svg
 }
 
+/// The face a `<text>` without a `font-family` is set in. usvg would fall
+/// back to "Times New Roman", but Wolfram's default graphics font is a
+/// sans-serif one — an `Epilog` label must match the tick labels around it.
+const DEFAULT_TEXT_FAMILY: &str = "Atkinson Hyperlegible Next";
+
 fn rasterize_svg(
   svg_str: &str,
   scale_factor: f32,
@@ -6170,6 +6175,7 @@ fn rasterize_svg(
 ) -> Option<(iced::widget::image::Handle, u32, u32)> {
   let opts = resvg::usvg::Options {
     fontdb: fontdb.clone(),
+    font_family: DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
@@ -8097,6 +8103,7 @@ fn encode_svg_as_png(
 ) -> Option<Vec<u8>> {
   let opts = resvg::usvg::Options {
     fontdb: fontdb.clone(),
+    font_family: DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
@@ -8124,6 +8131,7 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: std::sync::Arc::new(fontdb),
+    font_family: DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
 
@@ -8489,6 +8497,7 @@ fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
   );
   let opt = svg2pdf::usvg::Options {
     fontdb: pdf_fontdb(),
+    font_family: DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
@@ -8521,6 +8530,7 @@ fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: pdf_fontdb(),
+    font_family: DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let (slide_w, slide_h) = PDF_SLIDE_SIZE;
@@ -18437,6 +18447,39 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         .all(|p| p[0] > 150 && p[1] > 150 && p[2] > 150),
       "every drawn pixel should use the light dark-theme text color"
     );
+  }
+
+  #[test]
+  fn bare_svg_text_uses_the_sans_serif_face() {
+    // Regression: a `<text>` without `font-family` (an `Epilog` label)
+    // fell back to usvg's "Times New Roman" instead of the sans-serif
+    // face the tick labels around it use.
+    let mut db = resvg::usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    // Stand in for a system whose serif fallback is a face of its own
+    // (Times on macOS): here the Mono face plays that part.
+    db.set_serif_family("Atkinson Hyperlegible Mono");
+    let fontdb = Arc::new(db);
+    let svg = |family: &str| {
+      format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" \
+         height=\"30\"><text x=\"4\" y=\"20\" font-size=\"14\"{family}>\
+         Label 123</text></svg>"
+      )
+    };
+    let bare = encode_svg_as_png(&svg(""), &fontdb).unwrap();
+    let sans = encode_svg_as_png(
+      &svg(" font-family=\"Atkinson Hyperlegible Next\""),
+      &fontdb,
+    )
+    .unwrap();
+    let mono = encode_svg_as_png(
+      &svg(" font-family=\"Atkinson Hyperlegible Mono\""),
+      &fontdb,
+    )
+    .unwrap();
+    assert_ne!(sans, mono, "the two faces must render differently");
+    assert_eq!(bare, sans);
   }
 
   #[test]

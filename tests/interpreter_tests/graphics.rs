@@ -4329,7 +4329,7 @@ mod graphics {
     fn axis_at_padded_edge_keeps_label_gutter() {
       let svg = export_svg(
         "Graphics[{Rectangle[{0, 60}, {1, 61}]}, Axes -> True, \
-         Ticks -> {None, {{60, \"Label\"}}}]",
+         Ticks -> {None, {{60.5, \"Label\"}}}]",
       );
       let tag = svg
         .split("<text ")
@@ -4954,6 +4954,31 @@ mod graphics {
       ));
       assert!(svg.matches("<line ").count() > 1);
       assert!(svg.contains("<text "));
+    }
+
+    /// Regression: a lone `Axes -> Automatic` drew no axes at all.
+    #[test]
+    fn axes_automatic_draws_both_axes() {
+      let svg = export_svg("Graphics[Circle[], Axes -> Automatic]");
+      assert_eq!(svg, export_svg("Graphics[Circle[], Axes -> True]"));
+    }
+
+    /// Without `AxesOrigin`, axes whose range leaves out 0 cross at the
+    /// low end of the content, not of the padding around it — so neither
+    /// axis labels the tick at the crossing (the other axis runs on past
+    /// it), as in Wolfram.
+    #[test]
+    fn axes_cross_at_content_minimum() {
+      let svg = export_svg(
+        "Graphics[{Rectangle[{60, 0}, {140, 4}]}, Axes -> True, \
+         AspectRatio -> 1/2, ImageSize -> 360]",
+      );
+      let labels: Vec<&str> = svg
+        .split("</text>")
+        .filter_map(|t| t.rsplit('>').next())
+        .filter(|t| !t.is_empty())
+        .collect();
+      assert_eq!(labels, ["80", "100", "120", "140", "1", "2", "3", "4"]);
     }
   }
 
