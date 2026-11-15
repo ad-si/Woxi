@@ -2291,8 +2291,10 @@ pub fn random_variate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ) else {
         return Ok(unevaluated("RandomVariate", args));
       };
-      if !(mu.is_finite() && sigma > 0.0 && sigma.is_finite())
-        || !alpha.is_finite()
+      if !(mu.is_finite()
+        && sigma > 0.0
+        && sigma.is_finite()
+        && alpha.is_finite())
       {
         return Ok(unevaluated("RandomVariate", args));
       }
