@@ -637,6 +637,80 @@ mod country_data_tests {
     );
   }
 
+  // The further World Bank indicators carry WL's units and scale:
+  // rates per year, fractions instead of percentages, people counts.
+  #[test]
+  fn country_data_indicator_properties() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{QuantityUnit[CountryData[\"Germany\", \"BirthRateFraction\"]], \
+          QuantityUnit[CountryData[\"Japan\", \"LifeExpectancy\"]], \
+          QuantityUnit[CountryData[\"France\", \"FemalePopulation\"]], \
+          QuantityUnit[CountryData[\"India\", \"AnnualBirths\"]], \
+          QuantityUnit[CountryData[\"Brazil\", \"GDPAtParity\"]]}"
+      )
+      .unwrap(),
+      "{Years^(-1), Years, People, People/Years, USDollars/Years}"
+    );
+    // Fractions are plain reals between 0 and 1.
+    assert_eq!(
+      interpret(
+        "Map[With[{v = CountryData[\"Germany\", #]}, \
+          {Head[v], 0 < v < 1}] &, \
+          {\"PovertyFraction\", \"UnemploymentFraction\", \
+           \"InfantMortalityFraction\", \"GiniIndex\"}]"
+      )
+      .unwrap(),
+      "{{Real, True}, {Real, True}, {Real, True}, {Real, True}}"
+    );
+    assert_eq!(
+      interpret("0 < QuantityMagnitude[CountryData[\"Niger\", \"BirthRateFraction\"]] < 0.1")
+        .unwrap(),
+      "True"
+    );
+    // Sub-populations add up to the whole.
+    assert_eq!(
+      interpret(
+        "p = CountryData[\"Canada\", #] & /@ \
+          {\"FemalePopulation\", \"FemaleChildPopulation\", \
+           \"FemaleAdultPopulation\", \"FemaleElderlyPopulation\"}; \
+         Abs[QuantityMagnitude[p[[1]] - Total[Rest[p]]]] < 0.01 \
+           QuantityMagnitude[p[[1]]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // EntityValue answers from the same table.
+    assert_eq!(
+      interpret(
+        "EntityValue[Entity[\"Country\", \"Germany\"], \"LifeExpectancy\"] \
+         === CountryData[\"Germany\", \"LifeExpectancy\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A country without a figure, and an unknown property, give Missing.
+    assert_eq!(
+      interpret(
+        "CountryData[\"UnitedStatesMinorOutlyingIslands\", \"BirthRateFraction\"]"
+      )
+      .unwrap(),
+      "Missing[NotAvailable, BirthRateFraction]"
+    );
+    // Pairing two indicators over all countries, dropping missing data.
+    assert_eq!(
+      interpret(
+        "d = DeleteCases[{CountryData[#, \"PovertyFraction\"], \
+           CountryData[#, \"BirthRateFraction\"]} & /@ CountryData[], \
+           x_ /; !FreeQ[x, Missing]]; \
+         {Length[d] > 100, Union[Head /@ d[[All, 1]]]}"
+      )
+      .unwrap(),
+      "{True, {Real}}"
+    );
+  }
+
   // World Bank statistics under the Wolfram Language's entity names.
   #[test]
   fn country_data_statistics_and_classes() {
@@ -837,6 +911,32 @@ mod country_data_tests {
     assert_eq!(
       interpret("Union[ImageQ /@ CountryData[\"Europe\", \"Flag\"]]").unwrap(),
       "{True}"
+    );
+  }
+
+  #[test]
+  fn country_data_flag_description() {
+    clear_state();
+    // A plain-text description of the flag, through either entry point.
+    assert_eq!(
+      interpret("CountryData[\"France\", \"FlagDescription\"]").unwrap(),
+      "three equal vertical bands of blue (left side), white, and red"
+    );
+    assert_eq!(
+      interpret("StringQ[Entity[\"Country\", \"Japan\"][\"FlagDescription\"]]")
+        .unwrap(),
+      "True"
+    );
+    // Nearly every country has one; a territory flying another country's
+    // flag without a description of its own is Missing.
+    assert_eq!(
+      interpret("Count[CountryData[All, \"FlagDescription\"], _String] > 230")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("CountryData[\"Reunion\", \"FlagDescription\"]").unwrap(),
+      "Missing[NotAvailable, FlagDescription]"
     );
   }
 

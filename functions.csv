@@ -227,7 +227,7 @@ NDSolve,"Solves ordinary differential equations numerically (including vector-va
 Integers,"Domain symbol representing the set of integers",✅,pure,4.0,158
 Large,"Named size symbol used as option value for ImageSize and Style",✅,pure,6.0,159
 Limit,"Computes the limit of an expression",✅,pure,1.0,160
-CountryData,"Returns properties (Population/GDP/Area/FullName/Continent/BorderingCountries/Polygon/yearly series as TimeSeries) of countries or the members of a class (continents or EU) from bundled World Bank and Natural Earth data",✅,pure,6.0,161
+CountryData,"Returns properties (Population/GDP/Area/FullName/Continent/BorderingCountries/Polygon/yearly series as TimeSeries, plus demographic, health, social and economic indicators like BirthRateFraction/LifeExpectancy/PovertyFraction) of countries or the members of a class (continents or EU) from bundled World Bank and Natural Earth data",✅,pure,6.0,161
 AstronomicalData,"Classic (pre-Entity) solar-system data: an index 1-9 names a major body Mercury..Pluto; the ""Position"" property (with an optional date) gives its heliocentric position from two-body Keplerian elements",✅,pure,6.0,161
 Sequence,"Represents a sequence of arguments that are automatically spliced into any function",✅,pure,3.0,162
 Optional,"Represents a pattern with an optional default value — present arguments fill the slots from the left",✅,pure,1.0,164
@@ -787,7 +787,7 @@ GeoGraphics,"Creates geographic maps and visualizations",✅,pure,10.0,741
 Annotation,"Attach an annotation to an expression",✅,none,6.0,742
 Short,"Short output format",✅,pure,1.0,743
 SphericalPlot3D,"3D plot in spherical coordinates",✅,pure,6.0,744
-ProteinData,"",🚫,,7.0,745
+ProteinData,"Returns names, amino acid sequences and Gene Ontology classes of a bundled slice of human proteins (UniProtKB, HGNC, GO)",✅,pure,7.0,745
 CompanyData,"",🚫,,10.0,746
 Raster,"Graphics primitive representing raster image data",✅,none,2.0,747
 VertexSize,"Option for vertex size in graphs",✅,none,8.0,748
@@ -6463,3 +6463,4 @@ Combinatorica`RadialEmbedding,"A Combinatorica graph with its vertices laid out 
 Combinatorica`ConnectedQ,"Whether a Combinatorica graph is (weakly or strongly) connected",✅,pure,6.0,
 Combinatorica`Vertices,"The vertex coordinates of a Combinatorica graph (with All the vertices with their options)",✅,pure,6.0,
 TetGenLink`TetGenConvexHull,"Convex hull of a 3D point set as the points and the inward-wound boundary triangles (after Get[TetGenLink`])",✅,pure,8.0,
+GraphicsArray,"Arranges graphics in a row or grid (superseded by GraphicsGrid)",✅,pure,1.0,

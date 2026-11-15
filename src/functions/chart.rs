@@ -3848,6 +3848,7 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
     BarChartLook, RESOLUTION_SCALE, parse_style_directives,
   };
   let mut look = BarChartLook::default();
+  let mut aspect_full = false;
   let paint = |v: &Expr| {
     let st = parse_style_directives(v)?;
     let color = st.color.map(|c| {
@@ -3957,6 +3958,7 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       }
       "AspectRatio" => {
         look.aspect_ratio = try_eval_to_f64(&value).filter(|r| *r > 0.0);
+        aspect_full = matches!(&value, Expr::Identifier(n) if n == "Full");
       }
       // The label fonts: `LabelStyle` sizes every label, `TicksStyle` the
       // tick labels, and a `Style[label, size]` wrapper its own label.
@@ -4009,13 +4011,17 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
   }
   // As in WL, the plotting area takes the default `1/GoldenRatio` and the
   // picture's height follows (a `PlotLabel` or chart labels make it
-  // taller), unless `ImageSize -> {w, h}` fixes the height.
-  let fixed_height = args[1..].iter().any(|o| {
+  // taller). `ImageSize -> {w, h}` fixes the height instead: the plotting
+  // area keeps its ratio and is centered in that box, unless
+  // `AspectRatio -> Full` stretches it to fill the box.
+  look.fixed_height = args[1..].iter().any(|o| {
     crate::functions::graphics::option_name_value(o).is_some_and(|(n, v)| {
-      n == "ImageSize" && matches!(&*v, Expr::List(wh) if wh.len() == 2)
+      n == "ImageSize"
+        && matches!(&*v, Expr::List(wh)
+          if wh.len() == 2 && try_eval_to_f64(&wh[1]).is_some())
     })
   });
-  if look.aspect_ratio.is_none() && !fixed_height {
+  if look.aspect_ratio.is_none() && !(look.fixed_height && aspect_full) {
     look.aspect_ratio = Some(1.0 / f64::midpoint(1.0, 5f64.sqrt()));
   }
   look

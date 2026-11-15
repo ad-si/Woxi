@@ -6898,7 +6898,13 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
   if w <= 0.0 || h <= 0.0 {
     return inner_svg;
   }
-  let inner = crate::functions::graphics::strip_svg_wrapper(&inner_svg);
+  // Keep the picture's own root `<svg>` nested inside the rotation: a plot
+  // draws in a scaled coordinate system (its `viewBox` is larger than its
+  // `width`/`height`), and stripping that root would draw its content at
+  // the raw, unscaled coordinates — far outside the rotated canvas.
+  let inner = inner_svg
+    .find("<svg")
+    .map_or(inner_svg.as_str(), |root| &inner_svg[root..]);
   let deg = -angle.to_degrees();
   // The canvas grows to the rotated bounding box, so a quarter turn swaps
   // width and height instead of clipping the picture.
@@ -7411,6 +7417,39 @@ fn is_display_box(expr: &Expr) -> bool {
     if matches!(name.as_str(), "Framed" | "Panel" | "Text") && !args.is_empty())
 }
 
+/// The lines a sized `Pane` broke its text into follow the pane's
+/// horizontal `Alignment`: `Alignment -> Center` (or `{Center, Top}`)
+/// centers every line in the pane, `Right` sets them flush right.
+pub(crate) fn align_pane_lines(
+  lines: Expr,
+  alignment: Option<(f64, f64)>,
+) -> Expr {
+  let anchor = match alignment {
+    Some((0.5, _)) => "Center",
+    Some((1.0, _)) => "Right",
+    _ => return lines,
+  };
+  match &lines {
+    Expr::FunctionCall { name, args }
+      if name == "Column" && args.len() == 1 =>
+    {
+      call(
+        "Column",
+        vec![args[0].clone(), Expr::Identifier(anchor.to_string())],
+      )
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Style" | "TraditionalForm")
+        && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = align_pane_lines(args[0].clone(), alignment);
+      call(name.as_str(), new_args)
+    }
+    _ => lines,
+  }
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
@@ -7449,6 +7488,13 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::container_layout::resized_graphic_svg(expr)
         .unwrap_or_else(|| svg_data.clone())
     }
+    // `PaneSelector[{v1 -> e1, …}, sel, default]` displays only the pane
+    // whose key matches `sel`, so exporting one exports that pane.
+    Expr::FunctionCall { name, args }
+      if name == "PaneSelector" && args.len() >= 2 =>
+    {
+      expr_to_svg(&crate::functions::graphics::selected_pane_content(args))
+    }
     // `Pane[content, opts…]` only constrains its content's size; the
     // FrontEnd displays the content, so exporting one exports what it
     // wraps. (The notebook display pipeline already unwraps it — without
@@ -7467,7 +7513,8 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       let pane_size = pane_fixed_size(args);
       let wrapped = match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => pane_size_component(&size[0])
-          .and_then(|w| wrap_pane_text(&args[0], w, 14.0)),
+          .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
+          .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
         _ => None,
       };
       // A grid wider than the pane squeezes its automatically sized
@@ -7673,6 +7720,32 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // difference between the typeset row and the string `Text[Row[…]]`.)
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       expr_to_svg(&unquoted_display_string(&args[0]))
+    }
+    // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
+    // (an outer label size around an inner color) takes both: merge them
+    // into one `Style`, the inner directives after (so overriding) the
+    // outer ones.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
+          if inner == "Style"
+            && inner_args.len() >= 2
+            && styled_table_core(&inner_args[0])) =>
+    {
+      let Expr::FunctionCall {
+        args: inner_args, ..
+      } = &args[0]
+      else {
+        unreachable!()
+      };
+      let mut merged = vec![inner_args[0].clone()];
+      merged.extend(args[1..].iter().cloned());
+      merged.extend(inner_args[1..].iter().cloned());
+      expr_to_svg(&Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: merged.into(),
+      })
     }
     // `Style[content, directives…]` shows `content`; the directives only
     // change how it is set. The picture path has to look through the
@@ -8524,6 +8597,25 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       }
     }
     other => expr_text_svg(other),
+  }
+}
+
+/// Whether `expr` is a table layout a `Style` draws as a styled grid,
+/// possibly under further `Style` wrappers.
+pub(crate) fn styled_table_core(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
+      styled_table_core(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "TableForm" || name == "MatrixForm") && !args.is_empty() =>
+    {
+      true
+    }
+    _ => {
+      is_traditional_matrix_form(expr)
+        || distribute_format_over_tableform(expr).is_some()
+    }
   }
 }
 

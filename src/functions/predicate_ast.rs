@@ -2235,7 +2235,14 @@ pub fn is_directed_infinity(expr: &Expr) -> bool {
 /// structure (a Plus-Times tree) must not be traversed by structural
 /// operations like Map, Apply, Scan, Level, Cases, or Position.
 pub fn is_atomic_number(expr: &Expr) -> bool {
-  matches!(expr, Expr::FunctionCall { name, .. } if name == "Rational")
+  // Only an integer numerator and denominator make the `Rational` atom; an
+  // unevaluated `Rational[a, b c]` is an ordinary call whose parts rules
+  // still reach.
+  matches!(expr, Expr::FunctionCall { name, args } if name == "Rational"
+    && args.len() == 2
+    && args
+      .iter()
+      .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_))))
     || is_complex_number(expr)
 }
 

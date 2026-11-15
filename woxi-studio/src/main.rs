@@ -65,24 +65,6 @@ fn main() -> iced::Result {
     .run()
 }
 
-/// Map between a continuous control's value and its slider's track
-/// position. The two coincide for an ordinary `min..max` range; a reversed
-/// range (written high-to-low, stored sorted) mirrors the track so its
-/// first bound sits at the start, as Wolfram draws it. The mapping is its
-/// own inverse, so it converts in both directions. The track's ends map
-/// exactly onto the bounds, free of the rounding `min + max - v` leaves.
-fn slider_track_position(min: f64, max: f64, reversed: bool, v: f64) -> f64 {
-  if !reversed {
-    v
-  } else if v <= min {
-    max
-  } else if v >= max {
-    min
-  } else {
-    (min + max - v).clamp(min, max)
-  }
-}
-
 /// Application id used as the X11 `WM_CLASS` and the Wayland `app_id`.
 /// Matches the basename of `woxi-studio/linux/woxi-studio.desktop`
 /// so desktop environments can associate windows with the launcher.
@@ -4324,6 +4306,40 @@ fn renders_as_checkbox(values: &[String], value_labels: &[String]) -> bool {
     && value_labels.iter().zip(values).all(|(label, v)| label == v)
 }
 
+/// How a discrete control draws as a checkbox, if it does: whether the box
+/// is checked, and the display label a toggle sends (the other choice).
+///
+/// A bare `{True, False}` domain (see `renders_as_checkbox`) is checked on
+/// `True`, unless a `PopupMenu`/`SetterBar` type was forced (`other_type`).
+/// An explicit `ControlType -> Checkbox` over any two choices (`{1, 0}`) is
+/// a checkbox too, following `Checkbox[x, {v1, v2}]`: the first choice is
+/// unchecked and the second checked. While the bound value is none of the
+/// choices (`has_overflow`) the box shows unchecked.
+fn discrete_checkbox_state(
+  values: &[String],
+  value_labels: &[String],
+  current_index: usize,
+  forced_checkbox: bool,
+  other_type: bool,
+  has_overflow: bool,
+) -> Option<(bool, Option<String>)> {
+  if forced_checkbox && value_labels.len() == 2 {
+    let checked = !has_overflow && current_index == 1;
+    return Some((checked, value_labels.get(usize::from(!checked)).cloned()));
+  }
+  if other_type || !renders_as_checkbox(values, value_labels) {
+    return None;
+  }
+  let checked =
+    !has_overflow && values.get(current_index).is_some_and(|v| v == "True");
+  let other_label = value_labels
+    .iter()
+    .zip(values)
+    .find(|(_, v)| (*v == "True") != checked)
+    .map(|(l, _)| l.clone());
+  Some((checked, other_label))
+}
+
 /// Whether a discrete control's choices render as a segmented SetterBar (a row
 /// of toggle buttons) rather than a dropdown.
 ///
@@ -4417,6 +4433,67 @@ fn placement_slot(placement: manipulate::ControlPlacement) -> usize {
   }
 }
 
+/// One pressable Manipulate `Button`, captioned with its label runs (italic
+/// and `FontSize` from a `Style[…]` label are kept).
+fn manipulate_button<'a>(
+  label: &str,
+  label_runs: &[woxi::functions::graphics::LabelRun],
+  on_press: Message,
+) -> Element<'a, Message> {
+  let spans: Vec<iced::widget::text::Span<Message>> = label_runs
+    .iter()
+    .map(|run| {
+      let mut font = Font::MONOSPACE;
+      if run.italic {
+        font.style = iced::font::Style::Italic;
+      }
+      let span = iced::widget::span(run.text.clone()).font(font);
+      match run.size {
+        Some(size) => span.size(size as f32),
+        None => span,
+      }
+    })
+    .collect();
+  let btn_label: Element<Message> = if spans.is_empty() {
+    text(label.to_string())
+      .size(11)
+      .font(Font::MONOSPACE)
+      .into()
+  } else {
+    rich_text(spans).size(11).into()
+  };
+  button(btn_label).padding([3, 10]).on_press(on_press).into()
+}
+
+/// Finish the column the current control was drawn into (see the `line`
+/// bookkeeping in `render_manipulate_widget`): put the panel column back
+/// into `controls_col` and queue the control's column on the current line.
+fn close_line_item<'a>(
+  controls_col: &mut Column<'a, Message>,
+  outer: &mut Option<Column<'a, Message>>,
+  line: &mut Vec<Element<'a, Message>>,
+) {
+  if let Some(panel) = outer.take() {
+    let item = std::mem::replace(controls_col, panel);
+    line.push(item.into());
+  }
+}
+
+/// Add the queued controls of one panel line to `controls_col`: a single
+/// control as its own row, several side by side.
+fn flush_control_line<'a>(
+  controls_col: &mut Column<'a, Message>,
+  line: &mut Vec<Element<'a, Message>>,
+) {
+  let items = std::mem::take(line);
+  let panel = std::mem::replace(controls_col, Column::new());
+  *controls_col = match items.len() {
+    0 => panel,
+    1 => panel.extend(items),
+    _ => panel.push(Row::with_children(items).spacing(20).align_y(Center)),
+  };
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
@@ -4472,8 +4549,26 @@ fn render_manipulate_widget<'a>(
         *current = to;
       }
     };
+  // The last button already drawn on the line of an earlier button (see
+  // `ControlState::Button::joins_previous`).
+  let mut joined_through: Option<usize> = None;
+  // Controls sharing one line of the panel (see
+  // `ManipulateState::joins_previous_control`): each control is drawn into
+  // a column of its own, kept in `line` until a control that starts a new
+  // line flushes them as one row. `line_outer` holds the panel column while
+  // `controls_col` stands in for the current control's own column.
+  let mut line: Vec<Element<'a, Message>> = Vec::new();
+  let mut line_outer: Option<Column<'a, Message>> = None;
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
-    for tree in panel_trees_at(ctrl_idx) {
+    close_line_item(&mut controls_col, &mut line_outer, &mut line);
+    if joined_through.is_some_and(|last| ctrl_idx <= last) {
+      continue;
+    }
+    let mut trees = panel_trees_at(ctrl_idx).peekable();
+    if trees.peek().is_some() {
+      flush_control_line(&mut controls_col, &mut line);
+    }
+    for tree in trees {
       controls_col = controls_col.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
@@ -4488,8 +4583,18 @@ fn render_manipulate_widget<'a>(
       continue;
     }
     let slot = placement_slot(state.placement_of(ctrl_idx));
+    let joins_line = !line.is_empty()
+      && slot == current_slot
+      && state.joins_previous_control(ctrl_idx);
+    if !joins_line {
+      flush_control_line(&mut controls_col, &mut line);
+    }
     switch_slot(&mut controls_col, &mut current_slot, slot);
     side_used[slot] = true;
+    line_outer = Some(std::mem::replace(
+      &mut controls_col,
+      Column::new().spacing(6).width(Fill),
+    ));
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -4513,10 +4618,25 @@ fn render_manipulate_widget<'a>(
       } => {
         let label_widget =
           manipulate_label_widget(label_runs, label, label_col_width, enabled);
-        // A high-to-low range (`{h, -0.05, -0.5}`) runs its track from the
-        // first bound, so the widget shows and reports mirrored positions.
-        let (lo, hi, reversed) = (*min, *max, *reversed);
-        let position = slider_track_position(lo, hi, reversed, *current);
+        // A high-to-low range (`{u, 2, 0}`) runs its rail from `max` to
+        // `min`; the widget itself only takes an ascending range, so the
+        // thumb position and the reported value are mirrored.
+        let (min, max, step, reversed) = (*min, *max, *step, *reversed);
+        let position =
+          manipulate::slider_rail_position(min, max, reversed, *current);
+        let on_slide = move |v: f64| {
+          if enabled {
+            Message::ManipulateContinuousChanged(
+              cell_idx,
+              ctrl_idx,
+              manipulate::slider_value_at_rail_position(
+                min, max, step, reversed, v,
+              ),
+            )
+          } else {
+            Message::Noop
+          }
+        };
         let value_widget = text(format_slider_value(*current, *is_real))
           .size(11)
           .font(Font::MONOSPACE)
@@ -4524,20 +4644,10 @@ fn render_manipulate_widget<'a>(
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
-              iced::widget::vertical_slider(lo..=hi, position, move |v| {
-                if enabled {
-                  Message::ManipulateContinuousChanged(
-                    cell_idx,
-                    ctrl_idx,
-                    slider_track_position(lo, hi, reversed, v),
-                  )
-                } else {
-                  Message::Noop
-                }
-              })
-              .step(*step)
-              // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
-              .height(120.0);
+              iced::widget::vertical_slider(min..=max, position, on_slide)
+                .step(step)
+                // Default `Fill` height collapses to 0 in this row's `Shrink` cross axis.
+                .height(120.0);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -4545,19 +4655,8 @@ fn render_manipulate_widget<'a>(
               .align_y(Center)
               .spacing(8)
           } else {
-            let mut s = slider(lo..=hi, position, move |v| {
-              if enabled {
-                Message::ManipulateContinuousChanged(
-                  cell_idx,
-                  ctrl_idx,
-                  slider_track_position(lo, hi, reversed, v),
-                )
-              } else {
-                Message::Noop
-              }
-            })
-            .step(*step)
-            .width(Fill);
+            let mut s =
+              slider(min..=max, position, on_slide).step(step).width(Fill);
             if !enabled {
               s = s.style(disabled_slider_style);
             }
@@ -4582,6 +4681,7 @@ fn render_manipulate_widget<'a>(
         radio: as_radio,
         slider: as_slider,
         vertical: is_vertical,
+        checkbox: forced_checkbox,
       } => {
         // A shared variable can have several disjoint SetterBar rows (see
         // `ControlState::Discrete::overflow`'s doc comment); while the true
@@ -4633,22 +4733,17 @@ fn render_manipulate_widget<'a>(
           controls_col = controls_col.push(control_row);
           continue;
         }
-        // A bare boolean domain renders as a checkbox; see
-        // `renders_as_checkbox`.
-        let bool_values: &[String] = values;
-        if !*popup
-          && !*force_setter_bar
-          && renders_as_checkbox(bool_values, value_labels)
-        {
-          let checked = !has_overflow
-            && bool_values.get(*current_index).is_some_and(|v| v == "True");
-          // Toggling selects the other entry; the update handler maps the
-          // sent display label back to its index.
-          let other_label = value_labels
-            .iter()
-            .zip(bool_values.iter())
-            .find(|(_, v)| (*v == "True") != checked)
-            .map(|(l, _)| l.clone());
+        // A bare boolean domain, or any two choices under an explicit
+        // `ControlType -> Checkbox`, renders as a checkbox; see
+        // `discrete_checkbox_state`.
+        if let Some((checked, other_label)) = discrete_checkbox_state(
+          values,
+          value_labels,
+          *current_index,
+          *forced_checkbox,
+          *popup || *force_setter_bar,
+          has_overflow,
+        ) {
           let mut cb = checkbox(checked);
           if enabled && let Some(target) = other_label {
             cb = cb.on_toggle(move |_| {
@@ -5095,31 +5190,45 @@ fn render_manipulate_widget<'a>(
           .spacing(8);
         controls_col = controls_col.push(control_row);
       }
-      manipulate::ControlState::Button {
-        label, label_runs, ..
-      } => {
-        // A pressable action row (`Button["reset", …]`).
-        let spans: Vec<iced::widget::text::Span<Message>> = label_runs
-          .iter()
-          .map(|run| {
-            let mut font = Font::MONOSPACE;
-            if run.italic {
-              font.style = iced::font::Style::Italic;
+      manipulate::ControlState::Button { .. } => {
+        // A pressable action row (`Button["reset", …]`). The buttons right
+        // after it that share its `Row[{…}]` (or `ButtonBar`) go on the
+        // same line.
+        let mut btn_row = Row::new().spacing(6).align_y(Center);
+        let mut idx = ctrl_idx;
+        loop {
+          if let manipulate::ControlState::Button {
+            label, label_runs, ..
+          } = &visible_controls[idx]
+          {
+            let on = state.control_is_enabled.get(idx).copied().unwrap_or(true);
+            btn_row = btn_row.push(manipulate_button(
+              label,
+              label_runs,
+              if on {
+                Message::ManipulateButtonPressed(cell_idx, idx)
+              } else {
+                Message::Noop
+              },
+            ));
+          }
+          match visible_controls.get(idx + 1) {
+            Some(manipulate::ControlState::Button {
+              joins_previous: true,
+              ..
+            }) if state
+              .control_is_visible
+              .get(idx + 1)
+              .copied()
+              .unwrap_or(true) =>
+            {
+              idx += 1;
             }
-            iced::widget::span(run.text.clone()).font(font)
-          })
-          .collect();
-        let btn_label: Element<Message> = if spans.is_empty() {
-          text(label.clone()).size(11).font(Font::MONOSPACE).into()
-        } else {
-          rich_text(spans).size(11).into()
-        };
-        let btn = button(btn_label).padding([3, 10]).on_press(if enabled {
-          Message::ManipulateButtonPressed(cell_idx, ctrl_idx)
-        } else {
-          Message::Noop
-        });
-        controls_col = controls_col.push(row![btn].align_y(Center));
+            _ => break,
+          }
+        }
+        joined_through = Some(idx);
+        controls_col = controls_col.push(btn_row);
       }
       manipulate::ControlState::Heading { label, label_runs } => {
         // A static heading row (a string or `Style[…]` Manipulate argument,
@@ -5147,6 +5256,8 @@ fn render_manipulate_widget<'a>(
       }
     }
   }
+  close_line_item(&mut controls_col, &mut line_outer, &mut line);
+  flush_control_line(&mut controls_col, &mut line);
   // The widget-level extras (bookmarks, play toggle) join the main panel.
   switch_slot(&mut controls_col, &mut current_slot, main_slot);
   // Bars declared after the last control close the panel.
@@ -10141,6 +10252,45 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 0.1}, \"\\[Ellipsis]\"]"], "O
     let _ = render_manipulate_widget(0, widget, false);
   }
 
+  /// A widget-level `ControlPlacement -> {Top, Top, Left, Right}` lists the
+  /// sides of successive controls: two labeled sliders above the output,
+  /// one vertical slider on its left and another on its right. The body
+  /// plots a cubic together with a horizontal line through each of two
+  /// marked abscissas (independently written, not copied from any notebook).
+  /// Regression: the list form was ignored, so every row landed on top.
+  #[test]
+  fn manipulate_successive_control_placements_list() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[\nh[t_] := p t^3 + q t;\nGrid[{{Plot[{h[t], h[u], h[v]}, {t, -3, 3}, PlotRange -> {-30, 30}]}, {Style[\"cubic\", 14]}}],\n{{p, 1, \"p\"}, -2, 2, Appearance -> \"Labeled\"},\n{{q, 0, \"q\"}, -5, 5, Appearance -> \"Labeled\"},\n{{u, -1, \"u\"}, -3, 0, ControlType -> VerticalSlider},\n{{v, 2, \"v\"}, 0, 3, ControlType -> VerticalSlider},\nControlPlacement -> {Top, Top, Left, Right},\nTrackedSymbols :> {p, q, u, v}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`p$$ = 1}, \"\\[Ellipsis]\"]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .iter()
+      .find_map(|e| e.manipulate_state.as_ref())
+      .expect("the Manipulate cell must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    let sides: Vec<(&str, manipulate::ControlPlacement)> = widget
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| (c.name(), widget.placement_of(i)))
+      .collect();
+    assert_eq!(
+      sides,
+      [
+        ("p", manipulate::ControlPlacement::Top),
+        ("q", manipulate::ControlPlacement::Top),
+        ("u", manipulate::ControlPlacement::Left),
+        ("v", manipulate::ControlPlacement::Right),
+      ]
+    );
+    let _ = render_manipulate_widget(0, widget, false);
+  }
+
   /// A slider written with a negative step (`{t, 0, Pi, -0.1}`) must step
   /// by its magnitude, and a revolved-solid body must still draw.
   #[test]
@@ -13228,12 +13378,12 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
     assert_eq!((lo, hi, current), (-0.5, -0.05, -0.09));
     assert!(reversed, "a high-to-low range must be flagged as reversed");
     // The thumb for -0.09 sits close to the track's start (-0.05 end).
-    let pos = slider_track_position(lo, hi, reversed, current);
+    let pos = manipulate::slider_rail_position(lo, hi, reversed, current);
     let fraction = (pos - lo) / (hi - lo);
     assert!((fraction - 0.04 / 0.45).abs() < 1e-9, "fraction {fraction}");
     // The track's start and end map back to the first and second bounds.
-    assert_eq!(slider_track_position(lo, hi, reversed, lo), hi);
-    assert_eq!(slider_track_position(lo, hi, reversed, hi), lo);
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, lo), hi);
+    assert_eq!(manipulate::slider_rail_position(lo, hi, reversed, hi), lo);
 
     match &state.controls[1] {
       manipulate::ControlState::Continuous { reversed, .. } => {
@@ -13241,7 +13391,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`angle$$ = -1.2}, \"…\"]"], "Outpu
       }
       other => panic!("unexpected control: {other:?}"),
     }
-    assert_eq!(slider_track_position(1.0, 5.0, false, 2.0), 2.0);
+    assert_eq!(manipulate::slider_rail_position(1.0, 5.0, false, 2.0), 2.0);
   }
 
   #[test]
@@ -22976,6 +23126,77 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       .map(|_| Some(svg::Handle::from_memory(Vec::new())))
       .collect();
     assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,
+  /// "label"}, {1, 0}, Checkbox}`) draws a checkbox, like `Checkbox[k, {1,
+  /// 0}]`: unchecked binds the first choice and checking it binds the
+  /// second. Regression: only a `{True, False}` domain became a checkbox,
+  /// so this drew a two-button `1 | 0` SetterBar.
+  #[test]
+  fn explicit_checkbox_over_numeric_choices_toggles_between_them() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[10 + 5 k, {{k, 1, \"drop term\"}, {1, 0}, Checkbox}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let state_of = |state: &manipulate::ManipulateState| match &state.controls[..]
+    {
+      [
+        manipulate::ControlState::Discrete {
+          values,
+          value_labels,
+          current_index,
+          checkbox,
+          popup,
+          setter_bar,
+          overflow,
+          ..
+        },
+      ] => {
+        assert!(*checkbox, "the control must be a checkbox");
+        discrete_checkbox_state(
+          values,
+          value_labels,
+          *current_index,
+          *checkbox,
+          *popup || *setter_bar,
+          overflow.is_some(),
+        )
+        .expect("draws as a checkbox")
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    };
+    // Starts unchecked on the first choice; a toggle sends the second.
+    assert_eq!(state_of(&state), (false, Some("0".to_string())));
+    assert!(state.select_discrete(0, "0"));
+    assert_eq!(state_of(&state), (true, Some("1".to_string())));
+
+    // The reversed `{0, 1}` order checks on `1`.
+    let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["0", "1"]),
+        &s(&["0", "1"]),
+        1,
+        true,
+        false,
+        false
+      ),
+      Some((true, Some("0".to_string())))
+    );
+    // Without the explicit type a numeric pair is no checkbox.
+    assert_eq!(
+      discrete_checkbox_state(
+        &s(&["1", "0"]),
+        &s(&["1", "0"]),
+        0,
+        false,
+        false,
+        false
+      ),
+      None
+    );
   }
 
   /// A bare `{True, False}` domain (either order) is a checkbox, but one

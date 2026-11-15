@@ -445,6 +445,30 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
+  /// A heading merged across fixed-width columns with `SpanFromLeft` wraps
+  /// to the width of the whole span, not to that of its first column.
+  #[test]
+  fn grid_item_size_span_wraps_to_span_width() {
+    let svg = svg_of(
+      "Grid[{{\"a heading of some words\", SpanFromLeft}, {\"x\", \"y\"}}, \
+       ItemSize -> {{6, 10}}]",
+    );
+    assert!(svg.contains(">a heading of some words<"), "{svg}");
+    assert!(!svg.contains("<tspan"), "{svg}");
+    // Narrower than the text, the span still wraps it.
+    let svg = svg_of(
+      "Grid[{{\"a heading of some words\", SpanFromLeft}, {\"x\", \"y\"}}, \
+       ItemSize -> {{3, 4}}]",
+    );
+    assert!(svg.contains("<tspan"), "{svg}");
+    // A span over a content-sized column is not wrapped.
+    let svg = svg_of(
+      "Grid[{{\"a heading of some words\", SpanFromLeft}, {\"x\", \"y\"}}, \
+       ItemSize -> {{3, Automatic}}]",
+    );
+    assert!(!svg.contains("<tspan"), "{svg}");
+  }
+
   /// A string holding inline linear syntax (`\!\(…\)`) in a fixed-width
   /// `ItemSize` column is a typeset formula: it is not word-wrapped at its
   /// markup's spaces, which would split the box structure.
@@ -551,6 +575,113 @@ mod layout_display {
     let svg = svg_of("Column[{\"a\", \"b\", \"c\"}, Frame -> All]");
     assert_eq!(svg.matches("<line").count(), 2, "{svg}");
     assert!(svg.contains("stroke=\"black\""), "{svg}");
+  }
+
+  /// Regression: the rules between a `Column`'s items are drawn in its
+  /// `FrameStyle`, like the outer frame, not always in black.
+  #[test]
+  fn column_frame_all_dividers_use_frame_style() {
+    let svg =
+      svg_of("Column[{\"a\", \"b\", \"c\"}, Frame -> All, FrameStyle -> Red]");
+    let lines: Vec<&str> = svg
+      .match_indices("<line")
+      .map(|(i, _)| &svg[i..i + svg[i..].find('>').unwrap()])
+      .collect();
+    assert_eq!(lines.len(), 2, "{svg}");
+    assert!(
+      lines.iter().all(|l| l.contains("stroke=\"rgb(255,0,0)\"")),
+      "{svg}"
+    );
+    assert!(!svg.contains("stroke=\"black\""), "{svg}");
+  }
+
+  /// Regression: `BaseStyle -> {…}` on a `Column` or `Row` styles all its
+  /// items — nested grids included — as an enclosing `Style` would.
+  #[test]
+  fn column_and_row_base_style_reach_every_item() {
+    for head in ["Column", "Row"] {
+      let svg = svg_of(&format!(
+        "{head}[{{\"a\", Grid[{{{{1, 2}}}}, Frame -> All]}}, \
+         BaseStyle -> {{FontFamily -> \"Times\", FontSize -> 20}}]"
+      ));
+      let ts = texts(&svg);
+      assert!(ts.len() >= 3, "{head}: {svg}");
+      for t in ts {
+        assert!(t.contains("font-family=\"Times"), "{head}: {t}");
+        assert!(t.contains("font-size=\"20"), "{head}: {t}");
+      }
+    }
+  }
+
+  /// Regression: a power of a subscripted symbol typesets as a
+  /// `SubsuperscriptBox` — the exponent stacked over the index, pulled
+  /// back over the narrower script instead of following it.
+  #[test]
+  fn power_of_subscript_stacks_the_scripts() {
+    let svg = svg_of("Row[{Subscript[x, 1]^k, \" + \", Subscript[x, 12]^2}]");
+    let ts = texts(&svg);
+    let first = ts.iter().find(|t| t.contains(">k<")).expect("x1^k");
+    assert!(
+      first.contains(
+        "<tspan baseline-shift=\"super\" font-size=\"70%\">k</tspan>\
+         <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">1</tspan>"
+      ),
+      "{first}"
+    );
+    let second = ts.iter().find(|t| t.contains(">12<")).expect("x12^2");
+    // The narrower exponent goes first; the wider index is pulled back
+    // under it by the exponent's width.
+    assert!(
+      second.contains(
+        "<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>\
+         <tspan dx=\"-0.5em\" baseline-shift=\"sub\" font-size=\"70%\">12</tspan>"
+      ),
+      "{second}"
+    );
+  }
+
+  /// Regression: a fixed `ItemSize` width narrower than a nested layout
+  /// item widens the column instead of clipping the item at both sides.
+  #[test]
+  fn column_item_size_widens_for_a_nested_layout() {
+    let svg = svg_of(
+      "Column[{Column[{Row[{\"aaaaaaaaaaaaaaaaaaaa\"}], 1}]}, ItemSize -> 2]",
+    );
+    let outer_w: f64 = svg
+      .split("width=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .expect("outer width");
+    let inner = svg.match_indices("<svg x=\"").next().expect("nested svg").0;
+    let inner_tag = &svg[inner..inner + svg[inner..].find('>').unwrap()];
+    let x: f64 = inner_tag
+      .split("x=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    let w: f64 = inner_tag
+      .split("width=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!(x >= 0.0, "{inner_tag}");
+    assert!(x + w <= outer_w + 0.5, "{svg}");
+  }
+
+  /// A wider exponent is drawn after the index and pulled back over it.
+  #[test]
+  fn subsuperscript_wider_exponent_follows_the_index() {
+    let svg = svg_of("Row[{Subsuperscript[a, 1, 23]}]");
+    assert!(
+      svg.contains(
+        "<tspan baseline-shift=\"sub\" font-size=\"70%\">1</tspan>\
+         <tspan dx=\"-0.5em\" baseline-shift=\"super\" font-size=\"70%\">23</tspan>"
+      ),
+      "{svg}"
+    );
   }
 
   #[test]

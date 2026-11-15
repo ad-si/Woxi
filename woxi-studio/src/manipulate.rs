@@ -100,6 +100,10 @@ pub enum ControlState {
     /// choices in a column instead of a row. Ignored by the dropdown and
     /// index-slider layouts.
     vertical: bool,
+    /// `ControlType -> Checkbox` over two choices: draw a checkbox that
+    /// binds the first choice when unchecked and the second when checked
+    /// (see `ManipulateControl::Discrete::checkbox`).
+    checkbox: bool,
   },
   /// A 2D slider binding its variable to a `{x, y}` pair.
   Slider2D {
@@ -175,6 +179,9 @@ pub enum ControlState {
     label: String,
     label_runs: Vec<LabelRun>,
     action: String,
+    /// Drawn on the same line as the button before it (both from one
+    /// `Row[{Button[…], Button[…]}]` or one `ButtonBar`).
+    joins_previous: bool,
   },
   /// A static heading row between controls (a string or `Style[…]`
   /// Manipulate argument). Binds no variable.
@@ -788,6 +795,9 @@ pub struct ManipulateState {
   /// Per-control `ControlPlacement -> side` overrides, as `(control name,
   /// side)` (see `ManipulateSpec::control_placements`).
   control_placements: Vec<(String, ControlPlacement)>,
+  /// Names of the controls drawn on the same line as the control before
+  /// them (see `ManipulateSpec::row_joined_controls`).
+  row_joined_controls: Vec<String>,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -920,6 +930,20 @@ impl ManipulateState {
       .unwrap_or(self.control_placement)
   }
 
+  /// Whether the control at `ctrl_idx` shares a line of the control panel
+  /// with the control before it, because one `Row[{Control[…],
+  /// Control[…]}]` argument placed both side by side.
+  pub fn joins_previous_control(&self, ctrl_idx: usize) -> bool {
+    ctrl_idx > 0
+      && self
+        .controls
+        .get(ctrl_idx)
+        .map(|c| c.name())
+        .is_some_and(|name| {
+          !name.is_empty() && self.row_joined_controls.iter().any(|n| n == name)
+        })
+  }
+
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
@@ -1016,6 +1040,7 @@ impl ManipulateState {
       appearance_none: spec.appearance_none,
       control_placement: spec.control_placement,
       control_placements: spec.control_placements,
+      row_joined_controls: spec.row_joined_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
@@ -1090,6 +1115,7 @@ impl ManipulateState {
           slot.1 = value;
         }
       }
+      state.body = unqualify_loaded_package_symbols(&state.body);
     }
     // A display `Checkbox[Dynamic[var]]` on a never-set variable behaves as
     // unchecked (Wolfram stores the off value on first display); the body may
@@ -2226,11 +2252,17 @@ impl ManipulateState {
       // Trigger (a projectile's flight Trigger capped by another control's
       // computed range, e.g. `Dynamic[range[angle, speed]]`, follows that
       // control the same way a Continuous slider's dynamic bound does).
-      if let Some(v) = new_step.filter(|v| *v != 0.0)
-        && let Some(ControlState::Continuous { step, .. }) =
-          self.controls.iter_mut().find(|c| {
-            matches!(c, ControlState::Continuous { name: n, .. } if n == name)
-          })
+      if let Some(v) = new_step.filter(|v| *v != 0.0 && v.is_finite())
+        && let Some(
+          ControlState::Continuous { step, .. }
+          | ControlState::Trigger { step, .. },
+        ) = self.controls.iter_mut().find(|c| {
+          matches!(
+            c,
+            ControlState::Continuous { name: n, .. }
+            | ControlState::Trigger { name: n, .. } if n == name
+          )
+        })
       {
         *step = v.abs();
       }
@@ -2363,6 +2395,50 @@ fn explicit_step(step: Option<f64>) -> Option<f64> {
   step.map(f64::abs).filter(|s| *s > 0.0)
 }
 
+/// Where the thumb of a `Continuous` slider sits on the widget's rail
+/// (always the ascending `min..=max`) for the control's `value`. A
+/// `reversed` control (spec written high-to-low, `{u, 2, 0}`) mirrors the
+/// value, so its `max` sits at the rail's start the way Wolfram draws it.
+pub fn slider_rail_position(
+  min: f64,
+  max: f64,
+  reversed: bool,
+  value: f64,
+) -> f64 {
+  // The rail's ends map exactly onto the bounds, free of the rounding
+  // `min + max - value` leaves.
+  if !reversed {
+    value
+  } else if value <= min {
+    max
+  } else if value >= max {
+    min
+  } else {
+    (min + max - value).clamp(min, max)
+  }
+}
+
+/// The control value for a thumb moved to rail position `position` — the
+/// inverse of `slider_rail_position`. A reversed slider's steps count down
+/// from `max`, so the mirrored value is snapped onto that grid
+/// (`max - k step`) rather than carrying the float drift of `min + max - p`.
+pub fn slider_value_at_rail_position(
+  min: f64,
+  max: f64,
+  step: f64,
+  reversed: bool,
+  position: f64,
+) -> f64 {
+  if !reversed {
+    return position;
+  }
+  if step.is_nan() || step <= 0.0 {
+    return slider_rail_position(min, max, true, position);
+  }
+  let k = ((position - min) / step).round();
+  (max - k * step).clamp(min, max)
+}
+
 /// The increment of a slider whose spec gives no step.
 fn default_slider_step(min: f64, max: f64, is_real: bool) -> f64 {
   let span = (max - min).abs();
@@ -2451,6 +2527,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         radio,
         slider,
         vertical,
+        checkbox,
       } => ControlState::Discrete {
         name: name.clone(),
         label: label.clone(),
@@ -2472,6 +2549,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         radio: *radio,
         slider: *slider,
         vertical: *vertical,
+        checkbox: *checkbox,
       },
       ManipulateControl::Slider2D {
         name,
@@ -2571,10 +2649,12 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         action,
         enabled: _,
         label_code: _,
+        joins_previous,
       } => ControlState::Button {
         label: label.clone(),
         label_runs: label_runs.clone(),
         action: action.clone(),
+        joins_previous: *joins_previous,
       },
       ManipulateControl::Heading { label, label_runs } => {
         ControlState::Heading {
@@ -2634,19 +2714,47 @@ fn load_leading_packages(init: &str) -> String {
     rest = after.trim_start();
     rest = rest.strip_prefix(';').unwrap_or(rest).trim_start();
     let _ = woxi::interpret(&format!("Quiet[Get[\"{ctx}\"]]"));
-    let Ok(names) = woxi::interpret(&format!("Names[\"{ctx}*\"]")) else {
-      continue;
-    };
-    for name in names
-      .trim_matches(|c| c == '{' || c == '}')
-      .split(',')
-      .map(str::trim)
-      .filter(|n| !n.is_empty())
-    {
-      rewritten = unqualify_global_symbol(&rewritten, name);
-    }
+    rewritten = unqualify_context_exports(&rewritten, ctx);
   }
   rewritten
+}
+
+/// Rewrite every `` Global`name `` in `code` whose `name` the context `ctx`
+/// exports back to the bare `name`, which now reads as the package's symbol.
+fn unqualify_context_exports(code: &str, ctx: &str) -> String {
+  let Ok(names) = woxi::interpret(&format!("Names[\"{ctx}*\"]")) else {
+    return code.to_string();
+  };
+  names
+    .trim_matches(|c| c == '{' || c == '}')
+    .split(',')
+    .map(str::trim)
+    .filter(|n| !n.is_empty())
+    .fold(code.to_string(), |acc, name| {
+      unqualify_global_symbol(&acc, name)
+    })
+}
+
+/// The body counterpart of [`load_leading_packages`]: once Initialization
+/// has loaded its packages, a body that was formatted with their bare
+/// exports already shadowed (`` Global`Truncate `` next to
+/// `` PolyhedronOperations`Truncate ``) is rewritten so those names reach
+/// the packages' functions again, as they do in the authoring kernel.
+fn unqualify_loaded_package_symbols(code: &str) -> String {
+  if !code.contains("Global`") {
+    return code.to_string();
+  }
+  let Ok(path) = woxi::interpret("$ContextPath") else {
+    return code.to_string();
+  };
+  path
+    .trim_matches(|c| c == '{' || c == '}')
+    .split(',')
+    .map(str::trim)
+    .filter(|ctx| !ctx.is_empty() && *ctx != "System`" && *ctx != "Global`")
+    .fold(code.to_string(), |acc, ctx| {
+      unqualify_context_exports(&acc, ctx)
+    })
 }
 
 /// Replace every whole-symbol `` Global`name `` in `code` with `name`.
@@ -2765,6 +2873,30 @@ mod tests {
     let state =
       ManipulateState::from_expr(&expr).expect("build Manipulate widget");
     assert_eq!(state.text_output.as_deref(), Some("4"), "{:?}", state.error);
+  }
+
+  /// A body that calls the bare `Truncate` while only the Initialization
+  /// loads `PolyhedronOperations`` must reach the package's function, so the
+  /// truncation slider actually cuts the solid's corners.
+  #[test]
+  fn polyhedron_operations_truncate_in_body_after_get() {
+    let code = r#"Manipulate[
+      Length[Cases[Truncate[GraphicsComplex[
+        {{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}},
+        Polygon[{{1,4,3,2},{5,6,7,8},{1,2,6,5},{2,3,7,6},{3,4,8,7},{4,1,5,8}}]],
+        r], _Polygon, Infinity]],
+      {{r, 0.2}, 0, 0.4},
+      Initialization :> (Get["PolyhedronOperations`"];)]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    // 6 corner-cut faces plus a cap for each of the 8 vertices.
+    assert_eq!(
+      state.text_output.as_deref(),
+      Some("14"),
+      "{:?}",
+      state.error
+    );
   }
 
   /// A puzzle generator initialized with `Needs["Combinatorica`"]` shuffles
@@ -3122,6 +3254,27 @@ mod tests {
     assert_eq!(value("s").as_deref(), Some("0"));
   }
 
+  /// A control name that the Initialization uses as a pattern variable of
+  /// an immediate definition inside a `{…}` list (`fz[x_, z_] = D[…, z]`)
+  /// stays a local symbol there: binding it to the control's value made
+  /// the derivative `D[…, 20]` (`D::ivar`).
+  #[test]
+  fn initialization_list_keeps_control_named_pattern_variables_local() {
+    let code = r#"Manipulate[
+      fz[1, z],
+      {{z, 20, "position z"}, 15, 30, Appearance -> "Labeled"},
+      Initialization :> {
+        gz[x_, z_] = x z^2;
+        fz[x_, z_] = D[gz[x, z], z];
+      }]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("40"));
+  }
+
   /// A hidden `ControlType -> None` variable is bound when Initialization
   /// runs, also when a control's spec depends on what Initialization sets
   /// (`Control[{{n, top/4}, 2^Range[4, k]}]` with `top = 2^k` there).
@@ -3270,6 +3423,77 @@ mod tests {
         .iter()
         .any(|c| matches!(c, ControlState::Heading { .. })),
       "the button must not be frozen into a heading"
+    );
+  }
+
+  /// Controls sharing one `Row[{Control[…], Spacer[…], Control[…]}]`
+  /// argument keep that grouping in the Studio's control state, so a setter
+  /// bar and the 2D slider beside it are drawn on one line, while the next
+  /// `Row` starts a line of its own.
+  #[test]
+  fn row_of_controls_is_drawn_on_one_line() {
+    let code = r#"Manipulate[
+      {k, a, s, n},
+      Row[{Control@{{k, 2, "kind"}, {1 -> "one", 2 -> "two"}}, Spacer[20],
+        Control@{{a, {0.5, 0.5}, "point"}, {0, 0}, {1, 1}}}],
+      "",
+      Row[{Control@{{s, 1, "show"}, {1 -> "x", 2 -> "y"}}, Spacer[20],
+        Control@{{n, 0, "level"}, {0, 1, 2}}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let joins: Vec<(&str, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !c.name().is_empty())
+      .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+      .collect();
+    assert_eq!(
+      joins,
+      vec![("k", false), ("a", true), ("s", false), ("n", true)]
+    );
+  }
+
+  /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
+  /// control state, so they are drawn side by side on one line, and a
+  /// `Style[…, FontSize -> n]` caption keeps its size.
+  #[test]
+  fn row_of_buttons_is_drawn_on_one_line() {
+    let code = r#"Manipulate[
+      t,
+      Row[{Button[Style["one", FontSize -> 15], t = 1], Button["two", t = 2]}],
+      Row[{Button["three", t = 3]}],
+      {{t, 0, "time"}, 0, 5, Animator, AnimationRunning -> False}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let buttons: Vec<(&str, bool, Option<f64>)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ControlState::Button {
+          label,
+          label_runs,
+          joins_previous,
+          ..
+        } => Some((
+          label.as_str(),
+          *joins_previous,
+          label_runs.first().and_then(|r| r.size),
+        )),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      buttons,
+      vec![
+        ("one", false, Some(15.0)),
+        ("two", true, None),
+        ("three", false, None)
+      ]
     );
   }
 
@@ -3947,6 +4171,47 @@ mod tests {
     assert!(labels[0].starts_with("C(CH\u{2083}"), "{}", labels[0]);
   }
 
+  /// A high-to-low range (`{{w, 0, "…"}, 2, 0}`) keeps an ascending
+  /// `min..=max` for the widget but is flagged `reversed`, so the thumb of
+  /// the initial `0` sits at the rail's *end* (Wolfram draws the slider
+  /// running from 2 down to 0), and dragging toward the start raises the
+  /// value back onto the grid counted down from `max`.
+  #[test]
+  fn reversed_range_slider_runs_from_max_to_min() {
+    let expr =
+      woxi::interpret_to_expr(r#"Manipulate[w, {{w, 0, "push"}, 2, 0}]"#)
+        .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let Some(ControlState::Continuous {
+      min,
+      max,
+      step,
+      current,
+      reversed,
+      ..
+    }) = state.controls.first()
+    else {
+      panic!("expected a continuous control");
+    };
+    assert_eq!((*min, *max, *current), (0.0, 2.0, 0.0));
+    assert!(*reversed);
+    // The initial value sits at the rail's end, the maximum at its start.
+    assert_eq!(slider_rail_position(*min, *max, true, *current), 2.0);
+    assert_eq!(slider_rail_position(*min, *max, true, 2.0), 0.0);
+    // A thumb dragged to rail positions maps back to the counted-down grid.
+    let value = |p| slider_value_at_rail_position(*min, *max, *step, true, p);
+    assert_eq!(value(0.0), 2.0);
+    assert_eq!(value(2.0), 0.0);
+    assert_eq!(value(*min + 80.0 * *step), 2.0 - 80.0 * *step);
+    // An ascending slider passes positions through unchanged.
+    assert_eq!(slider_rail_position(0.0, 2.0, false, 0.5), 0.5);
+    assert_eq!(
+      slider_value_at_rail_position(0.0, 2.0, 0.02, false, 0.5),
+      0.5
+    );
+  }
+
   /// Checked a randomly-sampled Wolfram Demonstrations Project notebook
   /// ("Selective Resizing of Images") whose paired sliders each bound the
   /// other through a `Dynamic[…]` limit and one of them counts *down*:
@@ -4606,6 +4871,37 @@ mod tests {
     };
     assert!(vis("v"), "`v` is shown while mode is True");
     assert!(!vis("w"), "`w` is hidden while mode is True");
+  }
+
+  /// A slider placed with `ControlPlacement -> 1` into the first pane of
+  /// `PaneSelector[{1 -> Manipulate`Place[1], 2 -> ""}, Dynamic[mode]]` is on
+  /// screen only while `mode` selects that pane.
+  #[test]
+  fn placed_control_in_a_pane_selector_follows_its_pane() {
+    for (mode, shown) in [(1, true), (2, false)] {
+      let code = format!(
+        r#"Manipulate[
+          If[mode == 1, Text[h], Text["off"]],
+          {{{{mode, {mode}, ""}}, {{1 -> "on", 2 -> "off"}}}},
+          {{{{h, 3, "height"}}, 0, 10, 0.5, ControlPlacement -> 1}},
+          PaneSelector[{{1 -> Manipulate`Place[1], 2 -> ""}}, Dynamic[mode]]
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code)
+        .expect("Manipulate should parse and hold");
+      let state = ManipulateState::from_expr(&expr)
+        .expect("the placed control should build a ManipulateState");
+      assert_eq!(state.error, None, "body must evaluate cleanly");
+      let names: Vec<_> = state.controls.iter().map(|c| c.name()).collect();
+      let i = names
+        .iter()
+        .position(|n| *n == "h")
+        .unwrap_or_else(|| panic!("`h` must be a control: {names:?}"));
+      assert_eq!(
+        state.control_is_visible[i], shown,
+        "`h` visibility in mode {mode}"
+      );
+    }
   }
 
   /// A `Dynamic@Column` control area whose second row is a nested
@@ -5799,6 +6095,22 @@ mod tests {
     assert!(dump.contains("label: \"ⅆ²/ⅆx²\""), "{dump}");
   }
 
+  /// A unit caption typeset as a fraction of powers
+  /// (`\!\(\*FractionBox[SuperscriptBox[\(m\), \(3\)], \(s\)]\)`) reads
+  /// `m³/s`: the `SuperscriptBox` is a superscript, not an OutputForm
+  /// `m^3` exponent.
+  #[test]
+  fn control_label_typesets_superscript_inside_plain_fraction() {
+    let code = r#"Manipulate[q, {{q, 1, "rate \!\(\*FractionBox[SuperscriptBox[\(m\), \(3\)], \(s\)]\)"}, 0, 2},
+      {{r, 1, "\!\(\*FractionBox[\(1\), SuperscriptBox[\(k\), \(2\)]]\)"}, 0, 2}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains('^'), "{dump}");
+    assert!(dump.contains("label: \"rate m³/s\""), "{dump}");
+    assert!(dump.contains("label: \"1/k²\""), "{dump}");
+  }
+
   /// A caption can apply a compound head to an argument —
   /// `TraditionalForm[Subscript[f, a][x]]` — which must typeset as the head's
   /// script followed by `(x)`, not leak the raw `Subscript[f, a][x]` source.
@@ -6261,6 +6573,56 @@ mod tests {
     assert_eq!(bounds(&state), Some((0.0, 19.0, 1.0)));
   }
 
+  /// A Trigger whose step names another control's variable (a speed
+  /// setter) advances by that control's value, and follows it when the
+  /// setter changes. Regression: the step fell back to 1, so the animation
+  /// jumped in whole units no matter which speed was picked.
+  #[test]
+  fn trigger_step_follows_other_control() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{time, step},
+        {{time, 0}, 0, 10, step, ControlType -> Trigger},
+        {{step, 0.05}, {0.01 -> \"slow\", 0.05 -> \"normal\", 0.1 -> \"fast\"}}
+      ]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let trigger_step = |s: &ManipulateState| {
+      s.controls.iter().find_map(|c| match c {
+        ControlState::Trigger { name, step, .. } if name == "time" => {
+          Some(*step)
+        }
+        _ => None,
+      })
+    };
+    assert_eq!(trigger_step(&state), Some(0.05));
+    let speed_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "step")
+      .unwrap();
+    assert!(state.select_discrete(speed_idx, "fast"));
+    state.reevaluate();
+    assert_eq!(trigger_step(&state), Some(0.1));
+  }
+
+  /// A control caption written as juxtaposed strings (`"viewpoint" ""`, a
+  /// `Times` of strings) reads as the text side by side, as the notebook
+  /// shows it, not with the `*` of its InputForm.
+  #[test]
+  fn control_label_string_product_reads_as_text() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[vp, {{vp, 1, \"viewpoint\" \"\"}, {1, 2, 3}}]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let dump = format!("{:?}", state.controls);
+    assert!(dump.contains("label: \"viewpoint\""), "{dump}");
+    assert!(!dump.contains('*'), "{dump}");
+  }
+
   /// A slider with no step whose range runs between two other controls
   /// (`{t, a, b}` with `a`, `b` sliders) takes its default increment from
   /// the *current* range. Regression: the step stayed 1/100 of the range
@@ -6396,6 +6758,95 @@ mod tests {
       .find(|(n, _)| n == "msg")
       .map(|(_, v)| v.clone());
     assert_eq!(msg.as_deref(), Some("{\"A\", \"c\"}"));
+  }
+}
+
+#[cfg(test)]
+mod pane_selector_keyboard_tests {
+  use super::*;
+
+  /// A substitution-cipher style widget: the body is a `PaneSelector`
+  /// switching between a "compose" pane (a `Row` of letter-key `Button`s
+  /// generated by `Map`, an erase key, and a styled read-out) and an
+  /// "inspect" pane, picked by a `SetterBar`. Self-authored construct
+  /// equivalent of a randomly sampled Demonstration — not its code.
+  ///
+  /// Regressions: the `PaneSelector` body printed its whole source text
+  /// (every pane, with raw `Button[…]` code) instead of drawing the
+  /// selected pane, and text-labeled `Button`s in a `Row` drew as inert
+  /// plates with no hit region, so the keys could not be pressed.
+  #[test]
+  fn pane_selector_body_with_letter_keys_is_pressable() {
+    let code = r#"Manipulate[
+      PaneSelector[{
+        1 -> Column[{
+          Row[(Button[#, If[StringLength[word] < 5, word = word <> #]] &) /@
+            {"K", "L", "M"}],
+          Row[{Button["ERASE", word = ""]}],
+          Row[{Style["word  = ", 12], Style[word, 14, Bold]}]}],
+        2 -> Column[{Style["inspected", 12],
+          StringJoin[Reverse[Characters[word]]]}]
+      }, view],
+      {{word, ""}, ControlType -> None},
+      {{view, 1, ""}, {1 -> "compose", 2 -> "inspect"}, SetterBar}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the pane must draw a picture"
+    );
+    assert_eq!(state.text_output, None, "no source-text fallback");
+    assert_eq!(
+      state.button_regions.len(),
+      4,
+      "three letter keys and the erase key are pressable"
+    );
+
+    let word = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "word")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let press = |state: &mut ManipulateState, needle: &str| {
+      let action = state
+        .button_regions
+        .iter()
+        .find(|r| r.action.contains(needle))
+        .unwrap_or_else(|| panic!("no key pressing {needle}"))
+        .action
+        .clone();
+      state.apply_button_action(&action);
+      assert_eq!(state.error, None);
+    };
+    press(&mut state, "\"L\"");
+    press(&mut state, "\"M\"");
+    assert_eq!(word(&state), "\"LM\"");
+
+    // Switching to the other pane hides the keys.
+    let view = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "view")
+      .expect("the SetterBar control");
+    assert!(state.select_discrete(view, "inspect"));
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some());
+    assert!(
+      state.button_regions.is_empty(),
+      "the keys are not on screen"
+    );
+
+    // And back: the erase key clears the word.
+    assert!(state.select_discrete(view, "compose"));
+    state.reevaluate();
+    press(&mut state, "word = \"\"");
+    assert_eq!(word(&state), "\"\"");
   }
 }
 

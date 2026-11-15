@@ -5175,6 +5175,61 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // Infinite ranges are integrated with adaptive Gauss-Kronrod on the
+  // mapped interval. Adaptive Simpson accepted oscillating integrands
+  // (Hermite polynomials under a Gaussian) too early, e.g. giving 0.0011
+  // instead of E^-2 2^8/8! = 0.00086 for a displaced-oscillator overlap.
+  #[test]
+  fn oscillating_integrand_over_infinite_range() {
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^(-x^2) HermiteH[n, x]^2, \
+         {x, -Infinity, Infinity}]/(Sqrt[Pi] 2^n n!), 10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^(-(x^2 + (x - 2)^2)/2) HermiteH[m, x - 2], \
+         {x, -Infinity, Infinity}]^2/(Pi 2^m m!) - E^-2 2^m/m!, 10^-8], \
+         {m, 0, 10}]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+    );
+    // Overlap of the n = 2 and m = 7 states: (2!/7!) E^-2 2^5 L_2^5(2)^2.
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[E^(-(x^2 + (x - 2)^2)/2) HermiteH[7, x - 2] \
+         HermiteH[2, x], {x, -Infinity, Infinity}]^2/(Pi 2^9 7! 2!) - \
+         2!/7! E^-2 2^5 LaguerreL[2, 5, 2]^2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn oscillating_integrand_over_half_infinite_ranges() {
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^-x LaguerreL[n, x]^2, {x, 0, Infinity}], \
+         10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^x LaguerreL[n, -x]^2, {x, -Infinity, 0}], \
+         10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+  }
+
   // A tail where E^(huge) meets an underflowed factor: the compiled
   // integrand retries the overflow with an unbounded exponent (0, not
   // Infinity times 0), and Gamma far off the real axis underflows instead
@@ -5296,6 +5351,40 @@ mod nintegrate {
          non-numerical values for all sampling points in the region with \
          boundaries {{-10, 10}}."
       ]
+    );
+  }
+
+  // A multi-dimensional integrand with a free symbol is reported once for
+  // the whole region and left unevaluated: every inner integral used to
+  // fail on its own and the failures were integrated as 0.
+  #[test]
+  fn non_numeric_multidimensional_integrand() {
+    clear_state();
+    let result =
+      interpret_with_stdout("NIntegrate[x + X + Y, {X, 0, 1}, {Y, 0, 1}]")
+        .unwrap();
+    assert_eq!(result.result, "NIntegrate[x + X + Y, {X, 0, 1}, {Y, 0, 1}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand x + X + Y has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{0, 1}, {0, 1}}."
+      ]
+    );
+    // Substituting numbers afterwards integrates it.
+    assert_eq!(
+      interpret(
+        "Abs[(Quiet[NIntegrate[x + X + Y + Z, {X, 0, 1}, {Y, 0, 1}, \
+         {Z, 0, 1}]] /. x -> 1) - 5/2] < 10^-8"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Numeric triple integrals, also with dependent bounds, still work.
+    assert_eq!(
+      interpret("NIntegrate[X + Y, {X, 0, 1}, {Y, 0, X}]").unwrap(),
+      "0.5"
     );
   }
 
@@ -18531,6 +18620,87 @@ mod integrate_piecewise_definite {
       "5/6"
     );
   }
+
+  // A non-zero default holds on the complement of the cases; subtracting the
+  // discontinuous piecewise antiderivative gave 2 and 1/2 here.
+  #[test]
+  fn nonzero_default() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{4 x, x < 1/2}}, 4 - 4 x], {x, 0, 1}]")
+        .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{0, x < 1/2}}, x], {x, 0, 1}]").unwrap(),
+      "3/8"
+    );
+    assert_eq!(
+      interpret("Integrate[x Piecewise[{{4 x, x < 1/2}}, 4 - 4 x], {x, 0, 1}]")
+        .unwrap(),
+      "1/2"
+    );
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, x < 0}}, E^-x], {x, -1, Infinity}]")
+        .unwrap(),
+      "2"
+    );
+  }
+
+  // The first case whose condition holds wins, so overlapping conditions
+  // must not add up.
+  #[test]
+  fn overlapping_conditions() {
+    assert_eq!(
+      interpret("Integrate[Piecewise[{{1, x < 1}, {2, x < 2}}], {x, 0, 3}]")
+        .unwrap(),
+      "3"
+    );
+  }
+
+  #[test]
+  fn if_integrand() {
+    assert_eq!(
+      interpret("Integrate[If[x < 1/2, 4 x, 4 - 4 x], {x, 0, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[If[x > 0, x, -x], {x, -1, 1}]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Integrate[If[x < 1/2, 4 x, 4 - 4 x], {x, 1, 0}]").unwrap(),
+      "-1"
+    );
+    // A pure function with an `If` body, as `Derivative` gives it.
+    assert_eq!(
+      interpret(
+        "f = If[# < 1/2, 2 #^2, 4 # - 2 #^2 - 1] &; \
+         Integrate[x f'[x], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "1/2"
+    );
+  }
+
+  #[test]
+  fn products_of_switches() {
+    assert_eq!(
+      interpret(
+        "Integrate[If[x < 1/2, 1, 2] Piecewise[{{3, x < 1/4}}, 5], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "7"
+    );
+    // Mean of the larger of two draws from the tent density.
+    assert_eq!(
+      interpret(
+        "F = If[x < 1/2, 2 x^2, 4 x - 2 x^2 - 1]; \
+         Integrate[2 x F If[x < 1/2, 4 x, 4 - 4 x], {x, 0, 1}]"
+      )
+      .unwrap(),
+      "37/60"
+    );
+  }
 }
 
 mod cases {
@@ -23788,6 +23958,43 @@ mod ndsolve_complex_periodic_pde {
     );
   }
 
+  /// A complex Ginzburg–Landau equation started from the uniform state
+  /// settles on a plane wave `E^(-2 I t)` of modulus 1. Its phase turns
+  /// about 2 radians per default output row spacing, so the stored time
+  /// rows must follow the rotation: otherwise `Abs` of the interpolated
+  /// solution dips between rows.
+  #[test]
+  fn rotating_phase_keeps_modulus_between_time_rows() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == 1, u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 60}, {x, -10, 10}]; \
+         Min[Table[Abs[u[t, 3.]], {t, 0, 60, 0.37}] /. First[s]] > 0.999"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// `Abs` of a complex PDE solution, substituted into a plot body with
+  /// `Evaluate`, samples to a density plot (the solution's tables are
+  /// carried through every sample point unchanged).
+  #[test]
+  fn density_plot_of_complex_pde_solution() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == E^(-x^2), u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 20}, {x, -10, 10}]; \
+         Head[DensityPlot[Evaluate[Abs[u[t, x]] /. s], {t, 0, 20}, {x, -10, 10}, \
+           PlotPoints -> 10, MaxRecursion -> 1]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
   /// The forcing term and initial profile may be complex expressions of
   /// `x`, and the result is complex (not just its absolute value).
   #[test]
@@ -25226,6 +25433,26 @@ mod nintegrate_limits_numeric_after_n {
 
 mod ndsolve_stiff_system {
   use super::*;
+
+  // Regression: a radical intermediate consumed at a rate ~10^7 times its
+  // formation made every bisection of the fixed RK4 step equally unstable.
+  // The refinement gave up as if the right-hand side jumped and kept the
+  // diverged step, so the solution grew to ~10^8 instead of the slow
+  // manifold y ≈ 10^-10 x (x + y + z). The leg now goes to the stiff method.
+  #[test]
+  fn stalled_unstable_refinement_goes_to_the_stiff_method() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{x'[t] == -10^3 x[t] y[t]/(x[t] + y[t] + z[t]), \
+         y'[t] == 10^-3 x[t] - 10^7 y[t]/(x[t] + y[t] + z[t]), \
+         z'[t] == 10^7 y[t]/(x[t] + y[t] + z[t]), \
+         x[0] == 1, y[0] == 0, z[0] == 0}, {x, y, z}, {t, 0, 100}]; \
+         Round[{10^5 x[100], 10^12 y[100], 10^5 z[100]} /. First[s]]"
+      )
+      .unwrap(),
+      "{99999, 110, 10000}"
+    );
+  }
 
   // A right-hand side with I in it but real values compiles with complex
   // arithmetic, its tangents and reciprocal functions included, instead of

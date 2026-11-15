@@ -1535,10 +1535,18 @@ fn try_definite_integral(
   lo: &Expr,
   hi: &Expr,
 ) -> Option<Expr> {
-  // Definite integral of a Piecewise: split [lo, hi] at the piece boundaries
-  // and integrate each piece over the sub-interval where its condition holds.
-  // The antiderivative path uses a discontinuous default-0 antiderivative, so
-  // a bounded-support condition like `0 < x < 1` otherwise integrates to 0.
+  // A `Piecewise`/`If` switching in `var` (any default, overlapping cases,
+  // `If`, products and nests of them) over numeric bounds: split at the
+  // switching points and integrate the branch active on each sub-interval.
+  // The antiderivative path would subtract a discontinuous piecewise
+  // antiderivative and get the wrong value.
+  if let Some(result) =
+    try_split_piecewise_definite_integral(integrand, var, lo, hi)
+  {
+    return Some(result);
+  }
+  // Otherwise (symbolic bounds, conditions like `Abs[x] < 1`) integrate each
+  // zero-default piece over the sub-interval where its condition holds.
   if let Some(result) = try_piecewise_definite_integral(integrand, var, lo, hi)
   {
     return Some(result);
@@ -13140,6 +13148,213 @@ fn try_piecewise_definite_integral(
   Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
 }
 
+/// The conditions of a `Piecewise` or `If` node that depend on `var`, if
+/// `e` is such a switch.
+fn var_switch_conditions<'a>(e: &'a Expr, var: &str) -> Option<Vec<&'a Expr>> {
+  let Expr::FunctionCall { name, args } = e else {
+    return None;
+  };
+  let conds: Vec<&Expr> = match name.as_str() {
+    "Piecewise" => match args.first() {
+      Some(Expr::List(cases)) => cases
+        .iter()
+        .filter_map(|c| match c {
+          Expr::List(p) if p.len() == 2 => Some(&p[1]),
+          _ => None,
+        })
+        .collect(),
+      _ => return None,
+    },
+    "If" if !args.is_empty() => vec![&args[0]],
+    _ => return None,
+  };
+  conds.iter().any(|c| contains_var(c, var)).then_some(conds)
+}
+
+/// Whether a `Piecewise` or `If` switching in `var` occurs in `e`.
+fn has_var_switch(e: &Expr, var: &str) -> bool {
+  var_switch_conditions(e, var).is_some()
+    || crate::syntax::expr_children(e)
+      .into_iter()
+      .any(|c| has_var_switch(c, var))
+}
+
+/// Collect the exact points where the `var` conditions of every
+/// `Piecewise`/`If` in `e` can change truth value. `false` when a condition
+/// compares a non-isolated expression in `var` (such as `x^2 < 1`), whose
+/// switching points are not read off directly.
+fn collect_switch_points(
+  e: &Expr,
+  var: &str,
+  out: &mut Vec<(f64, Expr)>,
+) -> bool {
+  fn chain(operands: &[Expr], var: &str, out: &mut Vec<(f64, Expr)>) -> bool {
+    let is_var = |e: &Expr| matches!(e, Expr::Identifier(n) if n == var);
+    for pair in operands.windows(2) {
+      let other = if is_var(&pair[0]) {
+        &pair[1]
+      } else if is_var(&pair[1]) {
+        &pair[0]
+      } else if contains_var(&pair[0], var) || contains_var(&pair[1], var) {
+        return false;
+      } else {
+        continue;
+      };
+      if contains_var(other, var) {
+        return false;
+      }
+      match crate::functions::math_ast::try_eval_to_f64(other) {
+        Some(v) if v.is_finite() => out.push((v, other.clone())),
+        _ => return false,
+      }
+    }
+    true
+  }
+  fn condition(c: &Expr, var: &str, out: &mut Vec<(f64, Expr)>) -> bool {
+    if !contains_var(c, var) {
+      return true;
+    }
+    match c {
+      Expr::Comparison { operands, .. } => chain(operands, var, out),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Inequality" => {
+          let operands: Vec<Expr> = args.iter().step_by(2).cloned().collect();
+          chain(&operands, var, out)
+        }
+        "Less" | "LessEqual" | "Greater" | "GreaterEqual" | "Equal"
+        | "Unequal" => chain(args, var, out),
+        "And" | "Or" | "Not" => args.iter().all(|a| condition(a, var, out)),
+        _ => false,
+      },
+      Expr::BinaryOp {
+        op: BinaryOperator::And | BinaryOperator::Or,
+        left,
+        right,
+      } => condition(left, var, out) && condition(right, var, out),
+      Expr::UnaryOp {
+        op: UnaryOperator::Not,
+        operand,
+      } => condition(operand, var, out),
+      _ => false,
+    }
+  }
+  if let Some(conds) = var_switch_conditions(e, var)
+    && !conds.into_iter().all(|c| condition(c, var, out))
+  {
+    return false;
+  }
+  crate::syntax::expr_children(e)
+    .into_iter()
+    .all(|c| collect_switch_points(c, var, out))
+}
+
+/// Replace every `Piecewise`/`If` switching in `var` by the branch that is
+/// active at `var = at`. `None` when a condition does not evaluate to
+/// `True` or `False` there.
+fn select_active_branches(e: &Expr, var: &str, at: &Expr) -> Option<Expr> {
+  let truth = |c: &Expr| -> Option<bool> {
+    let c = crate::syntax::substitute_variable(c, var, at);
+    match &crate::evaluator::evaluate_expr_to_expr(&c).ok()? {
+      Expr::Identifier(t) if t == "True" => Some(true),
+      Expr::Identifier(t) if t == "False" => Some(false),
+      _ => None,
+    }
+  };
+  if var_switch_conditions(e, var).is_some()
+    && let Expr::FunctionCall { name, args } = e
+  {
+    if name == "If" {
+      if args.len() != 3 {
+        return None;
+      }
+      let branch = if truth(&args[0])? { &args[1] } else { &args[2] };
+      return select_active_branches(branch, var, at);
+    }
+    let Some(Expr::List(cases)) = args.first() else {
+      return None;
+    };
+    for case in cases {
+      let Expr::List(p) = case else {
+        return None;
+      };
+      if p.len() == 2 && truth(&p[1])? {
+        return select_active_branches(&p[0], var, at);
+      }
+    }
+    let default = args.get(1).cloned().unwrap_or(Expr::Integer(0));
+    return select_active_branches(&default, var, at);
+  }
+  let failed = std::cell::Cell::new(false);
+  let rebuilt = crate::syntax::map_children(e, &|c| {
+    select_active_branches(c, var, at).unwrap_or_else(|| {
+      failed.set(true);
+      c.clone()
+    })
+  });
+  (!failed.get()).then_some(rebuilt)
+}
+
+/// Definite integral over real numeric bounds of an integrand holding
+/// `Piecewise`/`If` switches in `var`: split the range at every switching
+/// point, integrate the branch active on each sub-interval, and add up.
+/// `None` when the bounds are not numeric, a switching point cannot be
+/// read off, or a branch does not integrate.
+fn try_split_piecewise_definite_integral(
+  integrand: &Expr,
+  var: &str,
+  lo: &Expr,
+  hi: &Expr,
+) -> Option<Expr> {
+  if !has_var_switch(integrand, var) {
+    return None;
+  }
+  let to_f64 = crate::functions::math_ast::try_eval_to_f64_with_infinity;
+  let (lo_f, hi_f) = (to_f64(lo)?, to_f64(hi)?);
+  if lo_f.is_nan() || hi_f.is_nan() || lo_f == hi_f {
+    return None;
+  }
+  if lo_f > hi_f {
+    let swapped =
+      try_split_piecewise_definite_integral(integrand, var, hi, lo)?;
+    let negated = neg1(swapped);
+    return Some(
+      crate::evaluator::evaluate_expr_to_expr(&negated).unwrap_or(negated),
+    );
+  }
+  let mut points = Vec::new();
+  if !collect_switch_points(integrand, var, &mut points) {
+    return None;
+  }
+  points.retain(|(v, _)| lo_f < *v && *v < hi_f);
+  points.sort_by(|a, b| a.0.total_cmp(&b.0));
+  points.dedup_by(|a, b| (a.0 - b.0).abs() <= 1e-12 * (1.0 + b.0.abs()));
+  let mut edges = vec![(lo_f, lo.clone())];
+  edges.extend(points);
+  edges.push((hi_f, hi.clone()));
+  let mut terms = Vec::with_capacity(edges.len() - 1);
+  for w in edges.windows(2) {
+    let ((af, a), (bf, b)) = (&w[0], &w[1]);
+    let probe = match (af.is_finite(), bf.is_finite()) {
+      (true, true) => f64::midpoint(*af, *bf),
+      (false, true) => bf - 1.0,
+      (true, false) => af + 1.0,
+      (false, false) => 0.0,
+    };
+    let branch = select_active_branches(integrand, var, &Expr::Real(probe))?;
+    let sub = integrate_ast(&[
+      branch,
+      Expr::List(vec![id_expr(var), a.clone(), b.clone()].into()),
+    ])
+    .ok()?;
+    if expr_mentions_head(&sub, "Integrate") {
+      return None;
+    }
+    terms.push(sub);
+  }
+  let sum = plus(terms);
+  Some(crate::evaluator::evaluate_expr_to_expr(&sum).unwrap_or(sum))
+}
+
 /// Every lower and every upper bound a Piecewise condition puts on `var`,
 /// without deciding which is tighter (they may involve parameters).
 fn piecewise_condition_bound_lists(
@@ -18882,6 +19097,73 @@ fn piecewise_breakpoints(integrand: &Expr, var: &str) -> Vec<f64> {
 }
 
 /// A limit of integration that is not a number: wolframscript reports
+/// The interior point at fraction `t` (in (0, 1)) of the range [lo, hi],
+/// stepping a fixed distance in from a finite end of a half-infinite range.
+fn region_sample_point(lo: f64, hi: f64, t: f64) -> f64 {
+  match (lo.is_finite(), hi.is_finite()) {
+    (true, true) => lo + (hi - lo) * t,
+    (true, false) => lo + 0.5 + 6.0 * t,
+    (false, true) => hi - 0.5 - 6.0 * t,
+    (false, false) => -2.0 + 4.0 * t,
+  }
+}
+
+/// Whether `integrand` evaluates to a number at any of a few interior
+/// points of the iterated region `outer` × `inner` (each a `{var, lo, hi}`
+/// range; inner bounds may depend on the variables before them).
+fn integrand_numeric_somewhere_in_region(
+  integrand: &Expr,
+  outer: &Expr,
+  inner: &[Expr],
+) -> bool {
+  let ranges: Vec<&Expr> = std::iter::once(outer).chain(inner).collect();
+  // A few diagonal points plus a couple of staggered ones, so a singular
+  // line through the region does not hide the integrand's values.
+  let fractions: [&[f64]; 6] = [
+    &[0.5],
+    &[0.27],
+    &[0.61],
+    &[0.83],
+    &[0.27, 0.61, 0.83],
+    &[0.83, 0.38, 0.17],
+  ];
+  let snapshot = crate::snapshot_warnings();
+  crate::push_quiet();
+  let numeric = fractions.iter().any(|fr| {
+    let mut expr = integrand.clone();
+    let mut subs: Vec<(String, Expr)> = Vec::new();
+    for (k, r) in ranges.iter().enumerate() {
+      let Expr::List(items) = r else { return false };
+      let Expr::Identifier(var) = &items[0] else {
+        return false;
+      };
+      let bound = |e: &Expr| -> Option<f64> {
+        let mut e = e.clone();
+        for (v, val) in &subs {
+          e = crate::syntax::substitute_variable(&e, v, val);
+        }
+        expr_to_bound(&crate::evaluator::evaluate_expr_to_expr(&e).ok()?)
+      };
+      let (Some(lo), Some(hi)) = (bound(&items[1]), bound(&items[items.len() - 1]))
+      else {
+        // A bound that is no number is reported by the inner integral.
+        return true;
+      };
+      let x = Expr::Real(region_sample_point(lo, hi, fr[k % fr.len()]));
+      expr = crate::syntax::substitute_variable(&expr, var, &x);
+      subs.push((var.clone(), x));
+    }
+    crate::evaluator::evaluate_expr_to_expr(&call1("N", expr)).is_ok_and(|v| {
+      crate::functions::math_ast::try_eval_to_f64(&v).is_some()
+        || crate::functions::math_ast::try_extract_complex_float(&v).is_some()
+        || matches!(&v, Expr::Identifier(s) if s == "Indeterminate" || s == "ComplexInfinity")
+    })
+  });
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  numeric
+}
+
 /// `NIntegrate::nlim` for the first such limit and leaves the call
 /// unevaluated.
 fn nintegrate_bad_limit(args: &[Expr], var: &str, bounds: &[Expr]) -> Expr {
@@ -19176,6 +19458,42 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
       return Ok(unevaluated("NIntegrate", args));
     }
     let integrand0 = args[0].clone();
+    // An integrand that still holds a free symbol (`x + X + Y` integrated
+    // over X and Y only) is not a number anywhere in the region: report it
+    // once for the whole region and leave the call unevaluated, instead of
+    // letting every inner integral fail and reading the failures as 0.
+    if !matches!(&integrand0, Expr::List(_))
+      && !integrand_numeric_somewhere_in_region(
+        &integrand0,
+        &args[1],
+        &inner_ranges,
+      )
+    {
+      let bounds: Vec<String> = std::iter::once(&args[1])
+        .chain(inner_ranges.iter())
+        .filter_map(|r| match r {
+          Expr::List(items) => Some(format!(
+            "{{{}, {}}}",
+            crate::syntax::expr_to_output(
+              &crate::evaluator::evaluate_expr_to_expr(&items[1])
+                .unwrap_or_else(|_| items[1].clone())
+            ),
+            crate::syntax::expr_to_output(
+              &crate::evaluator::evaluate_expr_to_expr(&items[items.len() - 1])
+                .unwrap_or_else(|_| items[items.len() - 1].clone())
+            ),
+          )),
+          _ => None,
+        })
+        .collect();
+      crate::emit_message(&format!(
+        "NIntegrate::inumr: The integrand {} has evaluated to non-numerical \
+         values for all sampling points in the region with boundaries {{{}}}.",
+        crate::syntax::expr_to_output(&integrand0),
+        bounds.join(", "),
+      ));
+      return Ok(unevaluated("NIntegrate", args));
+    }
     // A complex-valued integrand (`1/Sqrt[Cos[x y]]` where the cosine is
     // negative) is integrated as its real and imaginary parts: the
     // reduction below works with real samples.
@@ -19851,24 +20169,47 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let b_inf = b.is_infinite() && b > 0.0;
     let half_pi = std::f64::consts::FRAC_PI_2;
     let eps = 1e-10;
+    // Integrate a mapped integrand `g` over [lo, hi]. Adaptive
+    // Gauss-Kronrod on a few starting panels estimates its error from the
+    // whole panel, so an integrand that oscillates (a product of Hermite
+    // polynomials under a Gaussian) is not accepted early, as Simpson's
+    // three-point comparison can do when the samples happen to agree.
+    // Simpson is kept as the fallback for integrands GK cannot sample.
+    let mapped = |g: &dyn Fn(f64) -> Option<f64>, lo: f64, hi: f64| {
+      const START_PANELS: usize = 8;
+      let width = (hi - lo) / START_PANELS as f64;
+      (0..START_PANELS)
+        .map(|k| {
+          let a = lo + width * k as f64;
+          let b = if k + 1 == START_PANELS { hi } else { a + width };
+          gk11_panel(&g, a, b, 0)
+        })
+        .collect::<Option<Vec<_>>>()
+        .and_then(|panels| {
+          adaptive_gk11(
+            &g,
+            &|endpoint: f64, offset: f64| g(endpoint + offset),
+            panels,
+            &|t: f64| t == lo || t == hi,
+            gk_tolerance,
+            max_recursion,
+            max_points,
+          )
+        })
+        .or_else(|| adaptive_simpson(g, lo, hi, tolerance, max_recursion))
+    };
     if a_inf && b_inf {
       // (-∞, ∞): x = tan(t), dx = sec²(t) dt over (-π/2, π/2).
       let g = |t: f64| eval_at(t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(
-        &g,
-        -half_pi + eps,
-        half_pi - eps,
-        tolerance,
-        max_recursion,
-      )
+      mapped(&g, -half_pi + eps, half_pi - eps)
     } else if a_inf {
       // (-∞, b): x = b - tan(t), t in (0, π/2).
       let g = |t: f64| eval_at(b - t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+      mapped(&g, eps, half_pi - eps)
     } else if b_inf {
       // (a, ∞): x = a + tan(t), t in (0, π/2).
       let g = |t: f64| eval_at(a + t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+      mapped(&g, eps, half_pi - eps)
     } else {
       // Projecting across a complex branch cut creates interior kinks; the
       // double-exponential rule is more robust for these component functions.

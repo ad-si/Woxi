@@ -243,25 +243,35 @@ const MAX_REFINED_SAMPLES_FACTOR: usize = 8;
 /// curve there (`None` when the body did not evaluate to coordinates).
 type Sample = (f64, Option<Vec<(f64, f64)>>);
 
-/// Whether the middle of a sampled triple is far enough off the straight
-/// line between its neighbors that the interval needs more points. The
-/// measure is the deviation relative to the neighbors' separation, so it
-/// is independent of the coordinate scale.
-fn needs_refinement(a: &Sample, b: &Sample, c: &Sample) -> bool {
+/// How far the middle of a sampled triple lies off the straight line
+/// between its neighbors, or `None` when that is close enough that the
+/// interval needs no more points. Coordinates are first multiplied by the
+/// per-axis `scale` (see [`display_scale`]) so bends are judged as they
+/// will be drawn. The decision uses the deviation relative to the
+/// neighbors' separation, so it is independent of the overall size; the returned score is the absolute deviation (infinite for a gap
+/// or a non-finite point), which ranks the flagged intervals by how visibly
+/// the polyline departs from the curve.
+fn refinement_score(
+  a: &Sample,
+  b: &Sample,
+  c: &Sample,
+  (sx, sy): (f64, f64),
+) -> Option<f64> {
   let (Some(ra), Some(rb), Some(rc)) = (&a.1, &b.1, &c.1) else {
     // A gap in the samples is a discontinuity (or a domain boundary);
     // refining pins down where it actually starts.
-    return true;
+    return Some(f64::INFINITY);
   };
   if ra.len() != rb.len() || rb.len() != rc.len() {
-    return true;
+    return Some(f64::INFINITY);
   }
   let span = c.0 - a.0;
   if span == 0.0 {
-    return false;
+    return None;
   }
   let u = (b.0 - a.0) / span;
-  ra.iter().zip(rb).zip(rc).any(|((p0, p1), p2)| {
+  let mut score: Option<f64> = None;
+  for ((p0, p1), p2) in ra.iter().zip(rb).zip(rc) {
     if !p0.0.is_finite()
       || !p0.1.is_finite()
       || !p1.0.is_finite()
@@ -269,13 +279,77 @@ fn needs_refinement(a: &Sample, b: &Sample, c: &Sample) -> bool {
       || !p2.0.is_finite()
       || !p2.1.is_finite()
     {
-      return true;
+      return Some(f64::INFINITY);
     }
+    let (p0, p1, p2) = (
+      (p0.0 * sx, p0.1 * sy),
+      (p1.0 * sx, p1.1 * sy),
+      (p2.0 * sx, p2.1 * sy),
+    );
     let interp = (p0.0 + (p2.0 - p0.0) * u, p0.1 + (p2.1 - p0.1) * u);
     let deviation = (p1.0 - interp.0).hypot(p1.1 - interp.1);
     let separation = (p2.0 - p0.0).hypot(p2.1 - p0.1).max(1e-10);
-    deviation / separation > 0.05
-  })
+    // A deviation under ~1/10000 of the frame is invisible; without this
+    // floor a curve settling into a sub-pixel spiral would be refined at
+    // every sample.
+    if deviation / separation > 0.05 && deviation > 1e-4 {
+      score = Some(score.map_or(deviation, |s: f64| s.max(deviation)));
+    }
+  }
+  score
+}
+
+/// How the plot will map the sampled curve onto its frame, so refinement
+/// judges bends as they will be drawn.
+#[derive(Clone, Copy, Default)]
+struct DisplayFrame {
+  /// Explicit `PlotRange` component of each axis, if any; an axis without
+  /// one shows the full extent of the samples.
+  x: Option<(f64, f64)>,
+  y: Option<(f64, f64)>,
+  /// An explicit `AspectRatio` stretches each axis independently to fill
+  /// the frame; otherwise (`Automatic`) both axes share one scale.
+  stretch: bool,
+}
+
+/// Per-axis factors that map the sampled coordinates onto the unit-sized
+/// frame of `frame`. Without this, a curve whose x range is much narrower
+/// than its y range but which is drawn in a square frame looks nearly
+/// straight in data coordinates even where it visibly bends once drawn.
+fn display_scale(samples: &[Sample], frame: DisplayFrame) -> (f64, f64) {
+  let mut lo = (f64::INFINITY, f64::INFINITY);
+  let mut hi = (f64::NEG_INFINITY, f64::NEG_INFINITY);
+  for (_, row) in samples {
+    for &(x, y) in row.iter().flatten() {
+      if x.is_finite() && y.is_finite() {
+        lo = (lo.0.min(x), lo.1.min(y));
+        hi = (hi.0.max(x), hi.1.max(y));
+      }
+    }
+  }
+  let width = |explicit: Option<(f64, f64)>, lo: f64, hi: f64| {
+    let w = match explicit {
+      Some((a, b)) => (b - a).abs(),
+      None => hi - lo,
+    };
+    if w.is_finite() && w > 0.0 {
+      Some(w)
+    } else {
+      None
+    }
+  };
+  let wx = width(frame.x, lo.0, hi.0);
+  let wy = width(frame.y, lo.1, hi.1);
+  match (wx, wy) {
+    (Some(wx), Some(wy)) if frame.stretch => (1.0 / wx, 1.0 / wy),
+    (Some(wx), Some(wy)) => {
+      let w = wx.max(wy);
+      (1.0 / w, 1.0 / w)
+    }
+    // A curve flat along one axis: keep both axes on the other's scale.
+    (Some(w), None) | (None, Some(w)) => (1.0 / w, 1.0 / w),
+    (None, None) => (1.0, 1.0),
+  }
 }
 
 /// Adaptively sample a parametric curve: lay down a uniform grid, then
@@ -290,6 +364,7 @@ fn adaptive_samples<F>(
   t_max: f64,
   initial_n: usize,
   max_total: usize,
+  frame: DisplayFrame,
 ) -> Vec<Sample>
 where
   F: Fn(f64) -> Option<Vec<(f64, f64)>>,
@@ -303,23 +378,36 @@ where
     })
     .collect();
 
+  let scale = display_scale(&samples, frame);
   let min_span = (t_max - t_min).abs() * 1e-10;
   for _ in 0..MAX_REFINEMENT_DEPTH {
     if samples.len() >= max_total {
       break;
     }
     let budget = max_total - samples.len();
+    let mut flagged: Vec<(usize, f64)> = samples
+      .windows(3)
+      .enumerate()
+      .filter(|(_, triple)| (triple[2].0 - triple[0].0).abs() >= min_span)
+      .filter_map(|(i, triple)| {
+        refinement_score(&triple[0], &triple[1], &triple[2], scale)
+          .map(|s| (i, s))
+      })
+      .collect();
+    // Each flagged triple adds up to two samples. When the budget cannot
+    // cover them all, spend it on the intervals that deviate most: a curve
+    // that settles into a tiny spiral (an ODE trajectory approaching a
+    // fixed point) bends at every sample, and refining that sub-pixel tail
+    // first would leave the large, visible bends polygonal.
+    let capacity = (budget / 2).max(1);
+    if flagged.len() > capacity {
+      flagged.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+      flagged.truncate(capacity);
+      flagged.sort_by_key(|&(i, _)| i);
+    }
     let mut added: Vec<Sample> = Vec::new();
-    for triple in samples.windows(3) {
-      if added.len() >= budget {
-        break;
-      }
-      if (triple[2].0 - triple[0].0).abs() < min_span {
-        continue;
-      }
-      if !needs_refinement(&triple[0], &triple[1], &triple[2]) {
-        continue;
-      }
+    for (i, _) in flagged {
+      let triple = &samples[i..i + 3];
       for (left, right) in [(&triple[0], &triple[1]), (&triple[1], &triple[2])]
       {
         let mid = f64::midpoint(left.0, right.0);
@@ -376,37 +464,52 @@ fn samples_to_series(samples: Vec<Sample>) -> (Vec<Vec<(f64, f64)>>, Vec<f64>) {
 /// with `ColorFunctionScaling` on, `x` and `y` are rescaled over the plot
 /// range and `t` over the parameter range first. A named gradient colors by
 /// the scaled `x`. Consecutive runs share their boundary point so the curve
-/// stays connected. Returns the run polylines and the color of each.
+/// stays connected. Returns the run polylines and the RGBA color of each.
+/// `radii` (PolarPlot) gives each sample's radius, passed as a fourth
+/// argument `r` (scaled over its range like `t`), as `f[x, y, θ, r]`.
 fn color_function_series(
   curves: &[Vec<(f64, f64)>],
   params: &[Vec<f64>],
+  radii: Option<&[Vec<f64>]>,
   cf: &Expr,
   scaling: (bool, bool),
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   (t_min, t_max): (f64, f64),
-) -> (Vec<Vec<(f64, f64)>>, Vec<(u8, u8, u8)>, Vec<usize>) {
+) -> (Vec<Vec<(f64, f64)>>, Vec<(u8, u8, u8, u8)>, Vec<usize>) {
   let scale = |v: f64, lo: f64, hi: f64| {
     if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
   };
   let scheme = crate::functions::field_plot::color_function_scheme_name(cf);
-  let color_at = |x: f64, y: f64, t: f64| -> (u8, u8, u8) {
+  let (r_min, r_max) = radii
+    .into_iter()
+    .flatten()
+    .flatten()
+    .filter(|r| r.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &r| {
+      (lo.min(r), hi.max(r))
+    });
+  let color_at = |x: f64, y: f64, t: f64, r: Option<f64>| -> (u8, u8, u8, u8) {
     let (sx, sy, st) = (
       scale(x, x_min, x_max),
       scale(y, y_min, y_max),
       scale(t, t_min, t_max),
     );
     if let Some(name) = &scheme {
-      return crate::functions::field_plot::apply_named_color_function(
-        name, sx,
-      );
+      let (r, g, b) =
+        crate::functions::field_plot::apply_named_color_function(name, sx);
+      return (r, g, b, 255);
     }
     // `{True, False}` scales x alone; the parameter follows x.
-    let args = vec![
+    let mut args = vec![
       Expr::Real(if scaling.0 { sx } else { x }),
       Expr::Real(if scaling.1 { sy } else { y }),
       Expr::Real(if scaling.0 { st } else { t }),
     ];
+    if let Some(r) = r {
+      let sr = scale(r, r_min, r_max);
+      args.push(Expr::Real(if scaling.0 { sr } else { r }));
+    }
     let call = Expr::CurriedCall {
       func: Box::new(cf.clone()),
       args,
@@ -415,15 +518,16 @@ fn color_function_series(
     evaluate_expr_to_expr(&call)
       .ok()
       .and_then(|r| crate::functions::graphics::parse_color_function_result(&r))
-      .map_or((0, 0, 0), |c| (ch(c.r), ch(c.g), ch(c.b)))
+      .map_or((0, 0, 0, 255), |c| (ch(c.r), ch(c.g), ch(c.b), ch(c.a)))
   };
   let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
-  let mut colors: Vec<(u8, u8, u8)> = Vec::new();
+  let mut colors: Vec<(u8, u8, u8, u8)> = Vec::new();
   let mut owners: Vec<usize> = Vec::new();
   for (ci, (curve, ts)) in curves.iter().zip(params).enumerate() {
     // Index of the run still being extended (None after a gap).
     let mut open: Option<usize> = None;
-    for (pair, tp) in curve.windows(2).zip(ts.windows(2)) {
+    let rs = radii.and_then(|r| r.get(ci));
+    for (i, (pair, tp)) in curve.windows(2).zip(ts.windows(2)).enumerate() {
       let (a, b) = (pair[0], pair[1]);
       if ![a.0, a.1, b.0, b.1].iter().all(|v| v.is_finite()) {
         open = None;
@@ -433,6 +537,7 @@ fn color_function_series(
         f64::midpoint(a.0, b.0),
         f64::midpoint(a.1, b.1),
         f64::midpoint(tp[0], tp[1]),
+        rs.and_then(|r| Some(f64::midpoint(*r.get(i)?, *r.get(i + 1)?))),
       );
       match open {
         Some(i) if colors[i] == c => runs[i].push(b),
@@ -1013,6 +1118,11 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       t_max,
       num_samples,
       max_total,
+      DisplayFrame {
+        x: overrides.x,
+        y: overrides.y,
+        stretch: overrides.aspect_ratio.is_some(),
+      },
     );
     if let Some(region) = &region_function {
       samples = clip_samples_to_region(samples, region, &sample_at);
@@ -1052,14 +1162,40 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (x_range, y_range) =
     apply_ranges_and_aspect(&mut plot_opts, &overrides, data_x, data_y);
 
+  render_curves(
+    &all_points,
+    &all_params,
+    None,
+    &mut plot_opts,
+    x_range,
+    y_range,
+    (t_min, t_max),
+    args,
+  )
+}
+
+/// Draw sampled parametric curves and attach them as a `PlotSource`.
+/// `radii` is only given by PolarPlot, whose `ColorFunction` also takes `r`.
+#[allow(clippy::too_many_arguments)]
+fn render_curves(
+  all_points: &[Vec<(f64, f64)>],
+  all_params: &[Vec<f64>],
+  radii: Option<&[Vec<f64>]>,
+  plot_opts: &mut PlotOptions,
+  x_range: (f64, f64),
+  y_range: (f64, f64),
+  (t_min, t_max): (f64, f64),
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
   // `ColorFunction -> f` colors the curve along its length by `f[x, y, t]`:
   // draw it as runs of constant color, one series per run. A `Show` merge
   // gets the colored runs, since the parameter `f` needs is gone by then.
   let mut colored_runs: Option<(Vec<Vec<(f64, f64)>>, Vec<SeriesStyle>)> = None;
   let svg = if let Some(cf) = plot_opts.color_function.take() {
     let (runs, colors, owners) = color_function_series(
-      &all_points,
-      &all_params,
+      all_points,
+      all_params,
+      radii,
       &cf,
       plot_opts.color_function_scaling,
       x_range,
@@ -1070,7 +1206,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_opts.plot_style = colors
       .iter()
       .zip(&owners)
-      .map(|(&(r, g, b), &curve)| {
+      .map(|(&(r, g, b, a), &curve)| {
         // Runs keep the weight and opacity of the curve they came from.
         let mut st = if base.is_empty() {
           SeriesStyle::default()
@@ -1082,16 +1218,22 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           f64::from(g) / 255.0,
           f64::from(b) / 255.0,
         ));
+        // `Directive[color, Opacity[a]]` results make the run translucent,
+        // on top of any opacity the curve's own style gives it.
+        if a < 255 {
+          let alpha = f64::from(a) / 255.0;
+          st.opacity = Some(st.opacity.unwrap_or(1.0) * alpha);
+        }
         st
       })
       .collect();
-    let svg = generate_svg_with_filling(&runs, x_range, y_range, &plot_opts);
+    let svg = generate_svg_with_filling(&runs, x_range, y_range, plot_opts);
     colored_runs =
       Some((runs, std::mem::replace(&mut plot_opts.plot_style, base)));
     plot_opts.color_function = Some(cf);
     svg?
   } else {
-    generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?
+    generate_svg_with_filling(all_points, x_range, y_range, plot_opts)?
   };
 
   // Attach the sampled curves as a PlotSource so `Show` can merge this plot
@@ -1106,16 +1248,16 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if matches!(pattern.as_ref(), Expr::Identifier(n)
             if n == "ColorFunction" || n == "ColorFunctionScaling"))
       });
-      (runs, styles)
+      (runs.as_slice(), styles)
     }
-    None => (&all_points, &plot_opts.plot_style),
+    None => (all_points, &plot_opts.plot_style),
   };
   let source = build_plot_source(
     points,
     styles,
     x_range,
     y_range,
-    &plot_opts,
+    plot_opts,
     &[false],
     plot_opts.filling,
     plot_opts.filling_style,
@@ -2069,24 +2211,54 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect();
   }
 
+  // Sampled like ParametricPlot: a uniform grid, refined where the curve
+  // bends faster than the grid resolves (a spiral winding many times).
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
-  let step = (t_max - t_min) / (num_samples - 1) as f64;
+  let max_total = num_samples.saturating_mul(MAX_REFINED_SAMPLES_FACTOR);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
+  let mut all_params: Vec<Vec<f64>> = Vec::with_capacity(bodies.len());
+  let mut all_radii: Vec<Vec<f64>> = Vec::with_capacity(bodies.len());
 
   for func_body in &bodies {
-    let mut points = Vec::with_capacity(num_samples);
-    for i in 0..num_samples {
-      let theta = t_min + i as f64 * step;
-      if let Some(r) = evaluate_at_point(func_body, &var_name, theta) {
-        let x = r * theta.cos();
-        let y = r * theta.sin();
-        points.push((x, y));
-      } else {
-        points.push((f64::NAN, f64::NAN));
-      }
-    }
+    let samples = adaptive_samples(
+      |theta| {
+        let r = evaluate_at_point(func_body, &var_name, theta)?;
+        Some(vec![(r * theta.cos(), r * theta.sin())])
+      },
+      t_min,
+      t_max,
+      num_samples,
+      max_total,
+      DisplayFrame {
+        x: overrides.x,
+        y: overrides.y,
+        stretch: overrides.aspect_ratio.is_some(),
+      },
+    );
+    let (series, params) = samples_to_series(samples);
+    let points = series.into_iter().next().unwrap_or_default();
+    // The signed radius of each sample, recovered from its point and angle.
+    all_radii.push(
+      points
+        .iter()
+        .zip(&params)
+        .map(|(&(x, y), &t)| x * t.cos() + y * t.sin())
+        .collect(),
+    );
     all_points.push(points);
+    all_params.push(params);
   }
+  plot_opts.mesh_parameters = all_points
+    .iter()
+    .zip(&all_params)
+    .map(|(points, params)| {
+      points
+        .iter()
+        .zip(params)
+        .map(|(&(x, y), &t)| (x, y, t))
+        .collect()
+    })
+    .collect();
 
   let (mut data_x, mut data_y) = compute_data_ranges(&all_points);
   if let Some(axes) = PolarAxesSpec::from_options(&args[2..]) {
@@ -2114,25 +2286,16 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let (x_range, y_range) =
     apply_ranges_and_aspect(&mut plot_opts, &overrides, data_x, data_y);
 
-  let svg =
-    generate_svg_with_filling(&all_points, x_range, y_range, &plot_opts)?;
-
-  // Attach the sampled curves as a PlotSource so `Show` can merge this plot
-  // with other graphics (re-rendering the curves as Line primitives). The
-  // style goes with them: a curve merged by `Show` keeps the color and
-  // weight `PlotStyle` gave it, as it does when drawn on its own.
-  let source = build_plot_source(
+  render_curves(
     &all_points,
-    &plot_opts.plot_style,
+    &all_params,
+    Some(&all_radii),
+    &mut plot_opts,
     x_range,
     y_range,
-    &plot_opts,
-    &[false],
-    plot_opts.filling,
-    plot_opts.filling_style,
-    source_options(args),
-  );
-  Ok(crate::graphics_result_with_source(svg, source))
+    (t_min, t_max),
+    args,
+  )
 }
 
 /// The options a parametric plot keeps with its curves: the explicit ones

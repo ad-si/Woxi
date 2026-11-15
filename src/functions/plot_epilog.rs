@@ -66,6 +66,11 @@ struct EpilogStyle {
   /// `EdgeForm[…]`: the outline drawn around filled primitives
   /// (`Rectangle`, `Polygon`, `Disk`). `None` = no outline.
   edge: Option<Box<EpilogStyle>>,
+  /// Font weight, slant and size a `Style[prim, Bold, Italic, 14, …]`
+  /// around a `Text` primitive sets (the label's own `Style` wins).
+  bold: bool,
+  italic: bool,
+  font_size: Option<f64>,
 }
 
 impl EpilogStyle {
@@ -86,6 +91,9 @@ impl EpilogStyle {
       arrowheads: None,
       cap_form: Expr::String("Round".into()),
       edge: None,
+      bold: false,
+      italic: false,
+      font_size: None,
     }
   }
 
@@ -270,6 +278,26 @@ fn anchor_component(expr: &Expr, min: f64, max: f64) -> Option<f64> {
   try_eval_to_f64(expr)
 }
 
+/// A text `Inset[label, pos, …, Background -> color]` rendered as its
+/// `Text[…]`: the inset's `Background` goes along as the text's own.
+fn with_inset_background(text: Expr, inset_args: &[Expr]) -> Expr {
+  let background = inset_args.iter().find(|o| {
+    matches!(
+      o,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background")
+    )
+  });
+  match (&text, background) {
+    (Expr::FunctionCall { name, args }, Some(rule)) if name == "Text" => {
+      let mut args = args.to_vec();
+      args.push(rule.clone());
+      call("Text", args)
+    }
+    _ => text,
+  }
+}
+
 /// The value of option `key` among a primitive's trailing `opt -> value`
 /// arguments.
 fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
@@ -286,6 +314,35 @@ fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
     }
     _ => None,
   })
+}
+
+/// The `Background -> color` that `Style` wrappers around a label set
+/// (`Style[Row[…], 18, Blue, Background -> White]`), the innermost one
+/// winning, with directives grouped in lists or `Directive[…]` included.
+/// `None` when no wrapper gives a background.
+fn style_wrapper_background(label: &Expr) -> Option<Color> {
+  fn in_directives(ds: &[Expr]) -> Option<Color> {
+    ds.iter().rev().find_map(|d| match d {
+      Expr::List(items) => in_directives(items),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        in_directives(args)
+      }
+      _ => option_value(std::slice::from_ref(d), "Background")
+        .and_then(parse_color),
+    })
+  }
+  let mut found = None;
+  let mut cur = label;
+  while let Expr::FunctionCall { name, args } = cur
+    && crate::functions::graphics::is_style_wrapper(name)
+    && !args.is_empty()
+  {
+    if let Some(color) = in_directives(&args[1..]) {
+      found = Some(color);
+    }
+    cur = &args[0];
+  }
+  found
 }
 
 /// Try to interpret an expression as a `{x, y}` coordinate pair.
@@ -358,6 +415,66 @@ fn polyline_points(pts: &[(f64, f64)], area: &PlotArea) -> String {
 
 /// Apply a single style directive to `style`. Returns `true` when the
 /// expression was a directive (and thus produces no visible output).
+/// Apply a font directive of a `Style[prim, …]` (`Bold`, `Italic`,
+/// `Plain`, a font size, or a `FontWeight`/`FontSlant`/`FontSize`/
+/// `FontColor` rule) to the text primitives it wraps.
+fn apply_font_directive(expr: &Expr, style: &mut EpilogStyle) {
+  fn word(e: &Expr) -> Option<&str> {
+    match e {
+      Expr::Identifier(s) | Expr::String(s) => Some(s.as_str()),
+      _ => None,
+    }
+  }
+  match expr {
+    Expr::Identifier(s) => match s.as_str() {
+      "Bold" => style.bold = true,
+      "Italic" => style.italic = true,
+      "Plain" => {
+        style.bold = false;
+        style.italic = false;
+      }
+      _ => {}
+    },
+    Expr::Integer(_) | Expr::Real(_) => {
+      if let Some(size) = try_eval_to_f64(expr).filter(|s| *s > 0.0) {
+        style.font_size = Some(size);
+      }
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => match word(pattern) {
+      Some("FontWeight") => {
+        if let Some(w) = word(replacement) {
+          style.bold =
+            matches!(w, "Bold" | "SemiBold" | "Heavy" | "Black" | "ExtraBold");
+        }
+      }
+      Some("FontSlant") => {
+        if let Some(w) = word(replacement) {
+          style.italic = matches!(w, "Italic" | "Oblique");
+        }
+      }
+      Some("FontSize") => {
+        if let Some(size) = try_eval_to_f64(replacement).filter(|s| *s > 0.0) {
+          style.font_size = Some(size);
+        }
+      }
+      Some("FontColor") => {
+        if let Some(c) = parse_color(replacement) {
+          style.color = c;
+        }
+      }
+      _ => {}
+    },
+    _ => {}
+  }
+}
+
 fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
   if let Some(c) = parse_color(expr) {
     style.color = c;
@@ -375,7 +492,9 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "Directive" => {
         for a in args {
-          apply_directive(a, style);
+          if !apply_directive(a, style) {
+            apply_font_directive(a, style);
+          }
         }
       }
       // `EdgeForm[]` / `EdgeForm[None]` draw no outline; otherwise the
@@ -923,9 +1042,22 @@ fn render_item(
           // `Style[…]` around the content sets the text's own size and
           // color; without one the epilog's directives still apply.
           let styled = crate::functions::chart::parse_styled_label(body);
-          let font_size =
-            styled.as_ref().and_then(|s| s.font_size).unwrap_or(13.0)
-              * area.scale;
+          let font_size = styled
+            .as_ref()
+            .and_then(|s| s.font_size)
+            .or(style.font_size)
+            .unwrap_or(13.0)
+            * area.scale;
+          let bold = style.bold || styled.as_ref().is_some_and(|s| s.bold);
+          let italic =
+            style.italic || styled.as_ref().is_some_and(|s| s.italic);
+          let mut font_attrs = String::new();
+          if bold {
+            font_attrs.push_str(" font-weight=\"bold\"");
+          }
+          if italic {
+            font_attrs.push_str(" font-style=\"italic\"");
+          }
           let fill = match styled.as_ref().and_then(|s| s.color) {
             // A translucent color (`Transparent` placeholder text, say)
             // keeps its alpha instead of drawing opaque.
@@ -1005,6 +1137,33 @@ fn render_item(
             || svg_escape_text(&expr_to_output(body)),
             |s| s.svg_scaled_stacked(area.scale, px, line_height),
           );
+          // `Text[label, pos, …, Background -> color]` (or an `Inset`'s
+          // `Background`, carried over onto its text) lays a borderless
+          // panel behind the label, so a curve running under it is hidden.
+          // A `Style[…, Background -> color]` around the label asks for the
+          // same panel, as it does in `Graphics`.
+          let text_background = option_value(args, "Background")
+            .and_then(parse_color)
+            .or_else(|| style_wrapper_background(body))
+            .filter(|_| !is_framed && direction.is_none());
+          if let Some(color) = text_background {
+            let chars = styled.as_ref().map_or_else(
+              || expr_to_output(body).chars().count(),
+              super::chart::StyledLabel::max_line_chars,
+            ) as f64;
+            let text_w = chars * font_size * 0.6;
+            let left = match text_anchor {
+              "start" => px,
+              "end" => px - text_w,
+              _ => px - text_w / 2.0,
+            };
+            out.push_str(&format!(
+              "<rect x=\"{left:.1}\" y=\"{:.1}\" width=\"{text_w:.1}\" height=\"{:.1}\" fill=\"{}\" stroke=\"none\"/>\n",
+              py - font_size / 2.0,
+              extra_lines * line_height + font_size,
+              color.to_svg_rgb(),
+            ));
+          }
           if is_framed {
             let text_w = styled
               .as_ref()
@@ -1045,7 +1204,7 @@ fn render_item(
           out.push_str(&format!(
             "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-             font-size=\"{font_size:.0}\" {fill}{rotate_attr}>{label}</text>\n",
+             font-size=\"{font_size:.0}\"{font_attrs} {fill}{rotate_attr}>{label}</text>\n",
           ));
         }
       }
@@ -1058,11 +1217,11 @@ fn render_item(
         if let Some(text) =
           crate::functions::graphics::text_primitive_inset(args) =>
       {
-        render_item(&text, style, area, out);
+        render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
         let text = call("Text", vec![args[0].clone(), args[1].clone()]);
-        render_item(&text, style, area, out);
+        render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if !args.is_empty() => {
         let anchor = args.get(1).and_then(|p| anchor2(p, area)).unwrap_or((
@@ -1119,7 +1278,9 @@ fn render_item(
       "Style" if !args.is_empty() => {
         let mut scoped = style.clone();
         for d in &args[1..] {
-          apply_directive(d, &mut scoped);
+          if !apply_directive(d, &mut scoped) {
+            apply_font_directive(d, &mut scoped);
+          }
         }
         render_item(&args[0], &mut scoped, area, out);
       }

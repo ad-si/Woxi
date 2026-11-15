@@ -6851,6 +6851,21 @@ mod expand_threading {
       "33.3333333333333333333`5."
     );
   }
+
+  // Each list element is capped by its own magnitude, as for a lone number.
+  #[test]
+  fn n_precision_accuracy_spec_list() {
+    assert_eq!(
+      interpret("N[{1/3, 100/3, {1/100}}, {5, 5}]").unwrap(),
+      format!(
+        "{{{}, {}, {{{}}}}}",
+        interpret("N[1/3, {5, 5}]").unwrap(),
+        interpret("N[100/3, {5, 5}]").unwrap(),
+        interpret("N[1/100, {5, 5}]").unwrap()
+      )
+    );
+    assert_eq!(interpret("N[{1/100}, {5, 5}]").unwrap(), "{0.01`3.}");
+  }
 }
 
 /// Regression tests for unary minus after operators (issues 2 & 5)
@@ -7566,6 +7581,21 @@ mod exp_log_identity {
   #[test]
   fn exp_log_compound() {
     assert_eq!(interpret("E^Log[a + b]").unwrap(), "a + b");
+  }
+
+  /// `Log[b, x]` evaluates to `Log[x]/Log[b]`; raising `b` to it undoes the
+  /// logarithm for any base, not only `E`.
+  #[test]
+  fn base_power_of_log_in_same_base() {
+    assert_eq!(interpret("10^Log[10, 300]").unwrap(), "300");
+    assert_eq!(interpret("2^Log[2, x]").unwrap(), "x");
+    assert_eq!(interpret("b^Log[b, x + y]").unwrap(), "x + y");
+    assert_eq!(interpret("10^(Log[10, 3] + 0)").unwrap(), "3");
+    // `Log[5/7]` is `-Log[7/5]`, so the exponent carries a leading -1.
+    assert_eq!(interpret("2^Log[2, 5/7]").unwrap(), "5/7");
+    assert_eq!(interpret("10^Log[10, 1/1000]").unwrap(), "1/1000");
+    // A different base leaves the power alone.
+    assert_eq!(interpret("3^Log[2, x]").unwrap(), "3^(Log[x]/Log[2])");
   }
 
   #[test]
