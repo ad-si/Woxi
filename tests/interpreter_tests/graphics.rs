@@ -10198,7 +10198,7 @@ mod plot3d {
         assert_eq!(bound, spherical, "{view}");
       }
       // The frame ends with the closure.
-      let () = woxi::with_manipulate_frame(|| ());
+      woxi::with_manipulate_frame(|| ());
       assert!(!woxi::in_manipulate_frame());
     }
 
@@ -22412,6 +22412,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// the range. The IQR-fenced `robust_value_range` keeps the pole from
     /// swamping the well-behaved bulk of the domain, so multiple contour
     /// lines should still be drawn away from it.
+    /// `PlotRange -> All` spans the contour levels over every sampled
+    /// value. A narrow peak on a wide domain is mostly near-zero samples,
+    /// which the default outlier fence would treat as the whole range,
+    /// packing every level into the tail far from the peak; with `All` the
+    /// levels follow the peak, so its level curves sit close around it.
+    #[test]
+    fn contour_plot_plot_range_all_uses_full_value_range() {
+      let radius = |range: &str| {
+        let out = interpret(&format!(
+          "pts = Flatten[Cases[Normal[ContourPlot[Exp[-(x^2 + y^2)], \
+           {{x, -8, 8}}, {{y, -8, 8}}{range}]], Line[p_] :> p, Infinity], 1]; \
+           Max[Norm /@ pts]"
+        ))
+        .unwrap();
+        out.parse::<f64>().unwrap()
+      };
+      let all = radius(", PlotRange -> All");
+      assert!(all < 2.0, "outermost level curve at radius {all}");
+      let three_axis = radius(", PlotRange -> {Full, Full, All}");
+      assert!(three_axis < 2.0, "outermost level curve at {three_axis}");
+    }
+
     #[test]
     fn contour_plot_pole_does_not_flatten_contour_levels() {
       let svg = export_svg(
