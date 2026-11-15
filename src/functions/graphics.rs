@@ -37533,11 +37533,108 @@ fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
   Some(out)
 }
 
+/// Move every control spec carrying `ControlPlacement -> n` (a positive
+/// integer) to where a layout argument references it with `Place[n]` (or
+/// the FrontEnd-saved `` Manipulate`Place[n] ``), as Wolfram does: the
+/// marker becomes `Control[spec]` and the spec's own argument is dropped.
+/// `Row[{Place[1], Place[2]}]` thereby puts both controls on one line,
+/// handled by the ordinary `Row[{Control[…], …}]` layout path. Returns the
+/// rewritten `Manipulate` arguments, or `None` when no marker resolves.
+fn place_numbered_controls(args: &[Expr]) -> Option<Vec<Expr>> {
+  use std::cell::RefCell;
+  use std::collections::HashMap;
+  fn numbered_placement(spec: &Expr) -> Option<(i128, Expr)> {
+    control_spec_variable(spec)?;
+    let Expr::List(items) = spec else {
+      return None;
+    };
+    let pos = items.iter().position(|item| {
+      matches!(item, Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ControlPlacement")
+          && matches!(replacement.as_ref(), Expr::Integer(n) if *n > 0))
+    })?;
+    let Expr::Rule { replacement, .. } = &items[pos] else {
+      return None;
+    };
+    let Expr::Integer(n) = replacement.as_ref() else {
+      return None;
+    };
+    let rest: Vec<Expr> = items
+      .iter()
+      .enumerate()
+      .filter(|(i, _)| *i != pos)
+      .map(|(_, e)| e.clone())
+      .collect();
+    Some((*n, Expr::List(rest.into())))
+  }
+  fn rewrite(
+    expr: &Expr,
+    numbered: &HashMap<i128, (usize, Expr)>,
+    used: &RefCell<Vec<usize>>,
+  ) -> Expr {
+    if let Expr::FunctionCall { name, args } = expr
+      && is_place_head(name)
+      && let [Expr::Integer(n)] = args.as_ref()
+      && let Some((index, spec)) = numbered.get(n)
+    {
+      used.borrow_mut().push(*index);
+      return call1("Control", spec.clone());
+    }
+    crate::syntax::map_children(expr, &|e| rewrite(e, numbered, used))
+  }
+  if args.len() < 2 {
+    return None;
+  }
+  let mut numbered: HashMap<i128, (usize, Expr)> = HashMap::new();
+  for (i, arg) in args.iter().enumerate().skip(1) {
+    if let Some((n, spec)) = numbered_placement(arg) {
+      numbered.entry(n).or_insert((i, spec));
+    }
+  }
+  if numbered.is_empty() {
+    return None;
+  }
+  let spec_indices: Vec<usize> = numbered.values().map(|(i, _)| *i).collect();
+  let used = RefCell::new(Vec::new());
+  let rewritten: Vec<Expr> = args
+    .iter()
+    .enumerate()
+    .map(|(i, arg)| {
+      if i == 0
+        || spec_indices.contains(&i)
+        || matches!(arg, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+      {
+        arg.clone()
+      } else {
+        rewrite(arg, &numbered, &used)
+      }
+    })
+    .collect();
+  let used = used.into_inner();
+  if used.is_empty() {
+    return None;
+  }
+  Some(
+    rewritten
+      .into_iter()
+      .enumerate()
+      .filter(|(i, _)| !used.contains(i))
+      .map(|(_, e)| e)
+      .collect(),
+  )
+}
+
 pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let expr = peel_manipulate_wrapper(expr);
   if let Expr::FunctionCall { name, args } = expr
     && name == "Manipulate"
     && let Some(new_args) = add_selectors_to_bare_tabviews(args)
+  {
+    return extract_manipulate_spec(&call("Manipulate", new_args));
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Manipulate"
+    && let Some(new_args) = place_numbered_controls(args)
   {
     return extract_manipulate_spec(&call("Manipulate", new_args));
   }
