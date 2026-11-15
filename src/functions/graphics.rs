@@ -6501,6 +6501,10 @@ fn button_image_size(button_args: &[Expr]) -> Option<(f64, Option<f64>)> {
   }
 }
 
+/// The side, in pixels, of an unsized picture label (`Button[Graphics[…],
+/// …]`): Wolfram draws it inline at the height of a line of text.
+const BUTTON_PICTURE_LABEL_SIZE: i128 = 18;
+
 /// A `Button[label, action, opts…]` laid out as a cell of a `Grid`, `Row` or
 /// `Column`. A picture label (`Graphics[…]`) is drawn at the button's
 /// `ImageSize` with the button's `Background` and hit region; a text label
@@ -6513,7 +6517,7 @@ fn button_cell_svg(args: &[Expr]) -> String {
     let (w, h) = match size {
       Some((w, Some(h))) => (w.round() as i128, h.round() as i128),
       Some((w, None)) => (w.round() as i128, w.round() as i128),
-      None => (28, 28),
+      None => (BUTTON_PICTURE_LABEL_SIZE, BUTTON_PICTURE_LABEL_SIZE),
     };
     let sized = with_fixed_image_size(&args[0], w, h);
     if let Ok(evaluated) = evaluate_expr_to_expr(&sized) {
@@ -29980,6 +29984,67 @@ fn is_span_placeholder_svg(svg: &str) -> bool {
   svg.starts_with("<svg ") && svg[5..].starts_with(SPAN_PLACEHOLDER_ATTR)
 }
 
+/// The value a layout cell shows: a bare variable resolves to the picture
+/// it holds, and a user function returning a `Dynamic[…]` (a
+/// `DynamicModule` holding a clickable square) to the picture or `Button`
+/// inside it now.
+fn resolve_layout_cell(item: &Expr) -> Expr {
+  // An inline call (`GraphicsGrid[{{Plot[…], Plot[…]}}]`) gets its
+  // `ImageSize` injected before it ever evaluates. A bare variable
+  // holding an already-rendered picture (`g1 = Graphics[…];
+  // GraphicsGrid[{{g1, …}}]`, how a Demonstration typically builds one
+  // panel and reuses it) is not itself rewritable, so resolve it to its
+  // value first — a `Graphics[…]` value keeps its built expression in
+  // `structure` for exactly this.
+  let target = if matches!(item, Expr::FunctionCall { .. }) {
+    item.clone()
+  } else {
+    evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
+  };
+  let is_user_call = matches!(&target, Expr::FunctionCall { name, .. }
+    if !is_graphics_producing_head(name)
+      && !matches!(name.as_str(), "Button" | "Dynamic"));
+  let value = if is_user_call {
+    evaluate_expr_to_expr(&target).unwrap_or_else(|_| target.clone())
+  } else {
+    target.clone()
+  };
+  if matches!(&value, Expr::FunctionCall { name, .. } if name == "Dynamic") {
+    dynamic_current_value(&value)
+  } else {
+    target
+  }
+}
+
+/// The width a `Button[Graphics[…], action, opts…]` layout cell takes on
+/// its own: its `ImageSize`, or else the size Wolfram draws an unsized
+/// picture label at. `None` for any other cell.
+fn button_picture_cell_width(item: &Expr) -> Option<f64> {
+  let cell = resolve_layout_cell(item);
+  let Expr::FunctionCall { name, args } = &cell else {
+    return None;
+  };
+  if name != "Button" || args.is_empty() {
+    return None;
+  }
+  let is_picture = |e: &Expr| match e {
+    Expr::Graphics { .. } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Graphics" | "Graphics3D")
+    }
+    _ => false,
+  };
+  if !is_picture(&args[0])
+    && !evaluate_expr_to_expr(&args[0]).is_ok_and(|l| is_picture(&l))
+  {
+    return None;
+  }
+  Some(
+    button_image_size(&args)
+      .map_or(BUTTON_PICTURE_LABEL_SIZE as f64, |(w, _)| w),
+  )
+}
+
 /// Evaluate each item with `ImageSize -> per_cell_w` injected (when the
 /// item is a rewritable FunctionCall) and collect the resulting SVGs.
 /// Items that are already evaluated (variables, literals) pass through
@@ -30032,30 +30097,7 @@ fn render_items_at_size(
       // panel and reuses it) is not itself rewritable, so resolve it to its
       // value first — a `Graphics[…]` value keeps its built expression in
       // `structure` for exactly this.
-      let target = if matches!(item, Expr::FunctionCall { .. }) {
-        item.clone()
-      } else {
-        evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone())
-      };
-      // A cell made by a user function that returns a `Dynamic[…]` (a
-      // `DynamicModule` holding a clickable square) shows the value it holds
-      // now, so unwrap it to the picture or `Button` inside.
-      let target = {
-        let is_user_call = matches!(&target, Expr::FunctionCall { name, .. }
-          if !is_graphics_producing_head(name)
-            && !matches!(name.as_str(), "Button" | "Dynamic"));
-        let value = if is_user_call {
-          evaluate_expr_to_expr(&target).unwrap_or_else(|_| target.clone())
-        } else {
-          target.clone()
-        };
-        if matches!(&value, Expr::FunctionCall { name, .. } if name == "Dynamic")
-        {
-          dynamic_current_value(&value)
-        } else {
-          target
-        }
-      };
+      let target = resolve_layout_cell(item);
       // A finished plot (`p = Plot[…]` collected into a layout) can't take
       // an `ImageSize` through its expression, but it keeps the sampled
       // curves and its options, so it is drawn again at the cell's size.
@@ -30497,6 +30539,11 @@ pub fn graphics_grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let auto_size = opts.target_width.is_none() && !opts.aspect_full;
   if auto_size {
     let natural_width = |item: &Expr| -> Option<f64> {
+      // A pressable picture (`Button[Graphics[…], …]`, possibly behind a
+      // `Dynamic`) is as wide as the button draws it.
+      if let Some(w) = button_picture_cell_width(item) {
+        return Some(w);
+      }
       let structure = match item {
         Expr::Graphics {
           structure: Some(inner),

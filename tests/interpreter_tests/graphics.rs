@@ -48539,6 +48539,56 @@ fn graphics_grid_button_cells_carry_hit_regions() {
   assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 4);
 }
 
+/// With no `ImageSize`, a `GraphicsGrid` row of pressable pictures
+/// (`Button[Graphics[…], …]`, also behind a `DynamicModule`'s `Dynamic`) is
+/// as wide as the buttons draw their unsized labels — 18 pixels each, a line
+/// of text high — instead of stretching to the full 600-pixel width.
+#[test]
+fn graphics_grid_of_picture_buttons_keeps_button_size() {
+  let size = |code: &str| {
+    clear_state();
+    let svg = export_svg(code);
+    let head = svg.lines().next().unwrap().to_string();
+    let attr = |name: &str| -> String {
+      head
+        .split(&format!("{name}=\""))
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_string()
+    };
+    (attr("width"), attr("height"))
+  };
+  assert_eq!(
+    size(
+      "sq = Graphics[{White, Rectangle[]}]; \
+       GraphicsGrid[Table[Button[sq, Null], {2}, {7}], Spacings -> {0, 0}]"
+    ),
+    ("126".to_string(), "36".to_string())
+  );
+  assert_eq!(
+    size(
+      "cell[v_] := DynamicModule[{c = v}, Dynamic[Button[\
+         If[c, Graphics[{Black, Rectangle[]}], Graphics[{White, Rectangle[]}]], \
+         c = !c, Appearance -> \"Frameless\"]]]; \
+       GraphicsGrid[Table[cell[OddQ[j]], {1}, {5}], Frame -> All, \
+         Spacings -> {0, 0}]"
+    ),
+    ("90".to_string(), "18".to_string())
+  );
+  // An explicit button `ImageSize` still sets the cell width.
+  assert_eq!(
+    size(
+      "GraphicsGrid[{{Button[Graphics[Disk[]], Null, ImageSize -> 40], \
+         Button[Graphics[Disk[]], Null, ImageSize -> 40]}}, Spacings -> {0, 0}]"
+    )
+    .0,
+    "80"
+  );
+}
+
 /// `ViewVertical` picks the direction that points up on screen: looking
 /// along +y, the z axis is vertical by default but lies flat once the
 /// vertical is the x axis.
