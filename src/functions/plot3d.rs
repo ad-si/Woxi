@@ -14113,11 +14113,13 @@ fn with_plot_label(
     style_attrs.push_str(" font-style=\"italic\"");
   }
   let label = styled.svg_scaled_stacked(1.0, cx, line_height);
+  // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+  let keep = crate::functions::plot::preserve_blanks_attr(&label);
   format!(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
      <text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{fill}\"{style_attrs}>{label}</text>\n\
+     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n\
      <g transform=\"translate(0,{strip})\">{svg}</g>\n\
      </svg>",
     bg.0, bg.1, bg.2,

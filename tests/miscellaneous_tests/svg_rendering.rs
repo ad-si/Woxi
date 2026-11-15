@@ -2853,6 +2853,24 @@ mod tests {
     }
 
     #[test]
+    fn plot3d_plot_label_keeps_runs_of_spaces() {
+      // SVG collapses consecutive blanks unless told otherwise.
+      let svg = svg_of(
+        r#"ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6},
+        PlotLabel -> Row[{"a = 1", "   b = 2"}]]"#,
+      );
+      assert!(
+        svg.contains("xml:space=\"preserve\">a = 1   b = 2</text>"),
+        "expected the label's blank run to be kept: {svg}"
+      );
+      let single = svg_of(
+        r#"ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6},
+        PlotLabel -> "a b"]"#,
+      );
+      assert!(!single.contains("xml:space"), "{single}");
+    }
+
+    #[test]
     fn parametric_plot3d_surface_first_repeated_plot_style_wins() {
       let first = svg_of(
         "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \

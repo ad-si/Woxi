@@ -4602,7 +4602,7 @@ fn grid_line_props(
 /// The attribute that keeps a run of blanks a label asks for
 /// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
 /// space; empty when the markup has no such run.
-fn preserve_blanks_attr(markup: &str) -> &'static str {
+pub(crate) fn preserve_blanks_attr(markup: &str) -> &'static str {
   if markup.contains("  ") {
     " xml:space=\"preserve\""
   } else {

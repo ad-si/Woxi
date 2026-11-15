@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+    3D plot labels keep them too.
+- `ParametricPlot3D` honors the first of a repeated option, as Wolfram does,
+    so `PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws the curve as a tube.
 
 # 2026-11-08 - 0.4.0
 
