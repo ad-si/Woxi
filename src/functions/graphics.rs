@@ -16286,7 +16286,21 @@ impl BoxLayout {
     // room.
     let zero_width =
       |c: &char| matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}');
-    let w = s.chars().filter(|c| !zero_width(c)).count() as f64 * ch;
+    let family = BOX_FONT_FAMILY.with(|f| f.borrow().clone());
+    let w = match family.as_deref() {
+      // A proportional face (`StyleBox[…, FontFamily -> "Times"]`, a
+      // grid's `BaseStyle`) advances each glyph by its own width.
+      Some(ff) => {
+        s.chars()
+          .filter(|c| !zero_width(c))
+          .map(crate::functions::plot_padding::char_width_em)
+          .sum::<f64>()
+          * font_size
+          * proportional_family_scale(ff)
+      }
+      None => s.chars().filter(|c| !zero_width(c)).count() as f64 * ch,
+    };
+    let family_attr = svg_escape(family.as_deref().unwrap_or("monospace"));
     let escaped = svg_escape(s);
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
@@ -16305,7 +16319,7 @@ impl BoxLayout {
       // their allocated width rather than the glyph sticking to the previous
       // token. The width above already counts those spaces.
       elements: format!(
-        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\"{style_attr} xml:space=\"preserve\">{escaped}</text>"
+        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"{family_attr}\" font-size=\"{font_size:.1}\" stroke=\"none\"{style_attr} xml:space=\"preserve\">{escaped}</text>"
       ),
     }
   }
@@ -16327,12 +16341,46 @@ thread_local! {
   /// the level-0 size ([`BOX_ROOT_FONT_SIZE`]): the third tier of a
   /// continued fraction is as large as the second.
   static BOX_SCRIPT_LEVEL: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+  /// The proportional font family a `StyleBox[…, FontFamily -> f]` (or a
+  /// grid's `BaseStyle`) sets its text atoms in; `None` keeps the
+  /// monospace default.
+  static BOX_FONT_FAMILY: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
   /// The font size of the box last laid out at script level 0.
   static BOX_ROOT_FONT_SIZE: std::cell::Cell<f64> = const { std::cell::Cell::new(14.0) };
   /// Set while typesetting an item of a `Column`/`Row`/`Grid`, which Wolfram
   /// sets inline: `∑`, `∏` and `lim` carry their limits as scripts there,
   /// the way they do inside a fraction.
   static BOX_INLINE_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// How much narrower a proportional face sets text than the Arial metrics
+/// of [`crate::functions::plot_padding::char_width_em`]: a serif face such
+/// as Times runs about 10% tighter.
+fn proportional_family_scale(family: &str) -> f64 {
+  let f = family.to_ascii_lowercase();
+  if f.contains("times") || (f.contains("serif") && !f.contains("sans")) {
+    0.9
+  } else {
+    1.0
+  }
+}
+
+/// Run `f` with the box text atoms set in `family` (`None`: monospace, or
+/// a fixed-width family, which is the same advance).
+fn with_box_font_family<T>(family: Option<&str>, f: impl FnOnce() -> T) -> T {
+  struct Restore(Option<String>);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      let previous = self.0.take();
+      BOX_FONT_FAMILY.with(|f| *f.borrow_mut() = previous);
+    }
+  }
+  let family = family
+    .filter(|ff| !is_monospace_font_family(ff))
+    .map(str::to_string);
+  let previous = BOX_FONT_FAMILY.with(|f| f.replace(family));
+  let _restore = Restore(previous);
+  f()
 }
 
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
@@ -16934,6 +16982,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut show_contents = true;
         let mut italic = false;
         let mut opacity: Option<f64> = None;
+        let mut font_family: Option<String> = None;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -16991,6 +17040,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               "FontColor" => {
                 font_color = parse_color(val);
               }
+              "FontFamily" => {
+                if let Expr::String(ff) = val {
+                  font_family = Some(ff.clone());
+                }
+              }
               "Background" => {
                 background = parse_color(val);
               }
@@ -17004,7 +17058,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             }
           }
         }
-        let content = layout_box(&args[0], effective_font_size);
+        let content = match font_family.as_deref() {
+          Some(ff) => with_box_font_family(Some(ff), || {
+            layout_box(&args[0], effective_font_size)
+          }),
+          None => layout_box(&args[0], effective_font_size),
+        };
         if !show_contents {
           return BoxLayout {
             elements: String::new(),
@@ -24450,6 +24509,7 @@ fn has_script_stacked_inline_box(s: &str) -> bool {
 fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   let mut content = cell;
   let mut size = 14.0;
+  let mut family: Option<String> = None;
   loop {
     match content {
       Expr::FunctionCall { name, args }
@@ -24460,11 +24520,28 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
       Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
         let style = extract_cell_style(content);
         size = style.font_size.unwrap_or(size);
+        // The innermost `FontFamily` wins, as it is nearest the text.
+        if style.font_family.is_some() {
+          family.clone_from(&style.font_family);
+        }
         content = style.content;
       }
       _ => break,
     }
   }
+  // `Style[…, FontFamily -> "Times"]` sets the typeset numerator,
+  // denominator and scripts in that face too.
+  with_box_font_family(family.as_deref(), || {
+    traditional_inline_box_content_svg(content, size)
+  })
+}
+
+/// [`traditional_inline_box_cell_svg`] for a cell already stripped of its
+/// `Text`/`Style` wrappers, typeset at `size`.
+fn traditional_inline_box_content_svg(
+  content: &Expr,
+  size: f64,
+) -> Option<String> {
   // A plain string holding inline `\!\(\*…\)` box notation is typeset the
   // same way: `"\!\(\*FractionBox[\(a\), \(b\)]\)"` is a fraction, not its
   // linear `a/b` reading, which loses the grouping of nested fractions.
@@ -25718,6 +25795,24 @@ fn grid_svg_styled_internal_reporting(
         && has_stacked_inline_box(text)
       {
         *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
+      }
+      // A typeset cell (a `Row` holding a quotient, a `TraditionalForm`
+      // formula) is set in the grid's `BaseStyle` face and size, like the
+      // grid's plain text cells, rather than the monospace default.
+      if let Some(family) = &default_style.font_family
+        && traditional_inline_box_cell_svg(cell).is_some()
+      {
+        let mut directives = vec![
+          cell.clone(),
+          Expr::Rule {
+            pattern: Box::new(id_expr("FontFamily")),
+            replacement: Box::new(str_expr(family)),
+          },
+        ];
+        if let Some(size) = default_style.font_size {
+          directives.push(Expr::Real(size));
+        }
+        *cell = call("Style", directives);
       }
     }
   }
