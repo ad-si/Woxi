@@ -18,6 +18,41 @@ use woxi::functions::graphics::{
 };
 use woxi::syntax::Expr;
 
+/// A control caption drawn as a picture, at the size its SVG states.
+#[derive(Debug, Clone)]
+pub struct LabelIcon {
+  pub handle: svg::Handle,
+  pub width: f32,
+  pub height: f32,
+}
+
+impl LabelIcon {
+  pub fn from_svg(svg: String) -> Self {
+    let (width, height) = svg_root_size(&svg).unwrap_or((24.0, 24.0));
+    LabelIcon {
+      handle: svg::Handle::from_memory(svg.into_bytes()),
+      width,
+      height,
+    }
+  }
+}
+
+/// The `width`/`height` attributes of an SVG document's root element.
+fn svg_root_size(svg: &str) -> Option<(f32, f32)> {
+  let root = &svg[svg.find("<svg")?..];
+  let root = &root[..root.find('>')?];
+  let attr = |key: &str| -> Option<f32> {
+    let start = root.find(&format!(" {key}=\""))? + key.len() + 3;
+    let rest = &root[start..];
+    rest[..rest.find('"')?]
+      .trim_end_matches("px")
+      .parse::<f32>()
+      .ok()
+      .filter(|v| *v > 0.0)
+  };
+  Some((attr("width")?, attr("height")?))
+}
+
 /// Runtime state for a single control inside a Manipulate cell.
 #[derive(Debug, Clone)]
 pub enum ControlState {
@@ -795,6 +830,9 @@ pub struct ManipulateState {
   /// Per-control `ControlPlacement -> side` overrides, as `(control name,
   /// side)` (see `ManipulateSpec::control_placements`).
   control_placements: Vec<(String, ControlPlacement)>,
+  /// The width of `ContentSize -> {w, h}`: output text wider than it (a
+  /// long list) breaks into lines at this width.
+  pub content_width: Option<f64>,
   /// Names of the controls drawn on the same line as the control before
   /// them (see `ManipulateSpec::row_joined_controls`).
   row_joined_controls: Vec<String>,
@@ -830,6 +868,10 @@ pub struct ManipulateState {
   /// Per-control captions that follow another control's variable (InputForm
   /// code), re-typeset on every change like `dynamic_values` are.
   dynamic_labels: Vec<(String, String)>,
+  /// Rendered icons of the captions in `dynamic_labels` that are pictures
+  /// (a `Dynamic[Framed@Graphics[…]]` sector showing a slider's angle), as
+  /// `(control name, icon)`. Re-rendered with the captions on every change.
+  pub label_svgs: Vec<(String, LabelIcon)>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -912,6 +954,15 @@ thread_local! {
 }
 
 impl ManipulateState {
+  /// The rendered icon of a control whose caption is a picture.
+  pub fn label_svg(&self, name: &str) -> Option<&LabelIcon> {
+    self
+      .label_svgs
+      .iter()
+      .find(|(n, _)| n == name)
+      .map(|(_, handle)| handle)
+  }
+
   /// Which side of the output the control at `ctrl_idx` sits on: its own
   /// `ControlPlacement -> side` option when it states one, otherwise the
   /// widget-level placement shared by the rest of the panel.
@@ -1040,6 +1091,7 @@ impl ManipulateState {
       appearance_none: spec.appearance_none,
       control_placement: spec.control_placement,
       control_placements: spec.control_placements,
+      content_width: spec.content_width,
       row_joined_controls: spec.row_joined_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
@@ -1050,6 +1102,7 @@ impl ManipulateState {
       default_step_controls,
       dynamic_values: spec.dynamic_values,
       dynamic_labels: spec.dynamic_labels,
+      label_svgs: Vec::new(),
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
       dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
@@ -1943,6 +1996,7 @@ impl ManipulateState {
     let dynamic_values = self.dynamic_values.clone();
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
+    let content_width = self.content_width;
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
@@ -2034,6 +2088,15 @@ impl ManipulateState {
           render = Ok(content);
         }
       }
+      // The content area is `ContentSize` wide: a list or other text wider
+      // than that breaks into lines there, as the FrontEnd lays it out,
+      // rather than running off in one long line.
+      if let Some(width) = content_width
+        && let Ok(r) = &render
+        && let Some(flowed) = flow_to_content_width(r, width)
+      {
+        render = Ok(flowed);
+      }
       let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
         .iter()
@@ -2089,8 +2152,8 @@ impl ManipulateState {
       let labels: Vec<(String, _)> = dynamic_labels
         .iter()
         .filter_map(|(name, code)| {
-          woxi::functions::graphics::manipulate_eval_label_code(code)
-            .map(|runs| (name.clone(), runs))
+          woxi::functions::graphics::manipulate_eval_caption(code)
+            .map(|caption| (name.clone(), caption))
         })
         .collect();
       // And `Button[Dynamic[label], …]` captions ("next" / "show
@@ -2323,8 +2386,17 @@ impl ManipulateState {
   }
 
   /// Retitle each named control with its freshly typeset caption.
-  fn apply_dynamic_labels(&mut self, resolved: Vec<(String, Vec<LabelRun>)>) {
-    for (name, runs) in resolved {
+  fn apply_dynamic_labels(
+    &mut self,
+    resolved: Vec<(String, (Vec<LabelRun>, Option<String>))>,
+  ) {
+    for (name, (runs, svg)) in resolved {
+      self.label_svgs.retain(|(n, _)| *n != name);
+      if let Some(svg) = svg {
+        self
+          .label_svgs
+          .push((name.clone(), LabelIcon::from_svg(svg)));
+      }
       let Some(
         ControlState::Continuous {
           label, label_runs, ..
@@ -3806,10 +3878,13 @@ mod tests {
         woxi::interpret_with_stdout(&state.body)
       })
       .expect("evaluate body");
-    let first = woxi::interpret(
-      "ExportString[Graphics3D[{Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 1}}]}, \
-       Boxed -> False], \"SVG\"]",
-    )
+    // Drawn as a Manipulate frame, so framed like the body's picture.
+    let first = woxi::with_manipulate_frame(|| {
+      woxi::interpret(
+        "ExportString[Graphics3D[{Polygon[{{0, 0, 0}, {4, 0, 0}, {4, 4, 1}}]}, \
+         Boxed -> False], \"SVG\"]",
+      )
+    })
     .expect("render first frame");
     assert_eq!(render.graphics.expect("body draws a graphic"), first);
   }
@@ -4559,6 +4634,39 @@ mod tests {
   /// A `Button[Dynamic[label], action]` caption follows the live bindings
   /// (a "next" button that turns into "show solution" on the last step).
   /// It used to show the `Dynamic`'s source code as its text.
+  /// A slider captioned by a picture — `Dynamic[Framed@Graphics[…]]`
+  /// drawing a sector of the slider's own angle, or a static `Graphics[…]`
+  /// — carries a rendered icon sized from the picture, and a plain string
+  /// caption does not.
+  #[test]
+  fn picture_caption_renders_as_label_icon() {
+    let code = r#"Manipulate[a + b + c,
+      {{a, 1, Dynamic[Framed@Graphics[{Disk[{0, 0}, 1, {0, a}]},
+        PlotRange -> 1, ImageSize -> 30]]}, 0.1, 3},
+      {{b, 0, Graphics[{Disk[]}, ImageSize -> 20]}, 0, 1},
+      {{c, 0, "c"}, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let a = state.label_svg("a").expect("a sector icon for a");
+    assert!(
+      a.width >= 30.0 && a.height >= 30.0,
+      "{}x{}",
+      a.width,
+      a.height
+    );
+    let b = state.label_svg("b").expect("an icon for b");
+    assert!((b.width - 20.0).abs() < 1.0, "width {}", b.width);
+    assert!(state.label_svg("c").is_none());
+    // Moving the slider re-renders its icon (still present, not dropped).
+    let idx = state.controls.iter().position(|c| c.name() == "a").unwrap();
+    state.slide_continuous(idx, 2.5);
+    state.reevaluate();
+    assert!(state.label_svg("a").is_some());
+    assert_eq!(state.label_svgs.iter().filter(|(n, _)| n == "a").count(), 1);
+  }
+
   #[test]
   fn button_with_dynamic_label_follows_live_bindings() {
     let code = r#"Manipulate[
@@ -4588,6 +4696,35 @@ mod tests {
       state.apply_button_action(&action);
       assert_eq!(label(&state), expected);
     }
+  }
+
+  /// A custom control `{{v, 0, ""}, Button[If[…], …]&}` is wrapped in
+  /// `Dynamic` by Wolfram, so its computed caption follows the other
+  /// controls. It used to show the unevaluated `If[…]` source as its text.
+  #[test]
+  fn custom_control_button_with_computed_label_follows_live_bindings() {
+    let code = r#"Manipulate[
+      {mode, seed},
+      {{mode, 1, ""}, {1 -> "one", 2 -> "two"}, ControlType -> PopupMenu},
+      {{seed, 0, ""}, Button[If[mode == 2, "restart", "add more"],
+        seed = seed + 1] &}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Button { .. }))
+      .expect("a Button control");
+    let label = |s: &ManipulateState| match &s.controls[idx] {
+      ControlState::Button { label, .. } => label.clone(),
+      _ => unreachable!(),
+    };
+    assert_eq!(label(&state), "add more");
+    assert!(state.select_discrete(0, "two"));
+    state.reevaluate();
+    assert_eq!(label(&state), "restart");
   }
 
   #[test]
@@ -7419,6 +7556,27 @@ mod bare_tabview_tests {
   }
 }
 
+/// The output `render` re-laid out for a content area `width` wide
+/// (`ContentSize -> {width, h}`): a list or other text wider than the area
+/// breaks into lines that fit, as the FrontEnd lays it out. `None` when the
+/// output already fits or has no text to break.
+pub fn flow_to_content_width(
+  render: &woxi::InterpretResult,
+  width: f64,
+) -> Option<woxi::InterpretResult> {
+  let svg = render.graphics.as_ref()?;
+  if woxi::functions::graphics::parse_svg_wh(svg).0 <= width + 0.5 {
+    return None;
+  }
+  let flowed = woxi::functions::graphics::wrap_wide_text_to_width(
+    render.expr.as_ref()?,
+    width,
+  )?;
+  woxi::interpret_with_stdout(&woxi::syntax::expr_to_input_form(&flowed))
+    .ok()
+    .filter(|r| r.graphics.is_some())
+}
+
 #[cfg(test)]
 mod repeated_option_tests {
   use super::*;
@@ -7441,6 +7599,44 @@ mod repeated_option_tests {
     assert_eq!(state.error, None);
     assert_eq!(state.control_placement, ControlPlacement::Left);
     assert_eq!(state.placement_of(0), ControlPlacement::Left);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a table of values of
+  /// a recursively defined function). Its `ContentSize` is a computed size
+  /// (`scale {w, h}`), and the long list of values in its output has to
+  /// break into lines at that width instead of running off in one line.
+  #[test]
+  fn content_size_width_breaks_a_long_list_into_lines() {
+    let code = "Manipulate[\
+       Text[Column[{\"Values\", \
+         Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {k, 1, n}]}]], \
+       {{n, 60}, 10, 100, 1}, ContentSize -> 1.5 {200, 100}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.content_width, Some(300.0));
+
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    let wide = woxi::functions::graphics::parse_svg_wh(
+      body.graphics.as_ref().expect("the column is a picture"),
+    )
+    .0;
+    assert!(wide > 300.0, "the unbroken list is {wide} wide");
+    let flowed =
+      flow_to_content_width(&body, 300.0).expect("the list is re-flowed");
+    let svg = flowed.graphics.expect("the re-flowed column is a picture");
+    let (w, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(w <= 300.5, "the re-flowed list is {w} wide: {svg}");
+    // Every value is still shown, bold ones included.
+    assert!(svg.contains(">3600<"), "{svg}");
+    assert!(svg.contains(r#"font-weight="bold">4<"#), "{svg}");
+    // Output that already fits is left alone.
+    assert!(flow_to_content_width(&body, 1.0e6).is_none());
   }
 
   /// A style a pure function applies in the body survives the round trip
