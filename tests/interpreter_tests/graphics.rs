@@ -21869,6 +21869,40 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// are bisected on the predicate rather than left on the sample grid,
     /// and the corner where the two lines meet (inside a grid cell) is
     /// restored instead of beveled.
+    /// A plot binds its variables like `Block`, so a function whose own
+    /// parameters share their names keeps them. Regression: sampling a
+    /// saved `CompiledFunction[…]` whose embedded `Function[{x, y}, …]`
+    /// reused the plot variables rewrote it to `Function[{1., y}, …]`,
+    /// and the region came out empty.
+    #[test]
+    fn region_plot_keeps_function_parameters_named_like_plot_variables() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "cf = CompiledFunction[{11, 15., 5470}, {_Real, _Real}, \
+           {{3, 0, 0}, {3, 0, 1}, {3, 0, 2}}, {}, {0, 0, 3, 0, 0}, {{1}}, \
+           Function[{x, y}, x^2 + y^2], Evaluate]; \
+           Count[RegionPlot[cf[x, y] < 1, {x, -2, 2}, {y, -2, 2}], \
+           _Polygon, Infinity]"
+        )
+        .unwrap(),
+        "1"
+      );
+      // The inner function's parameter shadows the plot variable while a
+      // free occurrence of the other plot variable is still substituted.
+      assert_eq!(
+        interpret(
+          "cg = CompiledFunction[{11, 15., 5470}, {_Real, _Real}, \
+           {{3, 0, 0}, {3, 0, 1}, {3, 0, 2}}, {}, {0, 0, 3, 0, 0}, {{1}}, \
+           Function[{x, t}, x - t], Evaluate]; \
+           Cases[RegionPlot[cg[x, 0] < cg[y, 0], {x, -1, 1}, {y, -1, 1}][[1]], \
+           Polygon[p_] :> Length[p], Infinity] =!= {}"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     #[test]
     fn region_plot_linear_region_is_exact() {
       clear_state();
