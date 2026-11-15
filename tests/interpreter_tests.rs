@@ -5263,7 +5263,7 @@ mod interpreter_tests {
     clear_state();
     let plain = interpret(
       "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
-         FrameLabel -> {\"t\", \"y\"}], \"SVG\"]",
+         Frame -> True, FrameLabel -> {\"t\", \"y\"}], \"SVG\"]",
     )
     .unwrap();
     assert!(
@@ -5274,7 +5274,7 @@ mod interpreter_tests {
     clear_state();
     let styled = interpret(
       "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
-         FrameLabel -> {\"t\", \"y\"}, LabelStyle -> {20, Red}], \"SVG\"]",
+         Frame -> True, FrameLabel -> {\"t\", \"y\"}, LabelStyle -> {20, Red}], \"SVG\"]",
     )
     .unwrap();
     assert!(
@@ -5292,7 +5292,7 @@ mod interpreter_tests {
     clear_state();
     let via_show = interpret(
       "ExportString[Show[Plot[Sin[x], {x, 0, 2 Pi}, \
-         FrameLabel -> {\"t\", \"y\"}], LabelStyle -> {20, Red}], \"SVG\"]",
+         Frame -> True, FrameLabel -> {\"t\", \"y\"}], LabelStyle -> {20, Red}], \"SVG\"]",
     )
     .unwrap();
     assert!(
@@ -5300,6 +5300,38 @@ mod interpreter_tests {
         && via_show.contains("fill=\"rgb(255,0,0)\""),
       "LabelStyle applied via Show must still restyle the frame label: {via_show}"
     );
+  }
+
+  #[test]
+  fn test_frame_label_needs_a_frame() {
+    // `FrameLabel` captions the frame's edges, so a plot or picture
+    // without a frame shows none of its labels (they used to be drawn
+    // over the axes, colliding with the tick labels).
+    for code in [
+      "Plot[x, {x, 0, 1}, FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "ListPlot[{1, 2, 3}, Frame -> False, FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "Show[ListLinePlot[{1, 2, 3}], FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "Graphics[Line[{{0, 0}, {1, 1}}], FrameLabel -> {\"aaa\", \"bbb\"}]",
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(
+        !svg.contains("aaa") && !svg.contains("bbb"),
+        "unframed {code} must not draw its FrameLabel"
+      );
+    }
+    for code in [
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "Graphics[Line[{{0, 0}, {1, 1}}], Frame -> True, \
+       FrameLabel -> {\"aaa\", \"bbb\"}]",
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(
+        svg.contains("aaa") && svg.contains("bbb"),
+        "framed {code} must draw its FrameLabel"
+      );
+    }
   }
 
   #[test]
