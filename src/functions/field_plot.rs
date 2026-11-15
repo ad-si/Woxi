@@ -344,6 +344,10 @@ struct DensityContourOptions {
   /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
   /// range): the values the colors span, instead of the sampled ones.
   value_range: Option<(f64, f64)>,
+  /// `PlotRange -> All` (or a three-axis range whose value part is `All`):
+  /// the levels and colors span every sampled value, with no outlier
+  /// clipping.
+  value_range_all: bool,
   /// `ClippingStyle`: how a cell outside `value_range` is drawn.
   clipping: Clipping,
   /// The `PlotRangePadding` between the frame and the data, as a fraction
@@ -404,6 +408,28 @@ fn plot_value_range(value: &Expr) -> Option<(f64, f64)> {
   }
 }
 
+/// Whether a `PlotRange` value asks for the full value range: `All`, or a
+/// three-axis `{xr, yr, All}`.
+fn plot_value_range_is_all(value: &Expr) -> bool {
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(n) if n == "All");
+  match value {
+    Expr::List(parts) if parts.len() == 3 => is_all(&parts[2]),
+    other => is_all(other),
+  }
+}
+
+/// The smallest and largest finite value of `values` (non-finite pair when
+/// there is none).
+fn full_value_range(values: &[f64]) -> (f64, f64) {
+  values
+    .iter()
+    .copied()
+    .filter(|v| v.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+      (lo.min(v), hi.max(v))
+    })
+}
+
 /// The per-contour styles of a `ContourStyle` value whose entries are all
 /// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
 /// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
@@ -429,6 +455,16 @@ fn per_contour_styles(
 }
 
 impl DensityContourOptions {
+  /// The value range sampled `values` span: the full range under
+  /// `PlotRange -> All`, otherwise the range with outliers fenced off.
+  fn sampled_range(&self, values: &[f64]) -> (f64, f64) {
+    if self.value_range_all {
+      full_value_range(values)
+    } else {
+      robust_value_range(values)
+    }
+  }
+
   /// The style of the `index`-th contour function: its own entry of a
   /// per-contour `ContourStyle` (cycled), else the single shared style.
   fn style_for_contour(
@@ -521,6 +557,7 @@ fn parse_density_contour_options(
   let mut contour_level_exprs: Vec<(f64, Expr)> = Vec::new();
   let mut bar_legend = false;
   let mut value_range: Option<(f64, f64)> = None;
+  let mut value_range_all = false;
   let mut clipping = Clipping::Blank;
   for opt in &args[start..] {
     if let Expr::Rule {
@@ -661,7 +698,10 @@ fn parse_density_contour_options(
           contour_labels = !matches!(replacement, Expr::Identifier(v)
             if v == "False" || v == "None");
         }
-        "PlotRange" => value_range = plot_value_range(replacement),
+        "PlotRange" => {
+          value_range = plot_value_range(replacement);
+          value_range_all = plot_value_range_is_all(replacement);
+        }
         "ClippingStyle" => clipping = Clipping::parse(replacement),
         "PlotLegends" => {
           bar_legend = matches!(replacement, Expr::Identifier(v)
@@ -703,6 +743,7 @@ fn parse_density_contour_options(
     contour_level_exprs,
     bar_legend,
     value_range,
+    value_range_all,
     clipping,
     range_padding: FIELD_RANGE_PADDING,
   }
@@ -2926,7 +2967,7 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Otherwise the colors span the sampled values.
   let (v_min, v_max) = opts
     .value_range
-    .unwrap_or_else(|| robust_value_range(&samples));
+    .unwrap_or_else(|| opts.sampled_range(&samples));
   let clipping = if opts.value_range.is_some() {
     opts.clipping
   } else {
@@ -3339,8 +3380,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let (v_min, v_max) = robust_value_range(&samples);
-  let (level_min, level_max) = robust_value_range(&all_samples);
+  let (v_min, v_max) = opts.sampled_range(&samples);
+  let (level_min, level_max) = opts.sampled_range(&all_samples);
 
   if !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
