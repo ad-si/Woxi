@@ -960,7 +960,25 @@ function renderManipulate(item) {
       // `ControlType -> PopupMenu` always renders a dropdown and
       // `ControlType -> SetterBar` always renders the bar, matching Wolfram;
       // `rendersAsSetterBar` only decides for a spec that names no type.
-      if (ctrl.radio) {
+      if (ctrl.checkbox && values.length === 2) {
+        // `ControlType -> Checkbox` over two choices: unchecked binds the
+        // first choice and checked the second, like `Checkbox[x, {v1, v2}]`.
+        const input = document.createElement("input")
+        input.type = "checkbox"
+        input.checked = ctrl.initialIndex === 1
+        input.addEventListener("change", () => {
+          current[ctrl.name] = values[input.checked ? 1 : 0]
+          requestUpdate()
+        })
+        row.appendChild(input)
+        widget.enabledControls.push({
+          condition: ctrl.enabledWhen || "",
+          apply: (on) => {
+            input.disabled = !on
+            row.classList.toggle("disabled", !on)
+          },
+        })
+      } else if (ctrl.radio) {
         // `ControlType -> RadioButton`/`RadioButtonBar`: a row of radio dots,
         // each followed by its choice label, as Wolfram draws it.
         const bar = document.createElement("div")

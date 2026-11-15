@@ -210,12 +210,18 @@ fn main() {
             }
           }
         }
-        let code = match state.initialization.as_deref() {
-          Some(init) => format!("{init}; {}", state.body),
-          None => state.body.clone(),
-        };
+        // Like the widget's own re-evaluation, the Initialization is not
+        // run again: it already ran once (with the control names it uses as
+        // pattern variables left unbound) when the state was built.
         let render = woxi::with_scoped_globals(&bindings, || {
-          woxi::interpret_with_stdout(&code)
+          woxi::interpret_with_stdout(&state.body)
+        });
+        // Lay the output out in the `ContentSize` area, as the Studio does.
+        let render = render.map(|res| {
+          state
+            .content_width
+            .and_then(|w| manipulate::flow_to_content_width(&res, w))
+            .unwrap_or(res)
         });
         if let Ok(res) = render
           && let Some(svg) = res.graphics

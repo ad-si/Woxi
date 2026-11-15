@@ -6460,6 +6460,13 @@ pub fn dispatch_list_operations(
         }
         flat.push(arg.clone());
       }
+      // f /* g applies f first, so a chain of geometric transforms folds
+      // to the same single TransformationFunction as the reversed
+      // Composition.
+      let reversed: Vec<Expr> = flat.iter().rev().cloned().collect();
+      if let Some(folded) = compose_transformation_functions(&reversed) {
+        return Some(Ok(folded));
+      }
       return Some(Ok(call("RightComposition", flat)));
     }
     // With no list to range over, Outer[f] applies f to nothing.
