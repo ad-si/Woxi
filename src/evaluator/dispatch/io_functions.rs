@@ -7517,6 +7517,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
         _ => None,
       };
+      // A list in a grid or column wider than the pane breaks into lines
+      // that fit it.
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            crate::functions::graphics::wrap_wide_grid_text(
+              &args[0],
+              pane_size_component(&size[0])?,
+              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+            )
+          }
+          _ => None,
+        });
       // A grid wider than the pane squeezes its automatically sized
       // pictures to fit.
       let wrapped =
@@ -7855,6 +7868,69 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       crate::functions::graphics::setter_bar_svg(args)
         .unwrap_or_else(|| expr_text_svg(expr))
+    }
+    // A static `CheckboxBar`: a checkbox before each choice's label, the
+    // choices in a row or, under `Appearance -> "Vertical"`, a column.
+    Expr::FunctionCall { name, args }
+      if name == "CheckboxBar"
+        && let Some((choices, vertical, enabled)) =
+          crate::functions::graphics::checkbox_bar_choices(args) =>
+    {
+      // A label's tooltip shows only on hover.
+      let shown_label = |label: &Expr| {
+        let mut label = label;
+        while let Expr::FunctionCall {
+          name: t,
+          args: targs,
+        } = label
+          && t == "Tooltip"
+          && !targs.is_empty()
+        {
+          label = &targs[0];
+        }
+        expr_to_svg(&unquoted_display_string(label))
+      };
+      let pairs: Vec<[String; 2]> = choices
+        .iter()
+        .map(|(checked, label)| {
+          [
+            crate::functions::graphics::checkbox_svg(*checked, enabled),
+            shown_label(label),
+          ]
+        })
+        .collect();
+      let combined = if vertical {
+        // One choice per line, the checkboxes lined up at the left.
+        let rows: Option<Vec<Vec<String>>> = pairs
+          .iter()
+          .map(|pair| {
+            crate::functions::graphics::combine_layout_svgs(
+              &[pair.to_vec()],
+              &[],
+              4.0,
+              Vec::new(),
+            )
+            .map(|row| vec![row])
+          })
+          .collect();
+        rows.and_then(|rows| {
+          let align = vec![0.0; rows.len()];
+          crate::functions::graphics::combine_layout_svgs(
+            &rows,
+            &[],
+            4.0,
+            align,
+          )
+        })
+      } else {
+        crate::functions::graphics::combine_layout_svgs(
+          &[pairs.into_iter().flatten().collect()],
+          &[],
+          4.0,
+          Vec::new(),
+        )
+      };
+      combined.unwrap_or_else(|| expr_text_svg(expr))
     }
     // `Overlay[{item, …}]` stacks its items into one picture instead of
     // arranging them in a grid, so it gets its own compositor.

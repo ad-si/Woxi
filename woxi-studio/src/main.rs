@@ -4151,6 +4151,12 @@ fn handle_event(
 /// once by `woxi::functions::graphics` is honored consistently everywhere it
 /// is shown, rather than each call site re-implementing (and potentially
 /// dropping) part of it.
+/// Font size (px) of a [`LabelRun`] flagged as a subscript: about three
+/// quarters of the 11–12 px the captions it appears in are set at.
+///
+/// [`LabelRun`]: woxi::functions::graphics::LabelRun
+const SUBSCRIPT_SPAN_SIZE: f32 = 9.0;
+
 fn label_run_spans<'a, L>(
   runs: &[woxi::functions::graphics::LabelRun],
   base_font: Font,
@@ -4166,6 +4172,11 @@ fn label_run_spans<'a, L>(
         font.weight = iced::font::Weight::Bold;
       }
       let mut span = iced::widget::span(r.text.clone()).font(font);
+      // A subscript Unicode has no glyphs for (`Subscript["V", "y"]`) is set
+      // smaller than the text around it, as Wolfram typesets a script.
+      if r.subscript {
+        span = span.size(SUBSCRIPT_SPAN_SIZE);
+      }
       if let Some((red, green, blue)) = r.color {
         span = span.color(Color::from_rgb(red, green, blue));
       }
@@ -4218,6 +4229,20 @@ fn manipulate_label_widget<'a>(
     .size(SIZE)
     .width(iced::Length::Fixed(width))
     .into()
+}
+
+/// A picture caption, drawn at its own size in the shared label column.
+fn manipulate_label_icon<'a>(
+  icon: &manipulate::LabelIcon,
+  width: f32,
+) -> Element<'a, Message> {
+  container(
+    svg::Svg::new(icon.handle.clone())
+      .width(iced::Length::Fixed(icon.width))
+      .height(iced::Length::Fixed(icon.height)),
+  )
+  .width(iced::Length::Fixed(width))
+  .into()
 }
 
 /// Approximate rendered width (px) of a Manipulate label at the caption font
@@ -4517,7 +4542,19 @@ fn render_manipulate_widget<'a>(
     .map(|(_, c)| manipulate_label_char_count(c))
     .max()
     .unwrap_or(0);
-  let label_col_width = (max_label_chars as f32 * 7.3 + 6.0).clamp(20.0, 220.0);
+  // A picture caption (a sector icon naming an angle slider) claims its own
+  // drawn width instead of a character count.
+  let max_icon_width = state
+    .controls
+    .iter()
+    .enumerate()
+    .filter(|(i, _)| state.control_is_visible.get(*i).copied().unwrap_or(true))
+    .filter_map(|(_, c)| state.label_svg(c.name()))
+    .map(|icon| icon.width + 6.0)
+    .fold(0.0_f32, f32::max);
+  let label_col_width = (max_label_chars as f32 * 7.3 + 6.0)
+    .max(max_icon_width)
+    .clamp(20.0, 220.0);
   let visible_controls: &[manipulate::ControlState] =
     if show_controls { &state.controls } else { &[] };
   // A display standing in for a declared control (a `ControlType ->
@@ -4604,7 +4641,7 @@ fn render_manipulate_widget<'a>(
       .unwrap_or(true);
     match ctrl {
       manipulate::ControlState::Continuous {
-        name: _,
+        name,
         label,
         label_runs,
         min,
@@ -4616,8 +4653,12 @@ fn render_manipulate_widget<'a>(
         reversed,
         ..
       } => {
-        let label_widget =
-          manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        let label_widget = match state.label_svg(name) {
+          Some(icon) => manipulate_label_icon(icon, label_col_width),
+          None => {
+            manipulate_label_widget(label_runs, label, label_col_width, enabled)
+          }
+        };
         // A high-to-low range (`{u, 2, 0}`) runs its rail from `max` to
         // `min`; the widget itself only takes an ascending range, so the
         // thumb position and the reported value are mirrored.
@@ -4667,7 +4708,7 @@ fn render_manipulate_widget<'a>(
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Discrete {
-        name: _,
+        name,
         label,
         label_runs,
         values,
@@ -4688,8 +4729,12 @@ fn render_manipulate_widget<'a>(
         // value is one none of *this* row's own choices represent, no
         // button/checkbox/dropdown entry here should show as selected.
         let has_overflow = overflow.is_some();
-        let label_widget =
-          manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        let label_widget = match state.label_svg(name) {
+          Some(icon) => manipulate_label_icon(icon, label_col_width),
+          None => {
+            manipulate_label_widget(label_runs, label, label_col_width, enabled)
+          }
+        };
         // `ControlType -> Slider` over a discrete domain: a slider that
         // steps through the choices by index, which is how Wolfram draws a
         // twenty-entry color-scheme picker. Dragging sends the choice at
@@ -8984,6 +9029,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       bold: true,
       color: Some((1.0, 0.0, 0.0)),
       size: None,
+      subscript: false,
     }];
     let spans: Vec<text::Span<'_, ()>> =
       label_run_spans(&runs, Font::MONOSPACE);
@@ -8992,6 +9038,52 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(
       spans[0].font.map(|f| f.weight),
       Some(iced::font::Weight::Bold)
+    );
+  }
+
+  /// A control caption `Row[{"viewpoint ", Subscript["V", "y"]}]` must set
+  /// its `y` as a smaller script: Unicode has no subscript `y`, so the run
+  /// keeps the plain letter and is flagged as a subscript, which
+  /// `label_run_spans` has to honor. Regression: the `y` (and `z`) rendered
+  /// at full size, so the caption read "Vy" next to a correctly scripted
+  /// "Vₓ" in the slider above it.
+  #[test]
+  fn unmappable_subscript_caption_renders_smaller() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[{u, w}, {{u, 1, Row[{"view ", Subscript["V", "y"]}]}, 0, 2},
+        {{w, 1, Row[{"view ", Subscript["V", "x"]}]}, 0, 2}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let widget = manipulate::ManipulateState::from_expr(&expr)
+      .expect("build Manipulate widget");
+    let runs_of = |name: &str| {
+      widget
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .map(|c| match c {
+          manipulate::ControlState::Continuous { label_runs, .. } => {
+            label_runs.clone()
+          }
+          other => panic!("unexpected control: {other:?}"),
+        })
+        .expect("control present")
+    };
+    let u = runs_of("u");
+    let script = u.last().expect("caption runs");
+    assert_eq!(script.text, "y");
+    assert!(script.subscript, "{u:?}");
+    let spans: Vec<text::Span<'_, ()>> = label_run_spans(&u, Font::MONOSPACE);
+    assert_eq!(
+      spans.last().and_then(|s| s.size),
+      Some(SUBSCRIPT_SPAN_SIZE.into())
+    );
+    assert!(spans[..spans.len() - 1].iter().all(|s| s.size.is_none()));
+    // A script with a Unicode subscript glyph keeps it and needs no flag.
+    let w = runs_of("w");
+    assert_eq!(
+      w.last().map(|r| (r.text.as_str(), r.subscript)),
+      Some(("\u{2093}", false))
     );
   }
 
@@ -10191,6 +10283,56 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       svg.matches("<line ").count() >= 3,
       "the three extended edge lines must be drawn: {svg}"
     );
+  }
+
+  /// A Manipulate that switches the view point of a boxed 3D scene with
+  /// an explicit `PlotRange` (a `Show` of a surface and a `Graphics3D`, the
+  /// shape of a cone-section Demonstration; written independently here).
+  /// Wolfram frames a Manipulate's 3D graphics by the sphere around the
+  /// box, so every view keeps one scale. Regression: the widget fitted the
+  /// projected box instead, so an axis-aligned view (`Below`) blew its near
+  /// face up to the full picture, about 1.44 times Wolfram's size.
+  #[test]
+  fn manipulate_3d_view_switch_frames_by_the_bounding_sphere() {
+    let code = r#"Manipulate[
+      Show[{Plot3D[s x + 3, {x, -4, 4}, {y, -4, 4}, Mesh -> False],
+        Graphics3D[{Sphere[{0, 0, 4}, 2], Line[{{0, 0, 0}, {0, 0, 9}}]}]},
+        PlotRange -> {{-6, 6}, {-6, 6}, {0, 12}}, ViewPoint -> vp,
+        ImageSize -> {300, 300}],
+      {{s, 0.5, "slope"}, 0, 1},
+      {{vp, {1.3, -2.4, 2}, "view"}, {{1.3, -2.4, 2} -> "skew",
+        Below -> "below", Left -> "left"}}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a view-switching 3D Manipulate should build a ManipulateState");
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    for (index, view) in ["{1.3, -2.4, 2}", "Below", "Left"].iter().enumerate()
+    {
+      if let Some(manipulate::ControlState::Discrete {
+        current_index, ..
+      }) = state.controls.iter_mut().find(|c| c.name() == "vp")
+      {
+        *current_index = index;
+      } else {
+        panic!("the view control must be discrete");
+      }
+      state.reevaluate();
+      let svg = state
+        .check_render()
+        .expect("the body must evaluate")
+        .graphics
+        .expect("the body must render a graphic");
+      let spherical = woxi::interpret_with_stdout(&format!(
+        "Block[{{s = 0.5, vp = {view}}}, Show[{}, SphericalRegion -> True]]",
+        state.body
+      ))
+      .expect("the reference must evaluate")
+      .graphics
+      .expect("the reference must render");
+      assert_eq!(svg, spherical, "view {view}");
+    }
   }
 
   /// A Manipulate whose controls ask for different sides one by one: the
@@ -21518,7 +21660,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`NumTrials$$ = 10}, \"\\[Ellipsis]\"
       svg.contains("probability associated with each value"),
       "{svg}"
     );
-    assert!(svg.contains(">x</text>"), "{svg}");
+    // The symbol label `x` is set in TraditionalForm, in italics.
+    assert!(
+      svg.contains("><tspan font-style=\"italic\">x</tspan></text>"),
+      "{svg}"
+    );
     assert!(
       svg.contains("baseline-shift=\"sub\""),
       "the y label's subscript must typeset: {svg}"
@@ -25761,6 +25907,99 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`view$$ = 1, $CellContext`k$$ = 0.2}
       intensity_view, mismatched_view,
       "moving the phase-mismatch slider must change the rendered picture"
     );
+  }
+
+  /// A sampling-distribution Demonstration shape: a hidden seed reseeded
+  /// by a `Button`, labeled sliders with "reset" buttons whose action is a
+  /// list of assignments, and a body that draws a population from a
+  /// `SkewNormalDistribution` via `RandomReal[dist, n]` and stacks two
+  /// histograms in a `GraphicsColumn` (independently written, not copied
+  /// from any specific notebook). `RandomReal[SkewNormalDistribution[…], n]`
+  /// used to stay unevaluated, so both histograms rendered blank.
+  #[test]
+  fn manipulate_skew_normal_population_histograms_with_reset_buttons() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[\
+       SeedRandom[seed]; \
+       Module[{data = RandomReal[SkewNormalDistribution[1, 2, 5], 2000]}, \
+         GraphicsColumn[{Histogram[{data}, PlotLabel -> \"data\"], \
+           Histogram[Table[Mean[RandomChoice[data, k]], {m}]]}, \
+           ImageSize -> {300, 400}]], \
+       Button[\"reseed\", seed = RandomInteger[1000]], \
+       Delimiter, \
+       {{k, 20, \"\"}, 5, 100, 5, Appearance -> \"Labeled\"}, \
+       Button[\"reset k\", {k = 20}], \
+       {{m, 30, \"\"}, 10, 500, 10, Appearance -> \"Labeled\"}, \
+       {{seed, 7}, ControlType -> None}, \
+       ControlPlacement -> Left]",
+    )
+    .expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("buttons + labeled sliders should build a ManipulateState");
+    assert!(state.error.is_none(), "initial render: {:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "histograms must render");
+
+    // The handle alone does not prove the bars were drawn (an unevaluated
+    // sample once yielded an empty `<svg>`), so re-render the body with the
+    // widget's bindings and count the histogram bars.
+    let mut bindings: Vec<(String, String)> = state
+      .controls
+      .iter()
+      .filter(|c| c.binds_variable())
+      .map(|c| (c.name().to_string(), c.current_code()))
+      .collect();
+    bindings.extend(state.state.iter().cloned());
+    let svg = woxi::with_scoped_globals(&bindings, || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("body evaluates")
+    .graphics
+    .expect("body yields graphics");
+    let bars = svg.matches("<rect").count();
+    assert!(bars > 10, "expected histogram bars, found {bars} rects");
+
+    let buttons: Vec<String> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { action, .. } => Some(action.clone()),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(buttons.len(), 2, "reseed and reset buttons: {buttons:?}");
+
+    // Reseeding draws a new population and still renders.
+    state.apply_button_action(&buttons[0]);
+    assert!(state.error.is_none(), "after reseed: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
+
+    // Move the sample-size slider, then reset it through the button whose
+    // action is a list `{k = 20}`.
+    let k_idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "k")
+      .expect("a slider for k");
+    if let manipulate::ControlState::Continuous { current, .. } =
+      &mut state.controls[k_idx]
+    {
+      *current = 60.0;
+    }
+    state.reevaluate();
+    assert!(
+      state.error.is_none(),
+      "after slider move: {:?}",
+      state.error
+    );
+    state.apply_button_action(&buttons[1]);
+    match &state.controls[k_idx] {
+      manipulate::ControlState::Continuous { current, .. } => {
+        assert_eq!(*current, 20.0, "reset button must restore k")
+      }
+      other => panic!("k should stay a slider, got {other:?}"),
+    }
+    assert!(state.error.is_none(), "after reset: {:?}", state.error);
+    assert!(state.graphics_handle.is_some());
   }
 
   /// A Diophantine-style Demonstration shape: two `ControlType -> None`

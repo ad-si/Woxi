@@ -383,6 +383,11 @@ pub fn same_with_tolerant_reals(a: &Expr, b: &Expr) -> bool {
       x.len() == y.len() && x.iter().zip(y).all(|(p, q)| go(p, q, depth + 1))
     };
     match (a, b) {
+      // Two machine reals print alike exactly when their bits agree, so the
+      // one-ULP test decides it without formatting either (memoized-value
+      // lookups compare thousands of stored arguments this way).
+      (Expr::Real(x), Expr::Real(y)) => within_one_ulp(*x, *y),
+      (Expr::Integer(x), Expr::Integer(y)) => x == y,
       (
         Expr::Real(_) | Expr::BigFloat(..),
         Expr::Real(_) | Expr::BigFloat(..),

@@ -1670,6 +1670,55 @@ mod tests {
     }
 
     #[test]
+    fn frame_label_keeps_runs_of_spaces() {
+      // SVG collapses consecutive blanks unless told otherwise, which
+      // squashed a frame label spaced apart with a "    " string.
+      for (plot, expected) in [
+        (
+          r#"Plot[x, {x, 0, 1}, Frame -> True,
+          FrameLabel -> {t, Row[{x, ",", "    ", y}]}]"#,
+          "xml:space=\"preserve\">x,    y</text>",
+        ),
+        (
+          r#"ListLinePlot[{1, 2, 3}, Frame -> True,
+          FrameLabel -> {"a   b", "c"}]"#,
+          "xml:space=\"preserve\">a   b</text>",
+        ),
+        (
+          r#"Plot[x, {x, 0, 1}, Frame -> True,
+          FrameLabel -> {{"l", "r  s"}, {"b", "u  v"}}]"#,
+          "xml:space=\"preserve\">r  s</text>",
+        ),
+        (
+          r#"StreamPlot[{x, -y}, {x, -1, 1}, {y, -1, 1},
+          FrameLabel -> {"m  n", "y"}]"#,
+          "xml:space=\"preserve\">m  n</text>",
+        ),
+        (
+          r#"Plot[x, {x, 0, 1}, PlotLabel -> "p  q"]"#,
+          "xml:space=\"preserve\">p  q</text>",
+        ),
+      ] {
+        let svg = woxi::interpret(&format!(r#"ExportString[{plot}, "SVG"]"#))
+          .expect("interpret should succeed");
+        assert!(
+          svg.contains(expected),
+          "space run collapsed in {plot}: {svg}"
+        );
+      }
+    }
+
+    #[test]
+    fn single_spaces_in_labels_stay_plain() {
+      let svg = woxi::interpret(
+        r#"ExportString[Plot[x, {x, 0, 1}, PlotLabel -> "p q r"], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains(">p q r</text>"), "label changed: {svg}");
+      assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
+    }
+
+    #[test]
     fn list_line_plot_frame_label_renders_box_notation() {
       // FrameLabel with a SqrtBox renders as a radical, not raw box text.
       let svg = woxi::interpret(
@@ -4599,6 +4648,44 @@ mod tests {
       )
       .expect("interpret should succeed");
       assert!(grid.graphics.is_some(), "{:?}", grid.graphics);
+    }
+
+    /// A list in a `Column` wider than the `Pane` around it breaks into
+    /// lines at the pane's width, after the commas between its elements,
+    /// whether the pane gives only a width or a fixed `{w, h}` box, and
+    /// through the `Text` and `Style` wrapped around the column.
+    #[test]
+    fn pane_breaks_a_long_list_in_a_column_into_lines() {
+      fn svg_width(svg: &str) -> f64 {
+        svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|w| w.parse().ok())
+          .expect("svg width")
+      }
+      for pane in ["300", "{300, 400}"] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Pane[Text[Style[Column[{{"Squares:",
+            Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {{k, 1, 60}}]}}],
+            12]], {pane}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        let width = svg_width(&svg);
+        assert!(width <= 300.5, "Pane[…, {pane}] is {width} wide: {svg}");
+        assert!(svg.contains("Squares:"), "{svg}");
+        assert!(svg.contains(r#"font-weight="bold">3600<"#), "{svg}");
+        // The list takes several lines, each starting where the last one
+        // ended: the first line opens the brace, the last one closes it.
+        assert!(svg.matches("<text").count() > 3, "{svg}");
+      }
+      // Without a pane the same column is one long line.
+      let svg = woxi::interpret(
+        r#"ExportString[Column[{"Squares:",
+          Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {k, 1, 60}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg_width(&svg) > 300.0, "{svg}");
     }
 
     /// `Text` around a `Pane` of a plain table draws the table: the pane

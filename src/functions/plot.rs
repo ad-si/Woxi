@@ -1390,6 +1390,18 @@ fn clip_segments_to_y_range(
   y_max: f64,
   join_across_jumps: bool,
 ) -> Vec<Vec<(f64, f64)>> {
+  // A sample that overshoots a range edge only by floating-point noise
+  // (e.g. a running total ending at 100.00000000000003 under
+  // `PlotRange -> {0, 100}`) lies on the edge, so a curve running along the
+  // edge stays drawn instead of vanishing. Matches the tolerance of the
+  // `Show` clipper (`clip_segment_to_y_range` in graphics.rs).
+  let (y_min, y_max) =
+    if y_min.is_finite() && y_max.is_finite() && y_min < y_max {
+      let pad = (y_max - y_min) * 1e-9;
+      (y_min - pad, y_max + pad)
+    } else {
+      (y_min, y_max)
+    };
   let mut result: Vec<Vec<(f64, f64)>> = Vec::new();
 
   for segment in segments {
@@ -4587,6 +4599,17 @@ fn grid_line_props(
   (rgb, stroke_w, style.dashing.clone())
 }
 
+/// The attribute that keeps a run of blanks a label asks for
+/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
+/// space; empty when the markup has no such run.
+fn preserve_blanks_attr(markup: &str) -> &'static str {
+  if markup.contains("  ") {
+    " xml:space=\"preserve\""
+  } else {
+    ""
+  }
+}
+
 /// A label that spans several lines (a `Column[…]` tick label) as one
 /// `<tspan>` per line, each re-anchored at `x` and `line_height` below the
 /// previous one. A single-line label is returned unchanged.
@@ -4743,15 +4766,17 @@ pub(crate) fn plot_labels_svg(
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
   let mut labels_svg = String::new();
+  // The label's `xml:space` attribute (kept blank runs) and its content.
   let text_svg = |label: &str, x: f64| {
-    stacked_lines_svg(
+    let markup = stacked_lines_svg(
       &crate::functions::graphics::box_string_to_svg_scaled(
         label,
         RESOLUTION_SCALE as f64,
       ),
       x,
       pitch,
-    )
+    );
+    (preserve_blanks_attr(&markup), markup)
   };
   // Bottom/left FrameLabel: centered outside the plot area, 6 pt beyond
   // the tick labels of their edge.
@@ -4763,11 +4788,11 @@ pub(crate) fn plot_labels_svg(
     let cx = plot_x0 + plot_w / 2.0;
     let base_y = bottom_label_top + ascent(label_pt) * sf;
     bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
+    let (keep, markup) = text_svg(x_label, cx);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{fill}\">{}</text>\n",
-      text_svg(x_label, cx),
+         fill=\"{fill}\"{keep}>{markup}</text>\n",
       fill = edge_fill(0),
     ));
   }
@@ -4803,11 +4828,11 @@ pub(crate) fn plot_labels_svg(
       - gap
       - block_height(lines_of(y_label), label_pt) * sf;
     let lx = box_left + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(y_label, lx);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(y_label, lx),
+         fill=\"{fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
       fill = edge_fill(1),
     ));
   }
@@ -4886,11 +4911,11 @@ pub(crate) fn plot_labels_svg(
     // One element per line, so no renderer collapses the breaks.
     for (i, line) in top_label.split('\n').enumerate() {
       let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
+      let (keep, markup) = text_svg(line, cx);
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-           fill=\"{fill}\">{}</text>\n",
-              text_svg(line, cx),
+           fill=\"{fill}\"{keep}>{markup}</text>\n",
       fill = edge_fill(2),
       ));
     }
@@ -4917,11 +4942,11 @@ pub(crate) fn plot_labels_svg(
   {
     let cy = margin_top + plot_h / 2.0;
     let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(right_label, rx);
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(right_label, rx),
+         fill=\"{fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
       fill = edge_fill(3),
     ));
   }
@@ -5009,13 +5034,8 @@ pub(crate) fn plot_labels_svg(
       ));
       return labels_svg;
     }
-    // A run of blanks the label asks for (`Row[{a, "    ", b}]`) is kept
-    // instead of collapsing into one space.
-    let preserve_attr = if body.contains("  ") {
-      " xml:space=\"preserve\""
-    } else {
-      ""
-    };
+    // A run of blanks the label asks for is kept.
+    let preserve_attr = preserve_blanks_attr(&body);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
@@ -15271,6 +15291,16 @@ pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
     .map(|ticks| ticks.into_iter().map(|t| (t.pos, t.label)).collect())
 }
 
+/// One side of `Ticks -> {xspec, yspec}`: `None` or `False` leaves that
+/// axis without ticks (an empty explicit list), a list gives the explicit
+/// ticks, and anything else (`Automatic`, `All`) keeps the automatic ones.
+pub(crate) fn parse_axis_tick_side(value: &Expr) -> Option<Vec<(f64, String)>> {
+  match value {
+    Expr::Identifier(s) if s == "None" || s == "False" => Some(Vec::new()),
+    other => parse_explicit_ticks(other),
+  }
+}
+
 /// A `MultiaxisArrangement` y axis drawn outside the frame: a spine
 /// parallel to the left (`edge` 1) or right (3) frame edge carrying its own
 /// ticks (in the plot's y coordinates), colored in stretches like
@@ -16548,15 +16578,17 @@ pub(crate) fn apply_common_plot_option(
       {
         plot_opts.ticks = false;
       }
-      // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
-      // explicit list of positions (each optionally `{pos, label}`).
+      // `Ticks -> {xspec, yspec}`: each side is None (no ticks on that
+      // axis), Automatic, or an explicit list of positions (each optionally `{pos, label}`).
       // The y side may be left off — `Ticks -> {xspec}` states the x ticks
       // and leaves the y axis to its default.
+      // A side set to `None` / `False` (`Ticks -> {Automatic, False}`)
+      // carries no ticks, the same as an empty explicit list.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
-        plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        plot_opts.ticks_x = parse_axis_tick_side(&items[0]);
         plot_opts.ticks_from_axes_option.0 = plot_opts.ticks_x.is_some();
         if let Some(y) = items.get(1) {
-          plot_opts.ticks_y = parse_explicit_ticks(y);
+          plot_opts.ticks_y = parse_axis_tick_side(y);
           plot_opts.ticks_from_axes_option.1 = plot_opts.ticks_y.is_some();
         }
       }
