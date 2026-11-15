@@ -58884,3 +58884,74 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+/// The stroke widths of an SVG's elements, skipping the thin axis/tick
+/// strokes, in render-independent pixels (`viewBox` units divided by the
+/// viewBox-to-width ratio).
+fn wide_stroke_widths(svg: &str) -> Vec<f64> {
+  let width: f64 = svg
+    .split("width=\"")
+    .nth(1)
+    .and_then(|s| s.split('"').next())
+    .and_then(|s| s.parse().ok())
+    .unwrap();
+  let vb_width: f64 = svg
+    .split("viewBox=\"0 0 ")
+    .nth(1)
+    .and_then(|s| s.split(' ').next())
+    .and_then(|s| s.parse().ok())
+    .unwrap();
+  svg
+    .split("stroke-width=\"")
+    .skip(1)
+    .filter_map(|s| s.split('"').next()?.parse::<f64>().ok())
+    .map(|w| w * width / vb_width)
+    .filter(|w| *w > 2.5)
+    .collect()
+}
+
+/// A relative `Thickness[t]` in `PlotStyle` is a fraction of the width of
+/// the picture actually drawn: it used to be fixed to the 360-pixel default
+/// width, so a plot drawn at another `ImageSize` (or letterboxed into one)
+/// had curves too heavy for its size.
+#[test]
+fn plot_style_relative_thickness_follows_image_size() {
+  let at = |opts: &str| {
+    wide_stroke_widths(&export_svg(&format!(
+      "Plot[x, {{x, 0, 1}}, PlotStyle -> Thickness[0.02]{opts}]"
+    )))
+  };
+  let close = |ws: Vec<f64>, want: f64| {
+    assert_eq!(ws.len(), 1, "{ws:?}");
+    assert!((ws[0] - want).abs() < 0.3, "{ws:?} vs {want}");
+  };
+  // 0.02 of the default 360-pixel width.
+  close(at(""), 7.2);
+  close(at(", ImageSize -> 200"), 4.0);
+  close(at(", ImageSize -> 500"), 10.0);
+  // A square plot letterboxed into a 550 × 300 image is 300 wide.
+  close(at(", ImageSize -> {550, 300}, AspectRatio -> 1"), 6.0);
+}
+
+/// A curve's relative `Thickness[t]` stays relative in the plot's
+/// primitives, so `Show` weighs it against the combined picture the same
+/// way as a `Graphics` line drawn with the same thickness.
+#[test]
+fn plot_relative_thickness_survives_show() {
+  assert_eq!(
+    interpret(
+      "First[Cases[Plot[x, {x, 0, 1}, PlotStyle -> {Thickness[0.015], \
+       Blue}], _Thickness, Infinity]]"
+    )
+    .unwrap(),
+    "Thickness[0.015]"
+  );
+  let svg = export_svg(
+    "Show[Plot[x, {x, 0, 1}, PlotStyle -> Thickness[0.015], \
+     ImageSize -> {550, 300}, AspectRatio -> 1], \
+     Graphics[{Thickness[0.015], Line[{{0, 1}, {1, 0}}]}]]",
+  );
+  let ws = wide_stroke_widths(&svg);
+  assert_eq!(ws.len(), 2, "{ws:?}");
+  assert!((ws[0] - ws[1]).abs() < 0.05, "{ws:?}");
+}

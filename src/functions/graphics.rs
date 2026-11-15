@@ -23168,10 +23168,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
         }
       }
     } else {
-      series_prims.push(call1(
-        "AbsoluteThickness",
-        Expr::Real(sd.thickness.unwrap_or(1.5)),
-      ));
+      series_prims.push(series_thickness_expr(sd, 1.5));
       // Like the opacity above: once any series is dashed, a solid one
       // says so, or the previous series' dashes would carry over to it.
       if let Some(dashing) = series_dashing_expr(sd, ps.image_size.0) {
@@ -23208,6 +23205,23 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
 /// The `AbsoluteDashing[…]` of a dashed plot series. Relative lengths
 /// become pixels of the plot's image (`image_width` wide), so the dashes keep
 /// their size whatever picture the curve is drawn into.
+/// The weight directive of a plot series' curve: its relative
+/// `Thickness[t]` when `PlotStyle` gave one, so the weight follows the
+/// picture the curve is finally drawn in, else `AbsoluteThickness` of its
+/// pixels (`default` when it has no weight of its own).
+pub(crate) fn series_thickness_expr(
+  sd: &crate::syntax::PlotSeriesData,
+  default: f64,
+) -> Expr {
+  match sd.thickness_fraction {
+    Some(f) => call1("Thickness", Expr::Real(f)),
+    None => call1(
+      "AbsoluteThickness",
+      Expr::Real(sd.thickness.unwrap_or(default)),
+    ),
+  }
+}
+
 pub(crate) fn series_dashing_expr(
   sd: &crate::syntax::PlotSeriesData,
   image_width: u32,
