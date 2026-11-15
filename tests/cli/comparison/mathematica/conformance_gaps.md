@@ -9043,6 +9043,19 @@ the molecular weights carry PubChem's precision (butane 58.12, WL
 structural formula, `"LogAcidityConstant"` is the first pKa PubChem states
 (conjugate-acid values for amines), and the drawings are Woxi's own.
 
+### ProteinData curated data
+
+`ProteinData` covers the ~360 reviewed human proteins UniProtKB annotates
+with the GO term "actin binding" or one of its descendants
+(`resources/protein_data.tsv.gz`). Standard names are HGNC symbols and the
+sequences are UniProt's canonical ones (`"CFL1"` and `"CFL2"` align exactly
+as in a stored WL snapshot), but `"Name"` is HGNC's current approved name,
+which can differ from WL's (older) wording, the GO annotations are
+UniProt's current ones, and a class (`ProteinData["ActinBinding"]`) lists
+only the bundled proteins annotated directly with its term. Only the
+`"Name"`, `"StandardName"`, `"Sequence"`, `"SequenceLength"` and GO class
+properties are available.
+
 ### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
 `MatrixPower[m, n]` for a symbolic `n` is written as `s . J^n . s^-1` and
