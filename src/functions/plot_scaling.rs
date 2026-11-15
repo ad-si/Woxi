@@ -81,7 +81,11 @@ pub(crate) fn resolve_charting_frame_ticks(
           Expr::List(
             vec![
               Expr::Real(pos),
-              Expr::String(if labeled { label } else { String::new() }),
+              if labeled {
+                tick_label_expr(&label)
+              } else {
+                Expr::String(String::new())
+              },
             ]
             .into(),
           )
@@ -1274,8 +1278,56 @@ fn mantissa_digits(a: f64) -> i32 {
   d
 }
 
+const SUPERSCRIPT_OPEN: &str =
+  "<tspan baseline-shift=\"super\" font-size=\"70%\">";
+
 fn superscript(e: i32) -> String {
-  format!("10<tspan baseline-shift=\"super\" font-size=\"70%\">{e}</tspan>")
+  format!("10{SUPERSCRIPT_OPEN}{e}</tspan>")
+}
+
+/// A tick label as an expression for a stored tick list: the plain text of
+/// a number, `Superscript[10, e]` for a power of ten, and
+/// `Row[{m, "×", Superscript[10, e]}]` for a scaled one. A tick list holds
+/// labels as expressions, so the SVG markup the labels are built as would
+/// otherwise be drawn as escaped text.
+fn tick_label_expr(label: &str) -> Expr {
+  let power = |rest: &str| -> Option<Expr> {
+    let e = rest
+      .strip_prefix("10")?
+      .strip_prefix(SUPERSCRIPT_OPEN)?
+      .strip_suffix("</tspan>")?
+      .parse::<i128>()
+      .ok()?;
+    Some(crate::helpers::call(
+      "Superscript",
+      vec![Expr::Integer(10), Expr::Integer(e)],
+    ))
+  };
+  let parsed = if let Some((mantissa, rest)) = label.split_once("&#215;") {
+    power(rest).map(|p| {
+      crate::helpers::call(
+        "Row",
+        vec![Expr::List(
+          vec![
+            Expr::String(mantissa.to_string()),
+            Expr::String("\u{d7}".to_string()),
+            p,
+          ]
+          .into(),
+        )],
+      )
+    })
+  } else if let Some(rest) = label.strip_prefix('-') {
+    power(rest).map(|p| {
+      crate::helpers::call(
+        "Row",
+        vec![Expr::List(vec![Expr::String("-".to_string()), p].into())],
+      )
+    })
+  } else {
+    power(label)
+  };
+  parsed.unwrap_or_else(|| Expr::String(label.to_string()))
 }
 
 fn int_label(v: f64) -> String {

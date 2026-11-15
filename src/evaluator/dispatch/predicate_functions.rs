@@ -2766,6 +2766,40 @@ pub fn builtin_default_options(func_name: &str) -> Vec<Expr> {
       make_rule("MusicTempo", id("Automatic")),
       make_rule("MusicNotation", id("Automatic")),
     ],
+    // The pre-version-6 graph drawing options on top of `Graphics`'s,
+    // in alphabetical order like every option list.
+    "GraphUtilities`ExpressionTreePlot" => {
+      let mut opts: Vec<Expr> = builtin_default_options("Graphics")
+        .into_iter()
+        .filter(|o| {
+          !matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRangePadding"))
+        })
+        .collect();
+      opts.extend([
+        make_rule("DirectedEdges", id("False")),
+        make_rule("EdgeLabeling", id("True")),
+        make_rule("EdgeRenderingFunction", id("None")),
+        make_rule("LayerSizeFunction", func_slot1(Expr::Integer(1))),
+        make_rule("Method", id("Automatic")),
+        make_rule("MultiedgeStyle", id("Automatic")),
+        make_rule("PackingMethod", id("Automatic")),
+        make_rule("PlotRangePadding", id("Automatic")),
+        make_rule("PlotStyle", id("Automatic")),
+        make_rule("SelfLoopStyle", id("Automatic")),
+        make_rule("VertexCoordinateRules", id("Automatic")),
+        make_rule("VertexLabeling", id("True")),
+        make_rule("VertexRenderingFunction", id("Automatic")),
+      ]);
+      let key = |o: &Expr| match o {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          crate::syntax::expr_to_string(pattern)
+        }
+        _ => String::new(),
+      };
+      opts.sort_by_key(key);
+      opts
+    }
     _ => vec![],
   }
 }
