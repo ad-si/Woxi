@@ -58790,8 +58790,8 @@ fn text_offset_places_the_named_point_of_its_background_panel() {
       .unwrap_or_else(|| panic!("{svg}"));
     let (x, w) = (attr(rect, "x"), attr(rect, "width"));
     let (y, h) = (attr(rect, "y"), attr(rect, "height"));
-    let named_x = x + (1.0 + ox) / 2.0 * w;
-    let named_y = y + (1.0 - oy) / 2.0 * h;
+    let named_x = x + w / 2.0 + ox * w / 2.0;
+    let named_y = y + h / 2.0 - oy * h / 2.0;
     assert!(
       (named_x - 199.5).abs() < 0.05 && (named_y - 199.5).abs() < 0.05,
       "offset {{{ox}, {oy}}}: panel point ({named_x}, {named_y}): {rect}"
