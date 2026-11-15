@@ -6005,6 +6005,17 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
   )
 }
 
+/// The stroke width of a `Line` (or `Arrow`) in a `Graphics3D` that sets
+/// no thickness: Wolfram draws those as hairlines, as thin as the edges
+/// of the bounding box, far thinner than the curves of a plot.
+const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
+
+/// The absolute width a thickness symbol names in 3D (`Thick`,
+/// `Thickness[Large]`, …): the same widths as in 2D graphics.
+fn named_line_thickness(name: &str) -> Option<f64> {
+  crate::functions::graphics::symbolic_thickness(name).map(|t| -t)
+}
+
 /// A 3D primitive for Graphics3D
 #[derive(Clone, Debug)]
 struct StyleState3D {
@@ -6013,7 +6024,8 @@ struct StyleState3D {
   /// viewer. None means both sides use `color`.
   back_color: Option<(u8, u8, u8)>,
   opacity: f64,
-  /// Stroke width in pixels for Line3D primitives. None means default 1.5.
+  /// Stroke width in pixels for Line3D primitives. None means
+  /// [`DEFAULT_LINE_3D_WIDTH`].
   thickness: Option<f64>,
   /// Whether a `Tube`'s ends are closed off, as `CapForm` sets it.
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
@@ -6352,12 +6364,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
 
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => {
-        style.thickness = Some(2.5);
-        return true;
-      }
-      "Thin" => {
-        style.thickness = Some(0.5);
+      "Thick" | "Thin" => {
+        style.thickness = named_line_thickness(s);
         return true;
       }
       "Dashed" => {
@@ -6505,18 +6513,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       "Thickness" if args.len() == 1 => {
-        if let Expr::Identifier(s) = &args[0] {
-          match s.as_str() {
-            "Large" => style.thickness = Some(3.0),
-            "Tiny" => style.thickness = Some(0.5),
-            _ => {
-              if let Some(t) = expr_to_f64(&args[0]) {
-                // Relative thickness: a fraction of the picture's width.
-                style.thickness = Some(t * scene_image_width());
-              }
-            }
-          }
+        if let Expr::Identifier(s) = &args[0]
+          && let Some(t) = named_line_thickness(s)
+        {
+          style.thickness = Some(t);
         } else if let Some(t) = expr_to_f64(&args[0]) {
+          // Relative thickness: a fraction of the picture's width.
           style.thickness = Some(t * scene_image_width());
         }
         return true;
@@ -13204,7 +13206,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
-      let width = style.thickness.unwrap_or(1.5);
+      let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
       for seg in segments {
         // On-screen length of the polyline drawn so far: a dash pattern
         // runs continuously along the whole line instead of restarting
@@ -13664,8 +13666,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .collect();
         svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"{}/>\n",
-          pts.join(" "), stroke_color, opacity_attr
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
+          pts.join(" "),
+          stroke_color,
+          style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH),
+          opacity_attr
         ));
         // Arrowhead: a cone in the scene, like the head of an
         // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
@@ -20920,16 +20925,26 @@ fn parametric_plot3d_curve_ast(
       // sets a thickness or dashing (`PlotStyle -> Thick`).
       let (r, g, b) = crate::functions::plot::PLOT_COLORS
         [curve_idx % crate::functions::plot::PLOT_COLORS.len()];
+      prim_items.push(call(
+        "Directive",
+        vec![
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(f64::from(r) / 255.0),
+              Expr::Real(f64::from(g) / 255.0),
+              Expr::Real(f64::from(b) / 255.0),
+            ],
+          ),
+          call1("AbsoluteThickness", Expr::Integer(2)),
+        ],
+      ));
+    } else {
+      // A space curve is stroked 2 wide, like the curves of a 2D plot,
+      // not as the hairline a bare `Line` in `Graphics3D` gets.
       prim_items.push(call1(
         "Directive",
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(f64::from(r) / 255.0),
-            Expr::Real(f64::from(g) / 255.0),
-            Expr::Real(f64::from(b) / 255.0),
-          ],
-        ),
+        call1("AbsoluteThickness", Expr::Integer(2)),
       ));
     }
     if !per_curve_styles.is_empty() {
