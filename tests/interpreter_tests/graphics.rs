@@ -33983,7 +33983,7 @@ mod log_log_plot {
       for (x, lens) in &edges {
         let longest = lens.iter().copied().fold(0.0, f64::max);
         let majors = lens.iter().filter(|l| (*l - longest).abs() < 0.5);
-        let minors = lens.iter().filter(|l| *l < longest - 0.5);
+        let minors = lens.iter().filter(|l| **l < longest - 0.5);
         assert!(majors.count() >= 4, "{code}: majors at x = {x}: {lens:?}");
         assert!(minors.count() >= 10, "{code}: minors at x = {x}: {lens:?}");
       }
