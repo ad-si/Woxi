@@ -1378,6 +1378,20 @@ mod typeset_labels {
     assert!(svg.contains("1.5"), "{svg}");
   }
 
+  // The stacked label writes `Pi` as `π`, and a string part (the unit
+  // `"A"`) stays upright instead of being set as an italic variable.
+  #[test]
+  fn text_fraction_label_pi_glyph_and_upright_strings() {
+    let svg = svg_of("Graphics[Text[Row[{\"I = \", 7 Pi/10, \"A\"}], {0, 0}]]");
+    assert!(svg.contains(">π</text>"), "{svg}");
+    assert!(!svg.contains(">Pi</text>"), "{svg}");
+    assert!(
+      svg.contains("stroke=\"none\" xml:space=\"preserve\">A</text>"),
+      "{svg}"
+    );
+    assert!(!svg.contains("font-style=\"italic\" xml:space=\"preserve\">A<"));
+  }
+
   #[test]
   fn text_quotient_label_stacks() {
     let svg = svg_of("Graphics[Text[a^2/b, {0, 0}]]");

@@ -4739,6 +4739,37 @@ mod tests {
     assert!(!vis("w"), "`w` is hidden while mode is True");
   }
 
+  /// A slider placed with `ControlPlacement -> 1` into the first pane of
+  /// `PaneSelector[{1 -> Manipulate`Place[1], 2 -> ""}, Dynamic[mode]]` is on
+  /// screen only while `mode` selects that pane.
+  #[test]
+  fn placed_control_in_a_pane_selector_follows_its_pane() {
+    for (mode, shown) in [(1, true), (2, false)] {
+      let code = format!(
+        r#"Manipulate[
+          If[mode == 1, Text[h], Text["off"]],
+          {{{{mode, {mode}, ""}}, {{1 -> "on", 2 -> "off"}}}},
+          {{{{h, 3, "height"}}, 0, 10, 0.5, ControlPlacement -> 1}},
+          PaneSelector[{{1 -> Manipulate`Place[1], 2 -> ""}}, Dynamic[mode]]
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code)
+        .expect("Manipulate should parse and hold");
+      let state = ManipulateState::from_expr(&expr)
+        .expect("the placed control should build a ManipulateState");
+      assert_eq!(state.error, None, "body must evaluate cleanly");
+      let names: Vec<_> = state.controls.iter().map(|c| c.name()).collect();
+      let i = names
+        .iter()
+        .position(|n| *n == "h")
+        .unwrap_or_else(|| panic!("`h` must be a control: {names:?}"));
+      assert_eq!(
+        state.control_is_visible[i], shown,
+        "`h` visibility in mode {mode}"
+      );
+    }
+  }
+
   /// A `Dynamic@Column` control area whose second row is a nested
   /// `If[mode == 1, Control[…], If[mode == 2, d = 2.5; Control[…],
   /// d = 1; Control[…]]]`: each mode brings its own slider, and the

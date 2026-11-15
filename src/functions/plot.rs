@@ -106,6 +106,18 @@ fn is_finished_interpolating_function(name: &str, args: &[Expr]) -> bool {
     && matches!(args[0], Expr::List(_))
 }
 
+/// Whether the parameter spec of `Function[params, body]` (a symbol or a
+/// list of symbols) names `var`.
+fn function_params_bind(params: &Expr, var: &str) -> bool {
+  match params {
+    Expr::Identifier(p) => p == var,
+    Expr::List(items) => items
+      .iter()
+      .any(|p| matches!(p, Expr::Identifier(n) if n == var)),
+    _ => false,
+  }
+}
+
 /// Substitute all occurrences of a variable with a value in an expression
 pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
   let sub = |e: &Expr| substitute_var(e, var, value);
@@ -117,6 +129,33 @@ pub(crate) fn substitute_var(expr: &Expr, var: &str, value: &Expr) -> Expr {
         || is_finished_interpolating_function(name, args) =>
     {
       expr.clone()
+    }
+    // A plot binds its variables dynamically (as `Block` does), so a
+    // `Function` whose own parameters reuse a plot variable's name keeps
+    // them: `Function[{x}, x^2]` inside `Plot[…, {x, …}]` — or the
+    // uncompiled fallback embedded in a saved `CompiledFunction[…]` — must
+    // not become `Function[{1.}, 1.^2]`.
+    Expr::FunctionCall { name, args }
+      if name == "Function"
+        && args.len() >= 2
+        && function_params_bind(&args[0], var) =>
+    {
+      expr.clone()
+    }
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => {
+      if params.iter().any(|p| p == var) {
+        expr.clone()
+      } else {
+        Expr::NamedFunction {
+          params: params.clone(),
+          body: Box::new(sub(body)),
+          bracketed: *bracketed,
+        }
+      }
     }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
