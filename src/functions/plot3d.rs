@@ -9017,8 +9017,11 @@ fn collect_3d_primitives(
             let mut collected = Vec::new();
             collect_3d_primitives(&resolved, style, &mut collected);
             // Keep a sampled surface together so shared vertices receive
-            // averaged normals. Collecting each triangle as an independent
+            // averaged normals. Collecting each facet as an independent
             // polygon loses the topology and produces faceted lighting.
+            // This holds for the quads of a sampled grid (as in
+            // `ParametricPlot3D[…]`'s own complex) as much as for triangles,
+            // so larger faces are split into triangles first.
             let mut surfaces: std::collections::BTreeMap<
               String,
               (StyleState3D, Vec<(Point3D, Point3D, Point3D)>),
@@ -9029,7 +9032,7 @@ fn collect_3d_primitives(
                   points,
                   holes,
                   style: face,
-                } if points.len() == 3
+                } if points.len() >= 3
                   && holes.is_empty()
                   && !face.edges
                   && face.texture.is_none()
@@ -9038,7 +9041,7 @@ fn collect_3d_primitives(
                   let key = format!("{face:?}");
                   let entry =
                     surfaces.entry(key).or_insert_with(|| (face, Vec::new()));
-                  entry.1.push((points[0], points[1], points[2]));
+                  entry.1.extend(triangulate_face3d(&points));
                 }
                 other => prims.push(other),
               }
@@ -9842,6 +9845,20 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
+/// Split a hole-free 3D face into triangles: a fan from the first corner
+/// when it is convex, the general triangulator otherwise.
+fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
+  if points.len() < 3 {
+    Vec::new()
+  } else if points.len() == 3 || is_convex_polygon3d(points) {
+    (1..points.len() - 1)
+      .map(|i| (points[0], points[i], points[i + 1]))
+      .collect()
+  } else {
+    tessellate_polygon_with_holes(points, &[]).0
+  }
+}
+
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
   holes: &[Vec<Point3D>],
