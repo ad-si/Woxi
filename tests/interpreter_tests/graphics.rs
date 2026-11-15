@@ -2453,6 +2453,51 @@ mod graphics {
       );
     }
 
+    /// A zero-length `Line` (every point the same, e.g. `Line[{p, p}]`)
+    /// is drawn by Wolfram as its caps alone: a square dot one stroke
+    /// width across, a round dot under `CapForm["Round"]`, and nothing
+    /// under `CapForm["Butt"]`. Woxi emitted a capped zero-length
+    /// polyline that rendered invisibly, so diagrams that mark one-point
+    /// blocks with such lines lost those blocks.
+    #[test]
+    fn zero_length_line_draws_cap_dot() {
+      let svg = |prims: &str| {
+        export_svg(&format!(
+          "Graphics[{{Thickness[0.1], {prims}, Point[{{{{-1, -1}}, {{1, 1}}}}]}}, \
+           ImageSize -> 200, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}]"
+        ))
+      };
+      for (p, (cx, cy)) in
+        [("{0, 0}", (99.5, 99.5)), ("{0.5, 0}", (149.25, 99.5))]
+      {
+        let out = svg(&format!("Line[{{{p}, {p}, {p}}}]"));
+        let rect = out
+          .split("<rect ")
+          .find(|s| s.contains(" width=\"19.90\""))
+          .unwrap_or_else(|| panic!("no square dot for {p}: {out}"));
+        let attr = |name: &str| -> f64 {
+          rect
+            .split(&format!(" {name}=\""))
+            .nth(1)
+            .or_else(|| rect.strip_prefix(&format!("{name}=\"")))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap()
+        };
+        assert!((attr("x") - (cx - 9.95)).abs() < 0.05, "{rect}");
+        assert!((attr("y") - (cy - 9.95)).abs() < 0.05, "{rect}");
+        assert!(rect.contains("height=\"19.90\""), "{rect}");
+      }
+      let round = svg("CapForm[\"Round\"], Line[{{0, 0}, {0, 0}}]");
+      assert!(round.contains("r=\"9.95\""), "{round}");
+      let butt = svg("CapForm[\"Butt\"], Line[{{0, 0}, {0, 0}}]");
+      assert!(!butt.contains(" width=\"19.90\""), "{butt}");
+      // A line with length is still a stroked polyline.
+      let line = svg("Line[{{0, 0}, {0.5, 0}}]");
+      assert!(line.contains("<polyline "), "{line}");
+      assert!(!line.contains(" width=\"19.90\""), "{line}");
+    }
+
     /// `JoinForm[…]` sets the SVG `stroke-linejoin` a multi-segment `Line`
     /// is drawn with, and `JoinForm[{"Miter", limit}]` also sets
     /// `stroke-miterlimit`. Left unset, Woxi keeps its existing rounded
@@ -10153,7 +10198,7 @@ mod plot3d {
         assert_eq!(bound, spherical, "{view}");
       }
       // The frame ends with the closure.
-      let () = woxi::with_manipulate_frame(|| ());
+      woxi::with_manipulate_frame(|| ());
       assert!(!woxi::in_manipulate_frame());
     }
 
@@ -10582,6 +10627,44 @@ mod plot3d {
         fitted("{7, 20, 0}").0.round(),
         fitted("{14, 40, 0}").0.round()
       );
+    }
+
+    /// With `Boxed -> False` in a picture whose width and height are both
+    /// given, Wolfram frames the scene by the sphere around its box (as
+    /// `SphericalRegion -> True` does) rather than fitting the invisible
+    /// box's outline to the frame, so the scene keeps wide margins.
+    /// Demonstration snapshots of a `Show` of a `Graphics3D` and a
+    /// `ParametricPlot3D` draw it about 0.86 times the fitted-box size.
+    #[test]
+    fn an_invisible_box_in_a_pinned_picture_is_framed_by_its_sphere() {
+      let scene = |opts: &str| {
+        drawn_extent(&format!(
+          "Show[Graphics3D[{{Cuboid[{{0, 0, 0}}, {{1, 0.5, 0.9}}], \
+           Cylinder[{{{{0.5, -0.35, 0.5}}, {{0.5, -0.55, 0.5}}}}, 0.1]}}, \
+           Boxed -> False], \
+           ParametricPlot3D[{{s, 0.5, s / 2}}, {{s, 0, 1}}], \
+           ViewPoint -> {{-2.7, 1.1, 1.7}}, {opts}]"
+        ))
+      };
+      let pinned = scene("ImageSize -> {400, 400}");
+      let sphere = scene("ImageSize -> {400, 400}, SphericalRegion -> True");
+      assert_eq!(
+        (pinned.0.round(), pinned.1.round()),
+        (sphere.0.round(), sphere.1.round())
+      );
+      // The visible box is still fitted to the frame, filling more of it.
+      let boxed = scene("ImageSize -> {400, 400}, Boxed -> True");
+      let ratio = pinned.1 / boxed.1;
+      assert!(
+        (0.8..0.92).contains(&ratio),
+        "expected the sphere framing at about 0.86 of the box fit, got \
+         {pinned:?} vs {boxed:?}"
+      );
+      // A bare width leaves the picture to follow the projected box, so
+      // nothing changes there.
+      let free = scene("ImageSize -> 400");
+      let free_boxed = scene("ImageSize -> 400, Boxed -> True");
+      assert_eq!(free.0.round(), free_boxed.0.round());
     }
 
     /// Surface plots honor an explicit `ViewAngle` the same way
@@ -13748,6 +13831,21 @@ mod plot3d {
         "Graphics[{Line[{{0, 0}, {1, 1}}]}, Axes -> True, AxesLabel -> None]",
       );
       assert!(!svg.contains("</tspan>"), "{svg}");
+    }
+
+    /// A `Plot`'s `AxesLabel` given as a `Style`d string of inline
+    /// `FractionBox` notation is drawn stacked in the style's color and
+    /// size, like the same label on a plain `Graphics`.
+    #[test]
+    fn plot_axes_label_stacks_styled_inline_fraction_string() {
+      let svg = export_svg(
+        r#"Plot[t, {t, 0, 1}, AxesLabel -> {"t",
+          Style["\!\(\*FractionBox[\(dy\), \(dt\)]\)", Large, Purple]}]"#,
+      );
+      assert!(!svg.contains("dy/dt"), "flattened: {svg}");
+      assert!(svg.contains(">dy<") && svg.contains(">dt<"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(128,0,128)\""), "purple: {svg}");
+      assert!(svg.contains("font-size=\"24.0\""), "Large size: {svg}");
     }
 
     /// An `AxesLabel` written as a stacked fraction (`FractionBox`) is drawn
@@ -22314,6 +22412,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// the range. The IQR-fenced `robust_value_range` keeps the pole from
     /// swamping the well-behaved bulk of the domain, so multiple contour
     /// lines should still be drawn away from it.
+    /// `PlotRange -> All` spans the contour levels over every sampled
+    /// value. A narrow peak on a wide domain is mostly near-zero samples,
+    /// which the default outlier fence would treat as the whole range,
+    /// packing every level into the tail far from the peak; with `All` the
+    /// levels follow the peak, so its level curves sit close around it.
+    #[test]
+    fn contour_plot_plot_range_all_uses_full_value_range() {
+      let radius = |range: &str| {
+        let out = interpret(&format!(
+          "pts = Flatten[Cases[Normal[ContourPlot[Exp[-(x^2 + y^2)], \
+           {{x, -8, 8}}, {{y, -8, 8}}{range}]], Line[p_] :> p, Infinity], 1]; \
+           Max[Norm /@ pts]"
+        ))
+        .unwrap();
+        out.parse::<f64>().unwrap()
+      };
+      let all = radius(", PlotRange -> All");
+      assert!(all < 2.0, "outermost level curve at radius {all}");
+      let three_axis = radius(", PlotRange -> {Full, Full, All}");
+      assert!(three_axis < 2.0, "outermost level curve at {three_axis}");
+    }
+
     #[test]
     fn contour_plot_pole_does_not_flatten_contour_levels() {
       let svg = export_svg(
@@ -36916,6 +37036,34 @@ mod manipulate {
       ),
       "f[xs_] -> x"
     );
+  }
+
+  // A bare arithmetic choice (`1/2`, `Pi/4`) is typeset the way the
+  // FrontEnd shows the value — a stacked fraction — on its setter button,
+  // while plain integers and strings stay text.
+  #[test]
+  fn bare_arithmetic_setter_choices_are_typeset_as_fractions() {
+    let expr =
+      interpret_to_expr(r#"Manipulate[b, {b, {1/2, 1, Pi/4, -3, "x"}}]"#)
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let ManipulateControl::Discrete {
+      values,
+      value_label_svgs,
+      ..
+    } = &spec.controls[0]
+    else {
+      panic!("expected a discrete control, got {:?}", spec.controls[0]);
+    };
+    assert_eq!(values[0], "1/2");
+    for i in [0, 2] {
+      let svg = value_label_svgs[i].as_deref().unwrap_or_default();
+      assert!(svg.starts_with("<svg"), "choice {i}: {svg:?}");
+      assert!(svg.contains("<line"), "fraction bar for choice {i}: {svg}");
+    }
+    for i in [1, 3, 4] {
+      assert!(value_label_svgs[i].is_none(), "choice {i} stays text");
+    }
   }
 
   // A `Sequence @@ (f /@ items[[1 ;; n]])` inside a control-area
@@ -56162,6 +56310,29 @@ mod ranges_and_ticks {
   }
 
   #[test]
+  fn show_spans_only_the_axes_the_first_plot_shows_in_full() {
+    // `{{0, 3}, All}`: the x range stays the first plot's, the y range
+    // reaches the later plot's curve.
+    assert_eq!(
+      interpret(
+        "Round[PlotRange[Show[Plot[x, {x, 0, 1}, PlotRange -> {{0, 3}, All}], \
+         Plot[3 x, {x, 1, 2}]]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 3.}, {0., 6.}}"
+    );
+    // `{All, {0, 2}}`: the x range spans both plots, the y range is kept.
+    assert_eq!(
+      interpret(
+        "Round[PlotRange[Show[Plot[x, {x, 0, 1}, PlotRange -> {All, {0, 2}}], \
+         Plot[3 x, {x, 1, 2}]]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 2.}, {0., 2.}}"
+    );
+  }
+
+  #[test]
   fn end_samples_sit_inside_the_domain() {
     // The step function is not caught on its next stair at x = 100.
     assert_eq!(
@@ -58526,12 +58697,18 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   assert_eq!(automatic, sphere);
   assert_ne!(automatic, outline);
 
-  // A visible box, an automatic range or a bare width keep the outline fit.
+  // An automatic range is framed by its sphere as well.
+  let auto_range = "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
+     Boxed -> False, ImageSize -> {595, 375}";
+  assert_eq!(
+    export_svg(&format!("{auto_range}]")),
+    export_svg(&format!("{auto_range}, SphericalRegion -> True]"))
+  );
+
+  // A visible box or a bare width keep the outline fit.
   for code in [
     "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
      PlotRange -> {{-6.5, 6.5}, {-4, 4}, {-4, 4}}, ImageSize -> {595, 375}",
-    "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
-     Boxed -> False, ImageSize -> {595, 375}",
     "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, Boxed -> False, \
      PlotRange -> {{-6.5, 6.5}, {-4, 4}, {-4, 4}}, ImageSize -> 595",
   ] {

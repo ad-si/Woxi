@@ -10867,6 +10867,43 @@ fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
   }
 }
 
+/// The filled shape (an unterminated `<rect …`/`<circle …` tag) that
+/// stands in for a zero-length `Line` segment — one whose points all
+/// coincide, such as `Line[{p, p}]`.
+///
+/// Wolfram draws such a segment as its end caps alone: a square dot one
+/// stroke width across (lines are drawn with projecting square caps), a
+/// round dot under `CapForm["Round"]`, and nothing under
+/// `CapForm["Butt"]` (returns `None`, as for a segment with length). The
+/// dot is emitted as a filled shape rather than a capped zero-length
+/// stroke, which SVG renderers are free to drop.
+fn degenerate_line_dot(
+  screen_pts: &[(f64, f64)],
+  stroke_width: f64,
+  cap_form: Option<LineCapKind>,
+) -> Option<String> {
+  let (&(x0, y0), rest) = screen_pts.split_first()?;
+  if rest.is_empty()
+    || rest
+      .iter()
+      .any(|&(x, y)| (x - x0).abs() > 1e-9 || (y - y0).abs() > 1e-9)
+  {
+    return None;
+  }
+  let half = stroke_width / 2.0;
+  match cap_form {
+    Some(LineCapKind::Butt) => None,
+    Some(LineCapKind::Round) => Some(format!(
+      "<circle cx=\"{x0:.2}\" cy=\"{y0:.2}\" r=\"{half:.2}\""
+    )),
+    Some(LineCapKind::Square) | None => Some(format!(
+      "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{stroke_width:.2}\" height=\"{stroke_width:.2}\"",
+      x0 - half,
+      y0 - half,
+    )),
+  }
+}
+
 /// The `stroke-linecap` value for a `Line` stroke. Wolfram draws a `Line`
 /// with square caps unless a `CapForm` says otherwise: each end extends
 /// half the line's thickness past its endpoint, so a short thick segment
@@ -12758,6 +12795,14 @@ fn render_primitive(
             ));
           }
           point_idx += screen_pts.len();
+        } else if let Some(dot) =
+          degenerate_line_dot(&screen_pts, sw, style.cap_form)
+        {
+          out.push_str(&format!(
+            "{dot} fill=\"{}\"{}/>\n",
+            color.to_svg_rgb(),
+            color.opacity_attr(),
+          ));
         } else {
           out.push_str(&format!(
             "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
@@ -21521,7 +21566,8 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
 /// [`styled_axis_label`] for an `AxesLabel` entry, which may also be a
 /// stacked-fraction picture (see [`fraction_label_svg`]).
 pub fn axes_label_entry(e: &Expr) -> Option<String> {
-  fraction_label_svg(e, LABEL_FONT)
+  inline_fraction_string_svg(e)
+    .or_else(|| fraction_label_svg(e, LABEL_FONT))
     .or_else(|| traditional_math_axis_label(e))
     .or_else(|| styled_axis_label(e))
 }
@@ -23876,16 +23922,23 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Like its other options, the merged graphic keeps the `PlotRange` of
     // the first plot — the numeric range that plot settled on, so
     // `Show[Plot[Sin[x], {x, 0, 1}], Plot[3 Sin[x], {x, 0, 10}]]` shows
-    // 0..1 — unless that plot asked for `PlotRange -> All`, which spans
-    // everything shown.
-    let first_all = merged_options.iter().any(|o| {
-      matches!(option_name_value(o), Some(("PlotRange", v))
-        if crate::functions::plot::plot_range_all_axes(&v) == (true, true))
-    });
-    let first = plot_sources
+    // 0..1 — except on an axis that plot asked to show `All` of
+    // (`PlotRange -> All`, or `{{0, 2}, All}` for the y axis alone), which
+    // spans everything shown.
+    let (x_all, y_all) = merged_options
       .iter()
-      .find(|ps| !any_curves || !ps.series.is_empty())
-      .filter(|_| !first_all);
+      .find_map(|o| match option_name_value(o) {
+        Some(("PlotRange", v)) => {
+          Some(crate::functions::plot::plot_range_all_axes(&v))
+        }
+        _ => None,
+      })
+      .unwrap_or((false, false));
+    let first_all = x_all && y_all;
+    let first_plot = plot_sources
+      .iter()
+      .find(|ps| !any_curves || !ps.series.is_empty());
+    let first = first_plot.filter(|_| !first_all);
     let data_x_range = plot_sources
       .iter()
       .filter(|ps| !any_curves || !ps.series.is_empty())
@@ -23894,7 +23947,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or_else(|| ps.plot_range.map_or(ps.x_range, |r| r.0))
       })
       .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)));
-    let all_range = if first_all {
+    let union_range = if x_all || y_all {
       plot_sources
         .iter()
         .filter(|ps| !any_curves || !ps.series.is_empty())
@@ -23919,6 +23972,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       None
     };
+    // An axis shown in full takes the union; the other keeps the first
+    // plot's range.
+    let all_range = union_range.and_then(|(ux, uy)| {
+      if first_all {
+        return Some((ux, uy));
+      }
+      let ps = first_plot?;
+      Some((
+        if x_all { ux } else { ps.x_range },
+        if y_all { uy } else { ps.y_range },
+      ))
+    });
+    let first = first.filter(|_| all_range.is_none());
     let ((x_min, x_max), (y_min, y_max)) = all_range
       .or_else(|| first.map(|ps| (ps.x_range, ps.y_range)))
       .unwrap_or(((x_min, x_max), (y_min, y_max)));
@@ -32095,12 +32161,12 @@ pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
 /// or a `DisplayForm`/`RawBoxes` box tree holding one, typeset through the
 /// box layout so the numerator stacks over the denominator. `None` for any other item, which keeps its text rendering.
 fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
-  let (content, size) = match expr {
+  let (content, size, color) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
       let style = extract_cell_style(expr);
-      (style.content, style.font_size.unwrap_or(14.0))
+      (style.content, style.font_size.unwrap_or(14.0), style.color)
     }
-    other => (other, 14.0),
+    other => (other, 14.0, None),
   };
   // The boxes are spelled either as inline `\!\(\*…\)` notation in a
   // string or as a box tree shown through `DisplayForm`/`RawBoxes`
@@ -32120,7 +32186,10 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
-  Some(layout_to_svg(&layout, theme().text_primary))
+  // A `Style[…, color]` wrapper paints the whole fraction, bar included.
+  let fill =
+    color.map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
+  Some(layout_to_svg(&layout, &fill))
 }
 
 /// Whether `expr` — a label, possibly a `Row`/`Column` layout under `Style`
@@ -42600,7 +42669,14 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);
-      svgs.push(None);
+      // A bare arithmetic choice (`{1/2, 1, 2}`, `{Pi/4, Pi/2}`) is shown
+      // the way the FrontEnd typesets the value — a stacked fraction —
+      // just like an arithmetic `value -> label` rule label.
+      svgs.push(if is_arithmetic_label(item) {
+        discrete_choice_label_svg(item)
+      } else {
+        None
+      });
     }
   }
   (values, labels, svgs, label_runs)

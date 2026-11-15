@@ -10,6 +10,8 @@
     visible head. `Style[Text[…], Italic]` slants 3D labels.
 - `RandomVariate` and `RandomReal` draw samples from
     `SkewNormalDistribution[μ, σ, α]`.
+- Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
+    `FrameLabel`) instead of collapsing them to one blank in the SVG.
 
 # 2026-11-08 - 0.4.0
 
