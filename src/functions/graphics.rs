@@ -31720,8 +31720,9 @@ fn resolve_display_item(expr: &Expr) -> Expr {
 /// Distribute a `Style[…]`'s directives over the items of the layout it
 /// wraps, so `Style[Row[{a, b}], Bold]` becomes `Row[{Style[a, Bold],
 /// Style[b, Bold]}]`. Only the item list is rewritten; a separator or
-/// option argument keeps its place. `None` when the wrapped expression is
-/// not a layout with a list of items.
+/// option argument keeps its place. A `Framed[…]` takes the directives onto
+/// its content. `None` when the wrapped expression is neither a layout
+/// with a list of items nor a frame.
 pub(crate) fn style_pushed_into_layout(
   inner: &Expr,
   directives: &[Expr],
@@ -31732,6 +31733,19 @@ pub(crate) fn style_pushed_into_layout(
   let Expr::FunctionCall { name, args } = inner else {
     return None;
   };
+  // `Style[Framed[content, opts…], directives…]`: the frame keeps its box
+  // and its options, and the directives style the content it frames.
+  // Without this the styled frame was set as plain text and lost its box.
+  if name == "Framed" && !args.is_empty() {
+    let mut new_args: Vec<Expr> = args.iter().cloned().collect();
+    new_args[0] = call(
+      "Style",
+      std::iter::once(args[0].clone())
+        .chain(directives.iter().cloned())
+        .collect(),
+    );
+    return Some(call("Framed", new_args));
+  }
   if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
     || args.is_empty()
   {
