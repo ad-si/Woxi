@@ -1119,6 +1119,63 @@ mod smooth_shading {
     assert!(!flat.contains("<linearGradient"), "{flat}");
   }
 
+  // A parametric surface keeps its smooth shading when it is drawn through
+  // `Show` (which merges its `GraphicsComplex` of grid quads) instead of as
+  // the plot's own picture.
+  #[test]
+  fn parametric_surface_in_show_is_smooth() {
+    let torus = "ParametricPlot3D[{Cos[u] (3 + Cos[v]), Sin[v], \
+                 Sin[u] (3 + Cos[v])}, {u, 0, 2 Pi}, {v, 0, 2 Pi}, \
+                 Mesh -> False]";
+    for code in [
+      format!("Show[{torus}]"),
+      format!("Show[{torus}, Graphics3D[Sphere[{{0, 0, 0}}, 0.5]]]"),
+    ] {
+      let s = svg(&code);
+      let gradients = s.matches("fill=\"url(#").count();
+      assert!(
+        gradients * 2 > polygon_count(&s),
+        "{code}: {gradients} of {}",
+        polygon_count(&s)
+      );
+    }
+  }
+
+  // Shared-vertex quads in a `GraphicsComplex` without outlines are shaded
+  // as one smooth surface; the hard fold of a box keeps flat faces.
+  #[test]
+  fn graphics_complex_quads_are_smooth() {
+    let n = 12;
+    let pts = (0..=n)
+      .flat_map(|i| {
+        (0..=1).map(move |j| {
+          let a = std::f64::consts::PI * i as f64 / n as f64;
+          format!("{{{:.6}, {:.6}, {j}}}", a.cos(), a.sin())
+        })
+      })
+      .collect::<Vec<_>>()
+      .join(", ");
+    let quads = (0..n)
+      .map(|i| {
+        let k = 2 * i + 1;
+        format!("{{{}, {}, {}, {}}}", k, k + 2, k + 3, k + 1)
+      })
+      .collect::<Vec<_>>()
+      .join(", ");
+    let s = svg(&format!(
+      "Graphics3D[GraphicsComplex[{{{pts}}}, {{EdgeForm[], \
+       Polygon[{{{quads}}}]}}]]"
+    ));
+    assert!(s.contains("<linearGradient"), "{s}");
+    let cube = svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, \
+       {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}}, \
+       {EdgeForm[], Polygon[{{1, 2, 3, 4}, {5, 6, 7, 8}, {1, 2, 6, 5}, \
+       {2, 3, 7, 6}, {3, 4, 8, 7}, {4, 1, 5, 8}}]}]]",
+    );
+    assert!(!cube.contains("<linearGradient"), "{cube}");
+  }
+
   // The far side of a closed convex surface (a capsule) is hidden, so a
   // translucent one, whose far side shows, draws more facets.
   #[test]
