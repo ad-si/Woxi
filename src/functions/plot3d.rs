@@ -985,15 +985,15 @@ fn grid_mesh_lines(
 }
 
 /// The default mesh of a surface sampled on a `(grid_u + 1) × (grid_v + 1)`
-/// parameter grid (`ParametricPlot3D`, `RevolutionPlot3D`): `n` lines of
-/// constant first and of constant second parameter, evenly spaced and
-/// snapped to the nearest grid line, plus the surface's edges. `at(i, j)`
+/// parameter grid (`ParametricPlot3D`, `RevolutionPlot3D`): `n[0]` lines of
+/// constant first and `n[1]` of constant second parameter, evenly spaced
+/// and snapped to the nearest grid line, plus the surface's edges. `at(i, j)`
 /// is the sample in the normalized box (`None` where the surface has a
 /// hole); `segment` builds the line piece between two samples.
 fn parameter_grid_mesh_lines(
   grid_u: usize,
   grid_v: usize,
-  n: usize,
+  n: [usize; 2],
   at: &dyn Fn(usize, usize) -> Option<Point3D>,
   segment: &dyn Fn(Point3D, Point3D) -> MeshLine,
 ) -> Vec<MeshLine> {
@@ -1005,14 +1005,15 @@ fn parameter_grid_mesh_lines(
     y: a.y + (b.y - a.y) * f,
     z: a.z + (b.z - a.z) * f,
   };
-  for m in 0..=n + 1 {
+  for m in 0..=n[0].max(n[1]) + 1 {
     for axis in 0..2 {
       let (across, along) = if axis == 0 {
         (grid_u, grid_v)
       } else {
         (grid_v, grid_u)
       };
-      if across == 0 {
+      let n = n[axis];
+      if across == 0 || m > n + 1 {
         continue;
       }
       let level = across as f64 * m as f64 / (n + 1) as f64;
@@ -3005,8 +3006,10 @@ fn generate_svg(
         // A translucent triangle's own-color hairline overlaps its
         // neighbors' and darkens every shared seam, tracing the
         // tessellation across what should be a smooth surface. Only an
-        // opaque triangle needs it to close the anti-aliasing gap.
-        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+        // opaque triangle needs it to close the anti-aliasing gap. A
+        // surface's facets draw no outline, so this holds for every
+        // translucent one (a `PlotStyle -> Opacity[…]` surface).
+        let seam_stroke = if tri.opacity < 1.0 {
           "none"
         } else {
           paint.as_str()
@@ -9017,8 +9020,11 @@ fn collect_3d_primitives(
             let mut collected = Vec::new();
             collect_3d_primitives(&resolved, style, &mut collected);
             // Keep a sampled surface together so shared vertices receive
-            // averaged normals. Collecting each triangle as an independent
+            // averaged normals. Collecting each facet as an independent
             // polygon loses the topology and produces faceted lighting.
+            // This holds for the quads of a sampled grid (as in
+            // `ParametricPlot3D[…]`'s own complex) as much as for triangles,
+            // so larger faces are split into triangles first.
             let mut surfaces: std::collections::BTreeMap<
               String,
               (StyleState3D, Vec<(Point3D, Point3D, Point3D)>),
@@ -9029,7 +9035,7 @@ fn collect_3d_primitives(
                   points,
                   holes,
                   style: face,
-                } if points.len() == 3
+                } if points.len() >= 3
                   && holes.is_empty()
                   && !face.edges
                   && face.texture.is_none()
@@ -9038,7 +9044,7 @@ fn collect_3d_primitives(
                   let key = format!("{face:?}");
                   let entry =
                     surfaces.entry(key).or_insert_with(|| (face, Vec::new()));
-                  entry.1.push((points[0], points[1], points[2]));
+                  entry.1.extend(triangulate_face3d(&points));
                 }
                 other => prims.push(other),
               }
@@ -9842,6 +9848,20 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
+/// Split a hole-free 3D face into triangles: a fan from the first corner
+/// when it is convex, the general triangulator otherwise.
+fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
+  if points.len() < 3 {
+    Vec::new()
+  } else if points.len() == 3 || is_convex_polygon3d(points) {
+    (1..points.len() - 1)
+      .map(|i| (points[0], points[i], points[i + 1]))
+      .collect()
+  } else {
+    tessellate_polygon_with_holes(points, &[]).0
+  }
+}
+
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
   holes: &[Vec<Point3D>],
@@ -11471,8 +11491,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut box_ratios: Option<[f64; 3]> = None;
   // `SphericalRegion -> True`: frame the picture by the sphere that
   // encloses the contents instead of by their projected outline, so the
-  // scale stays put as the view turns or the contents move.
-  let mut spherical_region = false;
+  // scale stays put as the view turns or the contents move. A
+  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
+  let mut spherical_region = crate::in_manipulate_frame();
   // `ViewAngle -> θ`: the field of view of the camera, in radians. With one
   // given the picture is no longer scaled to fit its contents — the view
   // volume sets the scale, so a small object stays small. `view_distance`
@@ -15775,7 +15796,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       mesh_lines.extend(parameter_grid_mesh_lines(
         n_t,
         n_theta,
-        15,
+        [15, 15],
         &|i, j| grid[i][j].map(normalize),
         &segment,
       ));
@@ -21131,8 +21152,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
-  // `Mesh -> n`: `n` evenly spaced mesh lines in each parameter direction.
-  let mut mesh_count: Option<usize> = None;
+  // `Mesh -> n`: `n` evenly spaced mesh lines in each parameter direction;
+  // `Mesh -> {nu, nv}` gives each direction its own count.
+  let mut mesh_count: Option<[usize; 2]> = None;
+  let mut mesh_counts_per_direction: Option<[usize; 2]> = None;
   let mut show_axes = true;
   let mut plot_style_expr: Option<&Expr> = None;
   // `MeshFunctions -> {f}` / `Mesh -> {{v1, v2, ...}}` / `MeshShading ->
@@ -21170,6 +21193,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_points: Option<usize> = None;
   // Second entry of `PlotPoints -> {nu, nv}` (defaults to the first).
   let mut plot_points_v: Option<usize> = None;
+  // `MaxRecursion -> r`: how often each cell of the initial sampling grid
+  // may be halved. Woxi refines uniformly instead of adaptively, so an
+  // explicit value bounds the grid at `(PlotPoints - 1) * 2^r` cells per
+  // direction, the most Wolfram's adaptive sampler can produce.
+  let mut max_recursion: Option<usize> = None;
   // `RegionFunction -> f`: keep only the parts of the surface where
   // `f[x, y, z, u, v]` is `True`.
   let mut region_fn: Option<Expr> = None;
@@ -21201,6 +21229,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             Ok(ref e) => plot_points = count(e),
             _ => {}
+          }
+        }
+        Expr::Identifier(name) if name == "MaxRecursion" => {
+          if let Ok(Expr::Integer(n)) = evaluate_expr_to_expr(replacement) {
+            max_recursion = Some(n.clamp(0, 15) as usize);
           }
         }
         Expr::Identifier(name) if name == "ColorFunction" => {
@@ -21261,8 +21294,24 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               mesh_mode = MeshMode::None;
             }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
-            Expr::Integer(n) if *n >= 0 => mesh_count = Some(*n as usize),
+            Expr::Integer(n) if *n >= 0 => {
+              mesh_count = Some([*n as usize, *n as usize]);
+            }
             Expr::List(items) => {
+              // `{nu, nv}`: a count of lines for each of the default mesh
+              // functions (the two parameters). With `MeshFunctions` the
+              // entries are read as break values instead (below).
+              let counts: Vec<usize> = items
+                .iter()
+                .map_while(|it| match it {
+                  Expr::Integer(n) if *n >= 0 => Some(*n as usize),
+                  _ => None,
+                })
+                .collect();
+              if (1..=2).contains(&items.len()) && counts.len() == items.len() {
+                mesh_counts_per_direction =
+                  Some([counts[0], *counts.get(1).unwrap_or(&counts[0])]);
+              }
               let level_items: &[Expr] =
                 if items.iter().all(|it| matches!(it, Expr::List(_))) {
                   match items.first() {
@@ -21336,6 +21385,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mesh_shading_active = mesh_function.is_some()
     && !mesh_breaks.is_empty()
     && !mesh_shading.is_empty();
+  if mesh_function.is_none() && mesh_counts_per_direction.is_some() {
+    mesh_count = mesh_counts_per_direction;
+  }
 
   // Parse parametric surfaces: body must be {fx, fy, fz} or {{fx1, fy1, fz1}, ...}
   struct ParametricSurface {
@@ -21369,7 +21421,15 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       GRID_N
     }
   };
-  let grid_u = plot_points.map_or_else(|| auto_grid(u_max - u_min), |p| p - 1);
+  // Wolfram starts `ParametricPlot3D` from 15 samples per direction.
+  let recursion_grid = |p: Option<usize>, auto: usize| -> usize {
+    match (p, max_recursion) {
+      (Some(p), _) => p - 1,
+      (None, Some(r)) => 14usize.saturating_mul(1 << r.min(10)).min(auto),
+      (None, None) => auto,
+    }
+  };
+  let grid_u = recursion_grid(plot_points, auto_grid(u_max - u_min));
   let u_step = (u_max - u_min) / grid_u as f64;
   // The `v` range may depend on `u` (`{v, 0, h - Sin[u]}`), so each grid
   // column `i` gets its own `(lo, hi)`; a column whose bounds do not
@@ -21387,17 +21447,14 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (bound(&v_lo_expr), bound(&v_hi_expr))
     })
     .collect();
-  let grid_v = plot_points_v.or(plot_points).map_or_else(
-    || {
-      let span = v_ranges
-        .iter()
-        .filter(|(lo, hi)| lo.is_finite() && hi.is_finite())
-        .map(|(lo, hi)| hi - lo)
-        .fold(0.0_f64, f64::max);
-      auto_grid(span)
-    },
-    |p| p - 1,
-  );
+  let grid_v = recursion_grid(plot_points_v.or(plot_points), {
+    let span = v_ranges
+      .iter()
+      .filter(|(lo, hi)| lo.is_finite() && hi.is_finite())
+      .map(|(lo, hi)| hi - lo)
+      .fold(0.0_f64, f64::max);
+    auto_grid(span)
+  });
   let v_step_at = |i: usize| (v_ranges[i].1 - v_ranges[i].0) / grid_v as f64;
   let (v_min, v_max) = v_ranges
     .iter()
@@ -21723,7 +21780,8 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
-        if let Some(n) = mesh_count.filter(|&n| n > 0) {
+        if let Some([nu, nv]) = mesh_count.filter(|n| n.iter().any(|&c| c > 0))
+        {
           let mut segments: Vec<Expr> = Vec::new();
           let mut push_segment = |a: Option<usize>, b: Option<usize>| {
             if let (Some(a), Some(b)) = (a, b) {
@@ -21736,12 +21794,14 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               ));
             }
           };
-          for m in 1..=n {
-            let ku = (grid_u * m + n.div_ceil(2)) / (n + 1);
-            let kv = (grid_v * m + n.div_ceil(2)) / (n + 1);
+          for m in 1..=nv {
+            let kv = (grid_v * m + nv.div_ceil(2)) / (nv + 1);
             for i in 0..grid_u {
               push_segment(index_of[i][kv], index_of[i + 1][kv]);
             }
+          }
+          for m in 1..=nu {
+            let ku = (grid_u * m + nu.div_ceil(2)) / (nu + 1);
             for j in 0..grid_v {
               push_segment(index_of[ku][j], index_of[ku][j + 1]);
             }
@@ -21984,7 +22044,7 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_lines: Vec<MeshLine> = Vec::new();
   if mesh_mode == MeshMode::Default && !mesh_style_none && !mesh_shading_active
   {
-    let n = mesh_count.unwrap_or(15);
+    let n = mesh_count.unwrap_or([15, 15]);
     // The depth pull that keeps a line in front of the facets it lies on
     // grows with the box (normalized to ±box_ratios) and with the facets.
     let extra_bias = MESH_DEPTH_BIAS
@@ -22693,7 +22753,7 @@ mod review_mesh_tests {
       let lines = parameter_grid_mesh_lines(
         nu,
         nv,
-        count,
+        [count, count],
         &|i, j| {
           Some(Point3D {
             x: i as f64,

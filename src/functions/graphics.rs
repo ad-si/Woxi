@@ -10786,14 +10786,24 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
   }
 }
 
-/// The `stroke-linecap` value for a `Line`/`Arrow` stroke, from its
-/// `CapForm[…]` directive. Unset (`None`) keeps Woxi's pre-existing butt
-/// cap, which is also what `CapForm["Butt"]` — Wolfram's default — asks for.
+/// The `stroke-linecap` value for an `Arrow`/curve stroke, from its
+/// `CapForm[…]` directive. Unset (`None`) keeps the butt cap.
 fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
   match cap_form {
     Some(LineCapKind::Round) => "round",
     Some(LineCapKind::Square) => "square",
     Some(LineCapKind::Butt) | None => "butt",
+  }
+}
+
+/// The `stroke-linecap` value for a `Line` stroke. Wolfram draws a `Line`
+/// with square caps unless a `CapForm` says otherwise: each end extends
+/// half the line's thickness past its endpoint, so a short thick segment
+/// (a tick mark) is as wide as its stroke plus its length.
+fn line_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+  match cap_form {
+    None => "square",
+    some => stroke_linecap_attr(some),
   }
 }
 
@@ -12621,7 +12631,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = line_linecap_attr(style.cap_form);
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
       // `VertexColors` assigns one color per point, in order, across all
       // segments concatenated — only usable when the count actually lines
@@ -14502,10 +14512,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             other
               if plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
+                .or_else(|| plot_label_grid_svg(other))
                 .is_some() =>
             {
               let (svg, w, h) = plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
+                .or_else(|| plot_label_grid_svg(other))
                 .expect("checked by the guard");
               // Reserve as many title lines as the picture is tall.
               let mut lines = 1;
@@ -21227,6 +21239,116 @@ fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   Some((svg, w, h))
 }
 
+/// A `PlotLabel` that is a `Grid` of two or more columns
+/// (`Grid[{{"sum:", 6.}, {"product:", 9.}}]`): set as a table whose columns
+/// line up, in the title's font, the way Wolfram draws it, instead of
+/// running each row's cells together into one line of text. Each cell is
+/// typeset like any other title text and measured with proportional glyph
+/// widths; columns are `0.8` em apart (Wolfram's default `Spacings`) and
+/// placed by the grid's horizontal `Alignment` (`Center` by default). A
+/// single-column `Grid` stays a block of title lines.
+fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  use crate::functions::plot_padding::{ascent, line_pitch, text_width};
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Grid" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(rows) = &args[0] else {
+    return None;
+  };
+  let rows: Vec<&[Expr]> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => Some(cells.as_slice()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  // A cell that stacks its own lines (a nested `Column`) has no single
+  // line to align, so such a grid keeps the line-based layout.
+  if num_cols < 2
+    || rows
+      .iter()
+      .flat_map(|r| r.iter())
+      .any(|c| expr_to_svg_markup_lines(c).len() > 1)
+  {
+    return None;
+  }
+  // The horizontal alignment of each column: one symbol for all of them,
+  // or a list cycled over the columns, possibly inside `{h, v}`.
+  let mut aligns = vec!["Center"];
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(&**pattern, Expr::Identifier(n) if n == "Alignment")
+    {
+      let h = match &**replacement {
+        Expr::List(items) if items.len() == 2 => &items[0],
+        other => other,
+      };
+      let names: Vec<&str> = match h {
+        Expr::Identifier(n) => vec![n.as_str()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|i| match i {
+            Expr::Identifier(n) => Some(n.as_str()),
+            _ => None,
+          })
+          .collect(),
+        _ => Vec::new(),
+      };
+      if !names.is_empty() {
+        aligns = names;
+      }
+    }
+  }
+  let size = TITLE_FONT;
+  let markup: Vec<Vec<String>> = rows
+    .iter()
+    .map(|r| r.iter().map(expr_to_svg_markup).collect())
+    .collect();
+  let mut col_w = vec![0.0_f64; num_cols];
+  for row in &markup {
+    for (j, cell) in row.iter().enumerate() {
+      col_w[j] = col_w[j].max(text_width(cell, size));
+    }
+  }
+  let gap = 0.8 * size;
+  let width = col_w.iter().sum::<f64>() + gap * (num_cols - 1) as f64;
+  let pitch = line_pitch(size);
+  let height = pitch * markup.len() as f64;
+  let mut body = String::new();
+  for (i, row) in markup.iter().enumerate() {
+    let y = i as f64 * pitch + ascent(size);
+    let mut x0 = 0.0;
+    for (j, w) in col_w.iter().enumerate() {
+      if let Some(cell) = row.get(j).filter(|c| !c.is_empty()) {
+        let (x, anchor) = match aligns[j % aligns.len()] {
+          "Left" => (x0, "start"),
+          "Right" => (x0 + w, "end"),
+          _ => (x0 + w / 2.0, "middle"),
+        };
+        body.push_str(&format!(
+          "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" \
+           xml:space=\"preserve\">{cell}</text>\n"
+        ));
+      }
+      x0 += w + gap;
+    }
+  }
+  let svg = format!(
+    "<svg width=\"{width:.2}\" height=\"{height:.2}\" \
+     viewBox=\"0 0 {width:.2} {height:.2}\" \
+     xmlns=\"http://www.w3.org/2000/svg\" font-family=\"sans-serif\" \
+     font-size=\"{size}\">\n{body}</svg>"
+  );
+  (width > 0.0).then_some((svg, width, height))
+}
+
 /// Whether a label sets a matrix inline: a `MatrixForm` of a list of rows,
 /// or a string carrying the `\!\(\*…\)` box text of a grid (what
 /// `ToString[m . x, TraditionalForm]` returns). Items of a `Column`, `Grid`
@@ -23807,16 +23929,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           **replacement = id_expr("All");
         }
       }
-      // A framed plot draws no interior axes, so the merged graphic must
-      // not grow a set of them either: `Show[ParametricPlot[…, Frame ->
-      // True], …]` keeps the frame it was given and nothing more.
-      let framed = merged_options.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, replacement }
-          if option_name(pattern) == Some("Frame")
-            && !matches!(replacement.as_ref(),
-              Expr::Identifier(s) if s == "False" || s == "None"))
-      });
-      if !has_option(&merged_options, "Axes") && !framed {
+      // The leading plot's axes stay on. In a framed plot they are drawn as
+      // plain lines through the origin (the frame carries the ticks), just
+      // as `Plot[…, Frame -> True]` draws them on its own.
+      if !has_option(&merged_options, "Axes") {
         merged_options.push(rule_expr(id_expr("Axes"), bool_expr(true)));
       }
       // The shape the leading plot drew itself in, unless the options
@@ -28621,8 +28737,20 @@ pub fn combine_layout_svgs(
   if !opts.spacings_explicit {
     // `Points` counts printer's points at 96 dpi; the layout works in the
     // pictures' own units, which are points already.
-    opts.h_spacing = SpacingSpec::Points(gap * 0.75);
-    opts.v_spacing = SpacingSpec::Points(gap * 0.75);
+    let gap = gap * 0.75;
+    if opts.frame == FrameSetting::None {
+      opts.h_spacing = SpacingSpec::Points(gap);
+      opts.v_spacing = SpacingSpec::Points(gap);
+    } else {
+      // A framed `Grid` pads every cell by three quarters of that gap
+      // (4.5 pixels) on each side, so the frame lines run between the
+      // cells instead of touching them: a 250 × 300 plot sits in a
+      // 259 × 309 framed cell.
+      opts.h_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.v_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.outer_margin = true;
+      opts.spacings_explicit = true;
+    }
   }
   combine_svgs_grid(rows, &opts)
 }
@@ -28866,6 +28994,10 @@ struct GridLayout {
   v_gap: f64,
   /// Space above the first row (`LayoutOptions::outer_margin`).
   top_pad: f64,
+  /// Where each column starts, and the gap between two columns: a
+  /// `Frame -> All` divider runs down the middle of that gap.
+  col_x: Vec<f64>,
+  h_gap: f64,
 }
 
 /// Compute a natural-dimension grid layout for a 2-D array of SVG cells.
@@ -29084,7 +29216,7 @@ fn compute_grid_layout(
     }
   }
   let left_pad = if opts.outer_margin { h_gap / 2.0 } else { 0.0 };
-  let col_x: Vec<f64> = col_w
+  let mut col_x: Vec<f64> = col_w
     .iter()
     .scan(left_pad, |x, w| {
       let here = *x;
@@ -29176,6 +29308,9 @@ fn compute_grid_layout(
         cell.x += dx;
       }
     }
+    for x in &mut col_x {
+      *x += dx;
+    }
     top_pad += ((th - total_height) / 2.0).max(0.0);
     total_width = total_width.max(tw);
     total_height = total_height.max(th);
@@ -29187,6 +29322,8 @@ fn compute_grid_layout(
     total_height,
     v_gap,
     top_pad,
+    col_x,
+    h_gap,
   })
 }
 
@@ -29290,28 +29427,20 @@ fn draw_frame_lines(
     return;
   }
 
-  // Inner row dividers: draw at the top of each row after the first
+  // Inner row dividers: in the middle of the gap above each row after
+  // the first.
   for (i, row) in layout.rows.iter().enumerate() {
     if i == 0 || row.row_h <= 0.0 {
       continue;
     }
-    let y = row_y_starts[i];
+    let y = row_y_starts[i] - layout.v_gap / 2.0;
     line(out, 0.0, y, total_w, y);
   }
 
-  // Inner column dividers: use the widest row to place vertical lines
-  // at every cell boundary. Cells share an x-coordinate scheme inside
-  // a row, so taking max-cells row gives the most granular boundaries.
-  let widest_row = layout
-    .rows
-    .iter()
-    .max_by_key(|r| r.cells.len())
-    .map_or(&[][..], |r| &r.cells[..]);
-  for (i, cell) in widest_row.iter().enumerate() {
-    if i == 0 {
-      continue;
-    }
-    let x = cell.x;
+  // Inner column dividers: in the middle of the gap before each column
+  // after the first.
+  for x in layout.col_x.iter().skip(1) {
+    let x = x - layout.h_gap / 2.0;
     line(out, x, 0.0, x, total_h);
   }
 }
@@ -34119,7 +34248,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 }
 
 /// Parse width and height from an SVG's root element attributes.
-pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
+pub fn parse_svg_wh(svg: &str) -> (f64, f64) {
   // Only the root `<svg …>` tag states the picture's size; a raster
   // `Image` writes its attributes in single quotes (`width='20'`).
   let root = svg.find("<svg").unwrap_or(0);
@@ -34387,31 +34516,123 @@ pub(crate) fn fit_tree_to_pane_width(
   Some(with_default_image_size(content, width as i128))
 }
 
-/// Break the text cells of `Pane[Grid[rows], width]` that are wider than
-/// the pane — a long list such as the rules of a graph — into lines that
-/// fit, the way the FrontEnd's line breaking does once the pane fixes the
-/// width. Returns the grid with those cells re-flowed, or `None` when no
-/// cell needed it.
+/// Break the text cells of `Pane[Grid[rows], width]` (or the items of a
+/// `Column`, looked at through `Text` and `Style`) that are wider than the
+/// pane — a long list such as the rules of a graph — into lines that fit,
+/// the way the FrontEnd's line breaking does once the pane fixes the width.
+/// Returns the layout with those cells re-flowed, or `None` when no cell
+/// needed it.
 pub(crate) fn wrap_wide_grid_text(
   grid: &Expr,
   width: f64,
   cell_width: &dyn Fn(&Expr) -> f64,
 ) -> Option<Expr> {
-  let (opts, mut rows) = grid_rows_of(grid)?;
-  // A cell keeps its padding on either side of the text.
-  let line_width = (width - 12.0).max(1.0);
-  let mut changed = false;
-  for row in &mut rows {
-    for cell in row.iter_mut() {
-      if cell_width(cell) > width + 0.5
-        && let Some(flowed) = wrap_list_text(cell, line_width, &[], cell_width)
-      {
-        *cell = flowed;
-        changed = true;
-      }
+  wrap_wide_layout_text(grid, width, &[], cell_width)
+}
+
+/// [`wrap_wide_grid_text`] measuring each cell by its rendered SVG: the
+/// layout `expr` with any text cell wider than `width` re-flowed into lines
+/// that fit, or `None` when nothing needed breaking. A Manipulate's
+/// `ContentSize` width is applied to its output this way.
+pub fn wrap_wide_text_to_width(expr: &Expr, width: f64) -> Option<Expr> {
+  wrap_wide_grid_text(expr, width, &|c| {
+    parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+  })
+}
+
+fn wrap_wide_layout_text(
+  layout: &Expr,
+  width: f64,
+  styles: &[Expr],
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = layout else {
+    return None;
+  };
+  // Measure a cell the way it is drawn: under the enclosing `Style`s.
+  let styled_width = |cell: &Expr| {
+    if styles.is_empty() {
+      cell_width(cell)
+    } else {
+      cell_width(&call(
+        "Style",
+        std::iter::once(cell.clone())
+          .chain(styles.iter().cloned())
+          .collect(),
+      ))
     }
+  };
+  let rebuilt = |first: Expr| {
+    let mut new_args = vec![first];
+    new_args.extend(args[1..].iter().cloned());
+    call(name, new_args)
+  };
+  match name.as_str() {
+    "Text" if args.len() == 1 => {
+      wrap_wide_layout_text(&args[0], width, styles, cell_width).map(rebuilt)
+    }
+    _ if is_style_wrapper(name) && !args.is_empty() => {
+      let mut inner_styles = styles.to_vec();
+      inner_styles.extend(args[1..].iter().cloned());
+      wrap_wide_layout_text(&args[0], width, &inner_styles, cell_width)
+        .map(rebuilt)
+    }
+    "Grid" => {
+      let (opts, mut rows) = grid_rows_of(layout)?;
+      // A cell keeps its padding on either side of the text.
+      let line_width = (width - 12.0).max(1.0);
+      let mut changed = false;
+      for row in &mut rows {
+        for cell in row.iter_mut() {
+          if styled_width(cell) > width + 0.5
+            && let Some(flowed) =
+              wrap_list_text(cell, line_width, styles, cell_width)
+          {
+            *cell = flowed;
+            changed = true;
+          }
+        }
+      }
+      changed.then(|| rebuild_grid(opts, rows))
+    }
+    // A `Column`'s items share the full width; one wider than it breaks
+    // into lines the same way. Its lines are measured as the column draws
+    // them, which sets text tighter than a bare expression on its own.
+    "Column" if !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let in_column = |e: &Expr| {
+        cell_width(&call1("Column", Expr::List(vec![e.clone()].into())))
+      };
+      let mut changed = false;
+      let flowed: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          let styled = if styles.is_empty() {
+            item.clone()
+          } else {
+            call(
+              "Style",
+              std::iter::once(item.clone())
+                .chain(styles.iter().cloned())
+                .collect(),
+            )
+          };
+          if in_column(&styled) > width + 0.5
+            && let Some(lines) = wrap_list_text(item, width, styles, &in_column)
+          {
+            changed = true;
+            lines
+          } else {
+            item.clone()
+          }
+        })
+        .collect();
+      changed.then(|| rebuilt(Expr::List(flowed.into())))
+    }
+    _ => None,
   }
-  changed.then(|| rebuild_grid(opts, rows))
 }
 
 /// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`
@@ -35835,6 +36056,10 @@ pub struct LabelRun {
   /// The run's font size in points, when `Style` gave it one
   /// (`Style["t", 16]` or `FontSize -> 16`).
   pub size: Option<f64>,
+  /// The run is a subscript Unicode has no glyphs for (`Subscript["V",
+  /// "y"]`): its text stays plain and the UI must set it lowered and
+  /// smaller, as Wolfram typesets a script.
+  pub subscript: bool,
 }
 
 /// The font size a `Style`'s directives set: a bare number or
@@ -36354,6 +36579,11 @@ pub struct ManipulateSpec {
   /// usually asks for `Left` so the controls run down beside the picture
   /// instead of pushing it off screen.
   pub control_placement: ControlPlacement,
+  /// The width of `ContentSize -> w | {w, h}`: the content area the body is
+  /// shown in. Text wider than it (a long list) breaks into lines at this
+  /// width, as the FrontEnd lays it out. `None` when no numeric width is
+  /// given (the area then grows with its content).
+  pub content_width: Option<f64>,
   /// `(synthesized control name, parent variable, 1-based index)` for every
   /// `ParsedControl::ListElement` control — a slider generated by
   /// `Evaluate[Sequence @@ Table[…]]` for one `Part` of a shared list
@@ -37176,6 +37406,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  let mut content_width: Option<f64> = None;
   // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
   // successive controls, applied once the controls are known.
   let mut successive_placements: Vec<ControlPlacement> = Vec::new();
@@ -37438,6 +37669,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // `ContentSize -> w` or `{w, h}` (possibly computed, as in
+      // `1.25 {400, 300}`) fixes the width of the content area.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContentSize") {
+        content_width = manipulate_content_width(replacement);
       }
       // `ControlPlacement -> {Top, Top, Left, Right}` places successive
       // controls on the listed sides, one entry per control.
@@ -38449,9 +38685,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols,
     tracking,
     control_placement,
+    content_width,
     list_elements,
     bookmarks,
   })
+}
+
+/// The numeric width of a `ContentSize` setting: `w` or the first entry of
+/// `{w, h}`, evaluated first so a computed size such as `1.25 {400, 300}`
+/// counts. `None` for `Automatic` and other non-numeric widths.
+fn manipulate_content_width(setting: &Expr) -> Option<f64> {
+  let value = evaluate_expr_to_expr(setting).ok()?;
+  let width = match &value {
+    Expr::List(items) => items.first()?.clone(),
+    other => other.clone(),
+  };
+  try_eval_to_f64(&width).filter(|w| w.is_finite() && *w > 0.0)
 }
 
 /// Whether `s` names one of Wolfram's control types, i.e. a value
@@ -42401,6 +42650,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42482,6 +42732,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42577,6 +42828,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42780,6 +43032,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42843,6 +43096,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42916,6 +43170,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -44552,6 +44807,21 @@ fn script_runs(
       restyle(&mut runs, &|t| {
         format!("{SUPERSCRIPT_START}{t}{SUPERSCRIPT_END}")
       });
+    } else if !superscript
+      && text
+        .chars()
+        .any(|c| unicode_script_char(c, false).is_none())
+    {
+      // No subscript glyphs for some letter (`Subscript["V", "y"]`): keep
+      // the whole script as plain text flagged as a subscript, so the UI
+      // sets it lowered and smaller instead of drawing it full size next
+      // to the base (or as a half-mapped mix of glyphs and letters).
+      runs.extend(script_runs.iter().filter(|r| !r.text.is_empty()).map(|r| {
+        LabelRun {
+          subscript: true,
+          ..r.clone()
+        }
+      }));
     } else {
       restyle(&mut runs, &|t| to_unicode_script(t, superscript));
     }
@@ -50125,6 +50395,45 @@ mod manipulate_label_tests {
     assert_eq!(runs(&sup), vec![run("x", false), run("\u{1D5D}", false)]);
     let sub = call("Subscript", vec![id_expr("x"), str_expr("\u{03C7}")]);
     assert_eq!(runs(&sub), vec![run("x", false), run("\u{1D6A}", false)]);
+  }
+
+  /// A subscript letter with no Unicode subscript glyph (`y`, `z`, a
+  /// capital) keeps its plain text but is flagged as a subscript so the UI
+  /// sets it smaller, instead of drawing `Subscript["V", "y"]` as a
+  /// full-size "Vy". Mappable scripts keep their Unicode glyphs.
+  #[test]
+  fn unmappable_subscript_is_flagged_as_subscript_run() {
+    let sub_run = |t: &str| LabelRun {
+      subscript: true,
+      ..run(t, false)
+    };
+    for letter in ["y", "z", "N", "q"] {
+      let label = call("Subscript", vec![str_expr("V"), str_expr(letter)]);
+      assert_eq!(runs(&label), vec![run("V", false), sub_run(letter)]);
+    }
+    // A script mixing mappable and unmappable letters stays whole rather
+    // than becoming a half-mapped mix of glyphs and plain letters.
+    let label = call("Subscript", vec![id_expr("v"), str_expr("xy")]);
+    assert_eq!(runs(&label), vec![run("v", false), sub_run("xy")]);
+    // Fully mappable scripts still fold into Unicode subscript glyphs.
+    let label = call("Subscript", vec![str_expr("V"), str_expr("x")]);
+    assert_eq!(runs(&label), vec![run("V", false), run("\u{2093}", false)]);
+    // Inside a `Row` caption, as a Manipulate control label writes it.
+    let row = call1(
+      "Row",
+      Expr::List(
+        vec![
+          str_expr("viewpoint "),
+          call("Subscript", vec![str_expr("V"), str_expr("z")]),
+        ]
+        .into(),
+      ),
+    );
+    assert_eq!(
+      runs(&row),
+      vec![run("viewpoint ", false), run("V", false), sub_run("z")]
+    );
+    assert_eq!(flatten_label_runs(&runs(&row)), "viewpoint Vz");
   }
 
   #[test]

@@ -6548,6 +6548,16 @@ mod base_form {
         .unwrap(),
       "1.01101010000010011110011001100111111100111011110011001001000010001"
     );
+    // The digit count follows the accuracy, not the significant digits:
+    // √7 has one more integer bit than √2 yet keeps 65 fraction bits,
+    // and the last one is rounded (the tail …0001|11… rounds up).
+    assert_eq!(
+      digits("BaseForm[N[Sqrt[7], 20], 2]")
+        .lines()
+        .next()
+        .unwrap(),
+      "10.10100101010011111111010100111010010111110001110100110110111100100"
+    );
     // The base still rides along on the line below.
     assert_eq!(digits("BaseForm[3.5, 2]").lines().nth(1).unwrap(), "    2");
   }
