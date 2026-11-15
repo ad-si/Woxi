@@ -22777,7 +22777,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }))
           });
         let flat =
-          points.is_some_and(|((x0, x1), (y0, y1))| !(x0 < x1) || !(y0 < y1));
+          points.is_some_and(|((x0, x1), (y0, y1))| x1 <= x0 || y1 <= y0);
         (
           ps.plot_range
             .map(|(x, y)| (ps.data_x_range.unwrap_or(x), y))
