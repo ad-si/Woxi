@@ -2687,7 +2687,8 @@ pub(crate) struct FrameTicksLayout<'a> {
   /// Whether the x and the y axis are logarithmic.
   pub log: (bool, bool),
   /// The automatic ticks of the x and the y axis, as `(min, max, major
-  /// step)`; `None` where the axis places its own (log and date axes).
+  /// step)`; `None` for a log axis (which gets its log-scale ticks) and a
+  /// date axis (which places its own).
   pub auto: [Option<(f64, f64, f64)>; 2],
   /// The automatic labels of the x and the y axis, in axis space, for a far
   /// edge set to `All`.
@@ -2774,7 +2775,26 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
       FrameEdgeTicks::None => continue,
       spec @ (FrameEdgeTicks::Marks | FrameEdgeTicks::Labeled) => {
         let axis = if horizontal { l.auto[0] } else { l.auto[1] };
-        for (frac, major) in axis.map_or_default(auto_ticks) {
+        let positions = match axis {
+          Some(spec) => auto_ticks(spec),
+          // A log axis carries the `Charting`ScaledTicks[{Log, Exp}]`
+          // marks its unframed axis has: decade majors, minors between.
+          None if log => {
+            let t = crate::functions::plot_scaling::log_axis_ticks(
+              lo.exp(),
+              hi.exp(),
+            );
+            let majors = t.majors.iter().map(|(p, _)| (p.ln(), true));
+            let minors = t.minors.iter().map(|p| (p.ln(), false));
+            majors
+              .chain(minors)
+              .map(|(v, major)| (frac_of(v), major))
+              .filter(|&(f, _)| in_range(f))
+              .collect()
+          }
+          None => Vec::new(),
+        };
+        for (frac, major) in positions {
           let len = if major { major_len } else { minor_len };
           ticks.push((frac, len, 0.0, paint.mark, paint.mark_width, None));
         }
@@ -7464,7 +7484,7 @@ fn generate_svg_with_options(
 
   // Label the log axes of a frame with the same `Charting`ScaledTicks`
   // majors the unframed log axes carry (the origin axes label their own);
-  // the frame mesh draws the tick marks.
+  // `frame_ticks_svg` draws the tick marks.
   if !origin_axes
     && ((opts.log_y && tick_axis_y && show_ticks && opts.ticks_y.is_none())
       || (opts.log_x && tick_axis_x && show_ticks && opts.ticks_x.is_none()))
