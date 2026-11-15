@@ -28687,6 +28687,70 @@ mod graphics_grid {
     assert!(svg.contains("font-size=\"20\""), "{svg}");
   }
 
+  /// A typeset cell — a `Row` quotient stacked as a fraction — is set in
+  /// the grid's `BaseStyle` face like the plain text cells, its glyphs
+  /// measured in that (narrower, proportional) face, so the stacked
+  /// formula is not drawn in monospace and clipped by its column.
+  #[test]
+  fn grid_base_style_font_family_reaches_typeset_fraction_cells() {
+    let src = |opts: &str| {
+      format!(
+        "Grid[{{{{\"d\", Row[{{\"12\", Style[\"S\", Italic], \"+10\"}}]/\
+         Row[{{\"(25\", \"-3)\"}}]}}}}{opts}]"
+      )
+    };
+    let nested_width = |svg: &str| -> f64 {
+      let inner = &svg[svg.find("<svg x=").expect("typeset cell")..];
+      let w = &inner[inner.find("width=\"").unwrap() + 7..];
+      w[..w.find('"').unwrap()].parse().unwrap()
+    };
+    clear_state();
+    let times = interpret_with_stdout(&src(
+      ", BaseStyle -> {FontFamily -> \"Times\", FontSize -> 14}",
+    ))
+    .unwrap()
+    .graphics
+    .unwrap();
+    // The label cell and every atom of the numerator and denominator.
+    assert!(
+      times.matches("font-family=\"Times\"").count() >= 6,
+      "{times}"
+    );
+    assert!(!times.contains("font-family=\"monospace\""), "{times}");
+    clear_state();
+    let mono = interpret_with_stdout(&src("")).unwrap().graphics.unwrap();
+    assert!(mono.contains("font-family=\"monospace\""), "{mono}");
+    assert!(
+      nested_width(&times) < nested_width(&mono),
+      "the Times fraction should be narrower than the monospace one"
+    );
+    // A cell's own `FontFamily` is nearer the text and wins.
+    clear_state();
+    let own = interpret_with_stdout(
+      "Grid[{{Style[Row[{\"a\"}]/Row[{\"b\"}], FontFamily -> \"Courier\"]}}, \
+       BaseStyle -> {FontFamily -> \"Times\"}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(!own.contains("font-family=\"Times\""), "{own}");
+  }
+
+  /// `Style[…, FontFamily -> f]` inside a typeset formula sets only its
+  /// own atoms in that face; the rest of the formula keeps the default.
+  #[test]
+  fn style_font_family_inside_typeset_fraction() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{Row[{Style[\"x\", FontFamily -> \"Times\"], \"y\"}]/Row[{\"z\"}]}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(svg.contains("font-family=\"Times\""), "{svg}");
+    assert_eq!(svg.matches("font-family=\"monospace\"").count(), 2, "{svg}");
+  }
+
   /// A `Graphics`' `BaseStyle` acts like a `Style` round the whole drawing,
   /// so its text directives size and weight the `Text` labels as well as
   /// coloring them, while a label's own `Style` still wins.
