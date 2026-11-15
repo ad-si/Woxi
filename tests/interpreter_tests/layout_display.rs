@@ -1387,7 +1387,8 @@ fn styled_layout_keeps_picture_of_caption_product() {
     );
     // The caption still takes the style.
     assert!(
-      svg.contains("fill=\"rgb(255,0,0)\">Label:"),
+      svg.split("<text ").any(|t| t.contains("Label:")
+        && t[..t.find('>').unwrap()].contains("fill=\"rgb(255,0,0)\"")),
       "{layout}: {svg}"
     );
   }

@@ -8699,7 +8699,9 @@ pub(crate) fn sample_bspline_curve(
         total += w;
       }
       if weights.is_some() && total != 0.0 {
-        acc.iter_mut().for_each(|a| *a /= total);
+        for a in &mut acc {
+          *a /= total;
+        }
       }
       acc
     })
