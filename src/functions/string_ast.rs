@@ -9885,6 +9885,20 @@ pub(crate) fn format_string_form_with(
   format_slots(template, values, fmt, true)
 }
 
+/// The parts a `StringForm` typesets: its template's literal runs as strings
+/// and, between them, the values its slots pick — the items of the `Row`
+/// the filled template reads as. Empty literal runs are left out.
+pub(crate) fn string_form_parts(template: &str, values: &[Expr]) -> Vec<Expr> {
+  slot_pieces(template, values, false)
+    .into_iter()
+    .filter_map(|piece| match piece {
+      MessagePiece::Text(t) if t.is_empty() => None,
+      MessagePiece::Text(t) => Some(Expr::String(t)),
+      MessagePiece::Expr(e) => Some(e.clone()),
+    })
+    .collect()
+}
+
 /// Substitute `` `` `` / `` `n` `` slots, warning with `StringForm::sfr` on
 /// an out-of-range one only when `warn` is set.
 fn format_slots(
@@ -17752,6 +17766,93 @@ pub(crate) struct NumberFormOptions {
 /// with spaces, `NumberForm` does not pad it at all, and `AccountingForm`
 /// pads neither side (so `AccountingForm[12.345, {5, 2}]` is "12.35", not
 /// "12.35" padded out to the field).
+/// The value a `NumberForm` / `PaddedForm` / `AccountingForm` displays
+/// unchanged because there is no number in it to format: these wrappers
+/// only rewrite numbers, so `NumberForm[Subscript["6c", "36"], Infinity]`
+/// typesets exactly like the subscript it wraps. A `BaseForm` value is left
+/// to the dedicated base-form paths.
+pub fn number_form_numberless_value<'a>(
+  head: &str,
+  args: &'a [Expr],
+) -> Option<&'a Expr> {
+  fn has_number(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => true,
+      Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_) => false,
+      Expr::List(items) => items.iter().any(has_number),
+      Expr::FunctionCall { name, args } => {
+        name == "BaseForm" || args.iter().any(has_number)
+      }
+      // Anything else (an operator form, a rule, …) may hold a number.
+      _ => true,
+    }
+  }
+  if !matches!(head, "NumberForm" | "PaddedForm" | "AccountingForm") {
+    return None;
+  }
+  let value = args.first()?;
+  if matches!(value, Expr::String(_) | Expr::List(_)) || has_number(value) {
+    return None;
+  }
+  Some(value)
+}
+
+/// The `BaseForm[x, b]` that `NumberForm[BaseForm[x, b], Infinity, opts…]`
+/// shows unchanged: unlimited precision keeps every base-b digit, so the
+/// number typesets exactly like the bare `BaseForm` (digits with a
+/// subscripted base). A nested `NumberForm[…, Infinity]` of the same kind
+/// is seen through. `None` when a `NumberFormat` or an exponent-choosing
+/// `ExponentFunction` takes over the formatting.
+pub fn number_form_unlimited_base_form<'a>(
+  head: &str,
+  args: &'a [Expr],
+) -> Option<&'a Expr> {
+  if head != "NumberForm" {
+    return None;
+  }
+  let positional: Vec<&Expr> = args
+    .iter()
+    .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .collect();
+  let [value, Expr::Identifier(spec)] = positional.as_slice() else {
+    return None;
+  };
+  if spec != "Infinity" {
+    return None;
+  }
+  // An outer `NumberForm[…, Infinity]` around one that already keeps every
+  // digit (a formatting helper applied twice) changes nothing.
+  let value: &Expr = match value {
+    Expr::FunctionCall {
+      name,
+      args: inner_args,
+    } if name == "NumberForm" => {
+      number_form_unlimited_base_form(name, inner_args)?
+    }
+    _ => value,
+  };
+  if !matches!(value, Expr::FunctionCall { name, args }
+    if name == "BaseForm" && args.len() == 2)
+  {
+    return None;
+  }
+  let has_option = |opt: &str| {
+    args.iter().any(|a| {
+      matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == opt))
+    })
+  };
+  if has_option("NumberFormat")
+    || (has_option("ExponentFunction") && !exponent_function_suppresses(args))
+  {
+    return None;
+  }
+  Some(value)
+}
+
 /// Whether an `ExponentFunction` option maps every exponent to `Null` —
 /// Wolfram's way of asking for a number to be written out rather than put
 /// in scientific notation. Probed at two exponents, which tells a
@@ -18188,7 +18289,11 @@ pub(crate) fn number_form_family_to_string(
   }) = inner.first()
     && matches!(
       inner_head.as_str(),
-      "NumberForm" | "PaddedForm" | "AccountingForm"
+      "NumberForm"
+        | "PaddedForm"
+        | "AccountingForm"
+        | "ScientificForm"
+        | "EngineeringForm"
     )
   {
     let is_rule =
@@ -18205,6 +18310,22 @@ pub(crate) fn number_form_family_to_string(
       );
     }
     merged.extend(inner[1..].iter().filter(|a| is_rule(a)).cloned());
+    // An inner `ScientificForm`/`EngineeringForm` keeps its notation (and
+    // any `ExponentFunction`) while the outer wrapper supplies the digit
+    // count it left out: `NumberForm[ScientificForm[0.000123456], 3]` is
+    // "1.23 × 10^-4".
+    if matches!(inner_head.as_str(), "ScientificForm" | "EngineeringForm") {
+      let merged_call = Expr::FunctionCall {
+        name: inner_head.clone(),
+        args: merged.into(),
+      };
+      return match to_string_ast(&[merged_call]) {
+        Ok(Expr::String(ref s)) if !s.starts_with(inner_head.as_str()) => {
+          Some(s.clone())
+        }
+        _ => None,
+      };
+    }
     // The inner wrapper alone decides how the number is laid out, its sign
     // included: `AccountingForm[NumberForm[-1234.5, {12, 2}], 12]` is
     // "-1234.50", not "(1234.50)".
