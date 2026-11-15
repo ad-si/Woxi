@@ -1810,6 +1810,132 @@ mod tests {
       );
     }
 
+    /// `GridLinesStyle -> {xstyle, ystyle}` styles the vertical and the
+    /// horizontal grid lines apart — in a plot, in a `Show` of plots and in
+    /// a plain `Graphics` — instead of drawing both in the last color.
+    #[test]
+    fn grid_lines_style_per_axis() {
+      for code in [
+        r#"ExportString[ListLinePlot[{{28, 3}, {68, 1}},
+           GridLines -> {{40}, {2}},
+           GridLinesStyle -> {{Black, Dashed}, {Red, Dashed}}], "SVG"]"#,
+        r#"ExportString[Show[ListLinePlot[{{28, 3}, {68, 1}},
+           GridLines -> {{40}, {2}},
+           GridLinesStyle -> {{Black, Dashed}, {Red, Dashed}}],
+           ListPlot[{{40, 2.5}}]], "SVG"]"#,
+      ] {
+        let svg = woxi::interpret(code).expect("interpret should succeed");
+        let dashed: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.contains("stroke-dasharray="))
+          .collect();
+        assert!(
+          dashed.iter().any(|l| l.contains("stroke=\"rgb(0,0,0)\"")),
+          "vertical grid line should be black: {code}"
+        );
+        assert!(
+          dashed.iter().any(|l| l.contains("stroke=\"rgb(255,0,0)\"")),
+          "horizontal grid line should be red: {code}"
+        );
+      }
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics[Line[{{0, 0}, {1, 1}}],
+          GridLines -> {{0.5}, {0.5}},
+          GridLinesStyle -> {Directive[Blue], Directive[Red]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let vertical = svg
+        .lines()
+        .find(|l| l.starts_with("<line") && l.contains("y1=\"0\""))
+        .expect("vertical grid line");
+      let horizontal = svg
+        .lines()
+        .find(|l| l.starts_with("<line") && l.contains("x1=\"0\""))
+        .expect("horizontal grid line");
+      assert!(vertical.contains("rgb(0,0,255)"), "{vertical}");
+      assert!(horizontal.contains("rgb(255,0,0)"), "{horizontal}");
+    }
+
+    /// A `Framed` plot title fills its box with the `Background` it names.
+    #[test]
+    fn framed_plot_label_background() {
+      let svg = woxi::interpret(
+        r#"ExportString[ListLinePlot[{{1, 2}, {2, 3}, {3, 1}},
+          PlotLabel -> Framed["title", Background -> LightGreen]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        svg.contains("<rect") && svg.contains("fill=\"rgb(224,255,224)\""),
+        "framed title should sit on a light green panel"
+      );
+    }
+
+    /// A stacked plot title whose lines lead with small legend pictures
+    /// (`Framed[Column[{Row[{Graphics[…], "text"}], …}]]`) is drawn as a
+    /// picture — swatches, text, box and background — not printed as the
+    /// source of the `Graphics` in it.
+    #[test]
+    fn framed_column_plot_label_with_pictures() {
+      let svg = woxi::interpret(
+        r#"swatch[c_] := Graphics[{c, Thick, Line[{{0, 0}, {20, 0}}]},
+             ImageSize -> {50, 5}];
+           ExportString[ListLinePlot[{{1, 2}, {2, 3}, {3, 1}},
+             PlotLabel -> Framed[Column[{
+               Row[{swatch[Red], "first: ", 7.5}],
+               Row[{swatch[Blue], "second: ", 6.25}]}],
+               Background -> LightGreen]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(!svg.contains("Thickness"), "Graphics source leaked: {svg}");
+      assert!(!svg.contains("ImageSize"), "Graphics source leaked");
+      assert!(svg.contains("first: "), "first line missing");
+      assert!(svg.contains("second: "), "second line missing");
+      assert!(svg.contains("rgb(224,255,224)"), "background missing");
+      assert!(
+        svg.contains("rgb(255,0,0)") && svg.contains("rgb(0,0,255)"),
+        "swatches missing"
+      );
+    }
+
+    /// `Show[plot, ListPlot[{{x, y}}]]` with `PlotRange -> All` on the plot
+    /// spans the shown data: the lone marker point does not widen the range
+    /// to its own 0..2x default.
+    #[test]
+    fn show_plot_range_all_ignores_lone_point_default_range() {
+      let svg = woxi::interpret(
+        r#"ExportString[Show[ListLinePlot[{{28, 3}, {68, 1}},
+          PlotRange -> All], ListPlot[{{40, 2.5}}]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let labels: Vec<&str> = svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| t.split('>').nth(1))
+        .map(|t| t.split('<').next().unwrap_or(""))
+        .collect();
+      assert!(labels.contains(&"30"), "{labels:?}");
+      assert!(labels.contains(&"60"), "{labels:?}");
+      assert!(!labels.contains(&"80"), "{labels:?}");
+    }
+
+    /// `ListPlot3D` keeps its axes when `Show` re-renders it with another
+    /// option, as `Plot3D` does.
+    #[test]
+    fn show_list_plot3d_keeps_axes() {
+      assert_eq!(
+        woxi::interpret("Options[ListPlot3D[Table[i + j, {j, 3}, {i, 3}]]]")
+          .unwrap(),
+        "{Axes -> True, BoxRatios -> {1, 1, 0.4}}"
+      );
+      let svg = woxi::interpret(
+        r#"ExportString[Show[ListPlot3D[Table[i + j, {j, 5}, {i, 5}],
+          AxesLabel -> {"a", "b", "c"}], ImageSize -> {400, 300}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains("<text"), "axes lost under Show");
+      assert!(svg.contains(">a<") || svg.contains(">a</"), "x label lost");
+    }
+
     /// `Axes -> False` hides the axes of a `ListPlot`, which the scatter
     /// renderer used to draw regardless.
     #[test]

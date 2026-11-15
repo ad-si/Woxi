@@ -14920,6 +14920,25 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let mut structure_args = vec![complex];
   structure_args.extend(args[1..].iter().cloned());
+  // Like `Plot3D`, the surface's graphic carries its axes and box shape, so
+  // re-rendering it (`Show[ListPlot3D[…], ImageSize -> …]`) keeps them.
+  let names = |opt: &str| {
+    args[1..].iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+    })
+  };
+  if !names("Axes") {
+    structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if !names("BoxRatios") {
+    structure_args.push(rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+      ),
+    ));
+  }
   let structure = call("Graphics3D", structure_args);
 
   Ok(crate::plot3d_result_with_structure(svg, structure))

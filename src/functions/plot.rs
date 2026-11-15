@@ -3606,8 +3606,10 @@ pub(crate) struct PlotOptions {
   /// Explicit horizontal grid lines. Replace automatic `grid_lines_y` lines.
   pub grid_y_lines: Vec<GridLine>,
   /// `GridLinesStyle -> Directive[…]`: the default style for every grid line
-  /// that carries no style of its own. `None` = the built-in gray.
-  pub grid_lines_style: Option<SeriesStyle>,
+  /// that carries no style of its own, as `(x lines, y lines)` —
+  /// `GridLinesStyle -> {xstyle, ystyle}` styles the two sets apart.
+  /// `None` = the built-in gray.
+  pub grid_lines_style: (Option<SeriesStyle>, Option<SeriesStyle>),
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
   /// The unpadded (x, y) plot range of a list plot: its automatic grid
@@ -3989,7 +3991,7 @@ impl Default for PlotOptions {
       grid_full_y: false,
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
-      grid_lines_style: None,
+      grid_lines_style: (None, None),
       frame: false,
       frame_edges: FrameEdges::ALL,
       frame_hidden_edges: FrameEdges::NONE,
@@ -4885,9 +4887,13 @@ pub(crate) fn plot_labels_svg(
       let h =
         line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
       let top = ty - ascent(fs / sf) * sf - margin;
+      // `Background -> color` fills the box behind the title.
+      let fill = sl
+        .background
+        .map_or_else(|| "none".to_string(), super::graphics::Color::to_svg_rgb);
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
+           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{fill}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
         3.0 * sf,
@@ -6068,7 +6074,10 @@ fn generate_svg_with_options(
         // A line colored on its own keeps the default style's opacity,
         // as WL's `{2, Directive[Blue, Thick]}` draws at 0.4 alpha.
         let grid_alpha = |rgb: Option<(u8, u8, u8)>| {
-          if rgb.is_some() && opts.grid_lines_style.is_none() {
+          if rgb.is_some()
+            && opts.grid_lines_style.0.is_none()
+            && opts.grid_lines_style.1.is_none()
+          {
             0.4
           } else {
             1.0
@@ -6083,7 +6092,7 @@ fn generate_svg_with_options(
           (y_min, y_max),
           log_y,
           full_grid_step(axis_tick_step(y_max - y_min), opts.grid_full_y),
-          opts.grid_lines_style.as_ref(),
+          opts.grid_lines_style.1.as_ref(),
         );
         {
           let tol = (y_max - y_min).abs() * 1e-9;
@@ -6142,7 +6151,7 @@ fn generate_svg_with_options(
           } else {
             full_grid_step(axis_tick_step(x_max - x_min), opts.grid_full_x)
           },
-          opts.grid_lines_style.as_ref(),
+          opts.grid_lines_style.0.as_ref(),
         );
         {
           let tol = (x_max - x_min).abs() * 1e-9;
@@ -14884,6 +14893,30 @@ pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
 /// and any value that sets nothing, come back as `None` so the caller keeps
 /// its built-in look. Shared by `GridLinesStyle`, `ContourStyle` and the
 /// other single-style options.
+/// `GridLinesStyle -> style` styles the x and the y grid lines alike;
+/// `GridLinesStyle -> {xstyle, ystyle}` — two entries that are each a style
+/// of their own (a list or `Directive` of directives, or `None`/`Automatic`)
+/// — styles them apart, as `{{Black, Dashed}, {Red, Dashed}}` draws black
+/// vertical and red horizontal lines.
+pub(crate) fn parse_grid_lines_style(
+  value: &Expr,
+) -> (Option<SeriesStyle>, Option<SeriesStyle>) {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if let Expr::List(items) = &val
+    && items.len() == 2
+    && items
+      .iter()
+      .all(crate::functions::graphics::is_axis_style_entry)
+  {
+    return (
+      parse_style_directives(&items[0]),
+      parse_style_directives(&items[1]),
+    );
+  }
+  let style = parse_style_directives(&val);
+  (style.clone(), style)
+}
+
 pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   if matches!(&val, Expr::Identifier(s) if s == "Automatic" || s == "None") {
@@ -16264,7 +16297,7 @@ pub(crate) fn apply_common_plot_option(
       );
     }
     "GridLinesStyle" => {
-      plot_opts.grid_lines_style = parse_style_directives(replacement);
+      plot_opts.grid_lines_style = parse_grid_lines_style(replacement);
     }
     "PlotRange" => {
       let (rx, ry) = parse_series_plot_range(replacement);
