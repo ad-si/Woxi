@@ -1021,6 +1021,25 @@ mod tests {
       );
     }
 
+    /// `StyleBox[x, FontSlant -> "Plain"]` sets a one-letter atom upright,
+    /// the way a notebook writes `V₁` in a typeset fraction; without it the
+    /// letter is a math variable in italics.
+    #[test]
+    fn stylebox_plain_slant_keeps_single_letter_upright() {
+      let letter = Expr::String("V".to_string());
+      let plain = call(
+        "StyleBox",
+        vec![
+          letter.clone(),
+          rule_expr(id_expr("FontSlant"), Expr::String("Plain".to_string())),
+        ],
+      );
+      let svg = layout_to_svg(&layout_box(&plain, 14.0), "currentColor");
+      assert!(!svg.contains("italic"), "upright: {svg}");
+      let svg = layout_to_svg(&layout_box(&letter, 14.0), "currentColor");
+      assert!(svg.contains("font-style=\"italic\""), "italic: {svg}");
+    }
+
     /// Regression: the subscript of an accented base (`OverDot[θ]`, as in
     /// a `θ̇₁` plot label) was placed at 0.4 of the base's full height, so
     /// the accent stacked on top lifted it above the base's baseline. It
@@ -2470,6 +2489,63 @@ mod tests {
         svg.contains("stroke=\"rgb(255,0,0)\""),
         "red frame lines: {svg}"
       );
+    }
+
+    #[test]
+    fn named_style_sets_the_size_of_a_styled_grid() {
+      // `Style[Grid[…], "Label"]` sets the grid in the stylesheet's small
+      // label size, as `Style["ab", "Label"]` does a lone string; the named
+      // style used to be ignored, leaving the cells at the default 14.
+      let svg = svg_of("Style[Grid[{{\"ab\", 3}}], \"Label\"]");
+      assert!(svg.contains("font-size=\"9\""), "{svg}");
+      assert!(!svg.contains("font-size=\"14\""), "{svg}");
+      // Explicit directives sit on top of the named style, on either side.
+      for code in [
+        "Style[Grid[{{\"ab\", 3}}], \"Label\", 20]",
+        "Style[Grid[{{\"ab\", 3}}], 20, \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"20\""), "{code}: {svg}");
+      }
+      // A named style's color reaches the cells too.
+      let svg = svg_of("Style[Grid[{{\"ab\"}}], \"Section\"]");
+      assert!(svg.contains("font-size=\"28\""), "{svg}");
+      assert!(svg.contains("rgb(202,81,25)"), "{svg}");
+    }
+
+    #[test]
+    fn fraction_cell_takes_the_styled_grid_size() {
+      // A quotient cell typeset as a built-up fraction is set at the styled
+      // grid's size, like the text cells beside it, not at the default 14.
+      for code in [
+        "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
+        "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
+      }
+    }
+
+    #[test]
+    fn string_letters_in_a_fraction_stay_upright() {
+      // A string is literal text: its single letters are not math
+      // variables, so they stay upright in a typeset fraction, while a
+      // one-letter symbol is still set in italics.
+      let svg = svg_of("Grid[{{\"a\"/\"b\"}}]");
+      assert!(svg.contains(">a</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "string letters upright: {svg}");
+      let svg = svg_of("Grid[{{a/b}}]");
+      assert!(
+        svg.contains("font-style=\"italic\""),
+        "symbols italic: {svg}"
+      );
+      // Inline subscript boxes inside a string are literal text too.
+      let svg = svg_of(
+        "Grid[{{\"\\!\\(\\*SubscriptBox[\\(V\\), \\(1\\)]\\)\"/\"xy\"}}]",
+      );
+      assert!(svg.contains(">V</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "inline-box letters upright: {svg}");
     }
 
     #[test]
