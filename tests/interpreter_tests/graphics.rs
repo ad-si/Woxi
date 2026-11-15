@@ -7765,8 +7765,8 @@ mod plot3d {
         })
         .collect();
       assert!(!xs.is_empty(), "{prims} must draw");
-      let max = xs.iter().cloned().fold(f64::MIN, f64::max);
-      let min = xs.iter().cloned().fold(f64::MAX, f64::min);
+      let max = xs.iter().copied().fold(f64::MIN, f64::max);
+      let min = xs.iter().copied().fold(f64::MAX, f64::min);
       max - min
     }
 
