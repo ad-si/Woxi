@@ -8807,6 +8807,105 @@ mod graph_utilities_package {
       "4"
     );
   }
+
+  // The plot is a GraphicsComplex: one Line of the edges as index pairs
+  // (vertices numbered depth-first from the root) and a framed label per
+  // vertex — the head of an inner vertex, the held atom at a leaf.
+  #[test]
+  fn expression_tree_plot_labels_vertices_by_index() {
+    let etp =
+      "GraphUtilities`ExpressionTreePlot[Or[\"x\", And[\"y\", Not[\"z\"]]]]";
+    assert_eq!(
+      interpret(&format!(
+        "Cases[{etp}, Text[Framed[Style[HoldForm[a_], ___], ___], i_] :> i -> a, Infinity]"
+      ))
+      .unwrap(),
+      "{2 -> x, 4 -> y, 6 -> z}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "Cases[{etp}, Text[Framed[Style[a_?AtomQ, ___], ___], i_] :> i -> a, Infinity]"
+      ))
+      .unwrap(),
+      "{1 -> Or, 3 -> And, 5 -> Not}"
+    );
+    assert_eq!(
+      interpret(&format!("Cases[{etp}, Line[e_] :> e, Infinity]")).unwrap(),
+      "{{{1, 2}, {1, 3}, {3, 4}, {3, 5}, {5, 6}}}"
+    );
+    assert_eq!(
+      interpret(&format!("Head[First[{etp}]]")).unwrap(),
+      "GraphicsComplex"
+    );
+  }
+
+  // Without labels each vertex is a point carrying its label as a tooltip.
+  #[test]
+  fn expression_tree_plot_without_labels_draws_points() {
+    assert_eq!(
+      interpret(
+        "Cases[GraphUtilities`ExpressionTreePlot[f[a, b], VertexLabeling -> None], \
+         Tooltip[Point[i_], l_] :> {i, l}, Infinity]"
+      )
+      .unwrap(),
+      "{{1, f}, {2, HoldForm[a]}, {3, HoldForm[b]}}"
+    );
+  }
+
+  // `VertexRenderingFunction` gets a vertex's position, label and index;
+  // `EdgeRenderingFunction` an edge's end points, end labels, (no) label and
+  // end indices. Graphics options reach the Graphics, the plot's own ones
+  // do not.
+  #[test]
+  fn expression_tree_plot_rendering_functions_and_options() {
+    let g = "GraphUtilities`ExpressionTreePlot[f[a, b], \
+      VertexRenderingFunction -> (vf[##] &), \
+      EdgeRenderingFunction -> (ef[##] &), ImageSize -> 100, \
+      PlotLabel -> \"t\"]";
+    assert_eq!(
+      interpret(&format!("Cases[{g}, _vf, Infinity]")).unwrap(),
+      "{vf[{0.5, 1.}, f, 1], vf[{0., 0.}, HoldForm[a], 2], \
+       vf[{1., 0.}, HoldForm[b], 3]}"
+    );
+    assert_eq!(
+      interpret(&format!("Cases[{g}, _ef, Infinity]")).unwrap(),
+      "{ef[{{0.5, 1.}, {0., 0.}}, {f, HoldForm[a]}, None, {1, 2}], \
+       ef[{{0.5, 1.}, {1., 0.}}, {f, HoldForm[b]}, None, {1, 3}]}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "{{ImageSize, PlotLabel, VertexLabeling}} /. Options[{g}]"
+      ))
+      .unwrap(),
+      "{100, t, VertexLabeling}"
+    );
+    assert_eq!(
+      interpret("VertexLabeling /. Options[GraphUtilities`ExpressionTreePlot]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // `ExpressionTreePlot[e, Left, lev]` hangs the tree from the left side and
+  // stops at level `lev`, holding the deeper subexpression as a leaf.
+  #[test]
+  fn expression_tree_plot_position_and_level() {
+    assert_eq!(
+      interpret(
+        "First[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Left, 1]][[1]]"
+      )
+      .unwrap(),
+      "{{0., 0.5}, {1., 1.}, {1., 0.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[GraphUtilities`ExpressionTreePlot[f[a, g[b]], Top, 1], \
+         Text[Framed[Style[HoldForm[x_], ___], ___], _] :> Hold[x], Infinity]"
+      )
+      .unwrap(),
+      "{Hold[a], Hold[g[b]]}"
+    );
+  }
 }
 
 mod pareto_random_variate {
@@ -9359,10 +9458,10 @@ mod graph_background {
     )
     .unwrap();
     assert!(svg.contains(
-      "<circle cx=\"71.80\" cy=\"179.50\" r=\"2.15\" fill=\"rgb(255,0,0)\"/>"
+      "<circle cx=\"71.80\" cy=\"179.50\" r=\"1.44\" fill=\"rgb(255,0,0)\"/>"
     ));
     assert!(svg.contains(
-      "<circle cx=\"287.20\" cy=\"179.50\" r=\"2.15\" fill=\"rgb(0,0,255)\"/>"
+      "<circle cx=\"287.20\" cy=\"179.50\" r=\"1.44\" fill=\"rgb(0,0,255)\"/>"
     ));
     let red = svg.find("rgb(255,0,0)").unwrap();
     let blue = svg.find("rgb(0,0,255)").unwrap();

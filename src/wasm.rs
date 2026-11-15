@@ -420,7 +420,9 @@ fn try_build_manipulate_item(stmt: &str) -> Option<String> {
     &bindings,
   );
 
-  let initial = match crate::interpret_with_stdout(&block_code) {
+  let initial = match crate::with_manipulate_frame(|| {
+    crate::interpret_with_stdout(&block_code)
+  }) {
     Ok(r) => r,
     Err(_) => crate::InterpretResult {
       stdout: String::new(),
