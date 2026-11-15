@@ -62,6 +62,12 @@ fn parse_color(e: &Expr) -> Option<Color> {
   let Expr::FunctionCall { name, args } = e else {
     return None;
   };
+  // `Opacity[a, color]` is that color with alpha `a`.
+  if name == "Opacity" && args.len() == 2 && is_number(&args[0]) {
+    let mut color = parse_color(&args[1])?;
+    color.alpha = Some(args[0].clone());
+    return Some(color);
+  }
   let n = component_count(name)?;
   if !args.iter().all(is_number) {
     return None;
