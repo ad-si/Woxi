@@ -31129,7 +31129,16 @@ fn typeset_script_svg(expr: &Expr) -> Option<String> {
     "Underscript" => false,
     _ => return None,
   };
-  if args.len() != 2 || crate::evaluator::lays_out_a_graphic(inner) {
+  // A picture over or under a caption is stacked by `nested_layout_svg`.
+  if args.len() != 2
+    || crate::evaluator::lays_out_a_graphic(inner)
+    || args.iter().any(|a| {
+      matches!(
+        resolve_display_item(a),
+        Expr::Graphics { .. } | Expr::Image { .. }
+      )
+    })
+  {
     return None;
   }
   // `\[UnderBrace]` written bare is a symbol, quoted a string.
