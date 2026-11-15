@@ -18275,7 +18275,11 @@ pub(crate) fn number_form_family_to_string(
   }) = inner.first()
     && matches!(
       inner_head.as_str(),
-      "NumberForm" | "PaddedForm" | "AccountingForm"
+      "NumberForm"
+        | "PaddedForm"
+        | "AccountingForm"
+        | "ScientificForm"
+        | "EngineeringForm"
     )
   {
     let is_rule =
@@ -18292,6 +18296,22 @@ pub(crate) fn number_form_family_to_string(
       );
     }
     merged.extend(inner[1..].iter().filter(|a| is_rule(a)).cloned());
+    // An inner `ScientificForm`/`EngineeringForm` keeps its notation (and
+    // any `ExponentFunction`) while the outer wrapper supplies the digit
+    // count it left out: `NumberForm[ScientificForm[0.000123456], 3]` is
+    // "1.23 × 10^-4".
+    if matches!(inner_head.as_str(), "ScientificForm" | "EngineeringForm") {
+      let merged_call = Expr::FunctionCall {
+        name: inner_head.clone(),
+        args: merged.into(),
+      };
+      return match to_string_ast(&[merged_call]) {
+        Ok(Expr::String(ref s)) if !s.starts_with(inner_head.as_str()) => {
+          Some(s.clone())
+        }
+        _ => None,
+      };
+    }
     // The inner wrapper alone decides how the number is laid out, its sign
     // included: `AccountingForm[NumberForm[-1234.5, {12, 2}], 12]` is
     // "-1234.50", not "(1234.50)".
