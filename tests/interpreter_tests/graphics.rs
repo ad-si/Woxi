@@ -25522,6 +25522,51 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// A `Text` label typeset from stacked boxes (an inline `OverscriptBox`
+    /// vector, a built-up fraction) honors the offset argument like a plain
+    /// string label: `{-2, -1}` puts the anchor one half-width left of the
+    /// label's left edge, at its bottom, so the label sits up and to the
+    /// right of the point instead of being centered on it.
+    #[test]
+    fn text_offset_moves_box_typeset_labels() {
+      fn num(s: &str, key: &str) -> f64 {
+        let start = s.find(key).unwrap() + key.len();
+        let end = start + s[start..].find('"').unwrap();
+        s[start..end].parse().unwrap()
+      }
+      for label in [
+        r#""\!\(\*OverscriptBox[\(T\), \(\[RightArrow]\)]\)""#,
+        "a^2/b",
+      ] {
+        let embed = |offset: &str| {
+          let svg = export_svg(&format!(
+            "Graphics[{{Text[{label}, {{0, 0}}, {offset}]}}, \
+             PlotRange -> 1, ImageSize -> 200]"
+          ));
+          let at = svg.find("<svg x=").expect("embedded label picture");
+          svg[at..].to_string()
+        };
+        let centered = embed("{0, 0}");
+        let (w, h) = (num(&centered, "width=\""), num(&centered, "height=\""));
+        let (cx, cy) = (
+          num(&centered, "x=\"") + w / 2.0,
+          num(&centered, "y=\"") + h / 2.0,
+        );
+        let shifted = embed("{-2, -1}");
+        assert_eq!(num(&shifted, "width=\""), 3.0 * w, "{label}: {shifted}");
+        assert_eq!(num(&shifted, "height=\""), 2.0 * h, "{label}: {shifted}");
+        // The padded picture stays centered on the anchor, with the label
+        // drawn in its top-right part.
+        let (sx, sy) = (num(&shifted, "x=\""), num(&shifted, "y=\""));
+        assert!((sx + 1.5 * w - cx).abs() < 0.01, "{label}: {shifted}");
+        assert!((sy + h - cy).abs() < 0.01, "{label}: {shifted}");
+        assert!(
+          shifted.contains(&format!("translate({:.2},0.00)", 2.0 * w)),
+          "{label}: {shifted}"
+        );
+      }
+    }
+
     /// A shaded contour plot keeps its shading when `Show` merges it with
     /// other graphics — the bands travel with the plot's symbolic form, so
     /// the merged picture is not reduced to bare contour lines. A
