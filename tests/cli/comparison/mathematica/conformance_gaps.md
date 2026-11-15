@@ -4378,7 +4378,14 @@ unevaluated, because the package is not loaded. Woxi has no package system for
 `Needs` to load into, so the qualified names are always live. With the package
 loaded the results agree.
 
-`Needs` also does not put such a context on `$ContextPath`, so where
+`PolyhedronOperations`Truncate` of a closed solid appends one cap face per
+cut-off vertex after the corner-cut faces (as `{cutFaces, {caps…}}`); the
+geometry is that of a truncation, but the order and nesting of those faces
+have not been checked against wolframscript.
+
+`Needs["PolyhedronOperations`"]` does put that context on `$ContextPath` (so a
+bare `Truncate` read afterwards is the package's), but for `Combinatorica`` and
+`HypothesisTesting`` `Needs` does not, so where
 wolframscript prints `OneSidedPValue -> …` after
 `Needs["HypothesisTesting`"]`, Woxi prints the qualified
 `HypothesisTesting`OneSidedPValue -> …` — the same expression, spelled in
@@ -5617,6 +5624,18 @@ given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
 colors — wolframscript draws no highlight even though the plot's style names
 `Specularity[White, 3]`, so Woxi leaves it out there too.
 
+### Standalone 3D plots ignore the camera options
+
+`Plot3D` and most other 3D plot functions (`ParametricPlot3D`,
+`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
+the plot call itself change nothing:
+`Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
+picture as without the option. The options are kept on the result, so
+`Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
+re-renders the scene through `Graphics3D` and honors them, including the
+`SphericalRegion -> True` framing a `Manipulate` frame defaults to.
+
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
 Woxi frames the picture by the sphere around the (2 %-padded) bounding box
@@ -5639,27 +5658,6 @@ contents' own enclosing sphere (radius 3). The cube- and bar-shaped
 calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
-
-### A long explicit `PlotRange` box at a fixed `ImageSize` draws smaller in Wolfram
-
-Without `SphericalRegion`, Woxi fits the projected outline of the displayed
-box into an `ImageSize -> {w, h}` picture. A Demonstration drawing a long,
-thin `Graphics3D` scene through `Show[g, PlotRange -> {{-11, 11},
-{-4.25, 4.25}, {-4.25, 4.25}}, ImageSize -> {575, 350}]` (with `Boxed ->
-False` and the default view) behaves differently. In all four of its Wolfram
-snapshots, a cylinder from `{-10, 0, 0}` to `{10, 0, 0}` is about 246 px
-wide. In Woxi it is 357 px wide: the box's outline fills the 350 px height.
-
-Wolfram's size matches what Woxi draws with `SphericalRegion -> True`. That
-gives 250 px, with the same slope and centering, as if the sphere around the
-displayed box were fit into the shorter image side.
-
-This conflicts with the calibration in the entry above. There a
-`SphericalRegion -> False` cylinder at `ImageSize -> {550, 350}` without a
-`PlotRange` fills the width (532/550). So the explicit `PlotRange`, `Show`,
-or `Boxed -> False` may trigger the different framing. This could not be
-checked without wolframscript: no snapshot of a box-filling scene with
-an explicit `PlotRange` and a fixed image size was available to compare.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -9043,6 +9041,19 @@ the molecular weights carry PubChem's precision (butane 58.12, WL
 structural formula, `"LogAcidityConstant"` is the first pKa PubChem states
 (conjugate-acid values for amines), and the drawings are Woxi's own.
 
+### ProteinData curated data
+
+`ProteinData` covers the ~360 reviewed human proteins UniProtKB annotates
+with the GO term "actin binding" or one of its descendants
+(`resources/protein_data.tsv.gz`). Standard names are HGNC symbols and the
+sequences are UniProt's canonical ones (`"CFL1"` and `"CFL2"` align exactly
+as in a stored WL snapshot), but `"Name"` is HGNC's current approved name,
+which can differ from WL's (older) wording, the GO annotations are
+UniProt's current ones, and a class (`ProteinData["ActinBinding"]`) lists
+only the bundled proteins annotated directly with its term. Only the
+`"Name"`, `"StandardName"`, `"Sequence"`, `"SequenceLength"` and GO class
+properties are available.
+
 ### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
 `MatrixPower[m, n]` for a symbolic `n` is written as `s . J^n . s^-1` and
@@ -10140,3 +10151,12 @@ dropping outlying vertices such as the `Top` corners of `Filling -> {i -> Top}`
 polygons (a saved snapshot shows roughly 2.5–29.5 for curves spanning
 4–22), while Woxi keeps the first plot's 0–100. The exact outlier rule
 for an `Automatic` range of merged graphics is not yet known.
+
+### `ViewAngle` with `SphericalRegion -> True`
+
+`Graphics3D[…, SphericalRegion -> True, ViewAngle -> 0.1,
+ViewPoint -> {0, 10, 0}]` of an icosahedron ringed by small solids draws the
+scene about 4% larger than wolframscript, so the outermost solids touch the
+picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
+from the view volume alone (calibrated without `SphericalRegion`); how
+wolframscript combines the two has not been measured.

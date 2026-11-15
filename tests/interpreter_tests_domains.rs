@@ -35,6 +35,7 @@ mod interpreter_tests {
   mod polyhedron_data;
   mod polyhedron_operations;
   mod property;
+  mod protein_data;
   mod quantity;
   mod statistics;
   mod tabular;
