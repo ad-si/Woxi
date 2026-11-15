@@ -32023,7 +32023,7 @@ pub(crate) fn style_pushed_into_layout(
   // `Style[Framed[content, opts…], directives…]`: the frame keeps its box
   // and its options, and the directives style the content it frames.
   // Without this the styled frame was set as plain text and lost its box.
-  if name == "Framed" && !args.is_empty() {
+  if (name == "Framed" || name == "Panel") && !args.is_empty() {
     let mut new_args: Vec<Expr> = args.iter().cloned().collect();
     new_args[0] = call(
       "Style",
@@ -32031,7 +32031,7 @@ pub(crate) fn style_pushed_into_layout(
         .chain(directives.iter().cloned())
         .collect(),
     );
-    return Some(call("Framed", new_args));
+    return Some(call(name.as_str(), new_args));
   }
   if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
     || args.is_empty()
@@ -32056,6 +32056,15 @@ pub(crate) fn style_pushed_into_layout(
         && !crate::evaluator::styled_table_core(e))
     {
       return e.clone();
+    }
+    // A frame keeps its box and styles the content it frames, so the
+    // layout still sees (and draws) the `Framed`/`Panel` item.
+    if let Expr::FunctionCall { name, args } = e
+      && matches!(name.as_str(), "Framed" | "Panel")
+      && !args.is_empty()
+    {
+      return style_pushed_into_layout(e, directives)
+        .unwrap_or_else(|| e.clone());
     }
     // `Pane`/`Item` only size or place their content, so the style goes
     // onto the content; `Style[Pane[…], …]` as an item would otherwise be
