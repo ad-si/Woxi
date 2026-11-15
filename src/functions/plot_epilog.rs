@@ -1082,11 +1082,27 @@ fn render_item(
           // several computed values, say) stacks below its first line; the
           // whole block is centered on the anchor the way a single line
           // would be, so the first line moves up by half the extra height.
-          let line_height = font_size * 1.2;
           let extra_lines = styled
             .as_ref()
             .map_or(0, super::chart::StyledLabel::extra_line_count)
             as f64;
+          // Lines styled to their own sizes (`Labeled[Style[n, 100],
+          // Style[k, 40]]`) sit as far apart as those sizes need, and the
+          // block is centered from the first line's top to the last
+          // line's bottom.
+          let advances = styled
+            .as_ref()
+            .map_or_default(|s| s.line_advances(font_size, area.scale));
+          let line_sizes = styled
+            .as_ref()
+            .map_or_default(|s| s.line_font_sizes(font_size, area.scale));
+          let first_size = line_sizes.first().copied().unwrap_or(font_size);
+          let last_size = line_sizes.last().copied().unwrap_or(font_size);
+          let stack_h: f64 = advances.iter().sum();
+          // From the first line's center to the block's center.
+          let center_drop = stack_h / 2.0 + (last_size - first_size) / 4.0;
+          // The whole block's height.
+          let block_h = stack_h + f64::midpoint(first_size, last_size);
           // `Text[label, pt, offset, {dx, dy}]` turns the baseline to run
           // along `{dx, dy}`, read in screen space (y up) as in `Graphics`:
           // its angle does not depend on the plot's x/y scaling. The offset
@@ -1103,7 +1119,7 @@ fn render_item(
               super::chart::StyledLabel::max_line_chars,
             ) as f64;
             let half_w = chars * font_size * 0.55 / 2.0;
-            let half_h = f64::midpoint(font_size, extra_lines * line_height);
+            let half_h = block_h / 2.0;
             let (ux, uy) = (angle.cos(), angle.sin());
             let (vx, vy) = (-uy, ux);
             px += -off_x * half_w * ux + off_y * half_h * vx;
@@ -1113,8 +1129,8 @@ fn render_item(
               angle.to_degrees()
             );
           } else {
-            py -= extra_lines * line_height / 2.0;
-            py += off_y * (font_size + extra_lines * line_height) / 2.0;
+            py -= center_drop;
+            py += off_y * block_h / 2.0;
           }
           if direction.is_some() {
             // Centered on the point computed above.
@@ -1135,7 +1151,7 @@ fn render_item(
           // the first instead of being silently dropped.
           let label = styled.as_ref().map_or_else(
             || svg_escape_text(&expr_to_output(body)),
-            |s| s.svg_scaled_stacked(area.scale, px, line_height),
+            |s| s.svg_scaled_stacked_by(area.scale, px, &advances),
           );
           // `Text[label, pos, …, Background -> color]` (or an `Inset`'s
           // `Background`, carried over onto its text) lays a borderless
@@ -1159,8 +1175,8 @@ fn render_item(
             };
             out.push_str(&format!(
               "<rect x=\"{left:.1}\" y=\"{:.1}\" width=\"{text_w:.1}\" height=\"{:.1}\" fill=\"{}\" stroke=\"none\"/>\n",
-              py - font_size / 2.0,
-              extra_lines * line_height + font_size,
+              py - first_size / 2.0,
+              block_h,
               color.to_svg_rgb(),
             ));
           }
@@ -1173,11 +1189,11 @@ fn render_item(
               * 0.6;
             // `py` is the first line's own center (shifted up above), so
             // the box starts half a line above it and grows by one more
-            // `line_height` per extra line — not `py`'s center outward,
+            // line advance per extra line — not `py`'s center outward,
             // which would leave it too short and too high once the label
             // stacks below `py`.
-            let box_h = extra_lines * line_height + font_size;
-            let box_y = py - font_size / 2.0;
+            let box_h = block_h;
+            let box_y = py - first_size / 2.0;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
               .map_or_else(

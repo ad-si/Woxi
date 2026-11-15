@@ -13705,6 +13705,32 @@ fn render_primitive(
           style.font_style,
           color.opacity_attr(),
         ));
+        // Each line's own size: the largest `Style[…, n]` falling on it
+        // (`Column[{Style[a, 100], Style[b, 40]}]`), else the text's. Lines
+        // sit half their two sizes apart, so equal sizes keep the plain
+        // `fs` pitch while a large line leaves room above a small one.
+        let mut line_sizes = Vec::with_capacity(lines.len());
+        let mut offset = 0;
+        for line in &lines {
+          let end = offset + line.chars().count();
+          let size = line_styled_ranges(styled_ranges, offset, end)
+            .iter()
+            .filter_map(|r| r.size)
+            .reduce(f64::max)
+            .unwrap_or(fs);
+          line_sizes.push(size);
+          offset = end + 1;
+        }
+        let pitches: Vec<f64> = line_sizes
+          .windows(2)
+          .map(|w| f64::midpoint(w[0], w[1]))
+          .collect();
+        let first_size = line_sizes.first().copied().unwrap_or(fs);
+        let last_size = line_sizes.last().copied().unwrap_or(fs);
+        // The block (first line's top to last line's bottom) is centered
+        // on the anchor.
+        let first_dy =
+          -(pitches.iter().sum::<f64>() / 2.0 + (last_size - first_size) / 4.0);
         // Character offset of the current line within `text`, so each
         // line keeps the slanted parts (`Style[…, Italic]`) that fall on it.
         let mut line_start = 0;
@@ -13721,13 +13747,13 @@ fn render_primitive(
             // The block is centered on the anchor, so its first line sits
             // half of the remaining height above it.
             out.push_str(&format!(
-              "<tspan x=\"{sx:.2}\" dy=\"{}\">{}</tspan>",
-              -(lines.len() as f64 - 1.0) * fs / 2.0,
+              "<tspan x=\"{sx:.2}\" dy=\"{first_dy}\">{}</tspan>",
               tspan_line(&markup)
             ));
           } else {
             out.push_str(&format!(
-              "<tspan x=\"{sx:.2}\" dy=\"{fs}\">{}</tspan>",
+              "<tspan x=\"{sx:.2}\" dy=\"{}\">{}</tspan>",
+              pitches[i - 1],
               tspan_line(&markup)
             ));
           }
