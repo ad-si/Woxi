@@ -10882,6 +10882,22 @@ mod cases {
     );
   }
   #[test]
+  fn to_boxes_named_constants_use_glyphs() {
+    // StandardForm boxes write the named constants as their characters
+    // (`ToBoxes[Pi]` is `"\[Pi]"`); EulerGamma keeps its name.
+    assert_case(
+      r#"ToBoxes[{Pi, Infinity, Degree, EulerGamma}]"#,
+      r#"RowBox[{"{", RowBox[{"π", ",", "∞", ",", "°", ",", "EulerGamma"}], "}"}]"#,
+    );
+  }
+  #[test]
+  fn to_boxes_fraction_with_pi() {
+    assert_case(
+      r#"ToBoxes[7 Pi/10]"#,
+      r#"FractionBox[RowBox[{"7", " ", "π"}], "10"]"#,
+    );
+  }
+  #[test]
   fn to_boxes_fraction_symbol_numerator() {
     assert_case(r#"ToBoxes[x/10]"#, r#"FractionBox["x", "10"]"#);
   }

@@ -758,6 +758,42 @@ mod accounting_form {
   }
 
   #[test]
+  fn wrapping_scientific_form_keeps_its_notation() {
+    // The outer `NumberForm` supplies the digit count the inner
+    // `ScientificForm`/`EngineeringForm` left out; the inner wrapper keeps
+    // its notation and any `ExponentFunction`.
+    assert_eq!(
+      interpret("ToString[NumberForm[ScientificForm[0.000123456], 3]]")
+        .unwrap(),
+      "         -4\n1.23 × 10"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[EngineeringForm[123456.], 4]]").unwrap(),
+      "          3\n123.5 × 10"
+    );
+    assert_eq!(
+      interpret("ToString[NumberForm[ScientificForm[0.0001236, 4], 2]]")
+        .unwrap(),
+      "          -4\n1.236 × 10"
+    );
+    let suppress = "ExponentFunction -> (If[-3 < # < 3, Null, #] &)";
+    assert_eq!(
+      interpret(&format!(
+        "ToString[NumberForm[ScientificForm[12.3456, {suppress}], 3]]"
+      ))
+      .unwrap(),
+      "12.3"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "ToString[NumberForm[ScientificForm[-0.000654321, {suppress}], 3]]"
+      ))
+      .unwrap(),
+      "          -4\n-6.54 × 10"
+    );
+  }
+
+  #[test]
   fn head() {
     assert_eq!(
       interpret("Head[AccountingForm[123.45]]").unwrap(),

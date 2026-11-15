@@ -382,8 +382,9 @@ mod column_visual_mode {
     .unwrap();
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
-    assert!(svg.contains(">a</tspan>"), "{svg}");
-    assert!(svg.contains(">b</tspan>"), "{svg}");
+    assert!(svg.contains(">a</text>"), "{svg}");
+    assert!(svg.contains(">b</text>"), "{svg}");
+    assert!(svg.contains("font-size=\"20\""), "{svg}");
   }
 
   /// `Pane[content, ImageSize -> {w, h}]` is the same fixed-size box as
@@ -625,7 +626,7 @@ mod column_visual_mode {
     .unwrap();
     assert_eq!(result.result, "-Graphics-");
     let svg = result.graphics.unwrap();
-    assert!(svg.contains(">2</tspan>"), "expected value 2, got: {svg}");
+    assert!(svg.contains(">2</text>"), "expected value 2, got: {svg}");
     assert!(svg.contains("1.43</"), "expected 1.43, got: {svg}");
     assert!(!svg.contains("Dynamic"), "Dynamic leaked: {svg}");
   }
