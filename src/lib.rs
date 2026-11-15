@@ -2301,23 +2301,28 @@ pub fn memo_key<S: std::hash::BuildHasher>(
   if cache.contains_key(&key) || !real_at.iter().any(|&r| r) {
     return key;
   }
+  // Check the positions holding reals first, shortest spelling first, on
+  // the stored expressions themselves: most entries differ there, and
+  // rejecting them that way touches a few numbers instead of splitting
+  // and comparing every stored key (thousands of saved memoized values
+  // made each new definition quadratic). The other positions are compared
+  // by spelling only for the entries that survive.
+  let mut real_positions: Vec<usize> =
+    (0..args.len()).filter(|&i| real_at[i]).collect();
+  real_positions.sort_by_key(|&i| parts[i].len());
   cache
     .iter()
     .find(|(k, (stored, _))| {
       stored.len() == args.len()
+        && real_positions.iter().all(|&i| {
+          functions::boolean_ast::same_with_tolerant_reals(&stored[i], &args[i])
+        })
         && k.split('\u{1}').count() == parts.len()
         && k
           .split('\u{1}')
           .zip(&parts)
           .zip(&real_at)
-          .zip(stored.iter().zip(args))
-          .all(|(((kp, p), &real), (s, a))| {
-            if real {
-              kp == p || functions::boolean_ast::same_with_tolerant_reals(s, a)
-            } else {
-              kp == p
-            }
-          })
+          .all(|((kp, p), &real)| real || kp == p)
     })
     .map(|(k, _)| k.clone())
     .unwrap_or(key)
@@ -2434,7 +2439,42 @@ pub fn with_scoped_globals<R>(
     });
   }
   let _guard = ScopedGlobals { saved };
+  with_manipulate_frame(f)
+}
+
+thread_local! {
+  /// How many [`with_manipulate_frame`] scopes are active on this thread.
+  static MANIPULATE_FRAME_DEPTH: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
+/// Decrements [`MANIPULATE_FRAME_DEPTH`] when dropped, so an early return
+/// or a panic inside `f` cannot leave the frame marked as active.
+struct ManipulateFrameGuard;
+
+impl Drop for ManipulateFrameGuard {
+  fn drop(&mut self) {
+    MANIPULATE_FRAME_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+  }
+}
+
+/// Run `f` as the rendering of one `Manipulate` frame.
+///
+/// The Wolfram FrontEnd frames the 3D graphics a `Manipulate` displays by
+/// the sphere around their box (as if `SphericalRegion -> True` were
+/// given), so the picture keeps its scale while controls change the view
+/// point or the contents. [`with_scoped_globals`], which installs the
+/// control values for a frame, runs its closure through this.
+pub fn with_manipulate_frame<R>(f: impl FnOnce() -> R) -> R {
+  MANIPULATE_FRAME_DEPTH.with(|d| d.set(d.get() + 1));
+  let _guard = ManipulateFrameGuard;
   f()
+}
+
+/// Whether the current evaluation renders a `Manipulate` frame (see
+/// [`with_manipulate_frame`]).
+pub fn in_manipulate_frame() -> bool {
+  MANIPULATE_FRAME_DEPTH.with(|d| d.get() > 0)
 }
 
 thread_local! {
@@ -2444,7 +2484,7 @@ thread_local! {
   /// a 200 KB image literal each time cost seconds per frame. Only the parse
   /// is cached; the statements are still evaluated on every install.
   static BINDING_PARSE_CACHE: std::cell::RefCell<
-    std::collections::HashMap<String, std::rc::Rc<Vec<syntax::Expr>>>,
+    std::collections::HashMap<String, std::rc::Rc<Vec<(usize, syntax::Expr)>>>,
   > = std::cell::RefCell::new(std::collections::HashMap::new());
 }
 
@@ -2459,7 +2499,8 @@ fn scoped_binding_value(source: &str) -> Option<syntax::Expr> {
   let statements = if let Some(statements) = cached {
     statements
   } else {
-    let statements = std::rc::Rc::new(parse_statements(source).ok()?);
+    let statements =
+      std::rc::Rc::new(parse_statements_with_lines(source).ok()?);
     BINDING_PARSE_CACHE.with(|c| {
       let mut cache = c.borrow_mut();
       if cache.len() >= 64 {
@@ -3574,6 +3615,141 @@ fn is_display_wrapper(expr: &syntax::Expr) -> bool {
   }
 }
 
+/// `Style[Labeled[…], dirs…]` and `TraditionalForm[Labeled[…]]` (in any
+/// nesting) style the whole captioned picture: the directives and the form
+/// reach the text inside the content and every label. Rewrites such a
+/// wrapper into the `Labeled` with the wrapper moved onto that text, which
+/// the `Labeled` composition can draw; `None` for anything else.
+fn distribute_wrapper_into_labeled(
+  expr: &syntax::Expr,
+) -> Option<syntax::Expr> {
+  let syntax::Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let inner = args.first()?;
+  let labeled = match inner {
+    syntax::Expr::FunctionCall { name: n, args: a }
+      if n == "Labeled" && a.len() >= 2 =>
+    {
+      inner.clone()
+    }
+    _ => distribute_wrapper_into_labeled(inner)?,
+  };
+  let syntax::Expr::FunctionCall {
+    args: labeled_args, ..
+  } = &labeled
+  else {
+    return None;
+  };
+  let wrap: Box<dyn Fn(&syntax::Expr) -> syntax::Expr> = match name.as_str() {
+    "TraditionalForm" if args.len() == 1 => {
+      Box::new(|e: &syntax::Expr| push_form_to_text(e, "TraditionalForm"))
+    }
+    "Style" if args.len() >= 2 => {
+      let directives = args[1..].to_vec();
+      Box::new(move |e: &syntax::Expr| push_style_to_text(e, &directives))
+    }
+    _ => return None,
+  };
+  let mut new_args = labeled_args.to_vec();
+  new_args[0] = wrap(&labeled_args[0]);
+  new_args[1] = match &labeled_args[1] {
+    syntax::Expr::List(labels) => {
+      syntax::Expr::List(labels.iter().map(&wrap).collect())
+    }
+    label => wrap(label),
+  };
+  Some(syntax::Expr::FunctionCall {
+    name: "Labeled".to_string(),
+    args: new_args.into(),
+  })
+}
+
+/// `expr` with `Style[…, directives…]` moved inside the `Pane`, `Framed`,
+/// `Panel`, `Text` and `Item` boxes around its text, so the boxes keep
+/// their own size and frame while the text takes the style.
+fn push_style_to_text(
+  expr: &syntax::Expr,
+  directives: &[syntax::Expr],
+) -> syntax::Expr {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Pane" | "Framed" | "Panel" | "Text" | "Item"
+      ) && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = push_style_to_text(&args[0], directives);
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => {
+      let mut style_args = vec![expr.clone()];
+      style_args.extend(directives.iter().cloned());
+      syntax::Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: style_args.into(),
+      }
+    }
+  }
+}
+
+/// `expr` with the display form `form` (`TraditionalForm`) applied to each
+/// piece of math inside its layout boxes (`Pane`, `Framed`, `Text`, `Row`,
+/// `Column`, `Style`, …). Strings show the same in every form and pieces
+/// already in a form keep it.
+fn push_form_to_text(expr: &syntax::Expr, form: &str) -> syntax::Expr {
+  match expr {
+    syntax::Expr::String(_) => expr.clone(),
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "TraditionalForm" | "StandardForm" | "InputForm" | "OutputForm"
+      ) =>
+    {
+      expr.clone()
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Pane" | "Framed" | "Panel" | "Text" | "Item" | "Style" | "Labeled"
+      ) && !args.is_empty() =>
+    {
+      let mut new_args = args.to_vec();
+      new_args[0] = push_form_to_text(&args[0], form);
+      if name == "Labeled" && new_args.len() >= 2 {
+        new_args[1] = push_form_to_text(&args[1], form);
+      }
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    syntax::Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Row" | "Column")
+        && matches!(args.first(), Some(syntax::Expr::List(_))) =>
+    {
+      let mut new_args = args.to_vec();
+      if let syntax::Expr::List(items) = &args[0] {
+        new_args[0] = syntax::Expr::List(
+          items.iter().map(|i| push_form_to_text(i, form)).collect(),
+        );
+      }
+      syntax::Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => syntax::Expr::FunctionCall {
+      name: form.to_string(),
+      args: vec![expr.clone()].into(),
+    },
+  }
+}
+
 /// Whether `expr` is an image, possibly under `Pane`/`Panel` wrappers.
 fn wraps_a_raster_image(expr: &syntax::Expr) -> bool {
   match expr {
@@ -3744,6 +3920,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
     // through the one-cell `Grid` pipeline so its font matches the table
     // it labels; `RotateLabel` is not honored — a `Left`/`Right` caption
     // renders upright rather than rotated.
+    // `Style[TraditionalForm[Labeled[…]], 20]`: the style and the form
+    // apply to the text of the captioned picture.
+    syntax::Expr::FunctionCall { name, .. }
+      if matches!(name.as_str(), "Style" | "TraditionalForm")
+        && let Some(labeled) = distribute_wrapper_into_labeled(&expr) =>
+    {
+      match render_grid_if_needed(labeled) {
+        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        _ => expr,
+      }
+    }
     syntax::Expr::FunctionCall { name, args }
       if name == "Labeled" && args.len() >= 2 =>
     {
@@ -4924,6 +5111,13 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
       )
     })
     .unwrap_or(expr);
+  // A list in a grid or column wider than the box breaks into lines that
+  // fit it.
+  let expr = pane_box
+    .and_then(|(w, _, _, _)| {
+      functions::graphics::wrap_wide_grid_text(&expr, w, &measured_width)
+    })
+    .unwrap_or(expr);
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box
@@ -5161,6 +5355,13 @@ fn render_column_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn column_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
+  // A `BaseStyle` reaches every item, nested layouts too, so it is pushed
+  // onto the items before they are pre-rendered.
+  if let Some(styled) =
+    functions::graphics::base_style_pushed_args("Column", args)
+  {
+    return column_svg_with_rendered_items(&styled);
+  }
   // Text too wide for a fixed-width column is broken into lines before
   // the items are pre-rendered (which would freeze it as one long line).
   let mut new_args: Vec<syntax::Expr> =
@@ -5208,11 +5409,21 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   };
   if !matches!(
     inner_name,
-    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic" | "Labeled"
+    "Column" | "Row" | "Grid" | "TextGrid" | "Dynamic" | "Labeled" | "Framed"
   ) {
     return expr;
   }
   let rendered = match inner_name {
+    // `Style[Framed[…], directives…]` draws the frame around the styled
+    // content.
+    "Framed" => {
+      let Some(styled) =
+        functions::graphics::style_pushed_into_layout(&inner, &args[1..])
+      else {
+        return expr;
+      };
+      render_framed_if_needed(styled)
+    }
     // `Style[Labeled[content, caption, pos…], directives…]` — the directives
     // set the font of the content and of its caption alike.
     "Labeled" => {
@@ -5310,6 +5521,10 @@ fn render_row_if_needed(expr: syntax::Expr) -> syntax::Expr {
 pub(crate) fn row_svg_with_rendered_items(
   args: &[syntax::Expr],
 ) -> Option<String> {
+  if let Some(styled) = functions::graphics::base_style_pushed_args("Row", args)
+  {
+    return row_svg_with_rendered_items(&styled);
+  }
   let mut new_args: Vec<syntax::Expr> = args.to_vec();
   if let syntax::Expr::List(items) = &args[0] {
     // A product with a line-breaking string factor flows into the row
@@ -7561,6 +7776,20 @@ pub(crate) fn normalize_source(input: &str) -> String {
 fn parse_statements(
   input: &str,
 ) -> Result<Vec<syntax::Expr>, InterpreterError> {
+  Ok(
+    parse_statements_with_lines(input)?
+      .into_iter()
+      .map(|(_, expr)| expr)
+      .collect(),
+  )
+}
+
+/// Parse source text into its statements, each with the source line it
+/// starts on (the input unit its names are resolved in, see
+/// [`evaluate_statements`]).
+fn parse_statements_with_lines(
+  input: &str,
+) -> Result<Vec<(usize, syntax::Expr)>, InterpreterError> {
   let normalized = normalize_source(input);
   // A large literal — the data matrix a Manipulate control holds, or a
   // table a notebook defines — parses directly; pest's per-character rule
@@ -7568,7 +7797,7 @@ fn parse_statements(
   if normalized.len() > 512
     && let Some(expr) = syntax::parse_literal_data(&normalized)
   {
-    return Ok(vec![expr]);
+    return Ok(vec![(1, expr)]);
   }
   let (normalized, hoisted_keys) =
     match syntax::hoist_large_literals(&normalized) {
@@ -7590,7 +7819,12 @@ fn parse_statements(
       program
         .into_inner()
         .filter(|node| is_statement_rule(node.as_rule()))
-        .map(syntax::pair_to_expr)
+        .map(|node| {
+          (
+            node.as_span().start_pos().line_col().0,
+            syntax::pair_to_expr(node),
+          )
+        })
         .collect(),
     )
   })();
@@ -7617,17 +7851,40 @@ pub fn interpret_to_expr(
   // Returning at the first `Expression` made `"a = 1; {a}"` come back as `1`,
   // and skipping the other `Statement` alternatives dropped a definition
   // whose left side carries a pattern (`f[x_] := …`) on the floor.
-  evaluate_statements(&parse_statements(input)?)
+  evaluate_statements(&parse_statements_with_lines(input)?)
 }
 
 /// Evaluate parsed statements in order and return the last value.
+///
+/// Names are resolved as `interpret` resolves them: a whole source line at
+/// once, against the contexts open when that line starts. So a symbol a
+/// package loaded on an earlier line exports (`ConvexHull` after
+/// `Needs["ComputationalGeometry`"]`) is that package's symbol, not a fresh
+/// `Global`` one.
 fn evaluate_statements(
-  statements: &[syntax::Expr],
+  statements: &[(usize, syntax::Expr)],
 ) -> Result<syntax::Expr, InterpreterError> {
   with_entry_stack(|| {
     let mut last: Option<syntax::Expr> = None;
-    for expr in statements {
-      last = Some(settle_termination(evaluator::evaluate_expr_to_expr(expr))?);
+    let mut resolved: Vec<syntax::Expr> = Vec::new();
+    let mut idx = 0;
+    while idx < statements.len() {
+      let line = statements[idx].0;
+      let line_end = statements[idx..]
+        .iter()
+        .position(|(l, _)| *l != line)
+        .map_or(statements.len(), |n| idx + n);
+      resolved.clear();
+      resolved.extend(
+        statements[idx..line_end]
+          .iter()
+          .map(|(_, expr)| evaluator::contexts::rewrite(expr)),
+      );
+      for expr in &resolved {
+        last =
+          Some(settle_termination(evaluator::evaluate_expr_to_expr(expr))?);
+      }
+      idx = line_end;
     }
     last.ok_or(InterpreterError::EmptyInput)
   })

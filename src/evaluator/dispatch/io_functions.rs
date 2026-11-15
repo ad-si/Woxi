@@ -6898,7 +6898,13 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
   if w <= 0.0 || h <= 0.0 {
     return inner_svg;
   }
-  let inner = crate::functions::graphics::strip_svg_wrapper(&inner_svg);
+  // Keep the picture's own root `<svg>` nested inside the rotation: a plot
+  // draws in a scaled coordinate system (its `viewBox` is larger than its
+  // `width`/`height`), and stripping that root would draw its content at
+  // the raw, unscaled coordinates — far outside the rotated canvas.
+  let inner = inner_svg
+    .find("<svg")
+    .map_or(inner_svg.as_str(), |root| &inner_svg[root..]);
   let deg = -angle.to_degrees();
   // The canvas grows to the rotated bounding box, so a quarter turn swaps
   // width and height instead of clipping the picture.
@@ -7511,6 +7517,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
         _ => None,
       };
+      // A list in a grid or column wider than the pane breaks into lines
+      // that fit it.
+      let wrapped =
+        wrapped.or_else(|| match (name.as_str(), pane_size.as_ref()) {
+          ("Pane", Some(size)) => {
+            crate::functions::graphics::wrap_wide_grid_text(
+              &args[0],
+              pane_size_component(&size[0])?,
+              &|c| crate::functions::graphics::parse_svg_wh(&expr_to_svg(c)).0,
+            )
+          }
+          _ => None,
+        });
       // A grid wider than the pane squeezes its automatically sized
       // pictures to fit.
       let wrapped =
@@ -7714,6 +7733,32 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // difference between the typeset row and the string `Text[Row[…]]`.)
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       expr_to_svg(&unquoted_display_string(&args[0]))
+    }
+    // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
+    // (an outer label size around an inner color) takes both: merge them
+    // into one `Style`, the inner directives after (so overriding) the
+    // outer ones.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: inner, args: inner_args }
+          if inner == "Style"
+            && inner_args.len() >= 2
+            && styled_table_core(&inner_args[0])) =>
+    {
+      let Expr::FunctionCall {
+        args: inner_args, ..
+      } = &args[0]
+      else {
+        unreachable!()
+      };
+      let mut merged = vec![inner_args[0].clone()];
+      merged.extend(args[1..].iter().cloned());
+      merged.extend(inner_args[1..].iter().cloned());
+      expr_to_svg(&Expr::FunctionCall {
+        name: "Style".to_string(),
+        args: merged.into(),
+      })
     }
     // `Style[content, directives…]` shows `content`; the directives only
     // change how it is set. The picture path has to look through the
@@ -8565,6 +8610,25 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       }
     }
     other => expr_text_svg(other),
+  }
+}
+
+/// Whether `expr` is a table layout a `Style` draws as a styled grid,
+/// possibly under further `Style` wrappers.
+pub(crate) fn styled_table_core(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Style" && args.len() >= 2 => {
+      styled_table_core(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "TableForm" || name == "MatrixForm") && !args.is_empty() =>
+    {
+      true
+    }
+    _ => {
+      is_traditional_matrix_form(expr)
+        || distribute_format_over_tableform(expr).is_some()
+    }
   }
 }
 

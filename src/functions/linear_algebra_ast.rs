@@ -12674,8 +12674,11 @@ pub fn nonlinear_model_fit_ast(
             .zip(&predicted)
             .map(|(y, y_hat)| y - y_hat)
             .collect();
-          let y_mean: f64 = y_vals.iter().sum::<f64>() / n as f64;
-          let ss_tot: f64 = y_vals.iter().map(|y| (y - y_mean).powi(2)).sum();
+          // Nonlinear models generally have no constant term, so Wolfram
+          // measures them against the *uncorrected* total sum of squares
+          // (Σ y², not Σ (y - ȳ)²), and the adjustment uses n rather than
+          // n - 1 degrees of freedom for that total.
+          let ss_tot: f64 = y_vals.iter().map(|y| y.powi(2)).sum();
           let ss_res: f64 = residuals.iter().map(|r| r.powi(2)).sum();
           let r_squared = if ss_tot.abs() < 1e-30 {
             1.0
@@ -12684,7 +12687,7 @@ pub fn nonlinear_model_fit_ast(
           };
           let n_params = rules.len();
           let adjusted_r_squared = if n > n_params && ss_tot.abs() > 1e-30 {
-            1.0 - (ss_res / (n - n_params) as f64) / (ss_tot / (n - 1) as f64)
+            1.0 - (ss_res / (n - n_params) as f64) / (ss_tot / n as f64)
           } else {
             r_squared
           };
