@@ -13191,6 +13191,84 @@ mod plot3d {
       }
     }
 
+    /// Regression: a `False` entry of `FrameLabel` (like `None`) leaves its
+    /// edge without a caption; it was drawn as the word "False".
+    #[test]
+    fn frame_label_false_entry_draws_no_caption() {
+      let svg = export_svg(
+        "ListPlot[{1, 2, 3}, Frame -> True, \
+         FrameLabel -> {{\"fl\", False}, {\"fb\", False}}]",
+      );
+      assert!(svg.contains(">fl</text>"), "{svg}");
+      assert!(svg.contains(">fb</text>"), "{svg}");
+      assert!(!svg.contains("False"), "{svg}");
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {False, \"fl\"}]",
+      );
+      assert!(svg.contains(">fl</text>"), "{svg}");
+      assert!(!svg.contains("False"), "{svg}");
+    }
+
+    /// `Style[…, DefaultOptions -> {Graphics -> opts}]` gives every graphic
+    /// inside the style the options it does not set itself; options that
+    /// are not `Graphics` options (`PlotStyle`) are ignored.
+    #[test]
+    fn style_default_options_size_the_graphics_inside() {
+      let size = |svg: &str| {
+        let head = svg.split_once('>').unwrap().0.to_string();
+        let attr = |name: &str| -> f64 {
+          let rest = head.split_once(&format!(" {name}=\"")).unwrap().1;
+          rest.split_once('"').unwrap().0.parse().unwrap()
+        };
+        (attr("width"), attr("height"))
+      };
+      // A lone styled plot takes the default size.
+      let svg = export_svg(
+        "Style[ListPlot[{1, 2, 3}], \
+         DefaultOptions -> {Graphics -> {ImageSize -> {295, 295}, \
+                                         PlotStyle -> Red}}]",
+      );
+      assert_eq!(size(&svg), (295.0, 295.0), "{svg}");
+      // Each plot of a grid takes it, unless it sets its own `ImageSize`.
+      let two = export_svg(
+        "Style[Grid[{{Plot[x, {x, 0, 1}], Plot[x, {x, 0, 1}]}}], \
+         DefaultOptions -> {Graphics -> {ImageSize -> {200, 200}}}]",
+      );
+      let (w, h) = size(&two);
+      assert!((400.0..420.0).contains(&w) && h == 200.0, "{w}x{h}");
+      let own = export_svg(
+        "Style[Grid[{{Plot[x, {x, 0, 1}], \
+                      Plot[x, {x, 0, 1}, ImageSize -> 100]}}], \
+         DefaultOptions -> {Graphics -> {ImageSize -> {200, 200}}}]",
+      );
+      let (w, h) = size(&own);
+      assert!((300.0..320.0).contains(&w) && h == 200.0, "{w}x{h}");
+      // The style keeps its other directives and stays symbolic when
+      // evaluated.
+      assert_eq!(
+        interpret(
+          "Head[Style[Graphics[Circle[]], Red, \
+           DefaultOptions -> {Graphics -> {ImageSize -> 50}}]]"
+        )
+        .unwrap(),
+        "Style"
+      );
+    }
+
+    /// In a notebook (visual mode) the defaults reach the graphics of a
+    /// styled `Grid` too, which the notebook lays out on its own.
+    #[test]
+    fn style_default_options_apply_in_visual_mode() {
+      let result = woxi::interpret_with_stdout(
+        "Style[Grid[{{ListPlot[{1, 2}], ListPlot[{2, 1}]}}], \
+         DefaultOptions -> {Graphics -> {ImageSize -> {150, 150}}}]",
+      )
+      .unwrap();
+      let svg = result.graphics.expect("graphics");
+      let head = svg.split_once('>').unwrap().0;
+      assert!(head.contains("height=\"150\""), "{head}");
+    }
+
     /// Regression: a top `FrameLabel` containing a line break was drawn as
     /// one `<text>` element, so SVG collapsed the break and the caption
     /// ran off the image. Each line now gets its own element.
