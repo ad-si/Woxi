@@ -20066,24 +20066,47 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let b_inf = b.is_infinite() && b > 0.0;
     let half_pi = std::f64::consts::FRAC_PI_2;
     let eps = 1e-10;
+    // Integrate a mapped integrand `g` over [lo, hi]. Adaptive
+    // Gauss-Kronrod on a few starting panels estimates its error from the
+    // whole panel, so an integrand that oscillates (a product of Hermite
+    // polynomials under a Gaussian) is not accepted early, as Simpson's
+    // three-point comparison can do when the samples happen to agree.
+    // Simpson is kept as the fallback for integrands GK cannot sample.
+    let mapped = |g: &dyn Fn(f64) -> Option<f64>, lo: f64, hi: f64| {
+      const START_PANELS: usize = 8;
+      let width = (hi - lo) / START_PANELS as f64;
+      (0..START_PANELS)
+        .map(|k| {
+          let a = lo + width * k as f64;
+          let b = if k + 1 == START_PANELS { hi } else { a + width };
+          gk11_panel(&g, a, b, 0)
+        })
+        .collect::<Option<Vec<_>>>()
+        .and_then(|panels| {
+          adaptive_gk11(
+            &g,
+            &|endpoint: f64, offset: f64| g(endpoint + offset),
+            panels,
+            &|t: f64| t == lo || t == hi,
+            gk_tolerance,
+            max_recursion,
+            max_points,
+          )
+        })
+        .or_else(|| adaptive_simpson(g, lo, hi, tolerance, max_recursion))
+    };
     if a_inf && b_inf {
       // (-∞, ∞): x = tan(t), dx = sec²(t) dt over (-π/2, π/2).
       let g = |t: f64| eval_at(t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(
-        &g,
-        -half_pi + eps,
-        half_pi - eps,
-        tolerance,
-        max_recursion,
-      )
+      mapped(&g, -half_pi + eps, half_pi - eps)
     } else if a_inf {
       // (-∞, b): x = b - tan(t), t in (0, π/2).
       let g = |t: f64| eval_at(b - t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+      mapped(&g, eps, half_pi - eps)
     } else if b_inf {
       // (a, ∞): x = a + tan(t), t in (0, π/2).
       let g = |t: f64| eval_at(a + t.tan()).map(|v| v / (t.cos() * t.cos()));
-      adaptive_simpson(&g, eps, half_pi - eps, tolerance, max_recursion)
+      mapped(&g, eps, half_pi - eps)
     } else {
       // Projecting across a complex branch cut creates interior kinks; the
       // double-exponential rule is more robust for these component functions.
