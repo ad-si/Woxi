@@ -16650,8 +16650,33 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let inner_h = content.height + pad * 2.0;
         let w = inner_w + margin * 2.0;
         let h = inner_h + margin * 2.0;
+        // `FrameStyle -> color` and `RoundingRadius -> r` options.
+        let mut stroke = "currentColor".to_string();
+        let mut radius = 0.0;
+        for opt in &args[1..] {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = opt
+            && let Expr::Identifier(key) = pattern.as_ref()
+          {
+            match key.as_str() {
+              "FrameStyle" => {
+                if let Some(color) = parse_color(replacement) {
+                  stroke = color.to_svg_rgb();
+                }
+              }
+              "RoundingRadius" => {
+                if let Some(r) = try_eval_to_f64(replacement) {
+                  radius = r.max(0.0);
+                }
+              }
+              _ => {}
+            }
+          }
+        }
         let elements = format!(
-          "<rect x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"{stroke_w}\"/>\
+          "<rect x=\"{margin:.1}\" y=\"{margin:.1}\" width=\"{inner_w:.1}\" height=\"{inner_h:.1}\" rx=\"{radius:.1}\" fill=\"none\" stroke=\"{stroke}\" stroke-width=\"{stroke_w}\"/>\
            {}",
           content.translate(margin + pad, margin + pad),
         );
@@ -21035,9 +21060,11 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
       ),
       // The trailing arguments of these are a tag, a form or display
       // options — they are not part of the drawn text.
-      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" => args
-        .first()
-        .map_or_default(|a| box_expr_to_plain_in(a, spaced)),
+      "TagBox" | "FormBox" | "StyleBox" | "InterpretationBox" | "FrameBox" => {
+        args
+          .first()
+          .map_or_default(|a| box_expr_to_plain_in(a, spaced))
+      }
       // A grid of boxes (a matrix in `TraditionalForm`) is drawn as lines:
       // one per row, its cells spaced apart.
       "GridBox" if !args.is_empty() => match &args[0] {

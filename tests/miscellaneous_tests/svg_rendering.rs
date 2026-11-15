@@ -4706,6 +4706,71 @@ mod tests {
         y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
     }
+
+    /// `Style[TraditionalForm[Labeled[…]], size]` is drawn as the captioned
+    /// picture: the size reaches the text of the content and of the label,
+    /// and the label's polynomial is typeset in TraditionalForm (falling
+    /// powers). Regression: the wrappers left the whole layout as text.
+    #[test]
+    fn styled_traditional_form_labeled_is_drawn() {
+      let result = woxi::interpret_with_stdout(
+        r#"Style[TraditionalForm[Labeled[Pane[Text[a == b/2], {300, 200}], Framed[Text[Row[{3 + y + y^2, " = 0"}]], Background -> LightYellow], {Top}]], 20]"#,
+      )
+      .expect("interpret should succeed");
+      let svg = result.graphics.expect("the labeled layout is a graphic");
+      assert!(!svg.contains("Labeled"), "{svg}");
+      assert!(!svg.contains("TraditionalForm"), "{svg}");
+      assert!(svg.contains("font-size=\"20"), "{svg}");
+      assert!(!svg.contains("font-size=\"14\""), "{svg}");
+      // Falling powers: y² comes before the constant term.
+      let y = svg.find(">y</text>").expect("the variable is drawn");
+      let three = svg.find(">3</text>").expect("the constant is drawn");
+      assert!(y < three, "{svg}");
+    }
+
+    /// Each wrapper alone also reaches the captioned picture.
+    #[test]
+    fn style_or_traditional_form_around_labeled_is_drawn() {
+      for code in [
+        r#"Style[Labeled[Pane[Text[a + b], {200, 100}], Framed[Text["cap"]], Top], 18]"#,
+        r#"TraditionalForm[Labeled[Pane[Text[a + b], {200, 100}], Framed[Text["cap"]], Top]]"#,
+      ] {
+        let result =
+          woxi::interpret_with_stdout(code).expect("interpret should succeed");
+        let svg = result.graphics.expect("the labeled layout is a graphic");
+        assert!(svg.contains(">cap</text>"), "{code}: {svg}");
+        assert!(!svg.contains("Labeled"), "{code}: {svg}");
+      }
+    }
+
+    /// An exact `Root` object is typeset as its value to three significant
+    /// digits with an ellipsis, in a light rounded frame, as a notebook
+    /// shows it — not as the `Root[f, k, 0]` source.
+    #[test]
+    fn root_object_is_typeset_as_its_approximation() {
+      let svg = woxi::interpret(
+        r#"ExportString[TraditionalForm[x == Root[1 + 2 #1 + 2 #1^3 &, 1]], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains("-0.424\u{2026}"), "{svg}");
+      assert!(!svg.contains("Root"), "{svg}");
+      assert!(svg.contains("rx=\"3.0\""), "{svg}");
+
+      let svg = woxi::interpret(
+        r#"ExportString[Root[2 + #1 + #1^2 + #1^3 &, 1], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains("-1.35\u{2026}"), "{svg}");
+
+      // A complex root shows both parts.
+      let svg =
+        woxi::interpret(r#"ExportString[Root[1 + #1 + #1^3 &, 2], "SVG"]"#)
+          .unwrap();
+      assert!(svg.contains("0.341\u{2026} - 1.16\u{2026}"), "{svg}");
+      // The imaginary unit is drawn as a bold `i`.
+      assert!(svg.contains("font-weight=\"800\""), "{svg}");
+      assert!(svg.contains(">i</tspan>"), "{svg}");
+    }
   }
 
   // ── Display-only wrappers in text markup ──
