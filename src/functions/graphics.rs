@@ -5766,6 +5766,13 @@ pub(crate) fn label_stacked_fraction_svg(
   svg
 }
 
+/// Whether a `Row` item is `Null` — an empty slot such as the one
+/// `Row[{"Step:", If[False, "  "], n}]` leaves. The front end draws it
+/// as a one-space gap rather than dropping it.
+fn is_null_row_item(item: &Expr) -> bool {
+  matches!(item, Expr::Identifier(n) if n == "Null")
+}
+
 pub(crate) fn graphics_text_content(expr: &Expr) -> String {
   if let Some(styled) = hoist_style_out_of_number_form(expr) {
     return graphics_text_content(&styled);
@@ -6021,11 +6028,14 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       let Some(Expr::List(items)) = args.first() else {
         unreachable!()
       };
-      // A `Spacer[n]` among the items is a gap, not something to print.
+      // A `Spacer[n]` among the items is a gap, not something to print,
+      // and a `Null` item (what `If[False, "x"]` leaves) is an empty slot
+      // the front end still draws one space wide.
       let parts: Vec<String> = items
         .iter()
         .map(|item| match spacer_gap_text(item) {
           Some(gap) => gap,
+          None if is_null_row_item(item) => " ".to_string(),
           None => graphics_text_content(item),
         })
         .collect();
@@ -13291,8 +13301,15 @@ fn render_primitive(
           Some(_) => ("end", sx + longest as f64 * fs * 0.5 / 2.0),
           None => ("middle", sx),
         };
+        // A run of blanks inside a line (`Row[{"Step:", "  ", n}]`) is
+        // drawn as Wolfram draws it, not collapsed to one space.
+        let preserve_attr = if lines.iter().any(|l| l.contains("  ")) {
+          " xml:space=\"preserve\""
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{line_anchor}\" dominant-baseline=\"central\"{}{rotate_attr}>",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{line_anchor}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -13327,12 +13344,14 @@ fn render_primitive(
         }
         out.push_str("</text>\n");
       } else {
-        // Blanks a layout left in the text (a flattened `Spacer`) are kept.
-        let preserve_attr = if text.trim() == text.as_str() {
-          ""
-        } else {
-          " xml:space=\"preserve\""
-        };
+        // Blanks a layout left in the text (a flattened `Spacer`) are kept,
+        // and so is a run of blanks inside it (`Row[{"a:", "  ", 0}]`).
+        let preserve_attr =
+          if text.trim() == text.as_str() && !text.contains("  ") {
+            ""
+          } else {
+            " xml:space=\"preserve\""
+          };
         out.push_str(&format!(
           "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>{}</text>\n",
           color.to_svg_rgb(),
@@ -19275,10 +19294,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                   out.push_str(m);
                 }
               }
-              // `Null` typesets as nothing inside a `Row`.
-              let markup = if matches!(part, Expr::Identifier(n) if n == "Null")
-              {
-                String::new()
+              // A `Null` item is an empty slot one space wide.
+              let markup = if is_null_row_item(part) {
+                " ".to_string()
               } else {
                 expr_to_svg_markup(part)
               };
