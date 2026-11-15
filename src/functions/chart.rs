@@ -872,6 +872,10 @@ pub(crate) struct ChartOptions {
   pub legend_layout: LegendLayout,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
+  /// `AxesOrigin -> {x, y}`: where the axes cross, in data coordinates;
+  /// `None` keeps a coordinate's automatic placement. Currently consumed by
+  /// `Histogram`.
+  pub axes_origin: (Option<f64>, Option<f64>),
   /// `BarOrigin -> Left` (or `Right`) renders horizontal bars.
   pub bar_origin_left: bool,
   /// `LabelingFunction -> f` — applied to each bar value to produce a label
@@ -3003,6 +3007,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     legend_layout: LegendLayout::Column,
     plot_range_x: None,
     plot_range_y: None,
+    axes_origin: (None, None),
     bar_origin_left: false,
     labeling_function: None,
     ticks_x: None,
@@ -3017,12 +3022,20 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     color_function: None,
     color_function_scaling: true,
   };
+  // When an option is given more than once, its first setting wins, as for
+  // any Wolfram option list (`PlotRange -> {{-1, 5}, All}, …, PlotRange ->
+  // All` keeps the explicit range).
+  let mut seen: std::collections::HashSet<&str> =
+    std::collections::HashSet::new();
   for opt in &args[1..] {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
       let name = chart_option_alias(name);
+      if !seen.insert(name) {
+        continue;
+      }
       match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -3181,6 +3194,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               }
             }
           }
+        }
+        "AxesOrigin" => {
+          opts.axes_origin =
+            crate::functions::plot::parse_axes_origin(replacement);
         }
         "PlotRange" => {
           let (rx, ry) =

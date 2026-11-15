@@ -3170,6 +3170,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     legend_layout: crate::functions::plot::LegendLayout::Column,
     plot_range_x: Some((0.0, 255.0)),
     plot_range_y: None,
+    axes_origin: (None, None),
     bar_origin_left: false,
     labeling_function: None,
     ticks_x: None,
