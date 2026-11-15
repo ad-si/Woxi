@@ -2044,6 +2044,80 @@ mod graphics {
       );
     }
 
+    /// A log plot's primitives live in `Log` space, as in Wolfram:
+    /// `First[LogPlot[E^x, …]]` is a line with `y = x`, not `y = E^x`.
+    #[test]
+    fn log_plot_primitives_are_in_log_space() {
+      assert_eq!(
+        interpret(
+          "Max[Abs[Subtract @@@ Cases[First[LogPlot[Exp[x], {x, 0, 3}]], \
+           Line[p_] :> p, Infinity][[1]]]] < 10^-6"
+        )
+        .unwrap(),
+        "True"
+      );
+      assert_eq!(
+        interpret(
+          "Max[Abs[Subtract @@@ Cases[First[LogLogPlot[x, {x, 1, 10}]], \
+           Line[p_] :> p, Infinity][[1]]]] < 10^-6"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    /// `Show` layering a `Graphics` over a log plot used to redraw the
+    /// curve at its raw values on a linear axis, so a label placed at
+    /// `Log[100]` (Wolfram's coordinates for the height of the 100 tick)
+    /// sank to the bottom. The picture now stays in `Log` space with the
+    /// plot's decade ticks, and the plot's own `PlotRange` is mapped there.
+    #[test]
+    fn show_graphics_over_log_plot_keeps_the_log_axis() {
+      let svg = export_svg(
+        "Show[LogPlot[Exp[x], {x, 0, 10}], Graphics[Text[\"mid\", {5, Log[100]}]]]",
+      );
+      for label in [">10<", ">100<", ">1000<"] {
+        assert!(svg.contains(label), "missing {label}: {svg}");
+      }
+      assert!(!svg.contains(">5000<"), "linear y ticks: {svg}");
+      // The label sits halfway up the 0..10 decades of the axis' range,
+      // not on the bottom edge.
+      let before = &svg[..svg.find("mid<").unwrap()];
+      let tag = &before[before.rfind("<text").unwrap()..];
+      let y: f64 = tag
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .unwrap()
+        .parse()
+        .unwrap();
+      assert!((80.0..160.0).contains(&y), "label at y = {y}: {svg}");
+
+      assert_eq!(
+        interpret(
+          "PlotRange[Show[LogPlot[Exp[x], {x, 0, 3}, PlotRange -> {1, 10}], \
+           Graphics[Point[{1, 1}]]]][[2]]"
+        )
+        .unwrap(),
+        "{0., 2.302585092994046}"
+      );
+    }
+
+    /// `GridLines -> Automatic` on a log plot shown with other graphics
+    /// draws its horizontal lines at the log ticks.
+    #[test]
+    fn show_over_log_plot_puts_grid_lines_at_decades() {
+      assert_eq!(
+        interpret(
+          "Round[Exp[Cases[Options[Show[LogPlot[Exp[x], {x, 0, 7}, \
+           GridLines -> Automatic], Graphics[Point[{1, 1}]]], GridLines], \
+           {_, y_List} :> y, Infinity][[1]]]]"
+        )
+        .unwrap(),
+        "{1, 5, 10, 50, 100, 500, 1000}"
+      );
+    }
+
     /// A dashed curve on a log axis used to loop forever: the per-dash
     /// fallback never advanced past a named (absolute-pixel) dash length.
     /// It now goes through the same single `stroke-dasharray` polyline as

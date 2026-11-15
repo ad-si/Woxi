@@ -22009,13 +22009,219 @@ pub(crate) fn plot_source_aspect_ratio(
   }
 }
 
+/// A plot source in the coordinates its primitives live in. The series of
+/// a `LogPlot` (or any plot with a log axis) are kept in data space for the
+/// plot renderer, but Wolfram's graphic draws them at `Log` of those
+/// values: `First[LogPlot[E^x, {x, 0, 3}]]` holds a `Line` with `y = x`,
+/// and a `Graphics[Text[…, {x, Log[8000]}]]` shown over a `LogPlot` sits at
+/// the height of the 8000 tick. The returned source has its log axes
+/// mapped to `Log` space (a non-positive value has no place there and
+/// breaks the curve) and is linear from then on.
+pub(crate) fn log_scaled_plot_source(
+  ps: &crate::syntax::PlotSource,
+) -> std::borrow::Cow<'_, crate::syntax::PlotSource> {
+  if !ps.log_x && !ps.log_y {
+    return std::borrow::Cow::Borrowed(ps);
+  }
+  let ln = |v: f64| if v > 0.0 { v.ln() } else { f64::NAN };
+  let (lx, ly) = (ps.log_x, ps.log_y);
+  let fx = |v: f64| if lx { ln(v) } else { v };
+  let fy = |v: f64| if ly { ln(v) } else { v };
+  let point = |(x, y): (f64, f64)| (fx(x), fy(y));
+  let range_x = |(a, b): (f64, f64)| (fx(a), fx(b));
+  let range_y = |(a, b): (f64, f64)| (fy(a), fy(b));
+  let filling = |f: &mut crate::syntax::SeriesFilling| {
+    if let crate::syntax::SeriesFilling::Value(v) = f {
+      *v = fy(*v);
+    }
+  };
+  let mut scaled = ps.clone();
+  for s in &mut scaled.series {
+    s.points.iter_mut().for_each(|p| *p = point(*p));
+    s.mesh_full_points.iter_mut().for_each(|p| *p = point(*p));
+    filling(&mut s.filling);
+    s.extra_fills
+      .iter_mut()
+      .for_each(|f| filling(&mut f.filling));
+  }
+  scaled.x_range = range_x(ps.x_range);
+  scaled.y_range = range_y(ps.y_range);
+  scaled.plot_range = ps.plot_range.map(|(x, y)| (range_x(x), range_y(y)));
+  scaled.data_x_range = ps.data_x_range.map(range_x);
+  scaled.log_x = false;
+  scaled.log_y = false;
+  std::borrow::Cow::Owned(scaled)
+}
+
+/// A plot's `PlotRange` value with the numeric bounds of its log axes
+/// mapped to `Log` space: `{1, 10^14}` (the y range) of a `LogPlot` becomes
+/// `{0., 32.236…}`. Symbolic bounds (`All`, `Automatic`, `Full`) stay.
+fn log_scaled_plot_range(range: &Expr, log_x: bool, log_y: bool) -> Expr {
+  let bound = |e: &Expr, log: bool| match try_eval_to_f64(e) {
+    Some(v) if log && v > 0.0 => Expr::Real(v.ln()),
+    _ => e.clone(),
+  };
+  let axis = |e: &Expr, log: bool| match e {
+    Expr::List(items) if items.len() == 2 && !log => e.clone(),
+    Expr::List(items) if items.len() == 2 => Expr::List(
+      items
+        .iter()
+        .map(|b| bound(b, log))
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    _ => e.clone(),
+  };
+  match range {
+    Expr::List(items)
+      if items.len() == 2
+        && items.iter().any(|i| matches!(i, Expr::List(_))) =>
+    {
+      Expr::List(vec![axis(&items[0], log_x), axis(&items[1], log_y)].into())
+    }
+    // `{min, max}` alone is the y range.
+    Expr::List(items) if items.len() == 2 => axis(range, log_y),
+    _ => range.clone(),
+  }
+}
+
+/// The explicit ticks of a log axis over the `Log`-space range `min..max`,
+/// as a `Ticks` list: decade labels at their `Log` positions plus the
+/// unlabeled minor ticks between them — what Wolfram's
+/// `Charting`ScaledTicks[{Log, Exp}]` produces for a log plot's graphic.
+fn log_axis_tick_list(min: f64, max: f64, labeled: bool) -> Expr {
+  let ticks = crate::functions::plot_scaling::Scaling::Log.ticks(min, max);
+  let mut items: Vec<Expr> = Vec::new();
+  for (pos, label) in &ticks.majors {
+    let label = if labeled {
+      svg_tick_label_expr(label)
+    } else {
+      Expr::String(String::new())
+    };
+    items.push(Expr::List(vec![Expr::Real(*pos), label].into()));
+  }
+  for pos in &ticks.minors {
+    items.push(Expr::List(
+      vec![
+        Expr::Real(*pos),
+        Expr::String(String::new()),
+        Expr::List(vec![Expr::Real(0.004), Expr::Integer(0)].into()),
+      ]
+      .into(),
+    ));
+  }
+  Expr::List(items.into())
+}
+
+/// Gives a graphic layered over a log plot (already in `Log` space) the
+/// decade ticks of that plot's log axes, on the axes and on the frame, and
+/// lines at those ticks for `GridLines -> Automatic` — unless the options
+/// spell the ticks or grid lines out themselves.
+fn add_log_axis_ticks(
+  opts: &mut Vec<Expr>,
+  ps: &crate::syntax::PlotSource,
+  (log_x, log_y): (bool, bool),
+) {
+  let value = |opts: &[Expr], name: &str| {
+    opts.iter().find_map(|o| {
+      option_name_value(o)
+        .filter(|(n, _)| *n == name)
+        .map(|(_, v)| v.into_owned())
+    })
+  };
+  let (rx, ry) =
+    value(opts, "PlotRange").map_or((None, None), |r| parse_plot_range(&r));
+  let x_range = rx.unwrap_or(ps.x_range);
+  let y_range = ry.unwrap_or(ps.y_range);
+  let axis = |log: bool, (lo, hi): (f64, f64), labeled: bool| {
+    if log && lo.is_finite() && hi.is_finite() && lo < hi {
+      log_axis_tick_list(lo, hi, labeled)
+    } else {
+      id_expr("Automatic")
+    }
+  };
+  let is_automatic = |v: &Expr| matches!(v, Expr::Identifier(s) if s == "Automatic" || s == "True");
+  if value(opts, "Ticks").is_none_or(|v| is_automatic(&v)) {
+    opts.retain(|o| !matches!(option_name_value(o), Some(("Ticks", _))));
+    opts.push(rule_expr(
+      id_expr("Ticks"),
+      Expr::List(
+        vec![axis(log_x, x_range, true), axis(log_y, y_range, true)].into(),
+      ),
+    ));
+  }
+  if value(opts, "FrameTicks").is_none_or(|v| is_automatic(&v)) {
+    opts.retain(|o| !matches!(option_name_value(o), Some(("FrameTicks", _))));
+    let sides = |log: bool, range: (f64, f64)| {
+      // The opposite frame edge mirrors the ticks without their labels.
+      Expr::List(vec![axis(log, range, true), axis(log, range, false)].into())
+    };
+    opts.push(rule_expr(
+      id_expr("FrameTicks"),
+      Expr::List(vec![sides(log_y, y_range), sides(log_x, x_range)].into()),
+    ));
+  }
+  if value(opts, "GridLines").is_some_and(|v| is_automatic(&v)) {
+    opts.retain(|o| !matches!(option_name_value(o), Some(("GridLines", _))));
+    let lines = |log: bool, (lo, hi): (f64, f64)| {
+      if log && lo.is_finite() && hi.is_finite() && lo < hi {
+        let ticks = crate::functions::plot_scaling::Scaling::Log.ticks(lo, hi);
+        Expr::List(
+          ticks
+            .majors
+            .iter()
+            .map(|(p, _)| Expr::Real(*p))
+            .collect::<Vec<_>>()
+            .into(),
+        )
+      } else {
+        id_expr("Automatic")
+      }
+    };
+    opts.push(rule_expr(
+      id_expr("GridLines"),
+      Expr::List(vec![lines(log_x, x_range), lines(log_y, y_range)].into()),
+    ));
+  }
+}
+
+/// A scaled-axis tick label (plain text, with a power of ten written as
+/// an SVG superscript `tspan`) as the expression that typesets it:
+/// `10^e` becomes `Superscript[10, e]` and `m×10^e` a `Row` around it.
+fn svg_tick_label_expr(label: &str) -> Expr {
+  const OPEN: &str = "<tspan baseline-shift=\"super\" font-size=\"70%\">";
+  let Some((head, rest)) = label.split_once(OPEN) else {
+    return Expr::String(label.replace("&#215;", "\u{00d7}"));
+  };
+  let exponent = rest.trim_end_matches("</tspan>");
+  let exponent = exponent
+    .parse::<i128>()
+    .map_or_else(|_| Expr::String(exponent.to_string()), Expr::Integer);
+  let head = head.replace("&#215;", "\u{00d7}");
+  let base = head.strip_suffix("10").unwrap_or(&head);
+  let power = call("Superscript", vec![Expr::Integer(10), exponent]);
+  if base.is_empty() {
+    power
+  } else {
+    call(
+      "Row",
+      vec![Expr::List(
+        vec![Expr::String(base.to_string()), power].into(),
+      )],
+    )
+  }
+}
+
 /// The drawing primitives a rendered plot's sampled series stand for —
 /// filled regions, the series color and thickness, and the `Line` /
 /// `Point` the samples make up. `Show` merges these with the primitives of
 /// the graphics it is layering, and a structural rule (`plot /. L_Line :>
 /// …`) matches against them, which is what makes a plot's curve reachable
-/// by pattern replacement at all.
+/// by pattern replacement at all. A log axis is drawn in `Log` space (see
+/// [`log_scaled_plot_source`]).
 pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
+  let ps = log_scaled_plot_source(ps);
+  let ps = ps.as_ref();
   let mut series_prims: Vec<Expr> = Vec::new();
   for sd in &ps.series {
     // Filled region (Filling -> …) as a Polygon underneath the curve,
@@ -22865,6 +23071,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       _ => {}
     }
   }
+  let show_sets_plot_range = own_plot_range.is_some();
   if let Some(range) = own_plot_range {
     merged_options.retain(|existing| {
       !matches!(option_name_value(existing), Some(("PlotRange", _)))
@@ -23033,6 +23240,30 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Convert plot source series to Line/Point primitives so they can be
   // merged with the other Graphics primitives via graphics_ast.
   if !plot_sources.is_empty() {
+    // A log axis of the leading plot puts the whole picture in `Log` space:
+    // its curves are drawn at `Log` of their values, the other graphics'
+    // coordinates are read in that space, and the axis keeps its decade
+    // ticks.
+    let (log_x, log_y) = (plot_sources[0].log_x, plot_sources[0].log_y);
+    for ps in &mut plot_sources {
+      if ps.log_x || ps.log_y {
+        *ps = log_scaled_plot_source(ps).into_owned();
+      }
+    }
+    // The `PlotRange` the log plot was given names data values; a range
+    // given to `Show` itself is already in the picture's `Log` space.
+    if (log_x || log_y) && !show_sets_plot_range {
+      for opt in &mut merged_options {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = opt
+          && option_name(pattern) == Some("PlotRange")
+        {
+          **replacement = log_scaled_plot_range(replacement, log_x, log_y);
+        }
+      }
+    }
     // One primitive list per plot source, kept aside so the layers can be
     // stacked back in the order `Show` was given them.
     let mut source_prims: Vec<Expr> = Vec::with_capacity(plot_sources.len());
@@ -23226,6 +23457,13 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         );
         merged_options
           .push(rule_expr(id_expr("AspectRatio"), Expr::Real(aspect)));
+      }
+      if log_x || log_y {
+        add_log_axis_ticks(
+          &mut merged_options,
+          &plot_sources[0],
+          (log_x, log_y),
+        );
       }
     }
   }
