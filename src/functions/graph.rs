@@ -498,6 +498,44 @@ pub fn legacy_graph_plot(
   ))
 }
 
+/// A vertex label of the pre-version-6 graph drawings (`GraphPlot` with
+/// `VertexLabeling -> True`, `GraphUtilities\`ExpressionTreePlot`):
+/// `Text[Framed[label, {Background -> …, FrameStyle -> …, FrameMargins ->
+/// Automatic}], at]`, `at` being a point or a `GraphicsComplex` index.
+pub fn framed_vertex_label(label: Expr, at: Expr) -> Expr {
+  use crate::helpers::{call, rule_expr};
+  let rgb = |r: f64, g: f64, b: f64| {
+    let c = |v: f64| {
+      if v == 0.0 || v == 1.0 {
+        Expr::Integer(v as i128)
+      } else {
+        Expr::Real(v)
+      }
+    };
+    call("RGBColor", vec![c(r), c(g), c(b)])
+  };
+  call(
+    "Text",
+    vec![
+      call(
+        "Framed",
+        vec![
+          label,
+          Expr::List(
+            vec![
+              rule_expr(id_expr("Background"), rgb(1.0, 1.0, 0.8)),
+              rule_expr(id_expr("FrameStyle"), rgb(0.94, 0.85, 0.36)),
+              rule_expr(id_expr("FrameMargins"), id_expr("Automatic")),
+            ]
+            .into(),
+          ),
+        ],
+      ),
+      at,
+    ],
+  )
+}
+
 /// The picture of Wolfram's pre-version-6 `GraphPlot`, which it still
 /// draws when the `Method` list carries one of that implementation's
 /// suboptions (`MaxIterations`, `"Rotation"`): `Graphics[Annotation[
@@ -559,26 +597,7 @@ pub fn pre_v6_graph_plot(
       .iter()
       .enumerate()
       .map(|(i, v)| {
-        call(
-          "Text",
-          vec![
-            call(
-              "Framed",
-              vec![
-                v.clone(),
-                Expr::List(
-                  vec![
-                    rule_expr(id_expr("Background"), rgb(1.0, 1.0, 0.8)),
-                    rule_expr(id_expr("FrameStyle"), rgb(0.94, 0.85, 0.36)),
-                    rule_expr(id_expr("FrameMargins"), id_expr("Automatic")),
-                  ]
-                  .into(),
-                ),
-              ],
-            ),
-            Expr::Integer(i as i128 + 1),
-          ],
-        )
+        framed_vertex_label(v.clone(), Expr::Integer(i as i128 + 1))
       })
       .collect()
   } else {
