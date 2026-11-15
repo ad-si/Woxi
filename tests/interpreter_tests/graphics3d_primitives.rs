@@ -394,6 +394,28 @@ fn size(svg: &str) -> (f64, f64) {
 mod framing {
   use super::*;
 
+  /// `AspectRatio -> Full` stretches the scene to the width and height
+  /// `ImageSize` gives it, whatever the box's own proportions.
+  #[test]
+  fn aspect_ratio_full_fills_the_image_size() {
+    let s = svg(
+      "Graphics3D[{EdgeForm[Black], Cuboid[{-2, -2, 0}, {2, 2, 1}]}, \
+       Boxed -> False, ViewPoint -> {0, -100, 0}, ImageSize -> {250, 350}, \
+       AspectRatio -> Full, PlotRange -> {{-2, 2}, All, {0, 1}}]",
+    );
+    assert_eq!(size(&s), (250.0, 350.0));
+    let ys: Vec<f64> = s
+      .split(" y1=\"")
+      .skip(1)
+      .chain(s.split(" y2=\"").skip(1))
+      .filter_map(|r| r.split('"').next()?.parse().ok())
+      .collect();
+    let lo = ys.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    // The unit-high slab fills nearly the whole height, not a quarter.
+    assert!(hi - lo > 300.0, "{lo}..{hi}\n{s}");
+  }
+
   /// The x range of the drawn `<line>` endpoints in an SVG.
   fn line_x_extent(svg: &str) -> (f64, f64) {
     let mut xs = Vec::new();

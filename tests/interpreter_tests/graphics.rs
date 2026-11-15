@@ -31731,6 +31731,37 @@ mod raster {
 mod blend {
   use super::*;
 
+  /// `Opacity[a, color]` blends as that color with alpha `a`; the other
+  /// colors count as opaque.
+  #[test]
+  fn blend_with_opacity_wrapped_color() {
+    assert_eq!(
+      interpret("Blend[{Opacity[1/2, Red], Blue}, 1/2]").unwrap(),
+      "RGBColor[1/2, 0, 1/2, 3/4]"
+    );
+    assert_eq!(
+      interpret(
+        "Blend[{RGBColor[0, 0, 1], Opacity[0.5, RGBColor[0, 1, 0]]}, 0.3]"
+      )
+      .unwrap(),
+      "RGBColor[0., 0.3, 0.7, 0.85]"
+    );
+    assert_eq!(
+      interpret("Blend[{Opacity[0.2, Red], Blue}]").unwrap(),
+      "RGBColor[1/2, 0, 1/2, 0.6]"
+    );
+  }
+
+  /// A face colored by such a blend is drawn in the blended color.
+  #[test]
+  fn blend_with_opacity_colors_a_3d_face() {
+    let svg = export_svg(
+      "Graphics3D[{Blend[{Blue, Opacity[0.5, Green]}, 0], \
+       Cuboid[]}, Lighting -> {{\"Ambient\", White}}]",
+    );
+    assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+  }
+
   #[test]
   fn blend_two_colors_midpoint() {
     assert_eq!(
@@ -57238,6 +57269,39 @@ mod repeated_graphics_options {
        ImageSize -> 100]",
     );
     assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+  }
+}
+
+mod scaled_frame_ticks {
+  use super::*;
+
+  /// A stored `Charting`ScaledTicks[{Log, Exp}]` frame tick spec labels its
+  /// powers of ten as typeset superscripts, not as escaped SVG markup.
+  #[test]
+  fn log_frame_tick_powers_are_not_escaped() {
+    let svg = export_svg(
+      "Graphics[{Line[{{Log[3], Log[0.1]}, {Log[1*^5], Log[50]}}]}, \
+       Frame -> True, PlotRange -> {{Log[3], Log[1*^5]}, {Log[0.09], Log[50]}}, \
+       FrameTicks -> {{Charting`ScaledTicks[{Log, Exp}], \
+       Charting`ScaledFrameTicks[{Log, Exp}]}, \
+       {Charting`ScaledTicks[{Log, Exp}], Charting`ScaledFrameTicks[{Log, Exp}]}}]",
+    );
+    assert!(!svg.contains("&lt;tspan"), "{svg}");
+    assert!(svg.contains(">10\u{2074}</text>"), "{svg}");
+    assert!(svg.contains(">1000</text>"), "{svg}");
+  }
+
+  /// `LabelStyle` sizes the frame's tick labels as well as its captions.
+  #[test]
+  fn label_style_sizes_frame_tick_labels() {
+    let svg = export_svg(
+      "Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, LabelStyle -> 17]",
+    );
+    let tick = svg
+      .lines()
+      .find(|l| l.contains(">0.2</text>"))
+      .unwrap_or_else(|| panic!("{svg}"));
+    assert!(tick.contains("font-size=\"17\""), "{tick}");
   }
 }
 
