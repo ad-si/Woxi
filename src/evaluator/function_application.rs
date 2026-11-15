@@ -237,6 +237,18 @@ fn compile_vm_params(
     .collect()
 }
 
+/// Whether a compiled function's argument still holds a free symbol: a
+/// symbol or an unevaluated call, or an array with one among its entries
+/// (`{x, y, z}` while a plot probes its body with the variables unbound).
+fn holds_free_symbol(arg: &Expr) -> bool {
+  match arg {
+    Expr::Identifier(_) => true,
+    Expr::FunctionCall { name, .. } => name != "Rational" && name != "Complex",
+    Expr::List(items) => items.iter().any(holds_free_symbol),
+    _ => false,
+  }
+}
+
 fn compile_spec_rank(spec: &Expr) -> usize {
   match spec {
     Expr::List(items) if items.len() >= 3 => match &items[2] {
@@ -3257,8 +3269,11 @@ pub fn apply_curried_call(
       // the call unevaluated; it is evaluated per numeric sample instead.
       if SYMBOLIC_PLOT_PROBE.with(|p| p.get() > 0)
         && specs.iter().zip(args.iter()).any(|(spec, arg)| {
-          compile_spec_rank(spec) == 0
-            && matches!(arg, Expr::Identifier(_) | Expr::FunctionCall { .. })
+          if compile_spec_rank(spec) == 0 {
+            matches!(arg, Expr::Identifier(_) | Expr::FunctionCall { .. })
+          } else {
+            holds_free_symbol(arg)
+          }
         })
       {
         return Ok(Expr::CurriedCall {
@@ -3383,9 +3398,7 @@ pub fn apply_curried_call(
         }
       };
       let probing_symbolically = SYMBOLIC_PLOT_PROBE.with(|p| p.get() > 0)
-        && args.iter().any(|arg| {
-          matches!(arg, Expr::Identifier(_) | Expr::FunctionCall { .. })
-        });
+        && args.iter().any(holds_free_symbol);
       match func_args.iter().find(|a| {
         matches!(a, Expr::NamedFunction { .. } | Expr::Function { .. })
           || matches!(a, Expr::FunctionCall { name, .. } if name == "Function")

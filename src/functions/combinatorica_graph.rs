@@ -1614,15 +1614,26 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
     (x0, x1, y0, y1) = (0.0, 1.0, 0.0, 1.0);
   }
   let span = (x1 - x0).max(y1 - y0).max(1e-9);
-  let pad = 0.1 * span;
+  // Combinatorica's `FindPlotRange`: each axis is padded by 5% of its
+  // extent, but by at least 0.05 (a twentieth of the unit square the
+  // normalized drawing lives in).
+  let (pad_x, pad_y) = (0.05 * (x1 - x0).max(1.0), 0.05 * (y1 - y0).max(1.0));
+  let (left, right, bottom, top) =
+    (x0 - pad_x, x1 + pad_x, y0 - pad_y, y1 + pad_y);
+  // Edge thickness and vertex sizes are fractions of the drawing's width
+  // (like `Thickness` and `PointSize`), so a narrow drawing gets thinner
+  // edges and smaller vertices than a wide one in the same image.
+  let width = right - left;
 
   let mut prims: Vec<Expr> = Vec::new();
   // An edge style that is a graphics directive (Thin, Arrowheads[…], a
-  // color) applies to every edge.
-  if let Some(style) = option(gopts, "EdgeStyle")
-    && !matches!(style, Expr::Identifier(n) if n == "Normal")
-  {
-    prims.push(style.clone());
+  // color) applies to every edge; the default `Normal` style is a
+  // thickness of half a percent of the drawing's width.
+  match option(gopts, "EdgeStyle") {
+    Some(style) if !matches!(style, Expr::Identifier(n) if n == "Normal") => {
+      prims.push(style.clone());
+    }
+    _ => prims.push(crate::helpers::call("Thickness", vec![Expr::Real(0.005)])),
   }
   for edge in edges {
     let Expr::List(parts) = edge else { return None };
@@ -1649,12 +1660,13 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
   let radius = match option(gopts, "VertexStyle") {
     Some(Expr::FunctionCall { name, args }) if name == "Disk" => {
       match args.as_slice() {
-        // The size is the disk's diameter.
-        [r] => crate::functions::math_ast::try_eval_to_f64(r)? * span / 2.0,
-        _ => 0.03 * span,
+        // The size is the disk's diameter as a fraction of the drawing's
+        // width.
+        [r] => crate::functions::math_ast::try_eval_to_f64(r)? * width / 2.0,
+        _ => 0.03 * width,
       }
     }
-    _ => 0.03 * span,
+    _ => 0.03 * width,
   };
   let centered = option(gopts, "VertexNumberPosition")
     .is_some_and(|p| matches!(p, Expr::Identifier(c) if c == "Center"));
@@ -1709,8 +1721,8 @@ fn show_graph(args: &[Expr], labeled: bool) -> Option<Expr> {
     "PlotRange",
     Expr::List(
       vec![
-        Expr::List(vec![Expr::Real(x0 - pad), Expr::Real(x1 + pad)].into()),
-        Expr::List(vec![Expr::Real(y0 - pad), Expr::Real(y1 + pad)].into()),
+        Expr::List(vec![Expr::Real(left), Expr::Real(right)].into()),
+        Expr::List(vec![Expr::Real(bottom), Expr::Real(top)].into()),
       ]
       .into(),
     ),
