@@ -14923,6 +14923,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wolfram front end's rules for what the frame, the axes and their labels
   // need (see `plot_padding`); a bare picture only reserves its `PlotLabel`.
   let frame = frame_edges.iter().any(|&e| e);
+  // `FrameLabel` captions the frame's edges: without a frame there is
+  // nothing to caption, and Wolfram shows none of the labels.
+  if !frame {
+    frame_label = None;
+  }
   // A framed picture's axes are bare lines: the frame carries the ticks.
   if frame {
     ticks_x = TickSpec::None;
@@ -29990,9 +29995,25 @@ fn render_items_at_size(
         ),
       };
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
-      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      let mut svg = crate::evaluator::expr_to_svg(&evaluated);
       if svg.is_empty() {
         return None;
+      }
+      // A long list shown as text (`Text[Style[list, 11]]` under a plot)
+      // keeps its font size and is broken into lines at the cell width,
+      // the way the FrontEnd line-breaks an inset, rather than shrinking
+      // the whole layout to fit one very long line.
+      let cell_w = (per_cell_w * spans[item_idx]) as f64;
+      if !matches!(evaluated, Expr::Graphics { .. })
+        && parse_svg_wh(&svg).0 > cell_w + 0.5
+        && let Some(flowed) = wrap_list_text(&evaluated, cell_w, &[], &|c| {
+          parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+        })
+      {
+        let reflowed = crate::evaluator::expr_to_svg(&flowed);
+        if !reflowed.is_empty() {
+          svg = reflowed;
+        }
       }
       Some(match button_args {
         Some(bargs) => with_button_cell_chrome(svg, &bargs),

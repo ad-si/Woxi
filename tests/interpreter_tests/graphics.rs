@@ -28977,6 +28977,46 @@ mod graphics_column {
       "Should have outer + 2 nested SVGs, got {nested_count}"
     );
   }
+
+  /// A long list shown as text under a plot keeps its font size and is
+  /// broken into lines at the column width, instead of one very long line
+  /// that shrinks the whole layout (plot included) to a sliver.
+  #[test]
+  fn long_text_row_wraps_to_column_width() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "GraphicsColumn[{Plot[x, {x, 0, 1}], \
+       Text[Style[Range[100, 180], 11]]}, ImageSize -> {410, 490}]",
+    )
+    .unwrap()
+    .graphics
+    .expect("layout should render");
+    let sizes: Vec<(f64, f64)> = svg
+      .lines()
+      .filter(|l| l.starts_with("<svg "))
+      .map(|l| {
+        let attr = |name: &str| -> f64 {
+          let tail = l.split(&format!(" {name}=\"")).nth(1).unwrap();
+          tail.split('"').next().unwrap().parse().unwrap()
+        };
+        (attr("width"), attr("height"))
+      })
+      .collect();
+    let [outer, plot, text] = sizes[..] else {
+      panic!("expected an outer svg and two cells, got {sizes:?}");
+    };
+    assert_eq!(outer.0, 410.0);
+    // The plot fills the column width rather than being scaled down.
+    assert_eq!(plot.0, 410.0);
+    // The text fits the column and spans several lines.
+    assert!(text.0 <= 410.0, "text cell too wide: {text:?}");
+    assert!(
+      text.1 > 60.0,
+      "text should wrap onto several lines: {text:?}"
+    );
+    assert!(svg.contains("100, 101"), "list text is shown");
+    assert!(svg.contains("180}"), "list text ends with its last element");
+  }
 }
 
 mod graphics_grid {

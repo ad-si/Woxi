@@ -3970,6 +3970,16 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Drop every `FrameLabel` edge, plain text and picture alike.
+  pub(crate) fn clear_frame_labels(&mut self) {
+    self.frame_label_bottom = None;
+    self.frame_label_left = None;
+    self.frame_label_top = None;
+    self.frame_label_right = None;
+    self.frame_label_bottom_graphic = None;
+    self.frame_label_top_graphic = None;
+  }
+
   /// The plotting area's height / width when `ImageSize -> {w, h}` fixed
   /// the image height: the area then keeps its own shape (the
   /// `AspectRatio`, the data's shape under `AspectRatio -> Automatic`, else
@@ -5607,6 +5617,26 @@ fn without_axis_only_ticks(
   std::borrow::Cow::Owned(out)
 }
 
+/// `FrameLabel` captions the frame's edges, so a plot without a frame
+/// (`Frame -> False`, the default for `Plot`/`ListPlot`) shows none of
+/// them, just as Wolfram ignores the option there.
+fn without_unframed_frame_labels(
+  opts: &PlotOptions,
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let has_label = opts.frame_label_bottom.is_some()
+    || opts.frame_label_left.is_some()
+    || opts.frame_label_top.is_some()
+    || opts.frame_label_right.is_some()
+    || opts.frame_label_bottom_graphic.is_some()
+    || opts.frame_label_top_graphic.is_some();
+  if opts.frame || !has_label {
+    return std::borrow::Cow::Borrowed(opts);
+  }
+  let mut out = opts.clone();
+  out.clear_frame_labels();
+  std::borrow::Cow::Owned(out)
+}
+
 fn with_labeling_size(opts: &PlotOptions) -> std::borrow::Cow<'_, PlotOptions> {
   let Some(width) = opts.labeling_size else {
     return std::borrow::Cow::Borrowed(opts);
@@ -5627,6 +5657,7 @@ fn generate_svg_with_options(
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
+  let opts = &*without_unframed_frame_labels(opts);
   if let Some(caps) = opts.image_size_value.as_ref().and_then(image_size_caps) {
     return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
   }
