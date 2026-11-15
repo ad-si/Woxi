@@ -22718,16 +22718,23 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Like its other options, the merged graphic keeps the `PlotRange` of
     // the first plot — the numeric range that plot settled on, so
     // `Show[Plot[Sin[x], {x, 0, 1}], Plot[3 Sin[x], {x, 0, 10}]]` shows
-    // 0..1 — unless that plot asked for `PlotRange -> All`, which spans
-    // everything shown.
-    let first_all = merged_options.iter().any(|o| {
-      matches!(option_name_value(o), Some(("PlotRange", v))
-        if crate::functions::plot::plot_range_all_axes(&v) == (true, true))
-    });
-    let first = plot_sources
+    // 0..1 — except on an axis that plot asked to show `All` of
+    // (`PlotRange -> All`, or `{{0, 2}, All}` for the y axis alone), which
+    // spans everything shown.
+    let (x_all, y_all) = merged_options
       .iter()
-      .find(|ps| !any_curves || !ps.series.is_empty())
-      .filter(|_| !first_all);
+      .find_map(|o| match option_name_value(o) {
+        Some(("PlotRange", v)) => {
+          Some(crate::functions::plot::plot_range_all_axes(&v))
+        }
+        _ => None,
+      })
+      .unwrap_or((false, false));
+    let first_all = x_all && y_all;
+    let first_plot = plot_sources
+      .iter()
+      .find(|ps| !any_curves || !ps.series.is_empty());
+    let first = first_plot.filter(|_| !first_all);
     let data_x_range = plot_sources
       .iter()
       .filter(|ps| !any_curves || !ps.series.is_empty())
@@ -22736,7 +22743,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or_else(|| ps.plot_range.map_or(ps.x_range, |r| r.0))
       })
       .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)));
-    let all_range = if first_all {
+    let union_range = if x_all || y_all {
       plot_sources
         .iter()
         .filter(|ps| !any_curves || !ps.series.is_empty())
@@ -22761,6 +22768,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     } else {
       None
     };
+    // An axis shown in full takes the union; the other keeps the first
+    // plot's range.
+    let all_range = union_range.and_then(|(ux, uy)| {
+      if first_all {
+        return Some((ux, uy));
+      }
+      let ps = first_plot?;
+      Some((
+        if x_all { ux } else { ps.x_range },
+        if y_all { uy } else { ps.y_range },
+      ))
+    });
+    let first = first.filter(|_| all_range.is_none());
     let ((x_min, x_max), (y_min, y_max)) = all_range
       .or_else(|| first.map(|ps| (ps.x_range, ps.y_range)))
       .unwrap_or(((x_min, x_max), (y_min, y_max)));
