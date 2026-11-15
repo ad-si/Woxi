@@ -3528,11 +3528,16 @@ fn collect_primitives(
           let several = components.len() > 1;
           // `VertexTextureCoordinates` gives one coordinate list per
           // component, placing the `Texture` in force on its outline.
-          let tex_coords = if several {
+          // A lone component may also be given its coordinates unnested.
+          let tex_coords =
             filled_curve_texture_coordinates(&args[1..], components.len())
-          } else {
-            parse_vertex_texture_coordinates(&args[1..]).map(|c| vec![Some(c)])
-          };
+              .filter(|c| several || c.iter().all(Option::is_some))
+              .or_else(|| {
+                (!several)
+                  .then(|| parse_vertex_texture_coordinates(&args[1..]))
+                  .flatten()
+                  .map(|c| vec![Some(c)])
+              });
           for (ci, component) in components.into_iter().enumerate() {
             if let Expr::List(curves) = component
               && let Some(points) = joined_curve_points(curves, style)
