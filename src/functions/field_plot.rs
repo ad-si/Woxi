@@ -344,6 +344,9 @@ struct DensityContourOptions {
   /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
   /// range): the values the colors span, instead of the sampled ones.
   value_range: Option<(f64, f64)>,
+  /// `PlotRange -> All` (or an `All` value part of a three-axis range):
+  /// the colors span every sampled value, outliers included.
+  full_value_range: bool,
   /// `ClippingStyle`: how a cell outside `value_range` is drawn.
   clipping: Clipping,
   /// The `PlotRangePadding` between the frame and the data, as a fraction
@@ -401,6 +404,16 @@ fn plot_value_range(value: &Expr) -> Option<(f64, f64)> {
   match value {
     Expr::List(parts) if parts.len() == 3 => pair(&parts[2]),
     other => pair(other),
+  }
+}
+
+/// Whether a density or contour plot's `PlotRange` asks for every value
+/// (`All`, or `{xr, yr, All}`), so no sample is dropped as an outlier.
+fn plot_value_range_is_all(value: &Expr) -> bool {
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(v) if v == "All");
+  match value {
+    Expr::List(parts) if parts.len() == 3 => is_all(&parts[2]),
+    other => is_all(other),
   }
 }
 
@@ -521,6 +534,7 @@ fn parse_density_contour_options(
   let mut contour_level_exprs: Vec<(f64, Expr)> = Vec::new();
   let mut bar_legend = false;
   let mut value_range: Option<(f64, f64)> = None;
+  let mut full_value_range = false;
   let mut clipping = Clipping::Blank;
   for opt in &args[start..] {
     if let Expr::Rule {
@@ -661,7 +675,10 @@ fn parse_density_contour_options(
           contour_labels = !matches!(replacement, Expr::Identifier(v)
             if v == "False" || v == "None");
         }
-        "PlotRange" => value_range = plot_value_range(replacement),
+        "PlotRange" => {
+          value_range = plot_value_range(replacement);
+          full_value_range = plot_value_range_is_all(replacement);
+        }
         "ClippingStyle" => clipping = Clipping::parse(replacement),
         "PlotLegends" => {
           bar_legend = matches!(replacement, Expr::Identifier(v)
@@ -703,6 +720,7 @@ fn parse_density_contour_options(
     contour_level_exprs,
     bar_legend,
     value_range,
+    full_value_range,
     clipping,
     range_padding: FIELD_RANGE_PADDING,
   }
@@ -1689,6 +1707,17 @@ fn scaled_color(
 /// pole in the plotted function) can't collapse the color scale and contour
 /// levels onto a handful of pixels around it, leaving the rest of the plot a
 /// single flat color.
+/// The smallest and largest finite sample.
+fn full_value_range(values: &[f64]) -> (f64, f64) {
+  values
+    .iter()
+    .copied()
+    .filter(|v| v.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+      (lo.min(v), hi.max(v))
+    })
+}
+
 fn robust_value_range(values: &[f64]) -> (f64, f64) {
   let mut vs: Vec<f64> =
     values.iter().copied().filter(|v| v.is_finite()).collect();
@@ -2884,6 +2913,16 @@ fn field_plot_structure(
   if !explicit.iter().any(|o| name_of(o) == Some("AspectRatio")) {
     structure_args.push(rule_expr(id_expr("AspectRatio"), Expr::Integer(1)));
   }
+  // Like every Wolfram plot, a field plot clips what it draws to its range,
+  // so under `Show[…, PlotRange -> narrower]` the density raster (and any
+  // layer merged over it) is cut at the frame instead of spilling past it.
+  if !explicit
+    .iter()
+    .any(|o| name_of(o) == Some("PlotRangeClipping"))
+  {
+    structure_args
+      .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
+  }
   structure_args.extend(explicit);
   call("Graphics", structure_args)
 }
@@ -2924,9 +2963,13 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colors
   // span; cells beyond it follow `ClippingStyle` (blank by default).
   // Otherwise the colors span the sampled values.
-  let (v_min, v_max) = opts
-    .value_range
-    .unwrap_or_else(|| robust_value_range(&samples));
+  let (v_min, v_max) = opts.value_range.unwrap_or_else(|| {
+    if opts.full_value_range {
+      full_value_range(&samples)
+    } else {
+      robust_value_range(&samples)
+    }
+  });
   let clipping = if opts.value_range.is_some() {
     opts.clipping
   } else {

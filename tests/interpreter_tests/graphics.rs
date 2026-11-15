@@ -21383,6 +21383,57 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `PlotRange -> All` (or `{Full, Full, All}`) stretches the colors
+    /// over every sampled value: the flanks of a ridge over a flat
+    /// background keep their gradient instead of saturating at the end
+    /// color, as they do under the automatic outlier-clipping range.
+    #[test]
+    fn density_plot_plot_range_all_keeps_every_value() {
+      clear_state();
+      // Cells of row 50 at x ≈ 0.05 (background), 4.95 (crest), 5.55 and
+      // 5.95 (flank).
+      let cells = |range: &str| {
+        interpret(&format!(
+          "r = First[DensityPlot[Exp[-2 (x - 5)^2], {{x, 0, 10}}, \
+           {{y, 0, 1}}, ColorFunction -> \"TemperatureMap\" {range}]][[1]]; \
+           Round[255 r[[1, 50, {{1, 50, 56, 60}}]]]"
+        ))
+        .unwrap()
+      };
+      let (blue, red) = ("{46, 78, 238, 255}", "{208, 34, 42, 255}");
+      assert_eq!(cells(""), format!("{{{blue}, {red}, {red}, {red}}}"));
+      let full = format!(
+        "{{{blue}, {red}, {{253, 253, 205, 255}}, {{115, 144, 242, 255}}}}"
+      );
+      assert_eq!(cells(", PlotRange -> All"), full);
+      assert_eq!(cells(", PlotRange -> {Full, Full, All}"), full);
+    }
+
+    /// Field plots clip to their range (`PlotRangeClipping -> True`, as
+    /// in Wolfram), so `Show[…, PlotRange -> narrower]` cuts the density
+    /// raster at the frame instead of letting it spill past it.
+    #[test]
+    fn density_plot_clips_to_plot_range_in_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "{Options[DensityPlot[x y, {x, 0, 1}, {y, 0, 1}], \
+           PlotRangeClipping], Options[ContourPlot[x y, {x, 0, 1}, \
+           {y, 0, 1}], PlotRangeClipping]}"
+        )
+        .unwrap(),
+        "{{PlotRangeClipping -> True}, {PlotRangeClipping -> True}}"
+      );
+      let svg = export_svg(
+        "Show[DensityPlot[x y, {x, 0, 1}, {y, 0, 2}], \
+         Graphics[Line[{{0, 0}, {1, 2}}]], Frame -> True, \
+         PlotRange -> {{0, 1}, {0, 1}}]",
+      );
+      let clip = svg.find("clip-path=\"url(#plotClip").expect("no clip");
+      let image = svg.find("<image").expect("no raster");
+      assert!(clip < image, "raster is not inside the clip group");
+    }
+
     #[test]
     fn density_plot_image_size() {
       insta::assert_snapshot!(export_svg(
