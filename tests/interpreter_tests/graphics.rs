@@ -56288,6 +56288,29 @@ mod ranges_and_ticks {
   }
 
   #[test]
+  fn show_spans_only_the_axes_the_first_plot_shows_in_full() {
+    // `{{0, 3}, All}`: the x range stays the first plot's, the y range
+    // reaches the later plot's curve.
+    assert_eq!(
+      interpret(
+        "Round[PlotRange[Show[Plot[x, {x, 0, 1}, PlotRange -> {{0, 3}, All}], \
+         Plot[3 x, {x, 1, 2}]]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 3.}, {0., 6.}}"
+    );
+    // `{All, {0, 2}}`: the x range spans both plots, the y range is kept.
+    assert_eq!(
+      interpret(
+        "Round[PlotRange[Show[Plot[x, {x, 0, 1}, PlotRange -> {All, {0, 2}}], \
+         Plot[3 x, {x, 1, 2}]]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 2.}, {0., 2.}}"
+    );
+  }
+
+  #[test]
   fn end_samples_sit_inside_the_domain() {
     // The step function is not caught on its next stair at x = 100.
     assert_eq!(
