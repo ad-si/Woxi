@@ -791,6 +791,9 @@ pub struct ManipulateState {
   /// Per-control `ControlPlacement -> side` overrides, as `(control name,
   /// side)` (see `ManipulateSpec::control_placements`).
   control_placements: Vec<(String, ControlPlacement)>,
+  /// Names of the controls drawn on the same line as the control before
+  /// them (see `ManipulateSpec::row_joined_controls`).
+  row_joined_controls: Vec<String>,
   /// `TrackedSymbols :> {…}`: the variables whose change re-runs the body.
   /// A control bound to any other variable still moves, but the rendering
   /// waits for a tracked variable to change. `None` tracks everything.
@@ -923,6 +926,20 @@ impl ManipulateState {
       .unwrap_or(self.control_placement)
   }
 
+  /// Whether the control at `ctrl_idx` shares a line of the control panel
+  /// with the control before it, because one `Row[{Control[…],
+  /// Control[…]}]` argument placed both side by side.
+  pub fn joins_previous_control(&self, ctrl_idx: usize) -> bool {
+    ctrl_idx > 0
+      && self
+        .controls
+        .get(ctrl_idx)
+        .map(|c| c.name())
+        .is_some_and(|name| {
+          !name.is_empty() && self.row_joined_controls.iter().any(|n| n == name)
+        })
+  }
+
   /// Build a `ManipulateState` from an evaluated expression. Returns
   /// `None` if `expr` is not a well-formed Manipulate (in which case
   /// the caller should fall back to the normal text/graphics path).
@@ -1019,6 +1036,7 @@ impl ManipulateState {
       appearance_none: spec.appearance_none,
       control_placement: spec.control_placement,
       control_placements: spec.control_placements,
+      row_joined_controls: spec.row_joined_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
@@ -3393,6 +3411,36 @@ mod tests {
         .iter()
         .any(|c| matches!(c, ControlState::Heading { .. })),
       "the button must not be frozen into a heading"
+    );
+  }
+
+  /// Controls sharing one `Row[{Control[…], Spacer[…], Control[…]}]`
+  /// argument keep that grouping in the Studio's control state, so a setter
+  /// bar and the 2D slider beside it are drawn on one line, while the next
+  /// `Row` starts a line of its own.
+  #[test]
+  fn row_of_controls_is_drawn_on_one_line() {
+    let code = r#"Manipulate[
+      {k, a, s, n},
+      Row[{Control@{{k, 2, "kind"}, {1 -> "one", 2 -> "two"}}, Spacer[20],
+        Control@{{a, {0.5, 0.5}, "point"}, {0, 0}, {1, 1}}}],
+      "",
+      Row[{Control@{{s, 1, "show"}, {1 -> "x", 2 -> "y"}}, Spacer[20],
+        Control@{{n, 0, "level"}, {0, 1, 2}}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let joins: Vec<(&str, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !c.name().is_empty())
+      .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+      .collect();
+    assert_eq!(
+      joins,
+      vec![("k", false), ("a", true), ("s", false), ("n", true)]
     );
   }
 

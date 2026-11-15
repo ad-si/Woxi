@@ -4431,6 +4431,35 @@ fn manipulate_button<'a>(
   button(btn_label).padding([3, 10]).on_press(on_press).into()
 }
 
+/// Finish the column the current control was drawn into (see the `line`
+/// bookkeeping in `render_manipulate_widget`): put the panel column back
+/// into `controls_col` and queue the control's column on the current line.
+fn close_line_item<'a>(
+  controls_col: &mut Column<'a, Message>,
+  outer: &mut Option<Column<'a, Message>>,
+  line: &mut Vec<Element<'a, Message>>,
+) {
+  if let Some(panel) = outer.take() {
+    let item = std::mem::replace(controls_col, panel);
+    line.push(item.into());
+  }
+}
+
+/// Add the queued controls of one panel line to `controls_col`: a single
+/// control as its own row, several side by side.
+fn flush_control_line<'a>(
+  controls_col: &mut Column<'a, Message>,
+  line: &mut Vec<Element<'a, Message>>,
+) {
+  let items = std::mem::take(line);
+  let panel = std::mem::replace(controls_col, Column::new());
+  *controls_col = match items.len() {
+    0 => panel,
+    1 => panel.extend(items),
+    _ => panel.push(Row::with_children(items).spacing(20).align_y(Center)),
+  };
+}
+
 fn render_manipulate_widget<'a>(
   cell_idx: usize,
   state: &'a manipulate::ManipulateState,
@@ -4489,11 +4518,23 @@ fn render_manipulate_widget<'a>(
   // The last button already drawn on the line of an earlier button (see
   // `ControlState::Button::joins_previous`).
   let mut joined_through: Option<usize> = None;
+  // Controls sharing one line of the panel (see
+  // `ManipulateState::joins_previous_control`): each control is drawn into
+  // a column of its own, kept in `line` until a control that starts a new
+  // line flushes them as one row. `line_outer` holds the panel column while
+  // `controls_col` stands in for the current control's own column.
+  let mut line: Vec<Element<'a, Message>> = Vec::new();
+  let mut line_outer: Option<Column<'a, Message>> = None;
   for (ctrl_idx, ctrl) in visible_controls.iter().enumerate() {
+    close_line_item(&mut controls_col, &mut line_outer, &mut line);
     if joined_through.is_some_and(|last| ctrl_idx <= last) {
       continue;
     }
-    for tree in panel_trees_at(ctrl_idx) {
+    let mut trees = panel_trees_at(ctrl_idx).peekable();
+    if trees.peek().is_some() {
+      flush_control_line(&mut controls_col, &mut line);
+    }
+    for tree in trees {
       controls_col = controls_col.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
@@ -4508,8 +4549,18 @@ fn render_manipulate_widget<'a>(
       continue;
     }
     let slot = placement_slot(state.placement_of(ctrl_idx));
+    let joins_line = !line.is_empty()
+      && slot == current_slot
+      && state.joins_previous_control(ctrl_idx);
+    if !joins_line {
+      flush_control_line(&mut controls_col, &mut line);
+    }
     switch_slot(&mut controls_col, &mut current_slot, slot);
     side_used[slot] = true;
+    line_outer = Some(std::mem::replace(
+      &mut controls_col,
+      Column::new().spacing(6).width(Fill),
+    ));
     // A control whose `Enabled` condition currently evaluates to `False` is
     // grayed out and swallows interaction (see `Message::Noop`).
     let enabled = state
@@ -5175,6 +5226,8 @@ fn render_manipulate_widget<'a>(
       }
     }
   }
+  close_line_item(&mut controls_col, &mut line_outer, &mut line);
+  flush_control_line(&mut controls_col, &mut line);
   // The widget-level extras (bookmarks, play toggle) join the main panel.
   switch_slot(&mut controls_col, &mut current_slot, main_slot);
   // Bars declared after the last control close the panel.
