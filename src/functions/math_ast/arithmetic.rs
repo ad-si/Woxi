@@ -14597,6 +14597,66 @@ fn is_big_zero(e: &Expr) -> bool {
     if crate::functions::math_ast::numeric_utils::bigfloat_digits_are_zero(d))
 }
 
+/// When `exp` is `Log[x]/Log[base]` (the evaluated form of `Log[base, x]`),
+/// the `x` it takes the logarithm of.
+fn log_quotient_for_base(base: &Expr, exp: &Expr) -> Option<Expr> {
+  let factors: Vec<&Expr> = match exp {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().collect()
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Times,
+      left,
+      right,
+    } => vec![left.as_ref(), right.as_ref()],
+    _ => return None,
+  };
+  // `Log[5/7]` evaluates to `-Log[7/5]`, so `Log[b, 5/7]` carries a
+  // leading `-1`: the power is then the reciprocal of the log's argument.
+  let (negated, factors) = match factors.as_slice() {
+    [Expr::Integer(-1), rest @ ..] => (true, rest.to_vec()),
+    _ => (false, factors),
+  };
+  if factors.len() != 2 {
+    return None;
+  }
+  let log_arg = |e: &Expr| match e {
+    Expr::FunctionCall { name, args } if name == "Log" && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
+  };
+  let reciprocal_log_arg = |e: &Expr| match e {
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && matches!(args[1], Expr::Integer(-1)) =>
+    {
+      log_arg(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if matches!(right.as_ref(), Expr::Integer(-1)) => log_arg(left),
+    _ => None,
+  };
+  let same = |a: &Expr, b: &Expr| {
+    crate::syntax::expr_to_string(a) == crate::syntax::expr_to_string(b)
+  };
+  for (num, den) in [(factors[0], factors[1]), (factors[1], factors[0])] {
+    if let (Some(x), Some(b)) = (log_arg(num), reciprocal_log_arg(den))
+      && same(&b, base)
+    {
+      if negated {
+        return power_two(&x, &Expr::Integer(-1)).ok();
+      }
+      return Some(x);
+    }
+  }
+  None
+}
+
 pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
   // Zero to a complex power with a positive real part vanishes: exactly when
   // everything is exact (`0^(1/2 + I/3)` is 0), else as the machine complex
@@ -15082,6 +15142,12 @@ pub fn power_two(base: &Expr, exp: &Expr) -> Result<Expr, InterpreterError> {
     && log_args.len() == 1
   {
     return Ok(log_args[0].clone());
+  }
+
+  // b^Log[b, x] -> x: `Log[b, x]` evaluates to `Log[x]/Log[b]`, so a power
+  // whose exponent is exactly that quotient undoes the logarithm.
+  if let Some(x) = log_quotient_for_base(base, exp) {
+    return Ok(x);
   }
 
   // E^(n*Log[x]) -> x^n (generalized inverse)

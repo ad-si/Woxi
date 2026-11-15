@@ -651,6 +651,10 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
     ..
   } = expr
   {
+    // A log axis is drawn in `Log` space: `First[LogPlot[E^x, {x, 0, 3}]]`
+    // is a line with `y = x`.
+    let source = crate::functions::graphics::log_scaled_plot_source(source);
+    let source = source.as_ref();
     let series: Vec<Expr> = source
       .series
       .iter()
@@ -688,6 +692,12 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
           }
         };
         let mut style = vec![crate::functions::plot::series_color_expr(s)];
+        // A translucent curve (`PlotStyle -> Opacity[a]`, or a
+        // `ColorFunction` returning `Directive[c, Opacity[a]]`) stays
+        // translucent wherever its extracted primitives are drawn.
+        if let Some(a) = s.opacity {
+          style.insert(0, call1("Opacity", Expr::Real(a)));
+        }
         // A curve keeps its weight and dashes: the plot draws it with
         // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
         // extracted line is drawn the same way wherever it is placed.
@@ -717,9 +727,14 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         // First[Plot[…, Filling -> …]]` (extracting the drawing to
         // transform and redraw elsewhere, e.g. with
         // `GeometricTransformation`) silently loses the shading.
-        if let Some(polygon_points) = series_fill_polygon(s, &source.series) {
-          let fill_color = s.fill_color.unwrap_or(s.color);
-          let opacity = s.fill_opacity.unwrap_or(0.2);
+        for fill in s.fills() {
+          let Some(polygon_points) =
+            series_fill_polygon(s, fill.filling, &source.series)
+          else {
+            continue;
+          };
+          let fill_color = fill.color.unwrap_or(s.color);
+          let opacity = fill.opacity.unwrap_or(0.2);
           let styled_fill =
             call("Opacity", vec![Expr::Real(opacity), rgb_expr(fill_color)]);
           let polygon = call1(
@@ -787,13 +802,14 @@ const GRAPHICS_PLOT_OPTIONS: &[&str] = &[
   "TicksStyle",
 ];
 
-/// The polygon points for a `PlotSeriesData`'s `Filling` level: the curve's
+/// The polygon points for one `Filling` of a `PlotSeriesData`: the curve's
 /// points followed by the same x-values back along the reference level, so
 /// the closed loop matches what `AreaSeries` draws when rendering the SVG.
 /// `None` for unfilled or scatter series (a scatter plot's `Filling` draws
 /// per-point stems, not a shaded area, so it has no single polygon).
 fn series_fill_polygon(
   s: &crate::syntax::PlotSeriesData,
+  filling: crate::syntax::SeriesFilling,
   all_series: &[crate::syntax::PlotSeriesData],
 ) -> Option<Vec<(f64, f64)>> {
   if s.is_scatter {
@@ -813,7 +829,7 @@ fn series_fill_polygon(
     .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(_, y)| {
       (lo.min(y), hi.max(y))
     });
-  let ref_y = match s.filling {
+  let ref_y = match filling {
     crate::syntax::SeriesFilling::None => return None,
     crate::syntax::SeriesFilling::Axis => 0.0,
     crate::syntax::SeriesFilling::Bottom => y_min,

@@ -3578,12 +3578,64 @@ mod interpreter_tests {
 
   #[test]
   fn test_graphics_draws_ellipsoid_with_directions() {
+    // Regression: the `MultivariateStatistics`` ellipsoid (what
+    // `EllipsoidQuantile` returns) was filled black, hiding everything
+    // drawn under it; it is an outline in the first default plot color.
+    clear_state();
     let svg = interpret(
       "ExportString[Graphics[Ellipsoid[{0, 0}, {2, 1}, \
        {{1, 1}, {-1, 1}}]], \"SVG\"]",
     )
     .unwrap();
-    assert!(svg.contains("<polygon"), "{svg}");
+    assert!(!svg.contains("<polygon"), "{svg}");
+    assert!(svg.contains("<polyline"), "{svg}");
+    assert!(svg.contains("fill=\"none\""), "{svg}");
+    assert!(svg.contains("rgb(94,129,181)"), "{svg}");
+    // An explicit color directive still applies.
+    let red = interpret(
+      "ExportString[Graphics[{Red, Ellipsoid[{0, 0}, {2, 1}, \
+       {{1, 1}, {-1, 1}}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(red.contains("rgb(255,0,0)"), "{red}");
+    assert!(!red.contains("rgb(94,129,181)"), "{red}");
+  }
+
+  #[test]
+  fn test_graphics_package_ellipsoid_is_outline() {
+    // Once `MultivariateStatistics`` is loaded its `Ellipsoid` shadows the
+    // built-in, so an axis-aligned quantile ellipse is outlined too.
+    clear_state();
+    let svg = interpret(
+      "Needs[\"MultivariateStatistics`\"]; ExportString[Graphics[\
+       MultivariateStatistics`EllipsoidQuantile[\
+       MultinormalDistribution[{0, 0}, {{1, 0}, {0, 1}}], 0.5]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("<ellipse"), "{svg}");
+    assert!(svg.contains("<polyline"), "{svg}");
+    clear_state();
+  }
+
+  #[test]
+  fn test_graphics_frame_label_needs_frame() {
+    // Regression: `FrameLabel` captions were drawn although no frame was.
+    clear_state();
+    let bare = interpret(
+      "ExportString[Graphics[Circle[], FrameLabel -> {\"abc\", \"def\"}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!bare.contains(">abc<") && !bare.contains(">def<"), "{bare}");
+    let framed = interpret(
+      "ExportString[Graphics[Circle[], Frame -> True, \
+       FrameLabel -> {\"abc\", \"def\"}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      framed.contains(">abc<") && framed.contains(">def<"),
+      "{framed}"
+    );
   }
 
   #[test]
@@ -4056,6 +4108,86 @@ mod interpreter_tests {
       svg_row.contains(">dX₆<"),
       "expected dX₆ in SVG, got: {svg_row}"
     );
+  }
+
+  #[test]
+  fn test_graphics_text_superscript_without_unicode_glyph_is_raised() {
+    // Regression: an exponent with no Unicode superscript glyph (`θ^*`,
+    // a letter like `q`, or several words) was written out after a caret
+    // ("θ^*") instead of being typeset as a raised, smaller script.
+    let raised = "<tspan baseline-shift=\"super\" font-size=\"70%\">";
+    for (code, base, script) in [
+      (
+        "Text[\"\\!\\(\\*SuperscriptBox[\\(θ\\), \\(*\\)]\\)\", {0, 0}]",
+        "θ",
+        "*",
+      ),
+      ("Text[Superscript[\"θ\", \"*\"], {0, 0}]", "θ", "*"),
+      ("Text[Superscript[e, \"j k L\"], {0, 0}]", "e", "j k L"),
+    ] {
+      clear_state();
+      let svg =
+        interpret(&format!("ExportString[Graphics[{{{code}}}], \"SVG\"]"))
+          .unwrap();
+      assert!(
+        svg.contains(&format!(">{base}{raised}{script}</tspan></text>")),
+        "expected a raised superscript for {code}: {svg}"
+      );
+      assert!(!svg.contains('^'), "caret leaked for {code}: {svg}");
+    }
+  }
+
+  #[test]
+  fn test_graphics_inset_box_draws_its_cell_and_row_box_text() {
+    // Regression: `InsetBox[…]` (the box form of `Inset`, as a hand-drawn
+    // diagram stores its labels) was dropped from the picture.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Blue, \
+         InsetBox[Cell[\"pump\", \"Text\", GeneratedCell -> False], {0.2, 0.3}, {-1, 0}], \
+         InsetBox[RowBox[{\"Q\", Cell[\"\"]}], {0.6, 0.6}], \
+         InsetBox[SubscriptBox[\"T\", \"in\"], {0.8, 0.2}]}, \
+         PlotRange -> {{0, 1}, {0, 1}}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">pump<"), "Cell label missing: {svg}");
+    assert!(!svg.contains(">Text<"), "Cell style drawn as text: {svg}");
+    assert!(svg.contains(">Q<"), "RowBox label missing: {svg}");
+    assert!(svg.contains("in"), "SubscriptBox label missing: {svg}");
+    assert!(!svg.contains("InsetBox"), "box source leaked: {svg}");
+  }
+
+  #[test]
+  fn test_graphics_text_inset_size_is_not_a_direction() {
+    // Regression: the 4th argument of `Inset[text, pos, opos, size]` was
+    // passed on as `Text`'s direction, turning the label by the size
+    // vector; the label's direction is the first vector of the 5th
+    // argument instead.
+    clear_state();
+    let sized = interpret(
+      "ExportString[Graphics[{Inset[\"abc\", {0, 0}, Center, {3, 1}]}, \
+         PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    let plain = interpret(
+      "ExportString[Graphics[{Inset[\"abc\", {0, 0}, Center]}, \
+         PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!sized.contains("rotate("), "size turned the label: {sized}");
+    assert_eq!(sized, plain);
+
+    let turned = interpret(
+      "ExportString[Graphics[{Inset[\"abc\", {0, 0}, Center, Automatic, \
+         {{0, 1}, {-1, 0}}]}, PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    let text_turned = interpret(
+      "ExportString[Graphics[{Text[\"abc\", {0, 0}, {0, 0}, {0, 1}]}, \
+         PlotRange -> 1], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(turned, text_turned);
   }
 
   #[test]
@@ -5236,7 +5368,7 @@ mod interpreter_tests {
     clear_state();
     let plain = interpret(
       "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
-         FrameLabel -> {\"t\", \"y\"}], \"SVG\"]",
+         Frame -> True, FrameLabel -> {\"t\", \"y\"}], \"SVG\"]",
     )
     .unwrap();
     assert!(
@@ -5247,7 +5379,7 @@ mod interpreter_tests {
     clear_state();
     let styled = interpret(
       "ExportString[Plot[Sin[x], {x, 0, 2 Pi}, \
-         FrameLabel -> {\"t\", \"y\"}, LabelStyle -> {20, Red}], \"SVG\"]",
+         Frame -> True, FrameLabel -> {\"t\", \"y\"}, LabelStyle -> {20, Red}], \"SVG\"]",
     )
     .unwrap();
     assert!(
@@ -5265,7 +5397,7 @@ mod interpreter_tests {
     clear_state();
     let via_show = interpret(
       "ExportString[Show[Plot[Sin[x], {x, 0, 2 Pi}, \
-         FrameLabel -> {\"t\", \"y\"}], LabelStyle -> {20, Red}], \"SVG\"]",
+         Frame -> True, FrameLabel -> {\"t\", \"y\"}], LabelStyle -> {20, Red}], \"SVG\"]",
     )
     .unwrap();
     assert!(
@@ -5273,6 +5405,38 @@ mod interpreter_tests {
         && via_show.contains("fill=\"rgb(255,0,0)\""),
       "LabelStyle applied via Show must still restyle the frame label: {via_show}"
     );
+  }
+
+  #[test]
+  fn test_frame_label_needs_a_frame() {
+    // `FrameLabel` captions the frame's edges, so a plot or picture
+    // without a frame shows none of its labels (they used to be drawn
+    // over the axes, colliding with the tick labels).
+    for code in [
+      "Plot[x, {x, 0, 1}, FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "ListPlot[{1, 2, 3}, Frame -> False, FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "Show[ListLinePlot[{1, 2, 3}], FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "Graphics[Line[{{0, 0}, {1, 1}}], FrameLabel -> {\"aaa\", \"bbb\"}]",
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(
+        !svg.contains("aaa") && !svg.contains("bbb"),
+        "unframed {code} must not draw its FrameLabel"
+      );
+    }
+    for code in [
+      "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"aaa\", \"bbb\"}]",
+      "Graphics[Line[{{0, 0}, {1, 1}}], Frame -> True, \
+       FrameLabel -> {\"aaa\", \"bbb\"}]",
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(
+        svg.contains("aaa") && svg.contains("bbb"),
+        "framed {code} must draw its FrameLabel"
+      );
+    }
   }
 
   #[test]
@@ -7104,7 +7268,10 @@ mod interpreter_tests {
       ("TogglerBar[{1}, {1, 2}]", "TogglerBar[{1}, {1, 2}]"),
       ("RadioButton[1]", "RadioButton[1]"),
       ("ProgressIndicator[0.5]", "ProgressIndicator[0.5]"),
-      ("PaneSelector[{1 -> a}, 1]", "PaneSelector[{1 -> a}, 1]"),
+      // PaneSelector displays the pane its selector picks in visual mode;
+      // the script-mode echo is covered by
+      // pane_selector_display::stays_symbolic_in_text_output.
+      ("PaneSelector[{1 -> a}, 1]", "a"),
       ("PopupView[{a, b}]", "PopupView[{a, b}]"),
       ("IntervalSlider[{2, 4}]", "IntervalSlider[{2, 4}]"),
       ("Slider2D[{0, 0}]", "Slider2D[{0, 0}]"),

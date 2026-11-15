@@ -46,6 +46,53 @@ mod solids {
     );
   }
 
+  /// A solid wholly inside an opaque sphere or capped cylinder can never be
+  /// seen, so it draws nothing. Regression: a two-tone ball (a sphere just
+  /// inside another, offset a little) showed the inner sphere's facet
+  /// seams streaking across the outer one where the painter's sort
+  /// interleaved them.
+  #[test]
+  fn solid_inside_an_opaque_solid_draws_nothing() {
+    let outer = svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let nested = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Red, Sphere[{0, 0, 0.1}, 0.5], \
+       Cylinder[{{0, -0.3, 0}, {0, 0.3, 0}}, 0.2]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&nested), polygon_count(&outer));
+
+    let cylinder =
+      svg("Graphics3D[{Cylinder[{{0, -1, 0}, {0, 1, 0}}, 1]}, Boxed -> False]");
+    let in_cylinder = svg(
+      "Graphics3D[{Cylinder[{{0, -1, 0}, {0, 1, 0}}, 1], Red, \
+       Sphere[{0, 0.2, 0}, 0.5]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&in_cylinder), polygon_count(&cylinder));
+  }
+
+  /// Only the part of a sphere poking out of another stays; a see-through
+  /// enclosing solid hides nothing.
+  #[test]
+  fn solid_culling_keeps_visible_and_see_through_parts() {
+    let outer = svg("Graphics3D[{Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let poking = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Red, Sphere[{0, 0, 0.6}, 0.5]}, \
+       Boxed -> False]",
+    );
+    assert!(polygon_count(&poking) > polygon_count(&outer));
+    assert!(fills(&poking).iter().any(|f| {
+      let c: Vec<u8> = f.split(',').filter_map(|v| v.parse().ok()).collect();
+      c.len() == 3 && c[0] > 2 * c[1].max(c[2]).max(1)
+    }));
+
+    let glass =
+      svg("Graphics3D[{Opacity[0.5], Sphere[{0, 0, 0}, 1]}, Boxed -> False]");
+    let glass_nested = svg(
+      "Graphics3D[{Opacity[0.5], Sphere[{0, 0, 0}, 1], Opacity[1], Red, \
+       Sphere[{0, 0, 0}, 0.5]}, Boxed -> False]",
+    );
+    assert!(polygon_count(&glass_nested) > polygon_count(&glass));
+  }
+
   #[test]
   fn ellipsoid_with_semi_axes_is_drawn() {
     let s = svg("Graphics3D[Ellipsoid[{0, 0, 0}, {2, 1, 0.5}]]");
@@ -128,6 +175,91 @@ mod solids {
   fn capsule_shape_is_drawn() {
     let s = svg("Graphics3D[CapsuleShape[{{0, 0, 0}, {1, 1, 1}}, 0.3]]");
     assert!(polygon_count(&s) > 100, "got: {s}");
+  }
+
+  /// The solid head of `Arrow[Tube[…]]` is sized by the scene's box (the
+  /// diagonal of its `PlotRange`), not by the arrow itself: a short axis
+  /// arrow in a large scene keeps a visible head.
+  #[test]
+  fn arrow_tube_head_is_sized_by_the_scene() {
+    let d = 0.05 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[{{Arrow[Tube[{{{{0, 0, 0}}, {{1, 0, 0}}}}, 0.01]]}}, {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
+         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+        b = 1.0 - d,
+        r = 0.22 * d
+      ))
+    );
+  }
+
+  /// The head covers the last stretch of the curve measured along it, so a
+  /// finely sampled curve (an arc) still gets a full-size head instead of
+  /// one clipped to its last tiny segment.
+  #[test]
+  fn arrow_tube_head_spans_several_segments() {
+    let len = 0.1 * 3f64.sqrt() * 4.0;
+    let range = "PlotRange -> {{-2, 2}, {-2, 2}, {-2, 2}}";
+    assert_eq!(
+      svg(&format!(
+        "Graphics3D[{{Arrowheads[0.1], Arrow[Tube[{{{{0, 0, 0}}, \
+         {{0.5, 0, 0}}, {{0.75, 0, 0}}, {{1, 0, 0}}}}, 0.01]]}}, {range}]"
+      )),
+      svg(&format!(
+        "Graphics3D[{{Tube[{{{{0, 0, 0}}, {{{b}, 0, 0}}}}, 0.01], \
+         Cone[{{{{{b}, 0, 0}}, {{1, 0, 0}}}}, {r}]}}, {range}]",
+        b = 1.0 - len,
+        r = 0.22 * len
+      ))
+    );
+  }
+
+  /// `Style[Text[…], Italic]` (the style outside the `Text`) slants the
+  /// label, as `Style[…, Bold]` makes it bold.
+  #[test]
+  fn styled_text_label_font_face() {
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], 17, Italic]}]");
+    assert!(s.contains("font-style=\"italic\""), "got: {s}");
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], Bold]}]");
+    assert!(s.contains("font-weight=\"bold\""), "got: {s}");
+    let s =
+      svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], FontSlant -> Italic]}]");
+    assert!(s.contains("font-style=\"italic\""), "got: {s}");
+  }
+
+  /// `BaseStyle` acts like a `Style` round the whole scene: a size (bare or
+  /// as `FontSize -> n`) and a font face reach every `Text` label, also
+  /// through `Show`, while a label's own size still wins.
+  #[test]
+  fn base_style_sizes_and_styles_text_labels() {
+    for expr in [
+      "Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> 14]",
+      "Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {14}]",
+      "Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {FontSize -> 14}]",
+      "Show[Graphics3D[{Text[\"X\", {0, 0, 0}]}], BaseStyle -> 14]",
+    ] {
+      let s = svg(expr);
+      assert!(s.contains("font-size=\"14.0\""), "{expr}: {s}");
+      assert!(!s.contains("font-size=\"12.0\""), "{expr}: {s}");
+    }
+    let s =
+      svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], 20]}, BaseStyle -> 14]");
+    assert!(s.contains("font-size=\"20.0\""), "got: {s}");
+    let s = svg("Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {Bold}]");
+    assert!(s.contains("font-weight=\"bold\""), "got: {s}");
+    let s = svg("Graphics3D[{Text[\"X\", {0, 0, 0}]}, BaseStyle -> {}]");
+    assert!(s.contains("font-size=\"12.0\""), "got: {s}");
+  }
+
+  /// `Style[Text[…], FontSize -> n]` sizes the label like `Style[…, n]`.
+  #[test]
+  fn styled_text_label_font_size_rule() {
+    let s = svg("Graphics3D[{Style[Text[\"X\", {0, 0, 0}], FontSize -> 18]}]");
+    assert!(s.contains("font-size=\"18.0\""), "got: {s}");
   }
 
   #[test]
@@ -308,6 +440,28 @@ fn size(svg: &str) -> (f64, f64) {
 
 mod framing {
   use super::*;
+
+  /// `AspectRatio -> Full` stretches the scene to the width and height
+  /// `ImageSize` gives it, whatever the box's own proportions.
+  #[test]
+  fn aspect_ratio_full_fills_the_image_size() {
+    let s = svg(
+      "Graphics3D[{EdgeForm[Black], Cuboid[{-2, -2, 0}, {2, 2, 1}]}, \
+       Boxed -> False, ViewPoint -> {0, -100, 0}, ImageSize -> {250, 350}, \
+       AspectRatio -> Full, PlotRange -> {{-2, 2}, All, {0, 1}}]",
+    );
+    assert_eq!(size(&s), (250.0, 350.0));
+    let ys: Vec<f64> = s
+      .split(" y1=\"")
+      .skip(1)
+      .chain(s.split(" y2=\"").skip(1))
+      .filter_map(|r| r.split('"').next()?.parse().ok())
+      .collect();
+    let lo = ys.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    // The unit-high slab fills nearly the whole height, not a quarter.
+    assert!(hi - lo > 300.0, "{lo}..{hi}\n{s}");
+  }
 
   /// The x range of the drawn `<line>` endpoints in an SVG.
   fn line_x_extent(svg: &str) -> (f64, f64) {
@@ -759,6 +913,55 @@ mod plot3d_options {
     assert!(!s.contains("fill=\"rgb(178,178,178)\""));
   }
 
+  // A numeric filling level outside the surface's own values widens the
+  // automatic vertical range so the wall reaches it.
+  #[test]
+  fn filling_level_below_the_surface_extends_the_range() {
+    clear_state();
+    let out = interpret(
+      "Cases[Plot3D[x^2, {x, -1, 1}, {y, -1, 1}, Mesh -> None, \
+       Filling -> -3], Polygon[q_?(ArrayDepth[#] == 3 &)] :> \
+       Min[q[[All, All, 3]]], Infinity]",
+    )
+    .unwrap();
+    assert_eq!(out, "{-3.}");
+  }
+
+  // `FillingStyle` colors the wall, which travels into `Show` with the
+  // surface as polygons in data coordinates.
+  #[test]
+  fn filling_style_colors_the_wall_and_survives_show() {
+    clear_state();
+    let out = interpret(
+      "Cases[Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> Red], {EdgeForm[], c_RGBColor, Polygon[_]} :> c, \
+       Infinity]",
+    )
+    .unwrap();
+    assert_eq!(out, "{RGBColor[1., 0., 0.]}");
+    let red = svg(
+      "Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom, \
+       FillingStyle -> Red]",
+    );
+    assert!(!red.contains("fill=\"rgb(178,178,178)\""));
+    // The lit wall is red-dominated.
+    assert!(fills(&red).iter().any(|c| {
+      let v: Vec<u32> = c.split(',').filter_map(|x| x.parse().ok()).collect();
+      v.len() == 3 && v[0] > 150 && v[1] < 100 && v[2] < 100
+    }));
+    let shown = svg(
+      "Show[Plot3D[y, {x, 0, 1}, {y, 0, 1}, Filling -> Bottom], \
+       Graphics3D[Sphere[{0, 0, 0}, 0.1]]]",
+    );
+    assert!(
+      polygon_count(&shown)
+        > polygon_count(&svg(
+          "Show[Plot3D[y, {x, 0, 1}, {y, 0, 1}], \
+       Graphics3D[Sphere[{0, 0, 0}, 0.1]]]"
+        ))
+    );
+  }
+
   #[test]
   fn plot_legends_expressions() {
     let s = svg(
@@ -941,6 +1144,18 @@ mod fields_and_graphs {
 
 mod arrows_and_box {
   use super::*;
+
+  // `Opacity` fades a `Text` label in a 3-D scene; `Opacity[0]` hides it.
+  #[test]
+  fn opacity_applies_to_text_labels() {
+    let shown = svg("Graphics3D[{Text[\"Qz\", {0, 0, 0}], Sphere[]}]");
+    assert!(shown.contains(">Qz<"));
+    let hidden =
+      svg("Graphics3D[{Opacity[0], Text[\"Qz\", {0, 0, 0}], Sphere[]}]");
+    assert!(!hidden.contains(">Qz<"));
+    let faded = svg("Graphics3D[{Opacity[0.3], Text[\"Qz\", {0, 0, 0}]}]");
+    assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
+  }
 
   /// The area of the first filled arrowhead `<polygon>` (the triangle after
   /// a `<polyline>`).

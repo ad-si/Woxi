@@ -5175,6 +5175,61 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // Infinite ranges are integrated with adaptive Gauss-Kronrod on the
+  // mapped interval. Adaptive Simpson accepted oscillating integrands
+  // (Hermite polynomials under a Gaussian) too early, e.g. giving 0.0011
+  // instead of E^-2 2^8/8! = 0.00086 for a displaced-oscillator overlap.
+  #[test]
+  fn oscillating_integrand_over_infinite_range() {
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^(-x^2) HermiteH[n, x]^2, \
+         {x, -Infinity, Infinity}]/(Sqrt[Pi] 2^n n!), 10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^(-(x^2 + (x - 2)^2)/2) HermiteH[m, x - 2], \
+         {x, -Infinity, Infinity}]^2/(Pi 2^m m!) - E^-2 2^m/m!, 10^-8], \
+         {m, 0, 10}]"
+      )
+      .unwrap(),
+      "{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}"
+    );
+    // Overlap of the n = 2 and m = 7 states: (2!/7!) E^-2 2^5 L_2^5(2)^2.
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[E^(-(x^2 + (x - 2)^2)/2) HermiteH[7, x - 2] \
+         HermiteH[2, x], {x, -Infinity, Infinity}]^2/(Pi 2^9 7! 2!) - \
+         2!/7! E^-2 2^5 LaguerreL[2, 5, 2]^2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn oscillating_integrand_over_half_infinite_ranges() {
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^-x LaguerreL[n, x]^2, {x, 0, Infinity}], \
+         10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+    assert_eq!(
+      interpret(
+        "Table[Round[NIntegrate[E^x LaguerreL[n, -x]^2, {x, -Infinity, 0}], \
+         10^-6], {n, 0, 10}]"
+      )
+      .unwrap(),
+      "{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}"
+    );
+  }
+
   // A tail where E^(huge) meets an underflowed factor: the compiled
   // integrand retries the overflow with an unbounded exponent (0, not
   // Infinity times 0), and Gamma far off the real axis underflows instead
@@ -5296,6 +5351,40 @@ mod nintegrate {
          non-numerical values for all sampling points in the region with \
          boundaries {{-10, 10}}."
       ]
+    );
+  }
+
+  // A multi-dimensional integrand with a free symbol is reported once for
+  // the whole region and left unevaluated: every inner integral used to
+  // fail on its own and the failures were integrated as 0.
+  #[test]
+  fn non_numeric_multidimensional_integrand() {
+    clear_state();
+    let result =
+      interpret_with_stdout("NIntegrate[x + X + Y, {X, 0, 1}, {Y, 0, 1}]")
+        .unwrap();
+    assert_eq!(result.result, "NIntegrate[x + X + Y, {X, 0, 1}, {Y, 0, 1}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand x + X + Y has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{0, 1}, {0, 1}}."
+      ]
+    );
+    // Substituting numbers afterwards integrates it.
+    assert_eq!(
+      interpret(
+        "Abs[(Quiet[NIntegrate[x + X + Y + Z, {X, 0, 1}, {Y, 0, 1}, \
+         {Z, 0, 1}]] /. x -> 1) - 5/2] < 10^-8"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Numeric triple integrals, also with dependent bounds, still work.
+    assert_eq!(
+      interpret("NIntegrate[X + Y, {X, 0, 1}, {Y, 0, X}]").unwrap(),
+      "0.5"
     );
   }
 
@@ -23866,6 +23955,43 @@ mod ndsolve_complex_periodic_pde {
       )
       .unwrap(),
       "True"
+    );
+  }
+
+  /// A complex Ginzburg–Landau equation started from the uniform state
+  /// settles on a plane wave `E^(-2 I t)` of modulus 1. Its phase turns
+  /// about 2 radians per default output row spacing, so the stored time
+  /// rows must follow the rotation: otherwise `Abs` of the interpolated
+  /// solution dips between rows.
+  #[test]
+  fn rotating_phase_keeps_modulus_between_time_rows() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == 1, u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 60}, {x, -10, 10}]; \
+         Min[Table[Abs[u[t, 3.]], {t, 0, 60, 0.37}] /. First[s]] > 0.999"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// `Abs` of a complex PDE solution, substituted into a plot body with
+  /// `Evaluate`, samples to a density plot (the solution's tables are
+  /// carried through every sample point unchanged).
+  #[test]
+  fn density_plot_of_complex_pde_solution() {
+    assert_eq!(
+      interpret(
+        "s = NDSolve[{D[u[t, x], t] == u[t, x] - (1 + 2 I) Abs[u[t, x]]^2 u[t, x] \
+           + D[u[t, x], x, x], u[0, x] == E^(-x^2), u[t, -10] == u[t, 10]}, \
+           u, {t, 0, 20}, {x, -10, 10}]; \
+         Head[DensityPlot[Evaluate[Abs[u[t, x]] /. s], {t, 0, 20}, {x, -10, 10}, \
+           PlotPoints -> 10, MaxRecursion -> 1]]"
+      )
+      .unwrap(),
+      "Graphics"
     );
   }
 

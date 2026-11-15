@@ -4378,7 +4378,14 @@ unevaluated, because the package is not loaded. Woxi has no package system for
 `Needs` to load into, so the qualified names are always live. With the package
 loaded the results agree.
 
-`Needs` also does not put such a context on `$ContextPath`, so where
+`PolyhedronOperations`Truncate` of a closed solid appends one cap face per
+cut-off vertex after the corner-cut faces (as `{cutFaces, {caps…}}`); the
+geometry is that of a truncation, but the order and nesting of those faces
+have not been checked against wolframscript.
+
+`Needs["PolyhedronOperations`"]` does put that context on `$ContextPath` (so a
+bare `Truncate` read afterwards is the package's), but for `Combinatorica`` and
+`HypothesisTesting`` `Needs` does not, so where
 wolframscript prints `OneSidedPValue -> …` after
 `Needs["HypothesisTesting`"]`, Woxi prints the qualified
 `HypothesisTesting`OneSidedPValue -> …` — the same expression, spelled in
@@ -5387,6 +5394,14 @@ Woxi renders its own SVG; `wolframscript` prints `-Graphics-` and exports
 cairo-rendered SVG, so pixel or markup equality is never the goal. What follows
 is where the *drawn* result differs.
 
+### Products inside picture-label scripts keep an explicit `*`
+
+A symbolic product used as a sub- or superscript of a picture label
+(`Text[Superscript[e, j k L], {0, 0}]`, `Text[Subscript[e, 2 x], …]`) is
+written `j*k*L` / `2*x`, the OutputForm spelling widget labels use, where
+the front end typesets the factors separated by spaces (`j k L`, `2 x`).
+A string script (`Superscript[e, "j k L"]`) reads correctly.
+
 ### Legacy `VectorFieldPlots`` plots carry fewer options
 
 The package's `Graphics` gets `FilterRules[{opts, Options[ListVectorFieldPlot]},
@@ -5631,6 +5646,27 @@ contents' own enclosing sphere (radius 3). The cube- and bar-shaped
 calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
+
+### A long explicit `PlotRange` box at a fixed `ImageSize` draws smaller in Wolfram
+
+Without `SphericalRegion`, Woxi fits the projected outline of the displayed
+box into an `ImageSize -> {w, h}` picture. A Demonstration drawing a long,
+thin `Graphics3D` scene through `Show[g, PlotRange -> {{-11, 11},
+{-4.25, 4.25}, {-4.25, 4.25}}, ImageSize -> {575, 350}]` (with `Boxed ->
+False` and the default view) behaves differently. In all four of its Wolfram
+snapshots, a cylinder from `{-10, 0, 0}` to `{10, 0, 0}` is about 246 px
+wide. In Woxi it is 357 px wide: the box's outline fills the 350 px height.
+
+Wolfram's size matches what Woxi draws with `SphericalRegion -> True`. That
+gives 250 px, with the same slope and centering, as if the sphere around the
+displayed box were fit into the shorter image side.
+
+This conflicts with the calibration in the entry above. There a
+`SphericalRegion -> False` cylinder at `ImageSize -> {550, 350}` without a
+`PlotRange` fills the width (532/550). So the explicit `PlotRange`, `Show`,
+or `Boxed -> False` may trigger the different framing. This could not be
+checked without wolframscript: no snapshot of a box-filling scene with
+an explicit `PlotRange` and a fixed image size was available to compare.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -8697,6 +8733,8 @@ Found comparing the graphics-tests renders (2026-11):
     `ListPlot` with `FrameTicks -> All` matches.
   - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
     in italics (TraditionalForm), and writes `-a` with a minus sign.
+  - A symbol used as an axes or frame label (`FrameLabel -> {Z, X}`) is
+    likewise set upright; WL sets it in italics (TraditionalForm).
   - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
     draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
@@ -8972,7 +9010,12 @@ populations, GDPs and areas differ from WL's own curated values (US area:
 WL 9.63142*^6 km^2, World Bank 9.83151*^6), and `"Population"` is the latest
 World Bank year rather than WL's rounded estimate. Yearly series are
 returned as `TimeSeries[{{{year}, value}, …}]` (WL: a `TimeSeries` over
-`DateObject`s). The shape and polygon properties come from Natural Earth's
+`DateObject`s). The further indicators (`"BirthRateFraction"`,
+`"LifeExpectancy"`, `"PovertyFraction"`, sub-populations, trade and
+national-account figures, …; see `scripts/gen_country_indicators.py`) are
+the latest World Bank year and so also differ from WL's curated values;
+WL properties without a World Bank counterpart (radio stations, airports,
+military, …) return `Missing["NotAvailable", prop]`. The shape and polygon properties come from Natural Earth's
 1:110m outlines, coarser than WL's and with their own nesting, so tests over
 their point structure (`SchematicCoordinates`, `{"Shape", …}`) differ;
 `"BorderingCountries"` is derived from shared outline vertices and misses
@@ -9006,6 +9049,19 @@ the molecular weights carry PubChem's precision (butane 58.12, WL
 58.124), `"FormulaDisplay"` is the Hill formula instead of WL's condensed
 structural formula, `"LogAcidityConstant"` is the first pKa PubChem states
 (conjugate-acid values for amines), and the drawings are Woxi's own.
+
+### ProteinData curated data
+
+`ProteinData` covers the ~360 reviewed human proteins UniProtKB annotates
+with the GO term "actin binding" or one of its descendants
+(`resources/protein_data.tsv.gz`). Standard names are HGNC symbols and the
+sequences are UniProt's canonical ones (`"CFL1"` and `"CFL2"` align exactly
+as in a stored WL snapshot), but `"Name"` is HGNC's current approved name,
+which can differ from WL's (older) wording, the GO annotations are
+UniProt's current ones, and a class (`ProteinData["ActinBinding"]`) lists
+only the bundled proteins annotated directly with its term. Only the
+`"Name"`, `"StandardName"`, `"Sequence"`, `"SequenceLength"` and GO class
+properties are available.
 
 ### Symbolic `MatrixPower` with irrational or complex eigenvalues
 
@@ -10086,3 +10142,22 @@ in a monospace face regardless of the grid's `BaseStyle -> {FontFamily ->
 Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
+
+### `Show[plots, PlotRange -> {xr, Automatic}]` keeps the plots' explicit y range
+
+When `Show` merges plots that were drawn with an explicit
+`PlotRange -> {0, 100}` and is itself given `PlotRange -> {{x0, x1},
+Automatic}`, Wolfram recomputes the vertical range from the merged graphics,
+dropping outlying vertices such as the `Top` corners of `Filling -> {i -> Top}`
+polygons (a saved snapshot shows roughly 2.5–29.5 for curves spanning
+4–22), while Woxi keeps the first plot's 0–100. The exact outlier rule
+for an `Automatic` range of merged graphics is not yet known.
+
+### `ViewAngle` with `SphericalRegion -> True`
+
+`Graphics3D[…, SphericalRegion -> True, ViewAngle -> 0.1,
+ViewPoint -> {0, 10, 0}]` of an icosahedron ringed by small solids draws the
+scene about 4% larger than wolframscript, so the outermost solids touch the
+picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
+from the view volume alone (calibrated without `SphericalRegion`); how
+wolframscript combines the two has not been measured.

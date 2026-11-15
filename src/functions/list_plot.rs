@@ -2241,7 +2241,7 @@ fn list_plot_ranges(
       }
     };
     at_axis(&mut opts.filling);
-    for (_, target) in &mut opts.filling_rules {
+    for (_, target, _) in &mut opts.filling_rules {
       if let FillTarget::Level(level) = target {
         at_axis(level);
       }

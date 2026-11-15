@@ -619,10 +619,75 @@ fn row_of_buttons_in_grid_cell_draws_plates() {
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
   assert!(!svg.contains("Button["), "button source leaked: {svg}");
   assert_eq!(
-    svg.matches("<rect").count(),
+    svg.matches("<rect").count() - svg.matches("id=\"woxi-btn-").count(),
     2,
     "one plate per button: {svg}"
   );
+}
+
+/// A text-labeled `Button[label, action]` drawn as a `Row` item (an
+/// on-screen keyboard of letter keys) carries the invisible hit region a
+/// live widget presses, encoding the button's own action — not just an
+/// inert plate.
+#[test]
+fn row_of_text_buttons_carries_pressable_hit_regions() {
+  let svg = interpret(
+    r#"ExportString[Row[Map[Button[#, typed = typed <> #] &, {"p", "q", "r"}]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert_eq!(
+    svg.matches("id=\"woxi-btn-").count(),
+    3,
+    "one hit region per key: {svg}"
+  );
+  for key in ["p", "q", "r"] {
+    let action = format!("typed = StringJoin[typed, \"{key}\"]");
+    let hex: String = action
+      .bytes()
+      .flat_map(|b| {
+        let digits = b"0123456789abcdef";
+        [
+          digits[(b >> 4) as usize] as char,
+          digits[(b & 15) as usize] as char,
+        ]
+      })
+      .collect();
+    assert!(
+      svg.contains(&format!("id=\"woxi-btn-{hex}\"")),
+      "key {key} should press {action:?}: {svg}"
+    );
+  }
+}
+
+/// A `Button` without an action has nothing to press, so it gets no hit
+/// region.
+#[test]
+fn row_of_action_less_buttons_has_no_hit_regions() {
+  let svg =
+    interpret(r#"ExportString[Row[{Button["a"], Button["b"]}], "SVG"]"#)
+      .unwrap();
+  assert!(!svg.contains("woxi-btn-"), "{svg}");
+}
+
+/// Regression: SVG trims edge whitespace unless told not to, so a styled
+/// `Row` part with a trailing or doubled space (`Style["sum   = ", 14]`)
+/// lost those spaces — its `<tspan>` wrapper hid them from the check that
+/// adds `xml:space="preserve"`.
+#[test]
+fn styled_row_part_keeps_edge_and_doubled_spaces() {
+  let svg = interpret(
+    r#"ExportString[Row[{Style["sum   = ", 14], Style["7", 16, Bold]}], "SVG"]"#,
+  )
+  .unwrap();
+  let part = svg
+    .lines()
+    .find(|l| l.contains("sum   = "))
+    .unwrap_or_else(|| panic!("the part's spaces must be kept: {svg}"));
+  assert!(part.contains("xml:space=\"preserve\""), "{part}");
+  // A part without edge or doubled spaces needs no preserve attribute.
+  let seven = svg.lines().find(|l| l.contains(">7<")).expect("7 part");
+  assert!(!seven.contains("xml:space"), "{seven}");
 }
 
 /// Regression: a `Panel` in a `Grid` cell (a readout beside plots) printed

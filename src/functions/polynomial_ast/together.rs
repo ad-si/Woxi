@@ -2135,7 +2135,7 @@ pub fn together_expr(expr: &Expr) -> Expr {
       // 1/(4*x*(1 + x)) and Together[(x + x^2)/(4*x^2 + 4*x^3)] = 1/(4*x).
       if let Some(ed_bare) = expand_numeric_content_denominator(&ed)
         && single_variable_fraction(&en, &ed_bare)
-        && !(has_sum_factor(&en) && !fraction_has_polynomial_gcd(&en, &ed_bare))
+        && (!has_sum_factor(&en) || fraction_has_polynomial_gcd(&en, &ed_bare))
       {
         let frac = div2(en.clone(), ed_bare.clone());
         let canceled = super::cancel::cancel_expr_keep_quotient_sign(&frac);

@@ -1636,6 +1636,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `Filling -> Bottom | Top | Axis | z`: the height the surface is filled
   // down (or up) to.
   let mut filling: Option<Expr> = None;
+  // `FillingStyle`: how the filling wall is drawn. Unset, it is WL's
+  // translucent gray.
+  let mut filling_style: Option<StyleState3D> = None;
   // `BoundaryStyle`: the outline along the surface's edges, black by
   // default; `None` turns it off.
   let mut boundary_style: Option<StyleState3D> = Some(StyleState3D {
@@ -1665,7 +1668,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             other => mesh_levels = parse_mesh_levels(other),
           }
@@ -1691,6 +1696,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           filling = match replacement.as_ref() {
             Expr::Identifier(n) if n == "None" => None,
             other => Some(other.clone()),
+          };
+        }
+        Expr::Identifier(name) if name == "FillingStyle" => {
+          filling_style = match replacement.as_ref() {
+            Expr::Identifier(n) if n == "Automatic" => None,
+            other => parse_plot_style_3d(other, 1).into_iter().next(),
           };
         }
         Expr::Identifier(name) if name == "BoundaryStyle" => {
@@ -1845,6 +1856,17 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // A numeric `Filling` level is part of the picture: the automatic
+  // vertical range reaches down (or up) to it.
+  let filling_level = filling.as_ref().and_then(|spec| match spec {
+    Expr::Identifier(_) => None,
+    other => try_eval_to_f64(other),
+  });
+  if let Some(level) = filling_level.filter(|l| l.is_finite()) {
+    global_z_min = global_z_min.min(level);
+    global_z_max = global_z_max.max(level);
+  }
+
   // Use PlotRange if specified, otherwise the global data range
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
   let z_range = if (z_hi - z_lo).abs() < 1e-15 {
@@ -1897,7 +1919,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // together with a `Graphics3D`. Emitting the sampled surface in world
   // coordinates — styled with the directives the standalone render
   // shades it by — lets `Show[Plot3D[…], Graphics3D[…]]` draw both.
-  let structure = {
+  let mut structure = {
     let complexes: Vec<Expr> = grids
       .iter()
       .enumerate()
@@ -2383,21 +2405,49 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
 
-  // `Filling` hangs a translucent gray wall from the surface's outer edge
-  // down (or up) to the filling height.
+  // `Filling` hangs a wall from the surface's outer edge down (or up) to
+  // the filling height: translucent gray by default, or lit in the color
+  // of a `FillingStyle`.
   if let Some(spec) = &filling {
     let to = match spec {
       Expr::Identifier(n) if n == "Bottom" => Some(z_lo),
       Expr::Identifier(n) if n == "Top" => Some(z_hi),
       Expr::Identifier(n) if n == "Axis" => Some(0.0),
-      other => try_eval_to_f64(other),
+      _ => filling_level,
     };
+    let lit_style = filling_style.as_ref().filter(|s| s.color.is_some());
     if let Some(to) = to {
       let to = to.clamp(z_lo, z_hi);
+      let mut wall_quads: Vec<Expr> = Vec::new();
       for [a, b] in &edge_segments {
         let quad = [*a, *b, [b[0], b[1], to], [a[0], a[1], to]];
+        wall_quads.push(Expr::List(
+          quad
+            .iter()
+            .map(|p| {
+              Expr::List(
+                p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into(),
+              )
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        ));
         for tri in [[quad[0], quad[1], quad[2]], [quad[0], quad[2], quad[3]]] {
           let [v0, v1, v2] = tri.map(to_box);
+          let (color, opacity) = match lit_style {
+            Some(style) => shade_facet(
+              SurfaceDefault::Plain(style.color.unwrap_or((178, 178, 178))),
+              None,
+              Some(style),
+              triangle_normal(v0, v1, v2),
+              tri_center(v0, v1, v2),
+              &scene,
+            ),
+            // Wolfram's `FillingStyle -> Opacity[0.5]` gray, flattened onto
+            // the white page: neighboring translucent pieces would leave
+            // seams where their edges overlap.
+            None => ((178, 178, 178), 1.0),
+          };
           all_triangles.push(Triangle {
             boundary: [false; 3],
             edge_color: None,
@@ -2405,15 +2455,40 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             edge_dashing: None,
             projected: [v0, v1, v2].map(|v| project(v, &camera)),
             depth: depth(tri_center(v0, v1, v2), &camera),
-            // Wolfram's `FillingStyle -> Opacity[0.5]` gray, flattened onto
-            // the white page: neighboring translucent pieces would leave
-            // seams where their edges overlap.
-            color: (178, 178, 178),
-            opacity: 1.0,
+            color,
+            opacity,
             texture: None,
             vertex_colors: None,
           });
         }
+      }
+      // The wall travels with the surface into `Show`, in data coordinates
+      // and with the filling's own style.
+      if !wall_quads.is_empty()
+        && let Expr::FunctionCall { args: sargs, .. } = &mut structure
+        && let Some(content) = sargs.first_mut()
+      {
+        let mut wall = vec![call0("EdgeForm")];
+        match lit_style {
+          Some(style) => {
+            if style.opacity < 1.0 {
+              wall.push(call1("Opacity", Expr::Real(style.opacity)));
+            }
+            let (r, g, b) = style.color.unwrap_or((178, 178, 178));
+            wall.push(call(
+              "RGBColor",
+              vec![
+                Expr::Real(r as f64 / 255.0),
+                Expr::Real(g as f64 / 255.0),
+                Expr::Real(b as f64 / 255.0),
+              ],
+            ));
+          }
+          None => wall.push(call1("GrayLevel", Expr::Real(0.7))),
+        }
+        wall.push(call1("Polygon", Expr::List(wall_quads.into())));
+        let surface = std::mem::replace(content, Expr::List(vec![].into()));
+        *content = Expr::List(vec![surface, Expr::List(wall.into())].into());
       }
     }
   }
@@ -5937,8 +6012,9 @@ struct StyleState3D {
   opacity: f64,
   /// Stroke width in pixels for Line3D primitives. None means default 1.5.
   thickness: Option<f64>,
-  /// Whether an open surface's ends are closed off, as `CapForm` sets it.
+  /// Whether a `Tube`'s ends are closed off, as `CapForm` sets it.
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
+  /// (`Cylinder` and `Cone` are solid regions and always closed.)
   capped: bool,
   /// Whether a face is outlined. `EdgeForm[]` asks for no edge at all,
   /// which is how a dissection shows its pieces as flat color.
@@ -5993,6 +6069,9 @@ struct StyleState3D {
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
+  /// `(bold, italic)`: `Style[…, Bold]` / `Style[…, Italic]` (or
+  /// `FontWeight -> Bold` / `FontSlant -> Italic`) around `Text` labels.
+  font_face: (bool, bool),
   /// The panel `Background -> color` paints behind the `Text` labels, as
   /// a `Style[Text[…], Background -> color]` wrapper or the label's own
   /// option gives it. `None` draws the label straight on the scene.
@@ -6022,6 +6101,7 @@ impl Default for StyleState3D {
       vertex_colors: None,
       arrowhead: None,
       font_size: None,
+      font_face: (false, false),
       text_background: None,
     }
   }
@@ -6378,8 +6458,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         }
         return true;
       }
-      // CapForm[None] leaves an open surface's ends open; every named form
-      // ("Butt", "Square", "Round") closes them, as does the default.
+      // CapForm[None] leaves a tube's ends open; every named form ("Butt",
+      // "Square", "Round") closes them, as does the default.
       "CapForm" if args.len() == 1 => {
         style.capped = !matches!(&args[0], Expr::Identifier(s) if s == "None");
         return true;
@@ -7597,24 +7677,12 @@ fn tessellate_for_transform(
     Primitive3D::Sphere { center, radius, .. } => {
       Some(tessellate_sphere(center, *radius, (18, 36)))
     }
-    Primitive3D::Cylinder {
-      p1,
-      p2,
-      radius,
-      style,
-    } => Some(tessellate_cylinder(
-      p1,
-      p2,
-      *radius,
-      style.capped,
-      MAX_SIDE_SUBDIVISIONS,
-    )),
-    Primitive3D::Cone {
-      p1,
-      p2,
-      radius,
-      style,
-    } => Some(tessellate_cone(p1, p2, *radius, style.capped)),
+    Primitive3D::Cylinder { p1, p2, radius, .. } => {
+      Some(tessellate_cylinder(p1, p2, *radius, MAX_SIDE_SUBDIVISIONS))
+    }
+    Primitive3D::Cone { p1, p2, radius, .. } => {
+      Some(tessellate_cone(p1, p2, *radius))
+    }
     Primitive3D::Cuboid { p_min, p_max, .. } => {
       Some(tessellate_cuboid(p_min, p_max))
     }
@@ -7979,6 +8047,45 @@ fn text3d_background_option(opt: &Expr) -> Option<Option<(u8, u8, u8)>> {
 /// Typesets `label_expr` (a `Text`/`Inset` label, e.g. a plain string or
 /// `Style[…]`) and pushes a `Text3D` primitive for it at `pos`, if it
 /// renders to non-empty text.
+/// The `(bold, italic)` a font-face `Style` directive turns on: `Bold`,
+/// `Italic`, `FontWeight -> Bold` or `FontSlant -> Italic`.
+/// The size a `FontSize -> n` directive gives text.
+fn font_size_rule(directive: &Expr) -> Option<f64> {
+  match directive {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontSize") => {
+      try_eval_to_f64(replacement).filter(|size| *size > 0.0)
+    }
+    _ => None,
+  }
+}
+
+fn font_face_directive(directive: &Expr) -> Option<(bool, bool)> {
+  match directive {
+    Expr::Identifier(n) if n == "Bold" => Some((true, false)),
+    Expr::Identifier(n) if n == "Italic" => Some((false, true)),
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => match (pattern.as_ref(), replacement.as_ref()) {
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "FontWeight" && v == "Bold" =>
+      {
+        Some((true, false))
+      }
+      (Expr::Identifier(k), Expr::Identifier(v))
+        if k == "FontSlant" && v == "Italic" =>
+      {
+        Some((false, true))
+      }
+      _ => None,
+    },
+    _ => None,
+  }
+}
+
 fn push_text3d_label(
   label_expr: &Expr,
   pos: Point3D,
@@ -8010,6 +8117,7 @@ fn push_text3d_label(
   let (bold, italic) = styled
     .as_ref()
     .map_or((false, false), |s| (s.bold, s.italic));
+  let (bold, italic) = (bold || style.font_face.0, italic || style.font_face.1);
   // A number that typesets as a stacked fraction (`1/30`) keeps the
   // flattened `num\n--\nden` form the 2D labels draw it from, so the
   // renderer stacks it the same way instead of writing `1/30` on one line.
@@ -8366,9 +8474,10 @@ fn collect_3d_primitives(
         }
         // `Arrow[Tube[curve, r]]` is a solid arrow: the tube, stopped short
         // of the curve's end, and a slim cone head whose tip sits on that
-        // end. Wolfram sizes the head by the arrow (a twentieth of the
-        // curve's extent), not by the tube, so a thick tube hides most of
-        // it.
+        // end. Wolfram sizes the head by the picture, not by the tube (so a
+        // thick tube hides most of it): `Arrowheads[s]` (default a
+        // twentieth) is a fraction of the diagonal of the scene's box.
+        // Before that box is known, the curve's own extent stands in.
         "Arrow"
           if matches!(args.first(), Some( Expr::FunctionCall { name: n, args: ta })
             if n == "Tube" && !ta.is_empty()) =>
@@ -8384,12 +8493,19 @@ fn collect_3d_primitives(
             other => other.clone(),
           };
           let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+          // The head covers the last `len` of the curve (measured along
+          // it, so a finely sampled arc still gets a full-size head): the
+          // shaft stops where it begins and the cone points from there to
+          // the tip.
           let head = parse_point3d_list(&curve)
             .filter(|pts| pts.len() >= 2)
             .and_then(|pts| {
               let tip = pts[pts.len() - 1];
-              let prev = pts[pts.len() - 2];
-              let seg = v_len([tip.x - prev.x, tip.y - prev.y, tip.z - prev.z]);
+              let dist = |a: Point3D, b: Point3D| {
+                v_len([a.x - b.x, a.y - b.y, a.z - b.z])
+              };
+              let curve_len: f64 =
+                pts.windows(2).map(|w| dist(w[0], w[1])).sum();
               let (mut lo, mut hi) =
                 ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
               for p in &pts {
@@ -8398,20 +8514,41 @@ fn collect_3d_primitives(
                   hi[k] = hi[k].max(c);
                 }
               }
-              let diag = v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]]);
-              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(seg);
-              (seg > 0.0 && len > 0.0).then(|| {
-                let base = Point3D {
-                  x: tip.x + (prev.x - tip.x) / seg * len,
-                  y: tip.y + (prev.y - tip.y) / seg * len,
-                  z: tip.z + (prev.z - tip.z) / seg * len,
-                };
-                let mut shaft = pts.clone();
-                if let Some(last) = shaft.last_mut() {
-                  *last = base;
+              let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
+                v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
+              });
+              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(curve_len);
+              if !(curve_len > 0.0 && len > 0.0) {
+                return None;
+              }
+              // Walk back from the tip until `len` of the curve is used up.
+              let mut remaining = len;
+              let mut shaft = pts.clone();
+              let mut base = pts[0];
+              while shaft.len() >= 2 {
+                let end = shaft[shaft.len() - 1];
+                let prev = shaft[shaft.len() - 2];
+                let seg = dist(end, prev);
+                if seg >= remaining {
+                  let t = if seg > 0.0 { remaining / seg } else { 0.0 };
+                  base = Point3D {
+                    x: end.x + (prev.x - end.x) * t,
+                    y: end.y + (prev.y - end.y) * t,
+                    z: end.z + (prev.z - end.z) * t,
+                  };
+                  if let Some(last) = shaft.last_mut() {
+                    *last = base;
+                  }
+                  break;
                 }
-                (shaft, base, tip, len)
-              })
+                remaining -= seg;
+                shaft.pop();
+              }
+              if shaft.len() < 2 {
+                shaft = vec![pts[0], base];
+              }
+              let chord = dist(base, tip);
+              (chord > 0.0).then_some((shaft, base, tip, chord))
             });
           match head {
             Some((shaft, base, tip, len)) => {
@@ -8547,7 +8684,10 @@ fn collect_3d_primitives(
               }
             }
           };
-          let radius = match args.get(1) {
+          // A radius list (`Cylinder[{{p1, p2}, {p3, p4}}, {r1, r2}]`) gives
+          // each axis of the collection its own radius, cycling through the
+          // list; a single radius applies to every axis.
+          let radii: Vec<f64> = match args.get(1) {
             Some(r) => {
               let r = match r {
                 Expr::FunctionCall { name, args: inner }
@@ -8557,12 +8697,19 @@ fn collect_3d_primitives(
                 }
                 other => other,
               };
-              try_eval_to_f64(&evaluate_expr_to_expr(r).unwrap_or(r.clone()))
-                .unwrap_or(1.0)
+              let r = evaluate_expr_to_expr(r).unwrap_or(r.clone());
+              match &r {
+                Expr::List(items) if !items.is_empty() => items
+                  .iter()
+                  .map(|it| try_eval_to_f64(it).unwrap_or(1.0))
+                  .collect(),
+                other => vec![try_eval_to_f64(other).unwrap_or(1.0)],
+              }
             }
-            None => 1.0,
+            None => vec![1.0],
           };
-          for (p1, p2) in axes {
+          for (i, (p1, p2)) in axes.into_iter().enumerate() {
+            let radius = radii[i % radii.len()];
             prims.push(if name == "Cylinder" {
               Primitive3D::Cylinder {
                 p1,
@@ -8628,17 +8775,78 @@ fn collect_3d_primitives(
         // `curve` is a point list, a `Line[…]`, or a list of either.
         // `TubeBox` is the box form `Tube` is typeset as and draws
         // identically, so notebooks that spell it out render the same.
+        // `TubeBSplineCurveBox[pts, r, opts…]` is the box form the
+        // FrontEnd writes for `Tube[BSplineCurve[pts, opts…], r]`; it
+        // draws the same tube, so it is rewritten and drawn as that.
+        "TubeBSplineCurveBox" if !args.is_empty() => {
+          let (radius, opts): (Vec<Expr>, Vec<Expr>) = args[1..]
+            .iter()
+            .cloned()
+            .partition(|a| !matches!(a, Expr::Rule { .. }));
+          let mut curve_args = vec![args[0].clone()];
+          curve_args.extend(opts);
+          let mut tube_args = vec![Expr::FunctionCall {
+            name: "BSplineCurve".to_string(),
+            args: curve_args.into(),
+          }];
+          tube_args.extend(radius.into_iter().take(1));
+          collect_3d_primitives(
+            &Expr::FunctionCall {
+              name: "Tube".to_string(),
+              args: tube_args.into(),
+            },
+            style,
+            prims,
+          );
+        }
         "Tube" | "TubeBox" if !args.is_empty() => {
           // `Tube[BSplineCurve[…], r]` runs the tube along the spline, so
           // the curve is sampled first — a tube around the bare control
           // points would cut every corner the spline rounds.
-          let spline = match &args[0] {
+          //
+          // A radius list with one radius per control point is carried
+          // through the same spline basis (radius as one more coordinate),
+          // the way Wolfram interpolates it: the tube swells smoothly where
+          // the spline's middle control points pull it, rather than in
+          // straight-line steps between the control points.
+          //
+          // Without a radius of the `Tube`'s own, a radius list written as
+          // the curve's second argument (`Tube[BSplineCurve[pts, {r1, …}]]`)
+          // sets the radii the same way.
+          let control_radii = |inner: &[Expr]| -> Option<Vec<f64>> {
+            let spec = args.get(1).or_else(|| {
+              inner.get(1).filter(|a| {
+                !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+              })
+            })?;
+            let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
+            let Expr::List(items) = &spec else {
+              return None;
+            };
+            let control = evaluate_expr_to_expr(&inner[0])
+              .unwrap_or_else(|_| inner[0].clone());
+            let n = parse_point3d_list(&control)?.len();
+            if items.len() != n || n < 2 {
+              return None;
+            }
+            items
+              .iter()
+              .map(|e| {
+                try_eval_to_f64(&evaluate_expr_to_expr(e).unwrap_or(e.clone()))
+              })
+              .collect()
+          };
+          let (spline, spline_radii) = match &args[0] {
             Expr::FunctionCall { name, args: inner }
               if name == "BSplineCurve" && !inner.is_empty() =>
             {
-              bspline_curve_points(inner)
+              let radii = control_radii(inner);
+              match bspline_curve_samples(inner, radii.as_deref()) {
+                Some((pts, rs)) => (Some(pts), rs),
+                None => (None, None),
+              }
             }
-            _ => None,
+            _ => (None, None),
           };
           let curve = match &args[0] {
             Expr::FunctionCall { name, args: inner }
@@ -8662,7 +8870,9 @@ fn collect_3d_primitives(
             },
           };
           for pts in curves {
-            let radii: Vec<f64> = if let Some(spec) = args.get(1) {
+            let radii: Vec<f64> = if let Some(rs) = spline_radii.clone() {
+              rs
+            } else if let Some(spec) = args.get(1) {
               let spec = evaluate_expr_to_expr(spec).unwrap_or(spec.clone());
               match &spec {
                 Expr::List(items) if items.len() == pts.len() => items
@@ -8895,8 +9105,17 @@ fn collect_3d_primitives(
           for directive in &args[1..] {
             let evaluated =
               evaluate_expr_to_expr(directive).unwrap_or(directive.clone());
+            if let Some((bold, italic)) = font_face_directive(&evaluated) {
+              style.font_face.0 |= bold;
+              style.font_face.1 |= italic;
+              continue;
+            }
             if let Some(bg) = text3d_background_option(&evaluated) {
               style.text_background = bg;
+              continue;
+            }
+            if let Some(size) = font_size_rule(&evaluated) {
+              style.font_size = Some(size);
               continue;
             }
             match try_eval_to_f64(&evaluated) {
@@ -9099,67 +9318,71 @@ fn resample_tube_radii(pts: &[Point3D], radii: &[f64]) -> Vec<f64> {
     .collect()
 }
 
-/// The polyline a `BSplineCurve[{p1, …}, opts…]` stands for: the uniform
-/// B-spline of degree `min(3, n - 1)` over its control points, sampled
-/// finely enough to read as a curve. `SplineClosed -> True` wraps the
-/// leading control points onto the end so the curve closes on itself.
-/// `SplineDegree -> k` overrides the default degree `min(3, n - 1)`.
-/// Arguments after the control points that are not options are ignored,
-/// the way Wolfram ignores them. `None` when the first argument is not a
-/// list of 3-D points.
+/// The polyline a `BSplineCurve[{p1, …}, opts…]` stands for, sampled
+/// finely enough to read as a curve. The spline options (`SplineDegree`,
+/// `SplineClosed`, `SplineWeights`, `SplineKnots`) are honored exactly as
+/// for 2-D curves. Arguments after the control points that are not options
+/// are ignored, the way Wolfram ignores them. `None` when the first
+/// argument is not a list of 3-D points.
 fn bspline_curve_points(args: &[Expr]) -> Option<Vec<Point3D>> {
+  bspline_curve_samples(args, None).map(|(pts, _)| pts)
+}
+
+/// Like `bspline_curve_points`, but also carries one scalar per control
+/// point (a `Tube`'s radii) through the same spline basis, returning the
+/// interpolated value at every sample. `radii` of the wrong length are
+/// ignored and give `None`.
+fn bspline_curve_samples(
+  args: &[Expr],
+  radii: Option<&[f64]>,
+) -> Option<(Vec<Point3D>, Option<Vec<f64>>)> {
   let pts_expr =
     evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
   let control = parse_point3d_list(&pts_expr)?;
+  let radii = radii.filter(|rs| rs.len() == control.len());
   if control.len() < 2 {
-    return Some(control);
+    return Some((control, radii.map(<[f64]>::to_vec)));
   }
-  let closed = args.iter().skip(1).any(|arg| {
-    matches!(arg,
-      Expr::Rule { pattern, replacement }
-        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineClosed")
-        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
-  });
-  let degree = crate::functions::graphics::spline_degree_from_args(
-    &args[1..],
-    control.len(),
-  );
-  let control = if closed {
-    let mut cp = control.clone();
-    cp.extend_from_slice(&control[..degree]);
-    cp
-  } else {
-    control
-  };
-  let clamped =
-    !closed && !crate::functions::graphics::spline_knots_unclamped(&args[1..]);
-  let n = control.len();
+  let coords: Vec<Vec<f64>> = control
+    .iter()
+    .enumerate()
+    .map(|(i, p)| {
+      let mut c = vec![p.x, p.y, p.z];
+      if let Some(rs) = radii {
+        c.push(rs[i]);
+      }
+      c
+    })
+    .collect();
   // Enough samples that the curve is smooth without the tube it may feed
   // exploding into triangles: a handful per control point, bounded.
-  let samples = (n * 6).clamp(64, 600);
-  Some(
-    crate::functions::graphics::bspline_sample_weights(
-      n, degree, samples, clamped,
-    )
+  // A closed spline wraps its leading control points onto the end, so it
+  // has that many more spans to sample.
+  let spans = if crate::functions::graphics::spline_closed(&args[1..]) {
+    control.len()
+      + crate::functions::graphics::spline_degree_from_args(
+        &args[1..],
+        control.len(),
+      )
+  } else {
+    control.len()
+  };
+  let samples = (spans * 6).clamp(64, 600);
+  let sampled = crate::functions::graphics::sample_bspline_curve(
+    &coords,
+    &args[1..],
+    samples,
+  );
+  let pts = sampled
     .iter()
-    .map(|weights| {
-      let mut acc = Point3D {
-        x: 0.0,
-        y: 0.0,
-        z: 0.0,
-      };
-      for (j, &b) in weights.iter().enumerate() {
-        if b == 0.0 {
-          continue;
-        }
-        acc.x += b * control[j].x;
-        acc.y += b * control[j].y;
-        acc.z += b * control[j].z;
-      }
-      acc
+    .map(|p| Point3D {
+      x: p[0],
+      y: p[1],
+      z: p[2],
     })
-    .collect(),
-  )
+    .collect();
+  let rs = radii.map(|_| sampled.iter().map(|p| p[3]).collect());
+  Some((pts, rs))
 }
 
 /// Tessellate a B-spline surface from its control-point grid by sampling
@@ -9769,6 +9992,139 @@ fn cuboid_face_keys(
 /// of another opaque box (same plane, same rectangle). They are interior
 /// to the union and never visible, but a grid of many boxes (e.g. a
 /// fractal built from unit cubes) would otherwise emit them all.
+/// An opaque convex solid of the scene that hides whatever lies wholly
+/// inside it (see the culling in the `Graphics3D` renderer).
+struct SolidOccluder<'a> {
+  prim: &'a Primitive3D,
+  shape: OccluderShape,
+  /// Bounding sphere, for skipping pairs of primitives far apart.
+  center: Point3D,
+  reach: f64,
+}
+
+enum OccluderShape {
+  Sphere {
+    center: Point3D,
+    radius: f64,
+  },
+  Cylinder {
+    p1: Point3D,
+    p2: Point3D,
+    radius: f64,
+  },
+}
+
+impl SolidOccluder<'_> {
+  /// Whether `p` lies strictly inside the solid. The small margin keeps a
+  /// facet that touches the surface (a shared cap, a tangent point)
+  /// visible.
+  fn contains(&self, p: &Point3D) -> bool {
+    match &self.shape {
+      OccluderShape::Sphere { center, radius } => {
+        let d = ((p.x - center.x).powi(2)
+          + (p.y - center.y).powi(2)
+          + (p.z - center.z).powi(2))
+        .sqrt();
+        d < radius * (1.0 - 1e-6)
+      }
+      OccluderShape::Cylinder { p1, p2, radius } => {
+        let axis = [p2.x - p1.x, p2.y - p1.y, p2.z - p1.z];
+        let len2 = v_dot(axis, axis);
+        if len2 <= 0.0 {
+          return false;
+        }
+        let rel = [p.x - p1.x, p.y - p1.y, p.z - p1.z];
+        let t = v_dot(rel, axis) / len2;
+        let margin = 1e-6;
+        if t <= margin || t >= 1.0 - margin {
+          return false;
+        }
+        let radial = [
+          rel[0] - t * axis[0],
+          rel[1] - t * axis[1],
+          rel[2] - t * axis[2],
+        ];
+        v_dot(radial, radial).sqrt() < radius * (1.0 - margin)
+      }
+    }
+  }
+
+  /// Whether the bounding spheres of this solid and `prim` overlap, so
+  /// that `prim` may have facets inside it.
+  fn may_enclose(&self, prim: &Primitive3D) -> bool {
+    let Some((c, r)) = solid_bounding_sphere(prim) else {
+      return false;
+    };
+    let d = ((c.x - self.center.x).powi(2)
+      + (c.y - self.center.y).powi(2)
+      + (c.z - self.center.z).powi(2))
+    .sqrt();
+    d < self.reach + r
+  }
+}
+
+/// Bounding sphere of a sphere, cylinder or cone primitive.
+fn solid_bounding_sphere(prim: &Primitive3D) -> Option<(Point3D, f64)> {
+  match prim {
+    Primitive3D::Sphere { center, radius, .. } => Some((*center, *radius)),
+    Primitive3D::Cylinder { p1, p2, radius, .. }
+    | Primitive3D::Cone { p1, p2, radius, .. } => {
+      let c = Point3D {
+        x: f64::midpoint(p1.x, p2.x),
+        y: f64::midpoint(p1.y, p2.y),
+        z: f64::midpoint(p1.z, p2.z),
+      };
+      let half =
+        ((p2.x - p1.x).powi(2) + (p2.y - p1.y).powi(2) + (p2.z - p1.z).powi(2))
+          .sqrt()
+          / 2.0;
+      Some((c, (half * half + radius * radius).sqrt()))
+    }
+    _ => None,
+  }
+}
+
+/// The opaque, closed spheres and capped cylinders of a scene, which hide
+/// facets of other solids lying wholly inside them.
+fn solid_occluders(prims: &[Primitive3D]) -> Vec<SolidOccluder<'_>> {
+  prims
+    .iter()
+    .filter_map(|prim| {
+      let shape = match prim {
+        Primitive3D::Sphere {
+          center,
+          radius,
+          style,
+          ..
+        } if style.opacity >= 1.0 && style.faces => OccluderShape::Sphere {
+          center: *center,
+          radius: *radius,
+        },
+        Primitive3D::Cylinder {
+          p1,
+          p2,
+          radius,
+          style,
+        } if style.opacity >= 1.0 && style.faces && style.capped => {
+          OccluderShape::Cylinder {
+            p1: *p1,
+            p2: *p2,
+            radius: *radius,
+          }
+        }
+        _ => return None,
+      };
+      let (center, reach) = solid_bounding_sphere(prim)?;
+      (reach.is_finite() && reach > 0.0).then_some(SolidOccluder {
+        prim,
+        shape,
+        center,
+        reach,
+      })
+    })
+    .collect()
+}
+
 fn hidden_cuboid_faces(
   prims: &[Primitive3D],
 ) -> std::collections::HashSet<(u8, [i64; 5])> {
@@ -10094,6 +10450,29 @@ fn scene_image_width() -> f64 {
 }
 
 thread_local! {
+  /// Diagonal of the box of the `Graphics3D` currently being collected (its
+  /// explicit `PlotRange`, else the extent of its contents), which an
+  /// `Arrowheads[s]` size on an `Arrow[Tube[…]]` is a fraction of. `None`
+  /// until the box is known: a first collection pass measures it.
+  static SCENE_ARROW_EXTENT: std::cell::Cell<Option<f64>> =
+    const { std::cell::Cell::new(None) };
+}
+
+/// True when a 3D scene holds an `Arrow[Tube[…]]`, whose solid head is
+/// sized by the box of the whole scene.
+fn contains_tube_arrow(expr: &Expr) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().any(contains_tube_arrow),
+    Expr::FunctionCall { name, args } => {
+      (name == "Arrow"
+        && matches!(args.first(), Some(Expr::FunctionCall { name: n, .. }) if n == "Tube"))
+        || args.iter().any(contains_tube_arrow)
+    }
+    _ => false,
+  }
+}
+
+thread_local! {
   /// Number of `Tube`s in the `Graphics3D` currently being collected, so
   /// each can size its tessellation to the crowd it is drawn in.
   static SCENE_TUBE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -10138,16 +10517,15 @@ fn tube_subdivision_budget(tube_count: usize) -> usize {
   }
 }
 
-/// Tessellate a cylinder along its axis. With `capped`, flat disks close
-/// both ends — Wolfram's default; `CapForm[None]` leaves it a hollow tube.
-/// A flat cylinder (its two ends nearly coincident) is how a Demonstration
+/// Tessellate a cylinder along its axis, flat disks closing both ends: a
+/// `Cylinder` is a solid region, so `CapForm` (which styles the ends of
+/// lines and tubes) never opens it. A flat cylinder (its two ends nearly coincident) is how a Demonstration
 /// draws a filled disk in space, so the caps matter even when the side wall
 /// is too thin to see.
 fn tessellate_cylinder(
   p1: &Point3D,
   p2: &Point3D,
   radius: f64,
-  capped: bool,
   max_subdivisions: usize,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
   let n = CYLINDER_SIDES;
@@ -10226,18 +10604,16 @@ fn tessellate_cylinder(
       tris.push((ring1[i], ring2[i2], ring1[i2]));
     }
   }
-  if capped {
-    // The `p1` disk's outward normal points against the axis, so its fan
-    // needs the opposite winding from `p2`'s (see `tessellate_cone` for the
-    // same reasoning): `(center, ring[i+1], ring[i])` there vs.
-    // `(center, ring[i], ring[i+1])` here.
-    for i in 0..n {
-      tris.push((*p1, rings[0][(i + 1) % n], rings[0][i]));
-    }
-    let last = &rings[rings.len() - 1];
-    for i in 0..n {
-      tris.push((*p2, last[i], last[(i + 1) % n]));
-    }
+  // The `p1` disk's outward normal points against the axis, so its fan
+  // needs the opposite winding from `p2`'s (see `tessellate_cone` for the
+  // same reasoning): `(center, ring[i+1], ring[i])` there vs.
+  // `(center, ring[i], ring[i+1])` here.
+  for i in 0..n {
+    tris.push((*p1, rings[0][(i + 1) % n], rings[0][i]));
+  }
+  let last = &rings[rings.len() - 1];
+  for i in 0..n {
+    tris.push((*p2, last[i], last[(i + 1) % n]));
   }
   tris
 }
@@ -10476,13 +10852,12 @@ fn tessellate_tube(
   tris
 }
 
-/// Tessellate a cone. With `capped`, a flat disk closes the base — Wolfram's
-/// default; `CapForm[None]` leaves it open.
+/// Tessellate a cone, a flat disk closing the base: a `Cone` is a solid
+/// region, so `CapForm` never opens it.
 fn tessellate_cone(
   base: &Point3D,
   tip: &Point3D,
   radius: f64,
-  capped: bool,
 ) -> Vec<(Point3D, Point3D, Point3D)> {
   let n = CONE_SIDES;
   let pi = std::f64::consts::PI;
@@ -10543,13 +10918,11 @@ fn tessellate_cone(
     };
 
     tris.push((*tip, b1, b2));
-    if capped {
-      // Reversed winding vs. the lateral triangle above: its outward
-      // normal points along the radius and the axis (away from the base
-      // plane), so the base disk's normal — pointing the other way along
-      // the axis, away from the cone — needs `b2, b1` instead of `b1, b2`.
-      tris.push((*base, b2, b1));
-    }
+    // Reversed winding vs. the lateral triangle above: its outward normal
+    // points along the radius and the axis (away from the base plane), so
+    // the base disk's normal — pointing the other way along the axis, away
+    // from the cone — needs `b2, b1` instead of `b1, b2`.
+    tris.push((*base, b2, b1));
   }
   tris
 }
@@ -10561,11 +10934,10 @@ fn tessellate_cone(
 /// `steps` is the number of longitudinal ring-pair segments and `n` the
 /// radial subdivision count `tessellate_cylinder` was built with; a
 /// subdivided cylinder's interior ring seams are not rims, only the first
-/// and last are. When `capped`, the `2 * n` fan triangles appended after
-/// the side triangles close both rims, each contributing its own rim edge.
-fn cylinder_edge_flags(steps: usize, n: usize, capped: bool) -> Vec<[bool; 3]> {
-  let mut flags =
-    Vec::with_capacity(steps * 2 * n + if capped { 2 * n } else { 0 });
+/// and last are. The `2 * n` fan triangles appended after the side
+/// triangles close both rims, each contributing its own rim edge.
+fn cylinder_edge_flags(steps: usize, n: usize) -> Vec<[bool; 3]> {
+  let mut flags = Vec::with_capacity(steps * 2 * n + 2 * n);
   for seg in 0..steps {
     let is_first = seg == 0;
     let is_last = seg == steps - 1;
@@ -10574,24 +10946,18 @@ fn cylinder_edge_flags(steps: usize, n: usize, capped: bool) -> Vec<[bool; 3]> {
       flags.push([false, false, is_first]);
     }
   }
-  if capped {
-    flags.extend(std::iter::repeat_n([false, true, false], 2 * n));
-  }
+  flags.extend(std::iter::repeat_n([false, true, false], 2 * n));
   flags
 }
 
 /// Which triangle edges of a tessellated cone lie on its base circle.
 /// `tessellate_cone` emits one lateral triangle `(tip, b1, b2)` per segment,
-/// so the rim edge is always `b1→b2`; when `capped`, each is followed by a
-/// base-disk fan triangle whose own rim edge is `b2→b1`.
-fn cone_edge_flags(n: usize, capped: bool) -> Vec<[bool; 3]> {
-  if capped {
-    std::iter::repeat_n([[false, true, false], [false, true, false]], n)
-      .flatten()
-      .collect()
-  } else {
-    vec![[false, true, false]; n]
-  }
+/// so the rim edge is always `b1→b2`; each is followed by a base-disk fan
+/// triangle whose own rim edge is `b2→b1`.
+fn cone_edge_flags(n: usize) -> Vec<[bool; 3]> {
+  std::iter::repeat_n([[false, true, false], [false, true, false]], n)
+    .flatten()
+    .collect()
 }
 
 /// Moves the contents into the screen space of a perspective camera at
@@ -11138,6 +11504,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut tick_spec: [Option<TickList3D>; 3] = [None, None, None];
   // `AspectRatio -> r`: the picture is `r` times as tall as it is wide.
   let mut aspect_ratio: Option<f64> = None;
+  let mut aspect_full = false;
   // `Lighting -> spec`: the lights every surface without its own
   // `Lighting` directive is shaded under. `None` is `Automatic`.
   let mut scene_lighting: Option<Lighting> = None;
@@ -11148,6 +11515,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // sides): a band of the given width around the picture that the scene is
   // kept out of, so the contents are laid out in the region inside it.
   let mut image_padding: Option<[f64; 4]> = None;
+  // `BaseStyle -> spec`: directives in force before any of the scene's own,
+  // like a `Style` wrapped round the whole content (`BaseStyle -> 14` sizes
+  // every `Text` label).
+  let mut base_style: Option<Expr> = None;
   for opt in &args[1..] {
     let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
@@ -11179,6 +11550,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           orthographic = matches!(replacement.as_ref(), Expr::String(s) if s == "Orthographic");
         }
         "AxesEdge" => axes_edge = parse_axes_edge(replacement),
+        "BaseStyle" => base_style = Some(replacement.as_ref().clone()),
         "Lighting" => {
           scene_lighting = Lighting::parse(replacement);
         }
@@ -11307,10 +11679,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           tick_spec = parse_ticks_3d(&value);
         }
         "AspectRatio" => {
-          if let Some(r) = try_eval_to_f64(
-            &evaluate_expr_to_expr(replacement)
-              .unwrap_or_else(|_| replacement.as_ref().clone()),
-          ) && r > 0.0
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          aspect_full = matches!(&value, Expr::Identifier(s) if s == "Full");
+          if let Some(r) = try_eval_to_f64(&value)
+            && r > 0.0
             && r.is_finite()
           {
             aspect_ratio = Some(r);
@@ -11357,16 +11730,55 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   }
 
+  // `AspectRatio -> Full` stretches the scene to fill the width and height
+  // `ImageSize` gives it.
+  if aspect_full && explicit_height && svg_width > 0 {
+    aspect_ratio = Some(svg_height as f64 / svg_width as f64);
+  }
   if let Some(r) = aspect_ratio {
     svg_height = ((svg_width as f64 * r).round() as u32).max(1);
   }
+
+  let content = match base_style {
+    Some(base) => {
+      let directives = match base {
+        Expr::List(ref items) => items.to_vec(),
+        other => vec![other],
+      };
+      if directives.is_empty() {
+        content
+      } else {
+        let mut style_args = vec![content];
+        style_args.extend(directives);
+        Expr::FunctionCall {
+          name: "Style".to_string(),
+          args: style_args.into(),
+        }
+      }
+    }
+    None => content,
+  };
 
   // Collect primitives
   let mut prims = Vec::new();
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
   SCENE_IMAGE_WIDTH.set(svg_width as f64);
+  SCENE_ARROW_EXTENT.set(None);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
+
+  // Solid `Arrow[Tube[…]]` heads are sized by the scene's box, so once the
+  // first pass has measured it the scene is collected again.
+  if contains_tube_arrow(&content) {
+    let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
+    let diag = v_len([b[0].1 - b[0].0, b[1].1 - b[1].0, b[2].1 - b[2].0]);
+    if diag.is_finite() && diag > 0.0 {
+      SCENE_ARROW_EXTENT.set(Some(diag));
+      prims.clear();
+      style3d = StyleState3D::default();
+      collect_3d_primitives(&content, &mut style3d, &mut prims);
+    }
+  }
 
   if plot_range.is_none()
     && let Some(partial) = partial_range
@@ -11699,6 +12111,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let hidden_faces = hidden_cuboid_faces(&prims);
+  let occluders = solid_occluders(&prims);
 
   for prim in &prims {
     // Per-triangle edge flags for a polygon with holes; the ordinary
@@ -11751,8 +12164,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } => {
           let max_subdiv =
             cylinder_max_subdivisions(*radius, cyl_extent, cyl_count);
-          let tris =
-            tessellate_cylinder(p1, p2, *radius, style.capped, max_subdiv);
+          let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv);
           if style.edges {
             let len = ((p2.x - p1.x).powi(2)
               + (p2.y - p1.y).powi(2)
@@ -11760,8 +12172,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .sqrt();
             let steps =
               side_subdivision_steps(len, *radius, CYLINDER_SIDES, max_subdiv);
-            holed_boundaries =
-              cylinder_edge_flags(steps, CYLINDER_SIDES, style.capped);
+            holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
           }
           (tris, style)
         }
@@ -11771,9 +12182,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => {
-          let tris = tessellate_cone(p1, p2, *radius, style.capped);
+          let tris = tessellate_cone(p1, p2, *radius);
           if style.edges {
-            holed_boundaries = cone_edge_flags(CONE_SIDES, style.capped);
+            holed_boundaries = cone_edge_flags(CONE_SIDES);
           }
           (tris, style)
         }
@@ -11843,10 +12254,48 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             vertex_colors: None,
             arrowhead: None,
             font_size: None,
+            font_face: (false, false),
             text_background: None,
           },
         ),
       };
+    // A curved solid's facets that lie wholly inside another opaque convex
+    // solid can never be seen. Left in, the painter's sort interleaves
+    // them with the enclosing surface's facets wherever the two nearly
+    // coincide — a two-tone ball drawn as a sphere just inside another —
+    // and their seams streak across the visible surface.
+    let mut tris = tris;
+    if matches!(
+      prim,
+      Primitive3D::Sphere { .. }
+        | Primitive3D::Cylinder { .. }
+        | Primitive3D::Cone { .. }
+    ) && !occluders.is_empty()
+      && (holed_boundaries.is_empty() || holed_boundaries.len() == tris.len())
+    {
+      let enclosing: Vec<&SolidOccluder> = occluders
+        .iter()
+        .filter(|o| !std::ptr::eq(o.prim, prim) && o.may_enclose(prim))
+        .collect();
+      if !enclosing.is_empty() {
+        let keep: Vec<bool> = tris
+          .iter()
+          .map(|(a, b, c)| {
+            !enclosing
+              .iter()
+              .any(|o| o.contains(a) && o.contains(b) && o.contains(c))
+          })
+          .collect();
+        if keep.iter().any(|k| !k) {
+          let mut it = keep.iter();
+          tris.retain(|_| *it.next().unwrap_or(&true));
+          if !holed_boundaries.is_empty() {
+            let mut it = keep.iter();
+            holed_boundaries.retain(|_| *it.next().unwrap_or(&true));
+          }
+        }
+      }
+    }
     // `FaceForm[None]` leaves a face unfilled: it is still emitted, fully
     // transparent, so its outline is drawn where its edges lie.
     let prim_opacity = if prim_style.faces {
@@ -11964,9 +12413,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Primitive3D::Sphere { center, .. } if prim_opacity >= 1.0 => {
         Some(*center)
       }
-      Primitive3D::Cylinder { p1, p2, style, .. }
-      | Primitive3D::Cone { p1, p2, style, .. }
-        if style.capped && prim_opacity >= 1.0 =>
+      Primitive3D::Cylinder { p1, p2, .. }
+      | Primitive3D::Cone { p1, p2, .. }
+        if prim_opacity >= 1.0 =>
       {
         // Any interior point serves to orient the faces of a convex solid.
         let w = if matches!(prim, Primitive3D::Cone { .. }) {
@@ -12907,6 +13356,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           default_prim_color.to_string()
         };
+        // An `Opacity` in force fades the label like any other primitive;
+        // `Opacity[0]` hides it.
+        if style.opacity <= 0.0 {
+          continue;
+        }
+        let opacity_attr = if style.opacity < 1.0 {
+          format!(" opacity=\"{}\"", style.opacity)
+        } else {
+          String::new()
+        };
         let (px, py) = project(*pos, &camera);
         let (sx, sy) = to_svg(px, py);
         if let Some((pic, w, h)) = picture {
@@ -12914,7 +13373,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let y = sy - h / 2.0 + offset.1 * h / 2.0;
           svg.push_str(&pic.replacen(
             "<svg ",
-            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\" "),
+            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\"{opacity_attr} "),
             1,
           ));
           svg.push('\n');
@@ -13035,7 +13494,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
@@ -13829,7 +14288,9 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -14917,7 +15378,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -15617,13 +16080,17 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     reset_scalar_3d_cache();
     const CELLS: usize = 24;
     let ranges = [(x_min, x_max), (y_min, y_max), (z_min, z_max)];
-    let at = |d: usize, k: usize| {
-      let (lo, hi) = ranges[d];
-      lo + (hi - lo) * k as f64 / CELLS as f64
-    };
     // One layer beyond each face, outside the region, so the surface
     // closes on the face itself.
     let n = CELLS + 3;
+    let samples = sample_region_field(
+      &field,
+      [xvar.as_str(), yvar.as_str(), zvar.as_str()],
+      ranges,
+      CELLS,
+      false,
+    );
+    let m = CELLS + 1;
     let mut grid = vec![vec![vec![f64::NAN; n]; n]; n];
     let mut inside_any = false;
     for (i, plane) in grid.iter_mut().enumerate() {
@@ -15631,16 +16098,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         for (k, cell) in row.iter_mut().enumerate() {
           let pad = [i, j, k].iter().any(|&q| q == 0 || q == n - 1);
           let [a, b, c] = [i, j, k].map(|q| q.clamp(1, n - 2) - 1);
-          let v = evaluate_scalar_3d(
-            &field,
-            &xvar,
-            &yvar,
-            &zvar,
-            at(0, a),
-            at(1, b),
-            at(2, c),
-          )
-          .unwrap_or(f64::NAN);
+          let v = samples[(a * m + b) * m + c];
           inside_any |= v > 0.0;
           // A sample exactly on the boundary would make the surface pass
           // through a grid vertex, leaving sliver triangles.
@@ -15728,7 +16186,9 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -16620,6 +17080,131 @@ fn region_signed_field(cond: &Expr) -> Option<Expr> {
       _ => None,
     },
     _ => None,
+  }
+}
+
+/// Sample a `region_signed_field` on the `(cells + 1)³` grid corners of
+/// `ranges`, flattened as `[x][y][z]`. Each inequality (a leaf of the
+/// `Min`/`Max`/`Minus` tree) is divided by its numerical gradient length,
+/// turning it into an approximate signed distance before the leaves are
+/// combined. Without that, a steep condition (`(x-5)^2 + (z-5)^2 > 25`)
+/// combined with shallow ones (`x > -1/2`) has its zero crossing clipped by
+/// whichever leaf happens to be smaller at the inside sample, and the
+/// level surface comes out as a staircase instead of a smooth wall.
+///
+/// A lone condition (`normalize` false at the top) keeps its raw values:
+/// there is nothing for it to be clipped against.
+fn sample_region_field(
+  field: &Expr,
+  vars: [&str; 3],
+  ranges: [(f64, f64); 3],
+  cells: usize,
+  normalize: bool,
+) -> Vec<f64> {
+  let m = cells + 1;
+  let h: [f64; 3] =
+    [0, 1, 2].map(|d| (ranges[d].1 - ranges[d].0) / cells as f64);
+  let idx = |i: usize, j: usize, k: usize| (i * m + j) * m + k;
+  match field {
+    Expr::FunctionCall { name, args }
+      if (name == "Min" || name == "Max") && !args.is_empty() =>
+    {
+      let mut parts = args
+        .iter()
+        .map(|a| sample_region_field(a, vars, ranges, cells, true));
+      let first = parts.next().unwrap_or_default();
+      parts.fold(first, |acc, p| {
+        acc
+          .iter()
+          .zip(&p)
+          .map(|(&a, &b)| {
+            // A NaN sample (the condition failed to evaluate) counts as
+            // outside, as the boolean test would.
+            let (a, b) = (
+              if a.is_nan() { f64::NEG_INFINITY } else { a },
+              if b.is_nan() { f64::NEG_INFINITY } else { b },
+            );
+            if name == "Min" { a.min(b) } else { a.max(b) }
+          })
+          .collect()
+      })
+    }
+    Expr::FunctionCall { name, args } if name == "Minus" && args.len() == 1 => {
+      sample_region_field(&args[0], vars, ranges, cells, normalize)
+        .into_iter()
+        .map(|v| -v)
+        .collect()
+    }
+    leaf => {
+      let mut raw = vec![f64::NAN; m * m * m];
+      let at = |d: usize, k: usize| {
+        let (lo, hi) = ranges[d];
+        lo + (hi - lo) * k as f64 / cells as f64
+      };
+      for i in 0..m {
+        let x = at(0, i);
+        for j in 0..m {
+          let y = at(1, j);
+          for k in 0..m {
+            let z = at(2, k);
+            raw[idx(i, j, k)] =
+              evaluate_scalar_3d(leaf, vars[0], vars[1], vars[2], x, y, z)
+                .unwrap_or(f64::NAN);
+          }
+        }
+      }
+      if !normalize {
+        return raw;
+      }
+      // Finite-difference derivative along one axis, one-sided at the box
+      // faces and wherever a neighbor is missing.
+      let diff = |i: usize, j: usize, k: usize, d: usize| -> f64 {
+        let at = |q: [usize; 3]| raw[idx(q[0], q[1], q[2])];
+        let p = [i, j, k];
+        let here = at(p);
+        let mut lo = p;
+        let mut hi = p;
+        if p[d] > 0 {
+          lo[d] -= 1;
+        }
+        if p[d] + 1 < m {
+          hi[d] += 1;
+        }
+        let (vl, vh) = (at(lo), at(hi));
+        let (vl, sl) = if vl.is_finite() {
+          (vl, lo[d])
+        } else {
+          (here, p[d])
+        };
+        let (vh, sh) = if vh.is_finite() {
+          (vh, hi[d])
+        } else {
+          (here, p[d])
+        };
+        if sh == sl {
+          0.0
+        } else {
+          (vh - vl) / ((sh - sl) as f64 * h[d])
+        }
+      };
+      let mut out = raw.clone();
+      for i in 0..m {
+        for j in 0..m {
+          for k in 0..m {
+            let v = raw[idx(i, j, k)];
+            if !v.is_finite() {
+              continue;
+            }
+            let g =
+              (0..3).map(|d| diff(i, j, k, d).powi(2)).sum::<f64>().sqrt();
+            if g.is_finite() && g > 1e-12 {
+              out[idx(i, j, k)] = v / g;
+            }
+          }
+        }
+      }
+      out
+    }
   }
 }
 
@@ -18515,7 +19100,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             _ => {}
           }
@@ -20670,7 +21257,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Mesh" => {
           match replacement.as_ref() {
-            Expr::Identifier(n) if n == "None" => mesh_mode = MeshMode::None,
+            Expr::Identifier(n) if n == "None" || n == "False" => {
+              mesh_mode = MeshMode::None;
+            }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
             Expr::Integer(n) if *n >= 0 => mesh_count = Some(*n as usize),
             Expr::List(items) => {

@@ -26209,15 +26209,45 @@ mod combinatorica_show_graph {
       "{{RGBColor[1, 0, 0], {0.5, 1.}}, {RGBColor[0, 0, 1], {0., 0.5}}, \
 {RGBColor[0, 1, 0], {0.5, 0.}}, {RGBColor[1, 0, 0], {1., 0.5}}}"
     );
-    // A single color paints every vertex; `Disk[s]` is the disk's diameter.
+    // A single color paints every vertex; `Disk[s]` is the disk's diameter
+    // as a fraction of the drawing's width (1.1 here, the unit square
+    // padded by 0.05 on each side).
     assert_eq!(
       interpret(
         "Needs[\"Combinatorica`\"]; \
          Union[Cases[ShowGraph[Cycle[6], VertexColor -> Blue, \
-           VertexStyle -> Disk[0.1]], {c_, Disk[_, r_]} :> {c, r}, Infinity]]"
+           VertexStyle -> Disk[0.1]], {c_, Disk[_, r_]} :> {c, r}, \
+           Infinity]] /. r_Real :> Round[r, 0.0001]"
       )
       .unwrap(),
-      "{{RGBColor[0, 0, 1], 0.05}}"
+      "{{RGBColor[0, 0, 1], 0.055}}"
+    );
+  }
+
+  #[test]
+  fn show_graph_sizes_follow_the_drawing_width() {
+    // The tall Hasse diagram of the subsets of a 2-set is drawn 0.5 wide:
+    // each axis of the normalized drawing is padded by 0.05, edges get the
+    // default thickness of half a percent of the width, and a `Disk[0.05]`
+    // vertex is a twentieth of the width across.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         g = ShowGraph[BooleanAlgebra[2], VertexStyle -> Disk[0.05]]; \
+         {First[First[g]], Union[Cases[g, Disk[_, r_] :> r, Infinity]], \
+          PlotRange /. Rest[List @@ g]} /. r_Real :> Round[r, 0.0001]"
+      )
+      .unwrap(),
+      "{Thickness[0.005], {0.0125}, {{-0.05, 0.45}, {0.15, 1.05}}}"
+    );
+    // An explicit edge style replaces the default thickness.
+    assert_eq!(
+      interpret(
+        "Needs[\"Combinatorica`\"]; \
+         First[First[ShowGraph[Cycle[3], EdgeStyle -> Thick]]]"
+      )
+      .unwrap(),
+      "Thickness[Large]"
     );
   }
 }
