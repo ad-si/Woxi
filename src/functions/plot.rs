@@ -2288,7 +2288,12 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
     }
     return format_scientific_tick(v);
   }
-  let decimals = tick_step_decimals(step);
+  // A set whose spacing is no short decimal (explicit ticks at computed
+  // reals, `{-m, 0, m}`) has no shared decimals: each label is the real
+  // as the Wolfram Language displays it.
+  let Some(decimals) = tick_step_decimals(step) else {
+    return format_tick(v);
+  };
   if decimals == 0 {
     return format_tick(v);
   }
@@ -2305,19 +2310,17 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
 }
 
 /// How many decimals it takes to write `step` — the decimals every label of
-/// a `step`-spaced tick set carries. Capped at 6, the precision
-/// [`format_tick`] itself works to.
-fn tick_step_decimals(step: f64) -> usize {
+/// a `step`-spaced tick set carries, or `None` when `step` needs more than
+/// 6 (it is no short decimal at all).
+fn tick_step_decimals(step: f64) -> Option<usize> {
   let step = step.abs();
   if !step.is_finite() || step <= 0.0 {
-    return 0;
+    return Some(0);
   }
-  (0..=6)
-    .find(|d| {
-      let scaled = step * 10f64.powi(*d as i32);
-      (scaled - scaled.round()).abs() < 1e-6 * scaled.max(1.0)
-    })
-    .unwrap_or(6)
+  (0..=6).find(|d| {
+    let scaled = step * 10f64.powi(*d as i32);
+    (scaled - scaled.round()).abs() < 1e-6 * scaled.max(1.0)
+  })
 }
 
 /// `v` as `m×10^e` with Unicode superscript exponent digits.
@@ -2353,10 +2356,16 @@ pub(crate) fn format_tick(v: f64) -> String {
   if magnitude >= 1e6 || (magnitude > 0.0 && magnitude < 1e-5) {
     return format_scientific_tick(v);
   }
-  // Enough decimals to tell neighboring ticks apart — a 0.0002 step used
-  // to render every label as `0.0`.
-  let s = format!("{v:.6}");
-  s.trim_end_matches('0').trim_end_matches('.').to_string()
+  // The real as the Wolfram Language displays it: 6 significant digits
+  // (`0.0583948`, `12.3457`), trailing zeros dropped — enough to tell a
+  // 0.0002-step set apart, which a fixed `0.0` would not.
+  let decimals = (5 - magnitude.log10().floor() as i32).max(0) as usize;
+  let s = format!("{v:.decimals$}");
+  if s.contains('.') {
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
+  } else {
+    s
+  }
 }
 
 /// Inject SVG `<line>` elements extending labeled (major) ticks a few pixels

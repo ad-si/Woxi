@@ -801,6 +801,9 @@ pub struct ManipulateState {
   pub mouse_pressed: bool,
   /// Last cursor position over the picture, in its pixel coordinates.
   pub pointer: (f32, f32),
+  /// Whether the cursor is over the picture (it left since its last move
+  /// when false).
+  pub pointer_over: bool,
   pub text_output: Option<String>,
   pub error: Option<String>,
   /// Audio produced by the last pressed button's action (`Button[…,
@@ -821,8 +824,10 @@ pub struct ManipulateState {
   pub appearance_none: bool,
   /// Locals hoisted out of a `DynamicModule` around the body.
   module_locals: Vec<String>,
-  /// Whether the last evaluation changed one of `module_locals`: the body's
-  /// own `Dynamic` rewrote it, so Wolfram would refresh it again right away.
+  /// Whether the last evaluation changed one of `module_locals` (the body's
+  /// own `Dynamic` rewrote it, so Wolfram would refresh it again right
+  /// away) or ran a `Refresh[…, UpdateInterval -> t]` that asks for a
+  /// re-evaluation on a timer.
   self_refreshing: bool,
   /// `ControlPlacement -> …`: which side of the output the control panel
   /// sits on. `Top` (Wolfram's default) stacks the controls above it.
@@ -1080,6 +1085,7 @@ impl ManipulateState {
       mouse_region: None,
       mouse_pressed: false,
       pointer: (0.0, 0.0),
+      pointer_over: false,
       text_output: None,
       error: None,
       emitted_sound: None,
@@ -1326,6 +1332,7 @@ impl ManipulateState {
   /// it.
   pub fn mouse_moved(&mut self, px: f32, py: f32) {
     self.pointer = (px, py);
+    self.pointer_over = true;
     if self.mouse_pressed {
       self.apply_mouse_events(&["MouseDragged"]);
     } else if self
@@ -1335,6 +1342,22 @@ impl ManipulateState {
     {
       self.apply_mouse_events(&["MouseMoved"]);
     }
+  }
+
+  /// The pointer left the picture: `MousePosition` reports `None` again.
+  pub fn mouse_left(&mut self) {
+    self.pointer_over = false;
+  }
+
+  /// `MousePosition["Graphics"]` for the cursor: its graphics coordinates
+  /// while it is over the picture's `EventHandler`, else none.
+  fn pointer_graphics_position(&self) -> Option<(f64, f64)> {
+    let (px, py) = self.pointer;
+    let region = self.mouse_region.as_ref()?;
+    if !self.pointer_over || !region.contains(px, py) {
+      return None;
+    }
+    region.graphics_position(px, py)
   }
 
   /// The pointer was released: end a press begun over the `EventHandler`
@@ -1782,7 +1805,11 @@ impl ManipulateState {
     if self.animated && self.playing {
       self.advance_animation();
     } else if self.self_refreshing {
+      // A timed `Refresh` body polling `MousePosition["Graphics"]` (a
+      // mouse-trail recorder) sees where the cursor is now.
+      woxi::set_mouse_position(self.pointer_graphics_position());
       self.reevaluate();
+      woxi::set_mouse_position(None);
     }
   }
 
@@ -2003,6 +2030,7 @@ impl ManipulateState {
     // widget too, not just the value used to render this frame.
     let binding_names: Vec<String> =
       bindings.iter().map(|(n, _)| n.clone()).collect();
+    woxi::take_timed_refresh();
     let (
       (render, raw_render),
       updated_bindings,
@@ -2179,6 +2207,7 @@ impl ManipulateState {
       )
     });
     self.last_render = Some(raw_render);
+    let timed_refresh = woxi::take_timed_refresh();
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
@@ -2227,6 +2256,7 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
+    self.self_refreshing |= timed_refresh;
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -6494,6 +6524,76 @@ mod tests {
     state.controls[0].set_current_from_code("{3, 2}");
     state.reevaluate();
     assert_eq!(var(&state, "pos"), "{3, 2}");
+  }
+
+  /// A click toggles a recorder whose `Dynamic` body polls
+  /// `MousePosition["Graphics"]` through `Refresh[…, UpdateInterval -> 0]`:
+  /// while it records, the widget must keep re-evaluating on its timer
+  /// with the cursor's current position (`None` once it leaves the
+  /// picture), and stop ticking once a second click ends the recording.
+  #[test]
+  fn timed_refresh_records_the_mouse_trail() {
+    let code = r#"Manipulate[
+      EventHandler[
+        Dynamic[If[recording,
+          Refresh[AppendTo[trail, MousePosition["Graphics"]];
+            Graphics[Point[DeleteCases[trail, None]],
+              PlotRange -> {{0, 4}, {0, 2}}, ImageSize -> 200],
+            UpdateInterval -> 0],
+          Graphics[Rectangle[{0, 0}, {4, 2}], ImageSize -> 200]]],
+        {"MouseClicked" :> (recording = !recording)}],
+      {{recording, False}, ControlType -> None},
+      {{trail, {}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert!(!state.wants_tick(), "idle before the first click");
+    let var = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+
+    // Click to start recording.
+    let region = state.mouse_region.clone().expect("a mouse region");
+    let (px, py) = pixel_of(&region, 1.0, 1.0);
+    state.mouse_moved(px, py);
+    state.mouse_down();
+    state.mouse_up();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    assert_eq!(var(&state, "recording"), "True");
+    assert!(state.wants_tick(), "recording re-evaluates on the timer");
+
+    // Each tick appends where the cursor is now.
+    let region = state.mouse_region.clone().expect("a mouse region");
+    let (px, py) = pixel_of(&region, 3.0, 0.5);
+    state.mouse_moved(px, py);
+    let before = var(&state, "trail");
+    state.tick();
+    let after = var(&state, "trail");
+    assert_ne!(after, before, "the tick recorded a position");
+    let last = woxi::interpret(&format!("Round[Last[{after}], 0.1]")).unwrap();
+    assert_eq!(last, "{3., 0.5}");
+
+    // Outside the picture there is no position.
+    state.mouse_left();
+    state.tick();
+    let trail = var(&state, "trail");
+    assert_eq!(woxi::interpret(&format!("Last[{trail}]")).unwrap(), "None");
+
+    // A second click ends the recording and the ticking.
+    let region = state.mouse_region.clone().expect("a mouse region");
+    let (px, py) = pixel_of(&region, 1.0, 1.0);
+    state.mouse_moved(px, py);
+    state.mouse_down();
+    state.mouse_up();
+    assert_eq!(var(&state, "recording"), "False");
+    assert!(!state.wants_tick(), "idle after the recording ends");
   }
 
   /// `Button[Graphics[…], action]` cells (the shape of a tic-tac-toe style

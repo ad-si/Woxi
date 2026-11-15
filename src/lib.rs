@@ -305,6 +305,24 @@ pub fn mouse_position() -> Option<(f64, f64)> {
   MOUSE_POSITION.with(std::cell::Cell::get)
 }
 
+thread_local! {
+    static TIMED_REFRESH: std::cell::Cell<bool> =
+      const { std::cell::Cell::new(false) };
+}
+
+/// Note that an evaluation ran `Refresh[expr, UpdateInterval -> t]` with a
+/// finite `t`: a front end re-evaluates the enclosing `Dynamic` every `t`
+/// seconds, even when none of its tracked symbols changed.
+pub fn request_timed_refresh() {
+  TIMED_REFRESH.with(|r| r.set(true));
+}
+
+/// Whether a timed refresh was requested since the last call (see
+/// [`request_timed_refresh`]); clears the request.
+pub fn take_timed_refresh() -> bool {
+  TIMED_REFRESH.with(|r| r.replace(false))
+}
+
 /// Whether the interpreter is in visual (notebook-like) display mode, where
 /// front-end-only behaviors apply (e.g. `Defer[expr]` shows `expr` without
 /// its wrapper). False in plain CLI/script mode, which matches wolframscript.
