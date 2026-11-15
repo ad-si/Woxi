@@ -476,6 +476,30 @@ impl DensityContourOptions {
 
 /// Parse ImageSize, ColorFunction, Contours, ContourShading, Mesh,
 /// MeshFunctions, ContourStyle, FrameLabel and Epilog options.
+/// `FrameLabel -> Automatic` on a plot over two ranges `{x, …}, {y, …}`
+/// (the arguments just before the options at `start`) labels the bottom and
+/// left frame edges with the two variable names.
+fn automatic_frame_label(
+  value: &Expr,
+  args: &[Expr],
+  start: usize,
+) -> Option<Expr> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if !matches!(&val, Expr::Identifier(v) if v == "Automatic") || start < 3 {
+    return None;
+  }
+  let var_name = |e: &Expr| match e {
+    Expr::List(items) if items.len() >= 2 => match &items[0] {
+      Expr::Identifier(v) => Some(Expr::String(v.clone())),
+      _ => None,
+    },
+    _ => None,
+  };
+  Some(Expr::List(
+    vec![var_name(&args[start - 2])?, var_name(&args[start - 1])?].into(),
+  ))
+}
+
 fn parse_density_contour_options(
   args: &[Expr],
   start: usize,
@@ -647,10 +671,17 @@ fn parse_density_contour_options(
           };
         }
         "FrameLabel" => {
-          frame_labels = crate::functions::plot::parse_frame_label(replacement);
+          frame_labels = match automatic_frame_label(replacement, args, start) {
+            Some(labels) => crate::functions::plot::parse_frame_label(&labels),
+            None => crate::functions::plot::parse_frame_label(replacement),
+          };
         }
+        // `Frame -> None` draws no frame, like `Frame -> False`.
         "Frame" => {
-          frame = !matches!(replacement, Expr::Identifier(v) if v == "False");
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          frame = !matches!(&val, Expr::Identifier(v)
+            if v == "False" || v == "None");
         }
         "FrameTicks" => {
           frame_ticks =
@@ -3247,6 +3278,52 @@ pub fn with_evaluated_options(
   result.map(|()| out)
 }
 
+/// The number of samples per axis of the initial grid when the options
+/// among `args[start..]` set `MaxRecursion -> 0`: the explicit
+/// `PlotPoints -> n` (at least 2), else 15. `None` when the plot refines.
+fn initial_grid_without_recursion(
+  args: &[Expr],
+  start: usize,
+) -> Option<usize> {
+  let option = |key: &str| {
+    args.get(start..)?.iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      ),
+      _ => None,
+    })
+  };
+  if !matches!(option("MaxRecursion")?, Expr::Integer(0)) {
+    return None;
+  }
+  match option("PlotPoints") {
+    Some(Expr::Integer(k)) if k >= 2 => usize::try_from(k.min(400)).ok(),
+    _ => Some(15),
+  }
+}
+
+/// The value at fractional position `(u, v)` (each in [0, 1]) of a grid
+/// `grid[col][row]` whose nodes span the unit square, interpolated
+/// bilinearly between the four surrounding nodes (NaN if one is missing).
+fn bilinear_grid_value(grid: &[Vec<f64>], u: f64, v: f64) -> f64 {
+  let (nc, nr) = (grid.len(), grid[0].len());
+  let fx = u.clamp(0.0, 1.0) * (nc - 1) as f64;
+  let fy = v.clamp(0.0, 1.0) * (nr - 1) as f64;
+  let (i, j) = ((fx as usize).min(nc - 2), (fy as usize).min(nr - 2));
+  let (tx, ty) = (fx - i as f64, fy - j as f64);
+  let bottom = grid[i][j] * (1.0 - tx) + grid[i + 1][j] * tx;
+  let top = grid[i][j + 1] * (1.0 - tx) + grid[i + 1][j + 1] * tx;
+  bottom * (1.0 - ty) + top * ty
+}
+
 pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A body that names its function indirectly (`f = x^2 + y^2;
   // ContourPlot[f, …]`) is evaluated once first — see
@@ -3354,7 +3431,45 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut samples = Vec::with_capacity(n * n);
   let mut all_samples = Vec::with_capacity(n * n);
 
-  for i in 0..n {
+  // `MaxRecursion -> 0` asks for no refinement beyond the initial
+  // `PlotPoints` grid: only that grid is evaluated (a body that is costly
+  // per point, like a numerical integral, then stays fast) and the render
+  // grid is interpolated from it.
+  let coarse = if opts.region_function.is_none() && y_bounds.is_none() {
+    initial_grid_without_recursion(args, 3)
+  } else {
+    None
+  };
+  if let Some(m) = coarse {
+    let mut coarse_grid = vec![vec![f64::NAN; m]; m];
+    for (i, column) in coarse_grid.iter_mut().enumerate() {
+      let x = x_min + i as f64 / (m - 1) as f64 * (x_max - x_min);
+      for (j, cell) in column.iter_mut().enumerate() {
+        let y = y_min + j as f64 / (m - 1) as f64 * (y_max - y_min);
+        if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+          && v.is_finite()
+        {
+          *cell = v;
+        }
+      }
+    }
+    for (i, column) in grid.iter_mut().enumerate() {
+      for (j, cell) in column.iter_mut().enumerate() {
+        let v = bilinear_grid_value(
+          &coarse_grid,
+          i as f64 / cells as f64,
+          j as f64 / cells as f64,
+        );
+        if v.is_finite() {
+          *cell = v;
+          all_samples.push(v);
+          samples.push(v);
+        }
+      }
+    }
+  }
+
+  for i in 0..if coarse.is_some() { 0 } else { n } {
     let x = x_min + i as f64 / cells as f64 * (x_max - x_min);
     let (row_lo, row_hi) = match &y_bounds {
       Some(b) => b.at(x),

@@ -3224,6 +3224,27 @@ mod tests {
     assert_eq!(value("s").as_deref(), Some("0"));
   }
 
+  /// A control name that the Initialization uses as a pattern variable of
+  /// an immediate definition inside a `{…}` list (`fz[x_, z_] = D[…, z]`)
+  /// stays a local symbol there: binding it to the control's value made
+  /// the derivative `D[…, 20]` (`D::ivar`).
+  #[test]
+  fn initialization_list_keeps_control_named_pattern_variables_local() {
+    let code = r#"Manipulate[
+      fz[1, z],
+      {{z, 20, "position z"}, 15, 30, Appearance -> "Labeled"},
+      Initialization :> {
+        gz[x_, z_] = x z^2;
+        fz[x_, z_] = D[gz[x, z], z];
+      }]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output.as_deref(), Some("40"));
+  }
+
   /// A hidden `ControlType -> None` variable is bound when Initialization
   /// runs, also when a control's spec depends on what Initialization sets
   /// (`Control[{{n, top/4}, 2^Range[4, k]}]` with `top = 2^k` there).

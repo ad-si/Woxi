@@ -21284,6 +21284,67 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod field_plots {
     use super::*;
 
+    /// `FrameLabel -> Automatic` labels the frame with the two plot
+    /// variables (it used to print the word "Automatic").
+    #[test]
+    fn contour_plot_automatic_frame_label_names_the_variables() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "svg = ExportString[ContourPlot[u v, {u, -1, 1}, {v, -1, 1}, \
+           FrameLabel -> Automatic], \"SVG\"]; \
+           {StringCases[svg, RegularExpression[\">[uv]</text>\"]], \
+            StringContainsQ[svg, \"Automatic\"]}"
+        )
+        .unwrap(),
+        "{{>u</text>, >v</text>}, False}"
+      );
+    }
+
+    /// `Frame -> None` draws no frame (nor its tick labels), like
+    /// `Frame -> False`.
+    #[test]
+    fn vector_plot_frame_none_draws_no_frame() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "StringCount[ExportString[VectorPlot[{-x, -y}, {x, -1, 1}, \
+           {y, -1, 1}, Frame -> None], \"SVG\"], \"<text\"]"
+        )
+        .unwrap(),
+        "0"
+      );
+    }
+
+    /// `MaxRecursion -> 0` evaluates only the initial `PlotPoints` grid,
+    /// so a body that is costly per point (a numerical integral) stays
+    /// fast; the 101 x 101 render grid is interpolated from it.
+    #[test]
+    fn contour_plot_without_recursion_samples_only_the_initial_grid() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "f[x_?NumericQ, y_?NumericQ] := (n++; x y); \
+           {n = 0; ContourPlot[f[x, y], {x, -1, 1}, {y, -1, 1}, \
+             MaxRecursion -> 0, PlotPoints -> 5]; n, \
+            n = 0; ContourPlot[f[x, y], {x, -1, 1}, {y, -1, 1}, \
+             PlotPoints -> 9, MaxRecursion -> 0]; n, \
+            n = 0; ContourPlot[f[x, y], {x, -1, 1}, {y, -1, 1}, \
+             MaxRecursion -> 0]; n}"
+        )
+        .unwrap(),
+        "{25, 81, 225}"
+      );
+      assert_eq!(
+        interpret(
+          "Head[ContourPlot[x^2 + y^2, {x, -1, 1}, {y, -1, 1}, \
+           MaxRecursion -> 0, Contours -> 3]]"
+        )
+        .unwrap(),
+        "Graphics"
+      );
+    }
+
     #[test]
     fn density_plot_basic() {
       insta::assert_snapshot!(export_svg(
@@ -26492,6 +26553,27 @@ mod graphics_list {
     assert!(
       cell_widths.iter().all(|w| *w == 180.0),
       "expected all 3 list cells to be 180 wide, got {cell_widths:?}"
+    );
+  }
+
+  /// `GraphicsArray` (superseded by `GraphicsGrid`) lays out its graphics
+  /// like `GraphicsGrid`: a flat list is one row, a nested list a grid. It
+  /// used to stay symbolic and export as its text.
+  #[test]
+  fn graphics_array_lays_out_like_graphics_grid() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g1 = Graphics[Disk[]]; g2 = Graphics[Circle[]]; \
+         {Head[GraphicsArray[{g1, g2}]], \
+          ExportString[GraphicsArray[{g1, g2}], \"SVG\"] === \
+            ExportString[GraphicsGrid[{{g1, g2}}], \"SVG\"], \
+          ExportString[GraphicsArray[{{g1}, {g2}}, Spacings -> 5], \"SVG\"] \
+            === ExportString[GraphicsGrid[{{g1}, {g2}}, Spacings -> 5], \
+              \"SVG\"]}"
+      )
+      .unwrap(),
+      "{Graphics, True, True}"
     );
   }
 
