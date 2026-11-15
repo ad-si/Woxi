@@ -186,7 +186,11 @@ mod image_size {
         "Plot[x, {{x, 0, 15}}, AspectRatio -> 1, AxesLabel -> {{t, v}}, \
          PlotRange -> {{{{0, 30}}, {{0, {y_max}}}}}, ImageSize -> {{195, 200}}]"
       ));
-      assert_eq!(x_axis_label_font(&svg, "t"), 100.0, "PlotRange max {y_max}");
+      assert_eq!(
+        x_axis_label_font(&svg, "<tspan font-style=\"italic\">t</tspan>"),
+        100.0,
+        "PlotRange max {y_max}"
+      );
     }
   }
 }
