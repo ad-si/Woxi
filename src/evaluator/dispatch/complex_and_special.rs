@@ -4527,6 +4527,24 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
+    // Factorials are written postfix: `Factorial[n]` → `RowBox[{"n", "!"}]`,
+    // `Factorial2[n]` → `RowBox[{"n", "!!"}]`. An operand binding no
+    // tighter than the factorial (a sum, product, power, nested factorial)
+    // or a negative number is parenthesized: `(a+b)!`, `(-2)!`, `(5!)!`.
+    Expr::FunctionCall { name, args }
+      if (name == "Factorial" || name == "Factorial2") && args.len() == 1 =>
+    {
+      let bang = if name == "Factorial" { "!" } else { "!!" };
+      let operand = canonical_operator_call(&args[0]);
+      let boxed = expr_to_box_form(&operand);
+      let needs_paren = needs_paren_as_power_base(&operand)
+        || positive_of_negative_number(&operand).is_some()
+        || matches!(&operand, Expr::FunctionCall { name: r, args: ra }
+          if r == "Rational" && ra.len() == 2)
+        || tf_prec(&operand) <= tf_prec(expr);
+      let operand_box = if needs_paren { paren_box(boxed) } else { boxed };
+      row_box(vec![operand_box, str_expr(bang)])
+    }
     // `Overscript[a, b]` / `Underscript[a, b]` place `b` as an annotation
     // above/below `a` — the box form is a direct `OverscriptBox`/
     // `UnderscriptBox`, matching how the FrontEnd stores an

@@ -1111,6 +1111,102 @@ mod layout_display {
       assert!(!svg.contains("wrong"));
     }
   }
+
+  /// `Factorial[n]` / `Factorial2[n]` box postfix (`n!`, `n!!`), with the
+  /// operand bracketed when it binds no tighter than the factorial.
+  #[test]
+  fn factorial_boxes_postfix() {
+    clear_state();
+    for (code, boxes) in [
+      ("ToBoxes[Factorial[n]]", "RowBox[{n, !}]"),
+      ("ToBoxes[Factorial2[n]]", "RowBox[{n, !!}]"),
+      ("ToBoxes[HoldForm[Factorial[7]]]", "RowBox[{7, !}]"),
+      (
+        "ToBoxes[HoldForm[(a + b)!]]",
+        "RowBox[{RowBox[{(, RowBox[{a, +, b}], )}], !}]",
+      ),
+      (
+        "ToBoxes[HoldForm[(-3)!]]",
+        "RowBox[{RowBox[{(, RowBox[{-, 3}], )}], !}]",
+      ),
+      (
+        "ToBoxes[HoldForm[(4!)!]]",
+        "RowBox[{RowBox[{(, RowBox[{4, !}], )}], !}]",
+      ),
+      (
+        "ToBoxes[HoldForm[f[x]!]]",
+        "RowBox[{RowBox[{f, [, x, ]}], !}]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), boxes, "{code}");
+    }
+  }
+
+  /// Regression: a held factorial in a `Row` label printed as the call
+  /// `Factorial[12]` instead of `12!`.
+  #[test]
+  fn held_factorial_in_row_draws_postfix() {
+    for (code, text) in [
+      ("Row[{HoldForm[Factorial[12]], \" = \", 479001600}]", "12!"),
+      ("Style[Text[Row[{HoldForm[Factorial2[9]]}]], 20]", "9!!"),
+      ("Row[{HoldForm[Factorial[a + b]]}]", "(a+b)!"),
+    ] {
+      let svg = svg_of(code);
+      assert!(flat_text(&svg).contains(text), "{code}: {svg}");
+      assert!(!svg.contains("Factorial"), "{code}: {svg}");
+    }
+  }
+
+  /// A horizontal brace under or over a base (`Underscript[base,
+  /// Underscript[\[UnderBrace], n]]`, the idiom labeling a digit count)
+  /// is drawn as a brace path stretched across the base, with its label
+  /// beyond it, rather than as a tiny brace glyph beside the base.
+  #[test]
+  fn stretchy_brace_scripts_span_their_base() {
+    for code in [
+      "Row[{Underscript[Row[{\"123\", \"\\[Ellipsis]\", 9}], Underscript[\\[UnderBrace], 41]]}]",
+      "Row[{\"n = \", Overscript[\"000000\", Overscript[\\[OverBrace], 6]]}]",
+      "Style[Row[{Underscript[\"abcdef\", \\[UnderBrace]]}], 20]",
+      "Pane[Style[Text[Row[{x, \" = \", Underscript[Row[{1, 2, 3}], Underscript[\\[UnderBrace], 3]]}]], 20], {300, 80}]",
+    ] {
+      let svg = svg_of(code);
+      assert!(
+        !svg.contains('\u{FE38}') && !svg.contains('\u{FE37}'),
+        "{code}: brace drawn as a glyph: {svg}"
+      );
+      let path = svg
+        .match_indices("<path d=\"M")
+        .map(|(i, _)| &svg[i..i + svg[i..].find("/>").unwrap()])
+        .find(|p| p.matches(" Q ").count() == 4)
+        .unwrap_or_else(|| panic!("{code}: no curly brace path: {svg}"));
+      assert!(path.contains("stroke=\"currentColor\""), "{path}");
+    }
+    // The brace's label is set beside its own brace.
+    let svg =
+      svg_of("Row[{Underscript[\"0000\", Underscript[\\[UnderBrace], 4]]}]");
+    assert!(flat_text(&svg).contains("00004"), "{svg}");
+  }
+
+  /// A brace-labeled base in a `Row` sits on the row's text line: the
+  /// base's digits share the vertical position of the plain text before
+  /// it instead of the whole stack being centered on the line.
+  #[test]
+  fn brace_labeled_row_item_keeps_the_text_line() {
+    let svg = svg_of(
+      "Row[{\"x = \", Underscript[\"12345\", Underscript[\\[UnderBrace], 5]]}]",
+    );
+    // The underscript stack hangs below its base line, so lining that
+    // line up with the row's center puts the stack lower than plain
+    // centering would.
+    let attr = |s: &str, key: &str| -> f64 {
+      let at = s.find(&format!(" {key}=\"")).unwrap() + key.len() + 3;
+      s[at..at + s[at..].find('"').unwrap()].parse().unwrap()
+    };
+    let row_h = attr(&svg, "height");
+    let nested = &svg[svg.find("<svg x=").expect("nested picture")..];
+    let (y, h) = (attr(nested, "y"), attr(nested, "height"));
+    assert!(y > (row_h - h) / 2.0 + 1.0, "stack centered: {svg}");
+  }
 }
 
 #[test]

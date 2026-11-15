@@ -16529,6 +16529,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             elements,
           };
         }
+        // A horizontal brace (`︷`, `⎴`, `︵`) over the base stretches to
+        // span it, carrying any label of its own above it.
+        if let Some(brace) = stretchy_brace_script(&args[1], true, font_size) {
+          return brace.attach(base, true);
+        }
         let over = layout_box_nested(&args[1], font_size * 0.7);
         let base_y = over.height;
         let elements = format!(
@@ -16576,6 +16581,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       }
       "UnderscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
+        // A horizontal brace (`︸`, `⎵`, `︶`) under the base stretches to
+        // span it, carrying any label of its own below it.
+        if let Some(brace) = stretchy_brace_script(&args[1], false, font_size) {
+          return brace.attach(base, false);
+        }
         let under = layout_box_nested(&args[1], font_size * 0.7);
         let under_y = base.height;
         let elements = format!(
@@ -18808,6 +18818,18 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         }
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
 
+        // `Factorial[n]` / `Factorial2[n]` typeset postfix (`n!`, `n!!`),
+        // with the operand parenthesized exactly where the box form does.
+        "Factorial" | "Factorial2" if args.len() == 1 => {
+          let bang = if name == "Factorial" { "!" } else { "!!" };
+          let operand = expr_to_svg_markup(&args[0]);
+          if factorial_operand_parenthesized(expr) {
+            format!("({operand}){bang}")
+          } else {
+            format!("{operand}{bang}")
+          }
+        }
+
         // Tooltip[content, tip] → render content (the tip only shows on
         // hover in the Wolfram FrontEnd, which static SVG can't do)
         "Tooltip" if !args.is_empty() => expr_to_svg_markup(&args[0]),
@@ -19193,6 +19215,27 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 /// Estimate the display width of an expression in character units,
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
+/// Whether `Factorial[x]`/`Factorial2[x]` brackets its operand — read off
+/// its box form (`RowBox[{RowBox[{"(", …, ")"}], "!"}]`), so every
+/// renderer parenthesizes the same operands.
+fn factorial_operand_parenthesized(expr: &Expr) -> bool {
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr);
+  let Expr::FunctionCall { name, args } = &boxes else {
+    return false;
+  };
+  if name != "RowBox" {
+    return false;
+  }
+  let Some(Expr::List(items)) = args.first() else {
+    return false;
+  };
+  matches!(items.first(), Some(Expr::FunctionCall { name, args })
+    if name == "RowBox"
+      && matches!(args.first(), Some(Expr::List(inner))
+        if matches!(inner.first(), Some(Expr::String(o)) if o == "(")))
+}
+
 pub fn estimate_display_width(expr: &Expr) -> f64 {
   if let Some((base, exp)) = as_power(expr) {
     let parens = if is_additive_expr(base) { 2.0 } else { 0.0 };
@@ -19430,6 +19473,15 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       "Graphics" if inline_graphic_glyph(args).is_some() => 1.0,
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      "Factorial" | "Factorial2" if args.len() == 1 => {
+        let bang = if name == "Factorial" { 1.0 } else { 2.0 };
+        let parens = if factorial_operand_parenthesized(expr) {
+          2.0
+        } else {
+          0.0
+        };
+        estimate_display_width(&args[0]) + parens + bang
+      }
       // OverBar/UnderBar draw their accent as a zero-width line over the
       // content; Overscript/Underscript's accent overlaps the base the same
       // way `expr_to_svg_markup` draws it (see that function's comment).
@@ -20854,6 +20906,166 @@ fn accent_text(base: &str, accent: &str, over: bool) -> String {
 /// Whether an over/underscript box is a plain horizontal-bar accent: `_`,
 /// a macron or overline, or a hyphen/minus/en dash typed as the script.
 /// Such a script is drawn as a rule spanning the base (x̄, b̄).
+/// The shape of a horizontal brace that stretches over or under its base.
+#[derive(Clone, Copy)]
+enum BraceShape {
+  Curly,
+  Square,
+  Round,
+}
+
+/// A horizontal brace glyph as an over- (`over`) or underscript: `︷`/`⏞`
+/// (`\[OverBrace]`), `⎴` (`\[OverBracket]`), `︵`/`⏜`
+/// (`\[OverParenthesis]`) and their under counterparts.
+fn horizontal_brace_shape(script: &Expr, over: bool) -> Option<BraceShape> {
+  let Expr::String(s) = script else {
+    return None;
+  };
+  let s = s
+    .strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .unwrap_or(s);
+  Some(match (s, over) {
+    ("\u{FE37}" | "\u{23DE}", true) | ("\u{FE38}" | "\u{23DF}", false) => {
+      BraceShape::Curly
+    }
+    ("\u{23B4}", true) | ("\u{23B5}", false) => BraceShape::Square,
+    ("\u{FE35}" | "\u{23DC}", true) | ("\u{FE36}" | "\u{23DD}", false) => {
+      BraceShape::Round
+    }
+    _ => return None,
+  })
+}
+
+/// A brace script stretched to its base, with the label set beyond it
+/// (`Overscript[base, Overscript[\[OverBrace], label]]`).
+struct StretchyBrace {
+  shape: BraceShape,
+  label: Option<BoxLayout>,
+  font_size: f64,
+}
+
+/// The brace an over- (`over`) or underscript box draws: a bare brace
+/// glyph, or a brace glyph carrying its own label on the far side
+/// (`OverscriptBox["︷", n]` over, `UnderscriptBox["︸", n]` under).
+fn stretchy_brace_script(
+  script: &Expr,
+  over: bool,
+  font_size: f64,
+) -> Option<StretchyBrace> {
+  let script_size = font_size * 0.7;
+  if let Some(shape) = horizontal_brace_shape(script, over) {
+    return Some(StretchyBrace {
+      shape,
+      label: None,
+      font_size: script_size,
+    });
+  }
+  let Expr::FunctionCall { name, args } = script else {
+    return None;
+  };
+  let wanted = if over {
+    "OverscriptBox"
+  } else {
+    "UnderscriptBox"
+  };
+  if name != wanted || args.len() != 2 {
+    return None;
+  }
+  let shape = horizontal_brace_shape(&args[0], over)?;
+  Some(StretchyBrace {
+    shape,
+    label: Some(layout_box_nested(&args[1], script_size * 0.7)),
+    font_size: script_size,
+  })
+}
+
+impl StretchyBrace {
+  /// Stack the brace (and its label) over (`over`) or under `base`,
+  /// stretched to the base's width.
+  fn attach(self, base: BoxLayout, over: bool) -> BoxLayout {
+    let w = base.width.max(self.font_size);
+    let h = self.font_size * 0.45;
+    let sw = (self.font_size * 0.07).max(0.6);
+    let gap = self.font_size * 0.12;
+    // The brace path, drawn opening toward the base (`flip` mirrors an
+    // overbrace into an underbrace), inset by half a stroke on each side.
+    let flip = |y: f64| if over { y } else { h - y };
+    let (x0, x1) = (sw / 2.0, w - sw / 2.0);
+    let (top, mid, tip) = (flip(sw / 2.0), flip(h / 2.0), flip(h - sw / 2.0));
+    let d = match self.shape {
+      BraceShape::Curly => {
+        let r = (h / 2.0).min((x1 - x0) / 4.0);
+        let c = w / 2.0;
+        format!(
+          "M {x0:.2} {tip:.2} Q {x0:.2} {mid:.2} {:.2} {mid:.2} \
+           L {:.2} {mid:.2} Q {c:.2} {mid:.2} {c:.2} {top:.2} \
+           Q {c:.2} {mid:.2} {:.2} {mid:.2} L {:.2} {mid:.2} \
+           Q {x1:.2} {mid:.2} {x1:.2} {tip:.2}",
+          x0 + r,
+          c - r,
+          c + r,
+          x1 - r,
+        )
+      }
+      BraceShape::Square => format!(
+        "M {x0:.2} {tip:.2} L {x0:.2} {top:.2} L {x1:.2} {top:.2} \
+         L {x1:.2} {tip:.2}"
+      ),
+      BraceShape::Round => format!(
+        "M {x0:.2} {tip:.2} Q {:.2} {:.2} {x1:.2} {tip:.2}",
+        w / 2.0,
+        flip(-h + sw),
+      ),
+    };
+    let brace = format!(
+      "<path d=\"{d}\" fill=\"none\" stroke=\"currentColor\" \
+       stroke-width=\"{sw:.2}\" stroke-linecap=\"round\" \
+       stroke-linejoin=\"round\"/>"
+    );
+    let label = self.label;
+    let label_h = label.as_ref().map_or(0.0, |l| l.height);
+    let width = w.max(label.as_ref().map_or(0.0, |l| l.width));
+    // The base is centered under/over the wider of brace and label.
+    let base_x = (width - base.width) / 2.0;
+    let brace_x = (width - w) / 2.0;
+    let label_x = |l: &BoxLayout| (width - l.width) / 2.0;
+    if over {
+      let brace_y = label_h;
+      let base_y = brace_y + h + gap;
+      let label_svg = label
+        .as_ref()
+        .map_or_else(String::new, |l| l.translate(label_x(l), 0.0));
+      BoxLayout {
+        width,
+        height: base_y + base.height,
+        baseline: base_y + base.baseline,
+        elements: format!(
+          "{label_svg}<g transform=\"translate({brace_x:.2},{brace_y:.2})\">\
+           {brace}</g>{}",
+          base.translate(base_x, base_y)
+        ),
+      }
+    } else {
+      let brace_y = base.height + gap;
+      let label_y = brace_y + h;
+      let label_svg = label
+        .as_ref()
+        .map_or_else(String::new, |l| l.translate(label_x(l), label_y));
+      BoxLayout {
+        width,
+        height: label_y + label_h,
+        baseline: base.baseline,
+        elements: format!(
+          "{}<g transform=\"translate({brace_x:.2},{brace_y:.2})\">\
+           {brace}</g>{label_svg}",
+          base.translate(base_x, 0.0)
+        ),
+      }
+    }
+  }
+}
+
 fn is_bar_accent_box(script: &Expr) -> bool {
   let Expr::String(s) = script else {
     return false;
@@ -30878,6 +31090,70 @@ pub fn styled_inline_text_svg(text: &str, max_width: f64) -> Option<String> {
   ))
 }
 
+/// A text `Overscript`/`Underscript` (optionally inside `Style`) whose
+/// script is a stretchy brace or itself a compound expression — the
+/// `Underscript[digits, Underscript[\[UnderBrace], n]]` idiom labeling the
+/// length of a number — typeset by the box layout engine, so the brace
+/// spans the base and nested scripts stack, with the picture's text axis
+/// recorded for the row to line it up with its neighbors.
+fn typeset_script_svg(expr: &Expr) -> Option<String> {
+  let mut inner = expr;
+  let mut font_size = 14.0;
+  while let Expr::FunctionCall { name, args } = inner {
+    if name != "Style" || args.is_empty() {
+      break;
+    }
+    for d in &args[1..] {
+      match d {
+        Expr::Integer(_) | Expr::Real(_) => {
+          if let Some(sz) = expr_to_f64(d).filter(|s| *s > 0.0) {
+            font_size = sz;
+          }
+        }
+        _ => {
+          if let Some(("FontSize", v)) = option_kv(d)
+            && let Some(sz) = expr_to_f64(v).filter(|s| *s > 0.0)
+          {
+            font_size = sz;
+          }
+        }
+      }
+    }
+    inner = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = inner else {
+    return None;
+  };
+  let over = match name.as_str() {
+    "Overscript" => true,
+    "Underscript" => false,
+    _ => return None,
+  };
+  if args.len() != 2 || crate::evaluator::lays_out_a_graphic(inner) {
+    return None;
+  }
+  // `\[UnderBrace]` written bare is a symbol, quoted a string.
+  let script_qualifies = match &args[1] {
+    Expr::String(s) | Expr::Identifier(s) => {
+      horizontal_brace_shape(&Expr::String(s.clone()), over).is_some()
+    }
+    Expr::FunctionCall { .. } => true,
+    _ => false,
+  };
+  if !script_qualifies {
+    return None;
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr);
+  let layout = layout_box(&boxes, 14.0);
+  let mut svg = layout_to_svg(&layout, theme().text_primary);
+  // The text's central line (where a row sets its plain text items) sits
+  // about a third of the font size above the baseline.
+  let axis = (layout.baseline - font_size * 0.3).max(0.0);
+  crate::functions::container_layout::set_baseline_attr(&mut svg, axis);
+  Some(svg)
+}
+
 /// Render a resolved `Column`/`Row` item that is itself a layout construct
 /// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
 /// compose instead of printing as raw InputForm text. `None` for other
@@ -30887,6 +31163,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
   // fraction instead of flattening it to `a/b` text; a `Style[…]` around it
   // sets the type size.
   if let Some(svg) = inline_fraction_string_svg(expr) {
+    return Some(svg);
+  }
+  if let Some(svg) = typeset_script_svg(expr) {
     return Some(svg);
   }
   // `picture -> picture` is laid out the way a grid cell holding one is.
@@ -32070,6 +32349,9 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       svg: String,
       width: f64,
       height: f64,
+      /// The picture's text axis below its top, when it records one: the
+      /// row lines that up with its text items' central line.
+      axis: Option<f64>,
     },
     Text {
       markup: String,
@@ -32181,6 +32463,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
             svg: svg.clone(),
             width: w,
             height: h,
+            axis: None,
           }
         }
         // A raster image is a picture drawn at its own size, as in a
@@ -32193,6 +32476,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
             svg,
             width: w,
             height: h,
+            axis: None,
           }
         }
         _ => match nested_layout_svg(&resolved)
@@ -32200,10 +32484,13 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
+            let axis = crate::functions::container_layout::baseline_attr(&svg)
+              .filter(|a| a.is_finite() && (0.0..=h).contains(a));
             Cell::Svg {
               svg,
               width: w,
               height: h,
+              axis,
             }
           }
           // `Spacer[n]` between items is blank horizontal space, the same
@@ -32281,9 +32568,19 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     0.0
   };
   let content_w = items_width + seps_total;
+  // A picture that records its text axis is set with that axis on the
+  // row's center line, so it reaches as far above and below the center as
+  // the larger of its two extents.
   let total_h = cells
     .iter()
-    .map(&cell_height)
+    .map(|c| match c {
+      Cell::Svg {
+        height,
+        axis: Some(a),
+        ..
+      } if v_align == "center" => 2.0 * a.max(height - a),
+      _ => cell_height(c),
+    })
     .fold(font_size + pad_y, f64::max);
   let canvas_w = target_width.map_or(content_w, |w| w.max(content_w));
 
@@ -32430,8 +32727,12 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         svg: child,
         width,
         height,
+        axis,
       } => {
-        let y_off = cell_top(*height);
+        let y_off = match axis {
+          Some(a) if v_align == "center" => mid_y - a,
+          _ => cell_top(*height),
+        };
         // The child keeps its own coordinate space: a plot draws at a
         // multiple of its display size, so the nested `<svg>` needs the
         // child's viewBox or none of it lands inside the cell.
