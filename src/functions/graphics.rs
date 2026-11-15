@@ -300,12 +300,16 @@ pub(crate) fn named_color(name: &str) -> Option<Color> {
 
 /// `Texture[image]` fill: the image as a base64 PNG, plus — once a polygon
 /// carries `VertexTextureCoordinates` — one `(u, v)` per polygon vertex.
+///
+/// A one-dimensional texture (`Texture[{c1, c2, …}]`, a list of colors)
+/// keeps its colors in `gradient` instead; its coordinates are `(u, 0)`.
 #[derive(Debug, Clone)]
 struct TextureFill {
   png_b64: std::sync::Arc<str>,
   width: u32,
   height: u32,
   coords: Vec<(f64, f64)>,
+  gradient: Option<std::sync::Arc<[Color]>>,
 }
 
 #[derive(Debug, Clone)]
@@ -2265,7 +2269,18 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       // `Texture[image]`: fills the polygons that follow with the image,
       // placed by their `VertexTextureCoordinates`.
       "Texture" if args.len() == 1 => {
-        if let Some(Expr::Image {
+        // A list of colors (`{RGBColor[…], …}` or `{{r, g, b}, …}`) is a
+        // one-dimensional texture: a color ramp the polygon's `u`
+        // coordinates run along.
+        if let Some(colors) = one_dimensional_texture_colors(&args[0]) {
+          style.texture = Some(std::sync::Arc::new(TextureFill {
+            png_b64: "".into(),
+            width: colors.len() as u32,
+            height: 1,
+            coords: Vec::new(),
+            gradient: Some(colors.into()),
+          }));
+        } else if let Some(Expr::Image {
           width,
           height,
           channels,
@@ -2292,6 +2307,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
               width,
               height,
               coords: Vec::new(),
+              gradient: None,
             }));
           }
         }
@@ -3472,7 +3488,12 @@ fn collect_primitives(
         }
         // `FilledCurve[BezierCurve[…]]` (or a list of curves) fills the
         // region each Bezier path encloses.
-        "FilledCurve" if args.len() == 2 => {
+        // A trailing option (`VertexTextureCoordinates -> …`) is not a
+        // coordinate list: `FilledCurve[curves, opts…]` is the curve form.
+        "FilledCurve"
+          if args.len() >= 2
+            && args[1..].iter().all(|a| option_kv(a).is_none()) =>
+        {
           // Compact form `FilledCurve[{{seg, …}, …}, {pt, …}]`: each
           // component is a run of `{type, n, d}` segments drawing from
           // the shared coordinate list.
@@ -3505,15 +3526,27 @@ fn collect_primitives(
           };
           let first = prims.len();
           let several = components.len() > 1;
-          for component in components {
+          // `VertexTextureCoordinates` gives one coordinate list per
+          // component, placing the `Texture` in force on its outline.
+          let tex_coords = if several {
+            filled_curve_texture_coordinates(&args[1..], components.len())
+          } else {
+            parse_vertex_texture_coordinates(&args[1..]).map(|c| vec![Some(c)])
+          };
+          for (ci, component) in components.into_iter().enumerate() {
             if let Expr::List(curves) = component
               && let Some(points) = joined_curve_points(curves, style)
             {
+              let coords = tex_coords
+                .as_ref()
+                .and_then(|c| c.get(ci))
+                .and_then(|c| c.as_deref());
+              let style = with_texture_coords(style, coords, points.len());
               prims.push(Primitive::PolygonPrim {
                 points,
                 holes: Vec::new(),
                 vertex_colors: None,
-                style: style.clone(),
+                style,
               });
               continue;
             }
@@ -4274,16 +4307,82 @@ fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
         replacement,
       } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") =>
       {
-        let Expr::List(items) = replacement.as_ref() else {
-          return None;
-        };
-        items.iter().map(expr_to_point).collect()
+        texture_coordinate_list(replacement)
       }
       Expr::List(inner) => inner.iter().find_map(from_rule),
       _ => None,
     }
   }
   opts.iter().find_map(from_rule)
+}
+
+/// A list of texture coordinates: `{u, v}` pairs, or — for a
+/// one-dimensional texture — `{u}` singletons or bare numbers `u`, read as
+/// `(u, 0)`.
+fn texture_coordinate_list(list: &Expr) -> Option<Vec<(f64, f64)>> {
+  let Expr::List(items) = list else {
+    return None;
+  };
+  items
+    .iter()
+    .map(|item| match item {
+      Expr::List(u) if u.len() == 1 => Some((expr_to_f64(&u[0])?, 0.0)),
+      Expr::List(_) => expr_to_point(item),
+      other => Some((expr_to_f64(other)?, 0.0)),
+    })
+    .collect()
+}
+
+/// The `VertexTextureCoordinates -> {coords1, coords2, …}` of a
+/// `FilledCurve`, one coordinate list per curve component; `None` when the
+/// option is absent or does not give one list per component.
+fn filled_curve_texture_coordinates(
+  opts: &[Expr],
+  components: usize,
+) -> Option<Vec<Option<Vec<(f64, f64)>>>> {
+  let value = opts.iter().find_map(|o| match option_kv(o) {
+    Some(("VertexTextureCoordinates", v)) => Some(v),
+    _ => None,
+  })?;
+  let Expr::List(lists) = value else {
+    return None;
+  };
+  if lists.len() != components {
+    return None;
+  }
+  Some(lists.iter().map(texture_coordinate_list).collect())
+}
+
+/// The colors of a one-dimensional `Texture[{c1, c2, …}]`: a list (of at
+/// least two entries) of color directives or `{r, g, b}` / `{r, g, b, a}`
+/// triples. `None` for anything else, such as an image or a 2D array.
+fn one_dimensional_texture_colors(arg: &Expr) -> Option<Vec<Color>> {
+  let value = match arg {
+    Expr::List(_) => arg.clone(),
+    _ => crate::evaluator::evaluate_expr_to_expr(arg).ok()?,
+  };
+  let Expr::List(items) = &value else {
+    return None;
+  };
+  if items.len() < 2 {
+    return None;
+  }
+  items
+    .iter()
+    .map(|item| match item {
+      Expr::List(c) if c.len() == 3 || c.len() == 4 => {
+        let ch: Option<Vec<f64>> = c.iter().map(expr_to_f64).collect();
+        let ch = ch?;
+        let mut color = Color::new(ch[0], ch[1], ch[2]);
+        if let Some(&a) = ch.get(3) {
+          color.a = a;
+        }
+        Some(color)
+      }
+      Expr::List(_) => None,
+      other => parse_color(other),
+    })
+    .collect()
 }
 
 /// The style for one polygon: the `Texture` in force, if any, with the
@@ -6126,8 +6225,11 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
               None => text,
             }
           }
+          // A cell merged into its neighbor (`SpanFromLeft`, …) adds no
+          // text of its own.
           Expr::List(cells) if name == "Grid" => cells
             .iter()
+            .filter(|c| !is_span_marker(c))
             .map(graphics_text_content)
             .collect::<Vec<_>>()
             .join("  "),
@@ -7979,6 +8081,277 @@ fn align_inset_picture(
   (padded, pw, ph)
 }
 
+/// `expr` with every `Spacer[w]` resized to the number of blanks of a
+/// `font_size`-point label that comes closest to `w` points, since a label
+/// flattened to text spells a spacer as blanks (see `spacer_gap_text`).
+fn scale_label_spacers(expr: &Expr, font_size: f64) -> Expr {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Spacer"
+        && args.len() == 1
+        && let Some(w) = expr_to_f64(&args[0]) =>
+    {
+      let blank =
+        crate::functions::plot_padding::char_width_em(' ') * font_size;
+      let n = if blank > 0.0 {
+        (w / blank).round().max(1.0)
+      } else {
+        1.0
+      };
+      call("Spacer", vec![Expr::Integer(n as i128)])
+    }
+    Expr::FunctionCall { name, args } => call(
+      name.as_str(),
+      args
+        .iter()
+        .map(|a| scale_label_spacers(a, font_size))
+        .collect(),
+    ),
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|a| scale_label_spacers(a, font_size))
+        .collect(),
+    ),
+    other => other.clone(),
+  }
+}
+
+/// The picture of a `Text[Framed[content, opts…], …]` label: its lines (or,
+/// for a `Grid`, its cells in columns, honoring `SpanFromLeft` merges and
+/// `ItemSize` widths) set in the label's font, framed in `frame_color` with
+/// the `FrameMargins` around them (5 points by default) and the optional
+/// `background` behind. Returns the SVG and its width and height.
+fn framed_label_picture(
+  content: &Expr,
+  text: &str,
+  style: &StyleState,
+  frame_color: Color,
+  background: Option<Color>,
+  frame_opts: &[Expr],
+) -> (String, f64, f64) {
+  use crate::functions::plot_padding::{line_pitch, text_width};
+  let fs = style.font_size;
+  let color = style.effective_color();
+  let measure = |markup: &str| text_width(markup, fs);
+  // Each row is a list of `(markup, columns spanned)` cells.
+  let mut rows: Vec<Vec<(String, usize)>> = Vec::new();
+  let mut min_widths: Vec<f64> = Vec::new();
+  let mut anchor = column_line_anchor(content).or(style.text_line_anchor);
+  match content {
+    Expr::FunctionCall { name, args }
+      if name == "Grid"
+        && let Some(Expr::List(grid_rows)) = args.first()
+        && grid_rows.iter().all(|r| matches!(r, Expr::List(_))) =>
+    {
+      for row in grid_rows.iter() {
+        let Expr::List(cells) = row else { continue };
+        let mut out: Vec<(String, usize)> = Vec::new();
+        for cell in cells.iter() {
+          match cell {
+            Expr::Identifier(s) if s == "SpanFromLeft" || s == "SpanFromBoth" => {
+              match out.last_mut() {
+                Some(last) => last.1 += 1,
+                None => out.push((String::new(), 1)),
+              }
+            }
+            Expr::Identifier(s) if s == "SpanFromAbove" => {
+              out.push((String::new(), 1))
+            }
+            other => out.push((svg_escape(&graphics_text_content(other)), 1)),
+          }
+        }
+        rows.push(out);
+      }
+      // `ItemSize -> {{w1, w2, …}, …}` (or `{w, h}`) sets each column at
+      // least `w` ems wide.
+      let opt = |key: &str| {
+        args[1..].iter().find_map(|o| match option_kv(o) {
+          Some((k, v)) if k == key => Some(v),
+          _ => None,
+        })
+      };
+      if let Some(Expr::List(size)) = opt("ItemSize")
+        && let Some(widths) = size.first()
+      {
+        min_widths = match widths {
+          Expr::List(ws) => ws
+            .iter()
+            .map(|w| expr_to_f64(w).map_or(0.0, |w| w * fs))
+            .collect(),
+          w => expr_to_f64(w).map_or_else(Vec::new, |w| vec![w * fs]),
+        };
+      }
+      if let Some(a) = opt("Alignment") {
+        let h = match a {
+          Expr::List(items) => items.first().unwrap_or(a),
+          other => other,
+        };
+        match h {
+          Expr::Identifier(s) if s == "Left" => anchor = Some("start"),
+          Expr::Identifier(s) if s == "Right" => anchor = Some("end"),
+          _ => {}
+        }
+      }
+    }
+    _ => {
+      // Each line keeps the styled runs (`Style[…, Italic]`) on it.
+      let ranges = styled_text_ranges(content, text);
+      let fill = color.to_svg_rgb();
+      let mut start = 0;
+      for line in text.split('\n') {
+        let end = start + line.chars().count();
+        let markup = svg_escape_with_styles(
+          line,
+          &line_styled_ranges(&ranges, start, end),
+          style,
+          &fill,
+        );
+        rows.push(vec![(markup, 1)]);
+        start = end + 1;
+      }
+      // A `Column` sets its items flush left unless told otherwise.
+      if anchor.is_none()
+        && matches!(content, Expr::FunctionCall { name, .. } if name == "Column")
+      {
+        anchor = Some("start");
+      }
+    }
+  }
+  let ncols = rows
+    .iter()
+    .map(|r| r.iter().map(|c| c.1).sum::<usize>())
+    .max()
+    .unwrap_or(1)
+    .max(1);
+  // A gap separates the columns of a grid.
+  let gap = if ncols > 1 { 0.5 * fs } else { 0.0 };
+  let mut col_w: Vec<f64> = (0..ncols)
+    .map(|c| {
+      let item = min_widths
+        .get(c)
+        .or(min_widths.last())
+        .copied()
+        .unwrap_or(0.0);
+      // `ItemSize` widths include the gap.
+      (item - gap).max(0.0)
+    })
+    .collect();
+  for row in &rows {
+    let mut c = 0;
+    for (cell, span) in row {
+      if *span == 1 && c < ncols {
+        col_w[c] = col_w[c].max(measure(cell));
+      }
+      c += span;
+    }
+  }
+  // A cell spanning several columns widens the last of them if it needs to.
+  for row in &rows {
+    let mut c = 0;
+    for (cell, span) in row {
+      if *span > 1 && c + span <= ncols {
+        let have: f64 =
+          col_w[c..c + span].iter().sum::<f64>() + gap * (*span - 1) as f64;
+        let need = measure(cell);
+        if need > have {
+          col_w[c + span - 1] += need - have;
+        }
+      }
+      c += span;
+    }
+  }
+  let content_w =
+    col_w.iter().sum::<f64>() + gap * (ncols.saturating_sub(1)) as f64;
+  let pitch = line_pitch(fs);
+  let content_h = rows.len().max(1) as f64 * pitch;
+
+  let default_margin = 5.0;
+  let margins = frame_opts.iter().find_map(|o| match option_kv(o) {
+    Some(("FrameMargins", v)) => Some(v),
+    _ => None,
+  });
+  let pair = |v: &Expr| -> Option<(f64, f64)> {
+    match v {
+      Expr::List(p) if p.len() == 2 => {
+        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
+      }
+      other => expr_to_f64(other).map(|m| (m, m)),
+    }
+  };
+  let (left, right, bottom, top) = match margins {
+    Some(Expr::List(p)) if p.len() == 2 => {
+      let (l, r) = pair(&p[0]).unwrap_or((default_margin, default_margin));
+      let (b, t) = pair(&p[1]).unwrap_or((default_margin, default_margin));
+      (l, r, b, t)
+    }
+    other => {
+      let m = other.and_then(expr_to_f64).unwrap_or(default_margin);
+      (m, m, m, m)
+    }
+  };
+  let w = (content_w + left + right).ceil().max(1.0);
+  let h = (content_h + top + bottom).ceil().max(1.0);
+  let (fill, fill_opacity) = match background {
+    Some(bg) => (bg.to_svg_rgb(), bg.opacity_attr()),
+    None => ("none".to_string(), String::new()),
+  };
+  let mut svg = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w:.2}\" \
+     height=\"{h:.2}\" viewBox=\"0 0 {w:.2} {h:.2}\">\
+     <rect x=\"0.5\" y=\"0.5\" width=\"{:.2}\" height=\"{:.2}\" \
+     fill=\"{fill}\"{fill_opacity} stroke=\"{}\"{}/>",
+    w - 1.0,
+    h - 1.0,
+    frame_color.to_svg_rgb(),
+    if frame_color.a < 1.0 {
+      format!(" stroke-opacity=\"{}\"", frame_color.a)
+    } else {
+      String::new()
+    },
+  );
+  let ff_attr = if style.font_family.is_empty() {
+    String::new()
+  } else {
+    format!(" font-family=\"{}\"", svg_escape(&style.font_family))
+  };
+  for (i, row) in rows.iter().enumerate() {
+    let y = top + pitch * (i as f64 + 0.5);
+    let mut x0 = left;
+    let mut c = 0;
+    for (cell, span) in row {
+      let span = (*span).min(ncols - c.min(ncols)).max(1);
+      let end = (c + span).min(ncols);
+      let cell_w: f64 = col_w[c.min(ncols)..end].iter().sum::<f64>()
+        + gap * (span - 1) as f64;
+      // A lone line spans the whole block.
+      let cell_w = if ncols == 1 { content_w } else { cell_w };
+      let (text_anchor, x) = match anchor {
+        Some("start") => ("start", x0),
+        Some(_) => ("end", x0 + cell_w),
+        None => ("middle", x0 + cell_w / 2.0),
+      };
+      if !cell.is_empty() {
+        svg.push_str(&format!(
+          "<text x=\"{x:.2}\" y=\"{y:.2}\" fill=\"{}\"{} font-size=\"{fs}\" \
+           font-weight=\"{}\" font-style=\"{}\"{ff_attr} \
+           text-anchor=\"{text_anchor}\" dominant-baseline=\"central\" \
+           xml:space=\"preserve\">{}</text>",
+          color.to_svg_rgb(),
+          color.opacity_attr(),
+          style.font_weight,
+          style.font_style,
+          cell,
+        ));
+      }
+      x0 += cell_w + gap;
+      c += span;
+    }
+  }
+  svg.push_str("</svg>");
+  (svg, w, h)
+}
+
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // A `StringForm` label with a matrix among its values is typeset as the
   // `Row` of its parts, so the matrix keeps its rows (see
@@ -8046,6 +8419,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
     other => (other, &[] as &[Expr]),
   };
+  // A `Framed` box's border takes the label's color (a `Style[Text[Framed[
+  // …]], Red]` caption is boxed in red), not the color of a `Style` inside
+  // the frame.
+  let frame_default_color = local_style.effective_color();
   // A top-level `Style[content, dirs…]` carries text directives (font size,
   // weight, color) that apply to the whole label; peel it off and apply them
   // to the primitive, then render the inner content.
@@ -8253,6 +8630,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       return;
     }
   }
+  // A `Spacer[w]` is `w` points wide: as text, the blanks of the label's
+  // font that come closest to that width.
+  let spaced = scale_label_spacers(content, local_style.font_size);
+  let content = &spaced;
   let text = graphics_text_content(content);
   // A `Column`'s own alignment wins over a `TextAlignment` the label's
   // `Style` wrapper gives its lines.
@@ -8336,12 +8717,52 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   let frame = if is_framed {
     match option_value(frame_opts, "FrameStyle") {
       Some(Expr::Identifier(s)) if s == "None" => None,
-      Some(spec) => parse_color(spec).or(Some(Color::new(0.0, 0.0, 0.0))),
-      None => Some(Color::new(0.0, 0.0, 0.0)),
+      // A color, or a list / `Directive` of directives holding one.
+      Some(spec) => Some(
+        parse_color(spec)
+          .or_else(|| {
+            crate::functions::plot::parse_style_directives(spec)
+              .and_then(|s| s.color_expr)
+              .and_then(|c| parse_color(&c))
+          })
+          .unwrap_or(frame_default_color),
+      ),
+      None => Some(frame_default_color),
     }
   } else {
     None
   };
+
+  // A framed label is laid out as its own picture — lines (or a grid's
+  // columns) measured in the label's font, inside the frame's margins — and
+  // set at the anchor like an inset.
+  if let Some(frame_color) = frame
+    && direction.is_none()
+    && fraction_label_parts(&text).is_none()
+    && stacked_label_rows(&text).is_none()
+  {
+    let (svg, w, h) = framed_label_picture(
+      content,
+      &text,
+      &local_style,
+      frame_color,
+      background,
+      frame_opts,
+    );
+    let (svg, w, h) = align_inset_picture(svg, w, h, offset);
+    prims.push(Primitive::InsetGraphic {
+      svg,
+      x,
+      y,
+      w,
+      h,
+      scaled,
+      size: None,
+      size_scaled: false,
+      source: None,
+    });
+    return;
+  }
 
   let styled_ranges = styled_text_ranges(content, &text);
   prims.push(Primitive::TextPrim {
@@ -10570,6 +10991,102 @@ fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
 /// (`(0, 0)` bottom-left, `(1, 1)` top-right) to its screen position.
 /// Returns `false` when no such map exists (fewer than three non-collinear
 /// vertices), so the caller can draw a plain fill instead.
+/// Define the SVG gradient a one-dimensional texture paints a polygon with
+/// and return the `fill` that references it; `None` for a 2D texture or
+/// when the polygon has no `u` coordinate per vertex.
+///
+/// Wolfram interpolates `u` linearly across the polygon, which a linear
+/// gradient reproduces exactly whenever `u` is an affine function of the
+/// position (any triangle, and the common case of coordinates assigned by
+/// height or width). Otherwise the least-squares affine fit of `u` over the
+/// vertices gives the gradient's direction and extent. Coordinates outside
+/// `[0, 1]` repeat the ramp.
+fn emit_texture_ramp(
+  out: &mut String,
+  points: &[(f64, f64)],
+  tex: &TextureFill,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+) -> Option<String> {
+  let colors = tex.gradient.as_ref()?;
+  if tex.coords.len() != points.len() || points.len() < 2 {
+    return None;
+  }
+  let screen: Vec<(f64, f64)> = points
+    .iter()
+    .map(|&(x, y)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h)))
+    .collect();
+  let n = screen.len() as f64;
+  let (cx, cy) = screen
+    .iter()
+    .fold((0.0, 0.0), |(sx, sy), &(x, y)| (sx + x / n, sy + y / n));
+  let mean_u = tex.coords.iter().map(|&(u, _)| u).sum::<f64>() / n;
+  // Least squares for u - mean_u = b (x - cx) + c (y - cy).
+  let (mut sxx, mut sxy, mut syy, mut sxu, mut syu) = (0.0, 0.0, 0.0, 0.0, 0.0);
+  for (&(x, y), &(u, _)) in screen.iter().zip(&tex.coords) {
+    let (dx, dy, du) = (x - cx, y - cy, u - mean_u);
+    sxx += dx * dx;
+    sxy += dx * dy;
+    syy += dy * dy;
+    sxu += dx * du;
+    syu += dy * du;
+  }
+  let det = sxx * syy - sxy * sxy;
+  let (b, c) = if det.abs() > 1e-9 {
+    ((sxu * syy - syu * sxy) / det, (syu * sxx - sxu * sxy) / det)
+  } else if sxx + syy > 1e-9 {
+    // Collinear vertices: fit along their common line.
+    let t = sxx + syy;
+    (sxu / t, syu / t)
+  } else {
+    (0.0, 0.0)
+  };
+  let sample = |u: f64| -> Color {
+    let u = u.rem_euclid(1.0);
+    let pos = u * (colors.len() - 1) as f64;
+    let i = (pos.floor() as usize).min(colors.len() - 2);
+    let t = pos - i as f64;
+    let (a, z) = (colors[i], colors[i + 1]);
+    Color {
+      r: a.r + (z.r - a.r) * t,
+      g: a.g + (z.g - a.g) * t,
+      b: a.b + (z.b - a.b) * t,
+      a: a.a + (z.a - a.a) * t,
+    }
+  };
+  let g2 = b * b + c * c;
+  if g2 < 1e-18 {
+    // `u` does not vary: one flat color.
+    return Some(sample(mean_u).to_svg_rgb());
+  }
+  // The points where the fitted u is 0 and 1.
+  let at = |u: f64| {
+    let k = (u - mean_u) / g2;
+    (cx + k * b, cy + k * c)
+  };
+  let ((x1, y1), (x2, y2)) = (at(0.0), at(1.0));
+  // A ramp of many colors is sampled down to a few dozen stops.
+  let stops = colors.len().min(33);
+  let mut stop_svg = String::new();
+  for k in 0..stops {
+    let off = k as f64 / (stops - 1) as f64;
+    let col = sample(off.min(1.0 - 1e-9));
+    stop_svg.push_str(&format!(
+      "<stop offset=\"{off:.4}\" stop-color=\"{}\"{}/>",
+      col.to_svg_rgb(),
+      col.stop_opacity_attr()
+    ));
+  }
+  let id = format!("ramp{}", out.len());
+  out.push_str(&format!(
+    "<defs><linearGradient id=\"{id}\" gradientUnits=\"userSpaceOnUse\" \
+     spreadMethod=\"repeat\" x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" \
+     y2=\"{y2:.2}\">{stop_svg}</linearGradient></defs>\n"
+  ));
+  Some(format!("url(#{id})"))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit_textured_polygon(
   out: &mut String,
@@ -13129,7 +13646,15 @@ fn render_primitive(
       } else {
         String::new()
       };
+      // A one-dimensional texture fills the polygon with its color ramp.
+      let fill = style
+        .texture
+        .as_ref()
+        .filter(|_| vertex_colors.is_none())
+        .and_then(|tex| emit_texture_ramp(out, points, tex, bb, svg_w, svg_h))
+        .unwrap_or_else(|| color.to_svg_rgb());
       if let Some(tex) = style.texture.as_ref()
+        && tex.gradient.is_none()
         && holes.is_empty()
         && vertex_colors.is_none()
         && emit_textured_polygon(
@@ -13191,9 +13716,8 @@ fn render_primitive(
           ""
         };
         out.push_str(&format!(
-          "<polygon points=\"{}\" fill=\"{}\"{}{}{rule}/>\n",
+          "<polygon points=\"{}\" fill=\"{fill}\"{}{}{rule}/>\n",
           pts.join(" "),
-          color.to_svg_rgb(),
           fill_opacity,
           stroke_attr,
         ));
@@ -13205,9 +13729,8 @@ fn render_primitive(
           d.push_str(&subpath(hole));
         }
         out.push_str(&format!(
-          "<path d=\"{}\" fill=\"{}\" fill-rule=\"evenodd\"{}{}/>\n",
+          "<path d=\"{}\" fill=\"{fill}\" fill-rule=\"evenodd\"{}{}/>\n",
           d.trim_end(),
-          color.to_svg_rgb(),
           fill_opacity,
           stroke_attr,
         ));
@@ -50174,6 +50697,21 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
         }
       }
       released = call(name.as_str(), args.iter().map(release).collect());
+      &released
+    }
+    // `NumberForm[Dynamic[x], spec]` (a control's value readout) shows the
+    // live value as it is: the front end updates the `Dynamic` on its own,
+    // outside the number formatting, so `2.` stays `2.`, not `2.0`.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "NumberForm" | "PaddedForm" | "AccountingForm")
+        && let Some(Expr::FunctionCall {
+          name: dynamic,
+          args: inner,
+        }) = args.first()
+        && dynamic == "Dynamic"
+        && !inner.is_empty() =>
+    {
+      released = inner[0].clone();
       &released
     }
     other => other,
