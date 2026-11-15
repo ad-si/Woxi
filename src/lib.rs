@@ -2434,7 +2434,42 @@ pub fn with_scoped_globals<R>(
     });
   }
   let _guard = ScopedGlobals { saved };
+  with_manipulate_frame(f)
+}
+
+thread_local! {
+  /// How many [`with_manipulate_frame`] scopes are active on this thread.
+  static MANIPULATE_FRAME_DEPTH: std::cell::Cell<usize> =
+    const { std::cell::Cell::new(0) };
+}
+
+/// Decrements [`MANIPULATE_FRAME_DEPTH`] when dropped, so an early return
+/// or a panic inside `f` cannot leave the frame marked as active.
+struct ManipulateFrameGuard;
+
+impl Drop for ManipulateFrameGuard {
+  fn drop(&mut self) {
+    MANIPULATE_FRAME_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+  }
+}
+
+/// Run `f` as the rendering of one `Manipulate` frame.
+///
+/// The Wolfram FrontEnd frames the 3D graphics a `Manipulate` displays by
+/// the sphere around their box (as if `SphericalRegion -> True` were
+/// given), so the picture keeps its scale while controls change the view
+/// point or the contents. [`with_scoped_globals`], which installs the
+/// control values for a frame, runs its closure through this.
+pub fn with_manipulate_frame<R>(f: impl FnOnce() -> R) -> R {
+  MANIPULATE_FRAME_DEPTH.with(|d| d.set(d.get() + 1));
+  let _guard = ManipulateFrameGuard;
   f()
+}
+
+/// Whether the current evaluation renders a `Manipulate` frame (see
+/// [`with_manipulate_frame`]).
+pub fn in_manipulate_frame() -> bool {
+  MANIPULATE_FRAME_DEPTH.with(|d| d.get() > 0)
 }
 
 thread_local! {

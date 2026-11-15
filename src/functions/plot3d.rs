@@ -11488,8 +11488,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut box_ratios: Option<[f64; 3]> = None;
   // `SphericalRegion -> True`: frame the picture by the sphere that
   // encloses the contents instead of by their projected outline, so the
-  // scale stays put as the view turns or the contents move.
-  let mut spherical_region = false;
+  // scale stays put as the view turns or the contents move. A
+  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
+  let mut spherical_region = crate::in_manipulate_frame();
   // `ViewAngle -> θ`: the field of view of the camera, in radians. With one
   // given the picture is no longer scaled to fit its contents — the view
   // volume sets the scale, so a small object stays small. `view_distance`

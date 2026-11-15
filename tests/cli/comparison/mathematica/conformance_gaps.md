@@ -5624,6 +5624,18 @@ given). Under `VertexColors` — how WL's `ColorFunction` surfaces carry their
 colors — wolframscript draws no highlight even though the plot's style names
 `Specularity[White, 3]`, so Woxi leaves it out there too.
 
+### Standalone 3D plots ignore the camera options
+
+`Plot3D` and most other 3D plot functions (`ParametricPlot3D`,
+`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
+the plot call itself change nothing:
+`Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
+picture as without the option. The options are kept on the result, so
+`Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
+re-renders the scene through `Graphics3D` and honors them, including the
+`SphericalRegion -> True` framing a `Manipulate` frame defaults to.
+
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
 Woxi frames the picture by the sphere around the (2 %-padded) bounding box
@@ -5646,27 +5658,6 @@ contents' own enclosing sphere (radius 3). The cube- and bar-shaped
 calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
-
-### A long explicit `PlotRange` box at a fixed `ImageSize` draws smaller in Wolfram
-
-Without `SphericalRegion`, Woxi fits the projected outline of the displayed
-box into an `ImageSize -> {w, h}` picture. A Demonstration drawing a long,
-thin `Graphics3D` scene through `Show[g, PlotRange -> {{-11, 11},
-{-4.25, 4.25}, {-4.25, 4.25}}, ImageSize -> {575, 350}]` (with `Boxed ->
-False` and the default view) behaves differently. In all four of its Wolfram
-snapshots, a cylinder from `{-10, 0, 0}` to `{10, 0, 0}` is about 246 px
-wide. In Woxi it is 357 px wide: the box's outline fills the 350 px height.
-
-Wolfram's size matches what Woxi draws with `SphericalRegion -> True`. That
-gives 250 px, with the same slope and centering, as if the sphere around the
-displayed box were fit into the shorter image side.
-
-This conflicts with the calibration in the entry above. There a
-`SphericalRegion -> False` cylinder at `ImageSize -> {550, 350}` without a
-`PlotRange` fills the width (532/550). So the explicit `PlotRange`, `Show`,
-or `Boxed -> False` may trigger the different framing. This could not be
-checked without wolframscript: no snapshot of a box-filling scene with
-an explicit `PlotRange` and a fixed image size was available to compare.
 
 ### `Texture` and `VertexTextureCoordinates`
 

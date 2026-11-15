@@ -10207,6 +10207,56 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// A Manipulate that switches the view point of a boxed 3D scene with
+  /// an explicit `PlotRange` (a `Show` of a surface and a `Graphics3D`, the
+  /// shape of a cone-section Demonstration; written independently here).
+  /// Wolfram frames a Manipulate's 3D graphics by the sphere around the
+  /// box, so every view keeps one scale. Regression: the widget fitted the
+  /// projected box instead, so an axis-aligned view (`Below`) blew its near
+  /// face up to the full picture, about 1.44 times Wolfram's size.
+  #[test]
+  fn manipulate_3d_view_switch_frames_by_the_bounding_sphere() {
+    let code = r#"Manipulate[
+      Show[{Plot3D[s x + 3, {x, -4, 4}, {y, -4, 4}, Mesh -> False],
+        Graphics3D[{Sphere[{0, 0, 4}, 2], Line[{{0, 0, 0}, {0, 0, 9}}]}]},
+        PlotRange -> {{-6, 6}, {-6, 6}, {0, 12}}, ViewPoint -> vp,
+        ImageSize -> {300, 300}],
+      {{s, 0.5, "slope"}, 0, 1},
+      {{vp, {1.3, -2.4, 2}, "view"}, {{1.3, -2.4, 2} -> "skew",
+        Below -> "below", Left -> "left"}}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a view-switching 3D Manipulate should build a ManipulateState");
+    assert_eq!(state.error, None, "the body must evaluate cleanly");
+    for (index, view) in ["{1.3, -2.4, 2}", "Below", "Left"].iter().enumerate()
+    {
+      if let Some(manipulate::ControlState::Discrete {
+        current_index, ..
+      }) = state.controls.iter_mut().find(|c| c.name() == "vp")
+      {
+        *current_index = index;
+      } else {
+        panic!("the view control must be discrete");
+      }
+      state.reevaluate();
+      let svg = state
+        .check_render()
+        .expect("the body must evaluate")
+        .graphics
+        .expect("the body must render a graphic");
+      let spherical = woxi::interpret_with_stdout(&format!(
+        "Block[{{s = 0.5, vp = {view}}}, Show[{}, SphericalRegion -> True]]",
+        state.body
+      ))
+      .expect("the reference must evaluate")
+      .graphics
+      .expect("the reference must render");
+      assert_eq!(svg, spherical, "view {view}");
+    }
+  }
+
   /// A Manipulate whose controls ask for different sides one by one: the
   /// sliders and radio row stay in the widget-level (top) panel, while a
   /// labeled popup and a boolean checkbox each written with their own

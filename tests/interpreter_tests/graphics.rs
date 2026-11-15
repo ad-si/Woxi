@@ -9881,6 +9881,43 @@ mod plot3d {
       }
     }
 
+    /// A `Manipulate` frame frames its 3D graphics by the sphere around
+    /// the box, as Wolfram does: a Demonstration's snapshots of a
+    /// `Show[Plot3D[…], Graphics3D[…]]` cube of side 15 at `ImageSize ->
+    /// 400` measured 332 px (skew view) and 277 px (`ViewPoint -> Below`,
+    /// near face) across, exactly what `SphericalRegion -> True` draws. An
+    /// explicit `SphericalRegion -> False` still wins.
+    #[test]
+    fn manipulate_frame_defaults_graphics3d_to_spherical_region() {
+      for view in ["{1.3, -2.4, 2}", "Below", "Left"] {
+        let scene = |opts: &str| {
+          format!(
+            "Show[Graphics3D[Sphere[{{0, 0, 5}}, 2]], PlotRange -> \
+             {{{{-7.5, 7.5}}, {{-7.5, 7.5}}, {{0, 15}}}}, ViewPoint -> \
+             {view}, ImageSize -> {{400, 400}}{opts}]"
+          )
+        };
+        let plain = export_svg(&scene(""));
+        let spherical = export_svg(&scene(", SphericalRegion -> True"));
+        assert_ne!(plain, spherical, "{view}");
+        let in_frame = woxi::with_manipulate_frame(|| export_svg(&scene("")));
+        assert_eq!(in_frame, spherical, "{view}");
+        let forced_off = woxi::with_manipulate_frame(|| {
+          export_svg(&scene(", SphericalRegion -> False"))
+        });
+        assert_eq!(forced_off, plain, "{view}");
+        // Installing control values is rendering a frame.
+        let bound = woxi::with_scoped_globals(
+          &[("r".to_string(), "2".to_string())],
+          || export_svg(&scene("").replace(", 2]", ", r]")),
+        );
+        assert_eq!(bound, spherical, "{view}");
+      }
+      // The frame ends with the closure.
+      let _ = woxi::with_manipulate_frame(|| ());
+      assert!(!woxi::in_manipulate_frame());
+    }
+
     // `ViewCenter` moves the point the camera looks at; the box middle is
     // the default, so naming it changes nothing.
     #[test]
