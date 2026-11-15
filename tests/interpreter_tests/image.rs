@@ -11454,7 +11454,7 @@ mod svg_default_font_family {
                     .font()
                     .families()
                     .iter()
-                    .map(|f| f.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect(),
                 );
               }
@@ -11477,7 +11477,7 @@ mod svg_default_font_family {
   fn bare_text_gets_default_sans_family() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="20" font-size="15">label</text></svg>"#;
     let families = span_families(svg);
-    assert!(!families.is_empty());
+    assert_ne!(families, Vec::<Vec<String>>::new());
     for f in &families {
       assert_eq!(f, &vec![format!("\"{DEFAULT_SVG_FONT_FAMILY}\"")]);
     }
