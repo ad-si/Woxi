@@ -5070,6 +5070,13 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
       )
     })
     .unwrap_or(expr);
+  // A list in a grid or column wider than the box breaks into lines that
+  // fit it.
+  let expr = pane_box
+    .and_then(|(w, _, _, _)| {
+      functions::graphics::wrap_wide_grid_text(&expr, w, &measured_width)
+    })
+    .unwrap_or(expr);
   // A grid wider than that box squeezes its automatically sized pictures
   // (a plot's legend) to fit, instead of pushing the other columns out.
   let expr = pane_box

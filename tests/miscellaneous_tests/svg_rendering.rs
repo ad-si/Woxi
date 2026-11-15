@@ -4601,6 +4601,44 @@ mod tests {
       assert!(grid.graphics.is_some(), "{:?}", grid.graphics);
     }
 
+    /// A list in a `Column` wider than the `Pane` around it breaks into
+    /// lines at the pane's width, after the commas between its elements,
+    /// whether the pane gives only a width or a fixed `{w, h}` box, and
+    /// through the `Text` and `Style` wrapped around the column.
+    #[test]
+    fn pane_breaks_a_long_list_in_a_column_into_lines() {
+      fn svg_width(svg: &str) -> f64 {
+        svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|w| w.parse().ok())
+          .expect("svg width")
+      }
+      for pane in ["300", "{300, 400}"] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Pane[Text[Style[Column[{{"Squares:",
+            Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {{k, 1, 60}}]}}],
+            12]], {pane}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        let width = svg_width(&svg);
+        assert!(width <= 300.5, "Pane[…, {pane}] is {width} wide: {svg}");
+        assert!(svg.contains("Squares:"), "{svg}");
+        assert!(svg.contains(r#"font-weight="bold">3600<"#), "{svg}");
+        // The list takes several lines, each starting where the last one
+        // ended: the first line opens the brace, the last one closes it.
+        assert!(svg.matches("<text").count() > 3, "{svg}");
+      }
+      // Without a pane the same column is one long line.
+      let svg = woxi::interpret(
+        r#"ExportString[Column[{"Squares:",
+          Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {k, 1, 60}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg_width(&svg) > 300.0, "{svg}");
+    }
+
     /// `Text` around a `Pane` of a plain table draws the table: the pane
     /// only sizes it.
     #[test]
