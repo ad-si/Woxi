@@ -8253,7 +8253,15 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       return;
     }
   }
-  let text = graphics_text_content(content);
+  // A graphic's `FormatType` is `TraditionalForm`: a mathematical label
+  // (`Row[{"|", HoldForm[D - F], "| = ", 5.}]`, a bare symbol `x`) sets its
+  // one-letter symbols in italics.
+  let traditional =
+    traditional_text_runs(content).filter(|runs| runs.iter().any(|r| r.italic));
+  let text = match &traditional {
+    Some(runs) => flatten_label_runs(runs),
+    None => graphics_text_content(content),
+  };
   // A `Column`'s own alignment wins over a `TextAlignment` the label's
   // `Style` wrapper gives its lines.
   local_style.text_line_anchor =
@@ -8343,7 +8351,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     None
   };
 
-  let styled_ranges = styled_text_ranges(content, &text);
+  let styled_ranges = match &traditional {
+    Some(runs) => label_runs_ranges(runs),
+    None => styled_text_ranges(content, &text),
+  };
   prims.push(Primitive::TextPrim {
     text,
     x,
@@ -12383,11 +12394,169 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   if flatten_label_runs(&runs) != text || !runs.iter().any(styled) {
     return Vec::new();
   }
+  label_runs_ranges(&runs)
+}
+
+/// The runs of a `Text` label as a graphic's `FormatType -> TraditionalForm`
+/// typesets it: strings and numbers as they are, a mathematical part
+/// (`HoldForm[D - F]`, a bare symbol `x`, `a b`, `x^2`) with its one-letter
+/// symbols in italics and spaces around a binary `+`/`-`. A `Row` of such
+/// parts is the concatenation of their runs. `None` when some part is not
+/// one of these, so the label keeps its plain text.
+fn traditional_text_runs(content: &Expr) -> Option<Vec<LabelRun>> {
+  let plain = |text: String| LabelRun {
+    text,
+    ..Default::default()
+  };
+  match content {
+    Expr::String(_) | Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => {
+      Some(vec![plain(graphics_text_content(content))])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Row" && matches!(args.len(), 1 | 2) =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let separator = match args.get(1) {
+        None => None,
+        Some(Expr::String(s)) => Some(s.clone()),
+        Some(_) => return None,
+      };
+      let mut runs = Vec::new();
+      for (i, item) in items.iter().enumerate() {
+        if i > 0
+          && let Some(sep) = &separator
+        {
+          runs.push(plain(sep.clone()));
+        }
+        runs.extend(traditional_text_runs(item)?);
+      }
+      Some(runs)
+    }
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      match &args[0] {
+        Expr::String(_) => traditional_text_runs(&args[0]),
+        inner => traditional_box_runs(
+          &crate::evaluator::dispatch::complex_and_special::
+            expr_to_box_form_traditional(inner),
+        ),
+      }
+    }
+    Expr::FunctionCall { name, args }
+      if name == "HoldForm"
+        && args.len() == 1
+        && !matches!(args[0], Expr::String(_)) =>
+    {
+      traditional_box_runs(
+        &crate::evaluator::dispatch::complex_and_special::
+          expr_to_box_form_traditional(content),
+      )
+    }
+    _ if is_traditional_math_label(content) => traditional_box_runs(
+      &crate::evaluator::dispatch::complex_and_special::
+        expr_to_box_form_traditional(content),
+    ),
+    _ => None,
+  }
+}
+
+/// The runs a `TraditionalForm` box tree sets on one line: one-letter
+/// symbols in italics, a binary `+`/`-` and relations spaced, a comma
+/// followed by a space, scripts as Unicode script characters. `None` for
+/// any other box (a fraction, a radical, a script Unicode has no glyphs
+/// for), which a single
+/// line of text cannot show.
+fn traditional_box_runs(boxes: &Expr) -> Option<Vec<LabelRun>> {
+  let plain = |text: &str| LabelRun {
+    text: text.to_string(),
+    ..Default::default()
+  };
+  match boxes {
+    Expr::String(s) => {
+      let s = strip_precision_marker(s);
+      let unquoted =
+        s.strip_prefix('"').and_then(|rest| rest.strip_suffix('"'));
+      Some(match unquoted {
+        // A quoted string is literal text, upright whatever the form.
+        Some(text) => vec![plain(text)],
+        None if s.contains(crate::functions::string_ast::BOX_START) => {
+          return None;
+        }
+        None => vec![LabelRun {
+          text: s.to_string(),
+          // `π` is the constant `Pi`, set upright like the other
+          // constant glyphs.
+          italic: is_single_letter_symbol(s) && s != "\u{3C0}",
+          ..Default::default()
+        }],
+      })
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "FormBox" | "TagBox") && !args.is_empty() =>
+    {
+      traditional_box_runs(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "RowBox" && args.len() == 1 =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut runs = Vec::new();
+      for (i, item) in items.iter().enumerate() {
+        let between = i > 0 && i + 1 < items.len();
+        match item {
+          Expr::String(op)
+            if between
+              && (matches!(op.as_str(), "+" | "-")
+                || is_spaced_box_operator(op)) =>
+          {
+            runs.push(plain(&format!(" {op} ")));
+          }
+          Expr::String(op) if op == "," && i + 1 < items.len() => {
+            runs.push(plain(", "));
+          }
+          _ => runs.extend(traditional_box_runs(item)?),
+        }
+      }
+      Some(runs)
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "SuperscriptBox" | "SubscriptBox")
+        && args.len() == 2 =>
+    {
+      let superscript = name == "SuperscriptBox";
+      let script = flatten_label_runs(&traditional_box_runs(&args[1])?);
+      if script.is_empty()
+        || !script
+          .chars()
+          .all(|c| unicode_script_char(c, superscript).is_some())
+        // A letter subscript is lowered by the label renderer instead:
+        // the Unicode subscript letters are missing from most fonts.
+        || (!superscript && script.chars().any(char::is_alphabetic))
+      {
+        return None;
+      }
+      let mut runs = traditional_box_runs(&args[0])?;
+      runs.push(plain(&to_unicode_script(&script, superscript)));
+      Some(runs)
+    }
+    _ => None,
+  }
+}
+
+/// Character ranges of the styled runs in `runs`, counted over their
+/// concatenated text (see [`StyledRange`]).
+fn label_runs_ranges(runs: &[LabelRun]) -> Vec<StyledRange> {
   let mut ranges = Vec::new();
   let mut pos = 0;
-  for r in &runs {
+  for r in runs {
     let len = r.text.chars().count();
-    if styled(r) && len > 0 {
+    if (r.italic || r.bold || r.color.is_some() || r.size.is_some()) && len > 0
+    {
       ranges.push(StyledRange {
         start: pos,
         end: pos + len,
