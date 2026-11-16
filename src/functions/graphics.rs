@@ -16039,9 +16039,13 @@ pub(crate) fn text_pushed_into_row(content: &Expr) -> Option<Expr> {
       let items: Vec<Expr> = items
         .iter()
         .map(|item| {
+          // Items the row draws as their own sub-layout (a stacked
+          // fraction, a nested grid) keep their typesetting.
           let keep = is_text_display_item(item)
             || crate::syntax::spacer_width_pts(item).is_some()
-            || crate::evaluator::lays_out_a_graphic(item);
+            || crate::evaluator::lays_out_a_graphic(item)
+            || nested_layout_svg(item).is_some()
+            || standard_fraction_cell_svg(item, 14.0).is_some();
           if keep {
             item.clone()
           } else {
