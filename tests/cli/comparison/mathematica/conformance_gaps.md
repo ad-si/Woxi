@@ -10200,3 +10200,11 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### 2D plots don't box the `Framed` lines of a stacked title
+
+`PlotLabel -> Column[{Style[Framed[eq], Blue, Background -> LightYellow],
+"caption"}]` boxes the first line in a blue frame on a yellow background
+above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
+other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
+Only a title that is framed as a whole gets a box there.

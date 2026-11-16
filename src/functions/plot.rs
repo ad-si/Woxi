@@ -4960,7 +4960,7 @@ pub(crate) fn plot_labels_svg(
     // A title wider than the picture (a long `Row` of text) shrinks to fit
     // instead of being clipped at both edges.
     let widest = sl.max_line_chars() as f64;
-    let fs = if widest > 0.0 && !sl.framed {
+    let fs = if widest > 0.0 && sl.frame.is_none() {
       fs.min((canvas_width - 8.0 * sf) / (widest * 0.52))
     } else {
       fs
@@ -4968,7 +4968,7 @@ pub(crate) fn plot_labels_svg(
     let ty = layout.title_top + ascent(fs / sf) * sf;
     // A box around the title must stay inside the image, even when a tight
     // `ImagePadding` leaves less room above the plot than the box needs.
-    let ty = if sl.framed {
+    let ty = if sl.frame.is_some() {
       let top = ty - fs * 0.9 - 6.0 * sf;
       ty + (sf - top).max(0.0)
     } else {
@@ -4986,7 +4986,7 @@ pub(crate) fn plot_labels_svg(
       style_attrs.push_str(" font-style=\"italic\"");
     }
     let title_pitch = line_pitch(fs / sf) * sf;
-    if sl.framed {
+    if let Some(frame) = &sl.frame {
       // Box the title: the widest line plus Framed's 6pt margin per side.
       let margin = 6.0 * sf;
       let w = sl.max_line_chars() as f64 * fs * 0.47 + 2.0 * margin;
@@ -4996,11 +4996,20 @@ pub(crate) fn plot_labels_svg(
       let top = ty - ascent(fs / sf) * sf - margin;
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
+           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
         3.0 * sf,
-        crate::functions::graphics::theme().framed_border,
+        frame
+          .background
+          .as_ref()
+          .map_or_else(|| "none".to_string(), |c| c.to_svg_rgb()),
+        frame.stroke.as_ref().map_or_else(
+          || crate::functions::graphics::theme()
+            .framed_border
+            .to_string(),
+          |c| c.to_svg_rgb()
+        ),
         sf,
       ));
     }
