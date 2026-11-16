@@ -6849,6 +6849,46 @@ mod plot3d {
         assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
       }
 
+      // A pure-function `ColorFunction` still draws the smooth boundary
+      // surface (not blocky voxel faces), translucent and in its color
+      // also when combined with other graphics by `Show`.
+      #[test]
+      fn pure_function_color_function_on_smooth_surface() {
+        clear_state();
+        assert_eq!(
+          interpret(
+            "g = RegionPlot3D[x^2 + y^2 + z^2 < 1 && x + y > 0, {x, -1, 1}, \
+             {y, -1, 1}, {z, -1, 1}, \
+             ColorFunction -> (Directive[Green, Opacity[0.3]] &), \
+             Mesh -> None]; \
+             {Head[First[g]], \
+              Union[Cases[First[g], _RGBColor | _Opacity, Infinity]], \
+              MemberQ[List @@ First[g], VertexNormals -> _]}"
+          )
+          .unwrap(),
+          "{GraphicsComplex, {Opacity[0.3], RGBColor[0., 1., 0.]}, True}"
+        );
+        let svg = export_svg(
+          "Show[RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ColorFunction -> (Directive[Green, Opacity[0.3]] &), Mesh -> None], Graphics3D[{}]]",
+        );
+        assert!(svg.contains(" opacity=\"0.3\""), "{svg}");
+        // Greenish facets, not the white of a lost color.
+        assert!(
+          svg.matches("fill=\"rgb(255,255,255)\"").count() <= 1,
+          "{svg}"
+        );
+      }
+
+      // `RegionPlot3D` calls its `ColorFunction` with x, y and z only.
+      #[test]
+      fn color_function_gets_three_arguments() {
+        let svg = export_svg(
+          "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ColorFunction -> (If[Length[{##}] == 3, Red, Blue] &)]",
+        );
+        assert!(!svg.contains("rgb(0,0,"), "{svg}");
+        assert!(svg.contains("fill=\"rgb(2"), "{svg}");
+      }
+
       #[test]
       fn color_function_sees_scaled_coordinates() {
         // Red where the scaled x is above 1/2, i.e. on half of the cube.
@@ -33995,6 +34035,24 @@ mod log_linear_plot {
 
 mod contour_plot_3d {
   use super::*;
+
+  // The `ColorFunction` colors stay with the primitives, so `Show` draws
+  // the surface in them, and the option itself is not passed on.
+  #[test]
+  fn color_function_colors_survive_in_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = ContourPlot3D[x == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         ColorFunction -> Function[{x, y, z, f}, If[y < 0.5, Red, Black]], \
+         Mesh -> None]; \
+         {Union[Cases[First[g], _RGBColor, Infinity]], \
+          FreeQ[Rest[List @@ g], ColorFunction]}"
+      )
+      .unwrap(),
+      "{{RGBColor[0., 0., 0.], RGBColor[1., 0., 0.]}, True}"
+    );
+  }
 
   // A tube thinner than a grid cell leaves every sample on one side of the
   // level; the surface must still be found, and — like the FrontEnd's
