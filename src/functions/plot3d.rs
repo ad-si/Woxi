@@ -3560,6 +3560,26 @@ fn draw_axes_on_box_with_ticks(
   };
   let (cx, cy) =
     to_svg(project(box_center, camera).0, project(box_center, camera).1);
+  // Which way (+1 or -1 times the unit normal `(nx, ny)` of the axis line
+  // from `(sx0, sy0)` to `(sx1, sy1)`) the labels of an axis go: away from
+  // the box center. An axis drawn through the center (`AxesOrigin` at the
+  // middle of the range) has no outward side, so its labels go where
+  // Wolfram puts them then: left of a steep axis, below a flat one.
+  let outward_sign = |sx0: f64, sy0: f64, sx1: f64, sy1: f64| -> f64 {
+    let (dx, dy) = (sx1 - sx0, sy1 - sy0);
+    let len = dx.hypot(dy);
+    if len <= 1e-9 {
+      return 1.0;
+    }
+    let (nx, ny) = (-dy / len, dx / len);
+    let (mid_x, mid_y) = (f64::midpoint(sx0, sx1), f64::midpoint(sy0, sy1));
+    let toward_center = nx * (cx - mid_x) + ny * (cy - mid_y);
+    if toward_center.abs() > 0.5 {
+      return if toward_center > 0.0 { -1.0 } else { 1.0 };
+    }
+    let leftward_or_down = if nx.abs() >= ny.abs() { -nx } else { ny };
+    if leftward_or_down >= 0.0 { 1.0 } else { -1.0 }
+  };
 
   // Each tick with its label. Automatic ticks share the decimals their
   // step needs (`-1.0, -0.5, 0.0`), as Wolfram writes them.
@@ -3622,11 +3642,7 @@ fn draw_axes_on_box_with_ticks(
       if len > 1.0 {
         let (mid_x, mid_y) = (f64::midpoint(sx0, sx1), f64::midpoint(sy0, sy1));
         let (perpx, perpy) = (-dy / len, dx / len);
-        let sign = if perpx * (cx - mid_x) + perpy * (cy - mid_y) > 0.0 {
-          -1.0
-        } else {
-          1.0
-        };
+        let sign = outward_sign(sx0, sy0, sx1, sy1);
         // How far the tick labels already reach, in the direction the
         // axis label is being pushed: their own offset plus half of the
         // widest one's box. Sideways of a vertical axis that is the text
@@ -3715,15 +3731,7 @@ fn draw_axes_on_box_with_ticks(
         // The label goes on the outward side (away from the box center);
         // the tick mark points into the box, whichever way the axis line
         // runs.
-        let mid_x = f64::midpoint(sx0, sx1);
-        let mid_y = f64::midpoint(sy0, sy1);
-        let to_center_x = cx - mid_x;
-        let to_center_y = cy - mid_y;
-        let sign = if perpx * to_center_x + perpy * to_center_y > 0.0 {
-          -1.0
-        } else {
-          1.0
-        };
+        let sign = outward_sign(sx0, sy0, sx1, sy1);
 
         svg.push_str(&format!(
                     "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",

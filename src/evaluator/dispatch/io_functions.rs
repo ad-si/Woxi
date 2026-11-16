@@ -9107,6 +9107,8 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: StdArc::new(fontdb),
+    font_family: crate::functions::image_ast::DEFAULT_TEXT_FONT_FAMILY
+      .to_owned(),
     ..Default::default()
   };
 

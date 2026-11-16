@@ -4,6 +4,7 @@ mod highlighter;
 mod macos_open;
 mod manipulate;
 
+use woxi::functions::image_ast::DEFAULT_TEXT_FONT_FAMILY;
 use woxi::notebook;
 
 use iced::keyboard;
@@ -6163,15 +6164,24 @@ fn plain_text_svg(text: &str) -> String {
   svg
 }
 
+/// How Woxi Studio parses a graphic's SVG: with its fonts, and the default
+/// sans face for text that names no family.
+fn svg_render_options(
+  fontdb: &Arc<resvg::usvg::fontdb::Database>,
+) -> resvg::usvg::Options<'static> {
+  resvg::usvg::Options {
+    fontdb: fontdb.clone(),
+    font_family: DEFAULT_TEXT_FONT_FAMILY.to_owned(),
+    ..Default::default()
+  }
+}
+
 fn rasterize_svg(
   svg_str: &str,
   scale_factor: f32,
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<(iced::widget::image::Handle, u32, u32)> {
-  let opts = resvg::usvg::Options {
-    fontdb: fontdb.clone(),
-    ..Default::default()
-  };
+  let opts = svg_render_options(fontdb);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let logical_w = size.width().ceil() as u32;
@@ -8095,10 +8105,7 @@ fn encode_svg_as_png(
   svg_str: &str,
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<Vec<u8>> {
-  let opts = resvg::usvg::Options {
-    fontdb: fontdb.clone(),
-    ..Default::default()
-  };
+  let opts = svg_render_options(fontdb);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let scale: f32 = 2.0;
@@ -8124,6 +8131,7 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: std::sync::Arc::new(fontdb),
+    font_family: DEFAULT_TEXT_FONT_FAMILY.to_owned(),
     ..Default::default()
   };
 
@@ -8489,6 +8497,7 @@ fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
   );
   let opt = svg2pdf::usvg::Options {
     fontdb: pdf_fontdb(),
+    font_family: DEFAULT_TEXT_FONT_FAMILY.to_owned(),
     ..Default::default()
   };
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
@@ -8521,6 +8530,7 @@ fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: pdf_fontdb(),
+    font_family: DEFAULT_TEXT_FONT_FAMILY.to_owned(),
     ..Default::default()
   };
   let (slide_w, slide_h) = PDF_SLIDE_SIZE;
@@ -8693,6 +8703,37 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A graphic's `<text>` without a `font-family` (a `Text` without
+  /// `FontFamily`) is drawn in the default sans face, as an exported SVG
+  /// and Wolfram draw it, not in usvg's fallback "Times New Roman" (or
+  /// whatever face happens to stand in for it).
+  #[test]
+  fn graphic_text_without_family_renders_in_default_sans_face() {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let db = std::sync::Arc::new(db);
+    let svg = |family: &str| {
+      format!(
+        "<svg width=\"120\" height=\"30\" xmlns=\"http://www.w3.org/2000/svg\">\
+         <text x=\"4\" y=\"20\" font-size=\"16\"{family}>Hamburg 2 (g)</text></svg>"
+      )
+    };
+    let png = |family: &str| {
+      super::encode_svg_as_png(&svg(family), &db).expect("renders")
+    };
+    assert_eq!(
+      super::svg_render_options(&db).font_family,
+      "Atkinson Hyperlegible Next"
+    );
+    let bare = png("");
+    assert_eq!(
+      bare,
+      png(" font-family=\"Atkinson Hyperlegible Next\""),
+      "bare text must use the default sans face"
+    );
+    assert_ne!(bare, png(" font-family=\"Atkinson Hyperlegible Mono\""));
+  }
+
   /// A slider's value readout marks a whole-number machine real with a
   /// trailing dot (`-10.`), as Wolfram's labeled slider does.
   #[test]
