@@ -1211,6 +1211,16 @@ mod fields_and_graphs {
     assert_ne!(s, boxed);
   }
 
+  // A `Text` inside a `GraphicsComplex` is anchored at the indexed point.
+  #[test]
+  fn graphics_complex_text_by_index() {
+    let s = svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 1, 1}}, \
+       {Sphere[1, 0.1], Text[\"Qz\", 2]}]]",
+    );
+    assert!(s.contains(">Qz<"), "{s}");
+  }
+
   #[test]
   fn list_plot3d_mesh_style() {
     let s = svg(
