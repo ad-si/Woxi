@@ -12,6 +12,10 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Text[Row[…]]`, `Text[Column[…]]`, `Text[Grid[…]]` and `Text["…"]` set
+    their text in the proportional text face, and fixed-size `Pane`s wrap
+    such text by its proportional width, so a sentence that fits the pane
+    stays on one line.
 
 # 2026-11-08 - 0.4.0
 
