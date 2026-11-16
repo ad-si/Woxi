@@ -13486,10 +13486,8 @@ const SERIF_FAMILY_PREFERENCE: &[&str] = &[
 pub fn preferred_serif_family<'a>(
   families: impl IntoIterator<Item = &'a str>,
 ) -> Option<&'static str> {
-  let installed: std::collections::HashSet<String> = families
-    .into_iter()
-    .map(|name| name.to_ascii_lowercase())
-    .collect();
+  let installed: std::collections::HashSet<String> =
+    families.into_iter().map(str::to_ascii_lowercase).collect();
   SERIF_FAMILY_PREFERENCE
     .iter()
     .copied()
