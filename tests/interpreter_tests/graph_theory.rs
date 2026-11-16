@@ -10492,3 +10492,34 @@ mod layered_plot_components {
     );
   }
 }
+
+mod graph_is_atomic {
+  use super::*;
+
+  // A Graph object is an atom: Apply and Map leave it unchanged, it has no
+  // parts and counts as a single leaf.
+  #[test]
+  fn apply_and_map_leave_a_graph_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = CompleteKaryTree[3]; {AtomQ[g], Length[g], Depth[g], \
+         LeafCount[g], (f @@ g) === g, (f /@ g) === g}"
+      )
+      .unwrap(),
+      "{True, 0, 1, 1, True, True}"
+    );
+  }
+
+  #[test]
+  fn graph_functions_still_read_it() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Text @@ Graph[{1 -> 2, 2 -> 3}]; {VertexCount[g], EdgeCount[g]}"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+  }
+}

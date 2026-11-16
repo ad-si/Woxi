@@ -8414,7 +8414,17 @@ fn tf(expr: &Expr) -> Expr {
     Expr::UnaryOp {
       op: UnaryOperator::Not,
       operand,
-    } => tf_row(vec![tf_string("\u{00AC}"), tf(operand)]),
+    } => {
+      // An operand that binds looser than `¬` is parenthesized:
+      // `¬(a ∨ b)`, `¬(a ⇒ b)`.
+      let not_prec = tf_prec(expr);
+      let body = if tf_prec(operand) < not_prec {
+        tf_parens(tf(operand))
+      } else {
+        tf(operand)
+      };
+      tf_row(vec![tf_string("\u{00AC}"), body])
+    }
     Expr::Comparison {
       operands,
       operators,

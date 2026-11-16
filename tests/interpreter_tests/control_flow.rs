@@ -5516,3 +5516,104 @@ mod boolean_fuzz_edge_cases {
     );
   }
 }
+
+mod boolean_convert_tree_and_implies_forms {
+  use super::*;
+
+  // "BDT" is the binary decision tree, the same Shannon decomposition "IF"
+  // writes out.
+  #[test]
+  fn bdt_is_the_decision_tree() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[(a || b) && c, \"BDT\"]").unwrap(),
+      "If[a, If[c, True, False], If[b, If[c, True, False], False]]"
+    );
+    assert_eq!(
+      interpret(
+        "Table[BooleanConvert[e, \"BDT\"] === BooleanConvert[e, \"IF\"], \
+         {e, {Xor[a, b, c], a && !b, Majority[a, b, c]}}]"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
+  // "BFF" applies the opaque BooleanFunction object of the truth table to
+  // the variables, and converting it back gives the same function.
+  #[test]
+  fn bff_is_a_boolean_function_application() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[Nand[a, b], \"BFF\"]").unwrap(),
+      "BooleanFunction[BDD -> {-2, 0, 2, -1, 1, 1, -1}][a, b]"
+    );
+    assert_eq!(
+      interpret(
+        "Table[TautologyQ[Equivalent[BooleanConvert[BooleanConvert[e, \
+         \"BFF\"]], e]], {e, {Xor[a, b, c], a || !b, Majority[a, b, c, d]}}]"
+      )
+      .unwrap(),
+      "{True, True, True}"
+    );
+  }
+
+  // "IMPLIES" uses only Implies and Not: `x || y` is `Implies[!x, y]` and
+  // `x && y` is `!Implies[x, !y]`.
+  #[test]
+  fn implies_uses_only_implies_and_not() {
+    clear_state();
+    assert_eq!(
+      interpret("BooleanConvert[a || b, \"IMPLIES\"]").unwrap(),
+      "Implies[ !a, b]"
+    );
+    assert_eq!(
+      interpret("BooleanConvert[a && b && c, \"IMPLIES\"]").unwrap(),
+      " !Implies[a, Implies[b,  !c]]"
+    );
+    assert_eq!(
+      interpret(
+        "Table[TautologyQ[Equivalent[BooleanConvert[e, \"IMPLIES\"], e]], \
+         {e, {Xor[a, b, c], a && !b, Majority[a, b, c, d], BooleanFunction[105, \
+         3, {x, y, z}]}}]"
+      )
+      .unwrap(),
+      "{True, True, True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "FreeQ[BooleanConvert[Xor[a, b, c], \"IMPLIES\"], And | Or | Xor]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
+mod nested_prefix_not {
+  use super::*;
+
+  // Repeated prefix `!` stacks a Not per `!`, with or without spaces.
+  #[test]
+  fn double_and_triple_not() {
+    clear_state();
+    assert_eq!(interpret("!!a").unwrap(), "a");
+    assert_eq!(interpret("! !a").unwrap(), "a");
+    assert_eq!(interpret("{!!True, !!!x}").unwrap(), "{True,  !x}");
+  }
+
+  // Every stacked Not reaches as far as a single one would: over `==`, but
+  // not over `&&`.
+  #[test]
+  fn stacked_nots_share_the_reach_of_one() {
+    clear_state();
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[!!a == b]]]").unwrap(),
+      "Hold[Not[Not[Equal[a, b]]]]"
+    );
+    assert_eq!(
+      interpret("ToString[FullForm[Hold[!!a && b]]]").unwrap(),
+      "Hold[And[Not[Not[a]], b]]"
+    );
+  }
+}
