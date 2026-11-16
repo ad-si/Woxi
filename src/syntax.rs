@@ -12028,6 +12028,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // in separator position is an option, not a separator; any non-Rule
       // extra argument keeps the expression in its full form (matching
       // wolframscript, e.g. Row[{1, 2}, "|", "x"]).
+      // OutputForm-only: `Infix[{a, b}, h]` lays out as the row `a h b`.
+      if is_output
+        && name == "Infix"
+        && let Some(items) = infix_display_items(args)
+      {
+        return items.iter().map(&fmt).collect();
+      }
       if is_output
         && name == "Row"
         && let Some(Expr::List(items)) = args.first()
@@ -14903,6 +14910,46 @@ pub fn spacer_width_pts(expr: &Expr) -> Option<f64> {
 /// This is used for the final output in interpret(), not for round-tripping.
 pub fn expr_to_output(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Output)
+}
+
+/// The display items of `Infix[expr, h, …]` (the `args` of the call): the
+/// operands of `expr` with the operator `h` between each pair. A bare
+/// `Infix[f[a, b, …]]` uses its head as the operator, set off by tildes —
+/// `a ~ f ~ b ~ …`. A string item stands for the text it displays; every
+/// display renderer lays the items out as one row, so `Infix` is formatted
+/// in one place. The optional precedence and grouping arguments affect only
+/// parenthesization by an enclosing operator and are not needed to lay the
+/// row out. `None` when the call has no operands to join.
+pub fn infix_display_items(args: &[Expr]) -> Option<Vec<Expr>> {
+  if args.is_empty() || args.len() > 4 {
+    return None;
+  }
+  let (operands, head): (&[Expr], Option<&str>) = match &args[0] {
+    Expr::List(items) => (items, None),
+    Expr::FunctionCall { name, args: items } => (items, Some(name.as_str())),
+    _ => return None,
+  };
+  if operands.is_empty() {
+    return None;
+  }
+  let separator: Vec<Expr> = match (args.get(1), head) {
+    (Some(op), _) => vec![op.clone()],
+    (None, Some(head)) => vec![
+      Expr::String(" ~ ".to_string()),
+      Expr::Identifier(head.to_string()),
+      Expr::String(" ~ ".to_string()),
+    ],
+    // A bare list has no head to stand in as its operator.
+    (None, None) => return None,
+  };
+  let mut items = Vec::with_capacity(operands.len() * (separator.len() + 1));
+  for (i, operand) in operands.iter().enumerate() {
+    if i > 0 {
+      items.extend(separator.iter().cloned());
+    }
+    items.push(operand.clone());
+  }
+  Some(items)
 }
 
 /// Text that tells apart expressions which differ only in the pictures they

@@ -8426,6 +8426,16 @@ fn tex_function_call(name: &str, args: &[Expr]) -> String {
       };
       items.join(&separator)
     }
+    // Infix joins its operands with the operator, a string written literally.
+    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
+      items
+        .iter()
+        .map(|item| match item {
+          Expr::String(text) => text.clone(),
+          other => expr_to_tex(other),
+        })
+        .collect()
+    }
     // Column stacks its items in a left-aligned array.
     "Column" if !args.is_empty() => {
       let items: Vec<String> = match &args[0] {
@@ -9681,6 +9691,18 @@ fn negated_term_boxes(arg: &Expr) -> Option<String> {
 
 fn box_function_call(name: &str, args: &[Expr]) -> String {
   match name {
+    // `Infix[{a, b}, "+"]` is the row `a + b`; a string operator contributes
+    // its text rather than a quoted literal.
+    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
+      let parts: Vec<String> = items
+        .iter()
+        .map(|item| match item {
+          Expr::String(s) => format!("\"{}\"", escape_box_text(s)),
+          other => expr_to_boxes(other),
+        })
+        .collect();
+      format!("RowBox[{{{}}}]", parts.join(", "))
+    }
     // `Row` typesets through one of the FrontEnd's row templates rather than
     // as a function call — the parts are laid out side by side, and the
     // separator (when there is one) travels with them inside the template.

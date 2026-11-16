@@ -4627,6 +4627,22 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), str_expr(mark)],
       )
     }
+    // `Infix[{a, b}, "+"]` is the row `a + b`: its operands boxed as
+    // expressions, a string operator contributing its text.
+    Expr::FunctionCall { name, args }
+      if name == "Infix"
+        && let Some(items) = crate::syntax::infix_display_items(args) =>
+    {
+      row_box(
+        items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s) => str_expr(s),
+            other => expr_to_box_form(other),
+          })
+          .collect(),
+      )
+    }
     // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
     // expressions (a string keeps its quotes):
     // `TemplateBox[{a, "\"(\"", b}, "RowDefault"]`.
@@ -7768,6 +7784,11 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         })
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
+    }
+    // `Infix[{a, b}, "+"]` lays its operands out with the operator between
+    // them, each item displayed (a string operator contributes its text).
+    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
+      tf_row(items.iter().map(tf_display).collect())
     }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
     // with the separator. A row *displays* its parts, so a string item
