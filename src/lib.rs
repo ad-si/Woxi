@@ -4884,6 +4884,14 @@ fn render_labeled_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// Whether `expr` or any part of it is drawn as a picture.
+fn holds_layout_graphic(expr: &syntax::Expr) -> bool {
+  evaluator::lays_out_a_graphic(expr)
+    || syntax::expr_children(expr)
+      .into_iter()
+      .any(holds_layout_graphic)
+}
+
 /// Pre-render display wrappers (TableForm, MatrixForm, Grid, Framed, Row,
 /// nested Column, Dataset, …) inside an arbitrary expression so they appear
 /// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
@@ -4899,6 +4907,20 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   {
     let inner = render_inline_display_wrapper(&args[0]);
     return match inner {
+      // A text layout (`Text[Style[Row[…], 14]]`) that the inner pass drew
+      // as a picture is typeset as the text it is, in the text face — the
+      // way a `Grid` cell sets the same `Text[…]`.
+      syntax::Expr::Graphics { .. } if !holds_layout_graphic(&args[0]) => {
+        match functions::graphics::grid_svg_with_gaps(
+          &[syntax::Expr::List(
+            vec![syntax::Expr::List(vec![expr.clone()].into())].into(),
+          )],
+          &[],
+        ) {
+          Ok(svg) => graphics_result(svg),
+          Err(_) => inner,
+        }
+      }
       syntax::Expr::Graphics { .. } => inner,
       other => syntax::Expr::FunctionCall {
         name: name.clone(),

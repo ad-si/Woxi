@@ -6662,9 +6662,12 @@ pub(crate) fn manipulator_svg(args: &[Expr]) -> Option<String> {
   let value = expr_to_f64(&dynamic_current_value(args.first()?))?;
   let (lo, hi) = match args.get(1) {
     None => (0.0, 1.0),
-    Some(Expr::List(range)) if range.len() >= 2 => {
-      (expr_to_f64(&range[0])?, expr_to_f64(&range[1])?)
-    }
+    // A bound may be live (`{1, Dynamic[n], 1}`): it sits at the current
+    // value of its variable.
+    Some(Expr::List(range)) if range.len() >= 2 => (
+      expr_to_f64(&dynamic_current_value(&range[0]))?,
+      expr_to_f64(&dynamic_current_value(&range[1]))?,
+    ),
     Some(_) => return None,
   };
   if hi <= lo {
@@ -16015,6 +16018,24 @@ fn is_text_display_item(item: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// A `Text[…]` layout item (possibly styled) whose resolved content is a
+/// text layout such as a `Row`: set in the proportional text face, the way
+/// a `Grid` cell typesets it, rather than in the monospace face the bare
+/// layout gets. `None` for any other item, or content holding a picture.
+fn text_item_layout_svg(item: &Expr, resolved: &Expr) -> Option<String> {
+  if !is_text_display_item(item)
+    || crate::evaluator::lays_out_a_graphic(resolved)
+  {
+    return None;
+  }
+  let cell = call1("Text", resolved.clone());
+  grid_svg_with_gaps(
+    &[Expr::List(vec![Expr::List(vec![cell].into())].into())],
+    &[],
+  )
+  .ok()
 }
 
 /// If `s` is a single n-ary/large operator glyph (∑ ∏ ∫ …), return the font
@@ -32926,6 +32947,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
           }
         }
         _ => match nested_layout_svg(&resolved)
+          .map(|svg| text_item_layout_svg(item, &resolved).unwrap_or(svg))
           .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
         {
           Some(svg) => {
@@ -33709,6 +33731,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           }
         }
         _ => match nested_layout_svg(&resolved)
+          .map(|svg| text_item_layout_svg(item, &resolved).unwrap_or(svg))
           .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
         {
           Some(svg) => {
@@ -48983,7 +49006,8 @@ fn display_expr_to_node(
       // written inside a display element: a live slider writing back to
       // `lval`.
       "Manipulator" | "Slider" | "VerticalSlider" if args.len() >= 2 => {
-        match slider_node(args, Vec::new(), name == "VerticalSlider") {
+        match slider_node(args, Vec::new(), name == "VerticalSlider", bindings)
+        {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -48992,7 +49016,7 @@ fn display_expr_to_node(
       // display element: the play button sweeps `lval` over its range, so
       // draw it as a slider over that range (the speed only paces playback).
       "Trigger" if args.len() >= 2 => {
-        match slider_node(&args[..2], Vec::new(), false) {
+        match slider_node(&args[..2], Vec::new(), false, bindings) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -49036,7 +49060,7 @@ fn display_expr_to_node(
             "Manipulator" | "Slider" | "VerticalSlider"
           ) && sargs.len() >= 2 =>
           {
-            match slider_node(sargs, after, n == "VerticalSlider") {
+            match slider_node(sargs, after, n == "VerticalSlider", bindings) {
               Some(node) => node,
               None => static_leaf_node(&args[0], bindings),
             }
@@ -50017,6 +50041,7 @@ fn slider_node(
   args: &[Expr],
   after: Vec<String>,
   vertical: bool,
+  bindings: &[(String, String)],
 ) -> Option<DisplayNode> {
   let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
@@ -50034,6 +50059,26 @@ fn slider_node(
   if bounds.len() < 2 {
     return None;
   }
+  // A bound may itself be live (`{1, Dynamic[n], 1}`, a slider whose
+  // maximum follows another control): read it at the current bindings.
+  let read_live = |e: &Expr| {
+    if bindings.is_empty() {
+      crate::evaluator::evaluate_expr_to_expr(e).ok()
+    } else {
+      eval_display_in_scope(e, bindings)
+    }
+  };
+  let bounds: Vec<Expr> = bounds
+    .iter()
+    .map(|b| match b {
+      Expr::FunctionCall { name, args: dargs }
+        if name == "Dynamic" && !dargs.is_empty() =>
+      {
+        read_live(&dargs[0]).unwrap_or_else(|| b.clone())
+      }
+      other => other.clone(),
+    })
+    .collect();
   let min = expr_to_f64(&bounds[0]).filter(|v| v.is_finite())?;
   let max = expr_to_f64(&bounds[1]).filter(|v| v.is_finite())?;
   let step = bounds
@@ -50041,8 +50086,7 @@ fn slider_node(
     .and_then(expr_to_f64)
     .filter(|v| v.is_finite() && *v > 0.0)
     .unwrap_or(0.0);
-  let current = crate::evaluator::evaluate_expr_to_expr(lval)
-    .ok()
+  let current = read_live(lval)
     .and_then(|e| expr_to_f64(&e))
     .filter(|v| v.is_finite())
     .unwrap_or(min)

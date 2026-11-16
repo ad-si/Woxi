@@ -7732,6 +7732,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      // Text content (no picture inside) is set in the proportional text
+      // face, the way a `Grid` cell typesets the same `Text[…]` — not in
+      // the monospace face of an expression's output form.
+      if !lays_out_a_graphic(&args[0])
+        && let Ok(svg) = crate::functions::graphics::grid_svg_with_gaps(
+          &[Expr::List(
+            vec![Expr::List(vec![expr.clone()].into())].into(),
+          )],
+          &[],
+        )
+      {
+        return svg;
+      }
       expr_to_svg(&unquoted_display_string(&args[0]))
     }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
