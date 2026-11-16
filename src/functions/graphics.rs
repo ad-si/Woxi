@@ -1451,7 +1451,22 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
 /// fractions `(from the left, from the top)` of the picture. Only the
 /// symbolic corners `{Left, Top}` … are understood; `None` otherwise.
 fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
-  let (x, y, scaled) = expr_to_anchor(args.get(2)?)?;
+  // Without an explicit `opos`, a position named by the region's sides
+  // (`{Center, Bottom}`, `{Right, Top}`) puts the object's matching point
+  // there, so the object stays inside the region.
+  let opos = match args.get(2) {
+    None => match args.get(1)? {
+      named @ Expr::List(items)
+        if items.len() == 2
+          && items.iter().all(|i| matches!(i, Expr::Identifier(_))) =>
+      {
+        named
+      }
+      _ => return None,
+    },
+    Some(opos) => opos,
+  };
+  let (x, y, scaled) = expr_to_anchor(opos)?;
   if scaled {
     return Some((x, 1.0 - y));
   }

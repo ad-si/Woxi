@@ -133,6 +133,27 @@ mod row_text_mode {
 mod row_visual_mode {
   use super::*;
 
+  /// `Row[{…picture…}, ImageSize -> …]`: the option sizes the row instead of
+  /// being typeset between its items as a separator.
+  #[test]
+  fn option_of_a_row_holding_a_picture_is_not_a_separator() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Row[{"ab", Graphics[{Disk[]}, ImageSize -> 20]},
+        ImageSize -> {120, 30}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("ImageSize"), "option typeset as text: {svg}");
+    assert!(svg.starts_with("<svg width=\"120\""), "row width: {svg}");
+    // A real separator is still set between the items.
+    let svg = interpret(
+      r#"ExportString[Row[{"ab", Graphics[{Disk[]}, ImageSize -> 20]}, "|"],
+        "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">|<"), "separator missing: {svg}");
+  }
+
   #[test]
   fn row_renders_svg() {
     clear_state();
