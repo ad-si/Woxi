@@ -6555,6 +6555,12 @@ fn button_cell_svg(args: &[Expr]) -> String {
   }
 }
 
+/// A `Button[label, action, opts…]` exported on its own: the plate (or
+/// picture) the FrontEnd draws for it, not its source text.
+pub(crate) fn button_svg(args: &[Expr]) -> String {
+  button_cell_svg(args)
+}
+
 /// The plate of a text-labeled `Button`: stretched to a requested
 /// `ImageSize` and painted with its `Background`.
 fn button_text_plate_svg(args: &[Expr]) -> String {
@@ -32982,6 +32988,42 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .fold(0.0_f64, f64::max);
   let col_width = item_size_entry_at(item_size_w, 0, 1)
     .map_or(col_width, |w| (w * font_size + pad_x).max(widest_picture));
+
+  // A text-labeled `Button` without an explicit `ImageSize` stretches to
+  // the column's width, as the FrontEnd lays out a button stacked above a
+  // wider item (a "play" button over a plot).
+  let cells: Vec<Cell> = cells
+    .into_iter()
+    .zip(items.iter())
+    .map(|(cell, item)| match (&cell, resolve_display_item(item)) {
+      (Cell::Svg { width, .. }, Expr::FunctionCall { ref name, ref args })
+        if name == "Button"
+          && args.len() >= 2
+          && *width < col_width
+          && button_image_size(args).is_none()
+          && !matches!(args[0], Expr::Image { .. })
+          && !matches!(
+            &args[0],
+            Expr::FunctionCall { name: inner, .. }
+              if inner == "Graphics" || inner == "Graphics3D"
+          ) =>
+      {
+        let mut stretched = args.to_vec();
+        stretched.push(Expr::Rule {
+          pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+          replacement: Box::new(Expr::Real(col_width)),
+        });
+        let svg = button_cell_svg(&stretched);
+        let (w, h) = parse_svg_wh(&svg);
+        Cell::Svg {
+          svg,
+          width: w,
+          height: h,
+        }
+      }
+      _ => cell,
+    })
+    .collect();
 
   // Per-row heights
   let n_items = cells.len();

@@ -816,3 +816,64 @@ mod column_item_size_wrapping {
     assert!(out.contains("height=\"22\""), "{out}");
   }
 }
+
+mod stretched_button_items {
+  use super::*;
+
+  /// The width of the button plate (the first rounded `rect`) in `svg`.
+  fn plate_width(svg: &str) -> f64 {
+    let at = svg.find("rx=\"4\"").expect("button plate");
+    let rect = &svg[svg[..at].rfind("<rect").unwrap()..at];
+    let w = rect.split("width=\"").nth(1).unwrap();
+    w[..w.find('"').unwrap()].parse().unwrap()
+  }
+
+  // A text-labeled `Button` stacked in a `Column` with a wider item
+  // stretches to the column's width, as the FrontEnd lays it out.
+  #[test]
+  fn button_above_a_picture_spans_the_column() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{Button["go", x = 1], Graphics[Circle[], ImageSize -> 240]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains(">Button<"), "button printed as source");
+    assert!(plate_width(&svg) > 230.0, "{}", plate_width(&svg));
+  }
+
+  #[test]
+  fn button_above_long_text_spans_the_column() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"Column[{Button["go", x = 1], "a considerably longer line of text"}]"#,
+    )
+    .unwrap();
+    let svg = r.graphics.expect("column graphic");
+    let (narrow, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(plate_width(&svg) > narrow - 2.0, "{svg}");
+  }
+
+  // An explicit `ImageSize` keeps the button at its requested width.
+  #[test]
+  fn sized_button_keeps_its_width() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{Button["go", x = 1, ImageSize -> 80], Graphics[Circle[], ImageSize -> 240]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      (plate_width(&svg) - 79.0).abs() < 1.0,
+      "{}",
+      plate_width(&svg)
+    );
+  }
+
+  // A bare `Button` exports as its plate, not its source text.
+  #[test]
+  fn bare_button_exports_as_plate() {
+    clear_state();
+    let svg = interpret(r#"ExportString[Button["go", x = 1], "SVG"]"#).unwrap();
+    assert!(!svg.contains(">Button<"), "{svg}");
+    assert!(plate_width(&svg) < 60.0, "{}", plate_width(&svg));
+  }
+}
