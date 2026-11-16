@@ -14933,6 +14933,8 @@ pub fn infix_display_items(args: &[Expr]) -> Option<Vec<Expr>> {
     return None;
   }
   let separator: Vec<Expr> = match (args.get(1), head) {
+    // A list of operators is left as the call.
+    (Some(Expr::List(_)), _) => return None,
     (Some(op), _) => vec![op.clone()],
     (None, Some(head)) => vec![
       Expr::String(" ~ ".to_string()),

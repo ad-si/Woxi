@@ -50,6 +50,16 @@ mod infix_text_mode {
   }
 
   #[test]
+  fn list_of_operators_is_left_as_the_call() {
+    clear_state();
+    assert_eq!(
+      interpret(r#"ToString[Infix[{a, b, c}, {"+", "-"}], InputForm]"#)
+        .unwrap(),
+      r#"Infix[{a, b, c}, {"+", "-"}]"#
+    );
+  }
+
+  #[test]
   fn precedence_and_grouping_arguments_are_accepted() {
     clear_state();
     assert_eq!(
