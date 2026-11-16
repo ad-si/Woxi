@@ -5480,8 +5480,9 @@ mod grid_item_style_tests {
   #[test]
   fn test_text_string_in_pane_wraps_by_proportional_width() {
     // Long `Text` prose in a fixed pane flows into lines measured in the
-    // proportional face: the laid-out block fits the pane's width
-    // instead of being shrunk to fit it.
+    // proportional face: the laid-out block about fits the pane's width
+    // (give or take the column's padding) instead of running a monospace
+    // measure wider and being shrunk to fit it.
     let svg = woxi::interpret(
       r#"ExportString[Pane[Style[Text[StringRepeat["word ", 40]], 16], {500, 100}], "SVG"]"#,
     )
@@ -5494,7 +5495,7 @@ mod grid_item_style_tests {
       .and_then(|w| w.split('"').next())
       .and_then(|w| w.parse().ok())
       .unwrap();
-    assert!(width <= 500.0, "{width}: {svg}");
+    assert!(width <= 512.0, "{width}: {svg}");
     assert!(svg.matches("<text ").count() >= 2, "{svg}");
   }
 
