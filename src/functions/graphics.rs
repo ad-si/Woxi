@@ -23296,6 +23296,20 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => evaluated.push(a.clone()),
       },
+      // A held `Graphics[…]` / `Graphics3D[…]` keeps its symbolic head
+      // (so the symbolic merge below still sees it), but its primitives
+      // and options evaluate in the current scope, as they do in Wolfram:
+      // `Table[Show[Graphics3D[{Sphere[pts[[i]], r]}]], {i, n}]` draws each
+      // sphere at its point instead of keeping `pts[[i]]` unevaluated.
+      Expr::FunctionCall { name, args: items }
+        if name == "Graphics" || name == "Graphics3D" =>
+      {
+        let items = items
+          .iter()
+          .map(evaluate_expr_to_expr)
+          .collect::<Result<Vec<_>, _>>()?;
+        evaluated.push(call(name, items));
+      }
       other => evaluated.push(other.clone()),
     }
   }

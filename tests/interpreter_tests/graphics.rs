@@ -6508,6 +6508,33 @@ mod plot3d {
       );
     }
 
+    /// `Show` of a literal `Graphics3D[…]` / `Graphics[…]` evaluates the
+    /// graphic's primitives in the current scope. Regression: they were
+    /// kept unevaluated, so `Sphere[pts[[i]], r]` inside a `Table` stayed
+    /// symbolic and every sphere was drawn at the origin.
+    #[test]
+    fn show_evaluates_the_primitives_of_a_literal_graphic() {
+      clear_state();
+      assert_eq!(
+        interpret("Show[Graphics3D[{Sphere[{1 + 1, 0, 0}]}]][[1]]").unwrap(),
+        "{Sphere[{2, 0, 0}]}"
+      );
+      assert_eq!(
+        interpret("Show[Graphics[{Point[{2 a, 3}]}, Axes -> True]][[1]]")
+          .unwrap(),
+        "{Point[{2*a, 3}]}"
+      );
+      assert_eq!(
+        interpret(
+          "pts = {{1, 2, 3}, {4, 5, 6}}; \
+           Cases[Table[Show[Graphics3D[{Red, Sphere[pts[[i]], 0.1]}]], \
+           {i, 1, 2}], _Sphere, Infinity]"
+        )
+        .unwrap(),
+        "{Sphere[{1, 2, 3}, 0.1], Sphere[{4, 5, 6}, 0.1]}"
+      );
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
