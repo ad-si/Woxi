@@ -405,17 +405,18 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
       }) =>
     {
+      // A delayed value is kept as its `RuleDelayed`, the way an
+      // association stores one, so only the value looked up is evaluated.
       let pairs: Vec<(Expr, Expr)> = items
         .iter()
         .filter_map(|it| match it {
           Expr::Rule {
             pattern,
             replacement,
-          }
-          | Expr::RuleDelayed {
-            pattern,
-            replacement,
           } => Some((*pattern.clone(), *replacement.clone())),
+          Expr::RuleDelayed { pattern, .. } => {
+            Some((*pattern.clone(), it.clone()))
+          }
           _ => None,
         })
         .collect();

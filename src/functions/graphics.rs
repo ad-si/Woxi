@@ -9057,6 +9057,23 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
 /// own ImageSize in screen pixels, centered on the position — Wolfram
 /// treats the appearance as a screen-space icon, not data-space geometry.
 fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
+  for (x, y, svg, w, h) in locator_markers(args) {
+    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+  }
+}
+
+/// The markers `Locator[pos, appearance]` draws, as `(x, y, svg, width,
+/// height)`: one per point at `pos` (a point or a list of points), each the
+/// appearance graphic at its own size or Wolfram's default crosshair, and
+/// none for `Appearance -> None`. Shared by `Graphics` and plot overlays
+/// (`Epilog`).
+pub(crate) fn locator_markers(
+  args: &[Expr],
+) -> Vec<(f64, f64, String, f64, f64)> {
+  let mut markers = Vec::new();
+  if args.is_empty() {
+    return markers;
+  }
   let pos_expr = match &args[0] {
     Expr::FunctionCall { name, args: dargs }
       if name == "Dynamic" && !dargs.is_empty() =>
@@ -9075,7 +9092,7 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
   };
   if points.is_empty() {
     crate::truncate_captured_graphics(captured);
-    return;
+    return markers;
   }
 
   // The appearance graphic, pre-rendered at its own ImageSize. `Automatic`
@@ -9087,7 +9104,7 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
   if appearance.is_some_and(|a| matches!(a, Expr::Identifier(s) if s == "None"))
   {
     crate::truncate_captured_graphics(captured);
-    return;
+    return markers;
   }
   let marker: Option<(String, f64, f64)> = appearance.and_then(|a| {
     // Render the appearance to a graphic. A held `Graphics[…]` call is
@@ -9129,8 +9146,9 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
       let (svg, size) = default_locator_marker_svg();
       (svg, size, size)
     };
-    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+    markers.push((x, y, svg, w, h));
   }
+  markers
 }
 
 /// Wolfram's default Locator appearance: a small circled crosshair.
@@ -23964,7 +23982,38 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ))
     });
     let first = first.filter(|_| all_range.is_none());
-    let ((x_min, x_max), (y_min, y_max)) = all_range
+    // The ranges `All` collects are the unpadded data extents, while a
+    // plot draws them with its `PlotRangePadding` added. Pad the combined
+    // range by the same fractions of its span the first plot used, so a
+    // lone plot shown with an extra option (`Show[p, Epilog -> …]`) draws
+    // exactly as `p` does.
+    let padded_all_range = all_range.map(|(ux, uy)| {
+      let Some(ps) = first_plot else {
+        return (ux, uy);
+      };
+      let Some((px, py)) = ps.plot_range else {
+        return (ux, uy);
+      };
+      let px = ps.data_x_range.unwrap_or(px);
+      let pad = |(lo, hi): (f64, f64),
+                 (dlo, dhi): (f64, f64),
+                 (rlo, rhi): (f64, f64),
+                 on: bool| {
+        let span = dhi - dlo;
+        let uspan = hi - lo;
+        if !on || !(span > 0.0) || !uspan.is_finite() {
+          return (lo, hi);
+        }
+        let below = ((dlo - rlo) / span).max(0.0);
+        let above = ((rhi - dhi) / span).max(0.0);
+        (lo - below * uspan, hi + above * uspan)
+      };
+      (
+        pad(ux, px, ps.x_range, x_all),
+        pad(uy, py, ps.y_range, y_all),
+      )
+    });
+    let ((x_min, x_max), (y_min, y_max)) = padded_all_range
       .or_else(|| first.map(|ps| (ps.x_range, ps.y_range)))
       .unwrap_or(((x_min, x_max), (y_min, y_max)));
     // Like the other options, the axis scales come from the first graphic.
@@ -39297,10 +39346,12 @@ pub fn locator_marker_body(
     "Module[{{woxiRes = ({body}), woxiPos, woxiGraphic}}, \
      woxiPos = FirstPosition[woxiRes, _Graphics, None, Heads -> False]; \
      If[woxiPos === None, woxiRes, \
-     woxiGraphic = Extract[woxiRes, woxiPos]; \
-     ReplacePart[woxiRes, woxiPos -> Show[woxiGraphic, Epilog -> \
+     woxiGraphic = If[woxiPos === {{}}, woxiRes, Extract[woxiRes, woxiPos]]; \
+     woxiGraphic = Show[woxiGraphic, Epilog -> \
      Join[Flatten[{{Lookup[Options[woxiGraphic, Epilog], Epilog, {{}}]}}], \
-     {points}]]]]]"
+     {points}]]; \
+     If[woxiPos === {{}}, woxiGraphic, \
+     ReplacePart[woxiRes, woxiPos -> woxiGraphic]]]]"
   )
 }
 

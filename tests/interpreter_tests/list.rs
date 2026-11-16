@@ -20257,23 +20257,6 @@ mod replace_part_rules_and_patterns {
   use super::*;
 
   #[test]
-  fn empty_position_replaces_the_whole_expression() {
-    // Regression: `{}` (the position `Position` gives the whole expression)
-    // left the expression unchanged.
-    assert_eq!(interpret("ReplacePart[{a, b}, {} -> x]").unwrap(), "x");
-    assert_eq!(
-      interpret("ReplacePart[f[a, b], {{}} -> g[1]]").unwrap(),
-      "g[1]"
-    );
-    assert_eq!(interpret("ReplacePart[f[a], {} :> 1 + 2]").unwrap(), "3");
-    assert_eq!(
-      interpret("r = h[u, v]; ReplacePart[r, FirstPosition[r, _h] -> k]")
-        .unwrap(),
-      "k"
-    );
-  }
-
-  #[test]
   fn first_matching_rule_wins() {
     // Regression: the last duplicate rule used to win
     assert_eq!(

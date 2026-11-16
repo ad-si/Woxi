@@ -1274,6 +1274,21 @@ fn render_item(
           ));
         }
       }
+      // `Locator[pos, appearance]` draws its marker (Wolfram's crosshair or
+      // the appearance graphic) at its own screen size, centered on `pos`.
+      "Locator" if !args.is_empty() => {
+        for (x, y, svg, w, h) in
+          crate::functions::graphics::locator_markers(args)
+        {
+          out.push_str(&crate::functions::graphics::embed_svg_centered(
+            &svg,
+            area.px(x),
+            area.py(y),
+            w * area.scale,
+            h * area.scale,
+          ));
+        }
+      }
       // `Style[prim, directives…]` styles just its own primitive.
       "Style" if !args.is_empty() => {
         let mut scoped = style.clone();
