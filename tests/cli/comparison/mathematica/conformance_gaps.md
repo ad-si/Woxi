@@ -5690,6 +5690,17 @@ pinned size, an explicit `PlotRange` or `Show` — is unverified. A
 `ViewAngle` turn the sphere framing off. The surface plots
 (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
+A fourth Demonstration contradicts the rule. A `Manipulate` showing
+`Show[g, Graphics3D[…], ViewPoint -> {0, 10, 0}, PlotRange -> 3.0,
+ImageSize -> {400, 400}]` (with `g` an unboxed `ContourPlot3D` and every
+part lying in the plane y = 0) draws the scene at about 60.5 px per unit in
+three snapshots. That is close to the box-outline fit (Woxi: 63 px per
+unit). The sphere framing that Woxi applies, from the `Manipulate` frame
+and from the rule above, gives 38 px per unit. The view point is much
+farther away (`|ViewPoint|` = 10) than in the cases that fit the sphere
+(about 2 to 3.4), but which property turns the sphere framing off is
+unverified.
+
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
 
 Woxi draws a `Graphics3D` point with diameter `PointSize` × the picture's
