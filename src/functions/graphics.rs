@@ -32005,8 +32005,9 @@ pub(crate) fn style_pushed_into_layout(
       // A product with a picture among its factors (`"Label: " g`) is
       // laid out factor by factor; a `Style` around it would hide the
       // picture and print its placeholder.
-      || (matches!(e, Expr::FunctionCall { name, .. } if name == "Times")
-        && grid_cell_graphic(e).is_some())
+      || matches!(e, Expr::FunctionCall { name, args } if name == "Times"
+        && args.iter().any(|f| matches!(f, Expr::Graphics { .. })
+          || crate::evaluator::lays_out_a_graphic(f)))
     {
       return e.clone();
     }
