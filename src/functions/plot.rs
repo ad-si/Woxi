@@ -8248,6 +8248,7 @@ pub(crate) fn build_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    settles_all_range: false,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
   }
 }
@@ -12433,6 +12434,7 @@ pub(crate) fn histogram_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    settles_all_range: false,
     aspect_ratio: None,
   })
 }
@@ -13854,7 +13856,7 @@ fn automatic_marker_shape(
 /// WL's font draws it: points around the data point (y down), measured at
 /// font size 10 from wolframscript's SVG glyphs and scaled to `size`, and
 /// the outline's stroke width for the empty shapes (`None` = filled).
-fn glyph_marker_outline(
+pub(crate) fn glyph_marker_outline(
   glyph: &str,
   size: f64,
 ) -> Option<(GlyphOutline, Option<f64>)> {
@@ -13897,7 +13899,7 @@ fn glyph_marker_outline(
 
 /// A shape [`glyph_marker_outline`] draws, in points around the data point
 /// (y down).
-enum GlyphOutline {
+pub(crate) enum GlyphOutline {
   Circle { r: f64, cy: f64 },
   Polygon(Vec<(f64, f64)>),
 }

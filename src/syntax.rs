@@ -183,6 +183,11 @@ pub struct PlotSource {
   /// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}` frame).
   /// `None` = the ratio follows from `image_size`.
   pub aspect_ratio: Option<f64>,
+  /// Whether the plot settles `PlotRange -> All` into the numeric range of
+  /// its data, as WL's list plots (`ListPlot`, `ListLinePlot`) do: `Show`
+  /// then keeps that range like an automatic one, clipping other graphics
+  /// reaching past it, where a function plot's `All` spans everything shown.
+  pub settles_all_range: bool,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
