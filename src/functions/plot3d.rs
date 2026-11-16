@@ -6066,6 +6066,10 @@ struct StyleState3D {
   /// `VertexColors` of the polygon or line being added: one RGB color per
   /// vertex, blended across the face (or along the line) between them.
   vertex_colors: Option<std::sync::Arc<Vec<(f64, f64, f64)>>>,
+  /// `VertexNormals` of the polygon being added: one normal per vertex,
+  /// lighting each corner with its own normal so a mesh of flat facets
+  /// shades as the smooth surface it samples.
+  vertex_normals: Option<std::sync::Arc<Vec<[f64; 3]>>>,
   /// `Arrowheads[s]`: the arrowhead length as a fraction of the picture's
   /// width. `None` keeps the default 8-pixel head.
   arrowhead: Option<f64>,
@@ -6102,6 +6106,7 @@ impl Default for StyleState3D {
       texture: None,
       texture_coords: None,
       vertex_colors: None,
+      vertex_normals: None,
       arrowhead: None,
       font_size: None,
       font_face: (false, false),
@@ -7080,6 +7085,41 @@ fn parse_texture_coords3d(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
   })
 }
 
+/// `VertexNormals -> {{nx, ny, nz}, …}` among a `Polygon`'s or a
+/// `GraphicsComplex`'s options (possibly still packed as `CompressedData`).
+fn parse_vertex_normals3d(opts: &[Expr]) -> Option<Vec<[f64; 3]>> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexNormals") =>
+    {
+      let value = match replacement.as_ref() {
+        list @ Expr::List(_) => list.clone(),
+        other => evaluate_expr_to_expr(other).ok()?,
+      };
+      let Expr::List(items) = &value else {
+        return None;
+      };
+      items
+        .iter()
+        .map(|n| match n {
+          Expr::List(v) if v.len() == 3 => {
+            // Exact components (`Sqrt[2]/2`) are numericized too.
+            let f = |e: &Expr| {
+              crate::functions::math_ast::expr_to_f64(e)
+                .or_else(|| try_eval_to_f64(e))
+            };
+            Some([f(&v[0])?, f(&v[1])?, f(&v[2])?])
+          }
+          _ => None,
+        })
+        .collect()
+    }
+    _ => None,
+  })
+}
+
 /// The texture of triangle `i` in the fan triangulation of a textured,
 /// convex polygon: corners `0`, `i + 1`, `i + 2` of the polygon.
 fn fan_texture(
@@ -7262,6 +7302,22 @@ impl Affine3 {
         + self.m[2][2] * p.z
         + self.t[2],
     }
+  }
+
+  /// Map a surface normal through the linear part: by its cofactor
+  /// matrix (the inverse transpose up to a factor), so the normal stays
+  /// perpendicular to the mapped surface under any invertible map.
+  fn apply_normal(&self, n: [f64; 3]) -> [f64; 3] {
+    let m = &self.m;
+    let c = |r0: usize, r1: usize, c0: usize, c1: usize| {
+      m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0]
+    };
+    let cof = [
+      [c(1, 2, 1, 2), -c(1, 2, 0, 2), c(1, 2, 0, 1)],
+      [-c(0, 2, 1, 2), c(0, 2, 0, 2), -c(0, 2, 0, 1)],
+      [c(0, 1, 1, 2), -c(0, 1, 0, 2), c(0, 1, 0, 1)],
+    ];
+    [0, 1, 2].map(|i| cof[i][0] * n[0] + cof[i][1] * n[1] + cof[i][2] * n[2])
   }
 
   /// Uniform length-scale factor of the linear part (cube root of |det|),
@@ -7757,9 +7813,18 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
         z: a.z.max(b.z),
       };
     }
-    Primitive3D::Polygon3D { points, holes, .. } => {
+    Primitive3D::Polygon3D {
+      points,
+      holes,
+      style,
+    } => {
       for p in points.iter_mut().chain(holes.iter_mut().flatten()) {
         *p = xf.apply(*p);
+      }
+      if let Some(normals) = &style.vertex_normals {
+        style.vertex_normals = Some(std::sync::Arc::new(
+          normals.iter().map(|&n| xf.apply_normal(n)).collect(),
+        ));
       }
     }
     Primitive3D::Point3DPrim { points, .. }
@@ -7800,14 +7865,17 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 /// refer to, leaving everything else untouched.
 ///
 /// With `colors` (the complex's `VertexColors`, one color per point) each
-/// `Polygon` facet is drawn in the mean color of its vertices. With
-/// `tex` (its `VertexTextureCoordinates`, one `(u, v)` per point) each
-/// facet carries the coordinates of its own corners.
+/// `Polygon` facet carries the colors of its own corners as
+/// `VertexColors`, blended across it (and its mean color as a plain
+/// directive). With `tex` (its `VertexTextureCoordinates`, one `(u, v)`
+/// per point) and `normals` (its `VertexNormals`) each facet likewise
+/// carries the coordinates and normals of its own corners.
 fn resolve_complex_indices(
   expr: &Expr,
   points: &[Expr],
   colors: Option<&[(f64, f64, f64)]>,
   tex: Option<&[(f64, f64)]>,
+  normals: Option<&[[f64; 3]]>,
 ) -> Expr {
   fn substitute(expr: &Expr, points: &[Expr]) -> Expr {
     match expr {
@@ -7853,8 +7921,10 @@ fn resolve_complex_indices(
     Expr::FunctionCall { name, args }
       if name == "Polygon"
         && !args.is_empty()
-        && (colors.is_some() || tex.is_some()) =>
+        && (colors.is_some() || tex.is_some() || normals.is_some()) =>
     {
+      let corner_colors: Option<Vec<[f64; 3]>> =
+        colors.map(|c| c.iter().map(|&(r, g, b)| [r, g, b]).collect());
       let facet = |indices: &Expr| -> Expr {
         // Not `args.to_vec()`: that copied every facet's indices for each
         // facet.
@@ -7883,6 +7953,39 @@ fn resolve_complex_indices(
               replacement: Box::new(Expr::List(uvs.into())),
             });
           }
+        }
+        // The corner colors and normals of this facet, as bare triples.
+        let per_corner = |name: &str, values: &[[f64; 3]]| -> Option<Expr> {
+          let Expr::List(items) = indices else {
+            return None;
+          };
+          let picked: Option<Vec<Expr>> = items
+            .iter()
+            .map(|i| match i {
+              Expr::Integer(i) if *i >= 1 => {
+                values.get(*i as usize - 1).map(|v| {
+                  Expr::List(
+                    v.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into(),
+                  )
+                })
+              }
+              _ => None,
+            })
+            .collect();
+          Some(crate::helpers::rule_expr(
+            Expr::Identifier(name.to_string()),
+            Expr::List(picked?.into()),
+          ))
+        };
+        if let Some(colors) = &corner_colors
+          && let Some(rule) = per_corner("VertexColors", colors)
+        {
+          new_args.push(rule);
+        }
+        if let Some(normals) = normals
+          && let Some(rule) = per_corner("VertexNormals", normals)
+        {
+          new_args.push(rule);
         }
         let polygon = Expr::FunctionCall {
           name: name.clone(),
@@ -7915,7 +8018,7 @@ fn resolve_complex_indices(
         Expr::FunctionCall { name: inner, .. }
           if name == "Arrow" && matches!(inner.as_str(), "Tube" | "Line") =>
         {
-          resolve_complex_indices(&args[0], points, colors, tex)
+          resolve_complex_indices(&args[0], points, colors, tex, normals)
         }
         first => substitute(first, points),
       };
@@ -7927,7 +8030,7 @@ fn resolve_complex_indices(
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|e| resolve_complex_indices(e, points, colors, tex))
+        .map(|e| resolve_complex_indices(e, points, colors, tex, normals))
         .collect::<Vec<_>>()
         .into(),
     ),
@@ -7935,7 +8038,7 @@ fn resolve_complex_indices(
       name: name.clone(),
       args: args
         .iter()
-        .map(|e| resolve_complex_indices(e, points, colors, tex))
+        .map(|e| resolve_complex_indices(e, points, colors, tex, normals))
         .collect::<Vec<_>>()
         .into(),
     },
@@ -7970,7 +8073,18 @@ fn complex_vertex_colors(
     if !matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexColors") {
       return None;
     }
-    let value = evaluate_expr_to_expr(replacement).ok()?;
+    // A list of bare numeric triples (what a resolved complex facet
+    // carries) needs no evaluation.
+    let numeric = |c: &Expr| {
+      matches!(c, Expr::List(rgb) if rgb.len() == 3
+        && rgb.iter().all(|v| matches!(v, Expr::Real(_) | Expr::Integer(_))))
+    };
+    let value = match replacement.as_ref() {
+      Expr::List(items) if items.iter().all(numeric) => {
+        replacement.as_ref().clone()
+      }
+      other => evaluate_expr_to_expr(other).ok()?,
+    };
     let Expr::List(items) = &value else {
       return None;
     };
@@ -8382,7 +8496,12 @@ fn collect_3d_primitives(
               .map(|p| p.0)
               .filter(|c| c.len() == pts.len())
               .map(std::sync::Arc::new);
-            let (points, holes) = if style.texture_coords.is_some() {
+            style.vertex_normals = parse_vertex_normals3d(&args[1..])
+              .filter(|n| n.len() == pts.len())
+              .map(std::sync::Arc::new);
+            let (points, holes) = if style.texture_coords.is_some()
+              || style.vertex_normals.is_some()
+            {
               (pts, Vec::new())
             } else {
               split_nested_loops(pts)
@@ -9023,11 +9142,14 @@ fn collect_3d_primitives(
             }
             let colors = palette.map(|p| p.0);
             let tex = parse_texture_coords3d(&args[2..]);
+            let normals = parse_vertex_normals3d(&args[2..])
+              .filter(|n| n.len() == points.len());
             let resolved = resolve_complex_indices(
               &args[1],
               points,
               colors.as_deref(),
               tex.as_deref(),
+              normals.as_deref(),
             );
             let mut collected = Vec::new();
             collect_3d_primitives(&resolved, style, &mut collected);
@@ -9051,7 +9173,8 @@ fn collect_3d_primitives(
                   && holes.is_empty()
                   && !face.edges
                   && face.texture.is_none()
-                  && face.vertex_colors.is_none() =>
+                  && face.vertex_colors.is_none()
+                  && face.vertex_normals.is_none() =>
                 {
                   let key = format!("{face:?}");
                   let entry =
@@ -12398,6 +12521,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             texture: None,
             texture_coords: None,
             vertex_colors: None,
+            vertex_normals: None,
             arrowhead: None,
             font_size: None,
             font_face: (false, false),
@@ -12489,19 +12613,31 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let tri_count = tris.len();
     // A convex polygon with `VertexColors` blends the corner colors across
     // each fan triangle (corners 0, i + 1, i + 2), drawn as a fine grid of
-    // sub-triangles each in its interpolated color.
-    let vertex_colors = match prim {
+    // sub-triangles each in its interpolated color. `VertexNormals` light
+    // each corner with its own normal instead of the face's.
+    let (vertex_colors, vertex_normals) = match prim {
       Primitive3D::Polygon3D {
         points,
         holes,
         style,
-      } if holes.is_empty() && holed_boundaries.is_empty() => style
-        .vertex_colors
-        .as_ref()
-        .filter(|c| c.len() == points.len() && points.len() >= 3),
-      _ => None,
+      } if holes.is_empty()
+        && holed_boundaries.is_empty()
+        && points.len() >= 3 =>
+      {
+        (
+          style
+            .vertex_colors
+            .as_ref()
+            .filter(|c| c.len() == points.len()),
+          style
+            .vertex_normals
+            .as_ref()
+            .filter(|n| n.len() == points.len()),
+        )
+      }
+      _ => (None, None),
     };
-    if let Some(colors) = vertex_colors {
+    if vertex_colors.is_some() || vertex_normals.is_some() {
       // A flat face is lit the same everywhere but for its color, so the
       // lit color is linear across it: each fan triangle is lit at its
       // corners and filled with the gradient between them.
@@ -12513,12 +12649,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           [true; 3]
         };
-        let normal =
+        let face_normal =
           polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
-        let corner = |c: &(f64, f64, f64), at: Point3D| {
+        let corner = |k: usize, at: Point3D| {
           let q = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
           let mut sub_style = prim_style.clone();
-          sub_style.color = Some((q(c.0), q(c.1), q(c.2)));
+          if let Some(colors) = vertex_colors {
+            let c = colors[k];
+            sub_style.color = Some((q(c.0), q(c.1), q(c.2)));
+          }
+          // A corner's own normal, turned to the face's side so the
+          // two-sided lighting flips the face and its corners together.
+          let normal = match vertex_normals {
+            Some(normals) => {
+              let n = normals[k];
+              if v_dot(n, face_normal) < 0.0 {
+                n.map(|v| -v)
+              } else {
+                n
+              }
+            }
+            None => face_normal,
+          };
           shade_facet(
             SurfaceDefault::Plain(base_color),
             None,
@@ -12529,11 +12681,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
           .0
         };
-        let lit = [
-          corner(&colors[0], v0),
-          corner(&colors[i + 1], v1),
-          corner(&colors[i + 2], v2),
-        ];
+        let lit = [corner(0, v0), corner(i + 1, v1), corner(i + 2, v2)];
         let center = tri_center(v0, v1, v2);
         triangle_vertices.push([v0, v1, v2]);
         all_triangles.push(Triangle {
