@@ -22287,6 +22287,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// `AspectRatio -> Automatic` gives the frame the shape of the plotted
+    /// region (one x unit as long as one y unit) instead of the default
+    /// square, for `DensityPlot` and `ContourPlot` alike.
+    #[test]
+    fn density_and_contour_plot_aspect_ratio_automatic_follows_ranges() {
+      let frame = |code: &str| -> (f64, f64) {
+        let svg = export_svg(code);
+        let attr = svg
+          .split("data-plot-frame=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_else(|| panic!("no plot frame in {svg}"));
+        let v: Vec<f64> = attr.split(' ').map(|n| n.parse().unwrap()).collect();
+        (v[6], v[7])
+      };
+      for head in ["DensityPlot", "ContourPlot"] {
+        for (x_max, y_max) in [(4.0, 1.0), (1.0, 3.0), (0.03, 0.008)] {
+          let (w, h) = frame(&format!(
+            "{head}[x y, {{x, 0, {x_max}}}, {{y, 0, {y_max}}}, \
+             AspectRatio -> Automatic, ImageSize -> 400]"
+          ));
+          let ratio = h / w;
+          let expected = y_max / x_max;
+          assert!(
+            (ratio - expected).abs() < 0.01 * expected,
+            "{head} {x_max}x{y_max}: frame {w}x{h}, ratio {ratio}"
+          );
+        }
+      }
+    }
+
     /// Tick labels on a narrow `ImageSize` must not squeeze the bitmap to a
     /// negative width.
     #[test]

@@ -279,6 +279,9 @@ struct DensityContourOptions {
   full_width: bool,
   /// `AspectRatio` of the frame (1 unless given).
   aspect_ratio: f64,
+  /// `AspectRatio -> Automatic`: the frame takes the shape of the plotted
+  /// region, one unit in x as long as one unit in y.
+  aspect_automatic: bool,
   /// `ImageSize -> {w, h}` fixes the picture's height too.
   explicit_height: bool,
   color_function: Option<String>,
@@ -530,6 +533,7 @@ fn parse_density_contour_options(
           if wh.len() == 2 && try_eval_to_f64(&wh[1]).is_some()))
   });
   let mut aspect_ratio = 1.0;
+  let mut aspect_automatic = false;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -539,6 +543,8 @@ fn parse_density_contour_options(
     {
       let value = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.as_ref().clone());
+      aspect_automatic =
+        matches!(&value, Expr::Identifier(n) if n == "Automatic");
       if let Some(r) = try_eval_to_f64(&value).filter(|r| *r > 0.0) {
         aspect_ratio = r;
         if !explicit_size_pair {
@@ -737,6 +743,7 @@ fn parse_density_contour_options(
     svg_height,
     full_width,
     aspect_ratio,
+    aspect_automatic,
     explicit_height,
     color_function,
     color_function_expr,
@@ -1009,7 +1016,13 @@ fn field_frame_layout(
     size.unwrap_or(14.0) * 1.35 * lines.len().max(1) as f64
   });
   let width = opts.svg_width as f64;
-  let aspect = opts.aspect_ratio;
+  let natural = (y_span.1 - y_span.0) / (x_span.1 - x_span.0);
+  let aspect = if opts.aspect_automatic && natural.is_finite() && natural > 0.0
+  {
+    natural
+  } else {
+    opts.aspect_ratio
+  };
   // The last x label is centered on its tick and the top y label on its own,
   // so either may reach past the frame's end; the padding then grows by
   // the overhang (from WL: `ImageSize -> 200` gives a right padding of 4.4).
