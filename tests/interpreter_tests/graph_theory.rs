@@ -10492,3 +10492,42 @@ mod layered_plot_components {
     );
   }
 }
+
+mod graph_plot_vertex_rendering_units {
+  use super::*;
+
+  // A computed layout hands `VertexRenderingFunction` coordinates on
+  // Wolfram's embedding scale, where edges are about 1 long, so a
+  // `Disk[#, 1/5]` stays small next to the edges instead of covering a
+  // fifth of the drawing.
+  #[test]
+  fn computed_layout_has_unit_edges() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = GraphPlot[Table[i -> Mod[i, 30] + 1, {i, 30}], \
+         VertexRenderingFunction -> (f[#1] &)]; \
+         p = Cases[g, f[q_] :> q, Infinity]; \
+         {Length[p], Round[Mean[Table[EuclideanDistance[p[[i]], \
+         p[[Mod[i, 30] + 1]]], {i, 30}]], 0.01]}"
+      )
+      .unwrap(),
+      "{30, 1.}"
+    );
+  }
+
+  // Explicit `VertexCoordinates` reach the function unchanged.
+  #[test]
+  fn explicit_coordinates_are_passed_through() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{1 -> 2, 2 -> 3}, \
+         VertexCoordinates -> {{0, 0}, {10, 0}, {20, 5}}, \
+         VertexRenderingFunction -> (f[#1] &)], _f, Infinity]"
+      )
+      .unwrap(),
+      "{f[{0., 0.}], f[{10., 0.}], f[{20., 5.}]}"
+    );
+  }
+}
