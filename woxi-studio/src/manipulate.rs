@@ -6988,6 +6988,71 @@ mod pane_selector_keyboard_tests {
 }
 
 #[cfg(test)]
+mod tooltip_button_in_body_tests {
+  use super::*;
+
+  /// A `Button` wrapped in `Tooltip` inside a `Grid` cell of the body
+  /// (a counter whose cell background follows the count's parity).
+  ///
+  /// Regression: the `Button` was lifted out of the body into a separate
+  /// display row, leaving `Tooltip[Nothing, tip]` behind, so the picture
+  /// showed the literal word "Nothing" where the button belonged and the
+  /// cell lost its button.
+  #[test]
+  fn tooltip_wrapped_button_stays_in_place_and_is_pressable() {
+    let code = r#"Manipulate[
+      Grid[{{
+        Grid[{{Tooltip[Button[Style[count, "Title"], count = count + 1,
+          ImageSize -> {120, 60}], "count up"]}},
+          Background -> If[EvenQ[count], LightBlue, LightRed]],
+        Tooltip[Button["reset", count = 0], "start over"]
+      }}],
+      {{count, 1}, ControlType -> None},
+      {{step, 1, "step"}, {1, 2}, ControlType -> SetterBar}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    assert!(
+      !state.body.contains("Nothing"),
+      "the buttons must stay in the body: {}",
+      state.body
+    );
+    let svg = state
+      .check_render()
+      .expect("body renders")
+      .graphics
+      .expect("body draws a picture");
+    assert!(!svg.contains("Nothing"), "no literal Nothing in the picture");
+    assert_eq!(state.button_regions.len(), 2, "both buttons are pressable");
+
+    let count = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "count")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let press = |state: &mut ManipulateState, needle: &str| {
+      let action = state
+        .button_regions
+        .iter()
+        .find(|r| r.action.contains(needle))
+        .unwrap_or_else(|| panic!("no button running {needle}"))
+        .action
+        .clone();
+      state.apply_button_action(&action);
+      assert_eq!(state.error, None);
+    };
+    press(&mut state, "count + 1");
+    assert_eq!(count(&state), "2");
+    press(&mut state, "count = 0");
+    assert_eq!(count(&state), "0");
+  }
+}
+
+#[cfg(test)]
 mod scoped_button_tests {
   use super::*;
 

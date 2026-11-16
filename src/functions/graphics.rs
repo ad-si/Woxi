@@ -40365,6 +40365,22 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       expr.clone()
     }
+    // `Tooltip[Button[…], tip]` keeps its button in the body as well:
+    // lifting the `Button` out would leave `Tooltip[Nothing, tip]`, which
+    // draws the literal word "Nothing", and would tear the button out of
+    // the `Grid` cell (and its `Background`) the body places it in. The
+    // picture renderer draws the button plate with its label and a hit
+    // region, so it stays pressable where it is.
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: b, args: bargs })
+            if b == "Button" && bargs.len() >= 2
+        ) =>
+    {
+      expr.clone()
+    }
     // A bare `VerticalSlider[Dynamic[var], {min, max}, …]` drawn by the body
     // (a Demonstration's side slider next to its picture) is a live control
     // writing `var` back, so it moves into the display list as well.
