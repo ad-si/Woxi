@@ -3498,6 +3498,9 @@ pub(crate) struct SeriesStyle {
   /// This style came from its own `{…}` entry of a `PlotStyle` list, i.e. it
   /// is one dataset's style rather than a bare directive of a combined one.
   pub from_list: bool,
+  /// `Arrowheads[spec]`'s argument: the heads an axis styled by it
+  /// (`AxesStyle -> Arrowheads[…]`) carries.
+  pub arrowheads: Option<Expr>,
 }
 
 /// A single explicit grid line: a position on its axis plus an optional
@@ -13650,6 +13653,9 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
       "DropShadowing" => {
         style.shadow = crate::functions::graphics::parse_drop_shadowing(args);
       }
+      "Arrowheads" if args.len() == 1 => {
+        style.arrowheads = Some(args[0].clone());
+      }
       // `Opacity[a]` fades the curve; `Opacity[a, color]` also sets its color.
       "Opacity" if !args.is_empty() => {
         if let Some(a) = try_eval_to_f64(&args[0]) {
@@ -15025,7 +15031,8 @@ pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   }
   (style.color.is_some()
     || style.thickness.is_some()
-    || style.dashing.is_some())
+    || style.dashing.is_some()
+    || style.arrowheads.is_some())
   .then_some(style)
 }
 
