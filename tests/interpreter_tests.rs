@@ -4978,6 +4978,31 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_locator_range_probe_is_quiet() {
+    // A bare `Locator` looks for a `PlotRange` in the held body to bound
+    // its pad. A range written with a local the body sets first is out of
+    // scope there; probing it must not print `First::normal`/`Last::normal`
+    // messages for the unset local.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Module[{s}, s = {1, {a -> 0}}; \
+       ListPlot[pts, PlotRange -> {{(a /. Last[s]) - First[s], \
+       (a /. Last[s]) + First[s]}, {-1, 1}}]], \
+       {{pts, {{0, 0}, {0.5, 0.5}}}, Locator}]",
+    )
+    .unwrap();
+    let before = woxi::get_captured_messages_raw().len();
+    woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let after = woxi::get_captured_messages_raw();
+    assert!(
+      after.len() == before,
+      "unexpected messages: {:?}",
+      &after[before..]
+    );
+  }
+
+  #[test]
   fn test_manipulate_picture_captions_are_caption_code() {
     // Both a `Dynamic[…]` picture caption and a static `Graphics[…]` one
     // travel as caption code, since neither has text to store on the

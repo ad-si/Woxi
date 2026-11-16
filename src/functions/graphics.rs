@@ -14105,6 +14105,7 @@ fn parse_plot_pad_amount(expr: &Expr) -> PlotPadAmount {
   }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct AxisPadding {
   lo: PlotPadAmount,
   hi: PlotPadAmount,
@@ -14138,8 +14139,34 @@ impl AxisPadding {
     };
     (side(self.lo), side(self.hi))
   }
+
+  /// The range `(lo, hi)` padded by this spec, where `default` is the
+  /// range the axis would get without an explicit `PlotRangePadding`: a
+  /// side given explicitly replaces the default padding of that side, an
+  /// `Automatic` side keeps it.
+  pub(crate) fn pad_over(
+    &self,
+    (lo, hi): (f64, f64),
+    default: (f64, f64),
+  ) -> (f64, f64) {
+    let (pad_lo, pad_hi) = self.resolve(hi - lo, 0.0);
+    let automatic = |p: PlotPadAmount| matches!(p, PlotPadAmount::Automatic);
+    (
+      if automatic(self.lo) {
+        default.0
+      } else {
+        lo - pad_lo
+      },
+      if automatic(self.hi) {
+        default.1
+      } else {
+        hi + pad_hi
+      },
+    )
+  }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct PlotRangePaddingSpec {
   pub(crate) x: AxisPadding,
   pub(crate) y: AxisPadding,
@@ -43295,7 +43322,21 @@ fn bare_locator_spec(spec: &Expr) -> bool {
 /// anywhere inside `expr`, searched depth-first. Used to infer a pane's
 /// coordinate system from the plot it displays when nothing states it
 /// explicitly.
+///
+/// The search reads the *held* source, so a bound written in terms of a
+/// local computed earlier in the body (`PlotRange -> {{x0 - First[sol],
+/// …}}` after `sol = FindMinimum[…]` inside a `Module`) is evaluated
+/// outside its scope. Such a probe just fails to give a number; it runs
+/// quietly so the messages that failed evaluation raises (`First::normal`
+/// on the unset local) never reach the user.
 fn find_plot_range(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
+  crate::push_quiet();
+  let range = find_plot_range_in(expr);
+  crate::pop_quiet();
+  range
+}
+
+fn find_plot_range_in(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
   if let Expr::Rule {
     pattern,
     replacement,
@@ -43323,7 +43364,7 @@ fn find_plot_range(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
   match expr {
     Expr::FunctionCall { args, .. } => {
       for a in args {
-        if let Some(range) = find_plot_range(a) {
+        if let Some(range) = find_plot_range_in(a) {
           return Some(range);
         }
       }
@@ -43331,7 +43372,7 @@ fn find_plot_range(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
     }
     Expr::List(items) => {
       for it in items {
-        if let Some(range) = find_plot_range(it) {
+        if let Some(range) = find_plot_range_in(it) {
           return Some(range);
         }
       }
@@ -43339,7 +43380,7 @@ fn find_plot_range(expr: &Expr) -> Option<((f64, f64), (f64, f64))> {
     }
     Expr::CompoundExpr(items) => {
       for it in items {
-        if let Some(range) = find_plot_range(it) {
+        if let Some(range) = find_plot_range_in(it) {
           return Some(range);
         }
       }

@@ -1458,6 +1458,8 @@ struct ParsedOptions {
   data_range: Option<DataRangeSpec>,
   /// `ScalingFunctions -> {sx, sy}` (the first one given).
   scaling: Option<(Option<Scaling>, Option<Scaling>)>,
+  /// An explicit `PlotRangePadding`.
+  range_padding: Option<crate::functions::graphics::PlotRangePaddingSpec>,
 }
 
 thread_local! {
@@ -1544,6 +1546,12 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
           _ => {}
         },
+        "PlotRangePadding" if out.range_padding.is_none() => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          out.range_padding =
+            Some(crate::functions::graphics::parse_plot_range_padding(&value));
+        }
         "PlotRange" => {
           let (rx, ry) =
             crate::functions::plot::parse_series_plot_range(replacement);
@@ -1784,6 +1792,8 @@ struct RangeRequest {
   explicit: (bool, bool),
   /// `All`: the whole extent of the points, outliers included.
   keep_outliers: (bool, bool),
+  /// An explicit `PlotRangePadding`, in place of the default padding.
+  padding: Option<crate::functions::graphics::PlotRangePaddingSpec>,
 }
 
 impl ParsedOptions {
@@ -1792,6 +1802,7 @@ impl ParsedOptions {
     RangeRequest {
       explicit: (self.plot_range_x.is_some(), self.plot_range_y.is_some()),
       keep_outliers: self.plot_range_all,
+      padding: self.range_padding,
     }
   }
 }
@@ -1804,10 +1815,25 @@ fn apply_plot_range_override(
   x_range: (f64, f64),
   y_range: (f64, f64),
 ) -> ((f64, f64), (f64, f64)) {
-  (
-    log_safe_range(parsed.plot_range_x, x_range),
-    log_safe_range(parsed.plot_range_y, y_range),
-  )
+  let x = log_safe_range(parsed.plot_range_x, x_range);
+  let y = log_safe_range(parsed.plot_range_y, y_range);
+  // An explicit `PlotRangePadding` pads an explicit `PlotRange` too (the
+  // automatic axes were padded by it already).
+  match &parsed.range_padding {
+    Some(spec) => (
+      if parsed.plot_range_x.is_some() {
+        spec.x.pad_over(x, x)
+      } else {
+        x
+      },
+      if parsed.plot_range_y.is_some() {
+        spec.y.pad_over(y, y)
+      } else {
+        y
+      },
+    ),
+    None => (x, y),
+  }
 }
 
 /// An explicit `PlotRange` side, with the ends a scaled axis cannot reach
@@ -2225,10 +2251,16 @@ fn list_plot_ranges(
     opts.axes_origin_low.1 = Some(y.0);
   }
   opts.grid_interior = (!explicit_x && !explicit_y).then_some((x, y));
-  let (x, y_padded) = (
-    pad_list_axis(x, ListAxis::X, nx),
-    pad_list_axis(y, ListAxis::Y, ny),
-  );
+  let (x, y_padded) = match &request.padding {
+    Some(spec) => (
+      spec.x.pad_over(x, pad_list_axis(x, ListAxis::X, nx)),
+      spec.y.pad_over(y, pad_list_axis(y, ListAxis::Y, ny)),
+    ),
+    None => (
+      pad_list_axis(x, ListAxis::X, nx),
+      pad_list_axis(y, ListAxis::Y, ny),
+    ),
+  };
   // The range does not reach out to a filling's level: `Filling -> Axis`
   // fills to wherever the horizontal axis crosses, which is not 0 when the
   // range leaves 0 out.
