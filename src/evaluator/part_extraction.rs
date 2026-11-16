@@ -582,6 +582,10 @@ pub fn extract_part_ast(
     return extract_part_ast(&symbolic, index);
   }
 
+  if let Some(coords) = interpolating_function_coordinates_part(expr, index) {
+    return Ok(coords);
+  }
+
   // A tree is an atom: Part cannot reach inside it, so the call stays
   // unevaluated and the caller reports Part::partd.
   if crate::functions::predicate_ast::is_fully_atomic_object(expr) {
@@ -608,6 +612,35 @@ pub fn extract_part_ast(
     });
   }
   extract_part_ast_rest(expr, index)
+}
+
+/// Part 3 of a one-dimensional `InterpolatingFunction` is its list of grid
+/// coordinates in the Wolfram Language's layout (`f[[3, 1]]` is the grid of
+/// sample points, the common idiom for the steps `NDSolve` took). Woxi keeps
+/// the samples as `InterpolatingFunction[domain, {{x, y}, …}, order]`, so
+/// that part is read through the function's "Coordinates" property.
+fn interpolating_function_coordinates_part(
+  expr: &Expr,
+  index: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "InterpolatingFunction"
+    || !matches!(index, Expr::Integer(3))
+    || args.len() != 3
+    || !matches!(args[2], Expr::Integer(_))
+    || !matches!(&args[0], Expr::List(domain) if domain.len() == 1)
+  {
+    return None;
+  }
+  match crate::functions::ode_ast::evaluate_interpolating_function(
+    args,
+    &[Expr::String("Coordinates".to_string())],
+  ) {
+    Ok(coords @ Expr::List(_)) => Some(coords),
+    _ => None,
+  }
 }
 
 /// Whether `expr` is one of the numbers that Wolfram stores as a compound
