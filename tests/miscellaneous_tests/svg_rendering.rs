@@ -3105,6 +3105,53 @@ mod tests {
     }
 
     #[test]
+    fn spherical_region_sphere_reaches_the_primitives_own_boxes() {
+      // A band of narrow faces around the z-axis (radius 1, height 1). Its
+      // 2 × 2 × 1 box has a circumsphere of radius 1.5, but every face's own
+      // box stays near the band, at most about 1.13 from the center, and
+      // Wolfram frames by that smaller sphere: a cylinder of triangles in
+      // a Demonstration snapshot spans about 82 % of the width, where the
+      // box's sphere would leave it at 63 %. The same band built by
+      // rotating one face (`Rotate` of a `Polygon`) frames identically.
+      let face = |t: &str| {
+        format!(
+          "Polygon[{{{{Cos[{t}], Sin[{t}], 0}}, {{Cos[{t} + Pi/12], \
+           Sin[{t} + Pi/12], 0}}, {{Cos[{t} + Pi/12], Sin[{t} + Pi/12], 1}}, \
+           {{Cos[{t}], Sin[{t}], 1}}}}]"
+        )
+      };
+      let opts = "Boxed -> False, SphericalRegion -> True, \
+                  ImageSize -> {400, 400}";
+      let band = format!(
+        "Graphics3D[Table[{}, {{t, 0, 2 Pi - Pi/12, Pi/12}}], {opts}]",
+        face("t")
+      );
+      let rotated = format!(
+        "Graphics3D[Table[Rotate[{}, t, {{0, 0, 1}}], \
+         {{t, 0, 2 Pi - Pi/12, Pi/12}}], {opts}]",
+        face("0")
+      );
+      let (w, _) = ink_extent(&svg_of(&band));
+      assert!(
+        (310.0..340.0).contains(&w),
+        "the band should span about 81% of the width, got {w}"
+      );
+      let (w_rot, _) = ink_extent(&svg_of(&rotated));
+      assert!((w - w_rot).abs() < 2.0, "{w} vs {w_rot}");
+
+      // A pinned `PlotRange` is still framed by the sphere around it.
+      let pinned = band.replace(
+        opts,
+        &format!("{opts}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{0, 1}}}}"),
+      );
+      let (w_pinned, _) = ink_extent(&svg_of(&pinned));
+      assert!(
+        w_pinned < w * 0.85,
+        "a pinned box frames by its own sphere: {w_pinned} vs {w}"
+      );
+    }
+
+    #[test]
     fn relative_thickness_follows_the_3d_image_width() {
       // `Thickness[t]` is a fraction of the picture's width, so at
       // `ImageSize -> 400` a `Thickness[0.015]` line is 6 pixels wide.

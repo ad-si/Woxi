@@ -11333,17 +11333,14 @@ fn resolve_scaled_sphere_radii(
   }
 }
 
-/// The world-coordinate bounding box of a set of 3D primitives, as
-/// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
-/// to bound.
-fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
-  let mut x3_min = f64::INFINITY;
-  let mut x3_max = f64::NEG_INFINITY;
-  let mut y3_min = f64::INFINITY;
-  let mut y3_max = f64::NEG_INFINITY;
-  let mut z3_min = f64::INFINITY;
-  let mut z3_max = f64::NEG_INFINITY;
-
+/// Grow the bounding box `b` (`[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`) to
+/// take in one 3D primitive.
+fn extend_primitive_bounds(prim: &Primitive3D, b: &mut [(f64, f64); 3]) {
+  let [
+    (mut x3_min, mut x3_max),
+    (mut y3_min, mut y3_max),
+    (mut z3_min, mut z3_max),
+  ] = *b;
   let extend_3d = |pt: &Point3D,
                    x3_min: &mut f64,
                    x3_max: &mut f64,
@@ -11359,7 +11356,7 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
     *z3_max = z3_max.max(pt.z);
   };
 
-  for prim in prims {
+  {
     match prim {
       Primitive3D::Sphere { center, radius, .. } => {
         let r = *radius;
@@ -11513,6 +11510,18 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
       }
     }
   }
+  *b = [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)];
+}
+
+/// The world-coordinate bounding box of a set of 3D primitives, as
+/// `[(xlo, xhi), (ylo, yhi), (zlo, zhi)]`. Infinite when there is nothing
+/// to bound.
+fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
+  let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+  for prim in prims {
+    extend_primitive_bounds(prim, &mut b);
+  }
+  let [(x3_min, x3_max), (y3_min, y3_max), (z3_min, z3_max)] = b;
   // An axis the contents do not extend along (a flat polygon, a vertical
   // line) is given a range as Wolfram does: from 0 to twice the value
   // (`{0, 10}` for everything at 5), or `{-1, 1}` at 0.
@@ -11534,6 +11543,54 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
     widen((y3_min, y3_max)),
     widen((z3_min, z3_max)),
   ]
+}
+
+/// How far the sphere `SphericalRegion -> True` frames by reaches from the
+/// center of an automatic (content-fitted) box, before padding.
+///
+/// Wolfram does not take the sphere around the whole box but the one
+/// reaching the farthest corner of each primitive's own bounding box. The
+/// two agree for a single solid (a ball's box corners lie on the box's
+/// circumsphere) and for primitives spanning the box (two parallel disks),
+/// but a ring of small faces around an axis — a cylinder built from
+/// triangles — stays well inside the corners of its box, and Wolfram
+/// draws it accordingly larger. An axis along which the contents do not
+/// extend at all keeps the range the box gives it (`{-1, 1}` at 0).
+fn primitives_sphere_radius(
+  prims: &[Primitive3D],
+  box_: &[(f64, f64); 3],
+) -> f64 {
+  let center = box_.map(|(lo, hi)| f64::midpoint(lo, hi));
+  let overall = {
+    let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+    for prim in prims {
+      extend_primitive_bounds(prim, &mut b);
+    }
+    b
+  };
+  let flat = overall.map(|(lo, hi)| {
+    !(lo.is_finite() && hi.is_finite())
+      || hi - lo <= 1e-12 * f64::midpoint(lo, hi).abs().max(1.0)
+  });
+  let mut radius_sq: f64 = 0.0;
+  for prim in prims {
+    let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+    extend_primitive_bounds(prim, &mut b);
+    let mut dist_sq = 0.0;
+    for k in 0..3 {
+      let (lo, hi) = if flat[k] { box_[k] } else { b[k] };
+      if !(lo.is_finite() && hi.is_finite()) {
+        dist_sq = f64::NAN;
+        break;
+      }
+      let reach = (lo - center[k]).abs().max((hi - center[k]).abs());
+      dist_sq += reach * reach;
+    }
+    if dist_sq.is_finite() {
+      radius_sq = radius_sq.max(dist_sq);
+    }
+  }
+  radius_sq.sqrt()
 }
 
 /// Width, in scene units at the depth of the box center, that
@@ -12896,11 +12953,27 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y: f64::midpoint(y3_min, y3_max),
       z: f64::midpoint(z3_min, z3_max),
     };
-    let radius = ((x3_max - x3_min).powi(2)
+    let mut radius = ((x3_max - x3_min).powi(2)
       + (y3_max - y3_min).powi(2)
       + (z3_max - z3_min).powi(2))
     .sqrt()
       / 2.0;
+    // An automatic box: the sphere reaches only as far as the primitives'
+    // own boxes do (see `primitives_sphere_radius`), padded like the box.
+    // A pinned region is framed by the sphere around it.
+    if plot_range.is_none() && partial_range.is_none() {
+      let content_box = primitives_bounds(&prims);
+      let box_radius = content_box
+        .iter()
+        .map(|(lo, hi)| (hi - lo).powi(2))
+        .sum::<f64>()
+        .sqrt()
+        / 2.0;
+      let reach = primitives_sphere_radius(&prims, &content_box);
+      if box_radius > 0.0 && reach > 0.0 && reach.is_finite() {
+        radius *= (reach / box_radius).min(1.0);
+      }
+    }
     if radius > 0.0 && radius.is_finite() {
       let span = spherical_region_span(
         radius,
