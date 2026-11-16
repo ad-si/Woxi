@@ -33009,10 +33009,14 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       Cell::Svg { width, .. } => *width,
       Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
-        let advance = if *plain && style.font_family.is_none() {
-          SANS_ADVANCE / MONO_ADVANCE
-        } else {
-          1.0
+        // A plain `Text[…]` item, or one styled in a proportional face,
+        // sets narrower glyphs than the monospace default.
+        let advance = match style.font_family.as_deref() {
+          Some(ff) if !is_monospace_font_family(ff) => {
+            SANS_ADVANCE / MONO_ADVANCE
+          }
+          None if *plain => SANS_ADVANCE / MONO_ADVANCE,
+          _ => 1.0,
         };
         estimate_display_width(style.content)
           * char_width
@@ -33099,6 +33103,9 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         // column keeps its monospace default, except that a plain
         // `Text[…]` item is set in the proportional text face.
         let (ff, advance) = match style.font_family.as_deref() {
+          Some(ff) if !is_monospace_font_family(ff) => {
+            (ff, SANS_ADVANCE / MONO_ADVANCE)
+          }
           Some(ff) => (ff, 1.0),
           None if *plain => ("sans-serif", SANS_ADVANCE / MONO_ADVANCE),
           None => ("monospace", 1.0),

@@ -5442,4 +5442,82 @@ mod grid_item_style_tests {
       "{svg}"
     );
   }
+
+  #[test]
+  fn test_text_sets_row_in_proportional_face() {
+    // `Text[Row[…]]` sets every item of the row in the proportional text
+    // face, as `Text["…"]` is, alone or under `Style`.
+    for code in [
+      r#"ExportString[Text[Row[{"ab ", 1}]], "SVG"]"#,
+      r#"ExportString[Style[Text[Row[{"ab ", 1}]], 16], "SVG"]"#,
+      r#"ExportString[Text["ab"], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("monospace"), "{code}: {svg}");
+      assert!(svg.contains("sans-serif\""), "{code}: {svg}");
+    }
+  }
+
+  #[test]
+  fn test_text_row_in_pane_fits_one_line_in_proportional_face() {
+    // A sentence of 53 characters at size 16 fits a 500-wide pane in the
+    // proportional face, so it stays on one line rather than wrapping its
+    // last word as monospace metrics would.
+    let svg = woxi::interpret(
+      r#"ExportString[Pane[Style[Text[Row[{"At ", 120, " BPM, ", 24, " clock ticks will last ", 0.02083, " seconds."}]], 16], {500, 100}, Alignment -> Center], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("monospace"), "{svg}");
+    let ys: std::collections::BTreeSet<&str> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|t| t.split("y=\"").nth(1)?.split('"').next())
+      .collect();
+    assert_eq!(ys.len(), 1, "{svg}");
+    assert!(svg.contains(" seconds.</text>"), "{svg}");
+  }
+
+  #[test]
+  fn test_text_string_in_pane_wraps_by_proportional_width() {
+    // Long `Text` prose in a fixed pane flows into lines measured in the
+    // proportional face: the laid-out block fits the pane's width
+    // instead of being shrunk to fit it.
+    let svg = woxi::interpret(
+      r#"ExportString[Pane[Style[Text[StringRepeat["word ", 40]], 16], {500, 100}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("monospace"), "{svg}");
+    let inner = svg.split("<svg").nth(2).unwrap();
+    let width: f64 = inner
+      .split("width=\"")
+      .nth(1)
+      .and_then(|w| w.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .unwrap();
+    assert!(width <= 500.0, "{width}: {svg}");
+    assert!(svg.matches("<text ").count() >= 2, "{svg}");
+  }
+
+  #[test]
+  fn test_column_measures_proportional_font_family_items() {
+    // An item styled in a proportional face is measured with that face's
+    // narrower advance, not the monospace default.
+    let mono = woxi::interpret(
+      r#"ExportString[Column[{Style["abcdefghijklmnopqrst", FontFamily -> "Courier"]}], "SVG"]"#,
+    )
+    .unwrap();
+    let sans = woxi::interpret(
+      r#"ExportString[Column[{Style["abcdefghijklmnopqrst", FontFamily -> "sans-serif"]}], "SVG"]"#,
+    )
+    .unwrap();
+    let width = |svg: &str| -> f64 {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap()
+    };
+    assert!(width(&sans) < width(&mono), "{sans}\n{mono}");
+  }
 }
