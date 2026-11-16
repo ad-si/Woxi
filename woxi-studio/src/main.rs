@@ -5425,6 +5425,15 @@ fn render_manipulate_widget<'a>(
           .into()
       };
     output_col = output_col.push(container(picture).padding(4));
+  } else if let Some(ref handle) = state.typeset_handle {
+    // A textual result is shown typeset, as an ordinary output cell shows
+    // it: `TraditionalForm` math keeps its subscripts and font size.
+    let mut svg_widget =
+      svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
+    if stale {
+      svg_widget = svg_widget.opacity(0.3_f32);
+    }
+    output_col = output_col.push(container(svg_widget).padding(6));
   } else if let Some(ref txt) = state.text_output {
     let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);
     if stale {
@@ -10526,6 +10535,36 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "Graphics of translated/rotated pieces should render"
     );
   }
+  /// A body that prints an expanded product in a chosen term order — the
+  /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
+  /// `TraditionalForm` at a large size. The widget shows it typeset
+  /// (subscripts, operator, font size), like an output cell, instead of the
+  /// raw `TraditionalForm[Infix[…]]` source text. Independently written, not
+  /// copied from any specific Demonstration.
+  #[test]
+  fn manipulate_typesets_traditional_form_infix_sum() {
+    let code = r#"Manipulate[
+      Pane[Text@Style[TraditionalForm@Infix[
+        Reverse@SortBy[List @@ Expand[Product[1 + Subscript[x, i], {i, n}]],
+          Length], "+"], 18], {500, 200}],
+      {{n, 2}, Range[4], ControlType -> Setter}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a Setter row should build a ManipulateState");
+    assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
+    let svg = state
+      .typeset_output
+      .as_deref()
+      .expect("the textual result is typeset");
+    assert!(state.typeset_handle.is_some());
+    assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
+    assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
+    assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
+    assert!(svg.contains(">2<"), "the subscripts are drawn: {svg}");
+    assert!(svg.contains("font-size=\"18"), "the style's size: {svg}");
+  }
+
   /// A digit-inspector Manipulate picking among symbolic constants (Pi, E,
   /// GoldenRatio) and rendering the chosen constant's leading digits via
   /// `RealDigits`. Independently written, not copied from any specific

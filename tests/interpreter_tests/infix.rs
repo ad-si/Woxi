@@ -66,8 +66,8 @@ mod infix_text_mode {
       "RowBox[{a, +, b}]"
     );
     assert_eq!(
-      interpret(r#"ToBoxes[Infix[{a, b}, "+"]] // InputForm"#).unwrap(),
-      r#"InputForm[RowBox[{"a", "+", "b"}]]"#
+      interpret(r#"ToString[ToBoxes[Infix[{a, b}, "+"]], InputForm]"#).unwrap(),
+      r#"RowBox[{"a", "+", "b"}]"#
     );
   }
 
@@ -108,8 +108,11 @@ mod infix_visual_mode {
       r#"Text[Style[TraditionalForm[Infix[{Subscript[a, 1] Subscript[a, 2], Subscript[a, 3]}, "+"]], 21]]"#,
     )
     .unwrap();
-    let svg = result.graphics.expect("typeset as a picture");
-    assert!(!svg.contains(">Infix<"), "the call must not be echoed: {svg}");
+    let svg = result.output_svg.expect("typeset output");
+    assert!(
+      !svg.contains(">Infix<"),
+      "the call must not be echoed: {svg}"
+    );
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
     assert!(svg.contains(">3<"), "the subscripts are drawn: {svg}");
   }
