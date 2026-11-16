@@ -12,6 +12,11 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `ImageSize -> {Automatic, h}` adds the margins of `ImagePadding` or a
+    frame to the width the drawing's shape gives, instead of taking them
+    out of it.
+- Woxi Studio fits a picture of automatic size that is taller than a
+    Manipulate's `ContentSize -> {w, h}` area to that height.
 
 # 2026-11-08 - 0.4.0
 
