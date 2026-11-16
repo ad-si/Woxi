@@ -5521,4 +5521,18 @@ mod grid_item_style_tests {
     };
     assert!(width(&sans) < width(&mono), "{sans}\n{mono}");
   }
+
+  #[test]
+  fn test_text_row_in_fixed_pane_output_uses_proportional_face() {
+    // The notebook display of a fixed-size `Pane` (a Manipulate body) sets
+    // `Text[Row[…]]` in the proportional face on one line, as the export
+    // does.
+    let res = woxi::interpret_with_stdout(
+      r#"Pane[Style[Text[Row[{"At ", 120, " BPM, ", 24, " clock ticks will last ", 0.02083, " seconds."}]], 16], {500, 100}, Alignment -> Center]"#,
+    )
+    .unwrap();
+    let svg = res.graphics.expect("pane should render");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(svg.contains(" seconds.</text>"), "{svg}");
+  }
 }

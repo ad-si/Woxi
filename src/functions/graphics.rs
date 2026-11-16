@@ -31478,6 +31478,14 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
   let mut traditional = false;
   let mut standard = false;
   while let Expr::FunctionCall { name, args } = &current {
+    // `Text[Row[…]]` sets the layout in the proportional text face: it
+    // comes off as the `Style` that face is, for the layout renderers.
+    if let Some((layout, family)) = text_layout_face(&current)
+      && !matches!(layout, Expr::String(_))
+    {
+      current = call("Style", vec![layout.clone(), family]);
+      break;
+    }
     let pass_through = match name.as_str() {
       "Text" | "TraditionalForm" | "StandardForm" => args.len() == 1,
       // `DisplayForm[box]` typesets the box tree: peeling it would leave a
