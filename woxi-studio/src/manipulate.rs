@@ -833,6 +833,9 @@ pub struct ManipulateState {
   /// The width of `ContentSize -> {w, h}`: output text wider than it (a
   /// long list) breaks into lines at this width.
   pub content_width: Option<f64>,
+  /// The height of `ContentSize -> {w, h}`: a picture of automatic size
+  /// taller than the content area is laid out again to fit it.
+  pub content_height: Option<f64>,
   /// Names of the controls drawn on the same line as the control before
   /// them (see `ManipulateSpec::row_joined_controls`).
   row_joined_controls: Vec<String>,
@@ -1092,6 +1095,7 @@ impl ManipulateState {
       control_placement: spec.control_placement,
       control_placements: spec.control_placements,
       content_width: spec.content_width,
+      content_height: spec.content_height,
       row_joined_controls: spec.row_joined_controls,
       tracked_symbols: spec.tracked_symbols,
       animation_var: spec.animation_var,
@@ -1997,6 +2001,7 @@ impl ManipulateState {
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
     let content_width = self.content_width;
+    let content_height = self.content_height;
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
@@ -2096,6 +2101,14 @@ impl ManipulateState {
         && let Some(flowed) = flow_to_content_width(r, width)
       {
         render = Ok(flowed);
+      }
+      // A picture of automatic size taller than the content area is laid
+      // out again at the height the area leaves it, as the FrontEnd does.
+      if let Some(height) = content_height
+        && let Ok(r) = &render
+        && let Some(fitted) = fit_to_content_height(r, height)
+      {
+        render = Ok(fitted);
       }
       let updated_bindings = read_manipulate_state(&binding_names);
       let trees: Vec<_> = displays
@@ -7577,6 +7590,58 @@ pub fn flow_to_content_width(
     .filter(|r| r.graphics.is_some())
 }
 
+/// The room a Manipulate's content area keeps free on each side of a
+/// picture it fits into its `ContentSize`, in points.
+const CONTENT_AREA_MARGIN: f64 = 10.0;
+
+/// The output `render` re-laid out for a content area `height` tall
+/// (`ContentSize -> {w, height}`): a `Graphics` of automatic size taller
+/// than the area (less its margins) is drawn again with that height as its
+/// `ImageSize`, so its padding and labels keep their size while the drawing
+/// shrinks. `None` when the output already fits, is not such a picture, or
+/// names its own `ImageSize`.
+pub fn fit_to_content_height(
+  render: &woxi::InterpretResult,
+  height: f64,
+) -> Option<woxi::InterpretResult> {
+  let svg = render.graphics.as_ref()?;
+  let available = height - 2.0 * CONTENT_AREA_MARGIN;
+  if available <= 0.0
+    || woxi::functions::graphics::parse_svg_wh(svg).1 <= available + 0.5
+  {
+    return None;
+  }
+  let Some(Expr::FunctionCall { name, args }) = &render.expr else {
+    return None;
+  };
+  if name != "Graphics" || args.is_empty() {
+    return None;
+  }
+  let names_size = args[1..].iter().any(|opt| {
+    matches!(opt,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize"))
+  });
+  if names_size {
+    return None;
+  }
+  let mut fitted_args = args.clone();
+  fitted_args.push(Expr::Rule {
+    pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
+    replacement: Box::new(Expr::List(vec![
+      Expr::Identifier("Automatic".to_string()),
+      Expr::Real(available),
+    ])),
+  });
+  let fitted = Expr::FunctionCall {
+    name: name.clone(),
+    args: fitted_args,
+  };
+  woxi::interpret_with_stdout(&woxi::syntax::expr_to_input_form(&fitted))
+    .ok()
+    .filter(|r| r.graphics.is_some())
+}
+
 #[cfg(test)]
 mod repeated_option_tests {
   use super::*;
@@ -7637,6 +7702,55 @@ mod repeated_option_tests {
     assert!(svg.contains(r#"font-weight="bold">4<"#), "{svg}");
     // Output that already fits is left alone.
     assert!(flow_to_content_width(&body, 1.0e6).is_none());
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a thermometer with
+  /// two temperature scales). Its tall picture, with wide `ImagePadding`
+  /// for the scale labels, is taller than the `ContentSize` area at its
+  /// automatic size; the FrontEnd lays it out again to fit the area's
+  /// height (less a 10-point margin on each side), keeping the padding and
+  /// narrowing the drawing, rather than letting it overflow.
+  #[test]
+  fn content_size_height_fits_a_tall_picture() {
+    let code = "Manipulate[\
+       Graphics[{Rectangle[{-5, -273}, {5, t}]}, \
+         PlotRange -> {{-70, 70}, {-290, 100}}, \
+         Frame -> {False, True, False, True}, \
+         ImagePadding -> {{70, 150}, {15, 15}}], \
+       {{t, 37}, -273, 100, 1}, ContentSize -> {500, 400}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(state.content_height, Some(400.0));
+
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    let (_, tall) = woxi::functions::graphics::parse_svg_wh(
+      body.graphics.as_ref().expect("the body is a picture"),
+    );
+    assert!(tall > 380.0, "the unfitted picture is {tall} tall");
+    let fitted =
+      fit_to_content_height(&body, 400.0).expect("the picture is fitted");
+    let svg = fitted.graphics.expect("the fitted body is a picture");
+    let (w, h) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!((h - 380.0).abs() < 0.5, "the fitted picture is {h} tall");
+    // The drawing keeps its shape (390 / 140 as tall as wide) inside the
+    // 30 points of vertical padding; the 220 points of horizontal padding
+    // stay as they are.
+    let expected_w = 350.0 * 140.0 / 390.0 + 220.0;
+    assert!((w - expected_w).abs() < 1.0, "{w} vs {expected_w}: {svg}");
+    // A picture that already fits, or one with its own size, is left alone.
+    assert!(fit_to_content_height(&fitted, 400.0).is_none());
+    assert!(fit_to_content_height(&body, 1.0e6).is_none());
+    let sized = woxi::interpret_with_stdout(
+      "Graphics[Disk[], ImageSize -> {Automatic, 600}]",
+    )
+    .expect("evaluate a sized picture");
+    assert!(fit_to_content_height(&sized, 400.0).is_none());
   }
 
   /// A style a pure function applies in the body survives the round trip
