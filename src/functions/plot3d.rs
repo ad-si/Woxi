@@ -11536,73 +11536,6 @@ fn primitives_bounds(prims: &[Primitive3D]) -> [(f64, f64); 3] {
   ]
 }
 
-/// The farthest any part of the contents reaches from `center`: the
-/// radius of the smallest sphere around `center` that holds them all.
-fn primitives_reach(prims: &[Primitive3D], center: Point3D) -> f64 {
-  let c = [center.x, center.y, center.z];
-  let dist = |p: &Point3D| v_len(v_sub([p.x, p.y, p.z], c));
-  // The point of a disk (center `p`, unit normal `u`, radius `r`) farthest
-  // from `center`: along the normal by the offset's normal part, and out
-  // to the rim on the side the offset already leans to.
-  let disk_reach = |p: &Point3D, u: Option<[f64; 3]>, r: f64| {
-    let w = v_sub([p.x, p.y, p.z], c);
-    match u {
-      Some(u) => {
-        let along = v_dot(w, u);
-        let across = (v_dot(w, w) - along * along).max(0.0).sqrt();
-        (along * along + (across + r).powi(2)).sqrt()
-      }
-      None => v_len(w) + r,
-    }
-  };
-  let mut reach: f64 = 0.0;
-  for prim in prims {
-    let r = match prim {
-      Primitive3D::Sphere { center, radius, .. } => dist(center) + radius,
-      Primitive3D::Cuboid { p_min, p_max, .. } => {
-        // The corner farthest from `center` takes, on each axis, the end
-        // farther away.
-        let far = |lo: f64, hi: f64, m: f64| (lo - m).abs().max((hi - m).abs());
-        v_len([
-          far(p_min.x, p_max.x, center.x),
-          far(p_min.y, p_max.y, center.y),
-          far(p_min.z, p_max.z, center.z),
-        ])
-      }
-      Primitive3D::Cylinder { p1, p2, radius, .. }
-      | Primitive3D::Cone { p1, p2, radius, .. } => {
-        let axis = v_sub([p2.x, p2.y, p2.z], [p1.x, p1.y, p1.z]);
-        let len = v_len(axis);
-        let u = (len > 0.0).then(|| axis.map(|a| a / len));
-        let far_end = if matches!(prim, Primitive3D::Cone { .. }) {
-          dist(p2)
-        } else {
-          disk_reach(p2, u, *radius)
-        };
-        disk_reach(p1, u, *radius).max(far_end)
-      }
-      Primitive3D::Polygon3D { points, .. }
-      | Primitive3D::Point3DPrim { points, .. }
-      | Primitive3D::Arrow3D { points, .. } => {
-        points.iter().map(dist).fold(0.0, f64::max)
-      }
-      Primitive3D::Line3D { segments, .. } => {
-        segments.iter().flatten().map(dist).fold(0.0, f64::max)
-      }
-      Primitive3D::Text3D { pos, .. } => dist(pos),
-      Primitive3D::Surface3D { tris, .. } => tris
-        .iter()
-        .flat_map(|(a, b, t)| [a, b, t])
-        .map(dist)
-        .fold(0.0, f64::max),
-    };
-    if r.is_finite() {
-      reach = reach.max(r);
-    }
-  }
-  reach
-}
-
 /// Width, in scene units at the depth of the box center, that
 /// `SphericalRegion -> True` maps onto the shorter side of the picture.
 ///
@@ -12949,19 +12882,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_max = 1.0;
   }
 
-  // `SphericalRegion -> True` frames the picture by a sphere around the
-  // box center rather than by the projected outline of the contents. The
-  // sphere projects to the same circle from every direction, so the scale
-  // no longer follows the view angle or a moving shape. Wolfram widens the
-  // camera's field of view until that sphere just fits (see
-  // `spherical_region_span`); the resulting span replaces the fitted scale
-  // below.
-  //
-  // A given `PlotRange` (or `PlotRangePadding`) fixes the region shown, and
-  // the sphere is the one around that box. With the range taken from the
-  // contents, the sphere is the one that holds the contents themselves,
-  // which for a scene that does not fill its box's corners (a tetrahedron
-  // around a ball, a ring) is smaller than the box's own sphere.
+  // `SphericalRegion -> True` frames the picture by the sphere drawn
+  // around the displayed box rather than by the projected outline of the
+  // contents. The sphere projects to the same circle from every direction,
+  // so the scale no longer follows the view angle or a moving shape.
+  // Wolfram widens the camera's field of view until that sphere just fits
+  // (see `spherical_region_span`); the resulting span replaces the fitted
+  // scale below.
   let mut sphere_span: Option<f64> = None;
   if spherical_region && !perspective {
     let center = Point3D {
@@ -12969,19 +12896,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y: f64::midpoint(y3_min, y3_max),
       z: f64::midpoint(z3_min, z3_max),
     };
-    let box_radius = ((x3_max - x3_min).powi(2)
+    let radius = ((x3_max - x3_min).powi(2)
       + (y3_max - y3_min).powi(2)
       + (z3_max - z3_min).powi(2))
     .sqrt()
       / 2.0;
-    let radius = if plot_range.is_none() && range_padding.is_none() {
-      // Padded by the same 2 % as the box (`PlotRangePadding ->
-      // Automatic`).
-      let reach = primitives_reach(&prims, center) * 1.02;
-      if reach > 0.0 { reach.min(box_radius) } else { box_radius }
-    } else {
-      box_radius
-    };
     if radius > 0.0 && radius.is_finite() {
       let span = spherical_region_span(
         radius,
