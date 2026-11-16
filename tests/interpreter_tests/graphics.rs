@@ -10667,6 +10667,38 @@ mod plot3d {
       assert_eq!(free.0.round(), free_boxed.0.round());
     }
 
+    /// With the range taken from the contents, `SphericalRegion -> True`
+    /// frames the picture by the sphere holding the contents, not by the
+    /// larger sphere around their bounding box's corners. A unit ball
+    /// inside tetrahedron vertices √3 from its center (a 2√2 × 2√2 × 2
+    /// box, whose own sphere has radius √5) spans 252 of 450 pixels in
+    /// Wolfram's snapshot of such a scene. A given `PlotRange` of the same
+    /// box still frames by the box's sphere.
+    #[test]
+    fn spherical_region_frames_by_the_contents_sphere() {
+      let ball = |opts: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[{{Point[{{{{0, -Sqrt[2], 1}}, {{0, Sqrt[2], 1}}, \
+           {{Sqrt[2], 0, -1}}, {{-Sqrt[2], 0, -1}}}}], Sphere[]}}, \
+           Boxed -> False, SphericalRegion -> True, ImageSize -> 450{opts}]"
+        ))
+      };
+      let (w, h) = ball("");
+      assert!((249.0..255.0).contains(&w), "ball width {w}");
+      assert!((249.0..255.0).contains(&h), "ball height {h}");
+      // The same box given as the `PlotRange` frames by its corners' sphere,
+      // √5 / √3 farther out.
+      let (boxed_w, _) = ball(
+        ", PlotRange -> {{-Sqrt[2], Sqrt[2]}, {-Sqrt[2], Sqrt[2]}, {-1, 1}}",
+      );
+      let ratio = w / boxed_w;
+      assert!(
+        (1.25..1.36).contains(&ratio),
+        "expected the contents sphere about √(5/3) times the box sphere's \
+         scale, got {w} vs {boxed_w}"
+      );
+    }
+
     /// Surface plots honor an explicit `ViewAngle` the same way
     /// `Graphics3D` does, instead of always fitting the box to the frame.
     /// A unit sphere seen from the default `ViewPoint` (`|ViewPoint|` ≈
