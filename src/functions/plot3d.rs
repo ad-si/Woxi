@@ -16836,17 +16836,18 @@ const CONTOUR3D_REFINE_BUDGET: usize = 20_000;
 /// corner of the cell that stands out from both its neighbors on that
 /// line: either the corner alone lies across the level (the sheet was hit
 /// by a single sample), or all three lie on one side and the corner is the
-/// closest to the level. In the second case the parabola through the three
-/// samples estimates how close the field gets to the level between them; a
-/// dip whose estimated extreme comes within one grid step's worth of
-/// curvature of the level is near enough to the line for the sheet to
-/// cross the cell.
+/// closest to the level. The parabola through the three samples estimates
+/// the field between them. It counts when it is narrower than the grid
+/// where it crosses the level, or, staying short of the level, comes within
+/// half a grid step's worth of curvature of it (near enough to the line
+/// for the sheet to cross the cell beside it).
 ///
-/// A thin tube stands out like that across two directions at once. A
-/// surface the grid resolves changes monotonically across the cells around
-/// it, and where it merely curves away from a grid line (the waist of a
-/// hyperboloid, a saddle) it stands out along that one direction only, so
-/// cells showing the sign along fewer than two axes are left alone.
+/// The parabola must also bend sharply: its curvature at least a third of
+/// the largest change between neighboring corners of the cell. Where a
+/// grid line merely grazes a smooth surface (a sphere's pole, a
+/// hyperboloid's waist) the field dips to the level too, but bends only as
+/// gently as the surface curves, and a surface the grid resolves changes
+/// monotonically across the cells around it; both are left alone.
 fn cell_may_hide_thin_sheet(
   field: &[Vec<Vec<f64>>],
   cell: [usize; 3],
@@ -16855,10 +16856,28 @@ fn cell_may_hide_thin_sheet(
   let sample = |q: [usize; 3]| -> Option<f64> {
     field.get(q[0])?.get(q[1])?.get(q[2]).copied()
   };
-  (0..3)
-    .filter(|&axis| stands_out_along(&sample, cell, axis, level))
-    .nth(1)
-    .is_some()
+  // How much the field changes from one sample to the next across the
+  // cell, at most: the scale its bends are measured against.
+  let mut step_change = 0.0_f64;
+  for di in 0..2 {
+    for dj in 0..2 {
+      for dk in 0..2 {
+        let q = [cell[0] + di, cell[1] + dj, cell[2] + dk];
+        let Some(v) = sample(q) else { continue };
+        // The cell's own edges only: from the low corner along each axis.
+        for axis in (0..3).filter(|&axis| [di, dj, dk][axis] == 0) {
+          let mut r = q;
+          r[axis] += 1;
+          if let Some(w) = sample(r)
+            && (v - w).is_finite()
+          {
+            step_change = step_change.max((v - w).abs());
+          }
+        }
+      }
+    }
+  }
+  (0..3).any(|axis| stands_out_along(&sample, cell, axis, level, step_change))
 }
 
 /// Whether one of the cell's corners stands out from its two neighbors on
@@ -16868,6 +16887,7 @@ fn stands_out_along(
   cell: [usize; 3],
   axis: usize,
   level: f64,
+  step_change: f64,
 ) -> bool {
   let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
   for (da, db) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
@@ -16904,7 +16924,13 @@ fn stands_out_along(
       // spans less than one and a half steps (`-extreme / curvature` is its
       // squared half-width in steps). A dip that stays short of the level
       // may still reach it beside the grid line.
-      if extreme <= curvature / 2.0 && extreme > -curvature * 0.5625 {
+      // A thin sheet bends sharply against how fast the field changes
+      // between samples; a smooth surface a grid line merely grazes bends
+      // gently (its radius of curvature spans several steps).
+      if curvature * 3.0 >= step_change
+        && extreme <= curvature / 2.0
+        && extreme > -curvature * 0.5625
+      {
         return true;
       }
     }
