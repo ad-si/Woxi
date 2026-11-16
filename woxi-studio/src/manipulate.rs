@@ -7735,7 +7735,10 @@ mod repeated_option_tests {
     assert!(tall > 380.0, "the unfitted picture is {tall} tall");
     let fitted =
       fit_to_content_height(&body, 400.0).expect("the picture is fitted");
-    let svg = fitted.graphics.expect("the fitted body is a picture");
+    let svg = fitted
+      .graphics
+      .clone()
+      .expect("the fitted body is a picture");
     let (w, h) = woxi::functions::graphics::parse_svg_wh(&svg);
     assert!((h - 380.0).abs() < 0.5, "the fitted picture is {h} tall");
     // The drawing keeps its shape (390 / 140 as tall as wide) inside the
