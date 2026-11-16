@@ -603,6 +603,27 @@ fn traditional_sums(expr: &Expr) -> Expr {
   }
 }
 
+/// A picture taller than a line of text claims the room of the blank lines
+/// it spans, so the plot leaves space for it above the axes.
+fn claim_picture_lines(
+  segments: &[LabelSegment],
+  extra_lines: &mut Vec<String>,
+) {
+  let tallest = segments
+    .iter()
+    .filter_map(|s| match s {
+      LabelSegment::Graphic { h, .. } => Some(*h),
+      LabelSegment::Text(_) => None,
+    })
+    .fold(0.0, f64::max);
+  if tallest > 16.0 {
+    extra_lines.extend(std::iter::repeat_n(
+      String::new(),
+      ((tallest - 16.0) / 16.0).ceil() as usize,
+    ));
+  }
+}
+
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font
@@ -766,6 +787,16 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
       };
+      // Content whose boxes stack (`Row[{…, q^(1/e)}]`) is drawn as a
+      // picture, the `Style` wrapper's size and color included, just like
+      // the same content without the wrapper.
+      let segments =
+        if matches!(&args[0], Expr::String(_) | Expr::Identifier(_)) {
+          Vec::new()
+        } else {
+          inline_graphic_segments(expr).unwrap_or_default()
+        };
+      claim_picture_lines(&segments, &mut extra_lines);
       let (bold, italic, color, font_size) =
         parse_style_directive_args(&args[1..]);
       Some(StyledLabel {
@@ -777,7 +808,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color,
         font_size,
         framed: false,
-        segments: Vec::new(),
+        segments,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -796,22 +827,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           )),
         };
       let segments = inline_graphic_segments(other).unwrap_or_default();
-      // A picture taller than a line of text claims the room of the blank
-      // lines it spans, so the plot leaves space for it above the axes.
-      let tallest = segments
-        .iter()
-        .filter_map(|s| match s {
-          LabelSegment::Graphic { h, .. } => Some(*h),
-          LabelSegment::Text(_) => None,
-        })
-        .fold(0.0, f64::max);
       let mut extra_lines = extra_lines;
-      if tallest > 16.0 {
-        extra_lines.extend(std::iter::repeat_n(
-          String::new(),
-          ((tallest - 16.0) / 16.0).ceil() as usize,
-        ));
-      }
+      claim_picture_lines(&segments, &mut extra_lines);
       let text = stacked_visible_text(&markup, &extra_lines);
       if text.is_empty() && segments.is_empty() {
         None

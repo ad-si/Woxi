@@ -14620,11 +14620,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
                 .or_else(|| plot_label_grid_svg(other))
+                .or_else(|| plot_label_structured_svg(other))
                 .is_some() =>
             {
               let (svg, w, h) = plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
                 .or_else(|| plot_label_grid_svg(other))
+                .or_else(|| plot_label_structured_svg(other))
                 .expect("checked by the guard");
               // Reserve as many title lines as the picture is tall.
               let mut lines = 1;
@@ -21480,6 +21482,14 @@ fn label_sets_matrix(expr: &Expr) -> bool {
 
 /// Structured mathematical labels need a picture host instead of a text span.
 pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
+  structured_label_svg_sized(expr, 14.0)
+}
+
+/// [`structured_label_svg`] typeset at a base font size of `size` points.
+pub(crate) fn structured_label_svg_sized(
+  expr: &Expr,
+  size: f64,
+) -> Option<String> {
   let boxes=crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
   let source = crate::syntax::expr_to_string(&boxes);
   if ![
@@ -21497,7 +21507,23 @@ pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
-  Some(layout_to_svg(&layout_box(&boxes, 14.0), "currentColor"))
+  Some(layout_to_svg(&layout_box(&boxes, size), "currentColor"))
+}
+
+/// A one-line `PlotLabel` whose `TraditionalForm` boxes stack — a fraction
+/// (`x^(1/e)` sets its exponent as `1` over `e`), a radical, an over- or
+/// underscript — typeset as a picture in the title font, the way Wolfram
+/// draws it, instead of flattening the fraction to `1/e` in a text span.
+/// Strings keep their own (inline box notation) rendering.
+fn plot_label_structured_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  if matches!(peel_style_wrapper(expr), Expr::String(_))
+    || expr_to_svg_markup_lines(expr).len() != 1
+  {
+    return None;
+  }
+  let svg = structured_label_svg_sized(expr, TITLE_FONT)?;
+  let (w, h) = svg_natural_size(&svg)?;
+  (w > 0.0 && h > 0.0).then_some((svg, w, h))
 }
 
 pub(crate) fn legend_picture(label: &str) -> Option<(&str, f64, f64)> {

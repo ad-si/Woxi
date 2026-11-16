@@ -12,6 +12,10 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- A plot title holding a fraction (`Style[Row[{"P = ", q^(1/e)}], 12]`,
+    `Graphics[…, PlotLabel -> a/b]`, or the title `Show` keeps from a
+    combined plot) stacks the numerator over the denominator, as
+    `TraditionalForm` sets it, instead of writing `1/e` inline.
 
 # 2026-11-08 - 0.4.0
 

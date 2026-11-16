@@ -10854,6 +10854,56 @@ mod plot3d {
       );
       assert!(svg.contains("Title "));
     }
+
+    /// The fraction bar of a stacked fraction in a typeset picture.
+    fn has_fraction_bar(svg: &str) -> bool {
+      svg.contains("<line x1=\"0\"")
+    }
+
+    /// A `Style`d plot title whose content holds a fraction (here an
+    /// exponent `1/e`) stacks it in a picture, as without the `Style`,
+    /// instead of flattening it to `1/e` in a text span.
+    #[test]
+    fn styled_plot_label_stacks_a_fraction_exponent() {
+      for label in [
+        "Style[Row[{\"P = \", Style[\"Q\", Italic]^(1/e)}], 12]",
+        "Style[Row[{\"P = \", Style[\"Q\", Italic]^(1/e)}], 12, Red]",
+        "Style[a/b, Bold]",
+      ] {
+        let svg =
+          export_svg(&format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"));
+        assert!(has_fraction_bar(&svg), "{label}: {svg}");
+        assert!(!svg.contains("1/e") && !svg.contains("a/b"), "{label}");
+      }
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Style[Row[{\"P = \", x^(1/e)}], Red]]",
+      );
+      assert!(svg.contains("<g color=\"rgb(255,0,0)\""), "{svg}");
+    }
+
+    /// A `Graphics` title (also the one `Show` gives a combined plot) sets
+    /// fractions stacked, the way the same `Plot` title is drawn.
+    #[test]
+    fn graphics_plot_label_stacks_a_fraction() {
+      for expr in [
+        "Graphics[Disk[], PlotLabel -> a/b]",
+        "Graphics[Disk[], PlotLabel -> Row[{\"P = \", Q^(1/e)}]]",
+        "Show[Plot[x, {x, 0, 1}, PlotLabel -> Row[{\"P = \", Q^(1/e)}]], \
+         Graphics[Point[{0, 0}]]]",
+        "Show[Plot[x, {x, 0, 1}, PlotLabel -> \
+         Style[Row[{\"P = \", Style[\"Q\", Italic]^(1/e)}], 12]], \
+         Graphics[Point[{0, 0}]]]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(has_fraction_bar(&svg), "{expr}: {svg}");
+        assert!(!svg.contains("1/e") && !svg.contains("a/b"), "{expr}");
+      }
+      // A title without anything stacked stays text.
+      let svg =
+        export_svg("Graphics[Disk[], PlotLabel -> Row[{\"P = \", Q^2}]]");
+      assert!(!has_fraction_bar(&svg), "{svg}");
+      assert!(svg.contains(">P = Q<tspan"), "{svg}");
+    }
   }
 
   mod parametric_plot3d_curve {
@@ -48301,19 +48351,25 @@ fn manipulate_module_which_affine_prolog_checkbox_and_traditional_plot_label() {
 
 #[test]
 fn test_plot_label_fraction_of_difference_keeps_numerator_grouped() {
-  // Regression: `expr_to_svg_markup`'s `Times[Rational[1, d], expr]` case
-  // joins the numerator and denominator with a literal `/`, not a real
-  // vinculum, so an additive numerator needs its own parens — otherwise
-  // `1/2 (p^2 - r^2)` rendered as `p^2 - r^2/2` (only the last term
-  // divided) instead of `(p^2 - r^2)/2`.
+  // Regression: `1/2 (p^2 - r^2)` rendered as `p^2 - r^2/2` (only the
+  // last term divided). The title is typeset in TraditionalForm, as
+  // Wolfram does: a stacked `1` over `2` before the parenthesized sum.
   clear_state();
   let svg = export_svg(
     "Graphics[{Point[{0, 0}]}, PlotLabel -> Row[{q == 1/2 (p^2 - r^2)}]]",
   );
-  assert!(
-    svg.contains(")/2"),
-    "expected the whole numerator grouped in parens before the /2: {svg}"
+  let atoms: Vec<&str> = svg
+    .split("xml:space=\"preserve\">")
+    .skip(1)
+    .filter_map(|t| t.split("</text>").next())
+    .filter(|t| !t.is_empty())
+    .collect();
+  assert_eq!(
+    atoms,
+    ["q", "=", "1", "2", "(", "p", "2", "-", "r", "2", ")"],
+    "{svg}"
   );
+  assert!(svg.contains("<line x1=\"0\""), "a fraction bar: {svg}");
   assert!(
     !svg.contains("font-size=\"70%\">2</tspan>/2"),
     "the /2 must not attach directly to the last squared term alone: {svg}"
