@@ -7631,7 +7631,7 @@ pub fn fit_to_content_height(
     replacement: Box::new(Expr::List(vec![
       Expr::Identifier("Automatic".to_string()),
       Expr::Real(available),
-    ])),
+    ].into())),
   });
   let fitted = Expr::FunctionCall {
     name: name.clone(),
