@@ -48789,6 +48789,57 @@ mod grid_text_in_graphics {
     assert!(!svg.contains("Invisible"), "{svg}");
   }
 
+  /// `FrameStyle` only colors the frame of a `Grid` of pictures: the
+  /// cells keep the framed picture layout's padding. Regression: the option
+  /// sent the grid to the text-table layout, which spaced the pictures
+  /// twelve points apart horizontally and barely at all vertically.
+  #[test]
+  fn frame_style_keeps_framed_picture_grid_padding() {
+    let svg = interpret(
+      r#"g = Graphics[Disk[], ImageSize -> {100, 100}]; ExportString[Grid[{{g, g}, {g, g}}, Frame -> All, FrameStyle -> Gray], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"218\" height=\"218\""),
+      "{svg}"
+    );
+    for (x, y) in [(4, 4), (114, 4), (4, 114), (114, 114)] {
+      assert!(
+        svg.contains(&format!(
+          "<svg x=\"{x}\" y=\"{y}\" width=\"100\" height=\"100\""
+        )),
+        "{svg}"
+      );
+    }
+    assert!(
+      svg.contains(
+        "x1=\"109.00\" y1=\"0.00\" x2=\"109.00\" y2=\"218.00\" stroke=\"rgb(128,128,128)\""
+      ),
+      "{svg}"
+    );
+    assert!(!svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+  }
+
+  /// A `Grid` of composite pictures (a `Column` of two icons per cell) with
+  /// a styled frame is laid out like the same grid with a plain frame.
+  #[test]
+  fn frame_style_grid_of_picture_columns_matches_plain_frame() {
+    let grid = |extra: &str| {
+      interpret(&format!(
+        r#"g = Graphics[Rectangle[], ImageSize -> 30]; ExportString[Grid[{{{{Column[{{g, g}}, Spacings -> 0], Column[{{g, g}}, Spacings -> 0]}}}}, Frame -> All{extra}], "SVG"]"#
+      ))
+      .unwrap()
+    };
+    let plain = grid("");
+    let styled = grid(", FrameStyle -> Red");
+    assert!(styled.contains("stroke=\"rgb(255,0,0)\""), "{styled}");
+    assert_eq!(
+      styled.replace("rgb(255,0,0)", "rgb(0,0,0)"),
+      plain,
+      "styled frame changed the layout"
+    );
+  }
+
   /// A framed `Grid` of pictures pads every cell by 4.5 pixels on each
   /// side, with the dividers in the middle of the gaps. Regression: the
   /// frame lines ran along the pictures' edges.

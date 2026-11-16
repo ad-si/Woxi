@@ -29142,6 +29142,9 @@ struct LayoutOptions {
   /// centered. A `Column` sets its items at the left unless an
   /// `Item[…, Alignment -> …]` says otherwise.
   row_align: Vec<f64>,
+  /// `FrameStyle -> style`: the color of the frame lines and dividers
+  /// (black by default).
+  frame_color: Option<Color>,
 }
 
 /// Parse Spacings and ImageSize options from rule arguments.
@@ -29197,6 +29200,11 @@ fn parse_layout_options(args: &[Expr]) -> LayoutOptions {
         }
         Expr::Identifier(name) if name == "Background" => {
           opts.background = parse_background(replacement);
+        }
+        Expr::Identifier(name) if name == "FrameStyle" => {
+          opts.frame_color =
+            crate::functions::plot::parse_style_directives(replacement)
+              .and_then(|st| st.color);
         }
         Expr::Identifier(name) if name == "AspectRatio" => {
           opts.aspect_full =
@@ -29320,6 +29328,7 @@ fn compute_grid_layout(
         aspect_full: opts.aspect_full,
         outer_margin: opts.outer_margin,
         row_align: opts.row_align.clone(),
+        frame_color: opts.frame_color,
       };
       &opts_owned
     } else {
@@ -29673,6 +29682,7 @@ fn combine_svgs_grid(
       &layout,
       &row_y_starts,
       opts.frame == FrameSetting::All,
+      opts.frame_color.as_ref(),
     );
   }
 
@@ -29688,10 +29698,11 @@ fn draw_frame_lines(
   layout: &GridLayout,
   row_y_starts: &[f64],
   all: bool,
+  color: Option<&Color>,
 ) {
   let total_w = layout.total_width;
   let total_h = layout.total_height;
-  let stroke = "rgb(0,0,0)";
+  let stroke = color.map_or_else(|| "rgb(0,0,0)".to_string(), |c| c.to_svg_rgb());
   let sw = 1.0_f64;
 
   let line = |out: &mut String, x1: f64, y1: f64, x2: f64, y2: f64| {
@@ -29742,6 +29753,7 @@ fn default_layout_options() -> LayoutOptions {
     aspect_full: false,
     outer_margin: false,
     row_align: Vec::new(),
+    frame_color: None,
   }
 }
 
