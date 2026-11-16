@@ -6545,17 +6545,18 @@ mod plot3d {
         let svg = export_svg(code);
         let texts: Vec<&str> =
           svg.lines().filter(|l| l.starts_with("<text")).collect();
-        let face = |l: &&str| {
+        let face = |l: &str| {
           (
             l.contains("font-style=\"italic\""),
             l.contains("font-weight=\"bold\""),
           )
         };
         let is_label =
-          |l: &&str| l.ends_with(">x</text>") || l.ends_with(">y</text>");
-        let labels: Vec<_> = texts.iter().filter(is_label).map(face).collect();
+          |l: &str| l.ends_with(">x</text>") || l.ends_with(">y</text>");
+        let labels: Vec<_> =
+          texts.iter().filter(|l| is_label(l)).map(|l| face(l)).collect();
         let ticks: Vec<_> =
-          texts.iter().filter(|l| !is_label(l)).map(face).collect();
+          texts.iter().filter(|l| !is_label(l)).map(|l| face(l)).collect();
         assert!(labels.len() == 2 && !ticks.is_empty(), "{svg}");
         (labels, ticks)
       };
