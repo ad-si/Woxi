@@ -5890,7 +5890,17 @@ mod plot3d {
   /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
   #[test]
   fn touching_cuboids_drop_their_shared_faces() {
-    let polys = |code: &str| export_svg(code).matches("<polygon").count();
+    // Triangles drawn, whether alone or as the pieces of one merged
+    // translucent face `<path>`.
+    let polys = |code: &str| {
+      let svg = export_svg(code);
+      svg.matches("<polygon").count()
+        + svg
+          .lines()
+          .filter(|l| l.starts_with("<path d=\"M"))
+          .map(|l| l.matches(" Z").count())
+          .sum::<usize>()
+    };
     let apart = polys(
       "Graphics3D[{EdgeForm[], Cuboid[{0,0,0},{1,1,1}], Cuboid[{3,0,0},{4,1,1}]}]",
     );
