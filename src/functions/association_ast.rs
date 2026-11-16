@@ -397,6 +397,37 @@ pub fn lookup_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       Ok(lookup_key(items, &args[1], args.get(2)))
     }
+    // A list made only of rules (`{a -> 1, b :> x}`, or `{}`) is one lookup
+    // table, like an association: the first rule for a key wins, as with
+    // `Replace`.
+    Expr::List(items)
+      if items.iter().all(|it| {
+        matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+      }) =>
+    {
+      let pairs: Vec<(Expr, Expr)> = items
+        .iter()
+        .filter_map(|it| match it {
+          Expr::Rule {
+            pattern,
+            replacement,
+          }
+          | Expr::RuleDelayed {
+            pattern,
+            replacement,
+          } => Some((*pattern.clone(), *replacement.clone())),
+          _ => None,
+        })
+        .collect();
+      if let Expr::List(keys) = &args[1] {
+        let results: Vec<Expr> = keys
+          .iter()
+          .map(|key| lookup_key(&pairs, key, args.get(2)))
+          .collect();
+        return Ok(Expr::List(results.into()));
+      }
+      Ok(lookup_key(&pairs, &args[1], args.get(2)))
+    }
     Expr::List(items) => {
       // Thread Lookup over a list of associations
       let results: Result<Vec<Expr>, InterpreterError> = items

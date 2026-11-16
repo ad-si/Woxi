@@ -2127,6 +2127,26 @@ pub fn replace_part_heads_ast(
     }
   };
 
+  // The empty position `{}` (alone or among a rule's position list) is the
+  // whole expression, as `Position` reports it: the first such rule replaces
+  // everything.
+  if let Some((_, rhs, delayed)) = rules.iter().find(|(lhs, _, _)| match lhs {
+    Expr::List(items) => {
+      items.is_empty()
+        || (items.iter().all(|i| matches!(i, Expr::List(_)))
+          && items
+            .iter()
+            .any(|i| matches!(i, Expr::List(p) if p.is_empty())))
+    }
+    _ => false,
+  }) {
+    return if *delayed {
+      crate::evaluator::evaluate_expr_to_expr(rhs)
+    } else {
+      Ok(rhs.clone())
+    };
+  }
+
   // A SparseArray's positions are those of the array it stands for:
   // densify, replace, and re-sparsify against the same background.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "SparseArray")

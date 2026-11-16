@@ -50596,6 +50596,26 @@ fn explicit_plot_range_clips_lattice_in_wide_image_on_both_sides() {
 }
 
 #[test]
+fn plot_with_explicit_image_padding_clips_labels_at_its_edge() {
+  // Regression: a frame label below a bottom `ImagePadding` too small to
+  // hold it showed under the picture once the plot sat in a `Labeled`
+  // (whose cells let content overflow). Wolfram cuts it off at the image
+  // boundary, also when nested.
+  let code = "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}, \
+              ImagePadding -> {{50, 20}, {20, 20}}, ImageSize -> 300]";
+  let svg = export_svg(code);
+  assert!(svg.contains("<clipPath id=\"imageClip_"), "{svg}");
+  assert!(svg.contains("clip-path=\"url(#imageClip_"), "{svg}");
+  let labeled = export_svg(&format!("Labeled[{code}, \"caption\"]"));
+  assert!(labeled.contains("clip-path=\"url(#imageClip_"), "{labeled}");
+  // Automatic padding grows to hold the labels and clips nothing.
+  let auto = export_svg(
+    "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}]",
+  );
+  assert!(!auto.contains("imageClip_"), "{auto}");
+}
+
+#[test]
 fn lone_text_label_is_not_clipped_to_its_picture() {
   // Regression: a `Text` label wider than its picture (its extent does not
   // count toward an automatic plot range) was cut off at the picture's

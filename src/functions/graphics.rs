@@ -39171,6 +39171,139 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
   })
 }
 
+/// The visible `Locator` controls of a `Manipulate`, as `(variable,
+/// appearance)` pairs: every spec declaring `Locator` (bare or as
+/// `ControlType -> Locator`) without a custom `LocatorPane` control function,
+/// with the InputForm of its `Appearance -> …` graphic when it gives one.
+/// Wolfram draws these points over the first graphic the body displays; an
+/// `Appearance -> None` Locator draws nothing and is left out. Specs are
+/// found at top level and inside layout wrappers (`Control`, `Row`,
+/// `Column`, …). A body that places Locators itself (`LocatorPane`,
+/// `Locator[…]`) already draws them, so it yields none.
+pub fn manipulate_locator_markers(
+  expr: &Expr,
+) -> Vec<(String, Option<String>)> {
+  fn collect(spec: &Expr, out: &mut Vec<(String, Option<String>)>) {
+    match spec {
+      Expr::List(items) if !items.is_empty() => {
+        if let Some(var) = manipulate_spec_var_name(items) {
+          if spec_marks_locator(items)
+            && custom_locator_pane_options(items).is_none()
+          {
+            let appearance = items.iter().find_map(|it| match it {
+              Expr::Rule {
+                pattern,
+                replacement,
+              }
+              | Expr::RuleDelayed {
+                pattern,
+                replacement,
+              } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance") => {
+                Some(replacement.as_ref())
+              }
+              _ => None,
+            });
+            match appearance {
+              Some(Expr::Identifier(s)) if s == "None" => {}
+              Some(Expr::Identifier(s)) if s == "Automatic" => {
+                out.push((var, None));
+              }
+              // `Appearance -> "Labeled"` and other style names configure
+              // a slider, not a marker graphic.
+              Some(Expr::String(_)) | None => out.push((var, None)),
+              Some(app) => {
+                out.push((var, Some(crate::syntax::expr_to_input_form(app))))
+              }
+            }
+          }
+        } else {
+          for item in items.iter() {
+            collect(item, out);
+          }
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(
+          name.as_str(),
+          "Control" | "Row" | "Column" | "Grid" | "Panel" | "Framed"
+        ) =>
+      {
+        for arg in args.iter() {
+          collect(arg, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  fn places_locators(expr: &Expr) -> bool {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        matches!(name.as_str(), "Locator" | "LocatorPane")
+          || args.iter().any(places_locators)
+      }
+      Expr::List(items) => items.iter().any(places_locators),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => places_locators(pattern) || places_locators(replacement),
+      Expr::CompoundExpr(items) => items.iter().any(places_locators),
+      _ => false,
+    }
+  }
+  let Expr::FunctionCall { name, args } = peel_manipulate_wrapper(expr) else {
+    return Vec::new();
+  };
+  if name != "Manipulate" || args.len() < 2 || places_locators(&args[0]) {
+    return Vec::new();
+  }
+  let mut out = Vec::new();
+  for spec in args[1..].iter() {
+    collect(spec, &mut out);
+  }
+  out
+}
+
+/// Wrap a Manipulate body so the given Locator controls (see
+/// [`manipulate_locator_markers`]) show as markers on the first 2D graphic
+/// the body returns, the way Wolfram places a Manipulate's Locators. The
+/// markers join the graphic's `Epilog`, so they neither move its plot range
+/// nor hide its own epilog; a result with no graphic is returned unchanged.
+/// Each variable may hold one point or a list of points.
+pub fn locator_marker_body(
+  body: &str,
+  markers: &[(String, Option<String>)],
+) -> String {
+  if markers.is_empty() {
+    return body.to_string();
+  }
+  let points = markers
+    .iter()
+    .map(|(var, appearance)| {
+      let locator = match appearance {
+        Some(app) => format!("Locator[#, {app}] &"),
+        None => "Locator".to_string(),
+      };
+      format!(
+        "Map[{locator}, Cases[{{{var}}}, {{_?NumericQ, _?NumericQ}}, {{1, 2}}]]"
+      )
+    })
+    .collect::<Vec<_>>()
+    .join(", ");
+  format!(
+    "Module[{{woxiRes = ({body}), woxiPos, woxiGraphic}}, \
+     woxiPos = FirstPosition[woxiRes, _Graphics, None, Heads -> False]; \
+     If[woxiPos === None, woxiRes, \
+     woxiGraphic = Extract[woxiRes, woxiPos]; \
+     ReplacePart[woxiRes, woxiPos -> Show[woxiGraphic, Epilog -> \
+     Join[Flatten[{{Lookup[Options[woxiGraphic, Epilog], Epilog, {{}}]}}], \
+     {points}]]]]]"
+  )
+}
+
 /// The arguments of the `LocatorPane[Dynamic[var], graphic, …]` a spec's
 /// custom control function draws for the spec's own variable — `{{pts, init},
 /// {xmin, ymin}, {xmax, ymax}, (LocatorPane[Dynamic[pts], …] &)}`. Such a

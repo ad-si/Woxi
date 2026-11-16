@@ -946,6 +946,10 @@ pub struct ManipulateState {
   ///
   /// [`check_render`]: Self::check_render
   last_render: Option<Result<woxi::InterpretResult, String>>,
+  /// The visible `Locator` controls, `(variable, appearance)`, drawn as
+  /// markers over the first graphic the body returns (see
+  /// [`woxi::functions::graphics::manipulate_locator_markers`]).
+  locator_markers: Vec<(String, Option<String>)>,
 }
 
 thread_local! {
@@ -1116,6 +1120,9 @@ impl ManipulateState {
       reeval_applied: 0,
       reeval_scheduled: false,
       last_render: None,
+      locator_markers: woxi::functions::graphics::manipulate_locator_markers(
+        expr,
+      ),
     };
     // Run the `Initialization :> …` code ONCE, before the first render.
     // Re-running it on every re-evaluation would reset any state the body
@@ -1997,6 +2004,10 @@ impl ManipulateState {
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
     let content_width = self.content_width;
+    let marked_code = woxi::functions::graphics::locator_marker_body(
+      &code,
+      &self.locator_markers,
+    );
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
@@ -2021,7 +2032,8 @@ impl ManipulateState {
       trace_evaluation(&woxi::functions::graphics::manipulate_block_code(
         &code, &bindings,
       ));
-      let mut render = woxi::interpret_with_stdout(&code);
+      // The Locator controls show as markers on the body's graphic.
+      let mut render = woxi::interpret_with_stdout(&marked_code);
       let raw_render = match &render {
         Ok(r) => Ok(r.clone()),
         Err(e) => Err(e.to_string()),
