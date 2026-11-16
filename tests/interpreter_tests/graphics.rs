@@ -5536,6 +5536,27 @@ mod graphics {
       );
       assert_eq!(with, without);
     }
+
+    /// Matching Wolfram Language, the first occurrence of a repeated
+    /// option wins in `ListPlot`/`ListLinePlot`, as it does in `Plot`.
+    #[test]
+    fn first_occurrence_of_repeated_option_wins() {
+      for head in ["ListPlot", "ListLinePlot"] {
+        let first = export_svg(&format!(
+          "{head}[{{1, 3, 2}}, PlotRange -> All, \
+           PlotRange -> {{{{1, 20}}, {{1, 9}}}}]"
+        ));
+        let only =
+          export_svg(&format!("{head}[{{1, 3, 2}}, PlotRange -> All]"));
+        assert_eq!(first, only, "{head}: the first PlotRange must win");
+
+        let styled = export_svg(&format!(
+          "{head}[{{1, 3, 2}}, PlotStyle -> Red, PlotStyle -> Blue]"
+        ));
+        assert!(styled.contains("#FF0000"), "{head}: first PlotStyle lost");
+        assert!(!styled.contains("#0000FF"), "{head}: second PlotStyle used");
+      }
+    }
   }
 }
 
@@ -8216,6 +8237,24 @@ mod plot3d {
         !svg.contains("SpanFrom"),
         "SpanFromLeft must not be drawn as text:\n{svg}"
       );
+    }
+
+    // Regression: a `TraditionalForm[Grid[…]]` cell of an outer `Grid`
+    // keeps its `SpanFromLeft` markers as merges rather than typesetting
+    // each one as the literal word.
+    #[test]
+    fn traditional_form_nested_grid_keeps_span_markers() {
+      for inner in ["TraditionalForm", "Text[TraditionalForm"] {
+        let close = if inner.starts_with("Text") { "]]" } else { "]" };
+        let svg = export_svg(&format!(
+          "Grid[{{{{{inner}[Grid[{{{{a, \"=\", {{1, 2}}, SpanFromLeft, \
+           SpanFromLeft}}, {{b, c, d, e, f}}}}]{close}}}}}]"
+        ));
+        assert!(
+          !svg.contains("SpanFrom"),
+          "{inner}: SpanFromLeft must not be drawn as text:\n{svg}"
+        );
+      }
     }
 
     // Regression: a `Grid` with a picture in one cell still honors its

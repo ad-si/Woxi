@@ -1499,6 +1499,8 @@ fn has_date_stamps(data: &Expr) -> bool {
 }
 
 /// Parse common plot options from args[1..].
+/// Matching Wolfram Language, the first occurrence of a repeated option
+/// wins (`PlotRange -> All, …, PlotRange -> {{1, 20}, {1, 9}}` uses `All`).
 fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   let mut out = ParsedOptions::default();
   out.opts.date_axis = DATE_AXIS.with(std::cell::Cell::get);
@@ -1507,10 +1509,14 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   opts.simple_ticks = simple_ticks;
   // Joined data points are joined as given, also across a jump.
   opts.join_across_jumps = true;
+  let mut seen = std::collections::HashSet::new();
   for opt in &options {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {
+      if !seen.insert(name.to_string()) {
+        continue;
+      }
       let replacement = &*replacement;
       match name {
         "ScalingFunctions" if out.scaling.is_none() => {
