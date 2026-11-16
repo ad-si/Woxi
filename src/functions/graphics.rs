@@ -31910,6 +31910,40 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   current
 }
 
+/// A one-argument `Text[…]` around a string or a `Row`/`Column`/`Grid`
+/// sets its text in the proportional text face. Returns what it wraps and
+/// the `FontFamily` directive that face is, for the caller to apply (or
+/// push into a layout's items).
+pub(crate) fn text_layout_face(expr: &Expr) -> Option<(&Expr, Expr)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Text" || args.len() != 1 {
+    return None;
+  }
+  let laid_out = match &args[0] {
+    Expr::String(_) => true,
+    Expr::FunctionCall {
+      name: inner,
+      args: items,
+    } => {
+      matches!(inner.as_str(), "Row" | "Column" | "Grid")
+        && matches!(items.first(), Some(Expr::List(_)))
+    }
+    _ => false,
+  };
+  if !laid_out {
+    return None;
+  }
+  Some((
+    &args[0],
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+      replacement: Box::new(Expr::String("sans-serif".to_string())),
+    },
+  ))
+}
+
 /// Distribute a `Style[…]`'s directives over the items of the layout it
 /// wraps, so `Style[Row[{a, b}], Bold]` becomes `Row[{Style[a, Bold],
 /// Style[b, Bold]}]`. Only the item list is rewritten; a separator or
@@ -31922,6 +31956,14 @@ pub(crate) fn style_pushed_into_layout(
 ) -> Option<Expr> {
   if directives.is_empty() {
     return None;
+  }
+  // `Style[Text[Row[…]], 16]`: the `Text` sets its layout in the
+  // proportional text face, nearer the items than the outer directives.
+  if let Some(face) = text_layout_face(inner) {
+    let (layout, family) = face;
+    let mut all: Vec<Expr> = directives.to_vec();
+    all.push(family);
+    return style_pushed_into_layout(layout, &all);
   }
   let Expr::FunctionCall { name, args } = inner else {
     return None;
@@ -32360,6 +32402,16 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       }
       "Row" => return row_to_svg(&args),
       "Column" => return column_to_svg(&args),
+      // `Text[Row[…]]` sets the layout's items in the text face.
+      "Text"
+        if text_layout_face(expr).is_some_and(|(layout, family)| {
+          style_pushed_into_layout(layout, &[family]).is_some()
+        }) =>
+      {
+        let (layout, family) = text_layout_face(expr)?;
+        let styled = style_pushed_into_layout(layout, &[family])?;
+        return nested_layout_svg(&styled);
+      }
       // An `Underscript`/`Overscript` over or under a picture or layout
       // stacks the two, centered — a caption under a plot. A text-only pair
       // stays an inline accent (`accent_text`).
