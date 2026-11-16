@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- A `Grid` of pictures with `FrameStyle` keeps the framed picture layout and
+    draws its frame lines in that style, instead of spacing the pictures like
+    a text table.
 
 # 2026-11-08 - 0.4.0
 
