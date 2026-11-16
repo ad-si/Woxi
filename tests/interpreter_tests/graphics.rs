@@ -27532,13 +27532,20 @@ mod graphics_list {
   /// Regression: a cell carrying its own numeric `ImageSize` kept that
   /// absolute size while its neighbors were fitted to the shared column
   /// width, so a padded `GraphicsGrid` showed one oversized picture among
-  /// tiny cells. The cell's size only contributes its aspect ratio.
+  /// tiny cells. The cell's size only contributes its aspect ratio — also
+  /// for a plot cell and for a width-only `ImageSize -> {w}`, which used to
+  /// keep a `Plot[…, ImageSize -> {160}]` panel small beside full-width
+  /// neighbors.
   #[test]
   fn graphics_grid_cell_image_size_is_fitted_to_the_column() {
     clear_state();
     for cell in [
       "Graphics[Rectangle[], ImageSize -> {300, 200}]",
       "Graphics[Rectangle[], ImageSize -> 300]",
+      "Graphics[Rectangle[], ImageSize -> {300}]",
+      "Plot[Sin[t], {t, 0, 1}, ImageSize -> {40}]",
+      "Plot[Sin[t], {t, 0, 1}, ImageSize -> 300]",
+      "Plot[Sin[t], {t, 0, 1}, ImageSize -> {40, 25}]",
     ] {
       let code = format!(
         "GraphicsGrid[{{{{{cell}, Graphics[{{White, Disk[]}}]}}}}, \
