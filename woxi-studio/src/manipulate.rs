@@ -7023,7 +7023,10 @@ mod tooltip_button_in_body_tests {
       .expect("body renders")
       .graphics
       .expect("body draws a picture");
-    assert!(!svg.contains("Nothing"), "no literal Nothing in the picture");
+    assert!(
+      !svg.contains("Nothing"),
+      "no literal Nothing in the picture"
+    );
     assert_eq!(state.button_regions.len(), 2, "both buttons are pressable");
 
     let count = |state: &ManipulateState| {

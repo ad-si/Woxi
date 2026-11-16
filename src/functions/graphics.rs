@@ -6633,7 +6633,10 @@ fn button_plate_size_styled(
   match font {
     Some(f) if f.font_size > 14.0 => {
       let scale = f.font_size / 14.0;
-      (w.max(label.chars().count() as f64 * 8.4 * scale + 24.0), h * scale)
+      (
+        w.max(label.chars().count() as f64 * 8.4 * scale + 24.0),
+        h * scale,
+      )
     }
     _ => (w, h),
   }

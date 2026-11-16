@@ -944,10 +944,13 @@ fn styled_button_label_in_grid_keeps_its_style() {
   .unwrap();
   assert!(svg.contains("font-size=\"30\""), "size lost: {svg}");
   assert!(svg.contains("font-weight=\"bold\""), "weight lost: {svg}");
-  assert!(!svg.contains("fill=\"#000000\" text-anchor"), "color lost: {svg}");
+  assert!(
+    !svg.contains("fill=\"#000000\" text-anchor"),
+    "color lost: {svg}"
+  );
 
   // A plain label still draws as the default 14-point text.
-  let svg = interpret(r#"ExportString[Grid[{{Button["go", x = 1]}}], "SVG"]"#)
-    .unwrap();
+  let svg =
+    interpret(r#"ExportString[Grid[{{Button["go", x = 1]}}], "SVG"]"#).unwrap();
   assert!(svg.contains("font-size=\"14\""), "{svg}");
 }
