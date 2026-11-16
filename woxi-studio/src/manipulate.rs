@@ -759,6 +759,26 @@ fn event_handler_statement(body: &str) -> Option<String> {
   }
 }
 
+/// Whether `expr` holds a `Dynamic[…]` anywhere.
+fn contains_dynamic(expr: &woxi::syntax::Expr) -> bool {
+  use woxi::syntax::Expr;
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Dynamic" || args.iter().any(contains_dynamic)
+    }
+    Expr::List(items) => items.iter().any(contains_dynamic),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => contains_dynamic(pattern) || contains_dynamic(replacement),
+    _ => false,
+  }
+}
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -946,6 +966,10 @@ pub struct ManipulateState {
   ///
   /// [`check_render`]: Self::check_render
   last_render: Option<Result<woxi::InterpretResult, String>>,
+  /// The value the body returned on its last full run, kept so a change
+  /// that does not re-run the body can still refresh the `Dynamic[…]`
+  /// parts of it (see `refresh_inner_dynamics`).
+  body_value: Option<woxi::syntax::Expr>,
 }
 
 thread_local! {
@@ -1116,6 +1140,7 @@ impl ManipulateState {
       reeval_applied: 0,
       reeval_scheduled: false,
       last_render: None,
+      body_value: None,
     };
     // Run the `Initialization :> …` code ONCE, before the first render.
     // Re-running it on every re-evaluation would reset any state the body
@@ -1736,6 +1761,7 @@ impl ManipulateState {
   /// [`run_scheduled_reeval`]: Self::run_scheduled_reeval
   pub fn request_reeval(&mut self, ctrl_idx: usize) -> bool {
     if !self.control_is_tracked(ctrl_idx) {
+      self.refresh_inner_dynamics();
       return false;
     }
     // A change to any control *other* than a promoted `LocatorPane`
@@ -1757,6 +1783,27 @@ impl ManipulateState {
       self.reeval_scheduled = true;
       true
     }
+  }
+
+  /// Refresh the `Dynamic[…]` parts of the last rendering after a change
+  /// that does not re-run the body (a control left out of
+  /// `TrackedSymbols`). The front end keeps the body's value — a question
+  /// it drew at random stays on screen — but every `Dynamic` inside that
+  /// value still follows the variables it reads, e.g. a feedback line
+  /// comparing the picked answer with the question's solution.
+  fn refresh_inner_dynamics(&mut self) {
+    let Some(value) = self.body_value.take() else {
+      return;
+    };
+    if contains_dynamic(&value) {
+      let code = woxi::syntax::expr_to_source_form(&value);
+      let body = std::mem::replace(&mut self.body, code);
+      self.reevaluate();
+      self.body = body;
+    }
+    // Later refreshes start from the body's own value again, with its
+    // `Dynamic`s still in place.
+    self.body_value = Some(value);
   }
 
   /// Run a throttled re-evaluation when the debounce timer fires. Clears the
@@ -2178,6 +2225,7 @@ impl ManipulateState {
         button_labels,
       )
     });
+    self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
@@ -2886,6 +2934,45 @@ fn holds_typeset_layout(expr: &woxi::syntax::Expr) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+  /// A control left out of `TrackedSymbols` does not re-run the body, but a
+  /// `Dynamic[…]` inside the body that reads it still refreshes: picking an
+  /// answer updates the feedback line while the (random) question drawn by
+  /// the body stays as it is.
+  #[test]
+  fn untracked_control_refreshes_inner_dynamic_only() {
+    woxi::interpret("untrackedRuns = 0").unwrap();
+    let code = r#"Manipulate[
+      untrackedRuns++;
+      Column[{k, Dynamic[Which[an == 0, "pick", an == k, "match", True, "differ"]]}],
+      {k, 2, ControlType -> None},
+      Control[{{an, 0, "answer"}, Range[3], RadioButtonBar}],
+      TrackedSymbols :> {k}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let runs = || woxi::interpret("untrackedRuns").unwrap();
+    let runs_before = runs();
+    assert!(state.current_svg().unwrap().contains("pick"));
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "an")
+      .expect("answer control");
+    for (choice, shown) in [("2", "match"), ("3", "differ")] {
+      assert!(state.select_discrete(idx, choice));
+      state.apply_tracking(idx);
+      if state.request_reeval(idx) {
+        state.run_scheduled_reeval();
+      }
+      let svg = state.current_svg().unwrap();
+      assert!(
+        svg.contains(shown),
+        "expected {shown:?} after {choice}: {svg}"
+      );
+    }
+    assert_eq!(runs(), runs_before, "the body itself must not re-run");
+  }
 
   /// Dragging a step-less slider with whole-number bounds binds a machine
   /// real, as in Wolfram (a caption shows `-10.`, not `-10`), while the
