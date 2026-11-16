@@ -7628,10 +7628,13 @@ pub fn fit_to_content_height(
   let mut fitted_args = args.clone();
   fitted_args.push(Expr::Rule {
     pattern: Box::new(Expr::Identifier("ImageSize".to_string())),
-    replacement: Box::new(Expr::List(vec![
-      Expr::Identifier("Automatic".to_string()),
-      Expr::Real(available),
-    ].into())),
+    replacement: Box::new(Expr::List(
+      vec![
+        Expr::Identifier("Automatic".to_string()),
+        Expr::Real(available),
+      ]
+      .into(),
+    )),
   });
   let fitted = Expr::FunctionCall {
     name: name.clone(),

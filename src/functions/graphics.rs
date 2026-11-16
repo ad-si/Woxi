@@ -39049,8 +39049,9 @@ fn manipulate_content_width(setting: &Expr) -> Option<f64> {
 fn manipulate_content_height(setting: &Expr) -> Option<f64> {
   let value = evaluate_expr_to_expr(setting).ok()?;
   match &value {
-    Expr::List(items) if items.len() == 2 => try_eval_to_f64(&items[1])
-      .filter(|h| h.is_finite() && *h > 0.0),
+    Expr::List(items) if items.len() == 2 => {
+      try_eval_to_f64(&items[1]).filter(|h| h.is_finite() && *h > 0.0)
+    }
     _ => None,
   }
 }
