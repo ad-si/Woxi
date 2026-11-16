@@ -4728,7 +4728,6 @@ pub(crate) fn plot_labels_svg(
   let label_pt = plot_padding::plot_label_font(opts);
   let title_pt = plot_padding::plot_title_font(opts);
   let font_size = label_pt * sf;
-  let pitch = line_pitch(label_pt) * sf;
   let lines_of = |t: &str| t.split('\n').count();
   let label_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
@@ -4766,15 +4765,17 @@ pub(crate) fn plot_labels_svg(
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
   let mut labels_svg = String::new();
+  // A `Style[label, size]` label is set at its own size, so its lines
+  // stand that much taller and further apart.
+  let pt_of =
+    |label: &str| plot_padding::markup_font_size(label).unwrap_or(label_pt);
   // The label's `xml:space` attribute (kept blank runs) and its content.
+  // Each line keeps the styling (`Style[…, Bold]`) that spans the break.
   let text_svg = |label: &str, x: f64| {
-    let markup = stacked_lines_svg(
-      &crate::functions::graphics::box_string_to_svg_scaled(
-        label,
-        RESOLUTION_SCALE as f64,
-      ),
+    let markup = join_label_lines(
+      &label_markup_lines(label),
       x,
-      pitch,
+      line_pitch(pt_of(label)) * sf,
     );
     (preserve_blanks_attr(&markup), markup)
   };
@@ -4786,8 +4787,8 @@ pub(crate) fn plot_labels_svg(
     && !x_label.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
-    let base_y = bottom_label_top + ascent(label_pt) * sf;
-    bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
+    let base_y = bottom_label_top + ascent(pt_of(x_label)) * sf;
+    bottom_text_h = block_height(lines_of(x_label), pt_of(x_label)) * sf;
     let (keep, markup) = text_svg(x_label, cx);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
@@ -4826,8 +4827,8 @@ pub(crate) fn plot_labels_svg(
     let box_left = plot_x0
       - room_left
       - gap
-      - block_height(lines_of(y_label), label_pt) * sf;
-    let lx = box_left + ascent(label_pt) * sf;
+      - block_height(lines_of(y_label), pt_of(y_label)) * sf;
+    let lx = box_left + ascent(pt_of(y_label)) * sf;
     let (keep, markup) = text_svg(y_label, lx);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
@@ -4907,11 +4908,13 @@ pub(crate) fn plot_labels_svg(
     let top = margin_top
       - room_top
       - gap
-      - block_height(lines_of(top_label), label_pt) * sf;
+      - block_height(lines_of(top_label), pt_of(top_label)) * sf;
+    let top_pitch = line_pitch(pt_of(top_label)) * sf;
     // One element per line, so no renderer collapses the breaks.
-    for (i, line) in top_label.split('\n').enumerate() {
-      let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
-      let (keep, markup) = text_svg(line, cx);
+    for (i, line) in label_markup_lines(top_label).iter().enumerate() {
+      let ty = top + ascent(pt_of(top_label)) * sf + i as f64 * top_pitch;
+      let markup = crate::functions::graphics::tspan_line(line);
+      let keep = preserve_blanks_attr(markup);
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
@@ -4941,7 +4944,8 @@ pub(crate) fn plot_labels_svg(
     && !right_label.is_empty()
   {
     let cy = margin_top + plot_h / 2.0;
-    let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
+    let rx =
+      plot_x0 + plot_w + room_right + gap + ascent(pt_of(right_label)) * sf;
     let (keep, markup) = text_svg(right_label, rx);
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \

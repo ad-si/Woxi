@@ -56075,6 +56075,76 @@ mod field_plot_conformance {
     assert!(svg.contains("stroke-dasharray"), "{svg}");
   }
 
+  /// The stroke of each `<polyline>` contour line of a plot.
+  fn contour_line_strokes(svg: &str) -> Vec<String> {
+    svg
+      .split("<polyline")
+      .skip(1)
+      .filter_map(|s| {
+        let s = s.split('>').next()?;
+        Some(s.split("stroke=\"").nth(1)?.split('"').next()?.to_string())
+      })
+      .collect()
+  }
+
+  /// A list of per-contour styles styles a single function's contour
+  /// levels in turn, counted from the first level of an explicit
+  /// `Contours` list, also when that level lies outside the plotted range.
+  #[test]
+  fn contour_style_list_styles_each_level() {
+    // `x + y` spans -2..2, so of the levels -5..5 only -1, 0, 1 are drawn;
+    // the 6th style (the one of level 0) is the red one.
+    let svg = export_svg(
+      "ContourPlot[x + y, {x, -1, 1}, {y, -1, 1}, Contours -> Range[-5, 5, 1], \
+       ContourShading -> False, ContourStyle -> {{Black}, {Black}, {Black}, \
+       {Black}, {Blue}, {Red, Thick}, {Green}, {Black}, {Black}, {Black}, {Black}}]",
+    );
+    let strokes = contour_line_strokes(&svg);
+    assert!(strokes.contains(&"rgb(255,0,0)".to_string()), "{strokes:?}");
+    assert!(strokes.contains(&"rgb(0,0,255)".to_string()), "{strokes:?}");
+    assert!(strokes.contains(&"rgb(0,255,0)".to_string()), "{strokes:?}");
+    // Without an explicit list the styles cycle over the drawn levels.
+    let svg = export_svg(
+      "ContourPlot[x, {x, 0, 1}, {y, 0, 1}, Contours -> 4, \
+       ContourShading -> False, ContourStyle -> {{Red}, {Blue}}]",
+    );
+    let strokes = contour_line_strokes(&svg);
+    assert_eq!(
+      strokes,
+      [
+        "rgb(255,0,0)",
+        "rgb(0,0,255)",
+        "rgb(255,0,0)",
+        "rgb(0,0,255)"
+      ],
+    );
+  }
+
+  /// A multi-line `Style[…, {size, Bold}]` frame label keeps its style on
+  /// every line, and the picture makes room for all of its lines.
+  #[test]
+  fn styled_multi_line_frame_label_styles_every_line() {
+    let plot = |label: &str| {
+      export_svg(&format!(
+        "ContourPlot[x, {{x, 0, 1}}, {{y, 0, 1}}, FrameLabel -> {{{label}, \"y\"}}]"
+      ))
+    };
+    let svg = plot("Style[\"first\\nsecond\", {14, Bold}]");
+    let bold = "font-weight=\"bold\">";
+    assert!(svg.contains(&format!("{bold}first")), "{svg}");
+    assert!(svg.contains(&format!("{bold}second")), "{svg}");
+    let height = |svg: &str| -> f64 {
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap()
+    };
+    let one_line = plot("\"first\"");
+    assert!(height(&svg) > height(&one_line) + 20.0, "{svg}");
+  }
+
   #[test]
   fn density_plot_mesh_is_translucent_black() {
     let svg = export_svg(

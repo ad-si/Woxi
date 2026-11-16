@@ -795,6 +795,39 @@ impl DensityContourOptions {
     self.contour_stroke_for(self.contour_style.as_ref())
   }
 
+  /// The stroke of each of a single function's contour `levels`. A
+  /// per-contour `ContourStyle -> {s1, s2, …}` styles the contour levels in
+  /// turn (cycled), counting from the first level of an explicit
+  /// `Contours -> {v1, v2, …}` list even when it lies outside the plotted
+  /// value range, so a style stays tied to its level as the range changes.
+  fn level_strokes(&self, levels: &[f64]) -> Vec<(String, f64, String)> {
+    if self.contour_styles.is_empty() {
+      return vec![self.contour_stroke(); levels.len()];
+    }
+    let spec_levels: Option<Vec<f64>> = match &self.contours {
+      ContourSpec::Levels(ls) => {
+        let mut ls = ls.clone();
+        ls.sort_by(|a, b| {
+          a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        ls.dedup();
+        Some(ls)
+      }
+      _ => None,
+    };
+    levels
+      .iter()
+      .enumerate()
+      .map(|(i, level)| {
+        let index = spec_levels
+          .as_ref()
+          .and_then(|ls| ls.iter().position(|v| v == level))
+          .unwrap_or(i);
+        self.contour_stroke_for(self.style_for_contour(index))
+      })
+      .collect()
+  }
+
   /// `(color, weight, extra attributes)` of the mesh lines: `MeshStyle`, or
   /// Wolfram's default `Directive[Opacity[0.3], GrayLevel[0]]`.
   fn mesh_stroke(&self) -> (String, f64, String) {
@@ -886,8 +919,19 @@ const FRAME_TICK_LABEL_BOX: f64 = 11.171875;
 const FRAME_X_LABEL_ROOM: f64 = 15.171875;
 /// Distance from the frame to the baseline of an x tick label.
 const FRAME_X_LABEL_BASELINE: f64 = 12.05;
-/// Room a `FrameLabel` adds outside its edge (WL 15: 17.17 points).
-const FRAME_LABEL_ROOM: f64 = 17.171875;
+/// Room a `FrameLabel` adds outside its edge: the gap to the tick labels
+/// plus the height of its lines, at its own `Style[…, size]` if it has one
+/// (WL 15: 17.17 points for a one-line label at the default size).
+fn frame_label_room(label: &str) -> f64 {
+  use crate::functions::plot_padding::{
+    FRAME_LABEL_GAP, LABEL_FONT, block_height, markup_font_size,
+  };
+  if label.is_empty() {
+    return 0.0;
+  }
+  let size = markup_font_size(label).unwrap_or(LABEL_FONT);
+  FRAME_LABEL_GAP + block_height(label.split('\n').count(), size)
+}
 /// Lengths of the major and minor frame tick marks.
 const FRAME_MAJOR_TICK: f64 = 4.0;
 const FRAME_MINOR_TICK: f64 = 2.4;
@@ -991,18 +1035,10 @@ fn field_frame_layout(
   let mut bottom = if x_labels { FRAME_X_LABEL_ROOM } else { 1.5 };
   let mut top = 0.5;
   let mut right = 1.5;
-  if !labels.left.is_empty() {
-    left += FRAME_LABEL_ROOM;
-  }
-  if !labels.bottom.is_empty() {
-    bottom += FRAME_LABEL_ROOM;
-  }
-  if !labels.top.is_empty() {
-    top += FRAME_LABEL_ROOM;
-  }
-  if !labels.right.is_empty() {
-    right += FRAME_LABEL_ROOM;
-  }
+  left += frame_label_room(&labels.left);
+  bottom += frame_label_room(&labels.bottom);
+  top += frame_label_room(&labels.top);
+  right += frame_label_room(&labels.right);
   // A `PlotLabel` sits in its own strip above the padding (drawn at 14
   // points by `inject_field_plot_label`).
   let title = opts.plot_label.as_ref().map_or(0.0, |(lines, size)| {
@@ -2722,6 +2758,36 @@ fn mesh_function_value(
   }
 }
 
+/// Draw a single function's contour `levels`, each in its own
+/// [`DensityContourOptions::level_strokes`] style.
+fn render_contour_levels(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  area: &crate::functions::plot::PlotArea,
+  cell_w: f64,
+  cell_h: f64,
+  opts: &DensityContourOptions,
+) {
+  for (level, (color, weight, attrs)) in
+    levels.iter().zip(opts.level_strokes(levels))
+  {
+    render_contour_lines_styled(
+      svg,
+      grid,
+      std::slice::from_ref(level),
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+      &color,
+      weight,
+      &attrs,
+    );
+  }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_contour_lines_styled(
   svg: &mut String,
@@ -3596,20 +3662,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // mesh functions (the coordinates themselves by default), so the same
   // marching squares draw them.
   push_mesh_grids(&mut svg, &mesh_grids, &area, &opts);
-  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
-  render_contour_lines_styled(
-    &mut svg,
-    &grid,
-    &levels,
-    area.plot_x0,
-    area.plot_y0,
-    cell_w,
-    cell_h,
-    area.render_width,
-    &contour_color,
-    contour_weight,
-    &contour_attrs,
-  );
+  render_contour_levels(&mut svg, &grid, &levels, &area, cell_w, cell_h, &opts);
   if opts.boundary_style.is_some() {
     // The region's edge is the level curve halfway between the cells that
     // have a value and those left blank.
@@ -6968,20 +7021,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.band_coloring(),
     );
   }
-  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
-  render_contour_lines_styled(
-    &mut svg,
-    &grid,
-    &levels,
-    area.plot_x0,
-    area.plot_y0,
-    cell_w,
-    cell_h,
-    area.render_width,
-    &contour_color,
-    contour_weight,
-    &contour_attrs,
-  );
+  render_contour_levels(&mut svg, &grid, &levels, &area, cell_w, cell_h, &opts);
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   push_contour_annotations(
