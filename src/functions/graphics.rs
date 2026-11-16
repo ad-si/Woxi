@@ -29702,7 +29702,8 @@ fn draw_frame_lines(
 ) {
   let total_w = layout.total_width;
   let total_h = layout.total_height;
-  let stroke = color.map_or_else(|| "rgb(0,0,0)".to_string(), |c| c.to_svg_rgb());
+  let stroke =
+    color.map_or_else(|| "rgb(0,0,0)".to_string(), |c| c.to_svg_rgb());
   let sw = 1.0_f64;
 
   let line = |out: &mut String, x1: f64, y1: f64, x2: f64, y2: f64| {
