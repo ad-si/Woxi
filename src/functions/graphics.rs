@@ -24001,7 +24001,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
                  on: bool| {
         let span = dhi - dlo;
         let uspan = hi - lo;
-        if !on || !(span > 0.0) || !uspan.is_finite() {
+        if !on || span.is_nan() || span <= 0.0 || !uspan.is_finite() {
           return (lo, hi);
         }
         let below = ((dlo - rlo) / span).max(0.0);
@@ -39261,12 +39261,12 @@ pub fn manipulate_locator_markers(
               // a slider, not a marker graphic.
               Some(Expr::String(_)) | None => out.push((var, None)),
               Some(app) => {
-                out.push((var, Some(crate::syntax::expr_to_input_form(app))))
+                out.push((var, Some(crate::syntax::expr_to_input_form(app))));
               }
             }
           }
         } else {
-          for item in items.iter() {
+          for item in items {
             collect(item, out);
           }
         }
@@ -39277,7 +39277,7 @@ pub fn manipulate_locator_markers(
           "Control" | "Row" | "Column" | "Grid" | "Panel" | "Framed"
         ) =>
       {
-        for arg in args.iter() {
+        for arg in args {
           collect(arg, out);
         }
       }
@@ -39310,7 +39310,7 @@ pub fn manipulate_locator_markers(
     return Vec::new();
   }
   let mut out = Vec::new();
-  for spec in args[1..].iter() {
+  for spec in &args[1..] {
     collect(spec, &mut out);
   }
   out

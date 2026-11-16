@@ -1916,6 +1916,12 @@ impl ManipulateState {
     self.reevaluate_inner(true);
   }
 
+  /// The code the widget evaluates to draw `body`: the body itself, wrapped
+  /// so the visible `Locator` controls show as markers on its graphic.
+  pub fn display_code(&self, body: &str) -> String {
+    woxi::functions::graphics::locator_marker_body(body, &self.locator_markers)
+  }
+
   /// The SVG of the widget's current rendering, when it drew a graphic.
   pub fn current_svg(&self) -> Option<&str> {
     self
@@ -2004,10 +2010,7 @@ impl ManipulateState {
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
     let content_width = self.content_width;
-    let marked_code = woxi::functions::graphics::locator_marker_body(
-      &code,
-      &self.locator_markers,
-    );
+    let marked_code = self.display_code(&code);
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
