@@ -19100,6 +19100,70 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("stroke=\"#FEFEFE\""), "{svg}");
       assert!(!svg.contains("stroke=\"#3D99CC\""), "{svg}");
     }
+
+    /// The `ColorFunction` option is evaluated, so a computed choice that
+    /// yields `Automatic` keeps the default plot color instead of being
+    /// applied as a color function (which drew the curve black).
+    #[test]
+    fn plot_color_function_option_is_evaluated() {
+      for plot in [
+        "PolarPlot[Sin[t], {t, 0, 2 Pi}",
+        "Plot[Sin[t], {t, 0, 2 Pi}",
+        "ParametricPlot[{Cos[t], Sin[2 t]}, {t, 0, 2 Pi}",
+      ] {
+        assert_eq!(
+          interpret(&format!(
+            "First[Cases[{plot}, ColorFunction -> If[1 > 2, Hue, Automatic]], \
+             _RGBColor, Infinity]]"
+          ))
+          .unwrap(),
+          "RGBColor[0.24, 0.6, 0.8]",
+          "{plot}"
+        );
+      }
+      // A branch that picks a color function colors the curve with it.
+      assert_eq!(
+        interpret(
+          "First[Cases[PolarPlot[1, {t, 0, 2 Pi}, ColorFunctionScaling -> \
+           False, ColorFunction -> If[1 < 2, (Hue[#4/3] &), Automatic]], \
+           _RGBColor, Infinity]]"
+        )
+        .unwrap(),
+        "RGBColor[0., 1., 0.]"
+      );
+    }
+
+    /// `RegionFunction -> f` in PolarPlot is called as `f[x, y, θ, r]` and
+    /// draws only the stretches of the curve where it is True.
+    #[test]
+    fn polar_plot_region_function() {
+      let pts = |rf: &str| {
+        format!(
+          "Flatten[Cases[PolarPlot[Sin[t], {{t, 0, 2 Pi}}, \
+           RegionFunction -> {rf}], Line[p_] :> p, Infinity], 1]"
+        )
+      };
+      // `r` is the distance from the origin, so the retraced half of the
+      // circle (negative radii) is cut at the same radius as the first.
+      let max_r =
+        interpret(&format!("Max[Norm /@ {}]", pts("(#4 < 1/2 &)"))).unwrap();
+      let max_r: f64 = max_r.parse().unwrap();
+      assert!((max_r - 0.5).abs() < 1e-6, "{max_r}");
+      // The angle is the third argument: only the first quarter turn.
+      let x = interpret(&format!(
+        "MinMax[First /@ {}]",
+        pts("Function[{x, y, th}, th < Pi/2]")
+      ))
+      .unwrap();
+      assert!(x.starts_with("{0.") && x.contains(", 0.4999"), "{x}");
+      // `x` and `y` are the first two: the right half of the circle.
+      let x = interpret(&format!(
+        "Min[First /@ {}] >= 0",
+        pts("Function[{x, y}, x > 0]")
+      ))
+      .unwrap();
+      assert_eq!(x, "True");
+    }
   }
 
   mod charts {
