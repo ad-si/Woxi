@@ -25416,6 +25416,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(count(&default_mesh), count(&plain) + 8, "{default_mesh}");
     }
 
+    /// With a `RegionFunction`, a mesh function's `Mesh -> n` levels are
+    /// spread evenly over the values it takes *inside* the region: `x + y`
+    /// over the triangle
+    /// `x + y <= 1` gives lines at 1/4, 1/2 and 3/4, and `x y` there (at
+    /// most 1/4) gives 1/16, 1/8 and 3/16.
+    #[test]
+    fn region_function_mesh_levels_span_the_region() {
+      {
+        for (mf, level, expected) in [
+          ("(#1 + #2 &)", "Total", "{0.25, 0.5, 0.75}"),
+          ("Function[{a, b}, a + b]", "Total", "{0.25, 0.5, 0.75}"),
+          ("(#1 #2 &)", "Times @@ ", "{0.0625, 0.125, 0.1875}"),
+        ] {
+          let code = format!(
+            "g = DensityPlot[x y, {{x, 0, 1}}, {{y, 0, 1}}, Mesh -> 3, \
+             MeshFunctions -> {mf}, \
+             RegionFunction -> Function[{{x, y}}, x + y <= 1]]; \
+             Union[Cases[g, Line[pts_] :> Round[{level}[pts[[1]]], 0.0001], \
+             Infinity]]"
+          );
+          assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+        }
+      }
+    }
+
     /// A rendering that kept its symbolic form merges into a `Show` as
     /// those primitives, instead of being dropped for not being a plot.
     #[test]
@@ -26302,6 +26327,36 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "p = {{0.5, 0.5}}; LocatorPane[Dynamic[p], Dynamic@{body}]"
       ));
       assert!(svg.contains("<ellipse"), "dynamic body must draw: {svg}");
+    }
+
+    // A `LocatorPane` over `Show[plot, other]` keeps the `Epilog` that `Show`
+    // took over from its first plot: the locator marker is added to it, not
+    // drawn instead of it. An `Epilog` given to `Show` itself still replaces
+    // the plot's.
+    #[test]
+    fn a_locator_pane_over_show_keeps_the_first_plot_epilog() {
+      let plot = "ParametricPlot[{t, t^2}, {t, 0, 1}, \
+                  Epilog -> {Text[\"abc\", {0.5, 0.5}], Point[{0.2, 0.3}]}]";
+      for other in [
+        "Graphics[Disk[]]",
+        "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5]",
+      ] {
+        for body in [
+          format!("Show[{plot}, {other}]"),
+          format!("Dynamic[Show[{plot}, {other}]]"),
+        ] {
+          let svg = export_svg(&format!(
+            "p = {{0.2, 0.2}}; LocatorPane[Dynamic[p], {body}]"
+          ));
+          assert!(svg.contains(">abc<"), "{body} must keep its text: {svg}");
+          assert!(svg.contains("<circle"), "{body} must keep its point");
+        }
+      }
+      let svg = export_svg(&format!(
+        "p = {{0.2, 0.2}}; LocatorPane[Dynamic[p], Show[{plot}, \
+         Graphics[Disk[]], Epilog -> {{Text[\"xyz\", {{0.1, 0.1}}]}}]]"
+      ));
+      assert!(svg.contains(">xyz<") && !svg.contains(">abc<"));
     }
 
     // `Background -> color` on a graphics `Text` paints a panel behind the
