@@ -3802,7 +3802,7 @@ fn font_face_overrides(spec: &Expr) -> (Option<bool>, Option<bool>) {
     match e {
       Expr::List(items) => items.iter().for_each(|i| walk(i, face)),
       Expr::FunctionCall { name, args } if name == "Directive" => {
-        args.iter().for_each(|i| walk(i, face))
+        args.iter().for_each(|i| walk(i, face));
       }
       Expr::Identifier(n) => match n.as_str() {
         "Bold" => face.0 = Some(true),
@@ -3815,10 +3815,10 @@ fn font_face_overrides(spec: &Expr) -> (Option<bool>, Option<bool>) {
         replacement,
       } => match (pattern.as_ref(), replacement.as_ref()) {
         (Expr::Identifier(k), Expr::Identifier(v)) if k == "FontWeight" => {
-          face.0 = Some(v == "Bold")
+          face.0 = Some(v == "Bold");
         }
         (Expr::Identifier(k), Expr::Identifier(v)) if k == "FontSlant" => {
-          face.1 = Some(v == "Italic" || v == "Oblique")
+          face.1 = Some(v == "Italic" || v == "Oblique");
         }
         _ => {}
       },

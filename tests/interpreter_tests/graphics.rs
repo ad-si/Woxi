@@ -6553,10 +6553,16 @@ mod plot3d {
         };
         let is_label =
           |l: &str| l.ends_with(">x</text>") || l.ends_with(">y</text>");
-        let labels: Vec<_> =
-          texts.iter().filter(|l| is_label(l)).map(|l| face(l)).collect();
-        let ticks: Vec<_> =
-          texts.iter().filter(|l| !is_label(l)).map(|l| face(l)).collect();
+        let labels: Vec<_> = texts
+          .iter()
+          .filter(|l| is_label(l))
+          .map(|l| face(l))
+          .collect();
+        let ticks: Vec<_> = texts
+          .iter()
+          .filter(|l| !is_label(l))
+          .map(|l| face(l))
+          .collect();
         assert!(labels.len() == 2 && !ticks.is_empty(), "{svg}");
         (labels, ticks)
       };
