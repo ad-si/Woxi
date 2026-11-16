@@ -53,6 +53,10 @@ fn svg_root_size(svg: &str) -> Option<(f32, f32)> {
   Some((attr("width")?, attr("height")?))
 }
 
+/// A control's name with its freshly typeset caption: the styled runs and,
+/// for a caption drawn as a picture, its SVG.
+type ResolvedLabel = (String, (Vec<LabelRun>, Option<String>));
+
 /// Runtime state for a single control inside a Manipulate cell.
 #[derive(Debug, Clone)]
 pub enum ControlState {
@@ -2386,10 +2390,7 @@ impl ManipulateState {
   }
 
   /// Retitle each named control with its freshly typeset caption.
-  fn apply_dynamic_labels(
-    &mut self,
-    resolved: Vec<(String, (Vec<LabelRun>, Option<String>))>,
-  ) {
+  fn apply_dynamic_labels(&mut self, resolved: Vec<ResolvedLabel>) {
     for (name, (runs, svg)) in resolved {
       self.label_svgs.retain(|(n, _)| *n != name);
       if let Some(svg) = svg {

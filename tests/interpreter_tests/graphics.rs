@@ -26580,6 +26580,27 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // A pane whose body is a call of a user-defined function returning a
+    // plot (`LocatorPane[pt, picture[a]]`, or a symbol holding one) has no
+    // graphics call in sight to take the markers; they are drawn over the
+    // picture it evaluates to, keeping that picture's own `Epilog`.
+    #[test]
+    fn locator_pane_draws_its_locator_over_a_helper_plot() {
+      clear_state();
+      let svg = export_svg(
+        "helperPic[a_] := Plot[a Sin[x], {x, 0, Pi}, \
+           Epilog -> {Disk[{1, 0.2}, 0.05]}]; \
+         LocatorPane[{1.5, 0.3}, helperPic[1]]",
+      );
+      // The plot's own disk plus the locator's marker circle.
+      assert_eq!(svg.matches("<ellipse").count(), 2, "{svg}");
+      let svg = export_svg(
+        "storedPic = Plot[x, {x, 0, 1}]; \
+         LocatorPane[Dynamic[{0.5, 0.5}], storedPic]",
+      );
+      assert_eq!(svg.matches("<ellipse").count(), 1, "{svg}");
+    }
+
     // `Appearance -> {g1, g2, …}` gives one picture per locator, drawn about
     // the origin, so each marker is that picture moved onto its point. This
     // is how a Demonstration labels the vertices it lets you drag.
@@ -37814,6 +37835,62 @@ mod manipulate {
       ManipulateControl::Slider2D { name, .. } => assert_eq!(name, "pt"),
       other => panic!("expected a draggable 2D control, got {other:?}"),
     }
+  }
+
+  // A literal `Animate[…]` laid out inside the body (beside other content,
+  // under `Module`/`Column`) has its time hoisted into a running
+  // `ControlType -> Animator` control of the outer widget, and the inner
+  // body stays in its place, deferred by `Dynamic`. A hidden scalar that is
+  // one coordinate of a `LocatorPane` point, and that the body never
+  // reassigns, gets a slider along that axis of the pane.
+  #[test]
+  fn spec_body_nested_animate_and_locator_coordinate_become_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[Module[{}, Column[{\
+         LocatorPane[Dynamic[{k, Sin[k]}, (k = First[#]) &], \
+           Graphics[Point[{k, Sin[k]}], PlotRange -> {{0, 4}, {-1, 1}}]], \
+         Animate[Graphics[Disk[{Cos[t], 0}]], {{t, 0, \"time\"}, 0, 10}, \
+           AnimationRunning -> False]}]], \
+       {{k, 1.}, ControlType -> None}, {{a, 1}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(spec.animated);
+    assert!(!spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+    assert!(
+      spec.body_code.contains("Dynamic[Graphics[Disk["),
+      "{}",
+      spec.body_code
+    );
+    assert!(!spec.body_code.contains("Animate"), "{}", spec.body_code);
+    assert!(
+      !spec.state.iter().any(|(n, _)| n == "k"),
+      "{:?}",
+      spec.state
+    );
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "t", "k"]);
+    match &spec.controls[2] {
+      ManipulateControl::Continuous {
+        min, max, initial, ..
+      } => assert_eq!((*min, *max, *initial), (0.0, 4.0, 1.0)),
+      other => panic!("expected a slider for k, got {other:?}"),
+    }
+  }
+
+  // The body assigning the hidden coordinate itself keeps it hidden.
+  #[test]
+  fn spec_body_recomputed_locator_coordinate_stays_hidden() {
+    let expr = interpret_to_expr(
+      "Manipulate[k = 2 a; LocatorPane[Dynamic[{k, 0}], \
+         Graphics[Point[{k, 0}], PlotRange -> {{0, 4}, {-1, 1}}]], \
+       {{k, 1.}, ControlType -> None}, {{a, 1}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(!spec.controls.iter().any(|c| c.name() == "k"));
   }
 
   // A Demonstration that drags a *list* of points drawn by a body-local

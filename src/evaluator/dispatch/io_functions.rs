@@ -6543,18 +6543,20 @@ fn with_epilog(
 /// inert — they are never run at all. Anything else is returned
 /// unchanged, including a call whose head [`accepts_epilog_option`]
 /// does not recognize (appending an option to those could break their
-/// arity).
+/// arity). `reached` is set once some graphics call took the markers.
 fn inject_epilog_through_control_flow(
   expr: &Expr,
   markers: &Expr,
   inherited: Option<&Expr>,
+  reached: &mut bool,
 ) -> Expr {
   match expr {
     Expr::FunctionCall { name, args } if name == "If" && args.len() >= 2 => {
       let mut new_args = args.clone();
       for branch in new_args.iter_mut().skip(1) {
-        *branch =
-          inject_epilog_through_control_flow(branch, markers, inherited);
+        *branch = inject_epilog_through_control_flow(
+          branch, markers, inherited, reached,
+        );
       }
       Expr::FunctionCall {
         name: name.clone(),
@@ -6565,8 +6567,12 @@ fn inject_epilog_through_control_flow(
       let mut new_args = args.clone();
       let mut i = 1;
       while i < new_args.len() {
-        new_args[i] =
-          inject_epilog_through_control_flow(&new_args[i], markers, inherited);
+        new_args[i] = inject_epilog_through_control_flow(
+          &new_args[i],
+          markers,
+          inherited,
+          reached,
+        );
         i += 2;
       }
       Expr::FunctionCall {
@@ -6580,8 +6586,12 @@ fn inject_epilog_through_control_flow(
       let mut new_args = args.clone();
       let mut i = 2;
       while i < new_args.len() {
-        new_args[i] =
-          inject_epilog_through_control_flow(&new_args[i], markers, inherited);
+        new_args[i] = inject_epilog_through_control_flow(
+          &new_args[i],
+          markers,
+          inherited,
+          reached,
+        );
         i += 2;
       }
       Expr::FunctionCall {
@@ -6597,7 +6607,9 @@ fn inject_epilog_through_control_flow(
         name: name.clone(),
         args: vec![
           args[0].clone(),
-          inject_epilog_through_control_flow(&args[1], markers, inherited),
+          inject_epilog_through_control_flow(
+            &args[1], markers, inherited, reached,
+          ),
         ]
         .into(),
       }
@@ -6609,10 +6621,12 @@ fn inject_epilog_through_control_flow(
         &new_items[last],
         markers,
         inherited,
+        reached,
       );
       Expr::CompoundExpr(new_items)
     }
     Expr::FunctionCall { name, args } if accepts_epilog_option(name) => {
+      *reached = true;
       with_epilog(name, args, markers, inherited)
     }
     other => other.clone(),
@@ -6649,11 +6663,28 @@ fn locator_pane_graphic_via_epilog(
     return Some(body.clone());
   }
   let inherited = rendered_graphic_epilog(body);
+  let markers = Expr::List(markers.into());
+  let mut reached = false;
   let augmented = inject_epilog_through_control_flow(
     held,
-    &Expr::List(markers.into()),
+    &markers,
     inherited.as_ref(),
+    &mut reached,
   );
+  // No graphics call is in sight in the held body — it is a call of a
+  // user-defined function (`LocatorPane[…, graphic[β]]`) or a symbol
+  // holding a plot. Draw the markers over the picture it evaluated to,
+  // keeping that picture's own `Epilog`.
+  let augmented = if reached {
+    augmented
+  } else {
+    with_epilog(
+      "Show",
+      std::slice::from_ref(body),
+      &markers,
+      inherited.as_ref(),
+    )
+  };
   Some(
     crate::evaluator::evaluate_expr_to_expr(&augmented)
       .unwrap_or_else(|_| body.clone()),

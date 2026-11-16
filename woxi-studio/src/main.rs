@@ -15533,6 +15533,81 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn curve_locator_and_inner_animate_become_controls() {
+    // A body laying out a `LocatorPane` whose locator slides along a
+    // plotted curve (`Dynamic[{k, f[k]}, (k = First[#]) &]`, `k` a hidden
+    // `ControlType -> None` scalar no other control writes) above a
+    // literal inner `Animate`. The locator must be drawn on the picture a
+    // helper function returns, `k` must get a slider over the plot's x
+    // range, and the inner animation's time must become the widget's
+    // animated control.
+    woxi::interpret(
+      "bumpCurve[k_] := Sin[k/2]; \
+       bumpPlot[] := Plot[bumpCurve[k], {k, 0, Pi}];",
+    )
+    .unwrap();
+    let code = "Manipulate[Module[{}, DynamicModule[{h}, Column[{\
+        LocatorPane[Dynamic[{kk, h = bumpCurve[kk]}, (kk = First[#]) &], \
+          bumpPlot[]], \
+        Animate[Graphics[Disk[{kk + Cos[tt], h}, 0.1], \
+          PlotRange -> {{-2, 5}, {-1, 2}}], {{tt, 0, \"time\"}, 0, 2 Pi}]\
+      }]]], \
+      {{kk, 1.}, ControlType -> None}, \
+      {{amp, 1, \"amplitude\"}, 0, 2}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the locator Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.animated, "the inner Animate must animate the widget");
+    assert!(state.playing);
+    assert!(
+      !state.state.iter().any(|(n, _)| n == "kk"),
+      "kk must be a visible control now: {:?}",
+      state.state
+    );
+    let continuous: Vec<(&str, &str, f64, f64, f64)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        } => Some((name.as_str(), label.as_str(), *min, *max, *current)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(continuous.len(), 3, "{continuous:?}");
+    assert_eq!(continuous[0].0, "amp");
+    assert_eq!(continuous[1].0, "tt");
+    assert_eq!(continuous[1].1, "time");
+    assert!((continuous[1].3 - 2.0 * std::f64::consts::PI).abs() < 1e-9);
+    assert_eq!(continuous[2].0, "kk");
+    assert_eq!(continuous[2].2, 0.0);
+    assert!((continuous[2].3 - std::f64::consts::PI).abs() < 1e-9);
+    assert_eq!(continuous[2].4, 1.0);
+
+    // The locator marker (a circle) and the animated disk are both drawn.
+    let svg = state.check_render().unwrap().graphics.unwrap();
+    assert!(svg.matches("<ellipse").count() >= 2, "{svg}");
+
+    // Advancing the animation moves only the time.
+    state.advance_animation();
+    let tt = state.controls.iter().find_map(|c| match c {
+      manipulate::ControlState::Continuous { name, current, .. }
+        if name == "tt" =>
+      {
+        Some(*current)
+      }
+      _ => None,
+    });
+    assert!(tt.unwrap() > 0.0);
+    assert!(state.error.is_none(), "{:?}", state.error);
+  }
+
+  #[test]
   fn argand_diagram_manipulate_draws_its_locator_pane() {
     // End-to-end regression for "Argand Diagram": a locator on the complex
     // plane is driven by modulus and argument sliders, so its position is
