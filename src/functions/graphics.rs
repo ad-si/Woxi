@@ -12772,6 +12772,9 @@ fn render_primitive(
           // gradient between its two endpoint colors so the stroke blends
           // smoothly along the path, the way Wolfram Language interpolates
           // `VertexColors`.
+          // The edges are drawn one by one, but they are one line: each
+          // picks up the dash pattern where the edge before it ended.
+          let mut dash_phase = 0.0_f64;
           for i in 0..screen_pts.len().saturating_sub(1) {
             let c1 = colors[point_idx + i];
             let c2 = colors[point_idx + i + 1];
@@ -12790,8 +12793,14 @@ fn render_primitive(
               ));
               format!("url(#{gid})")
             };
+            let dash_offset = if !dash.is_empty() && dash_phase > 0.0 {
+              format!(" stroke-dashoffset=\"{dash_phase:.2}\"")
+            } else {
+              String::new()
+            };
+            dash_phase += (x2 - x1).hypot(y2 - y1);
             out.push_str(&format!(
-              "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"{cap}\"{dash}/>\n",
+              "<line x1=\"{x1:.2}\" y1=\"{y1:.2}\" x2=\"{x2:.2}\" y2=\"{y2:.2}\" stroke=\"{stroke}\" stroke-width=\"{sw:.2}\" stroke-linecap=\"{cap}\"{dash}{dash_offset}/>\n",
             ));
           }
           point_idx += screen_pts.len();
@@ -22978,7 +22987,12 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
   let ps = log_scaled_plot_source(ps);
   let ps = ps.as_ref();
   let mut series_prims: Vec<Expr> = Vec::new();
-  for sd in &ps.series {
+  let mut skip_until = 0usize;
+  for (si, sd) in ps.series.iter().enumerate() {
+    // Runs already drawn as part of an earlier series' line.
+    if si < skip_until {
+      continue;
+    }
     // Filled region (Filling -> …) as a Polygon underneath the curve,
     // wrapped in its own list so the fill color/opacity directives
     // don't leak onto the line drawn after it. FillingStyle appearance
@@ -23183,6 +23197,24 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       {
         series_prims.push(call1("Dashing", Expr::List(Vec::new().into())));
       }
+      // A dashed `ColorFunction` curve is kept as runs of constant color,
+      // the later ones continuing the first: draw them as one line whose
+      // `VertexColors` give each run's color, so the dashes run on along
+      // the whole curve as in Wolfram's own `Line[…, VertexColors -> …]`.
+      let chain_end = (si + 1..ps.series.len())
+        .find(|&j| {
+          let next = &ps.series[j];
+          !(next.continues_previous
+            && !next.is_scatter
+            && next.dashing.is_some())
+        })
+        .unwrap_or(ps.series.len());
+      if sd.dashing.is_some() && chain_end > si + 1 {
+        skip_until = chain_end;
+        series_prims
+          .extend(continued_run_lines(&ps.series[si..chain_end], ps.y_range));
+        continue;
+      }
       let segments = crate::functions::plot::split_into_segments(&sd.points);
       for seg in &segments {
         // The plot's own (outlier-trimmed) y range clips the curve, as it
@@ -23203,6 +23235,72 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     }
   }
   series_prims
+}
+
+/// The `Line` primitives of a chain of runs that continue one another (see
+/// `PlotSeriesData::continues_previous`), clipped to the plot's y range like
+/// any curve. Pieces that still join up form a single line, its points
+/// colored by the run they come from through `VertexColors`.
+fn continued_run_lines(
+  runs: &[crate::syntax::PlotSeriesData],
+  y_range: (f64, f64),
+) -> Vec<Expr> {
+  let mut lines: Vec<Expr> = Vec::new();
+  let mut cur: Vec<((f64, f64), (u8, u8, u8))> = Vec::new();
+  let flush = |cur: &mut Vec<((f64, f64), (u8, u8, u8))>,
+               lines: &mut Vec<Expr>| {
+    let pts = std::mem::take(cur);
+    if pts.len() < 2 {
+      return;
+    }
+    let coords: Vec<Expr> = pts
+      .iter()
+      .map(|&((x, y), _)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+      .collect();
+    let rgb = |(r, g, b): (u8, u8, u8)| {
+      call(
+        "RGBColor",
+        vec![
+          Expr::Real(f64::from(r) / 255.0),
+          Expr::Real(f64::from(g) / 255.0),
+          Expr::Real(f64::from(b) / 255.0),
+        ],
+      )
+    };
+    let first = pts[0].1;
+    if pts.iter().all(|&(_, c)| c == first) {
+      lines.push(call1("Line", Expr::List(coords.into())));
+    } else {
+      let colors: Vec<Expr> = pts.iter().map(|&(_, c)| rgb(c)).collect();
+      lines.push(call(
+        "Line",
+        vec![
+          Expr::List(coords.into()),
+          Expr::Rule {
+            pattern: Box::new(Expr::Identifier("VertexColors".to_string())),
+            replacement: Box::new(Expr::List(colors.into())),
+          },
+        ],
+      ));
+    }
+  };
+  for run in runs {
+    for seg in crate::functions::plot::split_into_segments(&run.points) {
+      for piece in clip_segment_to_y_range(&seg, y_range) {
+        if piece.len() < 2 {
+          continue;
+        }
+        let joins = cur.last().is_some_and(|&(p, _)| p == piece[0]);
+        if !joins {
+          flush(&mut cur, &mut lines);
+          cur.push((piece[0], run.color));
+        }
+        cur.extend(piece[1..].iter().map(|&p| (p, run.color)));
+      }
+    }
+  }
+  flush(&mut cur, &mut lines);
+  lines
 }
 
 /// The `AbsoluteDashing[…]` of a dashed plot series. Relative lengths

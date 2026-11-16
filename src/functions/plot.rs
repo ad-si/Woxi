@@ -3498,6 +3498,10 @@ pub(crate) struct SeriesStyle {
   /// This style came from its own `{…}` entry of a `PlotStyle` list, i.e. it
   /// is one dataset's style rather than a bare directive of a combined one.
   pub from_list: bool,
+  /// The series continues the line of the series before it (a later
+  /// `ColorFunction` run of the same curve; see
+  /// `PlotSeriesData::continues_previous`).
+  pub continues_previous: bool,
 }
 
 /// A single explicit grid line: a position on its axis plus an optional
@@ -4357,6 +4361,10 @@ struct DashedOverlay {
   dashes: Vec<f64>,
   /// Polyline vertices in data space.
   points: Vec<(f64, f64)>,
+  /// The line goes on from the end of the overlay before it (a later
+  /// `ColorFunction` run of the same curve): its dash pattern continues
+  /// from where that one stopped rather than starting afresh.
+  continues: bool,
 }
 
 /// One dash length, in the coordinate system its `<polyline>` is drawn in.
@@ -4378,7 +4386,7 @@ pub(crate) fn dash_len(d: f64, reference: f64, px_per_unit: f64) -> f64 {
 }
 
 /// Render collected dashed lines as single `<polyline stroke-dasharray>`
-/// elements, mapping data coordinates to render-space pixels with the same
+/// elements (one string per overlay, empty when it draws nothing), mapping data coordinates to render-space pixels with the same
 /// linear transform used for axis labels/ticks. Dash lengths use the
 /// plotting-area extent so series dashes match the legend swatches exactly.
 #[allow(clippy::too_many_arguments)]
@@ -4395,7 +4403,7 @@ fn render_dash_overlays(
   y_max: f64,
   log_x: bool,
   log_y: bool,
-) -> String {
+) -> Vec<String> {
   // Log axes place data at the logarithm of its value, so map through `ln`
   // before the linear transform to the plotting area.
   let to_axis = |v: f64, log: bool| if log { v.ln() } else { v };
@@ -4405,21 +4413,38 @@ fn render_dash_overlays(
   let yr = y_max - y_min;
   if !xr.is_finite() || !yr.is_finite() || xr.abs() < 1e-12 || yr.abs() < 1e-12
   {
-    return String::new();
+    return vec![String::new(); overlays.len()];
   }
-  let mut svg = String::new();
+  let mut out: Vec<String> = Vec::with_capacity(overlays.len());
+  // How far along its dash pattern the line drawn last ended, in render
+  // pixels, for an overlay that continues it.
+  let mut phase = 0.0_f64;
   for ov in overlays {
+    let mut svg = String::new();
     if ov.points.len() < 2 {
+      out.push(svg);
       continue;
     }
-    let pts: Vec<String> = ov
+    let screen: Vec<(f64, f64)> = ov
       .points
       .iter()
       .map(|&(x, y)| {
-        let px = plot_x0 + (to_axis(x, log_x) - x_min) / xr * plot_w;
-        let py = plot_y0 + (y_max - to_axis(y, log_y)) / yr * plot_h;
-        format!("{px:.1},{py:.1}")
+        (
+          plot_x0 + (to_axis(x, log_x) - x_min) / xr * plot_w,
+          plot_y0 + (y_max - to_axis(y, log_y)) / yr * plot_h,
+        )
       })
+      .collect();
+    let length: f64 = screen
+      .windows(2)
+      .map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1))
+      .filter(|l| l.is_finite())
+      .sum();
+    let offset = if ov.continues { phase } else { 0.0 };
+    phase = offset + length;
+    let pts: Vec<String> = screen
+      .iter()
+      .map(|&(px, py)| format!("{px:.1},{py:.1}"))
       .collect();
     let dash: Vec<String> = ov
       .dashes
@@ -4433,7 +4458,7 @@ fn render_dash_overlays(
     // close the short gaps of a dotted or `{6, 2}` pattern.
     svg.push_str(&format!(
       "<polyline fill=\"none\" stroke=\"rgb({},{},{})\" \
-       {}stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"butt\" \
+       {}stroke-width=\"{}\" stroke-dasharray=\"{}\"{} stroke-linecap=\"butt\" \
        points=\"{}\"/>\n",
       r,
       g,
@@ -4445,10 +4470,16 @@ fn render_dash_overlays(
       },
       ov.stroke_w,
       dash.join(","),
+      if offset > 0.0 {
+        format!(" stroke-dashoffset=\"{offset:.1}\"")
+      } else {
+        String::new()
+      },
       pts.join(" ")
     ));
+    out.push(svg);
   }
-  svg
+  out
 }
 
 /// Placeholder stroke color marking where the `k`-th deferred dashed line
@@ -6238,6 +6269,7 @@ fn generate_svg_with_options(
                 stroke_w,
                 dashes,
                 points: vec![(x_min, *gy), (x_max, *gy)],
+                continues: false,
               });
             } else {
               let shape = match rgb {
@@ -6297,6 +6329,7 @@ fn generate_svg_with_options(
                 stroke_w,
                 dashes,
                 points: vec![(*gx, y_min), (*gx, y_max)],
+                continues: false,
               });
             } else {
               let shape = match rgb {
@@ -6659,6 +6692,7 @@ fn generate_svg_with_options(
                     stroke_w: width,
                     dashes,
                     points: line,
+                    continues: false,
                   }),
                   None => {
                     chart
@@ -6807,7 +6841,14 @@ fn generate_svg_with_options(
               if let Some(ref dash_pattern) = dashing {
                 // Defer to a single <polyline stroke-dasharray> per segment,
                 // emitted after the plot is drawn.
-                for segment in segments {
+                // A later `ColorFunction` run of a curve picks up the dash
+                // pattern where the run before it left off.
+                let continues_run = shade.is_none()
+                  && opts
+                    .plot_style
+                    .get(series_idx)
+                    .is_some_and(|st| st.continues_previous);
+                for (seg_idx, segment) in segments.iter().enumerate() {
                   if segment.len() >= 2 {
                     defer_dashed!(chart, DashedOverlay {
                       color: (r, g, b),
@@ -6815,6 +6856,7 @@ fn generate_svg_with_options(
                       stroke_w,
                       dashes: dash_pattern.clone(),
                       points: segment.clone(),
+                      continues: continues_run && seg_idx == 0,
                     });
                   }
                 }
@@ -7115,22 +7157,22 @@ fn generate_svg_with_options(
       - top_margin as f64
       - margin_bottom as f64
       - x_label_area as f64;
-    for (k, overlay) in dashed_overlays.iter().enumerate() {
-      let series_svg = render_dash_overlays(
-        std::slice::from_ref(overlay),
-        plot_x0,
-        plot_y0,
-        plot_w,
-        plot_h,
-        render_width as f64,
-        x_min,
-        x_max,
-        y_min,
-        y_max,
-        opts.log_x,
-        opts.log_y,
-      );
-      replace_dash_overlay_sentinel(&mut buf, k, &series_svg);
+    let rendered = render_dash_overlays(
+      &dashed_overlays,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      render_width as f64,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      opts.log_x,
+      opts.log_y,
+    );
+    for (k, series_svg) in rendered.iter().enumerate() {
+      replace_dash_overlay_sentinel(&mut buf, k, series_svg);
     }
   }
 
@@ -8234,6 +8276,9 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        continues_previous: plot_style
+          .get(i % plot_style.len().max(1))
+          .is_some_and(|s| s.continues_previous),
       }
     })
     .collect();
@@ -8769,6 +8814,7 @@ pub(crate) fn render_merged_plot_source(
       point_size_expr: s.point_size_expr.clone(),
       dashing: s.dashing.clone(),
       opacity: s.opacity,
+      continues_previous: s.continues_previous,
       ..SeriesStyle::default()
     })
     .collect();
@@ -12419,6 +12465,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      continues_previous: false,
     });
   }
 

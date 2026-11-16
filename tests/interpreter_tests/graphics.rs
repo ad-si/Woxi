@@ -3023,6 +3023,31 @@ mod graphics {
         assert!(svg.contains("stop-color=\"rgb(0,102,255)\""));
       }
 
+      /// A dashed `VertexColors` line is drawn edge by edge, but it is one
+      /// line: every edge after the first continues the dash pattern from
+      /// where the previous edge ended instead of starting it over.
+      #[test]
+      fn dashed_line_continues_pattern_across_edges() {
+        let svg = export_svg(
+          "Graphics[{Dashed, Line[{{0, 0}, {1, 0}, {2, 0}, {3, 0}}, \
+           VertexColors -> {Red, Green, Blue, Red}]}]",
+        );
+        let offsets: Vec<f64> = svg
+          .split("<line ")
+          .skip(1)
+          .map(|el| {
+            el.split("stroke-dashoffset=\"")
+              .nth(1)
+              .and_then(|rest| rest.split('"').next())
+              .map_or(0.0, |v| v.parse().unwrap())
+          })
+          .collect();
+        assert_eq!(offsets.len(), 3, "{svg}");
+        assert_eq!(offsets[0], 0.0);
+        assert!(offsets[1] > 0.0);
+        assert!((offsets[2] - 2.0 * offsets[1]).abs() < 0.05, "{offsets:?}");
+      }
+
       /// A multi-segment `Line[{seg1, seg2, …}, VertexColors -> …]` maps
       /// the flat color list across all segments' points in order, not
       /// restarting per segment.
@@ -18078,6 +18103,88 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(list.contains("stroke=\"#FF0000\""), "{list}");
       assert_eq!(list, rgb);
+    }
+
+    /// The dash offsets of an SVG's dashed strokes, in drawing order (0 for
+    /// a stroke that starts its pattern afresh).
+    fn dash_offsets(svg: &str) -> Vec<f64> {
+      svg
+        .split('<')
+        .filter(|el| el.contains("stroke-dasharray"))
+        .map(|el| {
+          el.split("stroke-dashoffset=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .map_or(0.0, |v| v.parse().unwrap())
+        })
+        .collect()
+    }
+
+    /// Regression: a dashed `ColorFunction` curve is drawn as many short
+    /// runs of constant color, and each run restarted the dash pattern, so
+    /// with runs shorter than a dash the curve came out solid. The runs are
+    /// one line: each picks up the pattern where the one before it ended.
+    #[test]
+    fn parametric_curve_color_function_keeps_dashing() {
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, Pi}, \
+         PlotStyle -> {Thick, Dashed}, \
+         ColorFunction -> Function[{x, y, u}, Hue[u]]]",
+      );
+      let offsets = dash_offsets(&svg);
+      assert!(offsets.len() > 10, "{svg}");
+      assert_eq!(offsets[0], 0.0);
+      assert!(offsets.windows(2).all(|w| w[1] > w[0]), "{offsets:?}");
+    }
+
+    /// A separate dashed curve starts its own pattern: only runs of one
+    /// curve continue each other.
+    #[test]
+    fn parametric_curves_color_function_dashing_restarts_per_curve() {
+      let svg = export_svg(
+        "ParametricPlot[{{Cos[t], Sin[t]}, {2 Cos[t], 2 Sin[t]}}, \
+         {t, 0, Pi}, PlotStyle -> Dashed, \
+         ColorFunction -> Function[{x, y, u}, Hue[u]]]",
+      );
+      let offsets = dash_offsets(&svg);
+      let restarts = offsets.iter().filter(|&&o| o == 0.0).count();
+      assert_eq!(restarts, 2, "{offsets:?}");
+    }
+
+    /// The same holds when the dashed colored curve is redrawn by `Show`,
+    /// with or without other graphics layered on.
+    #[test]
+    fn show_parametric_curve_color_function_keeps_dashing() {
+      let plot = "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, Pi}, \
+                  PlotStyle -> Dashed, \
+                  ColorFunction -> Function[{x, y, u}, Hue[u]], \
+                  RegionFunction -> Function[{x, y, u}, y > 0.2]]";
+      for expr in [
+        format!("Show[{{{plot}, ParametricPlot[{{t, t}}, {{t, 0, 1}}]}}]"),
+        format!("Show[{plot}, Graphics[Point[{{0, 0}}]]]"),
+      ] {
+        let offsets = dash_offsets(&export_svg(&expr));
+        assert!(offsets.len() > 10, "{expr}");
+        assert_eq!(offsets[0], 0.0, "{expr}");
+        assert!(offsets.windows(2).all(|w| w[1] > w[0]), "{expr}");
+      }
+    }
+
+    /// Layered onto other graphics, the colored runs of a dashed curve
+    /// become one `Line` colored by `VertexColors`, as Wolfram draws it.
+    #[test]
+    fn show_dashed_color_function_curve_is_one_vertex_colored_line() {
+      assert_eq!(
+        interpret(
+          "p = ParametricPlot[{Cos[t], Sin[t]}, {t, 0, Pi}, \
+           PlotStyle -> Dashed, \
+           ColorFunction -> Function[{x, y, u}, Hue[u]]]; \
+           g = Show[p, Graphics[Point[{0, 0}]]]; \
+           {Count[g, _Line, Infinity], Count[g, VertexColors, Infinity]}"
+        )
+        .unwrap(),
+        "{1, 1}"
+      );
     }
 
     /// `PlotPoints -> {nu, nv}` (also as an expression such as `k*{4, 4}`)
