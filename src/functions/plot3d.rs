@@ -6066,9 +6066,9 @@ struct StyleState3D {
   /// `VertexColors` of the polygon or line being added: one RGB color per
   /// vertex, blended across the face (or along the line) between them.
   vertex_colors: Option<std::sync::Arc<Vec<(f64, f64, f64)>>>,
-  /// `Arrowheads[s]`: the arrowhead length as a fraction of the picture's
-  /// width. `None` keeps the default 8-pixel head.
-  arrowhead: Option<f64>,
+  /// `Arrowheads[s]`: the arrowhead length. `None` keeps the default
+  /// twentieth of the scene.
+  arrowhead: Option<ArrowheadSize3D>,
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
@@ -6309,12 +6309,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
   {
     let size = match &args[0] {
       Expr::List(specs) => specs.first().and_then(|spec| match spec {
-        Expr::List(parts) => parts.first().and_then(expr_to_f64),
-        other => expr_to_f64(other),
+        Expr::List(parts) => parts.first().and_then(ArrowheadSize3D::parse),
+        other => ArrowheadSize3D::parse(other),
       }),
-      other => expr_to_f64(other),
+      other => ArrowheadSize3D::parse(other),
     };
-    if let Some(size) = size.filter(|s| s.is_finite() && *s >= 0.0) {
+    if let Some(size) = size {
       style.arrowhead = Some(size);
     }
     return true;
@@ -8532,7 +8532,8 @@ fn collect_3d_primitives(
               let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
                 v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
               });
-              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(curve_len);
+              let len = ArrowheadSize3D::length(style.arrowhead, diag, None)
+                .min(curve_len);
               if !(curve_len > 0.0 && len > 0.0) {
                 return None;
               }
@@ -8599,6 +8600,17 @@ fn collect_3d_primitives(
               points: pts,
               style: style.clone(),
             });
+          } else if let Expr::List(paths) = &args[0] {
+            // `Arrow[{{p1, p2, …}, {q1, q2, …}, …}]` draws one arrow along
+            // each point list, like a multi-segment `Line`.
+            for path in paths {
+              if let Some(pts) = parse_point3d_list(path) {
+                prims.push(Primitive3D::Arrow3D {
+                  points: pts,
+                  style: style.clone(),
+                });
+              }
+            }
           }
         }
         // `Text[expr, {x, y, z}]` (optionally with an alignment offset)
@@ -10554,6 +10566,50 @@ fn contains_tube_arrow(expr: &Expr) -> bool {
         || args.iter().any(contains_tube_arrow)
     }
     _ => false,
+  }
+}
+
+/// The size `Arrowheads[s]` gives the heads of 3D arrows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ArrowheadSize3D {
+  /// A number: the head's length as a fraction of the scene.
+  Fraction(f64),
+  /// A named size (`Small`, `Medium`, …): a length in printer's points,
+  /// whatever the size of the picture.
+  Points(f64),
+}
+
+impl ArrowheadSize3D {
+  /// The default 3D head: a twentieth of the scene.
+  const DEFAULT_FRACTION: f64 = 0.05;
+  /// The width the picture is assumed to have while its scene is collected,
+  /// before the actual image size is known (`Graphics3D`'s default).
+  const DEFAULT_WIDTH: f64 = 360.0;
+
+  fn parse(spec: &Expr) -> Option<Self> {
+    if let Expr::Identifier(name) = spec
+      && let Some(points) =
+        crate::functions::graphics::named_arrowhead_size(name)
+    {
+      return Some(Self::Points(points));
+    }
+    crate::functions::math_ast::expr_to_f64(spec)
+      .filter(|s| s.is_finite() && *s >= 0.0)
+      .map(Self::Fraction)
+  }
+
+  /// The head's length in scene units, for a scene whose box has diagonal
+  /// `scene_diag` drawn `width` pixels wide (the box's diagonal spans about
+  /// the width of the picture).
+  fn length(size: Option<Self>, scene_diag: f64, width: Option<f64>) -> f64 {
+    let fraction = match size {
+      None => Self::DEFAULT_FRACTION,
+      Some(Self::Fraction(f)) => f,
+      Some(Self::Points(p)) => {
+        p / width.filter(|w| *w > 0.0).unwrap_or(Self::DEFAULT_WIDTH)
+      }
+    };
+    fraction * scene_diag
   }
 }
 
@@ -13675,7 +13731,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
         if let Some(head) = arrow3d_head_outline(
           points,
-          style.arrowhead.unwrap_or(0.05) * scene_diag,
+          ArrowheadSize3D::length(
+            style.arrowhead,
+            scene_diag,
+            Some(svg_width as f64),
+          ),
         ) {
           let screen: Vec<(f64, f64, usize)> = head
             .iter()

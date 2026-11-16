@@ -2957,6 +2957,15 @@ fn evaluate_function_call_ast_inner(
     {
       return Ok(result);
     }
+    // In a notebook, `SetOptions[$FrontEnd, …]` (e.g. a longer
+    // `DynamicEvaluationTimeout`) configures the front end itself, which
+    // takes any of its many options silently and returns nothing.
+    if crate::is_visual_mode()
+      && matches!(&args[0], Expr::Identifier(h)
+        if h == "$FrontEnd" || h == "$FrontEndSession")
+    {
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
     let Expr::Identifier(head) = &args[0] else {
       crate::emit_message(&format!(
         "SetOptions::sstm: Argument {} is not a symbol or a stream.",

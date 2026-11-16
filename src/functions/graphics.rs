@@ -690,7 +690,7 @@ impl Default for StyleState {
 
 /// The named arrowhead sizes, as a fraction of the plot width — the same
 /// units an explicit numeric size is given in.
-fn named_arrowhead_size(name: &str) -> Option<f64> {
+pub(crate) fn named_arrowhead_size(name: &str) -> Option<f64> {
   // Printer's points, whatever the image size (measured from wolframscript
   // at two widths).
   match name {
@@ -32808,14 +32808,15 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   // first entry sets the items' horizontal alignment.
   fn column_text_anchor(spec: &Expr) -> &'static str {
     match spec {
-      Expr::Identifier(s) if s == "Center" => "middle",
-      Expr::Identifier(s) if s == "Right" => "end",
+      // The front end also reads the string spellings (`"Center"`).
+      Expr::Identifier(s) | Expr::String(s) if s == "Center" => "middle",
+      Expr::Identifier(s) | Expr::String(s) if s == "Right" => "end",
       Expr::List(parts) if !parts.is_empty() => column_text_anchor(&parts[0]),
       _ => "start", // Left or anything else
     }
   }
   let mut alignment = match args.get(1) {
-    Some(spec @ (Expr::Identifier(_) | Expr::List(_))) => {
+    Some(spec @ (Expr::Identifier(_) | Expr::String(_) | Expr::List(_))) => {
       column_text_anchor(spec)
     }
     _ => "start",

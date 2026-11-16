@@ -12,6 +12,11 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Arrow[{path1, path2, …}]` in `Graphics3D` draws one arrow per point list,
+    and named `Arrowheads` sizes (`Small`, `Medium`, …) size 3D arrowheads.
+- `Column[…, "Center"]` reads the string alignment like the symbol.
+- In notebooks, `SetOptions[$FrontEnd, …]` accepts front-end options such as
+    `DynamicEvaluationTimeout` without an `optnf` message.
 
 # 2026-11-08 - 0.4.0
 

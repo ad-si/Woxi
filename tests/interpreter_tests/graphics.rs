@@ -27011,6 +27011,58 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// `Arrow[{path1, path2, …}]` draws one arrow along each point list,
+    /// as a multi-segment `Line` does; it used to draw nothing at all.
+    #[test]
+    fn graphics3d_arrow_of_several_paths_draws_each() {
+      let heads = |svg: &str| svg.matches("<polygon").count();
+      let shafts = |svg: &str| svg.matches("<polyline").count();
+      let one = export_svg("Graphics3D[Arrow[{{0,0,0},{1,0,0}}]]");
+      let many = export_svg(
+        "Graphics3D[Arrow[{{{0,0,0},{1,0,0}}, {{0,1,0},{1,1,1}}, \
+         {{0,0,1},{0,1,1},{1,1,1}}}]]",
+      );
+      assert_eq!(heads(&many), 3 * heads(&one), "{many}");
+      assert_eq!(shafts(&many), 3 * shafts(&one), "{many}");
+    }
+
+    /// `Arrowheads[Small]` (and the other named sizes) shrinks the heads of
+    /// 3D arrows; a named size used to be ignored, leaving the default head.
+    #[test]
+    fn graphics3d_named_arrowheads_size_the_head() {
+      let head_area = |svg: &str| -> f64 {
+        const START: &str = "<polygon points=\"";
+        let i = svg.find(START).expect("arrowhead") + START.len();
+        let pts: Vec<(f64, f64)> = svg[i..svg[i..].find('"').unwrap() + i]
+          .split(' ')
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect();
+        // Shoelace formula.
+        (0..pts.len())
+          .map(|k| {
+            let (a, b) = (pts[k], pts[(k + 1) % pts.len()]);
+            a.0 * b.1 - b.0 * a.1
+          })
+          .sum::<f64>()
+          .abs()
+          / 2.0
+      };
+      let arrow = |dir: &str| {
+        head_area(&export_svg(&format!(
+          "Graphics3D[{{{dir}Arrow[{{{{0,0,0}},{{1,0,1}}}}]}}]"
+        )))
+      };
+      let default = arrow("");
+      let tiny = arrow("Arrowheads[Tiny], ");
+      let small = arrow("Arrowheads[Small], ");
+      let large = arrow("Arrowheads[Large], ");
+      assert!(tiny < small && small < default, "{tiny} {small} {default}");
+      assert!(large > small, "{large} {small}");
+    }
+
     /// Regression: an argument-less `Arrow[]` in a `Graphics3D` must not
     /// panic while checking for the `Arrow[Tube[…]]` form.
     #[test]
