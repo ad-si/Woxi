@@ -9,6 +9,10 @@ const DEFAULT_SIZE: u32 = 360;
 const GRID_N: usize = 50;
 /// Matches Mathematica's default BoxRatios {1, 1, 0.4} for Plot3D.
 const Z_SCALE: f64 = 0.4;
+/// Stroke width in pixels of a `Graphics3D` `Line` with no thickness
+/// directive: the same hairline as a 2D `Line`, matching the thin edges
+/// Wolfram draws for 3D lines.
+const DEFAULT_LINE3D_THICKNESS: f64 = 1.0;
 
 // --- 3D math types and helpers ---
 
@@ -6013,7 +6017,8 @@ struct StyleState3D {
   /// viewer. None means both sides use `color`.
   back_color: Option<(u8, u8, u8)>,
   opacity: f64,
-  /// Stroke width in pixels for Line3D primitives. None means default 1.5.
+  /// Stroke width in pixels for Line3D primitives. None means
+  /// `DEFAULT_LINE3D_THICKNESS`.
   thickness: Option<f64>,
   /// Whether a `Tube`'s ends are closed off, as `CapForm` sets it.
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
@@ -13204,7 +13209,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
-      let width = style.thickness.unwrap_or(1.5);
+      let width = style.thickness.unwrap_or(DEFAULT_LINE3D_THICKNESS);
       for seg in segments {
         // On-screen length of the polyline drawn so far: a dash pattern
         // runs continuously along the whole line instead of restarting
