@@ -52816,6 +52816,22 @@ mod invisible_and_text_cells {
     assert!(svg.contains(">abc<"), "content missing: {svg}");
     assert!(!svg.contains("TextCell"), "wrapper leaked: {svg}");
   }
+
+  // A plot label that is (or multiplies in) a `TextCell` reads as the
+  // cell's text, not the `TextCell(…)` call.
+  #[test]
+  fn text_cell_in_a_plot_label_shows_its_content() {
+    clear_state();
+    let svg = export_svg(
+      "ListPlot[{{1, 2}, {2, 3}}, Frame -> True, \
+       FrameLabel -> {TextCell[\"abc\"], \"lbl\" TextCell[\"\"]}, \
+       PlotLabel -> \"p\" TextCell[\"q\"]]",
+    );
+    assert!(svg.contains(">abc<"), "bare cell missing: {svg}");
+    assert!(svg.contains(">lbl <"), "product label missing: {svg}");
+    assert!(svg.contains(">p q<"), "plot label missing: {svg}");
+    assert!(!svg.contains("TextCell"), "wrapper leaked: {svg}");
+  }
 }
 
 mod list_plot_scalar_data_range {
