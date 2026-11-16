@@ -14119,17 +14119,20 @@ fn with_plot_label(
     style_attrs.push_str(" font-style=\"italic\"");
   }
   let label = match framed_layout {
-    Some((lines, _)) => lines
-      .into_iter()
-      .map(|line| {
-        format!(
+    Some((lines, _)) => {
+      use std::fmt::Write as _;
+      let mut out = String::new();
+      for line in lines {
+        let _ = writeln!(
+          out,
           "{}<text x=\"{cx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
+           fill=\"{fill}\"{style_attrs}>{}</text>",
           line.frame_rect, line.baseline, line.markup
-        )
-      })
-      .collect::<String>(),
+        );
+      }
+      out
+    }
     None => format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
        font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
