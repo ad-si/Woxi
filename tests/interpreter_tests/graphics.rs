@@ -22861,8 +22861,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// Regression: `ContourPlot` used to ignore `PlotLabel` entirely (no
     /// text drawn, no headroom reserved), unlike `Plot`/`Plot3D`/`PieChart`.
     /// A `Framed[…]` label must also typeset its content rather than
-    /// printing the literal `Framed[…]` wrapper — SVG text markup has no
-    /// room to draw the frame's border, so it typesets the content plain.
+    /// printing the literal `Framed[…]` wrapper.
     #[test]
     fn contour_plot_honors_plot_label() {
       let svg = export_svg(
@@ -22885,6 +22884,89 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         !framed_svg.contains("Framed["),
         "Framed PlotLabel must not leak its literal head:\n{framed_svg}"
       );
+    }
+
+    /// Regression: a `Framed[…]` `PlotLabel` of a `ContourPlot` /
+    /// `DensityPlot` lost its box (only `Plot`-style charts drew it), also
+    /// when wrapped in a `Style`.
+    #[test]
+    fn field_plot_framed_plot_label_is_boxed() {
+      for head in [
+        "ContourPlot[x == y, {x, 0, 1}, {y, 0, 1}",
+        "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}",
+        "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}",
+      ] {
+        let plain = export_svg(&format!("{head}, PlotLabel -> \"ab\"]"));
+        for label in [
+          "Framed[\"ab\"]",
+          "Style[Framed[\"ab\"]]",
+          "Style[Framed[Row[{\"a\", Style[\"b\", Italic]}]], Red]",
+        ] {
+          let svg = export_svg(&format!("{head}, PlotLabel -> {label}]"));
+          assert_eq!(
+            svg.matches("<rect").count(),
+            plain.matches("<rect").count() + 1,
+            "{head} {label}: {svg}"
+          );
+          assert!(!svg.contains("Framed"), "{head} {label}: {svg}");
+        }
+      }
+    }
+
+    /// Regression: the equation form of `ContourPlot` traced a vertical
+    /// line along every pole of `y == Tan[x]`, where `y - Tan[x]` changes
+    /// sign without crossing zero. With the default `Exclusions ->
+    /// Automatic` only the branches are drawn; `Exclusions -> None` keeps
+    /// the sign change as a contour.
+    #[test]
+    fn contour_plot_equation_skips_poles() {
+      // The branches of `Tan` reach every y in the range, so a vertical
+      // contour line at a pole shows up as a long polyline with (nearly)
+      // constant x spanning the whole plot height.
+      fn longest_vertical_run(svg: &str) -> f64 {
+        let mut longest: f64 = 0.0;
+        for part in svg.split("<polyline points=\"").skip(1) {
+          let pts: Vec<(f64, f64)> = part
+            .split('"')
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .filter_map(|p| {
+              let (x, y) = p.split_once(',')?;
+              Some((x.parse().ok()?, y.parse().ok()?))
+            })
+            .collect();
+          let (xmin, xmax) = pts
+            .iter()
+            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.0), b.max(p.0)));
+          let (ymin, ymax) = pts
+            .iter()
+            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
+          if xmax - xmin < 1.0 {
+            longest = longest.max(ymax - ymin);
+          }
+        }
+        longest
+      }
+      let auto =
+        export_svg("ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}]");
+      let none = export_svg(
+        "ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}, Exclusions -> None]",
+      );
+      let reciprocal =
+        export_svg("ContourPlot[x y == 1, {x, -2, 2}, {y, -2, 2}]");
+      let quotient =
+        export_svg("ContourPlot[y == 1/x, {x, -2, 2}, {y, -2, 2}]");
+      assert!(longest_vertical_run(&auto) < 100.0, "{auto}");
+      assert!(longest_vertical_run(&none) > 1000.0, "{none}");
+      // The branches themselves are kept: as many curves as with the
+      // equivalent pole-free equation `x y == 1`.
+      assert_eq!(
+        quotient.matches("<polyline").count(),
+        reciprocal.matches("<polyline").count(),
+        "{quotient}"
+      );
+      assert!(auto.matches("<polyline").count() >= 3, "{auto}");
     }
 
     /// `PlotLabel -> Text[Grid[…]]` sets the grid's content, not the literal
