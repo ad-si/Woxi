@@ -1219,6 +1219,54 @@ fn render_item(
       {
         render_item(&with_inset_background(text, args), style, area, out);
       }
+      // `Inset[Rotate[obj, θ], pos, …]` turns the inset object by θ
+      // counterclockwise about its anchor. A text object becomes a `Text`
+      // whose baseline runs along `{Cos[θ], Sin[θ]}`; any other object is
+      // inset as usual and the drawing turned about its anchor point.
+      "Inset"
+        if args.len() >= 2
+          && let Expr::FunctionCall {
+            name: rotate,
+            args: rargs,
+          } = &args[0]
+          && rotate == "Rotate"
+          && rargs.len() == 2
+          && let Some(theta) =
+            crate::functions::graphics::rotation_angle(&rargs[1]) =>
+      {
+        if is_text_inset(&rargs[0]) {
+          let offset = args
+            .get(2)
+            .filter(|o| point2(o).is_some())
+            .cloned()
+            .unwrap_or_else(|| {
+              Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
+            });
+          let direction = Expr::List(
+            vec![Expr::Real(theta.cos()), Expr::Real(theta.sin())].into(),
+          );
+          let text = call(
+            "Text",
+            vec![rargs[0].clone(), args[1].clone(), offset, direction],
+          );
+          render_item(&with_inset_background(text, args), style, area, out);
+        } else {
+          let Some((ax, ay)) = anchor2(&args[1], area) else {
+            return;
+          };
+          let mut inner_args = args.to_vec();
+          inner_args[0] = rargs[0].clone();
+          let mut inner = String::new();
+          render_item(&call("Inset", inner_args), style, area, &mut inner);
+          out.push_str(&format!(
+            "<g transform=\"rotate({:.3} {:.1} {:.1})\">\n{}</g>\n",
+            -theta.to_degrees(),
+            area.px(ax),
+            area.py(ay),
+            inner,
+          ));
+        }
+      }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
         let text = call("Text", vec![args[0].clone(), args[1].clone()]);
         render_item(&with_inset_background(text, args), style, area, out);

@@ -9456,7 +9456,7 @@ fn affine_primitive(
 
 /// The counterclockwise angle of a 2D `Rotate` specification: a plain
 /// number `θ`, or a pair of vectors `{u, v}` meaning "rotate `u` onto `v`".
-fn rotation_angle(spec: &Expr) -> Option<f64> {
+pub(crate) fn rotation_angle(spec: &Expr) -> Option<f64> {
   if let Some(angle) = expr_to_f64(spec) {
     return Some(angle);
   }
@@ -21736,6 +21736,17 @@ fn contains_visible_style(e: &Expr) -> bool {
       args.iter().any(contains_visible_style)
         || args[1..].iter().any(script_needs_typesetting)
     }
+    // Arithmetic is typeset term by term, so a lettered script in any term
+    // (`(ω - Subscript[ω, σ])/Subscript[γ, σ]`) still needs its `<tspan>`.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Times" | "Plus" | "Power") =>
+    {
+      args.iter().any(contains_visible_style)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      contains_visible_style(left) || contains_visible_style(right)
+    }
+    Expr::UnaryOp { operand, .. } => contains_visible_style(operand),
     _ => false,
   }
 }
@@ -31603,7 +31614,7 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
 
 /// Split the 2D `ToString` layout of a scientific number — the exponent on
 /// the line above `mantissa × 10` — into `("mantissa × 10", "exponent")`.
-fn split_scientific_2d(text: &str) -> Option<(String, String)> {
+pub(crate) fn split_scientific_2d(text: &str) -> Option<(String, String)> {
   let (top, bottom) = text.split_once('\n')?;
   let (exp, base) = (top.trim(), bottom.trim());
   let exp_digits = exp.strip_prefix('-').unwrap_or(exp);
