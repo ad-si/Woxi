@@ -30197,6 +30197,19 @@ pub struct ClickPaneHit {
   pub handler: String,
 }
 
+impl ClickPaneHit {
+  /// The code applying the handler to a click at the fractions `(fx, fy)`
+  /// of the pane's width and height, measured from its top-left corner
+  /// (the pane's own y axis points up).
+  pub fn action_at(&self, fx: f64, fy: f64) -> String {
+    let fx = fx.clamp(0.0, 1.0);
+    let fy = fy.clamp(0.0, 1.0);
+    let x = self.x_min + fx * (self.x_max - self.x_min);
+    let y = self.y_max - fy * (self.y_max - self.y_min);
+    format!("({})[{{{x}, {y}}}]", self.handler)
+  }
+}
+
 /// Decode the id of a [`CLICK_PANE_HIT_ID_PREFIX`] rectangle.
 pub fn click_pane_from_hit_id(id: &str) -> Option<ClickPaneHit> {
   let text = decode_hit_id_hex(id.strip_prefix(CLICK_PANE_HIT_ID_PREFIX)?)?;
@@ -30347,6 +30360,45 @@ pub fn plot_frame_from_id(id: &str) -> Option<(f64, f64, f64, f64)> {
     [x_min, y_min, x_max, y_max] => Some((x_min, y_min, x_max, y_max)),
     _ => None,
   }
+}
+
+/// The first drawing area marked in `svg` (see [`with_plot_frame_markers`]):
+/// its rectangle `(left, top, width, height)` in the picture's pixels and the
+/// coordinate range `(xmin, ymin, xmax, ymax)` it shows.
+fn first_plot_frame(
+  svg: &str,
+) -> Option<((f64, f64, f64, f64), (f64, f64, f64, f64))> {
+  let start = svg.find(&format!("id=\"{PLOT_FRAME_ID_PREFIX}"))? + 4;
+  let id_end = start + svg[start..].find('"')?;
+  let range = plot_frame_from_id(&svg[start..id_end])?;
+  let tag = &svg[id_end..id_end + svg[id_end..].find('>')?];
+  let attr = |key: &str| -> Option<f64> {
+    let at = tag.find(&format!(" {key}=\""))? + key.len() + 3;
+    tag[at..at + tag[at..].find('"')?].parse().ok()
+  };
+  let rect = (attr("x")?, attr("y")?, attr("width")?, attr("height")?);
+  // The marker is in viewBox units; report it in the picture's pixels.
+  let dims = parse_svg_dimensions(svg)?;
+  let vb: Vec<f64> = dims
+    .view_box
+    .split_whitespace()
+    .filter_map(|v| v.parse().ok())
+    .collect();
+  let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+    return None;
+  };
+  let width = parse_svg_numeric_attr(svg, "width").unwrap_or(vb_w);
+  let height = parse_svg_numeric_attr(svg, "height").unwrap_or(vb_h);
+  let (sx, sy) = (width / vb_w, height / vb_h);
+  Some((
+    (
+      (rect.0 - vb_x) * sx,
+      (rect.1 - vb_y) * sy,
+      rect.2 * sx,
+      rect.3 * sy,
+    ),
+    range,
+  ))
 }
 
 /// The mouse events of `EventHandler[content, events…]` (each `events` a
@@ -48581,6 +48633,40 @@ pub enum DisplayNode {
   Text { runs: Vec<LabelRun> },
   /// Any unrecognized leaf, rendered to SVG (graphics) or text.
   Static { svg: Option<String>, text: String },
+  /// A `ClickPane[content, handler]` drawn as a display element: the picture
+  /// of `content`, and the rectangle `(x, y, width, height)` of it (in the
+  /// picture's pixels) whose clicks are reported to the handler in the
+  /// coordinates of `hit`. A click evaluates `hit.action_at(…)` against the
+  /// live bindings, like a pressed `Button`.
+  ClickPane {
+    svg: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    hit: ClickPaneHit,
+  },
+}
+
+impl DisplayNode {
+  /// For a `ClickPane` node, the handler call for a click at pixel
+  /// `(px, py)` of its picture, or `None` when the click misses the pane.
+  pub fn click_pane_action(&self, px: f64, py: f64) -> Option<String> {
+    let DisplayNode::ClickPane {
+      x,
+      y,
+      width,
+      height,
+      hit,
+      ..
+    } = self
+    else {
+      return None;
+    };
+    let inside = px >= *x && px <= x + width && py >= *y && py <= y + height;
+    (inside && *width > 0.0 && *height > 0.0)
+      .then(|| hit.action_at((px - x) / width, (py - y) / height))
+  }
 }
 
 /// Render one extra-display expression (its InputForm in `display_code`) in
@@ -48820,6 +48906,61 @@ fn overlay_selection_node(
 /// checkbox pushes its value-probe expression to `probes` (and the "on" value
 /// to `ons`) instead of evaluating it inline; `checked` is filled in later
 /// from a single batched evaluation.
+/// `ClickPane[content, handler]` (or `ClickPane[content, {{xmin, ymin},
+/// {xmax, ymax}}, handler]`) inside a display: draw `content` and record
+/// where clicks land in the pane's coordinates. With an explicit range the
+/// whole picture spans it; otherwise clicks are reported in the coordinates
+/// of the graphic drawn, read off its marked drawing area. A pane whose
+/// content draws no graphic (or no coordinate system) stays a plain leaf.
+fn click_pane_display_node(
+  args: &[Expr],
+  bindings: &[(String, String)],
+  probes: &mut Vec<String>,
+  ons: &mut Vec<String>,
+) -> DisplayNode {
+  let content = with_plot_frame_markers(|| {
+    display_expr_to_node(&args[0], bindings, probes, ons)
+  });
+  let DisplayNode::Static { svg: Some(svg), .. } = &content else {
+    return content;
+  };
+  let handler = crate::syntax::expr_to_source_form(&args[args.len() - 1]);
+  let explicit = match args.get(1).filter(|_| args.len() >= 3) {
+    Some(Expr::List(corners)) if corners.len() == 2 => {
+      list2_f64(&corners[0]).zip(list2_f64(&corners[1]))
+    }
+    _ => None,
+  };
+  let placed = match explicit {
+    Some(((x_min, y_min), (x_max, y_max))) => {
+      let width = parse_svg_numeric_attr(svg, "width");
+      let height = parse_svg_numeric_attr(svg, "height");
+      width
+        .zip(height)
+        .map(|(w, h)| ((0.0, 0.0, w, h), (x_min, y_min, x_max, y_max)))
+    }
+    None => first_plot_frame(svg),
+  };
+  let Some(((x, y, width, height), (x_min, y_min, x_max, y_max))) = placed
+  else {
+    return content;
+  };
+  DisplayNode::ClickPane {
+    svg: svg.clone(),
+    x,
+    y,
+    width,
+    height,
+    hit: ClickPaneHit {
+      x_min,
+      y_min,
+      x_max,
+      y_max,
+      handler,
+    },
+  }
+}
+
 fn display_expr_to_node(
   expr: &Expr,
   bindings: &[(String, String)],
@@ -49000,6 +49141,9 @@ fn display_expr_to_node(
       // `EventHandler[content, "MouseClicked" :> action, …]`: draws as its
       // content. When the content is a slider, the click/drag actions run
       // after each of its write-backs.
+      "ClickPane" if args.len() >= 2 => {
+        click_pane_display_node(args, bindings, probes, ons)
+      }
       "EventHandler" if args.len() >= 2 => {
         let after: Vec<String> = args[1..]
           .iter()
@@ -50142,6 +50286,7 @@ fn assign_checkbox_state(
     DisplayNode::Spacer { .. }
     | DisplayNode::Text { .. }
     | DisplayNode::Static { .. }
+    | DisplayNode::ClickPane { .. }
     | DisplayNode::Slider { .. }
     | DisplayNode::Popup { .. } => {}
   }
@@ -50425,6 +50570,11 @@ fn display_node_to_json(node: &DisplayNode) -> String {
     DisplayNode::Text { runs } => {
       format!(r#"{{"kind":"text","runs":{}}}"#, label_runs_to_json(runs))
     }
+    // The Playground has no pointer wiring for panes; it shows the picture.
+    DisplayNode::ClickPane { svg, .. } => format!(
+      r#"{{"kind":"static","svg":"{}"}}"#,
+      json_escape_manipulate(svg)
+    ),
     DisplayNode::Static { svg, text } => match svg {
       Some(svg) => format!(
         r#"{{"kind":"static","svg":"{}"}}"#,
@@ -53413,6 +53563,95 @@ mod manipulate_layout_button_symbol_tests {
       s.controls
         .iter()
         .all(|c| !matches!(c, ManipulateControl::Button { .. }))
+    );
+  }
+}
+
+#[cfg(test)]
+mod click_pane_display_tests {
+  use super::*;
+
+  /// A `ClickPane` written inside a display element (beside the controls,
+  /// not as the body) stays clickable: without an explicit range its clicks
+  /// are reported in the coordinates of the graphic it draws.
+  #[test]
+  fn click_pane_display_reports_clicks_in_graphics_coordinates() {
+    let node = build_manipulate_display(
+      "Dynamic[ClickPane[Dynamic[Graphics[{Rectangle[{0, 0}, {4, 1}]}, \
+       PlotRange -> {{0, 4}, {0, 1}}, ImageSize -> {400, 100}]], \
+       (hits = #) &]]",
+      &[],
+    );
+    let DisplayNode::ClickPane {
+      x,
+      y,
+      width,
+      height,
+      hit,
+      ..
+    } = &node
+    else {
+      panic!("expected a ClickPane node, got {node:?}");
+    };
+    let near = |a: f64, b: f64| (a - b).abs() < 0.05;
+    assert!(
+      near(hit.x_min, 0.0)
+        && near(hit.y_min, 0.0)
+        && near(hit.x_max, 4.0)
+        && near(hit.y_max, 1.0),
+      "{hit:?}"
+    );
+    assert_eq!(hit.handler, "(hits = #1) & ");
+    // The clicked pixel maps to graphics coordinates, y pointing up.
+    let point = |px: f64, py: f64| -> (f64, f64) {
+      let action = node.click_pane_action(px, py).expect("inside the pane");
+      let inner = action
+        .strip_prefix("((hits = #1) & )[{")
+        .and_then(|a| a.strip_suffix("}]"))
+        .expect("handler call");
+      let (a, b) = inner.split_once(", ").expect("two coordinates");
+      (a.parse().unwrap(), b.parse().unwrap())
+    };
+    let (cx, cy) = point(x + width / 2.0, y + height / 2.0);
+    assert!(near(cx, 2.0) && near(cy, 0.5), "centre: {cx}, {cy}");
+    let (lx, ty) = point(*x, *y);
+    assert!(near(lx, 0.0) && near(ty, 1.0), "top-left: {lx}, {ty}");
+    assert_eq!(node.click_pane_action(x + width + 1.0, *y), None);
+  }
+
+  /// Without a `PlotRange`, the range is the padded one the graphic is
+  /// drawn with, so the drawn shapes sit where clicks find them.
+  #[test]
+  fn click_pane_display_uses_the_drawn_range_without_plot_range() {
+    let node = build_manipulate_display(
+      "ClickPane[Graphics[{Rectangle[{-5, -1}, {2, 1}]}, ImageSize -> 350], f]",
+      &[],
+    );
+    let DisplayNode::ClickPane { hit, .. } = &node else {
+      panic!("expected a ClickPane node, got {node:?}");
+    };
+    assert!(hit.x_min < -5.0 && hit.x_max > 2.0, "{hit:?}");
+    assert!(hit.y_min < -1.0 && hit.y_max > 1.0, "{hit:?}");
+  }
+
+  /// `ClickPane[content, {{xmin, ymin}, {xmax, ymax}}, f]` spans the whole
+  /// picture with the given range.
+  #[test]
+  fn click_pane_display_honors_an_explicit_range() {
+    let node = build_manipulate_display(
+      "ClickPane[Graphics[Disk[], ImageSize -> 100], {{0, 0}, {10, 10}}, f]",
+      &[],
+    );
+    let DisplayNode::ClickPane {
+      x, y, width, hit, ..
+    } = &node
+    else {
+      panic!("expected a ClickPane node, got {node:?}");
+    };
+    assert_eq!((*x, *y, *width), (0.0, 0.0, 100.0));
+    assert_eq!(
+      (hit.x_min, hit.y_min, hit.x_max, hit.y_max),
+      (0.0, 0.0, 10.0, 10.0)
     );
   }
 }

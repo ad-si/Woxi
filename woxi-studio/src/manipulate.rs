@@ -553,12 +553,10 @@ impl ClickRegion {
   /// The code applying the pane's handler to a click at pixel `(px, py)` of
   /// the picture (the y axis points up in the pane's coordinates).
   pub fn click_action(&self, px: f32, py: f32) -> String {
-    let h = &self.hit;
-    let fx = f64::from((px - self.x) / self.width).clamp(0.0, 1.0);
-    let fy = f64::from((py - self.y) / self.height).clamp(0.0, 1.0);
-    let x = h.x_min + fx * (h.x_max - h.x_min);
-    let y = h.y_max - fy * (h.y_max - h.y_min);
-    format!("({})[{{{x}, {y}}}]", h.handler)
+    self.hit.action_at(
+      f64::from((px - self.x) / self.width),
+      f64::from((py - self.y) / self.height),
+    )
   }
 }
 
@@ -793,6 +791,10 @@ pub struct ManipulateState {
   /// `ClickPane`s drawn in the picture; a click inside one runs its handler
   /// on the click position.
   pub click_regions: Vec<ClickRegion>,
+  /// The handler call a press would make on the `ClickPane` display
+  /// element under the pointer (`None` while the pointer is off every
+  /// pane, or outside a pane's clickable area).
+  pub display_pane_action: Option<String>,
   /// An `EventHandler` with mouse events in the picture; pressing,
   /// dragging and releasing the pointer over it runs its actions.
   pub mouse_region: Option<MouseRegion>,
@@ -1077,6 +1079,7 @@ impl ManipulateState {
       graphics_handle: None,
       button_regions: Vec::new(),
       click_regions: Vec::new(),
+      display_pane_action: None,
       mouse_region: None,
       mouse_pressed: false,
       pointer: (0.0, 0.0),
@@ -6414,6 +6417,70 @@ mod tests {
     // A click's y axis points up: the top edge is the range's maximum.
     assert!(region.click_action(0.0, 0.0).contains(", 1}]"));
     assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
+  }
+
+  /// A `ClickPane` laid out beside the controls (a display element, not
+  /// the body) — the Demonstrations idiom for a rule editor toggled by
+  /// clicking its pieces. Clicking a cell of the pane runs the handler on
+  /// the clicked graphics coordinates, updates the state variable and
+  /// redraws both the pane and the body.
+  #[test]
+  fn click_pane_display_element_runs_its_handler() {
+    let code = r#"Manipulate[
+      Total[cells],
+      Grid[{{Control[{{cells, {0, 0, 0, 0}}, None}]},
+        {Dynamic[ClickPane[Dynamic@Graphics[
+          Table[{If[cells[[i]] == 1, Black, White], EdgeForm[Gray],
+            Rectangle[{i - 1, 0}, {i, 1}]}, {i, 4}], ImageSize -> {400, 100}],
+          (cells[[Floor[#[[1]]] + 1]] = 1 - cells[[Floor[#[[1]]] + 1]]) &]]}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    fn find_pane(node: &DisplayNode) -> Option<&DisplayNode> {
+      match node {
+        DisplayNode::ClickPane { .. } => Some(node),
+        DisplayNode::Panel(c) => find_pane(c),
+        DisplayNode::Grid(rows) => rows.iter().flatten().find_map(find_pane),
+        DisplayNode::Column(cs) | DisplayNode::Row(cs) => {
+          cs.iter().find_map(find_pane)
+        }
+        _ => None,
+      }
+    }
+    let pane = state
+      .display_trees
+      .iter()
+      .find_map(find_pane)
+      .cloned()
+      .unwrap_or_else(|| panic!("no ClickPane in {:?}", state.display_trees));
+    let DisplayNode::ClickPane {
+      x,
+      y,
+      width,
+      height,
+      ..
+    } = pane
+    else {
+      unreachable!()
+    };
+    // The middle of the third cell (graphics x in [2, 3]).
+    let action = pane
+      .click_pane_action(x + width * 0.625, y + height / 2.0)
+      .expect("inside the pane");
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let cells = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "cells")
+      .map(|(_, v)| v.clone())
+      .unwrap_or_default();
+    assert_eq!(cells, "{0, 0, 1, 0}");
+    assert_eq!(state.text_output.as_deref(), Some("1"));
+    // The redrawn pane still answers clicks.
+    assert!(state.display_trees.iter().any(|t| find_pane(t).is_some()));
   }
 
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first

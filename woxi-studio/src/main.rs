@@ -406,6 +406,13 @@ enum Message {
   /// A `Button[…]` inside a Manipulate display was pressed: run its held
   /// action against the widget's bindings.
   ManipulateDisplayAction(usize, String),
+  /// The pointer moved over (or left) a `ClickPane` inside a Manipulate
+  /// display: the handler call a press there would make, if any.
+  /// (cell_idx, action)
+  ManipulateDisplayPaneHover(usize, Option<String>),
+  /// A `ClickPane` inside a Manipulate display was pressed: run the
+  /// handler call recorded by the last hover. (cell_idx)
+  ManipulateDisplayPaneClicked(usize),
   /// The throttle timer for a Manipulate cell fired; re-evaluate the body
   /// with the latest control values if any change is still pending.
   /// (cell_idx)
@@ -2114,6 +2121,28 @@ impl WoxiStudio {
       Message::ManipulateDisplayAction(cell_idx, action) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.apply_button_action(&action);
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateDisplayPaneHover(cell_idx, action) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.display_pane_action = action;
+        }
+        Task::none()
+      }
+
+      Message::ManipulateDisplayPaneClicked(cell_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(action) = state.display_pane_action.clone()
         {
           state.apply_button_action(&action);
           if let Some(audio) = state.emitted_sound.take() {
@@ -5553,7 +5582,8 @@ fn display_node_plain_text(
     }
     DisplayNode::Checkbox { .. }
     | DisplayNode::Slider { .. }
-    | DisplayNode::Spacer { .. } => String::new(),
+    | DisplayNode::Spacer { .. }
+    | DisplayNode::ClickPane { .. } => String::new(),
     DisplayNode::Popup { current, .. } => current.clone(),
     DisplayNode::Opener { label, .. } => display_node_plain_text(label),
   }
@@ -5834,6 +5864,23 @@ fn render_display_node<'a>(
       } else {
         rich_text(spans).size(12).into()
       }
+    }
+    // Clicks on the pane run its handler at the clicked coordinates; the
+    // pointer position is tracked on hover since a press carries none.
+    DisplayNode::ClickPane { svg: svg_str, .. } => {
+      let handle = svg::Handle::from_memory(svg_str.clone().into_bytes());
+      let pane = node.clone();
+      mouse_area(svg::Svg::new(handle).width(iced::Length::Shrink))
+        .on_move(move |p| {
+          Message::ManipulateDisplayPaneHover(
+            cell_idx,
+            pane.click_pane_action(f64::from(p.x), f64::from(p.y)),
+          )
+        })
+        .on_exit(Message::ManipulateDisplayPaneHover(cell_idx, None))
+        .on_press(Message::ManipulateDisplayPaneClicked(cell_idx))
+        .interaction(iced::mouse::Interaction::Pointer)
+        .into()
     }
     DisplayNode::Static {
       svg: svg_src,
@@ -17638,7 +17685,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         | DisplayNode::Slider { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
-        | DisplayNode::Static { .. } => {}
+        | DisplayNode::Static { .. }
+        | DisplayNode::ClickPane { .. } => {}
       }
     }
     let mut out = Vec::new();
@@ -17680,7 +17728,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         | DisplayNode::Slider { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
-        | DisplayNode::Static { .. } => {}
+        | DisplayNode::Static { .. }
+        | DisplayNode::ClickPane { .. } => {}
       }
     }
     let mut out = Vec::new();
