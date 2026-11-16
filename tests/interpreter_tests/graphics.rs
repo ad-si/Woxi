@@ -22069,6 +22069,98 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod field_plots {
     use super::*;
 
+    /// Explicit `FrameTicks` on the right edge of a `DensityPlot` frame
+    /// are drawn there with their (typeset) labels, and the edges set to
+    /// `None` lose their automatic ticks and labels.
+    #[test]
+    fn density_plot_explicit_right_frame_ticks() {
+      clear_state();
+      let svg = interpret(
+        r#"ExportString[DensityPlot[y, {x, 0, 1}, {y, 0, 1},
+          FrameTicks -> {{None, Table[{k/4, Superscript["10", ToString[k]]},
+            {k, 0, 4}]}, {None, None}}], "SVG"]"#,
+      )
+      .unwrap();
+      assert_eq!(svg.matches("<text").count(), 5, "{svg}");
+      assert_eq!(svg.matches("text-anchor=\"start\"").count(), 5, "{svg}");
+      assert!(!svg.contains(">0.2<"), "{svg}");
+      assert!(!svg.contains("text-anchor=\"end\""), "{svg}");
+    }
+
+    /// `FrameTicks -> {All, All}` labels the top and right edges of a
+    /// `ContourPlot` frame too, and `FrameTicks -> None` labels none.
+    #[test]
+    fn contour_plot_frame_ticks_all_and_none() {
+      clear_state();
+      let count = |ticks: &str| {
+        interpret(&format!(
+          "StringCount[ExportString[ContourPlot[x y, {{x, 0, 1}}, \
+           {{y, 0, 1}}, FrameTicks -> {ticks}], \"SVG\"], \"<text\"]"
+        ))
+        .unwrap()
+        .parse::<usize>()
+        .unwrap()
+      };
+      let automatic = count("Automatic");
+      assert_eq!(count("All"), 2 * automatic);
+      assert_eq!(count("None"), 0);
+    }
+
+    /// `LabelStyle -> 16` sets the tick labels of a `DensityPlot` at 16
+    /// points, and its `FrameLabel` too.
+    #[test]
+    fn density_plot_label_style_font_size() {
+      clear_state();
+      let svg = interpret(
+        r#"ExportString[DensityPlot[x y, {x, 0, 1}, {y, 0, 1},
+          LabelStyle -> 16, FrameLabel -> {"xl", "yl"}], "SVG"]"#,
+      )
+      .unwrap();
+      let plain = interpret(
+        r#"ExportString[DensityPlot[x y, {x, 0, 1}, {y, 0, 1},
+          FrameLabel -> {"xl", "yl"}], "SVG"]"#,
+      )
+      .unwrap();
+      let sizes = |s: &str| {
+        s.split("font-size=\"")
+          .skip(1)
+          .filter_map(|r| r.split('"').next()?.parse::<f64>().ok())
+          .collect::<Vec<_>>()
+      };
+      let (big, small) = (sizes(&svg), sizes(&plain));
+      assert_eq!(big.len(), small.len(), "{svg}");
+      for (b, s) in big.iter().zip(&small) {
+        assert!((b / s - 1.6).abs() < 0.05, "{b} vs {s}: {svg}");
+      }
+    }
+
+    /// An explicit `ImagePadding` sets the room around a `DensityPlot`
+    /// frame: the frame starts exactly that far from the picture's edge.
+    #[test]
+    fn density_plot_explicit_image_padding() {
+      clear_state();
+      let svg = interpret(
+        r#"ExportString[DensityPlot[x, {x, 0, 1}, {y, 0, 1},
+          ImageSize -> 200, ImagePadding -> {{30, 20}, {25, 15}}], "SVG"]"#,
+      )
+      .unwrap();
+      let rect = svg
+        .split("<rect")
+        .find(|r| r.contains("fill=\"none\""))
+        .expect("frame rect");
+      let attr = |name: &str| -> f64 {
+        rect
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      let scale = attr("width") / (200.0 - 30.0 - 20.0);
+      assert!((attr("x") / scale - 30.0).abs() < 0.2, "{rect}");
+      assert!((attr("y") / scale - 15.0).abs() < 0.2, "{rect}");
+    }
+
     /// `FrameLabel -> Automatic` labels the frame with the two plot
     /// variables (it used to print the word "Automatic").
     #[test]

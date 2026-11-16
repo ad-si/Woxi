@@ -12971,38 +12971,6 @@ pub(crate) struct PlotArea {
   pub y_max: f64,
 }
 
-/// Which axes a `FrameTicks` setting leaves ticks on, as `(x, y)` — the
-/// bottom and the left edge. Accepts `None | False | All | Automatic`,
-/// `{xspec, yspec}`, `{b, l, t, r}` and `{{l, r}, {b, t}}`; an edge pair
-/// keeps the axis unless both of its sides are `None`/`False`.
-pub(crate) fn frame_tick_axes_visible(value: &Expr) -> (bool, bool) {
-  let hidden =
-    |e: &Expr| matches!(e, Expr::Identifier(v) if v == "None" || v == "False");
-  let is_edge_pair = |e: &Expr| match e {
-    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
-      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
-    }),
-    _ => false,
-  };
-  let pair_visible = |e: &Expr| match e {
-    Expr::List(p) if is_edge_pair(e) => !(hidden(&p[0]) && hidden(&p[1])),
-    other => !hidden(other),
-  };
-  match value {
-    Expr::List(items) if items.len() == 4 => (
-      !(hidden(&items[0]) && hidden(&items[2])),
-      !(hidden(&items[1]) && hidden(&items[3])),
-    ),
-    Expr::List(items) if items.len() == 2 && items.iter().any(is_edge_pair) => {
-      (pair_visible(&items[1]), pair_visible(&items[0]))
-    }
-    Expr::List(items) if items.len() == 2 => {
-      (!hidden(&items[0]), !hidden(&items[1]))
-    }
-    other => (!hidden(other), !hidden(other)),
-  }
-}
-
 /// What a `FrameTicks` setting draws on one frame edge.
 #[derive(Clone, Debug)]
 pub(crate) enum FrameEdgeTicks {
@@ -13022,6 +12990,11 @@ impl FrameEdgeTicks {
   /// and right ones marked only (bottom, left, top, right).
   pub(crate) fn defaults() -> [Self; 4] {
     [Self::Labeled, Self::Labeled, Self::Marks, Self::Marks]
+  }
+
+  /// No ticks on any edge.
+  pub(crate) fn none() -> [Self; 4] {
+    [Self::None, Self::None, Self::None, Self::None]
   }
 
   pub(crate) fn is_none(&self) -> bool {
