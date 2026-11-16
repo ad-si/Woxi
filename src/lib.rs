@@ -4907,18 +4907,13 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   {
     let inner = render_inline_display_wrapper(&args[0]);
     return match inner {
-      // A text layout (`Text[Style[Row[…], 14]]`) that the inner pass drew
-      // as a picture is typeset as the text it is, in the text face — the
-      // way a `Grid` cell sets the same `Text[…]`.
+      // A text row (`Text[Style[Row[…], 14]]`) that the inner pass drew as
+      // a picture is drawn again with `Text` on each item, so its text is
+      // set in the text face rather than the bare row's monospace face.
       syntax::Expr::Graphics { .. } if !holds_layout_graphic(&args[0]) => {
-        match functions::graphics::grid_svg_with_gaps(
-          &[syntax::Expr::List(
-            vec![syntax::Expr::List(vec![expr.clone()].into())].into(),
-          )],
-          &[],
-        ) {
-          Ok(svg) => graphics_result(svg),
-          Err(_) => inner,
+        match functions::graphics::text_pushed_into_row(&args[0]) {
+          Some(pushed) => render_inline_display_wrapper(&pushed),
+          None => inner,
         }
       }
       syntax::Expr::Graphics { .. } => inner,

@@ -16020,22 +16020,59 @@ fn is_text_display_item(item: &Expr) -> bool {
   }
 }
 
+/// `Text[…]` around a text `Row` (under any `Style` wrappers) pushed onto
+/// the row's items: `Text[Style[Row[{a, b}], 14]]` → `Style[Row[{Text[a],
+/// Text[b]}], 14]`, so the row renderer sets each item in the proportional
+/// text face instead of the monospace face of a bare `Row`. A bare string
+/// becomes a one-item row. `None` for any other content (a picture, or a
+/// wider layout such as a list re-flowed into a `Column` of lines).
+pub(crate) fn text_pushed_into_row(content: &Expr) -> Option<Expr> {
+  match content {
+    Expr::String(_) => Some(call1(
+      "Row",
+      Expr::List(vec![call1("Text", content.clone())].into()),
+    )),
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let items: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          let keep = is_text_display_item(item)
+            || crate::syntax::spacer_width_pts(item).is_some()
+            || crate::evaluator::lays_out_a_graphic(item);
+          if keep {
+            item.clone()
+          } else {
+            call1("Text", item.clone())
+          }
+        })
+        .collect();
+      let mut new_args = vec![Expr::List(items.into())];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Row", new_args))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let inner = text_pushed_into_row(&args[0])?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call(name.as_str(), new_args))
+    }
+    _ => None,
+  }
+}
+
 /// A `Text[…]` layout item (possibly styled) whose resolved content is a
-/// text layout such as a `Row`: set in the proportional text face, the way
-/// a `Grid` cell typesets it, rather than in the monospace face the bare
-/// layout gets. `None` for any other item, or content holding a picture.
+/// text `Row`: drawn with `Text` pushed onto the row's items (see
+/// `text_pushed_into_row`). `None` for any other item.
 fn text_item_layout_svg(item: &Expr, resolved: &Expr) -> Option<String> {
-  if !is_text_display_item(item)
-    || crate::evaluator::lays_out_a_graphic(resolved)
-  {
+  if !is_text_display_item(item) {
     return None;
   }
-  let cell = call1("Text", resolved.clone());
-  grid_svg_with_gaps(
-    &[Expr::List(vec![Expr::List(vec![cell].into())].into())],
-    &[],
-  )
-  .ok()
+  nested_layout_svg(&text_pushed_into_row(resolved)?)
 }
 
 /// If `s` is a single n-ary/large operator glyph (∑ ∏ ∫ …), return the font
