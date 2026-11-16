@@ -1751,15 +1751,22 @@ pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
 /// Automatic` (`AbsoluteOptions[g, Ticks]` shows them; independent of the
 /// image size). So 0..7.5 steps by 1, 0..8 by 2 and 0..16 by 5.
 pub(crate) fn axis_tick_step(range: f64) -> f64 {
+  tick_step_below(range, 8.0)
+}
+
+/// The smallest of 1, 2 and 5 × 10^k that cuts `range` into fewer than
+/// `max_intervals` intervals — the step rule shared by 2D axes (fewer than
+/// 8) and 3D box axes (fewer than 5).
+pub(crate) fn tick_step_below(range: f64, max_intervals: f64) -> f64 {
   let range = range.abs();
   if !(range.is_finite() && range > 0.0) {
     return 1.0;
   }
-  let mut mag = 10_f64.powf((range / 8.0).log10().floor());
+  let mut mag = 10_f64.powf((range / max_intervals).log10().floor());
   loop {
     for m in [1.0, 2.0, 5.0] {
       let step = m * mag;
-      if range / step < 8.0 * (1.0 - 1e-12) {
+      if range / step < max_intervals * (1.0 - 1e-12) {
         return step;
       }
     }

@@ -2,7 +2,7 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::functions::plot::{
-  PLOT_COLORS, format_tick, nice_step, parse_image_size, substitute_var,
+  PLOT_COLORS, format_tick, parse_image_size, substitute_var,
 };
 
 const DEFAULT_SIZE: u32 = 360;
@@ -3942,9 +3942,15 @@ fn label_half_width(label: &str, font_size: i32) -> f64 {
 }
 
 /// The tick positions along an axis spanning `val_min` to `val_max`, the
-/// same ones the tick marks are drawn at.
+/// same ones the tick marks are drawn at. Like wolframscript, a 3D box axis
+/// steps by the smallest of 1, 2 and 5 × 10^k that leaves fewer than five
+/// intervals: -1..1 by 0.5, 0..1 by 0.5, -5..5 and 0..10 by 5, 0..3 by 1.
 fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
-  let step = nice_step(val_max - val_min, 4);
+  let span = val_max - val_min;
+  if !(span.is_finite() && span > 0.0) {
+    return Vec::new();
+  }
+  let step = crate::functions::plot::tick_step_below(span, 5.0);
   if step <= 0.0 {
     return Vec::new();
   }
@@ -22840,7 +22846,17 @@ mod tick_values_tests {
 
   #[test]
   fn regular_extent_has_ticks() {
-    assert_eq!(tick_values(0.0, 10.0), vec![0.0, 2.5, 5.0, 7.5, 10.0]);
+    assert_eq!(tick_values(0.0, 10.0), vec![0.0, 5.0, 10.0]);
+  }
+
+  #[test]
+  fn steps_by_one_two_or_five_with_fewer_than_five_intervals() {
+    assert_eq!(tick_values(-5.0, 5.0), vec![-5.0, 0.0, 5.0]);
+    assert_eq!(tick_values(-1.0, 1.0), vec![-1.0, -0.5, 0.0, 0.5, 1.0]);
+    assert_eq!(tick_values(0.0, 1.0), vec![0.0, 0.5, 1.0]);
+    assert_eq!(tick_values(0.0, 3.0), vec![0.0, 1.0, 2.0, 3.0]);
+    assert_eq!(tick_values(-3.0, 3.0), vec![-2.0, 0.0, 2.0]);
+    assert_eq!(tick_values(0.0, 15.0), vec![0.0, 5.0, 10.0, 15.0]);
   }
 }
 
