@@ -58487,8 +58487,8 @@ mod labeled_text_and_pane_wrapping {
     let width = svg_width(&svg);
     assert!((width - 351.25).abs() < 1.0, "{width}: {svg}");
     // The frame's right edge is the drawing area's: 131.25 points right of
-    // the left padding.
-    assert!(svg.contains("x1=\"201.25\""), "{svg}");
+    // its left edge (both drawn inside the padding's offset).
+    assert!(svg.contains("<line x1=\"131.25\" y1=\"0.00\""), "{svg}");
   }
 
   /// Regression: `Re`/`Im` of a non-real `Root[…]` (what `ReIm` gives for
