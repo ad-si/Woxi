@@ -1300,10 +1300,10 @@ fn push_field_frame(
   );
   let sf = f64::from(RESOLUTION_SCALE);
   let (_, gray, _, label_fill, _) = plot_theme();
-  let label_fill = opts
-    .label_style
-    .and_then(|s| s.color)
-    .map_or_else(|| label_fill.to_string(), |c| c.to_svg_rgb());
+  let label_fill = opts.label_style.and_then(|s| s.color).map_or_else(
+    || label_fill.to_string(),
+    super::graphics::Color::to_svg_rgb,
+  );
   let color = format!("#{:02X}{:02X}{:02X}", gray.0, gray.1, gray.2);
   let (fx, fy, fw, fh) = layout.frame;
   let (fx, fy, fw, fh) = (fx * sf, fy * sf, fw * sf, fh * sf);
