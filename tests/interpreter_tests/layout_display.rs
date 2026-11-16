@@ -491,6 +491,44 @@ mod layout_display {
     assert!(!svg.contains("<tspan"), "{svg}");
   }
 
+  /// A short row ending in `SpanFromLeft` keeps spanning to the grid's
+  /// right edge. Regression: the missing trailing columns stayed separate
+  /// empty cells, so a framed heading row (`{"label", SpanFromLeft}` in a
+  /// three-column grid) covered only two columns, was centered over them
+  /// and had a divider before the last column.
+  #[test]
+  fn grid_trailing_span_from_left_reaches_last_column() {
+    let short = svg_of(
+      "Grid[{{\"aa\", \"bb\", \"cc\"}, {\"heading\", SpanFromLeft}, \
+       {1, 2, 3}}, Frame -> All, ItemSize -> 4]",
+    );
+    let full = svg_of(
+      "Grid[{{\"aa\", \"bb\", \"cc\"}, {\"heading\", SpanFromLeft, \
+       SpanFromLeft}, {1, 2, 3}}, Frame -> All, ItemSize -> 4]",
+    );
+    assert_eq!(short, full);
+    // The heading is centered across all three columns.
+    let attr = |tag: &str, name: &str| -> f64 {
+      let i = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+    };
+    let width = attr(&short, "width");
+    let heading = short[..short.find(">heading<").unwrap()]
+      .rsplit("<text")
+      .next()
+      .unwrap();
+    assert!(
+      (attr(heading, "x") - (width - 1.0) / 2.0).abs() < 1.0,
+      "{short}"
+    );
+    // A short row without a trailing span is not merged.
+    let ragged = svg_of(
+      "Grid[{{\"aa\", \"bb\", \"cc\"}, {\"heading\", \"x\"}, {1, 2, 3}}, \
+       Frame -> All, ItemSize -> 4]",
+    );
+    assert_ne!(ragged, short);
+  }
+
   /// A string holding inline linear syntax (`\!\(…\)`) in a fixed-width
   /// `ItemSize` column is a typeset formula: it is not word-wrapped at its
   /// markup's spaces, which would split the box structure.
