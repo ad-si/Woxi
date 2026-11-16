@@ -22977,6 +22977,11 @@ fn svg_tick_label_expr(label: &str) -> Expr {
 pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
   let ps = log_scaled_plot_source(ps);
   let ps = ps.as_ref();
+  // Every fill (and scatter stem) is gathered first and emitted before
+  // any series' curve or points, as in the Wolfram Language's own plot
+  // output: a `Filling -> {1 -> {2}}` area must not paint over the line
+  // of a series drawn before it.
+  let mut fill_layer: Vec<Expr> = Vec::new();
   let mut series_prims: Vec<Expr> = Vec::new();
   for sd in &ps.series {
     // Filled region (Filling -> …) as a Polygon underneath the curve,
@@ -23046,7 +23051,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           ));
           fill_prims.push(call1("Polygon", Expr::List(coords.into())));
         }
-        series_prims.push(Expr::List(fill_prims.into()));
+        fill_layer.push(Expr::List(fill_prims.into()));
       }
     }
     // Scattered points with a `Filling` carry a stem from each point to the
@@ -23082,7 +23087,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           ),
         ));
       }
-      series_prims.push(Expr::List(stems.into()));
+      fill_layer.push(Expr::List(stems.into()));
     }
     // Color directive
     series_prims.push(crate::functions::plot::series_color_expr(sd));
@@ -23202,7 +23207,8 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       }
     }
   }
-  series_prims
+  fill_layer.extend(series_prims);
+  fill_layer
 }
 
 /// The `AbsoluteDashing[…]` of a dashed plot series. Relative lengths

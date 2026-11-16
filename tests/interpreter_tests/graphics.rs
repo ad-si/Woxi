@@ -16895,6 +16895,41 @@ mod plot3d {
       ));
     }
 
+    // A plot's primitives (as `Part`, `Show` and `ReplaceAll` see them)
+    // list every fill before any curve, as Wolfram does: the area between
+    // curves 1 and 2 must not be layered over the line of curve 1, which
+    // would hide half its stroke once the primitives are drawn again.
+    #[test]
+    fn plot_primitives_put_fills_beneath_all_curves() {
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Plot[{-Sqrt[1 - x^2], Sqrt[1 - x^2]}, \
+           {x, -1, 1}, Filling -> {1 -> {2}}][[1]], _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2, x^3}, {x, 0, 1}, \
+           Filling -> {1 -> {3}, 2 -> Axis}]], _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
+      // Merged with other graphics, a fill owned by a later series still
+      // goes beneath the earlier series' curve.
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2}, {x, 0, 1}, \
+           Filling -> {2 -> {1}}], Graphics[Point[{0, 0}]]], \
+           _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
+    }
+
     // `Filling -> {1 -> {{2}, {c1, c2}}}` fills the regions where curve 1 is
     // above / below curve 2 in the two colors.
     #[test]
