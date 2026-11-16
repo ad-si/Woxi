@@ -39711,6 +39711,43 @@ mod manipulate {
     );
   }
 
+  /// A caption's `Style` color may be any expression that evaluates to a
+  /// color, such as a palette entry `ColorData[1, n]`. Regression: only
+  /// literal color directives were recognized, so these captions lost
+  /// their color.
+  #[test]
+  fn spec_label_style_color_from_color_data() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, \
+       {{a, True, Style[\"first\", ColorData[1, 1]]}, {True, False}}, \
+       {{b, 0.5, Style[\"second\", Bold, ColorData[1, 2]]}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let runs_of = |control: &ManipulateControl| match control {
+      ManipulateControl::Discrete { label_runs, .. }
+      | ManipulateControl::Continuous { label_runs, .. } => label_runs.clone(),
+      other => panic!("unexpected control {other:?}"),
+    };
+    let close = |c: Option<(f32, f32, f32)>, want: (f32, f32, f32)| {
+      let c = c.expect("label run must carry a color");
+      assert!(
+        (c.0 - want.0).abs() < 1e-3
+          && (c.1 - want.1).abs() < 1e-3
+          && (c.2 - want.2).abs() < 1e-3,
+        "got {c:?}, want {want:?}"
+      );
+    };
+    let first = runs_of(&spec.controls[0]);
+    assert_eq!(first.len(), 1);
+    assert_eq!(first[0].text, "first");
+    close(first[0].color, (0.2472, 0.24, 0.6));
+    let second = runs_of(&spec.controls[1]);
+    assert_eq!(second[0].text, "second");
+    assert!(second[0].bold);
+    close(second[0].color, (0.6, 0.24, 0.442893));
+  }
+
   #[test]
   fn spec_continuous_basic() {
     let expr = interpret_to_expr("Manipulate[x^2, {x, 0, 10}]").unwrap();

@@ -43945,6 +43945,19 @@ fn string_product_factors(expr: &Expr) -> Option<Vec<String>> {
   (is_product && collect(expr, &mut out)).then_some(out)
 }
 
+/// The color a label's `Style` directive sets. A directive that only
+/// becomes a color once evaluated (`ColorData[1, 1]`, `Lighter[Blue]` with
+/// computed arguments, …) is evaluated first, as the front end does when it
+/// typesets a control caption like `Style["bands", ColorData[1, 1]]`.
+fn label_style_color(directive: &Expr) -> Option<Color> {
+  parse_color(directive).or_else(|| match directive {
+    Expr::FunctionCall { .. } => evaluate_expr_to_expr(directive)
+      .ok()
+      .and_then(|evaluated| parse_color(&evaluated)),
+    _ => None,
+  })
+}
+
 fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let output_run = |italic: bool| {
     let text =
@@ -44158,7 +44171,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         let color = args
           .iter()
           .skip(1)
-          .find_map(parse_color)
+          .find_map(label_style_color)
           .map(|c| (c.r as f32, c.g as f32, c.b as f32));
         let size = style_directive_font_size(args.iter().skip(1));
         let mut runs = args
