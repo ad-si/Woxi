@@ -15226,7 +15226,9 @@ fn frame_label_entry(e: &Expr) -> String {
   if matches!(e, Expr::Identifier(s) if s == "None") {
     return String::new();
   }
-  crate::functions::graphics::styled_axis_label(e).unwrap_or_default()
+  // A frame label is typeset like an axis label: a mathematical entry
+  // (`i`, `Subscript[q, i][t]`) in TraditionalForm italics.
+  crate::functions::graphics::frame_label_text(e).unwrap_or_default()
 }
 
 /// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant

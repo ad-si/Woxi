@@ -14533,15 +14533,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }
             }
           }
-          (
-            grid,
-            num_cols,
-            num_rows,
-            1.0,
-            (num_cols as f64).max(2.0),
-            1.0,
-            (num_rows as f64).max(2.0),
-          )
+          // `DataRange -> {{x0, x1}, {y0, y1}}` places the first and last
+          // columns (x) and rows (y) there instead of at their indices.
+          let ((x0, x1), (y0, y1)) =
+            crate::functions::field_plot::matrix_data_range(
+              outer,
+              &args[1..],
+              (1.0, (num_cols as f64).max(2.0)),
+              (1.0, (num_rows as f64).max(2.0)),
+            );
+          (grid, num_cols, num_rows, x0, x1, y0, y1)
         }
         // Explicit 3D coordinates: {{x1,y1,z1}, {x2,y2,z2}, ...}
         _ => {

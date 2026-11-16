@@ -486,7 +486,8 @@ impl DensityContourOptions {
 
 /// `FrameLabel -> Automatic` on a plot over two ranges `{x, …}, {y, …}`
 /// (the arguments just before the options at `start`) labels the bottom and
-/// left frame edges with the two variable names.
+/// left frame edges with the two variables, typeset like an explicit
+/// `FrameLabel -> {x, y}` (in TraditionalForm italics).
 fn automatic_frame_label(
   value: &Expr,
   args: &[Expr],
@@ -498,7 +499,7 @@ fn automatic_frame_label(
   }
   let var_name = |e: &Expr| match e {
     Expr::List(items) if items.len() >= 2 => match &items[0] {
-      Expr::Identifier(v) => Some(Expr::String(v.clone())),
+      Expr::Identifier(v) => Some(Expr::Identifier(v.clone())),
       _ => None,
     },
     _ => None,
@@ -6604,7 +6605,7 @@ fn parse_list_data_to_grid(
 /// coordinates the first and last columns (x) and rows (y) sit at, instead
 /// of the default of 1-based indices. Triples carry their own coordinates,
 /// so they and absent or malformed options keep `default_x` / `default_y`.
-fn matrix_data_range(
+pub(crate) fn matrix_data_range(
   rows: &[Expr],
   opts: &[Expr],
   default_x: (f64, f64),
