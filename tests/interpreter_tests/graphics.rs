@@ -22087,14 +22087,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!svg.contains("text-anchor=\"end\""), "{svg}");
     }
 
-    /// `FrameTicks -> {All, All}` labels the top and right edges of a
-    /// `ContourPlot` frame too, and `FrameTicks -> None` labels none.
+    /// `FrameTicks -> All` labels the top and right edges of a
+    /// `DensityPlot` frame too, and `FrameTicks -> None` labels none.
     #[test]
-    fn contour_plot_frame_ticks_all_and_none() {
+    fn density_plot_frame_ticks_all_and_none() {
       clear_state();
       let count = |ticks: &str| {
         interpret(&format!(
-          "StringCount[ExportString[ContourPlot[x y, {{x, 0, 1}}, \
+          "StringCount[ExportString[DensityPlot[x y, {{x, 0, 1}}, \
            {{y, 0, 1}}, FrameTicks -> {ticks}], \"SVG\"], \"<text\"]"
         ))
         .unwrap()
