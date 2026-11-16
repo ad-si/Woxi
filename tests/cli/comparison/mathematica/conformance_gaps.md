@@ -7586,6 +7586,20 @@ entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
 the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
 styling, layout and lighting of these pictures differ.
 
+### `PolyhedronData[]` lists fewer entities than Wolfram, so positions differ
+
+`PolyhedronData[]` holds the 160 solids Woxi knows, while Wolfram's list
+has 195 (a Demonstration drives a `1`–`195` slider through
+`PolyhedronData[][[n]]`). Positions therefore name different solids: the
+stored snapshots of that Demonstration show the `Icosidodecahedron` at
+position `127` (Woxi: position `84`) and a nonconvex uniform star polyhedron
+with octahedral symmetry at position `51`.
+Positions `161`–`195` are out of range in Woxi (`Part::partw`). The missing
+entities appear to be nonconvex uniform polyhedra and similar solids, but which
+ones, and how Wolfram sorts the family entries (`{"Antiprism", n}`,
+`{"Prism", n}`, …) among the names, could not be determined without
+`wolframscript`, so the catalog has not been extended.
+
 ### `Solve` roots with a symbolic parameter keep the quadratic-formula form
 
 The roots are right but not written the way wolframscript writes them.
