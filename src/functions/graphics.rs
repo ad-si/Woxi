@@ -3285,29 +3285,9 @@ fn collect_primitives(
     // (`Line[{-5 Dynamic[u], 5 Dynamic[u]}]`): every one reads as its value
     // and the argument is evaluated again with the values in place.
     Expr::FunctionCall { name, args }
-      if args.iter().any(contains_dynamic)
-        && !matches!(name.as_str(), "Dynamic" | "Style" | "EventHandler")
-        // A user function handed `Dynamic[…]` arguments matches on them as
-        // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
-        && crate::evaluator::functions::is_builtin_symbol(name) =>
+      if let Some(released) = release_primitive_dynamics(name, args) =>
     {
-      let released: Vec<Expr> = args
-        .iter()
-        .map(|a| match a {
-          Expr::FunctionCall { name, args: inner }
-            if name == "Dynamic" && inner.len() == 1 =>
-          {
-            crate::evaluator::evaluate_expr_to_expr(&inner[0])
-              .unwrap_or_else(|_| a.clone())
-          }
-          other if contains_dynamic(other) => {
-            let value = release_dynamics(other);
-            crate::evaluator::evaluate_expr_to_expr(&value).unwrap_or(value)
-          }
-          other => other.clone(),
-        })
-        .collect();
-      collect_primitives(&call(name.as_str(), released), style, prims, errors);
+      collect_primitives(&released, style, prims, errors);
     }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
@@ -6631,6 +6611,43 @@ pub(crate) fn dynamic_current_value(expr: &Expr) -> Expr {
     }
     other => other.clone(),
   }
+}
+
+/// A graphics primitive whose arguments hold `Dynamic[…]` (`Line[{-5
+/// Dynamic[u], 5 Dynamic[u]}]`, `Cuboid[{0.5 + Dynamic[s], …}, …]`) with
+/// every `Dynamic` read as its current value and each such argument
+/// evaluated again with the values in place — what a front end draws.
+/// `None` when no argument holds one, for `Dynamic`/`Style`/`EventHandler`
+/// themselves, and for user functions: those match on `Dynamic[…]`
+/// arguments as they are (`f[Dynamic[{p_ - q_, …}]]`), only built-in
+/// primitives draw values. Shared by the 2D and 3D primitive collectors.
+pub(crate) fn release_primitive_dynamics(
+  name: &str,
+  args: &[Expr],
+) -> Option<Expr> {
+  if !args.iter().any(contains_dynamic)
+    || matches!(name, "Dynamic" | "Style" | "EventHandler")
+    || !crate::evaluator::functions::is_builtin_symbol(name)
+  {
+    return None;
+  }
+  let released: Vec<Expr> = args
+    .iter()
+    .map(|a| match a {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Dynamic" && inner.len() == 1 =>
+      {
+        crate::evaluator::evaluate_expr_to_expr(&inner[0])
+          .unwrap_or_else(|_| a.clone())
+      }
+      other if contains_dynamic(other) => {
+        let value = release_dynamics(other);
+        crate::evaluator::evaluate_expr_to_expr(&value).unwrap_or(value)
+      }
+      other => other.clone(),
+    })
+    .collect();
+  Some(call(name, released))
 }
 
 /// Whether `expr` holds a `Dynamic[…]` anywhere inside it.

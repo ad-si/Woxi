@@ -8220,6 +8220,15 @@ fn collect_3d_primitives(
     Expr::Identifier(_) | Expr::Rule { .. } => {
       apply_3d_directive(expr, style);
     }
+    // A primitive or directive with `Dynamic[…]` somewhere in its arguments
+    // (`Cuboid[{0.5 + Dynamic[s], …}, …]`, `Hue[Dynamic[h], 1, 1]`) is
+    // drawn with every `Dynamic` at its current value.
+    Expr::FunctionCall { name, args }
+      if let Some(released) =
+        crate::functions::graphics::release_primitive_dynamics(name, args) =>
+    {
+      collect_3d_primitives(&released, style, prims);
+    }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
         "Sphere" | "Ball" => {
