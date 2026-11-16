@@ -663,7 +663,7 @@ fn parse_density_contour_options(
             // (f[#1, #2] &)`.
             // `Function[{x, y}, body]` is just as much a lone function.
             f @ (Expr::Function { .. } | Expr::NamedFunction { .. }) => {
-              mesh_functions = vec![f.clone()]
+              mesh_functions = vec![f.clone()];
             }
             _ => {}
           }
@@ -2566,7 +2566,7 @@ impl RegionMask<'_> {
   /// region boundary rather than stopping half a cell short of it.
   fn excludes(&self, u: f64, v: f64) -> bool {
     let cols = self.grid.len();
-    let rows = self.grid.first().map_or(0, |r| r.len());
+    let rows = self.grid.first().map_or(0, std::vec::Vec::len);
     if cols == 0 || rows == 0 {
       return false;
     }
