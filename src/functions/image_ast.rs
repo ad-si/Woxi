@@ -13460,6 +13460,13 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 
 // ─── Rasterize ──────────────────────────────────────────────────────────────
 
+/// The face a rasterizer draws a `<text>` in when neither it nor an
+/// enclosing element names a `font-family` (a `Graphics` `Text` without
+/// `FontFamily`). usvg would otherwise fall back to "Times New Roman",
+/// while WL's default graphics font, and the family an exported SVG bakes
+/// onto such text, is a sans-serif one. Pass it as usvg's `font_family`.
+pub const DEFAULT_TEXT_FONT_FAMILY: &str = "Atkinson Hyperlegible Next";
+
 /// Populate a usvg font database with the embedded fallback fonts and wire
 /// each CSS generic family to a reasonable default. This is shared by the
 /// raster (`rasterize_svg`) and PDF (`svg_to_pdf_bytes`) export paths and by
@@ -13493,13 +13500,6 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 /// Anything with exotic glyphs outside the embedded fonts will fall
 /// through to `load_system_fonts()`.
 #[cfg(not(target_arch = "wasm32"))]
-/// The face a rasterizer draws a `<text>` in when neither it nor an
-/// enclosing element names a `font-family` (a `Graphics` `Text` without
-/// `FontFamily`). usvg would otherwise fall back to "Times New Roman",
-/// while WL's default graphics font, and the family an exported SVG bakes
-/// onto such text, is a sans-serif one. Pass it as usvg's `font_family`.
-pub const DEFAULT_TEXT_FONT_FAMILY: &str = "Atkinson Hyperlegible Next";
-
 pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.load_font_data(
     include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
