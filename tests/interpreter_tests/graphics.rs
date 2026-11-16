@@ -49873,6 +49873,18 @@ fn grid_column_width_follows_displayed_text() {
   let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
   let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
+  // A StringForm is measured as its filled template, not its call source.
+  let filled = first_divider(
+    "Grid[{{Style[StringForm[\"Q = `1`\", NumberForm[10., {6, 2}]], 16], 1}}, \
+     Frame -> All]",
+  );
+  let literal =
+    first_divider("Grid[{{Style[\"Q = 10.00\", 16], 1}}, Frame -> All]");
+  assert!((filled - literal).abs() < 1.0, "{filled} vs {literal}");
+  let slots =
+    first_divider("Grid[{{StringForm[\"`` of ``\", 2, x], 1}}, Frame -> All]");
+  let text = first_divider("Grid[{{\"2 of x\", 1}}, Frame -> All]");
+  assert!((slots - text).abs() < 1.0, "{slots} vs {text}");
 }
 
 mod traditional_form_typesetting {
