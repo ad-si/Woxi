@@ -13460,6 +13460,42 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 
 // ─── Rasterize ──────────────────────────────────────────────────────────────
 
+/// Serif faces to draw generic "serif" text in, most Times-like first:
+/// Times itself, then the faces metric-compatible with it, then common
+/// general-purpose serif faces.
+#[cfg(not(target_arch = "wasm32"))]
+const SERIF_FAMILY_PREFERENCE: &[&str] = &[
+  "Times New Roman",
+  "Times",
+  "Liberation Serif",
+  "Tinos",
+  "TeX Gyre Termes",
+  "Nimbus Roman",
+  "Nimbus Roman No9 L",
+  "STIX Two Text",
+  "Noto Serif",
+  "DejaVu Serif",
+  "FreeSerif",
+  "Georgia",
+];
+
+/// The most Times-like serif family among the installed font `families`
+/// (compared case-insensitively), or `None` when none of the known serif
+/// faces is installed.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn preferred_serif_family<'a>(
+  families: impl IntoIterator<Item = &'a str>,
+) -> Option<&'static str> {
+  let installed: std::collections::HashSet<String> = families
+    .into_iter()
+    .map(|name| name.to_ascii_lowercase())
+    .collect();
+  SERIF_FAMILY_PREFERENCE
+    .iter()
+    .copied()
+    .find(|candidate| installed.contains(&candidate.to_ascii_lowercase()))
+}
+
 /// Populate a usvg font database with the embedded fallback fonts and wire
 /// each CSS generic family to a reasonable default. This is shared by the
 /// raster (`rasterize_svg`) and PDF (`svg_to_pdf_bytes`) export paths and by
@@ -13514,9 +13550,19 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   );
   fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
   fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
-  // We don't ship a dedicated serif face, so fall back to the sans-serif
-  // for "serif" requests rather than leaving them unresolved.
-  fontdb.set_serif_family("Atkinson Hyperlegible Next");
+  // Text set in `FontFamily -> "Times"` is measured with Times-like
+  // advances, so a "serif" request has to be drawn in an installed
+  // Times-like face: the wider sans-serif would overrun the room the
+  // layout gave it. We don't ship a serif face, so only without any
+  // installed one fall back to the sans-serif rather than leaving
+  // "serif" unresolved.
+  let serif = preferred_serif_family(
+    fontdb
+      .faces()
+      .flat_map(|face| face.families.iter().map(|(name, _)| name.as_str())),
+  )
+  .unwrap_or("Atkinson Hyperlegible Next");
+  fontdb.set_serif_family(serif);
   fontdb.set_cursive_family("Atkinson Hyperlegible Next");
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
 }
