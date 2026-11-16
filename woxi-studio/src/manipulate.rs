@@ -3528,6 +3528,49 @@ mod tests {
     );
   }
 
+  /// A `Row[{"caption", Spacer[…], Control[…], Spacer[…], Control[…]}]`
+  /// draws its caption and both controls on one line, as Wolfram does: the
+  /// caption becomes a heading row and the first control joins its line
+  /// instead of starting a new one. A `Style[…]` caption does the same,
+  /// while a standalone heading argument keeps the next control on a line
+  /// of its own.
+  #[test]
+  fn row_caption_shares_line_with_its_controls() {
+    let code = r#"Manipulate[
+      {a, b, c, d},
+      Row[{"sizes:", Spacer[20], Control@{{a, 3, "first"}, Range[3, 7]},
+        Spacer[20], Control@{{b, 5, "second"}, Range[3, 7]}}],
+      Row[{Style["speed", Italic], Spacer[10], Control[{c, 0, 1}]}],
+      "standalone",
+      {d, 0, 10}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let layout: Vec<(String, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let key = match c {
+          ControlState::Heading { label, .. } => format!("heading {label}"),
+          other => other.name().to_string(),
+        };
+        (key, state.joins_previous_control(i))
+      })
+      .collect();
+    let expected: Vec<(String, bool)> = vec![
+      ("heading sizes:".into(), false),
+      ("a".into(), true),
+      ("b".into(), true),
+      ("heading speed".into(), false),
+      ("c".into(), true),
+      ("heading standalone".into(), false),
+      ("d".into(), false),
+    ];
+    assert_eq!(layout, expected);
+  }
+
   /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
   /// control state, so they are drawn side by side on one line, and a
   /// `Style[…, FontSize -> n]` caption keeps its size.
