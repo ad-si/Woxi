@@ -862,6 +862,31 @@ mod outlines {
         .all(|l| l.contains("stroke-linecap=\"round\""))
     );
   }
+
+  // The fan triangles of a translucent cap touch the outline on one side
+  // only. Stroking them in their own color overlapped the neighbors along
+  // the internal cuts and drew dark spokes across the cap; the outline is
+  // stroked on its own.
+  #[test]
+  fn translucent_triangles_on_the_outline_have_no_seam_stroke() {
+    for solid in [
+      "Cylinder[]",
+      "Cone[]",
+      "Cuboid[]",
+      "Tube[{{0, 0, 0}, {1, 1, 1}}, 0.2]",
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{Opacity[0.5], Red, {solid}}}, Boxed -> False]"
+      ));
+      let seamed: Vec<&str> = s
+        .lines()
+        .filter(|l| l.starts_with("<polygon") && l.contains(" opacity=\""))
+        .filter(|l| !l.contains("stroke=\"none\""))
+        .collect();
+      assert!(seamed.is_empty(), "{solid}: {:?}", seamed.first());
+      assert!(s.contains(" opacity=\"0.5\""), "{solid}: {s}");
+    }
+  }
 }
 
 mod ticks {
