@@ -386,56 +386,83 @@ fn line_draw_slots(
   // line along a face's edge (a mesh line on a surface) must still be
   // drawn after it.
   let margin = 0.002 * (hi.0 - lo.0).max(hi.1 - lo.1);
-  let inside = |t: &[(f64, f64); 3], (x, y): (f64, f64)| {
+  // Whether `(x, y)` lies inside the triangle `t`, widened by `pad`.
+  let within = |t: &[(f64, f64); 3], (x, y): (f64, f64), pad: f64| {
     let side = |a: (f64, f64), b: (f64, f64)| {
       let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
       ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) / len.max(1e-300)
     };
     let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
-    s.iter().all(|&v| v >= -margin) || s.iter().all(|&v| v <= margin)
+    s.iter().all(|&v| v >= -pad) || s.iter().all(|&v| v <= pad)
+  };
+  let inside = |t: &[(f64, f64); 3], p: (f64, f64)| within(t, p, margin);
+  // Each triangle's plane, its normal turned toward the viewer, and the
+  // tolerance within which a point still counts as on it: a line on a
+  // curved surface lies a little behind the planes of the faces next to
+  // the ones it runs along.
+  let planes: Vec<([f64; 3], Point3D, f64)> = verts
+    .iter()
+    .map(|v| {
+      let mut n = triangle_normal(v[0], v[1], v[2]);
+      if v_dot(n, camera.toward_viewer(v[0])) < 0.0 {
+        n = [-n[0], -n[1], -n[2]];
+      }
+      let size = (0..3)
+        .map(|e| {
+          let (a, b) = (v[e], v[(e + 1) % 3]);
+          v_len([a.x - b.x, a.y - b.y, a.z - b.z])
+        })
+        .fold(0.0, f64::max);
+      (n, v[0], 1e-2 * size.max(1e-300))
+    })
+    .collect();
+  // Signed distance of `m` in front of triangle `k`'s plane.
+  let front = |k: usize, m: Point3D| {
+    let (n, o, _) = planes[k];
+    v_dot(n, [m.x - o.x, m.y - o.y, m.z - o.z])
   };
   segs
     .iter()
     .map(|seg| {
       // A piece can cross several small faces: it is sampled along its
       // length.
-      let mut slot = 0;
-      for t in [0.02, 0.25, 0.5, 0.75, 0.98] {
+      let samples = [0.02, 0.25, 0.5, 0.75, 0.98].map(|t| {
         let m = Point3D {
           x: seg[0].x + t * (seg[1].x - seg[0].x),
           y: seg[0].y + t * (seg[1].y - seg[0].y),
           z: seg[0].z + t * (seg[1].z - seg[0].z),
         };
-        let pm = project(m, camera);
+        (m, project(m, camera))
+      });
+      // Faces the piece runs along (or crosses in front of) lift it over
+      // them. A face it only touches with an end sample (a hidden edge
+      // meeting the corner of a face in front of it) lifts it only as far
+      // as the first face hiding part of it: lifting it further would
+      // paint a stub of the hidden line over that face.
+      let (mut slot, mut end_slot) = (0, 0);
+      let mut cap = usize::MAX;
+      for (i, &(m, pm)) in samples.iter().enumerate() {
         if pm.0 < lo.0 || pm.0 > hi.0 || pm.1 < lo.1 || pm.1 > hi.1 {
           continue;
         }
+        let at_end = i == 0 || i == samples.len() - 1;
         let (c, r) = cell(pm.0, pm.1);
         for &k in &grid[r * CELLS + c] {
-          if k < slot || !inside(&tris[k].projected, pm) {
+          if !inside(&tris[k].projected, pm) {
             continue;
           }
-          let v = &verts[k];
-          let mut n = triangle_normal(v[0], v[1], v[2]);
-          let view = camera.toward_viewer(v[0]);
-          if v_dot(n, view) < 0.0 {
-            n = [-n[0], -n[1], -n[2]];
-          }
-          let size = (0..3)
-            .map(|e| {
-              let (a, b) = (v[e], v[(e + 1) % 3]);
-              v_len([a.x - b.x, a.y - b.y, a.z - b.z])
-            })
-            .fold(0.0, f64::max);
-          let d = v_dot(n, [m.x - v[0].x, m.y - v[0].y, m.z - v[0].z]);
-          // A line on a curved surface lies a little behind the planes
-          // of the faces next to the ones it runs along.
-          if d >= -1e-2 * size.max(1e-300) {
-            slot = k + 1;
+          if front(k, m) >= -planes[k].2 {
+            if at_end {
+              end_slot = end_slot.max(k + 1);
+            } else {
+              slot = slot.max(k + 1);
+            }
+          } else if k < cap && within(&tris[k].projected, pm, margin * 1e-3) {
+            cap = k;
           }
         }
       }
-      slot
+      slot.max(end_slot.min(cap))
     })
     .collect()
 }

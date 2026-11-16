@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6589
 expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="397" viewBox="0 0 360 397" xmlns="http://www.w3.org/2000/svg">
@@ -12850,6 +12849,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="125.0,270.2 128.5,272.7 133.3,275.9" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
 <linearGradient id="s89520857b2" gradientUnits="userSpaceOnUse" x1="235.0" y1="287.0" x2="235.1" y2="287.1"><stop stop-color="#572d04"/><stop offset="1" stop-color="#5d3004"/></linearGradient>
 <polygon points="232.7,288.0 230.3,288.9 242.1,284.3" fill="url(#s89520857b2)" stroke="url(#s89520857b2)" stroke-width="0.5"/>
+<line x1="266.5" y1="95.3" x2="265.7" y2="94.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="scce8ae8fe6" gradientUnits="userSpaceOnUse" x1="267.8" y1="96.3" x2="267.6" y2="96.5"><stop stop-color="#d06a09"/><stop offset="1" stop-color="#df730b"/></linearGradient>
 <polygon points="267.3,95.9 263.3,92.7 272.5,100.6" fill="url(#scce8ae8fe6)" stroke="url(#scce8ae8fe6)" stroke-width="0.5"/>
 <polygon points="136.4,278.1 139.6,279.9 145.4,282.8" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -13012,6 +13012,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <line x1="250.2" y1="279.9" x2="249.8" y2="280.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="250.6" y1="279.8" x2="250.2" y2="279.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="251.0" y1="279.5" x2="250.6" y2="279.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="124.1" y1="94.9" x2="123.3" y2="95.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="251.4" y1="279.3" x2="251.0" y2="279.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="251.8" y1="279.1" x2="251.4" y2="279.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="252.2" y1="278.9" x2="251.8" y2="279.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -13066,10 +13067,9 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <line x1="299.9" y1="222.6" x2="300.2" y2="221.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s6da07c6462" gradientUnits="userSpaceOnUse" x1="174.5" y1="71.7" x2="174.5" y2="71.5"><stop stop-color="#ac5908"/><stop offset="1" stop-color="#a05207"/></linearGradient>
 <polygon points="171.5,72.0 174.0,71.8 178.0,70.8" fill="url(#s6da07c6462)" stroke="url(#s6da07c6462)" stroke-width="0.5"/>
+<line x1="121.6" y1="96.9" x2="121.2" y2="97.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s591b35506b" gradientUnits="userSpaceOnUse" x1="120.4" y1="97.9" x2="120.6" y2="98.1"><stop stop-color="#753c05"/><stop offset="1" stop-color="#804206"/></linearGradient>
 <polygon points="117.3,100.7 121.6,97.2 122.5,96.0" fill="url(#s591b35506b)" stroke="url(#s591b35506b)" stroke-width="0.5"/>
-<line x1="121.6" y1="96.9" x2="121.2" y2="97.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="124.1" y1="94.9" x2="123.3" y2="95.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="122.1" y1="96.5" x2="121.6" y2="96.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="123.3" y1="95.5" x2="122.5" y2="96.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="122.5" y1="96.0" x2="122.1" y2="96.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -13233,7 +13233,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <line x1="306.2" y1="197.7" x2="306.4" y2="196.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s47061279d5" gradientUnits="userSpaceOnUse" x1="268.1" y1="96.7" x2="267.9" y2="96.9"><stop stop-color="#d9700a"/><stop offset="1" stop-color="#e8790c"/></linearGradient>
 <polygon points="268.2,97.1 272.5,100.6 263.3,92.7" fill="url(#s47061279d5)" stroke="url(#s47061279d5)" stroke-width="0.5"/>
-<line x1="266.5" y1="95.3" x2="265.7" y2="94.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="267.3" y1="95.9" x2="266.5" y2="95.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="267.9" y1="96.5" x2="267.3" y2="95.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="268.6" y1="97.1" x2="267.9" y2="96.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -13305,6 +13304,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="150.1,79.1 146.1,80.7 144.9,81.9" fill="url(#sdd4070d36e)" stroke="url(#sdd4070d36e)" stroke-width="0.5"/>
 <linearGradient id="s45d1fd56b0" gradientUnits="userSpaceOnUse" x1="102.7" y1="117.5" x2="103.3" y2="117.9"><stop stop-color="#643304"/><stop offset="1" stop-color="#6b3705"/></linearGradient>
 <polygon points="105.3,114.3 101.9,118.8 102.0,120.2" fill="url(#s45d1fd56b0)" stroke="url(#s45d1fd56b0)" stroke-width="0.5"/>
+<line x1="102.5" y1="118.1" x2="101.9" y2="118.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s6ad42f9996" gradientUnits="userSpaceOnUse" x1="137.1" y1="85.5" x2="137.5" y2="85.9"><stop stop-color="#854406"/><stop offset="1" stop-color="#904b07"/></linearGradient>
 <polygon points="140.4,83.8 136.2,86.1 135.4,87.3" fill="url(#s6ad42f9996)" stroke="url(#s6ad42f9996)" stroke-width="0.5"/>
 <polygon points="90.6,223.9 92.7,228.9 95.3,232.1" fill="rgb(68,35,3)" stroke="rgb(68,35,3)" stroke-width="0.5"/>
@@ -13423,7 +13423,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <line x1="107.0" y1="251.6" x2="107.7" y2="252.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s3423d9faf0" gradientUnits="userSpaceOnUse" x1="100.4" y1="121.2" x2="101.1" y2="121.6"><stop stop-color="#643304"/><stop offset="1" stop-color="#6b3705"/></linearGradient>
 <polygon points="98.4,125.1 102.0,120.2 101.9,118.8" fill="url(#s3423d9faf0)" stroke="url(#s3423d9faf0)" stroke-width="0.5"/>
-<line x1="102.5" y1="118.1" x2="101.9" y2="118.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="101.9" y1="118.8" x2="101.5" y2="119.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="101.5" y1="119.6" x2="101.0" y2="120.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="101.0" y1="120.4" x2="100.6" y2="121.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -17788,6 +17787,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <line x1="97.9" y1="217.7" x2="97.9" y2="218.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="97.9" y1="216.9" x2="97.9" y2="217.7" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="195.0,83.6 199.8,80.9 195.0,83.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
+<line x1="195.8" y1="82.8" x2="196.2" y2="82.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="scadb7b3725" gradientUnits="userSpaceOnUse" x1="251.0" y1="267.5" x2="249.6" y2="262.1"><stop stop-color="#8f4c09"/><stop offset="1" stop-color="#a0560a"/></linearGradient>
 <polygon points="246.3,264.6 245.2,269.1 259.0,259.6" fill="url(#scadb7b3725)" stroke="url(#scadb7b3725)" stroke-width="0.5"/>
 <polygon points="195.0,83.6 190.1,80.9 195.0,83.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
@@ -17809,7 +17809,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <line x1="272.3" y1="245.4" x2="272.2" y2="246.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="272.4" y1="244.7" x2="272.3" y2="245.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="195.0,83.6 200.5,81.2 195.0,83.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<line x1="195.8" y1="82.8" x2="196.2" y2="82.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="195.0,83.6 189.4,81.3 195.0,83.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <linearGradient id="sc98bf47e75" gradientUnits="userSpaceOnUse" x1="132.6" y1="101.2" x2="137.6" y2="104.6"><stop stop-color="#b6630c"/><stop offset="1" stop-color="#cf720e"/></linearGradient>
 <polygon points="137.0,100.5 130.6,104.3 137.9,104.1" fill="url(#sc98bf47e75)" stroke="url(#sc98bf47e75)" stroke-width="0.5"/>
@@ -17902,6 +17901,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <linearGradient id="se6781906e4" gradientUnits="userSpaceOnUse" x1="285.0" y1="217.0" x2="288.1" y2="219.4"><stop stop-color="#f48711"/><stop offset="1" stop-color="#e27c0f"/></linearGradient>
 <polygon points="283.8,218.6 283.8,224.8 292.3,211.3" fill="url(#se6781906e4)" stroke="url(#se6781906e4)" stroke-width="0.5"/>
 <polygon points="195.0,83.6 202.4,82.8 195.0,83.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
+<line x1="196.5" y1="83.1" x2="197.3" y2="82.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s70d826400c" gradientUnits="userSpaceOnUse" x1="205.0" y1="82.9" x2="205.4" y2="85.3"><stop stop-color="#ffa215"/><stop offset="1" stop-color="#ffa716"/></linearGradient>
 <polygon points="202.6,83.8 210.3,84.4 202.6,83.3" fill="url(#s70d826400c)" stroke="url(#s70d826400c)" stroke-width="0.5"/>
 <line x1="202.4" y1="82.8" x2="203.3" y2="82.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -17926,7 +17926,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <linearGradient id="s3c2b834c5b" gradientUnits="userSpaceOnUse" x1="96.2" y1="156.6" x2="103.7" y2="155.6"><stop stop-color="#703b06"/><stop offset="1" stop-color="#834608"/></linearGradient>
 <polygon points="99.7,151.8 96.4,158.1 104.0,158.4" fill="url(#s3c2b834c5b)" stroke="url(#s3c2b834c5b)" stroke-width="0.5"/>
 <polygon points="195.0,83.6 202.6,83.3 195.0,83.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
-<line x1="196.5" y1="83.1" x2="197.3" y2="82.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="195.0,83.6 187.4,83.3 195.0,83.6" fill="rgb(255,157,20)" stroke="rgb(255,157,20)" stroke-width="0.5"/>
 <linearGradient id="s0cfc9c8fb8" gradientUnits="userSpaceOnUse" x1="215.3" y1="84.7" x2="215.2" y2="86.7"><stop stop-color="#ffa716"/><stop offset="1" stop-color="#ffad17"/></linearGradient>
 <polygon points="217.8,85.4 210.3,84.4 217.7,86.8" fill="url(#s0cfc9c8fb8)" stroke="url(#s0cfc9c8fb8)" stroke-width="0.5"/>
@@ -18247,6 +18246,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="201.7,85.6 195.0,83.6 201.2,86.0" fill="url(#sd6bbd07341)" stroke="url(#sd6bbd07341)" stroke-width="0.5"/>
 <line x1="196.9" y1="83.7" x2="197.8" y2="83.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <polygon points="188.8,86.0 195.0,83.6 188.3,85.6" fill="rgb(255,157,21)" stroke="rgb(255,157,21)" stroke-width="0.5"/>
+<line x1="193.1" y1="83.8" x2="192.2" y2="84.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="192.2" y1="84.0" x2="191.3" y2="84.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sc74c5e681f" gradientUnits="userSpaceOnUse" x1="137.1" y1="264.4" x2="141.8" y2="258.6"><stop stop-color="#472504"/><stop offset="1" stop-color="#572e05"/></linearGradient>
 <polygon points="144.0,264.7 143.2,259.7 131.3,259.8" fill="url(#sc74c5e681f)" stroke="url(#sc74c5e681f)" stroke-width="0.5"/>
@@ -18299,6 +18299,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <linearGradient id="sc4ab59e847" gradientUnits="userSpaceOnUse" x1="198.6" y1="83.0" x2="199.1" y2="86.5"><stop stop-color="#ff9d14"/><stop offset="1" stop-color="#ffaa17"/></linearGradient>
 <polygon points="201.2,86.0 195.0,83.6 200.6,86.3" fill="url(#sc4ab59e847)" stroke="url(#sc4ab59e847)" stroke-width="0.5"/>
 <line x1="195.9" y1="83.5" x2="196.8" y2="83.4" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="197.5" y1="84.3" x2="198.4" y2="84.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="197.5" y1="84.3" x2="198.4" y2="84.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="198.4" y1="84.6" x2="199.2" y2="84.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="198.4" y1="84.6" x2="199.2" y2="84.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="199.2" y1="84.8" x2="200.0" y2="85.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -18306,7 +18308,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <linearGradient id="sac49d9d8c0" gradientUnits="userSpaceOnUse" x1="191.2" y1="85.7" x2="190.9" y2="84.9"><stop stop-color="#ffa015"/><stop offset="1" stop-color="#ff9d14"/></linearGradient>
 <polygon points="189.4,86.3 195.0,83.6 188.8,86.0" fill="url(#sac49d9d8c0)" stroke="url(#sac49d9d8c0)" stroke-width="0.5"/>
 <line x1="194.0" y1="83.5" x2="193.1" y2="83.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="193.1" y1="83.8" x2="192.2" y2="84.0" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s09f48ef9ea" gradientUnits="userSpaceOnUse" x1="175.7" y1="280.8" x2="181.1" y2="272.4"><stop stop-color="#5b3005"/><stop offset="1" stop-color="#683706"/></linearGradient>
 <polygon points="173.0,275.4 173.5,279.4 187.7,276.7" fill="url(#s09f48ef9ea)" stroke="url(#s09f48ef9ea)" stroke-width="0.5"/>
 <linearGradient id="sc14a28d0c9" gradientUnits="userSpaceOnUse" x1="151.5" y1="92.9" x2="155.3" y2="96.6"><stop stop-color="#de7a0f"/><stop offset="1" stop-color="#f48611"/></linearGradient>
@@ -18406,8 +18407,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="200.6,86.3 195.0,83.6 199.9,86.6" fill="url(#sb3ade38d20)" stroke="url(#sb3ade38d20)" stroke-width="0.5"/>
 <line x1="196.7" y1="84.1" x2="197.5" y2="84.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="196.7" y1="84.1" x2="197.5" y2="84.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="197.5" y1="84.3" x2="198.4" y2="84.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="197.5" y1="84.3" x2="198.4" y2="84.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="saeb02168bc" gradientUnits="userSpaceOnUse" x1="191.7" y1="86.1" x2="191.3" y2="84.8"><stop stop-color="#ffa215"/><stop offset="1" stop-color="#ff9d14"/></linearGradient>
 <polygon points="190.1,86.6 195.0,83.6 189.4,86.3" fill="url(#saeb02168bc)" stroke="url(#saeb02168bc)" stroke-width="0.5"/>
 <line x1="192.7" y1="84.5" x2="191.9" y2="84.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -18425,6 +18424,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="199.9,86.6 195.0,83.6 199.1,86.9" fill="url(#s2b95483292)" stroke="url(#s2b95483292)" stroke-width="0.5"/>
 <line x1="194.1" y1="83.4" x2="193.3" y2="83.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="195.9" y1="83.6" x2="196.9" y2="83.7" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="198.1" y1="85.5" x2="198.7" y2="85.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sb4c0be79c0" gradientUnits="userSpaceOnUse" x1="192.2" y1="86.6" x2="191.7" y2="84.4"><stop stop-color="#ffa316"/><stop offset="1" stop-color="#ff9d14"/></linearGradient>
 <polygon points="190.9,86.9 195.0,83.6 190.1,86.6" fill="url(#sb4c0be79c0)" stroke="url(#sb4c0be79c0)" stroke-width="0.5"/>
 <line x1="194.1" y1="83.7" x2="193.1" y2="83.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -18473,7 +18473,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <line x1="195.8" y1="83.8" x2="196.7" y2="84.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="196.8" y1="84.7" x2="197.4" y2="85.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="197.4" y1="85.1" x2="198.1" y2="85.5" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="198.1" y1="85.5" x2="198.7" y2="85.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s1b056f18e4" gradientUnits="userSpaceOnUse" x1="192.8" y1="86.7" x2="192.1" y2="84.7"><stop stop-color="#ffa516"/><stop offset="1" stop-color="#ff9d14"/></linearGradient>
 <polygon points="191.7,87.2 195.0,83.6 190.9,86.9" fill="url(#s1b056f18e4)" stroke="url(#s1b056f18e4)" stroke-width="0.5"/>
 <linearGradient id="sa8ac639a72" gradientUnits="userSpaceOnUse" x1="191.2" y1="282.0" x2="194.7" y2="273.4"><stop stop-color="#633405"/><stop offset="1" stop-color="#703c06"/></linearGradient>
@@ -18504,6 +18503,7 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <linearGradient id="scba8ab2117" gradientUnits="userSpaceOnUse" x1="193.3" y1="87.2" x2="192.7" y2="84.0"><stop stop-color="#ffa616"/><stop offset="1" stop-color="#ff9d14"/></linearGradient>
 <polygon points="192.6,87.3 195.0,83.6 191.7,87.2" fill="url(#scba8ab2117)" stroke="url(#scba8ab2117)" stroke-width="0.5"/>
 <line x1="194.2" y1="83.9" x2="193.4" y2="84.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="193.4" y1="85.3" x2="192.9" y2="85.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="192.9" y1="85.8" x2="192.5" y2="86.2" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="sdc2c8afa17" gradientUnits="userSpaceOnUse" x1="214.4" y1="86.1" x2="214.5" y2="89.6"><stop stop-color="#ffac17"/><stop offset="1" stop-color="#ffb418"/></linearGradient>
 <polygon points="217.2,88.2 209.8,86.2 216.4,89.6" fill="url(#sdc2c8afa17)" stroke="url(#sdc2c8afa17)" stroke-width="0.5"/>
@@ -18521,7 +18521,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="193.6,87.4 195.0,83.6 192.6,87.3" fill="url(#sca305f35da)" stroke="url(#sca305f35da)" stroke-width="0.5"/>
 <line x1="194.2" y1="84.5" x2="193.8" y2="84.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="193.8" y1="84.9" x2="193.4" y2="85.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="193.4" y1="85.3" x2="192.9" y2="85.8" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s75a010c46d" gradientUnits="userSpaceOnUse" x1="226.8" y1="276.4" x2="227.7" y2="267.8"><stop stop-color="#7c4308"/><stop offset="1" stop-color="#924f09"/></linearGradient>
 <polygon points="231.7,272.8 232.5,268.4 217.4,275.4" fill="url(#s75a010c46d)" stroke="url(#s75a010c46d)" stroke-width="0.5"/>
 <line x1="231.7" y1="272.8" x2="231.6" y2="273.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -19067,6 +19066,8 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="252.1,104.0 245.5,100.1 250.3,107.6" fill="url(#s9f1c03534d)" stroke="url(#s9f1c03534d)" stroke-width="0.5"/>
 <linearGradient id="s0f2549d7c5" gradientUnits="userSpaceOnUse" x1="205.1" y1="84.6" x2="206.4" y2="89.1"><stop stop-color="#ffa816"/><stop offset="1" stop-color="#ffb118"/></linearGradient>
 <polygon points="208.5,88.0 201.7,85.6 207.5,88.8" fill="url(#s0f2549d7c5)" stroke="url(#s0f2549d7c5)" stroke-width="0.5"/>
+<line x1="200.0" y1="85.1" x2="200.9" y2="85.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="200.0" y1="85.1" x2="200.9" y2="85.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="200.9" y1="85.3" x2="201.7" y2="85.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="200.9" y1="85.3" x2="201.7" y2="85.6" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="201.7" y1="85.6" x2="202.6" y2="85.9" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
@@ -19197,8 +19198,6 @@ expression: "export_svg(\"SphericalPlot3D[1, {theta, 0, Pi}, {phi, 0, 2 Pi}]\")"
 <polygon points="112.0,133.8 107.5,139.6 115.9,139.3" fill="url(#scac5a926f0)" stroke="url(#scac5a926f0)" stroke-width="0.5"/>
 <linearGradient id="sfa1dabdbe0" gradientUnits="userSpaceOnUse" x1="205.0" y1="85.9" x2="205.0" y2="89.5"><stop stop-color="#ffa917"/><stop offset="1" stop-color="#ffb318"/></linearGradient>
 <polygon points="207.5,88.8 201.2,86.0 206.3,89.5" fill="url(#sfa1dabdbe0)" stroke="url(#sfa1dabdbe0)" stroke-width="0.5"/>
-<line x1="200.0" y1="85.1" x2="200.9" y2="85.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
-<line x1="200.0" y1="85.1" x2="200.9" y2="85.3" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
 <linearGradient id="s0b25889a1b" gradientUnits="userSpaceOnUse" x1="101.9" y1="209.6" x2="107.5" y2="205.3"><stop stop-color="#5b2f05"/><stop offset="1" stop-color="#643506"/></linearGradient>
 <polygon points="106.9,212.3 107.7,205.6 98.4,205.1" fill="url(#s0b25889a1b)" stroke="url(#s0b25889a1b)" stroke-width="0.5"/>
 <line x1="97.6" y1="204.2" x2="98.4" y2="205.1" stroke="rgb(51,51,51)" stroke-width="0.5" stroke-linecap="round"/>
