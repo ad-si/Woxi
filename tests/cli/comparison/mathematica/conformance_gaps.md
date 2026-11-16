@@ -5575,6 +5575,18 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
 - `Charting`SimpleTicks` frame ticks of the themes (majors only, at most six)
   are reproduced, but their tick marks keep the default length.
 
+### `Plot` end labels do not avoid the axis label
+
+`Plot[{f1, f2}, …, PlotLabels -> {"a", "b"}, AxesLabel -> {"x", "y"}]`
+hangs each label past the right end of the plot at its curve's height. A
+curve that ends on the x axis (a spectrum decaying to 0) puts its label
+right on top of the `AxesLabel` that sits there. Wolfram lifts the label
+clear of the axis label and joins it to the curve end with a bent gray
+leader. A curve that leaves the top of the plot range is labeled from where
+it crosses the range's edge. Woxi starts the leader at the range's right
+edge. Seen in a Demonstration snapshot; WL's leader optimizer has not been
+measured.
+
 ### An `AxesLabel` carrying a reciprocal power
 
 A label's `Power[x, -1]` renders as `x⁻¹` in SVG markup where Wolfram stacks it
