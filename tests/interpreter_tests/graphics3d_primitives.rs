@@ -838,6 +838,53 @@ mod outlines {
     }
   }
 
+  // Rods that only cross on screen are not cut along each other's facet
+  // planes: such cuts used up a facet's piece budget before the slab the
+  // rod really passes through could cut it, so the rod showed through the
+  // slab's side.
+  #[test]
+  fn crossing_rods_that_do_not_touch_are_not_cut() {
+    let scene = |prims: &str| {
+      polygon_count(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], {prims}}}, Boxed -> False, \
+         ViewPoint -> {{-2.5, 2, 2}}]"
+      )))
+    };
+    let slab = "Cuboid[{-6, -9, -4.5}, {6, 6, -3.5}]";
+    let rod = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 7}}, 0.5]";
+    let bar = "Cylinder[{{-7.5, -10, 8.5}, {-7.5, 10, 8.5}}, 0.5]";
+    let pierced = scene(&format!("{slab}, {rod}"));
+    let alone = scene(bar);
+    let all = scene(&format!("{slab}, {rod}, {bar}"));
+    assert_eq!(all, pierced + alone);
+  }
+
+  // A rod through a slab is still cut by the slab's planes in a scene
+  // with many other triangles: the split budget used to assume every
+  // triangle could become the maximum number of pieces, keeping all but
+  // the last few thousand triangles whole.
+  #[test]
+  fn a_pierced_slab_is_split_in_a_busy_scene() {
+    let scene = |prims: &str| {
+      polygon_count(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], {prims}}}, Boxed -> False, \
+         ViewPoint -> {{-2.5, 2, 2}}]"
+      )))
+    };
+    let pierced = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 7}}, 0.5], \
+                   Cuboid[{-6, -9, -4.5}, {6, 6, -3.5}]";
+    let busy = "Table[Sphere[{40 + 3 i, 40, 0}, 1], {i, 24}]";
+    let (a, b, both) = (
+      scene(pierced),
+      scene(busy),
+      scene(&format!("{pierced}, {busy}")),
+    );
+    assert!(b > 6000, "{b}");
+    // The far spheres change the scale, which can shift a few slivers;
+    // an uncut rod would leave the scene hundreds of pieces short.
+    assert!(both.abs_diff(a + b) <= 16, "{both} vs {a} + {b}");
+  }
+
   // The far side of an opaque closed solid is not drawn, so it cannot be
   // painted over its near side.
   #[test]

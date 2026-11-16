@@ -503,6 +503,14 @@ fn for_each_overlapping_pair(
 /// a scene whose surfaces cross each other heavily.
 const MAX_SPLIT_PLANES: usize = 256;
 
+/// How many times its original triangle count a scene may grow to when
+/// interpenetrating triangles are cut.
+const SPLIT_MAX_GROWTH: usize = 3;
+
+/// Triangles a small scene may always grow to when cut, however few it
+/// started with.
+const SPLIT_MIN_BUDGET: usize = 10000;
+
 /// Most pieces one triangle is cut into.
 const MAX_PIECES_PER_TRIANGLE: usize = 64;
 
@@ -515,6 +523,107 @@ fn triangle_area(t: &[Point3D; 3]) -> f64 {
   let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
   let e2 = [t[2].x - t[0].x, t[2].y - t[0].y, t[2].z - t[0].z];
   0.5 * v_len(v_cross(e1, e2))
+}
+
+/// Whether the segment from `p` to `q` passes through the interior of
+/// triangle `t` (Möller–Trumbore, with a small relative tolerance so
+/// segments that merely graze an edge or end on the plane count too).
+fn segment_hits_triangle(p: Point3D, q: Point3D, t: &[Point3D; 3]) -> bool {
+  let pt = |a: Point3D| [a.x, a.y, a.z];
+  let (a, b, c) = (pt(t[0]), pt(t[1]), pt(t[2]));
+  let (o, d) = (pt(p), v_sub(pt(q), pt(p)));
+  let (e1, e2) = (v_sub(b, a), v_sub(c, a));
+  let h = v_cross(d, e2);
+  let det = v_dot(e1, h);
+  let scale = v_len(e1) * v_len(e2) * v_len(d);
+  if det.abs() <= 1e-12 * scale.max(1e-300) {
+    // Parallel to the plane: coplanar overlap is ordered elsewhere.
+    return false;
+  }
+  let inv = 1.0 / det;
+  let s = v_sub(o, a);
+  let u = inv * v_dot(s, h);
+  let eps = 1e-9;
+  if u < -eps || u > 1.0 + eps {
+    return false;
+  }
+  let qv = v_cross(s, e1);
+  let v = inv * v_dot(d, qv);
+  if v < -eps || u + v > 1.0 + eps {
+    return false;
+  }
+  let along = inv * v_dot(e2, qv);
+  (-eps..=1.0 + eps).contains(&along)
+}
+
+/// Whether two (non-coplanar) triangles meet in space: some edge of one
+/// passes through the other.
+fn triangles_intersect(a: &[Point3D; 3], b: &[Point3D; 3]) -> bool {
+  (0..3).any(|k| segment_hits_triangle(a[k], a[(k + 1) % 3], b))
+    || (0..3).any(|k| segment_hits_triangle(b[k], b[(k + 1) % 3], a))
+}
+
+/// Depths of triangles `a` and `b` (corners in space and on screen) at a
+/// screen point inside both: the centroid of the projected triangles'
+/// common area. Each 3-D point is found by its screen barycentric
+/// coordinates. `None` when they share no area.
+fn depths_at_shared_point(
+  a: &[Point3D; 3],
+  pa: &[(f64, f64); 3],
+  b: &[Point3D; 3],
+  pb: &[(f64, f64); 3],
+  camera: &Camera,
+) -> Option<(f64, f64)> {
+  // Clip `pa` by each edge of `pb` (Sutherland–Hodgman); orientation of
+  // `pb` decides which side of an edge is inside.
+  let cross = |o: (f64, f64), p: (f64, f64), q: (f64, f64)| {
+    (p.0 - o.0) * (q.1 - o.1) - (p.1 - o.1) * (q.0 - o.0)
+  };
+  let orient = cross(pb[0], pb[1], pb[2]).signum();
+  if orient == 0.0 {
+    return None;
+  }
+  let mut poly: Vec<(f64, f64)> = pa.to_vec();
+  for k in 0..3 {
+    let (e0, e1) = (pb[k], pb[(k + 1) % 3]);
+    let side = |p: (f64, f64)| orient * cross(e0, e1, p);
+    let mut next = Vec::with_capacity(poly.len() + 1);
+    for m in 0..poly.len() {
+      let (p, q) = (poly[m], poly[(m + 1) % poly.len()]);
+      let (sp, sq) = (side(p), side(q));
+      if sp >= 0.0 {
+        next.push(p);
+      }
+      if (sp > 0.0 && sq < 0.0) || (sp < 0.0 && sq > 0.0) {
+        let t = sp / (sp - sq);
+        next.push((p.0 + t * (q.0 - p.0), p.1 + t * (q.1 - p.1)));
+      }
+    }
+    poly = next;
+    if poly.len() < 3 {
+      return None;
+    }
+  }
+  let n = poly.len() as f64;
+  let c = poly
+    .iter()
+    .fold((0.0, 0.0), |s, p| (s.0 + p.0 / n, s.1 + p.1 / n));
+  let lift = |t: &[Point3D; 3], pt: &[(f64, f64); 3]| -> Option<f64> {
+    let det = cross(pt[0], pt[1], pt[2]);
+    if det.abs() < 1e-300 {
+      return None;
+    }
+    let u = cross(pt[0], c, pt[2]) / det;
+    let v = cross(pt[0], pt[1], c) / det;
+    let w = 1.0 - u - v;
+    let p = Point3D {
+      x: w * t[0].x + u * t[1].x + v * t[2].x,
+      y: w * t[0].y + u * t[1].y + v * t[2].y,
+      z: w * t[0].z + u * t[1].z + v * t[2].z,
+    };
+    Some(depth(p, camera))
+  };
+  Some((lift(a, pa)?, lift(b, pb)?))
 }
 
 /// Cuts a convex polygon (corner, flag of the edge to the next corner) by
@@ -682,8 +791,14 @@ fn split_interpenetrating(
   let areas: Vec<f64> = verts.iter().map(triangle_area).collect();
   let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(&projected, |i, j| {
+    // Two triangles that each straddle the other's plane without touching
+    // (facets of two rods crossing on screen) keep one depth order over
+    // all their shared screen area, so they need no cut. Cutting them anyway
+    // spends a triangle's piece budget before the faces it really passes
+    // through get to cut it.
     if side_of_plane(&verts[i], &verts[j], camera).is_none()
       && side_of_plane(&verts[j], &verts[i], camera).is_none()
+      && triangles_intersect(&verts[i], &verts[j])
     {
       // Cutting either triangle by the other's plane is enough to order
       // the pair, so of two very differently sized triangles only the
@@ -705,16 +820,37 @@ fn split_interpenetrating(
     return;
   }
   let original = verts.clone();
+  // Triangles each one is expected to end up as: a cut by `p` planes
+  // leaves at most `p + 1` pieces of up to a few corners each. Assuming
+  // the worst case (`MAX_PIECES_PER_TRIANGLE` for every triangle) kept all
+  // but the last few thousand triangles of a larger scene whole.
+  let estimate = |k: usize| {
+    if planes[k].is_empty() {
+      1
+    } else {
+      (2 * (planes[k].len() + 1)).min(2 * MAX_PIECES_PER_TRIANGLE)
+    }
+  };
+  // `still_to_come[k]`: the expected triangles from `k` on.
+  let mut still_to_come = vec![0usize; n + 1];
+  for k in (0..n).rev() {
+    still_to_come[k] = still_to_come[k + 1] + estimate(k);
+  }
+  // The split scene has to stay within what `painter_order` sorts, and a
+  // scene whose faces cross everywhere (a tube thicker than its curve) must
+  // not grow without bound.
+  let budget = PAINTER_ORDER_MAX_TRIANGLES
+    .min((SPLIT_MAX_GROWTH * n).max(SPLIT_MIN_BUDGET));
   let mut new_verts = Vec::with_capacity(n);
   let mut new_tris = Vec::with_capacity(n);
   for (k, tri) in triangles.drain(..).enumerate() {
-    // The split scene has to stay within what `painter_order` sorts: once
-    // the triangles still to come would only just fit, they stay whole.
-    let remaining = n - k;
+    // The triangle being cut is charged its worst case, so whatever the
+    // earlier ones became, the scene ends within `budget`: once the
+    // triangles still to come would no longer fit, they stay whole.
     if planes[k].is_empty()
       || tri.texture.is_some()
-      || new_tris.len() + remaining * MAX_PIECES_PER_TRIANGLE
-        > PAINTER_ORDER_MAX_TRIANGLES
+      || new_tris.len() + 2 * MAX_PIECES_PER_TRIANGLE + still_to_come[k + 1]
+        > budget
     {
       new_verts.push(original[k]);
       new_tris.push(tri);
@@ -806,6 +942,21 @@ fn painter_order(
     } else {
       side_of_plane(&verts[i], &verts[j], camera)
         .or_else(|| side_of_plane(&verts[j], &verts[i], camera).map(|s| !s))
+        .or_else(|| {
+          // Each straddles the other's plane; when they do not meet, the
+          // one farther away where they overlap on screen is behind.
+          if triangles_intersect(&verts[i], &verts[j]) {
+            return None;
+          }
+          let (di, dj) = depths_at_shared_point(
+            &verts[i],
+            &projected[i],
+            &verts[j],
+            &projected[j],
+            camera,
+          )?;
+          (di != dj).then_some(di > dj)
+        })
     };
     match i_behind {
       Some(true) => {
@@ -23093,5 +23244,43 @@ mod review_mesh_tests {
         .collect();
       assert_eq!(levels.len(), count + 2);
     }
+  }
+}
+
+#[cfg(test)]
+mod triangle_intersection_tests {
+  use super::*;
+
+  fn p(x: f64, y: f64, z: f64) -> Point3D {
+    Point3D { x, y, z }
+  }
+
+  #[test]
+  fn piercing_triangles_intersect() {
+    let flat = [p(-1.0, -1.0, 0.0), p(1.0, -1.0, 0.0), p(0.0, 1.0, 0.0)];
+    let upright = [p(0.0, 0.0, -1.0), p(0.1, 0.0, 1.0), p(-0.1, 0.0, 1.0)];
+    assert!(triangles_intersect(&flat, &upright));
+    assert!(triangles_intersect(&upright, &flat));
+  }
+
+  #[test]
+  fn triangles_straddling_each_others_planes_need_not_meet() {
+    // Two thin facets crossing like skew rods: each straddles the other's
+    // plane, but they are far apart.
+    let a = [p(-5.0, 0.0, 0.0), p(5.0, 0.0, 0.0), p(5.0, 0.1, 0.1)];
+    let b = [p(0.0, -5.0, 3.0), p(0.0, 5.0, 3.0), p(0.1, 5.0, 2.9)];
+    assert!(!triangles_intersect(&a, &b));
+  }
+
+  #[test]
+  fn depths_at_shared_point_orders_skew_facets() {
+    let camera = Camera::default();
+    let near = [p(-5.0, 0.0, 1.0), p(5.0, 0.0, 1.0), p(5.0, 0.1, 1.1)];
+    let far = [p(0.0, -5.0, -1.0), p(0.0, 5.0, -1.0), p(0.1, 5.0, -1.1)];
+    let pn = near.map(|v| project(v, &camera));
+    let pf = far.map(|v| project(v, &camera));
+    let (dn, df) = depths_at_shared_point(&near, &pn, &far, &pf, &camera)
+      .expect("the facets cross on screen");
+    assert!(dn < df, "{dn} vs {df}");
   }
 }
