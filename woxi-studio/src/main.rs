@@ -2180,6 +2180,10 @@ impl WoxiStudio {
         {
           state.apply_pane_click();
           state.mouse_down();
+          // A `ClickPane` handler may `Beep[]` or `EmitSound[…]`.
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
         }
         Task::none()
       }

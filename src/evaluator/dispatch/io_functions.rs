@@ -1251,6 +1251,13 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(null_expr()));
     }
+    // Beep[] — sound the alert tone. Like EmitSound, a short synthesized
+    // tone is captured for visual hosts (Woxi Studio plays it when a button
+    // or `ClickPane` handler beeps); the call returns Null.
+    "Beep" if args.is_empty() => {
+      crate::capture_sound(&crate::functions::sound::beep_wav_base64());
+      return Some(Ok(null_expr()));
+    }
     // HTTPRequest[url] / HTTPRequest[url, assoc] / HTTPRequest[assoc] —
     // symbolic HTTP request object; no network access is performed.
     // The one-argument URL form canonicalizes to HTTPRequest[url, <||>],

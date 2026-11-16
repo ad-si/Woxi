@@ -4174,6 +4174,31 @@ mod play {
   }
 }
 
+mod beep {
+  use super::*;
+
+  #[test]
+  fn returns_null() {
+    assert_eq!(interpret("Beep[] === Null").unwrap(), "True");
+    assert_eq!(interpret("x = Beep[]; x === Null").unwrap(), "True");
+  }
+
+  #[test]
+  fn captures_a_playable_tone() {
+    woxi::clear_captured_sound();
+    interpret("Beep[]").unwrap();
+    let audio = woxi::get_captured_sound().expect("Beep[] captures audio");
+    assert_eq!(audio.mime, "audio/wav");
+    assert!(!audio.base64.is_empty());
+  }
+
+  #[test]
+  fn runs_inside_compound_expressions() {
+    // A handler that beeps after a move must still carry on afterwards.
+    assert_eq!(interpret("n = 1; Beep[]; n + 1").unwrap(), "2");
+  }
+}
+
 mod sound_volume {
   use super::*;
 

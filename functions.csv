@@ -2469,7 +2469,7 @@ Sharpen,"Sharpens an image using unsharp mask",✅,pure,7.0,2462
 SystemsModelSeriesConnect,"",🚫,,8.0,2462
 VerticalGauge,"Display one or more values on a vertical scale as a Graphics gauge",✅,pure,9.0,2462
 Algebraics,"",🚫,,4.0,2468
-Beep,"",🚫,,6.0,2468
+Beep,"Sounds the alert tone (captured as playable audio for visual hosts; returns Null)",✅,io,6.0,2468
 GaussianIntegers,"",🚫,,2.0,2468
 HalfPlane,"Half-plane geometric region; symbolic region consumed by region functions and rendered in Graphics; drawn in Graphics3D clipped to the plot range",✅,unevaluated,10.0,2468
 MantissaExponent,"Decompose a number into mantissa and exponent",✅,pure,2.0,2468
