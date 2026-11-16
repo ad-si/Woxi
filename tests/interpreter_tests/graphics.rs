@@ -25427,7 +25427,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         for (mf, level, expected) in [
           ("(#1 + #2 &)", "Total", "{0.25, 0.5, 0.75}"),
           ("Function[{a, b}, a + b]", "Total", "{0.25, 0.5, 0.75}"),
-          ("(#1 #2 &)", "Times @@ ", "{0.0625, 0.125, 0.1875}"),
+          ("(#1 #2 &)", "Apply[Times]", "{0.0625, 0.125, 0.1875}"),
         ] {
           let code = format!(
             "g = DensityPlot[x y, {{x, 0, 1}}, {{y, 0, 1}}, Mesh -> 3, \
