@@ -22945,8 +22945,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         }
         total
       }
-      let auto =
-        export_svg("ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}]");
+      let auto = export_svg("ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}]");
       let none = export_svg(
         "ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}, Exclusions -> None]",
       );

@@ -1079,7 +1079,8 @@ fn field_frame_layout(
   // A `PlotLabel` sits in its own strip above the padding (drawn at 14
   // points by `inject_field_plot_label`).
   let title = opts.plot_label.as_ref().map_or(0.0, |label| {
-    let text = label.size.unwrap_or(14.0) * 1.35 * label.lines.len().max(1) as f64;
+    let text =
+      label.size.unwrap_or(14.0) * 1.35 * label.lines.len().max(1) as f64;
     // A boxed title adds Framed's margin above and below its lines.
     if label.framed {
       text + 2.0 * FRAMED_LABEL_MARGIN
@@ -2500,7 +2501,7 @@ fn is_pole_edge(
   let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
   let (mut f_lo, mut f_hi) = (a, b);
   for _ in 0..24 {
-    let t = (lo + hi) / 2.0;
+    let t = f64::midpoint(lo, hi);
     let Some(v) = f(p.0 + t * (q.0 - p.0), p.1 + t * (q.1 - p.1)) else {
       return false;
     };
