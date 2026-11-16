@@ -4189,7 +4189,7 @@ mod beep {
     interpret("Beep[]").unwrap();
     let audio = woxi::get_captured_sound().expect("Beep[] captures audio");
     assert_eq!(audio.mime, "audio/wav");
-    assert!(!audio.base64.is_empty());
+    assert_ne!(audio.base64, "");
   }
 
   #[test]
