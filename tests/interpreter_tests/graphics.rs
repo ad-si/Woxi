@@ -18998,18 +18998,84 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// labels its tick as one fraction, `π/2` / `3 π/4`, not "1/2 π".
     #[test]
     fn rational_multiple_of_pi_tick_labels_read_as_fractions() {
-      for graphic in [
+      let svg = export_svg(
         "Plot[Sin[x], {x, 0, 2 Pi}, Ticks -> {Table[{n Pi/4, n Pi/4}, \
          {n, 1, 3}], Automatic}]",
+      );
+      assert!(svg.contains(">π/4<"), "expected π/4: {svg}");
+      assert!(svg.contains(">π/2<"), "expected π/2: {svg}");
+      assert!(svg.contains(">3 π/4<"), "expected 3 π/4: {svg}");
+      assert!(!svg.contains("1/2 π"), "unexpected 1/2 π: {svg}");
+      // Combined by `Show`, the axes are a `Graphics`' own, which stack
+      // each fraction: "π" over "4", "3 π" over "4", never "1/2 π".
+      let svg = export_svg(
         "Show[Plot[Sin[x], {x, 0, 2 Pi}, Ticks -> {Table[{n Pi/4, n Pi/4}, \
          {n, 1, 3}], Automatic}], Graphics[{Point[{0, 0}]}]]",
-      ] {
-        let svg = export_svg(graphic);
-        assert!(svg.contains(">π/4<"), "expected π/4: {svg}");
-        assert!(svg.contains(">π/2<"), "expected π/2: {svg}");
-        assert!(svg.contains(">3 π/4<"), "expected 3 π/4: {svg}");
-        assert!(!svg.contains("1/2 π"), "unexpected 1/2 π: {svg}");
-      }
+      );
+      assert!(svg.contains(">π<"), "expected a π numerator: {svg}");
+      assert!(svg.contains(">3 π<"), "expected a 3 π numerator: {svg}");
+      assert!(svg.contains(">4<"), "expected a 4 denominator: {svg}");
+      assert!(!svg.contains("π/"), "unexpected inline fraction: {svg}");
+      assert!(!svg.contains("1/2 π"), "unexpected 1/2 π: {svg}");
+    }
+
+    /// A `Graphics` axis tick at a fraction (`Pi/2`, `-Pi/2`, `1/3`) is
+    /// labeled the way Wolfram typesets it, numerator stacked over
+    /// denominator with a bar between them (and a negative one's minus sign
+    /// before the bar), not the inline `π/2`.
+    #[test]
+    fn graphics_fraction_tick_labels_are_stacked() {
+      let texts = |svg: &str| -> Vec<String> {
+        svg
+          .split("<text")
+          .skip(1)
+          .filter_map(|t| {
+            let after = t.split_once('>')?.1;
+            Some(after.split_once("</text>")?.0.trim().to_string())
+          })
+          .collect()
+      };
+      let svg = export_svg(
+        "Graphics[Line[{{-Pi, -Pi}, {Pi, Pi}}], Axes -> True, \
+         Ticks -> {Table[i, {i, -Pi, Pi, Pi/2}], {{1, 1/3}, {2, \"two\"}}}]",
+      );
+      let labels = texts(&svg);
+      assert!(
+        !labels.iter().any(|l| l.contains('/')),
+        "no fraction should be written inline: {labels:?}"
+      );
+      // π/2 and −π/2 each give a "π" over a "2"; the whole multiples of π
+      // keep their one-line labels.
+      assert_eq!(labels.iter().filter(|l| *l == "π").count(), 3, "{labels:?}");
+      assert_eq!(labels.iter().filter(|l| *l == "2").count(), 2, "{labels:?}");
+      assert!(labels.contains(&"-π".to_string()), "{labels:?}");
+      assert!(labels.contains(&"\u{2212}".to_string()), "{labels:?}");
+      // An explicit `{pos, 1/3}` label is stacked too; a string stays text.
+      assert!(labels.contains(&"1".to_string()), "{labels:?}");
+      assert!(labels.contains(&"3".to_string()), "{labels:?}");
+      assert!(labels.contains(&"two".to_string()), "{labels:?}");
+      // The numerator sits right above its denominator: the explicit 1/3
+      // label's "1" and "3" share an x position, the "1" higher up.
+      let pos_of = |text: &str| -> (f64, f64) {
+        let tag = svg
+          .split("<text")
+          .find(|t| {
+            t.split_once('>')
+              .is_some_and(|(_, r)| r.starts_with(&format!("{text}</text>")))
+          })
+          .unwrap_or_else(|| panic!("no {text:?} label: {svg}"));
+        let attr = |name: &str| -> f64 {
+          tag
+            .split_once(&format!(" {name}=\""))
+            .and_then(|(_, r)| r.split_once('"'))
+            .and_then(|(v, _)| v.parse().ok())
+            .unwrap_or_else(|| panic!("no {name} in {tag}"))
+        };
+        (attr("x"), attr("y"))
+      };
+      let (one, three) = (pos_of("1"), pos_of("3"));
+      assert!((one.0 - three.0).abs() < 1e-6, "{one:?} {three:?}");
+      assert!(one.1 < three.1, "{one:?} {three:?}");
     }
 
     #[test]
