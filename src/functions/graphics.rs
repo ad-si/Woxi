@@ -18109,6 +18109,12 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
             set("fill", c.to_svg_rgb());
           }
         }
+        // `Style[…, FontFamily -> "Courier"]` sets that part in the face.
+        Some("FontFamily") => {
+          if let Expr::String(f) | Expr::Identifier(f) = replacement.as_ref() {
+            set("font-family", svg_escape(f));
+          }
+        }
         Some("FontSlant") => {
           if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "Italic")
           {
@@ -19929,6 +19935,26 @@ pub(crate) fn stacked_scripts_markup(sub: &str, sup: &str) -> String {
   }
 }
 
+/// The widths of the lines a `Row` part breaks into: one entry for a part
+/// without a line break, and one per line for a string (or a styled
+/// string) that contains `\n`.
+fn row_part_line_widths(part: &Expr) -> Vec<f64> {
+  match part {
+    Expr::String(s)
+      if s.contains('\n')
+        && !s.contains(crate::functions::string_ast::BOX_START) =>
+    {
+      s.split('\n').map(|l| l.chars().count() as f64).collect()
+    }
+    Expr::FunctionCall { name, args }
+      if (name == "Style" || name == "StyleForm") && !args.is_empty() =>
+    {
+      row_part_line_widths(&args[0])
+    }
+    other => vec![estimate_display_width(other)],
+  }
+}
+
 pub fn estimate_display_width(expr: &Expr) -> f64 {
   if let Some((base, exp)) = as_power(expr) {
     // `Subscript[x, i]^k` stacks the exponent over the index.
@@ -20237,12 +20263,28 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
               }
               other => estimate_display_width(other),
             });
-          let inner: f64 = parts
+          // A line break inside a part (`Row[{"a\n", "b"}]`) starts a new
+          // line: the row is as wide as its widest line, not as all of its
+          // parts laid end to end.
+          let mut lines: Vec<f64> = vec![0.0];
+          let mut first = true;
+          for part in parts
             .iter()
             .filter(|p| !matches!(p, Expr::Identifier(n) if n == "Null"))
-            .map(estimate_display_width)
-            .sum();
-          inner + sep * parts.len().saturating_sub(1) as f64
+          {
+            if !first && let Some(last) = lines.last_mut() {
+              *last += sep;
+            }
+            first = false;
+            let segments = row_part_line_widths(part);
+            if let (Some(last), Some(head)) =
+              (lines.last_mut(), segments.first())
+            {
+              *last += head;
+            }
+            lines.extend(segments.iter().skip(1));
+          }
+          lines.into_iter().fold(0.0, f64::max)
         }
         other => estimate_display_width(other),
       },
@@ -26180,6 +26222,9 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
       parts.push(item.clone());
     }
     let row = call("Row", vec![Expr::List(parts.into())]);
+    // A `Column` aligns its items on the left by default; the block as a
+    // whole is still placed by the grid's alignment.
+    directives.push(rule_expr(id_expr("TextAlignment"), id_expr("Left")));
     return call(
       "Style",
       std::iter::once(row).chain(directives).collect::<Vec<_>>(),
@@ -27787,6 +27832,34 @@ fn grid_svg_styled_internal_reporting(
         // A line break starts a new line: one `<tspan>` per line, the block
         // centered on the cell. Stacked fractions are drawn elsewhere.
         let multiline = markup.contains('\n') && !has_fraction(cell);
+        // A centered cell whose lines are aligned on one side
+        // (`TextAlignment -> Left`, as a `Column` cell sets) keeps the block
+        // centered but starts (or ends) every line at the block's edge.
+        let line_anchor = match cell {
+          Expr::FunctionCall { name, args } if multiline && name == "Style" => {
+            args[1..]
+              .iter()
+              .find_map(text_alignment_line_anchor)
+              .flatten()
+          }
+          _ => None,
+        };
+        let (anchor, cx) = match line_anchor {
+          Some(side) if anchor == "middle" => {
+            let half =
+              estimate_display_width(cell) * char_width * cell_text_scale(cell)
+                / 2.0;
+            (
+              side,
+              if side == "start" {
+                cx - half
+              } else {
+                cx + half
+              },
+            )
+          }
+          _ => (anchor, cx),
+        };
         let (text_y, markup) = if multiline {
           let lh = markup_line_height(&markup, fs);
           let lines = split_markup_lines(&markup);
