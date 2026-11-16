@@ -12443,10 +12443,10 @@ pub(crate) fn generate_histogram_svg(
   height: HistogramHeight,
   opts: &mut ChartOptions,
 ) -> Result<String, InterpreterError> {
-  let (svg_width, svg_height, full_width) =
+  let (svg_width, mut svg_height, full_width) =
     (opts.svg_width, opts.svg_height, opts.full_width);
   let render_width = svg_width * RESOLUTION_SCALE;
-  let render_height = svg_height * RESOLUTION_SCALE;
+  let mut render_height = svg_height * RESOLUTION_SCALE;
 
   // Shared bin edges spanning every dataset, then per-dataset counts and
   // bar heights (heights depend on the height spec: Count, PDF, …).
@@ -12689,7 +12689,42 @@ pub(crate) fn generate_histogram_svg(
     plot_theme();
 
   let side_margin = 2.0 * sf;
-  let right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
+  let mut right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
+
+  // The plotting area keeps its `AspectRatio` (the golden ratio by
+  // default). In a fixed `ImageSize -> {w, h}` box it is as large as fits
+  // and centered in the room the margins leave; otherwise an explicit
+  // ratio sets the image's height.
+  let mut left_margin = side_margin;
+  let mut bottom_margin = side_margin;
+  let mut top_margin = top_margin;
+  {
+    let right_total =
+      (right_margin + axes_label_margin_right + legend_margin_right) as f64;
+    let area_w =
+      (render_width as f64 - left_margin - y_label_area as f64 - right_total)
+        .max(1.0);
+    let margins_v = top_margin as f64 + bottom_margin + x_label_area as f64;
+    if opts.fixed_height && !opts.aspect_full {
+      let r = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
+      let area_h = (render_height as f64 - margins_v).max(1.0);
+      if area_w * r <= area_h {
+        let extra = ((area_h - area_w * r) / 2.0).floor();
+        top_margin += extra as i32;
+        bottom_margin += extra;
+      } else {
+        let extra = ((area_w - area_h / r) / 2.0).floor();
+        left_margin += extra;
+        right_margin += extra as u32;
+      }
+    } else if !opts.fixed_height
+      && let Some(r) = opts.aspect_ratio
+    {
+      svg_height = ((margins_v + area_w * r) / sf).round().max(1.0) as u32;
+      render_height = svg_height * RESOLUTION_SCALE;
+      opts.svg_height = svg_height;
+    }
+  }
 
   let mut buf = String::new();
   {
@@ -12704,8 +12739,8 @@ pub(crate) fn generate_histogram_svg(
       .margin_right(
         right_margin + axes_label_margin_right + legend_margin_right,
       )
-      .margin_bottom(side_margin as u32)
-      .margin_left(side_margin as u32)
+      .margin_bottom(bottom_margin as u32)
+      .margin_left(left_margin as u32)
       .x_label_area_size(x_label_area)
       .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_lo..x_hi, y_min..y_max)
@@ -12798,7 +12833,7 @@ pub(crate) fn generate_histogram_svg(
   );
 
   // Plot area coordinates (kept in sync with the ChartBuilder margins above).
-  let margin_left = side_margin;
+  let margin_left = left_margin;
   let plot_x0 = margin_left + y_label_area as f64;
   let plot_y0 = top_margin as f64;
   let plot_w = render_width as f64
@@ -12809,7 +12844,7 @@ pub(crate) fn generate_histogram_svg(
     - y_label_area as f64;
   let plot_h = render_height as f64
     - top_margin as f64
-    - side_margin
+    - bottom_margin
     - x_label_area as f64;
 
   {
