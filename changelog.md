@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Magnify[image, s]` shows the image at `s` times its size in notebooks
+    (also inside a fixed-size `Pane`), and `ExportString` draws it at that
+    size, instead of showing no picture.
 
 # 2026-11-08 - 0.4.0
 

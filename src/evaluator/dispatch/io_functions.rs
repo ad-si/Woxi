@@ -7719,6 +7719,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     Expr::FunctionCall { name, args }
       if name == "Magnify" && (args.len() == 1 || args.len() == 2) =>
     {
+      // An image is drawn again at the magnified size rather than having
+      // its finished document (which starts with an XML declaration)
+      // resized.
+      if let Some(image) = crate::functions::image_ast::magnified_image(expr) {
+        return expr_to_svg(&image);
+      }
       let inner = expr_to_svg(&unquoted_display_string(&args[0]));
       let factor = args
         .get(1)
