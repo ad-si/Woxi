@@ -12679,7 +12679,7 @@ pub(crate) fn graph_plot3d_ast(
           ]
           .into(),
         }
-      }))
+      }));
     }
   }
   let mut groups = vec![edge_group];
