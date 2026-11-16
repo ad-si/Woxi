@@ -9854,25 +9854,57 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
   total_turn.abs() < 3.0 * std::f64::consts::PI
 }
 
+/// Whether every corner of a polygon lies in one plane. A corner farther
+/// from the plane through the first corner (with the polygon's own normal)
+/// than a millionth of the polygon's extent makes it non-planar.
+fn is_planar_polygon3d(points: &[Point3D]) -> bool {
+  let Some(normal) = polygon_plane_normal(points) else {
+    return true;
+  };
+  let o = points[0];
+  let extent = points
+    .iter()
+    .flat_map(|p| [(p.x - o.x).abs(), (p.y - o.y).abs(), (p.z - o.z).abs()])
+    .fold(0.0f64, f64::max);
+  points.iter().all(|p| {
+    let d = (p.x - o.x) * normal[0]
+      + (p.y - o.y) * normal[1]
+      + (p.z - o.z) * normal[2];
+    d.abs() <= 1e-6 * extent
+  })
+}
+
+/// Whether a hole-free 3D face needs the general planar triangulator
+/// rather than a fan from its first corner: it is planar but not convex.
+/// A non-planar outline (a closed path over several faces of a box) has
+/// no plane to be flattened onto, so it is drawn as a fan, like Wolfram's
+/// renderer does; flattening would collapse it onto a single plane.
+fn uses_polygon_triangulator(points: &[Point3D]) -> bool {
+  points.len() > 3
+    && is_planar_polygon3d(points)
+    && !is_convex_polygon3d(points)
+}
+
+/// Split a hole-free 3D face into triangles: a fan from the first corner
+/// when it is convex or non-planar, the general triangulator otherwise.
+fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
+  if points.len() < 3 {
+    Vec::new()
+  } else if uses_polygon_triangulator(points) {
+    tessellate_polygon_with_holes(points, &[]).0
+  } else {
+    (1..points.len() - 1)
+      .map(|i| (points[0], points[i], points[i + 1]))
+      .collect()
+  }
+}
+
 /// Tessellate a planar polygon with holes (`Polygon[outer -> holes]`).
 ///
 /// The face is flattened onto its own plane, triangulated there, and the
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
-/// Split a hole-free 3D face into triangles: a fan from the first corner
-/// when it is convex, the general triangulator otherwise.
-fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
-  if points.len() < 3 {
-    Vec::new()
-  } else if points.len() == 3 || is_convex_polygon3d(points) {
-    (1..points.len() - 1)
-      .map(|i| (points[0], points[i], points[i + 1]))
-      .collect()
-  } else {
-    tessellate_polygon_with_holes(points, &[]).0
-  }
-}
 
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
@@ -12341,18 +12373,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } if holes.is_empty() => {
           // A fan from the first corner only covers a convex polygon; on a
           // concave one its triangles spill outside the outline, which
-          // shows as spikes off the shape. A concave face goes through the
-          // same triangulator the holed case uses.
-          let t = if points.len() < 3 {
-            vec![]
-          } else if is_convex_polygon3d(points) {
-            (1..points.len() - 1)
-              .map(|i| (points[0], points[i], points[i + 1]))
-              .collect()
-          } else {
+          // shows as spikes off the shape. A concave planar face goes
+          // through the same triangulator the holed case uses.
+          let t = if uses_polygon_triangulator(points) {
             let (t, flags) = tessellate_polygon_with_holes(points, &[]);
             holed_boundaries = flags;
             t
+          } else {
+            triangulate_face3d(points)
           };
           (t, style)
         }
@@ -12472,8 +12500,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Primitive3D::Cone { .. }
         | Primitive3D::Surface3D { smooth: true, .. }
     );
+    // A non-planar polygon has no single normal: each of its fan
+    // triangles is lit by its own.
     let polygon_normal = match prim {
-      Primitive3D::Polygon3D { points, .. } if points.len() > 3 => {
+      Primitive3D::Polygon3D { points, .. }
+        if points.len() > 3 && is_planar_polygon3d(points) =>
+      {
         let mut normal = [0.0; 3];
         for i in 0..points.len() {
           let (a, b) = (points[i], points[(i + 1) % points.len()]);
