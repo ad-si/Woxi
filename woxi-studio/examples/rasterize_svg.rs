@@ -11,11 +11,16 @@ fn main() {
   let mut fontdb = resvg::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
+  let data = woxi::functions::image_ast::synthesize_oblique_text(
+    std::str::from_utf8(&data).expect("utf-8 svg"),
+    &fontdb,
+  )
+  .into_owned();
   let opts = resvg::usvg::Options {
     fontdb: std::sync::Arc::new(fontdb),
     ..Default::default()
   };
-  let tree = resvg::usvg::Tree::from_data(&data, &opts).expect("parse svg");
+  let tree = resvg::usvg::Tree::from_str(&data, &opts).expect("parse svg");
   let size = tree.size();
   let (w, h) = (
     (size.width() * scale).ceil() as u32,

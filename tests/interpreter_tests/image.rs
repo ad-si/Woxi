@@ -11428,3 +11428,139 @@ mod image_value_positions {
     );
   }
 }
+
+/// usvg draws `font-style="italic"` text with upright outlines when the
+/// family has no italic face (the embedded Atkinson fonts have none), so
+/// rasterizers slant such text themselves, the way browsers do.
+#[cfg(not(target_arch = "wasm32"))]
+mod synthetic_oblique_text {
+  use resvg::usvg::fontdb::{Database, FaceInfo, Language, Source, Style};
+  use std::borrow::Cow;
+  use woxi::functions::image_ast::{
+    load_embedded_fonts, rasterize_svg, synthesize_oblique_text,
+  };
+
+  fn embedded_fonts() -> Database {
+    let mut db = Database::new();
+    load_embedded_fonts(&mut db);
+    db
+  }
+
+  fn svg(body: &str) -> String {
+    format!(
+      "<svg width=\"100\" height=\"40\" xmlns=\"http://www.w3.org/2000/svg\">{body}</svg>"
+    )
+  }
+
+  #[test]
+  fn italic_text_is_skewed_about_its_anchor() {
+    let input = svg(
+      "<text x=\"20.5\" y=\"10\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
+    );
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(
+      out.contains(
+        "<text transform=\"translate(20.5 10) skewX(-14) translate(-20.5 -10)\" x=\"20.5\""
+      ),
+      "{out}"
+    );
+  }
+
+  #[test]
+  fn text_set_in_one_italic_tspan_is_skewed() {
+    // How a styled PlotLabel or AxesLabel is written.
+    let input = svg(
+      "<text x=\"50\" y=\"14\" font-family=\"sans-serif\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
+    );
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(out.contains("skewX(-14)"), "{out}");
+  }
+
+  #[test]
+  fn italic_inherited_from_a_group_is_skewed() {
+    let input =
+      svg("<g style=\"font-style: italic\"><text x=\"1\" y=\"2\">a</text></g>");
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(out.contains("translate(1 2) skewX(-14) translate(-1 -2)"));
+  }
+
+  #[test]
+  fn existing_transform_is_extended() {
+    let input = svg(
+      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-style=\"italic\">y</text>",
+    );
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(
+      out.contains(
+        "transform=\"rotate(-90) translate(3 4) skewX(-14) translate(-3 -4)\""
+      ),
+      "{out}"
+    );
+    assert_eq!(out.matches("transform=").count(), 1, "{out}");
+  }
+
+  #[test]
+  fn upright_and_mixed_text_is_left_alone() {
+    let db = embedded_fonts();
+    for body in [
+      "<text x=\"1\" y=\"2\">plain</text>",
+      "<text x=\"1\" y=\"2\" font-weight=\"bold\">bold</text>",
+      // Mixed runs: a <tspan> cannot be transformed on its own.
+      "<text x=\"1\" y=\"2\"><tspan font-style=\"italic\">x</tspan>(t)</text>",
+      "<text x=\"1\" y=\"2\" font-style=\"italic\">a<tspan font-style=\"normal\">b</tspan></text>",
+    ] {
+      let input = svg(body);
+      let out = synthesize_oblique_text(&input, &db);
+      assert!(matches!(out, Cow::Borrowed(_)), "{body} became {out}");
+    }
+  }
+
+  #[test]
+  fn family_with_an_italic_face_is_not_skewed() {
+    let mut db = embedded_fonts();
+    db.push_face_info(FaceInfo {
+      id: resvg::usvg::fontdb::ID::dummy(),
+      source: Source::Binary(std::sync::Arc::new(Vec::<u8>::new())),
+      index: 0,
+      families: vec![(
+        "Slanted Sans".to_string(),
+        Language::English_UnitedStates,
+      )],
+      post_script_name: "SlantedSans-Italic".to_string(),
+      style: Style::Italic,
+      weight: resvg::usvg::fontdb::Weight::NORMAL,
+      stretch: resvg::usvg::fontdb::Stretch::Normal,
+      monospaced: false,
+    });
+    let input = svg(
+      "<text x=\"1\" y=\"2\" font-family=\"Slanted Sans\" font-style=\"italic\">a</text>",
+    );
+    let out = synthesize_oblique_text(&input, &db);
+    assert!(matches!(out, Cow::Borrowed(_)), "{out}");
+  }
+
+  #[test]
+  fn rasterized_italic_text_differs_from_upright_text() {
+    let upright = svg(
+      "<text x=\"10\" y=\"30\" font-family=\"sans-serif\" font-size=\"24\">Il</text>",
+    );
+    let italic = upright.replace("<text ", "<text font-style=\"italic\" ");
+    let pixels = |s: &str| match rasterize_svg(s, 72.0).unwrap() {
+      woxi::syntax::Expr::Image { ref data, .. } => data.clone(),
+      other => panic!("not an image: {other:?}"),
+    };
+    assert_ne!(pixels(&upright), pixels(&italic));
+  }
+
+  #[test]
+  fn styled_graphics_text_rasterizes_slanted() {
+    // End to end: Text[Style[..., Bold, Italic]] in Graphics.
+    let pixels = |style: &str| {
+      woxi::interpret(&format!(
+        "ImageData[Rasterize[Graphics[Text[Style[\"Il\", 24, {style}], {{0, 0}}], ImageSize -> 60]]]"
+      ))
+      .unwrap()
+    };
+    assert_ne!(pixels("Bold"), pixels("Bold, Italic"));
+  }
+}

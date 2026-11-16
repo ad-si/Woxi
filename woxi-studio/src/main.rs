@@ -6172,6 +6172,8 @@ fn rasterize_svg(
     fontdb: fontdb.clone(),
     ..Default::default()
   };
+  let svg_str =
+    &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let logical_w = size.width().ceil() as u32;
@@ -8099,6 +8101,8 @@ fn encode_svg_as_png(
     fontdb: fontdb.clone(),
     ..Default::default()
   };
+  let svg_str =
+    &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let scale: f32 = 2.0;
@@ -8121,6 +8125,8 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
+  let svg_str =
+    &woxi::functions::image_ast::synthesize_oblique_text(svg_str, &fontdb);
 
   let opt = svg2pdf::usvg::Options {
     fontdb: std::sync::Arc::new(fontdb),
@@ -8491,6 +8497,8 @@ fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
     fontdb: pdf_fontdb(),
     ..Default::default()
   };
+  let svg_doc =
+    woxi::functions::image_ast::synthesize_oblique_text(&svg_doc, &opt.fontdb);
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
     &tree,
@@ -8532,8 +8540,10 @@ fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
   let mut pdf = Pdf::new();
   let mut page_ids = Vec::new();
   for cells in slides {
-    let tree = svg2pdf::usvg::Tree::from_str(&slide_page_svg(cells), &opt)
-      .map_err(|_| ())?;
+    let page = slide_page_svg(cells);
+    let page =
+      woxi::functions::image_ast::synthesize_oblique_text(&page, &opt.fontdb);
+    let tree = svg2pdf::usvg::Tree::from_str(&page, &opt).map_err(|_| ())?;
     let (chunk, svg_id) =
       svg2pdf::to_chunk(&tree, svg2pdf::ConversionOptions::default())
         .map_err(|_| ())?;
