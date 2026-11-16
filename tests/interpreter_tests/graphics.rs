@@ -22920,11 +22920,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// the sign change as a contour.
     #[test]
     fn contour_plot_equation_skips_poles() {
-      // The branches of `Tan` reach every y in the range, so a vertical
-      // contour line at a pole shows up as a long polyline with (nearly)
-      // constant x spanning the whole plot height.
-      fn longest_vertical_run(svg: &str) -> f64 {
-        let mut longest: f64 = 0.0;
+      // A contour line along a pole runs straight up: sum the height of
+      // every step of the curves steeper than any branch of `Tan` gets in
+      // the plotted y range.
+      fn vertical_length(svg: &str) -> f64 {
+        let mut total = 0.0;
         for part in svg.split("<polyline points=\"").skip(1) {
           let pts: Vec<(f64, f64)> = part
             .split('"')
@@ -22936,17 +22936,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
               Some((x.parse().ok()?, y.parse().ok()?))
             })
             .collect();
-          let (xmin, xmax) = pts
-            .iter()
-            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.0), b.max(p.0)));
-          let (ymin, ymax) = pts
-            .iter()
-            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
-          if xmax - xmin < 1.0 {
-            longest = longest.max(ymax - ymin);
+          for w in pts.windows(2) {
+            let (dx, dy) = ((w[1].0 - w[0].0).abs(), (w[1].1 - w[0].1).abs());
+            if dx < 0.02 * dy {
+              total += dy;
+            }
           }
         }
-        longest
+        total
       }
       let auto =
         export_svg("ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}]");
@@ -22957,8 +22954,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         export_svg("ContourPlot[x y == 1, {x, -2, 2}, {y, -2, 2}]");
       let quotient =
         export_svg("ContourPlot[y == 1/x, {x, -2, 2}, {y, -2, 2}]");
-      assert!(longest_vertical_run(&auto) < 100.0, "{auto}");
-      assert!(longest_vertical_run(&none) > 1000.0, "{none}");
+      assert!(vertical_length(&auto) < 100.0, "{auto}");
+      assert!(vertical_length(&none) > 1000.0, "{none}");
       // The branches themselves are kept: as many curves as with the
       // equivalent pole-free equation `x y == 1`.
       assert_eq!(
