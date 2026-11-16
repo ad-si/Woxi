@@ -10165,6 +10165,65 @@ mod plot3d {
       }
     }
 
+    // `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}` confines the scene to that
+    // scaled part of the picture: it is laid out as in a picture of the
+    // region's size and moved into place, the picture keeping its full
+    // `ImageSize`. Regression: the option was ignored, drawing the scene
+    // across the whole picture.
+    #[test]
+    fn graphics3d_plot_region_confines_the_scene() {
+      fn polygon_extent(svg: &str) -> (f64, f64, f64, f64) {
+        let mut ext = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for chunk in svg.split("<polygon points=\"").skip(1) {
+          let points = chunk.split('"').next().unwrap();
+          for pair in points.split_whitespace() {
+            let (x, y) = pair.split_once(',').unwrap();
+            let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+            ext = (ext.0.min(x), ext.1.max(x), ext.2.min(y), ext.3.max(y));
+          }
+        }
+        ext
+      }
+      for camera in ["", ", ViewPoint -> {1, 0, 1}, SphericalRegion -> True"] {
+        let region = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, ImageSize -> {{300, 200}}, \
+           PlotRegion -> {{{{0.1, 0.8}}, {{0.25, 0.75}}}}{camera}]"
+        ));
+        let inner = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, \
+           ImageSize -> {{210, 100}}{camera}]"
+        ));
+        assert!(
+          region.starts_with("<svg width=\"300\" height=\"200\""),
+          "{}",
+          &region[..80]
+        );
+        let (p, q) = (polygon_extent(&region), polygon_extent(&inner));
+        let close = |a: f64, b: f64| (a - b).abs() < 0.15;
+        // 10% of 300 on the left, 25% of 200 on the top.
+        assert!(
+          close(p.0, q.0 + 30.0) && close(p.1, q.1 + 30.0),
+          "{p:?} {q:?}"
+        );
+        assert!(
+          close(p.2, q.2 + 50.0) && close(p.3, q.3 + 50.0),
+          "{p:?} {q:?}"
+        );
+      }
+      // The full unit square, `Automatic` and malformed specs leave the
+      // picture as it is.
+      let plain = export_svg("Graphics3D[Sphere[], ImageSize -> 200]");
+      for spec in ["{{0, 1}, {0, 1}}", "Automatic", "{{0.5, 0.2}, {0, 1}}"] {
+        assert_eq!(
+          export_svg(&format!(
+            "Graphics3D[Sphere[], ImageSize -> 200, PlotRegion -> {spec}]"
+          )),
+          plain,
+          "{spec}"
+        );
+      }
+    }
+
     /// A `Manipulate` frame frames its 3D graphics by the sphere around
     /// the box, as Wolfram does: a Demonstration's snapshots of a
     /// `Show[Plot3D[…], Graphics3D[…]]` cube of side 15 at `ImageSize ->
@@ -39098,6 +39157,47 @@ mod manipulate {
       texts(&node, &mut found);
       assert_eq!(found, ["9/10", "3/4", "0.25"], "{display}: {node:?}");
     }
+  }
+
+  /// A caption string joining a `ToString[TraditionalForm[list]]` readout
+  /// (`"v = " <> ToString[TraditionalForm[{1/2, 3}]]`) is typeset: a list
+  /// holding fractions is drawn with them stacked, and a plain list keeps
+  /// the FrontEnd's space after each comma. Regression: both were
+  /// flattened to one line of text, `{1/2,3}`.
+  #[test]
+  fn spec_display_traditional_form_list_readouts_are_typeset() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let expr = interpret_to_expr(
+      "Manipulate[n, {n, 1, 2}, Dynamic[Column[{\
+       StringJoin[\"u = \", ToString[TraditionalForm[{n, 0, 0}]]], \
+       StringJoin[\"v = \", ToString[TraditionalForm[{n/3, Sqrt[2]/5, 0}]]]}]]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("manipulate");
+    assert_eq!(spec.displays.len(), 1);
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      build_manipulate_display(&spec.displays[0], &bindings)
+    });
+    let DisplayNode::Column(items) = &node else {
+      panic!("expected a column: {node:?}");
+    };
+    let [first, second] = items.as_slice() else {
+      panic!("expected two rows: {node:?}");
+    };
+    let DisplayNode::Text { runs } = first else {
+      panic!("plain list should stay text: {first:?}");
+    };
+    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(text, "u = {1, 0, 0}");
+    let DisplayNode::Static { svg: Some(svg), .. } = second else {
+      panic!("fraction list should be typeset: {second:?}");
+    };
+    // The numerator and denominator are separate glyph runs over a bar,
+    // not the one-line `1/3` reading.
+    assert!(svg.starts_with("<svg"), "{svg}");
+    assert!(!svg.contains("1/3"), "{svg}");
+    assert!(svg.contains(">3<") && svg.contains(">5<"), "{svg}");
   }
 
   #[test]
