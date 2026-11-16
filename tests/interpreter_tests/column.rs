@@ -283,7 +283,11 @@ mod column_visual_mode {
       let result =
         interpret_with_stdout(&format!("Grid[{{{{\"a\", {cell}}}}}]")).unwrap();
       let svg = result.graphics.unwrap();
-      assert!(svg.contains(">2</tspan>"), "{svg}");
+      // (`Text[…]` sets the column in the text face, as `<text>` lines.)
+      assert!(
+        svg.contains(">2</tspan>") || svg.contains(">2</text>"),
+        "{svg}"
+      );
       assert!(!svg.contains("Dynamic"), "{svg}");
     }
   }
