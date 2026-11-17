@@ -9980,6 +9980,33 @@ mod ndsolve {
     );
   }
 
+  // A WhenEvent whose event is a real-valued expression rather than a
+  // logical condition fires where that expression crosses zero, and a
+  // `Throw[…, "StopIntegration"]` action ends the integration there.
+  #[test]
+  fn when_event_on_real_valued_expression() {
+    assert_eq!(
+      interpret(
+        "tt = 0; s = NDSolve[{x''[t] == -x[t], x[0] == 1, x'[0] == 0, \
+         WhenEvent[x[t] + 1/2, Throw[tt = t, \"StopIntegration\"]]}, x, \
+         {t, 0, 10}]; {Round[10^6 tt], \
+         Round[10^6 (x[\"Domain\"] /. First[s])]}"
+      )
+      .unwrap(),
+      "{2094395, {{0, 2094395}}}"
+    );
+    // A falling crossing of a product, with a plain "StopIntegration".
+    assert_eq!(
+      interpret(
+        "tt = 0; NDSolve[{x'[t] == -x[t], x[0] == 1, \
+         WhenEvent[2 (x[t] - 1/4), tt = t; \"StopIntegration\"]}, x, \
+         {t, 0, 10}]; Round[10^6 tt]"
+      )
+      .unwrap(),
+      "1386294"
+    );
+  }
+
   // A WhenEvent on an implicit curve stops it where the condition turns
   // True, located within the step, and runs its action there
   // (TheFrankKamenetskiiProblemUsingArcLengthContinuation).

@@ -7976,6 +7976,26 @@ enum StateTrigger {
   Condition(Expr),
 }
 
+/// Whether a `WhenEvent` event is a real-valued expression (a sum,
+/// product, power, negation or quotient) rather than a logical condition.
+fn is_arithmetic_event(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+    ),
+    Expr::UnaryOp { op, .. } => *op == UnaryOperator::Minus,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Plus" | "Times" | "Power")
+    }
+    _ => false,
+  }
+}
+
 /// A state event ready for integration. Its trigger is rewritten over the
 /// state placeholders; the action is kept as written, since a rule
 /// `f[x] -> value` in it names the state component it resets.
@@ -8042,6 +8062,12 @@ impl StateEvent {
       (raw.condition.clone(), None)
     };
     let trigger = match as_equal_pair(&condition) {
+      // A real-valued event `f` (not a logical condition) fires where it
+      // crosses zero, like `f == 0`.
+      None if is_arithmetic_event(&condition) => {
+        let rewritten = substitute_function_values(&condition, funcs, x_name);
+        StateTrigger::Crossing(NumFn::new(rewritten, var_names))
+      }
       Some((lhs, rhs)) => {
         let diff = Expr::FunctionCall {
           name: "Plus".to_string(),
