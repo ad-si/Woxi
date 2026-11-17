@@ -10827,12 +10827,33 @@ fn tessellate_tube(
     (1.0, 0.0, 0.0)
   };
   let mut normal = unit(cross(t0, seed)).unwrap_or((1.0, 0.0, 0.0));
-  let transport = |normal: (f64, f64, f64), t: (f64, f64, f64)| {
-    let dot = normal.0 * t.0 + normal.1 * t.1 + normal.2 * t.2;
+  // Carry the normal from one vertex tangent to the next by the rotation
+  // that turns the one tangent into the other (a rotation-minimizing
+  // frame). Merely re-projecting it would collapse at a right-angle bend
+  // within the normal's own plane, where it lines up with the new tangent.
+  let transport = |normal: (f64, f64, f64),
+                   from: (f64, f64, f64),
+                   to: (f64, f64, f64)| {
+    let axis = cross(from, to);
+    let sin = norm(axis);
+    let cos = from.0 * to.0 + from.1 * to.1 + from.2 * to.2;
+    let rotated = match unit(axis) {
+      Some(k) if sin > 1e-12 => {
+        let kv = cross(k, normal);
+        let kd = k.0 * normal.0 + k.1 * normal.1 + k.2 * normal.2;
+        (
+          normal.0 * cos + kv.0 * sin + k.0 * kd * (1.0 - cos),
+          normal.1 * cos + kv.1 * sin + k.1 * kd * (1.0 - cos),
+          normal.2 * cos + kv.2 * sin + k.2 * kd * (1.0 - cos),
+        )
+      }
+      _ => normal,
+    };
+    let dot = rotated.0 * to.0 + rotated.1 * to.1 + rotated.2 * to.2;
     let projected = (
-      normal.0 - dot * t.0,
-      normal.1 - dot * t.1,
-      normal.2 - dot * t.2,
+      rotated.0 - dot * to.0,
+      rotated.1 - dot * to.1,
+      rotated.2 - dot * to.2,
     );
     unit(projected).unwrap_or(normal)
   };
@@ -10841,8 +10862,10 @@ fn tessellate_tube(
   // angle; spreading that turn over the vertices lets the last ring meet
   // the first one without a twisted seam.
   let twist = if closed {
-    let first = transport(normal, tangents[0]);
-    let last = tangents.iter().fold(normal, |n, &t| transport(n, t));
+    let last = tangents
+      .windows(2)
+      .fold(normal, |n, pair| transport(n, pair[0], pair[1]));
+    let first = normal;
     let c = cross(first, last);
     let sin = c.0 * t0.0 + c.1 * t0.1 + c.2 * t0.2;
     let cos = first.0 * last.0 + first.1 * last.1 + first.2 * last.2;
@@ -10882,7 +10905,9 @@ fn tessellate_tube(
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
     // Re-project the carried normal into this vertex's normal plane.
-    normal = transport(normal, t);
+    if i > 0 {
+      normal = transport(normal, tangents[i - 1], t);
+    }
     let binormal = cross(t, normal);
     let r = radii.get(idx).copied().unwrap_or(0.0);
     // A bend shortens the ring's projection onto the segments; widening it
