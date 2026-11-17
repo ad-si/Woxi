@@ -30206,6 +30206,60 @@ mod graphics_grid {
     );
   }
 
+  /// A `Column` inside a centered, sized `Pane` keeps its own (`Left`)
+  /// item alignment: the pane only places the column as a whole. A
+  /// multi-line string item that the pane re-flows used to make every item
+  /// of the column centered.
+  #[test]
+  fn centered_pane_keeps_column_items_left_aligned() {
+    clear_state();
+    for content in [
+      "Column[{\"final is worth\", \"\\n\", \"you need\"}]",
+      "Text[Style[Column[{\"final is worth\", \"\\n\", \"you need\"}], 20, Bold]]",
+    ] {
+      let svg = interpret_with_stdout(&format!(
+        "Pane[{content}, {{350, 325}}, Alignment -> {{Center, Center}}]"
+      ))
+      .unwrap()
+      .graphics
+      .unwrap();
+      assert!(
+        !svg.contains("text-anchor=\"middle\""),
+        "column items must stay left-aligned in {content}: {svg}"
+      );
+      assert!(svg.contains(">final is worth<"), "{svg}");
+    }
+  }
+
+  /// A styled `Row` in a `Column` keeps its monospace cells apart: the
+  /// pass that pulls labels back inside the canvas measured the `%` in the
+  /// wider proportional face, decided it overran the row's right edge, and
+  /// shifted it onto the digits before it.
+  #[test]
+  fn styled_row_in_column_keeps_monospace_cells_apart() {
+    clear_state();
+    let svg =
+      interpret_with_stdout("Column[{Style[Row[{30, \"%\"}], 20, Bold]}]")
+        .unwrap()
+        .graphics
+        .unwrap();
+    let x_of = |content: &str| -> f64 {
+      let end = svg
+        .find(&format!(">{content}</text>"))
+        .unwrap_or_else(|| panic!("no {content} label: {svg}"));
+      let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+      let x = tag.split("x=\"").nth(1).unwrap().split('"').next().unwrap();
+      x.parse().unwrap()
+    };
+    // Both cells are middle-anchored: "30" is two glyphs wide, "%" one, so
+    // their centers are 1.5 monospace advances apart.
+    let advance = 20.0 * 0.632;
+    assert!(
+      x_of("%") - x_of("30") >= 1.5 * advance - 0.2,
+      "the % cell overlaps the number: {svg}"
+    );
+  }
+
   /// A sound in a layout draws the sound box a notebook shows for it — a
   /// play button and the waveform — instead of the `Play[…]` source text.
   #[test]
