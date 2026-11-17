@@ -10007,6 +10007,27 @@ mod ndsolve {
     );
   }
 
+  // On a solution much faster than the fixed grid the steps are refined;
+  // an event is looked for on every refined sub-interval (here x first
+  // reaches -1/2 and turns back within one nominal step) and located from
+  // the refined point before it, so the event time and the state the
+  // solution stops in are accurate: x = Cos[w t] stops at t = 2 Pi/(3 w)
+  // with x' = -w Sin[2 Pi/3].
+  #[test]
+  fn when_event_located_inside_refined_steps() {
+    assert_eq!(
+      interpret(
+        "Table[tt = 0; s = NDSolve[{x''[t] == -w^2 x[t], x[0] == 1, \
+         x'[0] == 0, WhenEvent[x[t] + 1/2, tt = t; \"StopIntegration\"]}, \
+         x, {t, 0, 100}]; {Round[10^5 (tt - 2 Pi/(3 w))], \
+         Round[10 ((x'[tt] /. First[s]) / w + Sin[2 Pi/3])]}, \
+         {w, {20, 50, 100, 300}}]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 0}, {0, 0}, {0, 0}}"
+    );
+  }
+
   // A WhenEvent on an implicit curve stops it where the condition turns
   // True, located within the step, and runs its action there
   // (TheFrankKamenetskiiProblemUsingArcLengthContinuation).
