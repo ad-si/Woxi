@@ -1352,6 +1352,91 @@ pub(crate) fn triangle_normal(
 /// `Plot3D`/`ContourPlot3D`'s region function (see
 /// `field_plot::region_allows`), so it does not need the plot's own
 /// variable names substituted in first.
+/// The level values one mesh function is drawn at, given its values
+/// across the surface: `Mesh -> n` spaces `n` levels evenly inside their
+/// range, an explicit list is used as is, and no spec draws 15.
+fn mesh_level_values(spec: Option<&MeshLevels>, values: &[f64]) -> Vec<f64> {
+  let (lo, hi) = values
+    .iter()
+    .filter(|v| v.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+      (a.min(v), b.max(v))
+    });
+  match spec.cloned().unwrap_or(MeshLevels::Count(15)) {
+    MeshLevels::Count(n) if hi > lo => (1..=n)
+      .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
+      .collect(),
+    MeshLevels::Values(v) => v,
+    MeshLevels::Count(_) => Vec::new(),
+  }
+}
+
+/// The segments (in data coordinates) where each mesh function crosses
+/// its levels on a triangulated surface: on every triangle, the two edges
+/// whose ends lie on opposite sides of a level are joined at the
+/// linearly interpolated crossings.
+fn surface_level_lines(
+  triangles: &[[[f64; 3]; 3]],
+  fns: &[MeshFn],
+  specs: Option<&[MeshLevels]>,
+) -> Vec<[[f64; 3]; 2]> {
+  let mut segments = Vec::new();
+  for (k, f) in fns.iter().enumerate() {
+    let values: Vec<[f64; 3]> =
+      triangles.iter().map(|t| t.map(|p| f.eval(p))).collect();
+    let flat: Vec<f64> = values.iter().flatten().copied().collect();
+    let spec = specs.and_then(|specs| {
+      specs
+        .get(k)
+        .or_else(|| specs.first().filter(|_| specs.len() == 1))
+    });
+    for level in mesh_level_values(spec, &flat) {
+      for (tri, vals) in triangles.iter().zip(&values) {
+        if vals.iter().any(|v| !v.is_finite()) {
+          continue;
+        }
+        let mut crossings: Vec<[f64; 3]> = Vec::with_capacity(2);
+        for e in 0..3 {
+          let (a, b) = (e, (e + 1) % 3);
+          if (vals[a] >= level) != (vals[b] >= level) {
+            let t = (level - vals[a]) / (vals[b] - vals[a]);
+            crossings
+              .push([0, 1, 2].map(|d| tri[a][d] + t * (tri[b][d] - tri[a][d])));
+          }
+        }
+        if let [p, q] = crossings[..] {
+          segments.push([p, q]);
+        }
+      }
+    }
+  }
+  segments
+}
+
+/// The outline of a triangulated surface: the triangle edges no other
+/// triangle shares.
+fn triangulation_outline(triangles: &[[[f64; 3]; 3]]) -> Vec<[[f64; 3]; 2]> {
+  let key = |p: &[f64; 3]| (p[0].to_bits(), p[1].to_bits());
+  let mut uses: std::collections::BTreeMap<_, (usize, [[f64; 3]; 2])> =
+    std::collections::BTreeMap::new();
+  for tri in triangles {
+    for e in 0..3 {
+      let (a, b) = (tri[e], tri[(e + 1) % 3]);
+      let edge = if key(&a) <= key(&b) {
+        (key(&a), key(&b))
+      } else {
+        (key(&b), key(&a))
+      };
+      uses.entry(edge).or_insert((0, [a, b])).0 += 1;
+    }
+  }
+  uses
+    .into_values()
+    .filter(|(n, _)| *n == 1)
+    .map(|(_, segment)| segment)
+    .collect()
+}
+
 fn eval_mesh_function(f: &Expr, x: f64, y: f64, z: f64) -> Option<f64> {
   let call = Expr::CurriedCall {
     func: Box::new(f.clone()),
@@ -14420,6 +14505,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_styles: Vec<StyleState3D> = Vec::new();
   // `MeshStyle`: the color, opacity and thickness of the mesh lines.
   let mut mesh_style: Option<StyleState3D> = None;
+  // `Mesh -> n` / `{levels…}` and `MeshFunctions`: lines where each mesh
+  // function takes those values, instead of the default grid.
+  let mut mesh_levels: Option<Vec<MeshLevels>> = None;
+  let mut mesh_functions: Option<Vec<Expr>> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -14443,8 +14532,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               mesh_mode = MeshMode::None;
             }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
-            _ => {}
+            other => mesh_levels = parse_mesh_levels(other),
           }
+        }
+        Expr::Identifier(name) if name == "MeshFunctions" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_functions = Some(match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          });
         }
         Expr::Identifier(name) if name == "ColorFunction" => {
           color_function =
@@ -14452,8 +14549,13 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               replacement,
             );
         }
+        // `PlotRange -> {zmin, zmax}`, or the z part of a per-axis
+        // `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` (with `All` or
+        // `Automatic` for an axis that keeps the data extent).
         Expr::Identifier(name) if name == "PlotRange" => {
-          z_clip = parse_z_only_range(replacement);
+          z_clip = parse_z_only_range(replacement).or_else(|| {
+            parse_partial_axis_ranges(replacement).and_then(|r| r[2])
+          });
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
@@ -14782,6 +14884,70 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     z_hi - z_lo
   };
 
+  // The surface's triangles in data coordinates: the two halves of each
+  // grid cell, or the triangulation of scattered points.
+  let coord = |k: usize, n: usize, lo: f64, hi: f64| {
+    if n > 1 {
+      lo + k as f64 * (hi - lo) / (n - 1) as f64
+    } else {
+      lo
+    }
+  };
+  let surface_triangles: Vec<[[f64; 3]; 3]> = if let Some((points, tris)) =
+    &scattered
+  {
+    tris
+      .iter()
+      .map(|t| {
+        t.map(|k| {
+          let (x, y, z) = points[k];
+          [x, y, z]
+        })
+      })
+      .collect()
+  } else {
+    let node = |i: usize, j: usize| -> Option<[f64; 3]> {
+      let z = *grid.get(i)?.get(j)?;
+      z.is_finite().then(|| {
+        [
+          coord(i, rows, x_min, x_max),
+          coord(j, cols, y_min, y_max),
+          z,
+        ]
+      })
+    };
+    let mut tris = Vec::new();
+    for i in 0..rows.saturating_sub(1) {
+      for j in 0..cols.saturating_sub(1) {
+        for corners in [
+          [(i, j), (i + 1, j), (i, j + 1)],
+          [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+        ] {
+          if let [Some(a), Some(b), Some(c)] = corners.map(|(a, b)| node(a, b))
+          {
+            tris.push([a, b, c]);
+          }
+        }
+      }
+    }
+    tris
+  };
+  // With an explicit `Mesh` level spec or `MeshFunctions`, the mesh is the
+  // set of level lines of the mesh functions (`{#1 &, #2 &}` by default)
+  // across the surface, plus the surface's outline.
+  let level_mesh: Option<Vec<[[f64; 3]; 2]>> = (mesh_mode == MeshMode::Default
+    && (mesh_levels.is_some() || mesh_functions.is_some()))
+  .then(|| {
+    let fns: Vec<MeshFn> = match &mesh_functions {
+      Some(fs) => fs.iter().map(MeshFn::of).collect(),
+      None => vec![MeshFn::X, MeshFn::Y],
+    };
+    let mut segments =
+      surface_level_lines(&surface_triangles, &fns, mesh_levels.as_deref());
+    segments.extend(triangulation_outline(&surface_triangles));
+    segments
+  });
+
   let camera = Camera::default();
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let mut mesh_world = Vec::new();
@@ -15101,7 +15267,22 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
     z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
   };
-  let mut mesh_lines = if mesh_mode == MeshMode::Default {
+  let mut mesh_lines = if let Some(segments) = &level_mesh {
+    segments
+      .iter()
+      .map(|[a, b]| {
+        let point = |p: &[f64; 3]| {
+          let (fi, fj) = frac(p[0], p[1]);
+          to_box(fi, fj, p[2])
+        };
+        let line = mesh_segment(point(a), point(b), &camera);
+        match &mesh_style {
+          Some(style) => styled_line_like(&line, style),
+          None => line,
+        }
+      })
+      .collect()
+  } else if mesh_mode == MeshMode::Default {
     let mut lines = if let Some((points, tris)) = &scattered {
       let corners: Vec<[(f64, f64, f64); 3]> = tris
         .iter()
@@ -15207,15 +15388,6 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // re-render everything together under one shared camera instead.
   let mut index_of: Vec<Vec<Option<usize>>> = vec![vec![None; cols]; rows];
   let mut point_exprs: Vec<Expr> = Vec::new();
-  // Grid node `[i][j]` in data coordinates (a height matrix's column and
-  // row numbers, counted from 1).
-  let coord = |k: usize, n: usize, lo: f64, hi: f64| {
-    if n > 1 {
-      lo + k as f64 * (hi - lo) / (n - 1) as f64
-    } else {
-      lo
-    }
-  };
   for (i, row) in grid.iter().enumerate() {
     for (j, &z) in row.iter().enumerate() {
       if !z.is_finite() {
@@ -15297,8 +15469,42 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  // The mesh, at the spacing the standalone render rules it with.
-  if matches!(mesh_mode, MeshMode::Default) {
+  // The level-line mesh: its points join the complex's vertex list.
+  if let Some(segments) = &level_mesh {
+    let mut pairs: Vec<Expr> = Vec::with_capacity(segments.len());
+    for segment in segments {
+      let ends: Vec<Expr> = segment
+        .iter()
+        .map(|p| {
+          point_exprs.push(Expr::List(
+            vec![
+              Expr::Real(p[0]),
+              Expr::Real(p[1]),
+              Expr::Real(p[2].clamp(z_lo, z_hi)),
+            ]
+            .into(),
+          ));
+          Expr::Integer(point_exprs.len() as i128)
+        })
+        .collect();
+      pairs.push(Expr::List(ends.into()));
+    }
+    if !pairs.is_empty() {
+      complex_content.push(Expr::List(
+        vec![
+          call1("Opacity", Expr::Real(0.63)),
+          call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          ),
+          call1("AbsoluteThickness", Expr::Real(0.5)),
+          call1("Line", Expr::List(pairs.into())),
+        ]
+        .into(),
+      ));
+    }
+  } else if matches!(mesh_mode, MeshMode::Default) {
+    // The mesh, at the spacing the standalone render rules it with.
     let mut segments: Vec<Expr> = Vec::new();
     let mut push_segment = |a: Option<usize>, b: Option<usize>| {
       if let (Some(a), Some(b)) = (a, b) {
@@ -15342,6 +15548,27 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let mut structure_args = vec![complex];
   structure_args.extend(args[1..].iter().cloned());
+  // Like `Plot3D`, the surface carries its `Axes -> True` and
+  // `BoxRatios -> {1, 1, 0.4}` defaults, so a `Show` that combines it
+  // with other 3D graphics keeps the plot's axes, ticks and proportions.
+  let names = |opt: &str| {
+    structure_args.iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+    })
+  };
+  let (names_axes, names_ratios) = (names("Axes"), names("BoxRatios"));
+  if !names_axes {
+    structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if !names_ratios {
+    structure_args.push(rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+      ),
+    ));
+  }
   let structure = call("Graphics3D", structure_args);
 
   Ok(crate::plot3d_result_with_structure(svg, structure))
