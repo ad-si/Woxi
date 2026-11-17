@@ -7137,6 +7137,26 @@ fn wrap_pane_text_at(
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
     }
+    // `Row[{e1, e2, …}, sep]` displays the items with `sep` between them,
+    // so it re-flows as the one-argument `Row[{e1, sep, e2, sep, …}]`.
+    "Row" if args.len() == 2 => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut joined = Vec::with_capacity(items.len() * 2);
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          joined.push(args[1].clone());
+        }
+        joined.push(item.clone());
+      }
+      wrap_pane_text_at(
+        &call1("Row", Expr::List(joined.into())),
+        width,
+        font_size,
+        whole_words,
+      )
+    }
     "Row" if args.len() == 1 => {
       let Expr::List(items) = &args[0] else {
         return None;
@@ -7239,6 +7259,13 @@ fn wrap_pane_text_at(
           }
         }
       }
+      let style_key = |d: &Option<Vec<Expr>>| {
+        d.as_ref().map(|d| {
+          d.iter()
+            .map(crate::syntax::expr_to_input_form)
+            .collect::<Vec<_>>()
+        })
+      };
       let rows: Vec<Expr> = lines
         .iter()
         .map(|line| {
@@ -7246,8 +7273,17 @@ fn wrap_pane_text_at(
           let mut i = 0;
           while i < line.len() {
             let idx = line[i].idx;
+            // Neighboring text items in the same style (the items and
+            // separators of a `Row[list, sep]`) form one run, so the line
+            // is set as one string rather than many abutting pieces.
+            let same_text = |u: &&PaneTextUnit| {
+              u.idx == idx
+                || (atoms[idx].is_none()
+                  && atoms[u.idx].is_none()
+                  && style_key(&styles[u.idx]) == style_key(&styles[idx]))
+            };
             let run: Vec<&PaneTextUnit> =
-              line[i..].iter().take_while(|u| u.idx == idx).collect();
+              line[i..].iter().take_while(same_text).collect();
             i += run.len();
             if let Some(atom) = &atoms[idx] {
               pieces.push(atom.clone());
