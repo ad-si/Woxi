@@ -58884,3 +58884,24 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+/// A script hung on a blank base (`\!\(\*SuperscriptBox[\(\ \), \(1\)]\)`,
+/// how a term symbol like `1s² ¹S` is typed) keeps the space its base
+/// typesets; only an invisible or empty base draws nothing. Regression: the
+/// space was dropped, running the script into the preceding text.
+#[test]
+fn inline_script_on_blank_base_keeps_the_space() {
+  let label = |head: &str, base: &str| {
+    let svg = export_svg(&format!(
+      r#"Graphics[Text["x\!\(\*{head}[\({base}\), \(1\)]\)S", {{0, 0}}]]"#
+    ));
+    let end = svg.find("S</text>").unwrap();
+    svg[svg[..end].rfind('>').unwrap() + 1..end + 1].to_string()
+  };
+  assert_eq!(label("SuperscriptBox", " "), "x ¹S");
+  assert_eq!(label("SubscriptBox", " "), "x ₁S");
+  assert_eq!(
+    label("SuperscriptBox", r"\[InvisiblePrefixScriptBase]"),
+    "x¹S"
+  );
+}

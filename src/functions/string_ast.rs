@@ -9467,6 +9467,20 @@ fn strip_box_markup(chars: &[char], keep_punct_quotes: bool) -> String {
         i = close + 1;
         continue;
       }
+      // A group holding only spaces (`\(\ \)`, the blank base a
+      // `SuperscriptBox` hangs a prefix script on) is a space token, not
+      // nothing: stripped bare, the box would lose its base and the gap
+      // it typesets.
+      BOX_OPEN
+        if !in_box_text
+          && let Some(close) = matching_box_close(chars, i)
+          && close > i + 1
+          && chars[i + 1..close].iter().all(|&c| c == ' ') =>
+      {
+        out.push_str("\" \"");
+        i = close + 1;
+        continue;
+      }
       // A group of plain words (`\(my\ height\)`) is text, not an
       // expression: stripped bare, the gap between the words would parse as
       // a product (`my*height`).

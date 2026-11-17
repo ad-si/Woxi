@@ -7567,9 +7567,9 @@ fn generate_svg_with_options(
     let mut numbered = opts.clone();
     numbered.plot_legends = placeholder_legends(all_points.len());
     numbered.legend_placeholders = true;
-    inject_legend(&mut buf, &numbered);
+    inject_legend(&mut buf, &numbered, plot_area);
   } else {
-    inject_legend(&mut buf, opts);
+    inject_legend(&mut buf, opts, plot_area);
   }
 
   // `BaselinePosition -> Axis`: record where the x axis lies (display
@@ -11864,7 +11864,13 @@ fn legend_swatch_svg(
 
 /// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
 /// is placed on the right (default), top, or bottom of the plot.
-fn inject_legend(buf: &mut String, opts: &PlotOptions) {
+/// `plot_area` is the drawing region in render-space pixels: (left, top,
+/// width, height); `Placed[…, {Right, Top}]`-style legends sit inside it.
+fn inject_legend(
+  buf: &mut String,
+  opts: &PlotOptions,
+  plot_area: (f64, f64, f64, f64),
+) {
   if opts.plot_legends.is_empty() {
     return;
   }
@@ -12099,11 +12105,21 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             fx * vb_w - (legend_width - legend_padding) / 2.0,
             (1.0 - fy) * vb_h - legend_total_h / 2.0,
           ),
-          LegendPosition::Aligned(fx, fy) => (
-            legend_padding * 0.5 + fx * (vb_w - legend_width),
-            legend_padding * 0.25
-              + (1.0 - fy) * (vb_h - legend_total_h - legend_padding * 0.5),
-          ),
+          // Named positions align the legend inside the plot's frame (not
+          // the whole image, whose margins hold the frame labels), inset
+          // a little from its edges.
+          LegendPosition::Aligned(fx, fy) => {
+            let (area_x0, area_top, area_w, area_h) = plot_area;
+            let inset = legend_padding * 0.5;
+            (
+              area_x0
+                + inset
+                + fx * (area_w - (legend_width - legend_padding) - 2.0 * inset),
+              area_top
+                + inset
+                + (1.0 - fy) * (area_h - legend_total_h - 2.0 * inset),
+            )
+          }
           _ => (vb_w + legend_padding * 0.5, (vb_h - legend_total_h) / 2.0),
         };
         if opts.legend_frame {
