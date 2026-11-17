@@ -3770,6 +3770,11 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if let Some((left, right)) = extent {
     let palette = crate::functions::plot::PLOT_COLORS_RGB;
+    // `FillingStyle` paints the area under the steps: its color replaces
+    // the series color and its opacity the default 0.2 translucency (a
+    // bare color fills opaquely), as for `Plot`'s filling.
+    let filling_style = option("FillingStyle")
+      .and_then(|fs| crate::functions::plot::parse_filling_style(&fs));
     let mut items: Vec<Expr> = Vec::new();
     let (mut y_lo, mut y_hi) = (0.0_f64, 0.0_f64);
     for (k, points) in all_series.iter().enumerate() {
@@ -3778,9 +3783,10 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "RGBColor".to_string(),
         args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
       };
-      let style = |extra: Vec<Expr>| {
+      // `Directive[extra…, paint, AbsoluteThickness[2]]`.
+      let style = |extra: Vec<Expr>, paint: Expr| {
         let mut directives = extra;
-        directives.push(color.clone());
+        directives.push(paint);
         directives.push(Expr::FunctionCall {
           name: "AbsoluteThickness".to_string(),
           args: vec![Expr::Integer(2)].into(),
@@ -3791,10 +3797,28 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
       if filling {
-        let mut group = vec![style(vec![Expr::FunctionCall {
-          name: "Opacity".to_string(),
-          args: vec![Expr::Real(0.2)].into(),
-        }])];
+        let opacity = filling_style
+          .and_then(|fs| fs.effective_opacity())
+          .unwrap_or(0.2);
+        let fill_color =
+          filling_style.and_then(|fs| fs.color).map(|(r, g, b)| {
+            Expr::FunctionCall {
+              name: "RGBColor".to_string(),
+              args: vec![
+                Expr::Real(r as f64 / 255.0),
+                Expr::Real(g as f64 / 255.0),
+                Expr::Real(b as f64 / 255.0),
+              ]
+              .into(),
+            }
+          });
+        let mut group = vec![style(
+          vec![Expr::FunctionCall {
+            name: "Opacity".to_string(),
+            args: vec![Expr::Real(opacity)].into(),
+          }],
+          fill_color.unwrap_or_else(|| color.clone()),
+        )];
         group.extend(points.iter().map(|&(n, y)| Expr::FunctionCall {
           name: "Rectangle".to_string(),
           args: vec![point(n + left, 0.0), point(n + right, y)].into(),
@@ -3811,7 +3835,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       items.push(Expr::List(
         vec![
-          style(Vec::new()),
+          style(Vec::new(), color.clone()),
           Expr::FunctionCall {
             name: "Line".to_string(),
             args: vec![Expr::List(steps.into())].into(),
@@ -3829,6 +3853,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     graphics_args.extend(passed_options(&[
       "ExtentSize",
       "Filling",
+      "FillingStyle",
       "PlotLegends",
       "PlotStyle",
     ]));

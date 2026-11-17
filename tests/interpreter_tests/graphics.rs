@@ -56100,6 +56100,44 @@ mod field_plot_conformance {
   }
 
   #[test]
+  fn discrete_plot_extent_steps_honor_filling_style() {
+    // Regression: `FillingStyle` was ignored for `ExtentSize` steps, which
+    // stayed filled in the translucent series color.
+    let fill_directive = |opts: &str| {
+      interpret(&format!(
+        "First[Cases[DiscretePlot[n, {{n, 1, 3}}, ExtentSize -> Full{opts}], \
+         {{d_Directive, __Rectangle}} :> d, Infinity]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(
+      fill_directive(", FillingStyle -> Directive[Red, Opacity[0.5]]"),
+      "Directive[Opacity[0.5], RGBColor[1., 0., 0.], AbsoluteThickness[2]]"
+    );
+    // A bare color fills opaquely, a bare opacity keeps the series color.
+    assert_eq!(
+      fill_directive(", FillingStyle -> Blue"),
+      "Directive[Opacity[1.], RGBColor[0., 0., 1.], AbsoluteThickness[2]]"
+    );
+    assert_eq!(
+      fill_directive(", FillingStyle -> Opacity[0.7]"),
+      "Directive[Opacity[0.7], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]]"
+    );
+    assert_eq!(
+      fill_directive(""),
+      "Directive[Opacity[0.2], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]]"
+    );
+    let svg = export_svg(
+      "DiscretePlot[n, {n, 1, 3}, ExtentSize -> Full, \
+       FillingStyle -> Directive[Red, Opacity[0.5]]]",
+    );
+    assert!(
+      svg.contains("rgb(255,0,0)") || svg.contains("#ff0000"),
+      "{svg}"
+    );
+  }
+
+  #[test]
   fn date_list_plot_pairs_every_dataset_with_the_start_date() {
     // Regression: two value lists with a start date plotted as one line.
     let svg = export_svg(
