@@ -7732,7 +7732,10 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      expr_to_svg(&unquoted_display_string(&args[0]))
+      match crate::functions::graphics::text_row_in_text_face(expr) {
+        Some(styled) => expr_to_svg(&styled),
+        None => expr_to_svg(&unquoted_display_string(&args[0])),
+      }
     }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them

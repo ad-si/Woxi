@@ -30137,6 +30137,66 @@ mod graphics_grid {
     assert!(text_tag(&svg, "alpha").contains("Times"), "{svg}");
   }
 
+  /// `Text[Row[…]]` sets the whole row in the proportional text face, like
+  /// a plain `Text["…"]` — its strings, numbers, styled parts and typeset
+  /// math alike — both as a layout item and on its own.
+  #[test]
+  fn text_row_uses_text_face() {
+    clear_state();
+    let text_tag = |svg: &str, word: &str| -> String {
+      let end = svg.find(word).unwrap_or_else(|| panic!("{word}: {svg}"));
+      let start = svg[..end].rfind("<text").unwrap();
+      svg[start..end].to_string()
+    };
+    for code in [
+      "Column[{Text[Row[{\"alpha \", 7}]], \"beta\"}]",
+      "Column[{Text[Style[Row[{\"alpha \", 7}], 20]], \"beta\"}]",
+      "Column[{Text[Row[{Style[Row[{\"alpha \", Style[\"q\", Italic]}], 20], \
+       TraditionalForm[1/w == 2/v]}]], \"beta\"}]",
+      "Row[{Text[Row[{\"alpha \", 7}]], \" \", \"beta\"}]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      assert!(
+        text_tag(&svg, "alpha").contains("sans-serif"),
+        "Text[Row[…]] in {code} should use the text face, got: {svg}"
+      );
+      assert!(
+        text_tag(&svg, "beta").contains("monospace"),
+        "plain string in {code} should stay monospace, got: {svg}"
+      );
+      if code.contains("TraditionalForm") {
+        // The nested `Style[Row[…], 20]` keeps its own size.
+        assert!(
+          text_tag(&svg, "alpha").contains("font-size=\"20\""),
+          "nested styled row in {code} should keep its size, got: {svg}"
+        );
+        assert!(
+          text_tag(&svg, ">w<").contains("sans-serif"),
+          "typeset math in {code} should use the text face, got: {svg}"
+        );
+      }
+    }
+    let svg = interpret_with_stdout(
+      "ExportString[Text[Row[{\"alpha \", 7}]], \"SVG\"]",
+    )
+    .unwrap()
+    .result;
+    assert!(text_tag(&svg, "alpha").contains("sans-serif"), "{svg}");
+    assert!(!text_tag(&svg, ">7").contains("monospace"), "{svg}");
+    // A styled row nested in a row set in another face keeps its own size.
+    let svg = interpret_with_stdout(
+      "ExportString[Style[Row[{Style[Row[{\"alpha \", 1}], 20], 7}], \
+       FontFamily -> \"Times\"], \"SVG\"]",
+    )
+    .unwrap()
+    .result;
+    assert!(
+      text_tag(&svg, "alpha").contains("font-size=\"20\""),
+      "{svg}"
+    );
+    assert!(text_tag(&svg, "alpha").contains("Times"), "{svg}");
+  }
+
   /// A raster image inside a `Row` that is itself an item of a `Column`
   /// with options is drawn as the picture, not as `-Image (w×h)-` text.
   #[test]

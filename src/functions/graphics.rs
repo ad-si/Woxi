@@ -31775,7 +31775,41 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
   }
 }
 
+/// `Text[Row[…]]` (possibly `Text[Style[Row[…], …]]`) sets the row in the
+/// proportional text face, as a plain `Text["…"]` item is, rather than in the
+/// monospace face of typeset output: it becomes `Style[Row[…], FontFamily ->
+/// "sans-serif"]`, which every part of the row (strings, numbers, typeset
+/// math) inherits. `None` for anything else.
+pub(crate) fn text_row_in_text_face(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Text" || args.len() != 1 {
+    return None;
+  }
+  let is_row = |e: &Expr| matches!(e, Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty());
+  let content = &args[0];
+  let row_like = is_row(content)
+    || matches!(content, Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() && is_row(&args[0]));
+  row_like.then(|| {
+    call(
+      "Style",
+      vec![
+        content.clone(),
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+          replacement: Box::new(Expr::String("sans-serif".to_string())),
+        },
+      ],
+    )
+  })
+}
+
 fn resolve_display_item(expr: &Expr) -> Expr {
+  if let Some(styled) = text_row_in_text_face(expr) {
+    return styled;
+  }
   let mut current = expr.clone();
   // `Null` is drawn as nothing, not as the word "Null".
   if matches!(&current, Expr::Identifier(s) if s == "Null") {
@@ -31983,11 +32017,13 @@ pub(crate) fn style_pushed_into_layout(
     // inherited directives into its own `Style`, ahead of its own so those
     // still win: a doubly nested `Style[Style[Column[…], Blue], 12]` would
     // hide the inner layout from the renderer and be typeset as its source.
-    // (A styled `Row` item is already set inline as it is.)
+    // A styled `Row` item (`Style[Row[…], 20]` in a row set in another
+    // face) merges the same way, or its own size would be measured at the
+    // default size and its text would overrun its neighbors.
     if let Expr::FunctionCall { name, args } = e
       && name == "Style"
       && let Some(Expr::FunctionCall { name: content, .. }) = args.first()
-      && matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
+      && matches!(content.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
     {
       return call(
         "Style",

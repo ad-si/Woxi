@@ -4897,6 +4897,11 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     && name == "Text"
     && args.len() == 1
   {
+    // A row of text is set in the text face as a whole: its strings,
+    // numbers and typeset math alike.
+    if let Some(styled) = functions::graphics::text_row_in_text_face(expr) {
+      return render_inline_display_wrapper(&styled);
+    }
     let inner = render_inline_display_wrapper(&args[0]);
     return match inner {
       syntax::Expr::Graphics { .. } => inner,
