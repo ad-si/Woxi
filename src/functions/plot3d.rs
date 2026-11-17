@@ -10834,32 +10834,31 @@ fn tessellate_tube(
   // that turns the one tangent into the other (a rotation-minimizing
   // frame). Merely re-projecting it would collapse at a right-angle bend
   // within the normal's own plane, where it lines up with the new tangent.
-  let transport = |normal: (f64, f64, f64),
-                   from: (f64, f64, f64),
-                   to: (f64, f64, f64)| {
-    let axis = cross(from, to);
-    let sin = norm(axis);
-    let cos = from.0 * to.0 + from.1 * to.1 + from.2 * to.2;
-    let rotated = match unit(axis) {
-      Some(k) if sin > 1e-12 => {
-        let kv = cross(k, normal);
-        let kd = k.0 * normal.0 + k.1 * normal.1 + k.2 * normal.2;
-        (
-          normal.0 * cos + kv.0 * sin + k.0 * kd * (1.0 - cos),
-          normal.1 * cos + kv.1 * sin + k.1 * kd * (1.0 - cos),
-          normal.2 * cos + kv.2 * sin + k.2 * kd * (1.0 - cos),
-        )
-      }
-      _ => normal,
+  let transport =
+    |normal: (f64, f64, f64), from: (f64, f64, f64), to: (f64, f64, f64)| {
+      let axis = cross(from, to);
+      let sin = norm(axis);
+      let cos = from.0 * to.0 + from.1 * to.1 + from.2 * to.2;
+      let rotated = match unit(axis) {
+        Some(k) if sin > 1e-12 => {
+          let kv = cross(k, normal);
+          let kd = k.0 * normal.0 + k.1 * normal.1 + k.2 * normal.2;
+          (
+            normal.0 * cos + kv.0 * sin + k.0 * kd * (1.0 - cos),
+            normal.1 * cos + kv.1 * sin + k.1 * kd * (1.0 - cos),
+            normal.2 * cos + kv.2 * sin + k.2 * kd * (1.0 - cos),
+          )
+        }
+        _ => normal,
+      };
+      let dot = rotated.0 * to.0 + rotated.1 * to.1 + rotated.2 * to.2;
+      let projected = (
+        rotated.0 - dot * to.0,
+        rotated.1 - dot * to.1,
+        rotated.2 - dot * to.2,
+      );
+      unit(projected).unwrap_or(normal)
     };
-    let dot = rotated.0 * to.0 + rotated.1 * to.1 + rotated.2 * to.2;
-    let projected = (
-      rotated.0 - dot * to.0,
-      rotated.1 - dot * to.1,
-      rotated.2 - dot * to.2,
-    );
-    unit(projected).unwrap_or(normal)
-  };
 
   // Around a closed curve the transported normal comes back turned by some
   // angle; spreading that turn over the vertices lets the last ring meet
@@ -10886,8 +10885,8 @@ fn tessellate_tube(
    -> Vec<Point3D> {
     (0..TUBE_SIDES)
       .map(|k| {
-        let a = 2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64
-          + phase;
+        let a =
+          2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64 + phase;
         let (c, s) = (a.cos() * radius, a.sin() * radius);
         Point3D {
           x: center.x + c * normal.0 + s * binormal.0,
@@ -10932,7 +10931,8 @@ fn tessellate_tube(
     } else {
       None
     };
-    let mut ring = ring_at(points[idx], r, normal, binormal, phase_at(i as f64));
+    let mut ring =
+      ring_at(points[idx], r, normal, binormal, phase_at(i as f64));
     if let (Some(prev), Some(next)) = (incoming, outgoing)
       && let Some(bend) =
         unit((next.0 - prev.0, next.1 - prev.1, next.2 - prev.2))
@@ -10945,7 +10945,8 @@ fn tessellate_tube(
       };
       let c = points[idx];
       for q in &mut ring {
-        let along = (q.x - c.x) * bend.0 + (q.y - c.y) * bend.1 + (q.z - c.z) * bend.2;
+        let along =
+          (q.x - c.x) * bend.0 + (q.y - c.y) * bend.1 + (q.z - c.z) * bend.2;
         let extra = along * (stretch - 1.0);
         q.x += extra * bend.0;
         q.y += extra * bend.1;

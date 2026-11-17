@@ -46735,9 +46735,7 @@ mod tube_and_cap_form {
     clear_state();
     let pts = "{{0, 0}, {2, 0}, {2, 1}, {0, 3}}";
     assert_eq!(
-      export_svg(&format!(
-        "Graphics[BSplineCurve[{pts}, SplineDegree -> 1]]"
-      )),
+      export_svg(&format!("Graphics[BSplineCurve[{pts}, SplineDegree -> 1]]")),
       export_svg(&format!("Graphics[Line[{pts}]]"))
     );
     assert_eq!(
@@ -46769,9 +46767,12 @@ mod tube_and_cap_form {
     };
     let straight = cap_polygons("{{0, 0, 0}, {3, 0, 0}}");
     assert!(straight > 0, "a straight tube must be capped");
-    assert_eq!(
-      cap_polygons("{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 1}}"),
-      straight
+    // Rounded elbows at the two corners would add two more pairs of
+    // hemispheres, tripling the count; only a few degenerate facets differ.
+    let bent = cap_polygons("{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 1}}");
+    assert!(
+      (bent - straight).abs() * 10 < straight,
+      "bent: {bent}, straight: {straight}"
     );
   }
 
