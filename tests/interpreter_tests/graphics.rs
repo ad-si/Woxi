@@ -46795,7 +46795,7 @@ mod tube_and_cap_form {
       })
       .collect();
     assert!(!chords.is_empty(), "the rim must be outlined: {svg}");
-    let longest = chords.iter().cloned().fold(0.0, f64::max);
+    let longest = chords.iter().copied().fold(0.0, f64::max);
     assert!(
       longest < 30.0,
       "rim drawn with {longest:.1} px chords, too coarse for a smooth circle"
