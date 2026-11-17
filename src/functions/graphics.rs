@@ -21260,9 +21260,12 @@ pub fn traditional_label(e: &Expr) -> String {
     {
       traditional_label(&args[0])
     }
-    _ if contains_visible_style(e) => {
-      format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e))
-    }
+    // The styling stays on the outside of what it wraps, which is still
+    // set in TraditionalForm: `Style[u, 15]` draws an italic u.
+    _ if contains_visible_style(e) => format!(
+      "{STYLED_LABEL_MARKER}{}",
+      expr_to_svg_markup(&traditionalize_styled_label(e))
+    ),
     _ => format!(
       "{STYLED_LABEL_MARKER}{}",
       expr_to_svg_markup(&Expr::FunctionCall {
@@ -32049,6 +32052,11 @@ pub(crate) fn axes_label_markup(expr: &Expr) -> String {
           .strip_prefix(STYLED_LABEL_MARKER)
           .map(str::to_string)
           .unwrap_or(label);
+      }
+      // A styled one keeps its styling around the TraditionalForm of what
+      // it wraps: `Style[u, 15]` is an italic u.
+      if contains_visible_style(expr) {
+        return expr_to_svg_markup(&traditionalize_styled_label(expr));
       }
       expr_to_svg_markup(expr)
     })
