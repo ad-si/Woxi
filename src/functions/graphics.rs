@@ -21260,6 +21260,10 @@ pub fn traditional_label(e: &Expr) -> String {
     {
       traditional_label(&args[0])
     }
+    Expr::CurriedCall { .. } if contains_visible_style(e) => format!(
+      "{STYLED_LABEL_MARKER}{}",
+      expr_to_svg_markup(&traditionalize_styled_label(e))
+    ),
     _ if contains_visible_style(e) => {
       format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e))
     }
@@ -21701,6 +21705,21 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
         args: new_args,
       }
     }
+    // `Style["E", Italic][t]`: a styled head applied to arguments reads
+    // like any function application in TraditionalForm, `E(t)`, with the
+    // head keeping its styling and the arguments set traditionally.
+    Expr::CurriedCall { func, args } if contains_visible_style(e) => {
+      let mut items =
+        vec![traditionalize_styled_label(func), Expr::String("(".into())];
+      for (i, arg) in args.iter().enumerate() {
+        if i > 0 {
+          items.push(Expr::String(",".into()));
+        }
+        items.push(traditionalize_styled_label(arg));
+      }
+      items.push(Expr::String(")".into()));
+      call1("Row", Expr::List(items.into()))
+    }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
     _ if contains_visible_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
@@ -21724,6 +21743,12 @@ fn contains_visible_style(e: &Expr) -> bool {
     // the styling of what it wraps still shows.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
       contains_visible_style(&args[0])
+    }
+    // `Style["E", Italic][t]`: the head of an application carries the
+    // styling.
+    Expr::CurriedCall { func, .. } => {
+      matches!(func.as_ref(), Expr::FunctionCall { name, .. } if name == "Style")
+        && contains_visible_style(func)
     }
     // `Subscript[Style["T", Italic], "r"]`: the script's base (or the
     // script itself) carries the styling.
