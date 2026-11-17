@@ -58743,8 +58743,8 @@ fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
         .collect::<Vec<_>>()
     })
     .collect();
-  let span = ys.iter().cloned().fold(f64::MIN, f64::max)
-    - ys.iter().cloned().fold(f64::MAX, f64::min);
+  let span = ys.iter().copied().fold(f64::MIN, f64::max)
+    - ys.iter().copied().fold(f64::MAX, f64::min);
   assert!(
     span > 350.0,
     "expected the scene to fill the height, got {span}"
