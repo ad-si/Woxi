@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-use num_traits::{Signed, Zero};
+use num_traits::{Signed, ToPrimitive, Zero};
 
 /// Helper - constants are kept symbolic, no direct f64 conversion in expr_to_num.
 pub fn constant_to_f64(_name: &str) -> Option<f64> {
@@ -1258,6 +1258,10 @@ pub fn extract_square_factor_big(n: &BigInt) -> (BigInt, BigInt) {
   if n <= &one {
     return (one, n.clone());
   }
+  if let Some(small) = n.to_u64() {
+    let (outside, inside) = extract_square_factor_u64(small);
+    return (BigInt::from(outside), BigInt::from(inside));
+  }
   let mut outside = BigInt::from(1);
   let mut inside = BigInt::from(1);
   let mut rest = n.clone();
@@ -1266,7 +1270,8 @@ pub fn extract_square_factor_big(n: &BigInt) -> (BigInt, BigInt) {
   while f <= SQUARE_FACTOR_TRIAL_BOUND {
     let fb = BigInt::from(f);
     if &fb * &fb > rest {
-      break;
+      // No factor up to `sqrt(rest)` is left, so `rest` is 1 or a prime.
+      return (outside, inside * rest);
     }
     let mut count: u32 = 0;
     while (&rest % &fb).is_zero() {
@@ -1301,6 +1306,50 @@ pub fn extract_square_factor_big(n: &BigInt) -> (BigInt, BigInt) {
       }
     } else {
       inside *= rest;
+    }
+  }
+  (outside, inside)
+}
+
+/// [`extract_square_factor_big`] for a radicand that fits a `u64`, by
+/// native trial division. Once the trial factor passes `sqrt(rest)` the
+/// cofactor is 1 or a prime, so the general factorizer is only consulted
+/// for a cofactor whose smallest prime factor exceeds the trial bound.
+fn extract_square_factor_u64(n: u64) -> (u64, u64) {
+  let mut outside: u64 = 1;
+  let mut inside: u64 = 1;
+  let mut rest = n;
+  let mut f: u64 = 2;
+  while f <= SQUARE_FACTOR_TRIAL_BOUND {
+    if f * f > rest {
+      return (outside, inside * rest);
+    }
+    let mut count: u32 = 0;
+    while rest % f == 0 {
+      rest /= f;
+      count += 1;
+    }
+    if count >= 2 {
+      outside *= f.pow(count / 2);
+    }
+    if count % 2 == 1 {
+      inside *= f;
+    }
+    f += if f == 2 { 1 } else { 2 };
+  }
+  if rest > 1 {
+    let r = rest.isqrt();
+    if r * r == rest {
+      outside *= r;
+    } else {
+      for (prime, exponent) in num_prime::nt_funcs::factorize64(rest) {
+        if exponent >= 2 {
+          outside *= prime.pow(exponent as u32 / 2);
+        }
+        if exponent % 2 == 1 {
+          inside *= prime;
+        }
+      }
     }
   }
   (outside, inside)
