@@ -23318,7 +23318,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .map(str::to_string)
         .collect()
       };
-      assert!(polygons("").is_empty());
+      assert_eq!(polygons(""), Vec::<String>::new());
       let heads = polygons(", AxesStyle -> Arrowheads[0.05]");
       assert_eq!(heads.len(), 2, "{heads:?}");
       // Only the heads at the high ends: `{0, s}` skips the low end.
