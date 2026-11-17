@@ -37379,6 +37379,31 @@ mod manipulate {
     }
   }
 
+  // A slider binding an exact non-integer value reads it as a typeset
+  // stacked fraction (`-7/6` on a `1/6` step, `3π/4` on a `Pi/4` step),
+  // while integers and machine reals keep a plain text readout.
+  #[test]
+  fn exact_slider_value_readout_is_a_stacked_fraction() {
+    use woxi::functions::graphics::continuous_value_label_svg;
+    let svg = continuous_value_label_svg(-7.0 / 6.0, false, false)
+      .expect("exact rational is typeset");
+    assert!(svg.contains("<line "), "fraction bar: {svg}");
+    assert!(svg.contains(">7<") && svg.contains(">6<"), "{svg}");
+    assert!(svg.contains("\u{2212}"), "minus sign: {svg}");
+
+    let svg = continuous_value_label_svg(
+      3.0 * std::f64::consts::PI / 4.0,
+      false,
+      false,
+    )
+    .expect("rational multiple of Pi is typeset");
+    assert!(svg.contains("<line "), "fraction bar: {svg}");
+    assert!(svg.contains("\u{3c0}"), "pi symbol: {svg}");
+
+    assert_eq!(continuous_value_label_svg(-3.0, false, false), None);
+    assert_eq!(continuous_value_label_svg(-7.0 / 6.0, true, false), None);
+  }
+
   // Corner points given as `{re, im I}` pairs make a 2D pad over the real
   // and imaginary extents.
   #[test]
