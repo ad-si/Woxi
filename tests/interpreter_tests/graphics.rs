@@ -51462,6 +51462,76 @@ mod grid_repeating_decimal_alignment {
     assert!(svg.contains("<polyline"), "{svg}");
   }
 
+  /// A half-open `PlotRange -> {min, All}` on `Graphics` pins the lower
+  /// vertical end and lets the data choose the upper one; it used to be
+  /// treated as fully automatic. Each axis of an `{xspec, yspec}` pair may
+  /// be half-open on its own.
+  #[test]
+  fn graphics_half_open_plot_range_pins_given_end() {
+    assert_eq!(
+      interpret(
+        "PlotRange[Graphics[Line[{{0, -3}, {5, 4}}], PlotRange -> {-0.2, All}]]"
+      )
+      .unwrap(),
+      "{{0., 5.}, {-0.2, 4.}}"
+    );
+    assert_eq!(
+      interpret(
+        "PlotRange[Graphics[Line[{{0, -3}, {5, 4}}], \
+         PlotRange -> {{1, Automatic}, {All, 2}}]]"
+      )
+      .unwrap(),
+      "{{1., 5.}, {-3., 2.}}"
+    );
+  }
+
+  /// `Plot[…, PlotRange -> {0, All}]` keeps its vertical range from 0 up to
+  /// the curve's own maximum (and `{Automatic, max}` the reverse), instead
+  /// of the whole automatic range.
+  #[test]
+  fn plot_half_open_plot_range_pins_given_end() {
+    assert_eq!(
+      interpret(
+        "Round[PlotRange[Plot[x - 1, {x, 0, 2}, PlotRange -> {0, All}]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 2.}, {0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[PlotRange[Plot[x - 1, {x, 0, 2}, \
+         PlotRange -> {Automatic, 0.5}]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 2.}, {-1., 0.5}}"
+    );
+  }
+
+  /// Layered by `Show`, a plot's curve stops at the pinned end of its
+  /// half-open `PlotRange`, as in Wolfram (only the part the plot itself
+  /// shows is drawn), and a leading graphic's half-open range clips the
+  /// picture there.
+  #[test]
+  fn show_trims_plot_curve_to_half_open_plot_range() {
+    assert_eq!(
+      interpret(
+        "Round[Cases[Show[Graphics[Point[{0, 1}], PlotRange -> {-0.2, All}], \
+         Plot[x - 1, {x, 0, 2}, PlotRange -> {0, All}]], \
+         Line[p_] :> MinMax[p[[All, 2]]], Infinity], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 1.}}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[PlotRange[Show[Graphics[Line[{{0, 1}, {5, 4}}], \
+         PlotRange -> {-0.2, All}], Graphics[Line[{{0, -3}, {5, 2}}]]]], 0.01]"
+      )
+      .unwrap(),
+      "{{0., 5.}, {-0.2, 4.}}"
+    );
+  }
+
   /// A list of `SparseArray` rows of differing lengths is a ragged array
   /// of their dense forms; `ArrayPlot` used to return an empty SVG.
   #[test]

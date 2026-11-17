@@ -16284,6 +16284,9 @@ pub(crate) struct PlotRangeOverrides {
   /// `PlotRange -> All` on the y axis: show every sampled value instead of
   /// the automatic range, which drops extreme outliers.
   pub y_all: bool,
+  /// A half-open vertical `PlotRange -> {min, All}` (or `{All, max}`): the
+  /// given end is pinned, the open one (`None`) follows the data.
+  pub y_half_open: Option<(Option<f64>, Option<f64>)>,
   /// The x range follows the sampled points rather than the iterator
   /// domain, reaching to 0 when close if `Some(true)` (see
   /// [`plot_range_x_from_points`]).
@@ -16406,6 +16409,10 @@ pub(crate) fn apply_common_plot_option(
       overrides.x = rx;
       overrides.y = ry;
       overrides.y_all = plot_range_requests_all_y(replacement);
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      overrides.y_half_open =
+        crate::functions::graphics::plot_range_half_open_axes(&val)[1];
       overrides.x_from_points = plot_range_x_from_points(replacement);
     }
     "Axes" => {
@@ -17228,6 +17235,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
   let plot_range_y_all = overrides.y_all;
+  let plot_range_y_half_open = overrides.y_half_open;
   let plot_range_x_from_points = overrides.x_from_points;
   let _precision = WorkingPrecisionGuard::set(working_precision);
 
@@ -17732,7 +17740,24 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
   let plot_range_x = fill_range(plot_range_x, x_auto);
-  let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max));
+  // A half-open `PlotRange -> {min, All}` pins one end; the open end is
+  // the automatic one (NaN, which `fill_range` fills in).
+  let half_open_y = if plot_range_y.is_some() {
+    None
+  } else {
+    plot_range_y_half_open.map(|(lo, hi)| {
+      let scaled = |v: Option<f64>| {
+        v.and_then(|v| match scaling.1.as_ref() {
+          Some(s) => s.forward(v),
+          None => Some(v),
+        })
+        .unwrap_or(f64::NAN)
+      };
+      (scaled(lo), scaled(hi))
+    })
+  };
+  let plot_range_y =
+    fill_range(plot_range_y.or(half_open_y), (y_auto_min, y_auto_max));
   let (x_display_min, x_display_max) = plot_range_x.unwrap_or(x_auto);
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
     // Labels placed above or below their curves get room inside the
@@ -17760,10 +17785,18 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if plot_range_y.is_none() && !log_clipped_below {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }
-  plot_opts.unpadded_range = Some((
-    plot_range_x.unwrap_or((x_min, x_max)),
-    plot_range_y.unwrap_or((y_data_min, y_data_max)),
-  ));
+  // A half-open range reports the data's own (unpadded) extent on its
+  // open end, like a fully automatic one.
+  let unpadded_y = match (plot_range_y, half_open_y) {
+    (Some((lo, hi)), Some((pin_lo, pin_hi))) => (
+      if pin_lo.is_nan() { y_data_min } else { lo },
+      if pin_hi.is_nan() { y_data_max } else { hi },
+    ),
+    (Some(r), None) => r,
+    (None, _) => (y_data_min, y_data_max),
+  };
+  plot_opts.unpadded_range =
+    Some((plot_range_x.unwrap_or((x_min, x_max)), unpadded_y));
   plot_opts.curve_clip_y = Some(plot_range_y.unwrap_or_else(|| {
     include_filling_levels(&plot_opts, (y_data_min, y_data_max))
   }));
