@@ -10796,7 +10796,7 @@ fn tessellate_tube(
     .sum();
   let closed = dirs.len() >= 3
     && norm(sub(&points[keep[0]], &points[keep[keep.len() - 1]]))
-      <= 1e-9 * length;
+      <= 1e-6 * length;
 
   // Vertex tangents: the segment direction at the ends, the normalized sum
   // of the two adjacent directions in between (and at a closed seam).
