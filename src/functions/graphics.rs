@@ -31788,22 +31788,27 @@ pub(crate) fn text_row_in_text_face(expr: &Expr) -> Option<Expr> {
     return None;
   }
   let is_row = |e: &Expr| matches!(e, Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty());
-  let content = &args[0];
-  let row_like = is_row(content)
-    || matches!(content, Expr::FunctionCall { name, args }
-      if name == "Style" && !args.is_empty() && is_row(&args[0]));
-  row_like.then(|| {
-    call(
-      "Style",
-      vec![
-        content.clone(),
-        Expr::Rule {
-          pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
-          replacement: Box::new(Expr::String("sans-serif".to_string())),
-        },
-      ],
-    )
-  })
+  let face = Expr::Rule {
+    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+    replacement: Box::new(Expr::String("sans-serif".to_string())),
+  };
+  match &args[0] {
+    row if is_row(row) => Some(call("Style", vec![row.clone(), face])),
+    // `Text[Style[Row[…], …]]`: the face joins the row's own directives,
+    // after which they still win (an explicit `FontFamily` among them).
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() && is_row(&args[0]) =>
+    {
+      Some(call(
+        "Style",
+        std::iter::once(args[0].clone())
+          .chain(std::iter::once(face))
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      ))
+    }
+    _ => None,
+  }
 }
 
 fn resolve_display_item(expr: &Expr) -> Expr {
