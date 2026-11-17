@@ -37389,7 +37389,7 @@ mod manipulate {
       .expect("exact rational is typeset");
     assert!(svg.contains("<line "), "fraction bar: {svg}");
     assert!(svg.contains(">7<") && svg.contains(">6<"), "{svg}");
-    assert!(svg.contains("\u{2212}"), "minus sign: {svg}");
+    assert!(svg.contains(">-<"), "minus sign: {svg}");
 
     let svg = continuous_value_label_svg(
       3.0 * std::f64::consts::PI / 4.0,
