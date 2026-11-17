@@ -6718,10 +6718,12 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
     "Column" => items.iter().map(|c| vec![c.clone()]).collect(),
     // `Row[{a, b, …}, sep]` sets `sep` between neighboring items.
     "Row" if args.len() >= 2 => {
+      let separator =
+        crate::functions::graphics::spaced_row_separator(&args[1]);
       let mut cells = Vec::with_capacity(2 * items.len());
       for (i, item) in items.iter().enumerate() {
         if i > 0 {
-          cells.push(args[1].clone());
+          cells.push(separator.clone());
         }
         cells.push(item.clone());
       }
