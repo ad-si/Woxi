@@ -4967,9 +4967,12 @@ pub(crate) fn plot_labels_svg(
     };
     let ty = layout.title_top + ascent(fs / sf) * sf;
     // A box around the title must stay inside the image, even when a tight
-    // `ImagePadding` leaves less room above the plot than the box needs.
+    // `ImagePadding` leaves less room above the plot than the box needs;
+    // its text sits below the frame's 6pt top margin, which the title band
+    // reserves.
     let ty = if sl.framed {
-      let top = ty - fs * 0.9 - 6.0 * sf;
+      let ty = ty + 6.0 * sf;
+      let top = ty - ascent(fs / sf) * sf - 6.0 * sf;
       ty + (sf - top).max(0.0)
     } else {
       ty
@@ -4987,20 +4990,53 @@ pub(crate) fn plot_labels_svg(
     }
     let title_pitch = line_pitch(fs / sf) * sf;
     if sl.framed {
-      // Box the title: the widest line plus Framed's 6pt margin per side.
+      // Box the title: the widest line plus Framed's 6pt margin per side,
+      // square-cornered like `Framed`'s default `RoundingRadius -> 0`.
       let margin = 6.0 * sf;
       let w = sl.max_line_chars() as f64 * fs * 0.47 + 2.0 * margin;
       let lines = 1.0 + sl.extra_line_count() as f64;
       let h =
         line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
       let top = ty - ascent(fs / sf) * sf - margin;
+      // A title with inline pictures (a typeset integral, a fraction) is
+      // boxed around the pictures and text it lays out, centered on the
+      // line those segments are centered on.
+      let (w, h, top) = if sl.segments.is_empty() {
+        (w, h, top)
+      } else {
+        let widths = inline_segment_widths(&sl.segments, fs, sf);
+        let content_h = sl
+          .segments
+          .iter()
+          .filter_map(|seg| match seg {
+            crate::functions::chart::LabelSegment::Graphic { h, .. } => {
+              Some(h * sf)
+            }
+            crate::functions::chart::LabelSegment::Text(_) => None,
+          })
+          .fold(line_height(fs / sf) * sf, f64::max);
+        let mid =
+          ty + sl.extra_line_count() as f64 * title_pitch / 2.0 - fs * 0.3;
+        (
+          widths.iter().sum::<f64>() + 2.0 * margin,
+          content_h + 2.0 * margin,
+          mid - content_h / 2.0 - margin,
+        )
+      };
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
+           height=\"{h:.1}\" fill=\"{}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
-        3.0 * sf,
-        crate::functions::graphics::theme().framed_border,
+        sl.frame_background
+          .as_ref()
+          .map_or_else(|| "none".to_string(), |c| c.to_svg_rgb()),
+        sl.frame_color.as_ref().map_or_else(
+          || crate::functions::graphics::theme()
+            .framed_border
+            .to_string(),
+          |c| c.to_svg_rgb()
+        ),
         sf,
       ));
     }
@@ -5046,6 +5082,28 @@ pub(crate) fn plot_labels_svg(
   labels_svg
 }
 
+/// The width in render units of each segment of a title that mixes text
+/// and inline pictures, as [`inline_segments_svg`] lays them out.
+fn inline_segment_widths(
+  segments: &[crate::functions::chart::LabelSegment],
+  fs: f64,
+  sf: f64,
+) -> Vec<f64> {
+  use crate::functions::chart::LabelSegment;
+  segments
+    .iter()
+    .map(|seg| match seg {
+      LabelSegment::Text(m) => {
+        crate::functions::plot_padding::text_width(
+          &crate::functions::chart::svg_markup_visible_text(m),
+          fs / sf,
+        ) * sf
+      }
+      LabelSegment::Graphic { w, .. } => w * sf,
+    })
+    .collect()
+}
+
 /// A title made of text runs and small inline pictures, laid out left to
 /// right and centered on `cx`. `ty` is the text baseline; each picture is
 /// centered on the text's x-height line. Lengths are in render units, with
@@ -5060,18 +5118,7 @@ fn inline_segments_svg(
   sf: f64,
 ) -> String {
   use crate::functions::chart::LabelSegment;
-  let widths: Vec<f64> = segments
-    .iter()
-    .map(|seg| match seg {
-      LabelSegment::Text(m) => {
-        crate::functions::plot_padding::text_width(
-          &crate::functions::chart::svg_markup_visible_text(m),
-          fs / sf,
-        ) * sf
-      }
-      LabelSegment::Graphic { w, .. } => w * sf,
-    })
-    .collect();
+  let widths = inline_segment_widths(segments, fs, sf);
   let mut x = cx - widths.iter().sum::<f64>() / 2.0;
   let mid = ty - fs * 0.3;
   let mut out = format!("<g color=\"{fill}\">");

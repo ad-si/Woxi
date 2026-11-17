@@ -262,6 +262,12 @@ pub(crate) struct StyledLabel {
   pub font_size: Option<f64>,
   /// `Framed[…]` title: drawn inside a thin box.
   pub framed: bool,
+  /// The fill of a framed title's box: `Framed[…, Background -> c]`, or
+  /// `Style[Framed[…], Background -> c]`.
+  pub frame_background: Option<Color>,
+  /// The stroke of a framed title's box: `Framed[…, FrameStyle -> c]`, else
+  /// the color the title is styled in. `None` keeps the theme's border.
+  pub frame_color: Option<Color>,
   /// A one-line title that mixes text with small inline pictures
   /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
   /// set, the renderer lays the segments out side by side.
@@ -603,6 +609,17 @@ fn traditional_sums(expr: &Expr) -> Expr {
   }
 }
 
+/// The color of a `FrameStyle`-like value: a color itself, or the first
+/// color of a `Directive[…]`.
+fn directive_color(value: &Expr) -> Option<Color> {
+  match value {
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().find_map(parse_color)
+    }
+    other => parse_color(other),
+  }
+}
+
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font
@@ -619,6 +636,13 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   {
     let mut label = parse_styled_label(&args[0])?;
     label.framed = true;
+    for opt in &args[1..] {
+      match crate::functions::graphics::option_name_value(opt) {
+        Some(("Background", v)) => label.frame_background = parse_color(&v),
+        Some(("FrameStyle", v)) => label.frame_color = directive_color(&v),
+        _ => {}
+      }
+    }
     return Some(label);
   }
   // `Invisible[…]` paints nothing — a Demonstration wraps a `Text[…]`
@@ -651,6 +675,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      frame_background: None,
+      frame_color: None,
       segments: Vec::new(),
     });
   }
@@ -685,6 +711,21 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     label.italic = italic;
     label.color = color;
     label.font_size = font_size;
+    if label.framed {
+      // The box of a styled `Framed` is drawn in the style's color and
+      // filled with its `Background`, unless the frame sets its own.
+      if label.frame_color.is_none() {
+        label.frame_color = color;
+      }
+      for opt in &args[1..] {
+        if let Some(("Background", v)) =
+          crate::functions::graphics::option_name_value(opt)
+          && label.frame_background.is_none()
+        {
+          label.frame_background = parse_color(&v);
+        }
+      }
+    }
     return Some(label);
   }
   match expr {
@@ -707,6 +748,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color: None,
         font_size: None,
         framed: false,
+        frame_background: None,
+        frame_color: None,
         segments: Vec::new(),
       })
     }
@@ -719,6 +762,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      frame_background: None,
+      frame_color: None,
       segments: Vec::new(),
     }),
     Expr::Identifier(s) => Some(StyledLabel {
@@ -730,6 +775,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      frame_background: None,
+      frame_color: None,
       segments: Vec::new(),
     }),
     Expr::FunctionCall { name, args }
@@ -777,6 +824,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color,
         font_size,
         framed: false,
+        frame_background: None,
+        frame_color: None,
         segments: Vec::new(),
       })
     }
@@ -825,6 +874,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           color: None,
           font_size: None,
           framed: false,
+          frame_background: None,
+          frame_color: None,
           segments,
         })
       }

@@ -23964,7 +23964,41 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ))
     });
     let first = first.filter(|_| all_range.is_none());
-    let ((x_min, x_max), (y_min, y_max)) = all_range
+    // The union spans the bare data, so an axis shown in full is padded
+    // the way the plot itself pads its automatic range (`PlotRangePadding`,
+    // by default 1/48 of the x span and 1/18 of the y span on each side);
+    // the first plot's own range on the other axis is padded already.
+    let all_range_padded = all_range.map(|((x0, x1), (y0, y1))| {
+      let spec =
+        merged_options
+          .iter()
+          .find_map(|o| match option_name_value(o) {
+            Some(("PlotRangePadding", v)) => Some(parse_plot_range_padding(&v)),
+            _ => None,
+          });
+      let pad = |(lo, hi): (f64, f64), axis: Option<&AxisPadding>, frac| {
+        let span = hi - lo;
+        if !span.is_finite() || span <= 0.0 {
+          return (lo, hi);
+        }
+        let (pl, ph) =
+          axis.map_or((span * frac, span * frac), |a| a.resolve(span, frac));
+        (lo - pl, hi + ph)
+      };
+      (
+        if x_all {
+          pad((x0, x1), spec.as_ref().map(|s| &s.x), 1.0 / 48.0)
+        } else {
+          (x0, x1)
+        },
+        if y_all {
+          pad((y0, y1), spec.as_ref().map(|s| &s.y), 1.0 / 18.0)
+        } else {
+          (y0, y1)
+        },
+      )
+    });
+    let ((x_min, x_max), (y_min, y_max)) = all_range_padded
       .or_else(|| first.map(|ps| (ps.x_range, ps.y_range)))
       .unwrap_or(((x_min, x_max), (y_min, y_max)));
     // Like the other options, the axis scales come from the first graphic.
