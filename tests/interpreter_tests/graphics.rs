@@ -46753,7 +46753,7 @@ mod tube_and_cap_form {
         "CapForm[{form}] must not change a Cylinder"
       );
     }
-    // Each end's disk fans into 24 triangles (`CYLINDER_SIDES`), same as a
+    // Each end's disk fans into 48 triangles (`CYLINDER_SIDES`), same as a
     // `Tube`'s cap. (Translucent, so the far side of the closed solid is
     // not culled and every facet is counted.) The open tube of the same
     // size has the same side wall without those disks.
@@ -46766,6 +46766,39 @@ mod tube_and_cap_form {
       see_through("Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]")
         > see_through("CapForm[None], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]"),
       "the cylinder must draw its end disks"
+    );
+  }
+
+  /// The end circles an `EdgeForm` outlines read as smooth curves, as in
+  /// Wolfram, not as visibly cornered polygons. Regression: the rims were
+  /// 24-gons, whose 50 px chords on a ring filling a 400 px picture left
+  /// corners more than a pixel deep (a Demonstration drew a fan guard as
+  /// such rings in space).
+  #[test]
+  fn cylinder_rim_outline_is_finely_sampled() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Opacity[0], EdgeForm[Black], \
+       Cylinder[{{0, 0, 0}, {0, 0, 0.01}}, 1]}, Boxed -> False, \
+       ViewPoint -> {0, 0, 10}, ImageSize -> 400]",
+    );
+    let coord = |seg: &str, attr: &str| -> f64 {
+      let rest = seg.split(&format!("{attr}=\"")).nth(1).unwrap();
+      rest.split('"').next().unwrap().parse().unwrap()
+    };
+    let chords: Vec<f64> = svg
+      .split("<line ")
+      .skip(1)
+      .map(|seg| {
+        (coord(seg, "x2") - coord(seg, "x1"))
+          .hypot(coord(seg, "y2") - coord(seg, "y1"))
+      })
+      .collect();
+    assert!(!chords.is_empty(), "the rim must be outlined: {svg}");
+    let longest = chords.iter().cloned().fold(0.0, f64::max);
+    assert!(
+      longest < 30.0,
+      "rim drawn with {longest:.1} px chords, too coarse for a smooth circle"
     );
   }
 

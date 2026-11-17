@@ -5690,6 +5690,18 @@ pinned size, an explicit `PlotRange` or `Show` — is unverified. A
 `ViewAngle` turn the sphere framing off. The surface plots
 (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
+A close `ViewPoint` contradicts the rule. A Demonstration's snapshot of a
+`Show` of three `Boxed -> False` `Graphics3D`s (a desk fan: rings of radius
+up to 1 in the y-z plane, on a stand reaching down to z = -1.5) at
+`ImageSize -> {600, 400}` from `ViewPoint -> {1, -1, 0}` draws the fan
+about 380 px tall, 0.95 of the height. Woxi's sphere framing draws it
+284 px tall, and even the box-outline fit (`SphericalRegion -> False`)
+only 300 px. The width-to-height ratio (0.58) matches a perspective eye at
+`|ViewPoint|` box sides, so only the scale is off: Wolfram fits roughly the
+projected contents, not the box (whose perspective outline is about 1.25×
+the contents here) nor its sphere. No single rule found so far reproduces
+this and the three snapshots above; unverified with wolframscript.
+
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
 
 Woxi draws a `Graphics3D` point with diameter `PointSize` × the picture's
