@@ -4299,6 +4299,44 @@ mod graphics {
       assert!(svg.contains(">wa</text>"), "{svg}");
     }
 
+    /// A bare real tick position is labeled the way the real is typeset,
+    /// so a whole-valued real keeps its trailing point while an integer
+    /// position does not.
+    #[test]
+    fn bare_real_tick_positions_keep_their_point() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 20}, Ticks -> {{2.5, 10., 15}, {-5., 7}}, \
+         PlotRange -> {{0, 20}, {-10, 20}}]",
+      );
+      assert!(svg.contains(">2.5</text>"), "{svg}");
+      assert!(svg.contains(">10.</text>"), "{svg}");
+      assert!(svg.contains(">15</text>"), "{svg}");
+      assert!(svg.contains(">-5.</text>"), "{svg}");
+      assert!(svg.contains(">7</text>"), "{svg}");
+    }
+
+    /// A tick position computed from real variables evaluates to a real and
+    /// is labeled as one, as in `Ticks -> {{(a - b c)/(1 - c)}, …}`.
+    #[test]
+    fn computed_real_tick_position_keeps_its_point() {
+      let svg = export_svg(
+        "a = 5100; b = 3000; c = 0.7; \
+         Plot[x, {x, 0, 20000}, Ticks -> {{(a - b c)/(1 - c)}, None}]",
+      );
+      assert!(svg.contains(">10000.</text>"), "{svg}");
+    }
+
+    /// `Graphics` axes read bare real tick positions the same way.
+    #[test]
+    fn graphics_bare_real_tick_positions_keep_their_point() {
+      let svg = export_svg(
+        "Graphics[Line[{{0, 0}, {20, 20}}], Axes -> True, \
+         Ticks -> {{5., 12}, None}]",
+      );
+      assert!(svg.contains(">5.</text>"), "{svg}");
+      assert!(svg.contains(">12</text>"), "{svg}");
+    }
+
     /// A tick label that calls a function (`ToString[a]` inside a `Row`)
     /// shows the call's result, not just the literal parts around it.
     #[test]
