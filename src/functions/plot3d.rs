@@ -12067,16 +12067,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // position and y the depth.
   let perspective = view_vector.is_some() && !orthographic;
   // Under the default `SphericalRegion -> Automatic`, an invisible
-  // (`Boxed -> False`) box in a picture of fixed width and height is framed
-  // like `SphericalRegion -> True`: by the sphere around the box, not by the
-  // box's projected outline. Wolfram's snapshots of such scenes (long tubes
-  // along x in a 13 × 8 × 8 and a 22 × 8.5 × 8.5 pinned box, and a `Show`
-  // of a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}`
-  // from a custom `ViewPoint`) draw them at the sphere-framed size, 0.7×
-  // to 0.86× the outline-fitted one.
+  // (`Boxed -> False`) box pinned by an explicit `PlotRange` (given
+  // directly or carried in by a plot inside `Show`) in a picture of fixed
+  // width and height is framed like `SphericalRegion -> True`: by the
+  // sphere around the box, not by the box's projected outline. Wolfram's
+  // snapshots of such scenes (long tubes along x in a 13 × 8 × 8 and a
+  // 22 × 8.5 × 8.5 pinned box, and a `Show` of a `Graphics3D` and a
+  // `ParametricPlot3D` at `ImageSize -> {400, 400}` from a custom
+  // `ViewPoint`) draw them at the sphere-framed size, 0.7× to 0.86× the
+  // outline-fitted one. A plain unboxed `Graphics3D` without a range (a
+  // tall 4 × 4 × 10 building at `ImageSize -> {300, 400}`) still fits its
+  // box outline to the frame.
   // `AspectRatio -> Full` instead stretches the scene to fill the picture.
   let spherical_region = spherical_region
     || (!spherical_region_off
+      && plot_range.is_some()
       && !show_box
       && explicit_height
       && !full_width

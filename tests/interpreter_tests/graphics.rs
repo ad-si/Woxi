@@ -58697,16 +58697,10 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   assert_eq!(automatic, sphere);
   assert_ne!(automatic, outline);
 
-  // An automatic range is framed by its sphere as well.
-  let auto_range = "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
-     Boxed -> False, ImageSize -> {595, 375}";
-  assert_eq!(
-    export_svg(&format!("{auto_range}]")),
-    export_svg(&format!("{auto_range}, SphericalRegion -> True]"))
-  );
-
-  // A visible box or a bare width keep the outline fit.
+  // A visible box, an automatic range or a bare width keep the outline fit.
   for code in [
+    "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, Boxed -> False, \
+     ImageSize -> {595, 375}",
     "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
      PlotRange -> {{-6.5, 6.5}, {-4, 4}, {-4, 4}}, ImageSize -> {595, 375}",
     "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, Boxed -> False, \
@@ -58717,6 +58711,40 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
       export_svg(&format!("{code}, SphericalRegion -> False]"));
     assert_eq!(default, explicit_off, "{code}");
   }
+}
+
+/// Regression: a plain unboxed `Graphics3D` without a `PlotRange` at
+/// `ImageSize -> {w, h}` fits its box outline to the frame (a tall building
+/// of stacked cuboids fills nearly the whole height of a 300 × 400
+/// Demonstration snapshot). Woxi framed it by the box's sphere, drawing it
+/// at only about 0.7× that size.
+#[test]
+fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
+  let scene = |extra: &str| {
+    export_svg(&format!(
+      "Graphics3D[{{{{Opacity[0.2], Cuboid[{{-2, 2, 0}}, {{2, -2, 10}}]}}, \
+       {{Orange, Cuboid[{{0, 0, 0}}, {{1, -1, 1}}]}}}}, \
+       Boxed -> False, ImageSize -> {{300, 400}}{extra}]"
+    ))
+  };
+  let automatic = scene("");
+  assert_eq!(automatic, scene(", SphericalRegion -> False"));
+  assert_ne!(automatic, scene(", SphericalRegion -> True"));
+  // The building spans most of the picture's height.
+  let ys: Vec<f64> = automatic
+    .split("points=\"")
+    .skip(1)
+    .flat_map(|rest| {
+      let pts = &rest[..rest.find('"').unwrap()];
+      pts
+        .split_whitespace()
+        .filter_map(|p| p.split(',').nth(1)?.parse::<f64>().ok())
+        .collect::<Vec<_>>()
+    })
+    .collect();
+  let span = ys.iter().cloned().fold(f64::MIN, f64::max)
+    - ys.iter().cloned().fold(f64::MAX, f64::min);
+  assert!(span > 350.0, "expected the scene to fill the height, got {span}");
 }
 
 mod plot_label_number_form_held_assignment {
