@@ -3154,8 +3154,9 @@ mod tests {
     fn raster3d_renders_voxels() {
       let svg =
         svg_of("Graphics3D[Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]]");
-      // 8 voxel cuboids, 12 triangles each.
-      assert_eq!(svg.matches("<polygon").count(), 96);
+      // A solid volume shows only its outer faces: 6 faces of 2×2 voxels,
+      // none merged (neighbors alternate), 2 triangles each.
+      assert_eq!(svg.matches("<polygon").count(), 48);
       // Voxels with value 0 are black, voxels with value 1 are white; both
       // shades must appear (modulated by lighting, so just check some
       // polygons exist with distinct fills).

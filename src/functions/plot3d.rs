@@ -9744,15 +9744,22 @@ fn collect_opaque_raster3d_faces(
               done[v * w + u] = true;
             }
           }
-          let mut quad =
-            [corner(u0, v0), corner(u1, v0), corner(u1, v1), corner(u0, v1)];
+          let mut quad = [
+            corner(u0, v0),
+            corner(u1, v0),
+            corner(u1, v1),
+            corner(u0, v1),
+          ];
           if !high {
             quad.reverse();
           }
           let mut voxel_style = face_style.clone();
           voxel_style.color = Some(color);
           prims.push(Primitive3D::Surface3D {
-            tris: vec![(quad[0], quad[1], quad[2]), (quad[0], quad[2], quad[3])],
+            tris: vec![
+              (quad[0], quad[1], quad[2]),
+              (quad[0], quad[2], quad[3]),
+            ],
             style: voxel_style,
             smooth: false,
           });
