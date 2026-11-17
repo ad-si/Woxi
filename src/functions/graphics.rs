@@ -11384,10 +11384,15 @@ fn render_axes(
           axis_y_px - h / 2.0,
         ));
       } else {
+        // The lines of a multi-line label stay centered on the axis.
+        let x = svg_w + AXES_LABEL_GAP_X;
+        let lines = text_label_lines(x_label);
+        let pitch = line_pitch(LABEL_FONT);
         svg.push_str(&format!(
-          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"start\">{x_label}</text>\n",
-          svg_w + AXES_LABEL_GAP_X,
-          axis_y_px + center_to_baseline(LABEL_FONT),
+          "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"start\">{}</text>\n",
+          axis_y_px + center_to_baseline(LABEL_FONT)
+            - (lines.len() - 1) as f64 * pitch / 2.0,
+          crate::functions::plot::join_label_lines(&lines, x, pitch),
         ));
       }
     }
@@ -11399,12 +11404,28 @@ fn render_axes(
           -AXES_LABEL_GAP_Y - h,
         ));
       } else {
+        // The last line sits above the axis; earlier lines stack upward.
+        let lines = text_label_lines(y_label);
+        let pitch = line_pitch(LABEL_FONT);
         svg.push_str(&format!(
-          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
-          -AXES_LABEL_GAP_Y - descent(LABEL_FONT),
+          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
+          -AXES_LABEL_GAP_Y
+            - descent(LABEL_FONT)
+            - (lines.len() - 1) as f64 * pitch,
+          crate::functions::plot::join_label_lines(&lines, axis_x_px, pitch),
         ));
       }
     }
+  }
+}
+
+/// The lines of a text label's SVG markup: one per newline in the label,
+/// each well-formed on its own (see [`split_markup_lines`]).
+fn text_label_lines(markup: &str) -> Vec<String> {
+  if markup.contains('\n') {
+    split_markup_lines(markup)
+  } else {
+    vec![markup.to_string()]
   }
 }
 
@@ -11649,7 +11670,16 @@ fn graphics_decorations(
     axes_label_picture_size(markup).unwrap_or_else(|| {
       let size = crate::functions::plot_padding::markup_font_size(markup)
         .unwrap_or(LABEL_FONT);
-      (text_width(markup, size), line_height(size))
+      // A multi-line label (`"arrival time\nof A"`) is as wide as its
+      // widest line and as tall as its stacked lines.
+      let lines = text_label_lines(markup);
+      let width = lines
+        .iter()
+        .map(|line| text_width(line, size))
+        .fold(0.0, f64::max);
+      let height =
+        line_height(size) + (lines.len() - 1) as f64 * line_pitch(size);
+      (width, height)
     })
   };
   let axis_x_data = origin.0.unwrap_or(if bb.x_min <= 0.0 && 0.0 <= bb.x_max {
