@@ -11583,8 +11583,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `SphericalRegion -> True`: frame the picture by the sphere that
   // encloses the contents instead of by their projected outline, so the
   // scale stays put as the view turns or the contents move. A
-  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
-  let mut spherical_region = crate::in_manipulate_frame();
+  // `Manipulate` frame defaults to it when the scene is aimed or pinned
+  // explicitly (see `manipulate_frame` below).
+  let mut spherical_region = false;
+  let manipulate_frame = crate::in_manipulate_frame();
   // `SphericalRegion -> False` given outright (rather than the default
   // `Automatic`), which rules out the automatic sphere framing below.
   let mut spherical_region_off = false;
@@ -12083,9 +12085,19 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // building at `ImageSize -> {300, 400}`) still fits its box outline to
   // the frame.
   // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  // Inside a `Manipulate` frame the same explicitly aimed or pinned scenes
+  // are sphere-framed whatever their box and size, so the picture keeps one
+  // scale as controls turn the view: Wolfram's snapshots of boxed scenes in
+  // a pinned `PlotRange` switched between view points (`ViewPoint ->
+  // Below`, a skew view) are drawn at the sphere-framed size, about 0.7×
+  // the outline-fitted one. A Manipulate's scene with the default camera
+  // and no range (a tall elevator building at `ImageSize -> {300, 400}`)
+  // still fits its box outline to the frame.
+  let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
+    || (!spherical_region_off && manipulate_frame && explicitly_framed)
     || (!spherical_region_off
-      && (plot_range.is_some() || explicit_view_point)
+      && explicitly_framed
       && !show_box
       && explicit_height
       && !full_width

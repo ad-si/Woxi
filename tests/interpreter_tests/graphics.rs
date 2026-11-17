@@ -58713,11 +58713,12 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   }
 }
 
-/// Regression: a plain unboxed `Graphics3D` without a `PlotRange` at
-/// `ImageSize -> {w, h}` fits its box outline to the frame (a tall building
-/// of stacked cuboids fills nearly the whole height of a 300 × 400
-/// Demonstration snapshot). Woxi framed it by the box's sphere, drawing it
-/// at only about 0.7× that size.
+/// Regression: a plain unboxed `Graphics3D` without a `PlotRange` or a
+/// `ViewPoint` at `ImageSize -> {w, h}` fits its box outline to the frame,
+/// also when drawn as a `Manipulate` frame (a tall building of stacked
+/// cuboids fills nearly the whole height of a 300 × 400 Demonstration
+/// snapshot of a `Manipulate`). Woxi framed it by the box's sphere, drawing
+/// it at only about 0.7× that size.
 #[test]
 fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
   let scene = |extra: &str| {
@@ -58745,6 +58746,21 @@ fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
   let span = ys.iter().cloned().fold(f64::MIN, f64::max)
     - ys.iter().cloned().fold(f64::MAX, f64::min);
   assert!(span > 350.0, "expected the scene to fill the height, got {span}");
+
+  // A `Manipulate` frame draws the same picture.
+  assert_eq!(woxi::with_manipulate_frame(|| scene("")), automatic);
+  // An explicit `ViewPoint` or `PlotRange` there still keeps one scale by
+  // framing the scene by its sphere.
+  for extra in [
+    ", ViewPoint -> {1.3, -2.4, 2}",
+    ", PlotRange -> {{-2, 2}, {-2, 2}, {0, 10}}",
+  ] {
+    assert_eq!(
+      woxi::with_manipulate_frame(|| scene(extra)),
+      scene(&format!("{extra}, SphericalRegion -> True")),
+      "{extra}"
+    );
+  }
 }
 
 mod plot_label_number_form_held_assignment {

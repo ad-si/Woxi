@@ -5683,8 +5683,14 @@ box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
 a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
 custom `ViewPoint` is about 1.02× the sphere framing and 0.86× the box fit.
 
-Without a `PlotRange` the outline fit stays: a plain `Boxed -> False`
-`Graphics3D` of a tall 4 × 4 × 10 building at `ImageSize -> {300, 400}`
+A `Manipulate` frame sphere-frames such explicitly aimed or pinned scenes
+whatever their box and size (boxed scenes in a pinned `PlotRange` switched
+between view points, `ViewPoint -> Below` and a skew view, measure about
+0.7× the outline fit).
+
+Without a `PlotRange` or `ViewPoint` the outline fit stays, inside a
+`Manipulate` too: a plain `Boxed -> False` `Graphics3D` of a tall
+4 × 4 × 10 building at `ImageSize -> {300, 400}` in a `Manipulate`
 fills about 383 px of the snapshot's 400 px height, where the sphere
 framing would draw it about 0.73× as tall, and a `SphericalRegion -> False`
 cylinder without a `PlotRange` at `ImageSize -> {550, 350}` fills the width
