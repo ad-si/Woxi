@@ -1532,7 +1532,7 @@ fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
   )
 }
 
-fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
+pub(crate) fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
   // Like `expr_to_point`: a point *list* is usually already a `{{x,y},…}`
   // literal, but a Demonstration's `Arrow[({{# - 2.5, 0}, {#, 0}}& )[tip]]`
   // only reduces to one at evaluation time (a pure function applied to the
@@ -4788,19 +4788,25 @@ fn parse_polygon(
       vertex_colors: vc,
       style,
     });
-  } else if let Some((outer, holes)) =
+  } else if let Some(faces) =
     crate::functions::polygon_holes::split_holes(&args[0], &expr_to_point_list)
   {
-    // Polygon[outer -> holes] — a polygon with the hole boundaries cut
-    // out of it. `VertexColors` still assigns one color per point of the
-    // *outer* boundary; hole boundaries have no colors of their own.
-    let vc = vertex_colors.clone().filter(|c| c.len() == outer.len());
-    prims.push(Primitive::PolygonPrim {
-      points: outer,
-      holes,
-      vertex_colors: vc,
-      style: style.clone(),
-    });
+    // Polygon[outer -> holes] (or a list of outers paired with their
+    // holes) — polygons with the hole boundaries cut out of them.
+    // `VertexColors` still assigns one color per point of a lone *outer*
+    // boundary; hole boundaries have no colors of their own.
+    let single = faces.len() == 1;
+    for (outer, holes) in faces {
+      let vc = vertex_colors
+        .clone()
+        .filter(|c| single && c.len() == outer.len());
+      prims.push(Primitive::PolygonPrim {
+        points: outer,
+        holes,
+        vertex_colors: vc,
+        style: style.clone(),
+      });
+    }
   } else if let Expr::List(items) = &args[0] {
     // `VertexColors` for a list of polygons assigns one color per point,
     // in order, across all sub-polygons concatenated — mirroring how it
@@ -4823,15 +4829,17 @@ fn parse_polygon(
           vertex_colors: vc,
           style: style.clone(),
         });
-      } else if let Some((outer, holes)) =
+      } else if let Some(faces) =
         crate::functions::polygon_holes::split_holes(item, &expr_to_point_list)
       {
-        prims.push(Primitive::PolygonPrim {
-          points: outer,
-          holes,
-          vertex_colors: None,
-          style: style.clone(),
-        });
+        for (outer, holes) in faces {
+          prims.push(Primitive::PolygonPrim {
+            points: outer,
+            holes,
+            vertex_colors: None,
+            style: style.clone(),
+          });
+        }
       }
     }
   }
