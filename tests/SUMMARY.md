@@ -1413,6 +1413,7 @@
   - [`BarChart`](plotting/BarChart.md)
   - [`BarChart3D`](plotting/BarChart3D.md)
   - [`BoxWhiskerChart`](plotting/BoxWhiskerChart.md)
+  - [`ChartElementData`](plotting/ChartElementData.md)
   - [`BubbleChart`](plotting/BubbleChart.md)
   - [`BubbleHistogram`](plotting/BubbleHistogram.md)
   - [`ComplexListPlot`](plotting/ComplexListPlot.md)
