@@ -5671,10 +5671,9 @@ all of them.
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a
 `Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
-displayed box) when the box is invisible (`Boxed -> False`), its range is
-pinned by an explicit `PlotRange` (given directly, or carried into `Show`
-by a plot such as `ParametricPlot3D`), and the picture is drawn at
-`ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate this, none
+displayed box) when the box is invisible (`Boxed -> False`), the scene is
+pinned by an explicit `PlotRange` or seen from an explicit `ViewPoint`,
+and the picture is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate this, none
 checked with wolframscript: a cylinder from `{-10, 0, 0}` to `{10, 0, 0}`
 in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25, 4.25}},
 ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
@@ -5691,8 +5690,10 @@ framing would draw it about 0.73× as tall, and a `SphericalRegion -> False`
 cylinder without a `PlotRange` at `ImageSize -> {550, 350}` fills the width
 (532/550).
 
-Whether the explicit `PlotRange` itself or something correlated with it
-(such as `Show` of a plot) triggers the sphere framing is unverified. A
+`Show` keeps only its first graphic's options, so the `Show` snapshot has
+no `PlotRange` and its explicit `ViewPoint` is what sets it apart from the
+building. Whether `PlotRange` and `ViewPoint` are really the triggers, or
+merely correlate with them in these four snapshots, is unverified. A
 `Boxed -> False` picture given only a width still fits the box outline, and
 `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
 `ViewAngle` turn the sphere framing off. The surface plots
