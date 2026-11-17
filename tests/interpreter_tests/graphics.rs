@@ -58884,3 +58884,64 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+/// The `width`/`height` the root `<svg>` tag of an export states, whichever
+/// quote style it uses.
+fn root_svg_size(svg: &str) -> (f64, f64) {
+  let start = svg.find("<svg").unwrap();
+  let tag = &svg[start..start + svg[start..].find('>').unwrap()];
+  let attr = |name: &str| -> f64 {
+    ['"', '\'']
+      .iter()
+      .find_map(|q| {
+        let key = format!(" {name}={q}");
+        let rest = &tag[tag.find(&key)? + key.len()..];
+        rest[..rest.find(*q)?].parse().ok()
+      })
+      .unwrap_or_else(|| panic!("no {name} in {tag}"))
+  };
+  (attr("width"), attr("height"))
+}
+
+/// `Magnify[img, s]` shows a raster image scaled by `s`. The image exports
+/// with an XML declaration and single-quoted size attributes, which the
+/// scaling used to skip, leaving the image at its own size.
+#[test]
+fn magnify_scales_a_raster_image() {
+  let img = "Image[ConstantArray[0.5, {30, 40}]]";
+  let export =
+    |e: &str| interpret(&format!("ExportString[{e}, \"SVG\"]")).unwrap();
+  assert_eq!(root_svg_size(&export(img)), (40.0, 30.0));
+  let svg = export(&format!("Magnify[{img}, 2]"));
+  assert_eq!(root_svg_size(&svg), (80.0, 60.0), "{svg}");
+  assert!(svg.contains("viewBox=\"0 0 40 30\""), "{svg}");
+}
+
+/// A `Grid` cell holding `Magnify[…]` is drawn scaled — an image or plain
+/// text — instead of printing the `Magnify[…]` call as source text.
+#[test]
+fn grid_cell_magnify_is_drawn_not_printed() {
+  let img = "Image[ConstantArray[0.5, {30, 40}]]";
+  let svg = export_svg(&format!("Grid[{{{{Magnify[{img}, 1.5], 1}}}}]"));
+  assert!(!svg.contains("Magnify"), "{svg}");
+  assert!(
+    svg.contains("width=\"60\" height=\"45\"")
+      || svg.contains("width=\"60.0\" height=\"45.0\""),
+    "{svg}"
+  );
+  let text = export_svg("Grid[{{Magnify[x, 2], 1}}]");
+  assert!(!text.contains("Magnify"), "{text}");
+}
+
+/// An image spanning a `Grid` row (`SpanFromLeft`) is drawn at its own size
+/// and the row grows to hold it. It used to be stretched across the columns
+/// in a text-height row, overlapping the grid's top edge.
+#[test]
+fn grid_spanning_image_sizes_its_row() {
+  let img = "Image[ConstantArray[0.5, {30, 40}]]";
+  let svg = export_svg(&format!("Grid[{{{{{img}, SpanFromLeft}}, {{1, 2}}}}]"));
+  assert!(svg.contains("width=\"40.0\" height=\"30.0\""), "{svg}");
+  let (_, height) = root_svg_size(&svg);
+  assert!(height > 30.0 + 14.0, "both rows fit: {svg}");
+  assert!(!svg.contains("y=\"-"), "nothing above the grid: {svg}");
+}

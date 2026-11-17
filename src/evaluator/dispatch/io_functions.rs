@@ -6038,6 +6038,14 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // Likewise `Magnify[g, s]`: the rendered graphic `g`, scaled by `s`.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Magnify"
+    && (args.len() == 1 || args.len() == 2)
+    && lays_out_a_graphic(&args[0])
+  {
+    return true;
+  }
   // `TableForm[data, …]` / `MatrixForm[data, …]`, and either wrapped in a
   // `Style[…]` that sets its font, are drawn as an aligned grid picture by
   // `expr_to_svg` — a Demonstration's Manipulate body composing one into a
@@ -9192,6 +9200,14 @@ pub(crate) fn readlist_inputstream(
 /// `viewBox` so the content scales with it. Anything that is not an `<svg
 /// width=".." height="..">` root is returned unchanged.
 fn scale_svg_size(svg: &str, factor: f64) -> String {
+  // A raster `Image` exports with an XML declaration before its root tag;
+  // the size lives on the `<svg …>` tag that follows it.
+  let svg = match svg.strip_prefix("<?xml") {
+    Some(rest) => rest
+      .find("?>")
+      .map_or(svg, |end| rest[end + 2..].trim_start()),
+    None => svg,
+  };
   if (factor - 1.0).abs() < f64::EPSILON || !svg.starts_with("<svg") {
     return svg.to_string();
   }
@@ -9209,13 +9225,17 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   for attr in ["width", "height"] {
-    let key = format!(" {attr}=\"");
-    if let Some(start) = head.find(&key) {
-      let vstart = start + key.len();
-      if let Some(vlen) = head[vstart..].find('"')
-        && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
-      {
-        head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+    // An `Image`'s root tag quotes its attributes with `'`.
+    for quote in ['"', '\''] {
+      let key = format!(" {attr}={quote}");
+      if let Some(start) = head.find(&key) {
+        let vstart = start + key.len();
+        if let Some(vlen) = head[vstart..].find(quote)
+          && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
+        {
+          head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+        }
+        break;
       }
     }
   }

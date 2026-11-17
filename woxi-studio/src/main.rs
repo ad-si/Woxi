@@ -14149,6 +14149,52 @@ Cell[BoxData[
   }
 
   #[test]
+  fn bare_locator_over_an_image_spans_its_pixel_coordinates() {
+    // A Manipulate whose body is a `Grid` with a magnified image on top and
+    // the `PixelValue` read at a bare `Locator` below. The Locator moves
+    // over the image in its pixel coordinates, `{0, 0}` to `{w, h}`; it used
+    // to take the range of the small swatch graphic further down instead,
+    // leaving the start point far outside its slider.
+    let code = "Manipulate[Module[{img = Image[ConstantArray[{0.2, 0.4, 0.6}, \
+        {30, 40}]], col}, \
+      Grid[{{Magnify[img, 1.5], SpanFromLeft}, \
+        {col = PixelValue[img, u][[1 ;; 3]], 1}, \
+        {Graphics[{RGBColor[col], RegularPolygon[4]}, ImageSize -> 50], 1}}]], \
+      {{u, {30, 20}}, Locator}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the image Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the body must render");
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Slider2D {
+          name,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x,
+          y,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "u");
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 40.0, 0.0, 30.0));
+        assert_eq!((*x, *y), (30.0, 20.0));
+      }
+      other => panic!("expected one locator control, got {other:?}"),
+    }
+    let svg = woxi::with_scoped_globals(&[], || {
+      woxi::interpret_with_stdout(&format!("u = {{30, 20}}; {}", state.body))
+    })
+    .expect("the body must evaluate")
+    .graphics
+    .expect("the body must render a graphic");
+    assert!(!svg.contains("Magnify"), "the image must be drawn: {svg}");
+    assert!(svg.contains("width=\"60.0\" height=\"45.0\""), "{svg}");
+  }
+
+  #[test]
   fn grid_laid_out_controls_take_the_manipulate_level_control_type() {
     // End-to-end for the Demonstrations control-panel shape: the controls sit
     // in a `Grid[…]` and the panel picks their type once, for all of them.
