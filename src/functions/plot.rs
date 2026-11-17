@@ -16302,18 +16302,15 @@ pub(crate) fn apply_common_plot_option(
   plot_opts: &mut PlotOptions,
   overrides: &mut PlotRangeOverrides,
 ) -> bool {
+  // A plot holds its options, so a value naming a variable
+  // (`ImagePadding -> padding`, `FrameTicks -> {Automatic, Automatic,
+  // None, ticks}`) arrives unevaluated. Like Wolfram, work it out once
+  // here, so every option below reads the value it stands for.
+  let evaluated =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  let replacement = &evaluated;
   match name {
     "ImageSize" => {
-      // A plot holds its options, so `ImageSize -> size` naming a variable
-      // (`size = {380, 290}`) arrives unevaluated.
-      let evaluated;
-      let replacement = if matches!(replacement, Expr::Identifier(_)) {
-        evaluated = evaluate_expr_to_expr(replacement)
-          .unwrap_or_else(|_| replacement.clone());
-        &evaluated
-      } else {
-        replacement
-      };
       if let Some((w, h, fw)) =
         parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
       {

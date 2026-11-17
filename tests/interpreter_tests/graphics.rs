@@ -12176,6 +12176,39 @@ mod plot3d {
       assert!(graphics.contains(">p0.5<"), "{graphics}");
     }
 
+    // Plot options are held, so a value stored in a variable is looked up:
+    // a `FrameTicks` edge list labels its edge instead of being called as
+    // a tick function (which tinted the plot as invalid), and an
+    // `ImagePadding` variable pads like the literal value.
+    #[test]
+    fn plot_options_given_as_variables_are_evaluated() {
+      let ticks = export_svg(
+        r#"right = Table[{v/4, "r" <> ToString[v]}, {v, 0, 4}];
+          Plot[x, {x, 0, 1}, Frame -> True,
+            FrameTicks -> {Automatic, Automatic, None, right}]"#,
+      );
+      for label in [">r0<", ">r2<", ">r4<"] {
+        assert!(ticks.contains(label), "missing {label}: {ticks}");
+      }
+      assert!(!ticks.contains("100%,33%,33%"), "flagged invalid: {ticks}");
+      let in_module = export_svg(
+        r#"Module[{right = {{0.5, "half"}}},
+          Show[Plot[x, {x, 0, 1}, Frame -> True,
+            FrameTicks -> {Automatic, Automatic, None, right}]]]"#,
+      );
+      assert!(in_module.contains(">half<"), "{in_module}");
+      assert!(!in_module.contains("100%,33%,33%"), "{in_module}");
+      let via_variable = export_svg(
+        r#"pad = {{40, 20}, {30, 5}};
+          Plot[x, {x, 0, 1}, Frame -> True, ImagePadding -> pad]"#,
+      );
+      let literal = export_svg(
+        r#"Plot[x, {x, 0, 1}, Frame -> True,
+          ImagePadding -> {{40, 20}, {30, 5}}]"#,
+      );
+      assert_eq!(via_variable, literal);
+    }
+
     // Explicit `FrameTicks` on the right and top edge of a `Plot` frame are
     // marked and labeled, whether written as `{pos, label}` pairs or as
     // plain positions.
