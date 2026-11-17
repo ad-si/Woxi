@@ -12834,6 +12834,9 @@ fn render_primitive(
       let partial = angles
         .filter(|(a1, a2)| (a2 - a1).abs() < std::f64::consts::TAU - 1e-9);
       if let Some((a1, a2)) = partial {
+        // Like Wolfram, a reversed range `{a1, a2}` with `a1 > a2` covers
+        // the same angles as `{a2, a1}`, so always sweep from the smaller.
+        let (a1, a2) = if a2 < a1 { (a2, a1) } else { (a1, a2) };
         // SVG y is flipped, so negate the sine component; sweep-flag 0 then
         // traces the arc in the mathematical (counter-clockwise) direction.
         let x1 = scx + srx * a1.cos();
@@ -12948,6 +12951,13 @@ fn render_primitive(
       let scy = coord_y(*cy, bb, svg_h);
       let srx = *rx / bb.width() * svg_w;
       let sry = *ry / bb.height() * svg_h;
+      // A reversed range `{angle1, angle2}` with `angle1 > angle2` covers
+      // the same sector as `{angle2, angle1}`, so sweep from the smaller.
+      let (angle1, angle2) = if angle2 < angle1 {
+        (angle2, angle1)
+      } else {
+        (angle1, angle2)
+      };
       // Start point of arc (in SVG coords: negate y because SVG y is flipped)
       let x1 = scx + srx * angle1.cos();
       let y1 = scy - sry * angle1.sin();
