@@ -12,6 +12,11 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `GraphPlot` gives a computed layout in Wolfram's units (edges 1 long on
+    average, starting at the origin) to its rendering functions and to
+    graphics `Show`n with it, so a caption placed at the center of a drawn
+    cycle lands there. A graph with explicit `VertexCoordinates` is likewise
+    drawn in the caller's coordinates.
 
 # 2026-11-08 - 0.4.0
 

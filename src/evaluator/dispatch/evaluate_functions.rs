@@ -5754,13 +5754,19 @@ fn evaluate_function_call_ast_inner(
       } = &evaluated
         && en == "Graph"
         && eargs.len() >= 2
-        && let Ok(rendered) = crate::functions::graph::graph_ast(&{
+        && let Ok(rendered) = {
           let mut a = eargs.to_vec();
           if plain_lines {
             a.push(rule_expr(id_expr("DirectedEdges"), id_expr("False")));
           }
-          a
-        })
+          // `GraphPlot` draws in its own plot units, which the rendering
+          // functions and any graphics `Show`n with it share.
+          if name == "GraphPlot" {
+            crate::functions::graph::graph_plot_render(&a)
+          } else {
+            crate::functions::graph::graph_ast(&a)
+          }
+        }
       {
         if let Expr::Graphics { svg, .. } = &rendered {
           crate::capture_graphics(svg);

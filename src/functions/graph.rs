@@ -645,7 +645,15 @@ pub fn pre_v6_graph_plot(
 /// Render a Graph[{vertices}, {edges}, options...] expression to SVG
 /// via the Graphics pipeline, using petgraph as the underlying data structure.
 pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  graph_render(args, None)
+  graph_render(args, None, false)
+}
+
+/// `GraphPlot`'s rendered picture of a Graph: drawn as [`graph_ast`] draws
+/// it, but in Wolfram's plot units — a computed layout has edges 1 long on
+/// average and starts at the origin — so graphics `Show`n with it, and the
+/// rendering functions it calls, share its coordinates.
+pub fn graph_plot_render(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  graph_render(args, None, true)
 }
 
 /// `GraphPlot`'s symbolic picture of a Graph (see [`legacy_graph_plot`]),
@@ -654,14 +662,17 @@ pub fn graph_plot_ast(
   args: &[Expr],
   directed: bool,
 ) -> Result<Expr, InterpreterError> {
-  graph_render(args, Some(directed))
+  graph_render(args, Some(directed), true)
 }
 
 /// `legacy_plot` asks for `GraphPlot`'s GraphicsComplex form (with the
 /// edge directedness it should show) instead of the rendered graph.
+/// `plot_units` puts a computed layout in `GraphPlot`'s units (see
+/// [`graph_plot_render`]).
 fn graph_render(
   args: &[Expr],
   legacy_plot: Option<bool>,
+  plot_units: bool,
 ) -> Result<Expr, InterpreterError> {
   // A `Graph` restored via `Uncompress[Compress[…]]` packs every option
   // into one trailing list argument (`Graph[verts, edges, {opt1, opt2,
@@ -1042,17 +1053,12 @@ fn graph_render(
       coord_scale = scale;
       let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
       coord_center = (cx, cy);
+      // The picture is drawn in the caller's units (see the end).
       let pair =
         |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
       shown_range = Some(rule_expr(
         id_expr("PlotRange"),
-        Expr::List(
-          vec![
-            pair((x0 - cx) * scale, (x1 - cx) * scale),
-            pair((y0 - cy) * scale, (y1 - cy) * scale),
-          ]
-          .into(),
-        ),
+        Expr::List(vec![pair(x0, x1), pair(y0, y1)].into()),
       ));
       pts
         .into_iter()
@@ -1066,19 +1072,60 @@ fn graph_render(
     }
   } else {
     layout_choice.plain_lines = !draw_directed;
-    layout_choice.positions(&graph, &index_map)
+    let pts = layout_choice.positions(&graph, &index_map);
+    // `GraphPlot` reports its layout with edges 1 long on average, moved
+    // to the origin; the drawing keeps the internal scale and maps back.
+    if plot_units {
+      let lengths: Vec<f64> = graph
+        .edge_references()
+        .map(|e| {
+          let (p, q) = (pts[e.source().index()], pts[e.target().index()]);
+          ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).sqrt()
+        })
+        .filter(|d| *d > 1e-12)
+        .collect();
+      if !lengths.is_empty() {
+        let mean = lengths.iter().sum::<f64>() / lengths.len() as f64;
+        let low = |f: fn(&(f64, f64)) -> f64| {
+          pts.iter().map(f).fold(f64::INFINITY, f64::min)
+        };
+        coord_scale = mean;
+        coord_center = (-low(|p| p.0) / mean, -low(|p| p.1) / mean);
+      }
+    }
+    pts
+  };
+  // The caller's units of an internal point, and the transform taking
+  // graphics drawn in the caller's units onto the internal scale.
+  let to_caller = |(x, y): (f64, f64)| {
+    (
+      snap_coord(x / coord_scale + coord_center.0),
+      snap_coord(y / coord_scale + coord_center.1),
+    )
+  };
+  let transformed = coord_scale != 1.0 || coord_center != (0.0, 0.0);
+  let pair =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let to_internal = |layer: Expr| -> Expr {
+    if !transformed {
+      return layer;
+    }
+    call(
+      "Scale",
+      vec![
+        call(
+          "Translate",
+          vec![layer, pair(-coord_center.0, -coord_center.1)],
+        ),
+        pair(coord_scale, coord_scale),
+        pair(0.0, 0.0),
+      ],
+    )
   };
   if let Some(directed) = legacy_plot {
     // The picture keeps the caller's own `VertexCoordinates` units.
-    let coords: Vec<(f64, f64)> = positions
-      .iter()
-      .map(|&(x, y)| {
-        (
-          x / coord_scale + coord_center.0,
-          y / coord_scale + coord_center.1,
-        )
-      })
-      .collect();
+    let coords: Vec<(f64, f64)> =
+      positions.iter().map(|&p| to_caller(p)).collect();
     if let Some(plot) =
       legacy_graph_plot(&vertices, &raw_edges, &coords, directed)
     {
@@ -1499,7 +1546,10 @@ fn graph_render(
         _ => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
       },
       Some((EdgeShape::Func(f), edge_expr, label)) => {
-        let pts_expr = points_expr(&shape_pts);
+        // The function sees the layout in the caller's own units.
+        let caller_pts: Vec<(f64, f64)> =
+          shape_pts.iter().map(|&p| to_caller(p)).collect();
+        let pts_expr = points_expr(&caller_pts);
         let mut call_args = vec![pts_expr, edge_expr];
         call_args.extend(label);
         match crate::functions::list_helpers_ast::apply_func_to_n_args(
@@ -1508,14 +1558,7 @@ fn graph_render(
           // The result is wrapped in a list so that any directives it
           // sets stay scoped to this edge.
           Ok(drawn) => {
-            // `GraphPlot`'s legacy function sees the layout in the
-            // caller's own units, where an `Arrow` setback is absolute.
-            let drawn = if edge_arg_as_list && coord_scale != 1.0 {
-              scale_arrow_setbacks(&drawn, coord_scale)
-            } else {
-              drawn
-            };
-            primitives.push(Expr::List(vec![drawn].into()));
+            primitives.push(Expr::List(vec![to_internal(drawn)].into()));
           }
           Err(_) => {
             primitives.push(line_or_arrow(edge_data.directed, &default_pts));
@@ -1613,7 +1656,8 @@ fn graph_render(
     match &vertex_render {
       Some(VertexRender::Hidden) => continue,
       Some(VertexRender::Func(f)) => {
-        let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+        let (cx, cy) = to_caller((x, y));
+        let point = pair(cx, cy);
         let name = unwrap_vertex_style(&vertices[i]).0.clone();
         if let Ok(drawn) =
           crate::functions::list_helpers_ast::apply_func_to_two_args(
@@ -1622,7 +1666,7 @@ fn graph_render(
         {
           // Wrapped in a list so any directives it sets stay scoped to
           // this vertex.
-          primitives.push(Expr::List(vec![drawn].into()));
+          primitives.push(Expr::List(vec![to_internal(drawn)].into()));
           continue;
         }
       }
@@ -1631,22 +1675,18 @@ fn graph_render(
 
     // `VertexShapeFunction -> f` hands the drawing of the vertex to `f`.
     if let Some(f) = &vertex_shape_func {
-      let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+      let (cx, cy) = to_caller((x, y));
+      let point = pair(cx, cy);
       let name = unwrap_vertex_style(&vertices[i]).0.clone();
-      let size = Expr::List(
-        vec![
-          Expr::Real(vertex_radius * 2.0),
-          Expr::Real(vertex_radius * 2.0),
-        ]
-        .into(),
-      );
+      let diameter = vertex_radius * 2.0 / coord_scale;
+      let size = pair(diameter, diameter);
       if let Ok(drawn) =
         crate::functions::list_helpers_ast::apply_func_to_n_args(
           f,
           &[point, name, size],
         )
       {
-        primitives.push(Expr::List(vec![drawn].into()));
+        primitives.push(Expr::List(vec![to_internal(drawn)].into()));
         if vertex_labels {
           push_vertex_label(&mut primitives, &vertices[i], x, y, vertex_radius);
         }
@@ -1775,35 +1815,32 @@ fn graph_render(
     primitives.push(call("Text", vec![styled, point]));
   }
 
-  // Prolog / Epilog are given in the caller's coordinates; bring them onto
-  // the internal scale the graph itself is drawn in.
-  let to_internal = |layer: Expr| -> Expr {
-    if coord_scale == 1.0 && coord_center == (0.0, 0.0) {
-      return layer;
-    }
-    let row =
-      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-    call(
-      "GeometricTransformation",
+  // The graph is drawn on the internal scale and handed back in the
+  // caller's coordinates, which Prolog / Epilog (and any graphics `Show`n
+  // with it) are given in. `Scale` moves text without resizing its glyphs.
+  let mut primitives = if transformed {
+    vec![call(
+      "Translate",
       vec![
-        layer,
-        Expr::List(
+        call(
+          "Scale",
           vec![
-            Expr::List(
-              vec![row(coord_scale, 0.0), row(0.0, coord_scale)].into(),
-            ),
-            row(-coord_center.0 * coord_scale, -coord_center.1 * coord_scale),
-          ]
-          .into(),
+            Expr::List(primitives.into()),
+            pair(1.0 / coord_scale, 1.0 / coord_scale),
+            pair(0.0, 0.0),
+          ],
         ),
+        pair(coord_center.0, coord_center.1),
       ],
-    )
+    )]
+  } else {
+    primitives
   };
   if let Some(p) = prolog {
-    primitives.insert(0, to_internal(p));
+    primitives.insert(0, p);
   }
   if let Some(e) = epilog {
-    primitives.push(to_internal(e));
+    primitives.push(e);
   }
   let content = Expr::List(primitives.into());
   // A graph is drawn at Wolfram's 360-point default unless the caller
@@ -3704,41 +3741,6 @@ fn normalize_explicit_positions(
     .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
     .collect();
   (scaled, scale, (cx, cy))
-}
-
-/// Convert the setbacks of `Arrow[path, setback]` primitives from the
-/// caller's coordinate units to the internal scale (`factor` = internal /
-/// caller), so an absolute setback keeps its length relative to the edge.
-fn scale_arrow_setbacks(e: &Expr, factor: f64) -> Expr {
-  match e {
-    Expr::FunctionCall { name, args } if name == "Arrow" && args.len() == 2 => {
-      let setback = match &args[1] {
-        Expr::Real(r) => Some(*r),
-        Expr::Integer(i) => Some(*i as f64),
-        _ => None,
-      };
-      match setback {
-        Some(s) => call("Arrow", vec![args[0].clone(), Expr::Real(s * factor)]),
-        None => e.clone(),
-      }
-    }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(|a| scale_arrow_setbacks(a, factor))
-        .collect::<Vec<_>>()
-        .into(),
-    },
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(|a| scale_arrow_setbacks(a, factor))
-        .collect::<Vec<_>>()
-        .into(),
-    ),
-    other => other.clone(),
-  }
 }
 
 /// Weakly connected components of `graph` (directed edges treated as
