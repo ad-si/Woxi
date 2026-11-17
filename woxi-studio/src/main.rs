@@ -4962,7 +4962,8 @@ fn render_manipulate_widget<'a>(
         y,
         ..
       } => {
-        // Rendered as two linked sliders (X and Y) driving the 2-vector.
+        // Rendered as two linked sliders (X and Y) driving the 2-vector,
+        // minus any axis the bounds pin in place.
         let x_span = (*x_max - *x_min).abs();
         let y_span = (*y_max - *y_min).abs();
         let x_step = if x_span > 0.0 { x_span / 100.0 } else { 1.0 };
@@ -5001,13 +5002,19 @@ fn render_manipulate_widget<'a>(
         // align with the other controls.
         let label_widget =
           manipulate_label_widget(&[], label, label_col_width, enabled);
-        let control_row = row![
-          label_widget,
-          column![x_slider, y_slider].spacing(4),
-          value_widget
-        ]
-        .align_y(Center)
-        .spacing(8);
+        // An axis the bounds pin to one coordinate can't be dragged, so it
+        // gets no (dead) slider of its own.
+        let [x_free, y_free] = ctrl.slider2d_free_axes();
+        let mut sliders = column![].spacing(4).width(Fill);
+        if x_free {
+          sliders = sliders.push(x_slider);
+        }
+        if y_free {
+          sliders = sliders.push(y_slider);
+        }
+        let control_row = row![label_widget, sliders, value_widget]
+          .align_y(Center)
+          .spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::IntervalSlider {
@@ -12098,6 +12105,52 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     // must still evaluate (the Demonstration shows its "add some points"
     // message) rather than error out.
     assert!(state.error.is_none(), "empty point list must not error");
+  }
+
+  #[test]
+  fn locator_pinned_to_a_segment_offers_only_its_free_axis() {
+    // A Locator whose corner bounds share a coordinate slides along a
+    // segment: `{1, 0}`–`{3, 0}` keeps it on the x-axis, `{0, -1}`–`{0, 2}`
+    // on the y-axis. The pinned axis must not get a (dead) slider, and
+    // dragging the free one moves the point along the segment only.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{Line[{{0, 0}, p}], Point[q]}, \
+       PlotRange -> {{-1, 4}, {-2, 3}}], \
+       {{p, {2, 0}}, {1, 0}, {3, 0}, ControlType -> Locator}, \
+       {{q, {0, 1}}, {0, -1}, {0, 2}, Locator}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the picture must render");
+    match &state.controls[..] {
+      [
+        p @ manipulate::ControlState::Slider2D { name: pn, .. },
+        q @ manipulate::ControlState::Slider2D { name: qn, .. },
+      ] => {
+        assert_eq!((pn.as_str(), qn.as_str()), ("p", "q"));
+        assert_eq!(p.slider2d_free_axes(), [true, false]);
+        assert_eq!(q.slider2d_free_axes(), [false, true]);
+      }
+      other => panic!("expected two locator controls, got {other:?}"),
+    }
+    state.slider2d_change(0, 0, 2.5);
+    match &state.controls[0] {
+      manipulate::ControlState::Slider2D { x, y, .. } => {
+        assert_eq!((*x, *y), (2.5, 0.0));
+      }
+      other => panic!("expected a locator control, got {other:?}"),
+    }
+    assert!(state.error.is_none(), "{:?}", state.error);
+  }
+
+  #[test]
+  fn two_dimensional_slider_offers_both_axes() {
+    let expr =
+      woxi::interpret_to_expr("Manipulate[p, {{p, {1, 1}}, {0, 0}, {2, 3}}]")
+        .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls[0].slider2d_free_axes(), [true, true]);
   }
 
   #[test]
