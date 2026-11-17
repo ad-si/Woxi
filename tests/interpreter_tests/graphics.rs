@@ -11916,6 +11916,35 @@ mod plot3d {
       }
     }
 
+    /// With an explicit `ImagePadding` and only an image width, a
+    /// `PlotLabel` sits above the padding and the image grows by its band:
+    /// the plotting area keeps the full `AspectRatio` height of the width
+    /// the padding leaves instead of giving up room to the title.
+    #[test]
+    fn plot_label_with_image_padding_grows_the_image() {
+      for code in [
+        "ListPlot[{1, 3, 2}, Frame -> True, ImageSize -> 500, \
+         ImagePadding -> 25, PlotLabel -> Style[\"t\", 16]]",
+        "Plot[x, {x, 0, 1}, Frame -> True, ImageSize -> 500, \
+         ImagePadding -> 25, PlotLabel -> Style[\"t\", 16]]",
+      ] {
+        let svg = export_svg(code);
+        // 450 wide plotting area at 1/GoldenRatio (278.1), 2 * 25 padding
+        // and a 16 pt title band (17.9).
+        assert!(
+          svg.starts_with("<svg width=\"500\" height=\"346\""),
+          "{code}: {}",
+          &svg[..80]
+        );
+      }
+      // Without a label the image stays plotting area plus padding.
+      let svg = export_svg(
+        "ListPlot[{1, 3, 2}, Frame -> True, ImageSize -> 500, \
+         ImagePadding -> 25]",
+      );
+      assert!(svg.starts_with("<svg width=\"500\" height=\"328\""));
+    }
+
     /// `Graphics[…, ImageSize -> {w, h}, AspectRatio -> r]` centers a
     /// drawing area of ratio `r` in the image instead of stretching it to
     /// the full height and width.

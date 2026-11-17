@@ -10200,3 +10200,12 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### Symbols inside a `Style`d `Row` `PlotLabel` drawn upright
+
+A saved snapshot of `ListPlot[…, PlotLabel -> Style[Row[{x^m, "  vs.  ",
+y^n}], 16]]` (with `x` and `y` unassigned symbols) shows the letters
+upright, while Woxi sets single-letter symbols in a plot label in italics as
+`TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
+is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
+rendered with another `FormatType`.
