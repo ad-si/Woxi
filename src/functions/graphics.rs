@@ -24549,6 +24549,21 @@ fn span_width(row: &[Expr], j: usize) -> usize {
     .count()
 }
 
+/// A row that is shorter than the grid and ends in a `SpanFromLeft`
+/// (`{{a, b, c}, {x, SpanFromLeft}}`) keeps spanning to the grid's last
+/// column, so its spanned cell is laid out across the full width rather than
+/// only the columns it lists.
+fn extend_trailing_spans(rows: &mut [Vec<Expr>], num_cols: usize) {
+  for row in rows.iter_mut() {
+    if row.len() >= 2
+      && row.len() < num_cols
+      && row.last().is_some_and(is_span_from_left)
+    {
+      row.resize(num_cols, Expr::Identifier("SpanFromLeft".to_string()));
+    }
+  }
+}
+
 /// How many rows the cell at `(i, j)` covers — itself plus every row below
 /// whose cell in that column continues it.
 fn span_height(rows: &[Vec<Expr>], i: usize, j: usize) -> usize {
@@ -26961,6 +26976,7 @@ fn grid_svg_styled_internal_reporting(
   if num_cols == 0 {
     return Err(InterpreterError::EvaluationError("Grid: empty data".into()));
   }
+  extend_trailing_spans(&mut rows, num_cols);
 
   // Compute column widths based on estimated display width
   // A `Style[Grid[…], size]` sets the font of the whole grid, so the cell

@@ -2604,7 +2604,7 @@ mod tests {
       // leaving a blank placeholder cell beside it.
       let svg = svg_of(
         "Grid[{{\"a\", \"b\", \"c\"}, \
-         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft}}]",
+         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft, \"d\"}}]",
       );
       assert!(
         svg.contains("width=\"200.0\" height=\"200.0\""),
@@ -2623,6 +2623,47 @@ mod tests {
         .next()
         .expect("text c");
       assert!(c_x > 206.0, "third column starts after the span: {svg}");
+    }
+
+    #[test]
+    fn grid_trailing_span_in_a_short_row_reaches_the_last_column() {
+      // A row shorter than the grid that ends in `SpanFromLeft` keeps
+      // spanning to the grid's last column: the wide picture is centered
+      // over all three columns, which keep their natural widths.
+      let svg = svg_of(
+        "Grid[{{Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100]}, \
+         {Graphics[Rectangle[{0, 0}, {3, 1}], ImageSize -> 250], \
+         SpanFromLeft}}]",
+      );
+      let xs: Vec<f64> = svg
+        .split("<svg x=\"")
+        .skip(1)
+        .map(|chunk| chunk.split('"').next().unwrap().parse().unwrap())
+        .collect();
+      assert_eq!(xs.len(), 4, "{svg}");
+      // The three disks sit in equally wide columns.
+      assert!(
+        ((xs[1] - xs[0]) - (xs[2] - xs[1])).abs() < 0.5,
+        "columns stay even: {svg}"
+      );
+      // The spanned picture is centered across the whole grid.
+      let total_w = picture_width(&svg);
+      assert!(
+        (xs[3] + 125.0 - total_w / 2.0).abs() < 1.0,
+        "picture centered across all columns: {svg}"
+      );
+    }
+
+    /// The width of the outermost `<svg>`.
+    fn picture_width(svg: &str) -> f64 {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .expect("svg width")
     }
 
     /// The `y` of the nested `<svg>` with the given `width`.
