@@ -37085,6 +37085,48 @@ mod manipulate {
     assert_eq!(interpret("hits").unwrap(), "0");
   }
 
+  // A `Refresh[…, UpdateInterval -> t]` in the body is recorded so the
+  // front end can re-run it on a timer; `t` may depend on the controls.
+  #[test]
+  fn manipulate_spec_records_refresh_update_interval() {
+    let spec_of = |code: &str| {
+      extract_manipulate_spec(&interpret_to_expr(code).unwrap())
+        .expect("well-formed manipulate")
+    };
+    let spec = spec_of(
+      "Manipulate[Refresh[f[x], UpdateInterval -> If[go, 0, Infinity]], \
+       {x, 0, 1}, {go, {True, False}}]",
+    );
+    assert_eq!(
+      spec.refresh_interval.as_deref(),
+      Some("If[go, 0, Infinity]")
+    );
+    let nested = spec_of(
+      "Manipulate[Column[{x, Refresh[x^2, TrackedSymbols :> {x}, \
+       UpdateInterval -> 2]}], {x, 0, 1}]",
+    );
+    assert_eq!(nested.refresh_interval.as_deref(), Some("2"));
+    for code in [
+      "Manipulate[Refresh[x, None], {x, 0, 1}]",
+      "Manipulate[Refresh[x, TrackedSymbols :> {x}], {x, 0, 1}]",
+      "Manipulate[x, {x, 0, 1}]",
+    ] {
+      assert_eq!(spec_of(code).refresh_interval, None, "{code}");
+    }
+  }
+
+  #[test]
+  fn manipulate_refresh_interval_resolves_to_seconds() {
+    use woxi::functions::graphics::manipulate_refresh_interval_seconds as secs;
+    clear_state();
+    assert_eq!(secs("If[True, 0, Infinity]"), Some(0.0));
+    assert_eq!(secs("If[False, 0, Infinity]"), None);
+    assert_eq!(secs("1/4"), Some(0.25));
+    assert_eq!(secs("0.5"), Some(0.5));
+    assert_eq!(secs("-1"), None);
+    assert_eq!(secs("Automatic"), None);
+  }
+
   // A Manipulate whose trailing arguments are all options shows its body
   // with no controls; it used to fall back to an unrendered Manipulate.
   #[test]
