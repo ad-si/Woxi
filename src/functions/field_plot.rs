@@ -8621,7 +8621,16 @@ fn with_plot_label_above(svg: &str, (lines, size): &FieldPlotLabel) -> String {
   if field_plot_label_is_blank(lines) {
     return svg.to_string();
   }
-  let font = size.unwrap_or(14.0);
+  // A title wider than the picture shrinks to fit, the way a `Graphics`
+  // title does, instead of being clipped at both edges
+  // (rounded down to a tenth of a point so it never overshoots).
+  let font = (crate::functions::graphics::fit_title_font(
+    lines,
+    size.unwrap_or(14.0),
+    w,
+  ) * 10.0)
+    .floor()
+    / 10.0;
   // One line keeps its 1.8-em strip; each further line of a stacked
   // `Column` title adds one line height above the picture.
   let line_h = font * 1.25;
@@ -8641,7 +8650,7 @@ fn with_plot_label_above(svg: &str, (lines, size): &FieldPlotLabel) -> String {
     out.push_str(&format!(
       "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
        dominant-baseline=\"central\" font-family=\"sans-serif\" \
-       font-size=\"{font:.0}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n",
+       font-size=\"{font}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n",
       w / 2.0,
       top + i as f64 * line_h,
     ));
