@@ -7526,7 +7526,10 @@ fn inset_primitives(
       args: call_args,
     } if (matches!(name.as_str(), "Framed" | "Column" | "Grid" | "Row")
       && crate::evaluator::lays_out_a_graphic(call))
-      || (name == "Grid" && grid_needs_table_layout(call_args)) =>
+      || (name == "Grid" && grid_needs_table_layout(call_args))
+      // A `LocatorPane[pts, picture, …]` shows its picture with the
+      // locators on it, so inset it is that picture, not its source text.
+      || (name == "LocatorPane" && call_args.len() >= 2) =>
     {
       rendered = crate::evaluator::expr_to_svg(call);
       (rendered.starts_with("<svg")).then_some(&rendered)
@@ -8939,7 +8942,14 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
   };
   let mut cf_cache: std::collections::HashMap<Vec<u64>, Color> =
     std::collections::HashMap::new();
-  let mut apply_cf = |f: &Expr, values: &[f64]| -> Color {
+  // Scaling from the default `{0, 1}` range is the identity, so the color
+  // function then sees each value as given — an integer stays an integer
+  // and nothing is clipped. That is how a stored indexed `RasterBox` works:
+  // its cells are palette indices and its color function looks them up
+  // (`Part[palette, #]`).
+  let identity_scaling =
+    !cf_scaling || (data_span.is_none() && v_min == 0.0 && v_max == 1.0);
+  let mut apply_cf = |f: &Expr, cells: &[Expr], values: &[f64]| -> Color {
     let values: Vec<f64> = values
       .iter()
       .map(|&v| match data_span {
@@ -8948,13 +8958,33 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
         None => scale(v),
       })
       .collect();
-    let key: Vec<u64> = values.iter().map(|v| v.to_bits()).collect();
+    let mut key: Vec<u64> = values.iter().map(|v| v.to_bits()).collect();
+    let call_args: Vec<Expr> = if identity_scaling {
+      key = cells
+        .iter()
+        .map(|c| {
+          use std::hash::{Hash, Hasher};
+          let mut h = std::collections::hash_map::DefaultHasher::new();
+          expr_to_string(c).hash(&mut h);
+          h.finish()
+        })
+        .collect();
+      cells.to_vec()
+    } else {
+      values.iter().map(|&v| Expr::Real(v)).collect()
+    };
     *cf_cache.entry(key).or_insert_with(|| {
-      let call_args: Vec<Expr> =
-        values.iter().map(|&v| Expr::Real(v)).collect();
       crate::functions::list_helpers_ast::apply_func_to_args(f, &call_args)
         .ok()
-        .and_then(|c| parse_color(&c))
+        .and_then(|c| {
+          // A plain number from the color function is a gray level.
+          parse_color(&c).or_else(|| {
+            expr_to_f64(&c).map(|g| {
+              let g = g.clamp(0.0, 1.0);
+              Color::new(g, g, g)
+            })
+          })
+        })
         .unwrap_or(Color::new(0.0, 0.0, 0.0))
     })
   };
@@ -8965,12 +8995,13 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
     let mut row_colors: Vec<Color> = Vec::with_capacity(cols.len());
     for cell in cols {
       if let Some(f) = &color_function {
-        let values: Option<Vec<f64>> = match cell {
-          Expr::List(cs) => cs.iter().map(expr_to_f64).collect(),
-          other => expr_to_f64(other).map(|v| vec![v]),
+        let cells: Vec<Expr> = match cell {
+          Expr::List(cs) => cs.to_vec(),
+          other => vec![other.clone()],
         };
+        let values: Option<Vec<f64>> = cells.iter().map(expr_to_f64).collect();
         row_colors.push(match values {
-          Some(vs) => apply_cf(f, &vs),
+          Some(vs) => apply_cf(f, &cells, &vs),
           None => Color::new(0.0, 0.0, 0.0),
         });
         continue;
