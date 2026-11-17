@@ -6929,7 +6929,11 @@ fn grid_node_samples(
   let cols = grid.len();
   let rows = grid.first().map_or(0, Vec::len);
   let step = |lo: f64, hi: f64, n: usize| {
-    if n > 1 { (hi - lo) / (n - 1) as f64 } else { 0.0 }
+    if n > 1 {
+      (hi - lo) / (n - 1) as f64
+    } else {
+      0.0
+    }
   };
   let (dx, dy) = (step(x_min, x_max, cols), step(y_min, y_max, rows));
   let mut samples = Vec::with_capacity(cols * rows);
@@ -6975,7 +6979,12 @@ fn voronoi_cell(
   (y_min, y_max): (f64, f64),
 ) -> Vec<(f64, f64)> {
   let (px, py, _) = samples[index];
-  let mut cell = vec![(x_min, y_min), (x_max, y_min), (x_max, y_max), (x_min, y_max)];
+  let mut cell = vec![
+    (x_min, y_min),
+    (x_max, y_min),
+    (x_max, y_max),
+    (x_min, y_max),
+  ];
   for (k, &(qx, qy, _)) in samples.iter().enumerate() {
     if cell.is_empty() {
       break;
@@ -7007,7 +7016,8 @@ fn render_voronoi_bands(
 ) {
   let (x_range, y_range) = ((area.x_min, area.x_max), (area.y_min, area.y_max));
   let span = |lo: f64, hi: f64| if hi > lo { hi - lo } else { 1.0 };
-  let (x_span, y_span) = (span(x_range.0, x_range.1), span(y_range.0, y_range.1));
+  let (x_span, y_span) =
+    (span(x_range.0, x_range.1), span(y_range.0, y_range.1));
   let device = |(x, y): (f64, f64)| {
     (
       area.plot_x0 + (x - x_range.0) / x_span * area.plot_w,
@@ -7021,7 +7031,10 @@ fn render_voronoi_bands(
     if cell.len() < 3 {
       continue;
     }
-    let band = levels.iter().position(|&l| value < l).unwrap_or(levels.len());
+    let band = levels
+      .iter()
+      .position(|&l| value < l)
+      .unwrap_or(levels.len());
     let (r, g, b) = band_color(band, levels, v_min, v_max, coloring);
     let fill = format!("rgb({r},{g},{b})");
     let mut d = String::new();
