@@ -10174,6 +10174,19 @@ Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
 
+### Studio: Grid `ItemSize -> w` columns are wider than the front end's
+
+Woxi sizes a fixed `ItemSize -> w` column as `w` ems at the 14 px base font
+plus the 12 px cell padding, so `Grid[table, Frame -> All, ItemSize -> 4]`
+gives 68 px per column. A front-end snapshot of the same grid (text about
+14 px tall, `Frame -> All`) measures about 49.5 px per column, i.e. about
+27% narrower. A six-column grid like that inside a
+`Pane[…, Alignment -> Center, ImageSize -> {400, 200}]` therefore overflows
+the pane in Woxi (409 px) and loses its right frame line and its centering,
+while Wolfram draws it about 297 px wide, centered. The front end's em unit
+for `ItemSize` and whether it includes the grid's `Spacings` have not been
+verified against `wolframscript`, so the width rule is left unchanged.
+
 ### `Plot` runs the cells of a multi-column `Grid` title together
 
 `PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
