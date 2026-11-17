@@ -40419,6 +40419,50 @@ mod manipulate {
     assert_eq!(flags, [(false, true), (false, false)]);
   }
 
+  /// A `{min, max, step}` range behind a one-widget-per-value control holds
+  /// exactly the values `Range[min, max, step]` does (`min + k step`), not
+  /// an accumulated sum: `{1.6, 2, 0.1}` used to come out with
+  /// `1.8000000000000003` in place of `1.8`, so an initial value of `1.8`
+  /// matched no button and none of the bar's buttons lit up.
+  #[test]
+  fn setter_bar_real_range_matches_range_values() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, \
+       {{a, 1.8, \"a\"}, 1.6, 2, .1, ControlType -> SetterBar}, \
+       {{b, 0.7}, 0, 1, 0.1, ControlType -> SetterBar}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let expected_a = "{1.6, 1.7000000000000002, 1.8, 1.9000000000000001, 2.}";
+    let expected_b = "{0., 0.1, 0.2, 0.30000000000000004, 0.4, 0.5, \
+                      0.6000000000000001, 0.7000000000000001, 0.8, 0.9, 1.}";
+    let summary: Vec<(String, usize, Option<String>)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete {
+          values,
+          initial_index,
+          initial_overflow,
+          ..
+        } => (
+          format!("{{{}}}", values.join(", ")),
+          *initial_index,
+          initial_overflow.clone(),
+        ),
+        other => panic!("expected discrete control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      summary,
+      [
+        (expected_a.to_string(), 2, None),
+        (expected_b.to_string(), 7, None)
+      ],
+      "choices must match Range and the initial value must light its button"
+    );
+  }
+
   /// `ControlType -> RadioButton` and `-> RadioButtonBar` force the bar like
   /// `SetterBar` does, but are also flagged `radio`, so a frontend draws a
   /// row of radio dots with labels rather than segmented buttons. A
@@ -58883,4 +58927,92 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+/// The legacy `PlotLegends`` package's `ShowLegend`: a boxed legend laid
+/// out in a frame where the graphic's longer side runs from -1 to 1.
+mod plot_legends_show_legend {
+  use super::*;
+
+  const LINE_ITEMS: &str = "{{Graphics[{Blue, Line[{{0, 0}, {1, 0}}]}], \
+     \"first\"}, {Graphics[{Red, Line[{{0, 0}, {1, 0}}]}], \"second\"}}";
+
+  fn svg_size(svg: &str) -> (String, String) {
+    let attr = |name: &str| {
+      let start = svg.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      svg[start..start + svg[start..].find('"').unwrap()].to_string()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  // Until the package is loaded, `ShowLegend` has no definition.
+  #[test]
+  fn unevaluated_before_loading() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[PlotLegends`ShowLegend[Graphics[Circle[]], {{}}]]")
+        .unwrap(),
+      "PlotLegends`ShowLegend"
+    );
+  }
+
+  // A legend inside the graphic leaves the picture at the graphic's own
+  // size and draws each label beside its icon.
+  #[test]
+  fn legend_inside_the_graphic() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(&format!(
+      "PlotLegends`ShowLegend[Graphics[Circle[], ImageSize -> {{200, 200}}], \
+       {{{LINE_ITEMS}, PlotLegends`LegendPosition -> {{-0.5, -0.5}}, \
+       PlotLegends`LegendSize -> {{0.6, 0.4}}}}]"
+    ));
+    assert_eq!(svg_size(&svg), ("200".to_string(), "200".to_string()));
+    assert!(svg.contains("first") && svg.contains("second"), "{svg}");
+  }
+
+  // A legend past the graphic's top edge (`LegendPosition -> {-1, 1}` puts
+  // its lower-left corner on that edge) grows the picture upward, while
+  // the graphic keeps its width; `LegendShadow -> None` drops the shadow.
+  #[test]
+  fn legend_beyond_the_graphic_grows_the_picture() {
+    clear_state();
+    interpret("Needs[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(&format!(
+      "PlotLegends`ShowLegend[Graphics[Circle[], ImageSize -> {{200, 200}}], \
+       {{{LINE_ITEMS}, PlotLegends`LegendPosition -> {{-1, 1}}, \
+       PlotLegends`LegendSize -> {{1, 0.5}}, \
+       PlotLegends`LegendShadow -> None}}]"
+    ));
+    assert_eq!(svg_size(&svg), ("200".to_string(), "250".to_string()));
+  }
+
+  // The bare name works once the package is loaded on an earlier line.
+  #[test]
+  fn bare_name_after_loading() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    assert_eq!(
+      interpret(&format!(
+        "Head[ShowLegend[Graphics[Circle[]], {{{LINE_ITEMS}}}]]"
+      ))
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
+  // The color-gradient form `{f, n, minLabel, maxLabel}` draws `n`
+  // swatches, labeled only at the ends.
+  #[test]
+  fn color_gradient_legend() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(
+      "PlotLegends`ShowLegend[Graphics[Circle[]], \
+       {GrayLevel, 3, \"low\", \"high\", \
+       PlotLegends`LegendPosition -> {-0.5, -0.5}}]",
+    );
+    assert!(svg.contains("low") && svg.contains("high"), "{svg}");
+    assert!(!svg.contains("ShowLegend"), "{svg}");
+  }
 }

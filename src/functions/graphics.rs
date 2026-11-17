@@ -46331,7 +46331,25 @@ fn parse_manipulate_control(
                 crate::evaluator::evaluate_expr_to_expr(&init).ok()?;
               let code = crate::syntax::expr_to_source_form(&evaluated);
               resolved_init_code = Some(code.clone());
-              values.iter().position(|v| *v == code)
+              values.iter().position(|v| *v == code).or_else(|| {
+                // A setter is lit while its variable is `SameQ` to its
+                // value, and `SameQ` identifies machine reals one ulp
+                // apart: an initial `0.7` lights the `0.7000000000000001`
+                // that `Range[0, 1, 0.1]` computes.
+                let index = value_items
+                  .iter()
+                  .filter(|item| {
+                    !matches!(item, Expr::Identifier(s) if s == "Delimiter")
+                  })
+                  .map(|item| discrete_choice_rule(item).map_or(item, |r| r.0))
+                  .position(|value| {
+                    crate::functions::boolean_ast::same_q_pair(
+                      value, &evaluated,
+                    )
+                  })?;
+                resolved_init_code = Some(values[index].clone());
+                Some(index)
+              })
             })
             .unwrap_or(0)
         }
@@ -46961,32 +46979,30 @@ fn parse_list_element_manipulator(
 /// for the control types that offer one widget per value. `step` defaults
 /// to 1, as it does for an integer range in Wolfram. Returns `None` when
 /// the bounds are not numeric or the range does not terminate.
+///
+/// The values themselves come from the canonical `Range` (Wolfram's
+/// control is exactly `Range[min, max, step]`), so a real step yields
+/// `min + k step` rather than an accumulated sum: `{1.6, 2, 0.1}` holds
+/// `1.8` itself, which an initial value of `1.8` then matches.
 fn enumerate_range(bounds: &[&Expr]) -> Option<Vec<Expr>> {
-  let value = |e: &Expr| expr_to_f64(e);
-  let min = value(bounds.first()?)?;
-  let max = value(bounds.get(1)?)?;
-  let step = match bounds.get(2) {
-    Some(e) => value(e)?,
+  let evaluated: Vec<Expr> = bounds
+    .iter()
+    .take(3)
+    .map(|e| evaluate_expr_to_expr(e).unwrap_or_else(|_| (*e).clone()))
+    .collect();
+  let min = expr_to_f64(evaluated.first()?)?;
+  let max = expr_to_f64(evaluated.get(1)?)?;
+  let step = match evaluated.get(2) {
+    Some(e) => expr_to_f64(e)?,
     None => 1.0,
   };
   if step <= 0.0 || !(max - min).is_finite() {
     return None;
   }
-  let integral = |v: f64| (v - v.round()).abs() < 1e-9;
-  let exact = integral(min) && integral(step);
-  let mut values = Vec::new();
-  let mut v = min;
-  // The half-step slack keeps a range whose end is only reachable up to
-  // floating-point error (`0, 1, 0.1`) from losing its last value.
-  while v <= max + step / 2.0 {
-    values.push(if exact {
-      Expr::Integer(v.round() as i128)
-    } else {
-      Expr::Real(v)
-    });
-    v += step;
+  match crate::functions::list_helpers_ast::range_ast(&evaluated).ok()? {
+    Expr::List(ref values) if !values.is_empty() => Some(values.to_vec()),
+    _ => None,
   }
-  (!values.is_empty()).then_some(values)
 }
 
 /// If `item` is a rule `lhs -> rhs` (in either `Expr::Rule` or

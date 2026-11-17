@@ -12,6 +12,12 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- The legacy `PlotLegends`` package's `ShowLegend` draws its boxed legends
+    (`{icon, label}` rows or a color gradient) with `LegendPosition`,
+    `LegendSize`, `LegendShadow`, `LegendBorder` and `LegendBackground`.
+- `Manipulate` controls with a real `{min, max, step}` range take their
+    values from `Range` (`min + k step`), and an initial value matches a
+    choice the way `SameQ` does, so `{{a, 1.8}, 1.6, 2, 0.1}` lights `1.8`.
 
 # 2026-11-08 - 0.4.0
 
