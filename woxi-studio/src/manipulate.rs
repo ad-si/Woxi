@@ -217,6 +217,9 @@ pub enum ControlState {
     /// Drawn on the same line as the button before it (both from one
     /// `Row[{Button[…], Button[…]}]` or one `ButtonBar`).
     joins_previous: bool,
+    /// The face color of a `Background -> color` option (`(r, g, b)` in
+    /// `0.0..=1.0`); `None` draws the default button.
+    background: Option<(f64, f64, f64)>,
   },
   /// A static heading row between controls (a string or `Style[…]`
   /// Manipulate argument). Binds no variable.
@@ -2722,11 +2725,13 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         enabled: _,
         label_code: _,
         joins_previous,
+        background,
       } => ControlState::Button {
         label: label.clone(),
         label_runs: label_runs.clone(),
         action: action.clone(),
         joins_previous: *joins_previous,
+        background: *background,
       },
       ManipulateControl::Heading { label, label_runs } => {
         ControlState::Heading {

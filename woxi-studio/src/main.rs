@@ -4463,6 +4463,7 @@ fn placement_slot(placement: manipulate::ControlPlacement) -> usize {
 fn manipulate_button<'a>(
   label: &str,
   label_runs: &[woxi::functions::graphics::LabelRun],
+  background: Option<(f64, f64, f64)>,
   on_press: Message,
 ) -> Element<'a, Message> {
   let spans: Vec<iced::widget::text::Span<Message>> = label_runs
@@ -4487,7 +4488,57 @@ fn manipulate_button<'a>(
   } else {
     rich_text(spans).size(11).into()
   };
-  button(btn_label).padding([3, 10]).on_press(on_press).into()
+  let btn = button(btn_label).padding([3, 10]).on_press(on_press);
+  match background {
+    Some(rgb) => btn
+      .style(move |_theme, status| colored_button_style(rgb, status))
+      .into(),
+    None => btn.into(),
+  }
+}
+
+/// The look of a Manipulate `Button[…, Background -> color]`: its face is
+/// painted in `color` (lightened while hovered, darkened while pressed),
+/// edged a shade darker, with black or white text — whichever contrasts
+/// with the face — the way the Wolfram FrontEnd draws a colored button.
+fn colored_button_style(
+  (r, g, b): (f64, f64, f64),
+  status: button::Status,
+) -> button::Style {
+  let shade = |f: f64| -> Color {
+    let mix = |c: f64| -> f32 {
+      let v = if f >= 0.0 {
+        c + (1.0 - c) * f
+      } else {
+        c * (1.0 + f)
+      };
+      v.clamp(0.0, 1.0) as f32
+    };
+    Color::from_rgb(mix(r), mix(g), mix(b))
+  };
+  let face = match status {
+    button::Status::Hovered => shade(0.15),
+    button::Status::Pressed => shade(-0.15),
+    _ => shade(0.0),
+  };
+  // Relative luminance (Rec. 709 weights) picks the readable text color.
+  let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  let text_color = if luminance > 0.5 {
+    Color::BLACK
+  } else {
+    Color::WHITE
+  };
+  button::Style {
+    background: Some(Background::Color(face)),
+    text_color,
+    border: iced::Border {
+      color: shade(-0.3),
+      width: 1.0,
+      radius: 3.0.into(),
+    },
+    shadow: Default::default(),
+    snap: false,
+  }
 }
 
 /// Finish the column the current control was drawn into (see the `line`
@@ -5243,13 +5294,17 @@ fn render_manipulate_widget<'a>(
         let mut idx = ctrl_idx;
         loop {
           if let manipulate::ControlState::Button {
-            label, label_runs, ..
+            label,
+            label_runs,
+            background,
+            ..
           } = &visible_controls[idx]
           {
             let on = state.control_is_enabled.get(idx).copied().unwrap_or(true);
             btn_row = btn_row.push(manipulate_button(
               label,
               label_runs,
+              *background,
               if on {
                 Message::ManipulateButtonPressed(cell_idx, idx)
               } else {
@@ -9898,6 +9953,55 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// twice (`Block::dup`), which made `apply_manipulate_button_action`
   /// silently drop the update instead of running it. The button appeared to
   /// do nothing.
+  /// A `Button[…, Background -> color]` control keeps its face color in
+  /// the Studio state, and the painted style picks text that contrasts
+  /// with it (white on a dark face, black on a light one).
+  #[test]
+  fn manipulate_button_background_paints_the_face() {
+    let code = "Manipulate[n, \
+      Row[{Button[\"-\", n = n - 1, Background -> Red], \
+      Button[\"+\", n = n + 1, Background -> Yellow], \
+      Button[\"0\", n = 0]}], \
+      {{n, 1}, 1, 9, 1}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the colored-button Manipulate must build a widget");
+    let backgrounds: Vec<Option<(f64, f64, f64)>> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { background, .. } => {
+          Some(*background)
+        }
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      backgrounds,
+      vec![Some((1.0, 0.0, 0.0)), Some((1.0, 1.0, 0.0)), None]
+    );
+
+    let red = colored_button_style((1.0, 0.0, 0.0), button::Status::Active);
+    assert_eq!(
+      red.background,
+      Some(Background::Color(Color::from_rgb(1.0, 0.0, 0.0)))
+    );
+    assert_eq!(red.text_color, Color::WHITE);
+    let yellow = colored_button_style((1.0, 1.0, 0.0), button::Status::Active);
+    assert_eq!(yellow.text_color, Color::BLACK);
+    // Hovering lightens the face, pressing darkens it.
+    let Some(Background::Color(hover)) =
+      colored_button_style((1.0, 0.0, 0.0), button::Status::Hovered).background
+    else {
+      panic!("a colored button has a solid face");
+    };
+    let Some(Background::Color(pressed)) =
+      colored_button_style((1.0, 0.0, 0.0), button::Status::Pressed).background
+    else {
+      panic!("a colored button has a solid face");
+    };
+    assert!(hover.g > 0.0 && pressed.r < 1.0, "{hover:?} {pressed:?}");
+  }
+
   #[test]
   fn manipulate_button_action_with_disjoint_setter_bar_siblings() {
     let code = "Manipulate[\
