@@ -38,7 +38,7 @@ impl LabelIcon {
 }
 
 /// The `width`/`height` attributes of an SVG document's root element.
-fn svg_root_size(svg: &str) -> Option<(f32, f32)> {
+pub fn svg_root_size(svg: &str) -> Option<(f32, f32)> {
   let root = &svg[svg.find("<svg")?..];
   let root = &root[..root.find('>')?];
   let attr = |key: &str| -> Option<f32> {
