@@ -6609,8 +6609,12 @@ internal hash order. Woxi keeps input order.
 
 ### Graph layouts that only approximate Wolfram's
 
+- **Large trees** in the automatic layout: Wolfram draws a 16-vertex tree in
+  layers and a 65-vertex tree with springs; the exact cutoff is undocumented.
+  Woxi switches to its spring embedding above 32 vertices.
 - **Spring-electrical layouts** (the automatic layout of a non-tree graph
-  with more than 8 vertices or more than one cycle, `"SpringElectricalEmbedding"`,
+  with more than 8 vertices or more than one cycle, or of a tree with more
+  than 32 vertices, `"SpringElectricalEmbedding"`,
   `HypercubeGraph`, `GraphPlot` of a general graph): Woxi runs its own
   Fruchterman–Reingold layout turned so the long axis is horizontal. It
   relaxes a sunflower start and a DFS-circle start and retains the lower

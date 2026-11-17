@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- The automatic layout of `Graph` and `GraphPlot` draws a large tree (more
+    than 32 vertices) with a spring-electrical embedding of unit-length edges,
+    as Wolfram does, instead of squeezing it into layers of overlapping disks.
 
 # 2026-11-08 - 0.4.0
 
