@@ -10719,6 +10719,9 @@ fn tessellate_cylinder(
 /// separately capped runs.
 const TUBE_CORNER_COS: f64 = 0.85;
 
+/// The most a tube's ring is stretched in the mitre plane of a sharp bend.
+const TUBE_MITER_LIMIT: f64 = 4.0;
+
 /// The index ranges (inclusive) of a tube's polyline between its sharp
 /// corners; consecutive runs share the corner point.
 fn tube_runs(pts: &[Point3D]) -> Vec<(usize, usize)> {
@@ -10910,8 +10913,11 @@ fn tessellate_tube(
     }
     let binormal = cross(t, normal);
     let r = radii.get(idx).copied().unwrap_or(0.0);
-    // A bend shortens the ring's projection onto the segments; widening it
-    // by 1/cos(half-angle) keeps the tube's radius constant along the curve.
+    // At a bend the ring lies in the mitre plane, which cuts the tube
+    // obliquely: stretching the ring by 1/cos(half-angle) along the bend
+    // (and only along it) keeps the tube's radius constant up to the
+    // corner. Like a stroke's miter limit, the stretch is bounded so that
+    // a curve doubling back does not flare out into a wide fin.
     let incoming = if i > 0 {
       Some(dirs[i - 1])
     } else if closed {
@@ -10919,15 +10925,34 @@ fn tessellate_tube(
     } else {
       None
     };
-    let widen = match incoming {
-      Some(prev) if closed || i < keep.len() - 1 => {
-        let d = prev.0 * t.0 + prev.1 * t.1 + prev.2 * t.2;
-        if d.abs() < 1e-6 { 1.0 } else { 1.0 / d }
-      }
-      _ => 1.0,
+    let outgoing = if i < dirs.len() {
+      Some(dirs[i])
+    } else if closed {
+      Some(dirs[0])
+    } else {
+      None
     };
-    let phase = phase_at(i as f64);
-    rings.push(ring_at(points[idx], r * widen, normal, binormal, phase));
+    let mut ring = ring_at(points[idx], r, normal, binormal, phase_at(i as f64));
+    if let (Some(prev), Some(next)) = (incoming, outgoing)
+      && let Some(bend) =
+        unit((next.0 - prev.0, next.1 - prev.1, next.2 - prev.2))
+    {
+      let d = prev.0 * t.0 + prev.1 * t.1 + prev.2 * t.2;
+      let stretch = if d > 1.0 / TUBE_MITER_LIMIT {
+        1.0 / d
+      } else {
+        TUBE_MITER_LIMIT
+      };
+      let c = points[idx];
+      for q in &mut ring {
+        let along = (q.x - c.x) * bend.0 + (q.y - c.y) * bend.1 + (q.z - c.z) * bend.2;
+        let extra = along * (stretch - 1.0);
+        q.x += extra * bend.0;
+        q.y += extra * bend.1;
+        q.z += extra * bend.2;
+      }
+    }
+    rings.push(ring);
 
     // Subdivide the straight run to the next vertex so no single
     // tessellated face spans an outsized fraction of the tube's length
