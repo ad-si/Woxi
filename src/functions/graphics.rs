@@ -36623,6 +36623,22 @@ pub enum ManipulateControl {
     high_initial: f64,
     label: String,
   },
+  /// A range given as two corner vectors of three or more components
+  /// (`{u, {0, 0, 0}, {1, 1, 1}}`). Wolfram draws one slider per component
+  /// side by side under a single label and binds the variable to the whole
+  /// vector `{u1, u2, u3, …}`. `mins`, `maxs` and `initials` all have the
+  /// same length.
+  VectorSlider {
+    name: String,
+    mins: Vec<f64>,
+    maxs: Vec<f64>,
+    initials: Vec<f64>,
+    label: String,
+    /// Every component of the initial vector was written as an exact
+    /// integer (`{0, 0, 0}`): Wolfram binds it as given until a slider is
+    /// first moved, after which the moved components are machine reals.
+    exact_initial: bool,
+  },
   /// A `Locator` control bound to a *list* of draggable 2D points (e.g.
   /// the vertices of a polygon). Rendered as one X/Y slider pair per
   /// point; `auto_create` (`LocatorAutoCreate -> True`) additionally
@@ -36731,6 +36747,7 @@ impl ManipulateControl {
       | Self::Discrete { name, .. }
       | Self::Slider2D { name, .. }
       | Self::IntervalSlider { name, .. }
+      | Self::VectorSlider { name, .. }
       | Self::Trigger { name, .. }
       | Self::Locator { name, .. }
       | Self::Color { name, .. } => name,
@@ -42951,6 +42968,7 @@ fn patch_default_label(
     }
     ManipulateControl::Slider2D { label, .. }
     | ManipulateControl::IntervalSlider { label, .. }
+    | ManipulateControl::VectorSlider { label, .. }
     | ManipulateControl::Locator { label, .. } => {
       if label == synth {
         *label = pretty;
@@ -43606,6 +43624,45 @@ fn is_exact_pair(e: &Expr) -> bool {
   let (e, _) = manipulate_bound_expr(e);
   matches!(e, Expr::List(l) if l.len() == 2
     && l.iter().all(|c| matches!(c, Expr::Integer(_))))
+}
+
+/// Whether `e` is a list whose every element is an exact integer.
+fn is_exact_integer_list(e: &Expr) -> bool {
+  let (e, _) = manipulate_bound_expr(e);
+  matches!(e, Expr::List(l) if !l.is_empty()
+    && l.iter().all(|c| matches!(c, Expr::Integer(_))))
+}
+
+/// Interpret an expression as a list of numeric components (each evaluated
+/// like a range bound, so `2 Pi` is accepted).
+fn list_f64(e: &Expr) -> Option<Vec<f64>> {
+  let (e, _) = manipulate_bound_expr(e);
+  match e {
+    Expr::List(l) if !l.is_empty() => l
+      .iter()
+      .map(|c| eval_manipulate_axis_bound(c).map(|(v, _, _)| v))
+      .collect(),
+    _ => None,
+  }
+}
+
+/// InputForm of a `VectorSlider` value `{u1, u2, …}`. The components
+/// flagged in `real` are machine reals (an integral value keeps its trailing
+/// dot, as after a slider was dragged or for an inexact initial value); the
+/// others are exact, as an exact initial vector is bound until moved.
+pub fn vector_slider_binding(values: &[f64], real: &[bool]) -> String {
+  let parts: Vec<String> = values
+    .iter()
+    .enumerate()
+    .map(|(i, v)| {
+      if real.get(i).copied().unwrap_or(false) {
+        format_f64_real(*v)
+      } else {
+        format_f64_input(*v)
+      }
+    })
+    .collect();
+  format!("{{{}}}", parts.join(", "))
 }
 
 fn list2_f64(e: &Expr) -> Option<(f64, f64)> {
@@ -46111,6 +46168,43 @@ fn parse_manipulate_control(
     });
   }
 
+  // A range given as two corner vectors of three or more components
+  // (`{u, {0, 0, 0}, {2 Pi, 2 Pi, 2 Pi}}`): one slider per component, the
+  // variable bound to the vector.
+  if control_type.is_none()
+    && bounds.len() >= 2
+    && let Some(mins) = list_f64(bounds[0])
+    && let Some(maxs) = list_f64(bounds[1])
+    && mins.len() >= 3
+    && mins.len() == maxs.len()
+  {
+    let explicit = explicit_initial
+      .as_ref()
+      .and_then(list_f64)
+      .filter(|v| v.len() == mins.len());
+    let exact_initial = match &explicit {
+      Some(_) => explicit_initial.as_ref().is_some_and(is_exact_integer_list),
+      None => is_exact_integer_list(bounds[0]),
+    };
+    let initials = explicit.unwrap_or_else(|| mins.clone());
+    return Some(ParsedControl::Visible {
+      control: ManipulateControl::VectorSlider {
+        name,
+        mins,
+        maxs,
+        initials,
+        label,
+        exact_initial,
+      },
+      enabled,
+      min_code: None,
+      max_code: None,
+      values_code: None,
+      animate: None,
+      tracking: tracking.clone(),
+    });
+  }
+
   // 2D control: either an explicit `ControlType -> Slider2D`, or a range
   // given as two corner points `{u, {xmin, ymin}, {xmax, ymax}}`.
   let is_2d_range = bounds.len() >= 2
@@ -47374,6 +47468,15 @@ pub fn manipulate_initial_bindings(
           format_f64_input(*high_initial)
         ),
       )),
+      ManipulateControl::VectorSlider {
+        name,
+        initials,
+        exact_initial,
+        ..
+      } => Some((
+        name.clone(),
+        vector_slider_binding(initials, &vec![!*exact_initial; initials.len()]),
+      )),
       ManipulateControl::Locator {
         name,
         points,
@@ -48220,6 +48323,29 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           low_initial,
           high_initial,
           step_json,
+        ));
+      }
+      ManipulateControl::VectorSlider {
+        name,
+        mins,
+        maxs,
+        initials,
+        label,
+        ..
+      } => {
+        let nums = |v: &[f64]| {
+          v.iter()
+            .map(std::string::ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+        };
+        ctrl_parts.push(format!(
+          r#"{{"kind":"vector","name":"{}","label":"{}","mins":[{}],"maxs":[{}],"initials":[{}]}}"#,
+          json_escape_manipulate(name),
+          json_escape_manipulate(label),
+          nums(mins),
+          nums(maxs),
+          nums(initials),
         ));
       }
       ManipulateControl::Locator {

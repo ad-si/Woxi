@@ -170,6 +170,18 @@ pub enum ControlState {
     low: f64,
     high: f64,
   },
+  /// One slider per component of a vector-valued variable (a range spec
+  /// `{u, {0, 0, 0}, {1, 1, 1}}`), drawn side by side under one label.
+  VectorSlider {
+    name: String,
+    label: String,
+    mins: Vec<f64>,
+    maxs: Vec<f64>,
+    values: Vec<f64>,
+    /// Per component: bound as a machine real (it was dragged, or the
+    /// initial vector was inexact) rather than the exact initial integer.
+    real: Vec<bool>,
+  },
   /// A `Locator` control binding its variable to a list of 2D points
   /// (e.g. draggable polygon vertices). Rendered as one X/Y slider pair
   /// per point; `auto_create` additionally offers add/remove buttons.
@@ -255,6 +267,7 @@ impl ControlState {
       ControlState::Discrete { name, .. } => name,
       ControlState::Slider2D { name, .. } => name,
       ControlState::IntervalSlider { name, .. } => name,
+      ControlState::VectorSlider { name, .. } => name,
       ControlState::Trigger { name, .. } => name,
       ControlState::Locator { name, .. } => name,
       ControlState::Color { name, .. } => name,
@@ -312,6 +325,9 @@ impl ControlState {
       }
       ControlState::IntervalSlider { low, high, .. } => {
         format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
+      }
+      ControlState::VectorSlider { values, real, .. } => {
+        woxi::functions::graphics::vector_slider_binding(values, real)
       }
       // Locator positions are machine reals (dragging produces fractional
       // coordinates); delegate so integral values keep their trailing dot.
@@ -425,6 +441,36 @@ impl ControlState {
         if let Some((a, b)) = as_pair(&expr) {
           *low = a;
           *high = b;
+        }
+      }
+      ControlState::VectorSlider {
+        values,
+        real,
+        mins,
+        maxs,
+        ..
+      } => {
+        if let Expr::List(items) = &expr
+          && items.len() == values.len()
+        {
+          let nums: Option<Vec<(f64, bool)>> = items
+            .iter()
+            .map(|it| match it {
+              Expr::Integer(n) => Some((*n as f64, false)),
+              Expr::Real(r) => Some((*r, true)),
+              _ => woxi::functions::math_ast::try_eval_to_f64(it)
+                .map(|v| (v, true)),
+            })
+            .collect();
+          if let Some(nums) = nums {
+            for (i, (v, is_real)) in nums.into_iter().enumerate() {
+              values[i] = v;
+              real[i] = is_real;
+              // Keep a value written from code reachable on its slider.
+              mins[i] = mins[i].min(v);
+              maxs[i] = maxs[i].max(v);
+            }
+          }
         }
       }
       // A derived variable's value is not the point list, so a write to it
@@ -2671,6 +2717,21 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           high: *high_initial,
         }
       }
+      ManipulateControl::VectorSlider {
+        name,
+        mins,
+        maxs,
+        initials,
+        label,
+        exact_initial,
+      } => ControlState::VectorSlider {
+        name: name.clone(),
+        label: label.clone(),
+        mins: mins.clone(),
+        maxs: maxs.clone(),
+        values: initials.clone(),
+        real: vec![!*exact_initial; initials.len()],
+      },
       ManipulateControl::Locator {
         name,
         points,
@@ -4348,6 +4409,60 @@ mod tests {
       "bare hidden spec must not become state: {:?}",
       state.state
     );
+  }
+
+  /// A range given by two three-component corner vectors (here inside a
+  /// named single-control group, as Mathematica saves it) is a row of three
+  /// sliders bound to the vector: exact at first, and a dragged component
+  /// becomes a machine real while the others stay as they were.
+  #[test]
+  fn vector_range_builds_component_sliders() {
+    let code = r#"Manipulate[Total[v],
+      "XYZ" -> {{v, {0, 0, 0}, "yaw/pitch/roll"}, {0, 0, 0}, {2 Pi, 2 Pi, 2 Pi}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state.state.iter().all(|(n, _)| n != "v"),
+      "vector variable must not become hidden state: {:?}",
+      state.state
+    );
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::VectorSlider { .. }))
+      .expect("vector slider control");
+    assert_eq!(state.controls[idx].current_code(), "{0, 0, 0}");
+    if let ControlState::VectorSlider {
+      values,
+      real,
+      label,
+      ..
+    } = &mut state.controls[idx]
+    {
+      assert_eq!(label, "yaw/pitch/roll");
+      assert_eq!(values.len(), 3);
+      values[1] = 2.0;
+      real[1] = true;
+    }
+    assert_eq!(state.controls[idx].current_code(), "{0, 2., 0}");
+  }
+
+  /// A write to a vector-slider variable from code (`v = {…}`) moves the
+  /// component sliders, keeping each component's exactness.
+  #[test]
+  fn vector_slider_follows_written_value() {
+    let code = r#"Manipulate[v, {v, {0, 0, 0}, {1, 1, 1}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let ctrl = state
+      .controls
+      .iter_mut()
+      .find(|c| c.name() == "v")
+      .expect("v control");
+    ctrl.set_current_from_code("{1, 0.25, 0}");
+    assert_eq!(ctrl.current_code(), "{1, 0.25, 0}");
   }
 
   /// An interval control whose bounds are wrapped in `QuantityMagnitude`

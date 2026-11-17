@@ -388,6 +388,9 @@ enum Message {
   ManipulateSlider2DChanged(usize, usize, u8, f64),
   /// (cell_idx, ctrl_idx, endpoint 0=low/1=high, value)
   ManipulateIntervalChanged(usize, usize, u8, f64),
+  /// One component slider of a vector-valued control moved.
+  /// (cell_idx, ctrl_idx, component_idx, value)
+  ManipulateVectorChanged(usize, usize, usize, f64),
   /// One coordinate of a Locator point moved.
   /// (cell_idx, ctrl_idx, point_idx, axis 0=x/1=y, value)
   ManipulateLocatorChanged(usize, usize, usize, u8, f64),
@@ -2012,6 +2015,30 @@ impl WoxiStudio {
           } else {
             *high = value.max(*low);
           }
+          state.apply_tracking(ctrl_idx);
+          if state.request_reeval(ctrl_idx) {
+            return manipulate_reeval_task(cell_idx);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateVectorChanged(
+        cell_idx,
+        ctrl_idx,
+        component,
+        value,
+      ) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(control) = state.controls.get_mut(ctrl_idx)
+          && let manipulate::ControlState::VectorSlider { values, real, .. } =
+            control
+          && component < values.len()
+        {
+          // A dragged component is a machine real from now on.
+          values[component] = value;
+          real[component] = true;
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -4255,6 +4282,7 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     | manipulate::ControlState::Discrete { label, .. }
     | manipulate::ControlState::Slider2D { label, .. }
     | manipulate::ControlState::IntervalSlider { label, .. }
+    | manipulate::ControlState::VectorSlider { label, .. }
     | manipulate::ControlState::Trigger { label, .. }
     | manipulate::ControlState::Locator { label, .. }
     | manipulate::ControlState::Color { label, .. } => label,
@@ -5061,6 +5089,40 @@ fn render_manipulate_widget<'a>(
         ]
         .align_y(Center)
         .spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
+      manipulate::ControlState::VectorSlider {
+        name: _,
+        label,
+        mins,
+        maxs,
+        values,
+        real: _,
+      } => {
+        // One slider per component, side by side on a single row, the way
+        // Wolfram lays out a vector-valued range control.
+        let mut sliders = row![].spacing(8).align_y(Center);
+        for (component, value) in values.iter().enumerate() {
+          let (lo, hi) = (mins[component], maxs[component]);
+          let span = (hi - lo).abs();
+          let mut component_slider = slider(lo..=hi, *value, move |v| {
+            if enabled {
+              Message::ManipulateVectorChanged(cell_idx, ctrl_idx, component, v)
+            } else {
+              Message::Noop
+            }
+          })
+          .step(if span > 0.0 { span / 100.0 } else { 1.0 })
+          .width(Fill);
+          if !enabled {
+            component_slider = component_slider.style(disabled_slider_style);
+          }
+          sliders = sliders.push(component_slider);
+        }
+        let label_widget =
+          manipulate_label_widget(&[], label, label_col_width, enabled);
+        let control_row =
+          row![label_widget, sliders].align_y(Center).spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::Color {

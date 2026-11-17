@@ -37602,11 +37602,11 @@ mod manipulate {
     );
   }
 
-  // A spec Woxi draws no widget for — a 3-vector `{{u, init}, min, max}`,
-  // here inside the `"XYZ" -> spec` controller form — still binds its
-  // variable to the initial value, as Wolfram does.
+  // A 3-vector range `{{u, init}, min, max}`, here inside the `"XYZ" ->
+  // spec` controller form, is a vector slider whose variable starts at the
+  // initial value, as Wolfram does.
   #[test]
-  fn spec_without_widget_binds_initial_value() {
+  fn spec_named_group_vector_range_binds_initial_value() {
     let expr = interpret_to_expr(
       "Manipulate[rgb[[1]] + r, {{r, 2}, 0, 3}, \
        \"XYZ\" -> {{rgb, {1, 1, 1}}, {0, 0, 0}, {1, 1, 1}}]",
@@ -37615,12 +37615,18 @@ mod manipulate {
     let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
     assert!(spec.displays.is_empty(), "displays: {:?}", spec.displays);
     assert!(
-      spec
-        .state
+      spec.controls.iter().any(|c| matches!(
+        c,
+        ManipulateControl::VectorSlider { name, initials, .. }
+          if name == "rgb" && initials == &vec![1.0; 3]
+      )),
+      "controls: {:?}",
+      spec.controls
+    );
+    assert!(
+      manipulate_initial_bindings(&spec)
         .iter()
         .any(|(name, value)| name == "rgb" && value == "{1, 1, 1}"),
-      "state: {:?}",
-      spec.state
     );
   }
 
@@ -42808,6 +42814,66 @@ mod manipulate {
     }
     let bindings = manipulate_initial_bindings(&spec);
     assert_eq!(bindings, vec![("int".to_string(), "{0, 1}".to_string())]);
+  }
+
+  // A range given by two corner vectors of three components is one slider
+  // per component, bound to the whole vector — not a hidden state variable.
+  #[test]
+  fn spec_three_component_vector_range_is_vector_slider() {
+    let expr = interpret_to_expr(
+      "Manipulate[v, {{v, {0, 0, 0}, \"angles\"}, {0, 0, 0}, {2 Pi, 2 Pi, 2 Pi}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::VectorSlider {
+        name,
+        mins,
+        maxs,
+        initials,
+        label,
+        exact_initial,
+      } => {
+        assert_eq!(name, "v");
+        assert_eq!(label, "angles");
+        assert_eq!(mins, &vec![0.0; 3]);
+        let two_pi = 2.0 * std::f64::consts::PI;
+        assert!(maxs.iter().all(|m| (m - two_pi).abs() < 1e-12), "{maxs:?}");
+        assert_eq!(initials, &vec![0.0; 3]);
+        assert!(*exact_initial);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings, vec![("v".to_string(), "{0, 0, 0}".to_string())]);
+  }
+
+  // Without an initial vector the minimum corner is the start; four
+  // components work the same, and inexact bounds bind machine reals.
+  #[test]
+  fn spec_four_component_vector_range_starts_at_min_corner() {
+    let expr = interpret_to_expr(
+      "Manipulate[w, {w, {1., 2., 3., 4.}, {5., 6., 7., 8.}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::VectorSlider {
+        initials,
+        exact_initial,
+        ..
+      } => {
+        assert_eq!(initials, &vec![1.0, 2.0, 3.0, 4.0]);
+        assert!(!*exact_initial);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(
+      bindings,
+      vec![("w".to_string(), "{1., 2., 3., 4.}".to_string())]
+    );
   }
 
   #[test]

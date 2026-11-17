@@ -447,6 +447,8 @@ function renderManipulate(item) {
       current[ctrl.name] = { x: ctrl.xInit, y: ctrl.yInit }
     } else if (ctrl.kind === "interval") {
       current[ctrl.name] = { low: ctrl.lowInit, high: ctrl.highInit }
+    } else if (ctrl.kind === "vector") {
+      current[ctrl.name] = { values: ctrl.initials.slice() }
     } else if (ctrl.kind === "locator") {
       current[ctrl.name] = { points: ctrl.points.map((p) => [p[0], p[1]]) }
     }
@@ -531,6 +533,8 @@ function renderManipulate(item) {
         bindings[ctrl.name] = `{${v.x}, ${v.y}}`
       } else if (ctrl.kind === "interval") {
         bindings[ctrl.name] = `{${v.low}, ${v.high}}`
+      } else if (ctrl.kind === "vector") {
+        bindings[ctrl.name] = `{${v.values.join(", ")}}`
       } else if (ctrl.kind === "locator") {
         // Locator positions are machine reals: integral coordinates keep a
         // trailing dot so they substitute as Real, not Integer.
@@ -1304,6 +1308,38 @@ function renderManipulate(item) {
         apply: (on) => {
           lowInput.disabled = !on
           highInput.disabled = !on
+          row.classList.toggle("disabled", !on)
+        },
+      })
+    } else if (ctrl.kind === "vector") {
+      // One range input per component, side by side, bound together as the
+      // vector `{u1, u2, …}`.
+      const strip = document.createElement("div")
+      strip.className = "manipulate-vector"
+      strip.style.display = "flex"
+      strip.style.gap = "8px"
+      const inputs = ctrl.initials.map((init, i) => {
+        const input = document.createElement("input")
+        input.type = "range"
+        input.min = ctrl.mins[i]
+        input.max = ctrl.maxs[i]
+        const span = ctrl.maxs[i] - ctrl.mins[i]
+        input.step = span > 0 ? span / 100 : "any"
+        input.value = init
+        input.style.flex = "1"
+        input.addEventListener("input", () => {
+          current[ctrl.name].values[i] = Number(input.value)
+          requestUpdate()
+        })
+        strip.appendChild(input)
+        return input
+      })
+
+      row.appendChild(strip)
+      widget.enabledControls.push({
+        condition: ctrl.enabledWhen || "",
+        apply: (on) => {
+          for (const input of inputs) input.disabled = !on
           row.classList.toggle("disabled", !on)
         },
       })
