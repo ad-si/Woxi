@@ -347,6 +347,10 @@ struct StyleState {
   /// against each other: the SVG `text-anchor` of the block's left or right
   /// edge. `None` centers every line on the anchor.
   text_line_anchor: Option<&'static str>,
+  /// `Text[Pane[expr, w]]`: the label is set in a box `w` printer's points
+  /// wide, so left/right-aligned lines hang from that box's edge rather
+  /// than from the edge of their own widest line.
+  text_block_width: Option<f64>,
   /// `Text[expr, Offset[{dx, dy}, pos]]`: the label sits `dx`, `dy` screen
   /// points (y up) away from `pos`, whatever the plot range.
   text_pixel_shift: (f64, f64),
@@ -678,6 +682,7 @@ impl Default for StyleState {
       text_background: None,
       text_decoration: TextDecoration::default(),
       text_line_anchor: None,
+      text_block_width: None,
       text_pixel_shift: (0.0, 0.0),
       text_scaled_shift: (0.0, 0.0),
       arrowheads: None,
@@ -5633,6 +5638,57 @@ fn wrap_text_to_width(text: &str, width: usize) -> String {
     .join("\n")
 }
 
+/// The width in printer's points `Pane[content, width]` (or `Pane[content,
+/// {width, height}]`) gives its box; `None` without a positive number.
+fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
+  let width = match pane_args.get(1) {
+    Some(Expr::List(dims)) => dims.first(),
+    other => other,
+  };
+  match width {
+    Some(Expr::Integer(n)) if *n > 0 => Some(*n as f64),
+    Some(Expr::Real(f)) if *f > 0.0 => Some(*f),
+    _ => None,
+  }
+}
+
+/// Break `text` into lines no wider than `width` printer's points when set
+/// at `font_size` points, measuring each word with the glyph widths of the
+/// label font (a longer word keeps its own line); existing line breaks stay.
+fn wrap_text_to_points(text: &str, width: f64, font_size: f64) -> String {
+  let em = |s: &str| -> f64 {
+    s.chars()
+      .map(crate::functions::plot_padding::char_width_em)
+      .sum::<f64>()
+      * font_size
+  };
+  let space = em(" ");
+  text
+    .split('\n')
+    .map(|line| {
+      let mut lines: Vec<String> = Vec::new();
+      let mut current = String::new();
+      let mut current_w = 0.0;
+      for word in line.split(' ') {
+        let word_w = em(word);
+        if !current.is_empty() && current_w + space + word_w > width {
+          lines.push(std::mem::take(&mut current));
+          current_w = 0.0;
+        }
+        if !current.is_empty() {
+          current.push(' ');
+          current_w += space;
+        }
+        current.push_str(word);
+        current_w += word_w;
+      }
+      lines.push(current);
+      lines.join("\n")
+    })
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
 /// Peel `Style[…]`-like wrappers off `expr`, returning the innermost content.
 pub(crate) fn strip_style_wrappers(expr: &Expr) -> &Expr {
   match expr {
@@ -6049,25 +6105,14 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       graphics_text_content(&args[0])
     }
     // `Pane[content, width, …]` sets `content` in a box `width` printer's
-    // points wide: its text wraps there (an average character being about
-    // half of the default 14-point font) rather than printing as the call.
-    // `Pane[content]` and a non-numeric size just show the content.
+    // points wide: its text wraps there (in the default 14-point font)
+    // rather than printing as the call. `Pane[content]` and a non-numeric
+    // size just show the content.
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       let text = graphics_text_content(&args[0]);
-      let width = match args.get(1) {
-        Some(Expr::List(dims)) => dims.first(),
-        other => other,
-      };
-      let points = match width {
-        Some(Expr::Integer(n)) => Some(*n as f64),
-        Some(Expr::Real(f)) => Some(*f),
-        _ => None,
-      };
-      match points {
-        Some(w) if w > 0.0 => {
-          wrap_text_to_width(&text, ((w / 7.0).floor() as usize).max(1))
-        }
-        _ => text,
+      match pane_width_points(args) {
+        Some(w) => wrap_text_to_points(&text, w, 14.0),
+        None => text,
       }
     }
     Expr::FunctionCall { name, args }
@@ -8056,10 +8101,21 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Style` inside them still applies.
   let mut content = framed_body;
   let mut style_line_anchor: Option<&'static str> = None;
+  // `Pane[Style[text, dirs…], w]` sets the styled text in a box `w` points
+  // wide: the `Style` inside still sizes and aligns the label, and the
+  // text wraps at the box's width once the font size is known.
+  let mut pane_width: Option<f64> = None;
   while let Expr::FunctionCall { name, args: sargs } = content
     && !sargs.is_empty()
   {
     if (name == "Text" && sargs.len() == 1) || name == "Tooltip" {
+      content = &sargs[0];
+      continue;
+    }
+    if name == "Pane" {
+      if let Some(w) = pane_width_points(sargs) {
+        pane_width = Some(pane_width.map_or(w, |p: f64| p.min(w)));
+      }
       content = &sargs[0];
       continue;
     }
@@ -8254,6 +8310,13 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     }
   }
   let text = graphics_text_content(content);
+  let text = match pane_width {
+    Some(w) => {
+      local_style.text_block_width = Some(w);
+      wrap_text_to_points(&text, w, local_style.font_size)
+    }
+    None => text,
+  };
   // A `Column`'s own alignment wins over a `TextAlignment` the label's
   // `Style` wrapper gives its lines.
   local_style.text_line_anchor =
@@ -13693,9 +13756,12 @@ fn render_primitive(
         let lines: Vec<&str> = text.split('\n').collect();
         // Left/right-aligned lines hang from the block's edge, half of its
         // (estimated) width either side of the anchor.
+        let half_width = style
+          .text_block_width
+          .map_or(longest * fs * 0.5 / 2.0, |w| w / 2.0);
         let (line_anchor, sx) = match style.text_line_anchor {
-          Some("start") => ("start", sx - longest * fs * 0.5 / 2.0),
-          Some(_) => ("end", sx + longest * fs * 0.5 / 2.0),
+          Some("start") => ("start", sx - half_width),
+          Some(_) => ("end", sx + half_width),
           None => ("middle", sx),
         };
         out.push_str(&format!(
