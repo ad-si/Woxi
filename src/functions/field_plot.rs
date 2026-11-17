@@ -7625,7 +7625,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 cell_expr, rules,
               )
               .ok()
-              .and_then(|replaced| parse_color(&replaced))
+              .and_then(|replaced| {
+                crate::functions::graphics::parse_style_color(&replaced)
+              })
               .map(|rule_color| {
                 (
                   (rule_color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -8832,9 +8834,20 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && parse_color(&v).is_none()
         && let Ok(replaced) =
           crate::evaluator::pattern_matching::apply_replace_all_ast(&v, rules)
-        && parse_color(&replaced).is_some()
+        && let Some(c) =
+          crate::functions::graphics::parse_style_color(&replaced)
       {
-        v = replaced;
+        // A directive list (`{Hue[h], AbsoluteThickness[t]}`) colors the
+        // cell with the color it sets.
+        v = if parse_color(&replaced).is_some() {
+          replaced
+        } else {
+          Expr::FunctionCall {
+            name: "RGBColor".to_string(),
+            args: vec![Expr::Real(c.r), Expr::Real(c.g), Expr::Real(c.b)]
+              .into(),
+          }
+        };
       }
       if parse_color(&v).is_none()
         && let Some(x) = try_eval_to_f64(&v).filter(|x| x.is_finite())

@@ -24676,6 +24676,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_color_rules_directive_lists() {
+      // Regression: a ColorRules right-hand side mixing a color with other
+      // directives (`{Hue[h], AbsoluteThickness[t]}` or `Directive[…]`)
+      // was not recognized as a color, so the cell fell back to the
+      // default gray scale instead of taking the color it sets.
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1, 2}}, ColorRules -> {0 -> White, \
+         1 -> {Hue[0.45], AbsoluteThickness[2]}, 2 -> Directive[Red, Thick]}]",
+      );
+      assert!(svg.contains("fill=\"#00FFB2\""), "{svg}"); // Hue[0.45]
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}"); // Red
+      // The last color of a directive list wins.
+      let svg =
+        export_svg("ArrayPlot[{{1}}, ColorRules -> {1 -> {Red, Thick, Blue}}]");
+      assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+    }
+
+    #[test]
+    fn matrix_plot_color_rules_directive_list() {
+      // The rule-colored cell takes the directive list's color and stays
+      // out of the scaling of the other cells.
+      let svg = export_svg(
+        "MatrixPlot[{{0, 1, 2}}, ColorRules -> \
+         {1 -> {Hue[0.45], AbsoluteThickness[2]}}]",
+      );
+      assert!(svg.contains("fill=\"#00FFB2\""), "{svg}");
+    }
+
+    #[test]
     fn array_plot_mesh() {
       // Mesh -> True draws grid lines between cells
       insta::assert_snapshot!(export_svg(

@@ -1730,6 +1730,21 @@ fn unpack_channels(
   }
 }
 
+/// The color a style specification such as a `ColorRules` right-hand side
+/// sets: a bare color, or a directive list / `Directive[…]` mixing a color
+/// with other directives (`{Hue[h], AbsoluteThickness[t]}`), where the last
+/// color wins and an `Opacity` folds into its alpha. Directives that set no
+/// color yield `None`.
+pub(crate) fn parse_style_color(expr: &Expr) -> Option<Color> {
+  match expr {
+    Expr::List(items) => parse_color_function_result(&Expr::FunctionCall {
+      name: "Directive".to_string(),
+      args: items.clone(),
+    }),
+    _ => parse_color_function_result(expr),
+  }
+}
+
 /// The color a `ColorFunction` result stands for. Besides any color
 /// directive, a list of three or four numbers is read as `RGBColor` channels
 /// (`ColorFunction -> ({#1, #2, 0} &)` colors like `RGBColor[#1, #2, 0]`),
