@@ -58745,7 +58745,10 @@ fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
     .collect();
   let span = ys.iter().cloned().fold(f64::MIN, f64::max)
     - ys.iter().cloned().fold(f64::MAX, f64::min);
-  assert!(span > 350.0, "expected the scene to fill the height, got {span}");
+  assert!(
+    span > 350.0,
+    "expected the scene to fill the height, got {span}"
+  );
 
   // A `Manipulate` frame draws the same picture.
   assert_eq!(woxi::with_manipulate_frame(|| scene("")), automatic);
