@@ -16501,6 +16501,32 @@ mod plot3d {
       assert_eq!(fills("Plot[x, {x, 0, 1}, Filling -> True]"), 1);
     }
 
+    /// With several curves, `Filling -> True` fills each curve to the next
+    /// one (curve 1 to 2, 2 to 3, …) and leaves the last one unfilled,
+    /// rather than filling every curve down to the axis.
+    #[test]
+    fn filling_true_fills_successive_curves() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      assert_eq!(fills("Plot[{x, x^2}, {x, 0, 1}, Filling -> True]"), 1);
+      assert_eq!(
+        fills("Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, Filling -> True]"),
+        2
+      );
+      assert_eq!(
+        fills("Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, Filling -> Axis]"),
+        3
+      );
+      // Filling between the curves does not stretch the range down to the
+      // axis: curves well above zero keep their own automatic range.
+      let between =
+        export_svg("Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, Filling -> True]");
+      let rules = export_svg(
+        "Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, \
+         Filling -> {1 -> {2}, 2 -> {3}}]",
+      );
+      assert_eq!(between, rules);
+    }
+
     /// A fill is drawn beneath every curve, including the curves of the
     /// series listed before the filled one: `Filling -> {2 -> Bottom}` must
     /// not paint over series 1.

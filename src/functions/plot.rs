@@ -3178,11 +3178,29 @@ pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
   // list of rules, all of which evaluate to themselves.
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  opts.filling_successive =
+    matches!(&value, Expr::Identifier(v) if v == "True");
   if let Some(rules) = parse_filling_rules(&value) {
     opts.filling_rules = rules;
   } else {
     opts.filling = parse_filling(&value);
   }
+}
+
+/// Resolve `Filling -> True` for a plot of `series_count` curves: the
+/// curves are filled pairwise, curve `i` to curve `i + 1`, and the last
+/// one is left unfilled (a single curve keeps its fill to the axis).
+pub(crate) fn resolve_successive_filling(
+  opts: &mut PlotOptions,
+  series_count: usize,
+) {
+  if !opts.filling_successive || series_count < 2 {
+    return;
+  }
+  opts.filling = Filling::None;
+  opts.filling_rules = (0..series_count - 1)
+    .map(|i| (i, FillTarget::Series(i + 1), None))
+    .collect();
 }
 
 /// The fills of series `idx` in drawing order, each with the
@@ -3583,6 +3601,11 @@ pub(crate) struct PlotOptions {
   /// replaces the global `filling`: series without a rule are not filled,
   /// and a series named by several rules gets every one of their fills.
   pub filling_rules: Vec<(usize, FillTarget, Option<FillStyle>)>,
+  /// `Filling -> True`: with several curves, each one is filled to the
+  /// next and the last stays unfilled; a lone curve fills to the axis.
+  /// Resolved into `filling_rules` by `resolve_successive_filling` once
+  /// the number of curves is known.
+  pub filling_successive: bool,
   /// `FillingStyle -> …`: color/opacity for the filled regions (applies to
   /// every filled series). `None` keeps the default appearance (series
   /// color at 0.2 opacity).
@@ -4041,6 +4064,7 @@ impl Default for PlotOptions {
       full_width: false,
       filling: Filling::None,
       filling_rules: Vec::new(),
+      filling_successive: false,
       filling_style: None,
       mesh: Mesh::None,
       plot_label: None,
@@ -17726,6 +17750,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   let y_auto_min = y_data_min - y_pad_lo;
   let y_auto_max = y_data_max + y_pad_hi;
+  resolve_successive_filling(&mut plot_opts, all_points.len());
   let (y_auto_min, y_auto_max) =
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
   let x_auto = (x_min - x_pad_lo, x_max + x_pad_hi);
