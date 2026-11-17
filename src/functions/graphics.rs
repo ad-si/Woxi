@@ -8087,6 +8087,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   if hidden {
     return;
   }
+  if frame_opts.is_empty()
+    && args.len() == 2
+    && split_framed_column_label(content, &args[1], &local_style, prims)
+  {
+    return;
+  }
   // A label laid out as a `Column`/`Row` holding a `Grid` (a table of
   // values beside a point) is composed to its own picture and embedded
   // whole at the anchor; flattening it to one text run would lose the
@@ -8357,6 +8363,92 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     styled_ranges,
     style: local_style,
   });
+}
+
+/// A centered `Column[{…}]` label whose items include a `Framed` one
+/// (`Column[{Framed[Style[…, 18], Background -> White], Spacer[25], …}]`)
+/// sets every item as its own label: each framed item keeps its own panel
+/// and font, instead of one panel behind the whole block in the default
+/// size. The rows are stacked one line of their own font size high and the
+/// block is centered on `pos`. Returns whether the label was handled.
+fn split_framed_column_label(
+  content: &Expr,
+  pos: &Expr,
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) -> bool {
+  let Expr::FunctionCall { name, args } = content else {
+    return false;
+  };
+  if name != "Column" || column_line_anchor(content).is_some() {
+    return false;
+  }
+  let Some(Expr::List(items)) = args.first() else {
+    return false;
+  };
+  let is_framed = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty())
+  };
+  if !items.iter().any(is_framed) {
+    return false;
+  }
+  // An `Offset`/`Scaled` anchor already carries a shift of its own.
+  if matches!(pos, Expr::FunctionCall { name, .. }
+    if name == "Offset" || name == "Scaled")
+    || expr_to_anchor(pos).is_none()
+  {
+    return false;
+  }
+  // The font size an item is set in: its own `Framed`/`Style` wrappers'
+  // directives over the label's style.
+  let item_font_size = |item: &Expr| {
+    let mut st = style.clone();
+    let mut cur = item;
+    loop {
+      match cur {
+        Expr::FunctionCall { name, args }
+          if name == "Framed" && !args.is_empty() =>
+        {
+          cur = &args[0];
+        }
+        Expr::FunctionCall { name, args }
+          if is_style_wrapper(name) && !args.is_empty() =>
+        {
+          for d in style_directives_in_application_order(&args[1..]) {
+            apply_directive(d, &mut st);
+            apply_text_style_directive(d, &mut st);
+          }
+          cur = &args[0];
+        }
+        _ => break,
+      }
+    }
+    apply_agreed_row_part_styles(cur, &mut st);
+    st.font_size
+  };
+  let heights: Vec<f64> = items.iter().map(item_font_size).collect();
+  let total: f64 = heights.iter().sum();
+  let mut top = total / 2.0;
+  for (item, h) in items.iter().zip(&heights) {
+    let center = top - h / 2.0;
+    top -= h;
+    // A `Spacer` or `Null` row is only room between the others.
+    if matches!(item, Expr::Identifier(s) if s == "Null")
+      || matches!(item, Expr::FunctionCall { name, .. } if name == "Spacer")
+    {
+      continue;
+    }
+    let anchor = call(
+      "Offset",
+      vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Real(center)].into()),
+        pos.clone(),
+      ],
+    );
+    parse_text(&[item.clone(), anchor], style, prims);
+  }
+  true
 }
 
 /// The horizontal alignment `Column[{…}, Left | Right]` (or
