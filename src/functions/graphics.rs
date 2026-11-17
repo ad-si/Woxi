@@ -32027,13 +32027,15 @@ pub(crate) fn style_pushed_into_layout(
     // inherited directives into its own `Style`, ahead of its own so those
     // still win: a doubly nested `Style[Style[Column[…], Blue], 12]` would
     // hide the inner layout from the renderer and be typeset as its source.
-    // A styled `Row` item (`Style[Row[…], 20]` in a row set in another
-    // face) merges the same way, or its own size would be measured at the
-    // default size and its text would overrun its neighbors.
+    // A `Row` item that sets its own size (`Style[Row[…], 20]` in a row
+    // set in another face) merges the same way, or its size would be
+    // measured at the default and its text would overrun its neighbors.
+    // (Any other styled `Row` item is already set inline as it is.)
     if let Expr::FunctionCall { name, args } = e
       && name == "Style"
       && let Some(Expr::FunctionCall { name: content, .. }) = args.first()
-      && matches!(content.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
+      && (matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
+        || (content == "Row" && extract_cell_style(e).font_size.is_some()))
     {
       return call(
         "Style",
