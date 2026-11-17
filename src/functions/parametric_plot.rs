@@ -1030,7 +1030,18 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(strip_hover_wrappers(
       &crate::functions::plot::eval_body_var_symbolic(body, &var_name),
     ))
-    .filter(|ev| matches!(ev, Expr::List(_)))
+    .filter(|ev| {
+      matches!(ev, Expr::List(_))
+        && crate::functions::plot::symbolic_body_agrees(
+          body,
+          ev,
+          &var_name,
+          &[
+            t_min + 0.37 * (t_max - t_min),
+            t_min + 0.71 * (t_max - t_min),
+          ],
+        )
+    })
   };
   let mut nonlist_curves = Vec::new();
   let nonlist_ok = evaluated_nonlist

@@ -484,6 +484,58 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_samples_a_helper_that_needs_a_numeric_parameter() {
+      // The helper's `FindRoot` cannot run with the parameter symbolic, so
+      // the held body must be sampled with the parameter bound to numbers.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "root[c_] := Part[FindRoot[Cos[s] == c s, {s, 1.}], 1, -1]; \
+           pt[c_] := {c, root[c]}; \
+           l = First[Cases[ParametricPlot[pt[c], {c, 0.5, 2}], \
+             Line[l_] :> l, Infinity]]; \
+           Round[{First[l], Last[l]}, 0.001]"
+        )
+        .unwrap(),
+        "{{0.5, 1.03}, {2., 0.45}}"
+      );
+    }
+
+    #[test]
+    fn parametric_plot_variable_named_like_a_helpers_findroot_variable() {
+      // The helper's own `FindRoot` iterates over `t` too; it must solve its
+      // own equation rather than capture the plot parameter `t`.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "root[c_] := Part[FindRoot[Cos[t] == c t, {t, 1.}], 1, -1]; \
+           pt[c_] := {c, root[c]}; \
+           l = First[Cases[ParametricPlot[pt[t], {t, 0.5, 2}], \
+             Line[l_] :> l, Infinity]]; \
+           Round[{First[l], Last[l]}, 0.001]"
+        )
+        .unwrap(),
+        "{{0.5, 1.03}, {2., 0.45}}"
+      );
+    }
+
+    #[test]
+    fn plot_samples_a_list_valued_helper_that_needs_a_numeric_variable() {
+      // Each curve of a list-valued held body follows the helper's values
+      // at the sampled points, not a value solved once with `x` symbolic.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "h[y_] := {Part[FindRoot[Cos[x] == y x, {x, 1.}], 1, -1], y}; \
+           Round[Cases[Plot[h[x], {x, 0.5, 2}], \
+             Line[l_] :> {First[l], Last[l]}, Infinity], 0.001]"
+        )
+        .unwrap(),
+        "{{{0.5, 1.03}, {2., 0.45}}, {{0.5, 0.5}, {2., 2.}}}"
+      );
+    }
+
+    #[test]
     fn parametric_plot_refines_a_long_winding_curve_all_along() {
       // The refinement budget must reach the end of a curve that winds
       // many times, not run out in its first stretch and leave the rest
