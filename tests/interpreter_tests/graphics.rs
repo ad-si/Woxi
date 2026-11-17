@@ -1176,6 +1176,53 @@ mod graphics {
       assert_eq!(svg.matches("<polygon").count(), 0, "{svg}");
     }
 
+    /// A trailing option is not the coordinate list of the compact
+    /// `FilledCurve[segments, coords]` form: the curves still fill, and the
+    /// picture is not an error box.
+    #[test]
+    fn filled_curve_with_an_option_fills_its_curves() {
+      let svg = export_svg(
+        "Graphics[{FilledCurve[{{Line[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}]}, \
+         {Line[{{1, 1}, {3, 1}, {3, 3}, {1, 3}}]}}, \
+         VertexTextureCoordinates -> {{{0}, {0}, {1}, {1}}, \
+         {{0}, {0}, {0}, {0}}}]}]",
+      );
+      assert!(!svg.contains("is not valid"), "{svg}");
+      assert!(svg.contains("fill-rule=\"evenodd\""), "{svg}");
+    }
+
+    /// `Texture[{c1, c2, …}]` is a one-dimensional texture: a vertex with
+    /// texture coordinate `{u}` takes the color a fraction `u` along it,
+    /// and the fill blends between the vertices.
+    #[test]
+    fn strip_texture_blends_polygon_by_vertex_coordinate() {
+      let svg = export_svg(
+        "Graphics[{Texture[{{1, 0, 0}, {0, 0, 1}}], \
+         Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}, \
+         VertexTextureCoordinates -> {{0}, {0}, {1}, {1}}]}]",
+      );
+      let reds = svg.matches("fill=\"rgb(2").count();
+      let blues = svg.matches(",0,2").count();
+      assert!(reds > 0 && blues > 0, "a red-to-blue blend: {svg}");
+      assert!(!svg.contains("<image"), "no raster texture: {svg}");
+    }
+
+    /// A strip texture over a `FilledCurve` with a hole colors each
+    /// component by its own coordinate list.
+    #[test]
+    fn strip_texture_on_filled_curve_with_hole() {
+      let svg = export_svg(
+        "Graphics[{Texture[{Red, Blue}], \
+         FilledCurve[{{Line[{{0, 0}, {4, 0}, {4, 4}, {0, 4}}]}, \
+         {Line[{{1, 1}, {3, 1}, {3, 3}, {1, 3}}]}}, \
+         VertexTextureCoordinates -> {{{1}, {1}, {0}, {0}}, \
+         {{0}, {0}, {0}, {0}}}]}]",
+      );
+      assert!(!svg.contains("is not valid"), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+    }
+
     #[test]
     fn stroked_bezier_curve_stays_unfilled() {
       let svg =
@@ -3976,6 +4023,37 @@ mod graphics {
       assert!(svg.contains(">x\u{00B2} t\u{2081} t\u{2082}<"), "{svg}");
       assert!(svg.contains(">(r\u{2081} r\u{2082})\u{207F}<"), "{svg}");
       assert!(!svg.contains("Subscript["), "{svg}");
+    }
+
+    /// A framed label's border takes the label's color, unless a
+    /// `FrameStyle` (a color, or a list of directives holding one) sets it.
+    #[test]
+    fn a_framed_label_border_follows_its_color() {
+      let svg =
+        export_svg("Graphics[{Style[Text[Framed[\"hi\"], {0, 0}], Red]}]");
+      assert!(
+        svg.contains("fill=\"none\" stroke=\"rgb(255,0,0)\""),
+        "{svg}"
+      );
+      let svg = export_svg(
+        "Graphics[{Style[Text[Framed[\"hi\", FrameStyle -> {White}], \
+         {0, 0}], Red]}]",
+      );
+      assert!(
+        svg.contains("fill=\"none\" stroke=\"rgb(255,255,255)\""),
+        "{svg}"
+      );
+    }
+
+    /// A merged cell of a grid label draws nothing of its own.
+    #[test]
+    fn framed_grid_label_hides_span_markers() {
+      let svg = export_svg(
+        "Graphics[{Text[Framed[Grid[{{\"feed\", SpanFromLeft}, \
+         {\"a\", \"b\"}}]], {0, 0}]}]",
+      );
+      assert!(!svg.contains("SpanFromLeft"), "{svg}");
+      assert!(svg.contains(">feed<"), "{svg}");
     }
 
     /// `Framed[…]` around a label draws a box: a border, and a panel when
@@ -39097,6 +39175,33 @@ mod manipulate {
       let mut found = Vec::new();
       texts(&node, &mut found);
       assert_eq!(found, ["9/10", "3/4", "0.25"], "{display}: {node:?}");
+    }
+  }
+
+  /// `NumberForm[Dynamic[x], spec]` formats the held `Dynamic`, so the
+  /// readout shows the live value of `x` unformatted (`2.`, not `2.0`).
+  #[test]
+  fn number_form_around_dynamic_shows_the_live_value() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn texts(node: &DisplayNode, out: &mut Vec<String>) {
+      match node {
+        DisplayNode::Static { text, .. } => out.push(text.clone()),
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            texts(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    for (value, shown) in [("2.", "2."), ("11.4", "11.4"), ("3", "3")] {
+      let node = build_manipulate_display(
+        "Row[{NumberForm[Dynamic[pressure], {3, 1}], \" bar\"}]",
+        &[("pressure".to_string(), value.to_string())],
+      );
+      let mut found = Vec::new();
+      texts(&node, &mut found);
+      assert_eq!(found, vec![shown.to_string()], "{node:?}");
     }
   }
 

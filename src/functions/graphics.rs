@@ -306,6 +306,11 @@ struct TextureFill {
   width: u32,
   height: u32,
   coords: Vec<(f64, f64)>,
+  /// The colors of a one-dimensional texture, `Texture[{c1, c2, …}]`:
+  /// a vertex with texture coordinate `{u}` takes the color found a
+  /// fraction `u` along the strip, and the polygon blends between its
+  /// vertex colors. Empty for an image texture.
+  strip: std::sync::Arc<[Color]>,
 }
 
 #[derive(Debug, Clone)]
@@ -2264,6 +2269,21 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       "Specularity" if !args.is_empty() => true,
       // `Texture[image]`: fills the polygons that follow with the image,
       // placed by their `VertexTextureCoordinates`.
+      // `Texture[{c1, c2, …}]`: a one-dimensional strip of colors.
+      "Texture"
+        if args.len() == 1 && texture_strip_colors(&args[0]).is_some() =>
+      {
+        if let Some(colors) = texture_strip_colors(&args[0]) {
+          style.texture = Some(std::sync::Arc::new(TextureFill {
+            png_b64: "".into(),
+            width: colors.len() as u32,
+            height: 1,
+            coords: Vec::new(),
+            strip: colors.into(),
+          }));
+        }
+        true
+      }
       "Texture" if args.len() == 1 => {
         if let Some(Expr::Image {
           width,
@@ -2292,6 +2312,7 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
               width,
               height,
               coords: Vec::new(),
+              strip: std::sync::Arc::from([]),
             }));
           }
         }
@@ -3472,7 +3493,9 @@ fn collect_primitives(
         }
         // `FilledCurve[BezierCurve[…]]` (or a list of curves) fills the
         // region each Bezier path encloses.
-        "FilledCurve" if args.len() == 2 => {
+        // (A trailing option such as `VertexTextureCoordinates -> …` is not
+        // that coordinate list.)
+        "FilledCurve" if args.len() == 2 && !is_option_arg(&args[1]) => {
           // Compact form `FilledCurve[{{seg, …}, …}, {pt, …}]`: each
           // component is a run of `{type, n, d}` segments drawing from
           // the shared coordinate list.
@@ -3503,16 +3526,35 @@ fn collect_primitives(
             }
             other => vec![other],
           };
+          // Under a strip texture, `VertexTextureCoordinates` gives each
+          // component's vertices a `{u}` — as one list per component, or
+          // (for a single component) one flat list.
+          let tex_coords = vertex_texture_coordinates_value(&args[1..]);
+          let per_component: Vec<Option<&Expr>> = match tex_coords {
+            Some(Expr::List(items))
+              if items.len() == components.len()
+                && items.iter().all(|i| {
+                  matches!(i, Expr::List(v)
+                    if v.iter().all(|c| matches!(c, Expr::List(_))))
+                }) =>
+            {
+              items.iter().map(Some).collect()
+            }
+            Some(flat) if components.len() == 1 => vec![Some(flat)],
+            _ => vec![None; components.len()],
+          };
           let first = prims.len();
           let several = components.len() > 1;
-          for component in components {
+          for (component, coords) in components.into_iter().zip(per_component) {
             if let Expr::List(curves) = component
               && let Some(points) = joined_curve_points(curves, style)
             {
+              let vertex_colors = coords
+                .and_then(|c| strip_vertex_colors(style, c, points.len()));
               prims.push(Primitive::PolygonPrim {
                 points,
                 holes: Vec::new(),
-                vertex_colors: None,
+                vertex_colors,
                 style: style.clone(),
               });
               continue;
@@ -3556,23 +3598,28 @@ fn collect_primitives(
           if several
             && prims.len() - first > 1
             && prims[first..].iter().all(|p| {
-              matches!(p, Primitive::PolygonPrim { holes, vertex_colors: None, .. }
+              matches!(p, Primitive::PolygonPrim { holes, .. }
                 if holes.is_empty())
             })
             && inside_first(&prims[first..])
           {
+            // The blend of a textured fill follows the outer boundary's
+            // vertex colors.
             let mut rings = prims.drain(first..).filter_map(|p| match p {
-              Primitive::PolygonPrim { points, style, .. } => {
-                Some((points, style))
-              }
+              Primitive::PolygonPrim {
+                points,
+                style,
+                vertex_colors,
+                ..
+              } => Some((points, style, vertex_colors)),
               _ => None,
             });
-            if let Some((points, style)) = rings.next() {
-              let holes = rings.map(|(pts, _)| pts).collect();
+            if let Some((points, style, vertex_colors)) = rings.next() {
+              let holes = rings.map(|(pts, ..)| pts).collect();
               prims.push(Primitive::PolygonPrim {
                 points,
                 holes,
-                vertex_colors: None,
+                vertex_colors,
                 style,
               });
             }
@@ -4263,7 +4310,16 @@ fn parse_point(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
 /// or inside a list of options (the form `Append[Polygon[…], {rule}]`
 /// produces).
 fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
-  fn from_rule(o: &Expr) -> Option<Vec<(f64, f64)>> {
+  let Expr::List(items) = vertex_texture_coordinates_value(opts)? else {
+    return None;
+  };
+  items.iter().map(expr_to_point).collect()
+}
+
+/// The value of a `VertexTextureCoordinates -> value` option, given either
+/// as a bare rule or inside a list of options.
+fn vertex_texture_coordinates_value(opts: &[Expr]) -> Option<&Expr> {
+  fn from_rule(o: &Expr) -> Option<&Expr> {
     match o {
       Expr::Rule {
         pattern,
@@ -4272,18 +4328,101 @@ fn parse_vertex_texture_coordinates(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
       | Expr::RuleDelayed {
         pattern,
         replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") =>
-      {
-        let Expr::List(items) = replacement.as_ref() else {
-          return None;
-        };
-        items.iter().map(expr_to_point).collect()
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexTextureCoordinates") => {
+        Some(replacement.as_ref())
       }
       Expr::List(inner) => inner.iter().find_map(from_rule),
       _ => None,
     }
   }
   opts.iter().find_map(from_rule)
+}
+
+/// The colors of a one-dimensional texture `Texture[{c1, c2, …}]`, whose
+/// entries are color directives or `{r, g, b}` / `{r, g, b, a}` channel
+/// lists. `None` for anything else (an image, or a 2D array of pixels).
+fn texture_strip_colors(arg: &Expr) -> Option<Vec<Color>> {
+  let Expr::List(items) = arg else {
+    return None;
+  };
+  if items.is_empty() {
+    return None;
+  }
+  items
+    .iter()
+    .map(|item| match item {
+      Expr::List(channels) if (3..=4).contains(&channels.len()) => {
+        let v: Vec<f64> =
+          channels.iter().map(expr_to_f64).collect::<Option<_>>()?;
+        Some(
+          Color::new(
+            v[0].clamp(0.0, 1.0),
+            v[1].clamp(0.0, 1.0),
+            v[2].clamp(0.0, 1.0),
+          )
+          .with_alpha(v.get(3).map_or(1.0, |a| a.clamp(0.0, 1.0))),
+        )
+      }
+      Expr::List(_) => None,
+      other => parse_color(other),
+    })
+    .collect()
+}
+
+/// Whether a primitive's argument is an option (`name -> value`, or a
+/// list of such rules) rather than data.
+fn is_option_arg(e: &Expr) -> bool {
+  match e {
+    Expr::Rule { .. } | Expr::RuleDelayed { .. } => true,
+    Expr::List(items) => {
+      !items.is_empty()
+        && items
+          .iter()
+          .all(|i| matches!(i, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    }
+    _ => false,
+  }
+}
+
+/// The `u` of one texture coordinate: `{u}`, `{u, v}` or a bare `u`.
+fn texture_coordinate_u(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::List(c) if (1..=2).contains(&c.len()) => expr_to_f64(&c[0]),
+    other => expr_to_f64(other),
+  }
+}
+
+/// The color a fraction `u` along a strip texture: its texels sit at the
+/// centers of `n` equal cells of `[0, 1]`, blended linearly in between.
+fn strip_color_at(strip: &[Color], u: f64) -> Color {
+  let n = strip.len();
+  if n == 1 {
+    return strip[0];
+  }
+  let t = (u.clamp(0.0, 1.0) * n as f64 - 0.5).clamp(0.0, (n - 1) as f64);
+  let i = (t.floor() as usize).min(n - 2);
+  strip[i].lerp(strip[i + 1], t - i as f64)
+}
+
+/// The per-vertex colors a strip texture in force gives a ring of
+/// `n_points` vertices with the texture coordinates `coords` (only when
+/// there is at least one per vertex).
+fn strip_vertex_colors(
+  style: &StyleState,
+  coords: &Expr,
+  n_points: usize,
+) -> Option<Vec<Color>> {
+  let strip = &style.texture.as_ref()?.strip;
+  let Expr::List(items) = coords else {
+    return None;
+  };
+  if strip.is_empty() || items.len() < n_points {
+    return None;
+  }
+  items[..n_points]
+    .iter()
+    .map(|c| texture_coordinate_u(c).map(|u| strip_color_at(strip, u)))
+    .collect()
 }
 
 /// The style for one polygon: the `Texture` in force, if any, with the
@@ -4295,7 +4434,10 @@ fn with_texture_coords(
   n_points: usize,
 ) -> StyleState {
   let mut out = style.clone();
-  if let (Some(tex), Some(coords)) = (&style.texture, coords)
+  if style.texture.as_ref().is_some_and(|t| !t.strip.is_empty()) {
+    // A strip texture becomes per-vertex colors (`strip_vertex_colors`).
+    out.texture = None;
+  } else if let (Some(tex), Some(coords)) = (&style.texture, coords)
     && coords.len() >= n_points
   {
     out.texture = Some(std::sync::Arc::new(TextureFill {
@@ -4780,7 +4922,16 @@ fn parse_polygon(
   if let Some(pts) = expr_to_point_list(&args[0]) {
     // `VertexColors` assigns one color per point, in order — only usable
     // when the count actually lines up with the points being drawn.
-    let vc = vertex_colors.clone().filter(|c| c.len() == pts.len());
+    let vc = vertex_colors
+      .clone()
+      .filter(|c| c.len() == pts.len())
+      .or_else(|| {
+        strip_vertex_colors(
+          style,
+          vertex_texture_coordinates_value(&args[1..])?,
+          pts.len(),
+        )
+      });
     let style = with_texture_coords(style, tex_coords.as_deref(), pts.len());
     prims.push(Primitive::PolygonPrim {
       points: pts,
@@ -6126,8 +6277,11 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
               None => text,
             }
           }
+          // A merged cell (`SpanFromLeft`, …) only continues its
+          // neighbor; it has no text of its own.
           Expr::List(cells) if name == "Grid" => cells
             .iter()
+            .filter(|c| !is_span_marker(c))
             .map(graphics_text_content)
             .collect::<Vec<_>>()
             .join("  "),
@@ -8328,16 +8482,32 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     .or_else(|| background_of(&args[1..]))
     .or(local_style.text_background);
   // Wolfram draws a `Framed` box with a thin border unless the label asks
-  // for none; an explicit `FrameStyle -> color` recolors it.
+  // for none. The border takes the label's own color (`Style[Text[Framed[
+  // …]], Red]` frames in red); an explicit `FrameStyle -> color` (or a
+  // list or `Directive` of styles holding one) recolors it.
   let is_framed = matches!(
     &args[0],
     Expr::FunctionCall { name, args: fargs } if name == "Framed" && !fargs.is_empty()
   );
+  fn frame_style_color(spec: &Expr) -> Option<Color> {
+    match spec {
+      Expr::List(items) => items.iter().find_map(frame_style_color),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().find_map(frame_style_color)
+      }
+      other => parse_color(other),
+    }
+  }
+  let label_color = if local_style.color_set {
+    local_style.color
+  } else {
+    Color::new(0.0, 0.0, 0.0)
+  };
   let frame = if is_framed {
     match option_value(frame_opts, "FrameStyle") {
       Some(Expr::Identifier(s)) if s == "None" => None,
-      Some(spec) => parse_color(spec).or(Some(Color::new(0.0, 0.0, 0.0))),
-      None => Some(Color::new(0.0, 0.0, 0.0)),
+      Some(spec) => frame_style_color(spec).or(Some(label_color)),
+      None => Some(label_color),
     }
   } else {
     None
@@ -50194,6 +50364,26 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   // current value of its variable.
   let released;
   let expr = match expr {
+    // A number format around a `Dynamic` (`NumberForm[Dynamic[x], {3, 1}]`)
+    // formats the held `Dynamic[x]`, which has no number in it: the front
+    // end then shows the live value of `x` as it is, unformatted.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "NumberForm"
+          | "PaddedForm"
+          | "AccountingForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+      ) && matches!(args.first(), Some(Expr::FunctionCall { name: d, args: da })
+        if d == "Dynamic" && !da.is_empty()) =>
+    {
+      let Some(Expr::FunctionCall { args: da, .. }) = args.first() else {
+        unreachable!()
+      };
+      released = da[0].clone();
+      &released
+    }
     Expr::FunctionCall { name, args } if name == "ProgressIndicator" => {
       fn release(e: &Expr) -> Expr {
         match e {
