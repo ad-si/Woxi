@@ -5708,9 +5708,16 @@ fn generate_svg_with_options(
   let show_ticks = opts.ticks_visible();
   // Which frame edges (bottom, left, top, right) carry their automatic tick
   // labels; an unframed plot labels its axes.
+  // An edge `Frame -> {{l, r}, {b, t}}` leaves undrawn carries no tick
+  // labels either.
+  let frame_edge_present = {
+    let e = opts.frame_edges;
+    [e.bottom, e.left, e.top, e.right]
+  };
   let frame_edge_labeled: [bool; 4] = std::array::from_fn(|edge| {
     if opts.frame {
-      matches!(opts.frame_tick_edges[edge], FrameEdgeTicks::Labeled)
+      frame_edge_present[edge]
+        && matches!(opts.frame_tick_edges[edge], FrameEdgeTicks::Labeled)
     } else {
       edge < 2
     }
