@@ -14011,6 +14011,64 @@ mod plot3d {
       assert!(plain.contains("font-size=\"14\""), "{plain}");
     }
 
+    /// The "Label" style sets its text in a proportional sans-serif face,
+    /// not the monospace of plain output text — for a bare string, a `Row`,
+    /// a `Column` and a `Framed` message alike. An explicit `FontFamily`
+    /// still wins over the style's face.
+    #[test]
+    fn label_style_sets_sans_serif_text() {
+      let families = |code: &str| -> Vec<String> {
+        let svg = export_svg(code);
+        svg
+          .match_indices("font-family=\"")
+          .filter_map(|(i, _)| svg[i + 13..].split('"').next())
+          .map(str::to_string)
+          .collect()
+      };
+      for code in [
+        "Style[\"ab cd\", \"Label\", 14]",
+        "Style[Row[{\"ab\", \"cd\"}], \"Label\"]",
+        "Style[Column[{\"ab\", \"cd\"}], \"Label\", 14]",
+        "Style[Framed[\"ab cd\"], \"Label\", 14]",
+        "Grid[{{Style[Framed[\"ab cd\"], \"Label\", 14]}}]",
+      ] {
+        let fams = families(code);
+        assert!(!fams.is_empty(), "{code}: no text");
+        assert!(
+          fams.iter().all(|f| f.ends_with("sans-serif")),
+          "{code}: {fams:?}"
+        );
+      }
+      let courier =
+        families("Style[\"ab cd\", \"Label\", FontFamily -> \"Courier\"]");
+      assert_eq!(courier, vec!["Courier, monospace".to_string()]);
+      // Without a style the string keeps the monospace output face.
+      let plain = families("Framed[\"ab cd\"]");
+      assert!(plain.iter().all(|f| f.ends_with("monospace")), "{plain:?}");
+    }
+
+    /// `Style[Framed[text], FontFamily -> f]` sets the framed text in `f`
+    /// and sizes the frame by that face's (narrower) advances.
+    #[test]
+    fn framed_text_takes_the_enclosing_font_family() {
+      let svg = export_svg(
+        "Style[Framed[\"abcdefghij\"], FontFamily -> \"Arial\", 14]",
+      );
+      assert!(svg.contains("font-family=\"Arial, sans-serif\""), "{svg}");
+      let mono = export_svg("Style[Framed[\"abcdefghij\"], 14]");
+      let width = |s: &str| -> f64 {
+        s.split("width=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      assert!(width(&svg) < width(&mono), "{svg}\n{mono}");
+    }
+
     /// A stored box expression typesets rather than printing itself: the
     /// balanced-ternary digit `UnderscriptBox["1", "_"]` is an underlined
     /// 1, not the text `UnderscriptBox[1, _]`.
