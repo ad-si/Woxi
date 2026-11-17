@@ -926,3 +926,26 @@ fn traditional_row_with_nested_grid_stacks_rows() {
   assert!(!svg.contains(">Grid<"), "grid head leaked: {svg}");
   assert!(!svg.contains(">(<"), "matrix parentheses leaked: {svg}");
 }
+
+/// Regression: a styled `Row` (`Style[Row[{…, Spacer[n], …}], size]`)
+/// pushes its style onto every item, and the resulting
+/// `Style[Spacer[n], size]` was typeset as text — dozens of points wide —
+/// instead of the `n` points of blank the spacer stands for.
+#[test]
+fn styled_spacer_keeps_its_width() {
+  clear_state();
+  let width = |code: &str| -> f64 {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let w = svg.split(" width=\"").nth(1).unwrap();
+    w.split('"').next().unwrap().parse().unwrap()
+  };
+  let plain = width("Row[{x, Spacer[10], b}]");
+  assert_eq!(width("Row[{x, Style[Spacer[10], 11], b}]"), plain);
+  assert_eq!(width("Row[{x, Style[Spacer[10], Red], b}]"), plain);
+  // The styled row's items are set at 11 pt, narrower than the default
+  // 14 pt, so the whole row is no wider than the unstyled one.
+  for opts in ["", ", Frame -> True"] {
+    let styled = width(&format!("Style[Row[{{x, Spacer[10], b}}{opts}], 11]"));
+    assert!(styled <= plain, "{opts}: {styled} > {plain}");
+  }
+}
