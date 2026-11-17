@@ -6192,6 +6192,32 @@ mod plot3d {
       assert!(svg.contains(">f[u]<"), "{svg}");
     }
 
+    // Regression: a subscripted label whose script has letters lost its
+    // `TraditionalForm` typesetting: `Subscript[x, n + 1]` read x₁₊ₙ with an
+    // upright x. Base and script are typeset like any expression label,
+    // with italic letters and the sum ordered `n+1`.
+    #[test]
+    fn subscript_axes_labels_typeset_their_parts_in_traditional_form() {
+      let expected = "<tspan font-style=\"italic\">x</tspan>\
+        <tspan baseline-shift=\"sub\" font-size=\"70%\">\
+        <tspan font-style=\"italic\">n</tspan>+1</tspan>";
+      for code in [
+        "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
+         AxesLabel -> {Subscript[x, n + 1], None, None}]",
+        "Plot[t, {t, 0, 1}, AxesLabel -> {Subscript[x, n + 1], None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(expected), "{code}: {svg}");
+        assert!(!svg.contains("1 + n"), "{code}: {svg}");
+      }
+      // A styled script keeps its own styling.
+      let svg = export_svg(
+        "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
+         AxesLabel -> {Subscript[x, Style[\"max\", Bold]], None, None}]",
+      );
+      assert!(svg.contains("font-weight=\"bold\""), "{svg}");
+    }
+
     // An `AxesLabel` expression that TraditionalForm typesets as a fraction
     // (`Subscript[c, p]/Subscript[c, a][0]`) is drawn as a stacked fraction
     // picture on every 2-D plot, not flattened to `cp/ca(0)` text.
@@ -10487,6 +10513,56 @@ mod plot3d {
         radius(&plain),
         radius(&sized)
       );
+    }
+
+    /// Regression: a list `PlotStyle -> {color, PointSize[…]}` of a single
+    /// dataset was nested as a sublist in front of the points, which scoped
+    /// its directives away from them: `Show` drew the points in the default
+    /// color and size.
+    #[test]
+    fn plot_style_list_colors_and_sizes_the_merged_points() {
+      let svg = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}}, \
+        PlotStyle -> {Red, PointSize[0.06]}], Graphics3D[{}]]",
+      );
+      let circles: Vec<&str> = svg.split("<circle").skip(1).collect();
+      assert_eq!(circles.len(), 2, "{svg}");
+      for c in circles {
+        assert!(c.contains("rgb(255,0,0)"), "points should be red:\n{svg}");
+        let r: f64 = c
+          .split("r=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap();
+        assert!(r > 8.0, "PointSize[0.06] should widen the dots:\n{svg}");
+      }
+    }
+
+    /// The standalone render honors `PlotStyle` too: its color and
+    /// `PointSize` replace the default palette color and dot.
+    #[test]
+    fn standalone_render_honors_plot_style() {
+      let svg = export_svg(
+        "ListPointPlot3D[{{0.1, 0.2, 0.3}, {0.5, 0.5, 0.5}}, \
+        PlotStyle -> {Red, PointSize[0.02]}]",
+      );
+      let circles: Vec<&str> = svg.split("<circle").skip(1).collect();
+      assert_eq!(circles.len(), 2, "{svg}");
+      for c in &circles {
+        assert!(c.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+        assert!(!c.contains("r=\"1.75\""), "{svg}");
+      }
+      // A per-dataset list cycles through the datasets.
+      let svg = export_svg(
+        "ListPointPlot3D[{{{0, 0, 0}, {1, 1, 1}}, {{0, 1, 0}, {1, 0, 1}}}, \
+        PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 2, "{svg}");
+      assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
     }
   }
 

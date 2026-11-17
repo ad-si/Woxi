@@ -21260,6 +21260,35 @@ pub fn traditional_label(e: &Expr) -> String {
     {
       traditional_label(&args[0])
     }
+    // An unstyled script (`Subscript[x, n + 1]`) keeps the shifted-tspan
+    // shape a text label can hold, with its base and scripts each typeset
+    // in `TraditionalForm`: italic letters and the sum ordered `n + 1`.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Subscript" | "Superscript")
+        && args.len() >= 2
+        && !args.iter().any(contains_visible_style)
+        && args[1..].iter().any(script_needs_typesetting) =>
+    {
+      let part = |p: &Expr| {
+        if let Expr::String(_) = p {
+          expr_to_svg_markup(p)
+        } else {
+          let label = traditional_label(p);
+          label
+            .strip_prefix(STYLED_LABEL_MARKER)
+            .map(str::to_string)
+            .unwrap_or(label)
+        }
+      };
+      let shift = if name == "Subscript" { "sub" } else { "super" };
+      let scripts: Vec<String> = args[1..].iter().map(part).collect();
+      format!(
+        "{STYLED_LABEL_MARKER}{}<tspan baseline-shift=\"{shift}\" \
+         font-size=\"70%\">{}</tspan>",
+        part(&args[0]),
+        scripts.join(",")
+      )
+    }
     _ if contains_visible_style(e) => {
       format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e))
     }

@@ -6792,6 +6792,17 @@ fn surface_opacity_directive(
 /// style — one bare directive, or a list that mixes directives for a
 /// single style, like `{RGBColor[...], Opacity[.5]}` — applies to every
 /// object alike, so the whole value comes back as the sole item.
+/// Append one `PlotStyle` entry to a primitive group's directives. A list
+/// entry such as `{Red, PointSize[0.02]}` is spliced in element by element:
+/// nested as a sublist it would scope its directives away from the
+/// primitives that follow it in the group.
+fn push_plot_style(group: &mut Vec<Expr>, style: &Expr) {
+  match style {
+    Expr::List(items) => group.extend(items.iter().cloned()),
+    other => group.push(other.clone()),
+  }
+}
+
 fn plot_style_items(replacement: &Expr, num_objects: usize) -> Vec<Expr> {
   use crate::functions::graphics::parse_color;
 
@@ -18367,6 +18378,8 @@ struct ScatterPoint {
   sy: f64,
   depth: f64,
   color: (u8, u8, u8),
+  /// The dot radius in pixels; `None` keeps the default scatter dot.
+  radius: Option<f64>,
   /// Text drawn beside the point (`data -> labels`).
   label: Option<String>,
 }
@@ -18533,10 +18546,36 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Dataset colors: WL 15's 3D point/curve palette.
   let palette = list_curve_colors_3d();
 
+  // `PlotStyle -> style` (or a list of per-dataset styles, cycling)
+  // overrides a dataset's palette color and dot size.
+  let dataset_styles: Vec<StyleState3D> = args[1..]
+    .iter()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") => {
+        Some(parse_plot_style_3d(replacement, datasets.len()))
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+
   let mut scatter_points: Vec<ScatterPoint> = Vec::new();
 
   for (di, ds) in datasets.iter().enumerate() {
-    let base_color = palette[di % palette.len()];
+    let style = (!dataset_styles.is_empty())
+      .then(|| &dataset_styles[di % dataset_styles.len()]);
+    let base_color = style
+      .and_then(|st| st.color)
+      .unwrap_or(palette[di % palette.len()]);
+    let radius = style
+      .and_then(|st| st.point_size)
+      .map(|ps| crate::functions::graphics::point_radius(ps, svg_width as f64));
     for (pi, &(x, y, z)) in ds.iter().enumerate() {
       let nx = if x_range_v > 1e-15 {
         ((x - x_min) / x_range_v) * 2.0 - 1.0
@@ -18565,6 +18604,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         sy,
         depth: d,
         color: base_color,
+        radius,
         label: if di == 0 {
           point_labels.get(pi).cloned()
         } else {
@@ -18641,7 +18681,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(style_items) = &plot_style_per_dataset
         && !style_items.is_empty()
       {
-        group.push(style_items[di % style_items.len()].clone());
+        push_plot_style(&mut group, &style_items[di % style_items.len()]);
       }
       let point_exprs: Vec<Expr> = ds
         .iter()
@@ -18831,10 +18871,10 @@ fn generate_scatter_svg(
   });
 
   // Merge-render scatter points and box edges back-to-front (painter's algorithm)
-  let radius = 1.75;
   {
     let mut ei = 0;
     for pt in points {
+      let radius = pt.radius.unwrap_or(1.75);
       // Emit any box edges further from camera than this point
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= pt.depth {
         let edge = &sorted_edges[ei];
@@ -20479,7 +20519,8 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some([xl, xr, yl, yr]) = extent {
     // Bars: from each value down to the filling level.
     for (k, pts) in datasets.iter().enumerate() {
-      let mut group = vec![colors[k].clone()];
+      let mut group = Vec::new();
+      push_plot_style(&mut group, &colors[k]);
       group.push(call1("EdgeForm", call1("GrayLevel", num(0.5))));
       let Some(bottom) = base else {
         continue;
@@ -20508,7 +20549,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         d.push(call1("Opacity", num(0.5)));
       }
       d.push(point_size());
-      d.push(colors[k].clone());
+      push_plot_style(&mut d, &colors[k]);
       call("Directive", d)
     };
     let vertex_colors =

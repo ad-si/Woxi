@@ -5699,6 +5699,18 @@ width, as in 2D. A Demonstration's snapshot of `PointSize[1/60]` atoms at
 default 360 px width (6 px). One snapshot can't tell these apart, so the
 2D rule stays.
 
+### 3D tick step on an exact unit `PlotRange`
+
+Woxi picks the automatic 3D tick step from about four intervals with the
+1, 2, 2.5, 5 multipliers, so an axis whose `PlotRange` is exactly `{0, 1}`
+ticks at 0.25 (`0.00, 0.25, …`). A Demonstration snapshot of a
+`ParametricPlot3D` with `PlotRange -> {{0, 1}, {0, 1}, {0, 1}}` shown at
+`ImageSize -> {400, 400}` with `SphericalRegion -> True` ticks every axis
+at 0.5 (`0.0, 0.5, 1.0`) with minor ticks between. The wider labels also
+push the left z-axis label partly out of the picture. Whether Wolfram's
+step depends on the projected axis length or drops the 2.5 multiplier in
+3D can't be told from one snapshot, so the current rule stays.
+
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
