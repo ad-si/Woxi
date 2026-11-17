@@ -740,6 +740,25 @@ mod graph_plot_graphics_complex {
       "{{1, 2}, {2, 3}}"
     );
   }
+
+  /// `GraphPlot` builds an undirected graph out of a rule list, so an
+  /// acyclic rule list is laid out like its undirected edges (spring
+  /// embedded) instead of being layered like a digraph.
+  #[test]
+  fn acyclic_rule_list_is_laid_out_undirected() {
+    assert_eq!(
+      interpret(
+        "r = Flatten[Table[{If[j < 5, {i, j} -> {i, j + 1}, Nothing], \
+         If[i < 3, {i, j} -> {i + 1, j}, Nothing]}, {i, 3}, {j, 5}]]; \
+         {GraphPlot[r][[1, 1]] === GraphPlot[UndirectedEdge @@@ r][[1, 1]], \
+         ExportString[GraphPlot[r, VertexRenderingFunction -> ({} &)], \"SVG\"] === \
+         ExportString[GraphPlot[UndirectedEdge @@@ r, \
+         VertexRenderingFunction -> ({} &)], \"SVG\"]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
 }
 
 /// A `Method` list with a suboption of the pre-version-6 GraphPlot
@@ -1006,6 +1025,45 @@ mod vertex_degree {
 
 mod graph_embedding {
   use super::*;
+
+  /// A long mesh strip must come out unfolded: the single-level spring
+  /// layout folded a 4 x 60 grid over itself (39 edge crossings) until
+  /// large components were refined level by level from a coarsened graph.
+  #[test]
+  fn long_grid_strip_has_no_edge_crossings() {
+    assert_eq!(
+      interpret(
+        "g = Graph[Flatten[Table[{If[j < 60, {i, j} <-> {i, j + 1}, Nothing], \
+         If[i < 4, {i, j} <-> {i + 1, j}, Nothing]}, {i, 4}, {j, 60}]]]; \
+         c = AssociationThread[VertexList[g], GraphEmbedding[g]]; \
+         segs = {c[#[[1]]], c[#[[2]]]} & /@ EdgeList[g]; \
+         o[a_, b_, p_] := Sign[(b - a)[[1]] (p - a)[[2]] - (b - a)[[2]] (p - a)[[1]]]; \
+         x[{p1_, p2_}, {q1_, q2_}] := \
+           o[p1, p2, q1] o[p1, p2, q2] < 0 && o[q1, q2, p1] o[q1, q2, p2] < 0; \
+         Count[Subsets[segs, {2}], s_ /; x @@ s]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  /// The strip is stretched out: its corners lie about as far apart as the
+  /// strip is long (in mean edge lengths), where the folded layout brought
+  /// them within half of that.
+  #[test]
+  fn long_grid_strip_is_stretched_out() {
+    assert_eq!(
+      interpret(
+        "g = Graph[Flatten[Table[{If[j < 80, {i, j} <-> {i, j + 1}, Nothing], \
+         If[i < 3, {i, j} <-> {i + 1, j}, Nothing]}, {i, 3}, {j, 80}]]]; \
+         c = AssociationThread[VertexList[g], GraphEmbedding[g]]; \
+         d = EuclideanDistance[c[#[[1]]], c[#[[2]]]] & /@ EdgeList[g]; \
+         EuclideanDistance[c[{1, 1}], c[{3, 80}]] / (Sqrt[79^2 + 2^2] Mean[d]) > 0.9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 
   #[test]
   fn complete_graph_3() {

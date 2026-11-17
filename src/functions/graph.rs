@@ -1065,7 +1065,9 @@ fn graph_render(
       pts
     }
   } else {
-    layout_choice.plain_lines = !draw_directed;
+    // `GraphPlot` drawing undirected lines (a rule list's plot) lays out
+    // the undirected graph.
+    layout_choice.plain_lines = !draw_directed || legacy_plot == Some(false);
     layout_choice.positions(&graph, &index_map)
   };
   if let Some(directed) = legacy_plot {
@@ -2967,6 +2969,17 @@ impl LayoutChoice {
         self.plain_lines,
       );
     }
+    // `GraphPlot` of a rule list builds an *undirected* graph, so no other
+    // layout may read the rules' direction: an acyclic rule list is spring
+    // embedded rather than layered like a digraph, and circular orders are
+    // those of the undirected graph.
+    let undirected;
+    let graph = if self.plain_lines {
+      undirected = undirected_render_graph(graph);
+      &undirected
+    } else {
+      graph
+    };
     if self.circular {
       let optimal = !matches!(
         self.named,
@@ -2996,6 +3009,19 @@ impl LayoutChoice {
     }
     compute_layout(graph)
   }
+}
+
+/// A copy of the rendering graph with every edge marked undirected.
+fn undirected_render_graph(
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> DiGraph<usize, RenderEdgeData> {
+  graph.map(
+    |_, &node| node,
+    |_, edge| RenderEdgeData {
+      directed: false,
+      ..edge.clone()
+    },
+  )
 }
 
 /// `GraphEmbedding[Graph[vertices, edges, opts…]]` for a graph without
@@ -3975,6 +4001,55 @@ fn force_layout_component(
     }
   }
 
+  let mut pos = if m >= MULTILEVEL_MIN_VERTICES {
+    multilevel_spring_layout(&adj)
+  } else {
+    two_start_spring_layout(&adj)
+  };
+
+  // Turn the layout so its long axis runs horizontally, the way Wolfram's
+  // spring embeddings come out.
+  let (mx, my) = pos
+    .iter()
+    .fold((0.0, 0.0), |(a, b), &(x, y)| (a + x, b + y));
+  let (mx, my) = (mx / m as f64, my / m as f64);
+  let (mut cxx, mut cyy, mut cxy) = (0.0_f64, 0.0_f64, 0.0_f64);
+  for &(x, y) in &pos {
+    cxx += (x - mx) * (x - mx);
+    cyy += (y - my) * (y - my);
+    cxy += (x - mx) * (y - my);
+  }
+  let theta = 0.5 * (2.0 * cxy).atan2(cxx - cyy);
+  let (sin, cos) = (-theta).sin_cos();
+  for p in &mut pos {
+    let (x, y) = (p.0 - mx, p.1 - my);
+    *p = (x * cos - y * sin, x * sin + y * cos);
+  }
+
+  // Center on the origin and scale the layout to fit [-1, 1]^2 so the
+  // spread is kept as it is instead of being squashed against the border.
+  let (mut min_x, mut max_x, mut min_y, mut max_y) =
+    (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+  for &(x, y) in &pos {
+    min_x = min_x.min(x);
+    max_x = max_x.max(x);
+    min_y = min_y.min(y);
+    max_y = max_y.max(y);
+  }
+  let (cx, cy) = (f64::midpoint(min_x, max_x), f64::midpoint(min_y, max_y));
+  let half = ((max_x - min_x).max(max_y - min_y) / 2.0).max(1e-9);
+  for p in &mut pos {
+    *p = ((p.0 - cx) / half, (p.1 - cy) / half);
+  }
+
+  pos
+}
+
+/// The single-level spring layout of a small component (given as an
+/// undirected adjacency list): two deterministic starts, a sunflower spiral
+/// and a DFS circle, compete by their final spring energy.
+fn two_start_spring_layout(adj: &[Vec<usize>]) -> Vec<(f64, f64)> {
+  let m = adj.len();
   // Deterministic initial placement on a sunflower spiral.
   let golden_angle = PI * (3.0 - (5.0_f64).sqrt());
   let sunflower: Vec<(f64, f64)> = (0..m)
@@ -4013,62 +4088,10 @@ fn force_layout_component(
   let mut best_energy = f64::INFINITY;
   let mut best_positions = Vec::new();
   for mut pos in [sunflower, circular] {
-    let mut temp = w * 0.1;
+    let temp = w * 0.1;
     let cool = (0.01_f64 / temp).powf(1.0 / iterations as f64);
 
-    for _ in 0..iterations {
-      let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
-
-      // Repulsive force between every pair.
-      for i in 0..m {
-        for j in (i + 1)..m {
-          let dx = pos[i].0 - pos[j].0;
-          let dy = pos[i].1 - pos[j].1;
-          let d2 = dx * dx + dy * dy;
-          let d = d2.sqrt().max(1e-4);
-          let force = (k * k) / d;
-          let fx = dx / d * force;
-          let fy = dy / d * force;
-          disp[i].0 += fx;
-          disp[i].1 += fy;
-          disp[j].0 -= fx;
-          disp[j].1 -= fy;
-        }
-      }
-
-      // Attractive force along edges (each undirected edge is listed twice
-      // in `adj`, so we guard on i < j to count it once).
-      for i in 0..m {
-        for &j in &adj[i] {
-          if i >= j {
-            continue;
-          }
-          let dx = pos[i].0 - pos[j].0;
-          let dy = pos[i].1 - pos[j].1;
-          let d = (dx * dx + dy * dy).sqrt().max(1e-4);
-          let force = (d * d) / k;
-          let fx = dx / d * force;
-          let fy = dy / d * force;
-          disp[i].0 -= fx;
-          disp[i].1 -= fy;
-          disp[j].0 += fx;
-          disp[j].1 += fy;
-        }
-      }
-
-      // Apply displacement, clamped by the current temperature, and keep
-      // everything inside [-w/2, w/2] × [-h/2, h/2].
-      for i in 0..m {
-        let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
-          .sqrt()
-          .max(1e-9);
-        let step = dlen.min(temp);
-        pos[i].0 += disp[i].0 / dlen * step;
-        pos[i].1 += disp[i].1 / dlen * step;
-      }
-
-      temp *= cool;
-    }
+    spring_iterations(&mut pos, adj, k, temp, cool, iterations);
 
     // Potential whose gradient gives the forces above. Compare before
     // normalization so an expanded, tangled drawing cannot win by scale.
@@ -4091,43 +4114,166 @@ fn force_layout_component(
       best_positions = pos;
     }
   }
-  let mut pos = best_positions;
+  best_positions
+}
 
-  // Turn the layout so its long axis runs horizontally, the way Wolfram's
-  // spring embeddings come out.
-  let (mx, my) = pos
-    .iter()
-    .fold((0.0, 0.0), |(a, b), &(x, y)| (a + x, b + y));
-  let (mx, my) = (mx / m as f64, my / m as f64);
-  let (mut cxx, mut cyy, mut cxy) = (0.0_f64, 0.0_f64, 0.0_f64);
-  for &(x, y) in &pos {
-    cxx += (x - mx) * (x - mx);
-    cyy += (y - my) * (y - my);
-    cxy += (x - mx) * (y - my);
-  }
-  let theta = 0.5 * (2.0 * cxy).atan2(cxx - cyy);
-  let (sin, cos) = (-theta).sin_cos();
-  for p in &mut pos {
-    let (x, y) = (p.0 - mx, p.1 - my);
-    *p = (x * cos - y * sin, x * sin + y * cos);
-  }
+/// Fruchterman-Reingold iterations on `pos` with natural edge length `k`:
+/// every pair repels, every edge attracts, and each step is clamped by a
+/// temperature that starts at `temp` and shrinks by `cool` per iteration.
+fn spring_iterations(
+  pos: &mut [(f64, f64)],
+  adj: &[Vec<usize>],
+  k: f64,
+  mut temp: f64,
+  cool: f64,
+  iterations: usize,
+) {
+  let m = pos.len();
+  for _ in 0..iterations {
+    let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
 
-  // Center on the origin and scale the layout to fit [-1, 1]^2 so the
-  // spread is kept as it is instead of being squashed against the border.
-  let (mut min_x, mut max_x, mut min_y, mut max_y) =
-    (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
-  for &(x, y) in &pos {
-    min_x = min_x.min(x);
-    max_x = max_x.max(x);
-    min_y = min_y.min(y);
-    max_y = max_y.max(y);
-  }
-  let (cx, cy) = (f64::midpoint(min_x, max_x), f64::midpoint(min_y, max_y));
-  let half = ((max_x - min_x).max(max_y - min_y) / 2.0).max(1e-9);
-  for p in &mut pos {
-    *p = ((p.0 - cx) / half, (p.1 - cy) / half);
-  }
+    // Repulsive force between every pair.
+    for i in 0..m {
+      for j in (i + 1)..m {
+        let dx = pos[i].0 - pos[j].0;
+        let dy = pos[i].1 - pos[j].1;
+        let d2 = dx * dx + dy * dy;
+        let d = d2.sqrt().max(1e-4);
+        let force = (k * k) / d;
+        let fx = dx / d * force;
+        let fy = dy / d * force;
+        disp[i].0 += fx;
+        disp[i].1 += fy;
+        disp[j].0 -= fx;
+        disp[j].1 -= fy;
+      }
+    }
 
+    // Attractive force along edges (each undirected edge is listed twice
+    // in `adj`, so we guard on i < j to count it once).
+    for i in 0..m {
+      for &j in &adj[i] {
+        if i >= j {
+          continue;
+        }
+        let dx = pos[i].0 - pos[j].0;
+        let dy = pos[i].1 - pos[j].1;
+        let d = (dx * dx + dy * dy).sqrt().max(1e-4);
+        let force = (d * d) / k;
+        let fx = dx / d * force;
+        let fy = dy / d * force;
+        disp[i].0 -= fx;
+        disp[i].1 -= fy;
+        disp[j].0 += fx;
+        disp[j].1 += fy;
+      }
+    }
+
+    // Apply displacement, clamped by the current temperature, and keep
+    // everything inside [-w/2, w/2] × [-h/2, h/2].
+    for i in 0..m {
+      let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
+        .sqrt()
+        .max(1e-9);
+      let step = dlen.min(temp);
+      pos[i].0 += disp[i].0 / dlen * step;
+      pos[i].1 += disp[i].1 / dlen * step;
+    }
+
+    temp *= cool;
+  }
+}
+
+/// Components at least this large are laid out by multilevel refinement:
+/// a single-level spring layout started from a fixed guess cannot untangle
+/// hundreds of vertices, which come out folded over themselves.
+const MULTILEVEL_MIN_VERTICES: usize = 64;
+
+/// The coarsest graph of the multilevel hierarchy has at most this many
+/// vertices; it is small enough for the two-start layout to settle.
+const MULTILEVEL_COARSEST_VERTICES: usize = 24;
+
+/// One coarsening step: a maximal matching that visits vertices by
+/// increasing degree and pairs each with its unmatched neighbor of least
+/// degree. Returns the coarse adjacency and each vertex's coarse parent, or
+/// `None` when the matching shrinks the graph by less than a fifth (a star,
+/// say), where further levels would not pay off.
+fn coarsen_graph(adj: &[Vec<usize>]) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
+  let n = adj.len();
+  let mut order: Vec<usize> = (0..n).collect();
+  order.sort_by_key(|&v| (adj[v].len(), v));
+  let mut parent = vec![usize::MAX; n];
+  let mut count = 0;
+  for &v in &order {
+    if parent[v] != usize::MAX {
+      continue;
+    }
+    parent[v] = count;
+    if let Some(&u) = adj[v]
+      .iter()
+      .filter(|&&u| u != v && parent[u] == usize::MAX)
+      .min_by_key(|&&u| (adj[u].len(), u))
+    {
+      parent[u] = count;
+    }
+    count += 1;
+  }
+  if count * 5 > n * 4 {
+    return None;
+  }
+  let mut coarse: Vec<Vec<usize>> = vec![Vec::new(); count];
+  for (v, neighbors) in adj.iter().enumerate() {
+    for &u in neighbors {
+      if parent[v] != parent[u] {
+        coarse[parent[v]].push(parent[u]);
+      }
+    }
+  }
+  for list in &mut coarse {
+    list.sort_unstable();
+    list.dedup();
+  }
+  Some((coarse, parent))
+}
+
+/// A multilevel spring layout (in the manner of Walshaw's and Hu's
+/// multilevel force-directed placement, which Wolfram's
+/// `"SpringElectricalEmbedding"` also uses): repeatedly coarsen the graph by
+/// matchings, lay out the coarsest graph, then at each finer level start
+/// every vertex next to its coarse parent and refine with spring iterations.
+/// The global shape is fixed while the graph is small, so large meshes and
+/// chains come out unfolded.
+fn multilevel_spring_layout(adj: &[Vec<usize>]) -> Vec<(f64, f64)> {
+  let mut levels = vec![adj.to_vec()];
+  let mut parents = Vec::new();
+  while levels.last().map_or(0, Vec::len) > MULTILEVEL_COARSEST_VERTICES {
+    let Some((coarse, parent)) = coarsen_graph(levels.last().unwrap()) else {
+      break;
+    };
+    levels.push(coarse);
+    parents.push(parent);
+  }
+  let mut pos = two_start_spring_layout(levels.last().unwrap());
+  let golden_angle = PI * (3.0 - (5.0_f64).sqrt());
+  let iterations = 80;
+  for (fine, parent) in levels.iter().rev().skip(1).zip(parents.iter().rev()) {
+    let n = fine.len();
+    // The layout keeps an extent of about 2 at every level, so the natural
+    // edge length shrinks with the vertex count.
+    let k = (4.0 / n as f64).sqrt();
+    // Matched siblings share a parent; fan them out on a small circle so
+    // they never coincide.
+    pos = (0..n)
+      .map(|v| {
+        let (x, y) = pos[parent[v]];
+        let angle = v as f64 * golden_angle;
+        (x + 0.1 * k * angle.cos(), y + 0.1 * k * angle.sin())
+      })
+      .collect();
+    let temp = 1.5 * k;
+    let cool = (0.01_f64 / 1.5).powf(1.0 / iterations as f64);
+    spring_iterations(&mut pos, fine, k, temp, cool, iterations);
+  }
   pos
 }
 
