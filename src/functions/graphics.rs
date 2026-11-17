@@ -797,7 +797,7 @@ fn segment_arrowheads_svg(
   let (dx, dy) = (to.0 - from.0, to.1 - from.1);
   let len = (dx * dx + dy * dy).sqrt();
   let mut out = String::new();
-  if !(len > 0.0) {
+  if len.is_nan() || len <= 0.0 {
     return out;
   }
   let (ux, uy) = (dx / len, dy / len);
