@@ -5644,34 +5644,39 @@ picture as without the option. The options are kept on the result, so
 re-renders the scene through `Graphics3D` and honors them, including the
 `SphericalRegion -> True` framing a `Manipulate` frame defaults to.
 
-### `SphericalRegion -> True` draws about 6 % larger than Wolfram
+### `SphericalRegion -> True` framing sphere
 
-Woxi frames the picture by the sphere around the (2 %-padded) bounding box
-and widens the perspective view until that sphere fits. That reproduces the
-proportions Wolfram draws across differently shaped scenes. It also matches
-the shrink ratio of a cylinder from `{0,0,0}` to `{10,0,0}` at
-`ImageSize -> {550, 350}` (324/532 in Wolfram, 331/550 in Woxi). In absolute
-terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
-(a `Show` of a `ParametricPlot3D` and `Graphics3D`) all came out 6–7 % larger
-in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
-per side instead of 2 %. Where the extra margin comes from was not decoded.
+Woxi frames the picture by a sphere centered on the bounding box and
+widens the perspective view until that sphere fits. Wolfram documents the
+sphere as the one "drawn around the three-dimensional bounding box", but
+its snapshots of scenes with an automatic range match the sphere that
+just encloses the *contents* far better, so that is what Woxi uses there.
+A pinned `PlotRange` keeps the sphere around the pinned box's corners.
+None of this was checked with wolframscript; the calibrations are:
 
-A flat scene points the other way. A twisted band of radius 3 around the
-z-axis has a 6 × 6 × 2 bounding box. Drawn at `ImageSize -> {450, 400}` with
-the default `ViewPoint`, it is about 1.36× *larger* in four Wolfram snapshots
-(78 % of the width) than in Woxi (58 %). Matching that would take a framing
-sphere of radius about 3.4. That is smaller than any sphere around this box
-(the x-y diagonal alone gives 4.24), and only a little larger than the
-contents' own enclosing sphere (radius 3). The cube- and bar-shaped
-calibrations above fit the box sphere, so no single rule tried so far
-(box sphere, contents sphere, longer vs. shorter image side) reproduces
-all of them.
+- A rhombic polyhedron (a near-sphere) in its tight bounding cube, with
+  `PlotRange -> All`, `Boxed -> False` and `ImageSize -> 400`, is 381 px
+  wide in Wolfram's snapshot. The contents sphere gives 384 px; the sphere
+  around the cube's corners would give about 220 px.
+- A twisted band of radius 3 around the z-axis in a 6 × 6 × 2 box at
+  `ImageSize -> {450, 400}` draws about 1.36× larger in Wolfram than the
+  box sphere allows (a framing radius of about 3.4); its contents reach
+  about 3.16 from the center, so the contents sphere draws it about 7 %
+  too large instead.
+- A cylinder from `{0,0,0}` to `{10,0,0}` at `ImageSize -> {550, 350}`
+  (324/532 in wolframscript with/without the option), where the contents
+  and box spheres nearly coincide.
+- Four snapshots of a `Show` of a `ParametricPlot3D` and a `Graphics3D` at
+  `ImageSize -> {400, 400}` came out 6–7 % larger in Woxi under the box
+  sphere; the smaller contents sphere moves them in the right direction.
+- Long tubes in pinned boxes (see the next section) match the pinned box's
+  sphere within 1 %.
 
 ### Sphere framing of an unboxed box at a fixed `ImageSize`
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a
-`Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
-displayed box) when the box is invisible (`Boxed -> False`) and the picture
+`Graphics3D` scene like `SphericalRegion -> True` (by the framing sphere
+described above) when the box is invisible (`Boxed -> False`) and the picture
 is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate
 this, none checked with wolframscript: a cylinder from `{-10, 0, 0}` to
 `{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
@@ -5680,8 +5685,9 @@ box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
 `{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
 244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), and a `Show` of
 a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
-custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
-and 0.86× the box fit.
+custom `ViewPoint` without a `PlotRange` was about 1.02× the box-sphere
+framing and 0.86× the box fit (measured before the automatic range
+switched to the contents sphere).
 
 Which conditions really trigger the sphere framing — `Boxed -> False`, the
 pinned size, an explicit `PlotRange` or `Show` — is unverified. A

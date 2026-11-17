@@ -3042,14 +3042,13 @@ mod tests {
     }
 
     #[test]
-    fn spherical_region_scales_by_the_bounding_box_sphere() {
-      // `SphericalRegion -> True` fits the sphere drawn around the 3D
-      // bounding box, not the projected box itself. A unit sphere's box is
-      // the cube [-1, 1]³, whose circumsphere is √3 times as wide as the
-      // ball, so the ball spans a little more than 1/√3 of the frame
-      // (perspective widens the view just enough for the circumsphere to
-      // fit). Without the option the frame hugs the projected cube, which
-      // is narrower than its circumsphere, so the ball is drawn larger.
+    fn spherical_region_scales_by_the_contents_sphere() {
+      // `SphericalRegion -> True` with an automatic range fits the sphere
+      // around the contents (centered on the bounding box), not the
+      // projected box. A unit ball is its own enclosing sphere, so it
+      // fills the frame (perspective widens the view just enough for the
+      // sphere's silhouette to fit), while without the option the frame
+      // hugs the larger projected cube [-1, 1]³ around it.
       let with = ink_extent(&svg_of(
         "Graphics3D[Sphere[{0, 0, 0}, 1], SphericalRegion -> True, \
          Boxed -> False, ImageSize -> 200]",
@@ -3059,25 +3058,23 @@ mod tests {
       ));
       let ratio = with.0 / 200.0;
       assert!(
-        (0.5..0.6).contains(&ratio),
-        "expected about a 1/√3 shrink, got {ratio}: {with:?}"
+        (0.95..=1.0).contains(&ratio),
+        "the ball should fill the frame, got {ratio}: {with:?}"
       );
       assert!(
-        with.0 < without.0 * 0.9,
-        "the circumsphere frame must draw the ball smaller: \
-         {with:?} vs {without:?}"
+        without.0 < with.0 * 0.8,
+        "the box outline fit must draw the ball smaller: \
+         {without:?} vs {with:?}"
       );
 
-      // A flat square seen face on. Its box is given the range {-1, 1}
-      // along the flat axis (as Wolfram does), so with the option the
-      // frame spans that box's circumsphere (radius √3 after 2% padding),
-      // seen from 3 box sides away.
+      // A flat square seen face on: its corners reach √2 from the center,
+      // seen from 3 box sides (6 units) away.
       let flat = "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, \
                   {-1, 1, 0}}], Boxed -> False, ImageSize -> 200, \
                   ViewPoint -> {0, 0, 3}, SphericalRegion -> True]";
       let with = ink_extent(&svg_of(flat));
       let ratio = with.0 / 200.0;
-      let r = 1.02 * 3f64.sqrt();
+      let r = 2f64.sqrt();
       let d = 6.0;
       let expected = 2.0 / (2.0 * r * d / (d * d - r * r).sqrt());
       assert!(
@@ -3087,20 +3084,48 @@ mod tests {
     }
 
     #[test]
-    fn spherical_region_sphere_surrounds_the_box_not_the_contents() {
-      // Two disks a distance apart: the contents' own enclosing sphere is
-      // smaller than the one around their bounding box (it misses the
-      // box's corners), and Wolfram frames by the latter. Wolfram draws
-      // a pair of unit circles this far apart about 55% as wide as a
-      // 400×400 picture.
+    fn spherical_region_frames_a_round_solid_in_its_cube_by_its_reach() {
+      // A round solid's tight bounding box is a cube whose corners reach
+      // √3 times as far as the solid does. Wolfram's snapshot of a
+      // rhombic polyhedron at `ImageSize -> 400` with `PlotRange -> All`
+      // draws it about 381 px wide (95 %); the sphere around the cube's
+      // corners would leave it at only about 55 %. A cube's corners and an
+      // octahedron's vertices both reaching 1 from the center frame alike.
+      let octahedron = "Graphics3D[{Polygon[{{1, 0, 0}, {0, 1, 0}, \
+                        {0, 0, 1}}], Polygon[{{-1, 0, 0}, {0, -1, 0}, \
+                        {0, 0, -1}}], Polygon[{{1, 0, 0}, {0, -1, 0}, \
+                        {0, 0, 1}}], Polygon[{{-1, 0, 0}, {0, 1, 0}, \
+                        {0, 0, -1}}]}, PlotRange -> All, Boxed -> False, \
+                        SphericalRegion -> True, ImageSize -> 400]";
+      let (w, h) = ink_extent(&svg_of(octahedron));
+      assert!(
+        w > 300.0 && h > 300.0,
+        "the solid should nearly fill the frame, got {w} × {h}"
+      );
+      assert!(w <= 400.0 && h <= 400.0, "{w} × {h}");
+    }
+
+    #[test]
+    fn spherical_region_with_a_pinned_range_surrounds_the_box() {
+      // Two disks a distance apart. With an automatic range the frame
+      // fits the sphere through their rims (radius √2 around the box
+      // center); a pinned `PlotRange` frames the sphere around the pinned
+      // box's corners (radius √3), drawing them smaller.
       let rings = "Graphics3D[{Polygon[Table[{Cos[t], Sin[t], 0}, \
                    {t, 0, 2 Pi, Pi/50}]], Polygon[Table[{Cos[t], Sin[t], 2}, \
                    {t, 0, 2 Pi, Pi/50}]]}, Boxed -> False, \
-                   SphericalRegion -> True, ImageSize -> {400, 400}]";
-      let (w, _) = ink_extent(&svg_of(rings));
+                   SphericalRegion -> True, ImageSize -> {400, 400}";
+      let (auto, _) = ink_extent(&svg_of(&format!("{rings}]")));
+      let (pinned, _) = ink_extent(&svg_of(&format!(
+        "{rings}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{0, 2}}}}]"
+      )));
       assert!(
-        (200.0..240.0).contains(&w),
-        "rings should span about 55% of the width, got {w}"
+        (290.0..320.0).contains(&auto),
+        "rings should span about 76% of the width, got {auto}"
+      );
+      assert!(
+        (230.0..260.0).contains(&pinned),
+        "pinned rings should span about 61% of the width, got {pinned}"
       );
     }
 

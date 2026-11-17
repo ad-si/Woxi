@@ -11553,6 +11553,45 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
   }
 }
 
+/// The largest distance from `center` to any drawn point of a scene: the
+/// triangle vertices of its faces and the points of its lines, arrows,
+/// points and text anchors.
+fn contents_reach(
+  prims: &[Primitive3D],
+  triangle_vertices: &[[Point3D; 3]],
+  center: Point3D,
+) -> f64 {
+  let dist = |p: &Point3D| {
+    ((p.x - center.x).powi(2)
+      + (p.y - center.y).powi(2)
+      + (p.z - center.z).powi(2))
+    .sqrt()
+  };
+  let mut reach = triangle_vertices
+    .iter()
+    .flatten()
+    .map(dist)
+    .fold(0.0_f64, f64::max);
+  for prim in prims {
+    match prim {
+      Primitive3D::Line3D { segments, .. } => {
+        for pt in segments.iter().flatten() {
+          reach = reach.max(dist(pt));
+        }
+      }
+      Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
+        for pt in points {
+          reach = reach.max(dist(pt));
+        }
+      }
+      Primitive3D::Text3D { pos, .. } => reach = reach.max(dist(pos)),
+      _ => {}
+    }
+  }
+  if reach.is_finite() { reach } else { 0.0 }
+}
+
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::graphics_option_args(args)[..];
@@ -12882,9 +12921,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_max = 1.0;
   }
 
-  // `SphericalRegion -> True` frames the picture by the sphere drawn
-  // around the displayed box rather than by the projected outline of the
-  // contents. The sphere projects to the same circle from every direction,
+  // `SphericalRegion -> True` frames the picture by a sphere centered on
+  // the displayed box (around the contents, or around a pinned box; see
+  // below) rather than by the projected outline of the contents. The
+  // sphere projects to the same circle from every direction,
   // so the scale no longer follows the view angle or a moving shape.
   // Wolfram widens the camera's field of view until that sphere just fits
   // (see `spherical_region_span`); the resulting span replaces the fitted
@@ -12901,6 +12941,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       + (z3_max - z3_min).powi(2))
     .sqrt()
       / 2.0;
+    // An automatic range frames the sphere around the contents (centered
+    // on the box), not the one around the box's corners: a round solid
+    // in its tight bounding cube fills the picture rather than shrinking
+    // to the 1/√3 the cube's corners would leave it. A pinned `PlotRange`
+    // keeps the sphere around the pinned box.
+    let radius = if plot_range.is_none() {
+      let contents = contents_reach(&prims, &triangle_vertices, center);
+      if contents > 0.0 { contents } else { radius }
+    } else {
+      radius
+    };
     if radius > 0.0 && radius.is_finite() {
       let span = spherical_region_span(
         radius,
