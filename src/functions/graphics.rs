@@ -31807,9 +31807,19 @@ pub(crate) fn text_row_in_text_face(expr: &Expr) -> Option<Expr> {
 }
 
 fn resolve_display_item(expr: &Expr) -> Expr {
-  if let Some(styled) = text_row_in_text_face(expr) {
+  let resolved = resolve_display_item_content(expr);
+  // A `Text[Row[…]]` item, once its `Dynamic` parts show their values, is
+  // set in the text face.
+  if text_row_in_text_face(expr).is_some()
+    && let Some(styled) =
+      text_row_in_text_face(&call("Text", vec![resolved.clone()]))
+  {
     return styled;
   }
+  resolved
+}
+
+fn resolve_display_item_content(expr: &Expr) -> Expr {
   let mut current = expr.clone();
   // `Null` is drawn as nothing, not as the word "Null".
   if matches!(&current, Expr::Identifier(s) if s == "Null") {
