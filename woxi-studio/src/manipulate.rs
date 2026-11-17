@@ -3447,6 +3447,37 @@ mod tests {
     );
   }
 
+  /// A `Sound` laid out inside a body `Grid` (next to a plot) is drawn as a
+  /// sound box whose play button is pressable: pressing it plays the sound
+  /// the body currently evaluates to.
+  #[test]
+  fn sound_box_in_body_grid_plays_when_pressed() {
+    let code = r#"Manipulate[
+      Grid[{{ArrayPlot[{{1, 0}, {0, 1}}],
+        Sound[SoundNote[#, 1/d, "Piano"] & /@ Range[k]]}}],
+      {k, 1, 5, 1}, {{d, 4}, 1, 8, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    let [region] = &state.button_regions[..] else {
+      panic!("expected one play button, got {:?}", state.button_regions);
+    };
+    assert!(
+      region.action.starts_with("EmitSound[Sound[")
+        && region.action.contains("\"Piano\""),
+      "the play button emits the drawn sound, got {}",
+      region.action
+    );
+    let action = region.action.clone();
+    state.apply_button_action(&action);
+    assert!(
+      state.emitted_sound.take().is_some(),
+      "pressing the play button should expose playable audio"
+    );
+  }
+
   /// A body that evaluates to a `Sound` (optionally wrapped in `Magnify`)
   /// exposes playable audio that follows the controls, instead of a bare
   /// `-Sound-` placeholder.

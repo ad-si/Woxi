@@ -527,6 +527,9 @@ const SOUND_BOX_COLUMNS: usize = 60;
 /// sound cell with this instead of printing the `Play[…]` source, which is
 /// what a notebook front end shows in that position.
 ///
+/// The play button carries a [`crate::functions::graphics::BUTTON_HIT_ID_PREFIX`]
+/// hit region whose action is `EmitSound[sound]`, so a live widget plays it.
+///
 /// Returns `None` for expressions that hold no samplable sound.
 pub fn sound_svg(expr: &Expr) -> Option<String> {
   let (samples, _) = sound_to_samples(expr)?;
@@ -566,6 +569,14 @@ pub fn sound_svg(expr: &Expr) -> Option<String> {
     button_cx + 6.0,
     mid_y,
     theme.text_secondary,
+  ));
+  // In a live widget (Woxi Studio) pressing the play button plays the sound.
+  svg.push_str(&crate::functions::graphics::button_hit_rect(
+    &format!("EmitSound[{}]", crate::syntax::expr_to_source_form(expr)),
+    button_cx - 12.0,
+    mid_y - 12.0,
+    24.0,
+    24.0,
   ));
   // Zero line, then one min/max bar per column of the waveform.
   svg.push_str(&format!(
