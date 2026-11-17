@@ -42794,8 +42794,53 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
     {
       Some(crate::syntax::expr_to_source_form(label))
     }
+    // A numeric arithmetic caption (`{{r, False, 8/9}, {False, True}}`,
+    // `{{t, 0, Pi/4}, 0, 1}`) is shown the way the FrontEnd typesets the
+    // value — a stacked fraction — so it travels as caption code too and the
+    // frontend draws it as an icon (see `manipulate_eval_caption`).
+    label if is_numeric_arithmetic_caption(label) => {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
     _ => None,
   }
+}
+
+/// Whether a control caption is arithmetic over numbers and constants only
+/// (`8/9`, `-Pi/4`, `Sqrt[2]/2`), the kind the FrontEnd typesets as math
+/// rather than as a word. A caption mentioning a symbol stays text.
+fn is_numeric_arithmetic_caption(label: &Expr) -> bool {
+  fn numeric(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::Constant(_) => true,
+      Expr::Identifier(_) => false,
+      Expr::BinaryOp { left, right, .. } => numeric(left) && numeric(right),
+      Expr::UnaryOp { operand, .. } => numeric(operand),
+      Expr::FunctionCall { args, .. } => args.iter().all(numeric),
+      _ => false,
+    }
+  }
+  is_arithmetic_label(label) && numeric(label)
+}
+
+/// The stacked-math icon of a numeric arithmetic caption whose typeset form
+/// holds a fraction or radical (`8/9`, `Pi/4`, `Sqrt[2]`); `None` when it
+/// lays out flat (`2 Pi`, `-3`), which keeps its text label.
+fn arithmetic_caption_svg(caption: &Expr) -> Option<String> {
+  if !is_numeric_arithmetic_caption(caption) {
+    return None;
+  }
+  let boxes = crate::syntax::expr_to_source_form(
+    &crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+      caption,
+    ),
+  );
+  if !(boxes.contains("FractionBox[") || boxes.contains("SqrtBox[")) {
+    return None;
+  }
+  form_box_svg(caption)
 }
 
 /// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
@@ -42822,7 +42867,7 @@ pub fn manipulate_eval_caption(
   let svg = if flatten_label_runs(&runs).trim().is_empty() {
     control_caption_svg(&evaluated)
   } else {
-    None
+    arithmetic_caption_svg(&evaluated)
   };
   let runs = if svg.is_some() { Vec::new() } else { runs };
   Some((runs, svg))
