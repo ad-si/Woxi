@@ -1325,7 +1325,7 @@ fn extract_square_factor_u64(n: u64) -> (u64, u64) {
       return (outside, inside * rest);
     }
     let mut count: u32 = 0;
-    while rest % f == 0 {
+    while rest.is_multiple_of(f) {
       rest /= f;
       count += 1;
     }
