@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Plot3D[…, AxesLabel -> Automatic]` names the two variable axes in
+    `TraditionalForm` (italic letters) and leaves the value axis unlabeled,
+    instead of adding an upright `z` label.
 
 # 2026-11-08 - 0.4.0
 
