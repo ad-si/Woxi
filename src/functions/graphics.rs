@@ -42590,6 +42590,9 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       // The choice list comes from a held `Manipulate` argument, so a label
       // naming a notebook variable (`1 -> Row[{"name", exprName}]`) is still
       // unevaluated here; resolve it against the current definitions.
+      // A `Dynamic[label]` is shown as its current value, recomputed
+      // whenever the choice list is (see `values_code`).
+      let label = unwrap_dynamic_choices(label);
       let resolved_label = resolve_choice_label(label);
       let label = resolved_label.as_ref().unwrap_or(label);
       values.push(crate::syntax::expr_to_source_form(value));
@@ -46993,13 +46996,24 @@ fn enumerate_range(bounds: &[&Expr]) -> Option<Vec<Expr>> {
 /// `Rule[…]` function-call form), return `(lhs, rhs)`. Used to split a
 /// discrete-choice spec like `True -> "Yin-Yang"` into its bound value and
 /// its display label.
+///
+/// A delayed rule `value :> label` is a choice too: the label stays
+/// unevaluated until the control draws it, which is how a label that
+/// follows another control (`Square :> Dynamic[icon[style, Square]]`) is
+/// written.
 fn discrete_choice_rule(item: &Expr) -> Option<(&Expr, &Expr)> {
   match item {
     Expr::Rule {
       pattern,
       replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
     } => Some((pattern, replacement)),
-    Expr::FunctionCall { name, args } if name == "Rule" && args.len() == 2 => {
+    Expr::FunctionCall { name, args }
+      if (name == "Rule" || name == "RuleDelayed") && args.len() == 2 =>
+    {
       Some((&args[0], &args[1]))
     }
     _ => None,
@@ -52571,6 +52585,66 @@ mod manipulate_traditional_form_choice_svg_tests {
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
+  }
+
+  /// A delayed choice rule (`value :> label`) binds `value` and shows
+  /// `label`, just like `value -> label`; it must not become a choice
+  /// whose value is the whole rule.
+  #[test]
+  fn delayed_rule_choices_split_value_and_label() {
+    let control = discrete_control(
+      "Manipulate[k, {{k, 2, \"k\"}, \
+        {1 :> \"one\", 2 :> \"two\", 3 :> \"three\"}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        values,
+        value_labels,
+        initial_index,
+        initial_overflow,
+        ..
+      } => {
+        assert_eq!(values, &["1", "2", "3"]);
+        assert_eq!(value_labels, &["one", "two", "three"]);
+        assert_eq!(*initial_index, 1);
+        assert_eq!(initial_overflow, &None);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Dynamic[…]` choice label shows its current value: text when it
+  /// computes a string, an icon when it computes a graphic.
+  #[test]
+  fn dynamic_choice_labels_show_their_current_value() {
+    crate::interpret(
+      "dynChoiceLabel[Text, s_] := ToString[s]; \
+       dynChoiceLabel[Graphics, s_] := Graphics[Disk[], ImageSize -> 10]",
+    )
+    .unwrap();
+    let labels = |style: &str| {
+      let control = discrete_control(&format!(
+        "Manipulate[s, {{{{s, circ, \"shape\"}}, \
+          Map[# :> Dynamic[dynChoiceLabel[{style}, #]] &, {{circ, box}}]}}]",
+      ));
+      match control {
+        ManipulateControl::Discrete {
+          values,
+          value_labels,
+          value_label_svgs,
+          ..
+        } => {
+          assert_eq!(values, &["circ", "box"]);
+          (value_labels, value_label_svgs)
+        }
+        other => panic!("expected a discrete control, got {other:?}"),
+      }
+    };
+    let (text, svgs) = labels("Text");
+    assert_eq!(text, &["circ", "box"]);
+    assert!(svgs.iter().all(Option::is_none), "{svgs:?}");
+    let (_, svgs) = labels("Graphics");
+    assert!(svgs.iter().all(Option::is_some), "{svgs:?}");
   }
 
   /// An unlabeled choice that is an angle (`15 Degree`) reads the way a
