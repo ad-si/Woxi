@@ -58884,3 +58884,67 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+mod magnify_display {
+  use woxi::interpret_with_stdout;
+
+  fn svg_width(svg: &str) -> f64 {
+    let rest = &svg[svg.find("width=\"").unwrap() + 7..];
+    rest[..rest.find('"').unwrap()].parse().unwrap()
+  }
+
+  /// In a visual host `Magnify[image, s]` shows the image `s` times its
+  /// size. It used to produce no picture at all, so a Manipulate body
+  /// switching to a magnified photo went blank in Woxi Studio.
+  #[test]
+  fn a_magnified_image_is_drawn_scaled() {
+    let r =
+      interpret_with_stdout("Magnify[Image[{{0, 1}, {1, 0}}], 3]").unwrap();
+    let svg = r.graphics.expect("Magnify[image, s] should be drawn");
+    assert!(svg.contains("<image"), "{svg}");
+    assert_eq!(svg_width(&svg), 6.0, "{svg}");
+  }
+
+  #[test]
+  fn a_magnified_graphic_is_drawn_scaled() {
+    let r =
+      interpret_with_stdout("Magnify[Graphics[Circle[], ImageSize -> 100], 2]")
+        .unwrap();
+    let svg = r.graphics.expect("Magnify[graphics, s] should be drawn");
+    assert_eq!(svg_width(&svg), 200.0, "{svg}");
+  }
+
+  /// `Magnify[g]` shows `g` at its own size.
+  #[test]
+  fn magnify_without_a_factor_keeps_the_size() {
+    let r =
+      interpret_with_stdout("Magnify[Graphics[Circle[], ImageSize -> 80]]")
+        .unwrap();
+    let svg = r.graphics.expect("Magnify[graphics] should be drawn");
+    assert_eq!(svg_width(&svg), 80.0, "{svg}");
+  }
+
+  /// A magnified picture in a fixed-size `Pane` fills the pane's box,
+  /// centered at its magnified size.
+  #[test]
+  fn a_magnified_image_in_a_pane_is_centered_at_its_scaled_size() {
+    let r = interpret_with_stdout(
+      "Pane[Magnify[Image[{{0, 1}, {1, 0}}], 3], ImageSize -> {40, 40}, \
+       Alignment -> Center]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the pane should be drawn");
+    assert_eq!(svg_width(&svg), 40.0, "{svg}");
+    assert!(svg.contains("translate(17.0 17.0)"), "{svg}");
+    assert!(svg.contains("<image"), "{svg}");
+  }
+
+  /// The CLI keeps the symbolic echo, matching wolframscript.
+  #[test]
+  fn magnify_stays_symbolic_in_cli() {
+    assert_eq!(
+      woxi::interpret("Magnify[Graphics[Circle[]], 2]").unwrap(),
+      "Magnify[-Graphics-, 2]"
+    );
+  }
+}
