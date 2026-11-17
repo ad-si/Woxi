@@ -11023,7 +11023,7 @@ fn parse_tick_spec(expr: &Expr) -> TickSpec {
             let label = if peel_invisible(&pair[1]).is_some() {
               String::new()
             } else {
-              expr_to_svg_markup(&pair[1])
+              crate::functions::plot::tick_label_markup(&pair[1])
             };
             Some((expr_to_f64(&pair[0])?, Some(label)))
           }
@@ -11311,6 +11311,16 @@ fn render_axes(
       // outermost labels whole.
       let x = clamp_tick_label_x(x, &label, svg_w, x_margins, tick_font);
       // The top of the label 3 pt below the axis.
+      if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+        &label,
+        (x, axis_y_px + TICK_LABEL_GAP),
+        (0.5, 0.0),
+        tick_font,
+        &tick_label_fill,
+      ) {
+        svg.push_str(&picture);
+        continue;
+      }
       svg.push_str(&format!(
         "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
         axis_y_px + TICK_LABEL_GAP + ascent(tick_font),
@@ -11357,6 +11367,16 @@ fn render_axes(
         continue;
       }
       // 3 pt left of the axis, centered on the tick.
+      if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+        &label,
+        (axis_x_px - TICK_LABEL_GAP, y),
+        (1.0, 0.5),
+        tick_font,
+        &tick_label_fill,
+      ) {
+        svg.push_str(&picture);
+        continue;
+      }
       svg.push_str(&format!(
         "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"end\">{label}</text>\n",
         axis_x_px - TICK_LABEL_GAP,
@@ -11632,7 +11652,11 @@ fn graphics_decorations(
     width: tick_label_width(label, tick_font).max(
       crate::functions::plot_padding::exported_text_extent(label, tick_font).1,
     ),
-    height: line_height(tick_font),
+    // A typeset picture (a stacked fraction) is as tall as it was laid out.
+    height: axes_label_picture_size(label)
+      .map_or(line_height(tick_font), |(_, h)| {
+        h * tick_font / crate::functions::plot_padding::TICK_FONT
+      }),
     at_crossing: false,
   };
   let auto_labels = |lo: f64, hi: f64| {
@@ -11905,6 +11929,23 @@ fn render_frame(
       if let Some(label) = label
         && ticks[i] == EdgeTicks::Labels
       {
+        // A typeset picture's top (bottom edge) or bottom (top edge) sits
+        // where a text label's would.
+        let (picture_y, ay) = if i == 0 {
+          (svg_h + TICK_LABEL_GAP, 0.0)
+        } else {
+          (-TICK_LABEL_GAP, 1.0)
+        };
+        if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+          label,
+          (x, picture_y),
+          (0.5, ay),
+          tick_font,
+          tick_label_fill,
+        ) {
+          svg.push_str(&picture);
+          continue;
+        }
         svg.push_str(&format!(
           "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
         ));
@@ -11949,6 +11990,17 @@ fn render_frame(
       if let Some(label) = label
         && ticks[i] == EdgeTicks::Labels
       {
+        let ax = if i == 1 { 1.0 } else { 0.0 };
+        if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+          label,
+          (anchor_x, y),
+          (ax, 0.5),
+          tick_font,
+          tick_label_fill,
+        ) {
+          svg.push_str(&picture);
+          continue;
+        }
         svg.push_str(&format!(
           "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
           y + center_to_baseline(tick_font),

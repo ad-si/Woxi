@@ -319,6 +319,13 @@ pub(crate) fn truncate_label(markup: &str, width: f64) -> String {
 /// hyphen, and an integer part of five or more digits split into blocks
 /// of three by thin spaces.
 pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
+  // A typeset picture (a stacked fraction) is as wide as it was laid out,
+  // at the tick font it was typeset in.
+  if let Some((w, _)) =
+    crate::functions::graphics::axes_label_picture_size(markup)
+  {
+    return w * size / TICK_FONT;
+  }
   let chars = visible_chars(markup);
   let numeric = !chars.is_empty()
     && chars
@@ -809,6 +816,16 @@ impl Decorations {
   }
 }
 
+/// The height of a tick label's markup at `size`: a typeset picture (a
+/// stacked fraction) is as tall as it was laid out at the tick font, text
+/// takes a line per line.
+pub(crate) fn tick_label_height(markup: &str, size: f64) -> f64 {
+  match crate::functions::graphics::axes_label_picture_size(markup) {
+    Some((_, h)) => h * size / TICK_FONT,
+    None => block_height(label_lines(markup), size),
+  }
+}
+
 /// Lines in a label string (`"a\nb"` has two).
 fn label_lines(text: &str) -> usize {
   text.split('\n').count()
@@ -926,7 +943,7 @@ pub(crate) fn plot_decorations(
           .split('\n')
           .map(|line| tick_label_width(line, tick_font))
           .fold(0.0, f64::max),
-        height: block_height(label_lines(l), tick_font),
+        height: tick_label_height(l, tick_font),
       })
       .filter(|b| b.frac.is_finite())
       .collect::<Vec<_>>()

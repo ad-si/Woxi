@@ -13045,8 +13045,8 @@ mod plot3d {
     /// A tick given as a bare position is labeled with that *expression*
     /// typeset, not with its decimal expansion — a Demonstration divides a
     /// wave's axis with `Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, …}` and
-    /// expects to read the multiples of π back. A literal number still
-    /// labels itself.
+    /// expects to read the multiples of π back, the quotients stacked as
+    /// TraditionalForm sets them. A literal number still labels itself.
     #[test]
     fn a_symbolic_tick_position_labels_itself() {
       let labels = |code: &str| {
@@ -13069,13 +13069,15 @@ mod plot3d {
         "Plot[Sin[x], {x, 0, 2 Pi}, Axes -> {False, True}, \
          Ticks -> {{0, Pi/2, Pi, 3 Pi/2, 2 Pi}, {-1, 0, 1}}]",
       ));
-      for expected in
-        ["0", "\u{03C0}/2", "\u{03C0}", "3 \u{03C0}/2", "2 \u{03C0}"]
-      {
+      for expected in ["0", "\u{03C0}", "2 \u{03C0}"] {
         assert!(
           ticks.contains(&expected.to_string()),
           "missing tick {expected:?} in {ticks:?}"
         );
+      }
+      // `Pi/2` and `3 Pi/2` are stacked fractions, not inline `π/2`.
+      for t in ["\u{03C0}/2", "3 \u{03C0}/2"] {
+        assert!(!ticks.contains(&t.to_string()), "inline {t:?}: {ticks:?}");
       }
       // No tick reads as the number π/2 works out to.
       assert!(
@@ -13108,11 +13110,32 @@ mod plot3d {
           .parse()
           .ok()
       };
-      let label_xs: Vec<f64> = svg
+      // A stacked-fraction label is a picture `<g transform="translate(x,
+      // y) scale(k)"><svg width="w" …>` centered on its tick.
+      let picture_x = |l: &str| -> Option<f64> {
+        let (x, rest) = l.split_once("translate(")?.1.split_once(',')?;
+        let k: f64 = rest
+          .split_once("scale(")?
+          .1
+          .split_once(')')?
+          .0
+          .parse()
+          .ok()?;
+        Some(x.parse::<f64>().ok()? + attr(l, "width")? * k / 2.0)
+      };
+      let mut label_xs: Vec<f64> = svg
         .lines()
         .filter(|l| l.starts_with("<text") && l.contains(r#"anchor="middle""#))
         .filter_map(|l| attr(l, "x"))
         .collect();
+      let pictures: Vec<f64> = svg
+        .lines()
+        .filter(|l| l.starts_with("<g transform=\"translate("))
+        .filter(|l| l.contains("<svg "))
+        .filter_map(picture_x)
+        .collect();
+      assert_eq!(pictures.len(), 2, "{svg}");
+      label_xs.extend(pictures);
       assert_eq!(label_xs.len(), 5, "{svg}");
       for mark in svg
         .lines()
@@ -18995,7 +19018,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// A computed multiple of Pi (`n Pi/4` evaluates to `Rational[n, 4] Pi`)
-    /// labels its tick as one fraction, `π/2` / `3 π/4`, not "1/2 π".
+    /// labels its tick as one stacked fraction, π over 2 / 3 π over 4, not
+    /// "1/2 π" or an inline `π/2`.
     #[test]
     fn rational_multiple_of_pi_tick_labels_read_as_fractions() {
       for graphic in [
@@ -19005,10 +19029,120 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          {n, 1, 3}], Automatic}], Graphics[{Point[{0, 0}]}]]",
       ] {
         let svg = export_svg(graphic);
-        assert!(svg.contains(">π/4<"), "expected π/4: {svg}");
-        assert!(svg.contains(">π/2<"), "expected π/2: {svg}");
-        assert!(svg.contains(">3 π/4<"), "expected 3 π/4: {svg}");
-        assert!(!svg.contains("1/2 π"), "unexpected 1/2 π: {svg}");
+        // Three tick pictures, each with a fraction bar.
+        let pictures: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.starts_with("<g transform=\"translate("))
+          .filter(|l| l.contains("<svg ") && l.contains(">π</text>"))
+          .collect();
+        assert_eq!(pictures.len(), 3, "expected 3 fraction ticks: {svg}");
+        for (picture, denominator) in pictures.iter().zip(["4", "2", "4"]) {
+          assert!(picture.contains("<line "), "no fraction bar: {picture}");
+          assert!(
+            picture.contains(&format!(">{denominator}</text>")),
+            "expected denominator {denominator}: {picture}"
+          );
+        }
+        assert!(pictures[2].contains(">3</text>"), "{}", pictures[2]);
+        for inline in [">π/4<", ">π/2<", ">3 π/4<", "1/2 π"] {
+          assert!(!svg.contains(inline), "unexpected {inline}: {svg}");
+        }
+      }
+    }
+
+    /// Tick labels are set in TraditionalForm on every edge and in every
+    /// renderer: a quotient stacks over a fraction bar on a framed plot's
+    /// edges, on a y axis and on a `Graphics` axis, and the plot leaves
+    /// room for the taller label below its frame.
+    #[test]
+    fn quotient_tick_labels_stack_on_every_axis() {
+      let fraction_pictures = |svg: &str| -> Vec<String> {
+        svg
+          .lines()
+          .filter(|l| l.starts_with("<g transform=\"translate("))
+          .filter(|l| l.contains("<svg ") && l.contains("<line "))
+          .map(str::to_string)
+          .collect()
+      };
+      for (code, expected) in [
+        (
+          "Plot[Sin[x], {x, -Pi, Pi}, Frame -> True, FrameTicks -> \
+           {{{-1, -1/2, 1/2, 1}, None}, {{-Pi, -Pi/2, Pi/2, Pi}, None}}]",
+          4,
+        ),
+        (
+          "Plot[Sin[x], {x, -Pi, Pi}, Ticks -> {None, {-1/2, 1/2}}]",
+          2,
+        ),
+        (
+          "Graphics[Circle[], Axes -> True, Ticks -> {{-1/2, 1}, {1/3}}]",
+          2,
+        ),
+        (
+          "Graphics[Circle[], Frame -> True, \
+           FrameTicks -> {{{1/2}, None}, {{-1/2, 1/2}, None}}]",
+          3,
+        ),
+        // A `{pos, label}` pair's quotient label stacks too.
+        ("Plot[x, {x, 0, 1}, Ticks -> {{{0.5, 1/2}}, None}]", 1),
+      ] {
+        let svg = export_svg(code);
+        let pictures = fraction_pictures(&svg);
+        assert_eq!(pictures.len(), expected, "{code}: {svg}");
+        for inline in [">1/2<", ">-1/2<", ">1/3<", ">π/2<"] {
+          assert!(!svg.contains(inline), "{code}: inline {inline}: {svg}");
+        }
+      }
+      // The labels below the frame fit inside the image.
+      let svg = export_svg(
+        "Plot[Sin[x], {x, -Pi, Pi}, Frame -> True, \
+         FrameTicks -> {{Automatic, None}, {{-Pi/2, Pi/2}, None}}]",
+      );
+      let num = |s: &str, key: &str| -> f64 {
+        s.split_once(key)
+          .unwrap()
+          .1
+          .split_once('"')
+          .unwrap()
+          .0
+          .parse()
+          .unwrap()
+      };
+      let view_box = svg
+        .split_once("viewBox=\"")
+        .unwrap()
+        .1
+        .split_once('"')
+        .unwrap()
+        .0;
+      let image_h: f64 = view_box.split(' ').nth(3).unwrap().parse().unwrap();
+      for picture in fraction_pictures(&svg) {
+        let y: f64 = picture
+          .split_once("translate(")
+          .unwrap()
+          .1
+          .split_once(',')
+          .unwrap()
+          .1
+          .split_once(')')
+          .unwrap()
+          .0
+          .parse()
+          .unwrap();
+        let k: f64 = picture
+          .split_once("scale(")
+          .unwrap()
+          .1
+          .split_once(')')
+          .unwrap()
+          .0
+          .parse()
+          .unwrap();
+        let h = num(&picture, "height=\"");
+        assert!(
+          y + h * k <= image_h + 0.5,
+          "clipped label {picture} in {view_box}"
+        );
       }
     }
 

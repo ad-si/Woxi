@@ -2840,6 +2840,21 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
         ));
       }
       let Some(label) = label else { continue };
+      // A typeset picture sits where a text label's box would: its top
+      // (bottom edge), bottom (top edge) or its middle (side edges) the
+      // label gap away from the edge.
+      let placed = match edge {
+        0 => ((px, py + gap), (0.5, 0.0)),
+        2 => ((px, py - gap), (0.5, 1.0)),
+        1 => ((px - gap, py), (1.0, 0.5)),
+        _ => ((px + gap, py), (0.0, 0.5)),
+      };
+      if let Some(picture) =
+        tick_label_picture_svg(label, placed.0, placed.1, l.font * sf, &fill)
+      {
+        svg.push_str(&picture);
+        continue;
+      }
       let lines = label.split('\n').count();
       let pitch = line_pitch(l.font) * sf;
       let text = match edge {
@@ -4669,6 +4684,18 @@ pub(crate) fn explicit_ticks_svg(
           axis_y - tick_len,
         ));
       }
+      // A picture's top sits where a text label's top would.
+      let top = axis_y + tick_font - plot_padding::ascent(tick_font_pt) * sf;
+      if let Some(picture) = tick_label_picture_svg(
+        label,
+        (px, top),
+        (0.5, 0.0),
+        tick_font,
+        label_fill,
+      ) {
+        out.push_str(&picture);
+        continue;
+      }
       out.push_str(&format!(
         "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_y + tick_font,
@@ -4687,6 +4714,16 @@ pub(crate) fn explicit_ticks_svg(
           "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
           plot_x0 + tick_len,
         ));
+      }
+      if let Some(picture) = tick_label_picture_svg(
+        label,
+        (plot_x0 - tick_len, py),
+        (1.0, 0.5),
+        tick_font,
+        label_fill,
+      ) {
+        out.push_str(&picture);
+        continue;
       }
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
@@ -15369,7 +15406,14 @@ pub(crate) fn parse_explicit_tick_entries(
         // (`-Infinity`, i.e. `DirectedInfinity[-1]`) is still typeset the
         // way a graphic's `Text` sets it — `{-0.05, -Infinity}` labels its
         // tick "-∞", not with the position.
+        // A quotient (`{Pi/4, Pi/4}`) is set stacked, as TraditionalForm
+        // typesets it.
+        let fraction = crate::functions::graphics::fraction_label_svg(
+          &label_expr,
+          plot_padding::TICK_FONT,
+        );
         let label = match crate::functions::chart::expr_to_label(&label_expr) {
+          _ if fraction.is_some() => fraction.unwrap_or_default(),
           Some(text) => crate::functions::graphics::box_string_to_svg(&text),
           None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
             crate::functions::graphics::svg_escape(&format_tick(pos))
@@ -15451,7 +15495,42 @@ pub(crate) fn bare_tick_label(e: &Expr, pos: f64) -> String {
   if is_literal_number(e) {
     return crate::functions::graphics::svg_escape(&format_tick(pos));
   }
-  crate::functions::graphics::expr_to_svg_markup(e)
+  tick_label_markup(e)
+}
+
+/// The markup of a tick label given as an expression. Tick labels are set in
+/// TraditionalForm, so a quotient (`Pi/2`, `-3 Pi/4`) stacks its numerator
+/// over its denominator: such a label comes back as a picture (a nested
+/// `<svg>` typeset at [`plot_padding::TICK_FONT`]) that
+/// [`tick_label_picture_svg`] places; anything else is the usual text
+/// markup.
+pub(crate) fn tick_label_markup(e: &Expr) -> String {
+  crate::functions::graphics::fraction_label_svg(e, plot_padding::TICK_FONT)
+    .unwrap_or_else(|| crate::functions::graphics::expr_to_svg_markup(e))
+}
+
+/// Draw a tick label that is a typeset picture (see [`tick_label_markup`]):
+/// the point `(ax, ay)` of the picture — fractions of its width and height
+/// from its top left — goes to `(x, y)`, the picture is scaled from the
+/// size it was typeset at to the tick font `font` (in the same units as
+/// `x`/`y`), and its ink takes the tick labels' `fill`. `None` for a label
+/// that is plain text markup, which the caller draws as `<text>`.
+pub(crate) fn tick_label_picture_svg(
+  label: &str,
+  (x, y): (f64, f64),
+  (ax, ay): (f64, f64),
+  font: f64,
+  fill: &str,
+) -> Option<String> {
+  let (w, h) = crate::functions::graphics::axes_label_picture_size(label)?;
+  let k = font / plot_padding::TICK_FONT;
+  let theme_fill = crate::functions::graphics::theme().text_primary;
+  Some(format!(
+    "<g transform=\"translate({:.1},{:.1}) scale({k:.3})\">{}</g>\n",
+    x - ax * w * k,
+    y - ay * h * k,
+    label.replace(&format!("\"{theme_fill}\""), &format!("\"{fill}\""))
+  ))
 }
 
 /// Apply a `FrameLabel` value to a plot's options. Bottom and left reuse
