@@ -41053,10 +41053,9 @@ fn collect_row_joined_controls(
           }
           Expr::FunctionCall { name, args: p } if is_place_head(name) => {
             let vars = match p.as_slice() {
-              [Expr::Integer(n)] if *n >= 1 => place_map
-                .get(*n as usize - 1)
-                .map(Vec::as_slice)
-                .unwrap_or_default(),
+              [Expr::Integer(n)] if *n >= 1 => {
+                place_map.get(*n as usize - 1).map_or_default(Vec::as_slice)
+              }
               _ => &[],
             };
             if vars.is_empty() {
