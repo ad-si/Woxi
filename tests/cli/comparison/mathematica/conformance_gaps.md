@@ -5462,6 +5462,15 @@ Wolfram.
 against Woxi's 500. The values agree exactly and the shape is the same; only
 small-scale wiggles are under-resolved.
 
+### A two-parameter `ParametricPlot` drops the padding of an explicit range
+
+`ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, PlotRange -> {{-15, 15},
+{-16, 16}}]` (or a `Show` of it with that range) is drawn with the range
+flush against the image edges, as a plain `Graphics` would be. The
+one-parameter curve plot keeps a small padding around the same explicit
+range, and Wolfram frames both alike, so the region version comes out a
+little tighter than WL.
+
 ### 2D field plots ignore `PlotPoints` and `MaxRecursion`
 
 `DensityPlot`, `ContourPlot`, `RegionPlot` and the other field plots sample a

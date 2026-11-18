@@ -1356,6 +1356,23 @@ fn evaluate_at_uv(
   }
 }
 
+/// Whether one slot of a two-parameter `ParametricPlot` body evaluates to
+/// a point `{x, y}` at some interior sample of the parameter rectangle (a
+/// few are tried, so a single singular sample does not decide it).
+fn region_slot_yields_point(slot: &Expr, u_spec: &Expr, v_spec: &Expr) -> bool {
+  let (Ok((uvar, u_min, u_max)), Ok((vvar, v_min, v_max))) = (
+    parse_iterator(u_spec, "ParametricPlot"),
+    parse_iterator(v_spec, "ParametricPlot"),
+  ) else {
+    return false;
+  };
+  [0.5, 0.37, 0.71].iter().any(|&f| {
+    let u = u_min + f * (u_max - u_min);
+    let v = v_min + f * (v_max - v_min);
+    evaluate_at_uv(slot, &uvar, u, &vvar, v).is_some()
+  })
+}
+
 /// `ParametricPlot[{fx, fy}, {u, umin, umax}, {v, vmin, vmax}]` — the image
 /// of the parameter rectangle, drawn the way Wolfram draws it: the quads of
 /// the sampled grid filled at 30% opacity in the plot color, with the image
@@ -1437,6 +1454,18 @@ fn parametric_region_ast(
         && items
           .iter()
           .all(|b| matches!(b, Expr::List(p) if p.len() == 2)) =>
+    {
+      items.iter().collect()
+    }
+    // `{f[u, v], g[u, v], …}` whose slots are calls that each return a
+    // point is a group of regions too; only a numeric probe can tell it
+    // apart from a `{fx, fy}` pair of scalar coordinates.
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|b| {
+          matches!(b, Expr::List(p) if p.len() == 2)
+            || region_slot_yields_point(b, u_spec, v_spec)
+        }) =>
     {
       items.iter().collect()
     }
