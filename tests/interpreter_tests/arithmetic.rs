@@ -8703,7 +8703,7 @@ mod cases {
       "ToString[NumberForm[1.23456789, 9], TraditionalForm]",
       "ToString[TraditionalForm[NumberForm[1.23456789, 9]]]",
     ] {
-      let out = interpret(code).unwrap();
+      let out = woxi::interpret(code).unwrap();
       assert!(out.contains("1.23456789"), "{code}: {out}");
     }
   }
