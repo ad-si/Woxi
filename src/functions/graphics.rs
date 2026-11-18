@@ -779,6 +779,29 @@ fn parse_arrowheads(spec: &Expr) -> Option<Vec<ArrowHead>> {
   }
 }
 
+/// The heads an `Arrowheads[spec]` directive puts on a 3D arrow, as
+/// `(size, position)` pairs: `size` is a fraction of the picture (negative
+/// points the head back towards the tail) and `position` runs from 0 at the
+/// tail to 1 at the tip. A named size (`Small`, …) is in printer's points,
+/// which a 3D scene has no fixed scale for, so it keeps its direction at the
+/// default size. Custom head graphics are not drawn in 3D.
+pub(crate) fn arrowhead_placements(spec: &Expr) -> Option<Vec<(f64, f64)>> {
+  const DEFAULT_SIZE: f64 = 0.05;
+  Some(
+    parse_arrowheads(spec)?
+      .into_iter()
+      .map(|h| {
+        let size = if h.absolute {
+          DEFAULT_SIZE.copysign(h.size)
+        } else {
+          h.size
+        };
+        (size, h.position.clamp(0.0, 1.0))
+      })
+      .collect(),
+  )
+}
+
 impl StyleState {
   fn effective_color(&self) -> Color {
     self.color.with_alpha(self.color.a * self.opacity)
@@ -19957,6 +19980,21 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     return estimate_display_width(func) + marks;
   }
 
+  // A `StringForm` typesets as its filled template, so it is as wide as its
+  // literal runs and slot values together — not its `StringForm[…]` source.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "StringForm"
+    && let Some(Expr::String(template)) = args.first()
+  {
+    return crate::functions::string_ast::string_form_parts(
+      template,
+      &args[1..],
+    )
+    .iter()
+    .map(estimate_display_width)
+    .sum();
+  }
+
   match expr {
     // Atoms
     // A string carrying inline linear syntax
@@ -38448,7 +38486,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
         }
-        state.push((name, value));
+        // Several readouts may share one placeholder variable; it is still
+        // a single variable, bound once.
+        if !state.iter().any(|(n, _)| *n == name) {
+          state.push((name, value));
+        }
         panel_displays.push((displays.len(), controls.len()));
         displays.push(display);
       }
@@ -46588,8 +46630,41 @@ fn parse_manipulate_control(
       display: crate::syntax::expr_to_source_form(&evaluated),
     });
   }
+  // A user-defined builder that yields a readout rather than a widget
+  // (`info[#, x, y] &` with `info[_, x_, y_] := Text[Grid[…]]`): Wolfram
+  // shows what it returns in the control panel, recomputed whenever the
+  // other controls it reads move. Keep the call unevaluated as the display
+  // so each re-render runs it against the live bindings.
+  if let Some(built @ Expr::FunctionCall { name: fn_name, .. }) = &built
+    && !crate::evaluator::functions::is_builtin_symbol(fn_name)
+    && let Ok(Expr::FunctionCall {
+      name: ref ev_name, ..
+    }) = evaluate_expr_to_expr(built)
+    && matches!(
+      ev_name.as_str(),
+      "Text"
+        | "Grid"
+        | "Row"
+        | "Column"
+        | "Style"
+        | "Pane"
+        | "Panel"
+        | "Framed"
+        | "Graphics"
+        | "TraditionalForm"
+    )
+  {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display: crate::syntax::expr_to_source_form(built),
+    });
+  }
 
-  // Color form: `{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
+  // Color form:`{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
   // a color names no domain to choose from (`{u, uinit}` picks the widget
   // from the type of `uinit`), so Wolfram draws the same full `ColorSlider`
   // (swatch plus hue/saturation picker) the explicit marker produces above,
@@ -50147,6 +50222,16 @@ fn assign_checkbox_state(
   }
 }
 
+/// Whether `expr` holds a `NumberForm`/`PaddedForm`/`AccountingForm`
+/// wrapper anywhere, which only a typeset rendering turns into digits.
+fn holds_number_format(expr: &Expr) -> bool {
+  ["NumberForm", "PaddedForm", "AccountingForm"]
+    .iter()
+    .any(|head| {
+      crate::functions::math_ast::numeric_utils::expr_contains_head(expr, head)
+    })
+}
+
 /// Render an unrecognized display leaf by evaluating it in scope and
 /// capturing its SVG (graphics) or text output.
 ///
@@ -50248,6 +50333,23 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
           formatted.replace('\n', " ").trim().to_string()
         };
         DisplayNode::Static { svg: None, text }
+      } else if let Some(value) = &r.expr
+        && holds_number_format(value)
+        && let Ok(svg) = grid_svg_with_gaps(
+          &[Expr::List(
+            vec![Expr::List(vec![value.clone()].into())].into(),
+          )],
+          &[],
+        )
+      {
+        // A number format inside a larger readout (`NumberForm[t, {4, 1}]^
+        // "∘"`, or a `StringForm` slot filled by one) is typeset as the
+        // notebook shows it — formatted digits, a raised exponent — rather
+        // than printed as the held wrapper.
+        DisplayNode::Static {
+          svg: Some(svg),
+          text: String::new(),
+        }
       } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
         && name == "StringForm"
         && let Some(Expr::String(template)) = args.first()
