@@ -9796,6 +9796,43 @@ mod rasterize_any_expression {
     );
   }
 
+  // A `RasterSize -> {w, h}` around typeset text is a pane: the text keeps
+  // its own size (drawn at 144 dpi) and is centered instead of being
+  // stretched to fill the raster.
+  #[test]
+  fn raster_size_box_keeps_text_at_its_size() {
+    // The ink's {height, width, center row, center column}.
+    let ink = |opts: &str| {
+      interpret(&format!(
+        "p = Position[ImageData[Binarize[Rasterize[Style[\"key\", 20], \
+         {opts}]]], 0]; \
+         {{r1, r2}} = MinMax[p[[All, 1]]]; {{c1, c2}} = MinMax[p[[All, 2]]]; \
+         Round[{{r2 - r1, c2 - c1, (r1 + r2)/2, (c1 + c2)/2}}, 10]"
+      ))
+      .unwrap()
+    };
+    // At 144 dpi the 20pt text is about 40 pixels tall, centered in the
+    // 300 x 100 raster.
+    assert_eq!(
+      ink("RasterSize -> {300, 100}, ImageSize -> {300, 100}"),
+      "{30, 70, 50, 150}"
+    );
+    // An explicit ImageResolution sets the scale instead.
+    assert_eq!(
+      ink("RasterSize -> {300, 100}, ImageResolution -> 72"),
+      "{20, 30, 50, 150}"
+    );
+    // Text larger than the raster is cropped, not shrunk.
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Rasterize[Style[\"a long line of text\", 20], \
+         RasterSize -> {40, 30}]]"
+      )
+      .unwrap(),
+      "{40, 30}"
+    );
+  }
+
   // Wolfram's Rasterize gives an RGB image (the drawing is composited on
   // white); Woxi's used to carry a redundant alpha channel.
   #[test]
