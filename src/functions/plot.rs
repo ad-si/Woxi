@@ -3483,6 +3483,10 @@ pub(crate) struct SeriesStyle {
   /// Line thickness in display pixels (e.g. 1.5 = default, 2.0 = Thick).
   /// None means use the default (1.5px).
   pub thickness: Option<f64>,
+  /// The fraction of the image width a relative `Thickness[t]` gave, which
+  /// `thickness` approximates for the default 360px width. A curve drawn
+  /// at another size (an `ImageSize`, a `GraphicsGrid` cell) scales by it.
+  pub thickness_fraction: Option<f64>,
   /// Scatter dot size: a fraction of the image width for `PointSize[…]`,
   /// stored negative for the absolute printer's points of
   /// `AbsolutePointSize[…]`. None means the default dot.
@@ -5256,6 +5260,7 @@ fn inject_epilog(
     y_min,
     y_max,
     scale,
+    image_w: f64::from(opts.svg_width) * scale,
   };
   let epilog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.epilog,
@@ -5296,6 +5301,7 @@ fn inject_prolog(
     y_min,
     y_max,
     scale,
+    image_w: f64::from(opts.svg_width) * scale,
   };
   let prolog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.prolog,
@@ -6594,7 +6600,11 @@ fn generate_svg_with_options(
         for (series_idx, points) in all_points.iter().enumerate() {
           let (r, g, b) = series_color(&opts.plot_style, series_idx);
           let color = RGBColor(r, g, b);
-          let stroke_w = series_thickness(&opts.plot_style, series_idx);
+          let stroke_w = series_thickness(
+            &opts.plot_style,
+            series_idx,
+            f64::from(render_width) / f64::from(RESOLUTION_SCALE),
+          );
           let dashing = series_dashing(&opts.plot_style, series_idx);
           let (clip_min, clip_max) = opts.curve_clip_y.unwrap_or((y_min, y_max));
           let segments = clip_segments_to_x_range(
@@ -6792,7 +6802,11 @@ fn generate_svg_with_options(
                 .unwrap_or(base_color);
               let stroke_w = match shade {
                 Some(st) if st.thickness.is_some() => {
-                  series_thickness(std::slice::from_ref(st), 0)
+                  series_thickness(
+                    std::slice::from_ref(st),
+                    0,
+                    f64::from(render_width) / f64::from(RESOLUTION_SCALE),
+                  )
                 }
                 _ => base_stroke_w,
               };
@@ -8225,6 +8239,9 @@ pub(crate) fn build_plot_source(
         fill_opacity,
         marker: None,
         thickness,
+        thickness_fraction: plot_style
+          .get(i % plot_style.len().max(1))
+          .and_then(|s| s.thickness_fraction),
         point_size,
         point_size_expr: plot_style
           .get(i % plot_style.len().max(1))
@@ -8315,6 +8332,7 @@ pub(crate) fn collapse_style_for_single_series(
     }
     if style.thickness.is_some() {
       merged.thickness = style.thickness;
+      merged.thickness_fraction = style.thickness_fraction;
     }
     if style.point_size.is_some() {
       merged.point_size = style.point_size;
@@ -8618,14 +8636,22 @@ fn series_opacity(plot_style: &[SeriesStyle], idx: usize) -> f64 {
 
 /// Get the line thickness (in render-space units) for a series.
 /// Default is 20 (2px at display size with RESOLUTION_SCALE=10).
-fn series_thickness(plot_style: &[SeriesStyle], idx: usize) -> u32 {
+/// A relative `Thickness[t]` is the fraction `t` of `image_width`, the
+/// display width of the whole picture.
+fn series_thickness(
+  plot_style: &[SeriesStyle],
+  idx: usize,
+  image_width: f64,
+) -> u32 {
   // WL 15 draws plot curves with `AbsoluteThickness[2]`.
   let default_thickness = 20; // 2px * RESOLUTION_SCALE
   if plot_style.is_empty() {
     return default_thickness;
   }
   let style = &plot_style[idx % plot_style.len()];
-  if let Some(t) = style.thickness {
+  if let Some(f) = style.thickness_fraction {
+    (f * image_width * RESOLUTION_SCALE as f64).round() as u32
+  } else if let Some(t) = style.thickness {
     (t * RESOLUTION_SCALE as f64).round() as u32
   } else {
     default_thickness
@@ -8765,6 +8791,7 @@ pub(crate) fn render_merged_plot_source(
       )),
       color_expr: s.color_expr.clone(),
       thickness: s.thickness,
+      thickness_fraction: s.thickness_fraction,
       point_size: s.point_size,
       point_size_expr: s.point_size_expr.clone(),
       dashing: s.dashing.clone(),
@@ -10286,6 +10313,7 @@ pub(crate) fn generate_bar_svg(
       y_min,
       y_max,
       scale: sf,
+      image_w: render_width as f64,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
       epilog, &area, "epilog", false,
@@ -11843,7 +11871,8 @@ fn legend_swatch_svg(
       sf * 2.5,
     );
   }
-  let thickness = series_thickness(&opts.plot_style, si);
+  let thickness =
+    series_thickness(&opts.plot_style, si, f64::from(opts.svg_width));
   let dashing = series_dashing(&opts.plot_style, si);
   let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
   let mut dash_attr = String::new();
@@ -12412,6 +12441,7 @@ pub(crate) fn histogram_plot_source(
       fill_opacity: Some(if datasets.len() > 1 { 0.7 } else { 1.0 }),
       marker: None,
       thickness: Some(0.5),
+      thickness_fraction: None,
       point_size: None,
       point_size_expr: None,
       dashing: None,
@@ -12851,6 +12881,7 @@ pub(crate) fn generate_histogram_svg(
       y_min,
       y_max,
       scale: sf,
+      image_w: render_width as f64,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
       &opts.epilog,
@@ -13629,8 +13660,14 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
   }
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => style.thickness = Some(2.0),
-      "Thin" => style.thickness = Some(0.5),
+      "Thick" => {
+        style.thickness = Some(2.0);
+        style.thickness_fraction = None;
+      }
+      "Thin" => {
+        style.thickness = Some(0.5);
+        style.thickness_fraction = None;
+      }
       // `None` hides the curve itself; a `Filling` toward it still shows.
       "None" => style.opacity = Some(0.0),
       // A named dash length is absolute pixels, not a fraction of the
@@ -13661,25 +13698,26 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
         }
       }
       "Thickness" if args.len() == 1 => {
-        if let Expr::Identifier(s) = &args[0] {
-          match s.as_str() {
-            "Large" => style.thickness = Some(2.0),
-            "Tiny" => style.thickness = Some(0.5),
-            _ => {
-              if let Some(t) = try_eval_to_f64(&args[0]) {
-                // Relative thickness: fraction of plot width → display px
-                // 360px default width * fraction
-                style.thickness = Some(t * 360.0);
-              }
-            }
-          }
+        let named = match &args[0] {
+          Expr::Identifier(s) if s == "Large" => Some(2.0),
+          Expr::Identifier(s) if s == "Tiny" => Some(0.5),
+          _ => None,
+        };
+        if let Some(t) = named {
+          style.thickness = Some(t);
+          style.thickness_fraction = None;
         } else if let Some(t) = try_eval_to_f64(&args[0]) {
+          // A relative thickness is a fraction of the image width; keep
+          // the fraction for the actual size, and its value at the 360px
+          // default width for consumers that know no size.
           style.thickness = Some(t * 360.0);
+          style.thickness_fraction = Some(t);
         }
       }
       "AbsoluteThickness" if args.len() == 1 => {
         if let Some(t) = try_eval_to_f64(&args[0]) {
           style.thickness = Some(t);
+          style.thickness_fraction = None;
         }
       }
       "PointSize" if args.len() == 1 => {
