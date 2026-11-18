@@ -16709,10 +16709,10 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       let text = quoted_box_string_value(s);
       let boxes =
         inline_box_string_to_box_expr(&text).expect("checked by the guard");
-      if !s.starts_with('"') {
-        layout_box(&boxes, font_size)
-      } else {
+      if s.starts_with('"') {
         with_box_upright_text(true, || layout_box(&boxes, font_size))
+      } else {
+        layout_box(&boxes, font_size)
       }
     }
     // A string box is stored as its quoted source but drawn without quotes.
