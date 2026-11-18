@@ -477,7 +477,10 @@ impl QuadraticSurd {
   fn recip(self) -> Option<Self> {
     let norm = Self::frac_add(
       Self::frac_mul(self.p, self.p)?,
-      Self::frac_mul(Self::frac_mul(self.q, self.q)?, (self.d.checked_neg()?, 1))?,
+      Self::frac_mul(
+        Self::frac_mul(self.q, self.q)?,
+        (self.d.checked_neg()?, 1),
+      )?,
     )?;
     if norm.0 == 0 {
       return None;
@@ -561,10 +564,13 @@ impl QuadraticSurd {
         })
       }
       Expr::FunctionCall { name, args } => match (name.as_str(), &args[..]) {
-        ("Sqrt", [x]) => power(x, &Expr::FunctionCall {
-          name: "Rational".into(),
-          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
-        }),
+        ("Sqrt", [x]) => power(
+          x,
+          &Expr::FunctionCall {
+            name: "Rational".into(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+          },
+        ),
         ("Power", [b, e]) => power(b, e),
         ("Plus", terms) if !terms.is_empty() => {
           let mut acc = Self::rational((0, 1));
