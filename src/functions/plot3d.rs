@@ -1132,7 +1132,14 @@ fn styled_line_like(line: &MeshLine, style: &StyleState3D) -> MeshLine {
 #[derive(Clone)]
 enum MeshLevels {
   Count(usize),
-  Values(Vec<f64>),
+  Values(Vec<MeshLevel>),
+}
+
+/// One explicit mesh level: `v`, or `{v, style}` drawn in its own style.
+#[derive(Clone)]
+struct MeshLevel {
+  value: f64,
+  style: Option<Expr>,
 }
 
 /// `Mesh -> n`, `{n1, n2, …}` (one count per mesh function) or
@@ -1146,9 +1153,22 @@ fn parse_mesh_levels(spec: &Expr) -> Option<Vec<MeshLevels>> {
         vals
           .iter()
           .filter_map(|v| match v {
-            // `{v, style}` levels keep their value.
-            Expr::List(pair) => pair.first().and_then(try_eval_to_f64),
-            other => try_eval_to_f64(other),
+            // `{v, style}` levels are drawn in their own style.
+            Expr::List(pair) => {
+              pair
+                .first()
+                .and_then(try_eval_to_f64)
+                .map(|value| MeshLevel {
+                  value,
+                  style: match &pair[1..] {
+                    [] => None,
+                    [one] => Some(one.clone()),
+                    more => Some(call("Directive", more.to_vec())),
+                  },
+                })
+            }
+            other => try_eval_to_f64(other)
+              .map(|value| MeshLevel { value, style: None }),
           })
           .collect(),
       )),
@@ -1632,6 +1652,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_levels: Option<Vec<MeshLevels>> = None;
   let mut mesh_functions: Option<Vec<Expr>> = None;
   let mut mesh_style: Option<StyleState3D> = None;
+  let mut mesh_style_expr: Option<Expr> = None;
   let mut mesh_shading: Option<Expr> = None;
   let mut region_function: Option<Expr> = None;
   // `Filling -> Bottom | Top | Axis | z`: the height the surface is filled
@@ -1686,6 +1707,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "MeshStyle" => {
           mesh_style = parse_plot_style_3d(replacement, 1).into_iter().next();
+          mesh_style_expr = evaluate_expr_to_expr(replacement).ok();
         }
         Expr::Identifier(name) if name == "MeshShading" => {
           mesh_shading = evaluate_expr_to_expr(replacement).ok();
@@ -1914,6 +1936,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
 
+  // Explicit mesh levels for each mesh function, from `Mesh -> n` / lists;
+  // `MeshFunctions` without a `Mesh` count draws 15 levels of each.
+  let explicit_mesh = mesh_levels.is_some() || mesh_functions.is_some();
+
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
@@ -2001,7 +2027,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         // The mesh, at the spacing the standalone render rules it with.
-        if matches!(mesh_mode, MeshMode::Default) {
+        // Explicit mesh levels are added as their contours further down.
+        if matches!(mesh_mode, MeshMode::Default) && !explicit_mesh {
           let mut segments: Vec<Expr> = Vec::new();
           let mut push_segment = |a: Option<usize>, b: Option<usize>| {
             if let (Some(a), Some(b)) = (a, b) {
@@ -2126,13 +2153,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(fs) => fs.iter().map(MeshFn::of).collect(),
     None => vec![MeshFn::X, MeshFn::Y],
   };
-  // Explicit mesh levels for each mesh function, from `Mesh -> n` / lists;
-  // `MeshFunctions` without a `Mesh` count draws 15 levels of each.
-  let explicit_mesh = mesh_levels.is_some() || mesh_functions.is_some();
   let mut boundary_segments: Vec<[[f64; 3]; 2]> = Vec::new();
   // The pieces of the domain's outer edge the surface runs along.
   let mut edge_segments: Vec<[[f64; 3]; 2]> = Vec::new();
-  let mut contour_segments: Vec<[[f64; 3]; 2]> = Vec::new();
+  // Each contour segment remembers the style of the level it belongs to,
+  // an index into `level_styles` (`None` for an unstyled level).
+  let mut contour_segments: Vec<([[f64; 3]; 2], Option<usize>)> = Vec::new();
+  let mut level_styles: Vec<Expr> = Vec::new();
 
   for (surface_idx, grid) in grids.iter().enumerate() {
     let compiled =
@@ -2172,8 +2199,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect()
       })
       .collect();
-    // The levels each mesh function is drawn at.
-    let levels: Vec<Vec<f64>> = mesh_fns
+    // The levels each mesh function is drawn at, with the index of the
+    // level's own style in `level_styles`.
+    let levels: Vec<Vec<(f64, Option<usize>)>> = mesh_fns
       .iter()
       .enumerate()
       .map(|(k, _)| {
@@ -2193,9 +2221,18 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         match spec {
           Some(MeshLevels::Count(n)) if hi > lo => (1..=n)
-            .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
+            .map(|m| (lo + (hi - lo) * m as f64 / (n + 1) as f64, None))
             .collect(),
-          Some(MeshLevels::Values(v)) => v,
+          Some(MeshLevels::Values(v)) => v
+            .into_iter()
+            .map(|level| {
+              let style = level.style.map(|st| {
+                level_styles.push(st);
+                level_styles.len() - 1
+              });
+              (level.value, style)
+            })
+            .collect(),
           _ => Vec::new(),
         }
       })
@@ -2218,7 +2255,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .zip(&levels)
             .map(|(f, lv)| {
               let v = f.eval(center);
-              lv.iter().filter(|l| **l <= v).count()
+              lv.iter().filter(|(l, _)| *l <= v).count()
             })
             .collect();
           let mut entry = shading.clone();
@@ -2342,7 +2379,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if vals.iter().any(|v| !v.is_finite()) {
                 continue;
               }
-              for &level in lv {
+              for &(level, level_style) in lv {
                 let above = vals.map(|v| v >= level);
                 let mut ends: Vec<[f64; 3]> = Vec::new();
                 for e in 0..3 {
@@ -2360,7 +2397,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     + (ends[0][1] - ends[1][1]).powi(2))
                   .sqrt();
                   if len > 0.0 {
-                    contour_segments.push([ends[0], ends[1]]);
+                    contour_segments.push(([ends[0], ends[1]], level_style));
                   }
                 }
               }
@@ -2533,14 +2570,64 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_mesh_lines.extend(lines);
     }
   }
-  for [a, b] in &contour_segments {
+  // A level's own style is laid over `MeshStyle`.
+  let level_render_styles: Vec<StyleState3D> = level_styles
+    .iter()
+    .map(|st| {
+      let mut style = mesh_style.clone().unwrap_or_default();
+      apply_3d_directive(st, &mut style);
+      style
+    })
+    .collect();
+  for ([a, b], level_style) in &contour_segments {
     all_mesh_lines.push(styled_mesh_segment(
       to_box(*a),
       to_box(*b),
       &camera,
-      mesh_style.as_ref(),
+      level_style
+        .map(|k| &level_render_styles[k])
+        .or(mesh_style.as_ref()),
       ("#000000a0", 0.5),
     ));
+  }
+  // The mesh contours travel with the surface into `Show`, in data
+  // coordinates, one `Line` per level style.
+  if !contour_segments.is_empty()
+    && let Expr::FunctionCall { args: sargs, .. } = &mut structure
+    && let Some(content) = sargs.first_mut()
+  {
+    let point = |p: &[f64; 3]| {
+      Expr::List(p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
+    };
+    let mut groups: Vec<(Option<usize>, Vec<Expr>)> = Vec::new();
+    for ([a, b], level_style) in &contour_segments {
+      let segment = Expr::List(vec![point(a), point(b)].into());
+      match groups.iter_mut().find(|(k, _)| k == level_style) {
+        Some((_, segments)) => segments.push(segment),
+        None => groups.push((*level_style, vec![segment])),
+      }
+    }
+    let mesh: Vec<Expr> = groups
+      .into_iter()
+      .map(|(level_style, segments)| {
+        // The render's default: translucent black, unless `MeshStyle` or
+        // the level's own style replaces it.
+        let mut group = vec![call1("AbsoluteThickness", Expr::Real(0.5))];
+        if mesh_style_expr.is_none() && level_style.is_none() {
+          group.push(call1("Opacity", Expr::Real(0.63)));
+          group.push(call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          ));
+        }
+        group.extend(mesh_style_expr.clone());
+        group.extend(level_style.map(|k| level_styles[k].clone()));
+        group.push(call1("Line", Expr::List(segments.into())));
+        Expr::List(group.into())
+      })
+      .collect();
+    let surface = std::mem::replace(content, Expr::List(vec![].into()));
+    *content = Expr::List(vec![surface, Expr::List(mesh.into())].into());
   }
   if let Some(style) = &boundary_style {
     for [a, b] in &boundary_segments {
@@ -18151,7 +18238,9 @@ fn contour3d_render(
             Vec::new()
           }
         }
-        Some(MeshLevels::Values(values)) => values.clone(),
+        Some(MeshLevels::Values(values)) => {
+          values.iter().map(|l| l.value).collect()
+        }
         None => Vec::new(),
       }
     });
