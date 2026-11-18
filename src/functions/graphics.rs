@@ -42627,8 +42627,10 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       label_runs.push(runs);
       // A bare arithmetic choice (`{1/2, 1, 2}`, `{Pi/4, Pi/2}`) is shown
       // the way the FrontEnd typesets the value — a stacked fraction —
-      // just like an arithmetic `value -> label` rule label.
-      svgs.push(if is_arithmetic_label(item) {
+      // just like an arithmetic `value -> label` rule label. A bare
+      // picture choice (`{Graphics[…], Graphics[…]}` in a popup menu) is
+      // shown as the picture itself, not its InputForm.
+      svgs.push(if is_arithmetic_label(item) || is_picture_choice(item) {
         discrete_choice_label_svg(item)
       } else {
         None
@@ -47188,6 +47190,18 @@ fn has_unmapped_subscript(expr: &Expr) -> bool {
     }
     Expr::FunctionCall { args, .. } => args.iter().any(has_unmapped_subscript),
     Expr::List(items) => items.iter().any(has_unmapped_subscript),
+    _ => false,
+  }
+}
+
+/// Whether a bare choice value is a picture: an evaluated graphic or image,
+/// or a held `Graphics[…]`/`Graphics3D[…]`/`Image[…]` call.
+fn is_picture_choice(item: &Expr) -> bool {
+  match item {
+    Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Graphics" | "Graphics3D" | "Image")
+    }
     _ => false,
   }
 }

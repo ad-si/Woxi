@@ -12020,6 +12020,43 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     );
   }
 
+  /// A popup menu whose bare choices are pictures (`{shape, {Graphics[…],
+  /// Graphics[…]}, ControlType -> PopupMenu}`) shows each picture, as
+  /// Wolfram does, instead of its `Graphics[…]` InputForm text.
+  #[test]
+  fn popup_menu_of_bare_graphics_choices_shows_pictures() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[shape], \
+       {{shape, Graphics[{Rectangle[]}], \"shape\"}, \
+       {Graphics[{Rectangle[]}], Graphics[{Circle[{0, 0}, 1]}], \
+       Graphics3D[{Sphere[]}]}, ControlType -> PopupMenu}, \
+       {n, {1, 2}}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          value_label_svgs: shapes,
+          popup: true,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          value_label_svgs: plain,
+          ..
+        },
+      ] => {
+        assert_eq!(shapes.len(), 3);
+        assert!(
+          shapes.iter().all(Option::is_some),
+          "every picture choice carries its rendered icon"
+        );
+        assert!(plain.iter().all(Option::is_none), "numbers stay text");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
   #[test]
   fn locator_manipulate_builds_a_draggable_widget() {
     // The "Center of Mass of a Polygon" Demonstration pattern: a Locator
