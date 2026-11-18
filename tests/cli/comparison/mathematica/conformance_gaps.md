@@ -10200,3 +10200,12 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### Named `Pane` widths other than `Medium`
+
+`Pane[text, Medium]` used as a graphics `Text` label wraps at about 180
+points (measured from a saved snapshot, half a `Graphics`' `Medium` of
+360). Woxi assumes the other named sizes scale the same way (`Tiny` 50,
+`Small` 90, `Large` 288), which has not been checked against wolframscript.
+Woxi's text wrapping also estimates 7 points per character of the default
+font, so the wrapped label can break into more lines than Wolfram's.

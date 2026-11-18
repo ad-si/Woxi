@@ -7301,7 +7301,11 @@ fn style_font_size(directives: &[Expr]) -> Option<f64> {
       pattern,
       replacement,
     } if matches!(&**pattern, Expr::Identifier(n) if n == "FontSize") => {
-      pane_size_component(replacement)
+      match &**replacement {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(r) => Some(*r),
+        _ => None,
+      }
     }
     _ => None,
   })
@@ -7401,10 +7405,21 @@ pub(crate) fn pane_width_only(args: &[Expr]) -> Option<f64> {
   })
 }
 
+/// One dimension of a `Pane` size, in points: an explicit number, or one of
+/// the named box sizes. The FrontEnd sizes a box (`Pane[text, Medium]`)
+/// half as wide as a `Graphics` of the same named size, so `Medium` wraps
+/// text at 180 points rather than a picture's 360.
 pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(r) => Some(*r),
+    Expr::Identifier(name) => match name.as_str() {
+      "Tiny" => Some(50.0),
+      "Small" => Some(90.0),
+      "Medium" => Some(180.0),
+      "Large" => Some(288.0),
+      _ => None,
+    },
     _ => None,
   }
 }

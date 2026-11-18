@@ -6051,18 +6051,18 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     // `Pane[content, width, …]` sets `content` in a box `width` printer's
     // points wide: its text wraps there (an average character being about
     // half of the default 14-point font) rather than printing as the call.
-    // `Pane[content]` and a non-numeric size just show the content.
+    // A named width (`Pane[content, Medium]`) is a box size (see
+    // `pane_size_component`); `Pane[content]` and any other size just show
+    // the content.
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       let text = graphics_text_content(&args[0]);
       let width = match args.get(1) {
         Some(Expr::List(dims)) => dims.first(),
         other => other,
       };
-      let points = match width {
-        Some(Expr::Integer(n)) => Some(*n as f64),
-        Some(Expr::Real(f)) => Some(*f),
-        _ => None,
-      };
+      let points = width.and_then(
+        crate::evaluator::dispatch::io_functions::pane_size_component,
+      );
       match points {
         Some(w) if w > 0.0 => {
           wrap_text_to_width(&text, ((w / 7.0).floor() as usize).max(1))
