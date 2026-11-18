@@ -50343,6 +50343,15 @@ fn front_end_number_display_text(expr: &Expr) -> Option<String> {
       Expr::List(items) => {
         Expr::List(items.iter().map(|a| rewrite(a, changed)).collect())
       }
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(rewrite(left, changed)),
+        right: Box::new(rewrite(right, changed)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(rewrite(operand, changed)),
+      },
       other => other.clone(),
     }
   }

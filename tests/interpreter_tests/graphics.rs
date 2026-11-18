@@ -39124,7 +39124,8 @@ mod manipulate {
       "Manipulate[x, {x, 1, 2}, \
        Dynamic[Row[{N[x Pi], \" \", -x/3., \" \", 10.^7 x, \" \", \
        MinimalPolynomial[Root[#^3 - #^2 - 1 &, 1], y], \" \", \
-       Root[#^3 - #^2 - 1 &, 1] - x}]]]",
+       Root[#^3 - #^2 - 1 &, 1] - x, \" \", MinimalPolynomial[r, r]}]], \
+       {r, Root[-1 - #^2 + #^3 &, 1, 0], ControlType -> None}]",
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("manipulate");
@@ -39145,7 +39146,9 @@ mod manipulate {
         " ",
         "-1 - y^2 + y^3",
         " ",
-        "-1 + 1.47\u{2026}"
+        "-1 + 1.47\u{2026}",
+        " ",
+        "-1 - 1.47\u{2026}^2 + 1.47\u{2026}^3"
       ],
       "{node:?}"
     );
