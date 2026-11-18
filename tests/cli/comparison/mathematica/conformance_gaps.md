@@ -9552,8 +9552,7 @@ differs:
   RevolutionPlot3D flattens the box of a plain profile `z = f(t)` to
   `BoxRatios -> {2, 2, 1/GoldenRatio}` as wolframscript does, but keeps the
   x/y ratio 1 for a partial sweep (wolframscript: `{2, 1, …}` for
-  `θ ∈ [0, π]`) and a fixed z ratio for `{r, z}` profiles (wolframscript:
-  `Automatic`).
+  `θ ∈ [0, π]`).
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
