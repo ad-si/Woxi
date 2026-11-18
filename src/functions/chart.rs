@@ -724,7 +724,11 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     // `Null` typesets as nothing — a label variable left unset, or an
     // option default of `Null`, must not print the word "Null".
     Expr::Identifier(s) => Some(StyledLabel {
-      text: if s == "Null" { String::new() } else { s.clone() },
+      text: if s == "Null" {
+        String::new()
+      } else {
+        s.clone()
+      },
       markup: None,
       extra_lines: Vec::new(),
       bold: false,
