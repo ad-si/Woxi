@@ -28642,6 +28642,29 @@ mod show {
     assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
   }
 
+  /// `Show[Histogram[…, opts], Plot[…]]` takes its options from the
+  /// histogram, the first graphic: its `PlotLabel` (here a `Grid` of lines)
+  /// labels the combined picture. Regression: the histogram's options were
+  /// dropped, so the label vanished as soon as a curve was overlaid.
+  #[test]
+  fn show_histogram_with_plot_keeps_histogram_options() {
+    clear_state();
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, {0, 4, 1}, "ProbabilityDensity",
+          PlotLabel -> Grid[{{"top line"}, {"bottom line"}}],
+          ChartStyle -> Red],
+        Plot[x/8, {x, 0, 4}], PlotRange -> All]"#,
+    );
+    assert!(svg.contains(">top line<"), "{svg}");
+    assert!(svg.contains(">bottom line<"), "{svg}");
+    // An option given to Show itself still wins over the histogram's.
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, PlotLabel -> "inner"],
+        Plot[x, {x, 0, 4}], PlotLabel -> "outer"]"#,
+    );
+    assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
+  }
+
   /// A bare `PlotRange -> {min, max}` given to `Show` on top of a plot is the
   /// y range: the plotted x domain (here -7..7) stays fully visible.
   #[test]
