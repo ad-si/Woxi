@@ -21756,6 +21756,62 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// The x positions of the `<text>` elements whose content is one of
+    /// `names`, in document order.
+    fn label_xs(svg: &str, names: &[&str]) -> Vec<(String, f64)> {
+      svg
+        .split("<text ")
+        .skip(1)
+        .filter_map(|t| {
+          let content = t.split_once('>')?.1.split_once("</text>")?.0;
+          if !names.contains(&content) {
+            return None;
+          }
+          let x = t.split_once("x=\"")?.1.split_once('"')?.0.parse().ok()?;
+          Some((content.to_string(), x))
+        })
+        .collect()
+    }
+
+    #[test]
+    fn bar_chart_flat_labels_name_each_bar_of_every_group() {
+      // A flat `ChartLabels` list on grouped data labels the bars inside
+      // each group (repeated per group), not the groups themselves.
+      let svg = export_svg(
+        r#"BarChart[{{1, 2, 3}, {2, 3, 4}}, ChartLabels -> {"a", "b", "c"}]"#,
+      );
+      let labels = label_xs(&svg, &["a", "b", "c"]);
+      let names: Vec<&str> = labels.iter().map(|(n, _)| n.as_str()).collect();
+      assert_eq!(names, ["a", "b", "c", "a", "b", "c"]);
+      assert!(labels.windows(2).all(|w| w[0].1 < w[1].1));
+    }
+
+    #[test]
+    fn bar_chart_single_group_labels_every_bar() {
+      let svg = export_svg(
+        r#"BarChart[{{3, 1, 2, 5}}, ChartLabels -> {"p", "q", "r", "s"}]"#,
+      );
+      let labels = label_xs(&svg, &["p", "q", "r", "s"]);
+      let names: Vec<&str> = labels.iter().map(|(n, _)| n.as_str()).collect();
+      assert_eq!(names, ["p", "q", "r", "s"]);
+      // Evenly spaced, one under each bar.
+      let gaps: Vec<f64> = labels.windows(2).map(|w| w[1].1 - w[0].1).collect();
+      assert!(gaps.iter().all(|g| (g - gaps[0]).abs() < 0.5 && *g > 0.0));
+    }
+
+    #[test]
+    fn bar_chart_nested_labels_name_the_groups() {
+      // `{groupLabels, barLabels}` keeps one label centered under each group.
+      let svg = export_svg(
+        r#"BarChart[{{1, 2}, {3, 4}}, ChartLabels -> {{"G1", "G2"}, {"x", "y"}}]"#,
+      );
+      let names: Vec<String> = label_xs(&svg, &["G1", "G2", "x", "y"])
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+      assert_eq!(names, ["G1", "G2"]);
+    }
+
     #[test]
     fn bar_chart_grouped_with_chart_style() {
       insta::assert_snapshot!(export_svg(

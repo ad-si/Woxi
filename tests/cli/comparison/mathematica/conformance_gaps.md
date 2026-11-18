@@ -10200,3 +10200,11 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### `Style[…, "Input"]` text weight
+
+The `"Input"` named style sets text in Wolfram's bold input font (a saved
+snapshot of `Style[Row[{…}], Gray, 20, "Input"]` shows bold monospace text),
+while Woxi ignores the style name and draws the text in regular weight.
+Its stylesheet font size, which applies when no explicit size is given, has
+not been measured against wolframscript yet.

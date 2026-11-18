@@ -850,6 +850,10 @@ pub(crate) struct ChartOptions {
   pub svg_height: u32,
   pub full_width: bool,
   pub chart_labels: Vec<ChartLabel>,
+  /// Set when `ChartLabels -> {groupLabels, barLabels}` named the groups
+  /// explicitly. A flat label list instead names the bars of each group
+  /// (repeated in every group) when a `BarChart` groups its data.
+  pub chart_labels_group_level: bool,
   pub chart_label_position: LabelPosition,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
@@ -2991,6 +2995,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     svg_height: DEFAULT_HEIGHT,
     full_width: false,
     chart_labels: Vec::new(),
+    chart_labels_group_level: false,
     chart_label_position: LabelPosition::Below,
     plot_label: None,
     axes_label: None,
@@ -3083,7 +3088,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               // `{groupLabels, barLabels}` — the first sublist names the
               // groups, which are what the category axis shows.
               let labels = match items.first() {
-                Some(Expr::List(group_labels)) => group_labels,
+                Some(Expr::List(group_labels)) => {
+                  opts.chart_labels_group_level = true;
+                  group_labels
+                }
                 _ => items,
               };
               for item in labels {
@@ -3641,6 +3649,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })?;
   }
   look.layout = opts.layout;
+  look.labels_per_bar = !opts.chart_labels_group_level;
   let decor = extract_grouped_decor(&args[0]).unwrap_or_default();
   if DatumDecor::any(&decor) {
     let to_u8 = |c: &Color| {
@@ -4797,19 +4806,27 @@ fn bar_chart_structure(
       });
     }
   }
-  // `ChartLabels` name the groups below the baseline (one label per group,
-  // centered on it).
+  // `ChartLabels` sit below the baseline: centered under each group, or
+  // under each bar when a flat list labels the bars of grouped data.
   if !opts.chart_labels.is_empty() {
     let mut labels: Vec<Expr> = vec![Expr::FunctionCall {
       name: "GrayLevel".to_string(),
       args: vec![Expr::Integer(0)].into(),
     }];
-    for (gi, label) in opts.chart_labels.iter().take(groups.len()).enumerate() {
+    let anchors = crate::functions::plot::bar_label_anchors(
+      &rects,
+      groups.len(),
+      opts.chart_labels.len(),
+      !opts.chart_labels_group_level,
+      opts.layout,
+    );
+    for (li, _, x_center) in anchors {
+      let label = &opts.chart_labels[li];
       labels.push(Expr::FunctionCall {
         name: "Text".to_string(),
         args: vec![
           Expr::String(label.text.clone()),
-          Expr::List(vec![Expr::Real(gi as f64 + 1.0), Expr::Real(0.0)].into()),
+          Expr::List(vec![Expr::Real(x_center + 0.5), Expr::Real(0.0)].into()),
           Expr::List(vec![Expr::Integer(0), Expr::Real(1.5)].into()),
         ]
         .into(),

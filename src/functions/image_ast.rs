@@ -3158,6 +3158,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     svg_height: crate::functions::plot::DEFAULT_HEIGHT,
     full_width: false,
     chart_labels: Vec::new(),
+    chart_labels_group_level: false,
     chart_label_position: crate::functions::chart::LabelPosition::Below,
     plot_label: None,
     axes_label: None,

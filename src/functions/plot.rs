@@ -8992,6 +8992,9 @@ pub(crate) struct BarChartLook {
   /// then centers the plotting area in the box instead of resizing it.
   pub fixed_height: bool,
   /// `ChartLayout`: how the bars of a group share its slot.
+  /// `ChartLabels` name the bars within each group (a flat label list on
+  /// grouped data) rather than the groups themselves.
+  pub labels_per_bar: bool,
   pub layout: BarLayout,
   /// Per-bar colors from `Style[v, color]` data wrappers, in drawing
   /// order (overriding `ChartStyle` and the default palette).
@@ -9074,6 +9077,7 @@ fn pictorial_bar_svg(svg: &str, base: (f64, f64), end: (f64, f64)) -> String {
 impl Default for BarChartLook {
   fn default() -> Self {
     Self {
+      labels_per_bar: false,
       axes: true,
       axes_color: None,
       axes_width: None,
@@ -9289,6 +9293,32 @@ impl BarSpacing {
 /// The rectangles of a bar chart's groups under `layout`, placed in their
 /// slots by `spacing`. The single canonical bar layout, shared by the SVG
 /// renderer and the chart's `Graphics` structure.
+/// Where each `ChartLabels` entry of a bar chart goes, as `(label index,
+/// group, x center)` in the bars' coordinates (group `g` spans `g..g+1`).
+/// Group labels sit centered under their group. Bar-level labels — a flat
+/// label list on grouped (side-by-side) data — sit under every bar, the
+/// `j`-th label naming the `j`-th bar of each group, as in Wolfram.
+pub(crate) fn bar_label_anchors(
+  rects: &[BarRect],
+  n_groups: usize,
+  label_count: usize,
+  per_bar: bool,
+  layout: BarLayout,
+) -> Vec<(usize, usize, f64)> {
+  let grouped = rects.iter().any(|r| r.index > 0);
+  if per_bar && grouped && !layout.single_column() {
+    rects
+      .iter()
+      .filter(|r| r.index < label_count)
+      .map(|r| (r.index, r.group, f64::midpoint(r.x0, r.x1)))
+      .collect()
+  } else {
+    (0..n_groups.min(label_count))
+      .map(|gi| (gi, gi, gi as f64 + 0.5))
+      .collect()
+  }
+}
+
 pub(crate) fn bar_rects(
   groups: &[Vec<f64>],
   layout: BarLayout,
@@ -10309,7 +10339,15 @@ pub(crate) fn generate_bar_svg(
       let y_span = y_max - y_min;
       let map_y_val =
         |v: f64| -> f64 { plot_y0 + (y_max - v) / y_span * plot_h };
-      for (i, label) in chart_labels.iter().enumerate().take(n) {
+      let anchors = bar_label_anchors(
+        &rects,
+        n,
+        chart_labels.len(),
+        look.labels_per_bar,
+        layout,
+      );
+      for (li, gi, x_center) in anchors {
+        let label = &chart_labels[li];
         let font_size = label.font_size.map_or(font_size, |f| f * sf);
         let lines = chart_label_lines(label, font_size / sf);
         let weight = if label.bold || label_bold {
@@ -10317,9 +10355,9 @@ pub(crate) fn generate_bar_svg(
         } else {
           ""
         };
-        let cx = map_x_val(i as f64 + 0.5);
+        let cx = map_x_val(x_center);
         // For Above/Center positioning, use the max value in the group
-        let group_max = group_top(i);
+        let group_max = group_top(gi);
         // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
         let svg_rotation_deg = -label.rotation.to_degrees();
         let is_rotated = svg_rotation_deg.abs() > 0.01;
