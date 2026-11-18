@@ -10202,6 +10202,43 @@ mod plot3d {
       assert!(!woxi::in_manipulate_frame());
     }
 
+    /// An explicit `AspectRatio -> r` stretches the projected box to the
+    /// picture's shape inside a `Manipulate` frame too, rather than being
+    /// overridden by the frame's default sphere framing: a Demonstration's
+    /// snapshots of a tall column of spheres at `AspectRatio -> 0.8` show
+    /// them widened into flat ellipses that span the whole picture.
+    #[test]
+    fn manipulate_frame_keeps_explicit_aspect_ratio_stretch() {
+      for (ratio, size) in [("0.8", "500"), ("1/2", "300"), ("1.5", "400")] {
+        let scene = |opts: &str| {
+          format!(
+            "Graphics3D[{{Sphere[{{0, 0, 10}}, 1], Sphere[{{0, 0, 60}}, 6]}}, \
+             AspectRatio -> {ratio}, Boxed -> False, ImageSize -> {size}{opts}]"
+          )
+        };
+        let plain = export_svg(&scene(""));
+        let in_frame = woxi::with_manipulate_frame(|| export_svg(&scene("")));
+        assert_eq!(in_frame, plain, "{ratio}");
+        // The stretched column fills the picture's width, far wider than
+        // the round spheres' own width/height proportion would allow.
+        let (x0, x1) = in_frame
+          .split("<polygon points=\"")
+          .skip(1)
+          .flat_map(|c| c.split('"').next().unwrap().split_whitespace())
+          .map(|pair| pair.split_once(',').unwrap().0.parse::<f64>().unwrap())
+          .fold((f64::MAX, f64::MIN), |(a, b), x| (a.min(x), b.max(x)));
+        let width: f64 = size.parse().unwrap();
+        assert!(x1 - x0 > 0.6 * width, "{ratio}: {x0} {x1}");
+        // An explicit `SphericalRegion -> True` is still honored.
+        let spherical = export_svg(&scene(", SphericalRegion -> True"));
+        let forced_on = woxi::with_manipulate_frame(|| {
+          export_svg(&scene(", SphericalRegion -> True"))
+        });
+        assert_eq!(forced_on, spherical, "{ratio}");
+        assert_ne!(forced_on, plain, "{ratio}");
+      }
+    }
+
     // `ViewCenter` moves the point the camera looks at; the box middle is
     // the default, so naming it changes nothing.
     #[test]

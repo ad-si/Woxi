@@ -11583,8 +11583,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `SphericalRegion -> True`: frame the picture by the sphere that
   // encloses the contents instead of by their projected outline, so the
   // scale stays put as the view turns or the contents move. A
-  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
-  let mut spherical_region = crate::in_manipulate_frame();
+  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does (see
+  // the resolution of `Automatic` below).
+  let mut spherical_region = false;
   // `SphericalRegion -> False` given outright (rather than the default
   // `Automatic`), which rules out the automatic sphere framing below.
   let mut spherical_region_off = false;
@@ -12075,7 +12076,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // from a custom `ViewPoint`) draw them at the sphere-framed size, 0.7×
   // to 0.86× the outline-fitted one.
   // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  // A `Manipulate` frame is likewise sphere-framed by default, unless an
+  // explicit `AspectRatio -> r` asks for the projected box to be stretched
+  // to the picture's shape: the FrontEnd's snapshots of such a frame show
+  // the contents filling the whole picture, squashed or widened to it.
+  let spherical_region_given = spherical_region || spherical_region_off;
   let spherical_region = spherical_region
+    || (!spherical_region_given
+      && crate::in_manipulate_frame()
+      && aspect_ratio.is_none())
     || (!spherical_region_off
       && !show_box
       && explicit_height
