@@ -2301,7 +2301,7 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
     return format_tick(v);
   }
   let v = if effectively_zero { 0.0 } else { v };
-  format!("{v:.decimals$}")
+  crate::functions::graphics::group_digits_str(&format!("{v:.decimals$}"))
 }
 
 /// How many decimals it takes to write `step` — the decimals every label of
@@ -2336,7 +2336,14 @@ fn format_scientific_tick(v: f64) -> String {
   )
 }
 
+/// Label a single tick. Like every label of a Wolfram tick set, an integer
+/// part of five or more digits is split into blocks of three by thin spaces
+/// (`100000` reads `100 000`).
 pub(crate) fn format_tick(v: f64) -> String {
+  crate::functions::graphics::group_digits_str(&format_tick_ungrouped(v))
+}
+
+fn format_tick_ungrouped(v: f64) -> String {
   // Outside `[10^-5, 10^6)` the Wolfram Language labels a tick in
   // scientific notation — a frequency axis running to 6*10^15 is labeled
   // `2x10^15` with real superscript digits, not `2000000000000000`. The

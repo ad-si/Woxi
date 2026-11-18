@@ -5442,4 +5442,29 @@ mod grid_item_style_tests {
       "{svg}"
     );
   }
+
+  /// Tick labels with an integer part of five or more digits are split
+  /// into blocks of three by a thin space (U+2009), as Wolfram sets them
+  /// (`100 000`), on every kind of axis; shorter ones stay whole.
+  #[test]
+  fn long_tick_labels_are_set_in_digit_blocks() {
+    for code in [
+      r#"ExportString[Plot[x, {x, 0, 200000}, Frame -> True], "SVG"]"#,
+      r#"ExportString[ListPlot[{{0, 0}, {200000, 1}}], "SVG"]"#,
+      r#"ExportString[Graphics[Line[{{0, 0}, {200000, 100000}}],
+        Frame -> True], "SVG"]"#,
+      r#"ExportString[Graphics[Line[{{0, 0}, {200000, 100000}}],
+        Axes -> True], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(svg.contains("100\u{2009}000"), "{code}: {svg}");
+      assert!(!svg.contains("100000<"), "{code}: {svg}");
+    }
+    // Four-digit labels are not grouped; five-digit ones are.
+    let svg =
+      woxi::interpret(r#"ExportString[Plot[x, {x, 0, 12345.6}], "SVG"]"#)
+        .expect("interpret should succeed");
+    assert!(svg.contains(">8000<"), "{svg}");
+    assert!(svg.contains("10\u{2009}000"), "{svg}");
+  }
 }

@@ -8752,7 +8752,8 @@ Found comparing the graphics-tests renders (2026-11):
   - `Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]` is
     442 wide (WL 414): the legend takes more room.
   - Tick labels are measured as WL sets them (a minus 0.63 em wide,
-    `10 000` in digit blocks) but drawn with a hyphen and no blocks.
+    `10 000` in digit blocks) and drawn in digit blocks, but with a
+    hyphen for the minus.
   - Explicit `Ticks` labels of an unframed plot without axes
     (`explicit_ticks_svg`) and the decade labels of a framed log axis are
     still drawn at Woxi's old sizes and offsets (13 / 14.5 px), though the
