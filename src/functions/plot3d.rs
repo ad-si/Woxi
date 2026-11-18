@@ -1493,12 +1493,13 @@ fn generate_mesh_lines(
   };
 
   let nx = |ii: usize| -> f64 {
-    ((ii as f64 / grid_n as f64) * 2.0 - 1.0) * half[0]
+    (ii as f64 / grid_n as f64) * 2.0 * half[0] - half[0]
   };
   let ny = |jj: usize| -> f64 {
-    ((jj as f64 / grid_n as f64) * 2.0 - 1.0) * half[1]
+    (jj as f64 / grid_n as f64) * 2.0 * half[1] - half[1]
   };
-  let nz = |z: f64| -> f64 { (((z - z_lo) / z_range) * 2.0 - 1.0) * half[2] };
+  let nz =
+    |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * half[2] - half[2] };
 
   let mut lines = Vec::new();
 
@@ -2152,13 +2153,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let nx = |x: f64| -> f64 {
-    ((x - x_min) / (x_max - x_min) * 2.0 - 1.0) * box_half[0]
+    (x - x_min) / (x_max - x_min) * 2.0 * box_half[0] - box_half[0]
   };
   let ny = |y: f64| -> f64 {
-    ((y - y_min) / (y_max - y_min) * 2.0 - 1.0) * box_half[1]
+    (y - y_min) / (y_max - y_min) * 2.0 * box_half[1] - box_half[1]
   };
   let nz = |z: f64| -> f64 {
-    (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 - 1.0) * box_half[2]
+    ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * box_half[2] - box_half[2]
   };
   let to_box = |p: [f64; 3]| Point3D {
     x: nx(p[0]),
