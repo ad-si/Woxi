@@ -4649,6 +4649,7 @@ fn render_manipulate_widget<'a>(
         step,
         current,
         is_real,
+        exact_value,
         orientation,
         reversed,
         ..
@@ -4678,10 +4679,11 @@ fn render_manipulate_widget<'a>(
             Message::Noop
           }
         };
-        let value_widget = text(format_slider_value(*current, *is_real))
-          .size(11)
-          .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(64.0));
+        let value_widget =
+          text(slider_value_text(*current, *is_real, *exact_value))
+            .size(11)
+            .font(Font::MONOSPACE)
+            .width(iced::Length::Fixed(64.0));
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -6044,6 +6046,19 @@ fn format_slider_value(v: f64, is_real: bool) -> String {
   } else {
     s
   }
+}
+
+/// The slider readout, showing the exact initial value (`π/2`) while the
+/// slider still sits on it, as Wolfram does, and the decimal otherwise.
+fn slider_value_text(
+  current: f64,
+  is_real: bool,
+  exact_value: Option<f64>,
+) -> String {
+  exact_value
+    .filter(|v| *v == current)
+    .and_then(woxi::functions::graphics::format_exact_slider_label)
+    .unwrap_or_else(|| format_slider_value(current, is_real))
 }
 
 fn format_manipulate_number(v: f64) -> String {
@@ -8703,6 +8718,27 @@ mod tests {
     assert_eq!(format_slider_value(-500.0, false), "-500");
     assert_eq!(format_slider_value(0.25, true), "0.25");
     assert_eq!(format_slider_value(0.25, false), "0.25");
+  }
+
+  #[test]
+  fn slider_value_text_shows_exact_initial_value() {
+    use super::slider_value_text;
+    use std::f64::consts::PI;
+    // Still on the exact initial value: typeset exactly, as Wolfram does.
+    assert_eq!(slider_value_text(PI / 2.0, false, Some(PI / 2.0)), "π/2");
+    assert_eq!(slider_value_text(PI / 2.0, true, Some(PI / 2.0)), "π/2");
+    assert_eq!(
+      slider_value_text(3.0 * PI / 4.0, false, Some(3.0 * PI / 4.0)),
+      "3π/4"
+    );
+    assert_eq!(slider_value_text(2.0 * PI, false, Some(2.0 * PI)), "2π");
+    assert_eq!(slider_value_text(-PI / 3.0, false, Some(-PI / 3.0)), "-π/3");
+    assert_eq!(slider_value_text(1.0 / 3.0, false, Some(1.0 / 3.0)), "1/3");
+    // Integers keep the plain readout.
+    assert_eq!(slider_value_text(5.0, false, Some(5.0)), "5");
+    // Once moved off it (or with no exact initial value) the decimal shows.
+    assert_eq!(slider_value_text(2.0, true, Some(PI / 2.0)), "2.");
+    assert_eq!(slider_value_text(PI / 2.0, true, None), "1.571");
   }
 
   /// A Manipulate's helper variables written with Gothic letters
