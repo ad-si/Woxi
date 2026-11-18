@@ -191,6 +191,18 @@ Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 `ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
 prints `0.1 × 10^-6` without padding.
 
+### A `NumberForm` nested in a list or call shows its head
+
+At the top level a number-display form prints as its formatted number, but
+inside another expression Woxi keeps the wrapper:
+
+```sh
+wolframscript -code '{NumberForm[1.23456789, 9], 2.5}'  # {1.23456789, 2.5}
+woxi eval '{NumberForm[1.23456789, 9], 2.5}'            # {NumberForm[1.23456789, 9], 2.5}
+```
+
+The same happens under `ToString` and for `f[NumberForm[…]]`.
+
 ### `NumberForm`/`ScientificForm` round half-to-even, wolframscript rounds half-up
 
 ```sh
