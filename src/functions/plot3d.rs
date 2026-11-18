@@ -3642,17 +3642,17 @@ fn draw_axes_on_box_with_ticks(
         // just past them. Wolfram sets every axis label upright, the z
         // axis's too.
         let own_w = label_half_width(label, font_size);
+        let (label_w, label_h) = markup_text_size(label, font_size as f64);
         let reach = TICK_LABEL_OFFSET
           + (perpx * sign).abs() * (half_w + own_w)
-          + (perpy * sign).abs() * (half_h + half_h);
+          + (perpy * sign).abs() * (half_h + label_h * 0.5);
         let offset = reach + font_size as f64 * 0.5;
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
         svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{label}</text>\n",
         ));
-        let chars = markup_char_count(label);
-        extent.add_text(lx, ly, chars, font_size as f64, "middle");
+        extent.add_box(lx, ly, label_w, label_h, "middle");
       }
     }
 
@@ -3833,14 +3833,19 @@ impl AxesExtent {
     font: f64,
     anchor: &str,
   ) {
-    let w = chars as f64 * font * 0.56;
+    self.add_box(x, y, chars as f64 * font * 0.56, font, anchor);
+  }
+
+  /// A text box `w` wide and `h` tall anchored at `(x, y)` (`anchor` as
+  /// SVG's `text-anchor`, vertically centered).
+  fn add_box(&mut self, x: f64, y: f64, w: f64, h: f64, anchor: &str) {
     let (l, r) = match anchor {
       "end" => (x - w, x),
       "start" => (x, x + w),
       _ => (x - w / 2.0, x + w / 2.0),
     };
-    self.add(l, y - font * 0.5);
-    self.add(r, y + font * 0.5);
+    self.add(l, y - h * 0.5);
+    self.add(r, y + h * 0.5);
   }
 }
 
@@ -3938,7 +3943,7 @@ fn label_font_size(opts: &[Expr]) -> Option<f64> {
 /// Half the width a text label takes at `font_size`, estimated from its
 /// character count — enough to keep labels from landing on each other.
 fn label_half_width(label: &str, font_size: i32) -> f64 {
-  markup_char_count(label) as f64 * font_size as f64 * 0.3
+  markup_text_size(label, font_size as f64).0 * 0.3 / 0.56
 }
 
 /// The tick positions along an axis spanning `val_min` to `val_max`, the
@@ -6353,7 +6358,7 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
   match expr {
     Expr::Identifier(s) => match s.as_str() {
       "Thick" => {
-        style.thickness = Some(2.5);
+        style.thickness = Some(2.0);
         return true;
       }
       "Thin" => {
@@ -6507,7 +6512,9 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       "Thickness" if args.len() == 1 => {
         if let Expr::Identifier(s) = &args[0] {
           match s.as_str() {
-            "Large" => style.thickness = Some(3.0),
+            // `Thick` evaluates to `Thickness[Large]`, which Wolfram
+            // strokes 2 pixels wide in 3D just as in 2D.
+            "Large" => style.thickness = Some(2.0),
             "Tiny" => style.thickness = Some(0.5),
             _ => {
               if let Some(t) = expr_to_f64(&args[0]) {
@@ -14126,6 +14133,82 @@ fn with_plot_label(
 
 /// The characters an SVG markup fragment actually shows, for width
 /// estimation: everything outside its tags.
+/// The size of an SVG text markup run set at `font_size`: its estimated
+/// width and the height of its tallest line. Nested `<tspan font-size=…>`
+/// runs (a styled `AxesLabel -> Style[…, Large]`, a 70% subscript) are
+/// measured at their own size rather than at the base one, so a large
+/// label claims the room it really takes.
+fn markup_text_size(markup: &str, font_size: f64) -> (f64, f64) {
+  let mut sizes = vec![font_size];
+  let mut width = 0.0;
+  let mut height = 0.0_f64;
+  let mut chars = markup.chars().peekable();
+  while let Some(c) = chars.next() {
+    let current = *sizes.last().unwrap_or(&font_size);
+    match c {
+      '<' => {
+        let mut tag = String::new();
+        for t in chars.by_ref() {
+          if t == '>' {
+            break;
+          }
+          tag.push(t);
+        }
+        if tag.starts_with('/') {
+          if sizes.len() > 1 {
+            sizes.pop();
+          }
+        } else if !tag.ends_with('/') {
+          sizes.push(tag_font_size(&tag, current));
+        }
+      }
+      '&' => {
+        // An entity (`&lt;`, `&#945;`) is one character.
+        while let Some(&t) = chars.peek() {
+          chars.next();
+          if t == ';' {
+            break;
+          }
+        }
+        width += current;
+        height = height.max(current);
+      }
+      _ => {
+        width += current;
+        height = height.max(current);
+      }
+    }
+  }
+  if width == 0.0 {
+    (font_size * 0.56, font_size)
+  } else {
+    (width * 0.56, height)
+  }
+}
+
+/// The font size an opening SVG tag (its text between `<` and `>`) sets
+/// for its content: an absolute `font-size="24"`, a relative
+/// `font-size="70%"`, or `current` when it sets none.
+fn tag_font_size(tag: &str, current: f64) -> f64 {
+  let Some(start) = tag.find("font-size=\"") else {
+    return current;
+  };
+  let rest = &tag[start + "font-size=\"".len()..];
+  let value = rest.split('"').next().unwrap_or("");
+  if let Some(pct) = value.strip_suffix('%') {
+    pct
+      .trim()
+      .parse::<f64>()
+      .map_or(current, |p| current * p / 100.0)
+  } else {
+    value
+      .trim()
+      .trim_end_matches("px")
+      .parse::<f64>()
+      .unwrap_or(current)
+  }
+}
+
 fn markup_char_count(markup: &str) -> usize {
   let mut count = 0;
   let mut in_tag = false;

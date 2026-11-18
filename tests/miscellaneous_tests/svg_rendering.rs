@@ -3121,6 +3121,61 @@ mod tests {
     }
 
     #[test]
+    fn thick_3d_line_is_two_pixels_wide() {
+      // `Thick` is `Thickness[Large]`, a 2-pixel stroke in 3D as in 2D,
+      // whatever the picture's size.
+      for code in [
+        "Graphics3D[{Thick, Line[{{0, 0, 0}, {1, 1, 1}}]}, ImageSize -> 400]",
+        "Graphics3D[{Thickness[Large], Line[{{0, 0, 0}, {1, 1, 1}}]}]",
+        "ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 2 Pi}, \
+         PlotStyle -> {Blue, Thick}]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("stroke-width=\"2.0\""), "{code}: {svg}");
+        assert!(!svg.contains("stroke-width=\"3.0\""), "{code}: {svg}");
+      }
+    }
+
+    #[test]
+    fn large_styled_3d_axes_labels_stay_inside_the_picture() {
+      // A label set in a large font (`Style[…, Large]`) is fitted into the
+      // picture at its own size, not at the default label size, so the
+      // vertical axis's label on the left edge is not cut off.
+      let svg = svg_of(
+        "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
+         AxesLabel -> {Style[\"x\", Large], Style[\"y\", Large], \
+         Style[\"zzz\", Large, Bold]}]",
+      );
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap();
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains(">zzz<"))
+        .unwrap_or_else(|| panic!("no z label: {svg}"));
+      let attr = |name: &str| -> f64 {
+        label
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .or_else(|| label.split(&format!("{name}=\"")).nth(1))
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap()
+      };
+      let x = attr("x");
+      // Three Large (24 px) characters are about 40 px wide, so a centered
+      // label needs its anchor at least 20 px from either edge.
+      let half = 3.0 * 24.0 * 0.56 / 2.0;
+      assert!(
+        x - half >= 0.0 && x + half <= width,
+        "z label at x = {x} spills out of the {width} px picture: {svg}"
+      );
+    }
+
+    #[test]
     fn spherical_region_holds_the_scale_across_views() {
       // The point of the option: an animated or rotated scene keeps one
       // scale, so the picture no longer breathes as the contents move.
