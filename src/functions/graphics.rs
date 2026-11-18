@@ -8225,7 +8225,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         ),
       ))
     }
-    _ => None,
+    // `TraditionalForm[x^n]` typesets the power with a raised exponent
+    // (and a quotient as a built-up fraction); flattening its boxes to
+    // one text run would print `xn`.
+    _ => traditional_form_two_dimensional_boxes(content),
   };
   if frame_opts.is_empty()
     && let Some(boxes) = stacked_boxes
@@ -24997,6 +25000,45 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// The traditional-notation boxes of a `TraditionalForm[expr]` label whose
+/// layout is two-dimensional (a superscript, subscript, fraction or
+/// radical), so it must be laid out rather than drawn as one text run.
+/// Strings and `Row`/`Column` layouts are left to the text path.
+fn traditional_form_two_dimensional_boxes(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "TraditionalForm"
+    || args.len() != 1
+    || matches!(args[0], Expr::String(_))
+    || is_traditional_layout(&args[0])
+  {
+    return None;
+  }
+  fn two_dimensional(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        matches!(
+          name.as_str(),
+          "SuperscriptBox"
+            | "SubscriptBox"
+            | "SubsuperscriptBox"
+            | "FractionBox"
+            | "SqrtBox"
+            | "RadicalBox"
+        ) || args.iter().any(two_dimensional)
+      }
+      Expr::List(items) => items.iter().any(two_dimensional),
+      _ => false,
+    }
+  }
+  let boxes = crate::strip_number_precision_markers(
+    &crate::evaluator::dispatch::complex_and_special::
+      expr_to_box_form_traditional(&args[0]),
+  );
+  two_dimensional(&boxes).then_some(boxes)
 }
 
 /// Whether an arithmetic expression (`Times`, `Power` or `Plus`, strings

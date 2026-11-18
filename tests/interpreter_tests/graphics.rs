@@ -26375,7 +26375,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Graphics[{Text[TraditionalForm[(1 - Row[{2, x, t}] + t^2)], \
          {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
       );
-      assert!(svg.contains("2xt"), "the concatenated row: {svg}");
+      // The row's parts are set side by side as typeset glyphs, and `t^2`
+      // raises its exponent.
+      assert!(
+        svg.contains("font-style=\"italic\" xml:space=\"preserve\">x</text>"),
+        "the row's variable: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "font-size=\"9.8\" stroke=\"none\" xml:space=\"preserve\">2</text>"
+        ),
+        "the raised exponent: {svg}"
+      );
       assert!(!svg.contains("Row"), "not the head name: {svg}");
     }
 
