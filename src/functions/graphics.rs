@@ -38131,6 +38131,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if is_manipulate_annotation_head(name)
           && annotation_contains_dynamic(spec) =>
       {
+        panel_displays.push((displays.len(), controls.len()));
         displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
@@ -38148,6 +38149,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           )
           && annotation_contains_dynamic(&args[0]) =>
       {
+        panel_displays.push((displays.len(), controls.len()));
         displays.push(crate::syntax::expr_to_source_form(&args[0]));
         continue;
       }
@@ -38250,8 +38252,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // controls were already flattened into `arg_items` above). Any other
     // trailing argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an
     // extra display element: capture it so the frontend can render it
-    // live.
+    // live. Wolfram draws every such argument inside the control panel, at
+    // the place it holds among the control specs (a `Grid` of live readouts
+    // after a `Delimiter` sits below the sliders in a `ControlPlacement ->
+    // Left` panel, not above the output).
     if !matches!(spec, Expr::List(_)) {
+      panel_displays.push((displays.len(), controls.len()));
       displays.push(crate::syntax::expr_to_source_form(spec));
       continue;
     }
@@ -52214,8 +52220,7 @@ mod manipulate_control_placement_tests {
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
   }
 
-  /// A bar declared after every other control closes the panel; a display
-  /// that is no control spec (a trailing `Dynamic[…]`) is not a panel row.
+  /// A bar declared after every other control closes the panel.
   #[test]
   fn trailing_toggler_bar_closes_the_panel() {
     let expr = crate::parse_to_expr(
@@ -52226,6 +52231,32 @@ mod manipulate_control_placement_tests {
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     assert_eq!(spec.controls.len(), 1);
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
+  }
+
+  /// A free-standing display among the control specs (a `Grid` of live
+  /// readouts after a `Delimiter`, a `Row` with a `Dynamic` before a
+  /// slider) is a row of the control panel at the place it was written,
+  /// so a `ControlPlacement -> Left` panel shows it under the controls
+  /// rather than above the output.
+  #[test]
+  fn control_area_displays_are_panel_rows_in_order() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[r, \
+       Row[{\"r = \", Dynamic[r]}], \
+       {{r, 1, \"radius\"}, 0, 2}, \
+       Delimiter, \
+       Grid[{{\"area\", Dynamic[Pi r^2]}, {\"perimeter\", Dynamic[2 Pi r]}}], \
+       ControlPlacement -> Left]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.controls.len(), 2, "{:?}", spec.controls);
+    assert_eq!(spec.displays.len(), 2, "{:?}", spec.displays);
+    assert!(spec.displays[0].starts_with("Row["), "{:?}", spec.displays);
+    assert!(spec.displays[1].starts_with("Grid["), "{:?}", spec.displays);
+    // The `Row` comes before the slider, the `Grid` after the delimiter.
+    assert_eq!(spec.panel_displays, vec![(0, 0), (1, 2)]);
+    assert_eq!(spec.control_placement, ControlPlacement::Left);
   }
 }
 
