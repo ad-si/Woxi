@@ -16002,6 +16002,22 @@ pub(crate) fn is_monospace_font_family(family: &str) -> bool {
 /// a fraction of the font size; used to size plain `Text[…]` items.
 pub(crate) const SANS_ADVANCE: f64 = 0.55;
 
+/// How wide the content of a plain-text `Text[…]` display sets at `size`
+/// points in the proportional text face: a one-line string glyph by glyph
+/// (the metrics a `Pane` breaks such text into lines by), anything else at
+/// the face's average advance.
+fn text_display_width(content: &Expr, size: f64) -> f64 {
+  match content {
+    Expr::String(s) if !s.contains('\n') => {
+      s.chars()
+        .map(crate::functions::plot_padding::char_width_em)
+        .sum::<f64>()
+        * size
+    }
+    _ => estimate_display_width(content) * SANS_ADVANCE * size,
+  }
+}
+
 /// Whether a layout item is a plain-text `Text[expr]` display, possibly
 /// dressed in `Style`/`Invisible` wrappers.
 fn is_text_display_item(item: &Expr) -> bool {
@@ -26212,6 +26228,56 @@ fn is_plain_text_item(item: &Expr) -> bool {
 }
 
 thread_local! {
+  /// Set while the content of a `Text[…]` display is laid out: its text is
+  /// set in the proportional text face, so a grid inside measures its text
+  /// cells glyph by glyph rather than at the monospace advance.
+  static TEXT_DISPLAY_GRID: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` (which lays out the content of a `Text[…]` display) with the
+/// grids inside it sizing their text cells in the proportional text face.
+pub fn with_text_display_grids<T>(f: impl FnOnce() -> T) -> T {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      TEXT_DISPLAY_GRID.with(|t| t.set(self.0));
+    }
+  }
+  let _restore = Restore(TEXT_DISPLAY_GRID.with(|t| t.replace(true)));
+  f()
+}
+
+/// How wide a grid cell of plain text (a string or a number, possibly under
+/// `Style`/`NumberForm`) sets at `font_size` in the proportional text face of
+/// a `Text[…]` display. `None` outside such a display, or for a cell that is
+/// no single line of plain text.
+fn text_display_cell_width(cell: &Expr, font_size: f64) -> Option<f64> {
+  if !TEXT_DISPLAY_GRID.with(std::cell::Cell::get) {
+    return None;
+  }
+  fn plain(e: &Expr) -> bool {
+    match e {
+      Expr::String(s) => !s.contains('\n') && !s.contains("\\!"),
+      Expr::Integer(_) | Expr::Real(_) => true,
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Style" | "NumberForm")
+          && !args.is_empty() =>
+      {
+        plain(&args[0])
+      }
+      _ => false,
+    }
+  }
+  if !plain(cell) {
+    return None;
+  }
+  let markup = expr_to_svg_markup(cell);
+  (!markup.contains('<') && !markup.contains('\n'))
+    .then(|| crate::functions::plot_padding::text_width(&markup, font_size))
+}
+
+thread_local! {
   /// Set by a caller whose display construct reports its cells' formatting
   /// messages even though it is laid out as a grid (`TableForm`).
   static LOUD_GRID_CELLS: std::cell::Cell<bool> =
@@ -27099,7 +27165,9 @@ fn grid_svg_styled_internal_reporting(
         } else {
           char_width
         };
-        estimate_display_width(cell) * advance * cell_text_scale(cell)
+        text_display_cell_width(cell, font_size)
+          .unwrap_or_else(|| estimate_display_width(cell) * advance)
+          * cell_text_scale(cell)
           + col_pad(j)
       };
       let cols = span_width(row, j);
@@ -32957,16 +33025,12 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       Cell::Svg { width, .. } => *width,
       Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
-        let advance = if *plain && style.font_family.is_none() {
-          SANS_ADVANCE / MONO_ADVANCE
+        let width = if *plain && style.font_family.is_none() {
+          text_display_width(style.content, fs)
         } else {
-          1.0
+          estimate_display_width(style.content) * char_width * (fs / font_size)
         };
-        estimate_display_width(style.content)
-          * char_width
-          * advance
-          * (fs / font_size)
-          + pad_x
+        width + pad_x
       }
     })
     .fold(0.0_f64, f64::max);
@@ -33046,17 +33110,20 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         // `Style[…, FontFamily -> "Times"]` picks the face; without one the
         // column keeps its monospace default, except that a plain
         // `Text[…]` item is set in the proportional text face.
-        let (ff, advance) = match style.font_family.as_deref() {
-          Some(ff) => (ff, 1.0),
-          None if *plain => ("sans-serif", SANS_ADVANCE / MONO_ADVANCE),
-          None => ("monospace", 1.0),
+        let (ff, proportional) = match style.font_family.as_deref() {
+          Some(ff) => (ff, false),
+          None if *plain => ("sans-serif", true),
+          None => ("monospace", false),
         };
         // `Style[…, Background -> c]` paints a panel just behind the text.
         if let Some(bg) = style.background.filter(|_| !style.hidden) {
-          let tw = estimate_display_width(style.content)
-            * char_width
-            * advance
-            * (fs / font_size);
+          let tw = if proportional {
+            text_display_width(style.content, fs)
+          } else {
+            estimate_display_width(style.content)
+              * char_width
+              * (fs / font_size)
+          };
           let left = match alignment {
             "middle" => text_x - tw / 2.0,
             "end" => text_x - tw,

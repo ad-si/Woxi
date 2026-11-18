@@ -7056,16 +7056,19 @@ pub(crate) fn wrap_pane_text(
   width: f64,
   font_size: f64,
 ) -> Option<Expr> {
-  wrap_pane_text_at(content, width, font_size, false)
+  wrap_pane_text_at(content, width, font_size, false, false)
 }
 
 /// `wrap_pane_text`, which with `whole_words` gives up (`None`) rather than
-/// break a word too long for a line in two.
+/// break a word too long for a line in two. With `proportional` the text is
+/// measured glyph by glyph in the proportional text face (it sits under a
+/// `Text[…]`) rather than at the monospace advance.
 fn wrap_pane_text_at(
   content: &Expr,
   width: f64,
   font_size: f64,
   whole_words: bool,
+  proportional: bool,
 ) -> Option<Expr> {
   // A bare string re-flows as the one-piece `Row` of it.
   if let Expr::String(_) = content {
@@ -7074,6 +7077,7 @@ fn wrap_pane_text_at(
       width,
       font_size,
       whole_words,
+      proportional,
     );
   }
   let Expr::FunctionCall { name, args } = content else {
@@ -7082,19 +7086,23 @@ fn wrap_pane_text_at(
   match name.as_str() {
     "Style" if !args.is_empty() => {
       let size = style_font_size(&args[1..]).unwrap_or(font_size);
-      let inner = wrap_pane_text_at(&args[0], width, size, whole_words)?;
+      let inner =
+        wrap_pane_text_at(&args[0], width, size, whole_words, proportional)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
     }
+    // `Text[…]` sets its lines in the proportional text face: they are
+    // measured in it, and each line keeps the `Text` so it is drawn in it.
     "Text" if args.len() == 1 => {
-      wrap_pane_text_at(&args[0], width, font_size, whole_words)
+      wrap_pane_text_at(&args[0], width, font_size, whole_words, true)
+        .map(|lines| text_display_lines(&lines))
     }
     // `TraditionalForm` only changes how math in the text is typeset; the
     // re-flowed lines keep it.
     "TraditionalForm" if args.len() == 1 => Some(call1(
       "TraditionalForm",
-      wrap_pane_text_at(&args[0], width, font_size, whole_words)?,
+      wrap_pane_text_at(&args[0], width, font_size, whole_words, proportional)?,
     )),
     // A `Column` of prose re-flows item by item: each line of text (a
     // `Row` of strings, or one string under `Style`) breaks at the width
@@ -7114,9 +7122,10 @@ fn wrap_pane_text_at(
               width,
               font_size,
               true,
+              proportional,
             )
           } else {
-            wrap_pane_text_at(item, width, font_size, true)
+            wrap_pane_text_at(item, width, font_size, true, proportional)
           };
           changed |= flowed.is_some();
           flowed.unwrap_or_else(|| item.clone())
@@ -7132,7 +7141,13 @@ fn wrap_pane_text_at(
     // An inner size-less `Pane` (e.g. a `Switch` branch under a sized outer
     // `Pane[Text[…], {w, h}]`) is looked through; its options are kept.
     "Pane" if !args.is_empty() => {
-      let inner = wrap_pane_text_at(&args[0], width, font_size, whole_words)?;
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width,
+        font_size,
+        whole_words,
+        proportional,
+      )?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
@@ -7197,12 +7212,28 @@ fn wrap_pane_text_at(
       } else {
         font_size
       };
-      let per_line = ((width
-        / (line_size * crate::functions::graphics::MONO_ADVANCE))
-        .floor() as usize)
-        .max(1);
+      // How wide each unit sets, in ems: a glyph of the proportional face
+      // by its own width, anything else at the monospace advance.
+      let unit_em = |u: &PaneTextUnit| {
+        if proportional
+          && atoms[u.idx].is_none()
+          && u.text.chars().count() == u.cols
+        {
+          u.text
+            .chars()
+            .map(crate::functions::plot_padding::char_width_em)
+            .sum::<f64>()
+        } else {
+          u.cols as f64 * crate::functions::graphics::MONO_ADVANCE
+        }
+      };
+      // The line holds as many ems as fit (a glyph at least); the slack
+      // absorbs rounding in the running sum.
+      let per_line = (width / line_size)
+        .max(crate::functions::graphics::MONO_ADVANCE)
+        + 1e-9;
       let is_newline = |u: &PaneTextUnit| u.text == "\n";
-      let total: usize = units.iter().map(|u| u.cols).sum();
+      let total: f64 = units.iter().map(&unit_em).sum();
       if total <= per_line && !units.iter().any(is_newline) {
         return None;
       }
@@ -7211,13 +7242,14 @@ fn wrap_pane_text_at(
         let mut rest = hard;
         loop {
           // The longest run of units that fits on the line.
-          let mut cols = 0;
+          let mut ems = 0.0;
           let mut fit = 0;
           for u in rest {
-            if cols + u.cols > per_line {
+            let w = unit_em(u);
+            if ems + w > per_line {
               break;
             }
-            cols += u.cols;
+            ems += w;
             fit += 1;
           }
           if fit == rest.len() {
@@ -7274,6 +7306,33 @@ fn wrap_pane_text_at(
       Some(call1("Column", Expr::List(rows.into())))
     }
     _ => None,
+  }
+}
+
+/// Mark the lines `wrap_pane_text` broke a `Text[…]` into as `Text`
+/// displays, looking through the `Column`s and `Style`s that hold them, so
+/// each is drawn in the proportional text face it was measured in.
+fn text_display_lines(lines: &Expr) -> Expr {
+  match lines {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Column" | "Style" | "TraditionalForm")
+        && !args.is_empty() =>
+    {
+      let mut args = args.to_vec();
+      args[0] = match (name.as_str(), &args[0]) {
+        ("Column", Expr::List(items)) => Expr::List(
+          items
+            .iter()
+            .map(text_display_lines)
+            .collect::<Vec<_>>()
+            .into(),
+        ),
+        ("Column", other) => other.clone(),
+        (_, inner) => text_display_lines(inner),
+      };
+      call(name, args)
+    }
+    other => call1("Text", other.clone()),
   }
 }
 
@@ -7732,7 +7791,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      expr_to_svg(&unquoted_display_string(&args[0]))
+      crate::functions::graphics::with_text_display_grids(|| {
+        expr_to_svg(&unquoted_display_string(&args[0]))
+      })
     }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them

@@ -30630,7 +30630,7 @@ mod graphics_grid {
 
   /// A `Style[Grid[…], …]` reached through `Text`/`Pane` unwrapping must
   /// still take the *whole-directives* styled path `render_grid_if_needed`
-  /// already gives a bare `Style[Grid[…], …]` — which colors the frame and
+  /// gives a bare `Style[Grid[…], …]` — which colors the frame and
   /// dividers, not only the cells. Distributing the directives over the
   /// cells first (as `Column`/`Row` need) would leave the frame at its
   /// default color instead.
@@ -30648,8 +30648,15 @@ mod graphics_grid {
         .unwrap()
         .graphics
         .unwrap();
-    assert_eq!(wrapped, bare, "wrapped: {wrapped}\nbare: {bare}");
-    assert!(wrapped.contains("stroke=\"rgb(255,0,0)\""), "{wrapped}");
+    // `Text` sets the cells in the proportional text face, so the columns
+    // may be narrower, but every frame line and divider is colored alike.
+    let red = |svg: &str| svg.matches("stroke=\"rgb(255,0,0)\"").count();
+    assert!(red(&bare) > 0, "{bare}");
+    assert_eq!(
+      red(&wrapped),
+      red(&bare),
+      "wrapped: {wrapped}\nbare: {bare}"
+    );
   }
 
   /// The same `Style`-through-`Text`/`Pane` path for a `TextGrid`, exercising
