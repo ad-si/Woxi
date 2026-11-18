@@ -6420,7 +6420,7 @@ pub(crate) fn tf_order_factors(factors: &mut Vec<Expr>) {
 
 /// The TraditionalForm glyph of a relational operator: `a == b` is set as
 /// `a = b`, `a <= b` as `a ≤ b`.
-pub(crate) fn tf_comparison_op_glyph(op: &ComparisonOp) -> &'static str {
+pub(crate) fn tf_comparison_op_glyph(op: ComparisonOp) -> &'static str {
   tf_comparison_glyph(op.head_name()).unwrap_or("=")
 }
 
@@ -8525,7 +8525,7 @@ fn tf(expr: &Expr) -> Expr {
     } => {
       let mut parts = vec![tf_operand(&operands[0])];
       for (i, op) in operators.iter().enumerate() {
-        parts.push(tf_string(tf_comparison_op_glyph(op)));
+        parts.push(tf_string(tf_comparison_op_glyph(*op)));
         parts.push(tf_operand(&operands[i + 1]));
       }
       tf_row(parts)

@@ -1272,7 +1272,7 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
       for (op, operand) in operators.iter().zip(&operands[1..]) {
         let sym =
           crate::evaluator::dispatch::complex_and_special::tf_comparison_op_glyph(
-            op,
+            *op,
           );
         out.push_str(&format!(" {sym} {}", expr_to_label(operand)?));
       }
