@@ -24876,7 +24876,8 @@ Cell[BoxData["Manipulate[
  Initialization :> (
   cube = GraphicsComplex[PolyhedronData[\"Cube\", \"VertexCoordinates\"], Polygon[PolyhedronData[\"Cube\", \"FaceIndices\"]]];
   octv = PolyhedronData[\"Octahedron\", \"VertexCoordinates\"];
-  oct = {Rotate[GraphicsComplex[octv, Polygon[PolyhedronData[\"Octahedron\", \"FaceIndices\"]]], Pi, {0, 0, 1}]})]"], "Input"]
+  oct = {Rotate[GraphicsComplex[octv, Polygon[PolyhedronData[\"Octahedron\", \"FaceIndices\"]]], Pi, {0, 0, 1}]})]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`g$$ = 4, $CellContext`showCube$$ = False, $CellContext`showRing$$ = False}, DynamicBox[\[Ellipsis]]]"], "Output"]
 }, Open]]
 }]"##;
     let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
