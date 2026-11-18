@@ -16719,7 +16719,7 @@ fn grid_box_dividers(
     return (cols, rows);
   };
   let is_true = |e: &Expr| matches!(e, Expr::Identifier(t) if t == "True");
-  for rule in rules.iter() {
+  for rule in rules {
     let Expr::Rule {
       pattern,
       replacement,
@@ -16739,7 +16739,7 @@ fn grid_box_dividers(
       let Expr::List(entries) = replacement.as_ref() else {
         continue;
       };
-      for entry in entries.iter() {
+      for entry in entries {
         let Expr::Rule {
           pattern: k,
           replacement: v,
@@ -16761,11 +16761,7 @@ fn grid_box_dividers(
           },
           _ => continue,
         };
-        let pos = if k > 0 {
-          k
-        } else {
-          count as i128 + 2 + k
-        };
+        let pos = if k > 0 { k } else { count as i128 + 2 + k };
         if pos >= 1 {
           target.push(pos as usize);
         }

@@ -28033,6 +28033,45 @@ mod matrix_form {
     );
   }
 
+  /// `TransformationFunction[m]` typesets its augmented matrix as a grid
+  /// whose last row and column (the translation part) are set off by
+  /// divider lines. It used to print as a one-line `{{…}, …}` listing.
+  #[test]
+  fn transformation_function_typesets_divided_matrix() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[TranslationTransform[{a, b}]]").unwrap(),
+      "RowBox[{TransformationFunction, [, RowBox[{(, GridBox[{{1, 0, a}, \
+       {0, 1, b}, {0, 0, 1}}, GridBoxDividers -> {Columns -> {{False}}, \
+       ColumnsIndexed -> {-2 -> True}, Rows -> {{False}}, \
+       RowsIndexed -> {-2 -> True}}], )}], ]}]"
+    );
+    let svg = interpret(
+      "ExportString[Row[{\"H = \", MatrixForm[TranslationTransform[{a, b}]]}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("{{"), "matrix printed as a list: {svg}");
+    assert_eq!(
+      svg.matches("<line ").count(),
+      2,
+      "one column and one row divider expected: {svg}"
+    );
+  }
+
+  /// `GridBoxDividers -> {"Columns" -> {{True}}}` rules every interior
+  /// column divider.
+  #[test]
+  fn grid_box_dividers_between_all_columns() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[DisplayForm[GridBox[{{\"a\", \"b\", \"c\"}}, \
+       GridBoxDividers -> {\"Columns\" -> {{True}}}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<line ").count(), 2, "{svg}");
+  }
+
   #[test]
   fn matrix_form_visual_2d() {
     clear_state();

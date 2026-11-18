@@ -5819,7 +5819,8 @@ fn transformation_function_boxes(
       other => Expr::List(vec![cell(other)].into()),
     })
     .collect();
-  let no_lines = || Expr::List(vec![Expr::List(vec![sym("False")].into())].into());
+  let no_lines =
+    || Expr::List(vec![Expr::List(vec![sym("False")].into())].into());
   let before_last =
     || Expr::List(vec![rule_expr(Expr::Integer(-2), sym("True"))].into());
   let dividers = Expr::List(
