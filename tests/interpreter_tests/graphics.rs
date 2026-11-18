@@ -23960,12 +23960,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     // `PieCharts`` package and call its qualified `PieChart`, whose
     // `PieStyle`/`PieLabels` options were renamed to `ChartStyle`/
     // `ChartLabels` — so both the head and its options must be normalized
-    // for the picture to come out the same.
+    // for the picture to come out the same. The package also laid its
+    // wedges out counterclockwise from the positive x axis, which the
+    // modern chart spells `SectorOrigin -> 0`.
     #[test]
     fn legacy_pie_chart_matches_pie_chart() {
       assert_eq!(
         export_svg("PieCharts`PieChart[{1, 1, 1}]"),
-        export_svg("PieChart[{1, 1, 1}]")
+        export_svg("PieChart[{1, 1, 1}, SectorOrigin -> 0]")
       );
     }
 
@@ -23975,7 +23977,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         export_svg(
           "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieStyle -> {Red, Green, Blue}]"
         ),
-        export_svg("PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}]")
+        export_svg(
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, SectorOrigin -> 0]"
+        )
       );
     }
 
@@ -23985,7 +23989,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         export_svg(
           "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieLabels -> {\"a\", \"b\", \"c\"}]"
         ),
-        export_svg("PieChart[{1, 1, 1}, ChartLabels -> {\"a\", \"b\", \"c\"}]")
+        export_svg(
+          "PieChart[{1, 1, 1}, ChartLabels -> {\"a\", \"b\", \"c\"}, SectorOrigin -> 0]"
+        )
       );
     }
 
@@ -23996,7 +24002,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieStyle -> {Red, Green, Blue}, PieCharts`PieLabels -> {\"a\", \"b\", \"c\"}]"
         ),
         export_svg(
-          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}]"
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}, SectorOrigin -> 0]"
         )
       );
     }
@@ -24011,7 +24017,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "PieCharts`PieChart[{1, 1, 1}, PieStyle -> {Red, Green, Blue}, PieLabels -> {\"a\", \"b\", \"c\"}]"
         ),
         export_svg(
-          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}]"
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, ChartLabels -> {\"a\", \"b\", \"c\"}, SectorOrigin -> 0]"
         )
       );
     }
@@ -24039,8 +24045,55 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         export_svg(
           "PieCharts`PieChart[{1, 1, 1}, PieCharts`PieStyle :> {Red, Green, Blue}]"
         ),
-        export_svg("PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}]")
+        export_svg(
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, SectorOrigin -> 0]"
+        )
       );
+    }
+
+    // The package began its first wedge at 3 o'clock and went
+    // counterclockwise; an explicit `SectorOrigin` still wins.
+    #[test]
+    fn legacy_pie_chart_starts_counterclockwise_at_x_axis() {
+      let svg =
+        export_svg("PieCharts`PieChart[{1, 2}, PieStyle -> {Red, Blue}]");
+      // The red first third spans 0° to 120°, from 3 o'clock over the top.
+      assert!(
+        svg.contains(
+          "L106.50,52.69 A147.00,147.00 0 0,1 327.00,180.00 Z\" fill=\"rgb(255,0,0)\""
+        ),
+        "{svg}"
+      );
+      assert_eq!(
+        export_svg("PieCharts`PieChart[{1, 2}, SectorOrigin -> Pi/2]"),
+        export_svg("PieChart[{1, 2}, SectorOrigin -> Pi/2]")
+      );
+    }
+
+    // `PieStyle` gave each wedge a list of directives
+    // (`{{Red}, {Green}, …}`); each such list styles its wedge like a
+    // modern `Directive[…]` instead of being dropped for the default palette.
+    #[test]
+    fn legacy_pie_chart_style_directive_lists() {
+      assert_eq!(
+        export_svg(
+          "PieCharts`PieChart[{1, 1, 1}, PieStyle -> {{Red}, {Green}, {Blue}}]"
+        ),
+        export_svg(
+          "PieChart[{1, 1, 1}, ChartStyle -> {Red, Green, Blue}, SectorOrigin -> 0]"
+        )
+      );
+    }
+
+    // A `Directive[…]` entry of a `ChartStyle` list colors its element with
+    // the directive's color.
+    #[test]
+    fn pie_chart_style_list_of_directives() {
+      let svg = export_svg(
+        "PieChart[{1, 2}, ChartStyle -> {Directive[Red, EdgeForm[Black]], Directive[Blue]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
     }
 
     #[test]

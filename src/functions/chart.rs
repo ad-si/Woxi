@@ -3256,7 +3256,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
                 _ => items.as_slice(),
               };
               for item in items {
-                if let Some(c) = parse_color(item) {
+                if let Some(c) = chart_style_color(item) {
                   opts.chart_style.push(c);
                 }
               }
@@ -3280,13 +3280,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             _ => {
               // A `Directive[color, EdgeForm[…], …]` colors the elements
               // with its color (and edges them, see `bar_edge`).
-              let color = parse_color(&val).or_else(|| match &val {
-                Expr::FunctionCall { name, args } if name == "Directive" => {
-                  args.iter().find_map(parse_color)
-                }
-                _ => None,
-              });
-              if let Some(c) = color {
+              if let Some(c) = chart_style_color(&val) {
                 opts.chart_style.push(c);
               }
             }
@@ -6652,6 +6646,17 @@ fn extract_sector_rows(
   let row: Vec<(f64, f64, f64)> =
     evaluated.iter().filter_map(as_triple).collect();
   Ok(vec![row])
+}
+
+/// The color a single `ChartStyle` entry paints its chart element with: a
+/// plain color, or the color inside a `Directive[color, EdgeForm[…], …]`.
+fn chart_style_color(style: &Expr) -> Option<Color> {
+  parse_color(style).or_else(|| match style {
+    Expr::FunctionCall { name, args } if name == "Directive" => {
+      args.iter().find_map(parse_color)
+    }
+    _ => None,
+  })
 }
 
 /// Picks the color for sector/index `idx`, honoring `ChartStyle` the same
