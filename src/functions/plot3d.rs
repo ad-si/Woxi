@@ -3628,25 +3628,27 @@ fn draw_axes_on_box_with_ticks(
           1.0
         };
         // How far the tick labels already reach, in the direction the
-        // axis label is being pushed: their own offset plus half of the
-        // widest one's box. Sideways of a vertical axis that is the text
-        // width, below a horizontal one it is the line height.
+        // axis label is being pushed. Sideways of a vertical axis that is
+        // their offset plus the widest one's width (they are aligned on
+        // their near end, see the tick labels below), measured at the
+        // tick labels' own font size; below a horizontal one it is their
+        // offset plus the line height.
         let tick_chars = axis_ticks(ai, val_min, val_max)
           .iter()
           .map(|(_, label)| markup_char_count(label))
           .max()
           .unwrap_or(1) as f64;
-        let half_w = tick_chars * font_size as f64 * 0.3;
+        let tick_w = tick_chars * f64::from(tick_font_size) * 0.45;
         let half_h = font_size as f64 * 0.5;
-        // …plus half of the label's own box, so `offset` can center it
-        // just past them. Wolfram sets every axis label upright, the z
-        // axis's too.
+        // …plus half of the label's own box, so `offset` centers it just
+        // past them. The width is that of the label as set, a styled
+        // `Style[…, Large]` label's at its own font size. Wolfram sets
+        // every axis label upright, the z axis's too.
         let own_w = label_half_width(label, font_size);
         let (label_w, label_h) = markup_text_size(label, font_size as f64);
-        let reach = TICK_LABEL_OFFSET
-          + (perpx * sign).abs() * (half_w + own_w)
-          + (perpy * sign).abs() * (half_h + label_h * 0.5);
-        let offset = reach + font_size as f64 * 0.5;
+        let side = TICK_LABEL_OFFSET * 0.6 + tick_w + own_w;
+        let below = TICK_LABEL_OFFSET + half_h + half_h + font_size as f64 * 0.5;
+        let offset = (perpx * sign).abs() * side + (perpy * sign).abs() * below;
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
         svg.push_str(&format!(
