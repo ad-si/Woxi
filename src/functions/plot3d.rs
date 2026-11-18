@@ -13016,7 +13016,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && view_angle.is_none()
     && !spherical_region
     && !perspective;
-  let axes_extent = |scale: f64, cx: f64, cy: f64| -> Option<AxesExtent> {
+  // The reach of the axes and their labels with the projected point
+  // `(p_cx, p_cy)` drawn at `(cx, cy)` at `scale`.
+  let axes_extent_about = |scale: f64,
+                           cx: f64,
+                           cy: f64,
+                           p_cx: f64,
+                           p_cy: f64|
+   -> Option<AxesExtent> {
     show_axes.then(|| {
       let to_svg =
         |px: f64, py: f64| (cx + (px - p_cx) * scale, cy - (py - p_cy) * scale);
@@ -13035,6 +13042,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         &axes_look,
       )
     })
+  };
+  let axes_extent = |scale: f64, cx: f64, cy: f64| {
+    axes_extent_about(scale, cx, cy, p_cx, p_cy)
   };
   // With an `ImagePadding` the scene is fitted into the region inside the
   // padding band; the picture keeps its full size around it.
@@ -13130,6 +13140,31 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     p_cy = bcy;
     if let Some(c) = view_center {
       (p_cx, p_cy) = look_at(c);
+    }
+    // The sphere fills the picture, but the axes' tick and axis labels
+    // still have to fit inside it, as they do in Wolfram's automatic
+    // image padding: a label reaching past an edge shrinks the scene
+    // about its center until it clears that edge by a pixel.
+    for _ in 0..4 {
+      let Some(ext) = axes_extent_about(scale, cx, cy, p_cx, p_cy) else {
+        break;
+      };
+      let (w, h) = (svg_width as f64, svg_height as f64);
+      let fit = |room: f64, reach: f64| {
+        if reach > room && reach > 0.0 {
+          (room / reach).max(0.0)
+        } else {
+          1.0
+        }
+      };
+      let factor = fit(cx - 1.0, cx - ext.x_min)
+        .min(fit(w - 1.0 - cx, ext.x_max - cx))
+        .min(fit(cy - 1.0, cy - ext.y_min))
+        .min(fit(h - 1.0 - cy, ext.y_max - cy));
+      if factor >= 0.999 || factor <= 0.0 {
+        break;
+      }
+      scale *= factor;
     }
   }
 
