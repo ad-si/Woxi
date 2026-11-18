@@ -7208,6 +7208,66 @@ mod plot3d {
       assert!(!plain.contains("rgb(255,0,0)"));
     }
 
+    /// `MeshStyle -> style` strokes a parametric surface's mesh in that
+    /// style, both in the plot itself and in the extracted complex that
+    /// `Show` draws; `{s1, s2}` styles the lines of constant first and of
+    /// constant second parameter separately.
+    #[test]
+    fn parametric_surface_mesh_style() {
+      clear_state();
+      let svg = export_svg(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 5, Mesh -> 3, MeshStyle -> RGBColor[0.2, 0.4, 0.6]]",
+      );
+      assert!(
+        svg.contains("stroke=\"rgb(51,102,153)\""),
+        "mesh not styled"
+      );
+      let lines = interpret(
+        "Cases[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 4, Mesh -> {1, 2}, MeshStyle -> {Red, Blue}][[1, 2]], \
+         {_AbsoluteThickness, c_, Line[segs_]} :> {c, Length[segs]}]",
+      )
+      .unwrap();
+      assert_eq!(lines, "{{RGBColor[0, 0, 1], 6}, {RGBColor[1, 0, 0], 3}}");
+      let shown = export_svg(
+        "Show[ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotPoints -> 5, Mesh -> {2, 2}, MeshStyle -> RGBColor[0.2, 0.4, 0.6]], \
+         Graphics3D[Point[{0, 0, 0}]]]",
+      );
+      assert!(
+        shown.contains("rgb(51,102,153)"),
+        "Show lost the mesh style"
+      );
+    }
+
+    /// With `ImageSize -> {w, h}` a 3D picture's `PlotLabel` fits inside
+    /// that size instead of growing the image, while an image size giving
+    /// only the width still adds the title strip on top.
+    #[test]
+    fn plot_label_fits_inside_fixed_image_size() {
+      clear_state();
+      let fixed = export_svg(
+        "Graphics3D[Sphere[], PlotLabel -> Column[{\"a\", \"b\"}], \
+         ImageSize -> {300, 280}]",
+      );
+      assert!(
+        fixed.starts_with("<svg width=\"300\" height=\"280\""),
+        "{}",
+        &fixed[..80]
+      );
+      let width_only = export_svg(
+        "Graphics3D[Sphere[], PlotLabel -> \"a\", ImageSize -> 300]",
+      );
+      let height: u32 = width_only
+        .split("height=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|h| h.parse().ok())
+        .unwrap();
+      assert!(height > 300, "title strip missing: {height}");
+    }
+
     /// An extracted surface outline keeps the hairline width the plot
     /// draws it at when a `Graphics3D` renders it, rather than the
     /// thicker width of a bare 3D `Line`; a thickness the `BoundaryStyle`
