@@ -15498,6 +15498,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> s`: the horizontal axes span `[-s, s]` too.
+  let mut xy_clip: Option<f64> = None;
   let mut plot_style: Option<Expr> = None;
   let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
   let mut color_fn = FacetColorFunction::default();
@@ -15537,6 +15539,14 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          // A single number `s` is the cube `[-s, s]` on every axis.
+          if let Some(s) = try_eval_to_f64(&evaluate_expr_to_expr(replacement)?)
+            && s > 0.0
+          {
+            z_clip = Some((-s, s));
+            xy_clip = Some(s);
+            continue;
+          }
           // `{zmin, zmax}` or the full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}`
           let z_items = match replacement.as_ref() {
             Expr::List(items) if items.len() == 2 => Some(items.clone()),
@@ -15715,14 +15725,26 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     z_hi - z_lo
   };
 
+  // An explicit `PlotRange -> s` fixes the horizontal extent as well;
+  // whatever of the surfaces reaches past it is cut back to the box.
+  if let Some(s) = xy_clip {
+    global_r_max = s;
+    (global_x_min, global_x_max) = (-s, s);
+    (global_y_min, global_y_max) = (-s, s);
+  }
+  let clamp_xy = |v: f64| match xy_clip {
+    Some(s) => v.clamp(-s, s),
+    None => v,
+  };
+
   let r_scale = if global_r_max < 1e-15 {
     1.0
   } else {
     global_r_max
   };
 
-  // `RevolutionPlot3D` draws a single surface, so `PlotStyle` is one style
-  // rather than a per-surface list.
+  // `PlotStyle` is one style shared by every surface; without one, each
+  // surface takes the next color of the default theme.
   let render_style: Option<StyleState3D> = plot_style.as_ref().map(|ps| {
     let mut style = StyleState3D::default();
     apply_3d_directive(ps, &mut style);
@@ -15769,7 +15791,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
-  for grid in &grids {
+  for (surface, grid) in grids.iter().enumerate() {
     for i in 0..n_t {
       for j in 0..n_theta {
         let p00 = grid[i][j];
@@ -15780,14 +15802,14 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let normalize = |p: Point3D| -> Point3D {
           if axis_is_z {
             Point3D {
-              x: p.x / r_scale,
-              y: p.y / r_scale,
+              x: clamp_xy(p.x) / r_scale,
+              y: clamp_xy(p.y) / r_scale,
               z: nz(p.z),
             }
           } else {
             Point3D {
-              x: norm_extent(p.x, global_x_min, global_x_max),
-              y: norm_extent(p.y, global_y_min, global_y_max),
+              x: norm_extent(clamp_xy(p.x), global_x_min, global_x_max),
+              y: norm_extent(clamp_xy(p.y), global_y_min, global_y_max),
               z: nz(p.z),
             }
           }
@@ -15802,7 +15824,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp00, pp10, pp01]);
           let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(0),
+            SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
             render_style.as_ref(),
             normal,
@@ -15842,7 +15864,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp11, pp01, pp10]);
           let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(0),
+            SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
             render_style.as_ref(),
             normal,
@@ -15903,14 +15925,14 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let normalize = |p: Point3D| -> Point3D {
       if axis_is_z {
         Point3D {
-          x: p.x / r_scale,
-          y: p.y / r_scale,
+          x: clamp_xy(p.x) / r_scale,
+          y: clamp_xy(p.y) / r_scale,
           z: nz(p.z),
         }
       } else {
         Point3D {
-          x: norm_extent(p.x, global_x_min, global_x_max),
-          y: norm_extent(p.y, global_y_min, global_y_max),
+          x: norm_extent(clamp_xy(p.x), global_x_min, global_x_max),
+          y: norm_extent(clamp_xy(p.y), global_y_min, global_y_max),
           z: nz(p.z),
         }
       }
@@ -15940,7 +15962,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // rendering below works in normalized coordinates and is unaffected.
   let surfaces: Vec<Expr> = grids
     .iter()
-    .map(|grid| {
+    .enumerate()
+    .map(|(surface, grid)| {
       let mut index_of: Vec<Vec<Option<usize>>> =
         vec![vec![None; n_theta + 1]; n_t + 1];
       let mut point_exprs: Vec<Expr> = Vec::new();
@@ -15988,7 +16011,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // with, so `Show[RevolutionPlot3D[…], g]` keeps the surface's look.
       if !color_fn.is_set() {
         content.extend(surface_style_directives(
-          0,
+          surface,
           render_style.as_ref(),
           false,
           &scene,
