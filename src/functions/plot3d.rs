@@ -3647,7 +3647,8 @@ fn draw_axes_on_box_with_ticks(
         let own_w = label_half_width(label, font_size);
         let (label_w, label_h) = markup_text_size(label, font_size as f64);
         let side = TICK_LABEL_OFFSET * 0.6 + tick_w + own_w;
-        let below = TICK_LABEL_OFFSET + half_h + half_h + font_size as f64 * 0.5;
+        let below =
+          TICK_LABEL_OFFSET + half_h + half_h + font_size as f64 * 0.5;
         let offset = (perpx * sign).abs() * side + (perpy * sign).abs() * below;
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
