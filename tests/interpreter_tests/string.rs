@@ -12147,6 +12147,54 @@ abb""#,
     assert_case("ToString[NumberForm[3.14159, 3]]", "3.14");
     assert_case("ToString[NumberForm[3.14159, 5]]", "3.1416");
   }
+  // A padded {n, f} field reserves as many sign columns as the widest of
+  // the NumberSigns prefixes needs (none for empty signs), and
+  // AccountingForm's fraction is one slot wider only for a sign suffix such
+  // as its default closing bracket.
+  #[test]
+  fn padded_number_form_sign_columns_follow_number_signs() {
+    let accounting = |value: &str, spec: &str, signs: &str| {
+      format!(
+        "ToString[AccountingForm[{value}, {spec}, NumberSigns -> {signs}, \
+         NumberPadding -> {{\"0\", \"0\"}}, SignPadding -> True]]"
+      )
+    };
+    let empty = r#"{"", ""}"#;
+    let plus = r#"{"-", "+"}"#;
+    assert_case(&accounting("0.111", "{3, 2}", empty), "0.11");
+    assert_case(&accounting("1.", "{3, 1}", empty), "01.0");
+    assert_case(&accounting("10.", "{3, 1}", empty), "10.0");
+    assert_case(&accounting("0.0159", "{4, 3}", empty), "0.016");
+    assert_case(&accounting("1.1077", "{7, 3}", empty), "0001.108");
+    assert_case(&accounting("1", "{3, 2}", empty), "001");
+    assert_case(&accounting("1.", "{2, 1}", plus), "+1.0");
+    assert_case(&accounting("-4.5", "{4, 1}", plus), "-004.5");
+    // A `{prefix, suffix}` sign pair brackets the value; the suffix keeps
+    // its column, as AccountingForm's default parentheses do.
+    let brackets = r#"{{"(", ")"}, ""}"#;
+    assert_case(&accounting("-12.3", "{6, 3}", brackets), "(012.3)00");
+    assert_case(
+      "ToString[AccountingForm[-12.3, {6, 3}, NumberPadding -> {\"0\", \"0\"}, \
+       SignPadding -> True]]",
+      "(012.3)00",
+    );
+    assert_case(&accounting("12.3", "{6, 3}", brackets), "0012.3000");
+    // NumberForm and PaddedForm size the sign column the same way.
+    assert_case(
+      "ToString[NumberForm[2.5, {3, 1}, NumberSigns -> {\"\", \"\"}, \
+       NumberPadding -> {\"0\", \"0\"}]]",
+      "02.5",
+    );
+    assert_case(
+      "ToString[PaddedForm[2.5, {3, 1}, NumberSigns -> {\"\", \"\"}]]",
+      " 2.5",
+    );
+    assert_case(
+      "ToString[PaddedForm[-2.5, {3, 1}, NumberSigns -> {\"neg\", \"\"}]]",
+      " neg2.5",
+    );
+  }
+
   // NumberSigns -> {neg, pos} overrides the sign prefixes: a non-negative
   // number (including zero) gets `pos`, a negative one gets `neg`.
   #[test]
