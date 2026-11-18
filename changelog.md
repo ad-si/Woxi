@@ -12,6 +12,8 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- Woxi Studio draws the controls of a custom Manipulate layout
+    `Row[{Place[1], Spacer[…], Place[2]}]` side by side on one line.
 
 # 2026-11-08 - 0.4.0
 

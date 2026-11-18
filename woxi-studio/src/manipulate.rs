@@ -3528,6 +3528,41 @@ mod tests {
     );
   }
 
+  /// A custom control layout `Row[{Place[1], Spacer[…], Place[2]}]` puts
+  /// the two controls it places side by side on one line, like a `Row` of
+  /// `Control[…]`s does. The slots resolve through per-control
+  /// `ControlPlacement -> n`, in both the bare `Place` spelling and the
+  /// fully qualified `` Manipulate`Place `` one a saved dump keeps.
+  #[test]
+  fn place_row_draws_its_controls_on_one_line() {
+    for place in ["Place", "Manipulate`Place"] {
+      let code = format!(
+        r#"Manipulate[
+        {{n, p, q}},
+        {{{{n, 3, "count"}}, 1, 9, 1}},
+        {{{{p, False, "first"}}, {{True, False}}, ControlPlacement -> 1}},
+        {{{{q, True, "second"}}, {{True, False}}, ControlPlacement -> 2}},
+        Row[{{{place}[1], Spacer[30], {place}[2]}}]
+      ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      let joins: Vec<(&str, bool)> = state
+        .controls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !c.name().is_empty())
+        .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+        .collect();
+      assert_eq!(
+        joins,
+        vec![("n", false), ("p", false), ("q", true)],
+        "{place}"
+      );
+    }
+  }
+
   /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
   /// control state, so they are drawn side by side on one line, and a
   /// `Style[…, FontSize -> n]` caption keeps its size.

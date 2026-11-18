@@ -37818,7 +37818,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // up the condition under which they are on screen.
     collect_pane_visibility(spec, &place_map, &mut control_visible, None);
     collect_row_joined_buttons(spec, &mut row_joined_buttons);
-    collect_row_joined_controls(spec, &mut row_joined_controls);
+    collect_row_joined_controls(spec, &place_map, &mut row_joined_controls);
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -41013,8 +41013,15 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
 /// with a 2D slider beside it). Layout containers (`Column[{Row[…],
 /// Row[…]}]`, …) are searched for such rows. `Spacer[…]` and string items
 /// between two controls keep them on the same line; any other item breaks
-/// the run.
-fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
+/// the run. A `Place[n]` item stands for the controls of layout slot `n`
+/// (resolved through `place_map`, see `place_slot_variables`), so a custom
+/// layout `Row[{Place[1], Spacer[50], Place[2]}]` joins those controls the
+/// same way.
+fn collect_row_joined_controls(
+  spec: &Expr,
+  place_map: &[Vec<String>],
+  out: &mut Vec<String>,
+) {
   match spec {
     Expr::FunctionCall { name, args } if name == "Row" => {
       let Some(Expr::List(items)) = args.first() else {
@@ -41044,23 +41051,41 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
               None => after_control = false,
             }
           }
+          Expr::FunctionCall { name, args: p } if is_place_head(name) => {
+            let vars = match p.as_slice() {
+              [Expr::Integer(n)] if *n >= 1 => place_map
+                .get(*n as usize - 1)
+                .map(Vec::as_slice)
+                .unwrap_or_default(),
+              _ => &[],
+            };
+            if vars.is_empty() {
+              after_control = false;
+            }
+            for var in vars {
+              if after_control {
+                out.push(var.clone());
+              }
+              after_control = true;
+            }
+          }
           Expr::FunctionCall { name, .. } if name == "Spacer" => {}
           Expr::String(_) => {}
           other => {
             after_control = false;
-            collect_row_joined_controls(other, out);
+            collect_row_joined_controls(other, place_map, out);
           }
         }
       }
     }
     Expr::FunctionCall { args, .. } => {
       for a in args {
-        collect_row_joined_controls(a, out);
+        collect_row_joined_controls(a, place_map, out);
       }
     }
     Expr::List(items) => {
       for a in items {
-        collect_row_joined_controls(a, out);
+        collect_row_joined_controls(a, place_map, out);
       }
     }
     _ => {}
