@@ -5551,10 +5551,14 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Use Unicode box markers (like StandardForm) so that:
     // - OutputForm renders as DisplayForm[FormBox[..., TraditionalForm]]
     // - InputForm renders as \!\(\*FormBox[..., TraditionalForm]\)
-    return Ok(Expr::String(traditional_form_box_escape(
-      &inner_args[0],
-      true,
-    )));
+    // Outside InputForm, machine reals typeset at the 6 significant digits
+    // the FrontEnd shows — the same as `ToString[expr, TraditionalForm]`.
+    let inner = if is_input_form {
+      inner_args[0].clone()
+    } else {
+      truncate_machine_reals_for_to_string(&inner_args[0])
+    };
+    return Ok(Expr::String(traditional_form_box_escape(&inner, true)));
   }
 
   // If the expression is TeXForm[inner], produce TeX representation.
@@ -5950,6 +5954,21 @@ fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
         .map(truncate_machine_reals_for_to_string)
         .collect(),
     ),
+    // A number-display form already fixes the digits it shows
+    // (`NumberForm[x, 9]` keeps nine), so its number is left untouched.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "NumberForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+          | "PaddedForm"
+          | "AccountingForm"
+          | "DecimalForm"
+      ) =>
+    {
+      expr.clone()
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args

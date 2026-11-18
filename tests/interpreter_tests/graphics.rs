@@ -58884,3 +58884,17 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+/// A blank line in a multi-line `PlotLabel` keeps its height: the empty line's
+/// `tspan` carries a no-break space, since SVG drops the `dy` of an empty one.
+#[test]
+fn plot_label_blank_lines_keep_their_height() {
+  for code in [
+    r#"Plot[x, {x, 0, 1}, PlotLabel -> "top\n\nbottom"]"#,
+    r#"Show[Plot[x, {x, 0, 1}], PlotLabel -> "top\n\nbottom", Frame -> True]"#,
+  ] {
+    let svg = export_svg(code);
+    assert!(!svg.contains("\"></tspan>"), "{code}: {svg}");
+    assert!(svg.contains("bottom"), "{code}: {svg}");
+  }
+}

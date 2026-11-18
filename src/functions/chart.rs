@@ -395,7 +395,9 @@ impl StyledLabel {
     for line in &self.extra_lines {
       out.push_str(&format!(
         "<tspan x=\"{cx:.1}\" dy=\"{line_height:.1}\">{}</tspan>",
-        scale_markup_lengths(line, scale)
+        crate::functions::graphics::tspan_line(&scale_markup_lengths(
+          line, scale
+        ))
       ));
     }
     out
