@@ -8268,6 +8268,34 @@ mod cases {
     );
   }
 
+  /// An indexed variable `Subscript[k, 1]` is ordered among a product's
+  /// factors as its base symbol `k` is: ahead of later symbols and of
+  /// function applications (`k₁ x`, `k₂ sin(k₁ x + ϕ)`), while a held
+  /// product keeps the order it was written in.
+  #[test]
+  fn traditional_form_orders_indexed_variables_by_their_base() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[x Subscript[k, 1]]]"#,
+      r#"TagBox[FormBox[RowBox[{SubscriptBox[k, 1],  , x}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[y Subscript[k, 1] x]]"#,
+      r#"TagBox[FormBox[RowBox[{SubscriptBox[k, 1],  , x,  , y}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[a Subscript[x, 1]]]"#,
+      r#"TagBox[FormBox[RowBox[{a,  , SubscriptBox[x, 1]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Subscript[k, 2] Sin[Subscript[k, 1] x + \[Phi]]]]"#,
+      r#"TagBox[FormBox[RowBox[{SubscriptBox[k, 2],  , RowBox[{sin, (, RowBox[{RowBox[{SubscriptBox[k, 1],  , x}], +, ϕ}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[HoldForm[x Subscript[k, 1]]]]"#,
+      r#"TagBox[FormBox[TagBox[RowBox[{x,  , SubscriptBox[k, 1]}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// A negative rational sets its minus sign before the fraction bar in
   /// TraditionalForm, as in StandardForm, not in the numerator.
   #[test]

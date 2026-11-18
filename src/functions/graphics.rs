@@ -12380,24 +12380,41 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
   let styled =
     |r: &LabelRun| r.italic || r.bold || r.color.is_some() || r.size.is_some();
-  if flatten_label_runs(&runs) != text || !runs.iter().any(styled) {
+  if !runs.iter().any(styled) {
     return Vec::new();
   }
+  // Line the runs up with the text. A `Spacer[n]` is a single blank run
+  // but `n` blanks of the text (see `spacer_gap_text`), so a blank run
+  // stretches over the whole gap; any other difference means the runs do
+  // not spell the text, and it stays unstyled.
+  let chars: Vec<char> = text.chars().collect();
   let mut ranges = Vec::new();
   let mut pos = 0;
   for r in &runs {
-    let len = r.text.chars().count();
-    if styled(r) && len > 0 {
+    let run: Vec<char> = r.text.chars().collect();
+    let mut end = pos + run.len();
+    if end > chars.len() || chars[pos..end] != run[..] {
+      return Vec::new();
+    }
+    if !run.is_empty() && run.iter().all(|&c| c == ' ') {
+      while end < chars.len() && chars[end] == ' ' {
+        end += 1;
+      }
+    }
+    if styled(r) && end > pos {
       ranges.push(StyledRange {
         start: pos,
-        end: pos + len,
+        end,
         italic: r.italic,
         bold: r.bold,
         color: r.color,
         size: r.size,
       });
     }
-    pos += len;
+    pos = end;
+  }
+  if pos != chars.len() {
+    return Vec::new();
   }
   ranges
 }
