@@ -7660,3 +7660,75 @@ mod repeated_option_tests {
     );
   }
 }
+
+#[cfg(test)]
+mod grid_button_pad_tests {
+  use super::*;
+
+  /// A sliding-token puzzle: the body is a `Grid` pairing the board picture
+  /// with a nested `Grid` pad of plate-less arrow `Button`s, a "reset"
+  /// button and a `PopupMenu[Dynamic[row], …]` of preset positions spanning
+  /// a row. Self-authored construct equivalent of a randomly sampled
+  /// Demonstration — not its code.
+  ///
+  /// Regressions: every literal `Button` in the pad was hoisted out of the
+  /// body into a separate display list, emptying its grid cell (a pad of
+  /// only buttons collapsed to `Grid[{{}}]`), and the promoted popup's cell
+  /// printed the hidden variable's whole value instead of staying blank.
+  #[test]
+  fn grid_pad_buttons_stay_in_place_and_press() {
+    let code = r#"Manipulate[
+      Deploy@Grid[{{
+        Graphics[MapIndexed[Disk[{First[#2], 0}, 0.4] &, row],
+          PlotRange -> {{0, 6}, {-1, 1}}],
+        Grid[{
+          {Button[Style["<", Large, Bold], row = RotateLeft[row], Appearance -> None],
+           "",
+           Button[Style[">", Large, Bold], row = RotateRight[row], Appearance -> None]},
+          {Button["reset", row = Range[5]], SpanFromLeft},
+          {PopupMenu[Dynamic[row], {{5, 4, 3, 2, 1} -> "reversed", Delimiter,
+            {2, 1, 4, 3, 5} -> "swapped"}, "presets"], SpanFromLeft}},
+          Alignment -> Center]}}],
+      {{row, Range[5]}, ControlType -> None},
+      {{marks, False, "marks"}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output, None, "no source-text fallback");
+    assert!(
+      state.displays.is_empty(),
+      "no button hoisted out of the pad"
+    );
+    let svg = state.current_svg().expect("the body draws a picture");
+    assert!(
+      !svg.contains("{1, 2, 3, 4, 5}"),
+      "popup cell printed row: {svg}"
+    );
+    assert!(svg.contains(">reset</text>"), "reset label drawn: {svg}");
+    assert_eq!(state.button_regions.len(), 3, "both arrows and reset press");
+
+    let row = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .chain(state.bindings().iter())
+        .find(|(n, _)| n == "row")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let action = state
+      .button_regions
+      .iter()
+      .find(|r| r.action.contains("RotateLeft"))
+      .expect("left arrow region")
+      .action
+      .clone();
+    state.apply_button_action(&action);
+    assert_eq!(state.error, None);
+    assert_eq!(row(&state), "{2, 3, 4, 5, 1}");
+    assert!(
+      state.controls.iter().any(|c| c.name() == "row"),
+      "the pick list drives row from the control panel"
+    );
+  }
+}

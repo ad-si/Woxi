@@ -6544,6 +6544,27 @@ fn button_cell_svg(args: &[Expr]) -> String {
       return with_button_cell_chrome(svg, args);
     }
   }
+  // `Appearance -> None` drops the plate: only the label is drawn (in its
+  // own style, e.g. a large bold arrow), still carrying the hit region.
+  if args.len() >= 2
+    && args[2..].iter().any(|o| {
+      matches!(option_kv(o), Some(("Appearance", Expr::Identifier(v))) if v == "None")
+    })
+  {
+    let label = evaluate_expr_to_expr(&args[0]).unwrap_or(args[0].clone());
+    let row = Expr::List(vec![label].into());
+    if let Some(svg) = row_to_svg(std::slice::from_ref(&row))
+      && svg.contains("viewBox")
+    {
+      // A button face sets its label in the same sans-serif face as the
+      // plate's, not the monospace face of a printed string.
+      let svg = svg.replace(
+        "font-family=\"monospace\"",
+        "font-family=\"sans-serif\"",
+      );
+      return with_button_cell_chrome(svg, args);
+    }
+  }
   // A text label (a keyboard of letter keys, a "SPACE"/"BACKSPACE" pair)
   // draws as the plate, which carries the same hit region so a live
   // widget can press it.
@@ -40241,14 +40262,12 @@ fn strip_body_setter_bars(expr: &Expr, promoted: &[String]) -> Expr {
   }
 }
 
-/// Replace each `PopupMenu[Dynamic[var], …]` whose `var` is listed in
-/// `promoted` with `var` itself, so the pick list is not also printed as
-/// source inside the body it was lifted out of.
-fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
-  // A promoted popup's own choice/enabled arguments still need this same
-  // walk (they can nest further Manipulate controls of their own), so this
-  // returns the replacement rather than handling it inline in the outer
-  // `match`'s guard, which cannot bind `v` for use in its arm.
+/// The variable of a `PopupMenu[Dynamic[var], …]` whose `var` is listed in
+/// `promoted`.
+fn promoted_popup_var<'a>(
+  expr: &'a Expr,
+  promoted: &[String],
+) -> Option<&'a String> {
   if let Expr::FunctionCall { name, args } = expr
     && name == "PopupMenu"
     && let Some(Expr::FunctionCall {
@@ -40259,6 +40278,21 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
     && let Some(Expr::Identifier(v)) = dargs.first()
     && promoted.contains(v)
   {
+    Some(v)
+  } else {
+    None
+  }
+}
+
+/// Replace each `PopupMenu[Dynamic[var], …]` whose `var` is listed in
+/// `promoted` with `var` itself, so the pick list is not also printed as
+/// source inside the body it was lifted out of.
+fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
+  // A promoted popup's own choice/enabled arguments still need this same
+  // walk (they can nest further Manipulate controls of their own), so this
+  // returns the replacement rather than handling it inline in the outer
+  // `match`'s guard, which cannot bind `v` for use in its arm.
+  if let Some(v) = promoted_popup_var(expr, promoted) {
     // Stand in with the control's own bound variable rather than `Nothing`:
     // a Demonstration commonly lays several such popups out as data (e.g.
     // `Apopups = {PopupMenu[Dynamic[a1], …], PopupMenu[Dynamic[a2], …], …}`
@@ -40270,6 +40304,43 @@ fn strip_body_popup_menus(expr: &Expr, promoted: &[String]) -> Expr {
     return Expr::Identifier(v.clone());
   }
   match expr {
+    // A promoted popup sitting directly in a cell of a `Grid` (a
+    // Demonstration's pad of buttons with a "patterns" pick list spanning
+    // a row) is pure layout: leave an empty cell rather than printing the
+    // variable's value, which can be a whole matrix that blows up the grid.
+    Expr::FunctionCall { name, args }
+      if name == "Grid" && matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      let mut new_args: Vec<Expr> = args.to_vec();
+      if let Expr::List(rows) = &args[0] {
+        new_args[0] = Expr::List(
+          rows
+            .iter()
+            .map(|row| match row {
+              Expr::List(cells) => Expr::List(
+                cells
+                  .iter()
+                  .map(|cell| {
+                    if promoted_popup_var(cell, promoted).is_some() {
+                      Expr::String(String::new())
+                    } else {
+                      strip_body_popup_menus(cell, promoted)
+                    }
+                  })
+                  .collect::<Vec<_>>()
+                  .into(),
+              ),
+              other => strip_body_popup_menus(other, promoted),
+            })
+            .collect::<Vec<_>>()
+            .into(),
+        );
+      }
+      for a in new_args.iter_mut().skip(1) {
+        *a = strip_body_popup_menus(a, promoted);
+      }
+      call(name.as_str(), new_args)
+    }
     Expr::FunctionCall { name, args } => call(
       name.as_str(),
       args
@@ -40339,6 +40410,21 @@ fn contains_body_button(expr: &Expr) -> bool {
 /// `displays` so the front-end renders it as a live widget instead of a
 /// static picture.
 fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
+  extract_body_togglerbars_in(expr, displays, false)
+}
+
+/// [`extract_body_togglerbars`], with `in_grid` set while walking the cells
+/// of a `Grid`/`GraphicsGrid`. A `Button` placed in a grid cell (a
+/// Demonstration's pad of arrow and "reset" buttons laid out in a `Grid`)
+/// stays in the body: the picture renderer draws it as a plate with its real
+/// label at its cell position, carrying the hit region a live widget
+/// presses. Hoisting it would pull it out of the layout and leave its cell
+/// empty.
+fn extract_body_togglerbars_in(
+  expr: &Expr,
+  displays: &mut Vec<String>,
+  in_grid: bool,
+) -> Expr {
   match expr {
     Expr::FunctionCall { name, args }
       if (name == "TogglerBar"
@@ -40388,10 +40474,15 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     // Moves into the display list, replaced by `Nothing`, so it renders as
     // a live, clickable element instead of an inert picture.
     Expr::FunctionCall { name, args }
-      if name == "Button" && args.len() >= 2 =>
+      if name == "Button" && args.len() >= 2 && !in_grid =>
     {
       displays.push(crate::syntax::expr_to_source_form(expr));
       id_expr("Nothing")
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Button" && args.len() >= 2 =>
+    {
+      expr.clone()
     }
     // `Table[body, iterators…]` generates a variable number of copies of
     // whatever `body` draws — a Demonstration's clickable grid (e.g. a
@@ -40414,7 +40505,7 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       let mut new_args: Vec<Expr> = args.to_vec();
       for a in new_args.iter_mut().skip(1) {
-        *a = extract_body_togglerbars(a, displays);
+        *a = extract_body_togglerbars_in(a, displays, in_grid);
       }
       call(name.as_str(), new_args)
     }
@@ -40439,24 +40530,27 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       expr.clone()
     }
-    Expr::FunctionCall { name, args } => call(
-      name.as_str(),
-      args
-        .iter()
-        .map(|a| extract_body_togglerbars(a, displays))
-        .collect(),
-    ),
+    Expr::FunctionCall { name, args } => {
+      let in_grid = in_grid || matches!(name.as_str(), "Grid" | "GraphicsGrid");
+      call(
+        name.as_str(),
+        args
+          .iter()
+          .map(|a| extract_body_togglerbars_in(a, displays, in_grid))
+          .collect(),
+      )
+    }
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|it| extract_body_togglerbars(it, displays))
+        .map(|it| extract_body_togglerbars_in(it, displays, in_grid))
         .collect::<Vec<_>>()
         .into(),
     ),
     Expr::CompoundExpr(items) => Expr::CompoundExpr(
       items
         .iter()
-        .map(|it| extract_body_togglerbars(it, displays))
+        .map(|it| extract_body_togglerbars_in(it, displays, in_grid))
         .collect(),
     ),
     other => other.clone(),
