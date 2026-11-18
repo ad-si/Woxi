@@ -10200,3 +10200,13 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### `SliceContourPlot3D` automatic contour levels on coarse slices
+
+With `Contours -> n` Woxi spaces the levels over the range of its own slice
+samples. For a distance function sampled with `PlotPoints -> 10` on
+`"BackPlanes"`, a saved snapshot shows the bar legend's levels one step
+higher than Woxi's (15.6–31.2 instead of 11.7–27.3, same 3.9 spacing): Wolfram's
+value range starts above Woxi's sampled minimum, and its slice even shows a
+band below the lowest legend band. How Wolfram samples the slice planes
+for the value range has not been measured.

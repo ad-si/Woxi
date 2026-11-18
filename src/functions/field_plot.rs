@@ -1469,9 +1469,25 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   let scaling = option("ColorFunctionScaling")
     .is_some_and(|v| matches!(&*v, Expr::Identifier(s) if s == "True"));
   let name = color_function_scheme_name(colors);
-  let color_at = |t: f64| match &name {
-    Some(name) => apply_named_color_function(name, t),
-    None => scaled_color(t, lo + t * (hi - lo), None, Some((colors, scaling))),
+  let color_at = |t: f64| match (&name, colors) {
+    (Some(name), _) => apply_named_color_function(name, t),
+    // A list of colors is a gradient through them, as `Blend` makes it
+    // (so a discrete bar with one color per band shows exactly those).
+    (None, Expr::List(cs)) if !cs.is_empty() => {
+      let blend = call("Blend", vec![colors.clone(), Expr::Real(t)]);
+      evaluate_expr_to_expr(&blend)
+        .ok()
+        .and_then(|c| {
+          crate::functions::graphics::parse_color_function_result(&c)
+        })
+        .map_or((128, 128, 128), |c| {
+          let channel = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+          (channel(c.r), channel(c.g), channel(c.b))
+        })
+    }
+    (None, _) => {
+      scaled_color(t, lo + t * (hi - lo), None, Some((colors, scaling)))
+    }
   };
   // Wolfram draws a discrete legend's bands about 20 points each, on a
   // slightly narrower bar.

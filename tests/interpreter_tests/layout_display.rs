@@ -182,6 +182,20 @@ mod layout_display {
       assert!(svg.contains(label), "missing {label}: {svg}");
     }
     assert!(!svg.contains(">0<") && !svg.contains(">4<"), "{svg}");
+    // A list of colors is a gradient through them: a discrete bar with one
+    // color per band shows exactly those, bottom to top.
+    let svg =
+      svg_of("BarLegend[{{Red, Green, Blue, Yellow}, {0, 4}}, {1, 2, 3}]");
+    let fills: Vec<&str> = [
+      "rgb(255,0,0)",
+      "rgb(0,255,0)",
+      "rgb(0,0,255)",
+      "rgb(255,255,0)",
+    ]
+    .into_iter()
+    .filter(|f| svg.contains(&format!("fill=\"{f}\"")))
+    .collect();
+    assert_eq!(fills.len(), 4, "{svg}");
     let svg =
       svg_of("BarLegend[{\"Rainbow\", {0, 1}}, LegendLabel -> \"Temp\"]");
     assert!(svg.contains(">Temp<"), "{svg}");
