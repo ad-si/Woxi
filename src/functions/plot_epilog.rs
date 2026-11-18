@@ -1167,38 +1167,53 @@ fn render_item(
           if is_framed {
             let text_w = styled
               .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64
-              * font_size
-              * 0.6;
+              .map_or(0.0, super::chart::StyledLabel::max_line_width_em)
+              * font_size;
+            // `Framed` leaves its `FrameMargins` (5 points a side unless
+            // set) between the text and the border.
+            let (m_left, m_right, m_bottom, m_top) =
+              crate::functions::graphics::framed_margins(
+                frame_opts,
+                crate::functions::graphics::FRAMED_DEFAULT_MARGIN,
+              );
+            let (m_left, m_right, m_bottom, m_top) = (
+              m_left * area.scale,
+              m_right * area.scale,
+              m_bottom * area.scale,
+              m_top * area.scale,
+            );
             // `py` is the first line's own center (shifted up above), so
             // the box starts half a line above it and grows by one more
             // `line_height` per extra line — not `py`'s center outward,
             // which would leave it too short and too high once the label
             // stacks below `py`.
-            let box_h = extra_lines * line_height + font_size;
-            let box_y = py - font_size / 2.0;
+            let box_h =
+              extra_lines * line_height + font_size + m_bottom + m_top;
+            let box_y = py - font_size / 2.0 - m_top;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
               .map_or_else(
                 || "none".to_string(),
                 super::graphics::Color::to_svg_rgb,
               );
-            // Wolfram draws the box with a thin border unless the label
-            // asks for none; `FrameStyle -> color` recolors it.
-            let stroke = match option_value(frame_opts, "FrameStyle") {
-              Some(Expr::Identifier(s)) if s == "None" => String::new(),
-              Some(spec) => format!(
-                " stroke=\"{}\"",
+            // Wolfram draws the box with a thin (one point) border unless
+            // the label asks for none; `FrameStyle -> color` recolors it.
+            let stroke_color = match option_value(frame_opts, "FrameStyle") {
+              Some(Expr::Identifier(s)) if s == "None" => None,
+              Some(spec) => Some(
                 parse_color(spec)
                   .unwrap_or(Color::new(0.0, 0.0, 0.0))
-                  .to_svg_rgb()
+                  .to_svg_rgb(),
               ),
-              None => " stroke=\"rgb(0,0,0)\"".to_string(),
+              None => Some("rgb(0,0,0)".to_string()),
             };
+            let stroke = stroke_color.map_or_else(String::new, |c| {
+              format!(" stroke=\"{c}\" stroke-width=\"{:.1}\"", area.scale)
+            });
             out.push_str(&format!(
-              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
-              px - text_w / 2.0,
+              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
+              px - text_w / 2.0 - m_left,
+              text_w + m_left + m_right,
             ));
           }
           out.push_str(&format!(
@@ -1311,6 +1326,11 @@ fn render_item(
 /// typeset with scripts) rather than a graphic.
 fn is_text_inset(obj: &Expr) -> bool {
   match crate::functions::graphics::strip_style_wrappers(obj) {
+    // `Framed[text, opts…]` is a boxed label, set like `Text[Framed[…]]`
+    // in the graphic's own font.
+    Expr::FunctionCall { name, args } if name == "Framed" => {
+      !args.is_empty() && is_text_inset(&args[0])
+    }
     Expr::String(_) => true,
     Expr::FunctionCall { name, args } => {
       matches!(

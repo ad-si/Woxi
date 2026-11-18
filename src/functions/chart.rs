@@ -417,6 +417,24 @@ impl StyledLabel {
       .max()
       .unwrap_or(0)
   }
+
+  /// The width of this label's widest line in ems of its font size,
+  /// measured with the proportional glyph widths a graphic's text is set
+  /// in (bold text setting wider), rather than a fixed width per character.
+  pub(crate) fn max_line_width_em(&self) -> f64 {
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .map(|line| {
+        let width = crate::functions::plot_padding::text_width(&line, 1.0);
+        // Markup that is bold itself already measures wider.
+        if self.bold && !line.contains("font-weight=\"bold\"") {
+          width * crate::functions::plot_padding::BOLD_WIDTH_SCALE
+        } else {
+          width
+        }
+      })
+      .fold(0.0, f64::max)
+  }
 }
 
 /// Multiply the absolute lengths in SVG markup — `font-size="N"`, the

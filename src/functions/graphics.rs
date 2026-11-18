@@ -87,6 +87,16 @@ pub(crate) fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// The border a `Framed[…]` label is drawn with.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TextFrame {
+  /// The border's color.
+  pub(crate) color: Color,
+  /// The `{left, right, bottom, top}` space, in points, between the text
+  /// and the border (`FrameMargins`).
+  pub(crate) margins: (f64, f64, f64, f64),
+}
+
 // ── Color ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1033,9 +1043,9 @@ enum Primitive {
     /// `Background -> color`: a panel painted behind the label, so it
     /// stays readable over whatever it is placed on.
     background: Option<Color>,
-    /// `Framed[…]`: the color of the border drawn around the label, or
-    /// `None` for an unframed one (including `FrameStyle -> None`).
-    frame: Option<Color>,
+    /// `Framed[…]`: the border drawn around the label, or `None` for an
+    /// unframed one (including `FrameStyle -> None`).
+    frame: Option<TextFrame>,
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
@@ -8339,6 +8349,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       Some(spec) => parse_color(spec).or(Some(Color::new(0.0, 0.0, 0.0))),
       None => Some(Color::new(0.0, 0.0, 0.0)),
     }
+    .map(|color| TextFrame {
+      color,
+      margins: framed_margins(frame_opts, FRAMED_DEFAULT_MARGIN),
+    })
   } else {
     None
   };
@@ -13582,24 +13596,34 @@ fn render_primitive(
           None => ("none".to_string(), String::new()),
         };
         let stroke = match frame {
-          Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
+          Some(f) => format!(" stroke=\"{}\"", f.color.to_svg_rgb()),
           None => String::new(),
         };
-        // The panel hugs the glyphs' advance width, as Wolfram's does.
-        // A frame keeps its margin round the text.
-        let panel_w = if frame.is_some() {
-          text_w
-        } else {
-          crate::functions::plot_padding::text_width(&svg_escape(text), fs)
-        };
+        // The panel hugs the glyphs' advance width, as Wolfram's does; a
+        // frame leaves its `FrameMargins` between the text and the border.
+        let glyphs_w = text
+          .split('\n')
+          .map(|line| {
+            crate::functions::plot_padding::text_width(&svg_escape(line), fs)
+          })
+          .fold(0.0, f64::max)
+          * if style.font_weight == "bold" {
+            crate::functions::plot_padding::BOLD_WIDTH_SCALE
+          } else {
+            1.0
+          };
+        let (m_left, m_right, m_bottom, m_top) =
+          frame.map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
+        let panel_w = glyphs_w + m_left + m_right;
+        let panel_h = text_h + m_bottom + m_top;
         out.push_str(&format!(
-          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
+          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{panel_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
           match anchor_attr {
-            "start" => sx,
-            "end" => sx - panel_w,
-            _ => sx - panel_w / 2.0,
+            "start" => sx - m_left,
+            "end" => sx - glyphs_w - m_left,
+            _ => sx - glyphs_w / 2.0 - m_left,
           },
-          sy - text_h / 2.0,
+          sy - text_h / 2.0 - m_top,
         ));
       }
       let ff_attr = if style.font_family.is_empty() {
@@ -34161,6 +34185,43 @@ fn pane_content_alignment(expr: &Expr) -> (f64, f64) {
   }
 }
 
+/// The space, in points, `Framed` leaves between its content and its border
+/// when no `FrameMargins` option is given.
+pub(crate) const FRAMED_DEFAULT_MARGIN: f64 = 5.0;
+
+/// The `{left, right, bottom, top}` margins, in points, a `FrameMargins`
+/// option among `opts` asks for: one number for every side, or
+/// `{{left, right}, {bottom, top}}`. Sides it leaves unset get `default`.
+pub(crate) fn framed_margins(
+  opts: &[Expr],
+  default: f64,
+) -> (f64, f64, f64, f64) {
+  let margins = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "FrameMargins")
+    .map(|(_, v)| v);
+  let pair = |v: &Expr| -> Option<(f64, f64)> {
+    match v {
+      Expr::List(p) if p.len() == 2 => {
+        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
+      }
+      other => expr_to_f64(other).map(|m| (m, m)),
+    }
+  };
+  match margins {
+    Some(Expr::List(p)) if p.len() == 2 => {
+      let (l, r) = pair(&p[0]).unwrap_or((default, default));
+      let (b, t) = pair(&p[1]).unwrap_or((default, default));
+      (l, r, b, t)
+    }
+    other => {
+      let m = other.and_then(expr_to_f64).unwrap_or(default);
+      (m, m, m, m)
+    }
+  }
+}
+
 fn framed_box_to_svg(
   args: &[Expr],
   default_background: Option<Color>,
@@ -34242,31 +34303,8 @@ fn framed_box_to_svg(
       .find(|(k, _)| *k == key)
       .and_then(|(_, v)| expr_to_f64(v))
   };
-  let default_margin = if is_panel { 6.0 } else { 5.0 };
-  let margins = args[1..]
-    .iter()
-    .filter_map(option_kv)
-    .find(|(k, _)| *k == "FrameMargins")
-    .map(|(_, v)| v);
-  let pair = |v: &Expr| -> Option<(f64, f64)> {
-    match v {
-      Expr::List(p) if p.len() == 2 => {
-        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
-      }
-      other => expr_to_f64(other).map(|m| (m, m)),
-    }
-  };
-  let (left, right, bottom, top) = match margins {
-    Some(Expr::List(p)) if p.len() == 2 => {
-      let (l, r) = pair(&p[0]).unwrap_or((default_margin, default_margin));
-      let (b, t) = pair(&p[1]).unwrap_or((default_margin, default_margin));
-      (l, r, b, t)
-    }
-    other => {
-      let m = other.and_then(expr_to_f64).unwrap_or(default_margin);
-      (m, m, m, m)
-    }
-  };
+  let default_margin = if is_panel { 6.0 } else { FRAMED_DEFAULT_MARGIN };
+  let (left, right, bottom, top) = framed_margins(&args[1..], default_margin);
   let rounding = numeric_option("RoundingRadius").unwrap_or(0.0);
 
   // Check if content is itself a Framed (nested) or already a Graphics

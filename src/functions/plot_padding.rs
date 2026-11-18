@@ -219,7 +219,7 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
 /// How much wider Arial Bold sets a run of text than Arial Regular, on
 /// average over mixed-case labels (`"Displacement x"` widens from 6.84 em
 /// to 7.34 em).
-const BOLD_WIDTH_SCALE: f64 = 1.075;
+pub(crate) const BOLD_WIDTH_SCALE: f64 = 1.075;
 
 /// The width factor the weight of label markup gives it: a bold label
 /// (`Style[label, Bold]`, which typesets as `font-weight="bold"`) is wider
