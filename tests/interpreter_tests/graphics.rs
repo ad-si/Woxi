@@ -29355,6 +29355,57 @@ mod graphics_row {
     (attr("width"), attr("height"))
   }
 
+  /// The nested `<svg>` cells of a layout, as their `width`/`height`.
+  fn cell_sizes(code: &str) -> Vec<(String, String)> {
+    let svg = interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("layout should render");
+    svg
+      .split("<svg ")
+      .skip(2)
+      .map(|tag| {
+        let attr = |name: &str| -> String {
+          let tail = tag.split(&format!(" {name}=\"")).nth(1).unwrap();
+          tail.split('"').next().unwrap().to_string()
+        };
+        (attr("width"), attr("height"))
+      })
+      .collect()
+  }
+
+  /// `Show[p]` is the picture `p`, so a layout cell wrapped in `Show` is
+  /// sized exactly like the bare plot.
+  #[test]
+  fn show_cell_is_sized_like_its_plot() {
+    clear_state();
+    let bare =
+      "GraphicsRow[{Plot[Sin[x], {x, 0, 6}], Plot[Cos[x], {x, 0, 6}]}]";
+    let shown =
+      "GraphicsRow[{Show[Plot[Sin[x], {x, 0, 6}]], Plot[Cos[x], {x, 0, 6}]}]";
+    assert_eq!(outer_size(shown), outer_size(bare));
+    assert_eq!(cell_sizes(shown), cell_sizes(bare));
+  }
+
+  /// A numeric `ImageSize` on a plot cell only sets its shape, as it does
+  /// on a `Graphics` cell: a sized plot above a sized legend picture, both
+  /// 200 wide, are drawn at the same width, with or without `Show`.
+  #[test]
+  fn sized_plot_and_graphics_cells_share_the_column_width() {
+    clear_state();
+    for plot in [
+      "Plot[x, {x, 0, 1}, ImageSize -> 200]",
+      "Show[Plot[x, {x, 0, 1}, ImageSize -> 200], Graphics[Point[{0, 0}]]]",
+    ] {
+      let code = format!(
+        "GraphicsColumn[{{{plot}, Graphics[Circle[], ImageSize -> 200]}}]"
+      );
+      let sizes = cell_sizes(&code);
+      assert_eq!(sizes.len(), 2, "{code}: {sizes:?}");
+      assert_eq!(sizes[0].0, sizes[1].0, "{code}: {sizes:?}");
+    }
+  }
+
   /// `ImageSize -> {w, h}` with `AspectRatio -> Full` makes the layout fill
   /// the whole rectangle, whether its cells are inline plots or finished
   /// ones held in variables.

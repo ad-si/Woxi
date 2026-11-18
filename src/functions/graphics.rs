@@ -29822,6 +29822,9 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
     "Graphics"
       | "Graphics3D"
       | "Image"
+      // `Show[g, …]` is the picture it combines: a layout cell made of one
+      // is resized like the bare plot would be.
+      | "Show"
       // 2-D / 3-D plots
       | "Plot"
       | "Plot3D"
@@ -29995,11 +29998,12 @@ fn with_default_image_size_shaped(
 
 /// `with_default_image_size` for a `GraphicsRow`/`GraphicsColumn`/
 /// `GraphicsGrid` cell. These layouts size every cell to the shared column
-/// width, so a numeric `ImageSize` on the `Graphics[…]` cell itself
-/// (`Graphics[…, ImageSize -> {94, 64}]`) only contributes its aspect
-/// ratio — keeping the absolute size would leave that cell a different
-/// scale than its neighbors (a padded grid whose first cell is a big
-/// picture and whose other cells are tiny). `golden_cells` is as in
+/// width, so a numeric `ImageSize` on the cell itself
+/// (`Graphics[…, ImageSize -> {94, 64}]`, `Plot[…, ImageSize -> 200]`)
+/// only contributes its aspect ratio — keeping the absolute size would
+/// leave that cell a different scale than its neighbors (a padded grid
+/// whose first cell is a big picture and whose other cells are tiny, or a
+/// sized plot over a sized legend `Graphics`). `golden_cells` is as in
 /// `with_default_image_size_shaped`.
 fn with_cell_image_size_shaped(
   expr: &Expr,
@@ -30014,7 +30018,7 @@ fn with_cell_image_size_shaped(
     other => other,
   };
   if let Expr::FunctionCall { name, args } = inner
-    && name == "Graphics"
+    && is_graphics_producing_head(name)
   {
     let is_size_rule = |a: &Expr| {
       matches!(a, Expr::Rule { pattern, .. }
