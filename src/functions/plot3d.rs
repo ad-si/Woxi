@@ -1498,8 +1498,7 @@ fn generate_mesh_lines(
   let ny = |jj: usize| -> f64 {
     (jj as f64 / grid_n as f64) * 2.0 * half[1] - half[1]
   };
-  let nz =
-    |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * half[2] - half[2] };
+  let nz = |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * half[2] - half[2] };
 
   let mut lines = Vec::new();
 
@@ -3692,7 +3691,8 @@ fn draw_axes_on_box_with_ticks(
         } else {
           vec![label.to_string()]
         };
-        let pitch = crate::functions::plot_padding::line_pitch(font_size as f64);
+        let pitch =
+          crate::functions::plot_padding::line_pitch(font_size as f64);
         let block_shift = (lines.len() - 1) as f64 * pitch / 2.0;
         // …plus half of the label's own box, so `offset` can center it
         // just past them. Wolfram sets every axis label upright, the z
@@ -7547,8 +7547,7 @@ fn parse_view_point(value: &Expr) -> (Option<[f64; 3]>, bool) {
 /// A `BoxRatios -> {rx, ry, rz}` setting with all sides positive; a lone
 /// number `r` asks for equal sides, like `{r, r, r}`.
 fn parse_box_ratios(value: &Expr) -> Option<[f64; 3]> {
-  let value =
-    evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let value = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   eval_vec3(&value)
     .or_else(|| try_eval_to_f64(&value).map(|r| [r; 3]))
     .filter(|r| r.iter().all(|v| *v > 0.0 && v.is_finite()))
@@ -13044,9 +13043,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       )
     })
   };
-  let axes_extent = |scale: f64, cx: f64, cy: f64| {
-    axes_extent_about(scale, cx, cy, p_cx, p_cy)
-  };
+  let axes_extent =
+    |scale: f64, cx: f64, cy: f64| axes_extent_about(scale, cx, cy, p_cx, p_cy);
   // With an `ImagePadding` the scene is fitted into the region inside the
   // padding band; the picture keeps its full size around it.
   let [pad_left, pad_right, pad_bottom, pad_top] =
