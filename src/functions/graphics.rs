@@ -46588,6 +46588,22 @@ fn parse_manipulate_control(
       display: crate::syntax::expr_to_source_form(&evaluated),
     });
   }
+  // Any other user-defined builder (`tableOf[#, params]&` drawing a `Grid`
+  // that reads other controls) is a picture of the live bindings: keep the
+  // call unevaluated as a display element, so it re-renders whenever the
+  // controls it reads change instead of being dropped.
+  if let Some(built @ Expr::FunctionCall { name: f, .. }) = &built
+    && crate::down_values_with_memo(f).is_some()
+  {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display: crate::syntax::expr_to_source_form(built),
+    });
+  }
 
   // Color form: `{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
   // a color names no domain to choose from (`{u, uinit}` picks the widget
