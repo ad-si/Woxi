@@ -16792,8 +16792,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           }) =>
       {
         let items = template_box_items(&args[0]).unwrap();
-        let size =
-          |i: usize| items.get(i).and_then(spacer_size).map_or(0.0, |v| v.max(0.0));
+        let size = |i: usize| {
+          items
+            .get(i)
+            .and_then(spacer_size)
+            .map_or(0.0, |v| v.max(0.0))
+        };
         let blank = BoxLayout::text("", font_size);
         let height = if items.len() > 1 {
           size(1)
@@ -16803,7 +16807,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         BoxLayout {
           width: size(0),
           height,
-          baseline: if items.len() > 1 { height } else { blank.baseline },
+          baseline: if items.len() > 1 {
+            height
+          } else {
+            blank.baseline
+          },
           elements: String::new(),
         }
       }

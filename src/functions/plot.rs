@@ -5065,7 +5065,15 @@ fn chart_title_svg(
   if !sl.segments.is_empty() {
     // Center the line on the band the tallest picture claims.
     let ty = ty + sl.extra_line_count() as f64 * pitch / 2.0;
-    return inline_segments_svg(&sl.segments, cx, ty, fs, fill, style_attrs, sf);
+    return inline_segments_svg(
+      &sl.segments,
+      cx,
+      ty,
+      fs,
+      fill,
+      style_attrs,
+      sf,
+    );
   }
   format!(
     "<text x=\"{cx:.decimals$}\" y=\"{ty:.decimals$}\" text-anchor=\"middle\" \
@@ -11027,16 +11035,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     if sl.italic {
       style_attrs.push_str(" font-style=\"italic\"");
     }
-    svg.push_str(&chart_title_svg(
-      sl,
-      cx,
-      ty,
-      fs,
-      &fill,
-      &style_attrs,
-      sf,
-      2,
-    ));
+    svg.push_str(&chart_title_svg(sl, cx, ty, fs, &fill, &style_attrs, sf, 2));
   }
 
   // Legends to the right of the plot.

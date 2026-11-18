@@ -58931,7 +58931,8 @@ mod spacer_boxes {
         "Plot[x, {{x, 0, 1}}, PlotLabel -> Row[{{\"q\"{gap}, a/b}}]]"
       ));
       assert!(!svg.contains("Spacer"), "{svg}");
-      let pic = &svg[svg.find("<g color=").unwrap_or_else(|| panic!("{svg}"))..];
+      let pic =
+        &svg[svg.find("<g color=").unwrap_or_else(|| panic!("{svg}"))..];
       let w = pic.split("width=\"").nth(1).unwrap();
       w[..w.find('"').unwrap()].parse().unwrap()
     };
@@ -58961,11 +58962,9 @@ mod styled_fraction_titles {
 
   #[test]
   fn bar_chart_row_title_stacks_fraction() {
-    for label in [
-      "Row[{\"K = \", a/b}]",
-      "Style[Row[{\"K = \", a/b}], 18]",
-    ] {
-      let svg = export_svg(&format!("BarChart[{{1, 2}}, PlotLabel -> {label}]"));
+    for label in ["Row[{\"K = \", a/b}]", "Style[Row[{\"K = \", a/b}], 18]"] {
+      let svg =
+        export_svg(&format!("BarChart[{{1, 2}}, PlotLabel -> {label}]"));
       assert!(stacked(&svg), "{label}: {svg}");
     }
   }
@@ -58974,7 +58973,8 @@ mod styled_fraction_titles {
   #[test]
   fn styled_size_scales_title_picture() {
     let width = |label: &str| -> f64 {
-      let svg = export_svg(&format!("BarChart[{{1, 2}}, PlotLabel -> {label}]"));
+      let svg =
+        export_svg(&format!("BarChart[{{1, 2}}, PlotLabel -> {label}]"));
       let pic = &svg[svg.find("<g color=").unwrap()..];
       let w = pic.split("width=\"").nth(1).unwrap();
       w[..w.find('"').unwrap()].parse().unwrap()
