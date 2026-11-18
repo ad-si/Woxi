@@ -58884,3 +58884,53 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+/// Visible text of an SVG: the contents of its `<text>` elements.
+fn svg_text_content(svg: &str) -> String {
+  let mut out = String::new();
+  let mut rest = svg;
+  while let Some(start) = rest.find("<text") {
+    let after = &rest[start..];
+    let Some(open_end) = after.find('>') else {
+      break;
+    };
+    let body = &after[open_end + 1..];
+    let Some(close) = body.find("</text>") else {
+      break;
+    };
+    out.push_str(&body[..close]);
+    rest = &body[close..];
+  }
+  out
+}
+
+// A string holding an inline `\!\(\*StyleBox[…]\)` cell typesets as the
+// boxes it spells in TraditionalForm too, whose box text escapes the inner
+// quotes — and a line break after the `\*` (how saved definitions wrap the
+// cell) changes nothing.
+#[test]
+fn traditional_form_inline_style_box_string_draws_its_text() {
+  for code in [
+    r#"TraditionalForm["\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)"]"#,
+    r#"TraditionalForm[HoldForm[Cos[2 "\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)"]]]"#,
+  ] {
+    let svg = export_svg(code);
+    let text = svg_text_content(&svg);
+    assert!(!text.contains("FontSlant"), "{code}: {text}");
+    assert!(text.contains('t'), "{code}: {text}");
+  }
+  let flat = export_svg(
+    r#"TraditionalForm[HoldForm[Cos[2 "\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)"]]]"#,
+  );
+  let wrapped = export_svg(
+    r#"TraditionalForm[HoldForm[Cos[2 "\!\(\*\nStyleBox[\"t\",\nFontSlant->\"Italic\"]\)"]]]"#,
+  );
+  let height = |svg: &str| {
+    svg
+      .split("height=\"")
+      .nth(1)
+      .and_then(|r| r.split('"').next())
+      .map(str::to_string)
+  };
+  assert_eq!(height(&flat), height(&wrapped));
+}
