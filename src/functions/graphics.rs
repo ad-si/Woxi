@@ -16556,6 +16556,16 @@ impl BoxLayout {
     let w = match family.as_deref() {
       // A proportional face (`StyleBox[…, FontFamily -> "Times"]`, a
       // grid's `BaseStyle`) advances each glyph by its own width.
+      // The generic sans family is drawn in the embedded Atkinson
+      // Hyperlegible Next, whose digits run wider than Arial's: measure
+      // with its own advances, or a number's last digit is clipped.
+      Some(ff) if is_embedded_sans_family(ff) => {
+        s.chars()
+          .filter(|c| !zero_width(c))
+          .map(crate::functions::plot_padding::atkinson_width_em)
+          .sum::<f64>()
+          * font_size
+      }
       Some(ff) => {
         s.chars()
           .filter(|c| !zero_width(c))
@@ -16648,6 +16658,13 @@ fn proportional_family_scale(family: &str) -> f64 {
   } else {
     1.0
   }
+}
+
+/// Whether `family` is the sans face SVG text is drawn in by default (the
+/// generic `sans-serif`, or Atkinson Hyperlegible Next by name).
+fn is_embedded_sans_family(family: &str) -> bool {
+  let f = family.trim().to_ascii_lowercase();
+  f == "sans-serif" || f.starts_with("atkinson hyperlegible next")
 }
 
 /// Run `f` with the box text atoms set in `family` (`None`: monospace, or
@@ -25075,8 +25092,35 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   // `Style[…, FontFamily -> "Times"]` sets the typeset numerator,
   // denominator and scripts in that face too.
   with_box_font_family(family.as_deref(), || {
-    traditional_inline_box_content_svg(content, styled, size)
+    with_grid_item_script_level(size, || {
+      traditional_inline_box_content_svg(content, styled, size)
+    })
   })
+}
+
+/// Run `f`, which typesets a cell at `size`, one script level deep when the
+/// cell is an item of a grid being laid out: Wolfram's `GridBox` raises the
+/// `ScriptLevel` of its items, so a fraction in a `Grid`, `Column` or
+/// `TableForm` cell is set at 0.75 of the cell's size, while the rest of
+/// the cell (`f'(x)` beside the quotient) keeps that size.
+fn with_grid_item_script_level<T>(size: f64, f: impl FnOnce() -> T) -> T {
+  if GRID_ITEM_DEPTH.with(std::cell::Cell::get) == 0
+    || BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) != 0
+  {
+    return f();
+  }
+  struct Restore(f64);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_SCRIPT_LEVEL.with(|l| l.set(0));
+      BOX_ROOT_FONT_SIZE.with(|r| r.set(self.0));
+    }
+  }
+  // The level-0 size the nested fractions' 0.75 floor is taken from is
+  // the cell's own size, not whatever was laid out last.
+  let _restore = Restore(BOX_ROOT_FONT_SIZE.with(|r| r.replace(size)));
+  BOX_SCRIPT_LEVEL.with(|l| l.set(1));
+  f()
 }
 
 /// [`traditional_inline_box_cell_svg`] for a cell already stripped of its
@@ -26216,6 +26260,10 @@ thread_local! {
   /// messages even though it is laid out as a grid (`TableForm`).
   static LOUD_GRID_CELLS: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
+  /// How many grids are being laid out around the current cell (see
+  /// [`with_grid_item_script_level`]).
+  static GRID_ITEM_DEPTH: std::cell::Cell<u32> =
+    const { std::cell::Cell::new(0) };
 }
 
 /// Run `f` (which renders a grid) so that the grid's cells report the
@@ -26239,6 +26287,14 @@ fn grid_svg_styled_internal(
   // `MatrixForm`. Only the outermost grid consults the flag; grids nested in
   // its cells are plain `Grid`s again.
   let loud = LOUD_GRID_CELLS.with(|l| l.replace(false));
+  struct LeaveGrid;
+  impl Drop for LeaveGrid {
+    fn drop(&mut self) {
+      GRID_ITEM_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+  }
+  GRID_ITEM_DEPTH.with(|d| d.set(d.get() + 1));
+  let _leave = LeaveGrid;
   if parens || loud {
     let result =
       grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style);
@@ -26382,10 +26438,11 @@ fn grid_svg_styled_internal_reporting(
       *cell = fraction_cell_in_grid_style(cell, default_style);
       // A typeset cell (a `Row` holding a quotient, a `TraditionalForm`
       // formula) is set in the grid's `BaseStyle` face and size, like the
-      // grid's plain text cells, rather than the monospace default.
-      if let Some(family) = &default_style.font_family
-        && traditional_inline_box_cell_svg(cell).is_some()
-      {
+      // grid's plain text cells, rather than the monospace default. Without
+      // a `FontFamily`, that is the sans face the text cells default to.
+      if traditional_inline_box_cell_svg(cell).is_some() {
+        let family =
+          default_style.font_family.as_deref().unwrap_or("sans-serif");
         let mut directives = vec![
           cell.clone(),
           Expr::Rule {
@@ -44463,6 +44520,21 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       italic,
       true,
     ),
+    // A held negation of a typeset piece (`-Style["x", Italic]`, an
+    // exponent in a Demonstration's popup label) sets as a minus sign
+    // before the piece's own styled runs.
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if contains_presentation_head(operand) => {
+      let mut runs = vec![LabelRun {
+        text: "-".to_string(),
+        italic: false,
+        ..Default::default()
+      }];
+      runs.extend(grouped_label_runs(operand, italic));
+      runs
+    }
     // Arithmetic joining typeset label pieces — a Demonstrations setter
     // writes a quotient of two typeset rows as `Row[…]/Row[…]`. Recurse into
     // the operands so their `Row`/`Style`/`Superscript` structure keeps
@@ -44643,6 +44715,19 @@ fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
 /// evaluates to — sets as a quotient rather than as a product with a
 /// negative exponent.
 fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
+  // A factor of -1 negates the product (`-Style["x", Italic]` evaluates to
+  // `Times[-1, Style[…]]`): it sets as a leading minus sign, not `-1*`.
+  if let [Expr::Integer(-1), rest @ ..] = factors
+    && !rest.is_empty()
+  {
+    let mut runs = vec![LabelRun {
+      text: "-".to_string(),
+      italic: false,
+      ..Default::default()
+    }];
+    runs.extend(product_label_runs(rest, italic));
+    return runs;
+  }
   let (denominators, numerators): (Vec<&Expr>, Vec<&Expr>) =
     factors.iter().partition(|f| reciprocal_base(f).is_some());
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();

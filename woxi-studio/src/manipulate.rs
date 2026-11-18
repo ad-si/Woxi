@@ -4185,6 +4185,36 @@ mod tests {
     assert_eq!(labels, vec!["A\u{2082}", "C\u{2083}\u{207A}", "B\u{00B2}"]);
   }
 
+  /// A popup choice labeled with a power whose exponent negates a styled
+  /// piece (`e^(-Style["x", Italic])`) raises the whole exponent, its
+  /// letter slanted, instead of spelling out the `Style[…]` source in
+  /// script glyphs.
+  #[test]
+  fn popup_label_raises_negated_styled_exponent() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[g, {g, {Sin -> s, (Exp[-#^2] &) -> e^(-Style[\"t\", Italic])}}]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let (labels, runs) = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Discrete {
+          value_labels,
+          value_label_runs,
+          ..
+        } => Some((value_labels.clone(), value_label_runs.clone())),
+        _ => None,
+      })
+      .expect("popup control");
+    assert_eq!(labels[1], "e\u{207B}\u{1D57}");
+    let exponent = runs[1].last().expect("exponent run");
+    assert_eq!(exponent.text, "\u{1D57}");
+    assert!(exponent.italic, "{:?}", runs[1]);
+  }
+
   /// A slider label typed as a subscripted `π` reads back as the symbol
   /// `Pi`; it must still be drawn as the glyph, not the word "Pi".
   #[test]

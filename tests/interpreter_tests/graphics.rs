@@ -29992,11 +29992,14 @@ mod graphics_grid {
     );
     assert!(!times.contains("font-family=\"monospace\""), "{times}");
     clear_state();
-    let mono = interpret_with_stdout(&src("")).unwrap().graphics.unwrap();
-    assert!(mono.contains("font-family=\"monospace\""), "{mono}");
+    // Without a `BaseStyle` face the cell takes the sans face the grid's
+    // text cells default to, not monospace.
+    let sans = interpret_with_stdout(&src("")).unwrap().graphics.unwrap();
+    assert!(sans.contains("font-family=\"sans-serif\""), "{sans}");
+    assert!(!sans.contains("font-family=\"monospace\""), "{sans}");
     assert!(
-      nested_width(&times) < nested_width(&mono),
-      "the Times fraction should be narrower than the monospace one"
+      nested_width(&times) < nested_width(&sans),
+      "the Times fraction should be narrower than the sans one"
     );
     // A cell's own `FontFamily` is nearer the text and wins.
     clear_state();
@@ -30011,7 +30014,8 @@ mod graphics_grid {
   }
 
   /// `Style[…, FontFamily -> f]` inside a typeset formula sets only its
-  /// own atoms in that face; the rest of the formula keeps the default.
+  /// own atoms in that face; the rest of the formula keeps the grid's
+  /// default sans face.
   #[test]
   fn style_font_family_inside_typeset_fraction() {
     clear_state();
@@ -30022,7 +30026,11 @@ mod graphics_grid {
     .graphics
     .unwrap();
     assert!(svg.contains("font-family=\"Times\""), "{svg}");
-    assert_eq!(svg.matches("font-family=\"monospace\"").count(), 2, "{svg}");
+    assert_eq!(
+      svg.matches("font-family=\"sans-serif\"").count(),
+      2,
+      "{svg}"
+    );
   }
 
   /// A `Graphics`' `BaseStyle` acts like a `Style` round the whole drawing,
@@ -58883,4 +58891,57 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+#[test]
+fn grid_traditional_form_cell_takes_grid_text_face_and_size() {
+  // Regression: a `TraditionalForm` cell of `Style[Grid[…], 18]` stayed in
+  // the monospace face at the default 14 pt while the grid's text cells
+  // beside it took the sans face at 18 pt.
+  let svg = export_svg(
+    r#"Style[Grid[{{"exact", TraditionalForm[f[x]], TraditionalForm[Cos[1]]}}, Frame -> All], 18]"#,
+  );
+  assert!(
+    !svg.contains("font-family=\"Atkinson Hyperlegible Mono"),
+    "{svg}"
+  );
+  assert!(!svg.contains("font-size=\"14.0\""), "{svg}");
+  assert!(svg.contains("font-size=\"18.0\""), "{svg}");
+  // Without a size the cell still takes the grid's sans face.
+  let svg = export_svg(r#"Grid[{{"a", TraditionalForm[g[y]]}}]"#);
+  assert!(
+    !svg.contains("font-family=\"Atkinson Hyperlegible Mono"),
+    "{svg}"
+  );
+}
+
+#[test]
+fn grid_item_fraction_is_one_script_level_deep() {
+  // A `GridBox` raises the script level of its items: a fraction in a
+  // grid cell is set at 0.75 of the cell's size, the rest of the cell at
+  // the full size.
+  let svg = export_svg(
+    r#"Style[Grid[{{TraditionalForm[f'[x]], TraditionalForm[(f[x + h] - f[x - h])/(2 h)]}}], 20]"#,
+  );
+  assert!(svg.contains("font-size=\"20.0\""), "{svg}");
+  assert!(svg.contains("font-size=\"15.0\""), "{svg}");
+  // The same quotient on its own is set at the full size.
+  let svg = export_svg("TraditionalForm[(f[x + h] - f[x - h])/(2 h)]");
+  assert!(!svg.contains("font-size=\"10.5\""), "{svg}");
+}
+
+#[test]
+fn grid_sans_typeset_number_is_not_clipped() {
+  // A typeset number in the sans face is measured with that face's wider
+  // digits, so its cell picture holds the whole number.
+  let svg = export_svg(r#"Style[Grid[{{TraditionalForm[0.539402]}}], 18]"#);
+  let start = svg.find("<svg x=").expect("nested cell picture");
+  let width: f64 = svg[start..]
+    .split("width=\"")
+    .nth(1)
+    .and_then(|w| w.split('"').next())
+    .and_then(|w| w.parse().ok())
+    .expect("cell width");
+  // 4.43 em of Atkinson Hyperlegible Next at 18 pt.
+  assert!(width >= 79.0, "{width}: {svg}");
 }

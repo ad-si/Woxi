@@ -147,7 +147,7 @@ fn atkinson_lsb_em(c: char) -> f64 {
 }
 
 /// Width of `c` in the face the exported SVG actually draws with.
-fn atkinson_width_em(c: char) -> f64 {
+pub(crate) fn atkinson_width_em(c: char) -> f64 {
   match c {
     ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
     '\u{2212}' => 0.606,
