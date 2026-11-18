@@ -53,10 +53,13 @@ use crate::syntax::Expr;
 struct TreeData {
   data: imbl::Vector<Expr>,
   cache: OnceLock<Box<[Expr]>>,
+  /// The memoized flag of `cached_all`. Clones of a tree hold the same
+  /// elements, so they share it; any mutation gives the tree a fresh one.
+  flag: Arc<OnceLock<bool>>,
 }
 
 /// Payload of the shared representation: the elements plus a lazily computed
-/// flag that callers cache per list (see `cached_flag`) and the epoch at
+/// flag that callers cache per list (see `cached_all`) and the epoch at
 /// which the expression owning the list was last verified to evaluate to
 /// itself (see `evaluated_at`). Both are reset when a mutation goes through
 /// `Arc::make_mut`.
@@ -68,7 +71,7 @@ struct SharedList {
   /// The list's text in each form (see `cached_rendering`), `None` when its
   /// rendering depends on more than the elements.
   rendered: [OnceLock<Option<Arc<str>>>; 2],
-  /// A second memoized property of the elements (see `cached_flag`): what
+  /// A second memoized property of the elements (see `cached_all`): what
   /// kind of numeric data they are (see `cached_numeric_kind`).
   numeric: OnceLock<u8>,
 }
@@ -140,7 +143,10 @@ impl ExprList {
         s.numeric = OnceLock::new();
         ReprMut::Vec(&mut s.items)
       }
-      Inner::Tree(t) => ReprMut::Tree(t),
+      Inner::Tree(t) => {
+        t.flag = Arc::default();
+        ReprMut::Tree(t)
+      }
     }
   }
 
@@ -163,17 +169,26 @@ impl ExprList {
     matches!(self.inner, Inner::Shared(_))
   }
 
-  /// `compute(self)`, memoized on a shared list until its next mutation.
+  /// Whether `pred` holds for every element, memoized on a shared or
+  /// tree-backed list until its next mutation. A tree is walked in place,
+  /// never materialized as a slice (each kept `AppendTo` version would
+  /// otherwise get a full copy).
   /// Callers must pass a property of the elements alone (not of outside
   /// state), since every clone of the list sees the same cached answer.
-  pub fn cached_flag(&self, compute: impl FnOnce(&[Expr]) -> bool) -> bool {
+  pub fn cached_all(&self, pred: impl Fn(&Expr) -> bool) -> bool {
     match &self.inner {
-      Inner::Shared(s) => *s.flag.get_or_init(|| compute(&s.items)),
-      _ => compute(self.as_slice_internal()),
+      Inner::Shared(s) => *s.flag.get_or_init(|| s.items.iter().all(pred)),
+      // In-place edits (`DerefMut`, `iter_mut`) live in the materialized
+      // slice until the next sync, so that is what holds the elements.
+      Inner::Tree(t) => *t.flag.get_or_init(|| match t.cache.get() {
+        Some(slice) => slice.iter().all(pred),
+        None => t.data.iter().all(pred),
+      }),
+      Inner::Vec(v) => v.iter().all(pred),
     }
   }
 
-  /// Like `cached_flag`, for a second property: the kind of numeric data
+  /// Like `cached_all`, for a second property: the kind of numeric data
   /// the elements are (`compute` must answer exactly that; see
   /// `crate::syntax::numeric_data_kind`).
   pub fn cached_numeric_kind(&self, compute: impl FnOnce(&[Expr]) -> u8) -> u8 {
@@ -321,6 +336,7 @@ impl ExprList {
       self.inner = Inner::Tree(Box::new(TreeData {
         data: v.into_iter().collect(),
         cache: OnceLock::new(),
+        flag: Arc::default(),
       }));
     }
   }
@@ -380,6 +396,7 @@ impl ExprList {
     self.invalidate_tree_cache();
     self.upgrade_to_tree();
     if let Inner::Tree(t) = &mut self.inner {
+      t.flag = Arc::default();
       t.data.push_front(e);
     }
   }
@@ -503,6 +520,7 @@ impl ExprList {
           inner: Inner::Tree(Box::new(TreeData {
             data: tail,
             cache: OnceLock::new(),
+            flag: Arc::default(),
           })),
         }
       }
@@ -603,6 +621,7 @@ impl ExprList {
             inner: Inner::Tree(Box::new(TreeData {
               data: copy,
               cache: OnceLock::new(),
+              flag: Arc::default(),
             })),
           }
         }
@@ -698,6 +717,7 @@ impl Clone for ExprList {
         inner: Inner::Tree(Box::new(TreeData {
           data: t.data.clone(),
           cache: OnceLock::new(),
+          flag: Arc::clone(&t.flag),
         })),
       },
     }
@@ -844,4 +864,69 @@ macro_rules! expr_list {
   ($x:expr; $n:expr) => {
     $crate::expr_list::ExprList::from(vec![$x; $n])
   };
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::cell::Cell;
+
+  fn tree_of_ints(n: i128) -> ExprList {
+    let mut list: ExprList = (1..=n).map(Expr::Integer).collect();
+    list.push_front(Expr::Integer(0));
+    assert!(list.is_tree());
+    list
+  }
+
+  /// `cached_all` with a predicate that counts the elements it visits and
+  /// reports whether each is an integer.
+  fn all_integers(list: &ExprList, visits: &Cell<usize>) -> bool {
+    list.cached_all(|x| {
+      visits.set(visits.get() + 1);
+      matches!(x, Expr::Integer(_))
+    })
+  }
+
+  #[test]
+  fn a_tree_memoizes_its_flag_across_clones() {
+    let visits = Cell::new(0);
+    let list = tree_of_ints(40);
+    assert!(all_integers(&list, &visits));
+    let copy = list.clone();
+    assert!(all_integers(&copy, &visits));
+    assert!(all_integers(&list, &visits));
+    // One walk over the 41 elements, shared by the clone.
+    assert_eq!(visits.get(), 41);
+  }
+
+  #[test]
+  fn mutating_a_tree_resets_its_flag() {
+    let visits = Cell::new(0);
+    let mut list = tree_of_ints(40);
+    let copy = list.clone();
+    assert!(all_integers(&list, &visits));
+
+    *list.get_mut(3).unwrap() = Expr::Identifier("y".into());
+    assert!(!all_integers(&list, &visits));
+    // The untouched clone keeps its elements and its answer.
+    assert!(all_integers(&copy, &visits));
+
+    let mut list = copy.clone();
+    list[5] = Expr::Identifier("z".into());
+    assert!(!all_integers(&list, &visits));
+
+    let mut list = copy.clone();
+    list.push_front(Expr::Identifier("w".into()));
+    assert!(!all_integers(&list, &visits));
+
+    let mut list = copy.clone();
+    list.push_back(Expr::Identifier("v".into()));
+    assert!(!all_integers(&list, &visits));
+
+    let mut list = copy;
+    for x in list.iter_mut() {
+      *x = Expr::Identifier("u".into());
+    }
+    assert!(!all_integers(&list, &visits));
+  }
 }

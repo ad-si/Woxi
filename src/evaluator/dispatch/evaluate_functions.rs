@@ -300,15 +300,14 @@ pub(crate) fn evaluate_function_call_ast(
 /// symbol's value) costs nothing at all, where rebuilding it as a tree
 /// copied it on every call.
 ///
-/// Threshold of 16 keeps the Vec path for small argument lists where the
-/// one-time conversion would dominate.
+/// Lists shorter than `share_large_lists`' threshold stay plain vectors,
+/// where the one-time conversion would dominate.
 fn promote_lists_for_substitution(values: &mut [Expr]) {
+  // Nested arrays too: a matrix held in a small state list
+  // (`{grid, {x, y}, dir}`) is otherwise copied in full at every place the
+  // body mentions the parameter.
   for v in values {
-    if let Expr::List(items) = v
-      && items.len() > 16
-    {
-      items.share();
-    }
+    crate::evaluator::share_large_lists(v, 0);
   }
 }
 
