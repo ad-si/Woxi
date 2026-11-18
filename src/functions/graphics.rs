@@ -24349,6 +24349,20 @@ pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_with_gaps(args, &[])
 }
 
+/// Render the `Grid[…]`/`TextGrid[…]` that a `TraditionalForm` wraps. The
+/// form applies to each cell, so `f[a]` reads f(a) and `f'[a]` f′(a)
+/// rather than their InputForm.
+pub fn traditional_form_grid_ast(
+  grid: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match &traditionalize_layout_items(grid) {
+    Expr::FunctionCall { args, .. } => grid_ast(args),
+    _ => Err(InterpreterError::EvaluationError(
+      "TraditionalForm grid expected".into(),
+    )),
+  }
+}
+
 /// Render a grid with default styles inherited from an outer Style wrapper.
 pub fn grid_ast_styled(
   args: &[Expr],

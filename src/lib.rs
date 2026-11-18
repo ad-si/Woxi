@@ -3874,16 +3874,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           if (inner == "Grid" || inner == "TextGrid") && !inner_args.is_empty()
         ) =>
     {
-      if let syntax::Expr::FunctionCall {
-        args: grid_args, ..
-      } = &args[0]
-      {
-        match functions::graphics::grid_ast(grid_args) {
-          Ok(result) => result,
-          Err(_) => expr,
-        }
-      } else {
-        expr
+      match functions::graphics::traditional_form_grid_ast(&args[0]) {
+        Ok(result) => result,
+        Err(_) => expr,
       }
     }
     // Style[Grid[...], directives...] — propagate style into grid

@@ -8295,19 +8295,10 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         if (name == "Grid" || name == "TextGrid") && !args.is_empty()
       ) =>
     {
-      // The form applies to each cell: `f[a]` reads f(a) and `f'[a]`
-      // f′(a), not their InputForm.
-      let traditional =
-        crate::functions::graphics::traditionalize_layout_items(&tf_args[0]);
-      if let Expr::FunctionCall {
-        args: grid_args, ..
-      } = &traditional
+      if crate::functions::graphics::traditional_form_grid_ast(&tf_args[0])
+        .is_ok()
       {
-        if crate::functions::graphics::grid_ast(grid_args).is_ok() {
-          crate::get_captured_graphics().unwrap_or_default()
-        } else {
-          String::new()
-        }
+        crate::get_captured_graphics().unwrap_or_default()
       } else {
         String::new()
       }

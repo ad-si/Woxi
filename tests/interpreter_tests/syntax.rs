@@ -6948,6 +6948,16 @@ mod grid {
     assert!(!svg.contains("Derivative"), "{svg}");
     assert!(svg.contains(">(</text>"), "{svg}");
     assert!(svg.contains(">′</text>"), "{svg}");
+
+    // The grid an evaluation displays is typeset the same way.
+    let result = interpret_with_stdout(
+      "Text[TraditionalForm[Grid[{{f[a], 1}, {f'[a], 2}}]]]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(!svg.contains("f[a]"), "{svg}");
+    assert!(!svg.contains("Derivative"), "{svg}");
+    assert!(svg.contains(">′</text>"), "{svg}");
   }
 
   #[test]
