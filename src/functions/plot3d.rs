@@ -3711,17 +3711,17 @@ fn draw_axes_on_box_with_ticks(
         let content = if lines.len() == 1 {
           lines[0].clone()
         } else {
-          lines
-            .iter()
-            .enumerate()
-            .map(|(i, line)| {
-              let dy = if i == 0 { -block_shift } else { pitch };
-              format!(
-                "<tspan x=\"{lx:.1}\" dy=\"{dy:.1}\">{}</tspan>",
-                crate::functions::graphics::tspan_line(line)
-              )
-            })
-            .collect()
+          use std::fmt::Write;
+          let mut out = String::new();
+          for (i, line) in lines.iter().enumerate() {
+            let dy = if i == 0 { -block_shift } else { pitch };
+            let _ = write!(
+              out,
+              "<tspan x=\"{lx:.1}\" dy=\"{dy:.1}\">{}</tspan>",
+              crate::functions::graphics::tspan_line(line)
+            );
+          }
+          out
         };
         svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{content}</text>\n",
