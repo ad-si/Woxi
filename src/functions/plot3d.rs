@@ -13036,7 +13036,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some(span) = sphere_span
     && view_angle.is_none()
   {
-    scale = svg_width.min(svg_height) as f64 / span;
+    // The sphere fills the shorter side of the picture, less whatever
+    // room the axes' labels need beyond the usual 1-pixel padding:
+    // `fit_3d_frame` framed the sphere's outline together with those
+    // labels, so a label that would stick out of the picture (a large
+    // `AxesLabel` beside a vertical axis) shrinks the sphere to make room,
+    // as Wolfram does.
+    let full = svg_width.min(svg_height) as f64;
+    scale = (fit_scale * span + 2.0).min(full) / span;
     let (bcx, bcy) = project(
       Point3D {
         x: f64::midpoint(x3_min, x3_max),
