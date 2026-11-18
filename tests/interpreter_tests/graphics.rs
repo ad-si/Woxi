@@ -984,6 +984,61 @@ mod graphics {
       assert_ne!(bridged, solid);
     }
 
+    /// Total area of the filled `<polygon>`s in an SVG, and the largest x
+    /// coordinate any of them reaches.
+    fn svg_polygon_area_and_max_x(svg: &str) -> (f64, f64) {
+      let mut total = 0.0;
+      let mut max_x = f64::NEG_INFINITY;
+      for chunk in svg.split("<polygon points=\"").skip(1) {
+        let pts: Vec<(f64, f64)> = chunk
+          .split('"')
+          .next()
+          .unwrap()
+          .split_whitespace()
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect();
+        let mut acc = 0.0;
+        for i in 0..pts.len() {
+          let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+          acc += a.0 * b.1 - b.0 * a.1;
+          max_x = max_x.max(a.0);
+        }
+        total += acc.abs() / 2.0;
+      }
+      (total, max_x)
+    }
+
+    /// A 3D `Polygon[outer -> hole]` whose hole reaches past the outline
+    /// is filled by the even-odd rule, as in `Graphics`: the part of the
+    /// hole inside the outline is cut out, and the part sticking out of it
+    /// is filled. Here both parts have the same size, so the face covers
+    /// exactly the area of the plain square, but reaches further right.
+    #[test]
+    fn polygon3d_hole_reaching_past_its_outline_is_filled_even_odd() {
+      let opts = "Boxed -> False, Lighting -> {{\"Ambient\", White}}, \
+                  ViewPoint -> {0, 0, 10}, \
+                  PlotRange -> {{-2, 2}, {-2, 2}, {-1, 1}}";
+      let crossing = export_svg(&format!(
+        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+         {{-1, 1, 0}}}} -> {{{{0.5, -0.25, 0}}, {{1.5, -0.25, 0}}, \
+         {{1.5, 0.25, 0}}, {{0.5, 0.25, 0}}}}], {opts}]"
+      ));
+      let solid = export_svg(&format!(
+        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+         {{-1, 1, 0}}}}], {opts}]"
+      ));
+      let (crossing_area, crossing_x) = svg_polygon_area_and_max_x(&crossing);
+      let (solid_area, solid_x) = svg_polygon_area_and_max_x(&solid);
+      assert!(
+        (crossing_area - solid_area).abs() < 0.01 * solid_area,
+        "{crossing_area} vs {solid_area}\n{crossing}"
+      );
+      assert!(crossing_x > solid_x + 1.0, "{crossing_x} vs {solid_x}");
+    }
+
     #[test]
     fn arrow() {
       insta::assert_snapshot!(export_svg(
