@@ -395,7 +395,10 @@ impl StyledLabel {
     for line in &self.extra_lines {
       out.push_str(&format!(
         "<tspan x=\"{cx:.1}\" dy=\"{line_height:.1}\">{}</tspan>",
-        scale_markup_lengths(line, scale)
+        // A blank line keeps its height: renderers drop empty tspans.
+        crate::functions::graphics::tspan_line(&scale_markup_lengths(
+          line, scale
+        ))
       ));
     }
     out
@@ -416,6 +419,20 @@ impl StyledLabel {
       .map(|line| svg_markup_visible_text(&line).chars().count())
       .max()
       .unwrap_or(0)
+  }
+
+  /// The width of the label's widest line at `size` points, measured with
+  /// the glyph widths of the proportional label font.
+  pub(crate) fn max_line_width(&self, size: f64) -> f64 {
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .map(|line| {
+        crate::functions::plot_padding::text_width(
+          &svg_markup_visible_text(&line),
+          size,
+        )
+      })
+      .fold(0.0, f64::max)
   }
 }
 

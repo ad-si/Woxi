@@ -3601,6 +3601,11 @@ fn collect_primitives(
           // other object (a string, a number) is placed like `Text`.
           if let Some(text) = styled_text_inset(args) {
             collect_primitives(&text, style, prims, errors);
+          } else if let Some(label) = text_row_inset_object(args, 14.0) {
+            // A `Row` of text runs is a (possibly wrapped) paragraph.
+            let mut text_args = args.to_vec();
+            text_args[0] = label;
+            parse_text(&inset_as_text_args(&text_args), style, prims);
           } else {
             match inset_primitives(args, errors) {
               Some(inner) => prims.extend(inner),
@@ -7110,6 +7115,188 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
     return Some(inset_text(&targs[0], pos, args));
   }
   None
+}
+
+/// The label drawn for `Inset[obj, pos, …, BaseStyle -> s]` when `obj` is a
+/// `Row` of text runs (strings, numbers and `Style`d strings), possibly
+/// inside `Style`s. A row `ImageSize -> w` breaks its runs into lines at
+/// most `w` points wide at word boundaries, the way the front end flows a
+/// paragraph of a fixed width, and the inset's `BaseStyle` directives
+/// style the whole label (the label's own `Style`s take precedence).
+/// `default_size` is the font size used where no style gives one. Returns
+/// `None` when `obj` is not such a row.
+pub(crate) fn text_row_inset_object(
+  args: &[Expr],
+  default_size: f64,
+) -> Option<Expr> {
+  let obj = args.first()?;
+  let base: Vec<Expr> = args
+    .iter()
+    .skip(1)
+    .find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "BaseStyle") => {
+        Some(match replacement.as_ref() {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+  // The outer `Style` directives, innermost last, and the row inside them.
+  let mut outer: Vec<Expr> = Vec::new();
+  let mut row = obj;
+  while let Expr::FunctionCall { name, args: sargs } = row
+    && is_style_wrapper(name)
+    && !sargs.is_empty()
+  {
+    outer.extend(sargs[1..].iter().cloned());
+    row = &sargs[0];
+  }
+  let Expr::FunctionCall { name, args: rargs } = row else {
+    return None;
+  };
+  if name != "Row" || rargs.is_empty() {
+    return None;
+  }
+  let Expr::List(parts) = &rargs[0] else {
+    return None;
+  };
+  let is_rule = |e: &Expr| matches!(e, Expr::Rule { .. });
+  if !rargs[1..].iter().all(is_rule) {
+    return None;
+  }
+  let text_of = |part: &Expr| -> Option<String> {
+    match part {
+      Expr::String(s) => Some(s.clone()),
+      Expr::Integer(_) | Expr::Real(_) => {
+        Some(crate::syntax::expr_to_string(part))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Style" && !args.is_empty() =>
+      {
+        match &args[0] {
+          Expr::String(s) => Some(s.clone()),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let texts: Vec<String> = parts.iter().map(text_of).collect::<Option<_>>()?;
+  let width = rargs[1..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "ImageSize") => {
+      match replacement.as_ref() {
+        Expr::List(wh) => wh.first().and_then(try_eval_to_f64),
+        other => try_eval_to_f64(other),
+      }
+    }
+    _ => None,
+  });
+  let size_of = |dirs: &[Expr]| {
+    dirs.iter().rev().find_map(|d| match d {
+      Expr::Integer(_) | Expr::Real(_) => try_eval_to_f64(d),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontSize") => {
+        try_eval_to_f64(replacement)
+      }
+      _ => None,
+    })
+  };
+  let size = size_of(&outer)
+    .or_else(|| size_of(&base))
+    .unwrap_or(default_size);
+  let flowed = match width {
+    Some(w) if w > 0.0 => flow_text_runs(&texts, w, size),
+    _ => texts,
+  };
+  // Only strings are re-flowed; numbers and styles keep their form.
+  let new_parts: Vec<Expr> = parts
+    .iter()
+    .zip(flowed)
+    .map(|(part, text)| match part {
+      Expr::String(_) => Expr::String(text),
+      Expr::FunctionCall { name, args } if name == "Style" => {
+        let mut sargs = args.to_vec();
+        sargs[0] = Expr::String(text);
+        call(name, sargs)
+      }
+      other => other.clone(),
+    })
+    .collect();
+  let mut label = call("Row", vec![Expr::List(new_parts.into())]);
+  // Rebuild the outer `Style`s around the flowed row.
+  fn rewrap(e: &Expr, inner: Expr) -> Expr {
+    match e {
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        let mut sargs = args.to_vec();
+        sargs[0] = rewrap(&args[0], inner);
+        call(name, sargs)
+      }
+      _ => inner,
+    }
+  }
+  label = rewrap(obj, label);
+  if !base.is_empty() {
+    label = call("Style", std::iter::once(label).chain(base).collect());
+  }
+  Some(label)
+}
+
+/// Break the text runs of a paragraph into lines at most `width` points
+/// wide at `size` points: a space after which the next word would overflow
+/// the line becomes a line break. A word longer than the line stays whole,
+/// and existing line breaks are kept. Breaks may fall in any run, so a
+/// run's trailing space can end the line before a differently styled run.
+fn flow_text_runs(runs: &[String], width: f64, size: f64) -> Vec<String> {
+  let mut chars: Vec<Vec<char>> =
+    runs.iter().map(|r| r.chars().collect()).collect();
+  let char_width =
+    |c: char| crate::functions::plot_padding::text_width(&c.to_string(), size);
+  let mut line_width = 0.0;
+  // The last space on the current line and the width set after it.
+  let mut last_space: Option<(usize, usize)> = None;
+  let mut since_space = 0.0;
+  for r in 0..chars.len() {
+    for i in 0..chars[r].len() {
+      let c = chars[r][i];
+      if c == '\n' {
+        line_width = 0.0;
+        since_space = 0.0;
+        last_space = None;
+        continue;
+      }
+      let w = char_width(c);
+      line_width += w;
+      if c == ' ' {
+        last_space = Some((r, i));
+        since_space = 0.0;
+        continue;
+      }
+      since_space += w;
+      if line_width > width
+        && let Some((sr, si)) = last_space.take()
+      {
+        chars[sr][si] = '\n';
+        line_width = since_space;
+      }
+    }
+  }
+  chars.into_iter().map(|c| c.into_iter().collect()).collect()
 }
 
 /// `Text[obj, pos]` for an `Inset[Text[obj], pos, opos]`, carrying a
