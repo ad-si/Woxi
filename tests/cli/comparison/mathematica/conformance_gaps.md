@@ -9645,6 +9645,10 @@ session) and still need checking:
   `Style[…]` (not its color or weight), and big tick labels show the known
   Arial-versus-Atkinson width gap more: at 30 pt the first glyph of a long
   left tick label touches the image edge.
+- A `PlotLabel` holding a stacked fraction (`Row[{…, a/b, …}]`, also inside
+  `Style[…, size]`) is typeset as one picture by the box layout, whose text
+  is set in the monospace typesetting font; Wolfram keeps the title's
+  proportional font, so such a title comes out wider than the reference.
 
 ## Unit conformance follow-up (2026-11-06)
 
