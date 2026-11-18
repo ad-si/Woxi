@@ -15019,7 +15019,10 @@ mod plot3d {
       let svg = export_svg(
         "Graphics[{Inset[Row[{\"a\", Spacer[3], Style[\"b\", Bold]}], {1, 1}]}]",
       );
-      assert!(svg.contains("<tspan font-weight=\"bold\">b</tspan>"), "{svg}");
+      assert!(
+        svg.contains("<tspan font-weight=\"bold\">b</tspan>"),
+        "{svg}"
+      );
     }
 
     #[test]
