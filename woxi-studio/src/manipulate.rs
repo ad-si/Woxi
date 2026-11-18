@@ -4727,6 +4727,34 @@ mod tests {
     assert_eq!(label(&state), "restart");
   }
 
+  /// A custom control `{{u, 1, ""}, tableOf[#, n] &}` whose builder is a
+  /// user-defined function draws whatever that function returns from the
+  /// live bindings. It used to be dropped from the control panel.
+  #[test]
+  fn custom_control_from_user_defined_builder_is_displayed() {
+    woxi::interpret(
+      "customTableOfStudio[_, k_] := Grid[Table[{i, i^2}, {i, k}], \
+       Frame -> All]",
+    )
+    .expect("define the builder");
+    let code = r#"Manipulate[
+      n^2,
+      {{n, 2, "rows"}, {2, 3}},
+      {{u, 1, ""}, customTableOfStudio[#, n] &}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state
+        .displays
+        .iter()
+        .any(|d| d == "customTableOfStudio[Dynamic[u], n]"),
+      "the builder call must stay a live display, got {:?}",
+      state.displays
+    );
+  }
+
   #[test]
   fn button_with_own_enabled_condition_disables_independently_of_sibling() {
     let code = r#"Manipulate[
