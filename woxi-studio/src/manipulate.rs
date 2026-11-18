@@ -7660,3 +7660,58 @@ mod repeated_option_tests {
     );
   }
 }
+
+#[cfg(test)]
+mod control_panel_tabview_tests {
+  use super::*;
+
+  /// Construct-equivalent of a randomly sampled Wolfram Demonstration (not
+  /// its code, names or values): a hidden `{{var, init}, ControlType ->
+  /// None}` spec, followed by a control-panel `TabView[{…}, Dynamic[mode]]`
+  /// whose tabs hold embedded `SetterBar[Dynamic[var], …]` rows and a
+  /// slider for the same variable. The variable must start at the hidden
+  /// spec's value rather than the first setter choice, the hidden `mode`
+  /// selector must get a tab strip, and each tab's controls are shown only
+  /// while their tab is selected.
+  #[test]
+  fn control_panel_tabview_with_hidden_initial_value() {
+    let code = r#"Manipulate[
+      {mode, k},
+      {mode, {"a", "b"}, ControlType -> None},
+      {{k, 7}, Range[2, 12], ControlType -> None},
+      TabView[{
+        {"a", "coarse" -> Column[{
+          SetterBar[Dynamic[k], {2, 4, 6, 8}],
+          SetterBar[Dynamic[k], {10, 12}]}]},
+        {"b", "fine" -> Column[{
+          Control[{{k, 7}, 2, 12, 1}],
+          Control[{{shift, 3}, 0, 9, 1}]}]}
+      }, Dynamic[mode]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "{:?}", state.error);
+
+    let k = state.bindings().into_iter().find(|(n, _)| n == "k");
+    assert_eq!(k.map(|(_, v)| v).as_deref(), Some("7"));
+    assert_eq!(state.text_output.as_deref(), Some("{a, 7}"));
+
+    let mode = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("the tab selector becomes a visible control");
+    let vis = |state: &ManipulateState, n: &str| {
+      let i = state.controls.iter().position(|c| c.name() == n).unwrap();
+      state.control_is_visible[i]
+    };
+    assert!(vis(&state, "k"), "the setter rows show on the first tab");
+    assert!(!vis(&state, "shift"), "the second tab's slider is hidden");
+
+    assert!(state.select_discrete(mode, "fine"));
+    state.reevaluate();
+    assert!(vis(&state, "shift"), "the slider shows on its own tab");
+    assert_eq!(state.text_output.as_deref(), Some("{b, 7}"));
+  }
+}
