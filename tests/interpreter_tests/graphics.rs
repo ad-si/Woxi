@@ -58884,3 +58884,53 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+mod graphics_tick_style_font_size {
+  use super::*;
+
+  fn tick_font_size(code: &str, label: &str) -> String {
+    let svg = export_svg(code);
+    let tick = svg
+      .lines()
+      .find(|l| l.contains(&format!(">{label}</text>")))
+      .unwrap_or_else(|| panic!("{svg}"));
+    tick
+      .split("font-size=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .unwrap()
+      .to_string()
+  }
+
+  /// A size in `TicksStyle` sets the axes' tick labels, over the size
+  /// `BaseStyle` gives every label.
+  #[test]
+  fn ticks_style_size_beats_base_style() {
+    let code = "Graphics[{Point[{0, 0}]}, PlotRange -> 3, Axes -> True, \
+                TicksStyle -> 8, BaseStyle -> 14]";
+    assert_eq!(tick_font_size(code, "2"), "8");
+  }
+
+  #[test]
+  fn ticks_style_directive_size() {
+    let code = "Graphics[{Point[{0, 0}]}, PlotRange -> 3, Axes -> True, \
+                TicksStyle -> Directive[Red, 11]]";
+    assert_eq!(tick_font_size(code, "2"), "11");
+  }
+
+  /// Without a size in `TicksStyle` the `BaseStyle` size still applies.
+  #[test]
+  fn ticks_style_color_keeps_base_style_size() {
+    let code = "Graphics[{Point[{0, 0}]}, PlotRange -> 3, Axes -> True, \
+                TicksStyle -> Red, BaseStyle -> 14]";
+    assert_eq!(tick_font_size(code, "2"), "14");
+  }
+
+  /// A framed picture's tick labels follow `FrameTicksStyle`'s size.
+  #[test]
+  fn frame_ticks_style_size() {
+    let code = "Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True, \
+                FrameTicksStyle -> 9, LabelStyle -> 17]";
+    assert_eq!(tick_font_size(code, "0.2"), "9");
+  }
+}
