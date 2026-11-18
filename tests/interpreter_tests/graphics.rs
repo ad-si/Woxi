@@ -3257,6 +3257,38 @@ mod graphics {
       assert!(bottom.find("body").unwrap() < bottom.find("cap").unwrap());
     }
 
+    /// `PlotLabel -> Null` draws no text, so the word "Null" never shows.
+    /// On a `Graphics` (including a `Show` of several) it still takes up the
+    /// title's line, unlike `None`.
+    #[test]
+    fn plot_label_null_draws_no_text() {
+      let svg_height = |svg: &str| {
+        let start = svg.find("height=\"").unwrap() + 8;
+        let end = start + svg[start..].find('"').unwrap();
+        svg[start..end].parse::<f64>().unwrap()
+      };
+      let graphics = |label: &str| {
+        export_svg(&format!(
+          "Graphics[Disk[], Frame -> True, PlotLabel -> {label}]"
+        ))
+      };
+      let null = graphics("Null");
+      assert!(!null.contains("Null"), "{null}");
+      assert_eq!(svg_height(&null), svg_height(&graphics("\"T\"")));
+      assert!(svg_height(&null) > svg_height(&graphics("None")));
+
+      for expr in [
+        "Show[Graphics[Disk[], PlotLabel -> Null], Graphics[Circle[]]]",
+        "Plot[x, {x, 0, 1}, PlotLabel -> Null]",
+        "ListPlot[{1, 2, 3}, PlotLabel -> Null]",
+        "ContourPlot[x == y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "BarChart[{1, 2}, PlotLabel -> Null]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(!svg.contains("Null"), "{expr}: {svg}");
+      }
+    }
+
     use super::*;
 
     /// A list of directives inside `Style` is the same as the directives
