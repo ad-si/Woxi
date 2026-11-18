@@ -315,6 +315,9 @@ struct DensityContourOptions {
   boundary_style: Option<crate::functions::plot::SeriesStyle>,
   /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
   frame_labels: crate::functions::plot::FrameLabels,
+  /// `LabelStyle` laid over `BaseStyle`: the color, size, weight and
+  /// slant of the frame's tick labels and `FrameLabel`s.
+  label_style: Option<crate::functions::plot::LabelStyleSpec>,
   /// `FrameTicks`: whether the bottom (x) and left (y) edges keep their
   /// tick marks and labels.
   frame_ticks: (bool, bool),
@@ -442,6 +445,21 @@ fn per_contour_styles(
 }
 
 impl DensityContourOptions {
+  /// The size of the frame's tick labels, in points: the `LabelStyle` /
+  /// `BaseStyle` font size, else the default 10.
+  fn tick_font(&self) -> f64 {
+    self
+      .label_style
+      .and_then(|s| s.font_size)
+      .filter(|f| f.is_finite() && *f > 0.0)
+      .unwrap_or(FRAME_TICK_FONT)
+  }
+
+  /// How much larger than the default the frame's labels are drawn.
+  fn label_scale(&self) -> f64 {
+    self.tick_font() / FRAME_TICK_FONT
+  }
+
   /// The value range sampled `values` span: the full range under
   /// `PlotRange -> All`, otherwise the range with outliers fenced off.
   fn sampled_range(&self, values: &[f64]) -> (f64, f64) {
@@ -558,6 +576,10 @@ fn parse_density_contour_options(
   let mut contour_styles = Vec::new();
   let mut boundary_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
+  // `[LabelStyle, BaseStyle]`, combined once every option is read so the
+  // `LabelStyle` wins whichever comes first.
+  let mut label_style_sources: [Option<crate::functions::plot::LabelStyleSpec>;
+    2] = [None, None];
   let mut frame_ticks = (true, true);
   let mut frame = true;
   let mut epilog: Vec<Expr> = Vec::new();
@@ -686,6 +708,14 @@ fn parse_density_contour_options(
             None => crate::functions::plot::parse_frame_label(replacement),
           };
         }
+        "LabelStyle" => {
+          label_style_sources[0] =
+            crate::functions::plot::LabelStyleSpec::parse(replacement);
+        }
+        "BaseStyle" => {
+          label_style_sources[1] =
+            crate::functions::plot::LabelStyleSpec::parse(replacement);
+        }
         // `Frame -> None` draws no frame, like `Frame -> False`.
         "Frame" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -751,6 +781,10 @@ fn parse_density_contour_options(
     contour_styles,
     boundary_style,
     frame_labels,
+    label_style: crate::functions::plot::LabelStyleSpec::layered(
+      label_style_sources[1],
+      label_style_sources[0],
+    ),
     frame_ticks,
     frame,
     epilog,
@@ -974,10 +1008,13 @@ fn field_frame_layout(
   };
   let x_ticks = ticks(x_span, opts.frame && opts.frame_ticks.0);
   let y_ticks = ticks(y_span, opts.frame && opts.frame_ticks.1);
+  // A `LabelStyle` font size scales the tick labels and the room they
+  // and the `FrameLabel`s take.
+  let k = opts.label_scale();
   let widest = |t: &AxisTicks| {
     t.majors
       .iter()
-      .map(|(_, l)| frame_tick_label_width(l))
+      .map(|(_, l)| frame_tick_label_width(l) * k)
       .fold(0.0, f64::max)
   };
   let x_labels = !x_ticks.majors.is_empty();
@@ -988,20 +1025,25 @@ fn field_frame_layout(
   } else {
     0.5
   };
-  let mut bottom = if x_labels { FRAME_X_LABEL_ROOM } else { 1.5 };
+  let mut bottom = if x_labels {
+    FRAME_X_LABEL_ROOM * k
+  } else {
+    1.5
+  };
   let mut top = 0.5;
   let mut right = 1.5;
+  let label_room = FRAME_LABEL_ROOM * k;
   if !labels.left.is_empty() {
-    left += FRAME_LABEL_ROOM;
+    left += label_room;
   }
   if !labels.bottom.is_empty() {
-    bottom += FRAME_LABEL_ROOM;
+    bottom += label_room;
   }
   if !labels.top.is_empty() {
-    top += FRAME_LABEL_ROOM;
+    top += label_room;
   }
   if !labels.right.is_empty() {
-    right += FRAME_LABEL_ROOM;
+    right += label_room;
   }
   // A `PlotLabel` sits in its own strip above the padding (drawn at 14
   // points by `inject_field_plot_label`).
@@ -1016,7 +1058,7 @@ fn field_frame_layout(
   let last_x_half = x_ticks
     .majors
     .last()
-    .map_or(0.0, |(_, l)| frame_tick_label_width(l) / 2.0);
+    .map_or(0.0, |(_, l)| frame_tick_label_width(l) * k / 2.0);
   let last_x_frac = x_ticks
     .majors
     .last()
@@ -1040,7 +1082,7 @@ fn field_frame_layout(
       right = right.max(last_x_half - last_x_frac * fw + 1.0);
     }
     if y_labels {
-      top = top.max(FRAME_TICK_LABEL_BOX / 2.0 - top_y_frac * fh);
+      top = top.max(FRAME_TICK_LABEL_BOX * k / 2.0 - top_y_frac * fh);
     }
   }
   let (fw, fh) = frame_size(left, right, top, bottom);
@@ -1137,7 +1179,22 @@ fn push_field_frame(
     opts,
   );
   let sf = f64::from(RESOLUTION_SCALE);
-  let (_, gray, _, label_fill, _) = plot_theme();
+  let (_, gray, _, theme_label_fill, _) = plot_theme();
+  // A `LabelStyle` color, size and weight restyle the tick labels.
+  let style_fill = opts
+    .label_style
+    .and_then(|s| s.color)
+    .map(crate::functions::graphics::Color::to_svg_rgb);
+  let label_fill = style_fill.as_deref().unwrap_or(theme_label_fill);
+  let weight = match opts.label_style {
+    Some(s) if s.bold && s.italic => {
+      " font-weight=\"bold\" font-style=\"italic\""
+    }
+    Some(s) if s.bold => " font-weight=\"bold\"",
+    Some(s) if s.italic => " font-style=\"italic\"",
+    _ => "",
+  };
+  let k = opts.label_scale();
   let color = format!("#{:02X}{:02X}{:02X}", gray.0, gray.1, gray.2);
   let (fx, fy, fw, fh) = layout.frame;
   let (fx, fy, fw, fh) = (fx * sf, fy * sf, fw * sf, fh * sf);
@@ -1180,17 +1237,17 @@ fn push_field_frame(
   out.push_str(&format!(
     "<rect x=\"{fx:.1}\" y=\"{fy:.1}\" width=\"{fw:.1}\" height=\"{fh:.1}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{stroke:.1}\"/>\n"
   ));
-  let font = FRAME_TICK_FONT * sf;
+  let font = opts.tick_font() * sf;
   for (v, label) in &layout.x_ticks.majors {
     out.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{label_fill}\">{label}</text>\n",
       xf(*v),
-      fy + fh + FRAME_X_LABEL_BASELINE * sf
+      fy + fh + FRAME_X_LABEL_BASELINE * k * sf
     ));
   }
   for (v, label) in &layout.y_ticks.majors {
     out.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{label_fill}\">{label}</text>\n",
       fx - FRAME_TICK_LABEL_GAP * sf,
       yf(*v) + 0.35 * font
     ));
@@ -1238,7 +1295,7 @@ fn push_field_plot_overlays(
     inject_field_plot_label(svg, &frame, label);
   }
   push_epilog_primitives(svg, area, &opts.epilog);
-  push_frame_labels(svg, &frame, &opts.frame_labels);
+  push_frame_labels(svg, &frame, &opts.frame_labels, opts);
 }
 
 /// Draw a field plot's `Epilog` primitives over everything drawn so far
@@ -1611,6 +1668,7 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
 /// the automatic tick labels of its bottom and left edges.
 fn field_label_layout(
   area: &crate::functions::plot::PlotArea,
+  tick_font: f64,
 ) -> crate::functions::plot_padding::LabelLayout {
   use crate::functions::plot_axes::{AxisScale, AxisTicks};
   use crate::functions::plot_padding as pp;
@@ -1628,11 +1686,11 @@ fn field_label_layout(
   let y_width = ticks(area.y_min, area.y_max)
     .majors
     .iter()
-    .map(|(_, l)| pp::tick_label_width(l, pp::TICK_FONT))
+    .map(|(_, l)| pp::tick_label_width(l, tick_font))
     .fold(0.0, f64::max);
   pp::LabelLayout {
     tick_room: [
-      pp::TICK_LABEL_GAP + pp::line_height(pp::TICK_FONT),
+      pp::TICK_LABEL_GAP + pp::line_height(tick_font),
       pp::TICK_LABEL_GAP + y_width,
       0.0,
       0.0,
@@ -1646,6 +1704,7 @@ fn push_frame_labels(
   svg: &mut String,
   area: &crate::functions::plot::PlotArea,
   frame_labels: &crate::functions::plot::FrameLabels,
+  opts: &DensityContourOptions,
 ) {
   if frame_labels.bottom.is_empty()
     && frame_labels.left.is_empty()
@@ -1661,11 +1720,12 @@ fn push_frame_labels(
   plot_opts.frame_label_left = non_empty(&frame_labels.left);
   plot_opts.frame_label_top = non_empty(&frame_labels.top);
   plot_opts.frame_label_right = non_empty(&frame_labels.right);
+  plot_opts.label_style = opts.label_style;
   svg.push_str(&crate::functions::plot::plot_labels_svg(
     &plot_opts,
     (area.plot_x0, area.plot_y0, area.plot_w, area.plot_h),
     (area.x_min, area.x_max, area.y_min, area.y_max),
-    &field_label_layout(area),
+    &field_label_layout(area, opts.tick_font()),
     RESOLUTION_SCALE as f64,
     label_fill,
     title_fill,
