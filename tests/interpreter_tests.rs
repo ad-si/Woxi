@@ -2068,7 +2068,7 @@ mod interpreter_tests {
 
   #[test]
   fn test_contour_plot_bar_legend_and_contour_labels() {
-    // `PlotLegends -> Automatic` widens the picture by a color-bar strip
+    // `PlotLegends -> Automatic` sets a color bar beside the picture
     // and `ContourLabels -> True` writes each level on its contour line.
     clear_state();
     let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
@@ -2084,7 +2084,7 @@ mod interpreter_tests {
     .expect("ContourPlot should produce a graphics SVG");
     assert!(plain.starts_with("<svg width=\"360\""), "{plain}");
     assert!(
-      svg.starts_with("<svg width=\"413\""),
+      svg.starts_with("<svg width=\"423\""),
       "legend widens: {svg}"
     );
     assert!(

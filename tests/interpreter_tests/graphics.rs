@@ -12557,38 +12557,34 @@ mod plot3d {
          PlotLegends -> Automatic, \
          ImagePadding -> {{Automatic, 10}, {Automatic, 10}}]",
       );
-      let vb_w: f64 = svg
-        .split("viewBox=\"0 0 ")
-        .nth(1)
-        .and_then(|r| r.split_whitespace().next())
-        .and_then(|w| w.parse().ok())
-        .unwrap();
+      // The legend is its own picture set beside the plot; its labels
+      // must end inside it.
+      let legend = svg.rsplit("<svg x=").next().unwrap();
+      let attr = |head: &str, name: &str| -> f64 {
+        head
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap_or(0.0)
+      };
+      let legend_w = attr(legend, "width");
       let mut widest_end = 0.0_f64;
-      for tag in svg.split("<text ").skip(1) {
-        if !tag.contains("dominant-baseline=\"central\"") {
-          continue;
-        }
+      for tag in legend.split("<text ").skip(1) {
         let Some((head, rest)) = tag.split_once('>') else {
           continue;
         };
-        let attr = |name: &str| -> f64 {
-          head
-            .split(&format!("{name}=\""))
-            .nth(1)
-            .and_then(|r| r.split('"').next())
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0)
-        };
+        let head = format!(" {head}");
         let label = rest.split('<').next().unwrap_or("");
-        if attr("font-size") > 130.0 && attr("x") > vb_w * 0.8 {
-          widest_end = widest_end
-            .max(attr("x") + label.len() as f64 * attr("font-size") * 0.5);
-        }
+        widest_end = widest_end.max(
+          attr(&head, "x")
+            + label.len() as f64 * attr(&head, "font-size") * 0.5,
+        );
       }
       assert!(widest_end > 0.0, "no legend labels found: {svg}");
       assert!(
-        widest_end <= vb_w,
-        "legend labels end at {widest_end}, past canvas {vb_w}"
+        widest_end <= legend_w,
+        "legend labels end at {widest_end}, past legend width {legend_w}"
       );
     }
 
@@ -22195,6 +22191,137 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "no color bar"
       );
       assert!(svg.contains(">-3<") && svg.contains(">1<"), "bar labels");
+    }
+
+    /// A shaded `ContourPlot`'s `PlotLegends -> Automatic` is a discrete
+    /// `BarLegend` over the contour levels in a `Legended` wrapper, so
+    /// `Show` keeps it when merging the plot with other graphics (it used
+    /// to be baked into the plot's picture and lost).
+    #[test]
+    fn contour_plot_legend_survives_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "c = ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, \
+           PlotLegends -> Automatic]; {Head[c], c[[2]]}"
+        )
+        .unwrap(),
+        "{Legended, Placed[BarLegend[{WL14DefaultDensityGradient, {0., 1.}}, \
+         {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}], After]}"
+      );
+      assert_eq!(
+        interpret(
+          "s = Show[c, Graphics[{Red, Point[{0.5, 0.5}]}]]; \
+           {Head[s], s[[2]] === c[[2]], Head[First[s]]}"
+        )
+        .unwrap(),
+        "{Legended, True, Graphics}"
+      );
+      let svg = export_svg("s");
+      // Ten bands between the nine levels, each level labeled.
+      assert!(svg.contains(">0.1<") && svg.contains(">0.9<"), "bar labels");
+      assert!(
+        !svg.contains("woxiLegendGradient"),
+        "discrete, not a gradient"
+      );
+    }
+
+    /// `PlotLegends -> Placed[Automatic, Below]` puts a contour plot's
+    /// color bar under the plot, lying flat and labeled underneath (it
+    /// used to be dropped).
+    #[test]
+    fn contour_plot_legend_placed_below() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Last[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, Contours -> 3, \
+           PlotLegends -> Placed[Automatic, Below]]]"
+        )
+        .unwrap(),
+        "Placed[BarLegend[{WL14DefaultDensityGradient, {0., 2.}}, \
+         {0.5, 1., 1.5}], Below]"
+      );
+      let svg_size = |svg: &str| -> (f64, f64) {
+        let attr = |name: &str| -> f64 {
+          let key = format!("{name}=\"");
+          let start = svg.find(&key).unwrap() + key.len();
+          svg[start..start + svg[start..].find('"').unwrap()]
+            .parse()
+            .unwrap()
+        };
+        (attr("width"), attr("height"))
+      };
+      let plain = export_svg("ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}]");
+      let below = export_svg(
+        "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, \
+         PlotLegends -> Placed[Automatic, Below]]",
+      );
+      let after = export_svg(
+        "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, PlotLegends -> Automatic]",
+      );
+      let (pw, ph) = svg_size(&plain);
+      let (bw, bh) = svg_size(&below);
+      let (aw, ah) = svg_size(&after);
+      // Below: taller, not wider; After: wider, not taller.
+      assert!(bh > ph + 20.0 && (bw - pw).abs() < 1.0, "{bw}x{bh}");
+      assert!(aw > pw + 20.0 && (ah - ph).abs() < 1.0, "{aw}x{ah}");
+      // Centered labels under a horizontal bar.
+      assert!(below.contains("text-anchor=\"middle\">1.0<"), "{below}");
+    }
+
+    /// The legend a Wolfram contour plot carries — contours as
+    /// `{level, style}` pairs, `LegendLayout -> "Row"` and the bar length
+    /// as `LegendMarkerSize` — draws a flat discrete bar of that length
+    /// under the plot (it used to be dropped as an unreadable spec).
+    #[test]
+    fn plot_bar_legend_with_styled_contours_and_row_layout() {
+      let svg = export_svg(
+        "Legended[Graphics[Disk[], ImageSize -> 200], Placed[BarLegend[\
+         {\"Rainbow\", {0., 1.}}, {{0.25, Directive[GrayLevel[0]]}, \
+         {0.5, Directive[GrayLevel[0]]}, {0.75, Directive[GrayLevel[0]]}}, \
+         LegendLayout -> \"Row\", LegendMarkerSize -> 150], Below, Identity]]",
+      );
+      for label in ["0.25", "0.50", "0.75"] {
+        assert!(
+          svg.contains(&format!("text-anchor=\"middle\">{label}<")),
+          "{label}: {svg}"
+        );
+      }
+      // Four equal bands spanning the 150-point bar.
+      let widths: Vec<f64> = svg
+        .match_indices("<rect x=")
+        .filter_map(|(i, _)| {
+          let tag = &svg[i..i + svg[i..].find("/>")?];
+          if !tag.contains("fill=\"rgb(") {
+            return None;
+          }
+          let start = tag.find("width=\"")? + 7;
+          tag[start..start + tag[start..].find('"')?].parse().ok()
+        })
+        .collect();
+      assert_eq!(widths.len(), 4, "{widths:?}");
+      assert!(widths.iter().all(|w| (w - 37.5).abs() < 0.5), "{widths:?}");
+    }
+
+    /// A discrete `BarLegend` draws equal-sized bands and labels each
+    /// contour where two bands meet, however unevenly the contours are
+    /// spaced (labels used to sit at value-proportional heights, off the
+    /// band edges).
+    #[test]
+    fn discrete_bar_legend_labels_band_edges() {
+      let svg = export_svg("BarLegend[{\"Rainbow\", {0, 10}}, {1, 2, 9}]");
+      let label_y = |label: &str| -> f64 {
+        let at = svg.find(&format!(">{label}<")).unwrap();
+        let start = svg[..at].rfind("<text").unwrap();
+        svg[start..at]
+          .split(" y=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap()
+      };
+      let (y1, y2, y9) = (label_y("1"), label_y("2"), label_y("9"));
+      assert!(((y1 - y2) - (y2 - y9)).abs() < 0.2, "{y1} {y2} {y9}");
     }
 
     /// `PlotRange -> {zmin, zmax}` stretches the colors over exactly that

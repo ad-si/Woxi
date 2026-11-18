@@ -10200,3 +10200,13 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### `"M10DefaultDensityGradient"` is not a known color scheme
+
+Contour plots saved by Mathematica 14.1 and earlier color their bands and
+their `BarLegend` with `Blend["M10DefaultDensityGradient", #] &` (dark
+blue `RGBColor[0.148, 0.33, 0.54]` through gray and orange to
+`RGBColor[1., 0.95, 0.75]`). Woxi does not know that gradient's stops, so
+`Blend` of it stays unevaluated and a stored legend that uses it is drawn
+with the gray fallback ramp, while the stored plot's bands (explicit
+`RGBColor`s) are right. The exact stops have not been measured.

@@ -6017,6 +6017,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     && crate::functions::field_plot::bar_legend_svg(
       args,
       crate::functions::field_plot::BAR_LEGEND_HEIGHT,
+      false,
     )
     .is_some()
   {
@@ -8098,28 +8099,45 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     }
     // Legended[graphics, legend]: a `BarLegend` (optionally `Placed`) is
     // drawn right of the graphics, its bar 5/8 of their height, as Wolfram
-    // places a plot's color bar. Other legends are baked into the wrapped
-    // graphics' SVG already (e.g. PeriodicTablePlot["Phase"]).
+    // places a plot's color bar — or, `Placed` `Below` or `Above` them,
+    // lying flat across most of their width. Other legends are baked into
+    // the wrapped graphics' SVG already (e.g. PeriodicTablePlot["Phase"]).
     Expr::FunctionCall { name, args }
       if name == "Legended" && !args.is_empty() =>
     {
       let graphic = expr_to_svg(&args[0]);
-      let legend = match args.get(1) {
+      let (legend, position) = match args.get(1) {
         Some(Expr::FunctionCall { name, args: placed })
           if name == "Placed" && !placed.is_empty() =>
         {
-          Some(&placed[0])
+          (Some(&placed[0]), placed.get(1))
         }
-        other => other,
+        other => (other, None),
       };
+      let side = match position {
+        Some(Expr::Identifier(p))
+          if matches!(p.as_str(), "Below" | "Bottom" | "Above" | "Top") =>
+        {
+          p.as_str()
+        }
+        Some(Expr::Identifier(p)) if p == "Before" || p == "Left" => "Before",
+        _ => "After",
+      };
+      let horizontal = matches!(side, "Below" | "Bottom" | "Above" | "Top");
       let bar = match legend {
         Some(Expr::FunctionCall {
           name,
           args: bar_args,
         }) if name == "BarLegend" => {
-          let height = crate::functions::graphics::svg_natural_size(&graphic)
-            .map_or(225.0, |(_, h)| h * 0.625);
-          crate::functions::field_plot::bar_legend_svg(bar_args, height)
+          let size = crate::functions::graphics::svg_natural_size(&graphic);
+          let length = if horizontal {
+            size.map_or(300.0, |(w, _)| w * 0.85)
+          } else {
+            size.map_or(225.0, |(_, h)| h * 0.625)
+          };
+          crate::functions::field_plot::bar_legend_svg(
+            bar_args, length, horizontal,
+          )
         }
         // A swatch or line legend is typeset beside the graphics the same
         // way a bare one is drawn on its own.
@@ -8136,11 +8154,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         }
         _ => None,
       };
+      let layout = |bar: String| -> Vec<Vec<String>> {
+        match side {
+          "Below" | "Bottom" => vec![vec![graphic.clone()], vec![bar]],
+          "Above" | "Top" => vec![vec![bar], vec![graphic.clone()]],
+          "Before" => vec![vec![bar, graphic.clone()]],
+          _ => vec![vec![graphic.clone(), bar]],
+        }
+      };
       match bar.and_then(|bar| {
-        crate::functions::graphics::combine_graphics_svgs(&[vec![
-          graphic.clone(),
-          bar,
-        ]])
+        crate::functions::graphics::combine_graphics_svgs(&layout(bar))
       }) {
         Some(svg) => svg,
         None => graphic,
@@ -8192,6 +8215,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && let Some(svg) = crate::functions::field_plot::bar_legend_svg(
           args,
           crate::functions::field_plot::BAR_LEGEND_HEIGHT,
+          false,
         ) =>
     {
       svg
