@@ -10513,7 +10513,7 @@ fn arrow3d_head_anchors(
     .filter(|(_, _, l)| l.is_finite() && *l > 0.0)
     .collect();
   let total: f64 = segs.iter().map(|s| s.2).sum();
-  if segs.is_empty() || !(total > 0.0) {
+  if segs.is_empty() || total <= 0.0 {
     return Vec::new();
   }
   let default_head = [(0.05, 1.0)];
