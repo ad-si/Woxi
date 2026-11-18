@@ -5667,6 +5667,59 @@ mod plot_option_evaluate_once {
 }
 
 mod plot3d {
+  // Regression: `Plot3D` rendered itself with a fixed default camera and
+  // a fixed `{1, 1, 0.4}` box, ignoring `ViewPoint` and `BoxRatios` (only
+  // re-rendering it through `Show` honored them). A surface asked for in a
+  // cube seen from the front-right came out squat and seen from the
+  // default corner.
+  fn plot3d_svg(opts: &str) -> String {
+    clear_state();
+    export_svg(&format!(
+      "Plot3D[Exp[x/4] y, {{x, 0, 20}}, {{y, 0, 40}}, PlotRange -> \
+       {{{{0, 20}}, {{0, 40}}, {{0, 10}}}}{opts}]"
+    ))
+  }
+
+  #[test]
+  fn plot3d_view_point_turns_the_standalone_surface() {
+    let default_view = plot3d_svg("");
+    let turned = plot3d_svg(", ViewPoint -> {1., -3.4, 2}");
+    let above = plot3d_svg(", ViewPoint -> Above");
+    assert_ne!(default_view, turned);
+    assert_ne!(default_view, above);
+    assert_ne!(turned, above);
+  }
+
+  #[test]
+  fn plot3d_view_point_at_infinity_is_orthographic() {
+    let near = plot3d_svg(", ViewPoint -> {0, -2, 2}");
+    let infinite = plot3d_svg(", ViewPoint -> {0, -Infinity, Infinity}");
+    assert_ne!(near, infinite);
+  }
+
+  #[test]
+  fn plot3d_box_ratios_reshape_the_standalone_box() {
+    let default_box = plot3d_svg("");
+    // The default box spelled out draws the very same picture…
+    assert_eq!(default_box, plot3d_svg(", BoxRatios -> {1, 1, 0.4}"));
+    // …a cube does not, and a lone number means equal sides.
+    let cube = plot3d_svg(", BoxRatios -> {1, 1, 1}");
+    assert_ne!(default_box, cube);
+    assert_eq!(cube, plot3d_svg(", BoxRatios -> 1"));
+    // Only the proportions matter.
+    assert_eq!(cube, plot3d_svg(", BoxRatios -> {2, 2, 2}"));
+  }
+
+  #[test]
+  fn plot3d_multi_line_axes_label_is_stacked() {
+    let svg = plot3d_svg(
+      ", AxesLabel -> {\"x\", \"y\", \"rate constant\\n(arbitrary units)\"}",
+    );
+    let first = svg.find(">rate constant</tspan>").expect("first line");
+    let second = svg.find(">(arbitrary units)</tspan>").expect("second line");
+    assert!(first < second);
+  }
+
   /// `PlotPoints -> {nu, nv}` sets the sample count of each parameter
   /// separately; the second entry must not be ignored.
   #[test]
