@@ -537,11 +537,16 @@ fn clip_polygon_by_plane(
     let (a, flag) = poly[k];
     let b = poly[(k + 1) % poly.len()].0;
     let (da, db) = (dist(a), dist(b));
+    // A corner on the plane goes into both parts, but its edge to `b`
+    // only runs through the part `b` lies in (or both, when `b` is on the
+    // plane too). In the other part the corner's next neighbor is a point
+    // of the cut, so that edge is new and must not be outlined.
+    let on_plane = da.abs() <= eps;
     if da >= -eps {
-      pos.push((a, flag));
+      pos.push((a, flag && (!on_plane || db >= -eps)));
     }
     if da <= eps {
-      neg.push((a, flag));
+      neg.push((a, flag && (!on_plane || db <= eps)));
     }
     if (da > eps && db < -eps) || (da < -eps && db > eps) {
       let t = da / (da - db);
@@ -13440,9 +13445,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         // A translucent triangle's own-color hairline overlaps its
         // neighbors' and darkens every shared seam, tracing the
-        // tessellation across what should be a smooth surface. Only an
-        // opaque triangle needs it to close the anti-aliasing gap.
-        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+        // tessellation across what should be a smooth surface (or draws
+        // the diagonal of a translucent quad). Only an opaque triangle
+        // needs it to close the anti-aliasing gap; the outline edges are
+        // stroked separately below.
+        let seam_stroke = if tri.opacity < 1.0 {
           "none"
         } else {
           paint.as_str()
@@ -22756,6 +22763,53 @@ mod painter_order_tests {
           || side_of_plane(&verts[j], &verts[i], &camera).is_some()
       );
     });
+  }
+
+  /// Every outlined edge of a cut polygon's parts must run along one of
+  /// the polygon's own outlined edges: the cut itself is never outlined,
+  /// also when the plane passes through a corner (as where two touching
+  /// solids meet), whichever way the polygon is wound.
+  #[test]
+  fn cut_through_a_corner_does_not_outline_the_cut() {
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    // The plane x = 0, through the corner (0, 1, 0) and across the
+    // opposite edge.
+    let plane = [p(0.0, 0.0, 0.0), p(0.0, 1.0, 0.0), p(0.0, 0.0, 1.0)];
+    let corners = [p(-1.0, -1.0, 0.0), p(1.0, -1.0, 0.0), p(0.0, 1.0, 0.0)];
+    let on_segment = |q: Point3D, a: Point3D, b: Point3D| {
+      let (ab, aq) = ([b.x - a.x, b.y - a.y], [q.x - a.x, q.y - a.y]);
+      let cross = ab[0] * aq[1] - ab[1] * aq[0];
+      let t = (ab[0] * aq[0] + ab[1] * aq[1]) / (ab[0] * ab[0] + ab[1] * ab[1]);
+      cross.abs() < 1e-9 && (-1e-9..=1.0 + 1e-9).contains(&t)
+    };
+    for start in 0..3 {
+      for reversed in [false, true] {
+        let mut order: Vec<Point3D> =
+          (0..3).map(|k| corners[(start + k) % 3]).collect();
+        if reversed {
+          order.reverse();
+        }
+        let poly: Vec<(Point3D, bool)> =
+          order.iter().map(|&c| (c, true)).collect();
+        let (a, b) = clip_polygon_by_plane(&poly, &plane);
+        assert!(a.len() >= 3 && b.len() >= 3, "the triangle is cut in two");
+        for part in [&a, &b] {
+          for k in 0..part.len() {
+            let (from, outlined) = part[k];
+            let to = part[(k + 1) % part.len()].0;
+            let along_original = (0..3).any(|e| {
+              let (u, v) = (order[e], order[(e + 1) % 3]);
+              on_segment(from, u, v) && on_segment(to, u, v)
+            });
+            assert_eq!(
+              outlined, along_original,
+              "edge ({}, {}) -> ({}, {}) (start {start}, reversed {reversed})",
+              from.x, from.y, to.x, to.y
+            );
+          }
+        }
+      }
+    }
   }
 
   /// Triangles that never cross are left untouched.
