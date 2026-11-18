@@ -1483,6 +1483,7 @@ fn generate_mesh_lines(
   z_range: f64,
   mesh_mode: MeshMode,
   camera: &Camera,
+  half: [f64; 3],
 ) -> Vec<MeshLine> {
   let step = match mesh_mode {
     MeshMode::Default => MESH_STEP,
@@ -1491,9 +1492,13 @@ fn generate_mesh_lines(
     MeshMode::None => return Vec::new(),
   };
 
-  let nx = |ii: usize| -> f64 { (ii as f64 / grid_n as f64) * 2.0 - 1.0 };
-  let ny = |jj: usize| -> f64 { (jj as f64 / grid_n as f64) * 2.0 - 1.0 };
-  let nz = |z: f64| -> f64 { ((z - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE };
+  let nx = |ii: usize| -> f64 {
+    ((ii as f64 / grid_n as f64) * 2.0 - 1.0) * half[0]
+  };
+  let ny = |jj: usize| -> f64 {
+    ((jj as f64 / grid_n as f64) * 2.0 - 1.0) * half[1]
+  };
+  let nz = |z: f64| -> f64 { (((z - z_lo) / z_range) * 2.0 - 1.0) * half[2] };
 
   let mut lines = Vec::new();
 
@@ -1647,6 +1652,14 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ..StyleState3D::default()
   });
 
+  // The half-extents of the box the surface is normalized into: x and y
+  // span ±1 by default and z the flatter ±`Z_SCALE`; `BoxRatios` reshapes
+  // it (its longest side kept at 2).
+  let mut box_half = [1.0, 1.0, Z_SCALE];
+  // `ViewPoint`: the direction the box is seen from and whether it lies
+  // at infinity (an orthographic view).
+  let mut view_point: (Option<[f64; 3]>, bool) = (None, false);
+
   for opt in &args[3..] {
     if let Expr::Rule {
       pattern,
@@ -1751,6 +1764,15 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           axes_labels =
             parse_axes_labels(replacement, Some([&xvar, &yvar, "z"]));
         }
+        Expr::Identifier(name) if name == "BoxRatios" => {
+          if let Some(r) = parse_box_ratios(replacement) {
+            let longest = r.iter().copied().fold(0.0_f64, f64::max);
+            box_half = r.map(|v| v / longest);
+          }
+        }
+        Expr::Identifier(name) if name == "ViewPoint" => {
+          view_point = parse_view_point(replacement);
+        }
         _ => {}
       }
     }
@@ -1767,7 +1789,24 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let plot_styles: Vec<StyleState3D> =
     plot_style_expr.map_or_default(|e| parse_plot_style_3d(e, bodies.len()));
 
-  let camera = Camera::default();
+  // The eye looks at the middle of the box from `|ViewPoint|` times its
+  // longest side away (orthographically for a point at infinity).
+  let camera = match view_point {
+    (Some(vp), at_infinity) if vp.iter().any(|c| *c != 0.0) => {
+      let side = 2.0 * box_half.iter().copied().fold(0.0_f64, f64::max);
+      let distance = (vp[0] * vp[0] + vp[1] * vp[1] + vp[2] * vp[2]).sqrt();
+      Camera {
+        azimuth: vp[1].atan2(vp[0]),
+        elevation: vp[2].atan2(vp[0].hypot(vp[1])),
+        perspective: (!at_infinity).then_some(Perspective {
+          center: [0.0; 3],
+          distance: distance * side,
+        }),
+        ..Camera::default()
+      }
+    }
+    _ => Camera::default(),
+  };
   let mut scene = Scene::new(&camera, &args[3..]);
   // The sampling grid. With `Mesh -> n` lines of constant x / y and a
   // `MeshShading`, the cells are aligned with the mesh so each one lies in
@@ -1879,12 +1918,15 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Lights placed at scene coordinates (`{"Point", c, {x, y, z}}`) follow
   // the data into the normalized box the surface is drawn in.
   {
-    let sx = 2.0 / (x_max - x_min);
-    let sy = 2.0 / (y_max - y_min);
-    let sz = 2.0 * Z_SCALE / z_range;
+    let sx = 2.0 * box_half[0] / (x_max - x_min);
+    let sy = 2.0 * box_half[1] / (y_max - y_min);
+    let sz = 2.0 * box_half[2] / z_range;
     scene.frame.scale = [sx, sy, sz];
-    scene.frame.offset =
-      [-1.0 - x_min * sx, -1.0 - y_min * sy, -Z_SCALE - z_lo * sz];
+    scene.frame.offset = [
+      -box_half[0] - x_min * sx,
+      -box_half[1] - y_min * sy,
+      -box_half[2] - z_lo * sz,
+    ];
   }
 
   // Phase 2: Build triangles using the shared z range
@@ -2109,10 +2151,14 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     call("Graphics3D", structure_args)
   };
 
-  let nx = |x: f64| -> f64 { (x - x_min) / (x_max - x_min) * 2.0 - 1.0 };
-  let ny = |y: f64| -> f64 { (y - y_min) / (y_max - y_min) * 2.0 - 1.0 };
+  let nx = |x: f64| -> f64 {
+    ((x - x_min) / (x_max - x_min) * 2.0 - 1.0) * box_half[0]
+  };
+  let ny = |y: f64| -> f64 {
+    ((y - y_min) / (y_max - y_min) * 2.0 - 1.0) * box_half[1]
+  };
   let nz = |z: f64| -> f64 {
-    ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE
+    (((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 - 1.0) * box_half[2]
   };
   let to_box = |p: [f64; 3]| Point3D {
     x: nx(p[0]),
@@ -2523,7 +2569,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         None => grid,
       };
       let mut lines = generate_mesh_lines(
-        grid, grid_n, z_lo, z_hi, z_range, mesh_mode, &camera,
+        grid, grid_n, z_lo, z_hi, z_range, mesh_mode, &camera, box_half,
       );
       if let Some(style) = &mesh_style {
         for line in &mut lines {
@@ -2583,7 +2629,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
-    [1.0, 1.0, Z_SCALE],
+    box_half,
     &axes_labels,
     !image_height_is_explicit(args),
     args,
@@ -3638,21 +3684,52 @@ fn draw_axes_on_box_with_ticks(
           .unwrap_or(1) as f64;
         let half_w = tick_chars * font_size as f64 * 0.3;
         let half_h = font_size as f64 * 0.5;
+        // A label string holding newlines (`"rate\n(units)"`) is set as
+        // a block of lines centered on its anchor.
+        let lines: Vec<String> = if label.contains('\n') {
+          crate::functions::graphics::split_markup_lines(label)
+        } else {
+          vec![label.to_string()]
+        };
+        let pitch = crate::functions::plot_padding::line_pitch(font_size as f64);
+        let block_shift = (lines.len() - 1) as f64 * pitch / 2.0;
         // …plus half of the label's own box, so `offset` can center it
         // just past them. Wolfram sets every axis label upright, the z
         // axis's too.
-        let own_w = label_half_width(label, font_size);
+        let own_w = lines
+          .iter()
+          .map(|line| label_half_width(line, font_size))
+          .fold(0.0_f64, f64::max);
+        let own_h = half_h + block_shift;
         let reach = TICK_LABEL_OFFSET
           + (perpx * sign).abs() * (half_w + own_w)
-          + (perpy * sign).abs() * (half_h + half_h);
+          + (perpy * sign).abs() * (half_h + own_h);
         let offset = reach + font_size as f64 * 0.5;
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
+        let content = if lines.len() == 1 {
+          lines[0].clone()
+        } else {
+          lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+              let dy = if i == 0 { -block_shift } else { pitch };
+              format!(
+                "<tspan x=\"{lx:.1}\" dy=\"{dy:.1}\">{}</tspan>",
+                crate::functions::graphics::tspan_line(line)
+              )
+            })
+            .collect()
+        };
         svg.push_str(&format!(
-          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{label}</text>\n",
+          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{content}</text>\n",
         ));
-        let chars = markup_char_count(label);
-        extent.add_text(lx, ly, chars, font_size as f64, "middle");
+        for (i, line) in lines.iter().enumerate() {
+          let line_y = ly - block_shift + i as f64 * pitch;
+          let chars = markup_char_count(line);
+          extent.add_text(lx, line_y, chars, font_size as f64, "middle");
+        }
       }
     }
 
@@ -7437,6 +7514,43 @@ fn eval_view_direction(expr: &Expr) -> Option<[f64; 3]> {
   }
   let len = dir.iter().map(|c| c * c).sum::<f64>().sqrt();
   Some(dir.map(|c| 2.0 * c / len))
+}
+
+/// A `ViewPoint` setting: the direction (and distance, in units of the
+/// displayed box's longest side) the box is seen from, and whether that
+/// point lies at infinity (an orthographic view). Symbolic viewpoints
+/// stand for axis-aligned directions (Wolfram's `Above` is `{0, 0, ∞}`,
+/// etc.). `(None, false)` when the setting is not understood.
+fn parse_view_point(value: &Expr) -> (Option<[f64; 3]>, bool) {
+  let symbolic: Option<[f64; 3]> = match value {
+    Expr::Identifier(s) => match s.as_str() {
+      "Above" | "Top" => Some([0.0, 0.0, 2.0]),
+      "Below" | "Bottom" => Some([0.0, 0.0, -2.0]),
+      "Front" => Some([0.0, -2.0, 0.0]),
+      "Back" => Some([0.0, 2.0, 0.0]),
+      "Left" => Some([-2.0, 0.0, 0.0]),
+      "Right" => Some([2.0, 0.0, 0.0]),
+      _ => None,
+    },
+    _ => None,
+  };
+  if symbolic.is_some() {
+    return (symbolic, false);
+  }
+  if let Some(dir) = eval_view_direction(value) {
+    return (Some(dir), true);
+  }
+  (eval_vec3(value), false)
+}
+
+/// A `BoxRatios -> {rx, ry, rz}` setting with all sides positive; a lone
+/// number `r` asks for equal sides, like `{r, r, r}`.
+fn parse_box_ratios(value: &Expr) -> Option<[f64; 3]> {
+  let value =
+    evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  eval_vec3(&value)
+    .or_else(|| try_eval_to_f64(&value).map(|r| [r; 3]))
+    .filter(|r| r.iter().all(|v| *v > 0.0 && v.is_finite()))
 }
 
 fn eval_vec3(expr: &Expr) -> Option<[f64; 3]> {
@@ -11697,27 +11811,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "ViewPoint" => {
           // Symbolic viewpoints stand for axis-aligned directions
           // (Wolfram's `Above` is `{0, 0, ∞}`, etc.).
-          let symbolic: Option<[f64; 3]> = match replacement.as_ref() {
-            Expr::Identifier(s) => match s.as_str() {
-              "Above" | "Top" => Some([0.0, 0.0, 2.0]),
-              "Below" | "Bottom" => Some([0.0, 0.0, -2.0]),
-              "Front" => Some([0.0, -2.0, 0.0]),
-              "Back" => Some([0.0, 2.0, 0.0]),
-              "Left" => Some([-2.0, 0.0, 0.0]),
-              "Right" => Some([2.0, 0.0, 0.0]),
-              _ => None,
-            },
-            _ => None,
-          };
-          let at_infinity = if symbolic.is_none() {
-            eval_view_direction(replacement)
-          } else {
-            None
-          };
-          view_point_at_infinity = at_infinity.is_some();
-          if let Some(vp) =
-            symbolic.or(at_infinity).or_else(|| eval_vec3(replacement))
-          {
+          let (view_point, at_infinity) = parse_view_point(replacement);
+          view_point_at_infinity = at_infinity;
+          if let Some(vp) = view_point {
             camera.azimuth = vp[1].atan2(vp[0]);
             camera.elevation = vp[2].atan2(vp[0].hypot(vp[1]));
             view_distance =
@@ -11784,13 +11880,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // is what keeps a plot whose values run far wider than its domain
         // (or the other way round) from drawing as a sliver.
         "BoxRatios" => {
-          let value = evaluate_expr_to_expr(replacement)
-            .unwrap_or_else(|_| replacement.as_ref().clone());
-          // A lone number `r` asks for equal sides, like `{r, r, r}`.
-          if let Some(r) = eval_vec3(&value)
-            .or_else(|| try_eval_to_f64(&value).map(|r| [r; 3]))
-            && r.iter().all(|v| *v > 0.0)
-          {
+          if let Some(r) = parse_box_ratios(replacement) {
             box_ratios = Some(r);
           }
         }
