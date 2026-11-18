@@ -7639,6 +7639,44 @@ mod repeated_option_tests {
     assert!(flow_to_content_width(&body, 1.0e6).is_none());
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (continued fractions
+  /// of quadratic irrationals). Its output ends in a list like
+  /// `{1, 53, {1, 1, …, 54}}` whose long periodic part is nested one level
+  /// deep. The FrontEnd breaks it after commas inside the nested list too;
+  /// breaking only between the three top-level elements left the period
+  /// running off in one long line.
+  #[test]
+  fn content_size_width_breaks_inside_a_nested_list() {
+    let code = "Manipulate[\
+       Text[Column[{Style[{n, 53, Range[n]}, 10]}, Alignment -> Center]], \
+       {{n, 80}, 10, 100, 1}, ContentSize -> {300, 200}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.content_width, Some(300.0));
+
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    let wide = woxi::functions::graphics::parse_svg_wh(
+      body.graphics.as_ref().expect("the column is a picture"),
+    )
+    .0;
+    assert!(wide > 300.0, "the unbroken list is {wide} wide");
+    let flowed =
+      flow_to_content_width(&body, 300.0).expect("the list is re-flowed");
+    let svg = flowed.graphics.expect("the re-flowed column is a picture");
+    let (w, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(w <= 300.5, "the re-flowed list is {w} wide: {svg}");
+    // The first line opens the nested list, and the last one closes it.
+    assert!(svg.contains(">{80, 53, {1, 2, 3,"), "{svg}");
+    assert!(svg.contains(", 79, 80}}<"), "{svg}");
+    let lines = svg.matches("<text").count();
+    assert!(lines > 2, "the nested list spans {lines} lines: {svg}");
+  }
+
   /// A style a pure function applies in the body survives the round trip
   /// through source text that rebuilding the widget performs: the rows of
   /// the same Demonstration are headed by `Text[Style[#, 16]] &` applied to

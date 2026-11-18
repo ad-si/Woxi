@@ -360,169 +360,246 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
   }
 }
 
-/// Match 1/√d (Power[d, Rational[-1, 2]], the canonical form of
-/// Sqrt[d]/d) and return d.
-fn extract_reciprocal_sqrt_integer(expr: &Expr) -> Option<i128> {
-  let rational_minus_half = |e: &Expr| -> bool {
-    matches!(e, Expr::FunctionCall { name, args }
-      if name == "Rational"
-        && args.len() == 2
-        && matches!(args[0], Expr::Integer(-1))
-        && matches!(args[1], Expr::Integer(2)))
-  };
-  match expr {
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      if let Expr::Integer(d) = &args[0]
-        && rational_minus_half(&args[1])
-      {
-        return Some(*d);
-      }
-      None
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(d) = left.as_ref()
-        && rational_minus_half(right)
-      {
-        return Some(*d);
-      }
-      None
-    }
-    _ => None,
-  }
-}
-
 /// Extract a quadratic-irrational expression of the form `(p + q · √d) / r`
 /// where `p`, `q`, `r` are integers and `d` is a positive integer (not a
 /// perfect square — caller verifies). Returns `None` if the input doesn't
 /// match.
+///
+/// The expression may be any sum, product, quotient or integer power of
+/// rationals and square roots of one rational radicand, e.g.
+/// `4/7 + 1/Sqrt[5]`, `29/5 + 11/(5 Sqrt[5])` or `(1 + Sqrt[5])/(3 Sqrt[5])`.
 fn extract_quadratic_irrational(
   expr: &Expr,
 ) -> Option<(i128, i128, i128, i128)> {
-  // 1/√d = √d/d = (0 + 1·√d)/d
-  if let Some(d) = extract_reciprocal_sqrt_integer(expr) {
-    return Some((0, 1, d, d));
+  let quad = QuadraticSurd::of(expr, 0)?;
+  if quad.q.0 == 0 || quad.d == 0 {
+    return None;
   }
-  // Peel off outer scale: (scale_num/scale_den) · inner, collecting the
-  // overall Rational coefficient and whatever Plus-sum remains.
-  let (inner_owned, scale_num, scale_den): (Expr, i128, i128) = match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(r) = right.as_ref() {
-        (left.as_ref().clone(), 1, *r)
-      } else {
-        (expr.clone(), 1, 1)
-      }
+  // (pn/pd) + (qn/qd)·√d = (pn·r/pd + qn·r/qd·√d) / r with r = lcm(pd, qd).
+  let (pn, pd) = quad.p;
+  let (qn, qd) = quad.q;
+  let r = (pd / gcd_i128(pd, qd).max(1)).checked_mul(qd)?;
+  let p = pn.checked_mul(r / pd)?;
+  let q = qn.checked_mul(r / qd)?;
+  let g = gcd_i128(gcd_i128(p, q), r).max(1);
+  Some((p / g, q / g, quad.d, r / g))
+}
+
+/// An exact number `p + q·√d` with rational `p` and `q` (as reduced
+/// numerator/denominator pairs with a positive denominator) and an integer
+/// radicand `d`, where `d == 0` means no radical has been seen yet.
+#[derive(Clone, Copy)]
+struct QuadraticSurd {
+  p: (i128, i128),
+  q: (i128, i128),
+  d: i128,
+}
+
+impl QuadraticSurd {
+  /// Deepest nesting of Plus/Times/Power that is decomposed.
+  const MAX_DEPTH: usize = 64;
+
+  fn rational(r: (i128, i128)) -> Self {
+    QuadraticSurd {
+      p: r,
+      q: (0, 1),
+      d: 0,
     }
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      let mut scale_n: i128 = 1;
-      let mut scale_d: i128 = 1;
-      let mut remaining: Vec<Expr> = Vec::new();
-      for a in args {
-        match a {
-          Expr::Integer(n) => scale_n = scale_n.checked_mul(*n)?,
-          Expr::FunctionCall { name, args: rargs }
-            if name == "Rational" && rargs.len() == 2 =>
-          {
-            if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
-            {
-              scale_n = scale_n.checked_mul(*n)?;
-              scale_d = scale_d.checked_mul(*d)?;
-            } else {
-              return None;
-            }
+  }
+
+  fn frac(n: i128, d: i128) -> Option<(i128, i128)> {
+    if d == 0 {
+      return None;
+    }
+    let g = gcd_i128(n, d).max(1);
+    let (n, d) = (n / g, d / g);
+    if d < 0 {
+      Some((n.checked_neg()?, d.checked_neg()?))
+    } else {
+      Some((n, d))
+    }
+  }
+
+  fn frac_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+    let n = a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?;
+    Self::frac(n, a.1.checked_mul(b.1)?)
+  }
+
+  fn frac_mul(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+    let g1 = gcd_i128(a.0, b.1).max(1);
+    let g2 = gcd_i128(b.0, a.1).max(1);
+    Self::frac(
+      (a.0 / g1).checked_mul(b.0 / g2)?,
+      (a.1 / g2).checked_mul(b.1 / g1)?,
+    )
+  }
+
+  /// The radicand two operands share, or `None` for two different ones.
+  fn common_radicand(a: i128, b: i128) -> Option<i128> {
+    match (a, b) {
+      (0, d) | (d, 0) => Some(d),
+      (a, b) if a == b => Some(a),
+      _ => None,
+    }
+  }
+
+  fn add(self, other: Self) -> Option<Self> {
+    Some(QuadraticSurd {
+      p: Self::frac_add(self.p, other.p)?,
+      q: Self::frac_add(self.q, other.q)?,
+      d: Self::common_radicand(self.d, other.d)?,
+    })
+  }
+
+  fn neg(self) -> Option<Self> {
+    Some(QuadraticSurd {
+      p: (self.p.0.checked_neg()?, self.p.1),
+      q: (self.q.0.checked_neg()?, self.q.1),
+      d: self.d,
+    })
+  }
+
+  /// (p1 + q1√d)(p2 + q2√d) = (p1·p2 + q1·q2·d) + (p1·q2 + p2·q1)√d
+  fn mul(self, other: Self) -> Option<Self> {
+    let d = Self::common_radicand(self.d, other.d)?;
+    let qq = Self::frac_mul(Self::frac_mul(self.q, other.q)?, (d, 1))?;
+    Some(QuadraticSurd {
+      p: Self::frac_add(Self::frac_mul(self.p, other.p)?, qq)?,
+      q: Self::frac_add(
+        Self::frac_mul(self.p, other.q)?,
+        Self::frac_mul(other.p, self.q)?,
+      )?,
+      d,
+    })
+  }
+
+  /// 1 / (p + q√d) = (p − q√d) / (p² − q²·d)
+  fn recip(self) -> Option<Self> {
+    let norm = Self::frac_add(
+      Self::frac_mul(self.p, self.p)?,
+      Self::frac_mul(Self::frac_mul(self.q, self.q)?, (self.d.checked_neg()?, 1))?,
+    )?;
+    if norm.0 == 0 {
+      return None;
+    }
+    let inv = Self::frac(norm.1, norm.0)?;
+    Some(QuadraticSurd {
+      p: Self::frac_mul(self.p, inv)?,
+      q: Self::frac_mul((self.q.0.checked_neg()?, self.q.1), inv)?,
+      d: self.d,
+    })
+  }
+
+  fn pow(self, exponent: i128) -> Option<Self> {
+    if exponent.unsigned_abs() > Self::MAX_DEPTH as u128 {
+      return None;
+    }
+    let base = if exponent < 0 { self.recip()? } else { self };
+    let mut result = Self::rational((1, 1));
+    for _ in 0..exponent.unsigned_abs() {
+      result = result.mul(base)?;
+    }
+    Some(result)
+  }
+
+  /// √r or 1/√r for a positive rational r = n/m: √(n·m)/m resp. √(n·m)/n.
+  fn sqrt_of_rational((n, m): (i128, i128), inverse: bool) -> Option<Self> {
+    if n <= 0 {
+      return None;
+    }
+    let radicand = n.checked_mul(m)?;
+    let root = integer_sqrt(radicand);
+    let scale = if inverse { n } else { m };
+    if root.checked_mul(root)? == radicand {
+      return Some(Self::rational(Self::frac(root, scale)?));
+    }
+    Some(QuadraticSurd {
+      p: (0, 1),
+      q: Self::frac(1, scale)?,
+      d: radicand,
+    })
+  }
+
+  fn of(expr: &Expr, depth: usize) -> Option<Self> {
+    if depth > Self::MAX_DEPTH {
+      return None;
+    }
+    let sub = |e: &Expr| Self::of(e, depth + 1);
+    let as_rational = |e: &Expr| -> Option<(i128, i128)> {
+      match e {
+        Expr::Integer(n) => Some((*n, 1)),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          match (&args[0], &args[1]) {
+            (Expr::Integer(n), Expr::Integer(d)) => Self::frac(*n, *d),
+            _ => None,
           }
-          _ => remaining.push(a.clone()),
         }
+        _ => None,
       }
-      let inner = match remaining.len() {
-        0 => return None,
-        1 => remaining.into_iter().next().unwrap(),
-        _ => times(remaining),
-      };
-      (inner, scale_n, scale_d)
+    };
+    let power = |base: &Expr, exponent: &Expr| -> Option<Self> {
+      match exponent {
+        Expr::Integer(k) => sub(base)?.pow(*k),
+        _ => match as_rational(exponent)? {
+          (1, 2) => Self::sqrt_of_rational(as_rational(base)?, false),
+          (-1, 2) => Self::sqrt_of_rational(as_rational(base)?, true),
+          _ => None,
+        },
+      }
+    };
+    if let Some(r) = as_rational(expr) {
+      return Some(Self::rational(r));
     }
-    _ => (expr.clone(), 1, 1),
-  };
-  let inner = &inner_owned;
-  // Inner: a sum of rationals and rational multiples of one Sqrt[d], as
-  // the exact fractions p = pn/pd and q = qn/qd.
-  let rational = |e: &Expr| -> Option<(i128, i128)> {
-    match e {
-      Expr::Integer(n) => Some((*n, 1)),
-      Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2 =>
-      {
-        match (&args[0], &args[1]) {
-          (Expr::Integer(n), Expr::Integer(d)) => Some((*n, *d)),
+    match expr {
+      Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio" => {
+        Some(QuadraticSurd {
+          p: (1, 2),
+          q: (1, 2),
+          d: 5,
+        })
+      }
+      Expr::FunctionCall { name, args } => match (name.as_str(), &args[..]) {
+        ("Sqrt", [x]) => power(x, &Expr::FunctionCall {
+          name: "Rational".into(),
+          args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+        }),
+        ("Power", [b, e]) => power(b, e),
+        ("Plus", terms) if !terms.is_empty() => {
+          let mut acc = Self::rational((0, 1));
+          for t in terms {
+            acc = acc.add(sub(t)?)?;
+          }
+          Some(acc)
+        }
+        ("Times", factors) if !factors.is_empty() => {
+          let mut acc = Self::rational((1, 1));
+          for f in factors {
+            acc = acc.mul(sub(f)?)?;
+          }
+          Some(acc)
+        }
+        _ => None,
+      },
+      Expr::BinaryOp { op, left, right } => {
+        let (l, r) = (left.as_ref(), right.as_ref());
+        match op {
+          BinaryOperator::Plus => sub(l)?.add(sub(r)?),
+          BinaryOperator::Minus => sub(l)?.add(sub(r)?.neg()?),
+          BinaryOperator::Times => sub(l)?.mul(sub(r)?),
+          BinaryOperator::Divide => sub(l)?.mul(sub(r)?.recip()?),
+          BinaryOperator::Power => power(l, r),
           _ => None,
         }
       }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => sub(operand)?.neg(),
       _ => None,
     }
-  };
-  let add =
-    |(an, ad): (i128, i128), (bn, bd): (i128, i128)| -> Option<(i128, i128)> {
-      let n = an.checked_mul(bd)?.checked_add(bn.checked_mul(ad)?)?;
-      let d = ad.checked_mul(bd)?;
-      let g = gcd_i128(n, d).max(1);
-      Some((n / g, d / g))
-    };
-  let (mut p, mut q): ((i128, i128), (i128, i128)) = ((0, 1), (0, 1));
-  let mut d: i128 = 0;
-  let terms: Vec<&Expr> = match inner {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left,
-      right,
-    } => vec![left.as_ref(), right.as_ref()],
-    Expr::FunctionCall { name, args } if name == "Plus" => {
-      args.iter().collect()
-    }
-    _ => vec![inner],
-  };
-  for t in &terms {
-    if let Some(r) = rational(t) {
-      p = add(p, r)?;
-      continue;
-    }
-    // Sqrt[d], or k * Sqrt[d] (canonically Times[k, Sqrt[d]]).
-    let (coeff, sqrt_expr) = match t {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left,
-        right,
-      } => (rational(left)?, right.as_ref()),
-      Expr::FunctionCall { name, args }
-        if name == "Times" && args.len() == 2 =>
-      {
-        (rational(&args[0])?, &args[1])
-      }
-      _ => ((1, 1), *t),
-    };
-    let dd = extract_sqrt_integer(sqrt_expr)?;
-    q = add(q, coeff)?;
-    if d != 0 && d != dd {
-      return None;
-    }
-    d = dd;
   }
-  if q.0 == 0 || d == 0 {
-    return None;
-  }
-  // Compose with the outer scale: (scale_num/scale_den) · (p + q√d)
-  //   = (sn·pn·qd + sn·qn·pd·√d) / (sd·pd·qd).
-  let final_p = scale_num.checked_mul(p.0)?.checked_mul(q.1)?;
-  let final_q = scale_num.checked_mul(q.0)?.checked_mul(p.1)?;
-  let final_r = scale_den.checked_mul(p.1)?.checked_mul(q.1)?;
-  let g = gcd_i128(gcd_i128(final_p, final_q), final_r).max(1);
-  Some((final_p / g, final_q / g, d, final_r / g))
 }
 
 fn is_perfect_square(d: i128) -> bool {
