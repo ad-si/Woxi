@@ -809,10 +809,10 @@ fn painter_order(
     // whatever the order they were given in.
     let i_behind = if coplanar(&verts[i], &verts[j]) {
       let (i_opaque, j_opaque) = (opacities[i] >= 1.0, opacities[j] >= 1.0);
-      if i_opaque != j_opaque {
-        Some(j_opaque)
-      } else {
+      if i_opaque == j_opaque {
         Some(i < j)
+      } else {
+        Some(j_opaque)
       }
     } else {
       side_of_plane(&verts[i], &verts[j], camera)
