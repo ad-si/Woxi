@@ -4130,6 +4130,27 @@ fn three_significant_digits(x: f64) -> String {
   }
 }
 
+/// The box of `Spacer[w]` (`TemplateBox[{w}, "Spacer1"]`) or of
+/// `Spacer[{w, h}]` (`TemplateBox[{w, h}, "Spacer2"]`), the templates the
+/// FrontEnd draws as blank room of that many printer's points. `None` for a
+/// size that is not numeric.
+fn spacer_template_box(args: &[Expr]) -> Option<Expr> {
+  let is_size = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+  };
+  let (sizes, template) = match args {
+    [Expr::List(wh)] if wh.len() == 2 && wh.iter().all(is_size) => {
+      (wh.to_vec(), "Spacer2")
+    }
+    [w] if is_size(w) => (vec![w.clone()], "Spacer1"),
+    _ => return None,
+  };
+  Some(call(
+    "TemplateBox",
+    vec![Expr::List(sizes.into()), str_expr(template)],
+  ))
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // A number format around a `Style` typesets as the style around the
   // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
@@ -4839,6 +4860,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         rule_expr(id_expr("NumberMarks"), bool_expr(true)),
       ];
       call("TagBox", vec![call("StyleBox", style), id_expr("FullForm")])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Spacer" && spacer_template_box(args).is_some() =>
+    {
+      spacer_template_box(args).expect("checked by the guard")
     }
     // Style[content, directives…] → StyleBox[content-box, directives…],
     // keeping the directives (a color, `Bold`, `FontColor -> …`, …) in the
@@ -7682,6 +7708,10 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       style_args.extend(args[1..].iter().cloned());
       style_args.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
       call("StyleBox", style_args)
+    }
+    // `Spacer[w]` / `Spacer[{w, h}]` box as the FrontEnd's blank templates.
+    "Spacer" if spacer_template_box(args).is_some() => {
+      spacer_template_box(args).expect("checked by the guard")
     }
     // `Invisible[expr]` keeps the room `expr` takes but draws nothing: its
     // box is the content's, with `ShowContents -> False`.

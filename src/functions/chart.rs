@@ -361,6 +361,41 @@ fn inline_graphic_segments(expr: &Expr) -> Option<Vec<LabelSegment>> {
   walk(expr, None, &mut out).then_some(out)
 }
 
+/// The text and picture segments of a structured title (see
+/// [`inline_graphic_segments`]), its pictures scaled from the default
+/// 14-point typesetting to `font_size`. A picture taller than a line of
+/// text claims the room of the blank lines it spans, added to
+/// `extra_lines`, so the plot leaves space for it above the axes.
+fn inline_label_segments(
+  expr: &Expr,
+  font_size: Option<f64>,
+  extra_lines: &mut Vec<String>,
+) -> Vec<LabelSegment> {
+  let mut segments = inline_graphic_segments(expr).unwrap_or_default();
+  let scale = font_size.map_or(1.0, |fs| fs / 14.0);
+  for seg in &mut segments {
+    if let LabelSegment::Graphic { w, h, .. } = seg {
+      *w *= scale;
+      *h *= scale;
+    }
+  }
+  let tallest = segments
+    .iter()
+    .filter_map(|s| match s {
+      LabelSegment::Graphic { h, .. } => Some(*h),
+      LabelSegment::Text(_) => None,
+    })
+    .fold(0.0, f64::max);
+  let line = 16.0 * scale;
+  if tallest > line {
+    extra_lines.extend(std::iter::repeat_n(
+      String::new(),
+      ((tallest - line) / line).ceil() as usize,
+    ));
+  }
+  segments
+}
+
 impl StyledLabel {
   /// The label as SVG `<text>` content.
   pub(crate) fn svg(&self) -> String {
@@ -768,6 +803,12 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       };
       let (bold, italic, color, font_size) =
         parse_style_directive_args(&args[1..]);
+      // Structured content (`Style[Row[{"K = ", a/b}], 18]`) keeps the
+      // stacked layout an unstyled title gets, set at the styled size.
+      let segments = match &args[0] {
+        Expr::String(_) | Expr::Identifier(_) => Vec::new(),
+        content => inline_label_segments(content, font_size, &mut extra_lines),
+      };
       Some(StyledLabel {
         text,
         markup,
@@ -777,7 +818,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color,
         font_size,
         framed: false,
-        segments: Vec::new(),
+        segments,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -795,23 +836,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
             &traditional_label_layout(other),
           )),
         };
-      let segments = inline_graphic_segments(other).unwrap_or_default();
-      // A picture taller than a line of text claims the room of the blank
-      // lines it spans, so the plot leaves space for it above the axes.
-      let tallest = segments
-        .iter()
-        .filter_map(|s| match s {
-          LabelSegment::Graphic { h, .. } => Some(*h),
-          LabelSegment::Text(_) => None,
-        })
-        .fold(0.0, f64::max);
       let mut extra_lines = extra_lines;
-      if tallest > 16.0 {
-        extra_lines.extend(std::iter::repeat_n(
-          String::new(),
-          ((tallest - 16.0) / 16.0).ceil() as usize,
-        ));
-      }
+      let segments = inline_label_segments(other, None, &mut extra_lines);
       let text = stacked_visible_text(&markup, &extra_lines);
       if text.is_empty() && segments.is_empty() {
         None
