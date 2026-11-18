@@ -13145,8 +13145,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The sphere fills the picture, but the axes' tick and axis labels
     // still have to fit inside it, as they do in Wolfram's automatic
     // image padding: a label reaching past an edge shrinks the scene
-    // about its center until it clears that edge by a pixel.
-    for _ in 0..4 {
+    // about its center until it clears that edge by a pixel. The labels
+    // keep their pixel distance from the axes while the scene shrinks, so
+    // each step closes only part of the overflow.
+    for _ in 0..32 {
       let Some(ext) = axes_extent_about(scale, cx, cy, p_cx, p_cy) else {
         break;
       };
