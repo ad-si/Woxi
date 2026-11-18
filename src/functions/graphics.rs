@@ -16002,6 +16002,11 @@ pub(crate) fn is_monospace_font_family(family: &str) -> bool {
 /// a fraction of the font size; used to size plain `Text[…]` items.
 pub(crate) const SANS_ADVANCE: f64 = 0.55;
 
+/// The proportional face a `Text[…]` sets its content in, as a
+/// `FontFamily` value.
+pub(crate) const TEXT_FACE_FAMILY: &str =
+  "Atkinson Hyperlegible Next, sans-serif";
+
 /// Whether a layout item is a plain-text `Text[expr]` display, possibly
 /// dressed in `Style`/`Invisible` wrappers.
 fn is_text_display_item(item: &Expr) -> bool {
@@ -20922,6 +20927,19 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   // Parse bracketed, comma-separated args. Commas inside nested `\(...\)`
   // groups or `[...]` brackets do not split.
   i += 1; // consume '['
+  // A `StyleBox`'s arguments after the content are style directives
+  // (`Italic`, `FontSize -> 20`, `RGBColor[1, 0, 0]`), not boxes: read
+  // them as expressions so the renderer recognizes them, instead of as
+  // the box strings "Italic" and "FontSize -> 20" that style nothing.
+  let parse_arg = |index: usize, src: &[char]| -> Expr {
+    if name == "StyleBox" && index > 0 {
+      let text: String = src.iter().collect();
+      if let Ok(directive) = crate::parse_to_expr(&text) {
+        return directive;
+      }
+    }
+    parse_box_to_expr(src)
+  };
   let mut args: Vec<Expr> = Vec::new();
   let mut arg_start = i;
   let mut gdepth = 0usize; // `\(` group depth
@@ -20956,7 +20974,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
       ']' if bdepth == 0 => {
         // End of the argument list.
         if !(args.is_empty() && arg_start == i) {
-          args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+          args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..i])));
         }
         i += 1; // consume ']'
         return (
@@ -20972,7 +20990,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
         i += 1;
       }
       ',' if bdepth == 0 => {
-        args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+        args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..i])));
         i += 1;
         arg_start = i;
       }
@@ -20981,7 +20999,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   }
   // Unbalanced — consume what we have.
   if arg_start < cs.len() {
-    args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..])));
+    args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..])));
   }
   (
     Expr::FunctionCall {
@@ -33658,8 +33676,17 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       let bold = if st.font_weight == "bold" { 1.1 } else { 1.0 };
       let per_char =
         crate::functions::plot_padding::text_width(&markup, st.font_size);
-      let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
-      per_char.max(average) * bold
+      // Woxi's own text face is embedded in every exported picture, so it
+      // never falls back and is measured by its own advances.
+      if st.font_family == TEXT_FACE_FAMILY {
+        crate::functions::plot_padding::exported_text_width(
+          &markup,
+          st.font_size,
+        ) * bold
+      } else {
+        let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
+        per_char.max(average) * bold
+      }
     } else {
       chars * char_width * scale
     };

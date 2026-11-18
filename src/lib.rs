@@ -4899,6 +4899,43 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   {
     let inner = render_inline_display_wrapper(&args[0]);
     return match inner {
+      // Text laid out as a picture (a styled `Row` of strings) is still
+      // text, set in the proportional face; a real picture is left alone.
+      // It is laid out again in that face, so its parts are spaced by the
+      // proportional advances rather than the monospace ones.
+      syntax::Expr::Graphics { .. }
+        if !evaluator::lays_out_a_graphic(&args[0]) =>
+      {
+        let family = syntax::Expr::Rule {
+          pattern: Box::new(syntax::Expr::Identifier("FontFamily".to_string())),
+          replacement: Box::new(syntax::Expr::String(
+            functions::graphics::TEXT_FACE_FAMILY.to_string(),
+          )),
+        };
+        // The family joins the content's own `Style` (ahead of its
+        // directives, so a `FontFamily` written there still wins).
+        let in_text_face = match &args[0] {
+          syntax::Expr::FunctionCall {
+            name: s,
+            args: sargs,
+          } if s == "Style" && !sargs.is_empty() => {
+            let mut styled = vec![sargs[0].clone(), family];
+            styled.extend(sargs[1..].iter().cloned());
+            syntax::Expr::FunctionCall {
+              name: s.clone(),
+              args: styled.into(),
+            }
+          }
+          content => syntax::Expr::FunctionCall {
+            name: "Style".to_string(),
+            args: vec![content.clone(), family].into(),
+          },
+        };
+        match render_inline_display_wrapper(&in_text_face) {
+          rendered @ syntax::Expr::Graphics { .. } => rendered,
+          _ => inner,
+        }
+      }
       syntax::Expr::Graphics { .. } => inner,
       other => syntax::Expr::FunctionCall {
         name: name.clone(),

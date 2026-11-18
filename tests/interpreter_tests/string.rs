@@ -5046,6 +5046,36 @@ mod string_form {
   // with the directives, a string's box is its quoted source, and a quotient
   // sets as a `FractionBox`. The escape characters are invisible, so the
   // assertions compare the `InputForm` of the returned String.
+  /// Regression: `ToString[Subscript[…], StandardForm]` (or `FormatType ->
+  /// StandardForm`) took the two-line OutputForm text ("x\n 2") instead of
+  /// typesetting the script into a `SubscriptBox` escape.
+  #[test]
+  fn to_string_standard_form_typesets_scripts() {
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Subscript[x, 2], FormatType -> StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SubscriptBox[\"x\", \"2\"]\)""#
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Subscript[\"Z\", n], StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SubscriptBox[\"\\\"Z\\\"\", \"n\"]\)""#
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Superscript[x, 3], StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SuperscriptBox[\"x\", \"3\"]\)""#
+    );
+    // OutputForm keeps the two-line text.
+    assert_eq!(interpret("ToString[Subscript[x, 2]]").unwrap(), "x\n 2");
+  }
+
   #[test]
   fn to_string_traditional_form_typesets_functions() {
     assert_eq!(
@@ -7813,6 +7843,20 @@ mod make_boxes {
     assert_eq!(
       interpret("MakeBoxes[Subscript[x, 0]]").unwrap(),
       "SubscriptBox[x, 0]"
+    );
+  }
+
+  /// Regression: `Superscript` had no box rule and boxed as the literal
+  /// call `RowBox[{Superscript, [, …, ]}]`.
+  #[test]
+  fn make_boxes_superscript() {
+    assert_eq!(
+      interpret("MakeBoxes[Superscript[x, 3]]").unwrap(),
+      "SuperscriptBox[x, 3]"
+    );
+    assert_eq!(
+      interpret("MakeBoxes[Superscript[a, b + 1], StandardForm]").unwrap(),
+      "SuperscriptBox[a, RowBox[{b, +, 1}]]"
     );
   }
 

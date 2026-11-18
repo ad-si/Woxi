@@ -363,6 +363,29 @@ pub(crate) fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
   (lead * size, width * size)
 }
 
+/// Width of a line of SVG label markup at `size` points in the face
+/// exported graphics draw with (Atkinson Hyperlegible Next), counting the
+/// `dx="…em"` gaps its tspans open (the thin space that groups the digits
+/// of `73 728`). A multi-line text measures its widest line.
+pub(crate) fn exported_text_width(markup: &str, size: f64) -> f64 {
+  markup
+    .split('\n')
+    .map(|line| {
+      let glyphs: f64 =
+        visible_chars(line).into_iter().map(atkinson_width_em).sum();
+      let gaps: f64 = line
+        .split("dx=\"")
+        .skip(1)
+        .filter_map(|rest| rest.split_once("em\"").map(|(v, _)| v))
+        .filter_map(|v| v.parse::<f64>().ok())
+        .sum();
+      glyphs + gaps
+    })
+    .fold(0.0, f64::max)
+    * size
+    * weight_scale(markup)
+}
+
 /// Shift every label of a flat plot SVG that would run past the left or
 /// right edge of its `viewBox` back inside it.
 ///

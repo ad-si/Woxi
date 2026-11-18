@@ -2652,6 +2652,69 @@ mod graphics {
       }
     }
 
+    /// Regression: the directives of a `StyleBox` inside a string's inline
+    /// `\!\(\*…\)` boxes were read as box strings ("Italic"), so a styled
+    /// base such as `ToString[Subscript[Style["S", Italic], 2],
+    /// StandardForm]` was drawn upright and a color was dropped.
+    #[test]
+    fn inline_box_style_directives_apply() {
+      let svg = export_svg(
+        "Grid[{{ToString[Subscript[Style[\"S\", Italic], 2], StandardForm] \
+         <> \" x \" <> ToString[Style[\"T\", Red, Bold], StandardForm]}}]",
+      );
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">S</tspan><tspan baseline-shift=\"sub\" font-size=\"70%\">2</tspan>"
+        ),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(
+          "<tspan fill=\"rgb(255,0,0)\" font-weight=\"bold\">T</tspan>"
+        ),
+        "{svg}"
+      );
+    }
+
+    /// Regression: a `Text[…]` item laid out as a picture (a styled `Row`)
+    /// lost its proportional text face in a `Column` and was set, and
+    /// spaced, in the monospace face.
+    #[test]
+    fn text_wrapped_row_in_column_uses_text_face() {
+      let svg = export_svg(
+        "Column[{Text[Style[Row[{\"Total: \", 73728}], 20]], \"x\"}]",
+      );
+      assert!(
+        svg.contains(
+          "font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"20\""
+        ),
+        "{svg}"
+      );
+      assert!(
+        !svg.contains(
+          "font-family=\"Atkinson Hyperlegible Mono, monospace\" font-size=\"20\""
+        ),
+        "{svg}"
+      );
+      // The row is as wide as its proportional text, not the monospace
+      // estimate (156 points).
+      let width: f64 = svg
+        .split("<svg x=\"")
+        .nth(1)
+        .and_then(|rest| rest.split("width=\"").nth(1))
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .expect("nested row svg");
+      assert!(width < 150.0, "row width {width}: {svg}");
+      // A plain string item keeps the monospace face.
+      assert!(
+        svg.contains(
+          "font-family=\"Atkinson Hyperlegible Mono, monospace\" font-size=\"14\""
+        ),
+        "{svg}"
+      );
+    }
+
     /// A `Style[…, Italic]` part of a `Text` label slants only its own
     /// characters.
     #[test]
