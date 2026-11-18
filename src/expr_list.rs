@@ -924,7 +924,7 @@ mod tests {
     assert!(!all_integers(&list, &visits));
 
     let mut list = copy;
-    for x in list.iter_mut() {
+    for x in &mut list {
       *x = Expr::Identifier("u".into());
     }
     assert!(!all_integers(&list, &visits));
