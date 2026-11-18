@@ -42070,11 +42070,15 @@ fn collect_pane_visibility(
       continue;
     };
     // A symbolic key (`Automatic`, `Random`) never compares `==` with a
-    // different symbol (the comparison stays unevaluated), so pick panes by
-    // `SameQ`, keeping `==` for numerically equal keys (`1` and `1.`).
+    // different symbol (the comparison stays unevaluated), so such panes
+    // are picked by `SameQ`; literal keys keep `==` (`1` matches `1.`).
     let key = crate::syntax::expr_to_source_form(pattern);
-    let own =
-      format!("({selector}) === ({key}) || TrueQ[({selector}) == ({key})]");
+    let own = match pattern.as_ref() {
+      Expr::Identifier(s) if s != "True" && s != "False" => {
+        format!("({selector}) === ({key})")
+      }
+      _ => format!("({selector}) == ({key})"),
+    };
     // A pane nested inside another pane's content (`PaneSelector[{True ->
     // PaneSelector[{1 -> control}, Dynamic[w]]}, Dynamic[p]]`) is only on
     // screen while the outer pane is too, so its condition is the
