@@ -54754,6 +54754,24 @@ mod plot_content_regressions {
     assert_eq!(pieces("Plot[Sin[x] + x, {x, 0, 5}]"), 1);
   }
 
+  /// `ArcCot` jumps from `-Pi/2` to `Pi/2` where its argument crosses
+  /// zero, so `Exclusions -> Automatic` breaks its curve there instead of
+  /// drawing a vertical riser; an argument that never changes sign keeps
+  /// the curve in one piece.
+  #[test]
+  fn arc_cot_is_excluded_at_its_jump() {
+    let pieces = |code: &str| {
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(pieces("Plot[ArcCot[x], {x, -2, 2}]"), 2);
+    assert_eq!(pieces("Plot[ArcCot[x - 1] + x, {x, -2, 2}]"), 2);
+    assert_eq!(pieces("Plot[ArcCot[x^2 + 1], {x, -2, 2}]"), 1);
+    assert_eq!(pieces("Plot[ArcCot[x], {x, -2, 2}, Exclusions -> None]"), 1);
+  }
+
   /// A conditional (`Which`, `If`, `Piecewise`) that jumps between its
   /// branches is broken there too — also when it is hidden behind a user
   /// function, which Wolfram works out with the variable left symbolic.

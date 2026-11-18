@@ -1166,9 +1166,10 @@ fn has_branch_cut(body: &Expr) -> bool {
 
 /// Whether `body` contains a function that jumps between constant (or
 /// separately continuous) pieces, whose discontinuities `Exclusions ->
-/// Automatic` breaks the curve at.
+/// Automatic` breaks the curve at. `ArcCot` counts too: on the reals it
+/// jumps from `-Pi/2` to `Pi/2` where its argument crosses zero.
 fn has_step_function(body: &Expr) -> bool {
-  const STEP_HEADS: [&str; 13] = [
+  const STEP_HEADS: [&str; 14] = [
     "Floor",
     "Ceiling",
     "Round",
@@ -1182,6 +1183,7 @@ fn has_step_function(body: &Expr) -> bool {
     "Boole",
     "SquareWave",
     "SawtoothWave",
+    "ArcCot",
   ];
   if matches!(body, Expr::FunctionCall { name, .. } if STEP_HEADS.contains(&name.as_str()))
   {
