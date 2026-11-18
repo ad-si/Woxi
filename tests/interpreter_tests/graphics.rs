@@ -22280,6 +22280,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(clip < image, "raster is not inside the clip group");
     }
 
+    /// The plot's `Scaled[0.02]` margin between data and frame is an
+    /// option of the result, so `Show` merging it with other graphics (or
+    /// pinning an explicit `PlotRange`) keeps the raster inset from the
+    /// frame instead of stretching it edge to edge.
+    #[test]
+    fn density_plot_padding_survives_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Options[DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5], \
+           PlotRangePadding]"
+        )
+        .unwrap(),
+        "{PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, \
+         {Scaled[0.02], Scaled[0.02]}}}"
+      );
+      for show in [
+        "Show[DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5], \
+         Graphics[Point[{0.5, 0.5}]]]",
+        "Show[DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5], \
+         PlotRange -> {{0, 1}, {0, 1}}]",
+      ] {
+        let svg = export_svg(show);
+        let image = &svg[svg.find("<image").expect("no raster")..];
+        assert!(
+          !image.starts_with("<image x=\"0.00\" y=\"0.00\""),
+          "{show}: {image:.80}"
+        );
+      }
+    }
+
     #[test]
     fn density_plot_image_size() {
       insta::assert_snapshot!(export_svg(
@@ -52364,6 +52395,47 @@ mod plots_with_nothing_to_draw {
       .unwrap(),
       "True"
     );
+  }
+
+  /// `"Temperature"` is likewise the short spelling of `"TemperatureMap"`:
+  /// a `DensityPlot` (and the other gradient-shaded plots) colors with the
+  /// full gradient instead of falling back to grayscale.
+  #[test]
+  fn temperature_color_function_alias() {
+    clear_state();
+    for plot in [
+      "DensityPlot[x + y, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5, \
+       ColorFunction -> \"#\"]",
+      "ListDensityPlot[Table[i + j, {i, 5}, {j, 5}], ColorFunction -> \"#\"]",
+      "ListLinePlot[{1, 3, 2, 5}, ColorFunction -> \"#\"]",
+    ] {
+      let short = plot.replace('#', "Temperature");
+      let long = plot.replace('#', "TemperatureMap");
+      let gray = plot.replace('#', "NoSuchGradient");
+      let short_svg =
+        interpret(&format!("ExportString[{short}, \"SVG\"]")).unwrap();
+      assert_eq!(
+        short_svg,
+        interpret(&format!("ExportString[{long}, \"SVG\"]")).unwrap(),
+        "{short}"
+      );
+      assert_ne!(
+        short_svg,
+        interpret(&format!("ExportString[{gray}, \"SVG\"]")).unwrap(),
+        "{short}"
+      );
+    }
+    // Ambiguous or non-word-boundary prefixes are not expanded.
+    for (name, other) in [("Light", "LightTerrain"), ("Rain", "Rainbow")] {
+      let plot = |n: &str| {
+        interpret(&format!(
+          "ExportString[ListLinePlot[{{1, 3, 2, 5}}, ColorFunction -> \
+           \"{n}\"], \"SVG\"]"
+        ))
+        .unwrap()
+      };
+      assert_ne!(plot(name), plot(other), "{name}");
+    }
   }
 }
 
