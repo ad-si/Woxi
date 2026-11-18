@@ -30251,18 +30251,29 @@ pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
       let shown = evaluate_expr_to_expr(&args[0]).ok()?;
       find_plot_range(&shown)
     });
-  let Some(((x_min, y_min), (x_max, y_max))) = range else {
-    return svg;
+  let area = match range {
+    // A known range spans the whole picture.
+    Some(range) => {
+      let Some(dims) = parse_svg_dimensions(&svg) else {
+        return svg;
+      };
+      let vb: Vec<f64> = dims
+        .view_box
+        .split_whitespace()
+        .filter_map(|v| v.parse().ok())
+        .collect();
+      let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+        return svg;
+      };
+      Some(((vb_x, vb_y, vb_w, vb_h), range))
+    }
+    // Content held behind a variable (`ClickPane[Dynamic[board], …]`) names
+    // no range, but its picture, when drawn with plot-frame markers,
+    // records its drawing area and the coordinates at its edges.
+    None => first_plot_frame_of(&svg),
   };
-  let Some(dims) = parse_svg_dimensions(&svg) else {
-    return svg;
-  };
-  let vb: Vec<f64> = dims
-    .view_box
-    .split_whitespace()
-    .filter_map(|v| v.parse().ok())
-    .collect();
-  let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+  let Some(((vb_x, vb_y, vb_w, vb_h), ((x_min, y_min), (x_max, y_max)))) = area
+  else {
     return svg;
   };
   let Some(close) = svg.rfind("</svg>") else {
@@ -30337,6 +30348,29 @@ fn plot_frame_marker(bb: &BBox, left: f64, top: f64, w: f64, h: f64) -> String {
     "<rect id=\"{PLOT_FRAME_ID_PREFIX}{}\" x=\"{left}\" y=\"{top}\" width=\"{w}\" height=\"{h}\" fill=\"#000\" fill-opacity=\"0\"/>\n",
     hex_encode(&range)
   )
+}
+
+/// The first drawing area a plot-frame marker records in `svg` (see
+/// [`plot_frame_marker`]): its rectangle `(x, y, width, height)` in the
+/// picture's coordinates and the graphics coordinates `((xmin, ymin),
+/// (xmax, ymax))` at its edges.
+#[allow(clippy::type_complexity)]
+fn first_plot_frame_of(
+  svg: &str,
+) -> Option<((f64, f64, f64, f64), ((f64, f64), (f64, f64)))> {
+  let start = svg.find(&format!("id=\"{PLOT_FRAME_ID_PREFIX}"))?;
+  let tag_end = start + svg[start..].find("/>")?;
+  let tag = &svg[start..tag_end];
+  let id = tag.strip_prefix("id=\"")?.split('"').next()?;
+  let (x_min, y_min, x_max, y_max) = plot_frame_from_id(id)?;
+  let attr = |name: &str| -> Option<f64> {
+    let key = format!(" {name}=\"");
+    let at = tag.find(&key)? + key.len();
+    tag[at..].split('"').next()?.parse().ok()
+  };
+  let rect = (attr("x")?, attr("y")?, attr("width")?, attr("height")?);
+  (rect.2 > 0.0 && rect.3 > 0.0)
+    .then_some((rect, ((x_min, y_min), (x_max, y_max))))
 }
 
 /// A decoded [`PLOT_FRAME_ID_PREFIX`] id: `(xmin, ymin, xmax, ymax)`.
@@ -31809,11 +31843,63 @@ fn resolve_display_item(expr: &Expr) -> Expr {
       // `ClickPane[content, handler]` shows `content`; the handler needs
       // live clicks. `content` is held, so a state variable holding a
       // picture (`ClickPane[Dynamic[board], …]`) still has to be resolved.
+      // A pane laid out in a `Grid`/`Row`/`Column` keeps its click
+      // region: the picture is drawn with plot-frame markers so the
+      // marker can map a click to the pane's coordinates.
       Some(("ClickPane", held)) => {
+        let pane = current.clone();
         let captured = crate::captured_graphics_count();
-        let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
+        let shown = with_plot_frame_markers(|| {
+          let evaluated = crate::evaluator::evaluate_expr_to_expr(held)
+            .unwrap_or_else(|_| held.clone());
+          let shown = resolve_display_item(&evaluated);
+          // A symbolic picture (`Graphics[{}]`, the usual initial value of
+          // the state variable) is drawn here, while markers are on; so is
+          // a picture drawn earlier without them (a state variable that
+          // kept the rendering of an earlier frame), from its symbolic form.
+          let symbolic = match &shown {
+            Expr::Graphics {
+              svg,
+              is_3d: false,
+              structure: Some(symbolic),
+              ..
+            } if !svg.contains(PLOT_FRAME_ID_PREFIX) => symbolic.as_ref(),
+            Expr::FunctionCall { name, .. }
+              if matches!(name.as_str(), "Graphics" | "Show") =>
+            {
+              &shown
+            }
+            _ => return shown,
+          };
+          let svg = crate::evaluator::expr_to_svg(symbolic);
+          if svg.starts_with("<svg") {
+            Expr::Graphics {
+              svg,
+              is_3d: false,
+              source: None,
+              head: None,
+              structure: None,
+            }
+          } else {
+            shown
+          }
+        });
         crate::truncate_captured_graphics(captured);
-        current = evaluated.unwrap_or_else(|_| held.clone());
+        if let Expr::Graphics { svg, .. } = &shown
+          && matches!(&pane, Expr::FunctionCall { args, .. } if args.len() >= 2)
+        {
+          let marked = with_click_pane_marker(svg.clone(), &pane);
+          if marked.len() != svg.len() {
+            return Expr::Graphics {
+              svg: marked,
+              is_3d: false,
+              source: None,
+              head: None,
+              structure: None,
+            };
+          }
+        }
+        current = shown;
       }
       // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
       Some(("Tooltip", content)) => current = content.clone(),
@@ -47828,7 +47914,21 @@ pub fn apply_manipulate_button_action(
   let names: Vec<&str> = bindings.iter().map(|(n, _)| n.as_str()).collect();
   let body = format!("{action}; {{{}}}", names.join(", "));
   let code = manipulate_block_code(&body, bindings);
-  match crate::interpret_to_expr(&code) {
+  // A variable holding a picture has no source to bind in the `Block`, so
+  // it is installed as a global while the action runs: the action can read
+  // it, and one that leaves it alone reports the picture back rather than
+  // the bare symbol.
+  let frozen: Vec<(String, String)> = bindings
+    .iter()
+    .filter(|(_, value)| crate::is_frozen_graphic(value))
+    .cloned()
+    .collect();
+  let result = if frozen.is_empty() {
+    crate::interpret_to_expr(&code)
+  } else {
+    crate::with_scoped_globals(&frozen, || crate::interpret_to_expr(&code))
+  };
+  match result {
     Ok(Expr::List(ref vals)) if vals.len() == names.len() => names
       .into_iter()
       .map(str::to_string)
