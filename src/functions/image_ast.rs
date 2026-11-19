@@ -3175,6 +3175,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    frame_ticks: true,
     layout: crate::functions::plot::BarLayout::Grouped,
     bar_origin_top: false,
     log_x: false,

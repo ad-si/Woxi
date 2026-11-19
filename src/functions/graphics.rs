@@ -14111,6 +14111,14 @@ pub(crate) struct AxisPadding {
 }
 
 impl AxisPadding {
+  /// Whether the `(low, high)` sides are left `Automatic`.
+  pub(crate) fn automatic_sides(&self) -> (bool, bool) {
+    (
+      matches!(self.lo, PlotPadAmount::Automatic),
+      matches!(self.hi, PlotPadAmount::Automatic),
+    )
+  }
+
   /// The `(low, high)` padding in data units for an axis of the given
   /// (unpadded) span, with `Automatic` resolving to `automatic_frac` of it.
   /// A `Scaled[f]` side is the fraction `f` of the whole padded range:
@@ -15076,6 +15084,40 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if plot_range_y.is_none() && text_h < svg_height as f64 {
         grown.y_min = grown.y_min.min(cy - half_h + room_y);
         grown.y_max = grown.y_max.max(cy + half_h - room_y);
+      }
+    }
+    // An inset drawn at its own pixel size (`Inset[g, pos]` with no `size`)
+    // is likewise kept whole: it is centered on its anchor, so the range
+    // grows by half its width and height in data units — plus the default
+    // padding (1/50 of the padded width) unless `PlotRangePadding` is set.
+    let inset_margin = if plot_range_padding.is_none() {
+      plot_w / 50.0
+    } else {
+      0.0
+    };
+    for prim in &primitives {
+      let Primitive::InsetGraphic {
+        x,
+        y,
+        w,
+        h,
+        scaled: false,
+        size: None,
+        ..
+      } = prim
+      else {
+        continue;
+      };
+      let (half_w, half_h) =
+        ((w / 2.0 + inset_margin) / kx, (h / 2.0 + inset_margin) / ky);
+      let (room_x, room_y) = (slack_x / kx, slack_y / ky);
+      if plot_range_x.is_none() && *w < svg_width as f64 {
+        grown.x_min = grown.x_min.min(x - half_w + room_x);
+        grown.x_max = grown.x_max.max(x + half_w - room_x);
+      }
+      if plot_range_y.is_none() && *h < svg_height as f64 {
+        grown.y_min = grown.y_min.min(y - half_h + room_y);
+        grown.y_max = grown.y_max.max(y + half_h - room_y);
       }
     }
     if grown == bb {

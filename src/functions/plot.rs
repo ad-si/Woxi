@@ -9029,6 +9029,9 @@ pub(crate) struct BarChartLook {
   /// An explicit `ImagePadding` (left, right, bottom, top in points); a
   /// `None` side is automatic.
   pub image_padding: Option<[Option<f64>; 4]>,
+  /// An explicit `PlotRangePadding`, padding the bars' extent (or the
+  /// explicit `PlotRange`); its `Automatic` sides keep the default padding.
+  pub plot_range_padding: Option<Expr>,
 }
 
 /// A `ChartElements` bar: copies of the rendered picture `svg`, each as
@@ -9099,6 +9102,7 @@ impl Default for BarChartLook {
       ticks_style: None,
       axes_label_fonts: [None, None],
       image_padding: None,
+      plot_range_padding: None,
     }
   }
 }
@@ -9497,6 +9501,41 @@ pub(crate) fn generate_bar_svg(
     }
   });
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
+
+  // An explicit `PlotRangePadding` pads the bars' own extent (or the
+  // explicit `PlotRange`) instead; an `Automatic` side keeps the default
+  // bound computed above.
+  let ((x_min, x_max), (y_min, y_max)) = match &look.plot_range_padding {
+    Some(padding) => {
+      let spec = crate::functions::graphics::parse_plot_range_padding(padding);
+      let pad = |axis: &crate::functions::graphics::AxisPadding,
+                 (lo, hi): (f64, f64),
+                 (auto_lo, auto_hi): (f64, f64)| {
+        let span = hi - lo;
+        if span <= 0.0 {
+          return (auto_lo, auto_hi);
+        }
+        let (pad_lo, pad_hi) = axis.resolve(span, 0.0);
+        let (keep_lo, keep_hi) = axis.automatic_sides();
+        (
+          if keep_lo { auto_lo } else { lo - pad_lo },
+          if keep_hi { auto_hi } else { hi + pad_hi },
+        )
+      };
+      let x_base =
+        plot_range_x.unwrap_or((slot.margin, n as f64 - slot.margin));
+      let y_base = plot_range_y.unwrap_or(if look.value_axis_negated {
+        (data_lo.min(0.0), 0.0)
+      } else {
+        (data_lo.min(0.0), data_hi.max(0.0))
+      });
+      (
+        pad(&spec.x, x_base, (x_min, x_max)),
+        pad(&spec.y, y_base, (y_min, y_max)),
+      )
+    }
+    None => ((x_min, x_max), (y_min, y_max)),
+  };
 
   let sf = RESOLUTION_SCALE as f64;
 

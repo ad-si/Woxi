@@ -1695,6 +1695,45 @@ mod graphics {
       );
     }
 
+    /// An inset drawn at its own pixel size is kept whole by an automatic
+    /// plot range: the range grows until the picture, centered on its
+    /// anchor, fits in the canvas instead of being cut off at the edge.
+    #[test]
+    fn a_natural_size_inset_widens_the_automatic_plot_range() {
+      let svg = export_svg(
+        "Graphics[{Disk[], Inset[Graphics[{Red, Disk[]}, \
+         ImageSize -> {100, 100}], {3, 0}]}, ImageSize -> {400, 200}]",
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("a nested picture")
+        .0
+        .to_string();
+      let attr = |name: &str| -> f64 {
+        nested
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no {name}: {nested}"))
+      };
+      let (x, w) = (attr("x"), attr("width"));
+      assert_eq!(w, 100.0, "natural size: {nested}");
+      assert!(
+        x >= 0.0 && x + w <= 400.0,
+        "the inset lies inside the canvas: {nested}"
+      );
+      // An explicit plot range still pins the axis: the inset may overflow.
+      let pinned = export_svg(
+        "Graphics[{Disk[], Inset[Graphics[{Red, Disk[]}, \
+         ImageSize -> {100, 100}], {3, 0}]}, ImageSize -> {400, 200}, \
+         PlotRange -> {{-1, 3}, {-1, 1}}]",
+      );
+      assert!(pinned.contains("<svg x=\"348.50\""), "{pinned}");
+    }
+
     /// A `Scaled[{w, h}]` inset size is a fraction of the plot, so a
     /// picture inset into itself shrinks at every level instead of keeping
     /// its natural size.
@@ -19694,6 +19733,71 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "{centers:?} {ticks:?}"
         );
       }
+    }
+
+    /// `FrameTicks -> None` keeps a bar chart's frame but drops its tick
+    /// marks and labels (regression: the value labels stayed), while
+    /// `Ticks -> None` alone leaves a frame's ticks alone.
+    #[test]
+    fn bar_chart_frame_ticks_none_drops_the_frame_ticks() {
+      let bare = export_svg(
+        "BarChart[{5, 3, 8}, Frame -> True, FrameTicks -> None, Axes -> False]",
+      );
+      assert!(y_tick_labels(&bare).is_empty(), "{bare}");
+      for side in ["None", "False"] {
+        let svg = export_svg(&format!(
+          "BarChart[{{5, 3, 8}}, Frame -> True, FrameTicks -> {side}]"
+        ));
+        assert!(y_tick_labels(&svg).is_empty(), "{side}: {svg}");
+      }
+      let framed = export_svg("BarChart[{5, 3, 8}, Frame -> True]");
+      assert!(!y_tick_labels(&framed).is_empty(), "{framed}");
+      // Without a frame `FrameTicks` has nothing to act on.
+      let unframed = export_svg("BarChart[{5, 3, 8}, FrameTicks -> None]");
+      assert!(!y_tick_labels(&unframed).is_empty(), "{unframed}");
+    }
+
+    /// `PlotRangePadding` pads a bar chart's range: `None` puts the frame
+    /// right at the explicit `PlotRange` edges, and `Scaled[f]` on the top
+    /// leaves that fraction of the padded range above it.
+    #[test]
+    fn bar_chart_plot_range_padding_pads_the_range() {
+      // The frame's top and bottom, from the closed polyline drawing it.
+      let frame_rect = |svg: &str| -> (f64, f64) {
+        let points = svg
+          .split("<polyline")
+          .nth(1)
+          .and_then(|t| t.split(" points=\"").nth(1))
+          .and_then(|t| t.split('"').next())
+          .expect("a frame polyline");
+        let ys: Vec<f64> = points
+          .split_whitespace()
+          .filter_map(|p| p.split(',').nth(1)?.parse().ok())
+          .collect();
+        let top = ys.iter().copied().fold(f64::MAX, f64::min);
+        let bottom = ys.iter().copied().fold(f64::MIN, f64::max);
+        (top, bottom)
+      };
+      let bar_top = |svg: &str| -> f64 {
+        bar_rects(svg)
+          .iter()
+          .map(|b| b.1 as f64)
+          .fold(f64::MAX, f64::min)
+      };
+      let opts = "Frame -> True, FrameTicks -> None, Axes -> False, \
+                  PlotRange -> {{0.5, 2.5}, {0, 10}}";
+      let plain = export_svg(&format!("BarChart[{{10, 5}}, {opts}]"));
+      let padded = export_svg(&format!(
+        "BarChart[{{10, 5}}, {opts}, \
+         PlotRangePadding -> {{None, {{None, Scaled[0.2]}}}}]"
+      ));
+      // Unpadded, the tallest bar reaches the top of the range; padded,
+      // a fifth of the frame's height stays free above it.
+      let (top, _) = frame_rect(&plain);
+      assert!((bar_top(&plain) - top).abs() <= 2.0, "{plain}");
+      let (top, bottom) = frame_rect(&padded);
+      let free = (bar_top(&padded) - top) / (bottom - top);
+      assert!((free - 0.2).abs() < 0.02, "free fraction {free}: {padded}");
     }
 
     /// `ChartLegends` are set beside the chart, whose own size stays, with
