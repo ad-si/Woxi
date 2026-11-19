@@ -8752,16 +8752,18 @@ pub(crate) fn inject_plot_source_legend(
   // Bring the picture into the plots' units: the viewBox scaled up by
   // `RESOLUTION_SCALE`, with the drawing scaled along inside it, so the
   // legend comes out at the size it has on a plot of its own.
-  let vb_re = regex::Regex::new(
-    r#"viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)""#,
-  )
-  .ok()?;
+  let vb_re =
+    regex::Regex::new(r#"viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)""#)
+      .ok()?;
   let caps = vb_re.captures(svg)?;
   let w: f64 = caps[1].parse().ok()?;
   let h: f64 = caps[2].parse().ok()?;
   let sf = RESOLUTION_SCALE as f64;
-  let scaled_vb =
-    format!("viewBox=\"0 0 {:.0} {:.0}\"", (w * sf).round(), (h * sf).round());
+  let scaled_vb = format!(
+    "viewBox=\"0 0 {:.0} {:.0}\"",
+    (w * sf).round(),
+    (h * sf).round()
+  );
   let mut buf = svg.replacen(&caps[0], &scaled_vb, 1);
   let tag_end = buf.find('>')? + 1;
   let close = buf.rfind("</svg>")?;
