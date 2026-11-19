@@ -12,6 +12,10 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Apart` splits rational functions with symbolic coefficients over
+    quadratic and repeated factors (`1/(s (s^2 + a^2))`), and
+    `InverseLaplaceTransform` uses it, so `1/(s (s^2 + Pi^2))` inverts.
+    A sum of time-shifted terms (`1/s - E^(-2 s)/s`) inverts term by term.
 
 # 2026-11-08 - 0.4.0
 

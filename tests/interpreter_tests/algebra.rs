@@ -4124,6 +4124,53 @@ mod together {
 mod apart {
   use super::*;
 
+  // Nonlinear and repeated factors with symbolic coefficients are split by
+  // undetermined coefficients.
+  #[test]
+  fn apart_symbolic_nonlinear_factors() {
+    assert_eq!(
+      interpret("Apart[1/(s (s^2 + a^2)), s]").unwrap(),
+      "1/(a^2*s) - s/(a^2*(a^2 + s^2))"
+    );
+    assert_eq!(
+      interpret("Apart[1/(s (s^2 + Pi^2)), s]").unwrap(),
+      "1/(Pi^2*s) - s/(Pi^2*(Pi^2 + s^2))"
+    );
+    assert_eq!(
+      interpret("Apart[1/((x^2 + a) (x^2 + b)), x]").unwrap(),
+      "1/((-a + b)*(a + x^2)) + 1/((a - b)*(b + x^2))"
+    );
+  }
+
+  #[test]
+  fn apart_symbolic_repeated_factors() {
+    assert_eq!(
+      interpret("Apart[s/(s + a)^2, s]").unwrap(),
+      "-(a/(a + s)^2) + (a + s)^(-1)"
+    );
+    assert_eq!(
+      interpret("Apart[1/((s + a)^2 (s + b)), s]").unwrap(),
+      "1/((-a + b)*(a + s)^2) - 1/((a - b)^2*(a + s)) + 1/((a - b)^2*(b + s))"
+    );
+  }
+
+  #[test]
+  fn apart_symbolic_improper_fraction() {
+    assert_eq!(
+      interpret("Apart[s^3/(s^2 + a^2), s]").unwrap(),
+      "s - (a^2*s)/(a^2 + s^2)"
+    );
+    assert_eq!(
+      interpret("Apart[(x^2 + 1)/(x^2 + a^2), x]").unwrap(),
+      "1 + (1 - a^2)/(a^2 + x^2)"
+    );
+    // A proper fraction over one irreducible factor is already apart.
+    assert_eq!(
+      interpret("Apart[1/(x^2 + a^2), x]").unwrap(),
+      "(a^2 + x^2)^(-1)"
+    );
+  }
+
   // A polynomial has no denominator to split, but Apart multiplies it out.
   #[test]
   fn apart_expands_polynomials() {
