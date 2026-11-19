@@ -6914,7 +6914,10 @@ impl QuadraticNumber {
     // 1/(a + b√d) = (a - b√d)/(a² - d b²); the norm is nonzero for a
     // nonzero number since √d is irrational.
     let d = ExactRational::int(self.radicand.unwrap_or(0));
-    let norm = self.a.mul(self.a)?.add(self.b.mul(self.b)?.mul(d)?.neg()?)?;
+    let norm = self
+      .a
+      .mul(self.a)?
+      .add(self.b.mul(self.b)?.mul(d)?.neg()?)?;
     let inv = norm.inv()?;
     Some(Self {
       a: self.a.mul(inv)?,
@@ -7024,7 +7027,9 @@ impl QuadraticNumber {
       Expr::UnaryOp {
         op: UnaryOperator::Minus,
         operand,
-      } => Self::from_expr(operand)?.mul(Self::rational(ExactRational::int(-1))),
+      } => {
+        Self::from_expr(operand)?.mul(Self::rational(ExactRational::int(-1)))
+      }
       _ => None,
     }
   }

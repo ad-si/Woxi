@@ -1735,6 +1735,53 @@ mod simplify {
     assert_eq!(interpret("Simplify[a/x + b/x]").unwrap(), "(a + b)/x");
   }
 
+  // A number built from square roots that equals a rational is reduced to
+  // it, whatever form it comes in.
+  #[test]
+  fn square_radical_numbers_reduce_to_rationals() {
+    assert_eq!(
+      interpret("Simplify[(-6 - 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Simplify[(6 + 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(1 + Sqrt[2]) + 1/(1 - Sqrt[2])]").unwrap(),
+      "-2"
+    );
+    // Irrational ones keep their form.
+    assert_eq!(
+      interpret("Simplify[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "Sqrt[2] + Sqrt[3]"
+    );
+  }
+
+  // A sum over a quadratic radical denominator is rationalized when that is
+  // simpler.
+  #[test]
+  fn rationalizes_sum_over_radical_denominator() {
+    assert_eq!(
+      interpret("FullSimplify[(1 + Sqrt[5])/(6 + 2 Sqrt[5])]").unwrap(),
+      "(-1 + Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + Sqrt[3])/(1 + Sqrt[3])]").unwrap(),
+      "(1 + Sqrt[3])/2"
+    );
+  }
+
+  // The result is evaluated (and simplified) again, so factors that cancel
+  // do and the form of the input does not matter.
+  #[test]
+  fn result_is_reevaluated() {
+    assert_eq!(
+      interpret("FullSimplify[(-2 (-1 - Sqrt[5]))/(1 + Sqrt[5])^2]").unwrap(),
+      interpret("FullSimplify[2/(1 + Sqrt[5])]").unwrap()
+    );
+  }
+
   #[test]
   fn combine_like_denominator_with_extra() {
     assert_eq!(
@@ -3317,6 +3364,36 @@ mod together_integer_denominator_form {
 
 mod together {
   use super::*;
+
+  // A bare integer numerator cancels against the denominator's content.
+  #[test]
+  fn integer_numerator_cancels_content() {
+    assert_eq!(
+      interpret("Together[(1/2)/(-1/2 + x^2)] === 1/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Together[(-3/2)/(-1/2 + x^2)] === -3/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Inverse[{{1/2, x}, {x, 1}}][[2, 2]] === -1/(-1 + 2 x^2)")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // The combined fraction is an evaluated expression.
+  #[test]
+  fn result_is_evaluated() {
+    assert_eq!(
+      interpret(
+        "Together[(-1 - Sqrt[5])/(-(1 + Sqrt[5])^2)] === 1/(1 + Sqrt[5])"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 
   // Combining a sum reads `c^(-1 + n)` as `c^n/c`; a lone power keeps it
   #[test]

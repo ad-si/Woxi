@@ -7169,6 +7169,16 @@ mod qfactorial {
 mod plus_term_ordering {
   use super::*;
 
+  // A sum times other factors against a product of several factors orders
+  // from the last factor, as Sort does.
+  #[test]
+  fn scaled_sum_against_product() {
+    assert_eq!(interpret("(a + b)/x + c/y").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("c/y + (a + b)/x").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("(a + b)*x + c*y").unwrap(), "(a + b)*x + c*y");
+    assert_eq!(interpret("(a + b)*y + c*x").unwrap(), "c*x + (a + b)*y");
+  }
+
   // Powers of one base with symbolic exponents order by the exponents, and a
   // power of a plain sum with a symbolic exponent orders after the variable
   #[test]

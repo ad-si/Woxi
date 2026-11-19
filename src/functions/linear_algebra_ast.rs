@@ -2004,7 +2004,10 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// algebraic number, reduced as such when a radical is left in a
 /// denominator: the determinant of a rotation matrix written with them is
 /// exactly `1`. `None` when there is nothing to reduce.
-fn reduce_radical_determinant(matrix: &[Vec<Expr>], det: &Expr) -> Option<Expr> {
+fn reduce_radical_determinant(
+  matrix: &[Vec<Expr>],
+  det: &Expr,
+) -> Option<Expr> {
   if !has_irrational_denominator(det)
     || !matrix.iter().flatten().all(is_radical_number)
   {
@@ -2024,7 +2027,8 @@ fn has_irrational_denominator(e: &Expr) -> bool {
   let negative_exponent = |x: &Expr| {
     crate::functions::math_ast::expr_to_rational(x).is_some_and(|(n, _)| n < 0)
   };
-  let rational = |x: &Expr| crate::functions::math_ast::expr_to_rational(x).is_some();
+  let rational =
+    |x: &Expr| crate::functions::math_ast::expr_to_rational(x).is_some();
   match e {
     Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
       (negative_exponent(&args[1]) && !rational(&args[0]))

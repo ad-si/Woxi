@@ -2405,7 +2405,8 @@ fn reevaluate_simplified(
   args: &[Expr],
   simplify: fn(&[Expr]) -> Result<Expr, InterpreterError>,
 ) -> Result<Expr, InterpreterError> {
-  let evaluate = |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
+  let evaluate =
+    |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
   let result = simplify(args)?;
   let evaluated = evaluate(result.clone());
   if crate::syntax::expr_to_string(&evaluated)
