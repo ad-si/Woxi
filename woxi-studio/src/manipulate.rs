@@ -1235,16 +1235,22 @@ impl ManipulateState {
       // `$$` uniquification suffix on its control names, while the saved
       // variable names arrive with it already stripped.
       let suffixed = format!("{name}$$");
-      if let Some(control) = self
+      // Every row bound to the variable (a slider and a Trigger playing
+      // it) reopens on the saved value, not just the first.
+      let mut restored = false;
+      for control in self
         .controls
         .iter_mut()
-        .find(|c| c.name() == name || c.name() == suffixed)
+        .filter(|c| c.name() == name || c.name() == suffixed)
       {
         control.set_current_from_code(code);
-      } else if let Some(slot) = self
-        .state
-        .iter_mut()
-        .find(|(n, _)| n == name || *n == suffixed)
+        restored = true;
+      }
+      if !restored
+        && let Some(slot) = self
+          .state
+          .iter_mut()
+          .find(|(n, _)| n == name || *n == suffixed)
       {
         // A hidden `ControlType -> None` variable (a cached puzzle, a
         // generated picture) reopens on what it held at save time too: the

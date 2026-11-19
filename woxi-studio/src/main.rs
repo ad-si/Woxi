@@ -11805,6 +11805,44 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
 
   #[test]
+  fn slider_and_trigger_on_one_variable_stay_in_sync() {
+    // A slider and a Trigger row for the same variable both show (as in
+    // Wolfram); a saved value restores both rows, and playing advances the
+    // Trigger with the slider following it.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[n^2, {{n, 9, \"steps\"}, 1, 9, 1}, \
+       {{n, 1, \"play\"}, 1, 9, 1, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls.len(), 2);
+    let values = |s: &manipulate::ManipulateState| {
+      s.controls
+        .iter()
+        .map(|c| match c {
+          manipulate::ControlState::Continuous { current, .. }
+          | manipulate::ControlState::Trigger { current, .. } => *current,
+          other => panic!("unexpected control {other:?}"),
+        })
+        .collect::<Vec<_>>()
+    };
+    assert!(matches!(
+      &state.controls[1],
+      manipulate::ControlState::Trigger { name, .. } if name == "n"
+    ));
+    // Both rows start from the first row's initial value.
+    assert_eq!(values(&state), vec![9.0, 9.0]);
+
+    state.apply_saved_variables(&[("n".to_string(), "2".to_string())]);
+    assert_eq!(values(&state), vec![2.0, 2.0]);
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+
+    state.advance_animation();
+    assert_eq!(values(&state), vec![3.0, 3.0]);
+    assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
+  #[test]
   fn sole_finite_trigger_builds_a_dedicated_trigger_row() {
     // A Demonstrations "play once over a fixed duration" control: this
     // Trigger is the *only* spec for its variable and its sweep end is
