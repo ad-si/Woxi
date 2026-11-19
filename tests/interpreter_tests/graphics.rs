@@ -28421,6 +28421,77 @@ mod show {
     assert!(svg.contains("stroke-width=\"2.00\""), "{svg}");
   }
 
+  /// A relative `Thickness[t]` in `PlotStyle` is a fraction of the image
+  /// width: a wider plot draws a heavier curve, and the curve extracted
+  /// from the plot stays relative, scaling with the graphic it is drawn in.
+  /// Regression: it was frozen to `t` times the default 360 px width, so a
+  /// `PolarPlot` curve redrawn in a 500 px `Graphics` was too thin.
+  #[test]
+  fn relative_plot_style_thickness_follows_the_image_width() {
+    clear_state();
+    let curve_width = |code: &str| -> f64 {
+      let svg = export_svg(code);
+      // The curve is the one stroke wider than the 2-unit axes and ticks.
+      svg
+        .split("stroke-width=\"")
+        .skip(1)
+        .filter_map(|s| s.split('"').next()?.parse::<f64>().ok())
+        .fold(0.0, f64::max)
+    };
+    for (plotter, width) in
+      [("Plot", 360), ("Plot", 720), ("ListLinePlot", 720)]
+    {
+      let data = if plotter == "Plot" {
+        "x, {x, 0, 1}"
+      } else {
+        "{1, 3, 2}"
+      };
+      let w = curve_width(&format!(
+        "{plotter}[{data}, PlotStyle -> Thickness[0.01], ImageSize -> {width}]"
+      ));
+      // Rendered at 10 units per pixel.
+      assert!(
+        (w - width as f64 * 0.01 * 10.0).abs() < 0.5,
+        "{plotter} at {width}: {w}"
+      );
+    }
+    // `ImageSize` before `PlotStyle` resolves the same way.
+    let w = curve_width(
+      "Plot[x, {x, 0, 1}, ImageSize -> 720, PlotStyle -> {Red, Thickness[0.01]}]",
+    );
+    assert!((w - 72.0).abs() < 0.5, "{w}");
+    // `Show` keeps the first plot's width for the merged curves.
+    let w = curve_width(
+      "Show[Plot[x, {x, 0, 1}, PlotStyle -> Thickness[0.01], \
+       ImageSize -> 720], Plot[2 x, {x, 0, 1}]]",
+    );
+    assert!((w - 72.0).abs() < 0.5, "{w}");
+    // A later absolute weight overrides the relative one.
+    assert_eq!(
+      interpret(
+        "Cases[First[PolarPlot[1, {t, 0, Pi}, \
+         PlotStyle -> {Thickness[0.006], AbsoluteThickness[3]}]], \
+         _Thickness | _AbsoluteThickness, Infinity]"
+      )
+      .unwrap(),
+      "{AbsoluteThickness[3.]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[First[PolarPlot[1, {t, 0, Pi}, \
+         PlotStyle -> {Thickness[0.006]}]], _Thickness | _AbsoluteThickness, \
+         Infinity]"
+      )
+      .unwrap(),
+      "{Thickness[0.006]}"
+    );
+    let svg = export_svg(
+      "Graphics[First[Plot[x, {x, 0, 1}, PlotStyle -> Thickness[0.01]]], \
+       ImageSize -> 720]",
+    );
+    assert!(svg.contains("stroke-width=\"7.19\""), "{svg}");
+  }
+
   /// `Show` merges the primitives of the graphics it is given, so a
   /// `Plot3D` surface has to be available as primitives too. Regression:
   /// the surface existed only as a rendering, so showing one together with

@@ -700,12 +700,16 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         }
         // A curve keeps its weight and dashes: the plot draws it with
         // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
-        // extracted line is drawn the same way wherever it is placed.
+        // extracted line is drawn the same way wherever it is placed. A
+        // relative `Thickness[t]` stays relative, so the line scales with
+        // the graphic it is placed in.
         if !s.is_scatter {
-          style.push(call1(
-            "AbsoluteThickness",
-            Expr::Real(s.thickness.unwrap_or(2.0)),
-          ));
+          style.push(match s.relative_thickness {
+            Some(t) => call1("Thickness", Expr::Real(t)),
+            None => {
+              call1("AbsoluteThickness", Expr::Real(s.thickness.unwrap_or(2.0)))
+            }
+          });
           style.extend(crate::functions::graphics::series_dashing_expr(
             s,
             source.image_size.0,

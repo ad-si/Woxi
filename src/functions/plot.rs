@@ -3483,6 +3483,10 @@ pub(crate) struct SeriesStyle {
   /// Line thickness in display pixels (e.g. 1.5 = default, 2.0 = Thick).
   /// None means use the default (1.5px).
   pub thickness: Option<f64>,
+  /// A relative `Thickness[t]`: the fraction `t` of the image width. Kept
+  /// so `thickness` follows the plot's actual width (see
+  /// `PlotOptions::resolve_relative_thickness`).
+  pub relative_thickness: Option<f64>,
   /// Scatter dot size: a fraction of the image width for `PointSize[…]`,
   /// stored negative for the absolute printer's points of
   /// `AbsolutePointSize[…]`. None means the default dot.
@@ -3982,6 +3986,18 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Size each relative `Thickness[t]` of `plot_style` as the fraction `t`
+  /// of this plot's image width, as Wolfram does: a wider plot draws the
+  /// same `Thickness` with a heavier line.
+  pub(crate) fn resolve_relative_thickness(&mut self) {
+    let width = self.svg_width as f64;
+    for style in &mut self.plot_style {
+      if let Some(t) = style.relative_thickness {
+        style.thickness = Some(t * width);
+      }
+    }
+  }
+
   /// Drop every `FrameLabel` edge, plain text and picture alike.
   pub(crate) fn clear_frame_labels(&mut self) {
     self.frame_label_bottom = None;
@@ -8198,12 +8214,18 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
-      let (thickness, point_size, dashing) = if plot_style.is_empty() {
-        (None, None, None)
-      } else {
-        let style = &plot_style[i % plot_style.len()];
-        (style.thickness, style.point_size, style.dashing.clone())
-      };
+      let (thickness, relative_thickness, point_size, dashing) =
+        if plot_style.is_empty() {
+          (None, None, None, None)
+        } else {
+          let style = &plot_style[i % plot_style.len()];
+          (
+            style.thickness,
+            style.relative_thickness,
+            style.point_size,
+            style.dashing.clone(),
+          )
+        };
       let opacity = plot_style
         .get(i % plot_style.len().max(1))
         .and_then(|s| s.opacity);
@@ -8225,6 +8247,7 @@ pub(crate) fn build_plot_source(
         fill_opacity,
         marker: None,
         thickness,
+        relative_thickness,
         point_size,
         point_size_expr: plot_style
           .get(i % plot_style.len().max(1))
@@ -8315,6 +8338,7 @@ pub(crate) fn collapse_style_for_single_series(
     }
     if style.thickness.is_some() {
       merged.thickness = style.thickness;
+      merged.relative_thickness = style.relative_thickness;
     }
     if style.point_size.is_some() {
       merged.point_size = style.point_size;
@@ -8765,6 +8789,7 @@ pub(crate) fn render_merged_plot_source(
       )),
       color_expr: s.color_expr.clone(),
       thickness: s.thickness,
+      relative_thickness: s.relative_thickness,
       point_size: s.point_size,
       point_size_expr: s.point_size_expr.clone(),
       dashing: s.dashing.clone(),
@@ -8772,6 +8797,8 @@ pub(crate) fn render_merged_plot_source(
       ..SeriesStyle::default()
     })
     .collect();
+  // A relative `Thickness` follows the merged graphic's width.
+  opts.resolve_relative_thickness();
   // Markers travel with the series too, so a `Show` of a marked scatter
   // plot keeps drawing the glyphs its `PlotMarkers` asked for.
   opts.plot_markers = drawn.iter().map(|s| s.marker.clone()).collect();
@@ -12412,6 +12439,7 @@ pub(crate) fn histogram_plot_source(
       fill_opacity: Some(if datasets.len() > 1 { 0.7 } else { 1.0 }),
       marker: None,
       thickness: Some(0.5),
+      relative_thickness: None,
       point_size: None,
       point_size_expr: None,
       dashing: None,
@@ -13629,8 +13657,14 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
   }
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => style.thickness = Some(2.0),
-      "Thin" => style.thickness = Some(0.5),
+      "Thick" => {
+        style.thickness = Some(2.0);
+        style.relative_thickness = None;
+      }
+      "Thin" => {
+        style.thickness = Some(0.5);
+        style.relative_thickness = None;
+      }
       // `None` hides the curve itself; a `Filling` toward it still shows.
       "None" => style.opacity = Some(0.0),
       // A named dash length is absolute pixels, not a fraction of the
@@ -13661,25 +13695,25 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
         }
       }
       "Thickness" if args.len() == 1 => {
-        if let Expr::Identifier(s) = &args[0] {
-          match s.as_str() {
-            "Large" => style.thickness = Some(2.0),
-            "Tiny" => style.thickness = Some(0.5),
-            _ => {
-              if let Some(t) = try_eval_to_f64(&args[0]) {
-                // Relative thickness: fraction of plot width → display px
-                // 360px default width * fraction
-                style.thickness = Some(t * 360.0);
-              }
-            }
-          }
+        let named = match &args[0] {
+          Expr::Identifier(s) if s == "Large" => Some(2.0),
+          Expr::Identifier(s) if s == "Tiny" => Some(0.5),
+          _ => None,
+        };
+        if let Some(t) = named {
+          style.thickness = Some(t);
+          style.relative_thickness = None;
         } else if let Some(t) = try_eval_to_f64(&args[0]) {
-          style.thickness = Some(t * 360.0);
+          // A fraction of the image width: display px at the default
+          // width until the plot's own width resolves it.
+          style.thickness = Some(t * DEFAULT_WIDTH as f64);
+          style.relative_thickness = Some(t);
         }
       }
       "AbsoluteThickness" if args.len() == 1 => {
         if let Some(t) = try_eval_to_f64(&args[0]) {
           style.thickness = Some(t);
+          style.relative_thickness = None;
         }
       }
       "PointSize" if args.len() == 1 => {
@@ -16322,6 +16356,7 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.full_width = fw;
         plot_opts.image_size_explicit = image_size_explicit_dims(replacement);
         plot_opts.image_size_value = Some(replacement.clone());
+        plot_opts.resolve_relative_thickness();
       }
     }
     "ClippingStyle" => {
@@ -16355,6 +16390,7 @@ pub(crate) fn apply_common_plot_option(
     }
     "PlotStyle" => {
       plot_opts.plot_style = parse_plot_style(replacement);
+      plot_opts.resolve_relative_thickness();
     }
     "ColorFunction" => {
       plot_opts.color_function = match replacement {

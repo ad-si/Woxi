@@ -3915,6 +3915,7 @@ fn contour_plot_equations(
           fill_opacity: None,
           marker: None,
           thickness: series_thickness,
+          relative_thickness: None,
           point_size: None,
           point_size_expr: None,
           dashing: style.and_then(|s| s.dashing.clone()),

@@ -3,11 +3,10 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, FillTarget, Filling, IntervalMarkers,
-  PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
-  apply_filling_option, build_plot_source, expand_plot_theme,
-  generate_scatter_svg_with_options, generate_svg_with_filling,
-  parse_image_size, parse_plot_style,
+  FillTarget, Filling, IntervalMarkers, PlotOptions, SeriesStyle,
+  adjust_y_range_for_filling_opts, apply_filling_option, build_plot_source,
+  expand_plot_theme, generate_scatter_svg_with_options,
+  generate_svg_with_filling,
 };
 use crate::functions::plot_scaling::Scaling;
 use crate::functions::sound::audio_sample_rate;
@@ -1518,18 +1517,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             .unwrap_or_else(|_| replacement.clone());
           out.scaling = Scaling::parse_option(&value);
         }
-        "ImageSize" => {
-          if let Some((w, h, fw)) =
-            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
-          {
-            opts.svg_width = w;
-            opts.svg_height = h;
-            opts.full_width = fw;
-            opts.image_size_explicit =
-              crate::functions::plot::image_size_explicit_dims(replacement);
-            opts.image_size_value = Some(replacement.clone());
-          }
-        }
         "Joined" => match replacement {
           Expr::Identifier(v) if v == "True" => out.joined = true,
           // `Joined -> {b1, b2, ...}`: join series `i` only when `bi` is
@@ -1595,9 +1582,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           opts.background =
             crate::functions::plot::parse_background_option(replacement);
         }
-        "PlotStyle" => {
-          opts.plot_style = parse_plot_style(replacement);
-        }
         // `PlotMarkers -> marker` draws that glyph at every data point
         // instead of the default round dot, one marker per series.
         "PlotMarkers" => {
@@ -1625,7 +1609,9 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "MeshShading"
         | "MeshStyle"
         | "PlotLabels"
-        | "PlotLegends" => {
+        | "PlotLegends"
+        | "ImageSize"
+        | "PlotStyle" => {
           let mut overrides =
             crate::functions::plot::PlotRangeOverrides::default();
           crate::functions::plot::apply_common_plot_option(
