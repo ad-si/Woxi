@@ -838,6 +838,51 @@ mod outlines {
     }
   }
 
+  // Two faces crossing along a line through a corner of each are cut
+  // there to be depth-sorted. The cut is not part of either outline, so no
+  // dark line is drawn along it (here the vertical line x = 189.7).
+  #[test]
+  fn a_cut_through_a_corner_is_not_outlined() {
+    let s = svg(
+      "Graphics3D[{Polygon[{{-1, 0, -1}, {1, 0, -1}, {0, 0, 1}}], \
+       Polygon[{{0, -1, -1}, {0, 1, -1}, {0, 0, 1}}]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&s), 4, "{s}");
+    let outline: Vec<&str> =
+      s.lines().filter(|l| l.starts_with("<line ")).collect();
+    // Each piece keeps the two outline edges it got from its face.
+    assert_eq!(outline.len(), 8, "{s}");
+    assert!(
+      s.lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .all(|l| !l.contains("stroke=\"rgb(64,64,64)\"")),
+      "{s}"
+    );
+    let x = |l: &str, attr: &str| {
+      l.split(&format!("{attr}=\""))
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .map(str::to_string)
+    };
+    assert!(
+      outline.iter().all(|l| x(l, "x1") != x(l, "x2")),
+      "a line runs along the cut: {s}"
+    );
+  }
+
+  // Faces that share an edge only up to the precision of their data (a
+  // corner a millionth off the other face's plane) are not cut into
+  // slivers against each other.
+  #[test]
+  fn faces_meeting_up_to_rounding_are_not_cut() {
+    let s = svg(
+      "Graphics3D[{Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}], \
+       Polygon[{{0, 0, -1*^-6}, {1, 0, 1*^-6}, {1, 0.8, 0.3}, {0, 0.8, 0.3}}]}, \
+       ViewPoint -> {0.3, 2, 3}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&s), 4, "{s}");
+  }
+
   // The far side of an opaque closed solid is not drawn, so it cannot be
   // painted over its near side.
   #[test]
