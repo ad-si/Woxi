@@ -6416,6 +6416,39 @@ mod tests {
     assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
   }
 
+  /// Live counters written between the control specs
+  /// (`Row[{Style["left "], Dynamic[left]}]`) are panel rows at their
+  /// declared place that follow the state a click changes, and a control
+  /// written in one `Row` after such a counter shares its line.
+  #[test]
+  fn live_counter_rows_sit_in_the_panel_and_follow_clicks() {
+    let code = r#"Manipulate[
+      ClickPane[Graphics[Rectangle[{0, 0}, {2, 1}], PlotRange -> {{0, 2}, {0, 1}},
+          ImageSize -> {200, 100}], (left--; n++) &],
+      {{mode, 1, ""}, {1 -> "a", 2 -> "b"}, ControlType -> SetterBar},
+      Row[{Style["left "], Dynamic[left]}],
+      Row[{Style["rounds ", Bold], Dynamic[n],
+        Control[{{back, 0, ""}, {1 -> "undo"}, ControlType -> SetterBar}]}],
+      {{left, 5}, ControlType -> None},
+      {{n, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["mode", "back"]);
+    // Both counters sit in the panel just before the "undo" bar.
+    assert_eq!(state.panel_displays, vec![(0, 1), (1, 1)]);
+    assert!(state.joins_previous_control(1));
+    state.pointer = (50.0, 50.0);
+    state.apply_pane_click();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let shown = format!("{:?}", state.display_trees);
+    assert!(shown.contains("text: \"4\""), "{shown}");
+    assert!(shown.contains("text: \"1\""), "{shown}");
+  }
+
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
   /// graphic.
   fn pixel_of(region: &MouseRegion, gx: f64, gy: f64) -> (f32, f32) {

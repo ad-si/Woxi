@@ -4601,12 +4601,12 @@ fn render_manipulate_widget<'a>(
     if joined_through.is_some_and(|last| ctrl_idx <= last) {
       continue;
     }
-    let mut trees = panel_trees_at(ctrl_idx).peekable();
-    if trees.peek().is_some() {
+    // Each such display starts a line of its own; the control after it may
+    // join that line (a live caption written in one `Row` with the control,
+    // see `ManipulateState::joins_previous_control`).
+    for tree in panel_trees_at(ctrl_idx) {
       flush_control_line(&mut controls_col, &mut line);
-    }
-    for tree in trees {
-      controls_col = controls_col.push(render_display_node(cell_idx, tree));
+      line.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
     // showing is left out of the panel entirely, the way Wolfram swaps one
