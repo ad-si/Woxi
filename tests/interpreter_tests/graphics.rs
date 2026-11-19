@@ -26225,6 +26225,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // A one-argument `Text[…]` between nested styles only marks its content
+    // as text: the column inside it is still laid out with both styles
+    // instead of being typeset as the source text `Column[{b, c}]`.
+    #[test]
+    fn text_wrapped_styled_column_inside_styled_layout_is_laid_out() {
+      for expr in [
+        "Style[Column[{\"a\", Style[Text[Column[{\"b\", \"c\"}]], Blue]}], 12]",
+        "Style[Text[Column[{\"a\", Style[Text[Column[{\"b\", \"c\"}]], Blue]}]], 12]",
+        "Column[{\"a\", Style[Style[Text[Column[{\"b\", \"c\"}]], Blue], 12]}]",
+        "Column[{\"a\", Style[Text[Style[Column[{\"b\", \"c\"}], Blue]], 12]}]",
+        "Style[Row[{\"a\", Style[Text[Column[{\"b\", \"c\"}]], Blue]}], 12]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(!svg.contains("Column["), "{expr} dumped source: {svg}");
+        for part in ["b", "c"] {
+          let blue_12 = svg.split("<text").any(|t| {
+            t.contains("font-size=\"12\"")
+              && t.contains("fill=\"rgb(0,0,255)\"")
+              && t.contains(&format!(">{part}<"))
+          });
+          assert!(blue_12, "{expr}: `{part}` not blue at 12pt: {svg}");
+        }
+      }
+    }
+
     // A `Spacer[n]` *between* a row's items is blank horizontal space, the
     // same as one used as the separator — the typeset row used to print it
     // as the literal text "Spacer[50]".
