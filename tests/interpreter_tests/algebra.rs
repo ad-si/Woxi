@@ -10411,10 +10411,8 @@ mod reduce {
        a[2, 3] == 0 && a[3, 1] == 0 && a[3, 2] == 0"
     );
     assert_eq!(
-      interpret(
-        "Reduce[{x + Sqrt[2] y == 1, Sqrt[2] x + 2 y == 0}, {x, y}]"
-      )
-      .unwrap(),
+      interpret("Reduce[{x + Sqrt[2] y == 1, Sqrt[2] x + 2 y == 0}, {x, y}]")
+        .unwrap(),
       "False"
     );
     assert!(

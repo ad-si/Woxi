@@ -2788,7 +2788,7 @@ fn reduce_numeric_linear_system(
   vars: &[String],
   domain: Option<&str>,
 ) -> Option<Expr> {
-  if !matches!(domain, None | Some("Reals") | Some("Complexes"))
+  if !matches!(domain, None | Some("Reals" | "Complexes"))
     || vars.is_empty()
     || constraints.len() < 2
   {

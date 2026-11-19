@@ -1005,7 +1005,10 @@ mod plus_radical_like_terms {
   #[test]
   fn radicals_differing_by_integer_powers_combine() {
     assert_eq!(interpret("Sqrt[2] + 1/Sqrt[2]").unwrap(), "3/Sqrt[2]");
-    assert_eq!(interpret("1 + Sqrt[2] + 1/Sqrt[2]").unwrap(), "1 + 3/Sqrt[2]");
+    assert_eq!(
+      interpret("1 + Sqrt[2] + 1/Sqrt[2]").unwrap(),
+      "1 + 3/Sqrt[2]"
+    );
     assert_eq!(interpret("Sqrt[3]/12 + Sqrt[3]/4").unwrap(), "1/Sqrt[3]");
     assert_eq!(interpret("2^(1/3) + 2^(-2/3)").unwrap(), "3/2^(2/3)");
     assert_eq!(
