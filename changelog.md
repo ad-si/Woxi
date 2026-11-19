@@ -12,6 +12,10 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `GraphPlot` of a rule list ignores the edge directions when laying the
+    graph out, as it already did when drawing it, so a directed acyclic list
+    (a grid of rules pointing right and up) comes out as a grid instead of in
+    layers.
 
 # 2026-11-08 - 0.4.0
 
