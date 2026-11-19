@@ -2051,6 +2051,87 @@ fn parametric_region_layer(
   Ok(Expr::List(items.into()))
 }
 
+/// The polar grid `PolarGridLines` asks a `ListPolarPlot` to draw under its
+/// points when the polar axes are off, for data reaching radius `r_max`.
+///
+/// The option is `{angular, radial}` (a lone value applies to both). As in
+/// Wolfram, `Automatic` (or `True`) angular grid lines are 25 spokes from
+/// the origin to `r_max`, one every π/12 from 0 to 2π, and `Automatic`
+/// radial grid lines are the circles at radii `k r_max / 5` for k = 0…4;
+/// an explicit list of angles or radii draws a spoke or circle at each.
+/// Every line is styled `GrayLevel[0.5], Opacity[0.4]`. Returns the grid
+/// primitives and the largest distance from the origin they reach, or
+/// `None` unless the option asks for some grid.
+pub fn polar_grid_lines_prolog(
+  opts: &[Expr],
+  r_max: f64,
+) -> Option<(Vec<Expr>, f64)> {
+  let value = opts.iter().rev().find_map(|opt| {
+    let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+    (name == "PolarGridLines").then(|| value.into_owned())
+  })?;
+  let (angular, radial) = match &value {
+    Expr::List(items)
+      if items.len() == 2
+        && !items.iter().all(|e| try_eval_to_f64(e).is_some()) =>
+    {
+      (items[0].clone(), items[1].clone())
+    }
+    other => (other.clone(), other.clone()),
+  };
+  // `Automatic`/`True` take the default positions; a list its own values.
+  let positions = |spec: &Expr, defaults: Vec<f64>| -> Vec<f64> {
+    match spec {
+      Expr::Identifier(n) if n == "Automatic" || n == "True" => defaults,
+      Expr::List(items) => items.iter().filter_map(try_eval_to_f64).collect(),
+      _ => Vec::new(),
+    }
+  };
+  let r_max = if r_max.is_finite() && r_max > 0.0 {
+    r_max
+  } else {
+    1.0
+  };
+  let angles = positions(
+    &angular,
+    (0..=24)
+      .map(|k| std::f64::consts::PI / 12.0 * f64::from(k))
+      .collect(),
+  );
+  let radii = positions(
+    &radial,
+    (0..5).map(|k| r_max * f64::from(k) / 5.0).collect(),
+  );
+  if angles.is_empty() && radii.is_empty() {
+    return None;
+  }
+  let extent = radii
+    .iter()
+    .map(|r| r.abs())
+    .fold(if angles.is_empty() { 0.0 } else { r_max }, f64::max);
+  let point =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let mut grid = vec![call(
+    "Directive",
+    vec![
+      call1("GrayLevel", Expr::Real(0.5)),
+      call1("Opacity", Expr::Real(0.4)),
+    ],
+  )];
+  for a in angles {
+    grid.push(call1(
+      "Line",
+      Expr::List(
+        vec![point(0.0, 0.0), point(r_max * a.cos(), r_max * a.sin())].into(),
+      ),
+    ));
+  }
+  for r in radii {
+    grid.push(call("Circle", vec![point(0.0, 0.0), Expr::Real(r)]));
+  }
+  Some((vec![Expr::List(grid.into())], extent))
+}
+
 /// What `PolarAxes`, `PolarTicks` and `PolarGridLines` ask a `PolarPlot` to
 /// draw: a circular angular axis with an optional radial axis, instead of the
 /// Cartesian axes. Both two-part options are `{angular, radial}`.

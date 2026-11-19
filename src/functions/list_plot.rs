@@ -3577,7 +3577,25 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if parsed.opts.aspect_ratio.is_none() {
     parsed.opts.aspect_automatic = true;
   }
-  let (x_range, y_range) = compute_ranges(&polar_series);
+  // `PolarGridLines` draws spokes and circles out to the farthest point;
+  // the automatic plot range then spans the whole grid, like any other
+  // primitive in the picture.
+  let r_max = polar_series
+    .iter()
+    .flatten()
+    .map(|&(x, y)| x.hypot(y))
+    .filter(|r| r.is_finite())
+    .fold(0.0_f64, f64::max);
+  let grid = crate::functions::parametric_plot::polar_grid_lines_prolog(
+    &args[1..],
+    r_max,
+  );
+  let mut range_series = polar_series.clone();
+  if let Some((grid, extent)) = grid {
+    parsed.opts.prolog.extend(grid);
+    range_series.push(vec![(-extent, -extent), (extent, extent)]);
+  }
+  let (x_range, y_range) = compute_ranges(&range_series);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   // Like ListPlot, the points stay unconnected unless `Joined -> True`,

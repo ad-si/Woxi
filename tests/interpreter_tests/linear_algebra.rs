@@ -10626,6 +10626,56 @@ mod coordinate_transform {
     );
   }
 
+  // A list of points (or a deeper array of them) is transformed point by
+  // point.
+  #[test]
+  fn list_of_points() {
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Polar\", {{1, 1}, {0, 2}}]"
+      )
+      .unwrap(),
+      "{{Sqrt[2], Pi/4}, {2, Pi/2}}"
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Polar\" -> \"Cartesian\", \
+         {{{1, Pi}, {2, Pi/2}}, {{1, 0}, {3, 0}}}]"
+      )
+      .unwrap(),
+      "{{{-1, 0}, {0, 2}}, {{1, 0}, {3, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Spherical\", {{3., 4., 0.}}]"
+      )
+      .unwrap(),
+      "{{5., 1.5707963267948966, 0.9272952180016122}}"
+    );
+    // A single-point list keeps the list structure, so `Rest /@` drops
+    // each point's radius rather than mapping over the unevaluated call.
+    assert_eq!(
+      interpret(
+        "Rest /@ CoordinateTransform[\"Spherical\" -> \"Cartesian\", \
+         {{1, Pi/2, 0}, {2, 0, 0}}]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 2}}"
+    );
+  }
+
+  // A point of the wrong dimension leaves the whole call unevaluated.
+  #[test]
+  fn list_of_points_with_bad_point_stays_unevaluated() {
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Polar\", {{1, 1}, {1, 2, 3}}]"
+      )
+      .unwrap(),
+      "CoordinateTransform[Cartesian -> Polar, {{1, 1}, {1, 2, 3}}]"
+    );
+  }
+
   #[test]
   fn numeric_points_fold() {
     assert_eq!(
