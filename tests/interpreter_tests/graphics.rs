@@ -6142,6 +6142,35 @@ mod plot3d {
       }
     }
 
+    // A label with a newline is stacked as one line per tspan; it used to
+    // be written into a single `<text>` with the raw newline, which SVG
+    // collapses into a space.
+    #[test]
+    fn multiline_axes_label_is_stacked() {
+      for code in [
+        "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
+         AxesLabel -> {\"first part\\nsecond part\", None, None}]",
+        "ListPlot3D[Table[{i, j, i + j}, {i, 3}, {j, 3}], \
+         AxesLabel -> {None, \"first part\\nsecond part\", None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(!svg.contains("first part\n"), "{code}: {svg}");
+        assert!(
+          svg.contains("dy=\"0.0\">first part</tspan>"),
+          "{code}: {svg}"
+        );
+        let second = svg
+          .split("\">second part</tspan>")
+          .next()
+          .and_then(|s| s.rsplit("dy=\"").next())
+          .and_then(|s| s.parse::<f64>().ok());
+        assert!(
+          matches!(second, Some(dy) if dy > 0.0),
+          "{code}: the second line must sit below the first: {svg}"
+        );
+      }
+    }
+
     // `AxesLabel -> Automatic` labels the axes with the plot's variables;
     // it used to be drawn as the literal word "Automatic". The labels
     // survive `Show` and an `Automatic` among explicit labels.

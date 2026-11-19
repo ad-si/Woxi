@@ -3641,18 +3641,31 @@ fn draw_axes_on_box_with_ticks(
         // …plus half of the label's own box, so `offset` can center it
         // just past them. Wolfram sets every axis label upright, the z
         // axis's too.
-        let own_w = label_half_width(label, font_size);
+        // A label with newlines (`"time to expiry\nin months"`) is set
+        // as a block of centered lines, as Wolfram stacks it.
+        let lines = label_lines(label);
+        let pitch = font_size as f64 * LABEL_LINE_PITCH;
+        let block_half_h = half_h + (lines.len() - 1) as f64 * pitch * 0.5;
+        let own_w = lines
+          .iter()
+          .map(|line| label_half_width(line, font_size))
+          .fold(0.0, f64::max);
         let reach = TICK_LABEL_OFFSET
           + (perpx * sign).abs() * (half_w + own_w)
-          + (perpy * sign).abs() * (half_h + half_h);
+          + (perpy * sign).abs() * (half_h + block_half_h);
         let offset = reach + font_size as f64 * 0.5;
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
+        let top = ly - (lines.len() - 1) as f64 * pitch * 0.5;
+        let content = stacked_label_svg(&lines, lx, pitch);
         svg.push_str(&format!(
-          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{label}</text>\n",
+          "<text x=\"{lx:.1}\" y=\"{top:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{content}</text>\n",
         ));
-        let chars = markup_char_count(label);
-        extent.add_text(lx, ly, chars, font_size as f64, "middle");
+        for (i, line) in lines.iter().enumerate() {
+          let chars = markup_char_count(line);
+          let y = top + i as f64 * pitch;
+          extent.add_text(lx, y, chars, font_size as f64, "middle");
+        }
       }
     }
 
@@ -3939,6 +3952,36 @@ fn label_font_size(opts: &[Expr]) -> Option<f64> {
 /// character count — enough to keep labels from landing on each other.
 fn label_half_width(label: &str, font_size: i32) -> f64 {
   markup_char_count(label) as f64 * font_size as f64 * 0.3
+}
+
+/// The distance between the baselines of a multi-line axis label, as a
+/// multiple of its font size.
+const LABEL_LINE_PITCH: f64 = 1.2;
+
+/// The lines of an axis label's SVG markup, each well-formed on its own.
+fn label_lines(label: &str) -> Vec<String> {
+  if label.contains('\n') {
+    crate::functions::graphics::split_markup_lines(label)
+  } else {
+    vec![label.to_string()]
+  }
+}
+
+/// The content of a `<text>` holding `lines`: a single line as is, several
+/// as `<tspan>`s that each restart at `x`, `pitch` below the one before.
+fn stacked_label_svg(lines: &[String], x: f64, pitch: f64) -> String {
+  if lines.len() == 1 {
+    return lines[0].clone();
+  }
+  let mut out = String::new();
+  for (i, line) in lines.iter().enumerate() {
+    let dy = if i == 0 { 0.0 } else { pitch };
+    let line = crate::functions::graphics::tspan_line(line);
+    out.push_str(&format!(
+      "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+    ));
+  }
+  out
 }
 
 /// The tick positions along an axis spanning `val_min` to `val_max`, the
