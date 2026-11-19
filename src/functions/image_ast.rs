@@ -13481,6 +13481,10 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 /// - Static **Bold** instances of both (`fonttools varLib.instancer
 ///   wght=700`) for the same reason: usvg would otherwise draw
 ///   `font-weight="bold"` text with the regular outlines.
+/// - Static **Italic** and **Bold Italic** instances of Atkinson
+///   Hyperlegible Next: usvg never slants glyphs itself, so without a
+///   dedicated italic face `font-style="italic"` text (`Style[…, Italic]`,
+///   `FontSlant -> Italic`, TraditionalForm variables) would draw upright.
 ///
 /// All bundled Atkinson files carry an `OS/2.ySubscriptYOffset` of 400
 /// (upstream: 75). usvg lowers `baseline-shift="sub"` by exactly that
@@ -13511,6 +13515,14 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
       "../../resources/AtkinsonHyperlegibleNext-VariableFont_wght.ttf"
     )
     .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-Italic.ttf")
+      .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-BoldItalic.ttf")
+      .to_vec(),
   );
   fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
   fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");

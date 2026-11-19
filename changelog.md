@@ -12,6 +12,10 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- Woxi Studio and PNG/PDF export draw italic text slanted:
+    `Style[…, Italic]`, `FontSlant -> Italic` and TraditionalForm variables
+    use bundled italic and bold-italic Atkinson Hyperlegible Next faces
+    instead of falling back to the upright ones.
 
 # 2026-11-08 - 0.4.0
 
