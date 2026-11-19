@@ -36070,4 +36070,3 @@ Cell[BoxData["2"], "Output"]
     assert_eq!(notebook::slide_ranges(&styles), [0..2, 2..5]);
   }
 }
-

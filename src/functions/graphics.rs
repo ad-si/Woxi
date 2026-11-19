@@ -38285,22 +38285,21 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
                 matches!(b, ManipulateControl::Button { label: l, action: a, .. }
                   if *l == label && *a == action)
               });
-              match known {
-                Some((_, in_branches)) => in_branches.push(idx + 1),
-                None => {
-                  let joins_previous = !buttons.is_empty();
-                  buttons.push((
-                    ManipulateControl::Button {
-                      label,
-                      label_runs,
-                      action,
-                      enabled: None,
-                      label_code: dynamic_button_label_code(pattern),
-                      joins_previous,
-                    },
-                    vec![idx + 1],
-                  ));
-                }
+              if let Some((_, in_branches)) = known {
+                in_branches.push(idx + 1)
+              } else {
+                let joins_previous = !buttons.is_empty();
+                buttons.push((
+                  ManipulateControl::Button {
+                    label,
+                    label_runs,
+                    action,
+                    enabled: None,
+                    label_code: dynamic_button_label_code(pattern),
+                    joins_previous,
+                  },
+                  vec![idx + 1],
+                ));
               }
             }
           }
@@ -38308,7 +38307,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             for (button, in_branches) in buttons {
               let list = in_branches
                 .iter()
-                .map(|i| i.to_string())
+                .map(std::string::ToString::to_string)
                 .collect::<Vec<_>>()
                 .join(", ");
               control_visible.push((
