@@ -43275,7 +43275,7 @@ mod manipulate {
   fn spec_keplers_second_law_demonstration() {
     // The full Manipulate cell of the "Kepler's Second Law" Demonstration
     // notebook: four labeled sliders (two bounded by the period P), a
-    // Trigger on t, and a body that renders an SVG under the initial
+    // Trigger row on t (shown beside t's slider), and a body that renders an SVG under the initial
     // bindings.
     let expr = interpret_to_expr(
       "Manipulate[\n\
@@ -43314,10 +43314,11 @@ mod manipulate {
       .controls
       .iter()
       .map(|c| match c {
-        ManipulateControl::Continuous { name, label, .. } => {
+        ManipulateControl::Continuous { name, label, .. }
+        | ManipulateControl::Trigger { name, label, .. } => {
           (name.as_str(), label.as_str())
         }
-        other => panic!("expected continuous control, got {other:?}"),
+        other => panic!("expected a slider or Trigger, got {other:?}"),
       })
       .collect();
     assert_eq!(
@@ -43327,8 +43328,13 @@ mod manipulate {
         ("e", "eccentricity"),
         ("P", "orbital period (years)"),
         ("dt", "time span (years)"),
+        ("t", "animate time since perihelion"),
       ]
     );
+    assert!(matches!(
+      spec.controls.last(),
+      Some(ManipulateControl::Trigger { .. })
+    ));
     assert!(spec.animated && !spec.animation_running);
     assert_eq!(spec.animation_var.as_deref(), Some("t"));
 
