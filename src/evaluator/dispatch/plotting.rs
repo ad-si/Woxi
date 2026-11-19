@@ -208,17 +208,14 @@ fn with_symbol_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   renamed.then_some(out)
 }
 
-/// The arguments with every `opt -> (Evaluate[…] &)` option value
-/// evaluated, or `None` when there is none. (A pure function whose body is
-/// not wrapped in `Evaluate` evaluates to itself; other option values are
-/// evaluated by each plot as it reads them.)
+/// The arguments with every `opt -> value` option value evaluated, or
+/// `None` when evaluation changes none of them. The function plots hold
+/// their arguments, but Wolfram evaluates a `->` option's value once up
+/// front: `Axes -> ax` with `ax = False` hides the axes, and the
+/// `Evaluate[…]` in a `ColorFunction -> (Evaluate[…] &)` runs once, not at
+/// every sample point. (A pure function whose body is not wrapped in
+/// `Evaluate` evaluates to itself; `:>` options stay held.)
 fn with_evaluated_options(args: &[Expr]) -> Option<Vec<Expr>> {
-  let evaluate_body = |e: &Expr| match e {
-    Expr::Function { body } | Expr::NamedFunction { body, .. } => {
-      matches!(body.as_ref(), Expr::FunctionCall { name, .. } if name == "Evaluate")
-    }
-    _ => false,
-  };
   let mut out = args.to_vec();
   let mut changed = false;
   for arg in out.iter_mut().skip(1) {
@@ -229,11 +226,9 @@ fn with_evaluated_options(args: &[Expr]) -> Option<Vec<Expr>> {
     else {
       continue;
     };
-    if !evaluate_body(replacement) {
-      continue;
-    }
     if let Ok(value) =
       crate::evaluator::evaluate_expr_to_expr(replacement.as_ref())
+      && !crate::evaluator::pattern_matching::expr_equal(&value, replacement)
     {
       *arg = Expr::Rule {
         pattern: pattern.clone(),
@@ -382,9 +377,7 @@ pub fn dispatch_plotting(
     return dispatch_plotting(name, &renamed);
   }
   // The function plots hold their arguments, but Wolfram evaluates their
-  // options once up front: the `Evaluate[…]` in a
-  // `ColorFunction -> (Evaluate[…] &)` runs once, not at every sample
-  // point.
+  // options once up front (see `with_evaluated_options`).
   if PLLD_HEADS.contains(&name)
     && args.len() >= 2
     && let Some(evaluated) = with_evaluated_options(args)
