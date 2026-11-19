@@ -6180,7 +6180,7 @@ pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bandwidth = match positional.get(1) {
     None => None,
     Some(Expr::Identifier(a)) if a == "Automatic" => None,
-    Some(e) => match crate::functions::math_ast::try_eval_to_f64(e) {
+    Some(e) => match try_eval_to_f64(e) {
       Some(h) if h > 0.0 => Some(h),
       _ => return unchanged(),
     },
@@ -7263,6 +7263,96 @@ pub fn array_plot_argument_error(head: &str, args: &[Expr]) -> Option<Expr> {
 /// `ArrayPlot`'s default `MeshStyle`: `GrayLevel[2/3]`.
 const ARRAY_PLOT_MESH_COLOR: RGBColor = RGBColor(0xAA, 0xAA, 0xAA);
 
+/// One direction of an `ArrayPlot` `Mesh` spec.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum ArrayMeshLines {
+  /// `False` / `None` (the default): no lines.
+  #[default]
+  None,
+  /// `True` / `All`: a line at every cell boundary, outer edges included.
+  All,
+  /// `{k1, k2, …}`: lines at the listed boundaries, where `0` is the
+  /// leading edge and `n` the trailing edge of an `n`-cell direction.
+  At(Vec<f64>),
+}
+
+impl ArrayMeshLines {
+  fn parse(spec: &Expr) -> Self {
+    match spec {
+      Expr::Identifier(v) if v == "True" || v == "All" => Self::All,
+      Expr::List(items) => Self::At(
+        items
+          .iter()
+          .filter_map(|item| match item {
+            // `{k, style}` places a styled line; only the position is used.
+            Expr::List(pair) if !pair.is_empty() => try_eval_to_f64(&pair[0]),
+            other => try_eval_to_f64(other),
+          })
+          .collect(),
+      ),
+      _ => Self::None,
+    }
+  }
+
+  /// The boundaries that carry a line, in increasing order, for a
+  /// direction of `n` cells. Positions outside `0..=n` are dropped.
+  fn boundaries(&self, n: usize) -> Vec<f64> {
+    match self {
+      Self::None => Vec::new(),
+      Self::All => (0..=n).map(|k| k as f64).collect(),
+      Self::At(positions) => {
+        let mut out: Vec<f64> = positions
+          .iter()
+          .copied()
+          .filter(|k| k.is_finite() && (0.0..=n as f64).contains(k))
+          .collect();
+        out.sort_by(f64::total_cmp);
+        out.dedup();
+        out
+      }
+    }
+  }
+}
+
+/// `ArrayPlot`'s `Mesh` option, split into row and column boundaries.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ArrayMeshSpec {
+  rows: ArrayMeshLines,
+  cols: ArrayMeshLines,
+}
+
+impl ArrayMeshSpec {
+  /// `True`/`All`/`False`/`None` apply to both directions;
+  /// `{rspec, cspec}` gives the row and column boundaries separately.
+  fn parse(spec: &Expr) -> Self {
+    match spec {
+      Expr::List(items)
+        if items.len() == 2
+          && items.iter().all(|i| {
+            matches!(i, Expr::List(_))
+              || matches!(i, Expr::Identifier(v)
+                if matches!(v.as_str(), "True" | "False" | "All" | "None"))
+          }) =>
+      {
+        Self {
+          rows: ArrayMeshLines::parse(&items[0]),
+          cols: ArrayMeshLines::parse(&items[1]),
+        }
+      }
+      other => {
+        let lines = match other {
+          Expr::Identifier(_) => ArrayMeshLines::parse(other),
+          _ => ArrayMeshLines::None,
+        };
+        Self {
+          rows: lines.clone(),
+          cols: lines,
+        }
+      }
+    }
+  }
+}
+
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
@@ -7275,7 +7365,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // be matched by `Replace` semantics — exact values like `I`/`-I` (which
   // have no `f64` form) and patterns alike, not just real numbers.
   let mut color_rules: Option<Expr> = None;
-  let mut mesh = false;
+  // `Mesh -> spec`: which row and column boundaries get a grid line.
+  let mut mesh_spec = ArrayMeshSpec::default();
   // `MeshStyle` / `FrameStyle`: colors of the cell grid and of the border.
   let mut mesh_style_color: Option<RGBColor> = None;
   let mut frame_style_color: Option<RGBColor> = None;
@@ -7376,10 +7467,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .unwrap_or_else(|_| replacement.as_ref().clone()),
           );
         }
-        "Mesh" => match replacement.as_ref() {
-          Expr::Identifier(v) if v == "True" || v == "All" => mesh = true,
-          _ => {}
-        },
+        "Mesh" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_spec = ArrayMeshSpec::parse(&val);
+        }
         "MeshStyle" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
@@ -7543,6 +7635,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
+  // Row boundaries (0 = top edge) and column boundaries (0 = left edge)
+  // that carry a mesh line.
+  let mesh_rows = mesh_spec.rows.boundaries(n_rows);
+  let mesh_cols = mesh_spec.cols.boundaries(n_cols);
+  let mesh = !mesh_rows.is_empty() || !mesh_cols.is_empty();
 
   // Padding in cell units. `Automatic` (the default) leaves a margin of
   // 1/48 (horizontally) and 1/50 (vertically) of the larger dimension
@@ -7767,9 +7864,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if mesh {
       let mesh_color = mesh_style_color.unwrap_or(ARRAY_PLOT_MESH_COLOR);
       let line_w = (s as i32).max(1);
-      // Vertical lines, including the outer edges of the grid
-      for j in 0..=n_cols {
-        let x = (off_x + j as f64 * cell_w).round() as i32;
+      // Vertical lines at the chosen column boundaries
+      for &j in &mesh_cols {
+        let x = (off_x + j * cell_w).round() as i32;
         root
           .draw(&Rectangle::new(
             [
@@ -7785,9 +7882,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
           })?;
       }
-      // Horizontal lines, including the outer edges of the grid
-      for i in 0..=n_rows {
-        let y = (off_y + i as f64 * cell_h).round() as i32;
+      // Horizontal lines at the chosen row boundaries
+      for &i in &mesh_rows {
+        let y = (off_y + i * cell_h).round() as i32;
         root
           .draw(&Rectangle::new(
             [
@@ -8009,18 +8106,24 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         channel(mesh_color.2),
       ],
     ));
-    let point = |x: usize, y: usize| {
-      Expr::List(
-        vec![Expr::Integer(x as i128), Expr::Integer(y as i128)].into(),
-      )
+    // Whole boundaries stay exact integers; others become reals.
+    let coord = |v: f64| {
+      if v.fract() == 0.0 {
+        Expr::Integer(v as i128)
+      } else {
+        Expr::Real(v)
+      }
     };
+    let point = |x: f64, y: f64| Expr::List(vec![coord(x), coord(y)].into());
     let segment =
       |a: Expr, b: Expr| call1("Line", Expr::List(vec![a, b].into()));
-    for j in 0..=n_cols {
-      prims.push(segment(point(j, 0), point(j, n_rows)));
+    let (w, h) = (n_cols as f64, n_rows as f64);
+    for &j in &mesh_cols {
+      prims.push(segment(point(j, 0.0), point(j, h)));
     }
-    for i in 0..=n_rows {
-      prims.push(segment(point(0, i), point(n_cols, i)));
+    // Row boundaries count from the top; the raster's y axis runs upward.
+    for &i in mesh_rows.iter().rev() {
+      prims.push(segment(point(0.0, h - i), point(w, h - i)));
     }
   }
   let content = if prims.len() == 1 {
@@ -8088,6 +8191,14 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
       ),
     ));
+  }
+  // The epilog is drawn over the grid in the same coordinates as the
+  // raster, so redrawing the symbolic form (`Pane`, `Show`) keeps it.
+  if !epilog.is_empty() {
+    structure_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Epilog".to_string())),
+      replacement: Box::new(Expr::List(epilog.clone().into())),
+    });
   }
   // The sizing options travel with the symbolic form, so `Show[ArrayPlot[…],
   // …]` redraws the grid at the size and shape it was plotted with.
