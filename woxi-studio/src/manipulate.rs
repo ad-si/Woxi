@@ -6496,6 +6496,63 @@ mod tests {
     assert_eq!(var(&state, "pos"), "{3, 2}");
   }
 
+  /// A sketch pad whose `EventHandler` sits in a `Grid` below a caption:
+  /// pressing clears the path, dragging appends `MousePosition["Graphics"]`
+  /// to it (after a short `Pause`), the `Line[Dynamic[path]]` redraws, and a
+  /// `Button` in a control `Row` integrates along the drawn path.
+  #[test]
+  fn event_handler_in_grid_sketches_a_path() {
+    let code = r#"Manipulate[
+      Grid[{{Text["sketch"]},
+        {EventHandler[
+          Graphics[{Blue, Line[Dynamic[path]]}, PlotRange -> Dynamic[r],
+            Axes -> True, ImageSize -> {200, 200}],
+          {"MouseDown" :> (path = {}),
+           "MouseDragged" :> (Pause[0.01];
+             AppendTo[path, MousePosition["Graphics"]])}]}}],
+      Row[{Button["length",
+        total = Total[EuclideanDistance @@@ Partition[path, 2, 1]]],
+        Dynamic[total]}],
+      {{r, 2}, ControlType -> None},
+      {{path, {{0, 0}, {1, 1}}}, ControlType -> None},
+      {{total, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let region = state.mouse_region.clone().expect("a mouse region");
+    assert_eq!(region.frames.len(), 1, "the graphic's drawing area");
+    let var = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let svg_before = state.current_svg().unwrap().to_string();
+    state.pointer = pixel_of(&region, 0.0, 0.0);
+    state.mouse_down();
+    assert_eq!(var(&state, "path"), "{}");
+    for (gx, gy) in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)] {
+      let (px, py) = pixel_of(&region, gx, gy);
+      state.mouse_moved(px, py);
+    }
+    state.mouse_up();
+    assert!(state.error.is_none(), "drag failed: {:?}", state.error);
+    let path = var(&state, "path");
+    let n = woxi::interpret(&format!("Length[{path}]")).unwrap();
+    assert_eq!(n, "3", "three points appended: {path}");
+    assert_ne!(state.current_svg().unwrap(), svg_before, "path redrawn");
+    state.apply_button_action(
+      "total = Total[EuclideanDistance @@@ Partition[path, 2, 1]]",
+    );
+    let total = var(&state, "total");
+    let ok = woxi::interpret(&format!("Abs[{total} - 2] < 0.05")).unwrap();
+    assert_eq!(ok, "True", "path length {total}");
+  }
+
   /// `Button[Graphics[…], action]` cells (the shape of a tic-tac-toe style
   /// Demonstration): every enabled cell must be a pressable region of the
   /// picture, pressing one runs that cell's own action on the widget state,

@@ -31805,7 +31805,23 @@ fn resolve_display_item(expr: &Expr) -> Expr {
           Err(_) => break,
         }
       }
-      Some(("EventHandler", content)) => current = content.clone(),
+      // A handler with mouse events a live widget can deliver (a sketch
+      // pad laid out in a `Grid` cell below its caption) renders its
+      // picture with the events and drawing areas recorded, as a
+      // top-level `EventHandler` does, so presses and drags over it reach
+      // the actions.
+      Some(("EventHandler", content)) => {
+        if let Expr::FunctionCall { args, .. } = &current
+          && crate::is_visual_mode()
+          && !live_mouse_events(&args[1..]).is_empty()
+          && let rendered @ Expr::Graphics { .. } =
+            crate::render_event_handler_if_needed(current.clone())
+        {
+          current = rendered;
+          break;
+        }
+        current = content.clone();
+      }
       // `ClickPane[content, handler]` shows `content`; the handler needs
       // live clicks. `content` is held, so a state variable holding a
       // picture (`ClickPane[Dynamic[board], …]`) still has to be resolved.

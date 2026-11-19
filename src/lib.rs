@@ -5029,7 +5029,9 @@ fn render_dynamic_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// idiom wraps the whole `Dynamic[Show[…]]` display of a Manipulate in an
 /// `EventHandler` to make it click-to-toggle). Script/CLI mode keeps the
 /// symbolic `EventHandler[…]` echo to match wolframscript.
-fn render_event_handler_if_needed(expr: syntax::Expr) -> syntax::Expr {
+pub(crate) fn render_event_handler_if_needed(
+  expr: syntax::Expr,
+) -> syntax::Expr {
   if !is_visual_mode() {
     return expr;
   }
