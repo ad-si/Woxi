@@ -3779,6 +3779,58 @@ mod graphics {
     }
 
     #[test]
+    fn text_grid_keeps_base_style_and_cell_styles() {
+      // Regression: `Text[Grid[…, BaseStyle -> {20}]]` and a grid of
+      // `Style[…, color]` cells were flattened to one line of 14pt black
+      // text, dropping the font size and the per-cell colors.
+      let svg = export_svg(
+        "Graphics[{Text[Grid[{{Style[\"major\", Red], Style[\"minor\", Blue]}}, \
+         BaseStyle -> {20}], {0, 0}]}, PlotRange -> 11, ImageSize -> 450]",
+      );
+      assert!(!svg.contains(">major  minor<"), "{svg}");
+      assert!(svg.contains("font-size=\"20\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+
+      let svg = export_svg(
+        "Graphics[{Text[Grid[{{\"left\", \"right\"}}, BaseStyle -> {20}], \
+         {0, 0}]}, PlotRange -> 11, ImageSize -> 450]",
+      );
+      assert!(svg.contains("font-size=\"20\""), "{svg}");
+      assert!(svg.contains(">left<") && svg.contains(">right<"), "{svg}");
+    }
+
+    #[test]
+    fn text_grid_offset_is_relative_to_its_center() {
+      // Regression: `Text[Grid[…], pos, {0, 0}]` set as a table put the
+      // grid's lower left corner on `pos`, reading the `Text` offset as an
+      // `Inset` object position; `{0, 0}` is the grid's center.
+      let inset_box = |offset: &str| -> (f64, f64, f64, f64) {
+        let svg = export_svg(&format!(
+          "Graphics[{{Text[Grid[{{{{\"ab\", \"cd\"}}}}, Frame -> All], \
+           {{0, 0}}{offset}]}}, PlotRange -> 10, ImageSize -> 400]"
+        ));
+        let start = svg.find("<svg x=\"").expect(&svg);
+        let tag = &svg[start..svg[start..].find('>').unwrap() + start];
+        let attr = |name: &str| -> f64 {
+          let key = format!(" {name}=\"");
+          let i = tag.find(&key).unwrap() + key.len();
+          tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+        };
+        (attr("x"), attr("y"), attr("width"), attr("height"))
+      };
+      let centered = inset_box("");
+      let (x, y, w, h) = inset_box(", {0, 0}");
+      assert_eq!((x, y, w, h), centered);
+      assert!((x + w / 2.0 - 199.5).abs() < 1.0, "{x} {w}");
+      assert!((y + h / 2.0 - 199.5).abs() < 1.0, "{y} {h}");
+      // `{-1, 0}` puts the grid's left edge on the anchor.
+      let (lx, ly, lw, lh) = inset_box(", {-1, 0}");
+      assert!((lx + lw / 2.0 - 199.5).abs() < 1.0, "{lx} {lw}");
+      assert!(lw > w && (ly + lh / 2.0 - 199.5).abs() < 1.0);
+    }
+
+    #[test]
     fn number_form_of_nested_list_is_typeset() {
       // Regression: `NumberForm[matrix, {3, 2}]` (a Manipulate readout of a
       // 2x2 matrix) printed the raw `NumberForm[{{…}}, {3, 2}]` call because

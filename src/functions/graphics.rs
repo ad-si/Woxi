@@ -3448,7 +3448,7 @@ fn collect_primitives(
             Expr::FunctionCall { name, args: gargs }
               if name == "Grid" && grid_needs_table_layout(gargs) =>
             {
-              match inset_primitives(args, errors) {
+              match inset_primitives(&text_offset_as_inset_args(args), errors) {
                 Some(inner) => prims.extend(inner),
                 None => parse_text(args, style, prims),
               }
@@ -7217,12 +7217,48 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
     Expr::List(cells) => cells.iter().any(is_span_marker),
     _ => false,
   });
+  // A `BaseStyle` (`BaseStyle -> {20}` sets the font size) applies to
+  // every cell, which the flattened single-line text would drop.
   let has_chrome = args[1..].iter().any(|opt| {
     matches!(opt, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n)
-        if matches!(n.as_str(), "Dividers" | "Background" | "Frame")))
+        if matches!(n.as_str(), "Dividers" | "Background" | "Frame" | "BaseStyle")))
   });
-  has_span || has_chrome
+  // Cells styled on their own (`Style["major", Green]`) keep their colors
+  // and sizes only when each cell is set separately.
+  let has_styled_cell = rows.iter().any(|row| match row {
+    Expr::List(cells) => cells.iter().any(|cell| {
+      matches!(cell, Expr::FunctionCall { name, args }
+        if name == "Style" && args.len() > 1)
+    }),
+    _ => false,
+  });
+  has_span || has_chrome || has_styled_cell
+}
+
+/// `Text[expr, pos, {ox, oy}]` puts the point `{ox, oy}` of the text's box
+/// (`{0, 0}` its center, `{±1, ±1}` its corners) on `pos`. When the
+/// expression is embedded as a picture the way `Inset` embeds one, that
+/// offset becomes the matching `Scaled` point of the object, since an
+/// `Inset` reads a bare `{0, 0}` as the object's lower left corner.
+fn text_offset_as_inset_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out = args.to_vec();
+  if let Some(offset) = out.get_mut(2)
+    && let Some((ox, oy)) = expr_to_point(offset)
+  {
+    *offset = Expr::FunctionCall {
+      name: "Scaled".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::Real(f64::midpoint(ox, 1.0)),
+          Expr::Real(f64::midpoint(oy, 1.0)),
+        ]
+        .into(),
+      )]
+      .into(),
+    };
+  }
+  out
 }
 
 /// Embedded inset pictures always center on their anchor. To put the point
