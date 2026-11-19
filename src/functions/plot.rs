@@ -16357,9 +16357,13 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.plot_style = parse_plot_style(replacement);
     }
     "ColorFunction" => {
-      plot_opts.color_function = match replacement {
-        Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
-        other => Some(other.clone()),
+      // Evaluated like any other option value, so a computed choice such
+      // as `ColorFunction -> If[flag, f, None]` resolves to `f` or `None`.
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      plot_opts.color_function = match val {
+        Expr::Identifier(ref v) if v == "Automatic" || v == "None" => None,
+        other => Some(other),
       };
     }
     "ColorFunctionScaling" => {
