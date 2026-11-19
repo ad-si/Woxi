@@ -38286,7 +38286,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
                   if *l == label && *a == action)
               });
               if let Some((_, in_branches)) = known {
-                in_branches.push(idx + 1)
+                in_branches.push(idx + 1);
               } else {
                 let joins_previous = !buttons.is_empty();
                 buttons.push((
