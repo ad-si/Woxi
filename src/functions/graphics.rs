@@ -37938,6 +37938,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // which options were already given so later repeats are skipped below.
   let mut seen_options: std::collections::HashSet<String> =
     std::collections::HashSet::new();
+  // The bounds of every slider variant of a pane- or branch-governed
+  // variable, in declaration order (see `variant_dynamic_bounds`).
+  let mut variant_bounds: Vec<(String, Vec<(f64, f64, Option<f64>)>)> =
+    Vec::new();
   for spec in &arg_items {
     if let Expr::Rule {
       pattern,
@@ -38382,6 +38386,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         // Iterations") are a real Wolfram pattern instead: both stay
         // visible, independently interactive, and read/write the same
         // binding, so those get their own rows.
+        if let ManipulateControl::Continuous {
+          name, min, max, step, ..
+        } = &c
+          && animate.is_none()
+          && pane_governed_names.contains(name)
+        {
+          let bounds = (*min, *max, *step);
+          match variant_bounds.iter_mut().find(|(n, _)| n == name) {
+            Some((_, all)) => all.push(bounds),
+            None => variant_bounds.push((name.clone(), vec![bounds])),
+          }
+        }
         if (animate.is_some() || pane_governed_names.contains(c.name()))
           && !c.name().is_empty()
           && controls.iter().any(|prev| prev.name() == c.name())
@@ -38866,6 +38882,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       real: false,
       exact_initial: false,
     });
+  }
+
+  // A variable whose slider differs per `If` branch or `PaneSelector` pane
+  // got a single row above; let that row take the bounds of whichever
+  // variant is on screen. Bounds the spec already made dynamic win.
+  if !variant_bounds.is_empty() {
+    let conditions = branch_variant_conditions(&spliced_specs, &place_map);
+    for (name, bounds) in &variant_bounds {
+      if dynamic_bounds.iter().any(|(n, ..)| n == name) {
+        continue;
+      }
+      if let Some((_, conds)) = conditions.iter().find(|(n, _)| n == name)
+        && let Some(bound) = variant_dynamic_bounds(name, bounds, conds)
+      {
+        dynamic_bounds.push(bound);
+      }
+    }
   }
 
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
@@ -42038,6 +42071,17 @@ fn pane_or_tab_governed_names(
     }
     match e {
       Expr::FunctionCall { name, args } => {
+        // `If[cond, Control[{{n, …}, a, b}], Control[{{n, …}, c, d}]]` puts
+        // a per-branch variant of one variable's control on screen at a
+        // time, exactly like two panes of a `PaneSelector` would.
+        if name == "If" && args.len() >= 3 {
+          let in_else = pane_control_variables(&args[2], place_map);
+          out.extend(
+            pane_control_variables(&args[1], place_map)
+              .into_iter()
+              .filter(|v| in_else.contains(v)),
+          );
+        }
         if (name == "PaneSelector" || name == "TabView")
           && let Some(panes) = args.first().and_then(tabview_panes)
         {
@@ -42070,6 +42114,181 @@ fn pane_or_tab_governed_names(
     walk(a, place_map, &mut out);
   }
   out
+}
+
+/// For every variable that has one control variant per branch of an
+/// `If[cond, …, …]` or per pane of a `PaneSelector[{v -> …, …}, sel]`
+/// (see `pane_or_tab_governed_names`), the condition under which each
+/// variant is on screen, in the order the variants are declared. A variant
+/// written as a `Manipulate\`Place[n]` reference is declared at slot `n`,
+/// so variants that are all such references are ordered by their slot.
+///
+/// The merged control row of such a variable follows these conditions to
+/// take the bounds of whichever variant is currently showing (see
+/// `variant_dynamic_bounds`).
+fn branch_variant_conditions(
+  args: &[Expr],
+  place_map: &[Vec<String>],
+) -> Vec<(String, Vec<String>)> {
+  type Variants = Vec<(String, Vec<(String, Option<i128>)>)>;
+  fn place_slot(e: &Expr) -> Option<i128> {
+    match e {
+      Expr::FunctionCall { name, args } if is_place_head(name) => {
+        match args.as_slice() {
+          [Expr::Integer(n)] => Some(*n),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  fn record(
+    out: &mut Variants,
+    branch: &Expr,
+    vars: &[String],
+    cond: &str,
+    place_map: &[Vec<String>],
+  ) {
+    for var in pane_control_variables(branch, place_map) {
+      if !vars.contains(&var) {
+        continue;
+      }
+      let entry = (cond.to_string(), place_slot(branch));
+      match out.iter_mut().find(|(n, _)| *n == var) {
+        Some((_, conds)) => conds.push(entry),
+        None => out.push((var, vec![entry])),
+      }
+    }
+  }
+  fn walk(e: &Expr, place_map: &[Vec<String>], out: &mut Variants) {
+    if let Some(selector) = switch_as_pane_selector(e) {
+      return walk(&selector, place_map, out);
+    }
+    match e {
+      Expr::FunctionCall { name, args } if name == "If" && args.len() >= 3 => {
+        let in_else = pane_control_variables(&args[2], place_map);
+        let shared: Vec<String> = pane_control_variables(&args[1], place_map)
+          .into_iter()
+          .filter(|v| in_else.contains(v))
+          .collect();
+        let cond = crate::syntax::expr_to_source_form(&args[0]);
+        record(out, &args[1], &shared, &format!("({cond})"), place_map);
+        record(out, &args[2], &shared, &format!("!({cond})"), place_map);
+        for a in args {
+          walk(a, place_map, out);
+        }
+      }
+      Expr::FunctionCall { name, args } if name == "PaneSelector" => {
+        if let (Some(Expr::List(panes)), Some(selector)) =
+          (args.first(), args.get(1))
+        {
+          let selector = crate::syntax::expr_to_source_form(
+            unwrap_pane_selector(selector),
+          );
+          let mut counts: Vec<(String, usize)> = Vec::new();
+          for pane in panes {
+            if let Expr::Rule { replacement, .. }
+            | Expr::RuleDelayed { replacement, .. } = pane
+            {
+              for v in pane_control_variables(replacement, place_map) {
+                match counts.iter_mut().find(|(n, _)| *n == v) {
+                  Some((_, c)) => *c += 1,
+                  None => counts.push((v, 1)),
+                }
+              }
+            }
+          }
+          let shared: Vec<String> = counts
+            .into_iter()
+            .filter(|(_, c)| *c > 1)
+            .map(|(v, _)| v)
+            .collect();
+          for pane in panes {
+            if let Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } = pane
+            {
+              let cond = format!(
+                "({}) == ({})",
+                selector,
+                crate::syntax::expr_to_source_form(pattern)
+              );
+              record(out, replacement, &shared, &cond, place_map);
+            }
+          }
+        }
+        for a in args {
+          walk(a, place_map, out);
+        }
+      }
+      Expr::FunctionCall { args, .. } => {
+        for a in args {
+          walk(a, place_map, out);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, place_map, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut out = Variants::new();
+  for a in args {
+    walk(a, place_map, &mut out);
+  }
+  out
+    .into_iter()
+    .map(|(var, mut conds)| {
+      if conds.iter().all(|(_, slot)| slot.is_some()) {
+        conds.sort_by_key(|(_, slot)| *slot);
+      }
+      (var, conds.into_iter().map(|(c, _)| c).collect())
+    })
+    .collect()
+}
+
+/// The dynamic bounds of the single row a variable's per-branch slider
+/// variants collapse into (see `branch_variant_conditions`): each of min,
+/// max and step becomes a `Which` over the variants' conditions, so the
+/// slider takes the range of whichever variant Wolfram would be showing.
+/// `None` when the variants and conditions do not line up one to one, or
+/// when every variant has the same bounds anyway.
+fn variant_dynamic_bounds(
+  name: &str,
+  bounds: &[(f64, f64, Option<f64>)],
+  conds: &[String],
+) -> Option<DynamicBound> {
+  if bounds.len() < 2
+    || bounds.len() != conds.len()
+    || bounds.iter().all(|b| *b == bounds[0])
+  {
+    return None;
+  }
+  let num = |v: f64| {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+      format!("{}", v as i64)
+    } else {
+      format!("{v:?}")
+    }
+  };
+  let which = |pick: &dyn Fn(&(f64, f64, Option<f64>)) -> Option<f64>| {
+    let mut parts = Vec::new();
+    for (b, c) in bounds.iter().zip(conds) {
+      parts.push(format!("{c}, {}", num(pick(b)?)));
+    }
+    Some(format!("Which[{}]", parts.join(", ")))
+  };
+  let min_code = which(&|b| Some(b.0));
+  let max_code = which(&|b| Some(b.1));
+  let step_code = which(&|b| b.2);
+  Some((name.to_string(), min_code, max_code, step_code))
 }
 
 /// The control variables a `PaneSelector` pane declares: the variable of
