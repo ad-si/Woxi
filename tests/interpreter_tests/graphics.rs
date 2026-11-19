@@ -48426,6 +48426,36 @@ fn test_parametric_plot3d_tube_plot_style_is_drawn_as_a_surface() {
   );
 }
 
+/// A computed `PlotStyle` (a Manipulate checkbox switching the curve to a
+/// tube: `If[tube, {Tube[r]}, Automatic]`) is evaluated before its `Tube`
+/// is lifted out. Regression: the held `If` was kept as-is, so the curve
+/// stayed a line with a stray `Tube[r]` directive beside it.
+#[test]
+fn test_parametric_plot3d_computed_tube_plot_style() {
+  clear_state();
+  assert_eq!(
+    interpret(
+      "tube = True; r = 0.05; \
+       g = ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6}, \
+       PlotStyle -> If[tube, {Tube[r]}, Automatic]]; \
+       {Cases[g, h_Tube :> Length[h], Infinity], Count[g, _Line, Infinity]}"
+    )
+    .unwrap(),
+    "{{2}, 0}"
+  );
+  clear_state();
+  assert_eq!(
+    interpret(
+      "tube = False; \
+       g = ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6}, \
+       PlotStyle -> If[tube, {Tube[0.05]}, Automatic]]; \
+       {Count[g, _Tube, Infinity], Count[g, _Line, Infinity]}"
+    )
+    .unwrap(),
+    "{0, 1}"
+  );
+}
+
 #[test]
 fn test_infinite_line_is_clipped_to_the_plot_range() {
   // An infinite line drawn into a box is the segment between its two exit
