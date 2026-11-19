@@ -4989,6 +4989,12 @@ fn render_manipulate_widget<'a>(
           x_slider = x_slider.style(disabled_slider_style);
           y_slider = y_slider.style(disabled_slider_style);
         }
+        let sliders = axis_sliders(
+          movable_axes(*x_min, *x_max, *y_min, *y_max),
+          x_slider,
+          y_slider,
+        )
+        .spacing(4);
         let value_widget = text(format!(
           "{{{}, {}}}",
           format_manipulate_number(*x),
@@ -5001,13 +5007,9 @@ fn render_manipulate_widget<'a>(
         // align with the other controls.
         let label_widget =
           manipulate_label_widget(&[], label, label_col_width, enabled);
-        let control_row = row![
-          label_widget,
-          column![x_slider, y_slider].spacing(4),
-          value_widget
-        ]
-        .align_y(Center)
-        .spacing(8);
+        let control_row = row![label_widget, sliders, value_widget]
+          .align_y(Center)
+          .spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::IntervalSlider {
@@ -5177,7 +5179,12 @@ fn render_manipulate_widget<'a>(
             text(format!("{}", point_idx + 1))
               .size(11)
               .font(Font::MONOSPACE),
-            column![x_slider, y_slider].spacing(2),
+            axis_sliders(
+              movable_axes(*x_min, *x_max, *y_min, *y_max),
+              x_slider,
+              y_slider
+            )
+            .spacing(2),
             value_widget
           ]
           .align_y(Center)
@@ -7916,6 +7923,40 @@ fn check_notebook(path: &std::path::Path) -> i32 {
     }
   }
   if ok { 0 } else { 1 }
+}
+
+/// Which axes of a 2D control (`Slider2D`, a `Locator` point) the user can
+/// move, as `(x, y)`. An axis whose bounds coincide is pinned: a Locator
+/// confined to a horizontal line (`{{p, {1, 0}}, {-1, 0}, {6, 0}, Locator}`)
+/// only ever moves in x, so a slider over the empty y range would be dead.
+/// A point pinned on both axes keeps both sliders, so its row stays visible.
+fn movable_axes(
+  x_min: f64,
+  x_max: f64,
+  y_min: f64,
+  y_max: f64,
+) -> (bool, bool) {
+  match (x_min != x_max, y_min != y_max) {
+    (false, false) => (true, true),
+    axes => axes,
+  }
+}
+
+/// The X and Y sliders of a 2D control, stacked, leaving out pinned axes
+/// (see [`movable_axes`]).
+fn axis_sliders<'a>(
+  (x_movable, y_movable): (bool, bool),
+  x_slider: impl Into<Element<'a, Message>>,
+  y_slider: impl Into<Element<'a, Message>>,
+) -> Column<'a, Message> {
+  let mut sliders = Column::new();
+  if x_movable {
+    sliders = sliders.push(x_slider);
+  }
+  if y_movable {
+    sliders = sliders.push(y_slider);
+  }
+  sliders
 }
 
 /// Whether a `--check` warning is a `Symbol::obsolete` deprecation notice.
@@ -35821,6 +35862,51 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "Part::partw: Part 3 of {1, 2} does not exist."
     ));
     assert!(!is_deprecation_notice("obsolete::x is not a tag: here"));
+  }
+
+  #[test]
+  fn pinned_axes_of_2d_controls_get_no_slider() {
+    assert_eq!(movable_axes(-1.0, 6.0, -2.0, 2.0), (true, true));
+    assert_eq!(movable_axes(-1.0, 6.0, 0.0, 0.0), (true, false));
+    assert_eq!(movable_axes(3.0, 3.0, -2.0, 5.0), (false, true));
+    // Pinned on both axes: keep both rather than an empty row.
+    assert_eq!(movable_axes(1.0, 1.0, 2.0, 2.0), (true, true));
+  }
+
+  /// A single-point Locator confined to a horizontal line by equal corner
+  /// y-coordinates keeps that zero-height range, so the Studio offers only
+  /// its x slider while the point still moves along the line.
+  #[test]
+  fn locator_confined_to_a_line_moves_only_along_it() {
+    let code = r#"Manipulate[
+      Graphics[{Line[{{-2, -1}, p, {4, 1}}], Point[p]},
+        PlotRange -> {{-2, 7}, {-2, 2}}],
+      {{p, {1., 0}}, {-1, 0}, {6, 0}, Locator}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a line-confined Locator should build a ManipulateState");
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some());
+    let manipulate::ControlState::Slider2D {
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      ..
+    } = &state.controls[0]
+    else {
+      panic!("expected a Slider2D, got {:?}", state.controls[0]);
+    };
+    assert_eq!((*x_min, *x_max, *y_min, *y_max), (-1.0, 6.0, 0.0, 0.0));
+    assert_eq!(movable_axes(*x_min, *x_max, *y_min, *y_max), (true, false));
+    state.slider2d_change(0, 0, 4.5);
+    let manipulate::ControlState::Slider2D { x, y, .. } = &state.controls[0]
+    else {
+      unreachable!()
+    };
+    assert_eq!((*x, *y), (4.5, 0.0));
   }
 }
 #[cfg(test)]
