@@ -921,6 +921,86 @@ use crate::functions::plot_padding::{
 
 // ── Primitives ───────────────────────────────────────────────────────────
 
+/// The border `Framed[label, opts…]` draws around a graphics label: its
+/// `FrameStyle` color and stroke width, and its `RoundingRadius`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LabelFrame {
+  color: Color,
+  /// Stroke width in printer points.
+  width: f64,
+  /// Corner radius in printer points (`0` for square corners).
+  radius: f64,
+}
+
+/// The value of the `key -> value` (or `key :> value`) option among `opts`.
+fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// The `LabelFrame` of a `Framed[label, opts…]`'s options, or `None` under
+/// `FrameStyle -> None`. `FrameStyle` takes a color, a thickness, or a list
+/// of such directives (`{Thick, Black}`); Wolfram draws a thin black border
+/// by default.
+fn label_frame(opts: &[Expr]) -> Option<LabelFrame> {
+  let mut color = Color::new(0.0, 0.0, 0.0);
+  let mut width = 1.0;
+  if let Some(spec) = option_value(opts, "FrameStyle") {
+    if matches!(spec, Expr::Identifier(s) if s == "None") {
+      return None;
+    }
+    let directives: Vec<&Expr> = match spec {
+      Expr::List(items) => items.iter().collect(),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().collect()
+      }
+      other => vec![other],
+    };
+    for d in directives {
+      if let Some(c) = parse_color(d) {
+        color = c;
+        continue;
+      }
+      let mut probe = StyleState::default();
+      probe.thickness = f64::NAN;
+      apply_directive(d, &mut probe);
+      if !probe.thickness.is_nan() {
+        // Thickness fractions are of a picture's width; a frame around a
+        // label has no picture of its own, so read them against Wolfram's
+        // default 360-point graphic.
+        width = if probe.thickness < 0.0 {
+          -probe.thickness
+        } else {
+          probe.thickness * 360.0
+        };
+      }
+    }
+  }
+  let radius = option_value(opts, "RoundingRadius")
+    .and_then(|r| match r {
+      Expr::List(items) if !items.is_empty() => try_eval_to_f64(&items[0]),
+      other => try_eval_to_f64(other),
+    })
+    .unwrap_or(0.0)
+    .max(0.0);
+  Some(LabelFrame {
+    color,
+    width,
+    radius,
+  })
+}
+
 #[derive(Debug, Clone)]
 enum Primitive {
   /// Opens a `<g>` carrying the hex-encoded action of an
@@ -1033,9 +1113,9 @@ enum Primitive {
     /// `Background -> color`: a panel painted behind the label, so it
     /// stays readable over whatever it is placed on.
     background: Option<Color>,
-    /// `Framed[…]`: the color of the border drawn around the label, or
-    /// `None` for an unframed one (including `FrameStyle -> None`).
-    frame: Option<Color>,
+    /// `Framed[…]`: the border drawn around the label, or `None` for an
+    /// unframed one (including `FrameStyle -> None`).
+    frame: Option<LabelFrame>,
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
@@ -7133,8 +7213,8 @@ fn inset_text(obj: &Expr, pos: &Expr, inset_args: &[Expr]) -> Expr {
 /// The `Text` arguments that place `Inset[obj, pos, opos, size, dirs, opts…]`
 /// when `obj` is drawn as a label. `Text`'s fourth slot is a direction, but
 /// `Inset`'s is a size, so it must not be passed through: the label's
-/// baseline follows the first vector of `dirs` (the direction of the object's
-/// x axis) instead. Options such as `Background -> …` are kept.
+/// baseline follows the direction of the object's x axis that `dirs` gives
+/// instead. Options such as `Background -> …` are kept.
 fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
   let is_option =
     |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
@@ -7142,10 +7222,13 @@ fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
     args.iter().take_while(|e| !is_option(e)).collect();
   let mut text_args: Vec<Expr> =
     positional.iter().take(3).map(|e| (*e).clone()).collect();
+  // `dirs` is either the pair `{{dx, dy}, {ex, ey}}` of the object's axis
+  // directions or just the x direction `{dx, dy}`.
   let x_direction = match positional.get(4) {
     Some(Expr::List(rows)) if rows.len() == 2 => match &rows[0] {
       Expr::List(v) if v.len() == 2 => Some(rows[0].clone()),
-      _ => None,
+      Expr::List(_) => None,
+      _ => Some(Expr::List(rows.clone())),
     },
     _ => None,
   };
@@ -8303,21 +8386,6 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     .or_else(|| rotation.map(|a| (a.cos(), a.sin())));
   // `Background -> color`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
-  fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
-    opts.iter().find_map(|o| match o {
-      Expr::Rule {
-        pattern,
-        replacement,
-      }
-      | Expr::RuleDelayed {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
-        Some(replacement.as_ref())
-      }
-      _ => None,
-    })
-  }
   let background_of =
     |opts: &[Expr]| option_value(opts, "Background").and_then(parse_color);
   // A `Style` the label is written inside — around the `Text` or around its
@@ -8334,11 +8402,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     Expr::FunctionCall { name, args: fargs } if name == "Framed" && !fargs.is_empty()
   );
   let frame = if is_framed {
-    match option_value(frame_opts, "FrameStyle") {
-      Some(Expr::Identifier(s)) if s == "None" => None,
-      Some(spec) => parse_color(spec).or(Some(Color::new(0.0, 0.0, 0.0))),
-      None => Some(Color::new(0.0, 0.0, 0.0)),
-    }
+    label_frame(frame_opts)
   } else {
     None
   };
@@ -13582,7 +13646,17 @@ fn render_primitive(
           None => ("none".to_string(), String::new()),
         };
         let stroke = match frame {
-          Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
+          Some(f) => {
+            let mut attrs =
+              format!(" stroke=\"{}\"", f.color.to_svg_rgb());
+            if f.width != 1.0 {
+              attrs.push_str(&format!(" stroke-width=\"{:.2}\"", f.width));
+            }
+            if f.radius > 0.0 {
+              attrs.push_str(&format!(" rx=\"{:.2}\"", f.radius));
+            }
+            attrs
+          }
           None => String::new(),
         };
         // The panel hugs the glyphs' advance width, as Wolfram's does.
@@ -13593,7 +13667,7 @@ fn render_primitive(
           crate::functions::plot_padding::text_width(&svg_escape(text), fs)
         };
         out.push_str(&format!(
-          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
+          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}{rotate_attr}/>\n",
           match anchor_attr {
             "start" => sx,
             "end" => sx - panel_w,
