@@ -4926,7 +4926,7 @@ mod tests {
         .and_then(|v| v.parse().ok())
         .unwrap();
       // 43 characters at the 0.55 em sans average would be 331 wide.
-      assert!(width < 280.0, "{svg}");
+      assert!(width < 300.0, "{svg}");
     }
 
     /// A re-flowed line that continues after a break between row items

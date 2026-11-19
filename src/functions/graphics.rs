@@ -33665,13 +33665,12 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       let bold = if st.font_weight == "bold" { 1.1 } else { 1.0 };
       let per_char =
         crate::functions::plot_padding::text_width(&markup, st.font_size);
-      let serif_scale = proportional_family_scale(&st.font_family);
-      if serif_scale < 1.0 {
+      if proportional_family_scale(&st.font_family) < 1.0 {
         // A serif face (`"Times"`) falls back to the default serif face,
-        // which sets text narrower still than the sans average: measure it
-        // the way the box typesetter does, or a centered piece floats in a
-        // gap as wide as a third of its own text.
-        per_char * serif_scale * bold
+        // which sets text narrower than the sans average: its per-character
+        // advances bound it, where the average would leave a centered piece
+        // floating in a gap as wide as a third of its own text.
+        per_char * bold
       } else {
         let average =
           chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
