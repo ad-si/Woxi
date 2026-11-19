@@ -24312,11 +24312,25 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
 
-  let primitives_result = if is_3d {
+  let mut primitives_result = if is_3d {
     crate::functions::plot3d::graphics3d_ast(&graphics_args)
   } else {
     graphics_ast(&graphics_args)
   }?;
+
+  // The leading plot's `PlotLegends` legend stays on the combined picture,
+  // as it does when `Show` merges plots alone.
+  if !is_3d
+    && first_graphic_is_plot == Some(true)
+    && let Some(ps) = plot_sources.first()
+    && let Expr::Graphics { svg, .. } = &mut primitives_result
+    && let Some(legended) =
+      crate::functions::plot::inject_plot_source_legend(svg, ps)
+  {
+    crate::remove_captured_graphics(svg);
+    *svg = legended;
+    crate::capture_graphics(svg);
+  }
 
   if rendered_graphics.is_empty() {
     return Ok(primitives_result);

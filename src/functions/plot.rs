@@ -8700,6 +8700,77 @@ pub(crate) fn generate_scatter_svg_with_options(
   generate_svg_with_filling(all_series, x_range, y_range, &opts)
 }
 
+/// The style a plot series of a `PlotSource` was drawn with, as a
+/// `PlotStyle` entry: the color its own plot resolved, its thickness,
+/// dashing, point size and opacity.
+fn merged_series_style(s: &crate::syntax::PlotSeriesData) -> SeriesStyle {
+  SeriesStyle {
+    color: Some(WoxiColor::new(
+      s.color.0 as f64 / 255.0,
+      s.color.1 as f64 / 255.0,
+      s.color.2 as f64 / 255.0,
+    )),
+    color_expr: s.color_expr.clone(),
+    thickness: s.thickness,
+    point_size: s.point_size,
+    point_size_expr: s.point_size_expr.clone(),
+    dashing: s.dashing.clone(),
+    opacity: s.opacity,
+    ..SeriesStyle::default()
+  }
+}
+
+/// Set the `PlotLegends` legend of the plot `source` on `svg`, a picture
+/// drawn at one viewBox unit per point (a `Graphics` rendering) rather
+/// than at the plots' `RESOLUTION_SCALE`. `Show[plot, Graphics[…]]` draws
+/// the plot's curves as primitives together with the other graphics, and
+/// keeps the plot's legend on the result as Wolfram does
+/// (`Show[Legended[g, l], h]` is `Legended[Show[g, h], l]`). Each entry's
+/// swatch takes the style of the curve it stands for. `None` when the plot
+/// has no legend with explicit labels, or `svg` has no plain viewBox.
+pub(crate) fn inject_plot_source_legend(
+  svg: &str,
+  source: &crate::syntax::PlotSource,
+) -> Option<String> {
+  let mut opts = PlotOptions::default();
+  let mut overrides = PlotRangeOverrides::default();
+  let (options, _) = expand_plot_theme(&source.options, false);
+  for opt in &options {
+    if let Some((name, value)) =
+      crate::functions::graphics::option_name_value(opt)
+    {
+      apply_common_plot_option(name, &value, &mut opts, &mut overrides);
+    }
+  }
+  if opts.plot_legends.is_empty() {
+    return None;
+  }
+  opts.plot_style = source.series.iter().map(merged_series_style).collect();
+  opts.joined_per_series =
+    Some(source.series.iter().map(|s| !s.is_scatter).collect());
+
+  // Bring the picture into the plots' units: the viewBox scaled up by
+  // `RESOLUTION_SCALE`, with the drawing scaled along inside it, so the
+  // legend comes out at the size it has on a plot of its own.
+  let vb_re = regex::Regex::new(
+    r#"viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)""#,
+  )
+  .ok()?;
+  let caps = vb_re.captures(svg)?;
+  let w: f64 = caps[1].parse().ok()?;
+  let h: f64 = caps[2].parse().ok()?;
+  let sf = RESOLUTION_SCALE as f64;
+  let scaled_vb =
+    format!("viewBox=\"0 0 {:.0} {:.0}\"", (w * sf).round(), (h * sf).round());
+  let mut buf = svg.replacen(&caps[0], &scaled_vb, 1);
+  let tag_end = buf.find('>')? + 1;
+  let close = buf.rfind("</svg>")?;
+  buf.insert_str(close, "</g>");
+  buf.insert_str(tag_end, &format!("<g transform=\"scale({sf})\">"));
+  inject_legend(&mut buf, &opts);
+  Some(buf)
+}
+
 /// Render a merged `PlotSource` (from `Show`).
 ///
 /// `Show` keeps the options of the graphics it was given, so the merged
@@ -8755,23 +8826,7 @@ pub(crate) fn render_merged_plot_source(
 
   // Each series carries the color its own plot resolved, so `PlotStyle`
   // is rebuilt from the series rather than re-read from the options.
-  opts.plot_style = drawn
-    .iter()
-    .map(|s| SeriesStyle {
-      color: Some(WoxiColor::new(
-        s.color.0 as f64 / 255.0,
-        s.color.1 as f64 / 255.0,
-        s.color.2 as f64 / 255.0,
-      )),
-      color_expr: s.color_expr.clone(),
-      thickness: s.thickness,
-      point_size: s.point_size,
-      point_size_expr: s.point_size_expr.clone(),
-      dashing: s.dashing.clone(),
-      opacity: s.opacity,
-      ..SeriesStyle::default()
-    })
-    .collect();
+  opts.plot_style = drawn.iter().map(|s| merged_series_style(s)).collect();
   // Markers travel with the series too, so a `Show` of a marked scatter
   // plot keeps drawing the glyphs its `PlotMarkers` asked for.
   opts.plot_markers = drawn.iter().map(|s| s.marker.clone()).collect();
@@ -15804,7 +15859,16 @@ pub(crate) fn parse_plot_legends(
     && name == "Placed"
     && args.len() == 2
   {
-    let pos = match &args[1] {
+    // `Scaled[{x, y}]` names the same scaled point as a bare `{x, y}`.
+    let position = match &args[1] {
+      Expr::FunctionCall { name, args: scaled }
+        if name == "Scaled" && scaled.len() == 1 =>
+      {
+        &scaled[0]
+      }
+      other => other,
+    };
+    let pos = match position {
       Expr::Identifier(s) => match s.as_str() {
         "Top" | "Above" => LegendPosition::Top,
         "Bottom" | "Below" => LegendPosition::Bottom,
