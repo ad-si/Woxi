@@ -1972,22 +1972,121 @@ pub fn det_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // simplification of it.
   // With rational coefficients it is brought over one denominator
   // (`Det[{{1/2, x}, {x, 1}}]` is `(1 - 2 x^2)/2`).
+  // Radicals count as numbers here: products of `1 + Sqrt[2]` and
+  // `1 - Sqrt[2]` multiply out (`Det[{{1 + Sqrt[2], 1}, {1, 1 - Sqrt[2]}}]`
+  // is `-2`), so the polynomial is always expanded first.
   if is_polynomial_matrix(&matrix) {
-    let combine = if matrix.iter().flatten().any(has_rational) {
-      "Together"
-    } else {
-      "Expand"
-    };
+    let expanded = crate::evaluator::evaluate_function_call_ast(
+      "Expand",
+      std::slice::from_ref(&det),
+    )
+    .unwrap_or(det);
+    if let Some(reduced) = reduce_radical_determinant(&matrix, &expanded) {
+      return Ok(reduced);
+    }
+    if !matrix.iter().flatten().any(has_rational_coefficient) {
+      return Ok(expanded);
+    }
     return Ok(
       crate::evaluator::evaluate_function_call_ast(
-        combine,
-        std::slice::from_ref(&det),
+        "Together",
+        std::slice::from_ref(&expanded),
       )
-      .unwrap_or(det),
+      .unwrap_or(expanded),
     );
   }
   let r = crate::functions::expand_and_combine(&det);
-  Ok(simplify_expr(&r))
+  let r = simplify_expr(&r);
+  Ok(reduce_radical_determinant(&matrix, &r).unwrap_or(r))
+}
+
+/// Entries that are numbers built from radicals (`1/(1 + Sqrt[5])`) give an
+/// algebraic number, reduced as such when a radical is left in a
+/// denominator: the determinant of a rotation matrix written with them is
+/// exactly `1`. `None` when there is nothing to reduce.
+fn reduce_radical_determinant(matrix: &[Vec<Expr>], det: &Expr) -> Option<Expr> {
+  if !has_irrational_denominator(det)
+    || !matrix.iter().flatten().all(is_radical_number)
+  {
+    return None;
+  }
+  crate::evaluator::evaluate_function_call_ast(
+    "Simplify",
+    std::slice::from_ref(det),
+  )
+  .ok()
+}
+
+/// Whether `e` divides by something other than a rational number, such as
+/// the `1 + Sqrt[5]` of `3/(1 + Sqrt[5])`.
+fn has_irrational_denominator(e: &Expr) -> bool {
+  use crate::syntax::BinaryOperator;
+  let negative_exponent = |x: &Expr| {
+    crate::functions::math_ast::expr_to_rational(x).is_some_and(|(n, _)| n < 0)
+  };
+  let rational = |x: &Expr| crate::functions::math_ast::expr_to_rational(x).is_some();
+  match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (negative_exponent(&args[1]) && !rational(&args[0]))
+        || has_irrational_denominator(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => {
+      (negative_exponent(right) && !rational(left))
+        || has_irrational_denominator(left)
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Divide,
+      left,
+      right,
+    } => !rational(right) || has_irrational_denominator(left),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().any(has_irrational_denominator)
+    }
+    Expr::BinaryOp { left, right, .. } => {
+      has_irrational_denominator(left) || has_irrational_denominator(right)
+    }
+    Expr::UnaryOp { operand, .. } => has_irrational_denominator(operand),
+    _ => false,
+  }
+}
+
+/// Whether `e` is an exact number built from integers and rationals by
+/// sums, products and rational powers (`(1 + Sqrt[5])/4`, `2^(1/3)`).
+fn is_radical_number(e: &Expr) -> bool {
+  use crate::syntax::BinaryOperator;
+  match e {
+    Expr::Integer(_) | Expr::BigInteger(_) => true,
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Rational" => args.len() == 2,
+      "Plus" | "Times" => args.iter().all(is_radical_number),
+      "Power" => {
+        args.len() == 2
+          && is_radical_number(&args[0])
+          && crate::functions::math_ast::expr_to_rational(&args[1]).is_some()
+      }
+      "Sqrt" => args.len() == 1 && is_radical_number(&args[0]),
+      _ => false,
+    },
+    Expr::BinaryOp { op, left, right } => match op {
+      BinaryOperator::Plus
+      | BinaryOperator::Minus
+      | BinaryOperator::Times
+      | BinaryOperator::Divide => {
+        is_radical_number(left) && is_radical_number(right)
+      }
+      BinaryOperator::Power => {
+        is_radical_number(left)
+          && crate::functions::math_ast::expr_to_rational(right).is_some()
+      }
+      _ => false,
+    },
+    Expr::UnaryOp { operand, .. } => is_radical_number(operand),
+    _ => false,
+  }
 }
 
 /// A machine-number matrix with a single row (or column) of symbolic
@@ -2056,17 +2155,26 @@ fn det_by_one_symbolic_row(
   ))
 }
 
-/// Whether `e` contains a `Rational` anywhere.
-fn has_rational(e: &Expr) -> bool {
+/// Whether `e` contains a `Rational` other than as an exponent, so a
+/// radical such as `Sqrt[2]` (`2^(1/2)`) does not count.
+fn has_rational_coefficient(e: &Expr) -> bool {
   match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      has_rational_coefficient(&args[0])
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      ..
+    } => has_rational_coefficient(left),
     Expr::FunctionCall { name, args } => {
-      name == "Rational" || args.iter().any(has_rational)
+      name == "Rational" || args.iter().any(has_rational_coefficient)
     }
-    Expr::List(items) => items.iter().any(has_rational),
+    Expr::List(items) => items.iter().any(has_rational_coefficient),
     Expr::BinaryOp { left, right, .. } => {
-      has_rational(left) || has_rational(right)
+      has_rational_coefficient(left) || has_rational_coefficient(right)
     }
-    Expr::UnaryOp { operand, .. } => has_rational(operand),
+    Expr::UnaryOp { operand, .. } => has_rational_coefficient(operand),
     _ => false,
   }
 }
@@ -2723,7 +2831,8 @@ pub fn inverse_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // form, so `Inverse[m] Det[m]` cancels to the adjugate.
   // With rational coefficients the fraction is brought together instead.
   let polynomial = is_polynomial_matrix(&matrix);
-  let rational = polynomial && matrix.iter().flatten().any(has_rational);
+  let rational =
+    polynomial && matrix.iter().flatten().any(has_rational_coefficient);
   let call = |head: &str, e: Expr| {
     crate::evaluator::evaluate_function_call_ast(head, std::slice::from_ref(&e))
       .unwrap_or(e)

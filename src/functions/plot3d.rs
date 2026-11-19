@@ -537,11 +537,14 @@ fn clip_polygon_by_plane(
     let (a, flag) = poly[k];
     let b = poly[(k + 1) % poly.len()].0;
     let (da, db) = (dist(a), dist(b));
+    // A corner on the plane whose edge leaves for the other side starts
+    // the cut on this side, not the original edge: its flag is `false`
+    // there (a face cut through one of its own corners).
     if da >= -eps {
-      pos.push((a, flag));
+      pos.push((a, flag && (da > eps || db >= -eps)));
     }
     if da <= eps {
-      neg.push((a, flag));
+      neg.push((a, flag && (da < -eps || db <= eps)));
     }
     if (da > eps && db < -eps) || (da < -eps && db > eps) {
       let t = da / (da - db);
@@ -23093,5 +23096,78 @@ mod review_mesh_tests {
         .collect();
       assert_eq!(levels.len(), count + 2);
     }
+  }
+}
+
+#[cfg(test)]
+mod clip_polygon_by_plane_tests {
+  use super::*;
+
+  fn p(x: f64, y: f64, z: f64) -> Point3D {
+    Point3D { x, y, z }
+  }
+
+  /// Every edge of every piece is flagged exactly when it is part of the
+  /// original outline: the edges along the cut are not outline, even where
+  /// the cut starts at one of the polygon's own corners.
+  fn assert_cut_edges_unflagged(
+    pieces: &[Vec<(Point3D, bool)>],
+    on_plane: impl Fn(Point3D) -> bool,
+  ) {
+    for piece in pieces {
+      assert!(piece.len() >= 3);
+      for k in 0..piece.len() {
+        let (a, flag) = piece[k];
+        let b = piece[(k + 1) % piece.len()].0;
+        let along_cut = on_plane(a) && on_plane(b);
+        assert_eq!(flag, !along_cut, "edge {a:?} -> {b:?}");
+      }
+    }
+  }
+
+  #[test]
+  fn cut_through_a_corner_is_not_an_outline_edge() {
+    let square: Vec<(Point3D, bool)> = [
+      p(0.0, 0.0, 0.0),
+      p(2.0, 0.0, 0.0),
+      p(2.0, 2.0, 0.0),
+      p(0.0, 2.0, 0.0),
+    ]
+    .into_iter()
+    .map(|c| (c, true))
+    .collect();
+    // The plane x = 2 y passes through the corner (0, 0, 0) and crosses
+    // the opposite edge at (2, 1, 0).
+    let plane = [p(0.0, 0.0, -1.0), p(2.0, 1.0, -1.0), p(1.0, 0.5, 1.0)];
+    let on_plane = |c: Point3D| (c.x - 2.0 * c.y).abs() < 1e-9;
+    let (front, back) = clip_polygon_by_plane(&square, &plane);
+    assert_cut_edges_unflagged(&[front.clone(), back.clone()], on_plane);
+    // The corner on the plane belongs to both pieces, so each is a
+    // triangle or quadrilateral with exactly one cut edge.
+    assert_eq!(front.len() + back.len(), 7);
+    // The same with the corner coming last in the outline.
+    let mut rotated = square.clone();
+    rotated.rotate_left(1);
+    let (front, back) = clip_polygon_by_plane(&rotated, &plane);
+    assert_cut_edges_unflagged(&[front, back], on_plane);
+  }
+
+  #[test]
+  fn cut_through_two_corners_leaves_two_triangles() {
+    let square: Vec<(Point3D, bool)> = [
+      p(0.0, 0.0, 0.0),
+      p(2.0, 0.0, 0.0),
+      p(2.0, 2.0, 0.0),
+      p(0.0, 2.0, 0.0),
+    ]
+    .into_iter()
+    .map(|c| (c, true))
+    .collect();
+    // The diagonal plane x = y through (0, 0, 0) and (2, 2, 0).
+    let plane = [p(0.0, 0.0, -1.0), p(2.0, 2.0, -1.0), p(1.0, 1.0, 1.0)];
+    let on_plane = |c: Point3D| (c.x - c.y).abs() < 1e-9;
+    let (front, back) = clip_polygon_by_plane(&square, &plane);
+    assert_eq!((front.len(), back.len()), (3, 3));
+    assert_cut_edges_unflagged(&[front, back], on_plane);
   }
 }
