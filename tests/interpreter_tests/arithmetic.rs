@@ -1010,7 +1010,10 @@ mod plus_radical_like_terms {
       interpret("c/Sqrt[3] - Sqrt[3] c/4 - c/(4 Sqrt[3])").unwrap(),
       "0"
     );
-    assert_eq!(interpret("Sqrt[2] + 1/Sqrt[2]").unwrap(), "1/Sqrt[2] + Sqrt[2]");
+    assert_eq!(
+      interpret("Sqrt[2] + 1/Sqrt[2]").unwrap(),
+      "1/Sqrt[2] + Sqrt[2]"
+    );
     assert_eq!(interpret("Sqrt[2] + Sqrt[3]").unwrap(), "Sqrt[2] + Sqrt[3]");
   }
 }

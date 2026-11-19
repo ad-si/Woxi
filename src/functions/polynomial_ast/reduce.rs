@@ -2854,9 +2854,7 @@ fn contains_irrational_number(e: &Expr) -> bool {
     matches!(b, Expr::Integer(_))
       || matches!(b, Expr::FunctionCall { name, .. } if name == "Rational")
   };
-  let rational_exponent = |x: &Expr| {
-    matches!(x, Expr::FunctionCall { name, .. } if name == "Rational")
-  };
+  let rational_exponent = |x: &Expr| matches!(x, Expr::FunctionCall { name, .. } if name == "Rational");
   match e {
     Expr::Constant(_) => true,
     Expr::Identifier(name) => matches!(name.as_str(), "Pi" | "E" | "Degree"),
