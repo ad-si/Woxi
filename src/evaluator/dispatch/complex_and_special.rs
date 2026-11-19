@@ -8509,6 +8509,16 @@ fn tf(expr: &Expr) -> Expr {
       pattern,
       replacement,
     } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
+    // A replacement left unevaluated (its rules were no rules) has no
+    // traditional notation: like any other built-in function without one it
+    // keeps its name and brackets, `ReplaceAll[f(a), {g(x)}]`.
+    Expr::ReplaceAll { expr: e, rules } => {
+      tf_call("ReplaceAll", &[e.as_ref().clone(), rules.as_ref().clone()])
+    }
+    Expr::ReplaceRepeated { expr: e, rules } => tf_call(
+      "ReplaceRepeated",
+      &[e.as_ref().clone(), rules.as_ref().clone()],
+    ),
     _ => expr_to_box_form(expr),
   }
 }
