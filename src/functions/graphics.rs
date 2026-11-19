@@ -44922,6 +44922,63 @@ fn is_interpretation_display(boxes: &Expr) -> bool {
   }
 }
 
+/// Quote every bare symbol in source reconstructed from boxes whose name is
+/// spelled like a typeset constant (`E`, `I`, `Pi`, `Degree`, …). A box atom
+/// is the text it draws: `SubscriptBox[E, 0]` shows the capital letter E,
+/// whereas the constant ℯ is stored as its own glyph (`\[ExponentialE]`).
+/// Read back as an expression, the bare `E` would become that constant and
+/// be drawn as `ⅇ`. Names inside string literals, called heads (`Pi[…]`),
+/// and longer identifiers (`Eq`, `x$E`) are left untouched.
+fn quote_box_constant_names(code: &str) -> String {
+  let chars: Vec<char> = code.chars().collect();
+  let mut out = String::with_capacity(code.len());
+  let mut i = 0;
+  while i < chars.len() {
+    let c = chars[i];
+    if c == '"' {
+      // Copy the string literal verbatim, honoring backslash escapes.
+      out.push(c);
+      i += 1;
+      while i < chars.len() {
+        out.push(chars[i]);
+        if chars[i] == '\\' && i + 1 < chars.len() {
+          i += 1;
+          out.push(chars[i]);
+        } else if chars[i] == '"' {
+          break;
+        }
+        i += 1;
+      }
+      i += 1;
+      continue;
+    }
+    let is_ident_char =
+      |ch: char| ch.is_alphanumeric() || ch == '$' || ch == '`';
+    if is_ident_char(c) {
+      let start = i;
+      while i < chars.len() && is_ident_char(chars[i]) {
+        i += 1;
+      }
+      let word: String = chars[start..i].iter().collect();
+      let is_head = chars.get(i) == Some(&'[');
+      if !is_head
+        && word.starts_with(|ch: char| ch.is_ascii_alphabetic())
+        && typeset_constant_glyph(&word).is_some()
+      {
+        out.push('"');
+        out.push_str(&word);
+        out.push('"');
+      } else {
+        out.push_str(&word);
+      }
+      continue;
+    }
+    out.push(c);
+    i += 1;
+  }
+  out
+}
+
 fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
   let segments =
     crate::functions::string_ast::split_inline_boxes_keeping_punctuation(s);
@@ -44995,6 +45052,7 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     let rendered = (!seg.text.contains("GridBox["))
       .then(|| crate::notebook::box_source_to_expression(&seg.text))
       .flatten()
+      .map(|code| quote_box_constant_names(&code))
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| {
         // This is frozen source reconstructed from boxes, not an evaluated
@@ -50735,6 +50793,28 @@ mod manipulate_label_tests {
       italic,
       ..Default::default()
     }
+  }
+
+  #[test]
+  fn linear_syntax_box_letters_stay_literal_glyphs() {
+    // A typeset box holds the characters it draws: a capital `E` (or `I`,
+    // `Pi`, …) in `SubscriptBox[\(E\), \(0\)]` is the letter E, not the
+    // constant ℯ, so it must not turn into `ⅇ` (or `ⅈ`, `π`, …).
+    let label_text = |source: &str| -> String {
+      let label = crate::parse_to_expr(source).unwrap();
+      runs(&label).iter().map(|r| r.text.as_str()).collect()
+    };
+    for (letter, sub) in [("E", 0), ("I", 1), ("Pi", 2), ("Degree", 3)] {
+      let source =
+        format!(r#""\!\(\*SubscriptBox[\({letter}\), \({sub}\)]\)""#);
+      let digit = char::from_u32(0x2080 + sub).unwrap();
+      assert_eq!(label_text(&source), format!("{letter}{digit}"));
+    }
+    // The typeset glyph itself still draws as that glyph.
+    assert_eq!(
+      label_text(r#""\!\(\*SubscriptBox[\(\[ExponentialE]\), \(0\)]\)""#),
+      "\u{2147}\u{2080}"
+    );
   }
 
   #[test]

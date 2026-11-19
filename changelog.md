@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- A capital letter typeset in a box label (`"\!\(\*SubscriptBox[\(E\), \(0\)]\)"`)
+    stays the letter `E₀` in Manipulate controls instead of turning into the
+    constant glyph `ⅇ₀` (likewise `I`, `Pi`, `Degree`, …).
 
 # 2026-11-08 - 0.4.0
 
