@@ -5399,12 +5399,43 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         &mut inner,
         &mut Vec::new(),
       );
+      resolve_scaled_anchors(&mut inner);
       for p in &inner {
         prims.push(match transform {
           Some(m) => affine_primitive(p, m, (x, y)),
           None => translate_primitive(p, x, y),
         });
       }
+    }
+  }
+}
+
+/// Turn the `Scaled`/symbolic anchors (`{Center, Center}`, …) of a nested
+/// graphic's primitives into points of that graphic's own range, so they
+/// stay inside it once it is mapped into the enclosing picture instead of
+/// naming a point of the outer plot range. The range is what the
+/// graphic's unscaled primitives span; with none it collapses onto the
+/// origin, where a lone label of an arrowhead graphic belongs.
+fn resolve_scaled_anchors(prims: &mut [Primitive]) {
+  let mut bb = BBox::empty();
+  for p in prims.iter() {
+    bb.merge(&primitive_bbox(p));
+  }
+  if bb.is_empty() {
+    bb = BBox {
+      x_min: 0.0,
+      x_max: 0.0,
+      y_min: 0.0,
+      y_max: 0.0,
+    };
+  }
+  for p in prims.iter_mut() {
+    if let Primitive::TextPrim { x, y, scaled, .. }
+    | Primitive::InsetGraphic { x, y, scaled, .. } = p
+      && *scaled
+    {
+      (*x, *y) = resolve_anchor(*x, *y, true, &bb);
+      *scaled = false;
     }
   }
 }
