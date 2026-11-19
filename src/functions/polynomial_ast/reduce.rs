@@ -2556,6 +2556,14 @@ fn reduce_and(
     return Ok(result);
   }
 
+  // A system of linear equations with exact numeric (irrational)
+  // coefficients is solved by Gaussian elimination as a whole; rational ones
+  // already went to the dense linear engine.
+  if let Some(result) = reduce_numeric_linear_system(&constraints, vars, domain)
+  {
+    return Ok(result);
+  }
+
   // Constraints that share no variable are independent, so each is reduced
   // over its own variables. Ones that *do* share a variable have to be
   // reduced together — `a^2 < 4 && a > 0` is `0 < a < 2`, not the two bounds
@@ -2765,6 +2773,83 @@ fn reduce_and(
   let left_r = reduce_expr(left, vars, domain)?;
   let right_r = reduce_expr(right, vars, domain)?;
   Ok(and_results(&left_r, &right_r))
+}
+
+/// `Reduce` of a conjunction of equations linear in `vars` whose
+/// coefficients are exact numbers, such as the invariance conditions
+/// `m == R.m.Transpose[R]` of a rotation `R` with entries `Sqrt[3]/2`:
+/// eliminated by the canonical symbolic Gaussian elimination `Solve` uses,
+/// which solves for the last variables in terms of the earlier ones
+/// (`m[2, 1] == -m[1, 2] && m[2, 2] == m[1, 1]`). Sequential substitution
+/// left the radicals of such a system unsimplified and divided by zero
+/// coefficients it could not recognize. `None` for any other system.
+fn reduce_numeric_linear_system(
+  constraints: &[Expr],
+  vars: &[String],
+  domain: Option<&str>,
+) -> Option<Expr> {
+  if !matches!(domain, None | Some("Reals") | Some("Complexes"))
+    || vars.is_empty()
+    || constraints.len() < 2
+  {
+    return None;
+  }
+  let mut equations = Vec::with_capacity(constraints.len());
+  for c in constraints {
+    let (lhs, rhs, CompOp::Equal) = extract_comparison(c)? else {
+      return None;
+    };
+    let difference = minus2(lhs.clone(), rhs.clone());
+    if crate::syntax::contains_inexact(&difference) {
+      return None;
+    }
+    // Only the unknowns may occur: a parameter in a coefficient needs the
+    // case distinctions of the general path.
+    let Ok(Expr::List(symbols)) =
+      crate::evaluator::evaluate_function_call_ast("Variables", &[difference])
+    else {
+      return None;
+    };
+    if !symbols
+      .iter()
+      .all(|s| vars.contains(&crate::syntax::expr_to_string(s)))
+    {
+      return None;
+    }
+    equations.push(make_equality(&lhs, &rhs));
+  }
+  let solution = super::solve::solve_linear_symbolic(&equations, vars)?;
+  let Expr::List(branches) = &solution else {
+    return None;
+  };
+  let rules = match branches.as_slice() {
+    [] => return Some(bool_expr(false)),
+    [Expr::List(rules)] => rules,
+    _ => return None,
+  };
+  if rules.is_empty() {
+    return Some(bool_expr(true));
+  }
+  // The elimination writes a parametrized value term by term
+  // (`1/Sqrt[2] - x/Sqrt[2]`); Reduce combines it over one denominator.
+  let parts: Vec<Expr> = rules
+    .iter()
+    .map(|rule| match rule {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => {
+        let value = crate::evaluator::evaluate_function_call_ast(
+          "Together",
+          std::slice::from_ref(replacement.as_ref()),
+        )
+        .unwrap_or_else(|_| replacement.as_ref().clone());
+        Some(make_equality(pattern, &value))
+      }
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  Some(and_chain(&parts))
 }
 
 /// Collect all And-connected terms.
