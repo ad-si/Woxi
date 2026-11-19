@@ -2620,18 +2620,8 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
         groups.len() - 1
       }
     };
-  // Rational powers of one integer whose exponents differ by an integer
-  // are like terms: `Sqrt[2] + 1/Sqrt[2]` is `3/Sqrt[2]`. Such terms are
-  // grouped by the radical's canonical exponent in (-1, 0), its integral
-  // part moved into the coefficient.
-  let radical_views = radical_normal_forms(terms);
-  let views: Vec<&Expr> = terms
-    .iter()
-    .zip(&radical_views)
-    .map(|(term, view)| view.as_ref().unwrap_or(term))
-    .collect();
   let decomposed: Vec<(Coeff, &[Expr])> =
-    views.iter().map(|t| decompose_term_ref(t)).collect();
+    terms.iter().map(decompose_term_ref).collect();
   if decomposed
     .iter()
     .all(|(_, base)| product_factors(base).iter().all(prints_injectively))
@@ -2778,98 +2768,6 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
     return collect_like_terms(&result);
   }
   result
-}
-
-/// The integer base and exponent `(p, a, b)` of a radical factor `p^(a/b)`
-/// (`b > 1`), in either power representation.
-fn integer_radical_parts(e: &Expr) -> Option<(i128, i128, i128)> {
-  let (base, exponent) = match e {
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      (&args[0], &args[1])
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => (left.as_ref(), right.as_ref()),
-    _ => return None,
-  };
-  let Expr::Integer(p) = base else {
-    return None;
-  };
-  let Expr::FunctionCall { name, args } = exponent else {
-    return None;
-  };
-  match (name.as_str(), args.as_slice()) {
-    ("Rational", [Expr::Integer(a), Expr::Integer(b)]) if *p > 1 && *b > 1 => {
-      Some((*p, *a, *b))
-    }
-    _ => None,
-  }
-}
-
-/// For each term of a sum, the term rewritten so that its integer radical
-/// factors `p^(a/b)` with a positive exponent carry the canonical exponent
-/// `a/b - k` in (-1, 0) and the coefficient the integer power `p^k`, where
-/// `k = Ceiling[a/b]` (`Sqrt[3] x` reads `3 * 3^(-1/2) x`). Only terms whose
-/// radical base also occurs in another term are rewritten; `None` keeps a
-/// term as it is.
-fn radical_normal_forms(terms: &[Expr]) -> Vec<Option<Expr>> {
-  let radical_bases = |term: &Expr| -> Vec<i128> {
-    let (_, base) = decompose_term_ref(term);
-    product_factors(base)
-      .iter()
-      .filter_map(integer_radical_parts)
-      .map(|(p, _, _)| p)
-      .collect()
-  };
-  let bases: Vec<Vec<i128>> = terms.iter().map(radical_bases).collect();
-  let mut counts: std::collections::HashMap<i128, usize> =
-    std::collections::HashMap::new();
-  for term_bases in &bases {
-    for p in term_bases {
-      *counts.entry(*p).or_default() += 1;
-    }
-  }
-  terms
-    .iter()
-    .zip(&bases)
-    .map(|(term, term_bases)| {
-      if !term_bases.iter().any(|p| counts[p] > 1) {
-        return None;
-      }
-      let (c, base) = decompose_term_ref(term);
-      if !matches!(c, Coeff::Exact(..) | Coeff::BigExact(..)) {
-        return None;
-      }
-      let mut coeff = c;
-      let mut changed = false;
-      let mut factors: Vec<Expr> = Vec::new();
-      for f in product_factors(base) {
-        match integer_radical_parts(f) {
-          Some((p, a, b)) if a > 0 && counts[&p] > 1 => {
-            let k = (a + b - 1) / b;
-            let power = u32::try_from(k).ok().and_then(|k| p.checked_pow(k))?;
-            coeff = coeff.mul(&Coeff::Exact(power, 1));
-            let reduced = call(
-              "Rational",
-              vec![Expr::Integer(a - k * b), Expr::Integer(b)],
-            );
-            // Evaluated, the radical takes the form any other `p^(-q)` in
-            // the sum has, so the two group together.
-            factors.push(power_ast(&[Expr::Integer(p), reduced]).ok()?);
-            changed = true;
-          }
-          _ => factors.push(f.clone()),
-        }
-      }
-      changed.then(|| {
-        let mut args = vec![coeff.to_expr()];
-        args.extend(factors);
-        times(args)
-      })
-    })
-    .collect()
 }
 
 /// `Power[r, q]` with a positive rational base and a non-integer rational
