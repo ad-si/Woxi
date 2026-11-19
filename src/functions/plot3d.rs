@@ -23120,7 +23120,7 @@ mod clip_polygon_by_plane_tests {
         let (a, flag) = piece[k];
         let b = piece[(k + 1) % piece.len()].0;
         let along_cut = on_plane(a) && on_plane(b);
-        assert_eq!(flag, !along_cut, "edge {a:?} -> {b:?}");
+        assert_eq!(flag, !along_cut, "edge ({}, {}, {}) -> ({}, {}, {})", a.x, a.y, a.z, b.x, b.y, b.z);
       }
     }
   }
