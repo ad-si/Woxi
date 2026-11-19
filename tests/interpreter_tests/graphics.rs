@@ -14283,6 +14283,57 @@ mod plot3d {
       assert!(svg.contains(">ab</text>"), "{svg}");
     }
 
+    /// A subscripted symbol in a label is typeset in `TraditionalForm`
+    /// too: single letters are italic, multi-letter symbols stay upright,
+    /// whether the label is bare, styled, inside a `Row`, or a frame label.
+    /// As part of a scheduled QA routine, Woxi Studio was tested against a
+    /// randomly sampled Wolfram Demonstration notebook whose frame labels
+    /// read `Style[Row[{Subscript[…], " (unit)"}], 14]`; the subscript base
+    /// was drawn upright. This is a self-authored, construct-equivalent
+    /// example.
+    #[test]
+    fn subscripted_labels_set_single_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let sub = |s: &str| {
+        format!("<tspan baseline-shift=\"sub\" font-size=\"70%\">{s}</tspan>")
+      };
+      let r_x = format!("{}{}", italic("R"), sub(&italic("x")));
+      for code in [
+        "Plot[s, {s, 0, 1}, AxesLabel -> {Subscript[R, x], None}]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Subscript[R, x], None}]",
+        "Plot[s, {s, 0, 1}, AxesLabel -> \
+         {Style[Row[{Subscript[R, x], \" (m)\"}], 14], None}]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Style[Row[{Subscript[R, x], \" (m)\"}], 14], None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(&r_x), "{code}: {svg}");
+      }
+      // A multi-letter script stays upright beside the italic base.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Style[Row[{Subscript[R, AB], \" (m)\"}], 14], None}]",
+      );
+      assert!(
+        svg.contains(&format!("{}{} (m)", italic("R"), sub("AB"))),
+        "{svg}"
+      );
+      // A bare symbol frame label is italic; a string stays upright.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, Frame -> True, FrameLabel -> {V, \"V\"}]",
+      );
+      assert!(svg.contains(&format!(">{}</text>", italic("V"))), "{svg}");
+      assert!(svg.contains(">V</text>"), "{svg}");
+      // An explicitly styled script base keeps its own styling.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> \
+         {Subscript[Style[\"T\", Bold], \"r\"], None}]",
+      );
+      assert!(!svg.contains(&italic("T")), "{svg}");
+    }
+
     /// A list is a perfectly good label — it is typeset as the list itself,
     /// which is how a Demonstration names the four curves it draws on one
     /// axis.

@@ -21260,7 +21260,7 @@ pub fn traditional_label(e: &Expr) -> String {
     {
       traditional_label(&args[0])
     }
-    _ if contains_visible_style(e) => {
+    _ if has_explicit_style(e) => {
       format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e))
     }
     _ => format!(
@@ -21556,7 +21556,7 @@ pub fn axes_label_entry(e: &Expr) -> Option<String> {
 /// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
 /// italics — `x(t)` with an italic x and t — the way Wolfram draws it.
 /// `None` for any other label (see [`is_traditional_math_label`]).
-fn traditional_math_axis_label(e: &Expr) -> Option<String> {
+pub(crate) fn traditional_math_axis_label(e: &Expr) -> Option<String> {
   if !is_traditional_math_label(e) {
     return None;
   }
@@ -21702,7 +21702,7 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       }
     }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
-    _ if contains_visible_style(e) => e.clone(),
+    _ if has_explicit_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
   }
 }
@@ -21735,6 +21735,36 @@ fn contains_visible_style(e: &Expr) -> bool {
     {
       args.iter().any(contains_visible_style)
         || args[1..].iter().any(script_needs_typesetting)
+    }
+    _ => false,
+  }
+}
+
+/// Whether `e` is, or holds inside a `Row`, `Text` or script, a
+/// `Style[label, …]` whose directives change how the text is drawn. Unlike
+/// [`contains_visible_style`], a script that merely holds letters
+/// (`Subscript[R, x]`) does not count: such a label carries no styling of
+/// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
+fn has_explicit_style(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Style" => {
+      (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
+        || args.first().is_some_and(has_explicit_style)
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(items)) => items.iter().any(has_explicit_style),
+      _ => false,
+    },
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      has_explicit_style(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) =>
+    {
+      args.iter().any(has_explicit_style)
     }
     _ => false,
   }
