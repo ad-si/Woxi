@@ -2755,7 +2755,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
         && let Ok(folded) = times_ast(&times_args)
       {
         let raw = times(times_args);
-        if folded != raw {
+        if expr_to_string(&folded) != expr_to_string(&raw) {
           renormalized = true;
         }
         result.push(folded);
