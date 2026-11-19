@@ -6660,6 +6660,19 @@ fn locator_pane_graphic_via_epilog(
   )
 }
 
+/// Set the text of an SVG rendering in the proportional text face: every
+/// element left in the default monospace (output) family is switched to the
+/// sans-serif family that `Text[…]` asks for. Elements with an explicitly
+/// named face (`FontFamily -> "Times"`) are untouched.
+fn text_face_svg(svg: &str) -> String {
+  svg
+    .replace(
+      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
+      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+    )
+    .replace("font-family=\"monospace\"", "font-family=\"sans-serif\"")
+}
+
 /// A string shown through `Text` loses the quotation marks its own
 /// OutputForm carries — that is what `Text` asks for. Only a string that
 /// would be typeset on its own is affected (directly, or as the content of
@@ -7731,8 +7744,43 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // in text rather than mathematical form — it contributes no box of its
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
+    // `Style[Pane[expr, size, opts…], d…]`: the pane keeps its box and its
+    // options, and the directives style the content it holds.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: p, args: inner }
+          if p == "Pane" && inner.len() >= 2) =>
+    {
+      let Expr::FunctionCall { args: inner, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut styled = vec![inner[0].clone()];
+      styled.extend(args[1..].iter().cloned());
+      let mut pane = vec![call("Style", styled)];
+      pane.extend(inner[1..].iter().cloned());
+      expr_to_svg(&call("Pane", pane))
+    }
+    // `Style[Text[expr], d…]` shows the styled `expr` as text, just like
+    // `Text[Style[expr, d…]]`: draw the styled content in the text face.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: t, args: inner }
+          if t == "Text" && inner.len() == 1) =>
+    {
+      let Expr::FunctionCall { args: inner, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut styled = vec![unquoted_display_string(&inner[0])];
+      styled.extend(args[1..].iter().cloned());
+      text_face_svg(&expr_to_svg(&call("Style", styled)))
+    }
+    // The text face is the proportional one, so the default monospace
+    // family of the content is swapped for the sans-serif text family (an
+    // explicitly named `FontFamily` is kept).
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      expr_to_svg(&unquoted_display_string(&args[0]))
+      text_face_svg(&expr_to_svg(&unquoted_display_string(&args[0])))
     }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them
