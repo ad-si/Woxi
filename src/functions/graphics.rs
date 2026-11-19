@@ -5417,7 +5417,8 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
             {
               let s = m[0][0].hypot(m[1][0]);
               if s > 0.0 {
-                let r = [[m[0][0] / s, m[0][1] / s], [m[1][0] / s, m[1][1] / s]];
+                let r =
+                  [[m[0][0] / s, m[0][1] / s], [m[1][0] / s, m[1][1] / s]];
                 let g = glyph_map.unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
                 *mapped_glyphs = Some([
                   [
