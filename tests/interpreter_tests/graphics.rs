@@ -47285,6 +47285,24 @@ mod arrowheads_render {
         (x - 40.0).abs() < 2.0 && (y - 160.0).abs() < 2.0,
         "{pos}: the label belongs at the arrow's midpoint (40, 160), got ({x}, {y})"
       );
+      // It turns with the upward arrow but keeps its font size: the glyph
+      // map is a pure quarter turn, not shrunk to the head's size.
+      let m: Vec<f64> = tag
+        .split("matrix(")
+        .nth(1)
+        .and_then(|t| t.split(')').next())
+        .unwrap_or_else(|| panic!("{pos}: the label must turn: {tag}"))
+        .split_whitespace()
+        .filter_map(|n| n.parse().ok())
+        .collect();
+      assert!(
+        m.len() == 6
+          && m[0].abs() < 1e-3
+          && (m[1] + 1.0).abs() < 1e-3
+          && (m[2] - 1.0).abs() < 1e-3
+          && m[3].abs() < 1e-3,
+        "{pos}: expected a quarter turn at full size, got {m:?}"
+      );
     }
   }
 
