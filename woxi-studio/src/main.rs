@@ -384,6 +384,9 @@ enum Message {
   // Manipulate interactive widgets
   ManipulateContinuousChanged(usize, usize, f64),
   ManipulateDiscreteChanged(usize, usize, String),
+  /// (cell_idx, ctrl_idx, choice index): a discrete choice picked by its
+  /// position, for widgets whose choices may share a label.
+  ManipulateDiscreteIndexChanged(usize, usize, usize),
   /// (cell_idx, ctrl_idx, axis 0=x/1=y, value)
   ManipulateSlider2DChanged(usize, usize, u8, f64),
   /// (cell_idx, ctrl_idx, endpoint 0=low/1=high, value)
@@ -1966,9 +1969,28 @@ impl WoxiStudio {
       }
 
       Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice) => {
+        let idx = self
+          .cell_editors
+          .get(cell_idx)
+          .and_then(|e| e.manipulate_state.as_ref())
+          .and_then(|state| match state.controls.get(ctrl_idx) {
+            Some(manipulate::ControlState::Discrete {
+              value_labels, ..
+            }) => value_labels.iter().position(|v| *v == choice),
+            _ => None,
+          });
+        match idx {
+          Some(idx) => self.update(Message::ManipulateDiscreteIndexChanged(
+            cell_idx, ctrl_idx, idx,
+          )),
+          None => Task::none(),
+        }
+      }
+
+      Message::ManipulateDiscreteIndexChanged(cell_idx, ctrl_idx, idx) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
-          && state.select_discrete(ctrl_idx, &choice)
+          && state.select_discrete_index(ctrl_idx, idx)
         {
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
@@ -4180,6 +4202,12 @@ fn label_run_spans<'a, L>(
       if let Some((red, green, blue)) = r.color {
         span = span.color(Color::from_rgb(red, green, blue));
       }
+      // `Style[…, Background -> c]` fills the run's box, so a choice label
+      // like `Style["| |", FontColor -> c, Background -> c]` reads as a
+      // solid color swatch.
+      if let Some((red, green, blue)) = r.background {
+        span = span.background(Color::from_rgb(red, green, blue));
+      }
       span
     })
     .collect()
@@ -4741,16 +4769,14 @@ fn render_manipulate_widget<'a>(
         // the new index, so the update handler needs no special case.
         if *as_slider && value_labels.len() > 1 {
           let last = value_labels.len() - 1;
-          let choices = value_labels.clone();
           let mut s =
             slider(0..=last as u32, *current_index as u32, move |i| {
-              match choices.get(i as usize) {
-                Some(choice) if enabled => Message::ManipulateDiscreteChanged(
-                  cell_idx,
-                  ctrl_idx,
-                  choice.clone(),
-                ),
-                _ => Message::Noop,
+              if enabled {
+                Message::ManipulateDiscreteIndexChanged(
+                  cell_idx, ctrl_idx, i as usize,
+                )
+              } else {
+                Message::Noop
               }
             })
             .step(1u32)
@@ -4812,7 +4838,7 @@ fn render_manipulate_widget<'a>(
         // spec that stays silent: an explicit `ControlType -> SetterBar` gets
         // its bar however long the choice list is. The button labels are the
         // display labels (rule right-hand sides); pressing one sends its
-        // label, which the update handler maps back to an index. A disabled
+        // index, since several choices may share a label. A disabled
         // control drops its press handlers so it can't be changed.
         let control: Element<Message> = if *as_radio {
           // `ControlType -> RadioButton`/`RadioButtonBar`: Wolfram draws a
@@ -4824,13 +4850,10 @@ fn render_manipulate_widget<'a>(
           let mut items: Vec<Element<Message>> =
             Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
-            let choice = choice_label.clone();
-            let on_click = move |_: usize| {
+            let on_click = move |picked: usize| {
               if enabled {
-                Message::ManipulateDiscreteChanged(
-                  cell_idx,
-                  ctrl_idx,
-                  choice.clone(),
+                Message::ManipulateDiscreteIndexChanged(
+                  cell_idx, ctrl_idx, picked,
                 )
               } else {
                 Message::Noop
@@ -4838,7 +4861,12 @@ fn render_manipulate_widget<'a>(
             };
             let icon = value_label_svgs.get(i).and_then(|s| s.as_ref());
             let styled_runs = value_label_runs.get(i).filter(|runs| {
-              runs.iter().any(|r| r.color.is_some() || r.bold || r.italic)
+              runs.iter().any(|r| {
+                r.color.is_some()
+                  || r.background.is_some()
+                  || r.bold
+                  || r.italic
+              })
             });
             let item: Element<Message> = match (icon, styled_runs) {
               (None, None) => {
@@ -4880,7 +4908,6 @@ fn render_manipulate_widget<'a>(
           let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
             let is_selected = !has_overflow && i == *current_index;
-            let choice = choice_label.clone();
             // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
             // shows the rendered icon; a text choice shows its label, honoring
             // any `Style[…, color]`/`Bold` directive the rule label carried
@@ -4914,8 +4941,8 @@ fn render_manipulate_widget<'a>(
               },
             );
             if enabled {
-              btn = btn.on_press(Message::ManipulateDiscreteChanged(
-                cell_idx, ctrl_idx, choice,
+              btn = btn.on_press(Message::ManipulateDiscreteIndexChanged(
+                cell_idx, ctrl_idx, i,
               ));
             }
             buttons.push(btn.into());
@@ -9042,6 +9069,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       italic: false,
       bold: true,
       color: Some((1.0, 0.0, 0.0)),
+      background: None,
       size: None,
       subscript: false,
     }];
@@ -9099,6 +9127,49 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       w.last().map(|r| (r.text.as_str(), r.subscript)),
       Some(("\u{2093}", false))
     );
+  }
+
+  /// A SetterBar of color swatches — every choice labeled
+  /// `Style["||", FontColor -> c, Background -> c]`, so all labels share the
+  /// same text — must draw each swatch's background and let each button
+  /// select its own choice. Regression: the colors were dropped (eight
+  /// identical plain "||" buttons), and since a press sent the label, every
+  /// button selected the first choice.
+  #[test]
+  fn color_swatch_setter_bar_selects_by_position() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[k, {{k, 0}, Thread[Range[0, 3] -> (Style["||", FontColor -> #, Background -> #] & /@ {Red, Green, Blue, Black})], ControlType -> SetterBar}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let runs = match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        value_label_runs,
+        ..
+      } => {
+        assert!(value_labels.iter().all(|l| l == "||"));
+        value_label_runs.clone()
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    };
+    let spans: Vec<text::Span<'_, ()>> =
+      label_run_spans(&runs[2], Font::MONOSPACE);
+    assert_eq!(spans[0].color, Some(Color::from_rgb(0.0, 0.0, 1.0)));
+    assert_eq!(
+      spans[0].highlight.map(|h| h.background),
+      Some(iced::Background::Color(Color::from_rgb(0.0, 0.0, 1.0)))
+    );
+    assert!(state.select_discrete_index(0, 2));
+    assert!(matches!(
+      &state.controls[0],
+      manipulate::ControlState::Discrete {
+        current_index: 2,
+        ..
+      }
+    ));
+    assert!(!state.select_discrete_index(0, 4), "out of range");
   }
 
   /// A multi-way selector whose choices are `value -> Style["label", color]`
