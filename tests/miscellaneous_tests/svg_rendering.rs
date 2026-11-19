@@ -4841,7 +4841,8 @@ mod tests {
         svg.contains("<tspan dx=\"0.18em\">147</tspan>"),
         "the number keeps its digit groups: {svg}"
       );
-      assert!(svg.contains(">nine ten</text>"), "{svg}");
+      // The last item moves to its own line whole, leading space and all.
+      assert!(svg.contains("> nine ten</text>"), "{svg}");
     }
 
     /// The line-breaking string factor of a product (`Row[…] "\n\n  "`, an
