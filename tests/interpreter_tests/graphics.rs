@@ -31190,7 +31190,7 @@ mod grid_frame_and_background {
   /// `Spacings -> h` still spaces every column equally.
   #[test]
   fn uniform_spacings_keeps_columns_evenly_spaced() {
-    let svg = export_svg(r#"Grid[{{"a", "b", "c"}}, Spacings -> 2]"#);
+    let svg = export_svg(r#"Grid[{{"a", "a", "a"}}, Spacings -> 2]"#);
     let xs = text_xs(&svg);
     assert_eq!(xs.len(), 3, "{svg}");
     assert!(
@@ -49869,10 +49869,55 @@ fn grid_column_width_follows_displayed_text() {
   let long = first_divider("Grid[{{0.1 + 0.2, 1}}, Frame -> All]");
   let short = first_divider("Grid[{{0.3, 1}}, Frame -> All]");
   assert_eq!(long, short);
-  // A derivative is measured as the function plus its prime marks.
+  // A derivative is measured as the function plus its prime marks: one
+  // character wider than the bare function, not its `Derivative[1][y]`
+  // source.
   let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
-  let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
-  assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
+  let plain = first_divider("Grid[{{y, 1}}, Frame -> All]");
+  assert!(deriv > plain && deriv - plain < 10.0, "{deriv} vs {plain}");
+}
+
+/// A grid's plain-text cells are drawn in a proportional face, so their
+/// columns are as wide as the words they hold, not a fixed monospace
+/// advance per character. Regression: a bold 20 pt header row of
+/// `"fraction"`, `"decimal"`, `"percent"` came out about 30% wider than the
+/// front end sets it, pushing a table past the `Pane` it was sized for.
+#[test]
+fn grid_text_columns_follow_proportional_text_width() {
+  fn dividers(code: &str) -> Vec<f64> {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let mut xs: Vec<f64> = svg
+      .split("<line x1=\"")
+      .skip(1)
+      .filter_map(|l| {
+        let x1: f64 = l.split('"').next()?.parse().ok()?;
+        let x2: f64 =
+          l.split("x2=\"").nth(1)?.split('"').next()?.parse().ok()?;
+        (x1 == x2).then_some(x1)
+      })
+      .collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup();
+    xs
+  }
+  // Narrow letters make a narrower column than wide ones of equal count.
+  let narrow = dividers(r#"Grid[{{"iiiiiiii"}}, Frame -> All]"#);
+  let wide = dividers(r#"Grid[{{"MMMMMMMM"}}, Frame -> All]"#);
+  assert!(narrow[1] + 30.0 < wide[1], "{narrow:?} vs {wide:?}");
+  // Bold text is set wider than regular text.
+  let regular = dividers(r#"Grid[{{"fraction"}}, Frame -> All]"#);
+  let bold = dividers(r#"Style[Grid[{{"fraction"}}, Frame -> All], Bold]"#);
+  assert!(bold[1] > regular[1], "{bold:?} vs {regular:?}");
+  // Each bold 20 pt header column is about as wide as the front end's
+  // (about 85 pt), not ~110 pt.
+  let header = dividers(
+    r#"Style[Grid[{{"fraction", "decimal", "percent"}}, Frame -> All], 20, Bold]"#,
+  );
+  assert_eq!(header.len(), 4, "{header:?}");
+  for pair in header.windows(2) {
+    let w = pair[1] - pair[0];
+    assert!((75.0..100.0).contains(&w), "column width {w}: {header:?}");
+  }
 }
 
 mod traditional_form_typesetting {

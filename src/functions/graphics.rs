@@ -25271,6 +25271,49 @@ fn markup_lines(markup: &str) -> Option<Vec<&str>> {
     .then_some(lines)
 }
 
+/// The width of a grid cell holding one line of plain text, set in the
+/// proportional face the grid draws it with.
+///
+/// Such a cell is drawn `sans-serif`, so measuring it at a fixed
+/// monospace advance per character made every text column far wider than
+/// its words (a bold 20 pt `"fraction"` heading took 113 pt where the
+/// front end needs about 85). The width is the larger of the front end's
+/// Arial layout and the extent of the face the SVG actually draws, so the
+/// column matches Wolfram's while the drawn text still fits inside it.
+/// Typeset strings, multi-line text and cells in an explicit font family
+/// keep the character-count estimate.
+fn proportional_text_cell_width(
+  cell: &Expr,
+  default_style: &GridStyle,
+  font_size: f64,
+) -> Option<f64> {
+  let style = extract_cell_style(cell);
+  let Expr::String(text) = style.content else {
+    return None;
+  };
+  if text.is_empty()
+    || text.contains('\n')
+    || text.contains(crate::functions::string_ast::BOX_START)
+    || style.font_family.is_some()
+    || default_style.font_family.is_some()
+  {
+    return None;
+  }
+  let size = style.font_size.unwrap_or(font_size);
+  let bold =
+    style.font_weight == "bold" || default_style.font_weight == Some("bold");
+  let weight = if bold {
+    crate::functions::plot_padding::BOLD_WIDTH_SCALE
+  } else {
+    1.0
+  };
+  let markup = svg_escape(text);
+  let layout = crate::functions::plot_padding::text_width(&markup, size);
+  let (_, drawn) =
+    crate::functions::plot_padding::exported_text_extent(&markup, size);
+  Some(layout.max(drawn) * weight)
+}
+
 fn contains_base_form(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, args } => {
@@ -27093,6 +27136,10 @@ fn grid_svg_styled_internal_reporting(
       }
       let w = if let Some((_, nat_w, _)) = grid_cell_graphic(cell) {
         nat_w + col_pad(j)
+      } else if let Some(text_w) =
+        proportional_text_cell_width(cell, default_style, font_size)
+      {
+        text_w + col_pad(j)
       } else {
         let advance = if contains_base_form(cell) {
           font_size * MONO_ADVANCE
