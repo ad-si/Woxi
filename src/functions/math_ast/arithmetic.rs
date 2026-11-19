@@ -2692,6 +2692,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   }
 
   let mut result = Vec::new();
+  let mut renormalized = false;
   for (base, c, original, count) in groups {
     if c.is_zero() {
       // Preserve `Real(0.0) * I` as the imaginary marker of an inexact
@@ -2745,10 +2746,50 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
           times_args.push(base);
         }
       }
-      result.push(times(times_args));
+      // A coefficient merged onto a numeric radical (`x/Sqrt[3] -
+      // x/(4 Sqrt[3])` is `3/4 x 3^(-1/2)`) folds into it, as in any
+      // product: the term is `(Sqrt[3] x)/4`, which can now be a like
+      // term of another one in the sum (`- (Sqrt[3] x)/4` cancels it).
+      if matches!(&c, Coeff::Exact(..) | Coeff::BigExact(..))
+        && times_args[1..].iter().any(is_numeric_radical_factor)
+        && let Ok(folded) = times_ast(&times_args)
+      {
+        let raw = times(times_args);
+        if folded != raw {
+          renormalized = true;
+        }
+        result.push(folded);
+      } else {
+        result.push(times(times_args));
+      }
     }
   }
+  if renormalized {
+    return collect_like_terms(&result);
+  }
   result
+}
+
+/// `Power[r, q]` with a positive rational base and a non-integer rational
+/// exponent: a radical such as `Sqrt[3]` or `3^(-1/2)` that an exact
+/// coefficient multiplied onto it folds into.
+fn is_numeric_radical_factor(e: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = e else {
+    return false;
+  };
+  if name != "Power" || args.len() != 2 {
+    return false;
+  }
+  let positive_rational = match &args[0] {
+    Expr::Integer(n) => *n > 1,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      matches!(args.as_slice(), [Expr::Integer(p), Expr::Integer(_)] if *p > 0)
+    }
+    _ => false,
+  };
+  positive_rational
+    && matches!(&args[1], Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
 }
 
 /// The factors of a `decompose_term_ref` base: a product stands for its

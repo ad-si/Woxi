@@ -1095,6 +1095,55 @@ mod outer_extended {
     assert!(!tf.contains("SparseArray"), "{tf}");
   }
 
+  // The list cells of a deeper MatrixForm array are typeset as nested
+  // parenthesized column vectors (or matrices), not spelled with braces —
+  // also when the MatrixForm sits inside another expression.
+  #[test]
+  fn traditional_matrix_form_nests_list_cells_as_column_vectors() {
+    let boxes =
+      interpret("ToString[TraditionalForm[f[MatrixForm[{{{a, b}, {c, d}}}]]]]")
+        .unwrap();
+    assert!(boxes.contains("GridBox[{{a}, {b}}"), "{boxes}");
+    assert!(boxes.contains("GridBox[{{c}, {d}}"), "{boxes}");
+    assert!(!boxes.contains("RowBox[{{"), "{boxes}");
+    // A matrix cell stays a nested matrix.
+    let nested = interpret(
+      "ToString[TraditionalForm[MatrixForm[{{{{a, b}, {c, d}}, x}}]]]",
+    )
+    .unwrap();
+    assert!(nested.contains("GridBox[{{a, b}, {c, d}}"), "{nested}");
+    // A flat list is a column vector.
+    let vector =
+      interpret("ToString[TraditionalForm[MatrixForm[{a, b, c}]]]").unwrap();
+    assert!(vector.contains("GridBox[{{a}, {b}, {c}}"), "{vector}");
+    // The drawn 3D cells carry their own parentheses inside the outer pair.
+    let svg = interpret(
+      "ExportString[TraditionalForm[f[MatrixForm[{{{a, b}, {c, d}}}]]], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains(">{</text>"), "{svg}");
+  }
+
+  // A styled TraditionalForm matrix inside a Column (the shape a
+  // `Style[Row[{Column[{label, TraditionalForm[MatrixForm[m]]}]}], 12]`
+  // layout pushes its style down into) is still drawn as a bracketed grid,
+  // not flattened into one line of text.
+  #[test]
+  fn styled_traditional_matrix_form_in_column_keeps_grid() {
+    for code in [
+      "ExportString[Column[{Style[TraditionalForm[MatrixForm[{{a, b}, \
+       {c, d}}]], 12]}], \"SVG\"]",
+      "ExportString[Style[Row[{\" \", Column[{\"o\", \
+       TraditionalForm[MatrixForm[{{a, b}, {c, d}}]]}]}], 12], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      assert!(svg.contains("<path"), "{code}: {svg}");
+      assert!(svg.contains(">a</text>"), "{code}: {svg}");
+      assert!(!svg.contains("MatrixForm"), "{code}: {svg}");
+    }
+  }
+
   // First/Last/Part on a 1-D SparseArray return the scalar entry (or the
   // default value) at that position, like a dense vector.
   #[test]
