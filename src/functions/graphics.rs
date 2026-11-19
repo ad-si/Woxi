@@ -4060,9 +4060,17 @@ fn collect_primitives(
       apply_directive(expr, &mut *style);
       let _ = name;
     }
-    // `Thickness -> t` and friends in a primitive list act as directives.
-    Expr::Rule { .. } => {
-      apply_directive(expr, &mut *style);
+    // `Thickness -> t` and friends in a primitive list act as directives,
+    // and so do the font options (`FontSize -> 16`, `FontWeight -> Bold`,
+    // …): they style every label that follows them in the list.
+    Expr::Rule { pattern, .. }
+      if !apply_directive(expr, &mut *style)
+        && matches!(pattern.as_ref(), Expr::Identifier(k)
+          if matches!(k.as_str(),
+            "FontSize" | "FontWeight" | "FontSlant" | "FontFamily"
+              | "FontColor")) =>
+    {
+      apply_text_style_directive(expr, &mut *style);
     }
     _ => {}
   }
@@ -13647,8 +13655,7 @@ fn render_primitive(
         };
         let stroke = match frame {
           Some(f) => {
-            let mut attrs =
-              format!(" stroke=\"{}\"", f.color.to_svg_rgb());
+            let mut attrs = format!(" stroke=\"{}\"", f.color.to_svg_rgb());
             if f.width != 1.0 {
               attrs.push_str(&format!(" stroke-width=\"{:.2}\"", f.width));
             }

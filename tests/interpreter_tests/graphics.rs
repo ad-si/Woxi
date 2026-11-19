@@ -1560,6 +1560,33 @@ mod graphics {
       }
     }
 
+    /// Font options given as directives in a primitive list
+    /// (`{FontSize -> 20, FontWeight -> Bold, Text[…]}`) style the labels
+    /// after them, framed or inset ones too, but not those outside their
+    /// list.
+    #[test]
+    fn font_option_directives_style_the_following_labels() {
+      let svg = export_svg(
+        "Graphics[{Circle[], {FontSize -> 20, FontWeight -> Bold, \
+         FontColor -> Blue, Text[\"zzbig\", {0, 0}], \
+         Inset[Framed[\"zzframed\"], {0, 0.5}]}, Text[\"zzplain\", {0, -0.5}]}]",
+      );
+      let tag = |label: &str| {
+        let end = svg.find(&format!(">{label}</text>")).expect(&svg);
+        let start = svg[..end].rfind("<text").expect(&svg);
+        svg[start..end].to_string()
+      };
+      for label in ["zzbig", "zzframed"] {
+        let t = tag(label);
+        assert!(t.contains("font-size=\"20\""), "{t}");
+        assert!(t.contains("font-weight=\"bold\""), "{t}");
+        assert!(t.contains("fill=\"rgb(0,0,255)\""), "{t}");
+      }
+      let t = tag("zzplain");
+      assert!(t.contains("font-size=\"14\""), "{t}");
+      assert!(t.contains("font-weight=\"normal\""), "{t}");
+    }
+
     /// A `Framed` label's border takes the thickness and the corner radius
     /// its `FrameStyle` and `RoundingRadius` ask for, and turns with the
     /// label when the label runs along a direction.
@@ -1572,19 +1599,20 @@ mod graphics {
       );
       let label = svg.find(">zzbox</text>").expect(&svg);
       let rect_start = svg[..label].rfind("<rect").expect(&svg);
-      let rect = &svg[rect_start..svg[rect_start..].find("/>").unwrap()
-        + rect_start];
+      let rect =
+        &svg[rect_start..svg[rect_start..].find("/>").unwrap() + rect_start];
       assert!(rect.contains("stroke=\"rgb(0,0,255)\""), "{rect}");
       assert!(rect.contains("stroke-width=\"2.00\""), "{rect}");
       assert!(rect.contains("rx=\"5.00\""), "{rect}");
       assert!(rect.contains("rotate(-90.000"), "{rect}");
 
       // The default frame stays a thin, square, black border.
-      let svg = export_svg("Graphics[{Circle[], Text[Framed[\"zzsq\"], {0, 0}]}]");
+      let svg =
+        export_svg("Graphics[{Circle[], Text[Framed[\"zzsq\"], {0, 0}]}]");
       let label = svg.find(">zzsq</text>").expect(&svg);
       let rect_start = svg[..label].rfind("<rect").expect(&svg);
-      let rect = &svg[rect_start..svg[rect_start..].find("/>").unwrap()
-        + rect_start];
+      let rect =
+        &svg[rect_start..svg[rect_start..].find("/>").unwrap() + rect_start];
       assert!(rect.contains("stroke=\"rgb(0,0,0)\""), "{rect}");
       assert!(!rect.contains("stroke-width"), "{rect}");
       assert!(!rect.contains("rx="), "{rect}");
