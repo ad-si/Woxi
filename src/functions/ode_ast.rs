@@ -15,6 +15,7 @@ mod cse;
 mod curve;
 mod dde;
 mod pde_mol;
+mod pde_mol2d;
 mod stiff;
 
 // ─── DSolve ────────────────────────────────────────────────────────────
@@ -1844,6 +1845,20 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       },
       Err(e) => Err(e),
     });
+  }
+  if n_pos == 5 {
+    // `NDSolve[eqns, u, {x, …}, {y, …}, {t, …}]`: a PDE in two space
+    // variables and time.
+    let mut flat_eqs = Vec::new();
+    flatten_eq_list(&args[0], &mut flat_eqs);
+    let opts = pde_mol::MolOptions::from_rules(&args[n_pos..]);
+    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts)? {
+      Some(mut result) => {
+        crate::evaluator::share_large_lists(&mut result, 0);
+        Ok(result)
+      }
+      None => Ok(unevaluated("NDSolve", args)),
+    };
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
