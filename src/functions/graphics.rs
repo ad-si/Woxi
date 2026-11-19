@@ -14615,7 +14615,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // (and a string's inline linear-syntax boxes) become shifted
           // tspans — the label is drawn, not printed.
           match replacement {
-            Expr::Identifier(s) if s == "None" => {}
+            // `Null` (e.g. from a one-armed `If[False, label]`) draws no
+            // label, just like `None`.
+            Expr::Identifier(s) if s == "None" || s == "Null" => {}
             other
               if plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))

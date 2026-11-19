@@ -2864,6 +2864,35 @@ mod tests {
     }
 
     #[test]
+    fn plot_label_null_draws_no_label() {
+      // A one-armed `If[False, label]` yields `Null`, which, like `None`,
+      // leaves the picture untitled instead of printing "Null".
+      for code in [
+        "Graphics[Disk[], PlotLabel -> If[False, \"t\"]]",
+        "Graphics3D[Sphere[], PlotLabel -> Null]",
+        "Plot[x, {x, 0, 1}, PlotLabel -> Null]",
+        "ListPlot[{1, 2, 3}, PlotLabel -> Null]",
+        "ListLinePlot[{1, 2, 3}, PlotLabel -> Null]",
+        "MatrixPlot[{{1, 0}, {0, 1}}, PlotLabel -> Null]",
+        "ArrayPlot[{{1, 0}, {0, 1}}, PlotLabel -> Null]",
+        "MatrixPlot[{{1, 0}, {0, 1}}, PlotLabel -> None]",
+        "BarChart[{1, 2, 3}, PlotLabel -> Null]",
+        "PieChart[{1, 2, 3}, PlotLabel -> Null]",
+        "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "Histogram[{1, 2, 2, 3}, PlotLabel -> Null]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.starts_with("<svg"), "expected an SVG for {code}: {svg}");
+        assert!(
+          !svg.contains("Null") && !svg.contains(">None<"),
+          "{code} must not draw a label"
+        );
+      }
+    }
+
+    #[test]
     fn plot3d_heads_draw_their_plot_label() {
       // The label reaches every 3-D plot head, not only `Graphics3D`.
       for code in [

@@ -117,6 +117,12 @@ fn parse_field_plot_label(
     }
     let value = evaluate_expr_to_expr(replacement)
       .unwrap_or_else(|_| replacement.as_ref().clone());
+    // `None` and `Null` (e.g. a one-armed `If[False, label]`) leave the
+    // plot untitled. Returning `Some(None)` keeps the first `PlotLabel`
+    // decisive.
+    if matches!(&value, Expr::Identifier(n) if n == "None" || n == "Null") {
+      return Some(None);
+    }
     // A size on the outermost `Style` is the label's font size, which the
     // caller applies at render resolution; leaving it inside the markup
     // would emit it in unscaled units and draw the label ten times too
@@ -125,8 +131,8 @@ fn parse_field_plot_label(
     // A `Column[…]`/`Grid[…]` title stacks its items as separate lines,
     // the same way the generic `Graphics` label pass sets them.
     let lines = crate::functions::graphics::expr_to_svg_markup_lines(inner);
-    Some((lines, size))
-  })
+    Some(Some((lines, size)))
+  })?
 }
 
 /// A field plot's `PlotLabel`: its lines of SVG text markup, top to bottom,
