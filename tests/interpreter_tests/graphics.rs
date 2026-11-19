@@ -49150,6 +49150,53 @@ mod grid_text_in_graphics {
     );
   }
 
+  /// `Pane[Text@Grid[…], {w, h}, Alignment -> …]` reserves the whole
+  /// `w` x `h` box like any other fixed-size pane: a smaller table sits in
+  /// it where the alignment puts it rather than shrinking the pane to the
+  /// table, and a larger one is cut off at the box's edges. An `Automatic`
+  /// size still follows the table.
+  #[test]
+  fn pane_text_wrapped_grid_keeps_the_fixed_pane_box() {
+    clear_state();
+    let svg_of = |code: &str| {
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, "-Graphics-", "{code}");
+      result.graphics.unwrap()
+    };
+    let centered = svg_of(
+      "Pane[Text@Grid[{{1, 2}, {3, 4}}], {300, 200}, \
+       Alignment -> {Center, Center}]",
+    );
+    assert!(
+      centered.starts_with("<svg width=\"300\" height=\"200\""),
+      "{centered}"
+    );
+    assert!(centered.contains(">4</text>"), "{centered}");
+    assert!(!centered.contains("translate(0.0 0.0)"), "{centered}");
+
+    // The size may be computed, as in a Manipulate body that switches
+    // between a fixed and an automatic pane.
+    let computed = svg_of(
+      "big = False; Pane[Text@Grid[{{1, 2}, {3, 4}}], \
+       {If[big, Automatic, 300], If[big, Automatic, 200]}]",
+    );
+    assert!(
+      computed.starts_with("<svg width=\"300\" height=\"200\""),
+      "{computed}"
+    );
+
+    let clipped =
+      svg_of("Pane[Text@Grid[Table[i j, {i, 30}, {j, 30}]], {120, 80}]");
+    assert!(
+      clipped.starts_with("<svg width=\"120\" height=\"80\""),
+      "{clipped}"
+    );
+
+    let automatic =
+      svg_of("Pane[Text@Grid[{{1, 2}, {3, 4}}], {Automatic, Automatic}]");
+    assert!(!automatic.starts_with("<svg width=\"300\""), "{automatic}");
+  }
+
   /// A translucent cylinder is one smooth surface: its triangles must not
   /// stroke their shared seams, or the tessellation shows through.
   #[test]

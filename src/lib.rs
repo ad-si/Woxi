@@ -3852,7 +3852,20 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         ) =>
     {
       match render_grid_if_needed(args[0].clone()) {
-        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        // A `Pane[…, {w, h}]` reserves that whole box whatever the table's
+        // own size: a small table sits in it where the pane's `Alignment`
+        // puts it, a larger one is cut off at its edges.
+        graphics @ syntax::Expr::Graphics { .. } => {
+          match (&graphics, pane_fixed_size(&expr).filter(|_| name == "Pane")) {
+            (
+              syntax::Expr::Graphics { svg, .. },
+              Some((w, h, align, shrink)),
+            ) => graphics_result(functions::graphics::clip_svg_to_pane_box(
+              svg, w, h, align, false, shrink,
+            )),
+            _ => graphics,
+          }
+        }
         _ => expr,
       }
     }
