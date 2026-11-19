@@ -1809,7 +1809,8 @@ impl ManipulateState {
   /// repetitions starts over from the beginning.
   pub fn toggle_play(&mut self) {
     if !self.playing {
-      for c in &mut self.controls {
+      let mut restarted = Vec::new();
+      for (i, c) in self.controls.iter_mut().enumerate() {
         if let ControlState::Trigger {
           min,
           current,
@@ -1820,7 +1821,11 @@ impl ManipulateState {
         {
           *completed = 0;
           *current = *min;
+          restarted.push(i);
         }
+      }
+      for i in restarted {
+        self.sync_named_siblings(i);
       }
     }
     self.playing = !self.playing;
@@ -1832,19 +1837,30 @@ impl ManipulateState {
   /// `ControlType -> Trigger`/`Animator` variable when the spec named one
   /// (always a dedicated `Trigger` row, which wraps for a finite sweep and
   /// runs forever for an infinite one), else the first continuous control.
+  /// When a slider row shares the Trigger's variable, the Trigger row
+  /// drives the sweep (its bounds, step and repetitions) and the slider
+  /// follows along.
   pub fn advance_animation(&mut self) {
     let target = self.animation_var.clone();
-    let idx = self.controls.iter().position(|c| match &target {
-      Some(name) => matches!(
-        c,
-        ControlState::Continuous { name: n, .. }
-        | ControlState::Trigger { name: n, .. } if n == name
-      ),
-      None => matches!(
-        c,
-        ControlState::Continuous { .. } | ControlState::Trigger { .. }
-      ),
-    });
+    let idx = match &target {
+      Some(name) => self
+        .controls
+        .iter()
+        .position(
+          |c| matches!(c, ControlState::Trigger { name: n, .. } if n == name),
+        )
+        .or_else(|| {
+          self.controls.iter().position(|c| {
+            matches!(c, ControlState::Continuous { name: n, .. } if n == name)
+          })
+        }),
+      None => self.controls.iter().position(|c| {
+        matches!(
+          c,
+          ControlState::Continuous { .. } | ControlState::Trigger { .. }
+        )
+      }),
+    };
     let Some(idx) = idx else { return };
     // A Trigger's `AnimationRepetitions` may name another control.
     let limit = self.trigger_repetition_limit(idx);
@@ -1889,6 +1905,7 @@ impl ManipulateState {
       }
       _ => return,
     }
+    self.sync_named_siblings(idx);
     if finished {
       self.playing = false;
     }
