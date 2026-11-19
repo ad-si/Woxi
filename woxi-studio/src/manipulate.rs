@@ -3528,6 +3528,42 @@ mod tests {
     );
   }
 
+  /// A layout template `Row[{Spacer[…], Place[1], Spacer[…], Place[2]}]`
+  /// puts the controls declared with `ControlPlacement -> 1` and `-> 2` on
+  /// one line, just like a row of literal `Control[…]` items. Both the bare
+  /// `Place` of hand-written source and the `` Manipulate`Place `` of a
+  /// saved notebook's dump are recognized, and a control outside the row
+  /// starts a line of its own.
+  #[test]
+  fn row_of_placed_controls_is_drawn_on_one_line() {
+    for place in ["Place", "Manipulate`Place"] {
+      let code = format!(
+        r#"Manipulate[
+          {{p, q, r}},
+          {{{{p, 1, ""}}, {{1 -> "left", 2 -> "right"}}, ControlPlacement -> 1}},
+          {{{{q, 1, ""}}, {{1 -> "first", 2 -> "second"}}, ControlPlacement -> 2}},
+          Row[{{Spacer[25], {place}[1], Spacer[40], {place}[2]}}],
+          {{{{r, 0, "r"}}, 0, 1, 0.1}}
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      let joins: Vec<(&str, bool)> = state
+        .controls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !c.name().is_empty())
+        .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+        .collect();
+      assert_eq!(
+        joins,
+        vec![("p", false), ("q", true), ("r", false)],
+        "with head {place}"
+      );
+    }
+  }
+
   /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
   /// control state, so they are drawn side by side on one line, and a
   /// `Style[…, FontSize -> n]` caption keeps its size.
