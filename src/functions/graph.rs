@@ -1065,7 +1065,9 @@ fn graph_render(
       pts
     }
   } else {
-    layout_choice.plain_lines = !draw_directed;
+    // `GraphPlot`'s own picture of a rule list (`legacy_plot` undirected)
+    // is drawn without arrows too.
+    layout_choice.plain_lines = !draw_directed || legacy_plot == Some(false);
     layout_choice.positions(&graph, &index_map)
   };
   if let Some(directed) = legacy_plot {
