@@ -2774,13 +2774,18 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
 /// exponent: a radical such as `Sqrt[3]` or `3^(-1/2)` that an exact
 /// coefficient multiplied onto it folds into.
 fn is_numeric_radical_factor(e: &Expr) -> bool {
-  let Expr::FunctionCall { name, args } = e else {
-    return false;
+  let (base, exponent) = match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return false,
   };
-  if name != "Power" || args.len() != 2 {
-    return false;
-  }
-  let positive_rational = match &args[0] {
+  let positive_rational = match base {
     Expr::Integer(n) => *n > 1,
     Expr::FunctionCall { name, args } if name == "Rational" => {
       matches!(args.as_slice(), [Expr::Integer(p), Expr::Integer(_)] if *p > 0)
@@ -2788,7 +2793,7 @@ fn is_numeric_radical_factor(e: &Expr) -> bool {
     _ => false,
   };
   positive_rational
-    && matches!(&args[1], Expr::FunctionCall { name, args }
+    && matches!(exponent, Expr::FunctionCall { name, args }
       if name == "Rational" && args.len() == 2)
 }
 
