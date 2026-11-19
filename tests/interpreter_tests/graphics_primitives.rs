@@ -431,6 +431,34 @@ mod graphics_primitives {
   }
 
   #[test]
+  fn automatic_plot_range_padding_leaves_explicit_ranges_unpadded() {
+    // `Automatic` pads only ranges determined from the primitives, like
+    // the default: a range pinned by `PlotRange` is drawn exactly.
+    for range in ["{{-1, 1}, {-1, 1}}", "{{-3, 2}, {-1, 4}}"] {
+      let plain = svg_of(&format!(
+        "Graphics[Disk[], PlotRange -> {range}, Axes -> True]"
+      ));
+      for padding in ["Automatic", "{Automatic, Automatic}"] {
+        let padded = svg_of(&format!(
+          "Graphics[Disk[], PlotRange -> {range}, Axes -> True, \
+           PlotRangePadding -> {padding}]"
+        ));
+        assert_eq!(padded, plain, "PlotRangePadding -> {padding}");
+      }
+    }
+    // Per axis: the Scaled x side pads, the Automatic y side does not, so
+    // the unit disk fills the height but only 60% of the padded width.
+    let svg = svg_of(
+      "Graphics[Disk[], PlotRange -> {{-1, 1}, {-1, 1}}, \
+       PlotRangePadding -> {Scaled[0.2], Automatic}, AspectRatio -> Full, \
+       ImageSize -> {300, 300}]",
+    );
+    let rx = attr_of(&svg, "ellipse", "rx");
+    let ry = attr_of(&svg, "ellipse", "ry");
+    assert!(close(ry / rx, 1.0 / 0.6, 0.02), "{svg}");
+  }
+
+  #[test]
   fn primitives_spill_past_a_frame_into_the_margins() {
     // PlotRangeClipping -> False is the default: only the image cuts.
     let svg = svg_of(
