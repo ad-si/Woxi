@@ -276,7 +276,7 @@ mod layout_display {
          font-size=\"28\" {style}>lab</text></svg>"
       );
       match woxi::functions::image_ast::rasterize_svg(&svg, 72.0).unwrap() {
-        woxi::syntax::Expr::Image { data, .. } => data,
+        woxi::syntax::Expr::Image { ref data, .. } => data.clone(),
         _ => panic!("SVG rasterization did not produce an image"),
       }
     };
