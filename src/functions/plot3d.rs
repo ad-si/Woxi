@@ -11584,10 +11584,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // encloses the contents instead of by their projected outline, so the
   // scale stays put as the view turns or the contents move. A
   // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
-  let mut spherical_region = crate::in_manipulate_frame();
+  // Whether `SphericalRegion -> True` was given outright.
+  let mut spherical_region = false;
   // `SphericalRegion -> False` given outright (rather than the default
   // `Automatic`), which rules out the automatic sphere framing below.
   let mut spherical_region_off = false;
+  // Whether a camera option (`ViewPoint`, `ViewVector`, `ViewVertical` or
+  // `ViewCenter`) was given: under `SphericalRegion -> Automatic` only a
+  // scene with a set view (or a pinned `PlotRange`) is framed by its
+  // sphere.
+  let mut view_set = false;
   // `ViewAngle -> θ`: the field of view of the camera, in radians. With one
   // given the picture is no longer scaled to fit its contents — the view
   // volume sets the scale, so a small object stays small. `view_distance`
@@ -11695,6 +11701,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0));
         }
         "ViewPoint" => {
+          view_set = true;
           // Symbolic viewpoints stand for axis-aligned directions
           // (Wolfram's `Above` is `{0, 0, ∞}`, etc.).
           let symbolic: Option<[f64; 3]> = match replacement.as_ref() {
@@ -11725,6 +11732,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "ViewVector" => {
+          view_set = true;
           if let Some(eye) = eval_vec3(replacement) {
             view_vector = Some((eye, None));
           } else if let Ok(Expr::List(pair)) =
@@ -11738,6 +11746,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         // `ViewVertical -> {x, y, z}`: which way is up on screen.
         "ViewVertical" => {
+          view_set = true;
           if let Some(v) = eval_vec3(replacement)
             && v.iter().any(|c| *c != 0.0)
           {
@@ -11751,6 +11760,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "ViewCenter" => {
+          view_set = true;
           if let Some(c) = eval_vec3(replacement) {
             view_center = Some(c);
           }
@@ -12075,13 +12085,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // from a custom `ViewPoint`) draw them at the sphere-framed size, 0.7×
   // to 0.86× the outline-fitted one.
   // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  //
+  // A `Manipulate` frame draws its 3D graphics the same way, so the scale
+  // stays put while the controls turn the view (a cube seen from a skew
+  // `ViewPoint` and from `Below` in one Demonstration's snapshots).
+  //
+  // Both apply only to a scene whose view or region is set: a camera option
+  // or a pinned `PlotRange`. A scene with neither is fitted to its contents.
+  // A Demonstration's unboxed cylinder of fixed volume at
+  // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
+  // snapshots, whether it is tall and thin or short and wide. The sphere
+  // framing would draw it at 0.7× to 0.85× that size.
+  let view_or_region_set =
+    view_set || plot_range.is_some() || partial_range.is_some();
   let spherical_region = spherical_region
     || (!spherical_region_off
-      && !show_box
-      && explicit_height
-      && !full_width
-      && !aspect_full
-      && view_angle.is_none());
+      && view_or_region_set
+      && (crate::in_manipulate_frame()
+        || (!show_box
+          && explicit_height
+          && !full_width
+          && !aspect_full
+          && view_angle.is_none())));
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
       let b = primitives_bounds(&prims);
@@ -12865,7 +12890,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  {
+  // An invisible box around an automatic range with nothing tied to it (no
+  // axes, no sphere framing, no view volume) is left out: the picture is
+  // fitted to the projected contents themselves (see the `spherical_region`
+  // rule above for the snapshots that show it).
+  let fit_contents = !show_box
+    && !show_axes
+    && plot_range.is_none()
+    && partial_range.is_none()
+    && !spherical_region
+    && view_angle.is_none()
+    && px_min.is_finite();
+  if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
