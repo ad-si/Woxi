@@ -1356,6 +1356,17 @@ fn evaluate_at_uv(
   }
 }
 
+/// The edge style of a group of opaque region cells: a hairline in the
+/// cells' own color. The cells tile the region edge to edge, and without it
+/// the anti-aliased edges of neighbors let the background shine through as
+/// light seams, while Wolfram draws the region as one solid face.
+fn opaque_cell_edges(color: Expr) -> Expr {
+  call1(
+    "EdgeForm",
+    Expr::List(vec![color, call1("AbsoluteThickness", Expr::Real(0.5))].into()),
+  )
+}
+
 /// `ParametricPlot[{fx, fy}, {u, umin, umax}, {v, vmin, vmax}]` — the image
 /// of the parameter rectangle, drawn the way Wolfram draws it: the quads of
 /// the sampled grid filled at 30% opacity in the plot color, with the image
@@ -1865,11 +1876,13 @@ fn parametric_region_layer(
           continue;
         }
         let polys: Vec<Expr> = polys.into_iter().map(|q| q.polygon).collect();
-        let mut group = vec![call0("EdgeForm")];
+        let mut group = Vec::new();
         if let Some(shade) = mesh.shading_at(i, j) {
+          group.push(opaque_cell_edges(shade.clone()));
           group.push(shade);
           group.push(call1("Opacity", Expr::Real(1.0)));
         } else {
+          group.push(call0("EdgeForm"));
           let (r, g, b) = face_rgb;
           group.push(call(
             "RGBColor",
@@ -2009,16 +2022,17 @@ fn parametric_region_layer(
     groups
       .into_iter()
       .map(|((r, g, b), polys)| {
+        let cell_color = call(
+          "RGBColor",
+          vec![
+            Expr::Real(f64::from(r) / 255.0),
+            Expr::Real(f64::from(g) / 255.0),
+            Expr::Real(f64::from(b) / 255.0),
+          ],
+        );
         let mut group = vec![
-          call0("EdgeForm"),
-          call(
-            "RGBColor",
-            vec![
-              Expr::Real(f64::from(r) / 255.0),
-              Expr::Real(f64::from(g) / 255.0),
-              Expr::Real(f64::from(b) / 255.0),
-            ],
-          ),
+          opaque_cell_edges(cell_color.clone()),
+          cell_color,
           call1("Opacity", Expr::Real(1.0)),
         ];
         group.extend(polys);
@@ -2026,7 +2040,15 @@ fn parametric_region_layer(
       })
       .collect()
   } else {
-    let mut face_group = vec![no_edges, color.clone(), opacity];
+    // Opaque faces are outlined in their own color so that no light seams
+    // show between neighboring cells; translucent ones must not be, as the
+    // overlapping outlines would read as a darker grid.
+    let edges = if fill_opacity >= 1.0 {
+      opaque_cell_edges(color.clone())
+    } else {
+      no_edges
+    };
+    let mut face_group = vec![edges, color.clone(), opacity];
     face_group.extend(quads.into_iter().map(|q| q.polygon));
     vec![Expr::List(face_group.into())]
   };
