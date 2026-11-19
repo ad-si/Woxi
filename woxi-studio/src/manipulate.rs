@@ -371,8 +371,8 @@ impl ControlState {
           // An exact value (`2/3` from a linked `{2/3 -> "astroid", …}`
           // setter row) binds exactly again, as in Wolfram, even after a
           // drag had made the slider bind machine reals.
-          *exact_value = (!matches!(expr, Expr::Real(_) | Expr::BigFloat(..)))
-            .then_some(v);
+          *exact_value =
+            (!matches!(expr, Expr::Real(_) | Expr::BigFloat(..))).then_some(v);
           // A machine real assigned to a slider whose spec was all exact
           // integers (`{c, -2, 2}`) shows Wolfram's slider is continuous:
           // an integer step could never have produced that value.
@@ -7734,7 +7734,10 @@ mod repeated_option_tests {
       .position(|c| matches!(c, ControlState::Discrete { .. }))
       .expect("setter");
     assert_eq!(state.controls[slider].current_code(), "2/3");
-    assert!(state.readout_svg(slider).is_some(), "2/3 readout is stacked");
+    assert!(
+      state.readout_svg(slider).is_some(),
+      "2/3 readout is stacked"
+    );
 
     assert!(state.slide_continuous(slider, 5.0));
     state.apply_tracking(slider);
@@ -7746,12 +7749,18 @@ mod repeated_option_tests {
     state.apply_tracking(setter);
     state.reevaluate();
     assert_eq!(state.controls[slider].current_code(), "2/3");
-    assert!(state.readout_svg(slider).is_some(), "exact again after setter");
+    assert!(
+      state.readout_svg(slider).is_some(),
+      "exact again after setter"
+    );
 
     assert!(state.select_discrete(setter, "mid"));
     state.apply_tracking(setter);
     state.reevaluate();
     assert_eq!(state.controls[slider].current_code(), "1");
-    assert!(state.readout_svg(slider).is_none(), "an integer reads as text");
+    assert!(
+      state.readout_svg(slider).is_none(),
+      "an integer reads as text"
+    );
   }
 }
