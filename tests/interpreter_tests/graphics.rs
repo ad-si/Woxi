@@ -49922,6 +49922,29 @@ mod traditional_form_typesetting {
   }
 
   #[test]
+  fn fractions_inside_text_are_set_one_script_level_down() {
+    // Outside `Text`, a grid cell's fraction is set at the full 14 pt.
+    let plain = export_svg("Grid[{{1/9, x}}, Frame -> All]");
+    assert!(plain.contains("font-size=\"14.0\""), "{plain}");
+    assert!(!plain.contains("font-size=\"10.5\""), "{plain}");
+    // Math inside text sits one script level down: the same fraction,
+    // in a cell or in a `Row` beside a styled letter, shrinks to 3/4.
+    for code in [
+      "Text[Grid[{{1/9, x}}, Frame -> All]]",
+      "Text[Grid[{{Row[{2/3, Style[\"S\", Italic]}]}}]]",
+      "Text[5/7]",
+    ] {
+      let svg = export_svg(code);
+      assert!(svg.contains("<line"), "{code}: {svg}");
+      assert!(svg.contains("font-size=\"10.5\""), "{code}: {svg}");
+      // Only the fraction shrinks: text beside it keeps the full size.
+      if !code.contains("Row") {
+        assert!(!svg.contains("font-size=\"14.0\""), "{code}: {svg}");
+      }
+    }
+  }
+
+  #[test]
   fn styled_traditional_formula_is_typeset() {
     let svg = export_svg(
       "Style[TraditionalForm[HoldForm[a^2 == Sum[1/k^2, {k, 1, n}]]], 24]",

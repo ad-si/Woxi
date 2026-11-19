@@ -3810,7 +3810,11 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       {
         return graphics_result(svg);
       }
-      match render_grid_if_needed(content) {
+      // Math inside text is set one script level down, so its fractions
+      // are drawn at the reduced size of a nested one.
+      match functions::graphics::with_inline_text_math(|| {
+        render_grid_if_needed(content)
+      }) {
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }

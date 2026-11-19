@@ -7731,8 +7731,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // in text rather than mathematical form — it contributes no box of its
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
+    // Math inside text is set one script level down, so its fractions
+    // are drawn at the reduced size of a nested one.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      expr_to_svg(&unquoted_display_string(&args[0]))
+      crate::functions::graphics::with_inline_text_math(|| {
+        expr_to_svg(&unquoted_display_string(&args[0]))
+      })
     }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them
