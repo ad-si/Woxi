@@ -2980,6 +2980,19 @@ fn field_plot_structure(
     structure_args
       .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
   }
+  // The frame of a field plot lies `Scaled[0.02]` outside its data on every
+  // side, and the returned `Graphics` keeps that padding as an option, so a
+  // `Show` that redraws the plot (say merged with curves over it) leaves the
+  // same margin between the data and its frame instead of drawing it flush.
+  if !explicit
+    .iter()
+    .any(|o| name_of(o) == Some("PlotRangePadding"))
+  {
+    structure_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      call("Scaled", vec![Expr::Real(FIELD_RANGE_PADDING)]),
+    ));
+  }
   structure_args.extend(explicit);
   call("Graphics", structure_args)
 }
