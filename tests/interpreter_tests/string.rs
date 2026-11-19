@@ -7005,6 +7005,46 @@ mod to_string_machine_reals {
     assert_eq!(interpret("ToString[0.0001234567]").unwrap(), "0.000123457");
   }
 
+  // The six-digit display applies inside every kind of expression, not
+  // only plain calls and lists: comparisons, rules, associations and pure
+  // function bodies included.
+  #[test]
+  fn reals_round_inside_comparisons_rules_and_functions() {
+    assert_eq!(
+      interpret("ToString[{3} > 6.920776960731741]").unwrap(),
+      "{3} > 6.92078"
+    );
+    assert_eq!(
+      interpret("ToString[x == 2.718281828]").unwrap(),
+      "x == 2.71828"
+    );
+    assert_eq!(
+      interpret("ToString[x <= 2.718281828 <= y]").unwrap(),
+      "x <= 2.71828 <= y"
+    );
+    assert_eq!(
+      interpret("ToString[a -> 123.456789]").unwrap(),
+      "a -> 123.457"
+    );
+    assert_eq!(
+      interpret("ToString[a :> 123.456789]").unwrap(),
+      "a :> 123.457"
+    );
+    assert_eq!(
+      interpret("ToString[<|a -> 123.456789|>]").unwrap(),
+      "<|a -> 123.457|>"
+    );
+    assert_eq!(
+      interpret("ToString[# + 2.718281828 &]").unwrap(),
+      "#1 + 2.71828 & "
+    );
+    // InputForm still keeps every digit.
+    assert_eq!(
+      interpret("ToString[x > 2.718281828, InputForm]").unwrap(),
+      "x > 2.718281828"
+    );
+  }
+
   // InputForm keeps full precision.
   #[test]
   fn input_form_keeps_full_precision() {

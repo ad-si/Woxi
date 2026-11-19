@@ -5939,35 +5939,30 @@ fn scientific_if_out_of_range(fixed: &str, precision: usize) -> Option<String> {
 /// `ToString[{N[Pi, 5]}]` would wrongly be "{3.1415926535897932385`5.}"
 /// instead of "{3.1416}".
 fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
-  match expr {
-    Expr::Real(f) => Expr::Real(round_real_to_6_sig_digits(*f)),
+  // Every inexact number shows at its display width, wherever it sits:
+  // inside comparisons (`x > 6.92078`), rules, associations and pure
+  // function bodies just as in plain calls and lists.
+  map_expr_tree(expr, &|e| match e {
+    Expr::Real(f) => Some(Expr::Real(round_real_to_6_sig_digits(*f))),
     Expr::BigFloat(digits, prec) => {
-      Expr::Raw(format_bigfloat_for_to_string(digits, *prec))
+      Some(Expr::Raw(format_bigfloat_for_to_string(digits, *prec)))
     }
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(truncate_machine_reals_for_to_string)
-        .collect(),
-    ),
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(truncate_machine_reals_for_to_string)
-        .collect(),
-    },
-    Expr::BinaryOp { op, left, right } => binop(
-      *op,
-      truncate_machine_reals_for_to_string(left),
-      truncate_machine_reals_for_to_string(right),
-    ),
-    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(truncate_machine_reals_for_to_string(operand)),
-    },
-    _ => expr.clone(),
-  }
+    // `map_expr_tree` stops at function bodies (slot scoping); display
+    // rounding has no scope, so recurse into them here.
+    Expr::Function { body } => Some(Expr::Function {
+      body: Box::new(truncate_machine_reals_for_to_string(body)),
+    }),
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => Some(Expr::NamedFunction {
+      params: params.clone(),
+      body: Box::new(truncate_machine_reals_for_to_string(body)),
+      bracketed: *bracketed,
+    }),
+    _ => None,
+  })
 }
 
 /// Recursively replace TeXForm/CForm/FortranForm wrappers with their converted

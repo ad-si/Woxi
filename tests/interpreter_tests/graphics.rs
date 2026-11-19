@@ -19105,6 +19105,33 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod charts {
     use super::*;
 
+    /// `Style[label, Italic]` slants a chart label, upright or rotated, and
+    /// combines with `Bold`; the slant used to be dropped.
+    #[test]
+    fn bar_chart_italic_labels() {
+      let svg = export_svg(
+        "BarChart[{{1, 2}, {3, 4}}, ChartLabels -> {{Style[\"p\", Italic], \
+         Rotate[Style[\"q\", Italic, Bold], Pi/4]}, None}]",
+      );
+      let label = |text: &str| {
+        svg
+          .lines()
+          .flat_map(|l| l.split("<text"))
+          .find(|t| t.contains(&format!(">{text}</text>")))
+          .unwrap_or_else(|| panic!("label {text}: {svg}"))
+          .to_string()
+      };
+      let p = label("p");
+      assert!(p.contains("font-style=\"italic\""), "{p}");
+      assert!(!p.contains("font-weight"), "{p}");
+      let q = label("q");
+      assert!(q.contains("font-style=\"italic\""), "{q}");
+      assert!(q.contains("font-weight=\"bold\""), "{q}");
+      // An unstyled label stays upright.
+      let plain = export_svg("BarChart[{1, 2}, ChartLabels -> {\"r\", \"s\"}]");
+      assert!(!plain.contains("font-style=\"italic\""), "{plain}");
+    }
+
     /// A `Column` chart label stacks its lines (each in its own style)
     /// and a rotated one turns as a block; the lines used to run together
     /// into one line of text.
