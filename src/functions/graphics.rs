@@ -44891,6 +44891,40 @@ fn marked_subscript_box_runs(
   ])
 }
 
+/// Label runs for a `SubscriptBox` whose base is a plain atom and whose
+/// script is a text atom of spaced words (`SubscriptBox[y, "1 max"]`): the
+/// same runs as `Subscript[y, "1 max"]`. None for any other box.
+fn spaced_text_script_runs(boxes: &Expr, italic: bool) -> Option<Vec<LabelRun>> {
+  let Expr::FunctionCall { name, args } = boxes else {
+    return None;
+  };
+  if name != "SubscriptBox" {
+    return None;
+  }
+  let [base, script] = args.as_slice() else {
+    return None;
+  };
+  let atom_text = |e: &Expr| match e {
+    Expr::String(s) => Some(s.clone()),
+    Expr::Identifier(s) => Some(s.clone()),
+    Expr::Integer(n) => Some(n.to_string()),
+    _ => None,
+  };
+  let base = atom_text(base)?;
+  let Expr::String(script) = script else {
+    return None;
+  };
+  if base.trim().contains(' ') {
+    return None;
+  }
+  let label = Expr::FunctionCall {
+    name: "Subscript".to_string(),
+    args: vec![Expr::String(base), Expr::String(script.trim().to_string())]
+      .into(),
+  };
+  Some(manipulate_label_runs(&label, italic))
+}
+
 fn box_has_spaced_text(e: &Expr) -> bool {
   match e {
     // Padding around an atom (`"12 "`) draws nothing; only a gap between
@@ -44956,6 +44990,13 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     if let Ok(boxes) = crate::parse_to_expr(&seg.text)
       && box_has_spaced_text(&boxes)
     {
+      // A script made of spaced words (`SubscriptBox[y, "1 max"]`) is
+      // still a typeset script: set it lowered/raised like any other
+      // script instead of flattening it to `y_(1 max)`.
+      if let Some(script) = spaced_text_script_runs(&boxes, italic) {
+        runs.extend(script);
+        continue;
+      }
       runs.push(LabelRun {
         text: crate::notebook::render_boxes_text(&seg.text),
         italic,

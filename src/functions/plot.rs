@@ -16516,6 +16516,12 @@ pub(crate) fn apply_common_plot_option(
     }
     "Frame" => apply_frame_option(replacement, plot_opts),
     "FrameTicks" => {
+      // A held option may name a variable holding the ticks (a `Module`
+      // local set to an explicit tick list): use the value it holds, not
+      // the bare symbol, which would otherwise be called as a tick function.
+      let evaluated = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      let replacement = &evaluated;
       plot_opts.frame_tick_spec = Some(replacement.clone());
       let edges = parse_frame_ticks(replacement);
       plot_opts.frame_ticks = edges.iter().any(|e| !e.is_none());
