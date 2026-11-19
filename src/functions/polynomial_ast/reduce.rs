@@ -2556,9 +2556,8 @@ fn reduce_and(
     return Ok(result);
   }
 
-  // A system of linear equations with exact numeric (irrational)
-  // coefficients is solved by Gaussian elimination as a whole; rational ones
-  // already went to the dense linear engine.
+  // A system of linear equations with exact irrational coefficients is
+  // solved by Gaussian elimination as a whole.
   if let Some(result) = reduce_numeric_linear_system(&constraints, vars, domain)
   {
     return Ok(result);
@@ -2794,6 +2793,9 @@ fn reduce_numeric_linear_system(
   {
     return None;
   }
+  if !constraints.iter().any(contains_irrational_number) {
+    return None;
+  }
   let mut equations = Vec::with_capacity(constraints.len());
   for c in constraints {
     let (lhs, rhs, CompOp::Equal) = extract_comparison(c)? else {
@@ -2830,19 +2832,54 @@ fn reduce_numeric_linear_system(
   if rules.is_empty() {
     return Some(bool_expr(true));
   }
-  // The elimination writes a parametrized value term by term
-  // (`1/Sqrt[2] - x/Sqrt[2]`); Reduce combines it over one denominator.
+  // A parametrized value keeps the elimination's term-by-term form
+  // (`c == 12 - 3*a`), as in wolframscript's Reduce.
   let parts: Vec<Expr> = rules
     .iter()
     .map(|rule| match rule {
       Expr::Rule {
         pattern,
         replacement,
-      } => Some(make_equality(pattern, &linear_solution_form(replacement))),
+      } => Some(make_equality(pattern, replacement)),
       _ => None,
     })
     .collect::<Option<_>>()?;
   Some(and_chain(&parts))
+}
+
+/// Whether `e` holds an irrational exact number: a radical such as
+/// `Sqrt[3]` (a rational power of a number) or a constant such as `Pi`.
+fn contains_irrational_number(e: &Expr) -> bool {
+  let numeric = |b: &Expr| {
+    matches!(b, Expr::Integer(_))
+      || matches!(b, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  let rational_exponent = |x: &Expr| {
+    matches!(x, Expr::FunctionCall { name, .. } if name == "Rational")
+  };
+  match e {
+    Expr::Constant(_) => true,
+    Expr::Identifier(name) => matches!(name.as_str(), "Pi" | "E" | "Degree"),
+    Expr::FunctionCall { name, args }
+      if name == "Power"
+        && args.len() == 2
+        && numeric(&args[0])
+        && rational_exponent(&args[1]) =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
+      numeric(&args[0])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } if numeric(left) && rational_exponent(right) => true,
+    _ => crate::syntax::expr_children(e)
+      .into_iter()
+      .any(contains_irrational_number),
+  }
 }
 
 /// Collect all And-connected terms.
