@@ -15226,12 +15226,7 @@ fn frame_label_entry(e: &Expr) -> String {
   if matches!(e, Expr::Identifier(s) if s == "None") {
     return String::new();
   }
-  // A graphic's `FormatType` is `TraditionalForm`, so a mathematical frame
-  // label (`V`, `Subscript[R, x]`) sets its letters in italics, the same as
-  // an `AxesLabel` entry.
-  crate::functions::graphics::traditional_math_axis_label(e)
-    .or_else(|| crate::functions::graphics::styled_axis_label(e))
-    .unwrap_or_default()
+  crate::functions::graphics::styled_axis_label(e).unwrap_or_default()
 }
 
 /// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant

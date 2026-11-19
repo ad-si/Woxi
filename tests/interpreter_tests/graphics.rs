@@ -14285,7 +14285,8 @@ mod plot3d {
 
     /// A subscripted symbol in a label is typeset in `TraditionalForm`
     /// too: single letters are italic, multi-letter symbols stay upright,
-    /// whether the label is bare, styled, inside a `Row`, or a frame label.
+    /// whether the label is bare or styled, inside a `Row`, on an axis or
+    /// on the frame.
     /// As part of a scheduled QA routine, Woxi Studio was tested against a
     /// randomly sampled Wolfram Demonstration notebook whose frame labels
     /// read `Style[Row[{Subscript[…], " (unit)"}], 14]`; the subscript base
@@ -14320,12 +14321,6 @@ mod plot3d {
         svg.contains(&format!("{}{} (m)", italic("R"), sub("AB"))),
         "{svg}"
       );
-      // A bare symbol frame label is italic; a string stays upright.
-      let svg = export_svg(
-        "Plot[s, {s, 0, 1}, Frame -> True, FrameLabel -> {V, \"V\"}]",
-      );
-      assert!(svg.contains(&format!(">{}</text>", italic("V"))), "{svg}");
-      assert!(svg.contains(">V</text>"), "{svg}");
       // An explicitly styled script base keeps its own styling.
       let svg = export_svg(
         "Plot[s, {s, 0, 1}, AxesLabel -> \
