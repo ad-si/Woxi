@@ -24988,7 +24988,7 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
       !has_string_operand(expr) && typesets_fraction_box(expr)
     }
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
-      matches!(&args[0], Expr::List(items) if items.iter().any(label_typesets_fraction))
+      matches!(&args[0], Expr::List(items) if items.iter().any(row_item_typesets_fraction))
     }
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
@@ -24996,6 +24996,27 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
       label_typesets_fraction(&args[0])
     }
     _ => false,
+  }
+}
+
+/// Whether an item of a `Row` label typesets as a built-up fraction. Next to
+/// other items a rational number (`Row[{"mean = ", 14/3}]`) stacks inline
+/// too, and so does one a `NumberForm` leaves exact (`NumberForm[14/3,
+/// {3, 2}]` only formats approximate numbers).
+fn row_item_typesets_fraction(item: &Expr) -> bool {
+  match item {
+    Expr::FunctionCall { name, args } if name == "Rational" => args.len() == 2,
+    Expr::FunctionCall { name, args }
+      if name == "NumberForm" && !args.is_empty() =>
+    {
+      row_item_typesets_fraction(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      row_item_typesets_fraction(&args[0])
+    }
+    _ => label_typesets_fraction(item),
   }
 }
 

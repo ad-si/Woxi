@@ -5295,15 +5295,26 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Err(_) => expr_to_output(e),
       }
     };
-    let parts: Vec<String> = items.iter().map(&render).collect();
     // A rule in separator position is an option (`BaseStyle -> 20`), not
     // a separator.
-    let joined = if inner_args.len() >= 2
-      && !crate::syntax::is_rule_expr(&inner_args[1])
-    {
-      parts.join(&render(&inner_args[1]))
+    let separator = (inner_args.len() >= 2
+      && !crate::syntax::is_rule_expr(&inner_args[1]))
+    .then(|| (render(&inner_args[1]), inner_args[1].clone()));
+    let mut parts: Vec<(String, Expr)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+      if i > 0
+        && let Some(sep) = &separator
+      {
+        parts.push(sep.clone());
+      }
+      parts.push((render(item), item.clone()));
+    }
+    // A part laid out over several lines (a fraction) is set beside the
+    // others on its baseline rather than having its lines glued on.
+    let joined = if parts.iter().any(|(text, _)| text.contains('\n')) {
+      crate::syntax::hconcat_output_form_parts(&parts)
     } else {
-      parts.concat()
+      parts.into_iter().map(|(text, _)| text).collect()
     };
     return Ok(Expr::String(joined));
   }

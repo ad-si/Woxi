@@ -20508,6 +20508,38 @@ pub fn boxes_to_output_form_2d(expr: &Expr) -> String {
   boxes_to_textbox(expr).to_string()
 }
 
+/// Set the 2D OutputForm texts of a `Row`'s parts side by side, each part
+/// aligned on its baseline: `ToString[Row[{x, 14/3}]]` keeps `x` beside the
+/// fraction bar, with the numerator above and the denominator below it.
+/// Each part is given as its rendered text and the expression it came from;
+/// a multi-line text is on the baseline of that expression's 2D layout when
+/// the layout spells that text, and centered otherwise (the way a fraction
+/// produced by a display wrapper such as `NumberForm[14/3, {3, 2}]` sits).
+pub fn hconcat_output_form_parts(parts: &[(String, Expr)]) -> String {
+  let boxes: Vec<TextBox> = parts
+    .iter()
+    .map(|(text, source)| {
+      if !text.contains('\n') {
+        return TextBox::atom(text);
+      }
+      let lines: Vec<String> = text
+        .split('\n')
+        .map(std::string::ToString::to_string)
+        .collect();
+      let laid_out = with_display_names(source, |e| {
+        with_complex_display(e, expr_to_textbox)
+      });
+      let baseline = if laid_out.to_string() == *text {
+        laid_out.baseline
+      } else {
+        lines.len().saturating_sub(1) / 2
+      };
+      TextBox { lines, baseline }
+    })
+    .collect();
+  TextBox::hconcat(&boxes).to_string()
+}
+
 fn boxes_to_textbox(expr: &Expr) -> TextBox {
   let items = |arg: &Expr| -> Vec<Expr> {
     match arg {
