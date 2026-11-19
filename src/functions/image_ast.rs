@@ -13512,6 +13512,17 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
     )
     .to_vec(),
   );
+  // resvg doesn't synthesize oblique faces, so without dedicated italic
+  // faces `font-style="italic"` text (e.g. `Style[…, Italic]` labels)
+  // would rasterize upright.
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-Italic.ttf")
+      .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-BoldItalic.ttf")
+      .to_vec(),
+  );
   fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
   fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
   // We don't ship a dedicated serif face, so fall back to the sans-serif
