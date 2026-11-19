@@ -1146,6 +1146,33 @@ mod high_level_functions {
       );
     }
 
+    // Moduli whose product overflows 128-bit integers are solved exactly
+    // (they used to leave the call unevaluated).
+    #[test]
+    fn test_big_moduli() {
+      assert_eq!(
+        interpret(
+          "ChineseRemainder[{12345678901234567890, 98765432109876543210, 5}, \
+           {10^30 + 1, 10^30 + 3, 10^30 + 7}]"
+        )
+        .unwrap(),
+        "458333333322016460894701646094833333333244855966974485596713374999999935185184981018518509"
+      );
+      // Non-coprime moduli: the result lies in [0, LCM).
+      assert_eq!(
+        interpret(
+          "ChineseRemainder[{7, 10^25 + 8}, {2 (10^25 + 1), 3 (10^25 + 1)}]"
+        )
+        .unwrap(),
+        "40000000000000000000000011"
+      );
+      // A big offset in the three-argument form.
+      assert_eq!(
+        interpret("ChineseRemainder[{1, 2}, {3, 5}, 10^40]").unwrap(),
+        "10000000000000000000000000000000000000012"
+      );
+    }
+
     // Incompatible congruences have no solution: wolframscript leaves the
     // call unevaluated (rather than erroring).
     #[test]

@@ -11450,6 +11450,55 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose modes each
+  /// declare the same slider variable with its own range inside a
+  /// `PaneSelector` pane. This is a self-authored, construct-equivalent
+  /// example.
+  ///
+  /// Regression: the slider kept the first pane's range in every mode, so
+  /// switching modes could never reach the other panes' values.
+  #[test]
+  fn manipulate_pane_selector_slider_range_follows_pane() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{mode, r}, {{mode, 1, \"\"}, {1 -> \"small\", \
+       2 -> \"big\"}}, PaneSelector[{1 -> Control[{r, 0, 10, 2}], \
+       2 -> Control[{r, 10^6, 10^9, 3*10^8}]}, Dynamic[mode]]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["mode", "r"]);
+    let range = |state: &manipulate::ManipulateState| match &state.controls[1] {
+      manipulate::ControlState::Continuous {
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => (*min, *max, *step, *current),
+      other => panic!("expected a slider, got {other:?}"),
+    };
+    assert_eq!(range(&state), (0.0, 10.0, 2.0, 0.0));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    // The second pane's range and step apply, and the value moves into it.
+    assert_eq!(range(&state), (1e6, 1e9, 3e8, 1e6));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 0;
+    }
+    state.reevaluate();
+    assert_eq!(range(&state), (0.0, 10.0, 2.0, 10.0));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook (a pie chart editor)
   /// whose `PaneSelector` panes each wrap their sliders in a collapsible
   /// `OpenerView[{title, Column[{Control[…], …}]}, True]`, and whose slider
