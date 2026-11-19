@@ -11743,9 +11743,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   #[test]
   fn kepler_trigger_and_period_bounded_sliders() {
     // The "Kepler's Second Law" Demonstration pattern: time sliders bounded
-    // by the orbital-period control P, plus a Trigger animating t. The
+    // by the orbital-period control P, plus a Trigger row animating t. The
     // widget starts paused, the P-referencing ranges follow P as it moves,
-    // and the animation tick targets the Trigger's variable.
+    // and the animation tick advances the Trigger, which the t slider
+    // follows.
     let expr = woxi::interpret_to_expr(
       "Manipulate[{t, dt}, \
        {{t, 0, \"time\"}, 0, P, .01}, \
@@ -11757,7 +11758,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
     assert!(state.animated, "the Trigger makes the widget animatable");
     assert!(!state.playing, "a Trigger widget starts paused");
-    assert_eq!(state.controls.len(), 3, "the Trigger adds no second t row");
+    assert_eq!(state.controls.len(), 4, "the Trigger gets its own t row");
+    assert!(matches!(
+      &state.controls[3],
+      manipulate::ControlState::Trigger { name, .. } if name == "t"
+    ));
 
     let bounds =
       |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
@@ -11801,11 +11806,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
 
   #[test]
   fn sole_finite_trigger_builds_a_dedicated_trigger_row() {
-    // A Demonstrations "play once over a fixed duration" control: unlike
-    // Kepler's Trigger (a *second* spec for a variable that already has a
-    // plain slider, so it only steals the animation without a row of its
-    // own), this Trigger is the *only* spec for its variable and its sweep
-    // end is finite — `AppearanceElements` even asks for player buttons
+    // A Demonstrations "play once over a fixed duration" control: this
+    // Trigger is the *only* spec for its variable and its sweep end is
+    // finite — `AppearanceElements` even asks for player buttons
     // instead of a thumb. That must still build a dedicated `Trigger` row
     // (play/pause + step buttons), not fall back to an ordinary slider.
     let expr = woxi::interpret_to_expr(

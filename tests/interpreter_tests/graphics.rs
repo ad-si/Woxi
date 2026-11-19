@@ -43008,9 +43008,9 @@ mod manipulate {
   #[test]
   fn spec_trigger_animates_an_already_bound_variable() {
     // A `ControlType -> Trigger` spec for a variable that already has a
-    // slider (Kepler's "animate time since perihelion") must not bind the
-    // variable twice — it only makes the widget animate that variable,
-    // starting paused.
+    // slider gets its own play row bound to the same variable (Wolfram
+    // shows both), and makes the widget animate that variable, starting
+    // paused.
     let expr = interpret_to_expr(
       "Manipulate[t, {{t, 0, \"time\"}, 0, 10, .01}, \
        {{t, 0, \"animate\"}, 0, 10, .01, ControlType -> Trigger}, \
@@ -43018,7 +43018,11 @@ mod manipulate {
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    assert_eq!(spec.controls.len(), 1, "the Trigger adds no second row");
+    assert_eq!(spec.controls.len(), 2, "the Trigger gets its own row");
+    assert!(matches!(
+      &spec.controls[1],
+      ManipulateControl::Trigger { name, .. } if name == "t"
+    ));
     assert!(spec.animated);
     assert!(!spec.animation_running, "a Trigger starts paused");
     assert_eq!(spec.animation_var.as_deref(), Some("t"));
