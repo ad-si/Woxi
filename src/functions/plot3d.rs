@@ -1624,6 +1624,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
+  // automatic vertical range clips outliers off.
+  let mut keep_z_outliers = false;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut color_fn = FacetColorFunction::default();
@@ -1719,6 +1722,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          keep_z_outliers = plot_range_keeps_z_outliers(replacement);
           // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
           // full form `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds
           // all three; the horizontal bounds narrow the plotted domain, so
@@ -1855,6 +1859,26 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Plot3D: function produced no finite values in the given range".into(),
     ));
+  }
+
+  // The automatic vertical range drops outlying heights, as WL's does: a
+  // pole or a jump at the domain's edge is cut off instead of squashing
+  // the rest of the surface into a sliver of the box.
+  if !keep_z_outliers {
+    let region_masks = region_masks.as_ref();
+    let kept = grids.iter().enumerate().flat_map(|(s, grid)| {
+      grid.iter().enumerate().flat_map(move |(i, row)| {
+        row.iter().enumerate().filter_map(move |(j, &z)| {
+          region_masks.is_none_or(|masks| masks[s][i][j]).then_some(z)
+        })
+      })
+    });
+    if let Some((lo, hi)) =
+      crate::functions::plot::list_value_extent(kept, false)
+    {
+      global_z_min = lo;
+      global_z_max = hi;
+    }
   }
 
   // A numeric `Filling` level is part of the picture: the automatic
@@ -13798,6 +13822,18 @@ fn with_prolog_epilog(
 /// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
 /// by every 3D height-field plot (`Plot3D`, `ListPlot3D`) alongside the
 /// full per-axis form `parse_axis_ranges` handles.
+/// Whether a `Plot3D` `PlotRange` asks for every sampled height, outliers
+/// included: `All`, or `All` in the vertical slot of a three-axis spec.
+fn plot_range_keeps_z_outliers(expr: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  match &val {
+    e if is_all(e) => true,
+    Expr::List(items) if items.len() == 3 => is_all(&items[2]),
+    _ => false,
+  }
+}
+
 fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let Expr::List(items) = expr else {
     return None;

@@ -921,6 +921,55 @@ mod plot3d_options {
     assert_eq!(lines_with(&none, "stroke=\"rgb(0,0,0)\""), 0);
   }
 
+  /// The vertical extent of a `Plot3D` from `AbsoluteOptions`.
+  fn z_range(code: &str) -> (f64, f64) {
+    let out = interpret(&format!(
+      "Last[PlotRange /. AbsoluteOptions[{code}, PlotRange]]"
+    ))
+    .unwrap();
+    let inner = out.trim_matches(|c| c == '{' || c == '}');
+    let mut parts = inner.split(',').map(|p| {
+      let p = p.trim();
+      match p.split_once("*^") {
+        Some((m, e)) => {
+          m.parse::<f64>().unwrap() * 10f64.powi(e.parse::<i32>().unwrap())
+        }
+        None => p.parse::<f64>().unwrap(),
+      }
+    });
+    (parts.next().unwrap(), parts.next().unwrap())
+  }
+
+  // The automatic vertical range clips outlying heights off, as WL's
+  // does: a pole or a jump to a far value along one edge of the domain
+  // leaves the box spanning the bulk of the surface.
+  #[test]
+  fn automatic_z_range_clips_outliers() {
+    let (lo, hi) = z_range("Plot3D[1/(x^2 + y^2), {x, -1, 1}, {y, -1, 1}]");
+    assert_eq!(lo, 0.5);
+    assert!(hi > 5.0 && hi < 20.0, "{hi}");
+    // A cliff along the far edge (y > 0.98) is dropped from the range.
+    let (lo, hi) =
+      z_range("Plot3D[If[y > 0.98, -10, x + y], {x, 0, 1}, {y, 0, 1}]");
+    assert!(lo > -2.0 && lo < 0.0, "{lo}");
+    assert!((hi - 1.98).abs() < 1e-9, "{hi}");
+  }
+
+  // `PlotRange -> All`, also in the vertical slot of a three-axis spec,
+  // keeps every sampled height; a smooth surface keeps its whole extent.
+  #[test]
+  fn z_range_all_keeps_outliers() {
+    for opt in ["PlotRange -> All", "PlotRange -> {Full, Full, All}"] {
+      let (lo, hi) = z_range(&format!(
+        "Plot3D[1/(x^2 + y^2), {{x, -1, 1}}, {{y, -1, 1}}, {opt}]"
+      ));
+      assert_eq!(lo, 0.5);
+      assert!(hi > 600.0, "{opt}: {hi}");
+    }
+    let (lo, hi) = z_range("Plot3D[x y, {x, -1, 1}, {y, -1, 1}]");
+    assert_eq!((lo, hi), (-1.0, 1.0));
+  }
+
   // `Mesh -> n` draws n lines per direction, in the `MeshStyle`.
   #[test]
   fn mesh_count_and_style() {
