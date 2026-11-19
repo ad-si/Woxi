@@ -2992,9 +2992,12 @@ impl LayoutChoice {
     if self.planar {
       return planar_layout(n, &render_graph_pairs(graph))
         .map(normalize_explicit_positions)
-        .map_or_else(|| compute_layout(graph), |(pts, _, _)| pts);
+        .map_or_else(
+          || compute_layout(graph, self.plain_lines),
+          |(pts, _, _)| pts,
+        );
     }
-    compute_layout(graph)
+    compute_layout(graph, self.plain_lines)
   }
 }
 
@@ -3034,7 +3037,15 @@ pub(crate) fn computed_graph_embedding(
 /// component (force-directed once a component is big enough) and the
 /// components are packed into a grid, which makes clusters visible — e.g.
 /// `Graph[Table[i -> Mod[i^2, 74], {i, 100}]]` renders as 8 clusters.
-fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
+///
+/// `plain_lines` says the edges are drawn without arrows (`GraphPlot` of
+/// a rule list): the plot then ignores edge directions, so a directed
+/// acyclic graph is not put in layers but embedded like an undirected one
+/// (a grid of rules `i -> j` comes out as a grid).
+fn compute_layout(
+  graph: &DiGraph<usize, RenderEdgeData>,
+  plain_lines: bool,
+) -> Vec<(f64, f64)> {
   let n = graph.node_count();
   if n == 0 {
     return vec![];
@@ -3100,7 +3111,8 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
       // A directed acyclic graph (a Hasse diagram, say) is drawn in
       // layers instead, every vertex below the longest chain of edges
       // leading to it, as Wolfram's automatic layout does.
-      if graph.edge_references().all(|e| e.weight().directed)
+      if !plain_lines
+        && graph.edge_references().all(|e| e.weight().directed)
         && !petgraph::algo::is_cyclic_directed(graph)
       {
         return layered_layout(

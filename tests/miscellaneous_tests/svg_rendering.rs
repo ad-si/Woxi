@@ -3953,6 +3953,30 @@ mod tests {
       );
     }
 
+    /// `GraphPlot` draws a rule list without arrows and so ignores the edge
+    /// directions when laying it out: a grid of rules pointing right and up
+    /// (a directed acyclic graph) comes out as a grid, as in Wolfram, not in
+    /// the layers a directed `Graph` gets.
+    #[test]
+    fn graph_plot_lays_out_an_acyclic_rule_grid_as_a_grid() {
+      let svg = svg_of(
+        r#"With[{r = 4, c = 5}, GraphPlot[Join[
+             Flatten[Table[(a - 1) r + b -> (a - 1) r + b + 1,
+               {a, c}, {b, r - 1}]],
+             Flatten[Table[(a - 1) r + b -> a r + b, {a, c - 1}, {b, r}]]]]]"#,
+      );
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 20, "one vertex circle each: {svg}");
+      // Count the clusters of nearly equal coordinates.
+      let clusters = |mut vs: Vec<f64>| {
+        vs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        1 + vs.windows(2).filter(|w| w[1] - w[0] > 10.0).count()
+      };
+      let xs = clusters(centers.iter().map(|c| c.0).collect());
+      let ys = clusters(centers.iter().map(|c| c.1).collect());
+      assert_eq!((xs, ys), (5, 4), "a 5 by 4 grid of vertices: {svg}");
+    }
+
     /// An explicit `GraphLayout` outranks `Method`, as it does in Wolfram.
     #[test]
     fn graph_layout_wins_over_method() {
