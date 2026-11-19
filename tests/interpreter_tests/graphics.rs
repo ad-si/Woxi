@@ -5673,8 +5673,16 @@ mod plot_option_evaluate_once {
     clear_state();
     for (plot, option, value) in [
       ("Plot[x, {x, 0, 1}", "Axes", "False"),
-      ("ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}", "Axes", "False"),
-      ("ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}", "Frame", "True"),
+      (
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}",
+        "Axes",
+        "False",
+      ),
+      (
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}",
+        "Frame",
+        "True",
+      ),
       ("PolarPlot[1 + Cos[t], {t, 0, 2 Pi}", "Axes", "False"),
       ("Plot[x^2, {x, -1, 1}", "PlotRange", "{{0, 1}, {0, 2}}"),
     ] {
