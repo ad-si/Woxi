@@ -2805,7 +2805,7 @@ fn reduce_numeric_linear_system(
     }
     // Only the unknowns may occur: a parameter in a coefficient needs the
     // case distinctions of the general path.
-    let Ok(Expr::List(symbols)) =
+    let Ok(Expr::List(ref symbols)) =
       crate::evaluator::evaluate_function_call_ast("Variables", &[difference])
     else {
       return None;
