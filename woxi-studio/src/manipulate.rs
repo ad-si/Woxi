@@ -739,6 +739,52 @@ pub fn mouse_region_of(svg: &str) -> Option<MouseRegion> {
   Some(region)
 }
 
+/// The `UpdateInterval -> spec` option of the first `Refresh[expr, …]` in
+/// a Manipulate `body`, as source code of `spec`.
+fn refresh_update_interval_code(body: &str) -> Option<String> {
+  use woxi::syntax::Expr;
+  fn find(expr: &Expr) -> Option<String> {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        if name == "Refresh" {
+          let spec = args.iter().skip(1).find_map(|opt| match opt {
+            Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } if matches!(pattern.as_ref(),
+              Expr::Identifier(n) if n == "UpdateInterval") =>
+            {
+              Some(woxi::syntax::expr_to_source_form(replacement))
+            }
+            _ => None,
+          });
+          if spec.is_some() {
+            return spec;
+          }
+        }
+        args.iter().find_map(find)
+      }
+      Expr::CompoundExpr(items) => items.iter().find_map(find),
+      Expr::List(items) => items.iter().find_map(find),
+      _ => None,
+    }
+  }
+  find(&woxi::syntax::string_to_expr(body).ok()?)
+}
+
+/// Evaluate an `UpdateInterval` spec to the seconds between refreshes:
+/// `None` for `Infinity` (never refresh) or anything not a non-negative
+/// real number.
+fn eval_update_interval(code: &str) -> Option<f64> {
+  let result = woxi::interpret(&format!("N[{code}]")).ok()?;
+  let seconds = result.trim().parse::<f64>().ok()?;
+  (seconds.is_finite() && seconds >= 0.0).then_some(seconds)
+}
+
 /// The last statement of a compound Manipulate `body` when it is an
 /// `EventHandler[Dynamic[…], …]`, as source code.
 fn event_handler_statement(body: &str) -> Option<String> {
@@ -824,6 +870,15 @@ pub struct ManipulateState {
   /// Whether the last evaluation changed one of `module_locals`: the body's
   /// own `Dynamic` rewrote it, so Wolfram would refresh it again right away.
   self_refreshing: bool,
+  /// The `UpdateInterval -> spec` of a `Refresh[…]` in the body, as source
+  /// code. The spec may depend on the widget's variables
+  /// (`If[running, 0, Infinity]`), so it is re-read after every render.
+  refresh_interval_code: Option<String>,
+  /// The seconds between automatic refreshes the last render asked for: a
+  /// finite `UpdateInterval`, or `None` when it is `Infinity` (or absent).
+  refresh_interval: Option<f64>,
+  /// When the body was last evaluated, to pace `refresh_interval`.
+  last_evaluated: Option<std::time::Instant>,
   /// `ControlPlacement -> …`: which side of the output the control panel
   /// sits on. `Top` (Wolfram's default) stacks the controls above it.
   pub control_placement: ControlPlacement,
@@ -1066,6 +1121,7 @@ impl ManipulateState {
       &spec.body_code,
       &control_names,
     );
+    let refresh_body = body.clone();
     let mut state = ManipulateState {
       body,
       initialization: spec.initialization,
@@ -1097,6 +1153,9 @@ impl ManipulateState {
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
       self_refreshing: false,
+      refresh_interval_code: refresh_update_interval_code(&refresh_body),
+      refresh_interval: None,
+      last_evaluated: None,
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
       default_step_controls,
@@ -1774,16 +1833,31 @@ impl ManipulateState {
   /// Whether the app's timer should drive this widget: it plays an
   /// animation, or its body keeps rewriting its own `DynamicModule` state.
   pub fn wants_tick(&self) -> bool {
-    (self.animated && self.playing) || self.self_refreshing
+    (self.animated && self.playing)
+      || self.self_refreshing
+      || self.refresh_interval.is_some()
   }
 
-  /// One timer step: advance the animation, or refresh a self-updating body.
+  /// One timer step: advance the animation, or refresh a self-updating body
+  /// (one that rewrote its own state, or whose `Refresh[…]` asks to be
+  /// re-evaluated every `UpdateInterval` seconds and that much time passed).
   pub fn tick(&mut self) {
     if self.animated && self.playing {
       self.advance_animation();
-    } else if self.self_refreshing {
+    } else if self.self_refreshing || self.refresh_due() {
       self.reevaluate();
     }
+  }
+
+  /// Whether a finite `Refresh[…, UpdateInterval -> t]` in the body has
+  /// waited its `t` seconds since the last evaluation.
+  fn refresh_due(&self) -> bool {
+    let Some(interval) = self.refresh_interval else {
+      return false;
+    };
+    self
+      .last_evaluated
+      .is_none_or(|at| at.elapsed().as_secs_f64() >= interval)
   }
 
   /// The number of sweeps the Trigger at `idx` plays per press, or `None`
@@ -1997,6 +2071,7 @@ impl ManipulateState {
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
     let content_width = self.content_width;
+    let refresh_interval_code = self.refresh_interval_code.clone();
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
@@ -2004,7 +2079,7 @@ impl ManipulateState {
     let binding_names: Vec<String> =
       bindings.iter().map(|(n, _)| n.clone()).collect();
     let (
-      (render, raw_render),
+      (render, raw_render, refresh_interval),
       updated_bindings,
       display_trees,
       enabled,
@@ -2098,6 +2173,11 @@ impl ManipulateState {
         render = Ok(flowed);
       }
       let updated_bindings = read_manipulate_state(&binding_names);
+      // Read the `UpdateInterval` against the state this frame left, so
+      // a body that just stopped itself (`running = False`) stops ticking.
+      let refresh_interval = refresh_interval_code
+        .as_deref()
+        .and_then(eval_update_interval);
       let trees: Vec<_> = displays
         .iter()
         .map(|d| build_manipulate_display(d, &[]))
@@ -2167,7 +2247,7 @@ impl ManipulateState {
         })
         .collect();
       (
-        (render, raw_render),
+        (render, raw_render, refresh_interval),
         updated_bindings,
         trees,
         enabled,
@@ -2179,6 +2259,8 @@ impl ManipulateState {
       )
     });
     self.last_render = Some(raw_render);
+    self.refresh_interval = refresh_interval;
+    self.last_evaluated = Some(std::time::Instant::now());
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
@@ -6423,6 +6505,74 @@ mod tests {
     let fx = (gx - f.x_min) / (f.x_max - f.x_min);
     let fy = (f.y_max - gy) / (f.y_max - f.y_min);
     (f.x + f.width * fx as f32, f.y + f.height * fy as f32)
+  }
+
+  /// A body wrapped in `Refresh[…, UpdateInterval -> If[running, 0,
+  /// Infinity]]` with start/stop buttons: once started, the app's timer
+  /// must keep re-evaluating it (each pass advancing its counter) until it
+  /// is stopped, rather than advancing a single step per button press.
+  #[test]
+  fn refresh_update_interval_drives_the_timer() {
+    let code = r#"Manipulate[
+      Refresh[If[running, n++]; Graphics[Disk[], PlotLabel -> n],
+        UpdateInterval -> If[running, 0, Infinity]],
+      {{running, False}, None},
+      {{n, 0}, ControlType -> None},
+      Row[{Button["start", running = True], Button["stop", running = False]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let n = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "n")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert!(!state.wants_tick(), "an Infinity interval never refreshes");
+    assert_eq!(n(&state), "0");
+
+    state.apply_button_action("running = True");
+    assert!(state.wants_tick(), "a zero interval refreshes continuously");
+    let after_start = n(&state).parse::<i64>().unwrap();
+    state.tick();
+    state.tick();
+    assert_eq!(n(&state).parse::<i64>().unwrap(), after_start + 2);
+
+    state.apply_button_action("running = False");
+    assert!(!state.wants_tick(), "stopping returns to Infinity");
+    let stopped = n(&state);
+    state.tick();
+    assert_eq!(n(&state), stopped);
+  }
+
+  /// A finite `UpdateInterval` is honored: the timer only re-evaluates the
+  /// body once that many seconds passed since the last evaluation.
+  #[test]
+  fn refresh_update_interval_waits_its_seconds() {
+    let code = r#"Manipulate[
+      Refresh[n++; Graphics[Disk[]], UpdateInterval -> 3600],
+      {{n, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.wants_tick());
+    let value = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "n")
+        .unwrap()
+        .1
+        .clone()
+    };
+    let before = value(&state);
+    state.tick();
+    assert_eq!(value(&state), before, "an hour has not passed yet");
   }
 
   /// An `EventHandler[Dynamic[…], {"MouseDown" :> …, "MouseDragged" :> …}]`
