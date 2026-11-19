@@ -31970,22 +31970,24 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     }
 
     // The default weight (HarmonicNumber) must close to a typeset formula,
-    // not a raw unevaluated Sum or an Indeterminate boundary artifact.
+    // not a raw unevaluated Sum or an Indeterminate boundary artifact. The
+    // `Text[TraditionalForm[…]]` body draws that formula as a picture.
     assert!(
-      state.graphics_handle.is_none(),
-      "a Text[...] body draws no graphic"
+      state.graphics_handle.is_some(),
+      "a Text[TraditionalForm[...]] body draws the typeset formula: {:?}",
+      state.text_output
     );
     // The formula reads `HoldForm[Sum[...]] == <closed form>` — the LHS
     // stays an unevaluated `Sum[...]` on purpose (it names the symbolic
     // total being displayed); only the right-hand side is the closed form
-    // this test is pinning down.
-    let formula = state.text_output.clone().unwrap_or_default();
-    let rhs = formula.rsplit("==").next().unwrap_or_default();
+    // this test is pinning down, so exactly one summation sign is drawn.
+    let closed_form = |state: &manipulate::ManipulateState| {
+      let svg = state.check_render().unwrap().graphics.unwrap_or_default();
+      svg.matches('\u{2211}').count() == 1 && !svg.contains("Indeterminate")
+    };
     assert!(
-      rhs.contains("HarmonicNumber")
-        && !rhs.contains("Sum[")
-        && !rhs.contains("Indeterminate"),
-      "expected a closed-form harmonic formula, got: {formula:?}"
+      closed_form(&state),
+      "expected a closed-form harmonic formula"
     );
 
     // Dragging the exponent slider re-evaluates cleanly for every degree in
@@ -32004,11 +32006,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         "exponent {exponent} failed: {:?}",
         state.error
       );
-      let formula = state.text_output.clone().unwrap_or_default();
-      let rhs = formula.rsplit("==").next().unwrap_or_default();
       assert!(
-        !rhs.contains("Sum[") && !rhs.contains("Indeterminate"),
-        "exponent {exponent} did not close to a formula: {formula:?}"
+        closed_form(&state),
+        "exponent {exponent} did not close to a formula"
       );
     }
   }

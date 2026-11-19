@@ -3683,6 +3683,36 @@ mod tests {
     );
   }
 
+  /// A `Pane[Module[…, Text@Style[TraditionalForm[lhs == rhs], …]], size]`
+  /// body driven by a 2D slider draws the typeset identity, not the raw
+  /// `TraditionalForm[…]` call as text, and follows the slider.
+  #[test]
+  fn pane_of_text_traditional_form_body_draws_a_picture() {
+    let code = r#"Manipulate[
+      Pane[Module[{f = {Sin, Cos, Exp}[[p[[1]]]], g = {Tan, Log, Sqrt}[[p[[2]]]]},
+        Text[Style[TraditionalForm[
+          HoldForm[Integrate[f[g[x]], x]] == Integrate[f[g[x]], x]], 15, Bold]]],
+        If[wide, {480, Automatic}, {480, 300}], Alignment -> {Left, Center}],
+      {{p, {1, 2}, "pick"}, {1, 1}, {3, 3}, {1, 1}},
+      {{wide, False, "resize"}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the body must draw a picture, got text {:?}",
+      state.text_output
+    );
+    let svg = state.check_render().unwrap().graphics.unwrap();
+    assert!(svg.contains("log"), "{svg}");
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+    state.slider2d_change(0, 1, 1.0);
+    state.reevaluate();
+    let svg = state.check_render().unwrap().graphics.unwrap();
+    assert!(svg.contains("tan"), "{svg}");
+  }
+
   /// A choice list `Dynamic[Range[top]]` that follows a free variable the
   /// body itself assigns (not a control): switching the mode makes the body
   /// assign a different `top`, and the offered choices must follow it.
