@@ -11539,6 +11539,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert!(!state.control_is_visible[w_idx]);
   }
 
+  /// A `Dynamic[ButtonBar[Which[n == 1, {…}, n == 2, {…}]]]` in a control
+  /// `Row` offers a different set of buttons for each value of another
+  /// control. The bar used to contribute no buttons at all, so nothing could
+  /// be pressed. Every branch's buttons now join the panel once, and only the
+  /// ones the selected branch offers are on screen.
+  #[test]
+  fn conditional_button_bar_follows_its_selector() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[StringLength[s], \
+       {{n, 1, \"letters\"}, {1, 2}, ControlType -> SetterBar}, \
+       Row[{\"add\", Spacer[5], Dynamic[ButtonBar[Which[\
+         n == 1, {\"p\" :> (s = s <> \"p\"), \"q\" :> (s = s <> \"q\")}, \
+         n == 2, {\"p\" :> (s = s <> \"p\"), \"q\" :> (s = s <> \"q\"), \
+                  \"r\" :> (s = s <> \"r\")}]]]}], \
+       {{s, \"\"}, ControlType -> None}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let button = |state: &manipulate::ManipulateState, want: &str| {
+      state
+        .controls
+        .iter()
+        .position(|c| {
+          matches!(c, manipulate::ControlState::Button { label, .. }
+            if label == want)
+        })
+        .unwrap_or_else(|| panic!("no {want} button: {:?}", state.controls))
+    };
+    let (p, r) = (button(&state, "p"), button(&state, "r"));
+    assert!(state.control_is_visible[p]);
+    assert!(!state.control_is_visible[r], "n = 1 offers no r");
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(state.control_is_visible[p]);
+    assert!(state.control_is_visible[r], "n = 2 offers r");
+
+    // Pressing a button runs its action against the live bindings.
+    let action = match &state.controls[r] {
+      manipulate::ControlState::Button { action, .. } => action.clone(),
+      _ => unreachable!(),
+    };
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let rendered = state.check_render().unwrap();
+    assert_eq!(rendered.result, "1");
+  }
+
   /// A `PaneSelector` keyed by strings (`"a" -> …`, `"b" -> …`) rather than
   /// integers — the Demonstrations idiom for a mode picker whose Setter
   /// labels double as the pane keys. String comparison must be exact (a
@@ -36018,3 +36070,4 @@ Cell[BoxData["2"], "Output"]
     assert_eq!(notebook::slide_ranges(&styles), [0..2, 2..5]);
   }
 }
+
