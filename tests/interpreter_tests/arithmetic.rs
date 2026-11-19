@@ -988,6 +988,37 @@ mod plus_radical_like_terms {
       "4*Sqrt[2] + 3/Sqrt[7] + Sqrt[3]*x + Sqrt[3]*y"
     );
   }
+
+  // A coefficient merged onto a radical folds into it, as in a product.
+  #[test]
+  fn merged_coefficient_folds_into_radical() {
+    assert_eq!(interpret("x/Sqrt[2] + x/Sqrt[2]").unwrap(), "Sqrt[2]*x");
+    assert_eq!(
+      interpret("y/Sqrt[3] + y/(2 Sqrt[3])").unwrap(),
+      "(Sqrt[3]*y)/2"
+    );
+    assert_eq!(interpret("x/2^(1/3) + x/2^(1/3)").unwrap(), "2^(2/3)*x");
+  }
+
+  // Rational powers of one integer whose exponents differ by an integer
+  // are like terms.
+  #[test]
+  fn radicals_differing_by_integer_powers_combine() {
+    assert_eq!(interpret("Sqrt[2] + 1/Sqrt[2]").unwrap(), "3/Sqrt[2]");
+    assert_eq!(interpret("1 + Sqrt[2] + 1/Sqrt[2]").unwrap(), "1 + 3/Sqrt[2]");
+    assert_eq!(interpret("Sqrt[3]/12 + Sqrt[3]/4").unwrap(), "1/Sqrt[3]");
+    assert_eq!(interpret("2^(1/3) + 2^(-2/3)").unwrap(), "3/2^(2/3)");
+    assert_eq!(
+      interpret("c/Sqrt[3] - Sqrt[3] c/4 - c/(4 Sqrt[3])").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Sqrt[2] x + 2 x/Sqrt[2] + y").unwrap(),
+      "2*Sqrt[2]*x + y"
+    );
+    // Different radicands stay apart.
+    assert_eq!(interpret("Sqrt[2] + Sqrt[3]").unwrap(), "Sqrt[2] + Sqrt[3]");
+  }
 }
 
 // A quotient over a sum against a power or product with no sum in it

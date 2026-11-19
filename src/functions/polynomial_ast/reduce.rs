@@ -2838,14 +2838,7 @@ fn reduce_numeric_linear_system(
       Expr::Rule {
         pattern,
         replacement,
-      } => {
-        let value = crate::evaluator::evaluate_function_call_ast(
-          "Together",
-          std::slice::from_ref(replacement.as_ref()),
-        )
-        .unwrap_or_else(|_| replacement.as_ref().clone());
-        Some(make_equality(pattern, &value))
-      }
+      } => Some(make_equality(pattern, &linear_solution_form(replacement))),
       _ => None,
     })
     .collect::<Option<_>>()?;

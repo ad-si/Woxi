@@ -10395,6 +10395,39 @@ mod reduce {
     );
   }
 
+  // A linear system with radical coefficients — the invariance conditions
+  // of a matrix under a 60° rotation, a dependent system — is eliminated
+  // exactly, never dividing by an unrecognized zero coefficient.
+  #[test]
+  fn linear_system_with_radical_coefficients() {
+    assert_eq!(
+      interpret(
+        "With[{m = Array[a, {3, 3}], r = {{1/2, -Sqrt[3]/2, 0}, \
+         {Sqrt[3]/2, 1/2, 0}, {0, 0, 1}}}, \
+         Reduce[m == r.m.Transpose[r], Flatten[m]]]"
+      )
+      .unwrap(),
+      "a[1, 3] == 0 && a[2, 1] == -a[1, 2] && a[2, 2] == a[1, 1] && \
+       a[2, 3] == 0 && a[3, 1] == 0 && a[3, 2] == 0"
+    );
+    assert_eq!(
+      interpret(
+        "Reduce[{x + Sqrt[2] y == 1, Sqrt[2] x + 2 y == 0}, {x, y}]"
+      )
+      .unwrap(),
+      "False"
+    );
+    assert!(
+      !interpret(
+        "Reduce[{a == (a/2 - (Sqrt[3]*c)/2)/2 - \
+         (Sqrt[3]*(b/2 - (Sqrt[3]*d)/2))/2, d == (Sqrt[3]*((Sqrt[3]*a)/2 \
+         + c/2))/2 + ((Sqrt[3]*b)/2 + d/2)/2}, {a, b, c, d}]"
+      )
+      .unwrap()
+      .contains("Indeterminate")
+    );
+  }
+
   // A congruence in a system of equations restricts the lattice.
   #[test]
   fn diophantine_system_with_congruence() {
