@@ -35323,37 +35323,7 @@ pub(crate) fn clip_svg_to_pane_box(
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
-    // Content that fits still takes up the whole box, placed where the
-    // Pane's `Alignment` puts it (top left by default), as in WL:
-    // `Pane[Graphics[…, ImageSize -> 50], {200, 100}]` is 200 x 100.
-    let align = align.unwrap_or((0.0, 0.0));
-    if natural_w == width && natural_h == height {
-      return svg.to_string();
-    }
-    let x = (width - natural_w) * align.0;
-    let y = (height - natural_h) * align.1;
-    let root = svg.find("<svg").unwrap_or(0);
-    // Text running past the picture's own edges (a wide caption in a
-    // picture shrunk to the box) is still drawn; the box clips it.
-    let picture = &svg[root..];
-    let picture = match picture.find('>') {
-      Some(end) if !picture[..end].contains("overflow=") => {
-        let end = if picture[..end].ends_with('/') {
-          end - 1
-        } else {
-          end
-        };
-        format!(
-          "{} overflow=\"visible\"{}",
-          &picture[..end],
-          &picture[end..]
-        )
-      }
-      _ => picture.to_string(),
-    };
-    return format!(
-      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{picture}\n</g>\n</svg>"
-    );
+    return place_in_pane_box(svg, natural_w, natural_h, width, height, align);
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
@@ -35366,8 +35336,19 @@ pub(crate) fn clip_svg_to_pane_box(
   // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
   // the box (keeping its aspect ratio) instead of cutting it off.
   if shrink_to_fit && natural_w > 0.0 && natural_h > 0.0 {
+    // The Pane itself keeps its declared size: the shrunk content sits in
+    // the full `width` x `height` box where its `Alignment` puts it, so
+    // `Pane[wideGrid, {550, 305}, ImageSizeAction -> "ShrinkToFit"]` is
+    // still 550 x 305, not as short as the scaled grid.
     let scale = (width / natural_w).min(height / natural_h);
-    return resize_svg_root(svg, natural_w * scale, natural_h * scale);
+    let (scaled_w, scaled_h) = (
+      (natural_w * scale).min(width),
+      (natural_h * scale).min(height),
+    );
+    let scaled = resize_svg_root(svg, scaled_w, scaled_h);
+    return place_in_pane_box(
+      &scaled, scaled_w, scaled_h, width, height, align,
+    );
   }
   let inner = strip_svg_wrapper(svg);
   let clip_id = format!("paneClip_{width:.0}x{height:.0}");
@@ -35393,6 +35374,49 @@ pub(crate) fn clip_svg_to_pane_box(
   };
   format!(
     "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{inner}\n</g>\n</svg>"
+  )
+}
+
+/// Place content that fits inside a `width` x `height` Pane box: the box
+/// keeps its full size and the content sits where `align` puts it.
+fn place_in_pane_box(
+  svg: &str,
+  natural_w: f64,
+  natural_h: f64,
+  width: f64,
+  height: f64,
+  align: Option<(f64, f64)>,
+) -> String {
+  // Content that fits still takes up the whole box, placed where the
+  // Pane's `Alignment` puts it (top left by default), as in WL:
+  // `Pane[Graphics[…, ImageSize -> 50], {200, 100}]` is 200 x 100.
+  let align = align.unwrap_or((0.0, 0.0));
+  if natural_w == width && natural_h == height {
+    return svg.to_string();
+  }
+  let x = (width - natural_w) * align.0;
+  let y = (height - natural_h) * align.1;
+  let root = svg.find("<svg").unwrap_or(0);
+  // Text running past the picture's own edges (a wide caption in a
+  // picture shrunk to the box) is still drawn; the box clips it.
+  let picture = &svg[root..];
+  let picture = match picture.find('>') {
+    Some(end) if !picture[..end].contains("overflow=") => {
+      let end = if picture[..end].ends_with('/') {
+        end - 1
+      } else {
+        end
+      };
+      format!(
+        "{} overflow=\"visible\"{}",
+        &picture[..end],
+        &picture[end..]
+      )
+    }
+    _ => picture.to_string(),
+  };
+  format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{picture}\n</g>\n</svg>"
   )
 }
 
