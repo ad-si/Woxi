@@ -9753,6 +9753,32 @@ mod rasterize_any_expression {
     );
   }
 
+  // Text (unlike a graphic) is not scaled to an ImageSize: it keeps its
+  // natural size, centered in a canvas of that size, and a RasterSize
+  // then resamples the whole canvas. Woxi used to stretch the text to
+  // fill the canvas.
+  #[test]
+  fn image_size_is_a_canvas_for_text() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "t = Style[\"ab\", 30]; \
+         cols[img_] := Union[Position[ImageData[Binarize[img]], 0][[All, 2]]]; \
+         span[img_] := Max[cols[img]] - Min[cols[img]]; \
+         n = Rasterize[t]; \
+         c = Rasterize[t, ImageSize -> {200, 100}]; \
+         s = Rasterize[t, ImageSize -> {200, 100}, RasterSize -> {400, 200}]; \
+         {ImageDimensions[c], span[c] == span[n], \
+          Abs[Min[cols[c]] + Max[cols[c]] - 201] <= 2, \
+          ImageDimensions[s], Abs[span[s] - 2 span[n]] <= 2, \
+          Abs[Min[cols[s]] + Max[cols[s]] - 401] <= 3, \
+          ImageDimensions[Rasterize[t, ImageSize -> 200]][[1]]}"
+      )
+      .unwrap(),
+      "{{200, 100}, True, True, {400, 200}, True, True, 200}"
+    );
+  }
+
   // `ImageSize` is the displayed size in printer's points, so at the
   // default resolution it sets the raster's pixel dimensions; an image
   // argument used to come back at its own size regardless.
