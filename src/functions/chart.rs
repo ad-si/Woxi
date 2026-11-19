@@ -395,7 +395,9 @@ impl StyledLabel {
     for line in &self.extra_lines {
       out.push_str(&format!(
         "<tspan x=\"{cx:.1}\" dy=\"{line_height:.1}\">{}</tspan>",
-        scale_markup_lengths(line, scale)
+        crate::functions::graphics::tspan_line(&scale_markup_lengths(
+          line, scale
+        ))
       ));
     }
     out
@@ -737,21 +739,22 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     {
       let mut extra_lines = Vec::new();
       let (text, markup) = match &args[0] {
-        // Inline `\!\(\*…\)` box notation typesets like a bare string's.
-        Expr::String(s)
-          if s.contains(crate::functions::string_ast::BOX_START) =>
-        {
-          let markup = crate::functions::graphics::box_string_to_svg(s);
-          (svg_markup_visible_text(&markup), Some(markup))
-        }
-        // A multi-line string stacks like a bare one: each line is a row.
+        // A multi-line string stacks like a bare one: each line is a row
+        // (typeset on its own, so inline box notation on any line works).
         Expr::String(s) if s.contains('\n') => {
           let mut lines = s
             .split('\n')
             .map(crate::functions::graphics::box_string_to_svg);
           let first = lines.next().unwrap_or_default();
           extra_lines = lines.collect();
-          (s.replace('\n', " "), Some(first))
+          (stacked_visible_text(&first, &extra_lines), Some(first))
+        }
+        // Inline `\!\(\*…\)` box notation typesets like a bare string's.
+        Expr::String(s)
+          if s.contains(crate::functions::string_ast::BOX_START) =>
+        {
+          let markup = crate::functions::graphics::box_string_to_svg(s);
+          (svg_markup_visible_text(&markup), Some(markup))
         }
         Expr::String(s) => (s.clone(), None),
         Expr::Identifier(s) => (s.clone(), None),

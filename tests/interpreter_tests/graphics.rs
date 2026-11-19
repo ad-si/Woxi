@@ -13327,6 +13327,56 @@ mod plot3d {
       assert!(y >= 0.0, "title starts above the image: {line}");
     }
 
+    /// A line break inside one styled run of a product of styled strings
+    /// closes the run at the break and reopens it on the next line, so the
+    /// next line is its own positioned `<tspan>`; the break used to leave
+    /// the run open across lines and draw the rest on the first line.
+    #[test]
+    fn plot_label_line_break_inside_styled_run_starts_new_line() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, \
+         PlotLabel -> Style[\"abc\\nxyz\", Red] Style[\"def\", Blue]]",
+      );
+      let line = svg.lines().find(|l| l.contains("abc")).expect("title text");
+      assert!(
+        line.contains(
+          "<tspan fill=\"rgb(255,0,0)\">abc</tspan><tspan x=\"1842.0\" \
+           dy=\"167.6\"><tspan fill=\"rgb(255,0,0)\">xyz</tspan> \
+           <tspan fill=\"rgb(0,0,255)\">def</tspan></tspan>"
+        ),
+        "{line}"
+      );
+    }
+
+    /// Trailing blank lines of a stacked `PlotLabel` hold a no-break space:
+    /// SVG drops the `dy` of an empty `<tspan>`, so they used to vanish.
+    #[test]
+    fn plot_label_trailing_blank_lines_keep_their_height() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Style[\"abc\\n\\n\", Red]]",
+      );
+      let line = svg.lines().find(|l| l.contains("abc")).expect("title text");
+      assert!(!line.contains("\"></tspan>"), "{line}");
+      assert_eq!(line.matches("dy=\"167.6\">&#160;</tspan>").count(), 2);
+    }
+
+    /// A styled string with inline box notation and a line break stacks
+    /// one line per row; the break used to stay a raw newline inside one
+    /// `<text>`, so both lines ran together.
+    #[test]
+    fn styled_box_notation_plot_label_with_line_break_stacks() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> \
+         Style[\"a \\!\\(\\*SuperscriptBox[\\(10\\), \\(3\\)]\\)\\nnext\", \
+         Red]]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("baseline-shift=\"super\""))
+        .expect("title text");
+      assert!(line.contains("dy=\"167.6\">next</tspan></text>"), "{line}");
+    }
+
     /// A `PlotLabel` stacked above a top `FrameLabel` under a tight explicit
     /// `ImagePadding` used to be drawn above the canvas, so the title was
     /// invisible.
