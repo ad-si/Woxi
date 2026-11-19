@@ -33075,9 +33075,16 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         for (k, line) in lines.iter().enumerate() {
           let line_y = cy + (k as f64 - (lines.len() - 1) as f64 / 2.0) * fs;
           svg.push_str(&format!(
-            "<text x=\"{text_x:.1}\" y=\"{line_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+            "<text x=\"{text_x:.1}\" y=\"{line_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\"{preserve}>{content}</text>\n",
             ff = svg_escape(ff),
             deco = style.decoration.svg_attrs(),
+            // A line that starts with a space (re-flowed text continuing
+            // after a break between row items) keeps it as an indent.
+            preserve = if line.starts_with(' ') {
+              " xml:space=\"preserve\""
+            } else {
+              ""
+            },
             // Spans inside the run carry their own `Style` colors; the
             // opacity (inherited by them) is what keeps those unpainted too.
             hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
@@ -33658,8 +33665,18 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       let bold = if st.font_weight == "bold" { 1.1 } else { 1.0 };
       let per_char =
         crate::functions::plot_padding::text_width(&markup, st.font_size);
-      let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
-      per_char.max(average) * bold
+      let serif_scale = proportional_family_scale(&st.font_family);
+      if serif_scale < 1.0 {
+        // A serif face (`"Times"`) falls back to the default serif face,
+        // which sets text narrower still than the sans average: measure it
+        // the way the box typesetter does, or a centered piece floats in a
+        // gap as wide as a third of its own text.
+        per_char * serif_scale * bold
+      } else {
+        let average =
+          chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
+        per_char.max(average) * bold
+      }
     } else {
       chars * char_width * scale
     };

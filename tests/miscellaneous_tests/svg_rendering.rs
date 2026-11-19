@@ -4909,6 +4909,40 @@ mod tests {
       );
     }
 
+    /// A `Row` measures a piece in a serif `FontFamily` by the serif glyph
+    /// widths it is drawn with, not the wider sans-serif average: the
+    /// centered pieces then sit next to each other instead of each floating
+    /// in a gap a third as wide as its own text.
+    #[test]
+    fn row_measures_serif_pieces_by_their_glyph_widths() {
+      let svg = woxi::interpret(
+        r#"ExportString[Row[{Style["Passengers in third class survived the ", FontFamily -> "Times"], Style["word", FontFamily -> "Times", Italic]}], "SVG"]"#,
+      )
+      .unwrap();
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      // 43 characters at the 0.55 em sans average would be 331 wide.
+      assert!(width < 280.0, "{svg}");
+    }
+
+    /// A re-flowed line that continues after a break between row items
+    /// keeps its leading space as an indent.
+    #[test]
+    fn reflowed_line_keeps_its_leading_space() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Column[{Style[Row[{"one two ", Style["three", Italic], " four five six seven"}], FontFamily -> "Times"]}], {200, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains("xml:space=\"preserve\"> four five six seven</text>"),
+        "{svg}"
+      );
+    }
+
     /// `Style[TraditionalForm[Labeled[…]], size]` is drawn as the captioned
     /// picture: the size reaches the text of the content and of the label,
     /// and the label's polynomial is typeset in TraditionalForm (falling
