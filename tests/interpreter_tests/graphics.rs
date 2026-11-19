@@ -58884,3 +58884,26 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+mod exact_slider_readout {
+  use woxi::functions::graphics::exact_slider_readout_svg;
+
+  fn readout(code: &str) -> Option<String> {
+    exact_slider_readout_svg(&woxi::interpret_to_expr(code).unwrap())
+  }
+
+  #[test]
+  fn exact_fractions_are_typeset() {
+    for code in ["2/3", "-7/4", "Pi/4", "Sqrt[2]"] {
+      let svg = readout(code).unwrap_or_else(|| panic!("no readout: {code}"));
+      assert!(svg.starts_with("<svg"), "{code}: {svg}");
+    }
+  }
+
+  #[test]
+  fn numbers_and_non_numbers_stay_text() {
+    for code in ["1", "-3", "0.5", "2.", "10^40", "x", "\"a\""] {
+      assert!(readout(code).is_none(), "{code} must read as text");
+    }
+  }
+}

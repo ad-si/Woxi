@@ -32035,6 +32035,24 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
   Some(layout_to_svg(&layout, theme().text_primary))
 }
 
+/// The picture a `Manipulate` slider's `Appearance -> "Labeled"` readout
+/// shows for an exact non-integer value such as `2/3` or `Pi/4`: the
+/// front end typesets the bound value, stacking a fraction instead of
+/// printing a decimal. `None` for a machine number or an integer, which the
+/// readout keeps as plain text, and for anything that is not numeric.
+pub fn exact_slider_readout_svg(value: &Expr) -> Option<String> {
+  match value {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => None,
+    _ if crate::functions::math_ast::try_eval_to_f64(value).is_some() => {
+      form_box_svg(value)
+    }
+    _ => None,
+  }
+}
+
 /// The markup an `AxesLabel` entry draws as: a label whose inline box
 /// notation holds a fraction is a stacked-fraction picture (a nested `<svg>`),
 /// anything else the usual text markup.

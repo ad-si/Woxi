@@ -360,6 +360,7 @@ impl ControlState {
       ControlState::Continuous {
         current,
         is_real,
+        exact_value,
         step,
         min,
         max,
@@ -367,6 +368,11 @@ impl ControlState {
       } => {
         if let Some(v) = as_f64(&expr) {
           *current = v;
+          // An exact value (`2/3` from a linked `{2/3 -> "astroid", …}`
+          // setter row) binds exactly again, as in Wolfram, even after a
+          // drag had made the slider bind machine reals.
+          *exact_value = (!matches!(expr, Expr::Real(_) | Expr::BigFloat(..)))
+            .then_some(v);
           // A machine real assigned to a slider whose spec was all exact
           // integers (`{c, -2, 2}`) shows Wolfram's slider is continuous:
           // an integer step could never have produced that value.
@@ -872,6 +878,11 @@ pub struct ManipulateState {
   /// (a `Dynamic[Framed@Graphics[…]]` sector showing a slider's angle), as
   /// `(control name, icon)`. Re-rendered with the captions on every change.
   pub label_svgs: Vec<(String, LabelIcon)>,
+  /// `(control index, icon)` of each `Continuous` slider currently sitting
+  /// on an exact non-integer value (`2/3`, `Pi/4`): its value readout is
+  /// that stacked-fraction picture, the way Wolfram typesets the bound
+  /// value, instead of a decimal. Refreshed on every re-evaluation.
+  pub readout_svgs: Vec<(usize, LabelIcon)>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -955,6 +966,42 @@ thread_local! {
 
 impl ManipulateState {
   /// The rendered icon of a control whose caption is a picture.
+  /// The stacked-fraction picture standing in for the value readout of the
+  /// slider at `ctrl_idx` (see `readout_svgs`), if it shows one.
+  pub fn readout_svg(&self, ctrl_idx: usize) -> Option<&LabelIcon> {
+    self
+      .readout_svgs
+      .iter()
+      .find(|(i, _)| *i == ctrl_idx)
+      .map(|(_, icon)| icon)
+  }
+
+  /// Re-typeset the readout of every slider holding an exact value.
+  fn refresh_readout_svgs(&mut self) {
+    self.readout_svgs = self
+      .controls
+      .iter()
+      .enumerate()
+      .filter_map(|(i, ctrl)| {
+        let ControlState::Continuous {
+          current,
+          exact_value,
+          imaginary: false,
+          ..
+        } = ctrl
+        else {
+          return None;
+        };
+        if *exact_value != Some(*current) || current.fract() == 0.0 {
+          return None;
+        }
+        let expr = woxi::interpret_to_expr(&ctrl.current_code()).ok()?;
+        woxi::functions::graphics::exact_slider_readout_svg(&expr)
+          .map(|svg| (i, LabelIcon::from_svg(svg)))
+      })
+      .collect();
+  }
+
   pub fn label_svg(&self, name: &str) -> Option<&LabelIcon> {
     self
       .label_svgs
@@ -1103,6 +1150,7 @@ impl ManipulateState {
       dynamic_values: spec.dynamic_values,
       dynamic_labels: spec.dynamic_labels,
       label_svgs: Vec::new(),
+      readout_svgs: Vec::new(),
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
       dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
@@ -2210,6 +2258,7 @@ impl ManipulateState {
     self.apply_dynamic_bounds(&resolved_bounds);
     self.apply_dynamic_labels(resolved_labels);
     self.apply_button_labels(resolved_button_labels);
+    self.refresh_readout_svgs();
     // A re-resolved choice list may drop the value the body was just
     // rendered for; render again for the value the control settled on.
     if self.apply_dynamic_values(&resolved_values) && allow_retry {
@@ -7658,5 +7707,51 @@ mod repeated_option_tests {
       "the body lost the style it applies: {}",
       state.body
     );
+  }
+
+  /// A slider and a setter row sharing one variable: the slider starts on
+  /// the exact `2/3`, whose `"Labeled"` readout Wolfram typesets as a stacked
+  /// fraction. A drag makes it bind machine reals, but picking a setter
+  /// choice binds that choice's exact value again (`2/3`, `1`), and the
+  /// readout follows.
+  #[test]
+  fn linked_setter_restores_exact_slider_value_and_fraction_readout() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[r, {{r, 2/3, \"r\"}, 0.1, 20, Appearance -> \"Labeled\"}, \
+       {{r, 2/3, \"r\"}, {2/3 -> \"low\", 1 -> \"mid\", 2 -> \"high\"}}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    state.reevaluate();
+    let slider = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Continuous { .. }))
+      .expect("slider");
+    let setter = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Discrete { .. }))
+      .expect("setter");
+    assert_eq!(state.controls[slider].current_code(), "2/3");
+    assert!(state.readout_svg(slider).is_some(), "2/3 readout is stacked");
+
+    assert!(state.slide_continuous(slider, 5.0));
+    state.apply_tracking(slider);
+    state.reevaluate();
+    assert_eq!(state.controls[slider].current_code(), "5.");
+    assert!(state.readout_svg(slider).is_none());
+
+    assert!(state.select_discrete(setter, "low"));
+    state.apply_tracking(setter);
+    state.reevaluate();
+    assert_eq!(state.controls[slider].current_code(), "2/3");
+    assert!(state.readout_svg(slider).is_some(), "exact again after setter");
+
+    assert!(state.select_discrete(setter, "mid"));
+    state.apply_tracking(setter);
+    state.reevaluate();
+    assert_eq!(state.controls[slider].current_code(), "1");
+    assert!(state.readout_svg(slider).is_none(), "an integer reads as text");
   }
 }

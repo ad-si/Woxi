@@ -4678,10 +4678,17 @@ fn render_manipulate_widget<'a>(
             Message::Noop
           }
         };
-        let value_widget = text(format_slider_value(*current, *is_real))
-          .size(11)
-          .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(64.0));
+        // An exact non-integer value (`2/3`) reads as a stacked fraction,
+        // the way Wolfram typesets it; anything else as a number.
+        let value_widget: Element<'a, Message> =
+          match state.readout_svg(ctrl_idx) {
+            Some(icon) => manipulate_label_icon(icon, 64.0),
+            None => text(format_slider_value(*current, *is_real))
+              .size(11)
+              .font(Font::MONOSPACE)
+              .width(iced::Length::Fixed(64.0))
+              .into(),
+          };
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
