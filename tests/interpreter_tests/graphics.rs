@@ -10629,6 +10629,40 @@ mod plot3d {
       );
     }
 
+    /// With an automatic range, the box `ViewPoint` (and so `ViewAngle`) is
+    /// measured in is the *padded* box: the 2% `PlotRangePadding` on each
+    /// side makes a unit sphere's box 2.08 long, so seen from 10 box sides
+    /// away under a 6° field of view its silhouette spans
+    /// `tan(asin(1 / 20.8)) / tan(3°)` ≈ 0.919 of the frame. A Demonstration
+    /// snapshot of a sphere-and-cylinder cluster under these options is
+    /// drawn at this padded scale, not 4% larger.
+    #[test]
+    fn an_explicit_view_angle_measures_the_padded_box() {
+      let sphere = |opts: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, ViewPoint -> {{0, 0, 10}}, \
+           ViewAngle -> Pi/30, ImageSize -> 400{opts}]"
+        ))
+      };
+      let expected =
+        (1.0_f64 / 20.8).asin().tan() / 3.0_f64.to_radians().tan() * 400.0;
+      for opts in ["", ", SphericalRegion -> True"] {
+        let (w, h) = sphere(opts);
+        assert!(
+          (w - expected).abs() < 3.0 && (h - expected).abs() < 3.0,
+          "{opts}: expected about {expected:.1} px, got {w:.1} x {h:.1}"
+        );
+      }
+      // Without padding the box is the sphere's own: 1.04 times larger.
+      let (w, _) = sphere(", PlotRangePadding -> None");
+      let unpadded =
+        (1.0_f64 / 20.0).asin().tan() / 3.0_f64.to_radians().tan() * 400.0;
+      assert!(
+        (w - unpadded).abs() < 3.0,
+        "expected about {unpadded:.1} px without padding, got {w:.1}"
+      );
+    }
+
     /// With `Boxed -> False` in a picture whose width and height are both
     /// given, Wolfram frames the scene by the sphere around its box (as
     /// `SphericalRegion -> True` does) rather than fitting the invisible
