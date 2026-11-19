@@ -42944,11 +42944,14 @@ mod manipulate {
       .expect("branch-dependent bounds for n")
       .clone();
     let resolve = |mode: &str, code: &Option<String>| {
-      woxi::with_scoped_globals(&[("mode".to_string(), mode.to_string())], || {
-        woxi::functions::graphics::manipulate_eval_bound_code(
-          code.as_deref().unwrap(),
-        )
-      })
+      woxi::with_scoped_globals(
+        &[("mode".to_string(), mode.to_string())],
+        || {
+          woxi::functions::graphics::manipulate_eval_bound_code(
+            code.as_deref().unwrap(),
+          )
+        },
+      )
     };
     for (mode, expected) in
       [("1", (0.0, 750.0, 250.0)), ("2", (1000.0, 10100.0, 500.0))]
@@ -42975,10 +42978,7 @@ mod manipulate {
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    assert_eq!(
-      spec.controls.iter().filter(|c| c.name() == "n").count(),
-      1
-    );
+    assert_eq!(spec.controls.iter().filter(|c| c.name() == "n").count(), 1);
     assert!(!spec.dynamic_bounds.iter().any(|(n, ..)| n == "n"));
   }
 

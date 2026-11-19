@@ -38387,7 +38387,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         // visible, independently interactive, and read/write the same
         // binding, so those get their own rows.
         if let ManipulateControl::Continuous {
-          name, min, max, step, ..
+          name,
+          min,
+          max,
+          step,
+          ..
         } = &c
           && animate.is_none()
           && pane_governed_names.contains(name)
@@ -42182,9 +42186,8 @@ fn branch_variant_conditions(
         if let (Some(Expr::List(panes)), Some(selector)) =
           (args.first(), args.get(1))
         {
-          let selector = crate::syntax::expr_to_source_form(
-            unwrap_pane_selector(selector),
-          );
+          let selector =
+            crate::syntax::expr_to_source_form(unwrap_pane_selector(selector));
           let mut counts: Vec<(String, usize)> = Vec::new();
           for pane in panes {
             if let Expr::Rule { replacement, .. }
