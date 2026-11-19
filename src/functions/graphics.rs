@@ -44155,10 +44155,19 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Style" | "StyleForm" => {
         let styled = italic || args.iter().skip(1).any(is_italic_directive);
         let bold = args.iter().skip(1).any(is_bold_directive);
+        // A held label (a Manipulate control heading) may still carry a
+        // color that only evaluation produces, such as `ColorData[1, 1]`.
         let color = args
           .iter()
           .skip(1)
-          .find_map(parse_color)
+          .find_map(|d| {
+            parse_color(d).or_else(|| match d {
+              Expr::FunctionCall { .. } => {
+                parse_color(&evaluate_expr_to_expr(d).ok()?)
+              }
+              _ => None,
+            })
+          })
           .map(|c| (c.r as f32, c.g as f32, c.b as f32));
         let size = style_directive_font_size(args.iter().skip(1));
         let mut runs = args

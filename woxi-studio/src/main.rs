@@ -11449,6 +11449,45 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.control_is_visible, vec![true, false, false]);
   }
 
+  /// Regression: a control-area heading `Style["t", ColorData[1, 2], Bold]`
+  /// is held unevaluated by `Manipulate`, so its color — which only
+  /// evaluating `ColorData[…]` yields — was dropped and the heading drawn
+  /// in the default color.
+  #[test]
+  fn manipulate_heading_color_from_color_data() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a, Style[\"first\", ColorData[1, 2], Bold], \
+       {a, 0, 1}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let heading = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Heading { label_runs, .. } => {
+          Some(label_runs.clone())
+        }
+        _ => None,
+      })
+      .expect("a heading control");
+    let channel = |i: usize| -> f32 {
+      woxi::interpret(&format!("ColorData[1, 2][[{i}]]"))
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    let expected = (channel(1), channel(2), channel(3));
+    let color = heading[0].color.expect("heading keeps its color");
+    assert!(heading[0].bold);
+    assert!(
+      (color.0 - expected.0).abs() < 1e-4
+        && (color.1 - expected.1).abs() < 1e-4
+        && (color.2 - expected.2).abs() < 1e-4,
+      "{color:?} vs {expected:?}"
+    );
+  }
+
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook (a pie chart editor)
   /// whose `PaneSelector` panes each wrap their sliders in a collapsible
