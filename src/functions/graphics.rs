@@ -21043,7 +21043,17 @@ fn quoted_box_literal(cs: &[char]) -> Option<String> {
 /// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
 /// `\*Head[...]` explicit boxes) into a list of box Exprs.
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
-  let mut res: Vec<Expr> = Vec::new();
+  parse_box_units_tagged(cs)
+    .into_iter()
+    .map(|(unit, _)| unit)
+    .collect()
+}
+
+/// [`parse_box_units`], with each unit tagged by whether it was written as
+/// box code (a `\(...\)` group or an explicit `\*Head[...]` box) rather than
+/// as a plain text run of the string.
+fn parse_box_units_tagged(cs: &[char]) -> Vec<(Expr, bool)> {
+  let mut res: Vec<(Expr, bool)> = Vec::new();
   let mut plain = String::new();
   // A linear-syntax group may open with the form it is typeset in —
   // `\!\(TraditionalForm\`16 …\)`. The name says how to read the rest and
@@ -21071,20 +21081,20 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
         }
         '*' => {
           if !plain.is_empty() {
-            res.push(Expr::String(std::mem::take(&mut plain)));
+            res.push((Expr::String(std::mem::take(&mut plain)), false));
           }
           let (e, ni) = parse_explicit_box(cs, i + 2);
-          res.push(e);
+          res.push((e, true));
           i = ni;
           continue;
         }
         '(' => {
           if !plain.is_empty() {
-            res.push(Expr::String(std::mem::take(&mut plain)));
+            res.push((Expr::String(std::mem::take(&mut plain)), false));
           }
           match find_box_group_close(cs, i + 2) {
             Some(close) => {
-              res.push(parse_box_to_expr(&cs[i + 2..close]));
+              res.push((parse_box_to_expr(&cs[i + 2..close]), true));
               i = close + 2;
             }
             None => i += 1,
@@ -21102,9 +21112,9 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
     }
     if let Some((e, ni)) = bare_box_head_at(cs, i) {
       if !plain.is_empty() {
-        res.push(Expr::String(std::mem::take(&mut plain)));
+        res.push((Expr::String(std::mem::take(&mut plain)), false));
       }
-      res.push(e);
+      res.push((e, true));
       i = ni;
       continue;
     }
@@ -21112,7 +21122,7 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
     i += 1;
   }
   if !plain.is_empty() {
-    res.push(Expr::String(plain));
+    res.push((Expr::String(plain), false));
   }
   res
 }
@@ -21786,6 +21796,28 @@ pub fn box_string_to_svg(s: &str) -> String {
   let norm = normalize_box_markers(s);
   let cs: Vec<char> = norm.chars().collect();
   parse_box_units(&cs).iter().map(boxes_to_svg).collect()
+}
+
+/// [`box_string_to_svg`] for a label typeset in `TraditionalForm`, as plot
+/// legend entries are: the symbols spelt with a single letter in the
+/// string's box code (`"\!\(\*SubscriptBox[\(T\), \(0\)]\)"`) are set in
+/// italics, while its plain text runs and quoted strings stay upright.
+pub fn traditional_box_string_to_svg(s: &str) -> String {
+  if s.starts_with(STYLED_LABEL_MARKER) {
+    return box_string_to_svg(s);
+  }
+  let norm = normalize_box_markers(s);
+  let cs: Vec<char> = norm.chars().collect();
+  parse_box_units_tagged(&cs)
+    .iter()
+    .map(|(unit, is_box_code)| {
+      if *is_box_code {
+        with_single_letter_italics(|| boxes_to_svg(unit))
+      } else {
+        boxes_to_svg(unit)
+      }
+    })
+    .collect()
 }
 
 /// The box expression a string with inline `\!\(\*…\)` box notation

@@ -1597,6 +1597,39 @@ mod tests {
     }
 
     #[test]
+    fn plot_legend_box_code_sets_single_letters_in_italics() {
+      // Legend entries are typeset in TraditionalForm: a single-letter
+      // symbol written in the string's box code is italic, while the
+      // string's plain text and multi-letter symbols stay upright.
+      let code = r#"ExportString[Plot[{x, 2 x, 3 x}, {x, 0, 1},
+        PlotLegends -> {"\!\(\*SubscriptBox[\(T\), \(0\)]\)",
+          "k\!\(\*SuperscriptBox[\(y\), \(2\)]\)",
+          "\!\(\*SubscriptBox[\(v\), \(max\)]\)"}], "SVG"]"#;
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">T</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan></text>"
+        ),
+        "box-code symbol not italic in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">k<tspan font-style=\"italic\">y</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+        ),
+        "plain text or box-code symbol styled wrongly in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">v</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan></text>"
+        ),
+        "multi-letter symbol set in italics: {svg}"
+      );
+    }
+
+    #[test]
     fn list_line_plot_joined_false_draws_unconnected_points() {
       let count = |code: &str, tag: &str| {
         woxi::interpret(code)
