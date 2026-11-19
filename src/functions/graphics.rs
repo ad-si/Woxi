@@ -50830,6 +50830,33 @@ mod manipulate_label_tests {
   /// capital) keeps its plain text but is flagged as a subscript so the UI
   /// sets it smaller, instead of drawing `Subscript["V", "y"]` as a
   /// full-size "Vy". Mappable scripts keep their Unicode glyphs.
+  /// A label whose inline `SubscriptBox` holds spaced words (`y` with the
+  /// subscript "1 max", as a FrontEnd stores `\(1\ max\)`) sets the words
+  /// as a lowered script rather than flattening them to `y_(1 max)`.
+  #[test]
+  fn inline_spaced_word_subscript_is_a_subscript_run() {
+    use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+    let sub_run = |t: &str| LabelRun {
+      subscript: true,
+      ..run(t, false)
+    };
+    for (base, script, spelled) in [
+      ("y", "1 max", "1 max"),
+      ("y", "1 max", "1\\ max"),
+      ("T", "air in", "air\\ in"),
+    ] {
+      let label = format!(
+        "{BOX_START}{BOX_OPEN}{BOX_SEP}SubscriptBox[{BOX_OPEN}{base}{BOX_CLOSE}, \
+         {BOX_OPEN}{spelled}{BOX_CLOSE}]{BOX_CLOSE}"
+      );
+      assert_eq!(
+        runs(&str_expr(&label)),
+        vec![run(base, false), sub_run(script)],
+        "{label}"
+      );
+    }
+  }
+
   #[test]
   fn unmappable_subscript_is_flagged_as_subscript_run() {
     let sub_run = |t: &str| LabelRun {
