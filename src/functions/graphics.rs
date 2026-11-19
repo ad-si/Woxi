@@ -44894,7 +44894,10 @@ fn marked_subscript_box_runs(
 /// Label runs for a `SubscriptBox` whose base is a plain atom and whose
 /// script is a text atom of spaced words (`SubscriptBox[y, "1 max"]`): the
 /// same runs as `Subscript[y, "1 max"]`. None for any other box.
-fn spaced_text_script_runs(boxes: &Expr, italic: bool) -> Option<Vec<LabelRun>> {
+fn spaced_text_script_runs(
+  boxes: &Expr,
+  italic: bool,
+) -> Option<Vec<LabelRun>> {
   let Expr::FunctionCall { name, args } = boxes else {
     return None;
   };
@@ -50835,7 +50838,9 @@ mod manipulate_label_tests {
   /// as a lowered script rather than flattening them to `y_(1 max)`.
   #[test]
   fn inline_spaced_word_subscript_is_a_subscript_run() {
-    use crate::functions::string_ast::{BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START};
+    use crate::functions::string_ast::{
+      BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START,
+    };
     let sub_run = |t: &str| LabelRun {
       subscript: true,
       ..run(t, false)
