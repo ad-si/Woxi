@@ -33672,8 +33672,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         // floating in a gap as wide as a third of its own text.
         per_char * bold
       } else {
-        let average =
-          chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
+        let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
         per_char.max(average) * bold
       }
     } else {
