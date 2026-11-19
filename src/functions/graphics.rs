@@ -37620,11 +37620,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // re-creating fresh ones every frame.
     let mut dynamic_module_state = Vec::new();
     let mut module_initializations = Vec::new();
-    let unwrapped = unwrap_dynamic_module_locals(
+    let mut unwrapped = unwrap_dynamic_module_locals(
       &args[0],
       &mut dynamic_module_state,
       &mut module_initializations,
     );
+    if dynamic_module_state.is_empty() {
+      let control_names: Vec<String> =
+        args[1..].iter().filter_map(control_spec_variable).collect();
+      if let Some(hoisted) = hoist_tail_dynamic_module(
+        &unwrapped,
+        &control_names,
+        &mut dynamic_module_state,
+        &mut module_initializations,
+      ) {
+        unwrapped = hoisted;
+      }
+    }
     module_locals = dynamic_module_state
       .iter()
       .map(|(n, _)| n.clone())
@@ -40623,6 +40635,158 @@ fn unwrap_dynamic_module_locals(
       }
       _ => return cur.clone(),
     }
+  }
+}
+
+/// Hidden state variable remembering the control values a tail
+/// `DynamicModule`'s locals were last initialized for (see
+/// [`hoist_tail_dynamic_module`]).
+const TAIL_MODULE_KEY: &str = "woxiTailModuleKey$$";
+
+/// Hoist the locals of a `DynamicModule[{locals…}, Dynamic[…]]` that is not
+/// the whole Manipulate body but its *tail*: the last statement of a
+/// `pre; …` sequence, possibly inside `With[{c = …}, …]` (`SeedRandom[s];
+/// With[{p = RandomReal[…]}, DynamicModule[{q = p, i = 0}, Dynamic[…]]]`).
+///
+/// The inner `Dynamic` that advances the locals is refreshed on its own,
+/// so the locals persist across those refreshes and across changes of
+/// controls read only inside it. The surrounding code is the Manipulate's
+/// (outer) dynamic part: when a control it reads changes, the front end
+/// re-evaluates it, building a fresh `DynamicModule` whose locals start
+/// over from their initializers. The rewrite keeps both behaviors: the
+/// locals become hidden widget state, and a guard re-runs their
+/// initializers only when the values of those outer controls differ from
+/// the ones the locals were last initialized for.
+fn hoist_tail_dynamic_module(
+  body: &Expr,
+  control_names: &[String],
+  state: &mut Vec<(String, String)>,
+  initializations: &mut Vec<String>,
+) -> Option<Expr> {
+  let mut outer_symbols = std::collections::HashSet::new();
+  let mut locals = Vec::new();
+  let mut module_inits = Vec::new();
+  let rewritten = rewrite_tail_dynamic_module(
+    body,
+    &mut outer_symbols,
+    &mut locals,
+    &mut module_inits,
+  )?;
+  if locals.is_empty() || state.iter().any(|(n, _)| n == TAIL_MODULE_KEY) {
+    return None;
+  }
+  let key_vars: Vec<&str> = control_names
+    .iter()
+    .filter(|n| outer_symbols.contains(n.as_str()))
+    .map(String::as_str)
+    .collect();
+  let key = format!("{{{}}}", key_vars.join(", "));
+  let assignments: Vec<String> = locals
+    .iter()
+    .map(|(name, init)| format!("{name} = {init}"))
+    .collect();
+  let guard_code = format!(
+    "If[{TAIL_MODULE_KEY} =!= {key}, {TAIL_MODULE_KEY} = {key}; {}]",
+    assignments.join("; ")
+  );
+  let guard = crate::syntax::string_to_expr(&guard_code).ok()?;
+  let rewritten = replace_tail_guard(&rewritten, &guard);
+  state.push((TAIL_MODULE_KEY.to_string(), "Null".to_string()));
+  for (name, _) in &locals {
+    state.push((name.clone(), "Null".to_string()));
+  }
+  initializations.extend(module_inits);
+  Some(rewritten)
+}
+
+/// Placeholder head marking where [`hoist_tail_dynamic_module`] puts the
+/// initialization guard.
+const TAIL_MODULE_GUARD: &str = "woxiTailModuleGuard$$";
+
+fn rewrite_tail_dynamic_module(
+  e: &Expr,
+  outer_symbols: &mut std::collections::HashSet<String>,
+  locals: &mut Vec<(String, String)>,
+  inits: &mut Vec<String>,
+) -> Option<Expr> {
+  fn collect_symbols(e: &Expr, out: &mut std::collections::HashSet<String>) {
+    if let Expr::Identifier(name) = e {
+      out.insert(name.clone());
+    }
+    for child in crate::syntax::expr_children(e) {
+      collect_symbols(child, out);
+    }
+  }
+  match e {
+    Expr::CompoundExpr(items) if !items.is_empty() => {
+      let (last, pre) = items.split_last()?;
+      let tail =
+        rewrite_tail_dynamic_module(last, outer_symbols, locals, inits)?;
+      for stmt in pre {
+        collect_symbols(stmt, outer_symbols);
+      }
+      let mut items = pre.to_vec();
+      items.push(tail);
+      Some(Expr::CompoundExpr(items))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CompoundExpression" && !args.is_empty() =>
+    {
+      let (last, pre) = args.split_last()?;
+      let tail =
+        rewrite_tail_dynamic_module(last, outer_symbols, locals, inits)?;
+      for stmt in pre {
+        collect_symbols(stmt, outer_symbols);
+      }
+      let mut items = pre.to_vec();
+      items.push(tail);
+      Some(Expr::CompoundExpr(items))
+    }
+    Expr::FunctionCall { name, args } if name == "With" && args.len() == 2 => {
+      let tail =
+        rewrite_tail_dynamic_module(&args[1], outer_symbols, locals, inits)?;
+      collect_symbols(&args[0], outer_symbols);
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![args[0].clone(), tail].into(),
+      })
+    }
+    // Only a module whose body is itself an explicit `Dynamic[…]`: that
+    // inner `Dynamic` is the author's own refresh boundary.
+    Expr::FunctionCall { name, args }
+      if name == "DynamicModule"
+        && args.len() >= 2
+        && matches!(&args[1], Expr::FunctionCall { name: inner, .. } if inner == "Dynamic") =>
+    {
+      let inner = unwrap_dynamic_module_locals(e, locals, inits);
+      for (_, init) in locals.iter() {
+        if let Ok(init) = crate::syntax::string_to_expr(init) {
+          collect_symbols(&init, outer_symbols);
+        }
+      }
+      Some(Expr::CompoundExpr(vec![
+        Expr::Identifier(TAIL_MODULE_GUARD.to_string()),
+        inner,
+      ]))
+    }
+    _ => None,
+  }
+}
+
+/// Swap the [`TAIL_MODULE_GUARD`] placeholder for the real guard.
+fn replace_tail_guard(e: &Expr, guard: &Expr) -> Expr {
+  match e {
+    Expr::Identifier(name) if name == TAIL_MODULE_GUARD => guard.clone(),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items.iter().map(|i| replace_tail_guard(i, guard)).collect(),
+    ),
+    Expr::FunctionCall { name, args } if name == "With" && args.len() == 2 => {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![args[0].clone(), replace_tail_guard(&args[1], guard)].into(),
+      }
+    }
+    other => other.clone(),
   }
 }
 

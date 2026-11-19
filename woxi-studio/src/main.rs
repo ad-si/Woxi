@@ -8810,6 +8810,68 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`sam$$ = 1, $CellContext`gg$$ = Fals
     widget.reevaluate();
     assert!(!widget.wants_tick(), "a stopped spinner needs no timer");
   }
+  /// A Manipulate body that seeds the generator and computes a start
+  /// configuration (`SeedRandom[k]; With[{p0 = …}, DynamicModule[{p = p0,
+  /// t = 0}, Dynamic[If[go, t = t + 1; p = step[p]]; …]]]`) keeps its
+  /// `DynamicModule` locals between the inner `Dynamic`'s refreshes, so a
+  /// running simulation advances step after step instead of restarting
+  /// from `p0` every frame. Changing a control read outside the inner
+  /// `Dynamic` (the size `n`, the seed `k`) builds a fresh module, whose
+  /// locals start over.
+  #[test]
+  fn tail_dynamic_module_locals_persist_between_refreshes() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[SeedRandom[k]; With[{p0 = RandomReal[{-1, 1}, {n, 3}]}, DynamicModule[{p = p0, q = p0, t = 0}, Dynamic[If[go, t = t + 1; {p, q} = {2 p - q + 0.01, p}]; Graphics3D[{Point[p], Line[Transpose[{p, q}]]}, PlotLabel -> t]]]], {{n, 5}, 2, 9, 1}, {{go, False}, {False, True}}, {{k, 0}, 0, 9, 1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 5, $CellContext`go$$ = False, $CellContext`k$$ = 0}, \"x\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the points must render");
+    let local = |w: &manipulate::ManipulateState, name: &str| {
+      w.state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| panic!("`{name}` must be widget state"))
+    };
+    assert_eq!(local(&widget, "t"), "0");
+    let start = local(&widget, "p");
+
+    widget.apply_saved_variables(&[("go".to_string(), "True".to_string())]);
+    let steps = |w: &manipulate::ManipulateState| -> u32 {
+      local(w, "t").parse().expect("an integer step count")
+    };
+    let first = steps(&widget);
+    widget.reevaluate();
+    widget.reevaluate();
+    widget.reevaluate();
+    assert_eq!(steps(&widget), first + 3, "every refresh takes one step");
+    assert_ne!(local(&widget, "p"), start, "the points must move");
+    assert!(widget.wants_tick(), "a running body is driven by the timer");
+
+    // `go` is only read inside the inner `Dynamic`: pausing keeps the state.
+    widget.apply_saved_variables(&[("go".to_string(), "False".to_string())]);
+    widget.reevaluate();
+    assert_eq!(steps(&widget), first + 3);
+    widget.reevaluate();
+    assert!(!widget.wants_tick(), "a paused body needs no timer");
+
+    // A new seed rebuilds the module: the locals start over.
+    widget.apply_saved_variables(&[("k".to_string(), "1".to_string())]);
+    widget.reevaluate();
+    assert_eq!(local(&widget, "t"), "0");
+    assert_ne!(local(&widget, "p"), start, "a new seed draws new points");
+    widget.apply_saved_variables(&[("k".to_string(), "0".to_string())]);
+    widget.reevaluate();
+    assert_eq!(local(&widget, "p"), start, "the old seed draws them again");
+  }
   /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
   /// titles itself with a `Framed` message opens with the plot rendered
   /// (the walk's helper is an initialization cell).
