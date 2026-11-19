@@ -47271,7 +47271,7 @@ mod arrowheads_render {
         .and_then(|head| head.rsplit("<text ").next())
         .unwrap_or_else(|| panic!("the label must draw: {svg:.800}"));
       let attr = |name: &str| -> f64 {
-        tag
+        format!(" {tag}")
           .split(&format!(" {name}=\""))
           .nth(1)
           .and_then(|t| t.split('"').next())
