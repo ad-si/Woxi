@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Column` stripes its rows with a background list
+    (`Background -> {c1, c2, …}` or the cyclic `{{c1, c2}}`) instead of
+    dropping it.
 
 # 2026-11-08 - 0.4.0
 

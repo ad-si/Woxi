@@ -193,6 +193,54 @@ mod column_visual_mode {
     assert!(svg.contains("width=\"80.0\" height=\"30.0\""), "{svg}");
   }
 
+  /// The `fill` colors of the `<rect>`s in `svg`, top to bottom.
+  fn rect_fills(svg: &str) -> Vec<String> {
+    svg
+      .split("<rect")
+      .skip(1)
+      .filter_map(|r| {
+        let start = r.find(" fill=\"")? + 7;
+        Some(r[start..].split('"').next()?.to_string())
+      })
+      .collect()
+  }
+
+  // As part of a scheduled QA routine, Woxi Studio was tested against a
+  // randomly sampled Wolfram Demonstration notebook whose word list is a
+  // `Column` striped with a cyclic `Background -> {{c1, c2}}`; the row
+  // fills were dropped (only a single color filled the column).
+  #[test]
+  fn column_cyclic_background_stripes_rows() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{\"a\", \"b\", \"c\", \"d\", \"e\"}, Left, \
+       Background -> {{Yellow, Cyan}}, Spacings -> 1]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let (y, c) = ("rgb(255,255,0)", "rgb(0,255,255)");
+    assert_eq!(rect_fills(&svg), [y, c, y, c, y], "{svg}");
+    for item in ["a", "b", "c", "d", "e"] {
+      assert!(svg.contains(&format!(">{item}</text>")), "{svg}");
+    }
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+  }
+
+  // A flat background list colors successive rows once each.
+  #[test]
+  fn column_background_list_colors_successive_rows() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Background -> {Yellow, Cyan}]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(
+      rect_fills(&svg),
+      ["rgb(255,255,0)", "rgb(0,255,255)"],
+      "{svg}"
+    );
+  }
+
   #[test]
   fn column_dividers_all_rules_every_line() {
     clear_state();
