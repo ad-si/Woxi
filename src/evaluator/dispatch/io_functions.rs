@@ -6975,6 +6975,8 @@ struct PaneTextUnit {
   text: String,
   cols: usize,
   idx: usize,
+  /// How wide the unit is drawn, in points.
+  width: f64,
 }
 
 /// Split `text` into the units `wrap_pane_text` lays out: single characters,
@@ -7056,15 +7058,17 @@ pub(crate) fn wrap_pane_text(
   width: f64,
   font_size: f64,
 ) -> Option<Expr> {
-  wrap_pane_text_at(content, width, font_size, false)
+  wrap_pane_text_at(content, width, font_size, None, false)
 }
 
 /// `wrap_pane_text`, which with `whole_words` gives up (`None`) rather than
-/// break a word too long for a line in two.
+/// break a word too long for a line in two. `family` is the `FontFamily`
+/// an enclosing `Style` sets (`None`: the monospace default).
 fn wrap_pane_text_at(
   content: &Expr,
   width: f64,
   font_size: f64,
+  family: Option<&str>,
   whole_words: bool,
 ) -> Option<Expr> {
   // A bare string re-flows as the one-piece `Row` of it.
@@ -7073,6 +7077,7 @@ fn wrap_pane_text_at(
       &call1("Row", Expr::List(vec![content.clone()].into())),
       width,
       font_size,
+      family,
       whole_words,
     );
   }
@@ -7082,19 +7087,26 @@ fn wrap_pane_text_at(
   match name.as_str() {
     "Style" if !args.is_empty() => {
       let size = style_font_size(&args[1..]).unwrap_or(font_size);
-      let inner = wrap_pane_text_at(&args[0], width, size, whole_words)?;
+      let own_family = style_font_family(&args[1..]);
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width,
+        size,
+        own_family.as_deref().or(family),
+        whole_words,
+      )?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
     }
     "Text" if args.len() == 1 => {
-      wrap_pane_text_at(&args[0], width, font_size, whole_words)
+      wrap_pane_text_at(&args[0], width, font_size, family, whole_words)
     }
     // `TraditionalForm` only changes how math in the text is typeset; the
     // re-flowed lines keep it.
     "TraditionalForm" if args.len() == 1 => Some(call1(
       "TraditionalForm",
-      wrap_pane_text_at(&args[0], width, font_size, whole_words)?,
+      wrap_pane_text_at(&args[0], width, font_size, family, whole_words)?,
     )),
     // A `Column` of prose re-flows item by item: each line of text (a
     // `Row` of strings, or one string under `Style`) breaks at the width
@@ -7113,10 +7125,11 @@ fn wrap_pane_text_at(
               &call1("Row", Expr::List(vec![item.clone()].into())),
               width,
               font_size,
+              family,
               true,
             )
           } else {
-            wrap_pane_text_at(item, width, font_size, true)
+            wrap_pane_text_at(item, width, font_size, family, true)
           };
           changed |= flowed.is_some();
           flowed.unwrap_or_else(|| item.clone())
@@ -7132,7 +7145,8 @@ fn wrap_pane_text_at(
     // An inner size-less `Pane` (e.g. a `Switch` branch under a sized outer
     // `Pane[Text[…], {w, h}]`) is looked through; its options are kept.
     "Pane" if !args.is_empty() => {
-      let inner = wrap_pane_text_at(&args[0], width, font_size, whole_words)?;
+      let inner =
+        wrap_pane_text_at(&args[0], width, font_size, family, whole_words)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
@@ -7166,11 +7180,14 @@ fn wrap_pane_text_at(
         if let Some((text, directives)) = pane_row_piece(item) {
           styles.push(directives);
           atoms.push(None);
-          units.extend(
-            pane_text_units(&text)
-              .into_iter()
-              .map(|(text, cols)| PaneTextUnit { text, cols, idx }),
-          );
+          units.extend(pane_text_units(&text).into_iter().map(
+            |(text, cols)| PaneTextUnit {
+              text,
+              cols,
+              idx,
+              width: 0.0,
+            },
+          ));
         } else {
           let cols = crate::functions::graphics::estimate_display_width(item)
             .ceil() as usize;
@@ -7180,6 +7197,7 @@ fn wrap_pane_text_at(
             text: String::new(),
             cols: cols.max(1),
             idx,
+            width: 0.0,
           });
         }
       }
@@ -7197,13 +7215,37 @@ fn wrap_pane_text_at(
       } else {
         font_size
       };
-      let per_line = ((width
-        / (line_size * crate::functions::graphics::MONO_ADVANCE))
-        .floor() as usize)
-        .max(1);
+      let mono = line_size * crate::functions::graphics::MONO_ADVANCE;
+      let per_line = ((width / mono).floor() as usize).max(1);
+      // A line holds `per_line` monospace columns. Text in a proportional
+      // `FontFamily` (`"Times"`) advances each glyph by its own, mostly
+      // narrower, width instead, so more of it fits.
+      let capacity = per_line as f64 * mono;
+      for u in &mut units {
+        let piece_family = styles[u.idx]
+          .as_deref()
+          .and_then(style_font_family)
+          .or_else(|| family.map(str::to_string))
+          .filter(|f| !crate::functions::graphics::is_monospace_font_family(f));
+        u.width = match (&atoms[u.idx], piece_family) {
+          (None, Some(f)) if u.text.chars().count() == 1 => {
+            let size = styles[u.idx]
+              .as_deref()
+              .and_then(style_font_size)
+              .unwrap_or(font_size);
+            u.text
+              .chars()
+              .map(crate::functions::plot_padding::char_width_em)
+              .sum::<f64>()
+              * size
+              * crate::functions::graphics::proportional_family_scale(&f)
+          }
+          _ => u.cols as f64 * mono,
+        };
+      }
       let is_newline = |u: &PaneTextUnit| u.text == "\n";
-      let total: usize = units.iter().map(|u| u.cols).sum();
-      if total <= per_line && !units.iter().any(is_newline) {
+      let total: f64 = units.iter().map(|u| u.width).sum();
+      if total <= capacity + 1e-9 && !units.iter().any(is_newline) {
         return None;
       }
       let mut lines: Vec<Vec<PaneTextUnit>> = Vec::new();
@@ -7211,18 +7253,40 @@ fn wrap_pane_text_at(
         let mut rest = hard;
         loop {
           // The longest run of units that fits on the line.
-          let mut cols = 0;
+          let mut used = 0.0;
           let mut fit = 0;
           for u in rest {
-            if cols + u.cols > per_line {
+            if used + u.width > capacity + 1e-9 {
               break;
             }
-            cols += u.cols;
+            used += u.width;
             fit += 1;
           }
           if fit == rest.len() {
             lines.push(rest.to_vec());
             break;
+          }
+          // The FrontEnd breaks a row between its items before it breaks
+          // inside one: when the text item the line runs out in starts on
+          // this line and fits on a line of its own, the line ends before
+          // it.
+          let overflow_idx = rest[fit].idx;
+          let item_start =
+            rest[..fit].iter().rposition(|u| u.idx != overflow_idx);
+          if let Some(prev) = item_start
+            && atoms[overflow_idx].is_none()
+          {
+            let start = prev + 1;
+            let item_width: f64 = rest[start..]
+              .iter()
+              .take_while(|u| u.idx == overflow_idx)
+              .map(|u| u.width)
+              .sum();
+            if start > 0 && item_width <= capacity + 1e-9 {
+              lines.push(rest[..start].to_vec());
+              rest = &rest[start..];
+              continue;
+            }
           }
           // Break at the last space that fits, else mid-word.
           match rest[..=fit].iter().rposition(|u| u.text == " ") {
@@ -7290,6 +7354,22 @@ fn is_tabular_layout(expr: &Expr) -> bool {
   }
   matches!(layout, Expr::FunctionCall { name, args }
     if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
+}
+
+/// The `FontFamily` a `Style` directive list sets, if any.
+fn style_font_family(directives: &[Expr]) -> Option<String> {
+  directives.iter().find_map(|d| match d {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "FontFamily") => {
+      match &**replacement {
+        Expr::String(f) => Some(f.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  })
 }
 
 /// The font size a `Style` directive list sets, if any.

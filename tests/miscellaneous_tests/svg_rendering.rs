@@ -4870,6 +4870,45 @@ mod tests {
       assert!(line_y > six_y + 30.0, "{svg}");
     }
 
+    /// Re-flowed `Pane` text breaks between the items of a `Row` before it
+    /// breaks inside one: the text item the line runs out in moves to the
+    /// next line whole when it fits there, keeping its leading space,
+    /// rather than filling the first line with its first words.
+    #[test]
+    fn pane_text_breaks_between_row_items_first() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two ", Style["three", Italic], " four five six seven"}], {220, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains(">one two </text>"), "{svg}");
+      assert!(svg.contains(">three</text>"), "{svg}");
+      assert!(svg.contains("> four five six seven</text>"), "{svg}");
+      assert!(!svg.contains(">six seven</text>"), "{svg}");
+    }
+
+    /// Text in a proportional `FontFamily` is measured by its own glyph
+    /// widths when a `Pane` re-flows it, so a line that only overflows at
+    /// the monospace advance stays whole.
+    #[test]
+    fn pane_text_in_a_proportional_font_fits_more_per_line() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Style[Row[{"one two three four five six seven"}], FontFamily -> "Times"], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains(">one two three four five six seven</text>"),
+        "{svg}"
+      );
+      let mono = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two three four five six seven"}], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        !mono.contains(">one two three four five six seven</text>"),
+        "the monospace default still breaks: {mono}"
+      );
+    }
+
     /// `Style[TraditionalForm[Labeled[…]], size]` is drawn as the captioned
     /// picture: the size reaches the text of the content and of the label,
     /// and the label's polynomial is typeset in TraditionalForm (falling

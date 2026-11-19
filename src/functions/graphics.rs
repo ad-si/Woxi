@@ -16641,7 +16641,7 @@ fn with_box_upright_text<R>(upright: bool, f: impl FnOnce() -> R) -> R {
 /// How much narrower a proportional face sets text than the Arial metrics
 /// of [`crate::functions::plot_padding::char_width_em`]: a serif face such
 /// as Times runs about 10% tighter.
-fn proportional_family_scale(family: &str) -> f64 {
+pub(crate) fn proportional_family_scale(family: &str) -> f64 {
   let f = family.to_ascii_lowercase();
   if f.contains("times") || (f.contains("serif") && !f.contains("sans")) {
     0.9
