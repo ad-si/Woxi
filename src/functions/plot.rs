@@ -1328,9 +1328,7 @@ pub(crate) fn half_open_y_range(
   if items.len() != 2 {
     return None;
   }
-  let is_open = |e: &Expr| {
-    matches!(e, Expr::Identifier(s) if s == "All" || s == "Automatic")
-  };
+  let is_open = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All" || s == "Automatic");
   match (is_open(&items[0]), is_open(&items[1])) {
     (false, true) => try_eval_to_f64(&items[0]).map(|lo| (Some(lo), None)),
     (true, false) => try_eval_to_f64(&items[1]).map(|hi| (None, Some(hi))),

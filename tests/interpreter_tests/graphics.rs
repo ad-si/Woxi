@@ -55010,8 +55010,12 @@ mod grid_repeating_decimal_alignment {
       "Graphics[{Line[{{0, 0}, {1, 4}}]}, PlotRange -> {Automatic, 2}, \
        Frame -> True]",
     );
-    assert!(!upper.iter().any(|l| l.starts_with('3') || l.starts_with('4')),
-      "{upper:?}");
+    assert!(
+      !upper
+        .iter()
+        .any(|l| l.starts_with('3') || l.starts_with('4')),
+      "{upper:?}"
+    );
   }
 
   /// `Plot[…, PlotRange -> {0, All}]` clips its curve at the given lower
