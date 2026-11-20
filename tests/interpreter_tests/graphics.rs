@@ -58914,23 +58914,26 @@ fn polygon_vertices(svg: &str) -> Vec<(f64, f64)> {
 fn manipulate_frame_frames_surface_plots_by_their_sphere() {
   let plot = |opts: &str| {
     format!(
-      "ParametricPlot3D[{{Cos[u] (2 + Cos[v]), Sin[u] (2 + Cos[v]), Sin[v]}}, \
-       {{u, 0, 2 Pi}}, {{v, 0, 2 Pi}}, PlotPoints -> 8, Mesh -> None, \
+      "ParametricPlot3D[{{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}}, \
+       {{u, 0, 2 Pi}}, {{v, 0, Pi}}, PlotPoints -> 8, Mesh -> None, \
        ImageSize -> {{300, 300}}{opts}]"
     )
   };
   let plain = export_svg(&plot(""));
   let spherical = export_svg(&plot(", SphericalRegion -> True"));
   assert_ne!(plain, spherical);
-  assert_eq!(woxi::with_manipulate_frame(|| export_svg(&plot(""))), spherical);
+  assert_eq!(
+    woxi::with_manipulate_frame(|| export_svg(&plot(""))),
+    spherical
+  );
   assert_eq!(
     woxi::with_manipulate_frame(|| {
       export_svg(&plot(", SphericalRegion -> False"))
     }),
     plain
   );
-  // The sphere around the box is wider than the box's outline, so the
-  // surface is drawn smaller.
+  // The sphere around a cube-shaped box is wider than the box's outline,
+  // so the surface is drawn smaller.
   let width = |svg: &str| {
     let xs: Vec<f64> = polygon_vertices(svg).iter().map(|p| p.0).collect();
     xs.iter().cloned().fold(f64::MIN, f64::max)
@@ -58952,7 +58955,10 @@ fn surface_plot_image_padding_insets_the_scene() {
   };
   let plain = plot("");
   let padded = plot(", ImagePadding -> 40");
-  assert!(padded.starts_with("<svg width=\"300\" height=\"300\""), "{padded}");
+  assert!(
+    padded.starts_with("<svg width=\"300\" height=\"300\""),
+    "{padded}"
+  );
   let bounds = |svg: &str| {
     polygon_vertices(svg).iter().fold(
       [f64::MAX, f64::MIN, f64::MAX, f64::MIN],

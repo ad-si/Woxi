@@ -2701,7 +2701,10 @@ fn generate_svg(
     && view_angle_option(options).is_none())
   .then(|| {
     let radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
-    spherical_region_span(radius, camera.perspective.as_ref().map(|p| p.distance))
+    spherical_region_span(
+      radius,
+      camera.perspective.as_ref().map(|p| p.distance),
+    )
   })
   .filter(|span| *span > 0.0 && span.is_finite());
   // The box middle (the origin) projects to the sphere's center.
@@ -2829,7 +2832,11 @@ fn generate_svg(
     };
   // The sphere spans the shorter side of the picture, centered on the box.
   let (scale, p_cx, p_cy) = match sphere_span {
-    Some(span) => (svg_width.min(svg_height) as f64 / span, sphere_cx, sphere_cy),
+    Some(span) => (
+      svg_width.min(svg_height) as f64 / span,
+      sphere_cx,
+      sphere_cy,
+    ),
     None => (scale, p_cx, p_cy),
   };
   let (cx, cy) = if padded {
