@@ -27236,6 +27236,77 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    /// Stroke widths of the segments of the 3D lines in `svg` that are not
+    /// box edges (those are drawn 0.5 wide in gray).
+    fn line_3d_stroke_widths(svg: &str) -> Vec<String> {
+      svg
+        .split("<line ")
+        .skip(1)
+        .filter(|l| l.contains("stroke=\"rgb(0,0,0)\""))
+        .filter_map(|l| {
+          let w = l.split("stroke-width=\"").nth(1)?;
+          Some(w[..w.find('"')?].to_string())
+        })
+        .collect()
+    }
+
+    #[test]
+    fn graphics3d_line_widths() {
+      // A bare `Line` is a hairline; `Thick` and `Thickness[Large]` are 2
+      // wide and `Thin` is 0.2 wide, the same widths as in 2D graphics.
+      for (directive, width) in [
+        ("", "0.5"),
+        ("Thick,", "2.0"),
+        ("Thickness[Large],", "2.0"),
+        ("Thickness[Medium],", "1.0"),
+        ("Thin,", "0.2"),
+        ("AbsoluteThickness[3],", "3.0"),
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{Black, {directive} Line[{{{{0,0,0}}, {{1,1,1}}}}]}}]"
+        ));
+        let widths = line_3d_stroke_widths(&svg);
+        assert!(!widths.is_empty(), "{directive}: no line drawn");
+        assert!(
+          widths.iter().all(|w| w == width),
+          "{directive}: expected width {width}, got {widths:?}"
+        );
+      }
+    }
+
+    #[test]
+    fn graphics3d_arrow_honors_thickness() {
+      let thin = export_svg("Graphics3D[{Black, Arrow[{{0,0,0}, {1,1,1}}]}]");
+      assert!(
+        thin.contains("<polyline") && thin.contains("stroke-width=\"0.5\"")
+      );
+      let thick =
+        export_svg("Graphics3D[{Black, Thick, Arrow[{{0,0,0}, {1,1,1}}]}]");
+      assert!(thick.contains("stroke-width=\"2\""));
+    }
+
+    #[test]
+    fn parametric_plot3d_curves_are_two_wide() {
+      // A plot's space curve is stroked 2 wide, also when `PlotStyle` only
+      // sets its color, unlike the hairline of a bare `Line`.
+      for opts in ["", ", PlotStyle -> Black"] {
+        let svg = export_svg(&format!(
+          "ParametricPlot3D[{{Cos[t], Sin[t], 0}}, {{t, 0, 2 Pi}}{opts}]"
+        ));
+        let curve: Vec<&str> = svg
+          .split("<line ")
+          .skip(1)
+          .filter(|l| !l.contains("stroke-width=\"0.5\""))
+          .filter(|l| !l.contains("stroke-width=\"1\""))
+          .collect();
+        assert!(curve.len() > 100, "{opts}: curve not drawn");
+        assert!(
+          curve.iter().all(|l| l.contains("stroke-width=\"2.0\"")),
+          "{opts}: curve must be 2 wide"
+        );
+      }
+    }
+
     #[test]
     fn graphics3d_point() {
       insta::assert_snapshot!(export_svg("Graphics3D[Point[{0, 0, 0}]]"));
