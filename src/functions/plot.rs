@@ -3598,6 +3598,10 @@ pub(crate) struct PlotOptions {
   /// coordinate rescaled to 0..1 over the plot range (the default) or the
   /// raw value. `{True, False}` scales only x.
   pub color_function_scaling: (bool, bool),
+  /// Per-series `ColorFunction`s of curves merged by `Show`, each with the
+  /// scaling and data extents of its own plot. When non-empty it replaces
+  /// `color_function` for line series (`None` = a plain curve).
+  pub series_color_functions: Vec<Option<crate::syntax::SeriesColorFunction>>,
   /// Per-axis visibility: (x_axis, y_axis). Both true = default.
   pub axes: (bool, bool),
   /// `AxesOrigin -> {x, y}`: where the axes cross. `None` coordinates
@@ -3675,8 +3679,10 @@ pub(crate) struct PlotOptions {
   /// Explicit horizontal grid lines. Replace automatic `grid_lines_y` lines.
   pub grid_y_lines: Vec<GridLine>,
   /// `GridLinesStyle -> Directive[…]`: the default style for every grid line
-  /// that carries no style of its own. `None` = the built-in gray.
-  pub grid_lines_style: Option<SeriesStyle>,
+  /// that carries no style of its own, as `(x lines, y lines)` —
+  /// `GridLinesStyle -> {xstyle, ystyle}` styles the two sets apart.
+  /// `None` = the built-in gray.
+  pub grid_lines_style: (Option<SeriesStyle>, Option<SeriesStyle>),
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
   /// The unpadded (x, y) plot range of a list plot: its automatic grid
@@ -4048,6 +4054,7 @@ impl Default for PlotOptions {
       plot_style: Vec::new(),
       color_function: None,
       color_function_scaling: (true, true),
+      series_color_functions: Vec::new(),
       axes: (true, true),
       ticks: true,
       plot_points: NUM_SAMPLES,
@@ -4068,7 +4075,7 @@ impl Default for PlotOptions {
       grid_full_y: false,
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
-      grid_lines_style: None,
+      grid_lines_style: (None, None),
       frame: false,
       frame_edges: FrameEdges::ALL,
       frame_hidden_edges: FrameEdges::NONE,
@@ -4994,9 +5001,13 @@ pub(crate) fn plot_labels_svg(
       let h =
         line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
       let top = ty - ascent(fs / sf) * sf - margin;
+      // `Background -> color` fills the box behind the title.
+      let fill = sl
+        .background
+        .map_or_else(|| "none".to_string(), super::graphics::Color::to_svg_rgb);
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
+           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{fill}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
         3.0 * sf,
@@ -6193,7 +6204,10 @@ fn generate_svg_with_options(
         // A line colored on its own keeps the default style's opacity,
         // as WL's `{2, Directive[Blue, Thick]}` draws at 0.4 alpha.
         let grid_alpha = |rgb: Option<(u8, u8, u8)>| {
-          if rgb.is_some() && opts.grid_lines_style.is_none() {
+          if rgb.is_some()
+            && opts.grid_lines_style.0.is_none()
+            && opts.grid_lines_style.1.is_none()
+          {
             0.4
           } else {
             1.0
@@ -6208,7 +6222,7 @@ fn generate_svg_with_options(
           (y_min, y_max),
           log_y,
           full_grid_step(axis_tick_step(y_max - y_min), opts.grid_full_y),
-          opts.grid_lines_style.as_ref(),
+          opts.grid_lines_style.1.as_ref(),
         );
         {
           let tol = (y_max - y_min).abs() * 1e-9;
@@ -6267,7 +6281,7 @@ fn generate_svg_with_options(
           } else {
             full_grid_step(axis_tick_step(x_max - x_min), opts.grid_full_x)
           },
-          opts.grid_lines_style.as_ref(),
+          opts.grid_lines_style.0.as_ref(),
         );
         {
           let tol = (x_max - x_min).abs() * 1e-9;
@@ -6431,17 +6445,16 @@ fn generate_svg_with_options(
                     // fill polygons with opaque `VertexColors`). Any given
                     // `FillingStyle`, even a bare `Opacity[…]`, replaces
                     // the color function with the plain series color.
-                    let tinted = opts
-                      .color_function
-                      .as_ref()
-                      .filter(|_| fill_style.is_none());
+                    let tinted =
+                      curve_color_function(opts, series_idx, color_scale_ranges)
+                        .filter(|_| fill_style.is_none());
                     let pieces: Vec<(plotters::style::RGBAColor, Vec<(f64, f64)>)> =
                       match tinted {
-                        Some(cf) if let Some(stops) = color_function_gradient_stops(
+                        Some((cf, cf_scaling, cf_ranges)) if let Some(stops) = color_function_gradient_stops(
                           segment,
                           cf,
-                          opts.color_function_scaling,
-                          color_scale_ranges,
+                          cf_scaling,
+                          cf_ranges,
                           opts.log_x,
                         ) => {
                           let sentinel =
@@ -6450,12 +6463,12 @@ fn generate_svg_with_options(
                           let (sr, sg, sb) = sentinel;
                           vec![(RGBColor(sr, sg, sb).mix(1.0), segment.clone())]
                         }
-                        Some(cf) => {
+                        Some((cf, cf_scaling, cf_ranges)) => {
                           let runs = color_function_runs(
                             segment,
                             cf,
-                            opts.color_function_scaling,
-                            color_scale_ranges,
+                            cf_scaling,
+                            cf_ranges,
                           );
                           // Each opaque piece reaches one step into the
                           // next, which paints over it: abutting pieces
@@ -6803,7 +6816,8 @@ fn generate_svg_with_options(
                 .and_then(|st| st.opacity)
                 .unwrap_or_else(|| series_opacity(&opts.plot_style, series_idx));
               let color_function =
-                opts.color_function.as_ref().filter(|_| shade_color.is_none());
+                curve_color_function(opts, series_idx, color_scale_ranges)
+                  .filter(|_| shade_color.is_none());
               if let Some(ref dash_pattern) = dashing {
                 // Defer to a single <polyline stroke-dasharray> per segment,
                 // emitted after the plot is drawn.
@@ -6818,13 +6832,13 @@ fn generate_svg_with_options(
                     });
                   }
                 }
-              } else if let Some(cf) = color_function {
+              } else if let Some((cf, cf_scaling, cf_ranges)) = color_function {
                 for segment in segments {
                   if let Some(stops) = color_function_gradient_stops(
                     segment,
                     cf,
-                    opts.color_function_scaling,
-                    color_scale_ranges,
+                    cf_scaling,
+                    cf_ranges,
                     opts.log_x,
                   ) {
                     let sentinel =
@@ -6844,8 +6858,8 @@ fn generate_svg_with_options(
                   for (run_color, run) in color_function_runs(
                     segment,
                     cf,
-                    opts.color_function_scaling,
-                    color_scale_ranges,
+                    cf_scaling,
+                    cf_ranges,
                   ) {
                     chart
                       .draw_series(LineSeries::new(
@@ -6950,14 +6964,10 @@ fn generate_svg_with_options(
                 .find_map(|s| s.color)
                 .map(color_to_rgb8)
                 .or_else(|| {
-                  opts.color_function.as_ref().and_then(|cf| {
-                    color_function_rgb(
-                      cf,
-                      opts.color_function_scaling,
-                      dot.pos,
-                      color_scale_ranges,
-                    )
-                  })
+                  curve_color_function(opts, series_idx, color_scale_ranges)
+                    .and_then(|(cf, cf_scaling, cf_ranges)| {
+                      color_function_rgb(cf, cf_scaling, dot.pos, cf_ranges)
+                    })
                 })
                 .unwrap_or((r, g, b));
               let opacity = pick(&|s| s.opacity)
@@ -8193,6 +8203,18 @@ pub(crate) fn build_plot_source(
     Some(fs) => (fs.color, fs.effective_opacity()),
     None => (None, None),
   };
+  // The renderer rescales `ColorFunction` arguments over the extents of
+  // all the plot's sampled data; keep those with each curve.
+  let color_function =
+    opts
+      .color_function
+      .as_ref()
+      .map(|cf| crate::syntax::SeriesColorFunction {
+        function: cf.clone(),
+        scaling: opts.color_function_scaling,
+        ranges: data_extents(all_points)
+          .unwrap_or((x_range.0, x_range.1, y_range.0, y_range.1)),
+      });
   let series = all_points
     .iter()
     .enumerate()
@@ -8234,6 +8256,7 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        color_function: color_function.clone(),
       }
     })
     .collect();
@@ -8516,6 +8539,28 @@ fn color_function_gradient_stops(
   )
 }
 
+/// The `ColorFunction` that colors line series `series_idx`: its own one
+/// when `Show` merged curves of several plots (each keeps the function,
+/// scaling and data extents of the plot it came from), else the plot's
+/// `ColorFunction` rescaled over `ranges`.
+fn curve_color_function(
+  opts: &PlotOptions,
+  series_idx: usize,
+  ranges: (f64, f64, f64, f64),
+) -> Option<(&Expr, (bool, bool), (f64, f64, f64, f64))> {
+  if !opts.series_color_functions.is_empty() {
+    return opts
+      .series_color_functions
+      .get(series_idx)?
+      .as_ref()
+      .map(|c| (&c.function, c.scaling, c.ranges));
+  }
+  opts
+    .color_function
+    .as_ref()
+    .map(|cf| (cf, opts.color_function_scaling, ranges))
+}
+
 /// The placeholder color of the `k`-th gradient element of a plot.
 fn color_function_gradient_sentinel(k: usize) -> (u8, u8, u8) {
   (0x01, ((k >> 8) & 0xff) as u8, (k & 0xff) as u8)
@@ -8772,6 +8817,10 @@ pub(crate) fn render_merged_plot_source(
       ..SeriesStyle::default()
     })
     .collect();
+  // So does each curve's `ColorFunction`: a curve merged with a colored
+  // one keeps its own plain color.
+  opts.series_color_functions =
+    drawn.iter().map(|s| s.color_function.clone()).collect();
   // Markers travel with the series too, so a `Show` of a marked scatter
   // plot keeps drawing the glyphs its `PlotMarkers` asked for.
   opts.plot_markers = drawn.iter().map(|s| s.marker.clone()).collect();
@@ -12419,6 +12468,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      color_function: None,
     });
   }
 
@@ -13400,6 +13450,17 @@ fn inject_drop_shadows(
   }
 }
 
+/// A positive numeric size that is neither an integer nor a machine real
+/// (a `Rational`, or an exact expression such as `100 Pi`), rounded to
+/// whole pixels.
+fn positive_exact_size(e: &Expr) -> Option<u32> {
+  if !matches!(e, Expr::FunctionCall { .. } | Expr::BinaryOp { .. }) {
+    return None;
+  }
+  let f = crate::functions::math_ast::try_eval_to_f64(e)?;
+  (f.is_finite() && f > 0.0).then(|| f.round() as u32)
+}
+
 /// Parse ImageSize option value into (width, height, full_width).
 /// Supports: integer, {w, h}, and named sizes (Tiny, Small, Medium, Large, Full).
 /// Full uses a 720px render resolution but emits `width="100%"` in SVG.
@@ -13454,6 +13515,15 @@ pub(crate) fn parse_image_size(
       let h = (w as f64 * aspect).round() as u32;
       Some((w, h, false))
     }
+    // Any other positive number — a rational such as `1200/7` or an exact
+    // multiple like `100 Pi` — is a width in printer's points as well.
+    Expr::FunctionCall { .. } | Expr::BinaryOp { .. }
+      if positive_exact_size(value).is_some() =>
+    {
+      let w = positive_exact_size(value)?;
+      let h = (w as f64 * aspect).round() as u32;
+      Some((w, h, false))
+    }
     // `{w}` is the same as `w`.
     Expr::List(items) if items.len() == 1 => {
       parse_image_size(&items[0], def_w, def_h)
@@ -13502,7 +13572,9 @@ pub(crate) fn parse_image_size(
             (v > 0).then_some(Some(v))
           }
           Expr::Real(f) if *f > 0.0 => Some(Some(f.round() as u32)),
-          _ => None,
+          // `{600, 590*13/30}` evaluates its height to the rational
+          // `767/3`, which is a size just as much as `255.67` is.
+          _ => positive_exact_size(e).map(Some),
         }
       };
       match (dim(&items[0])?, dim(&items[1])?) {
@@ -15009,6 +15081,30 @@ pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
 /// and any value that sets nothing, come back as `None` so the caller keeps
 /// its built-in look. Shared by `GridLinesStyle`, `ContourStyle` and the
 /// other single-style options.
+/// `GridLinesStyle -> style` styles the x and the y grid lines alike;
+/// `GridLinesStyle -> {xstyle, ystyle}` — two entries that are each a style
+/// of their own (a list or `Directive` of directives, or `None`/`Automatic`)
+/// — styles them apart, as `{{Black, Dashed}, {Red, Dashed}}` draws black
+/// vertical and red horizontal lines.
+pub(crate) fn parse_grid_lines_style(
+  value: &Expr,
+) -> (Option<SeriesStyle>, Option<SeriesStyle>) {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if let Expr::List(items) = &val
+    && items.len() == 2
+    && items
+      .iter()
+      .all(crate::functions::graphics::is_axis_style_entry)
+  {
+    return (
+      parse_style_directives(&items[0]),
+      parse_style_directives(&items[1]),
+    );
+  }
+  let style = parse_style_directives(&val);
+  (style.clone(), style)
+}
+
 pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   if matches!(&val, Expr::Identifier(s) if s == "Automatic" || s == "None") {
@@ -16399,7 +16495,7 @@ pub(crate) fn apply_common_plot_option(
       );
     }
     "GridLinesStyle" => {
-      plot_opts.grid_lines_style = parse_style_directives(replacement);
+      plot_opts.grid_lines_style = parse_grid_lines_style(replacement);
     }
     "PlotRange" => {
       let (rx, ry) = parse_series_plot_range(replacement);

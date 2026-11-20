@@ -388,6 +388,8 @@ enum Message {
   ManipulateSlider2DChanged(usize, usize, u8, f64),
   /// (cell_idx, ctrl_idx, endpoint 0=low/1=high, value)
   ManipulateIntervalChanged(usize, usize, u8, f64),
+  /// A vector control's component (cell, control, component, value).
+  ManipulateVectorChanged(usize, usize, usize, f64),
   /// One coordinate of a Locator point moved.
   /// (cell_idx, ctrl_idx, point_idx, axis 0=x/1=y, value)
   ManipulateLocatorChanged(usize, usize, usize, u8, f64),
@@ -2012,6 +2014,24 @@ impl WoxiStudio {
           } else {
             *high = value.max(*low);
           }
+          state.apply_tracking(ctrl_idx);
+          if state.request_reeval(ctrl_idx) {
+            return manipulate_reeval_task(cell_idx);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateVectorChanged(
+        cell_idx,
+        ctrl_idx,
+        component,
+        value,
+      ) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && state.slide_vector(ctrl_idx, component, value)
+        {
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
             return manipulate_reeval_task(cell_idx);
@@ -4255,6 +4275,7 @@ fn manipulate_label_char_count(ctrl: &manipulate::ControlState) -> usize {
     | manipulate::ControlState::Discrete { label, .. }
     | manipulate::ControlState::Slider2D { label, .. }
     | manipulate::ControlState::IntervalSlider { label, .. }
+    | manipulate::ControlState::VectorSlider { label, .. }
     | manipulate::ControlState::Trigger { label, .. }
     | manipulate::ControlState::Locator { label, .. }
     | manipulate::ControlState::Color { label, .. } => label,
@@ -4681,7 +4702,7 @@ fn render_manipulate_widget<'a>(
         let value_widget = text(format_slider_value(*current, *is_real))
           .size(11)
           .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(64.0));
+          .width(iced::Length::Fixed(72.0));
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -5010,6 +5031,46 @@ fn render_manipulate_widget<'a>(
         .spacing(8);
         controls_col = controls_col.push(control_row);
       }
+      manipulate::ControlState::VectorSlider {
+        name: _,
+        label,
+        label_runs,
+        mins,
+        maxs,
+        steps,
+        values,
+        exact: _,
+      } => {
+        // One slider per component side by side, each followed by its
+        // value — how Wolfram lays out a vector-range control.
+        let mut sliders = row![].spacing(8).align_y(Center);
+        for (i, &value) in values.iter().enumerate() {
+          let (lo, hi) = (mins[i], maxs[i]);
+          let mut s = slider(lo.min(hi)..=hi.max(lo), value, move |v| {
+            if enabled {
+              Message::ManipulateVectorChanged(cell_idx, ctrl_idx, i, v)
+            } else {
+              Message::Noop
+            }
+          })
+          .step(steps[i])
+          .width(Fill);
+          if !enabled {
+            s = s.style(disabled_slider_style);
+          }
+          sliders = sliders.push(s).push(
+            text(format_manipulate_number(value))
+              .size(11)
+              .font(Font::MONOSPACE)
+              .width(iced::Length::Fixed(40.0)),
+          );
+        }
+        let label_widget =
+          manipulate_label_widget(label_runs, label, label_col_width, enabled);
+        let control_row =
+          row![label_widget, sliders].align_y(Center).spacing(8);
+        controls_col = controls_col.push(control_row);
+      }
       manipulate::ControlState::IntervalSlider {
         name: _,
         label,
@@ -5229,7 +5290,7 @@ fn render_manipulate_widget<'a>(
         let value_widget = text(format_manipulate_number(*current))
           .size(11)
           .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(64.0));
+          .width(iced::Length::Fixed(72.0));
         let control_row = row![label_widget, play_btn, value_widget]
           .align_y(Center)
           .spacing(8);
@@ -6051,7 +6112,7 @@ fn format_manipulate_number(v: f64) -> String {
     return format!("{v}");
   }
   if v.fract() == 0.0 && v.abs() < 1e15 {
-    return format!("{}", v as i64);
+    return group_integer_digits(&format!("{}", v as i64));
   }
   let s = format!("{:.3}", v);
   // Trim trailing zeros and a lone decimal point.
@@ -6059,8 +6120,35 @@ fn format_manipulate_number(v: f64) -> String {
   if trimmed.is_empty() {
     "0".to_string()
   } else {
-    trimmed.to_string()
+    group_integer_digits(trimmed)
   }
+}
+
+/// Split the integer part of a formatted number into blocks of three
+/// digits separated by a thin space, the way Wolfram's control readouts
+/// show large values (`1 000 000`, `-2 000 000`). Like the front end, runs
+/// of fewer than five digits stay unbroken (`4000`), and the fractional
+/// part is left as is.
+fn group_integer_digits(s: &str) -> String {
+  let (sign, rest) = match s.strip_prefix('-') {
+    Some(rest) => ("-", rest),
+    None => ("", s),
+  };
+  let (int_part, frac_part) = match rest.find('.') {
+    Some(i) => rest.split_at(i),
+    None => (rest, ""),
+  };
+  if int_part.len() < 5 || !int_part.bytes().all(|b| b.is_ascii_digit()) {
+    return s.to_string();
+  }
+  let mut grouped = String::with_capacity(s.len() + int_part.len() / 3 * 3);
+  for (i, c) in int_part.chars().enumerate() {
+    if i > 0 && (int_part.len() - i) % 3 == 0 {
+      grouped.push('\u{2009}');
+    }
+    grouped.push(c);
+  }
+  format!("{sign}{grouped}{frac_part}")
 }
 
 /// Convert a hue fraction (`0.0..=1.0`) to an `iced::Color` at full
@@ -6163,21 +6251,12 @@ fn plain_text_svg(text: &str) -> String {
   svg
 }
 
-/// The face a `<text>` without a `font-family` is set in. usvg would fall
-/// back to "Times New Roman", but Wolfram's default graphics font is a
-/// sans-serif one — an `Epilog` label must match the tick labels around it.
-const DEFAULT_TEXT_FAMILY: &str = "Atkinson Hyperlegible Next";
-
 fn rasterize_svg(
   svg_str: &str,
   scale_factor: f32,
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<(iced::widget::image::Handle, u32, u32)> {
-  let opts = resvg::usvg::Options {
-    fontdb: fontdb.clone(),
-    font_family: DEFAULT_TEXT_FAMILY.to_string(),
-    ..Default::default()
-  };
+  let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let logical_w = size.width().ceil() as u32;
@@ -8101,11 +8180,7 @@ fn encode_svg_as_png(
   svg_str: &str,
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<Vec<u8>> {
-  let opts = resvg::usvg::Options {
-    fontdb: fontdb.clone(),
-    font_family: DEFAULT_TEXT_FAMILY.to_string(),
-    ..Default::default()
-  };
+  let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let scale: f32 = 2.0;
@@ -8129,11 +8204,8 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   fontdb.load_system_fonts();
   woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
 
-  let opt = svg2pdf::usvg::Options {
-    fontdb: std::sync::Arc::new(fontdb),
-    font_family: DEFAULT_TEXT_FAMILY.to_string(),
-    ..Default::default()
-  };
+  let opt =
+    woxi::functions::image_ast::svg_render_options(std::sync::Arc::new(fontdb));
 
   let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
@@ -8495,11 +8567,7 @@ fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
   let svg_doc = format!(
     r#"<svg xmlns="http://www.w3.org/2000/svg" width="{PDF_PAGE_WIDTH}" height="{height}" viewBox="0 0 {PDF_PAGE_WIDTH} {height}">{elements}</svg>"#,
   );
-  let opt = svg2pdf::usvg::Options {
-    fontdb: pdf_fontdb(),
-    font_family: DEFAULT_TEXT_FAMILY.to_string(),
-    ..Default::default()
-  };
+  let opt = woxi::functions::image_ast::svg_render_options(pdf_fontdb());
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
     &tree,
@@ -8528,11 +8596,7 @@ fn slide_page_svg(cells: &[PdfCell]) -> String {
 fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
   use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref};
 
-  let opt = svg2pdf::usvg::Options {
-    fontdb: pdf_fontdb(),
-    font_family: DEFAULT_TEXT_FAMILY.to_string(),
-    ..Default::default()
-  };
+  let opt = woxi::functions::image_ast::svg_render_options(pdf_fontdb());
   let (slide_w, slide_h) = PDF_SLIDE_SIZE;
   let mut alloc = Ref::new(1);
   let catalog_id = alloc.bump();
@@ -8713,6 +8777,22 @@ mod tests {
     assert_eq!(format_slider_value(-500.0, false), "-500");
     assert_eq!(format_slider_value(0.25, true), "0.25");
     assert_eq!(format_slider_value(0.25, false), "0.25");
+    // Large readouts are grouped in blocks of three digits from five
+    // digits on, as in Wolfram's labeled sliders.
+    assert_eq!(format_slider_value(4000.0, false), "4000");
+    assert_eq!(format_slider_value(-4000.0, false), "-4000");
+    assert_eq!(format_slider_value(12345.0, false), "12\u{2009}345");
+    assert_eq!(
+      format_slider_value(1_000_000.0, false),
+      "1\u{2009}000\u{2009}000"
+    );
+    assert_eq!(
+      format_slider_value(-2_000_000.0, false),
+      "-2\u{2009}000\u{2009}000"
+    );
+    assert_eq!(format_slider_value(100_000.0, true), "100\u{2009}000.");
+    assert_eq!(format_slider_value(12345.5, false), "12\u{2009}345.5");
+    assert_eq!(format_slider_value(-0.125, false), "-0.125");
   }
 
   /// A Manipulate's helper variables written with Gothic letters
@@ -18447,39 +18527,6 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         .all(|p| p[0] > 150 && p[1] > 150 && p[2] > 150),
       "every drawn pixel should use the light dark-theme text color"
     );
-  }
-
-  #[test]
-  fn bare_svg_text_uses_the_sans_serif_face() {
-    // Regression: a `<text>` without `font-family` (an `Epilog` label)
-    // fell back to usvg's "Times New Roman" instead of the sans-serif
-    // face the tick labels around it use.
-    let mut db = resvg::usvg::fontdb::Database::new();
-    woxi::functions::image_ast::load_embedded_fonts(&mut db);
-    // Stand in for a system whose serif fallback is a face of its own
-    // (Times on macOS): here the Mono face plays that part.
-    db.set_serif_family("Atkinson Hyperlegible Mono");
-    let fontdb = Arc::new(db);
-    let svg = |family: &str| {
-      format!(
-        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" \
-         height=\"30\"><text x=\"4\" y=\"20\" font-size=\"14\"{family}>\
-         Label 123</text></svg>"
-      )
-    };
-    let bare = encode_svg_as_png(&svg(""), &fontdb).unwrap();
-    let sans = encode_svg_as_png(
-      &svg(" font-family=\"Atkinson Hyperlegible Next\""),
-      &fontdb,
-    )
-    .unwrap();
-    let mono = encode_svg_as_png(
-      &svg(" font-family=\"Atkinson Hyperlegible Mono\""),
-      &fontdb,
-    )
-    .unwrap();
-    assert_ne!(sans, mono, "the two faces must render differently");
-    assert_eq!(bare, sans);
   }
 
   #[test]

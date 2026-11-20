@@ -1315,6 +1315,13 @@ fn render_curves(
     }
     None => (all_points, &plot_opts.plot_style),
   };
+  // Colored runs already carry their colors: they must not take the color
+  // function along a second time.
+  let color_function = if colored_runs.is_some() {
+    plot_opts.color_function.take()
+  } else {
+    None
+  };
   let source = build_plot_source(
     points,
     styles,
@@ -1326,6 +1333,9 @@ fn render_curves(
     plot_opts.filling_style,
     options,
   );
+  if color_function.is_some() {
+    plot_opts.color_function = color_function;
+  }
   Ok(crate::graphics_result_with_source(svg, source))
 }
 
