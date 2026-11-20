@@ -135,6 +135,32 @@ pub fn empty_plot_for_nothing_to_draw(
   )];
   gargs.extend(options);
   if name.contains("3D") {
+    // The empty picture still carries the plot's own defaults: a 3-D
+    // function plot draws its axes (a bare `Graphics3D` does not), and a
+    // `Plot3D` box is flattened to `{1, 1, 0.4}`. A `Show` combining it
+    // with other pictures takes those options from it.
+    let given = |key: &str| {
+      gargs[1..].iter().any(|o| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key))
+      })
+    };
+    let rule = |key: &str, value: Expr| Expr::Rule {
+      pattern: Box::new(Expr::Identifier(key.to_string())),
+      replacement: Box::new(value),
+    };
+    let (has_axes, has_box_ratios) = (given("Axes"), given("BoxRatios"));
+    if !has_axes {
+      gargs.push(rule("Axes", Expr::Identifier("True".to_string())));
+    }
+    if name == "Plot3D" && !has_box_ratios {
+      gargs.push(rule(
+        "BoxRatios",
+        Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(0.4)].into(),
+        ),
+      ));
+    }
     crate::functions::plot3d::graphics3d_ast(&gargs)
   } else {
     crate::functions::graphics::graphics_ast(&gargs)

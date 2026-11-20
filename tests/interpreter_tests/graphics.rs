@@ -6222,6 +6222,79 @@ mod plot3d {
         "Plot3D[1/(x^2 + y^2), {x, -1, 1}, {y, -1, 1}]"
       ));
     }
+
+    /// A body that only evaluates to a list — a pure function returning
+    /// `{Re[#], Im[#]}`, or a helper whose definition returns a pair —
+    /// draws one surface per element, like an explicit list of functions.
+    #[test]
+    fn list_valued_body_draws_each_surface() {
+      let surfaces = |body: &str| {
+        interpret(&format!(
+          "Count[Plot3D[{body}, {{x, -2, 2}}, {{y, -2, 2}}], _Polygon, \
+           Infinity]"
+        ))
+        .unwrap()
+      };
+      let one = surfaces("x y");
+      let two = surfaces("{x y, x - y}");
+      assert_ne!(one, two);
+      assert_eq!(surfaces("({Re[#], Im[#]} &)[(x + I y)^2]"), two);
+      interpret("plotPair[a_, b_] := {a b, a - b}").unwrap();
+      assert_eq!(surfaces("plotPair[x, y]"), two);
+      // Only a list once the variables are numbers.
+      interpret("numPair[a_?NumericQ, b_] := {a, b}").unwrap();
+      assert_eq!(surfaces("numPair[x, y]"), two);
+    }
+
+    /// A `Plot3D` whose function never evaluates to a number is the empty
+    /// picture, which still draws the plot's axes in its flattened box —
+    /// also when `Show` combines it with other pictures.
+    #[test]
+    fn empty_plot_keeps_axes_and_box_ratios() {
+      assert_eq!(
+        interpret("Options[Plot3D[undefinedF[x], {x, -2, 2}, {y, -2, 2}]]")
+          .unwrap(),
+        "{Axes -> True, BoxRatios -> {1, 1, 0.4}}"
+      );
+      assert_eq!(
+        interpret(
+          "Options[Plot3D[undefinedF[x], {x, -2, 2}, {y, -2, 2}, \
+           Axes -> False]]"
+        )
+        .unwrap(),
+        "{Axes -> False, BoxRatios -> {1, 1, 0.4}}"
+      );
+      assert_eq!(
+        interpret("Options[ParametricPlot3D[undefinedF[t], {t, 0, 1}]]")
+          .unwrap(),
+        "{Axes -> True}"
+      );
+      assert_eq!(
+        interpret(
+          "Options[Show[{Plot3D[undefinedF[x], {x, -2, 2}, {y, -2, 2}], \
+           Graphics3D[Point[{0, 0, 0}]]}], Axes]"
+        )
+        .unwrap(),
+        "{Axes -> True}"
+      );
+    }
+
+    /// `Style[x, 16]` as a 3-D axis label keeps the `TraditionalForm`
+    /// italics of a bare symbol label; a function name such as `Re` stays
+    /// upright.
+    #[test]
+    fn styled_symbol_axes_label_is_italic() {
+      let svg = export_svg(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, \
+         AxesLabel -> {Style[x, 16], y, Style[Re, 16]}]",
+      );
+      assert!(
+        svg.contains("<tspan font-size=\"16\" font-style=\"italic\">x<"),
+        "{svg}"
+      );
+      assert!(svg.contains("<tspan font-style=\"italic\">y<"), "{svg}");
+      assert!(svg.contains("<tspan font-size=\"16\">Re<"), "{svg}");
+    }
   }
 
   mod options {
@@ -30795,6 +30868,51 @@ mod graphics_grid {
       row.contains("font-family=\"Times\""),
       "row item should be set in Times, got: {row}"
     );
+  }
+
+  /// A `Text[…]` display under `Style` and `TraditionalForm` wrappers
+  /// (`Style[TraditionalForm[Text[Row[…]]], 16]`) is still text: it is set
+  /// in the proportional text face, alone and as a `Column` item, with the
+  /// wrappers' size and math typesetting applied inside.
+  #[test]
+  fn wrapped_text_display_uses_text_face() {
+    clear_state();
+    let text_tag = |svg: &str, word: &str| -> String {
+      let end = svg.find(word).unwrap_or_else(|| panic!("{word}: {svg}"));
+      let start = svg[..end].rfind("<text").unwrap();
+      svg[start..end].to_string()
+    };
+    // On its own (exported as a picture).
+    for code in [
+      "Style[TraditionalForm[Text[Row[{\"alpha \", z^2}]]], 16]",
+      "Style[Text[Row[{\"alpha \", z^2}]], 16]",
+      "TraditionalForm[Text[\"alpha\"]]",
+    ] {
+      let svg = export_svg(code);
+      let tag = text_tag(&svg, "alpha");
+      assert!(
+        tag.contains("sans-serif"),
+        "Text in {code} should use the text face, got: {svg}"
+      );
+      assert!(!code.contains("16") || tag.contains("font-size=\"16\""));
+    }
+    // As a `Column` item, next to a plain string that stays monospace.
+    for code in [
+      "Column[{Style[TraditionalForm[Text[Row[{\"alpha \", z^2}]]], 16], \
+       \"beta\"}, Center]",
+      "Column[{Style[Text[\"alpha\"], 16], \"beta\"}]",
+    ] {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let tag = text_tag(&svg, "alpha");
+      assert!(
+        tag.contains("sans-serif") && tag.contains("font-size=\"16\""),
+        "Text in {code} should use the text face, got: {svg}"
+      );
+      assert!(
+        text_tag(&svg, "beta").contains("monospace"),
+        "plain string in {code} should stay monospace, got: {svg}"
+      );
+    }
   }
 
   /// `Text[expr]` displays `expr` in plain text format, so in a `Row` or

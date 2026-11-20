@@ -4908,6 +4908,11 @@ fn render_labeled_if_needed(expr: syntax::Expr) -> syntax::Expr {
 /// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
 /// unchanged.
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // `Style[TraditionalForm[Text[…]], 16]` is a text display like a bare
+  // `Text[…]`: the text face covers the styled content.
+  if let Some(hoisted) = functions::graphics::hoist_text_display(expr) {
+    return render_inline_display_wrapper(&hoisted);
+  }
   // `Text[content]` displays `content` in plain text format: a picture
   // inside is still drawn, but text keeps the wrapper so the layout sets it
   // in the proportional text face rather than its monospace default.
