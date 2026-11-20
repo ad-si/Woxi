@@ -403,6 +403,97 @@ mod layout_display {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
   }
 
+  /// The `font-family` of the `<text>` element that draws `text`.
+  fn text_family<'a>(svg: &'a str, text: &str) -> &'a str {
+    let end = svg
+      .find(&format!(">{text}</text>"))
+      .unwrap_or_else(|| panic!("no text {text}: {svg}"));
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let from = tag.find("font-family=\"").unwrap() + "font-family=\"".len();
+    &tag[from..from + tag[from..].find('"').unwrap()]
+  }
+
+  /// The font size of the `<text>` element that draws `text`.
+  fn text_size(svg: &str, text: &str) -> f64 {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let from = tag.find("font-size=\"").unwrap() + "font-size=\"".len();
+    tag[from..from + tag[from..].find('"').unwrap()]
+      .parse()
+      .unwrap()
+  }
+
+  /// Regression: the text of a `Framed`/`Panel` grid cell was set in the
+  /// monospace face (and the default size) while the grid's other text
+  /// cells use the grid's proportional face and size — also when the frame
+  /// sits in a styled `Column` cell.
+  #[test]
+  fn framed_grid_cell_text_in_grid_face() {
+    for (expr, framed) in [
+      ("Grid[{{\"abc\", Framed[\"msg\"]}}]", "msg"),
+      ("Grid[{{\"abc\", Panel[\"msg\"]}}]", "msg"),
+      ("Grid[{{\"abc\", Framed[Style[\"msg\", 20]]}}]", "msg"),
+      (
+        "Grid[{{\"abc\"}, {Style[Column[{Grid[{{\"g\"}}], \
+         Framed[\"msg\"]}], \"Label\", 16]}}]",
+        "msg",
+      ),
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(
+        text_family(&svg, framed),
+        text_family(&svg, "abc"),
+        "{expr}: {svg}"
+      );
+      assert!(!rects(&svg).is_empty(), "{expr}: {svg}");
+    }
+    // The grid's size reaches the framed text; the cell's own size wins.
+    let svg = svg_of("Style[Grid[{{\"abc\", Framed[\"msg\"]}}], 16]");
+    assert_eq!(text_size(&svg, "msg"), 16.0, "{svg}");
+    let svg =
+      svg_of("Style[Grid[{{\"abc\", Framed[Style[\"msg\", 20]]}}], 16]");
+    assert_eq!(text_size(&svg, "msg"), 20.0, "{svg}");
+    // A standalone frame keeps the monospace face.
+    let svg = svg_of("Framed[\"msg\"]");
+    assert!(text_family(&svg, "msg").contains("monospace"), "{svg}");
+  }
+
+  /// Regression: a `Row` grid cell holding a `Framed`/`Panel` was set as
+  /// one line of text and lost the box.
+  #[test]
+  fn row_grid_cell_keeps_frame() {
+    for expr in [
+      "Grid[{{\"abc\", Row[{\"x\", Framed[\"y\"]}]}}]",
+      "Grid[{{\"abc\", Row[{\"x\", Panel[\"y\"]}]}}]",
+      "Grid[{{\"abc\", Style[Row[{\"x\", Framed[\"y\"]}], 16]}}]",
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(rects(&svg).len(), 1, "{expr}: {svg}");
+      assert!(svg.contains(">x</text>"), "{expr}: {svg}");
+      assert!(svg.contains(">y</text>"), "{expr}: {svg}");
+    }
+  }
+
+  /// Regression: `Framed[Style[text, FontFamily -> f]]` ignored the family;
+  /// the text is now set (and the frame sized) in that face.
+  #[test]
+  fn framed_text_font_family() {
+    let svg = svg_of("Framed[Style[\"fill\", FontFamily -> \"Times\"]]");
+    assert!(text_family(&svg, "fill").starts_with("Times"), "{svg}");
+    // The proportional text is narrower than four monospace cells.
+    let mono = svg_of("Framed[\"fill\"]");
+    let width = |svg: &str| -> f64 {
+      let r = rects(svg)[0];
+      let from = r.find("width=\"").unwrap() + "width=\"".len();
+      r[from..from + r[from..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    assert!(width(&svg) < width(&mono), "{svg}\n{mono}");
+  }
+
   /// Regression: a `Dividers` entry's thickness and dashing were dropped;
   /// only its color was drawn.
   #[test]
