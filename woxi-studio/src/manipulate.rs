@@ -2209,7 +2209,31 @@ impl ManipulateState {
   ///
   /// [`from_expr`]: Self::from_expr
   pub fn reevaluate(&mut self) {
+    let before = self.bindings();
     self.reevaluate_inner(true);
+    self.settle_inner_dynamics(before);
+  }
+
+  /// Re-render while the body's inner `Dynamic`s keep changing the
+  /// widget's variables. The front end refreshes a `Dynamic[…]` whenever a
+  /// variable it shows changes, so when a later `Dynamic` updates what an
+  /// earlier one already drew (a click handled in the second row of a
+  /// grid whose first row draws the board), the earlier one is drawn
+  /// again. A single pass would leave it one step behind. Bounded, as a
+  /// `Dynamic` that writes what it reads never settles.
+  fn settle_inner_dynamics(&mut self, mut before: Vec<(String, String)>) {
+    const MAX_EXTRA_PASSES: usize = 2;
+    if !self.body.contains("Dynamic[") {
+      return;
+    }
+    for _ in 0..MAX_EXTRA_PASSES {
+      let after = self.bindings();
+      if after == before {
+        break;
+      }
+      before = after;
+      self.reevaluate_inner(true);
+    }
   }
 
   /// The code the widget evaluates to draw `body`: the body itself, wrapped
@@ -7171,6 +7195,112 @@ mod tests {
     // A click's y axis points up: the top edge is the range's maximum.
     assert!(region.click_action(0.0, 0.0).contains(", 1}]"));
     assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
+  }
+
+  /// A `ClickPane` laid out as a `Grid` cell, showing a picture held in a
+  /// state variable (`ClickPane[Dynamic[pic], handler]`, so no `PlotRange`
+  /// is visible in the call). The click handler only records the spot; a
+  /// later row's `Dynamic` consumes it, and the picture is drawn by a
+  /// `Dynamic` *before* that row. A click must:
+  /// - map to the picture's coordinates even though the picture is a
+  ///   rendering kept from an earlier frame,
+  /// - leave the picture variable intact (the handler does not touch it),
+  /// - redraw the picture with the consumed click, as the front end
+  ///   refreshes the earlier `Dynamic` once the later one changes its input,
+  /// - and keep the picture clickable for the next click.
+  #[test]
+  fn click_pane_in_grid_cell_over_dynamic_picture_runs_its_handler() {
+    let code = r#"Manipulate[
+      Grid[{
+        {ClickPane[Dynamic[Deploy[pic]], (spot = Round[#]) &],
+         Dynamic[pic = Graphics[{LightGray, Rectangle[{0, 0}, {4, 2}],
+             Red, Disk[#, 0.3] & /@ marks},
+             PlotRange -> {{0, 4}, {0, 2}}, ImageSize -> {200, 100}];
+           Length[marks]]},
+        {Dynamic[If[spot =!= {}, AppendTo[marks, spot]; spot = {}];
+           Row[{"marks: ", Length[marks]}]], SpanFromLeft}
+      }],
+      {{pic, Graphics[Rectangle[{0, 0}, {4, 2}],
+        PlotRange -> {{0, 4}, {0, 2}}, ImageSize -> {200, 100}]},
+        ControlType -> None},
+      {{spot, {}}, ControlType -> None},
+      {{marks, {}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let var = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let click_at = |state: &mut ManipulateState, gx: f64, gy: f64| {
+      assert_eq!(state.click_regions.len(), 1, "one click region");
+      let region = state.click_regions[0].clone();
+      let near = |a: f64, b: f64| (a - b).abs() < 0.05;
+      assert!(
+        near(region.hit.x_min, 0.0)
+          && near(region.hit.x_max, 4.0)
+          && near(region.hit.y_min, 0.0)
+          && near(region.hit.y_max, 2.0),
+        "pane coordinates: {:?}",
+        region.hit
+      );
+      let h = &region.hit;
+      let fx = ((gx - h.x_min) / (h.x_max - h.x_min)) as f32;
+      let fy = ((h.y_max - gy) / (h.y_max - h.y_min)) as f32;
+      state.pointer =
+        (region.x + region.width * fx, region.y + region.height * fy);
+      state.apply_pane_click();
+      assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    };
+    let red_disks = |state: &ManipulateState| {
+      state
+        .current_svg()
+        .unwrap_or_default()
+        .matches("fill=\"rgb(255,0,0)\"")
+        .count()
+    };
+    assert_eq!(red_disks(&state), 0);
+
+    click_at(&mut state, 3.1, 1.9);
+    assert_eq!(var(&state, "marks"), "{{3, 2}}");
+    assert_eq!(var(&state, "spot"), "{}");
+    assert_eq!(red_disks(&state), 1, "the picture shows the first mark");
+
+    click_at(&mut state, 1.0, 1.0);
+    assert_eq!(var(&state, "marks"), "{{3, 2}, {1, 1}}");
+    assert_eq!(red_disks(&state), 2, "the picture shows both marks");
+  }
+
+  /// A button or click action runs against a state variable that holds a
+  /// picture the body drew (kept as a rendering, with no source to bind):
+  /// the action must still be able to read it.
+  #[test]
+  fn action_sees_and_keeps_a_picture_state_variable() {
+    let code = r#"Manipulate[
+      Column[{pic = Plot[x, {x, 0, 1}, ImageSize -> 50], seen}],
+      {{pic, Graphics[{}]}, ControlType -> None},
+      {{seen, None}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    state.apply_button_action("seen = Head[pic]");
+    let var = |name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert_eq!(var("seen"), "Graphics");
   }
 
   /// A `ClickPane` laid out beside the controls (a display element, not
