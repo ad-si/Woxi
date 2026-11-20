@@ -3776,6 +3776,49 @@ mod tests {
     );
   }
 
+  /// A `Row[{"caption", Spacer[…], Control[…], Spacer[…], Control[…]}]`
+  /// draws its caption and both controls on one line, as Wolfram does: the
+  /// caption becomes a heading row and the first control joins its line
+  /// instead of starting a new one. A `Style[…]` caption does the same,
+  /// while a standalone heading argument keeps the next control on a line
+  /// of its own.
+  #[test]
+  fn row_caption_shares_line_with_its_controls() {
+    let code = r#"Manipulate[
+      {a, b, c, d},
+      Row[{"sizes:", Spacer[20], Control@{{a, 3, "first"}, Range[3, 7]},
+        Spacer[20], Control@{{b, 5, "second"}, Range[3, 7]}}],
+      Row[{Style["speed", Italic], Spacer[10], Control[{c, 0, 1}]}],
+      "standalone",
+      {d, 0, 10}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let layout: Vec<(String, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .map(|(i, c)| {
+        let key = match c {
+          ControlState::Heading { label, .. } => format!("heading {label}"),
+          other => other.name().to_string(),
+        };
+        (key, state.joins_previous_control(i))
+      })
+      .collect();
+    let expected: Vec<(String, bool)> = vec![
+      ("heading sizes:".into(), false),
+      ("a".into(), true),
+      ("b".into(), true),
+      ("heading speed".into(), false),
+      ("c".into(), true),
+      ("heading standalone".into(), false),
+      ("d".into(), false),
+    ];
+    assert_eq!(layout, expected);
+  }
+
   /// Controls declared with `ControlPlacement -> n` are drawn where a
   /// layout argument references them by `Place[n]` (bare or as the
   /// FrontEnd-saved `` Manipulate`Place[n] ``), so `Row[{Place[2],
@@ -7513,6 +7556,74 @@ mod pane_selector_keyboard_tests {
     state.reevaluate();
     press(&mut state, "word = \"\"");
     assert_eq!(word(&state), "\"\"");
+  }
+}
+
+#[cfg(test)]
+mod tooltip_button_in_body_tests {
+  use super::*;
+
+  /// A `Button` wrapped in `Tooltip` inside a `Grid` cell of the body
+  /// (a counter whose cell background follows the count's parity).
+  ///
+  /// Regression: the `Button` was lifted out of the body into a separate
+  /// display row, leaving `Tooltip[Nothing, tip]` behind, so the picture
+  /// showed the literal word "Nothing" where the button belonged and the
+  /// cell lost its button.
+  #[test]
+  fn tooltip_wrapped_button_stays_in_place_and_is_pressable() {
+    let code = r#"Manipulate[
+      Grid[{{
+        Grid[{{Tooltip[Button[Style[count, "Title"], count = count + 1,
+          ImageSize -> {120, 60}], "count up"]}},
+          Background -> If[EvenQ[count], LightBlue, LightRed]],
+        Tooltip[Button["reset", count = 0], "start over"]
+      }}],
+      {{count, 1}, ControlType -> None},
+      {{step, 1, "step"}, {1, 2}, ControlType -> SetterBar}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    assert!(
+      !state.body.contains("Nothing"),
+      "the buttons must stay in the body: {}",
+      state.body
+    );
+    let svg = state
+      .check_render()
+      .expect("body renders")
+      .graphics
+      .expect("body draws a picture");
+    assert!(
+      !svg.contains("Nothing"),
+      "no literal Nothing in the picture"
+    );
+    assert_eq!(state.button_regions.len(), 2, "both buttons are pressable");
+
+    let count = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "count")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let press = |state: &mut ManipulateState, needle: &str| {
+      let action = state
+        .button_regions
+        .iter()
+        .find(|r| r.action.contains(needle))
+        .unwrap_or_else(|| panic!("no button running {needle}"))
+        .action
+        .clone();
+      state.apply_button_action(&action);
+      assert_eq!(state.error, None);
+    };
+    press(&mut state, "count + 1");
+    assert_eq!(count(&state), "2");
+    press(&mut state, "count = 0");
+    assert_eq!(count(&state), "0");
   }
 }
 

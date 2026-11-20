@@ -2932,6 +2932,51 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// corner colors when it is smoothly shaded, else its flat color. A
 /// gradient's definition is written to `svg` (once) before the polygon
 /// that uses it.
+/// The triangles from `tris[start]` on that are painted as one translucent
+/// flat face: each next triangle in the draw order has the same color,
+/// opacity and outline style, carries no gradient or texture, and shares
+/// a projected edge with a triangle already in the run (the pieces of a
+/// fan-triangulated polygon). A single triangle when nothing joins it.
+pub(crate) fn translucent_face_run(
+  tris: &[Triangle],
+  start: usize,
+) -> &[Triangle] {
+  let first = &tris[start];
+  let flat = |t: &Triangle| {
+    t.opacity > 0.0
+      && t.opacity < 1.0
+      && t.vertex_colors.is_none()
+      && t.texture.is_none()
+      && t.boundary != [true; 3]
+  };
+  if !flat(first) {
+    return &tris[start..=start];
+  }
+  let shares_edge = |a: &Triangle, b: &Triangle| {
+    a.projected
+      .iter()
+      .filter(|p| b.projected.contains(p))
+      .count()
+      >= 2
+  };
+  let mut end = start + 1;
+  while end < tris.len() {
+    let t = &tris[end];
+    let joins = flat(t)
+      && t.color == first.color
+      && t.opacity == first.opacity
+      && t.edge_color == first.edge_color
+      && t.edge_width == first.edge_width
+      && t.edge_dashing == first.edge_dashing
+      && tris[start..end].iter().any(|m| shares_edge(m, t));
+    if !joins {
+      break;
+    }
+    end += 1;
+  }
+  &tris[start..end]
+}
+
 pub(crate) fn triangle_paint(
   tri: &Triangle,
   corners: [(f64, f64); 3],
@@ -8829,6 +8874,15 @@ fn collect_3d_primitives(
     Expr::Identifier(_) | Expr::Rule { .. } => {
       apply_3d_directive(expr, style);
     }
+    // A primitive or directive with `Dynamic[…]` somewhere in its arguments
+    // (`Cuboid[{0.5 + Dynamic[s], …}, …]`, `Hue[Dynamic[h], 1, 1]`) is
+    // drawn with every `Dynamic` at its current value.
+    Expr::FunctionCall { name, args }
+      if let Some(released) =
+        crate::functions::graphics::release_primitive_dynamics(name, args) =>
+    {
+      collect_3d_primitives(&released, style, prims);
+    }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
         "Sphere" | "Ball" => {
@@ -13937,6 +13991,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// endpoints coincide): the dots take their place in the same depth
     /// order, so a box edge or line in front of a dot is drawn over it.
     dot_radius: Option<f64>,
+    /// For a piece of a `Line` primitive: the polyline it was cut from and
+    /// its position along it. Translucent pieces of one polyline drawn in
+    /// a row are joined back into a single stroke (see `emit_edge_run`).
+    piece_of: Option<(usize, usize)>,
   }
 
   // Build depth-sorted segments: the bounding-box edges plus all Line
@@ -13986,6 +14044,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dashing: edge_style.dashing.clone(),
           dash_offset: t0 * edge_px,
           dot_radius: None,
+          piece_of: None,
         });
       }
     }
@@ -14035,6 +14094,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dashing: None,
               dash_offset: 0.0,
               dot_radius: None,
+              piece_of: None,
             });
           }
         }
@@ -14051,6 +14111,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .sqrt();
     let bias = diag * 1e-3;
     const LINE_SUBDIVISIONS: usize = 8;
+    let mut polyline_id = 0usize;
     for prim in &prims {
       let Primitive3D::Line3D { segments, style } = prim else {
         continue;
@@ -14061,6 +14122,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
       for seg in segments {
+        polyline_id += 1;
+        let mut piece_index = 0;
         // On-screen length of the polyline drawn so far: a dash pattern
         // runs continuously along the whole line instead of restarting
         // at every vertex (which would turn a finely sampled dotted
@@ -14093,7 +14156,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dashing: style.dashing.clone(),
               dash_offset: run_px + t0 * total_px,
               dot_radius: None,
+              piece_of: Some((polyline_id, piece_index)),
             });
+            piece_index += 1;
           }
           run_px += total_px;
         }
@@ -14122,6 +14187,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dashing: None,
           dash_offset: 0.0,
           dot_radius: Some(radius),
+          piece_of: None,
         });
       }
     }
@@ -14203,6 +14269,76 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ex0, ey0, ex1, ey1, edge.color, edge.width, cap, opacity_attr, dash_attr
       ));
     };
+    // Emit the line pieces of one draw slot. Translucent pieces cut from
+    // one polyline are joined into a single `<polyline>`: drawn as
+    // separate elements, every joint between two pieces shows as an
+    // anti-aliasing notch where the background bleeds through.
+    let emit_edge_run = |svg: &mut String, run: &[&SceneEdge]| {
+      let mut done = vec![false; run.len()];
+      for i in 0..run.len() {
+        if done[i] {
+          continue;
+        }
+        let edge = run[i];
+        let Some((line_id, _)) = edge.piece_of.filter(|_| edge.opacity < 1.0)
+        else {
+          emit_edge(svg, edge);
+          continue;
+        };
+        let mut pieces: Vec<usize> = (i..run.len())
+          .filter(|&k| {
+            !done[k]
+              && run[k].opacity < 1.0
+              && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
+          })
+          .collect();
+        pieces.sort_by_key(|&k| run[k].piece_of.map(|(_, n)| n));
+        for &k in &pieces {
+          done[k] = true;
+        }
+        let mut start = 0;
+        while start < pieces.len() {
+          let mut end = start + 1;
+          while end < pieces.len()
+            && run[pieces[end]].piece_of.map(|(_, n)| n)
+              == run[pieces[end - 1]].piece_of.map(|(_, n)| n + 1)
+          {
+            end += 1;
+          }
+          let chain = &pieces[start..end];
+          start = end;
+          if chain.len() == 1 {
+            emit_edge(svg, run[chain[0]]);
+            continue;
+          }
+          let first = run[chain[0]];
+          let mut points = Vec::with_capacity(chain.len() + 1);
+          for (n, &k) in chain.iter().enumerate() {
+            if n == 0 {
+              let (px, py) = project(run[k].endpoints[0], &camera);
+              let (x, y) = to_svg(px, py);
+              points.push(format!("{x:.1},{y:.1}"));
+            }
+            let (px, py) = project(run[k].endpoints[1], &camera);
+            let (x, y) = to_svg(px, py);
+            points.push(format!("{x:.1},{y:.1}"));
+          }
+          let dash_attr = dash3d_attr(
+            first.dashing.as_ref(),
+            svg_width as f64,
+            first.dash_offset,
+          );
+          svg.push_str(&format!(
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"butt\" stroke-linejoin=\"round\" opacity=\"{}\"{}/>\n",
+            points.join(" "),
+            first.color,
+            first.width,
+            first.opacity,
+            dash_attr
+          ));
+        }
+      }
+    };
     let mut ei = 0;
     let mut texture_ids = Vec::new();
     let mut gradients =
@@ -14223,6 +14359,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       by_slot.iter().map(|&k| &sorted_edges[k]).collect();
     let edge_slots: Vec<usize> =
       by_slot.iter().map(|&k| edge_slots[k]).collect();
+    let mut skip_until = 0;
     // The outline edges of the faces go in the same draw order as the
     // line pieces above, not right after their own face: an edge on a
     // curved solid's silhouette (the far rim of a `Cylinder`) would
@@ -14290,11 +14427,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     for (pos, tri) in all_triangles.iter().enumerate() {
       // Emit the edge segments that belong behind this triangle
+      let run_start = ei;
       while ei < sorted_edges.len() && edge_slots[ei] <= pos {
-        emit_edge(&mut svg, sorted_edges[ei]);
         ei += 1;
       }
+      emit_edge_run(&mut svg, &sorted_edges[run_start..ei]);
       flush_outlines(&mut svg, &mut pending_outlines, pos);
+      // Already painted as part of a merged face below.
+      if pos < skip_until {
+        continue;
+      }
       // Emit triangle
       let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
       let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
@@ -14374,21 +14516,45 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           paint.as_str()
         };
+        // The pieces of a translucent flat face painted one after another
+        // are filled as one `<path>`: as separate elements, the
+        // anti-aliased cut between two pieces lets the background show
+        // through as a light seam across the face.
+        let group = translucent_face_run(&all_triangles, pos);
+        skip_until = pos + group.len();
         // A fully transparent face (`FaceForm[None]`, `Opacity[0]`) paints
         // nothing; only its outline below is drawn.
-        if tri.opacity > 0.0 {
+        if group.len() > 1 {
+          let d: Vec<String> = group
+            .iter()
+            .map(|t| {
+              let [a, b, c] = t.projected.map(|(px, py)| to_svg(px, py));
+              format!(
+                "M{:.1},{:.1} L{:.1},{:.1} L{:.1},{:.1} Z",
+                a.0, a.1, b.0, b.1, c.0, c.1
+              )
+            })
+            .collect();
+          svg.push_str(&format!(
+            "<path d=\"{}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n",
+            d.join(" ")
+          ));
+        } else if tri.opacity > 0.0 {
           svg.push_str(&format!(
             "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
           ));
         }
-        let corners = [(x0, y0), (x1, y1), (x2, y2)];
-        for (e, on_outline) in tri.boundary.iter().enumerate() {
-          if !on_outline {
-            continue;
-          }
+        // The group's faces are `all_triangles[pos..]`, in order.
+        let outlines = group.iter().enumerate().flat_map(|(gi, t)| {
+          let corners = t.projected.map(|(px, py)| to_svg(px, py));
+          (0..3)
+            .filter(move |&e| t.boundary[e])
+            .map(move |e| (pos + gi, e, corners[e], corners[(e + 1) % 3]))
+        });
+        for (k, e, a, b) in outlines {
           // An edge two faces share is drawn by both; running each from
           // the same end keeps a dash pattern in step.
-          let (mut a, mut b) = (corners[e], corners[(e + 1) % 3]);
+          let (mut a, mut b) = (a, b);
           if (b.0, b.1) < (a.0, a.1) {
             std::mem::swap(&mut a, &mut b);
           }
@@ -14397,7 +14563,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             dash3d_attr(tri.edge_dashing.as_ref(), svg_width as f64, 0.0);
           let cap = outline_edge_cap(tri.edge_dashing.as_ref());
           pending_outlines.push(std::cmp::Reverse((
-            outline_slot(pos, e),
+            outline_slot(k, e),
             outline_seq,
             format!(
               "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}{dash}/>\n",
@@ -14409,10 +14575,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     flush_outlines(&mut svg, &mut pending_outlines, usize::MAX);
     // Emit remaining edge segments (closest to viewer)
-    while ei < sorted_edges.len() {
-      emit_edge(&mut svg, sorted_edges[ei]);
-      ei += 1;
-    }
+    emit_edge_run(&mut svg, &sorted_edges[ei..]);
   }
 
   // Render points and arrows on top (lines are depth-sorted with the
@@ -15596,15 +15759,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }
             }
           }
-          (
-            grid,
-            num_cols,
-            num_rows,
-            1.0,
-            (num_cols as f64).max(2.0),
-            1.0,
-            (num_rows as f64).max(2.0),
-          )
+          // `DataRange -> {{x0, x1}, {y0, y1}}` places the first and last
+          // columns (x) and rows (y) there instead of at their indices.
+          let ((x0, x1), (y0, y1)) =
+            crate::functions::field_plot::matrix_data_range(
+              outer,
+              &args[1..],
+              (1.0, (num_cols as f64).max(2.0)),
+              (1.0, (num_rows as f64).max(2.0)),
+            );
+          (grid, num_cols, num_rows, x0, x1, y0, y1)
         }
         // Explicit 3D coordinates: {{x1,y1,z1}, {x2,y2,z2}, ...}
         _ => {

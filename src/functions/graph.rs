@@ -1036,6 +1036,7 @@ fn graph_render(
   let mut coord_scale = 1.0_f64;
   // Center of the caller's coordinates, mapped to the origin.
   let mut coord_center = (0.0_f64, 0.0_f64);
+  let layout_is_computed = explicit_coordinates.is_none();
   let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
     if let Some(((x0, x1), (y0, y1))) = explicit_range {
       // Keep the caller's window: map it onto the same diameter-2 scale
@@ -1606,6 +1607,31 @@ fn graph_render(
   // Wolfram's `Hue[0.6, 0.5, 1]`.
   let default_fill = Color::new(0.5, 0.7, 1.0);
 
+  // `VertexRenderingFunction` draws in the caller's units: the coordinates
+  // `VertexCoordinates` gave, or, for a computed layout, Wolfram's own
+  // embedding scale where edges are about 1 long. Without this a
+  // `Disk[#, 1/5]` covers a fifth of the whole internal diameter-2 drawing
+  // and the vertices of a large graph melt into one blob.
+  let (render_scale, render_center) = if layout_is_computed {
+    let lengths: Vec<f64> = graph
+      .edge_references()
+      .map(|e| {
+        let (p, q) =
+          (positions[e.source().index()], positions[e.target().index()]);
+        ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).sqrt()
+      })
+      .filter(|d| *d > 1e-12)
+      .collect();
+    let mean = if lengths.is_empty() {
+      1.0
+    } else {
+      lengths.iter().sum::<f64>() / lengths.len() as f64
+    };
+    (mean, (0.0, 0.0))
+  } else {
+    (coord_scale, coord_center)
+  };
+
   for node_idx in graph.node_indices() {
     let i = node_idx.index();
     let (x, y) = positions[i];
@@ -1615,7 +1641,13 @@ fn graph_render(
     match &vertex_render {
       Some(VertexRender::Hidden) => continue,
       Some(VertexRender::Func(f)) => {
-        let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+        let point = Expr::List(
+          vec![
+            Expr::Real(x / render_scale + render_center.0),
+            Expr::Real(y / render_scale + render_center.1),
+          ]
+          .into(),
+        );
         let name = unwrap_vertex_style(&vertices[i]).0.clone();
         if let Ok(drawn) =
           crate::functions::list_helpers_ast::apply_func_to_two_args(
@@ -1623,8 +1655,14 @@ fn graph_render(
           )
         {
           // Wrapped in a list so any directives it sets stay scoped to
-          // this vertex.
-          primitives.push(Expr::List(vec![drawn].into()));
+          // this vertex, and mapped from the caller's units onto the
+          // internal scale the graph is drawn in.
+          let drawn = Expr::List(vec![drawn].into());
+          primitives.push(to_internal_units(
+            drawn,
+            render_scale,
+            render_center,
+          ));
           continue;
         }
       }
@@ -1780,26 +1818,7 @@ fn graph_render(
   // Prolog / Epilog are given in the caller's coordinates; bring them onto
   // the internal scale the graph itself is drawn in.
   let to_internal = |layer: Expr| -> Expr {
-    if coord_scale == 1.0 && coord_center == (0.0, 0.0) {
-      return layer;
-    }
-    let row =
-      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-    call(
-      "GeometricTransformation",
-      vec![
-        layer,
-        Expr::List(
-          vec![
-            Expr::List(
-              vec![row(coord_scale, 0.0), row(0.0, coord_scale)].into(),
-            ),
-            row(-coord_center.0 * coord_scale, -coord_center.1 * coord_scale),
-          ]
-          .into(),
-        ),
-      ],
-    )
+    to_internal_units(layer, coord_scale, coord_center)
   };
   if let Some(p) = prolog {
     primitives.insert(0, to_internal(p));
@@ -3727,6 +3746,29 @@ fn linear_layout(n: usize) -> Vec<(f64, f64)> {
   (0..n)
     .map(|k| (-1.0 + 2.0 * k as f64 / (n - 1) as f64, 0.0))
     .collect()
+}
+
+/// `layer`, drawn in the caller's units, mapped onto the internal drawing
+/// scale: internal = (caller - `center`) * `scale`.
+fn to_internal_units(layer: Expr, scale: f64, center: (f64, f64)) -> Expr {
+  if scale == 1.0 && center == (0.0, 0.0) {
+    return layer;
+  }
+  let row =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  call(
+    "GeometricTransformation",
+    vec![
+      layer,
+      Expr::List(
+        vec![
+          Expr::List(vec![row(scale, 0.0), row(0.0, scale)].into()),
+          row(-center.0 * scale, -center.1 * scale),
+        ]
+        .into(),
+      ),
+    ],
+  )
 }
 
 /// Rescale explicit `VertexCoordinates` — which can be given in any unit

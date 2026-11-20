@@ -5742,9 +5742,13 @@ mod interpreter_tests {
          FrameLabel -> {\"t\", x^2}], \"SVG\"]",
     )
     .unwrap();
+    // It is set in TraditionalForm: an italic x with a raised 2.
     assert!(
-      svg.contains("x²"),
-      "a bare Power FrameLabel entry must render as a Unicode superscript, \
+      svg.contains(
+        "<tspan font-style=\"italic\">x</tspan>\
+         <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+      ),
+      "a bare Power FrameLabel entry must render as a superscript, \
        not vanish: {svg}"
     );
 
@@ -5757,8 +5761,13 @@ mod interpreter_tests {
          Style[\"i\", Italic], \"t\"}], \")\"}]], \"SVG\"]",
     )
     .unwrap();
+    // The styled base and exponent keep their styles, the exponent raised.
     assert!(
-      svg2.contains("H(eit)"),
+      svg2.contains(
+        "H(<tspan font-style=\"italic\">e</tspan><tspan \
+         baseline-shift=\"super\" font-size=\"70%\"><tspan \
+         font-style=\"italic\">i</tspan>t</tspan>)"
+      ),
       "a Power nested in a Row must render alongside the row's other text, \
        not leave a gap: {svg2}"
     );

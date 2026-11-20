@@ -2546,6 +2546,71 @@ mod graphics {
       assert!(!line.contains(" width=\"19.90\""), "{line}");
     }
 
+    /// An open `Circle` arc ends like a `Line`: with square caps that
+    /// project half the stroke width past each end unless a `CapForm`
+    /// says otherwise. A very short, thick arc (a disparity marker on an
+    /// eye diagram) therefore still shows as a dot one stroke wide;
+    /// Woxi drew it with butt caps, so it vanished.
+    #[test]
+    fn open_circle_arc_defaults_to_square_cap() {
+      let arc_cap = |prims: &str| -> String {
+        let svg =
+          export_svg(&format!("Graphics[{{Thickness[0.05], {prims}}}]"));
+        let path = svg
+          .split("<path ")
+          .find(|s| s.contains(" A "))
+          .unwrap_or_else(|| panic!("no arc path: {svg}"));
+        path
+          .split("stroke-linecap=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_else(|| panic!("no linecap on arc: {path}"))
+          .to_string()
+      };
+      assert_eq!(arc_cap("Circle[{0, 0}, 1, {0, 1}]"), "square");
+      assert_eq!(arc_cap("Circle[{0, 0}, 1, {0.5, 0.501}]"), "square");
+      assert_eq!(
+        arc_cap("CapForm[\"Round\"], Circle[{0, 0}, 1, {0, 1}]"),
+        "round"
+      );
+      assert_eq!(
+        arc_cap("CapForm[\"Butt\"], Circle[{0, 0}, 1, {0, 1}]"),
+        "butt"
+      );
+      // A full circle has no ends and stays a closed ellipse.
+      let full = export_svg("Graphics[{Thickness[0.05], Circle[{0, 0}, 1]}]");
+      assert!(full.contains("<ellipse "), "{full}");
+      assert!(!full.contains("stroke-linecap"), "{full}");
+    }
+
+    /// A zero-length arc (`Circle[c, r, {a, a}]`) is drawn as its caps
+    /// alone, like a zero-length `Line`: a square dot one stroke width
+    /// across, a round dot under `CapForm["Round"]`, nothing under
+    /// `CapForm["Butt"]`. An SVG arc whose endpoints coincide is dropped
+    /// by renderers, so the dot must be a filled shape.
+    #[test]
+    fn zero_length_circle_arc_draws_cap_dot() {
+      let svg = |prims: &str| {
+        export_svg(&format!(
+          "Graphics[{{Thickness[0.1], {prims}, Point[{{{{-1, -1}}, {{1, 1}}}}]}}, \
+           ImageSize -> 200, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}]"
+        ))
+      };
+      for a in ["0", "Pi/3", "2"] {
+        let out = svg(&format!("Circle[{{0, 0}}, 0.5, {{{a}, {a}}}]"));
+        assert!(
+          out.contains(" width=\"19.90\" height=\"19.90\""),
+          "no square dot for angle {a}: {out}"
+        );
+        assert!(!out.contains(" A "), "{out}");
+      }
+      let round = svg("CapForm[\"Round\"], Circle[{0, 0}, 0.5, {1, 1}]");
+      assert!(round.contains("r=\"9.95\""), "{round}");
+      let butt = svg("CapForm[\"Butt\"], Circle[{0, 0}, 0.5, {1, 1}]");
+      assert!(!butt.contains(" width=\"19.90\""), "{butt}");
+      assert!(!butt.contains(" A "), "{butt}");
+    }
+
     /// `JoinForm[…]` sets the SVG `stroke-linejoin` a multi-segment `Line`
     /// is drawn with, and `JoinForm[{"Miter", limit}]` also sets
     /// `stroke-miterlimit`. Left unset, Woxi keeps its existing rounded
@@ -6346,7 +6411,17 @@ mod plot3d {
   /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
   #[test]
   fn touching_cuboids_drop_their_shared_faces() {
-    let polys = |code: &str| export_svg(code).matches("<polygon").count();
+    // Triangles drawn, whether alone or as the pieces of one merged
+    // translucent face `<path>`.
+    let polys = |code: &str| {
+      let svg = export_svg(code);
+      svg.matches("<polygon").count()
+        + svg
+          .lines()
+          .filter(|l| l.starts_with("<path d=\"M"))
+          .map(|l| l.matches(" Z").count())
+          .sum::<usize>()
+    };
     let apart = polys(
       "Graphics3D[{EdgeForm[], Cuboid[{0,0,0},{1,1,1}], Cuboid[{3,0,0},{4,1,1}]}]",
     );
@@ -14055,6 +14130,34 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// A mathematical `FrameLabel` entry is set in TraditionalForm, like an
+    /// `AxesLabel`: symbols in italics and `Subscript[q, i][t]` as q_i(t)
+    /// with a lowered index, while string captions stay upright.
+    #[test]
+    fn list_line_plot_frame_label_typesets_math_in_traditional_form() {
+      let svg = export_svg(
+        "ListLinePlot[{1, 3, 2}, Frame -> True, \
+         FrameLabel -> {i, Subscript[q, i][t]}]",
+      );
+      assert!(
+        svg.contains("><tspan font-style=\"italic\">i</tspan></text>"),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">q</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\"><tspan font-style=\"italic\">i</tspan></tspan>\
+           (<tspan font-style=\"italic\">t</tspan>)</text>"
+        ),
+        "{svg}"
+      );
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"time\", \"x\"}]",
+      );
+      assert!(svg.contains(">time</text>"), "{svg}");
+      assert!(svg.contains(">x</text>"), "{svg}");
+    }
+
     /// Regression: `Histogram` read the nested `{{left, right}, {bottom,
     /// top}}` `FrameLabel` as `{bottom, left}`, printing each inner list
     /// (`{p, overall risk}`) as one caption instead of one per edge.
@@ -14208,11 +14311,26 @@ mod plot3d {
            FrameLabel -> {{\"p\", {expr}}}]"
         ))
       };
-      assert!(label("a/c^2").contains(">a/c\u{b2}</text>"));
-      assert!(label("(a + b)/c").contains(">(a + b)/c</text>"));
-      assert!(label("2 a - b").contains(">2 a - b</text>"));
+      let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
+      let sup2 = "<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>";
+      assert!(label("a/c^2").contains(&format!(
+        ">{}/{}{sup2}</text>",
+        it("a"),
+        it("c")
+      )));
+      assert!(label("(a + b)/c").contains(&format!(
+        ">({}+{})/{}</text>",
+        it("a"),
+        it("b"),
+        it("c")
+      )));
+      assert!(label("2 a - b").contains(&format!(
+        ">2\u{2009}{}-{}</text>",
+        it("a"),
+        it("b")
+      )));
       assert!(label("Pi").contains(">\u{3c0}</text>"));
-      assert!(label("Subscript[k, n] a/Pi").contains("/\u{3c0}</text>"));
+      assert!(label("Subscript[k, n] a/Pi").contains("\u{3c0}</tspan></text>"));
     }
 
     /// The rotated left `FrameLabel` is anchored by its baseline, whose
@@ -15291,8 +15409,8 @@ mod plot3d {
     }
 
     /// A list is a perfectly good label — it is typeset as the list itself,
-    /// which is how a Demonstration names the four curves it draws on one
-    /// axis.
+    /// each element keeping its own styling, which is how a plot names (and
+    /// colors) the curves it draws on one axis.
     #[test]
     fn axes_label_given_a_list_prints_the_list() {
       let svg = export_svg(
@@ -15300,7 +15418,38 @@ mod plot3d {
              AxesLabel -> {"t", {Style[a, Blue], Style[b, Green]}}]"#,
       );
       assert!(svg.contains(">t</text>"), "{svg}");
-      assert!(svg.contains(">{a, b}</text>"), "{svg}");
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains('{'))
+        .unwrap_or_else(|| panic!("list label missing: {svg}"));
+      assert!(
+        label.contains("fill=\"rgb(0,0,255)\""),
+        "a is blue: {label}"
+      );
+      assert!(
+        label.contains("fill=\"rgb(0,255,0)\""),
+        "b is green: {label}"
+      );
+      assert!(!svg.contains(">{a, b}</text>"), "{svg}");
+    }
+
+    /// `TraditionalForm` mapped over a list of styled curve names only
+    /// changes the notation: the names read `prey(t)` with an italic `t`
+    /// and keep their colors.
+    #[test]
+    fn traditional_form_list_axes_label_keeps_element_colors() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, AxesLabel -> TraditionalForm /@
+             {t, {Style[prey[t], Red], Style[pred[t], Blue]}}]"#,
+      );
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains("prey"))
+        .unwrap_or_else(|| panic!("list label missing: {svg}"));
+      assert!(label.contains("fill=\"rgb(255,0,0)\""), "{label}");
+      assert!(label.contains("fill=\"rgb(0,0,255)\""), "{label}");
+      assert!(label.contains("font-style=\"italic\""), "{label}");
+      assert!(!label.contains("prey[t]"), "{label}");
     }
 
     /// A wide y label centered on an axis that sits near the left edge would
@@ -15809,6 +15958,48 @@ mod plot3d {
         assert!((x - f64::midpoint(left, right)).abs() < 1.0, "{code}: {x}");
         assert!((y - f64::midpoint(top, bottom)).abs() < 1.0, "{code}: {y}");
       }
+    }
+
+    /// An explicit `AxesOrigin` outside the data widens an automatic
+    /// `Graphics` range to reach it, so both axes stay in the picture.
+    /// Regression: the axes were placed off the canvas and not shown.
+    #[test]
+    fn graphics_range_grows_to_hold_the_axes_origin() {
+      for (code, below, left) in [
+        // Origin below and left of the data.
+        (
+          "Graphics[Line[{{1, 3}, {2, 4}}], Axes -> True, \
+           AxesOrigin -> {0, 2}]",
+          true,
+          true,
+        ),
+        // Origin above and right of the data.
+        (
+          "Graphics[Line[{{-3, -2}, {-1, -1}}], Axes -> True, \
+           AxesOrigin -> {1, 2}]",
+          false,
+          false,
+        ),
+      ] {
+        let svg = export_svg(code);
+        let dim = |name: &str| -> f64 {
+          let key = format!(" {name}=\"");
+          let i = svg.find(&key).unwrap() + key.len();
+          svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+        };
+        let (w, h) = (dim("width"), dim("height"));
+        let (x, y) = axes_crossing(&svg);
+        assert!(0.0 < x && x < w && 0.0 < y && y < h, "{code}: {x}, {y}");
+        // The crossing sits at the padded edge on the origin's side.
+        assert_eq!(y > 0.8 * h, below, "{code}: x axis at {y} of {h}");
+        assert_eq!(x < 0.2 * w, left, "{code}: y axis at {x} of {w}");
+      }
+      // An explicit `PlotRange` still wins over the origin.
+      let svg = export_svg(
+        "Graphics[Line[{{1, 3}, {2, 4}}], Axes -> True, \
+         AxesOrigin -> {0, 0}, PlotRange -> {{1, 2}, {3, 4}}]",
+      );
+      assert!(!svg.contains(">0.5</text>"), "{svg}");
     }
 
     /// The tick label where the axes cross would collide with the other
@@ -16397,7 +16588,12 @@ mod plot3d {
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[P, B, D][t]}]"#,
       );
       assert!(
-        svg.contains(">PB,D(t)</text>"),
+        svg.contains(
+          "<tspan font-style=\"italic\">P</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\"><tspan font-style=\"italic\">B</tspan>, \
+           <tspan font-style=\"italic\">D</tspan></tspan>\
+           (<tspan font-style=\"italic\">t</tspan>)</text>"
+        ),
         "applied multi-subscript label must be typeset: {svg}"
       );
       assert!(!svg.contains("Subscript["), "raw call leaked: {svg}");
@@ -16405,7 +16601,10 @@ mod plot3d {
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[x, 1, 2]}]"#,
       );
       assert!(
-        svg.contains(">x\u{2081},\u{2082}</text>"),
+        svg.contains(
+          "<tspan font-style=\"italic\">x</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\">1, 2</tspan></text>"
+        ),
         "several subscripts read comma-separated: {svg}"
       );
     }
@@ -17954,6 +18153,41 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, Filling -> {1 -> {2}}]"
       ));
+    }
+
+    // A plot's primitives (as `Part`, `Show` and `ReplaceAll` see them)
+    // list every fill before any curve, as Wolfram does: the area between
+    // curves 1 and 2 must not be layered over the line of curve 1, which
+    // would hide half its stroke once the primitives are drawn again.
+    #[test]
+    fn plot_primitives_put_fills_beneath_all_curves() {
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Plot[{-Sqrt[1 - x^2], Sqrt[1 - x^2]}, \
+           {x, -1, 1}, Filling -> {1 -> {2}}][[1]], _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2, x^3}, {x, 0, 1}, \
+           Filling -> {1 -> {3}, 2 -> Axis}]], _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
+      // Merged with other graphics, a fill owned by a later series still
+      // goes beneath the earlier series' curve.
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2}, {x, 0, 1}, \
+           Filling -> {2 -> {1}}], Graphics[Point[{0, 0}]]], \
+           _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
     }
 
     // `Filling -> {1 -> {{2}, {c1, c2}}}` fills the regions where curve 1 is
@@ -23652,11 +23886,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "svg = ExportString[ContourPlot[u v, {u, -1, 1}, {v, -1, 1}, \
            FrameLabel -> Automatic], \"SVG\"]; \
-           {StringCases[svg, RegularExpression[\">[uv]</text>\"]], \
+           {StringCases[svg, RegularExpression[\
+             \"italic\\\">[uv]</tspan></text>\"]], \
             StringContainsQ[svg, \"Automatic\"]}"
         )
         .unwrap(),
-        "{{>u</text>, >v</text>}, False}"
+        "{{italic\">u</tspan></text>, italic\">v</tspan></text>}, False}"
       );
     }
 
@@ -24410,7 +24645,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          FrameLabel -> Automatic]}}]",
       );
       assert!(!grid.contains(">Automatic</text>"), "{grid}");
-      assert!(grid.contains(">u</text>") && grid.contains(">w</text>"));
+      // The variables are set in TraditionalForm italics.
+      for v in ["u", "w"] {
+        assert!(
+          grid.contains(&format!(
+            "><tspan font-style=\"italic\">{v}</tspan></text>"
+          )),
+          "{grid}"
+        );
+      }
     }
 
     /// Contour labels are `Text[level, vertex]` inside the plot's
@@ -24498,7 +24741,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let auto = export_svg(
         "DensityPlot[u w, {u, 0, 1}, {w, 0, 1}, FrameLabel -> Automatic]",
       );
-      assert!(auto.contains(">u</text>") && auto.contains(">w</text>"));
+      for v in ["u", "w"] {
+        assert!(
+          auto.contains(&format!(
+            "><tspan font-style=\"italic\">{v}</tspan></text>"
+          )),
+          "{auto}"
+        );
+      }
     }
 
     /// Regression: `ContourPlot` used to ignore `PlotLabel` entirely (no
@@ -24853,7 +25103,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let frame = export_svg(
         "Plot[Sinc[u], {u, 0, 10}, Frame -> True, FrameLabel -> Automatic]",
       );
-      assert_eq!(frame.matches(">u</text>").count(), 1, "{frame}");
+      // So is the frame label.
+      assert_eq!(
+        frame
+          .matches("><tspan font-style=\"italic\">u</tspan></text>")
+          .count(),
+        1,
+        "{frame}"
+      );
     }
 
     /// `WorkingPrecision -> p` samples at `p` digits: `Sin[x + 10^20]` is a
@@ -29475,6 +29732,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 mod pane_wrapper_display {
   use super::*;
 
+  // Exported on its own or as a `Row` item next to a picture, `Text[…]`
+  // content is set in the proportional text face, like the same `Text` in
+  // a `Grid` cell.
+  #[test]
+  fn exported_text_uses_the_text_face() {
+    clear_state();
+    for code in [
+      "ExportString[Text[\"total\"], \"SVG\"]",
+      "ExportString[Row[{Text[Style[Row[{\"total, \", Style[\"n\", Italic]}], \
+       14]], Graphics[Circle[], ImageSize -> 20]}], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      let text = svg
+        .split("<text")
+        .find(|t| t.contains("total"))
+        .unwrap_or_else(|| panic!("no text in {svg}"));
+      assert!(text.contains("sans-serif"), "{code}: {text}");
+      assert!(!text.contains("monospace"), "{code}: {text}");
+    }
+  }
+
+  // A Manipulate body's control row — a slider, a `Text` caption whose
+  // `Row` holds a string times a styled symbol, and a second slider whose
+  // maximum is `Dynamic[…]` — draws both sliders and sets the caption in
+  // the proportional text face, not as monospace output or source text.
+  #[test]
+  fn column_of_slider_rows_with_text_captions_renders_in_visual_mode() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "k = 4; j = 2; Pane[Column[{\
+         Row[{Manipulator[Dynamic[k], {1, 10, 1}], Spacer[15], \
+           Text[Style[Row[{\"count, \" Style[\"n\", Italic], \" = \"}], 14]], \
+           Text[Style[Dynamic[k], 14]]}], \
+         Row[{Manipulator[Dynamic[j], {1, Dynamic[k], 1}], \
+           Text[Style[\"at least\", 14]]}], \
+         Graphics[Circle[], ImageSize -> 100]}, Alignment -> Center], \
+         {300, 200}]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("column should render");
+    assert!(
+      !svg.contains("Manipulator["),
+      "slider drawn as source: {svg}"
+    );
+    assert_eq!(svg.matches("<circle cx=").count(), 2, "{svg}");
+    let caption = svg
+      .split("<text")
+      .find(|t| t.contains("count,"))
+      .expect("caption text");
+    assert!(caption.contains("sans-serif"), "{caption}");
+    assert!(caption.contains("font-style=\"italic\">n<"), "{caption}");
+  }
+
   // In visual hosts (playground, studio — anything driven by
   // interpret_with_stdout), the transparent Pane wrapper displays its
   // content, so a Demonstrations-style Manipulate body like
@@ -31233,6 +31543,30 @@ mod list_plot_3d {
       assert_eq!(r.result, code);
       assert_eq!(r.warnings, vec![message.to_string()]);
     }
+  }
+
+  // `DataRange -> {{x0, x1}, {y0, y1}}` spans a height matrix's columns
+  // (x) and rows (y) over those ranges instead of their 1-based indices.
+  #[test]
+  fn list_plot3d_matrix_data_range() {
+    clear_state();
+    let ticks = |code: &str| -> Vec<String> {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("</text>")
+        .filter_map(|s| s.rsplit('>').next())
+        .map(str::to_string)
+        .collect()
+    };
+    let data = "Table[Sin[i/3] Cos[j/4], {i, 10}, {j, 40}]";
+    let plain = ticks(&format!("ListPlot3D[{data}]"));
+    assert!(plain.iter().any(|t| t == "40"), "{plain:?}");
+    let ranged = ticks(&format!(
+      "ListPlot3D[{data}, DataRange -> {{{{0, 4}}, {{0, 10}}}}]"
+    ));
+    assert!(ranged.iter().any(|t| t == "4"), "{ranged:?}");
+    assert!(ranged.iter().any(|t| t == "2.5"), "{ranged:?}");
+    assert!(!ranged.iter().any(|t| t == "40" || t == "30"), "{ranged:?}");
   }
 
   #[test]
@@ -42170,6 +42504,38 @@ mod manipulate {
     assert_eq!(actions, ["n = 1", "n = 2", "n = 3"]);
   }
 
+  /// A `Manipulator` in a display whose bound is itself live
+  /// (`{1, Dynamic[n], 1}`, a maximum following another control) is a real
+  /// slider ranging up to the bound's current value, not inert source text.
+  #[test]
+  fn display_manipulator_with_dynamic_bound_is_live_slider() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let node = build_manipulate_display(
+      "Row[{Manipulator[Dynamic[m], {1, Dynamic[n], 1}], \"label\"}]",
+      &[
+        ("n".to_string(), "7".to_string()),
+        ("m".to_string(), "3".to_string()),
+      ],
+    );
+    let DisplayNode::Row(items) = &node else {
+      panic!("expected a row, got {node:?}");
+    };
+    match &items[0] {
+      DisplayNode::Slider {
+        target,
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => {
+        assert_eq!(target, "m");
+        assert_eq!((*min, *max, *step, *current), (1.0, 7.0, 1.0, 3.0));
+      }
+      other => panic!("expected a live slider, got {other:?}"),
+    }
+  }
+
   /// `Overlay[{layers}, {shown…}, active]` in a display: a control layer Woxi
   /// cannot operate (an inert `ColorSetter`) gives way to the topmost shown
   /// layer — the swatch drawn over it — instead of printing as source text,
@@ -50664,9 +51030,17 @@ mod demonstration_plot_layout {
       "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
        FrameLabel -> {y[t], y'[t]}, ImageSize -> 250]",
     );
-    assert!(svg.contains(">y(t)<"), "the bottom frame label: {svg}");
+    // Frame labels are set in TraditionalForm too.
+    let y = "<tspan font-style=\"italic\">y</tspan>";
+    let of_t = "(<tspan font-style=\"italic\">t</tspan>)<";
     assert!(
-      svg.contains(">y\u{2032}(t)<"),
+      svg.contains(&format!(">{y}{of_t}")),
+      "the bottom frame label: {svg}"
+    );
+    assert!(
+      svg.contains(&format!(
+        ">{y}<tspan baseline-shift=\"super\" font-size=\"70%\">\u{2032}</tspan>{of_t}"
+      )),
       "the left frame label needs its prime: {svg}"
     );
   }
@@ -62190,6 +62564,124 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+/// `Inset[Rotate[text, θ], pos]` in a plot's `Epilog` draws the text turned
+/// by θ, not the literal `Rotate[…]` source.
+#[test]
+fn plot_epilog_inset_of_rotated_text() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Epilog -> {Inset[Rotate[Style["lbl", FontSize -> 14, FontColor -> Purple], 90 Degree], {0.5, 0.5}]}]"#,
+  );
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("transform=\"rotate(-90.000"), "{svg}");
+  assert!(svg.contains(">lbl</text>"), "{svg}");
+  assert!(svg.contains("fill=\"rgb(128,0,128)\""), "{svg}");
+}
+
+/// A rotated non-text inset (a picture) is turned about its anchor.
+#[test]
+fn plot_epilog_inset_of_rotated_graphic() {
+  let svg = export_svg(
+    "Plot[x, {x, 0, 1}, Epilog -> {Inset[Rotate[Graphics[Disk[]], Pi/4], {0.5, 0.5}]}]",
+  );
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("<g transform=\"rotate(-45.000"), "{svg}");
+}
+
+/// A `ScientificForm` (or `NumberForm`) in a frame label sets on one line,
+/// `mantissa×10ⁿ`, not as the two-line `ToString` layout.
+#[test]
+fn frame_label_scientific_form_is_one_line() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"x", Row[{"I (", ScientificForm[0.00149234, 3], " )"}]}]"#,
+  );
+  assert!(svg.contains(">I (1.49×10⁻³ )</text>"), "{svg}");
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {NumberForm[1.5*^-7, 3], "y"}]"#,
+  );
+  assert!(svg.contains(">1.5×10⁻⁷</text>"), "{svg}");
+}
+
+/// Lettered subscripts inside an arithmetic frame label are lowered with a
+/// `<tspan>`, as a bare `Subscript` label's are (the label is set in
+/// `TraditionalForm`, so its letters are italic).
+#[test]
+fn frame_label_arithmetic_with_letter_subscripts() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {(\[Omega] - Subscript[\[Omega], \[Sigma]])/Subscript[\[Gamma], \[Sigma]], "y"}]"#,
+  );
+  let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
+  let sub = format!(
+    "<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+    it("σ")
+  );
+  assert!(
+    svg.contains(&format!("({}-{}{sub})/{}{sub}", it("ω"), it("ω"), it("γ"))),
+    "{svg}"
+  );
+}
+
+/// `Labeled[v, Style[label, size], "RadialOutside"]` puts each label just
+/// outside its slice at the label's own font size.
+#[test]
+fn pie_chart_labeled_radial_outside() {
+  let svg = export_svg(
+    r#"PieChart[{Labeled[1, Style["a", FontSize -> 14], "RadialOutside"], Labeled[2, "b", "RadialOutside"]}]"#,
+  );
+  let label_pos = |text: &str| -> (f64, f64) {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text ").unwrap();
+    let tag = &svg[start..end];
+    let attr = |name: &str| -> f64 {
+      let i = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[i..].split('"').next().unwrap().parse().unwrap()
+    };
+    (attr("x"), attr("y"))
+  };
+  let path = svg.split("<path d=\"M").nth(1).unwrap();
+  let center: Vec<f64> = path
+    .split(' ')
+    .next()
+    .unwrap()
+    .split(',')
+    .map(|v| v.parse().unwrap())
+    .collect();
+  let radius: f64 = path
+    .split(" A")
+    .nth(1)
+    .unwrap()
+    .split(',')
+    .next()
+    .unwrap()
+    .parse()
+    .unwrap();
+  for text in ["a", "b"] {
+    let (x, y) = label_pos(text);
+    let dist = (x - center[0]).hypot(y - center[1]);
+    assert!(dist > radius, "{text}: {dist} <= {radius}: {svg}");
+  }
+  let a_start = svg.find(">a</text>").unwrap();
+  let a_tag = &svg[svg[..a_start].rfind("<text ").unwrap()..a_start];
+  assert!(a_tag.contains("font-size=\"14\""), "{a_tag}");
+}
+
+/// When `ChartStyle` is given twice, the first one is in effect.
+#[test]
+fn pie_chart_duplicate_option_first_wins() {
+  let first = export_svg(r#"PieChart[{1, 2}, ChartStyle -> {Red, Blue}]"#);
+  let both = export_svg(
+    r#"PieChart[{1, 2}, ChartStyle -> {Red, Blue}, ChartStyle -> {Green, Yellow}]"#,
+  );
+  assert_eq!(first, both);
+}
+
+/// An explicit `ImagePadding` leaves exactly that margin around the pie.
+#[test]
+fn pie_chart_image_padding_sets_radius() {
+  let svg =
+    export_svg("PieChart[{1, 2}, ImageSize -> 130, ImagePadding -> 20]");
+  assert!(svg.contains("A45.00,45.00"), "{svg}");
 }
 
 /// A stacked epilog `Text` label whose lines carry their own sizes

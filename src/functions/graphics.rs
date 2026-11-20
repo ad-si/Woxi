@@ -3396,29 +3396,9 @@ fn collect_primitives(
     // (`Line[{-5 Dynamic[u], 5 Dynamic[u]}]`): every one reads as its value
     // and the argument is evaluated again with the values in place.
     Expr::FunctionCall { name, args }
-      if args.iter().any(contains_dynamic)
-        && !matches!(name.as_str(), "Dynamic" | "Style" | "EventHandler")
-        // A user function handed `Dynamic[…]` arguments matches on them as
-        // they are (`f[Dynamic[{p_ - q_, …}]]`); only primitives draw values.
-        && crate::evaluator::functions::is_builtin_symbol(name) =>
+      if let Some(released) = release_primitive_dynamics(name, args) =>
     {
-      let released: Vec<Expr> = args
-        .iter()
-        .map(|a| match a {
-          Expr::FunctionCall { name, args: inner }
-            if name == "Dynamic" && inner.len() == 1 =>
-          {
-            crate::evaluator::evaluate_expr_to_expr(&inner[0])
-              .unwrap_or_else(|_| a.clone())
-          }
-          other if contains_dynamic(other) => {
-            let value = release_dynamics(other);
-            crate::evaluator::evaluate_expr_to_expr(&value).unwrap_or(value)
-          }
-          other => other.clone(),
-        })
-        .collect();
-      collect_primitives(&call(name.as_str(), released), style, prims, errors);
+      collect_primitives(&released, style, prims, errors);
     }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
@@ -6806,14 +6786,35 @@ pub(crate) fn button_svg(args: &[Expr]) -> String {
 /// `ImageSize` and painted with its `Background`.
 fn button_text_plate_svg(args: &[Expr]) -> String {
   let size = button_image_size(args);
+  // A `Style[label, …]` label (`Style[n, "Title"]`, `Style[k, 24, Bold]`)
+  // keeps its font size, color and face on the plate.
+  let mut text_style = StyleState::default();
+  let mut styled = false;
+  let mut inner = &args[0];
+  while let Expr::FunctionCall { name, args: sargs } = inner
+    && name == "Style"
+    && !sargs.is_empty()
+  {
+    for d in style_directives_in_application_order(&sargs[1..]) {
+      if apply_text_style_directive(d, &mut text_style)
+        || parse_color(d).is_some_and(|c| {
+          text_style.color = c;
+          true
+        })
+      {
+        styled = true;
+      }
+    }
+    inner = &sargs[0];
+  }
   let label = graphics_text_content(&args[0]);
+  let font = styled.then_some(&text_style);
+  let natural = button_plate_size_styled(&label, font);
   let plate = match size {
-    Some((w, h)) => button_plate_svg_sized(
-      &label,
-      w,
-      h.unwrap_or(button_plate_size(&label).1),
-    ),
-    None => button_plate_svg(&label),
+    Some((w, h)) => {
+      button_plate_svg_styled(&label, w, h.unwrap_or(natural.1), font)
+    }
+    None => button_plate_svg_styled(&label, natural.0, natural.1, font),
   };
   let background = args
     .iter()
@@ -6846,10 +6847,53 @@ fn button_plate_svg(label: &str) -> String {
 
 /// A `Button` plate of an explicit pixel size.
 fn button_plate_svg_sized(label: &str, w: f64, h: f64) -> String {
+  button_plate_svg_styled(label, w, h, None)
+}
+
+/// The plate size of a button whose label is drawn in `font` (the plain
+/// 14-point label when `None`): the 14-point metric scaled to the size.
+fn button_plate_size_styled(
+  label: &str,
+  font: Option<&StyleState>,
+) -> (f64, f64) {
+  let (w, h) = button_plate_size(label);
+  match font {
+    Some(f) if f.font_size > 14.0 => {
+      let scale = f.font_size / 14.0;
+      (
+        w.max(label.chars().count() as f64 * 8.4 * scale + 24.0),
+        h * scale,
+      )
+    }
+    _ => (w, h),
+  }
+}
+
+/// A `Button` plate of an explicit pixel size, its label drawn in `font`
+/// (size, color, weight and slant) or the plain 14-point black text.
+fn button_plate_svg_styled(
+  label: &str,
+  w: f64,
+  h: f64,
+  font: Option<&StyleState>,
+) -> String {
+  let (size, fill, face) = match font {
+    Some(f) => {
+      let mut face = String::new();
+      if f.font_weight != "normal" {
+        face.push_str(&format!(" font-weight=\"{}\"", f.font_weight));
+      }
+      if f.font_style != "normal" {
+        face.push_str(&format!(" font-style=\"{}\"", f.font_style));
+      }
+      (format!("{}", f.font_size), f.color.to_svg_rgb(), face)
+    }
+    None => ("14".to_string(), "#000000".to_string(), String::new()),
+  };
   format!(
     "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
-     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"14\" fill=\"#000000\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n\
+     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"{size}\" fill=\"{fill}\"{face} text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n\
      </svg>\n",
     w - 1.0,
     h - 1.0,
@@ -6878,6 +6922,43 @@ pub(crate) fn dynamic_current_value(expr: &Expr) -> Expr {
     }
     other => other.clone(),
   }
+}
+
+/// A graphics primitive whose arguments hold `Dynamic[…]` (`Line[{-5
+/// Dynamic[u], 5 Dynamic[u]}]`, `Cuboid[{0.5 + Dynamic[s], …}, …]`) with
+/// every `Dynamic` read as its current value and each such argument
+/// evaluated again with the values in place — what a front end draws.
+/// `None` when no argument holds one, for `Dynamic`/`Style`/`EventHandler`
+/// themselves, and for user functions: those match on `Dynamic[…]`
+/// arguments as they are (`f[Dynamic[{p_ - q_, …}]]`), only built-in
+/// primitives draw values. Shared by the 2D and 3D primitive collectors.
+pub(crate) fn release_primitive_dynamics(
+  name: &str,
+  args: &[Expr],
+) -> Option<Expr> {
+  if !args.iter().any(contains_dynamic)
+    || matches!(name, "Dynamic" | "Style" | "EventHandler")
+    || !crate::evaluator::functions::is_builtin_symbol(name)
+  {
+    return None;
+  }
+  let released: Vec<Expr> = args
+    .iter()
+    .map(|a| match a {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Dynamic" && inner.len() == 1 =>
+      {
+        crate::evaluator::evaluate_expr_to_expr(&inner[0])
+          .unwrap_or_else(|_| a.clone())
+      }
+      other if contains_dynamic(other) => {
+        let value = release_dynamics(other);
+        crate::evaluator::evaluate_expr_to_expr(&value).unwrap_or(value)
+      }
+      other => other.clone(),
+    })
+    .collect();
+  Some(call(name, released))
 }
 
 /// Whether `expr` holds a `Dynamic[…]` anywhere inside it.
@@ -6909,9 +6990,12 @@ pub(crate) fn manipulator_svg(args: &[Expr]) -> Option<String> {
   let value = expr_to_f64(&dynamic_current_value(args.first()?))?;
   let (lo, hi) = match args.get(1) {
     None => (0.0, 1.0),
-    Some(Expr::List(range)) if range.len() >= 2 => {
-      (expr_to_f64(&range[0])?, expr_to_f64(&range[1])?)
-    }
+    // A bound may be live (`{1, Dynamic[n], 1}`): it sits at the current
+    // value of its variable.
+    Some(Expr::List(range)) if range.len() >= 2 => (
+      expr_to_f64(&dynamic_current_value(&range[0]))?,
+      expr_to_f64(&dynamic_current_value(&range[1]))?,
+    ),
     Some(_) => return None,
   };
   if hi <= lo {
@@ -10128,7 +10212,7 @@ fn affine_primitive(
 
 /// The counterclockwise angle of a 2D `Rotate` specification: a plain
 /// number `θ`, or a pair of vectors `{u, v}` meaning "rotate `u` onto `v`".
-fn rotation_angle(spec: &Expr) -> Option<f64> {
+pub(crate) fn rotation_angle(spec: &Expr) -> Option<f64> {
   if let Some(angle) = expr_to_f64(spec) {
     return Some(angle);
   }
@@ -13982,16 +14066,30 @@ fn render_primitive(
         let x2 = scx + srx * a2.cos();
         let y2 = scy - sry * a2.sin();
         let large_arc = i32::from((a2 - a1).abs() > std::f64::consts::PI);
-        // An open arc has ends for `CapForm` to shape.
-        let cap = style.cap_form.map_or(String::new(), |c| {
-          format!(" stroke-linecap=\"{}\"", stroke_linecap_attr(Some(c)))
-        });
-        out.push_str(&format!(
-          "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}{cap}/>\n",
-          color.to_svg_rgb(),
-          color.opacity_attr(),
-          dash,
-        ));
+        // An open arc has ends, drawn like a `Line`'s: projecting square
+        // caps unless a `CapForm` says otherwise, so a very short thick arc
+        // still shows as a dot one stroke width across.
+        if (x2 - x1).abs() < 1e-9 && (y2 - y1).abs() < 1e-9 {
+          // A zero-length arc is its end caps alone; SVG renderers drop a
+          // path whose arc endpoints coincide, so draw the dot as a shape.
+          if let Some(dot) =
+            degenerate_line_dot(&[(x1, y1), (x2, y2)], sw, style.cap_form)
+          {
+            out.push_str(&format!(
+              "{dot} fill=\"{}\"{}/>\n",
+              color.to_svg_rgb(),
+              color.opacity_attr(),
+            ));
+          }
+        } else {
+          let cap = line_linecap_attr(style.cap_form);
+          out.push_str(&format!(
+            "<path d=\"M {x1:.2},{y1:.2} A {srx:.2},{sry:.2} 0 {large_arc} 0 {x2:.2},{y2:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{} stroke-linecap=\"{cap}\"/>\n",
+            color.to_svg_rgb(),
+            color.opacity_attr(),
+            dash,
+          ));
+        }
       } else {
         out.push_str(&format!(
           "<ellipse cx=\"{scx:.2}\" cy=\"{scy:.2}\" rx=\"{srx:.2}\" ry=\"{sry:.2}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\"{}{}/>\n",
@@ -16093,6 +16191,24 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
+  // An explicit `AxesOrigin` of drawn axes lies inside an automatic range:
+  // Wolfram widens the range to reach it, so an axis set off below the
+  // data (`AxesOrigin -> {1, Min[data] - 0.25}`) is still drawn.
+  if axes.0 || axes.1 {
+    if let (Some(x), None) = (axes_origin.0, plot_range_x)
+      && x.is_finite()
+    {
+      bb.x_min = bb.x_min.min(x);
+      bb.x_max = bb.x_max.max(x);
+    }
+    if let (Some(y), None) = (axes_origin.1, plot_range_y)
+      && y.is_finite()
+    {
+      bb.y_min = bb.y_min.min(y);
+      bb.y_max = bb.y_max.max(y);
+    }
+  }
+
   // Without an `AxesOrigin` the axes cross at the origin when it is in
   // view, else at the low end of the content's own range — not of the
   // padding around it, so the axis that overruns the crossing hides the
@@ -17384,6 +17500,65 @@ fn is_text_display_item(item: &Expr) -> bool {
     }
     _ => false,
   }
+}
+
+/// `Text[…]` around a text `Row` (under any `Style` wrappers) pushed onto
+/// the row's items: `Text[Style[Row[{a, b}], 14]]` → `Style[Row[{Text[a],
+/// Text[b]}], 14]`, so the row renderer sets each item in the proportional
+/// text face instead of the monospace face of a bare `Row`. A bare string
+/// becomes a one-item row. `None` for any other content (a picture, or a
+/// wider layout such as a list re-flowed into a `Column` of lines).
+pub(crate) fn text_pushed_into_row(content: &Expr) -> Option<Expr> {
+  match content {
+    Expr::String(_) => Some(call1(
+      "Row",
+      Expr::List(vec![call1("Text", content.clone())].into()),
+    )),
+    Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let items: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          // Items the row draws as their own sub-layout (a stacked
+          // fraction, a nested grid) keep their typesetting.
+          let keep = is_text_display_item(item)
+            || crate::syntax::spacer_width_pts(item).is_some()
+            || crate::evaluator::lays_out_a_graphic(item)
+            || nested_layout_svg(item).is_some()
+            || standard_fraction_cell_svg(item, 14.0).is_some();
+          if keep {
+            item.clone()
+          } else {
+            call1("Text", item.clone())
+          }
+        })
+        .collect();
+      let mut new_args = vec![Expr::List(items.into())];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Row", new_args))
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      let inner = text_pushed_into_row(&args[0])?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call(name.as_str(), new_args))
+    }
+    _ => None,
+  }
+}
+
+/// A `Text[…]` layout item (possibly styled) whose resolved content is a
+/// text `Row`: drawn with `Text` pushed onto the row's items (see
+/// `text_pushed_into_row`). `None` for any other item.
+fn text_item_layout_svg(item: &Expr, resolved: &Expr) -> Option<String> {
+  if !is_text_display_item(item) {
+    return None;
+  }
+  nested_layout_svg(&text_pushed_into_row(resolved)?)
 }
 
 /// If `s` is a single n-ary/large operator glyph (∑ ∏ ∫ …), return the font
@@ -23167,6 +23342,13 @@ pub fn axes_label_entry(e: &Expr) -> Option<String> {
     .or_else(|| styled_axis_label(e))
 }
 
+/// A `FrameLabel` entry as text markup: a plain mathematical expression is
+/// typeset in TraditionalForm italics like an `AxesLabel` entry (see
+/// [`traditional_math_axis_label`]), anything else as [`styled_axis_label`].
+pub fn frame_label_text(e: &Expr) -> Option<String> {
+  traditional_math_axis_label(e).or_else(|| styled_axis_label(e))
+}
+
 /// An `AxesLabel` entry that is a plain mathematical expression, typeset as
 /// marked-up text. A graphic's `FormatType` is `TraditionalForm`, so such a
 /// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
@@ -23317,6 +23499,19 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
         args: new_args,
       }
     }
+    // A list label keeps its braces; each element is set on its own.
+    Expr::List(items) if contains_visible_style(e) => {
+      Expr::List(items.iter().map(traditionalize_styled_label).collect())
+    }
+    // An explicit `TraditionalForm` around styled content is the notation
+    // every unstyled part gets anyway.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm"
+        && args.len() == 1
+        && contains_visible_style(&args[0]) =>
+    {
+      traditionalize_styled_label(&args[0])
+    }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
     _ if contains_visible_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
@@ -23336,6 +23531,16 @@ fn contains_visible_style(e: &Expr) -> bool {
       Some(Expr::List(items)) => items.iter().any(contains_visible_style),
       _ => false,
     },
+    // `{Style[f[t], Red], Style[g[t], Blue]}`: a list label shows each
+    // element with its own styling.
+    Expr::List(items) => items.iter().any(contains_visible_style),
+    // `TraditionalForm[Style[f[t], Red]]` only changes the notation, so the
+    // styling it wraps still shows.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      contains_visible_style(&args[0])
+    }
     // `Text[Style["ξ", 14]]`: a one-argument `Text` is just its label, so
     // the styling of what it wraps still shows.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
@@ -23352,6 +23557,16 @@ fn contains_visible_style(e: &Expr) -> bool {
       args.iter().any(contains_visible_style)
         || args[1..].iter().any(script_needs_typesetting)
     }
+    // `Style["e", Italic]^Row[{Style["i", Italic], "t"}]`: a power keeps
+    // the styling of its base and exponent, the exponent raised.
+    Expr::FunctionCall { name, args } if name == "Power" => {
+      args.iter().any(contains_visible_style)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => contains_visible_style(left) || contains_visible_style(right),
     _ => false,
   }
 }
@@ -24850,6 +25065,11 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
   };
   let ps = log_scaled_plot_source(ps);
   let ps = ps.as_ref();
+  // Every fill (and scatter stem) is gathered first and emitted before
+  // any series' curve or points, as in the Wolfram Language's own plot
+  // output: a `Filling -> {1 -> {2}}` area must not paint over the line
+  // of a series drawn before it.
+  let mut fill_layer: Vec<Expr> = Vec::new();
   let mut series_prims: Vec<Expr> = Vec::new();
   let mut skip_until = 0usize;
   for (si, sd) in ps.series.iter().enumerate() {
@@ -24924,7 +25144,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           ));
           fill_prims.push(call1("Polygon", Expr::List(coords.into())));
         }
-        series_prims.push(Expr::List(fill_prims.into()));
+        fill_layer.push(Expr::List(fill_prims.into()));
       }
     }
     // Scattered points with a `Filling` carry a stem from each point to the
@@ -24960,7 +25180,7 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           ),
         ));
       }
-      series_prims.push(Expr::List(stems.into()));
+      fill_layer.push(Expr::List(stems.into()));
     }
     // Color directive
     series_prims.push(crate::functions::plot::series_color_expr(sd));
@@ -25170,7 +25390,8 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       }
     }
   }
-  series_prims
+  fill_layer.extend(series_prims);
+  fill_layer
 }
 
 /// The `Line` primitives of a chain of runs that continue one another (see
@@ -34327,7 +34548,7 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
 
 /// Split the 2D `ToString` layout of a scientific number — the exponent on
 /// the line above `mantissa × 10` — into `("mantissa × 10", "exponent")`.
-fn split_scientific_2d(text: &str) -> Option<(String, String)> {
+pub(crate) fn split_scientific_2d(text: &str) -> Option<(String, String)> {
   let (top, bottom) = text.split_once('\n')?;
   let (exp, base) = (top.trim(), bottom.trim());
   let exp_digits = exp.strip_prefix('-').unwrap_or(exp);
@@ -35818,6 +36039,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
           }
         }
         _ => match nested_layout_svg(&resolved)
+          .map(|svg| text_item_layout_svg(item, &resolved).unwrap_or(svg))
           .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
         {
           Some(svg) => {
@@ -36655,6 +36877,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
           }
         }
         _ => match nested_layout_svg(&resolved)
+          .map(|svg| text_item_layout_svg(item, &resolved).unwrap_or(svg))
           .or_else(|| standard_fraction_cell_svg(&resolved, 14.0))
         {
           Some(svg) => {
@@ -43911,6 +44134,22 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
     {
       expr.clone()
     }
+    // `Tooltip[Button[…], tip]` keeps its button in the body as well:
+    // lifting the `Button` out would leave `Tooltip[Nothing, tip]`, which
+    // draws the literal word "Nothing", and would tear the button out of
+    // the `Grid` cell (and its `Background`) the body places it in. The
+    // picture renderer draws the button plate with its label and a hit
+    // region, so it stays pressable where it is.
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: b, args: bargs })
+            if b == "Button" && bargs.len() >= 2
+        ) =>
+    {
+      expr.clone()
+    }
     // A bare `VerticalSlider[Dynamic[var], {min, max}, …]` drawn by the body
     // (a Demonstration's side slider next to its picture) is a live control
     // writing `var` back, so it moves into the display list as well.
@@ -44554,12 +44793,14 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
 }
 
 /// Record the name of each `Control[spec]` that a `Row[{…}]` places
-/// directly after another `Control[…]`, so the two share one line of the
-/// control panel the way Wolfram lays such a row out (e.g. a setter bar
-/// with a 2D slider beside it). Layout containers (`Column[{Row[…],
-/// Row[…]}]`, …) are searched for such rows. `Spacer[…]` and string items
-/// between two controls keep them on the same line; any other item breaks
-/// the run.
+/// directly after another `Control[…]` or after a caption, so they share
+/// one line of the control panel the way Wolfram lays such a row out (e.g.
+/// a setter bar with a 2D slider beside it, or a leading
+/// `"number of sides:"` text followed by two setter bars). Layout
+/// containers (`Column[{Row[…], Row[…]}]`, …) are searched for such rows.
+/// `Spacer[…]` items keep the run going, and a caption piece (a string or
+/// `Style[…]`/`Text[…]` label holding no control, which the panel draws as
+/// a heading row) starts or continues it; any other item breaks the run.
 fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
   match spec {
     Expr::FunctionCall { name, args } if name == "Row" => {
@@ -44591,7 +44832,13 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
             }
           }
           Expr::FunctionCall { name, .. } if name == "Spacer" => {}
-          Expr::String(_) => {}
+          Expr::String(_) => after_control = true,
+          Expr::FunctionCall { name, .. }
+            if (name == "Style" || name == "Text")
+              && !row_item_holds_control(item) =>
+          {
+            after_control = true;
+          }
           other => {
             after_control = false;
             collect_row_joined_controls(other, out);
@@ -44610,6 +44857,21 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
       }
     }
     _ => {}
+  }
+}
+
+/// Whether a `Row` item contains a `Control[…]`/`Button[…]` anywhere, i.e.
+/// is not a pure caption piece.
+fn row_item_holds_control(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Control"
+        || name == "Button"
+        || name == "Dynamic"
+        || args.iter().any(row_item_holds_control)
+    }
+    Expr::List(items) => items.iter().any(row_item_holds_control),
+    _ => false,
   }
 }
 
@@ -52913,7 +53175,8 @@ fn display_expr_to_node(
       // written inside a display element: a live slider writing back to
       // `lval`.
       "Manipulator" | "Slider" | "VerticalSlider" if args.len() >= 2 => {
-        match slider_node(args, Vec::new(), name == "VerticalSlider") {
+        match slider_node(args, Vec::new(), name == "VerticalSlider", bindings)
+        {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -52922,7 +53185,7 @@ fn display_expr_to_node(
       // display element: the play button sweeps `lval` over its range, so
       // draw it as a slider over that range (the speed only paces playback).
       "Trigger" if args.len() >= 2 => {
-        match slider_node(&args[..2], Vec::new(), false) {
+        match slider_node(&args[..2], Vec::new(), false, bindings) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
@@ -52969,7 +53232,7 @@ fn display_expr_to_node(
             "Manipulator" | "Slider" | "VerticalSlider"
           ) && sargs.len() >= 2 =>
           {
-            match slider_node(sargs, after, n == "VerticalSlider") {
+            match slider_node(sargs, after, n == "VerticalSlider", bindings) {
               Some(node) => node,
               None => static_leaf_node(&args[0], bindings),
             }
@@ -53961,6 +54224,7 @@ fn slider_node(
   args: &[Expr],
   after: Vec<String>,
   vertical: bool,
+  bindings: &[(String, String)],
 ) -> Option<DisplayNode> {
   let lval = match args.first() {
     Some(Expr::FunctionCall { name, args: dargs })
@@ -53978,6 +54242,26 @@ fn slider_node(
   if bounds.len() < 2 {
     return None;
   }
+  // A bound may itself be live (`{1, Dynamic[n], 1}`, a slider whose
+  // maximum follows another control): read it at the current bindings.
+  let read_live = |e: &Expr| {
+    if bindings.is_empty() {
+      crate::evaluator::evaluate_expr_to_expr(e).ok()
+    } else {
+      eval_display_in_scope(e, bindings)
+    }
+  };
+  let bounds: Vec<Expr> = bounds
+    .iter()
+    .map(|b| match b {
+      Expr::FunctionCall { name, args: dargs }
+        if name == "Dynamic" && !dargs.is_empty() =>
+      {
+        read_live(&dargs[0]).unwrap_or_else(|| b.clone())
+      }
+      other => other.clone(),
+    })
+    .collect();
   let min = expr_to_f64(&bounds[0]).filter(|v| v.is_finite())?;
   let max = expr_to_f64(&bounds[1]).filter(|v| v.is_finite())?;
   let step = bounds
@@ -53985,8 +54269,7 @@ fn slider_node(
     .and_then(expr_to_f64)
     .filter(|v| v.is_finite() && *v > 0.0)
     .unwrap_or(0.0);
-  let current = crate::evaluator::evaluate_expr_to_expr(lval)
-    .ok()
+  let current = read_live(lval)
     .and_then(|e| expr_to_f64(&e))
     .filter(|v| v.is_finite())
     .unwrap_or(min)
