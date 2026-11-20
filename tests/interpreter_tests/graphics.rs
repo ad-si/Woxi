@@ -21509,6 +21509,77 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("opacity=\"0.7\" fill=\"#00AAF2\""), "{svg}");
     }
 
+    /// The `(width, height)` of a histogram's plotting area, read off its
+    /// x axis and the y axis rising from the axis' left end.
+    fn histogram_axes_extent(svg: &str) -> (f64, f64) {
+      let lines: Vec<[f64; 4]> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line "))
+        .map(|l| {
+          let attr = |name: &str| -> f64 {
+            let start =
+              l.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+            let end = start + l[start..].find('"').unwrap();
+            l[start..end].parse().unwrap()
+          };
+          [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+        })
+        .collect();
+      let x_axis = lines
+        .iter()
+        .filter(|l| l[1] == l[3])
+        .max_by(|a, b| (a[2] - a[0]).total_cmp(&(b[2] - b[0])))
+        .unwrap();
+      let y_axis = lines
+        .iter()
+        .filter(|l| l[0] == l[2] && l[0] == x_axis[0])
+        .max_by(|a, b| (a[3] - a[1]).total_cmp(&(b[3] - b[1])))
+        .unwrap();
+      (x_axis[2] - x_axis[0], y_axis[3] - y_axis[1])
+    }
+
+    #[test]
+    fn histogram_keeps_aspect_ratio_in_fixed_image_box() {
+      // A wide `ImageSize -> {w, h}` box (as `GraphicsColumn` hands its
+      // panels) keeps the plotting area at 1/GoldenRatio and centers it
+      // horizontally instead of stretching it to the box.
+      let svg = export_svg("Histogram[{1, 2, 2, 3}, ImageSize -> {300, 150}]");
+      assert!(
+        svg.starts_with("<svg width=\"300\" height=\"150\""),
+        "{svg}"
+      );
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 0.618).abs() < 0.02, "{w} x {h}");
+      assert!(w < 2400.0, "{w}");
+
+      // A tall box centers it vertically, spanning the full width.
+      let svg = export_svg("Histogram[{1, 2, 2, 3}, ImageSize -> {300, 400}]");
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 0.618).abs() < 0.02, "{w} x {h}");
+
+      // An explicit `AspectRatio` is kept the same way.
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3}, ImageSize -> {300, 150}, AspectRatio -> 1/2]",
+      );
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 0.5).abs() < 0.02, "{w} x {h}");
+
+      // `AspectRatio -> Full` fills the box.
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3}, ImageSize -> {300, 150}, AspectRatio -> Full]",
+      );
+      let (w, _) = histogram_axes_extent(&svg);
+      assert!(w > 2600.0, "{w}");
+    }
+
+    #[test]
+    fn histogram_aspect_ratio_sets_image_height() {
+      let svg = export_svg("Histogram[{1, 2, 2, 3}, AspectRatio -> 1]");
+      assert!(svg.starts_with("<svg width=\"360\""), "{svg}");
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 1.0).abs() < 0.02, "{w} x {h}");
+    }
+
     #[test]
     fn charts_use_wl15_chart_palette() {
       // WL 15 2D charts color with ColorData[118] (their theme's

@@ -1074,6 +1074,14 @@ pub(crate) struct ChartOptions {
   /// `ColorFunctionScaling -> False` hands `f` the raw values instead of
   /// values rescaled to 0..1.
   pub color_function_scaling: bool,
+  /// `AspectRatio -> r`: the plotting area's height over its width.
+  /// `None` is the default golden ratio (or `Full`, see below).
+  pub aspect_ratio: Option<f64>,
+  /// `AspectRatio -> Full`: the plotting area fills whatever box it gets.
+  pub aspect_full: bool,
+  /// `ImageSize -> {w, h}` with an explicit height fixes the image's box;
+  /// the plotting area then keeps its aspect ratio and is centered in it.
+  pub fixed_height: bool,
 }
 
 /// A chart label with optional rotation angle (in radians).
@@ -3184,6 +3192,9 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     epilog: Vec::new(),
     color_function: None,
     color_function_scaling: true,
+    aspect_ratio: None,
+    aspect_full: false,
+    fixed_height: false,
   };
   // When an option is given more than once, its first setting wins, as for
   // any Wolfram option list (`PlotRange -> {{-1, 5}, All}, …, PlotRange ->
@@ -3208,6 +3219,13 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
             opts.svg_height = h;
             opts.full_width = fw;
           }
+          opts.fixed_height = matches!(replacement, Expr::List(wh)
+            if wh.len() == 2 && try_eval_to_f64(&wh[1]).is_some());
+        }
+        "AspectRatio" => {
+          opts.aspect_ratio = try_eval_to_f64(replacement).filter(|r| *r > 0.0);
+          opts.aspect_full =
+            matches!(replacement, Expr::Identifier(n) if n == "Full");
         }
         "ChartLabels" => {
           // ChartLabels can be `Placed[labels, position]`,

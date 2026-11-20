@@ -3218,6 +3218,9 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     epilog: Vec::new(),
     color_function: None,
     color_function_scaling: true,
+    aspect_ratio: None,
+    aspect_full: false,
+    fixed_height: false,
   }
 }
 
