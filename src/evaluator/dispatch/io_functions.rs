@@ -7806,6 +7806,26 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !is_traditional_matrix_form(&args[0])
         && distribute_format_over_tableform(&args[0]).is_none() =>
     {
+      // `Style[Framed[content, opts…], dirs…]`: the style is inherited by the
+      // framed content, and the box keeps its frame. Typeset as styled text,
+      // the frame was dropped and only the content's text was shown.
+      if let Expr::FunctionCall {
+        name: box_name,
+        args: box_args,
+      } = &args[0]
+        && matches!(box_name.as_str(), "Framed" | "Panel")
+        && !box_args.is_empty()
+        && args.len() >= 2
+      {
+        let mut new_box_args = box_args.to_vec();
+        new_box_args[0] = call(
+          "Style",
+          std::iter::once(box_args[0].clone())
+            .chain(args[1..].iter().cloned())
+            .collect(),
+        );
+        return expr_to_svg(&call(box_name.as_str(), new_box_args));
+      }
       let pushed = crate::functions::graphics::style_pushed_into_layout(
         &args[0],
         &args[1..],
