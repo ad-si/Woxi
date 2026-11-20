@@ -2825,6 +2825,57 @@ fn bc_to_single_connective(
   }
 }
 
+/// Rewrite a DNF with `Implies` and `Not` only: `x || y` is
+/// `Implies[!x, y]` and `x && y` is `!Implies[x, !y]`, each folded from the
+/// right over the terms of the disjunction and the literals of a term.
+fn bc_to_implies(dnf: &Expr) -> Expr {
+  fn negate(e: Expr) -> Expr {
+    match &e {
+      Expr::FunctionCall { name, args } if name == "Not" && args.len() == 1 => {
+        args[0].clone()
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Not,
+        operand,
+      } => (**operand).clone(),
+      _ => call1("Not", e),
+    }
+  }
+  fn conjunction(literals: &[Expr]) -> Expr {
+    match literals {
+      [] => bool_expr(true),
+      [single] => single.clone(),
+      [first, rest @ ..] => negate(call(
+        "Implies",
+        vec![first.clone(), negate(conjunction(rest))],
+      )),
+    }
+  }
+  fn term(t: &Expr) -> Expr {
+    match t {
+      Expr::FunctionCall { name, args } if name == "And" => {
+        conjunction(&args.iter().cloned().collect::<Vec<_>>())
+      }
+      other => other.clone(),
+    }
+  }
+  fn disjunction(terms: &[Expr]) -> Expr {
+    match terms {
+      [] => bool_expr(false),
+      [single] => term(single),
+      [first, rest @ ..] => {
+        call("Implies", vec![negate(term(first)), disjunction(rest)])
+      }
+    }
+  }
+  match dnf {
+    Expr::FunctionCall { name, args } if name == "Or" => {
+      disjunction(&args.iter().cloned().collect::<Vec<_>>())
+    }
+    other => term(other),
+  }
+}
+
 /// Rewrite a normal form with one Sheffer connective. `top` is the connective
 /// joining the clauses of the normal form (`Or` for a DNF, `And` for a CNF),
 /// `clause_head` the one inside a clause, and `sheffer` the `Nand`/`Nor` that
@@ -3004,7 +3055,7 @@ fn bc_drop_redundant_clauses(
 /// BooleanConvert[expr] or BooleanConvert[expr, form]
 /// Convert boolean expressions to different normal forms.
 /// Supported forms: "DNF"/"SOP", "CNF"/"POS", "AND", "OR", "NAND", "NOR",
-/// "ANF", "IF", or default (DNF).
+/// "IMPLIES", "ANF", "IF"/"BDT", "BFF", or default (DNF).
 pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.is_empty() || args.len() > 2 {
     return Err(InterpreterError::EvaluationError(
@@ -3095,7 +3146,9 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A DNF is a Nand of Nands, a CNF a Nor of Nors.
     "NAND" => normalize_not(&bc_to_sheffer(&dnf(), "Or", "And", "Nand")),
     "NOR" => normalize_not(&bc_to_sheffer(&cnf()?, "And", "Or", "Nor")),
-    "ANF" | "IF" => {
+    // "BDT" (binary decision tree) is the same Shannon decomposition as
+    // "IF".
+    "ANF" | "IF" | "BDT" => {
       let Some(table) = &table else {
         return Ok(unevaluated("BooleanConvert", args));
       };
@@ -3106,6 +3159,19 @@ pub fn boolean_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       normalize_not(&built)
     }
+    // The BooleanFunction form: the opaque `BooleanFunction["BDD" -> …]`
+    // object of the truth table, applied to the variables.
+    "BFF" => {
+      let Some(table) = &table else {
+        return Ok(unevaluated("BooleanConvert", args));
+      };
+      Expr::CurriedCall {
+        func: Box::new(bdd_object(table, variables.len())),
+        args: variables.clone(),
+      }
+    }
+    // Express with Implies and Not only, starting from the DNF.
+    "IMPLIES" => normalize_not(&bc_to_implies(&dnf())),
     // Express with Or and Not only: take the DNF and rewrite every
     // conjunctive clause And[l…] as Not[Or[!l…]] (De Morgan). normalize_not
     // renders the introduced Not[…] wrappers with the `!` operator.
