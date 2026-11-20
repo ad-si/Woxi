@@ -6070,6 +6070,18 @@ fn generate_svg_with_options(
   // plotting area keeps its ratio and is centered in what the padding
   // leaves (see `padded_margins`). Without an `AspectRatio` the default
   // 1/GoldenRatio applies the same way.
+  // A lone one-line `PlotLabel` sits above the padding, so a canvas sized
+  // here grows by the title's band rather than giving up plotting area.
+  let lone_title = if opts.image_padding.is_some()
+    && !opts.image_size_explicit.1
+    && !has_top_label
+    && axes_label_y.is_none()
+    && plot_label_extra_lines(opts.plot_label.as_ref()) == 0
+  {
+    decorations.title
+  } else {
+    0.0
+  };
   if let Some(ar) = opts
     .aspect_ratio
     .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
@@ -6078,7 +6090,8 @@ fn generate_svg_with_options(
   {
     let plot_w = render_width as f64 - (pad_left + pad_right) * sf;
     if plot_w > 0.0 && ar > 0.0 {
-      let target_render_h = plot_w * ar + (pad_bottom + pad_top) * sf;
+      let target_render_h =
+        plot_w * ar + (pad_bottom + pad_top + lone_title) * sf;
       svg_height =
         ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
@@ -6097,8 +6110,9 @@ fn generate_svg_with_options(
     mut margin_bottom,
   ) = match opts.image_padding {
     Some(padding) => {
+      let [pad_left, pad_right, pad_bottom, pad_top] = padding;
       let m = padded_margins(
-        padding,
+        [pad_left, pad_right, pad_bottom, pad_top + lone_title],
         (render_width, render_height),
         opts.aspect_ratio,
         opts.aspect_full,

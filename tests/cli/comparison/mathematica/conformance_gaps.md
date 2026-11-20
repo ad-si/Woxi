@@ -10397,3 +10397,12 @@ like `s_NDSolve`StateData`, match.
 above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
 other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
 Only a title that is framed as a whole gets a box there.
+
+### Symbols inside a `Style`d `Row` `PlotLabel` drawn upright
+
+A saved snapshot of `ListPlot[…, PlotLabel -> Style[Row[{x^m, "  vs.  ",
+y^n}], 16]]` (with `x` and `y` unassigned symbols) shows the letters
+upright, while Woxi sets single-letter symbols in a plot label in italics as
+`TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
+is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
+rendered with another `FormatType`.
