@@ -364,7 +364,8 @@ fn parse_single_cell(s: &str) -> crate::notebook::Cell {
   // Parts before the style are the content.
   let content_parts = &parts[..style_idx];
   let raw_content = content_parts.join(",");
-  let content = extract_cell_content(&raw_content);
+  let content = stored_raster_image_box(style, &raw_content)
+    .unwrap_or_else(|| extract_cell_content(&raw_content));
 
   // Parts after the style are options.
   let mut collapsed = false;
@@ -381,6 +382,29 @@ fn parse_single_cell(s: &str) -> crate::notebook::Cell {
   }
 }
 
+/// The raw box text of a stored Output cell that holds nothing but a
+/// typeset raster image (`GraphicsBox[TagBox[RasterBox[…],
+/// BoxForm`ImageTag[…]], …]`), as a Demonstration's snapshot cells do.
+/// Such a cell is a picture the interpreter cannot regenerate, so it keeps
+/// its box form for `stored_output_image_svg` to decode — the same as the
+/// `PaneBox`-wrapped snapshot form — rather than becoming the `Image[…]`
+/// source an image literal inside an Input cell is rebuilt to.
+fn stored_raster_image_box(style: CellStyle, raw: &str) -> Option<String> {
+  if style != CellStyle::Output {
+    return None;
+  }
+  let raw = raw.trim();
+  let inner = raw
+    .strip_prefix("BoxData[")
+    .and_then(|r| r.strip_suffix(']'))
+    .unwrap_or(raw)
+    .trim();
+  let rest = inner.strip_prefix("GraphicsBox[")?;
+  let (args, _) = find_matching_bracket(rest).ok()?;
+  extract_image_from_boxes(split_top_level_commas(args).first()?)?;
+  Some(inner.to_string())
+}
+
 /// Does this option-expression set `CellOpen -> False`?
 fn is_cell_open_false(s: &str) -> bool {
   let s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
@@ -395,6 +419,18 @@ fn draws_nothing(s: &str) -> bool {
   crate::syntax::substitute_private_use_glyphs(s)
     .trim()
     .is_empty()
+}
+
+/// The base a prefix script keeps when its box base `draws_nothing`: a
+/// blank space (`SuperscriptBox[" ", "1"]`, as in the term symbol `1s² ¹S`)
+/// still typesets its gap, while an invisible base
+/// (`\[InvisiblePrefixScriptBase]`) or an empty one typesets nothing.
+fn blank_base_text(s: &str) -> &'static str {
+  if crate::syntax::substitute_private_use_glyphs(s).contains(' ') {
+    " "
+  } else {
+    ""
+  }
 }
 
 /// The part specification inside a `⟦…⟧` group, or None when `s` is an
@@ -1140,7 +1176,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
       // stays unevaluated and keeps it.
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
-        format!("Superscript[\"\", {}]", conv(&args[1]))
+        format!(
+          "Superscript[\"{}\", {}]",
+          blank_base_text(&conv(&args[0])),
+          conv(&args[1])
+        )
       }
       // `SuperscriptBox[f, TagBox[order, Derivative]]` is the typeset form
       // of a mixed or higher-order partial derivative — emit
@@ -1234,7 +1274,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           // Prefix subscript, as above — keep an explicit empty string
           // so the result still parses.
           if draws_nothing(&base) {
-            format!("Subscript[\"\", {sub}]")
+            format!("Subscript[\"{}\", {sub}]", blank_base_text(&base))
           } else {
             format!("Subscript[{base}, {sub}]")
           }
@@ -2050,6 +2090,13 @@ fn has_real_predecessor(
     // Inside a row a line break is layout, not a statement boundary
     if t == "\"\\n\"" && !newline_ends_statement {
       continue;
+    }
+    // Between the items of a `BoxData[{…}]` statement list, the
+    // FrontEnd's `\[IndentingNewLine]` separates statements just like a
+    // literal `"\n"`: `BoxData[{RowBox[{a = 1, ";"}], "\[IndentingNewLine]",
+    // RowBox[{b = 2, ";"}]}]` is two lines, not `a = 1; (b = 2);`.
+    if t == "\"\\[IndentingNewLine]\"" && newline_ends_statement {
+      return false;
     }
     // A literal `"\n"` multi-statement separator, a list/argument comma or
     // statement `;`, or an opening delimiter starting the enclosing group
@@ -2969,6 +3016,22 @@ fn strip_number_precision_mark(text: &str) -> Option<String> {
   (is_number && is_mark).then(|| number.to_string())
 }
 
+thread_local! {
+  /// Set while [`render_traditional_boxes_text`] renders a box tree.
+  static SPACE_AFTER_COMMAS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// [`render_boxes_text`] for a `ToString[expr, TraditionalForm]` box tree:
+/// the typeset readout of a value (`{925, 0, 0}`), whose list commas are
+/// followed by a space as the FrontEnd draws them.
+pub(crate) fn render_traditional_boxes_text(s: &str) -> String {
+  let previous = SPACE_AFTER_COMMAS.replace(true);
+  let text = render_boxes_text(s);
+  SPACE_AFTER_COMMAS.set(previous);
+  text
+}
+
 pub(crate) fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
 
@@ -3005,6 +3068,16 @@ pub(crate) fn render_boxes_text(s: &str) -> String {
         continue;
       }
       out.push_str(&render_boxes_text(items[i]));
+      // A `TraditionalForm` readout sets a separating comma with a space
+      // after it (`{1, 2}`), unless the boxes already spell one out.
+      if SPACE_AFTER_COMMAS.get()
+        && is_bare_char(items[i], ',')
+        && items
+          .get(i + 1)
+          .is_some_and(|next| !render_boxes_text(next).starts_with(' '))
+      {
+        out.push(' ');
+      }
       i += 1;
     }
     return out;
@@ -7659,13 +7732,11 @@ Cell["Chapter 2", "Chapter"]
     assert!(out.trim_end().ends_with('.'), "{out}");
   }
 
-  #[test]
-  fn test_stored_output_raster_snapshot_decodes_to_svg() {
-    // Build the exact serialization Mathematica writes for a stored
-    // Rasterize result: `RawArray["UnsignedInteger8", pixels]` with a
-    // rank-3 {height, width, 3} byte array, zlib-compressed and
-    // base64-encoded behind a "1:" prefix.
-    let (h, w) = (2u32, 3u32);
+  /// Build the exact serialization Mathematica writes for a stored
+  /// Rasterize result: `RawArray["UnsignedInteger8", pixels]` with a
+  /// rank-3 {height, width, 3} byte array, zlib-compressed and
+  /// base64-encoded (returned without the "1:" prefix).
+  fn rgb_snapshot_payload(h: u32, w: u32) -> String {
     let mut raw: Vec<u8> = Vec::new();
     raw.extend_from_slice(b"!boR");
     raw.push(b'f');
@@ -7681,7 +7752,7 @@ Cell["Chapter 2", "Chapter"]
     raw.extend_from_slice(&h.to_le_bytes());
     raw.extend_from_slice(&w.to_le_bytes());
     raw.extend_from_slice(&3u32.to_le_bytes());
-    raw.extend_from_slice(&[128u8; 2 * 3 * 3]);
+    raw.extend(std::iter::repeat_n(128u8, (h * w * 3) as usize));
 
     use base64::Engine;
     use std::io::Write;
@@ -7690,8 +7761,12 @@ Cell["Chapter 2", "Chapter"]
       flate2::Compression::default(),
     );
     enc.write_all(&raw).unwrap();
-    let b64 =
-      base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap());
+    base64::engine::general_purpose::STANDARD.encode(enc.finish().unwrap())
+  }
+
+  #[test]
+  fn test_stored_output_raster_snapshot_decodes_to_svg() {
+    let b64 = rgb_snapshot_payload(2, 3);
     let content = format!(
       "PaneBox[\n  GraphicsBox[\n   TagBox[RasterBox[CompressedData[\"\n\
        1:{b64}\n    \"], {{{{0, 0}}, {{1, 1}}}}]]]]"
@@ -7702,6 +7777,49 @@ Cell["Chapter 2", "Chapter"]
     assert!(svg.contains("data:image/png;base64,"), "{svg}");
     // Non-raster outputs decode to nothing.
     assert!(stored_output_image_svg("{1, 2, 3}").is_none());
+  }
+
+  #[test]
+  fn test_bare_graphicsbox_snapshot_output_stays_decodable() {
+    // Regression: a Demonstration snapshot saved as a bare image
+    // `GraphicsBox[TagBox[RasterBox[…], BoxForm`ImageTag[…]], …]` (no
+    // `PaneBox` wrapper) was rebuilt into `Image[…]` source, so the stored
+    // picture never showed. As an Output cell it keeps its box form; the
+    // same box inside an Input cell still becomes an evaluable `Image[…]`.
+    let b64 = rgb_snapshot_payload(4, 5);
+    let graphics_box = format!(
+      "GraphicsBox[\n  TagBox[RasterBox[CompressedData[\"\n1:{b64}\n    \"], \
+       {{{{0, 4.}}, {{5., 0}}}}, {{0, 255}},\n    ColorFunction->RGBColor,\n    \
+       ImageResolution->{{72, 72}}],\n   BoxForm`ImageTag[\n   \"Byte\", \
+       ColorSpace -> \"RGB\", Interleaving -> True],\n   Selectable->False],\n  \
+       DefaultBaseStyle->\"ImageGraphics\",\n  ImageSizeRaw->{{5., 4.}},\n  \
+       PlotRange->{{{{0, 5.}}, {{0, 4.}}}}]"
+    );
+    let nb = format!(
+      "Notebook[{{\nCell[BoxData[\n {graphics_box}], \"Output\",\n \
+       CellTags->\"Snapshot\"],\nCell[BoxData[\n {graphics_box}], \"Input\"]\n}}]"
+    );
+    let parsed = parse_notebook(&nb).unwrap();
+    let flat = parsed.flat_cells();
+    assert_eq!(flat.len(), 2);
+
+    let output = flat[0].1;
+    assert_eq!(output.style, CellStyle::Output);
+    assert!(
+      output.content.starts_with("GraphicsBox["),
+      "{}",
+      output.content
+    );
+    let svg = stored_output_image_svg(&output.content).expect("decodes");
+    assert!(svg.contains("viewBox=\"0 0 5 4\""), "{svg}");
+
+    let input = flat[1].1;
+    assert_eq!(input.style, CellStyle::Input);
+    assert!(
+      input.content.starts_with("Image[CompressedData["),
+      "{}",
+      input.content
+    );
   }
 
   /// Build the exact serialization Mathematica writes for a packed array
@@ -10124,6 +10242,17 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
        a corrupted `Times[…]` target carrying a stray `Null` factor from \
        the previous statement), got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn boxdata_statement_list_indenting_newline_keeps_statements_bare() {
+    // A multi-line Input cell is stored as a `BoxData[{…}]` list whose
+    // statements are separated by `\[IndentingNewLine]`. Each item is its
+    // own line, so a later assignment must not be parenthesized as if it
+    // were juxtaposed onto the previous statement.
+    let boxes = r#"BoxData[{RowBox[{RowBox[{RowBox[{"f", "[", "x_", "]"}], ":=", RowBox[{"x", "+", "1"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{RowBox[{"g", "[", "x_", "]"}], ":=", RowBox[{"f", "[", "x", "]"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{"h", "=", "2"}], ";"}]}]"#;
+    let src = extract_cell_content(boxes);
+    assert_eq!(src, "f[x_]:=x+1;\ng[x_]:=f[x];\nh=2;");
   }
 
   #[test]
