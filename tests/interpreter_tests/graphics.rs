@@ -27239,6 +27239,27 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!svg.contains("Infinity"), "not the symbol name: {svg}");
     }
 
+    // A spherical harmonic in a TraditionalForm plot label is set as
+    // `Yₗᵐ(θ, ϕ)`: both indices on the letter and both angles in the
+    // parentheses, not the head name with four arguments.
+    #[test]
+    fn traditional_form_typesets_a_spherical_harmonic_label() {
+      let svg = export_svg(
+        "Graphics[{}, PlotLabel -> TraditionalForm[HoldForm[\
+         r == SphericalHarmonicY[3, -1, \\[Theta], \\[Phi]]]]]",
+      );
+      for part in [
+        "<tspan font-style=\"italic\">Y</tspan>",
+        "baseline-shift=\"sub\" font-size=\"70%\">3</tspan>",
+        "baseline-shift=\"super\" font-size=\"70%\">-1</tspan>",
+        "</tspan>(<tspan font-style=\"italic\">θ</tspan>, \
+         <tspan font-style=\"italic\">ϕ</tspan>)",
+      ] {
+        assert!(svg.contains(part), "{part} must be set: {svg}");
+      }
+      assert!(!svg.contains("SphericalHarmonicY"), "not the head: {svg}");
+    }
+
     // `Row[{…}]` inside a TraditionalForm concatenates its parts, so the
     // implicit product `Row[{2, x, t}]` reads `2xt`, not `Row(…)`.
     #[test]
