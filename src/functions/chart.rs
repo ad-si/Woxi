@@ -7784,9 +7784,39 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &colors,
     (opts.svg_width, opts.svg_height),
   ) {
-    Some(src) => Ok(crate::graphics_result_with_source(svg, src)),
+    Some(mut src) => {
+      // The histogram's graphic carries its graphics options (`PlotLabel`,
+      // `Frame`, …), so `Show[Histogram[…, opts], Plot[…]]` keeps them as
+      // the options of its first graphic. Chart-only options style the
+      // bars and are not options of the resulting `Graphics`.
+      src.options = args[1..]
+        .iter()
+        .filter(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+            && !matches!(
+              crate::functions::graphics::option_name_value(a),
+              Some((name, _)) if is_chart_only_option(name)
+            )
+        })
+        .cloned()
+        .collect();
+      Ok(crate::graphics_result_with_source(svg, src))
+    }
     None => Ok(crate::graphics_result(svg)),
   }
+}
+
+/// Options that style a chart's elements rather than the `Graphics` the
+/// chart produces (`ChartStyle`, `ColorFunction`, …).
+fn is_chart_only_option(name: &str) -> bool {
+  name.starts_with("Chart")
+    || matches!(
+      name,
+      "ColorFunction"
+        | "ColorFunctionScaling"
+        | "LabelingFunction"
+        | "PerformanceGoal"
+    )
 }
 
 /// Parse a Histogram bin specification (`bspec`): an integer bin count,
