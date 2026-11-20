@@ -26640,6 +26640,20 @@ fn span_width(row: &[Expr], j: usize) -> usize {
     .count()
 }
 
+/// A row shorter than the grid that ends in a left continuation
+/// (`{"heading", SpanFromLeft}` in a three-column grid) keeps spanning to
+/// the grid's right edge: Wolfram merges the cell across the missing
+/// trailing columns instead of leaving them as separate empty cells.
+fn extend_trailing_left_spans(rows: &mut [Vec<Expr>], num_cols: usize) {
+  for row in rows.iter_mut() {
+    if row.len() < num_cols
+      && matches!(row.last(), Some(Expr::Identifier(s)) if s == "SpanFromLeft")
+    {
+      row.resize(num_cols, Expr::Identifier("SpanFromLeft".to_string()));
+    }
+  }
+}
+
 /// How many rows the cell at `(i, j)` covers — itself plus every row below
 /// whose cell in that column continues it.
 fn span_height(rows: &[Vec<Expr>], i: usize, j: usize) -> usize {
@@ -29227,6 +29241,7 @@ fn grid_svg_styled_internal_reporting(
   if num_cols == 0 {
     return Err(InterpreterError::EvaluationError("Grid: empty data".into()));
   }
+  extend_trailing_left_spans(&mut rows, num_cols);
 
   // Compute column widths based on estimated display width
   // A `Style[Grid[…], size]` sets the font of the whole grid, so the cell

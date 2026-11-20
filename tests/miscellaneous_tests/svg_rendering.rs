@@ -2727,10 +2727,12 @@ mod tests {
     fn grid_spans_a_picture_across_its_columns() {
       // A picture merged over two columns with `SpanFromLeft` is centered
       // across both, instead of widening the first column on its own and
-      // leaving a blank placeholder cell beside it.
+      // leaving a blank placeholder cell beside it. (The row's own third
+      // cell ends the span; a short row ending in `SpanFromLeft` would
+      // span to the grid's right edge instead.)
       let svg = svg_of(
         "Grid[{{\"a\", \"b\", \"c\"}, \
-         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft}}]",
+         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft, \"\"}}]",
       );
       assert!(
         svg.contains("width=\"200.0\" height=\"200.0\""),
