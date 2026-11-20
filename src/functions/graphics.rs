@@ -53579,12 +53579,18 @@ mod manipulate_display_grid_layout_tests {
     assert_eq!(layout, DisplayGridLayout::default());
   }
 
-  /// `ItemSize -> {{w1, w2, …}, h}` fixes each column's width in ems; the
-  /// inner list cycles over the remaining columns.
+  /// `ItemSize -> {{w1, w2, …}, h}` fixes each listed column's width in
+  /// ems, leaving later columns sized to their contents; a nested list
+  /// cycles over the columns instead.
   #[test]
   fn item_size_sets_column_widths() {
     let (_, layout) = grid_of(
       r#"Grid[{{"x", Dynamic[v], "y"}, {"z"}}, ItemSize -> {{4, 9}, Automatic}]"#,
+    );
+    assert_eq!(layout.column_widths, vec![Some(4.0), Some(9.0), None]);
+
+    let (_, layout) = grid_of(
+      r#"Grid[{{"x", Dynamic[v], "y"}}, ItemSize -> {{{4, 9}}, Automatic}]"#,
     );
     assert_eq!(layout.column_widths, vec![Some(4.0), Some(9.0), Some(4.0)]);
 
