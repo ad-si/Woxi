@@ -1290,13 +1290,15 @@ fn grid_mesh_lines(
 /// constant first and `n[1]` of constant second parameter, evenly spaced
 /// and snapped to the nearest grid line, plus the surface's edges. `at(i, j)`
 /// is the sample in the normalized box (`None` where the surface has a
-/// hole); `segment` builds the line piece between two samples.
+/// hole); `segment(a, b, axis)` builds the line piece between two samples
+/// of a line of constant first (`axis == 0`) or second (`axis == 1`)
+/// parameter.
 fn parameter_grid_mesh_lines(
   grid_u: usize,
   grid_v: usize,
   n: [usize; 2],
   at: &dyn Fn(usize, usize) -> Option<Point3D>,
-  segment: &dyn Fn(Point3D, Point3D) -> MeshLine,
+  segment: &dyn Fn(Point3D, Point3D, usize) -> MeshLine,
 ) -> Vec<MeshLine> {
   let mut lines = Vec::new();
   // Mesh levels are independent of PlotPoints. Interpolate between rows
@@ -1332,7 +1334,7 @@ fn parameter_grid_mesh_lines(
       };
       for j in 0..along {
         if let (Some(a), Some(b)) = (point(j), point(j + 1)) {
-          lines.push(segment(a, b));
+          lines.push(segment(a, b, axis));
         }
       }
     }
@@ -3561,6 +3563,23 @@ fn fitted_image_size(
 /// Whether a plot's options pin the picture's height: `ImageSize -> {w,
 /// h}`, `ImageSize -> Full` or an `AspectRatio`. Otherwise the height
 /// follows the projected box.
+/// Whether the options carry `ImageSize -> {w, h}` with both dimensions
+/// numeric, which pins the whole image (labels included) to that size.
+fn image_size_is_width_height(opts: &[Expr]) -> bool {
+  opts.iter().any(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      let value = crate::evaluator::evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone());
+      matches!(&value, Expr::List(items) if items.len() == 2
+        && items.iter().all(|i| try_eval_to_f64(i).is_some()))
+    }
+    _ => false,
+  })
+}
+
 fn image_height_is_explicit(opts: &[Expr]) -> bool {
   opts.iter().any(|o| match o {
     Expr::Rule {
@@ -15542,7 +15561,24 @@ fn with_plot_label(
     Some((_, h)) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
     None => PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32,
   };
-  let total = height + strip;
+  // `ImageSize -> {w, h}` fixes the whole image, title included: the
+  // picture shrinks (keeping its proportions, centered across the width)
+  // into what the title leaves of the height. Otherwise the title strip is
+  // added on top of the picture.
+  let fit_scale = (image_size_is_width_height(opts) && strip < height)
+    .then(|| f64::from(height - strip) / f64::from(height));
+  let total = if fit_scale.is_some() {
+    height
+  } else {
+    height + strip
+  };
+  let picture_transform = match fit_scale {
+    Some(k) => format!(
+      "translate({:.2},{strip}) scale({k:.6})",
+      f64::from(width) * (1.0 - k) / 2.0
+    ),
+    None => format!("translate(0,{strip})"),
+  };
   // The strip is painted in the picture's own background so the two read
   // as one canvas — an explicit `Background` reaches it too.
   let bg = opts
@@ -15617,7 +15653,7 @@ fn with_plot_label(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
      {label}\
-     <g transform=\"translate(0,{strip})\">{svg}</g>\n\
+     <g transform=\"{picture_transform}\">{svg}</g>\n\
      </svg>",
     bg.0, bg.1, bg.2,
   )
@@ -17661,7 +17697,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if mesh_mode == MeshMode::Default {
     let extra_bias = MESH_DEPTH_BIAS
       * ((50.0 / n_t.min(n_theta).max(1) as f64).max(1.0) - 1.0);
-    let segment = |a: Point3D, b: Point3D| {
+    let segment = |a: Point3D, b: Point3D, _axis: usize| {
       let mut line = mesh_segment(a, b, &camera);
       line.depth -= extra_bias;
       line
@@ -23542,6 +23578,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeForm[]` is suppressed, leaving flat color with no outline —
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
+  // `MeshStyle -> style` strokes the default mesh in `style`;
+  // `MeshStyle -> {s1, s2}` gives the lines of constant first and of
+  // constant second parameter their own styles (cycling when one is
+  // given). Empty keeps the default hairline.
+  let mut mesh_styles: Vec<(Expr, StyleState3D)> = Vec::new();
   // `BoundaryStyle -> style`: the outline along the edges of the parameter
   // domain, drawn in `style` (black where it names no color). Left at its
   // default, the outline is only drawn as part of the default mesh.
@@ -23737,10 +23778,23 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "MeshStyle" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          mesh_style_none =
+            matches!(&value, Expr::Identifier(s) if s == "None");
+          mesh_styles = if matches!(&value, Expr::Identifier(s) if s == "None" || s == "Automatic")
           {
-            mesh_style_none = true;
-          }
+            Vec::new()
+          } else {
+            plot_style_items(&value, 2)
+              .into_iter()
+              .map(|item| {
+                let mut style = StyleState3D::default();
+                apply_3d_directive(&item, &mut style);
+                (item, style)
+              })
+              .collect()
+          };
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
@@ -24153,32 +24207,45 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         if let Some([nu, nv]) = mesh_count.filter(|n| n.iter().any(|&c| c > 0))
         {
-          let mut segments: Vec<Expr> = Vec::new();
-          let mut push_segment = |a: Option<usize>, b: Option<usize>| {
-            if let (Some(a), Some(b)) = (a, b) {
-              segments.push(Expr::List(
-                vec![
-                  Expr::Integer(a as i128 + 1),
-                  Expr::Integer(b as i128 + 1),
-                ]
-                .into(),
-              ));
-            }
-          };
+          // Segments of the lines of constant first (`[0]`) and of
+          // constant second (`[1]`) parameter.
+          let mut segments: [Vec<Expr>; 2] = [Vec::new(), Vec::new()];
+          let mut push_segment =
+            |axis: usize, a: Option<usize>, b: Option<usize>| {
+              if let (Some(a), Some(b)) = (a, b) {
+                segments[axis].push(Expr::List(
+                  vec![
+                    Expr::Integer(a as i128 + 1),
+                    Expr::Integer(b as i128 + 1),
+                  ]
+                  .into(),
+                ));
+              }
+            };
           for m in 1..=nv {
             let kv = (grid_v * m + nv.div_ceil(2)) / (nv + 1);
             for i in 0..grid_u {
-              push_segment(index_of[i][kv], index_of[i + 1][kv]);
+              push_segment(1, index_of[i][kv], index_of[i + 1][kv]);
             }
           }
           for m in 1..=nu {
             let ku = (grid_u * m + nu.div_ceil(2)) / (nu + 1);
             for j in 0..grid_v {
-              push_segment(index_of[ku][j], index_of[ku][j + 1]);
+              push_segment(0, index_of[ku][j], index_of[ku][j + 1]);
             }
           }
-          if !segments.is_empty() {
-            content.push(Expr::List(
+          let mut push_lines = |style: Vec<Expr>, segments: Vec<Expr>| {
+            if !segments.is_empty() {
+              let mut group = style;
+              group.push(call1("Line", Expr::List(segments.into())));
+              content.push(Expr::List(group.into()));
+            }
+          };
+          let [constant_u, constant_v] = segments;
+          if mesh_styles.is_empty() {
+            let mut all = constant_v;
+            all.extend(constant_u);
+            push_lines(
               vec![
                 call1("Opacity", Expr::Real(0.63)),
                 call(
@@ -24186,10 +24253,21 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
                 ),
                 call1("AbsoluteThickness", Expr::Real(0.5)),
-                call1("Line", Expr::List(segments.into())),
-              ]
-              .into(),
-            ));
+              ],
+              all,
+            );
+          } else {
+            // A `MeshStyle` replaces the default translucent black, on top
+            // of the default hairline width.
+            for (axis, lines) in [(1, constant_v), (0, constant_u)] {
+              push_lines(
+                vec![
+                  call1("AbsoluteThickness", Expr::Real(0.5)),
+                  mesh_styles[axis % mesh_styles.len()].0.clone(),
+                ],
+                lines,
+              );
+            }
           }
         }
         call(
@@ -24422,8 +24500,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       * (box_ratios.iter().copied().fold(1.0_f64, f64::max)
         * (50.0 / grid_u.min(grid_v).max(1) as f64).max(1.0)
         - 1.0);
-    let segment = |a: Point3D, b: Point3D| {
+    let segment = |a: Point3D, b: Point3D, axis: usize| {
       let mut line = mesh_segment(a, b, &camera);
+      if !mesh_styles.is_empty() {
+        line =
+          styled_line_like(&line, &mesh_styles[axis % mesh_styles.len()].1);
+      }
       line.depth -= extra_bias;
       line
     };
@@ -25142,7 +25224,7 @@ mod review_mesh_tests {
             z: 0.0,
           })
         },
-        &|a, b| MeshLine {
+        &|a, b, _| MeshLine {
           endpoints: [a, b],
           projected: [(a.x, a.y), (b.x, b.y)],
           stroke: None,
