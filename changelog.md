@@ -15,6 +15,13 @@
     3D plot labels keep them too.
 - `ParametricPlot3D` honors the first of a repeated option, as Wolfram does,
     so `PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws the curve as a tube.
+- A standalone `LineLegend` draws relative `Thickness`/`Dashing` samples at
+    the weight of the plotted curves, honors `LabelStyle`, sets its labels in
+    a proportional face, and continues a multi-line label under its own
+    first line.
+- `Show` keeps a curve's `ColorFunction` on that curve alone: a plot merged
+    with it keeps its own color, and the colored curve stays colored when a
+    `Graphics` comes first (drawn with `VertexColors`).
 
 # 2026-11-08 - 0.4.0
 

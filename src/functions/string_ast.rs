@@ -5800,7 +5800,23 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && !sf_args.is_empty()
     && let Expr::String(template) = &sf_args[0]
   {
-    return Ok(Expr::String(format_string_form(template, &sf_args[1..])));
+    // Each argument is rendered through ToString itself so a nested display
+    // wrapper resolves, matching wolframscript's
+    // `ToString[StringForm["v = ``", NumberForm[4.123, {5, 2}]]]` -> "v = 4.12".
+    let render = |e: &Expr| -> String {
+      let mut recursed = args.to_vec();
+      recursed[0] = e.clone();
+      match to_string_ast(&recursed) {
+        Ok(Expr::String(ref s)) => s.clone(),
+        Ok(other) => expr_to_output(&other),
+        Err(_) => expr_to_output(e),
+      }
+    };
+    return Ok(Expr::String(format_string_form_with(
+      template,
+      &sf_args[1..],
+      render,
+    )));
   }
 
   // Arbitrary-precision numbers: ToString drops the `\`p` precision marker
