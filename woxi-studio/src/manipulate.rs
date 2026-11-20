@@ -459,6 +459,10 @@ impl ControlState {
   }
 }
 
+/// A control's freshly typeset caption, as `(control name, (styled runs,
+/// picture SVG))`.
+type ResolvedLabel = (String, (Vec<LabelRun>, Option<String>));
+
 /// A discrete control's freshly resolved choice list, as
 /// `(control name, (values, labels, rendered labels, styled-label runs))`.
 type ResolvedChoices = (
@@ -1226,10 +1230,22 @@ impl ManipulateState {
   /// open showing the authored default instead of Wolfram's own saved
   /// state. A name with no matching control (FrontEnd-only bookkeeping, or
   /// a control this build doesn't recognize) is silently skipped.
+  // The editor itself restores, adjusts and then re-renders in separate
+  // steps; tests and the `dump_manipulate` example use this shorthand.
+  #[cfg_attr(not(test), allow(dead_code))]
   pub fn apply_saved_variables(&mut self, saved: &[(String, String)]) {
     if saved.is_empty() {
       return;
     }
+    self.restore_saved_variables(saved);
+    self.reevaluate();
+  }
+
+  /// [`apply_saved_variables`] without the re-render, for a caller that
+  /// still adjusts the restored values first.
+  ///
+  /// [`apply_saved_variables`]: Self::apply_saved_variables
+  pub fn restore_saved_variables(&mut self, saved: &[(String, String)]) {
     for (name, code) in saved {
       // A widget rebuilt from a bare box dump keeps the DynamicModule's
       // `$$` uniquification suffix on its control names, while the saved
@@ -1262,7 +1278,6 @@ impl ManipulateState {
         }
       }
     }
-    self.reevaluate();
   }
 
   /// Run the `idx`-th `Bookmarks` preset's assignment code — the same
@@ -2386,10 +2401,7 @@ impl ManipulateState {
   }
 
   /// Retitle each named control with its freshly typeset caption.
-  fn apply_dynamic_labels(
-    &mut self,
-    resolved: Vec<(String, (Vec<LabelRun>, Option<String>))>,
-  ) {
+  fn apply_dynamic_labels(&mut self, resolved: Vec<ResolvedLabel>) {
     for (name, (runs, svg)) in resolved {
       self.label_svgs.retain(|(n, _)| *n != name);
       if let Some(svg) = svg {
