@@ -888,7 +888,11 @@ pub(crate) fn plot_title_band(
       let lines = 1 + sl.extra_line_count().max(label_lines(&sl.text) - 1);
       // A `Framed` title also claims the frame's 6pt margin above and
       // below and its stroke, so its box does not reach into the plot.
-      let frame = if sl.frame.is_some() { 2.0 * 6.0 + 1.0 } else { 0.0 };
+      let frame = if sl.frame.is_some() {
+        2.0 * 6.0 + 1.0
+      } else {
+        0.0
+      };
       block_height(lines, plot_title_font(opts)) + frame
     }
     _ => 0.0,

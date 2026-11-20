@@ -568,7 +568,7 @@ impl StyledLabel {
 /// `letter-spacing:Npx` a lone `Spacer` becomes, and the `dx="N"` a
 /// `Spacer` next to other Row content becomes — by `scale`, leaving
 /// relative ones (`70%`, `1.2em`) as they are.
-fn scale_markup_lengths(markup: &str, scale: f64) -> String {
+pub(crate) fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   if scale == 1.0 {
     return markup.to_string();
   }
