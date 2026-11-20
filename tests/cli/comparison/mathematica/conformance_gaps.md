@@ -10328,3 +10328,11 @@ expression only carries the registry index, so it prints as
 `NDSolve`StateData[1]` where wolframscript summarizes the time range
 covered so far (`NDSolve`StateData["<" 0. ">"]`). Its head, and so patterns
 like `s_NDSolve`StateData`, match.
+
+### 2D plots don't box the `Framed` lines of a stacked title
+
+`PlotLabel -> Column[{Style[Framed[eq], Blue, Background -> LightYellow],
+"caption"}]` boxes the first line in a blue frame on a yellow background
+above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
+other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
+Only a title that is framed as a whole gets a box there.

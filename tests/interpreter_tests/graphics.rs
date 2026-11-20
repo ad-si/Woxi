@@ -53378,6 +53378,75 @@ mod static_dynamic_controls {
       );
     }
   }
+
+  /// An enclosing `Style`'s color strokes a framed title's box and its
+  /// `Background` fills it.
+  #[test]
+  fn styled_framed_plot_label_takes_style_color_and_background() {
+    let svg = export_svg(
+      "ListPlot[{{1, 5}, {2, 7}}, PlotLabel -> \
+       Style[Framed[\"abc\"], Blue, Background -> Yellow]]",
+    );
+    assert!(
+      svg.contains("fill=\"rgb(255,255,0)\" stroke=\"rgb(0,0,255)\""),
+      "{svg}"
+    );
+  }
+
+  /// A framed 3-D title is boxed too, not drawn as bare text.
+  #[test]
+  fn framed_plot_label_is_boxed_in_3d() {
+    let plain = export_svg("Graphics3D[Sphere[], PlotLabel -> \"abc\"]");
+    let svg = export_svg(
+      "Graphics3D[Sphere[], PlotLabel -> Framed[\"abc\", FrameStyle -> Red]]",
+    );
+    assert_eq!(
+      svg.matches("<rect").count(),
+      plain.matches("<rect").count() + 1,
+      "{svg}"
+    );
+    assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+  }
+
+  /// One framed line of a stacked 3-D title gets its own box, in the
+  /// color and `Background` of the `Style` around it; the other lines
+  /// stay unboxed and below it.
+  #[test]
+  fn framed_line_of_column_plot_label_is_boxed_in_3d() {
+    let svg = export_svg(
+      "Graphics3D[Sphere[], PlotLabel -> Column[{Style[Framed[\"top\"], 16, \
+       Blue, Background -> Yellow], Style[\"bottom\", 20]}, Center]]",
+    );
+    let boxes: Vec<&str> = svg
+      .match_indices("<rect")
+      .map(|(i, _)| &svg[i..i + svg[i..].find("/>").unwrap()])
+      .filter(|r| r.contains("stroke=\"rgb(0,0,255)\""))
+      .collect();
+    assert_eq!(boxes.len(), 1, "{svg}");
+    assert!(boxes[0].contains("fill=\"rgb(255,255,0)\""), "{svg}");
+    let y = |word: &str| {
+      let end = svg.find(word).unwrap();
+      let start = svg[..end].rfind("<text").unwrap();
+      let tag = &svg[start..end];
+      let y = &tag[tag.find(" y=\"").unwrap() + 4..];
+      y[..y.find('"').unwrap()].parse::<f64>().unwrap()
+    };
+    assert!(y("bottom") > y("top"), "{svg}");
+  }
+
+  /// A plot title is set in `TraditionalForm`, so a sum inside a framed
+  /// line of a stacked title runs from its highest power down.
+  #[test]
+  fn sum_in_column_plot_label_is_traditional() {
+    for head in ["Graphics3D[Sphere[]", "ListPlot[{1, 2}"] {
+      let svg = export_svg(&format!(
+        "{head}, PlotLabel -> Column[{{Framed[x^2 + 3], \"c\"}}]]"
+      ));
+      let x = svg.find(">x<").expect(&svg);
+      let three = svg.find(">3<").or_else(|| svg.find("+3")).expect(&svg);
+      assert!(x < three, "{svg}");
+    }
+  }
 }
 
 #[test]

@@ -15007,7 +15007,14 @@ fn with_plot_label(
   // row, on top of the strip a single-line title reserves.
   let line_height = font_size * 1.2;
   let extra_lines = styled.extra_line_count() as f64;
-  let strip = PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32;
+  let cx = width as f64 / 2.0;
+  // A framed title (or a stacked one with framed lines) sets each line in
+  // its own box; otherwise the lines share one `<text>`.
+  let framed_layout = framed_label_svg(&styled, cx, font_size);
+  let strip = match &framed_layout {
+    Some((_, h)) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
+    None => PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32,
+  };
   let total = height + strip;
   // The strip is painted in the picture's own background so the two read
   // as one canvas — an explicit `Background` reaches it too.
@@ -15043,7 +15050,6 @@ fn with_plot_label(
       "width=\"{width}\" height=\"{total}\" viewBox=\"0 0 {width} {total}\""
     )
   };
-  let cx = width as f64 / 2.0;
   let fill = styled
     .color
     .as_ref()
@@ -15055,18 +15061,134 @@ fn with_plot_label(
   if styled.italic {
     style_attrs.push_str(" font-style=\"italic\"");
   }
-  let label = styled.svg_scaled_stacked(1.0, cx, line_height);
-  // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
-  let keep = crate::functions::plot::preserve_blanks_attr(&label);
+  let label = match framed_layout {
+    Some((lines, _)) => {
+      use std::fmt::Write as _;
+      let mut out = String::new();
+      for line in lines {
+        // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+        let keep = crate::functions::plot::preserve_blanks_attr(&line.markup);
+        let _ = writeln!(
+          out,
+          "{}<text x=\"{cx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{fill}\"{style_attrs}{keep}>{}</text>",
+          line.frame_rect, line.baseline, line.markup
+        );
+      }
+      out
+    }
+    None => {
+      let label = styled.svg_scaled_stacked(1.0, cx, line_height);
+      // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+      let keep = crate::functions::plot::preserve_blanks_attr(&label);
+      format!(
+        "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n"
+      )
+    }
+  };
   format!(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
-     <text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n\
+     {label}\
      <g transform=\"translate(0,{strip})\">{svg}</g>\n\
      </svg>",
     bg.0, bg.1, bg.2,
   )
+}
+
+/// One line of a framed 3-D title: its box (possibly empty), its baseline
+/// and its typeset markup.
+struct FramedTitleLine {
+  frame_rect: String,
+  baseline: f64,
+  markup: String,
+}
+
+/// Lay out a title with `Framed` boxes above a 3-D picture: a framed title
+/// is boxed as a whole, and a stacked title (`Column[{Framed[a], b}]`)
+/// boxes the lines that are framed on their own. Each box hugs its text
+/// with `Framed`'s 3pt margin, is filled with the box's `Background` and
+/// stroked in the box's color (the enclosing `Style`'s color). Returns the
+/// lines and the height of the strip they need, or `None` when nothing in
+/// the title is framed.
+fn framed_label_svg(
+  styled: &crate::functions::chart::StyledLabel,
+  cx: f64,
+  font_size: f64,
+) -> Option<(Vec<FramedTitleLine>, f64)> {
+  use crate::functions::chart::markup_font_size;
+  use crate::functions::plot_padding::{ascent, line_height, text_width};
+  if styled.frame.is_none() && styled.line_frames.iter().all(Option::is_none) {
+    return None;
+  }
+  const MARGIN: f64 = 3.0;
+  let markups: Vec<String> = std::iter::once(styled.svg_scaled(1.0))
+    .chain(styled.extra_lines.iter().cloned())
+    .collect();
+  let sizes: Vec<f64> = markups
+    .iter()
+    .map(|m| markup_font_size(m).unwrap_or(font_size))
+    .collect();
+  let rect =
+    |frame: &crate::functions::chart::LabelFrame, w: f64, top: f64, h: f64| {
+      let fill = frame
+        .background
+        .as_ref()
+        .map_or_else(|| "none".to_string(), |c| c.to_svg_rgb());
+      let stroke = frame.stroke.as_ref().map_or_else(
+        || {
+          crate::functions::graphics::theme()
+            .framed_border
+            .to_string()
+        },
+        |c| c.to_svg_rgb(),
+      );
+      format!(
+        "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
+       height=\"{h:.1}\" fill=\"{fill}\" stroke=\"{stroke}\" \
+       stroke-width=\"1\"/>\n",
+        cx - w / 2.0
+      )
+    };
+  let mut lines = Vec::with_capacity(markups.len());
+  // A whole framed title has a margin above its first line.
+  let outer = if styled.frame.is_some() { MARGIN } else { 0.0 };
+  let mut y = 1.0 + outer;
+  for (i, (markup, size)) in markups.iter().zip(&sizes).enumerate() {
+    let frame = styled.line_frames.get(i).and_then(Option::as_ref);
+    let margin = if frame.is_some() { MARGIN } else { 0.0 };
+    let line_h = line_height(*size);
+    let frame_rect = frame.map_or_else(String::new, |f| {
+      rect(
+        f,
+        text_width(markup, *size) + 2.0 * margin,
+        y,
+        line_h + 2.0 * margin,
+      )
+    });
+    lines.push(FramedTitleLine {
+      frame_rect,
+      baseline: y + margin + ascent(*size),
+      markup: markup.clone(),
+    });
+    y += line_h + 2.0 * margin;
+  }
+  let height = y + outer + 2.0;
+  if let Some(frame) = &styled.frame {
+    let w = markups
+      .iter()
+      .zip(&sizes)
+      .map(|(m, s)| text_width(m, *s))
+      .fold(0.0, f64::max)
+      + 2.0 * MARGIN;
+    if let Some(first) = lines.first_mut() {
+      first.frame_rect = rect(frame, w, 1.0, y + MARGIN - 1.0);
+    }
+  }
+  Some((lines, height))
 }
 
 /// The characters an SVG markup fragment actually shows, for width

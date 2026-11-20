@@ -261,14 +261,94 @@ pub(crate) struct StyledLabel {
   pub color: Option<Color>,
   pub font_size: Option<f64>,
   /// `Framed[…]` title: drawn inside a thin box.
-  pub framed: bool,
-  /// The `Background -> color` of a `Framed[…]` title: the panel the box
-  /// is filled with. `None` leaves the box unfilled.
-  pub background: Option<Color>,
+  pub frame: Option<LabelFrame>,
+  /// The boxes of the individual lines of a stacked title
+  /// (`Column[{Framed[a], b}]`), one entry per line (the first line
+  /// included). Empty when no line is framed on its own.
+  pub line_frames: Vec<Option<LabelFrame>>,
   /// A one-line title that mixes text with small inline pictures
   /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
   /// set, the renderer lays the segments out side by side.
   pub segments: Vec<LabelSegment>,
+}
+
+/// The box `Framed[…]` draws around a title or one line of it.
+#[derive(Clone, Default, Debug, PartialEq)]
+pub(crate) struct LabelFrame {
+  /// The frame's color: an enclosing `Style`'s color reaches the frame
+  /// along with the text, and `FrameStyle -> color` sets it directly.
+  /// `None` keeps the default frame color.
+  pub stroke: Option<Color>,
+  /// `Background -> color` of the enclosing `Style` or of the `Framed`.
+  pub background: Option<Color>,
+  /// The font size an enclosing `Style` sets for the framed text.
+  pub font_size: Option<f64>,
+}
+
+/// The `Framed` box of a title item, possibly wrapped in `Style`s whose
+/// color, size and `Background` reach the box (`Style[Framed[e], Blue,
+/// Background -> LightYellow]`). `None` when the item is not framed.
+pub(crate) fn label_item_frame(expr: &Expr) -> Option<LabelFrame> {
+  let mut frame = LabelFrame::default();
+  let mut current = expr;
+  loop {
+    let Expr::FunctionCall { name, args } = current else {
+      return None;
+    };
+    if args.is_empty() {
+      return None;
+    }
+    match name.as_str() {
+      "Style" => {
+        let (_, _, color, size) = parse_style_directive_args(&args[1..]);
+        // Outer styles yield to inner ones.
+        frame.stroke = color.or(frame.stroke);
+        frame.font_size = size.or(frame.font_size);
+        if let Some(bg) = background_rule(&args[1..]) {
+          frame.background = Some(bg);
+        }
+        current = &args[0];
+      }
+      "Framed" => {
+        if let Some(bg) = background_rule(&args[1..]) {
+          frame.background = Some(bg);
+        }
+        for opt in &args[1..] {
+          if let Expr::Rule {
+            pattern,
+            replacement,
+          } = opt
+            && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FrameStyle")
+            && let Some(c) = parse_color(replacement)
+          {
+            frame.stroke = Some(c);
+          }
+        }
+        return Some(frame);
+      }
+      _ => return None,
+    }
+  }
+}
+
+/// The color of a `Background -> color` rule among `opts`.
+fn background_rule(opts: &[Expr]) -> Option<Color> {
+  opts.iter().find_map(|opt| match opt {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Background") => {
+      parse_color(replacement)
+    }
+    _ => None,
+  })
+}
+
+/// The first font size a line of typeset label markup sets, if any.
+pub(crate) fn markup_font_size(markup: &str) -> Option<f64> {
+  let start = markup.find("font-size=\"")? + "font-size=\"".len();
+  let len = markup[start..].find('"')?;
+  markup[start..start + len].parse().ok()
 }
 
 /// One piece of a title that mixes text and inline pictures.
@@ -649,7 +729,8 @@ fn traditional_sums(expr: &Expr) -> Expr {
       call(name, new_args)
     }
     Expr::FunctionCall { name, args }
-      if matches!(name.as_str(), "Style" | "Text") && !args.is_empty() =>
+      if matches!(name.as_str(), "Style" | "Text" | "Framed")
+        && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();
       new_args[0] = traditional_sums(&args[0]);
@@ -741,8 +822,8 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
     italic: false,
     color: None,
     font_size: None,
-    framed: false,
-    background: None,
+    frame: None,
+    line_frames: Vec::new(),
     segments,
   })
 }
@@ -768,16 +849,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     && !args.is_empty()
   {
     let mut label = parse_styled_label(&args[0])?;
-    label.framed = true;
-    label.background = args[1..].iter().find_map(|opt| match opt {
-      Expr::Rule {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background") => {
-        parse_color(replacement)
-      }
-      _ => None,
-    });
+    label.frame = label_item_frame(expr);
     return Some(label);
   }
   // `Invisible[…]` paints nothing — a Demonstration wraps a `Text[…]`
@@ -794,8 +866,28 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   if matches!(expr, Expr::FunctionCall { name, args }
       if (name == "Grid" || name == "Column") && !args.is_empty())
   {
-    let lines = crate::functions::graphics::expr_to_svg_markup_lines(expr);
+    // A graphic's `FormatType` is `TraditionalForm`, so a sum on any of
+    // the lines runs from its highest power down.
+    let lines = crate::functions::graphics::expr_to_svg_markup_lines(
+      &traditional_sums(expr),
+    );
     let (first, rest) = lines.split_first()?;
+    // A `Column` whose items each fill one line can box single lines
+    // (`Column[{Style[Framed[eq], Blue], "caption"}]`).
+    let line_frames = match expr {
+      Expr::FunctionCall { name, args } if name == "Column" => match &args[0] {
+        Expr::List(items) if items.len() == lines.len() => {
+          let frames: Vec<_> = items.iter().map(label_item_frame).collect();
+          if frames.iter().any(Option::is_some) {
+            frames
+          } else {
+            Vec::new()
+          }
+        }
+        _ => Vec::new(),
+      },
+      _ => Vec::new(),
+    };
     let text = lines
       .iter()
       .map(|l| svg_markup_visible_text(l))
@@ -809,8 +901,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
-      framed: false,
-      background: None,
+      frame: None,
+      line_frames,
       segments: Vec::new(),
     });
   }
@@ -845,6 +937,9 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     label.italic = italic;
     label.color = color;
     label.font_size = font_size;
+    if label.frame.is_some() {
+      label.frame = label_item_frame(expr);
+    }
     return Some(label);
   }
   match expr {
@@ -866,8 +961,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         italic: false,
         color: None,
         font_size: None,
-        framed: false,
-        background: None,
+        frame: None,
+        line_frames: Vec::new(),
         segments: Vec::new(),
       })
     }
@@ -879,8 +974,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
-      framed: false,
-      background: None,
+      frame: None,
+      line_frames: Vec::new(),
       segments: Vec::new(),
     }),
     Expr::Identifier(s) => Some(StyledLabel {
@@ -891,8 +986,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       italic: false,
       color: None,
       font_size: None,
-      framed: false,
-      background: None,
+      frame: None,
+      line_frames: Vec::new(),
       segments: Vec::new(),
     }),
     Expr::FunctionCall { name, args }
@@ -949,8 +1044,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         italic,
         color,
         font_size,
-        framed: false,
-        background: None,
+        frame: None,
+        line_frames: Vec::new(),
         segments,
       })
     }
@@ -984,8 +1079,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           italic: false,
           color: None,
           font_size: None,
-          framed: false,
-          background: None,
+          frame: None,
+          line_frames: Vec::new(),
           segments,
         })
       }
