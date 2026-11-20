@@ -2881,7 +2881,36 @@ fn generate_svg(
       )
     })
   };
-  let ((scale, _), cx, cy, w, h) = fit_3d_frame(
+  // `ImagePadding`: as in `Graphics3D`, the scene is fitted into the region
+  // inside the padding band and the picture keeps its full size around it.
+  let image_padding = options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(name) if name == "ImagePadding") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      Some(
+        crate::functions::plot::parse_image_padding(&value)
+          .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0)),
+      )
+    }
+    _ => None,
+  });
+  let image_padding = image_padding.flatten();
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    image_padding.unwrap_or([0.0; 4]);
+  let pad_w = (pad_left + pad_right).round() as u32;
+  let pad_h = (pad_bottom + pad_top).round() as u32;
+  let padded = image_padding.is_some()
+    && !full_width
+    && svg_width > pad_w
+    && (auto_height || svg_height > pad_h);
+  if padded {
+    svg_width -= pad_w;
+    svg_height = svg_height.saturating_sub(pad_h).max(1);
+  }
+  let ((scale, _), mut cx, mut cy, w, h) = fit_3d_frame(
     svg_width,
     (!auto_height || full_width).then_some(svg_height),
     (px_min, px_max, py_min, py_max),
@@ -2890,6 +2919,15 @@ fn generate_svg(
   );
   svg_width = w;
   svg_height = h;
+  // The field of view of an explicit `ViewAngle` spans the region inside
+  // the padding.
+  let inner_side = w.min(h) as f64;
+  if padded {
+    cx += pad_left;
+    cy += pad_top;
+    svg_width += pad_w;
+    svg_height += pad_h;
+  }
 
   // An explicit `ViewAngle` fixes the camera's field of view, exactly as in
   // `Graphics3D`: the frame spans `2 · d · tan(θ/2)` about the middle of the
@@ -2908,7 +2946,7 @@ fn generate_svg(
             },
             camera,
           );
-          (svg_width.min(svg_height) as f64 / span, bcx, bcy)
+          (inner_side / span, bcx, bcy)
         } else {
           (scale, p_cx, p_cy)
         }
@@ -6136,6 +6174,17 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
   )
 }
 
+/// The stroke width of a `Line` (or `Arrow`) in a `Graphics3D` that sets
+/// no thickness: Wolfram draws those as hairlines, as thin as the edges
+/// of the bounding box, far thinner than the curves of a plot.
+const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
+
+/// The absolute width a thickness symbol names in 3D (`Thick`,
+/// `Thickness[Large]`, …): the same widths as in 2D graphics.
+fn named_line_thickness(name: &str) -> Option<f64> {
+  crate::functions::graphics::symbolic_thickness(name).map(|t| -t)
+}
+
 /// A 3D primitive for Graphics3D
 #[derive(Clone, Debug)]
 struct StyleState3D {
@@ -6144,7 +6193,8 @@ struct StyleState3D {
   /// viewer. None means both sides use `color`.
   back_color: Option<(u8, u8, u8)>,
   opacity: f64,
-  /// Stroke width in pixels for Line3D primitives. None means default 1.5.
+  /// Stroke width in pixels for Line3D primitives. None means
+  /// [`DEFAULT_LINE_3D_WIDTH`].
   thickness: Option<f64>,
   /// Whether a `Tube`'s ends are closed off, as `CapForm` sets it.
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
@@ -6483,12 +6533,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
 
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => {
-        style.thickness = Some(2.5);
-        return true;
-      }
-      "Thin" => {
-        style.thickness = Some(0.5);
+      "Thick" | "Thin" => {
+        style.thickness = named_line_thickness(s);
         return true;
       }
       "Dashed" => {
@@ -6636,18 +6682,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       "Thickness" if args.len() == 1 => {
-        if let Expr::Identifier(s) = &args[0] {
-          match s.as_str() {
-            "Large" => style.thickness = Some(3.0),
-            "Tiny" => style.thickness = Some(0.5),
-            _ => {
-              if let Some(t) = expr_to_f64(&args[0]) {
-                // Relative thickness: a fraction of the picture's width.
-                style.thickness = Some(t * scene_image_width());
-              }
-            }
-          }
+        if let Expr::Identifier(s) = &args[0]
+          && let Some(t) = named_line_thickness(s)
+        {
+          style.thickness = Some(t);
         } else if let Some(t) = expr_to_f64(&args[0]) {
+          // Relative thickness: a fraction of the picture's width.
           style.thickness = Some(t * scene_image_width());
         }
         return true;
@@ -11699,6 +11739,41 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
   }
 }
 
+/// Radius of the smallest sphere around `center` that encloses every drawn
+/// point of the scene: the corners of its (tessellated) faces and the
+/// vertices of its lines, points, arrows and text anchors.
+fn contents_sphere_radius(
+  triangles: &[[Point3D; 3]],
+  prims: &[Primitive3D],
+  center: Point3D,
+) -> f64 {
+  let dist = |p: &Point3D| {
+    ((p.x - center.x).powi(2)
+      + (p.y - center.y).powi(2)
+      + (p.z - center.z).powi(2))
+    .sqrt()
+  };
+  let mut radius = triangles.iter().flatten().map(dist).fold(0.0_f64, f64::max);
+  for prim in prims {
+    match prim {
+      Primitive3D::Line3D { segments, .. } => {
+        for pt in segments.iter().flatten() {
+          radius = radius.max(dist(pt));
+        }
+      }
+      Primitive3D::Text3D { pos, .. } => radius = radius.max(dist(pos)),
+      Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
+        for pt in points {
+          radius = radius.max(dist(pt));
+        }
+      }
+      _ => {}
+    }
+  }
+  radius
+}
+
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::graphics_option_args(args)[..];
@@ -13042,11 +13117,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y: f64::midpoint(y3_min, y3_max),
       z: f64::midpoint(z3_min, z3_max),
     };
-    let radius = ((x3_max - x3_min).powi(2)
+    let box_radius = ((x3_max - x3_min).powi(2)
       + (y3_max - y3_min).powi(2)
       + (z3_max - z3_min).powi(2))
     .sqrt()
       / 2.0;
+    // An automatic range is framed by the sphere around the box center
+    // that just encloses the contents, which for a rounded solid is much
+    // smaller than the sphere through the box corners. Wolfram's
+    // snapshots of closed polyhedra (a ring of triangles capped by two
+    // pyramids, 2 × 2 × 1.5 to 2 × 2 × 2.3 boxes) at
+    // `ImageSize -> {400, 400}` draw them 1.55–1.63× as large as the
+    // box-sphere framing, which the contents sphere reproduces to within
+    // 1 %. Contents filling the box (a cuboid, a long cylinder) reach its
+    // corners, so both spheres nearly agree there. A pinned `PlotRange` (or an
+    // explicit `PlotRangePadding`) keeps the sphere around its box. The
+    // contents sphere is widened by 2 %, which fits those snapshots best
+    // (unwidened it draws them 2.3 % too large).
+    let contents_radius = (plot_range.is_none() && range_padding.is_none())
+      .then(|| {
+        1.02 * contents_sphere_radius(&triangle_vertices, &prims, center)
+      })
+      .filter(|r| *r > 0.0 && r.is_finite());
+    let radius = contents_radius.map_or(box_radius, |r| r.min(box_radius));
     if radius > 0.0 && radius.is_finite() {
       let span = spherical_region_span(
         radius,
@@ -13350,7 +13443,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
-      let width = style.thickness.unwrap_or(1.5);
+      let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
       for seg in segments {
         // On-screen length of the polyline drawn so far: a dash pattern
         // runs continuously along the whole line instead of restarting
@@ -13655,7 +13748,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // neighbors' and darkens every shared seam, tracing the
         // tessellation across what should be a smooth surface. Only an
         // opaque triangle needs it to close the anti-aliasing gap.
-        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+        // That holds for the internal cuts of a partly outlined triangle
+        // (a fan-triangulated cylinder cap, the diagonal of a quad) too:
+        // its outlined edges get their own line below.
+        let seam_stroke = if tri.opacity < 1.0 {
           "none"
         } else {
           paint.as_str()
@@ -13851,9 +13947,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
           for (i, line) in lines.iter().enumerate() {
             let dy = if i == 0 { first_dy } else { line_height };
-            let line = crate::functions::graphics::tspan_line(line);
-            body.push_str(&format!(
-              "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+            body.push_str(&crate::functions::graphics::stacked_line_tspan(
+              &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
+              "middle",
+              line,
             ));
           }
         }
@@ -13884,8 +13981,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .collect();
         svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"{}/>\n",
-          pts.join(" "), stroke_color, opacity_attr
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
+          pts.join(" "),
+          stroke_color,
+          style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH),
+          opacity_attr
         ));
         // Arrowhead: a cone in the scene, like the head of an
         // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
@@ -15562,6 +15662,25 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let mut structure_args = vec![complex];
   structure_args.extend(args[1..].iter().cloned());
+  // Like `Plot3D`, the surface's graphic carries its axes and box shape, so
+  // re-rendering it (`Show[ListPlot3D[…], ImageSize -> …]`) keeps them.
+  let names = |opt: &str| {
+    args[1..].iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+    })
+  };
+  if !names("Axes") {
+    structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if !names("BoxRatios") {
+    structure_args.push(rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+      ),
+    ));
+  }
   let structure = call("Graphics3D", structure_args);
 
   Ok(crate::plot3d_result_with_structure(svg, structure))
@@ -21140,16 +21259,26 @@ fn parametric_plot3d_curve_ast(
       // sets a thickness or dashing (`PlotStyle -> Thick`).
       let (r, g, b) = crate::functions::plot::PLOT_COLORS
         [curve_idx % crate::functions::plot::PLOT_COLORS.len()];
+      prim_items.push(call(
+        "Directive",
+        vec![
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(f64::from(r) / 255.0),
+              Expr::Real(f64::from(g) / 255.0),
+              Expr::Real(f64::from(b) / 255.0),
+            ],
+          ),
+          call1("AbsoluteThickness", Expr::Integer(2)),
+        ],
+      ));
+    } else {
+      // A space curve is stroked 2 wide, like the curves of a 2D plot,
+      // not as the hairline a bare `Line` in `Graphics3D` gets.
       prim_items.push(call1(
         "Directive",
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(f64::from(r) / 255.0),
-            Expr::Real(f64::from(g) / 255.0),
-            Expr::Real(f64::from(b) / 255.0),
-          ],
-        ),
+        call1("AbsoluteThickness", Expr::Integer(2)),
       ));
     }
     if !per_curve_styles.is_empty() {
