@@ -2702,6 +2702,49 @@ mod graphics {
       );
     }
 
+    /// `Row[items, BaseStyle -> color]` colors the whole label, like an
+    /// enclosing `Style[Row[items], color]`, while the parts keep their own
+    /// directives.
+    #[test]
+    fn text_label_row_base_style_colors_the_label() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"f(\", Style[\"u\", Italic], \")\"}, \
+         BaseStyle -> RGBColor[0, 0.5, 0]], {0, 0}]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(0,128,0)\""), "{svg}");
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">u</tspan>"),
+        "{svg}"
+      );
+      // An outer `Style` size still applies alongside the row's color.
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{\"w\"}, BaseStyle -> Blue], 20], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("fill=\"rgb(0,0,255)\" font-size=\"20\""),
+        "{svg}"
+      );
+    }
+
+    /// A held formula, an equation or a rule with a quotient on one side
+    /// stacks the quotient in a label, as the quotient alone does.
+    #[test]
+    fn text_label_formula_stacks_its_fraction() {
+      for label in [
+        "HoldForm[v = 2/w]",
+        "v == 2/w",
+        "v -> 2/w",
+        "HoldForm[v = (w + 1)/3]",
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        assert!(svg.contains("<line"), "{label}: {svg}");
+        assert!(!svg.contains("^(-1)"), "{label}: {svg}");
+      }
+      // Without a quotient the formula is one line of text.
+      let svg = export_svg("Graphics[{Text[HoldForm[v = w + 2], {0, 0}]}]");
+      assert!(!svg.contains("<line"), "{svg}");
+    }
+
     /// A nested `Style[…, size]` part of a label inside a `Style` of
     /// another size is drawn at its own size.
     #[test]
@@ -2833,18 +2876,56 @@ mod graphics {
       );
     }
 
-    /// `Null` typesets as nothing inside a `Row` — a Manipulate readout
-    /// like `Row[{"rate ", If[cond, "x"], "%"}]` must not print "Null".
+    /// A `Null` part of a `Row` — what a Manipulate readout like
+    /// `Row[{"Step:", If[cond, "  "], n}]` leaves when `cond` fails — is
+    /// an empty slot the front end draws one space wide; it never prints
+    /// "Null".
     #[test]
-    fn row_null_part_renders_nothing() {
+    fn row_null_part_renders_as_one_space() {
       let svg =
-        export_svg("Graphics[{Text[Row[{\"a \", Null, \"b\"}], {0, 0}]}]");
+        export_svg("Graphics[{Text[Row[{\"a\", Null, \"b\"}], {0, 0}]}]");
       assert!(svg.contains(">a b</text>"), "{svg}");
       assert!(!svg.contains("Null"), "{svg}");
+      // Next to a blank of its own, the slot widens the gap to two spaces.
+      let wide =
+        export_svg("Graphics[{Text[Row[{\"a \", Null, 10}], {0, 0}]}]");
+      assert!(wide.contains(">a  10</text>"), "{wide}");
       let sep = export_svg(
         "Graphics[{Text[Row[{\"a\", Null, \"b\"}, \",\"], {0, 0}]}]",
       );
-      assert!(sep.contains(">a,,b</text>"), "{sep}");
+      assert!(sep.contains(">a, ,b</text>"), "{sep}");
+      // Inside a styled `Column` line too.
+      let col = export_svg(
+        "Graphics[{Text[Style[Column[{\"x\", Row[{\"Step:\", Null, 3}]}], \
+         Red, 18], {0, 0}]}]",
+      );
+      assert!(col.contains(">Step: 3</tspan>"), "{col}");
+    }
+
+    /// SVG collapses a run of blanks to one unless told otherwise, but
+    /// Wolfram draws every blank of `Row[{"Real step:", "  ", 0}]`.
+    #[test]
+    fn text_keeps_runs_of_blanks() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"Real step:\", \"  \", 0}], {0, 0}]}]",
+      );
+      let text = svg
+        .lines()
+        .find(|l| l.contains(">Real step:  0</text>"))
+        .unwrap_or_else(|| panic!("{svg}"));
+      assert!(text.contains("xml:space=\"preserve\""), "{text}");
+      let col = export_svg(
+        "Graphics[{Text[Column[{\"0000\", Row[{\"Step:\", \"  \", 0}]}], \
+         {0, 0}]}]",
+      );
+      let text = col
+        .lines()
+        .find(|l| l.contains(">Step:  0</tspan>"))
+        .unwrap_or_else(|| panic!("{col}"));
+      assert!(text.contains("xml:space=\"preserve\""), "{text}");
+      // A single blank needs no preserving.
+      let one = export_svg("Graphics[{Text[\"a b\", {0, 0}]}]");
+      assert!(!one.contains("xml:space"), "{one}");
     }
 
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
@@ -28395,6 +28476,57 @@ mod show {
     assert!(svg.contains("<path") || svg.contains("<polyline"), "{svg}");
   }
 
+  /// The curve extracted from a plot is clipped to the plot's y range, as
+  /// in Wolfram: a pole sampled near `x = 0` must not leave a point at
+  /// `y ~ 10^6` that stretches `PlotRange -> {0, All}` of the `Graphics`
+  /// the curve is redrawn in.
+  #[test]
+  fn first_of_a_plot_clips_its_curve_to_the_plot_range() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[MinMax[Flatten[Cases[First[Plot[2/t, {t, 0, 5}, \
+         PlotRange -> {0, 3}]], Line[p_] :> p[[All, 2]], Infinity]]], 0.01]"
+      )
+      .unwrap(),
+      "{0.4, 3.}"
+    );
+    // A curve leaving and re-entering the range is one line per piece.
+    assert_eq!(
+      interpret(
+        "Count[First[Plot[3 Sin[t], {t, 0, 2 Pi}, PlotRange -> {-2, 2}]], \
+         _Line, Infinity]"
+      )
+      .unwrap(),
+      "3"
+    );
+    // Redrawn with `PlotRange -> All`, the range stays the plot's.
+    let svg = export_svg(
+      "Graphics[First[Plot[2/t, {t, 0, 5}, PlotRange -> {0, 3}]], \
+       PlotRange -> {{0, 5}, {0, All}}, Axes -> True, ImageSize -> 200, \
+       AspectRatio -> 1]",
+    );
+    let ys: Vec<f64> = svg
+      .split("points=\"")
+      .skip(1)
+      .flat_map(|rest| {
+        rest
+          .split('"')
+          .next()
+          .unwrap()
+          .split_whitespace()
+          .filter_map(|p| p.split(',').nth(1)?.parse::<f64>().ok())
+          .collect::<Vec<_>>()
+      })
+      .collect();
+    let (lo, hi) = ys
+      .iter()
+      .fold((f64::MAX, f64::MIN), |(l, h), &y| (l.min(y), h.max(y)));
+    // The curve spans most of the picture's height instead of collapsing
+    // onto the axis.
+    assert!(hi - lo > 100.0, "{svg}");
+  }
+
   /// The curve extracted from a plot keeps the weight the plot draws it
   /// with (`AbsoluteThickness[2]` by default), so redrawing it inside a
   /// `Graphics[…]` does not thin it to the bare line default.
@@ -49191,6 +49323,56 @@ fn graphics_grid_button_cells_carry_hit_regions() {
   actions.sort();
   assert_eq!(actions, vec!["b = 1 + 1", "b = 2 + 1"]);
   assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 4);
+}
+
+/// With no `ImageSize`, a `GraphicsGrid` row of pressable pictures
+/// (`Button[Graphics[…], …]`, also behind a `DynamicModule`'s `Dynamic`) is
+/// as wide as the buttons draw their unsized labels — 18 pixels each, a line
+/// of text high — instead of stretching to the full 600-pixel width.
+#[test]
+fn graphics_grid_of_picture_buttons_keeps_button_size() {
+  let size = |code: &str| {
+    clear_state();
+    let svg = export_svg(code);
+    let head = svg.lines().next().unwrap().to_string();
+    let attr = |name: &str| -> String {
+      head
+        .split(&format!("{name}=\""))
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .to_string()
+    };
+    (attr("width"), attr("height"))
+  };
+  assert_eq!(
+    size(
+      "sq = Graphics[{White, Rectangle[]}]; \
+       GraphicsGrid[Table[Button[sq, Null], {2}, {7}], Spacings -> {0, 0}]"
+    ),
+    ("126".to_string(), "36".to_string())
+  );
+  assert_eq!(
+    size(
+      "cell[v_] := DynamicModule[{c = v}, Dynamic[Button[\
+         If[c, Graphics[{Black, Rectangle[]}], Graphics[{White, Rectangle[]}]], \
+         c = !c, Appearance -> \"Frameless\"]]]; \
+       GraphicsGrid[Table[cell[OddQ[j]], {1}, {5}], Frame -> All, \
+         Spacings -> {0, 0}]"
+    ),
+    ("90".to_string(), "18".to_string())
+  );
+  // An explicit button `ImageSize` still sets the cell width.
+  assert_eq!(
+    size(
+      "GraphicsGrid[{{Button[Graphics[Disk[]], Null, ImageSize -> 40], \
+         Button[Graphics[Disk[]], Null, ImageSize -> 40]}}, Spacings -> {0, 0}]"
+    )
+    .0,
+    "80"
+  );
 }
 
 /// `ViewVertical` picks the direction that points up on screen: looking

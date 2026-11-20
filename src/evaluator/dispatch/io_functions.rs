@@ -7731,8 +7731,34 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // in text rather than mathematical form — it contributes no box of its
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
+    // Text is set in the proportional text face rather than the monospace
+    // output face, so `Text[Row[{"Depth = ", x, " m"}]]` reads as prose; a
+    // `FontFamily` given inside still wins, as the innermost style does.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      expr_to_svg(&unquoted_display_string(&args[0]))
+      expr_to_svg(&crate::functions::graphics::in_text_face(
+        &unquoted_display_string(&args[0]),
+      ))
+    }
+    // `Style[Pane[content, size…], directives…]`: the pane only sizes and
+    // places its content, so the directives style the content, inside the
+    // pane — which keeps its width (and the wrapping of text at it).
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: pane, args: pargs }
+          if pane == "Pane" && !pargs.is_empty()) =>
+    {
+      let Expr::FunctionCall { args: pargs, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut pane_args = pargs.to_vec();
+      pane_args[0] = call(
+        "Style",
+        std::iter::once(pargs[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+      expr_to_svg(&call("Pane", pane_args))
     }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them
