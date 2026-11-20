@@ -754,6 +754,42 @@ mod epilog_framed_column_inset {
     assert_eq!(attr(&tspan[..tspan.find('>').unwrap()], "x"), x);
   }
 
+  /// The inset's offset aligns the *frame's* side (or center) with the
+  /// point, for a single line as well as a stacked `Column`, so the frame
+  /// and its text stay together whatever the anchor.
+  #[test]
+  fn frame_side_sits_on_the_anchor_point() {
+    // Where x = 5 lands in this plot: the epilog's vertical line through it.
+    let line_svg =
+      svg_of("Plot[x, {x, 0, 10}, Epilog -> {Line[{{5, 0}, {5, 10}}]}]");
+    let points = &line_svg[line_svg.rfind("points=\"").unwrap() + 8..];
+    let anchor: f64 = points[..points.find(',').unwrap()].parse().unwrap();
+    for body in ["\"hello\"", "Column[{\"ab\", \"abcdef\"}]"] {
+      for (opos, side) in [("{-1, 0}", -1.0), ("{0, 0}", 0.0), ("{1, 0}", 1.0)]
+      {
+        let svg = svg_of(&format!(
+          "Plot[x, {{x, 0, 10}}, Epilog -> {{Inset[Framed[{body}], {{5, 5}}, {opos}]}}]"
+        ));
+        let group = epilog(&svg);
+        let rect = &group[group.find("<rect x=").unwrap()..];
+        let rect = &rect[..rect.find('>').unwrap()];
+        let text = &group[group.find("<text ").unwrap()..];
+        let text = &text[..text.find('>').unwrap()];
+        let (left, width) = (attr(rect, "x"), attr(rect, "width"));
+        let aligned = left + (side + 1.0) / 2.0 * width;
+        assert!(
+          (aligned - anchor).abs() < 0.2,
+          "{body} at {opos}: {rect} vs anchor {anchor}"
+        );
+        let x = attr(text, "x");
+        assert!(
+          x >= left && x <= left + width,
+          "{body} at {opos}: {rect} / {text}"
+        );
+      }
+    }
+  }
+
   /// The frame's border is one point wide in the plot's 10× coordinates.
   #[test]
   fn frame_border_is_one_point_wide() {
