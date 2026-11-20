@@ -135,6 +135,66 @@ mod image_core {
     }
   }
 
+  // Regression: `Magnify[image, s]` showed no picture at all (only the
+  // `Magnify[-Image-, s]` echo), also inside a fixed-size `Pane` — the way a
+  // Manipulate body switches to an archived photograph. The image is shown
+  // at `s` times its size.
+  #[test]
+  fn magnified_image_is_shown_scaled() {
+    clear_state();
+    for (code, size) in [
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]], 2]",
+        "width='40' height='60'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]], 1/2]",
+        "width='10' height='15'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]]]",
+        "width='20' height='30'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}], ImageSize -> {50, 75}], 2]",
+        "width='100' height='150'",
+      ),
+      (
+        "Pane[If[True, Magnify[Image[ConstantArray[0.5, {30, 20}]], 3], 0], \
+         ImageSize -> {100, 100}, Alignment -> Center]",
+        "width='60' height='90'",
+      ),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      let svg = r.graphics.expect("expected the image as graphics output");
+      assert!(svg.contains("<image"), "{code}: {svg}");
+      assert!(svg.contains(size), "{code}: {svg}");
+    }
+  }
+
+  // `ExportString` of a magnified image draws the raster at the magnified
+  // size (the image document's XML declaration kept the generic resize from
+  // applying, so it stayed at its own size).
+  #[test]
+  fn exported_magnified_image_is_scaled() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Magnify[Image[ConstantArray[0.5, {30, 20}]], 2], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("width='40' height='60'"), "{svg}");
+  }
+
+  // The CLI keeps the symbolic echo of a magnified image, like wolframscript.
+  #[test]
+  fn magnified_image_echo_in_cli() {
+    clear_state();
+    assert_eq!(
+      interpret("Magnify[Image[{{0, 1}, {1, 0}}], 2]").unwrap(),
+      "Magnify[-Image-, 2]"
+    );
+  }
+
   // Regression: an image's SVG writes its size in single quotes
   // (`width='20'`), which the pane layout didn't read, so `ExportString`
   // placed the picture as if it were 100 x 30.
@@ -11426,5 +11486,67 @@ mod image_value_positions {
        {{0.5, 0.5}, {2.5, 0.5}}, {{1.5, 0.5}, {2.5, 0.5}}, {{1.5, 0.5}}, \
        {{1.5, 0.5}}}"
     );
+  }
+}
+
+mod svg_default_font_family {
+  use std::sync::Arc;
+  use woxi::functions::image_ast::{
+    DEFAULT_SVG_FONT_FAMILY, load_embedded_fonts, svg_render_options,
+  };
+
+  /// The font families usvg resolves for each text span of `svg`.
+  fn span_families(svg: &str) -> Vec<Vec<String>> {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    load_embedded_fonts(&mut db);
+    let tree =
+      resvg::usvg::Tree::from_str(svg, &svg_render_options(Arc::new(db)))
+        .unwrap();
+    fn walk(group: &resvg::usvg::Group, out: &mut Vec<Vec<String>>) {
+      for node in group.children() {
+        match node {
+          resvg::usvg::Node::Group(g) => walk(g, out),
+          resvg::usvg::Node::Text(t) => {
+            for chunk in t.chunks() {
+              for span in chunk.spans() {
+                out.push(
+                  span
+                    .font()
+                    .families()
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+                );
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+    }
+    let mut out = Vec::new();
+    walk(tree.root(), &mut out);
+    out
+  }
+
+  /// A `Graphics` `Text` without `FontFamily` is drawn as a bare `<text>`.
+  /// usvg used to give it its own default, "Times New Roman", so wherever
+  /// that font is installed (macOS, Windows) Woxi Studio, `Rasterize` and
+  /// `Export` drew such labels serif instead of in Woxi's sans default.
+  #[test]
+  fn bare_text_gets_default_sans_family() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="20" font-size="15">label</text></svg>"#;
+    let families = span_families(svg);
+    assert_ne!(families, Vec::<Vec<String>>::new());
+    for f in &families {
+      assert_eq!(f, &vec![format!("\"{DEFAULT_SVG_FONT_FAMILY}\"")]);
+    }
+  }
+
+  /// An explicit family still wins over the default.
+  #[test]
+  fn explicit_family_is_kept() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="20" font-family="monospace">label</text></svg>"#;
+    assert_eq!(span_families(svg), vec![vec!["monospace".to_string()]]);
   }
 }
