@@ -1078,6 +1078,61 @@ mod graphics {
       assert_eq!(listed, single);
     }
 
+    /// Total area of the filled `<polygon>`s in an SVG, and the largest x
+    /// coordinate any of them reaches.
+    fn svg_polygon_area_and_max_x(svg: &str) -> (f64, f64) {
+      let mut total = 0.0;
+      let mut max_x = f64::NEG_INFINITY;
+      for chunk in svg.split("<polygon points=\"").skip(1) {
+        let pts: Vec<(f64, f64)> = chunk
+          .split('"')
+          .next()
+          .unwrap()
+          .split_whitespace()
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect();
+        let mut acc = 0.0;
+        for i in 0..pts.len() {
+          let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+          acc += a.0 * b.1 - b.0 * a.1;
+          max_x = max_x.max(a.0);
+        }
+        total += acc.abs() / 2.0;
+      }
+      (total, max_x)
+    }
+
+    /// A 3D `Polygon[outer -> hole]` whose hole reaches past the outline
+    /// is filled by the even-odd rule, as in `Graphics`: the part of the
+    /// hole inside the outline is cut out, and the part sticking out of it
+    /// is filled. Here both parts have the same size, so the face covers
+    /// exactly the area of the plain square, but reaches further right.
+    #[test]
+    fn polygon3d_hole_reaching_past_its_outline_is_filled_even_odd() {
+      let opts = "Boxed -> False, Lighting -> {{\"Ambient\", White}}, \
+                  ViewPoint -> {0, 0, 10}, \
+                  PlotRange -> {{-2, 2}, {-2, 2}, {-1, 1}}";
+      let crossing = export_svg(&format!(
+        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+         {{-1, 1, 0}}}} -> {{{{0.5, -0.25, 0}}, {{1.5, -0.25, 0}}, \
+         {{1.5, 0.25, 0}}, {{0.5, 0.25, 0}}}}], {opts}]"
+      ));
+      let solid = export_svg(&format!(
+        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+         {{-1, 1, 0}}}}], {opts}]"
+      ));
+      let (crossing_area, crossing_x) = svg_polygon_area_and_max_x(&crossing);
+      let (solid_area, solid_x) = svg_polygon_area_and_max_x(&solid);
+      assert!(
+        (crossing_area - solid_area).abs() < 0.01 * solid_area,
+        "{crossing_area} vs {solid_area}\n{crossing}"
+      );
+      assert!(crossing_x > solid_x + 1.0, "{crossing_x} vs {solid_x}");
+    }
+
     #[test]
     fn arrow() {
       insta::assert_snapshot!(export_svg(
@@ -6470,6 +6525,59 @@ mod plot_option_evaluate_once {
 }
 
 mod plot3d {
+  // Regression: `Plot3D` rendered itself with a fixed default camera and
+  // a fixed `{1, 1, 0.4}` box, ignoring `ViewPoint` and `BoxRatios` (only
+  // re-rendering it through `Show` honored them). A surface asked for in a
+  // cube seen from the front-right came out squat and seen from the
+  // default corner.
+  fn plot3d_svg(opts: &str) -> String {
+    clear_state();
+    export_svg(&format!(
+      "Plot3D[Exp[x/4] y, {{x, 0, 20}}, {{y, 0, 40}}, PlotRange -> \
+       {{{{0, 20}}, {{0, 40}}, {{0, 10}}}}{opts}]"
+    ))
+  }
+
+  #[test]
+  fn plot3d_view_point_turns_the_standalone_surface() {
+    let default_view = plot3d_svg("");
+    let turned = plot3d_svg(", ViewPoint -> {1., -3.4, 2}");
+    let above = plot3d_svg(", ViewPoint -> Above");
+    assert_ne!(default_view, turned);
+    assert_ne!(default_view, above);
+    assert_ne!(turned, above);
+  }
+
+  #[test]
+  fn plot3d_view_point_at_infinity_is_orthographic() {
+    let near = plot3d_svg(", ViewPoint -> {0, -2, 2}");
+    let infinite = plot3d_svg(", ViewPoint -> {0, -Infinity, Infinity}");
+    assert_ne!(near, infinite);
+  }
+
+  #[test]
+  fn plot3d_box_ratios_reshape_the_standalone_box() {
+    let default_box = plot3d_svg("");
+    // The default box spelled out draws the very same picture…
+    assert_eq!(default_box, plot3d_svg(", BoxRatios -> {1, 1, 0.4}"));
+    // …a cube does not, and a lone number means equal sides.
+    let cube = plot3d_svg(", BoxRatios -> {1, 1, 1}");
+    assert_ne!(default_box, cube);
+    assert_eq!(cube, plot3d_svg(", BoxRatios -> 1"));
+    // Only the proportions matter.
+    assert_eq!(cube, plot3d_svg(", BoxRatios -> {2, 2, 2}"));
+  }
+
+  #[test]
+  fn plot3d_multi_line_axes_label_is_stacked() {
+    let svg = plot3d_svg(
+      ", AxesLabel -> {\"x\", \"y\", \"rate constant\\n(arbitrary units)\"}",
+    );
+    let first = svg.find(">rate constant</tspan>").expect("first line");
+    let second = svg.find(">(arbitrary units)</tspan>").expect("second line");
+    assert!(first < second);
+  }
+
   /// `PlotPoints -> {nu, nv}` sets the sample count of each parameter
   /// separately; the second entry must not be ignored.
   #[test]
@@ -11709,6 +11817,38 @@ mod plot3d {
       // The frame ends with the closure.
       woxi::with_manipulate_frame(|| ());
       assert!(!woxi::in_manipulate_frame());
+    }
+
+    /// Regression: framing by the sphere around the box ignored how far the
+    /// axes' labels reach, so in a `Manipulate` frame a long `AxesLabel`
+    /// beside the vertical axis ran off the left edge of the picture. The
+    /// scene now shrinks about its center until every label fits.
+    #[test]
+    fn spherical_region_keeps_long_axes_labels_inside_the_picture() {
+      let label = "rate constant of the reaction";
+      let scene = format!(
+        "Graphics3D[Sphere[{{10, 20, 5}}, 1], PlotRange -> {{{{0, 20}}, \
+         {{0, 40}}, {{0, 10}}}}, BoxRatios -> {{1, 1, 1}}, Axes -> True, \
+         ViewPoint -> {{1., -3.4, 2}}, AxesLabel -> {{\"x\", \"y\", \
+         \"{label}\"}}, ImageSize -> {{415, 385}}, SphericalRegion -> True]"
+      );
+      for svg in [
+        export_svg(&scene),
+        woxi::with_manipulate_frame(|| {
+          export_svg(&scene.replace(", SphericalRegion -> True", ""))
+        }),
+      ] {
+        let end = svg.find(&format!(">{label}<")).expect("label drawn");
+        let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+        let attr = |name: &str| -> f64 {
+          let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[at..at + tag[at..].find('"').unwrap()].parse().unwrap()
+        };
+        let half_width = label.len() as f64 * attr("font-size") * 0.28;
+        let x = attr("x");
+        assert!(x - half_width >= 0.0, "label starts at {}", x - half_width);
+        assert!(x + half_width <= 415.0, "label ends at {}", x + half_width);
+      }
     }
 
     // `ViewCenter` moves the point the camera looks at; the box middle is
@@ -17164,10 +17304,50 @@ mod plot3d {
          {Subscript[v, 1] == Subscript[k, 2] Sin[Subscript[k, 1] x], \
           Cos[Subscript[a, 3]], a < b}]",
       );
-      assert!(svg.contains("v₁ == sin(x k₁) k₂"), "{svg}");
+      assert!(svg.contains("v₁ = k₂ sin(k₁ x)"), "{svg}");
       assert!(svg.contains("cos(a₃)"), "{svg}");
       assert!(svg.contains("a &lt; b"), "{svg}");
       assert!(!svg.contains("Subscript["), "{svg}");
+    }
+
+    /// A graphic's labels are set in TraditionalForm: an equation's `==` is
+    /// `=` (and `<=`, `!=` are `≤`, `≠`), an indexed variable leads the
+    /// factors it is ordered before, and a sum's terms follow
+    /// TraditionalForm's order, the way Wolfram draws the legend.
+    #[test]
+    fn plot_legends_follow_traditional_form_order_and_relations() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2}, {2, 3}}, PlotLegends -> \
+         {Subscript[v, 1] == Subscript[k, 2] Sin[Subscript[k, 1] x + \\[Phi]], \
+          a <= b, a != b, x^2 - 1, 1 + x}]",
+      );
+      assert!(svg.contains(">v₁ = k₂ sin(k₁ x + ϕ)<"), "{svg}");
+      assert!(svg.contains(">a ≤ b<"), "{svg}");
+      assert!(svg.contains(">a ≠ b<"), "{svg}");
+      assert!(svg.contains(">x² - 1<"), "{svg}");
+      assert!(svg.contains(">x + 1<"), "{svg}");
+    }
+
+    /// A `Spacer` in a `Row` that is set as graphics text keeps the color
+    /// and slant of the styled items beside it: the gap is several blanks
+    /// of the text but a single run of the label's styling.
+    #[test]
+    fn inset_row_with_spacer_keeps_item_styles() {
+      let svg = export_svg(
+        "Graphics[{Inset[Row[{Spacer[15], \
+         Style[Subscript[Style[\"v\", Italic], 1], Blue]}], {1, 1}]}]",
+      );
+      assert!(
+        svg.contains("<tspan font-style=\"italic\" fill=\"rgb(0,0,255)\">v</tspan><tspan fill=\"rgb(0,0,255)\">₁</tspan>"),
+        "{svg}"
+      );
+      let svg = export_svg(
+        "Graphics[{Inset[Row[{\"a\", Spacer[3], Style[\"b\", Bold]}], {1, 1}]}]",
+      );
+      assert!(
+        svg.contains("<tspan font-weight=\"bold\">b</tspan>"),
+        "{svg}"
+      );
     }
 
     #[test]
@@ -32867,6 +33047,29 @@ mod show {
     assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
   }
 
+  /// `Show[Histogram[…, opts], Plot[…]]` takes its options from the
+  /// histogram, the first graphic: its `PlotLabel` (here a `Grid` of lines)
+  /// labels the combined picture. Regression: the histogram's options were
+  /// dropped, so the label vanished as soon as a curve was overlaid.
+  #[test]
+  fn show_histogram_with_plot_keeps_histogram_options() {
+    clear_state();
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, {0, 4, 1}, "ProbabilityDensity",
+          PlotLabel -> Grid[{{"top line"}, {"bottom line"}}],
+          ChartStyle -> Red],
+        Plot[x/8, {x, 0, 4}], PlotRange -> All]"#,
+    );
+    assert!(svg.contains(">top line<"), "{svg}");
+    assert!(svg.contains(">bottom line<"), "{svg}");
+    // An option given to Show itself still wins over the histogram's.
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, PlotLabel -> "inner"],
+        Plot[x, {x, 0, 4}], PlotLabel -> "outer"]"#,
+    );
+    assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
+  }
+
   /// A bare `PlotRange -> {min, max}` given to `Show` on top of a plot is the
   /// y range: the plotted x domain (here -7..7) stays fully visible.
   #[test]
@@ -33604,6 +33807,57 @@ mod graphics_row {
       tail.split('"').next().unwrap().parse().unwrap()
     };
     (attr("width"), attr("height"))
+  }
+
+  /// The nested `<svg>` cells of a layout, as their `width`/`height`.
+  fn cell_sizes(code: &str) -> Vec<(String, String)> {
+    let svg = interpret_with_stdout(code)
+      .unwrap()
+      .graphics
+      .expect("layout should render");
+    svg
+      .split("<svg ")
+      .skip(2)
+      .map(|tag| {
+        let attr = |name: &str| -> String {
+          let tail = tag.split(&format!(" {name}=\"")).nth(1).unwrap();
+          tail.split('"').next().unwrap().to_string()
+        };
+        (attr("width"), attr("height"))
+      })
+      .collect()
+  }
+
+  /// `Show[p]` is the picture `p`, so a layout cell wrapped in `Show` is
+  /// sized exactly like the bare plot.
+  #[test]
+  fn show_cell_is_sized_like_its_plot() {
+    clear_state();
+    let bare =
+      "GraphicsRow[{Plot[Sin[x], {x, 0, 6}], Plot[Cos[x], {x, 0, 6}]}]";
+    let shown =
+      "GraphicsRow[{Show[Plot[Sin[x], {x, 0, 6}]], Plot[Cos[x], {x, 0, 6}]}]";
+    assert_eq!(outer_size(shown), outer_size(bare));
+    assert_eq!(cell_sizes(shown), cell_sizes(bare));
+  }
+
+  /// A numeric `ImageSize` on a plot cell only sets its shape, as it does
+  /// on a `Graphics` cell: a sized plot above a sized legend picture, both
+  /// 200 wide, are drawn at the same width, with or without `Show`.
+  #[test]
+  fn sized_plot_and_graphics_cells_share_the_column_width() {
+    clear_state();
+    for plot in [
+      "Plot[x, {x, 0, 1}, ImageSize -> 200]",
+      "Show[Plot[x, {x, 0, 1}, ImageSize -> 200], Graphics[Point[{0, 0}]]]",
+    ] {
+      let code = format!(
+        "GraphicsColumn[{{{plot}, Graphics[Circle[], ImageSize -> 200]}}]"
+      );
+      let sizes = cell_sizes(&code);
+      assert_eq!(sizes.len(), 2, "{code}: {sizes:?}");
+      assert_eq!(sizes[0].0, sizes[1].0, "{code}: {sizes:?}");
+    }
   }
 
   /// `ImageSize -> {w, h}` with `AspectRatio -> Full` makes the layout fill
@@ -35025,7 +35279,7 @@ mod graphics_grid {
 
   /// A `Style[Grid[…], …]` reached through `Text`/`Pane` unwrapping must
   /// still take the *whole-directives* styled path `render_grid_if_needed`
-  /// already gives a bare `Style[Grid[…], …]` — which colors the frame and
+  /// gives a bare `Style[Grid[…], …]` — which colors the frame and
   /// dividers, not only the cells. Distributing the directives over the
   /// cells first (as `Column`/`Row` need) would leave the frame at its
   /// default color instead.
@@ -35043,8 +35297,15 @@ mod graphics_grid {
         .unwrap()
         .graphics
         .unwrap();
-    assert_eq!(wrapped, bare, "wrapped: {wrapped}\nbare: {bare}");
-    assert!(wrapped.contains("stroke=\"rgb(255,0,0)\""), "{wrapped}");
+    // `Text` sets the cells in the proportional text face, so the columns
+    // may be narrower, but every frame line and divider is colored alike.
+    let red = |svg: &str| svg.matches("stroke=\"rgb(255,0,0)\"").count();
+    assert!(red(&bare) > 0, "{bare}");
+    assert_eq!(
+      red(&wrapped),
+      red(&bare),
+      "wrapped: {wrapped}\nbare: {bare}"
+    );
   }
 
   /// The same `Style`-through-`Text`/`Pane` path for a `TextGrid`, exercising
