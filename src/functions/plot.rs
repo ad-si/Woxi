@@ -15705,17 +15705,6 @@ pub(crate) fn style_stroke(
   (stroke, w)
 }
 
-/// Parse a PlotRange option value into (x_range, y_range) overrides.
-///
-/// Supported forms:
-/// - `All` / `Automatic` / `Full` → (None, None)
-/// - `r` (a bare number) → (Some((-r, r)), Some((-r, r))) — "r in all
-///   directions from the origin", equivalent to `{{-r, r}, {-r, r}}`
-/// - `{ymin, ymax}` → (None, Some((ymin, ymax)))
-/// - `{Automatic, ymax}` / `{ymin, All}` → an open end, which comes back as
-///   NaN and follows the data (see [`fill_range`])
-/// - `{{xmin, xmax}, {ymin, ymax}}` → (Some(x), Some(y))
-/// - `{All, {ymin, ymax}}` / `{{xmin,xmax}, All}` → only the specified axis
 /// `Automatic`, `All` or `Full` as one end of a `PlotRange` pair.
 fn is_open_range_end(e: &Expr) -> bool {
   matches!(e, Expr::Identifier(s) if s == "All" || s == "Automatic" || s == "Full")
@@ -15727,6 +15716,17 @@ pub(crate) fn closed_range(range: Option<(f64, f64)>) -> Option<(f64, f64)> {
   range.filter(|(lo, hi)| !lo.is_nan() && !hi.is_nan())
 }
 
+/// Parse a PlotRange option value into (x_range, y_range) overrides.
+///
+/// Supported forms:
+/// - `All` / `Automatic` / `Full` → (None, None)
+/// - `r` (a bare number) → (Some((-r, r)), Some((-r, r))) — "r in all
+///   directions from the origin", equivalent to `{{-r, r}, {-r, r}}`
+/// - `{ymin, ymax}` → (None, Some((ymin, ymax)))
+/// - `{Automatic, ymax}` / `{ymin, All}` → an open end, which comes back as
+///   NaN and follows the data (see [`fill_range`])
+/// - `{{xmin, xmax}, {ymin, ymax}}` → (Some(x), Some(y))
+/// - `{All, {ymin, ymax}}` / `{{xmin,xmax}, All}` → only the specified axis
 #[allow(clippy::type_complexity)]
 pub(crate) fn parse_plot_range(
   value: &Expr,
