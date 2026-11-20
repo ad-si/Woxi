@@ -11232,6 +11232,7 @@ fn render_axes(
   origin: (Option<f64>, Option<f64>),
   label_fill: Option<Color>,
   tick_font: f64,
+  label_font: f64,
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -11385,9 +11386,9 @@ fn render_axes(
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"start\">{x_label}</text>\n",
+          "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{label_font}\" font-family=\"sans-serif\" text-anchor=\"start\">{x_label}</text>\n",
           svg_w + AXES_LABEL_GAP_X,
-          axis_y_px + center_to_baseline(LABEL_FONT),
+          axis_y_px + center_to_baseline(label_font),
         ));
       }
     }
@@ -11400,8 +11401,8 @@ fn render_axes(
         ));
       } else {
         svg.push_str(&format!(
-          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
-          -AXES_LABEL_GAP_Y - descent(LABEL_FONT),
+          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{label_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{y_label}</text>\n",
+          -AXES_LABEL_GAP_Y - descent(label_font),
         ));
       }
     }
@@ -11619,7 +11620,7 @@ fn graphics_decorations(
   axes_label: Option<&(String, String)>,
   title_lines: usize,
   title_font: f64,
-  frame_label_font: f64,
+  label_font: f64,
   tick_font: f64,
 ) -> crate::functions::plot_padding::Decorations {
   use crate::functions::plot_padding::{
@@ -11648,7 +11649,7 @@ fn graphics_decorations(
   let measure = |markup: &str| {
     axes_label_picture_size(markup).unwrap_or_else(|| {
       let size = crate::functions::plot_padding::markup_font_size(markup)
-        .unwrap_or(LABEL_FONT);
+        .unwrap_or(label_font);
       (text_width(markup, size), line_height(size))
     })
   };
@@ -11696,7 +11697,7 @@ fn graphics_decorations(
       let text = |s: &String| {
         (!s.is_empty()).then(|| {
           axes_label_picture_size(s)
-            .map_or(block_height(1, frame_label_font), |(_, h)| h)
+            .map_or(block_height(1, label_font), |(_, h)| h)
         })
       };
       d.frame_labels = [text(b), text(l), text(t), text(r)];
@@ -15227,8 +15228,22 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let label_font =
     GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
   let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
-  // The same size sets the tick labels of the frame and of the axes.
-  let tick_font = label_font.size.unwrap_or(TICK_FONT);
+  // The same size sets the tick labels of the frame and of the axes; the
+  // axes' own `TicksStyle` / `AxesStyle` size wins over it.
+  let axis_font = |spec: &Option<Expr>| {
+    spec
+      .as_ref()
+      .and_then(crate::functions::plot::axis_pair_font_size)
+  };
+  let axes_font = (!frame).then(|| axis_font(&axes_style)).flatten();
+  let tick_font = (!frame)
+    .then(|| axis_font(&ticks_style))
+    .flatten()
+    .or(axes_font)
+    .or(label_font.size)
+    .unwrap_or(TICK_FONT);
+  // The axes labels take the `AxesStyle` size, else the `LabelStyle` one.
+  let axes_label_font = axes_font.or(label_font.size).unwrap_or(LABEL_FONT);
   let title_font = plot_label
     .iter()
     .flatten()
@@ -15244,7 +15259,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_label.as_ref(),
     plot_label.as_ref().map_or(0, Vec::len),
     title_font,
-    frame_label_font,
+    if frame {
+      frame_label_font
+    } else {
+      axes_label_font
+    },
     tick_font,
   );
   // The shape of the drawing area: what the data (or `AspectRatio`) asks
@@ -15722,6 +15741,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_origin,
     label_color,
     tick_font,
+    axes_label_font,
   );
 
   if frame {
