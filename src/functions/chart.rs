@@ -1588,25 +1588,20 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       arithmetic_label(e)
     }
-    // A comparison reads as its sides joined by the operator, each side set
-    // as a label itself — `PlotLegends -> {Subscript[v, 1] == Sin[x]}` shows
-    // `v₁ == Sin[x]`, not the raw `Subscript[v, 1]` call.
+    // A comparison reads as its sides joined by the operator's
+    // TraditionalForm glyph, each side set as a label itself —
+    // `PlotLegends -> {Subscript[v, 1] == Sin[x]}` shows `v₁ = sin(x)`, not
+    // the raw `Subscript[v, 1]` call.
     Expr::Comparison {
       operands,
       operators,
     } => {
       let mut out = expr_to_label(operands.first()?)?;
       for (op, operand) in operators.iter().zip(&operands[1..]) {
-        let sym = match op {
-          ComparisonOp::Equal => "==",
-          ComparisonOp::NotEqual => "!=",
-          ComparisonOp::Less => "<",
-          ComparisonOp::LessEqual => "<=",
-          ComparisonOp::Greater => ">",
-          ComparisonOp::GreaterEqual => ">=",
-          ComparisonOp::SameQ => "===",
-          ComparisonOp::UnsameQ => "=!=",
-        };
+        let sym =
+          crate::evaluator::dispatch::complex_and_special::tf_comparison_op_glyph(
+            *op,
+          );
         out.push_str(&format!(" {sym} {}", expr_to_label(operand)?));
       }
       Some(out)
@@ -1723,9 +1718,10 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
     }
   }
 
-  let mut sum = Vec::new();
-  terms(e, &mut sum, false);
-  if sum.len() > 1 {
+  if is_sum(e) {
+    // The terms are set in TraditionalForm's order: `k₁ x + ϕ`.
+    let sum =
+      crate::evaluator::dispatch::complex_and_special::tf_sum_terms_in_order(e);
     let mut out = String::new();
     for (i, (neg, t)) in sum.iter().enumerate() {
       let mut text = expr_to_label(t)?;
@@ -1749,6 +1745,9 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
 
   let (mut num, mut den) = (Vec::new(), Vec::new());
   factors(e, &mut num, &mut den, false);
+  // The factors are set in TraditionalForm's order: `k₂ sin(k₁ x)`.
+  crate::evaluator::dispatch::complex_and_special::tf_order_factors(&mut num);
+  crate::evaluator::dispatch::complex_and_special::tf_order_factors(&mut den);
   let join = |parts: &[Expr]| -> Option<String> {
     let texts = parts
       .iter()

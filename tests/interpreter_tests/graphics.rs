@@ -17164,10 +17164,50 @@ mod plot3d {
          {Subscript[v, 1] == Subscript[k, 2] Sin[Subscript[k, 1] x], \
           Cos[Subscript[a, 3]], a < b}]",
       );
-      assert!(svg.contains("v₁ == sin(x k₁) k₂"), "{svg}");
+      assert!(svg.contains("v₁ = k₂ sin(k₁ x)"), "{svg}");
       assert!(svg.contains("cos(a₃)"), "{svg}");
       assert!(svg.contains("a &lt; b"), "{svg}");
       assert!(!svg.contains("Subscript["), "{svg}");
+    }
+
+    /// A graphic's labels are set in TraditionalForm: an equation's `==` is
+    /// `=` (and `<=`, `!=` are `≤`, `≠`), an indexed variable leads the
+    /// factors it is ordered before, and a sum's terms follow
+    /// TraditionalForm's order, the way Wolfram draws the legend.
+    #[test]
+    fn plot_legends_follow_traditional_form_order_and_relations() {
+      let svg = export_svg(
+        "ListPlot[{{1, 2}, {2, 3}}, PlotLegends -> \
+         {Subscript[v, 1] == Subscript[k, 2] Sin[Subscript[k, 1] x + \\[Phi]], \
+          a <= b, a != b, x^2 - 1, 1 + x}]",
+      );
+      assert!(svg.contains(">v₁ = k₂ sin(k₁ x + ϕ)<"), "{svg}");
+      assert!(svg.contains(">a ≤ b<"), "{svg}");
+      assert!(svg.contains(">a ≠ b<"), "{svg}");
+      assert!(svg.contains(">x² - 1<"), "{svg}");
+      assert!(svg.contains(">x + 1<"), "{svg}");
+    }
+
+    /// A `Spacer` in a `Row` that is set as graphics text keeps the color
+    /// and slant of the styled items beside it: the gap is several blanks
+    /// of the text but a single run of the label's styling.
+    #[test]
+    fn inset_row_with_spacer_keeps_item_styles() {
+      let svg = export_svg(
+        "Graphics[{Inset[Row[{Spacer[15], \
+         Style[Subscript[Style[\"v\", Italic], 1], Blue]}], {1, 1}]}]",
+      );
+      assert!(
+        svg.contains("<tspan font-style=\"italic\" fill=\"rgb(0,0,255)\">v</tspan><tspan fill=\"rgb(0,0,255)\">₁</tspan>"),
+        "{svg}"
+      );
+      let svg = export_svg(
+        "Graphics[{Inset[Row[{\"a\", Spacer[3], Style[\"b\", Bold]}], {1, 1}]}]",
+      );
+      assert!(
+        svg.contains("<tspan font-weight=\"bold\">b</tspan>"),
+        "{svg}"
+      );
     }
 
     #[test]
