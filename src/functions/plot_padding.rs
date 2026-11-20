@@ -319,6 +319,13 @@ pub(crate) fn truncate_label(markup: &str, width: f64) -> String {
 /// hyphen, and an integer part of five or more digits split into blocks
 /// of three by thin spaces.
 pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
+  // A typeset picture (a stacked fraction) is as wide as it was laid out,
+  // at the tick font it was typeset in.
+  if let Some((w, _)) =
+    crate::functions::graphics::axes_label_picture_size(markup)
+  {
+    return w * size / TICK_FONT;
+  }
   let chars = visible_chars(markup);
   let numeric = !chars.is_empty()
     && chars
@@ -361,6 +368,24 @@ pub(crate) fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
   let lead = chars.first().map_or(0.0, |&c| atkinson_lsb_em(c));
   let width = chars.iter().copied().map(atkinson_width_em).sum::<f64>();
   (lead * size, width * size)
+}
+
+/// `exported_text_extent` for the text of the `<text …>` start tag `tag`:
+/// a label set in a monospace face (a `Row`/`Column` cell) advances every
+/// glyph by the monospace advance, so it is measured by that rather than by
+/// the wider proportional glyphs (a `%` would otherwise seem to overrun the
+/// canvas and be pulled back onto its neighbor).
+fn exported_tag_text_extent(tag: &str, markup: &str, size: f64) -> (f64, f64) {
+  let family = tag
+    .split_once("font-family=\"")
+    .and_then(|(_, rest)| rest.split_once('"'))
+    .map_or("", |(family, _)| family);
+  let first = family.split(',').next().unwrap_or("").trim();
+  if crate::functions::graphics::is_monospace_font_family(first) {
+    let n = visible_chars(markup).len() as f64;
+    return (0.0, n * crate::functions::graphics::MONO_ADVANCE * size);
+  }
+  exported_text_extent(markup, size)
 }
 
 /// Shift every label of a flat plot SVG that would run past the left or
@@ -449,7 +474,7 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
       continue;
     };
     let size = attr_number(tag, "font-size").map_or(16.0, |(_, _, v)| v);
-    let (lead, w) = exported_text_extent(content, size);
+    let (lead, w) = exported_tag_text_extent(tag, content, size);
     if w <= 0.0 || w - lead > width {
       continue;
     }
@@ -809,6 +834,16 @@ impl Decorations {
   }
 }
 
+/// The height of a tick label's markup at `size`: a typeset picture (a
+/// stacked fraction) is as tall as it was laid out at the tick font, text
+/// takes a line per line.
+pub(crate) fn tick_label_height(markup: &str, size: f64) -> f64 {
+  match crate::functions::graphics::axes_label_picture_size(markup) {
+    Some((_, h)) => h * size / TICK_FONT,
+    None => block_height(label_lines(markup), size),
+  }
+}
+
 /// Lines in a label string (`"a\nb"` has two).
 fn label_lines(text: &str) -> usize {
   text.split('\n').count()
@@ -886,7 +921,14 @@ pub(crate) fn plot_title_band(
   match &opts.plot_label {
     Some(sl) if !sl.text.is_empty() => {
       let lines = 1 + sl.extra_line_count().max(label_lines(&sl.text) - 1);
-      block_height(lines, plot_title_font(opts))
+      // A `Framed` title also claims the frame's 6pt margin above and
+      // below and its stroke, so its box does not reach into the plot.
+      let frame = if sl.frame.is_some() {
+        2.0 * 6.0 + 1.0
+      } else {
+        0.0
+      };
+      block_height(lines, plot_title_font(opts)) + frame
     }
     _ => 0.0,
   }
@@ -926,7 +968,7 @@ pub(crate) fn plot_decorations(
           .split('\n')
           .map(|line| tick_label_width(line, tick_font))
           .fold(0.0, f64::max),
-        height: block_height(label_lines(l), tick_font),
+        height: tick_label_height(l, tick_font),
       })
       .filter(|b| b.frac.is_finite())
       .collect::<Vec<_>>()
