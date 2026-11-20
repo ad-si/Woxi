@@ -1638,6 +1638,26 @@ mod graphics {
       assert!(svg.contains("fill-opacity=\"0\""), "{svg}");
     }
 
+    #[test]
+    fn a_plot_epilog_graphics_complex_is_drawn() {
+      // `GraphicsComplex` inside a plot's `Epilog` was dropped: its
+      // primitives index into the complex's points.
+      let svg = export_svg(
+        "ListPlot[{{0, 0}, {1, 0}, {1, 1}}, Epilog -> {GraphicsComplex[\
+         {{0, 0}, {1, 0}, {1, 1}}, {Blue, Polygon[{1, 2, 3}], Red, \
+         Line[{1, 3}]}]}]",
+      );
+      let epilog = svg.split_once("epilogClip").expect("an epilog").1;
+      assert!(
+        epilog.contains("<polygon fill=\"rgb(0,0,255)\""),
+        "the polygon of the complex is drawn: {epilog}"
+      );
+      assert!(
+        epilog.contains("<polyline fill=\"none\" stroke=\"rgb(255,0,0)\""),
+        "the line of the complex is drawn: {epilog}"
+      );
+    }
+
     /// `Graphics` takes `Prolog` and `Epilog` too: extra primitives drawn
     /// under and over its content. Neither stretches the plot range — a
     /// point far outside it is clipped away rather than rescaling the
@@ -16059,6 +16079,60 @@ mod plot3d {
 
   mod list_plot {
     use super::*;
+
+    /// The frame tick labels of a rendered plot, in drawing order.
+    fn tick_labels(svg: &str) -> Vec<String> {
+      svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| {
+          let text = t.split_once('>')?.1.split_once("</text>")?.0.trim();
+          (!text.is_empty()).then(|| text.to_string())
+        })
+        .collect()
+    }
+
+    // An explicit `PlotRangePadding` was ignored by `ListPlot`: the range
+    // kept its default padding, and an explicit `PlotRange` none at all.
+    #[test]
+    fn list_plot_explicit_plot_range_padding() {
+      let labels = |opts: &str| {
+        tick_labels(&export_svg(&format!(
+          "ListPlot[{{{{0, 0}}, {{1, 0}}, {{1, 1}}}}, {opts}, \
+           Frame -> True, Axes -> False]"
+        )))
+      };
+      let padded: Vec<String> = ["-0.5", "0.0", "0.5", "1.0", "1.5"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+      let both = [padded.clone(), padded].concat();
+      // An absolute amount replaces the automatic padding …
+      assert_eq!(labels("PlotRangePadding -> 0.5"), both);
+      // … and pads an explicit `PlotRange` as well.
+      assert_eq!(
+        labels("PlotRange -> {{0, 1}, {0, 1}}, PlotRangePadding -> 0.5"),
+        both
+      );
+      // Without it, an explicit `PlotRange` is not padded.
+      let unpadded: Vec<String> = ["0.0", "0.2", "0.4", "0.6", "0.8", "1.0"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+      assert_eq!(
+        labels("PlotRange -> {{0, 1}, {0, 1}}"),
+        [unpadded.clone(), unpadded.clone()].concat()
+      );
+      // Per side: 1 below x, `None` on y.
+      let x: Vec<String> = ["-1.0", "-0.5", "0.0", "0.5", "1.0"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+      assert_eq!(
+        labels("PlotRangePadding -> {{1, Automatic}, None}"),
+        [unpadded, x].concat()
+      );
+    }
 
     #[test]
     fn list_plot_simple_y_values() {

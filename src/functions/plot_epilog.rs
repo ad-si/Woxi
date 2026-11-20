@@ -760,6 +760,19 @@ fn render_item(
           render_item(&inner, style, area, out);
         }
       }
+      // `GraphicsComplex[pts, prims]`: the primitives with their vertex
+      // indices resolved to coordinates, drawn in the current style.
+      "GraphicsComplex" if args.len() >= 2 => {
+        if let Expr::List(points) = &args[0] {
+          let resolved =
+            crate::functions::graphics::graphics_complex_to_normal_form(
+              points,
+              &args[1],
+              &args[2..],
+            );
+          render_item(&resolved, style, area, out);
+        }
+      }
       "Line" if !args.is_empty() => {
         for pts in collect_point_lists(&args[0]) {
           out.push_str(&format!(
