@@ -5682,7 +5682,8 @@ mod interpreter_tests {
   #[test]
   fn test_axes_label_letter_script_is_typeset() {
     // `Subscript[x, n]` has no Unicode subscript for a letter, so the label
-    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`.
+    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`,
+    // with base and script in `TraditionalForm` italics.
     clear_state();
     let svg = interpret(
       "ExportString[ListLinePlot[{1, 3, 2}, \
@@ -5691,7 +5692,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan></text>"
+        "<tspan font-style=\"italic\">x</tspan><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">n</tspan></tspan></text>"
       ),
       "subscript letter not typeset: {svg}"
     );
@@ -5702,7 +5704,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "y<tspan baseline-shift=\"super\" font-size=\"70%\">k</tspan></text>"
+        "<tspan font-style=\"italic\">y</tspan><tspan baseline-shift=\"super\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">k</tspan></tspan></text>"
       ),
       "superscript letter not typeset: {svg}"
     );
