@@ -58903,7 +58903,11 @@ mod traditional_form_text_scripts {
     assert!(svg.contains(">x\u{b2}+y</text>"), "{svg}");
     let svg =
       export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
-    assert!(svg.contains("16\u{207f} ((p-q) q\u{b3})\u{207f}"), "{svg}");
+    // The product's factors are set apart by thin spaces.
+    assert!(
+      svg.contains("16\u{207f}\u{2009}((p-q)\u{2009}q\u{b3})\u{207f}"),
+      "{svg}"
+    );
   }
 
   #[test]
@@ -58911,7 +58915,7 @@ mod traditional_form_text_scripts {
     let svg = export_svg("Graphics[Text[TraditionalForm[x^(a b)], {0, 0}]]");
     assert!(
       svg.contains(
-        "x<tspan baseline-shift=\"super\" font-size=\"70%\">a b</tspan>"
+        "x<tspan baseline-shift=\"super\" font-size=\"70%\">a\u{2009}b</tspan>"
       ),
       "{svg}"
     );
