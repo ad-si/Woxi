@@ -448,6 +448,14 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
     let Some((x_at, len, x)) = attr_number(tag, "x") else {
       continue;
     };
+    // A label whose own anchor lies off the canvas belongs to a primitive
+    // placed outside the plot range (`Text[…, {-7, 0}]` under
+    // `PlotRange -> {{-2, 2}, …}`): Wolfram leaves it there, out of view,
+    // so it is not dragged back to the edge. Only labels the layout put
+    // inside the canvas can overhang it through the wider exported face.
+    if !(0.0..=width).contains(&x) {
+      continue;
+    }
     let size = attr_number(tag, "font-size").map_or(16.0, |(_, _, v)| v);
     let (lead, w) = exported_text_extent(content, size);
     if w <= 0.0 || w - lead > width {
@@ -1131,6 +1139,16 @@ mod tests {
                text-anchor=\"middle\" font-size=\"10\">100</text></svg>";
     let out = keep_text_in_view(svg);
     assert!(out.contains("x=\"391.5\""), "{out}");
+    // A label anchored off the canvas (a `Text` placed outside an explicit
+    // `PlotRange`) stays out of view instead of being pinned to the edge.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"-114\" y=\"9\" \
+               text-anchor=\"middle\" font-size=\"20\">A</text><text \
+               x=\"420\" y=\"9\" text-anchor=\"middle\" font-size=\"20\">\
+               B</text></svg>";
+    assert!(matches!(
+      keep_text_in_view(svg),
+      std::borrow::Cow::Borrowed(_)
+    ));
     // Labels already inside, and labels in a transformed group, stay.
     let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"30\" \
                text-anchor=\"end\" font-size=\"10\">0.08</text>\

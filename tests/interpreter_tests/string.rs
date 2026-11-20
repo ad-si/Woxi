@@ -16212,6 +16212,20 @@ mod typeset_boxes_regressions {
     );
   }
 
+  /// A `Grid` in TraditionalForm boxes is the tagged grid box, as in
+  /// StandardForm. Regression: it was boxed as a call around a
+  /// parenthesized matrix, `Grid[(GridBox[…])]`.
+  #[test]
+  fn traditional_boxes_of_grid_are_a_tagged_grid_box() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[Grid[{{a, x^2}, {3, b}}], TraditionalForm]").unwrap(),
+      "FormBox[TagBox[GridBox[{{a, SuperscriptBox[x, 2]}, {3, b}}, \
+       AutoDelete -> False, GridBoxItemSize -> {Columns -> {{Automatic}}, \
+       Rows -> {{Automatic}}}], Grid], TraditionalForm]"
+    );
+  }
+
   /// TraditionalForm sets a positive rational coefficient of a sum (or of a
   /// power of one) as a fraction in front of it; a monomial still goes over
   /// one bar.

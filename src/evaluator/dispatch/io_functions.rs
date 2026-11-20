@@ -7892,6 +7892,30 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         &unquoted_display_string(&args[0]),
       ))
     }
+    // `Style[TraditionalForm[grid], directives…]` (what `Text` makes of
+    // `Text[TraditionalForm[Style[Grid[…], 24]]]`): the directives style
+    // the typeset grid, so they move inside the `TraditionalForm` and the
+    // grid is typeset with them, rather than flattened into one line of
+    // text by the styled-text path.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: targs }
+          if tf == "TraditionalForm"
+            && targs.len() == 1
+            && typesets_a_grid(&targs[0])) =>
+    {
+      let Expr::FunctionCall { args: targs, .. } = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let styled = call(
+        "Style",
+        std::iter::once(targs[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+      expr_to_svg(&call1("TraditionalForm", styled))
+    }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and
     // places its content, so the directives style the content, inside the
     // pane — which keeps its width (and the wrapping of text at it).
@@ -9469,4 +9493,22 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   format!("{head}{rest}")
+}
+
+/// Whether `expr` is a `Grid`/`TextGrid` call, possibly under `Style`
+/// wrappers.
+fn typesets_a_grid(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      typesets_a_grid(&args[0])
+    }
+    _ => false,
+  }
 }

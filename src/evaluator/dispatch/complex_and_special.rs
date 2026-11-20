@@ -4675,53 +4675,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let Expr::List(rows) = &args[0] else {
         unreachable!("guarded by the match arm")
       };
-      let rows: Vec<Expr> = rows
-        .iter()
-        .map(|row| match row {
-          Expr::List(cells) => {
-            Expr::List(cells.iter().map(expr_to_box_form).collect())
-          }
-          _ => unreachable!("guarded by the match arm"),
-        })
-        .collect();
-      let rule = |k: Expr, v: Expr| Expr::Rule {
-        pattern: Box::new(k),
-        replacement: Box::new(v),
-      };
-      let automatic = || {
-        Expr::List(
-          vec![Expr::List(
-            vec![Expr::Identifier("Automatic".into())].into(),
-          )]
-          .into(),
-        )
-      };
-      call(
-        "TagBox",
-        vec![
-          call(
-            "GridBox",
-            vec![
-              Expr::List(rows.into()),
-              rule(
-                Expr::Identifier("AutoDelete".into()),
-                Expr::Identifier("False".into()),
-              ),
-              rule(
-                Expr::Identifier("GridBoxItemSize".into()),
-                Expr::List(
-                  vec![
-                    rule(str_expr("Columns"), automatic()),
-                    rule(str_expr("Rows"), automatic()),
-                  ]
-                  .into(),
-                ),
-              ),
-            ],
-          ),
-          str_expr("Grid"),
-        ],
-      )
+      grid_tag_box(rows, expr_to_box_form)
     }
     Expr::FunctionCall { name, args }
       if name == "Subscript" && args.len() == 2 =>
@@ -7804,6 +7758,20 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
     }
+    // In box text a `Grid` is the FrontEnd's tagged grid box, as in
+    // StandardForm, its items boxed as expressions, so the text reads back
+    // as the same `Grid` (and draws as a grid, not `Grid[(…)]`).
+    "Grid"
+      if TF_BOX_TEXT.get()
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(rows)
+          if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
+    {
+      let Expr::List(rows) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      grid_tag_box(rows, tf)
+    }
     // `Grid[{{a, b}, {c, d}}]` lays its items out in rows and columns, each
     // typeset in place (a string item contributes its text), instead of
     // printing the call around a parenthesized matrix.
@@ -8515,6 +8483,59 @@ fn tf(expr: &Expr) -> Expr {
     } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
     _ => expr_to_box_form(expr),
   }
+}
+
+/// The FrontEnd's grid box for the rows of a `Grid[{{a, b}, …}]` (every row
+/// a list), each item boxed by `cell` and tagged so it reads back as a
+/// `Grid`: `TagBox[GridBox[{{a, b}, …}, AutoDelete -> False,
+/// GridBoxItemSize -> {…}], "Grid"]`. Shared by the StandardForm and the
+/// TraditionalForm box text.
+fn grid_tag_box(rows: &[Expr], cell: impl Fn(&Expr) -> Expr) -> Expr {
+  let rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => Expr::List(cells.iter().map(&cell).collect()),
+      other => Expr::List(vec![cell(other)].into()),
+    })
+    .collect();
+  let rule = |k: Expr, v: Expr| Expr::Rule {
+    pattern: Box::new(k),
+    replacement: Box::new(v),
+  };
+  let automatic = || {
+    Expr::List(
+      vec![Expr::List(
+        vec![Expr::Identifier("Automatic".into())].into(),
+      )]
+      .into(),
+    )
+  };
+  call(
+    "TagBox",
+    vec![
+      call(
+        "GridBox",
+        vec![
+          Expr::List(rows.into()),
+          rule(
+            Expr::Identifier("AutoDelete".into()),
+            Expr::Identifier("False".into()),
+          ),
+          rule(
+            Expr::Identifier("GridBoxItemSize".into()),
+            Expr::List(
+              vec![
+                rule(str_expr("Columns"), automatic()),
+                rule(str_expr("Rows"), automatic()),
+              ]
+              .into(),
+            ),
+          ),
+        ],
+      ),
+      str_expr("Grid"),
+    ],
+  )
 }
 
 /// Convert an expression to its TraditionalForm box tree for typeset SVG
