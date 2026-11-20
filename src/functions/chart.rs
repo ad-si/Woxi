@@ -605,6 +605,15 @@ fn traditional_sums(expr: &Expr) -> Expr {
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // A `Dynamic[x]` label reads as the value `x` currently has.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return parse_styled_label(
+      &crate::functions::graphics::dynamic_current_value(expr),
+    );
+  }
   // `Text[…]` sets its content in the graphic's own text style, so the font
   // weight and slant it inherits are reset — `Style[Text["a"], Bold]` is not
   // bold in Wolfram, while the color and size still reach through. A

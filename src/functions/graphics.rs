@@ -18833,6 +18833,15 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some(styled) = hoist_style_out_of_number_form(expr) {
     return expr_to_svg_markup(&styled);
   }
+  // A typeset `Dynamic[x]` shows the value `x` currently has, not the
+  // wrapper (e.g. a Manipulate variable initialized to `Dynamic[…]` and
+  // then used as a plot or axis label).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return expr_to_svg_markup(&dynamic_current_value(expr));
+  }
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
   // `Print`/OutputForm in a script, which show the literal wrapper because
@@ -21251,6 +21260,10 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 pub fn traditional_label(e: &Expr) -> String {
   match e {
     Expr::String(s) => s.clone(),
+    // A `Dynamic[x]` label reads as the value `x` currently has.
+    Expr::FunctionCall { name, args } if name == "Dynamic" && !args.is_empty() => {
+      traditional_label(&dynamic_current_value(e))
+    }
     // `Rotate[content, angle]` (a vertical axis label idiom) typesets its
     // content unrotated, as `expr_to_svg_markup` does, rather than the
     // `Rotate(…)` call `TraditionalForm` would print. A `Text[content]`
@@ -48993,6 +49006,26 @@ fn display_expr_to_node(
       // draw it as a slider over that range (the speed only paces playback).
       "Trigger" if args.len() >= 2 => {
         match slider_node(&args[..2], Vec::new(), false) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
+      // `Animator[Dynamic[lval], {min, max[, step]}[, step], opts…]` written
+      // inside a display element (e.g. next to a setter bar in a `Row`):
+      // like `Trigger`, it sweeps `lval` over its range, so draw it as a
+      // slider over that range. A bare third positional step folds into the
+      // range; options (rules) only affect playback and appearance.
+      "Animator" if args.len() >= 2 => {
+        let range = match (&args[1], args.get(2)) {
+          (Expr::List(b), Some(step))
+            if b.len() == 2
+              && !matches!(step, Expr::Rule { .. } | Expr::RuleDelayed { .. }) =>
+          {
+            Expr::List(vec![b[0].clone(), b[1].clone(), step.clone()].into())
+          }
+          (r, _) => r.clone(),
+        };
+        match slider_node(&[args[0].clone(), range], Vec::new(), false) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
