@@ -54047,6 +54047,46 @@ mod generalized_bar_chart {
     );
   }
 
+  /// `TraditionalForm[P[X | A]]` keeps the infix bar of `Alternatives`
+  /// (a conditional probability `P(X | A)`), not `Alternatives(X, A)`.
+  #[test]
+  fn traditional_form_alternatives_boxes_keep_the_bar() {
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[P[X | A | B]]]").unwrap(),
+      "TagBox[FormBox[RowBox[{P, (, RowBox[{X, |, A, |, B}], )}], \
+       TraditionalForm], TraditionalForm, Editable -> True]"
+    );
+  }
+
+  /// `Style[expr, "TraditionalForm"]` in a picture's text sets `expr` in
+  /// traditional notation, with the infix bar spaced (`P(X | A)`); the
+  /// delimiters of `|x|` stay tight.
+  #[test]
+  fn text_label_traditional_form_style_name() {
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Row[{Style[P[X | A], \"TraditionalForm\"], \
+       \" = \", 0.9}], {0, 0}], Text[TraditionalForm[Abs[x]], {0, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">P(X | A) = 0.9<"), "{svg}");
+    assert!(svg.contains(">|x|<"), "{svg}");
+    assert!(!svg.contains("Alternatives"), "{svg}");
+  }
+
+  /// A rule inside a picture's text is typeset with its arrow glyph, as
+  /// the front end shows it, not as the printed `->` / `:>`.
+  #[test]
+  fn text_label_rule_uses_arrow_glyph() {
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Style[a -> 0, \"TraditionalForm\"], \
+       {0, 0}], Text[(a -> b) :> c, {0, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">a \u{2192} 0<"), "{svg}");
+    assert!(svg.contains(">(a \u{2192} b) \u{29F4} c<"), "{svg}");
+    assert!(!svg.contains("-&gt;"), "{svg}");
+  }
+
   /// `TraditionalForm[NumberForm[m, {3, 2}]]` of a matrix typesets the
   /// matrix the way `TraditionalForm[m]` does — a parenthesized grid — with
   /// each entry formatted by the number form, not as nested braces.
