@@ -46,6 +46,12 @@
 - A `Grid` of pictures with `FrameStyle` keeps the framed picture layout and
     draws its frame lines in that style, instead of spacing the pictures like
     a text table.
+- The legacy `PlotLegends`` package's `ShowLegend` draws its boxed legends
+    (`{icon, label}` rows or a color gradient) with `LegendPosition`,
+    `LegendSize`, `LegendShadow`, `LegendBorder` and `LegendBackground`.
+- `Manipulate` controls with a real `{min, max, step}` range take their
+    values from `Range` (`min + k step`), and an initial value matches a
+    choice the way `SameQ` does, so `{{a, 1.8}, 1.6, 2, 0.1}` lights `1.8`.
 
 # 2026-11-08 - 0.4.0
 
