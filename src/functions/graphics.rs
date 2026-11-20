@@ -40170,6 +40170,139 @@ fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
   Some(out)
 }
 
+/// A `Manipulate` whose body lays out a literal `Animate[inner, {t, …}]`
+/// among other content (`Column[{plot, Animate[…]}]`, inside `Module` or
+/// `DynamicModule` scopes) shows the inner animation's own play control
+/// in the body. A single widget animates one variable, so hoist that
+/// control into the Specifications as a `ControlType -> Animator` spec and
+/// leave the inner body, `Dynamic`-wrapped, in the Animate's place. Only one such Animate,
+/// with exactly one variable, outside any control-flow branch or held
+/// expression, qualifies. Returns the rewritten `Manipulate` arguments.
+fn hoist_nested_animate(args: &[Expr]) -> Option<Vec<Expr>> {
+  fn is_option(e: &Expr) -> bool {
+    matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  }
+  // Heads whose arguments are not simply laid out once: control flow,
+  // held or repeated code, and nested interactive cells.
+  fn opaque(name: &str) -> bool {
+    matches!(
+      name,
+      "Manipulate"
+        | "Dynamic"
+        | "If"
+        | "Which"
+        | "Switch"
+        | "Piecewise"
+        | "Function"
+        | "Hold"
+        | "HoldForm"
+        | "Button"
+        | "Table"
+        | "Map"
+        | "Do"
+    )
+  }
+  // Every literal `Animate[…]` reachable through layout and scoping
+  // wrappers, as the arguments of each.
+  fn find<'a>(expr: &'a Expr, found: &mut Vec<&'a [Expr]>) {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "Animate" => {
+        found.push(args);
+      }
+      Expr::FunctionCall { name, args } if !opaque(name) => {
+        args.iter().for_each(|a| find(a, found));
+      }
+      Expr::List(items) => items.iter().for_each(|a| find(a, found)),
+      Expr::CompoundExpr(items) => items.iter().for_each(|a| find(a, found)),
+      _ => {}
+    }
+  }
+  fn replace(expr: &Expr) -> Expr {
+    match expr {
+      // Like the Animate it replaces, `Dynamic` defers the inner body to
+      // display time, after the content laid out before it has set any
+      // variables it reads.
+      Expr::FunctionCall { name, args } if name == "Animate" => {
+        call("Dynamic", vec![args[0].clone()])
+      }
+      Expr::FunctionCall { name, args } if !opaque(name) => {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(replace).collect::<Vec<_>>().into(),
+        }
+      }
+      Expr::List(items) => {
+        Expr::List(items.iter().map(replace).collect::<Vec<_>>().into())
+      }
+      Expr::CompoundExpr(items) => {
+        Expr::CompoundExpr(items.iter().map(replace).collect())
+      }
+      other => other.clone(),
+    }
+  }
+  fn spec_var(spec: &Expr) -> Option<&str> {
+    match spec {
+      Expr::List(items) => match items.first()? {
+        Expr::Identifier(v) => Some(v),
+        Expr::List(inner) => match inner.first()? {
+          Expr::Identifier(v) => Some(v),
+          _ => None,
+        },
+        _ => None,
+      },
+      _ => None,
+    }
+  }
+  let body = args.first()?;
+  if matches!(body, Expr::FunctionCall { name, .. } if name == "Animate") {
+    return None;
+  }
+  let mut found = Vec::new();
+  find(body, &mut found);
+  let [animate] = found.as_slice() else {
+    return None;
+  };
+  let (spec, options) = match animate {
+    [_, spec @ Expr::List(_), options @ ..]
+      if options.iter().all(is_option) =>
+    {
+      (spec, options)
+    }
+    _ => return None,
+  };
+  let var = spec_var(spec)?;
+  if args[1..].iter().any(|a| spec_var(a) == Some(var)) {
+    return None;
+  }
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  let mut items = items.to_vec();
+  let has_rule = |items: &[Expr], key: &str| {
+    items.iter().any(|it| {
+      matches!(it, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key))
+    })
+  };
+  if !has_rule(&items, "ControlType") {
+    items.push(rule_expr(id_expr("ControlType"), id_expr("Animator")));
+  }
+  for option in options {
+    if let Expr::Rule { pattern, .. } = option
+      && matches!(pattern.as_ref(), Expr::Identifier(k) if k == "AnimationRunning")
+      && !has_rule(&items, "AnimationRunning")
+    {
+      items.push(option.clone());
+    }
+  }
+  let mut out = vec![replace(body)];
+  let mut rest = args[1..].to_vec();
+  let at = rest.iter().position(is_option).unwrap_or(rest.len());
+  rest.insert(at, Expr::List(items.into()));
+  out.extend(rest);
+  Some(out)
+}
+
 /// Move every control spec carrying `ControlPlacement -> n` (a positive
 /// integer) to where a layout argument references it with `Place[n]` (or
 /// the FrontEnd-saved `` Manipulate`Place[n] ``), as Wolfram does: the
@@ -40271,7 +40404,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Manipulate"
-    && let Some(new_args) = place_numbered_controls(args)
+    && let Some(new_args) =
+      hoist_nested_animate(args).or_else(|| place_numbered_controls(args))
   {
     return extract_manipulate_spec(&call("Manipulate", new_args));
   }
@@ -41500,10 +41634,26 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         continue;
       }
     } else if state.iter().any(|(n, _)| n == &var) {
-      // `ControlType -> None`: the author deliberately hid it, driving it
+      // `ControlType -> None`: the author usually hid it to drive it
       // through other visible controls instead (e.g. polar sliders writing
       // a Cartesian locator back through the `Dynamic`'s callback) — respect
-      // that rather than surfacing a row they chose not to show.
+      // that rather than surfacing a row they chose not to show. The
+      // exception is a scalar that is one coordinate of the dragged point
+      // (`LocatorPane[Dynamic[{k, f[k]}, (k = First[#]) &], plot]`, a
+      // marker that slides along a curve) and that nothing in the body
+      // reassigns: dragging is its only input, so it gets a slider along
+      // that axis of the pane.
+      if let Some(slider) = locator_coordinate_slider(
+        &args[0],
+        &var,
+        &state,
+        range_arg.as_ref(),
+        &graphic,
+        &initial_bindings,
+      ) {
+        state.retain(|(n, _)| *n != var);
+        controls.push(slider);
+      }
       continue;
     }
     // A variable whose default resolves to a plain `{x, y}` point is a fit
@@ -42264,6 +42414,92 @@ fn collect_body_locator_callbacks(
   let mut found = Vec::new();
   walk(expr, &resolve, &mut found);
   found
+}
+
+/// The axis (0 for x, 1 for y) at which `var` is one coordinate of a
+/// `LocatorPane[Dynamic[{x, y}, …], …]` point drawn in `expr`.
+fn locator_pane_coordinate_axis(expr: &Expr, var: &str) -> Option<usize> {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "LocatorPane"
+        && let Some(Expr::FunctionCall {
+          name: dname,
+          args: dargs,
+        }) = args.first()
+        && dname == "Dynamic"
+        && let Some(Expr::List(items)) = dargs.first()
+        && items.len() == 2
+        && let Some(axis) = items
+          .iter()
+          .position(|it| matches!(it, Expr::Identifier(v) if v == var))
+      {
+        return Some(axis);
+      }
+      args
+        .iter()
+        .find_map(|a| locator_pane_coordinate_axis(a, var))
+    }
+    Expr::List(items) => items
+      .iter()
+      .find_map(|it| locator_pane_coordinate_axis(it, var)),
+    Expr::CompoundExpr(items) => items
+      .iter()
+      .find_map(|it| locator_pane_coordinate_axis(it, var)),
+    _ => None,
+  }
+}
+
+/// A slider for a hidden scalar `var` that is one coordinate of a
+/// `LocatorPane` point in `body` and is never assigned by the body itself,
+/// spanning the pane's range along that axis. `None` when `var` is no such
+/// coordinate, holds no real number, or is recomputed by the body.
+fn locator_coordinate_slider(
+  body: &Expr,
+  var: &str,
+  state: &[(String, String)],
+  range_arg: Option<&Expr>,
+  graphic: &Expr,
+  bindings: &[(String, String)],
+) -> Option<ManipulateControl> {
+  let axis = locator_pane_coordinate_axis(body, var)?;
+  if find_body_var_reset(body, var).is_some() {
+    return None;
+  }
+  let (_, code) = state.iter().find(|(n, _)| n == var)?;
+  let value = crate::interpret_to_expr(code).ok()?;
+  let initial = crate::functions::math_ast::try_eval_to_f64(&value)?;
+  // The pane's own range, else the plot range of the picture it shows.
+  let ((x_min, y_min), (x_max, y_max)) = match range_arg {
+    Some(_) => pane_range(range_arg, graphic),
+    None => find_plot_range(graphic)
+      .or_else(|| drawn_plot_range(graphic, bindings))
+      .unwrap_or(((0.0, 0.0), (1.0, 1.0))),
+  };
+  let (min, max) = if axis == 0 {
+    (x_min, x_max)
+  } else {
+    (y_min, y_max)
+  };
+  if max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
+    return None;
+  }
+  Some(ManipulateControl::Continuous {
+    name: var.to_string(),
+    min: min.min(initial),
+    max: max.max(initial),
+    step: None,
+    initial,
+    label: var.to_string(),
+    label_runs: vec![LabelRun {
+      text: var.to_string(),
+      ..Default::default()
+    }],
+    is_real: !matches!(value, Expr::Integer(_)),
+    exact_initial: matches!(value, Expr::Integer(_)),
+    orientation: ControlOrientation::Horizontal,
+    imaginary: false,
+    reversed: false,
+  })
 }
 
 /// The explicit `{{xmin, ymin}, {xmax, ymax}}` (optionally followed by a
