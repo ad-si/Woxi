@@ -262,6 +262,9 @@ pub(crate) struct StyledLabel {
   pub font_size: Option<f64>,
   /// `Framed[…]` title: drawn inside a thin box.
   pub framed: bool,
+  /// The `Background -> color` of a `Framed[…]` title: the panel the box
+  /// is filled with. `None` leaves the box unfilled.
+  pub background: Option<Color>,
   /// A one-line title that mixes text with small inline pictures
   /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
   /// set, the renderer lays the segments out side by side.
@@ -656,6 +659,94 @@ fn traditional_sums(expr: &Expr) -> Expr {
   }
 }
 
+/// A picture taller than a line of text claims the room of the blank lines
+/// it spans, so the plot leaves space for it above the axes.
+fn claim_picture_room(
+  segments: &[LabelSegment],
+  extra_lines: &mut Vec<String>,
+) {
+  let tallest = segments
+    .iter()
+    .filter_map(|s| match s {
+      LabelSegment::Graphic { h, .. } => Some(*h),
+      LabelSegment::Text(_) => None,
+    })
+    .fold(0.0, f64::max);
+  if tallest > 16.0 {
+    extra_lines.extend(std::iter::repeat_n(
+      String::new(),
+      ((tallest - 16.0) / 16.0).ceil() as usize,
+    ));
+  }
+}
+
+/// Whether a label expression holds a picture anywhere inside it.
+fn holds_picture(expr: &Expr) -> bool {
+  match expr {
+    Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::List(items) => items.iter().any(holds_picture),
+    Expr::FunctionCall { name, args } => {
+      name == "Graphics"
+        || name == "Graphics3D"
+        || args.iter().any(holds_picture)
+    }
+    _ => false,
+  }
+}
+
+/// A `Column`/`Grid` title whose lines hold pictures — each line leading
+/// with a legend swatch drawn as a small `Graphics`, say — possibly inside
+/// a `Framed` box with a `Background`. Its lines cannot be set as text
+/// (the pictures would print as their source), so the whole label is
+/// typeset as one picture the way the notebook draws it standalone.
+fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
+  let body = match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty() =>
+    {
+      &args[0]
+    }
+    other => other,
+  };
+  let Expr::FunctionCall { name, args } = body else {
+    return None;
+  };
+  if !matches!(name.as_str(), "Column" | "Grid")
+    || !args.first().is_some_and(holds_picture)
+  {
+    return None;
+  }
+  let svg = crate::evaluator::expr_to_svg(expr);
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let (w, h) = crate::functions::graphics::svg_natural_size(&svg)?;
+  let text = crate::functions::graphics::expr_to_svg_markup_lines(body)
+    .iter()
+    .map(|l| svg_markup_visible_text(l))
+    .collect::<Vec<_>>()
+    .join(" ");
+  let segments = vec![LabelSegment::Graphic { svg, w, h }];
+  let mut extra_lines = Vec::new();
+  claim_picture_room(&segments, &mut extra_lines);
+  Some(StyledLabel {
+    text: if text.trim().is_empty() {
+      " ".into()
+    } else {
+      text
+    },
+    markup: Some(String::new()),
+    extra_lines,
+    bold: false,
+    italic: false,
+    color: None,
+    font_size: None,
+    framed: false,
+    background: None,
+    segments,
+  })
+}
+
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   // `Text[…]` sets its content in the graphic's own text style, so the font
@@ -665,13 +756,28 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   if let Some(inner) = text_wrapper_content(expr) {
     return parse_styled_label(inner);
   }
-  // `Framed[title]` boxes the title it would otherwise draw.
+  // A stacked title whose lines hold pictures cannot be set as lines of
+  // text; it is typeset whole, with any `Framed` box around it.
+  if let Some(label) = stacked_picture_label(expr) {
+    return Some(label);
+  }
+  // `Framed[title]` boxes the title it would otherwise draw, on the panel
+  // its `Background` names.
   if let Expr::FunctionCall { name, args } = expr
     && name == "Framed"
     && !args.is_empty()
   {
     let mut label = parse_styled_label(&args[0])?;
     label.framed = true;
+    label.background = args[1..].iter().find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "Background") => {
+        parse_color(replacement)
+      }
+      _ => None,
+    });
     return Some(label);
   }
   // `Invisible[…]` paints nothing — a Demonstration wraps a `Text[…]`
@@ -704,6 +810,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      background: None,
       segments: Vec::new(),
     });
   }
@@ -760,6 +867,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color: None,
         font_size: None,
         framed: false,
+        background: None,
         segments: Vec::new(),
       })
     }
@@ -772,6 +880,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      background: None,
       segments: Vec::new(),
     }),
     Expr::Identifier(s) => Some(StyledLabel {
@@ -783,6 +892,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       color: None,
       font_size: None,
       framed: false,
+      background: None,
       segments: Vec::new(),
     }),
     Expr::FunctionCall { name, args }
@@ -830,6 +940,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         color,
         font_size,
         framed: false,
+        background: None,
         segments: Vec::new(),
       })
     }
@@ -849,22 +960,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           )),
         };
       let segments = inline_graphic_segments(other).unwrap_or_default();
-      // A picture taller than a line of text claims the room of the blank
-      // lines it spans, so the plot leaves space for it above the axes.
-      let tallest = segments
-        .iter()
-        .filter_map(|s| match s {
-          LabelSegment::Graphic { h, .. } => Some(*h),
-          LabelSegment::Text(_) => None,
-        })
-        .fold(0.0, f64::max);
       let mut extra_lines = extra_lines;
-      if tallest > 16.0 {
-        extra_lines.extend(std::iter::repeat_n(
-          String::new(),
-          ((tallest - 16.0) / 16.0).ceil() as usize,
-        ));
-      }
+      claim_picture_room(&segments, &mut extra_lines);
       let text = stacked_visible_text(&markup, &extra_lines);
       if text.is_empty() && segments.is_empty() {
         None
@@ -878,6 +975,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           color: None,
           font_size: None,
           framed: false,
+          background: None,
           segments,
         })
       }
@@ -925,6 +1023,10 @@ pub(crate) struct ChartOptions {
   pub legend_layout: LegendLayout,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
+  /// `AxesOrigin -> {x, y}`: where the axes cross, in data coordinates;
+  /// `None` keeps a coordinate's automatic placement. Currently consumed by
+  /// `Histogram`.
+  pub axes_origin: (Option<f64>, Option<f64>),
   /// `BarOrigin -> Left` (or `Right`) renders horizontal bars.
   pub bar_origin_left: bool,
   /// `LabelingFunction -> f` — applied to each bar value to produce a label
@@ -3056,6 +3158,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     legend_layout: LegendLayout::Column,
     plot_range_x: None,
     plot_range_y: None,
+    axes_origin: (None, None),
     bar_origin_left: false,
     labeling_function: None,
     ticks_x: None,
@@ -3070,12 +3173,20 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     color_function: None,
     color_function_scaling: true,
   };
+  // When an option is given more than once, its first setting wins, as for
+  // any Wolfram option list (`PlotRange -> {{-1, 5}, All}, …, PlotRange ->
+  // All` keeps the explicit range).
+  let mut seen: std::collections::HashSet<&str> =
+    std::collections::HashSet::new();
   for opt in &args[1..] {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
       let name = chart_option_alias(name);
+      if !seen.insert(name) {
+        continue;
+      }
       match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -3234,6 +3345,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               }
             }
           }
+        }
+        "AxesOrigin" => {
+          opts.axes_origin =
+            crate::functions::plot::parse_axes_origin(replacement);
         }
         "PlotRange" => {
           let (rx, ry) =

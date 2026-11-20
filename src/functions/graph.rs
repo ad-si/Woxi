@@ -3208,6 +3208,7 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
     list.sort_unstable_by(|a, b| b.cmp(a));
     list.dedup();
   }
+  let undirected = edge_order_adjacency(graph);
   let mut seen = vec![false; n];
   let mut parent = vec![usize::MAX; n];
   let mut order = Vec::with_capacity(n);
@@ -3279,7 +3280,61 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
       comp[..run].reverse();
     }
   }
+  // A graph whose edges, read without direction, form one simple cycle
+  // (`a -> x, b -> y, a -> y, b -> x`) is drawn as that cycle: the
+  // directed search above can visit it out of turn (from several roots),
+  // which would put non-adjacent vertices next to each other on the
+  // circle and cross the edges.
+  walk_undirected_cycle(&undirected, &mut order);
   order
+}
+
+/// Reorder `comp` (the vertices of a graph, starting at a root) into a walk
+/// around its cycle when its edges, ignoring direction, form exactly one
+/// simple cycle and `comp` does not already follow it. The walk leaves the
+/// root toward the neighbor `comp` visited first.
+fn walk_undirected_cycle(adj: &[Vec<usize>], comp: &mut [usize]) {
+  let m = comp.len();
+  if m < 4 {
+    return;
+  }
+  let members: std::collections::HashSet<usize> =
+    comp.iter().copied().collect();
+  if comp.iter().any(|&v| {
+    adj[v].len() != 2
+      || adj[v][0] == adj[v][1]
+      || adj[v].iter().any(|w| !members.contains(w))
+  }) {
+    return;
+  }
+  let follows = comp.windows(2).all(|w| adj[w[0]].contains(&w[1]))
+    && adj[comp[m - 1]].contains(&comp[0]);
+  if follows {
+    return;
+  }
+  let root = comp[0];
+  let rank = |v: usize| comp.iter().position(|&c| c == v).unwrap_or(m);
+  let first = if rank(adj[root][0]) <= rank(adj[root][1]) {
+    adj[root][0]
+  } else {
+    adj[root][1]
+  };
+  let mut walk = Vec::with_capacity(m);
+  walk.push(root);
+  let (mut prev, mut cur) = (root, first);
+  while cur != root && walk.len() < m {
+    walk.push(cur);
+    let next = if adj[cur][0] == prev {
+      adj[cur][1]
+    } else {
+      adj[cur][0]
+    };
+    prev = cur;
+    cur = next;
+  }
+  if walk.len() == m && cur == root {
+    comp.copy_from_slice(&walk);
+  }
 }
 
 /// `1/φ`, the golden ratio's reciprocal: Wolfram's height-to-width ratio
@@ -11374,11 +11429,14 @@ fn same_edge(a: &Expr, b: &Expr) -> bool {
   let Some((b1, b2, b_directed)) = edge_endpoints(b) else {
     return false;
   };
-  (same_vertex(&a1, &b1) && same_vertex(&a2, &b2))
+  // A `Style[v, …]` endpoint (as written in a `GraphPlot` edge list) names
+  // the vertex `v`, which is how the drawn edge refers to it.
+  let [a1, a2, b1, b2] = [&a1, &a2, &b1, &b2].map(|v| unwrap_vertex_style(v).0);
+  (same_vertex(a1, b1) && same_vertex(a2, b2))
     || (!a_directed
       && !b_directed
-      && same_vertex(&a1, &b2)
-      && same_vertex(&a2, &b1))
+      && same_vertex(a1, b2)
+      && same_vertex(a2, b1))
 }
 
 /// Whether two vertex names are the same vertex: equal as printed (a

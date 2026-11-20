@@ -1149,9 +1149,29 @@ fn render_item(
           // SVG markup; a plain one goes through the same path, which
           // escapes it. Further lines (if any) become stacked tspans below
           // the first instead of being silently dropped.
+          // A `Column` sets its lines flush left by default (a `Grid`
+          // centers them), so a stacked column label starts every line at
+          // the left side of its block rather than centering each one.
+          let mut line_x = px;
+          if direction.is_none()
+            && extra_lines > 0.0
+            && is_left_aligned_column(body)
+          {
+            let chars = styled
+              .as_ref()
+              .map_or(0, super::chart::StyledLabel::max_line_chars)
+              as f64;
+            let block_w = chars * font_size * 0.6;
+            line_x = match text_anchor {
+              "start" => px,
+              "end" => px - block_w,
+              _ => px - block_w / 2.0,
+            } + font_size * 0.35;
+            text_anchor = "start";
+          }
           let label = styled.as_ref().map_or_else(
             || svg_escape_text(&expr_to_output(body)),
-            |s| s.svg_scaled_stacked_by(area.scale, px, &advances),
+            |s| s.svg_scaled_stacked_by(area.scale, line_x, &advances),
           );
           // `Text[label, pos, …, Background -> color]` (or an `Inset`'s
           // `Background`, carried over onto its text) lays a borderless
@@ -1212,13 +1232,20 @@ fn render_item(
               ),
               None => " stroke=\"rgb(0,0,0)\"".to_string(),
             };
+            // The border is one printer's point wide whatever the
+            // plot's internal coordinate scale.
+            let stroke = if stroke.is_empty() {
+              stroke
+            } else {
+              format!("{stroke} stroke-width=\"{:.2}\"", area.scale)
+            };
             out.push_str(&format!(
               "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
               px - text_w / 2.0,
             ));
           }
           out.push_str(&format!(
-            "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
+            "<text x=\"{line_x:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
              font-size=\"{font_size:.0}\"{font_attrs} {fill}{rotate_attr}>{label}</text>\n",
           ));
@@ -1236,7 +1263,8 @@ fn render_item(
         render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
-        let text = call("Text", vec![args[0].clone(), args[1].clone()]);
+        let text =
+          crate::functions::graphics::inset_text(&args[0], &args[1], args);
         render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if !args.is_empty() => {
@@ -1272,8 +1300,8 @@ fn render_item(
         {
           let (w, h) = (w * area.scale, h * area.scale);
           // `opos` names the point of the inset object (a plot's data
-          // coordinates, a display's fractions of its size) that lands on `pos`; the picture is otherwise
-          // centered there.
+          // coordinates, a display's `Text`-style offset) that lands on
+          // `pos`; the picture is otherwise centered there.
           let (fx, fy) = args
             .get(2)
             .and_then(point2)
@@ -1323,11 +1351,41 @@ fn render_item(
   }
 }
 
+/// Whether a label is a `Column` whose lines are set flush left — the
+/// default, or an explicit `Alignment -> Left`.
+fn is_left_aligned_column(label: &Expr) -> bool {
+  match crate::functions::graphics::strip_style_wrappers(label) {
+    Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      match option_value(&args[1..], "Alignment") {
+        None => true,
+        Some(Expr::Identifier(a)) => a == "Left",
+        Some(_) => false,
+      }
+    }
+    _ => false,
+  }
+}
+
 /// Whether an `Inset` object is plain text (a string, possibly styled or
 /// typeset with scripts) rather than a graphic.
 fn is_text_inset(obj: &Expr) -> bool {
   match crate::functions::graphics::strip_style_wrappers(obj) {
     Expr::String(_) => true,
+    // A framed label or a column of labels (a boxed summary of several
+    // computed values) is still text, typeset like `Text[Framed[…]]`.
+    Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty() =>
+    {
+      is_text_inset(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      matches!(&args[0], Expr::List(items)
+        if !items.is_empty() && items.iter().all(is_text_inset))
+    }
     Expr::FunctionCall { name, args } => {
       matches!(
         name.as_str(),

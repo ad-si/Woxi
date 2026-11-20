@@ -1768,7 +1768,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         }
         "GridLinesStyle" => {
           opts.grid_lines_style =
-            crate::functions::plot::parse_style_directives(replacement);
+            crate::functions::plot::parse_grid_lines_style(replacement);
         }
         _ => {}
       }
