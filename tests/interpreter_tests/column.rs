@@ -816,3 +816,94 @@ mod column_item_size_wrapping {
     assert!(out.contains("height=\"22\""), "{out}");
   }
 }
+
+mod column_text_cell_in_grid {
+  use super::*;
+
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  fn grid_of_column(items: &str) -> String {
+    clear_state();
+    interpret(&format!(
+      "ExportString[Grid[{{{{Text[Column[{{{items}}}]]}}}}], \"SVG\"]"
+    ))
+    .unwrap()
+  }
+
+  /// A column of text lines in a grid cell is as wide as its widest line,
+  /// not as all of its lines laid end to end — a heading ending in a line
+  /// break must not stretch it either.
+  #[test]
+  fn width_is_the_widest_line() {
+    let one =
+      grid_of_column(r#"Style["Head\n", Bold], "aaaaaaaaaaaaaaaaaaaa""#);
+    let many = grid_of_column(
+      r#"Style["Head\n", Bold], "aaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccc""#,
+    );
+    assert_eq!(svg_width(&one), svg_width(&many), "{many}");
+    assert!(svg_width(&many) < 250.0, "{many}");
+  }
+
+  /// The lines of a `Column` are left-aligned (its default alignment).
+  #[test]
+  fn lines_are_left_aligned() {
+    let svg = grid_of_column(r#""a", "bbbbbbbbbbbb", "cc""#);
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+    assert!(!svg.contains("text-anchor=\"middle\""), "{svg}");
+  }
+
+  /// A `FontFamily` on one line of the column reaches that line's text.
+  #[test]
+  fn item_font_family_is_kept() {
+    let svg = grid_of_column(
+      r#""Title", Style["0123456789", FontFamily -> "Courier", 10]"#,
+    );
+    assert!(
+      svg.contains("<tspan font-family=\"Courier, monospace\" font-size=\"10\">0123456789</tspan>"),
+      "{svg}"
+    );
+  }
+}
+
+mod row_part_font_family {
+  use super::*;
+
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// A `Row` cell whose parts break onto several lines is as wide as its
+  /// widest line.
+  #[test]
+  fn row_cell_with_line_breaks_is_widest_line_wide() {
+    clear_state();
+    let broken = interpret(
+      r#"ExportString[Grid[{{Row[{"aaaaaaaaaa\n", "bbbbbbbbbb\ncc"}]}}], "SVG"]"#,
+    )
+    .unwrap();
+    let single =
+      interpret(r#"ExportString[Grid[{{"aaaaaaaaaa"}}], "SVG"]"#).unwrap();
+    assert_eq!(svg_width(&broken), svg_width(&single), "{broken}");
+  }
+
+  /// `Style[…, FontFamily -> f]` on a part of a `Row` cell sets that part
+  /// in `f`.
+  #[test]
+  fn styled_font_family_in_row_cell() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Grid[{{Row[{"x ", Style["y", FontFamily -> "Times"]}]}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<tspan font-family=\"Times, serif\">y</tspan>"),
+      "{svg}"
+    );
+  }
+}
