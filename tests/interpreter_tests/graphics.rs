@@ -1962,7 +1962,7 @@ mod graphics {
     #[test]
     fn a_grid_image_cell_keeps_its_own_size() {
       let grid_svg = |code: &str| {
-        let Ok(woxi::syntax::Expr::FunctionCall { name, args }) =
+        let Ok(woxi::syntax::Expr::FunctionCall { ref name, ref args }) =
           woxi::interpret_to_expr(code)
         else {
           panic!("expected a Grid for {code}");
