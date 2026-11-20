@@ -36987,7 +36987,9 @@ pub(crate) fn base_style_pushed_args(
 /// the separator keeps its directives.
 pub(crate) fn spaced_row_separator(separator: &Expr) -> Expr {
   match separator {
-    Expr::String(s) if is_spaced_box_operator(s) => {
+    // The bar of `X | A` is spaced only as that operator; a `"|"` row
+    // separator stays a tight divider (`Row[{a, b}, "|"]` reads `a|b`).
+    Expr::String(s) if s != "|" && is_spaced_box_operator(s) => {
       Expr::String(format!(" {s} "))
     }
     Expr::FunctionCall { name, args }
