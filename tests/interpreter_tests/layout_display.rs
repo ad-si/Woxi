@@ -117,6 +117,36 @@ mod layout_display {
     );
   }
 
+  /// Regression: a `Grid` cell's `Style[…, Background -> c]` (e.g. a
+  /// "YES"/"NO" verdict label) dropped its panel; it is painted just behind
+  /// the text, sized to it rather than filling the whole cell.
+  #[test]
+  fn grid_cell_style_background_paints_behind_text() {
+    let svg = svg_of(
+      "Grid[{{\"a\", Style[\"NO\", Large, Background -> Pink]}}, \
+       ItemSize -> {{4, 10}, Automatic}]",
+    );
+    let rect = rects(&svg)
+      .into_iter()
+      .find(|r| r.contains("fill=\"rgb(255,128,128)\""))
+      .unwrap_or_else(|| panic!("no pink panel: {svg}"));
+    let width: f64 = rect
+      .split("width=\"")
+      .nth(1)
+      .unwrap()
+      .split('"')
+      .next()
+      .unwrap()
+      .parse()
+      .unwrap();
+    // Two large glyphs wide, far narrower than the 10-em column.
+    assert!(width > 15.0 && width < 60.0, "{rect}");
+    // The panel sits under the text: it is drawn before it.
+    let panel_at = svg.find(rect).unwrap();
+    let text_at = svg.find(">NO</text>").unwrap();
+    assert!(panel_at < text_at, "{svg}");
+  }
+
   /// `Underlined`, `Struckthrough` and the `FontVariations` spellings draw
   /// their lines; "SmallCaps" sets the caps variant.
   #[test]
