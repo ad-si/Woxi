@@ -776,7 +776,7 @@ mod epilog_framed_column_inset {
         let text = &group[group.find("<text ").unwrap()..];
         let text = &text[..text.find('>').unwrap()];
         let (left, width) = (attr(rect, "x"), attr(rect, "width"));
-        let aligned = left + (side + 1.0) / 2.0 * width;
+        let aligned = left + f64::midpoint(side, 1.0) * width;
         assert!(
           (aligned - anchor).abs() < 0.2,
           "{body} at {opos}: {rect} vs anchor {anchor}"
