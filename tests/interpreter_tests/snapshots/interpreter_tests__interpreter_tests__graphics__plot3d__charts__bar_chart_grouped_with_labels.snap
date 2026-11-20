@@ -64,7 +64,10 @@ expression: "export_svg(r#\"BarChart[{{1, 2}, {3, 4}, {5, 6}}, ChartLabels -> {\
 <line x1="2327.9" y1="2125.0" x2="2327.9" y2="2185.0" stroke="#666666" stroke-width="5"/>
 <line x1="2998.4" y1="2125.0" x2="2998.4" y2="2165.0" stroke="#666666" stroke-width="5"/>
 <line x1="3049.0" y1="2125.0" x2="3049.0" y2="2165.0" stroke="#666666" stroke-width="5"/>
-<text x="645.6" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">A</text>
-<text x="1834.6" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">B</text>
-<text x="3023.7" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">C</text>
+<text x="386.3" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">A</text>
+<text x="904.9" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">B</text>
+<text x="1575.3" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">A</text>
+<text x="2093.9" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">B</text>
+<text x="2764.4" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">A</text>
+<text x="3283.0" y="2275.0" text-anchor="middle" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">B</text>
 </svg>
