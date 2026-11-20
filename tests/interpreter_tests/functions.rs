@@ -7543,6 +7543,40 @@ mod mouse_position {
   }
 }
 
+mod refresh_update_interval {
+  use super::*;
+
+  /// `Refresh[expr, UpdateInterval -> t]` with a finite `t` asks a front
+  /// end to re-evaluate the enclosing `Dynamic` on a timer.
+  #[test]
+  fn a_finite_interval_requests_a_timed_refresh() {
+    woxi::take_timed_refresh();
+    assert_eq!(
+      interpret("Refresh[1 + 1, UpdateInterval -> 0]").unwrap(),
+      "2"
+    );
+    assert!(woxi::take_timed_refresh());
+    assert!(!woxi::take_timed_refresh(), "the request is cleared");
+    assert_eq!(
+      interpret("dt = 1/2; Refresh[3, UpdateInterval :> dt]").unwrap(),
+      "3"
+    );
+    assert!(woxi::take_timed_refresh());
+  }
+
+  #[test]
+  fn no_or_an_infinite_interval_requests_none() {
+    woxi::take_timed_refresh();
+    assert_eq!(interpret("Refresh[3, None]").unwrap(), "3");
+    assert_eq!(
+      interpret("Refresh[3, UpdateInterval -> Infinity]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Refresh[3, TrackedSymbols :> {x}]").unwrap(), "3");
+    assert!(!woxi::take_timed_refresh());
+  }
+}
+
 mod event_handler_mouse_markers {
   use super::*;
   use woxi::functions::graphics::{
