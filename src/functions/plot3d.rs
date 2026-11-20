@@ -15591,6 +15591,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Whether every surface is a plain profile `z = f(t)`: Wolfram then
   // flattens the box to `BoxRatios -> {2, 2, 1/GoldenRatio}`.
   let mut all_profiles = true;
+  // Whether every surface is a curve given by its coordinates (`{r, z}` or
+  // `{x, y, z}`): Wolfram then keeps the true proportions
+  // (`BoxRatios -> Automatic`).
+  let mut all_curves = true;
 
   for body in &bodies {
     let parametric_len: Option<usize> = match body {
@@ -15610,6 +15614,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       _ => false,
     };
+    all_curves &= parametric_len.is_some();
     all_profiles &=
       parametric_len.is_none() && (theta_var.is_none() || scalar_is_profile);
     let mut grid: Vec<Vec<Option<Point3D>>> =
@@ -15730,8 +15735,13 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
   let scene = Scene::new(&camera, &args[opt_start..]);
 
+  let automatic_ratios = all_curves && axis_is_z;
   let z_scale = if all_profiles && axis_is_z {
     0.5 * 0.618_033_988_749_894_9
+  } else if automatic_ratios {
+    // x and y span [-1, 1] for [-r_max, r_max], so the height keeps the
+    // same scale.
+    z_range / (2.0 * r_scale)
   } else {
     Z_SCALE
   };
@@ -16084,9 +16094,13 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !names("BoxRatios") {
     defaults.push(rule_expr(
       id_expr("BoxRatios"),
-      Expr::List(
-        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(z_scale)].into(),
-      ),
+      if automatic_ratios {
+        id_expr("Automatic")
+      } else {
+        Expr::List(
+          vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(z_scale)].into(),
+        )
+      },
     ));
   }
   if !names("PlotRange") {
