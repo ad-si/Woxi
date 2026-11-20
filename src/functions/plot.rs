@@ -9251,7 +9251,9 @@ pub(crate) fn inject_plot_source_legend(
   buf.push_str(&svg[root_end + 1..close]);
   buf.push_str("</g></svg>");
   buf.push_str(&svg[close + "</svg>".len()..]);
-  inject_legend(&mut buf, &opts);
+  // The plot's frame inside the shown picture is not known here; a legend
+  // aligned to it is aligned to the whole picture instead.
+  inject_legend(&mut buf, &opts, (0.0, 0.0, scaled_w, scaled_h));
   Some(buf)
 }
 
