@@ -2059,26 +2059,19 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
     return None;
   }
 
-  let sample_w = 30.0_f64;
+  // Wolfram's legend sample is a line about 39 points long.
+  let sample_w = 41.0_f64;
   let sample_h = 16.0_f64;
-  // `thickness_px`/`dash_attr` only read `bb` for the (unused, since a
-  // legend sample has no data range) relative-dashing branch, so any
-  // BBox is fine here.
-  let bb = BBox {
-    x_min: 0.0,
-    x_max: 1.0,
-    y_min: 0.0,
-    y_max: 1.0,
-  };
 
-  let mut entries: Vec<Expr> = Vec::new();
+  let label_style = legend_label_style(&args[2..]);
+  let mut rows: Vec<Expr> = Vec::new();
   for (label, spec) in labels.iter().zip(style_specs.iter()) {
     // LineLegend's sample draws a plain visible stroke by default — not
     // the hairline `AbsoluteThickness[1]` an undirected `Line[…]`
     // primitive gets — so an entry with no `Thickness` directive of its
     // own still reads as a line, matching wolframscript's legend.
     let mut style = StyleState {
-      thickness: 0.05,
+      thickness: -1.5,
       ..StyleState::default()
     };
     match spec {
@@ -2091,8 +2084,28 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
         apply_directive(other, &mut style);
       }
     }
-    let sw = thickness_px(style.thickness, &bb, sample_w).max(1.0);
-    let dash = dash_attr(style.dashing.as_ref(), &bb, sample_w);
+    // A relative `Thickness`/`Dashing` on a legend sample is a fraction of
+    // the default picture width, not of the short sample itself: the
+    // `Thickness[0.01]` of a plotted curve keeps its weight in the legend
+    // beside it rather than thinning to a hairline.
+    let resolve = |len: f64| {
+      if len < 0.0 {
+        -len
+      } else {
+        len * LEGEND_REFERENCE_WIDTH
+      }
+    };
+    let sw = resolve(style.thickness).max(1.0);
+    let dash = style.dashing.as_ref().map_or_else(String::new, |dashes| {
+      let px: Vec<String> = dashes
+        .iter()
+        .map(|d| {
+          let px = resolve(*d);
+          format!("{:.1}", if px <= 0.0 { 1.0 } else { px })
+        })
+        .collect();
+      format!(" stroke-dasharray=\"{}\"", px.join(","))
+    });
     let y = sample_h / 2.0;
     let line_svg = format!(
       "<svg width=\"{sample_w}\" height=\"{sample_h}\" viewBox=\"0 0 {sample_w} {sample_h}\" xmlns=\"http://www.w3.org/2000/svg\"><line x1=\"1\" y1=\"{y:.1}\" x2=\"{x2:.1}\" y2=\"{y:.1}\" stroke=\"{color}\" stroke-width=\"{sw:.2}\"{dash} stroke-linecap=\"butt\"/></svg>",
@@ -2106,17 +2119,77 @@ pub(crate) fn line_legend_svg(args: &[Expr]) -> Option<String> {
       head: None,
       structure: None,
     };
-    entries.push(call(
-      "Row",
-      vec![Expr::List(
-        vec![line_item, str_expr(" "), label.clone()].into(),
-      )],
+    rows.push(Expr::List(
+      vec![line_item, styled_legend_label(label, &label_style)].into(),
     ));
   }
-  if entries.is_empty() {
+  if rows.is_empty() {
     return None;
   }
-  column_to_svg(&[Expr::List(entries.into())])
+  legend_grid_svg(rows)
+}
+
+/// The width (in printer's points) that a legend sample's relative
+/// `Thickness` and `Dashing` lengths are fractions of: the default width of
+/// a picture.
+const LEGEND_REFERENCE_WIDTH: f64 = 360.0;
+
+/// The `Style` directives a legend's `LabelStyle -> spec` option gives its
+/// labels (`LabelStyle -> {FontSize -> 11}`, `LabelStyle -> 11`,
+/// `LabelStyle -> Directive[Red, Bold]`, …).
+fn legend_label_style(opts: &[Expr]) -> Vec<Expr> {
+  let Some(spec) = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "LabelStyle")
+    .map(|(_, v)| v)
+  else {
+    return Vec::new();
+  };
+  match spec {
+    Expr::List(items) => items.to_vec(),
+    Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
+    Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
+    other => vec![other.clone()],
+  }
+}
+
+/// A legend label as typeset in its legend: in the proportional face of a
+/// legend graphic (not the monospace face of typeset output), carrying the
+/// legend's `LabelStyle` directives.
+fn styled_legend_label(label: &Expr, label_style: &[Expr]) -> Expr {
+  let mut style_args = vec![
+    label.clone(),
+    Expr::Rule {
+      pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+      replacement: Box::new(str_expr("sans-serif")),
+    },
+  ];
+  style_args.extend(label_style.iter().cloned());
+  call("Style", style_args)
+}
+
+/// Lay out legend entries — rows of `{marker, label}` — as a grid whose
+/// labels share one left edge: a label broken over several lines continues
+/// under its own first line rather than under the marker, and each marker
+/// sits beside the first line of its label.
+fn legend_grid_svg(rows: Vec<Expr>) -> Option<String> {
+  let rule = |key: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(key.to_string())),
+    replacement: Box::new(value),
+  };
+  let ident = |s: &str| Expr::Identifier(s.to_string());
+  grid_svg_with_gaps(
+    &[
+      Expr::List(rows.into()),
+      rule(
+        "Alignment",
+        Expr::List(vec![ident("Left"), ident("Top")].into()),
+      ),
+    ],
+    &[],
+  )
+  .ok()
 }
 
 /// `SwatchLegend[colors, labels, opts…]` draws a colored square next to
