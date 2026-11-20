@@ -1977,8 +1977,9 @@ mod tests {
       assert_eq!(horizontals, 1, "expected 1 horizontal grid line: {svg}");
       // x=0 maps to the horizontal center (167.65 of 335.30).
       assert!(
-        svg
-          .contains("<line x1=\"167.65\" y1=\"0\" x2=\"167.65\" y2=\"334.76\""),
+        svg.contains(
+          "<line x1=\"167.65\" y1=\"0.00\" x2=\"167.65\" y2=\"334.76\""
+        ),
         "vertical grid line at x=0 missing: {svg}"
       );
     }
