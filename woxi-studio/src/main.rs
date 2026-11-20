@@ -12454,6 +12454,33 @@ Manipulate[
     assert_eq!(state.display_trees.len(), 1);
   }
 
+  /// A dump whose `FrameLabel` uses the per-side `{{left, right}, {bottom,
+  /// top}}` form must show its top caption — here a `Grid` of
+  /// `Dynamic[Style[…]]` readouts of the slider — instead of dropping it.
+  #[test]
+  fn share_link_dump_keeps_per_side_frame_label_caption() {
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 0}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`k$$ = 0}, \n\
+      \"Body\" :> Graphics[Disk[{0, 0}, 1 + $CellContext`k$$]], \n\
+      \"Specifications\" :> {{{$CellContext`k$$, 0, \"size\"}, 0, 2}}, \n\
+      \"Options\" :> {FrameLabel -> {{None, None}, {None, Grid[{{Dynamic[\
+      Style[\"size is \" <> ToString[$CellContext`k$$], 12]]}}]}}}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the dump must rebuild a live widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert_eq!(state.displays.len(), 1, "{:?}", state.displays);
+    assert!(
+      state.displays[0].starts_with("Grid["),
+      "{:?}",
+      state.displays
+    );
+    let trees = format!("{:?}", state.display_trees);
+    assert!(trees.contains("size is 0"), "{trees}");
+  }
+
   /// A Setter whose choices are `ToString[f[x], TraditionalForm]` typesets
   /// as `sin(x)`, not as the box row's elements joined by commas
   /// (`sin(, x, )`).

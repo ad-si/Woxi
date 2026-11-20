@@ -38013,10 +38013,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // A widget-level `FrameLabel -> label` (a string, `Style`, `Column`, …
       // rather than the `{bottom, left}` pair a plot takes) is a caption
       // Wolfram shows with the output, so it is an extra display element.
-      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FrameLabel")
-        && !matches!(replacement.as_ref(), Expr::List(_) | Expr::Identifier(_))
-      {
-        displays.push(crate::syntax::expr_to_source_form(replacement));
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FrameLabel") {
+        for label in manipulate_frame_labels(replacement) {
+          displays.push(crate::syntax::expr_to_source_form(label));
+        }
       }
       // `AnimationRunning -> False` builds the widget paused.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
@@ -39009,6 +39009,28 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     list_elements,
     bookmarks,
   })
+}
+
+/// The captions of a widget-level `FrameLabel` setting, each shown as an
+/// extra display element. A single label (a string, `Style`, `Column`, …)
+/// is one caption; the per-side form `{{left, right}, {bottom, top}}`
+/// yields every side that is set, top first. `None`, `Automatic` and
+/// other bare symbols are not captions, and a flat `{bottom, left}` pair
+/// (the shape a plot's own `FrameLabel` takes) is left alone.
+fn manipulate_frame_labels(setting: &Expr) -> Vec<&Expr> {
+  match setting {
+    Expr::Identifier(_) => Vec::new(),
+    Expr::List(sides) => match sides.as_slice() {
+      [Expr::List(lr), Expr::List(bt)] if lr.len() == 2 && bt.len() == 2 => {
+        [&bt[1], &lr[0], &lr[1], &bt[0]]
+          .into_iter()
+          .filter(|label| !matches!(label, Expr::Identifier(_)))
+          .collect()
+      }
+      _ => Vec::new(),
+    },
+    label => vec![label],
+  }
 }
 
 /// The numeric width of a `ContentSize` setting: `w` or the first entry of
