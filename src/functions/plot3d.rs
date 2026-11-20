@@ -12533,8 +12533,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `SphericalRegion -> True`: frame the picture by the sphere that
   // encloses the contents instead of by their projected outline, so the
   // scale stays put as the view turns or the contents move. A
-  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
-  let mut spherical_region = crate::in_manipulate_frame();
+  // `Manipulate` frame defaults to it when the scene is aimed or pinned
+  // explicitly (see `manipulate_frame` below).
+  let mut spherical_region = false;
+  let manipulate_frame = crate::in_manipulate_frame();
   // `SphericalRegion -> False` given outright (rather than the default
   // `Automatic`), which rules out the automatic sphere framing below.
   let mut spherical_region_off = false;
@@ -12558,6 +12560,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `ViewPoint` with an infinite component looks from infinitely far
   // away: an orthographic picture.
   let mut view_point_at_infinity = false;
+  // Whether an explicit `ViewPoint` option was given (a camera the scene's
+  // author picked, rather than the default one).
+  let mut explicit_view_point = false;
   let mut orthographic = false;
   let mut show_axes = false;
   let (label_face, tick_faces) = axes_text_faces(&args[1..]);
@@ -12676,6 +12681,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             None
           };
           view_point_at_infinity = at_infinity.is_some();
+          explicit_view_point = true;
           if let Some(vp) =
             symbolic.or(at_infinity).or_else(|| eval_vec3(replacement))
           {
@@ -13032,16 +13038,31 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // position and y the depth.
   let perspective = view_vector.is_some() && !orthographic;
   // Under the default `SphericalRegion -> Automatic`, an invisible
-  // (`Boxed -> False`) box in a picture of fixed width and height is framed
-  // like `SphericalRegion -> True`: by the sphere around the box, not by the
-  // box's projected outline. Wolfram's snapshots of such scenes (long tubes
-  // along x in a 13 × 8 × 8 and a 22 × 8.5 × 8.5 pinned box, and a `Show`
-  // of a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}`
-  // from a custom `ViewPoint`) draw them at the sphere-framed size, 0.7×
-  // to 0.86× the outline-fitted one.
+  // (`Boxed -> False`) box in a picture of fixed width and height whose
+  // range is pinned by an explicit `PlotRange` or that is seen from an
+  // explicit `ViewPoint` is framed like `SphericalRegion -> True`: by the
+  // sphere around the box, not by the box's projected outline. Wolfram's
+  // snapshots of such scenes (long tubes along x in a 13 × 8 × 8 and a
+  // 22 × 8.5 × 8.5 pinned box, and a `Show` of a `Graphics3D` and a
+  // `ParametricPlot3D` at `ImageSize -> {400, 400}` from a custom
+  // `ViewPoint`) draw them at the sphere-framed size, 0.7× to 0.86× the
+  // outline-fitted one. An unboxed scene with neither (a tall 4 × 4 × 10
+  // building at `ImageSize -> {300, 400}`) still fits its box outline to
+  // the frame.
   // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  // Inside a `Manipulate` frame the same explicitly aimed or pinned scenes
+  // are sphere-framed whatever their box and size, so the picture keeps one
+  // scale as controls turn the view: Wolfram's snapshots of boxed scenes in
+  // a pinned `PlotRange` switched between view points (`ViewPoint ->
+  // Below`, a skew view) are drawn at the sphere-framed size, about 0.7×
+  // the outline-fitted one. A Manipulate's scene with the default camera
+  // and no range (a tall elevator building at `ImageSize -> {300, 400}`)
+  // still fits its box outline to the frame.
+  let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
+    || (!spherical_region_off && manipulate_frame && explicitly_framed)
     || (!spherical_region_off
+      && explicitly_framed
       && !show_box
       && explicit_height
       && !full_width
