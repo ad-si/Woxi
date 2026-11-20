@@ -28320,6 +28320,17 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
       });
     }
     Expr::Graphics { svg, .. } => svg.clone(),
+    // A raster image is drawn at its display size (its `ImageSize`, else
+    // its pixel dimensions), like any other picture, so the row it sits in
+    // — also one it spans with `SpanFromLeft` — is sized to hold it.
+    Expr::Image { .. } => crate::evaluator::expr_to_svg(cell),
+    // `Magnify[expr, s]` shows `expr` scaled by `s`, whatever it holds — a
+    // picture or plain text — rather than the call's source text.
+    Expr::FunctionCall { name, args }
+      if name == "Magnify" && (args.len() == 1 || args.len() == 2) =>
+    {
+      crate::evaluator::expr_to_svg(cell)
+    }
     // A styled graphic is still a graphic. A styled nested layout
     // (`Style[Column[{Grid[…]}], 16]` in a cell) keeps its directives: they
     // are distributed over the layout's items before it is drawn, just as
@@ -47482,6 +47493,12 @@ fn drawn_plot_range(
     match e {
       Expr::Graphics { is_3d: false, .. } => corners(e),
       Expr::FunctionCall { name, .. } if name == "Graphics" => corners(e),
+      // A raster image is dragged over in its own pixel coordinates —
+      // `{0, 0}` at the bottom-left corner to `{width, height}` — the
+      // system `PixelValue[img, {x, y}]` reads a dragged point in.
+      Expr::Image { width, height, .. } if *width > 0 && *height > 0 => {
+        Some(((0.0, 0.0), (*width as f64, *height as f64)))
+      }
       Expr::FunctionCall { args, .. } => {
         args.iter().find_map(first_graphic_range)
       }
