@@ -25962,6 +25962,14 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
       }
     } else {
       series_prims.push(series_thickness_expr(sd, 1.5));
+      // The series share one list, so a curve without `Arrowheads` resets
+      // them when an earlier one set its own.
+      if let Some(spec) = &sd.arrowheads {
+        series_prims.push(call1("Arrowheads", spec.clone()));
+      } else if ps.series[..si].iter().any(|s| s.arrowheads.is_some()) {
+        series_prims
+          .push(call1("Arrowheads", Expr::Identifier("Automatic".into())));
+      }
       // Like the opacity above: once any series is dashed, a solid one
       // says so, or the previous series' dashes would carry over to it.
       if let Some(dashing) = series_dashing_expr(sd, ps.image_size.0) {
@@ -59423,6 +59431,7 @@ mod click_pane_display_tests {
   }
 }
 
+#[cfg(test)]
 mod grid_display_null_cell_tests {
   use super::*;
 

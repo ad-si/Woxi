@@ -3050,20 +3050,21 @@ fn ndsolve_pde(
     other => vec![other.clone()],
   };
   let eq_items = flatten_chained_equalities(&eq_items);
-  // The finite-element form (`NeumannValue`) returns its solutions as
-  // functions of the space variable first, then time, like the unknowns'
-  // own `u[x, t]` calls, whatever order the domains were declared in.
+  // The solutions take their arguments in the order of the unknowns' own
+  // calls (`u[x, t]` gives `u[x0, t0]`), whatever order the domains were
+  // declared in.
+  let call_dim0 = unknown_first_argument(&eq_items, &u_names, &dom_a, &dom_b);
   let (eq_items, dim0_dom, natural_flux, both_edges) =
     match lower_neumann_values(&eq_items, &u_names, &[&dom_a, &dom_b]) {
       Some((lowered, x_vars)) => {
-        let dim0 = if dom_a.name == x_vars[0] {
+        let dim0 = call_dim0.unwrap_or(if dom_a.name == x_vars[0] {
           &dom_a
         } else {
           &dom_b
-        };
+        });
         (lowered, dim0.clone(), true, x_vars.len() > 1)
       }
-      None => (eq_items, dom_a.clone(), false, false),
+      None => (eq_items, call_dim0.unwrap_or(&dom_a).clone(), false, false),
     };
 
   // Flux conditions on the ends of both variables: a stationary problem.
@@ -3103,6 +3104,40 @@ fn ndsolve_pde(
     );
   }
   Ok(None)
+}
+
+/// The domain of the first argument the unknowns are called with in the
+/// equations: `a` for `u[a, b]`, `b` for `u[b, a]` (or a derivative of
+/// `u` called so). `None` when no unknown is called with exactly the two
+/// domain variables.
+fn unknown_first_argument<'a>(
+  eqs: &[Expr],
+  u_names: &[String],
+  a: &'a PdeDomain,
+  b: &'a PdeDomain,
+) -> Option<&'a PdeDomain> {
+  fn find(expr: &Expr, u_names: &[String], a: &str, b: &str) -> Option<bool> {
+    // A plain call `u[p, q]` or a derivative `Derivative[i, j][u][p, q]`.
+    for u in u_names {
+      if let Some((_, _, first, second)) = match_pde_term(expr, u)
+        && let (Expr::Identifier(p), Expr::Identifier(q)) = (&first, &second)
+      {
+        if p == a && q == b {
+          return Some(true);
+        }
+        if p == b && q == a {
+          return Some(false);
+        }
+      }
+    }
+    expr_children(expr)
+      .iter()
+      .find_map(|c| find(c, u_names, a, b))
+  }
+  let a_first = eqs
+    .iter()
+    .find_map(|e| find(e, u_names, &a.name, &b.name))?;
+  Some(if a_first { a } else { b })
 }
 
 /// `NDSolve` PDE systems that mix unknown groups of different kinds — e.g.

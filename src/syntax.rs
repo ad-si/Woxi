@@ -290,6 +290,10 @@ pub struct PlotSeriesData {
   /// (`None` = plain `color`). Travels with the series so that `Show`
   /// colors only this curve by it, not the curves merged with it.
   pub color_function: Option<SeriesColorFunction>,
+  /// `Arrowheads[spec]` from `PlotStyle`: the plot expression keeps it as
+  /// a directive of the curve, so `plot /. Line -> Arrow` draws the heads
+  /// it asks for (several evenly spaced ones for a list of sizes).
+  pub arrowheads: Option<Expr>,
 }
 
 /// A plot's `ColorFunction` as one of its curves was drawn with it: the
