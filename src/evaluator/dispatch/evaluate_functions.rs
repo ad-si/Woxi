@@ -848,6 +848,23 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "PlotLegends`" {
+    // Its exports, so a bare `ShowLegend` read after loading is
+    // `PlotLegends`ShowLegend` (the dispatch entry Woxi implements), and
+    // the legend options it reads answer to their bare names too.
+    for name in [
+      "Legend",
+      "LegendBackground",
+      "LegendBorder",
+      "LegendPosition",
+      "LegendShadow",
+      "LegendSize",
+      "ShowLegend",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "PolyhedronOperations`" {
     // Its exports, so a bare `Truncate` read after loading is
     // `PolyhedronOperations`Truncate` (the dispatch entry Woxi implements).
@@ -2957,6 +2974,15 @@ fn evaluate_function_call_ast_inner(
     {
       return Ok(result);
     }
+    // In a notebook, `SetOptions[$FrontEnd, …]` (e.g. a longer
+    // `DynamicEvaluationTimeout`) configures the front end itself, which
+    // takes any of its many options silently and returns nothing.
+    if crate::is_visual_mode()
+      && matches!(&args[0], Expr::Identifier(h)
+        if h == "$FrontEnd" || h == "$FrontEndSession")
+    {
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
     let Expr::Identifier(head) = &args[0] else {
       crate::emit_message(&format!(
         "SetOptions::sstm: Argument {} is not a symbol or a stream.",
@@ -3211,8 +3237,24 @@ fn evaluate_function_call_ast_inner(
 
   // Refresh[expr, opts…] — the FrontEnd refresh wrapper displays (and
   // returns) its first argument; the update-interval options only matter
-  // inside a Dynamic FrontEnd context.
+  // inside a Dynamic FrontEnd context, where a finite `UpdateInterval`
+  // asks the front end to re-evaluate the enclosing `Dynamic` on a timer.
   if name == "Refresh" && !args.is_empty() {
+    let timed = args[1..].iter().any(|opt| {
+      matches!(
+        opt,
+        Expr::Rule { pattern, replacement }
+          | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "UpdateInterval")
+            && evaluate_expr_to_expr(replacement)
+              .ok()
+              .and_then(|t| crate::functions::math_ast::try_eval_to_f64(&t))
+              .is_some_and(f64::is_finite)
+      )
+    });
+    if timed {
+      crate::request_timed_refresh();
+    }
     return Ok(args[0].clone());
   }
 
@@ -5522,6 +5564,11 @@ fn evaluate_function_call_ast_inner(
         let root = root_vertex.cloned().or_else(|| {
           if radial {
             crate::functions::graph::unique_source_vertex(&args[0])
+          } else if name == "TreePlot" {
+            // Without a single source to hang from, `TreePlot` roots the
+            // drawing at the graph center and layers the other vertices
+            // by their distance from it, whatever the edge directions.
+            crate::functions::graph::tree_plot_center_root(&args[0])
           } else {
             None
           }
@@ -5883,6 +5930,13 @@ fn evaluate_function_call_ast_inner(
     return hierarchical_clustering_distance_matrix(args);
   }
 
+  // The legacy PlotLegends` package, once loaded.
+  if name == "PlotLegends`ShowLegend"
+    && package_loaded("PlotLegends`")
+    && args.len() >= 2
+  {
+    return crate::functions::plot_legends_package::show_legend_ast(args);
+  }
   // The legacy ComputationalGeometry` package, once loaded.
   if name.starts_with("ComputationalGeometry`")
     && package_loaded("ComputationalGeometry`")
