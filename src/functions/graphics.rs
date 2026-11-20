@@ -56554,6 +56554,10 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
             &args[1..],
           ),
         }
+      } else if let Some(text) =
+        r.expr.as_ref().and_then(front_end_number_display_text)
+      {
+        DisplayNode::Static { svg: None, text }
       } else {
         let text = r
           .result
@@ -56571,6 +56575,82 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
       text: String::new(),
     },
   }
+}
+
+/// The one-line text of a dynamic value that holds machine reals or `Root`
+/// objects, shown the way the notebook front end typesets them rather than
+/// in full InputForm: a machine real at 6 significant figures (`1.46557`,
+/// `1.23457×10^6`) and a numeric `Root[…]` elided to its approximate value
+/// (`1.47…`). `None` when the value contains neither, so the caller keeps
+/// its plain text.
+fn front_end_number_display_text(expr: &Expr) -> Option<String> {
+  fn elided_root_value(args: &[Expr]) -> Option<f64> {
+    let root = Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: args.to_vec().into(),
+    };
+    match crate::evaluator::evaluate_expr_to_expr(&call("N", vec![root])) {
+      Ok(Expr::Real(f)) if f.is_finite() => Some(f),
+      _ => None,
+    }
+  }
+  fn real_text(f: f64) -> String {
+    let parts = machine_real_display_parts(f);
+    match parts.exponent {
+      Some(exp) => format!("{}\u{00d7}10^{exp}", parts.mantissa),
+      None => parts.mantissa,
+    }
+  }
+  // A display token for a number, kept as a symbol so the formatter
+  // writes it verbatim; a negative one is negated so `Plus` still prints
+  // `a - 1.5`, not `a + -1.5`.
+  fn token(f: f64, text: impl Fn(f64) -> String) -> Expr {
+    if f < 0.0 {
+      call("Times", vec![Expr::Integer(-1), Expr::Identifier(text(-f))])
+    } else {
+      Expr::Identifier(text(f))
+    }
+  }
+  fn rewrite(e: &Expr, changed: &mut bool) -> Expr {
+    match e {
+      Expr::Real(f) if f.is_finite() => {
+        *changed = true;
+        token(*f, real_text)
+      }
+      Expr::FunctionCall { name, args } if name == "Root" => {
+        match elided_root_value(args) {
+          Some(f) => {
+            *changed = true;
+            token(f, |v| {
+              let r = crate::functions::string_ast::round_shortest_digits(v, 3);
+              format!("{}\u{2026}", machine_real_display_parts(r).mantissa)
+            })
+          }
+          None => e.clone(),
+        }
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(|a| rewrite(a, changed)).collect(),
+      },
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|a| rewrite(a, changed)).collect())
+      }
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(rewrite(left, changed)),
+        right: Box::new(rewrite(right, changed)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(rewrite(operand, changed)),
+      },
+      other => other.clone(),
+    }
+  }
+  let mut changed = false;
+  let shown = rewrite(expr, &mut changed);
+  changed.then(|| crate::syntax::expr_to_string(&shown))
 }
 
 /// Serialize a `DisplayNode` tree to the JSON the Playground consumes.
