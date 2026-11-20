@@ -1251,6 +1251,13 @@ pub fn dispatch_io_functions(
       }
       return Some(Ok(null_expr()));
     }
+    // Beep[] — sound the alert tone. Like EmitSound, a short synthesized
+    // tone is captured for visual hosts (Woxi Studio plays it when a button
+    // or `ClickPane` handler beeps); the call returns Null.
+    "Beep" if args.is_empty() => {
+      crate::capture_sound(&crate::functions::sound::beep_wav_base64());
+      return Some(Ok(null_expr()));
+    }
     // HTTPRequest[url] / HTTPRequest[url, assoc] / HTTPRequest[assoc] —
     // symbolic HTTP request object; no network access is performed.
     // The one-argument URL form canonicalizes to HTTPRequest[url, <||>],
@@ -6458,23 +6465,43 @@ fn rendered_graphic_span(body: &Expr) -> f64 {
   1.0
 }
 
-/// The `Epilog` option a rendered picture was drawn with, if any.
+/// The `Epilog` option a rendered picture was drawn with, if any: one its
+/// plot source records, or else one among the options of the symbolic
+/// `Graphics[prims, opts]` it was rendered from (where a `Show[…]` keeps
+/// the `Epilog` it took over from its first graphic).
 fn rendered_graphic_epilog(body: &Expr) -> Option<Expr> {
   let Expr::Graphics {
-    source: Some(src), ..
+    source, structure, ..
   } = body
   else {
     return None;
   };
-  src.options.iter().find_map(|o| match o {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog") => {
-      Some(replacement.as_ref().clone())
-    }
-    _ => None,
-  })
+  let epilog_in = |options: &[Expr]| {
+    options.iter().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog") => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })
+  };
+  source
+    .as_ref()
+    .and_then(|src| epilog_in(&src.options))
+    .or_else(|| match structure.as_deref() {
+      Some(Expr::FunctionCall { name, args })
+        if name == "Graphics" && !args.is_empty() =>
+      {
+        epilog_in(&args[1..])
+      }
+      _ => None,
+    })
 }
 
 /// Whether `name` is a graphics-producing head known to accept an
@@ -6716,8 +6743,9 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
       .filter(|cells| !cells.is_empty())
       .collect(),
     "Column" => items.iter().map(|c| vec![c.clone()]).collect(),
-    // `Row[{a, b, …}, sep]` sets `sep` between neighboring items.
-    "Row" if args.len() >= 2 => {
+    // `Row[{a, b, …}, sep]` sets `sep` between neighboring items; a rule in
+    // that position is an option (`ImageSize -> …`), not a separator.
+    "Row" if args.len() >= 2 && !crate::syntax::is_rule_expr(&args[1]) => {
       let mut cells = Vec::with_capacity(2 * items.len());
       for (i, item) in items.iter().enumerate() {
         if i > 0 {
@@ -7059,6 +7087,31 @@ pub(crate) fn wrap_pane_text(
   wrap_pane_text_at(content, width, font_size, false)
 }
 
+/// How many monospace columns of text fit in the width one column of the
+/// face a `Style`'s `FontFamily` directive picks takes: above 1 for a
+/// proportional face, 1 for a monospace one or without a `FontFamily`.
+fn style_face_advance_ratio(directives: &[Expr]) -> f64 {
+  use crate::functions::graphics::{
+    MONO_ADVANCE, SANS_ADVANCE, is_monospace_font_family,
+  };
+  let family = directives.iter().rev().find_map(|d| match d {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontFamily") => {
+      match replacement.as_ref() {
+        Expr::String(f) => Some(f.as_str()),
+        _ => None,
+      }
+    }
+    _ => None,
+  });
+  match family {
+    Some(f) if !is_monospace_font_family(f) => MONO_ADVANCE / SANS_ADVANCE,
+    _ => 1.0,
+  }
+}
+
 /// `wrap_pane_text`, which with `whole_words` gives up (`None`) rather than
 /// break a word too long for a line in two.
 fn wrap_pane_text_at(
@@ -7082,13 +7135,26 @@ fn wrap_pane_text_at(
   match name.as_str() {
     "Style" if !args.is_empty() => {
       let size = style_font_size(&args[1..]).unwrap_or(font_size);
+      // Lines are counted in monospace columns; a proportional face
+      // (`FontFamily -> "sans-serif"`, as `Text[Row[…]]` sets) fits more
+      // glyphs, as many as a proportionally wider monospace line holds.
+      let width = width * style_face_advance_ratio(&args[1..]);
       let inner = wrap_pane_text_at(&args[0], width, size, whole_words)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
     }
     "Text" if args.len() == 1 => {
-      wrap_pane_text_at(&args[0], width, font_size, whole_words)
+      match crate::functions::graphics::text_layout_face(content) {
+        // `Text[Row[…]]` flows in the proportional text face.
+        Some((layout, family)) => wrap_pane_text_at(
+          &call("Style", vec![layout.clone(), family]),
+          width,
+          font_size,
+          whole_words,
+        ),
+        None => wrap_pane_text_at(&args[0], width, font_size, whole_words),
+      }
     }
     // `TraditionalForm` only changes how math in the text is typeset; the
     // re-flowed lines keep it.
@@ -7760,6 +7826,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       );
       expr_to_svg(&call("Pane", pane_args))
     }
+    // `Style[content, DefaultOptions -> {Graphics -> {…}}]` draws the
+    // graphics inside `content` with those defaults.
+    Expr::FunctionCall { name, .. }
+      if name == "Style"
+        && let Some(applied) =
+          crate::functions::graphics::apply_style_default_graphics_options(
+            expr,
+          ) =>
+    {
+      expr_to_svg(&applied)
+    }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them
     // into one `Style`, the inner directives after (so overriding) the
@@ -8012,6 +8089,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       if name == "Column"
         && args.len() >= 2
         && let Some(svg) = crate::functions::graphics::column_to_svg(args)
+      {
+        return svg;
+      }
+      // So does a `Row` given options (`ImageSize`, `Alignment`, `Frame`):
+      // its own layout honors them, where the generic composition below
+      // knows none of a row's options.
+      if name == "Row"
+        && args[1..].iter().any(crate::syntax::is_rule_expr)
+        && let Some(svg) = crate::row_svg_with_rendered_items(args)
       {
         return svg;
       }

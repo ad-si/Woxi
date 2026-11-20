@@ -305,6 +305,24 @@ pub fn mouse_position() -> Option<(f64, f64)> {
   MOUSE_POSITION.with(std::cell::Cell::get)
 }
 
+thread_local! {
+    static TIMED_REFRESH: std::cell::Cell<bool> =
+      const { std::cell::Cell::new(false) };
+}
+
+/// Note that an evaluation ran `Refresh[expr, UpdateInterval -> t]` with a
+/// finite `t`: a front end re-evaluates the enclosing `Dynamic` every `t`
+/// seconds, even when none of its tracked symbols changed.
+pub fn request_timed_refresh() {
+  TIMED_REFRESH.with(|r| r.set(true));
+}
+
+/// Whether a timed refresh was requested since the last call (see
+/// [`request_timed_refresh`]); clears the request.
+pub fn take_timed_refresh() -> bool {
+  TIMED_REFRESH.with(|r| r.replace(false))
+}
+
 /// Whether the interpreter is in visual (notebook-like) display mode, where
 /// front-end-only behaviors apply (e.g. `Defer[expr]` shows `expr` without
 /// its wrapper). False in plain CLI/script mode, which matches wolframscript.
@@ -3480,6 +3498,13 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   } else {
     result_expr
   };
+  // `Style[…, DefaultOptions -> {Graphics -> …}]` hands its defaults to the
+  // graphics it wraps before the layout passes below draw them.
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    functions::graphics::resolve_style_default_graphics_options(&result_expr)
+  } else {
+    result_expr
+  };
   // If the result is a Grid expression, render it as SVG (visual mode
   // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
   let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
@@ -5401,6 +5426,20 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   };
   if !functions::graphics::is_style_wrapper(name) || args.len() < 2 {
     return expr;
+  }
+  // `Style[Text[Row[…]], 16]`: the `Text` adds the proportional text face
+  // to the directives, nearest the layout.
+  if let Some((layout, family)) =
+    functions::graphics::text_layout_face(&args[0])
+    && !matches!(layout, syntax::Expr::String(_))
+  {
+    let mut styled = vec![layout.clone()];
+    styled.extend(args[1..].iter().cloned());
+    styled.push(family);
+    return render_styled_layout_if_needed(syntax::Expr::FunctionCall {
+      name: name.clone(),
+      args: styled.into(),
+    });
   }
   // Look through pass-through display wrappers (`Text[…]`, `Pane[…]`, …) to
   // find the Column/Row/Grid underneath — a Demonstration's Manipulate body

@@ -262,6 +262,58 @@ mod layout_display {
     }
   }
 
+  /// Regression: a label with a character the requested face lacks (such
+  /// as "ρ") was redrawn entirely in the first database face that had
+  /// it, even when that face's weight or style differed (e.g. a bold
+  /// oblique system font for a regular label).
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn svg_font_fallback_prefers_the_same_kind_of_face() {
+    use resvg::usvg::fontdb::{Database, Weight};
+    let mut db = Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let face = |family: &str, weight: u16| {
+      db.faces()
+        .find(|f| {
+          f.weight == Weight(weight) && f.families.iter().any(|n| n.0 == family)
+        })
+        .unwrap_or_else(|| panic!("missing embedded {family} {weight}"))
+        .id
+    };
+    let mono_bold = face("Atkinson Hyperlegible Mono", 700);
+    let mono_regular = face("Atkinson Hyperlegible Mono", 400);
+    let next_bold = face("Atkinson Hyperlegible Next", 700);
+    let next_regular = face("Atkinson Hyperlegible Next", 400);
+    assert!(db.face(mono_regular).unwrap().monospaced);
+    assert!(!db.face(next_regular).unwrap().monospaced);
+    let mut db = std::sync::Arc::new(db);
+    let select = woxi::functions::image_ast::same_style_fallback_selector();
+    // The closest weight wins over the kind of face: a regular base never
+    // falls back to a bold face of its own kind.
+    assert_eq!(select('a', &[next_bold], &mut db), Some(mono_bold));
+    assert_eq!(select('a', &[mono_regular], &mut db), Some(next_regular));
+    // Among faces of equal weight, the same kind wins over the database
+    // order (the Mono faces come first): a proportional base falls back to
+    // a proportional face and a monospaced to a monospaced.
+    assert_eq!(
+      select('a', &[next_bold, mono_bold], &mut db),
+      Some(next_regular)
+    );
+    assert_eq!(
+      select('a', &[mono_bold, next_bold], &mut db),
+      Some(mono_regular)
+    );
+    // A character no face has yields no fallback.
+    assert_eq!(select('\u{E000}', &[next_bold], &mut db), None);
+
+    // The options used for rasterizing carry this selector.
+    let opts = woxi::functions::image_ast::svg_render_options(db.clone());
+    assert_eq!(
+      (opts.font_resolver.select_fallback)('a', &[next_bold], &mut db),
+      Some(mono_bold)
+    );
+  }
+
   #[test]
   fn dataset_records_have_vertical_column_separators() {
     for expr in [
@@ -403,6 +455,97 @@ mod layout_display {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
   }
 
+  /// The `font-family` of the `<text>` element that draws `text`.
+  fn text_family<'a>(svg: &'a str, text: &str) -> &'a str {
+    let end = svg
+      .find(&format!(">{text}</text>"))
+      .unwrap_or_else(|| panic!("no text {text}: {svg}"));
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let from = tag.find("font-family=\"").unwrap() + "font-family=\"".len();
+    &tag[from..from + tag[from..].find('"').unwrap()]
+  }
+
+  /// The font size of the `<text>` element that draws `text`.
+  fn text_size(svg: &str, text: &str) -> f64 {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let from = tag.find("font-size=\"").unwrap() + "font-size=\"".len();
+    tag[from..from + tag[from..].find('"').unwrap()]
+      .parse()
+      .unwrap()
+  }
+
+  /// Regression: the text of a `Framed`/`Panel` grid cell was set in the
+  /// monospace face (and the default size) while the grid's other text
+  /// cells use the grid's proportional face and size — also when the frame
+  /// sits in a styled `Column` cell.
+  #[test]
+  fn framed_grid_cell_text_in_grid_face() {
+    for (expr, framed) in [
+      ("Grid[{{\"abc\", Framed[\"msg\"]}}]", "msg"),
+      ("Grid[{{\"abc\", Panel[\"msg\"]}}]", "msg"),
+      ("Grid[{{\"abc\", Framed[Style[\"msg\", 20]]}}]", "msg"),
+      (
+        "Grid[{{\"abc\"}, {Style[Column[{Grid[{{\"g\"}}], \
+         Framed[\"msg\"]}], \"Label\", 16]}}]",
+        "msg",
+      ),
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(
+        text_family(&svg, framed),
+        text_family(&svg, "abc"),
+        "{expr}: {svg}"
+      );
+      assert!(!rects(&svg).is_empty(), "{expr}: {svg}");
+    }
+    // The grid's size reaches the framed text; the cell's own size wins.
+    let svg = svg_of("Style[Grid[{{\"abc\", Framed[\"msg\"]}}], 16]");
+    assert_eq!(text_size(&svg, "msg"), 16.0, "{svg}");
+    let svg =
+      svg_of("Style[Grid[{{\"abc\", Framed[Style[\"msg\", 20]]}}], 16]");
+    assert_eq!(text_size(&svg, "msg"), 20.0, "{svg}");
+    // A standalone frame keeps the monospace face.
+    let svg = svg_of("Framed[\"msg\"]");
+    assert!(text_family(&svg, "msg").contains("monospace"), "{svg}");
+  }
+
+  /// Regression: a `Row` grid cell holding a `Framed`/`Panel` was set as
+  /// one line of text and lost the box.
+  #[test]
+  fn row_grid_cell_keeps_frame() {
+    for expr in [
+      "Grid[{{\"abc\", Row[{\"x\", Framed[\"y\"]}]}}]",
+      "Grid[{{\"abc\", Row[{\"x\", Panel[\"y\"]}]}}]",
+      "Grid[{{\"abc\", Style[Row[{\"x\", Framed[\"y\"]}], 16]}}]",
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(rects(&svg).len(), 1, "{expr}: {svg}");
+      assert!(svg.contains(">x</text>"), "{expr}: {svg}");
+      assert!(svg.contains(">y</text>"), "{expr}: {svg}");
+    }
+  }
+
+  /// Regression: `Framed[Style[text, FontFamily -> f]]` ignored the family;
+  /// the text is now set (and the frame sized) in that face.
+  #[test]
+  fn framed_text_font_family() {
+    let svg = svg_of("Framed[Style[\"fill\", FontFamily -> \"Times\"]]");
+    assert!(text_family(&svg, "fill").starts_with("Times"), "{svg}");
+    // The proportional text is narrower than four monospace cells.
+    let mono = svg_of("Framed[\"fill\"]");
+    let width = |svg: &str| -> f64 {
+      let r = rects(svg)[0];
+      let from = r.find("width=\"").unwrap() + "width=\"".len();
+      r[from..from + r[from..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    assert!(width(&svg) < width(&mono), "{svg}\n{mono}");
+  }
+
   /// Regression: a `Dividers` entry's thickness and dashing were dropped;
   /// only its color was drawn.
   #[test]
@@ -489,6 +632,44 @@ mod layout_display {
        ItemSize -> {{3, Automatic}}]",
     );
     assert!(!svg.contains("<tspan"), "{svg}");
+  }
+
+  /// A short row ending in `SpanFromLeft` keeps spanning to the grid's
+  /// right edge. Regression: the missing trailing columns stayed separate
+  /// empty cells, so a framed heading row (`{"label", SpanFromLeft}` in a
+  /// three-column grid) covered only two columns, was centered over them
+  /// and had a divider before the last column.
+  #[test]
+  fn grid_trailing_span_from_left_reaches_last_column() {
+    let short = svg_of(
+      "Grid[{{\"aa\", \"bb\", \"cc\"}, {\"heading\", SpanFromLeft}, \
+       {1, 2, 3}}, Frame -> All, ItemSize -> 4]",
+    );
+    let full = svg_of(
+      "Grid[{{\"aa\", \"bb\", \"cc\"}, {\"heading\", SpanFromLeft, \
+       SpanFromLeft}, {1, 2, 3}}, Frame -> All, ItemSize -> 4]",
+    );
+    assert_eq!(short, full);
+    // The heading is centered across all three columns.
+    let attr = |tag: &str, name: &str| -> f64 {
+      let i = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+    };
+    let width = attr(&short, "width");
+    let heading = short[..short.find(">heading<").unwrap()]
+      .rsplit("<text")
+      .next()
+      .unwrap();
+    assert!(
+      (attr(heading, "x") - (width - 1.0) / 2.0).abs() < 1.0,
+      "{short}"
+    );
+    // A short row without a trailing span is not merged.
+    let ragged = svg_of(
+      "Grid[{{\"aa\", \"bb\", \"cc\"}, {\"heading\", \"x\"}, {1, 2, 3}}, \
+       Frame -> All, ItemSize -> 4]",
+    );
+    assert_ne!(ragged, short);
   }
 
   /// A string holding inline linear syntax (`\!\(…\)`) in a fixed-width

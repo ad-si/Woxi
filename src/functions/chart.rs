@@ -394,16 +394,69 @@ impl StyledLabel {
     cx: f64,
     line_height: f64,
   ) -> String {
+    let advances = vec![line_height; self.extra_lines.len()];
+    self.svg_scaled_stacked_by(scale, cx, &advances)
+  }
+
+  /// The same as [`Self::svg_scaled_stacked`], with the `i`-th further
+  /// line placed `advances[i]` render units below the line above it.
+  pub(crate) fn svg_scaled_stacked_by(
+    &self,
+    scale: f64,
+    cx: f64,
+    advances: &[f64],
+  ) -> String {
     let mut out = self.svg_scaled(scale);
-    for line in &self.extra_lines {
+    for (i, line) in self.extra_lines.iter().enumerate() {
+      let dy = advances.get(i).copied().unwrap_or(0.0);
       out.push_str(&format!(
-        "<tspan x=\"{cx:.1}\" dy=\"{line_height:.1}\">{}</tspan>",
+        "<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{}</tspan>",
         scale_markup_lengths(line, scale)
       ));
     }
     out
   }
 
+  /// The font size (in render units) each line of this label is drawn
+  /// at: the largest absolute `font-size` its own markup sets (a
+  /// `Style[…, 40]` part of a `Labeled`/`Column` label), scaled by
+  /// `scale`, or `base` for a line that sets none.
+  pub(crate) fn line_font_sizes(&self, base: f64, scale: f64) -> Vec<f64> {
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .map(|line| markup_max_font_size(&line).map_or(base, |s| s * scale))
+      .collect()
+  }
+
+  /// The baseline-to-baseline distance from each line to the next: the
+  /// usual `1.2` line pitch taken over the two lines' mean size, so a
+  /// label whose lines share one size keeps that size's plain pitch while
+  /// a large line followed by a small one (`Labeled[Style[n, 100],
+  /// Style[k, 40]]`) leaves room for the large glyphs above.
+  pub(crate) fn line_advances(&self, base: f64, scale: f64) -> Vec<f64> {
+    let sizes = self.line_font_sizes(base, scale);
+    sizes.windows(2).map(|w| 0.6 * (w[0] + w[1])).collect()
+  }
+}
+
+/// The largest absolute `font-size="N"` an SVG markup fragment sets, if
+/// any (relative sizes such as `70%` are skipped).
+fn markup_max_font_size(markup: &str) -> Option<f64> {
+  let key = "font-size=\"";
+  let mut best: Option<f64> = None;
+  let mut rest = markup;
+  while let Some(pos) = rest.find(key) {
+    rest = &rest[pos + key.len()..];
+    let end = rest.find('"').unwrap_or(rest.len());
+    if let Ok(v) = rest[..end].parse::<f64>() {
+      best = Some(best.map_or(v, |b: f64| b.max(v)));
+    }
+    rest = &rest[end..];
+  }
+  best
+}
+
+impl StyledLabel {
   /// How many lines below the first this label occupies.
   pub(crate) fn extra_line_count(&self) -> usize {
     self.extra_lines.len()
@@ -876,6 +929,16 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
       };
+      // Content whose boxes stack (`Row[{…, q^(1/e)}]`) is drawn as a
+      // picture, the `Style` wrapper's size and color included, just like
+      // the same content without the wrapper.
+      let segments =
+        if matches!(&args[0], Expr::String(_) | Expr::Identifier(_)) {
+          Vec::new()
+        } else {
+          inline_graphic_segments(expr).unwrap_or_default()
+        };
+      claim_picture_room(&segments, &mut extra_lines);
       let (bold, italic, color, font_size) =
         parse_style_directive_args(&args[1..]);
       Some(StyledLabel {
@@ -888,7 +951,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         font_size,
         framed: false,
         background: None,
-        segments: Vec::new(),
+        segments,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -970,6 +1033,10 @@ pub(crate) struct ChartOptions {
   pub legend_layout: LegendLayout,
   pub plot_range_x: Option<(f64, f64)>,
   pub plot_range_y: Option<(f64, f64)>,
+  /// `AxesOrigin -> {x, y}`: where the axes cross, in data coordinates;
+  /// `None` keeps a coordinate's automatic placement. Currently consumed by
+  /// `Histogram`.
+  pub axes_origin: (Option<f64>, Option<f64>),
   /// `BarOrigin -> Left` (or `Right`) renders horizontal bars.
   pub bar_origin_left: bool,
   /// `LabelingFunction -> f` — applied to each bar value to produce a label
@@ -1153,10 +1220,12 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // print as `label`, with the second argument only shown on hover, so a
     // label written that way must not vanish from the axis. A
     // `Rotate[label, angle]` (a vertical axis label idiom) reads as its
-    // content too.
+    // content too, and so does a `TextCell[label, …]`, a cell showing
+    // `label` (an empty `TextCell[""]` factor adds no text).
     Expr::FunctionCall { name, args }
       if (name == "Style"
         || name == "Text"
+        || name == "TextCell"
         || name == "Tooltip"
         || name == "Annotation"
         || name == "Pane"
@@ -3101,6 +3170,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     legend_layout: LegendLayout::Column,
     plot_range_x: None,
     plot_range_y: None,
+    axes_origin: (None, None),
     bar_origin_left: false,
     labeling_function: None,
     ticks_x: None,
@@ -3115,12 +3185,20 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     color_function: None,
     color_function_scaling: true,
   };
+  // When an option is given more than once, its first setting wins, as for
+  // any Wolfram option list (`PlotRange -> {{-1, 5}, All}, …, PlotRange ->
+  // All` keeps the explicit range).
+  let mut seen: std::collections::HashSet<&str> =
+    std::collections::HashSet::new();
   for opt in &args[1..] {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {
       let replacement = &*replacement;
       let name = chart_option_alias(name);
+      if !seen.insert(name) {
+        continue;
+      }
       match name {
         "ImageSize" => {
           if let Some((w, h, fw)) =
@@ -3279,6 +3357,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               }
             }
           }
+        }
+        "AxesOrigin" => {
+          opts.axes_origin =
+            crate::functions::plot::parse_axes_origin(replacement);
         }
         "PlotRange" => {
           let (rx, ry) =
