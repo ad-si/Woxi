@@ -12406,6 +12406,37 @@ mod plot3d {
       );
     }
 
+    // A string tick label with newlines on a framed `Graphics` (as charts
+    // like `BubbleChart` produce) is stacked one line per `<tspan>` on
+    // every edge, instead of running together on one line.
+    #[test]
+    fn graphics_frame_tick_labels_stack_newline_lines() {
+      let svg = export_svg(
+        r#"Graphics[{Line[{{0, 0}, {1, 1}}]}, Frame -> True,
+          FrameTicks -> {{{0.5, "b1\nb2"}}, {{0.25, "l1\nl2\nl3"}},
+                         {{0.5, "t1\nt2"}}, {{0.75, "r1\nr2"}}}]"#,
+      );
+      for line in ["b1", "b2", "l1", "l2", "l3", "t1", "t2", "r1", "r2"] {
+        assert!(
+          svg.contains(&format!(">{line}</tspan>")),
+          "line {line} not stacked: {svg}"
+        );
+      }
+      assert!(!svg.contains("l1\nl2"), "lines run together: {svg}");
+      // The left label is centered on its tick as a block: its first
+      // baseline sits well above the tick mark drawn just before it.
+      let attr = |tag: &str, name: &str| -> f64 {
+        let v = tag.split(&format!(" {name}=\"")).nth(1).unwrap();
+        v.split('"').next().unwrap().parse().unwrap()
+      };
+      let at = svg.find(">l1</tspan>").unwrap();
+      let text_start = svg[..at].rfind("<text").unwrap();
+      let line_start = svg[..text_start].rfind("<line").unwrap();
+      let tick_y = attr(&svg[line_start..text_start], "y1");
+      let first_baseline = attr(&svg[text_start..at], "y");
+      assert!(first_baseline < tick_y - 5.0, "{svg}");
+    }
+
     // A `Row` frame label that embeds `Graphics` (a legend swatch) is drawn
     // as a picture on the top and bottom edges instead of leaking the
     // `Graphics[…]` source as text.
