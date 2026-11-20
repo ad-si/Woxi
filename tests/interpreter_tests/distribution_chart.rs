@@ -79,3 +79,36 @@ fn non_list_data_is_ldata() {
     r.warnings
   );
 }
+
+// ChartElementData lists the element names DistributionChart accepts
+// (feeding e.g. a Manipulate popup of chart elements).
+#[test]
+fn chart_element_data_distribution_chart() {
+  assert_eq!(
+    interpret("ChartElementData[\"DistributionChart\"]").unwrap(),
+    "{Density, DensityQuantile, FadingQuantile, GlassQuantile, \
+     HistogramDensity, LineDensity, PointDensity, Quantile, SmoothDensity}"
+  );
+  assert_eq!(
+    interpret("Attributes[ChartElementData]").unwrap(),
+    "{Protected}"
+  );
+}
+
+// ChartElementFunction -> "HistogramDensity": one mirrored rectangle per
+// nonempty histogram bin, the fullest bin spanning the full half-width.
+#[test]
+fn histogram_density_element() {
+  assert_eq!(
+    interpret(
+      "g = DistributionChart[{{0, 1, 1, 2, 2, 2, 2, 3, 9}, {5, 5, 6}}, \
+       ChartElementFunction -> \"HistogramDensity\"]; \
+       {Length[Cases[g, _Polygon, Infinity]], \
+        Cases[g, Rectangle[{x0_, y0_}, {x1_, y1_}] :> \
+          Round[{x1 - x0, y0, y1}, 0.01], Infinity]}"
+    )
+    .unwrap(),
+    "{0, {{0.2, -0.5, 0.5}, {0.4, 0.5, 1.5}, {0.8, 1.5, 2.5}, \
+     {0.2, 2.5, 3.5}, {0.2, 8.5, 9.5}, {0.8, 4.5, 5.5}, {0.4, 5.5, 6.5}}}"
+  );
+}
