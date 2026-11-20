@@ -3287,8 +3287,8 @@ root. The unique-root and no-root regimes match exactly, as does n=2.
 
 ### Boolean minimization
 
-`BooleanConvert` ships every wolframscript form except `"ESOP"` and `"BFF"`,
-but four differences remain:
+`BooleanConvert` ships every wolframscript form except `"ESOP"`, but four
+differences remain:
 
 - **DNF needs term merging**, not just redundancy removal:
   `(a&&!b)||(!a&&b)||(a&&b)` is `a || b` in WL; Woxi keeps three terms.
@@ -3304,6 +3304,13 @@ but four differences remain:
 rewrite the head) against Woxi's `!(a && b && c)`, and
 `BooleanConvert[Equivalent[Xor[a,b],c], "IF"]` branches on `c` first, so WL's
 BDD variable order is not always alphabetical.
+
+The `"BDT"`, `"IMPLIES"` and `"BFF"` forms are **unverified** against
+wolframscript: `"BDT"` reuses the `"IF"` decision tree, `"IMPLIES"` folds the
+DNF from the right with `x || y` as `Implies[!x, y]` and `x && y` as
+`!Implies[x, !y]`, and `"BFF"` applies the `BooleanFunction["BDD" -> …]`
+object to the variables. All three give the right function; WL may nest or
+order them differently.
 
 `BooleanFunction[k, n]` and `BooleanMinterms`/`BooleanMaxterms` with an integer
 variable count normalize to the opaque `BooleanFunction["BDD" -> …]` object —
