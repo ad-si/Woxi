@@ -1064,11 +1064,13 @@ fn split_interpenetrating(
 /// large face that lies behind a small one on top of it (a cube inside a
 /// polyhedron pokes through its faces), so every overlapping pair is first
 /// ordered by which one lies wholly behind the other's plane; the centroid
-/// depth only breaks the remaining ties and cycles.
+/// depth only breaks the remaining ties and cycles. `opacities` gives each
+/// triangle's opacity (`1.0` is opaque).
 fn painter_order(
   verts: &[[Point3D; 3]],
   projected: &[[(f64, f64); 3]],
   depths: &[f64],
+  opacities: &[f64],
   camera: &Camera,
 ) -> Vec<usize> {
   let n = verts.len();
@@ -1098,9 +1100,18 @@ fn painter_order(
   let mut indegree = vec![0usize; n];
   for_each_overlapping_pair(projected, |i, j| {
     // Faces lying in one plane (two boxes sharing a face) have no depth
-    // order; the one given later is drawn on top, as in Wolfram.
+    // order; the one given later is drawn on top, as in Wolfram. Wolfram
+    // draws the opaque faces first and a translucent face only where it is
+    // strictly nearer, so a translucent face lying on an opaque one (a
+    // translucent pyramid glued to an opaque solid) stays beneath it
+    // whatever the order they were given in.
     let i_behind = if coplanar(&verts[i], &verts[j]) {
-      Some(i < j)
+      let (i_opaque, j_opaque) = (opacities[i] >= 1.0, opacities[j] >= 1.0);
+      if i_opaque == j_opaque {
+        Some(i < j)
+      } else {
+        Some(j_opaque)
+      }
     } else {
       side_of_plane(&verts[i], &verts[j], camera)
         .or_else(|| side_of_plane(&verts[j], &verts[i], camera).map(|s| !s))
@@ -14128,7 +14139,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     let projected: Vec<_> = all_triangles.iter().map(|t| t.projected).collect();
     let depths: Vec<_> = all_triangles.iter().map(|t| t.depth).collect();
-    let order = painter_order(&triangle_vertices, &projected, &depths, &camera);
+    let opacities: Vec<_> = all_triangles.iter().map(|t| t.opacity).collect();
+    let order = painter_order(
+      &triangle_vertices,
+      &projected,
+      &depths,
+      &opacities,
+      &camera,
+    );
     let mut slots: Vec<Option<Triangle>> =
       all_triangles.drain(..).map(Some).collect();
     triangle_vertices = order.iter().map(|&i| triangle_vertices[i]).collect();
@@ -25280,7 +25298,13 @@ mod painter_order_tests {
       depths[1..].iter().any(|d| *d > depths[0]),
       "scenario must defeat a plain centroid sort"
     );
-    let order = painter_order(&verts, &projected, &depths, &camera);
+    let order = painter_order(
+      &verts,
+      &projected,
+      &depths,
+      &vec![1.0; verts.len()],
+      &camera,
+    );
     assert_eq!(order.len(), verts.len());
     assert_eq!(order[0], 0, "the large back face is drawn first");
   }

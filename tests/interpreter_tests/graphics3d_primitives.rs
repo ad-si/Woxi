@@ -1795,6 +1795,28 @@ mod smooth_shading {
     let first_blue = colors.iter().position(|c| c.2 > c.0).unwrap();
     assert!(last_red < first_blue, "{colors:?}");
   }
+
+  // A translucent face lying on an opaque one stays beneath it, even when
+  // it is given later: only the opaque face's color shows through.
+  #[test]
+  fn translucent_face_on_opaque_face_stays_beneath() {
+    for (first, second) in [
+      ("Red, ", "Blue, Opacity[0.5], "),
+      ("Blue, Opacity[0.5], ", "Opacity[1], Red, "),
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{{first}Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, \
+         {{2, 2, 0}}, {{0, 2, 0}}}}], {second}Polygon[{{{{0, 0, 0}}, \
+         {{2, 0, 0}}, {{2, 2, 0}}, {{0, 2, 0}}}}]}}, Boxed -> False]"
+      ));
+      let polys: Vec<&str> = s.split("<polygon ").skip(1).collect();
+      assert!(!polys.is_empty(), "{s}");
+      assert!(
+        !polys.last().unwrap().contains("fill-opacity"),
+        "the opaque face must be drawn last: {s}"
+      );
+    }
+  }
 }
 
 mod edge_form_3d {
