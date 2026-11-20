@@ -4398,6 +4398,20 @@ fn renders_as_setter_bar(
   value_labels: &[String],
   value_label_svgs: &[Option<svg::Handle>],
 ) -> bool {
+  setter_bar_fits(value_labels, value_label_svgs, false)
+}
+
+/// [`renders_as_setter_bar`] for a control drawn in the panel column
+/// `beside_output` (`ControlPlacement -> Left`/`Right`) or above/below it.
+/// A side column is only as wide as its widest caption plus a short
+/// control, so the run of compact buttons Wolfram allows past
+/// [`SETTER_BAR_MAX_CHOICES`] in a full-width panel no longer fits there:
+/// seven integer choices beside the output are a dropdown.
+fn setter_bar_fits(
+  value_labels: &[String],
+  value_label_svgs: &[Option<svg::Handle>],
+  beside_output: bool,
+) -> bool {
   let is_icon = |i: usize| value_label_svgs.get(i).is_some_and(Option::is_some);
   let count = value_labels.len();
   if count <= SETTER_BAR_MAX_CHOICES {
@@ -4409,7 +4423,8 @@ fn renders_as_setter_bar(
       .sum();
     return row_chars <= SETTER_BAR_MAX_ROW_CHARS;
   }
-  count <= SETTER_BAR_MAX_COMPACT_CHOICES
+  !beside_output
+    && count <= SETTER_BAR_MAX_COMPACT_CHOICES
     && value_labels.iter().enumerate().all(|(i, label)| {
       is_icon(i) || label.chars().count() <= SETTER_BAR_COMPACT_LABEL_CHARS
     })
@@ -4874,7 +4889,11 @@ fn render_manipulate_widget<'a>(
             Row::with_children(items).spacing(12).align_y(Center).into()
           }
         } else if *force_setter_bar
-          || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
+          || (setter_bar_fits(
+            value_labels,
+            value_label_svgs,
+            matches!(slot, SLOT_LEFT | SLOT_RIGHT),
+          ) && !*popup)
         {
           let is_vertical = *is_vertical;
           let mut buttons = Vec::with_capacity(value_labels.len());
@@ -23272,6 +23291,62 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       .map(|_| Some(svg::Handle::from_memory(Vec::new())))
       .collect();
     assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// A panel column beside the output (`ControlPlacement -> Left`/`Right`)
+  /// is too narrow for the long run of compact buttons a full-width panel
+  /// allows: Wolfram shows a seven-integer count control placed on the left
+  /// as a dropdown, while up to five choices stay a bar on either side.
+  #[test]
+  fn side_panel_turns_long_compact_setter_bar_into_dropdown() {
+    let labels = |range: std::ops::RangeInclusive<i32>| -> Vec<String> {
+      range.map(|n| n.to_string()).collect()
+    };
+    let seven = labels(1..=7);
+    let svgs = vec![None; seven.len()];
+    assert!(setter_bar_fits(&seven, &svgs, false));
+    assert!(!setter_bar_fits(&seven, &svgs, true));
+    assert_eq!(
+      renders_as_setter_bar(&seven, &svgs),
+      setter_bar_fits(&seven, &svgs, false),
+      "the placement-free check is the full-width panel's"
+    );
+
+    let five = labels(2..=6);
+    let svgs = vec![None; five.len()];
+    assert!(setter_bar_fits(&five, &svgs, true));
+    assert!(setter_bar_fits(&five, &svgs, false));
+
+    // The control itself is placed beside the picture, which is what the
+    // panel renderer keys the narrower rule on.
+    let code = r#"Manipulate[
+      Graphics[Table[Circle[{k, 0}, r], {k, n}]],
+      {{n, 3, "count"}, Range[7]},
+      {{r, 0.5, "radius"}, 0.1, 1, Appearance -> "Labeled"},
+      ControlPlacement -> Left]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the count picker should build a ManipulateState");
+    assert_eq!(state.error, None, "got: {:?}", state.error);
+    assert_eq!(
+      placement_slot(state.placement_of(0)),
+      SLOT_LEFT,
+      "the count picker sits in the left column"
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        value_label_svgs,
+        popup,
+        setter_bar,
+        ..
+      } => {
+        assert!(!*popup && !*setter_bar, "no explicit control type");
+        assert!(!setter_bar_fits(value_labels, value_label_svgs, true));
+      }
+      other => panic!("expected a discrete count picker, got {other:?}"),
+    }
   }
 
   /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,
