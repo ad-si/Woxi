@@ -22043,7 +22043,14 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               _ => None,
             };
             let sep_markup = if sep_gap.is_none() {
-              separator.map(expr_to_svg_markup)
+              separator.map(|s| {
+                let markup = expr_to_svg_markup(s);
+                if is_bare_comma_separator(s) {
+                  format!("{markup} ")
+                } else {
+                  markup
+                }
+              })
             } else {
               None
             };
@@ -22115,6 +22122,14 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── Everything else → fallback to expr_to_output ──
     _ => svg_escape(&expr_to_output(expr)),
   }
+}
+
+/// Whether a `Row` separator is a bare `","`. The front end typesets it
+/// like the comma between list elements, with a space after it, so a plot
+/// label `Row[{a, b, c}, ","]` reads `a, b, c` rather than `a,b,c` (the
+/// same spacing [`boxes_to_svg`] gives a comma inside a `RowBox`).
+fn is_bare_comma_separator(sep: &Expr) -> bool {
+  matches!(sep, Expr::String(s) if s == ",")
 }
 
 /// A subscript and a superscript stacked over one another after their
@@ -22529,6 +22544,8 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
               Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
                 spacer_char_width(sargs)
               }
+              // A bare comma is followed by the front end's comma space.
+              other if is_bare_comma_separator(other) => 2.0,
               other => estimate_display_width(other),
             });
           // A line break inside a part (`Row[{"a\n", "b"}]`) starts a new

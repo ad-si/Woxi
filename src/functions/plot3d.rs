@@ -1701,7 +1701,7 @@ fn mesh_level_values(spec: Option<&MeshLevels>, values: &[f64]) -> Vec<f64> {
     MeshLevels::Count(n) if hi > lo => (1..=n)
       .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
       .collect(),
-    MeshLevels::Values(v) => v,
+    MeshLevels::Values(v) => v.into_iter().map(|level| level.value).collect(),
     MeshLevels::Count(_) => Vec::new(),
   }
 }

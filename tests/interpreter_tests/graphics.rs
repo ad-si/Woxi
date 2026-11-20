@@ -12321,6 +12321,27 @@ mod plot3d {
       assert!(svg.contains("Title "));
     }
 
+    /// A bare `","` separator in a plot title is followed by the front
+    /// end's comma space (`a, b, c`), as Wolfram draws it; any other
+    /// separator is set exactly as written.
+    #[test]
+    fn plot_label_row_comma_separator_is_spaced() {
+      let svg = export_svg(
+        "ListLinePlot[{1, 2}, PlotLabel -> \
+         Row[{Style[\"a\", Italic], \"b\", Row[{\"c\", \" + \", \"d\"}]}, \",\"]]",
+      );
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">a</tspan>, b, c + d"),
+        "{svg}"
+      );
+      let svg =
+        export_svg("ListLinePlot[{1, 2}, PlotLabel -> Row[{1, 2}, \";\"]]");
+      assert!(svg.contains(">1;2<"), "{svg}");
+      let svg =
+        export_svg("ListLinePlot[{1, 2}, PlotLabel -> Row[{1, 2}, \", \"]]");
+      assert!(svg.contains(">1, 2<"), "{svg}");
+    }
+
     /// The fraction bar of a stacked fraction in a typeset picture.
     fn has_fraction_bar(svg: &str) -> bool {
       svg.contains("<line x1=\"0\"")
