@@ -14130,6 +14130,34 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// A mathematical `FrameLabel` entry is set in TraditionalForm, like an
+    /// `AxesLabel`: symbols in italics and `Subscript[q, i][t]` as q_i(t)
+    /// with a lowered index, while string captions stay upright.
+    #[test]
+    fn list_line_plot_frame_label_typesets_math_in_traditional_form() {
+      let svg = export_svg(
+        "ListLinePlot[{1, 3, 2}, Frame -> True, \
+         FrameLabel -> {i, Subscript[q, i][t]}]",
+      );
+      assert!(
+        svg.contains("><tspan font-style=\"italic\">i</tspan></text>"),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">q</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\"><tspan font-style=\"italic\">i</tspan></tspan>\
+           (<tspan font-style=\"italic\">t</tspan>)</text>"
+        ),
+        "{svg}"
+      );
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"time\", \"x\"}]",
+      );
+      assert!(svg.contains(">time</text>"), "{svg}");
+      assert!(svg.contains(">x</text>"), "{svg}");
+    }
+
     /// Regression: `Histogram` read the nested `{{left, right}, {bottom,
     /// top}}` `FrameLabel` as `{bottom, left}`, printing each inner list
     /// (`{p, overall risk}`) as one caption instead of one per edge.
@@ -14283,11 +14311,26 @@ mod plot3d {
            FrameLabel -> {{\"p\", {expr}}}]"
         ))
       };
-      assert!(label("a/c^2").contains(">a/c\u{b2}</text>"));
-      assert!(label("(a + b)/c").contains(">(a + b)/c</text>"));
-      assert!(label("2 a - b").contains(">2 a - b</text>"));
+      let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
+      let sup2 = "<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>";
+      assert!(label("a/c^2").contains(&format!(
+        ">{}/{}{sup2}</text>",
+        it("a"),
+        it("c")
+      )));
+      assert!(label("(a + b)/c").contains(&format!(
+        ">({}+{})/{}</text>",
+        it("a"),
+        it("b"),
+        it("c")
+      )));
+      assert!(label("2 a - b").contains(&format!(
+        ">2\u{2009}{}-{}</text>",
+        it("a"),
+        it("b")
+      )));
       assert!(label("Pi").contains(">\u{3c0}</text>"));
-      assert!(label("Subscript[k, n] a/Pi").contains("/\u{3c0}</text>"));
+      assert!(label("Subscript[k, n] a/Pi").contains("\u{3c0}</tspan></text>"));
     }
 
     /// The rotated left `FrameLabel` is anchored by its baseline, whose
@@ -16482,7 +16525,12 @@ mod plot3d {
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[P, B, D][t]}]"#,
       );
       assert!(
-        svg.contains(">PB,D(t)</text>"),
+        svg.contains(
+          "<tspan font-style=\"italic\">P</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\"><tspan font-style=\"italic\">B</tspan>, \
+           <tspan font-style=\"italic\">D</tspan></tspan>\
+           (<tspan font-style=\"italic\">t</tspan>)</text>"
+        ),
         "applied multi-subscript label must be typeset: {svg}"
       );
       assert!(!svg.contains("Subscript["), "raw call leaked: {svg}");
@@ -16490,7 +16538,10 @@ mod plot3d {
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[x, 1, 2]}]"#,
       );
       assert!(
-        svg.contains(">x\u{2081},\u{2082}</text>"),
+        svg.contains(
+          "<tspan font-style=\"italic\">x</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\">1, 2</tspan></text>"
+        ),
         "several subscripts read comma-separated: {svg}"
       );
     }
@@ -23772,11 +23823,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "svg = ExportString[ContourPlot[u v, {u, -1, 1}, {v, -1, 1}, \
            FrameLabel -> Automatic], \"SVG\"]; \
-           {StringCases[svg, RegularExpression[\">[uv]</text>\"]], \
+           {StringCases[svg, RegularExpression[\
+             \"italic\\\">[uv]</tspan></text>\"]], \
             StringContainsQ[svg, \"Automatic\"]}"
         )
         .unwrap(),
-        "{{>u</text>, >v</text>}, False}"
+        "{{italic\">u</tspan></text>, italic\">v</tspan></text>}, False}"
       );
     }
 
@@ -24530,7 +24582,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          FrameLabel -> Automatic]}}]",
       );
       assert!(!grid.contains(">Automatic</text>"), "{grid}");
-      assert!(grid.contains(">u</text>") && grid.contains(">w</text>"));
+      // The variables are set in TraditionalForm italics.
+      for v in ["u", "w"] {
+        assert!(
+          grid.contains(&format!(
+            "><tspan font-style=\"italic\">{v}</tspan></text>"
+          )),
+          "{grid}"
+        );
+      }
     }
 
     /// Contour labels are `Text[level, vertex]` inside the plot's
@@ -24618,7 +24678,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let auto = export_svg(
         "DensityPlot[u w, {u, 0, 1}, {w, 0, 1}, FrameLabel -> Automatic]",
       );
-      assert!(auto.contains(">u</text>") && auto.contains(">w</text>"));
+      for v in ["u", "w"] {
+        assert!(
+          auto.contains(&format!(
+            "><tspan font-style=\"italic\">{v}</tspan></text>"
+          )),
+          "{auto}"
+        );
+      }
     }
 
     /// Regression: `ContourPlot` used to ignore `PlotLabel` entirely (no
@@ -24973,7 +25040,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let frame = export_svg(
         "Plot[Sinc[u], {u, 0, 10}, Frame -> True, FrameLabel -> Automatic]",
       );
-      assert_eq!(frame.matches(">u</text>").count(), 1, "{frame}");
+      // So is the frame label.
+      assert_eq!(
+        frame
+          .matches("><tspan font-style=\"italic\">u</tspan></text>")
+          .count(),
+        1,
+        "{frame}"
+      );
     }
 
     /// `WorkingPrecision -> p` samples at `p` digits: `Sin[x + 10^20]` is a
@@ -31406,6 +31480,30 @@ mod list_plot_3d {
       assert_eq!(r.result, code);
       assert_eq!(r.warnings, vec![message.to_string()]);
     }
+  }
+
+  // `DataRange -> {{x0, x1}, {y0, y1}}` spans a height matrix's columns
+  // (x) and rows (y) over those ranges instead of their 1-based indices.
+  #[test]
+  fn list_plot3d_matrix_data_range() {
+    clear_state();
+    let ticks = |code: &str| -> Vec<String> {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("</text>")
+        .filter_map(|s| s.rsplit('>').next())
+        .map(str::to_string)
+        .collect()
+    };
+    let data = "Table[Sin[i/3] Cos[j/4], {i, 10}, {j, 40}]";
+    let plain = ticks(&format!("ListPlot3D[{data}]"));
+    assert!(plain.iter().any(|t| t == "40"), "{plain:?}");
+    let ranged = ticks(&format!(
+      "ListPlot3D[{data}, DataRange -> {{{{0, 4}}, {{0, 10}}}}]"
+    ));
+    assert!(ranged.iter().any(|t| t == "4"), "{ranged:?}");
+    assert!(ranged.iter().any(|t| t == "2.5"), "{ranged:?}");
+    assert!(!ranged.iter().any(|t| t == "40" || t == "30"), "{ranged:?}");
   }
 
   #[test]
@@ -50869,9 +50967,17 @@ mod demonstration_plot_layout {
       "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
        FrameLabel -> {y[t], y'[t]}, ImageSize -> 250]",
     );
-    assert!(svg.contains(">y(t)<"), "the bottom frame label: {svg}");
+    // Frame labels are set in TraditionalForm too.
+    let y = "<tspan font-style=\"italic\">y</tspan>";
+    let of_t = "(<tspan font-style=\"italic\">t</tspan>)<";
     assert!(
-      svg.contains(">y\u{2032}(t)<"),
+      svg.contains(&format!(">{y}{of_t}")),
+      "the bottom frame label: {svg}"
+    );
+    assert!(
+      svg.contains(&format!(
+        ">{y}<tspan baseline-shift=\"super\" font-size=\"70%\">\u{2032}</tspan>{of_t}"
+      )),
       "the left frame label needs its prime: {svg}"
     );
   }

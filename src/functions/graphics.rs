@@ -23324,6 +23324,13 @@ pub fn axes_label_entry(e: &Expr) -> Option<String> {
     .or_else(|| styled_axis_label(e))
 }
 
+/// A `FrameLabel` entry as text markup: a plain mathematical expression is
+/// typeset in TraditionalForm italics like an `AxesLabel` entry (see
+/// [`traditional_math_axis_label`]), anything else as [`styled_axis_label`].
+pub fn frame_label_text(e: &Expr) -> Option<String> {
+  traditional_math_axis_label(e).or_else(|| styled_axis_label(e))
+}
+
 /// An `AxesLabel` entry that is a plain mathematical expression, typeset as
 /// marked-up text. A graphic's `FormatType` is `TraditionalForm`, so such a
 /// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
