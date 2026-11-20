@@ -26383,10 +26383,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && plot_sources.first().is_some_and(|ps| ps.settles_all_range);
       let automatic_range = merged_options.iter().all(|o| {
         !matches!(option_name_value(o), Some(("PlotRange", v))
-          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic")
-            && !(settled_all
+          if !(matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic")
+            || (settled_all
               && crate::functions::plot::plot_range_all_axes(&v)
-                != (false, false)))
+                != (false, false))))
       });
       if automatic_range
         && let Some(ps) = plot_sources.first()
