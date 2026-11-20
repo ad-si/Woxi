@@ -5446,14 +5446,11 @@ tick labels and `AxesLabel`s keep the default 10 pt upright text, where Wolfram
 sets all of the graphic's text in the base style. `Plot` and the list plots
 apply it everywhere.
 
-### `Graphics` ignores `AxesOrigin` and pads a `Full` range less
+### `Graphics` pads a `Full` range less
 
-The `Graphics` renderer draws the x axis at `y = 0` when that is in range and
-at the bottom edge otherwise, whatever `AxesOrigin` says, and pads a
-`PlotRange -> Full` side by 4 %, where Wolfram extends it to include the axes
-origin and pads more. In a `MusicPlot` this drops the pitch label just above
-the highest note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which
-Wolfram shows.
+The `Graphics` renderer pads a `PlotRange -> Full` side by 4 %, where Wolfram
+pads more. In a `MusicPlot` this drops the pitch label just above the highest
+note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which Wolfram shows.
 
 ### Tick step from the padded range
 
