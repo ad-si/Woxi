@@ -2746,7 +2746,16 @@ impl ManipulateState {
       else {
         continue;
       };
-      if values == new_values {
+      // A choice list whose labels follow another control
+      // (`v :> Dynamic[icon[style, v]]`) keeps its values but relabels.
+      if values == new_values
+        && value_labels == new_labels
+        && *value_label_runs == *new_runs
+        && value_label_svgs
+          .iter()
+          .map(Option::is_some)
+          .eq(new_svgs.iter().map(Option::is_some))
+      {
         continue;
       }
       let selected = values.get(*current_index).cloned();
@@ -4204,6 +4213,56 @@ mod tests {
     assert!(state.select_discrete(0, "short"));
     state.reevaluate();
     assert_eq!(count_of(&state), 3);
+  }
+
+  /// Choices `v :> Dynamic[label[style, v]]` keep their values when the
+  /// `style` control moves, but their labels must follow it (text names
+  /// in one style, icons in the other) without losing the selection.
+  #[test]
+  fn delayed_dynamic_choice_labels_follow_another_control() {
+    woxi::interpret(
+      "relabelIcon[\"words\", s_] := ToString[s]; \
+       relabelIcon[\"icons\", s_] := Graphics[Disk[], ImageSize -> 10]",
+    )
+    .unwrap();
+    let code = r#"Manipulate[
+      shp,
+      {{style, "words"}, {"words", "icons"}},
+      {{shp, sqr}, Map[# :> Dynamic[relabelIcon[style, #]] &, {sqr, hex}],
+        ControlType -> SetterBar}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(state.select_discrete(1, "hex"));
+    let shp = |state: &ManipulateState| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Discrete {
+            name,
+            values,
+            value_label_svgs,
+            current_index,
+            ..
+          } if name == "shp" => Some((
+            values.clone(),
+            value_label_svgs.iter().filter(|s| s.is_some()).count(),
+            *current_index,
+          )),
+          _ => None,
+        })
+        .expect("shp control")
+    };
+    state.reevaluate();
+    assert_eq!(shp(&state), (vec!["sqr".into(), "hex".into()], 0, 1));
+    assert!(state.select_discrete(0, "icons"));
+    state.reevaluate();
+    assert_eq!(shp(&state), (vec!["sqr".into(), "hex".into()], 2, 1));
+    assert!(state.select_discrete(0, "words"));
+    state.reevaluate();
+    assert_eq!(shp(&state), (vec!["sqr".into(), "hex".into()], 0, 1));
   }
 
   /// A sound-player display built with `Audio`Waveform` evaluates to an
