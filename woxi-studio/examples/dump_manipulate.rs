@@ -10,6 +10,9 @@
 //! `<svg-out-dir>/widget-<n>.svg` so the visual output can be inspected.
 //! Set `OVERRIDE="x=0.5,y=1"` to render the SVG with those control values
 //! in place of the initial ones (e.g. to compare against a stored snapshot).
+//! Set `CLICKS="1.5,2.5;9.5,2.5"` to click the picture's `ClickPane` at
+//! those pane coordinates in turn; the variables (and, with `svg-out-dir`,
+//! the picture as `widget-<n>-click-<k>.svg`) are dumped after each click.
 
 use std::path::PathBuf;
 
@@ -244,6 +247,9 @@ fn main() {
           println!("wrote {}", out.display());
         }
       }
+      if let Ok(clicks) = std::env::var("CLICKS") {
+        click_pane(&mut state, &clicks, widget_count, svg_out_dir.as_deref());
+      }
       if std::env::var("PRESS_BUTTONS").is_ok() {
         let mut st = state;
         let actions: Vec<String> = st
@@ -270,6 +276,47 @@ fn main() {
     }
   }
   println!("Interactive widgets built: {widget_count}");
+}
+
+/// Click the widget's first `ClickPane` at each `;`-separated `x,y` pane
+/// coordinate of `clicks`, dumping the variables after every click.
+fn click_pane(
+  state: &mut manipulate::ManipulateState,
+  clicks: &str,
+  widget: usize,
+  svg_out_dir: Option<&std::path::Path>,
+) {
+  for (k, click) in clicks.split(';').enumerate() {
+    let Some(region) = state.click_regions.first().cloned() else {
+      println!("!! no ClickPane to click");
+      return;
+    };
+    let Some((gx, gy)) = click.split_once(',').and_then(|(x, y)| {
+      Some((x.trim().parse::<f64>().ok()?, y.trim().parse::<f64>().ok()?))
+    }) else {
+      continue;
+    };
+    let h = &region.hit;
+    let fx = ((gx - h.x_min) / (h.x_max - h.x_min)) as f32;
+    let fy = ((h.y_max - gy) / (h.y_max - h.y_min)) as f32;
+    state.pointer =
+      (region.x + fx * region.width, region.y + fy * region.height);
+    state.apply_pane_click();
+    println!(
+      "after click {} at {{{gx}, {gy}}}: error={:?}",
+      k + 1,
+      state.error
+    );
+    for (n, v) in &state.state {
+      let snippet: String = v.chars().take(200).collect();
+      println!("  {n} = {snippet}");
+    }
+    if let (Some(dir), Some(svg)) = (svg_out_dir, state.current_svg()) {
+      let out = dir.join(format!("widget-{widget}-click-{}.svg", k + 1));
+      std::fs::write(&out, svg).expect("write svg");
+      println!("wrote {}", out.display());
+    }
+  }
 }
 
 /// Split an `OVERRIDE` list on the commas that are not nested inside

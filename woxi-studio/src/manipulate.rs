@@ -6750,6 +6750,35 @@ mod tests {
     assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
   }
 
+  /// A `ClickPane` handler that `Beep[]`s after updating its state (a board
+  /// game confirming a move) must still apply the update and hand the
+  /// alert tone to the Studio to play.
+  #[test]
+  fn click_pane_handler_beep_emits_a_sound() {
+    let code = r#"Manipulate[
+      ClickPane[
+        Graphics[{Rectangle[{0, 0}, {2, 1}]}, PlotRange -> {{0, 2}, {0, 1}},
+          ImageSize -> {200, 100}],
+        (moves = moves + 1; Beep[]) &],
+      {{moves, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.emitted_sound.is_none());
+    state.pointer = (50.0, 50.0);
+    state.apply_pane_click();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let moves = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "moves")
+      .map(|(_, v)| v.clone());
+    assert_eq!(moves.as_deref(), Some("1"));
+    let audio = state.emitted_sound.take().expect("the beep's tone");
+    assert_eq!(audio.mime, "audio/wav");
+  }
+
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
   /// graphic.
   fn pixel_of(region: &MouseRegion, gx: f64, gy: f64) -> (f32, f32) {
