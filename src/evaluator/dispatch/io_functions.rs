@@ -7585,6 +7585,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::container_layout::resized_graphic_svg(expr)
         .unwrap_or_else(|| svg_data.clone())
     }
+    // `Button[label, action, …]` draws as its button, not its source.
+    Expr::FunctionCall { name, args }
+      if name == "Button" && args.len() >= 2 =>
+    {
+      crate::functions::graphics::button_svg(args)
+    }
     // `PaneSelector[{v1 -> e1, …}, sel, default]` displays only the pane
     // whose key matches `sel`, so exporting one exports that pane.
     Expr::FunctionCall { name, args }
@@ -8123,8 +8129,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // — `Column[{picture, legend}, Center]` centers the narrow legend
       // under the wide picture. The generic composition below packs every
       // row to the left instead.
+      // A `Button` item stretches to the column's width, which only the
+      // `Column` layout knows.
       if name == "Column"
-        && args.len() >= 2
+        && (args.len() >= 2
+          || matches!(&args[0], Expr::List(items) if items.iter().any(|it| {
+            matches!(it, Expr::FunctionCall { name, args }
+              if name == "Button" && args.len() >= 2)
+          })))
         && let Some(svg) = crate::functions::graphics::column_to_svg(args)
       {
         return svg;
