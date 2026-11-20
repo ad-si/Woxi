@@ -48,6 +48,7 @@ Output is always in [FullForm].
 - [`Hold`](expressions/Hold.md)
 - [`Hyperlink`](expressions/Hyperlink.md)
 - [`InfiniteLine`](expressions/InfiniteLine.md)
+- [`Infix`](expressions/Infix.md)
 - [`Information`](expressions/Information.md)
 - [`InputForm`](expressions/InputForm.md)
 - [`LeafCount`](expressions/LeafCount.md)
