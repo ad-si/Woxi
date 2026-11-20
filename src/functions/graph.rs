@@ -871,10 +871,12 @@ fn graph_render(
           vertex_shape_default = directives.into_iter().next();
         }
         "VertexRenderingFunction" => {
-          vertex_render = Some(match replacement {
-            Expr::Identifier(s) if s == "None" => VertexRender::Hidden,
-            other => VertexRender::Func(other.clone()),
-          });
+          // `Automatic` keeps the default vertex drawing.
+          vertex_render = match replacement {
+            Expr::Identifier(s) if s == "Automatic" => None,
+            Expr::Identifier(s) if s == "None" => Some(VertexRender::Hidden),
+            other => Some(VertexRender::Func(other.clone())),
+          };
         }
         // `VertexSize -> s` (every vertex), `{v -> s, …}` (per vertex, with
         // an optional bare default in the list).
@@ -3208,6 +3210,7 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
     list.sort_unstable_by(|a, b| b.cmp(a));
     list.dedup();
   }
+  let undirected = edge_order_adjacency(graph);
   let mut seen = vec![false; n];
   let mut parent = vec![usize::MAX; n];
   let mut order = Vec::with_capacity(n);
@@ -3279,7 +3282,61 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
       comp[..run].reverse();
     }
   }
+  // A graph whose edges, read without direction, form one simple cycle
+  // (`a -> x, b -> y, a -> y, b -> x`) is drawn as that cycle: the
+  // directed search above can visit it out of turn (from several roots),
+  // which would put non-adjacent vertices next to each other on the
+  // circle and cross the edges.
+  walk_undirected_cycle(&undirected, &mut order);
   order
+}
+
+/// Reorder `comp` (the vertices of a graph, starting at a root) into a walk
+/// around its cycle when its edges, ignoring direction, form exactly one
+/// simple cycle and `comp` does not already follow it. The walk leaves the
+/// root toward the neighbor `comp` visited first.
+fn walk_undirected_cycle(adj: &[Vec<usize>], comp: &mut [usize]) {
+  let m = comp.len();
+  if m < 4 {
+    return;
+  }
+  let members: std::collections::HashSet<usize> =
+    comp.iter().copied().collect();
+  if comp.iter().any(|&v| {
+    adj[v].len() != 2
+      || adj[v][0] == adj[v][1]
+      || adj[v].iter().any(|w| !members.contains(w))
+  }) {
+    return;
+  }
+  let follows = comp.windows(2).all(|w| adj[w[0]].contains(&w[1]))
+    && adj[comp[m - 1]].contains(&comp[0]);
+  if follows {
+    return;
+  }
+  let root = comp[0];
+  let rank = |v: usize| comp.iter().position(|&c| c == v).unwrap_or(m);
+  let first = if rank(adj[root][0]) <= rank(adj[root][1]) {
+    adj[root][0]
+  } else {
+    adj[root][1]
+  };
+  let mut walk = Vec::with_capacity(m);
+  walk.push(root);
+  let (mut prev, mut cur) = (root, first);
+  while cur != root && walk.len() < m {
+    walk.push(cur);
+    let next = if adj[cur][0] == prev {
+      adj[cur][1]
+    } else {
+      adj[cur][0]
+    };
+    prev = cur;
+    cur = next;
+  }
+  if walk.len() == m && cur == root {
+    comp.copy_from_slice(&walk);
+  }
 }
 
 /// `1/φ`, the golden ratio's reciprocal: Wolfram's height-to-width ratio
@@ -11374,11 +11431,14 @@ fn same_edge(a: &Expr, b: &Expr) -> bool {
   let Some((b1, b2, b_directed)) = edge_endpoints(b) else {
     return false;
   };
-  (same_vertex(&a1, &b1) && same_vertex(&a2, &b2))
+  // A `Style[v, …]` endpoint (as written in a `GraphPlot` edge list) names
+  // the vertex `v`, which is how the drawn edge refers to it.
+  let [a1, a2, b1, b2] = [&a1, &a2, &b1, &b2].map(|v| unwrap_vertex_style(v).0);
+  (same_vertex(a1, b1) && same_vertex(a2, b2))
     || (!a_directed
       && !b_directed
-      && same_vertex(&a1, &b2)
-      && same_vertex(&a2, &b1))
+      && same_vertex(a1, b2)
+      && same_vertex(a2, b1))
 }
 
 /// Whether two vertex names are the same vertex: equal as printed (a
@@ -12549,6 +12609,21 @@ pub(crate) fn graph_coordinates(
   Ok(Some((vertices.to_vec(), edges, coords)))
 }
 
+/// Options of `GraphPlot3D` that steer the graph drawing rather than the
+/// `Graphics3D` it produces.
+const GRAPH_PLOT_ONLY_OPTIONS: &[&str] = &[
+  "DirectedEdges",
+  "EdgeLabeling",
+  "EdgeRenderingFunction",
+  "Method",
+  "MultiedgeStyle",
+  "PackingMethod",
+  "SelfLoopStyle",
+  "VertexCoordinateRules",
+  "VertexLabeling",
+  "VertexRenderingFunction",
+];
+
 /// `GraphPlot3D[edges]`: the graph drawn the way wolframscript draws it, a
 /// `GraphicsComplex` over the vertex positions holding one tube per edge
 /// (`Arrow[Tube[{{i, j}, …}], r]`, the vertex pairs sorted) and a sphere
@@ -12557,8 +12632,38 @@ pub(crate) fn graph_plot3d_ast(
   graph_input: &Expr,
   options: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
-  let Some((_, edges, coords)) = graph_coordinates(graph_input, 3)? else {
+  let Some((vertices, edges, coords)) = graph_coordinates(graph_input, 3)?
+  else {
     return Ok(None);
+  };
+  let option = |name: &str| {
+    options.iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })
+  };
+  // `VertexLabeling -> True` puts each vertex's name next to it.
+  let labeling = matches!(
+    option("VertexLabeling"),
+    Some(Expr::Identifier(ref s)) if s == "True"
+  );
+  // `VertexRenderingFunction -> None` leaves the spheres out, a function
+  // `f` draws vertex `v` at `p` as `f[p, v]`, and `Automatic` keeps the
+  // default sphere.
+  let vertex_render = match option("VertexRenderingFunction") {
+    Some(Expr::Identifier(ref s)) if s == "None" => Some(VertexRender::Hidden),
+    Some(Expr::Identifier(ref s)) if s == "Automatic" => None,
+    Some(f) => Some(VertexRender::Func(f)),
+    None => None,
   };
   let point =
     |i: usize| Expr::List(coords[i].iter().map(|&x| Expr::Real(x)).collect());
@@ -12617,18 +12722,63 @@ pub(crate) fn graph_plot3d_ast(
       vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Integer(1)],
     )],
   )];
-  vertex_group.extend(
-    (0..coords.len()).map(|i| call("Sphere", vec![int(i), radius.clone()])),
-  );
+  match &vertex_render {
+    None => vertex_group.extend(
+      (0..coords.len()).map(|i| call("Sphere", vec![int(i), radius.clone()])),
+    ),
+    Some(VertexRender::Hidden) => vertex_group.clear(),
+    Some(VertexRender::Func(f)) => {
+      vertex_group.extend((0..coords.len()).map(|i| {
+        Expr::FunctionCall {
+          name: "Apply".into(),
+          args: vec![
+            f.clone(),
+            Expr::List(vec![point(i), vertices[i].clone()].into()),
+          ]
+          .into(),
+        }
+      }));
+    }
+  }
+  let mut groups = vec![edge_group];
+  if !vertex_group.is_empty() {
+    groups.push(Expr::List(vertex_group.into()));
+  }
+  if labeling {
+    let mut label_group = vec![call1("GrayLevel", Expr::Integer(0))];
+    label_group.extend((0..coords.len()).map(|i| {
+      call(
+        "Text",
+        vec![
+          call("Style", vec![vertices[i].clone(), Expr::Integer(10)]),
+          int(i),
+          Expr::List(vec![Expr::Integer(-1), Expr::Integer(-1)].into()),
+        ],
+      )
+    }));
+    groups.push(Expr::List(label_group.into()));
+  }
   let complex = call(
     "GraphicsComplex",
     vec![
       Expr::List((0..coords.len()).map(point).collect()),
-      Expr::List(vec![edge_group, Expr::List(vertex_group.into())].into()),
+      Expr::List(groups.into()),
     ],
   );
   let mut args = vec![complex];
-  args.extend(options.iter().cloned());
+  // The graph-drawing options shape the picture above; the rest are
+  // `Graphics3D` options.
+  args.extend(
+    options
+      .iter()
+      .filter(|o| match o {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          !matches!(pattern.as_ref(), Expr::Identifier(n) if GRAPH_PLOT_ONLY_OPTIONS.contains(&n.as_str()))
+        }
+        _ => true,
+      })
+      .cloned(),
+  );
   // wolframscript draws the graph without its bounding box.
   if !options.iter().any(|o| {
     matches!(o, Expr::Rule { pattern, .. }

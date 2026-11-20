@@ -877,15 +877,15 @@ mod outlines {
       .collect()
   }
 
-  // A 3D line with no thickness directive is the same 1px hairline as a
-  // 2D line, while an explicit thickness still sets its width.
+  // A 3D line with no thickness directive is a hairline, while an explicit
+  // thickness still sets its width.
   #[test]
   fn default_line_is_a_hairline() {
     let widths = black_line_widths(&svg(
       "Graphics3D[{Black, Line[{{0, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
     ));
     assert!(
-      !widths.is_empty() && widths.iter().all(|w| *w == 1.0),
+      !widths.is_empty() && widths.iter().all(|w| *w == 0.5),
       "{widths:?}"
     );
     let widths = black_line_widths(&svg(
@@ -1244,6 +1244,16 @@ mod fields_and_graphs {
     assert!(polygon_count(&s) > 1000, "{s}");
     let boxed = svg("GraphPlot3D[HypercubeGraph[3], Boxed -> True]");
     assert_ne!(s, boxed);
+  }
+
+  // A `Text` inside a `GraphicsComplex` is anchored at the indexed point.
+  #[test]
+  fn graphics_complex_text_by_index() {
+    let s = svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 1, 1}}, \
+       {Sphere[1, 0.1], Text[\"Qz\", 2]}]]",
+    );
+    assert!(s.contains(">Qz<"), "{s}");
   }
 
   #[test]

@@ -4715,6 +4715,24 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
+    // Factorials are written postfix: `Factorial[n]` → `RowBox[{"n", "!"}]`,
+    // `Factorial2[n]` → `RowBox[{"n", "!!"}]`. An operand binding no
+    // tighter than the factorial (a sum, product, power, nested factorial)
+    // or a negative number is parenthesized: `(a+b)!`, `(-2)!`, `(5!)!`.
+    Expr::FunctionCall { name, args }
+      if (name == "Factorial" || name == "Factorial2") && args.len() == 1 =>
+    {
+      let bang = if name == "Factorial" { "!" } else { "!!" };
+      let operand = canonical_operator_call(&args[0]);
+      let boxed = expr_to_box_form(&operand);
+      let needs_paren = needs_paren_as_power_base(&operand)
+        || positive_of_negative_number(&operand).is_some()
+        || matches!(&operand, Expr::FunctionCall { name: r, args: ra }
+          if r == "Rational" && ra.len() == 2)
+        || tf_prec(&operand) <= tf_prec(expr);
+      let operand_box = if needs_paren { paren_box(boxed) } else { boxed };
+      row_box(vec![operand_box, str_expr(bang)])
+    }
     Expr::FunctionCall { name, args }
       if name == "Subsuperscript" && args.len() == 3 =>
     {
@@ -5711,14 +5729,19 @@ fn tf_is_symbol_token(token: &str) -> bool {
 /// `BesselJ[n, x]` → `Jₙ(x)`, `LegendreP[n, m, x]` → `Pₙᵐ(x)`,
 /// `JacobiP[n, a, b, x]` → `Pₙ⁽ᵃ˒ᵇ⁾(x)`.
 ///
-/// Returns the display letter plus, for the Hankel-style families whose
-/// superscript is part of the name rather than an argument, that fixed
-/// superscript. `arity` is the full argument count — the last argument is
-/// always the function's variable, every earlier one is an index.
+/// Returns the display letter, for the Hankel-style families whose
+/// superscript is part of the name rather than an argument that fixed
+/// superscript, and the number of trailing arguments that are the
+/// function's variables (every earlier one is an index). `arity` is the
+/// full argument count.
 fn tf_indexed_special(
   name: &str,
   arity: usize,
-) -> Option<(&'static str, Option<&'static str>)> {
+) -> Option<(&'static str, Option<&'static str>, usize)> {
+  // Two indices and two angles: SphericalHarmonicY[l, m, θ, ϕ] → Yₗᵐ(θ, ϕ).
+  if name == "SphericalHarmonicY" && arity == 4 {
+    return Some(("Y", None, 2));
+  }
   let entry: (&'static str, Option<&'static str>, &[usize]) = match name {
     "BesselJ" => ("J", None, &[2]),
     "BesselY" => ("Y", None, &[2]),
@@ -5746,19 +5769,21 @@ fn tf_indexed_special(
     "LucasL" => ("L", None, &[2]),
     _ => return None,
   };
-  entry.2.contains(&arity).then_some((entry.0, entry.1))
+  entry.2.contains(&arity).then_some((entry.0, entry.1, 1))
 }
 
 /// Build `letterₙ^sup(x)` for an indexed special function. All but the last
-/// argument are indices: the first becomes the subscript, any further ones
-/// the superscript (parenthesized and comma-separated when there is more
-/// than one, as in `Pₙ⁽ᵃ˒ᵇ⁾(x)`).
+/// `n_vars` arguments are indices: the first becomes the subscript, any
+/// further ones the superscript (parenthesized and comma-separated when
+/// there is more than one, as in `Pₙ⁽ᵃ˒ᵇ⁾(x)`). Several variables are
+/// listed comma-separated inside the parentheses, as in `Yₗᵐ(θ, ϕ)`.
 fn tf_indexed_call(
   letter: &str,
   fixed_sup: Option<&str>,
+  n_vars: usize,
   args: &[Expr],
 ) -> Expr {
-  let (indices, var) = args.split_at(args.len() - 1);
+  let (indices, vars) = args.split_at(args.len() - n_vars);
   let sup = match fixed_sup {
     Some(s) => Some(tf_string(s)),
     None => match &indices[1..] {
@@ -5774,7 +5799,11 @@ fn tf_indexed_call(
     ),
     None => tf_box("SubscriptBox", vec![tf_string(letter), tf(&indices[0])]),
   };
-  tf_row(vec![head, tf_string("("), tf(&var[0]), tf_string(")")])
+  let var = match vars {
+    [single] => tf(single),
+    many => tf_comma_seq(many.iter().map(tf)).unwrap(),
+  };
+  tf_row(vec![head, tf_string("("), var, tf_string(")")])
 }
 
 /// True for a trig/hyperbolic function whose power is written on the name
@@ -7572,6 +7601,18 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
     "RawBoxes" if args.len() == 1 => args[0].clone(),
     "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
+    // `a | b | c` keeps its infix bar (`P(X | A)` for a conditional
+    // probability) instead of falling back to `Alternatives(a, b, c)`.
+    "Alternatives" if args.len() > 1 => {
+      let mut parts = Vec::new();
+      for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(tf_string("|"));
+        }
+        parts.push(tf_operand(a));
+      }
+      tf_row(parts)
+    }
     // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
     "Inequality"
       if args.len() >= 5
@@ -8201,8 +8242,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     }
     // Indexed special functions: Jₙ(x), Pₙᵐ(x), hₙ⁽¹⁾(x), …
     _ if tf_indexed_special(name, args.len()).is_some() => {
-      let (letter, fixed_sup) = tf_indexed_special(name, args.len()).unwrap();
-      tf_indexed_call(letter, fixed_sup, args)
+      let (letter, fixed_sup, n_vars) =
+        tf_indexed_special(name, args.len()).unwrap();
+      tf_indexed_call(letter, fixed_sup, n_vars, args)
     }
     "Subscript" if args.len() >= 2 => {
       let sub = tf_comma_seq(args[1..].iter().map(tf)).unwrap();

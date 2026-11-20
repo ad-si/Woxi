@@ -2655,12 +2655,14 @@ mod interpreter_tests {
       "PlotLabel SVG must not typeset the reciprocal as a superscripted \
        negative exponent:\n{svg}"
     );
+    // The title is set in TraditionalForm, so `V` stacks over `R`.
+    let v = svg.find(">V</text>").expect("numerator V");
+    let bar = svg.find("<line x1=\"0\"").expect("fraction bar");
+    let r = svg.find(">R</text>").expect("denominator R");
     assert!(
-      svg.contains(
-        "<tspan font-style=\"italic\">V</tspan>/<tspan font-style=\"italic\">R</tspan>"
-      ),
-      "PlotLabel SVG must render the symbolic division as the fraction \
-       \"V/R\":\n{svg}"
+      v < bar && bar < r,
+      "PlotLabel SVG must render the symbolic division as the stacked \
+       fraction V over R:\n{svg}"
     );
   }
 
@@ -2711,17 +2713,20 @@ mod interpreter_tests {
   fn test_manipulate_row_style_symbolic_reciprocal_product_svg() {
     // Same renderer, a product of two reciprocals (`Times[a, Power[b, -1],
     // Power[c, -1]]`, i.e. `a/(b c)`): every reciprocal factor must move
-    // into a single combined, parenthesized denominator — `a/(b c)`, not
-    // the ambiguous `a/b c` (misreadable as `(a/b) c`) or a superscripted
-    // negative exponent on each factor.
+    // into a single combined denominator — `a` stacked over `b c`, not
+    // `a/b c` or a superscripted negative exponent on each factor.
     clear_state();
     let r = interpret_with_stdout("Graphics[{Circle[]}, PlotLabel -> a/(b c)]")
       .unwrap();
     let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(!svg.contains("super"), "{svg}");
+    let a = svg.find(">a</text>").expect("numerator a");
+    let bar = svg.find("<line x1=\"0\"").expect("fraction bar");
+    let b = svg.find(">b</text>").expect("denominator b");
+    let c = svg.find(">c</text>").expect("denominator c");
     assert!(
-      svg.contains(">a/(b c)<"),
-      "PlotLabel SVG must render a/(b c) as a single fraction with a \
-       parenthesized denominator:\n{svg}"
+      a < bar && bar < b && b < c,
+      "PlotLabel SVG must render a/(b c) as one stacked fraction:\n{svg}"
     );
   }
 
@@ -4975,6 +4980,49 @@ mod interpreter_tests {
       "angle"
     );
     interpret("Clear[t]").unwrap();
+  }
+
+  #[test]
+  fn test_control_caption_words_with_picture_render_as_svg_icon() {
+    // A caption pairing words with a picture (`Row[{"shift ", Graphics[…]}]`)
+    // keeps its picture: it renders whole, words included, as an SVG icon.
+    clear_state();
+    let (runs, svg) = woxi::functions::graphics::manipulate_eval_caption(
+      "Row[{\"shift \", Graphics[{Cyan, Disk[]}, ImageSize -> {22, 22}]}]",
+    )
+    .unwrap();
+    assert!(runs.is_empty(), "drawn as an icon, not text: {runs:?}");
+    let svg = svg.expect("a worded picture caption renders to SVG");
+    assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+    assert!(svg.contains("shift"), "the words were dropped: {svg}");
+  }
+
+  #[test]
+  fn test_manipulate_annotation_row_with_picture_is_panel_display() {
+    // A static annotation row whose picture comes from a symbol bound to a
+    // `Graphics` is a display in its place among the controls, not a text
+    // heading spelling out the symbol's name.
+    clear_state();
+    interpret("pic = Graphics[{Green, Disk[]}, ImageSize -> 20];").unwrap();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a, {{a, 1}, 0, 2}, Row[{\"drag any \", pic}], {{b, 0}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    assert_eq!(spec.panel_displays, vec![(0, 1)]);
+    assert_eq!(spec.displays.len(), 1);
+    assert!(spec.displays[0].contains("pic"), "{:?}", spec.displays);
+    // Without a picture the row stays a heading.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a, {{a, 1}, 0, 2}, Row[{\"drag any \", \"point\"}]]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    assert_eq!(spec.panel_displays, Vec::<(usize, usize)>::new());
+    assert_eq!(spec.displays, Vec::<String>::new());
+    interpret("Clear[pic]").unwrap();
   }
 
   #[test]
