@@ -13546,36 +13546,13 @@ pub fn svg_render_options(
 
 /// usvg's font resolver with a fallback that keeps the text's style.
 ///
-/// When the chosen font lacks a glyph (e.g. a Greek letter in a text
-/// set in a Latin-only face), usvg reshapes the run in a fallback face.
-/// Its built-in selector accepts any face that matches the base face's
-/// slant *or* weight *or* width, so an upright regular text could come
-/// out in e.g. an ExtraBold Italic face. This one prefers faces of the
-/// same slant, then the nearest weight, then the same width.
+/// When the chosen font lacks a glyph, the fallback face is picked by
+/// [`same_style_fallback_selector`].
 #[cfg(not(target_arch = "wasm32"))]
 pub fn font_resolver() -> resvg::usvg::FontResolver<'static> {
   resvg::usvg::FontResolver {
     select_font: resvg::usvg::FontResolver::default_font_selector(),
-    select_fallback: Box::new(|c, exclude_fonts, fontdb| {
-      let base = fontdb.face(*exclude_fonts.first()?)?;
-      let mut candidates: Vec<_> = fontdb
-        .faces()
-        .filter(|face| !exclude_fonts.contains(&face.id))
-        .map(|face| {
-          let key = fallback_face_rank(
-            (face.style, face.weight.0, face.stretch),
-            (base.style, base.weight.0, base.stretch),
-          );
-          (key, face.id)
-        })
-        .collect();
-      // A stable sort keeps the database order among equally good faces.
-      candidates.sort_by_key(|(key, _)| *key);
-      candidates
-        .into_iter()
-        .map(|(_, id)| id)
-        .find(|id| face_has_char(fontdb, *id, c))
-    }),
+    select_fallback: same_style_fallback_selector(),
   }
 }
 
@@ -13612,6 +13589,59 @@ pub fn fallback_face_rank(
   ),
 ) -> (bool, u16, bool) {
   (face.0 != base.0, face.1.abs_diff(base.1), face.2 != base.2)
+}
+
+/// Fallback face selection for characters missing from the requested
+/// font (e.g. Greek letters, which the embedded Atkinson faces lack).
+///
+/// usvg's default selector takes the first face in the database that has
+/// the character unless its style, weight *and* stretch all differ, and
+/// when that face covers the whole text run, usvg reshapes the entire run
+/// with it. A label like "at ρ = 0" could thus come out entirely in some
+/// bold oblique system face. This selector instead prefers faces whose
+/// style matches exactly, then the closest weight, then the same kind of
+/// family (monospaced or proportional, serif or sans-serif), then the
+/// same stretch.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn same_style_fallback_selector()
+-> resvg::usvg::FallbackSelectionFn<'static> {
+  Box::new(|c, exclude_fonts, fontdb| {
+    // Font metadata has no serif flag, so go by the family names
+    // ("DejaVu Serif", "Noto Serif", but not "PT Sans Serif").
+    let is_serif = |face: &resvg::usvg::fontdb::FaceInfo| {
+      face
+        .families
+        .iter()
+        .any(|(name, _)| name.contains("Serif") && !name.contains("Sans"))
+    };
+    let base = fontdb.face(*exclude_fonts.first()?)?;
+    let (style, weight, stretch) = (base.style, base.weight, base.stretch);
+    let (monospaced, serif) = (base.monospaced, is_serif(base));
+    let mut candidates: Vec<_> = fontdb
+      .faces()
+      .filter(|face| !exclude_fonts.contains(&face.id))
+      .map(|face| {
+        let (slant, weight_diff, stretch_diff) = fallback_face_rank(
+          (face.style, face.weight.0, face.stretch),
+          (style, weight.0, stretch),
+        );
+        let rank = (
+          slant,
+          weight_diff,
+          face.monospaced != monospaced,
+          is_serif(face) != serif,
+          stretch_diff,
+        );
+        (rank, face.id)
+      })
+      .collect();
+    // Stable sort: ties keep the database order.
+    candidates.sort_by_key(|(rank, _)| *rank);
+    candidates
+      .into_iter()
+      .map(|(_, id)| id)
+      .find(|&id| face_has_char(fontdb, id, c))
+  })
 }
 
 /// Extract an SVG rendering of `expr` when it is a `Graphics`/`Graphics3D`
