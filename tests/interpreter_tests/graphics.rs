@@ -1934,6 +1934,34 @@ mod graphics {
       );
     }
 
+    /// `Inset[obj, {h, v}]` with no `opos`: a position named by the sides
+    /// of the region puts the object's matching point there, so the object
+    /// stays inside (`{Center, Bottom}` sits on the bottom edge). A numeric
+    /// or `Scaled` position still centers the object on it.
+    #[test]
+    fn a_named_inset_position_aligns_the_matching_point_of_the_object() {
+      let inset = |pos: &str| {
+        export_svg(&format!(
+          "Graphics[{{Inset[Graphics[{{Disk[]}}, ImageSize -> 40], {pos}]}}, \
+           PlotRange -> {{{{0, 10}}, {{0, 10}}}}, ImageSize -> 200]"
+        ))
+      };
+      // Padded to twice the far side of the anchor and centered on it: the
+      // 40px disk fills the upper half of an 80px pad on the bottom edge.
+      assert!(inset("{Center, Bottom}").contains(
+        "<svg x=\"79.50\" y=\"159.00\" width=\"40.00\" height=\"80.00\""
+      ));
+      assert!(inset("{Right, Top}").contains(
+        "<svg x=\"159.00\" y=\"-40.00\" width=\"80.00\" height=\"80.00\""
+      ));
+      assert!(inset("{5, 5}").contains(
+        "<svg x=\"79.50\" y=\"79.50\" width=\"40.00\" height=\"40.00\""
+      ));
+      assert!(inset("Scaled[{0.5, 0}]").contains(
+        "<svg x=\"79.50\" y=\"179.00\" width=\"40.00\" height=\"40.00\""
+      ));
+    }
+
     /// `Inset[image, pos, {0, 0}, size]` puts the image's own lower-left
     /// pixel corner on `pos` (an image is measured in pixels), not its
     /// center; `{w, h}` names its upper-right corner.

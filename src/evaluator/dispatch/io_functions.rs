@@ -6743,8 +6743,9 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
       .filter(|cells| !cells.is_empty())
       .collect(),
     "Column" => items.iter().map(|c| vec![c.clone()]).collect(),
-    // `Row[{a, b, …}, sep]` sets `sep` between neighboring items.
-    "Row" if args.len() >= 2 => {
+    // `Row[{a, b, …}, sep]` sets `sep` between neighboring items; a rule in
+    // that position is an option (`ImageSize -> …`), not a separator.
+    "Row" if args.len() >= 2 && !crate::syntax::is_rule_expr(&args[1]) => {
       let mut cells = Vec::with_capacity(2 * items.len());
       for (i, item) in items.iter().enumerate() {
         if i > 0 {
@@ -8088,6 +8089,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       if name == "Column"
         && args.len() >= 2
         && let Some(svg) = crate::functions::graphics::column_to_svg(args)
+      {
+        return svg;
+      }
+      // So does a `Row` given options (`ImageSize`, `Alignment`, `Frame`):
+      // its own layout honors them, where the generic composition below
+      // knows none of a row's options.
+      if name == "Row"
+        && args[1..].iter().any(crate::syntax::is_rule_expr)
+        && let Some(svg) = crate::row_svg_with_rendered_items(args)
       {
         return svg;
       }
