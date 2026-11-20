@@ -7845,30 +7845,31 @@ fn inset_primitives(
       source,
     }]);
   }
-  // `Inset[Button[label, action], pos]` — the control a puzzle
-  // Demonstration puts inside its picture. It draws as the button itself:
-  // a rounded white plate with a thin border and the label centered,
-  // sized to the label the way Wolfram sizes one.
+  // `Inset[Button[label, action, opts…], pos]` — the control a puzzle
+  // Demonstration puts inside its picture. It draws as the button itself
+  // (the same cell a `Row`/`Grid` item draws, honoring `ImageSize` and
+  // `Background`), centered on `pos`; a missing or `Automatic` position is
+  // the origin, as for any other inset object.
   if let Expr::FunctionCall { name, args: bargs } = &args[0]
     && name == "Button"
     && !bargs.is_empty()
-    && let Some((x, y)) = args.get(1).and_then(expr_to_point)
+    && let Some((x, y)) = match args.get(1) {
+      None => Some((0.0, 0.0)),
+      Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.0, 0.0)),
+      Some(pos) => expr_to_point(pos),
+    }
   {
-    let label = graphics_text_content(&bargs[0]);
-    // With an action, the plate also carries the invisible hit region a
-    // live widget presses (see `with_button_cell_chrome`).
-    let plate = button_plate_svg(&label);
-    let svg = if bargs.len() >= 2 {
-      with_button_cell_chrome(plate, bargs)
-    } else {
-      plate
-    };
+    let svg = button_cell_svg(bargs);
+    let (w, h) = parse_svg_dimensions(&svg).map_or_else(
+      || button_plate_size(&graphics_text_content(&bargs[0])),
+      |d| (d.nat_w, d.nat_h),
+    );
     return Some(vec![Primitive::InsetGraphic {
       svg,
       x,
       y,
-      w: button_plate_size(&label).0,
-      h: button_plate_size(&label).1,
+      w,
+      h,
       scaled: false,
       size: None,
       size_scaled: false,

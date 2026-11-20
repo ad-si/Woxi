@@ -14319,6 +14319,38 @@ mod plot3d {
       );
     }
 
+    /// `Inset[Button[…]]` without a position sits on the origin like any
+    /// other inset object, and its plate takes the button's `ImageSize`.
+    /// It used to print the raw `Button[…]` source text instead.
+    #[test]
+    fn an_unpositioned_inset_button_draws_at_its_image_size() {
+      let svg = export_svg(
+        r#"Graphics[{Disk[{0, 0}, 1],
+           Inset[Button["", q = 1, ImageSize -> {50, 25}]]},
+           PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> 400]"#,
+      );
+      assert!(!svg.contains("Button["), "drew the source text: {svg}");
+      assert!(
+        svg.contains("width=\"50.00\" height=\"25.00\""),
+        "button ignored ImageSize: {svg}"
+      );
+      assert!(svg.contains("rx=\"4\""), "no rounded plate: {svg}");
+      // Centered on the origin, i.e. the middle of the 400-wide picture.
+      let x: f64 = svg
+        .split("<svg x=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .expect("no inset svg");
+      assert!((x + 25.0 - 200.0).abs() < 2.0, "not centered: x = {x}");
+      let svg = export_svg(
+        r#"Graphics[{Inset[Button["Go", q = 1, ImageSize -> 80], Automatic]},
+           PlotRange -> {{-1, 1}, {-1, 1}}]"#,
+      );
+      assert!(svg.contains(">Go</text>"), "no label: {svg}");
+      assert!(svg.contains("width=\"80.00\""), "ignored width: {svg}");
+    }
+
     /// A `Button` whose label is a picture, laid out as a `Grid` cell, shows
     /// that picture at the button's `ImageSize` (not the `-Graphics-`
     /// placeholder plate) and draws a blank-labeled one at that size too.
