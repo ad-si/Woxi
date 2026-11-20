@@ -10851,6 +10851,48 @@ mod plot3d {
         radius(&sized)
       );
     }
+
+    /// The radius of every `<circle>` in `svg`.
+    fn circle_radii(svg: &str) -> Vec<f64> {
+      svg
+        .split("<circle")
+        .skip(1)
+        .filter_map(|c| {
+          let after = c.split("r=\"").nth(1)?;
+          after[..after.find('"')?].parse().ok()
+        })
+        .collect()
+    }
+
+    /// The automatic dot size shrinks with the number of points, as in a
+    /// 2D `ListPlot`: thousands of points along a trajectory draw as a thin
+    /// trail (`PointSize[1.32/360]`), not a band of large dots, both in the
+    /// plot itself and once `Show` merges it into other 3D graphics.
+    #[test]
+    fn automatic_point_size_shrinks_for_dense_data() {
+      let few = "ListPointPlot3D[Table[{Cos[t], Sin[t], t}, {t, 0, 3, 1}]]";
+      let many =
+        "ListPointPlot3D[Table[{Cos[t], Sin[t], t}, {t, 0, 30, 0.005}]]";
+      for wrap in ["{}", "Show[{}, Graphics3D[{}]]"] {
+        let r_few = circle_radii(&export_svg(&wrap.replace("{}", few)));
+        let r_many = circle_radii(&export_svg(&wrap.replace("{}", many)));
+        assert_eq!(r_many.len(), 6001, "{wrap}");
+        // 7 steps for fewer than 50 points, 2 for 6000 evenly spread ones.
+        let (a, b) = (r_few[0], r_many[0]);
+        assert!((a / b - 3.5).abs() < 0.1, "{wrap}: few r={a}, many r={b}");
+      }
+    }
+
+    /// A `PlotStyle` `PointSize` still overrides the automatic size.
+    #[test]
+    fn plot_style_point_size_overrides_the_automatic_size() {
+      let svg = export_svg(
+        "Show[ListPointPlot3D[Table[{Cos[t], Sin[t], t / 30}, \
+         {t, 0, 30, 0.005}], PlotStyle -> PointSize[0.02]], Graphics3D[{}]]",
+      );
+      let radii = circle_radii(&svg);
+      assert!(radii.iter().all(|&r| r > 2.0), "{:?}", &radii[..3]);
+    }
   }
 
   mod unbounded_primitives_2d {

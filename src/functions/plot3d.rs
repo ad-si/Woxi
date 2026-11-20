@@ -18717,15 +18717,26 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (z_min, z_max)
   };
 
+  // The automatic dot size shrinks as the data grows, the same adaptive
+  // steps (0.66 printer's points each, at least 1, over a 360-point width)
+  // a 2D `ListPlot` sizes its dots by — a dense trajectory of thousands of
+  // points draws as a thin trail rather than a thick band.
+  let point_size = (0.66
+    * crate::functions::list_plot::adaptive_point_size_steps(
+      datasets.iter().flatten().map(|&(x, y, z)| [x, y, z]),
+    ))
+  .max(1.0)
+    / 360.0;
+
   let svg = generate_scatter_svg(
     &scatter_points,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
     (z_axis_min, z_axis_max),
-    svg_width,
-    svg_height,
+    (svg_width, svg_height),
     full_width,
+    point_size,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -18767,6 +18778,9 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(base_color.2 as f64 / 255.0),
         ],
       )];
+      // The automatic size goes first, so a `PlotStyle` `PointSize`
+      // appended below overrides it.
+      group.push(call1("PointSize", Expr::Real(point_size)));
       if let Some(style_items) = &plot_style_per_dataset
         && !style_items.is_empty()
       {
@@ -18841,9 +18855,9 @@ fn generate_scatter_svg(
   x_range: (f64, f64),
   y_range: (f64, f64),
   z_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
+  (svg_width, svg_height): (u32, u32),
   full_width: bool,
+  point_size: f64,
 ) -> Result<String, InterpreterError> {
   // Find bounding box
   let mut px_min = f64::INFINITY;
@@ -18960,7 +18974,8 @@ fn generate_scatter_svg(
   });
 
   // Merge-render scatter points and box edges back-to-front (painter's algorithm)
-  let radius = 1.75;
+  let radius =
+    crate::functions::graphics::point_radius(point_size, svg_width as f64);
   {
     let mut ei = 0;
     for pt in points {
@@ -18984,7 +18999,7 @@ fn generate_scatter_svg(
       let (sx, sy) = to_svg(pt.sx, pt.sy);
       let (r, g, b) = pt.color;
       svg.push_str(&format!(
-        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
+        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.2}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
         sx, sy, radius, r, g, b,
         (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
       ));
