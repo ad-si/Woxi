@@ -8270,6 +8270,28 @@ mod cases {
 
   /// A negative rational sets its minus sign before the fraction bar in
   /// TraditionalForm, as in StandardForm, not in the numerator.
+  /// `¬` parenthesizes an operand that binds looser than it — an `∨`, an
+  /// `⇒` or an `⊻` — but not a literal it binds tighter than.
+  #[test]
+  fn traditional_form_not_parenthesizes_looser_operands() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!(a || b)]]"#,
+      r#"TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, ∨, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!Xor[a, b]]]"#,
+      r#"TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, ⊻, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!Implies[a, b]]]"#,
+      "TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, \u{F523}, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]",
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!a && b]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{¬, a}], ∧, b}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   #[test]
   fn traditional_form_negative_rational_sign_precedes_the_bar() {
     assert_case(
@@ -11644,6 +11666,27 @@ mod abs_simplifications {
     assert_eq!(interpret("Abs[3 + I]").unwrap(), "Sqrt[10]");
     // Rational components.
     assert_eq!(interpret("Abs[1/2 + 1/2 I]").unwrap(), "1/Sqrt[2]");
+  }
+
+  // Exact complex numbers with radical or constant parts keep an exact
+  // modulus Sqrt[Re^2 + Im^2] instead of collapsing to a machine real.
+  #[test]
+  fn abs_exact_complex_with_radicals() {
+    assert_eq!(interpret("Abs[1 + I Sqrt[3]]").unwrap(), "2");
+    assert_eq!(interpret("Abs[-1/2 - I Sqrt[3]]").unwrap(), "Sqrt[13]/2");
+    assert_eq!(interpret("Abs[-1/2 - I Sqrt[3]/2]").unwrap(), "1");
+    assert_eq!(interpret("Abs[Sqrt[2] + I Sqrt[3]]").unwrap(), "Sqrt[5]");
+    assert_eq!(interpret("Abs[1 + Sqrt[2] I]").unwrap(), "Sqrt[3]");
+    assert_eq!(interpret("Abs[1 + I Pi]").unwrap(), "Sqrt[1 + Pi^2]");
+    assert_eq!(
+      interpret("Abs[2 + b (1/2 - 1 + I Sqrt[3])] /. b -> -1").unwrap(),
+      "Sqrt[37]/2"
+    );
+    // A Mod of the exact modulus stays exact.
+    assert_eq!(
+      interpret("Mod[Abs[-1 - (-1/2 + I Sqrt[3])], 1]").unwrap(),
+      "-1 + Sqrt[13]/2"
+    );
   }
 
   // Machine-precision complex numbers: `a. + b. I` stays Complex in Wolfram
