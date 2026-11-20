@@ -13152,6 +13152,10 @@ fn evaluate_function_call_ast_inner(
         | "Mouseover"
         | "Magnify"
         | "Shallow"
+        // Magnification[s] is a size specification (`ImageSize ->
+        // Magnification[1]` in a stored image's GraphicsBox); it stays
+        // unevaluated in wolframscript.
+        | "Magnification"
         // Geographic primitives consumed by GeoGraphics (rendered there);
         // they stay symbolic on their own, matching wolframscript, so they
         // are not "unimplemented".

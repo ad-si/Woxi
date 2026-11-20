@@ -1721,6 +1721,39 @@ mod graphics {
       );
     }
 
+    /// An inset size `{w, Automatic}` gives the width in the enclosing
+    /// picture's coordinates; the height follows from the picture's own
+    /// aspect ratio on screen, even where the plot's x and y units differ
+    /// in length. The size used to be dropped, leaving the inset at its
+    /// natural pixel size.
+    #[test]
+    fn an_inset_size_with_an_automatic_height_keeps_the_aspect_ratio() {
+      for (size, expected) in [
+        ("{1, Automatic}", ("49.50", "25.85")),
+        ("{Automatic, 2}", ("47.39", "24.75")),
+      ] {
+        let svg = export_svg(&format!(
+          "d = Graphics[Raster[{{{{{{1, 0, 0}}, {{0, 1, 0}}}}}}]]; \
+           Graphics[{{Point[{{0, 0}}], Point[{{4, 8}}], Inset[d, {{2, 4}}, \
+           Automatic, {size}]}}, PlotRange -> {{{{0, 4}}, {{0, 8}}}}, \
+           AspectRatio -> 1/2, ImageSize -> {{200, 100}}]",
+        ));
+        let nested = svg
+          .split("<svg ")
+          .nth(2)
+          .and_then(|s| s.split_once('>'))
+          .expect("a nested picture")
+          .0
+          .to_string();
+        assert!(
+          nested.contains(&format!("width=\"{}\"", expected.0))
+            && nested.contains(&format!("height=\"{}\"", expected.1)),
+          "size {size}: the given side, at the picture's own \
+           shape: {nested}"
+        );
+      }
+    }
+
     /// `Inset[Graphics3D[…], pos]` embeds a whole three-dimensional
     /// picture in a flat one, at its own size — a Demonstration puts a
     /// little schematic of its apparatus in the corner that way. It used

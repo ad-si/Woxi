@@ -6900,9 +6900,20 @@ fn parse_inset_target_size(args: &[Expr]) -> (Option<f64>, Option<f64>) {
   match spec {
     Some(spec) => match expr_to_point(spec) {
       Some(wh) => (Some(wh.0), Some(wh.1)),
-      None => match expr_to_f64(spec) {
-        Some(v) => (Some(v), Some(v)),
-        None => (None, None),
+      None => match spec {
+        // `{w, Automatic}` / `{Automatic, h}`: one side is given and the
+        // other follows from the object's own aspect ratio.
+        Expr::List(items) if items.len() == 2 => {
+          let side = |e: &Expr| match e {
+            Expr::Identifier(a) if a == "Automatic" => None,
+            other => expr_to_f64(other),
+          };
+          (side(&items[0]), side(&items[1]))
+        }
+        _ => match expr_to_f64(spec) {
+          Some(v) => (Some(v), Some(v)),
+          None => (None, None),
+        },
       },
     },
     None => (None, None),
@@ -7356,7 +7367,17 @@ fn inset_primitives(
           -*w / 2.0,
           -*h / 2.0
         );
-        *size = size.map(|(sw, sh)| (sw * cos + sh * sin, sw * sin + sh * cos));
+        *size = size.map(|(sw, sh)| {
+          // Resolve an `Automatic` side from the picture's own shape first.
+          let (sw, sh) = if sh.is_nan() {
+            (sw, sw * *h / *w)
+          } else if sw.is_nan() {
+            (sh * *w / *h, sh)
+          } else {
+            (sw, sh)
+          };
+          (sw * cos + sh * sin, sw * sin + sh * cos)
+        });
         (*w, *h) = (rw, rh);
         if let Some((fx, fy)) = rotated_anchor
           .filter(|(fx, fy)| (fx - 0.5).abs() > 1e-9 || (fy - 0.5).abs() > 1e-9)
@@ -7420,7 +7441,12 @@ fn inset_primitives(
   if let Some(prim) = framed_plot_inset(args, anchor) {
     return Some(vec![prim]);
   }
-  let natural_size = parse_inset_target_size(args) == (None, None);
+  // A size with one `Automatic` side (`{w, Automatic}`) keeps the
+  // picture's own shape on screen, which folding its primitives into this
+  // picture's coordinates cannot do where the x and y units differ in
+  // length — so such a picture is embedded whole, like a sizeless one.
+  let embeds_whole =
+    matches!(parse_inset_target_size(args), (None, _) | (_, None));
   let rendered;
   let image_svg;
   let plate_free;
@@ -7444,7 +7470,7 @@ fn inset_primitives(
       structure: Some(_),
       is_3d: false,
       ..
-    } if natural_size => Some(svg),
+    } if embeds_whole => Some(svg),
     // The chart's own white plate would hide whatever it overlaps.
     Expr::Graphics {
       svg,
@@ -7505,7 +7531,7 @@ fn inset_primitives(
     call @ Expr::FunctionCall { name, .. }
       if name == "Graphics3D"
         || name == "Graphics3DBox"
-        || ((natural_size
+        || ((embeds_whole
           || inset_size_is_scaled(args)
           || anchor.is_some_and(|(_, _, scaled)| scaled))
           && (name == "Graphics" || name == "GraphicsBox")) =>
@@ -7557,7 +7583,15 @@ fn inset_primitives(
     };
     let mut source = plot.map(|g| Box::new(g.clone()));
     let (mut w, mut h) = (dims.nat_w, dims.nat_h);
-    let mut size = target_w.zip(target_h);
+    // A size with one `Automatic` side keeps the picture's own shape on
+    // screen. The missing side is left as NaN and worked out from the
+    // given one once its size in pixels is known (see `render_primitive`),
+    // since the plot's x and y units need not be equally long.
+    let mut size = match (target_w, target_h) {
+      (Some(tw), None) => Some((tw, f64::NAN)),
+      (None, Some(th)) => Some((f64::NAN, th)),
+      (tw, th) => tw.zip(th),
+    };
     // `Inset[obj, pos, {Left, Top}]` puts the object's own corner, not its
     // center, on `pos`. Embedded pictures always center on the anchor, so
     // pad the picture to twice its distance to the far side of that point.
@@ -7693,10 +7727,13 @@ fn inset_primitives(
   let keeps_shape = matches!(&args[0], Expr::FunctionCall { name, .. }
     if name == "Graphics" || name == "GraphicsBox")
     || matches!(&args[0], Expr::Graphics { .. });
-  let (sx, sy) = if keeps_shape && target_w.is_some() && target_h.is_some() {
-    (sx.min(sy), sx.min(sy))
-  } else {
-    (sx, sy)
+  let (sx, sy) = match (target_w, target_h) {
+    (Some(_), Some(_)) if keeps_shape => (sx.min(sy), sx.min(sy)),
+    // `{w, Automatic}` / `{Automatic, h}`: the given side sets the scale
+    // of both, so the object keeps its shape.
+    (Some(_), None) => (sx, sx),
+    (None, Some(_)) => (sy, sy),
+    _ => (sx, sy),
   };
 
   // `dirs` is `{Automatic, {dx, dy}}` (or a bare direction vector): the
@@ -12674,6 +12711,15 @@ fn render_primitive(
           (sw * svg_w / bb.width(), sh * svg_h / bb.height())
         }
         _ => (*w, *h),
+      };
+      // A side given as `Automatic` follows the other at the picture's own
+      // aspect ratio.
+      let (pw, ph) = if ph.is_nan() && *w > 0.0 {
+        (pw, pw * *h / *w)
+      } else if pw.is_nan() && *h > 0.0 {
+        (ph * *w / *h, ph)
+      } else {
+        (pw, ph)
       };
       let relaid = source
         .as_ref()
