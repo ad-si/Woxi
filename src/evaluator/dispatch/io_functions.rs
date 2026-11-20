@@ -8562,15 +8562,10 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         if (name == "Grid" || name == "TextGrid") && !args.is_empty()
       ) =>
     {
-      if let Expr::FunctionCall {
-        args: grid_args, ..
-      } = &tf_args[0]
+      if crate::functions::graphics::traditional_form_grid_ast(&tf_args[0])
+        .is_ok()
       {
-        if crate::functions::graphics::grid_ast(grid_args).is_ok() {
-          crate::get_captured_graphics().unwrap_or_default()
-        } else {
-          String::new()
-        }
+        crate::get_captured_graphics().unwrap_or_default()
       } else {
         String::new()
       }
