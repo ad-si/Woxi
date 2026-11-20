@@ -53,6 +53,10 @@ fn svg_root_size(svg: &str) -> Option<(f32, f32)> {
   Some((attr("width")?, attr("height")?))
 }
 
+/// A control's name with its freshly typeset caption: the styled runs and,
+/// for a caption drawn as a picture, its SVG.
+type ResolvedLabel = (String, (Vec<LabelRun>, Option<String>));
+
 /// Runtime state for a single control inside a Manipulate cell.
 #[derive(Debug, Clone)]
 pub enum ControlState {
@@ -170,6 +174,20 @@ pub enum ControlState {
     low: f64,
     high: f64,
   },
+  /// A vector control binding its variable to a list of three or more
+  /// numbers, drawn as one slider per component.
+  VectorSlider {
+    name: String,
+    label: String,
+    label_runs: Vec<LabelRun>,
+    mins: Vec<f64>,
+    maxs: Vec<f64>,
+    steps: Vec<f64>,
+    values: Vec<f64>,
+    /// Still the exact initial vector: Wolfram binds `{0, 0, 1}` as given
+    /// until a slider is first dragged.
+    exact: bool,
+  },
   /// A `Locator` control binding its variable to a list of 2D points
   /// (e.g. draggable polygon vertices). Rendered as one X/Y slider pair
   /// per point; `auto_create` additionally offers add/remove buttons.
@@ -255,6 +273,7 @@ impl ControlState {
       ControlState::Discrete { name, .. } => name,
       ControlState::Slider2D { name, .. } => name,
       ControlState::IntervalSlider { name, .. } => name,
+      ControlState::VectorSlider { name, .. } => name,
       ControlState::Trigger { name, .. } => name,
       ControlState::Locator { name, .. } => name,
       ControlState::Color { name, .. } => name,
@@ -312,6 +331,9 @@ impl ControlState {
       }
       ControlState::IntervalSlider { low, high, .. } => {
         format!("{{{}, {}}}", format_f64(*low), format_f64(*high))
+      }
+      ControlState::VectorSlider { values, exact, .. } => {
+        woxi::functions::graphics::vector_binding_code(values, *exact)
       }
       // Locator positions are machine reals (dragging produces fractional
       // coordinates); delegate so integral values keep their trailing dot.
@@ -425,6 +447,16 @@ impl ControlState {
         if let Some((a, b)) = as_pair(&expr) {
           *low = a;
           *high = b;
+        }
+      }
+      ControlState::VectorSlider { values, exact, .. } => {
+        if let Expr::List(items) = &expr
+          && items.len() == values.len()
+          && let Some(vals) =
+            items.iter().map(as_f64).collect::<Option<Vec<_>>>()
+        {
+          *exact = items.iter().all(|c| matches!(c, Expr::Integer(_)));
+          *values = vals;
         }
       }
       // A derived variable's value is not the point list, so a write to it
@@ -759,6 +791,26 @@ fn event_handler_statement(body: &str) -> Option<String> {
   }
 }
 
+/// Whether `expr` holds a `Dynamic[…]` anywhere.
+fn contains_dynamic(expr: &woxi::syntax::Expr) -> bool {
+  use woxi::syntax::Expr;
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Dynamic" || args.iter().any(contains_dynamic)
+    }
+    Expr::List(items) => items.iter().any(contains_dynamic),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => contains_dynamic(pattern) || contains_dynamic(replacement),
+    _ => false,
+  }
+}
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -801,7 +853,16 @@ pub struct ManipulateState {
   pub mouse_pressed: bool,
   /// Last cursor position over the picture, in its pixel coordinates.
   pub pointer: (f32, f32),
+  /// Whether the cursor is over the picture (it left since its last move
+  /// when false).
+  pub pointer_over: bool,
   pub text_output: Option<String>,
+  /// The typeset form of `text_output` (e.g. `TraditionalForm` math with
+  /// its subscripts, fractions and font size), drawn in its place the way
+  /// an ordinary output cell shows its result. `None` when the result has
+  /// no typeset rendering; the plain text is shown then.
+  pub typeset_output: Option<String>,
+  pub typeset_handle: Option<svg::Handle>,
   pub error: Option<String>,
   /// Audio produced by the last pressed button's action (`Button[…,
   /// EmitSound[…]]`), waiting for the host to play it.
@@ -821,8 +882,10 @@ pub struct ManipulateState {
   pub appearance_none: bool,
   /// Locals hoisted out of a `DynamicModule` around the body.
   module_locals: Vec<String>,
-  /// Whether the last evaluation changed one of `module_locals`: the body's
-  /// own `Dynamic` rewrote it, so Wolfram would refresh it again right away.
+  /// Whether the last evaluation changed one of `module_locals` (the body's
+  /// own `Dynamic` rewrote it, so Wolfram would refresh it again right
+  /// away) or ran a `Refresh[…, UpdateInterval -> t]` that asks for a
+  /// re-evaluation on a timer.
   self_refreshing: bool,
   /// `ControlPlacement -> …`: which side of the output the control panel
   /// sits on. `Top` (Wolfram's default) stacks the controls above it.
@@ -946,7 +1009,19 @@ pub struct ManipulateState {
   ///
   /// [`check_render`]: Self::check_render
   last_render: Option<Result<woxi::InterpretResult, String>>,
+  /// The visible `Locator` controls, `(variable, appearance)`, drawn as
+  /// markers over the first graphic the body returns (see
+  /// [`woxi::functions::graphics::manipulate_locator_markers`]).
+  locator_markers: Vec<(String, Option<String>)>,
+  /// The value the body returned on its last full run, kept so a change
+  /// that does not re-run the body can still refresh the `Dynamic[…]`
+  /// parts of it (see `refresh_inner_dynamics`).
+  body_value: Option<woxi::syntax::Expr>,
 }
+
+/// A typeset control caption: its label runs and, for a picture caption,
+/// the rendered SVG.
+type Caption = (Vec<LabelRun>, Option<String>);
 
 thread_local! {
   /// Set while [`ManipulateState::from_expr_unrendered`] builds a widget.
@@ -1080,7 +1155,10 @@ impl ManipulateState {
       mouse_region: None,
       mouse_pressed: false,
       pointer: (0.0, 0.0),
+      pointer_over: false,
       text_output: None,
+      typeset_output: None,
+      typeset_handle: None,
       error: None,
       emitted_sound: None,
       body_sound: None,
@@ -1116,6 +1194,10 @@ impl ManipulateState {
       reeval_applied: 0,
       reeval_scheduled: false,
       last_render: None,
+      locator_markers: woxi::functions::graphics::manipulate_locator_markers(
+        expr,
+      ),
+      body_value: None,
     };
     // Run the `Initialization :> …` code ONCE, before the first render.
     // Re-running it on every re-evaluation would reset any state the body
@@ -1326,6 +1408,7 @@ impl ManipulateState {
   /// it.
   pub fn mouse_moved(&mut self, px: f32, py: f32) {
     self.pointer = (px, py);
+    self.pointer_over = true;
     if self.mouse_pressed {
       self.apply_mouse_events(&["MouseDragged"]);
     } else if self
@@ -1335,6 +1418,22 @@ impl ManipulateState {
     {
       self.apply_mouse_events(&["MouseMoved"]);
     }
+  }
+
+  /// The pointer left the picture: `MousePosition` reports `None` again.
+  pub fn mouse_left(&mut self) {
+    self.pointer_over = false;
+  }
+
+  /// `MousePosition["Graphics"]` for the cursor: its graphics coordinates
+  /// while it is over the picture's `EventHandler`, else none.
+  fn pointer_graphics_position(&self) -> Option<(f64, f64)> {
+    let (px, py) = self.pointer;
+    let region = self.mouse_region.as_ref()?;
+    if !self.pointer_over || !region.contains(px, py) {
+      return None;
+    }
+    region.graphics_position(px, py)
   }
 
   /// The pointer was released: end a press begun over the `EventHandler`
@@ -1670,6 +1769,28 @@ impl ManipulateState {
     true
   }
 
+  /// Move component `component` of the vector control at `ctrl_idx` to
+  /// `value`. Returns `true` if the control and component exist. A drag
+  /// makes the whole vector machine-real, as in Wolfram.
+  pub fn slide_vector(
+    &mut self,
+    ctrl_idx: usize,
+    component: usize,
+    value: f64,
+  ) -> bool {
+    let Some(ControlState::VectorSlider { values, exact, .. }) =
+      self.controls.get_mut(ctrl_idx)
+    else {
+      return false;
+    };
+    let Some(slot) = values.get_mut(component) else {
+      return false;
+    };
+    *slot = value;
+    *exact = false;
+    true
+  }
+
   /// Select `choice_label` on the `Discrete` control at `ctrl_idx` (a
   /// SetterBar/RadioButtonBar/PopupMenu/checkbox click sends its choice's
   /// display label). Returns `true` if the control was found and the label
@@ -1736,6 +1857,7 @@ impl ManipulateState {
   /// [`run_scheduled_reeval`]: Self::run_scheduled_reeval
   pub fn request_reeval(&mut self, ctrl_idx: usize) -> bool {
     if !self.control_is_tracked(ctrl_idx) {
+      self.refresh_inner_dynamics();
       return false;
     }
     // A change to any control *other* than a promoted `LocatorPane`
@@ -1757,6 +1879,27 @@ impl ManipulateState {
       self.reeval_scheduled = true;
       true
     }
+  }
+
+  /// Refresh the `Dynamic[…]` parts of the last rendering after a change
+  /// that does not re-run the body (a control left out of
+  /// `TrackedSymbols`). The front end keeps the body's value — a question
+  /// it drew at random stays on screen — but every `Dynamic` inside that
+  /// value still follows the variables it reads, e.g. a feedback line
+  /// comparing the picked answer with the question's solution.
+  fn refresh_inner_dynamics(&mut self) {
+    let Some(value) = self.body_value.take() else {
+      return;
+    };
+    if contains_dynamic(&value) {
+      let code = woxi::syntax::expr_to_source_form(&value);
+      let body = std::mem::replace(&mut self.body, code);
+      self.reevaluate();
+      self.body = body;
+    }
+    // Later refreshes start from the body's own value again, with its
+    // `Dynamic`s still in place.
+    self.body_value = Some(value);
   }
 
   /// Run a throttled re-evaluation when the debounce timer fires. Clears the
@@ -1782,7 +1925,11 @@ impl ManipulateState {
     if self.animated && self.playing {
       self.advance_animation();
     } else if self.self_refreshing {
+      // A timed `Refresh` body polling `MousePosition["Graphics"]` (a
+      // mouse-trail recorder) sees where the cursor is now.
+      woxi::set_mouse_position(self.pointer_graphics_position());
       self.reevaluate();
+      woxi::set_mouse_position(None);
     }
   }
 
@@ -1909,6 +2056,12 @@ impl ManipulateState {
     self.reevaluate_inner(true);
   }
 
+  /// The code the widget evaluates to draw `body`: the body itself, wrapped
+  /// so the visible `Locator` controls show as markers on its graphic.
+  pub fn display_code(&self, body: &str) -> String {
+    woxi::functions::graphics::locator_marker_body(body, &self.locator_markers)
+  }
+
   /// The SVG of the widget's current rendering, when it drew a graphic.
   pub fn current_svg(&self) -> Option<&str> {
     self
@@ -1997,12 +2150,14 @@ impl ManipulateState {
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
     let content_width = self.content_width;
+    let marked_code = self.display_code(&code);
     // Every bound name (visible controls + hidden state), so a body that
     // reassigns one of its own controls — a common "preset" idiom, e.g.
     // `If[given > 0, {a, b, c} = presets[[given]]]` — moves that control's
     // widget too, not just the value used to render this frame.
     let binding_names: Vec<String> =
       bindings.iter().map(|(n, _)| n.clone()).collect();
+    woxi::take_timed_refresh();
     let (
       (render, raw_render),
       updated_bindings,
@@ -2021,7 +2176,8 @@ impl ManipulateState {
       trace_evaluation(&woxi::functions::graphics::manipulate_block_code(
         &code, &bindings,
       ));
-      let mut render = woxi::interpret_with_stdout(&code);
+      // The Locator controls show as markers on the body's graphic.
+      let mut render = woxi::interpret_with_stdout(&marked_code);
       let raw_render = match &render {
         Ok(r) => Ok(r.clone()),
         Err(e) => Err(e.to_string()),
@@ -2178,7 +2334,9 @@ impl ManipulateState {
         button_labels,
       )
     });
+    self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
+    let timed_refresh = woxi::take_timed_refresh();
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
@@ -2227,6 +2385,7 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
+    self.self_refreshing |= timed_refresh;
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -2270,6 +2429,8 @@ impl ManipulateState {
           self.mouse_region = mouse_region_of(&svg);
           self.graphics_handle = Some(handle);
           self.text_output = None;
+          self.typeset_output = None;
+          self.typeset_handle = None;
           self.error = None;
         } else {
           // No graphic: either a textual result or genuinely empty output.
@@ -2278,6 +2439,12 @@ impl ManipulateState {
           self.button_regions.clear();
           self.click_regions.clear();
           self.mouse_region = None;
+          self.typeset_output =
+            result.output_svg.filter(|_| !cleaned.is_empty());
+          self.typeset_handle = self
+            .typeset_output
+            .as_ref()
+            .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()));
           self.text_output = if cleaned.is_empty() {
             None
           } else {
@@ -2294,6 +2461,8 @@ impl ManipulateState {
         self.click_regions.clear();
         self.mouse_region = None;
         self.text_output = None;
+        self.typeset_output = None;
+        self.typeset_handle = None;
         self.error = Some(format!("{e}"));
       }
     }
@@ -2386,10 +2555,7 @@ impl ManipulateState {
   }
 
   /// Retitle each named control with its freshly typeset caption.
-  fn apply_dynamic_labels(
-    &mut self,
-    resolved: Vec<(String, (Vec<LabelRun>, Option<String>))>,
-  ) {
+  fn apply_dynamic_labels(&mut self, resolved: Vec<ResolvedLabel>) {
     for (name, (runs, svg)) in resolved {
       self.label_svgs.retain(|(n, _)| *n != name);
       if let Some(svg) = svg {
@@ -2456,6 +2622,9 @@ impl ManipulateState {
     selection_moved
   }
 }
+
+/// A control name with its typeset caption runs and optional rendered SVG.
+type ResolvedLabel = (String, Caption);
 
 /// A dynamic bound re-resolved to numbers:
 /// `(control name, min, max, step)`.
@@ -2671,6 +2840,33 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
           high: *high_initial,
         }
       }
+      ManipulateControl::VectorSlider {
+        name,
+        mins,
+        maxs,
+        steps,
+        initial,
+        label,
+        label_runs,
+        exact_initial,
+      } => ControlState::VectorSlider {
+        name: name.clone(),
+        label: label.clone(),
+        label_runs: label_runs.clone(),
+        mins: mins.clone(),
+        maxs: maxs.clone(),
+        steps: mins
+          .iter()
+          .zip(maxs)
+          .enumerate()
+          .map(|(i, (&lo, &hi))| {
+            explicit_step(steps.as_ref().and_then(|s| s.get(i).copied()))
+              .unwrap_or_else(|| default_slider_step(lo, hi, true))
+          })
+          .collect(),
+        values: initial.clone(),
+        exact: *exact_initial,
+      },
       ManipulateControl::Locator {
         name,
         points,
@@ -2886,6 +3082,45 @@ fn holds_typeset_layout(expr: &woxi::syntax::Expr) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+  /// A control left out of `TrackedSymbols` does not re-run the body, but a
+  /// `Dynamic[…]` inside the body that reads it still refreshes: picking an
+  /// answer updates the feedback line while the (random) question drawn by
+  /// the body stays as it is.
+  #[test]
+  fn untracked_control_refreshes_inner_dynamic_only() {
+    woxi::interpret("untrackedRuns = 0").unwrap();
+    let code = r#"Manipulate[
+      untrackedRuns++;
+      Column[{k, Dynamic[Which[an == 0, "pick", an == k, "match", True, "differ"]]}],
+      {k, 2, ControlType -> None},
+      Control[{{an, 0, "answer"}, Range[3], RadioButtonBar}],
+      TrackedSymbols :> {k}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let runs = || woxi::interpret("untrackedRuns").unwrap();
+    let runs_before = runs();
+    assert!(state.current_svg().unwrap().contains("pick"));
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "an")
+      .expect("answer control");
+    for (choice, shown) in [("2", "match"), ("3", "differ")] {
+      assert!(state.select_discrete(idx, choice));
+      state.apply_tracking(idx);
+      if state.request_reeval(idx) {
+        state.run_scheduled_reeval();
+      }
+      let svg = state.current_svg().unwrap();
+      assert!(
+        svg.contains(shown),
+        "expected {shown:?} after {choice}: {svg}"
+      );
+    }
+    assert_eq!(runs(), runs_before, "the body itself must not re-run");
+  }
 
   /// Dragging a step-less slider with whole-number bounds binds a machine
   /// real, as in Wolfram (a caption shows `-10.`, not `-10`), while the
@@ -3526,6 +3761,42 @@ mod tests {
       joins,
       vec![("k", false), ("a", true), ("s", false), ("n", true)]
     );
+  }
+
+  /// Controls declared with `ControlPlacement -> n` are drawn where a
+  /// layout argument references them by `Place[n]` (bare or as the
+  /// FrontEnd-saved `` Manipulate`Place[n] ``), so `Row[{Place[2],
+  /// Place[1]}]` puts both checkboxes on one line in that order. Regression:
+  /// the `Place` template was dropped and each checkbox got a line of its
+  /// own at its declaration position.
+  #[test]
+  fn numbered_control_placement_fills_place_template() {
+    for place in ["Place", "Manipulate`Place"] {
+      let code = format!(
+        r#"Manipulate[
+          {{r, a, b}},
+          {{{{r, 1, "radius"}}, 0, 2}},
+          {{{{a, False, "first"}}, {{False, True}}, ControlPlacement -> 1}},
+          {{{{b, True, "second"}}, {{False, True}}, ControlPlacement -> 2}},
+          Row[{{{place}[2], {place}[1]}}, Spacer[20]]
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      let joins: Vec<(&str, bool)> = state
+        .controls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !c.name().is_empty())
+        .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+        .collect();
+      assert_eq!(
+        joins,
+        vec![("r", false), ("b", false), ("a", true)],
+        "{place}"
+      );
+    }
   }
 
   /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
@@ -4320,6 +4591,43 @@ mod tests {
     assert_eq!(current("hi"), "114");
   }
 
+  /// A range given as two corner vectors of three components draws one
+  /// slider per component and binds the whole list: exact as written until
+  /// a slider moves, machine reals afterwards. It used to fall back to a
+  /// fixed binding with no control at all.
+  #[test]
+  fn vector_range_control_slides_each_component() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Total[v], {{v, {1, 0, 2}, \"offset\"}, {0, 0, 0}, {3, 3, 3}}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let idx = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "v")
+      .expect("vector control");
+    match &state.controls[idx] {
+      ControlState::VectorSlider {
+        label, mins, maxs, ..
+      } => {
+        assert_eq!(label, "offset");
+        assert_eq!(mins, &[0.0, 0.0, 0.0]);
+        assert_eq!(maxs, &[3.0, 3.0, 3.0]);
+      }
+      other => panic!("expected a VectorSlider, got {other:?}"),
+    }
+    assert_eq!(state.controls[idx].current_code(), "{1, 0, 2}");
+    assert_eq!(state.text_output.as_deref(), Some("3"));
+
+    assert!(state.slide_vector(idx, 1, 1.5));
+    assert!(!state.slide_vector(idx, 3, 1.0));
+    assert_eq!(state.controls[idx].current_code(), "{1., 1.5, 2.}");
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("4.5"));
+  }
+
   /// A Demonstration declares a variable's visible control inside a
   /// `Row[{Control[…], …}]` and afterwards lists the bare
   /// `{var, ControlType -> None}` (no initial value, no domain) just to
@@ -4638,6 +4946,51 @@ mod tests {
   /// drawing a sector of the slider's own angle, or a static `Graphics[…]`
   /// — carries a rendered icon sized from the picture, and a plain string
   /// caption does not.
+  /// A slider caption that pairs words with a picture
+  /// (`Dynamic[Row[{"shift ", Graphics[…]}]]`) keeps the picture: the
+  /// whole caption becomes an icon instead of being reduced to its words.
+  #[test]
+  fn worded_picture_caption_renders_as_label_icon() {
+    let code = r#"Manipulate[t,
+      {{t, 0, Dynamic[Row[{"move ", Graphics[{Orange, Disk[]},
+        ImageSize -> {18, 18}]}]]}, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let icon = state
+      .label_svg("t")
+      .expect("an icon for the worded caption");
+    assert!(icon.width > 18.0, "width {}", icon.width);
+  }
+
+  /// A static annotation row whose picture comes from a symbol bound to a
+  /// `Graphics` (`Row[{"pull the ", marker}]`) is drawn as a display in its
+  /// place in the panel, not as a heading spelling out the symbol's name.
+  #[test]
+  fn annotation_row_with_picture_becomes_panel_display() {
+    woxi::interpret(
+      "annotationMarker = Graphics[{Purple, Disk[]}, ImageSize -> 16];",
+    )
+    .expect("define marker");
+    let code = r#"Manipulate[a,
+      {{a, 1}, 0, 2},
+      Row[{"pull the ", annotationMarker}],
+      {{b, 0}, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      !state.controls.iter().any(|c| matches!(
+        c,
+        ControlState::Heading { label, .. } if label.contains("annotationMarker")
+      )),
+      "the picture must not be spelled out as heading text"
+    );
+    assert_eq!(state.panel_displays, vec![(0, 1)]);
+  }
+
   #[test]
   fn picture_caption_renders_as_label_icon() {
     let code = r#"Manipulate[a + b + c,
@@ -6416,6 +6769,35 @@ mod tests {
     assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
   }
 
+  /// A `ClickPane` handler that `Beep[]`s after updating its state (a board
+  /// game confirming a move) must still apply the update and hand the
+  /// alert tone to the Studio to play.
+  #[test]
+  fn click_pane_handler_beep_emits_a_sound() {
+    let code = r#"Manipulate[
+      ClickPane[
+        Graphics[{Rectangle[{0, 0}, {2, 1}]}, PlotRange -> {{0, 2}, {0, 1}},
+          ImageSize -> {200, 100}],
+        (moves = moves + 1; Beep[]) &],
+      {{moves, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.emitted_sound.is_none());
+    state.pointer = (50.0, 50.0);
+    state.apply_pane_click();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let moves = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "moves")
+      .map(|(_, v)| v.clone());
+    assert_eq!(moves.as_deref(), Some("1"));
+    let audio = state.emitted_sound.take().expect("the beep's tone");
+    assert_eq!(audio.mime, "audio/wav");
+  }
+
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
   /// graphic.
   fn pixel_of(region: &MouseRegion, gx: f64, gy: f64) -> (f32, f32) {
@@ -6494,6 +6876,76 @@ mod tests {
     state.controls[0].set_current_from_code("{3, 2}");
     state.reevaluate();
     assert_eq!(var(&state, "pos"), "{3, 2}");
+  }
+
+  /// A click toggles a recorder whose `Dynamic` body polls
+  /// `MousePosition["Graphics"]` through `Refresh[…, UpdateInterval -> 0]`:
+  /// while it records, the widget must keep re-evaluating on its timer
+  /// with the cursor's current position (`None` once it leaves the
+  /// picture), and stop ticking once a second click ends the recording.
+  #[test]
+  fn timed_refresh_records_the_mouse_trail() {
+    let code = r#"Manipulate[
+      EventHandler[
+        Dynamic[If[recording,
+          Refresh[AppendTo[trail, MousePosition["Graphics"]];
+            Graphics[Point[DeleteCases[trail, None]],
+              PlotRange -> {{0, 4}, {0, 2}}, ImageSize -> 200],
+            UpdateInterval -> 0],
+          Graphics[Rectangle[{0, 0}, {4, 2}], ImageSize -> 200]]],
+        {"MouseClicked" :> (recording = !recording)}],
+      {{recording, False}, ControlType -> None},
+      {{trail, {}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert!(!state.wants_tick(), "idle before the first click");
+    let var = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+
+    // Click to start recording.
+    let region = state.mouse_region.clone().expect("a mouse region");
+    let (px, py) = pixel_of(&region, 1.0, 1.0);
+    state.mouse_moved(px, py);
+    state.mouse_down();
+    state.mouse_up();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    assert_eq!(var(&state, "recording"), "True");
+    assert!(state.wants_tick(), "recording re-evaluates on the timer");
+
+    // Each tick appends where the cursor is now.
+    let region = state.mouse_region.clone().expect("a mouse region");
+    let (px, py) = pixel_of(&region, 3.0, 0.5);
+    state.mouse_moved(px, py);
+    let before = var(&state, "trail");
+    state.tick();
+    let after = var(&state, "trail");
+    assert_ne!(after, before, "the tick recorded a position");
+    let last = woxi::interpret(&format!("Round[Last[{after}], 0.1]")).unwrap();
+    assert_eq!(last, "{3., 0.5}");
+
+    // Outside the picture there is no position.
+    state.mouse_left();
+    state.tick();
+    let trail = var(&state, "trail");
+    assert_eq!(woxi::interpret(&format!("Last[{trail}]")).unwrap(), "None");
+
+    // A second click ends the recording and the ticking.
+    let region = state.mouse_region.clone().expect("a mouse region");
+    let (px, py) = pixel_of(&region, 1.0, 1.0);
+    state.mouse_moved(px, py);
+    state.mouse_down();
+    state.mouse_up();
+    assert_eq!(var(&state, "recording"), "False");
+    assert!(!state.wants_tick(), "idle after the recording ends");
   }
 
   /// `Button[Graphics[…], action]` cells (the shape of a tic-tac-toe style

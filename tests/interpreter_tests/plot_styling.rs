@@ -540,3 +540,104 @@ mod epilog_text_style_background {
     assert!(!group.contains("<rect"), "{svg}");
   }
 }
+
+/// `Inset[Framed[Column[{…}]], pos, opos]` in a `Plot` `Epilog` — a boxed
+/// summary of computed values — is typeset as text, like
+/// `Text[Framed[Column[…]], pos, opos]`, not embedded as a picture of
+/// monospace source text.
+mod epilog_framed_column_inset {
+  use super::*;
+
+  const PLOT: &str = "Plot[Max[100 - x, 0], {x, 60, 140}, \
+    ImageSize -> {500, 350}, Epilog -> {Inset[Framed[Column[{\"short\", \
+    \"a longer line\"}], Background -> GrayLevel[0.99]], {110, 20}, {-1, 0}]}]";
+
+  /// The epilog's own group (after its clip path).
+  fn epilog(svg: &str) -> &str {
+    &svg[svg.find("</defs><g clip-path").unwrap()..]
+  }
+
+  fn attr(tag: &str, name: &str) -> f64 {
+    let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    tag[start..start + tag[start..].find('"').unwrap()]
+      .parse()
+      .unwrap()
+  }
+
+  #[test]
+  fn typesets_the_lines_as_sans_serif_text() {
+    let svg = svg_of(PLOT);
+    let group = epilog(&svg);
+    assert!(!group.contains("<svg"), "{group}");
+    assert!(!group.contains("monospace"), "{group}");
+    assert!(group.contains(">short<"), "{group}");
+    assert!(group.contains(">a longer line</tspan>"), "{group}");
+  }
+
+  /// A `Column` sets its lines flush left inside the frame, starting at
+  /// the frame's left side (`opos -> {-1, 0}` puts that side on `pos`).
+  #[test]
+  fn column_lines_start_flush_left_inside_the_frame() {
+    let svg = svg_of(PLOT);
+    let group = epilog(&svg);
+    let rect = &group[group.find("<rect x=").unwrap()..];
+    let rect = &rect[..rect.find('>').unwrap()];
+    let text = &group[group.find("<text ").unwrap()..];
+    let text = &text[..text.find('>').unwrap()];
+    assert!(text.contains("text-anchor=\"start\""), "{text}");
+    let (left, x) = (attr(rect, "x"), attr(text, "x"));
+    assert!(x > left && x < left + 100.0, "{rect} / {text}");
+    // Every further line starts at the same x.
+    let tspan = &group[group.find("<tspan ").unwrap()..];
+    assert_eq!(attr(&tspan[..tspan.find('>').unwrap()], "x"), x);
+  }
+
+  /// The frame's border is one point wide in the plot's 10× coordinates.
+  #[test]
+  fn frame_border_is_one_point_wide() {
+    let svg = svg_of(PLOT);
+    let group = epilog(&svg);
+    let rect = &group[group.find("<rect x=").unwrap()..];
+    let rect = &rect[..rect.find('>').unwrap()];
+    assert_eq!(attr(rect, "stroke-width"), 10.0, "{rect}");
+  }
+
+  /// A `Grid` keeps its centered lines.
+  #[test]
+  fn grid_lines_stay_centered() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> {Text[Framed[Grid[{{\"a\"}, \
+       {\"bcd\"}}]], {0.5, 0.5}]}]",
+    );
+    assert!(!epilog(&svg).contains("text-anchor=\"start\""), "{svg}");
+  }
+}
+
+/// `opos` of an inset display (`Framed`, `Grid`, …) is measured like a
+/// `Text` offset: `{-1, 0}` puts the middle of its left edge on `pos`, so
+/// the display is moved half its width right of where `{0, 0}` (the
+/// default, its center) puts it, and not at all vertically.
+#[test]
+fn epilog_inset_display_offset_is_text_like() {
+  let at = |opos: &str| {
+    let svg = svg_of(&format!(
+      "Plot[Max[100 - x, 0], {{x, 60, 140}}, ImageSize -> 400, \
+       Epilog -> {{Inset[Framed[Grid[{{{{Graphics[Disk[], ImageSize -> 20], \
+       \"label\"}}}}]], {{110, 20}}{opos}]}}]"
+    ));
+    let group = &svg[svg.find("</defs><g clip-path").unwrap()..];
+    let tag = &group[group.find("<svg x=").unwrap()..];
+    let tag = &tag[..tag.find('>').unwrap()];
+    let num = |name: &str| -> f64 {
+      let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[start..start + tag[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    (num("x"), num("y"), num("width"))
+  };
+  let (cx, cy, w) = at("");
+  let (lx, ly, _) = at(", {-1, 0}");
+  assert!((lx - (cx + w / 2.0)).abs() < 0.1, "{lx} vs {cx} + {w}/2");
+  assert!((ly - cy).abs() < 0.1, "{ly} vs {cy}");
+}
