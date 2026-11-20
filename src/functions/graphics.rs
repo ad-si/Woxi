@@ -8682,15 +8682,18 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     );
     let layout = layout_box(&boxes, local_style.font_size);
     if layout.width > 0.0 && layout.height > 0.0 {
+      let (svg, w, h) = align_inset_picture(
+        layout_to_svg(&layout, &local_style.effective_color().to_svg_rgb()),
+        layout.width.ceil().max(1.0),
+        layout.height.ceil().max(1.0),
+        picture_offset.unwrap_or_default(),
+      );
       prims.push(Primitive::InsetGraphic {
-        svg: layout_to_svg(
-          &layout,
-          &local_style.effective_color().to_svg_rgb(),
-        ),
+        svg,
         x,
         y,
-        w: layout.width.ceil().max(1.0),
-        h: layout.height.ceil().max(1.0),
+        w,
+        h,
         scaled,
         size: None,
         size_scaled: false,
@@ -8713,12 +8716,18 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     if svg.starts_with("<svg")
       && let Some(dims) = parse_svg_dimensions(&svg)
     {
+      let (svg, w, h) = align_inset_picture(
+        svg,
+        dims.nat_w,
+        dims.nat_h,
+        picture_offset.unwrap_or_default(),
+      );
       prims.push(Primitive::InsetGraphic {
         svg,
         x,
         y,
-        w: dims.nat_w,
-        h: dims.nat_h,
+        w,
+        h,
         scaled,
         size: None,
         size_scaled: false,
@@ -8765,15 +8774,18 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   {
     let layout = layout_box(&boxes, local_style.font_size);
     if layout.width > 0.0 && layout.height > 0.0 {
+      let (svg, w, h) = align_inset_picture(
+        layout_to_svg(&layout, &local_style.effective_color().to_svg_rgb()),
+        layout.width.ceil().max(1.0),
+        layout.height.ceil().max(1.0),
+        picture_offset.unwrap_or_default(),
+      );
       prims.push(Primitive::InsetGraphic {
-        svg: layout_to_svg(
-          &layout,
-          &local_style.effective_color().to_svg_rgb(),
-        ),
+        svg,
         x,
         y,
-        w: layout.width.ceil().max(1.0),
-        h: layout.height.ceil().max(1.0),
+        w,
+        h,
         scaled,
         size: None,
         size_scaled: false,
