@@ -487,7 +487,15 @@ impl ControlState {
       ControlState::Locator {
         derived: Some(_), ..
       } => {}
-      ControlState::Locator { points, single, .. } => {
+      ControlState::Locator {
+        points,
+        single,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
         if let Some(p) = as_pair(&expr) {
           // A lone point `{x, y}` written to a single-point Locator.
           if *single {
@@ -502,6 +510,15 @@ impl ControlState {
           } else {
             new_points
           };
+        }
+        // As for a 2D slider: a locator can sit anywhere in the picture, so
+        // points written from code (a button, a restored value) outside the
+        // range derived from the initial value must stay reachable.
+        for &(a, b) in points.iter() {
+          *x_min = x_min.min(a);
+          *x_max = x_max.max(a);
+          *y_min = y_min.min(b);
+          *y_max = y_max.max(b);
         }
       }
       ControlState::Color { current, .. } => {
@@ -4525,6 +4542,61 @@ mod tests {
     assert_eq!((*x, *y), (-30.0, 50.0));
     assert!(*x_min <= -30.0 && *x_max >= 1.0);
     assert!(*y_min <= 0.0 && *y_max >= 50.0);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate holds a
+  /// list of `Appearance -> None` locators gated by `Enabled -> !flag`, next
+  /// to buttons that overwrite the whole point list. Regression check: the
+  /// gate follows the checkbox, and a button that moves the points beyond the
+  /// range derived from their initial value widens the locator's sliders so
+  /// the new points stay reachable. This is a self-authored,
+  /// construct-equivalent example.
+  #[test]
+  fn locator_list_written_by_button_widens_its_range() {
+    let code = r#"Manipulate[
+      Graphics[Table[Text[i, pts[[i]]], {i, Length[pts]}], PlotRange -> 20],
+      Row[{
+        Control[{{pts, {{0, 0}, {1, 1}}}, Locator, Appearance -> None,
+          Enabled -> !frozen}],
+        Button["spread", pts = {{-15, 12}, {9, -18}}],
+        Control[{{frozen, False, "freeze"}, {True, False}}]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let loc = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Locator { .. }))
+      .expect("a locator control");
+    assert!(state.control_is_enabled[loc]);
+
+    state.apply_button_action("pts = {{-15, 12}, {9, -18}}");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let ControlState::Locator {
+      points,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      ..
+    } = &state.controls[loc]
+    else {
+      panic!("expected a locator");
+    };
+    assert_eq!(points, &vec![(-15.0, 12.0), (9.0, -18.0)]);
+    assert!(
+      *x_min <= -15.0 && *x_max >= 9.0 && *y_min <= -18.0 && *y_max >= 12.0,
+      "range must cover the new points: {x_min}..{x_max}, {y_min}..{y_max}"
+    );
+
+    state.apply_button_action("frozen = True");
+    assert!(
+      !state.control_is_enabled[loc],
+      "Enabled -> !frozen must disable the locator"
+    );
   }
 
   /// A body that caches a rendered plot in hidden state (recomputing it only
