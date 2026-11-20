@@ -16548,6 +16548,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // their labels have taken their room.
   let (mut margin_left, mut margin_right, mut margin_bottom, mut margin_top) =
     (margin_left, margin_right, margin_bottom, margin_top);
+  // How far a letterboxed drawing area moved down inside the picture: the
+  // `PlotLabel` moves along with it, staying just above the area instead
+  // of at the top edge of the picture, as Wolfram centers both together.
+  let mut title_shift = 0.0;
   let (svg_w, svg_h) = {
     let w = (svg_w - margin_left - margin_right).max(1.0);
     match aspect_ratio {
@@ -16573,6 +16577,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         margin_right += slack_w;
         margin_bottom += slack_h;
         margin_top += slack_h;
+        title_shift += slack_h;
         (pw.max(1.0), ph.max(1.0))
       }
       // `AspectRatio -> r` shapes the drawing area itself, not the whole
@@ -16602,6 +16607,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       margin_right += dx;
       margin_bottom += dy;
       margin_top += dy;
+      title_shift += dy;
       (fitted_w, fitted_h)
     } else {
       (svg_w, svg_h)
@@ -16785,7 +16791,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cx = margin_left + svg_w / 2.0;
     let title_top = match image_padding {
       Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
-      None => 0.0,
+      None => title_shift,
     };
     // A picture wider than the graphic shrinks to fit, keeping its shape.
     let scale = ((total_width - 8.0) / w).clamp(0.0, 1.0);
@@ -16837,7 +16843,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The band at the top of the picture, above the padding.
     let title_top = match image_padding {
       Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
-      None => 0.0,
+      None => title_shift,
     };
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{:.2}\" text-anchor=\"middle\" \
@@ -24898,11 +24904,49 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           ],
         ));
       }
+      let outline = crate::functions::plot::glyph_marker_outline(
+        &marker.glyph,
+        marker.size,
+      );
+      if let Some((_, Some(w))) = &outline {
+        series_prims.push(call1("AbsoluteThickness", Expr::Real(*w)));
+      }
       for &(x, y) in sd
         .points
         .iter()
         .filter(|(x, y)| x.is_finite() && y.is_finite())
       {
+        // A geometric glyph (`●`, `■`, `▲`, …) is drawn as the shape WL's
+        // font gives it, sized in points around the data point, the way the
+        // plot itself draws it — not as text in whatever font is at hand.
+        if let Some((shape, stroke)) = &outline {
+          let at = |dx: f64, dy: f64| {
+            call(
+              "Offset",
+              vec![
+                Expr::List(vec![Expr::Real(dx), Expr::Real(-dy)].into()),
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+              ],
+            )
+          };
+          series_prims.push(match shape {
+            crate::functions::plot::GlyphOutline::Circle { r, cy } => call(
+              if stroke.is_some() { "Circle" } else { "Disk" },
+              vec![at(0.0, *cy), call1("Offset", Expr::Real(*r))],
+            ),
+            crate::functions::plot::GlyphOutline::Polygon(pts) => {
+              let mut corners: Vec<Expr> =
+                pts.iter().map(|&(dx, dy)| at(dx, dy)).collect();
+              if stroke.is_some() {
+                corners.push(corners[0].clone());
+                call1("Line", Expr::List(corners.into()))
+              } else {
+                call1("Polygon", Expr::List(corners.into()))
+              }
+            }
+          });
+          continue;
+        }
         series_prims.push(call(
           "Text",
           vec![
@@ -26032,10 +26076,17 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       })
       .unwrap_or((false, false));
-    let first_all = x_all && y_all;
     let first_plot = plot_sources
       .iter()
       .find(|ps| !any_curves || !ps.series.is_empty());
+    // A list plot already settled its `All` into numbers, which `Show`
+    // keeps like any other range of the first plot.
+    let (x_all, y_all) = if first_plot.is_some_and(|ps| ps.settles_all_range) {
+      (false, false)
+    } else {
+      (x_all, y_all)
+    };
+    let first_all = x_all && y_all;
     let first = first_plot.filter(|_| !first_all);
     let data_x_range = plot_sources
       .iter()
@@ -26116,6 +26167,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       log_x: plot_sources[0].log_x,
       log_y: plot_sources[0].log_y,
       aspect_ratio: plot_sources[0].aspect_ratio,
+      settles_all_range: plot_sources[0].settles_all_range,
       data_x_range,
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
@@ -26237,10 +26289,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // leading plot settled on: primitives reaching beyond it (a marker
       // line from y = -10 to 10 over a curve within ±1) are clipped, not
       // allowed to zoom the picture out. Only a `PlotRange` given to `Show`
-      // or an `All` asked of the plot spans everything shown.
+      // or an `All` asked of a function plot spans everything shown; a list
+      // plot has settled its `All` into the range of its data.
+      let settled_all = !show_sets_plot_range
+        && plot_sources.first().is_some_and(|ps| ps.settles_all_range);
       let automatic_range = merged_options.iter().all(|o| {
         !matches!(option_name_value(o), Some(("PlotRange", v))
-          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic"))
+          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic")
+            && !(settled_all
+              && crate::functions::plot::plot_range_all_axes(&v)
+                != (false, false)))
       });
       if automatic_range
         && let Some(ps) = plot_sources.first()

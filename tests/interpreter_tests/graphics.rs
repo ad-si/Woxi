@@ -58561,6 +58561,89 @@ mod ranges_and_ticks {
   }
 
   #[test]
+  fn show_keeps_the_settled_all_range_of_a_list_plot() {
+    // A list plot settles `PlotRange -> All` into its data's range, so a
+    // marker line reaching past it is clipped, not zooming the picture out.
+    for head in ["ListPlot", "ListLinePlot"] {
+      assert_eq!(
+        interpret(&format!(
+          "lp = {head}[{{{{1, 1}}, {{2, 2}}, {{3, 3}}}}, PlotRange -> All]; \
+           PlotRange[Show[lp, Graphics[Line[{{{{2, -5}}, {{2, 5}}}}]]]] == \
+           PlotRange[Show[lp, Graphics[Point[{{2, 2}}]]]]"
+        ))
+        .unwrap(),
+        "True",
+        "{head}"
+      );
+    }
+    // A function plot's `All` still spans everything shown.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[Plot[x, {x, 1, 3}, PlotRange -> All], \
+         Graphics[Line[{{2, -5}, {2, 5}}]]]][[2]]"
+      )
+      .unwrap(),
+      "{-5., 5.}"
+    );
+    // So does an `All` given to `Show` itself.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotRange -> All], \
+         Graphics[Line[{{2, -5}, {2, 5}}]], PlotRange -> All]][[2]]"
+      )
+      .unwrap(),
+      "{-5., 5.}"
+    );
+    // Shown with another list plot, the first one's range is kept as well.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotRange -> All], \
+         ListPlot[{{2, -5}, {4, 5}}]]][[2]]"
+      )
+      .unwrap(),
+      "{0., 3.}"
+    );
+  }
+
+  #[test]
+  fn show_draws_glyph_plot_markers_as_their_shapes() {
+    // `●` keeps the radius the plot draws it with (3.17 pt at size 10)
+    // instead of turning into text in an arbitrary font.
+    let svg = export_svg(
+      "Show[ListPlot[{1, 2, 3}, PlotMarkers -> \"●\"], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert!(!svg.contains('●'), "{svg}");
+    assert_eq!(svg.matches("rx=\"3.17\" ry=\"3.17\"").count(), 3, "{svg}");
+    // A hollow glyph is its stroked outline.
+    let svg = export_svg(
+      "Show[ListPlot[{1, 2, 3}, PlotMarkers -> \"□\"], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert!(!svg.contains('□'), "{svg}");
+    assert_eq!(svg.matches("stroke-width=\"0.56\"").count(), 3, "{svg}");
+  }
+
+  #[test]
+  fn letterboxed_plot_label_stays_above_the_drawing_area() {
+    // The 1/GoldenRatio area is centered in the 400 pt tall picture; the
+    // label moves down with it rather than staying at the top edge.
+    let svg = export_svg(
+      "Graphics[Line[{{0, 0}, {1, 1}}], PlotLabel -> \"T\", Axes -> True, \
+       AspectRatio -> 1/GoldenRatio, ImageSize -> {450, 400}]",
+    );
+    let end = svg.find(">T</text>").expect("title");
+    let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+    let y: f64 = tag
+      .split(" y=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!((60.0..75.0).contains(&y), "title baseline at {y}: {svg}");
+  }
+
+  #[test]
   fn show_spans_only_the_axes_the_first_plot_shows_in_full() {
     // `{{0, 3}, All}`: the x range stays the first plot's, the y range
     // reaches the later plot's curve.

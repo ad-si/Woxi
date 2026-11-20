@@ -3159,6 +3159,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   source.plot_range = opts.grid_interior;
   source.log_x = opts.log_x;
+  source.settles_all_range = true;
   source.aspect_ratio = source
     .aspect_ratio
     .or_else(|| crate::functions::plot::drawn_aspect_ratio(opts));
@@ -3400,6 +3401,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   source.plot_range = parsed.opts.grid_interior;
   source.log_x = parsed.opts.log_x;
+  source.settles_all_range = true;
   source.aspect_ratio = source
     .aspect_ratio
     .or_else(|| crate::functions::plot::drawn_aspect_ratio(&parsed.opts));
