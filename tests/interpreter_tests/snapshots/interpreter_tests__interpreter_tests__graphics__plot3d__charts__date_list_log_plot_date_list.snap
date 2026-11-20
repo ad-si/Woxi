@@ -1,6 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 18006
+assertion_line: 21366
 expression: "export_svg(\"DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 100}, {{2010, 12, 31}, 10}}]\")"
 ---
 <svg width="360" height="226" viewBox="0 0 3600 2260" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
@@ -53,6 +53,28 @@ expression: "export_svg(\"DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 10
 <line x1="2867.4" y1="2099.0" x2="2867.4" y2="2088.8" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="2985.8" y1="2099.0" x2="2985.8" y2="2088.8" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="3104.1" y1="2099.0" x2="3104.1" y2="2088.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1915.8" x2="237.0" y2="1915.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1284.6" x2="237.0" y2="1284.6" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1012.7" x2="237.0" y2="1012.7" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="381.5" x2="237.0" y2="381.5" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="109.7" x2="237.0" y2="109.7" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="2055.7" x2="221.0" y2="2055.7" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="2003.3" x2="221.0" y2="2003.3" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1957.1" x2="221.0" y2="1957.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1643.9" x2="221.0" y2="1643.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1484.9" x2="221.0" y2="1484.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1372.1" x2="221.0" y2="1372.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1213.1" x2="221.0" y2="1213.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1152.6" x2="221.0" y2="1152.6" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1100.3" x2="221.0" y2="1100.3" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="1054.1" x2="221.0" y2="1054.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="740.9" x2="221.0" y2="740.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="581.9" x2="221.0" y2="581.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="469.1" x2="221.0" y2="469.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="310.0" x2="221.0" y2="310.0" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="249.6" x2="221.0" y2="249.6" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="197.2" x2="221.0" y2="197.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="197.0" y1="151.0" x2="221.0" y2="151.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="264.8" y1="5.0" x2="264.8" y2="45.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="856.6" y1="5.0" x2="856.6" y2="45.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="1447.7" y1="5.0" x2="1447.7" y2="45.0" stroke="rgb(102,102,102)" stroke-width="10"/>
@@ -79,6 +101,28 @@ expression: "export_svg(\"DateListLogPlot[{{{2000, 1, 1}, 1}, {{2005, 6, 15}, 10
 <line x1="2867.4" y1="5.0" x2="2867.4" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="2985.8" y1="5.0" x2="2985.8" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
 <line x1="3104.1" y1="5.0" x2="3104.1" y2="15.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1915.8" x2="3545.0" y2="1915.8" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1284.6" x2="3545.0" y2="1284.6" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1012.7" x2="3545.0" y2="1012.7" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="381.5" x2="3545.0" y2="381.5" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="109.7" x2="3545.0" y2="109.7" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="2055.7" x2="3561.0" y2="2055.7" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="2003.3" x2="3561.0" y2="2003.3" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1957.1" x2="3561.0" y2="1957.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1643.9" x2="3561.0" y2="1643.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1484.9" x2="3561.0" y2="1484.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1372.1" x2="3561.0" y2="1372.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1213.1" x2="3561.0" y2="1213.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1152.6" x2="3561.0" y2="1152.6" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1100.3" x2="3561.0" y2="1100.3" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="1054.1" x2="3561.0" y2="1054.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="740.9" x2="3561.0" y2="740.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="581.9" x2="3561.0" y2="581.9" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="469.1" x2="3561.0" y2="469.1" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="310.0" x2="3561.0" y2="310.0" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="249.6" x2="3561.0" y2="249.6" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="197.2" x2="3561.0" y2="197.2" stroke="rgb(102,102,102)" stroke-width="10"/>
+<line x1="3585.0" y1="151.0" x2="3561.0" y2="151.0" stroke="rgb(102,102,102)" stroke-width="10"/>
 <text x="166.8" y="1915.8" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">1</text>
 <text x="166.8" y="1284.6" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">5</text>
 <text x="166.8" y="1012.7" text-anchor="end" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif" font-size="100" fill="#666">10</text>

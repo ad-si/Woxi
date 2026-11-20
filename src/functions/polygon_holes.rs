@@ -16,9 +16,16 @@
 
 use super::*;
 
-/// Split a `Polygon`/`Triangle` first argument into its outer boundary and
-/// hole boundaries. Returns `None` when the argument is not a rule, i.e.
-/// for an ordinary hole-free polygon.
+/// Split a `Polygon`/`Triangle` first argument into faces, each an outer
+/// boundary with its hole boundaries. Returns `None` when the argument is
+/// not a rule, i.e. for an ordinary hole-free polygon.
+///
+/// Both rule forms are accepted:
+/// - `outer -> holes`: one face, where `holes` is a single ring `{q…}` or
+///   a list of rings `{{q…}, …}`;
+/// - `{outer1, outer2, …} -> {holes1, holes2, …}`: one face per outer
+///   boundary, paired by position with its holes spec (again a single ring
+///   or a list of rings).
 ///
 /// `points_of` extracts a coordinate list of the caller's dimensionality
 /// (2D for `Graphics`, 3D for `Graphics3D`), so the same shape analysis
@@ -26,7 +33,7 @@ use super::*;
 pub fn split_holes<P, T>(
   arg: &Expr,
   points_of: &P,
-) -> Option<(Vec<T>, Vec<Vec<T>>)>
+) -> Option<Vec<(Vec<T>, Vec<Vec<T>>)>>
 where
   P: Fn(&Expr) -> Option<Vec<T>>,
 {
@@ -37,19 +44,39 @@ where
   else {
     return None;
   };
-  let outer = points_of(pattern)?;
-  // `outer -> {{q…}, …}`: every element of the right side is a hole.
-  // `outer -> {q…}`: the right side is one hole. The two are told apart by
-  // whether the right side parses as a coordinate list itself.
-  let holes = if let Some(single) = points_of(replacement) {
-    vec![single]
-  } else {
-    let Expr::List(items) = replacement.as_ref() else {
-      return None;
-    };
-    items.iter().filter_map(points_of).collect()
+  if let Some(outer) = points_of(pattern) {
+    return Some(vec![(outer, holes_of(replacement, points_of)?)]);
+  }
+  // `{outer…} -> {holes…}`: several faces, each with its own holes.
+  let (Expr::List(outers), Expr::List(hole_specs)) =
+    (pattern.as_ref(), replacement.as_ref())
+  else {
+    return None;
   };
-  Some((outer, holes))
+  if outers.is_empty() || outers.len() != hole_specs.len() {
+    return None;
+  }
+  outers
+    .iter()
+    .zip(hole_specs.iter())
+    .map(|(outer, spec)| Some((points_of(outer)?, holes_of(spec, points_of)?)))
+    .collect()
+}
+
+/// The hole rings of one face: `{q…}` is one hole, `{{q…}, …}` several.
+/// The two are told apart by whether the spec parses as a coordinate list
+/// itself.
+fn holes_of<P, T>(spec: &Expr, points_of: &P) -> Option<Vec<Vec<T>>>
+where
+  P: Fn(&Expr) -> Option<Vec<T>>,
+{
+  if let Some(single) = points_of(spec) {
+    return Some(vec![single]);
+  }
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  Some(items.iter().filter_map(points_of).collect())
 }
 
 /// Signed area of a closed 2D ring (positive when counterclockwise).
@@ -592,6 +619,28 @@ mod tests {
         (a.cos(), a.sin())
       })
       .collect()
+  }
+
+  #[test]
+  fn split_holes_pairs_listed_outers_with_their_holes() {
+    use crate::functions::graphics::expr_to_point_list;
+    let arg = crate::interpret_to_expr(
+      "{{{0, 0}, {4, 0}, {4, 4}}, {{5, 0}, {9, 0}, {9, 4}}} -> \
+       {{{1, 1}, {2, 1}, {2, 2}}, {{{6, 1}, {7, 1}, {7, 2}}, {{8, 1}, {8.5, 1}, {8.5, 2}}}}",
+    )
+    .unwrap();
+    let faces = split_holes(&arg, &expr_to_point_list).unwrap();
+    assert_eq!(faces.len(), 2);
+    assert_eq!(faces[0].0[1], (4.0, 0.0));
+    assert_eq!(faces[0].1.len(), 1);
+    assert_eq!(faces[1].0[0], (5.0, 0.0));
+    assert_eq!(faces[1].1.len(), 2);
+    // Mismatched outer/holes counts are not a valid spec.
+    let bad = crate::interpret_to_expr(
+      "{{{0, 0}, {4, 0}, {4, 4}}} -> {{{1, 1}, {2, 1}, {2, 2}}, {{1, 1}, {2, 1}, {2, 2}}}",
+    )
+    .unwrap();
+    assert!(split_holes(&bad, &expr_to_point_list).is_none());
   }
 
   #[test]
