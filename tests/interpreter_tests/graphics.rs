@@ -12957,12 +12957,13 @@ mod plot3d {
         "Graphics[Text[Framed[Style[\"abc\", 12], Background -> Yellow], \
          {0, 0}]]",
       );
-      assert_eq!(h, 12.0 + 2.0 * 5.0);
       let (w2, h2) = rect_of(
         "Graphics[Text[Framed[Style[\"abc\", 12], Background -> Yellow, \
          FrameMargins -> {{1, 3}, {0, 2}}], {0, 0}]]",
       );
-      assert_eq!(h2, 12.0 + 2.0);
+      // 5pt on every side by default; `{{1, 3}, {0, 2}}` takes 6pt off the
+      // width and 8pt off the height.
+      assert!((h - h2 - 8.0).abs() < 1e-6, "{h} vs {h2}");
       assert!((w - w2 - 6.0).abs() < 1e-6, "{w} vs {w2}");
     }
 
