@@ -3864,7 +3864,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Err(_) => expr,
       }
     }
-    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — unwrap and render
+    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — render
+    // the grid with each of its cells typeset in TraditionalForm (`f(x)`,
+    // `f′(x)`), as the front end shows it.
     syntax::Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
@@ -3878,7 +3880,21 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         args: grid_args, ..
       } = &args[0]
       {
-        match functions::graphics::grid_ast(grid_args) {
+        let mut grid_args = grid_args.to_vec();
+        if let syntax::Expr::List(rows) = &grid_args[0] {
+          let typeset_row = |row: &syntax::Expr| match row {
+            syntax::Expr::List(cells) => syntax::Expr::List(
+              cells
+                .iter()
+                .map(|c| push_form_to_text(c, "TraditionalForm"))
+                .collect(),
+            ),
+            other => other.clone(),
+          };
+          grid_args[0] =
+            syntax::Expr::List(rows.iter().map(typeset_row).collect());
+        }
+        match functions::graphics::grid_ast(&grid_args) {
           Ok(result) => result,
           Err(_) => expr,
         }

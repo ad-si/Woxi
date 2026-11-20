@@ -12610,8 +12610,10 @@ fn poly_divide_single_var(num: &Expr, den: &Expr, var: &str) -> Option<Expr> {
     }
     let q = remainder[rem_idx] / lead_den;
     quotient[i] = q;
+    // A step overflowing `i128` gives up like an inexact division does.
     for j in 0..den_coeffs.len() {
-      remainder[i + j] -= q * den_coeffs[j];
+      remainder[i + j] =
+        remainder[i + j].checked_sub(q.checked_mul(den_coeffs[j])?)?;
     }
   }
 

@@ -13215,3 +13215,48 @@ mod fit_empty_data_and_properties {
     );
   }
 }
+
+/// An input entry that is a sum of rational terms cancelling to zero must
+/// not be taken as a pivot: it made a rank-deficient matrix look regular.
+mod disguised_zero_pivot {
+  use super::*;
+
+  #[test]
+  fn row_reduce_skips_a_zero_in_disguise() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "RowReduce[{{1, a}, {0, (1 + a)/(1 - a)}, {0, a/(1 - a) + a/(a - 1)}}]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 1}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("RowReduce[{{a/(1 - a) + a/(a - 1), 1}, {1, 2}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn null_space_and_rank_see_the_zero() {
+    clear_state();
+    assert_eq!(
+      interpret("NullSpace[{{1, a}, {a/(1 - a) + a/(a - 1), 0}}]").unwrap(),
+      "{{-a, 1}}"
+    );
+    assert_eq!(
+      interpret("MatrixRank[{{1, a}, {a/(1 - a) + a/(a - 1), 0}}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn linear_solve_skips_a_zero_in_disguise() {
+    clear_state();
+    assert_eq!(
+      interpret("LinearSolve[{{a/(1 - a) + a/(a - 1), 2}, {1, 3}}, {2, 1}]")
+        .unwrap(),
+      "{-2, 1}"
+    );
+  }
+}

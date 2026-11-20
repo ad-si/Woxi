@@ -26808,3 +26808,145 @@ fn solve_degenerate_systems() {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
   }
 }
+
+/// Linear systems whose coefficients are rational functions of a parameter.
+mod solve_rational_function_coefficients {
+  use super::*;
+
+  /// The coefficient of `x` cancels to zero, so `x` stays free.
+  #[test]
+  fn singular_system_keeps_its_free_variable() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Solve[{c0 + c1 (a/(1 - a) + a/(a - 1)) == 0, c1 - c2 == 0}, {c0, c1, c2}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{c0 -> 0, c2 -> c1}}");
+  }
+
+  /// The parametric solution of a singular system is found, not just the
+  /// trivial one, and its coefficients come out brought together.
+  #[test]
+  fn parametric_solution_is_found_and_reduced() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[Solve[{c0 + (1 + 1/(1 - a)) c1 == 0, \
+         (a/(1 - a) + 1) c0 + (2 - a)/(1 - a)^2 c1 == 0}, {c0, c1}]]"
+      )
+      .unwrap(),
+      interpret("Quiet[Solve[{c0 + (2 - a)/(1 - a) c1 == 0}, {c0, c1}]]")
+        .unwrap()
+    );
+  }
+
+  #[test]
+  fn regular_system_with_rational_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[{a/(1 - a) x + y == 1, x - y/(a + 1) == 2}, {x, y}]")
+        .unwrap(),
+      "{{x -> (-3 + a + 2*a^2)/(-1 - a + a^2), y -> (1 - 2*a - 3*a^2)/(1 + a - a^2)}}"
+    );
+  }
+}
+
+/// `True` among the equations (what `0 == 0` evaluates to) constrains
+/// nothing; `False` rules out every solution.
+mod solve_with_boolean_equations {
+  use super::*;
+
+  #[test]
+  fn true_entries_are_dropped() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[{x + y == 1, True, x - y == 0}, {x, y}]").unwrap(),
+      "{{x -> 1/2, y -> 1/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x - 1 == 0, True}, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn false_entry_has_no_solution() {
+    clear_state();
+    assert_eq!(interpret("Solve[{x == 1, False}, x]").unwrap(), "{}");
+  }
+}
+
+/// Polynomials whose coefficients (or the arithmetic on them) exceed the
+/// machine-integer range.
+mod large_coefficient_polynomials {
+  use super::*;
+
+  /// The Hensel lift needs a modulus beyond `i128`.
+  #[test]
+  fn factor_needs_a_big_lifting_modulus() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Factor[Expand[(1368 x^3 - 6144 x^2 + 1378 x - 17) \
+         (13608 x^5 - 32958 x^4 + 45061 x^3 - 20426 x^2 + 486 x + 8)]]"
+      )
+      .unwrap(),
+      "(-17 + 1378*x - 6144*x^2 + 1368*x^3)*(8 + 486*x - 20426*x^2 + \
+       45061*x^3 - 32958*x^4 + 13608*x^5)"
+    );
+  }
+
+  /// Coefficients near the `i128` limit overflowed the derivative and the
+  /// Zassenhaus arithmetic (a panic).
+  #[test]
+  fn factor_coefficients_near_the_machine_limit() {
+    clear_state();
+    let poly = "Expand[(9 + 320 x)^3 (-729 - 49464 x + 50000 x^2)^4 \
+                (-243 - 35028 x + 100000 x^2)^2]";
+    let factored = "(9 + 320*x)^3*(-729 - 49464*x + 50000*x^2)^4*\
+                    (-243 - 35028*x + 100000*x^2)^2";
+    assert_eq!(interpret(&format!("Factor[{poly}]")).unwrap(), factored);
+    assert_eq!(
+      interpret(&format!("FactorSquareFree[{poly}]")).unwrap(),
+      factored
+    );
+  }
+
+  /// The machine-integer square-free decomposition gave up and reported
+  /// the whole polynomial as square-free.
+  #[test]
+  fn square_free_list_with_large_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[Expand[(9 + 320 x)^3 (-729 - 49464 x + 50000 x^2)^4]]"
+      )
+      .unwrap(),
+      "{{1, 1}, {9 + 320*x, 3}, {-729 - 49464*x + 50000*x^2, 4}}"
+    );
+  }
+
+  /// A common factor whose coefficients exceed `i128` is still cancelled.
+  #[test]
+  fn together_and_cancel_divide_out_a_large_gcd() {
+    clear_state();
+    let frac =
+      "Expand[(3 x^2 + 7 x - 5)^9 (x - 1)]/Expand[(3 x^2 + 7 x - 5)^8 (x + 2)]";
+    let reduced = "(5 - 12*x + 4*x^2 + 3*x^3)/(2 + x)";
+    assert_eq!(interpret(&format!("Together[{frac}]")).unwrap(), reduced);
+    assert_eq!(interpret(&format!("Cancel[{frac}]")).unwrap(), reduced);
+  }
+
+  #[test]
+  fn polynomial_gcd_of_high_degree_polynomials() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PolynomialGCD[Expand[(3 x^2 + 7 x - 5)^9 (x - 1)], \
+         Expand[(3 x^2 + 7 x - 5)^8 (x + 2)]] === Expand[(3 x^2 + 7 x - 5)^8]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
