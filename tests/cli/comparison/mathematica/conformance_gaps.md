@@ -5732,14 +5732,32 @@ pinned size, an explicit `PlotRange` or `Show` — is unverified. A
 `ViewAngle` turn the sphere framing off. The surface plots
 (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
-### `PointSize` in `Graphics3D` draws larger than Wolfram
+### Base length of relative `Thickness` / `PointSize` in `Graphics3D`
 
-Woxi draws a `Graphics3D` point with diameter `PointSize` × the picture's
-width, as in 2D. A Demonstration's snapshot of `PointSize[1/60]` atoms at
-`ImageSize -> {595, 375}` shows dots about 6–6.5 px wide, where Woxi draws
-9.9 px. That fits a base of either the shorter image side (6.25 px) or the
-default 360 px width (6 px). One snapshot can't tell these apart, so the
-2D rule stays.
+Woxi measures a relative `Thickness[t]` and `PointSize[s]` in a
+`Graphics3D` against the picture's width, or against its shorter side when
+`ImageSize -> {w, h}` pins a picture less tall than wide. Two Demonstration
+snapshots motivate the shorter side, neither checked with wolframscript:
+`PointSize[1/60]` atoms at `ImageSize -> {595, 375}` are about 6–6.5 px wide
+(shorter side: 6.25 px; width: 9.9 px), and `Thickness[0.012]` lines at
+`ImageSize -> {580, 370}` are about 4.5 px wide (shorter side: 4.44 px;
+width: 6.96 px). Both also fit a fixed base of the default 360 px width
+(6 px and 4.32 px), which the snapshots can't rule out.
+
+### `SphericalRegion` framing and the default `Tube` radius
+
+A Demonstration's snapshot (`Graphics3D` at `ImageSize -> {580, 370}`,
+`ViewPoint -> {0, -1, 1}`, `SphericalRegion -> True`, a scene about
+9.3 × 28.9 × 9.1 units) is drawn about 1.15× as large as Woxi draws it, with
+slightly weaker perspective. Framing by the bare sphere diameter `2 r` of
+the unpadded box (no `r · d / √(d² − r²)` widening for the view cone)
+would match that snapshot, but the widened span matches the other
+snapshots listed under "Sphere framing of an unboxed box at a fixed
+`ImageSize`" better, so the framing is
+unchanged. The same snapshot's `Tube[BSplineCurve[…]]` with no radius
+(a curve 24 units long) is drawn with a radius of about 0.11, where Woxi
+uses 1/100 of the curve's extent (0.24); the rule behind Wolfram's default
+radius is unknown.
 
 ### `Texture` and `VertexTextureCoordinates`
 

@@ -10671,9 +10671,12 @@ thread_local! {
     const { std::cell::Cell::new(DEFAULT_SIZE as f64) };
 }
 
-/// The width a relative `Thickness[t]` is measured against: that of the
-/// picture being drawn (`ImageSize -> {400, 400}` makes `Thickness[0.01]`
-/// 4 pixels wide).
+/// The length a relative `Thickness[t]` is measured against: the width of
+/// the picture being drawn (`ImageSize -> {400, 400}` makes
+/// `Thickness[0.01]` 4 pixels wide), or its shorter side when
+/// `ImageSize -> {w, h}` pins a picture that is less tall than wide (a
+/// Demonstration snapshot at `ImageSize -> {580, 370}` draws
+/// `Thickness[0.012]` lines 4.4 pixels wide, not 7).
 fn scene_image_width() -> f64 {
   SCENE_IMAGE_WIDTH.get()
 }
@@ -12116,7 +12119,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prims = Vec::new();
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
-  SCENE_IMAGE_WIDTH.set(svg_width as f64);
+  SCENE_IMAGE_WIDTH.set(if explicit_height && svg_height > 0 {
+    svg_width.min(svg_height) as f64
+  } else {
+    svg_width as f64
+  });
   SCENE_ARROW_EXTENT.set(None);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
@@ -13502,8 +13509,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
+      // A relative `PointSize` is measured against the same length as a
+      // relative `Thickness` (see `scene_image_width`).
       let radius = style.point_size.map_or(3.0, |ps| {
-        crate::functions::graphics::point_radius(ps, svg_width as f64)
+        crate::functions::graphics::point_radius(ps, scene_image_width())
       });
       for &pt in points {
         sorted_edges.push(SceneEdge {

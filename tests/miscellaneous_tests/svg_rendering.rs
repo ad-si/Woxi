@@ -3360,6 +3360,36 @@ mod tests {
     }
 
     #[test]
+    fn relative_thickness_follows_the_shorter_side_of_a_pinned_3d_picture() {
+      // In a picture pinned less tall than wide, `Thickness[t]` is a
+      // fraction of the height: `Thickness[0.02]` at `ImageSize -> {500,
+      // 300}` is 6 pixels wide, not 10.
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.02], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> {500, 300}]",
+      );
+      assert!(svg.contains("stroke-width=\"6.0\""), "{svg}");
+      // A picture taller than wide still measures against its width.
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.02], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> {300, 500}]",
+      );
+      assert!(svg.contains("stroke-width=\"6.0\""), "{svg}");
+    }
+
+    #[test]
+    fn relative_point_size_follows_the_shorter_side_of_a_pinned_3d_picture() {
+      // `PointSize[s]` in 3D is measured against the same length as
+      // `Thickness[t]`: at `ImageSize -> {500, 300}` a `PointSize[0.04]`
+      // dot is 12 pixels across (radius 6), not 20.
+      let svg = svg_of(
+        "Graphics3D[{PointSize[0.04], Point[{0, 0, 0}]}, \
+         ImageSize -> {500, 300}]",
+      );
+      assert!(svg.contains("r=\"6.00\""), "{svg}");
+    }
+
+    #[test]
     fn spherical_region_holds_the_scale_across_views() {
       // The point of the option: an animated or rotated scene keeps one
       // scale, so the picture no longer breathes as the contents move.
