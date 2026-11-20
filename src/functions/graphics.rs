@@ -21497,7 +21497,22 @@ pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
-  Some(layout_to_svg(&layout_box(&boxes, 14.0), "currentColor"))
+  // A label is inline text of the graphic, which Wolfram sets one script
+  // level down: a fraction in it (`W[u, r/B]`) stacks its numerator and
+  // denominator at script size rather than at the size of the text beside.
+  Some(layout_to_svg(
+    &layout_box_at_script_level_one(&boxes, 14.0),
+    "currentColor",
+  ))
+}
+
+/// `layout_box` with `expr` already one script level deep, its level-0
+/// text size being `font_size` (see [`BOX_SCRIPT_LEVEL`]).
+fn layout_box_at_script_level_one(expr: &Expr, font_size: f64) -> BoxLayout {
+  if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+    BOX_ROOT_FONT_SIZE.with(|r| r.set(font_size));
+  }
+  layout_box_nested(expr, font_size)
 }
 
 pub(crate) fn legend_picture(label: &str) -> Option<(&str, f64, f64)> {
@@ -21556,7 +21571,7 @@ pub fn axes_label_entry(e: &Expr) -> Option<String> {
 /// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
 /// italics — `x(t)` with an italic x and t — the way Wolfram draws it.
 /// `None` for any other label (see [`is_traditional_math_label`]).
-fn traditional_math_axis_label(e: &Expr) -> Option<String> {
+pub(crate) fn traditional_math_axis_label(e: &Expr) -> Option<String> {
   if !is_traditional_math_label(e) {
     return None;
   }
