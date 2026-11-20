@@ -27715,7 +27715,14 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Mixed case: plot sources + Graphics primitives.
   // Convert plot source series to Line/Point primitives so they can be
   // merged with the other Graphics primitives via graphics_ast.
+  // The leading plot's legend, drawn onto the merged picture afterwards:
+  // the result keeps the first graphic's options, `PlotLegends` included,
+  // so `Show[plot, Graphics[Point[…]]]` still shows the plot's legend.
+  let mut legend_source: Option<crate::syntax::PlotSource> = None;
   if !plot_sources.is_empty() {
+    if first_graphic_is_plot == Some(true) && !is_3d {
+      legend_source = Some(plot_sources[0].clone());
+    }
     // A log axis of the leading plot puts the whole picture in `Log` space:
     // its curves are drawn at `Log` of their values, the other graphics'
     // coordinates are read in that space, and the axis keeps its decade
@@ -28012,11 +28019,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
 
-  let primitives_result = if is_3d {
+  let mut primitives_result = if is_3d {
     crate::functions::plot3d::graphics3d_ast(&graphics_args)
   } else {
     graphics_ast(&graphics_args)
   }?;
+  if let Some(source) = &legend_source
+    && let Expr::Graphics { svg, .. } = &mut primitives_result
+    && let Some(legended) =
+      crate::functions::plot::inject_plot_source_legend(svg, source)
+  {
+    *svg = legended;
+    crate::capture_graphics(svg);
+  }
 
   if rendered_graphics.is_empty() {
     return Ok(primitives_result);

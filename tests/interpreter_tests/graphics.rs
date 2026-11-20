@@ -17169,6 +17169,36 @@ mod plot3d {
     }
 
     #[test]
+    fn show_of_a_plot_with_graphics_keeps_its_legend() {
+      // The merged picture keeps the first graphic's options, `PlotLegends`
+      // included, also when the other layers are plain graphics.
+      for plot in [
+        r#"Plot[{x, 2 x}, {x, 0, 1}, PlotLegends -> {"first", "second"}]"#,
+        r#"ListLinePlot[{{1, 2, 3}, {3, 2, 1}},
+          PlotLegends -> Placed[LineLegend[{"first", "second"}], {Right, Top}]]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "Show[{plot}, Graphics[{{Red, PointSize[0.05], Point[{{1, 1}}]}}]]"
+        ));
+        assert!(svg.contains(">first</text"), "{plot}: {svg}");
+        assert!(svg.contains(">second</text"), "{plot}: {svg}");
+      }
+    }
+
+    #[test]
+    fn plot_legends_show_the_current_value_of_a_dynamic_label() {
+      // A `Dynamic[…]` in a legend label shows its value, as in any other
+      // displayed text.
+      let svg = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 1}}, PlotLegends ->
+          {Row[{"a = ", Dynamic[1 + 1]}], Style[Dynamic[3 + 4], 11]}]"#,
+      );
+      assert!(svg.contains(">a = 2</text"), "{svg}");
+      assert!(svg.contains(">7</tspan>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+
+    #[test]
     fn plot_legends_line_legend_names_the_series() {
       // `LineLegend[{labels}, opts]` labels the curves like a plain list.
       let plain = export_svg(

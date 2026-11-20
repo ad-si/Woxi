@@ -5596,6 +5596,15 @@ it crosses the range's edge. Woxi starts the leader at the range's right
 edge. Seen in a Demonstration snapshot; WL's leader optimizer has not been
 measured.
 
+### A legend placed at a named corner is aligned to the whole image
+
+`PlotLegends -> Placed[legend, {Right, Top}]` (and the other named
+`{horizontal, vertical}` alignments) puts the legend in that corner of the
+whole picture, where WL aligns it to the plot region inside the frame. A
+framed plot with a `PlotLabel` therefore has its legend overlapping the
+label in Woxi. The same holds for a plot's legend kept by
+`Show[plot, Graphics[…]]`.
+
 ### An `AxesLabel` carrying a reciprocal power
 
 A label's `Power[x, -1]` renders as `x⁻¹` in SVG markup where Wolfram stacks it
