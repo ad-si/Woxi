@@ -17479,6 +17479,15 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          // A single number `s` is the cube `[-s, s]` on every axis.
+          if let Some(s) = try_eval_to_f64(&evaluate_expr_to_expr(replacement)?)
+            && s > 0.0
+          {
+            z_clip = Some((-s, s));
+            x_clip = Some((-s, s));
+            y_clip = Some((-s, s));
+            continue;
+          }
           // `{zmin, zmax}` or the full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}`
           let z_items = match replacement.as_ref() {
             Expr::List(items) if items.len() == 2 => Some(items.clone()),
@@ -17691,8 +17700,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // `RevolutionPlot3D` draws a single surface, so `PlotStyle` is one style
-  // rather than a per-surface list.
+  // `PlotStyle` is one style shared by every surface; without one, each
+  // surface takes the next color of the default theme.
   let render_style: Option<StyleState3D> = plot_style.as_ref().map(|ps| {
     let mut style = StyleState3D::default();
     apply_3d_directive(ps, &mut style);
@@ -17750,7 +17759,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
-  for grid in &grids {
+  for (surface, grid) in grids.iter().enumerate() {
     for i in 0..n_t {
       for j in 0..n_theta {
         let p00 = grid[i][j];
@@ -17767,7 +17776,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp00, pp10, pp01]);
           let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(0),
+            SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
             render_style.as_ref(),
             normal,
@@ -17807,7 +17816,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp11, pp01, pp10]);
           let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(0),
+            SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
             render_style.as_ref(),
             normal,
@@ -17890,7 +17899,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // rendering below works in normalized coordinates and is unaffected.
   let surfaces: Vec<Expr> = grids
     .iter()
-    .map(|grid| {
+    .enumerate()
+    .map(|(surface, grid)| {
       let mut index_of: Vec<Vec<Option<usize>>> =
         vec![vec![None; n_theta + 1]; n_t + 1];
       let mut point_exprs: Vec<Expr> = Vec::new();
@@ -17938,7 +17948,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // with, so `Show[RevolutionPlot3D[…], g]` keeps the surface's look.
       if !color_fn.is_set() {
         content.extend(surface_style_directives(
-          0,
+          surface,
           render_style.as_ref(),
           false,
           &scene,

@@ -8437,6 +8437,56 @@ mod plot3d {
         assert!(two.len() > bare.len());
       }
 
+      /// Each surface of a list of profiles takes the next color of the
+      /// default theme, so the lower sheet is blue rather than orange.
+      #[test]
+      fn surfaces_cycle_theme_colors() {
+        let colors = |code: &str| {
+          interpret(&format!(
+            "Union[Cases[First[{code}], RGBColor[__], Infinity]]"
+          ))
+          .unwrap()
+        };
+        let one = colors("RevolutionPlot3D[{{t}}, {t, 0, 1}]");
+        let two = colors("RevolutionPlot3D[{{t}, {-t}}, {t, 0, 1}]");
+        assert_ne!(one, two);
+        assert_eq!(
+          interpret(
+            "Length[Union[Cases[First /@ (Cases[#, _RGBColor, Infinity] & /@ \
+             First[RevolutionPlot3D[{{t}, {-t}, {2 t}}, {t, 0, 1}]]), \
+             _RGBColor]]]"
+          )
+          .unwrap(),
+          "3"
+        );
+      }
+
+      /// `PlotRange -> s` is the cube `[-s, s]` on all three axes.
+      #[test]
+      fn scalar_plot_range_is_a_cube() {
+        assert_eq!(
+          interpret(
+            "PlotRange /. Options[RevolutionPlot3D[{{Log[t + 1]}, \
+             {-Log[t + 1]}}, {t, 0, 5}, PlotRange -> 20]]"
+          )
+          .unwrap(),
+          "{{-20., 20.}, {-20., 20.}, {-20., 20.}}"
+        );
+        // The horizontal axes are cut back to the cube as well.
+        assert_eq!(
+          interpret(
+            "PlotRange /. Options[RevolutionPlot3D[t, {t, 0, 5}, \
+             PlotRange -> 2]]"
+          )
+          .unwrap(),
+          "{{-2., 2.}, {-2., 2.}, {-2., 2.}}"
+        );
+        let svg = export_svg(
+          "RevolutionPlot3D[Log[t + 1], {t, 0, 5}, PlotRange -> 20]",
+        );
+        assert!(svg.contains(">20<") && svg.contains(">-20<"));
+      }
+
       #[test]
       fn scalar_function() {
         // Revolve (t, t^4 - t^2) → r=t, z=t^4-t^2
