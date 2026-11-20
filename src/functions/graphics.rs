@@ -13035,6 +13035,25 @@ pub(crate) fn tspan_line(content: &str) -> &str {
   }
 }
 
+/// One line of a multi-line `<text>` whose `dominant-baseline` is
+/// `baseline`, placed by the `x`/`dy` attributes in `position`.
+///
+/// The line repeats the baseline of its `<text>`: resvg (which draws the
+/// pictures in Woxi Studio) resolves `dominant-baseline` only against the
+/// direct parent, so a styled run nested inside the line (a colored
+/// `Style[…]`, say) would otherwise fall back to the alphabetic baseline and
+/// sit half a line above its neighbors.
+pub(crate) fn stacked_line_tspan(
+  position: &str,
+  baseline: &str,
+  line: &str,
+) -> String {
+  format!(
+    "<tspan {position} dominant-baseline=\"{baseline}\">{}</tspan>",
+    tspan_line(line)
+  )
+}
+
 pub(crate) fn svg_escape(s: &str) -> String {
   // `\[ExponentialE]` (U+F74D) would become `ℯ`, which the embedded fonts
   // lack; it is drawn as the double-struck `ⅇ` Wolfram shows.
@@ -14610,15 +14629,19 @@ fn render_primitive(
           if i == 0 {
             // The block is centered on the anchor, so its first line sits
             // half of the remaining height above it.
-            out.push_str(&format!(
-              "<tspan x=\"{sx:.2}\" dy=\"{}\">{}</tspan>",
-              -(lines.len() as f64 - 1.0) * fs / 2.0,
-              tspan_line(&markup)
+            out.push_str(&stacked_line_tspan(
+              &format!(
+                "x=\"{sx:.2}\" dy=\"{}\"",
+                -(lines.len() as f64 - 1.0) * fs / 2.0
+              ),
+              "central",
+              &markup,
             ));
           } else {
-            out.push_str(&format!(
-              "<tspan x=\"{sx:.2}\" dy=\"{fs}\">{}</tspan>",
-              tspan_line(&markup)
+            out.push_str(&stacked_line_tspan(
+              &format!("x=\"{sx:.2}\" dy=\"{fs}\""),
+              "central",
+              &markup,
             ));
           }
         }
@@ -29421,9 +29444,10 @@ fn grid_svg_styled_internal_reporting(
           let mut body = String::new();
           for (k, line) in lines.iter().enumerate() {
             let dy = if k == 0 { 0.0 } else { lh };
-            let line = tspan_line(line);
-            body.push_str(&format!(
-              "<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+            body.push_str(&stacked_line_tspan(
+              &format!("x=\"{cx:.1}\" dy=\"{dy:.1}\""),
+              "central",
+              line,
             ));
           }
           (top, body)
@@ -35700,8 +35724,10 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
             if i == 0 {
               svg.push_str(line);
             } else {
-              svg.push_str(&format!(
-                "<tspan x=\"{cx:.1}\" dy=\"{size}\">{line}</tspan>"
+              svg.push_str(&stacked_line_tspan(
+                &format!("x=\"{cx:.1}\" dy=\"{size}\""),
+                "central",
+                line,
               ));
             }
           }
