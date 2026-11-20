@@ -15944,6 +15944,22 @@ pub(crate) fn bare_tick_label(e: &Expr, pos: f64) -> String {
       _ => false,
     }
   }
+  fn is_literal_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => true,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => is_literal_real(operand),
+      _ => false,
+    }
+  }
+  // A machine or arbitrary-precision real is typeset as the number it is,
+  // so a whole-valued real keeps its trailing point: `Ticks -> {{10.}}`
+  // reads "10.", not the "10" an integer position gets.
+  if is_literal_real(e) {
+    return crate::functions::graphics::expr_to_svg_markup(e);
+  }
   if is_literal_number(e) {
     return crate::functions::graphics::svg_escape(&format_tick(pos));
   }
