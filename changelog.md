@@ -55,6 +55,10 @@
 - The automatic layout of `Graph` and `GraphPlot` draws a large tree (more
     than 32 vertices) with a spring-electrical embedding of unit-length edges,
     as Wolfram does, instead of squeezing it into layers of overlapping disks.
+- `Text[Pane[Style[str, dirs…], w], pos]` honors the `Style` inside the
+    `Pane`: its font size and `TextAlignment` apply, the text wraps at `w`
+    points by the glyph widths of that size, and left- or right-aligned lines
+    hang from the pane's edge.
 
 # 2026-11-08 - 0.4.0
 
