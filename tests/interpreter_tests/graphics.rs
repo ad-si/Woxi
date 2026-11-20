@@ -50525,6 +50525,72 @@ mod tube_and_cap_form {
     );
   }
 
+  /// A degree-1 `BSplineCurve` is its control polygon, corners included:
+  /// sampling it at evenly spaced parameters used to cut every corner off.
+  #[test]
+  fn degree_one_bspline_curve_is_its_control_polygon() {
+    clear_state();
+    let pts = "{{0, 0}, {2, 0}, {2, 1}, {0, 3}}";
+    assert_eq!(
+      export_svg(&format!("Graphics[BSplineCurve[{pts}, SplineDegree -> 1]]")),
+      export_svg(&format!("Graphics[Line[{pts}]]"))
+    );
+    assert_eq!(
+      export_svg(&format!(
+        "Graphics[BSplineCurve[{pts}, SplineDegree -> 1, \
+         SplineClosed -> True]]"
+      )),
+      export_svg(&format!("Graphics[Line[Append[{pts}, First[{pts}]]]]"))
+    );
+  }
+
+  /// A tube along a spline is swept as one mitred tube: the sharp corners
+  /// of a `SplineDegree -> 1` curve get no rounded elbows, so the default
+  /// caps add only the two end hemispheres, as on a straight tube.
+  /// (Translucent, so no facet is culled and every one is counted.)
+  #[test]
+  fn spline_tube_corners_are_mitred_not_rounded() {
+    clear_state();
+    let cap_polygons = |pts: &str| {
+      let count = |cap: &str| {
+        export_svg(&format!(
+          "Graphics3D[{{Opacity[0.5], {cap} Tube[BSplineCurve[{pts}, \
+           SplineDegree -> 1], 0.1]}}]"
+        ))
+        .matches("<polygon")
+        .count()
+      };
+      count("") as i64 - count("CapForm[None],") as i64
+    };
+    let straight = cap_polygons("{{0, 0, 0}, {3, 0, 0}}");
+    assert!(straight > 0, "a straight tube must be capped");
+    // Rounded elbows at the two corners would add two more pairs of
+    // hemispheres, tripling the count; only a few degenerate facets differ.
+    let bent = cap_polygons("{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 1}}");
+    assert!(
+      (bent - straight).abs() * 10 < straight,
+      "bent: {bent}, straight: {straight}"
+    );
+  }
+
+  /// A closed spline has no ends, so its tube gets no caps at all, not
+  /// even at the seam where the curve returns to its start.
+  #[test]
+  fn closed_spline_tube_is_not_capped() {
+    clear_state();
+    for degree in [1, 3] {
+      let tube = format!(
+        "Tube[BSplineCurve[{{{{0, 0, 0}}, {{2, 0, 0}}, {{2, 2, 1}}, \
+         {{0, 2, 0}}}}, SplineDegree -> {degree}, SplineClosed -> True], 0.2]"
+      );
+      assert_eq!(
+        export_svg(&format!("Graphics3D[{{{tube}}}]")),
+        export_svg(&format!("Graphics3D[{{CapForm[None], {tube}}}]")),
+        "degree {degree}"
+      );
+    }
+  }
+
   /// `Cylinder`/`Cone` are solid regions: flat disks close their ends.
   /// Regression: `tessellate_cylinder` never emitted end-cap triangles at
   /// all (`tessellate_cone` never emitted a base cap), so every cylinder and

@@ -9563,8 +9563,19 @@ pub(crate) fn sample_bspline_curve(
     .collect();
   let weights: Option<Vec<f64>> =
     weights.map(|ws| (0..wrap(ws.len())).map(|i| ws[i % ws.len()]).collect());
+  let knot_list = spline_knots_list(opts);
+  // A degree-1 spline on uniform (clamped, unclamped or periodic) knots is
+  // exactly its control polygon, weights or not. Its vertices are the
+  // corners, which evenly spaced parameter samples would cut off.
+  if degree.min(points.len() - 1) == 1
+    && knot_list
+      .as_ref()
+      .is_none_or(|knots| closed || knots.len() != points.len() + 2)
+  {
+    return points.into_iter().cloned().collect();
+  }
   let clamped = !closed && !spline_knots_unclamped(opts);
-  let basis = match spline_knots_list(opts) {
+  let basis = match knot_list {
     Some(knots) if !closed && knots.len() == points.len() + degree + 1 => {
       bspline_sample_weights_with_knots(points.len(), degree, samples, &knots)
     }

@@ -9563,6 +9563,7 @@ fn collect_3d_primitives(
             other => other.clone(),
           };
           let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+          let from_spline = spline.is_some();
           let curves: Vec<Vec<Point3D>> = match spline {
             Some(pts) => vec![pts],
             None => match parse_point3d_list(&curve) {
@@ -9624,10 +9625,12 @@ fn collect_3d_primitives(
               vec![extent / 100.0; pts.len()]
             };
             let budget = tube_subdivision_budget(SCENE_TUBE_COUNT.get());
-            // At a sharp corner Wolfram ends one rounded run and starts the
-            // next, so the two overlap in a rounded elbow; a gently bending
-            // (sampled) curve stays one mitred tube.
-            let runs = if style.capped {
+            // At a sharp corner of a polyline Wolfram ends one rounded run
+            // and starts the next, so the two overlap in a rounded elbow; a
+            // gently bending (sampled) curve stays one mitred tube. A spline
+            // is always swept as one tube, so even the sharp corners of a
+            // `SplineDegree -> 1` `BSplineCurve` are mitred, not rounded.
+            let runs = if style.capped && !from_spline {
               tube_runs(&pts)
             } else {
               vec![(0, pts.len().saturating_sub(1))]
@@ -11615,6 +11618,9 @@ fn tessellate_cylinder(
 /// separately capped runs.
 const TUBE_CORNER_COS: f64 = 0.85;
 
+/// The most a tube's ring is stretched in the mitre plane of a sharp bend.
+const TUBE_MITER_LIMIT: f64 = 4.0;
+
 /// The index ranges (inclusive) of a tube's polyline between its sharp
 /// corners; consecutive runs share the corner point.
 fn tube_runs(pts: &[Point3D]) -> Vec<(usize, usize)> {
@@ -11685,11 +11691,26 @@ fn tessellate_tube(
     return vec![];
   }
 
+  // A polyline that returns to its first point (a closed spline) has no
+  // ends: its seam is joined like any other vertex and gets no caps.
+  let length: f64 = (1..keep.len())
+    .map(|i| norm(sub(&points[keep[i]], &points[keep[i - 1]])))
+    .sum();
+  let closed = dirs.len() >= 3
+    && norm(sub(&points[keep[0]], &points[keep[keep.len() - 1]]))
+      <= 1e-6 * length;
+
   // Vertex tangents: the segment direction at the ends, the normalized sum
-  // of the two adjacent directions in between.
+  // of the two adjacent directions in between (and at a closed seam).
+  let seam_tangent = {
+    let (a, b) = (dirs[dirs.len() - 1], dirs[0]);
+    unit((a.0 + b.0, a.1 + b.1, a.2 + b.2)).unwrap_or(b)
+  };
   let tangents: Vec<(f64, f64, f64)> = (0..keep.len())
     .map(|i| {
-      if i == 0 {
+      if closed && (i == 0 || i == keep.len() - 1) {
+        seam_tangent
+      } else if i == 0 {
         dirs[0]
       } else if i == keep.len() - 1 {
         dirs[dirs.len() - 1]
@@ -11708,15 +11729,63 @@ fn tessellate_tube(
     (1.0, 0.0, 0.0)
   };
   let mut normal = unit(cross(t0, seed)).unwrap_or((1.0, 0.0, 0.0));
+  // Carry the normal from one vertex tangent to the next by the rotation
+  // that turns the one tangent into the other (a rotation-minimizing
+  // frame). Merely re-projecting it would collapse at a right-angle bend
+  // within the normal's own plane, where it lines up with the new tangent.
+  let transport =
+    |normal: (f64, f64, f64), from: (f64, f64, f64), to: (f64, f64, f64)| {
+      let axis = cross(from, to);
+      let sin = norm(axis);
+      let cos = from.0 * to.0 + from.1 * to.1 + from.2 * to.2;
+      let rotated = match unit(axis) {
+        Some(k) if sin > 1e-12 => {
+          let kv = cross(k, normal);
+          let kd = k.0 * normal.0 + k.1 * normal.1 + k.2 * normal.2;
+          (
+            normal.0 * cos + kv.0 * sin + k.0 * kd * (1.0 - cos),
+            normal.1 * cos + kv.1 * sin + k.1 * kd * (1.0 - cos),
+            normal.2 * cos + kv.2 * sin + k.2 * kd * (1.0 - cos),
+          )
+        }
+        _ => normal,
+      };
+      let dot = rotated.0 * to.0 + rotated.1 * to.1 + rotated.2 * to.2;
+      let projected = (
+        rotated.0 - dot * to.0,
+        rotated.1 - dot * to.1,
+        rotated.2 - dot * to.2,
+      );
+      unit(projected).unwrap_or(normal)
+    };
+
+  // Around a closed curve the transported normal comes back turned by some
+  // angle; spreading that turn over the vertices lets the last ring meet
+  // the first one without a twisted seam.
+  let twist = if closed {
+    let last = tangents
+      .windows(2)
+      .fold(normal, |n, pair| transport(n, pair[0], pair[1]));
+    let first = normal;
+    let c = cross(first, last);
+    let sin = c.0 * t0.0 + c.1 * t0.1 + c.2 * t0.2;
+    let cos = first.0 * last.0 + first.1 * last.1 + first.2 * last.2;
+    sin.atan2(cos)
+  } else {
+    0.0
+  };
+  let phase_at = |i: f64| -twist * i / (keep.len() - 1) as f64;
 
   let ring_at = |center: Point3D,
                  radius: f64,
                  normal: (f64, f64, f64),
-                 binormal: (f64, f64, f64)|
+                 binormal: (f64, f64, f64),
+                 phase: f64|
    -> Vec<Point3D> {
     (0..TUBE_SIDES)
       .map(|k| {
-        let a = 2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64;
+        let a =
+          2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64 + phase;
         let (c, s) = (a.cos() * radius, a.sin() * radius);
         Point3D {
           x: center.x + c * normal.0 + s * binormal.0,
@@ -11737,24 +11806,53 @@ fn tessellate_tube(
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
     // Re-project the carried normal into this vertex's normal plane.
-    let dot = normal.0 * t.0 + normal.1 * t.1 + normal.2 * t.2;
-    let projected = (
-      normal.0 - dot * t.0,
-      normal.1 - dot * t.1,
-      normal.2 - dot * t.2,
-    );
-    normal = unit(projected).unwrap_or(normal);
+    if i > 0 {
+      normal = transport(normal, tangents[i - 1], t);
+    }
     let binormal = cross(t, normal);
     let r = radii.get(idx).copied().unwrap_or(0.0);
-    // A bend shortens the ring's projection onto the segments; widening it
-    // by 1/cos(half-angle) keeps the tube's radius constant along the curve.
-    let widen = if i == 0 || i == keep.len() - 1 {
-      1.0
+    // At a bend the ring lies in the mitre plane, which cuts the tube
+    // obliquely: stretching the ring by 1/cos(half-angle) along the bend
+    // (and only along it) keeps the tube's radius constant up to the
+    // corner. Like a stroke's miter limit, the stretch is bounded so that
+    // a curve doubling back does not flare out into a wide fin.
+    let incoming = if i > 0 {
+      Some(dirs[i - 1])
+    } else if closed {
+      Some(dirs[dirs.len() - 1])
     } else {
-      let d = dirs[i - 1].0 * t.0 + dirs[i - 1].1 * t.1 + dirs[i - 1].2 * t.2;
-      if d.abs() < 1e-6 { 1.0 } else { 1.0 / d }
+      None
     };
-    rings.push(ring_at(points[idx], r * widen, normal, binormal));
+    let outgoing = if i < dirs.len() {
+      Some(dirs[i])
+    } else if closed {
+      Some(dirs[0])
+    } else {
+      None
+    };
+    let mut ring =
+      ring_at(points[idx], r, normal, binormal, phase_at(i as f64));
+    if let (Some(prev), Some(next)) = (incoming, outgoing)
+      && let Some(bend) =
+        unit((next.0 - prev.0, next.1 - prev.1, next.2 - prev.2))
+    {
+      let d = prev.0 * t.0 + prev.1 * t.1 + prev.2 * t.2;
+      let stretch = if d > 1.0 / TUBE_MITER_LIMIT {
+        1.0 / d
+      } else {
+        TUBE_MITER_LIMIT
+      };
+      let c = points[idx];
+      for q in &mut ring {
+        let along =
+          (q.x - c.x) * bend.0 + (q.y - c.y) * bend.1 + (q.z - c.z) * bend.2;
+        let extra = along * (stretch - 1.0);
+        q.x += extra * bend.0;
+        q.y += extra * bend.1;
+        q.z += extra * bend.2;
+      }
+    }
+    rings.push(ring);
 
     // Subdivide the straight run to the next vertex so no single
     // tessellated face spans an outsized fraction of the tube's length
@@ -11779,13 +11877,14 @@ fn tessellate_tube(
           z: points[idx].z + (points[idx_next].z - points[idx].z) * frac,
         };
         let rr = r + (r_next - r) * frac;
-        rings.push(ring_at(center, rr, normal, binormal));
+        let phase = phase_at(i as f64 + frac);
+        rings.push(ring_at(center, rr, normal, binormal, phase));
       }
     }
   }
 
   // Wolfram rounds a capped tube's ends: a hemisphere closes each one.
-  if capped {
+  if capped && !closed {
     const CAP_RINGS: usize = 6;
     let cap = |ring: &[Point3D], center: Point3D, out: (f64, f64, f64)| {
       (1..=CAP_RINGS)
