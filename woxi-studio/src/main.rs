@@ -425,6 +425,7 @@ enum Message {
   /// The cursor moved over a Manipulate picture holding a `ClickPane`
   /// (cell_idx, x, y in the picture's pixels).
   ManipulatePointerMoved(usize, f32, f32),
+  ManipulatePointerLeft(usize),
   /// The picture was pressed: run the `ClickPane` handler on the last
   /// pointer position.
   ManipulatePaneClicked(usize),
@@ -2189,6 +2190,16 @@ impl WoxiStudio {
           .and_then(|e| e.manipulate_state.as_mut())
         {
           state.mouse_moved(x, y);
+        }
+        Task::none()
+      }
+      Message::ManipulatePointerLeft(cell_idx) => {
+        if let Some(state) = self
+          .cell_editors
+          .get_mut(cell_idx)
+          .and_then(|e| e.manipulate_state.as_mut())
+        {
+          state.mouse_left();
         }
         Task::none()
       }
@@ -5481,6 +5492,7 @@ fn render_manipulate_widget<'a>(
       } else {
         mouse_area(picture)
           .on_move(move |p| Message::ManipulatePointerMoved(cell_idx, p.x, p.y))
+          .on_exit(Message::ManipulatePointerLeft(cell_idx))
           .on_press(Message::ManipulatePaneClicked(cell_idx))
           .on_release(Message::ManipulateMouseReleased(cell_idx))
           .into()

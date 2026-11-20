@@ -11553,14 +11553,7 @@ fn format_tick_value(v: f64) -> String {
   if (v - v.round()).abs() < 1e-10 {
     return format!("{}", v.round() as i64);
   }
-  let mut s = format!("{v:.6}");
-  while s.contains('.') && s.ends_with('0') {
-    s.pop();
-  }
-  if s.ends_with('.') {
-    s.pop();
-  }
-  s
+  crate::functions::plot::format_tick(v)
 }
 
 /// The spacing of a tick sequence, or `None` when there are too few ticks

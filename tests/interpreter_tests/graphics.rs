@@ -4300,6 +4300,22 @@ mod graphics {
       assert!(!svg.contains(">yout</text>"), "{svg}");
     }
 
+    /// Explicit ticks at reals that are no short decimals are labeled as
+    /// the Wolfram Language displays those reals: 6 significant digits,
+    /// not 6 decimal places.
+    #[test]
+    fn explicit_real_ticks_show_six_significant_digits() {
+      let svg = export_svg(
+        "Graphics[Point[{0, 0}], Axes -> True, \
+         PlotRange -> {{-1, 1}, {-20, 20}}, \
+         Ticks -> {{-0.05839482108702637, 0.05839482108702637}, \
+         {12.3456789}}]",
+      );
+      assert!(svg.contains(">0.0583948</text>"), "{svg}");
+      assert!(svg.contains(">12.3457</text>"), "{svg}");
+      assert!(!svg.contains("0.058395<"), "{svg}");
+    }
+
     /// A wide tick label centered on the right end of the x axis keeps its
     /// whole width inside the image instead of being clipped.
     #[test]
