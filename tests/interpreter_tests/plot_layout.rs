@@ -1069,7 +1069,8 @@ mod tiny_values {
     assert!(w > 2000.0, "curve width {w}");
     assert!(h > 1000.0, "curve height {h}");
     let labels = tick_labels(&svg);
-    assert!(labels.iter().any(|l| l == "2×10⁻²⁰"), "{labels:?}");
+    // `1.2×10⁻²⁰` needs a decimal, so every mantissa of the set has one.
+    assert!(labels.iter().any(|l| l == "2.0×10⁻²⁰"), "{labels:?}");
     assert!(
       !labels.iter().any(|l| l == "-1.0" || l == "1.0"),
       "{labels:?}"
@@ -1089,8 +1090,9 @@ mod tiny_values {
   fn tiny_constant_spans_zero_to_twice_its_value() {
     let svg = svg_of("Plot[10^-20, {x, 0, 1}]");
     let labels = tick_labels(&svg);
-    assert!(labels.iter().any(|l| l == "1×10⁻²⁰"), "{labels:?}");
-    assert!(labels.iter().any(|l| l == "2×10⁻²⁰"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "5.0×10⁻²¹"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "1.0×10⁻²⁰"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "2.0×10⁻²⁰"), "{labels:?}");
   }
 }
 
