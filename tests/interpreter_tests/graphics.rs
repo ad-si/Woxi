@@ -1933,6 +1933,29 @@ mod graphics {
       assert!(inset("{2, 2}").contains("translate(0.00,2.00)"));
     }
 
+    /// `Inset[obj]` is `Inset[obj, Center]` (and an `Automatic` position is
+    /// `Center` too): the image is drawn in the middle of the picture. A
+    /// missing position used to leave the image unanchored, so it fell back
+    /// to printing its `-Image-` short form as text.
+    #[test]
+    fn an_image_inset_without_a_position_is_centered() {
+      for pos in ["", ", Center", ", Automatic"] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Inset[Image[{{{{0.2, 0.8, 0.4}}, {{0.9, 0.1, 0.6}}}}, \
+           ImageSize -> {{30, 20}}]{pos}]}}, PlotRange -> {{{{0, 4}}, {{0, 2}}}}, \
+           ImageSize -> 200]"
+        ));
+        assert!(!svg.contains("-Image-"), "pos {pos:?}: {svg}");
+        assert!(svg.contains("<image"), "pos {pos:?}: {svg}");
+        // Centered on the middle of the 200 x 100 picture, not on the
+        // origin in its lower-left corner.
+        assert!(
+          svg.contains("<svg x=\"85.00\" y=\"40.00\" width=\"30.00\""),
+          "pos {pos:?}: {svg}"
+        );
+      }
+    }
+
     /// `Inset[Graphics[…], pos, {Center, Bottom}, {w, h}]` folds the
     /// picture's primitives in with its bottom-center on `pos`. The symbolic
     /// `opos` used to be ignored, centering the picture on `pos` instead, so
