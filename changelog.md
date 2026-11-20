@@ -43,6 +43,9 @@
 - `Magnify[image, s]` shows the image at `s` times its size in notebooks
     (also inside a fixed-size `Pane`), and `ExportString` draws it at that
     size, instead of showing no picture.
+- A `Grid` of pictures with `FrameStyle` keeps the framed picture layout and
+    draws its frame lines in that style, instead of spacing the pictures like
+    a text table.
 
 # 2026-11-08 - 0.4.0
 

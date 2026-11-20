@@ -8165,9 +8165,21 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
           if matches!(pattern.as_ref(), Expr::Identifier(k)
             if matches!(
               k.as_str(),
-              "Alignment" | "ItemSize" | "FrameStyle" | "Dividers"
+              "Alignment" | "ItemSize" | "Dividers"
             )))
-        }) || crate::functions::graphics::has_item_alignment(args))
+        })
+          // `FrameStyle` only colors the frame, which the picture
+          // compositor draws too; it must not change how far apart the
+          // pictures sit. A grid with a text cell still takes the table
+          // engine, which typesets that cell as text.
+          || (args[1..].iter().any(|opt| {
+            matches!(opt, Expr::Rule { pattern, .. }
+              if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FrameStyle"))
+          }) && !layout_rows(name, args)
+            .iter()
+            .flatten()
+            .all(lays_out_a_graphic))
+          || crate::functions::graphics::has_item_alignment(args))
         && let Ok(svg) =
           crate::functions::graphics::grid_svg_with_gaps(args, &[])
       {
