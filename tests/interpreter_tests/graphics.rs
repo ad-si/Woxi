@@ -29961,6 +29961,51 @@ mod graphics_grid {
     assert!(svg.contains("font-size=\"20\""), "{svg}");
   }
 
+  /// A `Grid` nested in a cell of a styled grid inherits the outer style
+  /// (size, weight, color, face) like any other cell, instead of falling
+  /// back to the default 14 pt; the nested grid's own style still wins.
+  #[test]
+  fn nested_grid_inherits_outer_grid_style() {
+    clear_state();
+    let svg_of =
+      |code: &str| interpret_with_stdout(code).unwrap().graphics.unwrap();
+    let svg = svg_of(
+      "Style[Grid[{{Grid[{{\"a\", \"b\"}}], \"c\"}}], 12, Bold, Red, \
+       FontFamily -> \"Times\"]",
+    );
+    assert_eq!(svg.matches("font-size=\"12\"").count(), 3, "{svg}");
+    assert_eq!(svg.matches("font-weight=\"bold\"").count(), 3, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 3, "{svg}");
+    assert_eq!(svg.matches("font-family=\"Times\"").count(), 3, "{svg}");
+    assert!(!svg.contains("font-size=\"14\""), "{svg}");
+
+    let svg = svg_of("Grid[{{Grid[{{\"a\", \"b\"}}]}}, BaseStyle -> {9}]");
+    assert_eq!(svg.matches("font-size=\"9\"").count(), 2, "{svg}");
+
+    let svg = svg_of(
+      "Style[Grid[{{Grid[{{\"a\", \"b\"}}, BaseStyle -> {16}], \"c\"}}], 12]",
+    );
+    assert_eq!(svg.matches("font-size=\"16\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("font-size=\"12\"").count(), 1, "{svg}");
+  }
+
+  /// Text that names no font family gets Wolfram's sans-serif graphics
+  /// face, so a renderer's own (serif) default never shows through; text
+  /// with a family, or inside a group that sets one, is left alone.
+  #[test]
+  fn default_text_family_fills_only_unset_text() {
+    let svg = "<svg><text x=\"1\">A</text>\
+      <text font-family=\"Times\">B</text>\
+      <g font-family=\"Courier\"><text>C</text></g></svg>";
+    let out = woxi::with_default_text_family(svg);
+    assert_eq!(
+      out,
+      "<svg><text x=\"1\" font-family=\"Atkinson Hyperlegible Next, \
+       sans-serif\">A</text><text font-family=\"Times\">B</text>\
+       <g font-family=\"Courier\"><text>C</text></g></svg>"
+    );
+  }
+
   /// A typeset cell — a `Row` quotient stacked as a fraction — is set in
   /// the grid's `BaseStyle` face like the plain text cells, its glyphs
   /// measured in that (narrower, proportional) face, so the stacked

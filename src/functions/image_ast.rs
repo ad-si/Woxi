@@ -13493,6 +13493,12 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 /// Anything with exotic glyphs outside the embedded fonts will fall
 /// through to `load_system_fonts()`.
 #[cfg(not(target_arch = "wasm32"))]
+/// The family usvg sets a `<text>` in when neither it nor an ancestor names
+/// one. Wolfram's default graphics font is a sans-serif face, so a bare
+/// `Text["A", …]` or `Style["A", 20, "Label"]` label must not fall back to
+/// usvg's own default, "Times New Roman".
+pub const DEFAULT_TEXT_FAMILY: &str = "Atkinson Hyperlegible Next";
+
 pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.load_font_data(
     include_bytes!("../../resources/AtkinsonHyperlegibleMono-Regular.ttf")
@@ -13804,6 +13810,7 @@ fn rasterize_svg_with(
   // Parse SVG
   let opt = resvg::usvg::Options {
     fontdb: StdArc::new(fontdb),
+    font_family: DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
 
@@ -13971,6 +13978,7 @@ fn rasterize_mask_svg(
   load_embedded_fonts(&mut fontdb);
   let opt = resvg::usvg::Options {
     fontdb: StdArc::new(fontdb),
+    font_family: DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
 

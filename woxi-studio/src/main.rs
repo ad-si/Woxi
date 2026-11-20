@@ -6105,7 +6105,7 @@ fn stored_output_editor(cell: &Cell) -> Option<CellEditor> {
     })?;
   // The svg handle is a fallback for when rasterization fails; the normal
   // path shows the pre-rasterized image.
-  let handle = svg::Handle::from_memory(svg.clone().into_bytes());
+  let handle = manipulate::text_svg_handle(&svg);
   Some(CellEditor {
     content: text_editor::Content::with_text(&cell.content),
     style: cell.style,
@@ -6170,6 +6170,7 @@ fn rasterize_svg(
 ) -> Option<(iced::widget::image::Handle, u32, u32)> {
   let opts = resvg::usvg::Options {
     fontdb: fontdb.clone(),
+    font_family: woxi::functions::image_ast::DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
@@ -6790,7 +6791,7 @@ fn evaluate_cell_statements(
   editor.graphics_handle = editor
     .graphics_svg
     .as_ref()
-    .map(|s| svg::Handle::from_memory(s.as_bytes().to_vec()));
+    .map(|s| manipulate::text_svg_handle(s));
   editor.graphics_image = editor
     .graphics_svg
     .as_ref()
@@ -7889,7 +7890,8 @@ fn check_notebook(path: &std::path::Path) -> i32 {
         if let Some(svg) = &result.graphics {
           // `WOXI_CHECK_SVG=FILE` saves the rendered graphic for a look.
           if let Some(out) = std::env::var_os("WOXI_CHECK_SVG") {
-            let _ = std::fs::write(out, svg);
+            // What the editor draws: text with no family set in the sans face.
+            let _ = std::fs::write(out, woxi::with_default_text_family(svg));
           }
           println!("widget {i}: graphics");
         } else if result.result == "\0" || result.result.trim().is_empty() {
@@ -8097,6 +8099,7 @@ fn encode_svg_as_png(
 ) -> Option<Vec<u8>> {
   let opts = resvg::usvg::Options {
     fontdb: fontdb.clone(),
+    font_family: woxi::functions::image_ast::DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
@@ -8124,6 +8127,7 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: std::sync::Arc::new(fontdb),
+    font_family: woxi::functions::image_ast::DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
 
@@ -8489,6 +8493,7 @@ fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
   );
   let opt = svg2pdf::usvg::Options {
     fontdb: pdf_fontdb(),
+    font_family: woxi::functions::image_ast::DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
@@ -8521,6 +8526,7 @@ fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: pdf_fontdb(),
+    font_family: woxi::functions::image_ast::DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
   let (slide_w, slide_h) = PDF_SLIDE_SIZE;

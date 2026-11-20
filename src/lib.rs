@@ -19,6 +19,10 @@ pub mod vfs;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+/// Give every `<text>` of an SVG without a font family the sans-serif face
+/// Wolfram sets graphics text in, so a renderer's own default (often a serif
+/// face) never shows through.
+pub use evaluator::dispatch::io_functions::with_default_text_family;
 pub use expr_list::ExprList;
 
 pub use woxi_parser::{Rule, WolframParser};

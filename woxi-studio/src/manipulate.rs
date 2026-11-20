@@ -26,11 +26,18 @@ pub struct LabelIcon {
   pub height: f32,
 }
 
+/// An iced `svg` handle for an SVG Woxi rendered. iced draws it with its own
+/// usvg options, whose default family is a serif face, so text that names no
+/// family first gets the sans-serif face Wolfram sets graphics text in.
+pub fn text_svg_handle(svg: &str) -> svg::Handle {
+  svg::Handle::from_memory(woxi::with_default_text_family(svg).into_bytes())
+}
+
 impl LabelIcon {
   pub fn from_svg(svg: String) -> Self {
     let (width, height) = svg_root_size(&svg).unwrap_or((24.0, 24.0));
     LabelIcon {
-      handle: svg::Handle::from_memory(svg.into_bytes()),
+      handle: text_svg_handle(&svg),
       width,
       height,
     }
@@ -2264,7 +2271,7 @@ impl ManipulateState {
         };
 
         if let Some(svg) = result.graphics {
-          let handle = svg::Handle::from_memory(svg.as_bytes().to_vec());
+          let handle = text_svg_handle(&svg);
           self.button_regions = button_regions_of(&svg);
           self.click_regions = click_regions_of(&svg);
           self.mouse_region = mouse_region_of(&svg);
@@ -2443,10 +2450,7 @@ impl ManipulateState {
       value_labels.clone_from(new_labels);
       *value_label_svgs = new_svgs
         .iter()
-        .map(|s| {
-          s.as_ref()
-            .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()))
-        })
+        .map(|s| s.as_ref().map(|svg| text_svg_handle(svg)))
         .collect();
       value_label_runs.clone_from(new_runs);
       let kept = selected.and_then(|v| values.iter().position(|nv| *nv == v));
@@ -2608,10 +2612,7 @@ fn controls_from_spec(spec: &ManipulateSpec) -> Vec<ControlState> {
         value_labels: value_labels.clone(),
         value_label_svgs: value_label_svgs
           .iter()
-          .map(|s| {
-            s.as_ref()
-              .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()))
-          })
+          .map(|s| s.as_ref().map(|svg| text_svg_handle(svg)))
           .collect(),
         value_label_runs: value_label_runs.clone(),
         current_index: *initial_index,
@@ -2886,6 +2887,28 @@ fn holds_typeset_layout(expr: &woxi::syntax::Expr) -> bool {
 
 #[cfg(test)]
 mod tests {
+
+  /// A Manipulate graphic's labels (`Text[Style["A", 20, "Label"], …]`)
+  /// name no font family; iced's svg widget would set them in its serif
+  /// default, so the handle the widget draws carries the sans-serif face.
+  #[test]
+  fn manipulate_graphic_labels_are_set_in_sans_face() {
+    let code = r#"Manipulate[Graphics[{Text[Style["A", 20, "Label"], {0, a}]}], {a, 0, 1}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let handle = state.graphics_handle.as_ref().expect("graphics output");
+    let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+      panic!("in-memory svg expected");
+    };
+    let svg = String::from_utf8_lossy(bytes);
+    let text = &svg[svg.find("<text").expect("a label")..];
+    let tag = &text[..text.find('>').unwrap()];
+    assert!(
+      tag.contains("font-family=\"Atkinson Hyperlegible Next, sans-serif\""),
+      "{tag}"
+    );
+  }
 
   /// Dragging a step-less slider with whole-number bounds binds a machine
   /// real, as in Wolfram (a caption shows `-10.`, not `-10`), while the

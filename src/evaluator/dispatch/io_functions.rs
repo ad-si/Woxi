@@ -8913,7 +8913,7 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
 /// the opening tag.
-fn with_default_text_family(svg: &str) -> String {
+pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
@@ -9107,6 +9107,7 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
 
   let opt = svg2pdf::usvg::Options {
     fontdb: StdArc::new(fontdb),
+    font_family: crate::functions::image_ast::DEFAULT_TEXT_FAMILY.to_string(),
     ..Default::default()
   };
 

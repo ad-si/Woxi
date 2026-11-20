@@ -26110,16 +26110,9 @@ fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
   gs
 }
 
-/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
-/// grid's text: in the grid's face and size, not as a free-standing column
-/// (which defaults to monospace at the base size). A column of plain text
-/// takes the grid's style directives, with the sans face as the default
-/// family. Other cells are returned unchanged.
-/// A grid cell that is drawn as a stacked fraction, wrapped in the grid's
-/// base style (`Style[Grid[…], 16]`, `BaseStyle -> …`) so the fraction is
-/// typeset at that size, weight, slant and color instead of the default
-/// 14 pt. Any other cell, or a grid without such a style, is returned as is.
-fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+/// The `Style` directives (weight, slant, size, color) a grid's base style
+/// passes on to a cell that is typeset on its own.
+fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
   let mut directives: Vec<Expr> = Vec::new();
   if style.font_weight == Some("bold") {
     directives.push(id_expr("Bold"));
@@ -26133,6 +26126,44 @@ fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if let Some(color) = style.color {
     directives.push(color.to_expr());
   }
+  directives
+}
+
+/// A `Grid[…]` that is a cell of a styled grid (`Style[Grid[…], 12]`,
+/// `BaseStyle -> …`) inherits the outer grid's style, like every other
+/// cell: its text is set at that size, weight, slant, color and face rather
+/// than the default 14 pt. Its own `Style`/`BaseStyle` still wins, being
+/// nearer its cells. Any other cell is returned unchanged.
+fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Grid") {
+    return cell.clone();
+  }
+  let mut directives = grid_style_directives(style);
+  if let Some(family) = &style.font_family {
+    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
+  }
+  if directives.is_empty() {
+    return cell.clone();
+  }
+  call(
+    "Style",
+    std::iter::once(cell.clone())
+      .chain(directives)
+      .collect::<Vec<_>>(),
+  )
+}
+
+/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
+/// grid's text: in the grid's face and size, not as a free-standing column
+/// (which defaults to monospace at the base size). A column of plain text
+/// takes the grid's style directives, with the sans face as the default
+/// family. Other cells are returned unchanged.
+/// A grid cell that is drawn as a stacked fraction, wrapped in the grid's
+/// base style (`Style[Grid[…], 16]`, `BaseStyle -> …`) so the fraction is
+/// typeset at that size, weight, slant and color instead of the default
+/// 14 pt. Any other cell, or a grid without such a style, is returned as is.
+fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  let directives = grid_style_directives(style);
   if directives.is_empty() || standard_fraction_cell_svg(cell, 14.0).is_none() {
     return cell.clone();
   }
@@ -26145,19 +26176,7 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
   }
-  let mut directives: Vec<Expr> = Vec::new();
-  if style.font_weight == Some("bold") {
-    directives.push(id_expr("Bold"));
-  }
-  if style.font_style == Some("italic") {
-    directives.push(id_expr("Italic"));
-  }
-  if let Some(size) = style.font_size {
-    directives.push(Expr::Real(size));
-  }
-  if let Some(color) = style.color {
-    directives.push(color.to_expr());
-  }
+  let mut directives = grid_style_directives(style);
   let family = style
     .font_family
     .clone()
@@ -26367,6 +26386,7 @@ fn grid_svg_styled_internal_reporting(
       }
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
+      *cell = nested_grid_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
       // grid's size, like the plain text cells around it.
