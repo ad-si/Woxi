@@ -16,6 +16,14 @@ recorded so they are not investigated twice.
 
 ## Output form, ordering and rendering
 
+### `DownValues` shows a named list pattern as `name_List`
+
+A definition such as `h[g : {__}, n_] := …` matches exactly like Wolfram's
+(`h[{}, 1]` stays unevaluated), but `DownValues[h]` and `Definition[h]` print
+its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
+named list pattern is compiled into a `List` head plus an element condition,
+and the display rebuilds the pattern from the head alone.
+
 ### `Rationalize[x, dx]` sometimes picks a different approximation
 
 Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200
@@ -5659,6 +5667,38 @@ calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
 
+### Sphere framing of an unboxed box at a fixed `ImageSize`
+
+Under the default `SphericalRegion -> Automatic`, Woxi frames a
+`Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
+displayed box) when the box is invisible (`Boxed -> False`) and the picture
+is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate
+this, none checked with wolframscript: a cylinder from `{-10, 0, 0}` to
+`{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
+4.25}}, ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
+box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
+`{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
+244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), and a `Show` of
+a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
+custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
+and 0.86× the box fit.
+
+Which conditions really trigger the sphere framing — `Boxed -> False`, the
+pinned size, an explicit `PlotRange` or `Show` — is unverified. A
+`Boxed -> False` picture given only a width still fits the box outline, and
+`SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
+`ViewAngle` turn the sphere framing off. The surface plots
+(`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
+
+### `PointSize` in `Graphics3D` draws larger than Wolfram
+
+Woxi draws a `Graphics3D` point with diameter `PointSize` × the picture's
+width, as in 2D. A Demonstration's snapshot of `PointSize[1/60]` atoms at
+`ImageSize -> {595, 375}` shows dots about 6–6.5 px wide, where Woxi draws
+9.9 px. That fits a base of either the shorter image side (6.25 px) or the
+default 360 px width (6 px). One snapshot can't tell these apart, so the
+2D rule stays.
+
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
@@ -8724,8 +8764,9 @@ Found comparing the graphics-tests renders (2026-11):
     `ListPlot` with `FrameTicks -> All` matches.
   - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
     in italics (TraditionalForm), and writes `-a` with a minus sign.
-  - A symbol used as an axes or frame label (`FrameLabel -> {Z, X}`) is
-    likewise set upright; WL sets it in italics (TraditionalForm).
+  - A symbol used as a frame label (`FrameLabel -> {Z, X}`) or a plot
+    legend entry is likewise set upright; WL sets it in italics
+    (TraditionalForm). `AxesLabel` entries already follow WL.
   - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
     draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
@@ -9308,8 +9349,7 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `Text` in `Graphics` defaults to 14 pt in Woxi; wolframscript's SVG
   export sets it at 10 pt. Changing the default touches most Graphics
   snapshots, so it is left for a dedicated pass.
-- `Line` strokes use butt caps; wolframscript draws `stroke-linecap:square`
-  (lines extend half their thickness). `Thin` is clamped to 0.5 pt (WL 0.25).
+- `Thin` is clamped to 0.5 pt (WL 0.25).
 - Graphics frames are drawn 1 pt wide in the theme gray; wolframscript uses
   0.5 pt in `GrayLevel[0.4]` (frame and tick marks).
 - `GraphicsGrid[…, ImageSize -> 400]` of labeled graphics is 456 pt tall
@@ -10133,6 +10173,14 @@ in a monospace face regardless of the grid's `BaseStyle -> {FontFamily ->
 Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
+
+### `Plot` runs the cells of a multi-column `Grid` title together
+
+`PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
+lines its columns up as a table in `Graphics` and `Show` (the way Wolfram
+draws it), but `Plot` and the other charts with their own title pipeline
+(`src/functions/plot.rs`) still join each row's cells with a space into a
+single centered line of text.
 
 ### `Show[plots, PlotRange -> {xr, Automatic}]` keeps the plots' explicit y range
 

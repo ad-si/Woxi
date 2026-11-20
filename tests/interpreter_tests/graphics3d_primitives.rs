@@ -383,6 +383,85 @@ mod contour_plot3d {
       "{1, 1, 1}"
     );
   }
+
+  /// A compiled function taking the point as one vector argument
+  /// (`cf[{x, y, z}]`) is sampled through its compiled body, and draws the
+  /// same surface as the expression it computes.
+  #[test]
+  fn compiled_vector_argument_body() {
+    let plot = |body: &str| {
+      clear_state();
+      interpret(&format!(
+        "cf = Compile[{{{{p, _Real, 1}}, {{s, _Real}}}}, s p.p]; \
+         ExportString[ContourPlot3D[{body}, {{x, -1, 1}}, {{y, -1, 1}}, \
+         {{z, -1, 1}}, Contours -> {{0.5}}, Mesh -> None, PlotPoints -> 12], \
+         \"SVG\"]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(plot("cf[{x, y, z}, 1.]"), plot("x^2 + y^2 + z^2"));
+    // Entries may be constants or expressions in the variables.
+    assert_eq!(
+      plot("cf[{x, 2 y, 0.5}, 2.]"),
+      plot("2. (x^2 + 4 y^2 + 0.25)")
+    );
+  }
+
+  /// `ColorFunction` colors each facet by `f[x, y, z, value]` with every
+  /// argument scaled to 0..1, so a function of the scaled height paints
+  /// the lower and upper half of a sphere differently. A named gradient
+  /// colors by height too.
+  #[test]
+  fn color_function() {
+    let sphere = "ContourPlot3D[x^2 + y^2 + z^2, {x, -1, 1}, {y, -1, 1}, \
+                  {z, -1, 1}, Contours -> {0.8}, Mesh -> None";
+    let reddish = |c: &String| {
+      let v: Vec<u16> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[0] > v[1] + 60 && v[0] > v[2] + 60
+    };
+    let bluish = |c: &String| {
+      let v: Vec<u16> =
+        c.split(',').map(|x| x.trim().parse().unwrap()).collect();
+      v[2] > v[0] + 60 && v[2] > v[1] + 60
+    };
+    let halves = fills(&svg(&format!(
+      "{sphere}, ColorFunction -> Function[{{x, y, z, f}}, \
+       If[z > 0.5, Red, Blue]]]"
+    )));
+    assert!(halves.iter().any(reddish), "{halves:?}");
+    assert!(halves.iter().any(bluish), "{halves:?}");
+    // The value argument is passed too: one level gives one color.
+    let by_value = fills(&svg(&format!(
+      "{sphere}, ColorFunction -> Function[{{x, y, z, f}}, \
+       If[f >= 0, Blue, Red]]]"
+    )));
+    assert!(by_value.iter().any(bluish) && !by_value.iter().any(reddish));
+    let plain = fills(&svg(&format!("{sphere}]")));
+    let rainbow =
+      fills(&svg(&format!("{sphere}, ColorFunction -> \"Rainbow\"]")));
+    assert!(!plain.iter().any(bluish));
+    assert!(rainbow.iter().any(bluish) && rainbow.iter().any(reddish));
+  }
+
+  /// While the plot looks at its body with the variables still free, a
+  /// compiled function given those variables in a vector stays
+  /// unevaluated, instead of iterating its `FixedPoint` symbolically
+  /// without end.
+  #[test]
+  fn compiled_vector_argument_iteration_is_not_run_symbolically() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "cf = Compile[{{p, _Real, 1}}, FixedPoint[(# + p.p/#)/2 &, 1., \
+         SameTest -> (Abs[#1 - #2] < 10^-6 &)]]; \
+         Head[ContourPlot3D[cf[{x, y, z}], {x, -1, 1}, {y, -1, 1}, \
+         {z, -1, 1}, Contours -> {0.5}, PlotPoints -> 8]]"
+      )
+      .unwrap(),
+      "Graphics3D"
+    );
+  }
 }
 
 mod stream_plot3d {
@@ -1157,8 +1236,8 @@ mod arrows_and_box {
     assert!(faded.contains("opacity=\"0.3\">Qz<"), "{faded}");
   }
 
-  /// The area of the first filled arrowhead `<polygon>` (the triangle after
-  /// a `<polyline>`).
+  /// The area of the first filled arrowhead `<polygon>` (the outline after
+  /// a `<polyline>`), by the shoelace formula.
   fn head_area(svg: &str) -> f64 {
     let after = svg.split("<polyline").nth(1).unwrap();
     let pts = after.split("<polygon points=\"").nth(1).unwrap();
@@ -1172,20 +1251,61 @@ mod arrows_and_box {
         (it.next().unwrap(), it.next().unwrap())
       })
       .collect();
-    ((p[1].0 - p[0].0) * (p[2].1 - p[0].1)
-      - (p[2].0 - p[0].0) * (p[1].1 - p[0].1))
+    let n = p.len();
+    (0..n)
+      .map(|i| {
+        let (a, b) = (p[i], p[(i + 1) % n]);
+        a.0 * b.1 - b.0 * a.1
+      })
+      .sum::<f64>()
       .abs()
       / 2.0
   }
 
   // `Arrowheads[s]` sizes the heads of 3D arrows as a fraction of the
-  // picture's width.
+  // diagonal of the scene's box; the default is a twentieth.
   #[test]
   fn arrowheads_size_3d_arrow_heads() {
-    let small = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
-    let large =
+    let default = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    let same =
       svg("Graphics3D[{Arrowheads[0.05], Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
-    assert!(head_area(&large) > 3.0 * head_area(&small));
+    let large =
+      svg("Graphics3D[{Arrowheads[0.15], Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    assert!((head_area(&default) - head_area(&same)).abs() < 1.0);
+    assert!(head_area(&large) > 6.0 * head_area(&default));
+  }
+
+  // The head of a 3D line arrow is a cone sized by the scene, not a fixed
+  // number of pixels, so it stays about as large on screen however big the
+  // scene is.
+  #[test]
+  fn arrow3d_head_scales_with_the_scene() {
+    let small = svg("Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}]}]");
+    let big = svg(
+      "Graphics3D[{Arrow[{{0, 0, 0}, {1, 0, 0}}], \
+       Point[{{-10, -10, -10}, {10, 10, 10}}]}]",
+    );
+    // A twentieth of the 1-unit scene is well over the old fixed 8-pixel
+    // head (an area of 24).
+    assert!(head_area(&small) > 60.0, "{}", head_area(&small));
+    // In the 35-times larger scene the 1-unit arrow shrinks on screen but
+    // its head (a twentieth of the scene) stays about as large.
+    assert!(head_area(&big) > 0.3 * head_area(&small));
+  }
+
+  // A head keeps its size on an arrow shorter than the head itself (up to
+  // the perspective of its slightly different place in the scene).
+  #[test]
+  fn arrow3d_head_not_clamped_to_short_arrow() {
+    let scene = |tip: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrow[{{{{0, 0, 0}}, {tip}}}], \
+         Point[{{{{-1, -1, -1}}, {{1, 1, 1}}}}]}}]"
+      ))
+    };
+    let short = head_area(&scene("{0.01, 0, 0}"));
+    let long = head_area(&scene("{0.9, 0, 0}"));
+    assert!((short - long).abs() < 0.2 * long, "{short} vs {long}");
   }
 
   // The bounding box is drawn opaque, in the axis gray.
