@@ -58936,8 +58936,8 @@ fn manipulate_frame_frames_surface_plots_by_their_sphere() {
   // so the surface is drawn smaller.
   let width = |svg: &str| {
     let xs: Vec<f64> = polygon_vertices(svg).iter().map(|p| p.0).collect();
-    xs.iter().cloned().fold(f64::MIN, f64::max)
-      - xs.iter().cloned().fold(f64::MAX, f64::min)
+    xs.iter().copied().fold(f64::MIN, f64::max)
+      - xs.iter().copied().fold(f64::MAX, f64::min)
   };
   let ratio = width(&spherical) / width(&plain);
   assert!(ratio > 0.7 && ratio < 0.95, "{ratio}");
