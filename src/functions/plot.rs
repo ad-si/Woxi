@@ -7711,7 +7711,40 @@ fn generate_svg_with_options(
       buf.insert_str(end, &format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"{}\"/>\n", 0.6 * sf, 0.6 * sf, render_width as f64 - 1.2 * sf, render_height as f64 - 1.2 * sf, 1.2 * sf));
     }
   }
+  // An explicit `ImagePadding` fixes the picture's edges: a frame label or
+  // tick label that does not fit in the padding is cut off at the image
+  // boundary, also when the picture is nested in a layout (`Labeled`,
+  // `Grid`) whose cells let their content overflow.
+  if opts.image_padding.is_some() {
+    clip_to_image(&mut buf, render_width, render_height);
+  }
   Ok(buf)
+}
+
+/// Clip everything a finished plot SVG draws to its own `width` x `height`
+/// canvas (in viewBox units). The clip region is a `<path>`, so code that
+/// looks for the background as the first `<rect` still finds it.
+fn clip_to_image(buf: &mut String, width: u32, height: u32) {
+  let Some(root) = buf.find("<svg") else {
+    return;
+  };
+  let (Some(open_end), Some(close)) = (
+    buf[root..].find('>').map(|i| root + i + 1),
+    buf.rfind("</svg>"),
+  ) else {
+    return;
+  };
+  if close < open_end {
+    return;
+  }
+  let id = format!("imageClip_{width}x{height}");
+  buf.insert_str(close, "</g>\n");
+  buf.insert_str(
+    open_end,
+    &format!(
+      "\n<defs><clipPath id=\"{id}\"><path d=\"M0 0H{width}V{height}H0Z\"/></clipPath></defs>\n<g clip-path=\"url(#{id})\">"
+    ),
+  );
 }
 
 /// Inject the static `Highlighted[f, Placed[effect, pos]]` highlights into a
@@ -8381,6 +8414,7 @@ pub(crate) fn build_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    settles_all_range: false,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
   }
 }
@@ -12608,6 +12642,7 @@ pub(crate) fn histogram_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    settles_all_range: false,
     aspect_ratio: None,
   })
 }
@@ -14063,7 +14098,7 @@ fn automatic_marker_shape(
 /// WL's font draws it: points around the data point (y down), measured at
 /// font size 10 from wolframscript's SVG glyphs and scaled to `size`, and
 /// the outline's stroke width for the empty shapes (`None` = filled).
-fn glyph_marker_outline(
+pub(crate) fn glyph_marker_outline(
   glyph: &str,
   size: f64,
 ) -> Option<(GlyphOutline, Option<f64>)> {
@@ -14106,7 +14141,7 @@ fn glyph_marker_outline(
 
 /// A shape [`glyph_marker_outline`] draws, in points around the data point
 /// (y down).
-enum GlyphOutline {
+pub(crate) enum GlyphOutline {
   Circle { r: f64, cy: f64 },
   Polygon(Vec<(f64, f64)>),
 }

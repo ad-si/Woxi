@@ -9704,6 +9704,23 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
 /// own ImageSize in screen pixels, centered on the position — Wolfram
 /// treats the appearance as a screen-space icon, not data-space geometry.
 fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
+  for (x, y, svg, w, h) in locator_markers(args) {
+    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+  }
+}
+
+/// The markers `Locator[pos, appearance]` draws, as `(x, y, svg, width,
+/// height)`: one per point at `pos` (a point or a list of points), each the
+/// appearance graphic at its own size or Wolfram's default crosshair, and
+/// none for `Appearance -> None`. Shared by `Graphics` and plot overlays
+/// (`Epilog`).
+pub(crate) fn locator_markers(
+  args: &[Expr],
+) -> Vec<(f64, f64, String, f64, f64)> {
+  let mut markers = Vec::new();
+  if args.is_empty() {
+    return markers;
+  }
   let pos_expr = match &args[0] {
     Expr::FunctionCall { name, args: dargs }
       if name == "Dynamic" && !dargs.is_empty() =>
@@ -9722,7 +9739,7 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
   };
   if points.is_empty() {
     crate::truncate_captured_graphics(captured);
-    return;
+    return markers;
   }
 
   // The appearance graphic, pre-rendered at its own ImageSize. `Automatic`
@@ -9734,7 +9751,7 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
   if appearance.is_some_and(|a| matches!(a, Expr::Identifier(s) if s == "None"))
   {
     crate::truncate_captured_graphics(captured);
-    return;
+    return markers;
   }
   let marker: Option<(String, f64, f64)> = appearance.and_then(|a| {
     // Render the appearance to a graphic. A held `Graphics[…]` call is
@@ -9776,8 +9793,9 @@ fn parse_locator(args: &[Expr], prims: &mut Vec<Primitive>) {
       let (svg, size) = default_locator_marker_svg();
       (svg, size, size)
     };
-    prims.push(Primitive::MarkerPrim { x, y, w, h, svg });
+    markers.push((x, y, svg, w, h));
   }
+  markers
 }
 
 /// Wolfram's default Locator appearance: a small circled crosshair.
@@ -16598,6 +16616,10 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // their labels have taken their room.
   let (mut margin_left, mut margin_right, mut margin_bottom, mut margin_top) =
     (margin_left, margin_right, margin_bottom, margin_top);
+  // How far a letterboxed drawing area moved down inside the picture: the
+  // `PlotLabel` moves along with it, staying just above the area instead
+  // of at the top edge of the picture, as Wolfram centers both together.
+  let mut title_shift = 0.0;
   let (svg_w, svg_h) = {
     let w = (svg_w - margin_left - margin_right).max(1.0);
     match aspect_ratio {
@@ -16623,6 +16645,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         margin_right += slack_w;
         margin_bottom += slack_h;
         margin_top += slack_h;
+        title_shift += slack_h;
         (pw.max(1.0), ph.max(1.0))
       }
       // `AspectRatio -> r` shapes the drawing area itself, not the whole
@@ -16652,6 +16675,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       margin_right += dx;
       margin_bottom += dy;
       margin_top += dy;
+      title_shift += dy;
       (fitted_w, fitted_h)
     } else {
       (svg_w, svg_h)
@@ -16835,7 +16859,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cx = margin_left + svg_w / 2.0;
     let title_top = match image_padding {
       Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
-      None => 0.0,
+      None => title_shift,
     };
     // A picture wider than the graphic shrinks to fit, keeping its shape.
     let scale = ((total_width - 8.0) / w).clamp(0.0, 1.0);
@@ -16887,7 +16911,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The band at the top of the picture, above the padding.
     let title_top = match image_padding {
       Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
-      None => 0.0,
+      None => title_shift,
     };
     svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{:.2}\" text-anchor=\"middle\" \
@@ -21810,6 +21834,18 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           None => estimate_display_width(&args[0]),
         }
       }
+      // `StringForm["template", args…]` typesets as its filled template, so
+      // it is as wide as the template's literal runs plus each slot's
+      // value — not the `StringForm[…]` call's source text.
+      "StringForm" if matches!(args.first(), Some(Expr::String(_))) => {
+        let Some(Expr::String(template)) = args.first() else {
+          unreachable!()
+        };
+        crate::functions::string_ast::string_form_parts(template, &args[1..])
+          .iter()
+          .map(estimate_display_width)
+          .sum()
+      }
       _ => {
         let args_width: f64 = args.iter().map(estimate_display_width).sum();
         let seps = if args.len() > 1 {
@@ -24948,11 +24984,49 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           ],
         ));
       }
+      let outline = crate::functions::plot::glyph_marker_outline(
+        &marker.glyph,
+        marker.size,
+      );
+      if let Some((_, Some(w))) = &outline {
+        series_prims.push(call1("AbsoluteThickness", Expr::Real(*w)));
+      }
       for &(x, y) in sd
         .points
         .iter()
         .filter(|(x, y)| x.is_finite() && y.is_finite())
       {
+        // A geometric glyph (`●`, `■`, `▲`, …) is drawn as the shape WL's
+        // font gives it, sized in points around the data point, the way the
+        // plot itself draws it — not as text in whatever font is at hand.
+        if let Some((shape, stroke)) = &outline {
+          let at = |dx: f64, dy: f64| {
+            call(
+              "Offset",
+              vec![
+                Expr::List(vec![Expr::Real(dx), Expr::Real(-dy)].into()),
+                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+              ],
+            )
+          };
+          series_prims.push(match shape {
+            crate::functions::plot::GlyphOutline::Circle { r, cy } => call(
+              if stroke.is_some() { "Circle" } else { "Disk" },
+              vec![at(0.0, *cy), call1("Offset", Expr::Real(*r))],
+            ),
+            crate::functions::plot::GlyphOutline::Polygon(pts) => {
+              let mut corners: Vec<Expr> =
+                pts.iter().map(|&(dx, dy)| at(dx, dy)).collect();
+              if stroke.is_some() {
+                corners.push(corners[0].clone());
+                call1("Line", Expr::List(corners.into()))
+              } else {
+                call1("Polygon", Expr::List(corners.into()))
+              }
+            }
+          });
+          continue;
+        }
         series_prims.push(call(
           "Text",
           vec![
@@ -25465,6 +25539,20 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         _ => evaluated.push(a.clone()),
       },
+      // A held `Graphics[…]` / `Graphics3D[…]` keeps its symbolic head
+      // (so the symbolic merge below still sees it), but its primitives
+      // and options evaluate in the current scope, as they do in Wolfram:
+      // `Table[Show[Graphics3D[{Sphere[pts[[i]], r]}]], {i, n}]` draws each
+      // sphere at its point instead of keeping `pts[[i]]` unevaluated.
+      Expr::FunctionCall { name, args: items }
+        if name == "Graphics" || name == "Graphics3D" =>
+      {
+        let items = items
+          .iter()
+          .map(evaluate_expr_to_expr)
+          .collect::<Result<Vec<_>, _>>()?;
+        evaluated.push(call(name, items));
+      }
       other => evaluated.push(other.clone()),
     }
   }
@@ -26082,10 +26170,17 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         _ => None,
       })
       .unwrap_or((false, false));
-    let first_all = x_all && y_all;
     let first_plot = plot_sources
       .iter()
       .find(|ps| !any_curves || !ps.series.is_empty());
+    // A list plot already settled its `All` into numbers, which `Show`
+    // keeps like any other range of the first plot.
+    let (x_all, y_all) = if first_plot.is_some_and(|ps| ps.settles_all_range) {
+      (false, false)
+    } else {
+      (x_all, y_all)
+    };
+    let first_all = x_all && y_all;
     let first = first_plot.filter(|_| !first_all);
     let data_x_range = plot_sources
       .iter()
@@ -26153,7 +26248,38 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       ))
     });
     let first = first.filter(|_| all_range.is_none());
-    let ((x_min, x_max), (y_min, y_max)) = all_range
+    // The ranges `All` collects are the unpadded data extents, while a
+    // plot draws them with its `PlotRangePadding` added. Pad the combined
+    // range by the same fractions of its span the first plot used, so a
+    // lone plot shown with an extra option (`Show[p, Epilog -> …]`) draws
+    // exactly as `p` does.
+    let padded_all_range = all_range.map(|(ux, uy)| {
+      let Some(ps) = first_plot else {
+        return (ux, uy);
+      };
+      let Some((px, py)) = ps.plot_range else {
+        return (ux, uy);
+      };
+      let px = ps.data_x_range.unwrap_or(px);
+      let pad = |(lo, hi): (f64, f64),
+                 (dlo, dhi): (f64, f64),
+                 (rlo, rhi): (f64, f64),
+                 on: bool| {
+        let span = dhi - dlo;
+        let uspan = hi - lo;
+        if !on || span.is_nan() || span <= 0.0 || !uspan.is_finite() {
+          return (lo, hi);
+        }
+        let below = ((dlo - rlo) / span).max(0.0);
+        let above = ((rhi - dhi) / span).max(0.0);
+        (lo - below * uspan, hi + above * uspan)
+      };
+      (
+        pad(ux, px, ps.x_range, x_all),
+        pad(uy, py, ps.y_range, y_all),
+      )
+    });
+    let ((x_min, x_max), (y_min, y_max)) = padded_all_range
       .or_else(|| first.map(|ps| (ps.x_range, ps.y_range)))
       .unwrap_or(((x_min, x_max), (y_min, y_max)));
     // Like the other options, the axis scales come from the first graphic.
@@ -26166,6 +26292,7 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       log_x: plot_sources[0].log_x,
       log_y: plot_sources[0].log_y,
       aspect_ratio: plot_sources[0].aspect_ratio,
+      settles_all_range: plot_sources[0].settles_all_range,
       data_x_range,
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
@@ -26287,10 +26414,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // leading plot settled on: primitives reaching beyond it (a marker
       // line from y = -10 to 10 over a curve within ±1) are clipped, not
       // allowed to zoom the picture out. Only a `PlotRange` given to `Show`
-      // or an `All` asked of the plot spans everything shown.
+      // or an `All` asked of a function plot spans everything shown; a list
+      // plot has settled its `All` into the range of its data.
+      let settled_all = !show_sets_plot_range
+        && plot_sources.first().is_some_and(|ps| ps.settles_all_range);
       let automatic_range = merged_options.iter().all(|o| {
         !matches!(option_name_value(o), Some(("PlotRange", v))
-          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic"))
+          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic")
+            && !(settled_all
+              && crate::functions::plot::plot_range_all_axes(&v)
+                != (false, false)))
       });
       if automatic_range
         && let Some(ps) = plot_sources.first()
@@ -40220,6 +40353,139 @@ fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
   Some(out)
 }
 
+/// A `Manipulate` whose body lays out a literal `Animate[inner, {t, …}]`
+/// among other content (`Column[{plot, Animate[…]}]`, inside `Module` or
+/// `DynamicModule` scopes) shows the inner animation's own play control
+/// in the body. A single widget animates one variable, so hoist that
+/// control into the Specifications as a `ControlType -> Animator` spec and
+/// leave the inner body, `Dynamic`-wrapped, in the Animate's place. Only one such Animate,
+/// with exactly one variable, outside any control-flow branch or held
+/// expression, qualifies. Returns the rewritten `Manipulate` arguments.
+fn hoist_nested_animate(args: &[Expr]) -> Option<Vec<Expr>> {
+  fn is_option(e: &Expr) -> bool {
+    matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  }
+  // Heads whose arguments are not simply laid out once: control flow,
+  // held or repeated code, and nested interactive cells.
+  fn opaque(name: &str) -> bool {
+    matches!(
+      name,
+      "Manipulate"
+        | "Dynamic"
+        | "If"
+        | "Which"
+        | "Switch"
+        | "Piecewise"
+        | "Function"
+        | "Hold"
+        | "HoldForm"
+        | "Button"
+        | "Table"
+        | "Map"
+        | "Do"
+    )
+  }
+  // Every literal `Animate[…]` reachable through layout and scoping
+  // wrappers, as the arguments of each.
+  fn find<'a>(expr: &'a Expr, found: &mut Vec<&'a [Expr]>) {
+    match expr {
+      Expr::FunctionCall { name, args } if name == "Animate" => {
+        found.push(args);
+      }
+      Expr::FunctionCall { name, args } if !opaque(name) => {
+        args.iter().for_each(|a| find(a, found));
+      }
+      Expr::List(items) => items.iter().for_each(|a| find(a, found)),
+      Expr::CompoundExpr(items) => items.iter().for_each(|a| find(a, found)),
+      _ => {}
+    }
+  }
+  fn replace(expr: &Expr) -> Expr {
+    match expr {
+      // Like the Animate it replaces, `Dynamic` defers the inner body to
+      // display time, after the content laid out before it has set any
+      // variables it reads.
+      Expr::FunctionCall { name, args } if name == "Animate" => {
+        call("Dynamic", vec![args[0].clone()])
+      }
+      Expr::FunctionCall { name, args } if !opaque(name) => {
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: args.iter().map(replace).collect::<Vec<_>>().into(),
+        }
+      }
+      Expr::List(items) => {
+        Expr::List(items.iter().map(replace).collect::<Vec<_>>().into())
+      }
+      Expr::CompoundExpr(items) => {
+        Expr::CompoundExpr(items.iter().map(replace).collect())
+      }
+      other => other.clone(),
+    }
+  }
+  fn spec_var(spec: &Expr) -> Option<&str> {
+    match spec {
+      Expr::List(items) => match items.first()? {
+        Expr::Identifier(v) => Some(v),
+        Expr::List(inner) => match inner.first()? {
+          Expr::Identifier(v) => Some(v),
+          _ => None,
+        },
+        _ => None,
+      },
+      _ => None,
+    }
+  }
+  let body = args.first()?;
+  if matches!(body, Expr::FunctionCall { name, .. } if name == "Animate") {
+    return None;
+  }
+  let mut found = Vec::new();
+  find(body, &mut found);
+  let [animate] = found.as_slice() else {
+    return None;
+  };
+  let (spec, options) = match animate {
+    [_, spec @ Expr::List(_), options @ ..]
+      if options.iter().all(is_option) =>
+    {
+      (spec, options)
+    }
+    _ => return None,
+  };
+  let var = spec_var(spec)?;
+  if args[1..].iter().any(|a| spec_var(a) == Some(var)) {
+    return None;
+  }
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  let mut items = items.to_vec();
+  let has_rule = |items: &[Expr], key: &str| {
+    items.iter().any(|it| {
+      matches!(it, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key))
+    })
+  };
+  if !has_rule(&items, "ControlType") {
+    items.push(rule_expr(id_expr("ControlType"), id_expr("Animator")));
+  }
+  for option in options {
+    if let Expr::Rule { pattern, .. } = option
+      && matches!(pattern.as_ref(), Expr::Identifier(k) if k == "AnimationRunning")
+      && !has_rule(&items, "AnimationRunning")
+    {
+      items.push(option.clone());
+    }
+  }
+  let mut out = vec![replace(body)];
+  let mut rest = args[1..].to_vec();
+  let at = rest.iter().position(is_option).unwrap_or(rest.len());
+  rest.insert(at, Expr::List(items.into()));
+  out.extend(rest);
+  Some(out)
+}
+
 /// Move every control spec carrying `ControlPlacement -> n` (a positive
 /// integer) to where a layout argument references it with `Place[n]` (or
 /// the FrontEnd-saved `` Manipulate`Place[n] ``), as Wolfram does: the
@@ -40321,7 +40587,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Manipulate"
-    && let Some(new_args) = place_numbered_controls(args)
+    && let Some(new_args) =
+      hoist_nested_animate(args).or_else(|| place_numbered_controls(args))
   {
     return extract_manipulate_spec(&call("Manipulate", new_args));
   }
@@ -41550,10 +41817,26 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         continue;
       }
     } else if state.iter().any(|(n, _)| n == &var) {
-      // `ControlType -> None`: the author deliberately hid it, driving it
+      // `ControlType -> None`: the author usually hid it to drive it
       // through other visible controls instead (e.g. polar sliders writing
       // a Cartesian locator back through the `Dynamic`'s callback) — respect
-      // that rather than surfacing a row they chose not to show.
+      // that rather than surfacing a row they chose not to show. The
+      // exception is a scalar that is one coordinate of the dragged point
+      // (`LocatorPane[Dynamic[{k, f[k]}, (k = First[#]) &], plot]`, a
+      // marker that slides along a curve) and that nothing in the body
+      // reassigns: dragging is its only input, so it gets a slider along
+      // that axis of the pane.
+      if let Some(slider) = locator_coordinate_slider(
+        &args[0],
+        &var,
+        &state,
+        range_arg.as_ref(),
+        &graphic,
+        &initial_bindings,
+      ) {
+        state.retain(|(n, _)| *n != var);
+        controls.push(slider);
+      }
       continue;
     }
     // A variable whose default resolves to a plain `{x, y}` point is a fit
@@ -42010,6 +42293,141 @@ fn spec_marks_locator(items: &[Expr]) -> bool {
   })
 }
 
+/// The visible `Locator` controls of a `Manipulate`, as `(variable,
+/// appearance)` pairs: every spec declaring `Locator` (bare or as
+/// `ControlType -> Locator`) without a custom `LocatorPane` control function,
+/// with the InputForm of its `Appearance -> …` graphic when it gives one.
+/// Wolfram draws these points over the first graphic the body displays; an
+/// `Appearance -> None` Locator draws nothing and is left out. Specs are
+/// found at top level and inside layout wrappers (`Control`, `Row`,
+/// `Column`, …). A body that places Locators itself (`LocatorPane`,
+/// `Locator[…]`) already draws them, so it yields none.
+pub fn manipulate_locator_markers(
+  expr: &Expr,
+) -> Vec<(String, Option<String>)> {
+  fn collect(spec: &Expr, out: &mut Vec<(String, Option<String>)>) {
+    match spec {
+      Expr::List(items) if !items.is_empty() => {
+        if let Some(var) = manipulate_spec_var_name(items) {
+          if spec_marks_locator(items)
+            && custom_locator_pane_options(items).is_none()
+          {
+            let appearance = items.iter().find_map(|it| match it {
+              Expr::Rule {
+                pattern,
+                replacement,
+              }
+              | Expr::RuleDelayed {
+                pattern,
+                replacement,
+              } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Appearance") => {
+                Some(replacement.as_ref())
+              }
+              _ => None,
+            });
+            match appearance {
+              Some(Expr::Identifier(s)) if s == "None" => {}
+              Some(Expr::Identifier(s)) if s == "Automatic" => {
+                out.push((var, None));
+              }
+              // `Appearance -> "Labeled"` and other style names configure
+              // a slider, not a marker graphic.
+              Some(Expr::String(_)) | None => out.push((var, None)),
+              Some(app) => {
+                out.push((var, Some(crate::syntax::expr_to_input_form(app))));
+              }
+            }
+          }
+        } else {
+          for item in items {
+            collect(item, out);
+          }
+        }
+      }
+      Expr::FunctionCall { name, args }
+        if matches!(
+          name.as_str(),
+          "Control" | "Row" | "Column" | "Grid" | "Panel" | "Framed"
+        ) =>
+      {
+        for arg in args {
+          collect(arg, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  fn places_locators(expr: &Expr) -> bool {
+    match expr {
+      Expr::FunctionCall { name, args } => {
+        matches!(name.as_str(), "Locator" | "LocatorPane")
+          || args.iter().any(places_locators)
+      }
+      Expr::List(items) => items.iter().any(places_locators),
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => places_locators(pattern) || places_locators(replacement),
+      Expr::CompoundExpr(items) => items.iter().any(places_locators),
+      _ => false,
+    }
+  }
+  let Expr::FunctionCall { name, args } = peel_manipulate_wrapper(expr) else {
+    return Vec::new();
+  };
+  if name != "Manipulate" || args.len() < 2 || places_locators(&args[0]) {
+    return Vec::new();
+  }
+  let mut out = Vec::new();
+  for spec in &args[1..] {
+    collect(spec, &mut out);
+  }
+  out
+}
+
+/// Wrap a Manipulate body so the given Locator controls (see
+/// [`manipulate_locator_markers`]) show as markers on the first 2D graphic
+/// the body returns, the way Wolfram places a Manipulate's Locators. The
+/// markers join the graphic's `Epilog`, so they neither move its plot range
+/// nor hide its own epilog; a result with no graphic is returned unchanged.
+/// Each variable may hold one point or a list of points.
+pub fn locator_marker_body(
+  body: &str,
+  markers: &[(String, Option<String>)],
+) -> String {
+  if markers.is_empty() {
+    return body.to_string();
+  }
+  let points = markers
+    .iter()
+    .map(|(var, appearance)| {
+      let locator = match appearance {
+        Some(app) => format!("Locator[#, {app}] &"),
+        None => "Locator".to_string(),
+      };
+      format!(
+        "Map[{locator}, Cases[{{{var}}}, {{_?NumericQ, _?NumericQ}}, {{1, 2}}]]"
+      )
+    })
+    .collect::<Vec<_>>()
+    .join(", ");
+  format!(
+    "Module[{{woxiRes = ({body}), woxiPos, woxiGraphic}}, \
+     woxiPos = FirstPosition[woxiRes, _Graphics, None, Heads -> False]; \
+     If[woxiPos === None, woxiRes, \
+     woxiGraphic = If[woxiPos === {{}}, woxiRes, Extract[woxiRes, woxiPos]]; \
+     woxiGraphic = Show[woxiGraphic, Epilog -> \
+     Join[Flatten[{{Lookup[Options[woxiGraphic, Epilog], Epilog, {{}}]}}], \
+     {points}]]; \
+     If[woxiPos === {{}}, woxiGraphic, \
+     ReplacePart[woxiRes, woxiPos -> woxiGraphic]]]]"
+  )
+}
+
 /// The arguments of the `LocatorPane[Dynamic[var], graphic, …]` a spec's
 /// custom control function draws for the spec's own variable — `{{pts, init},
 /// {xmin, ymin}, {xmax, ymax}, (LocatorPane[Dynamic[pts], …] &)}`. Such a
@@ -42314,6 +42732,92 @@ fn collect_body_locator_callbacks(
   let mut found = Vec::new();
   walk(expr, &resolve, &mut found);
   found
+}
+
+/// The axis (0 for x, 1 for y) at which `var` is one coordinate of a
+/// `LocatorPane[Dynamic[{x, y}, …], …]` point drawn in `expr`.
+fn locator_pane_coordinate_axis(expr: &Expr, var: &str) -> Option<usize> {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if name == "LocatorPane"
+        && let Some(Expr::FunctionCall {
+          name: dname,
+          args: dargs,
+        }) = args.first()
+        && dname == "Dynamic"
+        && let Some(Expr::List(items)) = dargs.first()
+        && items.len() == 2
+        && let Some(axis) = items
+          .iter()
+          .position(|it| matches!(it, Expr::Identifier(v) if v == var))
+      {
+        return Some(axis);
+      }
+      args
+        .iter()
+        .find_map(|a| locator_pane_coordinate_axis(a, var))
+    }
+    Expr::List(items) => items
+      .iter()
+      .find_map(|it| locator_pane_coordinate_axis(it, var)),
+    Expr::CompoundExpr(items) => items
+      .iter()
+      .find_map(|it| locator_pane_coordinate_axis(it, var)),
+    _ => None,
+  }
+}
+
+/// A slider for a hidden scalar `var` that is one coordinate of a
+/// `LocatorPane` point in `body` and is never assigned by the body itself,
+/// spanning the pane's range along that axis. `None` when `var` is no such
+/// coordinate, holds no real number, or is recomputed by the body.
+fn locator_coordinate_slider(
+  body: &Expr,
+  var: &str,
+  state: &[(String, String)],
+  range_arg: Option<&Expr>,
+  graphic: &Expr,
+  bindings: &[(String, String)],
+) -> Option<ManipulateControl> {
+  let axis = locator_pane_coordinate_axis(body, var)?;
+  if find_body_var_reset(body, var).is_some() {
+    return None;
+  }
+  let (_, code) = state.iter().find(|(n, _)| n == var)?;
+  let value = crate::interpret_to_expr(code).ok()?;
+  let initial = crate::functions::math_ast::try_eval_to_f64(&value)?;
+  // The pane's own range, else the plot range of the picture it shows.
+  let ((x_min, y_min), (x_max, y_max)) = match range_arg {
+    Some(_) => pane_range(range_arg, graphic),
+    None => find_plot_range(graphic)
+      .or_else(|| drawn_plot_range(graphic, bindings))
+      .unwrap_or(((0.0, 0.0), (1.0, 1.0))),
+  };
+  let (min, max) = if axis == 0 {
+    (x_min, x_max)
+  } else {
+    (y_min, y_max)
+  };
+  if max.partial_cmp(&min) != Some(std::cmp::Ordering::Greater) {
+    return None;
+  }
+  Some(ManipulateControl::Continuous {
+    name: var.to_string(),
+    min: min.min(initial),
+    max: max.max(initial),
+    step: None,
+    initial,
+    label: var.to_string(),
+    label_runs: vec![LabelRun {
+      text: var.to_string(),
+      ..Default::default()
+    }],
+    is_real: !matches!(value, Expr::Integer(_)),
+    exact_initial: matches!(value, Expr::Integer(_)),
+    orientation: ControlOrientation::Horizontal,
+    imaginary: false,
+    reversed: false,
+  })
 }
 
 /// The explicit `{{xmin, ymin}, {xmax, ymax}}` (optionally followed by a

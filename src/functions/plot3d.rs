@@ -3025,8 +3025,11 @@ fn generate_svg(
       _ => None,
     })
     .unwrap_or([None, None, None]);
+  let (label_face, tick_faces) = axes_text_faces(options);
   let look = AxesLook {
     label_size: label_font_size(options),
+    label_face,
+    tick_faces,
     ..AxesLook::default()
   };
   // The frame is fitted to the axes exactly as they are drawn below — the
@@ -4004,7 +4007,8 @@ fn draw_axes_on_box_with_ticks(
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
         svg.push_str(&format!(
-          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{label}</text>\n",
+          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{}>{label}</text>\n",
+          font_face_attrs(look.label_face),
         ));
         let chars = markup_char_count(label);
         extent.add_text(lx, ly, chars, font_size as f64, "middle");
@@ -4089,8 +4093,9 @@ fn draw_axes_on_box_with_ticks(
           ("middle", TICK_LABEL_OFFSET)
         };
         svg.push_str(&format!(
-                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + ux * reach, ty + uy * reach, tick_font_size, tick_color, anchor, label
+                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\"{}>{}</text>\n",
+                    tx + ux * reach, ty + uy * reach, tick_font_size, tick_color, anchor,
+                    font_face_attrs(look.tick_faces[ai]), label
                 ));
         extent.add_text(
           tx + ux * reach,
@@ -4113,6 +4118,13 @@ pub(crate) struct AxesLook {
   pub tick_colors: [Option<String>; 3],
   /// The font size `LabelStyle` gives the axis and tick labels.
   pub label_size: Option<f64>,
+  /// The `(bold, italic)` face of the axis labels (`BaseStyle`,
+  /// `LabelStyle`).
+  pub label_face: (bool, bool),
+  /// The `(bold, italic)` face of each axis's tick labels: the label face,
+  /// overridden by `TicksStyle` (`TicksStyle -> Plain` keeps them upright
+  /// under `BaseStyle -> Italic`).
+  pub tick_faces: [(bool, bool); 3],
 }
 
 impl Default for AxesLook {
@@ -4121,8 +4133,102 @@ impl Default for AxesLook {
       shown: [true; 3],
       tick_colors: [None, None, None],
       label_size: None,
+      label_face: (false, false),
+      tick_faces: [(false, false); 3],
     }
   }
+}
+
+/// The `(bold, italic)` overrides a text style spec sets: `Bold`, `Italic`,
+/// `Plain` (both off), `FontWeight -> …`, `FontSlant -> …`, and lists or
+/// `Directive[…]`s of those, later entries winning. `None` leaves a
+/// component as it was.
+fn font_face_overrides(spec: &Expr) -> (Option<bool>, Option<bool>) {
+  let mut face = (None, None);
+  fn walk(e: &Expr, face: &mut (Option<bool>, Option<bool>)) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| walk(i, face)),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().for_each(|i| walk(i, face));
+      }
+      Expr::Identifier(n) => match n.as_str() {
+        "Bold" => face.0 = Some(true),
+        "Italic" => face.1 = Some(true),
+        "Plain" => *face = (Some(false), Some(false)),
+        _ => {}
+      },
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match (pattern.as_ref(), replacement.as_ref()) {
+        (Expr::Identifier(k), Expr::Identifier(v)) if k == "FontWeight" => {
+          face.0 = Some(v == "Bold");
+        }
+        (Expr::Identifier(k), Expr::Identifier(v)) if k == "FontSlant" => {
+          face.1 = Some(v == "Italic" || v == "Oblique");
+        }
+        _ => {}
+      },
+      _ => {}
+    }
+  }
+  walk(spec, &mut face);
+  face
+}
+
+/// The `(bold, italic)` faces of a 3D box's axis labels and of each axis's
+/// tick labels: `BaseStyle` and then `LabelStyle` style all of that text,
+/// and `TicksStyle -> s` (or `{sx, sy, sz}`, one per axis) restyles just
+/// the tick labels.
+fn axes_text_faces(opts: &[Expr]) -> ((bool, bool), [(bool, bool); 3]) {
+  let apply = |face: (bool, bool), spec: &Expr| {
+    let (bold, italic) = font_face_overrides(spec);
+    (bold.unwrap_or(face.0), italic.unwrap_or(face.1))
+  };
+  let option = |key: &str| {
+    opts.iter().rev().find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      ),
+      _ => None,
+    })
+  };
+  let mut label = (false, false);
+  for key in ["BaseStyle", "LabelStyle"] {
+    if let Some(spec) = option(key) {
+      label = apply(label, &spec);
+    }
+  }
+  let ticks = match option("TicksStyle") {
+    Some(Expr::List(ref items)) if items.len() == 3 => [
+      apply(label, &items[0]),
+      apply(label, &items[1]),
+      apply(label, &items[2]),
+    ],
+    Some(spec) => [apply(label, &spec); 3],
+    None => [label; 3],
+  };
+  (label, ticks)
+}
+
+/// The SVG attributes for a `(bold, italic)` text face (empty for plain).
+fn font_face_attrs((bold, italic): (bool, bool)) -> String {
+  let mut attrs = String::new();
+  if bold {
+    attrs.push_str(" font-weight=\"bold\"");
+  }
+  if italic {
+    attrs.push_str(" font-style=\"italic\"");
+  }
+  attrs
 }
 
 /// The colors `TicksStyle -> {sx, sy, sz}` (or one style for all three
@@ -10247,25 +10353,57 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
   total_turn.abs() < 3.0 * std::f64::consts::PI
 }
 
+/// Whether every corner of a polygon lies in one plane. A corner farther
+/// from the plane through the first corner (with the polygon's own normal)
+/// than a millionth of the polygon's extent makes it non-planar.
+fn is_planar_polygon3d(points: &[Point3D]) -> bool {
+  let Some(normal) = polygon_plane_normal(points) else {
+    return true;
+  };
+  let o = points[0];
+  let extent = points
+    .iter()
+    .flat_map(|p| [(p.x - o.x).abs(), (p.y - o.y).abs(), (p.z - o.z).abs()])
+    .fold(0.0f64, f64::max);
+  points.iter().all(|p| {
+    let d = (p.x - o.x) * normal[0]
+      + (p.y - o.y) * normal[1]
+      + (p.z - o.z) * normal[2];
+    d.abs() <= 1e-6 * extent
+  })
+}
+
+/// Whether a hole-free 3D face needs the general planar triangulator
+/// rather than a fan from its first corner: it is planar but not convex.
+/// A non-planar outline (a closed path over several faces of a box) has
+/// no plane to be flattened onto, so it is drawn as a fan, like Wolfram's
+/// renderer does; flattening would collapse it onto a single plane.
+fn uses_polygon_triangulator(points: &[Point3D]) -> bool {
+  points.len() > 3
+    && is_planar_polygon3d(points)
+    && !is_convex_polygon3d(points)
+}
+
+/// Split a hole-free 3D face into triangles: a fan from the first corner
+/// when it is convex or non-planar, the general triangulator otherwise.
+fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
+  if points.len() < 3 {
+    Vec::new()
+  } else if uses_polygon_triangulator(points) {
+    tessellate_polygon_with_holes(points, &[]).0
+  } else {
+    (1..points.len() - 1)
+      .map(|i| (points[0], points[i], points[i + 1]))
+      .collect()
+  }
+}
+
 /// Tessellate a planar polygon with holes (`Polygon[outer -> holes]`).
 ///
 /// The face is flattened onto its own plane, triangulated there, and the
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
-/// Split a hole-free 3D face into triangles: a fan from the first corner
-/// when it is convex, the general triangulator otherwise.
-fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
-  if points.len() < 3 {
-    Vec::new()
-  } else if points.len() == 3 || is_convex_polygon3d(points) {
-    (1..points.len() - 1)
-      .map(|i| (points[0], points[i], points[i + 1]))
-      .collect()
-  } else {
-    tessellate_polygon_with_holes(points, &[]).0
-  }
-}
 
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
@@ -12085,8 +12223,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut view_point_at_infinity = false;
   let mut orthographic = false;
   let mut show_axes = false;
+  let (label_face, tick_faces) = axes_text_faces(&args[1..]);
   let mut axes_look = AxesLook {
     label_size: label_font_size(&args[1..]),
+    label_face,
+    tick_faces,
     ..AxesLook::default()
   };
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
@@ -12820,18 +12961,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } if holes.is_empty() => {
           // A fan from the first corner only covers a convex polygon; on a
           // concave one its triangles spill outside the outline, which
-          // shows as spikes off the shape. A concave face goes through the
-          // same triangulator the holed case uses.
-          let t = if points.len() < 3 {
-            vec![]
-          } else if is_convex_polygon3d(points) {
-            (1..points.len() - 1)
-              .map(|i| (points[0], points[i], points[i + 1]))
-              .collect()
-          } else {
+          // shows as spikes off the shape. A concave planar face goes
+          // through the same triangulator the holed case uses.
+          let t = if uses_polygon_triangulator(points) {
             let (t, flags) = tessellate_polygon_with_holes(points, &[]);
             holed_boundaries = flags;
             t
+          } else {
+            triangulate_face3d(points)
           };
           (t, style)
         }
@@ -12951,8 +13088,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Primitive3D::Cone { .. }
         | Primitive3D::Surface3D { smooth: true, .. }
     );
+    // A non-planar polygon has no single normal: each of its fan
+    // triangles is lit by its own.
     let polygon_normal = match prim {
-      Primitive3D::Polygon3D { points, .. } if points.len() > 3 => {
+      Primitive3D::Polygon3D { points, .. }
+        if points.len() > 3 && is_planar_polygon3d(points) =>
+      {
         let mut normal = [0.0; 3];
         for i in 0..points.len() {
           let (a, b) = (points[i], points[(i + 1) % points.len()]);

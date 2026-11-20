@@ -6898,6 +6898,94 @@ mod plot3d {
       );
     }
 
+    /// `Show` of a literal `Graphics3D[…]` / `Graphics[…]` evaluates the
+    /// graphic's primitives in the current scope. Regression: they were
+    /// kept unevaluated, so `Sphere[pts[[i]], r]` inside a `Table` stayed
+    /// symbolic and every sphere was drawn at the origin.
+    #[test]
+    fn show_evaluates_the_primitives_of_a_literal_graphic() {
+      clear_state();
+      assert_eq!(
+        interpret("Show[Graphics3D[{Sphere[{1 + 1, 0, 0}]}]][[1]]").unwrap(),
+        "{Sphere[{2, 0, 0}]}"
+      );
+      assert_eq!(
+        interpret("Show[Graphics[{Point[{2 a, 3}]}, Axes -> True]][[1]]")
+          .unwrap(),
+        "{Point[{2*a, 3}]}"
+      );
+      assert_eq!(
+        interpret(
+          "pts = {{1, 2, 3}, {4, 5, 6}}; \
+           Cases[Table[Show[Graphics3D[{Red, Sphere[pts[[i]], 0.1]}]], \
+           {i, 1, 2}], _Sphere, Infinity]"
+        )
+        .unwrap(),
+        "{Sphere[{1, 2, 3}, 0.1], Sphere[{4, 5, 6}, 0.1]}"
+      );
+    }
+
+    /// `BaseStyle -> Italic` slants the axis and tick labels of a 3D box,
+    /// and `TicksStyle -> Plain` sets the tick labels upright again — for
+    /// a `Graphics3D`, a surface plot and a `Show` of a 3D plot alike.
+    #[test]
+    fn base_style_sets_the_face_of_3d_axes_labels() {
+      // (axis labels, tick labels) as (italic, bold) flags of each <text>.
+      let faces = |code: &str| {
+        let svg = export_svg(code);
+        let texts: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<text")).collect();
+        let face = |l: &str| {
+          (
+            l.contains("font-style=\"italic\""),
+            l.contains("font-weight=\"bold\""),
+          )
+        };
+        let is_label =
+          |l: &str| l.ends_with(">x</text>") || l.ends_with(">y</text>");
+        let labels: Vec<_> = texts
+          .iter()
+          .filter(|l| is_label(l))
+          .map(|l| face(l))
+          .collect();
+        let ticks: Vec<_> = texts
+          .iter()
+          .filter(|l| !is_label(l))
+          .map(|l| face(l))
+          .collect();
+        assert!(labels.len() == 2 && !ticks.is_empty(), "{svg}");
+        (labels, ticks)
+      };
+      let all = |v: &[(bool, bool)], f: (bool, bool)| v.iter().all(|x| *x == f);
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> Italic]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (true, false)));
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> Italic, TicksStyle -> Plain]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (false, false)));
+      let (labels, ticks) = faces(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> {Bold}]",
+      );
+      assert!(all(&labels, (false, true)) && all(&ticks, (false, true)));
+      let (labels, ticks) = faces(
+        "Show[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 3}], \
+         AxesLabel -> {\"x\", \"y\", None}, BaseStyle -> Italic, \
+         TicksStyle -> Plain]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (false, false)));
+      // Without a BaseStyle every label stays upright.
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}]",
+      );
+      assert!(all(&labels, (false, false)) && all(&ticks, (false, false)));
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
@@ -27928,6 +28016,27 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // A pane whose body is a call of a user-defined function returning a
+    // plot (`LocatorPane[pt, picture[a]]`, or a symbol holding one) has no
+    // graphics call in sight to take the markers; they are drawn over the
+    // picture it evaluates to, keeping that picture's own `Epilog`.
+    #[test]
+    fn locator_pane_draws_its_locator_over_a_helper_plot() {
+      clear_state();
+      let svg = export_svg(
+        "helperPic[a_] := Plot[a Sin[x], {x, 0, Pi}, \
+           Epilog -> {Disk[{1, 0.2}, 0.05]}]; \
+         LocatorPane[{1.5, 0.3}, helperPic[1]]",
+      );
+      // The plot's own disk plus the locator's marker circle.
+      assert_eq!(svg.matches("<ellipse").count(), 2, "{svg}");
+      let svg = export_svg(
+        "storedPic = Plot[x, {x, 0, 1}]; \
+         LocatorPane[Dynamic[{0.5, 0.5}], storedPic]",
+      );
+      assert_eq!(svg.matches("<ellipse").count(), 1, "{svg}");
+    }
+
     // `Appearance -> {g1, g2, …}` gives one picture per locator, drawn about
     // the origin, so each marker is that picture moved onto its point. This
     // is how a Demonstration labels the vertices it lets you drag.
@@ -28205,6 +28314,49 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         signs.iter().all(|s| *s == signs[0]),
         "every triangle must wind the polygon's way: {signs:?} in {svg}"
       );
+    }
+
+    // A polygon whose corners do not lie in one plane (a closed path over
+    // three faces of a cube) has no plane to be flattened onto. Woxi used
+    // to squash it onto one plane and light it with a single normal, so a
+    // box drawn as one such polygon came out as a flat panel. It is drawn
+    // as a fan from its first corner instead, each triangle lit by its own
+    // normal.
+    #[test]
+    fn a_non_planar_polygon_is_a_lit_fan() {
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{1,0,0},{1,0,1},{1,1,1},{0,1,1},          {0,1,0}}], Boxed -> False]",
+      );
+      let triangles: Vec<(Vec<String>, String)> = svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .map(|l| {
+          let attr = |k: &str| {
+            l.split(&format!("{k}=\""))
+              .nth(1)
+              .and_then(|v| v.split('"').next())
+              .unwrap_or("")
+              .to_string()
+          };
+          let pts = attr("points")
+            .split(' ')
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+          (pts, attr("fill"))
+        })
+        .collect();
+      assert_eq!(triangles.len(), 4, "a hexagon fans into 4: {svg}");
+      assert!(
+        triangles[0]
+          .0
+          .iter()
+          .any(|p| triangles.iter().all(|(pts, _)| pts.contains(p))),
+        "every triangle shares the first corner: {svg}"
+      );
+      let mut fills: Vec<&String> = triangles.iter().map(|t| &t.1).collect();
+      fills.sort();
+      fills.dedup();
+      assert_eq!(fills.len(), 4, "each triangle has its own shade: {svg}");
     }
 
     // Wolfram outlines a flat face in a solid `GrayLevel[0.25]` one pixel
@@ -39795,6 +39947,62 @@ mod manipulate {
       ManipulateControl::Slider2D { name, .. } => assert_eq!(name, "pt"),
       other => panic!("expected a draggable 2D control, got {other:?}"),
     }
+  }
+
+  // A literal `Animate[…]` laid out inside the body (beside other content,
+  // under `Module`/`Column`) has its time hoisted into a running
+  // `ControlType -> Animator` control of the outer widget, and the inner
+  // body stays in its place, deferred by `Dynamic`. A hidden scalar that is
+  // one coordinate of a `LocatorPane` point, and that the body never
+  // reassigns, gets a slider along that axis of the pane.
+  #[test]
+  fn spec_body_nested_animate_and_locator_coordinate_become_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[Module[{}, Column[{\
+         LocatorPane[Dynamic[{k, Sin[k]}, (k = First[#]) &], \
+           Graphics[Point[{k, Sin[k]}], PlotRange -> {{0, 4}, {-1, 1}}]], \
+         Animate[Graphics[Disk[{Cos[t], 0}]], {{t, 0, \"time\"}, 0, 10}, \
+           AnimationRunning -> False]}]], \
+       {{k, 1.}, ControlType -> None}, {{a, 1}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(spec.animated);
+    assert!(!spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+    assert!(
+      spec.body_code.contains("Dynamic[Graphics[Disk["),
+      "{}",
+      spec.body_code
+    );
+    assert!(!spec.body_code.contains("Animate"), "{}", spec.body_code);
+    assert!(
+      !spec.state.iter().any(|(n, _)| n == "k"),
+      "{:?}",
+      spec.state
+    );
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "t", "k"]);
+    match &spec.controls[2] {
+      ManipulateControl::Continuous {
+        min, max, initial, ..
+      } => assert_eq!((*min, *max, *initial), (0.0, 4.0, 1.0)),
+      other => panic!("expected a slider for k, got {other:?}"),
+    }
+  }
+
+  // The body assigning the hidden coordinate itself keeps it hidden.
+  #[test]
+  fn spec_body_recomputed_locator_coordinate_stays_hidden() {
+    let expr = interpret_to_expr(
+      "Manipulate[k = 2 a; LocatorPane[Dynamic[{k, 0}], \
+         Graphics[Point[{k, 0}], PlotRange -> {{0, 4}, {-1, 1}}]], \
+       {{k, 1.}, ControlType -> None}, {{a, 1}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(!spec.controls.iter().any(|c| c.name() == "k"));
   }
 
   // A Demonstration that drags a *list* of points drawn by a body-local
@@ -51947,6 +52155,18 @@ fn grid_column_width_follows_displayed_text() {
   let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
   let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
+  // A StringForm is measured as its filled template, not its call source.
+  let filled = first_divider(
+    "Grid[{{Style[StringForm[\"Q = `1`\", NumberForm[10., {6, 2}]], 16], 1}}, \
+     Frame -> All]",
+  );
+  let literal =
+    first_divider("Grid[{{Style[\"Q = 10.00\", 16], 1}}, Frame -> All]");
+  assert!((filled - literal).abs() < 1.0, "{filled} vs {literal}");
+  let slots =
+    first_divider("Grid[{{StringForm[\"`` of ``\", 2, x], 1}}, Frame -> All]");
+  let text = first_divider("Grid[{{\"2 of x\", 1}}, Frame -> All]");
+  assert!((slots - text).abs() < 1.0, "{slots} vs {text}");
 }
 
 mod traditional_form_typesetting {
@@ -52667,6 +52887,60 @@ fn explicit_plot_range_clips_lattice_in_wide_image_on_both_sides() {
     "{svg}"
   );
   assert!(svg.contains("clip-path=\"url("), "{svg}");
+}
+
+#[test]
+fn plot_epilog_draws_locator_markers() {
+  // Regression: a `Locator` in a plot's `Epilog` drew nothing (only
+  // `Graphics` placed its marker).
+  const MARKER: &str = "rgba(180,180,180,0.35)";
+  let one = export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}]}]");
+  assert_eq!(one.matches(MARKER).count(), 1, "{one}");
+  let two = export_svg(
+    "Plot[x, {x, 0, 1}, Epilog -> {Locator[{{0.2, 0.2}, {0.7, 0.7}}]}]",
+  );
+  assert_eq!(two.matches(MARKER).count(), 2, "{two}");
+  let hidden =
+    export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}, None]}]");
+  assert_eq!(hidden.matches(MARKER).count(), 0, "{hidden}");
+}
+
+#[test]
+fn show_with_an_option_keeps_a_plot_range_all_plot_unchanged() {
+  // Regression: `Show[p, opt]` of a `PlotRange -> All` plot dropped the
+  // plot's range padding, redrawing it squeezed to its data (and taller).
+  for code in [
+    "Plot[x^2, {x, 0, 5}, PlotRange -> All]",
+    "Plot[30 - 31 Exp[-x], {x, 0, 50}, PlotRange -> All, Frame -> True, \
+     Axes -> False, ImagePadding -> {{65, 25}, {25, 25}}, ImageSize -> 450]",
+    "Plot[Sin[x], {x, 0, 10}, PlotRange -> {{0, 5}, All}]",
+  ] {
+    assert_eq!(
+      export_svg(&format!("Show[{code}, Epilog -> {{}}]")),
+      export_svg(code),
+      "{code}"
+    );
+  }
+}
+
+#[test]
+fn plot_with_explicit_image_padding_clips_labels_at_its_edge() {
+  // Regression: a frame label below a bottom `ImagePadding` too small to
+  // hold it showed under the picture once the plot sat in a `Labeled`
+  // (whose cells let content overflow). Wolfram cuts it off at the image
+  // boundary, also when nested.
+  let code = "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}, \
+              ImagePadding -> {{50, 20}, {20, 20}}, ImageSize -> 300]";
+  let svg = export_svg(code);
+  assert!(svg.contains("<clipPath id=\"imageClip_"), "{svg}");
+  assert!(svg.contains("clip-path=\"url(#imageClip_"), "{svg}");
+  let labeled = export_svg(&format!("Labeled[{code}, \"caption\"]"));
+  assert!(labeled.contains("clip-path=\"url(#imageClip_"), "{labeled}");
+  // Automatic padding grows to hold the labels and clips nothing.
+  let auto = export_svg(
+    "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}]",
+  );
+  assert!(!auto.contains("imageClip_"), "{auto}");
 }
 
 #[test]
@@ -58512,6 +58786,89 @@ mod ranges_and_ticks {
       .unwrap(),
       "9.999999795918367"
     );
+  }
+
+  #[test]
+  fn show_keeps_the_settled_all_range_of_a_list_plot() {
+    // A list plot settles `PlotRange -> All` into its data's range, so a
+    // marker line reaching past it is clipped, not zooming the picture out.
+    for head in ["ListPlot", "ListLinePlot"] {
+      assert_eq!(
+        interpret(&format!(
+          "lp = {head}[{{{{1, 1}}, {{2, 2}}, {{3, 3}}}}, PlotRange -> All]; \
+           PlotRange[Show[lp, Graphics[Line[{{{{2, -5}}, {{2, 5}}}}]]]] == \
+           PlotRange[Show[lp, Graphics[Point[{{2, 2}}]]]]"
+        ))
+        .unwrap(),
+        "True",
+        "{head}"
+      );
+    }
+    // A function plot's `All` still spans everything shown.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[Plot[x, {x, 1, 3}, PlotRange -> All], \
+         Graphics[Line[{{2, -5}, {2, 5}}]]]][[2]]"
+      )
+      .unwrap(),
+      "{-5., 5.}"
+    );
+    // So does an `All` given to `Show` itself.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotRange -> All], \
+         Graphics[Line[{{2, -5}, {2, 5}}]], PlotRange -> All]][[2]]"
+      )
+      .unwrap(),
+      "{-5., 5.}"
+    );
+    // Shown with another list plot, the first one's range is kept as well.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotRange -> All], \
+         ListPlot[{{2, -5}, {4, 5}}]]][[2]]"
+      )
+      .unwrap(),
+      "{0., 3.}"
+    );
+  }
+
+  #[test]
+  fn show_draws_glyph_plot_markers_as_their_shapes() {
+    // `●` keeps the radius the plot draws it with (3.17 pt at size 10)
+    // instead of turning into text in an arbitrary font.
+    let svg = export_svg(
+      "Show[ListPlot[{1, 2, 3}, PlotMarkers -> \"●\"], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert!(!svg.contains('●'), "{svg}");
+    assert_eq!(svg.matches("rx=\"3.17\" ry=\"3.17\"").count(), 3, "{svg}");
+    // A hollow glyph is its stroked outline.
+    let svg = export_svg(
+      "Show[ListPlot[{1, 2, 3}, PlotMarkers -> \"□\"], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert!(!svg.contains('□'), "{svg}");
+    assert_eq!(svg.matches("stroke-width=\"0.56\"").count(), 3, "{svg}");
+  }
+
+  #[test]
+  fn letterboxed_plot_label_stays_above_the_drawing_area() {
+    // The 1/GoldenRatio area is centered in the 400 pt tall picture; the
+    // label moves down with it rather than staying at the top edge.
+    let svg = export_svg(
+      "Graphics[Line[{{0, 0}, {1, 1}}], PlotLabel -> \"T\", Axes -> True, \
+       AspectRatio -> 1/GoldenRatio, ImageSize -> {450, 400}]",
+    );
+    let end = svg.find(">T</text>").expect("title");
+    let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+    let y: f64 = tag
+      .split(" y=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!((60.0..75.0).contains(&y), "title baseline at {y}: {svg}");
   }
 
   #[test]
