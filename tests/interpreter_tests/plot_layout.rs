@@ -1536,3 +1536,49 @@ mod typeset_labels {
     assert!((translate(&plain) - translate(&styled)).abs() < 1.0);
   }
 }
+
+/// Regression: a per-series `PlotStyle` entry that is a directive list
+/// holding a color (`{Opacity[a], Gray}`) was read as that one color, so
+/// the curve lost its opacity (and any other directive in the list).
+mod plot_style_directive_lists {
+  use super::*;
+
+  /// The `opacity` of every curve (`<polyline>`) in order.
+  fn curve_opacities(svg: &str) -> Vec<String> {
+    svg
+      .split("<polyline ")
+      .skip(1)
+      .map(|t| {
+        let start = t.find("opacity=\"").unwrap() + "opacity=\"".len();
+        t[start..start + t[start..].find('"').unwrap()].to_string()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn plot_keeps_opacity_beside_color() {
+    let svg = svg_of(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, \
+       PlotStyle -> {{Opacity[0.3], Gray}, {Red, Opacity[0.5]}}]",
+    );
+    assert_eq!(curve_opacities(&svg), ["0.3", "0.5"], "{svg}");
+    assert!(svg.contains("stroke=\"#808080\""), "{svg}");
+    assert!(svg.contains("stroke=\"#FF0000\""), "{svg}");
+  }
+
+  #[test]
+  fn parametric_plot_keeps_opacity_beside_color() {
+    let svg = svg_of(
+      "ParametricPlot[{{Cos[t], Sin[t]}, {2 Cos[t], Sin[t]}}, {t, 0, 2 Pi}, \
+       PlotStyle -> {{Opacity[0.025], Gray}, {Opacity[0.025], Gray}}]",
+    );
+    assert_eq!(curve_opacities(&svg), ["0.025", "0.025"], "{svg}");
+  }
+
+  #[test]
+  fn single_series_list_keeps_opacity() {
+    let svg =
+      svg_of("Plot[Sin[x], {x, 0, 1}, PlotStyle -> {Red, Opacity[0.5]}]");
+    assert_eq!(curve_opacities(&svg), ["0.5"], "{svg}");
+  }
+}

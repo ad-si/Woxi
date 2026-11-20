@@ -14208,8 +14208,12 @@ pub(crate) fn series_color_expr(
 
 /// Apply a style directive expression to a SeriesStyle.
 pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
-  // Try as a color first
-  if let Some(c) = parse_color(expr) {
+  // Try as a color first. A directive list is not: `parse_color` reads
+  // `{Opacity[a], Gray}` as its one color, which would drop the opacity
+  // (and any thickness or dashing) — the `List` arm below applies each
+  // directive in turn instead.
+  if let Some(c) = parse_color(expr).filter(|_| !matches!(expr, Expr::List(_)))
+  {
     // A translucent color (`Transparent`, `RGBColor[r, g, b, a]`) fades the
     // curve by its alpha.
     if c.a < 1.0 {
