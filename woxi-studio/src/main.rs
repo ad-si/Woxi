@@ -4350,6 +4350,30 @@ const MANIPULATE_THROTTLE_MS: u64 = 16;
 /// (and the Playground's pace).
 const ANIM_INTERVAL_MS: u64 = 60;
 
+/// Largest box a radio-bar choice icon is drawn in; a bigger picture is
+/// scaled down to fit, keeping its aspect ratio.
+const RADIO_ICON_MAX: (f32, f32) = (160.0, 48.0);
+
+/// The size to draw a radio-bar choice icon at: the size its SVG states
+/// (`Graphics[…, ImageSize -> {30, 30}]` padded by a `Row`'s trailing
+/// spaces is wider than tall), scaled down to fit [`RADIO_ICON_MAX`].
+/// An icon that states no size gets the compact 24×14 slot.
+fn radio_choice_icon_size(icon: &svg::Handle) -> (f32, f32) {
+  let iced::advanced::svg::Data::Bytes(bytes) = icon.data() else {
+    return (24.0, 14.0);
+  };
+  let Some((width, height)) = std::str::from_utf8(bytes)
+    .ok()
+    .and_then(manipulate::svg_root_size)
+  else {
+    return (24.0, 14.0);
+  };
+  let scale = (RADIO_ICON_MAX.0 / width)
+    .min(RADIO_ICON_MAX.1 / height)
+    .min(1.0);
+  (width * scale, height * scale)
+}
+
 /// Maximum number of choices rendered as a segmented SetterBar (a row of
 /// toggle buttons) as long as the whole row still fits
 /// ([`SETTER_BAR_MAX_ROW_CHARS`]). Wolfram picks a SetterBar for up to five
@@ -4528,6 +4552,7 @@ fn placement_slot(placement: manipulate::ControlPlacement) -> usize {
 fn manipulate_button<'a>(
   label: &str,
   label_runs: &[woxi::functions::graphics::LabelRun],
+  background: Option<(f64, f64, f64)>,
   on_press: Message,
 ) -> Element<'a, Message> {
   let spans: Vec<iced::widget::text::Span<Message>> = label_runs
@@ -4552,7 +4577,57 @@ fn manipulate_button<'a>(
   } else {
     rich_text(spans).size(11).into()
   };
-  button(btn_label).padding([3, 10]).on_press(on_press).into()
+  let btn = button(btn_label).padding([3, 10]).on_press(on_press);
+  match background {
+    Some(rgb) => btn
+      .style(move |_theme, status| colored_button_style(rgb, status))
+      .into(),
+    None => btn.into(),
+  }
+}
+
+/// The look of a Manipulate `Button[…, Background -> color]`: its face is
+/// painted in `color` (lightened while hovered, darkened while pressed),
+/// edged a shade darker, with black or white text — whichever contrasts
+/// with the face — the way the Wolfram FrontEnd draws a colored button.
+fn colored_button_style(
+  (r, g, b): (f64, f64, f64),
+  status: button::Status,
+) -> button::Style {
+  let shade = |f: f64| -> Color {
+    let mix = |c: f64| -> f32 {
+      let v = if f >= 0.0 {
+        c + (1.0 - c) * f
+      } else {
+        c * (1.0 + f)
+      };
+      v.clamp(0.0, 1.0) as f32
+    };
+    Color::from_rgb(mix(r), mix(g), mix(b))
+  };
+  let face = match status {
+    button::Status::Hovered => shade(0.15),
+    button::Status::Pressed => shade(-0.15),
+    _ => shade(0.0),
+  };
+  // Relative luminance (Rec. 709 weights) picks the readable text color.
+  let luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  let text_color = if luminance > 0.5 {
+    Color::BLACK
+  } else {
+    Color::WHITE
+  };
+  button::Style {
+    background: Some(Background::Color(face)),
+    text_color,
+    border: iced::Border {
+      color: shade(-0.3),
+      width: 1.0,
+      radius: 3.0.into(),
+    },
+    shadow: Default::default(),
+    snap: false,
+  }
 }
 
 /// Finish the column the current control was drawn into (see the `line`
@@ -4913,12 +4988,15 @@ fn render_manipulate_widget<'a>(
                   .text_size(12)
                   .into()
               }
-              (Some(icon), _) => row![
-                radio("", i, selected, on_click).size(14).spacing(0),
-                svg::Svg::new(icon.clone())
-                  .width(iced::Length::Fixed(24.0))
-                  .height(iced::Length::Fixed(14.0)),
-              ]
+              (Some(icon), _) => {
+                let (icon_width, icon_height) = radio_choice_icon_size(icon);
+                row![
+                  radio("", i, selected, on_click).size(14).spacing(0),
+                  svg::Svg::new(icon.clone())
+                    .width(iced::Length::Fixed(icon_width))
+                    .height(iced::Length::Fixed(icon_height)),
+                ]
+              }
               .spacing(4)
               .align_y(Center)
               .into(),
@@ -4936,7 +5014,15 @@ fn render_manipulate_widget<'a>(
           if *is_vertical {
             Column::with_children(items).spacing(4).into()
           } else {
-            Row::with_children(items).spacing(12).align_y(Center).into()
+            // A bar too wide for the cell (seventeen picture choices)
+            // continues on the next line instead of squeezing its choices
+            // together and clipping the last ones out of reach.
+            Row::with_children(items)
+              .spacing(12)
+              .align_y(Center)
+              .wrap()
+              .vertical_spacing(4)
+              .into()
           }
         } else if *force_setter_bar
           || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
@@ -5027,7 +5113,8 @@ fn render_manipulate_widget<'a>(
         y,
         ..
       } => {
-        // Rendered as two linked sliders (X and Y) driving the 2-vector.
+        // Rendered as two linked sliders (X and Y) driving the 2-vector,
+        // minus any axis the bounds pin in place.
         let x_span = (*x_max - *x_min).abs();
         let y_span = (*y_max - *y_min).abs();
         let x_step = if x_span > 0.0 { x_span / 100.0 } else { 1.0 };
@@ -5066,13 +5153,19 @@ fn render_manipulate_widget<'a>(
         // align with the other controls.
         let label_widget =
           manipulate_label_widget(&[], label, label_col_width, enabled);
-        let control_row = row![
-          label_widget,
-          column![x_slider, y_slider].spacing(4),
-          value_widget
-        ]
-        .align_y(Center)
-        .spacing(8);
+        // An axis the bounds pin to one coordinate can't be dragged, so it
+        // gets no (dead) slider of its own.
+        let [x_free, y_free] = ctrl.slider2d_free_axes();
+        let mut sliders = column![].spacing(4).width(Fill);
+        if x_free {
+          sliders = sliders.push(x_slider);
+        }
+        if y_free {
+          sliders = sliders.push(y_slider);
+        }
+        let control_row = row![label_widget, sliders, value_widget]
+          .align_y(Center)
+          .spacing(8);
         controls_col = controls_col.push(control_row);
       }
       manipulate::ControlState::VectorSlider {
@@ -5348,13 +5441,17 @@ fn render_manipulate_widget<'a>(
         let mut idx = ctrl_idx;
         loop {
           if let manipulate::ControlState::Button {
-            label, label_runs, ..
+            label,
+            label_runs,
+            background,
+            ..
           } = &visible_controls[idx]
           {
             let on = state.control_is_enabled.get(idx).copied().unwrap_or(true);
             btn_row = btn_row.push(manipulate_button(
               label,
               label_runs,
+              *background,
               if on {
                 Message::ManipulateButtonPressed(cell_idx, idx)
               } else {
@@ -10163,6 +10260,55 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// twice (`Block::dup`), which made `apply_manipulate_button_action`
   /// silently drop the update instead of running it. The button appeared to
   /// do nothing.
+  /// A `Button[…, Background -> color]` control keeps its face color in
+  /// the Studio state, and the painted style picks text that contrasts
+  /// with it (white on a dark face, black on a light one).
+  #[test]
+  fn manipulate_button_background_paints_the_face() {
+    let code = "Manipulate[n, \
+      Row[{Button[\"-\", n = n - 1, Background -> Red], \
+      Button[\"+\", n = n + 1, Background -> Yellow], \
+      Button[\"0\", n = 0]}], \
+      {{n, 1}, 1, 9, 1}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the colored-button Manipulate must build a widget");
+    let backgrounds: Vec<Option<(f64, f64, f64)>> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Button { background, .. } => {
+          Some(*background)
+        }
+        _ => None,
+      })
+      .collect();
+    assert_eq!(
+      backgrounds,
+      vec![Some((1.0, 0.0, 0.0)), Some((1.0, 1.0, 0.0)), None]
+    );
+
+    let red = colored_button_style((1.0, 0.0, 0.0), button::Status::Active);
+    assert_eq!(
+      red.background,
+      Some(Background::Color(Color::from_rgb(1.0, 0.0, 0.0)))
+    );
+    assert_eq!(red.text_color, Color::WHITE);
+    let yellow = colored_button_style((1.0, 1.0, 0.0), button::Status::Active);
+    assert_eq!(yellow.text_color, Color::BLACK);
+    // Hovering lightens the face, pressing darkens it.
+    let Some(Background::Color(hover)) =
+      colored_button_style((1.0, 0.0, 0.0), button::Status::Hovered).background
+    else {
+      panic!("a colored button has a solid face");
+    };
+    let Some(Background::Color(pressed)) =
+      colored_button_style((1.0, 0.0, 0.0), button::Status::Pressed).background
+    else {
+      panic!("a colored button has a solid face");
+    };
+    assert!(hover.g > 0.0 && pressed.r < 1.0, "{hover:?} {pressed:?}");
+  }
+
   #[test]
   fn manipulate_button_action_with_disjoint_setter_bar_siblings() {
     let code = "Manipulate[\
@@ -12396,6 +12542,52 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
 
   #[test]
+  fn locator_pinned_to_a_segment_offers_only_its_free_axis() {
+    // A Locator whose corner bounds share a coordinate slides along a
+    // segment: `{1, 0}`–`{3, 0}` keeps it on the x-axis, `{0, -1}`–`{0, 2}`
+    // on the y-axis. The pinned axis must not get a (dead) slider, and
+    // dragging the free one moves the point along the segment only.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Graphics[{Line[{{0, 0}, p}], Point[q]}, \
+       PlotRange -> {{-1, 4}, {-2, 3}}], \
+       {{p, {2, 0}}, {1, 0}, {3, 0}, ControlType -> Locator}, \
+       {{q, {0, 1}}, {0, -1}, {0, 2}, Locator}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the picture must render");
+    match &state.controls[..] {
+      [
+        p @ manipulate::ControlState::Slider2D { name: pn, .. },
+        q @ manipulate::ControlState::Slider2D { name: qn, .. },
+      ] => {
+        assert_eq!((pn.as_str(), qn.as_str()), ("p", "q"));
+        assert_eq!(p.slider2d_free_axes(), [true, false]);
+        assert_eq!(q.slider2d_free_axes(), [false, true]);
+      }
+      other => panic!("expected two locator controls, got {other:?}"),
+    }
+    state.slider2d_change(0, 0, 2.5);
+    match &state.controls[0] {
+      manipulate::ControlState::Slider2D { x, y, .. } => {
+        assert_eq!((*x, *y), (2.5, 0.0));
+      }
+      other => panic!("expected a locator control, got {other:?}"),
+    }
+    assert!(state.error.is_none(), "{:?}", state.error);
+  }
+
+  #[test]
+  fn two_dimensional_slider_offers_both_axes() {
+    let expr =
+      woxi::interpret_to_expr("Manipulate[p, {{p, {1, 1}}, {0, 0}, {2, 3}}]")
+        .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls[0].slider2d_free_axes(), [true, true]);
+  }
+
+  #[test]
   fn locator_default_bound_to_initialization_functions_resolves_before_layout()
   {
     // The "Paths inside a Polygon" Demonstration pattern: a Locator's
@@ -14441,6 +14633,52 @@ Cell[BoxData[
       }
       other => panic!("expected one locator control, got {other:?}"),
     }
+  }
+
+  #[test]
+  fn bare_locator_over_an_image_spans_its_pixel_coordinates() {
+    // A Manipulate whose body is a `Grid` with a magnified image on top and
+    // the `PixelValue` read at a bare `Locator` below. The Locator moves
+    // over the image in its pixel coordinates, `{0, 0}` to `{w, h}`; it used
+    // to take the range of the small swatch graphic further down instead,
+    // leaving the start point far outside its slider.
+    let code = "Manipulate[Module[{img = Image[ConstantArray[{0.2, 0.4, 0.6}, \
+        {30, 40}]], col}, \
+      Grid[{{Magnify[img, 1.5], SpanFromLeft}, \
+        {col = PixelValue[img, u][[1 ;; 3]], 1}, \
+        {Graphics[{RGBColor[col], RegularPolygon[4]}, ImageSize -> 50], 1}}]], \
+      {{u, {30, 20}}, Locator}]";
+    let state = instantiate_stored_manipulate(code, "")
+      .expect("the image Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.graphics_handle.is_some(), "the body must render");
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Slider2D {
+          name,
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x,
+          y,
+          ..
+        },
+      ] => {
+        assert_eq!(name, "u");
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 40.0, 0.0, 30.0));
+        assert_eq!((*x, *y), (30.0, 20.0));
+      }
+      other => panic!("expected one locator control, got {other:?}"),
+    }
+    let svg = woxi::with_scoped_globals(&[], || {
+      woxi::interpret_with_stdout(&format!("u = {{30, 20}}; {}", state.body))
+    })
+    .expect("the body must evaluate")
+    .graphics
+    .expect("the body must render a graphic");
+    assert!(!svg.contains("Magnify"), "the image must be drawn: {svg}");
+    assert!(svg.contains("width=\"60.0\" height=\"45.0\""), "{svg}");
   }
 
   #[test]
@@ -23644,6 +23882,36 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       .map(|_| Some(svg::Handle::from_memory(Vec::new())))
       .collect();
     assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// A radio-bar choice icon draws at the size its SVG states, so a
+  /// `Graphics[…, ImageSize -> {30, 30}]` label is not squeezed into the
+  /// compact 24×14 slot; a huge picture shrinks to fit, keeping its aspect,
+  /// and an icon stating no size keeps the compact slot.
+  #[test]
+  fn radio_choice_icon_draws_at_its_stated_size() {
+    let icon = |svg: &str| svg::Handle::from_memory(svg.as_bytes().to_vec());
+    assert_eq!(
+      radio_choice_icon_size(&icon(
+        r#"<svg width="92" height="30" xmlns="http://www.w3.org/2000/svg"></svg>"#
+      )),
+      (92.0, 30.0)
+    );
+    let (w, h) = radio_choice_icon_size(&icon(
+      r#"<svg width="360" height="360" xmlns="http://www.w3.org/2000/svg"></svg>"#,
+    ));
+    assert!(
+      (w - RADIO_ICON_MAX.1).abs() < 1e-3
+        && (h - RADIO_ICON_MAX.1).abs() < 1e-3,
+      "a 360×360 icon must shrink to the {}px cap: {w}×{h}",
+      RADIO_ICON_MAX.1
+    );
+    assert_eq!(
+      radio_choice_icon_size(&icon(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"></svg>"#
+      )),
+      (24.0, 14.0)
+    );
   }
 
   /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,

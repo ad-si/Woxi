@@ -9980,6 +9980,54 @@ mod ndsolve {
     );
   }
 
+  // A WhenEvent whose event is a real-valued expression rather than a
+  // logical condition fires where that expression crosses zero, and a
+  // `Throw[…, "StopIntegration"]` action ends the integration there.
+  #[test]
+  fn when_event_on_real_valued_expression() {
+    assert_eq!(
+      interpret(
+        "tt = 0; s = NDSolve[{x''[t] == -x[t], x[0] == 1, x'[0] == 0, \
+         WhenEvent[x[t] + 1/2, Throw[tt = t, \"StopIntegration\"]]}, x, \
+         {t, 0, 10}]; {Round[10^6 tt], \
+         Round[10^6 (x[\"Domain\"] /. First[s])]}"
+      )
+      .unwrap(),
+      "{2094395, {{0, 2094395}}}"
+    );
+    // A falling crossing of a product, with a plain "StopIntegration".
+    assert_eq!(
+      interpret(
+        "tt = 0; NDSolve[{x'[t] == -x[t], x[0] == 1, \
+         WhenEvent[2 (x[t] - 1/4), tt = t; \"StopIntegration\"]}, x, \
+         {t, 0, 10}]; Round[10^6 tt]"
+      )
+      .unwrap(),
+      "1386294"
+    );
+  }
+
+  // On a solution much faster than the fixed grid the steps are refined;
+  // an event is looked for on every refined sub-interval (here x first
+  // reaches -1/2 and turns back within one nominal step) and located from
+  // the refined point before it, so the event time and the state the
+  // solution stops in are accurate: x = Cos[w t] stops at t = 2 Pi/(3 w)
+  // with x' = -w Sin[2 Pi/3].
+  #[test]
+  fn when_event_located_inside_refined_steps() {
+    assert_eq!(
+      interpret(
+        "Table[tt = 0; s = NDSolve[{x''[t] == -w^2 x[t], x[0] == 1, \
+         x'[0] == 0, WhenEvent[x[t] + 1/2, tt = t; \"StopIntegration\"]}, \
+         x, {t, 0, 100}]; {Round[10^5 (tt - 2 Pi/(3 w))], \
+         Round[10 ((x'[tt] /. First[s]) / w + Sin[2 Pi/3])]}, \
+         {w, {20, 50, 100, 300}}]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 0}, {0, 0}, {0, 0}}"
+    );
+  }
+
   // A WhenEvent on an implicit curve stops it where the condition turns
   // True, located within the step, and runs its action there
   // (TheFrankKamenetskiiProblemUsingArcLengthContinuation).

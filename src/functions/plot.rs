@@ -2264,7 +2264,7 @@ fn widest_label_line_len(label: &str) -> usize {
 
 /// The content of a `<text>` holding `lines`: a single line as is, several
 /// as `<tspan>`s that each restart at `x`, `pitch` below the one before.
-fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
+pub(crate) fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
   if lines.len() == 1 {
     return lines[0].clone();
   }
@@ -3267,11 +3267,29 @@ pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
   // list of rules, all of which evaluate to themselves.
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  opts.filling_successive =
+    matches!(&value, Expr::Identifier(v) if v == "True");
   if let Some(rules) = parse_filling_rules(&value) {
     opts.filling_rules = rules;
   } else {
     opts.filling = parse_filling(&value);
   }
+}
+
+/// Resolve `Filling -> True` for a plot of `series_count` curves: the
+/// curves are filled pairwise, curve `i` to curve `i + 1`, and the last
+/// one is left unfilled (a single curve keeps its fill to the axis).
+pub(crate) fn resolve_successive_filling(
+  opts: &mut PlotOptions,
+  series_count: usize,
+) {
+  if !opts.filling_successive || series_count < 2 {
+    return;
+  }
+  opts.filling = Filling::None;
+  opts.filling_rules = (0..series_count - 1)
+    .map(|i| (i, FillTarget::Series(i + 1), None))
+    .collect();
 }
 
 /// The fills of series `idx` in drawing order, each with the
@@ -3592,6 +3610,9 @@ pub(crate) struct SeriesStyle {
   /// This style came from its own `{…}` entry of a `PlotStyle` list, i.e. it
   /// is one dataset's style rather than a bare directive of a combined one.
   pub from_list: bool,
+  /// `Arrowheads[spec]`'s argument: the heads an axis styled by it
+  /// (`AxesStyle -> Arrowheads[…]`) carries.
+  pub arrowheads: Option<Expr>,
   /// The series continues the line of the series before it (a later
   /// `ColorFunction` run of the same curve; see
   /// `PlotSeriesData::continues_previous`).
@@ -3681,6 +3702,11 @@ pub(crate) struct PlotOptions {
   /// replaces the global `filling`: series without a rule are not filled,
   /// and a series named by several rules gets every one of their fills.
   pub filling_rules: Vec<(usize, FillTarget, Option<FillStyle>)>,
+  /// `Filling -> True`: with several curves, each one is filled to the
+  /// next and the last stays unfilled; a lone curve fills to the axis.
+  /// Resolved into `filling_rules` by `resolve_successive_filling` once
+  /// the number of curves is known.
+  pub filling_successive: bool,
   /// `FillingStyle -> …`: color/opacity for the filled regions (applies to
   /// every filled series). `None` keeps the default appearance (series
   /// color at 0.2 opacity).
@@ -4149,6 +4175,7 @@ impl Default for PlotOptions {
       full_width: false,
       filling: Filling::None,
       filling_rules: Vec::new(),
+      filling_successive: false,
       filling_style: None,
       mesh: Mesh::None,
       plot_label: None,
@@ -5101,7 +5128,7 @@ pub(crate) fn plot_labels_svg(
     // A title wider than the picture (a long `Row` of text) shrinks to fit
     // instead of being clipped at both edges.
     let widest = sl.max_line_chars() as f64;
-    let fs = if widest > 0.0 && !sl.framed {
+    let fs = if widest > 0.0 && sl.frame.is_none() {
       fs.min((canvas_width - 8.0 * sf) / (widest * 0.52))
     } else {
       fs
@@ -5109,7 +5136,7 @@ pub(crate) fn plot_labels_svg(
     let ty = layout.title_top + ascent(fs / sf) * sf;
     // A box around the title must stay inside the image, even when a tight
     // `ImagePadding` leaves less room above the plot than the box needs.
-    let ty = if sl.framed {
+    let ty = if sl.frame.is_some() {
       let top = ty - fs * 0.9 - 6.0 * sf;
       ty + (sf - top).max(0.0)
     } else {
@@ -5127,7 +5154,7 @@ pub(crate) fn plot_labels_svg(
       style_attrs.push_str(" font-style=\"italic\"");
     }
     let title_pitch = line_pitch(fs / sf) * sf;
-    if sl.framed {
+    if let Some(frame) = &sl.frame {
       // Box the title: the widest line plus Framed's 6pt margin per side.
       let margin = 6.0 * sf;
       let w = sl.max_line_chars() as f64 * fs * 0.47 + 2.0 * margin;
@@ -5135,17 +5162,22 @@ pub(crate) fn plot_labels_svg(
       let h =
         line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
       let top = ty - ascent(fs / sf) * sf - margin;
-      // `Background -> color` fills the box behind the title.
-      let fill = sl
-        .background
-        .map_or_else(|| "none".to_string(), super::graphics::Color::to_svg_rgb);
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{fill}\" \
+           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
         3.0 * sf,
-        crate::functions::graphics::theme().framed_border,
+        frame
+          .background
+          .as_ref()
+          .map_or_else(|| "none".to_string(), |c| c.to_svg_rgb()),
+        frame.stroke.as_ref().map_or_else(
+          || crate::functions::graphics::theme()
+            .framed_border
+            .to_string(),
+          |c| c.to_svg_rgb()
+        ),
         sf,
       ));
     }
@@ -7735,9 +7767,9 @@ fn generate_svg_with_options(
     let mut numbered = opts.clone();
     numbered.plot_legends = placeholder_legends(all_points.len());
     numbered.legend_placeholders = true;
-    inject_legend(&mut buf, &numbered);
+    inject_legend(&mut buf, &numbered, plot_area);
   } else {
-    inject_legend(&mut buf, opts);
+    inject_legend(&mut buf, opts, plot_area);
   }
 
   // `BaselinePosition -> Axis`: record where the x axis lies (display
@@ -12224,7 +12256,13 @@ fn legend_swatch_svg(
 
 /// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
 /// is placed on the right (default), top, or bottom of the plot.
-fn inject_legend(buf: &mut String, opts: &PlotOptions) {
+/// `plot_area` is the drawing region in render-space pixels: (left, top,
+/// width, height); `Placed[…, {Right, Top}]`-style legends sit inside it.
+fn inject_legend(
+  buf: &mut String,
+  opts: &PlotOptions,
+  plot_area: (f64, f64, f64, f64),
+) {
   if opts.plot_legends.is_empty() {
     return;
   }
@@ -12459,11 +12497,21 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             fx * vb_w - (legend_width - legend_padding) / 2.0,
             (1.0 - fy) * vb_h - legend_total_h / 2.0,
           ),
-          LegendPosition::Aligned(fx, fy) => (
-            legend_padding * 0.5 + fx * (vb_w - legend_width),
-            legend_padding * 0.25
-              + (1.0 - fy) * (vb_h - legend_total_h - legend_padding * 0.5),
-          ),
+          // Named positions align the legend inside the plot's frame (not
+          // the whole image, whose margins hold the frame labels), inset
+          // a little from its edges.
+          LegendPosition::Aligned(fx, fy) => {
+            let (area_x0, area_top, area_w, area_h) = plot_area;
+            let inset = legend_padding * 0.5;
+            (
+              area_x0
+                + inset
+                + fx * (area_w - (legend_width - legend_padding) - 2.0 * inset),
+              area_top
+                + inset
+                + (1.0 - fy) * (area_h - legend_total_h - 2.0 * inset),
+            )
+          }
           _ => (vb_w + legend_padding * 0.5, (vb_h - legend_total_h) / 2.0),
         };
         if opts.legend_frame {
@@ -14083,6 +14131,9 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
       "DropShadowing" => {
         style.shadow = crate::functions::graphics::parse_drop_shadowing(args);
       }
+      "Arrowheads" if args.len() == 1 => {
+        style.arrowheads = Some(args[0].clone());
+      }
       // `Opacity[a]` fades the curve; `Opacity[a, color]` also sets its color.
       "Opacity" if !args.is_empty() => {
         if let Some(a) = try_eval_to_f64(&args[0]) {
@@ -15482,7 +15533,8 @@ pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   }
   (style.color.is_some()
     || style.thickness.is_some()
-    || style.dashing.is_some())
+    || style.dashing.is_some()
+    || style.arrowheads.is_some())
   .then_some(style)
 }
 
@@ -15684,7 +15736,9 @@ fn frame_label_entry(e: &Expr) -> String {
   if matches!(e, Expr::Identifier(s) if s == "None" || s == "False") {
     return String::new();
   }
-  crate::functions::graphics::styled_axis_label(e).unwrap_or_default()
+  // A frame label is typeset like an axis label: a mathematical entry
+  // (`i`, `Subscript[q, i][t]`) in TraditionalForm italics.
+  crate::functions::graphics::frame_label_text(e).unwrap_or_default()
 }
 
 /// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant
@@ -15905,6 +15959,22 @@ pub(crate) fn bare_tick_label(e: &Expr, pos: f64) -> String {
       } => is_literal_number(operand),
       _ => false,
     }
+  }
+  fn is_literal_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => true,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => is_literal_real(operand),
+      _ => false,
+    }
+  }
+  // A machine or arbitrary-precision real is typeset as the number it is,
+  // so a whole-valued real keeps its trailing point: `Ticks -> {{10.}}`
+  // reads "10.", not the "10" an integer position gets.
+  if is_literal_real(e) {
+    return crate::functions::graphics::expr_to_svg_markup(e);
   }
   if is_literal_number(e) {
     return crate::functions::graphics::svg_escape(&format_tick(pos));
@@ -16262,7 +16332,17 @@ pub(crate) fn parse_plot_legends(
     && name == "Placed"
     && args.len() == 2
   {
-    let pos = match &args[1] {
+    // `Scaled[{x, y}]` names the same scaled position inside the plot as
+    // a bare `{x, y}` does.
+    let position = match &args[1] {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Scaled" && inner.len() == 1 =>
+      {
+        &inner[0]
+      }
+      other => other,
+    };
+    let pos = match position {
       Expr::Identifier(s) => match s.as_str() {
         "Top" | "Above" => LegendPosition::Top,
         "Bottom" | "Below" => LegendPosition::Bottom,
@@ -16366,6 +16446,12 @@ pub(crate) fn parse_plot_legends(
       (labels, false, false, LegendPosition::Right)
     }
     Expr::String(s) => (vec![s.clone()], false, false, LegendPosition::Right),
+    // Any other single label (`Text["…"]`, `Style["…", Red]`, `Row[…]`)
+    // labels the one dataset, as a one-element list would. A legend
+    // object (`BarLegend[…]`, …) is drawn by the plot itself instead.
+    Expr::FunctionCall { name, .. } if !name.ends_with("Legend") => {
+      parse_plot_legends(&Expr::List(vec![val.clone()].into()))
+    }
     _ => (Vec::new(), false, false, LegendPosition::Right),
   }
 }
@@ -17198,14 +17284,75 @@ pub(crate) fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
 /// list shape once evaluated; Wolfram plots one curve per element of the
 /// result. Returns `None` when the body is already a list or does not
 /// generate one, leaving plain `Plot[f[x], …]` untouched.
-fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
+fn expand_generated_bodies(
+  body: &Expr,
+  var: &str,
+  probe_x: f64,
+) -> Option<Expr> {
   if matches!(body, Expr::List(_)) {
     return None;
   }
   match eval_body_var_symbolic(body, var) {
-    evaluated @ Expr::List(_) => Some(evaluated),
+    evaluated @ Expr::List(_)
+      if symbolic_body_agrees(body, &evaluated, var, &[probe_x]) =>
+    {
+      Some(evaluated)
+    }
     _ => None,
   }
+}
+
+/// The numbers of a numeric value or a (nested) list of them, in order.
+fn numeric_leaves(expr: &Expr, out: &mut Vec<f64>) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().all(|i| numeric_leaves(i, out)),
+    other => match try_eval_to_f64(other) {
+      Some(v) => {
+        out.push(v);
+        true
+      }
+      None => false,
+    },
+  }
+}
+
+/// Whether a plot body pre-evaluated with its variable symbolic still
+/// computes what the held body does once the variable is a number.
+///
+/// Plotting heads hold their body and evaluate it per sample with the
+/// variable bound, as Wolfram does. Evaluating it symbolically first is only
+/// a shortcut that reveals its shape, and it is wrong for bodies that use
+/// the variable's *value*: a helper `f[t_] := … FindRoot[g[t] == h[s], {s,
+/// 1.}] …` cannot solve with `t` symbolic, and a helper whose own `FindRoot`
+/// iterates over a variable of the same name as the plot variable solves
+/// for it instead. At each probe where the held body samples to numbers, the
+/// pre-evaluated body has to yield the same numbers.
+pub(crate) fn symbolic_body_agrees(
+  original: &Expr,
+  evaluated: &Expr,
+  var: &str,
+  probes: &[f64],
+) -> bool {
+  probes.iter().all(|&t| {
+    let sample = |e: &Expr| {
+      let value =
+        evaluate_expr_to_expr(&substitute_var(e, var, &Expr::Real(t))).ok()?;
+      let mut leaves = Vec::new();
+      numeric_leaves(&value, &mut leaves).then_some(leaves)
+    };
+    // A held body that is not numeric on its own (`y[t] /. sol` turns into
+    // `y[0.5] /. sol`) needs the symbolic pass; nothing to compare against.
+    let Some(direct) = sample(original) else {
+      return true;
+    };
+    sample(evaluated).is_some_and(|pre| {
+      pre.len() == direct.len()
+        && pre
+          .iter()
+          .zip(&direct)
+          .all(|(a, b)| (a - b).abs() <= 1e-6 * (1.0 + a.abs().max(b.abs())))
+    })
+  })
 }
 
 /// A body that stays unevaluated while the plot variable is symbolic — a
@@ -17868,7 +18015,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|it| resolve_generated_bodies_deep(it, var, probe_x))
           .collect(),
       ),
-      _ => expand_generated_bodies(body, var)
+      _ => expand_generated_bodies(body, var, probe_x)
         .or_else(|| resolve_list_valued_symbol(body, var))
         .or_else(|| resolve_replaced_body(body, var))
         .or_else(|| expand_list_valued_body(body, var, probe_x))
@@ -18196,6 +18343,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   let y_auto_min = y_data_min - y_pad_lo;
   let y_auto_max = y_data_max + y_pad_hi;
+  resolve_successive_filling(&mut plot_opts, all_points.len());
   let (y_auto_min, y_auto_max) =
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
   let x_auto = (x_min - x_pad_lo, x_max + x_pad_hi);

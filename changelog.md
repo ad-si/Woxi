@@ -46,6 +46,27 @@
 - A `Grid` of pictures with `FrameStyle` keeps the framed picture layout and
     draws its frame lines in that style, instead of spacing the pictures like
     a text table.
+- The legacy `PlotLegends`` package's `ShowLegend` draws its boxed legends
+    (`{icon, label}` rows or a color gradient) with `LegendPosition`,
+    `LegendSize`, `LegendShadow`, `LegendBorder` and `LegendBackground`.
+- `Manipulate` controls with a real `{min, max, step}` range take their
+    values from `Range` (`min + k step`), and an initial value matches a
+    choice the way `SameQ` does, so `{{a, 1.8}, 1.6, 2, 0.1}` lights `1.8`.
+- The automatic layout of `Graph` and `GraphPlot` draws a large tree (more
+    than 32 vertices) with a spring-electrical embedding of unit-length edges,
+    as Wolfram does, instead of squeezing it into layers of overlapping disks.
+- `Text[Pane[Style[str, dirs…], w], pos]` honors the `Style` inside the
+    `Pane`: its font size and `TextAlignment` apply, the text wraps at `w`
+    points by the glyph widths of that size, and left- or right-aligned lines
+    hang from the pane's edge.
+- `GraphPlot` gives a computed layout in Wolfram's units (edges 1 long on
+    average, starting at the origin) to its rendering functions and to
+    graphics `Show`n with it, so a caption placed at the center of a drawn
+    cycle lands there. A graph with explicit `VertexCoordinates` is likewise
+    drawn in the caller's coordinates.
+- `Plot3D[…, AxesLabel -> Automatic]` names the two variable axes in
+    `TraditionalForm` (italic letters) and leaves the value axis unlabeled,
+    instead of adding an upright `z` label.
 
 # 2026-11-08 - 0.4.0
 

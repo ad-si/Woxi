@@ -315,6 +315,67 @@ mod layout_display {
   }
 
   #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn serif_family_prefers_the_most_times_like_installed_face() {
+    use woxi::functions::image_ast::preferred_serif_family;
+    assert_eq!(
+      preferred_serif_family(["DejaVu Serif", "Liberation Serif", "Arial"]),
+      Some("Liberation Serif")
+    );
+    assert_eq!(
+      preferred_serif_family(["liberation serif", "TIMES NEW ROMAN"]),
+      Some("Times New Roman")
+    );
+    assert_eq!(
+      preferred_serif_family(["Noto Serif", "DejaVu Sans"]),
+      Some("Noto Serif")
+    );
+    assert_eq!(preferred_serif_family(["Arial", "DejaVu Sans"]), None);
+    assert_eq!(preferred_serif_family([]), None);
+  }
+
+  #[test]
+  #[cfg(not(target_arch = "wasm32"))]
+  fn generic_serif_text_uses_an_installed_serif_face() {
+    use resvg::usvg::fontdb::{Database, Family, Query};
+    let resolved_family = |db: &Database| {
+      let id = db
+        .query(&Query {
+          families: &[Family::Serif],
+          ..Query::default()
+        })
+        .expect("serif resolves");
+      db.face(id).unwrap().families[0].0.clone()
+    };
+
+    // Without any installed serif face, "serif" falls back to the
+    // embedded sans-serif instead of staying unresolved.
+    let mut embedded_only = Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut embedded_only);
+    assert_eq!(
+      resolved_family(&embedded_only),
+      "Atkinson Hyperlegible Next"
+    );
+
+    // With system fonts, `FontFamily -> "Times"` text (measured with
+    // Times-like advances) is drawn in the most Times-like installed
+    // serif face, not in the wider sans-serif that would overrun it.
+    let mut system = Database::new();
+    system.load_system_fonts();
+    woxi::functions::image_ast::load_embedded_fonts(&mut system);
+    let expected = woxi::functions::image_ast::preferred_serif_family(
+      system
+        .faces()
+        .flat_map(|f| f.families.iter().map(|(n, _)| n.as_str())),
+    )
+    .unwrap_or("Atkinson Hyperlegible Next");
+    assert_eq!(
+      resolved_family(&system).to_ascii_lowercase(),
+      expected.to_ascii_lowercase()
+    );
+  }
+
+  #[test]
   fn dataset_records_have_vertical_column_separators() {
     for expr in [
       "Dataset[{<|\"a\" -> 1, \"long header\" -> 2, \"c\" -> 3|>}]",

@@ -7983,6 +7983,26 @@ enum StateTrigger {
   Condition(Expr),
 }
 
+/// Whether a `WhenEvent` event is a real-valued expression (a sum,
+/// product, power, negation or quotient) rather than a logical condition.
+fn is_arithmetic_event(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+    ),
+    Expr::UnaryOp { op, .. } => *op == UnaryOperator::Minus,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Plus" | "Times" | "Power")
+    }
+    _ => false,
+  }
+}
+
 /// A state event ready for integration. Its trigger is rewritten over the
 /// state placeholders; the action is kept as written, since a rule
 /// `f[x] -> value` in it names the state component it resets.
@@ -8049,6 +8069,12 @@ impl StateEvent {
       (raw.condition.clone(), None)
     };
     let trigger = match as_equal_pair(&condition) {
+      // A real-valued event `f` (not a logical condition) fires where it
+      // crosses zero, like `f == 0`.
+      None if is_arithmetic_event(&condition) => {
+        let rewritten = substitute_function_values(&condition, funcs, x_name);
+        StateTrigger::Crossing(NumFn::new(rewritten, var_names))
+      }
       Some((lhs, rhs)) => {
         let diff = Expr::FunctionCall {
           name: "Plus".to_string(),
@@ -8817,16 +8843,39 @@ fn integrate_leg(
         if !ev.active.get() {
           continue;
         }
-        let (Some(g0), Some(g1)) =
-          (prev_state_values[ei], state_value(ev, new_x, &new_state))
-        else {
+        let Some(g0) = prev_state_values[ei] else {
           continue;
         };
-        if !ev.fires(g0, g1) {
-          continue;
+        // The crossing is looked for between consecutive points the step's
+        // refinement visited (the last of them is `new_x`), so a trigger
+        // that crosses and recrosses within one nominal step still fires,
+        // and it is located with partial RK4 steps from the point before
+        // it, which are as short (and so as accurate) as the refinement
+        // found the step needs. Comparing only the step's two ends missed
+        // such a crossing, and one partial step across the whole nominal
+        // step was far off where the refinement had to subdivide it.
+        let mut base_x = x;
+        let mut base_state: &[f64] = &state;
+        let mut g_base = g0;
+        let mut found: Option<(f64, Vec<f64>)> = None;
+        for (xr, sr) in &refined {
+          let g = state_value(ev, *xr, sr);
+          if let Some(g) = g
+            && ev.fires(g_base, g)
+          {
+            found = Some((xr - base_x, sr.clone()));
+            break;
+          }
+          base_x = *xr;
+          base_state = sr;
+          if let Some(g) = g {
+            g_base = g;
+          }
         }
-        let (mut lo, mut hi) = (0.0_f64, h);
-        let mut hi_state = new_state.clone();
+        let Some((span, mut hi_state)) = found else {
+          continue;
+        };
+        let (mut lo, mut hi) = (0.0_f64, span);
         for _ in 0..60 {
           let mid = f64::midpoint(lo, hi);
           if mid == lo || mid == hi {
@@ -8836,32 +8885,33 @@ fn integrate_leg(
             residuals,
             funcs,
             state_offset,
-            &state,
-            x,
+            base_state,
+            base_x,
             mid,
             cached_m,
           )?
           else {
             break;
           };
-          match state_value(ev, x + mid, &s_mid) {
-            Some(g) if ev.fires(g0, g) => {
+          match state_value(ev, base_x + mid, &s_mid) {
+            Some(g) if ev.fires(g_base, g) => {
               hi = mid;
               hi_state = s_mid;
             }
             _ => lo = mid,
           }
         }
-        if !ev.guard_holds(x + hi, &hi_state, state_events.var_names) {
+        let t_hit = base_x + hi;
+        if !ev.guard_holds(t_hit, &hi_state, state_events.var_names) {
           continue;
         }
         // "Earliest" along the leg's direction (a backward leg runs down).
         let dir = h.signum();
         if earliest
           .as_ref()
-          .is_none_or(|(t, _, _)| dir * (x + hi) < dir * *t)
+          .is_none_or(|(t, _, _)| dir * t_hit < dir * *t)
         {
-          earliest = Some((x + hi, hi_state, ei));
+          earliest = Some((t_hit, hi_state, ei));
         }
       }
       if let Some((te, state_at, ei)) = earliest {
