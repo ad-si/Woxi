@@ -59053,6 +59053,39 @@ mod scaled_frame_ticks {
   }
 }
 
+/// A `Text` offset names the point of the label's box that sits at the
+/// coordinate. With a background panel that box is the panel itself, so
+/// the panel's named point lands exactly on the point; the label was moved
+/// by a wider fixed-pitch estimate and drifted off its panel's offset.
+#[test]
+fn text_offset_places_the_named_point_of_its_background_panel() {
+  for (ox, oy) in [(-0.5, 1.0), (0.7, -0.7), (0.3, 0.0), (-2.0, 0.5)] {
+    let svg = export_svg(&format!(
+      "Graphics[{{Text[Style[\"weight = 22.20 kN\", 18, Background -> White], \
+       {{0, 0}}, {{{ox}, {oy}}}]}}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}, \
+       ImageSize -> 400]"
+    ));
+    let attr = |tag: &str, name: &str| -> f64 {
+      let v = tag.split(&format!(" {name}=\"")).nth(1).unwrap();
+      v[..v.find('"').unwrap()].parse().unwrap()
+    };
+    let rect = svg
+      .lines()
+      .find(|l| {
+        l.starts_with("<rect") && l.contains("fill=\"rgb(255,255,255)\"")
+      })
+      .unwrap_or_else(|| panic!("{svg}"));
+    let (x, w) = (attr(rect, "x"), attr(rect, "width"));
+    let (y, h) = (attr(rect, "y"), attr(rect, "height"));
+    let named_x = x + w / 2.0 + ox * w / 2.0;
+    let named_y = y + h / 2.0 - oy * h / 2.0;
+    assert!(
+      (named_x - 199.5).abs() < 0.05 && (named_y - 199.5).abs() < 0.05,
+      "offset {{{ox}, {oy}}}: panel point ({named_x}, {named_y}): {rect}"
+    );
+  }
+}
+
 /// A `Text` label offset past its edge (`{2, -1}`) is moved by its own
 /// width. A subscript (`H_C`) is set at a smaller size and its lowering
 /// markers draw nothing, so it moves less than two full characters; it was
