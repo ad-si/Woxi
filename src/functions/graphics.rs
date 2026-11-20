@@ -26428,6 +26428,21 @@ fn annotation_contains_dynamic(expr: &Expr) -> bool {
   }
 }
 
+/// Whether a static annotation row (`Row[{"drag ", disk}]`) evaluates to
+/// a layout holding a picture, e.g. through a symbol bound to a
+/// `Graphics`, rather than to plain text.
+fn annotation_lays_out_a_graphic(expr: &Expr) -> bool {
+  fn holds_graphic(e: &Expr) -> bool {
+    crate::evaluator::lays_out_a_graphic(e)
+      || match e {
+        Expr::FunctionCall { args, .. } => args.iter().any(holds_graphic),
+        Expr::List(items) => items.iter().any(holds_graphic),
+        _ => false,
+      }
+  }
+  evaluate_expr_to_expr(expr).is_ok_and(|e| holds_graphic(&e))
+}
+
 /// Whether `expr` has a `Control[…]` call anywhere inside it.
 fn contains_control_call(expr: &Expr) -> bool {
   match expr {
@@ -40349,6 +40364,18 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Expr::FunctionCall { .. } if annotation_contains_place(spec) => {
         continue;
       }
+      // A static annotation row that holds a picture (`Row[{"drag any ",
+      // disk}]` with `disk` a `Graphics`) cannot be typeset as heading
+      // text, so it is drawn as a display in its place in the panel.
+      Expr::FunctionCall { name, .. }
+        if is_manipulate_annotation_head(name)
+          && !annotation_contains_dynamic(spec)
+          && annotation_lays_out_a_graphic(spec) =>
+      {
+        panel_displays.push((displays.len(), controls.len()));
+        displays.push(crate::syntax::expr_to_source_form(spec));
+        continue;
+      }
       Expr::FunctionCall { name, .. }
         if is_manipulate_annotation_head(name)
           && !annotation_contains_dynamic(spec) =>
@@ -45182,16 +45209,15 @@ pub fn manipulate_eval_caption(
 ) -> Option<(Vec<LabelRun>, Option<String>)> {
   let expr = crate::interpret_to_expr(code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
-  let runs = manipulate_label_runs(&evaluated, false);
-  // Only a caption with no words of its own becomes an icon; one that
-  // pairs a picture with words (`Row[{Pane[ArrayPlot[…]], "multiplier"}]`)
-  // keeps being labeled by the words.
-  let svg = if flatten_label_runs(&runs).trim().is_empty() {
-    control_caption_svg(&evaluated)
+  // A caption holding a picture becomes an icon — also one that pairs the
+  // picture with words (`Row[{"shift ", Graphics[…]}]`), which is drawn
+  // whole, words included, so the picture is not lost.
+  let svg = control_caption_svg(&evaluated);
+  let runs = if svg.is_some() {
+    Vec::new()
   } else {
-    None
+    manipulate_label_runs(&evaluated, false)
   };
-  let runs = if svg.is_some() { Vec::new() } else { runs };
   Some((runs, svg))
 }
 

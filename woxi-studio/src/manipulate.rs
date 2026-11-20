@@ -981,6 +981,10 @@ pub struct ManipulateState {
   last_render: Option<Result<woxi::InterpretResult, String>>,
 }
 
+/// A typeset control caption: its label runs and, for a picture caption,
+/// the rendered SVG.
+type Caption = (Vec<LabelRun>, Option<String>);
+
 thread_local! {
   /// Set while [`ManipulateState::from_expr_unrendered`] builds a widget.
   static UNRENDERED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -4818,6 +4822,51 @@ mod tests {
   /// drawing a sector of the slider's own angle, or a static `Graphics[…]`
   /// — carries a rendered icon sized from the picture, and a plain string
   /// caption does not.
+  /// A slider caption that pairs words with a picture
+  /// (`Dynamic[Row[{"shift ", Graphics[…]}]]`) keeps the picture: the
+  /// whole caption becomes an icon instead of being reduced to its words.
+  #[test]
+  fn worded_picture_caption_renders_as_label_icon() {
+    let code = r#"Manipulate[t,
+      {{t, 0, Dynamic[Row[{"move ", Graphics[{Orange, Disk[]},
+        ImageSize -> {18, 18}]}]]}, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let icon = state
+      .label_svg("t")
+      .expect("an icon for the worded caption");
+    assert!(icon.width > 18.0, "width {}", icon.width);
+  }
+
+  /// A static annotation row whose picture comes from a symbol bound to a
+  /// `Graphics` (`Row[{"pull the ", marker}]`) is drawn as a display in its
+  /// place in the panel, not as a heading spelling out the symbol's name.
+  #[test]
+  fn annotation_row_with_picture_becomes_panel_display() {
+    woxi::interpret(
+      "annotationMarker = Graphics[{Purple, Disk[]}, ImageSize -> 16];",
+    )
+    .expect("define marker");
+    let code = r#"Manipulate[a,
+      {{a, 1}, 0, 2},
+      Row[{"pull the ", annotationMarker}],
+      {{b, 0}, 0, 1}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      !state.controls.iter().any(|c| matches!(
+        c,
+        ControlState::Heading { label, .. } if label.contains("annotationMarker")
+      )),
+      "the picture must not be spelled out as heading text"
+    );
+    assert_eq!(state.panel_displays, vec![(0, 1)]);
+  }
+
   #[test]
   fn picture_caption_renders_as_label_icon() {
     let code = r#"Manipulate[a + b + c,

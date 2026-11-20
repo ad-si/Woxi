@@ -22423,9 +22423,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`pieceSpin$$ = {0., 0.}}, \"\\[Ellip
 
   /// A slider captioned with a small picture beside its words
   /// (`Dynamic[Row[{Pane[ArrayPlot[…], 80], "word"}, Spacer[6]]]`) is
-  /// labeled by the words alone, not the picture's `-Graphics-` placeholder.
+  /// drawn whole as an icon, picture and words together, never with the
+  /// picture's `-Graphics-` placeholder as text.
   #[test]
-  fn slider_caption_with_a_picture_keeps_only_its_words() {
+  fn slider_caption_with_a_picture_draws_as_an_icon() {
     let nb_src = r##"Notebook[{
 Cell[CellGroupData[{
 Cell[BoxData[
@@ -22468,8 +22469,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       .expect("the Manipulate cell must instantiate on load");
     assert!(widget.error.is_none(), "{:?}", widget.error);
     match &widget.controls[0] {
-      manipulate::ControlState::Continuous { label, .. } => {
-        assert_eq!(label.trim(), "multiplier");
+      manipulate::ControlState::Continuous { name, label, .. } => {
+        assert!(!label.contains("Graphics"), "placeholder text: {label}");
+        let icon = widget.label_svg(name).expect("the caption's icon");
+        assert!(icon.width > 80.0, "width {}", icon.width);
       }
       other => panic!("unexpected control: {other:?}"),
     }
