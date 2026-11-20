@@ -11083,18 +11083,19 @@ fn tessellate_polygon_with_holes(
   let verts2: Vec<(f64, f64)> = verts3.iter().map(flatten).collect();
 
   // An outline that crosses itself (a pentagram face of a star
-  // polyhedron) is filled by the even-odd rule, as `Graphics` fills it:
-  // each region it encloses an odd number of times is triangulated alone.
-  if holes.is_empty()
-    && let Some((arrangement, regions)) =
-      crate::functions::polygon_holes::even_odd_regions(&verts2)
+  // polyhedron), or a hole reaching past its outline, is filled by the
+  // even-odd rule, as `Graphics` fills it: each region enclosed an odd
+  // number of times is triangulated alone.
+  let mut rings = vec![outer_idx.clone()];
+  rings.extend(hole_idx.iter().cloned());
+  if let Some((arrangement, regions)) =
+    crate::functions::polygon_holes::even_odd_regions(&verts2, &rings)
   {
     let pts2: Vec<(f64, f64)> = arrangement.iter().map(|(p, _)| *p).collect();
     let pts3: Vec<Point3D> = arrangement
       .iter()
       .map(|(_, at)| {
-        let a = outer[at.edge];
-        let b = outer[(at.edge + 1) % outer.len()];
+        let (a, b) = (verts3[at.from], verts3[at.to]);
         Point3D {
           x: a.x + at.t * (b.x - a.x),
           y: a.y + at.t * (b.y - a.y),
@@ -11105,7 +11106,7 @@ fn tessellate_polygon_with_holes(
     let mut tris = Vec::new();
     let mut flags = Vec::new();
     for region in &regions {
-      let result = triangulate_with_holes(&pts2, region, &[]);
+      let result = triangulate_with_holes(&pts2, &region.outer, &region.holes);
       for t in &result.triangles {
         tris.push((pts3[t[0]], pts3[t[1]], pts3[t[2]]));
         // Every side of a region lies along one of the polygon's own
