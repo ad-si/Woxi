@@ -7760,6 +7760,17 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       );
       expr_to_svg(&call("Pane", pane_args))
     }
+    // `Style[content, DefaultOptions -> {Graphics -> {…}}]` draws the
+    // graphics inside `content` with those defaults.
+    Expr::FunctionCall { name, .. }
+      if name == "Style"
+        && let Some(applied) =
+          crate::functions::graphics::apply_style_default_graphics_options(
+            expr,
+          ) =>
+    {
+      expr_to_svg(&applied)
+    }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them
     // into one `Style`, the inner directives after (so overriding) the

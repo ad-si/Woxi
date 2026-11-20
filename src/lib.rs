@@ -3498,6 +3498,13 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   } else {
     result_expr
   };
+  // `Style[…, DefaultOptions -> {Graphics -> …}]` hands its defaults to the
+  // graphics it wraps before the layout passes below draw them.
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    functions::graphics::resolve_style_default_graphics_options(&result_expr)
+  } else {
+    result_expr
+  };
   // If the result is a Grid expression, render it as SVG (visual mode
   // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
   let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {

@@ -24852,6 +24852,194 @@ pub(crate) fn clip_segment_to_y_range(
   pieces
 }
 
+/// Graphics options a plot function (`Plot`, `ListPlot`, …) always writes
+/// into the `Graphics` it returns, so an inherited default for one of them
+/// never reaches a plot.
+const PLOT_EXPLICIT_GRAPHICS_OPTIONS: [&str; 13] = [
+  "AspectRatio",
+  "Axes",
+  "AxesLabel",
+  "AxesOrigin",
+  "DisplayFunction",
+  "Frame",
+  "FrameLabel",
+  "FrameTicks",
+  "GridLines",
+  "Method",
+  "PlotRange",
+  "PlotRangePadding",
+  "Ticks",
+];
+
+/// `Style[content, …, DefaultOptions -> {Graphics -> {opts…}, …}]` makes
+/// `opts` the defaults of every `Graphics` displayed inside `content`: a
+/// graphic that does not set an option itself is drawn as if it had been
+/// given it (`ImageSize -> {295, 295}` sizes each plot of a `Grid`). Returns
+/// the content with each such graphic redrawn through `Show`, still wrapped
+/// in the remaining style directives; `None` when the `Style` carries no
+/// `Graphics` defaults.
+pub(crate) fn apply_style_default_graphics_options(
+  expr: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Style" || args.len() < 2 {
+    return None;
+  }
+  let mut defaults: Vec<Expr> = Vec::new();
+  let mut rest: Vec<Expr> = vec![args[0].clone()];
+  for d in &args[1..] {
+    let entries = match d {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "DefaultOptions") => {
+        match replacement.as_ref() {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        }
+      }
+      _ => {
+        rest.push(d.clone());
+        continue;
+      }
+    };
+    for entry in entries {
+      if let Expr::Rule {
+        pattern,
+        replacement,
+      } = &entry
+        && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Graphics")
+      {
+        match replacement.as_ref() {
+          Expr::List(opts) => defaults.extend(opts.iter().cloned()),
+          other => defaults.push(other.clone()),
+        }
+      }
+    }
+  }
+  if defaults.is_empty() {
+    return None;
+  }
+  // Only genuine `Graphics` options take effect (`PlotStyle` is a plot
+  // function's option, not one of `Graphics`).
+  let graphics_options =
+    crate::evaluator::dispatch::predicate_functions::builtin_default_options(
+      "Graphics",
+    );
+  defaults.retain(|o| {
+    rule_option_name(o).is_some_and(|n| {
+      graphics_options
+        .iter()
+        .any(|g| rule_option_name(g) == Some(n))
+    })
+  });
+  rest[0] = with_default_graphics_options(&args[0], &defaults);
+  Some(if rest.len() == 1 {
+    rest.pop().unwrap()
+  } else {
+    Expr::FunctionCall {
+      name: "Style".to_string(),
+      args: rest.into(),
+    }
+  })
+}
+
+/// `expr` with every `Style[…, DefaultOptions -> {Graphics -> …}]` in it
+/// resolved by [`apply_style_default_graphics_options`], so a display
+/// pipeline that renders layouts on its own (a notebook's `Grid`) shows
+/// the graphics at their inherited options.
+pub(crate) fn resolve_style_default_graphics_options(expr: &Expr) -> Expr {
+  fn has_style_defaults(e: &Expr) -> bool {
+    match e {
+      Expr::List(items) => items.iter().any(has_style_defaults),
+      Expr::FunctionCall { name, args } => {
+        (name == "Style"
+          && args
+            .iter()
+            .skip(1)
+            .any(|d| rule_option_name(d) == Some("DefaultOptions")))
+          || args.iter().any(has_style_defaults)
+      }
+      _ => false,
+    }
+  }
+  if !has_style_defaults(expr) {
+    return expr.clone();
+  }
+  if let Some(applied) = apply_style_default_graphics_options(expr) {
+    return resolve_style_default_graphics_options(&applied);
+  }
+  match expr {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(resolve_style_default_graphics_options)
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(resolve_style_default_graphics_options)
+        .collect(),
+    },
+    _ => expr.clone(),
+  }
+}
+
+/// `expr` with every 2D graphic in it redrawn with those of `defaults` it
+/// does not set itself.
+fn with_default_graphics_options(expr: &Expr, defaults: &[Expr]) -> Expr {
+  match expr {
+    Expr::Graphics {
+      is_3d: false,
+      source,
+      ..
+    } => {
+      let own: Vec<&str> = source.as_ref().map_or_default(|s| {
+        s.options.iter().filter_map(rule_option_name).collect()
+      });
+      let is_plot = source.is_some();
+      let applied: Vec<Expr> = defaults
+        .iter()
+        .filter(|o| {
+          rule_option_name(o).is_some_and(|n| {
+            let plot_sets_it =
+              is_plot && PLOT_EXPLICIT_GRAPHICS_OPTIONS.contains(&n);
+            !(own.contains(&n) || plot_sets_it)
+          })
+        })
+        .cloned()
+        .collect();
+      if applied.is_empty() {
+        return expr.clone();
+      }
+      let mut show_args = vec![expr.clone()];
+      show_args.extend(applied);
+      match show_ast(&show_args) {
+        Ok(g @ Expr::Graphics { .. }) => g,
+        _ => expr.clone(),
+      }
+    }
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .map(|e| with_default_graphics_options(e, defaults))
+        .collect(),
+    ),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args
+        .iter()
+        .map(|e| with_default_graphics_options(e, defaults))
+        .collect(),
+    },
+    _ => expr.clone(),
+  }
+}
+
 pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Show's arguments reach it held, but Show is not HoldAll in Wolfram
   // Language: a list of graphics evaluates as a list first, so a `Nothing`

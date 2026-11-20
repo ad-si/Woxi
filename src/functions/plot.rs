@@ -15422,10 +15422,11 @@ pub(crate) struct FrameLabels {
   pub top_graphic: Option<GraphicLabel>,
 }
 
-/// Convert a single FrameLabel entry to a label string. `None` (the symbol)
-/// and unrenderable expressions become an empty string.
+/// Convert a single FrameLabel entry to a label string. `None` and `False`
+/// (no label on that edge) and unrenderable expressions become an empty
+/// string.
 fn frame_label_entry(e: &Expr) -> String {
-  if matches!(e, Expr::Identifier(s) if s == "None") {
+  if matches!(e, Expr::Identifier(s) if s == "None" || s == "False") {
     return String::new();
   }
   crate::functions::graphics::styled_axis_label(e).unwrap_or_default()
