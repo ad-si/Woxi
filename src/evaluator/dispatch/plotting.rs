@@ -1356,6 +1356,9 @@ pub fn dispatch_plotting(
     {
       Some(Ok(crate::functions::chart::invalid_dataset(name, args)))
     }
+    "ChartElementData" => Some(Ok(
+      crate::functions::distribution_chart::chart_element_data_ast(args),
+    )),
     "DistributionChart" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::distribution_chart::distribution_chart_ast(args)
     })),
