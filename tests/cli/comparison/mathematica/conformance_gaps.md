@@ -10434,3 +10434,13 @@ upright, while Woxi sets single-letter symbols in a plot label in italics as
 `TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
 is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
 rendered with another `FormatType`.
+
+### `SliceContourPlot3D` automatic contour levels on coarse slices
+
+With `Contours -> n` Woxi spaces the levels over the range of its own slice
+samples. For a distance function sampled with `PlotPoints -> 10` on
+`"BackPlanes"`, a saved snapshot shows the bar legend's levels one step
+higher than Woxi's (15.6–31.2 instead of 11.7–27.3, same 3.9 spacing): Wolfram's
+value range starts above Woxi's sampled minimum, and its slice even shows a
+band below the lowest legend band. How Wolfram samples the slice planes
+for the value range has not been measured.

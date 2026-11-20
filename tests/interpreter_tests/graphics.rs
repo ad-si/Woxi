@@ -24742,6 +24742,38 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains(">-3<") && svg.contains(">1<"), "bar labels");
     }
 
+    /// A cell (or Manipulate body) whose value is a plot with a color bar
+    /// shows the plot *and* its bar: the captured picture is the composed
+    /// `Legended` one, not just the plot drawn on the way there.
+    #[test]
+    fn legended_result_captures_plot_with_color_bar() {
+      for code in [
+        "DensityPlot[x, {x, 0, 1}, {y, 0, 1}, PlotRange -> {-3, 1}, \
+         PlotLegends -> Automatic]",
+        "Module[{f = x}, Quiet@DensityPlot[f, {x, 0, 1}, {y, 0, 1}, \
+         PlotRange -> {-3, 1}, PlotLegends -> Automatic]]",
+      ] {
+        clear_state();
+        let r = interpret_with_stdout(code).unwrap();
+        let svg = r.graphics.expect("graphics captured");
+        assert!(svg.contains("woxiLegendGradient"), "no color bar: {code}");
+        assert!(svg.contains(">-3<") && svg.contains(">1<"), "{code}");
+      }
+      // A discrete bar labels its contours beside the 3D box's ticks.
+      clear_state();
+      let r = interpret_with_stdout(
+        "SliceContourPlot3D[x + y + z, \"CenterPlanes\", {x, -1, 1}, \
+         {y, -1, 1}, {z, -1, 1}, PlotPoints -> 3, Contours -> {-1.5, 1.5}, \
+         PlotLegends -> Automatic]",
+      )
+      .unwrap();
+      let svg = r.graphics.unwrap();
+      assert!(
+        svg.contains(">-1.5<") && svg.contains(">1.5<"),
+        "bar labels"
+      );
+    }
+
     /// `PlotRange -> {zmin, zmax}` stretches the colors over exactly that
     /// range; a value beyond it is left blank by default and drawn per
     /// `ClippingStyle` otherwise (`Automatic`: the end color; a color:
