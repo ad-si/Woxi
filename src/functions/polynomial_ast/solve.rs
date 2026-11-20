@@ -22620,9 +22620,7 @@ fn eliminate_machine_numbers(
     return None;
   }
   let nrows = m.len();
-  let Some(rhs) = m.first().map(|row| row.len() - 1) else {
-    return None;
-  };
+  let rhs = m.first().map(|row| row.len() - 1)?;
   // Pivots are judged against the coefficients alone: a large or tiny
   // right-hand side says nothing about whether a coefficient is noise.
   let scale = m

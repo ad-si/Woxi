@@ -63520,7 +63520,7 @@ fn inline_script_on_blank_base_keeps_the_space() {
       r#"Graphics[Text["x\!\(\*{head}[\({base}\), \(1\)]\)S", {{0, 0}}]]"#
     ));
     let end = svg.find("S</text>").unwrap();
-    svg[svg[..end].rfind('>').unwrap() + 1..end + 1].to_string()
+    svg[(svg[..end].rfind('>').unwrap() + 1)..=end].to_string()
   };
   assert_eq!(label("SuperscriptBox", " "), "x ¹S");
   assert_eq!(label("SubscriptBox", " "), "x ₁S");
