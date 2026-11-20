@@ -38978,6 +38978,28 @@ mod manipulate {
     assert_eq!(on.matches("\"enabled\":true").count(), 4, "{on}");
   }
 
+  /// A display whose value is a list of numbers (a coordinate readout) is
+  /// one inline value, while a list of display elements still stacks.
+  #[test]
+  fn numeric_list_display_is_one_inline_value() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let bindings = vec![("x".to_string(), "3/2".to_string())];
+    match build_manipulate_display("Dynamic[N@{x, -1, {2, 1/4}}]", &bindings) {
+      DisplayNode::Static { svg: None, text } => {
+        assert_eq!(text, "{1.5, -1., {2., 0.25}}")
+      }
+      other => panic!("expected an inline value, got {other:?}"),
+    }
+    match build_manipulate_display("Dynamic[{x, 2/3}]", &bindings) {
+      DisplayNode::Static { svg: None, text } => assert_eq!(text, "{3/2, 2/3}"),
+      other => panic!("expected an inline value, got {other:?}"),
+    }
+    assert!(matches!(
+      build_manipulate_display("{\"a\", \"b\"}", &[]),
+      DisplayNode::Column(_)
+    ));
+  }
+
   /// An in-body `SetterBar[Dynamic[v], …, Enabled -> False]` draws every
   /// button disabled, and one without the option stays enabled.
   #[test]

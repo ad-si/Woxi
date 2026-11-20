@@ -41016,42 +41016,25 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
 /// the run.
 fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
   match spec {
+    // Each row of a `Grid` lays its cells out side by side like a `Row`.
+    // Cells that hold no control (a symbol picture, a live readout) are
+    // drawn outside Woxi's control panel, so they do not break the line.
+    Expr::FunctionCall { name, args } if name == "Grid" => {
+      let Some(Expr::List(rows)) = args.first() else {
+        return;
+      };
+      for row in rows {
+        match row {
+          Expr::List(cells) => joined_line_controls(cells, true, out),
+          other => collect_row_joined_controls(other, out),
+        }
+      }
+    }
     Expr::FunctionCall { name, args } if name == "Row" => {
       let Some(Expr::List(items)) = args.first() else {
         return;
       };
-      let mut after_control = false;
-      for item in items {
-        let item = match item {
-          Expr::FunctionCall { name, args: inner }
-            if name == "Item" && !inner.is_empty() =>
-          {
-            &inner[0]
-          }
-          _ => item,
-        };
-        match item {
-          Expr::FunctionCall { name, args: c }
-            if name == "Control" && !c.is_empty() =>
-          {
-            match control_spec_variable(&c[0]) {
-              Some(var) => {
-                if after_control {
-                  out.push(var);
-                }
-                after_control = true;
-              }
-              None => after_control = false,
-            }
-          }
-          Expr::FunctionCall { name, .. } if name == "Spacer" => {}
-          Expr::String(_) => {}
-          other => {
-            after_control = false;
-            collect_row_joined_controls(other, out);
-          }
-        }
-      }
+      joined_line_controls(items, false, out);
     }
     Expr::FunctionCall { args, .. } => {
       for a in args {
@@ -41064,6 +41047,50 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
       }
     }
     _ => {}
+  }
+}
+
+/// The `collect_row_joined_controls` walk over the items of one layout
+/// line (a `Row`'s items or a `Grid` row's cells). With
+/// `skip_non_controls`, an item holding no control keeps the run going
+/// instead of breaking it.
+fn joined_line_controls(
+  items: &[Expr],
+  skip_non_controls: bool,
+  out: &mut Vec<String>,
+) {
+  let mut after_control = false;
+  for item in items {
+    let item = match item {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Item" && !inner.is_empty() =>
+      {
+        &inner[0]
+      }
+      _ => item,
+    };
+    match item {
+      Expr::FunctionCall { name, args: c }
+        if name == "Control" && !c.is_empty() =>
+      {
+        match control_spec_variable(&c[0]) {
+          Some(var) => {
+            if after_control {
+              out.push(var);
+            }
+            after_control = true;
+          }
+          None => after_control = false,
+        }
+      }
+      Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+      Expr::String(_) => {}
+      other if skip_non_controls && !contains_control_call(other) => {}
+      other => {
+        after_control = false;
+        collect_row_joined_controls(other, out);
+      }
+    }
   }
 }
 
@@ -49183,6 +49210,12 @@ fn display_expr_to_node(
       }
       _ => static_leaf_node(expr, bindings),
     },
+    // A list of plain numbers (a coordinate readout such as
+    // `Dynamic[N@{x, y, z}]`) is a value, printed inline as `{1., -1., 1.}`
+    // like the front end does — not a stack of display elements.
+    Expr::List(_) if is_numeric_array_value(expr) => {
+      static_leaf_node(expr, bindings)
+    }
     // A bare list of display elements stacks vertically, like `Column`.
     Expr::List(_) => {
       DisplayNode::Column(list_children(expr, bindings, probes, ons))
@@ -49465,6 +49498,27 @@ fn pane_selector_content<'a>(
 }
 
 /// Render the children of a `Column[{…}]` / `Row[{…}]` (or a bare list).
+/// Whether `expr` is a non-empty list whose leaves are all explicit numbers
+/// (integers, reals, rationals, complex numbers), possibly nested.
+fn is_numeric_array_value(expr: &Expr) -> bool {
+  fn is_number(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => true,
+      Expr::FunctionCall { name, args }
+        if (name == "Rational" || name == "Complex") && args.len() == 2 =>
+      {
+        args.iter().all(is_number)
+      }
+      Expr::List(items) => !items.is_empty() && items.iter().all(is_number),
+      _ => false,
+    }
+  }
+  matches!(expr, Expr::List(_)) && is_number(expr)
+}
+
 fn list_children(
   list: &Expr,
   bindings: &[(String, String)],
