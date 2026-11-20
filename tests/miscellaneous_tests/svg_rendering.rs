@@ -1967,11 +1967,11 @@ mod tests {
       // span 5 px, so they don't match).
       let verticals = svg
         .lines()
-        .filter(|l| l.contains("y1=\"0\"") && l.contains("y2=\"334.76\""))
+        .filter(|l| l.contains("y1=\"0.00\"") && l.contains("y2=\"334.76\""))
         .count();
       let horizontals = svg
         .lines()
-        .filter(|l| l.contains("x1=\"0\"") && l.contains("x2=\"335.30\""))
+        .filter(|l| l.contains("x1=\"0.00\"") && l.contains("x2=\"335.30\""))
         .count();
       assert_eq!(verticals, 2, "expected 2 vertical grid lines: {svg}");
       assert_eq!(horizontals, 1, "expected 1 horizontal grid line: {svg}");
