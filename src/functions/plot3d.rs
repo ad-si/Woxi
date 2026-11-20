@@ -7144,6 +7144,13 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
   Some((rgb, exponent))
 }
 
+/// Whether `expr` is a function written out: `Function[{x, y, z}, …]`,
+/// `Function[x, …]` or a pure function like `Directive[Green, Opacity[0.3]] &`.
+fn is_function_value(expr: &Expr) -> bool {
+  matches!(expr, Expr::Function { .. } | Expr::NamedFunction { .. })
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Function")
+}
+
 /// `ColorFunction -> Function[{x, y, z}, …]` of a `Plot3D`/`RegionPlot3D`:
 /// the style (color and, for `Directive[Opacity[o], color]`, opacity) it
 /// gives the facet at a point. A named gradient (`ColorFunction ->
@@ -7166,9 +7173,10 @@ impl FacetColorFunction {
   fn read_option(&mut self, pattern: &Expr, replacement: &Expr) {
     match pattern {
       Expr::Identifier(name) if name == "ColorFunction" => {
-        self.function = matches!(replacement,
-          Expr::FunctionCall { name, .. } if name == "Function")
-        .then(|| replacement.clone());
+        // `Function[{x, y, z}, …]`, `Function[x, …]` or a pure function
+        // like `Directive[Green, Opacity[0.3]] &`.
+        self.function =
+          is_function_value(replacement).then(|| replacement.clone());
         self.scheme = if self.function.is_some() {
           None
         } else {
@@ -17117,11 +17125,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A region given by inequalities (combined with And/Or/Not) is drawn as
   // the smooth level surface of a signed field that is positive inside,
   // closed off where it meets the box — as wolframscript draws it.
-  let has_color_function = args[4..].iter().any(|o| {
-    matches!(o, Expr::Rule { pattern, .. }
-      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorFunction"))
-  });
-  if !has_color_function && let Some(field) = region_signed_field(body) {
+  if let Some(field) = region_signed_field(body) {
     reset_scalar_3d_cache();
     const CELLS: usize = 24;
     let ranges = [(x_min, x_max), (y_min, y_max), (z_min, z_max)];
@@ -17182,6 +17186,22 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             replacement,
           } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") => {
             rule_expr(id_expr("ContourStyle"), (**replacement).clone())
+          }
+          // `ContourPlot3D` calls its `ColorFunction` as `f[x, y, z, v]`,
+          // `RegionPlot3D` as `f[x, y, z]`: drop the level value.
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorFunction")
+            && is_function_value(replacement) =>
+          {
+            let wrapped = Expr::Function {
+              body: Box::new(Expr::CurriedCall {
+                func: replacement.clone(),
+                args: (1..=3).map(Expr::Slot).collect(),
+              }),
+            };
+            rule_expr(id_expr("ColorFunction"), wrapped)
           }
           other => other.clone(),
         })
@@ -18713,6 +18733,9 @@ fn contour3d_render(
   let mut point_index: std::collections::HashMap<[u64; 3], usize> =
     std::collections::HashMap::new();
   let mut content: Vec<Expr> = Vec::new();
+  // Under a `ColorFunction`: the position in `content` of each level's
+  // item, with its triangles and their indices into `world_triangles`.
+  let mut colored_items: Vec<(usize, Vec<([usize; 3], usize)>)> = Vec::new();
   let mut refinement_budget = CONTOUR3D_REFINE_BUDGET;
   // The segments along which a `RegionFunction` cut the surfaces, in plot
   // coordinates: part of the surfaces' boundary.
@@ -18798,6 +18821,8 @@ fn contour3d_render(
         let theme_idx = surf_idx * levels.len() + level_idx;
         // This level's triangles, as one Polygon of vertex-index triples.
         let mut level_triangles: Vec<[usize; 3]> = Vec::new();
+        // The index into `world_triangles` of each of `level_triangles`.
+        let mut level_world_ids: Vec<usize> = Vec::new();
         for i in 0..cells[0] {
           for j in 0..cells[1] {
             for k in 0..cells[2] {
@@ -18929,6 +18954,7 @@ fn contour3d_render(
                       *slot = idx;
                     }
                     level_triangles.push(tri);
+                    level_world_ids.push(world_triangles.len() - 1);
                   }
                 });
                 if let Some((body, vars)) = body
@@ -18966,6 +18992,21 @@ fn contour3d_render(
             && st.opacity < 1.0
           {
             item.push(call1("Opacity", Expr::Real(st.opacity)));
+          }
+          // A `ColorFunction` colors each triangle on its own; the colors
+          // are known once the facets are shaded below, so the triangles
+          // are kept until then.
+          if color_fn.is_set() {
+            colored_items.push((
+              content.len(),
+              level_triangles
+                .iter()
+                .copied()
+                .zip(level_world_ids)
+                .collect(),
+            ));
+            content.push(Expr::List(item.into()));
+            continue;
           }
           item.push(call1(
             "Polygon",
@@ -19089,6 +19130,68 @@ fn contour3d_render(
       style: cf_style,
       plot_style: style.cloned(),
     });
+  }
+  // Each triangle keeps its `ColorFunction` style in the extracted
+  // primitives, so `Show` draws the surface in the same colors; runs of
+  // triangles of one style share a polygon.
+  for (pos, triangles) in &colored_items {
+    let Expr::List(item) = &mut content[*pos] else {
+      continue;
+    };
+    let mut item = item.to_vec();
+    let polygon = |run: &[[usize; 3]]| {
+      call1(
+        "Polygon",
+        Expr::List(
+          run
+            .iter()
+            .map(|t| {
+              Expr::List(
+                t.iter().map(|&v| Expr::Integer(v as i128 + 1)).collect(),
+              )
+            })
+            .collect(),
+        ),
+      )
+    };
+    let style_key =
+      |st: Option<&StyleState3D>| st.map(|st| (st.color, st.opacity.to_bits()));
+    let mut run: Vec<[usize; 3]> = Vec::new();
+    let mut run_style: Option<&StyleState3D> = None;
+    let mut flush = |run: &mut Vec<[usize; 3]>, st: Option<&StyleState3D>| {
+      if run.is_empty() {
+        return;
+      }
+      let mut group = Vec::new();
+      if let Some(st) = st {
+        if st.opacity < 1.0 {
+          group.push(call1("Opacity", Expr::Real(st.opacity)));
+        }
+        if let Some((r, g, b)) = st.color {
+          group.push(call(
+            "RGBColor",
+            vec![
+              Expr::Real(r as f64 / 255.0),
+              Expr::Real(g as f64 / 255.0),
+              Expr::Real(b as f64 / 255.0),
+            ],
+          ));
+        }
+      }
+      group.push(polygon(run));
+      item.push(Expr::List(group.into()));
+      run.clear();
+    };
+    for &(tri, id) in triangles {
+      let st = facets[id].style.as_ref();
+      if !run.is_empty() && style_key(st) != style_key(run_style) {
+        flush(&mut run, run_style);
+      }
+      run_style = st;
+      run.push(tri);
+    }
+    flush(&mut run, run_style);
+    content[*pos] = Expr::List(item.into());
   }
   // A function's isosurface is lit with its gradient, the exact normal;
   // the boxes' axes are scaled differently, so it is taken in box
@@ -19380,7 +19483,17 @@ fn contour3d_render(
       ],
     );
     let mut structure_args = vec![complex];
-    structure_args.extend(opts.iter().cloned());
+    // The `ColorFunction` colors are already in the primitives.
+    structure_args.extend(
+      opts
+        .iter()
+        .filter(|o| {
+          !matches!(o, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n)
+              if n == "ColorFunction" || n == "ColorFunctionScaling"))
+        })
+        .cloned(),
+    );
     let names = |opt: &str| {
       structure_args.iter().any(|o| {
         matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
