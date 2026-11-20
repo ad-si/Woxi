@@ -980,6 +980,10 @@ pub struct ManipulateState {
   /// (a `Dynamic[Framed@Graphics[…]]` sector showing a slider's angle), as
   /// `(control name, icon)`. Re-rendered with the captions on every change.
   pub label_svgs: Vec<(String, LabelIcon)>,
+  /// Typeset slider value readouts (see [`Self::continuous_value_icon`]),
+  /// keyed by the value's bits and whether it binds as a machine real.
+  /// Filled lazily from `view`, hence the interior mutability.
+  value_icons: std::cell::RefCell<Vec<((u64, bool, bool), Option<LabelIcon>)>>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -1081,6 +1085,44 @@ impl ManipulateState {
       .iter()
       .find(|(n, _)| n == name)
       .map(|(_, handle)| handle)
+  }
+
+  /// The value readout of a `Continuous` control as a typeset picture
+  /// when its variable binds an exact non-integer number (a `1/6`-step
+  /// slider reads a stacked `-7/6`, as in Wolfram); `None` keeps the plain
+  /// text readout. Rendered once per value and cached.
+  pub fn continuous_value_icon(
+    &self,
+    ctrl: &ControlState,
+  ) -> Option<LabelIcon> {
+    let ControlState::Continuous {
+      current,
+      is_real,
+      exact_value,
+      imaginary,
+      ..
+    } = ctrl
+    else {
+      return None;
+    };
+    let real = *is_real && *exact_value != Some(*current);
+    let key = (current.to_bits(), real, *imaginary);
+    if let Some((_, icon)) =
+      self.value_icons.borrow().iter().find(|(k, _)| *k == key)
+    {
+      return icon.clone();
+    }
+    let icon = woxi::functions::graphics::continuous_value_label_svg(
+      *current, real, *imaginary,
+    )
+    .map(LabelIcon::from_svg);
+    let mut cache = self.value_icons.borrow_mut();
+    // A dragged slider visits many values; keep the cache bounded.
+    if cache.len() >= 256 {
+      cache.clear();
+    }
+    cache.push((key, icon.clone()));
+    icon
   }
 
   /// Which side of the output the control at `ctrl_idx` sits on: its own
@@ -1228,6 +1270,7 @@ impl ManipulateState {
       dynamic_values: spec.dynamic_values,
       dynamic_labels: spec.dynamic_labels,
       label_svgs: Vec::new(),
+      value_icons: Default::default(),
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
       dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
