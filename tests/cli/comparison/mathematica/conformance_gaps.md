@@ -5656,16 +5656,30 @@ terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
 in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
 per side instead of 2 %. Where the extra margin comes from was not decoded.
 
-A flat scene points the other way. A twisted band of radius 3 around the
-z-axis has a 6 × 6 × 2 bounding box. Drawn at `ImageSize -> {450, 400}` with
-the default `ViewPoint`, it is about 1.36× *larger* in four Wolfram snapshots
-(78 % of the width) than in Woxi (58 %). Matching that would take a framing
-sphere of radius about 3.4. That is smaller than any sphere around this box
-(the x-y diagonal alone gives 4.24), and only a little larger than the
-contents' own enclosing sphere (radius 3). The cube- and bar-shaped
-calibrations above fit the box sphere, so no single rule tried so far
-(box sphere, contents sphere, longer vs. shorter image side) reproduces
-all of them.
+With an automatic range, Woxi's sphere is the one around the box center
+that just encloses the contents (2 % padded), not the one through the box
+corners. Four snapshots of closed polyhedra (a ring of triangles capped by
+two pyramids, in 2 × 2 × 1.5 to 2 × 2 × 2.3 boxes) at
+`ImageSize -> {400, 400}` match it to within 1 %, while the box sphere drew
+them 1.55–1.63× too small. Contents that fill the box (cuboids, long bars)
+reach its corners, so the two spheres nearly agree there. A pinned `PlotRange` or
+an explicit `PlotRangePadding` keeps the box sphere. Wolfram's
+documentation describes the sphere as one "around the three-dimensional
+bounding box", and an earlier unit test expected two unit disks 2 apart to
+span 55 % of a 400 × 400 picture, as the box sphere gives. Where that figure
+came from is not recorded, and it contradicts the polyhedron snapshots, whose
+boxes are nearly the same shape. Woxi now draws the disks at about 75 %. This
+needs checking with wolframscript.
+
+A flat scene is still off. A twisted band of radius 3 around the z-axis has
+a 6 × 6 × 2 bounding box. Drawn at `ImageSize -> {450, 400}` with the
+default `ViewPoint`, it was about 1.36× *larger* in four Wolfram snapshots
+than under the box sphere. Matching them takes a framing sphere of radius
+about 3.4. The contents sphere (about 3.2) closes most of that gap, but now
+draws the band roughly 7 % too large. The 6–7 % excess of the
+`ParametricPlot3D` snapshots above was measured with the box sphere. Those
+contents largely fill their box, so the contents sphere should change them
+only a little. They have not been re-measured.
 
 ### Sphere framing of an unboxed box at a fixed `ImageSize`
 
