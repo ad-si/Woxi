@@ -17210,33 +17210,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let cx = margin_left + svg_w / 2.0;
     // A title wider than the picture (a long `Row` of text and numbers)
     // shrinks to fit instead of being clipped at both edges.
-    let widest = lines
-      .iter()
-      .map(|l| {
-        let mut in_tag = false;
-        l.chars()
-          .filter(|c| match c {
-            '<' => {
-              in_tag = true;
-              false
-            }
-            '>' => {
-              in_tag = false;
-              false
-            }
-            _ => !in_tag,
-          })
-          .count()
-      })
-      .max()
-      .unwrap_or(0);
-    let base_title_font = label_font.size.unwrap_or(TITLE_FONT);
-    let title_size = if widest == 0 {
-      base_title_font
-    } else {
-      base_title_font
-        .min(((total_width - 8.0) / (widest as f64 * 0.52)).max(9.0))
-    };
+    let title_size =
+      fit_title_font(lines, label_font.size.unwrap_or(TITLE_FONT), total_width);
     // The baseline sits one ascent of the title's largest glyphs down.
     let glyph_size = lines
       .iter()
@@ -23250,6 +23225,37 @@ pub(crate) fn traditional_legend_label(expr: &Expr) -> String {
   match structured_label_svg(expr) {
     Some(svg) => format!("{STYLED_LABEL_MARKER}{svg}"),
     None => traditional_label(expr),
+  }
+}
+
+/// The font size of a `PlotLabel` title of SVG markup `lines` set in a
+/// picture `width` wide: `base`, shrunk (down to 9 points) so the widest
+/// line fits between the edges instead of being clipped at both of them.
+pub(crate) fn fit_title_font(lines: &[String], base: f64, width: f64) -> f64 {
+  let widest = lines
+    .iter()
+    .map(|l| {
+      let mut in_tag = false;
+      l.chars()
+        .filter(|c| match c {
+          '<' => {
+            in_tag = true;
+            false
+          }
+          '>' => {
+            in_tag = false;
+            false
+          }
+          _ => !in_tag,
+        })
+        .count()
+    })
+    .max()
+    .unwrap_or(0);
+  if widest == 0 {
+    base
+  } else {
+    base.min(((width - 8.0) / (widest as f64 * 0.52)).max(9.0))
   }
 }
 

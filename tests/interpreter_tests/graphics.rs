@@ -26639,6 +26639,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_wide_plot_label_shrinks_to_fit() {
+      // Regression: a title wider than a small picture kept its 14-point
+      // font and was clipped at both edges; like a `Graphics` title it
+      // shrinks so the whole line fits the picture's width.
+      // The title's font size and the width of the canvas it sits in.
+      let title_of = |code: &str| -> (f64, f64) {
+        let svg = export_svg(code);
+        let attr = |tag: &str, name: &str| -> f64 {
+          let a = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+          tag[a..a + tag[a..].find('"').unwrap()].parse().unwrap()
+        };
+        let end = svg.find("</text>").unwrap();
+        let start = svg[..end].rfind("<text").unwrap();
+        (
+          attr(&svg[start..end], "font-size"),
+          attr(&svg[..svg.find('>').unwrap()], "width"),
+        )
+      };
+      let long = "\"A rather long caption for a small picture\"";
+      for (head, size) in [("ArrayPlot", 250), ("MatrixPlot", 250)] {
+        let (font, width) = title_of(&format!(
+          "{head}[{{{{0, 1}}, {{1, 0}}}}, ImageSize -> {size}, PlotLabel -> {long}]"
+        ));
+        assert!(font < 14.0, "{head} at {size}: {font}");
+        // The estimated width of the 41 characters stays inside the canvas.
+        assert!(41.0 * 0.52 * font <= width - 8.0 + 0.5, "{head}: {font}");
+      }
+      // A title too long for any legible size stops shrinking at 9 points.
+      let tiny = format!(
+        "ArrayPlot[{{{{0, 1}}, {{1, 0}}}}, ImageSize -> 100, PlotLabel -> {long}]"
+      );
+      assert_eq!(title_of(&tiny).0, 9.0);
+      // A short caption keeps the default size.
+      let short =
+        "ArrayPlot[{{0, 1}, {1, 0}}, ImageSize -> 250, PlotLabel -> \"Short\"]";
+      assert_eq!(title_of(short).0, 14.0);
+    }
+
+    #[test]
     fn array_plot_column_plot_label_stacks_lines() {
       // Regression: a `Column[…]` title was printed as its source text
       // (`Column[{1, {1, 2}}, Center]`) instead of one line per item.
