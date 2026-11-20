@@ -1749,3 +1749,70 @@ mod box_and_label_options {
     }
   }
 }
+
+mod internal_cut_seams {
+  use super::*;
+
+  /// The point count of every filled `<polygon>` an SVG draws.
+  fn polygon_point_counts(svg: &str) -> Vec<usize> {
+    svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .map(|pts| pts.split_whitespace().count())
+      .collect()
+  }
+
+  const SQUARE: &str = "Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}]";
+
+  /// Each half of a fan-triangulated face reaches across the diagonal it
+  /// was split along with a thin band, so the halves overlap and no
+  /// anti-aliasing seam traces the cut.
+  #[test]
+  fn fan_halves_overlap_across_the_cut() {
+    let s = svg(&format!("Graphics3D[{SQUARE}, Boxed -> False]"));
+    assert_eq!(polygon_point_counts(&s), vec![5, 5], "{s}");
+  }
+
+  /// Every triangle of a hexagon fan widens across each of its cuts: the
+  /// end triangles have one, the middle ones two.
+  #[test]
+  fn every_cut_of_a_larger_fan_widens() {
+    let s = svg(
+      "Graphics3D[Polygon[Table[{Cos[t], Sin[t], 0}, {t, 0, 5 Pi/3, Pi/3}]], Boxed -> False]",
+    );
+    let mut counts = polygon_point_counts(&s);
+    counts.sort();
+    assert_eq!(counts, vec![5, 5, 7, 7], "{s}");
+  }
+
+  /// Cube faces are fan-triangulated quads as well.
+  #[test]
+  fn cuboid_faces_widen() {
+    let s = svg("Graphics3D[Cuboid[], Boxed -> False]");
+    let counts = polygon_point_counts(&s);
+    assert!(!counts.is_empty());
+    assert!(counts.iter().all(|&n| n == 5), "{counts:?}");
+  }
+
+  /// A lone triangle has no internal cut to widen.
+  #[test]
+  fn lone_triangle_keeps_three_corners() {
+    let s = svg(
+      "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}], Boxed -> False]",
+    );
+    assert_eq!(polygon_point_counts(&s), vec![3], "{s}");
+  }
+
+  /// Overlapping translucent halves would darken the diagonal, and without
+  /// a drawn outline the band could show past the face, so neither widens.
+  #[test]
+  fn translucent_or_edgeless_faces_keep_three_corners() {
+    for style in ["Opacity[0.5]", "EdgeForm[]"] {
+      let s = svg(&format!(
+        "Graphics3D[{{{style}, {SQUARE}}}, Boxed -> False]"
+      ));
+      assert_eq!(polygon_point_counts(&s), vec![3, 3], "{style}: {s}");
+    }
+  }
+}

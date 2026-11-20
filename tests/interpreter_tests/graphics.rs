@@ -8772,12 +8772,14 @@ mod plot3d {
 
     /// A plane cuts a quadrilateral out of the box. Comparing the whole
     /// SVG would compare the triangle fan's starting corner too, so this
-    /// checks the drawn corners as a set.
+    /// checks the drawn corners as a set. Without edges the fan halves do
+    /// not widen across their cut, so only true corners are drawn.
     #[test]
     fn unbounded_planes_fill_their_cross_section_of_the_box() {
       let corners = |code: &str| -> Vec<String> {
-        let svg =
-          export_svg(&format!("Graphics3D[{{{code}}}, PlotRange -> 10]"));
+        let svg = export_svg(&format!(
+          "Graphics3D[{{EdgeForm[], {code}}}, PlotRange -> 10]"
+        ));
         let mut pts: Vec<String> = svg
           .split("<polygon points=\"")
           .skip(1)
