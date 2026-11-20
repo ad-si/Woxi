@@ -1424,7 +1424,5 @@ fn render_circle_like(
 
 /// Escape text content for inclusion in an SVG text element.
 fn svg_escape_text(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
+  crate::functions::plot::html_escape(s)
 }

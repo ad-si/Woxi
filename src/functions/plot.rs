@@ -11761,12 +11761,25 @@ pub(crate) fn generate_bubble_chart_svg(
   ))
 }
 
-/// Escape special characters for SVG/HTML text content.
+/// Escape special characters for SVG/HTML text content. C0 control
+/// characters other than tab, newline and carriage return (e.g. the `\.04`
+/// in `FromCharacterCode[{65, 4}]`) are not allowed anywhere in an XML
+/// document, so they are dropped: kept, a single one makes the whole SVG
+/// unparsable. They have no visible glyph anyway.
 pub(crate) fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match c {
+      '&' => out.push_str("&amp;"),
+      '<' => out.push_str("&lt;"),
+      '>' => out.push_str("&gt;"),
+      '"' => out.push_str("&quot;"),
+      '\t' | '\n' | '\r' => out.push(c),
+      c if (c as u32) < 0x20 || c == '\u{FFFE}' || c == '\u{FFFF}' => {}
+      c => out.push(c),
+    }
+  }
+  out
 }
 
 /// Width (in viewBox units) of the plotting area, mirroring the margins used

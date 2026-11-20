@@ -12332,11 +12332,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
   // for them switches the whole run's font; they look like an ASCII `-`.
   let s = s.replace(['\u{2010}', '\u{2011}'], "-");
   let s = crate::syntax::substitute_private_use_glyphs(&s);
-  let escaped = s
-    .replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;");
+  let escaped = crate::functions::plot::html_escape(&s);
   let escaped = render_math_letterlike_glyphs(&escaped);
   let escaped = render_combining_overlines(&escaped);
   if escaped.contains(SUBSCRIPT_START) || escaped.contains(SUPERSCRIPT_START) {
@@ -31518,6 +31514,17 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
         current = selected_pane_content(args);
         continue;
       }
+      // `TabView[{label -> pane, …}, sel]` nested in a layout shows the
+      // pane its selector names (the first pane without a selector),
+      // like a top-level `TabView` result does, rather than the call's
+      // source text.
+      "TabView" => match crate::tabview_selected_content(args) {
+        Some(content) => {
+          current = content;
+          continue;
+        }
+        None => false,
+      },
       // `Style[picture, Magnification -> m]` draws the picture `m` times
       // its size.
       "Style" => match magnified_picture(&current) {
