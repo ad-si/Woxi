@@ -27932,6 +27932,78 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "ListContourPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}, ImageSize -> 200]"
       ));
     }
+
+    /// The `<path>` fills of a contour plot's SVG with their vertex count.
+    fn filled_cells(svg: &str) -> Vec<(String, usize)> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<path d=\"M"))
+        .map(|l| {
+          let d = l.split('"').nth(1).unwrap();
+          let fill = l.split("fill=\"").nth(1).unwrap().split('"').next();
+          (fill.unwrap().to_string(), d.matches(['M', 'L']).count())
+        })
+        .collect()
+    }
+
+    /// `InterpolationOrder -> 0` gives every point the value of its nearest
+    /// sample, so scattered samples shade their Voronoi cells — here the
+    /// four corner triangles and the center diamond of the unit square —
+    /// in their band's color, with no contour lines along the jumps.
+    /// Regression: the option was ignored and the samples were blended
+    /// smoothly (with contour lines between them).
+    #[test]
+    fn interpolation_order_zero_shades_voronoi_cells_of_triples() {
+      let svg = export_svg(
+        "ListContourPlot[{{0, 0, 1}, {1, 0, 2}, {0, 1, 3}, {1, 1, 4}, \
+         {0.5, 0.5, 2}}, InterpolationOrder -> 0, \
+         Contours -> {1.5, 2.5, 3.5}, \
+         ContourShading -> {Red, Green, Blue, Black}]",
+      );
+      let mut cells = filled_cells(&svg);
+      cells.sort();
+      let cell = |fill: &str, n: usize| (fill.to_string(), n);
+      assert_eq!(
+        cells,
+        [
+          cell("rgb(0,0,0)", 3),
+          cell("rgb(0,0,255)", 3),
+          cell("rgb(0,255,0)", 3),
+          cell("rgb(0,255,0)", 4),
+          cell("rgb(255,0,0)", 3),
+        ]
+      );
+      assert!(!svg.contains("<polyline"), "no contour lines expected");
+    }
+
+    /// A matrix's nodes shade the square cells around them under
+    /// `InterpolationOrder -> 0`, the first row at the bottom.
+    #[test]
+    fn interpolation_order_zero_shades_square_cells_of_a_matrix() {
+      let svg = export_svg(
+        "ListContourPlot[{{1, 2}, {3, 4}}, InterpolationOrder -> 0, \
+         Contours -> {1.5, 2.5, 3.5}, \
+         ContourShading -> {Red, Green, Blue, Black}]",
+      );
+      let cells = filled_cells(&svg);
+      assert_eq!(cells.len(), 4, "{cells:?}");
+      assert!(cells.iter().all(|(_, n)| *n == 4), "{cells:?}");
+      // The bottom-left cell (value 1) is red, the top-right (value 4)
+      // black: compare the cells' vertical positions.
+      let top_of = |fill: &str| {
+        let line = svg
+          .lines()
+          .find(|l| l.starts_with("<path") && l.contains(fill))
+          .unwrap();
+        let d = line.split('"').nth(1).unwrap();
+        d.split(['M', 'L', 'Z'])
+          .filter(|p| !p.is_empty())
+          .map(|p| p.split(' ').nth(1).unwrap().parse::<f64>().unwrap())
+          .fold(f64::INFINITY, f64::min)
+      };
+      assert!(top_of("rgb(255,0,0)") > top_of("rgb(0,0,0)"));
+      assert!(!svg.contains("<polyline"), "no contour lines expected");
+    }
   }
 
   mod field_plot_aspect_ratio {
