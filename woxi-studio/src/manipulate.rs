@@ -853,6 +853,12 @@ pub struct ManipulateState {
   /// when false).
   pub pointer_over: bool,
   pub text_output: Option<String>,
+  /// The typeset form of `text_output` (e.g. `TraditionalForm` math with
+  /// its subscripts, fractions and font size), drawn in its place the way
+  /// an ordinary output cell shows its result. `None` when the result has
+  /// no typeset rendering; the plain text is shown then.
+  pub typeset_output: Option<String>,
+  pub typeset_handle: Option<svg::Handle>,
   pub error: Option<String>,
   /// Audio produced by the last pressed button's action (`Button[…,
   /// EmitSound[…]]`), waiting for the host to play it.
@@ -1143,6 +1149,8 @@ impl ManipulateState {
       pointer: (0.0, 0.0),
       pointer_over: false,
       text_output: None,
+      typeset_output: None,
+      typeset_handle: None,
       error: None,
       emitted_sound: None,
       body_sound: None,
@@ -2402,6 +2410,8 @@ impl ManipulateState {
           self.mouse_region = mouse_region_of(&svg);
           self.graphics_handle = Some(handle);
           self.text_output = None;
+          self.typeset_output = None;
+          self.typeset_handle = None;
           self.error = None;
         } else {
           // No graphic: either a textual result or genuinely empty output.
@@ -2410,6 +2420,12 @@ impl ManipulateState {
           self.button_regions.clear();
           self.click_regions.clear();
           self.mouse_region = None;
+          self.typeset_output =
+            result.output_svg.filter(|_| !cleaned.is_empty());
+          self.typeset_handle = self
+            .typeset_output
+            .as_ref()
+            .map(|svg| svg::Handle::from_memory(svg.as_bytes().to_vec()));
           self.text_output = if cleaned.is_empty() {
             None
           } else {
@@ -2426,6 +2442,8 @@ impl ManipulateState {
         self.click_regions.clear();
         self.mouse_region = None;
         self.text_output = None;
+        self.typeset_output = None;
+        self.typeset_handle = None;
         self.error = Some(format!("{e}"));
       }
     }

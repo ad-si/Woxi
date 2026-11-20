@@ -7710,6 +7710,7 @@ mod interpreter_tests {
   mod graphics3d_primitives;
   mod graphics_primitives;
   mod image;
+  mod infix;
   mod julia_set_plot;
   mod layout_display;
   mod lic_plot;
