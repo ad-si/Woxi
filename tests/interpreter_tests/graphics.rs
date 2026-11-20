@@ -33462,6 +33462,36 @@ mod graphics_grid {
     assert!(svg.matches("<line").count() > 10, "{svg}");
   }
 
+  /// The play button of a sound box is a button hit region whose action
+  /// emits the drawn sound, so a live widget can play it.
+  #[test]
+  fn sound_box_play_button_emits_the_sound() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Grid[{{\"tune\", Sound[{SoundNote[0, 0.25, \"Flute\"], SoundNote[7, 0.25, \"Flute\"]}]}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let actions: Vec<String> = svg
+      .split("id=\"")
+      .skip(1)
+      .filter_map(|rest| {
+        woxi::functions::graphics::button_action_from_hit_id(
+          &rest[..rest.find('"')?],
+        )
+      })
+      .collect();
+    assert_eq!(
+      actions,
+      vec![
+        "EmitSound[Sound[{SoundNote[0, 0.25, \"Flute\"], SoundNote[7, 0.25, \"Flute\"]}]]"
+          .to_string()
+      ],
+      "{svg}"
+    );
+  }
+
   #[test]
   fn column_item_that_is_a_sound_draws_a_sound_box() {
     clear_state();

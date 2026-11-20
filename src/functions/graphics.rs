@@ -33282,6 +33282,21 @@ fn with_fixed_image_size(expr: &Expr, w: i128, h: i128) -> Expr {
 /// overlays real clickable areas on them.
 pub const BUTTON_HIT_ID_PREFIX: &str = "woxi-btn-";
 
+/// The invisible rectangle that makes the area at `(x, y)` of size `w`×`h`
+/// a pressable button running `action` (Wolfram source) in a live widget.
+pub(crate) fn button_hit_rect(
+  action: &str,
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
+) -> String {
+  format!(
+    "<rect id=\"{BUTTON_HIT_ID_PREFIX}{}\" x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" fill=\"#000\" fill-opacity=\"0.001\"/>",
+    hex_encode(action)
+  )
+}
+
 /// Decode the action of a [`BUTTON_HIT_ID_PREFIX`] id.
 pub fn button_action_from_hit_id(id: &str) -> Option<String> {
   decode_hit_id_hex(id.strip_prefix(BUTTON_HIT_ID_PREFIX)?)
@@ -33354,12 +33369,12 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
   }
   out.push_str(&svg[open_end..close]);
   if enabled {
-    let mut hex = String::new();
-    for b in crate::syntax::expr_to_source_form(&button_args[1]).bytes() {
-      hex.push_str(&format!("{b:02x}"));
-    }
-    out.push_str(&format!(
-      "<rect id=\"{BUTTON_HIT_ID_PREFIX}{hex}\" x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"#000\" fill-opacity=\"0.001\"/>"
+    out.push_str(&button_hit_rect(
+      &crate::syntax::expr_to_source_form(&button_args[1]),
+      vb_x,
+      vb_y,
+      vb_w,
+      vb_h,
     ));
   }
   out.push_str(&svg[close..]);
