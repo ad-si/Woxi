@@ -12066,17 +12066,25 @@ fn grid_positions(
 /// Draw grid lines spanning the plot. Vertical lines sit at the `grid_x`
 /// positions, horizontal lines at the `grid_y` positions; `Automatic` uses the
 /// tick positions. `default_style` (from `GridLinesStyle`) applies to lines
-/// without a per-line override.
+/// without a per-line override. `span` is the plot range the lines run
+/// across: under `ImageSize -> {w, h}` the drawing range `bb` is widened to
+/// the image's shape, but that letterbox room beside the picture shows no
+/// grid lines.
 #[allow(clippy::too_many_arguments)]
 fn render_grid_lines(
   svg: &mut String,
   bb: &BBox,
+  span: &BBox,
   svg_w: f64,
   svg_h: f64,
   grid_x: &GridSpec,
   grid_y: &GridSpec,
   default_style: &StyleState,
 ) {
+  let span_x0 = coord_x(span.x_min, bb, svg_w).clamp(0.0, svg_w);
+  let span_x1 = coord_x(span.x_max, bb, svg_w).clamp(0.0, svg_w);
+  let span_y0 = coord_y(span.y_max, bb, svg_h).clamp(0.0, svg_h);
+  let span_y1 = coord_y(span.y_min, bb, svg_h).clamp(0.0, svg_h);
   let x_ticks = generate_ticks(bb.x_min, bb.x_max);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max);
 
@@ -12089,7 +12097,7 @@ fn render_grid_lines(
     }
     let color = style.effective_color();
     svg.push_str(&format!(
-      "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" \
+      "<line x1=\"{x:.2}\" y1=\"{span_y0:.2}\" x2=\"{x:.2}\" y2=\"{span_y1:.2}\" \
        stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
       thickness_px(style.thickness, bb, svg_w),
@@ -12106,7 +12114,7 @@ fn render_grid_lines(
     }
     let color = style.effective_color();
     svg.push_str(&format!(
-      "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" \
+      "<line x1=\"{span_x0:.2}\" y1=\"{y:.2}\" x2=\"{span_x1:.2}\" y2=\"{y:.2}\" \
        stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
       thickness_px(style.thickness, bb, svg_w),
@@ -15631,6 +15639,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     render_grid_lines(
       &mut svg,
       &bb,
+      &requested_bb,
       svg_w,
       svg_h,
       &grid_x,
