@@ -59747,6 +59747,7 @@ mod click_pane_display_tests {
   }
 }
 
+#[cfg(test)]
 mod grid_display_null_cell_tests {
   use super::*;
 
