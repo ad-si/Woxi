@@ -54983,6 +54983,60 @@ mod grid_repeating_decimal_alignment {
     assert!(svg.contains("<polyline"), "{svg}");
   }
 
+  /// A one-sided vertical `PlotRange -> {ymin, All}` of a `Graphics` pins
+  /// its given end and lets the other follow the primitives; it used to
+  /// be dropped, leaving the fully automatic range.
+  #[test]
+  fn graphics_half_open_plot_range_pins_given_end() {
+    let labels = |code: &str| -> Vec<String> {
+      export_svg(code)
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| {
+          let body = t.split('>').nth(1)?;
+          Some(body.split('<').next()?.to_string())
+        })
+        .collect()
+    };
+    let lower = labels(
+      "Graphics[{Line[{{0, 0}, {1, 4}}]}, PlotRange -> {1, All}, \
+       Frame -> True]",
+    );
+    assert!(lower.iter().any(|l| l == "1.0"), "{lower:?}");
+    assert!(lower.iter().any(|l| l == "4.0"), "{lower:?}");
+    // The y ticks start at the given lower end, not at the data's 0.
+    assert!(!lower.iter().any(|l| l == "0" || l == "0.5"), "{lower:?}");
+    let upper = labels(
+      "Graphics[{Line[{{0, 0}, {1, 4}}]}, PlotRange -> {Automatic, 2}, \
+       Frame -> True]",
+    );
+    assert!(!upper.iter().any(|l| l.starts_with('3') || l.starts_with('4')),
+      "{upper:?}");
+  }
+
+  /// `Plot[…, PlotRange -> {0, All}]` clips its curve at the given lower
+  /// end while the upper end follows the data.
+  #[test]
+  fn plot_half_open_plot_range_clips_curve_at_given_end() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[MinMax[Flatten[Cases[First[Plot[x - 2, {x, 0, 4}, \
+         PlotRange -> {0, All}]], Line[p_] :> p[[All, 2]], Infinity]]], 0.01]"
+      )
+      .unwrap(),
+      "{0., 2.}"
+    );
+    assert_eq!(
+      interpret(
+        "Round[MinMax[Flatten[Cases[First[Plot[x - 2, {x, 0, 4}, \
+         PlotRange -> {All, 1}]], Line[p_] :> p[[All, 2]], Infinity]]], 0.01]"
+      )
+      .unwrap(),
+      "{-2., 1.}"
+    );
+  }
+
   /// A list of `SparseArray` rows of differing lengths is a ragged array
   /// of their dense forms; `ArrayPlot` used to return an empty SVG.
   #[test]

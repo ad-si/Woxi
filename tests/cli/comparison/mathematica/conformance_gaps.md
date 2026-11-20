@@ -6195,10 +6195,11 @@ about 1 % of WL's value (`Plot[Exp[x], {x, -1, 10}]`: WL 7948, Woxi ≈ 8070),
 not on it. WL also clips some curves the rule leaves alone on the continuous
 curve (`Plot[x^6, {x, 0, 1}]` stops at 0.634 in WL, Woxi shows all of it to 1).
 
-A partly automatic range, `PlotRange -> {0, Automatic}`, still gives the fully
-automatic range in Woxi; WL clips its automatic end against the given one
+A partly automatic range, `PlotRange -> {0, Automatic}`, keeps its given end
+in `Plot` and `Graphics` (the curve is clipped there), but the automatic end
+of a `ListPlot` is not yet clipped against the given one the way WL does it
 (`ListPlot[{1, 2, 3, 4, 100, 5, 6, 7}, PlotRange -> {0, Automatic}]` → WL
-y range `{0, 17.5}`).
+y range `{0, 17.5}`, Woxi `{0, 14.5}`).
 
 `NIntegrate` now uses global Gauss–Kronrod refinement with a
 double-exponential singularity handler. The reviewed smooth monitor has
