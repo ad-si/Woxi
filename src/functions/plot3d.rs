@@ -7474,7 +7474,7 @@ fn plot_option_value(options: &[Expr], name: &str) -> Option<Expr> {
 /// `Manipulate` frame (so the picture keeps its size while a control moves
 /// the contents), unless `SphericalRegion -> False` turns it off.
 fn plot_spherical_region(options: &[Expr]) -> bool {
-  match plot_option_value(options, "SphericalRegion") {
+  match plot_option_value(options, "SphericalRegion").as_ref() {
     Some(Expr::Identifier(v)) if v == "True" => true,
     Some(Expr::Identifier(v)) if v == "False" => false,
     _ => crate::in_manipulate_frame(),
