@@ -15014,6 +15014,26 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // area is letterboxed inside the picture: its pixel size is the largest
   // box of that shape that fits, and a label may spill into the spare room
   // on either side of it before the range has to grow.
+  // A bare picture whose `AspectRatio -> r` shapes a drawing of a given
+  // width is different: Wolfram keeps the plot range (and so the drawing
+  // area's shape) and pads the image for labels running past it instead,
+  // shrinking the drawing until drawing and labels share the width.
+  let text_overflow = match aspect_ratio {
+    Some(r)
+      if !size_names_height
+        && plot_range_x.is_none()
+        && plot_range_y.is_none()
+        && image_padding.is_none()
+        && plot_label.is_none()
+        && plot_label_picture.is_none()
+        && !axes.0
+        && !axes.1
+        && !frame_edges.iter().any(|&e| e) =>
+    {
+      text_overflow_padding(&primitives, &bb, svg_width as f64, r)
+    }
+    _ => None,
+  };
   let (plot_w, plot_h, slack_x, slack_y) = match aspect_ratio {
     Some(r) if size_names_height => {
       let (w, h) = (svg_width as f64, svg_height as f64);
@@ -15169,7 +15189,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         continue;
       };
       // A horizontal baseline (`{1, 0}`) takes room like an unrotated one.
-      if direction.is_some_and(|(dx, dy)| dy != 0.0 || dx <= 0.0) {
+      if text_overflow.is_some()
+        || direction.is_some_and(|(dx, dy)| dy != 0.0 || dx <= 0.0)
+      {
         continue;
       }
       let fs = style.font_size;
@@ -15397,6 +15419,14 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some([left, right, bottom, top]) => (left, right, bottom, top),
       // A bare picture keeps one point on its right and bottom, unless a
       // `PlotLabel` sits above it.
+      // Labels past the drawing take their own room (at least the bare
+      // picture's one point on the right and bottom).
+      None if text_overflow.is_some() => text_overflow.map_or(
+        (0.0, 1.0, 1.0, 0.0),
+        |[left, right, bottom, top]| {
+          (left, right.max(1.0), bottom.max(1.0), top)
+        },
+      ),
       None if !frame && !axes.0 && !axes.1 && pad.title == 0.0 => {
         (0.0, 1.0, 1.0, 0.0)
       }
@@ -22340,6 +22370,87 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
 /// The visible character count of each line of a graphics label, with any
 /// inline box notation (`\!\(\*SubscriptBox[…]\)`) counted as the
 /// characters it draws rather than its markup.
+/// The image padding `[left, right, bottom, top]` a bare picture of total
+/// `width` and drawing shape `aspect` (height / width) needs so that its
+/// horizontal `Text` labels fit beside a drawing of plot range `bb`, or
+/// `None` when every label already fits inside the drawing (or the labels
+/// alone are wider than the picture).
+///
+/// The drawing shrinks by what the labels stick out, which moves their
+/// anchors and so changes how far they stick out; the room is settled by
+/// iterating to the fixed point.
+fn text_overflow_padding(
+  primitives: &[Primitive],
+  bb: &BBox,
+  width: f64,
+  aspect: f64,
+) -> Option<[f64; 4]> {
+  if !(bb.width() > 0.0 && bb.height() > 0.0 && width > 0.0 && aspect > 0.0) {
+    return None;
+  }
+  // Each label as (anchor x, anchor y as fractions of the range, center
+  // shift in pixels, size in pixels).
+  let labels: Vec<_> = primitives
+    .iter()
+    .filter_map(|prim| match prim {
+      Primitive::TextPrim {
+        text,
+        x,
+        y,
+        offset,
+        scaled: false,
+        direction,
+        glyph_map: None,
+        style,
+        ..
+      } if !direction.is_some_and(|(dx, dy)| dy != 0.0 || dx <= 0.0) => {
+        let fs = style.font_size;
+        let plain = text.strip_prefix(STYLED_LABEL_MARKER).unwrap_or(text);
+        let w = crate::functions::plot_padding::text_width(plain, fs);
+        let h = text.split('\n').count() as f64 * fs;
+        let fx = (x - bb.x_min) / bb.width() + style.text_scaled_shift.0;
+        let fy = (y - bb.y_min) / bb.height() + style.text_scaled_shift.1;
+        let shift = (
+          style.text_pixel_shift.0 - offset.0 * w / 2.0,
+          style.text_pixel_shift.1 - offset.1 * h / 2.0,
+        );
+        (fx.is_finite() && fy.is_finite()).then_some((fx, fy, shift, w, h))
+      }
+      _ => None,
+    })
+    .collect();
+  let overflow = |pw: f64| {
+    let ph = pw * aspect;
+    labels.iter().fold(
+      [0.0f64; 4],
+      |[l, r, b, t], &(fx, fy, (sx, sy), w, h)| {
+        let (cx, cy) = (fx * pw + sx, fy * ph + sy);
+        [
+          l.max(w / 2.0 - cx),
+          r.max(cx + w / 2.0 - pw),
+          b.max(h / 2.0 - cy),
+          t.max(cy + h / 2.0 - ph),
+        ]
+      },
+    )
+  };
+  let mut pw = width;
+  let mut pad = overflow(pw);
+  for _ in 0..50 {
+    let next = width - pad[0] - pad[1];
+    if next < 1.0 {
+      return None;
+    }
+    let settled = (next - pw).abs() < 1e-6;
+    pw = next;
+    pad = overflow(pw);
+    if settled {
+      break;
+    }
+  }
+  pad.iter().any(|&p| p > 0.0).then_some(pad)
+}
+
 fn text_visible_line_lengths(text: &str) -> Vec<usize> {
   let plain;
   let text = match text.strip_prefix(STYLED_LABEL_MARKER) {

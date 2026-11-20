@@ -2837,6 +2837,63 @@ mod graphics {
       );
     }
 
+    /// Regression: under `AspectRatio -> r` with only a width given, labels
+    /// running past the drawing widened the plot range (stretching the
+    /// drawing out of the shape asked for). Wolfram keeps the range and the
+    /// drawing's shape and pads the image for the labels instead: the
+    /// drawing narrows until it and the labels share the width, and the
+    /// height follows the narrowed drawing.
+    #[test]
+    fn explicit_aspect_ratio_pads_for_overflowing_labels() {
+      let svg = export_svg(
+        "Graphics[{Line[{{0, 0}, {1, 0}}], Line[{{0, 2}, {1, 2}}], \
+         Text[Style[\"first label text\", 14], {1.5, 2}, {Left, Center}], \
+         Text[Style[\"second label\", 14], {1.5, 0}, {Left, Center}]}, \
+         ImageSize -> 200, AspectRatio -> 0.5]",
+      );
+      let header = &svg[..svg.find('>').unwrap()];
+      let num = |s: &str, key: &str| -> f64 {
+        let start = s.find(&format!("{key}=\"")).unwrap() + key.len() + 2;
+        let rest = &s[start..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      assert_eq!(num(header, "width"), 200.0, "{svg}");
+      let lines: Vec<Vec<(f64, f64)>> = svg
+        .split("<polyline points=\"")
+        .skip(1)
+        .map(|s| {
+          s[..s.find('"').unwrap()]
+            .split_whitespace()
+            .map(|p| {
+              let (x, y) = p.split_once(',').unwrap();
+              (x.parse().unwrap(), y.parse().unwrap())
+            })
+            .collect()
+        })
+        .collect();
+      assert_eq!(lines.len(), 2, "{svg}");
+      // One unit across and two units up, in pixels.
+      let unit_x = lines[0][1].0 - lines[0][0].0;
+      let two_up = (lines[0][0].1 - lines[1][0].1).abs();
+      // The range is {0, 1.5} × {0, 2} (padded alike), drawn in a box half
+      // as tall as it is wide.
+      let ratio = two_up / unit_x;
+      assert!((ratio - 0.75).abs() < 0.05, "shape {ratio}: {svg}");
+      // The labels start right of the lines and end inside the image.
+      let texts: Vec<f64> = svg
+        .split("<text x=\"")
+        .skip(1)
+        .map(|s| s[..s.find('"').unwrap()].parse().unwrap())
+        .collect();
+      assert_eq!(texts.len(), 2, "{svg}");
+      assert!(texts[0] > lines[0][1].0, "{svg}");
+      // "first label text" is about 82 points wide at 14 pt (Arial), so
+      // the drawing gives up that much of the width.
+      assert!(texts[0] > 100.0 && texts[0] + 80.0 <= 200.0, "{svg}");
+      // The narrowed drawing is shorter than half the full width.
+      assert!(num(header, "height") < 80.0, "{svg}");
+    }
+
     /// A part styled like the whole label (an italic run inside an italic
     /// `Style`, a run in the label's own color) needs no `<tspan>`.
     #[test]
