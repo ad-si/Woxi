@@ -13872,9 +13872,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_max = 1.0;
   }
 
-  // `SphericalRegion -> True` frames the picture by the sphere drawn
-  // around the displayed box rather than by the projected outline of the
-  // contents. The sphere projects to the same circle from every direction,
+  // `SphericalRegion -> True` frames the picture by a sphere centered on
+  // the displayed box (around the contents, or around a pinned box; see
+  // below) rather than by the projected outline of the contents. The
+  // sphere projects to the same circle from every direction,
   // so the scale no longer follows the view angle or a moving shape.
   // Wolfram widens the camera's field of view until that sphere just fits
   // (see `spherical_region_span`); the resulting span replaces the fitted
