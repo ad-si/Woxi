@@ -6842,26 +6842,34 @@ mod plot3d {
       }
     }
 
-    // `AxesLabel -> Automatic` labels the axes with the plot's variables;
-    // it used to be drawn as the literal word "Automatic". The labels
+    // `AxesLabel -> Automatic` labels the two variable axes with the
+    // plot's variables, set in `TraditionalForm` (italic letters), and
+    // leaves the value axis unlabeled; it used to be drawn as the literal
+    // word "Automatic", then with an upright extra "z" label. The labels
     // survive `Show` and an `Automatic` among explicit labels.
     #[test]
     fn automatic_axes_label_uses_plot_variables() {
+      let italic =
+        |l: &str| format!("<tspan font-style=\"italic\">{l}</tspan>");
       for code in [
         "Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> Automatic]",
         "Show[{Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> Automatic]}]",
       ] {
         let svg = export_svg(code);
         assert!(!svg.contains("Automatic"), "{code}: {svg}");
-        for label in ["s", "t", "z"] {
-          assert!(svg.contains(&format!(">{label}<")), "{code}: {label}");
+        for label in ["s", "t"] {
+          assert!(svg.contains(&italic(label)), "{code}: {label}: {svg}");
         }
+        assert!(!svg.contains(">z<"), "{code}: {svg}");
       }
       let svg = export_svg(
-        "Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> {Automatic, \"depth\", None}]",
+        "Plot3D[s t, {s, 0, 1}, {t, 0, 1}, AxesLabel -> {Automatic, \"depth\", Automatic}]",
       );
-      assert!(svg.contains(">s<") && svg.contains(">depth<"));
-      assert!(!svg.contains(">z<"));
+      assert!(
+        svg.contains(&italic("s")) && svg.contains(">depth<"),
+        "{svg}"
+      );
+      assert!(!svg.contains(">z<"), "{svg}");
     }
 
     // An expression axis label is typeset in `TraditionalForm`, as on a

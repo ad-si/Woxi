@@ -2134,8 +2134,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
-          axes_labels =
-            parse_axes_labels(replacement, Some([&xvar, &yvar, "z"]));
+          axes_labels = parse_axes_labels(
+            replacement,
+            Some([Some(&xvar), Some(&yvar), None]),
+          );
         }
         _ => {}
       }
@@ -2441,8 +2443,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // inside another graphic keeps the shape it was drawn with.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
-    // `AxesLabel -> Automatic` names the axes after the plot's variables;
-    // a `Graphics3D` has no variables to name them by, so spell them out.
+    // `AxesLabel -> Automatic` names the two variable axes after the plot's
+    // variables and leaves the value axis unlabeled; a `Graphics3D` has no
+    // variables to name them by, so spell them out.
     for opt in &mut structure_args {
       if let Expr::Rule {
         pattern,
@@ -2455,7 +2458,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(a) if a == "Automatic" => name(default),
           other => other.clone(),
         };
-        let defaults = [xvar.as_str(), yvar.as_str(), "z"];
+        let defaults = [xvar.as_str(), yvar.as_str(), "None"];
         match replacement.as_ref() {
           Expr::Identifier(a) if a == "Automatic" => {
             **replacement = Expr::List(
@@ -15320,10 +15323,11 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
 
 /// The three axis labels an `AxesLabel` value names. A lone label (or a
 /// shorter list) labels the leading axes; `defaults` are the names
-/// `Automatic` stands for.
+/// `Automatic` stands for (`None` for an axis it leaves unlabeled, like the
+/// value axis of a `Plot3D`).
 fn parse_axes_labels(
   replacement: &Expr,
-  defaults: Option<[&str; 3]>,
+  defaults: Option<[Option<&str>; 3]>,
 ) -> [Option<String>; 3] {
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
@@ -15335,7 +15339,7 @@ fn parse_axes_labels(
   };
   let mut labels: [Option<String>; 3] = [None, None, None];
   for (i, item) in items.iter().take(3).enumerate() {
-    labels[i] = axis_label_markup(item, defaults.map(|d| d[i]));
+    labels[i] = axis_label_markup(item, defaults.and_then(|d| d[i]));
   }
   labels
 }
@@ -15350,11 +15354,10 @@ fn axis_label_markup(expr: &Expr, default: Option<&str>) -> Option<String> {
   match expr {
     Expr::Identifier(s) if s == "None" => None,
     // `Automatic` asks for the plot's default label: the variable's name
-    // for a function plot, nothing for a bare `Graphics3D`.
-    Expr::Identifier(s) if s == "Automatic" => default.map(|name| {
-      crate::functions::graphics::expr_to_svg_markup(&Expr::Identifier(
-        name.to_string(),
-      ))
+    // for a function plot, nothing for a bare `Graphics3D`. The name is a
+    // symbol, so it is set in `TraditionalForm` (an italic letter).
+    Expr::Identifier(s) if s == "Automatic" => default.and_then(|name| {
+      axis_label_markup(&Expr::Identifier(name.to_string()), None)
     }),
     Expr::String(_) => {
       let markup = crate::functions::graphics::expr_to_svg_markup(expr);
