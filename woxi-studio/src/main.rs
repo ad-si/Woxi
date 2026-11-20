@@ -4818,10 +4818,23 @@ fn render_manipulate_widget<'a>(
             Message::Noop
           }
         };
-        let value_widget = text(format_slider_value(*current, *is_real))
-          .size(11)
-          .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(72.0));
+        // An exact value (`-7/6` on a `1/6`-step slider) reads as a
+        // stacked fraction, the way the FrontEnd typesets it.
+        let value_widget: Element<Message> =
+          match state.continuous_value_icon(ctrl) {
+            Some(icon) => container(
+              svg::Svg::new(icon.handle)
+                .width(iced::Length::Fixed(icon.width))
+                .height(iced::Length::Fixed(icon.height)),
+            )
+            .width(iced::Length::Fixed(72.0))
+            .into(),
+            None => text(format_slider_value(*current, *is_real))
+              .size(11)
+              .font(Font::MONOSPACE)
+              .width(iced::Length::Fixed(72.0))
+              .into(),
+          };
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -36548,6 +36561,20 @@ mod slideshow_tests {
     let expr = woxi::interpret_to_expr(code).unwrap();
     manipulate::ManipulateState::from_expr(&expr)
       .expect("SlideView must build a widget")
+  }
+
+  /// A slider stepping by `1/6` binds exact rationals, so its readout is a
+  /// typeset fraction rather than the rounded decimal `-1.167`; an integer
+  /// value on the same slider stays a text readout.
+  #[test]
+  fn rational_step_slider_reads_a_typeset_fraction() {
+    let mut state =
+      slide_view_state("Manipulate[q, {{q, -7/6}, -10, 10, 1/6}]");
+    let ctrl = state.controls[0].clone();
+    assert!(state.continuous_value_icon(&ctrl).is_some());
+    assert!(state.slide_continuous(0, -3.0));
+    let ctrl = state.controls[0].clone();
+    assert!(state.continuous_value_icon(&ctrl).is_none());
   }
 
   #[test]

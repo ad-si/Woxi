@@ -3704,13 +3704,14 @@ mod graphics {
     }
 
     /// A `Framed` item stacked in a label's `Column` sets its content
-    /// instead of printing as `Framed[...]` source.
+    /// instead of printing as `Framed[...]` source, inside its own frame.
     #[test]
     fn text_column_with_framed_item() {
       let svg = export_svg(
         "Graphics[{Text[Column[{\"head\", Framed[Row[{\"x = \", NumberForm[0.1234, {2, 2}]}], FrameStyle -> Red], \"tail\"}, Center], {0, 0}]}]",
       );
-      assert!(svg.contains(">x = 0.12</tspan>"), "{svg}");
+      assert!(svg.contains(">x = 0.12</text>"), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
       assert!(!svg.contains("Framed["), "{svg}");
       assert!(!svg.contains("FrameStyle"), "{svg}");
     }
@@ -3830,6 +3831,40 @@ mod graphics {
         panel.contains("fill=\"rgb(255,255,255)\""),
         "the panel takes the background color: {panel}"
       );
+    }
+
+    /// A `Column` label of `Framed` items sets each item as its own label:
+    /// every framed row keeps its font size and gets a panel of its own,
+    /// one row high, while `Spacer` and `Null` rows only take up room.
+    /// Regression: the column was flattened into one 14-point text block
+    /// and the items' `Background` panels were dropped.
+    #[test]
+    fn column_of_framed_items_keeps_each_items_style_and_panel() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{Framed[Style[Row[{\"a\", \" = \", 1}], 18], \
+          Background -> White, FrameStyle -> None], Spacer[25], \
+          Framed[Style[\"bc\", 16], Background -> Yellow, \
+          FrameStyle -> None], Null}, Center], {0, 0}]}, ImageSize -> 200]",
+      );
+      let panels: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<rect")).collect();
+      assert_eq!(panels.len(), 2, "one panel per framed item: {svg}");
+      assert!(panels[0].contains("fill=\"rgb(255,255,255)\""), "{svg}");
+      assert!(panels[0].contains("height=\"18.00\""), "{svg}");
+      assert!(panels[1].contains("fill=\"rgb(255,255,0)\""), "{svg}");
+      assert!(panels[1].contains("height=\"16.00\""), "{svg}");
+      let texts: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<text")).collect();
+      assert_eq!(texts.len(), 2, "{svg}");
+      assert!(texts[0].contains("font-size=\"18\""), "{svg}");
+      assert!(texts[0].contains(">a = 1</text>"), "{svg}");
+      assert!(texts[1].contains("font-size=\"16\""), "{svg}");
+      // The rows stack downward from the first.
+      let y = |t: &str| -> f64 {
+        let i = t.find(" y=\"").unwrap() + 4;
+        t[i..].split('"').next().unwrap().parse().unwrap()
+      };
+      assert!(y(texts[0]) < y(texts[1]), "{svg}");
     }
 
     /// The same background written on the `Text` still wins over the one the
@@ -13454,6 +13489,51 @@ mod plot3d {
       assert!(nested.contains("text-anchor=\"start\""), "{nested}");
     }
 
+    // A `Plot` frame edge left undrawn by `Frame -> {{l, r}, {b, t}}` (or
+    // `{b, l, t, r}`) carries no tick labels: only the drawn edges do.
+    #[test]
+    fn plot_frame_undrawn_left_edge_has_no_tick_labels() {
+      let labels = |svg: &str| -> Vec<String> {
+        svg
+          .split("<text")
+          .skip(1)
+          .filter_map(|t| {
+            let body = t.split_once('>')?.1;
+            let text = body.split("</text>").next()?;
+            let text: String = text
+              .split('<')
+              .map(|p| p.split_once('>').map_or(p, |(_, v)| v))
+              .collect();
+            let text = text.trim().to_string();
+            (!text.is_empty()).then_some(text)
+          })
+          .collect()
+      };
+      for frame in [
+        "{{False, False}, {True, True}}",
+        "{True, False, True, False}",
+      ] {
+        let svg =
+          export_svg(&format!("Plot[10 x, {{x, 0, 1}}, Frame -> {frame}]"));
+        let shown = labels(&svg);
+        assert!(
+          shown.iter().any(|l| l == "0.2"),
+          "bottom labels missing for {frame}: {shown:?}"
+        );
+        for y in ["2", "4", "6", "8", "10"] {
+          assert!(
+            !shown.iter().any(|l| l == y),
+            "left label {y} drawn on an undrawn edge for {frame}: {shown:?}"
+          );
+        }
+      }
+      // A drawn left edge keeps its labels.
+      let left = labels(&export_svg(
+        "Plot[10 x, {x, 0, 1}, Frame -> {{True, False}, {True, False}}]",
+      ));
+      assert!(left.iter().any(|l| l == "10"), "{left:?}");
+    }
+
     // A `Pane[Column[{a, b}], size]` tick label reads as its content, set on
     // one line per `Column` item, and a `Column` bottom `FrameLabel` stacks
     // the same way instead of leaking the `Pane[…]` text or joining lines.
@@ -19168,6 +19248,46 @@ mod plot3d {
           "y={y} (fraction {frac}) outside lower third for PlotRange -> {{0, 10}}"
         );
       }
+    }
+
+    /// The y tick labels of a plot, in drawing order.
+    fn tick_labels(svg: &str) -> Vec<String> {
+      svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| t.split('>').nth(1)?.split('<').next())
+        .map(str::to_string)
+        .collect()
+    }
+
+    /// One open end in `PlotRange -> {Automatic, ymax}` follows the data
+    /// while the other stays fixed; the whole spec used to be ignored.
+    #[test]
+    fn plot_range_open_lower_end_keeps_fixed_upper_end() {
+      let labels = tick_labels(&export_svg(
+        "Plot[50 x/(1 - x), {x, 0.0001, 0.9999}, \
+         PlotRange -> {Automatic, 1000.}]",
+      ));
+      assert!(labels.contains(&"1000".to_string()), "{labels:?}");
+      assert!(labels.contains(&"200".to_string()), "{labels:?}");
+    }
+
+    #[test]
+    fn plot_range_open_end_in_per_axis_form() {
+      let labels = tick_labels(&export_svg(
+        "Plot[Sin[x], {x, 0, 6}, PlotRange -> {{0, 6}, {Automatic, 3}}]",
+      ));
+      assert!(labels.contains(&"3".to_string()), "{labels:?}");
+      assert!(labels.contains(&"-1".to_string()), "{labels:?}");
+    }
+
+    #[test]
+    fn list_line_plot_plot_range_open_upper_end() {
+      let labels = tick_labels(&export_svg(
+        "ListLinePlot[{1, 5, 3, 9}, PlotRange -> {0, All}]",
+      ));
+      assert!(labels.contains(&"0".to_string()), "{labels:?}");
+      assert!(labels.contains(&"8".to_string()), "{labels:?}");
     }
   }
 
@@ -40913,6 +41033,31 @@ mod manipulate {
     }
   }
 
+  // A slider binding an exact non-integer value reads it as a typeset
+  // stacked fraction (`-7/6` on a `1/6` step, `3π/4` on a `Pi/4` step),
+  // while integers and machine reals keep a plain text readout.
+  #[test]
+  fn exact_slider_value_readout_is_a_stacked_fraction() {
+    use woxi::functions::graphics::continuous_value_label_svg;
+    let svg = continuous_value_label_svg(-7.0 / 6.0, false, false)
+      .expect("exact rational is typeset");
+    assert!(svg.contains("<line "), "fraction bar: {svg}");
+    assert!(svg.contains(">7<") && svg.contains(">6<"), "{svg}");
+    assert!(svg.contains(">-<"), "minus sign: {svg}");
+
+    let svg = continuous_value_label_svg(
+      3.0 * std::f64::consts::PI / 4.0,
+      false,
+      false,
+    )
+    .expect("rational multiple of Pi is typeset");
+    assert!(svg.contains("<line "), "fraction bar: {svg}");
+    assert!(svg.contains("\u{3c0}"), "pi symbol: {svg}");
+
+    assert_eq!(continuous_value_label_svg(-3.0, false, false), None);
+    assert_eq!(continuous_value_label_svg(-7.0 / 6.0, true, false), None);
+  }
+
   // Corner points given as `{re, im I}` pairs make a 2D pad over the real
   // and imaginary extents.
   #[test]
@@ -50654,7 +50799,7 @@ mod tube_and_cap_form {
         "CapForm[{form}] must not change a Cylinder"
       );
     }
-    // Each end's disk fans into 24 triangles (`CYLINDER_SIDES`), same as a
+    // Each end's disk fans into 48 triangles (`CYLINDER_SIDES`), same as a
     // `Tube`'s cap. (Translucent, so the far side of the closed solid is
     // not culled and every facet is counted.) The open tube of the same
     // size has the same side wall without those disks.
@@ -50667,6 +50812,39 @@ mod tube_and_cap_form {
       see_through("Cylinder[{{0, 0, 0}, {0, 0, 1}}, 1]")
         > see_through("CapForm[None], Tube[{{0, 0, 0}, {0, 0, 1}}, 1]"),
       "the cylinder must draw its end disks"
+    );
+  }
+
+  /// The end circles an `EdgeForm` outlines read as smooth curves, as in
+  /// Wolfram, not as visibly cornered polygons. Regression: the rims were
+  /// 24-gons, whose 50 px chords on a ring filling a 400 px picture left
+  /// corners more than a pixel deep (a Demonstration drew a fan guard as
+  /// such rings in space).
+  #[test]
+  fn cylinder_rim_outline_is_finely_sampled() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Opacity[0], EdgeForm[Black], \
+       Cylinder[{{0, 0, 0}, {0, 0, 0.01}}, 1]}, Boxed -> False, \
+       ViewPoint -> {0, 0, 10}, ImageSize -> 400]",
+    );
+    let coord = |seg: &str, attr: &str| -> f64 {
+      let rest = seg.split(&format!("{attr}=\"")).nth(1).unwrap();
+      rest.split('"').next().unwrap().parse().unwrap()
+    };
+    let chords: Vec<f64> = svg
+      .split("<line ")
+      .skip(1)
+      .map(|seg| {
+        (coord(seg, "x2") - coord(seg, "x1"))
+          .hypot(coord(seg, "y2") - coord(seg, "y1"))
+      })
+      .collect();
+    assert!(!chords.is_empty(), "the rim must be outlined: {svg}");
+    let longest = chords.iter().copied().fold(0.0, f64::max);
+    assert!(
+      longest < 30.0,
+      "rim drawn with {longest:.1} px chords, too coarse for a smooth circle"
     );
   }
 
@@ -54557,6 +54735,84 @@ mod static_dynamic_controls {
         svg.matches("<rect").count(),
         plain.matches("<rect").count() + 1,
         "{label}: {svg}"
+      );
+    }
+  }
+
+  /// The box of a framed title takes `Framed`'s own `Background` and
+  /// `FrameStyle`, or the `Background` and color of a `Style` around it,
+  /// with `Framed`'s square corners.
+  #[test]
+  fn framed_plot_label_box_takes_background_and_frame_color() {
+    let title_rect = |label: &str| {
+      let svg =
+        export_svg(&format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"));
+      svg
+        .split("<rect")
+        .skip(1)
+        .map(|r| r.split('>').next().unwrap().to_string())
+        .find(|r| r.contains("stroke-width") && !r.contains("stroke=\"none\""))
+        .unwrap_or_else(|| panic!("{label}: no title box in {svg}"))
+    };
+    let r =
+      title_rect("Framed[\"ab\", Background -> Yellow, FrameStyle -> Red]");
+    assert!(r.contains("fill=\"rgb(255,255,0)\""), "{r}");
+    assert!(r.contains("stroke=\"rgb(255,0,0)\""), "{r}");
+    assert!(!r.contains("rx="), "{r}");
+    let r = title_rect(
+      "Style[Framed[Row[{\"a = \", 0.5}]], 14, Blue, \
+       Background -> GrayLevel[0.9]]",
+    );
+    assert!(r.contains("fill=\"rgb(230,230,230)\""), "{r}");
+    assert!(r.contains("stroke=\"rgb(0,0,255)\""), "{r}");
+    // A plain frame stays unfilled.
+    assert!(title_rect("Framed[\"ab\"]").contains("fill=\"none\""));
+  }
+
+  /// A framed title's band leaves room for the frame's margin, so the box
+  /// ends above the plot area, also when it holds a typeset fraction.
+  #[test]
+  fn framed_plot_label_box_stays_above_the_frame() {
+    for label in ["Framed[\"ab\"]", "Framed[Row[{Sqrt[x]/2, \" = \", 0.5}]]"] {
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, Frame -> True, PlotLabel -> {label}]"
+      ));
+      let rects: Vec<(f64, f64)> = svg
+        .split("<rect")
+        .skip(1)
+        .filter_map(|r| {
+          let attr = |name: &str| -> Option<f64> {
+            let i = r.find(&format!(" {name}=\""))? + name.len() + 3;
+            r[i..].split('"').next()?.parse().ok()
+          };
+          Some((attr("y")?, attr("height")?))
+        })
+        .collect();
+      // The title box is the topmost drawn box below the background.
+      let (box_y, box_h) = rects
+        .iter()
+        .copied()
+        .filter(|&(y, _)| y > 0.0)
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .unwrap_or_else(|| panic!("{label}: {svg}"));
+      // The frame's top edge is the highest point a frame tick reaches
+      // (the 1pt ticks, not the fraction bar inside the title).
+      let tick_tops: Vec<f64> = svg
+        .split("<line")
+        .skip(1)
+        .filter(|l| l.contains("stroke-width=\"10\""))
+        .flat_map(|l| {
+          ["y1", "y2"].into_iter().filter_map(move |a| {
+            let i = l.find(&format!(" {a}=\""))? + a.len() + 3;
+            l[i..].split('"').next()?.parse::<f64>().ok()
+          })
+        })
+        .collect();
+      let plot_top = tick_tops.iter().copied().fold(f64::INFINITY, f64::min);
+      assert!(
+        box_y + box_h <= plot_top,
+        "{label}: box ends at {} below plot top {plot_top}",
+        box_y + box_h
       );
     }
   }
@@ -60407,6 +60663,44 @@ mod field_plot_conformance {
   }
 
   #[test]
+  fn discrete_plot_extent_steps_honor_filling_style() {
+    // Regression: `FillingStyle` was ignored for `ExtentSize` steps, which
+    // stayed filled in the translucent series color.
+    let fill_directive = |opts: &str| {
+      interpret(&format!(
+        "First[Cases[DiscretePlot[n, {{n, 1, 3}}, ExtentSize -> Full{opts}], \
+         {{d_Directive, __Rectangle}} :> d, Infinity]]"
+      ))
+      .unwrap()
+    };
+    assert_eq!(
+      fill_directive(", FillingStyle -> Directive[Red, Opacity[0.5]]"),
+      "Directive[Opacity[0.5], RGBColor[1., 0., 0.], AbsoluteThickness[2]]"
+    );
+    // A bare color fills opaquely, a bare opacity keeps the series color.
+    assert_eq!(
+      fill_directive(", FillingStyle -> Blue"),
+      "Directive[Opacity[1.], RGBColor[0., 0., 1.], AbsoluteThickness[2]]"
+    );
+    assert_eq!(
+      fill_directive(", FillingStyle -> Opacity[0.7]"),
+      "Directive[Opacity[0.7], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]]"
+    );
+    assert_eq!(
+      fill_directive(""),
+      "Directive[Opacity[0.2], RGBColor[0.24, 0.6, 0.8], AbsoluteThickness[2]]"
+    );
+    let svg = export_svg(
+      "DiscretePlot[n, {n, 1, 3}, ExtentSize -> Full, \
+       FillingStyle -> Directive[Red, Opacity[0.5]]]",
+    );
+    assert!(
+      svg.contains("rgb(255,0,0)") || svg.contains("#ff0000"),
+      "{svg}"
+    );
+  }
+
+  #[test]
   fn date_list_plot_pairs_every_dataset_with_the_start_date() {
     // Regression: two value lists with a start date plotted as one line.
     let svg = export_svg(
@@ -60613,6 +60907,32 @@ mod ranges_and_ticks {
       )
       .unwrap(),
       "9.999999795918367"
+    );
+  }
+
+  /// An axis `Show` spans in full is padded like the plot pads its own
+  /// automatic range, so a curve does not run along the frame's edges;
+  /// the reported `PlotRange` stays the bare union.
+  #[test]
+  fn show_pads_the_axes_the_first_plot_shows_in_full() {
+    let bell = "Plot[Exp[-x^2], {x, -3, 3}, PlotRange -> All, Frame -> True]";
+    let single = export_svg(&format!("Show[{bell}]"));
+    let merged = export_svg(&format!(
+      "Show[{{{bell}, Plot[Exp[-x^2], {{x, 0, 1}}, Filling -> Axis]}}]"
+    ));
+    assert_eq!(y_tick_labels(&merged), y_tick_labels(&single));
+    assert!(
+      y_tick_labels(&merged).iter().any(|l| l == "1.0"),
+      "{:?}",
+      y_tick_labels(&merged)
+    );
+    assert_eq!(x_tick_labels(&merged), x_tick_labels(&single));
+    assert_eq!(
+      interpret(&format!(
+        "Round[PlotRange[Show[{{{bell}, Plot[x, {{x, 0, 1}}]}}]], 0.01]"
+      ))
+      .unwrap(),
+      "{{-3., 3.}, {0., 1.}}"
     );
   }
 

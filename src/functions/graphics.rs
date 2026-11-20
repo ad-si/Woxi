@@ -8901,6 +8901,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   if hidden {
     return;
   }
+  if frame_opts.is_empty()
+    && args.len() == 2
+    && split_framed_column_label(content, &args[1], &local_style, prims)
+  {
+    return;
+  }
   // A label laid out as a `Column`/`Row` holding a `Grid` (a table of
   // values beside a point) is composed to its own picture and embedded
   // whole at the anchor; flattening it to one text run would lose the
@@ -9245,6 +9251,92 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     styled_ranges,
     style: local_style,
   });
+}
+
+/// A centered `Column[{…}]` label whose items include a `Framed` one
+/// (`Column[{Framed[Style[…, 18], Background -> White], Spacer[25], …}]`)
+/// sets every item as its own label: each framed item keeps its own panel
+/// and font, instead of one panel behind the whole block in the default
+/// size. The rows are stacked one line of their own font size high and the
+/// block is centered on `pos`. Returns whether the label was handled.
+fn split_framed_column_label(
+  content: &Expr,
+  pos: &Expr,
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) -> bool {
+  let Expr::FunctionCall { name, args } = content else {
+    return false;
+  };
+  if name != "Column" || column_line_anchor(content).is_some() {
+    return false;
+  }
+  let Some(Expr::List(items)) = args.first() else {
+    return false;
+  };
+  let is_framed = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty())
+  };
+  if !items.iter().any(is_framed) {
+    return false;
+  }
+  // An `Offset`/`Scaled` anchor already carries a shift of its own.
+  if matches!(pos, Expr::FunctionCall { name, .. }
+    if name == "Offset" || name == "Scaled")
+    || expr_to_anchor(pos).is_none()
+  {
+    return false;
+  }
+  // The font size an item is set in: its own `Framed`/`Style` wrappers'
+  // directives over the label's style.
+  let item_font_size = |item: &Expr| {
+    let mut st = style.clone();
+    let mut cur = item;
+    loop {
+      match cur {
+        Expr::FunctionCall { name, args }
+          if name == "Framed" && !args.is_empty() =>
+        {
+          cur = &args[0];
+        }
+        Expr::FunctionCall { name, args }
+          if is_style_wrapper(name) && !args.is_empty() =>
+        {
+          for d in style_directives_in_application_order(&args[1..]) {
+            apply_directive(d, &mut st);
+            apply_text_style_directive(d, &mut st);
+          }
+          cur = &args[0];
+        }
+        _ => break,
+      }
+    }
+    apply_agreed_row_part_styles(cur, &mut st);
+    st.font_size
+  };
+  let heights: Vec<f64> = items.iter().map(item_font_size).collect();
+  let total: f64 = heights.iter().sum();
+  let mut top = total / 2.0;
+  for (item, h) in items.iter().zip(&heights) {
+    let center = top - h / 2.0;
+    top -= h;
+    // A `Spacer` or `Null` row is only room between the others.
+    if matches!(item, Expr::Identifier(s) if s == "Null")
+      || matches!(item, Expr::FunctionCall { name, .. } if name == "Spacer")
+    {
+      continue;
+    }
+    let anchor = call(
+      "Offset",
+      vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Real(center)].into()),
+        pos.clone(),
+      ],
+    );
+    parse_text(&[item.clone(), anchor], style, prims);
+  }
+  true
 }
 
 /// The horizontal alignment `Column[{…}, Left | Right]` (or
@@ -17691,6 +17783,16 @@ pub(crate) fn text_face_family() -> Expr {
 pub(crate) fn in_text_face(content: &Expr) -> Expr {
   let family = text_face_family();
   match content {
+    // A form wrapper only says how its content is typeset: the face goes on
+    // the content inside it, so `TraditionalForm[Style[Grid[…], 24]]` still
+    // lays its grid out (now in the text face) instead of falling back to
+    // its string form.
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "TraditionalForm" | "StandardForm") =>
+    {
+      call(name, vec![in_text_face(&args[0])])
+    }
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
@@ -22410,7 +22512,7 @@ fn is_single_letter_symbol(s: &str) -> bool {
 /// Infix box tokens drawn with a space on either side: relations,
 /// assignments, rule arrows, the `mod` word operator and the bar of
 /// `X | A`.
-fn is_spaced_box_operator(token: &str) -> bool {
+pub(crate) fn is_spaced_box_operator(token: &str) -> bool {
   matches!(
     token,
     ":="
@@ -35422,6 +35524,14 @@ pub(crate) fn style_pushed_into_layout(
     .collect();
   let mut new_args = vec![Expr::List(styled.into())];
   new_args.extend(args[1..].iter().cloned());
+  // A `Row`'s separator is set in the same style as its items:
+  // `Style[Row[{a, b}, "="], Orange]` draws an orange `=`.
+  if name == "Row"
+    && let Some(separator) = new_args.get_mut(1)
+    && !matches!(separator, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  {
+    *separator = restyle(separator);
+  }
   Some(call(name.as_str(), new_args))
 }
 
@@ -36971,6 +37081,33 @@ pub(crate) fn base_style_pushed_args(
   }
 }
 
+/// A `Row` separator as the front end sets it: a string separator is
+/// inserted as a raw token, so a relation such as `"="` gets the operator
+/// spacing on both sides (`Row[{a, 2}, "="]` reads `a = 2`). A `Style` around
+/// the separator keeps its directives.
+pub(crate) fn spaced_row_separator(separator: &Expr) -> Expr {
+  match separator {
+    // The bar of `X | A` is spaced only as that operator; a `"|"` row
+    // separator stays a tight divider (`Row[{a, b}, "|"]` reads `a|b`).
+    Expr::String(s) if s != "|" && is_spaced_box_operator(s) => {
+      Expr::String(format!(" {s} "))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && !args.is_empty()
+        && matches!(&args[0], Expr::String(_) | Expr::FunctionCall { .. }) =>
+    {
+      let mut args = args.to_vec();
+      args[0] = spaced_row_separator(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Row", args) {
     return row_to_svg(&styled);
@@ -37328,6 +37465,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       if let Some(pts) = crate::syntax::spacer_width_pts(sep) {
         Separator::Gap(pts)
       } else {
+        let sep = &spaced_row_separator(sep);
         let text = expr_to_svg_markup(sep);
         let w = estimate_display_width(sep) * char_width;
         Separator::Text(text, w)
@@ -47083,8 +47221,53 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
     {
       Some(crate::syntax::expr_to_source_form(label))
     }
+    // A numeric arithmetic caption (`{{r, False, 8/9}, {False, True}}`,
+    // `{{t, 0, Pi/4}, 0, 1}`) is shown the way the FrontEnd typesets the
+    // value — a stacked fraction — so it travels as caption code too and the
+    // frontend draws it as an icon (see `manipulate_eval_caption`).
+    label if is_numeric_arithmetic_caption(label) => {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
     _ => None,
   }
+}
+
+/// Whether a control caption is arithmetic over numbers and constants only
+/// (`8/9`, `-Pi/4`, `Sqrt[2]/2`), the kind the FrontEnd typesets as math
+/// rather than as a word. A caption mentioning a symbol stays text.
+fn is_numeric_arithmetic_caption(label: &Expr) -> bool {
+  fn numeric(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::Constant(_) => true,
+      Expr::Identifier(_) => false,
+      Expr::BinaryOp { left, right, .. } => numeric(left) && numeric(right),
+      Expr::UnaryOp { operand, .. } => numeric(operand),
+      Expr::FunctionCall { args, .. } => args.iter().all(numeric),
+      _ => false,
+    }
+  }
+  is_arithmetic_label(label) && numeric(label)
+}
+
+/// The stacked-math icon of a numeric arithmetic caption whose typeset form
+/// holds a fraction or radical (`8/9`, `Pi/4`, `Sqrt[2]`); `None` when it
+/// lays out flat (`2 Pi`, `-3`), which keeps its text label.
+fn arithmetic_caption_svg(caption: &Expr) -> Option<String> {
+  if !is_numeric_arithmetic_caption(caption) {
+    return None;
+  }
+  let boxes = crate::syntax::expr_to_source_form(
+    &crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+      caption,
+    ),
+  );
+  if !(boxes.contains("FractionBox[") || boxes.contains("SqrtBox[")) {
+    return None;
+  }
+  form_box_svg(caption)
 }
 
 /// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
@@ -47106,8 +47289,10 @@ pub fn manipulate_eval_caption(
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
   // A caption holding a picture becomes an icon — also one that pairs the
   // picture with words (`Row[{"shift ", Graphics[…]}]`), which is drawn
-  // whole, words included, so the picture is not lost.
-  let svg = control_caption_svg(&evaluated);
+  // whole, words included, so the picture is not lost. A numeric fraction
+  // or radical (`8/9`) is typeset as stacked math, also an icon.
+  let svg = control_caption_svg(&evaluated)
+    .or_else(|| arithmetic_caption_svg(&evaluated));
   let runs = if svg.is_some() {
     Vec::new()
   } else {
@@ -51903,6 +52088,29 @@ pub fn continuous_binding_code(
     format!("Complex[0, {inner}]")
   } else {
     inner
+  }
+}
+
+/// The value readout of a continuous `Manipulate` slider whose variable
+/// binds an exact number (see [`continuous_binding_code`]), typeset the way
+/// the FrontEnd shows it: a slider stepping by `1/6` reads a stacked `7/6`
+/// fraction and one stepping by `Pi/4` a stacked `3π/4`, not `1.167` or
+/// `2.356`. `None` when the bound value is a plain integer or machine real,
+/// which stays text.
+pub fn continuous_value_label_svg(
+  value: f64,
+  is_real: bool,
+  imaginary: bool,
+) -> Option<String> {
+  if is_real {
+    return None;
+  }
+  let code = continuous_binding_code(value, false, imaginary);
+  let expr = crate::syntax::string_to_expr(&code).ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  match evaluated {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => None,
+    other => form_box_svg(&other),
   }
 }
 

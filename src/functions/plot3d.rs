@@ -11268,7 +11268,23 @@ const MAX_SIDE_FACE_ASPECT: f64 = 1.0;
 const MAX_SIDE_SUBDIVISIONS: usize = 200;
 /// Radial subdivision count for `Cylinder`, shared between the
 /// tessellators and the call site that rebuilds their rim-edge flags.
-const CYLINDER_SIDES: usize = 24;
+/// The end circles are what an `EdgeForm` outlines, so they need enough
+/// points to read as smooth curves at picture size: a 24-gon put visible
+/// corners (over a pixel deep) on a radius-140 px ring, where Wolfram's
+/// outline is a smooth ellipse.
+const CYLINDER_SIDES: usize = 48;
+
+/// How many rings `tessellate_cylinder` cuts a side of the given length and
+/// radius into. The faces only need to stay short enough for the depth
+/// sort, so the aspect is measured against a 24-facet circumference, which
+/// keeps the ring count independent of how finely the rims are drawn.
+fn cylinder_side_steps(
+  len: f64,
+  radius: f64,
+  max_subdivisions: usize,
+) -> usize {
+  side_subdivision_steps(len, radius, CYLINDER_SIDES / 2, max_subdivisions)
+}
 /// Radial subdivision count for `Cone`. Its smooth shading has a single apex
 /// vertex, where neighboring facets meet at their own normals; finer
 /// slices keep that seam faint.
@@ -11644,7 +11660,7 @@ fn tessellate_cylinder(
   let biny = az * perpx - ax * perpz;
   let binz = ax * perpy - ay * perpx;
 
-  let steps = side_subdivision_steps(len, radius, n, max_subdivisions);
+  let steps = cylinder_side_steps(len, radius, max_subdivisions);
   let ring_at = |t: f64| -> Vec<Point3D> {
     let center = Point3D {
       x: p1.x + dx * t,
@@ -13500,8 +13516,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               + (p2.y - p1.y).powi(2)
               + (p2.z - p1.z).powi(2))
             .sqrt();
-            let steps =
-              side_subdivision_steps(len, *radius, CYLINDER_SIDES, max_subdiv);
+            let steps = cylinder_side_steps(len, *radius, max_subdiv);
             holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
           }
           (tris, style)
