@@ -10456,3 +10456,11 @@ axis's large label partly outside the picture's left edge (its center about
 Shrinking the framing sphere to fit the labels (fitting them together with
 the contents sphere) does not settle on a layout that keeps the label
 inside, and was not checked against `wolframscript`.
+
+### `Style[…, "Input"]` text weight
+
+The `"Input"` named style sets text in Wolfram's bold input font (a saved
+snapshot of `Style[Row[{…}], Gray, 20, "Input"]` shows bold monospace text),
+while Woxi ignores the style name and draws the text in regular weight.
+Its stylesheet font size, which applies when no explicit size is given, has
+not been measured against wolframscript yet.
