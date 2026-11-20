@@ -8292,6 +8292,22 @@ mod cases {
     );
   }
 
+  /// A string subscript (`Subscript[S, "B"]`) ranks a sum's term by the
+  /// letter it shows, not by the quote its box string starts with, so
+  /// `a …` still leads a term in `S_B` and `S_C`.
+  #[test]
+  fn traditional_form_sum_orders_string_subscripts_by_their_letters() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[S (Subscript[S, w] - 4 R^2) a + 2 R Subscript[S, "B"] Subscript[S, "C"]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{a,  , S,  , RowBox[{(, RowBox[{SubscriptBox[S, w], -, RowBox[{4,  , SuperscriptBox[R, 2]}]}], )}]}], +, RowBox[{2,  , R,  , SubscriptBox[S, "B"],  , SubscriptBox[S, "C"]}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    // A quoted subscript still sorts with its letter case: `A` before `b`.
+    assert_case(
+      r#"ToBoxes[TraditionalForm[x Subscript[y, "A"] + b z]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{x,  , SubscriptBox[y, "A"]}], +, RowBox[{b,  , z}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   #[test]
   fn traditional_form_negative_rational_sign_precedes_the_bar() {
     assert_case(

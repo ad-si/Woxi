@@ -6796,6 +6796,9 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
     .map(|(_, b)| {
       let mut names: Vec<String> = Vec::new();
       tf_visit_strings(b, &mut |s| {
+        // A string subscript (`Subscript[S, "B"]`) is boxed as the quoted
+        // text `"B"`; it ranks by the letters it shows.
+        let s = tf_unquoted(s);
         if is_variable(s) {
           names.push(s.to_string());
         }
@@ -6865,6 +6868,14 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
   order
 }
 
+/// A box string less the quotes a string atom is boxed with: `"B"` → `B`.
+fn tf_unquoted(s: &str) -> &str {
+  s.strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .filter(|t| !t.is_empty())
+    .unwrap_or(s)
+}
+
 /// Calls `f` on the exponent of every `SuperscriptBox[base, e, …]` in a box
 /// whose base mentions `eb`: a bare `x^2` as well as a parenthesized
 /// `(x - 1)^2`, so powers of a shifted variable rank by their degree.
@@ -6873,7 +6884,7 @@ fn tf_superscripts_of(b: &Expr, eb: &str, f: &mut impl FnMut(&Expr)) {
     Expr::FunctionCall { name, args } => {
       if name == "SuperscriptBox" && args.len() >= 2 && {
         let mut found = false;
-        tf_visit_strings(&args[0], &mut |s| found |= s == eb);
+        tf_visit_strings(&args[0], &mut |s| found |= tf_unquoted(s) == eb);
         found
       } {
         f(&args[1]);
