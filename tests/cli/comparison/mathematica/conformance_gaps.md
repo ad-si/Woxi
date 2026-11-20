@@ -3287,8 +3287,8 @@ root. The unique-root and no-root regimes match exactly, as does n=2.
 
 ### Boolean minimization
 
-`BooleanConvert` ships every wolframscript form except `"ESOP"` and `"BFF"`,
-but four differences remain:
+`BooleanConvert` ships every wolframscript form except `"ESOP"`, but four
+differences remain:
 
 - **DNF needs term merging**, not just redundancy removal:
   `(a&&!b)||(!a&&b)||(a&&b)` is `a || b` in WL; Woxi keeps three terms.
@@ -3304,6 +3304,13 @@ but four differences remain:
 rewrite the head) against Woxi's `!(a && b && c)`, and
 `BooleanConvert[Equivalent[Xor[a,b],c], "IF"]` branches on `c` first, so WL's
 BDD variable order is not always alphabetical.
+
+The `"BDT"`, `"IMPLIES"` and `"BFF"` forms are **unverified** against
+wolframscript: `"BDT"` reuses the `"IF"` decision tree, `"IMPLIES"` folds the
+DNF from the right with `x || y` as `Implies[!x, y]` and `x && y` as
+`!Implies[x, !y]`, and `"BFF"` applies the `BooleanFunction["BDD" -> …]`
+object to the variables. All three give the right function; WL may nest or
+order them differently.
 
 `BooleanFunction[k, n]` and `BooleanMinterms`/`BooleanMaxterms` with an integer
 variable count normalize to the opaque `BooleanFunction["BDD" -> …]` object —
@@ -5580,6 +5587,18 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
 - `Charting`SimpleTicks` frame ticks of the themes (majors only, at most six)
   are reproduced, but their tick marks keep the default length.
 
+### `Plot` end labels do not avoid the axis label
+
+`Plot[{f1, f2}, …, PlotLabels -> {"a", "b"}, AxesLabel -> {"x", "y"}]`
+hangs each label past the right end of the plot at its curve's height. A
+curve that ends on the x axis (a spectrum decaying to 0) puts its label
+right on top of the `AxesLabel` that sits there. Wolfram lifts the label
+clear of the axis label and joins it to the curve end with a bent gray
+leader. A curve that leaves the top of the plot range is labeled from where
+it crosses the range's edge. Woxi starts the leader at the range's right
+edge. Seen in a Demonstration snapshot; WL's leader optimizer has not been
+measured.
+
 ### An `AxesLabel` carrying a reciprocal power
 
 A label's `Power[x, -1]` renders as `x⁻¹` in SVG markup where Wolfram stacks it
@@ -5957,8 +5976,7 @@ accepted, but the picture is the same as without it.
 - `ParametricPlot`: `BoundaryStyle`.
 - `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
   `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
-- `PolarPlot`: `RegionFunction`, `PlotPoints`; `FrameStyle` on a framed polar
-  plot.
+- `PolarPlot`: `PlotPoints`; `FrameStyle` on a framed polar plot.
 - `DensityPlot`, `RegionPlot`: `FrameStyle`.
 - `Histogram`: `BarOrigin`, `LabelingFunction`; `ColorFunction` only for a
   single dataset.
@@ -10310,3 +10328,11 @@ expression only carries the registry index, so it prints as
 `NDSolve`StateData[1]` where wolframscript summarizes the time range
 covered so far (`NDSolve`StateData["<" 0. ">"]`). Its head, and so patterns
 like `s_NDSolve`StateData`, match.
+
+### 2D plots don't box the `Framed` lines of a stacked title
+
+`PlotLabel -> Column[{Style[Framed[eq], Blue, Background -> LightYellow],
+"caption"}]` boxes the first line in a blue frame on a yellow background
+above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
+other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
+Only a title that is framed as a whole gets a box there.

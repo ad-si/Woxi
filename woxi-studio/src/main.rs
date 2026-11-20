@@ -408,6 +408,13 @@ enum Message {
   /// A `Button[…]` inside a Manipulate display was pressed: run its held
   /// action against the widget's bindings.
   ManipulateDisplayAction(usize, String),
+  /// The pointer moved over (or left) a `ClickPane` inside a Manipulate
+  /// display: the handler call a press there would make, if any.
+  /// (cell_idx, action)
+  ManipulateDisplayPaneHover(usize, Option<String>),
+  /// A `ClickPane` inside a Manipulate display was pressed: run the
+  /// handler call recorded by the last hover. (cell_idx)
+  ManipulateDisplayPaneClicked(usize),
   /// The throttle timer for a Manipulate cell fired; re-evaluate the body
   /// with the latest control values if any change is still pending.
   /// (cell_idx)
@@ -2135,6 +2142,28 @@ impl WoxiStudio {
       Message::ManipulateDisplayAction(cell_idx, action) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.apply_button_action(&action);
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
+        }
+        Task::none()
+      }
+
+      Message::ManipulateDisplayPaneHover(cell_idx, action) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+        {
+          state.display_pane_action = action;
+        }
+        Task::none()
+      }
+
+      Message::ManipulateDisplayPaneClicked(cell_idx) => {
+        if let Some(editor) = self.cell_editors.get_mut(cell_idx)
+          && let Some(state) = editor.manipulate_state.as_mut()
+          && let Some(action) = state.display_pane_action.clone()
         {
           state.apply_button_action(&action);
           if let Some(audio) = state.emitted_sound.take() {
@@ -5639,7 +5668,8 @@ fn display_node_plain_text(
     }
     DisplayNode::Checkbox { .. }
     | DisplayNode::Slider { .. }
-    | DisplayNode::Spacer { .. } => String::new(),
+    | DisplayNode::Spacer { .. }
+    | DisplayNode::ClickPane { .. } => String::new(),
     DisplayNode::Popup { current, .. } => current.clone(),
     DisplayNode::Opener { label, .. } => display_node_plain_text(label),
   }
@@ -5953,6 +5983,23 @@ fn render_display_node<'a>(
       } else {
         rich_text(spans).size(12).into()
       }
+    }
+    // Clicks on the pane run its handler at the clicked coordinates; the
+    // pointer position is tracked on hover since a press carries none.
+    DisplayNode::ClickPane { svg: svg_str, .. } => {
+      let handle = svg::Handle::from_memory(svg_str.clone().into_bytes());
+      let pane = node.clone();
+      mouse_area(svg::Svg::new(handle).width(iced::Length::Shrink))
+        .on_move(move |p| {
+          Message::ManipulateDisplayPaneHover(
+            cell_idx,
+            pane.click_pane_action(f64::from(p.x), f64::from(p.y)),
+          )
+        })
+        .on_exit(Message::ManipulateDisplayPaneHover(cell_idx, None))
+        .on_press(Message::ManipulateDisplayPaneClicked(cell_idx))
+        .interaction(iced::mouse::Interaction::Pointer)
+        .into()
     }
     DisplayNode::Static {
       svg: svg_src,
@@ -6315,6 +6362,8 @@ fn rasterize_svg(
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<(iced::widget::image::Handle, u32, u32)> {
   let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
+  let svg_str =
+    &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let logical_w = size.width().ceil() as u32;
@@ -8239,6 +8288,8 @@ fn encode_svg_as_png(
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<Vec<u8>> {
   let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
+  let svg_str =
+    &woxi::functions::image_ast::synthesize_oblique_text(svg_str, fontdb);
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let scale: f32 = 2.0;
@@ -8261,6 +8312,8 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   let mut fontdb = svg2pdf::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
+  let svg_str =
+    &woxi::functions::image_ast::synthesize_oblique_text(svg_str, &fontdb);
 
   let opt =
     woxi::functions::image_ast::svg_render_options(std::sync::Arc::new(fontdb));
@@ -8626,6 +8679,8 @@ fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
     r#"<svg xmlns="http://www.w3.org/2000/svg" width="{PDF_PAGE_WIDTH}" height="{height}" viewBox="0 0 {PDF_PAGE_WIDTH} {height}">{elements}</svg>"#,
   );
   let opt = woxi::functions::image_ast::svg_render_options(pdf_fontdb());
+  let svg_doc =
+    woxi::functions::image_ast::synthesize_oblique_text(&svg_doc, &opt.fontdb);
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
     &tree,
@@ -8664,8 +8719,10 @@ fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
   let mut pdf = Pdf::new();
   let mut page_ids = Vec::new();
   for cells in slides {
-    let tree = svg2pdf::usvg::Tree::from_str(&slide_page_svg(cells), &opt)
-      .map_err(|_| ())?;
+    let page = slide_page_svg(cells);
+    let page =
+      woxi::functions::image_ast::synthesize_oblique_text(&page, &opt.fontdb);
+    let tree = svg2pdf::usvg::Tree::from_str(&page, &opt).map_err(|_| ())?;
     let (chunk, svg_id) =
       svg2pdf::to_chunk(&tree, svg2pdf::ConversionOptions::default())
         .map_err(|_| ())?;
@@ -15771,6 +15828,81 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
   }
 
   #[test]
+  fn curve_locator_and_inner_animate_become_controls() {
+    // A body laying out a `LocatorPane` whose locator slides along a
+    // plotted curve (`Dynamic[{k, f[k]}, (k = First[#]) &]`, `k` a hidden
+    // `ControlType -> None` scalar no other control writes) above a
+    // literal inner `Animate`. The locator must be drawn on the picture a
+    // helper function returns, `k` must get a slider over the plot's x
+    // range, and the inner animation's time must become the widget's
+    // animated control.
+    woxi::interpret(
+      "bumpCurve[k_] := Sin[k/2]; \
+       bumpPlot[] := Plot[bumpCurve[k], {k, 0, Pi}];",
+    )
+    .unwrap();
+    let code = "Manipulate[Module[{}, DynamicModule[{h}, Column[{\
+        LocatorPane[Dynamic[{kk, h = bumpCurve[kk]}, (kk = First[#]) &], \
+          bumpPlot[]], \
+        Animate[Graphics[Disk[{kk + Cos[tt], h}, 0.1], \
+          PlotRange -> {{-2, 5}, {-1, 2}}], {{tt, 0, \"time\"}, 0, 2 Pi}]\
+      }]]], \
+      {{kk, 1.}, ControlType -> None}, \
+      {{amp, 1, \"amplitude\"}, 0, 2}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the locator Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.animated, "the inner Animate must animate the widget");
+    assert!(state.playing);
+    assert!(
+      !state.state.iter().any(|(n, _)| n == "kk"),
+      "kk must be a visible control now: {:?}",
+      state.state
+    );
+    let continuous: Vec<(&str, &str, f64, f64, f64)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        } => Some((name.as_str(), label.as_str(), *min, *max, *current)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(continuous.len(), 3, "{continuous:?}");
+    assert_eq!(continuous[0].0, "amp");
+    assert_eq!(continuous[1].0, "tt");
+    assert_eq!(continuous[1].1, "time");
+    assert!((continuous[1].3 - 2.0 * std::f64::consts::PI).abs() < 1e-9);
+    assert_eq!(continuous[2].0, "kk");
+    assert_eq!(continuous[2].2, 0.0);
+    assert!((continuous[2].3 - std::f64::consts::PI).abs() < 1e-9);
+    assert_eq!(continuous[2].4, 1.0);
+
+    // The locator marker (a circle) and the animated disk are both drawn.
+    let svg = state.check_render().unwrap().graphics.unwrap();
+    assert!(svg.matches("<ellipse").count() >= 2, "{svg}");
+
+    // Advancing the animation moves only the time.
+    state.advance_animation();
+    let tt = state.controls.iter().find_map(|c| match c {
+      manipulate::ControlState::Continuous { name, current, .. }
+        if name == "tt" =>
+      {
+        Some(*current)
+      }
+      _ => None,
+    });
+    assert!(tt.unwrap() > 0.0);
+    assert!(state.error.is_none(), "{:?}", state.error);
+  }
+
+  #[test]
   fn argand_diagram_manipulate_draws_its_locator_pane() {
     // End-to-end regression for "Argand Diagram": a locator on the complex
     // plane is driven by modulus and argument sliders, so its position is
@@ -17876,7 +18008,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         | DisplayNode::Slider { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
-        | DisplayNode::Static { .. } => {}
+        | DisplayNode::Static { .. }
+        | DisplayNode::ClickPane { .. } => {}
       }
     }
     let mut out = Vec::new();
@@ -17918,7 +18051,8 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         | DisplayNode::Slider { .. }
         | DisplayNode::Spacer { .. }
         | DisplayNode::Text { .. }
-        | DisplayNode::Static { .. } => {}
+        | DisplayNode::Static { .. }
+        | DisplayNode::ClickPane { .. } => {}
       }
     }
     let mut out = Vec::new();
@@ -18649,10 +18783,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     assert!(editor.output_all_svg);
     let tree = resvg::usvg::Tree::from_str(
       &editor.output_svgs[0],
-      &resvg::usvg::Options {
-        fontdb: fontdb.clone(),
-        ..Default::default()
-      },
+      &woxi::functions::image_ast::svg_render_options(fontdb.clone()),
     )
     .unwrap();
     let size = tree.size();
@@ -35891,6 +36022,54 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       .map(|c| c.name())
       .collect();
     assert_eq!(names, ["a", "b"]);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose `Manipulate`
+  /// fits a curve through two `Locator` points and shows it in a
+  /// `Labeled[Plot[…], caption]`. Regression: Wolfram draws each Locator as
+  /// a crosshair marker on the displayed plot, but the widget drew none, so
+  /// nothing showed where the points were. An `Appearance -> None` Locator
+  /// still draws no marker. This is a self-authored, construct-equivalent
+  /// example.
+  #[test]
+  fn locator_controls_draw_markers_on_the_body_graphic() {
+    const MARKER: &str = "rgba(180,180,180,0.35)";
+    let code = "Manipulate[\
+      If[p == q, q = q + {1/100, 0}]; \
+      Labeled[Plot[p[[2]] + (q[[2]] - p[[2]]) (x - p[[1]])/(q[[1]] - p[[1]]), \
+        {x, 0, 10}, Frame -> True, PlotRange -> {{0, 10}, {0, 10}}], \
+        \"a line through two points\"], \
+      {{p, {2, 3}, \"first point\"}, {0, 0}, {10, 10}, Locator}, \
+      {{q, {8, 7}, \"second point\"}, {0, 0}, {10, 10}, ControlType -> Locator}, \
+      {{hidden, {5, 5}}, Locator, Appearance -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let svg = state.current_svg().expect("the plot renders").to_string();
+    assert_eq!(svg.matches(MARKER).count(), 2, "one marker per Locator");
+    // Markers follow their point and leave the plot range alone.
+    for c in state.controls.iter_mut() {
+      if let manipulate::ControlState::Slider2D { name, x, .. } = c
+        && name == "p"
+      {
+        *x = 4.0;
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let moved = state.current_svg().expect("the plot re-renders");
+    assert_eq!(moved.matches(MARKER).count(), 2);
+    assert_ne!(moved, svg, "the marker moves with its point");
+
+    // A body that places its own Locators keeps just those.
+    let own = "Manipulate[\
+      Graphics[{Locator[p], Disk[p, 1/2]}, PlotRange -> 5], \
+      {{p, {1, 1}}, {-5, -5}, {5, 5}, Locator}]";
+    let state = instantiate_stored_manipulate(own, "")
+      .expect("the Manipulate must build a widget");
+    let svg = state.current_svg().expect("the picture renders");
+    assert_eq!(svg.matches(MARKER).count(), 1);
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a

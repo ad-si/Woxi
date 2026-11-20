@@ -3025,8 +3025,11 @@ fn generate_svg(
       _ => None,
     })
     .unwrap_or([None, None, None]);
+  let (label_face, tick_faces) = axes_text_faces(options);
   let look = AxesLook {
     label_size: label_font_size(options),
+    label_face,
+    tick_faces,
     ..AxesLook::default()
   };
   // The frame is fitted to the axes exactly as they are drawn below — the
@@ -4004,7 +4007,8 @@ fn draw_axes_on_box_with_ticks(
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
         svg.push_str(&format!(
-          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\">{label}</text>\n",
+          "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{}>{label}</text>\n",
+          font_face_attrs(look.label_face),
         ));
         let chars = markup_char_count(label);
         extent.add_text(lx, ly, chars, font_size as f64, "middle");
@@ -4089,8 +4093,9 @@ fn draw_axes_on_box_with_ticks(
           ("middle", TICK_LABEL_OFFSET)
         };
         svg.push_str(&format!(
-                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\">{}</text>\n",
-                    tx + ux * reach, ty + uy * reach, tick_font_size, tick_color, anchor, label
+                    "<text x=\"{:.1}\" y=\"{:.1}\" font-size=\"{}\" fill=\"{}\" text-anchor=\"{}\" dominant-baseline=\"middle\"{}>{}</text>\n",
+                    tx + ux * reach, ty + uy * reach, tick_font_size, tick_color, anchor,
+                    font_face_attrs(look.tick_faces[ai]), label
                 ));
         extent.add_text(
           tx + ux * reach,
@@ -4113,6 +4118,13 @@ pub(crate) struct AxesLook {
   pub tick_colors: [Option<String>; 3],
   /// The font size `LabelStyle` gives the axis and tick labels.
   pub label_size: Option<f64>,
+  /// The `(bold, italic)` face of the axis labels (`BaseStyle`,
+  /// `LabelStyle`).
+  pub label_face: (bool, bool),
+  /// The `(bold, italic)` face of each axis's tick labels: the label face,
+  /// overridden by `TicksStyle` (`TicksStyle -> Plain` keeps them upright
+  /// under `BaseStyle -> Italic`).
+  pub tick_faces: [(bool, bool); 3],
 }
 
 impl Default for AxesLook {
@@ -4121,8 +4133,102 @@ impl Default for AxesLook {
       shown: [true; 3],
       tick_colors: [None, None, None],
       label_size: None,
+      label_face: (false, false),
+      tick_faces: [(false, false); 3],
     }
   }
+}
+
+/// The `(bold, italic)` overrides a text style spec sets: `Bold`, `Italic`,
+/// `Plain` (both off), `FontWeight -> …`, `FontSlant -> …`, and lists or
+/// `Directive[…]`s of those, later entries winning. `None` leaves a
+/// component as it was.
+fn font_face_overrides(spec: &Expr) -> (Option<bool>, Option<bool>) {
+  let mut face = (None, None);
+  fn walk(e: &Expr, face: &mut (Option<bool>, Option<bool>)) {
+    match e {
+      Expr::List(items) => items.iter().for_each(|i| walk(i, face)),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().for_each(|i| walk(i, face));
+      }
+      Expr::Identifier(n) => match n.as_str() {
+        "Bold" => face.0 = Some(true),
+        "Italic" => face.1 = Some(true),
+        "Plain" => *face = (Some(false), Some(false)),
+        _ => {}
+      },
+      Expr::Rule {
+        pattern,
+        replacement,
+      } => match (pattern.as_ref(), replacement.as_ref()) {
+        (Expr::Identifier(k), Expr::Identifier(v)) if k == "FontWeight" => {
+          face.0 = Some(v == "Bold");
+        }
+        (Expr::Identifier(k), Expr::Identifier(v)) if k == "FontSlant" => {
+          face.1 = Some(v == "Italic" || v == "Oblique");
+        }
+        _ => {}
+      },
+      _ => {}
+    }
+  }
+  walk(spec, &mut face);
+  face
+}
+
+/// The `(bold, italic)` faces of a 3D box's axis labels and of each axis's
+/// tick labels: `BaseStyle` and then `LabelStyle` style all of that text,
+/// and `TicksStyle -> s` (or `{sx, sy, sz}`, one per axis) restyles just
+/// the tick labels.
+fn axes_text_faces(opts: &[Expr]) -> ((bool, bool), [(bool, bool); 3]) {
+  let apply = |face: (bool, bool), spec: &Expr| {
+    let (bold, italic) = font_face_overrides(spec);
+    (bold.unwrap_or(face.0), italic.unwrap_or(face.1))
+  };
+  let option = |key: &str| {
+    opts.iter().rev().find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      ),
+      _ => None,
+    })
+  };
+  let mut label = (false, false);
+  for key in ["BaseStyle", "LabelStyle"] {
+    if let Some(spec) = option(key) {
+      label = apply(label, &spec);
+    }
+  }
+  let ticks = match option("TicksStyle") {
+    Some(Expr::List(ref items)) if items.len() == 3 => [
+      apply(label, &items[0]),
+      apply(label, &items[1]),
+      apply(label, &items[2]),
+    ],
+    Some(spec) => [apply(label, &spec); 3],
+    None => [label; 3],
+  };
+  (label, ticks)
+}
+
+/// The SVG attributes for a `(bold, italic)` text face (empty for plain).
+fn font_face_attrs((bold, italic): (bool, bool)) -> String {
+  let mut attrs = String::new();
+  if bold {
+    attrs.push_str(" font-weight=\"bold\"");
+  }
+  if italic {
+    attrs.push_str(" font-style=\"italic\"");
+  }
+  attrs
 }
 
 /// The colors `TicksStyle -> {sx, sy, sz}` (or one style for all three
@@ -6431,6 +6537,10 @@ struct StyleState3D {
   /// `VertexColors` of the polygon or line being added: one RGB color per
   /// vertex, blended across the face (or along the line) between them.
   vertex_colors: Option<std::sync::Arc<Vec<(f64, f64, f64)>>>,
+  /// `VertexNormals` of the polygon being added: one normal per vertex,
+  /// lighting each corner with its own normal so a mesh of flat facets
+  /// shades as the smooth surface it samples.
+  vertex_normals: Option<std::sync::Arc<Vec<[f64; 3]>>>,
   /// `Arrowheads[s]`: the arrowhead length. `None` keeps the default
   /// twentieth of the scene.
   arrowhead: Option<ArrowheadSize3D>,
@@ -6467,6 +6577,7 @@ impl Default for StyleState3D {
       texture: None,
       texture_coords: None,
       vertex_colors: None,
+      vertex_normals: None,
       arrowhead: None,
       font_size: None,
       font_face: (false, false),
@@ -7033,6 +7144,13 @@ fn parse_specularity(args: &[Expr]) -> Option<((u8, u8, u8), f64)> {
   Some((rgb, exponent))
 }
 
+/// Whether `expr` is a function written out: `Function[{x, y, z}, …]`,
+/// `Function[x, …]` or a pure function like `Directive[Green, Opacity[0.3]] &`.
+fn is_function_value(expr: &Expr) -> bool {
+  matches!(expr, Expr::Function { .. } | Expr::NamedFunction { .. })
+    || matches!(expr, Expr::FunctionCall { name, .. } if name == "Function")
+}
+
 /// `ColorFunction -> Function[{x, y, z}, …]` of a `Plot3D`/`RegionPlot3D`:
 /// the style (color and, for `Directive[Opacity[o], color]`, opacity) it
 /// gives the facet at a point. A named gradient (`ColorFunction ->
@@ -7055,9 +7173,10 @@ impl FacetColorFunction {
   fn read_option(&mut self, pattern: &Expr, replacement: &Expr) {
     match pattern {
       Expr::Identifier(name) if name == "ColorFunction" => {
-        self.function = matches!(replacement,
-          Expr::FunctionCall { name, .. } if name == "Function")
-        .then(|| replacement.clone());
+        // `Function[{x, y, z}, …]`, `Function[x, …]` or a pure function
+        // like `Directive[Green, Opacity[0.3]] &`.
+        self.function =
+          is_function_value(replacement).then(|| replacement.clone());
         self.scheme = if self.function.is_some() {
           None
         } else {
@@ -7450,6 +7569,41 @@ fn parse_texture_coords3d(opts: &[Expr]) -> Option<Vec<(f64, f64)>> {
   })
 }
 
+/// `VertexNormals -> {{nx, ny, nz}, …}` among a `Polygon`'s or a
+/// `GraphicsComplex`'s options (possibly still packed as `CompressedData`).
+fn parse_vertex_normals3d(opts: &[Expr]) -> Option<Vec<[f64; 3]>> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexNormals") =>
+    {
+      let value = match replacement.as_ref() {
+        list @ Expr::List(_) => list.clone(),
+        other => evaluate_expr_to_expr(other).ok()?,
+      };
+      let Expr::List(items) = &value else {
+        return None;
+      };
+      items
+        .iter()
+        .map(|n| match n {
+          Expr::List(v) if v.len() == 3 => {
+            // Exact components (`Sqrt[2]/2`) are numericized too.
+            let f = |e: &Expr| {
+              crate::functions::math_ast::expr_to_f64(e)
+                .or_else(|| try_eval_to_f64(e))
+            };
+            Some([f(&v[0])?, f(&v[1])?, f(&v[2])?])
+          }
+          _ => None,
+        })
+        .collect()
+    }
+    _ => None,
+  })
+}
+
 /// The texture of triangle `i` in the fan triangulation of a textured,
 /// convex polygon: corners `0`, `i + 1`, `i + 2` of the polygon.
 fn fan_texture(
@@ -7632,6 +7786,22 @@ impl Affine3 {
         + self.m[2][2] * p.z
         + self.t[2],
     }
+  }
+
+  /// Map a surface normal through the linear part: by its cofactor
+  /// matrix (the inverse transpose up to a factor), so the normal stays
+  /// perpendicular to the mapped surface under any invertible map.
+  fn apply_normal(&self, n: [f64; 3]) -> [f64; 3] {
+    let m = &self.m;
+    let c = |r0: usize, r1: usize, c0: usize, c1: usize| {
+      m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0]
+    };
+    let cof = [
+      [c(1, 2, 1, 2), -c(1, 2, 0, 2), c(1, 2, 0, 1)],
+      [-c(0, 2, 1, 2), c(0, 2, 0, 2), -c(0, 2, 0, 1)],
+      [c(0, 1, 1, 2), -c(0, 1, 0, 2), c(0, 1, 0, 1)],
+    ];
+    [0, 1, 2].map(|i| cof[i][0] * n[0] + cof[i][1] * n[1] + cof[i][2] * n[2])
   }
 
   /// Uniform length-scale factor of the linear part (cube root of |det|),
@@ -8127,9 +8297,18 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
         z: a.z.max(b.z),
       };
     }
-    Primitive3D::Polygon3D { points, holes, .. } => {
+    Primitive3D::Polygon3D {
+      points,
+      holes,
+      style,
+    } => {
       for p in points.iter_mut().chain(holes.iter_mut().flatten()) {
         *p = xf.apply(*p);
+      }
+      if let Some(normals) = &style.vertex_normals {
+        style.vertex_normals = Some(std::sync::Arc::new(
+          normals.iter().map(|&n| xf.apply_normal(n)).collect(),
+        ));
       }
     }
     Primitive3D::Point3DPrim { points, .. }
@@ -8170,14 +8349,17 @@ fn transform_primitive3d(prim: &mut Primitive3D, xf: &Affine3) {
 /// refer to, leaving everything else untouched.
 ///
 /// With `colors` (the complex's `VertexColors`, one color per point) each
-/// `Polygon` facet is drawn in the mean color of its vertices. With
-/// `tex` (its `VertexTextureCoordinates`, one `(u, v)` per point) each
-/// facet carries the coordinates of its own corners.
+/// `Polygon` facet carries the colors of its own corners as
+/// `VertexColors`, blended across it (and its mean color as a plain
+/// directive). With `tex` (its `VertexTextureCoordinates`, one `(u, v)`
+/// per point) and `normals` (its `VertexNormals`) each facet likewise
+/// carries the coordinates and normals of its own corners.
 fn resolve_complex_indices(
   expr: &Expr,
   points: &[Expr],
   colors: Option<&[(f64, f64, f64)]>,
   tex: Option<&[(f64, f64)]>,
+  normals: Option<&[[f64; 3]]>,
 ) -> Expr {
   fn substitute(expr: &Expr, points: &[Expr]) -> Expr {
     match expr {
@@ -8223,8 +8405,10 @@ fn resolve_complex_indices(
     Expr::FunctionCall { name, args }
       if name == "Polygon"
         && !args.is_empty()
-        && (colors.is_some() || tex.is_some()) =>
+        && (colors.is_some() || tex.is_some() || normals.is_some()) =>
     {
+      let corner_colors: Option<Vec<[f64; 3]>> =
+        colors.map(|c| c.iter().map(|&(r, g, b)| [r, g, b]).collect());
       let facet = |indices: &Expr| -> Expr {
         // Not `args.to_vec()`: that copied every facet's indices for each
         // facet.
@@ -8253,6 +8437,39 @@ fn resolve_complex_indices(
               replacement: Box::new(Expr::List(uvs.into())),
             });
           }
+        }
+        // The corner colors and normals of this facet, as bare triples.
+        let per_corner = |name: &str, values: &[[f64; 3]]| -> Option<Expr> {
+          let Expr::List(items) = indices else {
+            return None;
+          };
+          let picked: Option<Vec<Expr>> = items
+            .iter()
+            .map(|i| match i {
+              Expr::Integer(i) if *i >= 1 => {
+                values.get(*i as usize - 1).map(|v| {
+                  Expr::List(
+                    v.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into(),
+                  )
+                })
+              }
+              _ => None,
+            })
+            .collect();
+          Some(crate::helpers::rule_expr(
+            Expr::Identifier(name.to_string()),
+            Expr::List(picked?.into()),
+          ))
+        };
+        if let Some(colors) = &corner_colors
+          && let Some(rule) = per_corner("VertexColors", colors)
+        {
+          new_args.push(rule);
+        }
+        if let Some(normals) = normals
+          && let Some(rule) = per_corner("VertexNormals", normals)
+        {
+          new_args.push(rule);
         }
         let polygon = Expr::FunctionCall {
           name: name.clone(),
@@ -8285,7 +8502,7 @@ fn resolve_complex_indices(
         Expr::FunctionCall { name: inner, .. }
           if name == "Arrow" && matches!(inner.as_str(), "Tube" | "Line") =>
         {
-          resolve_complex_indices(&args[0], points, colors, tex)
+          resolve_complex_indices(&args[0], points, colors, tex, normals)
         }
         first => substitute(first, points),
       };
@@ -8308,7 +8525,7 @@ fn resolve_complex_indices(
     Expr::List(items) => Expr::List(
       items
         .iter()
-        .map(|e| resolve_complex_indices(e, points, colors, tex))
+        .map(|e| resolve_complex_indices(e, points, colors, tex, normals))
         .collect::<Vec<_>>()
         .into(),
     ),
@@ -8316,7 +8533,7 @@ fn resolve_complex_indices(
       name: name.clone(),
       args: args
         .iter()
-        .map(|e| resolve_complex_indices(e, points, colors, tex))
+        .map(|e| resolve_complex_indices(e, points, colors, tex, normals))
         .collect::<Vec<_>>()
         .into(),
     },
@@ -8351,7 +8568,18 @@ fn complex_vertex_colors(
     if !matches!(pattern.as_ref(), Expr::Identifier(k) if k == "VertexColors") {
       return None;
     }
-    let value = evaluate_expr_to_expr(replacement).ok()?;
+    // A list of bare numeric triples (what a resolved complex facet
+    // carries) needs no evaluation.
+    let numeric = |c: &Expr| {
+      matches!(c, Expr::List(rgb) if rgb.len() == 3
+        && rgb.iter().all(|v| matches!(v, Expr::Real(_) | Expr::Integer(_))))
+    };
+    let value = match replacement.as_ref() {
+      Expr::List(items) if items.iter().all(numeric) => {
+        replacement.as_ref().clone()
+      }
+      other => evaluate_expr_to_expr(other).ok()?,
+    };
     let Expr::List(items) = &value else {
       return None;
     };
@@ -8763,7 +8991,12 @@ fn collect_3d_primitives(
               .map(|p| p.0)
               .filter(|c| c.len() == pts.len())
               .map(std::sync::Arc::new);
-            let (points, holes) = if style.texture_coords.is_some() {
+            style.vertex_normals = parse_vertex_normals3d(&args[1..])
+              .filter(|n| n.len() == pts.len())
+              .map(std::sync::Arc::new);
+            let (points, holes) = if style.texture_coords.is_some()
+              || style.vertex_normals.is_some()
+            {
               (pts, Vec::new())
             } else {
               split_nested_loops(pts)
@@ -9416,11 +9649,14 @@ fn collect_3d_primitives(
             }
             let colors = palette.map(|p| p.0);
             let tex = parse_texture_coords3d(&args[2..]);
+            let normals = parse_vertex_normals3d(&args[2..])
+              .filter(|n| n.len() == points.len());
             let resolved = resolve_complex_indices(
               &args[1],
               points,
               colors.as_deref(),
               tex.as_deref(),
+              normals.as_deref(),
             );
             let mut collected = Vec::new();
             collect_3d_primitives(&resolved, style, &mut collected);
@@ -9444,7 +9680,8 @@ fn collect_3d_primitives(
                   && holes.is_empty()
                   && !face.edges
                   && face.texture.is_none()
-                  && face.vertex_colors.is_none() =>
+                  && face.vertex_colors.is_none()
+                  && face.vertex_normals.is_none() =>
                 {
                   let key = format!("{face:?}");
                   let entry =
@@ -10247,25 +10484,57 @@ fn is_convex_polygon3d(points: &[Point3D]) -> bool {
   total_turn.abs() < 3.0 * std::f64::consts::PI
 }
 
+/// Whether every corner of a polygon lies in one plane. A corner farther
+/// from the plane through the first corner (with the polygon's own normal)
+/// than a millionth of the polygon's extent makes it non-planar.
+fn is_planar_polygon3d(points: &[Point3D]) -> bool {
+  let Some(normal) = polygon_plane_normal(points) else {
+    return true;
+  };
+  let o = points[0];
+  let extent = points
+    .iter()
+    .flat_map(|p| [(p.x - o.x).abs(), (p.y - o.y).abs(), (p.z - o.z).abs()])
+    .fold(0.0f64, f64::max);
+  points.iter().all(|p| {
+    let d = (p.x - o.x) * normal[0]
+      + (p.y - o.y) * normal[1]
+      + (p.z - o.z) * normal[2];
+    d.abs() <= 1e-6 * extent
+  })
+}
+
+/// Whether a hole-free 3D face needs the general planar triangulator
+/// rather than a fan from its first corner: it is planar but not convex.
+/// A non-planar outline (a closed path over several faces of a box) has
+/// no plane to be flattened onto, so it is drawn as a fan, like Wolfram's
+/// renderer does; flattening would collapse it onto a single plane.
+fn uses_polygon_triangulator(points: &[Point3D]) -> bool {
+  points.len() > 3
+    && is_planar_polygon3d(points)
+    && !is_convex_polygon3d(points)
+}
+
+/// Split a hole-free 3D face into triangles: a fan from the first corner
+/// when it is convex or non-planar, the general triangulator otherwise.
+fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
+  if points.len() < 3 {
+    Vec::new()
+  } else if uses_polygon_triangulator(points) {
+    tessellate_polygon_with_holes(points, &[]).0
+  } else {
+    (1..points.len() - 1)
+      .map(|i| (points[0], points[i], points[i + 1]))
+      .collect()
+  }
+}
+
 /// Tessellate a planar polygon with holes (`Polygon[outer -> holes]`).
 ///
 /// The face is flattened onto its own plane, triangulated there, and the
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
-/// Split a hole-free 3D face into triangles: a fan from the first corner
-/// when it is convex, the general triangulator otherwise.
-fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
-  if points.len() < 3 {
-    Vec::new()
-  } else if points.len() == 3 || is_convex_polygon3d(points) {
-    (1..points.len() - 1)
-      .map(|i| (points[0], points[i], points[i + 1]))
-      .collect()
-  } else {
-    tessellate_polygon_with_holes(points, &[]).0
-  }
-}
 
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
@@ -11993,6 +12262,33 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
   }
 }
 
+/// Parse a `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}` value into
+/// `[sx0, sx1, sy0, sy1]`. Only a proper sub-region of the unit square is
+/// kept; `Automatic` and malformed specs give `None`.
+fn parse_plot_region(value: &Expr) -> Option<[f64; 4]> {
+  let Expr::List(axes) = value else {
+    return None;
+  };
+  let [x, y] = axes.as_slice() else {
+    return None;
+  };
+  let interval = |e: &Expr| -> Option<(f64, f64)> {
+    let Expr::List(ends) = e else {
+      return None;
+    };
+    let [lo, hi] = ends.as_slice() else {
+      return None;
+    };
+    let lo = try_eval_to_f64(lo)?;
+    let hi = try_eval_to_f64(hi)?;
+    (lo.is_finite() && hi.is_finite() && 0.0 <= lo && lo < hi && hi <= 1.0)
+      .then_some((lo, hi))
+  };
+  let (sx0, sx1) = interval(x)?;
+  let (sy0, sy1) = interval(y)?;
+  Some([sx0, sx1, sy0, sy1])
+}
+
 /// Radius of the smallest sphere around `center` that encloses every drawn
 /// point of the scene: the corners of its (tessellated) faces and the
 /// vertices of its lines, points, arrows and text anchors.
@@ -12085,8 +12381,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut view_point_at_infinity = false;
   let mut orthographic = false;
   let mut show_axes = false;
+  let (label_face, tick_faces) = axes_text_faces(&args[1..]);
   let mut axes_look = AxesLook {
     label_size: label_font_size(&args[1..]),
+    label_face,
+    tick_faces,
     ..AxesLook::default()
   };
   let mut axes_origin: Option<[Option<f64>; 3]> = None;
@@ -12105,6 +12404,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // sides): a band of the given width around the picture that the scene is
   // kept out of, so the contents are laid out in the region inside it.
   let mut image_padding: Option<[f64; 4]> = None;
+  // `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}`: the part of the picture, in
+  // scaled coordinates, that the scene fills; the rest is left empty.
+  let mut plot_region: Option<[f64; 4]> = None;
   // `BaseStyle -> spec`: directives in force before any of the scene's own,
   // like a `Style` wrapped round the whole content (`BaseStyle -> 14` sizes
   // every `Text` label).
@@ -12168,6 +12470,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .unwrap_or_else(|_| replacement.as_ref().clone());
           image_padding = crate::functions::plot::parse_image_padding(&value)
             .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0));
+        }
+        "PlotRegion" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          plot_region = parse_plot_region(&value);
         }
         "ViewPoint" => {
           // Symbolic viewpoints stand for axis-aligned directions
@@ -12820,18 +13127,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } if holes.is_empty() => {
           // A fan from the first corner only covers a convex polygon; on a
           // concave one its triangles spill outside the outline, which
-          // shows as spikes off the shape. A concave face goes through the
-          // same triangulator the holed case uses.
-          let t = if points.len() < 3 {
-            vec![]
-          } else if is_convex_polygon3d(points) {
-            (1..points.len() - 1)
-              .map(|i| (points[0], points[i], points[i + 1]))
-              .collect()
-          } else {
+          // shows as spikes off the shape. A concave planar face goes
+          // through the same triangulator the holed case uses.
+          let t = if uses_polygon_triangulator(points) {
             let (t, flags) = tessellate_polygon_with_holes(points, &[]);
             holed_boundaries = flags;
             t
+          } else {
+            triangulate_face3d(points)
           };
           (t, style)
         }
@@ -12877,6 +13180,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             texture: None,
             texture_coords: None,
             vertex_colors: None,
+            vertex_normals: None,
             arrowhead: None,
             font_size: None,
             font_face: (false, false),
@@ -12951,8 +13255,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Primitive3D::Cone { .. }
         | Primitive3D::Surface3D { smooth: true, .. }
     );
+    // A non-planar polygon has no single normal: each of its fan
+    // triangles is lit by its own.
     let polygon_normal = match prim {
-      Primitive3D::Polygon3D { points, .. } if points.len() > 3 => {
+      Primitive3D::Polygon3D { points, .. }
+        if points.len() > 3 && is_planar_polygon3d(points) =>
+      {
         let mut normal = [0.0; 3];
         for i in 0..points.len() {
           let (a, b) = (points[i], points[(i + 1) % points.len()]);
@@ -12968,19 +13276,31 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let tri_count = tris.len();
     // A convex polygon with `VertexColors` blends the corner colors across
     // each fan triangle (corners 0, i + 1, i + 2), drawn as a fine grid of
-    // sub-triangles each in its interpolated color.
-    let vertex_colors = match prim {
+    // sub-triangles each in its interpolated color. `VertexNormals` light
+    // each corner with its own normal instead of the face's.
+    let (vertex_colors, vertex_normals) = match prim {
       Primitive3D::Polygon3D {
         points,
         holes,
         style,
-      } if holes.is_empty() && holed_boundaries.is_empty() => style
-        .vertex_colors
-        .as_ref()
-        .filter(|c| c.len() == points.len() && points.len() >= 3),
-      _ => None,
+      } if holes.is_empty()
+        && holed_boundaries.is_empty()
+        && points.len() >= 3 =>
+      {
+        (
+          style
+            .vertex_colors
+            .as_ref()
+            .filter(|c| c.len() == points.len()),
+          style
+            .vertex_normals
+            .as_ref()
+            .filter(|n| n.len() == points.len()),
+        )
+      }
+      _ => (None, None),
     };
-    if let Some(colors) = vertex_colors {
+    if vertex_colors.is_some() || vertex_normals.is_some() {
       // A flat face is lit the same everywhere but for its color, so the
       // lit color is linear across it: each fan triangle is lit at its
       // corners and filled with the gradient between them.
@@ -12992,12 +13312,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           [true; 3]
         };
-        let normal =
+        let face_normal =
           polygon_normal.unwrap_or_else(|| triangle_normal(v0, v1, v2));
-        let corner = |c: &(f64, f64, f64), at: Point3D| {
+        let corner = |k: usize, at: Point3D| {
           let q = |x: f64| (x.clamp(0.0, 1.0) * 255.0).round() as u8;
           let mut sub_style = prim_style.clone();
-          sub_style.color = Some((q(c.0), q(c.1), q(c.2)));
+          if let Some(colors) = vertex_colors {
+            let c = colors[k];
+            sub_style.color = Some((q(c.0), q(c.1), q(c.2)));
+          }
+          // A corner's own normal, turned to the face's side so the
+          // two-sided lighting flips the face and its corners together.
+          let normal = match vertex_normals {
+            Some(normals) => {
+              let n = normals[k];
+              if v_dot(n, face_normal) < 0.0 {
+                n.map(|v| -v)
+              } else {
+                n
+              }
+            }
+            None => face_normal,
+          };
           shade_facet(
             SurfaceDefault::Plain(base_color),
             None,
@@ -13008,11 +13344,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           )
           .0
         };
-        let lit = [
-          corner(&colors[0], v0),
-          corner(&colors[i + 1], v1),
-          corner(&colors[i + 2], v2),
-        ];
+        let lit = [corner(0, v0), corner(i + 1, v1), corner(i + 2, v2)];
         let center = tri_center(v0, v1, v2);
         triangle_vertices.push([v0, v1, v2]);
         all_triangles.push(Triangle {
@@ -13445,7 +13777,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // With an `ImagePadding` the scene is fitted into the region inside the
   // padding band; the picture keeps its full size around it.
-  let [pad_left, pad_right, pad_bottom, pad_top] =
+  // A `PlotRegion` is a padding band too, sized as fractions of the
+  // picture. Its vertical part needs the picture's height, which is only
+  // known up front when the height is pinned; otherwise it is worked out
+  // from the fitted scene below.
+  let region_height_pending = plot_region.is_some()
+    && image_padding.is_none()
+    && !full_width
+    && fitted_height;
+  if image_padding.is_none()
+    && let Some([sx0, sx1, sy0, sy1]) = plot_region
+  {
+    let w = svg_width as f64;
+    let h = svg_height as f64;
+    image_padding = Some(if region_height_pending {
+      [sx0 * w, (1.0 - sx1) * w, 0.0, 0.0]
+    } else {
+      [sx0 * w, (1.0 - sx1) * w, sy0 * h, (1.0 - sy1) * h]
+    });
+  }
+  let [pad_left, pad_right, mut pad_bottom, mut pad_top] =
     image_padding.unwrap_or([0.0; 4]);
   let pad_w = (pad_left + pad_right).round() as u32;
   let pad_h = (pad_bottom + pad_top).round() as u32;
@@ -13550,6 +13901,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if padded {
+    let mut pad_h = pad_h;
+    if region_height_pending && let Some([_, _, sy0, sy1]) = plot_region {
+      // The fitted scene fills `sy1 - sy0` of the final height.
+      let total = svg_height as f64 / (sy1 - sy0);
+      pad_bottom = sy0 * total;
+      pad_top = (1.0 - sy1) * total;
+      pad_h = (pad_bottom + pad_top).round() as u32;
+    }
     cx += pad_left;
     cy += pad_top;
     svg_width += pad_w;
@@ -14648,7 +15007,14 @@ fn with_plot_label(
   // row, on top of the strip a single-line title reserves.
   let line_height = font_size * 1.2;
   let extra_lines = styled.extra_line_count() as f64;
-  let strip = PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32;
+  let cx = width as f64 / 2.0;
+  // A framed title (or a stacked one with framed lines) sets each line in
+  // its own box; otherwise the lines share one `<text>`.
+  let framed_layout = framed_label_svg(&styled, cx, font_size);
+  let strip = match &framed_layout {
+    Some((_, h)) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
+    None => PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32,
+  };
   let total = height + strip;
   // The strip is painted in the picture's own background so the two read
   // as one canvas — an explicit `Background` reaches it too.
@@ -14684,7 +15050,6 @@ fn with_plot_label(
       "width=\"{width}\" height=\"{total}\" viewBox=\"0 0 {width} {total}\""
     )
   };
-  let cx = width as f64 / 2.0;
   let fill = styled
     .color
     .as_ref()
@@ -14696,18 +15061,134 @@ fn with_plot_label(
   if styled.italic {
     style_attrs.push_str(" font-style=\"italic\"");
   }
-  let label = styled.svg_scaled_stacked(1.0, cx, line_height);
-  // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
-  let keep = crate::functions::plot::preserve_blanks_attr(&label);
+  let label = match framed_layout {
+    Some((lines, _)) => {
+      use std::fmt::Write as _;
+      let mut out = String::new();
+      for line in lines {
+        // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+        let keep = crate::functions::plot::preserve_blanks_attr(&line.markup);
+        let _ = writeln!(
+          out,
+          "{}<text x=\"{cx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{fill}\"{style_attrs}{keep}>{}</text>",
+          line.frame_rect, line.baseline, line.markup
+        );
+      }
+      out
+    }
+    None => {
+      let label = styled.svg_scaled_stacked(1.0, cx, line_height);
+      // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+      let keep = crate::functions::plot::preserve_blanks_attr(&label);
+      format!(
+        "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n"
+      )
+    }
+  };
   format!(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
-     <text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n\
+     {label}\
      <g transform=\"translate(0,{strip})\">{svg}</g>\n\
      </svg>",
     bg.0, bg.1, bg.2,
   )
+}
+
+/// One line of a framed 3-D title: its box (possibly empty), its baseline
+/// and its typeset markup.
+struct FramedTitleLine {
+  frame_rect: String,
+  baseline: f64,
+  markup: String,
+}
+
+/// Lay out a title with `Framed` boxes above a 3-D picture: a framed title
+/// is boxed as a whole, and a stacked title (`Column[{Framed[a], b}]`)
+/// boxes the lines that are framed on their own. Each box hugs its text
+/// with `Framed`'s 3pt margin, is filled with the box's `Background` and
+/// stroked in the box's color (the enclosing `Style`'s color). Returns the
+/// lines and the height of the strip they need, or `None` when nothing in
+/// the title is framed.
+fn framed_label_svg(
+  styled: &crate::functions::chart::StyledLabel,
+  cx: f64,
+  font_size: f64,
+) -> Option<(Vec<FramedTitleLine>, f64)> {
+  use crate::functions::chart::markup_font_size;
+  use crate::functions::plot_padding::{ascent, line_height, text_width};
+  if styled.frame.is_none() && styled.line_frames.iter().all(Option::is_none) {
+    return None;
+  }
+  const MARGIN: f64 = 3.0;
+  let markups: Vec<String> = std::iter::once(styled.svg_scaled(1.0))
+    .chain(styled.extra_lines.iter().cloned())
+    .collect();
+  let sizes: Vec<f64> = markups
+    .iter()
+    .map(|m| markup_font_size(m).unwrap_or(font_size))
+    .collect();
+  let rect =
+    |frame: &crate::functions::chart::LabelFrame, w: f64, top: f64, h: f64| {
+      let fill = frame
+        .background
+        .as_ref()
+        .map_or_else(|| "none".to_string(), |c| c.to_svg_rgb());
+      let stroke = frame.stroke.as_ref().map_or_else(
+        || {
+          crate::functions::graphics::theme()
+            .framed_border
+            .to_string()
+        },
+        |c| c.to_svg_rgb(),
+      );
+      format!(
+        "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
+       height=\"{h:.1}\" fill=\"{fill}\" stroke=\"{stroke}\" \
+       stroke-width=\"1\"/>\n",
+        cx - w / 2.0
+      )
+    };
+  let mut lines = Vec::with_capacity(markups.len());
+  // A whole framed title has a margin above its first line.
+  let outer = if styled.frame.is_some() { MARGIN } else { 0.0 };
+  let mut y = 1.0 + outer;
+  for (i, (markup, size)) in markups.iter().zip(&sizes).enumerate() {
+    let frame = styled.line_frames.get(i).and_then(Option::as_ref);
+    let margin = if frame.is_some() { MARGIN } else { 0.0 };
+    let line_h = line_height(*size);
+    let frame_rect = frame.map_or_else(String::new, |f| {
+      rect(
+        f,
+        text_width(markup, *size) + 2.0 * margin,
+        y,
+        line_h + 2.0 * margin,
+      )
+    });
+    lines.push(FramedTitleLine {
+      frame_rect,
+      baseline: y + margin + ascent(*size),
+      markup: markup.clone(),
+    });
+    y += line_h + 2.0 * margin;
+  }
+  let height = y + outer + 2.0;
+  if let Some(frame) = &styled.frame {
+    let w = markups
+      .iter()
+      .zip(&sizes)
+      .map(|(m, s)| text_width(m, *s))
+      .fold(0.0, f64::max)
+      + 2.0 * MARGIN;
+    if let Some(first) = lines.first_mut() {
+      first.frame_rect = rect(frame, w, 1.0, y + MARGIN - 1.0);
+    }
+  }
+  Some((lines, height))
 }
 
 /// The characters an SVG markup fragment actually shows, for width
@@ -16828,11 +17309,7 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A region given by inequalities (combined with And/Or/Not) is drawn as
   // the smooth level surface of a signed field that is positive inside,
   // closed off where it meets the box — as wolframscript draws it.
-  let has_color_function = args[4..].iter().any(|o| {
-    matches!(o, Expr::Rule { pattern, .. }
-      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorFunction"))
-  });
-  if !has_color_function && let Some(field) = region_signed_field(body) {
+  if let Some(field) = region_signed_field(body) {
     reset_scalar_3d_cache();
     const CELLS: usize = 24;
     let ranges = [(x_min, x_max), (y_min, y_max), (z_min, z_max)];
@@ -16893,6 +17370,22 @@ pub fn region_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             replacement,
           } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") => {
             rule_expr(id_expr("ContourStyle"), (**replacement).clone())
+          }
+          // `ContourPlot3D` calls its `ColorFunction` as `f[x, y, z, v]`,
+          // `RegionPlot3D` as `f[x, y, z]`: drop the level value.
+          Expr::Rule {
+            pattern,
+            replacement,
+          } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ColorFunction")
+            && is_function_value(replacement) =>
+          {
+            let wrapped = Expr::Function {
+              body: Box::new(Expr::CurriedCall {
+                func: replacement.clone(),
+                args: (1..=3).map(Expr::Slot).collect(),
+              }),
+            };
+            rule_expr(id_expr("ColorFunction"), wrapped)
           }
           other => other.clone(),
         })
@@ -18424,6 +18917,9 @@ fn contour3d_render(
   let mut point_index: std::collections::HashMap<[u64; 3], usize> =
     std::collections::HashMap::new();
   let mut content: Vec<Expr> = Vec::new();
+  // Under a `ColorFunction`: the position in `content` of each level's
+  // item, with its triangles and their indices into `world_triangles`.
+  let mut colored_items: Vec<(usize, Vec<([usize; 3], usize)>)> = Vec::new();
   let mut refinement_budget = CONTOUR3D_REFINE_BUDGET;
   // The segments along which a `RegionFunction` cut the surfaces, in plot
   // coordinates: part of the surfaces' boundary.
@@ -18509,6 +19005,8 @@ fn contour3d_render(
         let theme_idx = surf_idx * levels.len() + level_idx;
         // This level's triangles, as one Polygon of vertex-index triples.
         let mut level_triangles: Vec<[usize; 3]> = Vec::new();
+        // The index into `world_triangles` of each of `level_triangles`.
+        let mut level_world_ids: Vec<usize> = Vec::new();
         for i in 0..cells[0] {
           for j in 0..cells[1] {
             for k in 0..cells[2] {
@@ -18640,6 +19138,7 @@ fn contour3d_render(
                       *slot = idx;
                     }
                     level_triangles.push(tri);
+                    level_world_ids.push(world_triangles.len() - 1);
                   }
                 });
                 if let Some((body, vars)) = body
@@ -18677,6 +19176,21 @@ fn contour3d_render(
             && st.opacity < 1.0
           {
             item.push(call1("Opacity", Expr::Real(st.opacity)));
+          }
+          // A `ColorFunction` colors each triangle on its own; the colors
+          // are known once the facets are shaded below, so the triangles
+          // are kept until then.
+          if color_fn.is_set() {
+            colored_items.push((
+              content.len(),
+              level_triangles
+                .iter()
+                .copied()
+                .zip(level_world_ids)
+                .collect(),
+            ));
+            content.push(Expr::List(item.into()));
+            continue;
           }
           item.push(call1(
             "Polygon",
@@ -18800,6 +19314,68 @@ fn contour3d_render(
       style: cf_style,
       plot_style: style.cloned(),
     });
+  }
+  // Each triangle keeps its `ColorFunction` style in the extracted
+  // primitives, so `Show` draws the surface in the same colors; runs of
+  // triangles of one style share a polygon.
+  for (pos, triangles) in &colored_items {
+    let Expr::List(item) = &mut content[*pos] else {
+      continue;
+    };
+    let mut item = item.to_vec();
+    let polygon = |run: &[[usize; 3]]| {
+      call1(
+        "Polygon",
+        Expr::List(
+          run
+            .iter()
+            .map(|t| {
+              Expr::List(
+                t.iter().map(|&v| Expr::Integer(v as i128 + 1)).collect(),
+              )
+            })
+            .collect(),
+        ),
+      )
+    };
+    let style_key =
+      |st: Option<&StyleState3D>| st.map(|st| (st.color, st.opacity.to_bits()));
+    let mut run: Vec<[usize; 3]> = Vec::new();
+    let mut run_style: Option<&StyleState3D> = None;
+    let mut flush = |run: &mut Vec<[usize; 3]>, st: Option<&StyleState3D>| {
+      if run.is_empty() {
+        return;
+      }
+      let mut group = Vec::new();
+      if let Some(st) = st {
+        if st.opacity < 1.0 {
+          group.push(call1("Opacity", Expr::Real(st.opacity)));
+        }
+        if let Some((r, g, b)) = st.color {
+          group.push(call(
+            "RGBColor",
+            vec![
+              Expr::Real(r as f64 / 255.0),
+              Expr::Real(g as f64 / 255.0),
+              Expr::Real(b as f64 / 255.0),
+            ],
+          ));
+        }
+      }
+      group.push(polygon(run));
+      item.push(Expr::List(group.into()));
+      run.clear();
+    };
+    for &(tri, id) in triangles {
+      let st = facets[id].style.as_ref();
+      if !run.is_empty() && style_key(st) != style_key(run_style) {
+        flush(&mut run, run_style);
+      }
+      run_style = st;
+      run.push(tri);
+    }
+    flush(&mut run, run_style);
+    content[*pos] = Expr::List(item.into());
   }
   // A function's isosurface is lit with its gradient, the exact normal;
   // the boxes' axes are scaled differently, so it is taken in box
@@ -19091,7 +19667,17 @@ fn contour3d_render(
       ],
     );
     let mut structure_args = vec![complex];
-    structure_args.extend(opts.iter().cloned());
+    // The `ColorFunction` colors are already in the primitives.
+    structure_args.extend(
+      opts
+        .iter()
+        .filter(|o| {
+          !matches!(o, Expr::Rule { pattern, .. }
+            if matches!(pattern.as_ref(), Expr::Identifier(n)
+              if n == "ColorFunction" || n == "ColorFunctionScaling"))
+        })
+        .cloned(),
+    );
     let names = |opt: &str| {
       structure_args.iter().any(|o| {
         matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }

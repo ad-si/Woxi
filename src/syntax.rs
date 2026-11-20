@@ -183,6 +183,11 @@ pub struct PlotSource {
   /// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}` frame).
   /// `None` = the ratio follows from `image_size`.
   pub aspect_ratio: Option<f64>,
+  /// Whether the plot settles `PlotRange -> All` into the numeric range of
+  /// its data, as WL's list plots (`ListPlot`, `ListLinePlot`) do: `Show`
+  /// then keeps that range like an automatic one, clipping other graphics
+  /// reaching past it, where a function plot's `All` spans everything shown.
+  pub settles_all_range: bool,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
@@ -4234,10 +4239,16 @@ fn apply_prefix_nots(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
     if !marked {
       continue;
     }
-    let Expr::FunctionCall { args, .. } = &terms[i] else {
-      unreachable!()
-    };
-    let inner = args[0].clone();
+    // `!!a` stacks one mark per `!`; they all reach as far as the outermost.
+    let mut inner = terms[i].clone();
+    let mut depth = 0;
+    while let Expr::FunctionCall { name, args } = &inner
+      && name == PREFIX_NOT_MARK
+      && args.len() == 1
+    {
+      inner = args[0].clone();
+      depth += 1;
+    }
     let mut j = i;
     while j < operators.len() && operator_precedence(&operators[j]) > 180 {
       j += 1;
@@ -4245,10 +4256,11 @@ fn apply_prefix_nots(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
     let mut group_terms: Vec<Expr> = terms.drain(i..=j).collect();
     group_terms[0] = inner;
     let group_ops: Vec<String> = operators.drain(i..j).collect();
-    terms.insert(
-      i,
-      call1("Not", build_operator_chain(group_terms, &group_ops)),
-    );
+    let mut negated = build_operator_chain(group_terms, &group_ops);
+    for _ in 0..depth {
+      negated = call1("Not", negated);
+    }
+    terms.insert(i, negated);
   }
 }
 
@@ -4995,7 +5007,8 @@ fn parse_expression_inner(
   let mut term_was_implicit_times: Vec<bool> = Vec::new();
   let mut operators: Vec<String> = Vec::new();
   let mut leading_minus = false;
-  let mut leading_not = false;
+  // How many prefix `!`s the next term carries (`!!a` is `Not[Not[a]]`).
+  let mut leading_not: usize = 0;
   // True iff the *first* term was prefixed by `!`. Survives operator
   // boundaries (unlike pending_not_on_last, which is flushed eagerly).
   // Used to re-apply Not at the right precedence after the binary tree
@@ -5005,21 +5018,24 @@ fn parse_expression_inner(
   // current term — i.e. after all suffixes (!, !!, \[Transpose], ..) have
   // been applied. This makes "!a!" parse as Not[Factorial[a]] rather than
   // Factorial[Not[a]].
-  let mut pending_not_on_last = false;
-  // Apply a pending Not to the top of `terms` and clear the flag. Used at
+  let mut pending_not_on_last: usize = 0;
+  // Apply the pending Nots to the top of `terms` and clear the flag. Used at
   // every boundary that ends a term block.
   fn flush_pending_not(
-    pending: &mut bool,
+    pending: &mut usize,
     terms: &mut Vec<Expr>,
     origins: &mut Vec<bool>,
   ) {
-    if *pending {
-      if let Some(last) = terms.pop() {
+    if *pending > 0 {
+      if let Some(mut last) = terms.pop() {
         origins.pop();
-        terms.push(call1(PREFIX_NOT_MARK, last));
+        for _ in 0..*pending {
+          last = call1(PREFIX_NOT_MARK, last);
+        }
+        terms.push(last);
         origins.push(false);
       }
-      *pending = false;
+      *pending = 0;
     }
   }
 
@@ -5057,7 +5073,7 @@ fn parse_expression_inner(
       Rule::LeadingNot => {
         // !expr becomes Not[expr]. Deferred until after suffixes so that
         // !a! → Not[Factorial[a]] rather than Factorial[Not[a]].
-        leading_not = true;
+        leading_not += 1;
       }
       Rule::Operator | Rule::ConditionOp => {
         flush_pending_not(
@@ -5232,15 +5248,15 @@ fn parse_expression_inner(
           term_was_implicit_times.push(false);
         }
       }
-      _ if leading_not && leading_minus => {
+      _ if leading_not > 0 && leading_minus => {
         // `!-x`: the Not reaches over the negated operand, so negate it
         // directly rather than splicing in the synthetic `0 NEGATE` pair
         // (which would leave the Not wrapping only `x`).
         terms.push(neg1(pair_to_expr(item)));
         term_was_implicit_times.push(false);
-        pending_not_on_last = true;
+        pending_not_on_last = leading_not;
         leading_minus = false;
-        leading_not = false;
+        leading_not = 0;
       }
       _ => {
         if leading_minus {
@@ -5343,11 +5359,11 @@ fn parse_expression_inner(
           terms.push(expr);
           term_was_implicit_times.push(is_implicit_times);
         }
-        if leading_not {
+        if leading_not > 0 {
           // Defer the Not wrapping until any postfix suffixes have been
           // applied so that operators like `!` bind tighter than the prefix
           // Not, matching Wolfram precedence.
-          pending_not_on_last = true;
+          pending_not_on_last = leading_not;
           // If this is the first term (no operators yet), record the leading
           // `!` so we can re-apply it at the right precedence after the
           // binary tree is built. Mathematica's `!` (prec 230) is looser
@@ -5357,7 +5373,7 @@ fn parse_expression_inner(
           if terms.len() == 1 && operators.is_empty() {
             leading_not_at_start = true;
           }
-          leading_not = false;
+          leading_not = 0;
         }
       }
     }

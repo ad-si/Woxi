@@ -229,13 +229,19 @@ fn main() {
         // run again: it already ran once (with the control names it uses as
         // pattern variables left unbound) when the state was built.
         let render = woxi::with_scoped_globals(&bindings, || {
-          woxi::interpret_with_stdout(&state.body)
+          woxi::interpret_with_stdout(&state.display_code(&state.body))
         });
         // Lay the output out in the `ContentSize` area, as the Studio does.
         let render = render.map(|res| {
           state
             .content_width
             .and_then(|w| manipulate::flow_to_content_width(&res, w))
+            .unwrap_or(res)
+        });
+        let render = render.map(|res| {
+          state
+            .content_height
+            .and_then(|h| manipulate::fit_to_content_height(&res, h))
             .unwrap_or(res)
         });
         if let Ok(res) = render

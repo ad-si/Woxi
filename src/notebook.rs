@@ -2993,6 +2993,22 @@ fn strip_number_precision_mark(text: &str) -> Option<String> {
   (is_number && is_mark).then(|| number.to_string())
 }
 
+thread_local! {
+  /// Set while [`render_traditional_boxes_text`] renders a box tree.
+  static SPACE_AFTER_COMMAS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// [`render_boxes_text`] for a `ToString[expr, TraditionalForm]` box tree:
+/// the typeset readout of a value (`{925, 0, 0}`), whose list commas are
+/// followed by a space as the FrontEnd draws them.
+pub(crate) fn render_traditional_boxes_text(s: &str) -> String {
+  let previous = SPACE_AFTER_COMMAS.replace(true);
+  let text = render_boxes_text(s);
+  SPACE_AFTER_COMMAS.set(previous);
+  text
+}
+
 pub(crate) fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
 
@@ -3029,6 +3045,16 @@ pub(crate) fn render_boxes_text(s: &str) -> String {
         continue;
       }
       out.push_str(&render_boxes_text(items[i]));
+      // A `TraditionalForm` readout sets a separating comma with a space
+      // after it (`{1, 2}`), unless the boxes already spell one out.
+      if SPACE_AFTER_COMMAS.get()
+        && is_bare_char(items[i], ',')
+        && items
+          .get(i + 1)
+          .is_some_and(|next| !render_boxes_text(next).starts_with(' '))
+      {
+        out.push(' ');
+      }
       i += 1;
     }
     return out;
