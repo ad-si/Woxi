@@ -21261,7 +21261,9 @@ pub fn traditional_label(e: &Expr) -> String {
   match e {
     Expr::String(s) => s.clone(),
     // A `Dynamic[x]` label reads as the value `x` currently has.
-    Expr::FunctionCall { name, args } if name == "Dynamic" && !args.is_empty() => {
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
       traditional_label(&dynamic_current_value(e))
     }
     // `Rotate[content, angle]` (a vertical axis label idiom) typesets its
@@ -49019,7 +49021,10 @@ fn display_expr_to_node(
         let range = match (&args[1], args.get(2)) {
           (Expr::List(b), Some(step))
             if b.len() == 2
-              && !matches!(step, Expr::Rule { .. } | Expr::RuleDelayed { .. }) =>
+              && !matches!(
+                step,
+                Expr::Rule { .. } | Expr::RuleDelayed { .. }
+              ) =>
           {
             Expr::List(vec![b[0].clone(), b[1].clone(), step.clone()].into())
           }
