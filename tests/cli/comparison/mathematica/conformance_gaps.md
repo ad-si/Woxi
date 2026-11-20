@@ -6709,7 +6709,12 @@ internal hash order. Woxi keeps input order.
   Fruchterman–Reingold layout turned so the long axis is horizontal. It
   relaxes a sunflower start and a DFS-circle start and retains the lower
   spring-energy result, avoiding the crossed local minimum of the reviewed
-  six-vertex graph. WL's
+  six-vertex graph. Components of 64 or more vertices are laid out
+  multilevel instead (coarsened by matchings, the coarsest graph laid out
+  as above, then refined level by level), so long meshes and chains come
+  out unfolded as in WL; `GraphPlot` of a rule list lays out the
+  undirected graph, so an acyclic rule list is spring embedded rather than
+  layered. WL's
   coordinates, orientation and choice between symmetry-equivalent vertex
   placements are not reproduced. Small graphs with several cycles now use
   this layout too, including `HypercubeGraph[3]` and the reviewed six-vertex
