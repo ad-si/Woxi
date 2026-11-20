@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Grid` and `Column` read a flat `ItemSize -> {w, h, …}` with more than
+    two entries as `{w, h}`, so every column gets the `w`-em width instead of
+    only the first one.
 
 # 2026-11-08 - 0.4.0
 

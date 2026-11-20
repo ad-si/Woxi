@@ -467,6 +467,26 @@ mod layout_display {
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
   }
 
+  /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
+  /// as `{w, h}`: every column is `w` ems wide, not just the first one.
+  #[test]
+  fn grid_item_size_flat_list_longer_than_two() {
+    let cells = "{{\"ab\", \"c\", 1}, {2, 3, 4}}";
+    let long = svg_of(&format!("Grid[{cells}, ItemSize -> {{6, 1, 1}}]"));
+    let pair = svg_of(&format!("Grid[{cells}, ItemSize -> {{6, 1}}]"));
+    let scalar = svg_of(&format!("Grid[{cells}, ItemSize -> 6]"));
+    let width = |svg: &str| -> String {
+      let i = svg.find("width=\"").unwrap() + 7;
+      svg[i..i + svg[i..].find('"').unwrap()].to_string()
+    };
+    assert_eq!(width(&long), width(&pair), "{long}");
+    assert_eq!(width(&long), width(&scalar), "{long}");
+    // Same for a one-column `Column`.
+    let col_long = svg_of("Column[{\"a\", \"b\"}, ItemSize -> {11, 2, 1}]");
+    let col_pair = svg_of("Column[{\"a\", \"b\"}, ItemSize -> {11, 2}]");
+    assert_eq!(width(&col_long), width(&col_pair), "{col_long}");
+  }
+
   /// A heading merged across fixed-width columns with `SpanFromLeft` wraps
   /// to the width of the whole span, not to that of its first column.
   #[test]
