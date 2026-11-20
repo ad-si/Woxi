@@ -3287,8 +3287,8 @@ root. The unique-root and no-root regimes match exactly, as does n=2.
 
 ### Boolean minimization
 
-`BooleanConvert` ships every wolframscript form except `"ESOP"` and `"BFF"`,
-but four differences remain:
+`BooleanConvert` ships every wolframscript form except `"ESOP"`, but four
+differences remain:
 
 - **DNF needs term merging**, not just redundancy removal:
   `(a&&!b)||(!a&&b)||(a&&b)` is `a || b` in WL; Woxi keeps three terms.
@@ -3304,6 +3304,13 @@ but four differences remain:
 rewrite the head) against Woxi's `!(a && b && c)`, and
 `BooleanConvert[Equivalent[Xor[a,b],c], "IF"]` branches on `c` first, so WL's
 BDD variable order is not always alphabetical.
+
+The `"BDT"`, `"IMPLIES"` and `"BFF"` forms are **unverified** against
+wolframscript: `"BDT"` reuses the `"IF"` decision tree, `"IMPLIES"` folds the
+DNF from the right with `x || y` as `Implies[!x, y]` and `x && y` as
+`!Implies[x, !y]`, and `"BFF"` applies the `BooleanFunction["BDD" -> …]`
+object to the variables. All three give the right function; WL may nest or
+order them differently.
 
 `BooleanFunction[k, n]` and `BooleanMinterms`/`BooleanMaxterms` with an integer
 variable count normalize to the opaque `BooleanFunction["BDD" -> …]` object —
@@ -5439,14 +5446,11 @@ tick labels and `AxesLabel`s keep the default 10 pt upright text, where Wolfram
 sets all of the graphic's text in the base style. `Plot` and the list plots
 apply it everywhere.
 
-### `Graphics` ignores `AxesOrigin` and pads a `Full` range less
+### `Graphics` pads a `Full` range less
 
-The `Graphics` renderer draws the x axis at `y = 0` when that is in range and
-at the bottom edge otherwise, whatever `AxesOrigin` says, and pads a
-`PlotRange -> Full` side by 4 %, where Wolfram extends it to include the axes
-origin and pads more. In a `MusicPlot` this drops the pitch label just above
-the highest note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which
-Wolfram shows.
+The `Graphics` renderer pads a `PlotRange -> Full` side by 4 %, where Wolfram
+pads more. In a `MusicPlot` this drops the pitch label just above the highest
+note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which Wolfram shows.
 
 ### Tick step from the padded range
 
@@ -5579,6 +5583,18 @@ Minimal/Grid/Frame themes and callout leaders. Still different:
   Placed[PointLegend[…], After]]`.
 - `Charting`SimpleTicks` frame ticks of the themes (majors only, at most six)
   are reproduced, but their tick marks keep the default length.
+
+### `Plot` end labels do not avoid the axis label
+
+`Plot[{f1, f2}, …, PlotLabels -> {"a", "b"}, AxesLabel -> {"x", "y"}]`
+hangs each label past the right end of the plot at its curve's height. A
+curve that ends on the x axis (a spectrum decaying to 0) puts its label
+right on top of the `AxesLabel` that sits there. Wolfram lifts the label
+clear of the axis label and joins it to the curve end with a bent gray
+leader. A curve that leaves the top of the plot range is labeled from where
+it crosses the range's edge. Woxi starts the leader at the range's right
+edge. Seen in a Demonstration snapshot; WL's leader optimizer has not been
+measured.
 
 ### An `AxesLabel` carrying a reciprocal power
 
@@ -5957,8 +5973,7 @@ accepted, but the picture is the same as without it.
 - `ParametricPlot`: `BoundaryStyle`.
 - `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
   `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
-- `PolarPlot`: `RegionFunction`, `PlotPoints`; `FrameStyle` on a framed polar
-  plot.
+- `PolarPlot`: `PlotPoints`; `FrameStyle` on a framed polar plot.
 - `DensityPlot`, `RegionPlot`: `FrameStyle`.
 - `Histogram`: `BarOrigin`, `LabelingFunction`; `ColorFunction` only for a
   single dataset.
@@ -7665,6 +7680,20 @@ entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
 the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
 styling, layout and lighting of these pictures differ.
 
+### `PolyhedronData[]` lists fewer entities than Wolfram, so positions differ
+
+`PolyhedronData[]` holds the 160 solids Woxi knows, while Wolfram's list
+has 195 (a Demonstration drives a `1`–`195` slider through
+`PolyhedronData[][[n]]`). Positions therefore name different solids: the
+stored snapshots of that Demonstration show the `Icosidodecahedron` at
+position `127` (Woxi: position `84`) and a nonconvex uniform star polyhedron
+with octahedral symmetry at position `51`.
+Positions `161`–`195` are out of range in Woxi (`Part::partw`). The missing
+entities appear to be nonconvex uniform polyhedra and similar solids, but which
+ones, and how Wolfram sorts the family entries (`{"Antiprism", n}`,
+`{"Prism", n}`, …) among the names, could not be determined without
+`wolframscript`, so the catalog has not been extended.
+
 ### `Solve` roots with a symbolic parameter keep the quadratic-formula form
 
 The roots are right but not written the way wolframscript writes them.
@@ -8843,9 +8872,9 @@ Found comparing the graphics-tests renders (2026-11):
     `ListPlot` with `FrameTicks -> All` matches.
   - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
     in italics (TraditionalForm), and writes `-a` with a minus sign.
-  - A symbol used as a frame label (`FrameLabel -> {Z, X}`) or a plot
-    legend entry is likewise set upright; WL sets it in italics
-    (TraditionalForm). `AxesLabel` entries already follow WL.
+  - A symbol used as a plot legend entry is likewise set upright; WL sets
+    it in italics (TraditionalForm). `AxesLabel` and `FrameLabel` entries
+    already follow WL.
   - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
     draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
@@ -10310,3 +10339,11 @@ expression only carries the registry index, so it prints as
 `NDSolve`StateData[1]` where wolframscript summarizes the time range
 covered so far (`NDSolve`StateData["<" 0. ">"]`). Its head, and so patterns
 like `s_NDSolve`StateData`, match.
+
+### 2D plots don't box the `Framed` lines of a stacked title
+
+`PlotLabel -> Column[{Style[Framed[eq], Blue, Background -> LightYellow],
+"caption"}]` boxes the first line in a blue frame on a yellow background
+above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
+other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
+Only a title that is framed as a whole gets a box there.

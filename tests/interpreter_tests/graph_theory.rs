@@ -10577,3 +10577,73 @@ mod layered_plot_components {
     );
   }
 }
+
+mod graph_plot_vertex_rendering_units {
+  use super::*;
+
+  // A computed layout hands `VertexRenderingFunction` coordinates on
+  // Wolfram's embedding scale, where edges are about 1 long, so a
+  // `Disk[#, 1/5]` stays small next to the edges instead of covering a
+  // fifth of the drawing.
+  #[test]
+  fn computed_layout_has_unit_edges() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = GraphPlot[Table[i -> Mod[i, 30] + 1, {i, 30}], \
+         VertexRenderingFunction -> (f[#1] &)]; \
+         p = Cases[g, f[q_] :> q, Infinity]; \
+         {Length[p], Round[Mean[Table[EuclideanDistance[p[[i]], \
+         p[[Mod[i, 30] + 1]]], {i, 30}]], 0.01]}"
+      )
+      .unwrap(),
+      "{30, 1.}"
+    );
+  }
+
+  // Explicit `VertexCoordinates` reach the function unchanged.
+  #[test]
+  fn explicit_coordinates_are_passed_through() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{1 -> 2, 2 -> 3}, \
+         VertexCoordinates -> {{0, 0}, {10, 0}, {20, 5}}, \
+         VertexRenderingFunction -> (f[#1] &)], _f, Infinity]"
+      )
+      .unwrap(),
+      "{f[{0., 0.}], f[{10., 0.}], f[{20., 5.}]}"
+    );
+  }
+}
+
+mod graph_is_atomic {
+  use super::*;
+
+  // A Graph object is an atom: Apply and Map leave it unchanged, it has no
+  // parts and counts as a single leaf.
+  #[test]
+  fn apply_and_map_leave_a_graph_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = CompleteKaryTree[3]; {AtomQ[g], Length[g], Depth[g], \
+         LeafCount[g], (f @@ g) === g, (f /@ g) === g}"
+      )
+      .unwrap(),
+      "{True, 0, 1, 1, True, True}"
+    );
+  }
+
+  #[test]
+  fn graph_functions_still_read_it() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Text @@ Graph[{1 -> 2, 2 -> 3}]; {VertexCount[g], EdgeCount[g]}"
+      )
+      .unwrap(),
+      "{3, 2}"
+    );
+  }
+}

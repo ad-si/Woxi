@@ -270,6 +270,28 @@ mod solids {
     );
     assert!(polygon_count(&s) > 100);
   }
+
+  /// A `Dynamic[x]` nested inside a primitive's coordinates
+  /// (`Cuboid[{0.5 + Dynamic[3], …}, …]`, as `Dynamic[s] {i, j, k}`
+  /// produces) or a directive's arguments (`Hue[Dynamic[h], 1, 1]`) is
+  /// drawn at its current value — the same picture as the plain numbers,
+  /// not a malformed cuboid that falls back to the unit cube.
+  #[test]
+  fn nested_dynamic_coordinates_and_colors_are_drawn_at_their_values() {
+    let with_dynamic = svg(
+      "Graphics3D[Table[{Hue[Dynamic[0.3] i, Dynamic[0.8], 1], \
+       Cuboid[Dynamic[3] {i, 0, 0} - Dynamic[0.5]/2, \
+       Dynamic[3] {i, 0, 0} + Dynamic[0.5]/2]}, {i, 3}], Boxed -> False]",
+    );
+    let plain = svg(
+      "Graphics3D[Table[{Hue[0.3 i, 0.8, 1], \
+       Cuboid[3 {i, 0, 0} - 0.5/2, 3 {i, 0, 0} + 0.5/2]}, {i, 3}], \
+       Boxed -> False]",
+    );
+    assert_eq!(with_dynamic, plain);
+    assert_eq!(polygon_count(&plain), polygon_count(&with_dynamic));
+    assert!(fills(&with_dynamic).len() >= 3, "{with_dynamic}");
+  }
 }
 
 mod vertex_colors {
@@ -957,6 +979,126 @@ mod outlines {
     );
   }
 
+  // The depth-sorting pieces of a translucent line are joined back into
+  // one stroke: as separate elements, every joint shows an anti-aliasing
+  // notch where the background bleeds through.
+  #[test]
+  fn translucent_line_is_one_stroke() {
+    for line in [
+      "Line[{{0, 0, 0}, {1, 1, 1}}]",
+      "Line[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}}]",
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{Opacity[0.5], Thickness[0.02], {line}}}, Boxed -> False]"
+      ));
+      assert_eq!(s.matches("<polyline ").count(), 1, "{line}: {s}");
+      assert_eq!(s.matches("<line ").count(), 0, "{line}: {s}");
+    }
+    // Two separate lines stay two strokes.
+    let s = svg(
+      "Graphics3D[{Opacity[0.5], Line[{{0, 0, 0}, {1, 0, 0}}], \
+       Line[{{0, 1, 1}, {1, 1, 1}}]}, Boxed -> False]",
+    );
+    assert_eq!(s.matches("<polyline ").count(), 2, "{s}");
+  }
+
+  // The triangles a translucent polygon is cut into are filled as one
+  // path, so no light seam runs along the cut.
+  #[test]
+  fn translucent_polygon_is_one_fill() {
+    for prims in [
+      "EdgeForm[], Opacity[0.75], \
+       Polygon[{{-1, -1, 0}, {-1, 1, 0}, {1, 1, 0}, {1, -1, 0}}]",
+      "Opacity[0.5], Red, \
+       Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 1, 0}, {2, 2, 0}, {0, 2, 0}}]",
+    ] {
+      let s = svg(&format!("Graphics3D[{{{prims}}}, Boxed -> False]"));
+      assert_eq!(s.matches("<path d=\"M").count(), 1, "{prims}: {s}");
+      assert_eq!(s.matches("<polygon ").count(), 0, "{prims}: {s}");
+    }
+    // An opaque polygon keeps its own-color seam stroke instead.
+    let s = svg(
+      "Graphics3D[Polygon[{{-1, -1, 0}, {-1, 1, 0}, {1, 1, 0}, {1, -1, 0}}], \
+       Boxed -> False]",
+    );
+    assert!(!s.contains("<path d=\"M"), "{s}");
+  }
+}
+
+mod ticks {
+  use super::*;
+
+  // Automatic ticks share the decimals their step needs.
+  #[test]
+  fn tick_labels_share_their_decimals() {
+    let s = svg("Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}]");
+    for label in [">-0.5</text>", ">0.0</text>", ">0.5</text>", ">1.0</text>"] {
+      assert!(s.contains(label), "missing {label}");
+    }
+  }
+
+  // `{x, label}` pairs in `Ticks` label the tick with their label.
+  #[test]
+  fn explicit_tick_labels_are_drawn() {
+    let s = svg(
+      "Graphics3D[Cuboid[{0, 0, 0}, {2, 2, 2}], Axes -> True, \
+       Ticks -> {{0, 1, 2}, {0, 2}, {{0, \"low\"}, {2, \"high\"}}}]",
+    );
+    assert!(
+      s.contains(">low</text>") && s.contains(">high</text>"),
+      "{s}"
+    );
+  }
+
+  // A hidden edge that only meets a visible face at that face's corner
+  // stays under the face: no stub of it is painted over the face.
+  #[test]
+  fn hidden_line_touching_a_face_corner_stays_hidden() {
+    let s = svg(
+      "Graphics3D[{Red, Line[{{0, 0, 0}, {0, 0, 1}}], White, Cuboid[]}, \
+       ViewPoint -> {3, 3, 1}, Boxed -> False]",
+    );
+    let lines: Vec<&str> = s.lines().collect();
+    let last_red = lines
+      .iter()
+      .rposition(|l| l.contains("stroke=\"rgb(255,0,0)\""))
+      .expect("red line pieces");
+    // The top face's two triangles start at its far corner, where the
+    // hidden edge ends; both are painted over every piece of it.
+    let top_face: Vec<usize> = lines
+      .iter()
+      .enumerate()
+      .filter(|(_, l)| l.starts_with("<polygon points=\"180.0,6.0 "))
+      .map(|(i, _)| i)
+      .collect();
+    assert_eq!(top_face.len(), 2, "{s}");
+    assert!(top_face.iter().all(|&i| i > last_red), "{s}");
+  }
+
+  // A hidden edge that touches a neighboring visible face at its end is
+  // not lifted over the face that hides the rest of it.
+  #[test]
+  fn hidden_line_touching_a_neighbor_face_stays_hidden() {
+    let s = svg(
+      "Graphics3D[{Red, Line[{{1, 0, 1}, {0, 0, 1}}], White, \
+       Cuboid[{0, 0, 1}], Cuboid[{1, 0, 0}]}, ViewPoint -> {3, 3, 1}, \
+       Boxed -> False]",
+    );
+    let lines: Vec<&str> = s.lines().collect();
+    let last_red = lines
+      .iter()
+      .rposition(|l| l.contains("stroke=\"rgb(255,0,0)\""))
+      .expect("red line pieces");
+    // The upper cube's front-left face, which the edge runs behind.
+    let hiding_face = lines
+      .iter()
+      .position(|l| {
+        l.starts_with("<polygon points=\"134.0,170.5 247.1,32.4 245.5,196.0\"")
+      })
+      .expect("hiding face");
+    assert!(last_red < hiding_face, "{s}");
+  }
+
   // The fan triangles of a translucent cap touch the outline on one side
   // only. Stroking them in their own color overlapped the neighbors along
   // the internal cuts and drew dark spokes across the cap; the outline is
@@ -1014,32 +1156,6 @@ mod outlines {
     assert!(
       !widths.is_empty() && widths.iter().all(|w| *w == 3.0),
       "{widths:?}"
-    );
-  }
-}
-
-mod ticks {
-  use super::*;
-
-  // Automatic ticks share the decimals their step needs.
-  #[test]
-  fn tick_labels_share_their_decimals() {
-    let s = svg("Plot3D[Sin[x] Cos[y], {x, -3, 3}, {y, -3, 3}]");
-    for label in [">-0.5</text>", ">0.0</text>", ">0.5</text>", ">1.0</text>"] {
-      assert!(s.contains(label), "missing {label}");
-    }
-  }
-
-  // `{x, label}` pairs in `Ticks` label the tick with their label.
-  #[test]
-  fn explicit_tick_labels_are_drawn() {
-    let s = svg(
-      "Graphics3D[Cuboid[{0, 0, 0}, {2, 2, 2}], Axes -> True, \
-       Ticks -> {{0, 1, 2}, {0, 2}, {{0, \"low\"}, {2, \"high\"}}}]",
-    );
-    assert!(
-      s.contains(">low</text>") && s.contains(">high</text>"),
-      "{s}"
     );
   }
 }

@@ -35,6 +35,17 @@
 - `Column[…, "Center"]` reads the string alignment like the symbol.
 - In notebooks, `SetOptions[$FrontEnd, …]` accepts front-end options such as
     `DynamicEvaluationTimeout` without an `optnf` message.
+- `ImageSize -> {Automatic, h}` adds the margins of `ImagePadding` or a
+    frame to the width the drawing's shape gives, instead of taking them
+    out of it.
+- Woxi Studio fits a picture of automatic size that is taller than a
+    Manipulate's `ContentSize -> {w, h}` area to that height.
+- `Magnify[image, s]` shows the image at `s` times its size in notebooks
+    (also inside a fixed-size `Pane`), and `ExportString` draws it at that
+    size, instead of showing no picture.
+- A `Grid` of pictures with `FrameStyle` keeps the framed picture layout and
+    draws its frame lines in that style, instead of spacing the pictures like
+    a text table.
 
 # 2026-11-08 - 0.4.0
 

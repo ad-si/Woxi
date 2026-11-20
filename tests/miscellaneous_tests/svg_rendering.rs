@@ -4562,6 +4562,39 @@ mod tests {
       );
     }
 
+    /// The function draws in Wolfram's units, where edges are about 1
+    /// long: on a 40-vertex ring, disks of radius 1/5 stay far apart
+    /// instead of overlapping into one blob.
+    #[test]
+    fn vertex_rendering_function_disks_do_not_overlap_on_a_large_graph() {
+      let svg = svg_of(
+        r#"GraphPlot[Table[i -> Mod[i, 40] + 1, {i, 40}],
+           VertexRenderingFunction -> (Disk[#, 1/5] &)]"#,
+      );
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 40, "{svg}");
+      let radius: f64 = svg
+        .split("<ellipse ")
+        .nth(1)
+        .and_then(|c| c.split("rx=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|r| r.parse().ok())
+        .expect("a circle radius");
+      let closest = centers
+        .iter()
+        .enumerate()
+        .flat_map(|(i, a)| {
+          centers[i + 1..]
+            .iter()
+            .map(move |b| ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt())
+        })
+        .fold(f64::INFINITY, f64::min);
+      assert!(
+        closest > 4.0 * radius,
+        "neighbors {closest} apart with radius {radius}: {svg}"
+      );
+    }
+
     /// `VertexRenderingFunction -> None` leaves the edges without any
     /// vertices drawn on their ends.
     #[test]

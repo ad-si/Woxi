@@ -122,16 +122,61 @@ fn parse_field_plot_label(
     // would emit it in unscaled units and draw the label ten times too
     // small.
     let (inner, size) = peel_label_font_size(&value);
+    // `Framed[…]` (also inside the `Style` that sets the label's look)
+    // boxes the title; the box is drawn around the typeset lines.
+    let (inner, framed) = peel_label_framed(inner);
     // A `Column[…]`/`Grid[…]` title stacks its items as separate lines,
     // the same way the generic `Graphics` label pass sets them.
-    let lines = crate::functions::graphics::expr_to_svg_markup_lines(inner);
-    Some((lines, size))
+    let lines = crate::functions::graphics::expr_to_svg_markup_lines(&inner);
+    Some(FieldPlotLabel {
+      lines,
+      size,
+      framed,
+    })
   })
 }
 
 /// A field plot's `PlotLabel`: its lines of SVG text markup, top to bottom,
-/// and the font size of an outermost `Style`, if any.
-type FieldPlotLabel = (Vec<String>, Option<f64>);
+/// the font size of an outermost `Style`, if any, and whether a `Framed`
+/// boxes it.
+struct FieldPlotLabel {
+  lines: Vec<String>,
+  size: Option<f64>,
+  framed: bool,
+}
+
+/// Framed's margin between a boxed title and its border, in points.
+const FRAMED_LABEL_MARGIN: f64 = 6.0;
+
+/// Split a `Framed[expr]` title (possibly wrapped in a `Style[…, dirs]`)
+/// into the title with the `Framed` removed and whether it was there. The
+/// `Style` directives stay on the content they style.
+fn peel_label_framed(value: &Expr) -> (Expr, bool) {
+  let Expr::FunctionCall { name, args } = value else {
+    return (value.clone(), false);
+  };
+  if name == "Framed" && !args.is_empty() {
+    return (args[0].clone(), true);
+  }
+  if crate::functions::graphics::is_style_wrapper(name) && !args.is_empty() {
+    let (inner, framed) = peel_label_framed(&args[0]);
+    if framed {
+      if args.len() == 1 {
+        return (inner, true);
+      }
+      let mut restyled = vec![inner];
+      restyled.extend(args[1..].iter().cloned());
+      return (
+        Expr::FunctionCall {
+          name: name.clone(),
+          args: restyled.into(),
+        },
+        true,
+      );
+    }
+  }
+  (value.clone(), false)
+}
 
 /// Whether every line of a parsed `PlotLabel` is blank.
 fn field_plot_label_is_blank(lines: &[String]) -> bool {
@@ -161,18 +206,46 @@ fn peel_label_font_size(value: &Expr) -> (&Expr, Option<f64>) {
 fn inject_field_plot_label(
   svg: &mut String,
   area: &crate::functions::plot::PlotArea,
-  (lines, size): &FieldPlotLabel,
+  label: &FieldPlotLabel,
 ) {
+  let lines = &label.lines;
   if field_plot_label_is_blank(lines) {
     return;
   }
   let sf = f64::from(crate::functions::plot::RESOLUTION_SCALE);
-  let font = size.unwrap_or(14.0) * sf;
+  let pt = label.size.unwrap_or(14.0);
+  let font = pt * sf;
   let line_h = font * 1.35;
   let cx = area.plot_x0 + area.plot_w / 2.0;
   // The last line sits just above the frame; earlier lines stack upward.
+  // A boxed title keeps its border (one margin below the descenders)
+  // clear of the frame and of the image top.
   let first = (lines.len() - 1) as f64;
-  let y_last = (area.plot_y0 - sf * 8.0).max(font + first * line_h);
+  let margin = if label.framed {
+    FRAMED_LABEL_MARGIN * sf
+  } else {
+    0.0
+  };
+  let descent = if label.framed { font * 0.3 } else { 0.0 };
+  let y_last = (area.plot_y0 - sf * 8.0 - margin - descent)
+    .max(font + first * line_h + margin);
+  if label.framed {
+    let widest = lines
+      .iter()
+      .map(|l| crate::functions::plot_padding::text_width(l, pt))
+      .fold(0.0, f64::max);
+    let w = widest * sf + 2.0 * margin;
+    let top = y_last - first * line_h - font * 0.95 - margin;
+    let h = y_last + descent + margin - top;
+    svg.push_str(&format!(
+      "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
+       height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
+       stroke=\"{}\" stroke-width=\"{sf:.1}\"/>\n",
+      cx - w / 2.0,
+      3.0 * sf,
+      crate::functions::graphics::theme().framed_border,
+    ));
+  }
   for (i, label) in lines.iter().enumerate() {
     let y = y_last - (first - i as f64) * line_h;
     svg.push_str(&format!(
@@ -279,6 +352,9 @@ struct DensityContourOptions {
   full_width: bool,
   /// `AspectRatio` of the frame (1 unless given).
   aspect_ratio: f64,
+  /// `AspectRatio -> Automatic`: the frame takes the shape of the plotted
+  /// region, one unit in x as long as one unit in y.
+  aspect_automatic: bool,
   /// `ImageSize -> {w, h}` fixes the picture's height too.
   explicit_height: bool,
   color_function: Option<String>,
@@ -492,7 +568,8 @@ impl DensityContourOptions {
 
 /// `FrameLabel -> Automatic` on a plot over two ranges `{x, …}, {y, …}`
 /// (the arguments just before the options at `start`) labels the bottom and
-/// left frame edges with the two variable names.
+/// left frame edges with the two variables, typeset like an explicit
+/// `FrameLabel -> {x, y}` (in TraditionalForm italics).
 fn automatic_frame_label(
   value: &Expr,
   args: &[Expr],
@@ -504,7 +581,7 @@ fn automatic_frame_label(
   }
   let var_name = |e: &Expr| match e {
     Expr::List(items) if items.len() >= 2 => match &items[0] {
-      Expr::Identifier(v) => Some(Expr::String(v.clone())),
+      Expr::Identifier(v) => Some(Expr::Identifier(v.clone())),
       _ => None,
     },
     _ => None,
@@ -536,6 +613,7 @@ fn parse_density_contour_options(
           if wh.len() == 2 && try_eval_to_f64(&wh[1]).is_some()))
   });
   let mut aspect_ratio = 1.0;
+  let mut aspect_automatic = false;
   for opt in &args[start..] {
     if let Expr::Rule {
       pattern,
@@ -545,6 +623,8 @@ fn parse_density_contour_options(
     {
       let value = evaluate_expr_to_expr(replacement)
         .unwrap_or_else(|_| replacement.as_ref().clone());
+      aspect_automatic =
+        matches!(&value, Expr::Identifier(n) if n == "Automatic");
       if let Some(r) = try_eval_to_f64(&value).filter(|r| *r > 0.0) {
         aspect_ratio = r;
         if !explicit_size_pair {
@@ -756,6 +836,7 @@ fn parse_density_contour_options(
     svg_height,
     full_width,
     aspect_ratio,
+    aspect_automatic,
     explicit_height,
     color_function,
     color_function_expr,
@@ -814,6 +895,39 @@ impl DensityContourOptions {
   /// converts by the picture's own width.
   fn contour_stroke(&self) -> (String, f64, String) {
     self.contour_stroke_for(self.contour_style.as_ref())
+  }
+
+  /// The stroke of each of a single function's contour `levels`. A
+  /// per-contour `ContourStyle -> {s1, s2, …}` styles the contour levels in
+  /// turn (cycled), counting from the first level of an explicit
+  /// `Contours -> {v1, v2, …}` list even when it lies outside the plotted
+  /// value range, so a style stays tied to its level as the range changes.
+  fn level_strokes(&self, levels: &[f64]) -> Vec<(String, f64, String)> {
+    if self.contour_styles.is_empty() {
+      return vec![self.contour_stroke(); levels.len()];
+    }
+    let spec_levels: Option<Vec<f64>> = match &self.contours {
+      ContourSpec::Levels(ls) => {
+        let mut ls = ls.clone();
+        ls.sort_by(|a, b| {
+          a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        ls.dedup();
+        Some(ls)
+      }
+      _ => None,
+    };
+    levels
+      .iter()
+      .enumerate()
+      .map(|(i, level)| {
+        let index = spec_levels
+          .as_ref()
+          .and_then(|ls| ls.iter().position(|v| v == level))
+          .unwrap_or(i);
+        self.contour_stroke_for(self.style_for_contour(index))
+      })
+      .collect()
   }
 
   /// `(color, weight, extra attributes)` of the mesh lines: `MeshStyle`, or
@@ -907,8 +1021,21 @@ const FRAME_TICK_LABEL_BOX: f64 = 11.171875;
 const FRAME_X_LABEL_ROOM: f64 = 15.171875;
 /// Distance from the frame to the baseline of an x tick label.
 const FRAME_X_LABEL_BASELINE: f64 = 12.05;
-/// Room a `FrameLabel` adds outside its edge (WL 15: 17.17 points).
-const FRAME_LABEL_ROOM: f64 = 17.171875;
+/// Room a `FrameLabel` adds outside its edge: the gap to the tick labels
+/// plus the height of its lines, at its own `Style[…, size]` if it has one
+/// (WL 15: 17.17 points for a one-line label at the default size).
+fn frame_label_room(label: &str, font: f64) -> f64 {
+  use crate::functions::plot_padding::{
+    FRAME_LABEL_GAP, LABEL_FONT, block_height, markup_font_size,
+  };
+  if label.is_empty() {
+    return 0.0;
+  }
+  let size = markup_font_size(label).unwrap_or(font);
+  // The gap grows with the label font (`LabelStyle`) like the text does.
+  FRAME_LABEL_GAP * font / LABEL_FONT
+    + block_height(label.split('\n').count(), size)
+}
 /// Lengths of the major and minor frame tick marks.
 const FRAME_MAJOR_TICK: f64 = 4.0;
 const FRAME_MINOR_TICK: f64 = 2.4;
@@ -1127,7 +1254,6 @@ fn field_frame_layout(
   let edges = edges_for(1.0, 1.0);
   let has = |i: usize| !edges[i].labels.is_empty();
   let labels = &opts.frame_labels;
-  let label_room = FRAME_LABEL_ROOM * scale;
   let mut left = if has(1) {
     edges[1].widest_label(font) + FRAME_TICK_LABEL_GAP
   } else {
@@ -1148,18 +1274,10 @@ fn field_frame_layout(
   } else {
     1.5
   };
-  if !labels.left.is_empty() {
-    left += label_room;
-  }
-  if !labels.bottom.is_empty() {
-    bottom += label_room;
-  }
-  if !labels.top.is_empty() {
-    top += label_room;
-  }
-  if !labels.right.is_empty() {
-    right += label_room;
-  }
+  left += frame_label_room(&labels.left, font);
+  bottom += frame_label_room(&labels.bottom, font);
+  top += frame_label_room(&labels.top, font);
+  right += frame_label_room(&labels.right, font);
   // An explicit `ImagePadding` side replaces the automatic one.
   let [pl, pr, pb, pt] = opts.image_padding;
   left = pl.unwrap_or(left);
@@ -1168,11 +1286,24 @@ fn field_frame_layout(
   top = pt.unwrap_or(top);
   // A plot label sits in its own strip above the padding (drawn at 14
   // points by `inject_field_plot_label`).
-  let title = opts.plot_label.as_ref().map_or(0.0, |(lines, size)| {
-    size.unwrap_or(14.0) * 1.35 * lines.len().max(1) as f64
+  let title = opts.plot_label.as_ref().map_or(0.0, |label| {
+    let text =
+      label.size.unwrap_or(14.0) * 1.35 * label.lines.len().max(1) as f64;
+    // A boxed title adds Framed's margin above and below its lines.
+    if label.framed {
+      text + 2.0 * FRAMED_LABEL_MARGIN
+    } else {
+      text
+    }
   });
   let width = opts.svg_width as f64;
-  let aspect = opts.aspect_ratio;
+  let natural = (y_span.1 - y_span.0) / (x_span.1 - x_span.0);
+  let aspect = if opts.aspect_automatic && natural.is_finite() && natural > 0.0
+  {
+    natural
+  } else {
+    opts.aspect_ratio
+  };
   // The last x label is centered on its tick and the top y label on its own,
   // so either may reach past the frame's end; the padding then grows by
   // the overhang (from WL: `ImageSize -> 200` gives a right padding of 4.4).
@@ -2501,6 +2632,117 @@ fn marching_squares_segments(
   cell_w: f64,
   cell_h: f64,
 ) -> Vec<((f64, f64), (f64, f64))> {
+  marching_squares_segments_excluding(
+    grid, level, plot_x0, plot_y0, cell_w, cell_h, None,
+  )
+}
+
+/// The grid edges whose sign change is a pole of the sampled function
+/// (`y - Tan[x]` across `x = Pi/2`) rather than a root: `x_edges[i][j]`
+/// joins nodes `(i, j)` and `(i + 1, j)`, `y_edges[i][j]` joins `(i, j)`
+/// and `(i, j + 1)`. The contour that marching squares would put on such
+/// an edge is dropped, the way `Exclusions -> Automatic` keeps Wolfram's
+/// `ContourPlot` from drawing a line along every asymptote.
+struct PoleEdges {
+  x_edges: Vec<Vec<bool>>,
+  y_edges: Vec<Vec<bool>>,
+}
+
+impl PoleEdges {
+  /// Find the pole edges of the zero contour of `f` sampled as `grid`,
+  /// where `node_xy(i, j)` gives the coordinates of node `(i, j)` and `f`
+  /// evaluates the function at a point. `None` when there is none.
+  fn find(
+    grid: &[Vec<f64>],
+    node_xy: impl Fn(usize, usize) -> (f64, f64),
+    f: impl Fn(f64, f64) -> Option<f64>,
+  ) -> Option<Self> {
+    let cols = grid.len();
+    let rows = grid.first().map_or(0, Vec::len);
+    let mut x_edges = vec![vec![false; rows]; cols];
+    let mut y_edges = vec![vec![false; rows]; cols];
+    let mut any = false;
+    for i in 0..cols {
+      for j in 0..rows {
+        let a = grid[i][j];
+        let p = node_xy(i, j);
+        if i + 1 < cols
+          && is_pole_edge(a, grid[i + 1][j], p, node_xy(i + 1, j), &f)
+        {
+          x_edges[i][j] = true;
+          any = true;
+        }
+        if j + 1 < rows
+          && is_pole_edge(a, grid[i][j + 1], p, node_xy(i, j + 1), &f)
+        {
+          y_edges[i][j] = true;
+          any = true;
+        }
+      }
+    }
+    any.then_some(PoleEdges { x_edges, y_edges })
+  }
+}
+
+/// Whether the sign change of `f` from `a` at `p` to `b` at `q` is a pole:
+/// bisecting toward the sign change, the values shrink toward a root but
+/// grow toward a pole. A few halvings settle which it is.
+fn is_pole_edge(
+  a: f64,
+  b: f64,
+  p: (f64, f64),
+  q: (f64, f64),
+  f: &impl Fn(f64, f64) -> Option<f64>,
+) -> bool {
+  if !a.is_finite() || !b.is_finite() || a == 0.0 || b == 0.0 {
+    return false;
+  }
+  if (a > 0.0) == (b > 0.0) {
+    return false;
+  }
+  let (small, large) = (a.abs().min(b.abs()), a.abs().max(b.abs()));
+  let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+  let (mut f_lo, mut f_hi) = (a, b);
+  for _ in 0..24 {
+    let t = f64::midpoint(lo, hi);
+    let Some(v) = f(p.0 + t * (q.0 - p.0), p.1 + t * (q.1 - p.1)) else {
+      return false;
+    };
+    if !v.is_finite() {
+      return true;
+    }
+    if v == 0.0 {
+      return false;
+    }
+    if (v > 0.0) == (f_lo > 0.0) {
+      lo = t;
+      f_lo = v;
+    } else {
+      hi = t;
+      f_hi = v;
+    }
+    let m = f_lo.abs().min(f_hi.abs());
+    if m > 2.0 * large {
+      return true;
+    }
+    if m < 0.25 * small {
+      return false;
+    }
+  }
+  f_lo.abs().min(f_hi.abs()) > large
+}
+
+/// [`marching_squares_segments`] without the segments that end on one of
+/// the `poles` edges.
+fn marching_squares_segments_excluding(
+  grid: &[Vec<f64>],
+  level: f64,
+  plot_x0: f64,
+  plot_y0: f64,
+  cell_w: f64,
+  cell_h: f64,
+  poles: Option<&PoleEdges>,
+) -> Vec<((f64, f64), (f64, f64))> {
   let cols = grid.len();
   let rows = if cols > 0 { grid[0].len() } else { 0 };
   let mut segments = Vec::new();
@@ -2578,7 +2820,26 @@ fn marching_squares_segments(
       let node = |(fx, fy): (f64, f64)| {
         (fx == 0.0 || fx == 1.0) && (fy == 0.0 || fy == 1.0)
       };
+      // A crossing on a pole edge is no point of the curve.
+      let on_pole = |(fx, fy): (f64, f64)| {
+        poles.is_some_and(|p| {
+          if fy == 0.0 && fx > 0.0 && fx < 1.0 {
+            p.x_edges[i][j]
+          } else if fy == 1.0 && fx > 0.0 && fx < 1.0 {
+            p.x_edges[i][j + 1]
+          } else if fx == 0.0 && fy > 0.0 && fy < 1.0 {
+            p.y_edges[i][j]
+          } else if fx == 1.0 && fy > 0.0 && fy < 1.0 {
+            p.y_edges[i + 1][j]
+          } else {
+            false
+          }
+        })
+      };
       let mut push = |a: (f64, f64), b: (f64, f64)| {
+        if on_pole(a) || on_pole(b) {
+          return;
+        }
         let (oa, ob) = (outer(a), outer(b));
         let corner_cut = oa != 0 && ob != 0 && node(a) && node(b);
         if oa & ob == 0 && !corner_cut {
@@ -2924,6 +3185,36 @@ fn mesh_function_value(
   }
 }
 
+/// Draw a single function's contour `levels`, each in its own
+/// [`DensityContourOptions::level_strokes`] style.
+fn render_contour_levels(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  area: &crate::functions::plot::PlotArea,
+  cell_w: f64,
+  cell_h: f64,
+  opts: &DensityContourOptions,
+) {
+  for (level, (color, weight, attrs)) in
+    levels.iter().zip(opts.level_strokes(levels))
+  {
+    render_contour_lines_styled(
+      svg,
+      grid,
+      std::slice::from_ref(level),
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+      &color,
+      weight,
+      &attrs,
+    );
+  }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_contour_lines_styled(
   svg: &mut String,
@@ -2942,7 +3233,20 @@ fn render_contour_lines_styled(
   for &level in levels {
     let segments =
       marching_squares_segments(grid, level, plot_x0, plot_y0, cell_w, cell_h);
-    for chain in chain_segments(&segments) {
+    push_contour_polylines(svg, &segments, stroke, stroke_w, dash);
+  }
+}
+
+/// Draw marching-squares `segments`, chained into polylines.
+fn push_contour_polylines(
+  svg: &mut String,
+  segments: &[((f64, f64), (f64, f64))],
+  stroke: &str,
+  stroke_w: f64,
+  dash: &str,
+) {
+  {
+    for chain in chain_segments(segments) {
       let points: Vec<String> = chain
         .iter()
         .map(|(x, y)| format!("{x:.1},{y:.1}"))
@@ -3838,20 +4142,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // mesh functions (the coordinates themselves by default), so the same
   // marching squares draw them.
   push_mesh_grids(&mut svg, &mesh_grids, &area, &opts);
-  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
-  render_contour_lines_styled(
-    &mut svg,
-    &grid,
-    &levels,
-    area.plot_x0,
-    area.plot_y0,
-    cell_w,
-    cell_h,
-    area.render_width,
-    &contour_color,
-    contour_weight,
-    &contour_attrs,
-  );
+  render_contour_levels(&mut svg, &grid, &levels, &area, cell_w, cell_h, &opts);
   if opts.boundary_style.is_some() {
     // The region's edge is the level curve halfway between the cells that
     // have a value and those left blank.
@@ -4034,6 +4325,8 @@ fn contour_plot_equations(
   let (xvar, x_min, x_max) = parse_iterator(&args[1], "ContourPlot")?;
   let (yvar, y_min, y_max) = parse_iterator(&args[2], "ContourPlot")?;
   let mut opts = parse_density_contour_options(args, 3);
+  let exclusions_automatic =
+    crate::functions::plot::automatic_exclusions_enabled(&args[3..]);
 
   let n = FIELD_GRID + 1;
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
@@ -4115,22 +4408,47 @@ fn contour_plot_equations(
       series_per_body.push(first_series..first_series);
       continue;
     }
-    render_contour_lines_styled(
-      &mut svg,
+    // `Exclusions -> Automatic` (the default): a sign change across a
+    // pole (`y == Tan[x]` at `x = Pi/2`) is no part of the curve.
+    let poles = if exclusions_automatic {
+      let node_xy = |i: usize, j: usize| {
+        (
+          x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min),
+          y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min),
+        )
+      };
+      PoleEdges::find(&grid, node_xy, |x, y| {
+        evaluate_at_xy(body, &xvar, &yvar, x, y)
+      })
+    } else {
+      None
+    };
+    let screen_segments = marching_squares_segments_excluding(
       &grid,
-      &[0.0],
+      0.0,
       area.plot_x0,
       area.plot_y0,
       cell_w,
       cell_h,
-      area.render_width,
+      poles.as_ref(),
+    );
+    push_contour_polylines(
+      &mut svg,
+      &screen_segments,
       &contour_color,
-      contour_weight,
+      area.render_width as f64 / 1000.0 * contour_weight,
       &dash,
     );
     let scaled_cell = 1000.0 / FIELD_GRID as f64;
-    let segments =
-      marching_squares_segments(&grid, 0.0, 0.0, 0.0, scaled_cell, scaled_cell);
+    let segments = marching_squares_segments_excluding(
+      &grid,
+      0.0,
+      0.0,
+      0.0,
+      scaled_cell,
+      scaled_cell,
+      poles.as_ref(),
+    );
     for chain in chain_segments(&segments) {
       // The segments come in screen orientation (`v` grows downward from
       // the top edge at `y_max`), so `v` maps back to `y` from `y_max`.
@@ -4269,6 +4587,7 @@ fn contour_plot_equations(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: None,
+    settles_all_range: false,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {
@@ -4391,6 +4710,9 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut swatches: Vec<Expr> = Vec::new();
 
   let mut items: Vec<Expr> = Vec::new();
+  // Mesh lines and boundaries go above every region's fill.
+  let mut meshes: Vec<Expr> = Vec::new();
+  let mut outlines: Vec<Expr> = Vec::new();
   for (k, pred) in predicates.iter().enumerate() {
     if let Some(cf) = &color_function {
       let cells = region_plot_color_cells(
@@ -4441,12 +4763,38 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
       ),
     };
-    let mut swatch = vec![edge.clone()];
+    let mut swatch = vec![edge];
     swatch.extend(face.iter().cloned());
     swatches.push(call("Directive", swatch));
-    let mut group = vec![edge, call("Directive", face)];
+    let mut group = vec![call0("EdgeForm"), call("Directive", face)];
     group.extend(polygons);
     items.push(Expr::List(group.into()));
+    // Like Wolfram, every region's boundary is a closed `Line` drawn above
+    // all the fills, so a later region's translucent face never veils an
+    // earlier region's outline.
+    let outline_style = match &boundary_style {
+      Some(Expr::Identifier(s)) if s == "None" => None,
+      Some(style) => Some(style.clone()),
+      None => Some(call(
+        "Directive",
+        vec![
+          rgb_color(palette[k % palette.len()]),
+          call1("AbsoluteThickness", Expr::Real(1.6)),
+        ],
+      )),
+    };
+    if let Some(style) = outline_style {
+      let mut group = vec![style];
+      group.extend(loops.iter().filter(|ring| ring.len() >= 2).map(|ring| {
+        let pts: Vec<Expr> = ring
+          .iter()
+          .chain(ring.first())
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        call1("Line", Expr::List(pts.into()))
+      }));
+      outlines.push(Expr::List(group.into()));
+    }
     // The mesh divides the region's own extent, not the plot range.
     let extent = |f: fn(&(f64, f64)) -> f64| {
       loops
@@ -4473,9 +4821,11 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let mut group = vec![mesh_style.clone()];
       group.extend(mesh);
-      items.push(Expr::List(group.into()));
+      meshes.push(Expr::List(group.into()));
     }
   }
+  items.extend(meshes);
+  items.extend(outlines);
 
   // Wolfram's RegionPlot defaults, for the options the caller left unset.
   let rule = |name: &str, value: Expr| rule_expr(id_expr(name), value);
@@ -6858,7 +7208,7 @@ fn parse_list_data_to_grid(
 /// coordinates the first and last columns (x) and rows (y) sit at, instead
 /// of the default of 1-based indices. Triples carry their own coordinates,
 /// so they and absent or malformed options keep `default_x` / `default_y`.
-fn matrix_data_range(
+pub(crate) fn matrix_data_range(
   rows: &[Expr],
   opts: &[Expr],
   default_x: (f64, f64),
@@ -7222,20 +7572,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.band_coloring(),
     );
   }
-  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
-  render_contour_lines_styled(
-    &mut svg,
-    &grid,
-    &levels,
-    area.plot_x0,
-    area.plot_y0,
-    cell_w,
-    cell_h,
-    area.render_width,
-    &contour_color,
-    contour_weight,
-    &contour_attrs,
-  );
+  render_contour_levels(&mut svg, &grid, &levels, &area, cell_w, cell_h, &opts);
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   push_contour_annotations(
@@ -8862,7 +9199,8 @@ fn with_graphic_label_above(svg: &str, label_svg: &str) -> String {
 
 /// Set a `PlotLabel` caption above a finished picture: the picture keeps its
 /// size and is inset into a canvas that is taller by one line of text.
-fn with_plot_label_above(svg: &str, (lines, size): &FieldPlotLabel) -> String {
+fn with_plot_label_above(svg: &str, label: &FieldPlotLabel) -> String {
+  let (lines, size) = (&label.lines, &label.size);
   let attr = |name: &str| -> Option<f64> {
     let head = &svg[..svg.find('>')?];
     let start = head.find(&format!(" {name}=\""))? + name.len() + 3;

@@ -4346,6 +4346,12 @@ fn image_display_svg(expr: &syntax::Expr) -> Option<String> {
       *display_size,
     ))
   } else if VISUAL_MODE.with(|v| *v.borrow())
+    && let Some(image) = functions::image_ast::magnified_image(expr)
+  {
+    // A notebook shows `Magnify[image, s]` as the picture at `s` times its
+    // size (the CLI keeps the symbolic `Magnify[-Image-, s]` echo).
+    image_display_svg(&image)
+  } else if VISUAL_MODE.with(|v| *v.borrow())
     && let Some((width, height, channels, data)) =
       functions::image_ast::image3d_stack_projection(expr)
   {
@@ -4909,6 +4915,14 @@ fn render_labeled_if_needed(expr: syntax::Expr) -> syntax::Expr {
   }
 }
 
+/// Whether `expr` or any part of it is drawn as a picture.
+fn holds_layout_graphic(expr: &syntax::Expr) -> bool {
+  evaluator::lays_out_a_graphic(expr)
+    || syntax::expr_children(expr)
+      .into_iter()
+      .any(holds_layout_graphic)
+}
+
 /// Pre-render display wrappers (TableForm, MatrixForm, Grid, Framed, Row,
 /// nested Column, Dataset, …) inside an arbitrary expression so they appear
 /// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
@@ -4933,6 +4947,15 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     }
     let inner = render_inline_display_wrapper(&args[0]);
     return match inner {
+      // A text row (`Text[Style[Row[…], 14]]`) that the inner pass drew as
+      // a picture is drawn again with `Text` on each item, so its text is
+      // set in the text face rather than the bare row's monospace face.
+      syntax::Expr::Graphics { .. } if !holds_layout_graphic(&args[0]) => {
+        match functions::graphics::text_pushed_into_row(&args[0]) {
+          Some(pushed) => render_inline_display_wrapper(&pushed),
+          None => inner,
+        }
+      }
       syntax::Expr::Graphics { .. } => inner,
       other => syntax::Expr::FunctionCall {
         name: name.clone(),
