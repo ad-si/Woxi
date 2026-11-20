@@ -5446,14 +5446,11 @@ tick labels and `AxesLabel`s keep the default 10 pt upright text, where Wolfram
 sets all of the graphic's text in the base style. `Plot` and the list plots
 apply it everywhere.
 
-### `Graphics` ignores `AxesOrigin` and pads a `Full` range less
+### `Graphics` pads a `Full` range less
 
-The `Graphics` renderer draws the x axis at `y = 0` when that is in range and
-at the bottom edge otherwise, whatever `AxesOrigin` says, and pads a
-`PlotRange -> Full` side by 4 %, where Wolfram extends it to include the axes
-origin and pads more. In a `MusicPlot` this drops the pitch label just above
-the highest note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which
-Wolfram shows.
+The `Graphics` renderer pads a `PlotRange -> Full` side by 4 %, where Wolfram
+pads more. In a `MusicPlot` this drops the pitch label just above the highest
+note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which Wolfram shows.
 
 ### Tick step from the padded range
 
@@ -5732,20 +5729,35 @@ documented "sphere drawn around the bounding box", under which a lone
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a
 `Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
-displayed box) when the box is invisible (`Boxed -> False`) and the picture
-is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate
-this, none checked with wolframscript: a cylinder from `{-10, 0, 0}` to
-`{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
-4.25}}, ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
+displayed box) when the box is invisible (`Boxed -> False`), the scene is
+pinned by an explicit `PlotRange` or seen from an explicit `ViewPoint`,
+and the picture is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate this, none
+checked with wolframscript: a cylinder from `{-10, 0, 0}` to `{10, 0, 0}`
+in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25, 4.25}},
+ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
 box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
 `{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
 244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), and a `Show` of
 a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
-custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
-and 0.86× the box fit.
+custom `ViewPoint` is about 1.02× the sphere framing and 0.86× the box fit.
 
-Which conditions really trigger the sphere framing — `Boxed -> False`, the
-pinned size, an explicit `PlotRange` or `Show` — is unverified. A
+A `Manipulate` frame sphere-frames such explicitly aimed or pinned scenes
+whatever their box and size (boxed scenes in a pinned `PlotRange` switched
+between view points, `ViewPoint -> Below` and a skew view, measure about
+0.7× the outline fit).
+
+Without a `PlotRange` or `ViewPoint` the outline fit stays, inside a
+`Manipulate` too: a plain `Boxed -> False` `Graphics3D` of a tall
+4 × 4 × 10 building at `ImageSize -> {300, 400}` in a `Manipulate`
+fills about 383 px of the snapshot's 400 px height, where the sphere
+framing would draw it about 0.73× as tall, and a `SphericalRegion -> False`
+cylinder without a `PlotRange` at `ImageSize -> {550, 350}` fills the width
+(532/550).
+
+`Show` keeps only its first graphic's options, so the `Show` snapshot has
+no `PlotRange` and its explicit `ViewPoint` is what sets it apart from the
+building. Whether `PlotRange` and `ViewPoint` are really the triggers, or
+merely correlate with them in these four snapshots, is unverified. A
 `Boxed -> False` picture given only a width still fits the box outline, and
 `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
 `ViewAngle` turn the sphere framing off. The surface plots
@@ -5761,6 +5773,20 @@ and from the rule above, gives 38 px per unit. The view point is much
 farther away (`|ViewPoint|` = 10) than in the cases that fit the sphere
 (about 2 to 3.4), but which property turns the sphere framing off is
 unverified.
+
+A close `ViewPoint` contradicts the rule. A Demonstration's snapshot of a
+`Show` of three `Boxed -> False` `Graphics3D`s (a desk fan: rings of radius
+up to 1 in the y-z plane, on a stand reaching down to z = -1.5) at
+`ImageSize -> {600, 400}` from `ViewPoint -> {1, -1, 0}` draws the fan
+about 380 px tall, 0.95 of the height. Woxi's sphere framing draws it
+284 px tall, and even the box-outline fit (`SphericalRegion -> False`)
+only 300 px. The width-to-height ratio (0.58) matches a perspective eye at
+`|ViewPoint|` box sides, so only the scale is off: Wolfram fits roughly the
+projected contents, not the box (whose perspective outline is about 1.25×
+the contents here) nor its sphere. No single rule found so far reproduces
+this and the three snapshots above; unverified with wolframscript.
+
+### `PointSize` in `Graphics3D` draws larger than Wolfram
 
 ### Base length of relative `Thickness` / `PointSize` in `Graphics3D`
 
@@ -5788,6 +5814,31 @@ unchanged. The same snapshot's `Tube[BSplineCurve[…]]` with no radius
 (a curve 24 units long) is drawn with a radius of about 0.11, where Woxi
 uses 1/100 of the curve's extent (0.24); the rule behind Wolfram's default
 radius is unknown.
+
+### 3D tick step on an exact unit `PlotRange`
+
+Woxi picks the automatic 3D tick step from about four intervals with the
+1, 2, 2.5, 5 multipliers, so an axis whose `PlotRange` is exactly `{0, 1}`
+ticks at 0.25 (`0.00, 0.25, …`). A Demonstration snapshot of a
+`ParametricPlot3D` with `PlotRange -> {{0, 1}, {0, 1}, {0, 1}}` shown at
+`ImageSize -> {400, 400}` with `SphericalRegion -> True` ticks every axis
+at 0.5 (`0.0, 0.5, 1.0`) with minor ticks between. The wider labels also
+push the left z-axis label partly out of the picture. Whether Wolfram's
+step depends on the projected axis length or drops the 2.5 multiplier in
+3D can't be told from one snapshot, so the current rule stays.
+
+### Axis edges and tick density on an elongated 3D box
+
+A Demonstration's snapshots of a `Graphics3D` with `BoxRatios -> {2, 1, 1}`,
+the default `ViewPoint`, `PlotRange -> {All, {-5, 5}, {-5, 5}}` and
+`ImageSize -> {500, 400}` put the y axis on the upper-left box edge
+(x low, z high) and the z axis on the left vertical edge (x low, y low).
+Woxi's `AxesEdge -> Automatic` takes the exposed edge nearest the viewer,
+which for this box is the lower-right y edge and the right vertical z edge;
+it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
+label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
+…`), so Wolfram seems to thin the ticks of a short box side. One box shape
+doesn't pin down either rule, so both stay as they are.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -6706,13 +6757,22 @@ internal hash order. Woxi keeps input order.
 
 ### Graph layouts that only approximate Wolfram's
 
+- **Large trees** in the automatic layout: Wolfram draws a 16-vertex tree in
+  layers and a 65-vertex tree with springs; the exact cutoff is undocumented.
+  Woxi switches to its spring embedding above 32 vertices.
 - **Spring-electrical layouts** (the automatic layout of a non-tree graph
-  with more than 8 vertices or more than one cycle, `"SpringElectricalEmbedding"`,
+  with more than 8 vertices or more than one cycle, or of a tree with more
+  than 32 vertices, `"SpringElectricalEmbedding"`,
   `HypercubeGraph`, `GraphPlot` of a general graph): Woxi runs its own
   Fruchterman–Reingold layout turned so the long axis is horizontal. It
   relaxes a sunflower start and a DFS-circle start and retains the lower
   spring-energy result, avoiding the crossed local minimum of the reviewed
-  six-vertex graph. WL's
+  six-vertex graph. Components of 64 or more vertices are laid out
+  multilevel instead (coarsened by matchings, the coarsest graph laid out
+  as above, then refined level by level), so long meshes and chains come
+  out unfolded as in WL; `GraphPlot` of a rule list lays out the
+  undirected graph, so an acyclic rule list is spring embedded rather than
+  layered. WL's
   coordinates, orientation and choice between symmetry-equivalent vertex
   placements are not reproduced. Small graphs with several cycles now use
   this layout too, including `HypercubeGraph[3]` and the reviewed six-vertex
@@ -7682,6 +7742,20 @@ entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
 `"SkeletonImage"` draws a Schlegel diagram (convex solids) or a view down
 the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
 styling, layout and lighting of these pictures differ.
+
+### `PolyhedronData[]` lists fewer entities than Wolfram, so positions differ
+
+`PolyhedronData[]` holds the 160 solids Woxi knows, while Wolfram's list
+has 195 (a Demonstration drives a `1`–`195` slider through
+`PolyhedronData[][[n]]`). Positions therefore name different solids: the
+stored snapshots of that Demonstration show the `Icosidodecahedron` at
+position `127` (Woxi: position `84`) and a nonconvex uniform star polyhedron
+with octahedral symmetry at position `51`.
+Positions `161`–`195` are out of range in Woxi (`Part::partw`). The missing
+entities appear to be nonconvex uniform polyhedra and similar solids, but which
+ones, and how Wolfram sorts the family entries (`{"Antiprism", n}`,
+`{"Prism", n}`, …) among the names, could not be determined without
+`wolframscript`, so the catalog has not been extended.
 
 ### `Solve` roots with a symbolic parameter keep the quadratic-formula form
 
@@ -8861,9 +8935,9 @@ Found comparing the graphics-tests renders (2026-11):
     `ListPlot` with `FrameTicks -> All` matches.
   - A symbol used as a tick label (`{180, b}`) is set upright; WL sets it
     in italics (TraditionalForm), and writes `-a` with a minus sign.
-  - A symbol used as a frame label (`FrameLabel -> {Z, X}`) or a plot
-    legend entry is likewise set upright; WL sets it in italics
-    (TraditionalForm). `AxesLabel` entries already follow WL.
+  - A symbol used as a plot legend entry is likewise set upright; WL sets
+    it in italics (TraditionalForm). `AxesLabel` and `FrameLabel` entries
+    already follow WL.
   - Frame edges and tick marks are 1 px wide, tick labels `#666`; WL
     draws them 0.5 pt wide, labels `GrayLevel[0.25]`.
   - `Graphics[{Disk[]}, ImageSize -> 100, AspectRatio -> 1/8]` is 100 x 14
@@ -9528,6 +9602,8 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   Some curve annotations and explicit tick labels still use text markup;
   a `Plot`'s `Ticks -> {{Pi/2, 3 Pi/2}}` labels read `π/2` rather than
   stacked fractions (a `Graphics` axis already stacks them).
+
+  Some curve annotations still use text markup.
 - `PlotTheme -> "Monochrome"` in a list plot draws every series black but
   without the theme's per-series `PlotMarkers` shapes.
 - `Callout[f, label, Above]` puts the label straight above its anchor with
@@ -10283,6 +10359,19 @@ Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
 
+### Studio: Grid `ItemSize -> w` columns are wider than the front end's
+
+Woxi sizes a fixed `ItemSize -> w` column as `w` ems at the 14 px base font
+plus the 12 px cell padding, so `Grid[table, Frame -> All, ItemSize -> 4]`
+gives 68 px per column. A front-end snapshot of the same grid (text about
+14 px tall, `Frame -> All`) measures about 49.5 px per column, i.e. about
+27% narrower. A six-column grid like that inside a
+`Pane[…, Alignment -> Center, ImageSize -> {400, 200}]` therefore overflows
+the pane in Woxi (409 px) and loses its right frame line and its centering,
+while Wolfram draws it about 297 px wide, centered. The front end's em unit
+for `ItemSize` and whether it includes the grid's `Spacings` have not been
+verified against `wolframscript`, so the width rule is left unchanged.
+
 ### `Plot` runs the cells of a multi-column `Grid` title together
 
 `PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
@@ -10336,3 +10425,12 @@ like `s_NDSolve`StateData`, match.
 above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
 other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
 Only a title that is framed as a whole gets a box there.
+
+### Symbols inside a `Style`d `Row` `PlotLabel` drawn upright
+
+A saved snapshot of `ListPlot[…, PlotLabel -> Style[Row[{x^m, "  vs.  ",
+y^n}], 16]]` (with `x` and `y` unassigned symbols) shows the letters
+upright, while Woxi sets single-letter symbols in a plot label in italics as
+`TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
+is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
+rendered with another `FormatType`.

@@ -70,6 +70,10 @@ fn extract_grouped_decor(
 pub(crate) struct DatumDecor {
   pub color: Option<Color>,
   pub label: Option<String>,
+  /// The `Labeled[v, label, …]` label expression, styles included.
+  pub label_expr: Option<Expr>,
+  /// A named `Labeled[v, label, position]` position (`"RadialOutside"`).
+  pub label_position: Option<String>,
   pub error: Option<(f64, f64)>,
 }
 
@@ -105,6 +109,11 @@ fn chart_datum_decor(e: &Expr) -> DatumDecor {
         }
         if name == "Labeled" && decor.label.is_none() {
           decor.label = args.get(1).and_then(expr_to_label);
+          decor.label_expr = args.get(1).cloned();
+          decor.label_position = match args.get(2) {
+            Some(Expr::String(p)) => Some(p.clone()),
+            _ => None,
+          };
         }
         cur = &args[0];
       }
@@ -1479,7 +1488,19 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       match crate::functions::string_ast::to_string_ast(std::slice::from_ref(e))
       {
-        Ok(Expr::String(ref rendered)) => Some(rendered.clone()),
+        // A number in scientific notation sets on one line with a raised
+        // exponent (`1.49×10⁻³`), not as the stacked 2D `ToString` layout
+        // that would split the label across two rows.
+        Ok(Expr::String(ref rendered)) => Some(
+          match crate::functions::graphics::split_scientific_2d(rendered) {
+            Some((base, exp)) => format!(
+              "{}\u{00d7}10{}",
+              base.strip_suffix("\u{00d7} 10").unwrap_or(&base).trim_end(),
+              crate::functions::graphics::to_unicode_script_digits(&exp, true)
+            ),
+            None => rendered.clone(),
+          },
+        ),
         _ => None,
       }
     }
@@ -3509,8 +3530,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         "PlotRange" => {
           let (rx, ry) =
             crate::functions::plot::parse_series_plot_range(replacement);
-          opts.plot_range_x = rx;
-          opts.plot_range_y = ry;
+          opts.plot_range_x = crate::functions::plot::closed_range(rx);
+          opts.plot_range_y = crate::functions::plot::closed_range(ry);
         }
         // `Ticks -> None` suppresses ticks entirely; `Automatic`/`All` leave
         // the renderer's own automatic ticks in place; an explicit
@@ -5572,9 +5593,21 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   {
     opts.chart_labels = row
       .iter()
-      .map(|d| ChartLabel::plain(d.label.clone().unwrap_or_default()))
+      .map(|d| {
+        d.label_expr
+          .as_ref()
+          .and_then(expr_to_chart_label)
+          .unwrap_or_else(|| {
+            ChartLabel::plain(d.label.clone().unwrap_or_default())
+          })
+      })
       .collect();
   }
+  // The named `Labeled[v, label, position]` position of each slice's label.
+  let decor_label_positions: Vec<Option<String>> = match decor.as_slice() {
+    [row] => row.iter().map(|d| d.label_position.clone()).collect(),
+    _ => Vec::new(),
+  };
   let (sector_origin, clockwise, hole) = parse_sector_origin(args);
   // Resolve a named ChartStyle scheme (e.g. "Pastel") to one color per slice,
   // sized to the widest ring.
@@ -5619,8 +5652,21 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let w = svg_width as f64;
   let h = opts.svg_height as f64;
-  let cx = w / 2.0;
-  let cy = top_margin + h / 2.0;
+  // An explicit `ImagePadding` leaves that margin around the pie, which
+  // fills the rest of the frame (automatic sides keep the default margin).
+  let padding = args[1..]
+    .iter()
+    .find_map(|o| {
+      let (name, value) = crate::functions::graphics::option_name_value(o)?;
+      (name == "ImagePadding").then_some(value)
+    })
+    .and_then(|v| crate::functions::plot::parse_image_padding_sides(&v));
+  let default_margin = (w.min(h) / 2.0) * (33.0 / 180.0);
+  let [pad_l, pad_r, pad_b, pad_t] = padding
+    .unwrap_or([None; 4])
+    .map(|p| p.unwrap_or(default_margin).max(0.0));
+  let cx = pad_l + (w - pad_l - pad_r) / 2.0;
+  let cy = top_margin + pad_t + (h - pad_t - pad_b) / 2.0;
 
   // `LabelingFunction -> f` labels every slice with `f[value]`. The result
   // may be wrapped in `Placed[…, position]`, which decides how far out along
@@ -5668,8 +5714,23 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && !opts.chart_labels.is_empty());
   // wolframscript leaves a margin of ~1/6 of the half-frame around the pie,
   // so the radius is ~0.82 of the half-frame (147 on a 360x360 frame).
-  let radius =
-    (w.min(h) / 2.0) * (147.0 / 180.0) * if has_callout { 0.72 } else { 1.0 };
+  // Labels placed `"RadialOutside"` also need room around the pie, unless
+  // an explicit `ImagePadding` already reserves it.
+  let has_outside_label = padding.is_none()
+    && decor_label_positions
+      .iter()
+      .any(|p| p.as_deref() == Some("RadialOutside"));
+  let base_radius = if padding.is_some() {
+    ((w - pad_l - pad_r).min(h - pad_t - pad_b) / 2.0).max(1.0)
+  } else {
+    (w.min(h) / 2.0) * (147.0 / 180.0)
+  };
+  let radius = base_radius
+    * if has_callout || has_outside_label {
+      0.72
+    } else {
+      1.0
+    };
 
   let mut svg = svg_header(
     svg_width + legend_width.round() as u32,
@@ -5870,8 +5931,22 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       // Draw the ChartLabels text at its named radial position, else at
       // the wedge centroid.
+      let placement = decor_label_positions
+        .get(i)
+        .and_then(Option::as_deref)
+        .or(chart_label_placement.as_deref());
       if let Some(label) = label
-        && let Some(placement) = chart_label_placement.as_deref()
+        && placement == Some("RadialOutside")
+        && !label.text.contains('\n')
+      {
+        labels_svg.push_str(&pie_outside_label_svg(
+          label,
+          (cx, cy),
+          r_out,
+          start_angle + sweep / 2.0,
+        ));
+      } else if let Some(label) = label
+        && let Some(placement) = placement
         && !label.text.contains('\n')
       {
         labels_svg.push_str(&pie_slice_label_svg(
@@ -5976,6 +6051,49 @@ pub fn pie_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let structure = call1("Graphics", Expr::List(slice_prims.into()));
   Ok(crate::plot_result_with_structure(svg, structure))
+}
+
+/// SVG for a `"RadialOutside"` pie-slice label: just past the slice's outer
+/// edge on its mid-angle, the text growing away from the pie (its side facing
+/// the center touching that point), with no leader line.
+fn pie_outside_label_svg(
+  label: &ChartLabel,
+  (cx, cy): (f64, f64),
+  r_out: f64,
+  mid_angle: f64,
+) -> String {
+  let font_size = label.font_size.unwrap_or(12.0);
+  let (dx, dy) = (mid_angle.cos(), mid_angle.sin());
+  let r_label = r_out + font_size * 0.3;
+  let lx = cx + r_label * dx;
+  let ly = cy + r_label * dy;
+  let anchor = if dx.abs() < 0.2 {
+    "middle"
+  } else if dx > 0.0 {
+    "start"
+  } else {
+    "end"
+  };
+  // Screen y grows downward: a label below the pie hangs from its point, one
+  // above it sits on it.
+  let baseline = if dy.abs() < 0.2 {
+    "central"
+  } else if dy > 0.0 {
+    "hanging"
+  } else {
+    "auto"
+  };
+  let weight = if label.bold {
+    " font-weight=\"bold\""
+  } else {
+    ""
+  };
+  format!(
+    "<text x=\"{lx:.2}\" y=\"{ly:.2}\" text-anchor=\"{anchor}\" \
+     dominant-baseline=\"{baseline}\" font-family=\"sans-serif\" \
+     font-size=\"{font_size}\"{weight} fill=\"black\">{}</text>\n",
+    crate::functions::graphics::box_string_to_svg(&label.text)
+  )
 }
 
 /// SVG for one pie-slice label, placed along the slice's mid-angle according

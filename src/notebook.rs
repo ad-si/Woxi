@@ -421,6 +421,18 @@ fn draws_nothing(s: &str) -> bool {
     .is_empty()
 }
 
+/// The base a prefix script keeps when its box base `draws_nothing`: a
+/// blank space (`SuperscriptBox[" ", "1"]`, as in the term symbol `1s² ¹S`)
+/// still typesets its gap, while an invisible base
+/// (`\[InvisiblePrefixScriptBase]`) or an empty one typesets nothing.
+fn blank_base_text(s: &str) -> &'static str {
+  if crate::syntax::substitute_private_use_glyphs(s).contains(' ') {
+    " "
+  } else {
+    ""
+  }
+}
+
 /// The part specification inside a `⟦…⟧` group, or None when `s` is an
 /// ordinary subscript. The double-bracket characters are what
 /// `\[LeftDoubleBracket]` / `\[RightDoubleBracket]` unescape to.
@@ -1164,7 +1176,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
       // stays unevaluated and keeps it.
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
-        format!("Superscript[\"\", {}]", conv(&args[1]))
+        format!(
+          "Superscript[\"{}\", {}]",
+          blank_base_text(&conv(&args[0])),
+          conv(&args[1])
+        )
       }
       // `SuperscriptBox[f, TagBox[order, Derivative]]` is the typeset form
       // of a mixed or higher-order partial derivative — emit
@@ -1258,7 +1274,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           // Prefix subscript, as above — keep an explicit empty string
           // so the result still parses.
           if draws_nothing(&base) {
-            format!("Subscript[\"\", {sub}]")
+            format!("Subscript[\"{}\", {sub}]", blank_base_text(&base))
           } else {
             format!("Subscript[{base}, {sub}]")
           }
@@ -2074,6 +2090,13 @@ fn has_real_predecessor(
     // Inside a row a line break is layout, not a statement boundary
     if t == "\"\\n\"" && !newline_ends_statement {
       continue;
+    }
+    // Between the items of a `BoxData[{…}]` statement list, the
+    // FrontEnd's `\[IndentingNewLine]` separates statements just like a
+    // literal `"\n"`: `BoxData[{RowBox[{a = 1, ";"}], "\[IndentingNewLine]",
+    // RowBox[{b = 2, ";"}]}]` is two lines, not `a = 1; (b = 2);`.
+    if t == "\"\\[IndentingNewLine]\"" && newline_ends_statement {
+      return false;
     }
     // A literal `"\n"` multi-statement separator, a list/argument comma or
     // statement `;`, or an opening delimiter starting the enclosing group
@@ -10219,6 +10242,17 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
        a corrupted `Times[…]` target carrying a stray `Null` factor from \
        the previous statement), got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn boxdata_statement_list_indenting_newline_keeps_statements_bare() {
+    // A multi-line Input cell is stored as a `BoxData[{…}]` list whose
+    // statements are separated by `\[IndentingNewLine]`. Each item is its
+    // own line, so a later assignment must not be parenthesized as if it
+    // were juxtaposed onto the previous statement.
+    let boxes = r#"BoxData[{RowBox[{RowBox[{RowBox[{"f", "[", "x_", "]"}], ":=", RowBox[{"x", "+", "1"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{RowBox[{"g", "[", "x_", "]"}], ":=", RowBox[{"f", "[", "x", "]"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{"h", "=", "2"}], ";"}]}]"#;
+    let src = extract_cell_content(boxes);
+    assert_eq!(src, "f[x_]:=x+1;\ng[x_]:=f[x];\nh=2;");
   }
 
   #[test]

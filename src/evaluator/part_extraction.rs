@@ -688,10 +688,14 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
     // is a line with `y = x`.
     let source = crate::functions::graphics::log_scaled_plot_source(source);
     let source = source.as_ref();
-    let series: Vec<Expr> = source
+    // Each series yields its curve group and its fill polygons; every fill
+    // is placed before every curve (below), as in Wolfram's own plot
+    // primitives, so a `Filling -> {1 -> {2}}` area never covers the line
+    // of curve 1 when the primitives are drawn again.
+    let (fill_groups, curve_groups): (Vec<Vec<Expr>>, Vec<Expr>) = source
       .series
       .iter()
-      .flat_map(|s| {
+      .map(|s| {
         let to_list = |pts: &[(f64, f64)]| {
           Expr::List(
             pts
@@ -758,7 +762,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         };
         let mut group = vec![style];
         group.extend(draws);
-        let mut prims = vec![Expr::List(group.into())];
+        let mut fills = Vec::new();
         // `Filling` draws a shaded region under the curve — bake it in as
         // an explicit `Polygon` primitive alongside the `Line`, the way
         // Wolfram does. Without this, a Demonstration's `region =
@@ -786,10 +790,15 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
                 .collect(),
             ),
           );
-          prims.push(Expr::List(vec![styled_fill, polygon].into()));
+          fills.push(Expr::List(vec![styled_fill, polygon].into()));
         }
-        prims
+        (fills, Expr::List(group.into()))
       })
+      .unzip();
+    let series: Vec<Expr> = fill_groups
+      .into_iter()
+      .flatten()
+      .chain(curve_groups)
       .collect();
     // The options a plot shares with `Graphics` (an `Epilog`, a
     // `Background`, a `PlotRange`, …) stay with the drawing, so editing it —

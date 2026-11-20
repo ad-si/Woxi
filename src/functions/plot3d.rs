@@ -1653,6 +1653,91 @@ pub(crate) fn triangle_normal(
 /// `Plot3D`/`ContourPlot3D`'s region function (see
 /// `field_plot::region_allows`), so it does not need the plot's own
 /// variable names substituted in first.
+/// The level values one mesh function is drawn at, given its values
+/// across the surface: `Mesh -> n` spaces `n` levels evenly inside their
+/// range, an explicit list is used as is, and no spec draws 15.
+fn mesh_level_values(spec: Option<&MeshLevels>, values: &[f64]) -> Vec<f64> {
+  let (lo, hi) = values
+    .iter()
+    .filter(|v| v.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+      (a.min(v), b.max(v))
+    });
+  match spec.cloned().unwrap_or(MeshLevels::Count(15)) {
+    MeshLevels::Count(n) if hi > lo => (1..=n)
+      .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
+      .collect(),
+    MeshLevels::Values(v) => v,
+    MeshLevels::Count(_) => Vec::new(),
+  }
+}
+
+/// The segments (in data coordinates) where each mesh function crosses
+/// its levels on a triangulated surface: on every triangle, the two edges
+/// whose ends lie on opposite sides of a level are joined at the
+/// linearly interpolated crossings.
+fn surface_level_lines(
+  triangles: &[[[f64; 3]; 3]],
+  fns: &[MeshFn],
+  specs: Option<&[MeshLevels]>,
+) -> Vec<[[f64; 3]; 2]> {
+  let mut segments = Vec::new();
+  for (k, f) in fns.iter().enumerate() {
+    let values: Vec<[f64; 3]> =
+      triangles.iter().map(|t| t.map(|p| f.eval(p))).collect();
+    let flat: Vec<f64> = values.iter().flatten().copied().collect();
+    let spec = specs.and_then(|specs| {
+      specs
+        .get(k)
+        .or_else(|| specs.first().filter(|_| specs.len() == 1))
+    });
+    for level in mesh_level_values(spec, &flat) {
+      for (tri, vals) in triangles.iter().zip(&values) {
+        if vals.iter().any(|v| !v.is_finite()) {
+          continue;
+        }
+        let mut crossings: Vec<[f64; 3]> = Vec::with_capacity(2);
+        for e in 0..3 {
+          let (a, b) = (e, (e + 1) % 3);
+          if (vals[a] >= level) != (vals[b] >= level) {
+            let t = (level - vals[a]) / (vals[b] - vals[a]);
+            crossings
+              .push([0, 1, 2].map(|d| tri[a][d] + t * (tri[b][d] - tri[a][d])));
+          }
+        }
+        if let [p, q] = crossings[..] {
+          segments.push([p, q]);
+        }
+      }
+    }
+  }
+  segments
+}
+
+/// The outline of a triangulated surface: the triangle edges no other
+/// triangle shares.
+fn triangulation_outline(triangles: &[[[f64; 3]; 3]]) -> Vec<[[f64; 3]; 2]> {
+  let key = |p: &[f64; 3]| (p[0].to_bits(), p[1].to_bits());
+  let mut uses: std::collections::BTreeMap<_, (usize, [[f64; 3]; 2])> =
+    std::collections::BTreeMap::new();
+  for tri in triangles {
+    for e in 0..3 {
+      let (a, b) = (tri[e], tri[(e + 1) % 3]);
+      let edge = if key(&a) <= key(&b) {
+        (key(&a), key(&b))
+      } else {
+        (key(&b), key(&a))
+      };
+      uses.entry(edge).or_insert((0, [a, b])).0 += 1;
+    }
+  }
+  uses
+    .into_values()
+    .filter(|(n, _)| *n == 1)
+    .map(|(_, segment)| segment)
+    .collect()
+}
+
 fn eval_mesh_function(f: &Expr, x: f64, y: f64, z: f64) -> Option<f64> {
   let call = Expr::CurriedCall {
     func: Box::new(f.clone()),
@@ -2049,8 +2134,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
-          axes_labels =
-            parse_axes_labels(replacement, Some([&xvar, &yvar, "z"]));
+          axes_labels = parse_axes_labels(
+            replacement,
+            Some([Some(&xvar), Some(&yvar), None]),
+          );
         }
         _ => {}
       }
@@ -2356,8 +2443,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // inside another graphic keeps the shape it was drawn with.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
-    // `AxesLabel -> Automatic` names the axes after the plot's variables;
-    // a `Graphics3D` has no variables to name them by, so spell them out.
+    // `AxesLabel -> Automatic` names the two variable axes after the plot's
+    // variables and leaves the value axis unlabeled; a `Graphics3D` has no
+    // variables to name them by, so spell them out.
     for opt in &mut structure_args {
       if let Expr::Rule {
         pattern,
@@ -2370,7 +2458,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(a) if a == "Automatic" => name(default),
           other => other.clone(),
         };
-        let defaults = [xvar.as_str(), yvar.as_str(), "z"];
+        let defaults = [xvar.as_str(), yvar.as_str(), "None"];
         match replacement.as_ref() {
           Expr::Identifier(a) if a == "Automatic" => {
             **replacement = Expr::List(
@@ -2932,6 +3020,51 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 /// corner colors when it is smoothly shaded, else its flat color. A
 /// gradient's definition is written to `svg` (once) before the polygon
 /// that uses it.
+/// The triangles from `tris[start]` on that are painted as one translucent
+/// flat face: each next triangle in the draw order has the same color,
+/// opacity and outline style, carries no gradient or texture, and shares
+/// a projected edge with a triangle already in the run (the pieces of a
+/// fan-triangulated polygon). A single triangle when nothing joins it.
+pub(crate) fn translucent_face_run(
+  tris: &[Triangle],
+  start: usize,
+) -> &[Triangle] {
+  let first = &tris[start];
+  let flat = |t: &Triangle| {
+    t.opacity > 0.0
+      && t.opacity < 1.0
+      && t.vertex_colors.is_none()
+      && t.texture.is_none()
+      && t.boundary != [true; 3]
+  };
+  if !flat(first) {
+    return &tris[start..=start];
+  }
+  let shares_edge = |a: &Triangle, b: &Triangle| {
+    a.projected
+      .iter()
+      .filter(|p| b.projected.contains(p))
+      .count()
+      >= 2
+  };
+  let mut end = start + 1;
+  while end < tris.len() {
+    let t = &tris[end];
+    let joins = flat(t)
+      && t.color == first.color
+      && t.opacity == first.opacity
+      && t.edge_color == first.edge_color
+      && t.edge_width == first.edge_width
+      && t.edge_dashing == first.edge_dashing
+      && tris[start..end].iter().any(|m| shares_edge(m, t));
+    if !joins {
+      break;
+    }
+    end += 1;
+  }
+  &tris[start..end]
+}
+
 pub(crate) fn triangle_paint(
   tri: &Triangle,
   corners: [(f64, f64); 3],
@@ -7281,6 +7414,17 @@ fn surface_opacity_directive(
 /// style — one bare directive, or a list that mixes directives for a
 /// single style, like `{RGBColor[...], Opacity[.5]}` — applies to every
 /// object alike, so the whole value comes back as the sole item.
+/// Append one `PlotStyle` entry to a primitive group's directives. A list
+/// entry such as `{Red, PointSize[0.02]}` is spliced in element by element:
+/// nested as a sublist it would scope its directives away from the
+/// primitives that follow it in the group.
+fn push_plot_style(group: &mut Vec<Expr>, style: &Expr) {
+  match style {
+    Expr::List(items) => group.extend(items.iter().cloned()),
+    other => group.push(other.clone()),
+  }
+}
+
 fn plot_style_items(replacement: &Expr, num_objects: usize) -> Vec<Expr> {
   use crate::functions::graphics::parse_color;
 
@@ -8829,6 +8973,15 @@ fn collect_3d_primitives(
     Expr::Identifier(_) | Expr::Rule { .. } => {
       apply_3d_directive(expr, style);
     }
+    // A primitive or directive with `Dynamic[…]` somewhere in its arguments
+    // (`Cuboid[{0.5 + Dynamic[s], …}, …]`, `Hue[Dynamic[h], 1, 1]`) is
+    // drawn with every `Dynamic` at its current value.
+    Expr::FunctionCall { name, args }
+      if let Some(released) =
+        crate::functions::graphics::release_primitive_dynamics(name, args) =>
+    {
+      collect_3d_primitives(&released, style, prims);
+    }
     Expr::FunctionCall { name, args } => {
       match name.as_str() {
         "Sphere" | "Ball" => {
@@ -9006,19 +9159,21 @@ fn collect_3d_primitives(
               holes,
               style,
             });
-          } else if let Some((outer, holes)) =
+          } else if let Some(faces) =
             crate::functions::polygon_holes::split_holes(
               &args[0],
               &parse_point3d_list,
             )
           {
-            // Polygon[outer -> holes]: a face with the hole boundaries
-            // cut out of it.
-            prims.push(Primitive3D::Polygon3D {
-              points: outer,
-              holes,
-              style: style.clone(),
-            });
+            // Polygon[outer -> holes] (or a list of outers paired with
+            // their holes): faces with the hole boundaries cut out.
+            for (outer, holes) in faces {
+              prims.push(Primitive3D::Polygon3D {
+                points: outer,
+                holes,
+                style: style.clone(),
+              });
+            }
           } else if let Expr::List(poly_exprs) = &args[0] {
             // Polygon[{{p1, p2, …}, {q1, q2, …}, …}]: a collection of
             // polygons in one primitive.
@@ -9029,17 +9184,19 @@ fn collect_3d_primitives(
                   holes: Vec::new(),
                   style: style.clone(),
                 });
-              } else if let Some((outer, holes)) =
+              } else if let Some(faces) =
                 crate::functions::polygon_holes::split_holes(
                   poly,
                   &parse_point3d_list,
                 )
               {
-                prims.push(Primitive3D::Polygon3D {
-                  points: outer,
-                  holes,
-                  style: style.clone(),
-                });
+                for (outer, holes) in faces {
+                  prims.push(Primitive3D::Polygon3D {
+                    points: outer,
+                    holes,
+                    style: style.clone(),
+                  });
+                }
               }
             }
           }
@@ -9498,6 +9655,7 @@ fn collect_3d_primitives(
             other => other.clone(),
           };
           let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+          let from_spline = spline.is_some();
           let curves: Vec<Vec<Point3D>> = match spline {
             Some(pts) => vec![pts],
             None => match parse_point3d_list(&curve) {
@@ -9559,10 +9717,12 @@ fn collect_3d_primitives(
               vec![extent / 100.0; pts.len()]
             };
             let budget = tube_subdivision_budget(SCENE_TUBE_COUNT.get());
-            // At a sharp corner Wolfram ends one rounded run and starts the
-            // next, so the two overlap in a rounded elbow; a gently bending
-            // (sampled) curve stays one mitred tube.
-            let runs = if style.capped {
+            // At a sharp corner of a polyline Wolfram ends one rounded run
+            // and starts the next, so the two overlap in a rounded elbow; a
+            // gently bending (sampled) curve stays one mitred tube. A spline
+            // is always swept as one tube, so even the sharp corners of a
+            // `SplineDegree -> 1` `BSplineCurve` are mitred, not rounded.
+            let runs = if style.capped && !from_spline {
               tube_runs(&pts)
             } else {
               vec![(0, pts.len().saturating_sub(1))]
@@ -10176,6 +10336,43 @@ fn collect_raster3d(
     }
     _ => None,
   });
+  let size = [
+    (hi[0] - lo[0]) / nx as f64,
+    (hi[1] - lo[1]) / ny as f64,
+    (hi[2] - lo[2]) / nz as f64,
+  ];
+  // Without a color function, gray values and RGB (or fully opaque RGBA)
+  // channels fill the box solidly, so only the voxels on its outer faces
+  // can be seen. Those are drawn at full resolution, however dense the
+  // volume: averaging blocks would blur them (±1 cells average to gray).
+  let opaque = color_function.is_none()
+    && style.opacity >= 1.0
+    && cells.iter().flatten().flatten().all(|c| match c {
+      Cell::Value(_) => true,
+      Cell::Channels(ch) => ch.get(3).is_none_or(|&a| a >= 1.0),
+    });
+  if opaque {
+    let rgb = |c: &Cell| -> (u8, u8, u8) {
+      let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+      match c {
+        Cell::Value(v) => (byte(*v), byte(*v), byte(*v)),
+        Cell::Channels(ch) => (byte(ch[0]), byte(ch[1]), byte(ch[2])),
+      }
+    };
+    let colors: Vec<Vec<Vec<(u8, u8, u8)>>> = cells
+      .iter()
+      .map(|l| l.iter().map(|r| r.iter().map(rgb).collect()).collect())
+      .collect();
+    collect_opaque_raster3d_faces(
+      &colors,
+      [nx, ny, nz],
+      lo,
+      size,
+      style,
+      prims,
+    );
+    return;
+  }
   // A dense volume (a `DensityPlot3D` samples 51³ points) is drawn from
   // block averages, so the scene stays a few thousand cubes.
   const MAX_VOXELS: usize = 2000;
@@ -10185,11 +10382,6 @@ fn collect_raster3d(
   {
     stride += 1;
   }
-  let size = [
-    (hi[0] - lo[0]) / nx as f64,
-    (hi[1] - lo[1]) / ny as f64,
-    (hi[2] - lo[2]) / nz as f64,
-  ];
   for k0 in (0..nz).step_by(stride) {
     for j0 in (0..ny).step_by(stride) {
       for i0 in (0..nx).step_by(stride) {
@@ -10268,6 +10460,100 @@ fn collect_raster3d(
           style: voxel_style,
           smooth: false,
         });
+      }
+    }
+  }
+}
+
+/// The visible part of a solid `Raster3D`: the voxel colors on the six
+/// faces of its box. `colors` is indexed `[z][y][x]` and `dims` is
+/// `[nx, ny, nz]`. On each face, same-colored neighbors are merged into
+/// rectangles, so a large volume stays a modest number of polygons.
+fn collect_opaque_raster3d_faces(
+  colors: &[Vec<Vec<(u8, u8, u8)>>],
+  dims: [usize; 3],
+  lo: [f64; 3],
+  size: [f64; 3],
+  style: &StyleState3D,
+  prims: &mut Vec<Primitive3D>,
+) {
+  let mut face_style = style.clone();
+  // Voxels are cells of one volume, not outlined boxes, and carry their own
+  // color, so they are lit uniformly.
+  face_style.edges = false;
+  face_style.lighting = Some(Lighting {
+    lights: vec![crate::functions::lighting3d::Light::Ambient([1.0; 3])],
+    name: None,
+  });
+  let color_at = |p: [usize; 3]| colors[p[2]][p[1]][p[0]];
+  // The face normal to axis `a` spans the next two axes cyclically, so the
+  // corners (u, v) taken counterclockwise face along +a.
+  for a in 0..3 {
+    let (b, d) = ((a + 1) % 3, (a + 2) % 3);
+    let (w, h) = (dims[b], dims[d]);
+    for high in [false, true] {
+      let layer = if high { dims[a] - 1 } else { 0 };
+      let cell = |u: usize, v: usize| {
+        let mut p = [0; 3];
+        p[a] = layer;
+        p[b] = u;
+        p[d] = v;
+        color_at(p)
+      };
+      let coord = lo[a] + if high { dims[a] as f64 * size[a] } else { 0.0 };
+      let corner = |u: usize, v: usize| {
+        let mut p = [0.0; 3];
+        p[a] = coord;
+        p[b] = lo[b] + u as f64 * size[b];
+        p[d] = lo[d] + v as f64 * size[d];
+        Point3D {
+          x: p[0],
+          y: p[1],
+          z: p[2],
+        }
+      };
+      let mut done = vec![false; w * h];
+      for v0 in 0..h {
+        for u0 in 0..w {
+          if done[v0 * w + u0] {
+            continue;
+          }
+          let color = cell(u0, v0);
+          let mut u1 = u0 + 1;
+          while u1 < w && !done[v0 * w + u1] && cell(u1, v0) == color {
+            u1 += 1;
+          }
+          let mut v1 = v0 + 1;
+          while v1 < h
+            && (u0..u1).all(|u| !done[v1 * w + u] && cell(u, v1) == color)
+          {
+            v1 += 1;
+          }
+          for v in v0..v1 {
+            for u in u0..u1 {
+              done[v * w + u] = true;
+            }
+          }
+          let mut quad = [
+            corner(u0, v0),
+            corner(u1, v0),
+            corner(u1, v1),
+            corner(u0, v1),
+          ];
+          if !high {
+            quad.reverse();
+          }
+          let mut voxel_style = face_style.clone();
+          voxel_style.color = Some(color);
+          prims.push(Primitive3D::Surface3D {
+            tris: vec![
+              (quad[0], quad[1], quad[2]),
+              (quad[0], quad[2], quad[3]),
+            ],
+            style: voxel_style,
+            smooth: false,
+          });
+        }
       }
     }
   }
@@ -10535,7 +10821,6 @@ fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
-
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
   holes: &[Vec<Point3D>],
@@ -10987,7 +11272,23 @@ const MAX_SIDE_FACE_ASPECT: f64 = 1.0;
 const MAX_SIDE_SUBDIVISIONS: usize = 200;
 /// Radial subdivision count for `Cylinder`, shared between the
 /// tessellators and the call site that rebuilds their rim-edge flags.
-const CYLINDER_SIDES: usize = 24;
+/// The end circles are what an `EdgeForm` outlines, so they need enough
+/// points to read as smooth curves at picture size: a 24-gon put visible
+/// corners (over a pixel deep) on a radius-140 px ring, where Wolfram's
+/// outline is a smooth ellipse.
+const CYLINDER_SIDES: usize = 48;
+
+/// How many rings `tessellate_cylinder` cuts a side of the given length and
+/// radius into. The faces only need to stay short enough for the depth
+/// sort, so the aspect is measured against a 24-facet circumference, which
+/// keeps the ring count independent of how finely the rims are drawn.
+fn cylinder_side_steps(
+  len: f64,
+  radius: f64,
+  max_subdivisions: usize,
+) -> usize {
+  side_subdivision_steps(len, radius, CYLINDER_SIDES / 2, max_subdivisions)
+}
 /// Radial subdivision count for `Cone`. Its smooth shading has a single apex
 /// vertex, where neighboring facets meet at their own normals; finer
 /// slices keep that seam faint.
@@ -11363,7 +11664,7 @@ fn tessellate_cylinder(
   let biny = az * perpx - ax * perpz;
   let binz = ax * perpy - ay * perpx;
 
-  let steps = side_subdivision_steps(len, radius, n, max_subdivisions);
+  let steps = cylinder_side_steps(len, radius, max_subdivisions);
   let ring_at = |t: f64| -> Vec<Point3D> {
     let center = Point3D {
       x: p1.x + dx * t,
@@ -11424,6 +11725,9 @@ fn tessellate_cylinder(
 /// Cosine of the turn above which a tube's polyline is split into
 /// separately capped runs.
 const TUBE_CORNER_COS: f64 = 0.85;
+
+/// The most a tube's ring is stretched in the mitre plane of a sharp bend.
+const TUBE_MITER_LIMIT: f64 = 4.0;
 
 /// The index ranges (inclusive) of a tube's polyline between its sharp
 /// corners; consecutive runs share the corner point.
@@ -11495,11 +11799,26 @@ fn tessellate_tube(
     return vec![];
   }
 
+  // A polyline that returns to its first point (a closed spline) has no
+  // ends: its seam is joined like any other vertex and gets no caps.
+  let length: f64 = (1..keep.len())
+    .map(|i| norm(sub(&points[keep[i]], &points[keep[i - 1]])))
+    .sum();
+  let closed = dirs.len() >= 3
+    && norm(sub(&points[keep[0]], &points[keep[keep.len() - 1]]))
+      <= 1e-6 * length;
+
   // Vertex tangents: the segment direction at the ends, the normalized sum
-  // of the two adjacent directions in between.
+  // of the two adjacent directions in between (and at a closed seam).
+  let seam_tangent = {
+    let (a, b) = (dirs[dirs.len() - 1], dirs[0]);
+    unit((a.0 + b.0, a.1 + b.1, a.2 + b.2)).unwrap_or(b)
+  };
   let tangents: Vec<(f64, f64, f64)> = (0..keep.len())
     .map(|i| {
-      if i == 0 {
+      if closed && (i == 0 || i == keep.len() - 1) {
+        seam_tangent
+      } else if i == 0 {
         dirs[0]
       } else if i == keep.len() - 1 {
         dirs[dirs.len() - 1]
@@ -11518,15 +11837,63 @@ fn tessellate_tube(
     (1.0, 0.0, 0.0)
   };
   let mut normal = unit(cross(t0, seed)).unwrap_or((1.0, 0.0, 0.0));
+  // Carry the normal from one vertex tangent to the next by the rotation
+  // that turns the one tangent into the other (a rotation-minimizing
+  // frame). Merely re-projecting it would collapse at a right-angle bend
+  // within the normal's own plane, where it lines up with the new tangent.
+  let transport =
+    |normal: (f64, f64, f64), from: (f64, f64, f64), to: (f64, f64, f64)| {
+      let axis = cross(from, to);
+      let sin = norm(axis);
+      let cos = from.0 * to.0 + from.1 * to.1 + from.2 * to.2;
+      let rotated = match unit(axis) {
+        Some(k) if sin > 1e-12 => {
+          let kv = cross(k, normal);
+          let kd = k.0 * normal.0 + k.1 * normal.1 + k.2 * normal.2;
+          (
+            normal.0 * cos + kv.0 * sin + k.0 * kd * (1.0 - cos),
+            normal.1 * cos + kv.1 * sin + k.1 * kd * (1.0 - cos),
+            normal.2 * cos + kv.2 * sin + k.2 * kd * (1.0 - cos),
+          )
+        }
+        _ => normal,
+      };
+      let dot = rotated.0 * to.0 + rotated.1 * to.1 + rotated.2 * to.2;
+      let projected = (
+        rotated.0 - dot * to.0,
+        rotated.1 - dot * to.1,
+        rotated.2 - dot * to.2,
+      );
+      unit(projected).unwrap_or(normal)
+    };
+
+  // Around a closed curve the transported normal comes back turned by some
+  // angle; spreading that turn over the vertices lets the last ring meet
+  // the first one without a twisted seam.
+  let twist = if closed {
+    let last = tangents
+      .windows(2)
+      .fold(normal, |n, pair| transport(n, pair[0], pair[1]));
+    let first = normal;
+    let c = cross(first, last);
+    let sin = c.0 * t0.0 + c.1 * t0.1 + c.2 * t0.2;
+    let cos = first.0 * last.0 + first.1 * last.1 + first.2 * last.2;
+    sin.atan2(cos)
+  } else {
+    0.0
+  };
+  let phase_at = |i: f64| -twist * i / (keep.len() - 1) as f64;
 
   let ring_at = |center: Point3D,
                  radius: f64,
                  normal: (f64, f64, f64),
-                 binormal: (f64, f64, f64)|
+                 binormal: (f64, f64, f64),
+                 phase: f64|
    -> Vec<Point3D> {
     (0..TUBE_SIDES)
       .map(|k| {
-        let a = 2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64;
+        let a =
+          2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64 + phase;
         let (c, s) = (a.cos() * radius, a.sin() * radius);
         Point3D {
           x: center.x + c * normal.0 + s * binormal.0,
@@ -11547,24 +11914,53 @@ fn tessellate_tube(
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
     // Re-project the carried normal into this vertex's normal plane.
-    let dot = normal.0 * t.0 + normal.1 * t.1 + normal.2 * t.2;
-    let projected = (
-      normal.0 - dot * t.0,
-      normal.1 - dot * t.1,
-      normal.2 - dot * t.2,
-    );
-    normal = unit(projected).unwrap_or(normal);
+    if i > 0 {
+      normal = transport(normal, tangents[i - 1], t);
+    }
     let binormal = cross(t, normal);
     let r = radii.get(idx).copied().unwrap_or(0.0);
-    // A bend shortens the ring's projection onto the segments; widening it
-    // by 1/cos(half-angle) keeps the tube's radius constant along the curve.
-    let widen = if i == 0 || i == keep.len() - 1 {
-      1.0
+    // At a bend the ring lies in the mitre plane, which cuts the tube
+    // obliquely: stretching the ring by 1/cos(half-angle) along the bend
+    // (and only along it) keeps the tube's radius constant up to the
+    // corner. Like a stroke's miter limit, the stretch is bounded so that
+    // a curve doubling back does not flare out into a wide fin.
+    let incoming = if i > 0 {
+      Some(dirs[i - 1])
+    } else if closed {
+      Some(dirs[dirs.len() - 1])
     } else {
-      let d = dirs[i - 1].0 * t.0 + dirs[i - 1].1 * t.1 + dirs[i - 1].2 * t.2;
-      if d.abs() < 1e-6 { 1.0 } else { 1.0 / d }
+      None
     };
-    rings.push(ring_at(points[idx], r * widen, normal, binormal));
+    let outgoing = if i < dirs.len() {
+      Some(dirs[i])
+    } else if closed {
+      Some(dirs[0])
+    } else {
+      None
+    };
+    let mut ring =
+      ring_at(points[idx], r, normal, binormal, phase_at(i as f64));
+    if let (Some(prev), Some(next)) = (incoming, outgoing)
+      && let Some(bend) =
+        unit((next.0 - prev.0, next.1 - prev.1, next.2 - prev.2))
+    {
+      let d = prev.0 * t.0 + prev.1 * t.1 + prev.2 * t.2;
+      let stretch = if d > 1.0 / TUBE_MITER_LIMIT {
+        1.0 / d
+      } else {
+        TUBE_MITER_LIMIT
+      };
+      let c = points[idx];
+      for q in &mut ring {
+        let along =
+          (q.x - c.x) * bend.0 + (q.y - c.y) * bend.1 + (q.z - c.z) * bend.2;
+        let extra = along * (stretch - 1.0);
+        q.x += extra * bend.0;
+        q.y += extra * bend.1;
+        q.z += extra * bend.2;
+      }
+    }
+    rings.push(ring);
 
     // Subdivide the straight run to the next vertex so no single
     // tessellated face spans an outsized fraction of the tube's length
@@ -11589,13 +11985,14 @@ fn tessellate_tube(
           z: points[idx].z + (points[idx_next].z - points[idx].z) * frac,
         };
         let rr = r + (r_next - r) * frac;
-        rings.push(ring_at(center, rr, normal, binormal));
+        let phase = phase_at(i as f64 + frac);
+        rings.push(ring_at(center, rr, normal, binormal, phase));
       }
     }
   }
 
   // Wolfram rounds a capped tube's ends: a hemisphere closes each one.
-  if capped {
+  if capped && !closed {
     const CAP_RINGS: usize = 6;
     let cap = |ring: &[Point3D], center: Point3D, out: (f64, f64, f64)| {
       (1..=CAP_RINGS)
@@ -12354,8 +12751,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `SphericalRegion -> True`: frame the picture by the sphere that
   // encloses the contents instead of by their projected outline, so the
   // scale stays put as the view turns or the contents move. A
-  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
-  let mut spherical_region = crate::in_manipulate_frame();
+  // `Manipulate` frame defaults to it when the scene is aimed or pinned
+  // explicitly (see `manipulate_frame` below).
+  let mut spherical_region = false;
+  let manipulate_frame = crate::in_manipulate_frame();
   // `SphericalRegion -> False` given outright (rather than the default
   // `Automatic`), which rules out the automatic sphere framing below.
   let mut spherical_region_off = false;
@@ -12379,6 +12778,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `ViewPoint` with an infinite component looks from infinitely far
   // away: an orthographic picture.
   let mut view_point_at_infinity = false;
+  // Whether an explicit `ViewPoint` option was given (a camera the scene's
+  // author picked, rather than the default one).
+  let mut explicit_view_point = false;
   let mut orthographic = false;
   let mut show_axes = false;
   let (label_face, tick_faces) = axes_text_faces(&args[1..]);
@@ -12497,6 +12899,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             None
           };
           view_point_at_infinity = at_infinity.is_some();
+          explicit_view_point = true;
           if let Some(vp) =
             symbolic.or(at_infinity).or_else(|| eval_vec3(replacement))
           {
@@ -12853,16 +13256,31 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // position and y the depth.
   let perspective = view_vector.is_some() && !orthographic;
   // Under the default `SphericalRegion -> Automatic`, an invisible
-  // (`Boxed -> False`) box in a picture of fixed width and height is framed
-  // like `SphericalRegion -> True`: by the sphere around the box, not by the
-  // box's projected outline. Wolfram's snapshots of such scenes (long tubes
-  // along x in a 13 × 8 × 8 and a 22 × 8.5 × 8.5 pinned box, and a `Show`
-  // of a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}`
-  // from a custom `ViewPoint`) draw them at the sphere-framed size, 0.7×
-  // to 0.86× the outline-fitted one.
+  // (`Boxed -> False`) box in a picture of fixed width and height whose
+  // range is pinned by an explicit `PlotRange` or that is seen from an
+  // explicit `ViewPoint` is framed like `SphericalRegion -> True`: by the
+  // sphere around the box, not by the box's projected outline. Wolfram's
+  // snapshots of such scenes (long tubes along x in a 13 × 8 × 8 and a
+  // 22 × 8.5 × 8.5 pinned box, and a `Show` of a `Graphics3D` and a
+  // `ParametricPlot3D` at `ImageSize -> {400, 400}` from a custom
+  // `ViewPoint`) draw them at the sphere-framed size, 0.7× to 0.86× the
+  // outline-fitted one. An unboxed scene with neither (a tall 4 × 4 × 10
+  // building at `ImageSize -> {300, 400}`) still fits its box outline to
+  // the frame.
   // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  // Inside a `Manipulate` frame the same explicitly aimed or pinned scenes
+  // are sphere-framed whatever their box and size, so the picture keeps one
+  // scale as controls turn the view: Wolfram's snapshots of boxed scenes in
+  // a pinned `PlotRange` switched between view points (`ViewPoint ->
+  // Below`, a skew view) are drawn at the sphere-framed size, about 0.7×
+  // the outline-fitted one. A Manipulate's scene with the default camera
+  // and no range (a tall elevator building at `ImageSize -> {300, 400}`)
+  // still fits its box outline to the frame.
+  let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
+    || (!spherical_region_off && manipulate_frame && explicitly_framed)
     || (!spherical_region_off
+      && explicitly_framed
       && !show_box
       && explicit_height
       && !full_width
@@ -13102,8 +13520,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               + (p2.y - p1.y).powi(2)
               + (p2.z - p1.z).powi(2))
             .sqrt();
-            let steps =
-              side_subdivision_steps(len, *radius, CYLINDER_SIDES, max_subdiv);
+            let steps = cylinder_side_steps(len, *radius, max_subdiv);
             holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
           }
           (tris, style)
@@ -13693,9 +14110,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_max = 1.0;
   }
 
-  // `SphericalRegion -> True` frames the picture by the sphere drawn
-  // around the displayed box rather than by the projected outline of the
-  // contents. The sphere projects to the same circle from every direction,
+  // `SphericalRegion -> True` frames the picture by a sphere centered on
+  // the displayed box (around the contents, or around a pinned box; see
+  // below) rather than by the projected outline of the contents. The
+  // sphere projects to the same circle from every direction,
   // so the scale no longer follows the view angle or a moving shape.
   // Wolfram widens the camera's field of view until that sphere just fits
   // (see `spherical_region_span`); the resulting span replaces the fitted
@@ -13938,6 +14356,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// endpoints coincide): the dots take their place in the same depth
     /// order, so a box edge or line in front of a dot is drawn over it.
     dot_radius: Option<f64>,
+    /// For a piece of a `Line` primitive: the polyline it was cut from and
+    /// its position along it. Translucent pieces of one polyline drawn in
+    /// a row are joined back into a single stroke (see `emit_edge_run`).
+    piece_of: Option<(usize, usize)>,
   }
 
   // Build depth-sorted segments: the bounding-box edges plus all Line
@@ -13987,6 +14409,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dashing: edge_style.dashing.clone(),
           dash_offset: t0 * edge_px,
           dot_radius: None,
+          piece_of: None,
         });
       }
     }
@@ -14036,6 +14459,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dashing: None,
               dash_offset: 0.0,
               dot_radius: None,
+              piece_of: None,
             });
           }
         }
@@ -14052,6 +14476,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .sqrt();
     let bias = diag * 1e-3;
     const LINE_SUBDIVISIONS: usize = 8;
+    let mut polyline_id = 0usize;
     for prim in &prims {
       let Primitive3D::Line3D { segments, style } = prim else {
         continue;
@@ -14062,6 +14487,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
       let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
       for seg in segments {
+        polyline_id += 1;
+        let mut piece_index = 0;
         // On-screen length of the polyline drawn so far: a dash pattern
         // runs continuously along the whole line instead of restarting
         // at every vertex (which would turn a finely sampled dotted
@@ -14094,7 +14521,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dashing: style.dashing.clone(),
               dash_offset: run_px + t0 * total_px,
               dot_radius: None,
+              piece_of: Some((polyline_id, piece_index)),
             });
+            piece_index += 1;
           }
           run_px += total_px;
         }
@@ -14123,6 +14552,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dashing: None,
           dash_offset: 0.0,
           dot_radius: Some(radius),
+          piece_of: None,
         });
       }
     }
@@ -14204,6 +14634,76 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ex0, ey0, ex1, ey1, edge.color, edge.width, cap, opacity_attr, dash_attr
       ));
     };
+    // Emit the line pieces of one draw slot. Translucent pieces cut from
+    // one polyline are joined into a single `<polyline>`: drawn as
+    // separate elements, every joint between two pieces shows as an
+    // anti-aliasing notch where the background bleeds through.
+    let emit_edge_run = |svg: &mut String, run: &[&SceneEdge]| {
+      let mut done = vec![false; run.len()];
+      for i in 0..run.len() {
+        if done[i] {
+          continue;
+        }
+        let edge = run[i];
+        let Some((line_id, _)) = edge.piece_of.filter(|_| edge.opacity < 1.0)
+        else {
+          emit_edge(svg, edge);
+          continue;
+        };
+        let mut pieces: Vec<usize> = (i..run.len())
+          .filter(|&k| {
+            !done[k]
+              && run[k].opacity < 1.0
+              && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
+          })
+          .collect();
+        pieces.sort_by_key(|&k| run[k].piece_of.map(|(_, n)| n));
+        for &k in &pieces {
+          done[k] = true;
+        }
+        let mut start = 0;
+        while start < pieces.len() {
+          let mut end = start + 1;
+          while end < pieces.len()
+            && run[pieces[end]].piece_of.map(|(_, n)| n)
+              == run[pieces[end - 1]].piece_of.map(|(_, n)| n + 1)
+          {
+            end += 1;
+          }
+          let chain = &pieces[start..end];
+          start = end;
+          if chain.len() == 1 {
+            emit_edge(svg, run[chain[0]]);
+            continue;
+          }
+          let first = run[chain[0]];
+          let mut points = Vec::with_capacity(chain.len() + 1);
+          for (n, &k) in chain.iter().enumerate() {
+            if n == 0 {
+              let (px, py) = project(run[k].endpoints[0], &camera);
+              let (x, y) = to_svg(px, py);
+              points.push(format!("{x:.1},{y:.1}"));
+            }
+            let (px, py) = project(run[k].endpoints[1], &camera);
+            let (x, y) = to_svg(px, py);
+            points.push(format!("{x:.1},{y:.1}"));
+          }
+          let dash_attr = dash3d_attr(
+            first.dashing.as_ref(),
+            svg_width as f64,
+            first.dash_offset,
+          );
+          svg.push_str(&format!(
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"butt\" stroke-linejoin=\"round\" opacity=\"{}\"{}/>\n",
+            points.join(" "),
+            first.color,
+            first.width,
+            first.opacity,
+            dash_attr
+          ));
+        }
+      }
+    };
     let mut ei = 0;
     let mut texture_ids = Vec::new();
     let mut gradients =
@@ -14224,6 +14724,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       by_slot.iter().map(|&k| &sorted_edges[k]).collect();
     let edge_slots: Vec<usize> =
       by_slot.iter().map(|&k| edge_slots[k]).collect();
+    let mut skip_until = 0;
     // The outline edges of the faces go in the same draw order as the
     // line pieces above, not right after their own face: an edge on a
     // curved solid's silhouette (the far rim of a `Cylinder`) would
@@ -14291,11 +14792,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
     for (pos, tri) in all_triangles.iter().enumerate() {
       // Emit the edge segments that belong behind this triangle
+      let run_start = ei;
       while ei < sorted_edges.len() && edge_slots[ei] <= pos {
-        emit_edge(&mut svg, sorted_edges[ei]);
         ei += 1;
       }
+      emit_edge_run(&mut svg, &sorted_edges[run_start..ei]);
       flush_outlines(&mut svg, &mut pending_outlines, pos);
+      // Already painted as part of a merged face below.
+      if pos < skip_until {
+        continue;
+      }
       // Emit triangle
       let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
       let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
@@ -14375,21 +14881,45 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         } else {
           paint.as_str()
         };
+        // The pieces of a translucent flat face painted one after another
+        // are filled as one `<path>`: as separate elements, the
+        // anti-aliased cut between two pieces lets the background show
+        // through as a light seam across the face.
+        let group = translucent_face_run(&all_triangles, pos);
+        skip_until = pos + group.len();
         // A fully transparent face (`FaceForm[None]`, `Opacity[0]`) paints
         // nothing; only its outline below is drawn.
-        if tri.opacity > 0.0 {
+        if group.len() > 1 {
+          let d: Vec<String> = group
+            .iter()
+            .map(|t| {
+              let [a, b, c] = t.projected.map(|(px, py)| to_svg(px, py));
+              format!(
+                "M{:.1},{:.1} L{:.1},{:.1} L{:.1},{:.1} Z",
+                a.0, a.1, b.0, b.1, c.0, c.1
+              )
+            })
+            .collect();
+          svg.push_str(&format!(
+            "<path d=\"{}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n",
+            d.join(" ")
+          ));
+        } else if tri.opacity > 0.0 {
           svg.push_str(&format!(
             "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
           ));
         }
-        let corners = [(x0, y0), (x1, y1), (x2, y2)];
-        for (e, on_outline) in tri.boundary.iter().enumerate() {
-          if !on_outline {
-            continue;
-          }
+        // The group's faces are `all_triangles[pos..]`, in order.
+        let outlines = group.iter().enumerate().flat_map(|(gi, t)| {
+          let corners = t.projected.map(|(px, py)| to_svg(px, py));
+          (0..3)
+            .filter(move |&e| t.boundary[e])
+            .map(move |e| (pos + gi, e, corners[e], corners[(e + 1) % 3]))
+        });
+        for (k, e, a, b) in outlines {
           // An edge two faces share is drawn by both; running each from
           // the same end keeps a dash pattern in step.
-          let (mut a, mut b) = (corners[e], corners[(e + 1) % 3]);
+          let (mut a, mut b) = (a, b);
           if (b.0, b.1) < (a.0, a.1) {
             std::mem::swap(&mut a, &mut b);
           }
@@ -14398,7 +14928,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             dash3d_attr(tri.edge_dashing.as_ref(), svg_width as f64, 0.0);
           let cap = outline_edge_cap(tri.edge_dashing.as_ref());
           pending_outlines.push(std::cmp::Reverse((
-            outline_slot(pos, e),
+            outline_slot(k, e),
             outline_seq,
             format!(
               "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}{dash}/>\n",
@@ -14410,10 +14940,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     flush_outlines(&mut svg, &mut pending_outlines, usize::MAX);
     // Emit remaining edge segments (closest to viewer)
-    while ei < sorted_edges.len() {
-      emit_edge(&mut svg, sorted_edges[ei]);
-      ei += 1;
-    }
+    emit_edge_run(&mut svg, &sorted_edges[ei..]);
   }
 
   // Render points and arrows on top (lines are depth-sorted with the
@@ -14815,10 +15342,11 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
 
 /// The three axis labels an `AxesLabel` value names. A lone label (or a
 /// shorter list) labels the leading axes; `defaults` are the names
-/// `Automatic` stands for.
+/// `Automatic` stands for (`None` for an axis it leaves unlabeled, like the
+/// value axis of a `Plot3D`).
 fn parse_axes_labels(
   replacement: &Expr,
-  defaults: Option<[&str; 3]>,
+  defaults: Option<[Option<&str>; 3]>,
 ) -> [Option<String>; 3] {
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
@@ -14830,7 +15358,7 @@ fn parse_axes_labels(
   };
   let mut labels: [Option<String>; 3] = [None, None, None];
   for (i, item) in items.iter().take(3).enumerate() {
-    labels[i] = axis_label_markup(item, defaults.map(|d| d[i]));
+    labels[i] = axis_label_markup(item, defaults.and_then(|d| d[i]));
   }
   labels
 }
@@ -14845,11 +15373,10 @@ fn axis_label_markup(expr: &Expr, default: Option<&str>) -> Option<String> {
   match expr {
     Expr::Identifier(s) if s == "None" => None,
     // `Automatic` asks for the plot's default label: the variable's name
-    // for a function plot, nothing for a bare `Graphics3D`.
-    Expr::Identifier(s) if s == "Automatic" => default.map(|name| {
-      crate::functions::graphics::expr_to_svg_markup(&Expr::Identifier(
-        name.to_string(),
-      ))
+    // for a function plot, nothing for a bare `Graphics3D`. The name is a
+    // symbol, so it is set in `TraditionalForm` (an italic letter).
+    Expr::Identifier(s) if s == "Automatic" => default.and_then(|name| {
+      axis_label_markup(&Expr::Identifier(name.to_string()), None)
     }),
     Expr::String(_) => {
       let markup = crate::functions::graphics::expr_to_svg_markup(expr);
@@ -15070,8 +15597,8 @@ fn with_plot_label(
       let _ = writeln!(
         out,
         "{}<text x=\"{cx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
-         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-         fill=\"{fill}\"{style_attrs}{keep}>{}</text>",
+           font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+           fill=\"{fill}\"{style_attrs}{keep}>{}</text>",
         line.frame_rect, line.baseline, line.markup
       );
     }
@@ -15082,8 +15609,8 @@ fn with_plot_label(
     let keep = crate::functions::plot::preserve_blanks_attr(&label);
     format!(
       "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-       fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n"
+         font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
+         fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n"
     )
   };
   format!(
@@ -15484,6 +16011,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_styles: Vec<StyleState3D> = Vec::new();
   // `MeshStyle`: the color, opacity and thickness of the mesh lines.
   let mut mesh_style: Option<StyleState3D> = None;
+  // `Mesh -> n` / `{levels…}` and `MeshFunctions`: lines where each mesh
+  // function takes those values, instead of the default grid.
+  let mut mesh_levels: Option<Vec<MeshLevels>> = None;
+  let mut mesh_functions: Option<Vec<Expr>> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -15507,8 +16038,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               mesh_mode = MeshMode::None;
             }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
-            _ => {}
+            other => mesh_levels = parse_mesh_levels(other),
           }
+        }
+        Expr::Identifier(name) if name == "MeshFunctions" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_functions = Some(match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          });
         }
         Expr::Identifier(name) if name == "ColorFunction" => {
           color_function =
@@ -15516,8 +16055,13 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               replacement,
             );
         }
+        // `PlotRange -> {zmin, zmax}`, or the z part of a per-axis
+        // `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` (with `All` or
+        // `Automatic` for an axis that keeps the data extent).
         Expr::Identifier(name) if name == "PlotRange" => {
-          z_clip = parse_z_only_range(replacement);
+          z_clip = parse_z_only_range(replacement).or_else(|| {
+            parse_partial_axis_ranges(replacement).and_then(|r| r[2])
+          });
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
@@ -15597,15 +16141,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               }
             }
           }
-          (
-            grid,
-            num_cols,
-            num_rows,
-            1.0,
-            (num_cols as f64).max(2.0),
-            1.0,
-            (num_rows as f64).max(2.0),
-          )
+          // `DataRange -> {{x0, x1}, {y0, y1}}` places the first and last
+          // columns (x) and rows (y) there instead of at their indices.
+          let ((x0, x1), (y0, y1)) =
+            crate::functions::field_plot::matrix_data_range(
+              outer,
+              &args[1..],
+              (1.0, (num_cols as f64).max(2.0)),
+              (1.0, (num_rows as f64).max(2.0)),
+            );
+          (grid, num_cols, num_rows, x0, x1, y0, y1)
         }
         // Explicit 3D coordinates: {{x1,y1,z1}, {x2,y2,z2}, ...}
         _ => {
@@ -15845,6 +16390,70 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     z_hi - z_lo
   };
+
+  // The surface's triangles in data coordinates: the two halves of each
+  // grid cell, or the triangulation of scattered points.
+  let coord = |k: usize, n: usize, lo: f64, hi: f64| {
+    if n > 1 {
+      lo + k as f64 * (hi - lo) / (n - 1) as f64
+    } else {
+      lo
+    }
+  };
+  let surface_triangles: Vec<[[f64; 3]; 3]> = if let Some((points, tris)) =
+    &scattered
+  {
+    tris
+      .iter()
+      .map(|t| {
+        t.map(|k| {
+          let (x, y, z) = points[k];
+          [x, y, z]
+        })
+      })
+      .collect()
+  } else {
+    let node = |i: usize, j: usize| -> Option<[f64; 3]> {
+      let z = *grid.get(i)?.get(j)?;
+      z.is_finite().then(|| {
+        [
+          coord(i, rows, x_min, x_max),
+          coord(j, cols, y_min, y_max),
+          z,
+        ]
+      })
+    };
+    let mut tris = Vec::new();
+    for i in 0..rows.saturating_sub(1) {
+      for j in 0..cols.saturating_sub(1) {
+        for corners in [
+          [(i, j), (i + 1, j), (i, j + 1)],
+          [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+        ] {
+          if let [Some(a), Some(b), Some(c)] = corners.map(|(a, b)| node(a, b))
+          {
+            tris.push([a, b, c]);
+          }
+        }
+      }
+    }
+    tris
+  };
+  // With an explicit `Mesh` level spec or `MeshFunctions`, the mesh is the
+  // set of level lines of the mesh functions (`{#1 &, #2 &}` by default)
+  // across the surface, plus the surface's outline.
+  let level_mesh: Option<Vec<[[f64; 3]; 2]>> = (mesh_mode == MeshMode::Default
+    && (mesh_levels.is_some() || mesh_functions.is_some()))
+  .then(|| {
+    let fns: Vec<MeshFn> = match &mesh_functions {
+      Some(fs) => fs.iter().map(MeshFn::of).collect(),
+      None => vec![MeshFn::X, MeshFn::Y],
+    };
+    let mut segments =
+      surface_level_lines(&surface_triangles, &fns, mesh_levels.as_deref());
+    segments.extend(triangulation_outline(&surface_triangles));
+    segments
+  });
 
   let camera = Camera::default();
   let mut all_triangles: Vec<Triangle> = Vec::new();
@@ -16165,7 +16774,22 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
     z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
   };
-  let mut mesh_lines = if mesh_mode == MeshMode::Default {
+  let mut mesh_lines = if let Some(segments) = &level_mesh {
+    segments
+      .iter()
+      .map(|[a, b]| {
+        let point = |p: &[f64; 3]| {
+          let (fi, fj) = frac(p[0], p[1]);
+          to_box(fi, fj, p[2])
+        };
+        let line = mesh_segment(point(a), point(b), &camera);
+        match &mesh_style {
+          Some(style) => styled_line_like(&line, style),
+          None => line,
+        }
+      })
+      .collect()
+  } else if mesh_mode == MeshMode::Default {
     let mut lines = if let Some((points, tris)) = &scattered {
       let corners: Vec<[(f64, f64, f64); 3]> = tris
         .iter()
@@ -16271,15 +16895,6 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // re-render everything together under one shared camera instead.
   let mut index_of: Vec<Vec<Option<usize>>> = vec![vec![None; cols]; rows];
   let mut point_exprs: Vec<Expr> = Vec::new();
-  // Grid node `[i][j]` in data coordinates (a height matrix's column and
-  // row numbers, counted from 1).
-  let coord = |k: usize, n: usize, lo: f64, hi: f64| {
-    if n > 1 {
-      lo + k as f64 * (hi - lo) / (n - 1) as f64
-    } else {
-      lo
-    }
-  };
   for (i, row) in grid.iter().enumerate() {
     for (j, &z) in row.iter().enumerate() {
       if !z.is_finite() {
@@ -16361,8 +16976,42 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  // The mesh, at the spacing the standalone render rules it with.
-  if matches!(mesh_mode, MeshMode::Default) {
+  // The level-line mesh: its points join the complex's vertex list.
+  if let Some(segments) = &level_mesh {
+    let mut pairs: Vec<Expr> = Vec::with_capacity(segments.len());
+    for segment in segments {
+      let ends: Vec<Expr> = segment
+        .iter()
+        .map(|p| {
+          point_exprs.push(Expr::List(
+            vec![
+              Expr::Real(p[0]),
+              Expr::Real(p[1]),
+              Expr::Real(p[2].clamp(z_lo, z_hi)),
+            ]
+            .into(),
+          ));
+          Expr::Integer(point_exprs.len() as i128)
+        })
+        .collect();
+      pairs.push(Expr::List(ends.into()));
+    }
+    if !pairs.is_empty() {
+      complex_content.push(Expr::List(
+        vec![
+          call1("Opacity", Expr::Real(0.63)),
+          call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          ),
+          call1("AbsoluteThickness", Expr::Real(0.5)),
+          call1("Line", Expr::List(pairs.into())),
+        ]
+        .into(),
+      ));
+    }
+  } else if matches!(mesh_mode, MeshMode::Default) {
+    // The mesh, at the spacing the standalone render rules it with.
     let mut segments: Vec<Expr> = Vec::new();
     let mut push_segment = |a: Option<usize>, b: Option<usize>| {
       if let (Some(a), Some(b)) = (a, b) {
@@ -19707,6 +20356,8 @@ struct ScatterPoint {
   sy: f64,
   depth: f64,
   color: (u8, u8, u8),
+  /// The dot radius in pixels; `None` keeps the default scatter dot.
+  radius: Option<f64>,
   /// Text drawn beside the point (`data -> labels`).
   label: Option<String>,
 }
@@ -19873,10 +20524,36 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Dataset colors: WL 15's 3D point/curve palette.
   let palette = list_curve_colors_3d();
 
+  // `PlotStyle -> style` (or a list of per-dataset styles, cycling)
+  // overrides a dataset's palette color and dot size.
+  let dataset_styles: Vec<StyleState3D> = args[1..]
+    .iter()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotStyle") => {
+        Some(parse_plot_style_3d(replacement, datasets.len()))
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+
   let mut scatter_points: Vec<ScatterPoint> = Vec::new();
 
   for (di, ds) in datasets.iter().enumerate() {
-    let base_color = palette[di % palette.len()];
+    let style = (!dataset_styles.is_empty())
+      .then(|| &dataset_styles[di % dataset_styles.len()]);
+    let base_color = style
+      .and_then(|st| st.color)
+      .unwrap_or(palette[di % palette.len()]);
+    let radius = style
+      .and_then(|st| st.point_size)
+      .map(|ps| crate::functions::graphics::point_radius(ps, svg_width as f64));
     for (pi, &(x, y, z)) in ds.iter().enumerate() {
       let nx = if x_range_v > 1e-15 {
         ((x - x_min) / x_range_v) * 2.0 - 1.0
@@ -19905,6 +20582,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         sy,
         depth: d,
         color: base_color,
+        radius,
         label: if di == 0 {
           point_labels.get(pi).cloned()
         } else {
@@ -19981,7 +20659,7 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if let Some(style_items) = &plot_style_per_dataset
         && !style_items.is_empty()
       {
-        group.push(style_items[di % style_items.len()].clone());
+        push_plot_style(&mut group, &style_items[di % style_items.len()]);
       }
       let point_exprs: Vec<Expr> = ds
         .iter()
@@ -20171,10 +20849,10 @@ fn generate_scatter_svg(
   });
 
   // Merge-render scatter points and box edges back-to-front (painter's algorithm)
-  let radius = 1.75;
   {
     let mut ei = 0;
     for pt in points {
+      let radius = pt.radius.unwrap_or(1.75);
       // Emit any box edges further from camera than this point
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= pt.depth {
         let edge = &sorted_edges[ei];
@@ -21819,7 +22497,8 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let Some([xl, xr, yl, yr]) = extent {
     // Bars: from each value down to the filling level.
     for (k, pts) in datasets.iter().enumerate() {
-      let mut group = vec![colors[k].clone()];
+      let mut group = Vec::new();
+      push_plot_style(&mut group, &colors[k]);
       group.push(call1("EdgeForm", call1("GrayLevel", num(0.5))));
       let Some(bottom) = base else {
         continue;
@@ -21848,7 +22527,7 @@ pub fn discrete_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         d.push(call1("Opacity", num(0.5)));
       }
       d.push(point_size());
-      d.push(colors[k].clone());
+      push_plot_style(&mut d, &colors[k]);
       call("Directive", d)
     };
     let vertex_colors =

@@ -6045,6 +6045,14 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // Likewise `Magnify[g, s]`: the rendered graphic `g`, scaled by `s`.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Magnify"
+    && (args.len() == 1 || args.len() == 2)
+    && lays_out_a_graphic(&args[0])
+  {
+    return true;
+  }
   // `TableForm[data, …]` / `MatrixForm[data, …]`, and either wrapped in a
   // `Style[…]` that sets its font, are drawn as an aligned grid picture by
   // `expr_to_svg` — a Demonstration's Manipulate body composing one into a
@@ -6777,10 +6785,12 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
     // `Row[{a, b, …}, sep]` sets `sep` between neighboring items; a rule in
     // that position is an option (`ImageSize -> …`), not a separator.
     "Row" if args.len() >= 2 && !crate::syntax::is_rule_expr(&args[1]) => {
+      let separator =
+        crate::functions::graphics::spaced_row_separator(&args[1]);
       let mut cells = Vec::with_capacity(2 * items.len());
       for (i, item) in items.iter().enumerate() {
         if i > 0 {
-          cells.push(args[1].clone());
+          cells.push(separator.clone());
         }
         cells.push(item.clone());
       }
@@ -7234,6 +7244,26 @@ fn wrap_pane_text_at(
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
     }
+    // `Row[{e1, e2, …}, sep]` displays the items with `sep` between them,
+    // so it re-flows as the one-argument `Row[{e1, sep, e2, sep, …}]`.
+    "Row" if args.len() == 2 => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut joined = Vec::with_capacity(items.len() * 2);
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          joined.push(args[1].clone());
+        }
+        joined.push(item.clone());
+      }
+      wrap_pane_text_at(
+        &call1("Row", Expr::List(joined.into())),
+        width,
+        font_size,
+        whole_words,
+      )
+    }
     "Row" if args.len() == 1 => {
       let Expr::List(items) = &args[0] else {
         return None;
@@ -7336,6 +7366,13 @@ fn wrap_pane_text_at(
           }
         }
       }
+      let style_key = |d: &Option<Vec<Expr>>| {
+        d.as_ref().map(|d| {
+          d.iter()
+            .map(crate::syntax::expr_to_input_form)
+            .collect::<Vec<_>>()
+        })
+      };
       let rows: Vec<Expr> = lines
         .iter()
         .map(|line| {
@@ -7343,8 +7380,17 @@ fn wrap_pane_text_at(
           let mut i = 0;
           while i < line.len() {
             let idx = line[i].idx;
+            // Neighboring text items in the same style (the items and
+            // separators of a `Row[list, sep]`) form one run, so the line
+            // is set as one string rather than many abutting pieces.
+            let same_text = |u: &&PaneTextUnit| {
+              u.idx == idx
+                || (atoms[idx].is_none()
+                  && atoms[u.idx].is_none()
+                  && style_key(&styles[u.idx]) == style_key(&styles[idx]))
+            };
             let run: Vec<&PaneTextUnit> =
-              line[i..].iter().take_while(|u| u.idx == idx).collect();
+              line[i..].iter().take_while(same_text).collect();
             i += run.len();
             if let Some(atom) = &atoms[idx] {
               pieces.push(atom.clone());
@@ -7517,10 +7563,18 @@ fn is_display_box(expr: &Expr) -> bool {
 /// The lines a sized `Pane` broke its text into follow the pane's
 /// horizontal `Alignment`: `Alignment -> Center` (or `{Center, Top}`)
 /// centers every line in the pane, `Right` sets them flush right.
+///
+/// A `Column` the pane's `content` already is keeps its own item
+/// alignment (`Left` by default): the pane only places the column as a
+/// whole, so re-flowing one of its items must not re-align the others.
 pub(crate) fn align_pane_lines(
+  content: &Expr,
   lines: Expr,
   alignment: Option<(f64, f64)>,
 ) -> Expr {
+  if pane_content_is_column(content) {
+    return lines;
+  }
   let anchor = match alignment {
     Some((0.5, _)) => "Center",
     Some((1.0, _)) => "Right",
@@ -7540,10 +7594,28 @@ pub(crate) fn align_pane_lines(
         && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();
-      new_args[0] = align_pane_lines(args[0].clone(), alignment);
+      new_args[0] = align_pane_lines(content, args[0].clone(), alignment);
       call(name.as_str(), new_args)
     }
     _ => lines,
+  }
+}
+
+/// Whether pane content is a `Column` of its own, looking through the
+/// `Style`/`Text`/`TraditionalForm`/`Pane` wrappers `wrap_pane_text`
+/// re-flows through.
+fn pane_content_is_column(content: &Expr) -> bool {
+  match content {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Column" => true,
+        "Style" | "Text" | "TraditionalForm" | "Pane" => {
+          pane_content_is_column(&args[0])
+        }
+        _ => false,
+      }
+    }
+    _ => false,
   }
 }
 
@@ -7585,6 +7657,12 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::container_layout::resized_graphic_svg(expr)
         .unwrap_or_else(|| svg_data.clone())
     }
+    // `Button[label, action, …]` draws as its button, not its source.
+    Expr::FunctionCall { name, args }
+      if name == "Button" && args.len() >= 2 =>
+    {
+      crate::functions::graphics::button_svg(args)
+    }
     // `PaneSelector[{v1 -> e1, …}, sel, default]` displays only the pane
     // whose key matches `sel`, so exporting one exports that pane.
     Expr::FunctionCall { name, args }
@@ -7611,7 +7689,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       let wrapped = match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => pane_size_component(&size[0])
           .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
-          .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
+          .map(|lines| {
+            align_pane_lines(&args[0], lines, pane_alignment(&args[1..]))
+          }),
         _ => None,
       };
       // A list in a grid or column wider than the pane breaks into lines
@@ -8123,8 +8203,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       // — `Column[{picture, legend}, Center]` centers the narrow legend
       // under the wide picture. The generic composition below packs every
       // row to the left instead.
+      // A `Button` item stretches to the column's width, which only the
+      // `Column` layout knows.
       if name == "Column"
-        && args.len() >= 2
+        && (args.len() >= 2
+          || matches!(&args[0], Expr::List(items) if items.iter().any(|it| {
+            matches!(it, Expr::FunctionCall { name, args }
+              if name == "Button" && args.len() >= 2)
+          })))
         && let Some(svg) = crate::functions::graphics::column_to_svg(args)
       {
         return svg;
@@ -9373,6 +9459,14 @@ pub(crate) fn readlist_inputstream(
 /// `viewBox` so the content scales with it. Anything that is not an `<svg
 /// width=".." height="..">` root is returned unchanged.
 fn scale_svg_size(svg: &str, factor: f64) -> String {
+  // A raster `Image` exports with an XML declaration before its root tag;
+  // the size lives on the `<svg …>` tag that follows it.
+  let svg = match svg.strip_prefix("<?xml") {
+    Some(rest) => rest
+      .find("?>")
+      .map_or(svg, |end| rest[end + 2..].trim_start()),
+    None => svg,
+  };
   if (factor - 1.0).abs() < f64::EPSILON || !svg.starts_with("<svg") {
     return svg.to_string();
   }
@@ -9390,13 +9484,17 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   for attr in ["width", "height"] {
-    let key = format!(" {attr}=\"");
-    if let Some(start) = head.find(&key) {
-      let vstart = start + key.len();
-      if let Some(vlen) = head[vstart..].find('"')
-        && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
-      {
-        head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+    // An `Image`'s root tag quotes its attributes with `'`.
+    for quote in ['"', '\''] {
+      let key = format!(" {attr}={quote}");
+      if let Some(start) = head.find(&key) {
+        let vstart = start + key.len();
+        if let Some(vlen) = head[vstart..].find(quote)
+          && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
+        {
+          head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+        }
+        break;
       }
     }
   }
