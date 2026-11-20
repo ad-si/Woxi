@@ -34696,6 +34696,67 @@ mod log_log_plot {
     let bottom = ys.iter().filter(|y| (**y - lowest).abs() < 0.5).count();
     assert_eq!(bottom, 5, "{svg}");
   }
+
+  /// The horizontal tick marks (`y1 == y2`) of an SVG, grouped by the
+  /// x coordinate they start at, as `(x1, [length, …])`.
+  fn horizontal_marks(svg: &str) -> Vec<(f64, Vec<f64>)> {
+    let attr = |line: &str, name: &str| -> Option<f64> {
+      line
+        .split(&format!(" {name}=\""))
+        .nth(1)?
+        .split('"')
+        .next()?
+        .parse()
+        .ok()
+    };
+    let mut groups: Vec<(f64, Vec<f64>)> = Vec::new();
+    for line in svg.lines().filter(|l| l.starts_with("<line ")) {
+      let (Some(x1), Some(y1), Some(x2), Some(y2)) = (
+        attr(line, "x1"),
+        attr(line, "y1"),
+        attr(line, "x2"),
+        attr(line, "y2"),
+      ) else {
+        continue;
+      };
+      if (y1 - y2).abs() > 1e-9 {
+        continue;
+      }
+      let len = (x2 - x1).abs();
+      match groups.iter_mut().find(|(x, _)| (*x - x1).abs() < 0.5) {
+        Some((_, lens)) => lens.push(len),
+        None => groups.push((x1, vec![len])),
+      }
+    }
+    groups
+  }
+
+  /// A framed log axis carries tick marks on its edges: a major mark at
+  /// every labeled position and shorter minor marks between them, on the
+  /// labeled edge and mirrored (unlabeled) on the opposite one.
+  #[test]
+  fn framed_log_axis_has_major_and_minor_marks() {
+    for code in [
+      "LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True]",
+      "LogPlot[Exp[-x], {x, 0, 10}, Frame -> True]",
+      "LogLogPlot[Exp[-x], {x, 0.1, 10}, Frame -> True, \
+       FrameTicks -> {{Automatic, Automatic}, {{0.1, 1, 10}, Automatic}}]",
+    ] {
+      let svg = export_svg(code);
+      let edges: Vec<_> = horizontal_marks(&svg)
+        .into_iter()
+        .filter(|(_, lens)| lens.len() >= 10)
+        .collect();
+      assert_eq!(edges.len(), 2, "{code}: left and right edge marks\n{svg}");
+      for (x, lens) in &edges {
+        let longest = lens.iter().copied().fold(0.0, f64::max);
+        let majors = lens.iter().filter(|l| (*l - longest).abs() < 0.5);
+        let minors = lens.iter().filter(|l| **l < longest - 0.5);
+        assert!(majors.count() >= 4, "{code}: majors at x = {x}: {lens:?}");
+        assert!(minors.count() >= 10, "{code}: minors at x = {x}: {lens:?}");
+      }
+    }
+  }
 }
 
 mod log_plot {
