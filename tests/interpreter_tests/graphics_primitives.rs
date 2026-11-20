@@ -376,6 +376,35 @@ mod graphics_primitives {
   }
 
   #[test]
+  fn reversed_circle_arc_range_draws_the_same_arc() {
+    // `{a1, a2}` with `a1 > a2` covers the same angles as `{a2, a1}`.
+    for (rev, fwd) in [("{3, 1}", "{1, 3}"), ("{5.8, 2.7}", "{2.7, 5.8}")] {
+      let path = |range: &str| {
+        let svg = svg_of(&format!(
+          "Graphics[Circle[{{0, 0}}, 1, {range}], PlotRange -> 1.2]"
+        ));
+        let start = svg.find("<path").expect("arc path");
+        svg[start..].lines().next().unwrap().to_string()
+      };
+      assert_eq!(path(rev), path(fwd));
+    }
+  }
+
+  #[test]
+  fn reversed_disk_sector_range_draws_the_same_sector() {
+    for (rev, fwd) in [("{3, 1}", "{1, 3}"), ("{5.8, 2.7}", "{2.7, 5.8}")] {
+      let path = |range: &str| {
+        let svg = svg_of(&format!(
+          "Graphics[Disk[{{0, 0}}, 1, {range}], PlotRange -> 1.2]"
+        ));
+        let start = svg.find("<path").expect("sector path");
+        svg[start..].lines().next().unwrap().to_string()
+      };
+      assert_eq!(path(rev), path(fwd));
+    }
+  }
+
+  #[test]
   fn arrowhead_graphics_are_scaled_by_the_head_size() {
     let svg = svg_of(
       "Graphics[{Arrowheads[{{0.1, 1, Graphics[Disk[{0, 0}, 0.5]]}}], \
