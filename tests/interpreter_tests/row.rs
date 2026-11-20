@@ -995,6 +995,42 @@ fn traditional_row_with_nested_grid_stacks_rows() {
   assert!(!svg.contains(">(<"), "matrix parentheses leaked: {svg}");
 }
 
+/// A relation separator is set as an operator, with a space on each side,
+/// while a punctuation separator stays tight.
+#[test]
+fn row_relation_separator_gets_operator_spacing() {
+  clear_state();
+  let svg = interpret(r#"ExportString[Row[{x, 2}, "="], "SVG"]"#).unwrap();
+  assert!(svg.contains("> = </text>"), "unspaced `=`: {svg}");
+  let svg =
+    interpret(r#"ExportString[Row[{x, 2}, "\[Rule]"], "SVG"]"#).unwrap();
+  assert!(svg.contains("> \u{2192} </text>"), "unspaced arrow: {svg}");
+  let svg = interpret(r#"ExportString[Row[{x, 2}, ","], "SVG"]"#).unwrap();
+  assert!(svg.contains(">,</text>"), "spaced comma: {svg}");
+}
+
+/// A `Style` around a row with a separator styles the separator too.
+#[test]
+fn styled_row_styles_its_separator() {
+  clear_state();
+  let svg =
+    interpret(r#"ExportString[Style[Row[{x, 2.5}, "="], 14, Orange], "SVG"]"#)
+      .unwrap();
+  assert!(
+    svg.contains(r#"fill="rgb(255,128,0)"> = </tspan>"#),
+    "separator not orange: {svg}"
+  );
+  // The separator's own style wins over the enclosing one.
+  let svg = interpret(
+    r#"ExportString[Style[Row[{x, y}, Style[" | ", Gray]], Orange], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(
+    svg.contains(r#"fill="rgb(128,128,128)"> | </tspan>"#),
+    "separator not gray: {svg}"
+  );
+}
+
 /// Regression: a `Button` in a `Grid` cell drew a `Style`d label
 /// (`Style[n, "Title"]`, `Style[k, 30, Bold, Red]`) as plain 14-point
 /// black text, dropping the label's font size, color and weight.

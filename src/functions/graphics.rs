@@ -22412,7 +22412,7 @@ fn is_single_letter_symbol(s: &str) -> bool {
 /// Infix box tokens drawn with a space on either side: relations,
 /// assignments, rule arrows, the `mod` word operator and the bar of
 /// `X | A`.
-fn is_spaced_box_operator(token: &str) -> bool {
+pub(crate) fn is_spaced_box_operator(token: &str) -> bool {
   matches!(
     token,
     ":="
@@ -35424,6 +35424,14 @@ pub(crate) fn style_pushed_into_layout(
     .collect();
   let mut new_args = vec![Expr::List(styled.into())];
   new_args.extend(args[1..].iter().cloned());
+  // A `Row`'s separator is set in the same style as its items:
+  // `Style[Row[{a, b}, "="], Orange]` draws an orange `=`.
+  if name == "Row"
+    && let Some(separator) = new_args.get_mut(1)
+    && !matches!(separator, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  {
+    *separator = restyle(separator);
+  }
   Some(call(name.as_str(), new_args))
 }
 
@@ -36973,6 +36981,33 @@ pub(crate) fn base_style_pushed_args(
   }
 }
 
+/// A `Row` separator as the front end sets it: a string separator is
+/// inserted as a raw token, so a relation such as `"="` gets the operator
+/// spacing on both sides (`Row[{a, 2}, "="]` reads `a = 2`). A `Style` around
+/// the separator keeps its directives.
+pub(crate) fn spaced_row_separator(separator: &Expr) -> Expr {
+  match separator {
+    // The bar of `X | A` is spaced only as that operator; a `"|"` row
+    // separator stays a tight divider (`Row[{a, b}, "|"]` reads `a|b`).
+    Expr::String(s) if s != "|" && is_spaced_box_operator(s) => {
+      Expr::String(format!(" {s} "))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && !args.is_empty()
+        && matches!(&args[0], Expr::String(_) | Expr::FunctionCall { .. }) =>
+    {
+      let mut args = args.to_vec();
+      args[0] = spaced_row_separator(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Row", args) {
     return row_to_svg(&styled);
@@ -37330,6 +37365,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       if let Some(pts) = crate::syntax::spacer_width_pts(sep) {
         Separator::Gap(pts)
       } else {
+        let sep = &spaced_row_separator(sep);
         let text = expr_to_svg_markup(sep);
         let w = estimate_display_width(sep) * char_width;
         Separator::Text(text, w)
