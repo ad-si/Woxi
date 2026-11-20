@@ -28650,3 +28650,103 @@ mod interpolation_of_constant_data_is_exact {
     assert!(!svg.contains("10<tspan"), "{svg}");
   }
 }
+
+// The step-wise NDSolve framework: ProcessEquations sets up a state,
+// Reinitialize restarts it from new initial conditions, Iterate integrates
+// it (in place) and ProcessSolutions reads the solution rules back.
+mod ndsolve_state_data {
+  use super::*;
+
+  #[test]
+  fn process_equations_gives_state_data() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Map[Head, NDSolve`ProcessEquations[{x'[t] == y[t], \
+         y'[t] == -x[t], x[0] == 1, y[0] == 0}, {x, y}, t]]"
+      )
+      .unwrap(),
+      "{NDSolve`StateData}"
+    );
+  }
+
+  #[test]
+  fn iterate_forward_and_read_solutions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == y[t], \
+         y'[t] == -x[t], x[0] == 1, y[0] == 0}, {x, y}, t]]; \
+         NDSolve`Iterate[s, 2]; \
+         Chop[({x[2], y[2]} /. NDSolve`ProcessSolutions[s]) - \
+         {Cos[2.], -Sin[2.]}, 10^-5]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn reinitialize_and_iterate_backward() {
+    clear_state();
+    // x = Sin[t - 1], y = Cos[t - 1] through {0, 1} at t == 1.
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == y[t], \
+         y'[t] == -x[t], x[0] == 1, y[0] == 0}, {x, y}, t]]; \
+         s2 = First[NDSolve`Reinitialize[s, {x[1] == 0, y[1] == 1}]]; \
+         NDSolve`Iterate[s2, -2]; \
+         sol = {x, y} /. NDSolve`ProcessSolutions[s2]; \
+         Chop[Through[sol[-2]] - {Sin[-3.], Cos[-3.]}, 10^-5]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn iterate_changes_the_shared_state() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == x[t], x[0] == 1}, \
+         {x}, t]]; s2 = s; NDSolve`Iterate[s2, 1]; \
+         Chop[(x[1] /. NDSolve`ProcessSolutions[s]) - E, 10^-5]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn iterate_returns_null() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == x[t], x[0] == 1}, \
+         {x}, t]]; NDSolve`Iterate[s, 1] === Null"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn part_three_of_interpolating_function_is_its_grid() {
+    clear_state();
+    assert_eq!(
+      interpret("Interpolation[{1, 4, 9, 16}][[3]]").unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "f = x /. First[NDSolve[{x'[t] == x[t], x[0] == 1}, x, \
+         {t, 0, 1}]]; g = f[[3, 1]]; \
+         {First[g], Last[g], Length[g] > 3, \
+         Chop[Last[f[g]] - E, 10^-5]}"
+      )
+      .unwrap(),
+      "{0., 1., True, 0}"
+    );
+  }
+}

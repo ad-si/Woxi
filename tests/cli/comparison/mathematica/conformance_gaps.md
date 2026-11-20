@@ -10250,3 +10250,12 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### `NDSolve`StateData` prints its registry index
+
+An `NDSolve`StateData` object is a mutable handle (`NDSolve`Iterate`
+advances it in place), which Woxi keeps in a per-session registry. The
+expression only carries the registry index, so it prints as
+`NDSolve`StateData[1]` where wolframscript summarizes the time range
+covered so far (`NDSolve`StateData["<" 0. ">"]`). Its head, and so patterns
+like `s_NDSolve`StateData`, match.
