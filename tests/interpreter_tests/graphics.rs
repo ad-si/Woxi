@@ -15377,8 +15377,8 @@ mod plot3d {
     }
 
     /// A list is a perfectly good label — it is typeset as the list itself,
-    /// which is how a Demonstration names the four curves it draws on one
-    /// axis.
+    /// each element keeping its own styling, which is how a plot names (and
+    /// colors) the curves it draws on one axis.
     #[test]
     fn axes_label_given_a_list_prints_the_list() {
       let svg = export_svg(
@@ -15386,7 +15386,38 @@ mod plot3d {
              AxesLabel -> {"t", {Style[a, Blue], Style[b, Green]}}]"#,
       );
       assert!(svg.contains(">t</text>"), "{svg}");
-      assert!(svg.contains(">{a, b}</text>"), "{svg}");
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains('{'))
+        .unwrap_or_else(|| panic!("list label missing: {svg}"));
+      assert!(
+        label.contains("fill=\"rgb(0,0,255)\""),
+        "a is blue: {label}"
+      );
+      assert!(
+        label.contains("fill=\"rgb(0,255,0)\""),
+        "b is green: {label}"
+      );
+      assert!(!svg.contains(">{a, b}</text>"), "{svg}");
+    }
+
+    /// `TraditionalForm` mapped over a list of styled curve names only
+    /// changes the notation: the names read `prey(t)` with an italic `t`
+    /// and keep their colors.
+    #[test]
+    fn traditional_form_list_axes_label_keeps_element_colors() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, AxesLabel -> TraditionalForm /@
+             {t, {Style[prey[t], Red], Style[pred[t], Blue]}}]"#,
+      );
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains("prey"))
+        .unwrap_or_else(|| panic!("list label missing: {svg}"));
+      assert!(label.contains("fill=\"rgb(255,0,0)\""), "{label}");
+      assert!(label.contains("fill=\"rgb(0,0,255)\""), "{label}");
+      assert!(label.contains("font-style=\"italic\""), "{label}");
+      assert!(!label.contains("prey[t]"), "{label}");
     }
 
     /// A wide y label centered on an axis that sits near the left edge would
