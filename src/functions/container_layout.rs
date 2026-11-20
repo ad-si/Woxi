@@ -509,7 +509,7 @@ pub fn set_baseline_attr(svg: &mut String, y: f64) {
 
 /// The baseline a picture's `<svg>` element records (see
 /// [`set_baseline_attr`]).
-fn baseline_attr(svg: &str) -> Option<f64> {
+pub fn baseline_attr(svg: &str) -> Option<f64> {
   let head = &svg[..svg.find('>')?];
   let start =
     head.find(&format!("{BASELINE_ATTR}=\""))? + BASELINE_ATTR.len() + 2;

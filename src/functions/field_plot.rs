@@ -315,9 +315,15 @@ struct DensityContourOptions {
   boundary_style: Option<crate::functions::plot::SeriesStyle>,
   /// `FrameLabel -> {bottom, left}`: the labels along the frame edges.
   frame_labels: crate::functions::plot::FrameLabels,
-  /// `FrameTicks`: whether the bottom (x) and left (y) edges keep their
-  /// tick marks and labels.
-  frame_ticks: (bool, bool),
+  /// `FrameTicks`: what the bottom, left, top and right frame edges draw
+  /// (automatic marks, labeled marks, an explicit tick list or nothing).
+  frame_ticks: [crate::functions::plot::FrameEdgeTicks; 4],
+  /// `LabelStyle -> 16` / `LabelStyle -> {Red, 12}`: the style of the tick
+  /// and frame labels.
+  label_style: Option<crate::functions::plot::LabelStyleSpec>,
+  /// `ImagePadding`: the (left, right, bottom, top) sides given
+  /// explicitly, in points; `None` sides stay automatic.
+  image_padding: [Option<f64>; 4],
   /// `Frame -> False` leaves out the box (and its ticks) around the plot.
   frame: bool,
   /// `Epilog -> {…}`: graphics primitives drawn over the finished plot,
@@ -558,7 +564,9 @@ fn parse_density_contour_options(
   let mut contour_styles = Vec::new();
   let mut boundary_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
-  let mut frame_ticks = (true, true);
+  let mut frame_ticks = crate::functions::plot::FrameEdgeTicks::defaults();
+  let mut label_style = None;
+  let mut image_padding = [None; 4];
   let mut frame = true;
   let mut epilog: Vec<Expr> = Vec::new();
   let mut region_function: Option<Expr> = None;
@@ -661,7 +669,10 @@ fn parse_density_contour_options(
             }
             // A lone function stands for a list of one: `MeshFunctions ->
             // (f[#1, #2] &)`.
-            f @ Expr::Function { .. } => mesh_functions = vec![f.clone()],
+            // `Function[{x, y}, body]` is just as much a lone function.
+            f @ (Expr::Function { .. } | Expr::NamedFunction { .. }) => {
+              mesh_functions = vec![f.clone()];
+            }
             _ => {}
           }
         }
@@ -694,8 +705,16 @@ fn parse_density_contour_options(
             if v == "False" || v == "None");
         }
         "FrameTicks" => {
-          frame_ticks =
-            crate::functions::plot::frame_tick_axes_visible(replacement);
+          frame_ticks = crate::functions::plot::parse_frame_ticks(replacement);
+        }
+        "LabelStyle" => {
+          label_style =
+            crate::functions::plot::LabelStyleSpec::parse(replacement);
+        }
+        "ImagePadding" => {
+          image_padding =
+            crate::functions::plot::parse_image_padding_sides(replacement)
+              .unwrap_or_default();
         }
         // Evaluate now so primitives inside (e.g. `Point[{a, b}]` marking a
         // Manipulate's current parameters) resolve to numeric coordinates
@@ -730,7 +749,7 @@ fn parse_density_contour_options(
     }
   }
   if !frame {
-    frame_ticks = (false, false);
+    frame_ticks = crate::functions::plot::FrameEdgeTicks::none();
   }
   DensityContourOptions {
     svg_width,
@@ -752,6 +771,8 @@ fn parse_density_contour_options(
     boundary_style,
     frame_labels,
     frame_ticks,
+    label_style,
+    image_padding,
     frame,
     epilog,
     prolog: parse_overlay_primitives(args, start, "Prolog"),
@@ -793,6 +814,39 @@ impl DensityContourOptions {
   /// converts by the picture's own width.
   fn contour_stroke(&self) -> (String, f64, String) {
     self.contour_stroke_for(self.contour_style.as_ref())
+  }
+
+  /// The stroke of each of a single function's contour `levels`. A
+  /// per-contour `ContourStyle -> {s1, s2, …}` styles the contour levels in
+  /// turn (cycled), counting from the first level of an explicit
+  /// `Contours -> {v1, v2, …}` list even when it lies outside the plotted
+  /// value range, so a style stays tied to its level as the range changes.
+  fn level_strokes(&self, levels: &[f64]) -> Vec<(String, f64, String)> {
+    if self.contour_styles.is_empty() {
+      return vec![self.contour_stroke(); levels.len()];
+    }
+    let spec_levels: Option<Vec<f64>> = match &self.contours {
+      ContourSpec::Levels(ls) => {
+        let mut ls = ls.clone();
+        ls.sort_by(|a, b| {
+          a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        ls.dedup();
+        Some(ls)
+      }
+      _ => None,
+    };
+    levels
+      .iter()
+      .enumerate()
+      .map(|(i, level)| {
+        let index = spec_levels
+          .as_ref()
+          .and_then(|ls| ls.iter().position(|v| v == level))
+          .unwrap_or(i);
+        self.contour_stroke_for(self.style_for_contour(index))
+      })
+      .collect()
   }
 
   /// `(color, weight, extra attributes)` of the mesh lines: `MeshStyle`, or
@@ -886,8 +940,21 @@ const FRAME_TICK_LABEL_BOX: f64 = 11.171875;
 const FRAME_X_LABEL_ROOM: f64 = 15.171875;
 /// Distance from the frame to the baseline of an x tick label.
 const FRAME_X_LABEL_BASELINE: f64 = 12.05;
-/// Room a `FrameLabel` adds outside its edge (WL 15: 17.17 points).
-const FRAME_LABEL_ROOM: f64 = 17.171875;
+/// Room a `FrameLabel` adds outside its edge: the gap to the tick labels
+/// plus the height of its lines, at its own `Style[…, size]` if it has one
+/// (WL 15: 17.17 points for a one-line label at the default size).
+fn frame_label_room(label: &str, font: f64) -> f64 {
+  use crate::functions::plot_padding::{
+    FRAME_LABEL_GAP, LABEL_FONT, block_height, markup_font_size,
+  };
+  if label.is_empty() {
+    return 0.0;
+  }
+  let size = markup_font_size(label).unwrap_or(font);
+  // The gap grows with the label font (`LabelStyle`) like the text does.
+  FRAME_LABEL_GAP * font / LABEL_FONT
+    + block_height(label.split('\n').count(), size)
+}
 /// Lengths of the major and minor frame tick marks.
 const FRAME_MAJOR_TICK: f64 = 4.0;
 const FRAME_MINOR_TICK: f64 = 2.4;
@@ -909,6 +976,98 @@ fn frame_tick_label_width(label: &str) -> f64 {
   em * FRAME_TICK_FONT
 }
 
+/// The marks and labels one frame edge carries, positions in data
+/// coordinates and mark lengths in points (reaching into the frame).
+#[derive(Default)]
+struct FieldEdgeTicks {
+  marks: Vec<(f64, f64)>,
+  /// `(pos, label)`, the label as SVG `<text>` content.
+  labels: Vec<(f64, String)>,
+  /// Whether the labels are typeset markup from an explicit tick list
+  /// rather than plain automatic numbers.
+  explicit: bool,
+}
+
+impl FieldEdgeTicks {
+  /// What `spec` draws on an edge spanning `span`, `extent` points long.
+  fn new(
+    spec: &crate::functions::plot::FrameEdgeTicks,
+    span: (f64, f64),
+    extent: f64,
+  ) -> Self {
+    use crate::functions::plot::FrameEdgeTicks as E;
+    use crate::functions::plot_axes::{AxisScale, AxisTicks};
+    let automatic = || {
+      AxisTicks::new(
+        AxisScale {
+          min: span.0,
+          max: span.1,
+          log: false,
+        },
+        false,
+        None,
+      )
+    };
+    match spec {
+      E::None => Self::default(),
+      E::Marks | E::Labeled => {
+        let ticks = automatic();
+        let marks = ticks
+          .majors
+          .iter()
+          .map(|(v, _)| (*v, FRAME_MAJOR_TICK))
+          .chain(ticks.minors.iter().map(|v| (*v, FRAME_MINOR_TICK)))
+          .collect();
+        let labels = if matches!(spec, E::Labeled) {
+          ticks.majors
+        } else {
+          Vec::new()
+        };
+        Self {
+          marks,
+          labels,
+          explicit: false,
+        }
+      }
+      E::Explicit(ticks) => {
+        let (lo, hi) = (span.0.min(span.1), span.0.max(span.1));
+        let inside = |v: f64| v >= lo - 1e-9 * (hi - lo) && v <= hi;
+        let ticks: Vec<_> = ticks.iter().filter(|t| inside(t.pos)).collect();
+        Self {
+          marks: ticks
+            .iter()
+            .map(|t| {
+              let len = t.len.map_or(FRAME_MAJOR_TICK, |(i, _)| i * extent);
+              (t.pos, len)
+            })
+            .collect(),
+          labels: ticks
+            .iter()
+            .filter(|t| !t.label.is_empty())
+            .map(|t| (t.pos, t.label.clone()))
+            .collect(),
+          explicit: true,
+        }
+      }
+    }
+  }
+
+  /// The widest of the labels at `font` points.
+  fn widest_label(&self, font: f64) -> f64 {
+    self
+      .labels
+      .iter()
+      .map(|(_, l)| {
+        if self.explicit {
+          crate::functions::plot_padding::tick_label_width(l, font)
+        } else {
+          frame_tick_label_width(l) * font / FRAME_TICK_FONT
+        }
+      })
+      .fold(0.0, f64::max)
+  }
+}
+
 /// Where a framed density or contour plot puts things, in display points:
 /// the picture size, the frame rectangle and the ticks along its edges.
 struct FieldFrameLayout {
@@ -918,8 +1077,10 @@ struct FieldFrameLayout {
   /// The padded ranges the frame spans.
   x_span: (f64, f64),
   y_span: (f64, f64),
-  x_ticks: crate::functions::plot_axes::AxisTicks,
-  y_ticks: crate::functions::plot_axes::AxisTicks,
+  /// The ticks of the bottom, left, top and right edge.
+  edges: [FieldEdgeTicks; 4],
+  /// The font size of the tick labels.
+  tick_font: f64,
   /// The `PlotRangePadding` fraction between the frame and the data.
   padding: f64,
 }
@@ -937,73 +1098,112 @@ impl FieldFrameLayout {
       (fh - 2.0 * py) * sf,
     )
   }
+
+  /// Room the tick labels of each edge (bottom, left, top, right) take
+  /// outside the frame, in points.
+  fn tick_room(&self) -> [f64; 4] {
+    use crate::functions::plot_padding as pp;
+    let font = self.tick_font;
+    let across = |e: &FieldEdgeTicks| {
+      if e.labels.is_empty() {
+        0.0
+      } else {
+        pp::TICK_LABEL_GAP + pp::line_height(font)
+      }
+    };
+    let along = |e: &FieldEdgeTicks| {
+      if e.labels.is_empty() {
+        0.0
+      } else {
+        pp::TICK_LABEL_GAP + e.widest_label(font)
+      }
+    };
+    [
+      across(&self.edges[0]),
+      along(&self.edges[1]),
+      across(&self.edges[2]),
+      along(&self.edges[3]),
+    ]
+  }
+}
+
+/// The font size of a field plot's tick and frame labels.
+fn field_label_font(opts: &DensityContourOptions) -> f64 {
+  opts
+    .label_style
+    .and_then(|s| s.font_size)
+    .unwrap_or(FRAME_TICK_FONT)
 }
 
 /// WL 15's layout of a density or contour plot: the frame lies
 /// `Scaled[0.02]` outside the data on every side, carries tick marks on all
-/// four edges and labels on the bottom and left ones, and the automatic
-/// `ImagePadding` is just the room those labels take (0.5 / 1.5 points
-/// otherwise). The frame takes the `AspectRatio` (1 by default) and the
-/// picture's height follows from it.
+/// four edges and labels on the bottom and left ones (unless `FrameTicks`
+/// says otherwise), and the automatic `ImagePadding` is just the room those
+/// labels take (0.5 / 1.5 points otherwise). The frame takes the
+/// `AspectRatio` (1 by default) and the picture's height follows from it.
 fn field_frame_layout(
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   opts: &DensityContourOptions,
 ) -> FieldFrameLayout {
-  use crate::functions::plot_axes::{AxisScale, AxisTicks};
   let pad = |lo: f64, hi: f64| {
     let p = (hi - lo) * opts.range_padding / (1.0 - 2.0 * opts.range_padding);
     (lo - p, hi + p)
   };
   let x_span = pad(x_min, x_max);
   let y_span = pad(y_min, y_max);
-  let ticks = |(min, max): (f64, f64), shown: bool| {
-    if shown {
-      AxisTicks::new(
-        AxisScale {
-          min,
-          max,
-          log: false,
-        },
-        false,
-        None,
-      )
-    } else {
-      AxisTicks::default()
-    }
+  let font = field_label_font(opts);
+  let scale = font / FRAME_TICK_FONT;
+  let specs = if opts.frame {
+    opts.frame_ticks.clone()
+  } else {
+    crate::functions::plot::FrameEdgeTicks::none()
   };
-  let x_ticks = ticks(x_span, opts.frame && opts.frame_ticks.0);
-  let y_ticks = ticks(y_span, opts.frame && opts.frame_ticks.1);
-  let widest = |t: &AxisTicks| {
-    t.majors
-      .iter()
-      .map(|(_, l)| frame_tick_label_width(l))
-      .fold(0.0, f64::max)
+  // The tick lengths of an explicit list scale with the frame, which is
+  // only known once the padding is; a first pass with a nominal size gives
+  // the labels (which do not depend on it).
+  let edges_for = |fw: f64, fh: f64| -> [FieldEdgeTicks; 4] {
+    [
+      FieldEdgeTicks::new(&specs[0], x_span, fw),
+      FieldEdgeTicks::new(&specs[1], y_span, fh),
+      FieldEdgeTicks::new(&specs[2], x_span, fw),
+      FieldEdgeTicks::new(&specs[3], y_span, fh),
+    ]
   };
-  let x_labels = !x_ticks.majors.is_empty();
-  let y_labels = !y_ticks.majors.is_empty();
+  let edges = edges_for(1.0, 1.0);
+  let has = |i: usize| !edges[i].labels.is_empty();
   let labels = &opts.frame_labels;
-  let mut left = if y_labels {
-    widest(&y_ticks) + FRAME_TICK_LABEL_GAP
+  let mut left = if has(1) {
+    edges[1].widest_label(font) + FRAME_TICK_LABEL_GAP
   } else {
     0.5
   };
-  let mut bottom = if x_labels { FRAME_X_LABEL_ROOM } else { 1.5 };
-  let mut top = 0.5;
-  let mut right = 1.5;
-  if !labels.left.is_empty() {
-    left += FRAME_LABEL_ROOM;
-  }
-  if !labels.bottom.is_empty() {
-    bottom += FRAME_LABEL_ROOM;
-  }
-  if !labels.top.is_empty() {
-    top += FRAME_LABEL_ROOM;
-  }
-  if !labels.right.is_empty() {
-    right += FRAME_LABEL_ROOM;
-  }
-  // A `PlotLabel` sits in its own strip above the padding (drawn at 14
+  let mut bottom = if has(0) {
+    FRAME_X_LABEL_ROOM * scale
+  } else {
+    1.5
+  };
+  let mut top = if has(2) {
+    FRAME_X_LABEL_ROOM * scale
+  } else {
+    0.5
+  };
+  let mut right = if has(3) {
+    edges[3].widest_label(font) + FRAME_TICK_LABEL_GAP
+  } else {
+    1.5
+  };
+  left += frame_label_room(&labels.left, font);
+  bottom += frame_label_room(&labels.bottom, font);
+  top += frame_label_room(&labels.top, font);
+  right += frame_label_room(&labels.right, font);
+  // An explicit `ImagePadding` side replaces the automatic one.
+  let [pl, pr, pb, pt] = opts.image_padding;
+  left = pl.unwrap_or(left);
+  right = pr.unwrap_or(right);
+  bottom = pb.unwrap_or(bottom);
+  top = pt.unwrap_or(top);
+  // A plot label sits in its own strip above the padding (drawn at 14
   // points by `inject_field_plot_label`).
   let title = opts.plot_label.as_ref().map_or(0.0, |(lines, size)| {
     size.unwrap_or(14.0) * 1.35 * lines.len().max(1) as f64
@@ -1013,16 +1213,21 @@ fn field_frame_layout(
   // The last x label is centered on its tick and the top y label on its own,
   // so either may reach past the frame's end; the padding then grows by
   // the overhang (from WL: `ImageSize -> 200` gives a right padding of 4.4).
-  let last_x_half = x_ticks
-    .majors
-    .last()
-    .map_or(0.0, |(_, l)| frame_tick_label_width(l) / 2.0);
-  let last_x_frac = x_ticks
-    .majors
-    .last()
-    .map_or(0.0, |(v, _)| (x_span.1 - v) / (x_span.1 - x_span.0));
-  let top_y_frac = y_ticks
-    .majors
+  let x_edge = if has(0) { &edges[0] } else { &edges[2] };
+  let y_edge = if has(1) { &edges[1] } else { &edges[3] };
+  let last_x = x_edge.labels.last();
+  let last_x_half = last_x.map_or(0.0, |(_, l)| {
+    let w = if x_edge.explicit {
+      crate::functions::plot_padding::tick_label_width(l, font)
+    } else {
+      frame_tick_label_width(l) * scale
+    };
+    w / 2.0
+  });
+  let last_x_frac =
+    last_x.map_or(0.0, |(v, _)| (x_span.1 - v) / (x_span.1 - x_span.0));
+  let top_y_frac = y_edge
+    .labels
     .last()
     .map_or(1.0, |(v, _)| (y_span.1 - v) / (y_span.1 - y_span.0));
   let frame_size = |left: f64, right: f64, top: f64, bottom: f64| {
@@ -1036,11 +1241,11 @@ fn field_frame_layout(
   };
   for _ in 0..2 {
     let (fw, fh) = frame_size(left, right, top, bottom);
-    if x_labels {
+    if !x_edge.labels.is_empty() && pr.is_none() {
       right = right.max(last_x_half - last_x_frac * fw + 1.0);
     }
-    if y_labels {
-      top = top.max(FRAME_TICK_LABEL_BOX / 2.0 - top_y_frac * fh);
+    if !y_edge.labels.is_empty() && pt.is_none() {
+      top = top.max(FRAME_TICK_LABEL_BOX * scale / 2.0 - top_y_frac * fh);
     }
   }
   let (fw, fh) = frame_size(left, right, top, bottom);
@@ -1058,8 +1263,8 @@ fn field_frame_layout(
     frame: (x0, y0, fw, fh),
     x_span,
     y_span,
-    x_ticks,
-    y_ticks,
+    edges: edges_for(fw, fh),
+    tick_font: font,
     padding: opts.range_padding,
   }
 }
@@ -1120,9 +1325,6 @@ fn field_plot_axes(
   }
 }
 
-/// The frame of a density or contour plot whose canvas came from
-/// [`field_plot_axes`]: a `GrayLevel[0.4]` box with tick marks pointing in
-/// on all four edges and the labels below and left of it.
 fn push_field_frame(
   svg: &mut String,
   area: &crate::functions::plot::PlotArea,
@@ -1138,6 +1340,10 @@ fn push_field_frame(
   );
   let sf = f64::from(RESOLUTION_SCALE);
   let (_, gray, _, label_fill, _) = plot_theme();
+  let label_fill = opts.label_style.and_then(|s| s.color).map_or_else(
+    || label_fill.to_string(),
+    super::graphics::Color::to_svg_rgb,
+  );
   let color = format!("#{:02X}{:02X}{:02X}", gray.0, gray.1, gray.2);
   let (fx, fy, fw, fh) = layout.frame;
   let (fx, fy, fw, fh) = (fx * sf, fy * sf, fw * sf, fh * sf);
@@ -1148,52 +1354,57 @@ fn push_field_frame(
       "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" stroke=\"{color}\" stroke-width=\"{stroke:.1}\"/>\n"
     ));
   };
-  let (major, minor) = (FRAME_MAJOR_TICK * sf, FRAME_MINOR_TICK * sf);
   let xf = |v: f64| {
     fx + (v - layout.x_span.0) / (layout.x_span.1 - layout.x_span.0) * fw
   };
   let yf = |v: f64| {
     fy + fh - (v - layout.y_span.0) / (layout.y_span.1 - layout.y_span.0) * fh
   };
-  let x_marks = layout
-    .x_ticks
-    .majors
-    .iter()
-    .map(|(v, _)| (*v, major))
-    .chain(layout.x_ticks.minors.iter().map(|v| (*v, minor)));
-  for (v, len) in x_marks {
-    let x = xf(v);
-    line(x, fy + fh, x, fy + fh - len);
-    line(x, fy, x, fy + len);
+  let [bottom, left, top, right] = &layout.edges;
+  for &(v, len) in &bottom.marks {
+    line(xf(v), fy + fh, xf(v), fy + fh - len * sf);
   }
-  let y_marks = layout
-    .y_ticks
-    .majors
-    .iter()
-    .map(|(v, _)| (*v, major))
-    .chain(layout.y_ticks.minors.iter().map(|v| (*v, minor)));
-  for (v, len) in y_marks {
-    let y = yf(v);
-    line(fx, y, fx + len, y);
-    line(fx + fw, y, fx + fw - len, y);
+  for &(v, len) in &top.marks {
+    line(xf(v), fy, xf(v), fy + len * sf);
+  }
+  for &(v, len) in &left.marks {
+    line(fx, yf(v), fx + len * sf, yf(v));
+  }
+  for &(v, len) in &right.marks {
+    line(fx + fw, yf(v), fx + fw - len * sf, yf(v));
   }
   out.push_str(&format!(
     "<rect x=\"{fx:.1}\" y=\"{fy:.1}\" width=\"{fw:.1}\" height=\"{fh:.1}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"{stroke:.1}\"/>\n"
   ));
-  let font = FRAME_TICK_FONT * sf;
-  for (v, label) in &layout.x_ticks.majors {
+  let font = layout.tick_font * sf;
+  let scale = layout.tick_font / FRAME_TICK_FONT;
+  let gap = FRAME_TICK_LABEL_GAP * sf;
+  let mut text = |x: f64, y: f64, anchor: &str, label: &str| {
     out.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n"
+    ));
+  };
+  for (v, label) in &bottom.labels {
+    text(
       xf(*v),
-      fy + fh + FRAME_X_LABEL_BASELINE * sf
-    ));
+      fy + fh + FRAME_X_LABEL_BASELINE * scale * sf,
+      "middle",
+      label,
+    );
   }
-  for (v, label) in &layout.y_ticks.majors {
-    out.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"end\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
-      fx - FRAME_TICK_LABEL_GAP * sf,
-      yf(*v) + 0.35 * font
-    ));
+  for (v, label) in &top.labels {
+    text(
+      xf(*v),
+      fy - (FRAME_X_LABEL_ROOM - FRAME_X_LABEL_BASELINE) * scale * sf,
+      "middle",
+      label,
+    );
+  }
+  for (v, label) in &left.labels {
+    text(fx - gap, yf(*v) + 0.35 * font, "end", label);
+  }
+  for (v, label) in &right.labels {
+    text(fx + fw + gap, yf(*v) + 0.35 * font, "start", label);
   }
   svg.push_str(&out);
 }
@@ -1238,7 +1449,7 @@ fn push_field_plot_overlays(
     inject_field_plot_label(svg, &frame, label);
   }
   push_epilog_primitives(svg, area, &opts.epilog);
-  push_frame_labels(svg, &frame, &opts.frame_labels);
+  push_frame_labels(svg, area, &frame, opts);
 }
 
 /// Draw a field plot's `Epilog` primitives over everything drawn so far
@@ -1607,46 +1818,15 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   Some(svg)
 }
 
-/// The frame tick rooms of a field plot, for placing its `FrameLabel`s:
-/// the automatic tick labels of its bottom and left edges.
-fn field_label_layout(
-  area: &crate::functions::plot::PlotArea,
-) -> crate::functions::plot_padding::LabelLayout {
-  use crate::functions::plot_axes::{AxisScale, AxisTicks};
-  use crate::functions::plot_padding as pp;
-  let ticks = |min: f64, max: f64| {
-    AxisTicks::new(
-      AxisScale {
-        min,
-        max,
-        log: false,
-      },
-      false,
-      None,
-    )
-  };
-  let y_width = ticks(area.y_min, area.y_max)
-    .majors
-    .iter()
-    .map(|(_, l)| pp::tick_label_width(l, pp::TICK_FONT))
-    .fold(0.0, f64::max);
-  pp::LabelLayout {
-    tick_room: [
-      pp::TICK_LABEL_GAP + pp::line_height(pp::TICK_FONT),
-      pp::TICK_LABEL_GAP + y_width,
-      0.0,
-      0.0,
-    ],
-    title_top: 0.0,
-  }
-}
-
-/// Write a plot's `FrameLabel` text along the frame edges it names.
+/// Draw a field plot's `FrameLabel` text outside the frame `frame`, beyond
+/// the tick labels of each edge, in the `LabelStyle`.
 fn push_frame_labels(
   svg: &mut String,
   area: &crate::functions::plot::PlotArea,
-  frame_labels: &crate::functions::plot::FrameLabels,
+  frame: &crate::functions::plot::PlotArea,
+  opts: &DensityContourOptions,
 ) {
+  let frame_labels = &opts.frame_labels;
   if frame_labels.bottom.is_empty()
     && frame_labels.left.is_empty()
     && frame_labels.top.is_empty()
@@ -1654,6 +1834,11 @@ fn push_frame_labels(
   {
     return;
   }
+  let layout = field_frame_layout(
+    (area.x_min, area.x_max),
+    (area.y_min, area.y_max),
+    opts,
+  );
   let (.., label_fill, title_fill) = plot_theme();
   let mut plot_opts = crate::functions::plot::PlotOptions::default();
   let non_empty = |s: &String| (!s.is_empty()).then(|| s.clone());
@@ -1661,11 +1846,15 @@ fn push_frame_labels(
   plot_opts.frame_label_left = non_empty(&frame_labels.left);
   plot_opts.frame_label_top = non_empty(&frame_labels.top);
   plot_opts.frame_label_right = non_empty(&frame_labels.right);
+  plot_opts.label_style = opts.label_style;
   svg.push_str(&crate::functions::plot::plot_labels_svg(
     &plot_opts,
-    (area.plot_x0, area.plot_y0, area.plot_w, area.plot_h),
-    (area.x_min, area.x_max, area.y_min, area.y_max),
-    &field_label_layout(area),
+    (frame.plot_x0, frame.plot_y0, frame.plot_w, frame.plot_h),
+    (frame.x_min, frame.x_max, frame.y_min, frame.y_max),
+    &crate::functions::plot_padding::LabelLayout {
+      tick_room: layout.tick_room(),
+      title_top: 0.0,
+    },
     RESOLUTION_SCALE as f64,
     label_fill,
     title_fill,
@@ -2544,12 +2733,63 @@ struct MeshGrid {
   levels: Vec<f64>,
 }
 
+/// The main plot's already `RegionFunction`-masked sample grid (NaN outside
+/// the region), with how its samples sit over the plot domain, so a mesh
+/// grid of any resolution can look up whether one of its nodes is inside.
+#[derive(Clone, Copy)]
+struct RegionMask<'a> {
+  grid: &'a [Vec<f64>],
+  /// `true` when sample `k` of `m` lies at the center of cell `k`, at
+  /// `(k + 1/2)/m` of the span (`DensityPlot`'s color cells); `false` when
+  /// it lies on node `k`, at `k/(m - 1)` of the span.
+  cell_centered: bool,
+}
+
+impl RegionMask<'_> {
+  /// Whether the point at fractions `(u, v)` of the plot's x and y spans
+  /// lies outside the region. On a cell-centered grid a point is outside
+  /// only when every cell touching it is, so mesh lines run right up to the
+  /// region boundary rather than stopping half a cell short of it.
+  fn excludes(&self, u: f64, v: f64) -> bool {
+    let cols = self.grid.len();
+    let rows = self.grid.first().map_or(0, std::vec::Vec::len);
+    if cols == 0 || rows == 0 {
+      return false;
+    }
+    let outside = |i: usize, j: usize| {
+      self
+        .grid
+        .get(i)
+        .and_then(|r| r.get(j))
+        .is_some_and(|s| !s.is_finite())
+    };
+    if self.cell_centered {
+      // The cells on either side of the point along each axis.
+      let around = |t: f64, m: usize| {
+        let p = t * m as f64 - 0.5;
+        let lo = p.floor().clamp(0.0, (m - 1) as f64) as usize;
+        let hi = p.ceil().clamp(0.0, (m - 1) as f64) as usize;
+        [lo, hi]
+      };
+      let (is, js) = (around(u, cols), around(v, rows));
+      is.iter().all(|&i| js.iter().all(|&j| outside(i, j)))
+    } else {
+      let nearest = |t: f64, m: usize| {
+        (t * (m.max(2) - 1) as f64)
+          .round()
+          .clamp(0.0, (m - 1) as f64) as usize
+      };
+      outside(nearest(u, cols), nearest(v, rows))
+    }
+  }
+}
+
 /// Sample a mesh function over the plot's grid and pick `count` evenly
 /// spaced levels across the values it takes — `MeshFunctions -> {10 #1 &}`
-/// with `Mesh -> 11` gives eleven lines of constant x. `region_mask`, when
-/// given, is the main plot's already `RegionFunction`-masked grid (NaN
-/// outside the region): a cell excluded there is excluded here too, so mesh
-/// lines don't spill past the region boundary the contours/bands stop at.
+/// with `Mesh -> 11` gives eleven lines of constant x. A point that
+/// `region_mask` excludes is excluded here too, so mesh lines don't spill
+/// past the region boundary the contours/bands stop at, and the levels are
+/// spread over the values the function takes inside the region only.
 #[allow(clippy::too_many_arguments)]
 fn sample_mesh_grid(
   f: &Expr,
@@ -2560,19 +2800,18 @@ fn sample_mesh_grid(
   y_min: f64,
   y_max: f64,
   count: usize,
-  region_mask: Option<&[Vec<f64>]>,
+  region_mask: Option<RegionMask>,
 ) -> Option<MeshGrid> {
   let n = FIELD_GRID + 1;
   let mut grid = vec![vec![f64::NAN; n]; n];
   let (mut v_min, mut v_max) = (f64::INFINITY, f64::NEG_INFINITY);
   for i in 0..n {
-    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    let u = i as f64 / FIELD_GRID as f64;
+    let x = x_min + u * (x_max - x_min);
     for j in 0..n {
-      let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
-      let masked = region_mask
-        .and_then(|m| m.get(i).and_then(|row| row.get(j)))
-        .is_some_and(|v| !v.is_finite());
-      if masked {
+      let v = j as f64 / FIELD_GRID as f64;
+      let y = y_min + v * (y_max - y_min);
+      if region_mask.is_some_and(|m| m.excludes(u, v)) {
         continue;
       }
       // A mesh function is usually a pure function of the two
@@ -2603,7 +2842,7 @@ fn sample_mesh_grids(
   yvar: &str,
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
-  region_mask: &[Vec<f64>],
+  region_mask: RegionMask,
 ) -> Vec<MeshGrid> {
   let Some(count) = opts.mesh.filter(|&c| c > 0) else {
     return Vec::new();
@@ -2711,7 +2950,7 @@ fn mesh_function_value(
   y: f64,
 ) -> Option<f64> {
   match f {
-    Expr::Function { .. } => {
+    Expr::Function { .. } | Expr::NamedFunction { .. } => {
       let applied = Expr::CurriedCall {
         func: Box::new(f.clone()),
         args: vec![Expr::Real(x), Expr::Real(y)],
@@ -2719,6 +2958,36 @@ fn mesh_function_value(
       try_eval_to_f64(&evaluate_expr_to_expr(&applied).ok()?)
     }
     other => evaluate_at_xy(other, xvar, yvar, x, y),
+  }
+}
+
+/// Draw a single function's contour `levels`, each in its own
+/// [`DensityContourOptions::level_strokes`] style.
+fn render_contour_levels(
+  svg: &mut String,
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  area: &crate::functions::plot::PlotArea,
+  cell_w: f64,
+  cell_h: f64,
+  opts: &DensityContourOptions,
+) {
+  for (level, (color, weight, attrs)) in
+    levels.iter().zip(opts.level_strokes(levels))
+  {
+    render_contour_lines_styled(
+      svg,
+      grid,
+      std::slice::from_ref(level),
+      area.plot_x0,
+      area.plot_y0,
+      cell_w,
+      cell_h,
+      area.render_width,
+      &color,
+      weight,
+      &attrs,
+    );
   }
 }
 
@@ -3060,14 +3329,48 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
   // Mesh lines lie over the density, the level curves of each mesh
-  // function (the coordinates themselves by default).
+  // function (the coordinates themselves by default). They are sampled on
+  // the nodes between the color cells, so a `RegionFunction` is tested on
+  // those nodes too: the mesh then ends exactly at the region boundary and
+  // its levels span just the values inside the region.
+  let node_mask = opts
+    .region_function
+    .as_ref()
+    .filter(|_| opts.mesh.is_some_and(|c| c > 0))
+    .map(|r| {
+      let n = FIELD_GRID + 1;
+      let mut mask = vec![vec![f64::NAN; n]; n];
+      for (i, column) in mask.iter_mut().enumerate() {
+        let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+        for (j, node) in column.iter_mut().enumerate() {
+          let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+          if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+            && v.is_finite()
+            && region_allows(r, x, y, v)
+          {
+            *node = v;
+          }
+        }
+      }
+      mask
+    });
+  let mesh_mask = match &node_mask {
+    Some(mask) => RegionMask {
+      grid: mask,
+      cell_centered: false,
+    },
+    None => RegionMask {
+      grid: &grid,
+      cell_centered: true,
+    },
+  };
   let mesh_grids = sample_mesh_grids(
     &opts,
     &xvar,
     &yvar,
     (x_min, x_max),
     (y_min, y_max),
-    &grid,
+    mesh_mask,
   );
   push_mesh_grids(&mut svg, &mesh_grids, &area, &opts);
   push_field_frame(&mut svg, &area, &opts);
@@ -3108,6 +3411,9 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![
         Expr::List(rows.into()),
         Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+        // The density shades smoothly between its samples, as the
+        // standalone plot draws it, rather than in blocks.
+        rule_expr(id_expr("Resampling"), str_expr("Linear")),
       ],
     )
   });
@@ -3542,7 +3848,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &yvar,
     (x_min, x_max),
     (y_min, y_max),
-    &grid,
+    RegionMask {
+      grid: &grid,
+      cell_centered: false,
+    },
   );
 
   let mesh_items =
@@ -3596,20 +3905,7 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // mesh functions (the coordinates themselves by default), so the same
   // marching squares draw them.
   push_mesh_grids(&mut svg, &mesh_grids, &area, &opts);
-  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
-  render_contour_lines_styled(
-    &mut svg,
-    &grid,
-    &levels,
-    area.plot_x0,
-    area.plot_y0,
-    cell_w,
-    cell_h,
-    area.render_width,
-    &contour_color,
-    contour_weight,
-    &contour_attrs,
-  );
+  render_contour_levels(&mut svg, &grid, &levels, &area, cell_w, cell_h, &opts);
   if opts.boundary_style.is_some() {
     // The region's edge is the level curve halfway between the cells that
     // have a value and those left blank.
@@ -3915,6 +4211,7 @@ fn contour_plot_equations(
           fill_opacity: None,
           marker: None,
           thickness: series_thickness,
+          thickness_fraction: None,
           point_size: None,
           point_size_expr: None,
           dashing: style.and_then(|s| s.dashing.clone()),
@@ -3922,6 +4219,8 @@ fn contour_plot_equations(
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
+          continues_previous: false,
+          color_function: None,
         });
       }
     }
@@ -4024,6 +4323,7 @@ fn contour_plot_equations(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: None,
+    settles_all_range: false,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {
@@ -6070,8 +6370,17 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.cf_expr(),
   );
   let mask = resample_node_grid(&grid, FIELD_GRID + 1, FIELD_GRID + 1);
-  let mesh =
-    sample_mesh_grids(&opts, "x", "y", (x_min, x_max), (y_min, y_max), &mask);
+  let mesh = sample_mesh_grids(
+    &opts,
+    "x",
+    "y",
+    (x_min, x_max),
+    (y_min, y_max),
+    RegionMask {
+      grid: &mask,
+      cell_centered: false,
+    },
+  );
   push_mesh_grids(&mut svg, &mesh, &area, &opts);
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
@@ -6428,7 +6737,7 @@ pub fn relief_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     crate::functions::graphics::option_name_value(o)
       .is_some_and(|(n, _)| n == "FrameTicks")
   }) {
-    opts.frame_ticks = (false, false);
+    opts.frame_ticks = crate::functions::plot::FrameEdgeTicks::none();
   }
   let (mut grid, _, _, _, _, v_min, v_max, n_rows, n_cols) =
     parse_matrix_to_grid(rows, "ReliefPlot");
@@ -6968,20 +7277,7 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.band_coloring(),
     );
   }
-  let (contour_color, contour_weight, contour_attrs) = opts.contour_stroke();
-  render_contour_lines_styled(
-    &mut svg,
-    &grid,
-    &levels,
-    area.plot_x0,
-    area.plot_y0,
-    cell_w,
-    cell_h,
-    area.render_width,
-    &contour_color,
-    contour_weight,
-    &contour_attrs,
-  );
+  render_contour_levels(&mut svg, &grid, &levels, &area, cell_w, cell_h, &opts);
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   push_contour_annotations(
