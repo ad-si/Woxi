@@ -41950,10 +41950,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // selector variable via its own native tab strip: a hidden `ControlType
   // -> None` spec for such a variable turns into a visible `SetterBar` of
   // the tab labels, since Woxi Studio has no tab-strip widget of its own.
-  let body_tabviews = match &body_expr_kept {
+  let mut body_tabviews = match &body_expr_kept {
     Some(body) => collect_body_tabview_selectors(body),
     None => Vec::new(),
   };
+  // A `TabView[{…}, Dynamic[var]]` laid out among the controls (a custom
+  // control panel with one tab per mode) draws the same native tab strip,
+  // so its hidden selector gets the same `SetterBar` of tab labels.
+  for spec in &args[1..] {
+    if matches!(spec, Expr::FunctionCall { name, .. } if name == "TabView") {
+      for (var, items) in collect_body_tabview_selectors(spec) {
+        if !body_tabviews.iter().any(|(v, _)| *v == var) {
+          body_tabviews.push((var, items));
+        }
+      }
+    }
+  }
   // A `SetterBar[Dynamic[var], choices]` drawn inside the body's own layout
   // (typically in `TabView` panes) is lifted into the control panel the same
   // way, shown only while its tab is selected.
@@ -42521,6 +42533,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       continue;
     }
     let (spec, rename) = rewrite_compound_control_var(spec);
+    let spec = seed_bare_control_from_hidden_state(spec, &state);
     let first_pass = crate::with_scoped_globals(&initial_bindings, || {
       parse_manipulate_control(&spec, &sibling_names)
     });
@@ -43495,6 +43508,51 @@ fn is_control_type_rule(item: &Expr) -> bool {
 /// leaving a bare `None` behind alongside the appended `Locator` marker
 /// makes the re-parsed spec hidden all over again, so the promotion
 /// silently loses the control instead of making it draggable.
+/// A control spec that names its variable bare (`{n, {3, 4}, ControlType ->
+/// SetterBar}`, which is also what an embedded `SetterBar[Dynamic[n], …]`
+/// becomes) declares no starting value of its own. When an earlier hidden
+/// `{{n, init}, ControlType -> None}` spec already gave the variable one,
+/// Wolfram keeps that single `n$$ = init`, so the control must start there
+/// rather than at its first choice. Rewrite the bare name to `{n, init}`.
+fn seed_bare_control_from_hidden_state(
+  spec: Expr,
+  state: &[(String, String)],
+) -> Expr {
+  let Expr::List(items) = &spec else {
+    return spec;
+  };
+  let Some(Expr::Identifier(name)) = items.first() else {
+    return spec;
+  };
+  let hides = |it: &Expr| match it {
+    Expr::Identifier(s) => s == "None",
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(p) if p == "ControlType")
+        && matches!(replacement.as_ref(), Expr::Identifier(r) if r == "None")
+    }
+    _ => false,
+  };
+  if items[1..].iter().any(hides) {
+    return spec;
+  }
+  let Some((_, code)) = state.iter().find(|(n, _)| n == name) else {
+    return spec;
+  };
+  let Ok(init) = crate::syntax::string_to_expr(code) else {
+    return spec;
+  };
+  let mut seeded: Vec<Expr> = items.iter().cloned().collect();
+  seeded[0] = Expr::List(vec![Expr::Identifier(name.clone()), init].into());
+  Expr::List(seeded.into())
+}
+
 fn is_control_type_marker(item: &Expr) -> bool {
   is_control_type_rule(item)
     || matches!(item, Expr::Identifier(s) if s == "None")
@@ -46791,6 +46849,30 @@ fn collect_pane_visibility(
     }
     return;
   }
+  // A `TabView[{…}, Dynamic[var]]` shows one tab's controls at a time, just
+  // like a `PaneSelector`; a tab without an explicit key is selected by its
+  // 1-based position.
+  if name == "TabView"
+    && let (Some(tabs), Some(selector)) =
+      (args.first().and_then(tabview_panes), args.get(1))
+    && let Expr::Identifier(_) = unwrap_pane_selector(selector)
+  {
+    let panes: Vec<Expr> = tabs
+      .iter()
+      .enumerate()
+      .map(|(idx, tab)| {
+        let (key, _label, content) = tabview_pane_parts(tab);
+        let key = key.unwrap_or_else(|| Expr::Integer(idx as i128 + 1));
+        rule_expr(key, content.clone())
+      })
+      .collect();
+    let as_selector = call(
+      "PaneSelector",
+      vec![Expr::List(panes.into()), selector.clone()],
+    );
+    collect_pane_visibility(&as_selector, place_map, out, outer);
+    return;
+  }
   if name != "PaneSelector" {
     // The `PaneSelector` may sit inside a layout container.
     for arg in args {
@@ -46816,11 +46898,16 @@ fn collect_pane_visibility(
     else {
       continue;
     };
-    let own = format!(
-      "({}) == ({})",
-      selector,
-      crate::syntax::expr_to_source_form(pattern)
-    );
+    // A symbolic key (`Automatic`, `Random`) never compares `==` with a
+    // different symbol (the comparison stays unevaluated), so such panes
+    // are picked by `SameQ`; literal keys keep `==` (`1` matches `1.`).
+    let key = crate::syntax::expr_to_source_form(pattern);
+    let own = match pattern.as_ref() {
+      Expr::Identifier(s) if s != "True" && s != "False" => {
+        format!("({selector}) === ({key})")
+      }
+      _ => format!("({selector}) == ({key})"),
+    };
     // A pane nested inside another pane's content (`PaneSelector[{True ->
     // PaneSelector[{1 -> control}, Dynamic[w]]}, Dynamic[p]]`) is only on
     // screen while the outer pane is too, so its condition is the
@@ -54191,9 +54278,12 @@ fn display_expr_to_node(
               Expr::List(cs) => cs
                 .iter()
                 .map(|c| {
-                  // A span marker only continues its neighbor's cell: it
-                  // draws nothing, not its own name.
-                  if is_span_marker(c) {
+                  // A span marker only continues its neighbor's cell, and
+                  // a `Grid` draws a `Null` entry (an empty slot, as in
+                  // `{, x}`) as a blank cell: neither draws its own name.
+                  let blank_null = name != "TableForm"
+                    && matches!(c, Expr::Identifier(s) if s == "Null");
+                  if is_span_marker(c) || blank_null {
                     DisplayNode::Static {
                       svg: None,
                       text: String::new(),
@@ -59326,5 +59416,30 @@ mod click_pane_display_tests {
       (hit.x_min, hit.y_min, hit.x_max, hit.y_max),
       (0.0, 0.0, 10.0, 10.0)
     );
+  }
+}
+
+mod grid_display_null_cell_tests {
+  use super::*;
+
+  /// An empty slot in a display `Grid` row (`{, x}` reads as `{Null, x}`)
+  /// is drawn as a blank cell, the same as an exported static `Grid`, not
+  /// as the word "Null".
+  #[test]
+  fn null_grid_cell_is_blank() {
+    let node = build_manipulate_display(
+      r#"Grid[{{"w", Dynamic[a]}, {, Dynamic[b]}}]"#,
+      &[
+        ("a".to_string(), "1".to_string()),
+        ("b".to_string(), "2".to_string()),
+      ],
+    );
+    let DisplayNode::Grid(rows) = node else {
+      panic!("expected a grid node, got {node:?}");
+    };
+    match &rows[1][0] {
+      DisplayNode::Static { svg: None, text } => assert_eq!(text, ""),
+      other => panic!("expected a blank cell, got {other:?}"),
+    }
   }
 }
