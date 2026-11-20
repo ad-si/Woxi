@@ -500,7 +500,10 @@ impl StyledLabel {
       let dy = advances.get(i).copied().unwrap_or(0.0);
       out.push_str(&format!(
         "<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{}</tspan>",
-        scale_markup_lengths(line, scale)
+        // A blank line keeps its height: renderers drop empty tspans.
+        crate::functions::graphics::tspan_line(&scale_markup_lengths(
+          line, scale
+        ))
       ));
     }
     out
@@ -561,6 +564,12 @@ impl StyledLabel {
       .map(|line| svg_markup_visible_text(&line).chars().count())
       .max()
       .unwrap_or(0)
+  }
+
+  /// The width of the label's widest line at `size` points (see
+  /// [`Self::max_line_width_em`]).
+  pub(crate) fn max_line_width(&self, size: f64) -> f64 {
+    self.max_line_width_em() * size
   }
 
   /// The width of this label's widest line in ems of its font size,

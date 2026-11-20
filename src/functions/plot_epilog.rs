@@ -920,6 +920,17 @@ fn render_item(
           ));
         }
       }
+      // `Triangle[{p1, p2, p3}]` (or a list of such triples) is drawn as
+      // the polygon through its corners; `Triangle[]` is the unit triangle.
+      "Triangle" if args.len() <= 1 => {
+        let corners = args.first().cloned().unwrap_or_else(|| {
+          let pt = |x: i128, y: i128| {
+            Expr::List(vec![Expr::Integer(x), Expr::Integer(y)].into())
+          };
+          Expr::List(vec![pt(0, 0), pt(1, 0), pt(0, 1)].into())
+        });
+        render_item(&call("Polygon", vec![corners]), style, area, out);
+      }
       // `Translate[content, {dx, dy}]` shifts `content`; a list of offsets
       // draws one shifted copy per entry (matches `Graphics[Translate[…]]`).
       // A Demonstration's own custom-shape helper (e.g. a spring coil built
@@ -1196,11 +1207,15 @@ fn render_item(
             .or_else(|| style_wrapper_background(body))
             .filter(|_| !is_framed && direction.is_none());
           if let Some(color) = text_background {
-            let chars = styled.as_ref().map_or_else(
-              || expr_to_output(body).chars().count(),
-              super::chart::StyledLabel::max_line_chars,
-            ) as f64;
-            let text_w = chars * font_size * 0.6;
+            let text_w = styled.as_ref().map_or_else(
+              || {
+                crate::functions::plot_padding::text_width(
+                  &expr_to_output(body),
+                  font_size,
+                )
+              },
+              |s| s.max_line_width(font_size),
+            );
             let left = match text_anchor {
               "start" => px,
               "end" => px - text_w,
@@ -1280,6 +1295,15 @@ fn render_item(
         if let Some(text) =
           crate::functions::graphics::text_primitive_inset(args) =>
       {
+        render_item(&with_inset_background(text, args), style, area, out);
+      }
+      // A `Row` of text runs is a (possibly wrapped) paragraph label.
+      "Inset"
+        if args.len() >= 2
+          && let Some(label) =
+            crate::functions::graphics::text_row_inset_object(args, 13.0) =>
+      {
+        let text = call("Text", vec![label, args[1].clone()]);
         render_item(&with_inset_background(text, args), style, area, out);
       }
       // `Inset[Rotate[obj, θ], pos, …]` turns the inset object by θ
