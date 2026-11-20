@@ -8270,6 +8270,28 @@ mod cases {
 
   /// A negative rational sets its minus sign before the fraction bar in
   /// TraditionalForm, as in StandardForm, not in the numerator.
+  /// `¬` parenthesizes an operand that binds looser than it — an `∨`, an
+  /// `⇒` or an `⊻` — but not a literal it binds tighter than.
+  #[test]
+  fn traditional_form_not_parenthesizes_looser_operands() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!(a || b)]]"#,
+      r#"TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, ∨, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!Xor[a, b]]]"#,
+      r#"TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, ⊻, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!Implies[a, b]]]"#,
+      "TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, \u{F523}, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]",
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!a && b]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{¬, a}], ∧, b}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   #[test]
   fn traditional_form_negative_rational_sign_precedes_the_bar() {
     assert_case(

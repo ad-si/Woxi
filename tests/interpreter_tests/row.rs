@@ -133,6 +133,27 @@ mod row_text_mode {
 mod row_visual_mode {
   use super::*;
 
+  /// `Row[{…picture…}, ImageSize -> …]`: the option sizes the row instead of
+  /// being typeset between its items as a separator.
+  #[test]
+  fn option_of_a_row_holding_a_picture_is_not_a_separator() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Row[{"ab", Graphics[{Disk[]}, ImageSize -> 20]},
+        ImageSize -> {120, 30}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("ImageSize"), "option typeset as text: {svg}");
+    assert!(svg.starts_with("<svg width=\"120\""), "row width: {svg}");
+    // A real separator is still set between the items.
+    let svg = interpret(
+      r#"ExportString[Row[{"ab", Graphics[{Disk[]}, ImageSize -> 20]}, "|"],
+        "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">|<"), "separator missing: {svg}");
+  }
+
   #[test]
   fn row_renders_svg() {
     clear_state();
@@ -535,6 +556,53 @@ mod row_visual_mode {
     assert_eq!(
       nested.matches("<tspan").count(),
       nested.matches("</tspan>").count()
+    );
+  }
+
+  /// Each line of a stacked `<text>` repeats the text's central baseline:
+  /// resvg (Woxi Studio's renderer) resolves `dominant-baseline` only
+  /// against the direct parent, so a colored run nested inside a line
+  /// otherwise rose half a line above its row (into the cell above).
+  #[test]
+  fn stacked_lines_repeat_central_baseline() {
+    clear_state();
+    let svg = |code: &str| -> String {
+      interpret_with_stdout(code).unwrap().graphics.unwrap()
+    };
+    // The lines are `<tspan>`s of one `<text>`, or (a column in the text
+    // face of `Text[…]`) `<text>` elements of their own.
+    let line_baselines = |svg: &str, baseline: &str| {
+      let mut lines: Vec<&str> = svg
+        .split("<tspan x=")
+        .skip(1)
+        .map(|rest| rest.split('>').next().unwrap())
+        .collect();
+      if lines.len() < 2 {
+        lines = svg
+          .split("<text ")
+          .skip(1)
+          .map(|rest| rest.split('>').next().unwrap())
+          .collect();
+      }
+      assert!(lines.len() >= 2, "{svg}");
+      let attr = format!("dominant-baseline=\"{baseline}\"");
+      assert!(lines.iter().all(|attrs| attrs.contains(&attr)), "{svg}");
+    };
+    // Grid cell holding a column of colored rows.
+    line_baselines(
+      &svg(
+        "Grid[{{Text[Column[{Style[Row[{\"a = \", 1}], Red], \
+         Style[Row[{\"b = \", 2}], Blue]}]]}}]",
+      ),
+      "central",
+    );
+    // Text primitive with a styled run on each line.
+    line_baselines(
+      &svg(
+        "Graphics[Text[Style[Row[{Style[\"a\", Red], \"\\n\", \
+         Style[\"b\", Blue]}]], {0, 0}]]",
+      ),
+      "central",
     );
   }
 
@@ -961,4 +1029,32 @@ fn styled_row_styles_its_separator() {
     svg.contains(r#"fill="rgb(128,128,128)"> | </tspan>"#),
     "separator not gray: {svg}"
   );
+}
+
+/// Regression: a `Button` in a `Grid` cell drew a `Style`d label
+/// (`Style[n, "Title"]`, `Style[k, 30, Bold, Red]`) as plain 14-point
+/// black text, dropping the label's font size, color and weight.
+#[test]
+fn styled_button_label_in_grid_keeps_its_style() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style[7, "Title"], x = 1]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("font-size=\"44\""), "Title size lost: {svg}");
+
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style["go", 30, Bold, Red], x = 1, ImageSize -> {120, 60}]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("font-size=\"30\""), "size lost: {svg}");
+  assert!(svg.contains("font-weight=\"bold\""), "weight lost: {svg}");
+  assert!(
+    !svg.contains("fill=\"#000000\" text-anchor"),
+    "color lost: {svg}"
+  );
+
+  // A plain label still draws as the default 14-point text.
+  let svg =
+    interpret(r#"ExportString[Grid[{{Button["go", x = 1]}}], "SVG"]"#).unwrap();
+  assert!(svg.contains("font-size=\"14\""), "{svg}");
 }

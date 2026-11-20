@@ -7459,6 +7459,22 @@ mod solve_one_argument_unknowns {
        {{}}, {{x -> 1}}, {}}"
     );
   }
+
+  /// A disjunction of equations — the form `Roots` returns — is solved
+  /// for the unknowns of its alternatives.
+  #[test]
+  fn disjunction_of_equations() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Solve[x == 1 || x == 2], Solve[Roots[x^2 - 3 x + 2 == 0, x]], \
+         Solve[(x == 1 && y == 2) || (x == 3 && y == 4)]}"
+      )
+      .unwrap(),
+      "{{{x -> 1}, {x -> 2}}, {{x -> 1}, {x -> 2}}, \
+       {{x -> 1, y -> 2}, {x -> 3, y -> 4}}}"
+    );
+  }
 }
 
 mod solve_ratnz_only_for_polynomial_systems {
@@ -26806,5 +26822,71 @@ fn solve_degenerate_systems() {
     ),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// A linear system with machine numbers keeps a small right-hand side it
+// states outright: only rounding noise left by cancellation is snapped to
+// zero, judged against the terms that cancelled, and pivots are judged
+// against the coefficients alone, never against the right-hand side.
+mod solve_linear_machine_small_right_hand_sides {
+  use super::*;
+
+  fn solve(input: &str) -> (String, bool) {
+    clear_state();
+    let out = interpret(input).unwrap();
+    let ratnz = woxi::get_captured_messages_raw()
+      .iter()
+      .any(|m| m.contains("ratnz"));
+    (out, ratnz)
+  }
+
+  #[test]
+  fn small_stated_values_stay() {
+    assert_eq!(
+      solve("Solve[{x == 1.*^-12, y == 1}, {x, y}]"),
+      ("{{x -> 1.*^-12, y -> 1.}}".to_string(), false)
+    );
+    assert_eq!(
+      solve("Solve[{2.*x + y == 1.*^-12, -2.*x + y == -1.*^-12}, {x, y}]"),
+      ("{{x -> 5.*^-13, y -> 0.}}".to_string(), false)
+    );
+    assert_eq!(
+      solve("Solve[{4.*x == 2.*^-20, y - x == 0}, {x, y}]"),
+      ("{{x -> 5.*^-21, y -> 5.*^-21}}".to_string(), false)
+    );
+  }
+
+  /// Two nearly parallel lines meeting close to the origin.
+  #[test]
+  fn nearly_parallel_lines() {
+    let (out, ratnz) = solve(
+      "Solve[{y == 0.8 - 22918.311790689946*(0.00003490658506198784 + x), \
+       y == 0.8 + 22918.311790689946*(-0.00003490658506208581 + x)}, {x, y}]",
+    );
+    assert!(!ratnz);
+    assert!(out.starts_with("{{x -> 4.898"), "{out}");
+  }
+
+  #[test]
+  fn large_right_hand_side() {
+    assert_eq!(
+      solve("Solve[{x + y == 1.*^15, x - y == 1.}, {x, y}]"),
+      (
+        "{{x -> 5.000000000000005*^14, y -> 4.999999999999995*^14}}"
+          .to_string(),
+        false
+      )
+    );
+  }
+
+  /// Rounding noise from cancellation still vanishes, so a dependent
+  /// system stays underdetermined rather than inconsistent.
+  #[test]
+  fn cancellation_noise_vanishes() {
+    assert_eq!(
+      solve("Solve[{0.1 x + 0.2 y == 0.3, 0.3 x + 0.6 y == 0.9}, {x, y}]").0,
+      "{{y -> 1.5 - 0.5*x}}"
+    );
   }
 }
