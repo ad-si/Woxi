@@ -1782,7 +1782,7 @@ mod internal_cut_seams {
       "Graphics3D[Polygon[Table[{Cos[t], Sin[t], 0}, {t, 0, 5 Pi/3, Pi/3}]], Boxed -> False]",
     );
     let mut counts = polygon_point_counts(&s);
-    counts.sort();
+    counts.sort_unstable();
     assert_eq!(counts, vec![5, 5, 7, 7], "{s}");
   }
 
@@ -1791,7 +1791,7 @@ mod internal_cut_seams {
   fn cuboid_faces_widen() {
     let s = svg("Graphics3D[Cuboid[], Boxed -> False]");
     let counts = polygon_point_counts(&s);
-    assert!(!counts.is_empty());
+    assert_ne!(counts, [] as [usize; 0]);
     assert!(counts.iter().all(|&n| n == 5), "{counts:?}");
   }
 
