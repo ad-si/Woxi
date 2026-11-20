@@ -5667,23 +5667,28 @@ calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
 
-### Sphere framing of an unboxed pinned box at a fixed `ImageSize`
+### Sphere framing of an unboxed box at a fixed `ImageSize`
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a
 `Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
-displayed box) when the box is invisible (`Boxed -> False`), pinned by an
-explicit `PlotRange`, and drawn at `ImageSize -> {w, h}`. Two
-Demonstrations' snapshots motivate this: a cylinder from `{-10, 0, 0}` to
+displayed box) when the box is invisible (`Boxed -> False`) and the picture
+is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate
+this, none checked with wolframscript: a cylinder from `{-10, 0, 0}` to
 `{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
 4.25}}, ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
-box-outline fit gave 357 px), and a tube from `{-6, 0, 0}` to `{6, 0, 0}`
-in a `{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
-244.5 px wide (Woxi: 243 px; the outline fit gave 295 px).
+box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
+`{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
+244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), and a `Show` of
+a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
+custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
+and 0.86× the box fit.
 
-Which of the three conditions really triggers the sphere framing could not
-be told apart without wolframscript. A `SphericalRegion -> False` cylinder
-without a `PlotRange` at `ImageSize -> {550, 350}` still fills the width
-(532/550), so the rule is kept to scenes that meet all three conditions.
+Which conditions really trigger the sphere framing — `Boxed -> False`, the
+pinned size, an explicit `PlotRange` or `Show` — is unverified. A
+`Boxed -> False` picture given only a width still fits the box outline, and
+`SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
+`ViewAngle` turn the sphere framing off. The surface plots
+(`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
 
@@ -6029,6 +6034,14 @@ A plot merged with other graphics by `Show` (say a `DensityPlot` under a
 `StreamPlot`) is redrawn by the `Graphics` renderer, whose tick labels are a
 monospace font, larger than the plot renderer's sans-serif ones. Wolfram draws
 both alike.
+
+### Lines of a `Column` in a `Text` label are set closer together
+
+The lines of `Text[Style[Column[{"0000", "Step: 0"}], 18], pos]` inside a
+`Graphics` are one font size apart (18 pt) in Woxi; Wolfram's front end sets
+them about 25 pt apart (roughly 1.4 font sizes), as its line height plus the
+`Column`'s own row spacing. The same `tspan` layout also serves a string with
+`"\n"` line breaks, whose Wolfram pitch has not been measured.
 
 ### Graphics inside lists and layouts: remaining differences
 

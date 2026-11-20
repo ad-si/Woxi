@@ -10,6 +10,11 @@
     visible head. `Style[Text[…], Italic]` slants 3D labels.
 - `RandomVariate` and `RandomReal` draw samples from
     `SkewNormalDistribution[μ, σ, α]`.
+- Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
+    `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Show` keeps a curve's `ColorFunction` on that curve alone: a plot merged
+    with it keeps its own color, and the colored curve stays colored when a
+    `Graphics` comes first (drawn with `VertexColors`).
 
 # 2026-11-08 - 0.4.0
 

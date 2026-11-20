@@ -442,6 +442,16 @@ fn per_contour_styles(
 }
 
 impl DensityContourOptions {
+  /// The value range sampled `values` span: the full range under
+  /// `PlotRange -> All`, otherwise the range with outliers fenced off.
+  fn sampled_range(&self, values: &[f64]) -> (f64, f64) {
+    if self.full_value_range {
+      full_value_range(values)
+    } else {
+      robust_value_range(values)
+    }
+  }
+
   /// The style of the `index`-th contour function: its own entry of a
   /// per-contour `ContourStyle` (cycled), else the single shared style.
   fn style_for_contour(
@@ -3010,13 +3020,9 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An explicit `PlotRange -> {zmin, zmax}` fixes the values the colors
   // span; cells beyond it follow `ClippingStyle` (blank by default).
   // Otherwise the colors span the sampled values.
-  let (v_min, v_max) = opts.value_range.unwrap_or_else(|| {
-    if opts.full_value_range {
-      full_value_range(&samples)
-    } else {
-      robust_value_range(&samples)
-    }
-  });
+  let (v_min, v_max) = opts
+    .value_range
+    .unwrap_or_else(|| opts.sampled_range(&samples));
   let clipping = if opts.value_range.is_some() {
     opts.clipping
   } else {
@@ -3518,8 +3524,8 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  let (v_min, v_max) = robust_value_range(&samples);
-  let (level_min, level_max) = robust_value_range(&all_samples);
+  let (v_min, v_max) = opts.sampled_range(&samples);
+  let (level_min, level_max) = opts.sampled_range(&all_samples);
 
   if !v_min.is_finite() || !v_max.is_finite() {
     return Ok(crate::graphics_result(
@@ -3916,6 +3922,7 @@ fn contour_plot_equations(
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
+          color_function: None,
         });
       }
     }
