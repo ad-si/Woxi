@@ -27822,14 +27822,14 @@ fn grid_svg_styled_internal_reporting(
             char_width
           };
           let tw = estimate_display_width(cell) * advance * (fs / font_size);
-          let bh = n_lines * fs * 1.2;
+          let bh = n_lines * fs;
           let left = match anchor {
             "middle" => cx - tw / 2.0,
             "end" => cx - tw,
             _ => cx,
           };
           let top = if multiline {
-            text_y - fs * 0.6
+            text_y - fs / 2.0
           } else {
             text_y - bh / 2.0
           };
