@@ -5102,6 +5102,72 @@ mod graphics {
         assert!(!svg.contains("b c/"), "flattened to text: {svg}");
       }
 
+      // A one-item `Row[{Style["…\\!\\(\\*FractionBox[…]\\)…", Italic]}]`
+      // grid cell lays out like its lone item: the fraction is stacked
+      // instead of written as linear `(a)/(b)` text.
+      #[test]
+      fn grid_single_item_row_of_styled_inline_fraction_string_stacks() {
+        let svg = export_svg(
+          "Grid[{{Row[{Style[\"|\\!\\(\\*FractionBox[\\(p + q\\), \
+           \\(2\\ r\\)]\\)|\", Italic]}]}, {1.5}}, Frame -> All]",
+        );
+        assert!(!svg.contains(")/("), "flattened to text: {svg}");
+        assert!(svg.contains(">p + q<"), "numerator missing: {svg}");
+        assert!(svg.contains(">2 r<"), "denominator missing: {svg}");
+      }
+
+      /// The `x1`/`y1`/`x2`/`y2` coordinates of every `<line>` in `svg`.
+      fn svg_line_coords(svg: &str) -> Vec<[f64; 4]> {
+        svg
+          .split("<line ")
+          .skip(1)
+          .map(|rest| {
+            let attr = |name: &str| -> f64 {
+              let key = format!("{name}=\"");
+              let start = rest.find(&key).unwrap() + key.len();
+              let end = start + rest[start..].find('"').unwrap();
+              rest[start..end].parse().unwrap()
+            };
+            [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+          })
+          .collect()
+      }
+
+      // An `InfiniteLine`/`HalfLine` is drawn only across a box one plot
+      // size past the visible range, not thousands of pixels beyond it (an
+      // extent that made resvg drop a translucent primitive drawn after
+      // it), and a `HalfLine` still starts at its point.
+      #[test]
+      fn infinite_line_is_drawn_near_the_plot_range() {
+        let svg = export_svg(
+          "Graphics[{InfiniteLine[{{0, 0}, {1, 1/2}}], \
+           HalfLine[{0, 0}, {-1, 0}], \
+           {Opacity[0.5], Green, Line[{{0, 0}, {1, 1}}]}}, \
+           PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 200]",
+        );
+        let lines = svg_line_coords(&svg);
+        assert_eq!(lines.len(), 2, "{svg}");
+        for l in &lines {
+          assert!(l.iter().all(|c| c.abs() < 1000.0), "{l:?} in {svg}");
+        }
+        // The half line runs from the origin (the image center) leftward.
+        let half = lines[1];
+        assert!((half[0] - 100.0).abs() < 1.0, "{half:?}");
+        assert!(half[2] < 0.0, "{half:?}");
+        assert!(svg.contains("opacity=\"0.5\""), "{svg}");
+      }
+
+      // An `InfiniteLine` that misses the area around the plot range
+      // entirely draws nothing.
+      #[test]
+      fn infinite_line_far_outside_the_plot_range_is_not_drawn() {
+        let svg = export_svg(
+          "Graphics[{InfiniteLine[{0, 100}, {1, 0}], Point[{0, 0}]}, \
+           PlotRange -> {{-1, 1}, {-1, 1}}]",
+        );
+        assert!(svg_line_coords(&svg).is_empty(), "{svg}");
+      }
+
       // A NumberForm in scientific notation inside a Grid cell sets on
       // one line with a raised exponent, not as its stacked 2-D text run
       // together (`9 1.320 × 10`).

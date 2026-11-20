@@ -11210,6 +11210,40 @@ fn edge_stroke(
   ))
 }
 
+/// The segment of the line through `p` along `v` (only `t >= 0` for a
+/// `half` line) inside `bb` grown by one plot size on every side, or `None`
+/// when the line misses that box (or `v` is zero).
+fn clip_infinite_line_to_box(
+  p: (f64, f64),
+  v: (f64, f64),
+  half: bool,
+  bb: &BBox,
+) -> Option<((f64, f64), (f64, f64))> {
+  let margin = bb.width() + bb.height();
+  let (x0, x1) = (bb.x_min - margin, bb.x_max + margin);
+  let (y0, y1) = (bb.y_min - margin, bb.y_max + margin);
+  let (mut t_lo, mut t_hi) =
+    (if half { 0.0 } else { f64::NEG_INFINITY }, f64::INFINITY);
+  for (pc, vc, lo, hi) in [(p.0, v.0, x0, x1), (p.1, v.1, y0, y1)] {
+    if vc == 0.0 {
+      if pc < lo || pc > hi {
+        return None;
+      }
+    } else {
+      let (a, b) = ((lo - pc) / vc, (hi - pc) / vc);
+      t_lo = t_lo.max(a.min(b));
+      t_hi = t_hi.min(a.max(b));
+    }
+  }
+  if !t_lo.is_finite() || !t_hi.is_finite() || t_lo > t_hi {
+    return None;
+  }
+  Some((
+    (p.0 + t_lo * v.0, p.1 + t_lo * v.1),
+    (p.0 + t_hi * v.0, p.1 + t_hi * v.1),
+  ))
+}
+
 fn thickness_px(t: f64, bb: &BBox, svg_w: f64) -> f64 {
   if t < 0.0 {
     // Absolute thickness (stored as negative)
@@ -14372,17 +14406,16 @@ fn render_primitive(
       ));
     }
     Primitive::InfiniteLinePrim { p, v, half, style } => {
-      // Extend far past the visible plot range in the drawn direction(s);
-      // the SVG viewport clips it. A `HalfLine` only extends forward.
-      let ext = 10.0 * (bb.width() + bb.height());
-      let len = (v.0 * v.0 + v.1 * v.1).sqrt();
-      let (ux, uy) = (v.0 / len * ext, v.1 / len * ext);
-      let (sx, sy) = if *half {
-        (p.0, p.1)
-      } else {
-        (p.0 - ux, p.1 - uy)
+      // Draw the part that crosses a box reaching one plot size past the
+      // visible range on every side (a `HalfLine` only runs forward); the
+      // SVG viewport clips the rest. Extending the line much further (to
+      // thousands of pixels) makes resvg drop a translucent primitive drawn
+      // after it in the same clip group.
+      let Some(((sx, sy), (ex, ey))) =
+        clip_infinite_line_to_box(*p, *v, *half, bb)
+      else {
+        return;
       };
-      let (ex, ey) = (p.0 + ux, p.1 + uy);
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
@@ -27434,6 +27467,19 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
         if name == "Text" && args.len() == 1 =>
       {
         content = &args[0];
+        styled = None;
+      }
+      // A one-item `Row[{x}]` (no separator) lays out exactly as `x`, so a
+      // styled inline-box string inside one is typeset the same way.
+      Expr::FunctionCall { name, args }
+        if name == "Row"
+          && args.len() == 1
+          && matches!(&args[0], Expr::List(items) if items.len() == 1) =>
+      {
+        let Expr::List(items) = &args[0] else {
+          unreachable!()
+        };
+        content = &items[0];
         styled = None;
       }
       Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
