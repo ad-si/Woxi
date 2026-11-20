@@ -63037,6 +63037,54 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(!svg.contains("125%"), "{svg}");
 }
 
+mod graphics_multi_line_axes_label {
+  use super::*;
+
+  /// The `x` attribute of the first `<text>` whose content holds `needle`.
+  fn label_text_x(svg: &str, needle: &str) -> f64 {
+    let at = svg.find(needle).expect("label drawn");
+    let start = svg[..at].rfind("<text ").expect("label <text>");
+    let tag = &svg[start..];
+    let x = tag.find(" x=\"").unwrap() + 4;
+    let len = tag[x..].find('"').unwrap();
+    tag[x..x + len].parse().unwrap()
+  }
+
+  fn graphics_with_labels(x_label: &str, y_label: &str) -> String {
+    export_svg(&format!(
+      "Graphics[{{Rectangle[{{0, 0}}, {{30, 30}}]}}, Axes -> True, \
+       ImageSize -> {{300, 250}}, AxesLabel -> {{\"{x_label}\", \"{y_label}\"}}]"
+    ))
+  }
+
+  #[test]
+  fn lines_of_a_string_label_are_stacked() {
+    // A newline in an `AxesLabel` string starts a new line of the label
+    // instead of collapsing into a space.
+    let svg = graphics_with_labels("wwwwwwww\\nof xx", "kkkkkkkk\\nof yy");
+    for line in ["wwwwwwww", "of xx", "kkkkkkkk", "of yy"] {
+      assert!(
+        svg.contains(&format!("\">{line}</tspan>")),
+        "line {line:?} should be its own <tspan>: {svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn label_room_is_the_widest_line() {
+    // The room reserved right of the x axis is the width of the label's
+    // widest line, not of all its lines joined.
+    let two_lines = graphics_with_labels("wwwwwwww\\nof xx", "y");
+    let first_line = graphics_with_labels("wwwwwwww", "y");
+    let joined = graphics_with_labels("wwwwwwww of xx", "y");
+    let x2 = label_text_x(&two_lines, "wwwwwwww");
+    let x1 = label_text_x(&first_line, "wwwwwwww");
+    let xj = label_text_x(&joined, "wwwwwwww");
+    assert!((x2 - x1).abs() < 0.01, "{x2} vs {x1}");
+    assert!(x2 > xj + 1.0, "{x2} vs {xj}");
+  }
+}
+
 mod magnify_display {
   use woxi::interpret_with_stdout;
 

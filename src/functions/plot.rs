@@ -2264,7 +2264,7 @@ fn widest_label_line_len(label: &str) -> usize {
 
 /// The content of a `<text>` holding `lines`: a single line as is, several
 /// as `<tspan>`s that each restart at `x`, `pitch` below the one before.
-fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
+pub(crate) fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
   if lines.len() == 1 {
     return lines[0].clone();
   }
