@@ -38986,7 +38986,7 @@ mod manipulate {
     let bindings = vec![("x".to_string(), "3/2".to_string())];
     match build_manipulate_display("Dynamic[N@{x, -1, {2, 1/4}}]", &bindings) {
       DisplayNode::Static { svg: None, text } => {
-        assert_eq!(text, "{1.5, -1., {2., 0.25}}")
+        assert_eq!(text, "{1.5, -1., {2., 0.25}}");
       }
       other => panic!("expected an inline value, got {other:?}"),
     }
