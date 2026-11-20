@@ -3704,13 +3704,14 @@ mod graphics {
     }
 
     /// A `Framed` item stacked in a label's `Column` sets its content
-    /// instead of printing as `Framed[...]` source.
+    /// instead of printing as `Framed[...]` source, inside its own frame.
     #[test]
     fn text_column_with_framed_item() {
       let svg = export_svg(
         "Graphics[{Text[Column[{\"head\", Framed[Row[{\"x = \", NumberForm[0.1234, {2, 2}]}], FrameStyle -> Red], \"tail\"}, Center], {0, 0}]}]",
       );
-      assert!(svg.contains(">x = 0.12</tspan>"), "{svg}");
+      assert!(svg.contains(">x = 0.12</text>"), "{svg}");
+      assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
       assert!(!svg.contains("Framed["), "{svg}");
       assert!(!svg.contains("FrameStyle"), "{svg}");
     }
@@ -3830,6 +3831,40 @@ mod graphics {
         panel.contains("fill=\"rgb(255,255,255)\""),
         "the panel takes the background color: {panel}"
       );
+    }
+
+    /// A `Column` label of `Framed` items sets each item as its own label:
+    /// every framed row keeps its font size and gets a panel of its own,
+    /// one row high, while `Spacer` and `Null` rows only take up room.
+    /// Regression: the column was flattened into one 14-point text block
+    /// and the items' `Background` panels were dropped.
+    #[test]
+    fn column_of_framed_items_keeps_each_items_style_and_panel() {
+      let svg = export_svg(
+        "Graphics[{Text[Column[{Framed[Style[Row[{\"a\", \" = \", 1}], 18], \
+          Background -> White, FrameStyle -> None], Spacer[25], \
+          Framed[Style[\"bc\", 16], Background -> Yellow, \
+          FrameStyle -> None], Null}, Center], {0, 0}]}, ImageSize -> 200]",
+      );
+      let panels: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<rect")).collect();
+      assert_eq!(panels.len(), 2, "one panel per framed item: {svg}");
+      assert!(panels[0].contains("fill=\"rgb(255,255,255)\""), "{svg}");
+      assert!(panels[0].contains("height=\"18.00\""), "{svg}");
+      assert!(panels[1].contains("fill=\"rgb(255,255,0)\""), "{svg}");
+      assert!(panels[1].contains("height=\"16.00\""), "{svg}");
+      let texts: Vec<&str> =
+        svg.lines().filter(|l| l.starts_with("<text")).collect();
+      assert_eq!(texts.len(), 2, "{svg}");
+      assert!(texts[0].contains("font-size=\"18\""), "{svg}");
+      assert!(texts[0].contains(">a = 1</text>"), "{svg}");
+      assert!(texts[1].contains("font-size=\"16\""), "{svg}");
+      // The rows stack downward from the first.
+      let y = |t: &str| -> f64 {
+        let i = t.find(" y=\"").unwrap() + 4;
+        t[i..].split('"').next().unwrap().parse().unwrap()
+      };
+      assert!(y(texts[0]) < y(texts[1]), "{svg}");
     }
 
     /// The same background written on the `Text` still wins over the one the
