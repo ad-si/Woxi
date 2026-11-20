@@ -22176,9 +22176,20 @@ fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
 /// typeset like any other title text and measured with proportional glyph
 /// widths; columns are `0.8` em apart (Wolfram's default `Spacings`) and
 /// placed by the grid's horizontal `Alignment` (`Center` by default). A
-/// single-column `Grid` stays a block of title lines.
+/// single-column `Grid` stays a block of title lines unless it is framed.
+///
+/// A `Text[grid]` wrapper is the grid itself. `Frame -> All` rules every
+/// cell and `Frame -> True` draws the outer box; a framed grid gains half
+/// a column gap of padding at its left and right edges so the lines clear
+/// the text, and its rules are drawn in the title's color.
 fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   use crate::functions::plot_padding::{ascent, line_pitch, text_width};
+  let expr = match expr {
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      &args[0]
+    }
+    other => other,
+  };
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
@@ -22196,9 +22207,32 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
     })
     .collect::<Option<_>>()?;
   let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  #[derive(PartialEq)]
+  enum GridFrame {
+    None,
+    Outer,
+    All,
+  }
+  let frame = args[1..]
+    .iter()
+    .find_map(|opt| match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern, Expr::Identifier(n) if n == "Frame") => {
+        Some(match &**replacement {
+          Expr::Identifier(n) if n == "All" => GridFrame::All,
+          Expr::Identifier(n) if n == "True" => GridFrame::Outer,
+          _ => GridFrame::None,
+        })
+      }
+      _ => None,
+    })
+    .unwrap_or(GridFrame::None);
+  let min_cols = if frame == GridFrame::None { 2 } else { 1 };
   // A cell that stacks its own lines (a nested `Column`) has no single
   // line to align, so such a grid keeps the line-based layout.
-  if num_cols < 2
+  if num_cols < min_cols
     || rows
       .iter()
       .flat_map(|r| r.iter())
@@ -22248,13 +22282,19 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
     }
   }
   let gap = 0.8 * size;
-  let width = col_w.iter().sum::<f64>() + gap * (num_cols - 1) as f64;
+  let pad = if frame == GridFrame::None {
+    0.0
+  } else {
+    gap / 2.0
+  };
+  let width =
+    col_w.iter().sum::<f64>() + gap * (num_cols - 1) as f64 + 2.0 * pad;
   let pitch = line_pitch(size);
   let height = pitch * markup.len() as f64;
   let mut body = String::new();
   for (i, row) in markup.iter().enumerate() {
     let y = i as f64 * pitch + ascent(size);
-    let mut x0 = 0.0;
+    let mut x0 = pad;
     for (j, w) in col_w.iter().enumerate() {
       if let Some(cell) = row.get(j).filter(|c| !c.is_empty()) {
         let (x, anchor) = match aligns[j % aligns.len()] {
@@ -22268,6 +22308,35 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
         ));
       }
       x0 += w + gap;
+    }
+  }
+  if frame != GridFrame::None {
+    // Rules sit half a stroke inside the outer edge so none is clipped.
+    let (l, t, r, b) = (0.5, 0.5, width - 0.5, height - 0.5);
+    let mut xs = vec![l];
+    let mut ys = vec![t];
+    if frame == GridFrame::All {
+      let mut x = pad;
+      for w in &col_w[..num_cols - 1] {
+        x += w + gap / 2.0;
+        xs.push(x);
+        x += gap / 2.0;
+      }
+      ys.extend((1..markup.len()).map(|i| i as f64 * pitch));
+    }
+    xs.push(r);
+    ys.push(b);
+    for x in &xs {
+      body.push_str(&format!(
+        "<line x1=\"{x:.2}\" y1=\"{t:.2}\" x2=\"{x:.2}\" y2=\"{b:.2}\" \
+         stroke=\"currentColor\" stroke-width=\"1\"/>\n"
+      ));
+    }
+    for y in &ys {
+      body.push_str(&format!(
+        "<line x1=\"{l:.2}\" y1=\"{y:.2}\" x2=\"{r:.2}\" y2=\"{y:.2}\" \
+         stroke=\"currentColor\" stroke-width=\"1\"/>\n"
+      ));
     }
   }
   let svg = format!(
