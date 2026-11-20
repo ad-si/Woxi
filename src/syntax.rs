@@ -276,6 +276,11 @@ pub struct PlotSeriesData {
   /// (`Filling -> {1 -> {{2}, c1}, 1 -> {Top, c2}}`), drawn after the main
   /// one in rule order. Each carries its own target and appearance.
   pub extra_fills: Vec<SeriesFill>,
+  /// This series carries on the line of the series before it: a
+  /// `ColorFunction` curve is kept as runs of constant color, and a run
+  /// continuing the previous one is still the same line, so its dash
+  /// pattern goes on across the join instead of starting over.
+  pub continues_previous: bool,
   /// The `ColorFunction` the series' own plot colored its curve with
   /// (`None` = plain `color`). Travels with the series so that `Show`
   /// colors only this curve by it, not the curves merged with it.
