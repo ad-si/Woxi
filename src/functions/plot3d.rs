@@ -2693,12 +2693,55 @@ fn generate_svg(
     py_max = py_max.max(py);
   }
 
+  // Sphere framing (see `plot_spherical_region`): the picture is fitted to
+  // the circle the sphere around the box projects to, exactly as in
+  // `Graphics3D` (see `spherical_region_span`), so its scale no longer
+  // follows the shape of the contents.
+  let sphere_span = (plot_spherical_region(options)
+    && view_angle_option(options).is_none())
+  .then(|| {
+    let radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
+    spherical_region_span(radius, camera.perspective.as_ref().map(|p| p.distance))
+  })
+  .filter(|span| *span > 0.0 && span.is_finite());
+  // The box middle (the origin) projects to the sphere's center.
+  let (sphere_cx, sphere_cy) = project(
+    Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    },
+    camera,
+  );
+  if let Some(span) = sphere_span {
+    px_min = px_min.min(sphere_cx - span / 2.0);
+    px_max = px_max.max(sphere_cx + span / 2.0);
+    py_min = py_min.min(sphere_cy - span / 2.0);
+    py_max = py_max.max(sphere_cy + span / 2.0);
+  }
+
   let p_width = px_max - px_min;
   let p_height = py_max - py_min;
   if p_width < 1e-15 || p_height < 1e-15 {
     return Err(InterpreterError::EvaluationError(
       "Plot3D: degenerate projection".into(),
     ));
+  }
+
+  // With an `ImagePadding` the scene is fitted into the region inside the
+  // padding band, as in `Graphics3D`; the picture keeps its full size.
+  let image_padding = plot_image_padding(options);
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    image_padding.unwrap_or([0.0; 4]);
+  let pad_w = (pad_left + pad_right).round() as u32;
+  let pad_h = (pad_bottom + pad_top).round() as u32;
+  let padded = image_padding.is_some()
+    && !full_width
+    && svg_width > pad_w
+    && (auto_height || svg_height > pad_h);
+  if padded {
+    svg_width -= pad_w;
+    svg_height = svg_height.saturating_sub(pad_h).max(1);
   }
 
   // Map projected coords to SVG coords: the box (and the axes' labels
@@ -2784,6 +2827,18 @@ fn generate_svg(
       }
       _ => (scale, p_cx, p_cy),
     };
+  // The sphere spans the shorter side of the picture, centered on the box.
+  let (scale, p_cx, p_cy) = match sphere_span {
+    Some(span) => (svg_width.min(svg_height) as f64 / span, sphere_cx, sphere_cy),
+    None => (scale, p_cx, p_cy),
+  };
+  let (cx, cy) = if padded {
+    svg_width += pad_w;
+    svg_height += pad_h;
+    (cx + pad_left, cy + pad_top)
+  } else {
+    (cx, cy)
+  };
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -7394,6 +7449,45 @@ fn view_angle_option(options: &[Expr]) -> Option<f64> {
     }
     _ => None,
   })?
+}
+
+/// The last value a plot's options give the option `name`, evaluated.
+fn plot_option_value(options: &[Expr], name: &str) -> Option<Expr> {
+  options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => Some(
+      evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone()),
+    ),
+    _ => None,
+  })
+}
+
+/// Whether a surface plot is framed by the sphere around its box, as
+/// `Graphics3D` is: under `SphericalRegion -> True`, and by default inside a
+/// `Manipulate` frame (so the picture keeps its size while a control moves
+/// the contents), unless `SphericalRegion -> False` turns it off.
+fn plot_spherical_region(options: &[Expr]) -> bool {
+  match plot_option_value(options, "SphericalRegion") {
+    Some(Expr::Identifier(v)) if v == "True" => true,
+    Some(Expr::Identifier(v)) if v == "False" => false,
+    _ => crate::in_manipulate_frame(),
+  }
+}
+
+/// A plot's explicit `ImagePadding` as (left, right, bottom, top).
+fn plot_image_padding(options: &[Expr]) -> Option<[f64; 4]> {
+  crate::functions::plot::parse_image_padding(&plot_option_value(
+    options,
+    "ImagePadding",
+  )?)
+  .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0))
 }
 
 fn strip_dynamic(expr: &Expr) -> &Expr {
