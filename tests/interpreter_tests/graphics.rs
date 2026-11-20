@@ -8154,6 +8154,41 @@ mod plot3d {
       assert_eq!(styled, "False");
     }
 
+    /// Regression: an extracted `ParametricPlot3D[…][[1]]` complex with
+    /// `PlotStyle -> FaceForm[front, back]` baked only the front color into
+    /// its facets, so the far side of the surface (e.g. the outside of an
+    /// inward-facing cylinder) was drawn in the front color too.
+    #[test]
+    fn extracted_parametric_surface_keeps_face_form_back_color() {
+      clear_state();
+      let faces = interpret(
+        "Union[Cases[ParametricPlot3D[{Cos[u], v, Sin[u]}, {u, 0, 2 Pi}, \
+         {v, 0, 1}, PlotPoints -> 3, PlotStyle -> FaceForm[Yellow, Brown]]\
+         [[1, 2]], {f_FaceForm, _Polygon} :> f]]",
+      )
+      .unwrap();
+      assert_eq!(
+        faces,
+        "{FaceForm[RGBColor[1., 1., 0.], RGBColor[0.6, 0.4, 0.2]]}"
+      );
+      let lone_colors = interpret(
+        "Cases[ParametricPlot3D[{Cos[u], v, Sin[u]}, {u, 0, 2 Pi}, \
+         {v, 0, 1}, PlotPoints -> 3, PlotStyle -> FaceForm[Yellow, Brown]]\
+         [[1, 2]], {_RGBColor, _Polygon}]",
+      )
+      .unwrap();
+      assert_eq!(lone_colors, "{}");
+      // Drawn inside a `Graphics3D`, the side facing away from the viewer
+      // (here the outside of the cylinder) takes the back color.
+      let svg = export_svg(
+        "Graphics3D[ParametricPlot3D[{Cos[u], v, Sin[u]}, {u, 0, 2 Pi}, \
+         {v, 0, 1}, PlotPoints -> 6, Mesh -> None, \
+         PlotStyle -> FaceForm[Yellow, Brown]][[1]], \
+         Lighting -> {{\"Ambient\", White}}, ViewPoint -> {0, -5, 0}]",
+      );
+      assert!(svg.contains("fill=\"rgb(153,102,51)\""), "{svg}");
+    }
+
     /// Regression: the extracted complex of a `ParametricPlot3D` surface
     /// lacked the default theme's `Directive` (color, specularity and
     /// lights) that `Plot3D`'s carries, so a color placed before it in a

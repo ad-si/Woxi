@@ -7781,7 +7781,14 @@ fn surface_style_directives(
     return out;
   }
   if let Some(color) = style.and_then(|s| s.color) {
-    let mut out = vec![rgb(rgb_f64(color))];
+    // `FaceForm[front, back]` keeps its back color, so the far side of the
+    // extracted surface is still drawn in it.
+    let mut out = vec![match style.and_then(|s| s.back_color) {
+      Some(back) => {
+        call("FaceForm", vec![rgb(rgb_f64(color)), rgb(rgb_f64(back))])
+      }
+      None => rgb(rgb_f64(color)),
+    }];
     out.extend(own_specular);
     out.extend(lighting.map(lighting_rule));
     return out;
@@ -24452,12 +24459,19 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // into a facet. Facets of the default look carry none, like
             // wolframscript's `ParametricPlot3D[…][[1]]`, so a color
             // directive placed before the extracted complex still applies.
-            let explicit = facet_colors[surface_idx][i][j].or_else(|| {
-              match plot_style_for_surface(&plot_styles, surface_idx) {
+            let surface_style =
+              plot_style_for_surface(&plot_styles, surface_idx);
+            let explicit =
+              facet_colors[surface_idx][i][j].or_else(|| match surface_style {
                 Some(style) => style.color,
                 None => mesh_color.flatten(),
-              }
-            });
+              });
+            // A `PlotStyle -> FaceForm[front, back]` facet keeps both
+            // sides' colors, so its back stays `back` once extracted.
+            let back = facet_colors[surface_idx][i][j]
+              .is_none()
+              .then(|| surface_style.and_then(|s| s.back_color))
+              .flatten();
             let polygon = call1(
               "Polygon",
               Expr::List(
@@ -24468,24 +24482,25 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   .into(),
               ),
             );
-            let Some((cr, cg, cb)) = explicit else {
+            let Some(front) = explicit else {
               content.push(polygon);
               continue;
             };
-            content.push(Expr::List(
-              vec![
-                call(
-                  "RGBColor",
-                  vec![
-                    Expr::Real(cr as f64 / 255.0),
-                    Expr::Real(cg as f64 / 255.0),
-                    Expr::Real(cb as f64 / 255.0),
-                  ],
-                ),
-                polygon,
-              ]
-              .into(),
-            ));
+            let rgb = |(r, g, b): (u8, u8, u8)| {
+              call(
+                "RGBColor",
+                vec![
+                  Expr::Real(r as f64 / 255.0),
+                  Expr::Real(g as f64 / 255.0),
+                  Expr::Real(b as f64 / 255.0),
+                ],
+              )
+            };
+            let face = match back {
+              Some(back) => call("FaceForm", vec![rgb(front), rgb(back)]),
+              None => rgb(front),
+            };
+            content.push(Expr::List(vec![face, polygon].into()));
           }
         }
         if let Some((style_expr, _)) = &boundary_style {
