@@ -31533,7 +31533,9 @@ mod list_plot_3d {
       "ListPlot3D[{data}, DataRange -> {{{{0, 4}}, {{0, 10}}}}]"
     ));
     assert!(ranged.iter().any(|t| t == "4"), "{ranged:?}");
-    assert!(ranged.iter().any(|t| t == "2.5"), "{ranged:?}");
+    // The y axis spans 0 to 10, stepped by 5 (automatic 3D ticks step by
+    // 1, 2 or 5).
+    assert!(ranged.iter().any(|t| t == "5"), "{ranged:?}");
     assert!(!ranged.iter().any(|t| t == "40" || t == "30"), "{ranged:?}");
   }
 
