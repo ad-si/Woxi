@@ -783,6 +783,76 @@ fn parse_arrowheads(spec: &Expr) -> Option<Vec<ArrowHead>> {
   }
 }
 
+/// The default (triangular) heads an `Arrowheads` specification puts on a
+/// straight segment from `from` to `to`, in screen coordinates. A head's
+/// relative size is a fraction of `head_width`; an absolute one (a named
+/// size, in printer's points) is scaled by `abs_scale`. Heads of size 0
+/// and custom-graphic heads are skipped. `fill` is the SVG paint of the
+/// heads, `extra` any further attributes (an opacity).
+fn segment_arrowheads_svg(
+  heads: &[ArrowHead],
+  from: (f64, f64),
+  to: (f64, f64),
+  head_width: f64,
+  abs_scale: f64,
+  fill: &str,
+  extra: &str,
+) -> String {
+  let (dx, dy) = (to.0 - from.0, to.1 - from.1);
+  let len = (dx * dx + dy * dy).sqrt();
+  let mut out = String::new();
+  if len.is_nan() || len <= 0.0 {
+    return out;
+  }
+  let (ux, uy) = (dx / len, dy / len);
+  for h in heads {
+    if h.graphic.is_some() || h.size == 0.0 {
+      continue;
+    }
+    let head_len = if h.absolute {
+      h.size.abs() * abs_scale
+    } else {
+      h.size.abs() * head_width
+    };
+    let t = h.position.clamp(0.0, 1.0);
+    let (tip_x, tip_y) = (from.0 + t * dx, from.1 + t * dy);
+    let dir = h.size.signum();
+    let (hx, hy) = (ux * dir, uy * dir);
+    // `(px, py)` is the screen normal to the right of the direction.
+    let (px, py) = (-hy, hx);
+    let pts: Vec<String> = std::iter::once((0.0, 0.0))
+      .chain(ARROWHEAD_SHAPE.iter().copied())
+      .map(|(along, side)| {
+        let x = tip_x + (hx * along + px * side) * head_len;
+        let y = tip_y + (hy * along + py * side) * head_len;
+        format!("{x:.2},{y:.2}")
+      })
+      .collect();
+    out.push_str(&format!(
+      "<polygon points=\"{}\" fill=\"{fill}\"{extra}/>\n",
+      pts.join(" ")
+    ));
+  }
+  out
+}
+
+/// The heads `AxesStyle -> Arrowheads[spec]` puts on an axis line running
+/// from `from` to `to` (screen coordinates), for the plot functions whose
+/// axes are drawn outside of [`render_axes`]. See
+/// [`segment_arrowheads_svg`] for the other arguments.
+pub(crate) fn axis_arrowheads_svg(
+  spec: &Expr,
+  from: (f64, f64),
+  to: (f64, f64),
+  head_width: f64,
+  abs_scale: f64,
+  fill: &str,
+) -> String {
+  parse_arrowheads(spec).map_or_else(String::new, |heads| {
+    segment_arrowheads_svg(&heads, from, to, head_width, abs_scale, fill, "")
+  })
+}
+
 impl StyleState {
   fn effective_color(&self) -> Color {
     self.color.with_alpha(self.color.a * self.opacity)
@@ -12120,6 +12190,9 @@ struct AxisLineStyle {
   width: f64,
   /// A ` stroke-dasharray=…` attribute for a `Dashing` directive, or empty.
   dash: String,
+  /// `Arrowheads[…]`: the heads drawn on the axis line, from its low end
+  /// (position 0) to its high end (position 1).
+  arrowheads: Option<Vec<ArrowHead>>,
 }
 
 impl Default for AxisLineStyle {
@@ -12128,6 +12201,7 @@ impl Default for AxisLineStyle {
       color: None,
       width: 0.5,
       dash: String::new(),
+      arrowheads: None,
     }
   }
 }
@@ -12146,7 +12220,27 @@ impl AxisLineStyle {
       color,
       width: thickness_px(st.thickness, bb, svg_w),
       dash: dash_attr(st.dashing.as_ref(), bb, svg_w),
+      arrowheads: st.arrowheads,
     }
+  }
+
+  /// The heads of an `Arrowheads` directive on the axis line from `from`
+  /// to `to`, painted like the line.
+  fn arrowheads_svg(
+    &self,
+    from: (f64, f64),
+    to: (f64, f64),
+    svg_w: f64,
+    theme_stroke: &str,
+  ) -> String {
+    let Some(heads) = &self.arrowheads else {
+      return String::new();
+    };
+    let (fill, extra) = self.color.map_or_else(
+      || (theme_stroke.to_string(), String::new()),
+      |c| (c.to_svg_rgb(), c.opacity_attr()),
+    );
+    segment_arrowheads_svg(heads, from, to, svg_w, 1.0, &fill, &extra)
   }
 
   /// `AxesStyle -> style` styles both axes, `AxesStyle -> {xStyle, yStyle}`
@@ -12255,6 +12349,12 @@ fn render_axes(
       "<line x1=\"0.00\" y1=\"{axis_y_px:.2}\" x2=\"{svg_w:.2}\" y2=\"{axis_y_px:.2}\" {}/>\n",
       axes_style.0.stroke_attrs(axis_stroke)
     ));
+    svg.push_str(&axes_style.0.arrowheads_svg(
+      (0.0, axis_y_px),
+      (svg_w, axis_y_px),
+      svg_w,
+      axis_stroke,
+    ));
     let mark = ticks_style.0.stroke_attrs(axis_stroke);
     let tick_label_fill = tick_fill(&ticks_style.0);
     for t in axis_minor_ticks(ticks.0, bb.x_min, bb.x_max) {
@@ -12322,6 +12422,12 @@ fn render_axes(
     svg.push_str(&format!(
       "<line x1=\"{axis_x_px:.2}\" y1=\"0.00\" x2=\"{axis_x_px:.2}\" y2=\"{svg_h:.2}\" {}/>\n",
       axes_style.1.stroke_attrs(axis_stroke)
+    ));
+    svg.push_str(&axes_style.1.arrowheads_svg(
+      (axis_x_px, svg_h),
+      (axis_x_px, 0.0),
+      svg_w,
+      axis_stroke,
     ));
     let mark = ticks_style.1.stroke_attrs(axis_stroke);
     let tick_label_fill = tick_fill(&ticks_style.1);

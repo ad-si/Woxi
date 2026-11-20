@@ -25250,6 +25250,79 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(per_axis[1].contains("rgb(0,0,255)"), "{per_axis:?}");
     }
 
+    /// `AxesStyle -> Arrowheads[…]` puts arrowheads on the axis lines of a
+    /// `Graphics`: a bare size heads both axes at their high end, a zero
+    /// size draws no head, and the heads take the axis color.
+    #[test]
+    fn graphics_axes_style_arrowheads() {
+      let polygons = |opts: &str| -> Vec<String> {
+        export_svg(&format!(
+          "Graphics[Point[{{0.5, 0.5}}], Axes -> True, \
+           PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}{opts}]"
+        ))
+        .lines()
+        .filter(|l| l.starts_with("<polygon "))
+        .map(str::to_string)
+        .collect()
+      };
+      assert_eq!(polygons(""), Vec::<String>::new());
+      let heads = polygons(", AxesStyle -> Arrowheads[0.05]");
+      assert_eq!(heads.len(), 2, "{heads:?}");
+      // Only the heads at the high ends: `{0, s}` skips the low end.
+      assert_eq!(polygons(", AxesStyle -> Arrowheads[{0, 0.05}]").len(), 2);
+      // `{-s, s}` heads both ends of both axes.
+      assert_eq!(
+        polygons(", AxesStyle -> Arrowheads[{-0.05, 0.05}]").len(),
+        4
+      );
+      let red = polygons(", AxesStyle -> Directive[Red, Arrowheads[0.05]]");
+      assert_eq!(red.len(), 2, "{red:?}");
+      assert!(red.iter().all(|l| l.contains("fill=\"rgb(255,0,0)\"")));
+      // The x axis's head points right: its tip is its rightmost vertex.
+      let xs: Vec<f64> = heads[0]
+        .split("points=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .split(' ')
+        .map(|p| p.split(',').next().unwrap().parse().unwrap())
+        .collect();
+      assert!(xs[1..].iter().all(|&x| x < xs[0]), "{xs:?}");
+    }
+
+    /// `AxesStyle -> Arrowheads[…]` also heads the axes of plots, painted
+    /// like the axis lines.
+    #[test]
+    fn plot_axes_style_arrowheads() {
+      let polygons = |opts: &str| -> Vec<String> {
+        export_svg(&format!(
+          "ListPlot[{{{{-1, -1}}, {{1, 1}}}}, \
+           PlotRange -> {{{{-2, 2}}, {{-2, 2}}}}{opts}]"
+        ))
+        .lines()
+        .filter(|l| l.starts_with("<polygon "))
+        .map(str::to_string)
+        .collect()
+      };
+      let plain = polygons("").len();
+      let heads = polygons(", AxesStyle -> Arrowheads[{0, 0.02}]");
+      assert_eq!(heads.len(), plain + 2, "{heads:?}");
+      let blue = polygons(", AxesStyle -> Directive[Blue, Arrowheads[0.02]]");
+      assert_eq!(
+        blue
+          .iter()
+          .filter(|l| l.contains("fill=\"rgb(0,0,255)\""))
+          .count(),
+        2,
+        "{blue:?}"
+      );
+      let plot =
+        export_svg("Plot[x, {x, -1, 1}, AxesStyle -> Arrowheads[0.03]]");
+      assert_eq!(plot.matches("<polygon ").count(), 2, "{plot}");
+    }
+
     /// `PlotStyle` colors a region's fill but not its default outline;
     /// `BoundaryStyle -> None` drops the outline.
     #[test]

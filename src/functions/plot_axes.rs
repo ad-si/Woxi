@@ -305,12 +305,29 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
        stroke=\"{color}\" stroke-width=\"{width:.0}\"/>\n"
     ));
   };
+  // `AxesStyle -> Arrowheads[…]`: heads on the axis line, from its low
+  // end to its high end, sized against the plotting area's width and
+  // painted like the line.
+  let heads = |svg: &mut String,
+               i: usize,
+               color: &str,
+               from: (f64, f64),
+               to: (f64, f64)| {
+    if let Some(spec) =
+      a.axes_style[i].as_ref().and_then(|s| s.arrowheads.as_ref())
+    {
+      svg.push_str(&crate::functions::graphics::axis_arrowheads_svg(
+        spec, from, to, w, sf, color,
+      ));
+    }
+  };
   let major_len = AXIS_MAJOR_TICK_LEN * sf;
   let minor_len = AXIS_MINOR_TICK_LEN * sf;
 
   if a.show.0 {
     let (axis_line, mark, fill) = paint(0);
     line(&mut svg, &axis_line, (x0, axis_y, x0 + w, axis_y));
+    heads(&mut svg, 0, &axis_line.0, (x0, axis_y), (x0 + w, axis_y));
     if let Some((ticks, _)) = a.ticks {
       for &v in &ticks.minors {
         let x = px(v);
@@ -345,6 +362,7 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   if a.show.1 {
     let (axis_line, mark, fill) = paint(1);
     line(&mut svg, &axis_line, (axis_x, y0, axis_x, y0 + h));
+    heads(&mut svg, 1, &axis_line.0, (axis_x, y0 + h), (axis_x, y0));
     if let Some((_, ticks)) = a.ticks {
       for &v in &ticks.minors {
         let y = py(v);
