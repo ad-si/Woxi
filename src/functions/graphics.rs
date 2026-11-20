@@ -34526,25 +34526,45 @@ fn render_tabular_svg_grid(
 /// (text, point sizes, thicknesses) scaled alike, as the FrontEnd
 /// magnifies it. `None` unless every argument after the picture is an
 /// option and one of them is a positive numeric `Magnification`.
+///
+/// `Magnify[picture, m]` (and `Magnify[picture]`, `m` = 1) is the same
+/// request spelled as a function and is drawn the same way.
 pub(crate) fn magnified_picture(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
   };
-  if name != "Style"
-    || args.len() < 2
-    || !args[1..].iter().all(|a| option_kv(a).is_some())
-  {
+  let m = match name.as_str() {
+    "Style"
+      if args.len() >= 2
+        && args[1..].iter().all(|a| option_kv(a).is_some()) =>
+    {
+      args[1..]
+        .iter()
+        .filter_map(option_kv)
+        .find(|(k, _)| *k == "Magnification")
+        .and_then(|(_, v)| expr_to_f64(v))?
+    }
+    // A magnified image is drawn by `image_ast::magnified_image`.
+    "Magnify" if matches!(args.first(), Some(Expr::Image { .. })) => {
+      return None;
+    }
+    "Magnify" if args.len() == 1 => 1.0,
+    "Magnify" if args.len() == 2 => expr_to_f64(&args[1])?,
+    _ => return None,
+  };
+  if !(m.is_finite() && m > 0.0) {
     return None;
   }
-  let m = args[1..]
-    .iter()
-    .filter_map(option_kv)
-    .find(|(k, _)| *k == "Magnification")
-    .and_then(|(_, v)| expr_to_f64(v))
-    .filter(|m| m.is_finite() && *m > 0.0)?;
   let svg = match &args[0] {
     Expr::Graphics { svg, .. } => svg.clone(),
     Expr::Image { .. } => crate::evaluator::expr_to_svg(&args[0]),
+    // A picture kept as a symbolic `Graphics[…]` call (as `Magnify` holds
+    // it) is drawn the same way.
+    Expr::FunctionCall { name: head, .. }
+      if head == "Graphics" || head == "Graphics3D" =>
+    {
+      crate::evaluator::expr_to_svg(&args[0])
+    }
     _ => return None,
   };
   if !svg.contains("<svg") {
@@ -34554,7 +34574,8 @@ pub(crate) fn magnified_picture(expr: &Expr) -> Option<Expr> {
   if w <= 0.0 || h <= 0.0 {
     return None;
   }
-  let is_3d = matches!(&args[0], Expr::Graphics { is_3d: true, .. });
+  let is_3d = matches!(&args[0], Expr::Graphics { is_3d: true, .. })
+    || matches!(&args[0], Expr::FunctionCall { name, .. } if name == "Graphics3D");
   Some(Expr::Graphics {
     svg: resize_svg_root(&svg, w * m, h * m),
     is_3d,
@@ -34636,9 +34657,9 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
         current = selected_pane_content(args);
         continue;
       }
-      // `Style[picture, Magnification -> m]` draws the picture `m` times
-      // its size.
-      "Style" => match magnified_picture(&current) {
+      // `Style[picture, Magnification -> m]` and `Magnify[picture, m]`
+      // draw the picture `m` times its size.
+      "Style" | "Magnify" => match magnified_picture(&current) {
         Some(picture) => {
           current = picture;
           continue;
