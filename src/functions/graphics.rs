@@ -19103,6 +19103,94 @@ fn template_box_items(e: &Expr) -> Option<&[Expr]> {
   }
 }
 
+/// The interior dividers a `GridBoxDividers` option rules, as 1-based
+/// divider positions (divider `k` runs before column/row `k`): the
+/// `"ColumnsIndexed"`/`"RowsIndexed"` rules `{k -> True, …}` (a negative
+/// `k` counts from the far edge, `-1` being the last one), or every
+/// interior divider for `"Columns"`/`"Rows" -> {{True}}` or `-> True`.
+fn grid_box_dividers(
+  options: &[Expr],
+  n_cols: usize,
+  n_rows: usize,
+) -> (Vec<usize>, Vec<usize>) {
+  let mut cols = Vec::new();
+  let mut rows = Vec::new();
+  let Some(spec) = options.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "GridBoxDividers") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  }) else {
+    return (cols, rows);
+  };
+  let Expr::List(rules) = spec else {
+    return (cols, rows);
+  };
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(t) if t == "True");
+  for rule in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = rule
+    else {
+      continue;
+    };
+    let Expr::String(key) = pattern.as_ref() else {
+      continue;
+    };
+    let (target, count) = match key.as_str() {
+      "Columns" | "ColumnsIndexed" => (&mut cols, n_cols),
+      "Rows" | "RowsIndexed" => (&mut rows, n_rows),
+      _ => continue,
+    };
+    if key.ends_with("Indexed") {
+      let Expr::List(entries) = replacement.as_ref() else {
+        continue;
+      };
+      for entry in entries {
+        let Expr::Rule {
+          pattern: k,
+          replacement: v,
+        } = entry
+        else {
+          continue;
+        };
+        if !is_true(v) {
+          continue;
+        }
+        let k = match k.as_ref() {
+          Expr::Integer(k) => *k,
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          } => match operand.as_ref() {
+            Expr::Integer(k) => -k,
+            _ => continue,
+          },
+          _ => continue,
+        };
+        let pos = if k > 0 { k } else { count as i128 + 2 + k };
+        if pos >= 1 {
+          target.push(pos as usize);
+        }
+      }
+    } else {
+      let all = match replacement.as_ref() {
+        Expr::List(outer) => matches!(outer.as_slice(),
+          [Expr::List(inner)] if matches!(inner.as_slice(), [v] if is_true(v))),
+        other => is_true(other),
+      };
+      if all {
+        target.extend(2..=count);
+      }
+    }
+  }
+  (cols, rows)
+}
+
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
@@ -19933,6 +20021,35 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               x += col_w + gap_x;
             }
             y += row_h + gap_y;
+          }
+          // `GridBoxDividers -> {"ColumnsIndexed" -> {-2 -> True}, …}`
+          // rules a line through the gap at each listed divider.
+          let (col_dividers, row_dividers) =
+            grid_box_dividers(&args[1..], n_cols, row_metrics.len());
+          let stroke = (font_size * 0.05).max(0.6);
+          let mut x = 0.0;
+          for (ci, w) in col_widths.iter().enumerate() {
+            if ci > 0 && col_dividers.contains(&(ci + 1)) {
+              let lx = x - gap_x / 2.0;
+              elements.push_str(&format!(
+                "<line x1=\"{lx:.2}\" y1=\"0\" x2=\"{lx:.2}\" \
+                 y2=\"{total_h:.2}\" stroke=\"currentColor\" \
+                 stroke-width=\"{stroke:.2}\"/>"
+              ));
+            }
+            x += w + gap_x;
+          }
+          let mut y = 0.0;
+          for (ri, (_, h)) in row_metrics.iter().enumerate() {
+            if ri > 0 && row_dividers.contains(&(ri + 1)) {
+              let ly = y - gap_y / 2.0;
+              elements.push_str(&format!(
+                "<line x1=\"0\" y1=\"{ly:.2}\" x2=\"{total_w:.2}\" \
+                 y2=\"{ly:.2}\" stroke=\"currentColor\" \
+                 stroke-width=\"{stroke:.2}\"/>"
+              ));
+            }
+            y += h + gap_y;
           }
           let first_bl = total_h / 2.0 + 0.26 * font_size;
           BoxLayout {
@@ -52334,6 +52451,22 @@ fn parse_manipulate_control(
       name,
       value,
       display: crate::syntax::expr_to_source_form(&evaluated),
+    });
+  }
+  // Any other user-defined builder (`tableOf[#, params]&` drawing a `Grid`
+  // that reads other controls) is a picture of the live bindings: keep the
+  // call unevaluated as a display element, so it re-renders whenever the
+  // controls it reads change instead of being dropped.
+  if let Some(built @ Expr::FunctionCall { name: f, .. }) = &built
+    && crate::down_values_with_memo(f).is_some()
+  {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display: crate::syntax::expr_to_source_form(built),
     });
   }
 

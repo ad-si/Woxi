@@ -4198,6 +4198,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     return expr_to_box_form(&args[0]);
   }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "TransformationFunction"
+    && let Some(boxed) = transformation_function_boxes(args, expr_to_box_form)
+  {
+    return boxed;
+  }
   // `f'[x]` is held as `Derivative[1][f][x]`, and no notebook shows that
   // head: the order sets as prime marks on the differentiated function.
   // Without this the whole call fell through to its plain text, so every
@@ -5833,6 +5839,59 @@ fn tf_is_trig(name: &str) -> bool {
 
 /// Whether a List is a matrix (a non-empty list whose every element is a
 /// list of equal length ≥ 1).
+/// `TransformationFunction[m]` typesets as its head applied to the
+/// parenthesized augmented matrix `m`, with dividers setting off the last
+/// row and column (the translation part) the way a notebook draws it.
+/// `None` when the argument is no matrix.
+fn transformation_function_boxes(
+  args: &[Expr],
+  cell: fn(&Expr) -> Expr,
+) -> Option<Expr> {
+  use crate::helpers::rule_expr;
+  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let [Expr::List(rows)] = args else {
+    return None;
+  };
+  if !tf_is_matrix(rows) {
+    return None;
+  }
+  let grid_rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => {
+        Expr::List(cells.iter().map(cell).collect::<Vec<_>>().into())
+      }
+      other => Expr::List(vec![cell(other)].into()),
+    })
+    .collect();
+  let no_lines =
+    || Expr::List(vec![Expr::List(vec![sym("False")].into())].into());
+  let before_last =
+    || Expr::List(vec![rule_expr(Expr::Integer(-2), sym("True"))].into());
+  let dividers = Expr::List(
+    vec![
+      rule_expr(tf_string("Columns"), no_lines()),
+      rule_expr(tf_string("ColumnsIndexed"), before_last()),
+      rule_expr(tf_string("Rows"), no_lines()),
+      rule_expr(tf_string("RowsIndexed"), before_last()),
+    ]
+    .into(),
+  );
+  let grid = tf_box(
+    "GridBox",
+    vec![
+      Expr::List(grid_rows.into()),
+      rule_expr(sym("GridBoxDividers"), dividers),
+    ],
+  );
+  Some(tf_row(vec![
+    tf_string("TransformationFunction"),
+    tf_string("["),
+    tf_row(vec![tf_string("("), grid, tf_string(")")]),
+    tf_string("]"),
+  ]))
+}
+
 fn tf_is_matrix(items: &[Expr]) -> bool {
   if items.is_empty() {
     return false;
@@ -8263,6 +8322,11 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       } else {
         tf(&args[0])
       }
+    }
+    "TransformationFunction"
+      if transformation_function_boxes(args, tf).is_some() =>
+    {
+      transformation_function_boxes(args, tf).unwrap()
     }
     "MatrixForm" | "TableForm" if args.len() == 1 => {
       let dense =
