@@ -6898,6 +6898,94 @@ mod plot3d {
       );
     }
 
+    /// `Show` of a literal `Graphics3D[…]` / `Graphics[…]` evaluates the
+    /// graphic's primitives in the current scope. Regression: they were
+    /// kept unevaluated, so `Sphere[pts[[i]], r]` inside a `Table` stayed
+    /// symbolic and every sphere was drawn at the origin.
+    #[test]
+    fn show_evaluates_the_primitives_of_a_literal_graphic() {
+      clear_state();
+      assert_eq!(
+        interpret("Show[Graphics3D[{Sphere[{1 + 1, 0, 0}]}]][[1]]").unwrap(),
+        "{Sphere[{2, 0, 0}]}"
+      );
+      assert_eq!(
+        interpret("Show[Graphics[{Point[{2 a, 3}]}, Axes -> True]][[1]]")
+          .unwrap(),
+        "{Point[{2*a, 3}]}"
+      );
+      assert_eq!(
+        interpret(
+          "pts = {{1, 2, 3}, {4, 5, 6}}; \
+           Cases[Table[Show[Graphics3D[{Red, Sphere[pts[[i]], 0.1]}]], \
+           {i, 1, 2}], _Sphere, Infinity]"
+        )
+        .unwrap(),
+        "{Sphere[{1, 2, 3}, 0.1], Sphere[{4, 5, 6}, 0.1]}"
+      );
+    }
+
+    /// `BaseStyle -> Italic` slants the axis and tick labels of a 3D box,
+    /// and `TicksStyle -> Plain` sets the tick labels upright again — for
+    /// a `Graphics3D`, a surface plot and a `Show` of a 3D plot alike.
+    #[test]
+    fn base_style_sets_the_face_of_3d_axes_labels() {
+      // (axis labels, tick labels) as (italic, bold) flags of each <text>.
+      let faces = |code: &str| {
+        let svg = export_svg(code);
+        let texts: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<text")).collect();
+        let face = |l: &str| {
+          (
+            l.contains("font-style=\"italic\""),
+            l.contains("font-weight=\"bold\""),
+          )
+        };
+        let is_label =
+          |l: &str| l.ends_with(">x</text>") || l.ends_with(">y</text>");
+        let labels: Vec<_> = texts
+          .iter()
+          .filter(|l| is_label(l))
+          .map(|l| face(l))
+          .collect();
+        let ticks: Vec<_> = texts
+          .iter()
+          .filter(|l| !is_label(l))
+          .map(|l| face(l))
+          .collect();
+        assert!(labels.len() == 2 && !ticks.is_empty(), "{svg}");
+        (labels, ticks)
+      };
+      let all = |v: &[(bool, bool)], f: (bool, bool)| v.iter().all(|x| *x == f);
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> Italic]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (true, false)));
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> Italic, TicksStyle -> Plain]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (false, false)));
+      let (labels, ticks) = faces(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> {Bold}]",
+      );
+      assert!(all(&labels, (false, true)) && all(&ticks, (false, true)));
+      let (labels, ticks) = faces(
+        "Show[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 3}], \
+         AxesLabel -> {\"x\", \"y\", None}, BaseStyle -> Italic, \
+         TicksStyle -> Plain]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (false, false)));
+      // Without a BaseStyle every label stays upright.
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}]",
+      );
+      assert!(all(&labels, (false, false)) && all(&ticks, (false, false)));
+    }
+
     /// No `PlotStyle` must render byte-identically to before it was
     /// supported at all — the height-based rainbow default is load-bearing
     /// for every other Plot3D snapshot test. (The axis grid legitimately
