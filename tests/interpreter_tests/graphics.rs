@@ -59137,3 +59137,44 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
 }
+
+mod show_keeps_color_function_per_curve {
+  use super::*;
+
+  #[test]
+  fn plots_only_color_function_stays_on_its_own_curve() {
+    // The second plot has no `ColorFunction`: it keeps its plain color
+    // instead of taking the first plot's.
+    let svg = export_svg(
+      "Show[Plot[Sin[x], {x, -5, 5}, ColorFunction -> Function[{x, y}, Red]], \
+       Plot[Cos[x], {x, -5, 5}, PlotStyle -> Blue]]",
+    );
+    assert_eq!(svg.matches("url(#cfgrad").count(), 1, "{svg}");
+    assert!(svg.contains("stop-color=\"#FF0000\""), "{svg}");
+    assert!(svg.contains("stroke=\"#0000FF\""), "{svg}");
+  }
+
+  #[test]
+  fn color_function_survives_a_leading_graphics() {
+    // With a `Graphics` first, the curves become primitives; the colored
+    // one is shaded through its vertex colors, the other stays plain.
+    let svg = export_svg(
+      "Show[Graphics[Line[{{0, 0}, {1, 0.5}}], Axes -> True], \
+       Plot[Sin[x], {x, -5, 5}, ColorFunction -> Function[{x, y}, Red]], \
+       Plot[Cos[x], {x, -5, 5}, PlotStyle -> Blue]]",
+    );
+    assert!(svg.matches("stroke=\"rgb(255,0,0)\"").count() > 10, "{svg}");
+    assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
+  }
+
+  #[test]
+  fn varying_color_function_shades_the_curve_in_a_leading_graphics() {
+    // `Hue[x]` over the scaled x range: the curve's colors change along it.
+    let svg = export_svg(
+      "Show[Graphics[Point[{0, 0}], Axes -> True], \
+       Plot[x, {x, 0, 1}, ColorFunction -> Function[{x, y}, Hue[x]]]]",
+    );
+    assert!(svg.contains("woxi-vgrad"), "{svg}");
+    assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
+  }
+}

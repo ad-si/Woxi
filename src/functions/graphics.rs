@@ -23288,6 +23288,15 @@ fn svg_tick_label_expr(label: &str) -> Expr {
 /// by pattern replacement at all. A log axis is drawn in `Log` space (see
 /// [`log_scaled_plot_source`]).
 pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
+  // A colored curve's color function reads data values, not the `Log`
+  // space a log axis draws the curve in.
+  let (log_x, log_y) = (ps.log_x, ps.log_y);
+  let data_point = move |(x, y): (f64, f64)| {
+    (
+      if log_x { x.exp() } else { x },
+      if log_y { y.exp() } else { y },
+    )
+  };
   let ps = log_scaled_plot_source(ps);
   let ps = ps.as_ref();
   let mut series_prims: Vec<Expr> = Vec::new();
@@ -23508,8 +23517,45 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
               Expr::List(vec![Expr::Real(x), Expr::Real(y)].into())
             })
             .collect();
-          if coords.len() >= 2 {
-            series_prims.push(call1("Line", Expr::List(coords.into())));
+          if coords.len() < 2 {
+            continue;
+          }
+          // A `ColorFunction` curve is shaded through the colors at its
+          // vertices, as Wolfram draws it (`Line[pts, VertexColors -> …]`).
+          let vertex_colors = sd.color_function.as_ref().and_then(|c| {
+            piece
+              .iter()
+              .map(|&p| {
+                crate::functions::plot::color_function_rgb(
+                  &c.function,
+                  c.scaling,
+                  data_point(p),
+                  c.ranges,
+                )
+                .map(|(r, g, b)| {
+                  call(
+                    "RGBColor",
+                    vec![
+                      Expr::Real(f64::from(r) / 255.0),
+                      Expr::Real(f64::from(g) / 255.0),
+                      Expr::Real(f64::from(b) / 255.0),
+                    ],
+                  )
+                })
+              })
+              .collect::<Option<Vec<Expr>>>()
+          });
+          match vertex_colors {
+            Some(colors) => series_prims.push(call(
+              "Line",
+              vec![
+                Expr::List(coords.into()),
+                rule_expr(id_expr("VertexColors"), Expr::List(colors.into())),
+              ],
+            )),
+            None => {
+              series_prims.push(call1("Line", Expr::List(coords.into())));
+            }
           }
         }
       }

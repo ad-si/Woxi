@@ -3598,6 +3598,10 @@ pub(crate) struct PlotOptions {
   /// coordinate rescaled to 0..1 over the plot range (the default) or the
   /// raw value. `{True, False}` scales only x.
   pub color_function_scaling: (bool, bool),
+  /// Per-series `ColorFunction`s of curves merged by `Show`, each with the
+  /// scaling and data extents of its own plot. When non-empty it replaces
+  /// `color_function` for line series (`None` = a plain curve).
+  pub series_color_functions: Vec<Option<crate::syntax::SeriesColorFunction>>,
   /// Per-axis visibility: (x_axis, y_axis). Both true = default.
   pub axes: (bool, bool),
   /// `AxesOrigin -> {x, y}`: where the axes cross. `None` coordinates
@@ -4050,6 +4054,7 @@ impl Default for PlotOptions {
       plot_style: Vec::new(),
       color_function: None,
       color_function_scaling: (true, true),
+      series_color_functions: Vec::new(),
       axes: (true, true),
       ticks: true,
       plot_points: NUM_SAMPLES,
@@ -6440,17 +6445,16 @@ fn generate_svg_with_options(
                     // fill polygons with opaque `VertexColors`). Any given
                     // `FillingStyle`, even a bare `Opacity[…]`, replaces
                     // the color function with the plain series color.
-                    let tinted = opts
-                      .color_function
-                      .as_ref()
-                      .filter(|_| fill_style.is_none());
+                    let tinted =
+                      curve_color_function(opts, series_idx, color_scale_ranges)
+                        .filter(|_| fill_style.is_none());
                     let pieces: Vec<(plotters::style::RGBAColor, Vec<(f64, f64)>)> =
                       match tinted {
-                        Some(cf) if let Some(stops) = color_function_gradient_stops(
+                        Some((cf, cf_scaling, cf_ranges)) if let Some(stops) = color_function_gradient_stops(
                           segment,
                           cf,
-                          opts.color_function_scaling,
-                          color_scale_ranges,
+                          cf_scaling,
+                          cf_ranges,
                           opts.log_x,
                         ) => {
                           let sentinel =
@@ -6459,12 +6463,12 @@ fn generate_svg_with_options(
                           let (sr, sg, sb) = sentinel;
                           vec![(RGBColor(sr, sg, sb).mix(1.0), segment.clone())]
                         }
-                        Some(cf) => {
+                        Some((cf, cf_scaling, cf_ranges)) => {
                           let runs = color_function_runs(
                             segment,
                             cf,
-                            opts.color_function_scaling,
-                            color_scale_ranges,
+                            cf_scaling,
+                            cf_ranges,
                           );
                           // Each opaque piece reaches one step into the
                           // next, which paints over it: abutting pieces
@@ -6812,7 +6816,8 @@ fn generate_svg_with_options(
                 .and_then(|st| st.opacity)
                 .unwrap_or_else(|| series_opacity(&opts.plot_style, series_idx));
               let color_function =
-                opts.color_function.as_ref().filter(|_| shade_color.is_none());
+                curve_color_function(opts, series_idx, color_scale_ranges)
+                  .filter(|_| shade_color.is_none());
               if let Some(ref dash_pattern) = dashing {
                 // Defer to a single <polyline stroke-dasharray> per segment,
                 // emitted after the plot is drawn.
@@ -6827,13 +6832,13 @@ fn generate_svg_with_options(
                     });
                   }
                 }
-              } else if let Some(cf) = color_function {
+              } else if let Some((cf, cf_scaling, cf_ranges)) = color_function {
                 for segment in segments {
                   if let Some(stops) = color_function_gradient_stops(
                     segment,
                     cf,
-                    opts.color_function_scaling,
-                    color_scale_ranges,
+                    cf_scaling,
+                    cf_ranges,
                     opts.log_x,
                   ) {
                     let sentinel =
@@ -6853,8 +6858,8 @@ fn generate_svg_with_options(
                   for (run_color, run) in color_function_runs(
                     segment,
                     cf,
-                    opts.color_function_scaling,
-                    color_scale_ranges,
+                    cf_scaling,
+                    cf_ranges,
                   ) {
                     chart
                       .draw_series(LineSeries::new(
@@ -6959,14 +6964,10 @@ fn generate_svg_with_options(
                 .find_map(|s| s.color)
                 .map(color_to_rgb8)
                 .or_else(|| {
-                  opts.color_function.as_ref().and_then(|cf| {
-                    color_function_rgb(
-                      cf,
-                      opts.color_function_scaling,
-                      dot.pos,
-                      color_scale_ranges,
-                    )
-                  })
+                  curve_color_function(opts, series_idx, color_scale_ranges)
+                    .and_then(|(cf, cf_scaling, cf_ranges)| {
+                      color_function_rgb(cf, cf_scaling, dot.pos, cf_ranges)
+                    })
                 })
                 .unwrap_or((r, g, b));
               let opacity = pick(&|s| s.opacity)
@@ -8202,6 +8203,18 @@ pub(crate) fn build_plot_source(
     Some(fs) => (fs.color, fs.effective_opacity()),
     None => (None, None),
   };
+  // The renderer rescales `ColorFunction` arguments over the extents of
+  // all the plot's sampled data; keep those with each curve.
+  let color_function =
+    opts
+      .color_function
+      .as_ref()
+      .map(|cf| crate::syntax::SeriesColorFunction {
+        function: cf.clone(),
+        scaling: opts.color_function_scaling,
+        ranges: data_extents(all_points)
+          .unwrap_or((x_range.0, x_range.1, y_range.0, y_range.1)),
+      });
   let series = all_points
     .iter()
     .enumerate()
@@ -8243,6 +8256,7 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        color_function: color_function.clone(),
       }
     })
     .collect();
@@ -8525,6 +8539,28 @@ fn color_function_gradient_stops(
   )
 }
 
+/// The `ColorFunction` that colors line series `series_idx`: its own one
+/// when `Show` merged curves of several plots (each keeps the function,
+/// scaling and data extents of the plot it came from), else the plot's
+/// `ColorFunction` rescaled over `ranges`.
+fn curve_color_function(
+  opts: &PlotOptions,
+  series_idx: usize,
+  ranges: (f64, f64, f64, f64),
+) -> Option<(&Expr, (bool, bool), (f64, f64, f64, f64))> {
+  if !opts.series_color_functions.is_empty() {
+    return opts
+      .series_color_functions
+      .get(series_idx)?
+      .as_ref()
+      .map(|c| (&c.function, c.scaling, c.ranges));
+  }
+  opts
+    .color_function
+    .as_ref()
+    .map(|cf| (cf, opts.color_function_scaling, ranges))
+}
+
 /// The placeholder color of the `k`-th gradient element of a plot.
 fn color_function_gradient_sentinel(k: usize) -> (u8, u8, u8) {
   (0x01, ((k >> 8) & 0xff) as u8, (k & 0xff) as u8)
@@ -8781,6 +8817,10 @@ pub(crate) fn render_merged_plot_source(
       ..SeriesStyle::default()
     })
     .collect();
+  // So does each curve's `ColorFunction`: a curve merged with a colored
+  // one keeps its own plain color.
+  opts.series_color_functions =
+    drawn.iter().map(|s| s.color_function.clone()).collect();
   // Markers travel with the series too, so a `Show` of a marked scatter
   // plot keeps drawing the glyphs its `PlotMarkers` asked for.
   opts.plot_markers = drawn.iter().map(|s| s.marker.clone()).collect();
@@ -12428,6 +12468,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      color_function: None,
     });
   }
 
