@@ -29495,6 +29495,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 mod pane_wrapper_display {
   use super::*;
 
+  // Exported on its own or as a `Row` item next to a picture, `Text[…]`
+  // content is set in the proportional text face, like the same `Text` in
+  // a `Grid` cell.
+  #[test]
+  fn exported_text_uses_the_text_face() {
+    clear_state();
+    for code in [
+      "ExportString[Text[\"total\"], \"SVG\"]",
+      "ExportString[Row[{Text[Style[Row[{\"total, \", Style[\"n\", Italic]}], \
+       14]], Graphics[Circle[], ImageSize -> 20]}], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      let text = svg
+        .split("<text")
+        .find(|t| t.contains("total"))
+        .unwrap_or_else(|| panic!("no text in {svg}"));
+      assert!(text.contains("sans-serif"), "{code}: {text}");
+      assert!(!text.contains("monospace"), "{code}: {text}");
+    }
+  }
+
+  // A Manipulate body's control row — a slider, a `Text` caption whose
+  // `Row` holds a string times a styled symbol, and a second slider whose
+  // maximum is `Dynamic[…]` — draws both sliders and sets the caption in
+  // the proportional text face, not as monospace output or source text.
+  #[test]
+  fn column_of_slider_rows_with_text_captions_renders_in_visual_mode() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "k = 4; j = 2; Pane[Column[{\
+         Row[{Manipulator[Dynamic[k], {1, 10, 1}], Spacer[15], \
+           Text[Style[Row[{\"count, \" Style[\"n\", Italic], \" = \"}], 14]], \
+           Text[Style[Dynamic[k], 14]]}], \
+         Row[{Manipulator[Dynamic[j], {1, Dynamic[k], 1}], \
+           Text[Style[\"at least\", 14]]}], \
+         Graphics[Circle[], ImageSize -> 100]}, Alignment -> Center], \
+         {300, 200}]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("column should render");
+    assert!(
+      !svg.contains("Manipulator["),
+      "slider drawn as source: {svg}"
+    );
+    assert_eq!(svg.matches("<circle cx=").count(), 2, "{svg}");
+    let caption = svg
+      .split("<text")
+      .find(|t| t.contains("count,"))
+      .expect("caption text");
+    assert!(caption.contains("sans-serif"), "{caption}");
+    assert!(caption.contains("font-style=\"italic\">n<"), "{caption}");
+  }
+
   // In visual hosts (playground, studio — anything driven by
   // interpret_with_stdout), the transparent Pane wrapper displays its
   // content, so a Demonstrations-style Manipulate body like
@@ -42188,6 +42241,38 @@ mod manipulate {
       })
       .collect();
     assert_eq!(actions, ["n = 1", "n = 2", "n = 3"]);
+  }
+
+  /// A `Manipulator` in a display whose bound is itself live
+  /// (`{1, Dynamic[n], 1}`, a maximum following another control) is a real
+  /// slider ranging up to the bound's current value, not inert source text.
+  #[test]
+  fn display_manipulator_with_dynamic_bound_is_live_slider() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let node = build_manipulate_display(
+      "Row[{Manipulator[Dynamic[m], {1, Dynamic[n], 1}], \"label\"}]",
+      &[
+        ("n".to_string(), "7".to_string()),
+        ("m".to_string(), "3".to_string()),
+      ],
+    );
+    let DisplayNode::Row(items) = &node else {
+      panic!("expected a row, got {node:?}");
+    };
+    match &items[0] {
+      DisplayNode::Slider {
+        target,
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => {
+        assert_eq!(target, "m");
+        assert_eq!((*min, *max, *step, *current), (1.0, 7.0, 1.0, 3.0));
+      }
+      other => panic!("expected a live slider, got {other:?}"),
+    }
   }
 
   /// `Overlay[{layers}, {shown…}, active]` in a display: a control layer Woxi
