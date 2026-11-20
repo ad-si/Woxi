@@ -6661,6 +6661,12 @@ mod plot3d {
        Mesh -> None]",
       "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
        PlotStyle -> Directive[Yellow, Opacity[0.6]], Mesh -> None]",
+      // A translucent quad or pentagon is cut into triangles, whose
+      // inner cuts must not show (only the outline is stroked).
+      "Graphics3D[{Opacity[0.2], Orange, \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0.3}, {0, 1, 0.3}}]}]",
+      "Graphics3D[{Opacity[0.5], \
+       Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 1, 1}, {1, 2, 1}, {-1, 1, 0}}]}]",
     ] {
       let svg = export_svg(plot);
       let faces: Vec<&str> = svg
