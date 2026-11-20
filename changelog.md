@@ -12,6 +12,8 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Graphics3D` `Text` labels and plot labels keep the blanks padding their
+    text (`Text["  axis", pos]`) instead of SVG dropping them.
 
 # 2026-11-08 - 0.4.0
 

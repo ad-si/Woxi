@@ -4600,10 +4600,22 @@ fn grid_line_props(
 }
 
 /// The attribute that keeps a run of blanks a label asks for
-/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
-/// space; empty when the markup has no such run.
-fn preserve_blanks_attr(markup: &str) -> &'static str {
-  if markup.contains("  ") {
+/// (`Row[{a, "    ", b}]`), or blanks padding its text (`"  axis"`),
+/// instead of letting SVG collapse or drop them; empty when the markup has
+/// neither.
+pub(crate) fn preserve_blanks_attr(markup: &str) -> &'static str {
+  // The visible text, without the `<tspan …>` tags that style it.
+  let mut text = String::with_capacity(markup.len());
+  let mut in_tag = false;
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      _ if !in_tag => text.push(c),
+      _ => {}
+    }
+  }
+  if text.contains("  ") || text.trim() != text {
     " xml:space=\"preserve\""
   } else {
     ""

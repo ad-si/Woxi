@@ -13637,10 +13637,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
+        // Blanks padding the label (`"  axis"`) keep their room, as they
+        // do in a 2D `Text`.
+        let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
