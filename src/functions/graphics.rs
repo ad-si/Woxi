@@ -21784,6 +21784,18 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
           None => estimate_display_width(&args[0]),
         }
       }
+      // `StringForm["template", args…]` typesets as its filled template, so
+      // it is as wide as the template's literal runs plus each slot's
+      // value — not the `StringForm[…]` call's source text.
+      "StringForm" if matches!(args.first(), Some(Expr::String(_))) => {
+        let Some(Expr::String(template)) = args.first() else {
+          unreachable!()
+        };
+        crate::functions::string_ast::string_form_parts(template, &args[1..])
+          .iter()
+          .map(estimate_display_width)
+          .sum()
+      }
       _ => {
         let args_width: f64 = args.iter().map(estimate_display_width).sum();
         let seps = if args.len() > 1 {
