@@ -677,18 +677,26 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         let draws: Vec<Expr> = if s.is_scatter {
           vec![call1("Point", to_list(&s.points))]
         } else {
-          let runs: Vec<&[(f64, f64)]> = s
+          // The plot's own y range clips the curve, as in Wolfram: the
+          // pole of `First[Plot[1/x, {x, 0, 9}, PlotRange -> {0, 1.4}]]`
+          // must not reach y = 10^6 and stretch the range of the
+          // `Graphics` the line is drawn in.
+          let pieces: Vec<Vec<(f64, f64)>> = s
             .points
             .split(|(x, y)| !x.is_finite() || !y.is_finite())
             .filter(|run| !run.is_empty())
+            .flat_map(|run| {
+              crate::functions::graphics::clip_segment_to_y_range(
+                run,
+                source.y_range,
+              )
+            })
+            .filter(|piece| !piece.is_empty())
             .collect();
-          if runs.len() <= 1 {
+          if pieces.is_empty() {
             vec![call1("Line", to_list(&s.points))]
           } else {
-            runs
-              .into_iter()
-              .map(|r| call1("Line", to_list(r)))
-              .collect()
+            pieces.iter().map(|r| call1("Line", to_list(r))).collect()
           }
         };
         let mut style = vec![crate::functions::plot::series_color_expr(s)];

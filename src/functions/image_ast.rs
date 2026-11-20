@@ -13521,13 +13521,23 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
 }
 
-/// Options for parsing an SVG with `fontdb` and [`font_resolver`]'s
-/// style-preserving fallback.
+/// The family usvg gives a `<text>` that sets no `font-family` of its own.
+///
+/// Woxi emits a bare `<text>` for a `Graphics` `Text` without `FontFamily`
+/// and expects it in its default sans-serif face (WL's default graphics
+/// font is sans-serif too). usvg's own default is "Times New Roman", which
+/// is installed on macOS and Windows, so such labels came out serif there.
+pub const DEFAULT_SVG_FONT_FAMILY: &str = "Atkinson Hyperlegible Next";
+
+/// usvg options for rendering a Woxi SVG with `fontdb`: every parse that
+/// lays out text must go through this so unstyled text gets
+/// [`DEFAULT_SVG_FONT_FAMILY`] rather than usvg's serif default.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn svg_options(
+pub fn svg_render_options(
   fontdb: Arc<resvg::usvg::fontdb::Database>,
 ) -> resvg::usvg::Options<'static> {
   resvg::usvg::Options {
+    font_family: DEFAULT_SVG_FONT_FAMILY.to_string(),
     fontdb,
     font_resolver: font_resolver(),
     ..Default::default()
@@ -13885,7 +13895,7 @@ fn rasterize_svg_with(
   load_embedded_fonts(&mut fontdb);
 
   // Parse SVG
-  let opt = svg_options(StdArc::new(fontdb));
+  let opt = svg_render_options(StdArc::new(fontdb));
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
@@ -14049,7 +14059,7 @@ fn rasterize_mask_svg(
   let mut fontdb = resvg::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   load_embedded_fonts(&mut fontdb);
-  let opt = svg_options(StdArc::new(fontdb));
+  let opt = svg_render_options(StdArc::new(fontdb));
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(

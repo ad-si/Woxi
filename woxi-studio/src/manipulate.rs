@@ -2386,10 +2386,7 @@ impl ManipulateState {
   }
 
   /// Retitle each named control with its freshly typeset caption.
-  fn apply_dynamic_labels(
-    &mut self,
-    resolved: Vec<(String, (Vec<LabelRun>, Option<String>))>,
-  ) {
+  fn apply_dynamic_labels(&mut self, resolved: Vec<ResolvedLabel>) {
     for (name, (runs, svg)) in resolved {
       self.label_svgs.retain(|(n, _)| *n != name);
       if let Some(svg) = svg {
@@ -2456,6 +2453,9 @@ impl ManipulateState {
     selection_moved
   }
 }
+
+/// A control name with its typeset caption runs and optional rendered SVG.
+type ResolvedLabel = (String, (Vec<LabelRun>, Option<String>));
 
 /// A dynamic bound re-resolved to numbers:
 /// `(control name, min, max, step)`.
