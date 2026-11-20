@@ -1057,6 +1057,7 @@ fn styled_button_label_in_grid_keeps_its_style() {
   let svg =
     interpret(r#"ExportString[Grid[{{Button["go", x = 1]}}], "SVG"]"#).unwrap();
   assert!(svg.contains("font-size=\"14\""), "{svg}");
+}
 
 /// Regression: a styled `Row` (`Style[Row[{…, Spacer[n], …}], size]`)
 /// pushes its style onto every item, and the resulting
