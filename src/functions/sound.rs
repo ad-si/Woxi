@@ -504,14 +504,35 @@ pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
   if segments.is_empty() {
     return None;
   }
-  // Use the first segment's sample rate for the whole sound (the common case
-  // is a single segment; mixed-rate Sound objects are rare).
+  // Play the whole sound at the first segment's sample rate, resampling any
+  // segment recorded at another rate so it keeps its duration and pitch.
   let rate = segments[0].1;
   let mut samples = Vec::new();
-  for (seg, _) in &segments {
-    samples.extend_from_slice(seg);
+  for (seg, seg_rate) in &segments {
+    samples.extend_from_slice(&resample_linear(seg, *seg_rate, rate));
   }
   (!samples.is_empty()).then_some((samples, rate))
+}
+
+/// Resample `samples` recorded at `from` Hz to `to` Hz by linear
+/// interpolation, keeping their duration.
+pub(crate) fn resample_linear(samples: &[f64], from: u32, to: u32) -> Vec<f64> {
+  if from == to || from == 0 || to == 0 || samples.is_empty() {
+    return samples.to_vec();
+  }
+  let len =
+    ((samples.len() as f64) * f64::from(to) / f64::from(from)).round() as usize;
+  let step = f64::from(from) / f64::from(to);
+  (0..len)
+    .map(|i| {
+      let pos = i as f64 * step;
+      let idx = pos.floor() as usize;
+      let frac = pos - idx as f64;
+      let a = samples[idx.min(samples.len() - 1)];
+      let b = samples[(idx + 1).min(samples.len() - 1)];
+      a + (b - a) * frac
+    })
+    .collect()
 }
 
 /// Width of the sound box drawn for a `Sound` object inside a layout (px).

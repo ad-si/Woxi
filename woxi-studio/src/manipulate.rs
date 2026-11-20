@@ -3447,6 +3447,36 @@ mod tests {
     );
   }
 
+  /// A button whose action maps `EmitSound` over notes derived from a
+  /// control (a "play the scale" button) queues every note, so the host
+  /// plays the whole run rather than only its last note.
+  #[test]
+  fn button_action_emitting_several_sounds_queues_them() {
+    let code = r#"Manipulate[
+      k,
+      {{k, 3}, 1, 8, 1},
+      Button["run", (EmitSound[Play[Sin[1000 # t], {t, 0, 0.25}]] &) /@ Range[k]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "build must not report an error");
+    state.apply_button_action(
+      "(EmitSound[Play[Sin[1000 # t], {t, 0, 0.25}]] &) /@ Range[k]",
+    );
+    let audio = state
+      .emitted_sound
+      .take()
+      .expect("button should emit audio");
+    let bytes = base64::Engine::decode(
+      &base64::engine::general_purpose::STANDARD,
+      &audio.base64,
+    )
+    .expect("valid base64");
+    // 3 notes × 0.25s at 8000 Hz, 16-bit mono.
+    assert_eq!(bytes.len(), 44 + 3 * 2000 * 2);
+  }
+
   /// A body that evaluates to a `Sound` (optionally wrapped in `Magnify`)
   /// exposes playable audio that follows the controls, instead of a bare
   /// `-Sound-` placeholder.
