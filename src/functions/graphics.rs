@@ -6806,14 +6806,35 @@ pub(crate) fn button_svg(args: &[Expr]) -> String {
 /// `ImageSize` and painted with its `Background`.
 fn button_text_plate_svg(args: &[Expr]) -> String {
   let size = button_image_size(args);
+  // A `Style[label, …]` label (`Style[n, "Title"]`, `Style[k, 24, Bold]`)
+  // keeps its font size, color and face on the plate.
+  let mut text_style = StyleState::default();
+  let mut styled = false;
+  let mut inner = &args[0];
+  while let Expr::FunctionCall { name, args: sargs } = inner
+    && name == "Style"
+    && !sargs.is_empty()
+  {
+    for d in style_directives_in_application_order(&sargs[1..]) {
+      if apply_text_style_directive(d, &mut text_style)
+        || parse_color(d).is_some_and(|c| {
+          text_style.color = c;
+          true
+        })
+      {
+        styled = true;
+      }
+    }
+    inner = &sargs[0];
+  }
   let label = graphics_text_content(&args[0]);
+  let font = styled.then_some(&text_style);
+  let natural = button_plate_size_styled(&label, font);
   let plate = match size {
-    Some((w, h)) => button_plate_svg_sized(
-      &label,
-      w,
-      h.unwrap_or(button_plate_size(&label).1),
-    ),
-    None => button_plate_svg(&label),
+    Some((w, h)) => {
+      button_plate_svg_styled(&label, w, h.unwrap_or(natural.1), font)
+    }
+    None => button_plate_svg_styled(&label, natural.0, natural.1, font),
   };
   let background = args
     .iter()
@@ -6846,10 +6867,53 @@ fn button_plate_svg(label: &str) -> String {
 
 /// A `Button` plate of an explicit pixel size.
 fn button_plate_svg_sized(label: &str, w: f64, h: f64) -> String {
+  button_plate_svg_styled(label, w, h, None)
+}
+
+/// The plate size of a button whose label is drawn in `font` (the plain
+/// 14-point label when `None`): the 14-point metric scaled to the size.
+fn button_plate_size_styled(
+  label: &str,
+  font: Option<&StyleState>,
+) -> (f64, f64) {
+  let (w, h) = button_plate_size(label);
+  match font {
+    Some(f) if f.font_size > 14.0 => {
+      let scale = f.font_size / 14.0;
+      (
+        w.max(label.chars().count() as f64 * 8.4 * scale + 24.0),
+        h * scale,
+      )
+    }
+    _ => (w, h),
+  }
+}
+
+/// A `Button` plate of an explicit pixel size, its label drawn in `font`
+/// (size, color, weight and slant) or the plain 14-point black text.
+fn button_plate_svg_styled(
+  label: &str,
+  w: f64,
+  h: f64,
+  font: Option<&StyleState>,
+) -> String {
+  let (size, fill, face) = match font {
+    Some(f) => {
+      let mut face = String::new();
+      if f.font_weight != "normal" {
+        face.push_str(&format!(" font-weight=\"{}\"", f.font_weight));
+      }
+      if f.font_style != "normal" {
+        face.push_str(&format!(" font-style=\"{}\"", f.font_style));
+      }
+      (format!("{}", f.font_size), f.color.to_svg_rgb(), face)
+    }
+    None => ("14".to_string(), "#000000".to_string(), String::new()),
+  };
   format!(
     "<svg width=\"{w:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {w:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect x=\"0.5\" y=\"0.5\" width=\"{:.1}\" height=\"{:.1}\" rx=\"4\" ry=\"4\" fill=\"#FDFDFD\" stroke=\"#BFBFBF\" stroke-width=\"1\"/>\n\
-     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"14\" fill=\"#000000\" text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n\
+     <text x=\"{:.1}\" y=\"{:.1}\" font-family=\"Atkinson Hyperlegible Next, sans-serif\" font-size=\"{size}\" fill=\"{fill}\"{face} text-anchor=\"middle\" dominant-baseline=\"central\">{}</text>\n\
      </svg>\n",
     w - 1.0,
     h - 1.0,
@@ -43924,6 +43988,22 @@ fn extract_body_togglerbars(expr: &Expr, displays: &mut Vec<String>) -> Expr {
         && matches!(
           args.first(),
           Some(Expr::FunctionCall { name: b, .. }) if b == "Button"
+        ) =>
+    {
+      expr.clone()
+    }
+    // `Tooltip[Button[…], tip]` keeps its button in the body as well:
+    // lifting the `Button` out would leave `Tooltip[Nothing, tip]`, which
+    // draws the literal word "Nothing", and would tear the button out of
+    // the `Grid` cell (and its `Background`) the body places it in. The
+    // picture renderer draws the button plate with its label and a hit
+    // region, so it stays pressable where it is.
+    Expr::FunctionCall { name, args }
+      if name == "Tooltip"
+        && matches!(
+          args.first(),
+          Some(Expr::FunctionCall { name: b, args: bargs })
+            if b == "Button" && bargs.len() >= 2
         ) =>
     {
       expr.clone()
