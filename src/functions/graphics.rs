@@ -35425,9 +35425,15 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
 
 fn resolve_display_item(expr: &Expr) -> Expr {
   let resolved = resolve_display_item_content(expr);
-  // A `Text[Row[…]]` (or `Text[Style[Row[…], …]]`) item, once its `Dynamic`
-  // parts show their values, is set in the text face.
-  let is_row = |e: &Expr| matches!(e, Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty());
+  // A `Text[Row[…]]` or `Text[TraditionalForm[…]]` item (either possibly
+  // under `Style`), once its `Dynamic` parts show their values, is set in
+  // the text face — as it is on its own — rather than in the monospace face
+  // of typeset output.
+  let is_row = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if args.len() == 1 && matches!(name.as_str(), "TraditionalForm" | "StandardForm"))
+      || matches!(e, Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty())
+  };
   if let Expr::FunctionCall { name, args } = expr
     && name == "Text"
     && args.len() == 1
