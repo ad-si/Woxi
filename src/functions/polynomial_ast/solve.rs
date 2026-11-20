@@ -2499,7 +2499,17 @@ fn is_solve_constant(s: &str) -> bool {
 fn auto_detect_solve_vars(eqns: &Expr) -> Option<Expr> {
   let mut vars = Vec::new();
   collect_solve_var_exprs(eqns, &mut vars);
-  if solve_equalities(eqns).is_empty() {
+  // A disjunction of equation systems (`x == 1 || x == 2`, the form `Roots`
+  // returns) states equations as long as every alternative does.
+  fn states_equations(eqns: &Expr) -> bool {
+    match eqns {
+      Expr::FunctionCall { name, args } if name == "Or" && !args.is_empty() => {
+        args.iter().all(states_equations)
+      }
+      _ => !solve_equalities(eqns).is_empty(),
+    }
+  }
+  if !states_equations(eqns) {
     return None;
   }
   vars.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
