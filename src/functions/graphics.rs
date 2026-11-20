@@ -25725,6 +25725,43 @@ fn show_symbolic_graphics(args: &[Expr], original: &[Expr]) -> Option<Expr> {
   Some(call(head, vec![content, Expr::List(options.into())]))
 }
 
+/// The `PlotLabels` of plots merged by `Show`, one entry per merged series:
+/// each plot's own labels for its curves (`None` for an unlabeled one).
+/// `None` when no plot after the first labels its curves, so the first
+/// plot's option stands as given.
+fn merged_plot_labels(
+  plot_sources: &[crate::syntax::PlotSource],
+  any_curves: bool,
+) -> Option<Expr> {
+  let labels_of = |ps: &crate::syntax::PlotSource| {
+    ps.options.iter().find_map(|o| match option_name_value(o) {
+      Some(("PlotLabels", v)) => Some(v.into_owned()),
+      _ => None,
+    })
+  };
+  let shown: Vec<_> = plot_sources
+    .iter()
+    .filter(|ps| !any_curves || !ps.series.is_empty())
+    .collect();
+  if shown.iter().skip(1).all(|ps| labels_of(ps).is_none()) {
+    return None;
+  }
+  let mut entries: Vec<Expr> = Vec::new();
+  for ps in shown {
+    let n = ps.series.len();
+    let mut own: Vec<Expr> = match &labels_of(ps) {
+      // A list labels the curves in order.
+      Some(Expr::List(items)) => items.iter().take(n).cloned().collect(),
+      // A lone label (or `Automatic`) applies to a plot of one curve.
+      Some(other) if n == 1 => vec![other.clone()],
+      _ => Vec::new(),
+    };
+    own.resize(n, id_expr("None"));
+    entries.extend(own);
+  }
+  Some(Expr::List(entries.into()))
+}
+
 fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let original_args = args;
   let mut merged_primitives: Vec<Expr> = Vec::new();
@@ -26149,6 +26186,15 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if ps.image_size.0 > image_size.0 {
         image_size = ps.image_size;
       }
+    }
+    // Each shown plot keeps the labels it drew on its own curves
+    // (`Show[Plot[…, PlotLabels -> …], ListPlot[…, PlotLabels -> …]]`
+    // labels the curves of both), while its other options give way to the
+    // first graphic's.
+    if let Some(labels) = merged_plot_labels(&plot_sources, any_curves) {
+      merged_options
+        .retain(|o| !matches!(option_name_value(o), Some(("PlotLabels", _))));
+      merged_options.push(rule_expr(id_expr("PlotLabels"), labels));
     }
 
     // Like its other options, the merged graphic keeps the `PlotRange` of

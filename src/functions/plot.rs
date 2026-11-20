@@ -2316,6 +2316,59 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
   format!("{v:.decimals$}")
 }
 
+/// Label a `step`-spaced tick on an axis spanning `lo..hi`.
+///
+/// Like [`format_tick_with_step`], but the labels written in scientific
+/// notation all show as many mantissa decimals as the axis's largest tick
+/// needs, the way Wolfram labels a set of ticks: an axis stepping by
+/// `5*10^-8` up to `2*10^-7` reads `5.0×10⁻⁸, 1.0×10⁻⁷, 1.5×10⁻⁷, 2.0×10⁻⁷`.
+pub(crate) fn format_axis_tick(v: f64, step: f64, lo: f64, hi: f64) -> String {
+  let label = format_tick_with_step(v, step);
+  let Some(decimals) = axis_scientific_decimals(step, lo, hi) else {
+    return label;
+  };
+  pad_scientific_mantissa(&label, decimals)
+}
+
+/// The mantissa decimals every scientific label of a `step`-spaced axis
+/// over `lo..hi` carries: the most any of its ticks needs.
+fn axis_scientific_decimals(step: f64, lo: f64, hi: f64) -> Option<usize> {
+  if !(step.is_finite() && step > 0.0 && lo.is_finite() && hi.is_finite()) {
+    return None;
+  }
+  let (lo, hi) = (lo.min(hi), lo.max(hi));
+  let first = (lo / step - 1e-9).ceil();
+  let last = (hi / step + 1e-9).floor();
+  if !(last - first).is_finite() || last - first > 1000.0 {
+    return None;
+  }
+  (first as i64..=last as i64)
+    .filter_map(|k| {
+      let label = format_tick_with_step(k as f64 * step, step);
+      let (mantissa, _) = label.split_once('\u{d7}')?;
+      Some(mantissa.split_once('.').map_or(0, |(_, frac)| frac.len()))
+    })
+    .max()
+}
+
+/// Pad the mantissa of a scientific tick label (`5×10⁻⁸`) to `decimals`
+/// decimals (`5.0×10⁻⁸`); any other label is returned as is.
+fn pad_scientific_mantissa(label: &str, decimals: usize) -> String {
+  let Some((mantissa, rest)) = label.split_once('\u{d7}') else {
+    return label.to_string();
+  };
+  let have = mantissa.split_once('.').map_or(0, |(_, frac)| frac.len());
+  if have >= decimals {
+    return label.to_string();
+  }
+  let mut out = mantissa.to_string();
+  if have == 0 {
+    out.push('.');
+  }
+  out.extend(std::iter::repeat_n('0', decimals - have));
+  format!("{out}\u{d7}{rest}")
+}
+
 /// How many decimals it takes to write `step` — the decimals every label of
 /// a `step`-spaced tick set carries, or `None` when `step` needs more than
 /// 6 (it is no short decimal at all).
@@ -3831,6 +3884,10 @@ pub(crate) struct PlotOptions {
   /// `Mesh -> Full` dots, error bars, and per-point labels. Empty when the
   /// drawn curve is the data itself.
   pub data_points: Vec<Vec<(f64, f64)>>,
+  /// Points of series drawn as overlay primitives rather than as curves of
+  /// their own (a `ListPlot` shown over a `Plot`): `curve_label_specs` past
+  /// the drawn series index into these.
+  pub overlay_label_curves: Vec<Vec<(f64, f64)>>,
   /// `Background -> color`: fill for the whole image, replacing the
   /// theme background. `None` keeps the theme default.
   pub background: Option<RGBColor>,
@@ -4162,6 +4219,7 @@ impl Default for PlotOptions {
       interval_markers: IntervalMarkers::default(),
       interval_markers_color: None,
       data_points: Vec::new(),
+      overlay_label_curves: Vec::new(),
       background: None,
       image_padding: None,
       aspect_ratio: None,
@@ -6234,7 +6292,7 @@ fn generate_svg_with_options(
                 // Suppress plotters labels; we inject custom SVG with superscripts
                 String::new()
               } else if is_major_tick(*v, x_major) {
-                format_tick_with_step(*v, x_major)
+                format_axis_tick(*v, x_major, x_min, x_max)
               } else {
                 String::new()
               }
@@ -6246,7 +6304,7 @@ fn generate_svg_with_options(
               if log_y {
                 String::new()
               } else if is_major_tick(*v, y_major) {
-                format_tick_with_step(*v, y_major)
+                format_axis_tick(*v, y_major, y_min, y_max)
               } else {
                 String::new()
               }
@@ -7820,6 +7878,17 @@ fn inject_callout_labels(
   } else {
     &opts.data_points
   };
+  let with_overlays: Vec<Vec<(f64, f64)>>;
+  let curves = if opts.overlay_label_curves.is_empty() {
+    curves
+  } else {
+    with_overlays = curves
+      .iter()
+      .chain(&opts.overlay_label_curves)
+      .cloned()
+      .collect();
+    &with_overlays
+  };
   let scale = crate::functions::plot_curve_labels::LabelScale {
     kx: plot_w / sf / (x_max - x_min),
     ky: plot_h / sf / (y_max - y_min),
@@ -9028,11 +9097,96 @@ pub(crate) fn render_merged_plot_source(
 
   let points: Vec<Vec<(f64, f64)>> =
     drawn.iter().map(|s| s.points.clone()).collect();
+  reindex_merged_labels(&mut opts, &source.series, all_scatter);
   if all_scatter {
     generate_scatter_svg_with_options(&points, x_range, y_range, &opts)
   } else {
     generate_svg_with_options(&points, x_range, y_range, &opts)
   }
+}
+
+/// Point the curve labels of a merged plot, given per merged series, at the
+/// curves as drawn: the series drawn as curves keep their order, and the
+/// ones overlaid as primitives (`ListPlot` points shown over a `Plot`) are
+/// anchored to their points after them — an end label sitting right after
+/// the last point, as `ListPlot` puts it.
+fn reindex_merged_labels(
+  opts: &mut PlotOptions,
+  series: &[crate::syntax::PlotSeriesData],
+  all_scatter: bool,
+) {
+  use crate::functions::plot_curve_labels::{LabelAt, LabelSide};
+  if series.iter().all(|s| s.is_scatter == all_scatter) {
+    return;
+  }
+  let drawn_count = series
+    .iter()
+    .filter(|s| s.is_scatter == all_scatter)
+    .count();
+  let mut drawn_index = Vec::with_capacity(series.len());
+  let (mut next_drawn, mut next_overlay) = (0, drawn_count);
+  let mut overlay_curves = Vec::new();
+  for s in series {
+    if s.is_scatter == all_scatter {
+      drawn_index.push(next_drawn);
+      next_drawn += 1;
+    } else {
+      drawn_index.push(next_overlay);
+      next_overlay += 1;
+      overlay_curves.push(s.points.clone());
+    }
+  }
+  // An overlaid series' own plot spanned its points, padded by 2% a side
+  // (`PlotRangePadding` of a `ListPlot`), and laid its labels out there.
+  let own_extent = |j: usize| -> Option<(f64, f64)> {
+    let points = overlay_curves.get(j.checked_sub(drawn_count)?)?;
+    let (lo, hi) = points
+      .iter()
+      .filter(|(x, y): &&(f64, f64)| x.is_finite() && y.is_finite())
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+        (lo.min(x), hi.max(x))
+      });
+    let pad = 0.02 * (hi - lo);
+    (lo <= hi && pad > 0.0).then_some((lo - pad, hi + pad))
+  };
+  for spec in &mut opts.curve_label_specs {
+    if let Some(&i) = drawn_index.get(spec.series) {
+      spec.series = i;
+      spec.x_extent = own_extent(i);
+    }
+  }
+  let mut ends = vec![None; drawn_count];
+  let mut leaders = vec![false; drawn_count];
+  for (i, label) in std::mem::take(&mut opts.plot_labels)
+    .into_iter()
+    .enumerate()
+  {
+    let Some(&j) = drawn_index.get(i) else {
+      continue;
+    };
+    if j < drawn_count {
+      leaders[j] = opts.plot_label_leaders.get(i).copied().unwrap_or(false);
+      ends[j] = label;
+    } else if let Some(text) = label {
+      opts.curve_label_specs.push(
+        crate::functions::plot_curve_labels::CurveLabelSpec {
+          series: j,
+          text,
+          at: LabelAt::Finish,
+          side: Some(LabelSide::Right),
+          callout: false,
+          x_extent: own_extent(j),
+        },
+      );
+    }
+  }
+  if ends.iter().any(Option::is_some) {
+    opts.plot_labels = ends;
+    opts.plot_label_leaders = leaders;
+  } else {
+    opts.plot_label_leaders.clear();
+  }
+  opts.overlay_label_curves = overlay_curves;
 }
 
 /// The `Filling` a merged series was drawn with, or `None` when it is unfilled.
@@ -16420,6 +16574,7 @@ pub(crate) fn placed_label_spec(
     at,
     side,
     callout: *callout,
+    x_extent: None,
   })
 }
 
