@@ -8249,6 +8249,7 @@ pub(crate) fn build_plot_source(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
+    legends: Vec::new(),
   }
 }
 
@@ -8752,6 +8753,29 @@ pub(crate) fn render_merged_plot_source(
     .iter()
     .filter(|s| s.is_scatter == all_scatter)
     .collect();
+  // The legend entries of several merged plots, each keyed by the series
+  // it labels (now an index among the drawn series).
+  if !source.legends.is_empty() {
+    let drawn_index = |si: usize| {
+      source
+        .series
+        .get(si)
+        .filter(|s| s.is_scatter == all_scatter)?;
+      Some(
+        source.series[..si]
+          .iter()
+          .filter(|s| s.is_scatter == all_scatter)
+          .count(),
+      )
+    };
+    let (series, labels): (Vec<usize>, Vec<String>) = source
+      .legends
+      .iter()
+      .filter_map(|(si, label)| Some((drawn_index(*si)?, label.clone())))
+      .unzip();
+    opts.plot_legends = labels;
+    opts.legend_series = series;
+  }
 
   // Each series carries the color its own plot resolved, so `PlotStyle`
   // is rebuilt from the series rather than re-read from the options.
@@ -12434,6 +12458,7 @@ pub(crate) fn histogram_plot_source(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: None,
+    legends: Vec::new(),
   })
 }
 

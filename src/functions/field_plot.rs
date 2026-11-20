@@ -4024,6 +4024,7 @@ fn contour_plot_equations(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: None,
+    legends: Vec::new(),
   };
   let mut result = crate::graphics_result_with_source(svg, source);
   if let Expr::Graphics {
