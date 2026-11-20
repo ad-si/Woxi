@@ -1277,13 +1277,16 @@ impl ManipulateState {
     );
     state.state.extend(defaults);
     // Rows sharing one variable start from the first row's initial value
-    // (Wolfram stores a single `var$$ = <first initial>`), not the last's.
+    // (Wolfram stores a single `var$$ = <first initial>`), not the last's —
+    // unless that value is none of the variable's choices, see
+    // `shared_initial_row`.
     for i in 0..state.controls.len() {
       let first = state.controls[..i]
         .iter()
         .all(|c| c.name() != state.controls[i].name());
       if first {
-        state.sync_named_siblings(i);
+        let source = state.shared_initial_row(i);
+        state.sync_named_siblings(source);
       }
     }
     if !UNRENDERED.with(std::cell::Cell::get) {
@@ -1329,10 +1332,13 @@ impl ManipulateState {
       let suffixed = format!("{name}$$");
       if let Some(control) = self
         .controls
-        .iter_mut()
-        .find(|c| c.name() == name || c.name() == suffixed)
+        .iter()
+        .position(|c| c.name() == name || c.name() == suffixed)
       {
-        control.set_current_from_code(code);
+        self.controls[control].set_current_from_code(code);
+        // Every row bound to the variable shows the saved value, not just
+        // the first: the binding is read from the last such row.
+        self.sync_named_siblings(control);
       } else if let Some(slot) = self
         .state
         .iter_mut()
@@ -1533,6 +1539,46 @@ impl ManipulateState {
       }
     }
     self.reevaluate();
+  }
+
+  /// The row whose initial value a variable shared by several rows starts
+  /// from, given the index of its first row. That is the first row, unless
+  /// its initial value is none of the choices any of the rows offers while
+  /// a later row's is: `{{u, ""}, {-1 -> "a", 0 -> "b"}}` followed by
+  /// `{{u, -1, ""}, {1 -> "c", 2 -> "d"}}` starts `u` at `-1`, as Wolfram
+  /// resolves such a placeholder default to a real choice.
+  fn shared_initial_row(&self, first: usize) -> usize {
+    let name = self.controls[first].name();
+    if name.is_empty() {
+      return first;
+    }
+    let rows: Vec<usize> = (first..self.controls.len())
+      .filter(|&i| self.controls[i].name() == name)
+      .collect();
+    let choices: Vec<&String> = rows
+      .iter()
+      .filter_map(|&i| match &self.controls[i] {
+        ControlState::Discrete { values, .. } => Some(values.iter()),
+        _ => None,
+      })
+      .flatten()
+      .collect();
+    // A variable with no choice-list row has nothing to judge against.
+    if choices.is_empty()
+      || rows
+        .iter()
+        .any(|&i| !matches!(self.controls[i], ControlState::Discrete { .. }))
+    {
+      return first;
+    }
+    rows
+      .iter()
+      .copied()
+      .find(|&i| {
+        let code = self.controls[i].current_code();
+        choices.iter().any(|v| **v == code)
+      })
+      .unwrap_or(first)
   }
 
   /// Copy the control at `ctrl_idx`'s just-changed value into every other
@@ -4460,6 +4506,50 @@ mod tests {
       state.graphics_handle.is_some(),
       "second frame keeps the plot"
     );
+  }
+
+  /// A shared variable whose first row states a placeholder default that is
+  /// none of the choices (`""`) starts at the later row's real choice
+  /// instead, so the body's `Switch` on it picks a branch rather than
+  /// coming back unevaluated.
+  #[test]
+  fn shared_variable_placeholder_default_starts_at_a_real_choice() {
+    let code = r#"Manipulate[
+      Switch[m, -1, "table", 0, "summary", 1, "plot one", 2, "plot two"],
+      {{m, ""}, {-1 -> "table", 0 -> "summary"}},
+      Row[{"plot ", Control@{{m, -1, ""}, {1 -> "one", 2 -> "two"}}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let value = state
+      .bindings()
+      .into_iter()
+      .find(|(n, _)| n == "m")
+      .map(|(_, v)| v);
+    assert_eq!(value.as_deref(), Some("-1"));
+    assert_eq!(state.text_output.as_deref(), Some("table"));
+  }
+
+  /// A saved value for a variable shared by several rows reaches every row,
+  /// so the binding (read from the last row) is the saved one.
+  #[test]
+  fn saved_value_of_shared_variable_reaches_every_row() {
+    let code = r#"Manipulate[
+      m,
+      {{m, 1}, {1 -> "a", 2 -> "b"}},
+      {{m, 1}, {3 -> "c", 4 -> "d"}}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.apply_saved_variables(&[("m".to_string(), "4".to_string())]);
+    let value = state
+      .bindings()
+      .into_iter()
+      .find(|(n, _)| n == "m")
+      .map(|(_, v)| v);
+    assert_eq!(value.as_deref(), Some("4"));
   }
 
   /// Two SetterBar rows over disjoint choices can share one variable; the
