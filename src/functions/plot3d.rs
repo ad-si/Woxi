@@ -9159,19 +9159,21 @@ fn collect_3d_primitives(
               holes,
               style,
             });
-          } else if let Some((outer, holes)) =
+          } else if let Some(faces) =
             crate::functions::polygon_holes::split_holes(
               &args[0],
               &parse_point3d_list,
             )
           {
-            // Polygon[outer -> holes]: a face with the hole boundaries
-            // cut out of it.
-            prims.push(Primitive3D::Polygon3D {
-              points: outer,
-              holes,
-              style: style.clone(),
-            });
+            // Polygon[outer -> holes] (or a list of outers paired with
+            // their holes): faces with the hole boundaries cut out.
+            for (outer, holes) in faces {
+              prims.push(Primitive3D::Polygon3D {
+                points: outer,
+                holes,
+                style: style.clone(),
+              });
+            }
           } else if let Expr::List(poly_exprs) = &args[0] {
             // Polygon[{{p1, p2, …}, {q1, q2, …}, …}]: a collection of
             // polygons in one primitive.
@@ -9182,17 +9184,19 @@ fn collect_3d_primitives(
                   holes: Vec::new(),
                   style: style.clone(),
                 });
-              } else if let Some((outer, holes)) =
+              } else if let Some(faces) =
                 crate::functions::polygon_holes::split_holes(
                   poly,
                   &parse_point3d_list,
                 )
               {
-                prims.push(Primitive3D::Polygon3D {
-                  points: outer,
-                  holes,
-                  style: style.clone(),
-                });
+                for (outer, holes) in faces {
+                  prims.push(Primitive3D::Polygon3D {
+                    points: outer,
+                    holes,
+                    style: style.clone(),
+                  });
+                }
               }
             }
           }

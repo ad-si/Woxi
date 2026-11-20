@@ -1036,6 +1036,48 @@ mod graphics {
       assert_ne!(bridged, solid);
     }
 
+    /// `Polygon[{outer1, outer2, …} -> {holes1, holes2, …}]` pairs each
+    /// outer boundary with its holes by position; each holes entry may be a
+    /// single ring or a list of rings. It used to draw nothing at all.
+    #[test]
+    fn polygon_list_with_holes() {
+      let pair = export_svg(
+        "Graphics[Polygon[{{{0, 0}, {4, 0}, {4, 4}, {0, 4}}, \
+         {{6, 0}, {9, 0}, {9, 3}, {6, 3}}} -> \
+         {{{1, 1}, {3, 1}, {3, 3}, {1, 3}}, \
+         {{{7, 1}, {8, 1}, {8, 2}, {7, 2}}}}]]",
+      );
+      assert_eq!(pair.matches("fill-rule=\"evenodd\"").count(), 2, "{pair}");
+      assert_eq!(pair.matches(" Z").count(), 4, "{pair}");
+      // A one-face list draws the same as the plain `outer -> hole` form.
+      assert_eq!(
+        export_svg(
+          "Graphics[Polygon[{{{0, 0}, {4, 0}, {4, 4}, {0, 4}}} -> \
+           {{{1, 1}, {3, 1}, {3, 3}, {1, 3}}}]]"
+        ),
+        export_svg(
+          "Graphics[Polygon[{{0, 0}, {4, 0}, {4, 4}, {0, 4}} -> \
+           {{1, 1}, {3, 1}, {3, 3}, {1, 3}}]]"
+        )
+      );
+      // The same in 3D, also under geometric transformations.
+      let holed3d = |poly: &str| {
+        export_svg(&format!(
+          "Graphics3D[Scale[Translate[{poly}, {{0, 0, 1}}], 4]]"
+        ))
+      };
+      let listed = holed3d(
+        "Polygon[{{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}}} -> \
+         {{{-0.5, -0.5, 0}, {0.5, -0.5, 0}, {0.5, 0.5, 0}, {-0.5, 0.5, 0}}}]",
+      );
+      let single = holed3d(
+        "Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, {-1, 1, 0}} -> \
+         {{-0.5, -0.5, 0}, {0.5, -0.5, 0}, {0.5, 0.5, 0}, {-0.5, 0.5, 0}}]",
+      );
+      assert!(listed.contains("<path") || listed.contains("<polygon"));
+      assert_eq!(listed, single);
+    }
+
     #[test]
     fn arrow() {
       insta::assert_snapshot!(export_svg(
