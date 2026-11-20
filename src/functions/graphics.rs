@@ -9261,7 +9261,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       content,
       &text,
       &local_style,
-      frame_color,
+      frame_color.color,
       background,
       frame_opts,
     );
