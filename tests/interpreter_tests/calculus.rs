@@ -5354,6 +5354,40 @@ mod nintegrate {
     );
   }
 
+  // A multi-dimensional integrand with a free symbol is reported once for
+  // the whole region and left unevaluated: every inner integral used to
+  // fail on its own and the failures were integrated as 0.
+  #[test]
+  fn non_numeric_multidimensional_integrand() {
+    clear_state();
+    let result =
+      interpret_with_stdout("NIntegrate[x + X + Y, {X, 0, 1}, {Y, 0, 1}]")
+        .unwrap();
+    assert_eq!(result.result, "NIntegrate[x + X + Y, {X, 0, 1}, {Y, 0, 1}]");
+    assert_eq!(
+      result.warnings,
+      vec![
+        "NIntegrate::inumr: The integrand x + X + Y has evaluated to \
+         non-numerical values for all sampling points in the region with \
+         boundaries {{0, 1}, {0, 1}}."
+      ]
+    );
+    // Substituting numbers afterwards integrates it.
+    assert_eq!(
+      interpret(
+        "Abs[(Quiet[NIntegrate[x + X + Y + Z, {X, 0, 1}, {Y, 0, 1}, \
+         {Z, 0, 1}]] /. x -> 1) - 5/2] < 10^-8"
+      )
+      .unwrap(),
+      "True"
+    );
+    // Numeric triple integrals, also with dependent bounds, still work.
+    assert_eq!(
+      interpret("NIntegrate[X + Y, {X, 0, 1}, {Y, 0, X}]").unwrap(),
+      "0.5"
+    );
+  }
+
   // An inner Integrate without a closed form is a number under N, so it is
   // integrated as an iterated integral — it was reported as non-numeric,
   // and before that silently integrated as 0.

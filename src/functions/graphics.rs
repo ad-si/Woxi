@@ -393,7 +393,8 @@ fn parse_cap_form(expr: &Expr) -> Option<LineCapKind> {
     _ => return None,
   };
   match name {
-    "Butt" => Some(LineCapKind::Butt),
+    // `CapForm[None]` is documented as equivalent to `CapForm["Butt"]`.
+    "Butt" | "None" => Some(LineCapKind::Butt),
     "Round" => Some(LineCapKind::Round),
     "Square" => Some(LineCapKind::Square),
     _ => None,
@@ -834,8 +835,16 @@ impl BBox {
 
   /// Pad each axis by `frac` of its span; with `uniform` both axes get
   /// `frac` of the horizontal span, i.e. the same margin in pixels all
-  /// round.
-  fn with_padding_shaped(self, frac: f64, uniform: bool) -> Self {
+  /// round. An explicit `aspect` (height / width of the drawing area)
+  /// stretches the axes independently, so the vertical margin that keeps
+  /// the pixel margins equal is worked out from the picture's shape
+  /// instead of the horizontal data span.
+  fn with_padding_shaped(
+    self,
+    frac: f64,
+    uniform: bool,
+    aspect: Option<f64>,
+  ) -> Self {
     if self.is_empty() {
       return self;
     }
@@ -870,6 +879,19 @@ impl BBox {
       // `Graphics[Rectangle[{0, 0}, {1, 3}]]` is padded by 1/48 across and
       // 1/50 up and down.
       dy = dx * 0.96;
+      if let Some(a) = aspect.filter(|a| a.is_finite() && *a > 0.0)
+        && dx >= 1e-10
+      {
+        // The same pixel margin as above, as a share `k` of the drawing
+        // area's height: the margin is `0.96 frac / (1 + 2 frac)` of the
+        // padded width, and the height is `a` times that width. The
+        // vertical span then grows to `y_span / (1 - 2 k)`.
+        let k = 0.96 * frac / (1.0 + 2.0 * frac) / a;
+        let y_span = bb.y_max - bb.y_min;
+        if k < 0.5 && y_span >= 1e-10 {
+          dy = k * y_span / (1.0 - 2.0 * k);
+        }
+      }
     }
     // Ensure non-zero range
     let dx = if dx < 1e-10 { 0.5 } else { dx };
@@ -4130,12 +4152,13 @@ fn substitute_complex_indices(
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball"
+        "Disk" | "Circle" | "Rectangle" | "Cuboid" | "Inset" | "Ball" | "Text"
       ) =>
     {
       let point_slots: &[usize] = match name.as_str() {
         "Rectangle" | "Cuboid" => &[0, 1],
-        "Inset" => &[1],
+        // A contour label `Text[c, k]` sits at vertex `k`.
+        "Inset" | "Text" => &[1],
         _ => &[0],
       };
       let new_args: Vec<Expr> = args
@@ -5793,6 +5816,13 @@ pub(crate) fn label_stacked_fraction_svg(
   svg
 }
 
+/// Whether a `Row` item is `Null` — an empty slot such as the one
+/// `Row[{"Step:", If[False, "  "], n}]` leaves. The front end draws it
+/// as a one-space gap rather than dropping it.
+fn is_null_row_item(item: &Expr) -> bool {
+  matches!(item, Expr::Identifier(n) if n == "Null")
+}
+
 pub(crate) fn graphics_text_content(expr: &Expr) -> String {
   if let Some(styled) = hoist_style_out_of_number_form(expr) {
     return graphics_text_content(&styled);
@@ -5957,6 +5987,13 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         held @ (Expr::String(_) | Expr::Identifier(_) | Expr::Constant(_)) => {
           graphics_text_content(held)
         }
+        // A held `Tooltip` (a label put into a held leaf by a replacement)
+        // still shows only its content.
+        Expr::FunctionCall { name: t, args: targs }
+          if t == "Tooltip" && !targs.is_empty() =>
+        {
+          graphics_text_content(&call1("HoldForm", targs[0].clone()))
+        }
         held => box_expr_to_plain(
           &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
             &release_dynamics(held),
@@ -6048,11 +6085,14 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       let Some(Expr::List(items)) = args.first() else {
         unreachable!()
       };
-      // A `Spacer[n]` among the items is a gap, not something to print.
+      // A `Spacer[n]` among the items is a gap, not something to print,
+      // and a `Null` item (what `If[False, "x"]` leaves) is an empty slot
+      // the front end still draws one space wide.
       let parts: Vec<String> = items
         .iter()
         .map(|item| match spacer_gap_text(item) {
           Some(gap) => gap,
+          None if is_null_row_item(item) => " ".to_string(),
           None => graphics_text_content(item),
         })
         .collect();
@@ -6209,6 +6249,19 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         text
       }
     }
+    // A machine real too large or small for plain digits (a contour label
+    // `-1.247*^-7`) typesets as `mantissa×10ⁿ` on one line, as the front end
+    // shows it — not as the two-line OutputForm layout.
+    Expr::Real(f)
+      if machine_real_display_parts(*f).exponent.is_some() =>
+    {
+      let parts = machine_real_display_parts(*f);
+      format!(
+        "{}×10{}",
+        parts.mantissa,
+        to_unicode_script_digits(&parts.exponent.unwrap_or(0).to_string(), true)
+      )
+    }
     // `ScientificForm`/`EngineeringForm` typeset as `mantissa×10ⁿ` on one
     // line, with the exponent as a superscript — not the two-line OutputForm
     // box `ToString` gives, which would split a label across two rows.
@@ -6216,15 +6269,9 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       if matches!(name.as_str(), "ScientificForm" | "EngineeringForm")
         && !args.is_empty() =>
     {
-      let n = format_precision_arg(args.get(1), 6);
-      let parts = if name == "ScientificForm" {
-        crate::functions::string_ast::scientific_form_parts(&args[0], n)
-      } else {
-        crate::functions::string_ast::engineering_form_parts(&args[0], n)
-      };
-      match parts {
+      match exponent_form_display_parts(name, args) {
         Some((mantissa, Some(exp))) => {
-          format!("{mantissa}×10{}", to_unicode_script_digits(&exp.to_string(), true))
+          format!("{mantissa}×10{}", to_unicode_script_digits(&exp, true))
         }
         Some((mantissa, None)) => mantissa,
         None => graphics_text_content(&args[0]),
@@ -6713,6 +6760,79 @@ pub(crate) fn setter_bar_svg(args: &[Expr]) -> Option<String> {
   Some(format!(
     "<svg width=\"{x:.0}\" height=\"{h:.0}\" viewBox=\"0 0 {x:.0} {h:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n{body}</svg>\n"
   ))
+}
+
+/// A static `CheckboxBar[value, {v1, v2, …}, opts]` (or `{v1 -> label1,
+/// …}`): each choice as whether it is among the selected values (`value`
+/// being a list of them or a single one) and its label, whether the bar
+/// stacks its choices (`Appearance -> "Vertical"`) and whether it is
+/// enabled. `None` unless the choices are a non-empty list.
+pub(crate) fn checkbox_bar_choices(
+  args: &[Expr],
+) -> Option<(Vec<(bool, Expr)>, bool, bool)> {
+  let Some(Expr::List(choices)) = args.get(1) else {
+    return None;
+  };
+  if choices.is_empty() {
+    return None;
+  }
+  let selected: Vec<String> = match &dynamic_current_value(args.first()?) {
+    Expr::List(items) => items.iter().map(expr_to_string).collect(),
+    other => vec![expr_to_string(other)],
+  };
+  let items = choices
+    .iter()
+    .map(|choice| {
+      let (value, label) = match choice {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => (pattern.as_ref(), replacement.as_ref()),
+        other => (other, other),
+      };
+      (selected.contains(&expr_to_string(value)), label.clone())
+    })
+    .collect();
+  let mut vertical = false;
+  let mut enabled = true;
+  for (k, v) in args[2..].iter().filter_map(option_kv) {
+    match k {
+      "Appearance" => {
+        vertical =
+          matches!(v, Expr::String(s) | Expr::Identifier(s) if s == "Vertical");
+      }
+      "Enabled" => {
+        enabled = !matches!(v, Expr::Identifier(s) if s == "False");
+      }
+      _ => {}
+    }
+  }
+  Some((items, vertical, enabled))
+}
+
+/// One checkbox of a static `Checkbox`/`CheckboxBar`, ticked when
+/// `checked`; a disabled one is drawn grayed out.
+pub(crate) fn checkbox_svg(checked: bool, enabled: bool) -> String {
+  let (stroke, tick) = if enabled {
+    ("#7F7F7F", "#2E6DB4")
+  } else {
+    ("#BFBFBF", "#9F9F9F")
+  };
+  let mut svg = format!(
+    "<svg width=\"18\" height=\"18\" viewBox=\"0 0 18 18\" xmlns=\"http://www.w3.org/2000/svg\">\n\
+     <rect x=\"2.5\" y=\"2.5\" width=\"13\" height=\"13\" rx=\"2\" fill=\"#FDFDFD\" stroke=\"{stroke}\" stroke-width=\"1\"/>\n"
+  );
+  if checked {
+    svg.push_str(&format!(
+      "<polyline points=\"5,9 8,12 13,6\" fill=\"none\" stroke=\"{tick}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n"
+    ));
+  }
+  svg.push_str("</svg>\n");
+  svg
 }
 
 /// A static `ProgressIndicator[x]` / `ProgressIndicator[x, {min, max}]`: a
@@ -7772,7 +7892,112 @@ pub(crate) fn layout_grid_picture(expr: &Expr) -> Option<(String, f64, f64)> {
   Some((svg, dims.nat_w, dims.nat_h))
 }
 
+/// `expr` with every `StringForm` whose slots hold a matrix (`MatrixForm`,
+/// `TableForm`, `Grid`) rewritten as the `Row` of its literal runs and
+/// values — `None` when there is none. Filling the template as one string
+/// would flatten the matrix into lines of text; as a `Row` it is laid out
+/// as the parenthesized grid the front end typesets.
+fn string_form_grids_as_rows(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "StringForm"
+        && args.len() > 1
+        && args[1..].iter().any(expr_holds_grid) =>
+    {
+      let Expr::String(template) = &args[0] else {
+        return None;
+      };
+      let parts =
+        crate::functions::string_ast::string_form_parts(template, &args[1..]);
+      let parts = parts
+        .iter()
+        .map(|p| string_form_grids_as_rows(p).unwrap_or_else(|| p.clone()))
+        .collect();
+      Some(call("Row", vec![Expr::List(parts)]))
+    }
+    Expr::FunctionCall { name, args } => {
+      let rewritten: Vec<Option<Expr>> =
+        args.iter().map(string_form_grids_as_rows).collect();
+      rewritten.iter().any(Option::is_some).then(|| {
+        let args = rewritten
+          .into_iter()
+          .zip(args.iter())
+          .map(|(r, a)| r.unwrap_or_else(|| a.clone()))
+          .collect();
+        call(name, args)
+      })
+    }
+    Expr::List(items) => {
+      let rewritten: Vec<Option<Expr>> =
+        items.iter().map(string_form_grids_as_rows).collect();
+      rewritten.iter().any(Option::is_some).then(|| {
+        Expr::List(
+          rewritten
+            .into_iter()
+            .zip(items.iter())
+            .map(|(r, a)| r.unwrap_or_else(|| a.clone()))
+            .collect(),
+        )
+      })
+    }
+    _ => None,
+  }
+}
+
+/// Whether `expr` is or holds a grid picture: a `Grid`, or a
+/// `MatrixForm`/`TableForm` layout.
+fn expr_holds_grid(expr: &Expr) -> bool {
+  if crate::evaluator::is_table_form_layout(expr) {
+    return true;
+  }
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      name == "Grid" || args.iter().any(expr_holds_grid)
+    }
+    Expr::List(items) => items.iter().any(expr_holds_grid),
+    _ => false,
+  }
+}
+
+/// A picture of natural size `w`×`h` padded so that, drawn centered on a
+/// `Text` anchor, it sits where `Text[…, pos, {ox, oy}]` places it: the
+/// point `{ox, oy}` of the label's box (each from -1 to 1, `{-1, 0}` the
+/// middle of its left edge) on the anchor.
+fn align_inset_picture(
+  svg: String,
+  w: f64,
+  h: f64,
+  offset: (f64, f64),
+) -> (String, f64, f64) {
+  let (ox, oy) = offset;
+  if ox == 0.0 && oy == 0.0 {
+    return (svg, w, h);
+  }
+  // Pad the side the anchor moves away from by the shift's full width, so
+  // the padded picture's center falls on the requested point of the label.
+  let (pad_x, pad_y) = (ox.abs() * w, oy.abs() * h);
+  let left = if ox < 0.0 { pad_x } else { 0.0 };
+  // Screen y runs down: a positive `oy` anchors the top part of the label,
+  // so the padding goes above it.
+  let top = if oy > 0.0 { pad_y } else { 0.0 };
+  let (pw, ph) = (w + pad_x, h + pad_y);
+  let padded = format!(
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{pw:.2}\" \
+     height=\"{ph:.2}\" viewBox=\"0 0 {pw:.2} {ph:.2}\">\
+     <g transform=\"translate({left:.2},{top:.2})\">{svg}</g></svg>"
+  );
+  (padded, pw, ph)
+}
+
 fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
+  // A `StringForm` label with a matrix among its values is typeset as the
+  // `Row` of its parts, so the matrix keeps its rows (see
+  // `string_form_grids_as_rows`).
+  if let Some(label) = args.first().and_then(string_form_grids_as_rows) {
+    let mut rewritten = args.to_vec();
+    rewritten[0] = label;
+    return parse_text(&rewritten, style, prims);
+  }
   // Text[str, {x, y}] or Text[Style[str, ...], {x, y}]
   //
   // `Invisible[…]` paints nothing — a Demonstration wraps one item's label
@@ -7932,11 +8157,17 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         ],
       )
     };
+  let picture_offset = match args.get(2) {
+    None => Some((0.0, 0.0)),
+    Some(o) if args.len() == 3 => text_offset(o),
+    Some(_) => None,
+  };
   if frame_opts.is_empty()
-    && args.len() == 2
+    && let Some(offset) = picture_offset
     && let Some((svg, w, h)) = layout_grid_picture(&colored_body)
-    && let Some((x, y, scaled)) = expr_to_anchor(&args[1])
+    && let Some((x, y, scaled)) = args.get(1).and_then(expr_to_anchor)
   {
+    let (svg, w, h) = align_inset_picture(svg, w, h, offset);
     prims.push(Primitive::InsetGraphic {
       svg,
       x,
@@ -8435,47 +8666,11 @@ fn parse_bspline(
   if let Some(pts) = expr_to_point_list(&args[0])
     && pts.len() >= 2
   {
-    // Check for SplineClosed -> True option
-    let closed = args.iter().skip(1).any(|arg| {
-      matches!(arg,
-        Expr::Rule { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineClosed")
-          && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
-      )
-    });
-
-    let degree = spline_degree_from_args(&args[1..], pts.len());
-    // `SplineWeights -> {w1, …}`: one weight per control point, making the
-    // curve rational (a heavier point pulls the curve toward itself).
-    let weights: Option<Vec<f64>> = args[1..].iter().find_map(|a| {
-      let (name, value) = option_name_value(a)?;
-      match value.as_ref() {
-        Expr::List(ws) if name == "SplineWeights" && ws.len() == pts.len() => {
-          ws.iter().map(expr_to_f64).collect()
-        }
-        _ => None,
-      }
-    });
-    // A closed spline is periodic: the leading control points wrap onto
-    // the end and the knots are uniform, so no control point is
-    // interpolated. `SplineKnots -> "Unclamped"` gives an open curve the
-    // same uniform knots.
-    let wrap = |n: usize| if closed { n + degree } else { n };
-    let control: Vec<(f64, f64)> =
-      (0..wrap(pts.len())).map(|i| pts[i % pts.len()]).collect();
-    let weights: Option<Vec<f64>> =
-      weights.map(|ws| (0..wrap(ws.len())).map(|i| ws[i % ws.len()]).collect());
-    let clamped = !closed && !spline_knots_unclamped(&args[1..]);
-
-    // An explicit numeric knot vector (`SplineKnots -> {u0, ..., um}`) fixes
-    // the basis; it needs exactly n + degree + 1 non-decreasing knots.
-    let basis = match spline_knots_list(&args[1..]) {
-      Some(knots) if !closed && knots.len() == control.len() + degree + 1 => {
-        bspline_sample_weights_with_knots(control.len(), degree, 200, &knots)
-      }
-      _ => bspline_sample_weights(control.len(), degree, 200, clamped),
-    };
-    let sampled = combine_bspline(&control, weights.as_deref(), &basis);
+    let control: Vec<Vec<f64>> = pts.iter().map(|&(x, y)| vec![x, y]).collect();
+    let sampled = sample_bspline_curve(&control, &args[1..], 200)
+      .into_iter()
+      .map(|p| (p[0], p[1]))
+      .collect();
     prims.push(Primitive::Line {
       segments: vec![sampled],
       vertex_colors: None,
@@ -8484,28 +8679,75 @@ fn parse_bspline(
   }
 }
 
-/// The curve points of B-spline basis rows over `control_points`, made
-/// rational by the per-point `weights` when given.
-fn combine_bspline(
-  control_points: &[(f64, f64)],
-  weights: Option<&[f64]>,
-  basis: &[Vec<f64>],
-) -> Vec<(f64, f64)> {
+/// Sample the curve a `BSplineCurve[control, opts…]` stands for at
+/// `samples` parameter values. Works for control points of any dimension
+/// (2-D and 3-D curves share it) and honors the spline options:
+///
+/// - `SplineDegree -> d` (default `min(3, n - 1)`),
+/// - `SplineClosed -> True`: the curve is periodic, the leading control
+///   points wrap onto the end and the knots are uniform,
+/// - `SplineWeights -> {w1, …}`: one weight per control point, making the
+///   curve rational (a heavier point pulls the curve toward itself),
+/// - `SplineKnots -> "Unclamped"` (uniform knots on an open curve) or an
+///   explicit knot vector of `n + d + 1` non-decreasing values.
+pub(crate) fn sample_bspline_curve(
+  control: &[Vec<f64>],
+  opts: &[Expr],
+  samples: usize,
+) -> Vec<Vec<f64>> {
+  if control.len() < 2 {
+    return control.to_vec();
+  }
+  let closed = spline_closed(opts);
+  let degree = spline_degree_from_args(opts, control.len());
+  let weights: Option<Vec<f64>> = opts.iter().find_map(|a| {
+    let (name, value) = option_name_value(a)?;
+    match value.as_ref() {
+      Expr::List(ws)
+        if name == "SplineWeights" && ws.len() == control.len() =>
+      {
+        ws.iter()
+          .map(|w| expr_to_f64(w).or_else(|| try_eval_to_f64(w)))
+          .collect()
+      }
+      _ => None,
+    }
+  });
+  let wrap = |n: usize| if closed { n + degree } else { n };
+  let points: Vec<&Vec<f64>> = (0..wrap(control.len()))
+    .map(|i| &control[i % control.len()])
+    .collect();
+  let weights: Option<Vec<f64>> =
+    weights.map(|ws| (0..wrap(ws.len())).map(|i| ws[i % ws.len()]).collect());
+  let clamped = !closed && !spline_knots_unclamped(opts);
+  let basis = match spline_knots_list(opts) {
+    Some(knots) if !closed && knots.len() == points.len() + degree + 1 => {
+      bspline_sample_weights_with_knots(points.len(), degree, samples, &knots)
+    }
+    _ => bspline_sample_weights(points.len(), degree, samples, clamped),
+  };
+  let dim = control[0].len();
   basis
     .iter()
     .map(|row| {
-      let (mut x, mut y, mut total) = (0.0, 0.0, 0.0);
-      for (j, (b, p)) in row.iter().zip(control_points).enumerate() {
-        let w = b * weights.map_or(1.0, |ws| ws[j]);
-        x += w * p.0;
-        y += w * p.1;
+      let mut acc = vec![0.0; dim];
+      let mut total = 0.0;
+      for (j, (b, p)) in row.iter().zip(&points).enumerate() {
+        let w = b * weights.as_ref().map_or(1.0, |ws| ws[j]);
+        if w == 0.0 {
+          continue;
+        }
+        for (a, c) in acc.iter_mut().zip(p.iter()) {
+          *a += w * c;
+        }
         total += w;
       }
       if weights.is_some() && total != 0.0 {
-        (x / total, y / total)
-      } else {
-        (x, y)
+        for a in &mut acc {
+          *a /= total;
+        }
       }
+      acc
     })
     .collect()
 }
@@ -8638,6 +8880,16 @@ pub(crate) fn spline_knots_list(args: &[Expr]) -> Option<Vec<f64>> {
       }
     }
     _ => None,
+  })
+}
+
+/// Whether an option list asks for a periodic `SplineClosed -> True` curve.
+pub(crate) fn spline_closed(opts: &[Expr]) -> bool {
+  opts.iter().any(|arg| {
+    matches!(arg,
+      Expr::Rule { pattern, replacement }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "SplineClosed")
+        && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True"))
   })
 }
 
@@ -10649,14 +10901,61 @@ fn dash_attr(dashing: Option<&Vec<f64>>, _bb: &BBox, svg_w: f64) -> String {
   }
 }
 
-/// The `stroke-linecap` value for a `Line`/`Arrow` stroke, from its
-/// `CapForm[…]` directive. Unset (`None`) keeps Woxi's pre-existing butt
-/// cap, which is also what `CapForm["Butt"]` — Wolfram's default — asks for.
+/// The `stroke-linecap` value for an `Arrow`/curve stroke, from its
+/// `CapForm[…]` directive. Unset (`None`) keeps the butt cap.
 fn stroke_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
   match cap_form {
     Some(LineCapKind::Round) => "round",
     Some(LineCapKind::Square) => "square",
     Some(LineCapKind::Butt) | None => "butt",
+  }
+}
+
+/// The filled shape (an unterminated `<rect …`/`<circle …` tag) that
+/// stands in for a zero-length `Line` segment — one whose points all
+/// coincide, such as `Line[{p, p}]`.
+///
+/// Wolfram draws such a segment as its end caps alone: a square dot one
+/// stroke width across (lines are drawn with projecting square caps), a
+/// round dot under `CapForm["Round"]`, and nothing under
+/// `CapForm["Butt"]` (returns `None`, as for a segment with length). The
+/// dot is emitted as a filled shape rather than a capped zero-length
+/// stroke, which SVG renderers are free to drop.
+fn degenerate_line_dot(
+  screen_pts: &[(f64, f64)],
+  stroke_width: f64,
+  cap_form: Option<LineCapKind>,
+) -> Option<String> {
+  let (&(x0, y0), rest) = screen_pts.split_first()?;
+  if rest.is_empty()
+    || rest
+      .iter()
+      .any(|&(x, y)| (x - x0).abs() > 1e-9 || (y - y0).abs() > 1e-9)
+  {
+    return None;
+  }
+  let half = stroke_width / 2.0;
+  match cap_form {
+    Some(LineCapKind::Butt) => None,
+    Some(LineCapKind::Round) => Some(format!(
+      "<circle cx=\"{x0:.2}\" cy=\"{y0:.2}\" r=\"{half:.2}\""
+    )),
+    Some(LineCapKind::Square) | None => Some(format!(
+      "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{stroke_width:.2}\" height=\"{stroke_width:.2}\"",
+      x0 - half,
+      y0 - half,
+    )),
+  }
+}
+
+/// The `stroke-linecap` value for a `Line` stroke. Wolfram draws a `Line`
+/// with square caps unless a `CapForm` says otherwise: each end extends
+/// half the line's thickness past its endpoint, so a short thick segment
+/// (a tick mark) is as wide as its stroke plus its length.
+fn line_linecap_attr(cap_form: Option<LineCapKind>) -> &'static str {
+  match cap_form {
+    None => "square",
+    some => stroke_linecap_attr(some),
   }
 }
 
@@ -10854,9 +11153,10 @@ fn clamp_tick_label_x(
   label: &str,
   svg_w: f64,
   margins: (f64, f64),
+  tick_font: f64,
 ) -> f64 {
   let half =
-    crate::functions::plot_padding::tick_label_width(label, TICK_FONT) / 2.0;
+    crate::functions::plot_padding::tick_label_width(label, tick_font) / 2.0;
   let (left, right) = margins;
   let lo = -left + half;
   let hi = svg_w + right - half;
@@ -10975,6 +11275,7 @@ fn render_axes(
   ticks_style: Option<(AxisLineStyle, AxisLineStyle)>,
   origin: (Option<f64>, Option<f64>),
   label_fill: Option<Color>,
+  tick_font: f64,
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -11052,11 +11353,11 @@ fn render_axes(
       // edge would read as `1.0`. Nudge such a label inwards just far enough
       // to clear the margin, the way Wolfram's image padding keeps the
       // outermost labels whole.
-      let x = clamp_tick_label_x(x, &label, svg_w, x_margins);
+      let x = clamp_tick_label_x(x, &label, svg_w, x_margins, tick_font);
       // The top of the label 3 pt below the axis.
       svg.push_str(&format!(
-        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
-        axis_y_px + TICK_LABEL_GAP + ascent(TICK_FONT),
+        "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
+        axis_y_px + TICK_LABEL_GAP + ascent(tick_font),
       ));
     }
   }
@@ -11101,9 +11402,9 @@ fn render_axes(
       }
       // 3 pt left of the axis, centered on the tick.
       svg.push_str(&format!(
-        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"end\">{label}</text>\n",
+        "<text x=\"{:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"end\">{label}</text>\n",
         axis_x_px - TICK_LABEL_GAP,
-        y + center_to_baseline(TICK_FONT),
+        y + center_to_baseline(tick_font),
       ));
     }
   }
@@ -11363,6 +11664,7 @@ fn graphics_decorations(
   title_lines: usize,
   title_font: f64,
   frame_label_font: f64,
+  tick_font: f64,
 ) -> crate::functions::plot_padding::Decorations {
   use crate::functions::plot_padding::{
     Decorations, LabelBox, block_height, text_width, tick_label_width,
@@ -11371,10 +11673,10 @@ fn graphics_decorations(
   let frac_y = |v: f64| (v - bb.y_min) / (bb.y_max - bb.y_min);
   let label_box = |frac: f64, label: &str| LabelBox {
     frac,
-    width: tick_label_width(label, TICK_FONT).max(
-      crate::functions::plot_padding::exported_text_extent(label, TICK_FONT).1,
+    width: tick_label_width(label, tick_font).max(
+      crate::functions::plot_padding::exported_text_extent(label, tick_font).1,
     ),
-    height: line_height(TICK_FONT),
+    height: line_height(tick_font),
     at_crossing: false,
   };
   let auto_labels = |lo: f64, hi: f64| {
@@ -11527,6 +11829,7 @@ fn render_frame(
   frame_styles: &[AxisLineStyle; 4],
   ticks_style: Option<AxisLineStyle>,
   label_fill: Option<Color>,
+  tick_font: f64,
 ) {
   let t = theme();
   // `FrameStyle` paints each edge; `FrameTicksStyle` (else the edge's own
@@ -11610,9 +11913,9 @@ fn render_frame(
       0usize,
       svg_h,
       -1.0,
-      svg_h + TICK_LABEL_GAP + ascent(TICK_FONT),
+      svg_h + TICK_LABEL_GAP + ascent(tick_font),
     ),
-    (2usize, 0.0, 1.0, -TICK_LABEL_GAP - descent(TICK_FONT)),
+    (2usize, 0.0, 1.0, -TICK_LABEL_GAP - descent(tick_font)),
   ] {
     if ticks[i] == EdgeTicks::None {
       continue;
@@ -11647,7 +11950,7 @@ fn render_frame(
         && ticks[i] == EdgeTicks::Labels
       {
         svg.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
+          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
         ));
       }
     }
@@ -11691,8 +11994,8 @@ fn render_frame(
         && ticks[i] == EdgeTicks::Labels
       {
         svg.push_str(&format!(
-          "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{TICK_FONT}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
-          y + center_to_baseline(TICK_FONT),
+          "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
+          y + center_to_baseline(tick_font),
         ));
       }
     }
@@ -11701,6 +12004,18 @@ fn render_frame(
 
 /// Wolfram's grid lines: mid gray, 0.2 points wide, under whatever
 /// `GridLinesStyle` and per-line styles add.
+/// Whether one entry of a `{xstyle, ystyle}` option value is a style of its
+/// own — a list or `Directive` of directives, or `None`/`Automatic` — as
+/// opposed to a bare directive of a single style (`{Red, Dashed}`).
+pub(crate) fn is_axis_style_entry(entry: &Expr) -> bool {
+  match entry {
+    Expr::List(_) => true,
+    Expr::FunctionCall { name, .. } => name == "Directive",
+    Expr::Identifier(s) => s == "None" || s == "Automatic",
+    _ => false,
+  }
+}
+
 fn default_grid_line_style() -> StyleState {
   StyleState {
     color: Color::gray(0.5),
@@ -11814,15 +12129,14 @@ fn render_grid_lines(
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
-  grid_x: &GridSpec,
-  grid_y: &GridSpec,
-  default_style: &StyleState,
+  (grid_x, grid_y): (&GridSpec, &GridSpec),
+  (default_x, default_y): (&StyleState, &StyleState),
 ) {
   let x_ticks = generate_ticks(bb.x_min, bb.x_max);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max);
 
   for (pos, style) in
-    grid_positions(grid_x, &x_ticks, (bb.x_min, bb.x_max), default_style)
+    grid_positions(grid_x, &x_ticks, (bb.x_min, bb.x_max), default_x)
   {
     let x = coord_x(pos, bb, svg_w);
     if !x.is_finite() {
@@ -11839,7 +12153,7 @@ fn render_grid_lines(
     ));
   }
   for (pos, style) in
-    grid_positions(grid_y, &y_ticks, (bb.y_min, bb.y_max), default_style)
+    grid_positions(grid_y, &y_ticks, (bb.y_min, bb.y_max), default_y)
   {
     let y = coord_y(pos, bb, svg_h);
     if !y.is_finite() {
@@ -12480,7 +12794,7 @@ fn render_primitive(
       let color = style.effective_color();
       let sw = thickness_px(style.thickness, bb, svg_w);
       let dash = dash_attr(style.dashing.as_ref(), bb, svg_w);
-      let cap = stroke_linecap_attr(style.cap_form);
+      let cap = line_linecap_attr(style.cap_form);
       let (join, miterlimit) = stroke_linejoin_attrs(style.join_form);
       // `VertexColors` assigns one color per point, in order, across all
       // segments concatenated — only usable when the count actually lines
@@ -12536,6 +12850,14 @@ fn render_primitive(
             ));
           }
           point_idx += screen_pts.len();
+        } else if let Some(dot) =
+          degenerate_line_dot(&screen_pts, sw, style.cap_form)
+        {
+          out.push_str(&format!(
+            "{dot} fill=\"{}\"{}/>\n",
+            color.to_svg_rgb(),
+            color.opacity_attr(),
+          ));
         } else {
           out.push_str(&format!(
             "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{sw:.2}\" stroke-linejoin=\"{join}\" stroke-linecap=\"{cap}\"{miterlimit}{}{}/>\n",
@@ -13431,8 +13753,15 @@ fn render_primitive(
           Some(_) => ("end", sx + longest * fs * 0.5 / 2.0),
           None => ("middle", sx),
         };
+        // A run of blanks inside a line (`Row[{"Step:", "  ", n}]`) is
+        // drawn as Wolfram draws it, not collapsed to one space.
+        let preserve_attr = if lines.iter().any(|l| l.contains("  ")) {
+          " xml:space=\"preserve\""
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{line_anchor}\" dominant-baseline=\"central\"{}{rotate_attr}>",
+          "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{line_anchor}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>",
           color.to_svg_rgb(),
           style.font_weight,
           style.font_style,
@@ -13467,12 +13796,14 @@ fn render_primitive(
         }
         out.push_str("</text>\n");
       } else {
-        // Blanks a layout left in the text (a flattened `Spacer`) are kept.
-        let preserve_attr = if text.trim() == text.as_str() {
-          ""
-        } else {
-          " xml:space=\"preserve\""
-        };
+        // Blanks a layout left in the text (a flattened `Spacer`) are kept,
+        // and so is a run of blanks inside it (`Row[{"a:", "  ", 0}]`).
+        let preserve_attr =
+          if text.trim() == text.as_str() && !text.contains("  ") {
+            ""
+          } else {
+            " xml:space=\"preserve\""
+          };
         out.push_str(&format!(
           "<text x=\"{sx:.2}\" y=\"{sy:.2}\" fill=\"{}\" font-size=\"{fs}\" font-weight=\"{}\" font-style=\"{}\"{ff_attr} text-anchor=\"{anchor_attr}\" dominant-baseline=\"central\"{}{rotate_attr}{preserve_attr}>{}</text>\n",
           color.to_svg_rgb(),
@@ -14243,7 +14574,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut stored_frame_ticks = None;
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
-  let mut grid_style: Option<StyleState> = None;
+  // `GridLinesStyle`, as the default style of the (x, y) grid lines.
+  let mut grid_style: (Option<StyleState>, Option<StyleState>) = (None, None);
   let mut axes_style: Option<Expr> = None;
   // `TicksStyle`, `FrameStyle`, `FrameTicksStyle`, `LabelStyle` and
   // `BaseStyle`, read once the drawing's extent is known.
@@ -14352,10 +14684,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             other
               if plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
+                .or_else(|| plot_label_grid_svg(other))
                 .is_some() =>
             {
               let (svg, w, h) = plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
+                .or_else(|| plot_label_grid_svg(other))
                 .expect("checked by the guard");
               // Reserve as many title lines as the picture is tall.
               let mut lines = 1;
@@ -14493,9 +14827,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           axes_origin = crate::functions::plot::parse_axes_origin(replacement);
         }
         "GridLinesStyle" => {
-          let mut st = default_grid_line_style();
-          apply_directive(replacement, &mut st);
-          grid_style = Some(st);
+          let styled = |spec: &Expr| {
+            let mut st = default_grid_line_style();
+            apply_directive(spec, &mut st);
+            Some(st)
+          };
+          // `{xstyle, ystyle}` styles the two sets of lines apart.
+          grid_style = match replacement {
+            Expr::List(items)
+              if items.len() == 2 && items.iter().all(is_axis_style_entry) =>
+            {
+              (styled(&items[0]), styled(&items[1]))
+            }
+            other => (styled(other), styled(other)),
+          };
         }
         "AspectRatio" => {
           // AspectRatio -> Full: skip uniform scaling (used by plots)
@@ -14603,7 +14948,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Default: a margin of 2% of the picture's width all round (1/48 of
     // the horizontal span on each side, as in Wolfram); an axis
     // pinned by an explicit `PlotRange` is drawn exactly, with no padding.
-    bb = bb.with_padding_shaped(1.0 / 48.0, true);
+    bb = bb.with_padding_shaped(1.0 / 48.0, true, aspect_ratio);
     if let Some((lo, hi)) = plot_range_x {
       bb.x_min = lo;
       bb.x_max = hi;
@@ -14881,16 +15226,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // 1 data-unit maps to the same number of pixels in both x and y,
   // so circles are always rendered round.
   // Skipped when AspectRatio -> Full (plots need independent axis scaling).
-  // Under Wolfram's default (`PlotRangeClipping -> False`) the extra room
-  // this adds shows whatever lies past an explicit `PlotRange` — only the
-  // image edge cuts it off. `PlotRangeClipping -> True` keeps the
-  // requested range as the bound, so remember it for the clip rectangle.
-  let clip_x = plot_range_x
-    .filter(|_| clipping_requested)
-    .map(|_| (bb.x_min, bb.x_max));
-  let clip_y = plot_range_y
-    .filter(|_| clipping_requested)
-    .map(|_| (bb.y_min, bb.y_max));
+  // The extra room this adds is letterbox space beside the picture, not
+  // part of it: the front end draws only the background there, so a bare
+  // picture still cuts primitives off at an explicit `PlotRange` (the
+  // Wolfram snapshots of `ImageSize -> {w, h}` pictures whose content runs
+  // past the range show straight cuts at the range's edges). Remember the
+  // requested range for the clip rectangle. Spilling into a frame's, the
+  // axes' or an explicit `ImagePadding`'s margins (`PlotRangeClipping ->
+  // False`, the default) is decided where the clip is applied.
+  let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
+  let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
   // A frame or axes under `ImageSize -> {w, h}` with an automatic aspect
   // ratio hug the data instead: the frame keeps the shape of the plot range and
   // sits centered in the requested size, rather than the range being
@@ -14924,6 +15269,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Wolfram front end's rules for what the frame, the axes and their labels
   // need (see `plot_padding`); a bare picture only reserves its `PlotLabel`.
   let frame = frame_edges.iter().any(|&e| e);
+  // `FrameLabel` captions the frame's edges: without a frame there is
+  // nothing to caption, and Wolfram shows none of the labels.
+  if !frame {
+    frame_label = None;
+  }
   // A framed picture's axes are bare lines: the frame carries the ticks.
   if frame {
     ticks_x = TickSpec::None;
@@ -14953,6 +15303,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let label_font =
     GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
   let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
+  // The same size sets the tick labels of the frame and of the axes.
+  let tick_font = label_font.size.unwrap_or(TICK_FONT);
   let title_font = plot_label
     .iter()
     .flatten()
@@ -14969,6 +15321,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     plot_label.as_ref().map_or(0, Vec::len),
     title_font,
     frame_label_font,
+    tick_font,
   );
   // The shape of the drawing area: what the data (or `AspectRatio`) asks
   // for, unless `ImageSize -> {w, h}` fixed the height outright.
@@ -15349,16 +15702,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Grid lines render behind the axes and primitives.
   if grid_x.is_active() || grid_y.is_active() {
-    let default_style =
-      grid_style.clone().unwrap_or_else(default_grid_line_style);
+    let default_x =
+      grid_style.0.clone().unwrap_or_else(default_grid_line_style);
+    let default_y =
+      grid_style.1.clone().unwrap_or_else(default_grid_line_style);
     render_grid_lines(
       &mut svg,
       &bb,
       svg_w,
       svg_h,
-      &grid_x,
-      &grid_y,
-      &default_style,
+      (&grid_x, &grid_y),
+      (&default_x, &default_y),
     );
   }
 
@@ -15444,6 +15798,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .map(|spec| AxisLineStyle::parse_pair(spec, &bb, svg_w)),
     axes_origin,
     label_color,
+    tick_font,
   );
 
   if frame {
@@ -15460,6 +15815,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .as_ref()
         .map(|spec| AxisLineStyle::from_directive(spec, &bb, svg_w)),
       label_color,
+      tick_font,
     );
   }
 
@@ -16066,15 +16422,6 @@ fn sqrt_radical(
 impl BoxLayout {
   /// Create a layout for a simple text atom.
   fn text(s: &str, font_size: f64) -> Self {
-    Self::text_with(s, font_size, true)
-  }
-
-  /// A string literal's text: it is set upright, never as a math variable.
-  fn literal_text(s: &str, font_size: f64) -> Self {
-    Self::text_with(s, font_size, false)
-  }
-
-  fn text_with(s: &str, font_size: f64, math_italic: bool) -> Self {
     let ch = font_size * MONO_ADVANCE; // monospace char advance
     let ascent = font_size * 0.8; // approximate ascent
     let descent = font_size * 0.25; // approximate descent
@@ -16282,12 +16629,28 @@ impl BoxLayout {
     // room.
     let zero_width =
       |c: &char| matches!(c, '\u{2060}' | '\u{200b}' | '\u{2061}' | '\u{feff}');
-    let w = s.chars().filter(|c| !zero_width(c)).count() as f64 * ch;
+    let family = BOX_FONT_FAMILY.with(|f| f.borrow().clone());
+    let w = match family.as_deref() {
+      // A proportional face (`StyleBox[…, FontFamily -> "Times"]`, a
+      // grid's `BaseStyle`) advances each glyph by its own width.
+      Some(ff) => {
+        s.chars()
+          .filter(|c| !zero_width(c))
+          .map(crate::functions::plot_padding::char_width_em)
+          .sum::<f64>()
+          * font_size
+          * proportional_family_scale(ff)
+      }
+      None => s.chars().filter(|c| !zero_width(c)).count() as f64 * ch,
+    };
+    let family_attr = svg_escape(family.as_deref().unwrap_or("monospace"));
     let escaped = svg_escape(s);
     // Single Latin letters are math variables — render them italic for a
     // conventional TeX-like look. The advance width is unchanged (same font,
     // slanted), so surrounding layout is unaffected.
-    let style_attr = if math_italic && is_math_italic_atom(s) {
+    let style_attr = if is_math_italic_atom(s)
+      && !BOX_UPRIGHT_TEXT.with(std::cell::Cell::get)
+    {
       " font-style=\"italic\""
     } else {
       ""
@@ -16301,7 +16664,7 @@ impl BoxLayout {
       // their allocated width rather than the glyph sticking to the previous
       // token. The width above already counts those spaces.
       elements: format!(
-        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"monospace\" font-size=\"{font_size:.1}\" stroke=\"none\"{style_attr} xml:space=\"preserve\">{escaped}</text>"
+        "<text x=\"0\" y=\"{ascent:.1}\" font-family=\"{family_attr}\" font-size=\"{font_size:.1}\" stroke=\"none\"{style_attr} xml:space=\"preserve\">{escaped}</text>"
       ),
     }
   }
@@ -16323,12 +16686,63 @@ thread_local! {
   /// the level-0 size ([`BOX_ROOT_FONT_SIZE`]): the third tier of a
   /// continued fraction is as large as the second.
   static BOX_SCRIPT_LEVEL: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+  /// The proportional font family a `StyleBox[…, FontFamily -> f]` (or a
+  /// grid's `BaseStyle`) sets its text atoms in; `None` keeps the
+  /// monospace default.
+  static BOX_FONT_FAMILY: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
   /// The font size of the box last laid out at script level 0.
   static BOX_ROOT_FONT_SIZE: std::cell::Cell<f64> = const { std::cell::Cell::new(14.0) };
   /// Set while typesetting an item of a `Column`/`Row`/`Grid`, which Wolfram
   /// sets inline: `∑`, `∏` and `lim` carry their limits as scripts there,
   /// the way they do inside a fraction.
   static BOX_INLINE_LIMITS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while typesetting the text of a quoted string box (and any inline
+  /// `\!\(\*…\)` boxes it carries) or a `StyleBox[…, FontSlant -> Plain]`:
+  /// a string is literal text, so its single letters are not math variables
+  /// and stay upright.
+  static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
+fn with_box_upright_text<R>(upright: bool, f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_UPRIGHT_TEXT.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(BOX_UPRIGHT_TEXT.with(|c| c.replace(upright)));
+  f()
+}
+
+/// How much narrower a proportional face sets text than the Arial metrics
+/// of [`crate::functions::plot_padding::char_width_em`]: a serif face such
+/// as Times runs about 10% tighter.
+fn proportional_family_scale(family: &str) -> f64 {
+  let f = family.to_ascii_lowercase();
+  if f.contains("times") || (f.contains("serif") && !f.contains("sans")) {
+    0.9
+  } else {
+    1.0
+  }
+}
+
+/// Run `f` with the box text atoms set in `family` (`None`: monospace, or
+/// a fixed-width family, which is the same advance).
+fn with_box_font_family<T>(family: Option<&str>, f: impl FnOnce() -> T) -> T {
+  struct Restore(Option<String>);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      let previous = self.0.take();
+      BOX_FONT_FAMILY.with(|f| *f.borrow_mut() = previous);
+    }
+  }
+  let family = family
+    .filter(|ff| !is_monospace_font_family(ff))
+    .map(str::to_string);
+  let previous = BOX_FONT_FAMILY.with(|f| f.replace(family));
+  let _restore = Restore(previous);
+  f()
 }
 
 /// `layout_box` one script level deeper (see [`BOX_SCRIPT_LEVEL`]).
@@ -16377,19 +16791,25 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         .strip_prefix('"')
         .and_then(|t| t.strip_suffix('"'))
         .unwrap_or(s);
-      layout_box(
-        &inline_box_string_to_box_expr(text).expect("checked by the guard"),
-        font_size,
-      )
+      let boxes =
+        inline_box_string_to_box_expr(text).expect("checked by the guard");
+      if text.len() == s.len() {
+        layout_box(&boxes, font_size)
+      } else {
+        with_box_upright_text(true, || layout_box(&boxes, font_size))
+      }
     }
     // A string box is stored as its quoted source but drawn without quotes.
     Expr::String(s) => {
       let s = strip_precision_marker(s);
-      // A quoted string is a literal (`"A"` in `Row[{x, "A"}]`), which is
-      // drawn upright rather than as an italic math variable.
-      match s.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) {
-        Some(unquoted) => BoxLayout::literal_text(unquoted, font_size),
-        None => BoxLayout::text(s, font_size),
+      let unquoted = s
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(s);
+      if unquoted.len() == s.len() {
+        BoxLayout::text(unquoted, font_size)
+      } else {
+        with_box_upright_text(true, || BoxLayout::text(unquoted, font_size))
       }
     }
     Expr::Identifier(s) => {
@@ -16779,6 +17199,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             elements,
           };
         }
+        // A horizontal brace (`︷`, `⎴`, `︵`) over the base stretches to
+        // span it, carrying any label of its own above it.
+        if let Some(brace) = stretchy_brace_script(&args[1], true, font_size) {
+          return brace.attach(&base, true);
+        }
         let over = layout_box_nested(&args[1], font_size * 0.7);
         let base_y = over.height;
         let elements = format!(
@@ -16826,6 +17251,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       }
       "UnderscriptBox" if args.len() >= 2 => {
         let base = layout_box(&args[0], font_size);
+        // A horizontal brace (`︸`, `⎵`, `︶`) under the base stretches to
+        // span it, carrying any label of its own below it.
+        if let Some(brace) = stretchy_brace_script(&args[1], false, font_size) {
+          return brace.attach(&base, false);
+        }
         let under = layout_box_nested(&args[1], font_size * 0.7);
         let under_y = base.height;
         let elements = format!(
@@ -16929,7 +17359,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let mut bold = false;
         let mut show_contents = true;
         let mut italic = false;
+        let mut upright = false;
         let mut opacity: Option<f64> = None;
+        let mut font_family: Option<String> = None;
         // Scan style options (Rule expressions) in args[1..]. A directive can
         // also be bare rather than a `Rule` — `Style[expr, Red]`/`StyleBox[b,
         // Red]` — the short form Wolfram itself expands to `FontColor->Red`
@@ -16978,6 +17410,8 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               "FontSlant" => {
                 italic = matches!(val, Expr::Identifier(v) | Expr::String(v)
                   if v == "Italic" || v == "Oblique");
+                upright = matches!(val, Expr::Identifier(v) | Expr::String(v)
+                  if v == "Plain");
               }
               "FontSize" => {
                 if let Some(sz) = expr_to_f64(val) {
@@ -16986,6 +17420,11 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               }
               "FontColor" => {
                 font_color = parse_color(val);
+              }
+              "FontFamily" => {
+                if let Expr::String(ff) = val {
+                  font_family = Some(ff.clone());
+                }
               }
               "Background" => {
                 background = parse_color(val);
@@ -17000,7 +17439,17 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
             }
           }
         }
-        let content = layout_box(&args[0], effective_font_size);
+        let layout_content = || match font_family.as_deref() {
+          Some(ff) => with_box_font_family(Some(ff), || {
+            layout_box(&args[0], effective_font_size)
+          }),
+          None => layout_box(&args[0], effective_font_size),
+        };
+        let content = if upright {
+          with_box_upright_text(true, layout_content)
+        } else {
+          layout_content()
+        };
         if !show_contents {
           return BoxLayout {
             elements: String::new(),
@@ -17608,6 +18057,54 @@ fn digit_group_extra_width(digit_count: usize) -> f64 {
 
 /// Read an optional precision/`n` argument of a display form, defaulting to
 /// `default` when it is absent or non-integer.
+/// The `(mantissa, exponent)` a `ScientificForm[x, …]`/`EngineeringForm[x, …]`
+/// call displays, the exponent `None` when the number sets without a
+/// `× 10^e` factor. An `ExponentFunction` or `NumberFormat` option is
+/// honored through the `ToString` renderer: `ScientificForm[12.3,
+/// ExponentFunction -> (If[-3 < # < 3, Null, #] &)]` reads `12.3`.
+fn exponent_form_display_parts(
+  name: &str,
+  args: &[Expr],
+) -> Option<(String, Option<String>)> {
+  let first = args.first()?;
+  let has_custom_option = args[1..].iter().any(|a| {
+    matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s)
+        if s == "ExponentFunction" || s == "NumberFormat"))
+  });
+  if has_custom_option {
+    let call_expr = Expr::FunctionCall {
+      name: name.to_string(),
+      args: args.to_vec().into(),
+    };
+    let rendered = crate::functions::string_ast::to_string_ast(&[call_expr]);
+    let Ok(Expr::String(text)) = &rendered else {
+      return None;
+    };
+    if text.starts_with(name) {
+      return None;
+    }
+    return Some(match split_scientific_2d(text) {
+      Some((base, exp)) => (
+        base
+          .strip_suffix("\u{00d7} 10")
+          .unwrap_or(&base)
+          .trim_end()
+          .to_string(),
+        Some(exp),
+      ),
+      None => (text.clone(), None),
+    });
+  }
+  let n = format_precision_arg(args.get(1), 6);
+  let parts = if name == "ScientificForm" {
+    crate::functions::string_ast::scientific_form_parts(first, n)
+  } else {
+    crate::functions::string_ast::engineering_form_parts(first, n)
+  }?;
+  Some((parts.0, parts.1.map(|e| e.to_string())))
+}
+
 fn format_precision_arg(arg: Option<&Expr>, default: i64) -> i64 {
   match arg {
     Some(Expr::Integer(n)) => *n as i64,
@@ -18921,27 +19418,8 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
 
         // ScientificForm[x] / [x, n] → mantissa × 10^exp with a superscript
         // exponent (matching the number's notebook typesetting).
-        "ScientificForm" if !args.is_empty() => {
-          let n = format_precision_arg(args.get(1), 6);
-          match crate::functions::string_ast::scientific_form_parts(&args[0], n)
-          {
-            Some((mantissa, Some(exp))) => format!(
-              "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
-              svg_escape(&mantissa),
-              exp
-            ),
-            Some((mantissa, None)) => svg_escape(&mantissa),
-            None => expr_to_svg_markup(&args[0]),
-          }
-        }
-
-        // EngineeringForm[x] / [x, n] → like ScientificForm but exp is a
-        // multiple of 3.
-        "EngineeringForm" if !args.is_empty() => {
-          let n = format_precision_arg(args.get(1), 6);
-          match crate::functions::string_ast::engineering_form_parts(
-            &args[0], n,
-          ) {
+        "ScientificForm" | "EngineeringForm" if !args.is_empty() => {
+          match exponent_form_display_parts(name, args) {
             Some((mantissa, Some(exp))) => format!(
               "{}×10<tspan baseline-shift=\"super\" font-size=\"70%\">{}</tspan>",
               svg_escape(&mantissa),
@@ -19115,6 +19593,18 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
           svg_escape(&graphics_text_content(expr))
         }
         "HoldForm" if args.len() == 1 => expr_to_svg_markup(&args[0]),
+
+        // `Factorial[n]` / `Factorial2[n]` typeset postfix (`n!`, `n!!`),
+        // with the operand parenthesized exactly where the box form does.
+        "Factorial" | "Factorial2" if args.len() == 1 => {
+          let bang = if name == "Factorial" { "!" } else { "!!" };
+          let operand = expr_to_svg_markup(&args[0]);
+          if factorial_operand_parenthesized(expr) {
+            format!("({operand}){bang}")
+          } else {
+            format!("{operand}{bang}")
+          }
+        }
 
         // Tooltip[content, tip] → render content (the tip only shows on
         // hover in the Wolfram FrontEnd, which static SVG can't do)
@@ -19449,10 +19939,9 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
                   out.push_str(m);
                 }
               }
-              // `Null` typesets as nothing inside a `Row`.
-              let markup = if matches!(part, Expr::Identifier(n) if n == "Null")
-              {
-                String::new()
+              // A `Null` item is an empty slot one space wide.
+              let markup = if is_null_row_item(part) {
+                " ".to_string()
               } else {
                 expr_to_svg_markup(part)
               };
@@ -19499,9 +19988,6 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
   }
 }
 
-/// Estimate the display width of an expression in character units,
-/// accounting for superscript sizing (exponents rendered at ~70% width).
-/// Recursively mirrors `expr_to_svg_markup` structure.
 /// A subscript and a superscript stacked over one another after their
 /// base, the way a `SubsuperscriptBox` sets them (`x₁` with `ᵏ` right above
 /// the `1`, not after it). SVG text has no stacking, so the narrower script
@@ -19538,6 +20024,30 @@ pub(crate) fn stacked_scripts_markup(sub: &str, sup: &str) -> String {
   }
 }
 
+/// Whether `Factorial[x]`/`Factorial2[x]` brackets its operand — read off
+/// its box form (`RowBox[{RowBox[{"(", …, ")"}], "!"}]`), so every
+/// renderer parenthesizes the same operands.
+fn factorial_operand_parenthesized(expr: &Expr) -> bool {
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr);
+  let Expr::FunctionCall { name, args } = &boxes else {
+    return false;
+  };
+  if name != "RowBox" {
+    return false;
+  }
+  let Some(Expr::List(items)) = args.first() else {
+    return false;
+  };
+  matches!(items.first(), Some(Expr::FunctionCall { name, args })
+    if name == "RowBox"
+      && matches!(args.first(), Some(Expr::List(inner))
+        if matches!(inner.first(), Some(Expr::String(o)) if o == "(")))
+}
+
+/// Estimate the display width of an expression in character units,
+/// accounting for superscript sizing (exponents rendered at ~70% width).
+/// Recursively mirrors `expr_to_svg_markup` structure.
 pub fn estimate_display_width(expr: &Expr) -> f64 {
   if let Some((base, exp)) = as_power(expr) {
     // `Subscript[x, i]^k` stacks the exponent over the index.
@@ -19784,6 +20294,15 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       "Graphics" if inline_graphic_glyph(args).is_some() => 1.0,
       // HoldForm[expr] → width of content
       "HoldForm" if args.len() == 1 => estimate_display_width(&args[0]),
+      "Factorial" | "Factorial2" if args.len() == 1 => {
+        let bang = if name == "Factorial" { 1.0 } else { 2.0 };
+        let parens = if factorial_operand_parenthesized(expr) {
+          2.0
+        } else {
+          0.0
+        };
+        estimate_display_width(&args[0]) + parens + bang
+      }
       // OverBar/UnderBar draw their accent as a zero-width line over the
       // content; Overscript/Underscript's accent overlaps the base the same
       // way `expr_to_svg_markup` draws it (see that function's comment).
@@ -19863,16 +20382,10 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       // (mantissa × 10^exp, base digits, padded number) rather than the raw
       // `Head[...]` text, so table columns aren't wildly over-sized.
       "ScientificForm" | "EngineeringForm" if !args.is_empty() => {
-        let n = format_precision_arg(args.get(1), 6);
-        let parts = if name == "ScientificForm" {
-          crate::functions::string_ast::scientific_form_parts(&args[0], n)
-        } else {
-          crate::functions::string_ast::engineering_form_parts(&args[0], n)
-        };
-        match parts {
+        match exponent_form_display_parts(name, args) {
           Some((mantissa, Some(exp))) => {
             // mantissa + "×10" (3) + exponent as a 70%-width superscript
-            mantissa.len() as f64 + 3.0 + exp.to_string().len() as f64 * 0.7
+            mantissa.len() as f64 + 3.0 + exp.len() as f64 * 0.7
           }
           Some((mantissa, None)) => mantissa.len() as f64,
           None => estimate_display_width(&args[0]),
@@ -20962,6 +21475,116 @@ fn plot_label_layout_svg(expr: &Expr) -> Option<(String, f64, f64)> {
   Some((svg, w, h))
 }
 
+/// A `PlotLabel` that is a `Grid` of two or more columns
+/// (`Grid[{{"sum:", 6.}, {"product:", 9.}}]`): set as a table whose columns
+/// line up, in the title's font, the way Wolfram draws it, instead of
+/// running each row's cells together into one line of text. Each cell is
+/// typeset like any other title text and measured with proportional glyph
+/// widths; columns are `0.8` em apart (Wolfram's default `Spacings`) and
+/// placed by the grid's horizontal `Alignment` (`Center` by default). A
+/// single-column `Grid` stays a block of title lines.
+fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
+  use crate::functions::plot_padding::{ascent, line_pitch, text_width};
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Grid" || args.is_empty() {
+    return None;
+  }
+  let Expr::List(rows) = &args[0] else {
+    return None;
+  };
+  let rows: Vec<&[Expr]> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => Some(cells.as_slice()),
+      _ => None,
+    })
+    .collect::<Option<_>>()?;
+  let num_cols = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+  // A cell that stacks its own lines (a nested `Column`) has no single
+  // line to align, so such a grid keeps the line-based layout.
+  if num_cols < 2
+    || rows
+      .iter()
+      .flat_map(|r| r.iter())
+      .any(|c| expr_to_svg_markup_lines(c).len() > 1)
+  {
+    return None;
+  }
+  // The horizontal alignment of each column: one symbol for all of them,
+  // or a list cycled over the columns, possibly inside `{h, v}`.
+  let mut aligns = vec!["Center"];
+  for opt in &args[1..] {
+    if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && matches!(&**pattern, Expr::Identifier(n) if n == "Alignment")
+    {
+      let h = match &**replacement {
+        Expr::List(items) if items.len() == 2 => &items[0],
+        other => other,
+      };
+      let names: Vec<&str> = match h {
+        Expr::Identifier(n) => vec![n.as_str()],
+        Expr::List(items) => items
+          .iter()
+          .filter_map(|i| match i {
+            Expr::Identifier(n) => Some(n.as_str()),
+            _ => None,
+          })
+          .collect(),
+        _ => Vec::new(),
+      };
+      if !names.is_empty() {
+        aligns = names;
+      }
+    }
+  }
+  let size = TITLE_FONT;
+  let markup: Vec<Vec<String>> = rows
+    .iter()
+    .map(|r| r.iter().map(expr_to_svg_markup).collect())
+    .collect();
+  let mut col_w = vec![0.0_f64; num_cols];
+  for row in &markup {
+    for (j, cell) in row.iter().enumerate() {
+      col_w[j] = col_w[j].max(text_width(cell, size));
+    }
+  }
+  let gap = 0.8 * size;
+  let width = col_w.iter().sum::<f64>() + gap * (num_cols - 1) as f64;
+  let pitch = line_pitch(size);
+  let height = pitch * markup.len() as f64;
+  let mut body = String::new();
+  for (i, row) in markup.iter().enumerate() {
+    let y = i as f64 * pitch + ascent(size);
+    let mut x0 = 0.0;
+    for (j, w) in col_w.iter().enumerate() {
+      if let Some(cell) = row.get(j).filter(|c| !c.is_empty()) {
+        let (x, anchor) = match aligns[j % aligns.len()] {
+          "Left" => (x0, "start"),
+          "Right" => (x0 + w, "end"),
+          _ => (x0 + w / 2.0, "middle"),
+        };
+        body.push_str(&format!(
+          "<text x=\"{x:.2}\" y=\"{y:.2}\" text-anchor=\"{anchor}\" \
+           xml:space=\"preserve\">{cell}</text>\n"
+        ));
+      }
+      x0 += w + gap;
+    }
+  }
+  let svg = format!(
+    "<svg width=\"{width:.2}\" height=\"{height:.2}\" \
+     viewBox=\"0 0 {width:.2} {height:.2}\" \
+     xmlns=\"http://www.w3.org/2000/svg\" font-family=\"sans-serif\" \
+     font-size=\"{size}\">\n{body}</svg>"
+  );
+  (width > 0.0).then_some((svg, width, height))
+}
+
 /// Whether a label sets a matrix inline: a `MatrixForm` of a list of rows,
 /// or a string carrying the `\!\(\*…\)` box text of a grid (what
 /// `ToString[m . x, TraditionalForm]` returns). Items of a `Column`, `Grid`
@@ -21050,7 +21673,30 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
 /// [`styled_axis_label`] for an `AxesLabel` entry, which may also be a
 /// stacked-fraction picture (see [`fraction_label_svg`]).
 pub fn axes_label_entry(e: &Expr) -> Option<String> {
-  fraction_label_svg(e, LABEL_FONT).or_else(|| styled_axis_label(e))
+  inline_fraction_string_svg(e)
+    .or_else(|| fraction_label_svg(e, LABEL_FONT))
+    .or_else(|| traditional_math_axis_label(e))
+    .or_else(|| styled_axis_label(e))
+}
+
+/// An `AxesLabel` entry that is a plain mathematical expression, typeset as
+/// marked-up text. A graphic's `FormatType` is `TraditionalForm`, so such a
+/// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
+/// italics — `x(t)` with an italic x and t — the way Wolfram draws it.
+/// `None` for any other label (see [`is_traditional_math_label`]).
+fn traditional_math_axis_label(e: &Expr) -> Option<String> {
+  if !is_traditional_math_label(e) {
+    return None;
+  }
+  let inner = match e {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      &args[0]
+    }
+    other => other,
+  };
+  Some(traditional_label(inner))
 }
 
 pub fn styled_axis_label(e: &Expr) -> Option<String> {
@@ -21064,6 +21710,94 @@ pub fn styled_axis_label(e: &Expr) -> Option<String> {
     ));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Whether an axis label is a plain mathematical expression that
+/// `TraditionalForm` typesets with italic letters: a symbol, an application
+/// of a user function or a mathematical built-in (`x[t]`, `Sin[x]`, `y'[t]`),
+/// arithmetic, scripts and powers of those, or any of them wrapped in an
+/// explicit `TraditionalForm`. Strings, numbers and layout, styling or
+/// number-format wrappers (`Row`, `Style`, `NumberForm`, …) keep the plain
+/// label text.
+fn is_traditional_math_label(e: &Expr) -> bool {
+  fn part_ok(e: &Expr) -> bool {
+    matches!(
+      e,
+      Expr::Integer(_)
+        | Expr::BigInteger(_)
+        | Expr::Real(_)
+        | Expr::Constant(_)
+        | Expr::String(_)
+    ) || is_math(e)
+  }
+  fn is_math(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(s) => {
+        !matches!(s.as_str(), "None" | "Automatic" | "All" | "Null")
+          && typeset_constant_glyph(s).is_none()
+      }
+      Expr::CurriedCall { func, args } => {
+        as_derivative_of(e).is_some()
+          || (part_ok(func) && args.iter().all(part_ok))
+      }
+      Expr::BinaryOp { left, right, .. } => part_ok(left) && part_ok(right),
+      Expr::UnaryOp { operand, .. } => part_ok(operand),
+      // Display, layout and hover wrappers are no functions, even where
+      // the evaluator registers no built-in for them.
+      Expr::FunctionCall { name, .. }
+        if name.ends_with("Form")
+          || matches!(
+            name.as_str(),
+            "Style"
+              | "Text"
+              | "Row"
+              | "Column"
+              | "Grid"
+              | "Labeled"
+              | "Spacer"
+              | "Quantity"
+              | "Tooltip"
+              | "Annotation"
+              | "Pane"
+              | "Rotate"
+              | "Framed"
+              | "Highlighted"
+              | "Defer"
+              | "RawBoxes"
+              | "TextCell"
+          ) =>
+      {
+        false
+      }
+      Expr::FunctionCall { name, args } if !args.is_empty() => {
+        let math_head = matches!(
+          name.as_str(),
+          "Subscript"
+            | "Superscript"
+            | "Subsuperscript"
+            | "Power"
+            | "Times"
+            | "Plus"
+            | "Derivative"
+        )
+          || crate::evaluator::dispatch::complex_and_special::tf_known_func(
+            name,
+          )
+          .is_some()
+          || !crate::evaluator::functions::is_builtin_symbol(name);
+        math_head && args.iter().all(part_ok)
+      }
+      _ => false,
+    }
+  }
+  match e {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      is_math(&args[0])
+    }
+    _ => is_math(e),
+  }
 }
 
 /// Wrap the unstyled expressions of a styled label in `TraditionalForm`,
@@ -21221,6 +21955,166 @@ fn accent_text(base: &str, accent: &str, over: bool) -> String {
 /// Whether an over/underscript box is a plain horizontal-bar accent: `_`,
 /// a macron or overline, or a hyphen/minus/en dash typed as the script.
 /// Such a script is drawn as a rule spanning the base (x̄, b̄).
+/// The shape of a horizontal brace that stretches over or under its base.
+#[derive(Clone, Copy)]
+enum BraceShape {
+  Curly,
+  Square,
+  Round,
+}
+
+/// A horizontal brace glyph as an over- (`over`) or underscript: `︷`/`⏞`
+/// (`\[OverBrace]`), `⎴` (`\[OverBracket]`), `︵`/`⏜`
+/// (`\[OverParenthesis]`) and their under counterparts.
+fn horizontal_brace_shape(script: &Expr, over: bool) -> Option<BraceShape> {
+  let Expr::String(s) = script else {
+    return None;
+  };
+  let s = s
+    .strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .unwrap_or(s);
+  Some(match (s, over) {
+    ("\u{FE37}" | "\u{23DE}", true) | ("\u{FE38}" | "\u{23DF}", false) => {
+      BraceShape::Curly
+    }
+    ("\u{23B4}", true) | ("\u{23B5}", false) => BraceShape::Square,
+    ("\u{FE35}" | "\u{23DC}", true) | ("\u{FE36}" | "\u{23DD}", false) => {
+      BraceShape::Round
+    }
+    _ => return None,
+  })
+}
+
+/// A brace script stretched to its base, with the label set beyond it
+/// (`Overscript[base, Overscript[\[OverBrace], label]]`).
+struct StretchyBrace {
+  shape: BraceShape,
+  label: Option<BoxLayout>,
+  font_size: f64,
+}
+
+/// The brace an over- (`over`) or underscript box draws: a bare brace
+/// glyph, or a brace glyph carrying its own label on the far side
+/// (`OverscriptBox["︷", n]` over, `UnderscriptBox["︸", n]` under).
+fn stretchy_brace_script(
+  script: &Expr,
+  over: bool,
+  font_size: f64,
+) -> Option<StretchyBrace> {
+  let script_size = font_size * 0.7;
+  if let Some(shape) = horizontal_brace_shape(script, over) {
+    return Some(StretchyBrace {
+      shape,
+      label: None,
+      font_size: script_size,
+    });
+  }
+  let Expr::FunctionCall { name, args } = script else {
+    return None;
+  };
+  let wanted = if over {
+    "OverscriptBox"
+  } else {
+    "UnderscriptBox"
+  };
+  if name != wanted || args.len() != 2 {
+    return None;
+  }
+  let shape = horizontal_brace_shape(&args[0], over)?;
+  Some(StretchyBrace {
+    shape,
+    label: Some(layout_box_nested(&args[1], script_size * 0.7)),
+    font_size: script_size,
+  })
+}
+
+impl StretchyBrace {
+  /// Stack the brace (and its label) over (`over`) or under `base`,
+  /// stretched to the base's width.
+  fn attach(self, base: &BoxLayout, over: bool) -> BoxLayout {
+    let w = base.width.max(self.font_size);
+    let h = self.font_size * 0.45;
+    let sw = (self.font_size * 0.07).max(0.6);
+    let gap = self.font_size * 0.12;
+    // The brace path, drawn opening toward the base (`flip` mirrors an
+    // overbrace into an underbrace), inset by half a stroke on each side.
+    let flip = |y: f64| if over { y } else { h - y };
+    let (x0, x1) = (sw / 2.0, w - sw / 2.0);
+    let (top, mid, tip) = (flip(sw / 2.0), flip(h / 2.0), flip(h - sw / 2.0));
+    let d = match self.shape {
+      BraceShape::Curly => {
+        let r = (h / 2.0).min((x1 - x0) / 4.0);
+        let c = w / 2.0;
+        format!(
+          "M {x0:.2} {tip:.2} Q {x0:.2} {mid:.2} {:.2} {mid:.2} \
+           L {:.2} {mid:.2} Q {c:.2} {mid:.2} {c:.2} {top:.2} \
+           Q {c:.2} {mid:.2} {:.2} {mid:.2} L {:.2} {mid:.2} \
+           Q {x1:.2} {mid:.2} {x1:.2} {tip:.2}",
+          x0 + r,
+          c - r,
+          c + r,
+          x1 - r,
+        )
+      }
+      BraceShape::Square => format!(
+        "M {x0:.2} {tip:.2} L {x0:.2} {top:.2} L {x1:.2} {top:.2} \
+         L {x1:.2} {tip:.2}"
+      ),
+      BraceShape::Round => format!(
+        "M {x0:.2} {tip:.2} Q {:.2} {:.2} {x1:.2} {tip:.2}",
+        w / 2.0,
+        flip(-h + sw),
+      ),
+    };
+    let brace = format!(
+      "<path d=\"{d}\" fill=\"none\" stroke=\"currentColor\" \
+       stroke-width=\"{sw:.2}\" stroke-linecap=\"round\" \
+       stroke-linejoin=\"round\"/>"
+    );
+    let label = self.label;
+    let label_h = label.as_ref().map_or(0.0, |l| l.height);
+    let width = w.max(label.as_ref().map_or(0.0, |l| l.width));
+    // The base is centered under/over the wider of brace and label.
+    let base_x = (width - base.width) / 2.0;
+    let brace_x = (width - w) / 2.0;
+    let label_x = |l: &BoxLayout| (width - l.width) / 2.0;
+    if over {
+      let brace_y = label_h;
+      let base_y = brace_y + h + gap;
+      let label_svg = label
+        .as_ref()
+        .map_or_else(String::new, |l| l.translate(label_x(l), 0.0));
+      BoxLayout {
+        width,
+        height: base_y + base.height,
+        baseline: base_y + base.baseline,
+        elements: format!(
+          "{label_svg}<g transform=\"translate({brace_x:.2},{brace_y:.2})\">\
+           {brace}</g>{}",
+          base.translate(base_x, base_y)
+        ),
+      }
+    } else {
+      let brace_y = base.height + gap;
+      let label_y = brace_y + h;
+      let label_svg = label
+        .as_ref()
+        .map_or_else(String::new, |l| l.translate(label_x(l), label_y));
+      BoxLayout {
+        width,
+        height: label_y + label_h,
+        baseline: base.baseline,
+        elements: format!(
+          "{}<g transform=\"translate({brace_x:.2},{brace_y:.2})\">\
+           {brace}</g>{label_svg}",
+          base.translate(base_x, 0.0)
+        ),
+      }
+    }
+  }
+}
+
 fn is_bar_accent_box(script: &Expr) -> bool {
   let Expr::String(s) = script else {
     return false;
@@ -23302,16 +24196,23 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Like its other options, the merged graphic keeps the `PlotRange` of
     // the first plot — the numeric range that plot settled on, so
     // `Show[Plot[Sin[x], {x, 0, 1}], Plot[3 Sin[x], {x, 0, 10}]]` shows
-    // 0..1 — unless that plot asked for `PlotRange -> All`, which spans
-    // everything shown.
-    let first_all = merged_options.iter().any(|o| {
-      matches!(option_name_value(o), Some(("PlotRange", v))
-        if crate::functions::plot::plot_range_all_axes(&v) == (true, true))
-    });
-    let first = plot_sources
+    // 0..1 — except on an axis that plot asked to show `All` of
+    // (`PlotRange -> All`, or `{{0, 2}, All}` for the y axis alone), which
+    // spans everything shown.
+    let (x_all, y_all) = merged_options
       .iter()
-      .find(|ps| !any_curves || !ps.series.is_empty())
-      .filter(|_| !first_all);
+      .find_map(|o| match option_name_value(o) {
+        Some(("PlotRange", v)) => {
+          Some(crate::functions::plot::plot_range_all_axes(&v))
+        }
+        _ => None,
+      })
+      .unwrap_or((false, false));
+    let first_all = x_all && y_all;
+    let first_plot = plot_sources
+      .iter()
+      .find(|ps| !any_curves || !ps.series.is_empty());
+    let first = first_plot.filter(|_| !first_all);
     let data_x_range = plot_sources
       .iter()
       .filter(|ps| !any_curves || !ps.series.is_empty())
@@ -23320,31 +24221,64 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or_else(|| ps.plot_range.map_or(ps.x_range, |r| r.0))
       })
       .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)));
-    let all_range = if first_all {
-      plot_sources
-        .iter()
-        .filter(|ps| !any_curves || !ps.series.is_empty())
-        .filter_map(|ps| {
+    // `PlotRange -> All` spans everything shown. A source whose points have
+    // no extent of their own (a lone `ListPlot` point, which by itself spans
+    // 0 to twice its value) contributes just its points, so a marker does
+    // not zoom the picture out to the origin.
+    let union_range = if x_all || y_all {
+      let source_range = |ps: &crate::syntax::PlotSource| {
+        let points = ps
+          .series
+          .iter()
+          .flat_map(|s| &s.points)
+          .filter(|p| p.0.is_finite() && p.1.is_finite())
+          .fold(None, |acc: Option<((f64, f64), (f64, f64))>, &(x, y)| {
+            Some(acc.map_or(((x, x), (y, y)), |((x0, x1), (y0, y1))| {
+              ((x0.min(x), x1.max(x)), (y0.min(y), y1.max(y)))
+            }))
+          });
+        let flat =
+          points.is_some_and(|((x0, x1), (y0, y1))| x1 <= x0 || y1 <= y0);
+        (
           ps.plot_range
             .map(|(x, y)| (ps.data_x_range.unwrap_or(x), y))
-            .or_else(|| {
-              ps.series
-                .iter()
-                .flat_map(|s| &s.points)
-                .filter(|p| p.0.is_finite() && p.1.is_finite())
-                .fold(None, |acc: Option<((f64, f64), (f64, f64))>, &(x, y)| {
-                  Some(acc.map_or(((x, x), (y, y)), |((x0, x1), (y0, y1))| {
-                    ((x0.min(x), x1.max(x)), (y0.min(y), y1.max(y)))
-                  }))
-                })
-            })
-        })
-        .reduce(|((a, b), (c, d)), ((e, f), (g, h))| {
+            .or(points),
+          flat.then_some(points).flatten(),
+        )
+      };
+      let union =
+        |((a, b), (c, d)): ((f64, f64), (f64, f64)),
+         ((e, f), (g, h)): ((f64, f64), (f64, f64))| {
           ((a.min(e), b.max(f)), (c.min(g), d.max(h)))
-        })
+        };
+      let shown: Vec<_> = plot_sources
+        .iter()
+        .filter(|ps| !any_curves || !ps.series.is_empty())
+        .map(source_range)
+        .collect();
+      let full = shown.iter().filter_map(|r| r.0).reduce(union);
+      let tight = shown
+        .iter()
+        .filter_map(|(range, flat)| flat.or(*range))
+        .reduce(union)
+        .filter(|((x0, x1), (y0, y1))| x0 < x1 && y0 < y1);
+      tight.or(full)
     } else {
       None
     };
+    // An axis shown in full takes the union; the other keeps the first
+    // plot's range.
+    let all_range = union_range.and_then(|(ux, uy)| {
+      if first_all {
+        return Some((ux, uy));
+      }
+      let ps = first_plot?;
+      Some((
+        if x_all { ux } else { ps.x_range },
+        if y_all { uy } else { ps.y_range },
+      ))
+    });
+    let first = first.filter(|_| all_range.is_none());
     let ((x_min, x_max), (y_min, y_max)) = all_range
       .or_else(|| first.map(|ps| (ps.x_range, ps.y_range)))
       .unwrap_or(((x_min, x_max), (y_min, y_max)));
@@ -23549,16 +24483,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           **replacement = id_expr("All");
         }
       }
-      // A framed plot draws no interior axes, so the merged graphic must
-      // not grow a set of them either: `Show[ParametricPlot[…, Frame ->
-      // True], …]` keeps the frame it was given and nothing more.
-      let framed = merged_options.iter().any(|o| {
-        matches!(o, Expr::Rule { pattern, replacement }
-          if option_name(pattern) == Some("Frame")
-            && !matches!(replacement.as_ref(),
-              Expr::Identifier(s) if s == "False" || s == "None"))
-      });
-      if !has_option(&merged_options, "Axes") && !framed {
+      // The leading plot's axes stay on. In a framed plot they are drawn as
+      // plain lines through the origin (the frame carries the ticks), just
+      // as `Plot[…, Frame -> True]` draws them on its own.
+      if !has_option(&merged_options, "Axes") {
         merged_options.push(rule_expr(id_expr("Axes"), bool_expr(true)));
       }
       // The shape the leading plot drew itself in, unless the options
@@ -24278,10 +25206,13 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
   }
 }
 
-/// Parse Style directives into a GridStyle.
+/// Parse Style directives into a GridStyle. A named style ("Label",
+/// "Section", …) supplies the base size and color, and the explicit
+/// directives sit on top of it, wherever they were written; directive
+/// lists and `Directive[…]` are spliced in place.
 pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
   let mut gs = GridStyle::default();
-  for d in directives {
+  for d in style_directives_in_application_order(directives) {
     match d {
       Expr::Identifier(s) if s == "Bold" => gs.font_weight = Some("bold"),
       Expr::Identifier(s) if s == "Italic" => gs.font_style = Some("italic"),
@@ -24293,6 +25224,19 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
       Expr::Identifier(s) if s == "Huge" => gs.font_size = Some(26.0),
       Expr::Integer(n) => gs.font_size = Some(*n as f64),
       Expr::Real(f) => gs.font_size = Some(*f),
+      // `Style[Grid[…], "Label"]` — the stylesheet entry's size and color.
+      Expr::String(name) => {
+        if let Some((size, rgb)) = named_style_appearance(name) {
+          gs.font_size = Some(size);
+          if let Some((r, g, b)) = rgb {
+            gs.color = Some(Color::new(
+              r as f64 / 255.0,
+              g as f64 / 255.0,
+              b as f64 / 255.0,
+            ));
+          }
+        }
+      }
       Expr::Rule {
         pattern,
         replacement,
@@ -24313,25 +25257,6 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
             }
             _ => {}
           }
-        }
-      }
-      // Directives grouped in a list, e.g. Style[expr, {Large, Bold, Orange}].
-      Expr::List(items) => {
-        let inner = parse_grid_style(items);
-        if inner.font_weight.is_some() {
-          gs.font_weight = inner.font_weight;
-        }
-        if inner.font_style.is_some() {
-          gs.font_style = inner.font_style;
-        }
-        if inner.font_size.is_some() {
-          gs.font_size = inner.font_size;
-        }
-        if inner.font_family.is_some() {
-          gs.font_family = inner.font_family;
-        }
-        if inner.color.is_some() {
-          gs.color = inner.color;
         }
       }
       _ => {
@@ -24373,14 +25298,9 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     // fraction.
     Expr::FunctionCall { name, .. } if name == "Rational" => false,
     Expr::FunctionCall { name, .. }
-      if matches!(name.as_str(), "Times" | "Power" | "Plus")
-        && !has_string_operand(expr) =>
+      if matches!(name.as_str(), "Times" | "Power" | "Plus") =>
     {
-      box_has_fraction(
-        &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-          expr,
-        ),
-      )
+      !has_string_operand(expr) && typesets_fraction_box(expr)
     }
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
       matches!(&args[0], Expr::List(items) if items.iter().any(label_typesets_fraction))
@@ -24453,6 +25373,17 @@ fn is_relation_head(name: &str) -> bool {
   )
 }
 
+/// Whether an arithmetic expression (`Times`, `Power` or `Plus`, strings
+/// among its operands included) has a `FractionBox` in its box form, i.e.
+/// is laid out as a built-up fraction rather than as a line of text.
+fn typesets_fraction_box(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Times" | "Power" | "Plus"))
+    && box_has_fraction(
+      &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    )
+}
+
 /// Whether an arithmetic expression has a bare string among its operands
 /// (`"7"/100`): such a quotient is drawn on one line, as `7/100`.
 fn has_string_operand(expr: &Expr) -> bool {
@@ -24493,21 +25424,48 @@ fn has_script_stacked_inline_box(s: &str) -> bool {
 fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   let mut content = cell;
   let mut size = 14.0;
+  // The outermost of the innermost run of style wrappers: a stacked
+  // fraction is typeset from it, so its color, weight and slant reach the
+  // numerator and denominator, not only its size.
+  let mut styled: Option<&Expr> = None;
+  let mut family: Option<String> = None;
   loop {
     match content {
       Expr::FunctionCall { name, args }
         if name == "Text" && args.len() == 1 =>
       {
         content = &args[0];
+        styled = None;
       }
       Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
+        styled = styled.or(Some(content));
         let style = extract_cell_style(content);
         size = style.font_size.unwrap_or(size);
+        // The innermost `FontFamily` wins, as it is nearest the text.
+        if style.font_family.is_some() {
+          family.clone_from(&style.font_family);
+        }
         content = style.content;
       }
       _ => break,
     }
   }
+  // `Style[…, FontFamily -> "Times"]` sets the typeset numerator,
+  // denominator and scripts in that face too.
+  with_box_font_family(family.as_deref(), || {
+    traditional_inline_box_content_svg(content, styled, size)
+  })
+}
+
+/// [`traditional_inline_box_cell_svg`] for a cell already stripped of its
+/// `Text`/`Style` wrappers, typeset at `size`. `styled` is the outermost of
+/// the innermost run of style wrappers, which a stacked fraction is typeset
+/// from so their color, weight and slant reach it.
+fn traditional_inline_box_content_svg(
+  content: &Expr,
+  styled: Option<&Expr>,
+  size: f64,
+) -> Option<String> {
   // A plain string holding inline `\!\(\*…\)` box notation is typeset the
   // same way: `"\!\(\*FractionBox[\(a\), \(b\)]\)"` is a fraction, not its
   // linear `a/b` reading, which loses the grouping of nested fractions.
@@ -24523,7 +25481,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     return Some(layout_to_svg(&layout, theme().text_primary));
   }
   let Expr::FunctionCall { name, args } = content else {
-    return standard_fraction_cell_svg(content, size);
+    return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   };
   // A `Row[{…}]` cell with a quotient in it (`Row[{2 a b/(a + b), S}]`, a
   // Demonstration's formula readout) is typeset 2-D, the fraction stacked,
@@ -24547,7 +25505,7 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
     || args.len() != 1
     || matches!(args[0], Expr::String(_))
   {
-    return standard_fraction_cell_svg(content, size);
+    return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   }
   let boxes = if name == "StandardForm" {
     crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&args[0])
@@ -24885,6 +25843,12 @@ fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
     Expr::FunctionCall { name, args } if name == "ProgressIndicator" => {
       let args: Vec<Expr> = args.iter().cloned().collect();
       progress_indicator_svg(&args)?
+    }
+    // A static `CheckboxBar` cell draws its checkboxes and labels.
+    Expr::FunctionCall { name, args }
+      if name == "CheckboxBar" && checkbox_bar_choices(args).is_some() =>
+    {
+      crate::evaluator::expr_to_svg(cell)
     }
     // As above, a display wrapper that resolves to a picture is drawn
     // rather than printed as source.
@@ -25529,6 +26493,32 @@ fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
 /// (which defaults to monospace at the base size). A column of plain text
 /// takes the grid's style directives, with the sans face as the default
 /// family. Other cells are returned unchanged.
+/// A grid cell that is drawn as a stacked fraction, wrapped in the grid's
+/// base style (`Style[Grid[…], 16]`, `BaseStyle -> …`) so the fraction is
+/// typeset at that size, weight, slant and color instead of the default
+/// 14 pt. Any other cell, or a grid without such a style, is returned as is.
+fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  if directives.is_empty() || standard_fraction_cell_svg(cell, 14.0).is_none() {
+    return cell.clone();
+  }
+  let mut args = vec![cell.clone()];
+  args.extend(directives);
+  call("Style", args)
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -25755,12 +26745,36 @@ fn grid_svg_styled_internal_reporting(
       }
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
-      // A string with inline box notation is typeset at the grid's size.
-      if let Expr::String(text) = &*cell
-        && let Some(size) = default_style.font_size
-        && has_stacked_inline_box(text)
+      // A string with inline box notation, or an arithmetic cell that
+      // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
+      // grid's size, like the plain text cells around it.
+      if let Some(size) = default_style.font_size
+        && (matches!(&*cell, Expr::String(text) if has_stacked_inline_box(text))
+          || typesets_fraction_box(cell))
       {
         *cell = call("Style", vec![cell.clone(), Expr::Real(size)]);
+      }
+      // So is a quotient typeset as a stacked fraction (`7/11 + 6 x/11`):
+      // the grid's size, weight, slant and color reach its numerator and
+      // denominator, like the text cells beside it.
+      *cell = fraction_cell_in_grid_style(cell, default_style);
+      // A typeset cell (a `Row` holding a quotient, a `TraditionalForm`
+      // formula) is set in the grid's `BaseStyle` face and size, like the
+      // grid's plain text cells, rather than the monospace default.
+      if let Some(family) = &default_style.font_family
+        && traditional_inline_box_cell_svg(cell).is_some()
+      {
+        let mut directives = vec![
+          cell.clone(),
+          Expr::Rule {
+            pattern: Box::new(id_expr("FontFamily")),
+            replacement: Box::new(str_expr(family)),
+          },
+        ];
+        if let Some(size) = default_style.font_size {
+          directives.push(Expr::Real(size));
+        }
+        *cell = call("Style", directives);
       }
     }
   }
@@ -28385,8 +29399,20 @@ pub fn combine_layout_svgs(
   if !opts.spacings_explicit {
     // `Points` counts printer's points at 96 dpi; the layout works in the
     // pictures' own units, which are points already.
-    opts.h_spacing = SpacingSpec::Points(gap * 0.75);
-    opts.v_spacing = SpacingSpec::Points(gap * 0.75);
+    let gap = gap * 0.75;
+    if opts.frame == FrameSetting::None {
+      opts.h_spacing = SpacingSpec::Points(gap);
+      opts.v_spacing = SpacingSpec::Points(gap);
+    } else {
+      // A framed `Grid` pads every cell by three quarters of that gap
+      // (4.5 pixels) on each side, so the frame lines run between the
+      // cells instead of touching them: a 250 × 300 plot sits in a
+      // 259 × 309 framed cell.
+      opts.h_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.v_spacing = SpacingSpec::Points(1.5 * gap);
+      opts.outer_margin = true;
+      opts.spacings_explicit = true;
+    }
   }
   combine_svgs_grid(rows, &opts)
 }
@@ -28630,6 +29656,10 @@ struct GridLayout {
   v_gap: f64,
   /// Space above the first row (`LayoutOptions::outer_margin`).
   top_pad: f64,
+  /// Where each column starts, and the gap between two columns: a
+  /// `Frame -> All` divider runs down the middle of that gap.
+  col_x: Vec<f64>,
+  h_gap: f64,
 }
 
 /// Compute a natural-dimension grid layout for a 2-D array of SVG cells.
@@ -28848,7 +29878,7 @@ fn compute_grid_layout(
     }
   }
   let left_pad = if opts.outer_margin { h_gap / 2.0 } else { 0.0 };
-  let col_x: Vec<f64> = col_w
+  let mut col_x: Vec<f64> = col_w
     .iter()
     .scan(left_pad, |x, w| {
       let here = *x;
@@ -28940,6 +29970,9 @@ fn compute_grid_layout(
         cell.x += dx;
       }
     }
+    for x in &mut col_x {
+      *x += dx;
+    }
     top_pad += ((th - total_height) / 2.0).max(0.0);
     total_width = total_width.max(tw);
     total_height = total_height.max(th);
@@ -28951,6 +29984,8 @@ fn compute_grid_layout(
     total_height,
     v_gap,
     top_pad,
+    col_x,
+    h_gap,
   })
 }
 
@@ -29054,28 +30089,20 @@ fn draw_frame_lines(
     return;
   }
 
-  // Inner row dividers: draw at the top of each row after the first
+  // Inner row dividers: in the middle of the gap above each row after
+  // the first.
   for (i, row) in layout.rows.iter().enumerate() {
     if i == 0 || row.row_h <= 0.0 {
       continue;
     }
-    let y = row_y_starts[i];
+    let y = row_y_starts[i] - layout.v_gap / 2.0;
     line(out, 0.0, y, total_w, y);
   }
 
-  // Inner column dividers: use the widest row to place vertical lines
-  // at every cell boundary. Cells share an x-coordinate scheme inside
-  // a row, so taking max-cells row gives the most granular boundaries.
-  let widest_row = layout
-    .rows
-    .iter()
-    .max_by_key(|r| r.cells.len())
-    .map_or(&[][..], |r| &r.cells[..]);
-  for (i, cell) in widest_row.iter().enumerate() {
-    if i == 0 {
-      continue;
-    }
-    let x = cell.x;
+  // Inner column dividers: in the middle of the gap before each column
+  // after the first.
+  for x in layout.col_x.iter().skip(1) {
+    let x = x - layout.h_gap / 2.0;
     line(out, x, 0.0, x, total_h);
   }
 }
@@ -29938,9 +30965,25 @@ fn render_items_at_size(
         ),
       };
       let evaluated = evaluate_expr_to_expr(&rewritten).ok()?;
-      let svg = crate::evaluator::expr_to_svg(&evaluated);
+      let mut svg = crate::evaluator::expr_to_svg(&evaluated);
       if svg.is_empty() {
         return None;
+      }
+      // A long list shown as text (`Text[Style[list, 11]]` under a plot)
+      // keeps its font size and is broken into lines at the cell width,
+      // the way the FrontEnd line-breaks an inset, rather than shrinking
+      // the whole layout to fit one very long line.
+      let cell_w = (per_cell_w * spans[item_idx]) as f64;
+      if !matches!(evaluated, Expr::Graphics { .. })
+        && parse_svg_wh(&svg).0 > cell_w + 0.5
+        && let Some(flowed) = wrap_list_text(&evaluated, cell_w, &[], &|c| {
+          parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+        })
+      {
+        let reflowed = crate::evaluator::expr_to_svg(&flowed);
+        if !reflowed.is_empty() {
+          svg = reflowed;
+        }
       }
       Some(match button_args {
         Some(bargs) => with_button_cell_chrome(svg, &bargs),
@@ -30179,6 +31222,57 @@ fn alignment_axis_fraction(expr: &Expr, horizontal: bool) -> Option<f64> {
     },
     _ => try_eval_to_f64(expr),
   }
+}
+
+/// GraphicsArray[{g1, g2, …}, opts…] / GraphicsArray[{{g11, …}, …}, opts…]
+///
+/// The obsolete (pre-6.0) layout head superseded by `GraphicsGrid`. A flat
+/// list is one row of pictures and a nested list a 2D array, so it is
+/// rewritten into the equivalent `GraphicsGrid` call instead of keeping a
+/// second layout implementation. `GraphicsSpacing -> s` (a fraction of a
+/// cell, default 0.1) becomes the `Spacings -> Scaled[s]` it was replaced by.
+pub fn graphics_array_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let array = match &args[0] {
+    Expr::List(_) => args[0].clone(),
+    other => evaluate_expr_to_expr(other)?,
+  };
+  let Expr::List(items) = &array else {
+    return Ok(Expr::FunctionCall {
+      name: "GraphicsArray".to_string(),
+      args: args.to_vec().into(),
+    });
+  };
+  let grid = if items.iter().any(|item| matches!(item, Expr::List(_))) {
+    array.clone()
+  } else {
+    Expr::List(vec![array.clone()].into())
+  };
+  let mut grid_args = vec![grid];
+  for opt in &args[1..] {
+    let rewritten = match opt {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "GraphicsSpacing") =>
+      {
+        let scaled = |e: &Expr| Expr::FunctionCall {
+          name: "Scaled".to_string(),
+          args: vec![e.clone()].into(),
+        };
+        let value = match replacement.as_ref() {
+          Expr::List(pair) => Expr::List(pair.iter().map(scaled).collect()),
+          other => scaled(other),
+        };
+        Expr::Rule {
+          pattern: Box::new(Expr::Identifier("Spacings".to_string())),
+          replacement: Box::new(value),
+        }
+      }
+      other => other.clone(),
+    };
+    grid_args.push(rewritten);
+  }
+  graphics_grid_ast(&grid_args)
 }
 
 /// GraphicsGrid[{{g1, g2}, {g3, g4}}, opts...]
@@ -31197,8 +32291,9 @@ fn resolve_display_item(expr: &Expr) -> Expr {
 /// Distribute a `Style[…]`'s directives over the items of the layout it
 /// wraps, so `Style[Row[{a, b}], Bold]` becomes `Row[{Style[a, Bold],
 /// Style[b, Bold]}]`. Only the item list is rewritten; a separator or
-/// option argument keeps its place. `None` when the wrapped expression is
-/// not a layout with a list of items.
+/// option argument keeps its place. A `Framed[…]` takes the directives onto
+/// its content. `None` when the wrapped expression is neither a layout
+/// with a list of items nor a frame.
 pub(crate) fn style_pushed_into_layout(
   inner: &Expr,
   directives: &[Expr],
@@ -31209,6 +32304,19 @@ pub(crate) fn style_pushed_into_layout(
   let Expr::FunctionCall { name, args } = inner else {
     return None;
   };
+  // `Style[Framed[content, opts…], directives…]`: the frame keeps its box
+  // and its options, and the directives style the content it frames.
+  // Without this the styled frame was set as plain text and lost its box.
+  if name == "Framed" && !args.is_empty() {
+    let mut new_args: Vec<Expr> = args.iter().cloned().collect();
+    new_args[0] = call(
+      "Style",
+      std::iter::once(args[0].clone())
+        .chain(directives.iter().cloned())
+        .collect(),
+    );
+    return Some(call("Framed", new_args));
+  }
   if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
     || args.is_empty()
   {
@@ -31229,7 +32337,7 @@ pub(crate) fn style_pushed_into_layout(
       || is_span_marker(e)
       || matches!(e, Expr::Identifier(n) if n == "Null")
       || (crate::evaluator::lays_out_a_graphic(e)
-        && !crate::evaluator::is_table_form_layout(e))
+        && !crate::evaluator::styled_table_core(e))
     {
       return e.clone();
     }
@@ -31311,7 +32419,17 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
 pub(crate) fn axes_label_markup(expr: &Expr) -> String {
   inline_fraction_string_svg(expr)
     .or_else(|| fraction_label_svg(expr, LABEL_FONT))
-    .unwrap_or_else(|| expr_to_svg_markup(expr))
+    .unwrap_or_else(|| {
+      // A mathematical label is set in TraditionalForm (italic letters),
+      // the same as on a plot (see `axes_label_entry`).
+      if let Some(label) = traditional_math_axis_label(expr) {
+        return label
+          .strip_prefix(STYLED_LABEL_MARKER)
+          .map(str::to_string)
+          .unwrap_or(label);
+      }
+      expr_to_svg_markup(expr)
+    })
 }
 
 /// An axis label expression that TraditionalForm typesets as a stacked
@@ -31383,12 +32501,12 @@ pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
 /// or a `DisplayForm`/`RawBoxes` box tree holding one, typeset through the
 /// box layout so the numerator stacks over the denominator. `None` for any other item, which keeps its text rendering.
 fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
-  let (content, size) = match expr {
+  let (content, size, color) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
       let style = extract_cell_style(expr);
-      (style.content, style.font_size.unwrap_or(14.0))
+      (style.content, style.font_size.unwrap_or(14.0), style.color)
     }
-    other => (other, 14.0),
+    other => (other, 14.0, None),
   };
   // The boxes are spelled either as inline `\!\(\*…\)` notation in a
   // string or as a box tree shown through `DisplayForm`/`RawBoxes`
@@ -31408,7 +32526,10 @@ fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
   if layout.width <= 0.0 || layout.height <= 0.0 {
     return None;
   }
-  Some(layout_to_svg(&layout, theme().text_primary))
+  // A `Style[…, color]` wrapper paints the whole fraction, bar included.
+  let fill =
+    color.map_or_else(|| theme().text_primary.to_string(), Color::to_svg_rgb);
+  Some(layout_to_svg(&layout, &fill))
 }
 
 /// Whether `expr` — a label, possibly a `Row`/`Column` layout under `Style`
@@ -31570,6 +32691,88 @@ pub fn styled_inline_text_svg(text: &str, max_width: f64) -> Option<String> {
   ))
 }
 
+/// Whether `expr` is or contains a picture (`Graphics`, `Graphics3D`,
+/// `Image`), evaluated or still a call.
+fn holds_picture(expr: &Expr) -> bool {
+  match &resolve_display_item(expr) {
+    Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::FunctionCall { name, args } => {
+      matches!(name.as_str(), "Graphics" | "Graphics3D" | "Image")
+        || args.iter().any(holds_picture)
+    }
+    Expr::List(items) => items.iter().any(holds_picture),
+    _ => false,
+  }
+}
+
+/// A text `Overscript`/`Underscript` (optionally inside `Style`) whose
+/// script is a stretchy brace or itself a compound expression — the
+/// `Underscript[digits, Underscript[\[UnderBrace], n]]` idiom labeling the
+/// length of a number — typeset by the box layout engine, so the brace
+/// spans the base and nested scripts stack, with the picture's text axis
+/// recorded for the row to line it up with its neighbors.
+fn typeset_script_svg(expr: &Expr) -> Option<String> {
+  let mut inner = expr;
+  let mut font_size = 14.0;
+  while let Expr::FunctionCall { name, args } = inner {
+    if name != "Style" || args.is_empty() {
+      break;
+    }
+    for d in &args[1..] {
+      match d {
+        Expr::Integer(_) | Expr::Real(_) => {
+          if let Some(sz) = expr_to_f64(d).filter(|s| *s > 0.0) {
+            font_size = sz;
+          }
+        }
+        _ => {
+          if let Some(("FontSize", v)) = option_kv(d)
+            && let Some(sz) = expr_to_f64(v).filter(|s| *s > 0.0)
+          {
+            font_size = sz;
+          }
+        }
+      }
+    }
+    inner = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = inner else {
+    return None;
+  };
+  let over = match name.as_str() {
+    "Overscript" => true,
+    "Underscript" => false,
+    _ => return None,
+  };
+  // A picture over or under a caption is stacked by `nested_layout_svg`.
+  if args.len() != 2
+    || crate::evaluator::lays_out_a_graphic(inner)
+    || args.iter().any(holds_picture)
+  {
+    return None;
+  }
+  // `\[UnderBrace]` written bare is a symbol, quoted a string.
+  let script_qualifies = match &args[1] {
+    Expr::String(s) | Expr::Identifier(s) => {
+      horizontal_brace_shape(&Expr::String(s.clone()), over).is_some()
+    }
+    Expr::FunctionCall { .. } => true,
+    _ => false,
+  };
+  if !script_qualifies {
+    return None;
+  }
+  let boxes =
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr);
+  let layout = layout_box(&boxes, 14.0);
+  let mut svg = layout_to_svg(&layout, theme().text_primary);
+  // The text's central line (where a row sets its plain text items) sits
+  // about a third of the font size above the baseline.
+  let axis = (layout.baseline - font_size * 0.3).max(0.0);
+  crate::functions::container_layout::set_baseline_attr(&mut svg, axis);
+  Some(svg)
+}
+
 /// Render a resolved `Column`/`Row` item that is itself a layout construct
 /// (`Row[…]` / `Column[…]`) to a nested SVG, so mixed text/graphics rows
 /// compose instead of printing as raw InputForm text. `None` for other
@@ -31579,6 +32782,9 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
   // fraction instead of flattening it to `a/b` text; a `Style[…]` around it
   // sets the type size.
   if let Some(svg) = inline_fraction_string_svg(expr) {
+    return Some(svg);
+  }
+  if let Some(svg) = typeset_script_svg(expr) {
     return Some(svg);
   }
   // `picture -> picture` is laid out the way a grid cell holding one is.
@@ -31714,6 +32920,10 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // A progress bar drawn as a track with its filled fraction rather
       // than as `ProgressIndicator[…]` source text.
       "ProgressIndicator" => return progress_indicator_svg(&args),
+      // A static `CheckboxBar` shows its checkboxes and labels.
+      "CheckboxBar" if checkbox_bar_choices(&args).is_some() => {
+        return Some(crate::evaluator::expr_to_svg(expr));
+      }
       // `TraditionalForm[expr]` is typeset in conventional notation —
       // `=` for `Equal`, `≤` for `LessEqual`, `sin(x)` for `Sin[x]`,
       // stacked fractions — by the same box pipeline the top-level
@@ -32831,6 +34041,9 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       svg: String,
       width: f64,
       height: f64,
+      /// The picture's text axis below its top, when it records one: the
+      /// row lines that up with its text items' central line.
+      axis: Option<f64>,
     },
     Text {
       markup: String,
@@ -32862,10 +34075,15 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     // `Style[…, Opacity[a]]` fades the text, the way the directive fades
     // a graphics primitive.
     let mut opacity: f64 = 1.0;
+    // The text a `Style[…]` item sets: its directives go onto the cell's
+    // own `<text>` element, so typesetting the whole wrapper would apply
+    // them a second time (a relative `Larger` compounding to 156%).
+    let mut text_item = item;
     if let Expr::FunctionCall { name, args: sargs } = item
       && is_style_wrapper(name)
       && !sargs.is_empty()
     {
+      text_item = &sargs[0];
       for d in style_directives_in_application_order(&sargs[1..]) {
         if let Some(a) = text_opacity_directive(d) {
           opacity = a;
@@ -32877,7 +34095,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       }
     }
     let scale = st.font_size / font_size;
-    let markup = st.text_decoration.markup(&expr_to_svg_markup(item));
+    let markup = st.text_decoration.markup(&expr_to_svg_markup(text_item));
     // A markup string carrying its own `\n` (e.g. `ToString[1/3,
     // FormatType -> TraditionalForm]`'s stacked "1\n-\n3") needs one
     // line's worth of height per line, or the cell is sized for a single
@@ -32942,6 +34160,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
             svg: svg.clone(),
             width: w,
             height: h,
+            axis: None,
           }
         }
         // A raster image is a picture drawn at its own size, as in a
@@ -32954,6 +34173,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
             svg,
             width: w,
             height: h,
+            axis: None,
           }
         }
         _ => match nested_layout_svg(&resolved)
@@ -32961,10 +34181,13 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
+            let axis = crate::functions::container_layout::baseline_attr(&svg)
+              .filter(|a| a.is_finite() && (0.0..=h).contains(a));
             Cell::Svg {
               svg,
               width: w,
               height: h,
+              axis,
             }
           }
           // `Spacer[n]` between items is blank horizontal space, the same
@@ -33042,9 +34265,19 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     0.0
   };
   let content_w = items_width + seps_total;
+  // A picture that records its text axis is set with that axis on the
+  // row's center line, so it reaches as far above and below the center as
+  // the larger of its two extents.
   let total_h = cells
     .iter()
-    .map(&cell_height)
+    .map(|c| match c {
+      Cell::Svg {
+        height,
+        axis: Some(a),
+        ..
+      } if v_align == "center" => 2.0 * a.max(height - a),
+      _ => cell_height(c),
+    })
     .fold(font_size + pad_y, f64::max);
   let canvas_w = target_width.map_or(content_w, |w| w.max(content_w));
 
@@ -33191,8 +34424,12 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         svg: child,
         width,
         height,
+        axis,
       } => {
-        let y_off = cell_top(*height);
+        let y_off = match axis {
+          Some(a) if v_align == "center" => mid_y - a,
+          _ => cell_top(*height),
+        };
         // The child keeps its own coordinate space: a plot draws at a
         // multiple of its display size, so the nested `<svg>` needs the
         // child's viewBox or none of it lands inside the cell.
@@ -33816,7 +35053,7 @@ pub fn highlighted_to_svg(args: &[Expr]) -> Option<String> {
 }
 
 /// Parse width and height from an SVG's root element attributes.
-pub(crate) fn parse_svg_wh(svg: &str) -> (f64, f64) {
+pub fn parse_svg_wh(svg: &str) -> (f64, f64) {
   // Only the root `<svg …>` tag states the picture's size; a raster
   // `Image` writes its attributes in single quotes (`width='20'`).
   let root = svg.find("<svg").unwrap_or(0);
@@ -34084,31 +35321,123 @@ pub(crate) fn fit_tree_to_pane_width(
   Some(with_default_image_size(content, width as i128))
 }
 
-/// Break the text cells of `Pane[Grid[rows], width]` that are wider than
-/// the pane — a long list such as the rules of a graph — into lines that
-/// fit, the way the FrontEnd's line breaking does once the pane fixes the
-/// width. Returns the grid with those cells re-flowed, or `None` when no
-/// cell needed it.
+/// Break the text cells of `Pane[Grid[rows], width]` (or the items of a
+/// `Column`, looked at through `Text` and `Style`) that are wider than the
+/// pane — a long list such as the rules of a graph — into lines that fit,
+/// the way the FrontEnd's line breaking does once the pane fixes the width.
+/// Returns the layout with those cells re-flowed, or `None` when no cell
+/// needed it.
 pub(crate) fn wrap_wide_grid_text(
   grid: &Expr,
   width: f64,
   cell_width: &dyn Fn(&Expr) -> f64,
 ) -> Option<Expr> {
-  let (opts, mut rows) = grid_rows_of(grid)?;
-  // A cell keeps its padding on either side of the text.
-  let line_width = (width - 12.0).max(1.0);
-  let mut changed = false;
-  for row in &mut rows {
-    for cell in row.iter_mut() {
-      if cell_width(cell) > width + 0.5
-        && let Some(flowed) = wrap_list_text(cell, line_width, &[], cell_width)
-      {
-        *cell = flowed;
-        changed = true;
-      }
+  wrap_wide_layout_text(grid, width, &[], cell_width)
+}
+
+/// [`wrap_wide_grid_text`] measuring each cell by its rendered SVG: the
+/// layout `expr` with any text cell wider than `width` re-flowed into lines
+/// that fit, or `None` when nothing needed breaking. A Manipulate's
+/// `ContentSize` width is applied to its output this way.
+pub fn wrap_wide_text_to_width(expr: &Expr, width: f64) -> Option<Expr> {
+  wrap_wide_grid_text(expr, width, &|c| {
+    parse_svg_wh(&crate::evaluator::expr_to_svg(c)).0
+  })
+}
+
+fn wrap_wide_layout_text(
+  layout: &Expr,
+  width: f64,
+  styles: &[Expr],
+  cell_width: &dyn Fn(&Expr) -> f64,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = layout else {
+    return None;
+  };
+  // Measure a cell the way it is drawn: under the enclosing `Style`s.
+  let styled_width = |cell: &Expr| {
+    if styles.is_empty() {
+      cell_width(cell)
+    } else {
+      cell_width(&call(
+        "Style",
+        std::iter::once(cell.clone())
+          .chain(styles.iter().cloned())
+          .collect(),
+      ))
     }
+  };
+  let rebuilt = |first: Expr| {
+    let mut new_args = vec![first];
+    new_args.extend(args[1..].iter().cloned());
+    call(name, new_args)
+  };
+  match name.as_str() {
+    "Text" if args.len() == 1 => {
+      wrap_wide_layout_text(&args[0], width, styles, cell_width).map(rebuilt)
+    }
+    _ if is_style_wrapper(name) && !args.is_empty() => {
+      let mut inner_styles = styles.to_vec();
+      inner_styles.extend(args[1..].iter().cloned());
+      wrap_wide_layout_text(&args[0], width, &inner_styles, cell_width)
+        .map(rebuilt)
+    }
+    "Grid" => {
+      let (opts, mut rows) = grid_rows_of(layout)?;
+      // A cell keeps its padding on either side of the text.
+      let line_width = (width - 12.0).max(1.0);
+      let mut changed = false;
+      for row in &mut rows {
+        for cell in row.iter_mut() {
+          if styled_width(cell) > width + 0.5
+            && let Some(flowed) =
+              wrap_list_text(cell, line_width, styles, cell_width)
+          {
+            *cell = flowed;
+            changed = true;
+          }
+        }
+      }
+      changed.then(|| rebuild_grid(opts, rows))
+    }
+    // A `Column`'s items share the full width; one wider than it breaks
+    // into lines the same way. Its lines are measured as the column draws
+    // them, which sets text tighter than a bare expression on its own.
+    "Column" if !args.is_empty() => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let in_column = |e: &Expr| {
+        cell_width(&call1("Column", Expr::List(vec![e.clone()].into())))
+      };
+      let mut changed = false;
+      let flowed: Vec<Expr> = items
+        .iter()
+        .map(|item| {
+          let styled = if styles.is_empty() {
+            item.clone()
+          } else {
+            call(
+              "Style",
+              std::iter::once(item.clone())
+                .chain(styles.iter().cloned())
+                .collect(),
+            )
+          };
+          if in_column(&styled) > width + 0.5
+            && let Some(lines) = wrap_list_text(item, width, styles, &in_column)
+          {
+            changed = true;
+            lines
+          } else {
+            item.clone()
+          }
+        })
+        .collect();
+      changed.then(|| rebuilt(Expr::List(flowed.into())))
+    }
+    _ => None,
   }
-  changed.then(|| rebuild_grid(opts, rows))
 }
 
 /// Re-flow the list shown by `expr` (looked at through `Labeled`, `Text`
@@ -35532,6 +36861,10 @@ pub struct LabelRun {
   /// The run's font size in points, when `Style` gave it one
   /// (`Style["t", 16]` or `FontSize -> 16`).
   pub size: Option<f64>,
+  /// The run is a subscript Unicode has no glyphs for (`Subscript["V",
+  /// "y"]`): its text stays plain and the UI must set it lowered and
+  /// smaller, as Wolfram typesets a script.
+  pub subscript: bool,
 }
 
 /// The font size a `Style`'s directives set: a bare number or
@@ -35728,6 +37061,12 @@ pub enum ManipulateControl {
     /// Only affects the SetterBar/RadioButtonBar bar layout; a dropdown or
     /// index slider ignores it.
     vertical: bool,
+    /// `ControlType -> Checkbox` over a two-choice domain (`{{k, 1}, {1, 0},
+    /// Checkbox}`): draw a checkbox whatever the choices are, like
+    /// `Checkbox[x, {v1, v2}]` — unchecked sets the first choice, checked
+    /// the second. Without it only a bare `{True, False}` domain is a
+    /// checkbox and `{1, 0}` would become a two-button SetterBar.
+    checkbox: bool,
   },
   /// A 2D control (`ControlType -> Slider2D`, or a 2D range spec
   /// `{u, {xmin, ymin}, {xmax, ymax}}`). Binds its variable to a 2-vector
@@ -35987,6 +37326,12 @@ pub struct ManipulateSpec {
   /// form (`ControlPlacement -> n`, for a `Place[n]` layout template) is
   /// not a side and is ignored.
   pub control_placements: Vec<(String, ControlPlacement)>,
+  /// Names of the controls that share a line of the control panel with the
+  /// control before them, because a `Row[{Control[…], Spacer[…],
+  /// Control[…]}]` argument places both side by side (see
+  /// `collect_row_joined_controls`). The first control of each such row
+  /// does not appear here.
+  pub row_joined_controls: Vec<String>,
   /// `(control name, reset code)` for a `LocatorPane`/`Locator` variable
   /// promoted from a plain body-local `var = expr;` assignment (see
   /// `collect_body_locator_pane_vars`), where `expr` references another
@@ -36039,6 +37384,11 @@ pub struct ManipulateSpec {
   /// usually asks for `Left` so the controls run down beside the picture
   /// instead of pushing it off screen.
   pub control_placement: ControlPlacement,
+  /// The width of `ContentSize -> w | {w, h}`: the content area the body is
+  /// shown in. Text wider than it (a long list) breaks into lines at this
+  /// width, as the FrontEnd lays it out. `None` when no numeric width is
+  /// given (the area then grows with its content).
+  pub content_width: Option<f64>,
   /// `(synthesized control name, parent variable, 1-based index)` for every
   /// `ParsedControl::ListElement` control — a slider generated by
   /// `Evaluate[Sequence @@ Table[…]]` for one `Part` of a shared list
@@ -36861,6 +38211,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut appearance_none = false;
   let mut tracked_symbols: Option<Vec<String>> = None;
   let mut control_placement = ControlPlacement::default();
+  let mut content_width: Option<f64> = None;
   // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
   // successive controls, applied once the controls are known.
   let mut successive_placements: Vec<ControlPlacement> = Vec::new();
@@ -36887,6 +38238,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // before it in a `Row[{Button[…], Button[…], …}]` argument (see
   // `collect_row_joined_buttons`).
   let mut row_joined_buttons: Vec<(String, String)> = Vec::new();
+  // Names of the controls placed right after another control in a
+  // `Row[{Control[…], Control[…]}]` argument (see
+  // `collect_row_joined_controls`).
+  let mut row_joined_controls: Vec<String> = Vec::new();
   // An evaluated `Animate[…, AnimationRunning -> False]` carries the option
   // in its control specification (`{x, 0, 1, AnimationRunning -> False,
   // …}`), not among the Manipulate's own options.
@@ -36948,6 +38303,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // up the condition under which they are on screen.
     collect_pane_visibility(spec, &place_map, &mut control_visible, None);
     collect_row_joined_buttons(spec, &mut row_joined_buttons);
+    collect_row_joined_controls(spec, &mut row_joined_controls);
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -37118,6 +38474,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // `ContentSize -> w` or `{w, h}` (possibly computed, as in
+      // `1.25 {400, 300}`) fixes the width of the content area.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "ContentSize") {
+        content_width = manipulate_content_width(replacement);
       }
       // `ControlPlacement -> {Top, Top, Left, Right}` places successive
       // controls on the listed sides, one entry per control.
@@ -38120,6 +39481,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values,
     dynamic_labels,
     control_placements,
+    row_joined_controls,
     dynamic_locator_defaults,
     animation_var,
     animated,
@@ -38128,9 +39490,22 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols,
     tracking,
     control_placement,
+    content_width,
     list_elements,
     bookmarks,
   })
+}
+
+/// The numeric width of a `ContentSize` setting: `w` or the first entry of
+/// `{w, h}`, evaluated first so a computed size such as `1.25 {400, 300}`
+/// counts. `None` for `Automatic` and other non-numeric widths.
+fn manipulate_content_width(setting: &Expr) -> Option<f64> {
+  let value = evaluate_expr_to_expr(setting).ok()?;
+  let width = match &value {
+    Expr::List(items) => items.first()?.clone(),
+    other => other.clone(),
+  };
+  try_eval_to_f64(&width).filter(|w| w.is_finite() && *w > 0.0)
 }
 
 /// Whether `s` names one of Wolfram's control types, i.e. a value
@@ -40117,6 +41492,66 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
   }
 }
 
+/// Record the name of each `Control[spec]` that a `Row[{…}]` places
+/// directly after another `Control[…]`, so the two share one line of the
+/// control panel the way Wolfram lays such a row out (e.g. a setter bar
+/// with a 2D slider beside it). Layout containers (`Column[{Row[…],
+/// Row[…]}]`, …) are searched for such rows. `Spacer[…]` and string items
+/// between two controls keep them on the same line; any other item breaks
+/// the run.
+fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
+  match spec {
+    Expr::FunctionCall { name, args } if name == "Row" => {
+      let Some(Expr::List(items)) = args.first() else {
+        return;
+      };
+      let mut after_control = false;
+      for item in items {
+        let item = match item {
+          Expr::FunctionCall { name, args: inner }
+            if name == "Item" && !inner.is_empty() =>
+          {
+            &inner[0]
+          }
+          _ => item,
+        };
+        match item {
+          Expr::FunctionCall { name, args: c }
+            if name == "Control" && !c.is_empty() =>
+          {
+            match control_spec_variable(&c[0]) {
+              Some(var) => {
+                if after_control {
+                  out.push(var);
+                }
+                after_control = true;
+              }
+              None => after_control = false,
+            }
+          }
+          Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+          Expr::String(_) => {}
+          other => {
+            after_control = false;
+            collect_row_joined_controls(other, out);
+          }
+        }
+      }
+    }
+    Expr::FunctionCall { args, .. } => {
+      for a in args {
+        collect_row_joined_controls(a, out);
+      }
+    }
+    Expr::List(items) => {
+      for a in items {
+        collect_row_joined_controls(a, out);
+      }
+    }
+    _ => {}
+  }
+}
+
 /// Replace each bare symbol inside a `Row`/`Column`/`Grid` control-layout
 /// argument whose value is a button (`Button[…]` or `ButtonBar[…]`) by
 /// that value. Demonstrations often build their buttons up front
@@ -41436,7 +42871,15 @@ fn dynamic_step_code(spec: &Expr) -> Option<String> {
     })
     .nth(2)?;
   let (stripped, found) = manipulate_bound_expr_deep(step);
-  found.then(|| crate::syntax::expr_to_source_form(&stripped))
+  // A step naming another control's variable (`{{time, 0}, 0, tMax, step,
+  // Trigger}` with a speed setter for `step`) only resolves through the
+  // live bindings, so it follows that control too.
+  let follows_binding = !found
+    && crate::functions::math_ast::try_eval_to_f64_with_infinity(&stripped)
+      .is_none()
+    && matches!(eval_manipulate_bound(step), Some((_, true)));
+  (found || follows_binding)
+    .then(|| crate::syntax::expr_to_source_form(&stripped))
 }
 
 /// `Animate[expr, {var, min, max, …}, opts…]` nested inside a static
@@ -41667,7 +43110,14 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       values.push(crate::syntax::expr_to_source_form(item));
       labels.push(flatten_label_runs(&runs));
       label_runs.push(runs);
-      svgs.push(None);
+      // A bare arithmetic choice (`{1/2, 1, 2}`, `{Pi/4, Pi/2}`) is shown
+      // the way the FrontEnd typesets the value — a stacked fraction —
+      // just like an arithmetic `value -> label` rule label.
+      svgs.push(if is_arithmetic_label(item) {
+        discrete_choice_label_svg(item)
+      } else {
+        None
+      });
     }
   }
   (values, labels, svgs, label_runs)
@@ -41699,6 +43149,24 @@ fn dynamic_button_label_code(label: &Expr) -> Option<String> {
       if name == "Dynamic" && !args.is_empty() =>
     {
       Some(crate::syntax::expr_to_source_form(&args[0]))
+    }
+    _ => None,
+  }
+}
+
+/// The code of a computed (non-literal) button label of a custom control
+/// (`If[…]`, `Switch[…]`, a symbol), or `None` for literal text and the
+/// typesetting wrappers around it.
+fn computed_button_label_code(label: &Expr) -> Option<String> {
+  match label {
+    Expr::Identifier(_) => Some(crate::syntax::expr_to_source_form(label)),
+    Expr::FunctionCall { name, .. }
+      if !matches!(
+        name.as_str(),
+        "Style" | "Row" | "Column" | "Text" | "Graphics" | "Pane" | "Dynamic"
+      ) =>
+    {
+      Some(crate::syntax::expr_to_source_form(label))
     }
     _ => None,
   }
@@ -41802,6 +43270,15 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
     {
       Some(crate::syntax::expr_to_source_form(&args[0]))
     }
+    // A static picture caption (`{{t, 1, Graphics[…]}, 0, 1}`) has no text
+    // to store on the control, so it travels as caption code too and the
+    // frontend renders it to an icon (see `manipulate_eval_caption`).
+    label
+      if !matches!(label, Expr::Graphics { .. } | Expr::Image { .. })
+        && crate::evaluator::lays_out_a_graphic(label) =>
+    {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
     _ => None,
   }
 }
@@ -41809,9 +43286,39 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
 /// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
 /// current bindings and typeset it into label runs.
 pub fn manipulate_eval_label_code(code: &str) -> Option<Vec<LabelRun>> {
+  manipulate_eval_caption(code).map(|(runs, _)| runs)
+}
+
+/// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
+/// current bindings, returning its label runs together with the rendered
+/// SVG of a caption that is a picture. `{{t, 1, Dynamic[Framed@Graphics[
+/// {Disk[{0, 0}, 1, {0, t}]}]]}, 0, 2 Pi}` names a slider with a sector
+/// icon showing the current angle; such a caption has no text (its runs
+/// are empty), so the frontend draws the icon in the label column instead.
+pub fn manipulate_eval_caption(
+  code: &str,
+) -> Option<(Vec<LabelRun>, Option<String>)> {
   let expr = crate::interpret_to_expr(code).ok()?;
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
-  Some(manipulate_label_runs(&evaluated, false))
+  let runs = manipulate_label_runs(&evaluated, false);
+  // Only a caption with no words of its own becomes an icon; one that
+  // pairs a picture with words (`Row[{Pane[ArrayPlot[…]], "multiplier"}]`)
+  // keeps being labeled by the words.
+  let svg = if flatten_label_runs(&runs).trim().is_empty() {
+    control_caption_svg(&evaluated)
+  } else {
+    None
+  };
+  let runs = if svg.is_some() { Vec::new() } else { runs };
+  Some((runs, svg))
+}
+
+/// The SVG of a control caption that is a picture, or a layout wrapper
+/// (`Framed`, `Pane`, `Row`, …) holding one; `None` for a text caption.
+fn control_caption_svg(caption: &Expr) -> Option<String> {
+  crate::evaluator::lays_out_a_graphic(caption)
+    .then(|| crate::evaluator::expr_to_svg(caption))
+    .filter(|svg| svg.starts_with("<svg"))
 }
 
 /// Flatten label runs to the plain text a styling-blind consumer shows.
@@ -42003,6 +43510,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -42011,6 +43519,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42067,6 +43576,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     radio: false,
     slider: false,
     vertical: false,
+    checkbox: false,
   };
   Some(ManipulateSpec {
     module_locals: Vec::new(),
@@ -42082,6 +43592,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -42090,6 +43601,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42176,6 +43688,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: true,
@@ -42184,6 +43697,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42378,6 +43892,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -42386,6 +43901,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42440,6 +43956,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var: None,
     animated: false,
@@ -42448,6 +43965,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42512,6 +44030,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     dynamic_values: Vec::new(),
     dynamic_labels: Vec::new(),
     control_placements: Vec::new(),
+    row_joined_controls: Vec::new(),
     dynamic_locator_defaults: Vec::new(),
     animation_var,
     animated: animate.is_some(),
@@ -42520,6 +44039,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     tracked_symbols: None,
     tracking: Vec::new(),
     control_placement: ControlPlacement::default(),
+    content_width: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
   })
@@ -42697,9 +44217,28 @@ fn split_label_run_lines(runs: Vec<LabelRun>) -> Vec<Vec<LabelRun>> {
 /// text with the middle of a `Column` beside it. So
 /// `Row[{"text", Column[{Spacer[1], Spacer[1], Spacer[1]}]}]` (vertical
 /// padding around a slider caption) puts the text on the middle line.
-fn row_label_runs(pieces: Vec<Vec<LabelRun>>, italic: bool) -> Vec<LabelRun> {
+///
+/// Only a part that is itself a block layout (`blocks[i]` set) keeps its
+/// lines apart. Text parts flow into one another, so a string with an
+/// embedded newline breaks the line in place:
+/// `Row[{"index ", Style["p", Italic], "\n(set ", Style["q", Italic], " = 1)"}]`
+/// reads "index p" over "(set q = 1)".
+fn row_label_runs(
+  pieces: Vec<(Vec<LabelRun>, bool)>,
+  italic: bool,
+) -> Vec<LabelRun> {
+  let mut merged: Vec<Vec<LabelRun>> = Vec::new();
+  let mut flowing = false;
+  for (runs, block) in pieces {
+    if !block && flowing {
+      merged.last_mut().unwrap().extend(runs);
+    } else {
+      merged.push(runs);
+    }
+    flowing = !block;
+  }
   let pieces: Vec<Vec<Vec<LabelRun>>> =
-    pieces.into_iter().map(split_label_run_lines).collect();
+    merged.into_iter().map(split_label_run_lines).collect();
   let height = pieces.iter().map(Vec::len).max().unwrap_or(1);
   let mut lines: Vec<Vec<LabelRun>> = vec![Vec::new(); height];
   for piece in pieces {
@@ -42720,6 +44259,23 @@ fn row_label_runs(pieces: Vec<Vec<LabelRun>>, italic: bool) -> Vec<LabelRun> {
     out.extend(line);
   }
   out
+}
+
+/// Whether a `Row` part lays its content out as a block of lines of its
+/// own (a `Column`, `Grid`, …, possibly inside `Style`), rather than being
+/// text that flows into its neighbors.
+fn is_label_block(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => match name.as_str() {
+      "Column" | "GraphicsColumn" | "Grid" | "TableForm" | "TextGrid"
+      | "GridBox" | "MatrixForm" => true,
+      "Style" | "Framed" | "Pane" | "Item" => {
+        args.first().is_some_and(is_label_block)
+      }
+      _ => false,
+    },
+    _ => false,
+  }
 }
 
 /// Renders a `Grid`/`TableForm`/`TextGrid` row list as label runs: each
@@ -42840,6 +44396,40 @@ fn number_form_text(expr: &Expr) -> Option<String> {
   }
 }
 
+/// The string factors of a `Times` (held `BinaryOp` or `FunctionCall`
+/// form) whose every factor is a string; `None` for any other expression.
+fn string_product_factors(expr: &Expr) -> Option<Vec<String>> {
+  fn collect(expr: &Expr, out: &mut Vec<String>) -> bool {
+    match expr {
+      Expr::String(s) => {
+        out.push(s.clone());
+        true
+      }
+      Expr::FunctionCall { name, args } if name == "Times" => {
+        args.iter().all(|a| collect(a, out))
+      }
+      Expr::BinaryOp {
+        op: crate::syntax::BinaryOperator::Times,
+        left,
+        right,
+      } => collect(left, out) && collect(right, out),
+      _ => false,
+    }
+  }
+  let is_product = matches!(
+    expr,
+    Expr::FunctionCall { name, .. } if name == "Times"
+  ) || matches!(
+    expr,
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Times,
+      ..
+    }
+  );
+  let mut out = Vec::new();
+  (is_product && collect(expr, &mut out)).then_some(out)
+}
+
 fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let output_run = |italic: bool| {
     let text =
@@ -42876,6 +44466,26 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       ..Default::default()
     });
     return runs;
+  }
+  // A product of strings — a caption written as juxtaposed literals like
+  // `"viewpoint" ""` — is set side by side the way the notebook shows a
+  // product, not joined with the `*` of its InputForm.
+  if let Some(texts) = string_product_factors(expr) {
+    let text = texts
+      .iter()
+      .filter(|s| !s.is_empty())
+      .cloned()
+      .collect::<Vec<_>>()
+      .join(" ");
+    return if text.is_empty() {
+      vec![]
+    } else {
+      vec![LabelRun {
+        text,
+        italic: false,
+        ..Default::default()
+      }]
+    };
   }
   // A quantity reads with its unit abbreviated (`286 K`), as the notebook
   // typesets it, not spelled out the way `ToString` writes it.
@@ -43193,9 +44803,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           let mut pieces = Vec::new();
           for (i, p) in parts.iter().enumerate() {
             if i > 0 && !separator.is_empty() {
-              pieces.push(separator.clone());
+              pieces.push((separator.clone(), false));
             }
-            pieces.push(manipulate_label_runs(p, italic));
+            pieces.push((manipulate_label_runs(p, italic), is_label_block(p)));
           }
           row_label_runs(pieces, italic)
         }
@@ -44066,6 +45676,21 @@ fn script_runs(
       restyle(&mut runs, &|t| {
         format!("{SUPERSCRIPT_START}{t}{SUPERSCRIPT_END}")
       });
+    } else if !superscript
+      && text
+        .chars()
+        .any(|c| unicode_script_char(c, false).is_none())
+    {
+      // No subscript glyphs for some letter (`Subscript["V", "y"]`): keep
+      // the whole script as plain text flagged as a subscript, so the UI
+      // sets it lowered and smaller instead of drawing it full size next
+      // to the base (or as a half-mapped mix of glyphs and letters).
+      runs.extend(script_runs.iter().filter(|r| !r.text.is_empty()).map(|r| {
+        LabelRun {
+          subscript: true,
+          ..r.clone()
+        }
+      }));
     } else {
       restyle(&mut runs, &|t| to_unicode_script(t, superscript));
     }
@@ -44914,7 +46539,14 @@ fn parse_manipulate_control(
         )
       })
       .filter(|_| max.is_finite());
-    let step = bounds.get(2).and_then(|e| expr_to_f64(e)).unwrap_or(1.0);
+    // The step may name another control's variable (a speed setter), so
+    // it is resolved against the bindings like the bounds are.
+    let step = bounds
+      .get(2)
+      .and_then(|e| eval_manipulate_bound(e))
+      .map(|(v, _)| v)
+      .filter(|v| v.is_finite() && *v != 0.0)
+      .unwrap_or(1.0);
     let initial = explicit_initial
       .as_ref()
       .and_then(crate::functions::math_ast::try_eval_to_f64)
@@ -45213,6 +46845,8 @@ fn parse_manipulate_control(
       .then(|| {
         crate::syntax::expr_to_source_form(unwrap_dynamic_choices(bounds[0]))
       });
+      let forced_checkbox =
+        control_type.as_deref() == Some("Checkbox") && values.len() == 2;
       return Some(ParsedControl::Visible {
         control: ManipulateControl::Discrete {
           name,
@@ -45247,6 +46881,7 @@ fn parse_manipulate_control(
             Some("Slider" | "VerticalSlider" | "Manipulator")
           ),
           vertical: appearance_vertical,
+          checkbox: forced_checkbox,
         },
         enabled,
         min_code: None,
@@ -45355,7 +46990,11 @@ fn parse_manipulate_control(
         label_runs: button_runs,
         action: crate::syntax::expr_to_source_form(&built_args[1]),
         enabled: None,
-        label_code: dynamic_button_label_code(&built_args[0]),
+        // Wolfram wraps a custom control in `Dynamic`, so a computed label
+        // (`If[mode == 2, "new test", "add samples"]`) follows the other
+        // controls just like an explicit `Dynamic[label]`.
+        label_code: dynamic_button_label_code(&built_args[0])
+          .or_else(|| computed_button_label_code(&built_args[0])),
         joins_previous: false,
       },
     });
@@ -46952,6 +48591,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         radio,
         slider,
         vertical,
+        checkbox,
       } => {
         let value_parts: Vec<String> = values
           .iter()
@@ -46970,6 +48610,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         let radio_json = if *radio { r#","radio":true"# } else { "" };
         let slider_json = if *slider { r#","slider":true"# } else { "" };
         let vertical_json = if *vertical { r#","vertical":true"# } else { "" };
+        let checkbox_json = if *checkbox { r#","checkbox":true"# } else { "" };
         // Icon labels (rule right sides that are graphics) ride along as
         // rendered SVG, parallel to `values`; omitted when all-text.
         let svg_json = if value_label_svgs.iter().any(Option::is_some) {
@@ -47002,7 +48643,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           String::new()
         };
         ctrl_parts.push(format!(
-          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}{}}}"#,
+          r#"{{"kind":"discrete","name":"{}","label":"{}","labelRuns":{},"values":[{}],"valueLabels":[{}],"initialIndex":{}{}{}{}{}{}{}{}{}}}"#,
           json_escape_manipulate(name),
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
@@ -47014,6 +48655,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
           radio_json,
           slider_json,
           vertical_json,
+          checkbox_json,
           svg_json,
           runs_json,
         ));
@@ -49628,6 +51270,45 @@ mod manipulate_label_tests {
     assert_eq!(runs(&sub), vec![run("x", false), run("\u{1D6A}", false)]);
   }
 
+  /// A subscript letter with no Unicode subscript glyph (`y`, `z`, a
+  /// capital) keeps its plain text but is flagged as a subscript so the UI
+  /// sets it smaller, instead of drawing `Subscript["V", "y"]` as a
+  /// full-size "Vy". Mappable scripts keep their Unicode glyphs.
+  #[test]
+  fn unmappable_subscript_is_flagged_as_subscript_run() {
+    let sub_run = |t: &str| LabelRun {
+      subscript: true,
+      ..run(t, false)
+    };
+    for letter in ["y", "z", "N", "q"] {
+      let label = call("Subscript", vec![str_expr("V"), str_expr(letter)]);
+      assert_eq!(runs(&label), vec![run("V", false), sub_run(letter)]);
+    }
+    // A script mixing mappable and unmappable letters stays whole rather
+    // than becoming a half-mapped mix of glyphs and plain letters.
+    let label = call("Subscript", vec![id_expr("v"), str_expr("xy")]);
+    assert_eq!(runs(&label), vec![run("v", false), sub_run("xy")]);
+    // Fully mappable scripts still fold into Unicode subscript glyphs.
+    let label = call("Subscript", vec![str_expr("V"), str_expr("x")]);
+    assert_eq!(runs(&label), vec![run("V", false), run("\u{2093}", false)]);
+    // Inside a `Row` caption, as a Manipulate control label writes it.
+    let row = call1(
+      "Row",
+      Expr::List(
+        vec![
+          str_expr("viewpoint "),
+          call("Subscript", vec![str_expr("V"), str_expr("z")]),
+        ]
+        .into(),
+      ),
+    );
+    assert_eq!(
+      runs(&row),
+      vec![run("viewpoint ", false), run("V", false), sub_run("z")]
+    );
+    assert_eq!(flatten_label_runs(&runs(&row)), "viewpoint Vz");
+  }
+
   #[test]
   fn row_concatenates_parts_preserving_style() {
     let italic_a = call("Style", vec![str_expr("a"), id_expr("Italic")]);
@@ -51545,6 +53226,50 @@ mod manipulate_traditional_form_choice_svg_tests {
       "the italic flag itself must survive into the JSON: {json}"
     );
   }
+
+  /// An explicit `Checkbox` control type over a two-choice, non-boolean
+  /// domain (`{{k, 1, "label"}, {1, 0}, Checkbox}`) is still a checkbox —
+  /// unchecked binds the first choice, checked the second — so the spec
+  /// must flag it (and export the flag) instead of leaving it to the
+  /// boolean-only checkbox heuristic, which would draw two buttons.
+  #[test]
+  fn explicit_checkbox_over_numeric_choices_is_flagged() {
+    for code in [
+      "Manipulate[k, {{k, 1, \"drop term\"}, {1, 0}, Checkbox}]",
+      "Manipulate[k, {{k, 0, \"show\"}, {0, 1}, ControlType -> Checkbox}]",
+    ] {
+      let expr = crate::parse_to_expr(code).expect("parse");
+      let spec = extract_manipulate_spec(&expr).expect("extract spec");
+      match &spec.controls[..] {
+        [
+          ManipulateControl::Discrete {
+            values,
+            initial_index,
+            checkbox,
+            setter_bar,
+            ..
+          },
+        ] => {
+          assert_eq!(values.len(), 2, "{code}");
+          assert_eq!(*initial_index, 0, "{code}");
+          assert!(*checkbox, "{code} must be a checkbox");
+          assert!(!*setter_bar, "{code}");
+        }
+        other => panic!("expected one discrete control, got {other:?}"),
+      }
+      let json = manipulate_spec_to_json(&spec);
+      assert!(json.contains(r#""checkbox":true"#), "{json}");
+    }
+
+    // Without the control type, a numeric pair stays a setter.
+    let expr =
+      crate::parse_to_expr("Manipulate[k, {{k, 1}, {1, 0}}]").expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    match &spec.controls[..] {
+      [ManipulateControl::Discrete { checkbox, .. }] => assert!(!*checkbox),
+      other => panic!("expected one discrete control, got {other:?}"),
+    }
+  }
 }
 
 #[cfg(test)]
@@ -51605,6 +53330,27 @@ mod manipulate_button_enabled_tests {
     .map(|(l, j)| (l.to_string(), *j))
     .collect();
     assert_eq!(joins, expected);
+  }
+
+  /// Controls written side by side in one `Row[{Control[…], Spacer[…],
+  /// Control[…]}]` argument share one line of the control panel: every
+  /// control after the first of a row is recorded as joining the one
+  /// before it. A plain control spec, a new `Row`, and a non-control item
+  /// between two controls each start a new line.
+  #[test]
+  fn row_of_controls_shares_one_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{p, q, r, s, t, u, v}, \
+       Row[{Control[{{p, 1, \"first\"}, {1, 2, 3}}], Spacer[20], \
+       Control @ {{q, {0.5, 0.5}}, {0, 0}, {1, 1}}, \"\", \
+       Control[{r, 0, 1}]}], \
+       {s, 0, 1}, \
+       Row[{Control[{t, 0, 1}], Graphics[{}], Control[{u, 0, 1}]}], \
+       Column[{Row[{Control[{v, 0, 1}], Control[{{w, 2}, {1, 2}}]}]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.row_joined_controls, vec!["q", "r", "w"]);
   }
 
   #[test]
@@ -52046,6 +53792,7 @@ mod review_layout_tests {
       0,
       TITLE_FONT,
       LABEL_FONT,
+      TICK_FONT,
     );
     for (label, measured) in labels.iter().zip(&d.axis_ticks.1) {
       let width =

@@ -1390,6 +1390,18 @@ fn clip_segments_to_y_range(
   y_max: f64,
   join_across_jumps: bool,
 ) -> Vec<Vec<(f64, f64)>> {
+  // A sample that overshoots a range edge only by floating-point noise
+  // (e.g. a running total ending at 100.00000000000003 under
+  // `PlotRange -> {0, 100}`) lies on the edge, so a curve running along the
+  // edge stays drawn instead of vanishing. Matches the tolerance of the
+  // `Show` clipper (`clip_segment_to_y_range` in graphics.rs).
+  let (y_min, y_max) =
+    if y_min.is_finite() && y_max.is_finite() && y_min < y_max {
+      let pad = (y_max - y_min) * 1e-9;
+      (y_min - pad, y_max + pad)
+    } else {
+      (y_min, y_max)
+    };
   let mut result: Vec<Vec<(f64, f64)>> = Vec::new();
 
   for segment in segments {
@@ -3663,8 +3675,10 @@ pub(crate) struct PlotOptions {
   /// Explicit horizontal grid lines. Replace automatic `grid_lines_y` lines.
   pub grid_y_lines: Vec<GridLine>,
   /// `GridLinesStyle -> Directive[…]`: the default style for every grid line
-  /// that carries no style of its own. `None` = the built-in gray.
-  pub grid_lines_style: Option<SeriesStyle>,
+  /// that carries no style of its own, as `(x lines, y lines)` —
+  /// `GridLinesStyle -> {xstyle, ystyle}` styles the two sets apart.
+  /// `None` = the built-in gray.
+  pub grid_lines_style: (Option<SeriesStyle>, Option<SeriesStyle>),
   /// Use frame (left+bottom border) instead of axes
   pub frame: bool,
   /// The unpadded (x, y) plot range of a list plot: its automatic grid
@@ -3970,6 +3984,16 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Drop every `FrameLabel` edge, plain text and picture alike.
+  pub(crate) fn clear_frame_labels(&mut self) {
+    self.frame_label_bottom = None;
+    self.frame_label_left = None;
+    self.frame_label_top = None;
+    self.frame_label_right = None;
+    self.frame_label_bottom_graphic = None;
+    self.frame_label_top_graphic = None;
+  }
+
   /// The plotting area's height / width when `ImageSize -> {w, h}` fixed
   /// the image height: the area then keeps its own shape (the
   /// `AspectRatio`, the data's shape under `AspectRatio -> Automatic`, else
@@ -4046,7 +4070,7 @@ impl Default for PlotOptions {
       grid_full_y: false,
       grid_x_lines: Vec::new(),
       grid_y_lines: Vec::new(),
-      grid_lines_style: None,
+      grid_lines_style: (None, None),
       frame: false,
       frame_edges: FrameEdges::ALL,
       frame_hidden_edges: FrameEdges::NONE,
@@ -4577,6 +4601,17 @@ fn grid_line_props(
   (rgb, stroke_w, style.dashing.clone())
 }
 
+/// The attribute that keeps a run of blanks a label asks for
+/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
+/// space; empty when the markup has no such run.
+fn preserve_blanks_attr(markup: &str) -> &'static str {
+  if markup.contains("  ") {
+    " xml:space=\"preserve\""
+  } else {
+    ""
+  }
+}
+
 /// A label that spans several lines (a `Column[…]` tick label) as one
 /// `<tspan>` per line, each re-anchored at `x` and `line_height` below the
 /// previous one. A single-line label is returned unchanged.
@@ -4733,15 +4768,17 @@ pub(crate) fn plot_labels_svg(
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
   let mut labels_svg = String::new();
+  // The label's `xml:space` attribute (kept blank runs) and its content.
   let text_svg = |label: &str, x: f64| {
-    stacked_lines_svg(
+    let markup = stacked_lines_svg(
       &crate::functions::graphics::box_string_to_svg_scaled(
         label,
         RESOLUTION_SCALE as f64,
       ),
       x,
       pitch,
-    )
+    );
+    (preserve_blanks_attr(&markup), markup)
   };
   // Bottom/left FrameLabel: centered outside the plot area, 6 pt beyond
   // the tick labels of their edge.
@@ -4753,11 +4790,11 @@ pub(crate) fn plot_labels_svg(
     let cx = plot_x0 + plot_w / 2.0;
     let base_y = bottom_label_top + ascent(label_pt) * sf;
     bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
+    let (keep, markup) = text_svg(x_label, cx);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{fill}\">{}</text>\n",
-      text_svg(x_label, cx),
+         fill=\"{fill}\"{keep}>{markup}</text>\n",
       fill = edge_fill(0),
     ));
   }
@@ -4793,11 +4830,11 @@ pub(crate) fn plot_labels_svg(
       - gap
       - block_height(lines_of(y_label), label_pt) * sf;
     let lx = box_left + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(y_label, lx);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(y_label, lx),
+         fill=\"{fill}\" transform=\"rotate(-90,{lx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
       fill = edge_fill(1),
     ));
   }
@@ -4876,11 +4913,11 @@ pub(crate) fn plot_labels_svg(
     // One element per line, so no renderer collapses the breaks.
     for (i, line) in top_label.split('\n').enumerate() {
       let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
+      let (keep, markup) = text_svg(line, cx);
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-           fill=\"{fill}\">{}</text>\n",
-              text_svg(line, cx),
+           fill=\"{fill}\"{keep}>{markup}</text>\n",
       fill = edge_fill(2),
       ));
     }
@@ -4907,11 +4944,11 @@ pub(crate) fn plot_labels_svg(
   {
     let cy = margin_top + plot_h / 2.0;
     let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
+    let (keep, markup) = text_svg(right_label, rx);
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
-         fill=\"{fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\">{}</text>\n",
-      text_svg(right_label, rx),
+         fill=\"{fill}\" transform=\"rotate(-90,{rx:.1},{cy:.1})\"{keep}>{markup}</text>\n",
       fill = edge_fill(3),
     ));
   }
@@ -4959,9 +4996,13 @@ pub(crate) fn plot_labels_svg(
       let h =
         line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
       let top = ty - ascent(fs / sf) * sf - margin;
+      // `Background -> color` fills the box behind the title.
+      let fill = sl
+        .background
+        .map_or_else(|| "none".to_string(), super::graphics::Color::to_svg_rgb);
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"none\" \
+           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{fill}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
         3.0 * sf,
@@ -4999,13 +5040,8 @@ pub(crate) fn plot_labels_svg(
       ));
       return labels_svg;
     }
-    // A run of blanks the label asks for (`Row[{a, "    ", b}]`) is kept
-    // instead of collapsing into one space.
-    let preserve_attr = if body.contains("  ") {
-      " xml:space=\"preserve\""
-    } else {
-      ""
-    };
+    // A run of blanks the label asks for is kept.
+    let preserve_attr = preserve_blanks_attr(&body);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
@@ -5607,6 +5643,26 @@ fn without_axis_only_ticks(
   std::borrow::Cow::Owned(out)
 }
 
+/// `FrameLabel` captions the frame's edges, so a plot without a frame
+/// (`Frame -> False`, the default for `Plot`/`ListPlot`) shows none of
+/// them, just as Wolfram ignores the option there.
+fn without_unframed_frame_labels(
+  opts: &PlotOptions,
+) -> std::borrow::Cow<'_, PlotOptions> {
+  let has_label = opts.frame_label_bottom.is_some()
+    || opts.frame_label_left.is_some()
+    || opts.frame_label_top.is_some()
+    || opts.frame_label_right.is_some()
+    || opts.frame_label_bottom_graphic.is_some()
+    || opts.frame_label_top_graphic.is_some();
+  if opts.frame || !has_label {
+    return std::borrow::Cow::Borrowed(opts);
+  }
+  let mut out = opts.clone();
+  out.clear_frame_labels();
+  std::borrow::Cow::Owned(out)
+}
+
 fn with_labeling_size(opts: &PlotOptions) -> std::borrow::Cow<'_, PlotOptions> {
   let Some(width) = opts.labeling_size else {
     return std::borrow::Cow::Borrowed(opts);
@@ -5627,6 +5683,7 @@ fn generate_svg_with_options(
   y_range: (f64, f64),
   opts: &PlotOptions,
 ) -> Result<String, InterpreterError> {
+  let opts = &*without_unframed_frame_labels(opts);
   if let Some(caps) = opts.image_size_value.as_ref().and_then(image_size_caps) {
     return generate_svg_up_to(all_points, x_range, y_range, opts, caps);
   }
@@ -6142,7 +6199,10 @@ fn generate_svg_with_options(
         // A line colored on its own keeps the default style's opacity,
         // as WL's `{2, Directive[Blue, Thick]}` draws at 0.4 alpha.
         let grid_alpha = |rgb: Option<(u8, u8, u8)>| {
-          if rgb.is_some() && opts.grid_lines_style.is_none() {
+          if rgb.is_some()
+            && opts.grid_lines_style.0.is_none()
+            && opts.grid_lines_style.1.is_none()
+          {
             0.4
           } else {
             1.0
@@ -6157,7 +6217,7 @@ fn generate_svg_with_options(
           (y_min, y_max),
           log_y,
           full_grid_step(axis_tick_step(y_max - y_min), opts.grid_full_y),
-          opts.grid_lines_style.as_ref(),
+          opts.grid_lines_style.1.as_ref(),
         );
         {
           let tol = (y_max - y_min).abs() * 1e-9;
@@ -6216,7 +6276,7 @@ fn generate_svg_with_options(
           } else {
             full_grid_step(axis_tick_step(x_max - x_min), opts.grid_full_x)
           },
-          opts.grid_lines_style.as_ref(),
+          opts.grid_lines_style.0.as_ref(),
         );
         {
           let tol = (x_max - x_min).abs() * 1e-9;
@@ -14958,6 +15018,30 @@ pub(crate) fn parse_axes_option(value: &Expr) -> Option<(bool, bool)> {
 /// and any value that sets nothing, come back as `None` so the caller keeps
 /// its built-in look. Shared by `GridLinesStyle`, `ContourStyle` and the
 /// other single-style options.
+/// `GridLinesStyle -> style` styles the x and the y grid lines alike;
+/// `GridLinesStyle -> {xstyle, ystyle}` — two entries that are each a style
+/// of their own (a list or `Directive` of directives, or `None`/`Automatic`)
+/// — styles them apart, as `{{Black, Dashed}, {Red, Dashed}}` draws black
+/// vertical and red horizontal lines.
+pub(crate) fn parse_grid_lines_style(
+  value: &Expr,
+) -> (Option<SeriesStyle>, Option<SeriesStyle>) {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  if let Expr::List(items) = &val
+    && items.len() == 2
+    && items
+      .iter()
+      .all(crate::functions::graphics::is_axis_style_entry)
+  {
+    return (
+      parse_style_directives(&items[0]),
+      parse_style_directives(&items[1]),
+    );
+  }
+  let style = parse_style_directives(&val);
+  (style.clone(), style)
+}
+
 pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
   if matches!(&val, Expr::Identifier(s) if s == "Automatic" || s == "None") {
@@ -15238,6 +15322,16 @@ fn row_holds_graphics(args: &[Expr]) -> bool {
 pub(crate) fn parse_explicit_ticks(value: &Expr) -> Option<Vec<(f64, String)>> {
   parse_explicit_tick_entries(value)
     .map(|ticks| ticks.into_iter().map(|t| (t.pos, t.label)).collect())
+}
+
+/// One side of `Ticks -> {xspec, yspec}`: `None` or `False` leaves that
+/// axis without ticks (an empty explicit list), a list gives the explicit
+/// ticks, and anything else (`Automatic`, `All`) keeps the automatic ones.
+pub(crate) fn parse_axis_tick_side(value: &Expr) -> Option<Vec<(f64, String)>> {
+  match value {
+    Expr::Identifier(s) if s == "None" || s == "False" => Some(Vec::new()),
+    other => parse_explicit_ticks(other),
+  }
 }
 
 /// A `MultiaxisArrangement` y axis drawn outside the frame: a spine
@@ -16338,7 +16432,7 @@ pub(crate) fn apply_common_plot_option(
       );
     }
     "GridLinesStyle" => {
-      plot_opts.grid_lines_style = parse_style_directives(replacement);
+      plot_opts.grid_lines_style = parse_grid_lines_style(replacement);
     }
     "PlotRange" => {
       let (rx, ry) = parse_series_plot_range(replacement);
@@ -16517,15 +16611,17 @@ pub(crate) fn apply_common_plot_option(
       {
         plot_opts.ticks = false;
       }
-      // `Ticks -> {xspec, yspec}`: each side is None, Automatic, or an
-      // explicit list of positions (each optionally `{pos, label}`).
+      // `Ticks -> {xspec, yspec}`: each side is None (no ticks on that
+      // axis), Automatic, or an explicit list of positions (each optionally `{pos, label}`).
       // The y side may be left off — `Ticks -> {xspec}` states the x ticks
       // and leaves the y axis to its default.
+      // A side set to `None` / `False` (`Ticks -> {Automatic, False}`)
+      // carries no ticks, the same as an empty explicit list.
       Expr::List(items) if (1..=2).contains(&items.len()) => {
-        plot_opts.ticks_x = parse_explicit_ticks(&items[0]);
+        plot_opts.ticks_x = parse_axis_tick_side(&items[0]);
         plot_opts.ticks_from_axes_option.0 = plot_opts.ticks_x.is_some();
         if let Some(y) = items.get(1) {
-          plot_opts.ticks_y = parse_explicit_ticks(y);
+          plot_opts.ticks_y = parse_axis_tick_side(y);
           plot_opts.ticks_from_axes_option.1 = plot_opts.ticks_y.is_some();
         }
       }

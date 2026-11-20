@@ -2496,6 +2496,9 @@ fn enumerate_list_sequence_matches(
     min: usize,
     max: Option<usize>,
     head: Option<&'a str>,
+    /// A structural element (`{x__}`, `f[y_]`, a literal) that takes
+    /// exactly one element, matched with the general pattern matcher.
+    single: Option<&'a Expr>,
   }
   // Map a blank_type (1=Blank, 2=BlankSequence, 3=BlankNullSequence) to
   // (min, max).
@@ -2521,6 +2524,7 @@ fn enumerate_list_sequence_matches(
           min,
           max,
           head: head.as_deref(),
+          single: None,
         }
       }
       Expr::FunctionCall {
@@ -2539,18 +2543,29 @@ fn enumerate_list_sequence_matches(
           min,
           max,
           head,
+          single: None,
         }
       }
-      _ => {
-        let (blank_kind, head) = parse_blank_fc(p)?;
-        let (min, max) = bounds(blank_kind)?;
-        Slot {
+      _ => match parse_blank_fc(p) {
+        Some((blank_kind, head)) => {
+          let (min, max) = bounds(blank_kind)?;
+          Slot {
+            name: "",
+            min,
+            max,
+            head,
+            single: None,
+          }
+        }
+        None if is_single_element_pattern(p) => Slot {
           name: "",
-          min,
-          max,
-          head,
-        }
-      }
+          min: 1,
+          max: Some(1),
+          head: None,
+          single: Some(p),
+        },
+        None => return None,
+      },
     };
     slots.push(slot);
   }
@@ -2574,11 +2589,13 @@ fn enumerate_list_sequence_matches(
   // constraints on the consumed elements.
   let mut results: Vec<Vec<(String, Expr)>> = Vec::new();
   let mut counts = vec![0usize; k];
+  let mut single_bindings: Vec<Vec<(String, Expr)>> = vec![Vec::new(); k];
   #[allow(clippy::too_many_arguments)]
   fn recurse(
     idx: usize,
     pos: usize,
     counts: &mut Vec<usize>,
+    single_bindings: &mut Vec<Vec<(String, Expr)>>,
     slots: &[Slot<'_>],
     expr_elems: &[Expr],
     results: &mut Vec<Vec<(String, Expr)>>,
@@ -2588,20 +2605,31 @@ fn enumerate_list_sequence_matches(
       if pos != n {
         return;
       }
-      // Build the binding set from the chosen counts.
+      // Build the binding set from the chosen counts. A name bound by
+      // more than one slot must get the same value from each.
       let mut p = 0;
       let mut bindings: Vec<(String, Expr)> = Vec::new();
       for (i, slot) in slots.iter().enumerate() {
         let len = counts[i];
         let slice = &expr_elems[p..p + len];
         p += len;
-        if !slot.name.is_empty() {
+        let new = if slot.single.is_some() {
+          single_bindings[i].clone()
+        } else if !slot.name.is_empty() {
           let value = if len == 1 {
             slice[0].clone()
           } else {
             unevaluated("Sequence", slice)
           };
-          bindings.push((slot.name.to_string(), value));
+          vec![(slot.name.to_string(), value)]
+        } else {
+          Vec::new()
+        };
+        if !crate::evaluator::pattern_matching::merge_bindings(
+          &mut bindings,
+          new,
+        ) {
+          return;
         }
       }
       results.push(bindings);
@@ -2625,13 +2653,72 @@ fn enumerate_list_sequence_matches(
       {
         continue;
       }
+      if let Some(pattern) = slot.single {
+        match crate::evaluator::pattern_matching::match_pattern(
+          &expr_elems[pos],
+          pattern,
+        ) {
+          Some(b) => single_bindings[idx] = b,
+          None => continue,
+        }
+      }
       counts[idx] = take;
-      recurse(idx + 1, pos + take, counts, slots, expr_elems, results);
+      recurse(
+        idx + 1,
+        pos + take,
+        counts,
+        single_bindings,
+        slots,
+        expr_elems,
+        results,
+      );
     }
     counts[idx] = 0;
   }
-  recurse(0, 0, &mut counts, &slots, expr_elems, &mut results);
+  recurse(
+    0,
+    0,
+    &mut counts,
+    &mut single_bindings,
+    &slots,
+    expr_elems,
+    &mut results,
+  );
   Some(results)
+}
+
+/// Whether a list-pattern element always matches exactly one element of
+/// the list: a structural pattern such as `{x__}` or `f[y_, 1]`, or a
+/// literal. Anything that can stand for a varying number of elements
+/// (`Repeated`, `PatternSequence`, `Optional`, `Alternatives` of such
+/// things, …) or that the enumerator would otherwise misread is excluded.
+fn is_single_element_pattern(p: &Expr) -> bool {
+  match p {
+    Expr::List(_) => true,
+    Expr::FunctionCall { name, .. } => !matches!(
+      name.as_str(),
+      "Pattern"
+        | "Blank"
+        | "BlankSequence"
+        | "BlankNullSequence"
+        | "Repeated"
+        | "RepeatedNull"
+        | "PatternSequence"
+        | "OrderlessPatternSequence"
+        | "Optional"
+        | "Alternatives"
+        | "Condition"
+        | "PatternTest"
+        | "Except"
+        | "Longest"
+        | "Shortest"
+        | "HoldPattern"
+        | "Verbatim"
+        | "KeyValuePattern"
+        | "Sequence"
+    ),
+    _ => !crate::evaluator::pattern_matching::contains_pattern(p),
+  }
 }
 
 /// Parse a blank-like expression into (blank_type, head-constraint).
@@ -4627,6 +4714,24 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         "SubscriptBox",
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
+    }
+    // Factorials are written postfix: `Factorial[n]` → `RowBox[{"n", "!"}]`,
+    // `Factorial2[n]` → `RowBox[{"n", "!!"}]`. An operand binding no
+    // tighter than the factorial (a sum, product, power, nested factorial)
+    // or a negative number is parenthesized: `(a+b)!`, `(-2)!`, `(5!)!`.
+    Expr::FunctionCall { name, args }
+      if (name == "Factorial" || name == "Factorial2") && args.len() == 1 =>
+    {
+      let bang = if name == "Factorial" { "!" } else { "!!" };
+      let operand = canonical_operator_call(&args[0]);
+      let boxed = expr_to_box_form(&operand);
+      let needs_paren = needs_paren_as_power_base(&operand)
+        || positive_of_negative_number(&operand).is_some()
+        || matches!(&operand, Expr::FunctionCall { name: r, args: ra }
+          if r == "Rational" && ra.len() == 2)
+        || tf_prec(&operand) <= tf_prec(expr);
+      let operand_box = if needs_paren { paren_box(boxed) } else { boxed };
+      row_box(vec![operand_box, str_expr(bang)])
     }
     Expr::FunctionCall { name, args }
       if name == "Subsuperscript" && args.len() == 3 =>

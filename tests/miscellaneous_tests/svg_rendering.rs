@@ -1021,6 +1021,25 @@ mod tests {
       );
     }
 
+    /// `StyleBox[x, FontSlant -> "Plain"]` sets a one-letter atom upright,
+    /// the way a notebook writes `V₁` in a typeset fraction; without it the
+    /// letter is a math variable in italics.
+    #[test]
+    fn stylebox_plain_slant_keeps_single_letter_upright() {
+      let letter = Expr::String("V".to_string());
+      let plain = call(
+        "StyleBox",
+        vec![
+          letter.clone(),
+          rule_expr(id_expr("FontSlant"), Expr::String("Plain".to_string())),
+        ],
+      );
+      let svg = layout_to_svg(&layout_box(&plain, 14.0), "currentColor");
+      assert!(!svg.contains("italic"), "upright: {svg}");
+      let svg = layout_to_svg(&layout_box(&letter, 14.0), "currentColor");
+      assert!(svg.contains("font-style=\"italic\""), "italic: {svg}");
+    }
+
     /// Regression: the subscript of an accented base (`OverDot[θ]`, as in
     /// a `θ̇₁` plot label) was placed at 0.4 of the base's full height, so
     /// the accent stacked on top lifted it above the base's baseline. It
@@ -1651,6 +1670,55 @@ mod tests {
     }
 
     #[test]
+    fn frame_label_keeps_runs_of_spaces() {
+      // SVG collapses consecutive blanks unless told otherwise, which
+      // squashed a frame label spaced apart with a "    " string.
+      for (plot, expected) in [
+        (
+          r#"Plot[x, {x, 0, 1}, Frame -> True,
+          FrameLabel -> {t, Row[{x, ",", "    ", y}]}]"#,
+          "xml:space=\"preserve\">x,    y</text>",
+        ),
+        (
+          r#"ListLinePlot[{1, 2, 3}, Frame -> True,
+          FrameLabel -> {"a   b", "c"}]"#,
+          "xml:space=\"preserve\">a   b</text>",
+        ),
+        (
+          r#"Plot[x, {x, 0, 1}, Frame -> True,
+          FrameLabel -> {{"l", "r  s"}, {"b", "u  v"}}]"#,
+          "xml:space=\"preserve\">r  s</text>",
+        ),
+        (
+          r#"StreamPlot[{x, -y}, {x, -1, 1}, {y, -1, 1},
+          FrameLabel -> {"m  n", "y"}]"#,
+          "xml:space=\"preserve\">m  n</text>",
+        ),
+        (
+          r#"Plot[x, {x, 0, 1}, PlotLabel -> "p  q"]"#,
+          "xml:space=\"preserve\">p  q</text>",
+        ),
+      ] {
+        let svg = woxi::interpret(&format!(r#"ExportString[{plot}, "SVG"]"#))
+          .expect("interpret should succeed");
+        assert!(
+          svg.contains(expected),
+          "space run collapsed in {plot}: {svg}"
+        );
+      }
+    }
+
+    #[test]
+    fn single_spaces_in_labels_stay_plain() {
+      let svg = woxi::interpret(
+        r#"ExportString[Plot[x, {x, 0, 1}, PlotLabel -> "p q r"], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains(">p q r</text>"), "label changed: {svg}");
+      assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
+    }
+
+    #[test]
     fn list_line_plot_frame_label_renders_box_notation() {
       // FrameLabel with a SqrtBox renders as a radical, not raw box text.
       let svg = woxi::interpret(
@@ -1810,6 +1878,132 @@ mod tests {
           && !svg.contains("stroke=\"rgb(255,0,0)\""),
         "per-line style should override GridLinesStyle: {svg}"
       );
+    }
+
+    /// `GridLinesStyle -> {xstyle, ystyle}` styles the vertical and the
+    /// horizontal grid lines apart — in a plot, in a `Show` of plots and in
+    /// a plain `Graphics` — instead of drawing both in the last color.
+    #[test]
+    fn grid_lines_style_per_axis() {
+      for code in [
+        r#"ExportString[ListLinePlot[{{28, 3}, {68, 1}},
+           GridLines -> {{40}, {2}},
+           GridLinesStyle -> {{Black, Dashed}, {Red, Dashed}}], "SVG"]"#,
+        r#"ExportString[Show[ListLinePlot[{{28, 3}, {68, 1}},
+           GridLines -> {{40}, {2}},
+           GridLinesStyle -> {{Black, Dashed}, {Red, Dashed}}],
+           ListPlot[{{40, 2.5}}]], "SVG"]"#,
+      ] {
+        let svg = woxi::interpret(code).expect("interpret should succeed");
+        let dashed: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.contains("stroke-dasharray="))
+          .collect();
+        assert!(
+          dashed.iter().any(|l| l.contains("stroke=\"rgb(0,0,0)\"")),
+          "vertical grid line should be black: {code}"
+        );
+        assert!(
+          dashed.iter().any(|l| l.contains("stroke=\"rgb(255,0,0)\"")),
+          "horizontal grid line should be red: {code}"
+        );
+      }
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics[Line[{{0, 0}, {1, 1}}],
+          GridLines -> {{0.5}, {0.5}},
+          GridLinesStyle -> {Directive[Blue], Directive[Red]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let vertical = svg
+        .lines()
+        .find(|l| l.starts_with("<line") && l.contains("y1=\"0\""))
+        .expect("vertical grid line");
+      let horizontal = svg
+        .lines()
+        .find(|l| l.starts_with("<line") && l.contains("x1=\"0\""))
+        .expect("horizontal grid line");
+      assert!(vertical.contains("rgb(0,0,255)"), "{vertical}");
+      assert!(horizontal.contains("rgb(255,0,0)"), "{horizontal}");
+    }
+
+    /// A `Framed` plot title fills its box with the `Background` it names.
+    #[test]
+    fn framed_plot_label_background() {
+      let svg = woxi::interpret(
+        r#"ExportString[ListLinePlot[{{1, 2}, {2, 3}, {3, 1}},
+          PlotLabel -> Framed["title", Background -> LightGreen]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        svg.contains("<rect") && svg.contains("fill=\"rgb(224,255,224)\""),
+        "framed title should sit on a light green panel"
+      );
+    }
+
+    /// A stacked plot title whose lines lead with small legend pictures
+    /// (`Framed[Column[{Row[{Graphics[…], "text"}], …}]]`) is drawn as a
+    /// picture — swatches, text, box and background — not printed as the
+    /// source of the `Graphics` in it.
+    #[test]
+    fn framed_column_plot_label_with_pictures() {
+      let svg = woxi::interpret(
+        r#"swatch[c_] := Graphics[{c, Thick, Line[{{0, 0}, {20, 0}}]},
+             ImageSize -> {50, 5}];
+           ExportString[ListLinePlot[{{1, 2}, {2, 3}, {3, 1}},
+             PlotLabel -> Framed[Column[{
+               Row[{swatch[Red], "first: ", 7.5}],
+               Row[{swatch[Blue], "second: ", 6.25}]}],
+               Background -> LightGreen]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(!svg.contains("Thickness"), "Graphics source leaked: {svg}");
+      assert!(!svg.contains("ImageSize"), "Graphics source leaked");
+      assert!(svg.contains("first: "), "first line missing");
+      assert!(svg.contains("second: "), "second line missing");
+      assert!(svg.contains("rgb(224,255,224)"), "background missing");
+      assert!(
+        svg.contains("rgb(255,0,0)") && svg.contains("rgb(0,0,255)"),
+        "swatches missing"
+      );
+    }
+
+    /// `Show[plot, ListPlot[{{x, y}}]]` with `PlotRange -> All` on the plot
+    /// spans the shown data: the lone marker point does not widen the range
+    /// to its own 0..2x default.
+    #[test]
+    fn show_plot_range_all_ignores_lone_point_default_range() {
+      let svg = woxi::interpret(
+        r#"ExportString[Show[ListLinePlot[{{28, 3}, {68, 1}},
+          PlotRange -> All], ListPlot[{{40, 2.5}}]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let labels: Vec<&str> = svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| t.split('>').nth(1))
+        .map(|t| t.split('<').next().unwrap_or(""))
+        .collect();
+      assert!(labels.contains(&"30"), "{labels:?}");
+      assert!(labels.contains(&"60"), "{labels:?}");
+      assert!(!labels.contains(&"80"), "{labels:?}");
+    }
+
+    /// `ListPlot3D` keeps its axes when `Show` re-renders it with another
+    /// option, as `Plot3D` does.
+    #[test]
+    fn show_list_plot3d_keeps_axes() {
+      assert_eq!(
+        woxi::interpret("Options[ListPlot3D[Table[i + j, {j, 3}, {i, 3}]]]")
+          .unwrap(),
+        "{Axes -> True, BoxRatios -> {1, 1, 0.4}}"
+      );
+      let svg = woxi::interpret(
+        r#"ExportString[Show[ListPlot3D[Table[i + j, {j, 5}, {i, 5}],
+          AxesLabel -> {"a", "b", "c"}], ImageSize -> {400, 300}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains("<text"), "axes lost under Show");
+      assert!(svg.contains(">a<") || svg.contains(">a</"), "x label lost");
     }
 
     /// `Axes -> False` hides the axes of a `ListPlot`, which the scatter
@@ -2470,6 +2664,63 @@ mod tests {
         svg.contains("stroke=\"rgb(255,0,0)\""),
         "red frame lines: {svg}"
       );
+    }
+
+    #[test]
+    fn named_style_sets_the_size_of_a_styled_grid() {
+      // `Style[Grid[…], "Label"]` sets the grid in the stylesheet's small
+      // label size, as `Style["ab", "Label"]` does a lone string; the named
+      // style used to be ignored, leaving the cells at the default 14.
+      let svg = svg_of("Style[Grid[{{\"ab\", 3}}], \"Label\"]");
+      assert!(svg.contains("font-size=\"9\""), "{svg}");
+      assert!(!svg.contains("font-size=\"14\""), "{svg}");
+      // Explicit directives sit on top of the named style, on either side.
+      for code in [
+        "Style[Grid[{{\"ab\", 3}}], \"Label\", 20]",
+        "Style[Grid[{{\"ab\", 3}}], 20, \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"20\""), "{code}: {svg}");
+      }
+      // A named style's color reaches the cells too.
+      let svg = svg_of("Style[Grid[{{\"ab\"}}], \"Section\"]");
+      assert!(svg.contains("font-size=\"28\""), "{svg}");
+      assert!(svg.contains("rgb(202,81,25)"), "{svg}");
+    }
+
+    #[test]
+    fn fraction_cell_takes_the_styled_grid_size() {
+      // A quotient cell typeset as a built-up fraction is set at the styled
+      // grid's size, like the text cells beside it, not at the default 14.
+      for code in [
+        "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
+        "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
+      }
+    }
+
+    #[test]
+    fn string_letters_in_a_fraction_stay_upright() {
+      // A string is literal text: its single letters are not math
+      // variables, so they stay upright in a typeset fraction, while a
+      // one-letter symbol is still set in italics.
+      let svg = svg_of("Grid[{{\"a\"/\"b\"}}]");
+      assert!(svg.contains(">a</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "string letters upright: {svg}");
+      let svg = svg_of("Grid[{{a/b}}]");
+      assert!(
+        svg.contains("font-style=\"italic\""),
+        "symbols italic: {svg}"
+      );
+      // Inline subscript boxes inside a string are literal text too.
+      let svg = svg_of(
+        "Grid[{{\"\\!\\(\\*SubscriptBox[\\(V\\), \\(1\\)]\\)\"/\"xy\"}}]",
+      );
+      assert!(svg.contains(">V</text>"), "{svg}");
+      assert!(!svg.contains("italic"), "inline-box letters upright: {svg}");
     }
 
     #[test]
@@ -4525,6 +4776,44 @@ mod tests {
       assert!(grid.graphics.is_some(), "{:?}", grid.graphics);
     }
 
+    /// A list in a `Column` wider than the `Pane` around it breaks into
+    /// lines at the pane's width, after the commas between its elements,
+    /// whether the pane gives only a width or a fixed `{w, h}` box, and
+    /// through the `Text` and `Style` wrapped around the column.
+    #[test]
+    fn pane_breaks_a_long_list_in_a_column_into_lines() {
+      fn svg_width(svg: &str) -> f64 {
+        svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|w| w.parse().ok())
+          .expect("svg width")
+      }
+      for pane in ["300", "{300, 400}"] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Pane[Text[Style[Column[{{"Squares:",
+            Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {{k, 1, 60}}]}}],
+            12]], {pane}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        let width = svg_width(&svg);
+        assert!(width <= 300.5, "Pane[…, {pane}] is {width} wide: {svg}");
+        assert!(svg.contains("Squares:"), "{svg}");
+        assert!(svg.contains(r#"font-weight="bold">3600<"#), "{svg}");
+        // The list takes several lines, each starting where the last one
+        // ended: the first line opens the brace, the last one closes it.
+        assert!(svg.matches("<text").count() > 3, "{svg}");
+      }
+      // Without a pane the same column is one long line.
+      let svg = woxi::interpret(
+        r#"ExportString[Column[{"Squares:",
+          Table[Style[k^2, If[EvenQ[k], Bold, Plain]], {k, 1, 60}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg_width(&svg) > 300.0, "{svg}");
+    }
+
     /// `Text` around a `Pane` of a plain table draws the table: the pane
     /// only sizes it.
     #[test]
@@ -5180,6 +5469,87 @@ mod grid_item_style_tests {
     );
     assert!(svg.contains(">0.50</text>"), "{svg}");
     assert!(!svg.contains("<tspan x="), "{svg}");
+  }
+
+  #[test]
+  fn test_string_form_with_matrix_in_graphics_text_is_a_matrix() {
+    // A `StringForm` label whose slots hold matrices typesets each as a
+    // parenthesized column, not as its entries flattened into text lines.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Blue, Text[StringForm["`` = `` + t ``", MatrixForm[{"x", "y"}], MatrixForm[{1., 3.}], MatrixForm[{1., -2.}]], {0, 0}], Circle[]}], "SVG"]"#,
+    )
+    .unwrap();
+    let parens = paren_paths(&svg);
+    assert_eq!(parens.len(), 6, "{svg}");
+    assert!(
+      parens.iter().all(|p| p.contains("stroke=\"rgb(0,0,255)\"")),
+      "{svg}"
+    );
+    for entry in [">x</text>", ">y</text>", ">3.</text>", ">-2.</text>"] {
+      assert!(svg.contains(entry), "{entry} missing: {svg}");
+    }
+    assert!(!svg.contains("<tspan x="), "{svg}");
+    assert!(!svg.contains("StringForm"), "{svg}");
+  }
+
+  /// The `(x, width)` of the first nested picture an inset label embeds,
+  /// and the x shift of its content within that picture.
+  fn first_inset_geometry(svg: &str) -> (f64, f64) {
+    let attr = |s: &str, key: &str| -> f64 {
+      let start = s.find(key).unwrap() + key.len();
+      let rest = &s[start..];
+      rest[..rest.find('"').unwrap()].parse().unwrap()
+    };
+    let inset = &svg[svg.find("<svg x=").unwrap()..];
+    let shift = &inset[inset.find("translate(").unwrap() + 10..];
+    let shift: f64 = shift[..shift.find(',').unwrap()].parse().unwrap();
+    (attr(inset, "<svg x=\""), shift)
+  }
+
+  #[test]
+  fn test_text_offset_places_a_matrix_label() {
+    // `Text[label, pos, {-1, 0}]` puts the left edge of a label drawn as a
+    // picture (here a matrix) on `pos`, as it does for a plain text label.
+    let svg = woxi::interpret(
+      r#"ExportString[Graphics[{Point[{0, 0}], Text[Row[{"v = ", MatrixForm[{1, 2}]}], {0, 0}, {-1, 0}]}, PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 400], "SVG"]"#,
+    )
+    .unwrap();
+    let cx: f64 = {
+      let s = &svg[svg.find("<circle cx=\"").unwrap() + 12..];
+      s[..s.find('"').unwrap()].parse().unwrap()
+    };
+    let (x, shift) = first_inset_geometry(&svg);
+    assert!(
+      (x + shift - cx).abs() < 0.01,
+      "{x} + {shift} vs {cx}: {svg}"
+    );
+    assert_eq!(paren_paths(&svg).len(), 2, "{svg}");
+  }
+
+  #[test]
+  fn test_nested_style_around_matrix_keeps_outer_size() {
+    // An inner `Style` coloring a matrix keeps the font size of the
+    // `Style` around it, alone or as an item of a styled `Row`.
+    for code in [
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], Red], 30], "SVG"]"#,
+      r#"ExportString[Style[Row[{"a ", Style[MatrixForm[{1, 2}], Red]}], 30], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("font-size=\"14\""), "{code}: {svg}");
+      assert!(svg.contains("font-size=\"30\""), "{code}: {svg}");
+      assert_eq!(
+        svg.matches("fill=\"rgb(255,0,0)\"").count(),
+        2,
+        "{code}: {svg}"
+      );
+    }
+    // The inner directives win over the outer ones.
+    let svg = woxi::interpret(
+      r#"ExportString[Style[Style[MatrixForm[{1, 2}], 12, Red], 30], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("font-size=\"12\""), "{svg}");
+    assert!(!svg.contains("font-size=\"30\""), "{svg}");
   }
 
   #[test]
