@@ -2499,7 +2499,17 @@ fn is_solve_constant(s: &str) -> bool {
 fn auto_detect_solve_vars(eqns: &Expr) -> Option<Expr> {
   let mut vars = Vec::new();
   collect_solve_var_exprs(eqns, &mut vars);
-  if solve_equalities(eqns).is_empty() {
+  // A disjunction of equation systems (`x == 1 || x == 2`, the form `Roots`
+  // returns) states equations as long as every alternative does.
+  fn states_equations(eqns: &Expr) -> bool {
+    match eqns {
+      Expr::FunctionCall { name, args } if name == "Or" && !args.is_empty() => {
+        args.iter().all(states_equations)
+      }
+      _ => !solve_equalities(eqns).is_empty(),
+    }
+  }
+  if !states_equations(eqns) {
     return None;
   }
   vars.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
@@ -13867,6 +13877,33 @@ fn transcendental_root_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   held()
 }
 
+/// The machine-number coefficients (index = degree) of the expanded
+/// polynomial `poly` in `var`, or `None` when one is not numeric or the
+/// leading one vanishes.
+fn inexact_poly_coeffs(poly: &Expr, var: &str) -> Option<Vec<f64>> {
+  let degree = match max_power_int(poly, var) {
+    Some(d) if d >= 1 => d as usize,
+    _ => return None,
+  };
+  let terms = collect_additive_terms(poly);
+  let mut coeffs = vec![0.0f64; degree + 1];
+  for term in &terms {
+    let mut matched = false;
+    for (d, slot) in coeffs.iter_mut().enumerate() {
+      if let Some(c) = extract_coefficient_of_power(term, var, d as i128) {
+        *slot += try_eval_to_f64(&simplify(c))?;
+        matched = true;
+        break;
+      }
+    }
+    if !matched {
+      return None;
+    }
+  }
+  (coeffs[degree] != 0.0 && coeffs.iter().all(|c| c.is_finite()))
+    .then_some(coeffs)
+}
+
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let [arg] = args {
     return transcendental_root_ast(arg);
@@ -13905,6 +13942,18 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated("Root", args));
+  }
+
+  // `Root[poly, x, k]` names the k-th root of the polynomial `poly` in the
+  // variable `x`; it is the same number as `Root[poly /. x -> #1 &, k]`.
+  if let [poly, Expr::Identifier(var), k @ Expr::Integer(_)] = args {
+    let body = crate::syntax::substitute_variable(poly, var, &Expr::Slot(1));
+    return root_ast(&[
+      Expr::Function {
+        body: Box::new(body),
+      },
+      k.clone(),
+    ]);
   }
 
   // Root[f, k, 0] is the exact form (same as Root[f, k]). Root[f, k, 1]
@@ -13971,6 +14020,15 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && k > degree
   {
     return Ok(root_degree_message(args));
+  }
+  // Approximate coefficients: the root is evaluated numerically, e.g.
+  // `Root[#^2 - 2. &, 2]` is `1.41421`.
+  if crate::syntax::contains_inexact(&expanded_poly)
+    && let Some(coeffs) = inexact_poly_coeffs(&expanded_poly, var_name)
+    && let Some(value) =
+      crate::functions::math_ast::numerical::inexact_root_value(&coeffs, k)
+  {
+    return Ok(value);
   }
   // Symbolic coefficients: the polynomial collected in #1, and two
   // arguments, as wolframscript keeps it —
@@ -22610,12 +22668,19 @@ fn eliminate_machine_numbers(
     return None;
   }
   let nrows = m.len();
+  let rhs = m.first().map(|row| row.len() - 1)?;
+  // Pivots are judged against the coefficients alone: a large or tiny
+  // right-hand side says nothing about whether a coefficient is noise.
   let scale = m
     .iter()
-    .flatten()
+    .flat_map(|row| &row[..rhs])
     .fold(0.0f64, |acc, v| acc.max(v.abs()))
     .max(f64::MIN_POSITIVE);
   let tol = scale * 1e-12;
+  // A right-hand side is rounding noise only next to the size of the terms
+  // that cancelled into it, so each row tracks that magnitude. A small value
+  // stated outright (`x == 1.*^-12`) stays.
+  let mut magnitude: Vec<f64> = m.iter().map(|row| row[rhs].abs()).collect();
 
   let mut pivot_row = 0;
   let mut pivot_cols: Vec<(usize, usize)> = Vec::new();
@@ -22630,12 +22695,15 @@ fn eliminate_machine_numbers(
       continue;
     }
     m.swap(pivot_row, best);
+    magnitude.swap(pivot_row, best);
     let pivot = m[pivot_row][col];
     for v in &mut m[pivot_row] {
       *v /= pivot;
     }
+    magnitude[pivot_row] /= pivot.abs();
     m[pivot_row][col] = 1.0;
     let pivot_values = m[pivot_row].clone();
+    let pivot_magnitude = magnitude[pivot_row];
     for (row, values) in m.iter_mut().enumerate() {
       if row == pivot_row {
         continue;
@@ -22645,6 +22713,7 @@ fn eliminate_machine_numbers(
         for (v, p) in values.iter_mut().zip(&pivot_values) {
           *v -= factor * p;
         }
+        magnitude[row] += factor.abs() * pivot_magnitude;
       }
       values[col] = 0.0;
     }
@@ -22653,11 +22722,14 @@ fn eliminate_machine_numbers(
   }
   let reduced = m
     .into_iter()
-    .map(|row| {
+    .zip(magnitude)
+    .map(|(row, magnitude)| {
       row
         .into_iter()
-        .map(|v| {
-          if v.abs() <= tol {
+        .enumerate()
+        .map(|(j, v)| {
+          let noise = if j == rhs { magnitude * 1e-12 } else { tol };
+          if v.abs() <= noise {
             Expr::Integer(0)
           } else {
             Expr::Real(v)
