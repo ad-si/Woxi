@@ -35408,6 +35408,66 @@ mod graphics_complex {
     assert_eq!(svg.matches("<polygon").count(), 1682);
   }
 
+  // A 3D complex's `VertexColors` blend across each facet instead of
+  // flattening it to the mean of its corner colors.
+  #[test]
+  fn vertex_colors_3d_blend_across_facet() {
+    let svg = export_svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+       Polygon[{1, 2, 3}], VertexColors -> {Red, Green, Blue}], \
+       Axes -> False, Boxed -> False]",
+    );
+    assert!(svg.contains("<pattern"), "{svg}");
+  }
+
+  // `VertexNormals` light each corner of a flat face with its own normal,
+  // so the face is shaded with a gradient rather than one flat color.
+  #[test]
+  fn vertex_normals_shade_flat_polygon() {
+    let flat = export_svg(
+      "Graphics3D[{EdgeForm[], Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, \
+       {0, 1, 0}}]}, Axes -> False, Boxed -> False]",
+    );
+    assert!(!flat.contains("linearGradient"));
+    let normals =
+      "VertexNormals -> {{-1, 0, 1}, {1, 0, 1}, {1, 0, 1}, {-1, 0, 1}}";
+    let direct = export_svg(&format!(
+      "Graphics3D[{{EdgeForm[], Polygon[{{{{0, 0, 0}}, {{1, 0, 0}}, \
+       {{1, 1, 0}}, {{0, 1, 0}}}}, {normals}]}}, Axes -> False, \
+       Boxed -> False]"
+    ));
+    assert_eq!(direct.matches("<linearGradient").count(), 2, "{direct}");
+    // The same normals given once for the points of a complex.
+    let complex = export_svg(&format!(
+      "Graphics3D[GraphicsComplex[{{{{0, 0, 0}}, {{1, 0, 0}}, {{1, 1, 0}}, \
+       {{0, 1, 0}}}}, {{EdgeForm[], Polygon[{{1, 2, 3, 4}}]}}, {normals}], \
+       Axes -> False, Boxed -> False]"
+    ));
+    assert_eq!(complex, direct);
+  }
+
+  // A transformed face's normals turn with it: rotating the face and
+  // its normals by hand draws the same picture, while keeping the
+  // normals unrotated does not.
+  #[test]
+  fn vertex_normals_follow_geometric_transformation() {
+    let setup = "r = RotationTransform[Pi/3, {1, 1, 0}]; \
+       m = RotationMatrix[Pi/3, {1, 1, 0}]; \
+       pts = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}; \
+       ns = {{-1, 0, 1}, {1, 0, 1}, {1, 0, 1}, {-1, 0, 1}}; ";
+    let svg = |g: &str| {
+      export_svg(&format!(
+        "{setup}Graphics3D[{{EdgeForm[], {g}}}, Axes -> False, Boxed -> False]"
+      ))
+    };
+    let transformed =
+      svg("GeometricTransformation[Polygon[pts, VertexNormals -> ns], r]");
+    let by_hand = svg("Polygon[r /@ pts, VertexNormals -> (m . # & /@ ns)]");
+    let unrotated = svg("Polygon[r /@ pts, VertexNormals -> ns]");
+    assert_eq!(transformed, by_hand);
+    assert_ne!(transformed, unrotated);
+  }
+
   #[test]
   fn polygon_with_indices() {
     insta::assert_snapshot!(export_svg(
@@ -53900,7 +53960,8 @@ mod surface_vertex_colors {
   fn graphics_complex_vertex_colors_color_polygons_in_3d() {
     clear_state();
     // A stored complex colors its facets by their vertices' `VertexColors`
-    // (given as bare `{r, g, b}` triples too) instead of the default fill.
+    // (given as bare `{r, g, b}` triples too), blended across each facet,
+    // instead of the default fill.
     for colors in [
       "{Red, Green, Blue, Yellow}",
       "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 0}}",
@@ -53911,7 +53972,7 @@ mod surface_vertex_colors {
          VertexColors -> {colors}]], \"SVG\"]"
       );
       let svg = interpret(&code).unwrap();
-      assert!(svg.contains("fill=\"rgb(81,46,0)\""), "{svg}");
+      assert!(svg.contains("<pattern"), "{svg}");
     }
   }
 
