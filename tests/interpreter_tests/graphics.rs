@@ -31565,7 +31565,9 @@ mod list_plot_3d {
       "ListPlot3D[{data}, DataRange -> {{{{0, 4}}, {{0, 10}}}}]"
     ));
     assert!(ranged.iter().any(|t| t == "4"), "{ranged:?}");
-    assert!(ranged.iter().any(|t| t == "2.5"), "{ranged:?}");
+    // A 0..10 box axis steps by 5, like wolframscript (see `tick_values`).
+    assert!(ranged.iter().any(|t| t == "5"), "{ranged:?}");
+    assert!(ranged.iter().any(|t| t == "10"), "{ranged:?}");
     assert!(!ranged.iter().any(|t| t == "40" || t == "30"), "{ranged:?}");
   }
 
