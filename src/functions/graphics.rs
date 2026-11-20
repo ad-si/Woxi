@@ -34094,7 +34094,11 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
     Expr::String(_) | Expr::Graphics { .. } | Expr::Image { .. } => {
       expr.clone()
     }
-    Expr::Identifier(s) if s == "Null" => expr.clone(),
+    // `Null` draws nothing, and a span marker (`SpanFromLeft`) only says a
+    // neighboring cell continues into its slot: wrapped in
+    // `TraditionalForm[…]` it would no longer merge the cells and be
+    // drawn as the literal word instead.
+    Expr::Identifier(s) if s == "Null" || is_span_marker(expr) => expr.clone(),
     // A grid typesets each of its cells traditionally.
     Expr::FunctionCall { name, args }
       if name == "Grid"
