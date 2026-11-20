@@ -15894,6 +15894,47 @@ mod plot3d {
       assert!(svg.contains(">ab</text>"), "{svg}");
     }
 
+    /// `Style` only adds font directives around a label; what it wraps is
+    /// still set in `TraditionalForm`, so `Style[u, FontSize -> 15]` is an
+    /// italic u. As part of a scheduled QA routine, Woxi Studio was tested
+    /// against a randomly sampled Wolfram Demonstration notebook whose 3-D
+    /// axes were labeled with sized symbols; Woxi drew them upright on
+    /// `Graphics3D` (and axed `Graphics`). This is a self-authored,
+    /// construct-equivalent example.
+    #[test]
+    fn styled_mathematical_axes_labels_keep_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let sized = "<tspan font-size=\"15\" font-style=\"italic\">p</tspan>";
+      for code in [
+        "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
+         AxesLabel -> {Style[p, FontSize -> 15], q, Style[r[s], Red]}]",
+        "Graphics[Line[{{0, 0}, {1, 1}}], Axes -> True, \
+         AxesLabel -> {Style[p, FontSize -> 15], Style[r[s], Red]}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(sized), "{code}: {svg}");
+        assert!(
+          svg.contains(&format!(
+            "<tspan fill=\"rgb(255,0,0)\">{}({})</tspan>",
+            italic("r"),
+            italic("s")
+          )),
+          "{code}: {svg}"
+        );
+        assert!(!svg.contains("r[s]"), "{code}: {svg}");
+      }
+      // A styled string stays upright.
+      let svg = export_svg(
+        "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
+         AxesLabel -> {Style[\"p\", Red], None, None}]",
+      );
+      assert!(
+        svg.contains("<tspan fill=\"rgb(255,0,0)\">p</tspan>"),
+        "{svg}"
+      );
+    }
+
     /// A list is a perfectly good label — it is typeset as the list itself,
     /// each element keeping its own styling, which is how a plot names (and
     /// colors) the curves it draws on one axis.

@@ -5827,6 +5827,19 @@ push the left z-axis label partly out of the picture. Whether Wolfram's
 step depends on the projected axis length or drops the 2.5 multiplier in
 3D can't be told from one snapshot, so the current rule stays.
 
+### Axis edges and tick density on an elongated 3D box
+
+A Demonstration's snapshots of a `Graphics3D` with `BoxRatios -> {2, 1, 1}`,
+the default `ViewPoint`, `PlotRange -> {All, {-5, 5}, {-5, 5}}` and
+`ImageSize -> {500, 400}` put the y axis on the upper-left box edge
+(x low, z high) and the z axis on the left vertical edge (x low, y low).
+Woxi's `AxesEdge -> Automatic` takes the exposed edge nearest the viewer,
+which for this box is the lower-right y edge and the right vertical z edge;
+it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
+label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
+…`), so Wolfram seems to thin the ticks of a short box side. One box shape
+doesn't pin down either rule, so both stay as they are.
+
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
