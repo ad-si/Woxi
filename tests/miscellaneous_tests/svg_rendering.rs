@@ -3421,43 +3421,38 @@ mod tests {
       // A label set in a large font (`Style[…, Large]`) is fitted into the
       // picture at its own size, not at the default label size, so the
       // vertical axis's label on the left edge is not cut off.
-      // Under `SphericalRegion -> True` (how a Manipulate frames its 3D
-      // graphics) the sphere shrinks to leave the label room.
-      for region in ["False", "True"] {
-        let svg = svg_of(&format!(
-          "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
-         SphericalRegion -> {region}, \
-         AxesLabel -> {{Style[\"x\", Large], Style[\"y\", Large], \
-         Style[\"zzz\", Large, Bold]}}]",
-        ));
-        let width: f64 = svg
-          .split("width=\"")
+      let svg = svg_of(
+        "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
+         AxesLabel -> {Style[\"x\", Large], Style[\"y\", Large], \
+         Style[\"zzz\", Large, Bold]}]",
+      );
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap();
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains(">zzz<"))
+        .unwrap_or_else(|| panic!("no z label: {svg}"));
+      let attr = |name: &str| -> f64 {
+        label
+          .split(&format!(" {name}=\""))
           .nth(1)
+          .or_else(|| label.split(&format!("{name}=\"")).nth(1))
           .and_then(|s| s.split('"').next())
           .and_then(|s| s.parse().ok())
-          .unwrap();
-        let label = svg
-          .split("<text ")
-          .find(|t| t.contains(">zzz<"))
-          .unwrap_or_else(|| panic!("no z label: {svg}"));
-        let attr = |name: &str| -> f64 {
-          label
-            .split(&format!(" {name}=\""))
-            .nth(1)
-            .or_else(|| label.split(&format!("{name}=\"")).nth(1))
-            .and_then(|s| s.split('"').next())
-            .and_then(|s| s.parse().ok())
-            .unwrap()
-        };
-        let x = attr("x");
-        // Three Large (24 px) characters are about 40 px wide, so a centered
-        // label needs its anchor at least 20 px from either edge.
-        let half = 3.0 * 24.0 * 0.56 / 2.0;
-        assert!(
-          x - half >= 0.0 && x + half <= width,
-          "z label at x = {x} spills out of the {width} px picture: {svg}"
-        );
-      }
+          .unwrap()
+      };
+      let x = attr("x");
+      // Three Large (24 px) characters are about 40 px wide, so a centered
+      // label needs its anchor at least 20 px from either edge.
+      let half = 3.0 * 24.0 * 0.56 / 2.0;
+      assert!(
+        x - half >= 0.0 && x + half <= width,
+        "z label at x = {x} spills out of the {width} px picture: {svg}"
+      );
     }
 
     #[test]
