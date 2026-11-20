@@ -37116,7 +37116,10 @@ mod manipulate {
       r#"Manipulate[Graphics[Disk[{0, 0}, r]], {r, 1, 2}, FrameLabel -> {{None, None}, {None, None}}]"#,
     )
     .unwrap();
-    assert!(extract_manipulate_spec(&none).unwrap().displays.is_empty());
+    assert_eq!(
+      extract_manipulate_spec(&none).unwrap().displays,
+      Vec::<String>::new()
+    );
   }
 
   // A Manipulate whose trailing arguments are all options shows its body
