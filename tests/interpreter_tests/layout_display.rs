@@ -288,25 +288,29 @@ mod layout_display {
     assert!(!db.face(next_regular).unwrap().monospaced);
     let mut db = std::sync::Arc::new(db);
     let select = woxi::functions::image_ast::same_style_fallback_selector();
-    // The Mono faces come first in the database, but a proportional base
-    // falls back to a proportional face and a monospaced to a monospaced.
-    assert_eq!(select('a', &[next_bold], &mut db), Some(next_regular));
-    assert_eq!(select('a', &[next_regular], &mut db), Some(next_bold));
-    assert_eq!(select('a', &[mono_bold], &mut db), Some(mono_regular));
-    // Among faces of another kind, the same weight wins over the
-    // database order (Mono Regular precedes Mono Bold).
+    // The closest weight wins over the kind of face: a regular base never
+    // falls back to a bold face of its own kind.
+    assert_eq!(select('a', &[next_bold], &mut db), Some(mono_bold));
+    assert_eq!(select('a', &[mono_regular], &mut db), Some(next_regular));
+    // Among faces of equal weight, the same kind wins over the database
+    // order (the Mono faces come first): a proportional base falls back to
+    // a proportional face and a monospaced to a monospaced.
     assert_eq!(
-      select('a', &[next_bold, next_regular], &mut db),
-      Some(mono_bold)
+      select('a', &[next_bold, mono_bold], &mut db),
+      Some(next_regular)
+    );
+    assert_eq!(
+      select('a', &[mono_bold, next_bold], &mut db),
+      Some(mono_regular)
     );
     // A character no face has yields no fallback.
     assert_eq!(select('\u{E000}', &[next_bold], &mut db), None);
 
     // The options used for rasterizing carry this selector.
-    let opts = woxi::functions::image_ast::svg_options(db.clone());
+    let opts = woxi::functions::image_ast::svg_render_options(db.clone());
     assert_eq!(
       (opts.font_resolver.select_fallback)('a', &[next_bold], &mut db),
-      Some(next_regular)
+      Some(mono_bold)
     );
   }
 
@@ -449,6 +453,97 @@ mod layout_display {
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
     let svg = svg_of("Column[{Style[Framed[\"ab\"], Red], \"c\"}]");
     assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+  }
+
+  /// The `font-family` of the `<text>` element that draws `text`.
+  fn text_family<'a>(svg: &'a str, text: &str) -> &'a str {
+    let end = svg
+      .find(&format!(">{text}</text>"))
+      .unwrap_or_else(|| panic!("no text {text}: {svg}"));
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let from = tag.find("font-family=\"").unwrap() + "font-family=\"".len();
+    &tag[from..from + tag[from..].find('"').unwrap()]
+  }
+
+  /// The font size of the `<text>` element that draws `text`.
+  fn text_size(svg: &str, text: &str) -> f64 {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let from = tag.find("font-size=\"").unwrap() + "font-size=\"".len();
+    tag[from..from + tag[from..].find('"').unwrap()]
+      .parse()
+      .unwrap()
+  }
+
+  /// Regression: the text of a `Framed`/`Panel` grid cell was set in the
+  /// monospace face (and the default size) while the grid's other text
+  /// cells use the grid's proportional face and size — also when the frame
+  /// sits in a styled `Column` cell.
+  #[test]
+  fn framed_grid_cell_text_in_grid_face() {
+    for (expr, framed) in [
+      ("Grid[{{\"abc\", Framed[\"msg\"]}}]", "msg"),
+      ("Grid[{{\"abc\", Panel[\"msg\"]}}]", "msg"),
+      ("Grid[{{\"abc\", Framed[Style[\"msg\", 20]]}}]", "msg"),
+      (
+        "Grid[{{\"abc\"}, {Style[Column[{Grid[{{\"g\"}}], \
+         Framed[\"msg\"]}], \"Label\", 16]}}]",
+        "msg",
+      ),
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(
+        text_family(&svg, framed),
+        text_family(&svg, "abc"),
+        "{expr}: {svg}"
+      );
+      assert!(!rects(&svg).is_empty(), "{expr}: {svg}");
+    }
+    // The grid's size reaches the framed text; the cell's own size wins.
+    let svg = svg_of("Style[Grid[{{\"abc\", Framed[\"msg\"]}}], 16]");
+    assert_eq!(text_size(&svg, "msg"), 16.0, "{svg}");
+    let svg =
+      svg_of("Style[Grid[{{\"abc\", Framed[Style[\"msg\", 20]]}}], 16]");
+    assert_eq!(text_size(&svg, "msg"), 20.0, "{svg}");
+    // A standalone frame keeps the monospace face.
+    let svg = svg_of("Framed[\"msg\"]");
+    assert!(text_family(&svg, "msg").contains("monospace"), "{svg}");
+  }
+
+  /// Regression: a `Row` grid cell holding a `Framed`/`Panel` was set as
+  /// one line of text and lost the box.
+  #[test]
+  fn row_grid_cell_keeps_frame() {
+    for expr in [
+      "Grid[{{\"abc\", Row[{\"x\", Framed[\"y\"]}]}}]",
+      "Grid[{{\"abc\", Row[{\"x\", Panel[\"y\"]}]}}]",
+      "Grid[{{\"abc\", Style[Row[{\"x\", Framed[\"y\"]}], 16]}}]",
+    ] {
+      let svg = svg_of(expr);
+      assert_eq!(rects(&svg).len(), 1, "{expr}: {svg}");
+      assert!(svg.contains(">x</text>"), "{expr}: {svg}");
+      assert!(svg.contains(">y</text>"), "{expr}: {svg}");
+    }
+  }
+
+  /// Regression: `Framed[Style[text, FontFamily -> f]]` ignored the family;
+  /// the text is now set (and the frame sized) in that face.
+  #[test]
+  fn framed_text_font_family() {
+    let svg = svg_of("Framed[Style[\"fill\", FontFamily -> \"Times\"]]");
+    assert!(text_family(&svg, "fill").starts_with("Times"), "{svg}");
+    // The proportional text is narrower than four monospace cells.
+    let mono = svg_of("Framed[\"fill\"]");
+    let width = |svg: &str| -> f64 {
+      let r = rects(svg)[0];
+      let from = r.find("width=\"").unwrap() + "width=\"".len();
+      r[from..from + r[from..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    assert!(width(&svg) < width(&mono), "{svg}\n{mono}");
   }
 
   /// Regression: a `Dividers` entry's thickness and dashing were dropped;
@@ -1288,6 +1383,102 @@ mod layout_display {
       assert!(!svg.contains("wrong"));
     }
   }
+
+  /// `Factorial[n]` / `Factorial2[n]` box postfix (`n!`, `n!!`), with the
+  /// operand bracketed when it binds no tighter than the factorial.
+  #[test]
+  fn factorial_boxes_postfix() {
+    clear_state();
+    for (code, boxes) in [
+      ("ToBoxes[Factorial[n]]", "RowBox[{n, !}]"),
+      ("ToBoxes[Factorial2[n]]", "RowBox[{n, !!}]"),
+      ("ToBoxes[HoldForm[Factorial[7]]]", "RowBox[{7, !}]"),
+      (
+        "ToBoxes[HoldForm[(a + b)!]]",
+        "RowBox[{RowBox[{(, RowBox[{a, +, b}], )}], !}]",
+      ),
+      (
+        "ToBoxes[HoldForm[(-3)!]]",
+        "RowBox[{RowBox[{(, RowBox[{-, 3}], )}], !}]",
+      ),
+      (
+        "ToBoxes[HoldForm[(4!)!]]",
+        "RowBox[{RowBox[{(, RowBox[{4, !}], )}], !}]",
+      ),
+      (
+        "ToBoxes[HoldForm[f[x]!]]",
+        "RowBox[{RowBox[{f, [, x, ]}], !}]",
+      ),
+    ] {
+      assert_eq!(interpret(code).unwrap(), boxes, "{code}");
+    }
+  }
+
+  /// Regression: a held factorial in a `Row` label printed as the call
+  /// `Factorial[12]` instead of `12!`.
+  #[test]
+  fn held_factorial_in_row_draws_postfix() {
+    for (code, text) in [
+      ("Row[{HoldForm[Factorial[12]], \" = \", 479001600}]", "12!"),
+      ("Style[Text[Row[{HoldForm[Factorial2[9]]}]], 20]", "9!!"),
+      ("Row[{HoldForm[Factorial[a + b]]}]", "(a+b)!"),
+    ] {
+      let svg = svg_of(code);
+      assert!(flat_text(&svg).contains(text), "{code}: {svg}");
+      assert!(!svg.contains("Factorial"), "{code}: {svg}");
+    }
+  }
+
+  /// A horizontal brace under or over a base (`Underscript[base,
+  /// Underscript[\[UnderBrace], n]]`, the idiom labeling a digit count)
+  /// is drawn as a brace path stretched across the base, with its label
+  /// beyond it, rather than as a tiny brace glyph beside the base.
+  #[test]
+  fn stretchy_brace_scripts_span_their_base() {
+    for code in [
+      "Row[{Underscript[Row[{\"123\", \"\\[Ellipsis]\", 9}], Underscript[\\[UnderBrace], 41]]}]",
+      "Row[{\"n = \", Overscript[\"000000\", Overscript[\\[OverBrace], 6]]}]",
+      "Style[Row[{Underscript[\"abcdef\", \\[UnderBrace]]}], 20]",
+      "Pane[Style[Text[Row[{x, \" = \", Underscript[Row[{1, 2, 3}], Underscript[\\[UnderBrace], 3]]}]], 20], {300, 80}]",
+    ] {
+      let svg = svg_of(code);
+      assert!(
+        !svg.contains('\u{FE38}') && !svg.contains('\u{FE37}'),
+        "{code}: brace drawn as a glyph: {svg}"
+      );
+      let path = svg
+        .match_indices("<path d=\"M")
+        .map(|(i, _)| &svg[i..i + svg[i..].find("/>").unwrap()])
+        .find(|p| p.matches(" Q ").count() == 4)
+        .unwrap_or_else(|| panic!("{code}: no curly brace path: {svg}"));
+      assert!(path.contains("stroke=\"currentColor\""), "{path}");
+    }
+    // The brace's label is set beside its own brace.
+    let svg =
+      svg_of("Row[{Underscript[\"0000\", Underscript[\\[UnderBrace], 4]]}]");
+    assert!(flat_text(&svg).contains("00004"), "{svg}");
+  }
+
+  /// A brace-labeled base in a `Row` sits on the row's text line: the
+  /// base's digits share the vertical position of the plain text before
+  /// it instead of the whole stack being centered on the line.
+  #[test]
+  fn brace_labeled_row_item_keeps_the_text_line() {
+    let svg = svg_of(
+      "Row[{\"x = \", Underscript[\"12345\", Underscript[\\[UnderBrace], 5]]}]",
+    );
+    // The underscript stack hangs below its base line, so lining that
+    // line up with the row's center puts the stack lower than plain
+    // centering would.
+    let attr = |s: &str, key: &str| -> f64 {
+      let at = s.find(&format!(" {key}=\"")).unwrap() + key.len() + 3;
+      s[at..at + s[at..].find('"').unwrap()].parse().unwrap()
+    };
+    let row_h = attr(&svg, "height");
+    let nested = &svg[svg.find("<svg x=").expect("nested picture")..];
+    let (y, h) = (attr(nested, "y"), attr(nested, "height"));
+    assert!(y > (row_h - h) / 2.0 + 1.0, "stack centered: {svg}");
+  }
 }
 
 #[test]
@@ -1342,5 +1533,150 @@ fn review_colored_background_keeps_black_tick_labels() {
     let svg = interpret(&format!("ExportString[Framed[Pane[Plot[Sin[x],{{x,0,10}},ImageSize->{size},Background->StandardOrange],{{200,100}}]],\"SVG\"]")).unwrap();
     assert!(!svg.contains("fill=\"#666\""));
     assert!(svg.contains("fill=\"#000000\""));
+  }
+}
+
+/// `Style[Framed[…], …]` styles the framed content and keeps the frame:
+/// typeset as styled text, the box border was dropped.
+#[test]
+fn styled_framed_keeps_its_frame() {
+  clear_state();
+  for code in [
+    r#"ExportString[Style[Framed["degenerate"], 12, "Label"], "SVG"]"#,
+    r#"ExportString[Style[Framed["degenerate"], Red], "SVG"]"#,
+    r#"ExportString[Pane[Style[If[False, 1, Framed["degenerate"]], 12], ImageSize -> {200, 100}], "SVG"]"#,
+  ] {
+    let svg = interpret(code).unwrap();
+    assert!(svg.contains("<rect"), "{code}: no frame in {svg}");
+    assert!(svg.contains("degenerate"), "{code}: no text in {svg}");
+    assert!(!svg.contains("Framed"), "{code}: raw call in {svg}");
+  }
+  // The directives still reach the content: 12 pt red text.
+  let svg =
+    interpret(r#"ExportString[Style[Framed["degenerate"], 12, Red], "SVG"]"#)
+      .unwrap();
+  assert!(svg.contains("font-size=\"12"), "{svg}");
+  assert!(svg.contains("rgb(255,0,0)"), "{svg}");
+}
+
+/// `Style[Panel[…], …]` likewise keeps the panel box around the content.
+#[test]
+fn styled_panel_keeps_its_box() {
+  clear_state();
+  let svg =
+    interpret(r#"ExportString[Style[Panel["inside"], Bold], "SVG"]"#).unwrap();
+  assert!(svg.contains("<rect"), "{svg}");
+  assert!(svg.contains("inside") && !svg.contains("Panel"), "{svg}");
+}
+
+/// The `font-family` values of an SVG's `<text>` elements.
+fn text_families(svg: &str) -> Vec<&str> {
+  svg
+    .match_indices("<text ")
+    .filter_map(|(i, _)| {
+      let tag = &svg[i..i + svg[i..].find('>')?];
+      let start = tag.find("font-family=\"")? + "font-family=\"".len();
+      Some(&tag[start..start + tag[start..].find('"')?])
+    })
+    .collect()
+}
+
+#[test]
+fn text_sets_layouts_in_proportional_face() {
+  // `Text[…]` outside a `Graphics` shows its content in the proportional
+  // text face — a `Row` inside too, alone, in a `Column` or styled.
+  for expr in [
+    "Text[Row[{\"Depth = \", 2.85, \" m\"}]]",
+    "Text[Style[Row[{\"Depth = \", NumberForm[2.85, {2, 1}], \" m\"}], 15]]",
+    "Column[{Text[Style[Row[{\"a = \", 1}], 15]], Text[Style[\"b\", 14]]}, Alignment -> Center]",
+    "Column[{Text[Row[{\"a = \", 1}]], Graphics[Disk[]]}]",
+    "Text[\"label\"]",
+  ] {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap();
+    let families = text_families(&svg);
+    assert!(!families.is_empty(), "{expr}: no text in {svg}");
+    assert!(
+      families
+        .iter()
+        .all(|f| *f == "Atkinson Hyperlegible Next, sans-serif"),
+      "{expr}: {families:?}"
+    );
+  }
+  // A face the text asks for itself still wins over the default.
+  clear_state();
+  let svg = interpret(
+    "ExportString[Column[{Text[Style[Row[{\"a\", 1}], FontFamily -> \"Courier\"]]}], \"SVG\"]",
+  )
+  .unwrap();
+  let families = text_families(&svg);
+  assert!(
+    !families.is_empty() && families.iter().all(|f| f.starts_with("Courier")),
+    "{families:?}"
+  );
+  // A layout outside `Text` keeps the monospace output face.
+  clear_state();
+  let svg = interpret("ExportString[Row[{\"a = \", 1}], \"SVG\"]").unwrap();
+  assert!(text_families(&svg).iter().all(|f| f.contains("Mono")));
+}
+
+#[test]
+fn text_row_parts_sit_at_proportional_widths() {
+  // The parts of a `Row` set in the default proportional face are spaced
+  // by that face's glyph advances, not the monospace grid, so a short
+  // number does not float in a wide gap after its label.
+  clear_state();
+  let svg = interpret(
+    "ExportString[Text[Style[Row[{\"Depth of point = \", \"2.9\"}], 15]], \"SVG\"]",
+  )
+  .unwrap();
+  let width: f64 = svg
+    .split("width=\"")
+    .nth(1)
+    .and_then(|s| s.split('"').next())
+    .and_then(|s| s.parse().ok())
+    .unwrap();
+  // 20 characters at 15pt: a monospace grid needs ~190pt, the proportional
+  // face well under 150pt.
+  assert!(width < 150.0, "width {width} in {svg}");
+}
+
+#[test]
+fn styled_layout_keeps_picture_of_caption_product() {
+  // Regression: a `Style` pushed onto a layout's items wrapped a product
+  // with a picture (`"Label: " g`) whole, so the picture was typeset as
+  // the `-Graphics-` placeholder.
+  for layout in ["Column", "Row"] {
+    clear_state();
+    let svg = interpret(&format!(
+      "ExportString[Style[{layout}[{{\"Label: \" Graphics[Disk[], ImageSize -> 15]}}], Red], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(!svg.contains("-Graphics-"), "{layout}: {svg}");
+    assert!(
+      svg.contains("<ellipse") || svg.contains("<circle"),
+      "{layout}"
+    );
+    // The caption still takes the style.
+    assert!(
+      svg.split("<text ").any(|t| t.contains("Label:")
+        && t[..t.find('>').unwrap()].contains("fill=\"rgb(255,0,0)\"")),
+      "{layout}: {svg}"
+    );
+  }
+}
+
+#[test]
+fn styled_pane_keeps_its_width() {
+  // Regression: `Style[Pane[text, w], …]` dropped the pane, so its text
+  // ran on one long line instead of wrapping at the pane's width.
+  let long = "Column[{Row[{12.5, \" units of the first kind in the sample\"}], Row[{7, \" units of the second kind left over at the end\"}]}]";
+  for pane in [
+    format!("Style[Pane[{long}, 200], 12]"),
+    format!("Style[Pane[{long}, ImageSize -> 200], Red]"),
+  ] {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{pane}, \"SVG\"]")).unwrap();
+    assert!(svg.starts_with("<svg width=\"200\""), "{pane}: {svg}");
   }
 }

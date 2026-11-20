@@ -4966,6 +4966,25 @@ mod string_form {
   }
 
   #[test]
+  fn to_string_formats_display_wrapper_arguments() {
+    // Regression: a `NumberForm` argument was spliced in as its source
+    // text (`NumberForm[4.123, {5, 2}]`) instead of its formatted digits.
+    assert_eq!(
+      interpret(
+        "ToString[StringForm[\"a = ``, b = ``\", \
+         NumberForm[4.123, {5, 2}], NumberForm[0.0456, {5, 2}]]]"
+      )
+      .unwrap(),
+      "a = 4.12, b = 0.05"
+    );
+    assert_eq!(
+      interpret("ToString[StringForm[\"`1`%\", NumberForm[-1.2345, {4, 1}]]]")
+        .unwrap(),
+      "-1.2%"
+    );
+  }
+
+  #[test]
   fn to_string_multiple_placeholders() {
     assert_eq!(
       interpret("ToString[StringForm[\"x=`` and y=``.\", 5, 10]]").unwrap(),
