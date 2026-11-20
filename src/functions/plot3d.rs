@@ -1072,10 +1072,22 @@ fn painter_order(
   camera: &Camera,
 ) -> Vec<usize> {
   let n = verts.len();
+  // Depths that agree to within rounding noise are ties, kept in the order
+  // the triangles were given: a ring of a sphere's facets square to the
+  // line of sight lies at one depth, and which of them came out a hair
+  // nearer must not hinge on the last bits of how the radius was computed
+  // (`Scaled[0.05]` of a width 6 is `0.30000000000000004`). Quantizing the
+  // keys keeps the comparison a total order for the (stable) sort.
+  let scale = depths
+    .iter()
+    .filter(|d| d.is_finite())
+    .fold(0.0_f64, |m, d| m.max(d.abs()));
+  let quantum = if scale > 0.0 { scale * 1e-9 } else { 1.0 };
+  let key = |d: f64| (d / quantum).round();
   let mut by_depth: Vec<usize> = (0..n).collect();
   by_depth.sort_by(|&a, &b| {
-    depths[b]
-      .partial_cmp(&depths[a])
+    key(depths[b])
+      .partial_cmp(&key(depths[a]))
       .unwrap_or(std::cmp::Ordering::Equal)
   });
   if n > PAINTER_ORDER_MAX_TRIANGLES {
@@ -1290,13 +1302,15 @@ fn grid_mesh_lines(
 /// constant first and `n[1]` of constant second parameter, evenly spaced
 /// and snapped to the nearest grid line, plus the surface's edges. `at(i, j)`
 /// is the sample in the normalized box (`None` where the surface has a
-/// hole); `segment` builds the line piece between two samples.
+/// hole); `segment(a, b, axis)` builds the line piece between two samples
+/// of a line of constant first (`axis == 0`) or second (`axis == 1`)
+/// parameter.
 fn parameter_grid_mesh_lines(
   grid_u: usize,
   grid_v: usize,
   n: [usize; 2],
   at: &dyn Fn(usize, usize) -> Option<Point3D>,
-  segment: &dyn Fn(Point3D, Point3D) -> MeshLine,
+  segment: &dyn Fn(Point3D, Point3D, usize) -> MeshLine,
 ) -> Vec<MeshLine> {
   let mut lines = Vec::new();
   // Mesh levels are independent of PlotPoints. Interpolate between rows
@@ -1332,7 +1346,7 @@ fn parameter_grid_mesh_lines(
       };
       for j in 0..along {
         if let (Some(a), Some(b)) = (point(j), point(j + 1)) {
-          lines.push(segment(a, b));
+          lines.push(segment(a, b, axis));
         }
       }
     }
@@ -1433,7 +1447,14 @@ fn styled_line_like(line: &MeshLine, style: &StyleState3D) -> MeshLine {
 #[derive(Clone)]
 enum MeshLevels {
   Count(usize),
-  Values(Vec<f64>),
+  Values(Vec<MeshLevel>),
+}
+
+/// One explicit mesh level: `v`, or `{v, style}` drawn in its own style.
+#[derive(Clone)]
+struct MeshLevel {
+  value: f64,
+  style: Option<Expr>,
 }
 
 /// `Mesh -> n`, `{n1, n2, …}` (one count per mesh function) or
@@ -1447,9 +1468,22 @@ fn parse_mesh_levels(spec: &Expr) -> Option<Vec<MeshLevels>> {
         vals
           .iter()
           .filter_map(|v| match v {
-            // `{v, style}` levels keep their value.
-            Expr::List(pair) => pair.first().and_then(try_eval_to_f64),
-            other => try_eval_to_f64(other),
+            // `{v, style}` levels are drawn in their own style.
+            Expr::List(pair) => {
+              pair
+                .first()
+                .and_then(try_eval_to_f64)
+                .map(|value| MeshLevel {
+                  value,
+                  style: match &pair[1..] {
+                    [] => None,
+                    [one] => Some(one.clone()),
+                    more => Some(call("Directive", more.to_vec())),
+                  },
+                })
+            }
+            other => try_eval_to_f64(other)
+              .map(|value| MeshLevel { value, style: None }),
           })
           .collect(),
       )),
@@ -1667,7 +1701,7 @@ fn mesh_level_values(spec: Option<&MeshLevels>, values: &[f64]) -> Vec<f64> {
     MeshLevels::Count(n) if hi > lo => (1..=n)
       .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
       .collect(),
-    MeshLevels::Values(v) => v,
+    MeshLevels::Values(v) => v.into_iter().map(|level| level.value).collect(),
     MeshLevels::Count(_) => Vec::new(),
   }
 }
@@ -2018,6 +2052,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_levels: Option<Vec<MeshLevels>> = None;
   let mut mesh_functions: Option<Vec<Expr>> = None;
   let mut mesh_style: Option<StyleState3D> = None;
+  let mut mesh_style_expr: Option<Expr> = None;
   let mut mesh_shading: Option<Expr> = None;
   let mut region_function: Option<Expr> = None;
   // `Filling -> Bottom | Top | Axis | z`: the height the surface is filled
@@ -2072,6 +2107,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "MeshStyle" => {
           mesh_style = parse_plot_style_3d(replacement, 1).into_iter().next();
+          mesh_style_expr = evaluate_expr_to_expr(replacement).ok();
         }
         Expr::Identifier(name) if name == "MeshShading" => {
           mesh_shading = evaluate_expr_to_expr(replacement).ok();
@@ -2302,6 +2338,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     )
   };
 
+  // Explicit mesh levels for each mesh function, from `Mesh -> n` / lists;
+  // `MeshFunctions` without a `Mesh` count draws 15 levels of each.
+  let explicit_mesh = mesh_levels.is_some() || mesh_functions.is_some();
+
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
@@ -2389,7 +2429,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         // The mesh, at the spacing the standalone render rules it with.
-        if matches!(mesh_mode, MeshMode::Default) {
+        // Explicit mesh levels are added as their contours further down.
+        if matches!(mesh_mode, MeshMode::Default) && !explicit_mesh {
           let mut segments: Vec<Expr> = Vec::new();
           let mut push_segment = |a: Option<usize>, b: Option<usize>| {
             if let (Some(a), Some(b)) = (a, b) {
@@ -2515,13 +2556,13 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(fs) => fs.iter().map(MeshFn::of).collect(),
     None => vec![MeshFn::X, MeshFn::Y],
   };
-  // Explicit mesh levels for each mesh function, from `Mesh -> n` / lists;
-  // `MeshFunctions` without a `Mesh` count draws 15 levels of each.
-  let explicit_mesh = mesh_levels.is_some() || mesh_functions.is_some();
   let mut boundary_segments: Vec<[[f64; 3]; 2]> = Vec::new();
   // The pieces of the domain's outer edge the surface runs along.
   let mut edge_segments: Vec<[[f64; 3]; 2]> = Vec::new();
-  let mut contour_segments: Vec<[[f64; 3]; 2]> = Vec::new();
+  // Each contour segment remembers the style of the level it belongs to,
+  // an index into `level_styles` (`None` for an unstyled level).
+  let mut contour_segments: Vec<([[f64; 3]; 2], Option<usize>)> = Vec::new();
+  let mut level_styles: Vec<Expr> = Vec::new();
 
   for (surface_idx, grid) in grids.iter().enumerate() {
     let compiled =
@@ -2561,8 +2602,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .collect()
       })
       .collect();
-    // The levels each mesh function is drawn at.
-    let levels: Vec<Vec<f64>> = mesh_fns
+    // The levels each mesh function is drawn at, with the index of the
+    // level's own style in `level_styles`.
+    let levels: Vec<Vec<(f64, Option<usize>)>> = mesh_fns
       .iter()
       .enumerate()
       .map(|(k, _)| {
@@ -2582,9 +2624,18 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         };
         match spec {
           Some(MeshLevels::Count(n)) if hi > lo => (1..=n)
-            .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
+            .map(|m| (lo + (hi - lo) * m as f64 / (n + 1) as f64, None))
             .collect(),
-          Some(MeshLevels::Values(v)) => v,
+          Some(MeshLevels::Values(v)) => v
+            .into_iter()
+            .map(|level| {
+              let style = level.style.map(|st| {
+                level_styles.push(st);
+                level_styles.len() - 1
+              });
+              (level.value, style)
+            })
+            .collect(),
           _ => Vec::new(),
         }
       })
@@ -2607,7 +2658,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .zip(&levels)
             .map(|(f, lv)| {
               let v = f.eval(center);
-              lv.iter().filter(|l| **l <= v).count()
+              lv.iter().filter(|(l, _)| *l <= v).count()
             })
             .collect();
           let mut entry = shading.clone();
@@ -2731,7 +2782,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               if vals.iter().any(|v| !v.is_finite()) {
                 continue;
               }
-              for &level in lv {
+              for &(level, level_style) in lv {
                 let above = vals.map(|v| v >= level);
                 let mut ends: Vec<[f64; 3]> = Vec::new();
                 for e in 0..3 {
@@ -2749,7 +2800,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                     + (ends[0][1] - ends[1][1]).powi(2))
                   .sqrt();
                   if len > 0.0 {
-                    contour_segments.push([ends[0], ends[1]]);
+                    contour_segments.push(([ends[0], ends[1]], level_style));
                   }
                 }
               }
@@ -2922,14 +2973,64 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       all_mesh_lines.extend(lines);
     }
   }
-  for [a, b] in &contour_segments {
+  // A level's own style is laid over `MeshStyle`.
+  let level_render_styles: Vec<StyleState3D> = level_styles
+    .iter()
+    .map(|st| {
+      let mut style = mesh_style.clone().unwrap_or_default();
+      apply_3d_directive(st, &mut style);
+      style
+    })
+    .collect();
+  for ([a, b], level_style) in &contour_segments {
     all_mesh_lines.push(styled_mesh_segment(
       to_box(*a),
       to_box(*b),
       &camera,
-      mesh_style.as_ref(),
+      level_style
+        .map(|k| &level_render_styles[k])
+        .or(mesh_style.as_ref()),
       ("#000000a0", 0.5),
     ));
+  }
+  // The mesh contours travel with the surface into `Show`, in data
+  // coordinates, one `Line` per level style.
+  if !contour_segments.is_empty()
+    && let Expr::FunctionCall { args: sargs, .. } = &mut structure
+    && let Some(content) = sargs.first_mut()
+  {
+    let point = |p: &[f64; 3]| {
+      Expr::List(p.iter().map(|&c| Expr::Real(c)).collect::<Vec<_>>().into())
+    };
+    let mut groups: Vec<(Option<usize>, Vec<Expr>)> = Vec::new();
+    for ([a, b], level_style) in &contour_segments {
+      let segment = Expr::List(vec![point(a), point(b)].into());
+      match groups.iter_mut().find(|(k, _)| k == level_style) {
+        Some((_, segments)) => segments.push(segment),
+        None => groups.push((*level_style, vec![segment])),
+      }
+    }
+    let mesh: Vec<Expr> = groups
+      .into_iter()
+      .map(|(level_style, segments)| {
+        // The render's default: translucent black, unless `MeshStyle` or
+        // the level's own style replaces it.
+        let mut group = vec![call1("AbsoluteThickness", Expr::Real(0.5))];
+        if mesh_style_expr.is_none() && level_style.is_none() {
+          group.push(call1("Opacity", Expr::Real(0.63)));
+          group.push(call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          ));
+        }
+        group.extend(mesh_style_expr.clone());
+        group.extend(level_style.map(|k| level_styles[k].clone()));
+        group.push(call1("Line", Expr::List(segments.into())));
+        Expr::List(group.into())
+      })
+      .collect();
+    let surface = std::mem::replace(content, Expr::List(vec![].into()));
+    *content = Expr::List(vec![surface, Expr::List(mesh.into())].into());
   }
   if let Some(style) = &boundary_style {
     for [a, b] in &boundary_segments {
@@ -3561,6 +3662,23 @@ fn fitted_image_size(
 /// Whether a plot's options pin the picture's height: `ImageSize -> {w,
 /// h}`, `ImageSize -> Full` or an `AspectRatio`. Otherwise the height
 /// follows the projected box.
+/// Whether the options carry `ImageSize -> {w, h}` with both dimensions
+/// numeric, which pins the whole image (labels included) to that size.
+fn image_size_is_width_height(opts: &[Expr]) -> bool {
+  opts.iter().any(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "ImageSize") => {
+      let value = crate::evaluator::evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone());
+      matches!(&value, Expr::List(items) if items.len() == 2
+        && items.iter().all(|i| try_eval_to_f64(i).is_some()))
+    }
+    _ => false,
+  })
+}
+
 fn image_height_is_explicit(opts: &[Expr]) -> bool {
   opts.iter().any(|o| match o {
     Expr::Rule {
@@ -4119,32 +4237,35 @@ fn draw_axes_on_box_with_ticks(
         let (perpx, perpy) = (-dy / len, dx / len);
         let sign = outward_sign(sx0, sy0, sx1, sy1);
         // How far the tick labels already reach, in the direction the
-        // axis label is being pushed: their own offset plus half of the
-        // widest one's box. Sideways of a vertical axis that is the text
-        // width, below a horizontal one it is the line height.
+        // axis label is being pushed. Sideways of a vertical axis that is
+        // their offset plus the widest one's width (they are aligned on
+        // their near end, see the tick labels below), measured at the
+        // tick labels' own font size; below a horizontal one it is their
+        // offset plus the line height.
         let tick_chars = axis_ticks(ai, val_min, val_max)
           .iter()
           .map(|(_, label)| markup_char_count(label))
           .max()
           .unwrap_or(1) as f64;
-        let half_w = tick_chars * font_size as f64 * 0.3;
+        let tick_w = tick_chars * f64::from(tick_font_size) * 0.45;
         let half_h = font_size as f64 * 0.5;
-        // …plus half of the label's own box, so `offset` can center it
-        // just past them. Wolfram sets every axis label upright, the z
-        // axis's too.
+        // …plus half of the label's own box, so `offset` centers it just
+        // past them. The width is that of the label as set, a styled
+        // `Style[…, Large]` label's at its own font size. Wolfram sets
+        // every axis label upright, the z axis's too.
         let own_w = label_half_width(label, font_size);
-        let reach = TICK_LABEL_OFFSET
-          + (perpx * sign).abs() * (half_w + own_w)
-          + (perpy * sign).abs() * (half_h + half_h);
-        let offset = reach + font_size as f64 * 0.5;
+        let (label_w, label_h) = markup_text_size(label, font_size as f64);
+        let side = TICK_LABEL_OFFSET * 0.6 + tick_w + own_w;
+        let below =
+          TICK_LABEL_OFFSET + half_h + half_h + font_size as f64 * 0.5;
+        let offset = (perpx * sign).abs() * side + (perpy * sign).abs() * below;
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
         svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{}>{label}</text>\n",
           font_face_attrs(look.label_face),
         ));
-        let chars = markup_char_count(label);
-        extent.add_text(lx, ly, chars, font_size as f64, "middle");
+        extent.add_box(lx, ly, label_w, label_h, "middle");
       }
     }
 
@@ -4419,14 +4540,19 @@ impl AxesExtent {
     font: f64,
     anchor: &str,
   ) {
-    let w = chars as f64 * font * 0.56;
+    self.add_box(x, y, chars as f64 * font * 0.56, font, anchor);
+  }
+
+  /// A text box `w` wide and `h` tall anchored at `(x, y)` (`anchor` as
+  /// SVG's `text-anchor`, vertically centered).
+  fn add_box(&mut self, x: f64, y: f64, w: f64, h: f64, anchor: &str) {
     let (l, r) = match anchor {
       "end" => (x - w, x),
       "start" => (x, x + w),
       _ => (x - w / 2.0, x + w / 2.0),
     };
-    self.add(l, y - font * 0.5);
-    self.add(r, y + font * 0.5);
+    self.add(l, y - h * 0.5);
+    self.add(r, y + h * 0.5);
   }
 }
 
@@ -4524,7 +4650,7 @@ fn label_font_size(opts: &[Expr]) -> Option<f64> {
 /// Half the width a text label takes at `font_size`, estimated from its
 /// character count — enough to keep labels from landing on each other.
 fn label_half_width(label: &str, font_size: i32) -> f64 {
-  markup_char_count(label) as f64 * font_size as f64 * 0.3
+  markup_text_size(label, font_size as f64).0 * 0.3 / 0.56
 }
 
 /// The tick positions along an axis spanning `val_min` to `val_max`, the
@@ -7655,7 +7781,14 @@ fn surface_style_directives(
     return out;
   }
   if let Some(color) = style.and_then(|s| s.color) {
-    let mut out = vec![rgb(rgb_f64(color))];
+    // `FaceForm[front, back]` keeps its back color, so the far side of the
+    // extracted surface is still drawn in it.
+    let mut out = vec![match style.and_then(|s| s.back_color) {
+      Some(back) => {
+        call("FaceForm", vec![rgb(rgb_f64(color)), rgb(rgb_f64(back))])
+      }
+      None => rgb(rgb_f64(color)),
+    }];
     out.extend(own_specular);
     out.extend(lighting.map(lighting_rule));
     return out;
@@ -9159,19 +9292,21 @@ fn collect_3d_primitives(
               holes,
               style,
             });
-          } else if let Some((outer, holes)) =
+          } else if let Some(faces) =
             crate::functions::polygon_holes::split_holes(
               &args[0],
               &parse_point3d_list,
             )
           {
-            // Polygon[outer -> holes]: a face with the hole boundaries
-            // cut out of it.
-            prims.push(Primitive3D::Polygon3D {
-              points: outer,
-              holes,
-              style: style.clone(),
-            });
+            // Polygon[outer -> holes] (or a list of outers paired with
+            // their holes): faces with the hole boundaries cut out.
+            for (outer, holes) in faces {
+              prims.push(Primitive3D::Polygon3D {
+                points: outer,
+                holes,
+                style: style.clone(),
+              });
+            }
           } else if let Expr::List(poly_exprs) = &args[0] {
             // Polygon[{{p1, p2, …}, {q1, q2, …}, …}]: a collection of
             // polygons in one primitive.
@@ -9182,17 +9317,19 @@ fn collect_3d_primitives(
                   holes: Vec::new(),
                   style: style.clone(),
                 });
-              } else if let Some((outer, holes)) =
+              } else if let Some(faces) =
                 crate::functions::polygon_holes::split_holes(
                   poly,
                   &parse_point3d_list,
                 )
               {
-                prims.push(Primitive3D::Polygon3D {
-                  points: outer,
-                  holes,
-                  style: style.clone(),
-                });
+                for (outer, holes) in faces {
+                  prims.push(Primitive3D::Polygon3D {
+                    points: outer,
+                    holes,
+                    style: style.clone(),
+                  });
+                }
               }
             }
           }
@@ -9997,9 +10134,65 @@ fn tessellate_sphere(
   radius: f64,
   detail: (usize, usize),
 ) -> Vec<(Point3D, Point3D, Point3D)> {
+  tessellate_sphere_about(center, radius, detail, [0.0, 0.0, 1.0])
+}
+
+/// The detail an opaque sphere is tessellated with once its pole faces the
+/// viewer (see [`tessellate_sphere_about`]): its far half is culled, and
+/// its outline is the equator, so latitude bands are traded for longitude
+/// segments. The equator stays a band boundary (an even band count), and
+/// the outline gets twice the segments of the plain `detail`, up to 48 —
+/// round to a fraction of a pixel at any usual size, without crowding
+/// slivers around the pole that faces the viewer.
+fn viewer_facing_sphere_detail(detail: (usize, usize)) -> (usize, usize) {
+  let (n_lat, n_lon) = detail;
+  let half_bands = (n_lat * 3).div_ceil(8).max(2);
+  (2 * half_bands, (2 * n_lon).min(48))
+}
+
+/// Tessellate a sphere into latitude/longitude triangles whose pole points
+/// along `pole`. With the pole toward the viewer, the outline an opaque
+/// sphere shows is its equator — the ring every longitude segment lies on
+/// — so its silhouette is as round as the segment count allows, whatever
+/// the view direction.
+fn tessellate_sphere_about(
+  center: &Point3D,
+  radius: f64,
+  detail: (usize, usize),
+  pole: [f64; 3],
+) -> Vec<(Point3D, Point3D, Point3D)> {
   let (n_lat, n_lon) = detail;
   let mut tris = Vec::new();
   let pi = std::f64::consts::PI;
+  // Orthonormal frame `(e1, e2, w)` with `w` along the pole; the default
+  // z pole keeps the plain x/y/z frame.
+  let len = v_dot(pole, pole).sqrt();
+  let w = if len > 1e-12 {
+    pole.map(|c| c / len)
+  } else {
+    [0.0, 0.0, 1.0]
+  };
+  let (e1, e2) = if (w[2] - 1.0).abs() < 1e-12 {
+    ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0])
+  } else {
+    // Any direction not parallel to the pole seeds the frame.
+    let seed = if w[2].abs() < 0.9 {
+      [0.0, 0.0, 1.0]
+    } else {
+      [1.0, 0.0, 0.0]
+    };
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+      [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+      ]
+    };
+    let e1 = cross(seed, w);
+    let l1 = v_dot(e1, e1).sqrt();
+    let e1 = e1.map(|c| c / l1);
+    (e1, cross(w, e1))
+  };
 
   for i in 0..n_lat {
     let theta1 = pi * i as f64 / n_lat as f64;
@@ -10009,10 +10202,15 @@ fn tessellate_sphere(
       let phi2 = 2.0 * pi * (j + 1) as f64 / n_lon as f64;
 
       let p = |theta: f64, phi: f64| -> Point3D {
+        let (a, b, c) = (
+          theta.sin() * phi.cos(),
+          theta.sin() * phi.sin(),
+          theta.cos(),
+        );
         Point3D {
-          x: center.x + radius * theta.sin() * phi.cos(),
-          y: center.y + radius * theta.sin() * phi.sin(),
-          z: center.z + radius * theta.cos(),
+          x: center.x + radius * (a * e1[0] + b * e2[0] + c * w[0]),
+          y: center.y + radius * (a * e1[1] + b * e2[1] + c * w[1]),
+          z: center.z + radius * (a * e1[2] + b * e2[2] + c * w[2]),
         }
       };
 
@@ -11268,7 +11466,23 @@ const MAX_SIDE_FACE_ASPECT: f64 = 1.0;
 const MAX_SIDE_SUBDIVISIONS: usize = 200;
 /// Radial subdivision count for `Cylinder`, shared between the
 /// tessellators and the call site that rebuilds their rim-edge flags.
-const CYLINDER_SIDES: usize = 24;
+/// The end circles are what an `EdgeForm` outlines, so they need enough
+/// points to read as smooth curves at picture size: a 24-gon put visible
+/// corners (over a pixel deep) on a radius-140 px ring, where Wolfram's
+/// outline is a smooth ellipse.
+const CYLINDER_SIDES: usize = 48;
+
+/// How many rings `tessellate_cylinder` cuts a side of the given length and
+/// radius into. The faces only need to stay short enough for the depth
+/// sort, so the aspect is measured against a 24-facet circumference, which
+/// keeps the ring count independent of how finely the rims are drawn.
+fn cylinder_side_steps(
+  len: f64,
+  radius: f64,
+  max_subdivisions: usize,
+) -> usize {
+  side_subdivision_steps(len, radius, CYLINDER_SIDES / 2, max_subdivisions)
+}
 /// Radial subdivision count for `Cone`. Its smooth shading has a single apex
 /// vertex, where neighboring facets meet at their own normals; finer
 /// slices keep that seam faint.
@@ -11644,7 +11858,7 @@ fn tessellate_cylinder(
   let biny = az * perpx - ax * perpz;
   let binz = ax * perpy - ay * perpx;
 
-  let steps = side_subdivision_steps(len, radius, n, max_subdivisions);
+  let steps = cylinder_side_steps(len, radius, max_subdivisions);
   let ring_at = |t: f64| -> Vec<Point3D> {
     let center = Point3D {
       x: p1.x + dx * t,
@@ -13454,14 +13668,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
           ..
-        } => (
-          tessellate_sphere(
-            center,
-            *radius,
-            sphere_detail(*radius, sphere_extent, sphere_count),
-          ),
-          style,
-        ),
+        } => {
+          let detail = sphere_detail(*radius, sphere_extent, sphere_count);
+          // The far half of an opaque sphere is culled below, so it is
+          // tessellated about the line of sight: its outline is then the
+          // finely divided equator rather than a coarse slanted cut
+          // through the latitude bands.
+          let tris = if style.faces && style.opacity >= 1.0 {
+            tessellate_sphere_about(
+              center,
+              *radius,
+              viewer_facing_sphere_detail(detail),
+              camera.toward_viewer(*center),
+            )
+          } else {
+            tessellate_sphere(center, *radius, detail)
+          };
+          (tris, style)
+        }
         Primitive3D::Cuboid {
           p_min,
           p_max,
@@ -13500,8 +13724,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               + (p2.y - p1.y).powi(2)
               + (p2.z - p1.z).powi(2))
             .sqrt();
-            let steps =
-              side_subdivision_steps(len, *radius, CYLINDER_SIDES, max_subdiv);
+            let steps = cylinder_side_steps(len, *radius, max_subdiv);
             holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
           }
           (tris, style)
@@ -15523,7 +15746,24 @@ fn with_plot_label(
     Some((_, h)) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
     None => PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32,
   };
-  let total = height + strip;
+  // `ImageSize -> {w, h}` fixes the whole image, title included: the
+  // picture shrinks (keeping its proportions, centered across the width)
+  // into what the title leaves of the height. Otherwise the title strip is
+  // added on top of the picture.
+  let fit_scale = (image_size_is_width_height(opts) && strip < height)
+    .then(|| f64::from(height - strip) / f64::from(height));
+  let total = if fit_scale.is_some() {
+    height
+  } else {
+    height + strip
+  };
+  let picture_transform = match fit_scale {
+    Some(k) => format!(
+      "translate({:.2},{strip}) scale({k:.6})",
+      f64::from(width) * (1.0 - k) / 2.0
+    ),
+    None => format!("translate(0,{strip})"),
+  };
   // The strip is painted in the picture's own background so the two read
   // as one canvas — an explicit `Background` reaches it too.
   let bg = opts
@@ -15598,7 +15838,7 @@ fn with_plot_label(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
      {label}\
-     <g transform=\"translate(0,{strip})\">{svg}</g>\n\
+     <g transform=\"{picture_transform}\">{svg}</g>\n\
      </svg>",
     bg.0, bg.1, bg.2,
   )
@@ -15698,6 +15938,82 @@ fn framed_label_svg(
 
 /// The characters an SVG markup fragment actually shows, for width
 /// estimation: everything outside its tags.
+/// The size of an SVG text markup run set at `font_size`: its estimated
+/// width and the height of its tallest line. Nested `<tspan font-size=…>`
+/// runs (a styled `AxesLabel -> Style[…, Large]`, a 70% subscript) are
+/// measured at their own size rather than at the base one, so a large
+/// label claims the room it really takes.
+fn markup_text_size(markup: &str, font_size: f64) -> (f64, f64) {
+  let mut sizes = vec![font_size];
+  let mut width = 0.0;
+  let mut height = 0.0_f64;
+  let mut chars = markup.chars().peekable();
+  while let Some(c) = chars.next() {
+    let current = *sizes.last().unwrap_or(&font_size);
+    match c {
+      '<' => {
+        let mut tag = String::new();
+        for t in chars.by_ref() {
+          if t == '>' {
+            break;
+          }
+          tag.push(t);
+        }
+        if tag.starts_with('/') {
+          if sizes.len() > 1 {
+            sizes.pop();
+          }
+        } else if !tag.ends_with('/') {
+          sizes.push(tag_font_size(&tag, current));
+        }
+      }
+      '&' => {
+        // An entity (`&lt;`, `&#945;`) is one character.
+        while let Some(&t) = chars.peek() {
+          chars.next();
+          if t == ';' {
+            break;
+          }
+        }
+        width += current;
+        height = height.max(current);
+      }
+      _ => {
+        width += current;
+        height = height.max(current);
+      }
+    }
+  }
+  if width == 0.0 {
+    (font_size * 0.56, font_size)
+  } else {
+    (width * 0.56, height)
+  }
+}
+
+/// The font size an opening SVG tag (its text between `<` and `>`) sets
+/// for its content: an absolute `font-size="24"`, a relative
+/// `font-size="70%"`, or `current` when it sets none.
+fn tag_font_size(tag: &str, current: f64) -> f64 {
+  let Some(start) = tag.find("font-size=\"") else {
+    return current;
+  };
+  let rest = &tag[start + "font-size=\"".len()..];
+  let value = rest.split('"').next().unwrap_or("");
+  if let Some(pct) = value.strip_suffix('%') {
+    pct
+      .trim()
+      .parse::<f64>()
+      .map_or(current, |p| current * p / 100.0)
+  } else {
+    value
+      .trim()
+      .trim_end_matches("px")
+      .parse::<f64>()
+      .unwrap_or(current)
+  }
+}
+
 fn markup_char_count(markup: &str) -> usize {
   let mut count = 0;
   let mut in_tag = false;
@@ -17211,6 +17527,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // The horizontal extents a full `PlotRange -> {{x…}, {y…}, {z…}}` pins.
+  let mut x_clip: Option<(f64, f64)> = None;
+  let mut y_clip: Option<(f64, f64)> = None;
+  let mut box_ratios_explicit: Option<[f64; 3]> = None;
   let mut plot_style: Option<Expr> = None;
   let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
   let mut color_fn = FacetColorFunction::default();
@@ -17250,6 +17570,15 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          // A single number `s` is the cube `[-s, s]` on every axis.
+          if let Some(s) = try_eval_to_f64(&evaluate_expr_to_expr(replacement)?)
+            && s > 0.0
+          {
+            z_clip = Some((-s, s));
+            x_clip = Some((-s, s));
+            y_clip = Some((-s, s));
+            continue;
+          }
           // `{zmin, zmax}` or the full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}`
           let z_items = match replacement.as_ref() {
             Expr::List(items) if items.len() == 2 => Some(items.clone()),
@@ -17259,12 +17588,33 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             },
             _ => None,
           };
+          let pair = |items: &[Expr]| -> Option<(f64, f64)> {
+            let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0]).ok()?)?;
+            let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1]).ok()?)?;
+            (lo < hi).then_some((lo, hi))
+          };
           if let Some(items) = z_items {
-            let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0])?);
-            let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1])?);
-            if let (Some(lo), Some(hi)) = (lo, hi) {
-              z_clip = Some((lo, hi));
+            z_clip = pair(&items);
+          }
+          if let Expr::List(items) = replacement.as_ref()
+            && items.len() == 3
+          {
+            for (slot, item) in
+              [&mut x_clip, &mut y_clip].into_iter().zip(items)
+            {
+              if let Expr::List(r) = item
+                && r.len() == 2
+              {
+                *slot = pair(r);
+              }
             }
+          }
+        }
+        Expr::Identifier(name) if name == "BoxRatios" => {
+          if let Some(r) = eval_vec3(replacement)
+            && r.iter().all(|v| *v > 0.0 && v.is_finite())
+          {
+            box_ratios_explicit = Some(r);
           }
         }
         Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
@@ -17285,7 +17635,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // rotates the (fx, fy) vector by theta instead of assuming fy = 0.
   let has_theta = theta_var.is_some();
 
-  let camera = Camera::default();
   let n_t = GRID_N;
   let n_theta = GRID_N;
   let t_step = (t_max - t_min) / n_t as f64;
@@ -17422,50 +17771,69 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
-  let z_range = if (z_hi - z_lo).abs() < 1e-15 {
-    1.0
+  // The displayed box: a full `PlotRange` pins every side, otherwise the
+  // sweep's own extent (symmetric about the z axis for the default axis).
+  let x_range = x_clip.unwrap_or(if axis_is_z {
+    (-global_r_max, global_r_max)
   } else {
-    z_hi - z_lo
+    (global_x_min, global_x_max)
+  });
+  let y_range = y_clip.unwrap_or(if axis_is_z {
+    (-global_r_max, global_r_max)
+  } else {
+    (global_y_min, global_y_max)
+  });
+  let extent = |(lo, hi): (f64, f64)| -> f64 {
+    if (hi - lo).abs() < 1e-15 {
+      1.0
+    } else {
+      hi - lo
+    }
   };
 
-  let r_scale = if global_r_max < 1e-15 {
-    1.0
-  } else {
-    global_r_max
-  };
-
-  // `RevolutionPlot3D` draws a single surface, so `PlotStyle` is one style
-  // rather than a per-surface list.
+  // `PlotStyle` is one style shared by every surface; without one, each
+  // surface takes the next color of the default theme.
   let render_style: Option<StyleState3D> = plot_style.as_ref().map(|ps| {
     let mut style = StyleState3D::default();
     apply_3d_directive(ps, &mut style);
     style
   });
+
+  // Wolfram flattens the box of a plain profile `z = f(t)` swept about the
+  // z axis to `BoxRatios -> {2, 2, 1/GoldenRatio}`; every other surface
+  // keeps its true proportions (`BoxRatios -> Automatic`). An explicit
+  // `BoxRatios` wins either way. The box is normalized so its longest side
+  // spans ±1.
+  let profile_box = all_profiles && axis_is_z;
+  let raw_ratios = box_ratios_explicit.unwrap_or(if profile_box {
+    [1.0, 1.0, 0.5 * 0.618_033_988_749_894_9]
+  } else {
+    [extent(x_range), extent(y_range), extent((z_lo, z_hi))]
+  });
+  let ratio_max = raw_ratios.iter().copied().fold(0.0_f64, f64::max);
+  let box_ratios = raw_ratios.map(|r| r / ratio_max);
+  // A true-proportion box is seen in perspective, as `ParametricPlot3D`'s.
+  let camera = if profile_box && box_ratios_explicit.is_none() {
+    Camera::default()
+  } else {
+    Camera::for_box(box_ratios)
+  };
   let scene = Scene::new(&camera, &args[opt_start..]);
 
-  let z_scale = if all_profiles && axis_is_z {
-    0.5 * 0.618_033_988_749_894_9
-  } else {
-    Z_SCALE
-  };
-  let nz = |z: f64| -> f64 {
-    let cz = z.clamp(z_lo, z_hi);
-    ((cz - z_lo) / z_range) * 2.0 * z_scale - z_scale
+  let normalize = |p: Point3D| -> Point3D {
+    let axis = |v: f64, (lo, hi): (f64, f64), r: f64| {
+      norm_extent(v.clamp(lo.min(hi), hi.max(lo)), lo, hi) * r
+    };
+    Point3D {
+      x: axis(p.x, x_range, box_ratios[0]),
+      y: axis(p.y, y_range, box_ratios[1]),
+      z: axis(p.z, (z_lo, z_hi), box_ratios[2]),
+    }
   };
 
   // The style `ColorFunction` gives the facet with corners `ps`, evaluated
   // at the facet's center in world coordinates; it takes precedence over
   // `PlotStyle`.
-  let x_range = if axis_is_z {
-    (-global_r_max, global_r_max)
-  } else {
-    (global_x_min, global_x_max)
-  };
-  let y_range = if axis_is_z {
-    (-global_r_max, global_r_max)
-  } else {
-    (global_y_min, global_y_max)
-  };
   let facet_style = |ps: [Point3D; 3]| -> Option<StyleState3D> {
     color_fn.is_set().then_some(())?;
     let mid = |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
@@ -17482,29 +17850,13 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();
 
-  for grid in &grids {
+  for (surface, grid) in grids.iter().enumerate() {
     for i in 0..n_t {
       for j in 0..n_theta {
         let p00 = grid[i][j];
         let p10 = grid[i + 1][j];
         let p01 = grid[i][j + 1];
         let p11 = grid[i + 1][j + 1];
-
-        let normalize = |p: Point3D| -> Point3D {
-          if axis_is_z {
-            Point3D {
-              x: p.x / r_scale,
-              y: p.y / r_scale,
-              z: nz(p.z),
-            }
-          } else {
-            Point3D {
-              x: norm_extent(p.x, global_x_min, global_x_max),
-              y: norm_extent(p.y, global_y_min, global_y_max),
-              z: nz(p.z),
-            }
-          }
-        };
 
         // Triangle 1: p00, p10, p01
         if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
@@ -17515,7 +17867,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp00, pp10, pp01]);
           let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(0),
+            SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
             render_style.as_ref(),
             normal,
@@ -17555,7 +17907,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let normal = triangle_normal(v0, v1, v2);
           let cf_style = facet_style([pp11, pp01, pp10]);
           let (color, opacity) = shade_facet(
-            SurfaceDefault::Theme(0),
+            SurfaceDefault::Theme(surface),
             cf_style.as_ref(),
             render_style.as_ref(),
             normal,
@@ -17613,24 +17965,9 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // surface's edges, as `ParametricPlot3D` draws them.
   let mut mesh_lines: Vec<MeshLine> = Vec::new();
   if mesh_mode == MeshMode::Default {
-    let normalize = |p: Point3D| -> Point3D {
-      if axis_is_z {
-        Point3D {
-          x: p.x / r_scale,
-          y: p.y / r_scale,
-          z: nz(p.z),
-        }
-      } else {
-        Point3D {
-          x: norm_extent(p.x, global_x_min, global_x_max),
-          y: norm_extent(p.y, global_y_min, global_y_max),
-          z: nz(p.z),
-        }
-      }
-    };
     let extra_bias = MESH_DEPTH_BIAS
       * ((50.0 / n_t.min(n_theta).max(1) as f64).max(1.0) - 1.0);
-    let segment = |a: Point3D, b: Point3D| {
+    let segment = |a: Point3D, b: Point3D, _axis: usize| {
       let mut line = mesh_segment(a, b, &camera);
       line.depth -= extra_bias;
       line
@@ -17653,7 +17990,8 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // rendering below works in normalized coordinates and is unaffected.
   let surfaces: Vec<Expr> = grids
     .iter()
-    .map(|grid| {
+    .enumerate()
+    .map(|(surface, grid)| {
       let mut index_of: Vec<Vec<Option<usize>>> =
         vec![vec![None; n_theta + 1]; n_t + 1];
       let mut point_exprs: Vec<Expr> = Vec::new();
@@ -17701,7 +18039,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // with, so `Show[RevolutionPlot3D[…], g]` keeps the surface's look.
       if !color_fn.is_set() {
         content.extend(surface_style_directives(
-          0,
+          surface,
           render_style.as_ref(),
           false,
           &scene,
@@ -17748,10 +18086,39 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       }
-      call(
-        "GraphicsComplex",
-        vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
-      )
+      let mut complex =
+        vec![Expr::List(point_exprs.into()), Expr::List(content.into())];
+      // A `ColorFunction` colors the surface point by point, as Wolfram's
+      // `VertexColors`, so a re-render (`Show`, `GraphicsRow`) keeps it.
+      if color_fn.is_set() {
+        let colors: Option<Vec<Expr>> = grid
+          .iter()
+          .flatten()
+          .flatten()
+          .map(|p| {
+            let (r, g, b) = color_fn
+              .style_at(
+                [p.x, p.y, p.z.clamp(z_lo, z_hi)],
+                [x_range, y_range, (z_lo, z_hi)],
+              )?
+              .color?;
+            Some(call(
+              "RGBColor",
+              [r, g, b]
+                .iter()
+                .map(|&c| Expr::Real(f64::from(c) / 255.0))
+                .collect(),
+            ))
+          })
+          .collect();
+        if let Some(colors) = colors {
+          complex.push(rule_expr(
+            id_expr("VertexColors"),
+            Expr::List(colors.into()),
+          ));
+        }
+      }
+      call("GraphicsComplex", complex)
     })
     .collect();
   // The plot's own options travel with the surface: `Show` takes the
@@ -17797,9 +18164,18 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !names("BoxRatios") {
     defaults.push(rule_expr(
       id_expr("BoxRatios"),
-      Expr::List(
-        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(z_scale)].into(),
-      ),
+      if profile_box {
+        Expr::List(
+          vec![
+            Expr::Integer(1),
+            Expr::Integer(1),
+            Expr::Real(box_ratios[2]),
+          ]
+          .into(),
+        )
+      } else {
+        id_expr("Automatic")
+      },
     ));
   }
   if !names("PlotRange") {
@@ -17816,6 +18192,17 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   structure_args.extend(defaults);
+  // The picture below is drawn with the default camera. A plot that names
+  // its own (`ViewPoint`, `ViewVertical`, `ViewVector`) is drawn from its
+  // symbolic form instead, by the `Graphics3D` renderer that reads them.
+  if structure_args.iter().any(|o| {
+    matches!(
+      option_name(o).as_deref(),
+      Some("ViewPoint" | "ViewVertical" | "ViewVector")
+    )
+  }) {
+    return graphics3d_ast(&structure_args);
+  }
   let structure = call("Graphics3D", structure_args);
 
   let svg = generate_svg(
@@ -17832,7 +18219,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
-    [1.0, 1.0, z_scale],
+    box_ratios,
     &[None, None, None],
     !image_height_is_explicit(args),
     args,
@@ -20111,7 +20498,9 @@ fn contour3d_render(
             Vec::new()
           }
         }
-        Some(MeshLevels::Values(values)) => values.clone(),
+        Some(MeshLevels::Values(values)) => {
+          values.iter().map(|l| l.value).collect()
+        }
         None => Vec::new(),
       }
     });
@@ -23502,6 +23891,11 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `EdgeForm[]` is suppressed, leaving flat color with no outline —
   // the usual way a mesh-shaded dissection hides its own seams.
   let mut mesh_style_none = false;
+  // `MeshStyle -> style` strokes the default mesh in `style`;
+  // `MeshStyle -> {s1, s2}` gives the lines of constant first and of
+  // constant second parameter their own styles (cycling when one is
+  // given). Empty keeps the default hairline.
+  let mut mesh_styles: Vec<(Expr, StyleState3D)> = Vec::new();
   // `BoundaryStyle -> style`: the outline along the edges of the parameter
   // domain, drawn in `style` (black where it names no color). Left at its
   // default, the outline is only drawn as part of the default mesh.
@@ -23697,10 +24091,23 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "MeshStyle" => {
-          if matches!(replacement.as_ref(), Expr::Identifier(s) if s == "None")
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          mesh_style_none =
+            matches!(&value, Expr::Identifier(s) if s == "None");
+          mesh_styles = if matches!(&value, Expr::Identifier(s) if s == "None" || s == "Automatic")
           {
-            mesh_style_none = true;
-          }
+            Vec::new()
+          } else {
+            plot_style_items(&value, 2)
+              .into_iter()
+              .map(|item| {
+                let mut style = StyleState3D::default();
+                apply_3d_directive(&item, &mut style);
+                (item, style)
+              })
+              .collect()
+          };
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
@@ -24052,12 +24459,19 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             // into a facet. Facets of the default look carry none, like
             // wolframscript's `ParametricPlot3D[…][[1]]`, so a color
             // directive placed before the extracted complex still applies.
-            let explicit = facet_colors[surface_idx][i][j].or_else(|| {
-              match plot_style_for_surface(&plot_styles, surface_idx) {
+            let surface_style =
+              plot_style_for_surface(&plot_styles, surface_idx);
+            let explicit =
+              facet_colors[surface_idx][i][j].or_else(|| match surface_style {
                 Some(style) => style.color,
                 None => mesh_color.flatten(),
-              }
-            });
+              });
+            // A `PlotStyle -> FaceForm[front, back]` facet keeps both
+            // sides' colors, so its back stays `back` once extracted.
+            let back = facet_colors[surface_idx][i][j]
+              .is_none()
+              .then(|| surface_style.and_then(|s| s.back_color))
+              .flatten();
             let polygon = call1(
               "Polygon",
               Expr::List(
@@ -24068,24 +24482,25 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   .into(),
               ),
             );
-            let Some((cr, cg, cb)) = explicit else {
+            let Some(front) = explicit else {
               content.push(polygon);
               continue;
             };
-            content.push(Expr::List(
-              vec![
-                call(
-                  "RGBColor",
-                  vec![
-                    Expr::Real(cr as f64 / 255.0),
-                    Expr::Real(cg as f64 / 255.0),
-                    Expr::Real(cb as f64 / 255.0),
-                  ],
-                ),
-                polygon,
-              ]
-              .into(),
-            ));
+            let rgb = |(r, g, b): (u8, u8, u8)| {
+              call(
+                "RGBColor",
+                vec![
+                  Expr::Real(r as f64 / 255.0),
+                  Expr::Real(g as f64 / 255.0),
+                  Expr::Real(b as f64 / 255.0),
+                ],
+              )
+            };
+            let face = match back {
+              Some(back) => call("FaceForm", vec![rgb(front), rgb(back)]),
+              None => rgb(front),
+            };
+            content.push(Expr::List(vec![face, polygon].into()));
           }
         }
         if let Some((style_expr, _)) = &boundary_style {
@@ -24113,32 +24528,45 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         if let Some([nu, nv]) = mesh_count.filter(|n| n.iter().any(|&c| c > 0))
         {
-          let mut segments: Vec<Expr> = Vec::new();
-          let mut push_segment = |a: Option<usize>, b: Option<usize>| {
-            if let (Some(a), Some(b)) = (a, b) {
-              segments.push(Expr::List(
-                vec![
-                  Expr::Integer(a as i128 + 1),
-                  Expr::Integer(b as i128 + 1),
-                ]
-                .into(),
-              ));
-            }
-          };
+          // Segments of the lines of constant first (`[0]`) and of
+          // constant second (`[1]`) parameter.
+          let mut segments: [Vec<Expr>; 2] = [Vec::new(), Vec::new()];
+          let mut push_segment =
+            |axis: usize, a: Option<usize>, b: Option<usize>| {
+              if let (Some(a), Some(b)) = (a, b) {
+                segments[axis].push(Expr::List(
+                  vec![
+                    Expr::Integer(a as i128 + 1),
+                    Expr::Integer(b as i128 + 1),
+                  ]
+                  .into(),
+                ));
+              }
+            };
           for m in 1..=nv {
             let kv = (grid_v * m + nv.div_ceil(2)) / (nv + 1);
             for i in 0..grid_u {
-              push_segment(index_of[i][kv], index_of[i + 1][kv]);
+              push_segment(1, index_of[i][kv], index_of[i + 1][kv]);
             }
           }
           for m in 1..=nu {
             let ku = (grid_u * m + nu.div_ceil(2)) / (nu + 1);
             for j in 0..grid_v {
-              push_segment(index_of[ku][j], index_of[ku][j + 1]);
+              push_segment(0, index_of[ku][j], index_of[ku][j + 1]);
             }
           }
-          if !segments.is_empty() {
-            content.push(Expr::List(
+          let mut push_lines = |style: Vec<Expr>, segments: Vec<Expr>| {
+            if !segments.is_empty() {
+              let mut group = style;
+              group.push(call1("Line", Expr::List(segments.into())));
+              content.push(Expr::List(group.into()));
+            }
+          };
+          let [constant_u, constant_v] = segments;
+          if mesh_styles.is_empty() {
+            let mut all = constant_v;
+            all.extend(constant_u);
+            push_lines(
               vec![
                 call1("Opacity", Expr::Real(0.63)),
                 call(
@@ -24146,10 +24574,21 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                   vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
                 ),
                 call1("AbsoluteThickness", Expr::Real(0.5)),
-                call1("Line", Expr::List(segments.into())),
-              ]
-              .into(),
-            ));
+              ],
+              all,
+            );
+          } else {
+            // A `MeshStyle` replaces the default translucent black, on top
+            // of the default hairline width.
+            for (axis, lines) in [(1, constant_v), (0, constant_u)] {
+              push_lines(
+                vec![
+                  call1("AbsoluteThickness", Expr::Real(0.5)),
+                  mesh_styles[axis % mesh_styles.len()].0.clone(),
+                ],
+                lines,
+              );
+            }
           }
         }
         call(
@@ -24382,8 +24821,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       * (box_ratios.iter().copied().fold(1.0_f64, f64::max)
         * (50.0 / grid_u.min(grid_v).max(1) as f64).max(1.0)
         - 1.0);
-    let segment = |a: Point3D, b: Point3D| {
+    let segment = |a: Point3D, b: Point3D, axis: usize| {
       let mut line = mesh_segment(a, b, &camera);
+      if !mesh_styles.is_empty() {
+        line =
+          styled_line_like(&line, &mesh_styles[axis % mesh_styles.len()].1);
+      }
       line.depth -= extra_bias;
       line
     };
@@ -25102,7 +25545,7 @@ mod review_mesh_tests {
             z: 0.0,
           })
         },
-        &|a, b| MeshLine {
+        &|a, b, _| MeshLine {
           endpoints: [a, b],
           projected: [(a.x, a.y), (b.x, b.y)],
           stroke: None,

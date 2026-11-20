@@ -1077,25 +1077,71 @@ fn normalize_piecharts_option(arg: &Expr) -> Expr {
       _ => None,
     }
   }
+  // `PieStyle -> {{Red}, {Green, EdgeForm[…]}, …}` gave each wedge a list
+  // of directives; the modern `ChartStyle` spells one wedge's directives
+  // as `Directive[…]`.
+  fn translated_value(new_name: &str, value: &Expr) -> Expr {
+    match value {
+      Expr::List(items) if new_name == "ChartStyle" => Expr::List(
+        items
+          .iter()
+          .map(|item| match item {
+            Expr::List(directives) => Expr::FunctionCall {
+              name: "Directive".to_string(),
+              args: directives.clone(),
+            },
+            other => other.clone(),
+          })
+          .collect(),
+      ),
+      other => other.clone(),
+    }
+  }
   match arg {
     Expr::Rule {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => rule_expr(id_expr(new_name), *replacement.clone()),
+      Some(new_name) => {
+        rule_expr(id_expr(new_name), translated_value(new_name, replacement))
+      }
       None => arg.clone(),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => {
-        rule_delayed_expr(id_expr(new_name), *replacement.clone())
-      }
+      Some(new_name) => rule_delayed_expr(
+        id_expr(new_name),
+        translated_value(new_name, replacement),
+      ),
       None => arg.clone(),
     },
     other => other.clone(),
   }
+}
+
+/// Translate the arguments of a legacy `PieCharts\`PieChart` call to the
+/// modern `PieChart`: rename its options (see
+/// [`normalize_piecharts_option`]) and keep its wedge layout. The package
+/// laid the first wedge out from the positive x axis and went
+/// counterclockwise, whereas `PieChart` starts at 9 o'clock and goes
+/// clockwise, so an explicit `SectorOrigin -> 0` is added unless the call
+/// names one itself.
+fn normalize_piecharts_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out: Vec<Expr> =
+    args.iter().map(normalize_piecharts_option).collect();
+  let names_sector_origin = out.iter().any(|a| {
+    matches!(
+      a,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(id) if id == "SectorOrigin")
+    )
+  });
+  if !names_sector_origin {
+    out.push(rule_expr(id_expr("SectorOrigin"), Expr::Integer(0)));
+  }
+  out
 }
 
 /// Evaluate one stored overload condition against the call's bindings.
@@ -1723,10 +1769,7 @@ fn evaluate_function_call_ast_inner(
   // translate them alongside the head so old demonstrations still render.
   let normalized_pie_args;
   let args: &[Expr] = if original_name == "PieCharts`PieChart" {
-    normalized_pie_args = args
-      .iter()
-      .map(normalize_piecharts_option)
-      .collect::<Vec<_>>();
+    normalized_pie_args = normalize_piecharts_args(args);
     &normalized_pie_args
   } else {
     args
@@ -2461,7 +2504,7 @@ fn evaluate_function_call_ast_inner(
       },
       None => crate::functions::polyhedron_operations::DEFAULT_TRUNCATE_RATIO,
     };
-    if !(0.0..0.5).contains(&ratio) {
+    if !(0.0..=0.5).contains(&ratio) {
       return Ok(unevaluated(name, args));
     }
     return Ok(crate::functions::polyhedron_operations::truncate(

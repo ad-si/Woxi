@@ -5656,9 +5656,11 @@ colors — wolframscript draws no highlight even though the plot's style names
 ### Standalone 3D plots ignore the camera options
 
 `Plot3D` and most other 3D plot functions (`ParametricPlot3D`,
-`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+`ContourPlot3D`, …) draw their own picture with the
 default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
-the plot call itself change nothing:
+the plot call itself change nothing (`RevolutionPlot3D` given a
+`ViewPoint`, `ViewVertical` or `ViewVector` is drawn from its symbolic form
+by the `Graphics3D` renderer instead, which honors them):
 `Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
 picture as without the option. The options are kept on the result, so
 `Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
@@ -5774,6 +5776,20 @@ farther away (`|ViewPoint|` = 10) than in the cases that fit the sphere
 (about 2 to 3.4), but which property turns the sphere framing off is
 unverified.
 
+A close `ViewPoint` contradicts the rule. A Demonstration's snapshot of a
+`Show` of three `Boxed -> False` `Graphics3D`s (a desk fan: rings of radius
+up to 1 in the y-z plane, on a stand reaching down to z = -1.5) at
+`ImageSize -> {600, 400}` from `ViewPoint -> {1, -1, 0}` draws the fan
+about 380 px tall, 0.95 of the height. Woxi's sphere framing draws it
+284 px tall, and even the box-outline fit (`SphericalRegion -> False`)
+only 300 px. The width-to-height ratio (0.58) matches a perspective eye at
+`|ViewPoint|` box sides, so only the scale is off: Wolfram fits roughly the
+projected contents, not the box (whose perspective outline is about 1.25×
+the contents here) nor its sphere. No single rule found so far reproduces
+this and the three snapshots above; unverified with wolframscript.
+
+### `PointSize` in `Graphics3D` draws larger than Wolfram
+
 ### Base length of relative `Thickness` / `PointSize` in `Graphics3D`
 
 Woxi measures a relative `Thickness[t]` and `PointSize[s]` in a
@@ -5812,6 +5828,19 @@ at 0.5 (`0.0, 0.5, 1.0`) with minor ticks between. The wider labels also
 push the left z-axis label partly out of the picture. Whether Wolfram's
 step depends on the projected axis length or drops the 2.5 multiplier in
 3D can't be told from one snapshot, so the current rule stays.
+
+### Axis edges and tick density on an elongated 3D box
+
+A Demonstration's snapshots of a `Graphics3D` with `BoxRatios -> {2, 1, 1}`,
+the default `ViewPoint`, `PlotRange -> {All, {-5, 5}, {-5, 5}}` and
+`ImageSize -> {500, 400}` put the y axis on the upper-left box edge
+(x low, z high) and the z axis on the left vertical edge (x low, y low).
+Woxi's `AxesEdge -> Automatic` takes the exposed edge nearest the viewer,
+which for this box is the lower-right y edge and the right vertical z edge;
+it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
+label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
+…`), so Wolfram seems to thin the ticks of a short box side. One box shape
+doesn't pin down either rule, so both stay as they are.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -8896,7 +8925,8 @@ Found comparing the graphics-tests renders (2026-11):
   - `Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]` is
     442 wide (WL 414): the legend takes more room.
   - Tick labels are measured as WL sets them (a minus 0.63 em wide,
-    `10 000` in digit blocks) but drawn with a hyphen and no blocks.
+    `10 000` in digit blocks) and drawn in digit blocks, but with a
+    hyphen for the minus.
   - Explicit `Ticks` labels of an unframed plot without axes
     (`explicit_ticks_svg`) and the decade labels of a framed log axis are
     still drawn at Woxi's old sizes and offsets (13 / 14.5 px), though the
@@ -9575,6 +9605,8 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   Some curve annotations and explicit tick labels still use text markup;
   a `Plot`'s `Ticks -> {{Pi/2, 3 Pi/2}}` labels read `π/2` rather than
   stacked fractions (a `Graphics` axis already stacks them).
+
+  Some curve annotations still use text markup.
 - `PlotTheme -> "Monochrome"` in a list plot draws every series black but
   without the theme's per-series `PlotMarkers` shapes.
 - `Callout[f, label, Above]` puts the label straight above its anchor with
@@ -9702,8 +9734,7 @@ a unit sphere's by 0.5, as in wolframscript. What still differs:
   RevolutionPlot3D flattens the box of a plain profile `z = f(t)` to
   `BoxRatios -> {2, 2, 1/GoldenRatio}` as wolframscript does, but keeps the
   x/y ratio 1 for a partial sweep (wolframscript: `{2, 1, …}` for
-  `θ ∈ [0, π]`) and a fixed z ratio for `{r, z}` profiles (wolframscript:
-  `Automatic`).
+  `θ ∈ [0, π]`).
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
@@ -10330,6 +10361,19 @@ Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
 
+### Studio: Grid `ItemSize -> w` columns are wider than the front end's
+
+Woxi sizes a fixed `ItemSize -> w` column as `w` ems at the 14 px base font
+plus the 12 px cell padding, so `Grid[table, Frame -> All, ItemSize -> 4]`
+gives 68 px per column. A front-end snapshot of the same grid (text about
+14 px tall, `Frame -> All`) measures about 49.5 px per column, i.e. about
+27% narrower. A six-column grid like that inside a
+`Pane[…, Alignment -> Center, ImageSize -> {400, 200}]` therefore overflows
+the pane in Woxi (409 px) and loses its right frame line and its centering,
+while Wolfram draws it about 297 px wide, centered. The front end's em unit
+for `ItemSize` and whether it includes the grid's `Spacings` have not been
+verified against `wolframscript`, so the width rule is left unchanged.
+
 ### `Plot` runs the cells of a multi-column `Grid` title together
 
 `PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
@@ -10383,3 +10427,40 @@ like `s_NDSolve`StateData`, match.
 above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
 other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
 Only a title that is framed as a whole gets a box there.
+
+### Symbols inside a `Style`d `Row` `PlotLabel` drawn upright
+
+A saved snapshot of `ListPlot[…, PlotLabel -> Style[Row[{x^m, "  vs.  ",
+y^n}], 16]]` (with `x` and `y` unassigned symbols) shows the letters
+upright, while Woxi sets single-letter symbols in a plot label in italics as
+`TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
+is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
+rendered with another `FormatType`.
+
+### `SliceContourPlot3D` automatic contour levels on coarse slices
+
+With `Contours -> n` Woxi spaces the levels over the range of its own slice
+samples. For a distance function sampled with `PlotPoints -> 10` on
+`"BackPlanes"`, a saved snapshot shows the bar legend's levels one step
+higher than Woxi's (15.6–31.2 instead of 11.7–27.3, same 3.9 spacing): Wolfram's
+value range starts above Woxi's sampled minimum, and its slice even shows a
+band below the lowest legend band. How Wolfram samples the slice planes
+for the value range has not been measured.
+
+### Large 3D axis labels under `SphericalRegion -> True`
+
+`Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, SphericalRegion ->
+True, AxesLabel -> {…, …, Style["zzz", Large, Bold]}]` draws the vertical
+axis's large label partly outside the picture's left edge (its center about
+10 px from it). Without `SphericalRegion` the picture leaves the label room.
+Shrinking the framing sphere to fit the labels (fitting them together with
+the contents sphere) does not settle on a layout that keeps the label
+inside, and was not checked against `wolframscript`.
+
+### `Style[…, "Input"]` text weight
+
+The `"Input"` named style sets text in Wolfram's bold input font (a saved
+snapshot of `Style[Row[{…}], Gray, 20, "Input"]` shows bold monospace text),
+while Woxi ignores the style name and draws the text in regular weight.
+Its stylesheet font size, which applies when no explicit size is given, has
+not been measured against wolframscript yet.

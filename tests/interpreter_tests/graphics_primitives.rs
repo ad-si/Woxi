@@ -250,6 +250,27 @@ mod graphics_primitives {
     assert!(!head.contains("rgb(255,255,255)"), "{head}");
   }
 
+  // Scaling from the default `{0, 1}` range is the identity, so a color
+  // function sees the values as given: a stored indexed `RasterBox` looks
+  // its integer cells up in a palette, and a plain number from the color
+  // function is a gray level.
+  #[test]
+  fn raster_color_function_sees_unscaled_indices() {
+    let svg = svg_of(
+      "Graphics[Raster[{{1, 2}}, {{0, 0}, {2, 1}}, \
+       ColorFunction -> (Apply[GrayLevel, Part[{0., 65535.}, #]] &)]]",
+    );
+    assert!(svg.contains("fill=\"rgb(0,0,0)\""), "{svg}");
+    assert!(svg.contains("fill=\"rgb(255,255,255)\""), "{svg}");
+    let palette = svg_of(
+      "Graphics[Raster[{{1, 2, 3}}, {{0, 0}, {3, 1}}, \
+       ColorFunction -> ({Red, Green, Blue}[[#]] &)]]",
+    );
+    assert!(palette.contains("fill=\"rgb(255,0,0)\""), "{palette}");
+    assert!(palette.contains("fill=\"rgb(0,255,0)\""), "{palette}");
+    assert!(palette.contains("fill=\"rgb(0,0,255)\""), "{palette}");
+  }
+
   #[test]
   fn frame_style_per_edge() {
     let svg = svg_of(
@@ -373,6 +394,35 @@ mod graphics_primitives {
       "Graphics[{CapForm[\"Round\"], Thickness[0.02], Circle[{0, 0}, 1, {Pi, 2 Pi}]}]",
     );
     assert!(svg.contains("stroke-linecap=\"round\""), "{svg}");
+  }
+
+  #[test]
+  fn reversed_circle_arc_range_draws_the_same_arc() {
+    // `{a1, a2}` with `a1 > a2` covers the same angles as `{a2, a1}`.
+    for (rev, fwd) in [("{3, 1}", "{1, 3}"), ("{5.8, 2.7}", "{2.7, 5.8}")] {
+      let path = |range: &str| {
+        let svg = svg_of(&format!(
+          "Graphics[Circle[{{0, 0}}, 1, {range}], PlotRange -> 1.2]"
+        ));
+        let start = svg.find("<path").expect("arc path");
+        svg[start..].lines().next().unwrap().to_string()
+      };
+      assert_eq!(path(rev), path(fwd));
+    }
+  }
+
+  #[test]
+  fn reversed_disk_sector_range_draws_the_same_sector() {
+    for (rev, fwd) in [("{3, 1}", "{1, 3}"), ("{5.8, 2.7}", "{2.7, 5.8}")] {
+      let path = |range: &str| {
+        let svg = svg_of(&format!(
+          "Graphics[Disk[{{0, 0}}, 1, {range}], PlotRange -> 1.2]"
+        ));
+        let start = svg.find("<path").expect("sector path");
+        svg[start..].lines().next().unwrap().to_string()
+      };
+      assert_eq!(path(rev), path(fwd));
+    }
   }
 
   #[test]

@@ -14927,6 +14927,15 @@ pub fn is_rule_expr(expr: &Expr) -> bool {
 /// Extract the width in printer's points from a `Spacer` expression.
 /// Supports `Spacer[w]`, `Spacer[{w, ...}]`.
 pub fn spacer_width_pts(expr: &Expr) -> Option<f64> {
+  // A styled spacer (`Style[Spacer[10], 11]`, which `Style[Row[…], 11]`
+  // makes of each of its items) is still that many points of blank: font
+  // directives don't change a spacer's width.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Style"
+    && !args.is_empty()
+  {
+    return spacer_width_pts(&args[0]);
+  }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Spacer"
     && args.len() == 1

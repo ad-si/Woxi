@@ -8453,6 +8453,37 @@ mod cases {
     );
   }
 
+  /// `±x` and `∓x` typeset as their sign glyph in front of the operand (a
+  /// sum operand parenthesized), and `PlusMinus[a, b]` as the infix `a ± b`,
+  /// bracketed as a factor of a product.
+  #[test]
+  fn traditional_form_plus_minus_uses_its_glyph() {
+    assert_eq!(
+      held_traditional_boxes("±2 Sin[x]"),
+      r#"RowBox[{RowBox[{"±", "2"}], " ", RowBox[{"sin", "(", "x", ")"}]}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("MinusPlus[a + b]"),
+      r#"RowBox[{"∓", RowBox[{"(", RowBox[{"a", "+", "b"}], ")"}]}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("PlusMinus[a, b] c"),
+      r#"RowBox[{RowBox[{"(", RowBox[{"a", "±", "b"}], ")"}], " ", "c"}]"#
+    );
+  }
+
+  /// `DisplayForm[boxes]` inside a TraditionalForm layout draws its boxes,
+  /// not the `RowBox[…]` call that spells them.
+  #[test]
+  fn traditional_form_grid_draws_display_form_boxes() {
+    let svg = woxi::interpret(
+      r#"ExportString[TraditionalForm[Grid[{{"L = ", DisplayForm[RowBox[{"(", FractionBox["a", "2"], ")"}]]}}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("RowBox"), "{svg}");
+    assert!(!svg.contains("FractionBox"), "{svg}");
+  }
+
   /// A derivative sets the differentiated expression over the bar,
   /// `∂ψ(x, t)/∂t`, and only falls back to the operator form `∂/∂x (…)`
   /// for a derivand that is itself two-dimensional.
@@ -11635,6 +11666,27 @@ mod abs_simplifications {
     assert_eq!(interpret("Abs[3 + I]").unwrap(), "Sqrt[10]");
     // Rational components.
     assert_eq!(interpret("Abs[1/2 + 1/2 I]").unwrap(), "1/Sqrt[2]");
+  }
+
+  // Exact complex numbers with radical or constant parts keep an exact
+  // modulus Sqrt[Re^2 + Im^2] instead of collapsing to a machine real.
+  #[test]
+  fn abs_exact_complex_with_radicals() {
+    assert_eq!(interpret("Abs[1 + I Sqrt[3]]").unwrap(), "2");
+    assert_eq!(interpret("Abs[-1/2 - I Sqrt[3]]").unwrap(), "Sqrt[13]/2");
+    assert_eq!(interpret("Abs[-1/2 - I Sqrt[3]/2]").unwrap(), "1");
+    assert_eq!(interpret("Abs[Sqrt[2] + I Sqrt[3]]").unwrap(), "Sqrt[5]");
+    assert_eq!(interpret("Abs[1 + Sqrt[2] I]").unwrap(), "Sqrt[3]");
+    assert_eq!(interpret("Abs[1 + I Pi]").unwrap(), "Sqrt[1 + Pi^2]");
+    assert_eq!(
+      interpret("Abs[2 + b (1/2 - 1 + I Sqrt[3])] /. b -> -1").unwrap(),
+      "Sqrt[37]/2"
+    );
+    // A Mod of the exact modulus stays exact.
+    assert_eq!(
+      interpret("Mod[Abs[-1 - (-1/2 + I Sqrt[3])], 1]").unwrap(),
+      "-1 + Sqrt[13]/2"
+    );
   }
 
   // Machine-precision complex numbers: `a. + b. I` stays Complex in Wolfram

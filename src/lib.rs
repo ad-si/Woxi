@@ -1539,6 +1539,19 @@ pub fn get_captured_graphics() -> Option<String> {
 /// for all three shapes). Recurse into the selected pane's content (or the
 /// first one, absent a usable `sel` or a match) and promote its picture the
 /// same way.
+/// A `BarLegend[…]`, possibly `Placed[…]` (a plot's `PlotLegends` color bar).
+fn is_bar_legend(legend: &syntax::Expr) -> bool {
+  match legend {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      is_bar_legend(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, .. } => name == "BarLegend",
+    _ => false,
+  }
+}
+
 fn promote_result_graphics(expr: &syntax::Expr) {
   if let syntax::Expr::Graphics { svg, .. } = expr {
     if get_captured_graphics().as_deref() != Some(svg.as_str()) {
@@ -1553,6 +1566,23 @@ fn promote_result_graphics(expr: &syntax::Expr) {
     && args.len() == 2
     && matches!(&args[1], syntax::Expr::Identifier(n) if n == "None")
   {
+    promote_result_graphics(&args[0]);
+    return;
+  }
+  // `Legended[g, BarLegend[…]]` (what `PlotLegends` gives a plot) shows the
+  // color bar beside `g`; the picture captured while `g` was drawn lacks
+  // it, so capture the composed one.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Legended"
+    && args.len() == 2
+    && matches!(&args[0], syntax::Expr::Graphics { .. })
+    && is_bar_legend(&args[1])
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      capture_graphics(&svg);
+      return;
+    }
     promote_result_graphics(&args[0]);
     return;
   }
@@ -3899,16 +3929,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           if (inner == "Grid" || inner == "TextGrid") && !inner_args.is_empty()
         ) =>
     {
-      if let syntax::Expr::FunctionCall {
-        args: grid_args, ..
-      } = &args[0]
-      {
-        match functions::graphics::grid_ast(grid_args) {
-          Ok(result) => result,
-          Err(_) => expr,
-        }
-      } else {
-        expr
+      match functions::graphics::traditional_form_grid_ast(&args[0]) {
+        Ok(result) => result,
+        Err(_) => expr,
       }
     }
     // Style[Grid[...], directives...] — propagate style into grid
@@ -5163,7 +5186,9 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     .and_then(|(w, _, align, _)| {
       evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0).map(
         |lines| {
-          evaluator::dispatch::io_functions::align_pane_lines(lines, align)
+          evaluator::dispatch::io_functions::align_pane_lines(
+            &expr, lines, align,
+          )
         },
       )
     })

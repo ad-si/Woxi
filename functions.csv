@@ -6470,3 +6470,4 @@ NDSolve`Reinitialize,"Gives a new NDSolve`StateData for the same equations start
 NDSolve`Iterate,"Integrates an NDSolve`StateData in place up to a given time (forward or backward)",✅,stateful,5.0,
 NDSolve`ProcessSolutions,"Gives the solution rules computed so far for an NDSolve`StateData",✅,contextual,5.0,
 NDSolve`StateData,"Represents the state of a step-wise NDSolve problem set up by NDSolve`ProcessEquations",✅,none,5.0,
+ChartElementData,"Lists the built-in ChartElementFunction names of a chart function",✅,pure,7.0,

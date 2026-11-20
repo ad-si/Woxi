@@ -4818,10 +4818,23 @@ fn render_manipulate_widget<'a>(
             Message::Noop
           }
         };
-        let value_widget = text(format_slider_value(*current, *is_real))
-          .size(11)
-          .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(72.0));
+        // An exact value (`-7/6` on a `1/6`-step slider) reads as a
+        // stacked fraction, the way the FrontEnd typesets it.
+        let value_widget: Element<Message> =
+          match state.continuous_value_icon(ctrl) {
+            Some(icon) => container(
+              svg::Svg::new(icon.handle)
+                .width(iced::Length::Fixed(icon.width))
+                .height(iced::Length::Fixed(icon.height)),
+            )
+            .width(iced::Length::Fixed(72.0))
+            .into(),
+            None => text(format_slider_value(*current, *is_real))
+              .size(11)
+              .font(Font::MONOSPACE)
+              .width(iced::Length::Fixed(72.0))
+              .into(),
+          };
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -5785,6 +5798,15 @@ fn is_text_table(rows: &[Vec<woxi::functions::graphics::DisplayNode>]) -> bool {
     })
 }
 
+/// Transpose a display grid's rows into columns, padding the columns of a
+/// short (ragged) row with `None` so every column has one slot per row.
+fn grid_columns<T>(rows: &[Vec<T>]) -> Vec<Vec<Option<&T>>> {
+  let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+  (0..width)
+    .map(|c| rows.iter().map(|row| row.get(c)).collect())
+    .collect()
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -5821,15 +5843,21 @@ fn render_display_node<'a>(
       r.into()
     }
     DisplayNode::Grid(rows) => {
-      let mut col = Column::new().spacing(2);
-      for row_cells in rows {
-        let mut r = Row::new().spacing(2).align_y(Center);
-        for cell in row_cells {
-          r = r.push(render_display_node(cell_idx, cell));
+      // Wolfram lines a grid's cells up in columns, each cell centered in
+      // its column (the default `Alignment -> Center`), so the grid is laid
+      // out column by column rather than as independent rows.
+      let mut grid = Row::new().spacing(6);
+      for column_cells in grid_columns(rows) {
+        let mut col = Column::new().spacing(2).align_x(Center);
+        for cell in column_cells {
+          col = col.push(match cell {
+            Some(cell) => render_display_node(cell_idx, cell),
+            None => text(" ").size(12).into(),
+          });
         }
-        col = col.push(r);
+        grid = grid.push(col);
       }
-      col.into()
+      grid.into()
     }
     DisplayNode::Column(children) => {
       let mut col = Column::new().spacing(4);
@@ -18315,6 +18343,28 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         target
       })
       .collect()
+  }
+
+  /// A display grid is drawn column by column so its cells line up, as
+  /// Wolfram's `Grid` does: the label column `{"volume", "surface area"}`
+  /// and the value column stay together, and a short row leaves an empty
+  /// slot instead of shifting later rows' cells into the wrong column.
+  #[test]
+  fn grid_columns_transposes_rows_and_pads_ragged_ones() {
+    let rows = vec![vec!["volume", "24.02"], vec!["surface area", "40.26"]];
+    assert_eq!(
+      grid_columns(&rows),
+      vec![
+        vec![Some(&"volume"), Some(&"surface area")],
+        vec![Some(&"24.02"), Some(&"40.26")],
+      ]
+    );
+    let ragged = vec![vec!["a"], vec!["b", "c"]];
+    assert_eq!(
+      grid_columns(&ragged),
+      vec![vec![Some(&"a"), Some(&"b")], vec![None, Some(&"c")]]
+    );
+    assert!(grid_columns::<&str>(&[]).is_empty());
   }
 
   #[test]
@@ -36548,6 +36598,20 @@ mod slideshow_tests {
     let expr = woxi::interpret_to_expr(code).unwrap();
     manipulate::ManipulateState::from_expr(&expr)
       .expect("SlideView must build a widget")
+  }
+
+  /// A slider stepping by `1/6` binds exact rationals, so its readout is a
+  /// typeset fraction rather than the rounded decimal `-1.167`; an integer
+  /// value on the same slider stays a text readout.
+  #[test]
+  fn rational_step_slider_reads_a_typeset_fraction() {
+    let mut state =
+      slide_view_state("Manipulate[q, {{q, -7/6}, -10, 10, 1/6}]");
+    let ctrl = state.controls[0].clone();
+    assert!(state.continuous_value_icon(&ctrl).is_some());
+    assert!(state.slide_continuous(0, -3.0));
+    let ctrl = state.controls[0].clone();
+    assert!(state.continuous_value_icon(&ctrl).is_none());
   }
 
   #[test]

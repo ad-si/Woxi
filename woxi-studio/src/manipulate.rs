@@ -487,7 +487,15 @@ impl ControlState {
       ControlState::Locator {
         derived: Some(_), ..
       } => {}
-      ControlState::Locator { points, single, .. } => {
+      ControlState::Locator {
+        points,
+        single,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => {
         if let Some(p) = as_pair(&expr) {
           // A lone point `{x, y}` written to a single-point Locator.
           if *single {
@@ -502,6 +510,15 @@ impl ControlState {
           } else {
             new_points
           };
+        }
+        // As for a 2D slider: a locator can sit anywhere in the picture, so
+        // points written from code (a button, a restored value) outside the
+        // range derived from the initial value must stay reachable.
+        for &(a, b) in points.iter() {
+          *x_min = x_min.min(a);
+          *x_max = x_max.max(a);
+          *y_min = y_min.min(b);
+          *y_max = y_max.max(b);
         }
       }
       ControlState::Color { current, .. } => {
@@ -912,6 +929,15 @@ pub struct ManipulateState {
   /// away) or ran a `Refresh[…, UpdateInterval -> t]` that asks for a
   /// re-evaluation on a timer.
   self_refreshing: bool,
+  /// `UpdateInterval` code of a `Refresh[…, UpdateInterval -> t]` in the
+  /// body (see `ManipulateSpec::refresh_interval`).
+  refresh_interval: Option<String>,
+  /// The seconds between timed refreshes as of the last frame, or `None`
+  /// when the body does not currently refresh on its own (`t` is
+  /// `Infinity`, e.g. while a "run" checkbox is off).
+  timed_refresh: Option<f64>,
+  /// When the body last re-ran, so a timed refresh honors its interval.
+  last_refresh: Option<std::time::Instant>,
   /// `ControlPlacement -> …`: which side of the output the control panel
   /// sits on. `Top` (Wolfram's default) stacks the controls above it.
   pub control_placement: ControlPlacement,
@@ -963,6 +989,10 @@ pub struct ManipulateState {
   /// (a `Dynamic[Framed@Graphics[…]]` sector showing a slider's angle), as
   /// `(control name, icon)`. Re-rendered with the captions on every change.
   pub label_svgs: Vec<(String, LabelIcon)>,
+  /// Typeset slider value readouts (see [`Self::continuous_value_icon`]),
+  /// keyed by the value's bits and whether it binds as a machine real.
+  /// Filled lazily from `view`, hence the interior mutability.
+  value_icons: std::cell::RefCell<Vec<((u64, bool, bool), Option<LabelIcon>)>>,
   /// `(control name, reset code)` for a `LocatorPane` variable promoted from
   /// a body-local `var = expr;` assignment (see
   /// `woxi::functions::graphics::ManipulateSpec::dynamic_locator_defaults`).
@@ -1064,6 +1094,44 @@ impl ManipulateState {
       .iter()
       .find(|(n, _)| n == name)
       .map(|(_, handle)| handle)
+  }
+
+  /// The value readout of a `Continuous` control as a typeset picture
+  /// when its variable binds an exact non-integer number (a `1/6`-step
+  /// slider reads a stacked `-7/6`, as in Wolfram); `None` keeps the plain
+  /// text readout. Rendered once per value and cached.
+  pub fn continuous_value_icon(
+    &self,
+    ctrl: &ControlState,
+  ) -> Option<LabelIcon> {
+    let ControlState::Continuous {
+      current,
+      is_real,
+      exact_value,
+      imaginary,
+      ..
+    } = ctrl
+    else {
+      return None;
+    };
+    let real = *is_real && *exact_value != Some(*current);
+    let key = (current.to_bits(), real, *imaginary);
+    if let Some((_, icon)) =
+      self.value_icons.borrow().iter().find(|(k, _)| *k == key)
+    {
+      return icon.clone();
+    }
+    let icon = woxi::functions::graphics::continuous_value_label_svg(
+      *current, real, *imaginary,
+    )
+    .map(LabelIcon::from_svg);
+    let mut cache = self.value_icons.borrow_mut();
+    // A dragged slider visits many values; keep the cache bounded.
+    if cache.len() >= 256 {
+      cache.clear();
+    }
+    cache.push((key, icon.clone()));
+    icon
   }
 
   /// Which side of the output the control at `ctrl_idx` sits on: its own
@@ -1205,12 +1273,16 @@ impl ManipulateState {
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
       self_refreshing: false,
+      refresh_interval: spec.refresh_interval,
+      timed_refresh: None,
+      last_refresh: None,
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
       default_step_controls,
       dynamic_values: spec.dynamic_values,
       dynamic_labels: spec.dynamic_labels,
       label_svgs: Vec::new(),
+      value_icons: Default::default(),
       pending_locator_reset: vec![false; spec.dynamic_locator_defaults.len()],
       dynamic_locator_defaults: spec.dynamic_locator_defaults,
       control_enabled,
@@ -1993,7 +2065,9 @@ impl ManipulateState {
   /// Whether the app's timer should drive this widget: it plays an
   /// animation, or its body keeps rewriting its own `DynamicModule` state.
   pub fn wants_tick(&self) -> bool {
-    (self.animated && self.playing) || self.self_refreshing
+    (self.animated && self.playing)
+      || self.self_refreshing
+      || self.timed_refresh.is_some()
   }
 
   /// One timer step: advance the animation, or refresh a self-updating body.
@@ -2006,6 +2080,12 @@ impl ManipulateState {
       woxi::set_mouse_position(self.pointer_graphics_position());
       self.reevaluate();
       woxi::set_mouse_position(None);
+    } else if let Some(interval) = self.timed_refresh
+      && self
+        .last_refresh
+        .is_none_or(|t| t.elapsed().as_secs_f64() >= interval)
+    {
+      self.reevaluate();
     }
   }
 
@@ -2226,6 +2306,7 @@ impl ManipulateState {
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
     let content_width = self.content_width;
+    let refresh_interval = self.refresh_interval.clone();
     let content_height = self.content_height;
     let marked_code = self.display_code(&code);
     // Every bound name (visible controls + hidden state), so a body that
@@ -2245,6 +2326,7 @@ impl ManipulateState {
       resolved_values,
       resolved_labels,
       resolved_button_labels,
+      timed_refresh,
     ) = woxi::with_scoped_globals(&bindings, || {
       // The body runs *before* the captions are built: a Manipulate body
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
@@ -2417,8 +2499,14 @@ impl ManipulateState {
         values,
         labels,
         button_labels,
+        // Resolved after the body ran, against the values it left behind.
+        refresh_interval.as_deref().and_then(
+          woxi::functions::graphics::manipulate_refresh_interval_seconds,
+        ),
       )
     });
+    self.timed_refresh = timed_refresh;
+    self.last_refresh = Some(std::time::Instant::now());
     self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
     let timed_refresh = woxi::take_timed_refresh();
@@ -2686,7 +2774,16 @@ impl ManipulateState {
       else {
         continue;
       };
-      if values == new_values {
+      // A choice list whose labels follow another control
+      // (`v :> Dynamic[icon[style, v]]`) keeps its values but relabels.
+      if values == new_values
+        && value_labels == new_labels
+        && *value_label_runs == *new_runs
+        && value_label_svgs
+          .iter()
+          .map(Option::is_some)
+          .eq(new_svgs.iter().map(Option::is_some))
+      {
         continue;
       }
       let selected = values.get(*current_index).cloned();
@@ -4146,6 +4243,56 @@ mod tests {
     assert_eq!(count_of(&state), 3);
   }
 
+  /// Choices `v :> Dynamic[label[style, v]]` keep their values when the
+  /// `style` control moves, but their labels must follow it (text names
+  /// in one style, icons in the other) without losing the selection.
+  #[test]
+  fn delayed_dynamic_choice_labels_follow_another_control() {
+    woxi::interpret(
+      "relabelIcon[\"words\", s_] := ToString[s]; \
+       relabelIcon[\"icons\", s_] := Graphics[Disk[], ImageSize -> 10]",
+    )
+    .unwrap();
+    let code = r#"Manipulate[
+      shp,
+      {{style, "words"}, {"words", "icons"}},
+      {{shp, sqr}, Map[# :> Dynamic[relabelIcon[style, #]] &, {sqr, hex}],
+        ControlType -> SetterBar}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(state.select_discrete(1, "hex"));
+    let shp = |state: &ManipulateState| {
+      state
+        .controls
+        .iter()
+        .find_map(|c| match c {
+          ControlState::Discrete {
+            name,
+            values,
+            value_label_svgs,
+            current_index,
+            ..
+          } if name == "shp" => Some((
+            values.clone(),
+            value_label_svgs.iter().filter(|s| s.is_some()).count(),
+            *current_index,
+          )),
+          _ => None,
+        })
+        .expect("shp control")
+    };
+    state.reevaluate();
+    assert_eq!(shp(&state), (vec!["sqr".into(), "hex".into()], 0, 1));
+    assert!(state.select_discrete(0, "icons"));
+    state.reevaluate();
+    assert_eq!(shp(&state), (vec!["sqr".into(), "hex".into()], 2, 1));
+    assert!(state.select_discrete(0, "words"));
+    state.reevaluate();
+    assert_eq!(shp(&state), (vec!["sqr".into(), "hex".into()], 0, 1));
+  }
+
   /// A sound-player display built with `Audio`Waveform` evaluates to an
   /// Audio object (shown as `-Audio-`), not the raw unevaluated call.
   #[test]
@@ -4525,6 +4672,61 @@ mod tests {
     assert_eq!((*x, *y), (-30.0, 50.0));
     assert!(*x_min <= -30.0 && *x_max >= 1.0);
     assert!(*y_min <= 0.0 && *y_max >= 50.0);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate holds a
+  /// list of `Appearance -> None` locators gated by `Enabled -> !flag`, next
+  /// to buttons that overwrite the whole point list. Regression check: the
+  /// gate follows the checkbox, and a button that moves the points beyond the
+  /// range derived from their initial value widens the locator's sliders so
+  /// the new points stay reachable. This is a self-authored,
+  /// construct-equivalent example.
+  #[test]
+  fn locator_list_written_by_button_widens_its_range() {
+    let code = r#"Manipulate[
+      Graphics[Table[Text[i, pts[[i]]], {i, Length[pts]}], PlotRange -> 20],
+      Row[{
+        Control[{{pts, {{0, 0}, {1, 1}}}, Locator, Appearance -> None,
+          Enabled -> !frozen}],
+        Button["spread", pts = {{-15, 12}, {9, -18}}],
+        Control[{{frozen, False, "freeze"}, {True, False}}]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let loc = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Locator { .. }))
+      .expect("a locator control");
+    assert!(state.control_is_enabled[loc]);
+
+    state.apply_button_action("pts = {{-15, 12}, {9, -18}}");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let ControlState::Locator {
+      points,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      ..
+    } = &state.controls[loc]
+    else {
+      panic!("expected a locator");
+    };
+    assert_eq!(points, &vec![(-15.0, 12.0), (9.0, -18.0)]);
+    assert!(
+      *x_min <= -15.0 && *x_max >= 9.0 && *y_min <= -18.0 && *y_max >= 12.0,
+      "range must cover the new points: {x_min}..{x_max}, {y_min}..{y_max}"
+    );
+
+    state.apply_button_action("frozen = True");
+    assert!(
+      !state.control_is_enabled[loc],
+      "Enabled -> !frozen must disable the locator"
+    );
   }
 
   /// A body that caches a rendered plot in hidden state (recomputing it only
@@ -8551,5 +8753,158 @@ mod repeated_option_tests {
       "the body lost the style it applies: {}",
       state.body
     );
+  }
+
+  /// A `Refresh[…, UpdateInterval -> t]` body re-runs on the app's timer
+  /// while `t` is finite (a running simulation advancing its hidden state),
+  /// and stays put while `t` resolves to `Infinity`.
+  #[test]
+  fn refresh_with_update_interval_drives_the_timer() {
+    let code = r#"Manipulate[
+      Refresh[If[run, k = k + 1]; k, UpdateInterval -> If[run, 0, Infinity]],
+      {{run, False}, {True, False}}, {{k, 0}, ControlType -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.text_output.as_deref(), Some("0"));
+    assert!(!state.wants_tick(), "a stopped simulation needs no timer");
+    assert!(state.select_discrete(0, "True"));
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("1"));
+    assert!(state.wants_tick(), "a running simulation keeps refreshing");
+    state.tick();
+    state.tick();
+    assert_eq!(state.text_output.as_deref(), Some("3"));
+    assert!(state.select_discrete(0, "False"));
+    state.reevaluate();
+    assert!(!state.wants_tick());
+    assert_eq!(state.text_output.as_deref(), Some("3"));
+  }
+}
+
+#[cfg(test)]
+mod grid_button_pad_tests {
+  use super::*;
+
+  /// A sliding-token puzzle: the body is a `Grid` pairing the board picture
+  /// with a nested `Grid` pad of plate-less arrow `Button`s, a "reset"
+  /// button and a `PopupMenu[Dynamic[row], …]` of preset positions spanning
+  /// a row. Self-authored construct equivalent of a randomly sampled
+  /// Demonstration — not its code.
+  ///
+  /// Regressions: every literal `Button` in the pad was hoisted out of the
+  /// body into a separate display list, emptying its grid cell (a pad of
+  /// only buttons collapsed to `Grid[{{}}]`), and the promoted popup's cell
+  /// printed the hidden variable's whole value instead of staying blank.
+  #[test]
+  fn grid_pad_buttons_stay_in_place_and_press() {
+    let code = r#"Manipulate[
+      Deploy@Grid[{{
+        Graphics[MapIndexed[Disk[{First[#2], 0}, 0.4] &, row],
+          PlotRange -> {{0, 6}, {-1, 1}}],
+        Grid[{
+          {Button[Style["<", Large, Bold], row = RotateLeft[row], Appearance -> None],
+           "",
+           Button[Style[">", Large, Bold], row = RotateRight[row], Appearance -> None]},
+          {Button["reset", row = Range[5]], SpanFromLeft},
+          {PopupMenu[Dynamic[row], {{5, 4, 3, 2, 1} -> "reversed", Delimiter,
+            {2, 1, 4, 3, 5} -> "swapped"}, "presets"], SpanFromLeft}},
+          Alignment -> Center]}}],
+      {{row, Range[5]}, ControlType -> None},
+      {{marks, False, "marks"}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state = ManipulateState::from_expr(&expr).expect("should build");
+    assert_eq!(state.error, None);
+    assert_eq!(state.text_output, None, "no source-text fallback");
+    assert!(
+      state.displays.is_empty(),
+      "no button hoisted out of the pad"
+    );
+    let svg = state.current_svg().expect("the body draws a picture");
+    assert!(
+      !svg.contains("{1, 2, 3, 4, 5}"),
+      "popup cell printed row: {svg}"
+    );
+    assert!(svg.contains(">reset</text>"), "reset label drawn: {svg}");
+    assert_eq!(state.button_regions.len(), 3, "both arrows and reset press");
+
+    let row = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .chain(state.bindings().iter())
+        .find(|(n, _)| n == "row")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let action = state
+      .button_regions
+      .iter()
+      .find(|r| r.action.contains("RotateLeft"))
+      .expect("left arrow region")
+      .action
+      .clone();
+    state.apply_button_action(&action);
+    assert_eq!(state.error, None);
+    assert_eq!(row(&state), "{2, 3, 4, 5, 1}");
+    assert!(
+      state.controls.iter().any(|c| c.name() == "row"),
+      "the pick list drives row from the control panel"
+    );
+  }
+}
+
+#[cfg(test)]
+mod control_panel_tabview_tests {
+  use super::*;
+
+  /// Construct-equivalent of a randomly sampled Wolfram Demonstration (not
+  /// its code, names or values): a hidden `{{var, init}, ControlType ->
+  /// None}` spec, followed by a control-panel `TabView[{…}, Dynamic[mode]]`
+  /// whose tabs hold embedded `SetterBar[Dynamic[var], …]` rows and a
+  /// slider for the same variable, keyed by plain symbols. The variable must start at the hidden
+  /// spec's value rather than the first setter choice, the hidden `mode`
+  /// selector must get a tab strip, and each tab's controls are shown only
+  /// while their tab is selected.
+  #[test]
+  fn control_panel_tabview_with_hidden_initial_value() {
+    let code = r#"Manipulate[
+      {mode, k},
+      {mode, {low, high}, ControlType -> None},
+      {{k, 7}, Range[2, 12], ControlType -> None},
+      TabView[{
+        {low, "coarse" -> Column[{
+          SetterBar[Dynamic[k], {2, 4, 6, 8}],
+          SetterBar[Dynamic[k], {10, 12}]}]},
+        {high, "fine" -> Column[{
+          Control[{{k, 7}, 2, 12, 1}],
+          Control[{{shift, 3}, 0, 9, 1}]}]}
+      }, Dynamic[mode]]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None, "{:?}", state.error);
+
+    let k = state.bindings().into_iter().find(|(n, _)| n == "k");
+    assert_eq!(k.map(|(_, v)| v).as_deref(), Some("7"));
+    assert_eq!(state.text_output.as_deref(), Some("{low, 7}"));
+
+    let mode = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "mode")
+      .expect("the tab selector becomes a visible control");
+    let vis = |state: &ManipulateState, n: &str| {
+      let i = state.controls.iter().position(|c| c.name() == n).unwrap();
+      state.control_is_visible[i]
+    };
+    assert!(vis(&state, "k"), "the setter rows show on the first tab");
+    assert!(!vis(&state, "shift"), "the second tab's slider is hidden");
+
+    assert!(state.select_discrete(mode, "fine"));
+    state.reevaluate();
+    assert!(vis(&state, "shift"), "the slider shows on its own tab");
+    assert_eq!(state.text_output.as_deref(), Some("{high, 7}"));
   }
 }

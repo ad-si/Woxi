@@ -6785,10 +6785,12 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
     // `Row[{a, b, …}, sep]` sets `sep` between neighboring items; a rule in
     // that position is an option (`ImageSize -> …`), not a separator.
     "Row" if args.len() >= 2 && !crate::syntax::is_rule_expr(&args[1]) => {
+      let separator =
+        crate::functions::graphics::spaced_row_separator(&args[1]);
       let mut cells = Vec::with_capacity(2 * items.len());
       for (i, item) in items.iter().enumerate() {
         if i > 0 {
-          cells.push(args[1].clone());
+          cells.push(separator.clone());
         }
         cells.push(item.clone());
       }
@@ -7561,10 +7563,18 @@ fn is_display_box(expr: &Expr) -> bool {
 /// The lines a sized `Pane` broke its text into follow the pane's
 /// horizontal `Alignment`: `Alignment -> Center` (or `{Center, Top}`)
 /// centers every line in the pane, `Right` sets them flush right.
+///
+/// A `Column` the pane's `content` already is keeps its own item
+/// alignment (`Left` by default): the pane only places the column as a
+/// whole, so re-flowing one of its items must not re-align the others.
 pub(crate) fn align_pane_lines(
+  content: &Expr,
   lines: Expr,
   alignment: Option<(f64, f64)>,
 ) -> Expr {
+  if pane_content_is_column(content) {
+    return lines;
+  }
   let anchor = match alignment {
     Some((0.5, _)) => "Center",
     Some((1.0, _)) => "Right",
@@ -7584,10 +7594,28 @@ pub(crate) fn align_pane_lines(
         && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();
-      new_args[0] = align_pane_lines(args[0].clone(), alignment);
+      new_args[0] = align_pane_lines(content, args[0].clone(), alignment);
       call(name.as_str(), new_args)
     }
     _ => lines,
+  }
+}
+
+/// Whether pane content is a `Column` of its own, looking through the
+/// `Style`/`Text`/`TraditionalForm`/`Pane` wrappers `wrap_pane_text`
+/// re-flows through.
+fn pane_content_is_column(content: &Expr) -> bool {
+  match content {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Column" => true,
+        "Style" | "Text" | "TraditionalForm" | "Pane" => {
+          pane_content_is_column(&args[0])
+        }
+        _ => false,
+      }
+    }
+    _ => false,
   }
 }
 
@@ -7661,7 +7689,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       let wrapped = match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => pane_size_component(&size[0])
           .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
-          .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
+          .map(|lines| {
+            align_pane_lines(&args[0], lines, pane_alignment(&args[1..]))
+          }),
         _ => None,
       };
       // A list in a grid or column wider than the pane breaks into lines
@@ -8556,15 +8586,10 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         if (name == "Grid" || name == "TextGrid") && !args.is_empty()
       ) =>
     {
-      if let Expr::FunctionCall {
-        args: grid_args, ..
-      } = &tf_args[0]
+      if crate::functions::graphics::traditional_form_grid_ast(&tf_args[0])
+        .is_ok()
       {
-        if crate::functions::graphics::grid_ast(grid_args).is_ok() {
-          crate::get_captured_graphics().unwrap_or_default()
-        } else {
-          String::new()
-        }
+        crate::get_captured_graphics().unwrap_or_default()
       } else {
         String::new()
       }
