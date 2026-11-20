@@ -3483,6 +3483,11 @@ pub(crate) struct SeriesStyle {
   /// Line thickness in display pixels (e.g. 1.5 = default, 2.0 = Thick).
   /// None means use the default (1.5px).
   pub thickness: Option<f64>,
+  /// A relative `Thickness[t]`: the fraction `t` of the picture's width,
+  /// resolved once the picture's size is known (see
+  /// [`series_thickness`]). `thickness` then holds a fallback in pixels for
+  /// renderers that do not know the width.
+  pub thickness_fraction: Option<f64>,
   /// Scatter dot size: a fraction of the image width for `PointSize[…]`,
   /// stored negative for the absolute printer's points of
   /// `AbsolutePointSize[…]`. None means the default dot.
@@ -5952,6 +5957,9 @@ fn generate_svg_with_options(
     margin_left as f64 + margin_right as f64 + y_label_area as f64;
   let v_margins =
     top_margin as f64 + margin_bottom as f64 + x_label_area as f64;
+  // The width the picture leaves blank on its sides when a fixed image is
+  // wider than the plot's shape needs.
+  let mut letterbox_width = 0u32;
   if opts.image_size_explicit.1
     && !opts.aspect_full
     && !full_width
@@ -5969,6 +5977,7 @@ fn generate_svg_with_options(
         let slack = ((avail_w - avail_h / ar) / 2.0).round() as u32;
         margin_left += slack;
         margin_right += slack;
+        letterbox_width = 2 * slack;
       }
     } else {
       let target_render_w = avail_h / ar + h_margins;
@@ -6604,10 +6613,15 @@ fn generate_svg_with_options(
         // (position, radius, color, opacity) of every curve's mesh points.
         let mut pending_mesh_dots: Vec<((f64, f64), u32, (u8, u8, u8), f64)> =
           Vec::new();
+        // A relative `Thickness[…]` is a fraction of the width of the
+        // picture itself, which a letterboxed image does not fill.
+        let curve_area_width =
+          f64::from(render_width.saturating_sub(letterbox_width));
         for (series_idx, points) in all_points.iter().enumerate() {
           let (r, g, b) = series_color(&opts.plot_style, series_idx);
           let color = RGBColor(r, g, b);
-          let stroke_w = series_thickness(&opts.plot_style, series_idx);
+          let stroke_w =
+            series_thickness(&opts.plot_style, series_idx, curve_area_width);
           let dashing = series_dashing(&opts.plot_style, series_idx);
           let (clip_min, clip_max) = opts.curve_clip_y.unwrap_or((y_min, y_max));
           let segments = clip_segments_to_x_range(
@@ -6805,7 +6819,11 @@ fn generate_svg_with_options(
                 .unwrap_or(base_color);
               let stroke_w = match shade {
                 Some(st) if st.thickness.is_some() => {
-                  series_thickness(std::slice::from_ref(st), 0)
+                  series_thickness(
+                    std::slice::from_ref(st),
+                    0,
+                    curve_area_width,
+                  )
                 }
                 _ => base_stroke_w,
               };
@@ -8220,12 +8238,18 @@ pub(crate) fn build_plot_source(
     .enumerate()
     .map(|(i, points)| {
       let color = series_color(plot_style, i);
-      let (thickness, point_size, dashing) = if plot_style.is_empty() {
-        (None, None, None)
-      } else {
-        let style = &plot_style[i % plot_style.len()];
-        (style.thickness, style.point_size, style.dashing.clone())
-      };
+      let (thickness, thickness_fraction, point_size, dashing) =
+        if plot_style.is_empty() {
+          (None, None, None, None)
+        } else {
+          let style = &plot_style[i % plot_style.len()];
+          (
+            style.thickness,
+            style.thickness_fraction,
+            style.point_size,
+            style.dashing.clone(),
+          )
+        };
       let opacity = plot_style
         .get(i % plot_style.len().max(1))
         .and_then(|s| s.opacity);
@@ -8247,6 +8271,7 @@ pub(crate) fn build_plot_source(
         fill_opacity,
         marker: None,
         thickness,
+        thickness_fraction,
         point_size,
         point_size_expr: plot_style
           .get(i % plot_style.len().max(1))
@@ -8338,6 +8363,7 @@ pub(crate) fn collapse_style_for_single_series(
     }
     if style.thickness.is_some() {
       merged.thickness = style.thickness;
+      merged.thickness_fraction = style.thickness_fraction;
     }
     if style.point_size.is_some() {
       merged.point_size = style.point_size;
@@ -8663,14 +8689,24 @@ fn series_opacity(plot_style: &[SeriesStyle], idx: usize) -> f64 {
 
 /// Get the line thickness (in render-space units) for a series.
 /// Default is 20 (2px at display size with RESOLUTION_SCALE=10).
-fn series_thickness(plot_style: &[SeriesStyle], idx: usize) -> u32 {
+/// A relative `Thickness[t]` is the fraction `t` of `area_width`, the
+/// width of the drawn picture in render-space units.
+fn series_thickness(
+  plot_style: &[SeriesStyle],
+  idx: usize,
+  area_width: f64,
+) -> u32 {
   // WL 15 draws plot curves with `AbsoluteThickness[2]`.
   let default_thickness = 20; // 2px * RESOLUTION_SCALE
   if plot_style.is_empty() {
     return default_thickness;
   }
   let style = &plot_style[idx % plot_style.len()];
-  if let Some(t) = style.thickness {
+  if let Some(f) = style.thickness_fraction
+    && area_width > 0.0
+  {
+    (f * area_width).round() as u32
+  } else if let Some(t) = style.thickness {
     (t * RESOLUTION_SCALE as f64).round() as u32
   } else {
     default_thickness
@@ -8810,6 +8846,7 @@ pub(crate) fn render_merged_plot_source(
       )),
       color_expr: s.color_expr.clone(),
       thickness: s.thickness,
+      thickness_fraction: s.thickness_fraction,
       point_size: s.point_size,
       point_size_expr: s.point_size_expr.clone(),
       dashing: s.dashing.clone(),
@@ -11892,7 +11929,7 @@ fn legend_swatch_svg(
       sf * 2.5,
     );
   }
-  let thickness = series_thickness(&opts.plot_style, si);
+  let thickness = series_thickness(&opts.plot_style, si, dash_scale);
   let dashing = series_dashing(&opts.plot_style, si);
   let sw = (thickness as f64 / RESOLUTION_SCALE as f64 * sf).max(sf);
   let mut dash_attr = String::new();
@@ -12461,6 +12498,7 @@ pub(crate) fn histogram_plot_source(
       fill_opacity: Some(if datasets.len() > 1 { 0.7 } else { 1.0 }),
       marker: None,
       thickness: Some(0.5),
+      thickness_fraction: None,
       point_size: None,
       point_size_expr: None,
       dashing: None,
@@ -13701,8 +13739,14 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
   }
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => style.thickness = Some(2.0),
-      "Thin" => style.thickness = Some(0.5),
+      "Thick" => {
+        style.thickness = Some(2.0);
+        style.thickness_fraction = None;
+      }
+      "Thin" => {
+        style.thickness = Some(0.5);
+        style.thickness_fraction = None;
+      }
       // `None` hides the curve itself; a `Filling` toward it still shows.
       "None" => style.opacity = Some(0.0),
       // A named dash length is absolute pixels, not a fraction of the
@@ -13733,25 +13777,25 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
         }
       }
       "Thickness" if args.len() == 1 => {
-        if let Expr::Identifier(s) = &args[0] {
-          match s.as_str() {
-            "Large" => style.thickness = Some(2.0),
-            "Tiny" => style.thickness = Some(0.5),
-            _ => {
-              if let Some(t) = try_eval_to_f64(&args[0]) {
-                // Relative thickness: fraction of plot width → display px
-                // 360px default width * fraction
-                style.thickness = Some(t * 360.0);
-              }
-            }
-          }
+        let named = match &args[0] {
+          Expr::Identifier(s) if s == "Large" => Some(2.0),
+          Expr::Identifier(s) if s == "Tiny" => Some(0.5),
+          _ => None,
+        };
+        if let Some(t) = named {
+          style.thickness = Some(t);
+          style.thickness_fraction = None;
         } else if let Some(t) = try_eval_to_f64(&args[0]) {
+          // A fraction of the plotting area's width, resolved when the
+          // curve is drawn; the pixels assume the default 360px width.
           style.thickness = Some(t * 360.0);
+          style.thickness_fraction = Some(t);
         }
       }
       "AbsoluteThickness" if args.len() == 1 => {
         if let Some(t) = try_eval_to_f64(&args[0]) {
           style.thickness = Some(t);
+          style.thickness_fraction = None;
         }
       }
       "PointSize" if args.len() == 1 => {

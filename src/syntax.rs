@@ -244,6 +244,11 @@ pub struct PlotSeriesData {
   /// …); `None` = the 1.5px default. Travels with the series so a curve keeps
   /// its weight when `Show` merges it into another graphic.
   pub thickness: Option<f64>,
+  /// A relative `Thickness[t]` from `PlotStyle`: the fraction `t` of the
+  /// drawing's width, kept so the curve's weight follows the size of the
+  /// picture it is finally drawn in (`thickness` is then its pixels at the
+  /// default size).
+  pub thickness_fraction: Option<f64>,
   /// Dot size of a scatter series from `PlotStyle` — a fraction of the image
   /// width for `PointSize[…]`, stored negative for the absolute printer's
   /// points of `AbsolutePointSize[…]`, the same sign convention the graphics

@@ -710,10 +710,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
         // extracted line is drawn the same way wherever it is placed.
         if !s.is_scatter {
-          style.push(call1(
-            "AbsoluteThickness",
-            Expr::Real(s.thickness.unwrap_or(2.0)),
-          ));
+          style.push(crate::functions::graphics::series_thickness_expr(s, 2.0));
           style.extend(crate::functions::graphics::series_dashing_expr(
             s,
             source.image_size.0,
