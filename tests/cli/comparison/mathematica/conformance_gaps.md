@@ -5686,6 +5686,15 @@ draws the band roughly 7 % too large. The 6–7 % excess of the
 contents largely fill their box, so the contents sphere should change them
 only a little. They have not been re-measured.
 
+A ring-shaped scene is drawn too large. A Demonstration's cylinder of small
+triangles and spheres (a 2.1 × 2.1 × 1.2 box at `ImageSize -> {300, 350}`)
+spans about 82 % and 89 % of the width in its snapshots. A band of narrow
+faces of radius 1 and height 1 at `ImageSize -> {400, 400}` comes out at
+about 90 % under the contents sphere. Framing by the sphere through the
+farthest corner of each primitive's own bounding box drew such a band at
+about 81 % and matched that Demonstration. It was not checked against the
+polyhedron snapshots above. No single rule is known to fit both.
+
 ### Sphere framing of an unboxed box at a fixed `ImageSize`
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a

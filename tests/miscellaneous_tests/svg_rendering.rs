@@ -3294,6 +3294,54 @@ mod tests {
     }
 
     #[test]
+    fn spherical_region_band_frames_inside_the_box_sphere() {
+      // A band of narrow faces around the z-axis (radius 1, height 1). Its
+      // 2 × 2 × 1 box has a circumsphere of radius 1.5, but the contents
+      // stay within about 1.12 of the center, so the band is framed by a
+      // smaller sphere and drawn larger than the box's sphere would draw it
+      // (63 % of the width). A cylinder of triangles in a Demonstration
+      // snapshot spans about 82 %; Woxi draws about 90 % (see
+      // conformance_gaps.md). The same band built by rotating one face
+      // (`Rotate` of a `Polygon`) frames identically.
+      let face = |t: &str| {
+        format!(
+          "Polygon[{{{{Cos[{t}], Sin[{t}], 0}}, {{Cos[{t} + Pi/12], \
+           Sin[{t} + Pi/12], 0}}, {{Cos[{t} + Pi/12], Sin[{t} + Pi/12], 1}}, \
+           {{Cos[{t}], Sin[{t}], 1}}}}]"
+        )
+      };
+      let opts = "Boxed -> False, SphericalRegion -> True, \
+                  ImageSize -> {400, 400}";
+      let band = format!(
+        "Graphics3D[Table[{}, {{t, 0, 2 Pi - Pi/12, Pi/12}}], {opts}]",
+        face("t")
+      );
+      let rotated = format!(
+        "Graphics3D[Table[Rotate[{}, t, {{0, 0, 1}}], \
+         {{t, 0, 2 Pi - Pi/12, Pi/12}}], {opts}]",
+        face("0")
+      );
+      let (w, _) = ink_extent(&svg_of(&band));
+      assert!(
+        (300.0..380.0).contains(&w),
+        "the band should span 75–95% of the width, got {w}"
+      );
+      let (w_rot, _) = ink_extent(&svg_of(&rotated));
+      assert!((w - w_rot).abs() < 2.0, "{w} vs {w_rot}");
+
+      // A pinned `PlotRange` is still framed by the sphere around it.
+      let pinned = band.replace(
+        opts,
+        &format!("{opts}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{0, 1}}}}"),
+      );
+      let (w_pinned, _) = ink_extent(&svg_of(&pinned));
+      assert!(
+        w_pinned < w * 0.85,
+        "a pinned box frames by its own sphere: {w_pinned} vs {w}"
+      );
+    }
+
+    #[test]
     fn relative_thickness_follows_the_3d_image_width() {
       // `Thickness[t]` is a fraction of the picture's width, so at
       // `ImageSize -> 400` a `Thickness[0.015]` line is 6 pixels wide.
