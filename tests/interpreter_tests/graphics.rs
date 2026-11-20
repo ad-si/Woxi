@@ -6846,6 +6846,57 @@ mod plot3d {
       assert_ne!(plot("False"), plot("Automatic"));
     }
 
+    /// Explicit mesh levels `{{v, style}}` are drawn in the level's own
+    /// style, and a level outside the surface draws nothing.
+    #[test]
+    fn mesh_level_with_its_own_style() {
+      let svg = export_svg(
+        "Plot3D[x y, {x, 0, 10}, {y, 0, 10}, \
+         Mesh -> {{{-1}}, {{3, Yellow}}}]",
+      );
+      assert!(svg.contains("stroke=\"rgb(255,255,0)\""), "no yellow mesh");
+      let plain = export_svg(
+        "Plot3D[x y, {x, 0, 10}, {y, 0, 10}, Mesh -> {{{-1}}, {{3}}}]",
+      );
+      assert!(!plain.contains("stroke=\"rgb(255,255,0)\""));
+    }
+
+    /// The expression form `Show` merges carries the explicit mesh levels,
+    /// not the default mesh, so a shown surface keeps its own mesh.
+    #[test]
+    fn explicit_mesh_levels_travel_into_show() {
+      let plot = "g = Plot3D[x y, {x, 0, 10}, {y, 0, 10}, \
+                  Mesh -> {{{-1}}, {{3, Yellow}}}]";
+      assert_eq!(
+        interpret(&format!("{plot}; Length[Cases[g, _Line, Infinity]]"))
+          .unwrap(),
+        "1"
+      );
+      // Every segment of the yellow line lies on y == 3.
+      assert_eq!(
+        interpret(&format!(
+          "{plot}; Union[Round[Flatten[Cases[g, \
+           {{___, Yellow, Line[s_]}} :> s[[All, All, 2]], Infinity]], 0.001]]"
+        ))
+        .unwrap(),
+        "{3.}"
+      );
+      let svg = export_svg(&format!(
+        "Show[{}, Graphics3D[Point[{{1, 1, 1}}]]]",
+        &plot[4..]
+      ));
+      assert!(svg.contains("rgb(255,255,0)"), "no yellow mesh in Show");
+      // Any explicit spec replaces the default mesh in the expression form.
+      assert_eq!(
+        interpret(
+          "Length[Cases[Plot3D[x y, {x, 0, 1}, {y, 0, 1}, Mesh -> {{0.5}, None}], \
+           _Line, Infinity]]"
+        )
+        .unwrap(),
+        "1"
+      );
+    }
+
     #[test]
     fn mesh_all() {
       insta::assert_snapshot!(export_svg(
