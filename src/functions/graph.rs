@@ -4469,6 +4469,86 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
   }
 }
 
+/// The vertex `TreePlot` hangs a drawing from when none is named and no
+/// single source vertex is there to be the root (a graph with several
+/// sources such as a recombining lattice, a cyclic or an undirected one):
+/// the graph center, with every edge taken as undirected — the vertex of
+/// smallest eccentricity, then of smallest total distance to the others,
+/// the last such vertex on a tie. `None` when the graph has a unique source
+/// (that vertex is the root) or its edges cannot be read.
+pub(crate) fn tree_plot_center_root(graph: &Expr) -> Option<Expr> {
+  if unique_source_vertex(graph).is_some() {
+    return None;
+  }
+  let (listed, edges) = match graph {
+    Expr::List(edges) => (None, edges),
+    Expr::FunctionCall { name, args } if name == "Graph" => {
+      match (args.first(), args.get(1)) {
+        (Some(Expr::List(vs)), Some(Expr::List(es))) => (Some(vs), es),
+        (Some(Expr::List(es)), _) => (None, es),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let mut vertices: Vec<Expr> = Vec::new();
+  let mut index: HashMap<String, usize> = HashMap::new();
+  let mut add = |v: &Expr, vertices: &mut Vec<Expr>| -> usize {
+    *index.entry(vertex_key(v)).or_insert_with(|| {
+      vertices.push(v.clone());
+      vertices.len() - 1
+    })
+  };
+  if let Some(vs) = listed {
+    for v in vs {
+      add(v, &mut vertices);
+    }
+  }
+  let mut pairs: Vec<(usize, usize)> = Vec::new();
+  for e in edges {
+    let (u, v, _) = edge_endpoints(e)?;
+    let (a, b) = (add(&u, &mut vertices), add(&v, &mut vertices));
+    pairs.push((a, b));
+  }
+  let n = vertices.len();
+  if n == 0 {
+    return None;
+  }
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(a, b) in &pairs {
+    if a != b {
+      adj[a].push(b);
+      adj[b].push(a);
+    }
+  }
+  // (eccentricity, total distance) of a vertex; vertices another
+  // component holds are left out of both.
+  let spread = |s: usize| {
+    let mut dist = vec![usize::MAX; n];
+    dist[s] = 0;
+    let mut queue = std::collections::VecDeque::from([s]);
+    let (mut far, mut total) = (0, 0);
+    while let Some(v) = queue.pop_front() {
+      far = far.max(dist[v]);
+      total += dist[v];
+      for &w in &adj[v] {
+        if dist[w] == usize::MAX {
+          dist[w] = dist[v] + 1;
+          queue.push_back(w);
+        }
+      }
+    }
+    (far, total)
+  };
+  // Of several equally central vertices the later one wins (`max_by_key`
+  // keeps the last maximum).
+  let center = (0..n).max_by_key(|&v| {
+    let (far, total) = spread(v);
+    std::cmp::Reverse((far, total))
+  })?;
+  Some(vertices.swap_remove(center))
+}
+
 /// The one vertex that directed edges leave but none enter, in an edge
 /// list or a `Graph[vertices, edges, …]`; `None` when there is no such
 /// vertex or several, or an edge is undirected.

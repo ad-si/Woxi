@@ -5538,6 +5538,11 @@ fn evaluate_function_call_ast_inner(
         let root = root_vertex.cloned().or_else(|| {
           if radial {
             crate::functions::graph::unique_source_vertex(&args[0])
+          } else if name == "TreePlot" {
+            // Without a single source to hang from, `TreePlot` roots the
+            // drawing at the graph center and layers the other vertices
+            // by their distance from it, whatever the edge directions.
+            crate::functions::graph::tree_plot_center_root(&args[0])
           } else {
             None
           }

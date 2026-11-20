@@ -4791,6 +4791,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_treeplot_without_single_source_roots_at_graph_center() {
+    // A recombining lattice has several sources, so `TreePlot` hangs it
+    // from the graph center (taking the edges as undirected) and layers
+    // the other vertices by their distance from it.
+    let vertex_xs = |code: &str| -> Vec<f64> {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("<ellipse")
+        .skip(1)
+        .map(|e| {
+          let cx = e.split("cx=\"").nth(1).unwrap();
+          cx[..cx.find('"').unwrap()].parse().unwrap()
+        })
+        .collect()
+    };
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-6;
+    // Vertices in order 2, 1, 3, 4, 5, 6. Vertices 1 and 5 are both of
+    // eccentricity 2 and total distance 8; the later one, 5, is the root.
+    let xs = vertex_xs(
+      "TreePlot[{2 -> 1, 3 -> 1, 4 -> 2, 5 -> 2, 5 -> 3, 6 -> 3}, Left, \
+       DirectedEdges -> True]",
+    );
+    let (v2, v1, v3, v4, v5, v6) = (xs[0], xs[1], xs[2], xs[3], xs[4], xs[5]);
+    assert!(v5 < v2 && close(v2, v3), "{xs:?}");
+    assert!(v2 < v1 && close(v1, v4) && close(v1, v6), "{xs:?}");
+    // Two sources meeting in one sink: the sink is the unique center.
+    let xs = vertex_xs("TreePlot[{a -> b, c -> b}, Left]");
+    assert!(xs[1] < xs[0] && close(xs[0], xs[2]), "{xs:?}");
+    // A single source stays the root.
+    let xs = vertex_xs("TreePlot[{a -> b, b -> c}, Left]");
+    assert!(xs[0] < xs[1] && xs[1] < xs[2], "{xs:?}");
+  }
+
+  #[test]
   fn test_treeplot_accepts_valid_position_argument() {
     clear_state();
     assert_eq!(

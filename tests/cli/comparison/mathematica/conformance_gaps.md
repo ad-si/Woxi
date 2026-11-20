@@ -9199,7 +9199,10 @@ that are skipped there (`EXACT_EXPR_SKIP`) or compared with a tolerance
 - **`TreePlot`** returns the legacy GraphPlot drawing in wolframscript
   (`GraphicsComplex`, `Hue` directives, a disk radius from its own size
   heuristics, the graph center as the default root); Woxi draws its own tree
-  layout. Not compared: Graphics internals.
+  layout from the same root (a unique source, else the graph center: least
+  eccentricity, then least total distance, the later vertex on a tie), but
+  stacks a non-tree's layers from one edge where wolframscript centers them
+  on the root. Not compared: Graphics internals.
 - **Last-digit values** (`NEAR_MATCH`): `PeriodogramArray` (FFT round-off,
   `6.249999999999998` for 6.25), `Hyperfactorial[4.]`
   (`27647.99999999983`), `SphericalHankelH1[2, -5.]` (Woxi's real part is
