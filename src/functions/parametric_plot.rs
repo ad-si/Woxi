@@ -85,6 +85,9 @@ fn parse_options(opts: &[Expr]) -> (PlotOptions, PlotRangeOverrides) {
       }
     }
   }
+  // Only a fully explicit range applies to the parametric plots.
+  overrides.x = crate::functions::plot::closed_range(overrides.x);
+  overrides.y = crate::functions::plot::closed_range(overrides.y);
   (plot_opts, overrides)
 }
 

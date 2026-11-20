@@ -813,8 +813,10 @@ fn adaptive_sample(
     }
   };
   let visible_bend = match visible_y {
-    Some((lo, hi)) => curve_bend.min((hi - lo).abs() * 1e-3),
-    None => curve_bend,
+    Some((lo, hi)) if !lo.is_nan() && !hi.is_nan() => {
+      curve_bend.min((hi - lo).abs() * 1e-3)
+    }
+    _ => curve_bend,
   };
 
   // Adaptive refinement passes, one level of `MaxRecursion` each.
@@ -840,6 +842,9 @@ fn adaptive_sample(
       // A stretch whose ends both lie past the same edge of an explicit
       // `PlotRange` is clipped away, so refining it only spends samples.
       let off_screen = visible_y.is_some_and(|(lo, hi)| {
+        // An open (NaN) end of the range does not clip.
+        let lo = if lo.is_nan() { f64::NEG_INFINITY } else { lo };
+        let hi = if hi.is_nan() { f64::INFINITY } else { hi };
         let (lo, hi) = (lo.min(hi), lo.max(hi));
         (y0 > hi && y1 > hi) || (y0 < lo && y1 < lo)
       });
@@ -1290,6 +1295,15 @@ fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
   jumps
 }
 
+/// A `PlotRange -> {ymin, ymax}` pair limiting the y axis only: two numbers,
+/// or a number and an open end (`{Automatic, ymax}`).
+fn is_y_only_pair(items: &[Expr]) -> bool {
+  items
+    .iter()
+    .all(|e| try_eval_to_f64(e).is_some() || is_open_range_end(e))
+    && items.iter().any(|e| try_eval_to_f64(e).is_some())
+}
+
 /// True when a `PlotRange` value asks for the whole y extent: `All` itself, or
 /// `All` in the y slot of `{xrange, All}`.
 fn plot_range_requests_all_y(value: &Expr) -> bool {
@@ -1303,6 +1317,10 @@ pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
   match &val {
     e if is_all(e) => (true, true),
+    // `{ymin, All}` opens only an end of the y range.
+    Expr::List(items) if items.len() == 2 && is_y_only_pair(items) => {
+      (false, false)
+    }
     Expr::List(items) if items.len() == 2 => {
       (is_all(&items[0]), is_all(&items[1]))
     }
@@ -1328,7 +1346,7 @@ pub(crate) fn plot_range_x_from_points(value: &Expr) -> Option<bool> {
   };
   match &val {
     Expr::List(items) if items.len() == 2 => {
-      if items.iter().all(|e| try_eval_to_f64(e).is_some()) {
+      if is_y_only_pair(items) {
         return Some(true);
       }
       spec(&items[0])
@@ -9087,8 +9105,10 @@ pub(crate) fn render_merged_plot_source(
   opts.aspect_automatic = overrides.aspect_automatic;
   opts.log_x = source.log_x;
   opts.log_y = source.log_y;
-  let x_range = overrides.x.unwrap_or(source.x_range);
-  let y_range = overrides.y.unwrap_or(source.y_range);
+  let x_range =
+    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range);
+  let y_range =
+    fill_range(overrides.y, source.y_range).unwrap_or(source.y_range);
 
   let all_scatter =
     !source.series.is_empty() && source.series.iter().all(|s| s.is_scatter);
@@ -15678,8 +15698,21 @@ pub(crate) fn style_stroke(
 /// - `r` (a bare number) → (Some((-r, r)), Some((-r, r))) — "r in all
 ///   directions from the origin", equivalent to `{{-r, r}, {-r, r}}`
 /// - `{ymin, ymax}` → (None, Some((ymin, ymax)))
+/// - `{Automatic, ymax}` / `{ymin, All}` → an open end, which comes back as
+///   NaN and follows the data (see [`fill_range`])
 /// - `{{xmin, xmax}, {ymin, ymax}}` → (Some(x), Some(y))
 /// - `{All, {ymin, ymax}}` / `{{xmin,xmax}, All}` → only the specified axis
+/// `Automatic`, `All` or `Full` as one end of a `PlotRange` pair.
+fn is_open_range_end(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s) if s == "All" || s == "Automatic" || s == "Full")
+}
+
+/// A range without the open (NaN) ends [`parse_plot_range`] can return,
+/// for the plotters that only take a fully explicit range.
+pub(crate) fn closed_range(range: Option<(f64, f64)>) -> Option<(f64, f64)> {
+  range.filter(|(lo, hi)| !lo.is_nan() && !hi.is_nan())
+}
+
 #[allow(clippy::type_complexity)]
 pub(crate) fn parse_plot_range(
   value: &Expr,
@@ -15700,20 +15733,34 @@ pub(crate) fn parse_plot_range(
     return (Some((-r, r)), Some((-r, r)));
   }
 
+  // One end of a `{min, max}` pair: a number, or NaN for an open end
+  // (`Automatic`, `All` or `Full`) that follows the data.
+  let parse_end = |e: &Expr| -> Option<f64> {
+    let v = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+    if is_open_range_end(&v) {
+      return Some(f64::NAN);
+    }
+    try_eval_to_f64(&v)
+  };
   let parse_pair = |e: &Expr| -> Option<(f64, f64)> {
     if let Expr::List(items) = e
       && items.len() == 2
     {
-      let a = try_eval_to_f64(
-        &evaluate_expr_to_expr(&items[0]).unwrap_or_else(|_| items[0].clone()),
-      )?;
-      let b = try_eval_to_f64(
-        &evaluate_expr_to_expr(&items[1]).unwrap_or_else(|_| items[1].clone()),
-      )?;
+      let a = parse_end(&items[0])?;
+      let b = parse_end(&items[1])?;
+      // At least one end must be fixed; `{Automatic, Automatic}` is no
+      // explicit range at all.
+      if a.is_nan() && b.is_nan() {
+        return None;
+      }
       // Wolfram normalizes a reversed range: `PlotRange -> {3, -3}` plots
       // exactly like `{-3, 3}` (verified against a FrontEnd-saved raster
       // of the oscilloscope Demonstration, which uses the reversed form).
-      Some(if a <= b { (a, b) } else { (b, a) })
+      Some(if a.is_nan() || b.is_nan() || a <= b {
+        (a, b)
+      } else {
+        (b, a)
+      })
     } else {
       None
     }
@@ -17554,9 +17601,15 @@ pub(crate) fn scale_range(
     (Some(u), Some(v)) => u < v,
     _ => true,
   };
+  // An open (NaN) end stays open.
+  let (lo, hi) = if a.is_nan() || b.is_nan() {
+    (a, b)
+  } else {
+    (a.min(b), a.max(b))
+  };
   let (fa, fb) = (
-    s.forward(a.min(b)).unwrap_or(f64::NAN),
-    s.forward(a.max(b)).unwrap_or(f64::NAN),
+    s.forward(lo).unwrap_or(f64::NAN),
+    s.forward(hi).unwrap_or(f64::NAN),
   );
   Some(if increasing { (fa, fb) } else { (fb, fa) })
 }
@@ -18287,7 +18340,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotRange` (unit height when none is given).
   if !has_finite {
     let x_display = plot_range_x.unwrap_or((x_min, x_max));
-    let y_display = plot_range_y.unwrap_or((0.0, 1.0));
+    let y_display = fill_range(plot_range_y, (0.0, 1.0)).unwrap_or((0.0, 1.0));
     let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
     // Keep the (empty) plot's source, so `Show` can tell it from an opaque
     // picture and merge it as the layer without curves that it is.

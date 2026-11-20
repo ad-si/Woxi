@@ -19214,6 +19214,46 @@ mod plot3d {
         );
       }
     }
+
+    /// The y tick labels of a plot, in drawing order.
+    fn tick_labels(svg: &str) -> Vec<String> {
+      svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| t.split('>').nth(1)?.split('<').next())
+        .map(str::to_string)
+        .collect()
+    }
+
+    /// One open end in `PlotRange -> {Automatic, ymax}` follows the data
+    /// while the other stays fixed; the whole spec used to be ignored.
+    #[test]
+    fn plot_range_open_lower_end_keeps_fixed_upper_end() {
+      let labels = tick_labels(&export_svg(
+        "Plot[50 x/(1 - x), {x, 0.0001, 0.9999}, \
+         PlotRange -> {Automatic, 1000.}]",
+      ));
+      assert!(labels.contains(&"1000".to_string()), "{labels:?}");
+      assert!(labels.contains(&"200".to_string()), "{labels:?}");
+    }
+
+    #[test]
+    fn plot_range_open_end_in_per_axis_form() {
+      let labels = tick_labels(&export_svg(
+        "Plot[Sin[x], {x, 0, 6}, PlotRange -> {{0, 6}, {Automatic, 3}}]",
+      ));
+      assert!(labels.contains(&"3".to_string()), "{labels:?}");
+      assert!(labels.contains(&"-1".to_string()), "{labels:?}");
+    }
+
+    #[test]
+    fn list_line_plot_plot_range_open_upper_end() {
+      let labels = tick_labels(&export_svg(
+        "ListLinePlot[{1, 5, 3, 9}, PlotRange -> {0, All}]",
+      ));
+      assert!(labels.contains(&"0".to_string()), "{labels:?}");
+      assert!(labels.contains(&"8".to_string()), "{labels:?}");
+    }
   }
 
   mod ternary_list_plot {
