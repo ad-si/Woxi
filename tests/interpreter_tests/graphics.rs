@@ -15017,6 +15017,29 @@ mod plot3d {
       assert!(svg.contains("font-size=\"24.0\""), "Large size: {svg}");
     }
 
+    /// An unstyled inline-fraction `AxesLabel` string is typeset at the
+    /// axis label size and in the label face, like the plain text labels
+    /// beside it — not at the 14 pt monospace size of a box display, which
+    /// blew it up to a heading-sized label.
+    #[test]
+    fn plot_axes_label_inline_fraction_string_uses_label_font() {
+      for label in [
+        r#""\!\(\*FractionBox[\(covariance\), \(area\)]\)""#,
+        "covariance/area",
+      ] {
+        let svg = export_svg(&format!(
+          "Plot[t, {{t, 0, 1}}, AxesLabel -> {{\"t\", {label}}}]"
+        ));
+        let numerator = svg
+          .split("<text")
+          .find(|t| t.contains(">covariance<"))
+          .unwrap_or_else(|| panic!("no numerator: {svg}"));
+        assert!(numerator.contains("font-size=\"10.0\""), "{numerator}");
+        assert!(numerator.contains("sans-serif"), "{numerator}");
+        assert!(!numerator.contains("monospace"), "{numerator}");
+      }
+    }
+
     /// An `AxesLabel` written as a stacked fraction (`FractionBox`) is drawn
     /// as numerator over denominator, not flattened to a wide `a/b` line
     /// that squeezes the plotting area; a `PlotLabel` sits above the

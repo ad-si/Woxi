@@ -5452,6 +5452,14 @@ The `Graphics` renderer pads a `PlotRange -> Full` side by 4 %, where Wolfram
 pads more. In a `MusicPlot` this drops the pitch label just above the highest
 note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which Wolfram shows.
 
+### Symbolic tick labels are set on one line
+
+A bare tick position written as a quotient (`Ticks -> {{0, Pi/2, Pi, 3 Pi/2,
+2 Pi}, Automatic}`) is labeled with its expression, but Woxi writes it as
+in-line text (`π/2`, `3 π/2`), because tick labels are drawn as single
+`<text>` runs. Wolfram typesets the label in TraditionalForm, so the fraction
+is stacked: π over 2, 3π over 2.
+
 ### Tick step from the padded range
 
 Woxi derives the tick step from the *padded* display range, as WL 15 does

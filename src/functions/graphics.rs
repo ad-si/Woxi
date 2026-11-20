@@ -23502,8 +23502,7 @@ pub fn traditional_application_markup(expr: &Expr) -> Option<String> {
 /// [`styled_axis_label`] for an `AxesLabel` entry, which may also be a
 /// stacked-fraction picture (see [`fraction_label_svg`]).
 pub fn axes_label_entry(e: &Expr) -> Option<String> {
-  inline_fraction_string_svg(e)
-    .or_else(|| fraction_label_svg(e, LABEL_FONT))
+  axes_label_fraction_picture(e)
     .or_else(|| traditional_math_axis_label(e))
     .or_else(|| styled_axis_label(e))
 }
@@ -35279,19 +35278,29 @@ fn form_box_svg(expr: &Expr) -> Option<String> {
 /// notation holds a fraction is a stacked-fraction picture (a nested `<svg>`),
 /// anything else the usual text markup.
 pub(crate) fn axes_label_markup(expr: &Expr) -> String {
-  inline_fraction_string_svg(expr)
-    .or_else(|| fraction_label_svg(expr, LABEL_FONT))
-    .unwrap_or_else(|| {
-      // A mathematical label is set in TraditionalForm (italic letters),
-      // the same as on a plot (see `axes_label_entry`).
-      if let Some(label) = traditional_math_axis_label(expr) {
-        return label
-          .strip_prefix(STYLED_LABEL_MARKER)
-          .map(str::to_string)
-          .unwrap_or(label);
-      }
-      expr_to_svg_markup(expr)
-    })
+  axes_label_fraction_picture(expr).unwrap_or_else(|| {
+    // A mathematical label is set in TraditionalForm (italic letters),
+    // the same as on a plot (see `axes_label_entry`).
+    if let Some(label) = traditional_math_axis_label(expr) {
+      return label
+        .strip_prefix(STYLED_LABEL_MARKER)
+        .map(str::to_string)
+        .unwrap_or(label);
+    }
+    expr_to_svg_markup(expr)
+  })
+}
+
+/// An axes label holding a stacked fraction — inline `\!\(\*FractionBox[…]\)`
+/// notation in a string, or an expression TraditionalForm stacks — as a
+/// picture. It is typeset at the label font's point size (the caller scales
+/// it to the plot's label size) and in the plot's label face, like the text
+/// labels around it, not in the box layout's 14 pt monospace default.
+fn axes_label_fraction_picture(expr: &Expr) -> Option<String> {
+  with_box_font_family(Some("sans-serif"), || {
+    inline_fraction_string_svg_at(expr, LABEL_FONT)
+      .or_else(|| fraction_label_svg(expr, LABEL_FONT))
+  })
 }
 
 /// An axis label expression that TraditionalForm typesets as a stacked
@@ -35363,12 +35372,25 @@ pub(crate) fn axes_label_picture_size(markup: &str) -> Option<(f64, f64)> {
 /// or a `DisplayForm`/`RawBoxes` box tree holding one, typeset through the
 /// box layout so the numerator stacks over the denominator. `None` for any other item, which keeps its text rendering.
 fn inline_fraction_string_svg(expr: &Expr) -> Option<String> {
+  inline_fraction_string_svg_at(expr, 14.0)
+}
+
+/// [`inline_fraction_string_svg`] with `default_size` as the type size of an
+/// item that no `Style[…]` wrapper sizes.
+fn inline_fraction_string_svg_at(
+  expr: &Expr,
+  default_size: f64,
+) -> Option<String> {
   let (content, size, color) = match expr {
     Expr::FunctionCall { name, .. } if is_style_wrapper(name) => {
       let style = extract_cell_style(expr);
-      (style.content, style.font_size.unwrap_or(14.0), style.color)
+      (
+        style.content,
+        style.font_size.unwrap_or(default_size),
+        style.color,
+      )
     }
-    other => (other, 14.0, None),
+    other => (other, default_size, None),
   };
   // The boxes are spelled either as inline `\!\(\*…\)` notation in a
   // string or as a box tree shown through `DisplayForm`/`RawBoxes`
