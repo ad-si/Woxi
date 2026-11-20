@@ -14137,7 +14137,8 @@ mod plot3d {
       let svg = export_svg(
         "Plot[{1/10^36, 2/10^36}, {x, 0, 6}, PlotRange -> {0, 1.2/10^35}, Axes -> {False, True}]",
       );
-      for label in ["2×10⁻³⁶", "4×10⁻³⁶", "1.2×10⁻³⁵"] {
+      // The set's mantissas share one precision, as `1.2` needs a decimal.
+      for label in ["2.0×10⁻³⁶", "4.0×10⁻³⁶", "1.0×10⁻³⁵", "1.2×10⁻³⁵"] {
         assert!(svg.contains(label), "missing tick {label}: {svg}");
       }
     }

@@ -1527,7 +1527,8 @@ mod scientific_tick_labels {
   fn mantissas_share_decimals_across_decades() {
     for opts in ["", ", Frame -> True"] {
       let svg = svg_of(&format!("Plot[x, {{x, 0, 3*10^16}}{opts}]"));
-      for label in ["5.0×10¹⁵", "1.0×10¹⁶", "1.5×10¹⁶", "3.0×10¹⁶"] {
+      for label in ["5.0×10¹⁵", "1.0×10¹⁶", "1.5×10¹⁶", "3.0×10¹⁶"]
+      {
         assert!(svg.contains(label), "missing {label} ({opts})");
       }
       assert!(!svg.contains(">5×10¹⁵"), "{opts}");
