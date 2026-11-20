@@ -11497,6 +11497,45 @@ mod plot3d {
   mod parametric_plot3d_curve {
     use super::*;
 
+    /// `PlotPoints -> n` sets the number of initial samples of a space
+    /// curve (a straight line needs no refinement on top of them), and it is
+    /// consumed rather than forwarded to the resulting `Graphics3D`.
+    #[test]
+    fn curve_plot_points() {
+      assert_eq!(
+        interpret(
+          "g = ParametricPlot3D[{t, 2 t, 3 t}, {t, 0, 1}, PlotPoints -> 1000]; \
+           {Length[First[Cases[g, Line[p_] :> p, Infinity]]], FreeQ[g, PlotPoints]}"
+        )
+        .unwrap(),
+        "{1000, True}"
+      );
+      assert_eq!(
+        interpret(
+          "Length[First[Cases[ParametricPlot3D[{t, 2 t, 3 t}, {t, 0, 1}], \
+           Line[p_] :> p, Infinity]]]"
+        )
+        .unwrap(),
+        "201"
+      );
+    }
+
+    /// The adaptive refinement measures bends with every axis scaled to the
+    /// curve's extent: wiggles along an axis spanning a tiny range are
+    /// stretched to full height in the drawn box, so they must be refined
+    /// even though they are negligible in raw coordinates.
+    #[test]
+    fn curve_refines_bends_along_short_axis() {
+      let n: usize = interpret(
+        "Length[First[Cases[ParametricPlot3D[{t, t, 0.001 Sin[20 t]}, \
+         {t, 0, 2 Pi}], Line[p_] :> p, Infinity]]]",
+      )
+      .unwrap()
+      .parse()
+      .unwrap();
+      assert!(n > 400, "expected refined samples, got {n}");
+    }
+
     /// 1-iterator form should sample the curve and render it as line
     /// segments (depth-sorted so surfaces can occlude them).
     #[test]
