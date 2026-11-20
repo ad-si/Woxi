@@ -421,6 +421,18 @@ fn draws_nothing(s: &str) -> bool {
     .is_empty()
 }
 
+/// The base a prefix script keeps when its box base `draws_nothing`: a
+/// blank space (`SuperscriptBox[" ", "1"]`, as in the term symbol `1s² ¹S`)
+/// still typesets its gap, while an invisible base
+/// (`\[InvisiblePrefixScriptBase]`) or an empty one typesets nothing.
+fn blank_base_text(s: &str) -> &'static str {
+  if crate::syntax::substitute_private_use_glyphs(s).contains(' ') {
+    " "
+  } else {
+    ""
+  }
+}
+
 /// The part specification inside a `⟦…⟧` group, or None when `s` is an
 /// ordinary subscript. The double-bracket characters are what
 /// `\[LeftDoubleBracket]` / `\[RightDoubleBracket]` unescape to.
@@ -1164,7 +1176,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
       // stays unevaluated and keeps it.
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
-        format!("Superscript[\"\", {}]", conv(&args[1]))
+        format!(
+          "Superscript[\"{}\", {}]",
+          blank_base_text(&conv(&args[0])),
+          conv(&args[1])
+        )
       }
       // `SuperscriptBox[f, TagBox[order, Derivative]]` is the typeset form
       // of a mixed or higher-order partial derivative — emit
@@ -1258,7 +1274,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           // Prefix subscript, as above — keep an explicit empty string
           // so the result still parses.
           if draws_nothing(&base) {
-            format!("Subscript[\"\", {sub}]")
+            format!("Subscript[\"{}\", {sub}]", blank_base_text(&base))
           } else {
             format!("Subscript[{base}, {sub}]")
           }

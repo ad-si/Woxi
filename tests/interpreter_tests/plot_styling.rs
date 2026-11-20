@@ -131,6 +131,33 @@ mod legends {
     let height = root_attr(&svg, "height") * 10.0;
     assert!(y < height * 0.2, "near the top: {y} of {height}");
   }
+
+  /// A named `Placed` position aligns the legend inside the plot's frame,
+  /// not the whole image: the frame labels stay clear of it.
+  /// Regression: the legend sat in the image's top margin, over the label.
+  #[test]
+  fn placed_named_position_stays_inside_the_frame() {
+    let y_of = |svg: &str, text: &str| -> f64 {
+      let end = svg.find(&format!(">{text}</text>")).unwrap();
+      let tag = &svg[svg[..end].rfind("<text ").unwrap()..end];
+      let start = tag.find(" y=\"").unwrap() + 4;
+      tag[start..start + tag[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    for pos in ["{Right, Top}", "{Left, Bottom}"] {
+      let svg = svg_of(&format!(
+        r#"Plot[{{Sin[x], Cos[x]}}, {{x, 0, 4}}, Frame -> True, FrameLabel -> {{"xlabel", " ", "title"}}, PlotLegends -> Placed[{{"one", "two"}}, {pos}]]"#
+      ));
+      let title = y_of(&svg, "title");
+      let x_label = y_of(&svg, "xlabel");
+      assert!(title < y_of(&svg, "one"), "{pos}: legend under the title");
+      assert!(
+        y_of(&svg, "two") < x_label,
+        "{pos}: legend above the x label"
+      );
+    }
+  }
 }
 
 mod image_size {
