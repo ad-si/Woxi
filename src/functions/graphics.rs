@@ -9563,8 +9563,19 @@ pub(crate) fn sample_bspline_curve(
     .collect();
   let weights: Option<Vec<f64>> =
     weights.map(|ws| (0..wrap(ws.len())).map(|i| ws[i % ws.len()]).collect());
+  let knot_list = spline_knots_list(opts);
+  // A degree-1 spline on uniform (clamped, unclamped or periodic) knots is
+  // exactly its control polygon, weights or not. Its vertices are the
+  // corners, which evenly spaced parameter samples would cut off.
+  if degree.min(points.len() - 1) == 1
+    && knot_list
+      .as_ref()
+      .is_none_or(|knots| closed || knots.len() != points.len() + 2)
+  {
+    return points.into_iter().cloned().collect();
+  }
   let clamped = !closed && !spline_knots_unclamped(opts);
-  let basis = match spline_knots_list(opts) {
+  let basis = match knot_list {
     Some(knots) if !closed && knots.len() == points.len() + degree + 1 => {
       bspline_sample_weights_with_knots(points.len(), degree, samples, &knots)
     }
@@ -17680,6 +17691,16 @@ pub(crate) fn text_face_family() -> Expr {
 pub(crate) fn in_text_face(content: &Expr) -> Expr {
   let family = text_face_family();
   match content {
+    // A form wrapper only says how its content is typeset: the face goes on
+    // the content inside it, so `TraditionalForm[Style[Grid[…], 24]]` still
+    // lays its grid out (now in the text face) instead of falling back to
+    // its string form.
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "TraditionalForm" | "StandardForm") =>
+    {
+      call(name, vec![in_text_face(&args[0])])
+    }
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
@@ -29486,17 +29507,19 @@ fn grid_svg_styled_internal_reporting(
       *cell = fraction_cell_in_grid_style(cell, default_style);
       // A typeset cell (a `Row` holding a quotient, a `TraditionalForm`
       // formula) is set in the grid's `BaseStyle` face and size, like the
-      // grid's plain text cells, rather than the monospace default.
-      if let Some(family) = &default_style.font_family
+      // grid's plain text cells, rather than the monospace default. An
+      // enclosing `Style[Grid[…], 30]` sizes them the same way.
+      if (default_style.font_family.is_some()
+        || default_style.font_size.is_some())
         && traditional_inline_box_cell_svg(cell).is_some()
       {
-        let mut directives = vec![
-          cell.clone(),
-          Expr::Rule {
+        let mut directives = vec![cell.clone()];
+        if let Some(family) = &default_style.font_family {
+          directives.push(Expr::Rule {
             pattern: Box::new(id_expr("FontFamily")),
             replacement: Box::new(str_expr(family)),
-          },
-        ];
+          });
+        }
         if let Some(size) = default_style.font_size {
           directives.push(Expr::Real(size));
         }
@@ -33269,6 +33292,21 @@ fn with_fixed_image_size(expr: &Expr, w: i128, h: i128) -> Expr {
 /// overlays real clickable areas on them.
 pub const BUTTON_HIT_ID_PREFIX: &str = "woxi-btn-";
 
+/// The invisible rectangle that makes the area at `(x, y)` of size `w`×`h`
+/// a pressable button running `action` (Wolfram source) in a live widget.
+pub(crate) fn button_hit_rect(
+  action: &str,
+  x: f64,
+  y: f64,
+  w: f64,
+  h: f64,
+) -> String {
+  format!(
+    "<rect id=\"{BUTTON_HIT_ID_PREFIX}{}\" x=\"{x}\" y=\"{y}\" width=\"{w}\" height=\"{h}\" fill=\"#000\" fill-opacity=\"0.001\"/>",
+    hex_encode(action)
+  )
+}
+
 /// Decode the action of a [`BUTTON_HIT_ID_PREFIX`] id.
 pub fn button_action_from_hit_id(id: &str) -> Option<String> {
   decode_hit_id_hex(id.strip_prefix(BUTTON_HIT_ID_PREFIX)?)
@@ -33341,12 +33379,12 @@ fn with_button_cell_chrome(svg: String, button_args: &[Expr]) -> String {
   }
   out.push_str(&svg[open_end..close]);
   if enabled {
-    let mut hex = String::new();
-    for b in crate::syntax::expr_to_source_form(&button_args[1]).bytes() {
-      hex.push_str(&format!("{b:02x}"));
-    }
-    out.push_str(&format!(
-      "<rect id=\"{BUTTON_HIT_ID_PREFIX}{hex}\" x=\"{vb_x}\" y=\"{vb_y}\" width=\"{vb_w}\" height=\"{vb_h}\" fill=\"#000\" fill-opacity=\"0.001\"/>"
+    out.push_str(&button_hit_rect(
+      &crate::syntax::expr_to_source_form(&button_args[1]),
+      vb_x,
+      vb_y,
+      vb_w,
+      vb_h,
     ));
   }
   out.push_str(&svg[close..]);
@@ -47047,8 +47085,53 @@ fn dynamic_label_code(spec: &Expr) -> Option<String> {
     {
       Some(crate::syntax::expr_to_source_form(label))
     }
+    // A numeric arithmetic caption (`{{r, False, 8/9}, {False, True}}`,
+    // `{{t, 0, Pi/4}, 0, 1}`) is shown the way the FrontEnd typesets the
+    // value — a stacked fraction — so it travels as caption code too and the
+    // frontend draws it as an icon (see `manipulate_eval_caption`).
+    label if is_numeric_arithmetic_caption(label) => {
+      Some(crate::syntax::expr_to_source_form(label))
+    }
     _ => None,
   }
+}
+
+/// Whether a control caption is arithmetic over numbers and constants only
+/// (`8/9`, `-Pi/4`, `Sqrt[2]/2`), the kind the FrontEnd typesets as math
+/// rather than as a word. A caption mentioning a symbol stays text.
+fn is_numeric_arithmetic_caption(label: &Expr) -> bool {
+  fn numeric(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::Constant(_) => true,
+      Expr::Identifier(_) => false,
+      Expr::BinaryOp { left, right, .. } => numeric(left) && numeric(right),
+      Expr::UnaryOp { operand, .. } => numeric(operand),
+      Expr::FunctionCall { args, .. } => args.iter().all(numeric),
+      _ => false,
+    }
+  }
+  is_arithmetic_label(label) && numeric(label)
+}
+
+/// The stacked-math icon of a numeric arithmetic caption whose typeset form
+/// holds a fraction or radical (`8/9`, `Pi/4`, `Sqrt[2]`); `None` when it
+/// lays out flat (`2 Pi`, `-3`), which keeps its text label.
+fn arithmetic_caption_svg(caption: &Expr) -> Option<String> {
+  if !is_numeric_arithmetic_caption(caption) {
+    return None;
+  }
+  let boxes = crate::syntax::expr_to_source_form(
+    &crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(
+      caption,
+    ),
+  );
+  if !(boxes.contains("FractionBox[") || boxes.contains("SqrtBox[")) {
+    return None;
+  }
+  form_box_svg(caption)
 }
 
 /// Evaluate a [`ManipulateSpec::dynamic_labels`] caption against the
@@ -47070,8 +47153,10 @@ pub fn manipulate_eval_caption(
   let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
   // A caption holding a picture becomes an icon — also one that pairs the
   // picture with words (`Row[{"shift ", Graphics[…]}]`), which is drawn
-  // whole, words included, so the picture is not lost.
-  let svg = control_caption_svg(&evaluated);
+  // whole, words included, so the picture is not lost. A numeric fraction
+  // or radical (`8/9`) is typeset as stacked math, also an icon.
+  let svg = control_caption_svg(&evaluated)
+    .or_else(|| arithmetic_caption_svg(&evaluated));
   let runs = if svg.is_some() {
     Vec::new()
   } else {
@@ -51870,6 +51955,29 @@ pub fn continuous_binding_code(
   }
 }
 
+/// The value readout of a continuous `Manipulate` slider whose variable
+/// binds an exact number (see [`continuous_binding_code`]), typeset the way
+/// the FrontEnd shows it: a slider stepping by `1/6` reads a stacked `7/6`
+/// fraction and one stepping by `Pi/4` a stacked `3π/4`, not `1.167` or
+/// `2.356`. `None` when the bound value is a plain integer or machine real,
+/// which stays text.
+pub fn continuous_value_label_svg(
+  value: f64,
+  is_real: bool,
+  imaginary: bool,
+) -> Option<String> {
+  if is_real {
+    return None;
+  }
+  let code = continuous_binding_code(value, false, imaginary);
+  let expr = crate::syntax::string_to_expr(&code).ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  match evaluated {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => None,
+    other => form_box_svg(&other),
+  }
+}
+
 pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
@@ -54924,6 +55032,26 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   // current value of its variable.
   let released;
   let expr = match expr {
+    // A number format around a `Dynamic` (`NumberForm[Dynamic[x], {3, 1}]`)
+    // formats the held `Dynamic[x]`, which has no number in it: the front
+    // end then shows the live value of `x` as it is, unformatted.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "NumberForm"
+          | "PaddedForm"
+          | "AccountingForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+      ) && matches!(args.first(), Some(Expr::FunctionCall { name: d, args: da })
+        if d == "Dynamic" && !da.is_empty()) =>
+    {
+      let Some(Expr::FunctionCall { args: da, .. }) = args.first() else {
+        unreachable!()
+      };
+      released = da[0].clone();
+      &released
+    }
     Expr::FunctionCall { name, args } if name == "ProgressIndicator" => {
       fn release(e: &Expr) -> Expr {
         match e {

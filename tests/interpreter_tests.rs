@@ -5149,6 +5149,33 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_numeric_fraction_captions_typeset_as_icons() {
+    // A numeric arithmetic caption with a fraction or radical
+    // (`{{r, False, 8/9}, {False, True}}`, `Pi/4`, `Sqrt[2]`) is typeset as
+    // stacked math, so it travels as caption code and renders an icon with
+    // no text runs. A flat numeric caption (`2 Pi`), a symbolic one (`a/b`)
+    // and a string keep their text labels.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{r, s, t, u, v, w}, {{r, False, 8/9}, {False, True}}, {{s, 0, -Pi/4}, 0, 1}, {{t, 0, Sqrt[2]}, 0, 1}, {{u, 0, 2 Pi}, 0, 1}, {{v, 0, a/b}, 0, 1}, {{w, 0, \"1/2\"}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let mut icons = Vec::new();
+    for (name, code) in &spec.dynamic_labels {
+      let (runs, svg) =
+        woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+      if let Some(svg) = svg {
+        assert!(runs.is_empty(), "an icon caption has no text: {runs:?}");
+        assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+        icons.push(name.as_str());
+      }
+    }
+    assert_eq!(icons, ["r", "s", "t"]);
+  }
+
+  #[test]
   fn test_plot_label_matrix_form_typesets_entries_not_source() {
     // `MatrixForm[{{…}}]` in a `PlotLabel` is typeset as a matrix (a
     // picture above the drawing), not printed as the wrapper's source, and

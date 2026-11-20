@@ -5135,9 +5135,12 @@ pub(crate) fn plot_labels_svg(
     };
     let ty = layout.title_top + ascent(fs / sf) * sf;
     // A box around the title must stay inside the image, even when a tight
-    // `ImagePadding` leaves less room above the plot than the box needs.
+    // `ImagePadding` leaves less room above the plot than the box needs;
+    // its text sits below the frame's 6pt top margin, which the title band
+    // reserves.
     let ty = if sl.frame.is_some() {
-      let top = ty - fs * 0.9 - 6.0 * sf;
+      let ty = ty + 6.0 * sf;
+      let top = ty - ascent(fs / sf) * sf - 6.0 * sf;
       ty + (sf - top).max(0.0)
     } else {
       ty
@@ -5155,19 +5158,44 @@ pub(crate) fn plot_labels_svg(
     }
     let title_pitch = line_pitch(fs / sf) * sf;
     if let Some(frame) = &sl.frame {
-      // Box the title: the widest line plus Framed's 6pt margin per side.
+      // Box the title: the widest line plus Framed's 6pt margin per side,
+      // square-cornered like `Framed`'s default `RoundingRadius -> 0`.
       let margin = 6.0 * sf;
       let w = sl.max_line_chars() as f64 * fs * 0.47 + 2.0 * margin;
       let lines = 1.0 + sl.extra_line_count() as f64;
       let h =
         line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
       let top = ty - ascent(fs / sf) * sf - margin;
+      // A title with inline pictures (a typeset integral, a fraction) is
+      // boxed around the pictures and text it lays out, centered on the
+      // line those segments are centered on.
+      let (w, h, top) = if sl.segments.is_empty() {
+        (w, h, top)
+      } else {
+        let widths = inline_segment_widths(&sl.segments, fs, sf);
+        let content_h = sl
+          .segments
+          .iter()
+          .filter_map(|seg| match seg {
+            crate::functions::chart::LabelSegment::Graphic { h, .. } => {
+              Some(h * sf)
+            }
+            crate::functions::chart::LabelSegment::Text(_) => None,
+          })
+          .fold(line_height(fs / sf) * sf, f64::max);
+        let mid =
+          ty + sl.extra_line_count() as f64 * title_pitch / 2.0 - fs * 0.3;
+        (
+          widths.iter().sum::<f64>() + 2.0 * margin,
+          content_h + 2.0 * margin,
+          mid - content_h / 2.0 - margin,
+        )
+      };
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{}\" \
+           height=\"{h:.1}\" fill=\"{}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
-        3.0 * sf,
         frame
           .background
           .as_ref()
@@ -5223,6 +5251,28 @@ pub(crate) fn plot_labels_svg(
   labels_svg
 }
 
+/// The width in render units of each segment of a title that mixes text
+/// and inline pictures, as [`inline_segments_svg`] lays them out.
+fn inline_segment_widths(
+  segments: &[crate::functions::chart::LabelSegment],
+  fs: f64,
+  sf: f64,
+) -> Vec<f64> {
+  use crate::functions::chart::LabelSegment;
+  segments
+    .iter()
+    .map(|seg| match seg {
+      LabelSegment::Text(m) => {
+        crate::functions::plot_padding::text_width(
+          &crate::functions::chart::svg_markup_visible_text(m),
+          fs / sf,
+        ) * sf
+      }
+      LabelSegment::Graphic { w, .. } => w * sf,
+    })
+    .collect()
+}
+
 /// A title made of text runs and small inline pictures, laid out left to
 /// right and centered on `cx`. `ty` is the text baseline; each picture is
 /// centered on the text's x-height line. Lengths are in render units, with
@@ -5237,18 +5287,7 @@ fn inline_segments_svg(
   sf: f64,
 ) -> String {
   use crate::functions::chart::LabelSegment;
-  let widths: Vec<f64> = segments
-    .iter()
-    .map(|seg| match seg {
-      LabelSegment::Text(m) => {
-        crate::functions::plot_padding::text_width(
-          &crate::functions::chart::svg_markup_visible_text(m),
-          fs / sf,
-        ) * sf
-      }
-      LabelSegment::Graphic { w, .. } => w * sf,
-    })
-    .collect();
+  let widths = inline_segment_widths(segments, fs, sf);
   let mut x = cx - widths.iter().sum::<f64>() / 2.0;
   let mid = ty - fs * 0.3;
   let mut out = format!("<g color=\"{fill}\">");
@@ -5885,9 +5924,16 @@ fn generate_svg_with_options(
   let show_ticks = opts.ticks_visible();
   // Which frame edges (bottom, left, top, right) carry their automatic tick
   // labels; an unframed plot labels its axes.
+  // An edge `Frame -> {{l, r}, {b, t}}` leaves undrawn carries no tick
+  // labels either.
+  let frame_edge_present = {
+    let e = opts.frame_edges;
+    [e.bottom, e.left, e.top, e.right]
+  };
   let frame_edge_labeled: [bool; 4] = std::array::from_fn(|edge| {
     if opts.frame {
-      matches!(opts.frame_tick_edges[edge], FrameEdgeTicks::Labeled)
+      frame_edge_present[edge]
+        && matches!(opts.frame_tick_edges[edge], FrameEdgeTicks::Labeled)
     } else {
       edge < 2
     }
@@ -7767,9 +7813,9 @@ fn generate_svg_with_options(
     let mut numbered = opts.clone();
     numbered.plot_legends = placeholder_legends(all_points.len());
     numbered.legend_placeholders = true;
-    inject_legend(&mut buf, &numbered);
+    inject_legend(&mut buf, &numbered, plot_area);
   } else {
-    inject_legend(&mut buf, opts);
+    inject_legend(&mut buf, opts, plot_area);
   }
 
   // `BaselinePosition -> Axis`: record where the x axis lies (display
@@ -12256,7 +12302,13 @@ fn legend_swatch_svg(
 
 /// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
 /// is placed on the right (default), top, or bottom of the plot.
-fn inject_legend(buf: &mut String, opts: &PlotOptions) {
+/// `plot_area` is the drawing region in render-space pixels: (left, top,
+/// width, height); `Placed[…, {Right, Top}]`-style legends sit inside it.
+fn inject_legend(
+  buf: &mut String,
+  opts: &PlotOptions,
+  plot_area: (f64, f64, f64, f64),
+) {
   if opts.plot_legends.is_empty() {
     return;
   }
@@ -12491,11 +12543,21 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             fx * vb_w - (legend_width - legend_padding) / 2.0,
             (1.0 - fy) * vb_h - legend_total_h / 2.0,
           ),
-          LegendPosition::Aligned(fx, fy) => (
-            legend_padding * 0.5 + fx * (vb_w - legend_width),
-            legend_padding * 0.25
-              + (1.0 - fy) * (vb_h - legend_total_h - legend_padding * 0.5),
-          ),
+          // Named positions align the legend inside the plot's frame (not
+          // the whole image, whose margins hold the frame labels), inset
+          // a little from its edges.
+          LegendPosition::Aligned(fx, fy) => {
+            let (area_x0, area_top, area_w, area_h) = plot_area;
+            let inset = legend_padding * 0.5;
+            (
+              area_x0
+                + inset
+                + fx * (area_w - (legend_width - legend_padding) - 2.0 * inset),
+              area_top
+                + inset
+                + (1.0 - fy) * (area_h - legend_total_h - 2.0 * inset),
+            )
+          }
           _ => (vb_w + legend_padding * 0.5, (vb_h - legend_total_h) / 2.0),
         };
         if opts.legend_frame {
@@ -16316,7 +16378,17 @@ pub(crate) fn parse_plot_legends(
     && name == "Placed"
     && args.len() == 2
   {
-    let pos = match &args[1] {
+    // `Scaled[{x, y}]` names the same scaled position inside the plot as
+    // a bare `{x, y}` does.
+    let position = match &args[1] {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Scaled" && inner.len() == 1 =>
+      {
+        &inner[0]
+      }
+      other => other,
+    };
+    let pos = match position {
       Expr::Identifier(s) => match s.as_str() {
         "Top" | "Above" => LegendPosition::Top,
         "Bottom" | "Below" => LegendPosition::Bottom,
@@ -16420,6 +16492,12 @@ pub(crate) fn parse_plot_legends(
       (labels, false, false, LegendPosition::Right)
     }
     Expr::String(s) => (vec![s.clone()], false, false, LegendPosition::Right),
+    // Any other single label (`Text["…"]`, `Style["…", Red]`, `Row[…]`)
+    // labels the one dataset, as a one-element list would. A legend
+    // object (`BarLegend[…]`, …) is drawn by the plot itself instead.
+    Expr::FunctionCall { name, .. } if !name.ends_with("Legend") => {
+      parse_plot_legends(&Expr::List(vec![val.clone()].into()))
+    }
     _ => (Vec::new(), false, false, LegendPosition::Right),
   }
 }

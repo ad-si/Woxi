@@ -1653,6 +1653,91 @@ pub(crate) fn triangle_normal(
 /// `Plot3D`/`ContourPlot3D`'s region function (see
 /// `field_plot::region_allows`), so it does not need the plot's own
 /// variable names substituted in first.
+/// The level values one mesh function is drawn at, given its values
+/// across the surface: `Mesh -> n` spaces `n` levels evenly inside their
+/// range, an explicit list is used as is, and no spec draws 15.
+fn mesh_level_values(spec: Option<&MeshLevels>, values: &[f64]) -> Vec<f64> {
+  let (lo, hi) = values
+    .iter()
+    .filter(|v| v.is_finite())
+    .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+      (a.min(v), b.max(v))
+    });
+  match spec.cloned().unwrap_or(MeshLevels::Count(15)) {
+    MeshLevels::Count(n) if hi > lo => (1..=n)
+      .map(|m| lo + (hi - lo) * m as f64 / (n + 1) as f64)
+      .collect(),
+    MeshLevels::Values(v) => v,
+    MeshLevels::Count(_) => Vec::new(),
+  }
+}
+
+/// The segments (in data coordinates) where each mesh function crosses
+/// its levels on a triangulated surface: on every triangle, the two edges
+/// whose ends lie on opposite sides of a level are joined at the
+/// linearly interpolated crossings.
+fn surface_level_lines(
+  triangles: &[[[f64; 3]; 3]],
+  fns: &[MeshFn],
+  specs: Option<&[MeshLevels]>,
+) -> Vec<[[f64; 3]; 2]> {
+  let mut segments = Vec::new();
+  for (k, f) in fns.iter().enumerate() {
+    let values: Vec<[f64; 3]> =
+      triangles.iter().map(|t| t.map(|p| f.eval(p))).collect();
+    let flat: Vec<f64> = values.iter().flatten().copied().collect();
+    let spec = specs.and_then(|specs| {
+      specs
+        .get(k)
+        .or_else(|| specs.first().filter(|_| specs.len() == 1))
+    });
+    for level in mesh_level_values(spec, &flat) {
+      for (tri, vals) in triangles.iter().zip(&values) {
+        if vals.iter().any(|v| !v.is_finite()) {
+          continue;
+        }
+        let mut crossings: Vec<[f64; 3]> = Vec::with_capacity(2);
+        for e in 0..3 {
+          let (a, b) = (e, (e + 1) % 3);
+          if (vals[a] >= level) != (vals[b] >= level) {
+            let t = (level - vals[a]) / (vals[b] - vals[a]);
+            crossings
+              .push([0, 1, 2].map(|d| tri[a][d] + t * (tri[b][d] - tri[a][d])));
+          }
+        }
+        if let [p, q] = crossings[..] {
+          segments.push([p, q]);
+        }
+      }
+    }
+  }
+  segments
+}
+
+/// The outline of a triangulated surface: the triangle edges no other
+/// triangle shares.
+fn triangulation_outline(triangles: &[[[f64; 3]; 3]]) -> Vec<[[f64; 3]; 2]> {
+  let key = |p: &[f64; 3]| (p[0].to_bits(), p[1].to_bits());
+  let mut uses: std::collections::BTreeMap<_, (usize, [[f64; 3]; 2])> =
+    std::collections::BTreeMap::new();
+  for tri in triangles {
+    for e in 0..3 {
+      let (a, b) = (tri[e], tri[(e + 1) % 3]);
+      let edge = if key(&a) <= key(&b) {
+        (key(&a), key(&b))
+      } else {
+        (key(&b), key(&a))
+      };
+      uses.entry(edge).or_insert((0, [a, b])).0 += 1;
+    }
+  }
+  uses
+    .into_values()
+    .filter(|(n, _)| *n == 1)
+    .map(|(_, segment)| segment)
+    .collect()
+}
+
 fn eval_mesh_function(f: &Expr, x: f64, y: f64, z: f64) -> Option<f64> {
   let call = Expr::CurriedCall {
     func: Box::new(f.clone()),
@@ -2049,8 +2134,10 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
-          axes_labels =
-            parse_axes_labels(replacement, Some([&xvar, &yvar, "z"]));
+          axes_labels = parse_axes_labels(
+            replacement,
+            Some([Some(&xvar), Some(&yvar), None]),
+          );
         }
         _ => {}
       }
@@ -2356,8 +2443,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // inside another graphic keeps the shape it was drawn with.
     let mut structure_args = vec![content];
     structure_args.extend(args[3..].iter().cloned());
-    // `AxesLabel -> Automatic` names the axes after the plot's variables;
-    // a `Graphics3D` has no variables to name them by, so spell them out.
+    // `AxesLabel -> Automatic` names the two variable axes after the plot's
+    // variables and leaves the value axis unlabeled; a `Graphics3D` has no
+    // variables to name them by, so spell them out.
     for opt in &mut structure_args {
       if let Expr::Rule {
         pattern,
@@ -2370,7 +2458,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Identifier(a) if a == "Automatic" => name(default),
           other => other.clone(),
         };
-        let defaults = [xvar.as_str(), yvar.as_str(), "z"];
+        let defaults = [xvar.as_str(), yvar.as_str(), "None"];
         match replacement.as_ref() {
           Expr::Identifier(a) if a == "Automatic" => {
             **replacement = Expr::List(
@@ -9563,6 +9651,7 @@ fn collect_3d_primitives(
             other => other.clone(),
           };
           let curve = evaluate_expr_to_expr(&curve).unwrap_or(curve);
+          let from_spline = spline.is_some();
           let curves: Vec<Vec<Point3D>> = match spline {
             Some(pts) => vec![pts],
             None => match parse_point3d_list(&curve) {
@@ -9624,10 +9713,12 @@ fn collect_3d_primitives(
               vec![extent / 100.0; pts.len()]
             };
             let budget = tube_subdivision_budget(SCENE_TUBE_COUNT.get());
-            // At a sharp corner Wolfram ends one rounded run and starts the
-            // next, so the two overlap in a rounded elbow; a gently bending
-            // (sampled) curve stays one mitred tube.
-            let runs = if style.capped {
+            // At a sharp corner of a polyline Wolfram ends one rounded run
+            // and starts the next, so the two overlap in a rounded elbow; a
+            // gently bending (sampled) curve stays one mitred tube. A spline
+            // is always swept as one tube, so even the sharp corners of a
+            // `SplineDegree -> 1` `BSplineCurve` are mitred, not rounded.
+            let runs = if style.capped && !from_spline {
               tube_runs(&pts)
             } else {
               vec![(0, pts.len().saturating_sub(1))]
@@ -11177,7 +11268,23 @@ const MAX_SIDE_FACE_ASPECT: f64 = 1.0;
 const MAX_SIDE_SUBDIVISIONS: usize = 200;
 /// Radial subdivision count for `Cylinder`, shared between the
 /// tessellators and the call site that rebuilds their rim-edge flags.
-const CYLINDER_SIDES: usize = 24;
+/// The end circles are what an `EdgeForm` outlines, so they need enough
+/// points to read as smooth curves at picture size: a 24-gon put visible
+/// corners (over a pixel deep) on a radius-140 px ring, where Wolfram's
+/// outline is a smooth ellipse.
+const CYLINDER_SIDES: usize = 48;
+
+/// How many rings `tessellate_cylinder` cuts a side of the given length and
+/// radius into. The faces only need to stay short enough for the depth
+/// sort, so the aspect is measured against a 24-facet circumference, which
+/// keeps the ring count independent of how finely the rims are drawn.
+fn cylinder_side_steps(
+  len: f64,
+  radius: f64,
+  max_subdivisions: usize,
+) -> usize {
+  side_subdivision_steps(len, radius, CYLINDER_SIDES / 2, max_subdivisions)
+}
 /// Radial subdivision count for `Cone`. Its smooth shading has a single apex
 /// vertex, where neighboring facets meet at their own normals; finer
 /// slices keep that seam faint.
@@ -11553,7 +11660,7 @@ fn tessellate_cylinder(
   let biny = az * perpx - ax * perpz;
   let binz = ax * perpy - ay * perpx;
 
-  let steps = side_subdivision_steps(len, radius, n, max_subdivisions);
+  let steps = cylinder_side_steps(len, radius, max_subdivisions);
   let ring_at = |t: f64| -> Vec<Point3D> {
     let center = Point3D {
       x: p1.x + dx * t,
@@ -11614,6 +11721,9 @@ fn tessellate_cylinder(
 /// Cosine of the turn above which a tube's polyline is split into
 /// separately capped runs.
 const TUBE_CORNER_COS: f64 = 0.85;
+
+/// The most a tube's ring is stretched in the mitre plane of a sharp bend.
+const TUBE_MITER_LIMIT: f64 = 4.0;
 
 /// The index ranges (inclusive) of a tube's polyline between its sharp
 /// corners; consecutive runs share the corner point.
@@ -11685,11 +11795,26 @@ fn tessellate_tube(
     return vec![];
   }
 
+  // A polyline that returns to its first point (a closed spline) has no
+  // ends: its seam is joined like any other vertex and gets no caps.
+  let length: f64 = (1..keep.len())
+    .map(|i| norm(sub(&points[keep[i]], &points[keep[i - 1]])))
+    .sum();
+  let closed = dirs.len() >= 3
+    && norm(sub(&points[keep[0]], &points[keep[keep.len() - 1]]))
+      <= 1e-6 * length;
+
   // Vertex tangents: the segment direction at the ends, the normalized sum
-  // of the two adjacent directions in between.
+  // of the two adjacent directions in between (and at a closed seam).
+  let seam_tangent = {
+    let (a, b) = (dirs[dirs.len() - 1], dirs[0]);
+    unit((a.0 + b.0, a.1 + b.1, a.2 + b.2)).unwrap_or(b)
+  };
   let tangents: Vec<(f64, f64, f64)> = (0..keep.len())
     .map(|i| {
-      if i == 0 {
+      if closed && (i == 0 || i == keep.len() - 1) {
+        seam_tangent
+      } else if i == 0 {
         dirs[0]
       } else if i == keep.len() - 1 {
         dirs[dirs.len() - 1]
@@ -11708,15 +11833,63 @@ fn tessellate_tube(
     (1.0, 0.0, 0.0)
   };
   let mut normal = unit(cross(t0, seed)).unwrap_or((1.0, 0.0, 0.0));
+  // Carry the normal from one vertex tangent to the next by the rotation
+  // that turns the one tangent into the other (a rotation-minimizing
+  // frame). Merely re-projecting it would collapse at a right-angle bend
+  // within the normal's own plane, where it lines up with the new tangent.
+  let transport =
+    |normal: (f64, f64, f64), from: (f64, f64, f64), to: (f64, f64, f64)| {
+      let axis = cross(from, to);
+      let sin = norm(axis);
+      let cos = from.0 * to.0 + from.1 * to.1 + from.2 * to.2;
+      let rotated = match unit(axis) {
+        Some(k) if sin > 1e-12 => {
+          let kv = cross(k, normal);
+          let kd = k.0 * normal.0 + k.1 * normal.1 + k.2 * normal.2;
+          (
+            normal.0 * cos + kv.0 * sin + k.0 * kd * (1.0 - cos),
+            normal.1 * cos + kv.1 * sin + k.1 * kd * (1.0 - cos),
+            normal.2 * cos + kv.2 * sin + k.2 * kd * (1.0 - cos),
+          )
+        }
+        _ => normal,
+      };
+      let dot = rotated.0 * to.0 + rotated.1 * to.1 + rotated.2 * to.2;
+      let projected = (
+        rotated.0 - dot * to.0,
+        rotated.1 - dot * to.1,
+        rotated.2 - dot * to.2,
+      );
+      unit(projected).unwrap_or(normal)
+    };
+
+  // Around a closed curve the transported normal comes back turned by some
+  // angle; spreading that turn over the vertices lets the last ring meet
+  // the first one without a twisted seam.
+  let twist = if closed {
+    let last = tangents
+      .windows(2)
+      .fold(normal, |n, pair| transport(n, pair[0], pair[1]));
+    let first = normal;
+    let c = cross(first, last);
+    let sin = c.0 * t0.0 + c.1 * t0.1 + c.2 * t0.2;
+    let cos = first.0 * last.0 + first.1 * last.1 + first.2 * last.2;
+    sin.atan2(cos)
+  } else {
+    0.0
+  };
+  let phase_at = |i: f64| -twist * i / (keep.len() - 1) as f64;
 
   let ring_at = |center: Point3D,
                  radius: f64,
                  normal: (f64, f64, f64),
-                 binormal: (f64, f64, f64)|
+                 binormal: (f64, f64, f64),
+                 phase: f64|
    -> Vec<Point3D> {
     (0..TUBE_SIDES)
       .map(|k| {
-        let a = 2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64;
+        let a =
+          2.0 * std::f64::consts::PI * k as f64 / TUBE_SIDES as f64 + phase;
         let (c, s) = (a.cos() * radius, a.sin() * radius);
         Point3D {
           x: center.x + c * normal.0 + s * binormal.0,
@@ -11737,24 +11910,53 @@ fn tessellate_tube(
   for (i, &idx) in keep.iter().enumerate() {
     let t = tangents[i];
     // Re-project the carried normal into this vertex's normal plane.
-    let dot = normal.0 * t.0 + normal.1 * t.1 + normal.2 * t.2;
-    let projected = (
-      normal.0 - dot * t.0,
-      normal.1 - dot * t.1,
-      normal.2 - dot * t.2,
-    );
-    normal = unit(projected).unwrap_or(normal);
+    if i > 0 {
+      normal = transport(normal, tangents[i - 1], t);
+    }
     let binormal = cross(t, normal);
     let r = radii.get(idx).copied().unwrap_or(0.0);
-    // A bend shortens the ring's projection onto the segments; widening it
-    // by 1/cos(half-angle) keeps the tube's radius constant along the curve.
-    let widen = if i == 0 || i == keep.len() - 1 {
-      1.0
+    // At a bend the ring lies in the mitre plane, which cuts the tube
+    // obliquely: stretching the ring by 1/cos(half-angle) along the bend
+    // (and only along it) keeps the tube's radius constant up to the
+    // corner. Like a stroke's miter limit, the stretch is bounded so that
+    // a curve doubling back does not flare out into a wide fin.
+    let incoming = if i > 0 {
+      Some(dirs[i - 1])
+    } else if closed {
+      Some(dirs[dirs.len() - 1])
     } else {
-      let d = dirs[i - 1].0 * t.0 + dirs[i - 1].1 * t.1 + dirs[i - 1].2 * t.2;
-      if d.abs() < 1e-6 { 1.0 } else { 1.0 / d }
+      None
     };
-    rings.push(ring_at(points[idx], r * widen, normal, binormal));
+    let outgoing = if i < dirs.len() {
+      Some(dirs[i])
+    } else if closed {
+      Some(dirs[0])
+    } else {
+      None
+    };
+    let mut ring =
+      ring_at(points[idx], r, normal, binormal, phase_at(i as f64));
+    if let (Some(prev), Some(next)) = (incoming, outgoing)
+      && let Some(bend) =
+        unit((next.0 - prev.0, next.1 - prev.1, next.2 - prev.2))
+    {
+      let d = prev.0 * t.0 + prev.1 * t.1 + prev.2 * t.2;
+      let stretch = if d > 1.0 / TUBE_MITER_LIMIT {
+        1.0 / d
+      } else {
+        TUBE_MITER_LIMIT
+      };
+      let c = points[idx];
+      for q in &mut ring {
+        let along =
+          (q.x - c.x) * bend.0 + (q.y - c.y) * bend.1 + (q.z - c.z) * bend.2;
+        let extra = along * (stretch - 1.0);
+        q.x += extra * bend.0;
+        q.y += extra * bend.1;
+        q.z += extra * bend.2;
+      }
+    }
+    rings.push(ring);
 
     // Subdivide the straight run to the next vertex so no single
     // tessellated face spans an outsized fraction of the tube's length
@@ -11779,13 +11981,14 @@ fn tessellate_tube(
           z: points[idx].z + (points[idx_next].z - points[idx].z) * frac,
         };
         let rr = r + (r_next - r) * frac;
-        rings.push(ring_at(center, rr, normal, binormal));
+        let phase = phase_at(i as f64 + frac);
+        rings.push(ring_at(center, rr, normal, binormal, phase));
       }
     }
   }
 
   // Wolfram rounds a capped tube's ends: a hemisphere closes each one.
-  if capped {
+  if capped && !closed {
     const CAP_RINGS: usize = 6;
     let cap = |ring: &[Point3D], center: Point3D, out: (f64, f64, f64)| {
       (1..=CAP_RINGS)
@@ -13313,8 +13516,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               + (p2.y - p1.y).powi(2)
               + (p2.z - p1.z).powi(2))
             .sqrt();
-            let steps =
-              side_subdivision_steps(len, *radius, CYLINDER_SIDES, max_subdiv);
+            let steps = cylinder_side_steps(len, *radius, max_subdiv);
             holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
           }
           (tris, style)
@@ -15136,10 +15338,11 @@ fn parse_axis_ranges(expr: &Expr) -> Option<[(f64, f64); 3]> {
 
 /// The three axis labels an `AxesLabel` value names. A lone label (or a
 /// shorter list) labels the leading axes; `defaults` are the names
-/// `Automatic` stands for.
+/// `Automatic` stands for (`None` for an axis it leaves unlabeled, like the
+/// value axis of a `Plot3D`).
 fn parse_axes_labels(
   replacement: &Expr,
-  defaults: Option<[&str; 3]>,
+  defaults: Option<[Option<&str>; 3]>,
 ) -> [Option<String>; 3] {
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
@@ -15151,7 +15354,7 @@ fn parse_axes_labels(
   };
   let mut labels: [Option<String>; 3] = [None, None, None];
   for (i, item) in items.iter().take(3).enumerate() {
-    labels[i] = axis_label_markup(item, defaults.map(|d| d[i]));
+    labels[i] = axis_label_markup(item, defaults.and_then(|d| d[i]));
   }
   labels
 }
@@ -15166,11 +15369,10 @@ fn axis_label_markup(expr: &Expr, default: Option<&str>) -> Option<String> {
   match expr {
     Expr::Identifier(s) if s == "None" => None,
     // `Automatic` asks for the plot's default label: the variable's name
-    // for a function plot, nothing for a bare `Graphics3D`.
-    Expr::Identifier(s) if s == "Automatic" => default.map(|name| {
-      crate::functions::graphics::expr_to_svg_markup(&Expr::Identifier(
-        name.to_string(),
-      ))
+    // for a function plot, nothing for a bare `Graphics3D`. The name is a
+    // symbol, so it is set in `TraditionalForm` (an italic letter).
+    Expr::Identifier(s) if s == "Automatic" => default.and_then(|name| {
+      axis_label_markup(&Expr::Identifier(name.to_string()), None)
     }),
     Expr::String(_) => {
       let markup = crate::functions::graphics::expr_to_svg_markup(expr);
@@ -15805,6 +16007,10 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut plot_styles: Vec<StyleState3D> = Vec::new();
   // `MeshStyle`: the color, opacity and thickness of the mesh lines.
   let mut mesh_style: Option<StyleState3D> = None;
+  // `Mesh -> n` / `{levels…}` and `MeshFunctions`: lines where each mesh
+  // function takes those values, instead of the default grid.
+  let mut mesh_levels: Option<Vec<MeshLevels>> = None;
+  let mut mesh_functions: Option<Vec<Expr>> = None;
 
   for opt in &args[1..] {
     if let Expr::Rule {
@@ -15828,8 +16034,16 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               mesh_mode = MeshMode::None;
             }
             Expr::Identifier(n) if n == "All" => mesh_mode = MeshMode::All,
-            _ => {}
+            other => mesh_levels = parse_mesh_levels(other),
           }
+        }
+        Expr::Identifier(name) if name == "MeshFunctions" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_functions = Some(match &value {
+            Expr::List(items) => items.to_vec(),
+            other => vec![other.clone()],
+          });
         }
         Expr::Identifier(name) if name == "ColorFunction" => {
           color_function =
@@ -15837,8 +16051,13 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               replacement,
             );
         }
+        // `PlotRange -> {zmin, zmax}`, or the z part of a per-axis
+        // `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` (with `All` or
+        // `Automatic` for an axis that keeps the data extent).
         Expr::Identifier(name) if name == "PlotRange" => {
-          z_clip = parse_z_only_range(replacement);
+          z_clip = parse_z_only_range(replacement).or_else(|| {
+            parse_partial_axis_ranges(replacement).and_then(|r| r[2])
+          });
         }
         Expr::Identifier(name) if name == "AxesLabel" => {
           axes_labels = parse_axes_labels(replacement, None);
@@ -16168,6 +16387,70 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     z_hi - z_lo
   };
 
+  // The surface's triangles in data coordinates: the two halves of each
+  // grid cell, or the triangulation of scattered points.
+  let coord = |k: usize, n: usize, lo: f64, hi: f64| {
+    if n > 1 {
+      lo + k as f64 * (hi - lo) / (n - 1) as f64
+    } else {
+      lo
+    }
+  };
+  let surface_triangles: Vec<[[f64; 3]; 3]> = if let Some((points, tris)) =
+    &scattered
+  {
+    tris
+      .iter()
+      .map(|t| {
+        t.map(|k| {
+          let (x, y, z) = points[k];
+          [x, y, z]
+        })
+      })
+      .collect()
+  } else {
+    let node = |i: usize, j: usize| -> Option<[f64; 3]> {
+      let z = *grid.get(i)?.get(j)?;
+      z.is_finite().then(|| {
+        [
+          coord(i, rows, x_min, x_max),
+          coord(j, cols, y_min, y_max),
+          z,
+        ]
+      })
+    };
+    let mut tris = Vec::new();
+    for i in 0..rows.saturating_sub(1) {
+      for j in 0..cols.saturating_sub(1) {
+        for corners in [
+          [(i, j), (i + 1, j), (i, j + 1)],
+          [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+        ] {
+          if let [Some(a), Some(b), Some(c)] = corners.map(|(a, b)| node(a, b))
+          {
+            tris.push([a, b, c]);
+          }
+        }
+      }
+    }
+    tris
+  };
+  // With an explicit `Mesh` level spec or `MeshFunctions`, the mesh is the
+  // set of level lines of the mesh functions (`{#1 &, #2 &}` by default)
+  // across the surface, plus the surface's outline.
+  let level_mesh: Option<Vec<[[f64; 3]; 2]>> = (mesh_mode == MeshMode::Default
+    && (mesh_levels.is_some() || mesh_functions.is_some()))
+  .then(|| {
+    let fns: Vec<MeshFn> = match &mesh_functions {
+      Some(fs) => fs.iter().map(MeshFn::of).collect(),
+      None => vec![MeshFn::X, MeshFn::Y],
+    };
+    let mut segments =
+      surface_level_lines(&surface_triangles, &fns, mesh_levels.as_deref());
+    segments.extend(triangulation_outline(&surface_triangles));
+    segments
+  });
+
   let camera = Camera::default();
   let mut all_triangles: Vec<Triangle> = Vec::new();
   let mut mesh_world = Vec::new();
@@ -16487,7 +16770,22 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y: fj / (cols - 1).max(1) as f64 * 2.0 - 1.0,
     z: ((z.clamp(z_lo, z_hi) - z_lo) / z_range) * 2.0 * Z_SCALE - Z_SCALE,
   };
-  let mut mesh_lines = if mesh_mode == MeshMode::Default {
+  let mut mesh_lines = if let Some(segments) = &level_mesh {
+    segments
+      .iter()
+      .map(|[a, b]| {
+        let point = |p: &[f64; 3]| {
+          let (fi, fj) = frac(p[0], p[1]);
+          to_box(fi, fj, p[2])
+        };
+        let line = mesh_segment(point(a), point(b), &camera);
+        match &mesh_style {
+          Some(style) => styled_line_like(&line, style),
+          None => line,
+        }
+      })
+      .collect()
+  } else if mesh_mode == MeshMode::Default {
     let mut lines = if let Some((points, tris)) = &scattered {
       let corners: Vec<[(f64, f64, f64); 3]> = tris
         .iter()
@@ -16593,15 +16891,6 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // re-render everything together under one shared camera instead.
   let mut index_of: Vec<Vec<Option<usize>>> = vec![vec![None; cols]; rows];
   let mut point_exprs: Vec<Expr> = Vec::new();
-  // Grid node `[i][j]` in data coordinates (a height matrix's column and
-  // row numbers, counted from 1).
-  let coord = |k: usize, n: usize, lo: f64, hi: f64| {
-    if n > 1 {
-      lo + k as f64 * (hi - lo) / (n - 1) as f64
-    } else {
-      lo
-    }
-  };
   for (i, row) in grid.iter().enumerate() {
     for (j, &z) in row.iter().enumerate() {
       if !z.is_finite() {
@@ -16683,8 +16972,42 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
-  // The mesh, at the spacing the standalone render rules it with.
-  if matches!(mesh_mode, MeshMode::Default) {
+  // The level-line mesh: its points join the complex's vertex list.
+  if let Some(segments) = &level_mesh {
+    let mut pairs: Vec<Expr> = Vec::with_capacity(segments.len());
+    for segment in segments {
+      let ends: Vec<Expr> = segment
+        .iter()
+        .map(|p| {
+          point_exprs.push(Expr::List(
+            vec![
+              Expr::Real(p[0]),
+              Expr::Real(p[1]),
+              Expr::Real(p[2].clamp(z_lo, z_hi)),
+            ]
+            .into(),
+          ));
+          Expr::Integer(point_exprs.len() as i128)
+        })
+        .collect();
+      pairs.push(Expr::List(ends.into()));
+    }
+    if !pairs.is_empty() {
+      complex_content.push(Expr::List(
+        vec![
+          call1("Opacity", Expr::Real(0.63)),
+          call(
+            "RGBColor",
+            vec![Expr::Real(0.0), Expr::Real(0.0), Expr::Real(0.0)],
+          ),
+          call1("AbsoluteThickness", Expr::Real(0.5)),
+          call1("Line", Expr::List(pairs.into())),
+        ]
+        .into(),
+      ));
+    }
+  } else if matches!(mesh_mode, MeshMode::Default) {
+    // The mesh, at the spacing the standalone render rules it with.
     let mut segments: Vec<Expr> = Vec::new();
     let mut push_segment = |a: Option<usize>, b: Option<usize>| {
       if let (Some(a), Some(b)) = (a, b) {

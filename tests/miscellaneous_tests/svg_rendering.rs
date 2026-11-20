@@ -2753,6 +2753,47 @@ mod tests {
       assert!(c_x > 206.0, "third column starts after the span: {svg}");
     }
 
+    #[test]
+    fn grid_trailing_span_in_a_short_row_reaches_the_last_column() {
+      // A row shorter than the grid that ends in `SpanFromLeft` keeps
+      // spanning to the grid's last column: the wide picture is centered
+      // over all three columns, which keep their natural widths.
+      let svg = svg_of(
+        "Grid[{{Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100]}, \
+         {Graphics[Rectangle[{0, 0}, {3, 1}], ImageSize -> 250], \
+         SpanFromLeft}}]",
+      );
+      let xs: Vec<f64> = svg
+        .split("<svg x=\"")
+        .skip(1)
+        .map(|chunk| chunk.split('"').next().unwrap().parse().unwrap())
+        .collect();
+      assert_eq!(xs.len(), 4, "{svg}");
+      // The three disks sit in equally wide columns.
+      assert!(
+        ((xs[1] - xs[0]) - (xs[2] - xs[1])).abs() < 0.5,
+        "columns stay even: {svg}"
+      );
+      // The spanned picture is centered across the whole grid.
+      let total_w = picture_width(&svg);
+      assert!(
+        (xs[3] + 125.0 - total_w / 2.0).abs() < 1.0,
+        "picture centered across all columns: {svg}"
+      );
+    }
+
+    /// The width of the outermost `<svg>`.
+    fn picture_width(svg: &str) -> f64 {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .expect("svg width")
+    }
+
     /// The `y` of the nested `<svg>` with the given `width`.
     fn picture_y(svg: &str, width: &str) -> f64 {
       svg
@@ -4851,6 +4892,30 @@ mod tests {
       assert!(svg.contains("<svg"), "{svg}");
       assert!(!svg.contains("SuperscriptBox"), "box source leaked: {svg}");
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
+    }
+
+    /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells
+    /// at that size, like its plain text cells, also when the whole styled
+    /// grid is put in `TraditionalForm`.
+    #[test]
+    fn styled_grid_sizes_its_traditional_form_cells() {
+      for code in [
+        "Style[Grid[{{TraditionalForm[a + b], TraditionalForm[c - a]}}, Frame -> All], 30]",
+        "TraditionalForm[Style[Grid[{{a + b, c - a}, {7, -a - b + c}}, Frame -> All], 30]]",
+        "Text[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]]]",
+      ] {
+        let svg =
+          woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+        let size = if code.contains("24") { "24" } else { "30" };
+        assert!(
+          svg.contains(&format!("font-size=\"{size}")),
+          "{code}: cells not set at size {size}: {svg}"
+        );
+        assert!(
+          !svg.contains("font-size=\"14"),
+          "{code}: a cell kept the default size: {svg}"
+        );
+      }
     }
 
     /// A bushy tree sets its own picture width from its labels; in a
