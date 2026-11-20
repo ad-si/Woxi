@@ -9500,14 +9500,21 @@ mod robust_range_tests {
     assert_eq!(fine.len(), 10 * r + 1);
     // Next to the curve every fine node is sampled, and correctly.
     let mid = 5 * r + 1;
-    assert!((fine[mid][1] - (mid as f64 / (10 * r) as f64 - 0.5)).abs() < 1e-12);
+    assert!(
+      (fine[mid][1] - (mid as f64 / (10 * r) as f64 - 0.5)).abs() < 1e-12
+    );
     // Far from it only the coarse nodes are.
     assert!(fine[1][1].is_nan());
     assert_eq!(fine[0][0], -0.5);
     // Without budget for any refinement the lattice stays coarse.
     let coarse = vec![vec![-1.0, 1.0], vec![-1.0, 1.0]];
-    let (same, r) =
-      refine_equation_grid(coarse.clone(), |_, _| None, 0, (0.0, 1.0), (0.0, 1.0));
+    let (same, r) = refine_equation_grid(
+      coarse.clone(),
+      |_, _| None,
+      0,
+      (0.0, 1.0),
+      (0.0, 1.0),
+    );
     assert_eq!((same, r), (coarse, 1));
   }
 }
