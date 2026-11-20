@@ -39461,26 +39461,25 @@ fn wrap_list_text(
         )
       };
       let measure = |pieces: &[Expr]| cell_width(&styled(line_expr(pieces)));
-      let mut lines: Vec<Vec<Expr>> = vec![vec![str_expr("{")]];
-      for (i, item) in items.iter().enumerate() {
-        let item_boxes =
-          crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-            item,
-          );
-        let line = lines.last_mut()?;
-        if i > 0 {
-          line.push(str_expr(","));
-        }
-        // The element, and the comma that follows it on the same line.
+      // The list's boxes as unbreakable segments, each ending after a comma
+      // between elements at any depth: a nested list (the period of a
+      // continued fraction) breaks inside too, as in the FrontEnd.
+      let mut segments: Vec<Vec<Expr>> = vec![Vec::new()];
+      list_text_segments(expr, &mut segments);
+      let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+      for segment in segments.into_iter().filter(|s| !s.is_empty()) {
+        let line = lines.last()?;
+        // A line holding only opening brackets has no element to keep.
+        let has_element = line
+          .iter()
+          .any(|p| !matches!(p, Expr::String(b) if b == "{"));
         let mut candidate = line.clone();
-        candidate.push(item_boxes.clone());
-        candidate.push(str_expr(","));
-        if i > 0 && line.len() > 1 && measure(&candidate) > width {
+        candidate.extend(segment.iter().cloned());
+        if has_element && measure(&candidate) > width {
           lines.push(Vec::new());
         }
-        lines.last_mut()?.push(item_boxes);
+        lines.last_mut()?.extend(segment);
       }
-      lines.last_mut()?.push(str_expr("}"));
       if lines.len() < 2 {
         return None;
       }
@@ -39491,6 +39490,37 @@ fn wrap_list_text(
       ))
     }
     _ => None,
+  }
+}
+
+/// Append the boxes of `expr` to `segments`, starting a new segment after
+/// every comma between list elements, nested lists included. A nested
+/// list holding a graphic is kept whole.
+fn list_text_segments(expr: &Expr, segments: &mut Vec<Vec<Expr>>) {
+  let push = |segments: &mut Vec<Vec<Expr>>, piece: Expr| {
+    if let Some(last) = segments.last_mut() {
+      last.push(piece);
+    }
+  };
+  match expr {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|item| grid_cell_graphic(item).is_none()) =>
+    {
+      push(segments, str_expr("{"));
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          push(segments, str_expr(","));
+          segments.push(Vec::new());
+        }
+        list_text_segments(item, segments);
+      }
+      push(segments, str_expr("}"));
+    }
+    _ => push(
+      segments,
+      crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    ),
   }
 }
 
