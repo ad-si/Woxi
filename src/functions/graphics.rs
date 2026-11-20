@@ -26484,7 +26484,14 @@ fn grid_svg_styled_internal_reporting(
     } = &opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
-      match name.as_str() {
+      // `Frame -> {xspec, yspec}` rules the grid's column and row lines
+      // exactly as `Dividers -> {xspec, yspec}` does, so it shares that
+      // parser (e.g. `Frame -> {False, All}` draws only horizontal lines).
+      let key = match replacement.as_ref() {
+        Expr::List(items) if name == "Frame" && items.len() == 2 => "Dividers",
+        _ => name.as_str(),
+      };
+      match key {
         "Frame" => match replacement.as_ref() {
           Expr::Identifier(val) if val == "All" => frame_all = true,
           Expr::Identifier(val) if val == "True" => frame_outer = true,
