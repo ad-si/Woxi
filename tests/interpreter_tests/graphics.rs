@@ -4448,6 +4448,40 @@ mod graphics {
       ));
     }
 
+    // An exact rational size (`590*13/30` evaluates to `767/3`) is a size
+    // like any other number, not an unknown spec that falls back to the
+    // default 360 x 225 picture.
+    #[test]
+    fn image_size_rational_height() {
+      let svg =
+        export_svg("Show[Graphics[{Disk[]}], ImageSize -> {600, 590*13/30}]");
+      assert!(
+        svg.starts_with("<svg width=\"600\" height=\"256\""),
+        "{}",
+        &svg[..80]
+      );
+    }
+
+    #[test]
+    fn image_size_rational_width() {
+      let svg = export_svg("Graphics[{Disk[]}, ImageSize -> 1200/7]");
+      assert!(
+        svg.starts_with("<svg width=\"171\" height=\"171\""),
+        "{}",
+        &svg[..80]
+      );
+    }
+
+    #[test]
+    fn image_size_rational_in_plot() {
+      let svg = export_svg("Plot[x, {x, 0, 1}, ImageSize -> {300, 500/3}]");
+      assert!(
+        svg.starts_with("<svg width=\"300\" height=\"167\""),
+        "{}",
+        &svg[..80]
+      );
+    }
+
     #[test]
     fn image_size_named() {
       insta::assert_snapshot!(export_svg(
