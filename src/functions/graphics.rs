@@ -15915,6 +15915,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
+  // A one-sided vertical range (`PlotRange -> {-0.2, All}`): the given
+  // side is fixed, the open one follows the primitives.
+  let mut plot_range_y_half: Option<(Option<f64>, Option<f64>)> = None;
   let mut background: Option<Color> = None;
   let mut plot_label: Option<Vec<String>> = None;
   // A `PlotLabel` holding a two-dimensional layout (a matrix), typeset as
@@ -16026,6 +16029,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (xr, yr) = parse_plot_range(replacement);
           plot_range_x = xr;
           plot_range_y = yr;
+          plot_range_y_half =
+            crate::functions::plot::half_open_y_range(replacement);
         }
         "PlotRangePadding" => {
           plot_range_padding = Some(replacement.clone());
@@ -16296,6 +16301,21 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   }
 
+  // The given side of a one-sided vertical range replaces that side of the
+  // primitives' extent; the open side keeps following them.
+  if plot_range_y.is_none()
+    && let Some((lo, hi)) = plot_range_y_half
+    && let Some((lo, hi)) = crate::functions::plot::resolve_half_open_y_range(
+      (lo, hi),
+      (bb.y_min, bb.y_max),
+    )
+  {
+    bb.y_min = lo;
+    bb.y_max = hi;
+  } else {
+    plot_range_y_half = None;
+  }
+
   // An explicit `AxesOrigin` of drawn axes lies inside an automatic range:
   // Wolfram widens the range to reach it, so an axis set off below the
   // data (`AxesOrigin -> {1, Min[data] - 0.25}`) is still drawn.
@@ -16359,6 +16379,16 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if let Some((lo, hi)) = plot_range_y {
       bb.y_min = lo;
       bb.y_max = hi;
+    }
+    // Only the given side of a one-sided range is drawn exactly; the open
+    // side is padded like an automatic one.
+    if let Some((lo, hi)) = plot_range_y_half {
+      if let Some(lo) = lo {
+        bb.y_min = lo;
+      }
+      if let Some(hi) = hi {
+        bb.y_max = hi;
+      }
     }
   }
 
@@ -16701,7 +16731,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // axes' or an explicit `ImagePadding`'s margins (`PlotRangeClipping ->
   // False`, the default) is decided where the clip is applied.
   let clip_x = plot_range_x.map(|_| (bb.x_min, bb.x_max));
-  let clip_y = plot_range_y.map(|_| (bb.y_min, bb.y_max));
+  let clip_y = (plot_range_y.is_some() || plot_range_y_half.is_some())
+    .then_some((bb.y_min, bb.y_max));
   // A frame or axes under `ImageSize -> {w, h}` with an automatic aspect
   // ratio hug the data instead: the frame keeps the shape of the plot range and
   // sits centered in the requested size, rather than the range being

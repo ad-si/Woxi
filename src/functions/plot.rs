@@ -1303,11 +1303,50 @@ pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
   match &val {
     e if is_all(e) => (true, true),
+    // A one-sided vertical range (`{0, All}`, `{All, 5}`) is not a pair of
+    // axis specs: its `All` is the open end of the y range.
+    Expr::List(items) if half_open_y_range(&val).is_some() => {
+      (false, items.iter().any(is_all))
+    }
     Expr::List(items) if items.len() == 2 => {
       (is_all(&items[0]), is_all(&items[1]))
     }
     _ => (false, false),
   }
+}
+
+/// The fixed bounds of a vertical `PlotRange -> {ymin, ymax}` with one side
+/// left open (`{0, All}`, `{-0.2, Automatic}`, `{All, 5}`): `(Some(lo),
+/// None)` or `(None, Some(hi))`. The open side follows the data while the
+/// given side stays where it was put, so a curve is clipped there.
+pub(crate) fn half_open_y_range(
+  value: &Expr,
+) -> Option<(Option<f64>, Option<f64>)> {
+  let Expr::List(items) = value else {
+    return None;
+  };
+  if items.len() != 2 {
+    return None;
+  }
+  let is_open = |e: &Expr| {
+    matches!(e, Expr::Identifier(s) if s == "All" || s == "Automatic")
+  };
+  match (is_open(&items[0]), is_open(&items[1])) {
+    (false, true) => try_eval_to_f64(&items[0]).map(|lo| (Some(lo), None)),
+    (true, false) => try_eval_to_f64(&items[1]).map(|hi| (None, Some(hi))),
+    _ => None,
+  }
+}
+
+/// Resolve a [`half_open_y_range`] against the automatic range of the
+/// data: the given side is kept, the open side comes from `auto`.
+pub(crate) fn resolve_half_open_y_range(
+  half: (Option<f64>, Option<f64>),
+  auto: (f64, f64),
+) -> Option<(f64, f64)> {
+  let lo = half.0.unwrap_or(auto.0);
+  let hi = half.1.unwrap_or(auto.1);
+  (lo.is_finite() && hi.is_finite() && lo < hi).then_some((lo, hi))
 }
 
 /// Whether a `PlotRange` value leaves the x range of a function plot to
@@ -16757,6 +16796,9 @@ pub(crate) struct PlotRangeOverrides {
   /// `PlotRange -> All` on the y axis: show every sampled value instead of
   /// the automatic range, which drops extreme outliers.
   pub y_all: bool,
+  /// A one-sided vertical range (see [`half_open_y_range`]), resolved
+  /// against the data once it is known.
+  pub y_half: Option<(Option<f64>, Option<f64>)>,
   /// The x range follows the sampled points rather than the iterator
   /// domain, reaching to 0 when close if `Some(true)` (see
   /// [`plot_range_x_from_points`]).
@@ -16890,6 +16932,10 @@ pub(crate) fn apply_common_plot_option(
       overrides.x = rx;
       overrides.y = ry;
       overrides.y_all = plot_range_requests_all_y(replacement);
+      overrides.y_half = half_open_y_range(
+        &evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.clone()),
+      );
       overrides.x_from_points = plot_range_x_from_points(replacement);
     }
     "Axes" => {
@@ -17712,6 +17758,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
   let plot_range_y_all = overrides.y_all;
+  let plot_range_y_half = overrides.y_half;
   let plot_range_x_from_points = overrides.x_from_points;
   let _precision = WorkingPrecisionGuard::set(working_precision);
 
@@ -18216,7 +18263,12 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
   let plot_range_x = fill_range(plot_range_x, x_auto);
-  let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max));
+  let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max))
+    .or_else(|| {
+      plot_range_y_half.and_then(|half| {
+        resolve_half_open_y_range(half, (y_auto_min, y_auto_max))
+      })
+    });
   let (x_display_min, x_display_max) = plot_range_x.unwrap_or(x_auto);
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
     // Labels placed above or below their curves get room inside the
