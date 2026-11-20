@@ -16546,6 +16546,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // tspans — the label is drawn, not printed.
           match replacement {
             Expr::Identifier(s) if s == "None" => {}
+            // `Null` (typically an unset label variable or an option
+            // default of `Null` passed through) draws no text, but unlike
+            // `None` it still takes up the title's line above the picture.
+            Expr::Identifier(s) if s == "Null" => {
+              plot_label = Some(vec![String::new()]);
+            }
             other
               if plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
@@ -17613,7 +17619,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<g fill=\"{fill}\" color=\"{fill}\">{}</g>\n",
       embed_svg_centered(picture, cx, title_top + band / 2.0, w, h)
     ));
-  } else if let Some(lines) = &plot_label {
+  } else if let Some(lines) = &plot_label
+    && lines.iter().any(|l| !l.is_empty())
+  {
     let cx = margin_left + svg_w / 2.0;
     // A title wider than the picture (a long `Row` of text and numbers)
     // shrinks to fit instead of being clipped at both edges.
