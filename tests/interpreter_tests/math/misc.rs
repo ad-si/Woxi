@@ -2366,6 +2366,35 @@ mod radical_coefficient_merge {
     );
   }
 
+  // Small radicands reduce by plain trial division: once the trial factor
+  // passes the square root of what is left, the cofactor is prime and goes
+  // inside the radical as is (it used to be handed to the general integer
+  // factorizer, which made every `c * Sqrt[p]` product slow).
+  #[test]
+  fn small_radicands_reduce_to_square_free_parts() {
+    assert_eq!(
+      interpret("InputForm[Sqrt[Range[2, 20]]]").unwrap(),
+      "InputForm[{Sqrt[2], Sqrt[3], 2, Sqrt[5], Sqrt[6], Sqrt[7], 2*Sqrt[2], \
+       3, Sqrt[10], Sqrt[11], 2*Sqrt[3], Sqrt[13], Sqrt[14], Sqrt[15], 4, \
+       Sqrt[17], 3*Sqrt[2], Sqrt[19], 2*Sqrt[5]}]"
+    );
+    assert_eq!(
+      interpret("InputForm[{5*Sqrt[3]/2, 3*Sqrt[8/3], Sqrt[97*4*25]}]")
+        .unwrap(),
+      "InputForm[{(5*Sqrt[3])/2, 2*Sqrt[6], 10*Sqrt[97]}]"
+    );
+    // A prime cofactor left over past the machine-integer range.
+    assert_eq!(
+      interpret("InputForm[Sqrt[3*2^70]]").unwrap(),
+      "InputForm[34359738368*Sqrt[3]]"
+    );
+    // A square of a prime beyond the trial-division bound still comes out.
+    assert_eq!(
+      interpret("InputForm[Sqrt[7*1000003^2]]").unwrap(),
+      "InputForm[1000003*Sqrt[7]]"
+    );
+  }
+
   // wolframscript pulls a positive numeric factor out of a product radicand
   // as its own radical, and only when the rest is NOT numeric.
   #[test]

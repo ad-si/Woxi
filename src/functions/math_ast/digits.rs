@@ -1707,59 +1707,22 @@ fn apply_exponent(n: i128, d: i128, exp: i32) -> Option<(i128, i128)> {
 
 /// Compute RealDigits for a rational number in an arbitrary base.
 fn real_digits_rational_base(
-  numer: i128,
-  denom: i128,
+  numer: &BigInt,
+  denom: &BigInt,
   base: i128,
 ) -> (Vec<Expr>, i128) {
   use std::collections::HashMap;
 
-  let n = numer.abs();
   let d = denom.abs();
-
-  // Compute exponent: number of digits in integer part
-  let integer_part = n / d;
-
-  let exponent: i128 = if integer_part == 0 {
-    // For numbers < 1, exponent is 0 or negative
-    // Count leading zeros after decimal point
-    let mut temp = n * base;
-    let mut leading_zeros: i128 = 0;
-    while temp < d && temp > 0 {
-      leading_zeros += 1;
-      temp *= base;
-    }
-    -leading_zeros
-  } else {
-    // Count digits in integer part
-    let mut count = 0i128;
-    let mut temp = integer_part;
-    while temp > 0 {
-      count += 1;
-      temp /= base;
-    }
-    count
-  };
-
-  // Normalize: bring remainder into [0, d) range and extract integer part digits
-  let mut remainder = n;
-  let int_part = remainder / d;
-  remainder %= d;
-
-  // Extract integer part digits
-  let mut int_digits: Vec<i128> = Vec::new();
-  if int_part > 0 {
-    let mut temp = int_part;
-    while temp > 0 {
-      int_digits.push(temp % base);
-      temp /= base;
-    }
-    int_digits.reverse();
-  }
+  let n = numer.abs();
+  let (int_part, mut remainder) = (&n / &d, &n % &d);
+  let (exponent, int_digits) =
+    big_rational_exponent(&int_part, &remainder, &d, base);
 
   // A pure fraction starts at its first nonzero digit: the leading zeros
   // are the (negative) exponent, not digits, and the recurring block is
   // counted from there (RealDigits[1/7, 2] is {{{1, 0, 0}}, -2}).
-  if int_part == 0 {
+  if int_part.is_zero() {
     for _ in 0..(-exponent) {
       remainder *= base;
     }
@@ -1768,24 +1731,16 @@ fn real_digits_rational_base(
   // Now do long division for the fractional part
   // Track remainder -> position for cycle detection
   let mut digits: Vec<i128> = int_digits;
-  let mut remainder_positions: HashMap<i128, usize> = HashMap::new();
+  let mut remainder_positions: HashMap<BigInt, usize> = HashMap::new();
   let mut cycle_start: Option<usize> = None;
 
-  loop {
-    if remainder == 0 {
-      break;
-    }
-
+  while !remainder.is_zero() {
     if let Some(&pos) = remainder_positions.get(&remainder) {
       cycle_start = Some(pos);
       break;
     }
-
-    remainder_positions.insert(remainder, digits.len());
-    remainder *= base;
-    let digit = remainder / d;
-    remainder %= d;
-    digits.push(digit);
+    remainder_positions.insert(remainder.clone(), digits.len());
+    digits.push(next_long_division_digit(&mut remainder, &d, base));
   }
 
   // Build the result
@@ -1817,6 +1772,48 @@ fn real_digits_rational_base(
       digits.iter().map(|&d| Expr::Integer(d)).collect();
     (digit_exprs, exponent)
   }
+}
+
+/// The RealDigits exponent of the exact value `int_part + remainder / d`
+/// (`0 <= remainder < d`) in `base` — the number of digits left of the
+/// point, or minus the number of leading fractional zeros — together with
+/// the base-`base` digits of `int_part` (empty when it is zero).
+fn big_rational_exponent(
+  int_part: &BigInt,
+  remainder: &BigInt,
+  d: &BigInt,
+  base: i128,
+) -> (i128, Vec<i128>) {
+  if int_part.is_zero() {
+    let mut temp = remainder * base;
+    let mut leading_zeros: i128 = 0;
+    while temp < *d && temp.is_positive() {
+      leading_zeros += 1;
+      temp *= base;
+    }
+    (-leading_zeros, Vec::new())
+  } else {
+    let digits: Vec<i128> = int_part
+      .to_radix_be(base as u32)
+      .1
+      .into_iter()
+      .map(i128::from)
+      .collect();
+    (digits.len() as i128, digits)
+  }
+}
+
+/// One step of base-`base` long division by `d`: the next digit, leaving
+/// the new remainder in `remainder`.
+fn next_long_division_digit(
+  remainder: &mut BigInt,
+  d: &BigInt,
+  base: i128,
+) -> i128 {
+  *remainder *= base;
+  let digit = &*remainder / d;
+  *remainder %= d;
+  digit.to_i128().unwrap_or(0)
 }
 
 /// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
@@ -2009,7 +2006,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Expr::Real(_)
         | Expr::BigFloat(..)
     )
-    && expr_to_rational(expr).is_none()
+    && expr_to_big_rational(expr).is_none()
     && crate::functions::predicate_ast::is_numeric_q(expr)
   {
     crate::emit_message(
@@ -2130,7 +2127,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the f64 rounding tail (…5,4,9,9,9,…) that the astro-float path produces
   // from the raw bit pattern.
   let rational_from_real = if let Expr::Real(r) = &abs_expr {
-    real_to_rational(r.abs())
+    real_to_rational(r.abs()).map(|(n, d)| (BigInt::from(n), BigInt::from(d)))
   } else {
     None
   };
@@ -2141,9 +2138,11 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let treat_as_explicit = rational_from_real.is_some() || explicit_num_digits;
 
   // For rationals, use long division with cycle detection
-  if let Some((numer, denom)) =
-    rational_from_real.or_else(|| expr_to_rational(&abs_expr))
-    && denom != 0
+  if let Some((numer, denom)) = rational_from_real
+    .clone()
+    .or_else(|| expr_to_big_rational(&abs_expr))
+    .or_else(|| expr_to_big_rational(expr))
+    && !denom.is_zero()
   {
     if treat_as_explicit {
       // With explicit num_digits: use long division and produce exactly
@@ -2151,31 +2150,15 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // The rational long division already gives us digits starting
       // from the most significant, but the integer part may be 0 so
       // we need to generate enough fractional digits.
-      let mut remainder = numer.abs();
       let d = denom.abs();
-      let int_part = remainder / d;
-      remainder %= d;
+      let n = numer.abs();
+      let (int_part, mut remainder) = (&n / &d, &n % &d);
 
       // Determine exponent from integer part (Wolfram convention: number
       // of digits to the left of the decimal point, so first digit sits
       // at position `exponent - 1`).
-      let exponent: i128 = if int_part == 0 {
-        let mut temp = remainder * base;
-        let mut leading_zeros: i128 = 0;
-        while temp < d && temp > 0 {
-          leading_zeros += 1;
-          temp *= base;
-        }
-        -leading_zeros
-      } else {
-        let mut count = 0i128;
-        let mut temp = int_part;
-        while temp > 0 {
-          count += 1;
-          temp /= base;
-        }
-        count
-      };
+      let (exponent, int_digits) =
+        big_rational_exponent(&int_part, &remainder, &d, base);
 
       // When the caller provides `start_pos = p`, we need to collect
       // digits at positions p, p-1, …, p-num_digits+1. Pre-extract more
@@ -2198,19 +2181,10 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
 
       // Extract integer part digits
-      let mut digits: Vec<i128> = Vec::new();
-      if int_part > 0 {
-        let mut temp = int_part;
-        let mut int_digs = Vec::new();
-        while temp > 0 {
-          int_digs.push(temp % base);
-          temp /= base;
-        }
-        int_digs.reverse();
-        digits.extend(int_digs);
-      } else {
+      let mut digits: Vec<i128> = int_digits;
+      if int_part.is_zero() {
         // Skip leading fractional zeros (they're accounted for in exponent)
-        while remainder > 0 && remainder * base < d {
+        while remainder.is_positive() && &remainder * base < d {
           remainder *= base;
         }
       }
@@ -2231,10 +2205,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       // Generate up to `max_known` known digits.
       while digits.len() < max_known {
-        remainder *= base;
-        let digit = remainder / d;
-        remainder %= d;
-        digits.push(digit);
+        digits.push(next_long_division_digit(&mut remainder, &d, base));
       }
       digits.truncate(max_known);
 
@@ -2281,7 +2252,8 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![Expr::List(digit_exprs.into()), Expr::Integer(exponent)].into(),
       ));
     }
-    let (digit_list, exponent) = real_digits_rational_base(numer, denom, base);
+    let (digit_list, exponent) =
+      real_digits_rational_base(&numer, &denom, base);
     return Ok(Expr::List(
       vec![Expr::List(digit_list.into()), Expr::Integer(exponent)].into(),
     ));
