@@ -5609,10 +5609,9 @@ fn render_display_slider<'a>(
     (max - min) / 1000.0
   };
   if *vertical {
-    let mut s =
-      iced::widget::vertical_slider(*min..=*max, *current, on_change)
-        .step(step)
-        .height(120.0);
+    let mut s = iced::widget::vertical_slider(*min..=*max, *current, on_change)
+      .step(step)
+      .height(120.0);
     if !enabled {
       s = s.style(disabled_slider_style);
     }
@@ -5688,7 +5687,9 @@ fn render_display_grid<'a>(
         }
         None => container(render_display_node(cell_idx, cell)),
       };
-      r = r.push(content.padding(iced::Padding::ZERO.top(cell_pad).bottom(cell_pad)));
+      r = r.push(
+        content.padding(iced::Padding::ZERO.top(cell_pad).bottom(cell_pad)),
+      );
     }
     if col_line(n) {
       r = r.push(rule::vertical(1));
@@ -9162,8 +9163,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     };
     let spans: Vec<text::Span<'_, ()>> =
       label_run_spans(&runs, Font::MONOSPACE);
-    let flags: Vec<(&str, bool)> =
-      spans.iter().map(|s| (s.text.as_ref(), s.underline)).collect();
+    let flags: Vec<(&str, bool)> = spans
+      .iter()
+      .map(|s| (s.text.as_ref(), s.underline))
+      .collect();
     assert_eq!(flags, vec![("top", true), (" rest", false)]);
   }
 

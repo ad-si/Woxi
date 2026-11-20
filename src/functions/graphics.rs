@@ -48545,9 +48545,7 @@ impl DisplayGridLayout {
 /// (negative `i` counts from the far edge), and a plain list the lines by
 /// position with a nested list cycling over the middle.
 fn divider_positions(spec: &Expr, lines: usize) -> Vec<bool> {
-  let is_on = |style: &Expr| {
-    !matches!(style, Expr::Identifier(s) if s == "None" || s == "False")
-  };
+  let is_on = |style: &Expr| !matches!(style, Expr::Identifier(s) if s == "None" || s == "False");
   match spec {
     Expr::Identifier(s) if s == "True" || s == "All" => vec![true; lines],
     Expr::Identifier(s) if s == "Center" => {
@@ -48880,7 +48878,9 @@ fn opener_view_node(
 fn display_node_is_live(node: &DisplayNode) -> bool {
   match node {
     DisplayNode::Panel(inner) => display_node_is_live(inner),
-    DisplayNode::Grid(rows, ..) => rows.iter().flatten().any(display_node_is_live),
+    DisplayNode::Grid(rows, ..) => {
+      rows.iter().flatten().any(display_node_is_live)
+    }
     DisplayNode::Column(items) | DisplayNode::Row(items) => {
       items.iter().any(display_node_is_live)
     }
@@ -49065,30 +49065,30 @@ fn display_expr_to_node(
             DisplayGridLayout::from_options(&args[1..], rows.len(), n_cols)
           };
           DisplayNode::Grid(
-          rows
-            .iter()
-            .map(|row| match row {
-              Expr::List(cs) => cs
-                .iter()
-                .map(|c| {
-                  // A span marker only continues its neighbor's cell: it
-                  // draws nothing, not its own name.
-                  if is_span_marker(c) {
-                    DisplayNode::Static {
-                      svg: None,
-                      text: String::new(),
+            rows
+              .iter()
+              .map(|row| match row {
+                Expr::List(cs) => cs
+                  .iter()
+                  .map(|c| {
+                    // A span marker only continues its neighbor's cell: it
+                    // draws nothing, not its own name.
+                    if is_span_marker(c) {
+                      DisplayNode::Static {
+                        svg: None,
+                        text: String::new(),
+                      }
+                    } else {
+                      display_expr_to_node(c, bindings, probes, ons)
                     }
-                  } else {
-                    display_expr_to_node(c, bindings, probes, ons)
-                  }
-                })
-                .collect(),
-              other => {
-                vec![display_expr_to_node(other, bindings, probes, ons)]
-              }
-            })
-            .collect(),
-          layout,
+                  })
+                  .collect(),
+                other => {
+                  vec![display_expr_to_node(other, bindings, probes, ons)]
+                }
+              })
+              .collect(),
+            layout,
           )
         }
         _ => static_leaf_node(expr, bindings),
