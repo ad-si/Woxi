@@ -829,6 +829,22 @@ pub fn dispatch_calculus_functions(
     "NDSolve" if args.len() >= 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }
+    "NDSolve`ProcessEquations" => {
+      return Some(crate::functions::ode_ast::ndsolve_process_equations_ast(
+        args,
+      ));
+    }
+    "NDSolve`Reinitialize" => {
+      return Some(crate::functions::ode_ast::ndsolve_reinitialize_ast(args));
+    }
+    "NDSolve`Iterate" => {
+      return Some(crate::functions::ode_ast::ndsolve_iterate_ast(args));
+    }
+    "NDSolve`ProcessSolutions" => {
+      return Some(crate::functions::ode_ast::ndsolve_process_solutions_ast(
+        args,
+      ));
+    }
     "ParametricNDSolve" | "ParametricNDSolveValue" if args.len() >= 4 => {
       if let Some(result) = parametric_ndsolve(name, args) {
         return Some(Ok(result));
