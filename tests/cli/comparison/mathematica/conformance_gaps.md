@@ -9532,6 +9532,13 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `GraphicsGrid[…, ImageSize -> 400]` of labeled graphics is 456 pt tall
   (wolframscript 414): wolframscript shrinks each item to about 81 pt across
   inside a 100 pt column, the layout rule is not decoded.
+- `GraphicsRow[{Graphics[…, ImageSize -> 250], GraphicsColumn[{Show[Plot[…,
+  ImageSize -> 200], …], Graphics[…, ImageSize -> 200]}]}, ImageSize -> {500,
+  350}]` (a tall 19 x 27 picture beside a plot over a legend): Wolfram draws
+  the left picture only about 128 pt wide (0.51 of its `ImageSize`) and the
+  column about 207 pt wide, together spanning only about 365 x 218 pt of the
+  500 x 350 picture; Woxi gives each cell half the width (left about 238 pt
+  wide). Same undecoded shrink as the item above.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a

@@ -5970,8 +5970,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if matches!(expr, Expr::FunctionCall { name, args }
     if !args.is_empty()
       && name != "Framed"
-      && (name == "Show"
-        || crate::functions::graphics::is_graphics_producing_head(name)))
+      && crate::functions::graphics::is_graphics_producing_head(name))
   {
     return true;
   }
@@ -6517,7 +6516,7 @@ fn rendered_graphic_epilog(body: &Expr) -> Option<Expr> {
 /// in the same data coordinates, without changing the call's arity the
 /// way appending a plain positional argument would.
 fn accepts_epilog_option(name: &str) -> bool {
-  name == "Show" || crate::functions::graphics::is_graphics_producing_head(name)
+  crate::functions::graphics::is_graphics_producing_head(name)
 }
 
 /// Add `Epilog -> markers` (merging with any `Epilog` already there) to a
