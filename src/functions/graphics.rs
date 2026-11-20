@@ -38127,10 +38127,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // through to the generic "extra display element" handling below so it
       // re-renders from the live bindings every frame instead of being
       // frozen into a `Heading` with the `Dynamic` wrapper's bare source.
+      // Like any other control-list entry, it is a row of the control
+      // panel, at the place it holds among the controls.
       Expr::FunctionCall { name, .. }
         if is_manipulate_annotation_head(name)
           && annotation_contains_dynamic(spec) =>
       {
+        panel_displays.push((displays.len(), controls.len()));
         displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
@@ -38250,8 +38253,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // controls were already flattened into `arg_items` above). Any other
     // trailing argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an
     // extra display element: capture it so the frontend can render it
-    // live.
+    // live. Wolfram lays it out in the control panel, between the controls
+    // declared before and after it.
     if !matches!(spec, Expr::List(_)) {
+      panel_displays.push((displays.len(), controls.len()));
       displays.push(crate::syntax::expr_to_source_form(spec));
       continue;
     }
@@ -52214,8 +52219,7 @@ mod manipulate_control_placement_tests {
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
   }
 
-  /// A bar declared after every other control closes the panel; a display
-  /// that is no control spec (a trailing `Dynamic[…]`) is not a panel row.
+  /// A bar declared after every other control closes the panel.
   #[test]
   fn trailing_toggler_bar_closes_the_panel() {
     let expr = crate::parse_to_expr(
@@ -52226,6 +52230,34 @@ mod manipulate_control_placement_tests {
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     assert_eq!(spec.controls.len(), 1);
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
+  }
+
+  /// Live captions written among the controls (a bare `Dynamic[…]`, a
+  /// `Row`/`Style` holding one, or what a `Row[{Control[…], …}]` keeps
+  /// beside its control) are rows of the control panel, each at the place
+  /// it holds among the controls, not extras above the output.
+  #[test]
+  fn live_captions_keep_their_place_in_the_control_panel() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{a, b, msg}, \
+       Row[{Control[{{a, 1, \"a\"}, {1, 2}, ControlType -> PopupMenu}], \
+         Style[\" \"], Dynamic[{a, b}]}], \
+       {{b, 0.5, \"b\"}, 0, 1}, \
+       Row[{Style[\"b = \"], Dynamic[b]}], \
+       Delimiter, \
+       Dynamic[Style[msg, Bold, Red]], \
+       {{msg, \"\"}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "b", ""]);
+    assert_eq!(spec.displays.len(), 3, "{:?}", spec.displays);
+    assert!(spec.displays[0].contains("Dynamic[{a, b}]"));
+    assert!(spec.displays[1].contains("Dynamic[b]"));
+    assert!(spec.displays[2].contains("Dynamic[Style[msg"));
+    assert_eq!(spec.panel_displays, vec![(0, 1), (1, 2), (2, 3)]);
   }
 }
 
