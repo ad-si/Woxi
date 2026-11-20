@@ -276,6 +276,21 @@ pub struct PlotSeriesData {
   /// (`Filling -> {1 -> {{2}, c1}, 1 -> {Top, c2}}`), drawn after the main
   /// one in rule order. Each carries its own target and appearance.
   pub extra_fills: Vec<SeriesFill>,
+  /// The `ColorFunction` the series' own plot colored its curve with
+  /// (`None` = plain `color`). Travels with the series so that `Show`
+  /// colors only this curve by it, not the curves merged with it.
+  pub color_function: Option<SeriesColorFunction>,
+}
+
+/// A plot's `ColorFunction` as one of its curves was drawn with it: the
+/// function, its `ColorFunctionScaling` per axis, and the data extents
+/// `(x_min, x_max, y_min, y_max)` the scaling rescales over (those of the
+/// plot it came from, not of a picture `Show` later merges it into).
+#[derive(Debug, Clone)]
+pub struct SeriesColorFunction {
+  pub function: Expr,
+  pub scaling: (bool, bool),
+  pub ranges: (f64, f64, f64, f64),
 }
 
 /// One additional fill of a series: its target and its `FillingStyle`
