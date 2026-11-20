@@ -37828,8 +37828,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       None => arg_items.push(spec.clone()),
     }
   }
-  let arg_items: Vec<Expr> =
-    arg_items.into_iter().map(unwrap_control_wrapper).collect();
+  let arg_items: Vec<Expr> = seed_color_control_initials(
+    arg_items.into_iter().map(unwrap_control_wrapper).collect(),
+  );
   let spliced_specs: Vec<Expr> =
     args[1..].iter().map(splice_sequence_applies).collect();
   let pane_governed_names =
@@ -40787,6 +40788,16 @@ fn dynamic_control_spec(e: &Expr) -> Option<Expr> {
       };
       vec![var, Expr::List(choices.clone()), control_type("SetterBar")]
     }
+    // `ColorSlider[Dynamic[c], opts…]` / `ColorSetter[Dynamic[c], opts…]`:
+    // an unlabeled color control editing `c`, whose placeholder initial
+    // value `c` (keep the current color) `seed_color_control_initials`
+    // resolves.
+    "ColorSlider" | "ColorSetter" if args[1..].iter().all(rule_opt) => {
+      vec![
+        Expr::List(vec![var.clone(), var, Expr::String(String::new())].into()),
+        control_type(name),
+      ]
+    }
     _ => return None,
   };
   Some(call1("Control", Expr::List(spec.into())))
@@ -41652,6 +41663,97 @@ fn visibility_switched_control(spec: &Expr) -> Option<(Expr, Expr)> {
     target.clone(),
     call("If", vec![branches[0].clone(), then_branch, else_branch]),
   ))
+}
+
+/// The color a `ControlType -> ColorSlider` control starts from when no
+/// initial color is given.
+const DEFAULT_COLOR_CONTROL_INITIAL: &str = "RGBColor[0, 0, 0]";
+
+/// A bare `ColorSlider[Dynamic[var]]` / `ColorSetter[Dynamic[var]]` in the
+/// control area becomes the unlabeled spec `{{var, var, ""}, ControlType ->
+/// ColorSlider}` (see `dynamic_control_spec`), whose self-referential
+/// initial value means "keep `var`'s current color": the control only edits
+/// `var`, which keeps the color another spec gives it (usually a hidden
+/// `{var, init, init, ControlType -> None}` entry). Resolve that placeholder
+/// to the declared color — or to the color control's default when no spec
+/// declares one — so the visible control does not reset it.
+fn seed_color_control_initials(arg_items: Vec<Expr>) -> Vec<Expr> {
+  fn kept_color_var(spec: &Expr) -> Option<&str> {
+    let Expr::List(parts) = spec else {
+      return None;
+    };
+    match parts.as_slice() {
+      [
+        Expr::List(head),
+        Expr::Rule {
+          pattern,
+          replacement,
+        },
+      ] if matches!(pattern.as_ref(), Expr::Identifier(p) if p == "ControlType")
+        && matches!(replacement.as_ref(),
+            Expr::Identifier(t) if t == "ColorSlider" || t == "ColorSetter") =>
+      {
+        match head.as_slice() {
+          [
+            Expr::Identifier(var),
+            Expr::Identifier(init),
+            Expr::String(_),
+          ] if var == init => Some(var.as_str()),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  // The initial value another control spec declares for `var`:
+  // `{var, init, …}` or `{{var, init, …}, …}`.
+  fn declared_initial<'a>(items: &'a [Expr], var: &str) -> Option<&'a Expr> {
+    items.iter().find_map(|spec| {
+      let Expr::List(parts) = spec else {
+        return None;
+      };
+      let head = match parts.first()? {
+        Expr::List(inner) => inner.as_slice(),
+        _ => parts.as_slice(),
+      };
+      match head {
+        [Expr::Identifier(name), init, ..]
+          if name == var
+            && !matches!(init, Expr::Identifier(i) if i == var)
+            && !matches!(
+              init,
+              Expr::Rule { .. } | Expr::RuleDelayed { .. }
+            ) =>
+        {
+          Some(init)
+        }
+        _ => None,
+      }
+    })
+  }
+  if !arg_items.iter().any(|s| kept_color_var(s).is_some()) {
+    return arg_items;
+  }
+  arg_items
+    .iter()
+    .map(|spec| {
+      let (Some(var), Expr::List(parts)) = (kept_color_var(spec), spec) else {
+        return spec.clone();
+      };
+      let init =
+        declared_initial(&arg_items, var)
+          .cloned()
+          .unwrap_or_else(|| {
+            crate::syntax::string_to_expr(DEFAULT_COLOR_CONTROL_INITIAL)
+              .unwrap_or_else(|_| null_expr())
+          });
+      let mut parts: Vec<Expr> = parts.iter().cloned().collect();
+      parts[0] = Expr::List(
+        vec![id_expr(var), init, Expr::String(String::new())].into(),
+      );
+      Expr::List(parts.into())
+    })
+    .collect()
 }
 
 /// `Dynamic[Control[…]]` (the Demonstrations idiom `Dynamic@Control@{…}`)
@@ -46204,7 +46306,7 @@ fn parse_manipulate_control(
   // numeric domain to fall back on the way a range spec gives a slider one.
   if matches!(control_type.as_deref(), Some("ColorSlider" | "ColorSetter")) {
     let initial = explicit_initial.as_ref().map_or_else(
-      || "RGBColor[0, 0, 0]".to_string(),
+      || DEFAULT_COLOR_CONTROL_INITIAL.to_string(),
       manipulate_value_to_input_form,
     );
     return Some(ParsedControl::Visible {
@@ -51444,6 +51546,53 @@ mod manipulate_dynamic_control_list_tests {
       }
       other => panic!("expected a Color control, got {other:?}"),
     }
+  }
+
+  /// A `ColorSlider[Dynamic[var], opts…]` written in the control area (in a
+  /// `Row` beside its caption) is a live color control for `var`, starting
+  /// from the color a hidden `ControlType -> None` entry gives it — not an
+  /// extra display showing the unevaluated `ColorSlider[…]` source.
+  #[test]
+  fn bare_dynamic_color_slider_in_row_becomes_color_control() {
+    let s = spec(
+      r#"Manipulate[Graphics[{fill, Disk[]}], \
+         {{fill, RGBColor[0, 0, 1]}, ControlType -> None}, \
+         Row[{"fill color ", ColorSlider[Dynamic[fill], \
+           ImageSize -> {160, 30}]}]]"#,
+    );
+    assert!(s.displays.is_empty(), "displays: {:?}", s.displays);
+    let colors: Vec<_> = s
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Color {
+          name,
+          initial,
+          label,
+          ..
+        } => Some((name.as_str(), initial.as_str(), label.as_str())),
+        _ => None,
+      })
+      .collect();
+    // Unlabeled: the caption is the `Row`'s own text, not the variable name.
+    assert_eq!(colors, vec![("fill", "RGBColor[0, 0, 1]", "")]);
+  }
+
+  /// The same holds for `ColorSetter[Dynamic[var]]`, and for a variable no
+  /// other spec initializes (it starts black, like `ControlType ->
+  /// ColorSlider` without an initial value).
+  #[test]
+  fn bare_dynamic_color_setter_without_initial_becomes_color_control() {
+    let s = spec(
+      r#"Manipulate[Graphics[{c, Disk[]}], {r, 1, 2}, \
+         Row[{"color ", ColorSetter[Dynamic[c]]}]]"#,
+    );
+    assert!(s.displays.is_empty(), "displays: {:?}", s.displays);
+    assert!(s.controls.iter().any(|c| matches!(
+      c,
+      ManipulateControl::Color { name, initial, .. }
+        if name == "c" && initial == "RGBColor[0, 0, 0]"
+    )));
   }
 
   /// `Bookmarks -> {"name" :> assignment, …}` parses into `spec.bookmarks`
