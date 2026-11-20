@@ -848,6 +848,23 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "PlotLegends`" {
+    // Its exports, so a bare `ShowLegend` read after loading is
+    // `PlotLegends`ShowLegend` (the dispatch entry Woxi implements), and
+    // the legend options it reads answer to their bare names too.
+    for name in [
+      "Legend",
+      "LegendBackground",
+      "LegendBorder",
+      "LegendPosition",
+      "LegendShadow",
+      "LegendSize",
+      "ShowLegend",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "PolyhedronOperations`" {
     // Its exports, so a bare `Truncate` read after loading is
     // `PolyhedronOperations`Truncate` (the dispatch entry Woxi implements).
@@ -1060,25 +1077,71 @@ fn normalize_piecharts_option(arg: &Expr) -> Expr {
       _ => None,
     }
   }
+  // `PieStyle -> {{Red}, {Green, EdgeForm[…]}, …}` gave each wedge a list
+  // of directives; the modern `ChartStyle` spells one wedge's directives
+  // as `Directive[…]`.
+  fn translated_value(new_name: &str, value: &Expr) -> Expr {
+    match value {
+      Expr::List(items) if new_name == "ChartStyle" => Expr::List(
+        items
+          .iter()
+          .map(|item| match item {
+            Expr::List(directives) => Expr::FunctionCall {
+              name: "Directive".to_string(),
+              args: directives.clone(),
+            },
+            other => other.clone(),
+          })
+          .collect(),
+      ),
+      other => other.clone(),
+    }
+  }
   match arg {
     Expr::Rule {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => rule_expr(id_expr(new_name), *replacement.clone()),
+      Some(new_name) => {
+        rule_expr(id_expr(new_name), translated_value(new_name, replacement))
+      }
       None => arg.clone(),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => {
-        rule_delayed_expr(id_expr(new_name), *replacement.clone())
-      }
+      Some(new_name) => rule_delayed_expr(
+        id_expr(new_name),
+        translated_value(new_name, replacement),
+      ),
       None => arg.clone(),
     },
     other => other.clone(),
   }
+}
+
+/// Translate the arguments of a legacy `PieCharts\`PieChart` call to the
+/// modern `PieChart`: rename its options (see
+/// [`normalize_piecharts_option`]) and keep its wedge layout. The package
+/// laid the first wedge out from the positive x axis and went
+/// counterclockwise, whereas `PieChart` starts at 9 o'clock and goes
+/// clockwise, so an explicit `SectorOrigin -> 0` is added unless the call
+/// names one itself.
+fn normalize_piecharts_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out: Vec<Expr> =
+    args.iter().map(normalize_piecharts_option).collect();
+  let names_sector_origin = out.iter().any(|a| {
+    matches!(
+      a,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(id) if id == "SectorOrigin")
+    )
+  });
+  if !names_sector_origin {
+    out.push(rule_expr(id_expr("SectorOrigin"), Expr::Integer(0)));
+  }
+  out
 }
 
 /// Evaluate one stored overload condition against the call's bindings.
@@ -1706,10 +1769,7 @@ fn evaluate_function_call_ast_inner(
   // translate them alongside the head so old demonstrations still render.
   let normalized_pie_args;
   let args: &[Expr] = if original_name == "PieCharts`PieChart" {
-    normalized_pie_args = args
-      .iter()
-      .map(normalize_piecharts_option)
-      .collect::<Vec<_>>();
+    normalized_pie_args = normalize_piecharts_args(args);
     &normalized_pie_args
   } else {
     args
@@ -2444,7 +2504,7 @@ fn evaluate_function_call_ast_inner(
       },
       None => crate::functions::polyhedron_operations::DEFAULT_TRUNCATE_RATIO,
     };
-    if !(0.0..0.5).contains(&ratio) {
+    if !(0.0..=0.5).contains(&ratio) {
       return Ok(unevaluated(name, args));
     }
     return Ok(crate::functions::polyhedron_operations::truncate(
@@ -2957,6 +3017,15 @@ fn evaluate_function_call_ast_inner(
     {
       return Ok(result);
     }
+    // In a notebook, `SetOptions[$FrontEnd, …]` (e.g. a longer
+    // `DynamicEvaluationTimeout`) configures the front end itself, which
+    // takes any of its many options silently and returns nothing.
+    if crate::is_visual_mode()
+      && matches!(&args[0], Expr::Identifier(h)
+        if h == "$FrontEnd" || h == "$FrontEndSession")
+    {
+      return Ok(Expr::Identifier("Null".to_string()));
+    }
     let Expr::Identifier(head) = &args[0] else {
       crate::emit_message(&format!(
         "SetOptions::sstm: Argument {} is not a symbol or a stream.",
@@ -3211,8 +3280,24 @@ fn evaluate_function_call_ast_inner(
 
   // Refresh[expr, opts…] — the FrontEnd refresh wrapper displays (and
   // returns) its first argument; the update-interval options only matter
-  // inside a Dynamic FrontEnd context.
+  // inside a Dynamic FrontEnd context, where a finite `UpdateInterval`
+  // asks the front end to re-evaluate the enclosing `Dynamic` on a timer.
   if name == "Refresh" && !args.is_empty() {
+    let timed = args[1..].iter().any(|opt| {
+      matches!(
+        opt,
+        Expr::Rule { pattern, replacement }
+          | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "UpdateInterval")
+            && evaluate_expr_to_expr(replacement)
+              .ok()
+              .and_then(|t| crate::functions::math_ast::try_eval_to_f64(&t))
+              .is_some_and(f64::is_finite)
+      )
+    });
+    if timed {
+      crate::request_timed_refresh();
+    }
     return Ok(args[0].clone());
   }
 
@@ -5522,6 +5607,11 @@ fn evaluate_function_call_ast_inner(
         let root = root_vertex.cloned().or_else(|| {
           if radial {
             crate::functions::graph::unique_source_vertex(&args[0])
+          } else if name == "TreePlot" {
+            // Without a single source to hang from, `TreePlot` roots the
+            // drawing at the graph center and layers the other vertices
+            // by their distance from it, whatever the edge directions.
+            crate::functions::graph::tree_plot_center_root(&args[0])
           } else {
             None
           }
@@ -5754,13 +5844,19 @@ fn evaluate_function_call_ast_inner(
       } = &evaluated
         && en == "Graph"
         && eargs.len() >= 2
-        && let Ok(rendered) = crate::functions::graph::graph_ast(&{
+        && let Ok(rendered) = {
           let mut a = eargs.to_vec();
           if plain_lines {
             a.push(rule_expr(id_expr("DirectedEdges"), id_expr("False")));
           }
-          a
-        })
+          // `GraphPlot` draws in its own plot units, which the rendering
+          // functions and any graphics `Show`n with it share.
+          if name == "GraphPlot" {
+            crate::functions::graph::graph_plot_render(&a)
+          } else {
+            crate::functions::graph::graph_ast(&a)
+          }
+        }
       {
         if let Expr::Graphics { svg, .. } = &rendered {
           crate::capture_graphics(svg);
@@ -5877,6 +5973,13 @@ fn evaluate_function_call_ast_inner(
     return hierarchical_clustering_distance_matrix(args);
   }
 
+  // The legacy PlotLegends` package, once loaded.
+  if name == "PlotLegends`ShowLegend"
+    && package_loaded("PlotLegends`")
+    && args.len() >= 2
+  {
+    return crate::functions::plot_legends_package::show_legend_ast(args);
+  }
   // The legacy ComputationalGeometry` package, once loaded.
   if name.starts_with("ComputationalGeometry`")
     && package_loaded("ComputationalGeometry`")
