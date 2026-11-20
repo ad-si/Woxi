@@ -9860,6 +9860,29 @@ mod ndsolve {
     );
   }
 
+  // A rate that is huge only while the state is still tiny needs minute
+  // steps right at a start of 0, however long the whole domain is. The
+  // shortest step used to be measured at the domain's far end, so over a
+  // long domain the adaptive steps gave up at once and the fixed grid
+  // stepped straight across the switch (y(1000) came out as 3.84 instead
+  // of 1 - 0.999 E^-10), or no solution was found at all. As part of a
+  // scheduled QA routine, Woxi Studio was tested against a randomly sampled
+  // Wolfram Demonstration notebook whose rate law switched branches this
+  // way; this is a self-authored, construct-equivalent example.
+  #[test]
+  fn fast_transient_at_zero_on_a_long_domain() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{y'[t] == If[y[t] < 10^-3, 10^6, \
+         (1 - y[t])/100], y[0] == 0}, y, {t, 0, 2000}]]; \
+         {(y /. sol)[\"Domain\"], Round[10^6 y[1000] /. sol], \
+          Round[10^6 (1 - 999/1000 E^-10)]}"
+      )
+      .unwrap(),
+      "{{{0., 2000.}}, 999955, 999955}"
+    );
+  }
+
   // A zero-length domain keeps the slope at its one point
   // (SpecularAndDiffuseReflection restarts a bounce at the domain's end).
   #[test]

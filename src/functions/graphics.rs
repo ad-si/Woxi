@@ -21260,7 +21260,10 @@ pub fn traditional_label(e: &Expr) -> String {
     {
       traditional_label(&args[0])
     }
-    _ if contains_visible_style(e) => {
+    // Only real styling keeps the label out of `TraditionalForm`: a script
+    // with letters (`Subscript[T, opt]`) is typeset by the boxes as well,
+    // and with them its single-letter symbols in italics.
+    _ if has_style_directives(e) => {
       format!("{STYLED_LABEL_MARKER}{}", expr_to_svg_markup(e))
     }
     _ => format!(
@@ -21556,7 +21559,7 @@ pub fn axes_label_entry(e: &Expr) -> Option<String> {
 /// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
 /// italics — `x(t)` with an italic x and t — the way Wolfram draws it.
 /// `None` for any other label (see [`is_traditional_math_label`]).
-fn traditional_math_axis_label(e: &Expr) -> Option<String> {
+pub(crate) fn traditional_math_axis_label(e: &Expr) -> Option<String> {
   if !is_traditional_math_label(e) {
     return None;
   }
@@ -21711,19 +21714,33 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
 /// directives change how the text is drawn — `Row[{Style["a", Red], " b"}]`
 /// is a label whose color a plain-text label would lose.
 fn contains_visible_style(e: &Expr) -> bool {
+  visible_style(e, true)
+}
+
+/// Whether `e` carries a `Style` whose directives change how it is drawn,
+/// anywhere [`contains_visible_style`] looks — but without counting a
+/// script with letters, which `TraditionalForm` boxes typeset on their own.
+fn has_style_directives(e: &Expr) -> bool {
+  visible_style(e, false)
+}
+
+/// [`contains_visible_style`], counting a script with letters as needing
+/// the styled rendering only when `scripts` is set.
+fn visible_style(e: &Expr, scripts: bool) -> bool {
+  let recurse = |e: &Expr| visible_style(e, scripts);
   match e {
     Expr::FunctionCall { name, args } if name == "Style" => {
       (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
-        || args.first().is_some_and(contains_visible_style)
+        || args.first().is_some_and(recurse)
     }
     Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
-      Some(Expr::List(items)) => items.iter().any(contains_visible_style),
+      Some(Expr::List(items)) => items.iter().any(recurse),
       _ => false,
     },
     // `Text[Style["ξ", 14]]`: a one-argument `Text` is just its label, so
     // the styling of what it wraps still shows.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      contains_visible_style(&args[0])
+      recurse(&args[0])
     }
     // `Subscript[Style["T", Italic], "r"]`: the script's base (or the
     // script itself) carries the styling.
@@ -21733,8 +21750,8 @@ fn contains_visible_style(e: &Expr) -> bool {
         "Subscript" | "Superscript" | "Subsuperscript"
       ) =>
     {
-      args.iter().any(contains_visible_style)
-        || args[1..].iter().any(script_needs_typesetting)
+      args.iter().any(recurse)
+        || (scripts && args[1..].iter().any(script_needs_typesetting))
     }
     _ => false,
   }

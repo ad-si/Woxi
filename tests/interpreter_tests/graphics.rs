@@ -14283,6 +14283,53 @@ mod plot3d {
       assert!(svg.contains(">ab</text>"), "{svg}");
     }
 
+    /// A subscripted symbol as an axis or plot label is typeset in the
+    /// graphic's `TraditionalForm` too: its single-letter base is italic,
+    /// and a `PlotLabel` sets a plain mathematical expression the same way
+    /// an `AxesLabel` does. Both used to be drawn upright. As part of a
+    /// scheduled QA routine, Woxi Studio was tested against a randomly
+    /// sampled Wolfram Demonstration notebook whose plot was titled with a
+    /// subscripted symbol; this is a self-authored, construct-equivalent
+    /// example.
+    #[test]
+    fn subscripted_symbol_labels_set_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let sub = |s: &str| {
+        format!("<tspan baseline-shift=\"sub\" font-size=\"70%\">{s}</tspan>")
+      };
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> {Subscript[u, peak], None}, \
+         PlotLabel -> Subscript[W, total]]",
+      );
+      assert!(
+        svg.contains(&format!(">{}{}</text>", italic("u"), sub("peak"))),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(&format!(">{}{}</text>", italic("W"), sub("total"))),
+        "{svg}"
+      );
+      // Plain symbols and applications in a plot title follow suit.
+      let svg = export_svg("Plot[s, {s, 0, 1}, PlotLabel -> q[s]]");
+      assert!(
+        svg.contains(&format!(">{}({})</text>", italic("q"), italic("s"))),
+        "{svg}"
+      );
+      // Strings stay upright text, and explicit styling keeps its own
+      // rendering.
+      let svg =
+        export_svg("Plot[s, {s, 0, 1}, PlotLabel -> Subscript[\"c\", \"A\"]]");
+      assert!(svg.contains(&format!(">c{}</text>", sub("A"))), "{svg}");
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, PlotLabel -> Subscript[Style[\"c\", Red], A]]",
+      );
+      assert!(
+        svg.contains("<tspan fill=\"rgb(255,0,0)\">c</tspan>"),
+        "{svg}"
+      );
+    }
+
     /// A list is a perfectly good label — it is typeset as the list itself,
     /// which is how a Demonstration names the four curves it draws on one
     /// axis.
@@ -14967,7 +15014,13 @@ mod plot3d {
         svg.contains(">sinc(<tspan font-style=\"italic\">x</tspan>)</text>"),
         "{svg}"
       );
-      assert_eq!(svg.matches(">sin(x)</text>").count(), 2, "{svg}");
+      // The title sets its argument in italics like the axis label; the
+      // legend entries keep their upright text.
+      assert!(
+        svg.contains(">sin(<tspan font-style=\"italic\">x</tspan>)</text>"),
+        "{svg}"
+      );
+      assert_eq!(svg.matches(">sin(x)</text>").count(), 1, "{svg}");
       assert!(svg.contains(">cos(x)</text>"), "{svg}");
       assert!(!svg.contains("Sin["), "{svg}");
     }
