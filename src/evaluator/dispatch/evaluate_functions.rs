@@ -3211,8 +3211,24 @@ fn evaluate_function_call_ast_inner(
 
   // Refresh[expr, opts…] — the FrontEnd refresh wrapper displays (and
   // returns) its first argument; the update-interval options only matter
-  // inside a Dynamic FrontEnd context.
+  // inside a Dynamic FrontEnd context, where a finite `UpdateInterval`
+  // asks the front end to re-evaluate the enclosing `Dynamic` on a timer.
   if name == "Refresh" && !args.is_empty() {
+    let timed = args[1..].iter().any(|opt| {
+      matches!(
+        opt,
+        Expr::Rule { pattern, replacement }
+          | Expr::RuleDelayed { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "UpdateInterval")
+            && evaluate_expr_to_expr(replacement)
+              .ok()
+              .and_then(|t| crate::functions::math_ast::try_eval_to_f64(&t))
+              .is_some_and(f64::is_finite)
+      )
+    });
+    if timed {
+      crate::request_timed_refresh();
+    }
     return Ok(args[0].clone());
   }
 

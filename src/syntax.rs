@@ -244,6 +244,11 @@ pub struct PlotSeriesData {
   /// …); `None` = the 1.5px default. Travels with the series so a curve keeps
   /// its weight when `Show` merges it into another graphic.
   pub thickness: Option<f64>,
+  /// A relative `Thickness[t]` from `PlotStyle`: the fraction `t` of the
+  /// drawing's width, kept so the curve's weight follows the size of the
+  /// picture it is finally drawn in (`thickness` is then its pixels at the
+  /// default size).
+  pub thickness_fraction: Option<f64>,
   /// Dot size of a scatter series from `PlotStyle` — a fraction of the image
   /// width for `PointSize[…]`, stored negative for the absolute printer's
   /// points of `AbsolutePointSize[…]`, the same sign convention the graphics
@@ -276,6 +281,21 @@ pub struct PlotSeriesData {
   /// continuing the previous one is still the same line, so its dash
   /// pattern goes on across the join instead of starting over.
   pub continues_previous: bool,
+  /// The `ColorFunction` the series' own plot colored its curve with
+  /// (`None` = plain `color`). Travels with the series so that `Show`
+  /// colors only this curve by it, not the curves merged with it.
+  pub color_function: Option<SeriesColorFunction>,
+}
+
+/// A plot's `ColorFunction` as one of its curves was drawn with it: the
+/// function, its `ColorFunctionScaling` per axis, and the data extents
+/// `(x_min, x_max, y_min, y_max)` the scaling rescales over (those of the
+/// plot it came from, not of a picture `Show` later merges it into).
+#[derive(Debug, Clone)]
+pub struct SeriesColorFunction {
+  pub function: Expr,
+  pub scaling: (bool, bool),
+  pub ranges: (f64, f64, f64, f64),
 }
 
 /// One additional fill of a series: its target and its `FillingStyle`

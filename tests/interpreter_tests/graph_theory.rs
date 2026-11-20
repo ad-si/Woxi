@@ -690,6 +690,22 @@ mod graph_plot_labeled_edges {
       "{x, y, z}"
     );
   }
+
+  /// An edge written from a styled vertex (`Style[a -> 0, …] -> b`) still
+  /// gets its `{edge, label}` label: the drawn edge names the vertex
+  /// without its `Style` wrapper.
+  #[test]
+  fn styled_endpoint_keeps_its_edge_label() {
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{{Style[a -> 0, \"TraditionalForm\"] -> b, \"x\"}, \
+         {c -> b, \"y\"}}, DirectedEdges -> True, VertexLabeling -> True], \
+         Text[Style[s_String, ___], ___] :> s, Infinity]"
+      )
+      .unwrap(),
+      "{x, y}"
+    );
+  }
 }
 
 /// A plain `GraphPlot` is Wolfram's symbolic `Graphics[GraphicsComplex[
@@ -1029,6 +1045,23 @@ mod graph_embedding {
     assert_eq!(
       interpret("GraphEmbedding[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
       "{{-0.8660254037844388, -0.5}, {0.8660254037844384, -0.5}, {0., 1.}}"
+    );
+  }
+
+  /// Directed edges whose undirected shape is one 4-cycle are laid out
+  /// around the circle in cycle order, so no two edges cross: every edge
+  /// joins neighbors on the circle (a side of the square, length √2).
+  #[test]
+  fn directed_square_follows_its_cycle() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{a -> x, b -> y, a -> y, b -> x}]; \
+         pos = AssociationThread[VertexList[g], GraphEmbedding[g]]; \
+         Union[Round[EuclideanDistance[pos[#[[1]]], pos[#[[2]]]]^2, 10.^-6] & \
+           /@ EdgeList[g]]"
+      )
+      .unwrap(),
+      "{2.}"
     );
   }
 
@@ -2014,8 +2047,9 @@ mod graph_rendering {
       "ExportString[GraphPlot[{Subscript[x, 1] -> Subscript[x, 2]}, VertexLabeling -> True], \"SVG\"]"
     )
     .unwrap();
-    assert!(svg.contains(">x\u{2081}<"), "SVG: {svg}");
-    assert!(svg.contains(">x\u{2082}<"), "SVG: {svg}");
+    // A graphic's labels are `TraditionalForm`: the letter is italic.
+    assert!(svg.contains(">x</tspan>\u{2081}<"), "SVG: {svg}");
+    assert!(svg.contains(">x</tspan>\u{2082}<"), "SVG: {svg}");
     assert!(
       !svg.contains("Subscript["),
       "vertex label should not leak its literal head name: {svg}"
