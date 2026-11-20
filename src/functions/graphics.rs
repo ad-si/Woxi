@@ -36366,6 +36366,8 @@ pub fn geometric_scene_points(
 /// UI can render `Style["t", Italic]` as an italic `t` while leaving the
 /// rest upright. Italic, bold, underline and color are tracked — the
 /// styling Wolfram labels and Demonstration captions use in practice.
+// Italic, bold, subscript and underline are independent style flags.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LabelRun {
   pub text: String,
