@@ -562,6 +562,38 @@ mod series_end_labels {
     assert!(svg.contains("baseline-shift=\"super\""), "{svg}");
   }
 
+  /// `Show` keeps the `PlotLabels` of every plot it combines, each on its
+  /// own curves. Regression: only the first plot's labels survived, so a
+  /// `ListPlot`'s label shown over a `Plot` was dropped.
+  #[test]
+  fn show_keeps_the_labels_of_every_plot() {
+    let points = "{{0.2, 0.3}, {0.5, 0.6}}";
+    for labels in ["{Placed[\"pts\", After]}", "{\"pts\"}", "\"pts\""] {
+      let svg = svg_of(&format!(
+        "Show[{{Plot[x, {{x, 0, 1}}], ListPlot[{points}, PlotLabels -> {labels}]}}]"
+      ));
+      assert!(svg.contains(">pts</text>"), "{labels}: {svg}");
+    }
+    // Two labeled plots of curves label all three curves, as one plot of
+    // the three does.
+    let shown = svg_of(
+      "Show[Plot[{x, x^2}, {x, 0, 1}, PlotLabels -> {\"a\", \"b\"}], \
+       Plot[x^3, {x, 0, 1}, PlotLabels -> {\"c\"}]]",
+    );
+    let alone = svg_of(
+      "Plot[{x, x^2, x^3}, {x, 0, 1}, PlotLabels -> {\"a\", \"b\", \"c\"}]",
+    );
+    for l in ["a", "b", "c"] {
+      assert_eq!(label_at(&shown, l), label_at(&alone, l), "{l}");
+    }
+    // Unlabeled later plots leave the first plot's labels as they were.
+    let shown = svg_of(
+      "Show[Plot[{x, x^2}, {x, 0, 1}, PlotLabels -> {\"a\", \"b\"}], \
+       Plot[x^3, {x, 0, 1}]]",
+    );
+    assert!(shown.contains(">a</text>") && shown.contains(">b</text>"));
+  }
+
   #[test]
   fn a_positioned_callout_keeps_its_place() {
     // `Callout[data, label, Above]` is not moved to the series end: it
@@ -1069,7 +1101,7 @@ mod tiny_values {
     assert!(w > 2000.0, "curve width {w}");
     assert!(h > 1000.0, "curve height {h}");
     let labels = tick_labels(&svg);
-    assert!(labels.iter().any(|l| l == "2×10⁻²⁰"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "2.0×10⁻²⁰"), "{labels:?}");
     assert!(
       !labels.iter().any(|l| l == "-1.0" || l == "1.0"),
       "{labels:?}"
@@ -1085,12 +1117,46 @@ mod tiny_values {
     assert!(labels.iter().any(|l| l.contains("10⁻¹⁷")), "{labels:?}");
   }
 
+  /// Every scientific label of an axis shows as many mantissa decimals as
+  /// the one needing the most, as WL labels a tick set: an axis stepping
+  /// by `5*10^-8` reads `5.0×10⁻⁸, 1.0×10⁻⁷, 1.5×10⁻⁷, 2.0×10⁻⁷`.
+  #[test]
+  fn scientific_tick_mantissas_share_their_decimals() {
+    for (code, expected) in [
+      (
+        "Plot[x/10^7, {x, 0, 2}, Axes -> {False, True}]",
+        ["0", "5.0×10⁻⁸", "1.0×10⁻⁷", "1.5×10⁻⁷", "2.0×10⁻⁷"],
+      ),
+      (
+        "Plot[x, {x, 0, 2*10^15}, Axes -> {True, False}]",
+        ["0", "5.0×10¹⁴", "1.0×10¹⁵", "1.5×10¹⁵", "2.0×10¹⁵"],
+      ),
+      (
+        "Plot[x/10^7, {x, 0, 2}, Frame -> True, Axes -> False, \
+         FrameTicks -> {{Automatic, None}, {None, None}}]",
+        ["0", "5.0×10⁻⁸", "1.0×10⁻⁷", "1.5×10⁻⁷", "2.0×10⁻⁷"],
+      ),
+    ] {
+      let labels: Vec<String> = tick_labels(&svg_of(code))
+        .into_iter()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+      assert_eq!(labels, expected, "{code}");
+    }
+    // Integer mantissas alone stay bare.
+    let labels =
+      tick_labels(&svg_of("Plot[x, {x, 0, 10^7}, Axes -> {True, False}]"));
+    assert!(labels.iter().any(|l| l == "2×10⁶"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "1×10⁷"), "{labels:?}");
+  }
+
   #[test]
   fn tiny_constant_spans_zero_to_twice_its_value() {
     let svg = svg_of("Plot[10^-20, {x, 0, 1}]");
     let labels = tick_labels(&svg);
-    assert!(labels.iter().any(|l| l == "1×10⁻²⁰"), "{labels:?}");
-    assert!(labels.iter().any(|l| l == "2×10⁻²⁰"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "1.0×10⁻²⁰"), "{labels:?}");
+    assert!(labels.iter().any(|l| l == "2.0×10⁻²⁰"), "{labels:?}");
   }
 }
 
@@ -1468,5 +1534,51 @@ mod typeset_labels {
       svg[start..end].parse::<f64>().unwrap()
     };
     assert!((translate(&plain) - translate(&styled)).abs() < 1.0);
+  }
+}
+
+/// Regression: a per-series `PlotStyle` entry that is a directive list
+/// holding a color (`{Opacity[a], Gray}`) was read as that one color, so
+/// the curve lost its opacity (and any other directive in the list).
+mod plot_style_directive_lists {
+  use super::*;
+
+  /// The `opacity` of every curve (`<polyline>`) in order.
+  fn curve_opacities(svg: &str) -> Vec<String> {
+    svg
+      .split("<polyline ")
+      .skip(1)
+      .map(|t| {
+        let start = t.find("opacity=\"").unwrap() + "opacity=\"".len();
+        t[start..start + t[start..].find('"').unwrap()].to_string()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn plot_keeps_opacity_beside_color() {
+    let svg = svg_of(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, \
+       PlotStyle -> {{Opacity[0.3], Gray}, {Red, Opacity[0.5]}}]",
+    );
+    assert_eq!(curve_opacities(&svg), ["0.3", "0.5"], "{svg}");
+    assert!(svg.contains("stroke=\"#808080\""), "{svg}");
+    assert!(svg.contains("stroke=\"#FF0000\""), "{svg}");
+  }
+
+  #[test]
+  fn parametric_plot_keeps_opacity_beside_color() {
+    let svg = svg_of(
+      "ParametricPlot[{{Cos[t], Sin[t]}, {2 Cos[t], Sin[t]}}, {t, 0, 2 Pi}, \
+       PlotStyle -> {{Opacity[0.025], Gray}, {Opacity[0.025], Gray}}]",
+    );
+    assert_eq!(curve_opacities(&svg), ["0.025", "0.025"], "{svg}");
+  }
+
+  #[test]
+  fn single_series_list_keeps_opacity() {
+    let svg =
+      svg_of("Plot[Sin[x], {x, 0, 1}, PlotStyle -> {Red, Opacity[0.5]}]");
+    assert_eq!(curve_opacities(&svg), ["0.5"], "{svg}");
   }
 }

@@ -223,6 +223,26 @@ mod polyhedron_operations_tests {
     assert_eq!(interpret(&code).unwrap(), "{6, True}");
   }
 
+  /// A ratio of 1/2 (the largest one allowed) still truncates: every face
+  /// is cut at its edge midpoints and every corner is capped, so a cube
+  /// becomes a cuboctahedron — 6 squares and 8 triangles through the 12
+  /// edge midpoints.
+  #[test]
+  fn truncate_ratio_one_half_rectifies_the_solid() {
+    for ratio in ["1/2", "0.5"] {
+      let code = format!(
+        "t = PolyhedronOperations`Truncate[{CUBE}, {ratio}]; \
+         faces = Union /@ Cases[t, Polygon[p_] :> p, Infinity]; \
+         {{Sort[Length /@ faces], Length[Union[Flatten[faces, 1]]]}}"
+      );
+      assert_eq!(
+        interpret(&code).unwrap(),
+        "{{3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4}, 12}",
+        "ratio {ratio}"
+      );
+    }
+  }
+
   /// Loading the package puts its context on `$ContextPath`, so a bare
   /// `Truncate` read afterwards is the package's function.
   #[test]
