@@ -32508,10 +32508,20 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
         // `Style[TraditionalForm[Column[…]], 14]`: the form wrapper comes
         // off first (typesetting each item of the layout traditionally), so
         // the style reaches the layout's items the same way.
-        if matches!(&args[0], Expr::FunctionCall { name: n, .. }
+        // A one-argument `Text[…]` only marks its content as display text,
+        // so `Style[Text[TraditionalForm[poly]], 12]` is typeset the same
+        // way as `Style[TraditionalForm[poly], 12]`.
+        let mut form_body = &args[0];
+        while let Expr::FunctionCall { name: n, args: t } = form_body
+          && n == "Text"
+          && t.len() == 1
+        {
+          form_body = &t[0];
+        }
+        if matches!(form_body, Expr::FunctionCall { name: n, .. }
           if n == "TraditionalForm")
         {
-          let unwrapped = unwrap_display_wrappers(&args[0]);
+          let unwrapped = unwrap_display_wrappers(form_body);
           if let Some(inner) = style_pushed_into_layout(&unwrapped, &args[1..])
           {
             return nested_layout_svg(&inner);

@@ -4550,6 +4550,28 @@ mod tests {
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
     }
 
+    /// A column item `Style[Text[TraditionalForm[poly]], size]` is typeset
+    /// like `Style[TraditionalForm[poly], size]` (spaced operators, raised
+    /// exponents), not flattened to one unspaced text run.
+    #[test]
+    fn styled_text_of_traditional_form_typesets_like_styled_form() {
+      let render = |item: &str| {
+        woxi::interpret(&format!(
+          "ExportString[Column[{{{item}}}, Alignment -> Center], \"SVG\"]"
+        ))
+        .expect("interpret should succeed")
+      };
+      let poly = "x^10 + x^9 - x^3 + x + 1";
+      let through_text =
+        render(&format!("Style[Text@TraditionalForm[{poly}], 12]"));
+      let direct = render(&format!("Style[TraditionalForm[{poly}], 12]"));
+      assert_eq!(through_text, direct);
+      assert!(!through_text.contains("baseline-shift"), "{through_text}");
+      let nested =
+        render(&format!("Style[Text[Text[TraditionalForm[{poly}]]], 12]"));
+      assert_eq!(nested, direct);
+    }
+
     /// A bushy tree sets its own picture width from its labels; in a
     /// narrower fixed-size pane it is squeezed to the pane's width rather
     /// than clipped.
