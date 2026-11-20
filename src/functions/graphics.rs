@@ -6339,6 +6339,21 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       };
       format!("{}/{den}", graphics_text_content(left))
     }
+    // A caption equation with a string side (`"gain" == NumberForm[x, 3]`)
+    // stays unevaluated and is set as written: each side typeset on its own
+    // (so a `NumberForm`/`ScientificForm` side shows its formatted number
+    // and a linear-syntax string its glyphs), joined by the operator.
+    Expr::Comparison {
+      operands,
+      operators,
+    } if operands.iter().any(|o| matches!(o, Expr::String(_))) => {
+      let mut text = graphics_text_content(&operands[0]);
+      for (op, operand) in operators.iter().zip(&operands[1..]) {
+        text.push_str(comparison_op_text(op));
+        text.push_str(&graphics_text_content(operand));
+      }
+      text
+    }
     _ => {
       let text = match crate::functions::string_ast::to_string_ast(
         std::slice::from_ref(expr),
@@ -6348,6 +6363,21 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       };
       typeset_constants_in_text(&text)
     }
+  }
+}
+
+/// The operator text a comparison is joined with when set as a plain label.
+fn comparison_op_text(op: &crate::syntax::ComparisonOp) -> &'static str {
+  use crate::syntax::ComparisonOp;
+  match op {
+    ComparisonOp::Equal => " == ",
+    ComparisonOp::NotEqual => " != ",
+    ComparisonOp::Less => " < ",
+    ComparisonOp::LessEqual => " <= ",
+    ComparisonOp::Greater => " > ",
+    ComparisonOp::GreaterEqual => " >= ",
+    ComparisonOp::SameQ => " === ",
+    ComparisonOp::UnsameQ => " =!= ",
   }
 }
 
@@ -49403,21 +49433,10 @@ fn resolve_display_dynamics(
       operands,
       operators,
     } if annotation_contains_dynamic(expr) => {
-      use crate::syntax::ComparisonOp;
       let mut text = String::new();
       for (i, operand) in operands.iter().enumerate() {
         if i > 0 {
-          text.push_str(match operators.get(i - 1) {
-            Some(ComparisonOp::Equal) => " == ",
-            Some(ComparisonOp::NotEqual) => " != ",
-            Some(ComparisonOp::Less) => " < ",
-            Some(ComparisonOp::LessEqual) => " <= ",
-            Some(ComparisonOp::Greater) => " > ",
-            Some(ComparisonOp::GreaterEqual) => " >= ",
-            Some(ComparisonOp::SameQ) => " === ",
-            Some(ComparisonOp::UnsameQ) => " =!= ",
-            None => " ",
-          });
+          text.push_str(operators.get(i - 1).map_or(" ", comparison_op_text));
         }
         text.push_str(&typeset_caption_operand(&resolve_display_dynamics(
           operand, bindings,
