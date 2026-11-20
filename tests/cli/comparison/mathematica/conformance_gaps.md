@@ -5477,6 +5477,11 @@ Woxi makes 10000 every time. The pictures look alike, but an expensive body
 wolframscript wraps curves in `GraphicsComplex` / `Annotation` where Woxi emits
 plain `Line`/`Arrow` lists; `SphericalPlot3D` samples a different grid.
 
+`DensityPlot` returns its colors as a `GraphicsComplex` of polygons with
+`VertexColors` in wolframscript. Woxi returns one
+`Raster[cells, rect, Resampling -> "Linear"]` over the plotted domain, and the
+option makes `Show` shade the cells smoothly, as the polygons do.
+
 ### 3D plots sample and nest differently
 
 `ParametricPlot3D`, `ListPlot3D`, `ContourPlot3D` and `RevolutionPlot3D`

@@ -3108,6 +3108,9 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![
         Expr::List(rows.into()),
         Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+        // The density shades smoothly between its samples, as the
+        // standalone plot draws it, rather than in blocks.
+        rule_expr(id_expr("Resampling"), str_expr("Linear")),
       ],
     )
   });

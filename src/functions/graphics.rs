@@ -1101,6 +1101,10 @@ enum Primitive {
     y_min: f64,
     x_max: f64,
     y_max: f64,
+    /// `Resampling -> "Linear"` (or another smoothing method): the cells
+    /// blend into one another when the raster is enlarged, instead of
+    /// showing as blocks. Density plots carry their colors this way.
+    smooth: bool,
   },
   /// HalfPlane (fill on the `w` side of the line through `p` along `v`) or,
   /// with `full`, InfinitePlane covering the whole viewport. The actual fill
@@ -9410,6 +9414,15 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
     option("ColorFunctionScaling").as_ref(),
     Some(Expr::Identifier(n)) if n == "False"
   );
+  // `Resampling -> "Linear"` (any method but nearest-neighbor) blends the
+  // cells when the raster is enlarged instead of drawing them as blocks.
+  let smooth = match option("Resampling").as_ref() {
+    Some(Expr::String(m)) => m != "Nearest",
+    Some(Expr::List(ms)) => {
+      matches!(ms.first(), Some(Expr::String(m)) if m != "Nearest")
+    }
+    _ => false,
+  };
   // With an explicit `{vmin, vmax}`, a color function that is not a bare
   // symbol (`GrayLevel`, `Hue`) is handed the values rescaled from the
   // data's own minimum and maximum instead, as wolframscript does.
@@ -9543,6 +9556,7 @@ fn parse_raster(args: &[Expr], opacity: f64, prims: &mut Vec<Primitive>) {
     y_min: y_min.min(y_max),
     x_max: x_min.max(x_max),
     y_max: y_min.max(y_max),
+    smooth,
   });
 }
 
@@ -10297,12 +10311,14 @@ fn rotate_primitive(
       y_min,
       x_max,
       y_max,
+      smooth,
     } => Primitive::RasterPrim {
       data: data.clone(),
       x_min: *x_min,
       y_min: *y_min,
       x_max: *x_max,
       y_max: *y_max,
+      smooth: *smooth,
     },
     Primitive::HalfPlanePrim {
       p,
@@ -10542,12 +10558,14 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       y_min,
       x_max,
       y_max,
+      smooth,
     } => Primitive::RasterPrim {
       data: data.clone(),
       x_min: x_min + dx,
       y_min: y_min + dy,
       x_max: x_max + dx,
       y_max: y_max + dy,
+      smooth: *smooth,
     },
     Primitive::HalfPlanePrim {
       p,
@@ -10850,6 +10868,7 @@ fn scale_primitive(
       y_min,
       x_max,
       y_max,
+      smooth,
     } => {
       let (x1, y1) = sp(*x_min, *y_min);
       let (x2, y2) = sp(*x_max, *y_max);
@@ -10859,6 +10878,7 @@ fn scale_primitive(
         y_min: y1.min(y2),
         x_max: x1.max(x2),
         y_max: y1.max(y2),
+        smooth: *smooth,
       }
     }
     Primitive::HalfPlanePrim {
@@ -14528,6 +14548,7 @@ fn render_primitive(
       y_min,
       x_max,
       y_max,
+      smooth,
     } => {
       let nrows = data.len();
       if nrows == 0 {
@@ -14542,7 +14563,9 @@ fn render_primitive(
       // one <rect> per pixel: a 400x520 image would otherwise emit 208k
       // rects, which SVG renderers cannot handle interactively. Small
       // rasters keep the exact rect fills (crisp pixel edges at any zoom).
-      if nrows * ncols > 4096 {
+      // A smooth raster is always embedded as an image, so the renderer
+      // can blend its cells.
+      if *smooth || nrows * ncols > 4096 {
         use base64::Engine;
         let mut img = image::RgbaImage::new(ncols as u32, nrows as u32);
         for (ri, row) in data.iter().enumerate() {
@@ -14574,7 +14597,11 @@ fn render_primitive(
           let sh = (y_max - y_min) / bb.height() * svg_h;
           out.push_str(&format!(
             "<image x=\"{sx:.2}\" y=\"{sy:.2}\" width=\"{sw:.2}\" height=\"{sh:.2}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{b64}\"{}/>\n",
-            crate::functions::image_ast::IMAGE_RENDERING_ATTRS
+            if *smooth {
+              ""
+            } else {
+              crate::functions::image_ast::IMAGE_RENDERING_ATTRS
+            }
           ));
           return;
         }
