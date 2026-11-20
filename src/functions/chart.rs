@@ -394,16 +394,69 @@ impl StyledLabel {
     cx: f64,
     line_height: f64,
   ) -> String {
+    let advances = vec![line_height; self.extra_lines.len()];
+    self.svg_scaled_stacked_by(scale, cx, &advances)
+  }
+
+  /// The same as [`Self::svg_scaled_stacked`], with the `i`-th further
+  /// line placed `advances[i]` render units below the line above it.
+  pub(crate) fn svg_scaled_stacked_by(
+    &self,
+    scale: f64,
+    cx: f64,
+    advances: &[f64],
+  ) -> String {
     let mut out = self.svg_scaled(scale);
-    for line in &self.extra_lines {
+    for (i, line) in self.extra_lines.iter().enumerate() {
+      let dy = advances.get(i).copied().unwrap_or(0.0);
       out.push_str(&format!(
-        "<tspan x=\"{cx:.1}\" dy=\"{line_height:.1}\">{}</tspan>",
+        "<tspan x=\"{cx:.1}\" dy=\"{dy:.1}\">{}</tspan>",
         scale_markup_lengths(line, scale)
       ));
     }
     out
   }
 
+  /// The font size (in render units) each line of this label is drawn
+  /// at: the largest absolute `font-size` its own markup sets (a
+  /// `Style[…, 40]` part of a `Labeled`/`Column` label), scaled by
+  /// `scale`, or `base` for a line that sets none.
+  pub(crate) fn line_font_sizes(&self, base: f64, scale: f64) -> Vec<f64> {
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .map(|line| markup_max_font_size(&line).map_or(base, |s| s * scale))
+      .collect()
+  }
+
+  /// The baseline-to-baseline distance from each line to the next: the
+  /// usual `1.2` line pitch taken over the two lines' mean size, so a
+  /// label whose lines share one size keeps that size's plain pitch while
+  /// a large line followed by a small one (`Labeled[Style[n, 100],
+  /// Style[k, 40]]`) leaves room for the large glyphs above.
+  pub(crate) fn line_advances(&self, base: f64, scale: f64) -> Vec<f64> {
+    let sizes = self.line_font_sizes(base, scale);
+    sizes.windows(2).map(|w| 0.6 * (w[0] + w[1])).collect()
+  }
+}
+
+/// The largest absolute `font-size="N"` an SVG markup fragment sets, if
+/// any (relative sizes such as `70%` are skipped).
+fn markup_max_font_size(markup: &str) -> Option<f64> {
+  let key = "font-size=\"";
+  let mut best: Option<f64> = None;
+  let mut rest = markup;
+  while let Some(pos) = rest.find(key) {
+    rest = &rest[pos + key.len()..];
+    let end = rest.find('"').unwrap_or(rest.len());
+    if let Ok(v) = rest[..end].parse::<f64>() {
+      best = Some(best.map_or(v, |b: f64| b.max(v)));
+    }
+    rest = &rest[end..];
+  }
+  best
+}
+
+impl StyledLabel {
   /// How many lines below the first this label occupies.
   pub(crate) fn extra_line_count(&self) -> usize {
     self.extra_lines.len()

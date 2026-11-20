@@ -54069,7 +54069,12 @@ mod generalized_bar_chart {
     )
     .unwrap();
     assert!(svg.contains(">P(X | A) = 0.9<"), "{svg}");
-    assert!(svg.contains(">|x|<"), "{svg}");
+    // The one-letter symbol is set in italics, as everywhere in
+    // `TraditionalForm`.
+    assert!(
+      svg.contains(">|<tspan font-style=\"italic\">x</tspan>|<"),
+      "{svg}"
+    );
     assert!(!svg.contains("Alternatives"), "{svg}");
   }
 
@@ -59972,6 +59977,53 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+/// A stacked epilog `Text` label whose lines carry their own sizes
+/// (`Labeled[Style[a, 100], Style[b, 40]]`) puts the second line far
+/// enough below the first for the large glyphs, and centers the whole
+/// block on the anchor. It used to step down one base-size line (156
+/// units), drawing the small label across the large number.
+#[test]
+fn epilog_stacked_text_lines_sized_by_their_styles() {
+  let svg = export_svg(
+    "ArrayPlot[{{0, 1}, {1, 0}}, Epilog -> \
+     Text[Labeled[Style[7, 100], Style[3, 40]], {1/2, 3/2}]]",
+  );
+  // 0.6 * (100 + 40) points, at 10 render units per point.
+  assert!(svg.contains("dy=\"840.0\""), "{svg}");
+  // The cell center (y = 932) moved up by half the block's extent.
+  assert!(svg.contains("y=\"662.0\""), "{svg}");
+}
+
+/// Lines of one size keep the plain epilog line pitch.
+#[test]
+fn epilog_stacked_text_uniform_lines_keep_pitch() {
+  let svg = export_svg(
+    "ArrayPlot[{{0, 1}, {1, 0}}, Epilog -> Text[Column[{\"a\", \"b\"}], \
+     {3/2, 1/2}]]",
+  );
+  assert!(svg.contains("dy=\"156.0\">b</tspan>"), "{svg}");
+}
+
+/// A multi-line `Graphics` `Text` whose lines are styled to different
+/// sizes spaces them by those sizes rather than by the base font size,
+/// while equal lines keep the base pitch.
+#[test]
+fn graphics_text_column_lines_sized_by_their_styles() {
+  let svg =
+    export_svg("Graphics[Text[Column[{Style[7, 100], Style[3, 40]}], {0, 0}]]");
+  assert!(svg.contains("dy=\"-20\""), "{svg}");
+  assert!(svg.contains("dy=\"70\""), "{svg}");
+  let svg = export_svg("Graphics[Text[Column[{\"a\", \"b\", \"c\"}], {0, 0}]]");
+  assert!(
+    svg.contains("dy=\"-14\" dominant-baseline=\"central\">a</tspan>"),
+    "{svg}"
+  );
+  assert!(
+    svg.contains("dy=\"14\" dominant-baseline=\"central\">b</tspan>"),
+    "{svg}"
+  );
 }
 
 /// A graphic's `FormatType` is `TraditionalForm`, so a `Text` label holding
