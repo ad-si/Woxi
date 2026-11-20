@@ -114,6 +114,16 @@ slow-timeout = { period = "60s", terminate-after = 1 }
 filter = 'test(demonstration_guided_pair_manipulate_traces_its_ndsolve_trajectory)'
 slow-timeout = { period = "120s", terminate-after = 1 }
 
+# `interface_exchange_manipulate_solves_a_coupled_pde_with_a_shared_flux_condition`
+# integrates two diffusion PDEs coupled through a flux condition at a shared
+# boundary with `NDSolve` (method of lines) and plots both profiles, four
+# solves in all (building and re-rendering the widget, before and after
+# raising its exchange rate): ~26s standalone in debug builds, past the
+# default 20s timeout. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(interface_exchange_manipulate_solves_a_coupled_pde_with_a_shared_flux_condition)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # `compiled_function_serialized_form_in_density_plot_does_not_unroll` probes
 # a `DensityPlot` of a serialized `CompiledFunction` symbolically before
 # falling back to numeric sampling: ~20s standalone, right at the default
