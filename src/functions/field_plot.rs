@@ -4696,6 +4696,9 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut swatches: Vec<Expr> = Vec::new();
 
   let mut items: Vec<Expr> = Vec::new();
+  // Mesh lines and boundaries go above every region's fill.
+  let mut meshes: Vec<Expr> = Vec::new();
+  let mut outlines: Vec<Expr> = Vec::new();
   for (k, pred) in predicates.iter().enumerate() {
     if let Some(cf) = &color_function {
       let cells = region_plot_color_cells(
@@ -4746,12 +4749,38 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ),
       ),
     };
-    let mut swatch = vec![edge.clone()];
+    let mut swatch = vec![edge];
     swatch.extend(face.iter().cloned());
     swatches.push(call("Directive", swatch));
-    let mut group = vec![edge, call("Directive", face)];
+    let mut group = vec![call0("EdgeForm"), call("Directive", face)];
     group.extend(polygons);
     items.push(Expr::List(group.into()));
+    // Like Wolfram, every region's boundary is a closed `Line` drawn above
+    // all the fills, so a later region's translucent face never veils an
+    // earlier region's outline.
+    let outline_style = match &boundary_style {
+      Some(Expr::Identifier(s)) if s == "None" => None,
+      Some(style) => Some(style.clone()),
+      None => Some(call(
+        "Directive",
+        vec![
+          rgb_color(palette[k % palette.len()]),
+          call1("AbsoluteThickness", Expr::Real(1.6)),
+        ],
+      )),
+    };
+    if let Some(style) = outline_style {
+      let mut group = vec![style];
+      group.extend(loops.iter().filter(|ring| ring.len() >= 2).map(|ring| {
+        let pts: Vec<Expr> = ring
+          .iter()
+          .chain(ring.first())
+          .map(|&(x, y)| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()))
+          .collect();
+        call1("Line", Expr::List(pts.into()))
+      }));
+      outlines.push(Expr::List(group.into()));
+    }
     // The mesh divides the region's own extent, not the plot range.
     let extent = |f: fn(&(f64, f64)) -> f64| {
       loops
@@ -4778,9 +4807,11 @@ pub fn region_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     {
       let mut group = vec![mesh_style.clone()];
       group.extend(mesh);
-      items.push(Expr::List(group.into()));
+      meshes.push(Expr::List(group.into()));
     }
   }
+  items.extend(meshes);
+  items.extend(outlines);
 
   // Wolfram's RegionPlot defaults, for the options the caller left unset.
   let rule = |name: &str, value: Expr| rule_expr(id_expr(name), value);

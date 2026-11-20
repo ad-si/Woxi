@@ -24492,8 +24492,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(
         interpret(
           "Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, \
-           {x, -5, 5}, {y, -5, 5}][[1]], RGBColor[c__] :> Round[{c}, 1/100], \
-           {3}]"
+           {x, -5, 5}, {y, -5, 5}][[1]], \
+           Directive[RGBColor[c__], Opacity[_]] :> Round[{c}, 1/100], \
+           Infinity]"
         )
         .unwrap(),
         "{{6/25, 3/5, 4/5}, {19/20, 63/100, 7/50}}"
@@ -24501,8 +24502,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // A one-element list is a single region.
       assert_eq!(
         interpret(
-          "Length[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, \
-           {x, -5, 5}, {y, -5, 5}][[1]]]"
+          "Length[Cases[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, \
+           {x, -5, 5}, {y, -5, 5}][[1]], _Polygon, Infinity]]"
         )
         .unwrap(),
         "1"
@@ -24727,7 +24728,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(per_axis[1].contains("rgb(0,0,255)"), "{per_axis:?}");
     }
 
-    /// `PlotStyle` colors a region's fill and its default outline;
+    /// `PlotStyle` colors a region's fill but not its default outline;
     /// `BoundaryStyle -> None` drops the outline.
     #[test]
     fn region_plot_plot_style_and_boundary_style() {
@@ -24735,21 +24736,55 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(
         interpret(
           "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, \
-           PlotStyle -> Red][[1]], _EdgeForm, Infinity]"
+           PlotStyle -> Red][[1]], {s_, __Line} :> s, Infinity]"
         )
         .unwrap(),
         // The outline keeps the palette color, as in Wolfram.
-        "{EdgeForm[{RGBColor[0.23921568627450981, 0.6, 0.8], \
-         AbsoluteThickness[1.6]}]}"
+        "{Directive[RGBColor[0.23921568627450981, 0.6, 0.8], \
+         AbsoluteThickness[1.6]]}"
       );
       assert_eq!(
         interpret(
           "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, \
-           BoundaryStyle -> None][[1]], _EdgeForm, Infinity]"
+           BoundaryStyle -> None][[1]], _Line, Infinity]"
         )
         .unwrap(),
-        "{EdgeForm[]}"
+        "{}"
       );
+    }
+
+    /// Every region's boundary is drawn above all the fills, as in
+    /// Wolfram, so an overlapping later region's translucent face doesn't
+    /// veil an earlier region's outline. Regression: each region's outline
+    /// was the `EdgeForm` of its own polygons, and the next region's fill
+    /// painted over it.
+    #[test]
+    fn region_plot_boundaries_drawn_above_all_fills() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = RegionPlot[{y > x, y < 2 x}, {x, 0, 1}, {y, 0, 1}][[1]]; \
+           Map[Head, Cases[g, _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Polygon, Line, Line}"
+      );
+      // The outlines are closed loops in each region's palette color.
+      assert_eq!(
+        interpret(
+          "Cases[g, {Directive[c_RGBColor, _AbsoluteThickness], \
+           Line[p_]} :> {Round[List @@ c, 1/100], First[p] == Last[p]}, \
+           Infinity]"
+        )
+        .unwrap(),
+        "{{{6/25, 3/5, 4/5}, True}, {{19/20, 63/100, 7/50}, True}}"
+      );
+      // The SVG paints both fills before either outline.
+      let svg =
+        export_svg("RegionPlot[{y > x, y < 2 x}, {x, 0, 1}, {y, 0, 1}]");
+      let last_fill = svg.rfind("<polygon").unwrap();
+      let first_outline = svg.find("stroke=\"rgb(61,153,204)\"").unwrap();
+      assert!(last_fill < first_outline, "{svg}");
     }
 
     /// A `Plus` term with a negative coefficient joins with `-` and drops the
@@ -48727,12 +48762,12 @@ mod color_data_indexed {
     assert_eq!(
       interpret(
         "Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, \
-         BoundaryStyle -> Thick][[1]], _EdgeForm, Infinity]"
+         BoundaryStyle -> Thick][[1]], {s_, __Line} :> s, Infinity]"
       )
       .unwrap(),
       // The option is evaluated like any plot option, so `Thick` arrives as
       // its value
-      "{EdgeForm[Thickness[Large]]}"
+      "{Thickness[Large]}"
     );
     // The extracted primitives embed into an outer Graphics.
     let svg = export_svg(
