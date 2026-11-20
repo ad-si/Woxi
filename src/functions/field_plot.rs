@@ -2087,7 +2087,16 @@ struct BandRegion {
 
 /// The shaded bands of a contour plot: runs of cells that lie wholly in
 /// one band, and the cells a level crosses clipped to each band it meets.
-fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
+///
+/// As with Wolfram's default `ClippingStyle -> None`, the parts of the
+/// grid whose values lie outside the plotted value range
+/// `(v_min, v_max)` (e.g. near a pole fenced off by the automatic
+/// `PlotRange`) are left blank instead of taking the end band's color.
+fn contour_band_regions(
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+) -> Vec<BandRegion> {
   let cols = grid.len();
   if cols < 2 {
     return Vec::new();
@@ -2138,9 +2147,16 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
       }
       let cmin = v00.min(v10).min(v01).min(v11);
       let cmax = v00.max(v10).max(v01).max(v11);
-      let b_lo = band_of(cmin);
-      let b_hi = band_of(cmax);
-      if b_lo == b_hi {
+      // Wholly outside the plotted value range: clipped away.
+      if cmax < v_min || cmin > v_max {
+        flush(&mut regions, &mut run);
+        continue;
+      }
+      let clip_lo = cmin < v_min;
+      let clip_hi = cmax > v_max;
+      let b_lo = band_of(cmin.max(v_min));
+      let b_hi = band_of(cmax.min(v_max));
+      if b_lo == b_hi && !clip_lo && !clip_hi {
         run = match run {
           Some((b, s, e)) if b == b_lo && e == i => Some((b, s, i + 1)),
           other => {
@@ -2160,8 +2176,18 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
         ((i as f64 + 1.0, j as f64 + 1.0), v11),
         ((i as f64, j as f64 + 1.0), v01),
       ];
+      let mut clipped: Vec<PtV> = base.to_vec();
+      if clip_lo {
+        clipped = clip_polygon(&clipped, v_min, true);
+      }
+      if clip_hi {
+        clipped = clip_polygon(&clipped, v_max, false);
+      }
+      if clipped.len() < 3 {
+        continue;
+      }
       for b in b_lo..=b_hi {
-        let mut poly: Vec<PtV> = base.to_vec();
+        let mut poly: Vec<PtV> = clipped.clone();
         if b > 0 {
           poly = clip_polygon(&poly, levels[b - 1], true);
         }
@@ -2252,7 +2278,7 @@ fn render_contour_bands(
   // the contour lines drawn on top).
   let seam = RESOLUTION_SCALE as f64;
 
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let (r, g, b) = band_color(region.band, levels, v_min, v_max, coloring);
     let fill = format!("rgb({r},{g},{b})");
     let device = |(fx, fy): (f64, f64)| {
@@ -2303,7 +2329,7 @@ fn contour_band_primitives(
   let step_y = (y_max - y_min) / (rows - 1) as f64;
   let mut items: Vec<Expr> = Vec::new();
   let mut last_color: Option<(u8, u8, u8)> = None;
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let color = band_color(region.band, levels, v_min, v_max, coloring);
     if last_color != Some(color) {
       let rgb = call(
@@ -9306,5 +9332,70 @@ mod robust_range_tests {
     let (v_min, v_max) = robust_value_range(&[]);
     assert!(!v_min.is_finite());
     assert!(!v_max.is_finite());
+  }
+}
+
+#[cfg(test)]
+mod contour_clipping_tests {
+  use super::contour_band_regions;
+
+  /// Area of a polygon given in cell-index space (shoelace formula).
+  fn area(points: &[(f64, f64)]) -> f64 {
+    let n = points.len();
+    (0..n)
+      .map(|k| {
+        let (x0, y0) = points[k];
+        let (x1, y1) = points[(k + 1) % n];
+        x0 * y1 - x1 * y0
+      })
+      .sum::<f64>()
+      .abs()
+      / 2.0
+  }
+
+  /// A 3×3 node grid (2×2 cells) whose middle node spikes far above the
+  /// plotted value range, like a pole fenced off by the automatic
+  /// `PlotRange`.
+  fn spiked_grid(spike: f64) -> Vec<Vec<f64>> {
+    let mut grid = vec![vec![0.0; 3]; 3];
+    grid[1][1] = spike;
+    grid
+  }
+
+  #[test]
+  fn values_above_the_range_are_left_blank() {
+    let grid = spiked_grid(10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    // The four cells cover an area of 4. Along the edges into the spike
+    // the value passes 1 a tenth of the way in, so each cell loses the
+    // corner triangle with legs 0.9 there.
+    let expected = 4.0 - 4.0 * 0.5 * 0.9 * 0.9;
+    assert!((total - expected).abs() < 1e-9, "got area {total}");
+  }
+
+  #[test]
+  fn values_below_the_range_are_left_blank() {
+    let grid = spiked_grid(-10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!(
+      total < 4.0 - 1e-6,
+      "expected a blank hole, got area {total}"
+    );
+  }
+
+  #[test]
+  fn values_within_the_range_cover_the_whole_grid() {
+    let grid = spiked_grid(1.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!((total - 4.0).abs() < 1e-9, "got area {total}");
   }
 }
