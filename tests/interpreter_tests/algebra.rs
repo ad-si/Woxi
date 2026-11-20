@@ -7459,6 +7459,22 @@ mod solve_one_argument_unknowns {
        {{}}, {{x -> 1}}, {}}"
     );
   }
+
+  /// A disjunction of equations — the form `Roots` returns — is solved
+  /// for the unknowns of its alternatives.
+  #[test]
+  fn disjunction_of_equations() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Solve[x == 1 || x == 2], Solve[Roots[x^2 - 3 x + 2 == 0, x]], \
+         Solve[(x == 1 && y == 2) || (x == 3 && y == 4)]}"
+      )
+      .unwrap(),
+      "{{{x -> 1}, {x -> 2}}, {{x -> 1}, {x -> 2}}, \
+       {{x -> 1, y -> 2}, {x -> 3, y -> 4}}}"
+    );
+  }
 }
 
 mod solve_ratnz_only_for_polynomial_systems {
