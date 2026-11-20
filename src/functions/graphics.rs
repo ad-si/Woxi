@@ -5119,12 +5119,26 @@ fn parse_stadium_shape(
   });
 }
 
-/// Whether two non-adjacent edges of the closed outline `pts` cross.
+/// Whether two non-adjacent edges of the closed outline `pts` cross, or
+/// the outline comes back to a corner it already visited (two loops
+/// touching there, where a loop nested in the other is wound twice).
 /// Outlines too long to check pairwise are taken to be simple.
 fn polygon_self_intersects(pts: &[(f64, f64)]) -> bool {
   let n = pts.len();
   if !(4..=2000).contains(&n) {
     return false;
+  }
+  // A revisit that is more than a doubled neighbor or the closing repeat
+  // of the first corner.
+  for i in 0..n {
+    for j in i + 2..n {
+      if pts[i] == pts[j]
+        && (i + 1..j).any(|k| pts[k] != pts[i])
+        && (j + 1..n).chain(0..i).any(|k| pts[k] != pts[i])
+      {
+        return true;
+      }
+    }
   }
   let cross = |o: (f64, f64), a: (f64, f64), b: (f64, f64)| {
     (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
@@ -11450,6 +11464,38 @@ fn emit_polygon_vertex_gradient(
   svg_w: f64,
   svg_h: f64,
 ) {
+  // An outline that crosses itself, or runs around a second loop from a
+  // corner it already visited, is filled by the even-odd rule like any
+  // other polygon: only the regions it winds around an odd number of
+  // times are blended, with the colors at crossing points interpolated
+  // along the edges they lie on.
+  if holes.is_empty()
+    && colors.len() == points.len()
+    && let Some((arrangement, regions)) =
+      crate::functions::polygon_holes::even_odd_regions(points)
+  {
+    let n = points.len();
+    let pts: Vec<(f64, f64)> = arrangement.iter().map(|(p, _)| *p).collect();
+    let cols: Vec<Color> = arrangement
+      .iter()
+      .map(|(_, at)| colors[at.edge].lerp(colors[(at.edge + 1) % n], at.t))
+      .collect();
+    let triangles: Vec<[usize; 3]> = regions
+      .iter()
+      .flat_map(|region| {
+        crate::functions::polygon_holes::triangulate_with_holes(
+          &pts,
+          region,
+          &[],
+        )
+        .triangles
+      })
+      .collect();
+    emit_vertex_color_triangles(
+      out, &pts, &cols, &triangles, opacity, bb, svg_w, svg_h,
+    );
+    return;
+  }
   let mut all_pts = points.to_vec();
   let mut all_colors = colors.to_vec();
   let outer_indices: Vec<usize> = (0..points.len()).collect();
@@ -11492,7 +11538,31 @@ fn emit_polygon_vertex_gradient(
     )
     .triangles
   };
+  emit_vertex_color_triangles(
+    out,
+    &all_pts,
+    &all_colors,
+    &triangles,
+    opacity,
+    bb,
+    svg_w,
+    svg_h,
+  );
+}
 
+/// Draw `triangles` (indices into `all_pts`) with their corner colors
+/// blended across each one, as finely faceted flat-colored pieces.
+#[allow(clippy::too_many_arguments)]
+fn emit_vertex_color_triangles(
+  out: &mut String,
+  all_pts: &[(f64, f64)],
+  all_colors: &[Color],
+  triangles: &[[usize; 3]],
+  opacity: f64,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+) {
   let screen =
     |(x, y): (f64, f64)| (coord_x(x, bb, svg_w), coord_y(y, bb, svg_h));
   let at = |tri_p: &[(f64, f64); 3], tri_c: &[Color; 3], u: f64, v: f64| {
@@ -11546,7 +11616,7 @@ fn emit_polygon_vertex_gradient(
       fill_opacity,
     ));
   };
-  for [i, j, k] in triangles {
+  for &[i, j, k] in triangles {
     let tri_p = [all_pts[i], all_pts[j], all_pts[k]];
     let tri_c = [all_colors[i], all_colors[j], all_colors[k]];
     // Facets about 4 points across, so the blend reads as smooth.
