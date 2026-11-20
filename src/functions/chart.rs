@@ -1220,10 +1220,12 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     // print as `label`, with the second argument only shown on hover, so a
     // label written that way must not vanish from the axis. A
     // `Rotate[label, angle]` (a vertical axis label idiom) reads as its
-    // content too.
+    // content too, and so does a `TextCell[label, …]`, a cell showing
+    // `label` (an empty `TextCell[""]` factor adds no text).
     Expr::FunctionCall { name, args }
       if (name == "Style"
         || name == "Text"
+        || name == "TextCell"
         || name == "Tooltip"
         || name == "Annotation"
         || name == "Pane"
