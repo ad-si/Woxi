@@ -1072,10 +1072,22 @@ fn painter_order(
   camera: &Camera,
 ) -> Vec<usize> {
   let n = verts.len();
+  // Depths that agree to within rounding noise are ties, kept in the order
+  // the triangles were given: a ring of a sphere's facets square to the
+  // line of sight lies at one depth, and which of them came out a hair
+  // nearer must not hinge on the last bits of how the radius was computed
+  // (`Scaled[0.05]` of a width 6 is `0.30000000000000004`). Quantizing the
+  // keys keeps the comparison a total order for the (stable) sort.
+  let scale = depths
+    .iter()
+    .filter(|d| d.is_finite())
+    .fold(0.0_f64, |m, d| m.max(d.abs()));
+  let quantum = if scale > 0.0 { scale * 1e-9 } else { 1.0 };
+  let key = |d: f64| (d / quantum).round();
   let mut by_depth: Vec<usize> = (0..n).collect();
   by_depth.sort_by(|&a, &b| {
-    depths[b]
-      .partial_cmp(&depths[a])
+    key(depths[b])
+      .partial_cmp(&key(depths[a]))
       .unwrap_or(std::cmp::Ordering::Equal)
   });
   if n > PAINTER_ORDER_MAX_TRIANGLES {
@@ -10020,9 +10032,65 @@ fn tessellate_sphere(
   radius: f64,
   detail: (usize, usize),
 ) -> Vec<(Point3D, Point3D, Point3D)> {
+  tessellate_sphere_about(center, radius, detail, [0.0, 0.0, 1.0])
+}
+
+/// The detail an opaque sphere is tessellated with once its pole faces the
+/// viewer (see [`tessellate_sphere_about`]): its far half is culled, and
+/// its outline is the equator, so latitude bands are traded for longitude
+/// segments. The equator stays a band boundary (an even band count), and
+/// the outline gets twice the segments of the plain `detail`, up to 48 —
+/// round to a fraction of a pixel at any usual size, without crowding
+/// slivers around the pole that faces the viewer.
+fn viewer_facing_sphere_detail(detail: (usize, usize)) -> (usize, usize) {
+  let (n_lat, n_lon) = detail;
+  let half_bands = (n_lat * 3).div_ceil(8).max(2);
+  (2 * half_bands, (2 * n_lon).min(48))
+}
+
+/// Tessellate a sphere into latitude/longitude triangles whose pole points
+/// along `pole`. With the pole toward the viewer, the outline an opaque
+/// sphere shows is its equator — the ring every longitude segment lies on
+/// — so its silhouette is as round as the segment count allows, whatever
+/// the view direction.
+fn tessellate_sphere_about(
+  center: &Point3D,
+  radius: f64,
+  detail: (usize, usize),
+  pole: [f64; 3],
+) -> Vec<(Point3D, Point3D, Point3D)> {
   let (n_lat, n_lon) = detail;
   let mut tris = Vec::new();
   let pi = std::f64::consts::PI;
+  // Orthonormal frame `(e1, e2, w)` with `w` along the pole; the default
+  // z pole keeps the plain x/y/z frame.
+  let len = v_dot(pole, pole).sqrt();
+  let w = if len > 1e-12 {
+    pole.map(|c| c / len)
+  } else {
+    [0.0, 0.0, 1.0]
+  };
+  let (e1, e2) = if (w[2] - 1.0).abs() < 1e-12 {
+    ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0])
+  } else {
+    // Any direction not parallel to the pole seeds the frame.
+    let seed = if w[2].abs() < 0.9 {
+      [0.0, 0.0, 1.0]
+    } else {
+      [1.0, 0.0, 0.0]
+    };
+    let cross = |a: [f64; 3], b: [f64; 3]| {
+      [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+      ]
+    };
+    let e1 = cross(seed, w);
+    let l1 = v_dot(e1, e1).sqrt();
+    let e1 = e1.map(|c| c / l1);
+    (e1, cross(w, e1))
+  };
 
   for i in 0..n_lat {
     let theta1 = pi * i as f64 / n_lat as f64;
@@ -10032,10 +10100,15 @@ fn tessellate_sphere(
       let phi2 = 2.0 * pi * (j + 1) as f64 / n_lon as f64;
 
       let p = |theta: f64, phi: f64| -> Point3D {
+        let (a, b, c) = (
+          theta.sin() * phi.cos(),
+          theta.sin() * phi.sin(),
+          theta.cos(),
+        );
         Point3D {
-          x: center.x + radius * theta.sin() * phi.cos(),
-          y: center.y + radius * theta.sin() * phi.sin(),
-          z: center.z + radius * theta.cos(),
+          x: center.x + radius * (a * e1[0] + b * e2[0] + c * w[0]),
+          y: center.y + radius * (a * e1[1] + b * e2[1] + c * w[1]),
+          z: center.z + radius * (a * e1[2] + b * e2[2] + c * w[2]),
         }
       };
 
@@ -13493,14 +13566,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
           ..
-        } => (
-          tessellate_sphere(
-            center,
-            *radius,
-            sphere_detail(*radius, sphere_extent, sphere_count),
-          ),
-          style,
-        ),
+        } => {
+          let detail = sphere_detail(*radius, sphere_extent, sphere_count);
+          // The far half of an opaque sphere is culled below, so it is
+          // tessellated about the line of sight: its outline is then the
+          // finely divided equator rather than a coarse slanted cut
+          // through the latitude bands.
+          let tris = if style.faces && style.opacity >= 1.0 {
+            tessellate_sphere_about(
+              center,
+              *radius,
+              viewer_facing_sphere_detail(detail),
+              camera.toward_viewer(*center),
+            )
+          } else {
+            tessellate_sphere(center, *radius, detail)
+          };
+          (tris, style)
+        }
         Primitive3D::Cuboid {
           p_min,
           p_max,

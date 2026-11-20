@@ -9684,11 +9684,14 @@ mod plot3d {
       );
       let darkest = |svg: &str| fill_reds(svg).into_iter().min().unwrap_or(0);
       let brightest = |svg: &str| fill_reds(svg).into_iter().max().unwrap_or(0);
-      // The unlit side keeps the surface's own dark gray either way.
-      assert_eq!(
+      // The unlit side keeps the surface's own dark gray either way (up
+      // to a rounding step: the outline vertices see the lights at a
+      // grazing angle, where the highlight is faint but not zero).
+      assert!(
+        darkest(&plain).abs_diff(darkest(&shiny)) <= 1,
+        "the highlight must not lighten the surface's own color: {} vs {}",
         darkest(&plain),
-        darkest(&shiny),
-        "the highlight must not lighten the surface's own color"
+        darkest(&shiny)
       );
       // A matte dark sphere never approaches white; a shiny one does.
       assert!(
