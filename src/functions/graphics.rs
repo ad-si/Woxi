@@ -2867,6 +2867,16 @@ fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
   })
 }
 
+/// The font family a named style sets in Wolfram's default stylesheet:
+/// `"Label"` text (a Demonstration's captions and readouts) is set in a
+/// proportional sans-serif face, not the monospace of plain output text.
+fn named_style_font_family(name: &str) -> Option<&'static str> {
+  match name {
+    "Label" => Some("sans-serif"),
+    _ => None,
+  }
+}
+
 /// The point size a named font size stands for. `Tiny`, `Small`, `Medium`
 /// and `Large` are absolute in Wolfram's default stylesheet; `Larger` and
 /// `Smaller` scale whatever size is in force. Measured from wolframscript's
@@ -3183,11 +3193,14 @@ fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
       style.font_size = *f;
       true
     }
-    // A named style ("Section", "Label", …) brings its own size and
-    // color from the stylesheet.
+    // A named style ("Section", "Label", …) brings its own size, color
+    // and face from the stylesheet.
     Expr::String(name) => match named_style_appearance(name) {
       Some((size, color)) => {
         style.font_size = size;
+        if let Some(family) = named_style_font_family(name) {
+          style.font_family = family.to_string();
+        }
         if let Some((r, g, b)) = color {
           style.color =
             Color::new(r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
@@ -27662,10 +27675,14 @@ fn extract_cell_style(cell: &Expr) -> CellTextStyle<'_> {
         {
           fs = named_font_size(s, fs.unwrap_or(14.0));
         }
-        // `Style[x, "Label"]` — the stylesheet entry's size and color.
+        // `Style[x, "Label"]` — the stylesheet entry's size, color and
+        // face.
         Expr::String(name) if named_style_appearance(name).is_some() => {
           let (size, rgb) = named_style_appearance(name).unwrap();
           fs = Some(size);
+          if let Some(family) = named_style_font_family(name) {
+            ff = Some(family.to_string());
+          }
           if let Some((r, g, b)) = rgb {
             color = Some(Color::new(
               r as f64 / 255.0,
@@ -37922,8 +37939,8 @@ fn framed_box_to_svg(
       crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
         style.content,
       );
-    // A `FontFamily` sets (and measures) the framed text in that face, so
-    // the frame fits a proportional text as tightly as a monospace one.
+    // A `FontFamily` (or a named style's face) sets the text atoms in that
+    // family, measured with its own glyph advances.
     let layout = with_box_font_family(style.font_family.as_deref(), || {
       layout_box(&crate::strip_number_precision_markers(&boxes), size)
     });
