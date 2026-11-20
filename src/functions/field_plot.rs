@@ -7403,21 +7403,8 @@ fn regular_triples_grid(points: &[(f64, f64, f64)]) -> Option<Vec<Vec<f64>>> {
   Some(grid)
 }
 
-fn parse_triples_to_grid(
-  rows: &[Expr],
-  _func_name: &str,
-  nearest: bool,
-) -> (
-  std::vec::Vec<std::vec::Vec<f64>>,
-  f64,
-  f64,
-  f64,
-  f64,
-  f64,
-  f64,
-  usize,
-  usize,
-) {
+/// The finite `{x, y, z}` samples of triples data.
+fn parse_triple_points(rows: &[Expr]) -> Vec<(f64, f64, f64)> {
   let mut points: Vec<(f64, f64, f64)> = Vec::new();
 
   for row in rows {
@@ -7442,6 +7429,26 @@ fn parse_triples_to_grid(
       }
     }
   }
+
+  points
+}
+
+fn parse_triples_to_grid(
+  rows: &[Expr],
+  _func_name: &str,
+  nearest: bool,
+) -> (
+  std::vec::Vec<std::vec::Vec<f64>>,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  f64,
+  usize,
+  usize,
+) {
+  let points = parse_triple_points(rows);
 
   if points.is_empty() {
     return (vec![], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0);
@@ -7516,6 +7523,136 @@ fn parse_triples_to_grid(
   )
 }
 
+/// The `(x, y, value)` samples at the nodes of a value grid spanning the
+/// given data ranges.
+fn grid_node_samples(
+  grid: &[Vec<f64>],
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> Vec<(f64, f64, f64)> {
+  let cols = grid.len();
+  let rows = grid.first().map_or(0, Vec::len);
+  let step = |lo: f64, hi: f64, n: usize| {
+    if n > 1 {
+      (hi - lo) / (n - 1) as f64
+    } else {
+      0.0
+    }
+  };
+  let (dx, dy) = (step(x_min, x_max, cols), step(y_min, y_max, rows));
+  let mut samples = Vec::with_capacity(cols * rows);
+  for (i, column) in grid.iter().enumerate() {
+    for (j, &v) in column.iter().enumerate() {
+      if v.is_finite() {
+        samples.push((x_min + i as f64 * dx, y_min + j as f64 * dy, v));
+      }
+    }
+  }
+  samples
+}
+
+/// Clip a convex polygon to the half-plane `n · p <= c`.
+fn clip_polygon_half_plane(
+  polygon: &[(f64, f64)],
+  (nx, ny): (f64, f64),
+  c: f64,
+) -> Vec<(f64, f64)> {
+  let side = |&(x, y): &(f64, f64)| nx * x + ny * y - c;
+  let mut out = Vec::with_capacity(polygon.len() + 1);
+  for (k, p) in polygon.iter().enumerate() {
+    let q = &polygon[(k + 1) % polygon.len()];
+    let (sp, sq) = (side(p), side(q));
+    if sp <= 0.0 {
+      out.push(*p);
+    }
+    if (sp < 0.0 && sq > 0.0) || (sp > 0.0 && sq < 0.0) {
+      let t = sp / (sp - sq);
+      out.push((p.0 + t * (q.0 - p.0), p.1 + t * (q.1 - p.1)));
+    }
+  }
+  out
+}
+
+/// The Voronoi cell of `samples[index]` within the rectangle
+/// `[x_min, x_max] × [y_min, y_max]`: the points of the rectangle at least
+/// as close to that sample as to any other one.
+fn voronoi_cell(
+  samples: &[(f64, f64, f64)],
+  index: usize,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> Vec<(f64, f64)> {
+  let (px, py, _) = samples[index];
+  let mut cell = vec![
+    (x_min, y_min),
+    (x_max, y_min),
+    (x_max, y_max),
+    (x_min, y_max),
+  ];
+  for (k, &(qx, qy, _)) in samples.iter().enumerate() {
+    if cell.is_empty() {
+      break;
+    }
+    let (nx, ny) = (qx - px, qy - py);
+    if k == index || (nx == 0.0 && ny == 0.0) {
+      // A repeated sample shares its cell with the first one of its spot.
+      if k < index && nx == 0.0 && ny == 0.0 {
+        return Vec::new();
+      }
+      continue;
+    }
+    // The perpendicular bisector of the two samples bounds the cell.
+    let c = nx * (px + qx) / 2.0 + ny * (py + qy) / 2.0;
+    cell = clip_polygon_half_plane(&cell, (nx, ny), c);
+  }
+  cell
+}
+
+/// Shade the Voronoi cells of `samples` (clipped to the data rectangle of
+/// `area`) in the color of the contour band each sample's value lies in.
+fn render_voronoi_bands(
+  svg: &mut String,
+  samples: &[(f64, f64, f64)],
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+  area: &crate::functions::plot::PlotArea,
+  coloring: &BandColoring,
+) {
+  let (x_range, y_range) = ((area.x_min, area.x_max), (area.y_min, area.y_max));
+  let span = |lo: f64, hi: f64| if hi > lo { hi - lo } else { 1.0 };
+  let (x_span, y_span) =
+    (span(x_range.0, x_range.1), span(y_range.0, y_range.1));
+  let device = |(x, y): (f64, f64)| {
+    (
+      area.plot_x0 + (x - x_range.0) / x_span * area.plot_w,
+      area.plot_y0 + (y_range.1 - y) / y_span * area.plot_h,
+    )
+  };
+  // A stroke in the fill color hides antialiasing seams between cells.
+  let seam = RESOLUTION_SCALE as f64;
+  for (index, &(_, _, value)) in samples.iter().enumerate() {
+    let cell = voronoi_cell(samples, index, x_range, y_range);
+    if cell.len() < 3 {
+      continue;
+    }
+    let band = levels
+      .iter()
+      .position(|&l| value < l)
+      .unwrap_or(levels.len());
+    let (r, g, b) = band_color(band, levels, v_min, v_max, coloring);
+    let fill = format!("rgb({r},{g},{b})");
+    let mut d = String::new();
+    for (k, &pt) in cell.iter().enumerate() {
+      let (x, y) = device(pt);
+      d.push_str(&format!("{}{x:.1} {y:.1}", if k == 0 { "M" } else { "L" }));
+    }
+    d.push('Z');
+    svg.push_str(&format!(
+      "<path d=\"{d}\" fill=\"{fill}\" stroke=\"{fill}\" stroke-width=\"{seam:.1}\" stroke-linejoin=\"round\"/>\n"
+    ));
+  }
+}
+
 /// ListContourPlot[data] - contour plot from data
 /// Accepts same data formats as ListDensityPlot.
 pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
@@ -7530,8 +7667,9 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
 
   let mut opts = parse_density_contour_options(args, 1);
+  let nearest = interpolation_order_is_zero(&args[1..]);
   let (grid, x_min, x_max, y_min, y_max, v_min, v_max, _n_rows, _n_cols) =
-    parse_list_data_to_grid(rows, "ListContourPlot", false);
+    parse_list_data_to_grid(rows, "ListContourPlot", nearest);
   let ((x_min, x_max), (y_min, y_max)) =
     matrix_data_range(rows, &args[1..], (x_min, x_max), (y_min, y_max));
 
@@ -7558,7 +7696,27 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
-  if opts.contour_shading {
+  if nearest {
+    // `InterpolationOrder -> 0`: every point of the plane takes the value
+    // of its nearest sample, so the plot is the samples' Voronoi cells,
+    // each shaded in the color of the band its value falls in. The value
+    // only jumps across the cell borders, so no contour line is drawn.
+    let samples = if is_triples_data(rows) {
+      parse_triple_points(rows)
+    } else {
+      grid_node_samples(&grid, (x_min, x_max), (y_min, y_max))
+    };
+    if opts.contour_shading {
+      render_voronoi_bands(
+        &mut svg,
+        &samples,
+        &levels,
+        (v_min, v_max),
+        &area,
+        &opts.band_coloring(),
+      );
+    }
+  } else if opts.contour_shading {
     render_contour_bands(
       &mut svg,
       &grid,
@@ -7572,13 +7730,22 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &opts.band_coloring(),
     );
   }
-  render_contour_levels(&mut svg, &grid, &levels, &area, cell_w, cell_h, &opts);
+  let line_levels: &[f64] = if nearest { &[] } else { &levels };
+  render_contour_levels(
+    &mut svg,
+    &grid,
+    line_levels,
+    &area,
+    cell_w,
+    cell_h,
+    &opts,
+  );
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
   push_contour_annotations(
     &mut svg,
     &grid,
-    &levels,
+    line_levels,
     &area,
     &opts,
     (v_min, v_max),
@@ -8216,7 +8383,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 cell_expr, rules,
               )
               .ok()
-              .and_then(|replaced| parse_color(&replaced))
+              .and_then(|replaced| {
+                crate::functions::graphics::parse_style_color(&replaced)
+              })
               .map(|rule_color| {
                 (
                   (rule_color.r.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -9213,7 +9382,16 @@ fn with_plot_label_above(svg: &str, label: &FieldPlotLabel) -> String {
   if field_plot_label_is_blank(lines) {
     return svg.to_string();
   }
-  let font = size.unwrap_or(14.0);
+  // A title wider than the picture shrinks to fit, the way a `Graphics`
+  // title does, instead of being clipped at both edges
+  // (rounded down to a tenth of a point so it never overshoots).
+  let font = (crate::functions::graphics::fit_title_font(
+    lines,
+    size.unwrap_or(14.0),
+    w,
+  ) * 10.0)
+    .floor()
+    / 10.0;
   // One line keeps its 1.8-em strip; each further line of a stacked
   // `Column` title adds one line height above the picture.
   let line_h = font * 1.25;
@@ -9233,7 +9411,7 @@ fn with_plot_label_above(svg: &str, label: &FieldPlotLabel) -> String {
     out.push_str(&format!(
       "<text x=\"{:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
        dominant-baseline=\"central\" font-family=\"sans-serif\" \
-       font-size=\"{font:.0}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n",
+       font-size=\"{font}\" fill=\"{fill}\" xml:space=\"preserve\">{label}</text>\n",
       w / 2.0,
       top + i as f64 * line_h,
     ));
@@ -9424,9 +9602,20 @@ pub fn matrix_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         && parse_color(&v).is_none()
         && let Ok(replaced) =
           crate::evaluator::pattern_matching::apply_replace_all_ast(&v, rules)
-        && parse_color(&replaced).is_some()
+        && let Some(c) =
+          crate::functions::graphics::parse_style_color(&replaced)
       {
-        v = replaced;
+        // A directive list (`{Hue[h], AbsoluteThickness[t]}`) colors the
+        // cell with the color it sets.
+        v = if parse_color(&replaced).is_some() {
+          replaced
+        } else {
+          Expr::FunctionCall {
+            name: "RGBColor".to_string(),
+            args: vec![Expr::Real(c.r), Expr::Real(c.g), Expr::Real(c.b)]
+              .into(),
+          }
+        };
       }
       if parse_color(&v).is_none()
         && let Some(x) = try_eval_to_f64(&v).filter(|x| x.is_finite())

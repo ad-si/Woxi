@@ -4276,6 +4276,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_pane_of_style_applies_its_directives() {
+    // Regression: in `Text[Pane[Style[str, TextAlignment -> Left, size],
+    // w], pos]` the `Style` inside the `Pane` was ignored: the label kept
+    // the default 14-point font, its lines stayed centered, and it wrapped
+    // as if set in that default font.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Pane[Style[\"aaaa aaaa aaaa aaaa aaaa\", \
+       TextAlignment -> Left, 20], 120], {0, 0}], Point[{{-1, -1}, {1, 1}}]}, \
+       ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
+    assert!(svg.contains("font-size=\"20\""), "Style size lost: {svg}");
+    assert!(
+      svg.contains("text-anchor=\"start\""),
+      "TextAlignment -> Left lost: {svg}"
+    );
+    // At 20 points an `a` is about 11 points wide, so two 4-letter words
+    // (about 95 points) fit in the 120-point pane and a third does not.
+    assert!(svg.contains(">aaaa aaaa<"), "not wrapped at 20pt: {svg}");
+    assert!(!svg.contains("aaaa aaaa aaaa"), "wrapped too wide: {svg}");
+    // The left-aligned lines hang from the pane's left edge, 60 points
+    // left of the anchor at the center of the 400-point-wide picture.
+    let x = svg
+      .split("text-anchor=\"start\"")
+      .next()
+      .and_then(|head| head.rsplit("<text x=\"").next())
+      .and_then(|t| t.split('"').next())
+      .and_then(|n| n.parse::<f64>().ok())
+      .expect("text x");
+    assert!((x - 140.0).abs() < 2.0, "left edge at {x}: {svg}");
+  }
+
+  #[test]
   fn test_framed_pane_text_and_defer_in_grid_cell() {
     // Regression: a text `Framed[Pane[x, size]]` printed the literal
     // `Pane[…]` source, and a `Defer[expr]` grid cell kept its wrapper
@@ -5114,6 +5149,33 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_numeric_fraction_captions_typeset_as_icons() {
+    // A numeric arithmetic caption with a fraction or radical
+    // (`{{r, False, 8/9}, {False, True}}`, `Pi/4`, `Sqrt[2]`) is typeset as
+    // stacked math, so it travels as caption code and renders an icon with
+    // no text runs. A flat numeric caption (`2 Pi`), a symbolic one (`a/b`)
+    // and a string keep their text labels.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{r, s, t, u, v, w}, {{r, False, 8/9}, {False, True}}, {{s, 0, -Pi/4}, 0, 1}, {{t, 0, Sqrt[2]}, 0, 1}, {{u, 0, 2 Pi}, 0, 1}, {{v, 0, a/b}, 0, 1}, {{w, 0, \"1/2\"}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let mut icons = Vec::new();
+    for (name, code) in &spec.dynamic_labels {
+      let (runs, svg) =
+        woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+      if let Some(svg) = svg {
+        assert!(runs.is_empty(), "an icon caption has no text: {runs:?}");
+        assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+        icons.push(name.as_str());
+      }
+    }
+    assert_eq!(icons, ["r", "s", "t"]);
+  }
+
+  #[test]
   fn test_plot_label_matrix_form_typesets_entries_not_source() {
     // `MatrixForm[{{…}}]` in a `PlotLabel` is typeset as a matrix (a
     // picture above the drawing), not printed as the wrapper's source, and
@@ -5682,7 +5744,8 @@ mod interpreter_tests {
   #[test]
   fn test_axes_label_letter_script_is_typeset() {
     // `Subscript[x, n]` has no Unicode subscript for a letter, so the label
-    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`.
+    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`,
+    // with base and script in `TraditionalForm` italics.
     clear_state();
     let svg = interpret(
       "ExportString[ListLinePlot[{1, 3, 2}, \
@@ -5691,7 +5754,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan></text>"
+        "<tspan font-style=\"italic\">x</tspan><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">n</tspan></tspan></text>"
       ),
       "subscript letter not typeset: {svg}"
     );
@@ -5702,7 +5766,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "y<tspan baseline-shift=\"super\" font-size=\"70%\">k</tspan></text>"
+        "<tspan font-style=\"italic\">y</tspan><tspan baseline-shift=\"super\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">k</tspan></tspan></text>"
       ),
       "superscript letter not typeset: {svg}"
     );

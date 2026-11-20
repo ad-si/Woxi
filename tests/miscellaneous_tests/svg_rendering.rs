@@ -3423,8 +3423,9 @@ mod tests {
     fn raster3d_renders_voxels() {
       let svg =
         svg_of("Graphics3D[Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]]");
-      // 8 voxel cuboids, 12 triangles each.
-      assert_eq!(svg.matches("<polygon").count(), 96);
+      // A solid volume shows only its outer faces: 6 faces of 2×2 voxels,
+      // none merged (neighbors alternate), 2 triangles each.
+      assert_eq!(svg.matches("<polygon").count(), 48);
       // Voxels with value 0 are black, voxels with value 1 are white; both
       // shades must appear (modulated by lighting, so just check some
       // polygons exist with distinct fills).
@@ -4850,6 +4851,30 @@ mod tests {
       assert!(svg.contains("<svg"), "{svg}");
       assert!(!svg.contains("SuperscriptBox"), "box source leaked: {svg}");
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
+    }
+
+    /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells
+    /// at that size, like its plain text cells, also when the whole styled
+    /// grid is put in `TraditionalForm`.
+    #[test]
+    fn styled_grid_sizes_its_traditional_form_cells() {
+      for code in [
+        "Style[Grid[{{TraditionalForm[a + b], TraditionalForm[c - a]}}, Frame -> All], 30]",
+        "TraditionalForm[Style[Grid[{{a + b, c - a}, {7, -a - b + c}}, Frame -> All], 30]]",
+        "Text[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]]]",
+      ] {
+        let svg =
+          woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+        let size = if code.contains("24") { "24" } else { "30" };
+        assert!(
+          svg.contains(&format!("font-size=\"{size}")),
+          "{code}: cells not set at size {size}: {svg}"
+        );
+        assert!(
+          !svg.contains("font-size=\"14"),
+          "{code}: a cell kept the default size: {svg}"
+        );
+      }
     }
 
     /// A bushy tree sets its own picture width from its labels; in a

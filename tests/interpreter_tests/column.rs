@@ -448,6 +448,32 @@ mod column_visual_mode {
     assert!(svg.contains("font-style=\"italic\""), "{svg}");
   }
 
+  /// A fixed-size `Pane` re-flows a `Row[list, sep]` (a word list joined by
+  /// ", ") into lines that break after the separators, each set as one
+  /// string, instead of one line far wider than the box — which under
+  /// `ImageSizeAction -> "ShrinkToFit"` had shrunk the text to a sliver.
+  #[test]
+  fn sized_pane_wraps_a_row_with_a_separator() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Pane[Style[Row[Table[\"WORD\" <> ToString[i], {i, 30}], \
+       \", \"], 18], {500, 300}, Alignment -> {Left, Center}, \
+       ImageSizeAction -> \"ShrinkToFit\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"300\""),
+      "{svg}"
+    );
+    // 500 / (18 * 0.632) = 43 characters per line.
+    assert!(
+      svg.contains(">WORD1, WORD2, WORD3, WORD4, WORD5, WORD6,<"),
+      "{svg}"
+    );
+    assert!(svg.contains(">WORD7, WORD8, WORD9, "), "{svg}");
+    assert!(!svg.contains("font-size=\"14\""), "{svg}");
+  }
+
   /// `Style[Column[{…, Pane[text, w]}, opts], "Label", 12]` pushes the style
   /// onto each item; a `Pane` item used to come out as its own source text.
   #[test]

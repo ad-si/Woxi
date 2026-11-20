@@ -708,6 +708,53 @@ mod graph_plot_labeled_edges {
   }
 }
 
+/// Regression: the automatic layout drew every tree in layers, so a large
+/// tree (`GraphPlot` of a permutation tree, say) became a band of
+/// overlapping disks. Like Wolfram, a small tree stays layered while a
+/// large one gets a spring-electrical embedding with unit-length edges.
+mod large_tree_layout {
+  use super::*;
+
+  #[test]
+  fn small_tree_keeps_its_layers() {
+    assert_eq!(
+      interpret(
+        "gp = GraphPlot[Table[Floor[i/2] -> i, {i, 2, 15}]]; \
+         Length[Union[Round[gp[[1, 1, All, 2]], 0.001]]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn large_tree_is_spread_by_springs() {
+    assert_eq!(
+      interpret(
+        "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; \
+         pts = GraphPlot[edges][[1, 1]]; \
+         {Length[Union[Round[pts[[All, 2]], 0.001]]] > 6, \
+          Round[Mean[EuclideanDistance[pts[[#1]], pts[[#2]]] & @@@ \
+            (List @@@ edges)], 0.001]}"
+      )
+      .unwrap(),
+      "{True, 1.}"
+    );
+  }
+
+  #[test]
+  fn graph_uses_the_same_layout() {
+    assert_eq!(
+      interpret(
+        "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; \
+         GraphEmbedding[Graph[edges]] == GraphPlot[edges][[1, 1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 /// A plain `GraphPlot` is Wolfram's symbolic `Graphics[GraphicsComplex[
 /// coords, {edges, vertices}], …]`: Demonstrations read the vertex
 /// positions as `GraphPlot[g][[1, 1]]`. It used to be a flat primitive list.
@@ -773,6 +820,80 @@ mod graph_plot_graphics_complex {
       )
       .unwrap(),
       "{True, True}"
+    );
+  }
+}
+
+/// `GraphPlot` reports a computed layout in its own units — edges 1 long on
+/// average, starting at the origin — to its rendering functions and to the
+/// graphics `Show`n with it. A Demonstration centers a caption in a cycle
+/// this way; the drawing used to stay on the internal [-1, 1] scale, so the
+/// caption landed far outside the cycle.
+mod graph_plot_units {
+  use super::*;
+
+  const CYCLE: &str = "Table[i -> Mod[i, 12] + 1, {i, 12}]";
+
+  #[test]
+  fn rendering_functions_see_unit_edges_from_the_origin() {
+    assert_eq!(
+      interpret(&format!(
+        "pts = Cases[GraphPlot[{CYCLE}, \
+         VertexRenderingFunction -> (Point[#] &)], Point[p_] :> p, \
+         Infinity]; {{Length[pts], Min /@ Transpose[pts], \
+         Round[Mean[Norm /@ (pts - RotateLeft[pts])], 1/100]}}"
+      ))
+      .unwrap(),
+      "{12, {0., 0.}, 1}"
+    );
+    // An edge function gets its endpoints (cut back to the vertex
+    // markers) in the same units.
+    assert_eq!(
+      interpret(&format!(
+        "segs = Cases[GraphPlot[{CYCLE}, \
+         EdgeRenderingFunction -> (Line[#1] &)], Line[p_] :> p, Infinity]; \
+         {{Length[segs], Round[10 Mean[Norm[Subtract @@ #] & /@ segs]]}}"
+      ))
+      .unwrap(),
+      "{12, 9}"
+    );
+  }
+
+  #[test]
+  fn shown_graphics_share_the_coordinates() {
+    // Twelve unit edges make a ring of radius 1 / (2 Sin[Pi/12]) ≈ 1.93
+    // that starts at the origin, so its middle is near {1.9, 1.9}: a red
+    // disk placed there by hand lands inside the ring of vertices.
+    let svg = interpret(&format!(
+      "ExportString[Show[GraphPlot[{CYCLE}, \
+       VertexRenderingFunction -> (Point[#] &)], \
+       Graphics[{{Red, Disk[{{1.9, 1.9}}, 0.2]}}]], \"SVG\"]"
+    ))
+    .unwrap();
+    let attr = |tag: &str, name: &str| -> f64 {
+      let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[start..].split('"').next().unwrap().parse().unwrap()
+    };
+    let root = &svg[..svg.find('>').unwrap()];
+    let (w, h) = (attr(root, "width"), attr(root, "height"));
+    let red = svg
+      .split('<')
+      .find(|t| t.starts_with("ellipse") && t.contains("rgb(255,0,0)"))
+      .unwrap_or_else(|| panic!("no red disk: {svg}"));
+    let (cx, cy) = (attr(red, "cx"), attr(red, "cy"));
+    let ring: Vec<(f64, f64)> = svg
+      .split('<')
+      .filter(|t| t.starts_with("circle"))
+      .map(|t| (attr(t, "cx"), attr(t, "cy")))
+      .collect();
+    assert_eq!(ring.len(), 12, "SVG: {svg}");
+    let mean = |f: fn(&(f64, f64)) -> f64| {
+      ring.iter().map(f).sum::<f64>() / ring.len() as f64
+    };
+    assert!(
+      (cx - mean(|p| p.0)).abs() < 0.05 * w
+        && (cy - mean(|p| p.1)).abs() < 0.05 * h,
+      "disk at ({cx}, {cy}) is not in the ring's middle: {svg}"
     );
   }
 }

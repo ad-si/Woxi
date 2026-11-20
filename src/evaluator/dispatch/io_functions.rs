@@ -6045,6 +6045,14 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   {
     return true;
   }
+  // Likewise `Magnify[g, s]`: the rendered graphic `g`, scaled by `s`.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Magnify"
+    && (args.len() == 1 || args.len() == 2)
+    && lays_out_a_graphic(&args[0])
+  {
+    return true;
+  }
   // `TableForm[data, …]` / `MatrixForm[data, …]`, and either wrapped in a
   // `Style[…]` that sets its font, are drawn as an aligned grid picture by
   // `expr_to_svg` — a Demonstration's Manipulate body composing one into a
@@ -7234,6 +7242,26 @@ fn wrap_pane_text_at(
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
     }
+    // `Row[{e1, e2, …}, sep]` displays the items with `sep` between them,
+    // so it re-flows as the one-argument `Row[{e1, sep, e2, sep, …}]`.
+    "Row" if args.len() == 2 => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut joined = Vec::with_capacity(items.len() * 2);
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          joined.push(args[1].clone());
+        }
+        joined.push(item.clone());
+      }
+      wrap_pane_text_at(
+        &call1("Row", Expr::List(joined.into())),
+        width,
+        font_size,
+        whole_words,
+      )
+    }
     "Row" if args.len() == 1 => {
       let Expr::List(items) = &args[0] else {
         return None;
@@ -7336,6 +7364,13 @@ fn wrap_pane_text_at(
           }
         }
       }
+      let style_key = |d: &Option<Vec<Expr>>| {
+        d.as_ref().map(|d| {
+          d.iter()
+            .map(crate::syntax::expr_to_input_form)
+            .collect::<Vec<_>>()
+        })
+      };
       let rows: Vec<Expr> = lines
         .iter()
         .map(|line| {
@@ -7343,8 +7378,17 @@ fn wrap_pane_text_at(
           let mut i = 0;
           while i < line.len() {
             let idx = line[i].idx;
+            // Neighboring text items in the same style (the items and
+            // separators of a `Row[list, sep]`) form one run, so the line
+            // is set as one string rather than many abutting pieces.
+            let same_text = |u: &&PaneTextUnit| {
+              u.idx == idx
+                || (atoms[idx].is_none()
+                  && atoms[u.idx].is_none()
+                  && style_key(&styles[u.idx]) == style_key(&styles[idx]))
+            };
             let run: Vec<&PaneTextUnit> =
-              line[i..].iter().take_while(|u| u.idx == idx).collect();
+              line[i..].iter().take_while(same_text).collect();
             i += run.len();
             if let Some(atom) = &atoms[idx] {
               pieces.push(atom.clone());
@@ -9385,6 +9429,14 @@ pub(crate) fn readlist_inputstream(
 /// `viewBox` so the content scales with it. Anything that is not an `<svg
 /// width=".." height="..">` root is returned unchanged.
 fn scale_svg_size(svg: &str, factor: f64) -> String {
+  // A raster `Image` exports with an XML declaration before its root tag;
+  // the size lives on the `<svg …>` tag that follows it.
+  let svg = match svg.strip_prefix("<?xml") {
+    Some(rest) => rest
+      .find("?>")
+      .map_or(svg, |end| rest[end + 2..].trim_start()),
+    None => svg,
+  };
   if (factor - 1.0).abs() < f64::EPSILON || !svg.starts_with("<svg") {
     return svg.to_string();
   }
@@ -9402,13 +9454,17 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   for attr in ["width", "height"] {
-    let key = format!(" {attr}=\"");
-    if let Some(start) = head.find(&key) {
-      let vstart = start + key.len();
-      if let Some(vlen) = head[vstart..].find('"')
-        && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
-      {
-        head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+    // An `Image`'s root tag quotes its attributes with `'`.
+    for quote in ['"', '\''] {
+      let key = format!(" {attr}={quote}");
+      if let Some(start) = head.find(&key) {
+        let vstart = start + key.len();
+        if let Some(vlen) = head[vstart..].find(quote)
+          && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
+        {
+          head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+        }
+        break;
       }
     }
   }

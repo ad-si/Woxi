@@ -172,6 +172,7 @@ FontSize,"Option specifying the default font size in printer's points",✅,none,
 Frame,"Option specifying whether a frame is drawn around a plot",✅,none,2.0,97
 With,"Substitutes local constants into an expression",✅,pure,2.0,99
 PlotLegends,"Option for adding legends to plots identifying each series",✅,pure,9.0,100
+PlotLegends`ShowLegend,"Legacy package function: places boxed {icon, label} or color-gradient legends over or beside a graphic (bare ShowLegend after loading the package)",✅,pure,1.0,
 BlankNullSequence,"Pattern object matching zero or more expressions (___)",✅,pure,1.0,101
 Reals,"The domain of real numbers used with Element and related functions",✅,none,4.0,102
 FontFamily,"Option specifying the font family for text rendering",✅,none,3.0,103
@@ -6469,3 +6470,4 @@ NDSolve`Reinitialize,"Gives a new NDSolve`StateData for the same equations start
 NDSolve`Iterate,"Integrates an NDSolve`StateData in place up to a given time (forward or backward)",✅,stateful,5.0,
 NDSolve`ProcessSolutions,"Gives the solution rules computed so far for an NDSolve`StateData",✅,contextual,5.0,
 NDSolve`StateData,"Represents the state of a step-wise NDSolve problem set up by NDSolve`ProcessEquations",✅,none,5.0,
+ChartElementData,"Lists the built-in ChartElementFunction names of a chart function",✅,pure,7.0,
