@@ -16717,6 +16717,20 @@ pub(crate) struct PlotRangeOverrides {
   pub aspect_automatic: bool,
 }
 
+/// The color function a `ColorFunction -> value` option selects, or
+/// `None` for `Automatic` / `None`. The value is evaluated first, as
+/// Wolfram evaluates plot options, so a computed choice such as
+/// `ColorFunction -> If[cond, Hue[#4] &, Automatic]` resolves to the branch
+/// it picks instead of being applied as an (unevaluated) color function.
+pub(crate) fn color_function_option(replacement: &Expr) -> Option<Expr> {
+  let val =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  match &val {
+    Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
+    _ => Some(val),
+  }
+}
+
 /// Apply one plot option shared by the function plotters (Plot,
 /// ParametricPlot, PolarPlot, …) to `plot_opts` / `overrides`. Returns
 /// `true` when `name` names an option this helper understands.
@@ -16781,10 +16795,7 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.plot_style = parse_plot_style(replacement);
     }
     "ColorFunction" => {
-      plot_opts.color_function = match replacement {
-        Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
-        other => Some(other.clone()),
-      };
+      plot_opts.color_function = color_function_option(replacement);
     }
     "ColorFunctionScaling" => {
       // Evaluated: `Table[Plot[…, ColorFunctionScaling -> cf], {cf, …}]`.

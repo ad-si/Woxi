@@ -856,15 +856,35 @@ fn curve_region_function(opt_args: &[Expr]) -> Option<Expr> {
   Some(evaluate_expr_to_expr(&value).unwrap_or(value))
 }
 
-/// Whether `region` (a `RegionFunction -> f` value, called as
-/// `f[x, y, t]` for a curve) accepts the point sampled at `t`.
-fn parametric_curve_allows(region: &Expr, (x, y): (f64, f64), t: f64) -> bool {
+/// How a curve plot calls its `RegionFunction`: `f[x, y, t]` for a
+/// parametric curve, `f[x, y, θ, r]` for a polar one.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RegionArgs {
+  Parametric,
+  Polar,
+}
+
+/// Whether `region` (a `RegionFunction -> f` value, called with the
+/// arguments `kind` gives) accepts the point sampled at `t`.
+fn parametric_curve_allows(
+  region: &Expr,
+  (x, y): (f64, f64),
+  t: f64,
+  kind: RegionArgs,
+) -> bool {
   if !x.is_finite() || !y.is_finite() {
     return false;
   }
+  let mut args = vec![Expr::Real(x), Expr::Real(y), Expr::Real(t)];
+  if kind == RegionArgs::Polar {
+    // The point's distance from the origin: a curve such as `Sin[θ]`
+    // retraces itself with negative radii, and those stretches are kept or
+    // dropped by how far out they lie, like the first pass.
+    args.push(Expr::Real(x.hypot(y)));
+  }
   let call = Expr::CurriedCall {
     func: Box::new(region.clone()),
-    args: vec![Expr::Real(x), Expr::Real(y), Expr::Real(t)],
+    args,
   };
   matches!(
     evaluate_expr_to_expr(&call),
@@ -881,6 +901,7 @@ fn clip_samples_to_region<F>(
   samples: Vec<Sample>,
   region: &Expr,
   sample_at: &F,
+  kind: RegionArgs,
 ) -> Vec<Sample>
 where
   F: Fn(f64) -> Option<Vec<(f64, f64)>>,
@@ -888,7 +909,7 @@ where
   let inside_mask = |t: f64, row: &Option<Vec<(f64, f64)>>| -> Vec<bool> {
     row.as_ref().map_or_else(Vec::new, |r| {
       r.iter()
-        .map(|&p| parametric_curve_allows(region, p, t))
+        .map(|&p| parametric_curve_allows(region, p, t, kind))
         .collect()
     })
   };
@@ -919,7 +940,7 @@ where
           let m = f64::midpoint(a, b);
           let m_inside = sample_at(m)
             .and_then(|r| r.get(k).copied())
-            .is_some_and(|p| parametric_curve_allows(region, p, m));
+            .is_some_and(|p| parametric_curve_allows(region, p, m, kind));
           if m_inside == was {
             a = m;
           } else {
@@ -1207,7 +1228,12 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
     samples = extend_to_domain_edges(&samples, &sample_at);
     if let Some(region) = &region_function {
-      samples = clip_samples_to_region(samples, region, &sample_at);
+      samples = clip_samples_to_region(
+        samples,
+        region,
+        &sample_at,
+        RegionArgs::Parametric,
+      );
     }
     insert_exclusion_gaps(&mut samples, &excluded);
     let (series, params) = samples_to_series(samples);
@@ -2316,6 +2342,9 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // carried out to the edges of the radius's real domain.
   let num_samples = plot_opts.plot_points.max(NUM_SAMPLES);
   let max_total = num_samples.saturating_mul(MAX_REFINED_SAMPLES_FACTOR);
+  // `RegionFunction -> f`: only the stretches of the curve where
+  // `f[x, y, θ, r]` is True are drawn.
+  let region_function = curve_region_function(&args[2..]);
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
   let mut all_params: Vec<Vec<f64>> = Vec::with_capacity(bodies.len());
   let mut all_radii: Vec<Vec<f64>> = Vec::with_capacity(bodies.len());
@@ -2337,7 +2366,11 @@ pub fn polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         stretch: overrides.aspect_ratio.is_some(),
       },
     );
-    let samples = extend_to_domain_edges(&samples, &sample_at);
+    let mut samples = extend_to_domain_edges(&samples, &sample_at);
+    if let Some(region) = &region_function {
+      samples =
+        clip_samples_to_region(samples, region, &sample_at, RegionArgs::Polar);
+    }
     let (series, params) = samples_to_series(samples);
     let points = series.into_iter().next().unwrap_or_default();
     // The signed radius of each sample, recovered from its point and angle.

@@ -5969,8 +5969,7 @@ accepted, but the picture is the same as without it.
 - `ParametricPlot`: `BoundaryStyle`.
 - `ContourPlot`: `Axes`, `AxesStyle`, `AxesLabel`, `AxesOrigin`,
   `BoundaryStyle`, `PlotRange -> {zmin, zmax}`, `PlotPoints`, `PlotTheme`.
-- `PolarPlot`: `RegionFunction`, `PlotPoints`; `FrameStyle` on a framed polar
-  plot.
+- `PolarPlot`: `PlotPoints`; `FrameStyle` on a framed polar plot.
 - `DensityPlot`, `RegionPlot`: `FrameStyle`.
 - `Histogram`: `BarOrigin`, `LabelingFunction`; `ColorFunction` only for a
   single dataset.

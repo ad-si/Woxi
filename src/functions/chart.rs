@@ -3402,10 +3402,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
         }
         "ColorFunction" => {
-          opts.color_function = match replacement {
-            Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
-            other => Some(other.clone()),
-          };
+          opts.color_function =
+            crate::functions::plot::color_function_option(replacement);
         }
         "ColorFunctionScaling" => {
           opts.color_function_scaling =
