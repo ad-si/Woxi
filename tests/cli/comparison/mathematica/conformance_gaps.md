@@ -5477,6 +5477,11 @@ Woxi makes 10000 every time. The pictures look alike, but an expensive body
 wolframscript wraps curves in `GraphicsComplex` / `Annotation` where Woxi emits
 plain `Line`/`Arrow` lists; `SphericalPlot3D` samples a different grid.
 
+`DensityPlot` returns its colors as a `GraphicsComplex` of polygons with
+`VertexColors` in wolframscript. Woxi returns one
+`Raster[cells, rect, Resampling -> "Linear"]` over the plotted domain, and the
+option makes `Show` shade the cells smoothly, as the polygons do.
+
 ### 3D plots sample and nest differently
 
 `ParametricPlot3D`, `ListPlot3D`, `ContourPlot3D` and `RevolutionPlot3D`
@@ -5656,19 +5661,39 @@ terms, though, four snapshots of one Demonstration at `ImageSize -> {400, 400}`
 in Woxi. That is as if Wolfram's sphere were around a box padded by about 5.5 %
 per side instead of 2 %. Where the extra margin comes from was not decoded.
 
-A ring-shaped scene points the other way. Under an automatic plot range,
-Woxi now takes the framing sphere to reach only the farthest corner of each
-primitive's own bounding box, not the corners of the whole box. That
-reproduces a Demonstration's cylinder of small triangles and spheres (a
-2.1 × 2.1 × 1.2 box at `ImageSize -> {300, 350}`): its snapshots show about
-82 % and 89 % of the width, Woxi draws 83 % and 90 %, and the box's sphere
-gave 63 % and 70 %. For a single solid, or for primitives that span the box,
-the two spheres are the same. A twisted band of radius 3 (a 6 × 6 × 2 box at
-`ImageSize -> {450, 400}`) is drawn at 78 % of the width in four Wolfram
-snapshots. Under this rule a band of small faces frames by a sphere of
-radius about 3.2. Matching the snapshots would take about 3.4. The box's
-sphere is 4.36, so the rule comes closer, but it was not checked on that
-scene. With a pinned `PlotRange` the sphere still surrounds the whole box.
+With an automatic range, Woxi's sphere is the one around the box center
+that just encloses the contents (2 % padded), not the one through the box
+corners. Four snapshots of closed polyhedra (a ring of triangles capped by
+two pyramids, in 2 × 2 × 1.5 to 2 × 2 × 2.3 boxes) at
+`ImageSize -> {400, 400}` match it to within 1 %, while the box sphere drew
+them 1.55–1.63× too small. Contents that fill the box (cuboids, long bars)
+reach its corners, so the two spheres nearly agree there. A pinned `PlotRange` or
+an explicit `PlotRangePadding` keeps the box sphere. Wolfram's
+documentation describes the sphere as one "around the three-dimensional
+bounding box", and an earlier unit test expected two unit disks 2 apart to
+span 55 % of a 400 × 400 picture, as the box sphere gives. Where that figure
+came from is not recorded, and it contradicts the polyhedron snapshots, whose
+boxes are nearly the same shape. Woxi now draws the disks at about 75 %. This
+needs checking with wolframscript.
+
+A flat scene is still off. A twisted band of radius 3 around the z-axis has
+a 6 × 6 × 2 bounding box. Drawn at `ImageSize -> {450, 400}` with the
+default `ViewPoint`, it was about 1.36× *larger* in four Wolfram snapshots
+than under the box sphere. Matching them takes a framing sphere of radius
+about 3.4. The contents sphere (about 3.2) closes most of that gap, but now
+draws the band roughly 7 % too large. The 6–7 % excess of the
+`ParametricPlot3D` snapshots above was measured with the box sphere. Those
+contents largely fill their box, so the contents sphere should change them
+only a little. They have not been re-measured.
+
+A ring-shaped scene is drawn too large. A Demonstration's cylinder of small
+triangles and spheres (a 2.1 × 2.1 × 1.2 box at `ImageSize -> {300, 350}`)
+spans about 82 % and 89 % of the width in its snapshots. A band of narrow
+faces of radius 1 and height 1 at `ImageSize -> {400, 400}` comes out at
+about 90 % under the contents sphere. Framing by the sphere through the
+farthest corner of each primitive's own bounding box drew such a band at
+about 81 % and matched that Demonstration. It was not checked against the
+polyhedron snapshots above. No single rule is known to fit both.
 
 ### Sphere framing of an unboxed box at a fixed `ImageSize`
 
@@ -6037,6 +6062,14 @@ A plot merged with other graphics by `Show` (say a `DensityPlot` under a
 `StreamPlot`) is redrawn by the `Graphics` renderer, whose tick labels are a
 monospace font, larger than the plot renderer's sans-serif ones. Wolfram draws
 both alike.
+
+### Lines of a `Column` in a `Text` label are set closer together
+
+The lines of `Text[Style[Column[{"0000", "Step: 0"}], 18], pos]` inside a
+`Graphics` are one font size apart (18 pt) in Woxi; Wolfram's front end sets
+them about 25 pt apart (roughly 1.4 font sizes), as its line height plus the
+`Column`'s own row spacing. The same `tspan` layout also serves a string with
+`"\n"` line breaks, whose Wolfram pitch has not been measured.
 
 ### Graphics inside lists and layouts: remaining differences
 
