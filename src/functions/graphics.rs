@@ -1135,6 +1135,12 @@ enum Primitive {
     /// (horizontal) default — including when the argument is omitted or
     /// written `Automatic`.
     direction: Option<(f64, f64)>,
+    /// The `direction` came from a `Rotate[label, θ]` wrapped around the
+    /// label's content rather than from a fourth `Text` argument. Wolfram
+    /// then lays the rotated label out as a box of its own, so `offset`
+    /// picks a point of that box's *axis-aligned* bounding box instead of
+    /// one measured along the tilted baseline.
+    box_offset: bool,
     /// A data-space linear map a `GeometricTransformation` applied to the
     /// label: the glyphs are sheared/stretched about the anchor with it
     /// (the anchor itself is already moved). `None` for untransformed text.
@@ -8377,7 +8383,7 @@ fn layout_holds_grid(expr: &Expr) -> bool {
     }
     match e {
       Expr::FunctionCall { name, args } => {
-        name == "Grid" || args.iter().any(has_grid)
+        name == "Grid" || name == "Framed" || args.iter().any(has_grid)
       }
       Expr::List(items) => items.iter().any(has_grid),
       _ => false,
@@ -9190,10 +9196,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // runs parallel to `direction`, a screen-space vector (y up) whose angle
   // does not depend on the plot range's scaling. Left `None` for the common
   // `Automatic`/omitted case.
-  let direction = args
-    .get(3)
-    .and_then(text_direction)
-    .or_else(|| rotation.map(|a| (a.cos(), a.sin())));
+  let explicit_direction = args.get(3).and_then(text_direction);
+  let box_offset = explicit_direction.is_none() && rotation.is_some();
+  let direction =
+    explicit_direction.or_else(|| rotation.map(|a| (a.cos(), a.sin())));
   // `Background -> color`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
   fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
@@ -9293,6 +9299,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     frame,
     scaled,
     direction,
+    box_offset,
     glyph_map: None,
     styled_ranges,
     style: local_style,
@@ -10860,6 +10867,7 @@ fn rotate_primitive(
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -10882,6 +10890,7 @@ fn rotate_primitive(
           }
           None => None,
         },
+        box_offset: *box_offset,
         glyph_map: *glyph_map,
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
@@ -11119,6 +11128,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -11131,6 +11141,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       frame: *frame,
       scaled: *scaled,
       direction: *direction,
+      box_offset: *box_offset,
       glyph_map: *glyph_map,
       styled_ranges: styled_ranges.clone(),
       style: style.clone(),
@@ -11426,6 +11437,7 @@ fn scale_primitive(
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -11440,6 +11452,7 @@ fn scale_primitive(
         frame: *frame,
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
+        box_offset: *box_offset,
         glyph_map: *glyph_map,
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
@@ -15230,6 +15243,7 @@ fn render_primitive(
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -15291,15 +15305,34 @@ fn render_primitive(
       };
       let edge_anchorable = !text.contains('\n')
         && (!has_direction || (background.is_none() && frame.is_none()));
-      let (anchor_attr, edge_shift) = if offset.0 == -1.0 && edge_anchorable {
+      // A `Rotate[label, θ]` label is a box of its own: the offset picks a
+      // point of its axis-aligned bounding box, so the label is centered
+      // that far from the anchor along the screen axes and turned about its
+      // own center.
+      let rotated_box = *box_offset && has_direction;
+      let (anchor_attr, edge_shift) = if rotated_box {
+        ("middle", 0.0)
+      } else if offset.0 == -1.0 && edge_anchorable {
         ("start", 0.0)
       } else if offset.0 == 1.0 && edge_anchorable {
         ("end", 0.0)
       } else {
         ("middle", offset.0 * box_w / 2.0)
       };
-      let sx = anchor_x - edge_shift * ux + offset.1 * text_h / 2.0 * vx;
-      let sy = anchor_y - edge_shift * uy + offset.1 * text_h / 2.0 * vy;
+      let (sx, sy) = if rotated_box {
+        let (c, s) = (angle.cos().abs(), angle.sin().abs());
+        let box_w = text_w * c + text_h * s;
+        let box_h = text_w * s + text_h * c;
+        (
+          anchor_x - offset.0 * box_w / 2.0,
+          anchor_y + offset.1 * box_h / 2.0,
+        )
+      } else {
+        (
+          anchor_x - edge_shift * ux + offset.1 * text_h / 2.0 * vx,
+          anchor_y - edge_shift * uy + offset.1 * text_h / 2.0 * vy,
+        )
+      };
       let rotate_attr = if has_direction {
         format!(
           " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
@@ -15351,8 +15384,14 @@ fn render_primitive(
           frame.map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
         let panel_w = glyphs_w + m_left + m_right;
         let panel_h = text_h + m_bottom + m_top;
+        // A tilted label's panel turns with it, about the same point.
+        let panel_rotate = if has_direction {
+          rotate_attr.as_str()
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{panel_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
+          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{panel_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}{panel_rotate}/>\n",
           match anchor_attr {
             "start" => sx - m_left,
             "end" => sx - glyphs_w - m_left,

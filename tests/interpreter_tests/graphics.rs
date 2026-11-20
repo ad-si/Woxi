@@ -65477,3 +65477,76 @@ mod show_keeps_color_function_per_curve {
     assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
   }
 }
+
+/// The `x`/`y` attributes of the first `<text>` element whose content is
+/// `label`.
+fn text_position(svg: &str, label: &str) -> (f64, f64) {
+  let end = svg
+    .find(&format!(">{label}</text>"))
+    .unwrap_or_else(|| panic!("no {label} text: {svg}"));
+  let start = svg[..end].rfind("<text ").unwrap();
+  let tag = &svg[start..end];
+  let attr = |name: &str| -> f64 {
+    let key = format!(" {name}=\"");
+    let i = tag.find(&key).unwrap() + key.len();
+    tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+  };
+  (attr("x"), attr("y"))
+}
+
+/// `Text[Rotate[label, θ], pos, offset]` lays the turned label out as a box
+/// of its own: the offset picks a corner of the rotated label's
+/// axis-aligned bounding box (Wolfram's ternary-diagram axis labels sit
+/// beside the edge this way). It used to measure the offset along the
+/// tilted baseline instead, which left the labels straddling the edge.
+#[test]
+fn rotated_text_offset_aligns_its_bounding_box() {
+  let svg = export_svg(
+    "Graphics[{Text[\"o\", {1/2, 1/2}], \
+     Text[Rotate[Style[\"abc\", 16], -55 Degree], {1/2, 1/2}, {1, -1}], \
+     Text[Rotate[Style[\"def\", 16], 55 Degree], {1/2, 1/2}, {-1, 1}]}, \
+     PlotRange -> {{0, 1}, {0, 1}}, ImageSize -> 200]",
+  );
+  let (ax, ay) = text_position(&svg, "o");
+  // The bottom-right corner sits at the anchor, so the label's center is
+  // up and to the left of it — by half the rotated box in each direction.
+  let (x, y) = text_position(&svg, "abc");
+  assert!((-20.0..-10.0).contains(&(x - ax)), "{x} vs {ax}: {svg}");
+  assert!((-22.0..-11.0).contains(&(y - ay)), "{y} vs {ay}: {svg}");
+  // …and the top-left corner puts it down and to the right.
+  let (x, y) = text_position(&svg, "def");
+  assert!((10.0..20.0).contains(&(x - ax)), "{x} vs {ax}: {svg}");
+  assert!((11.0..22.0).contains(&(y - ay)), "{y} vs {ay}: {svg}");
+  assert_eq!(svg.matches("text-anchor=\"middle\"").count(), 3, "{svg}");
+}
+
+/// A rotated label's `Background` panel turns with the glyphs instead of
+/// staying an upright box beside them.
+#[test]
+fn rotated_text_background_panel_turns_with_the_label() {
+  let svg = export_svg(
+    "Graphics[{Text[Rotate[Style[\"ab\", 18, Background -> White], \
+     50 Degree], {1/2, 1/2}]}, PlotRange -> {{0, 1}, {0, 1}}]",
+  );
+  let rect = svg
+    .split("<rect ")
+    .find(|r| r.contains("fill=\"rgb(255,255,255)\""))
+    .unwrap_or_else(|| panic!("no panel: {svg}"));
+  assert!(rect.contains("transform=\"rotate(-50.000"), "{svg}");
+}
+
+/// A `Framed` item inside a `Column` label (a framed table of values under
+/// a heading) keeps its border: the label is composed as a picture instead
+/// of being flattened into lines of text, which dropped the frame.
+#[test]
+fn framed_item_in_column_text_label_keeps_its_frame() {
+  let svg = export_svg(
+    "Graphics[{Line[{{0, 0}, {1, 1}}], Text[Column[{\"heading\", \
+     Framed[Column[{\"first\", \"second\"}], FrameStyle -> Red]}, Center], \
+     {1/2, 1/2}]}]",
+  );
+  assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+  for label in ["heading", "first", "second"] {
+    assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
+  }
+}
