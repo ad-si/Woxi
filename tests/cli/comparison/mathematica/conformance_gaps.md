@@ -6035,6 +6035,14 @@ A plot merged with other graphics by `Show` (say a `DensityPlot` under a
 monospace font, larger than the plot renderer's sans-serif ones. Wolfram draws
 both alike.
 
+### Lines of a `Column` in a `Text` label are set closer together
+
+The lines of `Text[Style[Column[{"0000", "Step: 0"}], 18], pos]` inside a
+`Graphics` are one font size apart (18 pt) in Woxi; Wolfram's front end sets
+them about 25 pt apart (roughly 1.4 font sizes), as its line height plus the
+`Column`'s own row spacing. The same `tspan` layout also serves a string with
+`"\n"` line breaks, whose Wolfram pitch has not been measured.
+
 ### Graphics inside lists and layouts: remaining differences
 
 An automatically sized picture in a list, `Grid`, `Column`, `TableForm` or

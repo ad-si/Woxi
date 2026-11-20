@@ -2833,18 +2833,56 @@ mod graphics {
       );
     }
 
-    /// `Null` typesets as nothing inside a `Row` — a Manipulate readout
-    /// like `Row[{"rate ", If[cond, "x"], "%"}]` must not print "Null".
+    /// A `Null` part of a `Row` — what a Manipulate readout like
+    /// `Row[{"Step:", If[cond, "  "], n}]` leaves when `cond` fails — is
+    /// an empty slot the front end draws one space wide; it never prints
+    /// "Null".
     #[test]
-    fn row_null_part_renders_nothing() {
+    fn row_null_part_renders_as_one_space() {
       let svg =
-        export_svg("Graphics[{Text[Row[{\"a \", Null, \"b\"}], {0, 0}]}]");
+        export_svg("Graphics[{Text[Row[{\"a\", Null, \"b\"}], {0, 0}]}]");
       assert!(svg.contains(">a b</text>"), "{svg}");
       assert!(!svg.contains("Null"), "{svg}");
+      // Next to a blank of its own, the slot widens the gap to two spaces.
+      let wide =
+        export_svg("Graphics[{Text[Row[{\"a \", Null, 10}], {0, 0}]}]");
+      assert!(wide.contains(">a  10</text>"), "{wide}");
       let sep = export_svg(
         "Graphics[{Text[Row[{\"a\", Null, \"b\"}, \",\"], {0, 0}]}]",
       );
-      assert!(sep.contains(">a,,b</text>"), "{sep}");
+      assert!(sep.contains(">a, ,b</text>"), "{sep}");
+      // Inside a styled `Column` line too.
+      let col = export_svg(
+        "Graphics[{Text[Style[Column[{\"x\", Row[{\"Step:\", Null, 3}]}], \
+         Red, 18], {0, 0}]}]",
+      );
+      assert!(col.contains(">Step: 3</tspan>"), "{col}");
+    }
+
+    /// SVG collapses a run of blanks to one unless told otherwise, but
+    /// Wolfram draws every blank of `Row[{"Real step:", "  ", 0}]`.
+    #[test]
+    fn text_keeps_runs_of_blanks() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"Real step:\", \"  \", 0}], {0, 0}]}]",
+      );
+      let text = svg
+        .lines()
+        .find(|l| l.contains(">Real step:  0</text>"))
+        .unwrap_or_else(|| panic!("{svg}"));
+      assert!(text.contains("xml:space=\"preserve\""), "{text}");
+      let col = export_svg(
+        "Graphics[{Text[Column[{\"0000\", Row[{\"Step:\", \"  \", 0}]}], \
+         {0, 0}]}]",
+      );
+      let text = col
+        .lines()
+        .find(|l| l.contains(">Step:  0</tspan>"))
+        .unwrap_or_else(|| panic!("{col}"));
+      assert!(text.contains("xml:space=\"preserve\""), "{text}");
+      // A single blank needs no preserving.
+      let one = export_svg("Graphics[{Text[\"a b\", {0, 0}]}]");
+      assert!(!one.contains("xml:space"), "{one}");
     }
 
     /// What an `EdgeForm` leaves unsaid comes from Wolfram's defaults: a
