@@ -47504,7 +47504,7 @@ mod list_plot_markers_and_epilog {
         .and_then(|tag| tag.split("font-size=\"").nth(1))
         .and_then(|f| f.split('"').next())
         .and_then(|f| f.parse::<f64>().ok())
-        .map(|f| f.round())
+        .map(f64::round)
     };
     let svg = export_svg(
       "ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> Text[Style[\"B\", FontSize -> 15]]]",
