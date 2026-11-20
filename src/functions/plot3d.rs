@@ -17181,10 +17181,171 @@ const CONTOUR3D_GRID: usize = 24;
 const CONTOUR3D_Z_SCALE: f64 = 1.0;
 
 /// How many times a grid cell that may hide a sheet thinner than itself is
-/// halved, and the total number of cells that may be halved per plot. Only
-/// used when the plain grid finds no surface at all.
+/// halved, and the total number of cells that may be halved per plot. A
+/// cell [`cell_may_hide_thin_sheet`] picks out is halved this often before
+/// the surface is traced in it; when the plain grid finds no surface at
+/// all, every cell near the level is a candidate.
 const CONTOUR3D_REFINE_DEPTH: usize = 2;
 const CONTOUR3D_REFINE_BUDGET: usize = 20_000;
+
+/// Whether the sampled `field` hints that a sheet thinner than the grid (a
+/// thin tube or shell around the level) passes through cell `[i, j, k]`,
+/// so tracing the surface on the cell's corners alone would miss it or
+/// break it into disconnected specks.
+///
+/// Such a sheet shows up along a grid line through the cell's edges as a
+/// corner of the cell that stands out from both its neighbors on that
+/// line: either the corner alone lies across the level (the sheet was hit
+/// by a single sample), or all three lie on one side and the corner is the
+/// closest to the level. The parabola through the three samples estimates
+/// the field between them. It counts when it is narrower than the grid
+/// where it crosses the level, or, staying short of the level, comes within
+/// half a grid step's worth of curvature of it (near enough to the line
+/// for the sheet to cross the cell beside it).
+///
+/// The parabola must also bend sharply: its curvature at least a third of
+/// the largest change between neighboring corners of the cell. Where a
+/// grid line merely grazes a smooth surface (a sphere's pole, a
+/// hyperboloid's waist) the field dips to the level too, but bends only as
+/// gently as the surface curves, and a surface the grid resolves changes
+/// monotonically across the cells around it; both are left alone.
+fn cell_may_hide_thin_sheet(
+  field: &[Vec<Vec<f64>>],
+  cell: [usize; 3],
+  level: f64,
+) -> bool {
+  let sample = |q: [usize; 3]| -> Option<f64> {
+    field.get(q[0])?.get(q[1])?.get(q[2]).copied()
+  };
+  // How much the field changes from one sample to the next across the
+  // cell, at most: the scale its bends are measured against.
+  let mut step_change = 0.0_f64;
+  for di in 0..2 {
+    for dj in 0..2 {
+      for dk in 0..2 {
+        let q = [cell[0] + di, cell[1] + dj, cell[2] + dk];
+        let Some(v) = sample(q) else { continue };
+        // The cell's own edges only: from the low corner along each axis.
+        for axis in (0..3).filter(|&axis| [di, dj, dk][axis] == 0) {
+          let mut r = q;
+          r[axis] += 1;
+          if let Some(w) = sample(r)
+            && (v - w).is_finite()
+          {
+            step_change = step_change.max((v - w).abs());
+          }
+        }
+      }
+    }
+  }
+  (0..3).any(|axis| stands_out_along(&sample, cell, axis, level, step_change))
+}
+
+/// Whether one of the cell's corners stands out from its two neighbors on
+/// a grid line along `axis` (see [`cell_may_hide_thin_sheet`]).
+fn stands_out_along(
+  sample: &dyn Fn([usize; 3]) -> Option<f64>,
+  cell: [usize; 3],
+  axis: usize,
+  level: f64,
+  step_change: f64,
+) -> bool {
+  let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
+  for (da, db) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+    let at = |t: usize| {
+      let mut q = cell;
+      q[a] += da;
+      q[b] += db;
+      q[axis] = t;
+      sample(q).map(|v| v - level)
+    };
+    // Each of the edge's two corners in turn, as the middle sample.
+    for t in [cell[axis], cell[axis] + 1] {
+      let Some(prev) = t.checked_sub(1) else {
+        continue;
+      };
+      let (Some(lo), Some(mid), Some(hi)) = (at(prev), at(t), at(t + 1)) else {
+        continue;
+      };
+      if !(lo.is_finite() && mid.is_finite() && hi.is_finite()) {
+        continue;
+      }
+      // Distances from the level, positive on the neighbors' side.
+      let side = if lo >= 0.0 { 1.0 } else { -1.0 };
+      let (lo, mid, hi) = (side * lo, side * mid, side * hi);
+      if hi < 0.0 {
+        continue;
+      }
+      if mid >= lo || mid > hi {
+        continue;
+      }
+      let curvature = (lo + hi - 2.0 * mid) / 2.0;
+      let extreme = mid - (hi - lo).powi(2) / (16.0 * curvature);
+      // Across the level, the parabola is narrower than the grid when it
+      // spans less than one and a half steps (`-extreme / curvature` is its
+      // squared half-width in steps). A dip that stays short of the level
+      // may still reach it beside the grid line.
+      // A thin sheet bends sharply against how fast the field changes
+      // between samples; a smooth surface a grid line merely grazes bends
+      // gently (its radius of curvature spans several steps).
+      if curvature * 3.0 >= step_change
+        && extreme <= curvature / 2.0
+        && extreme > -curvature * 0.5625
+      {
+        return true;
+      }
+    }
+  }
+  false
+}
+
+/// The field sampled on the 3 × 3 × 3 grid that halves the cell spanning
+/// `xs`, `ys` and `zs` along every axis, returned as the eight sub-cells'
+/// spans and corner values (in `march_cube`'s corner order).
+#[allow(clippy::type_complexity)]
+fn split_contour_cell(
+  body: &Expr,
+  [xvar, yvar, zvar]: &[String; 3],
+  xs: [f64; 2],
+  ys: [f64; 2],
+  zs: [f64; 2],
+) -> Vec<([f64; 2], [f64; 2], [f64; 2], [f64; 8])> {
+  let mid = |a: [f64; 2]| f64::midpoint(a[0], a[1]);
+  let pts = |a: [f64; 2]| [a[0], mid(a), a[1]];
+  let (px, py, pz) = (pts(xs), pts(ys), pts(zs));
+  let mut sub = [[[f64::NAN; 3]; 3]; 3];
+  for (a, plane) in sub.iter_mut().enumerate() {
+    for (b, row) in plane.iter_mut().enumerate() {
+      for (c, cell) in row.iter_mut().enumerate() {
+        *cell = evaluate_scalar_3d(body, xvar, yvar, zvar, px[a], py[b], pz[c])
+          .unwrap_or(f64::NAN);
+      }
+    }
+  }
+  let mut cells = Vec::with_capacity(8);
+  for a in 0..2 {
+    for b in 0..2 {
+      for c in 0..2 {
+        cells.push((
+          [px[a], px[a + 1]],
+          [py[b], py[b + 1]],
+          [pz[c], pz[c + 1]],
+          [
+            sub[a][b][c],
+            sub[a + 1][b][c],
+            sub[a + 1][b + 1][c],
+            sub[a][b + 1][c],
+            sub[a][b][c + 1],
+            sub[a + 1][b][c + 1],
+            sub[a + 1][b + 1][c + 1],
+            sub[a][b + 1][c + 1],
+          ],
+        ));
+      }
+    }
+  }
+  cells
+}
 
 /// The vertices of a unit cube, sharing corner-to-corner diagonal 0–6, in
 /// the cyclic order that fans around that diagonal. Splitting a cube into
@@ -18123,11 +18284,33 @@ fn contour3d_render(
                 [y_min + j as f64 * y_step, y_min + (j + 1) as f64 * y_step];
               let zs =
                 [z_min + k as f64 * z_step, z_min + (k + 1) as f64 * z_step];
-              // A sheet thinner than a cell leaves every corner on one side
-              // of the level; such cells are subdivided (below) so the
-              // surface is still found.
-              let mut stack = vec![(xs, ys, zs, cvals, 0_usize)];
-              while let Some((xs, ys, zs, cvals, depth_level)) = stack.pop() {
+              // A sheet thinner than a cell can slip between its corners
+              // or be caught by only a few of them; such cells are
+              // subdivided so the surface is still found and stays whole.
+              // A cell the samples around it single out is split to the
+              // full depth before tracing (`forced`); after an empty first
+              // pass, any cell near the level is split once it traces
+              // nothing (below).
+              let mut stack = vec![(xs, ys, zs, cvals, 0_usize, false)];
+              while let Some((xs, ys, zs, cvals, depth_level, forced)) =
+                stack.pop()
+              {
+                if let Some((body, vars)) = body
+                  && depth_level < CONTOUR3D_REFINE_DEPTH
+                  && refinement_budget > 0
+                  && (forced
+                    || (depth_level == 0
+                      && !refine
+                      && cell_may_hide_thin_sheet(&field, [i, j, k], level)))
+                {
+                  refinement_budget -= 1;
+                  for (xs, ys, zs, cvals) in
+                    split_contour_cell(body, vars, xs, ys, zs)
+                  {
+                    stack.push((xs, ys, zs, cvals, depth_level + 1, true));
+                  }
+                  continue;
+                }
                 if cvals.iter().any(|v| !v.is_finite()) {
                   continue;
                 }
@@ -18215,7 +18398,7 @@ fn contour3d_render(
                     level_triangles.push(tri);
                   }
                 });
-                if let Some((body, [xvar, yvar, zvar])) = body
+                if let Some((body, vars)) = body
                   && refine
                   && !emitted
                   && depth_level < CONTOUR3D_REFINE_DEPTH
@@ -18231,41 +18414,10 @@ fn contour3d_render(
                   let gap = (lo - level).abs().min((hi - level).abs());
                   if gap <= hi - lo {
                     refinement_budget -= 1;
-                    let mid = |a: [f64; 2]| f64::midpoint(a[0], a[1]);
-                    let pts = |a: [f64; 2]| [a[0], mid(a), a[1]];
-                    let (px, py, pz) = (pts(xs), pts(ys), pts(zs));
-                    let mut sub = [[[f64::NAN; 3]; 3]; 3];
-                    for (a, plane) in sub.iter_mut().enumerate() {
-                      for (b, row) in plane.iter_mut().enumerate() {
-                        for (c, cell) in row.iter_mut().enumerate() {
-                          *cell = evaluate_scalar_3d(
-                            body, xvar, yvar, zvar, px[a], py[b], pz[c],
-                          )
-                          .unwrap_or(f64::NAN);
-                        }
-                      }
-                    }
-                    for a in 0..2 {
-                      for b in 0..2 {
-                        for c in 0..2 {
-                          stack.push((
-                            [px[a], px[a + 1]],
-                            [py[b], py[b + 1]],
-                            [pz[c], pz[c + 1]],
-                            [
-                              sub[a][b][c],
-                              sub[a + 1][b][c],
-                              sub[a + 1][b + 1][c],
-                              sub[a][b + 1][c],
-                              sub[a][b][c + 1],
-                              sub[a + 1][b][c + 1],
-                              sub[a + 1][b + 1][c + 1],
-                              sub[a][b + 1][c + 1],
-                            ],
-                            depth_level + 1,
-                          ));
-                        }
-                      }
+                    for (xs, ys, zs, cvals) in
+                      split_contour_cell(body, vars, xs, ys, zs)
+                    {
+                      stack.push((xs, ys, zs, cvals, depth_level + 1, false));
                     }
                   }
                 }
