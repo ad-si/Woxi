@@ -11960,6 +11960,18 @@ fn render_frame(
 
 /// Wolfram's grid lines: mid gray, 0.2 points wide, under whatever
 /// `GridLinesStyle` and per-line styles add.
+/// Whether one entry of a `{xstyle, ystyle}` option value is a style of its
+/// own — a list or `Directive` of directives, or `None`/`Automatic` — as
+/// opposed to a bare directive of a single style (`{Red, Dashed}`).
+pub(crate) fn is_axis_style_entry(entry: &Expr) -> bool {
+  match entry {
+    Expr::List(_) => true,
+    Expr::FunctionCall { name, .. } => name == "Directive",
+    Expr::Identifier(s) => s == "None" || s == "Automatic",
+    _ => false,
+  }
+}
+
 fn default_grid_line_style() -> StyleState {
   StyleState {
     color: Color::gray(0.5),
@@ -12073,15 +12085,14 @@ fn render_grid_lines(
   bb: &BBox,
   svg_w: f64,
   svg_h: f64,
-  grid_x: &GridSpec,
-  grid_y: &GridSpec,
-  default_style: &StyleState,
+  (grid_x, grid_y): (&GridSpec, &GridSpec),
+  (default_x, default_y): (&StyleState, &StyleState),
 ) {
   let x_ticks = generate_ticks(bb.x_min, bb.x_max);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max);
 
   for (pos, style) in
-    grid_positions(grid_x, &x_ticks, (bb.x_min, bb.x_max), default_style)
+    grid_positions(grid_x, &x_ticks, (bb.x_min, bb.x_max), default_x)
   {
     let x = coord_x(pos, bb, svg_w);
     if !x.is_finite() {
@@ -12098,7 +12109,7 @@ fn render_grid_lines(
     ));
   }
   for (pos, style) in
-    grid_positions(grid_y, &y_ticks, (bb.y_min, bb.y_max), default_style)
+    grid_positions(grid_y, &y_ticks, (bb.y_min, bb.y_max), default_y)
   {
     let y = coord_y(pos, bb, svg_h);
     if !y.is_finite() {
@@ -14510,7 +14521,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut stored_frame_ticks = None;
   let mut grid_x = GridSpec::None;
   let mut grid_y = GridSpec::None;
-  let mut grid_style: Option<StyleState> = None;
+  // `GridLinesStyle`, as the default style of the (x, y) grid lines.
+  let mut grid_style: (Option<StyleState>, Option<StyleState>) = (None, None);
   let mut axes_style: Option<Expr> = None;
   // `TicksStyle`, `FrameStyle`, `FrameTicksStyle`, `LabelStyle` and
   // `BaseStyle`, read once the drawing's extent is known.
@@ -14762,9 +14774,20 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           axes_origin = crate::functions::plot::parse_axes_origin(replacement);
         }
         "GridLinesStyle" => {
-          let mut st = default_grid_line_style();
-          apply_directive(replacement, &mut st);
-          grid_style = Some(st);
+          let styled = |spec: &Expr| {
+            let mut st = default_grid_line_style();
+            apply_directive(spec, &mut st);
+            Some(st)
+          };
+          // `{xstyle, ystyle}` styles the two sets of lines apart.
+          grid_style = match replacement {
+            Expr::List(items)
+              if items.len() == 2 && items.iter().all(is_axis_style_entry) =>
+            {
+              (styled(&items[0]), styled(&items[1]))
+            }
+            other => (styled(other), styled(other)),
+          };
         }
         "AspectRatio" => {
           // AspectRatio -> Full: skip uniform scaling (used by plots)
@@ -15626,16 +15649,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Grid lines render behind the axes and primitives.
   if grid_x.is_active() || grid_y.is_active() {
-    let default_style =
-      grid_style.clone().unwrap_or_else(default_grid_line_style);
+    let default_x =
+      grid_style.0.clone().unwrap_or_else(default_grid_line_style);
+    let default_y =
+      grid_style.1.clone().unwrap_or_else(default_grid_line_style);
     render_grid_lines(
       &mut svg,
       &bb,
       svg_w,
       svg_h,
-      &grid_x,
-      &grid_y,
-      &default_style,
+      (&grid_x, &grid_y),
+      (&default_x, &default_y),
     );
   }
 
@@ -23926,28 +23950,48 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .unwrap_or_else(|| ps.plot_range.map_or(ps.x_range, |r| r.0))
       })
       .reduce(|(a, b), (c, d)| (a.min(c), b.max(d)));
+    // `PlotRange -> All` spans everything shown. A source whose points have
+    // no extent of their own (a lone `ListPlot` point, which by itself spans
+    // 0 to twice its value) contributes just its points, so a marker does
+    // not zoom the picture out to the origin.
     let union_range = if x_all || y_all {
-      plot_sources
-        .iter()
-        .filter(|ps| !any_curves || !ps.series.is_empty())
-        .filter_map(|ps| {
+      let source_range = |ps: &crate::syntax::PlotSource| {
+        let points = ps
+          .series
+          .iter()
+          .flat_map(|s| &s.points)
+          .filter(|p| p.0.is_finite() && p.1.is_finite())
+          .fold(None, |acc: Option<((f64, f64), (f64, f64))>, &(x, y)| {
+            Some(acc.map_or(((x, x), (y, y)), |((x0, x1), (y0, y1))| {
+              ((x0.min(x), x1.max(x)), (y0.min(y), y1.max(y)))
+            }))
+          });
+        let flat =
+          points.is_some_and(|((x0, x1), (y0, y1))| x1 <= x0 || y1 <= y0);
+        (
           ps.plot_range
             .map(|(x, y)| (ps.data_x_range.unwrap_or(x), y))
-            .or_else(|| {
-              ps.series
-                .iter()
-                .flat_map(|s| &s.points)
-                .filter(|p| p.0.is_finite() && p.1.is_finite())
-                .fold(None, |acc: Option<((f64, f64), (f64, f64))>, &(x, y)| {
-                  Some(acc.map_or(((x, x), (y, y)), |((x0, x1), (y0, y1))| {
-                    ((x0.min(x), x1.max(x)), (y0.min(y), y1.max(y)))
-                  }))
-                })
-            })
-        })
-        .reduce(|((a, b), (c, d)), ((e, f), (g, h))| {
+            .or(points),
+          flat.then_some(points).flatten(),
+        )
+      };
+      let union =
+        |((a, b), (c, d)): ((f64, f64), (f64, f64)),
+         ((e, f), (g, h)): ((f64, f64), (f64, f64))| {
           ((a.min(e), b.max(f)), (c.min(g), d.max(h)))
-        })
+        };
+      let shown: Vec<_> = plot_sources
+        .iter()
+        .filter(|ps| !any_curves || !ps.series.is_empty())
+        .map(source_range)
+        .collect();
+      let full = shown.iter().filter_map(|r| r.0).reduce(union);
+      let tight = shown
+        .iter()
+        .filter_map(|(range, flat)| flat.or(*range))
+        .reduce(union)
+        .filter(|((x0, x1), (y0, y1))| x0 < x1 && y0 < y1);
+      tight.or(full)
     } else {
       None
     };
