@@ -1856,6 +1856,33 @@ fn raster_volume_colors_do_not_expose_triangle_lighting() {
   }));
 }
 
+// A dense opaque volume is drawn at full resolution: averaging blocks of
+// ±1 voxels (clamped to black and white) would turn them gray.
+#[test]
+fn dense_raster_volume_keeps_every_voxel_color() {
+  let s = svg(
+    "Graphics3D[Raster3D[Table[(-1)^(i + j + k), {i, 16}, {j, 16}, {k, 16}]]]",
+  );
+  let fills: std::collections::BTreeSet<&str> = s
+    .split("<polygon")
+    .skip(1)
+    .filter_map(|p| p.split("fill=\"").nth(1)?.split('"').next())
+    .collect();
+  assert_eq!(
+    fills.into_iter().collect::<Vec<_>>(),
+    ["rgb(0,0,0)", "rgb(255,255,255)"]
+  );
+}
+
+// Equal neighbors on a face of a solid volume merge, so a uniform volume is
+// just its six box faces however many voxels it has.
+#[test]
+fn uniform_raster_volume_is_six_faces() {
+  let s = svg("Graphics3D[Raster3D[ConstantArray[0.5, {20, 20, 20}]]]");
+  assert_eq!(s.matches("<polygon").count(), 12);
+  assert!(s.contains("fill=\"rgb(128,128,128)\""));
+}
+
 mod per_axis_options {
   use super::*;
 

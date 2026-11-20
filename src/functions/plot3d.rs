@@ -10230,6 +10230,43 @@ fn collect_raster3d(
     }
     _ => None,
   });
+  let size = [
+    (hi[0] - lo[0]) / nx as f64,
+    (hi[1] - lo[1]) / ny as f64,
+    (hi[2] - lo[2]) / nz as f64,
+  ];
+  // Without a color function, gray values and RGB (or fully opaque RGBA)
+  // channels fill the box solidly, so only the voxels on its outer faces
+  // can be seen. Those are drawn at full resolution, however dense the
+  // volume: averaging blocks would blur them (±1 cells average to gray).
+  let opaque = color_function.is_none()
+    && style.opacity >= 1.0
+    && cells.iter().flatten().flatten().all(|c| match c {
+      Cell::Value(_) => true,
+      Cell::Channels(ch) => ch.get(3).is_none_or(|&a| a >= 1.0),
+    });
+  if opaque {
+    let rgb = |c: &Cell| -> (u8, u8, u8) {
+      let byte = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+      match c {
+        Cell::Value(v) => (byte(*v), byte(*v), byte(*v)),
+        Cell::Channels(ch) => (byte(ch[0]), byte(ch[1]), byte(ch[2])),
+      }
+    };
+    let colors: Vec<Vec<Vec<(u8, u8, u8)>>> = cells
+      .iter()
+      .map(|l| l.iter().map(|r| r.iter().map(rgb).collect()).collect())
+      .collect();
+    collect_opaque_raster3d_faces(
+      &colors,
+      [nx, ny, nz],
+      lo,
+      size,
+      style,
+      prims,
+    );
+    return;
+  }
   // A dense volume (a `DensityPlot3D` samples 51³ points) is drawn from
   // block averages, so the scene stays a few thousand cubes.
   const MAX_VOXELS: usize = 2000;
@@ -10239,11 +10276,6 @@ fn collect_raster3d(
   {
     stride += 1;
   }
-  let size = [
-    (hi[0] - lo[0]) / nx as f64,
-    (hi[1] - lo[1]) / ny as f64,
-    (hi[2] - lo[2]) / nz as f64,
-  ];
   for k0 in (0..nz).step_by(stride) {
     for j0 in (0..ny).step_by(stride) {
       for i0 in (0..nx).step_by(stride) {
@@ -10322,6 +10354,100 @@ fn collect_raster3d(
           style: voxel_style,
           smooth: false,
         });
+      }
+    }
+  }
+}
+
+/// The visible part of a solid `Raster3D`: the voxel colors on the six
+/// faces of its box. `colors` is indexed `[z][y][x]` and `dims` is
+/// `[nx, ny, nz]`. On each face, same-colored neighbors are merged into
+/// rectangles, so a large volume stays a modest number of polygons.
+fn collect_opaque_raster3d_faces(
+  colors: &[Vec<Vec<(u8, u8, u8)>>],
+  dims: [usize; 3],
+  lo: [f64; 3],
+  size: [f64; 3],
+  style: &StyleState3D,
+  prims: &mut Vec<Primitive3D>,
+) {
+  let mut face_style = style.clone();
+  // Voxels are cells of one volume, not outlined boxes, and carry their own
+  // color, so they are lit uniformly.
+  face_style.edges = false;
+  face_style.lighting = Some(Lighting {
+    lights: vec![crate::functions::lighting3d::Light::Ambient([1.0; 3])],
+    name: None,
+  });
+  let color_at = |p: [usize; 3]| colors[p[2]][p[1]][p[0]];
+  // The face normal to axis `a` spans the next two axes cyclically, so the
+  // corners (u, v) taken counterclockwise face along +a.
+  for a in 0..3 {
+    let (b, d) = ((a + 1) % 3, (a + 2) % 3);
+    let (w, h) = (dims[b], dims[d]);
+    for high in [false, true] {
+      let layer = if high { dims[a] - 1 } else { 0 };
+      let cell = |u: usize, v: usize| {
+        let mut p = [0; 3];
+        p[a] = layer;
+        p[b] = u;
+        p[d] = v;
+        color_at(p)
+      };
+      let coord = lo[a] + if high { dims[a] as f64 * size[a] } else { 0.0 };
+      let corner = |u: usize, v: usize| {
+        let mut p = [0.0; 3];
+        p[a] = coord;
+        p[b] = lo[b] + u as f64 * size[b];
+        p[d] = lo[d] + v as f64 * size[d];
+        Point3D {
+          x: p[0],
+          y: p[1],
+          z: p[2],
+        }
+      };
+      let mut done = vec![false; w * h];
+      for v0 in 0..h {
+        for u0 in 0..w {
+          if done[v0 * w + u0] {
+            continue;
+          }
+          let color = cell(u0, v0);
+          let mut u1 = u0 + 1;
+          while u1 < w && !done[v0 * w + u1] && cell(u1, v0) == color {
+            u1 += 1;
+          }
+          let mut v1 = v0 + 1;
+          while v1 < h
+            && (u0..u1).all(|u| !done[v1 * w + u] && cell(u, v1) == color)
+          {
+            v1 += 1;
+          }
+          for v in v0..v1 {
+            for u in u0..u1 {
+              done[v * w + u] = true;
+            }
+          }
+          let mut quad = [
+            corner(u0, v0),
+            corner(u1, v0),
+            corner(u1, v1),
+            corner(u0, v1),
+          ];
+          if !high {
+            quad.reverse();
+          }
+          let mut voxel_style = face_style.clone();
+          voxel_style.color = Some(color);
+          prims.push(Primitive3D::Surface3D {
+            tris: vec![
+              (quad[0], quad[1], quad[2]),
+              (quad[0], quad[2], quad[3]),
+            ],
+            style: voxel_style,
+            smooth: false,
+          });
+        }
       }
     }
   }
