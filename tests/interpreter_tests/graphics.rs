@@ -46180,6 +46180,64 @@ mod manipulate {
     assert_eq!(bindings, vec![("int".to_string(), "{0, 1}".to_string())]);
   }
 
+  // Symbolic corner components (`2 Pi`) are evaluated, and an exact
+  // initial vector is bound as given.
+  #[test]
+  fn spec_vector_range_evaluates_symbolic_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[v, {{v, {0, 0, 0}, \"angles\"}, {0, 0, 0}, {2 Pi, 2 Pi, 2 Pi}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::VectorSlider {
+        name,
+        maxs,
+        initial,
+        label,
+        exact_initial,
+        ..
+      } => {
+        assert_eq!(name, "v");
+        assert_eq!(label, "angles");
+        let two_pi = 2.0 * std::f64::consts::PI;
+        assert!(maxs.iter().all(|m| (m - two_pi).abs() < 1e-12), "{maxs:?}");
+        assert_eq!(initial, &vec![0.0; 3]);
+        assert!(*exact_initial);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings, vec![("v".to_string(), "{0, 0, 0}".to_string())]);
+  }
+
+  // Inexact corners start the vector at the minimum corner as machine reals.
+  #[test]
+  fn spec_vector_range_with_inexact_bounds_binds_reals() {
+    let expr = interpret_to_expr(
+      "Manipulate[w, {w, {1., 2., 3., 4.}, {5., 6., 7., 8.}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::VectorSlider {
+        initial,
+        exact_initial,
+        ..
+      } => {
+        assert_eq!(initial, &vec![1.0, 2.0, 3.0, 4.0]);
+        assert!(!*exact_initial);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(
+      bindings,
+      vec![("w".to_string(), "{1., 2., 3., 4.}".to_string())]
+    );
+  }
+
   #[test]
   fn control_initial_value_and_label() {
     // `{{x, 0.5}, 0, 1}` sets the initial; the third head slot is a label.
