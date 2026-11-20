@@ -28580,6 +28580,77 @@ fn nminimize_symbolic_objective_reports_nnum_quickly() {
   );
 }
 
+/// Interpolating constant data returns the constant exactly: the Lagrange
+/// basis polynomials sum to 1 only up to rounding, so the value has to be
+/// formed relative to a node, not as a plain weighted sum.
+mod interpolation_of_constant_data_is_exact {
+  use super::*;
+
+  #[test]
+  fn interpolation_between_nodes() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 2.5}, {1, 2.5}, {3, 2.5}, {4, 2.5}, {7, 2.5}}]; \
+         Union[Table[f[t] - 2.5, {t, 0, 7, 0.013}]]"
+      )
+      .unwrap(),
+      "{0.}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_with_zero_derivative() {
+    assert_eq!(
+      interpret(
+        "s = First[x /. NDSolve[{x'[t] == 0, x[0] == 0.1}, x, {t, 0, 100}]]; \
+         Union[Table[s[t] - 0.1, {t, 0, 100, 0.37}]]"
+      )
+      .unwrap(),
+      "{0.}"
+    );
+  }
+
+  #[test]
+  fn delay_ndsolve_with_constant_solution() {
+    assert_eq!(
+      interpret(
+        "s = First[x /. NDSolve[{x'[t] == 0 x[t] (1 - x[t - 1/2]), \
+         x[t /; t <= 0] == 0.1}, x, {t, 0, 100}]]; \
+         Union[Table[s[t] - 0.1, {t, 0, 100, 0.37}]]"
+      )
+      .unwrap(),
+      "{0.}"
+    );
+  }
+
+  /// Non-constant data still interpolates through every node and between
+  /// them by the same cubic.
+  #[test]
+  fn nonconstant_data_unchanged() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0.}, {1, 1.}, {2, 8.}, {3, 27.}, {4, 64.}}]; \
+         {f[2], f[2.5], f[0.5]}"
+      )
+      .unwrap(),
+      "{8., 15.625, 0.125}"
+    );
+  }
+
+  /// A flat curve of an interpolating function plots with the range of a
+  /// constant (0 to twice its value), not a range spanning rounding noise.
+  #[test]
+  fn plot_of_constant_solution_has_constant_range() {
+    let svg = interpret(
+      "s = First[x /. NDSolve[{x'[t] == 0, x[0] == 0.1}, x, {t, 0, 100}]]; \
+       ExportString[Plot[s[t], {t, 0, 100}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">0.15</text>"), "{svg}");
+    assert!(!svg.contains("10<tspan"), "{svg}");
+  }
+}
+
 // The step-wise NDSolve framework: ProcessEquations sets up a state,
 // Reinitialize restarts it from new initial conditions, Iterate integrates
 // it (in place) and ProcessSolutions reads the solution rules back.

@@ -10038,16 +10038,27 @@ const DDE_NOMINAL_STEPS: usize = 10_000;
 const DDE_INTERPOLATION_NODES: usize = 6;
 
 /// The value at `x` of the polynomial through the points `(xs, ys)`.
+///
+/// The Lagrange basis polynomials sum to 1 only up to rounding, so the
+/// weighted sum over equal values wobbles by a few ulps (`0.1 ± 3e-17`);
+/// the polynomial through equal values is that value, which a flat
+/// stretch of an `NDSolve` solution has to reproduce exactly (a plot of
+/// it would otherwise span the rounding noise).
 fn lagrange_value(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+  if let Some((first, rest)) = ys.split_first()
+    && rest.iter().all(|y| y == first)
+  {
+    return *first;
+  }
   let mut sum = 0.0;
   for (j, (xj, yj)) in xs.iter().zip(ys).enumerate() {
-    let mut w = *yj;
+    let mut basis = 1.0;
     for (k, xk) in xs.iter().enumerate() {
       if k != j {
-        w *= (x - xk) / (xj - xk);
+        basis *= (x - xk) / (xj - xk);
       }
     }
-    sum += w;
+    sum += yj * basis;
   }
   sum
 }
@@ -15989,18 +16000,7 @@ fn interp_1d_xy_f64(xs: &[f64], ys: &[f64], x_val: f64, order: usize) -> f64 {
   }
   let eff_order = order.min(n - 1).max(1);
   let (start, end) = lagrange_window(n, lo, eff_order);
-  let m = end - start;
-  let mut result = 0.0;
-  for i in 0..m {
-    let mut basis = 1.0;
-    for j in 0..m {
-      if j != i {
-        basis *= (x_val - xs[start + j]) / (xs[start + i] - xs[start + j]);
-      }
-    }
-    result += ys[start + i] * basis;
-  }
-  result
+  lagrange_value(&xs[start..end], &ys[start..end], x_val)
 }
 
 /// `d`-th derivative at `x_val` of the Lagrange polynomial through the whole
@@ -17243,19 +17243,7 @@ fn lagrange_interpolate(
     ys.push(y);
   }
 
-  // Lagrange basis polynomials
-  let m = xs.len();
-  let mut result = 0.0;
-  for i in 0..m {
-    let mut basis = 1.0;
-    for j in 0..m {
-      if j != i {
-        basis *= (x_val - xs[j]) / (xs[i] - xs[j]);
-      }
-    }
-    result += ys[i] * basis;
-  }
-  Ok(result)
+  Ok(lagrange_value(&xs, &ys, x_val))
 }
 
 /// Extract (x, y) from a List[x, y] expression
