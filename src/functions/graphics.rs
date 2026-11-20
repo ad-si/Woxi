@@ -41216,8 +41216,28 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           }) = crate::with_scoped_globals(&initial_bindings, || {
             parse_manipulate_control(&promoted, &sibling_names)
           }) {
-            if let ManipulateControl::Slider2D { write_callback, .. } = &mut c {
+            if let ManipulateControl::Slider2D {
+              write_callback,
+              x_min,
+              x_max,
+              y_min,
+              y_max,
+              ..
+            } = &mut c
+            {
               write_callback.clone_from(callback);
+              // A hidden spec's corner bounds bound no widget, so they don't
+              // confine the point: a `LocatorPane[Dynamic[var], graphic,
+              // {{xmin, ymin}, {xmax, ymax}}]` in the body drags it over the
+              // pane's own range.
+              if let Some((_, range, graphic)) =
+                collect_body_locator_pane_vars(&args[0])
+                  .into_iter()
+                  .find(|(v, range, _)| *v == name && range.is_some())
+              {
+                let ((x0, y0), (x1, y1)) = pane_range(range.as_ref(), &graphic);
+                (*x_min, *x_max, *y_min, *y_max) = (x0, x1, y0, y1);
+              }
             }
             if let Some(cond) = enabled2 {
               control_enabled.push((c.name().to_string(), cond));
@@ -54365,6 +54385,33 @@ mod manipulate_dynamic_control_list_tests {
         assert!(*auto_create);
       }
       other => panic!("expected a Locator control, got {other:?}"),
+    }
+  }
+
+  /// A hidden point (`{{p, init}, {xmin, ymin}, {xmax, ymax}, None}`)
+  /// dragged by a body `LocatorPane[Dynamic[p, f], graphic, range]` moves
+  /// over the pane's range: the hidden spec's corners bound no widget, so
+  /// they must not clamp the promoted control.
+  #[test]
+  fn hidden_point_dragged_by_a_body_locator_pane_takes_the_pane_range() {
+    let s = spec(
+      "Manipulate[LocatorPane[Dynamic[p, (p = {#[[1]], Min[1 - #[[1]], \
+       #[[2]]]}) &], Graphics[Point[p], PlotRange -> {{0, 1}, {0, 1}}], \
+       {{0, 0}, {1, 1}}], {{p, {0.2, 0.2}}, {0, 0}, {0.5, 0.5}, None}]",
+    );
+    match s.controls.iter().find(|c| c.name() == "p") {
+      Some(ManipulateControl::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        write_callback,
+        ..
+      }) => {
+        assert_eq!((*x_min, *x_max, *y_min, *y_max), (0.0, 1.0, 0.0, 1.0));
+        assert!(write_callback.is_some());
+      }
+      other => panic!("expected a Slider2D control, got {other:?}"),
     }
   }
 

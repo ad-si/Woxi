@@ -6458,23 +6458,43 @@ fn rendered_graphic_span(body: &Expr) -> f64 {
   1.0
 }
 
-/// The `Epilog` option a rendered picture was drawn with, if any.
+/// The `Epilog` option a rendered picture was drawn with, if any: one its
+/// plot source records, or else one among the options of the symbolic
+/// `Graphics[prims, opts]` it was rendered from (where a `Show[…]` keeps
+/// the `Epilog` it took over from its first graphic).
 fn rendered_graphic_epilog(body: &Expr) -> Option<Expr> {
   let Expr::Graphics {
-    source: Some(src), ..
+    source, structure, ..
   } = body
   else {
     return None;
   };
-  src.options.iter().find_map(|o| match o {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog") => {
-      Some(replacement.as_ref().clone())
-    }
-    _ => None,
-  })
+  let epilog_in = |options: &[Expr]| {
+    options.iter().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Epilog") => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })
+  };
+  source
+    .as_ref()
+    .and_then(|src| epilog_in(&src.options))
+    .or_else(|| match structure.as_deref() {
+      Some(Expr::FunctionCall { name, args })
+        if name == "Graphics" && !args.is_empty() =>
+      {
+        epilog_in(&args[1..])
+      }
+      _ => None,
+    })
 }
 
 /// Whether `name` is a graphics-producing head known to accept an
