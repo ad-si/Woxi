@@ -283,7 +283,11 @@ mod column_visual_mode {
       let result =
         interpret_with_stdout(&format!("Grid[{{{{\"a\", {cell}}}}}]")).unwrap();
       let svg = result.graphics.unwrap();
-      assert!(svg.contains(">2</tspan>"), "{svg}");
+      // (`Text[…]` sets the column in the text face, as `<text>` lines.)
+      assert!(
+        svg.contains(">2</tspan>") || svg.contains(">2</text>"),
+        "{svg}"
+      );
       assert!(!svg.contains("Dynamic"), "{svg}");
     }
   }
@@ -862,8 +866,15 @@ mod column_text_cell_in_grid {
     let svg = grid_of_column(
       r#""Title", Style["0123456789", FontFamily -> "Courier", 10]"#,
     );
+    // The item keeps its own face and size, whether the column is set as
+    // `<tspan>` runs or (in the text face of `Text[…]`) as `<text>` lines.
+    let line = svg
+      .split('<')
+      .find(|t| t.ends_with(">0123456789"))
+      .unwrap_or_else(|| panic!("no item text in {svg}"));
     assert!(
-      svg.contains("<tspan font-family=\"Courier, monospace\" font-size=\"10\">0123456789</tspan>"),
+      line.contains("font-family=\"Courier, monospace\"")
+        && line.contains("font-size=\"10\""),
       "{svg}"
     );
   }

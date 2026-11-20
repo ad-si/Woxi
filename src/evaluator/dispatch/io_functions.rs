@@ -7059,6 +7059,31 @@ pub(crate) fn wrap_pane_text(
   wrap_pane_text_at(content, width, font_size, false)
 }
 
+/// How many monospace columns of text fit in the width one column of the
+/// face a `Style`'s `FontFamily` directive picks takes: above 1 for a
+/// proportional face, 1 for a monospace one or without a `FontFamily`.
+fn style_face_advance_ratio(directives: &[Expr]) -> f64 {
+  use crate::functions::graphics::{
+    MONO_ADVANCE, SANS_ADVANCE, is_monospace_font_family,
+  };
+  let family = directives.iter().rev().find_map(|d| match d {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontFamily") => {
+      match replacement.as_ref() {
+        Expr::String(f) => Some(f.as_str()),
+        _ => None,
+      }
+    }
+    _ => None,
+  });
+  match family {
+    Some(f) if !is_monospace_font_family(f) => MONO_ADVANCE / SANS_ADVANCE,
+    _ => 1.0,
+  }
+}
+
 /// `wrap_pane_text`, which with `whole_words` gives up (`None`) rather than
 /// break a word too long for a line in two.
 fn wrap_pane_text_at(
@@ -7082,13 +7107,26 @@ fn wrap_pane_text_at(
   match name.as_str() {
     "Style" if !args.is_empty() => {
       let size = style_font_size(&args[1..]).unwrap_or(font_size);
+      // Lines are counted in monospace columns; a proportional face
+      // (`FontFamily -> "sans-serif"`, as `Text[Row[…]]` sets) fits more
+      // glyphs, as many as a proportionally wider monospace line holds.
+      let width = width * style_face_advance_ratio(&args[1..]);
       let inner = wrap_pane_text_at(&args[0], width, size, whole_words)?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
     }
     "Text" if args.len() == 1 => {
-      wrap_pane_text_at(&args[0], width, font_size, whole_words)
+      match crate::functions::graphics::text_layout_face(content) {
+        // `Text[Row[…]]` flows in the proportional text face.
+        Some((layout, family)) => wrap_pane_text_at(
+          &call("Style", vec![layout.clone(), family]),
+          width,
+          font_size,
+          whole_words,
+        ),
+        None => wrap_pane_text_at(&args[0], width, font_size, whole_words),
+      }
     }
     // `TraditionalForm` only changes how math in the text is typeset; the
     // re-flowed lines keep it.

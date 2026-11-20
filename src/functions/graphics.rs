@@ -17225,15 +17225,21 @@ pub(crate) fn is_monospace_font_family(family: &str) -> bool {
 /// a fraction of the font size; used to size plain `Text[…]` items.
 pub(crate) const SANS_ADVANCE: f64 = 0.55;
 
+/// The `FontFamily` directive of the proportional text face `Text[…]` sets
+/// its content in outside a `Graphics`.
+pub(crate) fn text_face_family() -> Expr {
+  Expr::Rule {
+    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
+    replacement: Box::new(Expr::String("sans-serif".to_string())),
+  }
+}
+
 /// `content` set in the proportional text face, the way `Text[content]`
 /// displays it outside a `Graphics`: a `Style[…, FontFamily -> "sans-serif"]`
 /// around it, merged into a `Style` it already wears. The default face goes
 /// first, so a `FontFamily` of the content's own still takes precedence.
 pub(crate) fn in_text_face(content: &Expr) -> Expr {
-  let family = Expr::Rule {
-    pattern: Box::new(Expr::Identifier("FontFamily".to_string())),
-    replacement: Box::new(Expr::String("sans-serif".to_string())),
-  };
+  let family = text_face_family();
   match content {
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -33831,6 +33837,14 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
   let mut traditional = false;
   let mut standard = false;
   while let Expr::FunctionCall { name, args } = &current {
+    // `Text[Row[…]]` sets the layout in the proportional text face: it
+    // comes off as the `Style` that face is, for the layout renderers.
+    if let Some((layout, family)) = text_layout_face(&current)
+      && !matches!(layout, Expr::String(_))
+    {
+      current = call("Style", vec![layout.clone(), family]);
+      break;
+    }
     let pass_through = match name.as_str() {
       "Text" | "TraditionalForm" | "StandardForm" => args.len() == 1,
       // `DisplayForm[box]` typesets the box tree: peeling it would leave a
@@ -34267,6 +34281,34 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   current
 }
 
+/// A one-argument `Text[…]` around a string or a `Row`/`Column`/`Grid`
+/// sets its text in the proportional text face. Returns what it wraps and
+/// the `FontFamily` directive that face is, for the caller to apply (or
+/// push into a layout's items).
+pub(crate) fn text_layout_face(expr: &Expr) -> Option<(&Expr, Expr)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Text" || args.len() != 1 {
+    return None;
+  }
+  let laid_out = match &args[0] {
+    Expr::String(_) => true,
+    Expr::FunctionCall {
+      name: inner,
+      args: items,
+    } => {
+      matches!(inner.as_str(), "Row" | "Column" | "Grid")
+        && matches!(items.first(), Some(Expr::List(_)))
+    }
+    _ => false,
+  };
+  if !laid_out {
+    return None;
+  }
+  Some((&args[0], text_face_family()))
+}
+
 /// Distribute a `Style[…]`'s directives over the items of the layout it
 /// wraps, so `Style[Row[{a, b}], Bold]` becomes `Row[{Style[a, Bold],
 /// Style[b, Bold]}]`. Only the item list is rewritten; a separator or
@@ -34279,6 +34321,14 @@ pub(crate) fn style_pushed_into_layout(
 ) -> Option<Expr> {
   if directives.is_empty() {
     return None;
+  }
+  // `Style[Text[Row[…]], 16]`: the `Text` sets its layout in the
+  // proportional text face, nearer the items than the outer directives.
+  if let Some(face) = text_layout_face(inner) {
+    let (layout, family) = face;
+    let mut all: Vec<Expr> = directives.to_vec();
+    all.push(family);
+    return style_pushed_into_layout(layout, &all);
   }
   let Expr::FunctionCall { name, args } = inner else {
     return None;
@@ -34333,6 +34383,12 @@ pub(crate) fn style_pushed_into_layout(
       || matches!(e, Expr::Identifier(n) if n == "Null")
       || (crate::evaluator::lays_out_a_graphic(e)
         && !crate::evaluator::styled_table_core(e))
+      // A product with a picture among its factors (`"Label: " g`) is
+      // laid out factor by factor; a `Style` around it would hide the
+      // picture and print its placeholder.
+      || matches!(e, Expr::FunctionCall { name, args } if name == "Times"
+        && args.iter().any(|f| matches!(f, Expr::Graphics { .. })
+          || crate::evaluator::lays_out_a_graphic(f)))
     {
       return e.clone();
     }
@@ -34828,6 +34884,16 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       }
       "Row" => return row_to_svg(&args),
       "Column" => return column_to_svg(&args),
+      // `Text[Row[…]]` sets the layout's items in the text face.
+      "Text"
+        if text_layout_face(expr).is_some_and(|(layout, family)| {
+          style_pushed_into_layout(layout, &[family]).is_some()
+        }) =>
+      {
+        let (layout, family) = text_layout_face(expr)?;
+        let styled = style_pushed_into_layout(layout, &[family])?;
+        return nested_layout_svg(&styled);
+      }
       // An `Underscript`/`Overscript` over or under a picture or layout
       // stacks the two, centered — a caption under a plot. A text-only pair
       // stays an inline accent (`accent_text`).
@@ -35425,10 +35491,14 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       Cell::Svg { width, .. } => *width,
       Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
-        let advance = if *plain && style.font_family.is_none() {
-          SANS_ADVANCE / MONO_ADVANCE
-        } else {
-          1.0
+        // A plain `Text[…]` item, or one styled in a proportional face,
+        // sets narrower glyphs than the monospace default.
+        let advance = match style.font_family.as_deref() {
+          Some(ff) if !is_monospace_font_family(ff) => {
+            SANS_ADVANCE / MONO_ADVANCE
+          }
+          None if *plain => SANS_ADVANCE / MONO_ADVANCE,
+          _ => 1.0,
         };
         estimate_display_width(style.content)
           * char_width
@@ -35515,6 +35585,9 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         // column keeps its monospace default, except that a plain
         // `Text[…]` item is set in the proportional text face.
         let (ff, advance) = match style.font_family.as_deref() {
+          Some(ff) if !is_monospace_font_family(ff) => {
+            (ff, SANS_ADVANCE / MONO_ADVANCE)
+          }
           Some(ff) => (ff, 1.0),
           None if *plain => ("sans-serif", SANS_ADVANCE / MONO_ADVANCE),
           None => ("monospace", 1.0),

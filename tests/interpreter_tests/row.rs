@@ -548,12 +548,21 @@ mod row_visual_mode {
     let svg = |code: &str| -> String {
       interpret_with_stdout(code).unwrap().graphics.unwrap()
     };
+    // The lines are `<tspan>`s of one `<text>`, or (a column in the text
+    // face of `Text[…]`) `<text>` elements of their own.
     let line_baselines = |svg: &str, baseline: &str| {
-      let lines: Vec<&str> = svg
+      let mut lines: Vec<&str> = svg
         .split("<tspan x=")
         .skip(1)
         .map(|rest| rest.split('>').next().unwrap())
         .collect();
+      if lines.len() < 2 {
+        lines = svg
+          .split("<text ")
+          .skip(1)
+          .map(|rest| rest.split('>').next().unwrap())
+          .collect();
+      }
       assert!(lines.len() >= 2, "{svg}");
       let attr = format!("dominant-baseline=\"{baseline}\"");
       assert!(lines.iter().all(|attrs| attrs.contains(&attr)), "{svg}");
