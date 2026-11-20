@@ -690,6 +690,69 @@ mod graph_plot_labeled_edges {
       "{x, y, z}"
     );
   }
+
+  /// An edge written from a styled vertex (`Style[a -> 0, …] -> b`) still
+  /// gets its `{edge, label}` label: the drawn edge names the vertex
+  /// without its `Style` wrapper.
+  #[test]
+  fn styled_endpoint_keeps_its_edge_label() {
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{{Style[a -> 0, \"TraditionalForm\"] -> b, \"x\"}, \
+         {c -> b, \"y\"}}, DirectedEdges -> True, VertexLabeling -> True], \
+         Text[Style[s_String, ___], ___] :> s, Infinity]"
+      )
+      .unwrap(),
+      "{x, y}"
+    );
+  }
+}
+
+/// Regression: the automatic layout drew every tree in layers, so a large
+/// tree (`GraphPlot` of a permutation tree, say) became a band of
+/// overlapping disks. Like Wolfram, a small tree stays layered while a
+/// large one gets a spring-electrical embedding with unit-length edges.
+mod large_tree_layout {
+  use super::*;
+
+  #[test]
+  fn small_tree_keeps_its_layers() {
+    assert_eq!(
+      interpret(
+        "gp = GraphPlot[Table[Floor[i/2] -> i, {i, 2, 15}]]; \
+         Length[Union[Round[gp[[1, 1, All, 2]], 0.001]]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn large_tree_is_spread_by_springs() {
+    assert_eq!(
+      interpret(
+        "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; \
+         pts = GraphPlot[edges][[1, 1]]; \
+         {Length[Union[Round[pts[[All, 2]], 0.001]]] > 6, \
+          Round[Mean[EuclideanDistance[pts[[#1]], pts[[#2]]] & @@@ \
+            (List @@@ edges)], 0.001]}"
+      )
+      .unwrap(),
+      "{True, 1.}"
+    );
+  }
+
+  #[test]
+  fn graph_uses_the_same_layout() {
+    assert_eq!(
+      interpret(
+        "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; \
+         GraphEmbedding[Graph[edges]] == GraphPlot[edges][[1, 1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 /// A plain `GraphPlot` is Wolfram's symbolic `Graphics[GraphicsComplex[
@@ -738,6 +801,99 @@ mod graph_plot_graphics_complex {
     assert_eq!(
       interpret("GraphPlot[Graph[{1 -> 2, 2 -> 3}]][[1, 2, 1, 3, 1]]").unwrap(),
       "{{1, 2}, {2, 3}}"
+    );
+  }
+
+  /// `GraphPlot` builds an undirected graph out of a rule list, so an
+  /// acyclic rule list is laid out like its undirected edges (spring
+  /// embedded) instead of being layered like a digraph.
+  #[test]
+  fn acyclic_rule_list_is_laid_out_undirected() {
+    assert_eq!(
+      interpret(
+        "r = Flatten[Table[{If[j < 5, {i, j} -> {i, j + 1}, Nothing], \
+         If[i < 3, {i, j} -> {i + 1, j}, Nothing]}, {i, 3}, {j, 5}]]; \
+         {GraphPlot[r][[1, 1]] === GraphPlot[UndirectedEdge @@@ r][[1, 1]], \
+         ExportString[GraphPlot[r, VertexRenderingFunction -> ({} &)], \"SVG\"] === \
+         ExportString[GraphPlot[UndirectedEdge @@@ r, \
+         VertexRenderingFunction -> ({} &)], \"SVG\"]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+}
+
+/// `GraphPlot` reports a computed layout in its own units — edges 1 long on
+/// average, starting at the origin — to its rendering functions and to the
+/// graphics `Show`n with it. A Demonstration centers a caption in a cycle
+/// this way; the drawing used to stay on the internal [-1, 1] scale, so the
+/// caption landed far outside the cycle.
+mod graph_plot_units {
+  use super::*;
+
+  const CYCLE: &str = "Table[i -> Mod[i, 12] + 1, {i, 12}]";
+
+  #[test]
+  fn rendering_functions_see_unit_edges_from_the_origin() {
+    assert_eq!(
+      interpret(&format!(
+        "pts = Cases[GraphPlot[{CYCLE}, \
+         VertexRenderingFunction -> (Point[#] &)], Point[p_] :> p, \
+         Infinity]; {{Length[pts], Min /@ Transpose[pts], \
+         Round[Mean[Norm /@ (pts - RotateLeft[pts])], 1/100]}}"
+      ))
+      .unwrap(),
+      "{12, {0., 0.}, 1}"
+    );
+    // An edge function gets its endpoints (cut back to the vertex
+    // markers) in the same units.
+    assert_eq!(
+      interpret(&format!(
+        "segs = Cases[GraphPlot[{CYCLE}, \
+         EdgeRenderingFunction -> (Line[#1] &)], Line[p_] :> p, Infinity]; \
+         {{Length[segs], Round[10 Mean[Norm[Subtract @@ #] & /@ segs]]}}"
+      ))
+      .unwrap(),
+      "{12, 9}"
+    );
+  }
+
+  #[test]
+  fn shown_graphics_share_the_coordinates() {
+    // Twelve unit edges make a ring of radius 1 / (2 Sin[Pi/12]) ≈ 1.93
+    // that starts at the origin, so its middle is near {1.9, 1.9}: a red
+    // disk placed there by hand lands inside the ring of vertices.
+    let svg = interpret(&format!(
+      "ExportString[Show[GraphPlot[{CYCLE}, \
+       VertexRenderingFunction -> (Point[#] &)], \
+       Graphics[{{Red, Disk[{{1.9, 1.9}}, 0.2]}}]], \"SVG\"]"
+    ))
+    .unwrap();
+    let attr = |tag: &str, name: &str| -> f64 {
+      let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[start..].split('"').next().unwrap().parse().unwrap()
+    };
+    let root = &svg[..svg.find('>').unwrap()];
+    let (w, h) = (attr(root, "width"), attr(root, "height"));
+    let red = svg
+      .split('<')
+      .find(|t| t.starts_with("ellipse") && t.contains("rgb(255,0,0)"))
+      .unwrap_or_else(|| panic!("no red disk: {svg}"));
+    let (cx, cy) = (attr(red, "cx"), attr(red, "cy"));
+    let ring: Vec<(f64, f64)> = svg
+      .split('<')
+      .filter(|t| t.starts_with("circle"))
+      .map(|t| (attr(t, "cx"), attr(t, "cy")))
+      .collect();
+    assert_eq!(ring.len(), 12, "SVG: {svg}");
+    let mean = |f: fn(&(f64, f64)) -> f64| {
+      ring.iter().map(f).sum::<f64>() / ring.len() as f64
+    };
+    assert!(
+      (cx - mean(|p| p.0)).abs() < 0.05 * w
+        && (cy - mean(|p| p.1)).abs() < 0.05 * h,
+      "disk at ({cx}, {cy}) is not in the ring's middle: {svg}"
     );
   }
 }
@@ -1007,6 +1163,45 @@ mod vertex_degree {
 mod graph_embedding {
   use super::*;
 
+  /// A long mesh strip must come out unfolded: the single-level spring
+  /// layout folded a 4 x 60 grid over itself (39 edge crossings) until
+  /// large components were refined level by level from a coarsened graph.
+  #[test]
+  fn long_grid_strip_has_no_edge_crossings() {
+    assert_eq!(
+      interpret(
+        "g = Graph[Flatten[Table[{If[j < 60, {i, j} <-> {i, j + 1}, Nothing], \
+         If[i < 4, {i, j} <-> {i + 1, j}, Nothing]}, {i, 4}, {j, 60}]]]; \
+         c = AssociationThread[VertexList[g], GraphEmbedding[g]]; \
+         segs = {c[#[[1]]], c[#[[2]]]} & /@ EdgeList[g]; \
+         o[a_, b_, p_] := Sign[(b - a)[[1]] (p - a)[[2]] - (b - a)[[2]] (p - a)[[1]]]; \
+         x[{p1_, p2_}, {q1_, q2_}] := \
+           o[p1, p2, q1] o[p1, p2, q2] < 0 && o[q1, q2, p1] o[q1, q2, p2] < 0; \
+         Count[Subsets[segs, {2}], s_ /; x @@ s]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  /// The strip is stretched out: its corners lie about as far apart as the
+  /// strip is long (in mean edge lengths), where the folded layout brought
+  /// them within half of that.
+  #[test]
+  fn long_grid_strip_is_stretched_out() {
+    assert_eq!(
+      interpret(
+        "g = Graph[Flatten[Table[{If[j < 80, {i, j} <-> {i, j + 1}, Nothing], \
+         If[i < 3, {i, j} <-> {i + 1, j}, Nothing]}, {i, 3}, {j, 80}]]]; \
+         c = AssociationThread[VertexList[g], GraphEmbedding[g]]; \
+         d = EuclideanDistance[c[#[[1]]], c[#[[2]]]] & /@ EdgeList[g]; \
+         EuclideanDistance[c[{1, 1}], c[{3, 80}]] / (Sqrt[79^2 + 2^2] Mean[d]) > 0.9"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   #[test]
   fn complete_graph_3() {
     assert_eq!(
@@ -1029,6 +1224,23 @@ mod graph_embedding {
     assert_eq!(
       interpret("GraphEmbedding[Graph[{1 -> 2, 2 -> 3, 3 -> 1}]]").unwrap(),
       "{{-0.8660254037844388, -0.5}, {0.8660254037844384, -0.5}, {0., 1.}}"
+    );
+  }
+
+  /// Directed edges whose undirected shape is one 4-cycle are laid out
+  /// around the circle in cycle order, so no two edges cross: every edge
+  /// joins neighbors on the circle (a side of the square, length √2).
+  #[test]
+  fn directed_square_follows_its_cycle() {
+    assert_eq!(
+      interpret(
+        "g = Graph[{a -> x, b -> y, a -> y, b -> x}]; \
+         pos = AssociationThread[VertexList[g], GraphEmbedding[g]]; \
+         Union[Round[EuclideanDistance[pos[#[[1]]], pos[#[[2]]]]^2, 10.^-6] & \
+           /@ EdgeList[g]]"
+      )
+      .unwrap(),
+      "{2.}"
     );
   }
 
@@ -2014,8 +2226,9 @@ mod graph_rendering {
       "ExportString[GraphPlot[{Subscript[x, 1] -> Subscript[x, 2]}, VertexLabeling -> True], \"SVG\"]"
     )
     .unwrap();
-    assert!(svg.contains(">x\u{2081}<"), "SVG: {svg}");
-    assert!(svg.contains(">x\u{2082}<"), "SVG: {svg}");
+    // A graphic's labels are `TraditionalForm`: the letter is italic.
+    assert!(svg.contains(">x</tspan>\u{2081}<"), "SVG: {svg}");
+    assert!(svg.contains(">x</tspan>\u{2082}<"), "SVG: {svg}");
     assert!(
       !svg.contains("Subscript["),
       "vertex label should not leak its literal head name: {svg}"
@@ -9216,6 +9429,57 @@ mod graph_coordinates_3d {
     );
   }
 
+  // `VertexRenderingFunction -> Automatic` keeps the default disks (it is
+  // not applied as a function), so labels still appear.
+  #[test]
+  fn graph_plot_vertex_rendering_function_automatic() {
+    assert_eq!(
+      interpret(
+        "g = GraphPlot[{1 -> 2, 2 -> 3}, VertexLabeling -> True, \
+         VertexRenderingFunction -> Automatic]; \
+         {Length[Cases[g, _Disk, Infinity]], \
+         Length[Cases[g, _Text, Infinity]], \
+         Length[Cases[g, _Automatic, Infinity]]}"
+      )
+      .unwrap(),
+      "{3, 3, 0}"
+    );
+  }
+
+  // `VertexLabeling -> True` labels every vertex, `VertexRenderingFunction`
+  // replaces (`None` drops) the spheres, and neither ends up as a
+  // `Graphics3D` option.
+  #[test]
+  fn graph_plot_3d_vertex_labeling_and_rendering() {
+    assert_eq!(
+      interpret(
+        "g = GraphPlot3D[{a -> b, b -> c}, VertexLabeling -> True, \
+         VertexRenderingFunction -> None, Method -> \"SpringEmbedding\"]; \
+         {Cases[g, Text[Style[l_, z_], i_, o_] :> {l, z, i, o}, Infinity], \
+         Length[Cases[g, _Sphere, Infinity]], Options[g]}"
+      )
+      .unwrap(),
+      "{{{a, 10, 1, {-1, -1}}, {b, 10, 2, {-1, -1}}, \
+       {c, 10, 3, {-1, -1}}}, 0, {Boxed -> False}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = GraphPlot3D[{1 -> 2}, VertexRenderingFunction -> (vf[#2] &)]; \
+         {Cases[g, _vf, Infinity], Length[Cases[g, _Sphere, Infinity]]}"
+      )
+      .unwrap(),
+      "{{vf[1], vf[2]}, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[Cases[GraphPlot3D[{1 -> 2}, \
+         VertexRenderingFunction -> Automatic], _Sphere, Infinity]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn graph_plot_3d_is_graphics3d() {
     assert_eq!(
@@ -10489,6 +10753,76 @@ mod layered_plot_components {
       ))
       .unwrap(),
       "False"
+    );
+  }
+}
+
+mod graph_plot_vertex_rendering_units {
+  use super::*;
+
+  // A computed layout hands `VertexRenderingFunction` coordinates on
+  // Wolfram's embedding scale, where edges are about 1 long, so a
+  // `Disk[#, 1/5]` stays small next to the edges instead of covering a
+  // fifth of the drawing.
+  #[test]
+  fn computed_layout_has_unit_edges() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = GraphPlot[Table[i -> Mod[i, 30] + 1, {i, 30}], \
+         VertexRenderingFunction -> (f[#1] &)]; \
+         p = Cases[g, f[q_] :> q, Infinity]; \
+         {Length[p], Round[Mean[Table[EuclideanDistance[p[[i]], \
+         p[[Mod[i, 30] + 1]]], {i, 30}]], 0.01]}"
+      )
+      .unwrap(),
+      "{30, 1.}"
+    );
+  }
+
+  // Explicit `VertexCoordinates` reach the function unchanged.
+  #[test]
+  fn explicit_coordinates_are_passed_through() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Cases[GraphPlot[{1 -> 2, 2 -> 3}, \
+         VertexCoordinates -> {{0, 0}, {10, 0}, {20, 5}}, \
+         VertexRenderingFunction -> (f[#1] &)], _f, Infinity]"
+      )
+      .unwrap(),
+      "{f[{0., 0.}], f[{10., 0.}], f[{20., 5.}]}"
+    );
+  }
+}
+
+mod graph_is_atomic {
+  use super::*;
+
+  // A Graph object is an atom: Apply and Map leave it unchanged, it has no
+  // parts and counts as a single leaf.
+  #[test]
+  fn apply_and_map_leave_a_graph_unchanged() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = CompleteKaryTree[3]; {AtomQ[g], Length[g], Depth[g], \
+         LeafCount[g], (f @@ g) === g, (f /@ g) === g}"
+      )
+      .unwrap(),
+      "{True, 0, 1, 1, True, True}"
+    );
+  }
+
+  #[test]
+  fn graph_functions_still_read_it() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = Text @@ Graph[{1 -> 2, 2 -> 3}]; {VertexCount[g], EdgeCount[g]}"
+      )
+      .unwrap(),
+      "{3, 2}"
     );
   }
 }
