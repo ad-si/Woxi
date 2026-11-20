@@ -13440,9 +13440,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         // A translucent triangle's own-color hairline overlaps its
         // neighbors' and darkens every shared seam, tracing the
-        // tessellation across what should be a smooth surface. Only an
-        // opaque triangle needs it to close the anti-aliasing gap.
-        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+        // tessellation across what should be a smooth surface — including
+        // the diagonal cut of a fan-triangulated translucent quad, whose
+        // outline edges are drawn as separate lines below. Only an opaque
+        // triangle needs it to close the anti-aliasing gap.
+        let seam_stroke = if tri.opacity < 1.0 {
           "none"
         } else {
           paint.as_str()

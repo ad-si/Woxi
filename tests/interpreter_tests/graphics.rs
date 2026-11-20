@@ -9140,6 +9140,35 @@ mod plot3d {
       assert_eq!(svg.lines().filter(|l| l.starts_with("<line ")).count(), 0);
     }
 
+    /// A translucent quad is fan-triangulated too, but its triangles must
+    /// not stroke their own color at all: the hairlines of the two halves
+    /// overlap along the internal cut and draw a darker diagonal across
+    /// the see-through face. The quad's outline is still drawn as lines.
+    #[test]
+    fn graphics3d_translucent_quad_face_has_no_diagonal_seam() {
+      for corners in [
+        "{{0,0,0}, {1,0,0}, {1,1,0}, {0,1,0}}",
+        "{{0,0,0}, {2,0,1}, {2,1,1}, {1,2,1}, {0,1,0}}",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{Opacity[0.4], Red, EdgeForm[Thick], \
+           Polygon[{corners}]}}, Boxed -> False]"
+        ));
+        let filled: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<polygon")).collect();
+        assert!(filled.len() >= 2, "{svg}");
+        for tri in &filled {
+          assert!(
+            tri.contains("stroke=\"none\"") && tri.contains("opacity=\"0.4\""),
+            "a translucent face must not stroke its internal cuts: {tri}"
+          );
+        }
+        let corner_count = corners.matches("{").count() - 1;
+        let outline = svg.lines().filter(|l| l.starts_with("<line ")).count();
+        assert_eq!(outline, corner_count, "{svg}");
+      }
+    }
+
     // Part indexes the symbolic form of a rendered Graphics3D, as in
     // Wolfram where Graphics3D[…][[1]] returns the content.
     #[test]
