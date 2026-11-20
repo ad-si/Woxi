@@ -48607,7 +48607,7 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
       && seg.text.ends_with(", TraditionalForm]")
     {
       runs.push(LabelRun {
-        text: crate::notebook::render_boxes_text(&seg.text),
+        text: crate::notebook::render_traditional_boxes_text(&seg.text),
         italic,
         ..Default::default()
       });
@@ -53190,6 +53190,17 @@ fn styled_text_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   // symbol name.
   let resolved = resolve_display_dynamics(expr, bindings);
   match eval_display_in_scope(&resolved, bindings) {
+    // A string holding a typeset fraction (`"v = " <> ToString[
+    // TraditionalForm[{1/2, 3}]]`) stacks its numerators over their
+    // denominators instead of flattening them to a line of `a/b` text.
+    Some(evaluated)
+      if let Some(svg) = inline_fraction_string_svg(&evaluated) =>
+    {
+      DisplayNode::Static {
+        svg: Some(svg),
+        text: flatten_label_runs(&manipulate_label_runs(&evaluated, false)),
+      }
+    }
     Some(evaluated) => DisplayNode::Text {
       runs: manipulate_label_runs(&evaluated, false),
     },

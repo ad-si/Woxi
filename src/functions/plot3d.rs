@@ -12262,6 +12262,33 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
   }
 }
 
+/// Parse a `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}` value into
+/// `[sx0, sx1, sy0, sy1]`. Only a proper sub-region of the unit square is
+/// kept; `Automatic` and malformed specs give `None`.
+fn parse_plot_region(value: &Expr) -> Option<[f64; 4]> {
+  let Expr::List(axes) = value else {
+    return None;
+  };
+  let [x, y] = axes.as_slice() else {
+    return None;
+  };
+  let interval = |e: &Expr| -> Option<(f64, f64)> {
+    let Expr::List(ends) = e else {
+      return None;
+    };
+    let [lo, hi] = ends.as_slice() else {
+      return None;
+    };
+    let lo = try_eval_to_f64(lo)?;
+    let hi = try_eval_to_f64(hi)?;
+    (lo.is_finite() && hi.is_finite() && 0.0 <= lo && lo < hi && hi <= 1.0)
+      .then_some((lo, hi))
+  };
+  let (sx0, sx1) = interval(x)?;
+  let (sy0, sy1) = interval(y)?;
+  Some([sx0, sx1, sy0, sy1])
+}
+
 /// Radius of the smallest sphere around `center` that encloses every drawn
 /// point of the scene: the corners of its (tessellated) faces and the
 /// vertices of its lines, points, arrows and text anchors.
@@ -12377,6 +12404,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // sides): a band of the given width around the picture that the scene is
   // kept out of, so the contents are laid out in the region inside it.
   let mut image_padding: Option<[f64; 4]> = None;
+  // `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}`: the part of the picture, in
+  // scaled coordinates, that the scene fills; the rest is left empty.
+  let mut plot_region: Option<[f64; 4]> = None;
   // `BaseStyle -> spec`: directives in force before any of the scene's own,
   // like a `Style` wrapped round the whole content (`BaseStyle -> 14` sizes
   // every `Text` label).
@@ -12440,6 +12470,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .unwrap_or_else(|_| replacement.as_ref().clone());
           image_padding = crate::functions::plot::parse_image_padding(&value)
             .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0));
+        }
+        "PlotRegion" => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.as_ref().clone());
+          plot_region = parse_plot_region(&value);
         }
         "ViewPoint" => {
           // Symbolic viewpoints stand for axis-aligned directions
@@ -13742,7 +13777,26 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // With an `ImagePadding` the scene is fitted into the region inside the
   // padding band; the picture keeps its full size around it.
-  let [pad_left, pad_right, pad_bottom, pad_top] =
+  // A `PlotRegion` is a padding band too, sized as fractions of the
+  // picture. Its vertical part needs the picture's height, which is only
+  // known up front when the height is pinned; otherwise it is worked out
+  // from the fitted scene below.
+  let region_height_pending = plot_region.is_some()
+    && image_padding.is_none()
+    && !full_width
+    && fitted_height;
+  if image_padding.is_none()
+    && let Some([sx0, sx1, sy0, sy1]) = plot_region
+  {
+    let w = svg_width as f64;
+    let h = svg_height as f64;
+    image_padding = Some(if region_height_pending {
+      [sx0 * w, (1.0 - sx1) * w, 0.0, 0.0]
+    } else {
+      [sx0 * w, (1.0 - sx1) * w, sy0 * h, (1.0 - sy1) * h]
+    });
+  }
+  let [pad_left, pad_right, mut pad_bottom, mut pad_top] =
     image_padding.unwrap_or([0.0; 4]);
   let pad_w = (pad_left + pad_right).round() as u32;
   let pad_h = (pad_bottom + pad_top).round() as u32;
@@ -13847,6 +13901,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   if padded {
+    let mut pad_h = pad_h;
+    if region_height_pending && let Some([_, _, sy0, sy1]) = plot_region {
+      // The fitted scene fills `sy1 - sy0` of the final height.
+      let total = svg_height as f64 / (sy1 - sy0);
+      pad_bottom = sy0 * total;
+      pad_top = (1.0 - sy1) * total;
+      pad_h = (pad_bottom + pad_top).round() as u32;
+    }
     cx += pad_left;
     cy += pad_top;
     svg_width += pad_w;
