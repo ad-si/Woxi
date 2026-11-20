@@ -28285,6 +28285,49 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // A polygon whose corners do not lie in one plane (a closed path over
+    // three faces of a cube) has no plane to be flattened onto. Woxi used
+    // to squash it onto one plane and light it with a single normal, so a
+    // box drawn as one such polygon came out as a flat panel. It is drawn
+    // as a fan from its first corner instead, each triangle lit by its own
+    // normal.
+    #[test]
+    fn a_non_planar_polygon_is_a_lit_fan() {
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{1,0,0},{1,0,1},{1,1,1},{0,1,1},          {0,1,0}}], Boxed -> False]",
+      );
+      let triangles: Vec<(Vec<String>, String)> = svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .map(|l| {
+          let attr = |k: &str| {
+            l.split(&format!("{k}=\""))
+              .nth(1)
+              .and_then(|v| v.split('"').next())
+              .unwrap_or("")
+              .to_string()
+          };
+          let pts = attr("points")
+            .split(' ')
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+          (pts, attr("fill"))
+        })
+        .collect();
+      assert_eq!(triangles.len(), 4, "a hexagon fans into 4: {svg}");
+      assert!(
+        triangles[0]
+          .0
+          .iter()
+          .any(|p| triangles.iter().all(|(pts, _)| pts.contains(p))),
+        "every triangle shares the first corner: {svg}"
+      );
+      let mut fills: Vec<&String> = triangles.iter().map(|t| &t.1).collect();
+      fills.sort();
+      fills.dedup();
+      assert_eq!(fills.len(), 4, "each triangle has its own shade: {svg}");
+    }
+
     // Wolfram outlines a flat face in a solid `GrayLevel[0.25]` one pixel
     // wide (measured against wolframscript at 2x: a 2-pixel run of
     // rgb(64, 64, 64)). Woxi drew it at 9% black, which was all but
