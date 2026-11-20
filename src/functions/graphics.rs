@@ -17746,9 +17746,16 @@ pub(crate) fn text_face_family() -> Expr {
 /// displays it outside a `Graphics`: a `Style[…, FontFamily -> "sans-serif"]`
 /// around it, merged into a `Style` it already wears. The default face goes
 /// first, so a `FontFamily` of the content's own still takes precedence.
+/// Under a `TraditionalForm` the face goes inside the form, so a styled
+/// layout there (`TraditionalForm[Style[Grid[…], 24]]`) keeps its shape.
 pub(crate) fn in_text_face(content: &Expr) -> Expr {
   let family = text_face_family();
   match content {
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      call1("TraditionalForm", in_text_face(&args[0]))
+    }
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
