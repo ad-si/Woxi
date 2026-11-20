@@ -5568,6 +5568,39 @@ mod graphics3d_dynamic_content {
   }
 }
 
+mod dynamic_plot_labels {
+  use super::*;
+
+  /// A `PlotLabel`/`AxesLabel` holding `Dynamic[x]` (e.g. a Manipulate
+  /// variable initialized to a `Dynamic[…]` caption) typesets the value `x`
+  /// has now, not the `Dynamic[…]` wrapper.
+  #[test]
+  fn dynamic_plot_label_on_2d_graphics() {
+    clear_state();
+    let svg = interpret(
+      "k = 7; ExportString[Graphics[Circle[], \
+       PlotLabel -> Dynamic[Subscript[\"T\", k]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Dynamic"), "{svg}");
+    assert!(svg.contains('7'), "{svg}");
+  }
+
+  #[test]
+  fn dynamic_text_plot_and_axes_labels_on_3d_plot() {
+    clear_state();
+    let svg = interpret(
+      "k = 7; ExportString[Plot3D[a b, {a, 0, 1}, {b, 0, 1}, \
+       PlotLabel -> Dynamic[Text[Subscript[\"T\", k]]], \
+       AxesLabel -> {None, None, Dynamic[Row[{\"q\", k}]]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Dynamic"), "{svg}");
+    assert!(!svg.contains("Text["), "{svg}");
+    assert!(svg.contains("q7"), "{svg}");
+  }
+}
+
 mod plot_body_with_large_shared_data {
   use super::*;
 

@@ -53260,6 +53260,56 @@ mod manipulate_traditional_form_equation_tests {
   }
 }
 
+#[cfg(test)]
+mod animator_display_tests {
+  use super::*;
+
+  fn slider_of(node: &DisplayNode) -> Option<(String, f64, f64, f64)> {
+    match node {
+      DisplayNode::Slider {
+        target,
+        min,
+        max,
+        step,
+        ..
+      } => Some((target.clone(), *min, *max, *step)),
+      DisplayNode::Row(parts) => parts.iter().find_map(slider_of),
+      _ => None,
+    }
+  }
+
+  /// An `Animator[Dynamic[v], {min, max, step}, opts…]` placed in a display
+  /// `Row` (next to a setter bar) draws as a live control over its range,
+  /// not as the literal `Animator[…]` source.
+  #[test]
+  fn animator_in_row_with_step_in_range() {
+    let node = build_manipulate_display(
+      "Row[{\"animate \", Animator[Dynamic[n], {2, 4, 1}, \
+       AnimationRunning -> False, Appearance -> Small]}]",
+      &[("n".to_string(), "3".to_string())],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("n".to_string(), 2.0, 4.0, 1.0)),
+      "{node:?}"
+    );
+  }
+
+  /// The step may also follow the range as a separate positional argument.
+  #[test]
+  fn animator_with_positional_step() {
+    let node = build_manipulate_display(
+      "Animator[Dynamic[t], {0, 10}, 0.5, AnimationRunning -> False]",
+      &[],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("t".to_string(), 0.0, 10.0, 0.5)),
+      "{node:?}"
+    );
+  }
+}
+
 /// Are these the arguments of a `FractionBox[num, den, opts…]` — two boxes
 /// followed only by options such as `MultilineFunction -> None`?
 pub(crate) fn is_fraction_box_args(args: &[Expr]) -> bool {
