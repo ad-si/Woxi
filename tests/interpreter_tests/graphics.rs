@@ -54349,6 +54349,46 @@ fn styled_axes_label_keeps_font_directives() {
 }
 
 #[test]
+fn axes_label_styled_head_applied_to_arguments() {
+  // `Style["E", Italic][t]` is a function application whose head carries
+  // the styling: TraditionalForm sets it as `E(t)`, the head keeping its
+  // slant and the argument in italics, instead of a plain upright `E(t)`.
+  for plot in [
+    "ListPlot[{1, 2, 3}",
+    "ListLinePlot[{1, 2, 3}",
+    "Plot[x, {x, 0, 1}",
+  ] {
+    let svg = interpret(&format!(
+      "ExportString[{plot}, AxesLabel -> {{t, Style[\"E\", Italic][t]}}], \
+       \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">E</tspan>(<tspan \
+         font-style=\"italic\">t</tspan>)"
+      ),
+      "{plot}: {svg}"
+    );
+  }
+  // Several arguments are comma-separated; a bold string head is not
+  // slanted, while the symbols in the arguments are.
+  let svg = interpret(
+    "ExportString[Plot[x, {x, 0, 1}, AxesLabel -> {t, \
+     Style[\"F\", Bold, Red][a, b]}], \"SVG\"]",
+  )
+  .unwrap();
+  assert!(
+    svg.contains(
+      "<tspan font-weight=\"bold\" fill=\"rgb(255,0,0)\">F</tspan>(<tspan \
+       font-style=\"italic\">a</tspan>,<tspan \
+       font-style=\"italic\">b</tspan>)"
+    ),
+    "{svg}"
+  );
+}
+
+#[test]
 fn axes_label_row_keeps_styled_parts() {
   // `Row[{Style[…, color], " and ", Style[…, color]}]` as an AxesLabel is a
   // multi-colored legend-like label; every part keeps its own color.
