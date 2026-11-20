@@ -3872,9 +3872,8 @@ fn contour_plot_equations(
     // `MaxRecursion`), so branches closer together than a grid cell — the
     // loops and cusps of an algebraic curve near a singular point — are
     // still traced apart instead of merging or stopping short.
-    let budget = if crate::functions::plot::PlotBody2::new(body, &xvar, &yvar)
-      .is_compiled()
-    {
+    let sampler = crate::functions::plot::PlotBody2::new(body, &xvar, &yvar);
+    let budget = if sampler.is_compiled() {
       EQUATION_REFINE_BUDGET_COMPILED
     } else {
       EQUATION_REFINE_BUDGET_SYMBOLIC
@@ -3882,7 +3881,7 @@ fn contour_plot_equations(
     let (grid, refine) = refine_equation_grid(
       grid,
       |x, y| {
-        evaluate_at_xy(body, &xvar, &yvar, x, y).filter(|v| {
+        sampler.at(x, y).filter(|v| {
           v.is_finite()
             && opts
               .region_function
@@ -9464,5 +9463,48 @@ mod robust_range_tests {
     let (v_min, v_max) = robust_value_range(&[]);
     assert!(!v_min.is_finite());
     assert!(!v_max.is_finite());
+  }
+
+  #[test]
+  fn simplify_chain_drops_points_within_tolerance_only() {
+    // Collinear interior points go; the corner stays, as do the ends.
+    let chain = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (2.0, 2.0)];
+    assert_eq!(
+      simplify_chain(&chain, 0.1),
+      vec![(0.0, 0.0), (2.0, 0.0), (2.0, 2.0)]
+    );
+    // A closed loop keeps enough points to stay a loop.
+    let square = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)];
+    assert_eq!(simplify_chain(&square, 0.1).len(), 5);
+  }
+
+  #[test]
+  fn refine_equation_grid_resamples_only_cells_near_the_curve() {
+    // f = x - 0.5 on the unit square: only the cells straddling x = 0.5
+    // (and their close neighbors) are refined.
+    let n = 11;
+    let coarse: Vec<Vec<f64>> = (0..n)
+      .map(|i| vec![i as f64 / (n - 1) as f64 - 0.5; n])
+      .collect();
+    let (fine, r) = refine_equation_grid(
+      coarse,
+      |x, _| Some(x - 0.5),
+      1_000_000,
+      (0.0, 1.0),
+      (0.0, 1.0),
+    );
+    assert_eq!(r, EQUATION_REFINEMENTS[0]);
+    assert_eq!(fine.len(), 10 * r + 1);
+    // Next to the curve every fine node is sampled, and correctly.
+    let mid = 5 * r + 1;
+    assert!((fine[mid][1] - (mid as f64 / (10 * r) as f64 - 0.5)).abs() < 1e-12);
+    // Far from it only the coarse nodes are.
+    assert!(fine[1][1].is_nan());
+    assert_eq!(fine[0][0], -0.5);
+    // Without budget for any refinement the lattice stays coarse.
+    let coarse = vec![vec![-1.0, 1.0], vec![-1.0, 1.0]];
+    let (same, r) =
+      refine_equation_grid(coarse.clone(), |_, _| None, 0, (0.0, 1.0), (0.0, 1.0));
+    assert_eq!((same, r), (coarse, 1));
   }
 }

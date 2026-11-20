@@ -57598,6 +57598,23 @@ fn contour_plot_equation_line_lies_on_the_curve() {
   );
 }
 
+/// Two branches of an equation's curve that are closer together than a
+/// sampling cell (here tangent at the origin, `x^2` apart) are still traced
+/// apart near where they meet: the curve is sampled finer where it runs.
+#[test]
+fn contour_plot_equation_resolves_branches_closer_than_a_cell() {
+  assert_eq!(
+    interpret(
+      "pts = Flatten[Cases[Normal[ContourPlot[(y - x^2) (y - 2 x^2) == 0, \
+       {x, -1, 1}, {y, -1, 1}]], Line[p_] :> p, Infinity], 1]; \
+       Length[Select[pts, Abs[#[[2]] - 2 #[[1]]^2] < 10^-3 && \
+       0 < Abs[#[[1]]] < 0.08 &]] > 0"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
 mod frame_style_font_size {
   use super::*;
 
