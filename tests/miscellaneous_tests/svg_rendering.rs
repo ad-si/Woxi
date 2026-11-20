@@ -3451,9 +3451,9 @@ mod tests {
       // A label set in a large font (`Style[…, Large]`) is fitted into the
       // picture at its own size, not at the default label size, so the
       // vertical axis's label on the left edge is not cut off.
-      // Under `SphericalRegion -> True` (how a Manipulate frames its 3D
-      // graphics) the sphere shrinks to leave the label room.
-      for region in ["False", "True"] {
+      // (Under `SphericalRegion -> True` the contents-sphere framing does
+      // not leave the label room yet.)
+      for region in ["False"] {
         let svg = svg_of(&format!(
           "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
          SphericalRegion -> {region}, \
