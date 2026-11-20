@@ -7769,14 +7769,45 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // in text rather than mathematical form — it contributes no box of its
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
-    // A layout (`Text[Row[…]]`) is set in the proportional text face.
+    // Text is set in the proportional text face rather than the monospace
+    // output face, so `Text[Row[{"Depth = ", x, " m"}]]` reads as prose; a
+    // `FontFamily` given inside still wins, as the innermost style does.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      match crate::functions::graphics::text_layout_face(expr) {
-        Some((layout, family)) => {
-          expr_to_svg(&call("Style", vec![layout.clone(), family]))
-        }
-        None => expr_to_svg(&unquoted_display_string(&args[0])),
-      }
+      expr_to_svg(&crate::functions::graphics::in_text_face(
+        &unquoted_display_string(&args[0]),
+      ))
+    }
+    // `Style[Pane[content, size…], directives…]`: the pane only sizes and
+    // places its content, so the directives style the content, inside the
+    // pane — which keeps its width (and the wrapping of text at it).
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: pane, args: pargs }
+          if pane == "Pane" && !pargs.is_empty()) =>
+    {
+      let Expr::FunctionCall { args: pargs, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut pane_args = pargs.to_vec();
+      pane_args[0] = call(
+        "Style",
+        std::iter::once(pargs[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+      expr_to_svg(&call("Pane", pane_args))
+    }
+    // `Style[content, DefaultOptions -> {Graphics -> {…}}]` draws the
+    // graphics inside `content` with those defaults.
+    Expr::FunctionCall { name, .. }
+      if name == "Style"
+        && let Some(applied) =
+          crate::functions::graphics::apply_style_default_graphics_options(
+            expr,
+          ) =>
+    {
+      expr_to_svg(&applied)
     }
     // `Style[Style[MatrixForm[m], Red], 17]` — a grid styled at two levels
     // (an outer label size around an inner color) takes both: merge them
@@ -7824,6 +7855,26 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && !is_traditional_matrix_form(&args[0])
         && distribute_format_over_tableform(&args[0]).is_none() =>
     {
+      // `Style[Framed[content, opts…], dirs…]`: the style is inherited by the
+      // framed content, and the box keeps its frame. Typeset as styled text,
+      // the frame was dropped and only the content's text was shown.
+      if let Expr::FunctionCall {
+        name: box_name,
+        args: box_args,
+      } = &args[0]
+        && matches!(box_name.as_str(), "Framed" | "Panel")
+        && !box_args.is_empty()
+        && args.len() >= 2
+      {
+        let mut new_box_args = box_args.to_vec();
+        new_box_args[0] = call(
+          "Style",
+          std::iter::once(box_args[0].clone())
+            .chain(args[1..].iter().cloned())
+            .collect(),
+        );
+        return expr_to_svg(&call(box_name.as_str(), new_box_args));
+      }
       let pushed = crate::functions::graphics::style_pushed_into_layout(
         &args[0],
         &args[1..],
@@ -9149,10 +9200,8 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   fontdb.load_system_fonts();
   crate::functions::image_ast::load_embedded_fonts(&mut fontdb);
 
-  let opt = svg2pdf::usvg::Options {
-    fontdb: StdArc::new(fontdb),
-    ..Default::default()
-  };
+  let opt =
+    crate::functions::image_ast::svg_render_options(StdArc::new(fontdb));
 
   let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
