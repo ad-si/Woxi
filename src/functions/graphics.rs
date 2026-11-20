@@ -40019,6 +40019,10 @@ pub enum ManipulateControl {
     /// both come from one `Row[{Button[…], Button[…], …}]` argument (or one
     /// `ButtonBar`), the way Wolfram lays such a row out side by side.
     joins_previous: bool,
+    /// The button face color of a `Background -> color` option as an
+    /// `(r, g, b)` triple in `0.0..=1.0` (e.g. a red "-" and a green "+"
+    /// stepper pair). `None` keeps the default button look.
+    background: Option<(f64, f64, f64)>,
   },
   /// A static heading row between controls: a bare string or `Style[…]`
   /// Manipulate argument (Wolfram's `ThisIsNotAControl` annotations, e.g.
@@ -41737,6 +41741,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         let label_code = dynamic_button_label_code(&args[0]);
         let enabled = extract_enabled_condition(&args[2..])
           .map(crate::syntax::expr_to_source_form);
+        let background = extract_button_background(&args[2..]);
         let label = flatten_label_runs(&label_runs);
         let action = crate::syntax::expr_to_source_form(&args[1]);
         // The same button repeated in several panes of one `PaneSelector`
@@ -41762,6 +41767,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           enabled,
           label_code,
           joins_previous,
+          background,
         });
         continue;
       }
@@ -41797,6 +41803,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
               label_code: dynamic_button_label_code(pattern),
               // A `ButtonBar` is one line of buttons.
               joins_previous: any,
+              background: extract_button_background(&args[1..]),
             });
             any = true;
           }
@@ -50688,6 +50695,7 @@ fn parse_manipulate_control(
         label_code: dynamic_button_label_code(&built_args[0])
           .or_else(|| computed_button_label_code(&built_args[0])),
         joins_previous: false,
+        background: extract_button_background(&built_args[2..]),
       },
     });
   }
@@ -52519,12 +52527,23 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         enabled: _,
         label_code: _,
         joins_previous: _,
+        background,
       } => {
+        let background_json = match background {
+          Some((r, g, b)) => format!(
+            r#","background":"rgb({},{},{})""#,
+            (r * 255.0).round() as u8,
+            (g * 255.0).round() as u8,
+            (b * 255.0).round() as u8,
+          ),
+          None => String::new(),
+        };
         ctrl_parts.push(format!(
-          r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"}}"#,
+          r#"{{"kind":"button","label":"{}","labelRuns":{},"action":"{}"{}}}"#,
           json_escape_manipulate(label),
           label_runs_to_json(label_runs),
           json_escape_manipulate(action),
+          background_json,
         ));
       }
       ManipulateControl::Heading { label, label_runs } => {
@@ -54249,6 +54268,30 @@ fn setterbar_node(
 /// enabled. Shared by top-level control specs (`parse_manipulate_control`),
 /// an embedded `PopupMenu[…, Enabled -> …]` (`popup_node`), and one such
 /// `PopupMenu` promoted out of a Manipulate body (`collect_body_popup_menus`).
+/// The face color of a `Background -> color` option among a `Button`'s
+/// (or `ButtonBar`'s) options, as an `(r, g, b)` triple in `0.0..=1.0`.
+/// The color is evaluated first, so a computed one (`Lighter[Red]`) works
+/// as well as a named one. Anything that is not a color (`None`,
+/// `Automatic`, …) leaves the default button look.
+fn extract_button_background(items: &[Expr]) -> Option<(f64, f64, f64)> {
+  items.iter().find_map(|it| match it {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Background") =>
+    {
+      let color = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone());
+      parse_color(&color).map(|c| (c.r, c.g, c.b))
+    }
+    _ => None,
+  })
+}
+
 fn extract_enabled_condition(items: &[Expr]) -> Option<&Expr> {
   items.iter().find_map(|it| match it {
     Expr::Rule {
@@ -57484,6 +57527,68 @@ mod manipulate_button_enabled_tests {
   /// `control_enabled` lookup every other control type uses could never
   /// find it (and two buttons with different conditions would collide on
   /// that one shared empty-string key).
+  /// A `Background -> color` option paints the button face: named and
+  /// computed colors are both resolved to RGB (also for a `ButtonBar`),
+  /// a non-color leaves the default look, and the color reaches the
+  /// Playground JSON as the control's `background`.
+  #[test]
+  fn button_background_color_is_kept() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[x, \
+       Row[{Button[\"-\", x--, Appearance -> \"Palette\", Background -> Red], \
+       Button[\"+\", x++, Background -> Lighter[Blue, 0.5]]}], \
+       Button[\"reset\", x = 0], \
+       Button[\"none\", x = 1, Background -> None], \
+       ButtonBar[{\"a\" :> (x = 2)}, Background -> GrayLevel[0.25]], \
+       {x, 0, 10, 1}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let backgrounds: Vec<(String, Option<(f64, f64, f64)>)> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Button {
+          label, background, ..
+        } => Some((label.clone(), *background)),
+        _ => None,
+      })
+      .collect();
+    let expected: Vec<(String, Option<(f64, f64, f64)>)> = vec![
+      ("-".to_string(), Some((1.0, 0.0, 0.0))),
+      ("+".to_string(), Some((0.5, 0.5, 1.0))),
+      ("reset".to_string(), None),
+      ("none".to_string(), None),
+      ("a".to_string(), Some((0.25, 0.25, 0.25))),
+    ];
+    assert_eq!(backgrounds.len(), expected.len());
+    for ((label, got), (want_label, want)) in
+      backgrounds.iter().zip(expected.iter())
+    {
+      assert_eq!(label, want_label);
+      match (got, want) {
+        (Some(g), Some(w)) => assert!(
+          (g.0 - w.0).abs() < 1e-9
+            && (g.1 - w.1).abs() < 1e-9
+            && (g.2 - w.2).abs() < 1e-9,
+          "{label}: {g:?} != {w:?}"
+        ),
+        (None, None) => {}
+        _ => panic!("{label}: {got:?} != {want:?}"),
+      }
+    }
+    let json = manipulate_spec_to_json(&spec);
+    assert!(
+      json.contains(r#""label":"-","labelRuns":"#)
+        && json.contains(r#""background":"rgb(255,0,0)""#),
+      "{json}"
+    );
+    assert!(
+      json.contains(r#""background":"rgb(128,128,255)""#),
+      "{json}"
+    );
+  }
+
   /// Buttons written side by side in one `Row[{…}]` argument share one line
   /// of the control panel; a second `Row` starts a new line, and a slider
   /// between two buttons breaks the run. Each `ButtonBar` is one line too.
