@@ -929,6 +929,16 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           (stacked_visible_text(&markup, &extra_lines), Some(markup))
         }
       };
+      // Content whose boxes stack (`Row[{…, q^(1/e)}]`) is drawn as a
+      // picture, the `Style` wrapper's size and color included, just like
+      // the same content without the wrapper.
+      let segments =
+        if matches!(&args[0], Expr::String(_) | Expr::Identifier(_)) {
+          Vec::new()
+        } else {
+          inline_graphic_segments(expr).unwrap_or_default()
+        };
+      claim_picture_room(&segments, &mut extra_lines);
       let (bold, italic, color, font_size) =
         parse_style_directive_args(&args[1..]);
       Some(StyledLabel {
@@ -941,7 +951,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         font_size,
         framed: false,
         background: None,
-        segments: Vec::new(),
+        segments,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the

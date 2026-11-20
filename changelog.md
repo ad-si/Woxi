@@ -22,6 +22,10 @@
 - `Show` keeps a curve's `ColorFunction` on that curve alone: a plot merged
     with it keeps its own color, and the colored curve stays colored when a
     `Graphics` comes first (drawn with `VertexColors`).
+- A plot title holding a fraction (`Style[Row[{"P = ", q^(1/e)}], 12]`,
+    `Graphics[…, PlotLabel -> a/b]`, or the title `Show` keeps from a
+    combined plot) stacks the numerator over the denominator, as
+    `TraditionalForm` sets it, instead of writing `1/e` inline.
 
 # 2026-11-08 - 0.4.0
 
