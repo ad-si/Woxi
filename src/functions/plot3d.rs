@@ -4237,32 +4237,35 @@ fn draw_axes_on_box_with_ticks(
         let (perpx, perpy) = (-dy / len, dx / len);
         let sign = outward_sign(sx0, sy0, sx1, sy1);
         // How far the tick labels already reach, in the direction the
-        // axis label is being pushed: their own offset plus half of the
-        // widest one's box. Sideways of a vertical axis that is the text
-        // width, below a horizontal one it is the line height.
+        // axis label is being pushed. Sideways of a vertical axis that is
+        // their offset plus the widest one's width (they are aligned on
+        // their near end, see the tick labels below), measured at the
+        // tick labels' own font size; below a horizontal one it is their
+        // offset plus the line height.
         let tick_chars = axis_ticks(ai, val_min, val_max)
           .iter()
           .map(|(_, label)| markup_char_count(label))
           .max()
           .unwrap_or(1) as f64;
-        let half_w = tick_chars * font_size as f64 * 0.3;
+        let tick_w = tick_chars * f64::from(tick_font_size) * 0.45;
         let half_h = font_size as f64 * 0.5;
-        // …plus half of the label's own box, so `offset` can center it
-        // just past them. Wolfram sets every axis label upright, the z
-        // axis's too.
+        // …plus half of the label's own box, so `offset` centers it just
+        // past them. The width is that of the label as set, a styled
+        // `Style[…, Large]` label's at its own font size. Wolfram sets
+        // every axis label upright, the z axis's too.
         let own_w = label_half_width(label, font_size);
-        let reach = TICK_LABEL_OFFSET
-          + (perpx * sign).abs() * (half_w + own_w)
-          + (perpy * sign).abs() * (half_h + half_h);
-        let offset = reach + font_size as f64 * 0.5;
+        let (label_w, label_h) = markup_text_size(label, font_size as f64);
+        let side = TICK_LABEL_OFFSET * 0.6 + tick_w + own_w;
+        let below =
+          TICK_LABEL_OFFSET + half_h + half_h + font_size as f64 * 0.5;
+        let offset = (perpx * sign).abs() * side + (perpy * sign).abs() * below;
         let (lx, ly) =
           (mid_x + perpx * offset * sign, mid_y + perpy * offset * sign);
         svg.push_str(&format!(
           "<text x=\"{lx:.1}\" y=\"{ly:.1}\" font-size=\"{font_size}\" fill=\"{axis_color}\" text-anchor=\"middle\" dominant-baseline=\"middle\"{}>{label}</text>\n",
           font_face_attrs(look.label_face),
         ));
-        let chars = markup_char_count(label);
-        extent.add_text(lx, ly, chars, font_size as f64, "middle");
+        extent.add_box(lx, ly, label_w, label_h, "middle");
       }
     }
 
@@ -4537,14 +4540,19 @@ impl AxesExtent {
     font: f64,
     anchor: &str,
   ) {
-    let w = chars as f64 * font * 0.56;
+    self.add_box(x, y, chars as f64 * font * 0.56, font, anchor);
+  }
+
+  /// A text box `w` wide and `h` tall anchored at `(x, y)` (`anchor` as
+  /// SVG's `text-anchor`, vertically centered).
+  fn add_box(&mut self, x: f64, y: f64, w: f64, h: f64, anchor: &str) {
     let (l, r) = match anchor {
       "end" => (x - w, x),
       "start" => (x, x + w),
       _ => (x - w / 2.0, x + w / 2.0),
     };
-    self.add(l, y - font * 0.5);
-    self.add(r, y + font * 0.5);
+    self.add(l, y - h * 0.5);
+    self.add(r, y + h * 0.5);
   }
 }
 
@@ -4642,7 +4650,7 @@ fn label_font_size(opts: &[Expr]) -> Option<f64> {
 /// Half the width a text label takes at `font_size`, estimated from its
 /// character count — enough to keep labels from landing on each other.
 fn label_half_width(label: &str, font_size: i32) -> f64 {
-  markup_char_count(label) as f64 * font_size as f64 * 0.3
+  markup_text_size(label, font_size as f64).0 * 0.3 / 0.56
 }
 
 /// The tick positions along an axis spanning `val_min` to `val_max`, the
@@ -15923,6 +15931,82 @@ fn framed_label_svg(
 
 /// The characters an SVG markup fragment actually shows, for width
 /// estimation: everything outside its tags.
+/// The size of an SVG text markup run set at `font_size`: its estimated
+/// width and the height of its tallest line. Nested `<tspan font-size=…>`
+/// runs (a styled `AxesLabel -> Style[…, Large]`, a 70% subscript) are
+/// measured at their own size rather than at the base one, so a large
+/// label claims the room it really takes.
+fn markup_text_size(markup: &str, font_size: f64) -> (f64, f64) {
+  let mut sizes = vec![font_size];
+  let mut width = 0.0;
+  let mut height = 0.0_f64;
+  let mut chars = markup.chars().peekable();
+  while let Some(c) = chars.next() {
+    let current = *sizes.last().unwrap_or(&font_size);
+    match c {
+      '<' => {
+        let mut tag = String::new();
+        for t in chars.by_ref() {
+          if t == '>' {
+            break;
+          }
+          tag.push(t);
+        }
+        if tag.starts_with('/') {
+          if sizes.len() > 1 {
+            sizes.pop();
+          }
+        } else if !tag.ends_with('/') {
+          sizes.push(tag_font_size(&tag, current));
+        }
+      }
+      '&' => {
+        // An entity (`&lt;`, `&#945;`) is one character.
+        while let Some(&t) = chars.peek() {
+          chars.next();
+          if t == ';' {
+            break;
+          }
+        }
+        width += current;
+        height = height.max(current);
+      }
+      _ => {
+        width += current;
+        height = height.max(current);
+      }
+    }
+  }
+  if width == 0.0 {
+    (font_size * 0.56, font_size)
+  } else {
+    (width * 0.56, height)
+  }
+}
+
+/// The font size an opening SVG tag (its text between `<` and `>`) sets
+/// for its content: an absolute `font-size="24"`, a relative
+/// `font-size="70%"`, or `current` when it sets none.
+fn tag_font_size(tag: &str, current: f64) -> f64 {
+  let Some(start) = tag.find("font-size=\"") else {
+    return current;
+  };
+  let rest = &tag[start + "font-size=\"".len()..];
+  let value = rest.split('"').next().unwrap_or("");
+  if let Some(pct) = value.strip_suffix('%') {
+    pct
+      .trim()
+      .parse::<f64>()
+      .map_or(current, |p| current * p / 100.0)
+  } else {
+    value
+      .trim()
+      .trim_end_matches("px")
+      .parse::<f64>()
+      .unwrap_or(current)
+  }
+}
+
 fn markup_char_count(markup: &str) -> usize {
   let mut count = 0;
   let mut in_tag = false;

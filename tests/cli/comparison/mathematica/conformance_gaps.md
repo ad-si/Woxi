@@ -10446,3 +10446,13 @@ higher than Woxi's (15.6–31.2 instead of 11.7–27.3, same 3.9 spacing): Wolfr
 value range starts above Woxi's sampled minimum, and its slice even shows a
 band below the lowest legend band. How Wolfram samples the slice planes
 for the value range has not been measured.
+
+### Large 3D axis labels under `SphericalRegion -> True`
+
+`Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, SphericalRegion ->
+True, AxesLabel -> {…, …, Style["zzz", Large, Bold]}]` draws the vertical
+axis's large label partly outside the picture's left edge (its center about
+10 px from it). Without `SphericalRegion` the picture leaves the label room.
+Shrinking the framing sphere to fit the labels (fitting them together with
+the contents sphere) does not settle on a layout that keeps the label
+inside, and was not checked against `wolframscript`.
