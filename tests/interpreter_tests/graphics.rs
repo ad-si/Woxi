@@ -4326,6 +4326,51 @@ mod graphics {
       assert!(off(p, edges[2]) > 1.0, "{edges:?}");
     }
 
+    /// Axes crossing at the center of the box have no outward side, so the
+    /// tick labels of the vertical z axis sit left of it, right-aligned,
+    /// with the tick marks pointing the other way, for any view point.
+    #[test]
+    fn graphics3d_centered_axes_origin_puts_z_tick_labels_left() {
+      for view in ["{1.3, -2.4, 2.}", "{1.65, -2.72, 1.16}", "{-2, 1, 1}"] {
+        let svg = export_svg(&format!(
+          "Graphics3D[Sphere[{{0, 0, 0}}, 1], PlotRange -> 25, \
+           Axes -> True, AxesOrigin -> {{0, 0, 0}}, Boxed -> False, \
+           ViewPoint -> {view}, Ticks -> {{None, None, {{5, 10}}}}]"
+        ));
+        let attr = |l: &str, name: &str| -> f64 {
+          let key = format!(" {name}=\"");
+          let rest = &l[l.find(&key).unwrap() + key.len()..];
+          rest[..rest.find('"').unwrap()].parse().unwrap()
+        };
+        let z_axis = svg
+          .lines()
+          .find(|l| {
+            l.starts_with("<line ")
+              && l.contains("stroke-width=\"1\"")
+              && (attr(l, "x1") - attr(l, "x2")).abs() < 0.2
+          })
+          .unwrap_or_else(|| panic!("no vertical axis: {svg}"));
+        let axis_x = attr(z_axis, "x1");
+        let labels: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.starts_with("<text ") && l.ends_with("</text>"))
+          .filter(|l| l.contains(">5</text>") || l.contains(">10</text>"))
+          .collect();
+        assert_eq!(labels.len(), 2, "{svg}");
+        for l in labels {
+          assert!(l.contains("text-anchor=\"end\""), "{view}: {l}");
+          assert!(attr(l, "x") < axis_x, "{view}: {l} vs axis at {axis_x}");
+        }
+        for tick in svg.lines().filter(|l| {
+          l.starts_with("<line ")
+            && l.contains("stroke-width=\"0.5\"")
+            && (attr(l, "x1") - axis_x).abs() < 0.2
+        }) {
+          assert!(attr(tick, "x2") > axis_x, "{view}: {tick}");
+        }
+      }
+    }
+
     /// Explicit ticks outside the plot range are not drawn.
     #[test]
     fn explicit_ticks_outside_the_range_are_dropped() {

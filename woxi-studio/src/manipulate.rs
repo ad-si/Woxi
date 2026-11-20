@@ -2587,7 +2587,7 @@ impl ManipulateState {
 }
 
 /// A control name with its typeset caption runs and optional rendered SVG.
-type ResolvedLabel = (String, (Vec<LabelRun>, Option<String>));
+type ResolvedLabel = (String, Caption);
 
 /// A dynamic bound re-resolved to numbers:
 /// `(control name, min, max, step)`.

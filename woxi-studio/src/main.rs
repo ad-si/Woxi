@@ -8812,6 +8812,37 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A graphic's `<text>` without a `font-family` (a `Text` without
+  /// `FontFamily`) is drawn in the default sans face, as an exported SVG
+  /// and Wolfram draw it, not in usvg's fallback "Times New Roman" (or
+  /// whatever face happens to stand in for it).
+  #[test]
+  fn graphic_text_without_family_renders_in_default_sans_face() {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let db = std::sync::Arc::new(db);
+    let svg = |family: &str| {
+      format!(
+        "<svg width=\"120\" height=\"30\" xmlns=\"http://www.w3.org/2000/svg\">\
+         <text x=\"4\" y=\"20\" font-size=\"16\"{family}>Hamburg 2 (g)</text></svg>"
+      )
+    };
+    let png = |family: &str| {
+      super::encode_svg_as_png(&svg(family), &db).expect("renders")
+    };
+    assert_eq!(
+      woxi::functions::image_ast::svg_render_options(db.clone()).font_family,
+      "Atkinson Hyperlegible Next"
+    );
+    let bare = png("");
+    assert_eq!(
+      bare,
+      png(" font-family=\"Atkinson Hyperlegible Next\""),
+      "bare text must use the default sans face"
+    );
+    assert_ne!(bare, png(" font-family=\"Atkinson Hyperlegible Mono\""));
+  }
+
   /// A slider's value readout marks a whole-number machine real with a
   /// trailing dot (`-10.`), as Wolfram's labeled slider does.
   #[test]

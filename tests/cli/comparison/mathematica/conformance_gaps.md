@@ -10294,6 +10294,16 @@ picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
 
+### Tick side of 3D axes crossing at the box center
+
+With `AxesOrigin` at the center of an unboxed `Graphics3D` (for example
+`AxesOrigin -> {0, 0, 0}` and `PlotRange -> 25`), the axes have no outward
+side. Woxi now puts the tick labels left of a steep axis and below a flat
+one, with the tick marks pointing the other way. The z-axis placement
+matches a saved Wolfram snapshot. The flat-axis rule and the direction of
+the tick marks were not checked against `wolframscript` (none was available
+in the session).
+
 ### `NDSolve`StateData` prints its registry index
 
 An `NDSolve`StateData` object is a mutable handle (`NDSolve`Iterate`
