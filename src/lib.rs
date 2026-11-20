@@ -305,6 +305,24 @@ pub fn mouse_position() -> Option<(f64, f64)> {
   MOUSE_POSITION.with(std::cell::Cell::get)
 }
 
+thread_local! {
+    static TIMED_REFRESH: std::cell::Cell<bool> =
+      const { std::cell::Cell::new(false) };
+}
+
+/// Note that an evaluation ran `Refresh[expr, UpdateInterval -> t]` with a
+/// finite `t`: a front end re-evaluates the enclosing `Dynamic` every `t`
+/// seconds, even when none of its tracked symbols changed.
+pub fn request_timed_refresh() {
+  TIMED_REFRESH.with(|r| r.set(true));
+}
+
+/// Whether a timed refresh was requested since the last call (see
+/// [`request_timed_refresh`]); clears the request.
+pub fn take_timed_refresh() -> bool {
+  TIMED_REFRESH.with(|r| r.replace(false))
+}
+
 /// Whether the interpreter is in visual (notebook-like) display mode, where
 /// front-end-only behaviors apply (e.g. `Defer[expr]` shows `expr` without
 /// its wrapper). False in plain CLI/script mode, which matches wolframscript.
@@ -3480,6 +3498,13 @@ fn format_top_level_result(result_expr: syntax::Expr, depth: usize) -> String {
   } else {
     result_expr
   };
+  // `Style[…, DefaultOptions -> {Graphics -> …}]` hands its defaults to the
+  // graphics it wraps before the layout passes below draw them.
+  let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
+    functions::graphics::resolve_style_default_graphics_options(&result_expr)
+  } else {
+    result_expr
+  };
   // If the result is a Grid expression, render it as SVG (visual mode
   // only — CLI mode keeps Grid[...] symbolic to match wolframscript).
   let result_expr = if VISUAL_MODE.with(|v| *v.borrow()) {
@@ -4321,6 +4346,12 @@ fn image_display_svg(expr: &syntax::Expr) -> Option<String> {
       *display_size,
     ))
   } else if VISUAL_MODE.with(|v| *v.borrow())
+    && let Some(image) = functions::image_ast::magnified_image(expr)
+  {
+    // A notebook shows `Magnify[image, s]` as the picture at `s` times its
+    // size (the CLI keeps the symbolic `Magnify[-Image-, s]` echo).
+    image_display_svg(&image)
+  } else if VISUAL_MODE.with(|v| *v.borrow())
     && let Some((width, height, channels, data)) =
       functions::image_ast::image3d_stack_projection(expr)
   {
@@ -4905,6 +4936,15 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     && name == "Text"
     && args.len() == 1
   {
+    // A picture is drawn from the content set in the text face, so the
+    // text of a layout inside (`Text[Row[{"Depth = ", x, " m"}]]`) is
+    // proportional too.
+    let in_face = render_inline_display_wrapper(
+      &functions::graphics::in_text_face(&args[0]),
+    );
+    if matches!(in_face, syntax::Expr::Graphics { .. }) {
+      return in_face;
+    }
     let inner = render_inline_display_wrapper(&args[0]);
     return match inner {
       // A text row (`Text[Style[Row[…], 14]]`) that the inner pass drew as
@@ -5409,6 +5449,20 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   };
   if !functions::graphics::is_style_wrapper(name) || args.len() < 2 {
     return expr;
+  }
+  // `Style[Text[Row[…]], 16]`: the `Text` adds the proportional text face
+  // to the directives, nearest the layout.
+  if let Some((layout, family)) =
+    functions::graphics::text_layout_face(&args[0])
+    && !matches!(layout, syntax::Expr::String(_))
+  {
+    let mut styled = vec![layout.clone()];
+    styled.extend(args[1..].iter().cloned());
+    styled.push(family);
+    return render_styled_layout_if_needed(syntax::Expr::FunctionCall {
+      name: name.clone(),
+      args: styled.into(),
+    });
   }
   // Look through pass-through display wrappers (`Text[…]`, `Pane[…]`, …) to
   // find the Column/Row/Grid underneath — a Demonstration's Manipulate body
