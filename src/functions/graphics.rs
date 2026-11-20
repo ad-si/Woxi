@@ -53122,6 +53122,22 @@ pub fn format_f64_exact(v: f64) -> String {
   format_f64_input(v)
 }
 
+/// How a slider's value readout shows a value that is still the exactly
+/// written initial value: Wolfram's `Appearance -> "Labeled"` readout
+/// typesets the exact number (`π/2`, `3π/4`, `1/3`) rather than a decimal.
+/// `None` when the value has no short exact form or is a plain integer,
+/// which the decimal readout already shows exactly.
+pub fn format_exact_slider_label(v: f64) -> Option<String> {
+  if !v.is_finite() || v.fract() == 0.0 {
+    return None;
+  }
+  let code = format_f64_exact(v);
+  if code.contains('.') || code.contains('e') {
+    return None;
+  }
+  Some(code.replace("*Pi", "π").replace("Pi", "π"))
+}
+
 /// `v` as `p/q` (or `p`) via continued fractions, when a denominator of at
 /// most `max_den` reproduces it within relative tolerance `tol`.
 fn rational_form(v: f64, max_den: i64, tol: f64) -> Option<String> {
