@@ -286,6 +286,26 @@ impl ControlState {
     }
   }
 
+  /// Which axes (`[x, y]`) of a `Slider2D` the user can actually move.
+  ///
+  /// A Locator whose corner bounds share a coordinate —
+  /// `{{p, {2, 0}}, {1.5, 0}, {4, 0}, Locator}` slides along a horizontal
+  /// segment — is pinned on that axis, so dragging it there can never change
+  /// the value. Such an axis gets no slider; only the free one is offered.
+  /// Every other control reports no free axis.
+  pub fn slider2d_free_axes(&self) -> [bool; 2] {
+    match self {
+      ControlState::Slider2D {
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } => [x_max != x_min, y_max != y_min],
+      _ => [false, false],
+    }
+  }
+
   /// Whether this row binds a variable (annotation/button rows don't).
   pub fn binds_variable(&self) -> bool {
     !matches!(
