@@ -5199,7 +5199,7 @@ mod tests {
         DisplayNode::Row(c) | DisplayNode::Column(c) => {
           c.iter().any(has_slider)
         }
-        DisplayNode::Grid(rows) => rows.iter().flatten().any(has_slider),
+        DisplayNode::Grid(rows, ..) => rows.iter().flatten().any(has_slider),
         DisplayNode::Panel(inner) => has_slider(inner),
         _ => false,
       }
@@ -5772,7 +5772,7 @@ mod tests {
           on,
           ..
         } => out.push((t.clone(), *checked, on.clone())),
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, ..) => {
           rows.iter().flatten().for_each(|c| radios(c, out))
         }
         DisplayNode::Row(cs) | DisplayNode::Column(cs) => {

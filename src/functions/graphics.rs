@@ -36364,8 +36364,8 @@ pub fn geometric_scene_points(
 
 /// A styled run of a control label. A label is a sequence of these so the
 /// UI can render `Style["t", Italic]` as an italic `t` while leaving the
-/// rest upright. Italic, bold and color are tracked — the styling Wolfram
-/// labels and Demonstration captions use in practice.
+/// rest upright. Italic, bold, underline and color are tracked — the
+/// styling Wolfram labels and Demonstration captions use in practice.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LabelRun {
   pub text: String,
@@ -36380,6 +36380,8 @@ pub struct LabelRun {
   /// "y"]`): its text stays plain and the UI must set it lowered and
   /// smaller, as Wolfram typesets a script.
   pub subscript: bool,
+  /// The run is underlined (`Style["t", Underlined]`).
+  pub underline: bool,
 }
 
 /// The font size a `Style`'s directives set: a bare number or
@@ -38127,10 +38129,13 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // through to the generic "extra display element" handling below so it
       // re-renders from the live bindings every frame instead of being
       // frozen into a `Heading` with the `Dynamic` wrapper's bare source.
+      // Like a static heading it is a row of the control panel, at its
+      // place among the controls and `Delimiter`s.
       Expr::FunctionCall { name, .. }
         if is_manipulate_annotation_head(name)
           && annotation_contains_dynamic(spec) =>
       {
+        panel_displays.push((displays.len(), controls.len()));
         displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
@@ -44161,11 +44166,16 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           .find_map(parse_color)
           .map(|c| (c.r as f32, c.g as f32, c.b as f32));
         let size = style_directive_font_size(args.iter().skip(1));
+        let mut decoration = TextDecoration::default();
+        for d in args.iter().skip(1) {
+          decoration.apply(d);
+        }
         let mut runs = args
           .first()
           .map_or_default(|a| manipulate_label_runs(a, styled));
         for run in &mut runs {
           run.bold |= bold;
+          run.underline |= decoration.underline;
           if run.color.is_none() {
             run.color = color;
           }
@@ -48467,6 +48477,121 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
   )
 }
 
+/// The layout a display `Grid`'s options set: `ItemSize` column widths and
+/// the `Dividers` lines. All empty when the grid gives no such options, in
+/// which case each column is as wide as its widest cell.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DisplayGridLayout {
+  /// Each column's fixed width in ems (`None` sizes it to its contents).
+  pub column_widths: Vec<Option<f64>>,
+  /// For each of the `columns + 1` vertical line positions (the left edge
+  /// first), whether a divider is drawn there.
+  pub column_dividers: Vec<bool>,
+  /// For each of the `rows + 1` horizontal line positions (the top edge
+  /// first), whether a divider is drawn there.
+  pub row_dividers: Vec<bool>,
+}
+
+impl DisplayGridLayout {
+  /// Read `ItemSize` and `Dividers` from a `Grid`'s options for a grid of
+  /// `n_rows` × `n_cols` cells.
+  pub fn from_options(options: &[Expr], n_rows: usize, n_cols: usize) -> Self {
+    let mut layout = DisplayGridLayout::default();
+    for opt in options {
+      let (Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      }) = opt
+      else {
+        continue;
+      };
+      let Expr::Identifier(key) = pattern.as_ref() else {
+        continue;
+      };
+      match key.as_str() {
+        // `ItemSize -> w`, `{w, h}` or `{{w1, w2, …}, h}`.
+        "ItemSize" => {
+          let widths = match replacement.as_ref() {
+            Expr::List(items) if items.len() == 2 => &items[0],
+            other => other,
+          };
+          layout.column_widths = (0..n_cols)
+            .map(|j| item_size_entry_at(Some(widths), j, n_cols))
+            .collect();
+        }
+        // `Dividers -> spec` (both directions) or `{columns, rows}`.
+        "Dividers" => {
+          let (cols, rows) = match replacement.as_ref() {
+            Expr::List(items) if items.len() == 2 => (&items[0], &items[1]),
+            other => (other, other),
+          };
+          layout.column_dividers = divider_positions(cols, n_cols + 1);
+          layout.row_dividers = divider_positions(rows, n_rows + 1);
+        }
+        _ => {}
+      }
+    }
+    layout
+  }
+}
+
+/// Which of the `lines` divider positions (1-based, the leading edge first)
+/// one direction of a `Dividers` spec draws: `True`/`All` every line,
+/// `Center` the inner ones, a list of `i -> style` rules the named lines
+/// (negative `i` counts from the far edge), and a plain list the lines by
+/// position with a nested list cycling over the middle.
+fn divider_positions(spec: &Expr, lines: usize) -> Vec<bool> {
+  let is_on = |style: &Expr| {
+    !matches!(style, Expr::Identifier(s) if s == "None" || s == "False")
+  };
+  match spec {
+    Expr::Identifier(s) if s == "True" || s == "All" => vec![true; lines],
+    Expr::Identifier(s) if s == "Center" => {
+      (1..=lines).map(|p| p > 1 && p < lines).collect()
+    }
+    Expr::List(items) => {
+      let mut on = vec![false; lines];
+      let positional: Vec<Expr> = items
+        .iter()
+        .filter(|e| !matches!(e, Expr::Rule { .. }))
+        .cloned()
+        .collect();
+      if !positional.is_empty() {
+        for (p, slot) in on.iter_mut().enumerate() {
+          *slot =
+            grid_spec_entry_at(&positional, p + 1, lines).is_some_and(is_on);
+        }
+      }
+      for item in items {
+        if let Expr::Rule {
+          pattern,
+          replacement,
+        } = item
+          && let Expr::Integer(i) = pattern.as_ref()
+        {
+          let idx = if *i > 0 {
+            *i as usize - 1
+          } else {
+            match lines.checked_sub(i.unsigned_abs() as usize) {
+              Some(idx) => idx,
+              None => continue,
+            }
+          };
+          if let Some(slot) = on.get_mut(idx) {
+            *slot = is_on(replacement);
+          }
+        }
+      }
+      on
+    }
+    _ => vec![false; lines],
+  }
+}
+
 /// A node in a rendered Manipulate extra-display widget tree. Both frontends
 /// consume this: the Playground via `render_manipulate_display` (JSON), the
 /// Studio via `build_manipulate_display` (this enum directly).
@@ -48474,8 +48599,9 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
 pub enum DisplayNode {
   /// A framed container wrapping a single child (`Panel`, `Framed`, …).
   Panel(Box<Self>),
-  /// A 2D grid of cells (`Grid`).
-  Grid(Vec<Vec<Self>>),
+  /// A 2D grid of cells (`Grid`), with the column widths and divider lines
+  /// its options ask for.
+  Grid(Vec<Vec<Self>>, DisplayGridLayout),
   /// A vertical stack (`Column`, or a bare list).
   Column(Vec<Self>),
   /// A horizontal stack (`Row`).
@@ -48754,7 +48880,7 @@ fn opener_view_node(
 fn display_node_is_live(node: &DisplayNode) -> bool {
   match node {
     DisplayNode::Panel(inner) => display_node_is_live(inner),
-    DisplayNode::Grid(rows) => rows.iter().flatten().any(display_node_is_live),
+    DisplayNode::Grid(rows, ..) => rows.iter().flatten().any(display_node_is_live),
     DisplayNode::Column(items) | DisplayNode::Row(items) => {
       items.iter().any(display_node_is_live)
     }
@@ -48924,7 +49050,21 @@ fn display_expr_to_node(
         )))
       }
       "Grid" | "GridBox" | "TableForm" if !args.is_empty() => match &args[0] {
-        Expr::List(rows) => DisplayNode::Grid(
+        Expr::List(rows) => {
+          let n_cols = rows
+            .iter()
+            .map(|row| match row {
+              Expr::List(cs) => cs.len(),
+              _ => 1,
+            })
+            .max()
+            .unwrap_or(0);
+          let layout = if name == "TableForm" {
+            DisplayGridLayout::default()
+          } else {
+            DisplayGridLayout::from_options(&args[1..], rows.len(), n_cols)
+          };
+          DisplayNode::Grid(
           rows
             .iter()
             .map(|row| match row {
@@ -48948,7 +49088,9 @@ fn display_expr_to_node(
               }
             })
             .collect(),
-        ),
+          layout,
+          )
+        }
         _ => static_leaf_node(expr, bindings),
       },
       "Column" if !args.is_empty() => {
@@ -49496,7 +49638,7 @@ pub fn unset_checkbox_defaults(
   fn walk(node: &DisplayNode, out: &mut Vec<(String, String)>) {
     match node {
       DisplayNode::Panel(c) => walk(c, out),
-      DisplayNode::Grid(rows) => {
+      DisplayNode::Grid(rows, ..) => {
         for c in rows.iter().flatten() {
           walk(c, out);
         }
@@ -50112,7 +50254,7 @@ fn assign_checkbox_state(
 ) {
   match node {
     DisplayNode::Panel(child) => assign_checkbox_state(child, flags, idx),
-    DisplayNode::Grid(rows) => {
+    DisplayNode::Grid(rows, ..) => {
       for row in rows {
         for cell in row {
           assign_checkbox_state(cell, flags, idx);
@@ -50289,7 +50431,7 @@ fn display_node_to_json(node: &DisplayNode) -> String {
         display_node_to_json(child)
       )
     }
-    DisplayNode::Grid(rows) => {
+    DisplayNode::Grid(rows, ..) => {
       let row_json: Vec<String> = rows
         .iter()
         .map(|row| {
@@ -53414,5 +53556,110 @@ mod manipulate_layout_button_symbol_tests {
         .iter()
         .all(|c| !matches!(c, ManipulateControl::Button { .. }))
     );
+  }
+}
+
+#[cfg(test)]
+mod manipulate_display_grid_layout_tests {
+  use super::*;
+
+  fn grid_of(code: &str) -> (Vec<Vec<DisplayNode>>, DisplayGridLayout) {
+    match build_manipulate_display(code, &[("v".into(), "2".into())]) {
+      DisplayNode::Grid(rows, layout) => (rows, layout),
+      other => panic!("expected a grid, got {other:?}"),
+    }
+  }
+
+  /// A display grid without layout options sizes every column to its
+  /// contents and draws no lines.
+  #[test]
+  fn plain_grid_has_default_layout() {
+    let (rows, layout) = grid_of(r#"Grid[{{"a", Dynamic[v]}, {"b", "c"}}]"#);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(layout, DisplayGridLayout::default());
+  }
+
+  /// `ItemSize -> {{w1, w2, …}, h}` fixes each column's width in ems; the
+  /// inner list cycles over the remaining columns.
+  #[test]
+  fn item_size_sets_column_widths() {
+    let (_, layout) = grid_of(
+      r#"Grid[{{"x", Dynamic[v], "y"}, {"z"}}, ItemSize -> {{4, 9}, Automatic}]"#,
+    );
+    assert_eq!(layout.column_widths, vec![Some(4.0), Some(9.0), Some(4.0)]);
+
+    let (_, layout) =
+      grid_of(r#"Grid[{{"x", Dynamic[v]}}, ItemSize -> {3, 7}]"#);
+    assert_eq!(layout.column_widths, vec![Some(3.0), Some(3.0)]);
+  }
+
+  /// `Dividers -> {{i -> style}, {j -> style}}` draws the named vertical
+  /// and horizontal lines, the grid's leading edge being line 1; a ragged
+  /// grid counts its widest row's columns.
+  #[test]
+  fn divider_rules_name_lines() {
+    let (_, layout) = grid_of(
+      r#"Grid[{{"p", "q", Dynamic[v]}, {"r"}, {"s", "t"}},
+        Dividers -> {{3 -> Thick}, {-1 -> Gray, 2 -> True}}]"#,
+    );
+    assert_eq!(layout.column_dividers, vec![false, false, true, false]);
+    assert_eq!(layout.row_dividers, vec![false, true, false, true]);
+  }
+
+  /// `True`/`All` rule every line, `Center` only the inner ones, and a
+  /// positional list names lines in order with a nested list cycling.
+  #[test]
+  fn divider_keywords_and_positional_lists() {
+    let (_, layout) =
+      grid_of(r#"Grid[{{"p", Dynamic[v]}, {"r", "s"}}, Dividers -> All]"#);
+    assert_eq!(layout.column_dividers, vec![true; 3]);
+    assert_eq!(layout.row_dividers, vec![true; 3]);
+
+    let (_, layout) = grid_of(
+      r#"Grid[{{"p", Dynamic[v], "q"}}, Dividers -> {Center, {False, {True}}}]"#,
+    );
+    assert_eq!(layout.column_dividers, vec![false, true, true, false]);
+    assert_eq!(layout.row_dividers, vec![false, true]);
+  }
+
+  /// `Style[…, Underlined]` (or `FontVariations -> {"Underline" -> True}`)
+  /// underlines a display's text.
+  #[test]
+  fn underlined_style_marks_runs() {
+    let (rows, _) = grid_of(
+      r#"Grid[{{Style["head", Underlined], Dynamic[v],
+        Style["note", FontVariations -> {"Underline" -> True}], "plain"}}]"#,
+    );
+    let underlined: Vec<bool> = rows[0]
+      .iter()
+      .map(|cell| match cell {
+        DisplayNode::Text { runs } => runs.iter().all(|r| r.underline),
+        _ => false,
+      })
+      .collect();
+    assert_eq!(underlined, vec![true, false, true, false]);
+  }
+
+  /// A `Row` holding a `Dynamic` among a Manipulate's arguments is a row
+  /// of the control panel at its declared place: before the `Delimiter`
+  /// that follows it, so the separator is drawn between it and the row
+  /// after.
+  #[test]
+  fn dynamic_annotation_rows_keep_their_panel_place() {
+    let expr = crate::parse_to_expr(
+      r#"Manipulate[Plot[a x + b, {x, 0, 1}],
+        Row[{"slope ", Slider[Dynamic[a], {0, 2}], Dynamic[a]}],
+        Delimiter,
+        Row[{"offset ", Slider[Dynamic[b], {0, 3}], Dynamic[b]}],
+        {{a, 1}, ControlType -> None}, {{b, 0}, ControlType -> None}]"#,
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert!(matches!(
+      spec.controls.as_slice(),
+      [ManipulateControl::Divider]
+    ));
+    assert_eq!(spec.displays.len(), 2);
+    assert_eq!(spec.panel_displays, vec![(0, 0), (1, 1)]);
   }
 }
