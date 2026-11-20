@@ -3311,6 +3311,63 @@ mod real_digits {
   }
 
   #[test]
+  fn real_digits_of_big_integer_lists_every_digit() {
+    // Regression: integers beyond i128 fell through to a machine-precision
+    // path and came back cut to 16 digits.
+    assert_eq!(
+      interpret("Length[First[RealDigits[3*10^56 + 7]]]").unwrap(),
+      "57"
+    );
+    assert_eq!(
+      interpret("Last[First[RealDigits[3*10^56 + 7]]]").unwrap(),
+      "7"
+    );
+    assert_eq!(
+      interpret("RealDigits[-(10^40 + 1)]").unwrap(),
+      "{{1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
+       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, 41}"
+    );
+    assert_eq!(
+      interpret("RealDigits[2^130, 16]").unwrap(),
+      "{{4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, \
+       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}, 33}"
+    );
+  }
+
+  #[test]
+  fn real_digits_of_big_integer_with_length_and_start() {
+    assert_eq!(
+      interpret("RealDigits[3*10^56 + 7, 10, 5]").unwrap(),
+      "{{3, 0, 0, 0, 0}, 57}"
+    );
+    assert_eq!(
+      interpret("Take[First[RealDigits[3*10^56 + 7, 10, 60]], -4]").unwrap(),
+      "{7, 0, 0, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "RealDigits[12345678901234567890123456789012345678901, 10, 4, 38]"
+      )
+      .unwrap(),
+      "{{3, 4, 5, 6}, 39}"
+    );
+  }
+
+  #[test]
+  fn real_digits_of_big_rational_finds_recurring_block() {
+    assert_eq!(
+      interpret("RealDigits[(10^40 + 1)/7]").unwrap(),
+      "{{1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, \
+       5, 7, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, 5, 7, 1, 4, 2, 8, {7, 1, 4, 2, 8, \
+       5}}, 40}"
+    );
+    assert_eq!(
+      interpret("RealDigits[1/(2^130), 10, 3]").unwrap(),
+      "{{7, 3, 4}, -39}"
+    );
+  }
+
+  #[test]
   fn real_digits_base2_exact_dyadic_pads_with_zero() {
     // A machine Real carries ~53 bits, i.e. 53 base-2 digits. 23.34375 is an
     // exact dyadic (10111.01011), so the remaining digits are genuinely 0
