@@ -12,6 +12,16 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+    3D plot labels keep them too.
+- `ParametricPlot3D` honors the first of a repeated option, as Wolfram does,
+    so `PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws the curve as a tube.
+- A standalone `LineLegend` draws relative `Thickness`/`Dashing` samples at
+    the weight of the plotted curves, honors `LabelStyle`, sets its labels in
+    a proportional face, and continues a multi-line label under its own
+    first line.
+- `Show` keeps a curve's `ColorFunction` on that curve alone: a plot merged
+    with it keeps its own color, and the colored curve stays colored when a
+    `Graphics` comes first (drawn with `VertexColors`).
 - A plot title holding a fraction (`Style[Row[{"P = ", q^(1/e)}], 12]`,
     `Graphics[…, PlotLabel -> a/b]`, or the title `Show` keeps from a
     combined plot) stacks the numerator over the denominator, as

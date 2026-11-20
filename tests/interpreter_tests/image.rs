@@ -11428,3 +11428,65 @@ mod image_value_positions {
     );
   }
 }
+
+mod svg_default_font_family {
+  use std::sync::Arc;
+  use woxi::functions::image_ast::{
+    DEFAULT_SVG_FONT_FAMILY, load_embedded_fonts, svg_render_options,
+  };
+
+  /// The font families usvg resolves for each text span of `svg`.
+  fn span_families(svg: &str) -> Vec<Vec<String>> {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    load_embedded_fonts(&mut db);
+    let tree =
+      resvg::usvg::Tree::from_str(svg, &svg_render_options(Arc::new(db)))
+        .unwrap();
+    fn walk(group: &resvg::usvg::Group, out: &mut Vec<Vec<String>>) {
+      for node in group.children() {
+        match node {
+          resvg::usvg::Node::Group(g) => walk(g, out),
+          resvg::usvg::Node::Text(t) => {
+            for chunk in t.chunks() {
+              for span in chunk.spans() {
+                out.push(
+                  span
+                    .font()
+                    .families()
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+                );
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+    }
+    let mut out = Vec::new();
+    walk(tree.root(), &mut out);
+    out
+  }
+
+  /// A `Graphics` `Text` without `FontFamily` is drawn as a bare `<text>`.
+  /// usvg used to give it its own default, "Times New Roman", so wherever
+  /// that font is installed (macOS, Windows) Woxi Studio, `Rasterize` and
+  /// `Export` drew such labels serif instead of in Woxi's sans default.
+  #[test]
+  fn bare_text_gets_default_sans_family() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="20" font-size="15">label</text></svg>"#;
+    let families = span_families(svg);
+    assert_ne!(families, Vec::<Vec<String>>::new());
+    for f in &families {
+      assert_eq!(f, &vec![format!("\"{DEFAULT_SVG_FONT_FAMILY}\"")]);
+    }
+  }
+
+  /// An explicit family still wins over the default.
+  #[test]
+  fn explicit_family_is_kept() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="20" font-family="monospace">label</text></svg>"#;
+    assert_eq!(span_families(svg), vec![vec!["monospace".to_string()]]);
+  }
+}
