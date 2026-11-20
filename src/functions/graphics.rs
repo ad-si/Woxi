@@ -15679,6 +15679,57 @@ fn parse_plot_range(
   }
 }
 
+/// One axis's half-open `PlotRange` bounds: `{min, All}` (or `Automatic`)
+/// pins the lower end and leaves the upper end to the data, `{All, max}`
+/// the reverse. `None` when the axis spec is not half-open.
+pub(crate) type HalfOpenBounds = (Option<f64>, Option<f64>);
+
+fn half_open_axis_bounds(expr: &Expr) -> Option<HalfOpenBounds> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if !is_open_ended_range_pair(expr) {
+    return None;
+  }
+  Some((expr_to_f64(&items[0]), expr_to_f64(&items[1])))
+}
+
+/// The half-open axes of a `PlotRange` value, as `[x, y]`: a bare
+/// `{min, All}` pair is a vertical range, and in an `{xspec, yspec}` pair
+/// each axis may be half-open on its own (`{{0, All}, {All, 5}}`).
+pub(crate) fn plot_range_half_open_axes(
+  expr: &Expr,
+) -> [Option<HalfOpenBounds>; 2] {
+  if let Some(y) = half_open_axis_bounds(expr) {
+    return [None, Some(y)];
+  }
+  match expr {
+    Expr::List(items) if items.len() == 2 => [
+      half_open_axis_bounds(&items[0]),
+      half_open_axis_bounds(&items[1]),
+    ],
+    _ => [None, None],
+  }
+}
+
+/// Close a half-open axis range over the data's own `(lo, hi)` extent.
+/// A range the data never reaches (`{5, All}` over data below 5) collapses
+/// onto the pinned end, so it is widened by one unit to stay drawable.
+fn close_half_open_bounds(
+  (lo, hi): HalfOpenBounds,
+  (data_lo, data_hi): (f64, f64),
+) -> (f64, f64) {
+  let lo_v = lo.unwrap_or(data_lo);
+  let hi_v = hi.unwrap_or(data_hi);
+  if hi_v > lo_v {
+    (lo_v, hi_v)
+  } else if lo.is_some() {
+    (lo_v, lo_v + 1.0)
+  } else {
+    (hi_v - 1.0, hi_v)
+  }
+}
+
 fn parse_range_spec(expr: &Expr) -> Option<(f64, f64)> {
   match expr {
     Expr::List(items) if items.len() == 2 => {
@@ -16142,6 +16193,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
+  // `PlotRange -> {min, All}`-style axes: one end pinned, the other
+  // following the data. Closed over the content's extent once it is known.
+  let mut half_open_range: [Option<HalfOpenBounds>; 2] = [None, None];
   let mut background: Option<Color> = None;
   let mut plot_label: Option<Vec<String>> = None;
   // A `PlotLabel` holding a two-dimensional layout (a matrix), typeset as
@@ -16253,6 +16307,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (xr, yr) = parse_plot_range(replacement);
           plot_range_x = xr;
           plot_range_y = yr;
+          half_open_range = plot_range_half_open_axes(replacement);
         }
         "PlotRangePadding" => {
           plot_range_padding = Some(replacement.clone());
@@ -16521,6 +16576,24 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y_min: -1.0,
       y_max: 1.0,
     };
+  }
+
+  // A half-open axis pins one end and lets the data choose the other —
+  // padded as an automatic range would be on that open side only.
+  if half_open_range.iter().any(Option::is_some) {
+    let data = if plot_range_padding.is_some() {
+      bb
+    } else {
+      bb.with_padding_shaped(1.0 / 48.0, true, aspect_ratio)
+    };
+    if let Some(bounds) = half_open_range[0] {
+      plot_range_x =
+        Some(close_half_open_bounds(bounds, (data.x_min, data.x_max)));
+    }
+    if let Some(bounds) = half_open_range[1] {
+      plot_range_y =
+        Some(close_half_open_bounds(bounds, (data.y_min, data.y_max)));
+    }
   }
 
   // An explicit `AxesOrigin` of drawn axes lies inside an automatic range:
@@ -27112,7 +27185,8 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         merged_options
           .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
       }
-      // A bare `PlotRange -> {min, max}` on a plot is the *y* range; the
+      // A bare `PlotRange -> {min, max}` on a plot is the *y* range (a
+      // half-open `{min, All}` too, its open end following the data); the
       // horizontal extent stays that of the plotted domain.
       for opt in &mut merged_options {
         if let Expr::Rule {
@@ -27122,9 +27196,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && option_name(pattern) == Some("PlotRange")
           && let Expr::List(items) = replacement.as_ref()
           && items.len() == 2
-          && !is_axis_range_spec(&items[0])
-          && !is_axis_range_spec(&items[1])
-          && parse_range_spec(replacement).is_some()
+          && (is_open_ended_range_pair(replacement)
+            || (!is_axis_range_spec(&items[0])
+              && !is_axis_range_spec(&items[1])
+              && parse_range_spec(replacement).is_some()))
         {
           // The horizontal extent is the first plot's own domain (what
           // Wolfram reports as `Full`), so a later layer reaching far
@@ -27143,15 +27218,6 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           **replacement =
             Expr::List(vec![x_extent, replacement.as_ref().clone()].into());
-        }
-        if let Expr::Rule {
-          pattern,
-          replacement,
-        } = opt
-          && option_name(pattern) == Some("PlotRange")
-          && is_open_ended_range_pair(replacement)
-        {
-          **replacement = id_expr("All");
         }
       }
       // The leading plot's axes stay on. In a framed plot they are drawn as
@@ -58479,6 +58545,7 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
     {
       let mut x_range = None;
       let mut y_range = None;
+      let mut half_open = [None, None];
       // `Graphics[prims, opt -> v, …]` and `Graphics[prims, {opt -> v, …}]`
       // are the same graphic.
       let opts = args[1..].iter().flat_map(|a| match a {
@@ -58493,6 +58560,7 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
           && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
         {
           (x_range, y_range) = parse_plot_range(replacement);
+          half_open = plot_range_half_open_axes(replacement);
         }
       }
       let content = evaluate_expr_to_expr(&args[0]).ok()?;
@@ -58512,9 +58580,17 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
           y_max: 1.0,
         };
       }
+      let data_x = (bb.x_min, bb.x_max);
+      let data_y = (bb.y_min, bb.y_max);
       Some((
-        x_range.unwrap_or((bb.x_min, bb.x_max)),
-        y_range.unwrap_or((bb.y_min, bb.y_max)),
+        half_open[0]
+          .map(|b| close_half_open_bounds(b, data_x))
+          .or(x_range)
+          .unwrap_or(data_x),
+        half_open[1]
+          .map(|b| close_half_open_bounds(b, data_y))
+          .or(y_range)
+          .unwrap_or(data_y),
       ))
     }
     _ => None,
