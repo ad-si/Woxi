@@ -17236,14 +17236,75 @@ pub(crate) fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
 /// list shape once evaluated; Wolfram plots one curve per element of the
 /// result. Returns `None` when the body is already a list or does not
 /// generate one, leaving plain `Plot[f[x], …]` untouched.
-fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
+fn expand_generated_bodies(
+  body: &Expr,
+  var: &str,
+  probe_x: f64,
+) -> Option<Expr> {
   if matches!(body, Expr::List(_)) {
     return None;
   }
   match eval_body_var_symbolic(body, var) {
-    evaluated @ Expr::List(_) => Some(evaluated),
+    evaluated @ Expr::List(_)
+      if symbolic_body_agrees(body, &evaluated, var, &[probe_x]) =>
+    {
+      Some(evaluated)
+    }
     _ => None,
   }
+}
+
+/// The numbers of a numeric value or a (nested) list of them, in order.
+fn numeric_leaves(expr: &Expr, out: &mut Vec<f64>) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().all(|i| numeric_leaves(i, out)),
+    other => match try_eval_to_f64(other) {
+      Some(v) => {
+        out.push(v);
+        true
+      }
+      None => false,
+    },
+  }
+}
+
+/// Whether a plot body pre-evaluated with its variable symbolic still
+/// computes what the held body does once the variable is a number.
+///
+/// Plotting heads hold their body and evaluate it per sample with the
+/// variable bound, as Wolfram does. Evaluating it symbolically first is only
+/// a shortcut that reveals its shape, and it is wrong for bodies that use
+/// the variable's *value*: a helper `f[t_] := … FindRoot[g[t] == h[s], {s,
+/// 1.}] …` cannot solve with `t` symbolic, and a helper whose own `FindRoot`
+/// iterates over a variable of the same name as the plot variable solves
+/// for it instead. At each probe where the held body samples to numbers, the
+/// pre-evaluated body has to yield the same numbers.
+pub(crate) fn symbolic_body_agrees(
+  original: &Expr,
+  evaluated: &Expr,
+  var: &str,
+  probes: &[f64],
+) -> bool {
+  probes.iter().all(|&t| {
+    let sample = |e: &Expr| {
+      let value =
+        evaluate_expr_to_expr(&substitute_var(e, var, &Expr::Real(t))).ok()?;
+      let mut leaves = Vec::new();
+      numeric_leaves(&value, &mut leaves).then_some(leaves)
+    };
+    // A held body that is not numeric on its own (`y[t] /. sol` turns into
+    // `y[0.5] /. sol`) needs the symbolic pass; nothing to compare against.
+    let Some(direct) = sample(original) else {
+      return true;
+    };
+    sample(evaluated).is_some_and(|pre| {
+      pre.len() == direct.len()
+        && pre
+          .iter()
+          .zip(&direct)
+          .all(|(a, b)| (a - b).abs() <= 1e-6 * (1.0 + a.abs().max(b.abs())))
+    })
+  })
 }
 
 /// A body that stays unevaluated while the plot variable is symbolic — a
@@ -17906,7 +17967,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|it| resolve_generated_bodies_deep(it, var, probe_x))
           .collect(),
       ),
-      _ => expand_generated_bodies(body, var)
+      _ => expand_generated_bodies(body, var, probe_x)
         .or_else(|| resolve_list_valued_symbol(body, var))
         .or_else(|| resolve_replaced_body(body, var))
         .or_else(|| expand_list_valued_body(body, var, probe_x))
