@@ -26188,6 +26188,48 @@ fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   cell.clone()
 }
 
+/// A nested layout cell (`Grid`, `Row`, `Column`) drawn as a picture of its
+/// own inherits the enclosing grid's text style, as any box nested in a
+/// styled `GridBox` does: `Style[Grid[{{Grid[…]}}], 12]` sets the inner
+/// grid at 12 points too, rather than at the default size.
+fn layout_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  let Expr::FunctionCall { name, args } = cell else {
+    return cell.clone();
+  };
+  if !matches!(name.as_str(), "Grid" | "TextGrid" | "Row" | "Column")
+    || !matches!(args.first(), Some(Expr::List(_)))
+  {
+    return cell.clone();
+  }
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  if let Some(family) = &style.font_family {
+    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
+  }
+  // Text-only layouts are set by the grid's own text pass, which already
+  // applies the grid's style.
+  if directives.is_empty() || grid_cell_graphic(cell).is_none() {
+    return cell.clone();
+  }
+  call(
+    "Style",
+    std::iter::once(cell.clone())
+      .chain(directives)
+      .collect::<Vec<_>>(),
+  )
+}
+
 /// Whether a `Column` item is text only: a string, number or symbol, or a
 /// `Row`, `Style` or `NumberForm` of such.
 fn is_plain_text_item(item: &Expr) -> bool {
@@ -26367,6 +26409,7 @@ fn grid_svg_styled_internal_reporting(
       }
       *cell = resolve_display_item(cell);
       *cell = column_cell_in_grid_style(cell, default_style);
+      *cell = layout_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
       // grid's size, like the plain text cells around it.
