@@ -5582,7 +5582,9 @@ mod graphics {
           .skip(1)
           .filter_map(|t| t.split_once('>'))
           .filter_map(|(_, r)| r.split_once("</text>"))
-          .filter_map(|(v, _)| v.trim().parse::<f64>().ok())
+          .filter_map(|(v, _)| {
+            v.trim().replace('\u{2009}', "").parse::<f64>().ok()
+          })
           .collect()
       };
       let ticks =
@@ -5605,7 +5607,9 @@ mod graphics {
           .skip(1)
           .filter_map(|t| t.split_once('>'))
           .filter_map(|(_, r)| r.split_once("</text>"))
-          .filter_map(|(v, _)| v.trim().parse::<f64>().ok())
+          .filter_map(|(v, _)| {
+            v.trim().replace('\u{2009}', "").parse::<f64>().ok()
+          })
           .collect()
       };
       // E^10 is about 22026.
@@ -15705,16 +15709,16 @@ mod plot3d {
           "1\u{d7}10\u{2077}"
         ]
       );
-      // Inside the range the labels stay plain, and `10^6` itself is the
-      // first value that goes scientific.
+      // Inside the range the labels stay plain (in digit blocks), and
+      // `10^6` itself is the first value that goes scientific.
       assert_eq!(
         ticks("Plot[x, {x, 0, 10^6}]"),
         [
           "0",
-          "200000",
-          "400000",
-          "600000",
-          "800000",
+          "200\u{2009}000",
+          "400\u{2009}000",
+          "600\u{2009}000",
+          "800\u{2009}000",
           "1\u{d7}10\u{2076}"
         ]
       );

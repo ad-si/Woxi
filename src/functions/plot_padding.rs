@@ -123,6 +123,8 @@ pub(crate) fn char_width_em(c: char) -> f64 {
     '\u{00D7}' => 1196.0 / 2048.0,
     // Narrow combining marks and zero-width characters.
     '\u{200B}'..='\u{200D}' | '\u{2061}'..='\u{2063}' => 0.0,
+    // The thin space between digit blocks (`10 000`).
+    '\u{2009}' => DIGIT_BLOCK_GAP_EM,
     _ => 1139.0 / 2048.0,
   }
 }
@@ -328,9 +330,9 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
   }
   let chars = visible_chars(markup);
   let numeric = !chars.is_empty()
-    && chars
-      .iter()
-      .all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | '\u{2212}'))
+    && chars.iter().all(|c| {
+      c.is_ascii_digit() || matches!(c, '-' | '.' | '\u{2212}' | '\u{2009}')
+    })
     && chars.iter().any(char::is_ascii_digit);
   if !numeric {
     return text_width(markup, size);
@@ -345,6 +347,9 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
         in_int = false;
         em += char_width_em('.');
       }
+      // A digit-block separator the label already carries: the gaps are
+      // counted from the integer digits below.
+      '\u{2009}' => {}
       d => {
         if in_int {
           int_digits += 1;
@@ -1150,6 +1155,9 @@ mod tests {
     assert!((tick_label_width("-1.0", 10.0) - 20.204).abs() < 1e-3);
     // `10 000`: a thin space between the digit blocks.
     assert!((tick_label_width("10000", 10.0) - 29.199).abs() < 1e-3);
+    // A label that already carries its digit-block separator measures the
+    // same.
+    assert!((tick_label_width("10\u{2009}000", 10.0) - 29.199).abs() < 1e-3);
     assert!((text_width("time", 10.0) - 18.892).abs() < 1e-3);
   }
 

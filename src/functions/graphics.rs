@@ -12150,6 +12150,10 @@ fn stroke_linejoin_attrs(
 }
 
 fn format_tick_value(v: f64) -> String {
+  group_digits_str(&format_tick_value_ungrouped(v))
+}
+
+fn format_tick_value_ungrouped(v: f64) -> String {
   if v.abs() < 1e-10 {
     return "0".to_string();
   }
