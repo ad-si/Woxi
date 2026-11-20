@@ -5656,9 +5656,11 @@ colors — wolframscript draws no highlight even though the plot's style names
 ### Standalone 3D plots ignore the camera options
 
 `Plot3D` and most other 3D plot functions (`ParametricPlot3D`,
-`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+`ContourPlot3D`, …) draw their own picture with the
 default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
-the plot call itself change nothing:
+the plot call itself change nothing (`RevolutionPlot3D` given a
+`ViewPoint`, `ViewVertical` or `ViewVector` is drawn from its symbolic form
+by the `Graphics3D` renderer instead, which honors them):
 `Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
 picture as without the option. The options are kept on the result, so
 `Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)

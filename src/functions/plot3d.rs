@@ -17995,10 +17995,39 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         }
       }
-      call(
-        "GraphicsComplex",
-        vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
-      )
+      let mut complex =
+        vec![Expr::List(point_exprs.into()), Expr::List(content.into())];
+      // A `ColorFunction` colors the surface point by point, as Wolfram's
+      // `VertexColors`, so a re-render (`Show`, `GraphicsRow`) keeps it.
+      if color_fn.is_set() {
+        let colors: Option<Vec<Expr>> = grid
+          .iter()
+          .flatten()
+          .flatten()
+          .map(|p| {
+            let (r, g, b) = color_fn
+              .style_at(
+                [p.x, p.y, p.z.clamp(z_lo, z_hi)],
+                [x_range, y_range, (z_lo, z_hi)],
+              )?
+              .color?;
+            Some(call(
+              "RGBColor",
+              [r, g, b]
+                .iter()
+                .map(|&c| Expr::Real(f64::from(c) / 255.0))
+                .collect(),
+            ))
+          })
+          .collect();
+        if let Some(colors) = colors {
+          complex.push(rule_expr(
+            id_expr("VertexColors"),
+            Expr::List(colors.into()),
+          ));
+        }
+      }
+      call("GraphicsComplex", complex)
     })
     .collect();
   // The plot's own options travel with the surface: `Show` takes the
@@ -18072,6 +18101,17 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   structure_args.extend(defaults);
+  // The picture below is drawn with the default camera. A plot that names
+  // its own (`ViewPoint`, `ViewVertical`, `ViewVector`) is drawn from its
+  // symbolic form instead, by the `Graphics3D` renderer that reads them.
+  if structure_args.iter().any(|o| {
+    matches!(
+      option_name(o).as_deref(),
+      Some("ViewPoint" | "ViewVertical" | "ViewVector")
+    )
+  }) {
+    return graphics3d_ast(&structure_args);
+  }
   let structure = call("Graphics3D", structure_args);
 
   let svg = generate_svg(

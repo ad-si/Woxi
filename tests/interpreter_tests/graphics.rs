@@ -8529,6 +8529,61 @@ mod plot3d {
       }
     }
 
+    /// Options set from variables (a `Manipulate` or `Module` local) reach
+    /// the held plot as symbols; they must act like the values they hold.
+    #[test]
+    fn options_from_variables() {
+      clear_state();
+      let literal = export_svg(
+        "RevolutionPlot3D[r^2, {r, 0, 1}, \
+         ColorFunction -> Function[{x, y, z}, Hue[z]], \
+         Boxed -> False, Axes -> False, Mesh -> False]",
+      );
+      clear_state();
+      let from_vars = export_svg(
+        "c = Function[{x, y, z}, Hue[z]]; b = False; m = False; \
+         RevolutionPlot3D[r^2, {r, 0, 1}, ColorFunction -> c, \
+         Boxed -> b, Axes -> b, Mesh -> m]",
+      );
+      assert_eq!(from_vars, literal);
+      assert!(!literal.contains("<line"));
+    }
+
+    /// A `ColorFunction` surface keeps its colors as `VertexColors`, so
+    /// re-drawing it through `Show` does not fall back to the default look.
+    #[test]
+    fn color_function_kept_as_vertex_colors() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = RevolutionPlot3D[r, {r, 0, 1}, \
+           ColorFunction -> Function[{x, y, z}, Hue[z]]]; \
+           {Length[Cases[g, (VertexColors -> c_) :> c, Infinity][[1]]], \
+           Length[g[[1, 1]]]}"
+        )
+        .unwrap(),
+        "{2601, 2601}"
+      );
+    }
+
+    /// `ViewPoint` given to the plot itself turns the camera.
+    #[test]
+    fn view_point_turns_the_camera() {
+      clear_state();
+      let default = export_svg("RevolutionPlot3D[r^2, {r, 0, 1}]");
+      let above =
+        export_svg("RevolutionPlot3D[r^2, {r, 0, 1}, ViewPoint -> {0, 0, 3}]");
+      assert_ne!(above, default);
+      clear_state();
+      assert_eq!(
+        export_svg(
+          "v = {0, 0, 3}; \
+           RevolutionPlot3D[r^2, {r, 0, 1}, ViewPoint -> Dynamic[v]]"
+        ),
+        above
+      );
+    }
+
     /// `First[plot]` re-drawn in a `Graphics3D` must not outline the
     /// sampling quads (the plot itself draws none).
     #[test]
