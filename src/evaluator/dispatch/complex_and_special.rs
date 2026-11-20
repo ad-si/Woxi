@@ -8584,12 +8584,12 @@ fn format_reals_with(expr: &Expr, head: &str, spec: &[Expr]) -> Expr {
       args: args.iter().map(rec).collect(),
     },
     Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
-      op: op.clone(),
+      op: *op,
       left: Box::new(rec(left)),
       right: Box::new(rec(right)),
     },
     Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: op.clone(),
+      op: *op,
       operand: Box::new(rec(operand)),
     },
     Expr::Comparison {
