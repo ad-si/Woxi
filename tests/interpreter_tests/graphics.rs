@@ -63344,6 +63344,133 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(!svg.contains("125%"), "{svg}");
 }
 
+mod list_plot3d_show_options_and_level_mesh {
+  use super::*;
+
+  /// The tick labels of an SVG, in document order.
+  fn tick_texts(svg: &str) -> Vec<String> {
+    svg
+      .split("<text")
+      .skip(1)
+      .filter_map(|t| {
+        let body = &t[t.find('>')? + 1..];
+        Some(body[..body.find('<')?].to_string())
+      })
+      .collect()
+  }
+
+  /// `ListPlot3D` carries its `Axes -> True` and `BoxRatios` defaults, as
+  /// `Plot3D` does, so `Options` reports them.
+  #[test]
+  fn list_plot3d_carries_axes_and_box_ratio_defaults() {
+    clear_state();
+    assert_eq!(
+      interpret("Options[ListPlot3D[{{1, 2}, {2, 3}}]]").unwrap(),
+      "{Axes -> True, BoxRatios -> {1, 1, 0.4}}"
+    );
+    assert_eq!(
+      interpret(
+        "Options[ListPlot3D[{{1, 2}, {2, 3}}, Axes -> False, \
+         BoxRatios -> {1, 1, 1}]]"
+      )
+      .unwrap(),
+      "{Axes -> False, BoxRatios -> {1, 1, 1}}"
+    );
+  }
+
+  /// `Show` of a `ListPlot3D` with another `Graphics3D` keeps the surface's
+  /// axes and ticks: the merged picture takes the first graphic's options.
+  /// It used to draw no axes at all.
+  #[test]
+  fn show_with_graphics3d_keeps_list_plot3d_ticks() {
+    clear_state();
+    let svg = export_svg(
+      "Show[ListPlot3D[Table[i + j, {i, 5}, {j, 5}], \
+       Ticks -> {None, None, Automatic}], \
+       Graphics3D[Line[{{1, 1, 2}, {2, 2, 4}}]]]",
+    );
+    assert!(!tick_texts(&svg).is_empty(), "{svg}");
+  }
+
+  /// The z part of a per-axis `PlotRange` sets the vertical range of a
+  /// `ListPlot3D`, as `PlotRange -> {zmin, zmax}` does.
+  #[test]
+  fn per_axis_plot_range_sets_the_z_range() {
+    clear_state();
+    for range in ["{{0, 5}, {0, 5}, {500, 3000}}", "{All, All, {500, 3000}}"] {
+      let svg = export_svg(&format!(
+        "ListPlot3D[Table[1000 + 100 i + 50 j, {{i, 5}}, {{j, 5}}], \
+         PlotRange -> {range}, Ticks -> {{None, None, Automatic}}]"
+      ));
+      assert_eq!(tick_texts(&svg), ["1000", "2000", "3000"], "{range}");
+    }
+  }
+
+  /// `Mesh -> n` with `MeshFunctions -> {#3 &}` draws `n` level lines of
+  /// the height instead of the default grid: on a plane rising along one
+  /// axis, every mesh point of the structure lies at one of those heights
+  /// (or on the outline).
+  #[test]
+  fn mesh_functions_draw_height_level_lines() {
+    clear_state();
+    let heights = interpret(
+      "g = ListPlot3D[Table[i, {i, 5}, {j, 5}], Mesh -> 3, \
+       MeshFunctions -> {#3 &}]; \
+       Union[Cases[g, Line[s_] :> Flatten[s], Infinity] // Flatten // \
+       Map[g[[1, 1, #, 3]] &, #] &]",
+    )
+    .unwrap();
+    assert_eq!(heights, "{1., 2., 3., 4., 5.}");
+  }
+
+  /// The level lines are found on scattered points too.
+  #[test]
+  fn mesh_level_lines_on_scattered_points() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = ListPlot3D[{{0, 0, 0}, {1, 0, 1}, {0, 1, 0}, {1, 1, 1}}, \
+         Mesh -> {{0.5}}, MeshFunctions -> {#3 &}]; \
+         MemberQ[Cases[g, Line[s_] :> Flatten[s], Infinity] // Flatten // \
+         Map[g[[1, 1, #, 3]] &, #] &, 0.5]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  /// A single label that is neither a string nor a list (`Text["…"]`,
+  /// `Style["…", c]`) labels the one dataset of a plot, also when
+  /// `Placed` at a `Scaled[{x, y}]` position inside it.
+  #[test]
+  fn single_expression_legend_labels_the_dataset() {
+    clear_state();
+    for legend in [
+      r#"Text["level"]"#,
+      r#"Style["level", Red]"#,
+      r#"Placed[Text["level"], Scaled[{0.2, 0.9}]]"#,
+    ] {
+      let svg = export_svg(&format!(
+        "ListLinePlot[{{1, 3, 2, 4}}, PlotLegends -> {legend}]"
+      ));
+      assert!(svg.contains("level"), "{legend}: {svg}");
+    }
+  }
+
+  /// `Placed[…, Scaled[{x, y}]]` puts the legend where `Placed[…, {x, y}]`
+  /// does.
+  #[test]
+  fn scaled_legend_position_matches_bare_position() {
+    clear_state();
+    let at = |pos: &str| {
+      export_svg(&format!(
+        "ListLinePlot[{{1, 3, 2, 4}}, PlotLegends -> Placed[\"level\", {pos}]]"
+      ))
+    };
+    assert_eq!(at("Scaled[{0.2, 0.9}]"), at("{0.2, 0.9}"));
+  }
+}
+
 /// A script hung on a blank base (`\!\(\*SuperscriptBox[\(\ \), \(1\)]\)`,
 /// how a term symbol like `1s² ¹S` is typed) keeps the space its base
 /// typesets; only an invisible or empty base draws nothing. Regression: the

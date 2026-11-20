@@ -16332,7 +16332,17 @@ pub(crate) fn parse_plot_legends(
     && name == "Placed"
     && args.len() == 2
   {
-    let pos = match &args[1] {
+    // `Scaled[{x, y}]` names the same scaled position inside the plot as
+    // a bare `{x, y}` does.
+    let position = match &args[1] {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Scaled" && inner.len() == 1 =>
+      {
+        &inner[0]
+      }
+      other => other,
+    };
+    let pos = match position {
       Expr::Identifier(s) => match s.as_str() {
         "Top" | "Above" => LegendPosition::Top,
         "Bottom" | "Below" => LegendPosition::Bottom,
@@ -16436,6 +16446,12 @@ pub(crate) fn parse_plot_legends(
       (labels, false, false, LegendPosition::Right)
     }
     Expr::String(s) => (vec![s.clone()], false, false, LegendPosition::Right),
+    // Any other single label (`Text["…"]`, `Style["…", Red]`, `Row[…]`)
+    // labels the one dataset, as a one-element list would. A legend
+    // object (`BarLegend[…]`, …) is drawn by the plot itself instead.
+    Expr::FunctionCall { name, .. } if !name.ends_with("Legend") => {
+      parse_plot_legends(&Expr::List(vec![val.clone()].into()))
+    }
     _ => (Vec::new(), false, false, LegendPosition::Right),
   }
 }
