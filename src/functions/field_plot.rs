@@ -9424,7 +9424,10 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 #[cfg(test)]
-mod robust_range_tests {
+  use super::{
+    EQUATION_REFINEMENTS, refine_equation_grid, robust_value_range,
+    simplify_chain,
+  };
   use super::robust_value_range;
 
   #[test]
