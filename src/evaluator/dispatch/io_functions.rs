@@ -7591,9 +7591,56 @@ pub(crate) fn align_pane_lines(
   }
 }
 
+/// `Style[TraditionalForm[Style[layout, inner…]], outer…]` — a styled
+/// layout put in `TraditionalForm` and styled again (as `Text[…]` does with
+/// its text face) — is the layout styled by both: `TraditionalForm[Style[
+/// layout, outer…, inner…]]`, the nearer directives last so they win.
+/// `None` for anything else.
+fn traditional_style_merged(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Style" || args.len() < 2 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: form,
+    args: form_args,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if form != "TraditionalForm" || form_args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: style,
+    args: inner,
+  } = &form_args[0]
+  else {
+    return None;
+  };
+  if style != "Style"
+    || inner.len() < 2
+    || !matches!(&inner[0], Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Grid" | "TextGrid" | "Column" | "Row")
+        && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return None;
+  }
+  let directives = std::iter::once(inner[0].clone())
+    .chain(args[1..].iter().cloned())
+    .chain(inner[1..].iter().cloned())
+    .collect();
+  Some(call1("TraditionalForm", call("Style", directives)))
+}
+
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
+  }
+  if let Some(merged) = traditional_style_merged(expr) {
+    return expr_to_svg(&merged);
   }
   // A volume is drawn as its flat projection.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Image3D")

@@ -5018,9 +5018,31 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       return graphics_result(svg);
     }
   }
-  let expr = unwrap_display_pass_through(expr);
-  let expr = render_interactive_pane_if_needed(expr);
-  let expr = render_dynamic_if_needed(expr);
+  // A `Dynamic` item shows its current value. A `Text[…]` value
+  // (`Dynamic[If[ok, Text[a], Text[b]]]`) is pre-rendered like a `Text`
+  // item, keeping its wrapper so the layout sets it in the proportional
+  // text face; the display pipeline would peel it to bare monospace text.
+  let released = match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if is_visual_mode() && name == "Dynamic" && !args.is_empty() =>
+    {
+      let value = functions::graphics::dynamic_current_value(expr);
+      if functions::graphics::is_text_display_item(&value) {
+        return render_inline_display_wrapper(&value);
+      }
+      Some(value)
+    }
+    _ => None,
+  };
+  let expr = match released {
+    // Any other value is displayed as `render_dynamic_if_needed` would.
+    Some(value) => render_visual_display_pipeline(&value),
+    None => {
+      let expr = unwrap_display_pass_through(expr);
+      let expr = render_interactive_pane_if_needed(expr);
+      render_dynamic_if_needed(expr)
+    }
+  };
   let expr = render_event_handler_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);

@@ -4862,6 +4862,7 @@ mod tests {
         "Style[Grid[{{TraditionalForm[a + b], TraditionalForm[c - a]}}, Frame -> All], 30]",
         "TraditionalForm[Style[Grid[{{a + b, c - a}, {7, -a - b + c}}, Frame -> All], 30]]",
         "Text[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]]]",
+        "Style[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]], FontFamily -> \"Arial\"]",
       ] {
         let svg =
           woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();

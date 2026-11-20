@@ -17693,7 +17693,7 @@ pub(crate) fn in_text_face(content: &Expr) -> Expr {
 
 /// Whether a layout item is a plain-text `Text[expr]` display, possibly
 /// dressed in `Style`/`Invisible` wrappers.
-fn is_text_display_item(item: &Expr) -> bool {
+pub(crate) fn is_text_display_item(item: &Expr) -> bool {
   match item {
     Expr::FunctionCall { name, args } if name == "Text" => args.len() == 1,
     Expr::FunctionCall { name, args }
@@ -35080,10 +35080,20 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
 }
 
 fn resolve_display_item(expr: &Expr) -> Expr {
+  resolve_display_item_face(expr).0
+}
+
+/// `resolve_display_item`, also reporting whether a held `Dynamic[…]` on
+/// the way showed a plain `Text[…]` item (`Dynamic[If[c, Text[a],
+/// Text[b]]]`): the `Text` wrapper comes off with the rest, but the item
+/// is still set in the proportional text face rather than the monospace
+/// one of a bare string.
+fn resolve_display_item_face(expr: &Expr) -> (Expr, bool) {
+  let mut shows_text = false;
   let mut current = expr.clone();
   // `Null` is drawn as nothing, not as the word "Null".
   if matches!(&current, Expr::Identifier(s) if s == "Null") {
-    return Expr::String(String::new());
+    return (Expr::String(String::new()), false);
   }
   // `Dynamic[…]` shows its current value; `EventHandler[content, rules…]`
   // shows `content` (its event rules need live input a static rendering
@@ -35105,7 +35115,10 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
         crate::truncate_captured_graphics(captured);
         match evaluated {
-          Ok(inner) => current = inner,
+          Ok(inner) => {
+            shows_text |= is_text_display_item(&inner);
+            current = inner;
+          }
           Err(_) => break,
         }
       }
@@ -35167,7 +35180,8 @@ fn resolve_display_item(expr: &Expr) -> Expr {
         .chain(args[1..].iter().cloned())
         .collect(),
     );
-    return resolve_display_item(&restyled);
+    let (resolved, text) = resolve_display_item_face(&restyled);
+    return (resolved, text || shows_text);
   }
   // `InputForm[expr]` displays as the InputForm text of `expr`.
   if let Expr::FunctionCall { name, args } = &current
@@ -35211,7 +35225,7 @@ fn resolve_display_item(expr: &Expr) -> Expr {
   {
     current = release_dynamics(&current);
   }
-  current
+  (current, shows_text)
 }
 
 /// A one-argument `Text[…]` around a string or a `Row`/`Column`/`Grid`
@@ -36371,7 +36385,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
           height: h,
         };
       }
-      let resolved = resolve_display_item(item);
+      let (resolved, shows_text) = resolve_display_item_face(item);
       match &resolved {
         Expr::Graphics { svg, .. } => {
           let (w, h) = parse_svg_wh(svg);
@@ -36405,7 +36419,9 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
               height: h,
             }
           }
-          None => Cell::Text(resolved, is_text_display_item(item)),
+          None => {
+            Cell::Text(resolved, shows_text || is_text_display_item(item))
+          }
         },
       }
     })
@@ -37207,7 +37223,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
   let cells: Vec<Cell> = items
     .iter()
     .map(|item| {
-      let resolved = resolve_display_item(item);
+      let (resolved, shows_text) = resolve_display_item_face(item);
       match &resolved {
         Expr::Graphics { svg, .. } => {
           let (w, h) = parse_svg_wh(svg);
@@ -37270,7 +37286,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
               // default, and so narrower.
               if let Cell::Text { family, width, .. } = &mut cell
                 && family.is_empty()
-                && is_text_display_item(item)
+                && (shows_text || is_text_display_item(item))
               {
                 *family = "sans-serif".to_string();
                 *width *= SANS_ADVANCE / MONO_ADVANCE;
