@@ -44651,12 +44651,14 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
 }
 
 /// Record the name of each `Control[spec]` that a `Row[{…}]` places
-/// directly after another `Control[…]`, so the two share one line of the
-/// control panel the way Wolfram lays such a row out (e.g. a setter bar
-/// with a 2D slider beside it). Layout containers (`Column[{Row[…],
-/// Row[…]}]`, …) are searched for such rows. `Spacer[…]` and string items
-/// between two controls keep them on the same line; any other item breaks
-/// the run.
+/// directly after another `Control[…]` or after a caption, so they share
+/// one line of the control panel the way Wolfram lays such a row out (e.g.
+/// a setter bar with a 2D slider beside it, or a leading
+/// `"number of sides:"` text followed by two setter bars). Layout
+/// containers (`Column[{Row[…], Row[…]}]`, …) are searched for such rows.
+/// `Spacer[…]` items keep the run going, and a caption piece (a string or
+/// `Style[…]`/`Text[…]` label holding no control, which the panel draws as
+/// a heading row) starts or continues it; any other item breaks the run.
 fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
   match spec {
     Expr::FunctionCall { name, args } if name == "Row" => {
@@ -44688,7 +44690,13 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
             }
           }
           Expr::FunctionCall { name, .. } if name == "Spacer" => {}
-          Expr::String(_) => {}
+          Expr::String(_) => after_control = true,
+          Expr::FunctionCall { name, .. }
+            if (name == "Style" || name == "Text")
+              && !row_item_holds_control(item) =>
+          {
+            after_control = true;
+          }
           other => {
             after_control = false;
             collect_row_joined_controls(other, out);
@@ -44707,6 +44715,21 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
       }
     }
     _ => {}
+  }
+}
+
+/// Whether a `Row` item contains a `Control[…]`/`Button[…]` anywhere, i.e.
+/// is not a pure caption piece.
+fn row_item_holds_control(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } => {
+      name == "Control"
+        || name == "Button"
+        || name == "Dynamic"
+        || args.iter().any(row_item_holds_control)
+    }
+    Expr::List(items) => items.iter().any(row_item_holds_control),
+    _ => false,
   }
 }
 
