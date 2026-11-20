@@ -29957,9 +29957,9 @@ SaveDefinitions -> True]";
   /// style — evaluated fresh on every re-render against the *current*
   /// slider values (not memoized once at Initialization time), and (3) a
   /// custom layout argument (`Column[{Row[{Place[1], …}], Grid[{…}]}]`)
-  /// with per-control `ControlPlacement -> n` — Woxi keeps one control
-  /// panel rather than reproducing Wolfram's multi-region custom layout,
-  /// so this must parse harmlessly rather than breaking extraction.
+  /// with per-control `ControlPlacement -> n` — each `Place[n]` is filled
+  /// with its control, so the layout's "radii" caption shows up as a
+  /// static text row ahead of the three radius sliders.
   #[test]
   fn demonstration_tangent_circles_setter_toggles_3d_and_construction() {
     let code = "Manipulate[\
@@ -30020,7 +30020,7 @@ SaveDefinitions -> True]";
     );
 
     let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
-    assert_eq!(names, ["view3d", "spread", "r1", "r2", "r3"]);
+    assert_eq!(names, ["view3d", "spread", "", "r1", "r2", "r3"]);
 
     match &state.controls[0] {
       manipulate::ControlState::Discrete {
@@ -30059,12 +30059,12 @@ SaveDefinitions -> True]";
     // helpers must be called fresh with the *new* r1/r2/r3, not whatever
     // they memoized during the one-time Initialization run.
     if let manipulate::ControlState::Continuous { current, .. } =
-      &mut state.controls[2]
+      &mut state.controls[3]
     {
       *current = 4.0; // r1: 3 -> 4
     }
     if let manipulate::ControlState::Continuous { current, .. } =
-      &mut state.controls[3]
+      &mut state.controls[4]
     {
       *current = 3.0; // r2: 2 -> 3
     }

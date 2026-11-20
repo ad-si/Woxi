@@ -3635,6 +3635,42 @@ mod tests {
     );
   }
 
+  /// Controls declared with `ControlPlacement -> n` are drawn where a
+  /// layout argument references them by `Place[n]` (bare or as the
+  /// FrontEnd-saved `` Manipulate`Place[n] ``), so `Row[{Place[2],
+  /// Place[1]}]` puts both checkboxes on one line in that order. Regression:
+  /// the `Place` template was dropped and each checkbox got a line of its
+  /// own at its declaration position.
+  #[test]
+  fn numbered_control_placement_fills_place_template() {
+    for place in ["Place", "Manipulate`Place"] {
+      let code = format!(
+        r#"Manipulate[
+          {{r, a, b}},
+          {{{{r, 1, "radius"}}, 0, 2}},
+          {{{{a, False, "first"}}, {{False, True}}, ControlPlacement -> 1}},
+          {{{{b, True, "second"}}, {{False, True}}, ControlPlacement -> 2}},
+          Row[{{{place}[2], {place}[1]}}, Spacer[20]]
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      let joins: Vec<(&str, bool)> = state
+        .controls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !c.name().is_empty())
+        .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+        .collect();
+      assert_eq!(
+        joins,
+        vec![("r", false), ("b", false), ("a", true)],
+        "{place}"
+      );
+    }
+  }
+
   /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
   /// control state, so they are drawn side by side on one line, and a
   /// `Style[…, FontSize -> n]` caption keeps its size.
