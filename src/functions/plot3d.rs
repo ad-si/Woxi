@@ -8110,6 +8110,17 @@ fn resolve_complex_indices(
         args: new_args.into(),
       }
     }
+    // `Text[expr, i, …]` anchors its label at point `i`.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() >= 2 => {
+      let mut new_args = args.to_vec();
+      if matches!(args[1], Expr::Integer(_)) {
+        new_args[1] = substitute(&args[1], points);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
     Expr::List(items) => Expr::List(
       items
         .iter()
