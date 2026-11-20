@@ -3836,6 +3836,14 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         return graphics_result(svg);
       }
       match render_grid_if_needed(content) {
+        // A fixed `{w, h}` pane keeps its box around the table (see the
+        // `Pane[Text[…], size]` arm below).
+        syntax::Expr::Graphics { .. }
+          if let Some(svg) =
+            functions::graphics::fixed_size_pane_svg(&args[0]) =>
+        {
+          graphics_result(svg)
+        }
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }
@@ -3877,6 +3885,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         ) =>
     {
       match render_grid_if_needed(args[0].clone()) {
+        // A `Pane[…, {w, h}]` of numeric width and height draws exactly
+        // `w`×`h` with the table aligned inside, so the picture keeps the
+        // pane's box (as `ExportString[…, "SVG"]` does) rather than shrinking
+        // to the table — a Manipulate body sized this way must not change
+        // size when its controls move.
+        syntax::Expr::Graphics { .. }
+          if let Some(svg) =
+            functions::graphics::fixed_size_pane_svg(&expr) =>
+        {
+          graphics_result(svg)
+        }
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }

@@ -34903,7 +34903,7 @@ pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
 /// The box a `Pane[content, {w, h}]` with a numeric width and height
 /// draws: exactly `w`×`h`, the content aligned inside it. `None` for any
 /// other expression (an unsized pane only shows its content).
-fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
+pub fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
   use crate::evaluator::dispatch::io_functions::{
     pane_fixed_size, pane_size_component,
   };

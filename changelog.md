@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
+    inside `Text`) is drawn as its full `w`×`h` box with the table aligned
+    inside, so a Manipulate body sized this way no longer shrinks to the
+    table or changes size as its controls move.
 - A `TransformationFunction` applied to a geometric region (`Cylinder`,
     `Sphere`, `Ball`, `Disk`, `Circle`, `Cone`, `Line`, `Polygon`, …) maps the
     region's points and keeps the primitive, so a rotated `Cylinder` is drawn.
