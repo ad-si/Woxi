@@ -3422,7 +3422,8 @@ mod tests {
       // picture at its own size, not at the default label size, so the
       // vertical axis's label on the left edge is not cut off. (Under
       // `SphericalRegion -> True` it still is: see `conformance_gaps.md`.)
-      for region in ["False"] {
+      {
+        let region = "False";
         let svg = svg_of(&format!(
           "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
          SphericalRegion -> {region}, \
