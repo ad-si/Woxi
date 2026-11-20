@@ -5695,6 +5695,20 @@ farthest corner of each primitive's own bounding box drew such a band at
 about 81 % and matched that Demonstration. It was not checked against the
 polyhedron snapshots above. No single rule is known to fit both.
 
+A second scene of this kind is drawn the same 1.35× larger by Wolfram: a
+unit `Sphere[]` with the four vertices `{0, ±√2, 1}`, `{±√2, 0, -1}` of a
+tetrahedron around it (a 2√2 × 2√2 × 2 box) and `Boxed -> False`,
+`SphericalRegion -> True`, `ImageSize -> 450`, from the default `ViewPoint`.
+In a Demonstration's snapshot the ball spans 252 of the 450 pixels. Woxi
+draws it 187 pixels wide, framing by the box's sphere (radius √5). Framing
+by the sphere that holds the contents (radius √3 around the box center,
+padded by 2 %) reproduces the 252 pixels exactly and also fits the band
+above. That rule was tried and reverted. It contradicts the rings
+calibration in `svg_rendering.rs`, where two unit disks 2 apart span about
+55 % of a 400 × 400 picture (the box sphere). It also contradicts the
+documented "sphere drawn around the bounding box", under which a lone
+`Sphere[]` shrinks to about 1/√3 of the frame.
+
 ### Sphere framing of an unboxed box at a fixed `ImageSize`
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a
