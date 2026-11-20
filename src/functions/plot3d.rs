@@ -2,7 +2,7 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::{try_eval_to_f64, try_eval_to_f64_lenient};
 use crate::functions::plot::{
-  PLOT_COLORS, format_tick, nice_step, parse_image_size, substitute_var,
+  PLOT_COLORS, format_tick, parse_image_size, substitute_var,
 };
 
 const DEFAULT_SIZE: u32 = 360;
@@ -85,6 +85,26 @@ impl Camera {
         eye.center[2] + eye.distance * toward[2] - p.z,
       ],
       None => toward,
+    }
+  }
+
+  /// `toward_viewer` as a function of the point, with the angles turned
+  /// into a direction (or an eye position) only once.
+  pub(crate) fn toward_viewer_fn(&self) -> impl Fn(Point3D) -> [f64; 3] {
+    let origin = Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    };
+    // From the origin, the direction to the eye is the eye itself.
+    let base = self.toward_viewer(origin);
+    let perspective = self.perspective.is_some();
+    move |p| {
+      if perspective {
+        [base[0] - p.x, base[1] - p.y, base[2] - p.z]
+      } else {
+        base
+      }
     }
   }
 
@@ -344,10 +364,101 @@ fn line_draw_slots(
   segs: &[[Point3D; 2]],
   camera: &Camera,
 ) -> Vec<usize> {
-  const CELLS: usize = 64;
-  if tris.is_empty() || verts.len() != tris.len() {
-    return vec![0; segs.len()];
+  line_draw_bounds(verts, tris, segs, camera, None)
+    .into_iter()
+    .map(|(slot, _)| slot)
+    .collect()
+}
+
+/// Where each outline edge `segs[k]` of a face goes in the draw order of
+/// `tris`, as `line_draw_slots` places a line piece, but never after the
+/// first face that covers the edge and lies in front of it. An edge ending
+/// in a corner of a solid touches the faces meeting there; one of them
+/// drawn late must not lift a hidden edge over a face that hides it.
+/// `owners[k]` is the face edge `segs[k]` belongs to: the edge never goes
+/// before it, so the faces drawn before it need not be looked at.
+fn outline_draw_slots(
+  verts: &[[Point3D; 3]],
+  tris: &[Triangle],
+  segs: &[[Point3D; 2]],
+  owners: &[usize],
+  camera: &Camera,
+) -> Vec<usize> {
+  line_draw_bounds(verts, tris, segs, camera, Some(owners))
+    .into_iter()
+    .zip(owners)
+    .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
+    .collect()
+}
+
+/// Which outline edges of the faces `verts` (edge `e` of face `k` at
+/// `3 * k + e`) may show over the faces drawn after their own. On a closed
+/// solid an edge is visible only where one of the two faces meeting at it
+/// faces the viewer; an edge between two faces turned away is hidden by
+/// the solid's own front, so it stays right after its face and the front
+/// faces paint over it. A face counts as turned toward the viewer when the
+/// viewer and the far corner of the face across the edge lie on opposite
+/// sides of its plane, which needs no consistent winding. An edge no other
+/// face shares (the rim of an open surface) is not on a solid.
+fn front_outline_edges(
+  verts: &[[Point3D; 3]],
+  tris: &[Triangle],
+  camera: &Camera,
+) -> Vec<bool> {
+  let key = |p: Point3D| {
+    let q = |v: f64| (v * 1e7).round() as i64;
+    (q(p.x), q(p.y), q(p.z))
+  };
+  let mut by_edge: std::collections::HashMap<_, Vec<(usize, usize)>> =
+    std::collections::HashMap::new();
+  for (k, (v, t)) in verts.iter().zip(tris).enumerate() {
+    for e in 0..3 {
+      if t.boundary[e] {
+        let (a, b) = (key(v[e]), key(v[(e + 1) % 3]));
+        by_edge
+          .entry(if a <= b { (a, b) } else { (b, a) })
+          .or_default()
+          .push((k, e));
+      }
+    }
   }
+  let toward_viewer = camera.toward_viewer_fn();
+  let mut front = vec![true; verts.len() * 3];
+  for faces in by_edge.values() {
+    for &(k, e) in faces {
+      let Some(&(other, oe)) = faces.iter().find(|&&(j, _)| j != k) else {
+        continue;
+      };
+      let v = &verts[k];
+      let n = triangle_normal(v[0], v[1], v[2]);
+      let far = verts[other][(oe + 2) % 3];
+      let inward = v_dot(n, [far.x - v[0].x, far.y - v[0].y, far.z - v[0].z]);
+      let toward = v_dot(n, toward_viewer(v[0]));
+      front[k * 3 + e] = inward * toward < 0.0;
+    }
+  }
+  front
+}
+
+/// For each piece `segs[k]`: the slot `line_draw_slots` describes, and the
+/// index of the first triangle that covers the piece on screen and lies in
+/// front of it. That first face is only looked for when `owners` gives
+/// the face each piece belongs to, and only among the faces drawn after
+/// it; otherwise it is `usize::MAX`.
+fn line_draw_bounds(
+  verts: &[[Point3D; 3]],
+  tris: &[Triangle],
+  segs: &[[Point3D; 2]],
+  camera: &Camera,
+  owners: Option<&[usize]>,
+) -> Vec<(usize, usize)> {
+  if tris.is_empty() || verts.len() != tris.len() {
+    return vec![(0, usize::MAX); segs.len()];
+  }
+  // The screen grid that narrows down the faces near a point: finer for a
+  // crowded scene, so a cell does not hold thousands of faces.
+  let cells = ((tris.len() as f64).sqrt() as usize).clamp(64, 512);
+  let toward_viewer = camera.toward_viewer_fn();
   let (mut lo, mut hi) = ((f64::MAX, f64::MAX), (f64::MIN, f64::MIN));
   for t in tris {
     for &(x, y) in &t.projected {
@@ -355,15 +466,15 @@ fn line_draw_slots(
       hi = (hi.0.max(x), hi.1.max(y));
     }
   }
-  let w = ((hi.0 - lo.0) / CELLS as f64).max(1e-300);
-  let h = ((hi.1 - lo.1) / CELLS as f64).max(1e-300);
+  let w = ((hi.0 - lo.0) / cells as f64).max(1e-300);
+  let h = ((hi.1 - lo.1) / cells as f64).max(1e-300);
   let cell = |x: f64, y: f64| {
     (
-      (((x - lo.0) / w) as isize).clamp(0, CELLS as isize - 1) as usize,
-      (((y - lo.1) / h) as isize).clamp(0, CELLS as isize - 1) as usize,
+      (((x - lo.0) / w) as isize).clamp(0, cells as isize - 1) as usize,
+      (((y - lo.1) / h) as isize).clamp(0, cells as isize - 1) as usize,
     )
   };
-  let mut grid: Vec<Vec<usize>> = vec![Vec::new(); CELLS * CELLS];
+  let mut grid: Vec<Vec<usize>> = vec![Vec::new(); cells * cells];
   for (k, t) in tris.iter().enumerate() {
     let xs = t.projected.map(|p| p.0);
     let ys = t.projected.map(|p| p.1);
@@ -377,7 +488,7 @@ fn line_draw_slots(
     );
     for r in r0..=r1 {
       for c in c0..=c1 {
-        grid[r * CELLS + c].push(k);
+        grid[r * cells + c].push(k);
       }
     }
   }
@@ -386,83 +497,95 @@ fn line_draw_slots(
   // line along a face's edge (a mesh line on a surface) must still be
   // drawn after it.
   let margin = 0.002 * (hi.0 - lo.0).max(hi.1 - lo.1);
-  // Whether `(x, y)` lies inside the triangle `t`, widened by `pad`.
-  let within = |t: &[(f64, f64); 3], (x, y): (f64, f64), pad: f64| {
+  // How far inside the triangle a point lies on screen (negative outside).
+  let depth_inside = |t: &[(f64, f64); 3], (x, y): (f64, f64)| {
     let side = |a: (f64, f64), b: (f64, f64)| {
       let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
       ((b.0 - a.0) * (y - a.1) - (b.1 - a.1) * (x - a.0)) / len.max(1e-300)
     };
     let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
-    s.iter().all(|&v| v >= -pad) || s.iter().all(|&v| v <= pad)
-  };
-  let inside = |t: &[(f64, f64); 3], p: (f64, f64)| within(t, p, margin);
-  // Each triangle's plane, its normal turned toward the viewer, and the
-  // tolerance within which a point still counts as on it: a line on a
-  // curved surface lies a little behind the planes of the faces next to
-  // the ones it runs along.
-  let planes: Vec<([f64; 3], Point3D, f64)> = verts
-    .iter()
-    .map(|v| {
-      let mut n = triangle_normal(v[0], v[1], v[2]);
-      if v_dot(n, camera.toward_viewer(v[0])) < 0.0 {
-        n = [-n[0], -n[1], -n[2]];
-      }
-      let size = (0..3)
-        .map(|e| {
-          let (a, b) = (v[e], v[(e + 1) % 3]);
-          v_len([a.x - b.x, a.y - b.y, a.z - b.z])
-        })
-        .fold(0.0, f64::max);
-      (n, v[0], 1e-2 * size.max(1e-300))
-    })
-    .collect();
-  // Signed distance of `m` in front of triangle `k`'s plane.
-  let front = |k: usize, m: Point3D| {
-    let (n, o, _) = planes[k];
-    v_dot(n, [m.x - o.x, m.y - o.y, m.z - o.z])
+    let lo = s.iter().copied().fold(f64::MAX, f64::min);
+    let hi = s.iter().copied().fold(f64::MIN, f64::max);
+    lo.max(-hi)
   };
   segs
     .iter()
-    .map(|seg| {
+    .enumerate()
+    .map(|(n, seg)| {
       // A piece can cross several small faces: it is sampled along its
       // length.
-      let samples = [0.02, 0.25, 0.5, 0.75, 0.98].map(|t| {
-        let m = Point3D {
-          x: seg[0].x + t * (seg[1].x - seg[0].x),
-          y: seg[0].y + t * (seg[1].y - seg[0].y),
-          z: seg[0].z + t * (seg[1].z - seg[0].z),
-        };
-        (m, project(m, camera))
-      });
+      let floor = owners.map(|o| o[n] + 1);
+      let mut slot = floor.unwrap_or(0);
+      let mut first_front = usize::MAX;
       // Faces the piece runs along (or crosses in front of) lift it over
       // them. A face it only touches with an end sample (a hidden edge
       // meeting the corner of a face in front of it) lifts it only as far
       // as the first face hiding part of it: lifting it further would
       // paint a stub of the hidden line over that face.
-      let (mut slot, mut end_slot) = (0, 0);
+      let mut end_slot = 0;
       let mut cap = usize::MAX;
-      for (i, &(m, pm)) in samples.iter().enumerate() {
+      const SAMPLES: [f64; 5] = [0.02, 0.25, 0.5, 0.75, 0.98];
+      for (i, t) in SAMPLES.into_iter().enumerate() {
+        let at_end = i == 0 || i == SAMPLES.len() - 1;
+        let m = Point3D {
+          x: seg[0].x + t * (seg[1].x - seg[0].x),
+          y: seg[0].y + t * (seg[1].y - seg[0].y),
+          z: seg[0].z + t * (seg[1].z - seg[0].z),
+        };
+        let pm = project(m, camera);
         if pm.0 < lo.0 || pm.0 > hi.0 || pm.1 < lo.1 || pm.1 > hi.1 {
           continue;
         }
-        let at_end = i == 0 || i == samples.len() - 1;
         let (c, r) = cell(pm.0, pm.1);
-        for &k in &grid[r * CELLS + c] {
-          if !inside(&tris[k].projected, pm) {
+        // Each cell lists its faces in draw order.
+        let near = &grid[r * cells + c];
+        let start = floor.map_or(0, |f| near.partition_point(|&k| k < f));
+        for &k in &near[start..] {
+          // A face drawn before the slot found so far can only matter
+          // as the first one in front, and only when that is looked for.
+          if k < slot && (floor.is_none_or(|f| k < f) || k >= first_front) {
             continue;
           }
-          if front(k, m) >= -planes[k].2 {
+          let inset = depth_inside(&tris[k].projected, pm);
+          if inset < -margin {
+            continue;
+          }
+          let v = &verts[k];
+          let mut n = triangle_normal(v[0], v[1], v[2]);
+          let view = toward_viewer(v[0]);
+          if v_dot(n, view) < 0.0 {
+            n = [-n[0], -n[1], -n[2]];
+          }
+          let size = (0..3)
+            .map(|e| {
+              let (a, b) = (v[e], v[(e + 1) % 3]);
+              v_len([a.x - b.x, a.y - b.y, a.z - b.z])
+            })
+            .fold(0.0, f64::max);
+          let d = v_dot(n, [m.x - v[0].x, m.y - v[0].y, m.z - v[0].z]);
+          // A line on a curved surface lies a little behind the planes
+          // of the faces next to the ones it runs along.
+          if d >= -1e-2 * size.max(1e-300) {
             if at_end {
               end_slot = end_slot.max(k + 1);
             } else {
               slot = slot.max(k + 1);
             }
-          } else if k < cap && within(&tris[k].projected, pm, margin * 1e-3) {
-            cap = k;
+          } else {
+            if inset >= -margin * 1e-3 {
+              cap = cap.min(k);
+            }
+            if inset > margin && floor.is_some() {
+              // Only a face that really covers the piece hides it: the
+              // faces of a convex solid next to its silhouette lie a
+              // little in front of the outline there but only touch it on
+              // screen.
+              first_front = first_front.min(k);
+            }
           }
         }
       }
-      slot.max(end_slot.min(cap))
+      (slot.max(end_slot.min(cap)), first_front)
     })
     .collect()
 }
@@ -530,6 +653,14 @@ fn for_each_overlapping_pair(
 /// a scene whose surfaces cross each other heavily.
 const MAX_SPLIT_PLANES: usize = 256;
 
+/// How many times its original triangle count a scene may grow to when
+/// interpenetrating triangles are cut.
+const SPLIT_MAX_GROWTH: usize = 3;
+
+/// Triangles a small scene may always grow to when cut, however few it
+/// started with.
+const SPLIT_MIN_BUDGET: usize = 10000;
+
 /// Most pieces one triangle is cut into.
 const MAX_PIECES_PER_TRIANGLE: usize = 64;
 
@@ -542,6 +673,107 @@ fn triangle_area(t: &[Point3D; 3]) -> f64 {
   let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
   let e2 = [t[2].x - t[0].x, t[2].y - t[0].y, t[2].z - t[0].z];
   0.5 * v_len(v_cross(e1, e2))
+}
+
+/// Whether the segment from `p` to `q` passes through the interior of
+/// triangle `t` (Möller–Trumbore, with a small relative tolerance so
+/// segments that merely graze an edge or end on the plane count too).
+fn segment_hits_triangle(p: Point3D, q: Point3D, t: &[Point3D; 3]) -> bool {
+  let pt = |a: Point3D| [a.x, a.y, a.z];
+  let (a, b, c) = (pt(t[0]), pt(t[1]), pt(t[2]));
+  let (o, d) = (pt(p), v_sub(pt(q), pt(p)));
+  let (e1, e2) = (v_sub(b, a), v_sub(c, a));
+  let h = v_cross(d, e2);
+  let det = v_dot(e1, h);
+  let scale = v_len(e1) * v_len(e2) * v_len(d);
+  if det.abs() <= 1e-12 * scale.max(1e-300) {
+    // Parallel to the plane: coplanar overlap is ordered elsewhere.
+    return false;
+  }
+  let inv = 1.0 / det;
+  let s = v_sub(o, a);
+  let u = inv * v_dot(s, h);
+  let eps = 1e-9;
+  if u < -eps || u > 1.0 + eps {
+    return false;
+  }
+  let qv = v_cross(s, e1);
+  let v = inv * v_dot(d, qv);
+  if v < -eps || u + v > 1.0 + eps {
+    return false;
+  }
+  let along = inv * v_dot(e2, qv);
+  (-eps..=1.0 + eps).contains(&along)
+}
+
+/// Whether two (non-coplanar) triangles meet in space: some edge of one
+/// passes through the other.
+fn triangles_intersect(a: &[Point3D; 3], b: &[Point3D; 3]) -> bool {
+  (0..3).any(|k| segment_hits_triangle(a[k], a[(k + 1) % 3], b))
+    || (0..3).any(|k| segment_hits_triangle(b[k], b[(k + 1) % 3], a))
+}
+
+/// Depths of triangles `a` and `b` (corners in space and on screen) at a
+/// screen point inside both: the centroid of the projected triangles'
+/// common area. Each 3-D point is found by its screen barycentric
+/// coordinates. `None` when they share no area.
+fn depths_at_shared_point(
+  a: &[Point3D; 3],
+  pa: &[(f64, f64); 3],
+  b: &[Point3D; 3],
+  pb: &[(f64, f64); 3],
+  camera: &Camera,
+) -> Option<(f64, f64)> {
+  // Clip `pa` by each edge of `pb` (Sutherland–Hodgman); orientation of
+  // `pb` decides which side of an edge is inside.
+  let cross = |o: (f64, f64), p: (f64, f64), q: (f64, f64)| {
+    (p.0 - o.0) * (q.1 - o.1) - (p.1 - o.1) * (q.0 - o.0)
+  };
+  let orient = cross(pb[0], pb[1], pb[2]).signum();
+  if orient == 0.0 {
+    return None;
+  }
+  let mut poly: Vec<(f64, f64)> = pa.to_vec();
+  for k in 0..3 {
+    let (e0, e1) = (pb[k], pb[(k + 1) % 3]);
+    let side = |p: (f64, f64)| orient * cross(e0, e1, p);
+    let mut next = Vec::with_capacity(poly.len() + 1);
+    for m in 0..poly.len() {
+      let (p, q) = (poly[m], poly[(m + 1) % poly.len()]);
+      let (sp, sq) = (side(p), side(q));
+      if sp >= 0.0 {
+        next.push(p);
+      }
+      if (sp > 0.0 && sq < 0.0) || (sp < 0.0 && sq > 0.0) {
+        let t = sp / (sp - sq);
+        next.push((p.0 + t * (q.0 - p.0), p.1 + t * (q.1 - p.1)));
+      }
+    }
+    poly = next;
+    if poly.len() < 3 {
+      return None;
+    }
+  }
+  let n = poly.len() as f64;
+  let c = poly
+    .iter()
+    .fold((0.0, 0.0), |s, p| (s.0 + p.0 / n, s.1 + p.1 / n));
+  let lift = |t: &[Point3D; 3], pt: &[(f64, f64); 3]| -> Option<f64> {
+    let det = cross(pt[0], pt[1], pt[2]);
+    if det.abs() < 1e-300 {
+      return None;
+    }
+    let u = cross(pt[0], c, pt[2]) / det;
+    let v = cross(pt[0], pt[1], c) / det;
+    let w = 1.0 - u - v;
+    let p = Point3D {
+      x: w * t[0].x + u * t[1].x + v * t[2].x,
+      y: w * t[0].y + u * t[1].y + v * t[2].y,
+      z: w * t[0].z + u * t[1].z + v * t[2].z,
+    };
+    Some(depth(p, camera))
+  };
+  Some((lift(a, pa)?, lift(b, pb)?))
 }
 
 /// Cuts a convex polygon (corner, flag of the edge to the next corner) by
@@ -709,8 +941,14 @@ fn split_interpenetrating(
   let areas: Vec<f64> = verts.iter().map(triangle_area).collect();
   let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(&projected, |i, j| {
+    // Two triangles that each straddle the other's plane without touching
+    // (facets of two rods crossing on screen) keep one depth order over
+    // all their shared screen area, so they need no cut. Cutting them anyway
+    // spends a triangle's piece budget before the faces it really passes
+    // through get to cut it.
     if side_of_plane(&verts[i], &verts[j], camera).is_none()
       && side_of_plane(&verts[j], &verts[i], camera).is_none()
+      && triangles_intersect(&verts[i], &verts[j])
     {
       // Cutting either triangle by the other's plane is enough to order
       // the pair, so of two very differently sized triangles only the
@@ -732,16 +970,37 @@ fn split_interpenetrating(
     return;
   }
   let original = verts.clone();
+  // Triangles each one is expected to end up as: a cut by `p` planes
+  // leaves at most `p + 1` pieces of up to a few corners each. Assuming
+  // the worst case (`MAX_PIECES_PER_TRIANGLE` for every triangle) kept all
+  // but the last few thousand triangles of a larger scene whole.
+  let estimate = |k: usize| {
+    if planes[k].is_empty() {
+      1
+    } else {
+      (2 * (planes[k].len() + 1)).min(2 * MAX_PIECES_PER_TRIANGLE)
+    }
+  };
+  // `still_to_come[k]`: the expected triangles from `k` on.
+  let mut still_to_come = vec![0usize; n + 1];
+  for k in (0..n).rev() {
+    still_to_come[k] = still_to_come[k + 1] + estimate(k);
+  }
+  // The split scene has to stay within what `painter_order` sorts, and a
+  // scene whose faces cross everywhere (a tube thicker than its curve) must
+  // not grow without bound.
+  let budget = PAINTER_ORDER_MAX_TRIANGLES
+    .min((SPLIT_MAX_GROWTH * n).max(SPLIT_MIN_BUDGET));
   let mut new_verts = Vec::with_capacity(n);
   let mut new_tris = Vec::with_capacity(n);
   for (k, tri) in triangles.drain(..).enumerate() {
-    // The split scene has to stay within what `painter_order` sorts: once
-    // the triangles still to come would only just fit, they stay whole.
-    let remaining = n - k;
+    // The triangle being cut is charged its worst case, so whatever the
+    // earlier ones became, the scene ends within `budget`: once the
+    // triangles still to come would no longer fit, they stay whole.
     if planes[k].is_empty()
       || tri.texture.is_some()
-      || new_tris.len() + remaining * MAX_PIECES_PER_TRIANGLE
-        > PAINTER_ORDER_MAX_TRIANGLES
+      || new_tris.len() + 2 * MAX_PIECES_PER_TRIANGLE + still_to_come[k + 1]
+        > budget
     {
       new_verts.push(original[k]);
       new_tris.push(tri);
@@ -833,6 +1092,21 @@ fn painter_order(
     } else {
       side_of_plane(&verts[i], &verts[j], camera)
         .or_else(|| side_of_plane(&verts[j], &verts[i], camera).map(|s| !s))
+        .or_else(|| {
+          // Each straddles the other's plane; when they do not meet, the
+          // one farther away where they overlap on screen is behind.
+          if triangles_intersect(&verts[i], &verts[j]) {
+            return None;
+          }
+          let (di, dj) = depths_at_shared_point(
+            &verts[i],
+            &projected[i],
+            &verts[j],
+            &projected[j],
+            camera,
+          )?;
+          (di != dj).then_some(di > dj)
+        })
     };
     match i_behind {
       Some(true) => {
@@ -2777,7 +3051,36 @@ fn generate_svg(
       )
     })
   };
-  let ((scale, _), cx, cy, w, h) = fit_3d_frame(
+  // `ImagePadding`: as in `Graphics3D`, the scene is fitted into the region
+  // inside the padding band and the picture keeps its full size around it.
+  let image_padding = options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(name) if name == "ImagePadding") => {
+      let value = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| (**replacement).clone());
+      Some(
+        crate::functions::plot::parse_image_padding(&value)
+          .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0)),
+      )
+    }
+    _ => None,
+  });
+  let image_padding = image_padding.flatten();
+  let [pad_left, pad_right, pad_bottom, pad_top] =
+    image_padding.unwrap_or([0.0; 4]);
+  let pad_w = (pad_left + pad_right).round() as u32;
+  let pad_h = (pad_bottom + pad_top).round() as u32;
+  let padded = image_padding.is_some()
+    && !full_width
+    && svg_width > pad_w
+    && (auto_height || svg_height > pad_h);
+  if padded {
+    svg_width -= pad_w;
+    svg_height = svg_height.saturating_sub(pad_h).max(1);
+  }
+  let ((scale, _), mut cx, mut cy, w, h) = fit_3d_frame(
     svg_width,
     (!auto_height || full_width).then_some(svg_height),
     (px_min, px_max, py_min, py_max),
@@ -2786,6 +3089,15 @@ fn generate_svg(
   );
   svg_width = w;
   svg_height = h;
+  // The field of view of an explicit `ViewAngle` spans the region inside
+  // the padding.
+  let inner_side = w.min(h) as f64;
+  if padded {
+    cx += pad_left;
+    cy += pad_top;
+    svg_width += pad_w;
+    svg_height += pad_h;
+  }
 
   // An explicit `ViewAngle` fixes the camera's field of view, exactly as in
   // `Graphics3D`: the frame spans `2 · d · tan(θ/2)` about the middle of the
@@ -2804,7 +3116,7 @@ fn generate_svg(
             },
             camera,
           );
-          (svg_width.min(svg_height) as f64 / span, bcx, bcy)
+          (inner_side / span, bcx, bcy)
         } else {
           (scale, p_cx, p_cy)
         }
@@ -3587,6 +3899,26 @@ fn draw_axes_on_box_with_ticks(
   };
   let (cx, cy) =
     to_svg(project(box_center, camera).0, project(box_center, camera).1);
+  // Which way (+1 or -1 times the unit normal `(nx, ny)` of the axis line
+  // from `(sx0, sy0)` to `(sx1, sy1)`) the labels of an axis go: away from
+  // the box center. An axis drawn through the center (`AxesOrigin` at the
+  // middle of the range) has no outward side, so its labels go where
+  // Wolfram puts them then: left of a steep axis, below a flat one.
+  let outward_sign = |sx0: f64, sy0: f64, sx1: f64, sy1: f64| -> f64 {
+    let (dx, dy) = (sx1 - sx0, sy1 - sy0);
+    let len = dx.hypot(dy);
+    if len <= 1e-9 {
+      return 1.0;
+    }
+    let (nx, ny) = (-dy / len, dx / len);
+    let (mid_x, mid_y) = (f64::midpoint(sx0, sx1), f64::midpoint(sy0, sy1));
+    let toward_center = nx * (cx - mid_x) + ny * (cy - mid_y);
+    if toward_center.abs() > 0.5 {
+      return if toward_center > 0.0 { -1.0 } else { 1.0 };
+    }
+    let leftward_or_down = if nx.abs() >= ny.abs() { -nx } else { ny };
+    if leftward_or_down >= 0.0 { 1.0 } else { -1.0 }
+  };
 
   // Each tick with its label. Automatic ticks share the decimals their
   // step needs (`-1.0, -0.5, 0.0`), as Wolfram writes them.
@@ -3649,11 +3981,7 @@ fn draw_axes_on_box_with_ticks(
       if len > 1.0 {
         let (mid_x, mid_y) = (f64::midpoint(sx0, sx1), f64::midpoint(sy0, sy1));
         let (perpx, perpy) = (-dy / len, dx / len);
-        let sign = if perpx * (cx - mid_x) + perpy * (cy - mid_y) > 0.0 {
-          -1.0
-        } else {
-          1.0
-        };
+        let sign = outward_sign(sx0, sy0, sx1, sy1);
         // How far the tick labels already reach, in the direction the
         // axis label is being pushed: their own offset plus half of the
         // widest one's box. Sideways of a vertical axis that is the text
@@ -3742,15 +4070,7 @@ fn draw_axes_on_box_with_ticks(
         // The label goes on the outward side (away from the box center);
         // the tick mark points into the box, whichever way the axis line
         // runs.
-        let mid_x = f64::midpoint(sx0, sx1);
-        let mid_y = f64::midpoint(sy0, sy1);
-        let to_center_x = cx - mid_x;
-        let to_center_y = cy - mid_y;
-        let sign = if perpx * to_center_x + perpy * to_center_y > 0.0 {
-          -1.0
-        } else {
-          1.0
-        };
+        let sign = outward_sign(sx0, sy0, sx1, sy1);
 
         svg.push_str(&format!(
                     "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"{}\" stroke-width=\"0.5\"/>\n",
@@ -3969,9 +4289,15 @@ fn label_half_width(label: &str, font_size: i32) -> f64 {
 }
 
 /// The tick positions along an axis spanning `val_min` to `val_max`, the
-/// same ones the tick marks are drawn at.
+/// same ones the tick marks are drawn at. Like wolframscript, a 3D box axis
+/// steps by the smallest of 1, 2 and 5 × 10^k that leaves fewer than five
+/// intervals: -1..1 by 0.5, 0..1 by 0.5, -5..5 and 0..10 by 5, 0..3 by 1.
 fn tick_values(val_min: f64, val_max: f64) -> Vec<f64> {
-  let step = nice_step(val_max - val_min, 4);
+  let span = val_max - val_min;
+  if !(span.is_finite() && span > 0.0) {
+    return Vec::new();
+  }
+  let step = crate::functions::plot::tick_step_below(span, 5.0);
   if step <= 0.0 {
     return Vec::new();
   }
@@ -6032,6 +6358,17 @@ fn polygon3d_expr(poly: &[[f64; 3]]) -> Expr {
   )
 }
 
+/// The stroke width of a `Line` (or `Arrow`) in a `Graphics3D` that sets
+/// no thickness: Wolfram draws those as hairlines, as thin as the edges
+/// of the bounding box, far thinner than the curves of a plot.
+const DEFAULT_LINE_3D_WIDTH: f64 = 0.5;
+
+/// The absolute width a thickness symbol names in 3D (`Thick`,
+/// `Thickness[Large]`, …): the same widths as in 2D graphics.
+fn named_line_thickness(name: &str) -> Option<f64> {
+  crate::functions::graphics::symbolic_thickness(name).map(|t| -t)
+}
+
 /// A 3D primitive for Graphics3D
 #[derive(Clone, Debug)]
 struct StyleState3D {
@@ -6040,7 +6377,8 @@ struct StyleState3D {
   /// viewer. None means both sides use `color`.
   back_color: Option<(u8, u8, u8)>,
   opacity: f64,
-  /// Stroke width in pixels for Line3D primitives. None means default 1.5.
+  /// Stroke width in pixels for Line3D primitives. None means
+  /// [`DEFAULT_LINE_3D_WIDTH`].
   thickness: Option<f64>,
   /// Whether a `Tube`'s ends are closed off, as `CapForm` sets it.
   /// `CapForm[None]` leaves a `Tube` hollow; every other form caps it.
@@ -6093,9 +6431,9 @@ struct StyleState3D {
   /// `VertexColors` of the polygon or line being added: one RGB color per
   /// vertex, blended across the face (or along the line) between them.
   vertex_colors: Option<std::sync::Arc<Vec<(f64, f64, f64)>>>,
-  /// `Arrowheads[s]`: the arrowhead length as a fraction of the picture's
-  /// width. `None` keeps the default 8-pixel head.
-  arrowhead: Option<f64>,
+  /// `Arrowheads[s]`: the arrowhead length. `None` keeps the default
+  /// twentieth of the scene.
+  arrowhead: Option<ArrowheadSize3D>,
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
@@ -6336,12 +6674,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
   {
     let size = match &args[0] {
       Expr::List(specs) => specs.first().and_then(|spec| match spec {
-        Expr::List(parts) => parts.first().and_then(expr_to_f64),
-        other => expr_to_f64(other),
+        Expr::List(parts) => parts.first().and_then(ArrowheadSize3D::parse),
+        other => ArrowheadSize3D::parse(other),
       }),
-      other => expr_to_f64(other),
+      other => ArrowheadSize3D::parse(other),
     };
-    if let Some(size) = size.filter(|s| s.is_finite() && *s >= 0.0) {
+    if let Some(size) = size {
       style.arrowhead = Some(size);
     }
     return true;
@@ -6379,12 +6717,8 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
 
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => {
-        style.thickness = Some(2.5);
-        return true;
-      }
-      "Thin" => {
-        style.thickness = Some(0.5);
+      "Thick" | "Thin" => {
+        style.thickness = named_line_thickness(s);
         return true;
       }
       "Dashed" => {
@@ -6532,18 +6866,12 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
         return true;
       }
       "Thickness" if args.len() == 1 => {
-        if let Expr::Identifier(s) = &args[0] {
-          match s.as_str() {
-            "Large" => style.thickness = Some(3.0),
-            "Tiny" => style.thickness = Some(0.5),
-            _ => {
-              if let Some(t) = expr_to_f64(&args[0]) {
-                // Relative thickness: a fraction of the picture's width.
-                style.thickness = Some(t * scene_image_width());
-              }
-            }
-          }
+        if let Expr::Identifier(s) = &args[0]
+          && let Some(t) = named_line_thickness(s)
+        {
+          style.thickness = Some(t);
         } else if let Some(t) = expr_to_f64(&args[0]) {
+          // Relative thickness: a fraction of the picture's width.
           style.thickness = Some(t * scene_image_width());
         }
         return true;
@@ -6607,6 +6935,21 @@ fn parse_3d_dashing(arg: &Expr, absolute: bool) -> Option<Option<Vec<f64>>> {
     _ => dash_size_to_f64(arg)
       .or_else(|| expr_to_f64(arg).map(|d| if absolute { -d.abs() } else { d }))
       .map(|d| Some(vec![d, d])),
+  }
+}
+
+/// The `stroke-linecap` of one stroked outline edge of a face. A curved
+/// outline (the rim of a `Cylinder` or `Cone`, a tessellated disk) is drawn
+/// as many short straight segments; with SVG's default butt caps every
+/// joint where the curve bends leaves a wedge-shaped notch on its outer
+/// side, so the outline reads as a toothed or dashed ring. Round caps fill
+/// those joints and make the pieces one continuous line. A dashed outline
+/// keeps butt caps so its dash lengths stay as `Dashing` asked.
+fn outline_edge_cap(dashing: Option<&Vec<f64>>) -> &'static str {
+  if dashing.is_some() {
+    ""
+  } else {
+    " stroke-linecap=\"round\""
   }
 }
 
@@ -7951,6 +8294,17 @@ fn resolve_complex_indices(
         args: new_args.into(),
       }
     }
+    // `Text[expr, i, …]` anchors its label at point `i`.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() >= 2 => {
+      let mut new_args = args.to_vec();
+      if matches!(args[1], Expr::Integer(_)) {
+        new_args[1] = substitute(&args[1], points);
+      }
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
     Expr::List(items) => Expr::List(
       items
         .iter()
@@ -8559,7 +8913,8 @@ fn collect_3d_primitives(
               let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
                 v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
               });
-              let len = (style.arrowhead.unwrap_or(0.05) * diag).min(curve_len);
+              let len = ArrowheadSize3D::length(style.arrowhead, diag, None)
+                .min(curve_len);
               if !(curve_len > 0.0 && len > 0.0) {
                 return None;
               }
@@ -8626,6 +8981,17 @@ fn collect_3d_primitives(
               points: pts,
               style: style.clone(),
             });
+          } else if let Expr::List(paths) = &args[0] {
+            // `Arrow[{{p1, p2, …}, {q1, q2, …}, …}]` draws one arrow along
+            // each point list, like a multi-segment `Line`.
+            for path in paths {
+              if let Some(pts) = parse_point3d_list(path) {
+                prims.push(Primitive3D::Arrow3D {
+                  points: pts,
+                  style: style.clone(),
+                });
+              }
+            }
           }
         }
         // `Text[expr, {x, y, z}]` (optionally with an alignment offset)
@@ -10501,9 +10867,12 @@ thread_local! {
     const { std::cell::Cell::new(DEFAULT_SIZE as f64) };
 }
 
-/// The width a relative `Thickness[t]` is measured against: that of the
-/// picture being drawn (`ImageSize -> {400, 400}` makes `Thickness[0.01]`
-/// 4 pixels wide).
+/// The length a relative `Thickness[t]` is measured against: the width of
+/// the picture being drawn (`ImageSize -> {400, 400}` makes
+/// `Thickness[0.01]` 4 pixels wide), or its shorter side when
+/// `ImageSize -> {w, h}` pins a picture that is less tall than wide (a
+/// Demonstration snapshot at `ImageSize -> {580, 370}` draws
+/// `Thickness[0.012]` lines 4.4 pixels wide, not 7).
 fn scene_image_width() -> f64 {
   SCENE_IMAGE_WIDTH.get()
 }
@@ -10581,6 +10950,50 @@ fn contains_tube_arrow(expr: &Expr) -> bool {
         || args.iter().any(contains_tube_arrow)
     }
     _ => false,
+  }
+}
+
+/// The size `Arrowheads[s]` gives the heads of 3D arrows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ArrowheadSize3D {
+  /// A number: the head's length as a fraction of the scene.
+  Fraction(f64),
+  /// A named size (`Small`, `Medium`, …): a length in printer's points,
+  /// whatever the size of the picture.
+  Points(f64),
+}
+
+impl ArrowheadSize3D {
+  /// The default 3D head: a twentieth of the scene.
+  const DEFAULT_FRACTION: f64 = 0.05;
+  /// The width the picture is assumed to have while its scene is collected,
+  /// before the actual image size is known (`Graphics3D`'s default).
+  const DEFAULT_WIDTH: f64 = 360.0;
+
+  fn parse(spec: &Expr) -> Option<Self> {
+    if let Expr::Identifier(name) = spec
+      && let Some(points) =
+        crate::functions::graphics::named_arrowhead_size(name)
+    {
+      return Some(Self::Points(points));
+    }
+    crate::functions::math_ast::expr_to_f64(spec)
+      .filter(|s| s.is_finite() && *s >= 0.0)
+      .map(Self::Fraction)
+  }
+
+  /// The head's length in scene units, for a scene whose box has diagonal
+  /// `scene_diag` drawn `width` pixels wide (the box's diagonal spans about
+  /// the width of the picture).
+  fn length(size: Option<Self>, scene_diag: f64, width: Option<f64>) -> f64 {
+    let fraction = match size {
+      None => Self::DEFAULT_FRACTION,
+      Some(Self::Fraction(f)) => f,
+      Some(Self::Points(p)) => {
+        p / width.filter(|w| *w > 0.0).unwrap_or(Self::DEFAULT_WIDTH)
+      }
+    };
+    fraction * scene_diag
   }
 }
 
@@ -11580,6 +11993,41 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
   }
 }
 
+/// Radius of the smallest sphere around `center` that encloses every drawn
+/// point of the scene: the corners of its (tessellated) faces and the
+/// vertices of its lines, points, arrows and text anchors.
+fn contents_sphere_radius(
+  triangles: &[[Point3D; 3]],
+  prims: &[Primitive3D],
+  center: Point3D,
+) -> f64 {
+  let dist = |p: &Point3D| {
+    ((p.x - center.x).powi(2)
+      + (p.y - center.y).powi(2)
+      + (p.z - center.z).powi(2))
+    .sqrt()
+  };
+  let mut radius = triangles.iter().flatten().map(dist).fold(0.0_f64, f64::max);
+  for prim in prims {
+    match prim {
+      Primitive3D::Line3D { segments, .. } => {
+        for pt in segments.iter().flatten() {
+          radius = radius.max(dist(pt));
+        }
+      }
+      Primitive3D::Text3D { pos, .. } => radius = radius.max(dist(pos)),
+      Primitive3D::Point3DPrim { points, .. }
+      | Primitive3D::Arrow3D { points, .. } => {
+        for pt in points {
+          radius = radius.max(dist(pt));
+        }
+      }
+      _ => {}
+    }
+  }
+  radius
+}
+
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::graphics_option_args(args)[..];
@@ -11911,7 +12359,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut prims = Vec::new();
   let mut style3d = StyleState3D::default();
   SCENE_TUBE_COUNT.set(count_tubes(&content));
-  SCENE_IMAGE_WIDTH.set(svg_width as f64);
+  SCENE_IMAGE_WIDTH.set(if explicit_height && svg_height > 0 {
+    svg_width.min(svg_height) as f64
+  } else {
+    svg_width as f64
+  });
   SCENE_ARROW_EXTENT.set(None);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
@@ -12923,11 +13375,29 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y: f64::midpoint(y3_min, y3_max),
       z: f64::midpoint(z3_min, z3_max),
     };
-    let radius = ((x3_max - x3_min).powi(2)
+    let box_radius = ((x3_max - x3_min).powi(2)
       + (y3_max - y3_min).powi(2)
       + (z3_max - z3_min).powi(2))
     .sqrt()
       / 2.0;
+    // An automatic range is framed by the sphere around the box center
+    // that just encloses the contents, which for a rounded solid is much
+    // smaller than the sphere through the box corners. Wolfram's
+    // snapshots of closed polyhedra (a ring of triangles capped by two
+    // pyramids, 2 × 2 × 1.5 to 2 × 2 × 2.3 boxes) at
+    // `ImageSize -> {400, 400}` draw them 1.55–1.63× as large as the
+    // box-sphere framing, which the contents sphere reproduces to within
+    // 1 %. Contents filling the box (a cuboid, a long cylinder) reach its
+    // corners, so both spheres nearly agree there. A pinned `PlotRange` (or an
+    // explicit `PlotRangePadding`) keeps the sphere around its box. The
+    // contents sphere is widened by 2 %, which fits those snapshots best
+    // (unwidened it draws them 2.3 % too large).
+    let contents_radius = (plot_range.is_none() && range_padding.is_none())
+      .then(|| {
+        1.02 * contents_sphere_radius(&triangle_vertices, &prims, center)
+      })
+      .filter(|r| *r > 0.0 && r.is_finite());
+    let radius = contents_radius.map_or(box_radius, |r| r.min(box_radius));
     if radius > 0.0 && radius.is_finite() {
       let span = spherical_region_span(
         radius,
@@ -13231,7 +13701,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
-      let width = style.thickness.unwrap_or(1.5);
+      let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
       for seg in segments {
         // On-screen length of the polyline drawn so far: a dash pattern
         // runs continuously along the whole line instead of restarting
@@ -13279,8 +13749,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
+      // A relative `PointSize` is measured against the same length as a
+      // relative `Thickness` (see `scene_image_width`).
       let radius = style.point_size.map_or(3.0, |ps| {
-        crate::functions::graphics::point_radius(ps, svg_width as f64)
+        crate::functions::graphics::point_radius(ps, scene_image_width())
       });
       for &pt in points {
         sorted_edges.push(SceneEdge {
@@ -13393,12 +13865,78 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       by_slot.iter().map(|&k| &sorted_edges[k]).collect();
     let edge_slots: Vec<usize> =
       by_slot.iter().map(|&k| edge_slots[k]).collect();
+    // The outline edges of the faces go in the same draw order as the
+    // line pieces above, not right after their own face: an edge on a
+    // curved solid's silhouette (the far rim of a `Cylinder`) would
+    // otherwise be half painted over by the neighboring faces of the same
+    // solid drawn after it, and its visible width would jump from segment
+    // to segment.
+    // Only the edges stroked one by one below are placed: a face outlined
+    // all around is stroked with its own polygon.
+    let separately_stroked = |t: &Triangle| {
+      t.boundary.contains(&true)
+        && (t.boundary != [true; 3] || t.edge_dashing.is_some())
+    };
+    let front_outlines = if triangle_vertices.len() == all_triangles.len()
+      && all_triangles.iter().any(separately_stroked)
+    {
+      front_outline_edges(&triangle_vertices, &all_triangles, &camera)
+    } else {
+      Vec::new()
+    };
+    // Index into `outline_slots` of edge `e` of face `k`, at `3 * k + e`.
+    let mut outline_index = vec![usize::MAX; front_outlines.len()];
+    let mut outline_segs: Vec<[Point3D; 2]> = Vec::new();
+    let mut outline_owners: Vec<usize> = Vec::new();
+    for (k, (v, t)) in triangle_vertices.iter().zip(&all_triangles).enumerate()
+    {
+      if front_outlines.is_empty() || !separately_stroked(t) {
+        continue;
+      }
+      for e in 0..3 {
+        if t.boundary[e] && front_outlines[k * 3 + e] {
+          outline_index[k * 3 + e] = outline_segs.len();
+          outline_segs.push([v[e], v[(e + 1) % 3]]);
+          outline_owners.push(k);
+        }
+      }
+    }
+    let outline_slots = outline_draw_slots(
+      &triangle_vertices,
+      &all_triangles,
+      &outline_segs,
+      &outline_owners,
+      &camera,
+    );
+    let outline_slot = |pos: usize, e: usize| {
+      outline_index
+        .get(pos * 3 + e)
+        .and_then(|&i| outline_slots.get(i))
+        .copied()
+        .unwrap_or(0)
+        .max(pos + 1)
+    };
+    let mut pending_outlines: std::collections::BinaryHeap<
+      std::cmp::Reverse<(usize, usize, String)>,
+    > = std::collections::BinaryHeap::new();
+    let mut outline_seq = 0;
+    let flush_outlines = |svg: &mut String,
+                          pending: &mut std::collections::BinaryHeap<
+      std::cmp::Reverse<(usize, usize, String)>,
+    >,
+                          upto: usize| {
+      while pending.peek().is_some_and(|r| r.0.0 <= upto) {
+        let std::cmp::Reverse((_, _, line)) = pending.pop().unwrap();
+        svg.push_str(&line);
+      }
+    };
     for (pos, tri) in all_triangles.iter().enumerate() {
       // Emit the edge segments that belong behind this triangle
       while ei < sorted_edges.len() && edge_slots[ei] <= pos {
         emit_edge(&mut svg, sorted_edges[ei]);
         ei += 1;
       }
+      flush_outlines(&mut svg, &mut pending_outlines, pos);
       // Emit triangle
       let (x0, y0) = to_svg(tri.projected[0].0, tri.projected[0].1);
       let (x1, y1) = to_svg(tri.projected[1].0, tri.projected[1].1);
@@ -13423,8 +13961,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
             let (ax, ay) = corners[e];
             let (bx, by) = corners[(e + 1) % 3];
+            let cap = outline_edge_cap(None);
             svg.push_str(&format!(
-              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"/>\n",
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}/>\n",
             ));
           }
           continue;
@@ -13469,7 +14008,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // neighbors' and darkens every shared seam, tracing the
         // tessellation across what should be a smooth surface. Only an
         // opaque triangle needs it to close the anti-aliasing gap.
-        let seam_stroke = if tri.opacity < 1.0 && tri.boundary == [false; 3] {
+        // That holds for the internal cuts of a partly outlined triangle
+        // (a fan-triangulated cylinder cap, the diagonal of a quad) too:
+        // its outlined edges get their own line below.
+        let seam_stroke = if tri.opacity < 1.0 {
           "none"
         } else {
           paint.as_str()
@@ -13495,12 +14037,19 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let ((ax, ay), (bx, by)) = (a, b);
           let dash =
             dash3d_attr(tri.edge_dashing.as_ref(), svg_width as f64, 0.0);
-          svg.push_str(&format!(
-            "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{dash}/>\n",
-          ));
+          let cap = outline_edge_cap(tri.edge_dashing.as_ref());
+          pending_outlines.push(std::cmp::Reverse((
+            outline_slot(pos, e),
+            outline_seq,
+            format!(
+              "<line x1=\"{ax:.1}\" y1=\"{ay:.1}\" x2=\"{bx:.1}\" y2=\"{by:.1}\" stroke=\"{edge_stroke}\" stroke-width=\"{edge_width}\"{cap}{dash}/>\n",
+            ),
+          )));
+          outline_seq += 1;
         }
       }
     }
+    flush_outlines(&mut svg, &mut pending_outlines, usize::MAX);
     // Emit remaining edge segments (closest to viewer)
     while ei < sorted_edges.len() {
       emit_edge(&mut svg, sorted_edges[ei]);
@@ -13658,9 +14207,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
           for (i, line) in lines.iter().enumerate() {
             let dy = if i == 0 { first_dy } else { line_height };
-            let line = crate::functions::graphics::tspan_line(line);
-            body.push_str(&format!(
-              "<tspan x=\"{x:.1}\" dy=\"{dy:.1}\">{line}</tspan>"
+            body.push_str(&crate::functions::graphics::stacked_line_tspan(
+              &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
+              "middle",
+              line,
             ));
           }
         }
@@ -13691,8 +14241,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           })
           .collect();
         svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"1.5\"{}/>\n",
-          pts.join(" "), stroke_color, opacity_attr
+          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
+          pts.join(" "),
+          stroke_color,
+          style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH),
+          opacity_attr
         ));
         // Arrowhead: a cone in the scene, like the head of an
         // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
@@ -13702,7 +14255,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
         if let Some(head) = arrow3d_head_outline(
           points,
-          style.arrowhead.unwrap_or(0.05) * scene_diag,
+          ArrowheadSize3D::length(
+            style.arrowhead,
+            scene_diag,
+            Some(svg_width as f64),
+          ),
         ) {
           let screen: Vec<(f64, f64, usize)> = head
             .iter()
@@ -14140,11 +14697,13 @@ fn with_plot_label(
     style_attrs.push_str(" font-style=\"italic\"");
   }
   let label = styled.svg_scaled_stacked(1.0, cx, line_height);
+  // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+  let keep = crate::functions::plot::preserve_blanks_attr(&label);
   format!(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
      <rect width=\"{width}\" height=\"{total}\" fill=\"rgb({},{},{})\"/>\n\
      <text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
-     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{fill}\"{style_attrs}>{label}</text>\n\
+     font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n\
      <g transform=\"translate(0,{strip})\">{svg}</g>\n\
      </svg>",
     bg.0, bg.1, bg.2,
@@ -15369,6 +15928,25 @@ pub fn list_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   let mut structure_args = vec![complex];
   structure_args.extend(args[1..].iter().cloned());
+  // Like `Plot3D`, the surface's graphic carries its axes and box shape, so
+  // re-rendering it (`Show[ListPlot3D[…], ImageSize -> …]`) keeps them.
+  let names = |opt: &str| {
+    args[1..].iter().any(|o| {
+      matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(n) if n == opt))
+    })
+  };
+  if !names("Axes") {
+    structure_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
+  }
+  if !names("BoxRatios") {
+    structure_args.push(rule_expr(
+      id_expr("BoxRatios"),
+      Expr::List(
+        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(Z_SCALE)].into(),
+      ),
+    ));
+  }
   let structure = call("Graphics3D", structure_args);
 
   Ok(crate::plot3d_result_with_structure(svg, structure))
@@ -16847,10 +17425,171 @@ const CONTOUR3D_GRID: usize = 24;
 const CONTOUR3D_Z_SCALE: f64 = 1.0;
 
 /// How many times a grid cell that may hide a sheet thinner than itself is
-/// halved, and the total number of cells that may be halved per plot. Only
-/// used when the plain grid finds no surface at all.
+/// halved, and the total number of cells that may be halved per plot. A
+/// cell [`cell_may_hide_thin_sheet`] picks out is halved this often before
+/// the surface is traced in it; when the plain grid finds no surface at
+/// all, every cell near the level is a candidate.
 const CONTOUR3D_REFINE_DEPTH: usize = 2;
 const CONTOUR3D_REFINE_BUDGET: usize = 20_000;
+
+/// Whether the sampled `field` hints that a sheet thinner than the grid (a
+/// thin tube or shell around the level) passes through cell `[i, j, k]`,
+/// so tracing the surface on the cell's corners alone would miss it or
+/// break it into disconnected specks.
+///
+/// Such a sheet shows up along a grid line through the cell's edges as a
+/// corner of the cell that stands out from both its neighbors on that
+/// line: either the corner alone lies across the level (the sheet was hit
+/// by a single sample), or all three lie on one side and the corner is the
+/// closest to the level. The parabola through the three samples estimates
+/// the field between them. It counts when it is narrower than the grid
+/// where it crosses the level, or, staying short of the level, comes within
+/// half a grid step's worth of curvature of it (near enough to the line
+/// for the sheet to cross the cell beside it).
+///
+/// The parabola must also bend sharply: its curvature at least a third of
+/// the largest change between neighboring corners of the cell. Where a
+/// grid line merely grazes a smooth surface (a sphere's pole, a
+/// hyperboloid's waist) the field dips to the level too, but bends only as
+/// gently as the surface curves, and a surface the grid resolves changes
+/// monotonically across the cells around it; both are left alone.
+fn cell_may_hide_thin_sheet(
+  field: &[Vec<Vec<f64>>],
+  cell: [usize; 3],
+  level: f64,
+) -> bool {
+  let sample = |q: [usize; 3]| -> Option<f64> {
+    field.get(q[0])?.get(q[1])?.get(q[2]).copied()
+  };
+  // How much the field changes from one sample to the next across the
+  // cell, at most: the scale its bends are measured against.
+  let mut step_change = 0.0_f64;
+  for di in 0..2 {
+    for dj in 0..2 {
+      for dk in 0..2 {
+        let q = [cell[0] + di, cell[1] + dj, cell[2] + dk];
+        let Some(v) = sample(q) else { continue };
+        // The cell's own edges only: from the low corner along each axis.
+        for axis in (0..3).filter(|&axis| [di, dj, dk][axis] == 0) {
+          let mut r = q;
+          r[axis] += 1;
+          if let Some(w) = sample(r)
+            && (v - w).is_finite()
+          {
+            step_change = step_change.max((v - w).abs());
+          }
+        }
+      }
+    }
+  }
+  (0..3).any(|axis| stands_out_along(&sample, cell, axis, level, step_change))
+}
+
+/// Whether one of the cell's corners stands out from its two neighbors on
+/// a grid line along `axis` (see [`cell_may_hide_thin_sheet`]).
+fn stands_out_along(
+  sample: &dyn Fn([usize; 3]) -> Option<f64>,
+  cell: [usize; 3],
+  axis: usize,
+  level: f64,
+  step_change: f64,
+) -> bool {
+  let (a, b) = ((axis + 1) % 3, (axis + 2) % 3);
+  for (da, db) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+    let at = |t: usize| {
+      let mut q = cell;
+      q[a] += da;
+      q[b] += db;
+      q[axis] = t;
+      sample(q).map(|v| v - level)
+    };
+    // Each of the edge's two corners in turn, as the middle sample.
+    for t in [cell[axis], cell[axis] + 1] {
+      let Some(prev) = t.checked_sub(1) else {
+        continue;
+      };
+      let (Some(lo), Some(mid), Some(hi)) = (at(prev), at(t), at(t + 1)) else {
+        continue;
+      };
+      if !(lo.is_finite() && mid.is_finite() && hi.is_finite()) {
+        continue;
+      }
+      // Distances from the level, positive on the neighbors' side.
+      let side = if lo >= 0.0 { 1.0 } else { -1.0 };
+      let (lo, mid, hi) = (side * lo, side * mid, side * hi);
+      if hi < 0.0 {
+        continue;
+      }
+      if mid >= lo || mid > hi {
+        continue;
+      }
+      let curvature = (lo + hi - 2.0 * mid) / 2.0;
+      let extreme = mid - (hi - lo).powi(2) / (16.0 * curvature);
+      // Across the level, the parabola is narrower than the grid when it
+      // spans less than one and a half steps (`-extreme / curvature` is its
+      // squared half-width in steps). A dip that stays short of the level
+      // may still reach it beside the grid line.
+      // A thin sheet bends sharply against how fast the field changes
+      // between samples; a smooth surface a grid line merely grazes bends
+      // gently (its radius of curvature spans several steps).
+      if curvature * 3.0 >= step_change
+        && extreme <= curvature / 2.0
+        && extreme > -curvature * 0.5625
+      {
+        return true;
+      }
+    }
+  }
+  false
+}
+
+/// The field sampled on the 3 × 3 × 3 grid that halves the cell spanning
+/// `xs`, `ys` and `zs` along every axis, returned as the eight sub-cells'
+/// spans and corner values (in `march_cube`'s corner order).
+#[allow(clippy::type_complexity)]
+fn split_contour_cell(
+  body: &Expr,
+  [xvar, yvar, zvar]: &[String; 3],
+  xs: [f64; 2],
+  ys: [f64; 2],
+  zs: [f64; 2],
+) -> Vec<([f64; 2], [f64; 2], [f64; 2], [f64; 8])> {
+  let mid = |a: [f64; 2]| f64::midpoint(a[0], a[1]);
+  let pts = |a: [f64; 2]| [a[0], mid(a), a[1]];
+  let (px, py, pz) = (pts(xs), pts(ys), pts(zs));
+  let mut sub = [[[f64::NAN; 3]; 3]; 3];
+  for (a, plane) in sub.iter_mut().enumerate() {
+    for (b, row) in plane.iter_mut().enumerate() {
+      for (c, cell) in row.iter_mut().enumerate() {
+        *cell = evaluate_scalar_3d(body, xvar, yvar, zvar, px[a], py[b], pz[c])
+          .unwrap_or(f64::NAN);
+      }
+    }
+  }
+  let mut cells = Vec::with_capacity(8);
+  for a in 0..2 {
+    for b in 0..2 {
+      for c in 0..2 {
+        cells.push((
+          [px[a], px[a + 1]],
+          [py[b], py[b + 1]],
+          [pz[c], pz[c + 1]],
+          [
+            sub[a][b][c],
+            sub[a + 1][b][c],
+            sub[a + 1][b + 1][c],
+            sub[a][b + 1][c],
+            sub[a][b][c + 1],
+            sub[a + 1][b][c + 1],
+            sub[a + 1][b + 1][c + 1],
+            sub[a][b + 1][c + 1],
+          ],
+        ));
+      }
+    }
+  }
+  cells
+}
 
 /// The vertices of a unit cube, sharing corner-to-corner diagonal 0–6, in
 /// the cyclic order that fans around that diagonal. Splitting a cube into
@@ -17789,11 +18528,33 @@ fn contour3d_render(
                 [y_min + j as f64 * y_step, y_min + (j + 1) as f64 * y_step];
               let zs =
                 [z_min + k as f64 * z_step, z_min + (k + 1) as f64 * z_step];
-              // A sheet thinner than a cell leaves every corner on one side
-              // of the level; such cells are subdivided (below) so the
-              // surface is still found.
-              let mut stack = vec![(xs, ys, zs, cvals, 0_usize)];
-              while let Some((xs, ys, zs, cvals, depth_level)) = stack.pop() {
+              // A sheet thinner than a cell can slip between its corners
+              // or be caught by only a few of them; such cells are
+              // subdivided so the surface is still found and stays whole.
+              // A cell the samples around it single out is split to the
+              // full depth before tracing (`forced`); after an empty first
+              // pass, any cell near the level is split once it traces
+              // nothing (below).
+              let mut stack = vec![(xs, ys, zs, cvals, 0_usize, false)];
+              while let Some((xs, ys, zs, cvals, depth_level, forced)) =
+                stack.pop()
+              {
+                if let Some((body, vars)) = body
+                  && depth_level < CONTOUR3D_REFINE_DEPTH
+                  && refinement_budget > 0
+                  && (forced
+                    || (depth_level == 0
+                      && !refine
+                      && cell_may_hide_thin_sheet(&field, [i, j, k], level)))
+                {
+                  refinement_budget -= 1;
+                  for (xs, ys, zs, cvals) in
+                    split_contour_cell(body, vars, xs, ys, zs)
+                  {
+                    stack.push((xs, ys, zs, cvals, depth_level + 1, true));
+                  }
+                  continue;
+                }
                 if cvals.iter().any(|v| !v.is_finite()) {
                   continue;
                 }
@@ -17881,7 +18642,7 @@ fn contour3d_render(
                     level_triangles.push(tri);
                   }
                 });
-                if let Some((body, [xvar, yvar, zvar])) = body
+                if let Some((body, vars)) = body
                   && refine
                   && !emitted
                   && depth_level < CONTOUR3D_REFINE_DEPTH
@@ -17897,41 +18658,10 @@ fn contour3d_render(
                   let gap = (lo - level).abs().min((hi - level).abs());
                   if gap <= hi - lo {
                     refinement_budget -= 1;
-                    let mid = |a: [f64; 2]| f64::midpoint(a[0], a[1]);
-                    let pts = |a: [f64; 2]| [a[0], mid(a), a[1]];
-                    let (px, py, pz) = (pts(xs), pts(ys), pts(zs));
-                    let mut sub = [[[f64::NAN; 3]; 3]; 3];
-                    for (a, plane) in sub.iter_mut().enumerate() {
-                      for (b, row) in plane.iter_mut().enumerate() {
-                        for (c, cell) in row.iter_mut().enumerate() {
-                          *cell = evaluate_scalar_3d(
-                            body, xvar, yvar, zvar, px[a], py[b], pz[c],
-                          )
-                          .unwrap_or(f64::NAN);
-                        }
-                      }
-                    }
-                    for a in 0..2 {
-                      for b in 0..2 {
-                        for c in 0..2 {
-                          stack.push((
-                            [px[a], px[a + 1]],
-                            [py[b], py[b + 1]],
-                            [pz[c], pz[c + 1]],
-                            [
-                              sub[a][b][c],
-                              sub[a + 1][b][c],
-                              sub[a + 1][b + 1][c],
-                              sub[a][b + 1][c],
-                              sub[a][b][c + 1],
-                              sub[a + 1][b][c + 1],
-                              sub[a + 1][b + 1][c + 1],
-                              sub[a][b + 1][c + 1],
-                            ],
-                            depth_level + 1,
-                          ));
-                        }
-                      }
+                    for (xs, ys, zs, cvals) in
+                      split_contour_cell(body, vars, xs, ys, zs)
+                    {
+                      stack.push((xs, ys, zs, cvals, depth_level + 1, false));
                     }
                   }
                 }
@@ -20947,16 +21677,26 @@ fn parametric_plot3d_curve_ast(
       // sets a thickness or dashing (`PlotStyle -> Thick`).
       let (r, g, b) = crate::functions::plot::PLOT_COLORS
         [curve_idx % crate::functions::plot::PLOT_COLORS.len()];
+      prim_items.push(call(
+        "Directive",
+        vec![
+          call(
+            "RGBColor",
+            vec![
+              Expr::Real(f64::from(r) / 255.0),
+              Expr::Real(f64::from(g) / 255.0),
+              Expr::Real(f64::from(b) / 255.0),
+            ],
+          ),
+          call1("AbsoluteThickness", Expr::Integer(2)),
+        ],
+      ));
+    } else {
+      // A space curve is stroked 2 wide, like the curves of a 2D plot,
+      // not as the hairline a bare `Line` in `Graphics3D` gets.
       prim_items.push(call1(
         "Directive",
-        call(
-          "RGBColor",
-          vec![
-            Expr::Real(f64::from(r) / 255.0),
-            Expr::Real(f64::from(g) / 255.0),
-            Expr::Real(f64::from(b) / 255.0),
-          ],
-        ),
+        call1("AbsoluteThickness", Expr::Integer(2)),
       ));
     }
     if !per_curve_styles.is_empty() {
@@ -21461,6 +22201,10 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "ParametricPlot3D requires at least 2 arguments: ParametricPlot3D[{fx, fy, fz}, {t, tmin, tmax}]".into(),
     ));
   }
+  // As everywhere in Wolfram, the first setting of a repeated option is
+  // the one in force (`PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws
+  // tubes), so drop every later repetition before reading the options.
+  let args = &crate::functions::graphics::graphics_option_args(args);
 
   // `Legended[curve, label]` curves are plotted as the curves themselves.
   let unlegend = |e: &Expr| match e {
@@ -22867,7 +23611,17 @@ mod tick_values_tests {
 
   #[test]
   fn regular_extent_has_ticks() {
-    assert_eq!(tick_values(0.0, 10.0), vec![0.0, 2.5, 5.0, 7.5, 10.0]);
+    assert_eq!(tick_values(0.0, 10.0), vec![0.0, 5.0, 10.0]);
+  }
+
+  #[test]
+  fn steps_by_one_two_or_five_with_fewer_than_five_intervals() {
+    assert_eq!(tick_values(-5.0, 5.0), vec![-5.0, 0.0, 5.0]);
+    assert_eq!(tick_values(-1.0, 1.0), vec![-1.0, -0.5, 0.0, 0.5, 1.0]);
+    assert_eq!(tick_values(0.0, 1.0), vec![0.0, 0.5, 1.0]);
+    assert_eq!(tick_values(0.0, 3.0), vec![0.0, 1.0, 2.0, 3.0]);
+    assert_eq!(tick_values(-3.0, 3.0), vec![-2.0, 0.0, 2.0]);
+    assert_eq!(tick_values(0.0, 15.0), vec![0.0, 5.0, 10.0, 15.0]);
   }
 }
 
@@ -23120,5 +23874,43 @@ mod review_mesh_tests {
         .collect();
       assert_eq!(levels.len(), count + 2);
     }
+  }
+}
+
+#[cfg(test)]
+mod triangle_intersection_tests {
+  use super::*;
+
+  fn p(x: f64, y: f64, z: f64) -> Point3D {
+    Point3D { x, y, z }
+  }
+
+  #[test]
+  fn piercing_triangles_intersect() {
+    let flat = [p(-1.0, -1.0, 0.0), p(1.0, -1.0, 0.0), p(0.0, 1.0, 0.0)];
+    let upright = [p(0.0, 0.0, -1.0), p(0.1, 0.0, 1.0), p(-0.1, 0.0, 1.0)];
+    assert!(triangles_intersect(&flat, &upright));
+    assert!(triangles_intersect(&upright, &flat));
+  }
+
+  #[test]
+  fn triangles_straddling_each_others_planes_need_not_meet() {
+    // Two thin facets crossing like skew rods: each straddles the other's
+    // plane, but they are far apart.
+    let a = [p(-5.0, 0.0, 0.0), p(5.0, 0.0, 0.0), p(5.0, 0.1, 0.1)];
+    let b = [p(0.0, -5.0, 3.0), p(0.0, 5.0, 3.0), p(0.1, 5.0, 2.9)];
+    assert!(!triangles_intersect(&a, &b));
+  }
+
+  #[test]
+  fn depths_at_shared_point_orders_skew_facets() {
+    let camera = Camera::default();
+    let near = [p(-5.0, 0.0, 1.0), p(5.0, 0.0, 1.0), p(5.0, 0.1, 1.1)];
+    let far = [p(0.0, -5.0, -1.0), p(0.0, 5.0, -1.0), p(0.1, 5.0, -1.1)];
+    let pn = near.map(|v| project(v, &camera));
+    let pf = far.map(|v| project(v, &camera));
+    let (dn, df) = depths_at_shared_point(&near, &pn, &far, &pf, &camera)
+      .expect("the facets cross on screen");
+    assert!(dn < df, "{dn} vs {df}");
   }
 }

@@ -407,6 +407,53 @@ mod contour_plot3d {
     );
   }
 
+  /// A tube thinner than the sampling grid (here a torus whose minor
+  /// radius is well below a grid step) is traced whole: the grid catches
+  /// it at only a few samples, so the cells around it are subdivided before
+  /// the surface is traced. Regression: only those few samples produced
+  /// triangles, so the ring came out as a dashed line of specks with wide
+  /// gaps between them.
+  #[test]
+  fn tube_thinner_than_the_grid_is_traced_whole() {
+    // The largest angular gap between the ring's vertices around its axis
+    // and the largest distance of a vertex from the ring's center line.
+    let ring = |plane: &str, center: &str, ranges: &str, points: u32| {
+      clear_state();
+      interpret(&format!(
+        "pts = First[Cases[ContourPlot3D[\
+           ({plane} - 1)^2 + ({center})^2 == 0.03^2, {ranges}, \
+           Mesh -> None, PlotPoints -> {points}], \
+           GraphicsComplex[p_, ___] :> p, Infinity]]; \
+         {{Max[Differences[Sort[ArcTan @@@ pts[[All, {{1, 3}}]]]]], \
+           Max[Abs[Sqrt[pts[[All, 1]]^2 + pts[[All, 3]]^2] - 1]]}}"
+      ))
+      .unwrap()
+    };
+    let check = |result: String| {
+      let values: Vec<f64> = result
+        .trim_matches(|c| c == '{' || c == '}')
+        .split(", ")
+        .map(|v| v.parse().unwrap())
+        .collect();
+      assert!(values[0] < 0.05, "the ring has a gap: {result}");
+      assert!(values[1] < 0.05, "a vertex strays off the ring: {result}");
+    };
+    // A ring in the x-z plane, at a y that falls between grid planes.
+    check(ring(
+      "Sqrt[x^2 + z^2]",
+      "y - 0.1",
+      "{x, -1.2, 1.2}, {y, -0.7, 0.9}, {z, -1.2, 1.2}",
+      30,
+    ));
+    // The same ring on a grid plane, sampled more coarsely across it.
+    check(ring(
+      "Sqrt[x^2 + z^2]",
+      "y",
+      "{x, -1.2, 1.2}, {y, -3, 1.2}, {z, -3, 1.2}",
+      50,
+    ));
+  }
+
   /// `ColorFunction` colors each facet by `f[x, y, z, value]` with every
   /// argument scaled to 0..1, so a function of the scaled height paints
   /// the lower and upper half of a sphere differently. A named gradient
@@ -838,6 +885,53 @@ mod outlines {
     }
   }
 
+  // Rods that only cross on screen are not cut along each other's facet
+  // planes: such cuts used up a facet's piece budget before the slab the
+  // rod really passes through could cut it, so the rod showed through the
+  // slab's side.
+  #[test]
+  fn crossing_rods_that_do_not_touch_are_not_cut() {
+    let scene = |prims: &str| {
+      polygon_count(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], {prims}}}, Boxed -> False, \
+         ViewPoint -> {{-2.5, 2, 2}}]"
+      )))
+    };
+    let slab = "Cuboid[{-6, -9, -4.5}, {6, 6, -3.5}]";
+    let rod = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 7}}, 0.5]";
+    let bar = "Cylinder[{{-7.5, -10, 8.5}, {-7.5, 10, 8.5}}, 0.5]";
+    let pierced = scene(&format!("{slab}, {rod}"));
+    let alone = scene(bar);
+    let all = scene(&format!("{slab}, {rod}, {bar}"));
+    assert_eq!(all, pierced + alone);
+  }
+
+  // A rod through a slab is still cut by the slab's planes in a scene
+  // with many other triangles: the split budget used to assume every
+  // triangle could become the maximum number of pieces, keeping all but
+  // the last few thousand triangles whole.
+  #[test]
+  fn a_pierced_slab_is_split_in_a_busy_scene() {
+    let scene = |prims: &str| {
+      polygon_count(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], {prims}}}, Boxed -> False, \
+         ViewPoint -> {{-2.5, 2, 2}}]"
+      )))
+    };
+    let pierced = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 7}}, 0.5], \
+                   Cuboid[{-6, -9, -4.5}, {6, 6, -3.5}]";
+    let busy = "Table[Sphere[{40 + 3 i, 40, 0}, 1], {i, 24}]";
+    let (a, b, both) = (
+      scene(pierced),
+      scene(busy),
+      scene(&format!("{pierced}, {busy}")),
+    );
+    assert!(b > 6000, "{b}");
+    // The far spheres change the scale, which can shift a few slivers;
+    // an uncut rod would leave the scene hundreds of pieces short.
+    assert!(both.abs_diff(a + b) <= 16, "{both} vs {a} + {b}");
+  }
+
   // The far side of an opaque closed solid is not drawn, so it cannot be
   // painted over its near side.
   #[test]
@@ -910,6 +1004,66 @@ mod outlines {
       })
       .expect("hiding face");
     assert!(last_red < hiding_face, "{s}");
+  }
+
+  // The fan triangles of a translucent cap touch the outline on one side
+  // only. Stroking them in their own color overlapped the neighbors along
+  // the internal cuts and drew dark spokes across the cap; the outline is
+  // stroked on its own.
+  #[test]
+  fn translucent_triangles_on_the_outline_have_no_seam_stroke() {
+    for solid in [
+      "Cylinder[]",
+      "Cone[]",
+      "Cuboid[]",
+      "Tube[{{0, 0, 0}, {1, 1, 1}}, 0.2]",
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{Opacity[0.5], Red, {solid}}}, Boxed -> False]"
+      ));
+      let seamed: Vec<&str> = s
+        .lines()
+        .filter(|l| l.starts_with("<polygon") && l.contains(" opacity=\""))
+        .filter(|l| !l.contains("stroke=\"none\""))
+        .collect();
+      assert!(seamed.is_empty(), "{solid}: {:?}", seamed.first());
+      assert!(s.contains(" opacity=\"0.5\""), "{solid}: {s}");
+    }
+  }
+
+  /// The `stroke-width` values of the black `<line>` pieces of an SVG.
+  fn black_line_widths(svg: &str) -> Vec<f64> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && l.contains("stroke=\"rgb(0,0,0)\""))
+      .filter_map(|l| {
+        l.split("stroke-width=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|w| w.parse::<f64>().ok())
+      })
+      .collect()
+  }
+
+  // A 3D line with no thickness directive is a hairline, while an explicit
+  // thickness still sets its width.
+  #[test]
+  fn default_line_is_a_hairline() {
+    let widths = black_line_widths(&svg(
+      "Graphics3D[{Black, Line[{{0, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    ));
+    assert!(
+      !widths.is_empty() && widths.iter().all(|w| *w == 0.5),
+      "{widths:?}"
+    );
+    let widths = black_line_widths(&svg(
+      "Graphics3D[{Black, AbsoluteThickness[3], \
+       Line[{{0, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    ));
+    assert!(
+      !widths.is_empty() && widths.iter().all(|w| *w == 3.0),
+      "{widths:?}"
+    );
   }
 }
 
@@ -1258,6 +1412,16 @@ mod fields_and_graphs {
     assert!(polygon_count(&s) > 1000, "{s}");
     let boxed = svg("GraphPlot3D[HypercubeGraph[3], Boxed -> True]");
     assert_ne!(s, boxed);
+  }
+
+  // A `Text` inside a `GraphicsComplex` is anchored at the indexed point.
+  #[test]
+  fn graphics_complex_text_by_index() {
+    let s = svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 1, 1}}, \
+       {Sphere[1, 0.1], Text[\"Qz\", 2]}]]",
+    );
+    assert!(s.contains(">Qz<"), "{s}");
   }
 
   #[test]
