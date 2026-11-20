@@ -2655,12 +2655,14 @@ mod interpreter_tests {
       "PlotLabel SVG must not typeset the reciprocal as a superscripted \
        negative exponent:\n{svg}"
     );
+    // The title is set in TraditionalForm, so `V` stacks over `R`.
+    let v = svg.find(">V</text>").expect("numerator V");
+    let bar = svg.find("<line x1=\"0\"").expect("fraction bar");
+    let r = svg.find(">R</text>").expect("denominator R");
     assert!(
-      svg.contains(
-        "<tspan font-style=\"italic\">V</tspan>/<tspan font-style=\"italic\">R</tspan>"
-      ),
-      "PlotLabel SVG must render the symbolic division as the fraction \
-       \"V/R\":\n{svg}"
+      v < bar && bar < r,
+      "PlotLabel SVG must render the symbolic division as the stacked \
+       fraction V over R:\n{svg}"
     );
   }
 
@@ -2711,17 +2713,20 @@ mod interpreter_tests {
   fn test_manipulate_row_style_symbolic_reciprocal_product_svg() {
     // Same renderer, a product of two reciprocals (`Times[a, Power[b, -1],
     // Power[c, -1]]`, i.e. `a/(b c)`): every reciprocal factor must move
-    // into a single combined, parenthesized denominator — `a/(b c)`, not
-    // the ambiguous `a/b c` (misreadable as `(a/b) c`) or a superscripted
-    // negative exponent on each factor.
+    // into a single combined denominator — `a` stacked over `b c`, not
+    // `a/b c` or a superscripted negative exponent on each factor.
     clear_state();
     let r = interpret_with_stdout("Graphics[{Circle[]}, PlotLabel -> a/(b c)]")
       .unwrap();
     let svg = r.graphics.expect("expected Graphics SVG output");
+    assert!(!svg.contains("super"), "{svg}");
+    let a = svg.find(">a</text>").expect("numerator a");
+    let bar = svg.find("<line x1=\"0\"").expect("fraction bar");
+    let b = svg.find(">b</text>").expect("denominator b");
+    let c = svg.find(">c</text>").expect("denominator c");
     assert!(
-      svg.contains(">a/(b c)<"),
-      "PlotLabel SVG must render a/(b c) as a single fraction with a \
-       parenthesized denominator:\n{svg}"
+      a < bar && bar < b && b < c,
+      "PlotLabel SVG must render a/(b c) as one stacked fraction:\n{svg}"
     );
   }
 
@@ -4786,6 +4791,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_treeplot_without_single_source_roots_at_graph_center() {
+    // A recombining lattice has several sources, so `TreePlot` hangs it
+    // from the graph center (taking the edges as undirected) and layers
+    // the other vertices by their distance from it.
+    let vertex_xs = |code: &str| -> Vec<f64> {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("<ellipse")
+        .skip(1)
+        .map(|e| {
+          let cx = e.split("cx=\"").nth(1).unwrap();
+          cx[..cx.find('"').unwrap()].parse().unwrap()
+        })
+        .collect()
+    };
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-6;
+    // Vertices in order 2, 1, 3, 4, 5, 6. Vertices 1 and 5 are both of
+    // eccentricity 2 and total distance 8; the later one, 5, is the root.
+    let xs = vertex_xs(
+      "TreePlot[{2 -> 1, 3 -> 1, 4 -> 2, 5 -> 2, 5 -> 3, 6 -> 3}, Left, \
+       DirectedEdges -> True]",
+    );
+    let (v2, v1, v3, v4, v5, v6) = (xs[0], xs[1], xs[2], xs[3], xs[4], xs[5]);
+    assert!(v5 < v2 && close(v2, v3), "{xs:?}");
+    assert!(v2 < v1 && close(v1, v4) && close(v1, v6), "{xs:?}");
+    // Two sources meeting in one sink: the sink is the unique center.
+    let xs = vertex_xs("TreePlot[{a -> b, c -> b}, Left]");
+    assert!(xs[1] < xs[0] && close(xs[0], xs[2]), "{xs:?}");
+    // A single source stays the root.
+    let xs = vertex_xs("TreePlot[{a -> b, b -> c}, Left]");
+    assert!(xs[0] < xs[1] && xs[1] < xs[2], "{xs:?}");
+  }
+
+  #[test]
   fn test_treeplot_accepts_valid_position_argument() {
     clear_state();
     assert_eq!(
@@ -4975,6 +5015,74 @@ mod interpreter_tests {
       "angle"
     );
     interpret("Clear[t]").unwrap();
+  }
+
+  #[test]
+  fn test_manipulate_locator_range_probe_is_quiet() {
+    // A bare `Locator` looks for a `PlotRange` in the held body to bound
+    // its pad. A range written with a local the body sets first is out of
+    // scope there; probing it must not print `First::normal`/`Last::normal`
+    // messages for the unset local.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Module[{s}, s = {1, {a -> 0}}; \
+       ListPlot[pts, PlotRange -> {{(a /. Last[s]) - First[s], \
+       (a /. Last[s]) + First[s]}, {-1, 1}}]], \
+       {{pts, {{0, 0}, {0.5, 0.5}}}, Locator}]",
+    )
+    .unwrap();
+    let before = woxi::get_captured_messages_raw().len();
+    woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let after = woxi::get_captured_messages_raw();
+    assert!(
+      after.len() == before,
+      "unexpected messages: {:?}",
+      &after[before..]
+    );
+  }
+
+  #[test]
+  fn test_control_caption_words_with_picture_render_as_svg_icon() {
+    // A caption pairing words with a picture (`Row[{"shift ", Graphics[…]}]`)
+    // keeps its picture: it renders whole, words included, as an SVG icon.
+    clear_state();
+    let (runs, svg) = woxi::functions::graphics::manipulate_eval_caption(
+      "Row[{\"shift \", Graphics[{Cyan, Disk[]}, ImageSize -> {22, 22}]}]",
+    )
+    .unwrap();
+    assert!(runs.is_empty(), "drawn as an icon, not text: {runs:?}");
+    let svg = svg.expect("a worded picture caption renders to SVG");
+    assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+    assert!(svg.contains("shift"), "the words were dropped: {svg}");
+  }
+
+  #[test]
+  fn test_manipulate_annotation_row_with_picture_is_panel_display() {
+    // A static annotation row whose picture comes from a symbol bound to a
+    // `Graphics` is a display in its place among the controls, not a text
+    // heading spelling out the symbol's name.
+    clear_state();
+    interpret("pic = Graphics[{Green, Disk[]}, ImageSize -> 20];").unwrap();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a, {{a, 1}, 0, 2}, Row[{\"drag any \", pic}], {{b, 0}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    assert_eq!(spec.panel_displays, vec![(0, 1)]);
+    assert_eq!(spec.displays.len(), 1);
+    assert!(spec.displays[0].contains("pic"), "{:?}", spec.displays);
+    // Without a picture the row stays a heading.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a, {{a, 1}, 0, 2}, Row[{\"drag any \", \"point\"}]]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    assert_eq!(spec.panel_displays, Vec::<(usize, usize)>::new());
+    assert_eq!(spec.displays, Vec::<String>::new());
+    interpret("Clear[pic]").unwrap();
   }
 
   #[test]
@@ -5634,9 +5742,13 @@ mod interpreter_tests {
          FrameLabel -> {\"t\", x^2}], \"SVG\"]",
     )
     .unwrap();
+    // It is set in TraditionalForm: an italic x with a raised 2.
     assert!(
-      svg.contains("x²"),
-      "a bare Power FrameLabel entry must render as a Unicode superscript, \
+      svg.contains(
+        "<tspan font-style=\"italic\">x</tspan>\
+         <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+      ),
+      "a bare Power FrameLabel entry must render as a superscript, \
        not vanish: {svg}"
     );
 
@@ -5649,8 +5761,13 @@ mod interpreter_tests {
          Style[\"i\", Italic], \"t\"}], \")\"}]], \"SVG\"]",
     )
     .unwrap();
+    // The styled base and exponent keep their styles, the exponent raised.
     assert!(
-      svg2.contains("H(eit)"),
+      svg2.contains(
+        "H(<tspan font-style=\"italic\">e</tspan><tspan \
+         baseline-shift=\"super\" font-size=\"70%\"><tspan \
+         font-style=\"italic\">i</tspan>t</tspan>)"
+      ),
       "a Power nested in a Row must render alongside the row's other text, \
        not leave a gap: {svg2}"
     );
@@ -7627,6 +7744,7 @@ mod interpreter_tests {
   mod graphics3d_primitives;
   mod graphics_primitives;
   mod image;
+  mod infix;
   mod julia_set_plot;
   mod layout_display;
   mod lic_plot;
