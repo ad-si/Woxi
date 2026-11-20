@@ -35,6 +35,11 @@
 - `Column[…, "Center"]` reads the string alignment like the symbol.
 - In notebooks, `SetOptions[$FrontEnd, …]` accepts front-end options such as
     `DynamicEvaluationTimeout` without an `optnf` message.
+- `ImageSize -> {Automatic, h}` adds the margins of `ImagePadding` or a
+    frame to the width the drawing's shape gives, instead of taking them
+    out of it.
+- Woxi Studio fits a picture of automatic size that is taller than a
+    Manipulate's `ContentSize -> {w, h}` area to that height.
 
 # 2026-11-08 - 0.4.0
 

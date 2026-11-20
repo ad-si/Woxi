@@ -61066,6 +61066,28 @@ mod labeled_text_and_pane_wrapping {
     assert!(svg.starts_with("<svg width=\"100\" height=\"50\""), "{svg}");
   }
 
+  /// Regression: under `ImageSize -> {Automatic, h}` the margins of an
+  /// `ImagePadding` (or of a frame) came out of a width worked out from the
+  /// whole height, leaving a sliver of a drawing area. The drawing area is
+  /// what the margins leave of h, its width follows the data's shape, and
+  /// the margins add to that width.
+  #[test]
+  fn image_size_automatic_width_adds_the_padding() {
+    // The drawing is 350 tall and 8/3 as tall as wide: 131.25 wide, plus
+    // 70 + 150 points of padding.
+    let svg = export_svg(
+      "Graphics[Rectangle[{0, 0}, {1, 3}], PlotRange -> {{-1, 2}, {0, 8}}, \
+       Frame -> {False, True, False, True}, \
+       ImagePadding -> {{70, 150}, {15, 15}}, ImageSize -> {Automatic, 380}]",
+    );
+    assert!(svg.contains("height=\"380\""), "{svg}");
+    let width = svg_width(&svg);
+    assert!((width - 351.25).abs() < 1.0, "{width}: {svg}");
+    // The frame's right edge is the drawing area's: 131.25 points right of
+    // its left edge (both drawn inside the padding's offset).
+    assert!(svg.contains("<line x1=\"131.25\" y1=\"0.00\""), "{svg}");
+  }
+
   /// Regression: `Re`/`Im` of a non-real `Root[…]` (what `ReIm` gives for
   /// the complex roots `Solve` returns) were not taken as numbers, so a
   /// `Point` at such a root was rejected as a bad coordinate.
