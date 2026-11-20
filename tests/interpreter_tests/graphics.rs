@@ -2702,6 +2702,49 @@ mod graphics {
       );
     }
 
+    /// `Row[items, BaseStyle -> color]` colors the whole label, like an
+    /// enclosing `Style[Row[items], color]`, while the parts keep their own
+    /// directives.
+    #[test]
+    fn text_label_row_base_style_colors_the_label() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"f(\", Style[\"u\", Italic], \")\"}, \
+         BaseStyle -> RGBColor[0, 0.5, 0]], {0, 0}]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(0,128,0)\""), "{svg}");
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">u</tspan>"),
+        "{svg}"
+      );
+      // An outer `Style` size still applies alongside the row's color.
+      let svg = export_svg(
+        "Graphics[{Text[Style[Row[{\"w\"}, BaseStyle -> Blue], 20], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains("fill=\"rgb(0,0,255)\" font-size=\"20\""),
+        "{svg}"
+      );
+    }
+
+    /// A held formula, an equation or a rule with a quotient on one side
+    /// stacks the quotient in a label, as the quotient alone does.
+    #[test]
+    fn text_label_formula_stacks_its_fraction() {
+      for label in [
+        "HoldForm[v = 2/w]",
+        "v == 2/w",
+        "v -> 2/w",
+        "HoldForm[v = (w + 1)/3]",
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        assert!(svg.contains("<line"), "{label}: {svg}");
+        assert!(!svg.contains("^(-1)"), "{label}: {svg}");
+      }
+      // Without a quotient the formula is one line of text.
+      let svg = export_svg("Graphics[{Text[HoldForm[v = w + 2], {0, 0}]}]");
+      assert!(!svg.contains("<line"), "{svg}");
+    }
+
     /// A nested `Style[…, size]` part of a label inside a `Style` of
     /// another size is drawn at its own size.
     #[test]
@@ -28431,6 +28474,57 @@ mod show {
       "Graphics[{Blue, Translate[Scale[First[Plot[Sin[t], {t, 0, 3}]], {2, 1}], {1, 0}]}]",
     );
     assert!(svg.contains("<path") || svg.contains("<polyline"), "{svg}");
+  }
+
+  /// The curve extracted from a plot is clipped to the plot's y range, as
+  /// in Wolfram: a pole sampled near `x = 0` must not leave a point at
+  /// `y ~ 10^6` that stretches `PlotRange -> {0, All}` of the `Graphics`
+  /// the curve is redrawn in.
+  #[test]
+  fn first_of_a_plot_clips_its_curve_to_the_plot_range() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Round[MinMax[Flatten[Cases[First[Plot[2/t, {t, 0, 5}, \
+         PlotRange -> {0, 3}]], Line[p_] :> p[[All, 2]], Infinity]]], 0.01]"
+      )
+      .unwrap(),
+      "{0.4, 3.}"
+    );
+    // A curve leaving and re-entering the range is one line per piece.
+    assert_eq!(
+      interpret(
+        "Count[First[Plot[3 Sin[t], {t, 0, 2 Pi}, PlotRange -> {-2, 2}]], \
+         _Line, Infinity]"
+      )
+      .unwrap(),
+      "3"
+    );
+    // Redrawn with `PlotRange -> All`, the range stays the plot's.
+    let svg = export_svg(
+      "Graphics[First[Plot[2/t, {t, 0, 5}, PlotRange -> {0, 3}]], \
+       PlotRange -> {{0, 5}, {0, All}}, Axes -> True, ImageSize -> 200, \
+       AspectRatio -> 1]",
+    );
+    let ys: Vec<f64> = svg
+      .split("points=\"")
+      .skip(1)
+      .flat_map(|rest| {
+        rest
+          .split('"')
+          .next()
+          .unwrap()
+          .split_whitespace()
+          .filter_map(|p| p.split(',').nth(1)?.parse::<f64>().ok())
+          .collect::<Vec<_>>()
+      })
+      .collect();
+    let (lo, hi) = ys
+      .iter()
+      .fold((f64::MAX, f64::MIN), |(l, h), &y| (l.min(y), h.max(y)));
+    // The curve spans most of the picture's height instead of collapsing
+    // onto the axis.
+    assert!(hi - lo > 100.0, "{svg}");
   }
 
   /// The curve extracted from a plot keeps the weight the plot draws it
