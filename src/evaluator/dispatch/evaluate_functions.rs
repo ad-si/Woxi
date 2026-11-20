@@ -2461,7 +2461,7 @@ fn evaluate_function_call_ast_inner(
       },
       None => crate::functions::polyhedron_operations::DEFAULT_TRUNCATE_RATIO,
     };
-    if !(0.0..0.5).contains(&ratio) {
+    if !(0.0..=0.5).contains(&ratio) {
       return Ok(unevaluated(name, args));
     }
     return Ok(crate::functions::polyhedron_operations::truncate(
