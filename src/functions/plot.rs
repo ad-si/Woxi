@@ -12633,10 +12633,11 @@ pub(crate) fn generate_histogram_svg(
       log_base.unwrap_or(0.0) + 1.0
     };
 
-  // Explicit PlotRange overrides the auto-computed extents: the bins and
-  // 0..tallest bar, padded as WL 15's
+  // Explicit PlotRange overrides the auto-computed extents (the bins and
+  // 0..tallest bar). Either is padded as WL 15's
   // `PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, {Scaled[0.02],
-  // Scaled[0.05]}}` pads them (fractions of the padded span).
+  // Scaled[0.05]}}` pads it (fractions of the padded span): the padding
+  // applies to an explicit range as well, so its end ticks stay inside.
   let scaled_pad = |lo: f64, hi: f64, below: f64, above: f64| {
     let span = (hi - lo) / (1.0 - below - above);
     (lo - below * span, hi + above * span)
@@ -12645,16 +12646,18 @@ pub(crate) fn generate_histogram_svg(
   let to_draw = |(lo, hi): (f64, f64), log: bool, ln: fn(f64) -> f64| {
     if log { (ln(lo), ln(hi)) } else { (lo, hi) }
   };
-  let (y_min, y_max) = opts.plot_range_y.map_or_else(
-    || scaled_pad(log_base.unwrap_or(0.0), max_height, 0.02, 0.05),
+  let (y_lo, y_hi) = opts.plot_range_y.map_or_else(
+    || (log_base.unwrap_or(0.0), max_height),
     |r| to_draw(r, opts.log_y, f64::ln),
   );
-  let y_max = if y_max <= y_min { y_min + 1.0 } else { y_max };
+  let y_hi = if y_hi <= y_lo { y_lo + 1.0 } else { y_hi };
+  let (y_min, y_max) = scaled_pad(y_lo, y_hi, 0.02, 0.05);
   let (x_lo, x_hi) = opts.plot_range_x.map_or_else(
-    || scaled_pad(bin_edges[0], bin_edges[num_bins], 0.02, 0.02),
+    || (bin_edges[0], bin_edges[num_bins]),
     |r| to_draw(r, opts.log_x, f64::log10),
   );
   let x_hi = if x_hi <= x_lo { x_lo + 1.0 } else { x_hi };
+  let (x_lo, x_hi) = scaled_pad(x_lo, x_hi, 0.02, 0.02);
 
   let s = RESOLUTION_SCALE as i32;
   let sf = RESOLUTION_SCALE as f64;
@@ -12740,15 +12743,22 @@ pub(crate) fn generate_histogram_svg(
   } else {
     0
   } + bottom_extra as u32;
-  let y_label_area = if opts.ticks {
-    ((tick_room(&y_ticks) + plot_padding::TICK_LABEL_GAP) * sf) as u32
+  // The vertical axis stands at the left edge unless `AxesOrigin` places
+  // it further in (Wolfram's `AxesOrigin -> {xmin, 0}` default).
+  let origin_x = opts
+    .axes_origin
+    .0
+    .filter(|v| v.is_finite())
+    .map_or(x_scale.min, |v| {
+      v.clamp(x_scale.min.min(x_scale.max), x_scale.min.max(x_scale.max))
+    });
+  let origin_frac = x_scale.frac(origin_x).clamp(0.0, 1.0);
+  let y_tick_room = if opts.ticks {
+    (tick_room(&y_ticks) + plot_padding::TICK_LABEL_GAP) * sf
   } else {
-    0
-  } + if has_y_frame_label {
-    (24.0 * sf) as u32
-  } else {
-    0
+    0.0
   };
+  let y_frame_room = if has_y_frame_label { 24.0 * sf } else { 0.0 };
   // The last x label may hang past the right end of the axis.
   let x_overhang = x_ticks
     .majors
@@ -12807,6 +12817,24 @@ pub(crate) fn generate_histogram_svg(
 
   let side_margin = 2.0 * sf;
   let right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
+  // The y tick labels sit left of the vertical axis. An axis inside the
+  // plot already has `origin_frac` of the plot's width to its left, so only
+  // what the labels need beyond that is reserved: with `L` the reserved
+  // room and `W` the width shared by it and the plot,
+  // `L + origin_frac * (W - L) >= room`.
+  let y_label_area = {
+    let shared = render_width as f64
+      - side_margin
+      - right_margin as f64
+      - axes_label_margin_right as f64
+      - legend_margin_right as f64;
+    let room = if origin_frac < 1.0 {
+      ((y_tick_room - origin_frac * shared) / (1.0 - origin_frac)).max(0.0)
+    } else {
+      0.0
+    };
+    (room + y_frame_room) as u32
+  };
 
   let mut buf = String::new();
   {
@@ -12936,7 +12964,10 @@ pub(crate) fn generate_histogram_svg(
         x: x_scale,
         y: y_scale,
         // On a log count axis the x axis runs along the bars' base.
-        origin: (x_scale.min, y_scale.origin(log_base.map(f64::exp), None)),
+        origin: (
+          origin_x,
+          y_scale.origin(opts.axes_origin.1.or(log_base.map(f64::exp)), None),
+        ),
         show: (true, true),
         ticks: opts.ticks.then_some((&x_ticks, &y_ticks)),
         sf,
@@ -12944,7 +12975,9 @@ pub(crate) fn generate_histogram_svg(
         label_fill,
         axes_style: &[None, None],
         ticks_style: &[None, None],
-        keep_y_label_on_x_axis: true,
+        // A chart keeps its `0` beside the axis at the left edge; an axis
+        // `AxesOrigin` moves inward drops it like a plot's.
+        keep_y_label_on_x_axis: opts.axes_origin.0.is_none(),
         label_color: None,
         tick_font: crate::functions::plot_axes::AXIS_TICK_FONT,
       },

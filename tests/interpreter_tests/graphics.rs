@@ -21159,6 +21159,61 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn histogram_axes_origin_moves_vertical_axis() {
+      // `AxesOrigin -> {0, 0}` stands the vertical axis at x = 0 inside an
+      // explicit range from -1: the `-1` tick is labeled left of it and the
+      // `0` labels at the crossing are dropped, as in a plot.
+      let data = "{1.2, 1.5, 2.1, 2.2, 2.4, 3.1, 3.5, 4.2}";
+      let range = "PlotRange -> {{-1, 5}, All}";
+      let moved = export_svg(&format!(
+        "Histogram[{data}, {range}, AxesOrigin -> {{0, 0}}]"
+      ));
+      let edge = export_svg(&format!("Histogram[{data}, {range}]"));
+      assert!(moved.contains(">-1</text>"), "{moved}");
+      assert!(!moved.contains(">0</text>"), "{moved}");
+      assert!(edge.contains(">0</text>"), "{edge}");
+      assert_ne!(moved, edge);
+    }
+
+    #[test]
+    fn histogram_explicit_plot_range_is_padded() {
+      // Histogram's `PlotRangePadding` is in `Scaled` units, which pad an
+      // explicit `PlotRange` too, so the tick at its right end (6) stays
+      // inside the picture.
+      let data = "{1, 2, 2, 3, 3, 3, 4, 4, 5}";
+      let svg = export_svg(&format!(
+        "Histogram[{data}, {{1}}, PlotRange -> {{{{0, 6}}, {{0, 4}}}}]"
+      ));
+      let all = export_svg(&format!("Histogram[{data}, {{1}}]"));
+      assert!(svg.contains(">6</text>"), "{svg}");
+      assert_ne!(svg, all);
+    }
+
+    #[test]
+    fn chart_repeated_option_first_setting_wins() {
+      // A chart option given twice is decided by its first setting, as
+      // for any Wolfram option list; the later `PlotRange -> All` used to
+      // override the explicit range.
+      let data = "{1.2, 1.5, 2.1, 2.2, 2.4, 3.1, 7.5, 9.8}";
+      let explicit = export_svg(&format!(
+        "Histogram[{data}, PlotRange -> {{{{-1, 5}}, All}}]"
+      ));
+      let repeated = export_svg(&format!(
+        "Histogram[{data}, PlotRange -> {{{{-1, 5}}, All}}, PlotRange -> All]"
+      ));
+      let all = export_svg(&format!("Histogram[{data}, PlotRange -> All]"));
+      assert_eq!(repeated, explicit);
+      assert_ne!(repeated, all);
+
+      let bar =
+        |opts: &str| export_svg(&format!("BarChart[{{1, 2, 3}}, {opts}]"));
+      assert_eq!(
+        bar("ImageSize -> 200, ImageSize -> 400"),
+        bar("ImageSize -> 200")
+      );
+    }
+
+    #[test]
     fn box_whisker_chart() {
       insta::assert_snapshot!(export_svg(
         "BoxWhiskerChart[{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}]"
