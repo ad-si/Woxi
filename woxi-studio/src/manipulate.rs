@@ -55,7 +55,7 @@ fn svg_root_size(svg: &str) -> Option<(f32, f32)> {
 
 /// A control's name with its freshly typeset caption: the styled runs and,
 /// for a caption drawn as a picture, its SVG.
-type ResolvedLabel = (String, (Vec<LabelRun>, Option<String>));
+type ResolvedLabel = (String, Caption);
 
 /// Runtime state for a single control inside a Manipulate cell.
 #[derive(Debug, Clone)]
@@ -2635,9 +2635,6 @@ impl ManipulateState {
     selection_moved
   }
 }
-
-/// A control name with its typeset caption runs and optional rendered SVG.
-type ResolvedLabel = (String, Caption);
 
 /// A dynamic bound re-resolved to numbers:
 /// `(control name, min, max, step)`.

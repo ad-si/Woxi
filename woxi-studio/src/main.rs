@@ -18724,10 +18724,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     assert!(editor.output_all_svg);
     let tree = resvg::usvg::Tree::from_str(
       &editor.output_svgs[0],
-      &resvg::usvg::Options {
-        fontdb: fontdb.clone(),
-        ..Default::default()
-      },
+      &woxi::functions::image_ast::svg_render_options(fontdb.clone()),
     )
     .unwrap();
     let size = tree.size();
