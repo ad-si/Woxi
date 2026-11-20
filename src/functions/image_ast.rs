@@ -13539,8 +13539,79 @@ pub fn svg_render_options(
   resvg::usvg::Options {
     font_family: DEFAULT_SVG_FONT_FAMILY.to_string(),
     fontdb,
+    font_resolver: font_resolver(),
     ..Default::default()
   }
+}
+
+/// usvg's font resolver with a fallback that keeps the text's style.
+///
+/// When the chosen font lacks a glyph (e.g. a Greek letter in a text
+/// set in a Latin-only face), usvg reshapes the run in a fallback face.
+/// Its built-in selector accepts any face that matches the base face's
+/// slant *or* weight *or* width, so an upright regular text could come
+/// out in e.g. an ExtraBold Italic face. This one prefers faces of the
+/// same slant, then the nearest weight, then the same width.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn font_resolver() -> resvg::usvg::FontResolver<'static> {
+  resvg::usvg::FontResolver {
+    select_font: resvg::usvg::FontResolver::default_font_selector(),
+    select_fallback: Box::new(|c, exclude_fonts, fontdb| {
+      let base = fontdb.face(*exclude_fonts.first()?)?;
+      let mut candidates: Vec<_> = fontdb
+        .faces()
+        .filter(|face| !exclude_fonts.contains(&face.id))
+        .map(|face| {
+          let key = fallback_face_rank(
+            (face.style, face.weight.0, face.stretch),
+            (base.style, base.weight.0, base.stretch),
+          );
+          (key, face.id)
+        })
+        .collect();
+      // A stable sort keeps the database order among equally good faces.
+      candidates.sort_by_key(|(key, _)| *key);
+      candidates
+        .into_iter()
+        .map(|(_, id)| id)
+        .find(|id| face_has_char(fontdb, *id, c))
+    }),
+  }
+}
+
+/// Whether the font face `id` has a glyph for `c`.
+#[cfg(not(target_arch = "wasm32"))]
+fn face_has_char(
+  fontdb: &resvg::usvg::fontdb::Database,
+  id: resvg::usvg::fontdb::ID,
+  c: char,
+) -> bool {
+  fontdb
+    .with_face_data(id, |data, index| {
+      ttf_parser::Face::parse(data, index)
+        .ok()
+        .and_then(|face| face.glyph_index(c))
+        .is_some()
+    })
+    .unwrap_or(false)
+}
+
+/// How well a fallback face's (slant, weight, width) matches the base
+/// face's; lower is better.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn fallback_face_rank(
+  face: (
+    resvg::usvg::fontdb::Style,
+    u16,
+    resvg::usvg::fontdb::Stretch,
+  ),
+  base: (
+    resvg::usvg::fontdb::Style,
+    u16,
+    resvg::usvg::fontdb::Stretch,
+  ),
+) -> (bool, u16, bool) {
+  (face.0 != base.0, face.1.abs_diff(base.1), face.2 != base.2)
 }
 
 /// Extract an SVG rendering of `expr` when it is a `Graphics`/`Graphics3D`
