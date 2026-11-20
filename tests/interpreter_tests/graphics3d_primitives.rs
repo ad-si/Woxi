@@ -862,6 +862,41 @@ mod outlines {
         .all(|l| l.contains("stroke-linecap=\"round\""))
     );
   }
+
+  /// The `stroke-width` values of the black `<line>` pieces of an SVG.
+  fn black_line_widths(svg: &str) -> Vec<f64> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && l.contains("stroke=\"rgb(0,0,0)\""))
+      .filter_map(|l| {
+        l.split("stroke-width=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|w| w.parse::<f64>().ok())
+      })
+      .collect()
+  }
+
+  // A 3D line with no thickness directive is a hairline, while an explicit
+  // thickness still sets its width.
+  #[test]
+  fn default_line_is_a_hairline() {
+    let widths = black_line_widths(&svg(
+      "Graphics3D[{Black, Line[{{0, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    ));
+    assert!(
+      !widths.is_empty() && widths.iter().all(|w| *w == 0.5),
+      "{widths:?}"
+    );
+    let widths = black_line_widths(&svg(
+      "Graphics3D[{Black, AbsoluteThickness[3], \
+       Line[{{0, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    ));
+    assert!(
+      !widths.is_empty() && widths.iter().all(|w| *w == 3.0),
+      "{widths:?}"
+    );
+  }
 }
 
 mod ticks {
