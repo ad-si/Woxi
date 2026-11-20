@@ -3499,8 +3499,8 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
         "PlotRange" => {
           let (rx, ry) =
             crate::functions::plot::parse_series_plot_range(replacement);
-          opts.plot_range_x = rx;
-          opts.plot_range_y = ry;
+          opts.plot_range_x = crate::functions::plot::closed_range(rx);
+          opts.plot_range_y = crate::functions::plot::closed_range(ry);
         }
         // `Ticks -> None` suppresses ticks entirely; `Automatic`/`All` leave
         // the renderer's own automatic ticks in place; an explicit

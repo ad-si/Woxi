@@ -5774,6 +5774,20 @@ farther away (`|ViewPoint|` = 10) than in the cases that fit the sphere
 (about 2 to 3.4), but which property turns the sphere framing off is
 unverified.
 
+A close `ViewPoint` contradicts the rule. A Demonstration's snapshot of a
+`Show` of three `Boxed -> False` `Graphics3D`s (a desk fan: rings of radius
+up to 1 in the y-z plane, on a stand reaching down to z = -1.5) at
+`ImageSize -> {600, 400}` from `ViewPoint -> {1, -1, 0}` draws the fan
+about 380 px tall, 0.95 of the height. Woxi's sphere framing draws it
+284 px tall, and even the box-outline fit (`SphericalRegion -> False`)
+only 300 px. The width-to-height ratio (0.58) matches a perspective eye at
+`|ViewPoint|` box sides, so only the scale is off: Wolfram fits roughly the
+projected contents, not the box (whose perspective outline is about 1.25×
+the contents here) nor its sphere. No single rule found so far reproduces
+this and the three snapshots above; unverified with wolframscript.
+
+### `PointSize` in `Graphics3D` draws larger than Wolfram
+
 ### Base length of relative `Thickness` / `PointSize` in `Graphics3D`
 
 Woxi measures a relative `Thickness[t]` and `PointSize[s]` in a
@@ -10383,3 +10397,12 @@ like `s_NDSolve`StateData`, match.
 above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
 other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
 Only a title that is framed as a whole gets a box there.
+
+### Symbols inside a `Style`d `Row` `PlotLabel` drawn upright
+
+A saved snapshot of `ListPlot[…, PlotLabel -> Style[Row[{x^m, "  vs.  ",
+y^n}], 16]]` (with `x` and `y` unassigned symbols) shows the letters
+upright, while Woxi sets single-letter symbols in a plot label in italics as
+`TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
+is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
+rendered with another `FormatType`.

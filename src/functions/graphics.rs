@@ -1632,7 +1632,7 @@ fn resolve_anchor(x: f64, y: f64, scaled: bool, bb: &BBox) -> (f64, f64) {
   )
 }
 
-fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
+pub(crate) fn expr_to_point_list(expr: &Expr) -> Option<Vec<(f64, f64)>> {
   // Like `expr_to_point`: a point *list* is usually already a `{{x,y},…}`
   // literal, but a Demonstration's `Arrow[({{# - 2.5, 0}, {#, 0}}& )[tip]]`
   // only reduces to one at evaluation time (a pure function applied to the
@@ -5069,19 +5069,25 @@ fn parse_polygon(
       vertex_colors: vc,
       style,
     });
-  } else if let Some((outer, holes)) =
+  } else if let Some(faces) =
     crate::functions::polygon_holes::split_holes(&args[0], &expr_to_point_list)
   {
-    // Polygon[outer -> holes] — a polygon with the hole boundaries cut
-    // out of it. `VertexColors` still assigns one color per point of the
-    // *outer* boundary; hole boundaries have no colors of their own.
-    let vc = vertex_colors.clone().filter(|c| c.len() == outer.len());
-    prims.push(Primitive::PolygonPrim {
-      points: outer,
-      holes,
-      vertex_colors: vc,
-      style: style.clone(),
-    });
+    // Polygon[outer -> holes] (or a list of outers paired with their
+    // holes) — polygons with the hole boundaries cut out of them.
+    // `VertexColors` still assigns one color per point of a lone *outer*
+    // boundary; hole boundaries have no colors of their own.
+    let single = faces.len() == 1;
+    for (outer, holes) in faces {
+      let vc = vertex_colors
+        .clone()
+        .filter(|c| single && c.len() == outer.len());
+      prims.push(Primitive::PolygonPrim {
+        points: outer,
+        holes,
+        vertex_colors: vc,
+        style: style.clone(),
+      });
+    }
   } else if let Expr::List(items) = &args[0] {
     // `VertexColors` for a list of polygons assigns one color per point,
     // in order, across all sub-polygons concatenated — mirroring how it
@@ -5104,15 +5110,17 @@ fn parse_polygon(
           vertex_colors: vc,
           style: style.clone(),
         });
-      } else if let Some((outer, holes)) =
+      } else if let Some(faces) =
         crate::functions::polygon_holes::split_holes(item, &expr_to_point_list)
       {
-        prims.push(Primitive::PolygonPrim {
-          points: outer,
-          holes,
-          vertex_colors: None,
-          style: style.clone(),
-        });
+        for (outer, holes) in faces {
+          prims.push(Primitive::PolygonPrim {
+            points: outer,
+            holes,
+            vertex_colors: None,
+            style: style.clone(),
+          });
+        }
       }
     }
   }
@@ -8901,6 +8909,12 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   if hidden {
     return;
   }
+  if frame_opts.is_empty()
+    && args.len() == 2
+    && split_framed_column_label(content, &args[1], &local_style, prims)
+  {
+    return;
+  }
   // A label laid out as a `Column`/`Row` holding a `Grid` (a table of
   // values beside a point) is composed to its own picture and embedded
   // whole at the anchor; flattening it to one text run would lose the
@@ -9245,6 +9259,92 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     styled_ranges,
     style: local_style,
   });
+}
+
+/// A centered `Column[{…}]` label whose items include a `Framed` one
+/// (`Column[{Framed[Style[…, 18], Background -> White], Spacer[25], …}]`)
+/// sets every item as its own label: each framed item keeps its own panel
+/// and font, instead of one panel behind the whole block in the default
+/// size. The rows are stacked one line of their own font size high and the
+/// block is centered on `pos`. Returns whether the label was handled.
+fn split_framed_column_label(
+  content: &Expr,
+  pos: &Expr,
+  style: &StyleState,
+  prims: &mut Vec<Primitive>,
+) -> bool {
+  let Expr::FunctionCall { name, args } = content else {
+    return false;
+  };
+  if name != "Column" || column_line_anchor(content).is_some() {
+    return false;
+  }
+  let Some(Expr::List(items)) = args.first() else {
+    return false;
+  };
+  let is_framed = |e: &Expr| {
+    matches!(e, Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty())
+  };
+  if !items.iter().any(is_framed) {
+    return false;
+  }
+  // An `Offset`/`Scaled` anchor already carries a shift of its own.
+  if matches!(pos, Expr::FunctionCall { name, .. }
+    if name == "Offset" || name == "Scaled")
+    || expr_to_anchor(pos).is_none()
+  {
+    return false;
+  }
+  // The font size an item is set in: its own `Framed`/`Style` wrappers'
+  // directives over the label's style.
+  let item_font_size = |item: &Expr| {
+    let mut st = style.clone();
+    let mut cur = item;
+    loop {
+      match cur {
+        Expr::FunctionCall { name, args }
+          if name == "Framed" && !args.is_empty() =>
+        {
+          cur = &args[0];
+        }
+        Expr::FunctionCall { name, args }
+          if is_style_wrapper(name) && !args.is_empty() =>
+        {
+          for d in style_directives_in_application_order(&args[1..]) {
+            apply_directive(d, &mut st);
+            apply_text_style_directive(d, &mut st);
+          }
+          cur = &args[0];
+        }
+        _ => break,
+      }
+    }
+    apply_agreed_row_part_styles(cur, &mut st);
+    st.font_size
+  };
+  let heights: Vec<f64> = items.iter().map(item_font_size).collect();
+  let total: f64 = heights.iter().sum();
+  let mut top = total / 2.0;
+  for (item, h) in items.iter().zip(&heights) {
+    let center = top - h / 2.0;
+    top -= h;
+    // A `Spacer` or `Null` row is only room between the others.
+    if matches!(item, Expr::Identifier(s) if s == "Null")
+      || matches!(item, Expr::FunctionCall { name, .. } if name == "Spacer")
+    {
+      continue;
+    }
+    let anchor = call(
+      "Offset",
+      vec![
+        Expr::List(vec![Expr::Integer(0), Expr::Real(center)].into()),
+        pos.clone(),
+      ],
+    );
+    parse_text(&[item.clone(), anchor], style, prims);
+  }
+  true
 }
 
 /// The horizontal alignment `Column[{…}, Left | Right]` (or
@@ -15645,6 +15745,57 @@ fn parse_plot_range(
   }
 }
 
+/// One axis's half-open `PlotRange` bounds: `{min, All}` (or `Automatic`)
+/// pins the lower end and leaves the upper end to the data, `{All, max}`
+/// the reverse. `None` when the axis spec is not half-open.
+pub(crate) type HalfOpenBounds = (Option<f64>, Option<f64>);
+
+fn half_open_axis_bounds(expr: &Expr) -> Option<HalfOpenBounds> {
+  let Expr::List(items) = expr else {
+    return None;
+  };
+  if !is_open_ended_range_pair(expr) {
+    return None;
+  }
+  Some((expr_to_f64(&items[0]), expr_to_f64(&items[1])))
+}
+
+/// The half-open axes of a `PlotRange` value, as `[x, y]`: a bare
+/// `{min, All}` pair is a vertical range, and in an `{xspec, yspec}` pair
+/// each axis may be half-open on its own (`{{0, All}, {All, 5}}`).
+pub(crate) fn plot_range_half_open_axes(
+  expr: &Expr,
+) -> [Option<HalfOpenBounds>; 2] {
+  if let Some(y) = half_open_axis_bounds(expr) {
+    return [None, Some(y)];
+  }
+  match expr {
+    Expr::List(items) if items.len() == 2 => [
+      half_open_axis_bounds(&items[0]),
+      half_open_axis_bounds(&items[1]),
+    ],
+    _ => [None, None],
+  }
+}
+
+/// Close a half-open axis range over the data's own `(lo, hi)` extent.
+/// A range the data never reaches (`{5, All}` over data below 5) collapses
+/// onto the pinned end, so it is widened by one unit to stay drawable.
+fn close_half_open_bounds(
+  (lo, hi): HalfOpenBounds,
+  (data_lo, data_hi): (f64, f64),
+) -> (f64, f64) {
+  let lo_v = lo.unwrap_or(data_lo);
+  let hi_v = hi.unwrap_or(data_hi);
+  if hi_v > lo_v {
+    (lo_v, hi_v)
+  } else if lo.is_some() {
+    (lo_v, lo_v + 1.0)
+  } else {
+    (hi_v - 1.0, hi_v)
+  }
+}
+
 fn parse_range_spec(expr: &Expr) -> Option<(f64, f64)> {
   match expr {
     Expr::List(items) if items.len() == 2 => {
@@ -16108,6 +16259,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut full_width = false;
   let mut plot_range_x: Option<(f64, f64)> = None;
   let mut plot_range_y: Option<(f64, f64)> = None;
+  // `PlotRange -> {min, All}`-style axes: one end pinned, the other
+  // following the data. Closed over the content's extent once it is known.
+  let mut half_open_range: [Option<HalfOpenBounds>; 2] = [None, None];
   let mut background: Option<Color> = None;
   let mut plot_label: Option<Vec<String>> = None;
   // A `PlotLabel` holding a two-dimensional layout (a matrix), typeset as
@@ -16219,6 +16373,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (xr, yr) = parse_plot_range(replacement);
           plot_range_x = xr;
           plot_range_y = yr;
+          half_open_range = plot_range_half_open_axes(replacement);
         }
         "PlotRangePadding" => {
           plot_range_padding = Some(replacement.clone());
@@ -16487,6 +16642,24 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y_min: -1.0,
       y_max: 1.0,
     };
+  }
+
+  // A half-open axis pins one end and lets the data choose the other —
+  // padded as an automatic range would be on that open side only.
+  if half_open_range.iter().any(Option::is_some) {
+    let data = if plot_range_padding.is_some() {
+      bb
+    } else {
+      bb.with_padding_shaped(1.0 / 48.0, true, aspect_ratio)
+    };
+    if let Some(bounds) = half_open_range[0] {
+      plot_range_x =
+        Some(close_half_open_bounds(bounds, (data.x_min, data.x_max)));
+    }
+    if let Some(bounds) = half_open_range[1] {
+      plot_range_y =
+        Some(close_half_open_bounds(bounds, (data.y_min, data.y_max)));
+    }
   }
 
   // An explicit `AxesOrigin` of drawn axes lies inside an automatic range:
@@ -17751,6 +17924,16 @@ pub(crate) fn text_face_family() -> Expr {
 pub(crate) fn in_text_face(content: &Expr) -> Expr {
   let family = text_face_family();
   match content {
+    // A form wrapper only says how its content is typeset: the face goes on
+    // the content inside it, so `TraditionalForm[Style[Grid[…], 24]]` still
+    // lays its grid out (now in the text face) instead of falling back to
+    // its string form.
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "TraditionalForm" | "StandardForm") =>
+    {
+      call(name, vec![in_text_face(&args[0])])
+    }
     Expr::FunctionCall { name, args }
       if name == "TraditionalForm" && args.len() == 1 =>
     {
@@ -22489,7 +22672,7 @@ fn is_single_letter_symbol(s: &str) -> bool {
 /// Infix box tokens drawn with a space on either side: relations,
 /// assignments, rule arrows, the `mod` word operator and the bar of
 /// `X | A`.
-fn is_spaced_box_operator(token: &str) -> bool {
+pub(crate) fn is_spaced_box_operator(token: &str) -> bool {
   matches!(
     token,
     ":="
@@ -27097,7 +27280,8 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
         merged_options
           .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
       }
-      // A bare `PlotRange -> {min, max}` on a plot is the *y* range; the
+      // A bare `PlotRange -> {min, max}` on a plot is the *y* range (a
+      // half-open `{min, All}` too, its open end following the data); the
       // horizontal extent stays that of the plotted domain.
       for opt in &mut merged_options {
         if let Expr::Rule {
@@ -27107,9 +27291,10 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           && option_name(pattern) == Some("PlotRange")
           && let Expr::List(items) = replacement.as_ref()
           && items.len() == 2
-          && !is_axis_range_spec(&items[0])
-          && !is_axis_range_spec(&items[1])
-          && parse_range_spec(replacement).is_some()
+          && (is_open_ended_range_pair(replacement)
+            || (!is_axis_range_spec(&items[0])
+              && !is_axis_range_spec(&items[1])
+              && parse_range_spec(replacement).is_some()))
         {
           // The horizontal extent is the first plot's own domain (what
           // Wolfram reports as `Full`), so a later layer reaching far
@@ -27128,15 +27313,6 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
           **replacement =
             Expr::List(vec![x_extent, replacement.as_ref().clone()].into());
-        }
-        if let Expr::Rule {
-          pattern,
-          replacement,
-        } = opt
-          && option_name(pattern) == Some("PlotRange")
-          && is_open_ended_range_pair(replacement)
-        {
-          **replacement = id_expr("All");
         }
       }
       // The leading plot's axes stay on. In a framed plot they are drawn as
@@ -35501,6 +35677,14 @@ pub(crate) fn style_pushed_into_layout(
     .collect();
   let mut new_args = vec![Expr::List(styled.into())];
   new_args.extend(args[1..].iter().cloned());
+  // A `Row`'s separator is set in the same style as its items:
+  // `Style[Row[{a, b}, "="], Orange]` draws an orange `=`.
+  if name == "Row"
+    && let Some(separator) = new_args.get_mut(1)
+    && !matches!(separator, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+  {
+    *separator = restyle(separator);
+  }
   Some(call(name.as_str(), new_args))
 }
 
@@ -37050,6 +37234,33 @@ pub(crate) fn base_style_pushed_args(
   }
 }
 
+/// A `Row` separator as the front end sets it: a string separator is
+/// inserted as a raw token, so a relation such as `"="` gets the operator
+/// spacing on both sides (`Row[{a, 2}, "="]` reads `a = 2`). A `Style` around
+/// the separator keeps its directives.
+pub(crate) fn spaced_row_separator(separator: &Expr) -> Expr {
+  match separator {
+    // The bar of `X | A` is spaced only as that operator; a `"|"` row
+    // separator stays a tight divider (`Row[{a, b}, "|"]` reads `a|b`).
+    Expr::String(s) if s != "|" && is_spaced_box_operator(s) => {
+      Expr::String(format!(" {s} "))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && !args.is_empty()
+        && matches!(&args[0], Expr::String(_) | Expr::FunctionCall { .. }) =>
+    {
+      let mut args = args.to_vec();
+      args[0] = spaced_row_separator(&args[0]);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.into(),
+      }
+    }
+    other => other.clone(),
+  }
+}
+
 pub fn row_to_svg(args: &[Expr]) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Row", args) {
     return row_to_svg(&styled);
@@ -37407,6 +37618,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       if let Some(pts) = crate::syntax::spacer_width_pts(sep) {
         Separator::Gap(pts)
       } else {
+        let sep = &spaced_row_separator(sep);
         let text = expr_to_svg_markup(sep);
         let w = estimate_display_width(sep) * char_width;
         Separator::Text(text, w)
@@ -52032,6 +52244,29 @@ pub fn continuous_binding_code(
   }
 }
 
+/// The value readout of a continuous `Manipulate` slider whose variable
+/// binds an exact number (see [`continuous_binding_code`]), typeset the way
+/// the FrontEnd shows it: a slider stepping by `1/6` reads a stacked `7/6`
+/// fraction and one stepping by `Pi/4` a stacked `3π/4`, not `1.167` or
+/// `2.356`. `None` when the bound value is a plain integer or machine real,
+/// which stays text.
+pub fn continuous_value_label_svg(
+  value: f64,
+  is_real: bool,
+  imaginary: bool,
+) -> Option<String> {
+  if is_real {
+    return None;
+  }
+  let code = continuous_binding_code(value, false, imaginary);
+  let expr = crate::syntax::string_to_expr(&code).ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  match evaluated {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => None,
+    other => form_box_svg(&other),
+  }
+}
+
 pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
@@ -58405,6 +58640,7 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
     {
       let mut x_range = None;
       let mut y_range = None;
+      let mut half_open = [None, None];
       // `Graphics[prims, opt -> v, …]` and `Graphics[prims, {opt -> v, …}]`
       // are the same graphic.
       let opts = args[1..].iter().flat_map(|a| match a {
@@ -58419,6 +58655,7 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
           && matches!(pattern.as_ref(), Expr::Identifier(n) if n == "PlotRange")
         {
           (x_range, y_range) = parse_plot_range(replacement);
+          half_open = plot_range_half_open_axes(replacement);
         }
       }
       let content = evaluate_expr_to_expr(&args[0]).ok()?;
@@ -58438,9 +58675,17 @@ pub fn absolute_plot_range(g: &Expr) -> Option<((f64, f64), (f64, f64))> {
           y_max: 1.0,
         };
       }
+      let data_x = (bb.x_min, bb.x_max);
+      let data_y = (bb.y_min, bb.y_max);
       Some((
-        x_range.unwrap_or((bb.x_min, bb.x_max)),
-        y_range.unwrap_or((bb.y_min, bb.y_max)),
+        half_open[0]
+          .map(|b| close_half_open_bounds(b, data_x))
+          .or(x_range)
+          .unwrap_or(data_x),
+        half_open[1]
+          .map(|b| close_half_open_bounds(b, data_y))
+          .or(y_range)
+          .unwrap_or(data_y),
       ))
     }
     _ => None,
