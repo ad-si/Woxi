@@ -4865,7 +4865,11 @@ fn render_interactive_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if !is_pane {
     return expr;
   }
-  let svg = evaluator::dispatch::io_functions::expr_to_svg(&expr);
+  // Record the drawing area so a click maps to the coordinates of the
+  // graphic under it, also when the graphic is drawn letterboxed.
+  let svg = functions::graphics::with_plot_frame_markers(|| {
+    evaluator::dispatch::io_functions::expr_to_svg(&expr)
+  });
   if svg.starts_with("<svg") {
     graphics_result(functions::graphics::with_click_pane_marker(svg, &expr))
   } else {
