@@ -62534,6 +62534,124 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(!svg.contains("125%"), "{svg}");
 }
 
+/// `Inset[Rotate[text, θ], pos]` in a plot's `Epilog` draws the text turned
+/// by θ, not the literal `Rotate[…]` source.
+#[test]
+fn plot_epilog_inset_of_rotated_text() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Epilog -> {Inset[Rotate[Style["lbl", FontSize -> 14, FontColor -> Purple], 90 Degree], {0.5, 0.5}]}]"#,
+  );
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("transform=\"rotate(-90.000"), "{svg}");
+  assert!(svg.contains(">lbl</text>"), "{svg}");
+  assert!(svg.contains("fill=\"rgb(128,0,128)\""), "{svg}");
+}
+
+/// A rotated non-text inset (a picture) is turned about its anchor.
+#[test]
+fn plot_epilog_inset_of_rotated_graphic() {
+  let svg = export_svg(
+    "Plot[x, {x, 0, 1}, Epilog -> {Inset[Rotate[Graphics[Disk[]], Pi/4], {0.5, 0.5}]}]",
+  );
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("<g transform=\"rotate(-45.000"), "{svg}");
+}
+
+/// A `ScientificForm` (or `NumberForm`) in a frame label sets on one line,
+/// `mantissa×10ⁿ`, not as the two-line `ToString` layout.
+#[test]
+fn frame_label_scientific_form_is_one_line() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"x", Row[{"I (", ScientificForm[0.00149234, 3], " )"}]}]"#,
+  );
+  assert!(svg.contains(">I (1.49×10⁻³ )</text>"), "{svg}");
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {NumberForm[1.5*^-7, 3], "y"}]"#,
+  );
+  assert!(svg.contains(">1.5×10⁻⁷</text>"), "{svg}");
+}
+
+/// Lettered subscripts inside an arithmetic frame label are lowered with a
+/// `<tspan>`, as a bare `Subscript` label's are (the label is set in
+/// `TraditionalForm`, so its letters are italic).
+#[test]
+fn frame_label_arithmetic_with_letter_subscripts() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {(\[Omega] - Subscript[\[Omega], \[Sigma]])/Subscript[\[Gamma], \[Sigma]], "y"}]"#,
+  );
+  let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
+  let sub = format!(
+    "<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+    it("σ")
+  );
+  assert!(
+    svg.contains(&format!("({}-{}{sub})/{}{sub}", it("ω"), it("ω"), it("γ"))),
+    "{svg}"
+  );
+}
+
+/// `Labeled[v, Style[label, size], "RadialOutside"]` puts each label just
+/// outside its slice at the label's own font size.
+#[test]
+fn pie_chart_labeled_radial_outside() {
+  let svg = export_svg(
+    r#"PieChart[{Labeled[1, Style["a", FontSize -> 14], "RadialOutside"], Labeled[2, "b", "RadialOutside"]}]"#,
+  );
+  let label_pos = |text: &str| -> (f64, f64) {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text ").unwrap();
+    let tag = &svg[start..end];
+    let attr = |name: &str| -> f64 {
+      let i = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[i..].split('"').next().unwrap().parse().unwrap()
+    };
+    (attr("x"), attr("y"))
+  };
+  let path = svg.split("<path d=\"M").nth(1).unwrap();
+  let center: Vec<f64> = path
+    .split(' ')
+    .next()
+    .unwrap()
+    .split(',')
+    .map(|v| v.parse().unwrap())
+    .collect();
+  let radius: f64 = path
+    .split(" A")
+    .nth(1)
+    .unwrap()
+    .split(',')
+    .next()
+    .unwrap()
+    .parse()
+    .unwrap();
+  for text in ["a", "b"] {
+    let (x, y) = label_pos(text);
+    let dist = (x - center[0]).hypot(y - center[1]);
+    assert!(dist > radius, "{text}: {dist} <= {radius}: {svg}");
+  }
+  let a_start = svg.find(">a</text>").unwrap();
+  let a_tag = &svg[svg[..a_start].rfind("<text ").unwrap()..a_start];
+  assert!(a_tag.contains("font-size=\"14\""), "{a_tag}");
+}
+
+/// When `ChartStyle` is given twice, the first one is in effect.
+#[test]
+fn pie_chart_duplicate_option_first_wins() {
+  let first = export_svg(r#"PieChart[{1, 2}, ChartStyle -> {Red, Blue}]"#);
+  let both = export_svg(
+    r#"PieChart[{1, 2}, ChartStyle -> {Red, Blue}, ChartStyle -> {Green, Yellow}]"#,
+  );
+  assert_eq!(first, both);
+}
+
+/// An explicit `ImagePadding` leaves exactly that margin around the pie.
+#[test]
+fn pie_chart_image_padding_sets_radius() {
+  let svg =
+    export_svg("PieChart[{1, 2}, ImageSize -> 130, ImagePadding -> 20]");
+  assert!(svg.contains("A45.00,45.00"), "{svg}");
+}
+
 /// A stacked epilog `Text` label whose lines carry their own sizes
 /// (`Labeled[Style[a, 100], Style[b, 40]]`) puts the second line far
 /// enough below the first for the large glyphs, and centers the whole
