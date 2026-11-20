@@ -87,6 +87,16 @@ pub(crate) fn dash_size_to_f64(expr: &Expr) -> Option<f64> {
   }
 }
 
+/// The border a `Framed[…]` label is drawn with.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct TextFrame {
+  /// The border's color.
+  pub(crate) color: Color,
+  /// The `{left, right, bottom, top}` space, in points, between the text
+  /// and the border (`FrameMargins`).
+  pub(crate) margins: (f64, f64, f64, f64),
+}
+
 // ── Color ────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -1112,9 +1122,9 @@ enum Primitive {
     /// `Background -> color`: a panel painted behind the label, so it
     /// stays readable over whatever it is placed on.
     background: Option<Color>,
-    /// `Framed[…]`: the color of the border drawn around the label, or
-    /// `None` for an unframed one (including `FrameStyle -> None`).
-    frame: Option<Color>,
+    /// `Framed[…]`: the border drawn around the label, or `None` for an
+    /// unframed one (including `FrameStyle -> None`).
+    frame: Option<TextFrame>,
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
@@ -1125,6 +1135,12 @@ enum Primitive {
     /// (horizontal) default — including when the argument is omitted or
     /// written `Automatic`.
     direction: Option<(f64, f64)>,
+    /// The `direction` came from a `Rotate[label, θ]` wrapped around the
+    /// label's content rather than from a fourth `Text` argument. Wolfram
+    /// then lays the rotated label out as a box of its own, so `offset`
+    /// picks a point of that box's *axis-aligned* bounding box instead of
+    /// one measured along the tilted baseline.
+    box_offset: bool,
     /// A data-space linear map a `GeometricTransformation` applied to the
     /// label: the glyphs are sheared/stretched about the anchor with it
     /// (the anchor itself is already moved). `None` for untransformed text.
@@ -3817,6 +3833,11 @@ fn collect_primitives(
           // other object (a string, a number) is placed like `Text`.
           if let Some(text) = styled_text_inset(args) {
             collect_primitives(&text, style, prims, errors);
+          } else if let Some(label) = text_row_inset_object(args, 14.0) {
+            // A `Row` of text runs is a (possibly wrapped) paragraph.
+            let mut text_args = args.to_vec();
+            text_args[0] = label;
+            parse_text(&inset_as_text_args(&text_args), style, prims);
           } else {
             match inset_primitives(args, errors) {
               Some(inner) => prims.extend(inner),
@@ -7615,6 +7636,188 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
   None
 }
 
+/// The label drawn for `Inset[obj, pos, …, BaseStyle -> s]` when `obj` is a
+/// `Row` of text runs (strings, numbers and `Style`d strings), possibly
+/// inside `Style`s. A row `ImageSize -> w` breaks its runs into lines at
+/// most `w` points wide at word boundaries, the way the front end flows a
+/// paragraph of a fixed width, and the inset's `BaseStyle` directives
+/// style the whole label (the label's own `Style`s take precedence).
+/// `default_size` is the font size used where no style gives one. Returns
+/// `None` when `obj` is not such a row.
+pub(crate) fn text_row_inset_object(
+  args: &[Expr],
+  default_size: f64,
+) -> Option<Expr> {
+  let obj = args.first()?;
+  let base: Vec<Expr> = args
+    .iter()
+    .skip(1)
+    .find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "BaseStyle") => {
+        Some(match replacement.as_ref() {
+          Expr::List(items) => items.to_vec(),
+          other => vec![other.clone()],
+        })
+      }
+      _ => None,
+    })
+    .unwrap_or_default();
+  // The outer `Style` directives, innermost last, and the row inside them.
+  let mut outer: Vec<Expr> = Vec::new();
+  let mut row = obj;
+  while let Expr::FunctionCall { name, args: sargs } = row
+    && is_style_wrapper(name)
+    && !sargs.is_empty()
+  {
+    outer.extend(sargs[1..].iter().cloned());
+    row = &sargs[0];
+  }
+  let Expr::FunctionCall { name, args: rargs } = row else {
+    return None;
+  };
+  if name != "Row" || rargs.is_empty() {
+    return None;
+  }
+  let Expr::List(parts) = &rargs[0] else {
+    return None;
+  };
+  let is_rule = |e: &Expr| matches!(e, Expr::Rule { .. });
+  if !rargs[1..].iter().all(is_rule) {
+    return None;
+  }
+  let text_of = |part: &Expr| -> Option<String> {
+    match part {
+      Expr::String(s) => Some(s.clone()),
+      Expr::Integer(_) | Expr::Real(_) => {
+        Some(crate::syntax::expr_to_string(part))
+      }
+      Expr::FunctionCall { name, args }
+        if name == "Style" && !args.is_empty() =>
+      {
+        match &args[0] {
+          Expr::String(s) => Some(s.clone()),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  };
+  let texts: Vec<String> = parts.iter().map(text_of).collect::<Option<_>>()?;
+  let width = rargs[1..].iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "ImageSize") => {
+      match replacement.as_ref() {
+        Expr::List(wh) => wh.first().and_then(try_eval_to_f64),
+        other => try_eval_to_f64(other),
+      }
+    }
+    _ => None,
+  });
+  let size_of = |dirs: &[Expr]| {
+    dirs.iter().rev().find_map(|d| match d {
+      Expr::Integer(_) | Expr::Real(_) => try_eval_to_f64(d),
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontSize") => {
+        try_eval_to_f64(replacement)
+      }
+      _ => None,
+    })
+  };
+  let size = size_of(&outer)
+    .or_else(|| size_of(&base))
+    .unwrap_or(default_size);
+  let flowed = match width {
+    Some(w) if w > 0.0 => flow_text_runs(&texts, w, size),
+    _ => texts,
+  };
+  // Only strings are re-flowed; numbers and styles keep their form.
+  let new_parts: Vec<Expr> = parts
+    .iter()
+    .zip(flowed)
+    .map(|(part, text)| match part {
+      Expr::String(_) => Expr::String(text),
+      Expr::FunctionCall { name, args } if name == "Style" => {
+        let mut sargs = args.to_vec();
+        sargs[0] = Expr::String(text);
+        call(name, sargs)
+      }
+      other => other.clone(),
+    })
+    .collect();
+  let mut label = call("Row", vec![Expr::List(new_parts.into())]);
+  // Rebuild the outer `Style`s around the flowed row.
+  fn rewrap(e: &Expr, inner: Expr) -> Expr {
+    match e {
+      Expr::FunctionCall { name, args }
+        if is_style_wrapper(name) && !args.is_empty() =>
+      {
+        let mut sargs = args.to_vec();
+        sargs[0] = rewrap(&args[0], inner);
+        call(name, sargs)
+      }
+      _ => inner,
+    }
+  }
+  label = rewrap(obj, label);
+  if !base.is_empty() {
+    label = call("Style", std::iter::once(label).chain(base).collect());
+  }
+  Some(label)
+}
+
+/// Break the text runs of a paragraph into lines at most `width` points
+/// wide at `size` points: a space after which the next word would overflow
+/// the line becomes a line break. A word longer than the line stays whole,
+/// and existing line breaks are kept. Breaks may fall in any run, so a
+/// run's trailing space can end the line before a differently styled run.
+fn flow_text_runs(runs: &[String], width: f64, size: f64) -> Vec<String> {
+  let mut chars: Vec<Vec<char>> =
+    runs.iter().map(|r| r.chars().collect()).collect();
+  let char_width =
+    |c: char| crate::functions::plot_padding::text_width(&c.to_string(), size);
+  let mut line_width = 0.0;
+  // The last space on the current line and the width set after it.
+  let mut last_space: Option<(usize, usize)> = None;
+  let mut since_space = 0.0;
+  for r in 0..chars.len() {
+    for i in 0..chars[r].len() {
+      let c = chars[r][i];
+      if c == '\n' {
+        line_width = 0.0;
+        since_space = 0.0;
+        last_space = None;
+        continue;
+      }
+      let w = char_width(c);
+      line_width += w;
+      if c == ' ' {
+        last_space = Some((r, i));
+        since_space = 0.0;
+        continue;
+      }
+      since_space += w;
+      if line_width > width
+        && let Some((sr, si)) = last_space.take()
+      {
+        chars[sr][si] = '\n';
+        line_width = since_space;
+      }
+    }
+  }
+  chars.into_iter().map(|c| c.into_iter().collect()).collect()
+}
+
 /// `Text[obj, pos]` for an `Inset[Text[obj], pos, opos]`, carrying a
 /// symbolic `opos` (`{Center, Top}`, `{Left, Bottom}`, `Center`, …) along as
 /// the text's offset, so the named point of the label — not its center —
@@ -8367,7 +8570,7 @@ fn layout_holds_grid(expr: &Expr) -> bool {
     }
     match e {
       Expr::FunctionCall { name, args } => {
-        name == "Grid" || args.iter().any(has_grid)
+        name == "Grid" || name == "Framed" || args.iter().any(has_grid)
       }
       Expr::List(items) => items.iter().any(has_grid),
       _ => false,
@@ -9086,7 +9289,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         ),
       ))
     }
-    _ => None,
+    // `TraditionalForm[x^n]` typesets the power with a raised exponent
+    // (and a quotient as a built-up fraction); flattening its boxes to
+    // one text run would print `xn`.
+    _ => traditional_form_two_dimensional_boxes(content),
   };
   if frame_opts.is_empty()
     && let Some(boxes) = stacked_boxes
@@ -9180,10 +9386,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // runs parallel to `direction`, a screen-space vector (y up) whose angle
   // does not depend on the plot range's scaling. Left `None` for the common
   // `Automatic`/omitted case.
-  let direction = args
-    .get(3)
-    .and_then(text_direction)
-    .or_else(|| rotation.map(|a| (a.cos(), a.sin())));
+  let explicit_direction = args.get(3).and_then(text_direction);
+  let box_offset = explicit_direction.is_none() && rotation.is_some();
+  let direction =
+    explicit_direction.or_else(|| rotation.map(|a| (a.cos(), a.sin())));
   // `Background -> color`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
   fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
@@ -9231,6 +9437,10 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       ),
       None => Some(frame_default_color),
     }
+    .map(|color| TextFrame {
+      color,
+      margins: framed_margins(frame_opts, FRAMED_DEFAULT_MARGIN),
+    })
   } else {
     None
   };
@@ -9247,7 +9457,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       content,
       &text,
       &local_style,
-      frame_color,
+      frame_color.color,
       background,
       frame_opts,
     );
@@ -9279,6 +9489,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     frame,
     scaled,
     direction,
+    box_offset,
     glyph_map: None,
     styled_ranges,
     style: local_style,
@@ -10846,6 +11057,7 @@ fn rotate_primitive(
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -10868,6 +11080,7 @@ fn rotate_primitive(
           }
           None => None,
         },
+        box_offset: *box_offset,
         glyph_map: *glyph_map,
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
@@ -11105,6 +11318,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -11117,6 +11331,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       frame: *frame,
       scaled: *scaled,
       direction: *direction,
+      box_offset: *box_offset,
       glyph_map: *glyph_map,
       styled_ranges: styled_ranges.clone(),
       style: style.clone(),
@@ -11412,6 +11627,7 @@ fn scale_primitive(
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -11426,6 +11642,7 @@ fn scale_primitive(
         frame: *frame,
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
+        box_offset: *box_offset,
         glyph_map: *glyph_map,
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
@@ -15216,6 +15433,7 @@ fn render_primitive(
       frame,
       scaled,
       direction,
+      box_offset,
       glyph_map,
       styled_ranges,
       style,
@@ -15277,15 +15495,34 @@ fn render_primitive(
       };
       let edge_anchorable = !text.contains('\n')
         && (!has_direction || (background.is_none() && frame.is_none()));
-      let (anchor_attr, edge_shift) = if offset.0 == -1.0 && edge_anchorable {
+      // A `Rotate[label, θ]` label is a box of its own: the offset picks a
+      // point of its axis-aligned bounding box, so the label is centered
+      // that far from the anchor along the screen axes and turned about its
+      // own center.
+      let rotated_box = *box_offset && has_direction;
+      let (anchor_attr, edge_shift) = if rotated_box {
+        ("middle", 0.0)
+      } else if offset.0 == -1.0 && edge_anchorable {
         ("start", 0.0)
       } else if offset.0 == 1.0 && edge_anchorable {
         ("end", 0.0)
       } else {
         ("middle", offset.0 * box_w / 2.0)
       };
-      let sx = anchor_x - edge_shift * ux + offset.1 * text_h / 2.0 * vx;
-      let sy = anchor_y - edge_shift * uy + offset.1 * text_h / 2.0 * vy;
+      let (sx, sy) = if rotated_box {
+        let (c, s) = (angle.cos().abs(), angle.sin().abs());
+        let box_w = text_w * c + text_h * s;
+        let box_h = text_w * s + text_h * c;
+        (
+          anchor_x - offset.0 * box_w / 2.0,
+          anchor_y + offset.1 * box_h / 2.0,
+        )
+      } else {
+        (
+          anchor_x - edge_shift * ux + offset.1 * text_h / 2.0 * vx,
+          anchor_y - edge_shift * uy + offset.1 * text_h / 2.0 * vy,
+        )
+      };
       let rotate_attr = if has_direction {
         format!(
           " transform=\"rotate({:.3} {sx:.2} {sy:.2})\"",
@@ -15317,20 +15554,40 @@ fn render_primitive(
           None => ("none".to_string(), String::new()),
         };
         let stroke = match frame {
-          Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
+          Some(f) => format!(" stroke=\"{}\"", f.color.to_svg_rgb()),
           None => String::new(),
         };
-        // The panel hugs the glyphs' advance width, as Wolfram's does.
-        // A frame keeps its margin round the text.
-        let panel_w = box_w;
+        // The panel hugs the glyphs' advance width, as Wolfram's does; a
+        // frame leaves its `FrameMargins` between the text and the border.
+        let glyphs_w = text
+          .split('\n')
+          .map(|line| {
+            crate::functions::plot_padding::text_width(&svg_escape(line), fs)
+          })
+          .fold(0.0, f64::max)
+          * if style.font_weight == "bold" {
+            crate::functions::plot_padding::BOLD_WIDTH_SCALE
+          } else {
+            1.0
+          };
+        let (m_left, m_right, m_bottom, m_top) =
+          frame.map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
+        let panel_w = glyphs_w + m_left + m_right;
+        let panel_h = text_h + m_bottom + m_top;
+        // A tilted label's panel turns with it, about the same point.
+        let panel_rotate = if has_direction {
+          rotate_attr.as_str()
+        } else {
+          ""
+        };
         out.push_str(&format!(
-          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{text_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
+          "<rect x=\"{:.2}\" y=\"{:.2}\" width=\"{panel_w:.2}\" height=\"{panel_h:.2}\" fill=\"{fill}\"{fill_opacity}{stroke}{panel_rotate}/>\n",
           match anchor_attr {
-            "start" => sx,
-            "end" => sx - panel_w,
-            _ => sx - panel_w / 2.0,
+            "start" => sx - m_left,
+            "end" => sx - glyphs_w - m_left,
+            _ => sx - glyphs_w / 2.0 - m_left,
           },
-          sy - text_h / 2.0,
+          sy - text_h / 2.0 - m_top,
         ));
       }
       let ff_attr = if style.font_family.is_empty() {
@@ -16479,6 +16736,12 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           // tspans — the label is drawn, not printed.
           match replacement {
             Expr::Identifier(s) if s == "None" => {}
+            // `Null` (typically an unset label variable or an option
+            // default of `Null` passed through) draws no text, but unlike
+            // `None` it still takes up the title's line above the picture.
+            Expr::Identifier(s) if s == "Null" => {
+              plot_label = Some(vec![String::new()]);
+            }
             other
               if plot_label_graphic_svg(other)
                 .or_else(|| plot_label_layout_svg(other))
@@ -17546,7 +17809,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "<g fill=\"{fill}\" color=\"{fill}\">{}</g>\n",
       embed_svg_centered(picture, cx, title_top + band / 2.0, w, h)
     ));
-  } else if let Some(lines) = &plot_label {
+  } else if let Some(lines) = &plot_label
+    && lines.iter().any(|l| !l.is_empty())
+  {
     let cx = margin_left + svg_w / 2.0;
     // A title wider than the picture (a long `Row` of text and numbers)
     // shrinks to fit instead of being clipped at both edges.
@@ -21968,7 +22233,14 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
               _ => None,
             };
             let sep_markup = if sep_gap.is_none() {
-              separator.map(expr_to_svg_markup)
+              separator.map(|s| {
+                let markup = expr_to_svg_markup(s);
+                if is_bare_comma_separator(s) {
+                  format!("{markup} ")
+                } else {
+                  markup
+                }
+              })
             } else {
               None
             };
@@ -22040,6 +22312,14 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
     // ── Everything else → fallback to expr_to_output ──
     _ => svg_escape(&expr_to_output(expr)),
   }
+}
+
+/// Whether a `Row` separator is a bare `","`. The front end typesets it
+/// like the comma between list elements, with a space after it, so a plot
+/// label `Row[{a, b, c}, ","]` reads `a, b, c` rather than `a,b,c` (the
+/// same spacing [`boxes_to_svg`] gives a comma inside a `RowBox`).
+fn is_bare_comma_separator(sep: &Expr) -> bool {
+  matches!(sep, Expr::String(s) if s == ",")
 }
 
 /// A subscript and a superscript stacked over one another after their
@@ -22454,6 +22734,8 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
               Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
                 spacer_char_width(sargs)
               }
+              // A bare comma is followed by the front end's comma space.
+              other if is_bare_comma_separator(other) => 2.0,
               other => estimate_display_width(other),
             });
           // A line break inside a part (`Row[{"a\n", "b"}]`) starts a new
@@ -27588,6 +27870,20 @@ pub fn grid_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   grid_ast_with_gaps(args, &[])
 }
 
+/// Render the `Grid[…]`/`TextGrid[…]` that a `TraditionalForm` wraps. The
+/// form applies to each cell, so `f[a]` reads f(a) and `f'[a]` f′(a)
+/// rather than their InputForm.
+pub fn traditional_form_grid_ast(
+  grid: &Expr,
+) -> Result<Expr, InterpreterError> {
+  match &traditionalize_layout_items(grid) {
+    Expr::FunctionCall { args, .. } => grid_ast(args),
+    _ => Err(InterpreterError::EvaluationError(
+      "TraditionalForm grid expected".into(),
+    )),
+  }
+}
+
 /// Render a grid with default styles inherited from an outer Style wrapper.
 pub fn grid_ast_styled(
   args: &[Expr],
@@ -28316,6 +28612,45 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     } => label_typesets_fraction(operand),
     _ => false,
   }
+}
+
+/// The traditional-notation boxes of a `TraditionalForm[expr]` label whose
+/// layout is two-dimensional (a superscript, subscript, fraction or
+/// radical), so it must be laid out rather than drawn as one text run.
+/// Strings and `Row`/`Column` layouts are left to the text path.
+fn traditional_form_two_dimensional_boxes(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "TraditionalForm"
+    || args.len() != 1
+    || matches!(args[0], Expr::String(_))
+    || is_traditional_layout(&args[0])
+  {
+    return None;
+  }
+  fn two_dimensional(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        matches!(
+          name.as_str(),
+          "SuperscriptBox"
+            | "SubscriptBox"
+            | "SubsuperscriptBox"
+            | "FractionBox"
+            | "SqrtBox"
+            | "RadicalBox"
+        ) || args.iter().any(two_dimensional)
+      }
+      Expr::List(items) => items.iter().any(two_dimensional),
+      _ => false,
+    }
+  }
+  let boxes = crate::strip_number_precision_markers(
+    &crate::evaluator::dispatch::complex_and_special::
+      expr_to_box_form_traditional(&args[0]),
+  );
+  two_dimensional(&boxes).then_some(boxes)
 }
 
 /// Heads of the equations and relations a formula label typesets infix.
@@ -38150,6 +38485,43 @@ fn pane_content_alignment(expr: &Expr) -> (f64, f64) {
   }
 }
 
+/// The space, in points, `Framed` leaves between its content and its border
+/// when no `FrameMargins` option is given.
+pub(crate) const FRAMED_DEFAULT_MARGIN: f64 = 5.0;
+
+/// The `{left, right, bottom, top}` margins, in points, a `FrameMargins`
+/// option among `opts` asks for: one number for every side, or
+/// `{{left, right}, {bottom, top}}`. Sides it leaves unset get `default`.
+pub(crate) fn framed_margins(
+  opts: &[Expr],
+  default: f64,
+) -> (f64, f64, f64, f64) {
+  let margins = opts
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "FrameMargins")
+    .map(|(_, v)| v);
+  let pair = |v: &Expr| -> Option<(f64, f64)> {
+    match v {
+      Expr::List(p) if p.len() == 2 => {
+        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
+      }
+      other => expr_to_f64(other).map(|m| (m, m)),
+    }
+  };
+  match margins {
+    Some(Expr::List(p)) if p.len() == 2 => {
+      let (l, r) = pair(&p[0]).unwrap_or((default, default));
+      let (b, t) = pair(&p[1]).unwrap_or((default, default));
+      (l, r, b, t)
+    }
+    other => {
+      let m = other.and_then(expr_to_f64).unwrap_or(default);
+      (m, m, m, m)
+    }
+  }
+}
+
 fn framed_box_to_svg(
   args: &[Expr],
   default_background: Option<Color>,
@@ -38231,31 +38603,8 @@ fn framed_box_to_svg(
       .find(|(k, _)| *k == key)
       .and_then(|(_, v)| expr_to_f64(v))
   };
-  let default_margin = if is_panel { 6.0 } else { 5.0 };
-  let margins = args[1..]
-    .iter()
-    .filter_map(option_kv)
-    .find(|(k, _)| *k == "FrameMargins")
-    .map(|(_, v)| v);
-  let pair = |v: &Expr| -> Option<(f64, f64)> {
-    match v {
-      Expr::List(p) if p.len() == 2 => {
-        Some((expr_to_f64(&p[0])?, expr_to_f64(&p[1])?))
-      }
-      other => expr_to_f64(other).map(|m| (m, m)),
-    }
-  };
-  let (left, right, bottom, top) = match margins {
-    Some(Expr::List(p)) if p.len() == 2 => {
-      let (l, r) = pair(&p[0]).unwrap_or((default_margin, default_margin));
-      let (b, t) = pair(&p[1]).unwrap_or((default_margin, default_margin));
-      (l, r, b, t)
-    }
-    other => {
-      let m = other.and_then(expr_to_f64).unwrap_or(default_margin);
-      (m, m, m, m)
-    }
-  };
+  let default_margin = if is_panel { 6.0 } else { FRAMED_DEFAULT_MARGIN };
+  let (left, right, bottom, top) = framed_margins(&args[1..], default_margin);
   let rounding = numeric_option("RoundingRadius").unwrap_or(0.0);
 
   // Check if content is itself a Framed (nested) or already a Graphics
@@ -42414,6 +42763,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if is_manipulate_annotation_head(name)
           && annotation_contains_dynamic(spec) =>
       {
+        panel_displays.push((displays.len(), controls.len()));
         displays.push(crate::syntax::expr_to_source_form(spec));
         continue;
       }
@@ -42431,6 +42781,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           )
           && annotation_contains_dynamic(&args[0]) =>
       {
+        panel_displays.push((displays.len(), controls.len()));
         displays.push(crate::syntax::expr_to_source_form(&args[0]));
         continue;
       }
@@ -42536,8 +42887,12 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // controls were already flattened into `arg_items` above). Any other
     // trailing argument (e.g. a `Dynamic[Panel[…]]` of checkboxes) is an
     // extra display element: capture it so the frontend can render it
-    // live.
+    // live. Wolfram draws every such argument inside the control panel, at
+    // the place it holds among the control specs (a `Grid` of live readouts
+    // after a `Delimiter` sits below the sliders in a `ControlPlacement ->
+    // Left` panel, not above the output).
     if !matches!(spec, Expr::List(_)) {
+      panel_displays.push((displays.len(), controls.len()));
       displays.push(crate::syntax::expr_to_source_form(spec));
       continue;
     }
@@ -58022,8 +58377,7 @@ mod manipulate_control_placement_tests {
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
   }
 
-  /// A bar declared after every other control closes the panel; a display
-  /// that is no control spec (a trailing `Dynamic[…]`) is not a panel row.
+  /// A bar declared after every other control closes the panel.
   #[test]
   fn trailing_toggler_bar_closes_the_panel() {
     let expr = crate::parse_to_expr(
@@ -58034,6 +58388,32 @@ mod manipulate_control_placement_tests {
     let spec = extract_manipulate_spec(&expr).expect("extract spec");
     assert_eq!(spec.controls.len(), 1);
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
+  }
+
+  /// A free-standing display among the control specs (a `Grid` of live
+  /// readouts after a `Delimiter`, a `Row` with a `Dynamic` before a
+  /// slider) is a row of the control panel at the place it was written,
+  /// so a `ControlPlacement -> Left` panel shows it under the controls
+  /// rather than above the output.
+  #[test]
+  fn control_area_displays_are_panel_rows_in_order() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[r, \
+       Row[{\"r = \", Dynamic[r]}], \
+       {{r, 1, \"radius\"}, 0, 2}, \
+       Delimiter, \
+       Grid[{{\"area\", Dynamic[Pi r^2]}, {\"perimeter\", Dynamic[2 Pi r]}}], \
+       ControlPlacement -> Left]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    assert_eq!(spec.controls.len(), 2, "{:?}", spec.controls);
+    assert_eq!(spec.displays.len(), 2, "{:?}", spec.displays);
+    assert!(spec.displays[0].starts_with("Row["), "{:?}", spec.displays);
+    assert!(spec.displays[1].starts_with("Grid["), "{:?}", spec.displays);
+    // The `Row` comes before the slider, the `Grid` after the delimiter.
+    assert_eq!(spec.panel_displays, vec![(0, 0), (1, 2)]);
+    assert_eq!(spec.control_placement, ControlPlacement::Left);
   }
 }
 
