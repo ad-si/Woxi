@@ -4853,6 +4853,30 @@ mod tests {
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
     }
 
+    /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells
+    /// at that size, like its plain text cells, also when the whole styled
+    /// grid is put in `TraditionalForm`.
+    #[test]
+    fn styled_grid_sizes_its_traditional_form_cells() {
+      for code in [
+        "Style[Grid[{{TraditionalForm[a + b], TraditionalForm[c - a]}}, Frame -> All], 30]",
+        "TraditionalForm[Style[Grid[{{a + b, c - a}, {7, -a - b + c}}, Frame -> All], 30]]",
+        "Text[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]]]",
+      ] {
+        let svg =
+          woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+        let size = if code.contains("24") { "24" } else { "30" };
+        assert!(
+          svg.contains(&format!("font-size=\"{size}")),
+          "{code}: cells not set at size {size}: {svg}"
+        );
+        assert!(
+          !svg.contains("font-size=\"14"),
+          "{code}: a cell kept the default size: {svg}"
+        );
+      }
+    }
+
     /// A bushy tree sets its own picture width from its labels; in a
     /// narrower fixed-size pane it is squeezed to the pane's width rather
     /// than clipped.

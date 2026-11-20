@@ -29486,17 +29486,19 @@ fn grid_svg_styled_internal_reporting(
       *cell = fraction_cell_in_grid_style(cell, default_style);
       // A typeset cell (a `Row` holding a quotient, a `TraditionalForm`
       // formula) is set in the grid's `BaseStyle` face and size, like the
-      // grid's plain text cells, rather than the monospace default.
-      if let Some(family) = &default_style.font_family
+      // grid's plain text cells, rather than the monospace default. An
+      // enclosing `Style[Grid[…], 30]` sizes them the same way.
+      if (default_style.font_family.is_some()
+        || default_style.font_size.is_some())
         && traditional_inline_box_cell_svg(cell).is_some()
       {
-        let mut directives = vec![
-          cell.clone(),
-          Expr::Rule {
+        let mut directives = vec![cell.clone()];
+        if let Some(family) = &default_style.font_family {
+          directives.push(Expr::Rule {
             pattern: Box::new(id_expr("FontFamily")),
             replacement: Box::new(str_expr(family)),
-          },
-        ];
+          });
+        }
         if let Some(size) = default_style.font_size {
           directives.push(Expr::Real(size));
         }
