@@ -1472,8 +1472,10 @@ fn inset_object_anchor(args: &[Expr]) -> Option<(f64, f64)> {
 /// A plot is measured in its data coordinates: one that gave no `PlotRange`
 /// is drawn over its data extent plus the default 2% padding on each side,
 /// so the point is measured against that padded range. A laid-out display
-/// (`Grid`, `Row`, `Column`, `Framed`) is measured in fractions of its own
-/// size, `{0, 0}` being its lower left corner and `{1, 1}` its upper right.
+/// (`Grid`, `Row`, `Column`, `Framed`) is measured like a `Text` offset:
+/// `{-1, -1}` is its lower left corner, `{0, 0}` its center and `{1, 1}`
+/// its upper right, so `{-1, 0}` puts the middle of its left edge on the
+/// anchor.
 pub(crate) fn inset_object_fraction(
   object: &Expr,
   ox: f64,
@@ -1482,7 +1484,7 @@ pub(crate) fn inset_object_fraction(
   if let Expr::FunctionCall { name, .. } = object
     && matches!(name.as_str(), "Grid" | "Row" | "Column" | "Framed")
   {
-    return Some((ox, 1.0 - oy));
+    return Some((f64::midpoint(ox, 1.0), (1.0 - oy) / 2.0));
   }
   let Expr::Graphics { is_3d: false, .. } = object else {
     return None;
@@ -7129,8 +7131,21 @@ pub fn text_primitive_inset(args: &[Expr]) -> Option<Expr> {
 /// `Text[obj, pos]` for an `Inset[Text[obj], pos, opos]`, carrying a
 /// symbolic `opos` (`{Center, Top}`, `{Left, Bottom}`, `Center`, …) along as
 /// the text's offset, so the named point of the label — not its center —
-/// sits on `pos`: `{Center, Top}` hangs a title from the top edge.
-fn inset_text(obj: &Expr, pos: &Expr, inset_args: &[Expr]) -> Expr {
+/// sits on `pos`: `{Center, Top}` hangs a title from the top edge. A
+/// numeric `opos` is already a `Text` offset (`{-1, 0}` is the middle of
+/// the label's left edge) and is passed on as it is.
+pub(crate) fn inset_text(obj: &Expr, pos: &Expr, inset_args: &[Expr]) -> Expr {
+  if let Some(Expr::List(opos)) = inset_args.get(2)
+    && opos.len() == 2
+    && opos
+      .iter()
+      .all(|c| matches!(c, Expr::Integer(_) | Expr::Real(_)))
+  {
+    return call(
+      "Text",
+      vec![obj.clone(), pos.clone(), inset_args[2].clone()],
+    );
+  }
   match inset_args.get(2).and_then(symbolic_alignment_offset) {
     Some((dx, dy)) => call(
       "Text",
@@ -14267,7 +14282,10 @@ fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
   }
 
   match expr {
-    Expr::Identifier(s) if s == "True" => Some((true, true)),
+    // A lone `Automatic` draws both axes, like `True`.
+    Expr::Identifier(s) if s == "True" || s == "Automatic" => {
+      Some((true, true))
+    }
     Expr::Identifier(s) if s == "False" => Some((false, false)),
     Expr::List(items) if items.len() == 2 => {
       let x_axis = parse_bool(&items[0])?;
@@ -14938,6 +14956,24 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y_min: -1.0,
       y_max: 1.0,
     };
+  }
+
+  // Without an `AxesOrigin` the axes cross at the origin when it is in
+  // view, else at the low end of the content's own range — not of the
+  // padding around it, so the axis that overruns the crossing hides the
+  // other axis's tick label there (a histogram over 60..140 starting at
+  // y = 0 labels neither 60 nor 0, as in Wolfram).
+  let content_x = plot_range_x.unwrap_or((bb.x_min, bb.x_max));
+  let content_y = plot_range_y.unwrap_or((bb.y_min, bb.y_max));
+  let default_crossing = |(lo, hi): (f64, f64)| {
+    (lo.is_finite() && hi.is_finite() && !(lo <= 0.0 && 0.0 <= hi))
+      .then_some(lo)
+  };
+  if axes_origin.0.is_none() {
+    axes_origin.0 = default_crossing(content_x);
+  }
+  if axes_origin.1.is_none() {
+    axes_origin.1 = default_crossing(content_y);
   }
 
   if let Some(padding_expr) = &plot_range_padding {
