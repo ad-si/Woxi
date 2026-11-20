@@ -62006,13 +62006,19 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
 mod plot_label_number_form_held_assignment {
   use super::*;
 
+  /// A graphic's `FormatType` is `TraditionalForm`, so the held assignment
+  /// reads `w = sin(-1.3 x)`, its number formatted by the `NumberForm`.
   #[test]
-  fn label_reads_as_output_form() {
+  fn label_reads_in_traditional_form() {
     let svg = export_svg(
       "Plot[x, {x, 0, 1}, PlotLabel -> With[{c = -1.27, g = Sin}, \
        NumberForm[HoldForm[w = g[c x]], {3, 1}]]]",
     );
-    assert!(svg.contains(">w = Sin[-1.3 x]</text>"), "{svg}");
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">w</tspan> = sin(-1.3"),
+      "{svg}"
+    );
+    assert!(!svg.contains("Sin["), "{svg}");
     assert!(!svg.contains('*'), "{svg}");
   }
 }
