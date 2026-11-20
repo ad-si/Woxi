@@ -3039,11 +3039,22 @@ fn find_spans_with_empty(
   let mut spans = Vec::new();
   let mut i = 0;
   loop {
-    let matched = re.captures_at(s, i).and_then(|caps| {
-      let m = caps.get(0)?;
-      (m.start() == i && caps_satisfy_constraints(&caps, constraints))
-        .then(|| (m.start(), m.end()))
-    });
+    // The search reports the leftmost match at or after `i`, so no match
+    // starts between `i` and it: jump there instead of retrying every
+    // character (quadratic on a long text with sparse matches). No match
+    // at all ends the scan.
+    let Some(caps) = re.captures_at(s, i) else {
+      break;
+    };
+    let Some(m) = caps.get(0) else {
+      break;
+    };
+    if m.start() > i {
+      i = m.start();
+      continue;
+    }
+    let matched = caps_satisfy_constraints(&caps, constraints)
+      .then(|| (m.start(), m.end()));
     let step = s[i..].chars().next().map_or(0, char::len_utf8);
     if let Some((start, end)) = matched {
       spans.push((start, end));

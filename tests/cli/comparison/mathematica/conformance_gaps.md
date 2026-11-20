@@ -10200,3 +10200,16 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### `NDSolve` across a jump of a piecewise diffusion coefficient
+
+A PDE whose diffusion coefficient jumps by orders of magnitude inside the
+domain (e.g. `If[Abs[r] <= ri, 10.^-6, 10.^-3]` for a lumen surrounded by
+a porous bed) is solved by the method of lines with the flux kept
+continuous across the jump (each face's coefficient the exact harmonic
+mean `h / ∫ dx / c`), which converges to the continuum solution under grid
+refinement. Wolfram's finite element solution integrates the coefficient
+over mesh elements that straddle the jump, which lets noticeably more flux
+through on its default mesh: in a saved snapshot of such a reactor model
+the outlet averages are about 0.27 (lumen) and 0.11 (bed), where Woxi
+gives 0.41 and 0.14. Matching it would need Wolfram's exact mesh.
