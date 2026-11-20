@@ -19251,7 +19251,7 @@ mod plot3d {
     }
 
     /// The y tick labels of a plot, in drawing order.
-    fn tick_labels(svg: &str) -> Vec<String> {
+    fn open_range_tick_labels(svg: &str) -> Vec<String> {
       svg
         .split("<text")
         .skip(1)
@@ -19264,7 +19264,7 @@ mod plot3d {
     /// while the other stays fixed; the whole spec used to be ignored.
     #[test]
     fn plot_range_open_lower_end_keeps_fixed_upper_end() {
-      let labels = tick_labels(&export_svg(
+      let labels = open_range_tick_labels(&export_svg(
         "Plot[50 x/(1 - x), {x, 0.0001, 0.9999}, \
          PlotRange -> {Automatic, 1000.}]",
       ));
@@ -19274,7 +19274,7 @@ mod plot3d {
 
     #[test]
     fn plot_range_open_end_in_per_axis_form() {
-      let labels = tick_labels(&export_svg(
+      let labels = open_range_tick_labels(&export_svg(
         "Plot[Sin[x], {x, 0, 6}, PlotRange -> {{0, 6}, {Automatic, 3}}]",
       ));
       assert!(labels.contains(&"3".to_string()), "{labels:?}");
@@ -19283,7 +19283,7 @@ mod plot3d {
 
     #[test]
     fn list_line_plot_plot_range_open_upper_end() {
-      let labels = tick_labels(&export_svg(
+      let labels = open_range_tick_labels(&export_svg(
         "ListLinePlot[{1, 5, 3, 9}, PlotRange -> {0, All}]",
       ));
       assert!(labels.contains(&"0".to_string()), "{labels:?}");
