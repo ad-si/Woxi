@@ -7708,7 +7708,8 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "NumberForm" | "ScientificForm" | "EngineeringForm"
       if !args.is_empty()
         && !matches!(args[0], Expr::List(_))
-        && !is_number_expr(&args[0]) =>
+        && !is_number_expr(&args[0])
+        && !is_number_display_call(&args[0]) =>
     {
       let formatted = format_reals_with(&args[0], name, &args[1..]);
       call("TagBox", vec![tf(&formatted), id_expr(name)])
@@ -8552,6 +8553,14 @@ fn is_number_expr(expr: &Expr) -> bool {
   }
 }
 
+/// Whether `expr` is already a number-display form, which formats its own
+/// numbers (and so is left alone by an enclosing one).
+fn is_number_display_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "NumberForm" | "ScientificForm"
+      | "EngineeringForm" | "PaddedForm" | "AccountingForm"))
+}
+
 /// `expr` with every approximate number in it wrapped in the number-display
 /// form `head[x, spec…]`. A negative number keeps its sign outside the form
 /// (`-NumberForm[3.3, …]`), so a product or sum still reads its sign the way
@@ -8568,6 +8577,7 @@ fn format_reals_with(expr: &Expr, head: &str, spec: &[Expr]) -> Expr {
       call("Times", vec![Expr::Integer(-1), wrap(Expr::Real(-*v))])
     }
     Expr::Real(_) | Expr::BigFloat(_, _) => wrap(expr.clone()),
+    _ if is_number_display_call(expr) => expr.clone(),
     Expr::List(items) => Expr::List(items.iter().map(rec).collect()),
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
