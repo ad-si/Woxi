@@ -3919,6 +3919,24 @@ fn collect_primitives(
             None => collect_primitives(&args[0], style, prims, errors),
           }
         }
+        // `Button[g, action, opts…]` used as a primitive draws its label `g`
+        // and is pressable: like `EventHandler`, its held action is recorded
+        // on a group around `g`'s shapes. The action must never be scanned
+        // (and so evaluated) while drawing.
+        "Button" if !args.is_empty() => match args.get(1) {
+          Some(action) => {
+            let action = crate::syntax::expr_to_source_form(action);
+            let hex: String = action.bytes().fold(String::new(), |mut s, b| {
+              use std::fmt::Write;
+              let _ = write!(s, "{b:02x}");
+              s
+            });
+            prims.push(Primitive::ClickGroupStart { hex });
+            collect_primitives(&args[0], style, prims, errors);
+            prims.push(Primitive::ClickGroupEnd);
+          }
+          None => collect_primitives(&args[0], style, prims, errors),
+        },
         // `Tooltip[g, label]` draws `g`; the hover label has no static SVG
         // form. Only the first argument is rendered — the label must not
         // leak into the graphic.
