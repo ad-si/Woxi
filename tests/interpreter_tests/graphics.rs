@@ -57829,6 +57829,21 @@ mod overscript_bar_accent {
     );
   }
 
+  /// A tilde (or hat, dot, …) overscript in a label string is drawn as
+  /// the combining mark on its base, `ψ̃`, not as a raised `~` beside it.
+  #[test]
+  fn tilde_overscript_in_a_label_string_is_a_combining_mark() {
+    clear_state();
+    let svg = export_svg(
+      r#"Plot[x, {x, 0, 1}, AxesLabel -> {None, Row[{"Re ", "\!\(\*OverscriptBox[\(ψ\), \(~\)]\)(p)"}]}]"#,
+    );
+    assert!(svg.contains("Re ψ\u{0303}(p)"), "expected ψ̃: {svg}");
+    assert!(
+      !svg.contains("font-size=\"70%\">~</tspan>"),
+      "the tilde must not be raised beside the base: {svg}"
+    );
+  }
+
   /// The same box shown through `DisplayForm` reads as the barred letter.
   #[test]
   fn hyphen_overscript_box_displays_as_barred_letter() {

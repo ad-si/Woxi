@@ -20634,6 +20634,18 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
             "<tspan text-decoration=\"overline\">{base_svg}</tspan>"
           );
         }
+        // An accent with a combining mark (`~`, `^`, `.`, …) over a plain
+        // base is drawn as that mark on the base, `ψ̃`, the way the width
+        // estimate already counts it — not as a raised `~` beside it.
+        let accent = box_expr_to_plain_in(&args[1], false);
+        if matches!(&args[0], Expr::String(_))
+          && combining_accent(accent.trim(), true).is_some()
+        {
+          let base = box_expr_to_plain_in(&args[0], false);
+          return boxes_to_svg(&Expr::String(accent_text(
+            &base, &accent, true,
+          )));
+        }
         let over_svg = boxes_to_svg(&args[1]);
         format!(
           "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
