@@ -10709,6 +10709,71 @@ mod plot3d {
       }
     }
 
+    /// A cylinder's round cap is drawn as a smooth circle, not a visible
+    /// polygon: seen from above, its outline covers more than 99.5 % of the
+    /// circle around it. Wolfram's snapshots show smooth rims even on a
+    /// cylinder that fills a 150 pt picture; the 24-sided tessellation
+    /// covered only 98.9 %, leaving corners along the outlined rim.
+    #[test]
+    fn a_cylinder_cap_is_drawn_as_a_smooth_circle() {
+      let svg = export_svg(
+        "Graphics3D[Cylinder[{{0, 0, 0}, {0, 0, 0.1}}, 1], \
+         ViewPoint -> {0, 0, Infinity}, Boxed -> False, \
+         ImageSize -> {300, 300}]",
+      );
+      let mut pts: Vec<(f64, f64)> = Vec::new();
+      for chunk in svg.split("points=\"").skip(1) {
+        for pair in chunk.split('"').next().unwrap().split_whitespace() {
+          if let Some((x, y)) = pair.split_once(',')
+            && let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>())
+          {
+            pts.push((x, y));
+          }
+        }
+      }
+      assert!(pts.len() > 3, "{svg}");
+      // Convex hull (monotone chain) and its area.
+      pts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      let cross = |o: (f64, f64), a: (f64, f64), b: (f64, f64)| {
+        (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+      };
+      let mut hull: Vec<(f64, f64)> = Vec::new();
+      for pass in 0..2 {
+        let start = hull.len();
+        let iter: Box<dyn Iterator<Item = &(f64, f64)>> = if pass == 0 {
+          Box::new(pts.iter())
+        } else {
+          Box::new(pts.iter().rev())
+        };
+        for &p in iter {
+          while hull.len() >= start + 2
+            && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0
+          {
+            hull.pop();
+          }
+          hull.push(p);
+        }
+        hull.pop();
+      }
+      let area = hull
+        .iter()
+        .zip(hull.iter().cycle().skip(1))
+        .map(|(a, b)| a.0 * b.1 - b.0 * a.1)
+        .sum::<f64>()
+        .abs()
+        / 2.0;
+      let (cx, cy) = (
+        hull.iter().map(|p| p.0).sum::<f64>() / hull.len() as f64,
+        hull.iter().map(|p| p.1).sum::<f64>() / hull.len() as f64,
+      );
+      let radius = hull
+        .iter()
+        .map(|p| (p.0 - cx).hypot(p.1 - cy))
+        .fold(0.0, f64::max);
+      let coverage = area / (std::f64::consts::PI * radius * radius);
+      assert!(coverage > 0.995, "cap outline covers only {coverage}");
+    }
+
     /// Surface plots honor an explicit `ViewAngle` the same way
     /// `Graphics3D` does, instead of always fitting the box to the frame.
     /// A unit sphere seen from the default `ViewPoint` (`|ViewPoint|` ≈

@@ -10325,7 +10325,10 @@ const MAX_SIDE_FACE_ASPECT: f64 = 1.0;
 const MAX_SIDE_SUBDIVISIONS: usize = 200;
 /// Radial subdivision count for `Cylinder`, shared between the
 /// tessellators and the call site that rebuilds their rim-edge flags.
-const CYLINDER_SIDES: usize = 24;
+/// Wolfram draws a cylinder's rims as smooth ellipses. With 24 sides, a
+/// cylinder filling a 150 pt picture showed visible corners along its
+/// outlined rims. 48 sides keep each rim within about 0.3 % of its radius.
+const CYLINDER_SIDES: usize = 48;
 /// Radial subdivision count for `Cone`. Its smooth shading has a single apex
 /// vertex, where neighboring facets meet at their own normals; finer
 /// slices keep that seam faint.
