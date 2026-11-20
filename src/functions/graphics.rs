@@ -35424,6 +35424,23 @@ pub(crate) fn traditionalize_layout_items(expr: &Expr) -> Expr {
 }
 
 fn resolve_display_item(expr: &Expr) -> Expr {
+  let resolved = resolve_display_item_content(expr);
+  // A `Text[Row[…]]` (or `Text[Style[Row[…], …]]`) item, once its `Dynamic`
+  // parts show their values, is set in the text face.
+  let is_row = |e: &Expr| matches!(e, Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty());
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Text"
+    && args.len() == 1
+    && (is_row(&args[0])
+      || matches!(&args[0], Expr::FunctionCall { name, args }
+        if name == "Style" && args.first().is_some_and(is_row)))
+  {
+    return in_text_face(&resolved);
+  }
+  resolved
+}
+
+fn resolve_display_item_content(expr: &Expr) -> Expr {
   let mut current = expr.clone();
   // `Null` is drawn as nothing, not as the word "Null".
   if matches!(&current, Expr::Identifier(s) if s == "Null") {
@@ -35698,11 +35715,15 @@ pub(crate) fn style_pushed_into_layout(
     // inherited directives into its own `Style`, ahead of its own so those
     // still win: a doubly nested `Style[Style[Column[…], Blue], 12]` would
     // hide the inner layout from the renderer and be typeset as its source.
-    // (A styled `Row` item is already set inline as it is.)
+    // A `Row` item that sets its own size (`Style[Row[…], 20]` in a row
+    // set in another face) merges the same way, or its size would be
+    // measured at the default and its text would overrun its neighbors.
+    // (Any other styled `Row` item is already set inline as it is.)
     if let Expr::FunctionCall { name, args } = e
       && name == "Style"
       && let Some(Expr::FunctionCall { name: content, .. }) = args.first()
-      && matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
+      && (matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
+        || (content == "Row" && extract_cell_style(e).font_size.is_some()))
     {
       return call(
         "Style",
