@@ -8253,6 +8253,16 @@ fn inset_primitives(
       rendered = crate::evaluator::expr_to_svg(call);
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
+    // A `Panel` — e.g. a readout table of computed values a diagram carries
+    // on its canvas — draws as its plate with the content inside, the same
+    // picture it makes on its own, rather than as its source text.
+    call @ Expr::FunctionCall {
+      name,
+      args: call_args,
+    } if name == "Panel" && !call_args.is_empty() => {
+      rendered = crate::evaluator::expr_to_svg(call);
+      (rendered.starts_with("<svg")).then_some(&rendered)
+    }
     _ => None,
   };
   if let Some(svg) = embedded
@@ -38956,8 +38966,19 @@ fn framed_box_to_svg(
   let (area_w, area_h) =
     pane_content_size(content).unwrap_or((content_w, content_h));
   let (align_x, align_y) = pane_content_alignment(content);
-  let total_w = (area_w + left + right).ceil();
-  let total_h = (area_h + bottom + top).ceil();
+  // `ImageSize -> w` (or `{w, h}`) sets the outer size of the box, margins
+  // included. Content is never wrapped or clipped here, so a size smaller
+  // than the content leaves the box at the content's own size.
+  let (size_w, size_h) = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ImageSize")
+    .map_or((None, None), |(_, v)| match v {
+      Expr::List(p) if p.len() == 2 => (expr_to_f64(&p[0]), expr_to_f64(&p[1])),
+      other => (expr_to_f64(other), None),
+    });
+  let total_w = (area_w + left + right).ceil().max(size_w.unwrap_or(0.0));
+  let total_h = (area_h + bottom + top).ceil().max(size_h.unwrap_or(0.0));
   let (child_svg, content_w, content_h) = if pane_content_size(content)
     .is_some()
   {

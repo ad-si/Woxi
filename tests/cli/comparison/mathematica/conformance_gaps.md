@@ -10471,3 +10471,13 @@ snapshot of `Style[Row[{…}], Gray, 20, "Input"]` shows bold monospace text),
 while Woxi ignores the style name and draws the text in regular weight.
 Its stylesheet font size, which applies when no explicit size is given, has
 not been measured against wolframscript yet.
+
+### Text placed on the edge of a `Graphics` is clipped instead of padded
+
+`Graphics[{Text["left", Scaled[{0, .5}]], Text["right", Scaled[{1, .5}]]},
+AspectRatio -> .035, ImageSize -> 500, Axes -> {True, False}]` (a labeled
+color bar) draws each label centered on the picture's left and right edges,
+so half of it falls outside the image. A saved Wolfram snapshot of the same
+construction shows the image padding grown to fit both labels whole,
+beside the bar. The exact rule `ImagePadding -> Automatic` uses to reserve
+room for text primitives has not been measured against `wolframscript`.

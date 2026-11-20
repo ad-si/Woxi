@@ -4366,6 +4366,59 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_inset_panel_draws_plate() {
+    // Regression: `Inset[Panel[…], pos]` (a readout table placed on a
+    // diagram) printed the literal `Panel[Text[Grid[…]]]` source instead
+    // of drawing the panel's plate with its content.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Circle[], Inset[Panel[Text[Grid[{{\"speed\", 12}, {\"power\", 3.5}}, Alignment -> Left]]], {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Panel["), "Panel source leaked: {svg}");
+    assert!(!svg.contains("Grid["), "Grid source leaked: {svg}");
+    assert!(
+      svg.contains("fill=\"rgb(245,245,245)\""),
+      "no panel plate: {svg}"
+    );
+    assert!(svg.contains(">speed<") && svg.contains(">3.5<"), "{svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Inset[Panel[\"hi\"], Scaled[{0.2, 0.5}]], Point[{1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Panel["), "Panel source leaked: {svg}");
+  }
+
+  #[test]
+  fn test_panel_and_framed_image_size_width() {
+    // `ImageSize -> w` sets the outer width of a `Panel`/`Framed` box; a
+    // size narrower than the content leaves the box at its natural size.
+    clear_state();
+    let svg =
+      interpret("ExportString[Panel[\"hi\", ImageSize -> 100], \"SVG\"]")
+        .unwrap();
+    assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+    let svg = interpret(
+      "ExportString[Framed[\"hi\", ImageSize -> {120, 50}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg width=\"120\" height=\"50\""), "{svg}");
+    let natural =
+      interpret("ExportString[Panel[\"some longer text\"], \"SVG\"]").unwrap();
+    let narrow = interpret(
+      "ExportString[Panel[\"some longer text\", ImageSize -> 10], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      natural.split('\n').next(),
+      narrow.split('\n').next(),
+      "narrow ImageSize shrank the panel"
+    );
+  }
+
+  #[test]
   fn test_greater_less_slant_equal_operators() {
     // `\[GreaterSlantEqual]` (⩾, U+2A7E) and `\[LessSlantEqual]` (⩽,
     // U+2A7D) are glyph variants of GreaterEqual/LessEqual that a
