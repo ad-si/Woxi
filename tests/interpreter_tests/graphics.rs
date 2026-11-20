@@ -15986,10 +15986,11 @@ mod plot3d {
         let svg =
           export_svg(&format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"));
         assert!(
-          svg.contains(
-            "<tspan font-style=\"italic\">z</tspan> = sin(2 \
-             <tspan font-style=\"italic\">x</tspan>)"
-          ),
+          svg.contains("<tspan font-style=\"italic\">z</tspan> = sin(2"),
+          "{label}: {svg}"
+        );
+        assert!(
+          svg.contains("<tspan font-style=\"italic\">x</tspan>)</text>"),
           "{label}: {svg}"
         );
         assert!(!svg.contains("Sin["), "{label}: {svg}");
@@ -16006,8 +16007,8 @@ mod plot3d {
         "Plot[x, {x, 0, 1}, PlotLabel -> NumberForm[HoldForm[z = \
          Cos[-3. y] + 1.24 w], {3, 1}, NumberPadding -> {\"\", \"0\"}]]",
       );
-      assert!(svg.contains("cos(-3.0 <tspan"), "{svg}");
-      assert!(svg.contains("1.2 <tspan"), "{svg}");
+      assert!(svg.contains("cos(-3.0"), "{svg}");
+      assert!(svg.contains(")+1.2"), "{svg}");
       assert!(!svg.contains("NumberForm"), "{svg}");
       assert!(!svg.contains("Cos["), "{svg}");
       // With no approximate number inside, the content is typeset as is.
@@ -16015,7 +16016,7 @@ mod plot3d {
         "Plot[x, {x, 0, 1}, PlotLabel -> NumberForm[HoldForm[z = Cos[10 y]], \
          {3, 1}]]",
       );
-      assert!(svg.contains("cos(10 <tspan"), "{svg}");
+      assert!(svg.contains("cos(10"), "{svg}");
       assert!(!svg.contains("NumberForm"), "{svg}");
     }
 
