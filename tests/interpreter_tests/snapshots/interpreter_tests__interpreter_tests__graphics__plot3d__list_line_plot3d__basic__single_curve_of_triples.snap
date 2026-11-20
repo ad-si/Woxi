@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6961
 expression: "export_svg(\"ListLinePlot3D[{{1, 1, 1}, {2, 2, 8}, {3, 3, 27}, {4, 4, 64}}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">

@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 5137
 expression: "export_svg(\"Plot3D[{Sin[x y], Cos[x y]}, {x, -3, 3}, {y, -3, 3}]\")"
 ---
 <svg width="360" height="273" viewBox="0 0 360 273" xmlns="http://www.w3.org/2000/svg">

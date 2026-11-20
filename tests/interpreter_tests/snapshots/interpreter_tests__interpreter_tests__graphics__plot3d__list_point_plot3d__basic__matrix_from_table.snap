@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6896
 expression: "export_svg(\"ListPointPlot3D[Table[N[Sin[x] Cos[y]], {x, -3, 3, 1}, {y, -3, 3, 1}]]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">

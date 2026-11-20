@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 13655
 expression: "export_svg(r#\"Plot[Sin[x], {x, 0, 2 Pi}, PlotTheme -> \"Business\"]\"#)"
 ---
 <svg width="360" height="223" viewBox="0 0 3600 2230" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">

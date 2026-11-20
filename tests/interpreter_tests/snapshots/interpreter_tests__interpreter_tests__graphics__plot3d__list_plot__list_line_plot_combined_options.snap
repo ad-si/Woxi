@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 15379
 expression: "export_svg(r#\"ListLinePlot[Prime[Range[1, 25]], PlotTheme -> \"Business\", Filling -> Automatic, Mesh -> All]\"#)"
 ---
 <svg width="360" height="226" viewBox="0 0 3600 2260" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">

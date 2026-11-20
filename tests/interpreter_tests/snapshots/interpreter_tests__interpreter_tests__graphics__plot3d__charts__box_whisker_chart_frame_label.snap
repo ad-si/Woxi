@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 20524
 expression: "export_svg(r#\"BoxWhiskerChart[{{12, 15, 18, 22}, {8, 10, 14, 16}}, FrameLabel -> {\"X Axis\", \"Y Axis\"}]\"#)"
 ---
 <svg width="360" height="221" viewBox="0 0 360 221" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">

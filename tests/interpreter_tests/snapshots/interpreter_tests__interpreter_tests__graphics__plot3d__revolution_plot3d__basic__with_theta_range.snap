@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6435
 expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, {theta, 0, Pi}]\")"
 ---
 <svg width="360" height="288" viewBox="0 0 360 288" xmlns="http://www.w3.org/2000/svg">

@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 5130
 expression: "export_svg(\"Plot3D[{x^2, -x^2}, {x, -1, 1}, {y, -1, 1}]\")"
 ---
 <svg width="360" height="278" viewBox="0 0 360 278" xmlns="http://www.w3.org/2000/svg">

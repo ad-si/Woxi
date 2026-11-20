@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 5942
 expression: "export_svg(\"RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ImageSize -> 200]\")"
 ---
 <svg width="200" height="213" viewBox="0 0 200 213" xmlns="http://www.w3.org/2000/svg">

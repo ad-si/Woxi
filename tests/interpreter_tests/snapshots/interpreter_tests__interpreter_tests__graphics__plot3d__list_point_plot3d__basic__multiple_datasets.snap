@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 6875
 expression: "export_svg(\"ListPointPlot3D[{Table[{i, i, i^2}, {i, 5}], Table[{i, i, i^3}, {i, 5}]}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">

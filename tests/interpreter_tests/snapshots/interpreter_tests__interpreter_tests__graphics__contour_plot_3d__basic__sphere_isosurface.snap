@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 31203
 expression: "export_svg(\"ContourPlot3D[x^2 + y^2 + z^2 == 4, {x, -3, 3}, {y, -3, 3}, \\\n         {z, -3, 3}]\")"
 ---
 <svg width="360" height="384" viewBox="0 0 360 384" xmlns="http://www.w3.org/2000/svg">

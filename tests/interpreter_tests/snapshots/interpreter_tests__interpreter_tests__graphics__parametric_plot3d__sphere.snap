@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 32266
 expression: "export_svg(\"ParametricPlot3D[{Sin[t] Cos[p], Sin[t] Sin[p], Cos[t]}, {t, 0, Pi}, {p, 0, 2 Pi}]\")"
 ---
 <svg width="360" height="390" viewBox="0 0 360 390" xmlns="http://www.w3.org/2000/svg">

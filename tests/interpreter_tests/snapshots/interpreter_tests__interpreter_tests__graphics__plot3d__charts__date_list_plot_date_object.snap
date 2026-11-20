@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 17937
 expression: "export_svg(\"DateListPlot[{{DateObject[{2000}], 1}, {DateObject[{2005}], 3}, {DateObject[{2010}], 2}}]\")"
 ---
 <svg width="360" height="225" viewBox="0 0 3600 2250" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
