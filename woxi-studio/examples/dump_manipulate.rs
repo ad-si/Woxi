@@ -187,12 +187,21 @@ fn main() {
         println!("  {line}");
       }
       println!(
-        "render: graphics={} sound={} text={:?} error={:?}",
+        "render: graphics={} sound={} typeset={} text={:?} error={:?}",
         state.graphics_handle.is_some(),
         state.body_sound.is_some(),
+        state.typeset_output.is_some(),
         state.text_output,
         state.error
       );
+      // A typeset textual result is drawn as its own SVG.
+      if let Some(dir) = &svg_out_dir
+        && let Some(svg) = &state.typeset_output
+      {
+        let out = dir.join(format!("widget-{widget_count}-typeset.svg"));
+        std::fs::write(&out, svg).expect("write typeset SVG");
+        println!("wrote {}", out.display());
+      }
       if let Some(dir) = &svg_out_dir
         && state.graphics_handle.is_some()
       {

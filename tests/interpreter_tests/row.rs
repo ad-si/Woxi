@@ -538,6 +538,53 @@ mod row_visual_mode {
     );
   }
 
+  /// Each line of a stacked `<text>` repeats the text's central baseline:
+  /// resvg (Woxi Studio's renderer) resolves `dominant-baseline` only
+  /// against the direct parent, so a colored run nested inside a line
+  /// otherwise rose half a line above its row (into the cell above).
+  #[test]
+  fn stacked_lines_repeat_central_baseline() {
+    clear_state();
+    let svg = |code: &str| -> String {
+      interpret_with_stdout(code).unwrap().graphics.unwrap()
+    };
+    // The lines are `<tspan>`s of one `<text>`, or (a column in the text
+    // face of `Text[…]`) `<text>` elements of their own.
+    let line_baselines = |svg: &str, baseline: &str| {
+      let mut lines: Vec<&str> = svg
+        .split("<tspan x=")
+        .skip(1)
+        .map(|rest| rest.split('>').next().unwrap())
+        .collect();
+      if lines.len() < 2 {
+        lines = svg
+          .split("<text ")
+          .skip(1)
+          .map(|rest| rest.split('>').next().unwrap())
+          .collect();
+      }
+      assert!(lines.len() >= 2, "{svg}");
+      let attr = format!("dominant-baseline=\"{baseline}\"");
+      assert!(lines.iter().all(|attrs| attrs.contains(&attr)), "{svg}");
+    };
+    // Grid cell holding a column of colored rows.
+    line_baselines(
+      &svg(
+        "Grid[{{Text[Column[{Style[Row[{\"a = \", 1}], Red], \
+         Style[Row[{\"b = \", 2}], Blue]}]]}}]",
+      ),
+      "central",
+    );
+    // Text primitive with a styled run on each line.
+    line_baselines(
+      &svg(
+        "Graphics[Text[Style[Row[{Style[\"a\", Red], \"\\n\", \
+         Style[\"b\", Blue]}]], {0, 0}]]",
+      ),
+      "central",
+    );
+  }
+
   fn root_size(svg: &str) -> (f64, f64) {
     let attr = |name: &str| -> f64 {
       svg
