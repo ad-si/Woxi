@@ -6662,6 +6662,12 @@ mod plot3d {
        Mesh -> None]",
       "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
        PlotStyle -> Directive[Yellow, Opacity[0.6]], Mesh -> None]",
+      // A translucent quad or pentagon is cut into triangles, whose
+      // inner cuts must not show (only the outline is stroked).
+      "Graphics3D[{Opacity[0.2], Orange, \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0.3}, {0, 1, 0.3}}]}]",
+      "Graphics3D[{Opacity[0.5], \
+       Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 1, 1}, {1, 2, 1}, {-1, 1, 0}}]}]",
     ] {
       let svg = export_svg(plot);
       let faces: Vec<&str> = svg
@@ -32388,6 +32394,45 @@ mod matrix_form {
     );
   }
 
+  /// `TransformationFunction[m]` typesets its augmented matrix as a grid
+  /// whose last row and column (the translation part) are set off by
+  /// divider lines. It used to print as a one-line `{{…}, …}` listing.
+  #[test]
+  fn transformation_function_typesets_divided_matrix() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[TranslationTransform[{a, b}]]").unwrap(),
+      "RowBox[{TransformationFunction, [, RowBox[{(, GridBox[{{1, 0, a}, \
+       {0, 1, b}, {0, 0, 1}}, GridBoxDividers -> {Columns -> {{False}}, \
+       ColumnsIndexed -> {-2 -> True}, Rows -> {{False}}, \
+       RowsIndexed -> {-2 -> True}}], )}], ]}]"
+    );
+    let svg = interpret(
+      "ExportString[Row[{\"H = \", MatrixForm[TranslationTransform[{a, b}]]}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("{{"), "matrix printed as a list: {svg}");
+    assert_eq!(
+      svg.matches("<line ").count(),
+      2,
+      "one column and one row divider expected: {svg}"
+    );
+  }
+
+  /// `GridBoxDividers -> {"Columns" -> {{True}}}` rules every interior
+  /// column divider.
+  #[test]
+  fn grid_box_dividers_between_all_columns() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[DisplayForm[GridBox[{{\"a\", \"b\", \"c\"}}, \
+       GridBoxDividers -> {\"Columns\" -> {{True}}}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<line ").count(), 2, "{svg}");
+  }
+
   #[test]
   fn matrix_form_visual_2d() {
     clear_state();
@@ -33044,6 +33089,29 @@ mod show {
     let svg = export_svg(
       r#"Show[Plot[Sin[x], {x, 0, 6}, PlotLabel -> "inner"],
         Graphics[{Point[{2, 0}]}], PlotLabel -> "outer"]"#,
+    );
+    assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
+  }
+
+  /// `Show[Histogram[…, opts], Plot[…]]` takes its options from the
+  /// histogram, the first graphic: its `PlotLabel` (here a `Grid` of lines)
+  /// labels the combined picture. Regression: the histogram's options were
+  /// dropped, so the label vanished as soon as a curve was overlaid.
+  #[test]
+  fn show_histogram_with_plot_keeps_histogram_options() {
+    clear_state();
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, {0, 4, 1}, "ProbabilityDensity",
+          PlotLabel -> Grid[{{"top line"}, {"bottom line"}}],
+          ChartStyle -> Red],
+        Plot[x/8, {x, 0, 4}], PlotRange -> All]"#,
+    );
+    assert!(svg.contains(">top line<"), "{svg}");
+    assert!(svg.contains(">bottom line<"), "{svg}");
+    // An option given to Show itself still wins over the histogram's.
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, PlotLabel -> "inner"],
+        Plot[x, {x, 0, 4}], PlotLabel -> "outer"]"#,
     );
     assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
   }
@@ -44131,6 +44199,60 @@ mod manipulate {
       texts(&node, &mut found);
       assert_eq!(found, ["9/10", "3/4", "0.25"], "{display}: {node:?}");
     }
+  }
+
+  /// A `Dynamic` caption shows machine reals at the notebook's 6
+  /// significant figures and a `Root` object elided to its approximate
+  /// value, as the front end typesets them, not their full InputForm.
+  #[test]
+  fn spec_display_dynamic_numbers_use_front_end_precision() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn texts(node: &DisplayNode, out: &mut Vec<String>) {
+      match node {
+        DisplayNode::Text { runs } => {
+          out.push(runs.iter().map(|r| r.text.as_str()).collect());
+        }
+        DisplayNode::Static { text, .. } => out.push(text.clone()),
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            texts(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    let expr = interpret_to_expr(
+      "Manipulate[x, {x, 1, 2}, \
+       Dynamic[Row[{N[x Pi], \" \", -x/3., \" \", 10.^7 x, \" \", \
+       MinimalPolynomial[Root[#^3 - #^2 - 1 &, 1], y], \" \", \
+       Root[#^3 - #^2 - 1 &, 1] - x, \" \", MinimalPolynomial[r, r]}]], \
+       {r, Root[-1 - #^2 + #^3 &, 1, 0], ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("manipulate");
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      build_manipulate_display(&spec.displays[0], &bindings)
+    });
+    let mut found = Vec::new();
+    texts(&node, &mut found);
+    assert_eq!(
+      found,
+      [
+        "3.14159",
+        " ",
+        "-0.333333",
+        " ",
+        "1.\u{d7}10^7",
+        " ",
+        "-1 - y^2 + y^3",
+        " ",
+        "-1 + 1.47\u{2026}",
+        " ",
+        "-1 - 1.47\u{2026}^2 + 1.47\u{2026}^3"
+      ],
+      "{node:?}"
+    );
   }
 
   /// `NumberForm[Dynamic[x], spec]` formats the held `Dynamic`, so the

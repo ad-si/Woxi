@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 8324
 expression: "export_svg(\"RevolutionPlot3D[{1 + Sin[t]/4, t}, {t, 0, 2 Pi}]\")"
 ---
 <svg width="239" height="432" viewBox="0 0 239 432" xmlns="http://www.w3.org/2000/svg">

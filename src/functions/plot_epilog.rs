@@ -1127,18 +1127,6 @@ fn render_item(
           let center_drop = stack_h / 2.0 + (last_size - first_size) / 4.0;
           // The whole block's height.
           let block_h = stack_h + f64::midpoint(first_size, last_size);
-          // The label's widest line, measured glyph by glyph — shared by the
-          // anchor shift, the flush-left column start, the background panel
-          // and the frame, so they all agree on where the text sits.
-          let label_w = styled.as_ref().map_or_else(
-            || {
-              crate::functions::plot_padding::text_width(
-                &expr_to_output(body),
-                font_size,
-              )
-            },
-            |s| s.max_line_width(font_size),
-          );
           // `Text[label, pt, offset, {dx, dy}]` turns the baseline to run
           // along `{dx, dy}`, read in screen space (y up) as in `Graphics`:
           // its angle does not depend on the plot's x/y scaling. The offset
@@ -1168,17 +1156,6 @@ fn render_item(
             py -= center_drop;
             py += off_y * block_h / 2.0;
           }
-          // A `Framed` inset's side is what its offset aligns to the point,
-          // so the text sits one frame margin further in.
-          if is_framed && direction.is_none() && off_x != 0.0 {
-            let (m_left, m_right, _, _) =
-              crate::functions::graphics::framed_margins(
-                frame_opts,
-                crate::functions::graphics::FRAMED_DEFAULT_MARGIN,
-              );
-            px -=
-              off_x * if off_x < 0.0 { m_left } else { m_right } * area.scale;
-          }
           if direction.is_some() {
             // Centered on the point computed above.
           } else if extra_lines == 0.0 && off_x == -1.0 {
@@ -1186,7 +1163,11 @@ fn render_item(
           } else if extra_lines == 0.0 && off_x == 1.0 {
             text_anchor = "end";
           } else if off_x != 0.0 {
-            px -= off_x * label_w / 2.0;
+            let chars = styled.as_ref().map_or_else(
+              || expr_to_output(body).chars().count(),
+              super::chart::StyledLabel::max_line_chars,
+            ) as f64;
+            px -= off_x * chars * font_size * 0.55 / 2.0;
           }
           // A label carrying structure (`Subscript[N, D]`) is typeset into
           // SVG markup; a plain one goes through the same path, which
@@ -1200,11 +1181,26 @@ fn render_item(
             && extra_lines > 0.0
             && is_left_aligned_column(body)
           {
+            // A framed block is as wide as its frame measures it (by the
+            // proportional glyph widths), and the frame's `FrameMargins`
+            // already keep the lines off the border.
+            let (block_w, inset) = if is_framed {
+              let width_em = styled
+                .as_ref()
+                .map_or(0.0, super::chart::StyledLabel::max_line_width_em);
+              (width_em * font_size, 0.0)
+            } else {
+              let chars = styled
+                .as_ref()
+                .map_or(0, super::chart::StyledLabel::max_line_chars)
+                as f64;
+              (chars * font_size * 0.6, font_size * 0.35)
+            };
             line_x = match text_anchor {
               "start" => px,
-              "end" => px - label_w,
-              _ => px - label_w / 2.0,
-            };
+              "end" => px - block_w,
+              _ => px - block_w / 2.0,
+            } + inset;
             text_anchor = "start";
           }
           let label = styled.as_ref().map_or_else(
@@ -1221,7 +1217,15 @@ fn render_item(
             .or_else(|| style_wrapper_background(body))
             .filter(|_| !is_framed && direction.is_none());
           if let Some(color) = text_background {
-            let text_w = label_w;
+            let text_w = styled.as_ref().map_or_else(
+              || {
+                crate::functions::plot_padding::text_width(
+                  &expr_to_output(body),
+                  font_size,
+                )
+              },
+              |s| s.max_line_width(font_size),
+            );
             let left = match text_anchor {
               "start" => px,
               "end" => px - text_w,
@@ -1235,13 +1239,10 @@ fn render_item(
             ));
           }
           if is_framed {
-            let text_w = label_w;
-            // The text block's left side, from where its lines are anchored.
-            let block_left = match text_anchor {
-              "start" => line_x,
-              "end" => line_x - text_w,
-              _ => line_x - text_w / 2.0,
-            };
+            let text_w = styled
+              .as_ref()
+              .map_or(0.0, super::chart::StyledLabel::max_line_width_em)
+              * font_size;
             // `Framed` leaves its `FrameMargins` (5 points a side unless
             // set) between the text and the border.
             let (m_left, m_right, m_bottom, m_top) =
@@ -1284,7 +1285,7 @@ fn render_item(
             });
             out.push_str(&format!(
               "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
-              block_left - m_left,
+              px - text_w / 2.0 - m_left,
               text_w + m_left + m_right,
             ));
           }

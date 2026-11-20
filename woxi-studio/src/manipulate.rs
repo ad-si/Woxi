@@ -2209,7 +2209,31 @@ impl ManipulateState {
   ///
   /// [`from_expr`]: Self::from_expr
   pub fn reevaluate(&mut self) {
+    let before = self.bindings();
     self.reevaluate_inner(true);
+    self.settle_inner_dynamics(before);
+  }
+
+  /// Re-render while the body's inner `Dynamic`s keep changing the
+  /// widget's variables. The front end refreshes a `Dynamic[…]` whenever a
+  /// variable it shows changes, so when a later `Dynamic` updates what an
+  /// earlier one already drew (a click handled in the second row of a
+  /// grid whose first row draws the board), the earlier one is drawn
+  /// again. A single pass would leave it one step behind. Bounded, as a
+  /// `Dynamic` that writes what it reads never settles.
+  fn settle_inner_dynamics(&mut self, mut before: Vec<(String, String)>) {
+    const MAX_EXTRA_PASSES: usize = 2;
+    if !self.body.contains("Dynamic[") {
+      return;
+    }
+    for _ in 0..MAX_EXTRA_PASSES {
+      let after = self.bindings();
+      if after == before {
+        break;
+      }
+      before = after;
+      self.reevaluate_inner(true);
+    }
   }
 
   /// The code the widget evaluates to draw `body`: the body itself, wrapped
@@ -5527,6 +5551,34 @@ mod tests {
     assert_eq!(label(&state), "restart");
   }
 
+  /// A custom control `{{u, 1, ""}, tableOf[#, n] &}` whose builder is a
+  /// user-defined function draws whatever that function returns from the
+  /// live bindings. It used to be dropped from the control panel.
+  #[test]
+  fn custom_control_from_user_defined_builder_is_displayed() {
+    woxi::interpret(
+      "customTableOfStudio[_, k_] := Grid[Table[{i, i^2}, {i, k}], \
+       Frame -> All]",
+    )
+    .expect("define the builder");
+    let code = r#"Manipulate[
+      n^2,
+      {{n, 2, "rows"}, {2, 3}},
+      {{u, 1, ""}, customTableOfStudio[#, n] &}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert!(
+      state
+        .displays
+        .iter()
+        .any(|d| d == "customTableOfStudio[Dynamic[u], n]"),
+      "the builder call must stay a live display, got {:?}",
+      state.displays
+    );
+  }
+
   #[test]
   fn button_with_own_enabled_condition_disables_independently_of_sibling() {
     let code = r#"Manipulate[
@@ -7216,6 +7268,112 @@ mod tests {
     assert!(region.click_action(0.0, 100.0).contains(", 0}]"));
   }
 
+  /// A `ClickPane` laid out as a `Grid` cell, showing a picture held in a
+  /// state variable (`ClickPane[Dynamic[pic], handler]`, so no `PlotRange`
+  /// is visible in the call). The click handler only records the spot; a
+  /// later row's `Dynamic` consumes it, and the picture is drawn by a
+  /// `Dynamic` *before* that row. A click must:
+  /// - map to the picture's coordinates even though the picture is a
+  ///   rendering kept from an earlier frame,
+  /// - leave the picture variable intact (the handler does not touch it),
+  /// - redraw the picture with the consumed click, as the front end
+  ///   refreshes the earlier `Dynamic` once the later one changes its input,
+  /// - and keep the picture clickable for the next click.
+  #[test]
+  fn click_pane_in_grid_cell_over_dynamic_picture_runs_its_handler() {
+    let code = r#"Manipulate[
+      Grid[{
+        {ClickPane[Dynamic[Deploy[pic]], (spot = Round[#]) &],
+         Dynamic[pic = Graphics[{LightGray, Rectangle[{0, 0}, {4, 2}],
+             Red, Disk[#, 0.3] & /@ marks},
+             PlotRange -> {{0, 4}, {0, 2}}, ImageSize -> {200, 100}];
+           Length[marks]]},
+        {Dynamic[If[spot =!= {}, AppendTo[marks, spot]; spot = {}];
+           Row[{"marks: ", Length[marks]}]], SpanFromLeft}
+      }],
+      {{pic, Graphics[Rectangle[{0, 0}, {4, 2}],
+        PlotRange -> {{0, 4}, {0, 2}}, ImageSize -> {200, 100}]},
+        ControlType -> None},
+      {{spot, {}}, ControlType -> None},
+      {{marks, {}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let var = |state: &ManipulateState, name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    let click_at = |state: &mut ManipulateState, gx: f64, gy: f64| {
+      assert_eq!(state.click_regions.len(), 1, "one click region");
+      let region = state.click_regions[0].clone();
+      let near = |a: f64, b: f64| (a - b).abs() < 0.05;
+      assert!(
+        near(region.hit.x_min, 0.0)
+          && near(region.hit.x_max, 4.0)
+          && near(region.hit.y_min, 0.0)
+          && near(region.hit.y_max, 2.0),
+        "pane coordinates: {:?}",
+        region.hit
+      );
+      let h = &region.hit;
+      let fx = ((gx - h.x_min) / (h.x_max - h.x_min)) as f32;
+      let fy = ((h.y_max - gy) / (h.y_max - h.y_min)) as f32;
+      state.pointer =
+        (region.x + region.width * fx, region.y + region.height * fy);
+      state.apply_pane_click();
+      assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    };
+    let red_disks = |state: &ManipulateState| {
+      state
+        .current_svg()
+        .unwrap_or_default()
+        .matches("fill=\"rgb(255,0,0)\"")
+        .count()
+    };
+    assert_eq!(red_disks(&state), 0);
+
+    click_at(&mut state, 3.1, 1.9);
+    assert_eq!(var(&state, "marks"), "{{3, 2}}");
+    assert_eq!(var(&state, "spot"), "{}");
+    assert_eq!(red_disks(&state), 1, "the picture shows the first mark");
+
+    click_at(&mut state, 1.0, 1.0);
+    assert_eq!(var(&state, "marks"), "{{3, 2}, {1, 1}}");
+    assert_eq!(red_disks(&state), 2, "the picture shows both marks");
+  }
+
+  /// A button or click action runs against a state variable that holds a
+  /// picture the body drew (kept as a rendering, with no source to bind):
+  /// the action must still be able to read it.
+  #[test]
+  fn action_sees_and_keeps_a_picture_state_variable() {
+    let code = r#"Manipulate[
+      Column[{pic = Plot[x, {x, 0, 1}, ImageSize -> 50], seen}],
+      {{pic, Graphics[{}]}, ControlType -> None},
+      {{seen, None}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    state.apply_button_action("seen = Head[pic]");
+    let var = |name: &str| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert_eq!(var("seen"), "Graphics");
+  }
+
   /// A `ClickPane` laid out beside the controls (a display element, not
   /// the body) — the Demonstrations idiom for a rule editor toggled by
   /// clicking its pieces. Clicking a cell of the pane runs the handler on
@@ -8723,6 +8881,44 @@ mod repeated_option_tests {
     assert!(svg.contains(r#"font-weight="bold">4<"#), "{svg}");
     // Output that already fits is left alone.
     assert!(flow_to_content_width(&body, 1.0e6).is_none());
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (continued fractions
+  /// of quadratic irrationals). Its output ends in a list like
+  /// `{1, 53, {1, 1, …, 54}}` whose long periodic part is nested one level
+  /// deep. The FrontEnd breaks it after commas inside the nested list too;
+  /// breaking only between the three top-level elements left the period
+  /// running off in one long line.
+  #[test]
+  fn content_size_width_breaks_inside_a_nested_list() {
+    let code = "Manipulate[\
+       Text[Column[{Style[{n, 53, Range[n]}, 10]}, Alignment -> Center]], \
+       {{n, 80}, 10, 100, 1}, ContentSize -> {300, 200}]";
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.content_width, Some(300.0));
+
+    let body = woxi::with_scoped_globals(&state.bindings(), || {
+      woxi::interpret_with_stdout(&state.body)
+    })
+    .expect("evaluate the body");
+    let wide = woxi::functions::graphics::parse_svg_wh(
+      body.graphics.as_ref().expect("the column is a picture"),
+    )
+    .0;
+    assert!(wide > 300.0, "the unbroken list is {wide} wide");
+    let flowed =
+      flow_to_content_width(&body, 300.0).expect("the list is re-flowed");
+    let svg = flowed.graphics.expect("the re-flowed column is a picture");
+    let (w, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(w <= 300.5, "the re-flowed list is {w} wide: {svg}");
+    // The first line opens the nested list, and the last one closes it.
+    assert!(svg.contains(">{80, 53, {1, 2, 3,"), "{svg}");
+    assert!(svg.contains(", 79, 80}}<"), "{svg}");
+    let lines = svg.matches("<text").count();
+    assert!(lines > 2, "the nested list spans {lines} lines: {svg}");
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
