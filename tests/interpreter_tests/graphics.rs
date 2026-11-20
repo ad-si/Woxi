@@ -12890,6 +12890,83 @@ mod plot3d {
       );
     }
 
+    /// Regression: `Inset[Framed[Style[text, …]], pos]` in a plot's
+    /// `Epilog` was typeset as a notebook box in a monospace font, so the
+    /// label came out far wider than Wolfram's and overflowed the picture.
+    /// It is a boxed label set in the graphic's own proportional font,
+    /// its border a visible one-point line.
+    #[test]
+    fn plot_epilog_inset_framed_label_uses_graphics_font() {
+      let svg = export_svg(
+        "Plot[Sin[x], {x, 0, 9}, Epilog -> \
+         Inset[Framed[Style[\"current = magenta\", 12, Bold, Red], \
+         Background -> LightYellow], {4, 0.5}]]",
+      );
+      let text = svg
+        .split("<text ")
+        .find(|t| t.contains("current = magenta"))
+        .expect("the label");
+      assert!(
+        !text.contains("monospace") && text.contains("font-weight=\"bold\""),
+        "set in the bold graphics font: {text}"
+      );
+      let rect = svg
+        .split("<rect ")
+        .find(|r| r.contains("fill=\"rgb(255,255,217)\""))
+        .expect("the frame's panel");
+      let attr = |name: &str| -> f64 {
+        rect
+          .split_once(&format!(" {name}=\""))
+          .and_then(|(_, r)| r.split_once('"'))
+          .and_then(|(v, _)| v.parse().ok())
+          .unwrap_or_else(|| panic!("missing {name} in rect: {rect}"))
+      };
+      // At the plot's 10x resolution scale: a 1pt border, and 5pt margins
+      // around 12pt Arial-width text (17 characters, about 0.5 em each).
+      assert_eq!(attr("stroke-width"), 10.0, "{rect}");
+      assert_eq!(attr("height"), (12.0 + 2.0 * 5.0) * 10.0, "{rect}");
+      let width = attr("width");
+      assert!(
+        (900.0..1250.0).contains(&width),
+        "proportional, not monospace, width: {rect}"
+      );
+    }
+
+    /// `Text[Framed[…]]` in a `Graphics` leaves `Framed`'s margins (5pt
+    /// unless `FrameMargins` says otherwise) between the text and the
+    /// border, as Wolfram does, instead of hugging the glyphs.
+    #[test]
+    fn graphics_framed_label_keeps_frame_margins() {
+      let rect_of = |code: &str| -> (f64, f64) {
+        let svg = export_svg(code);
+        let rect = svg
+          .split("<rect ")
+          .find(|r| r.contains("fill=\"rgb(255,255,0)\""))
+          .expect("the frame's panel")
+          .to_string();
+        let attr = |name: &str| -> f64 {
+          rect
+            .split_once(&format!(" {name}=\""))
+            .and_then(|(_, r)| r.split_once('"'))
+            .and_then(|(v, _)| v.parse().ok())
+            .unwrap_or_else(|| panic!("missing {name} in rect: {rect}"))
+        };
+        (attr("width"), attr("height"))
+      };
+      let (w, h) = rect_of(
+        "Graphics[Text[Framed[Style[\"abc\", 12], Background -> Yellow], \
+         {0, 0}]]",
+      );
+      let (w2, h2) = rect_of(
+        "Graphics[Text[Framed[Style[\"abc\", 12], Background -> Yellow, \
+         FrameMargins -> {{1, 3}, {0, 2}}], {0, 0}]]",
+      );
+      // 5pt on every side by default; `{{1, 3}, {0, 2}}` takes 6pt off the
+      // width and 8pt off the height.
+      assert!((h - h2 - 8.0).abs() < 1e-6, "{h} vs {h2}");
+      assert!((w - w2 - 6.0).abs() < 1e-6, "{w} vs {w2}");
+    }
+
     /// `ToString[…, TraditionalForm]` text keeps its string atoms quoted
     /// inside the boxes; a grid cell typesets them without the quotes.
     #[test]
@@ -12937,8 +13014,10 @@ mod plot3d {
       // Default epilog font size (13pt) at the plot renderer's
       // RESOLUTION_SCALE (10), 3 lines (2 "extra" beyond the first)
       // stacked at 1.2x line height each.
+      // `Framed`'s default 5pt `FrameMargins` pad it above and below.
       let (font_size, line_height) = (13.0 * 10.0, 13.0 * 10.0 * 1.2);
-      let expected_h = 2.0 * line_height + font_size;
+      let margin = 5.0 * 10.0;
+      let expected_h = 2.0 * line_height + font_size + 2.0 * margin;
       assert!(
         (rect_h - expected_h).abs() < 1.0,
         "box must grow by one line_height per extra line, not font_size: \
@@ -12953,7 +13032,7 @@ mod plot3d {
         .and_then(|(_, r)| r.split_once('"'))
         .and_then(|(v, _)| v.parse().ok())
         .expect("a positioned label");
-      let expected_y = py - font_size / 2.0;
+      let expected_y = py - font_size / 2.0 - margin;
       assert!(
         (rect_y - expected_y).abs() < 1.0,
         "box must start half a line above the first line's own center, \
