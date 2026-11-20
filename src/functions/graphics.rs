@@ -12713,6 +12713,64 @@ impl GraphicsLabelFont {
   }
 }
 
+/// The markup of `Overlay[{layer1, layer2, …}, opts]` in a text label: every
+/// layer is typeset in turn and the pen is moved back (`dx`) before the next
+/// one, so the layers share one spot, later layers drawn on top. The
+/// horizontal `Alignment` (`Left` by default, `Center`, `Right`) places the
+/// narrower layers against the widest; the pen ends after the widest layer.
+/// Layers without their own size are measured at the label size.
+fn overlay_layers_markup(layers: &[Expr], opts: &[Expr]) -> String {
+  let align = opts
+    .iter()
+    .find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if option_name(pattern) == Some("Alignment") => {
+        let horizontal = match replacement.as_ref() {
+          Expr::List(parts) => parts.first()?,
+          other => other,
+        };
+        match horizontal {
+          Expr::Identifier(s) if s == "Center" => Some(0.5),
+          Expr::Identifier(s) if s == "Right" => Some(1.0),
+          Expr::Identifier(s) if s == "Left" => Some(0.0),
+          _ => None,
+        }
+      }
+      _ => None,
+    })
+    .unwrap_or(0.0);
+  let pieces: Vec<(String, f64)> = layers
+    .iter()
+    .map(|layer| {
+      let markup = expr_to_svg_markup(layer);
+      let size = markup_max_font_size(&markup).unwrap_or(LABEL_FONT);
+      let width = crate::functions::plot_padding::text_width(&markup, size);
+      (markup, width)
+    })
+    .collect();
+  let widest = pieces.iter().map(|(_, w)| *w).fold(0.0, f64::max);
+  let mut out = String::new();
+  let mut pen = 0.0;
+  for (markup, width) in &pieces {
+    let start = (widest - width) * align;
+    let shift = start - pen;
+    if shift.abs() > 1e-9 {
+      out.push_str(&format!("<tspan dx=\"{shift:.2}\">{markup}</tspan>"));
+    } else {
+      out.push_str(markup);
+    }
+    pen = start + width;
+  }
+  let rest = widest - pen;
+  if rest.abs() > 1e-9 {
+    // A zero-width joiner carries the final pen move to the widest edge.
+    out.push_str(&format!("<tspan dx=\"{rest:.2}\">\u{200D}</tspan>"));
+  }
+  out
+}
+
 /// The largest `font-size` an SVG markup fragment sets (a `Style[…, n]`
 /// piece of a title typesets as a sized tspan), if any.
 fn markup_max_font_size(markup: &str) -> Option<f64> {
@@ -19790,6 +19848,17 @@ fn style_directives_to_svg_attrs(directives: &[Expr]) -> String {
         }
         _ => {}
       },
+      // `Opacity[a]` fades the text; `Opacity[a, color]` also colors it.
+      Expr::FunctionCall { name, args }
+        if name == "Opacity"
+          && !args.is_empty()
+          && let Some(a) = expr_to_f64(&args[0]) =>
+      {
+        set("fill-opacity", format!("{}", a.clamp(0.0, 1.0)));
+        if let Some(c) = args.get(1).and_then(parse_color) {
+          set("fill", c.to_svg_rgb());
+        }
+      }
       other => {
         if let Some(c) = parse_color(other) {
           set("fill", c.to_svg_rgb());
@@ -21423,6 +21492,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
             "<tspan fill-opacity=\"0\">{}</tspan>",
             expr_to_svg_markup(&args[0])
           )
+        }
+
+        // `Overlay[{layer1, layer2, …}, …]` draws its layers on top of one
+        // another (e.g. an axis label cross-fading between two texts via
+        // `Opacity`), not as the wrapper's own source text.
+        "Overlay" if matches!(args.first(), Some(Expr::List(l)) if !l.is_empty()) =>
+        {
+          let Expr::List(layers) = &args[0] else {
+            unreachable!()
+          };
+          overlay_layers_markup(layers, &args[1..])
         }
 
         // `MatrixForm[{{…}, {…}}]` in a single-line label: a `<text>` run has
