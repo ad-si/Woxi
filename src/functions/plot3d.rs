@@ -517,7 +517,16 @@ fn line_draw_bounds(
       let floor = owners.map(|o| o[n] + 1);
       let mut slot = floor.unwrap_or(0);
       let mut first_front = usize::MAX;
-      for t in [0.02, 0.25, 0.5, 0.75, 0.98] {
+      // Faces the piece runs along (or crosses in front of) lift it over
+      // them. A face it only touches with an end sample (a hidden edge
+      // meeting the corner of a face in front of it) lifts it only as far
+      // as the first face hiding part of it: lifting it further would
+      // paint a stub of the hidden line over that face.
+      let mut end_slot = 0;
+      let mut cap = usize::MAX;
+      const SAMPLES: [f64; 5] = [0.02, 0.25, 0.5, 0.75, 0.98];
+      for (i, t) in SAMPLES.into_iter().enumerate() {
+        let at_end = i == 0 || i == SAMPLES.len() - 1;
         let m = Point3D {
           x: seg[0].x + t * (seg[1].x - seg[0].x),
           y: seg[0].y + t * (seg[1].y - seg[0].y),
@@ -557,16 +566,26 @@ fn line_draw_bounds(
           // A line on a curved surface lies a little behind the planes
           // of the faces next to the ones it runs along.
           if d >= -1e-2 * size.max(1e-300) {
-            slot = slot.max(k + 1);
-          } else if inset > margin && floor.is_some() {
-            // Only a face that really covers the piece hides it: the
-            // faces of a convex solid next to its silhouette lie a little
-            // in front of the outline there but only touch it on screen.
-            first_front = first_front.min(k);
+            if at_end {
+              end_slot = end_slot.max(k + 1);
+            } else {
+              slot = slot.max(k + 1);
+            }
+          } else {
+            if inset >= -margin * 1e-3 {
+              cap = cap.min(k);
+            }
+            if inset > margin && floor.is_some() {
+              // Only a face that really covers the piece hides it: the
+              // faces of a convex solid next to its silhouette lie a
+              // little in front of the outline there but only touch it on
+              // screen.
+              first_front = first_front.min(k);
+            }
           }
         }
       }
-      (slot, first_front)
+      (slot.max(end_slot.min(cap)), first_front)
     })
     .collect()
 }
