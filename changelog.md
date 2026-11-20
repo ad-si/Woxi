@@ -12,6 +12,9 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `ParametricPlot` breaks a curve at the poles of its coordinates
+    (`{Sec[t], Tan[t]}` at `t == Pi/2`) under the default
+    `Exclusions -> Automatic`, instead of joining the branches with a line.
 
 # 2026-11-08 - 0.4.0
 

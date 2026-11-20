@@ -1108,7 +1108,7 @@ fn drawn_y_range(
 
 /// Whether `Exclusions` leaves the automatic exclusions on: the option is
 /// absent, `Automatic`, or a list that includes `Automatic`.
-fn automatic_exclusions_enabled(options: &[Expr]) -> bool {
+pub(crate) fn automatic_exclusions_enabled(options: &[Expr]) -> bool {
   let value = options.iter().find_map(|opt| match opt {
     Expr::Rule {
       pattern,

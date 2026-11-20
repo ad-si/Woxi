@@ -565,6 +565,44 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_automatic_exclusions_break_curve_at_poles() {
+      // A coordinate that runs off to infinity and comes back from the
+      // other side (`Sec`/`Tan` at odd multiples of Pi/2) splits the
+      // curve, so no straight segment joins the two branch ends.
+      let lines = |code: &str| {
+        interpret(&format!(
+          "Cases[{code}, Line[pts_] :> Length[pts] > 10, Infinity]"
+        ))
+        .unwrap()
+      };
+      assert_eq!(
+        lines("ParametricPlot[{3 Sec[t], 2 Tan[t]}, {t, 0, 2 Pi}]"),
+        "{True, True, True}"
+      );
+      assert_eq!(
+        lines("ParametricPlot[{t, Tan[t]}, {t, 0, 2 Pi}]"),
+        "{True, True, True}"
+      );
+      assert_eq!(
+        lines("ParametricPlot[{1/t, t}, {t, -1, 1}, PlotRange -> 5]"),
+        "{True, True}"
+      );
+      // `Exclusions -> None` joins the branches again.
+      assert_eq!(
+        lines(
+          "ParametricPlot[{3 Sec[t], 2 Tan[t]}, {t, 0, 2 Pi}, \
+             Exclusions -> None]"
+        ),
+        "{True}"
+      );
+      // Continuous zero crossings of both coordinates are no poles.
+      assert_eq!(
+        lines("ParametricPlot[{Cos[t], Sin[3 t]}, {t, 0, 2 Pi}]"),
+        "{True}"
+      );
+    }
+
+    #[test]
     fn plot_exclusions_break_curve_at_listed_points() {
       // A jump at an excluded x is not bridged by a vertical line: the
       // curve is split there, whether given as numbers or as equations.
