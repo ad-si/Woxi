@@ -1392,3 +1392,115 @@ fn review_colored_background_keeps_black_tick_labels() {
     assert!(svg.contains("fill=\"#000000\""));
   }
 }
+
+/// The `font-family` values of an SVG's `<text>` elements.
+fn text_families(svg: &str) -> Vec<&str> {
+  svg
+    .match_indices("<text ")
+    .filter_map(|(i, _)| {
+      let tag = &svg[i..i + svg[i..].find('>')?];
+      let start = tag.find("font-family=\"")? + "font-family=\"".len();
+      Some(&tag[start..start + tag[start..].find('"')?])
+    })
+    .collect()
+}
+
+#[test]
+fn text_sets_layouts_in_proportional_face() {
+  // `Text[…]` outside a `Graphics` shows its content in the proportional
+  // text face — a `Row` inside too, alone, in a `Column` or styled.
+  for expr in [
+    "Text[Row[{\"Depth = \", 2.85, \" m\"}]]",
+    "Text[Style[Row[{\"Depth = \", NumberForm[2.85, {2, 1}], \" m\"}], 15]]",
+    "Column[{Text[Style[Row[{\"a = \", 1}], 15]], Text[Style[\"b\", 14]]}, Alignment -> Center]",
+    "Column[{Text[Row[{\"a = \", 1}]], Graphics[Disk[]]}]",
+    "Text[\"label\"]",
+  ] {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap();
+    let families = text_families(&svg);
+    assert!(!families.is_empty(), "{expr}: no text in {svg}");
+    assert!(
+      families
+        .iter()
+        .all(|f| *f == "Atkinson Hyperlegible Next, sans-serif"),
+      "{expr}: {families:?}"
+    );
+  }
+  // A face the text asks for itself still wins over the default.
+  clear_state();
+  let svg = interpret(
+    "ExportString[Column[{Text[Style[Row[{\"a\", 1}], FontFamily -> \"Courier\"]]}], \"SVG\"]",
+  )
+  .unwrap();
+  let families = text_families(&svg);
+  assert!(
+    !families.is_empty() && families.iter().all(|f| f.starts_with("Courier")),
+    "{families:?}"
+  );
+  // A layout outside `Text` keeps the monospace output face.
+  clear_state();
+  let svg = interpret("ExportString[Row[{\"a = \", 1}], \"SVG\"]").unwrap();
+  assert!(text_families(&svg).iter().all(|f| f.contains("Mono")));
+}
+
+#[test]
+fn text_row_parts_sit_at_proportional_widths() {
+  // The parts of a `Row` set in the default proportional face are spaced
+  // by that face's glyph advances, not the monospace grid, so a short
+  // number does not float in a wide gap after its label.
+  clear_state();
+  let svg = interpret(
+    "ExportString[Text[Style[Row[{\"Depth of point = \", \"2.9\"}], 15]], \"SVG\"]",
+  )
+  .unwrap();
+  let width: f64 = svg
+    .split("width=\"")
+    .nth(1)
+    .and_then(|s| s.split('"').next())
+    .and_then(|s| s.parse().ok())
+    .unwrap();
+  // 20 characters at 15pt: a monospace grid needs ~190pt, the proportional
+  // face well under 150pt.
+  assert!(width < 150.0, "width {width} in {svg}");
+}
+
+#[test]
+fn styled_layout_keeps_picture_of_caption_product() {
+  // Regression: a `Style` pushed onto a layout's items wrapped a product
+  // with a picture (`"Label: " g`) whole, so the picture was typeset as
+  // the `-Graphics-` placeholder.
+  for layout in ["Column", "Row"] {
+    clear_state();
+    let svg = interpret(&format!(
+      "ExportString[Style[{layout}[{{\"Label: \" Graphics[Disk[], ImageSize -> 15]}}], Red], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(!svg.contains("-Graphics-"), "{layout}: {svg}");
+    assert!(
+      svg.contains("<ellipse") || svg.contains("<circle"),
+      "{layout}"
+    );
+    // The caption still takes the style.
+    assert!(
+      svg.split("<text ").any(|t| t.contains("Label:")
+        && t[..t.find('>').unwrap()].contains("fill=\"rgb(255,0,0)\"")),
+      "{layout}: {svg}"
+    );
+  }
+}
+
+#[test]
+fn styled_pane_keeps_its_width() {
+  // Regression: `Style[Pane[text, w], …]` dropped the pane, so its text
+  // ran on one long line instead of wrapping at the pane's width.
+  let long = "Column[{Row[{12.5, \" units of the first kind in the sample\"}], Row[{7, \" units of the second kind left over at the end\"}]}]";
+  for pane in [
+    format!("Style[Pane[{long}, 200], 12]"),
+    format!("Style[Pane[{long}, ImageSize -> 200], Red]"),
+  ] {
+    clear_state();
+    let svg = interpret(&format!("ExportString[{pane}, \"SVG\"]")).unwrap();
+    assert!(svg.starts_with("<svg width=\"200\""), "{pane}: {svg}");
+  }
+}
