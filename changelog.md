@@ -16,6 +16,9 @@
     the weight of the plotted curves, honors `LabelStyle`, sets its labels in
     a proportional face, and continues a multi-line label under its own
     first line.
+- `Show` keeps a curve's `ColorFunction` on that curve alone: a plot merged
+    with it keeps its own color, and the colored curve stays colored when a
+    `Graphics` comes first (drawn with `VertexColors`).
 
 # 2026-11-08 - 0.4.0
 
