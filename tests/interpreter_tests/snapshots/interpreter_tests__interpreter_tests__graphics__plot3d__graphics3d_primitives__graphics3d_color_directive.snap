@@ -1017,8 +1017,6 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <linearGradient id="sdb92631da2" gradientUnits="userSpaceOnUse" x1="100.5" y1="280.2" x2="100.5" y2="285.6"><stop stop-color="#8b0000"/><stop offset="1" stop-color="#710000"/></linearGradient>
 <polygon points="94.8,280.8 103.5,285.6 103.1,280.2" fill="url(#sdb92631da2)" stroke="url(#sdb92631da2)" stroke-width="0.5"/>
 <polygon points="308.0,181.6 352.2,54.7 341.2,135.3" fill="rgb(0,0,209)" stroke="rgb(0,0,209)" stroke-width="0.5"/>
-<line x1="341.2" y1="135.3" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
-<line x1="308.0" y1="181.6" x2="341.2" y2="135.3" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <linearGradient id="safbe0fe513" gradientUnits="userSpaceOnUse" x1="112.3" y1="271.6" x2="114.1" y2="277.7"><stop stop-color="#a90000"/><stop offset="1" stop-color="#8d0000"/></linearGradient>
 <polygon points="110.5,272.1 111.1,278.6 118.8,276.1" fill="url(#safbe0fe513)" stroke="url(#safbe0fe513)" stroke-width="0.5"/>
 <linearGradient id="s0276f92671" gradientUnits="userSpaceOnUse" x1="70.0" y1="231.8" x2="76.5" y2="229.8"><stop stop-color="#e70000"/><stop offset="1" stop-color="#f60000"/></linearGradient>
@@ -1263,8 +1261,6 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <line x1="223.5" y1="72.9" x2="264.6" y2="34.5" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <line x1="264.6" y1="34.5" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <polygon points="221.2,155.3 317.4,97.0 308.0,181.6" fill="rgb(0,0,106)" stroke="rgb(0,0,106)" stroke-width="0.5"/>
-<line x1="308.0" y1="181.6" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
-<line x1="221.2" y1="155.3" x2="308.0" y2="181.6" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <line x1="307.9" y1="111.9" x2="313.1" y2="105.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="302.5" y1="118.5" x2="307.9" y2="111.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="297.0" y1="125.2" x2="302.5" y2="118.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -1274,12 +1270,10 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <line x1="273.4" y1="154.2" x2="279.5" y2="146.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="267.0" y1="161.9" x2="273.4" y2="154.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="260.5" y1="169.9" x2="267.0" y2="161.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="221.2" y1="155.3" x2="308.0" y2="181.6" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <polygon points="221.2,155.3 223.5,72.9 317.4,97.0" fill="rgb(0,0,106)" stroke="rgb(0,0,106)" stroke-width="0.5"/>
 <line x1="221.2" y1="155.3" x2="223.5" y2="72.9" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
-<line x1="223.5" y1="72.9" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <polygon points="308.0,181.6 317.4,97.0 352.2,54.7" fill="rgb(0,0,209)" stroke="rgb(0,0,209)" stroke-width="0.5"/>
-<line x1="308.0" y1="181.6" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
-<line x1="317.4" y1="97.0" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <line x1="350.7" y1="59.6" x2="354.9" y2="54.5" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="346.4" y1="64.9" x2="350.7" y2="59.6" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="342.0" y1="70.3" x2="346.4" y2="64.9" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
@@ -1289,7 +1283,13 @@ expression: "export_svg(\"Graphics3D[{Red, Sphere[{0,0,0}, 0.5], Blue, Cuboid[{1
 <line x1="323.2" y1="93.2" x2="328.1" y2="87.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="318.2" y1="99.3" x2="323.2" y2="93.2" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
 <line x1="313.1" y1="105.5" x2="318.2" y2="99.3" stroke="rgb(102,102,102)" stroke-width="0.5" stroke-linecap="round"/>
+<line x1="341.2" y1="135.3" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
+<line x1="308.0" y1="181.6" x2="341.2" y2="135.3" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
+<line x1="308.0" y1="181.6" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
+<line x1="308.0" y1="181.6" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <polygon points="223.5,72.9 352.2,54.7 317.4,97.0" fill="rgb(0,0,169)" stroke="rgb(0,0,169)" stroke-width="0.5"/>
+<line x1="223.5" y1="72.9" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
+<line x1="317.4" y1="97.0" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <line x1="317.4" y1="97.0" x2="352.2" y2="54.7" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 <line x1="223.5" y1="72.9" x2="317.4" y2="97.0" stroke="rgb(64,64,64)" stroke-width="1" stroke-linecap="round"/>
 </svg>

@@ -27808,6 +27808,260 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(export_svg("Graphics3D[Arrow[]]").contains("<svg"));
     }
 
+    /// Regression: the rim of a curved solid is stroked as many short
+    /// straight edge segments. With butt caps every joint left a notch, so
+    /// the rim of a `Cylinder` or `Cone` read as a toothed ring. Solid
+    /// outline edges are round-capped; dashed ones keep butt caps so their
+    /// dash lengths are unchanged.
+    #[test]
+    fn graphics3d_curved_rim_edges_are_round_capped() {
+      for prim in [
+        "Cylinder[{{0,0,0},{0,0,1}}, 0.5]",
+        "Cone[{{0,0,0},{1,2,3}}, 2]",
+        "Cylinder[{{1,-1,2},{3,4,0}}, 0.3]",
+      ] {
+        let svg = export_svg(&format!("Graphics3D[{prim}, Boxed -> False]"));
+        let edges: Vec<&str> = svg
+          .split('<')
+          .filter(|e| e.starts_with("line ") && e.contains("rgb(64,64,64)"))
+          .collect();
+        assert!(!edges.is_empty(), "no rim edges drawn for {prim}");
+        for edge in edges {
+          assert!(
+            edge.contains("stroke-linecap=\"round\""),
+            "rim edge of {prim} is not round-capped: {edge}"
+          );
+        }
+      }
+      let dashed = export_svg(
+        "Graphics3D[{EdgeForm[Dashed], Cylinder[]}, Boxed -> False]",
+      );
+      let dashed_edges: Vec<&str> = dashed
+        .split('<')
+        .filter(|e| e.starts_with("line ") && e.contains("stroke-dasharray"))
+        .collect();
+      assert!(!dashed_edges.is_empty(), "no dashed edges drawn");
+      assert!(dashed_edges.iter().all(|e| !e.contains("stroke-linecap")));
+    }
+
+    /// The filled triangles and the dark outline edges of a 3D SVG, in draw
+    /// order: `(index, corners)` and `(index, from, to)`.
+    #[allow(clippy::type_complexity)]
+    fn svg_faces_and_outlines(
+      svg: &str,
+    ) -> (
+      Vec<(usize, Vec<(f64, f64)>)>,
+      Vec<(usize, (f64, f64), (f64, f64))>,
+    ) {
+      let attr = |el: &str, name: &str| -> f64 {
+        let start = el.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+        let end = start + el[start..].find('"').unwrap();
+        el[start..end].parse().unwrap()
+      };
+      let (mut faces, mut outlines) = (Vec::new(), Vec::new());
+      for (i, el) in svg.split('<').enumerate() {
+        if el.starts_with("polygon ") {
+          let start = el.find("points=\"").unwrap() + 8;
+          let end = start + el[start..].find('"').unwrap();
+          let pts = el[start..end]
+            .split_whitespace()
+            .map(|p| {
+              let (x, y) = p.split_once(',').unwrap();
+              (x.parse().unwrap(), y.parse().unwrap())
+            })
+            .collect();
+          faces.push((i, pts));
+        } else if el.starts_with("line ") && el.contains("rgb(64,64,64)") {
+          outlines.push((
+            i,
+            (attr(el, "x1"), attr(el, "y1")),
+            (attr(el, "x2"), attr(el, "y2")),
+          ));
+        }
+      }
+      (faces, outlines)
+    }
+
+    /// How far `p` lies inside the triangle `t` (negative outside).
+    fn inset(t: &[(f64, f64)], p: (f64, f64)) -> f64 {
+      let side = |a: (f64, f64), b: (f64, f64)| {
+        let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+        ((b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0)) / len
+      };
+      let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
+      let lo = s.iter().copied().fold(f64::MAX, f64::min);
+      let hi = s.iter().copied().fold(f64::MIN, f64::max);
+      lo.max(-hi)
+    }
+
+    /// For each distinct outline segment: how deep inside the faces drawn
+    /// after its last stroke its midpoint lies (the most covering face).
+    fn outline_cover(svg: &str) -> Vec<((f64, f64), (f64, f64), f64)> {
+      let (faces, outlines) = svg_faces_and_outlines(svg);
+      let key =
+        |a: (f64, f64), b: (f64, f64)| if a <= b { (a, b) } else { (b, a) };
+      let mut last: Vec<(usize, (f64, f64), (f64, f64))> = Vec::new();
+      for (i, a, b) in outlines {
+        let k = key(a, b);
+        match last.iter_mut().find(|(_, x, y)| (*x, *y) == k) {
+          Some(entry) => entry.0 = i,
+          None => last.push((i, k.0, k.1)),
+        }
+      }
+      last
+        .into_iter()
+        .map(|(i, a, b)| {
+          let mid = (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1));
+          let cover = faces
+            .iter()
+            .filter(|(j, pts)| *j > i && pts.len() == 3 && pts[0] != pts[1])
+            .map(|(_, pts)| inset(pts, mid))
+            .fold(f64::MIN, f64::max);
+          (a, b, cover)
+        })
+        .collect()
+    }
+
+    /// Regression: the outline of a cylinder's far rim lies on its
+    /// silhouette, but each rim segment was stroked right after its own
+    /// side face, so the neighboring side faces painted after it covered
+    /// half its width and the rim looked toothed. No face drawn after the
+    /// last stroke of a silhouette edge may reach into it.
+    #[test]
+    fn graphics3d_silhouette_edges_not_painted_over() {
+      for (prim, view) in [
+        ("Cylinder[{{0,-0.6,3},{0,0.6,3}}]", "{3,-4,3}"),
+        ("Cylinder[{{0,0,0},{2,0,0}}, 0.5]", "{1.3,-2.4,2}"),
+        ("Cone[{{0,0,0},{0,0,2}}, 1]", "{2,-3,1}"),
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics3D[{prim}, ViewPoint -> {view}, Boxed -> False]"
+        ));
+        let (faces, _) = svg_faces_and_outlines(&svg);
+        let pts: Vec<(f64, f64)> =
+          faces.iter().flat_map(|(_, p)| p.iter().copied()).collect();
+        // Silhouette segments: every drawn point lies on one side of them.
+        let on_hull = |a: (f64, f64), b: (f64, f64)| {
+          let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
+          if len < 0.5 {
+            return false;
+          }
+          let d = |p: &(f64, f64)| {
+            ((b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0)) / len
+          };
+          pts.iter().all(|p| d(p) <= 0.3) || pts.iter().all(|p| d(p) >= -0.3)
+        };
+        let silhouette: Vec<_> = outline_cover(&svg)
+          .into_iter()
+          .filter(|(a, b, _)| on_hull(*a, *b))
+          .collect();
+        assert!(silhouette.len() >= 6, "{prim}: too few silhouette edges");
+        for (a, b, cover) in silhouette {
+          assert!(
+            cover < -0.3,
+            "{prim}: silhouette edge {a:?}-{b:?} is painted over ({cover})"
+          );
+        }
+      }
+    }
+
+    /// Regression for the same change: the edges where two faces turned
+    /// away from the viewer meet stay hidden behind the solid's front
+    /// faces, also when they end in a corner of a face drawn late.
+    #[test]
+    fn graphics3d_hidden_cuboid_edges_stay_hidden() {
+      let mut cases = vec![
+        (
+          "Cuboid[{1,1,1},{0,0,0}]".to_string(),
+          "{1.3,-2.4,2}".to_string(),
+        ),
+        (
+          "Cuboid[{0,0,0},{3,1,2}]".to_string(),
+          "{-2,-1,1.5}".to_string(),
+        ),
+      ];
+      // A sweep of tilts and view directions: some put a hidden edge right
+      // along the cut between the two triangles of a front face. Only the
+      // views that clearly show three faces (none seen nearly edge-on)
+      // have three hidden edges.
+      for tilt in [0.1_f64, 0.3, 0.5] {
+        let (s, c) = tilt.sin_cos();
+        let normals = [[c, 0.0, -s], [0.0, 1.0, 0.0], [s, 0.0, c]];
+        for k in 0..36 {
+          let azimuth = k as f64 * std::f64::consts::PI / 6.0;
+          let height = [1.0, 2.0, 3.5][k / 12];
+          let view = [4.0 * azimuth.cos(), 4.0 * azimuth.sin(), height];
+          let len =
+            (view[0] * view[0] + view[1] * view[1] + view[2] * view[2]).sqrt();
+          let clear = normals.iter().all(|n| {
+            (n[0] * view[0] + n[1] * view[1] + n[2] * view[2]).abs() / len > 0.2
+          });
+          if !clear {
+            continue;
+          }
+          cases.push((
+            format!(
+              "Rotate[Cuboid[{{-5.5,-0.5,2}},{{0,0.5,4}}], {tilt}, {{0,1,0}}, {{0,0,3}}]"
+            ),
+            format!("{{{:.3},{:.3},{:.3}}}", view[0], view[1], view[2]),
+          ));
+        }
+      }
+      assert!(cases.len() >= 40, "{}", cases.len());
+      for (cuboid, view) in cases {
+        let svg = export_svg(&format!(
+          "Graphics3D[{cuboid}, ViewPoint -> {view}, Boxed -> False]"
+        ));
+        let cover = outline_cover(&svg);
+        assert_eq!(cover.len(), 12, "{cuboid}: {cover:?}");
+        let hidden = cover.iter().filter(|(_, _, c)| *c > 0.0).count();
+        let shown = cover.iter().filter(|(_, _, c)| *c < 0.0).count();
+        assert_eq!((hidden, shown), (3, 9), "{cuboid}: {cover:?}");
+      }
+    }
+
+    /// Regression: an edge where two faces turned away from the viewer
+    /// meet can run right along the cut between the two triangles of a
+    /// front face, touching both of them only on that cut. It must still be
+    /// drawn before that face, not lifted over it, or it shows through.
+    #[test]
+    fn graphics3d_edge_between_back_faces_stays_hidden() {
+      let svg = export_svg(
+        "Graphics3D[{Cuboid[{-7,-5,0},{7,5,-0.4}], \
+         Rotate[Cuboid[{-5.5,-0.5,2},{0,0.5,4}], 0.2, {0,1,0}, {0,0,3}]}, \
+         ViewPoint -> {2,-4,2}, Boxed -> False]",
+      );
+      let (faces, outlines) = svg_faces_and_outlines(&svg);
+      let key =
+        |a: (f64, f64), b: (f64, f64)| if a <= b { (a, b) } else { (b, a) };
+      let mut last: Vec<(usize, (f64, f64), (f64, f64))> = Vec::new();
+      for (i, a, b) in outlines {
+        let k = key(a, b);
+        match last.iter_mut().find(|(_, x, y)| (*x, *y) == k) {
+          Some(entry) => entry.0 = i,
+          None => last.push((i, k.0, k.1)),
+        }
+      }
+      // An edge shows where a point of its last stroke is not covered by
+      // a face drawn after it (corners are rounded to a tenth of a pixel).
+      let shown = last
+        .iter()
+        .filter(|(i, a, b)| {
+          [0.2, 0.35, 0.5, 0.65, 0.8].iter().any(|t| {
+            let p = (a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1));
+            !faces.iter().any(|(j, pts)| {
+              j > i
+                && pts.len() == 3
+                && pts[0] != pts[1]
+                && inset(pts, p) > -0.15
+            })
+          })
+        })
+        .count();
+      // Each of the two boxes shows three faces and so nine edges.
+      assert_eq!((last.len(), shown), (24, 18));
+    }
+
     #[test]
     fn graphics3d_cylinder() {
       insta::assert_snapshot!(export_svg(
