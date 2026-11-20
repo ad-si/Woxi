@@ -29604,6 +29604,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // An `Inset[LocatorPane[pt, picture, …], …]` inside a graphic is drawn
+    // as the pane's picture, not printed as the pane's source text.
+    #[test]
+    fn inset_locator_pane_draws_its_picture() {
+      let svg = export_svg(
+        "Graphics[{Inset[LocatorPane[{0, 0}, \
+         Graphics[{Circle[]}, ImageSize -> {200, 150}, \
+         PlotRange -> {{-2, 2}, {-2, 2}}], Appearance -> None], \
+         {Center, Top}, {Center, Top}], Point[{0, 0}]}, \
+         ImageSize -> {200, 190}]",
+      );
+      assert!(!svg.contains("LocatorPane"), "not the source: {svg}");
+      assert!(!svg.contains("-Graphics-"), "not the source: {svg}");
+      assert!(svg.contains("<ellipse"), "the circle is drawn: {svg}");
+    }
+
     // `LocatorPane[locators, body]` shows `body` with a marker on every
     // locator. Wolfram's default marker is a small circle with a crosshair
     // through it; a Demonstration that lets you drag the vertices of a shape
