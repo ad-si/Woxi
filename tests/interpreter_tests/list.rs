@@ -19493,6 +19493,39 @@ mod cases {
     assert_case(r#"NestWhileList[f, x, test, 2]"#, r#"{x, f[x]}"#);
     assert_case(r#"NestWhileList[f, x, test, 3]"#, r#"{x, f[x], f[f[x]]}"#);
   }
+  // The iteration limit of NestWhile, NestWhileList, FixedPoint and
+  // FixedPointList defaults to Infinity: long runs must not stop early at
+  // an internal cap (regression: they stopped after 10000 steps).
+  #[test]
+  fn nest_while_has_no_default_iteration_cap() {
+    assert_case(r#"NestWhile[# + 1 &, 0, # < 25000 &]"#, r#"25000"#);
+    assert_case(
+      r#"NestWhile[# + 1 &, 0, # < 25000 &, 1, Infinity]"#,
+      r#"25000"#,
+    );
+    assert_case(
+      r#"Length[NestWhileList[# + 1 &, 0, # < 25000 &]]"#,
+      r#"25001"#,
+    );
+    assert_case(
+      r#"Module[{k = 0}, Length[NestWhileList[# &, 0, (k++ < 30000) &]]]"#,
+      r#"30001"#,
+    );
+    assert_case(r#"NestWhile[# + 1 &, 0, # < 25000 &, 1, 7]"#, r#"7"#);
+  }
+  #[test]
+  fn fixed_point_has_no_default_iteration_cap() {
+    assert_case(r#"FixedPoint[Min[# + 1, 25000] &, 0]"#, r#"25000"#);
+    assert_case(
+      r#"Length[FixedPointList[Min[# + 1, 25000] &, 0]]"#,
+      r#"25002"#,
+    );
+    assert_case(
+      r#"Length[FixedPointList[Min[# + 1, 25000] &, 0, Infinity]]"#,
+      r#"25002"#,
+    );
+    assert_case(r#"FixedPointList[Min[# + 1, 3] &, 0, 2]"#, r#"{0, 1, 2}"#);
+  }
   #[test]
   fn scan() {
     assert_case(r#"Scan[Print, {1, 2, 3}]"#, r#"Null"#);
