@@ -10580,7 +10580,6 @@ fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
-
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
   holes: &[Vec<Point3D>],
@@ -15215,33 +15214,30 @@ fn with_plot_label(
   if styled.italic {
     style_attrs.push_str(" font-style=\"italic\"");
   }
-  let label = match framed_layout {
-    Some((lines, _)) => {
-      use std::fmt::Write as _;
-      let mut out = String::new();
-      for line in lines {
-        // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
-        let keep = crate::functions::plot::preserve_blanks_attr(&line.markup);
-        let _ = writeln!(
-          out,
-          "{}<text x=\"{cx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
+  let label = if let Some((lines, _)) = framed_layout {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for line in lines {
+      // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+      let keep = crate::functions::plot::preserve_blanks_attr(&line.markup);
+      let _ = writeln!(
+        out,
+        "{}<text x=\"{cx:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
            fill=\"{fill}\"{style_attrs}{keep}>{}</text>",
-          line.frame_rect, line.baseline, line.markup
-        );
-      }
-      out
+        line.frame_rect, line.baseline, line.markup
+      );
     }
-    None => {
-      let label = styled.svg_scaled_stacked(1.0, cx, line_height);
-      // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
-      let keep = crate::functions::plot::preserve_blanks_attr(&label);
-      format!(
-        "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
+    out
+  } else {
+    let label = styled.svg_scaled_stacked(1.0, cx, line_height);
+    // A run of blanks the label asks for (`Row[{a, "   ", b}]`) is kept.
+    let keep = crate::functions::plot::preserve_blanks_attr(&label);
+    format!(
+      "<text x=\"{cx:.1}\" y=\"17\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
          fill=\"{fill}\"{style_attrs}{keep}>{label}</text>\n"
-      )
-    }
+    )
   };
   format!(
     "<svg {sizing} xmlns=\"http://www.w3.org/2000/svg\">\n\
