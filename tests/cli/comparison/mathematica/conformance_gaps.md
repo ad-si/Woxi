@@ -5655,13 +5655,14 @@ colors — wolframscript draws no highlight even though the plot's style names
 
 ### Standalone 3D plots ignore the camera options
 
-`Plot3D` and most other 3D plot functions (`ParametricPlot3D`,
-`ContourPlot3D`, …) draw their own picture with the
-default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
-the plot call itself change nothing (`RevolutionPlot3D` given a
-`ViewPoint`, `ViewVertical` or `ViewVector` is drawn from its symbolic form
-by the `Graphics3D` renderer instead, which honors them):
-`Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
+Most 3D plot functions (`ParametricPlot3D`, `ContourPlot3D`, …) draw their
+own picture with the default camera, so `ViewPoint`, `ViewAngle` and
+`SphericalRegion` given to the plot call itself change nothing
+(`RevolutionPlot3D` given a `ViewPoint`, `ViewVertical` or `ViewVector` is
+drawn from its symbolic form by the `Graphics3D` renderer instead, which
+honors them). `Plot3D` honors `ViewPoint` and `BoxRatios` but still ignores
+`ViewAngle`, `ViewVertical`, `ViewVector` and `SphericalRegion`:
+`Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewAngle -> Pi/10]` draws the same
 picture as without the option. The options are kept on the result, so
 `Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
 re-renders the scene through `Graphics3D` and honors them, including the
@@ -10453,16 +10454,6 @@ higher than Woxi's (15.6–31.2 instead of 11.7–27.3, same 3.9 spacing): Wolfr
 value range starts above Woxi's sampled minimum, and its slice even shows a
 band below the lowest legend band. How Wolfram samples the slice planes
 for the value range has not been measured.
-
-### Large 3D axis labels under `SphericalRegion -> True`
-
-`Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, SphericalRegion ->
-True, AxesLabel -> {…, …, Style["zzz", Large, Bold]}]` draws the vertical
-axis's large label partly outside the picture's left edge (its center about
-10 px from it). Without `SphericalRegion` the picture leaves the label room.
-Shrinking the framing sphere to fit the labels (fitting them together with
-the contents sphere) does not settle on a layout that keeps the label
-inside, and was not checked against `wolframscript`.
 
 ### `Style[…, "Input"]` text weight
 

@@ -3420,9 +3420,9 @@ mod tests {
     fn large_styled_3d_axes_labels_stay_inside_the_picture() {
       // A label set in a large font (`Style[…, Large]`) is fitted into the
       // picture at its own size, not at the default label size, so the
-      // vertical axis's label on the left edge is not cut off. (Under
-      // `SphericalRegion -> True` it still is: see `conformance_gaps.md`.)
-      for region in ["False"] {
+      // vertical axis's label on the left edge is not cut off, also when
+      // the picture is framed by the sphere around its box.
+      for region in ["False", "True"] {
         let svg = svg_of(&format!(
           "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
          SphericalRegion -> {region}, \
