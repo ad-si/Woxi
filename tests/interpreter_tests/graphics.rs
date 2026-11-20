@@ -9163,7 +9163,7 @@ mod plot3d {
             "a translucent face must not stroke its internal cuts: {tri}"
           );
         }
-        let corner_count = corners.matches("{").count() - 1;
+        let corner_count = corners.matches('{').count() - 1;
         let outline = svg.lines().filter(|l| l.starts_with("<line ")).count();
         assert_eq!(outline, corner_count, "{svg}");
       }
