@@ -527,8 +527,20 @@ fn samples_to_series(samples: Vec<Sample>) -> (Vec<Vec<(f64, f64)>>, Vec<f64>) {
 /// range and `t` over the parameter range first. A named gradient colors by
 /// the scaled `x`. Consecutive runs share their boundary point so the curve
 /// stays connected. Returns the run polylines and the RGBA color of each.
+/// (See [`ColorRuns`].)
 /// `radii` (PolarPlot) gives each sample's radius, passed as a fourth
 /// argument `r` (scaled over its range like `t`), as `f[x, y, θ, r]`.
+/// The constant-color runs a `ColorFunction` curve is drawn as: each run's
+/// polyline, its RGBA color, the index of the curve it belongs to, and
+/// whether it continues the run before it (the same line, so a dash pattern
+/// carries on across the join).
+struct ColorRuns {
+  runs: Vec<Vec<(f64, f64)>>,
+  colors: Vec<(u8, u8, u8, u8)>,
+  owners: Vec<usize>,
+  continues: Vec<bool>,
+}
+
 fn color_function_series(
   curves: &[Vec<(f64, f64)>],
   params: &[Vec<f64>],
@@ -538,7 +550,7 @@ fn color_function_series(
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
   (t_min, t_max): (f64, f64),
-) -> (Vec<Vec<(f64, f64)>>, Vec<(u8, u8, u8, u8)>, Vec<usize>) {
+) -> ColorRuns {
   let scale = |v: f64, lo: f64, hi: f64| {
     if hi > lo { (v - lo) / (hi - lo) } else { 0.0 }
   };
@@ -585,6 +597,7 @@ fn color_function_series(
   let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
   let mut colors: Vec<(u8, u8, u8, u8)> = Vec::new();
   let mut owners: Vec<usize> = Vec::new();
+  let mut continues: Vec<bool> = Vec::new();
   for (ci, (curve, ts)) in curves.iter().zip(params).enumerate() {
     // Index of the run still being extended (None after a gap).
     let mut open: Option<usize> = None;
@@ -604,6 +617,7 @@ fn color_function_series(
       match open {
         Some(i) if colors[i] == c => runs[i].push(b),
         _ => {
+          continues.push(open.is_some());
           runs.push(vec![a, b]);
           colors.push(c);
           owners.push(ci);
@@ -612,7 +626,12 @@ fn color_function_series(
       }
     }
   }
-  (runs, colors, owners)
+  ColorRuns {
+    runs,
+    colors,
+    owners,
+    continues,
+  }
 }
 
 /// Sample a whole-expression curve at parameter `t`. The evaluated body may
@@ -1255,7 +1274,12 @@ fn render_curves(
   // gets the colored runs, since the parameter `f` needs is gone by then.
   let mut colored_runs: Option<(Vec<Vec<(f64, f64)>>, Vec<SeriesStyle>)> = None;
   let svg = if let Some(cf) = plot_opts.color_function.take() {
-    let (runs, colors, owners) = color_function_series(
+    let ColorRuns {
+      runs,
+      colors,
+      owners,
+      continues,
+    } = color_function_series(
       all_points,
       all_params,
       radii,
@@ -1269,7 +1293,8 @@ fn render_curves(
     plot_opts.plot_style = colors
       .iter()
       .zip(&owners)
-      .map(|(&(r, g, b, a), &curve)| {
+      .zip(&continues)
+      .map(|((&(r, g, b, a), &curve), &continues_previous)| {
         // Runs keep the weight and opacity of the curve they came from.
         let mut st = if base.is_empty() {
           SeriesStyle::default()
@@ -1281,6 +1306,7 @@ fn render_curves(
           f64::from(g) / 255.0,
           f64::from(b) / 255.0,
         ));
+        st.continues_previous = continues_previous;
         // `Directive[color, Opacity[a]]` results make the run translucent,
         // on top of any opacity the curve's own style gives it.
         if a < 255 {
@@ -1315,6 +1341,13 @@ fn render_curves(
     }
     None => (all_points, &plot_opts.plot_style),
   };
+  // Colored runs already carry their colors: they must not take the color
+  // function along a second time.
+  let color_function = if colored_runs.is_some() {
+    plot_opts.color_function.take()
+  } else {
+    None
+  };
   let source = build_plot_source(
     points,
     styles,
@@ -1326,6 +1359,9 @@ fn render_curves(
     plot_opts.filling_style,
     options,
   );
+  if color_function.is_some() {
+    plot_opts.color_function = color_function;
+  }
   Ok(crate::graphics_result_with_source(svg, source))
 }
 
