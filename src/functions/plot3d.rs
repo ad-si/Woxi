@@ -10404,7 +10404,6 @@ fn triangulate_face3d(points: &[Point3D]) -> Vec<(Point3D, Point3D, Point3D)> {
 /// triangles are lifted back to 3D. The second result marks, per triangle,
 /// which of its three edges lie on the outer boundary or on a hole
 /// boundary — the rest are internal cuts that must not be stroked.
-
 fn tessellate_polygon_with_holes(
   outer: &[Point3D],
   holes: &[Vec<Point3D>],

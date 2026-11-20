@@ -26368,13 +26368,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // plot has settled its `All` into the range of its data.
       let settled_all = !show_sets_plot_range
         && plot_sources.first().is_some_and(|ps| ps.settles_all_range);
-      let automatic_range = merged_options.iter().all(|o| {
-        !matches!(option_name_value(o), Some(("PlotRange", v))
-          if !matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic")
-            && !(settled_all
-              && crate::functions::plot::plot_range_all_axes(&v)
-                != (false, false)))
-      });
+      let automatic_range =
+        merged_options.iter().all(|o| match option_name_value(o) {
+          Some(("PlotRange", v)) => {
+            matches!(v.as_ref(), Expr::Identifier(s) if s == "Automatic")
+              || (settled_all
+                && crate::functions::plot::plot_range_all_axes(&v)
+                  != (false, false))
+          }
+          _ => true,
+        });
       if automatic_range
         && let Some(ps) = plot_sources.first()
         && [ps.x_range, ps.y_range]
