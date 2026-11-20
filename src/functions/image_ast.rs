@@ -277,6 +277,40 @@ pub fn image_to_svg_document(
   )
 }
 
+/// `Magnify[image]` / `Magnify[image, s]` as the image it displays: the
+/// same raster shown at `s` times its display size (its `ImageSize`, or its
+/// pixel dimensions without one). `None` when `expr` is not a magnified
+/// image or the factor is not a positive number.
+pub fn magnified_image(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Magnify" || args.is_empty() || args.len() > 2 {
+    return None;
+  }
+  let factor = match args.get(1) {
+    Some(f) => crate::functions::math_ast::try_eval_to_f64(f)?,
+    None => 1.0,
+  };
+  if !(factor.is_finite() && factor > 0.0) {
+    return None;
+  }
+  let mut image = args[0].clone();
+  let Expr::Image {
+    width,
+    height,
+    display_size,
+    ..
+  } = &mut image
+  else {
+    return None;
+  };
+  let (w, h) = display_size.unwrap_or((*width, *height));
+  let scale = |v: u32| ((v as f64 * factor).round() as u32).max(1);
+  *display_size = Some((scale(w), scale(h)));
+  Some(image)
+}
+
 // ─── Core functions (Phase 1) ──────────────────────────────────────────────
 
 /// Image[data] / Image[data, type] / Image[data, type, opts…] — construct

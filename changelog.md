@@ -40,6 +40,9 @@
     out of it.
 - Woxi Studio fits a picture of automatic size that is taller than a
     Manipulate's `ContentSize -> {w, h}` area to that height.
+- `Magnify[image, s]` shows the image at `s` times its size in notebooks
+    (also inside a fixed-size `Pane`), and `ExportString` draws it at that
+    size, instead of showing no picture.
 
 # 2026-11-08 - 0.4.0
 

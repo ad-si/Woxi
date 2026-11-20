@@ -135,6 +135,66 @@ mod image_core {
     }
   }
 
+  // Regression: `Magnify[image, s]` showed no picture at all (only the
+  // `Magnify[-Image-, s]` echo), also inside a fixed-size `Pane` — the way a
+  // Manipulate body switches to an archived photograph. The image is shown
+  // at `s` times its size.
+  #[test]
+  fn magnified_image_is_shown_scaled() {
+    clear_state();
+    for (code, size) in [
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]], 2]",
+        "width='40' height='60'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]], 1/2]",
+        "width='10' height='15'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]]]",
+        "width='20' height='30'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}], ImageSize -> {50, 75}], 2]",
+        "width='100' height='150'",
+      ),
+      (
+        "Pane[If[True, Magnify[Image[ConstantArray[0.5, {30, 20}]], 3], 0], \
+         ImageSize -> {100, 100}, Alignment -> Center]",
+        "width='60' height='90'",
+      ),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      let svg = r.graphics.expect("expected the image as graphics output");
+      assert!(svg.contains("<image"), "{code}: {svg}");
+      assert!(svg.contains(size), "{code}: {svg}");
+    }
+  }
+
+  // `ExportString` of a magnified image draws the raster at the magnified
+  // size (the image document's XML declaration kept the generic resize from
+  // applying, so it stayed at its own size).
+  #[test]
+  fn exported_magnified_image_is_scaled() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Magnify[Image[ConstantArray[0.5, {30, 20}]], 2], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("width='40' height='60'"), "{svg}");
+  }
+
+  // The CLI keeps the symbolic echo of a magnified image, like wolframscript.
+  #[test]
+  fn magnified_image_echo_in_cli() {
+    clear_state();
+    assert_eq!(
+      interpret("Magnify[Image[{{0, 1}, {1, 0}}], 2]").unwrap(),
+      "Magnify[-Image-, 2]"
+    );
+  }
+
   // Regression: an image's SVG writes its size in single quotes
   // (`width='20'`), which the pane layout didn't read, so `ExportString`
   // placed the picture as if it were 100 x 30.

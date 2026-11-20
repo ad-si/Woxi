@@ -4346,6 +4346,12 @@ fn image_display_svg(expr: &syntax::Expr) -> Option<String> {
       *display_size,
     ))
   } else if VISUAL_MODE.with(|v| *v.borrow())
+    && let Some(image) = functions::image_ast::magnified_image(expr)
+  {
+    // A notebook shows `Magnify[image, s]` as the picture at `s` times its
+    // size (the CLI keeps the symbolic `Magnify[-Image-, s]` echo).
+    image_display_svg(&image)
+  } else if VISUAL_MODE.with(|v| *v.borrow())
     && let Some((width, height, channels, data)) =
       functions::image_ast::image3d_stack_projection(expr)
   {
