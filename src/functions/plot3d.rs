@@ -17230,6 +17230,10 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_axes = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // The horizontal extents a full `PlotRange -> {{x…}, {y…}, {z…}}` pins.
+  let mut x_clip: Option<(f64, f64)> = None;
+  let mut y_clip: Option<(f64, f64)> = None;
+  let mut box_ratios_explicit: Option<[f64; 3]> = None;
   let mut plot_style: Option<Expr> = None;
   let mut axis: [f64; 3] = [0.0, 0.0, 1.0];
   let mut color_fn = FacetColorFunction::default();
@@ -17278,12 +17282,33 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             },
             _ => None,
           };
+          let pair = |items: &[Expr]| -> Option<(f64, f64)> {
+            let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0]).ok()?)?;
+            let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1]).ok()?)?;
+            (lo < hi).then_some((lo, hi))
+          };
           if let Some(items) = z_items {
-            let lo = try_eval_to_f64(&evaluate_expr_to_expr(&items[0])?);
-            let hi = try_eval_to_f64(&evaluate_expr_to_expr(&items[1])?);
-            if let (Some(lo), Some(hi)) = (lo, hi) {
-              z_clip = Some((lo, hi));
+            z_clip = pair(&items);
+          }
+          if let Expr::List(items) = replacement.as_ref()
+            && items.len() == 3
+          {
+            for (slot, item) in
+              [&mut x_clip, &mut y_clip].into_iter().zip(items)
+            {
+              if let Expr::List(r) = item
+                && r.len() == 2
+              {
+                *slot = pair(r);
+              }
             }
+          }
+        }
+        Expr::Identifier(name) if name == "BoxRatios" => {
+          if let Some(r) = eval_vec3(replacement)
+            && r.iter().all(|v| *v > 0.0 && v.is_finite())
+          {
+            box_ratios_explicit = Some(r);
           }
         }
         Expr::Identifier(name) if name == "Boxed" => match replacement.as_ref()
@@ -17304,7 +17329,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // rotates the (fx, fy) vector by theta instead of assuming fy = 0.
   let has_theta = theta_var.is_some();
 
-  let camera = Camera::default();
   let n_t = GRID_N;
   let n_theta = GRID_N;
   let t_step = (t_max - t_min) / n_t as f64;
@@ -17441,16 +17465,24 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   let (z_lo, z_hi) = z_clip.unwrap_or((global_z_min, global_z_max));
-  let z_range = if (z_hi - z_lo).abs() < 1e-15 {
-    1.0
+  // The displayed box: a full `PlotRange` pins every side, otherwise the
+  // sweep's own extent (symmetric about the z axis for the default axis).
+  let x_range = x_clip.unwrap_or(if axis_is_z {
+    (-global_r_max, global_r_max)
   } else {
-    z_hi - z_lo
-  };
-
-  let r_scale = if global_r_max < 1e-15 {
-    1.0
+    (global_x_min, global_x_max)
+  });
+  let y_range = y_clip.unwrap_or(if axis_is_z {
+    (-global_r_max, global_r_max)
   } else {
-    global_r_max
+    (global_y_min, global_y_max)
+  });
+  let extent = |(lo, hi): (f64, f64)| -> f64 {
+    if (hi - lo).abs() < 1e-15 {
+      1.0
+    } else {
+      hi - lo
+    }
   };
 
   // `RevolutionPlot3D` draws a single surface, so `PlotStyle` is one style
@@ -17460,31 +17492,42 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     apply_3d_directive(ps, &mut style);
     style
   });
+
+  // Wolfram flattens the box of a plain profile `z = f(t)` swept about the
+  // z axis to `BoxRatios -> {2, 2, 1/GoldenRatio}`; every other surface
+  // keeps its true proportions (`BoxRatios -> Automatic`). An explicit
+  // `BoxRatios` wins either way. The box is normalized so its longest side
+  // spans ±1.
+  let profile_box = all_profiles && axis_is_z;
+  let raw_ratios = box_ratios_explicit.unwrap_or(if profile_box {
+    [1.0, 1.0, 0.5 * 0.618_033_988_749_894_9]
+  } else {
+    [extent(x_range), extent(y_range), extent((z_lo, z_hi))]
+  });
+  let ratio_max = raw_ratios.iter().copied().fold(0.0_f64, f64::max);
+  let box_ratios = raw_ratios.map(|r| r / ratio_max);
+  // A true-proportion box is seen in perspective, as `ParametricPlot3D`'s.
+  let camera = if profile_box && box_ratios_explicit.is_none() {
+    Camera::default()
+  } else {
+    Camera::for_box(box_ratios)
+  };
   let scene = Scene::new(&camera, &args[opt_start..]);
 
-  let z_scale = if all_profiles && axis_is_z {
-    0.5 * 0.618_033_988_749_894_9
-  } else {
-    Z_SCALE
-  };
-  let nz = |z: f64| -> f64 {
-    let cz = z.clamp(z_lo, z_hi);
-    ((cz - z_lo) / z_range) * 2.0 * z_scale - z_scale
+  let normalize = |p: Point3D| -> Point3D {
+    let axis = |v: f64, (lo, hi): (f64, f64), r: f64| {
+      norm_extent(v.clamp(lo.min(hi), hi.max(lo)), lo, hi) * r
+    };
+    Point3D {
+      x: axis(p.x, x_range, box_ratios[0]),
+      y: axis(p.y, y_range, box_ratios[1]),
+      z: axis(p.z, (z_lo, z_hi), box_ratios[2]),
+    }
   };
 
   // The style `ColorFunction` gives the facet with corners `ps`, evaluated
   // at the facet's center in world coordinates; it takes precedence over
   // `PlotStyle`.
-  let x_range = if axis_is_z {
-    (-global_r_max, global_r_max)
-  } else {
-    (global_x_min, global_x_max)
-  };
-  let y_range = if axis_is_z {
-    (-global_r_max, global_r_max)
-  } else {
-    (global_y_min, global_y_max)
-  };
   let facet_style = |ps: [Point3D; 3]| -> Option<StyleState3D> {
     color_fn.is_set().then_some(())?;
     let mid = |f: &dyn Fn(&Point3D) -> f64| ps.iter().map(f).sum::<f64>() / 3.0;
@@ -17508,22 +17551,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let p10 = grid[i + 1][j];
         let p01 = grid[i][j + 1];
         let p11 = grid[i + 1][j + 1];
-
-        let normalize = |p: Point3D| -> Point3D {
-          if axis_is_z {
-            Point3D {
-              x: p.x / r_scale,
-              y: p.y / r_scale,
-              z: nz(p.z),
-            }
-          } else {
-            Point3D {
-              x: norm_extent(p.x, global_x_min, global_x_max),
-              y: norm_extent(p.y, global_y_min, global_y_max),
-              z: nz(p.z),
-            }
-          }
-        };
 
         // Triangle 1: p00, p10, p01
         if let (Some(pp00), Some(pp10), Some(pp01)) = (p00, p10, p01) {
@@ -17632,21 +17659,6 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // surface's edges, as `ParametricPlot3D` draws them.
   let mut mesh_lines: Vec<MeshLine> = Vec::new();
   if mesh_mode == MeshMode::Default {
-    let normalize = |p: Point3D| -> Point3D {
-      if axis_is_z {
-        Point3D {
-          x: p.x / r_scale,
-          y: p.y / r_scale,
-          z: nz(p.z),
-        }
-      } else {
-        Point3D {
-          x: norm_extent(p.x, global_x_min, global_x_max),
-          y: norm_extent(p.y, global_y_min, global_y_max),
-          z: nz(p.z),
-        }
-      }
-    };
     let extra_bias = MESH_DEPTH_BIAS
       * ((50.0 / n_t.min(n_theta).max(1) as f64).max(1.0) - 1.0);
     let segment = |a: Point3D, b: Point3D| {
@@ -17816,9 +17828,18 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if !names("BoxRatios") {
     defaults.push(rule_expr(
       id_expr("BoxRatios"),
-      Expr::List(
-        vec![Expr::Integer(1), Expr::Integer(1), Expr::Real(z_scale)].into(),
-      ),
+      if profile_box {
+        Expr::List(
+          vec![
+            Expr::Integer(1),
+            Expr::Integer(1),
+            Expr::Real(box_ratios[2]),
+          ]
+          .into(),
+        )
+      } else {
+        id_expr("Automatic")
+      },
     ));
   }
   if !names("PlotRange") {
@@ -17851,7 +17872,7 @@ pub fn revolution_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     full_width,
     mesh_mode,
     show_axes,
-    [1.0, 1.0, z_scale],
+    box_ratios,
     &[None, None, None],
     !image_height_is_explicit(args),
     args,

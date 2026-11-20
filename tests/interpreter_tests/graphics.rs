@@ -8378,6 +8378,76 @@ mod plot3d {
         ));
       }
 
+      /// Width and height of the drawn surface: the extent of every
+      /// `<polygon>` vertex in the SVG.
+      fn surface_extent(svg: &str) -> (f64, f64) {
+        let (mut x0, mut x1, mut y0, mut y1) = (
+          f64::INFINITY,
+          f64::NEG_INFINITY,
+          f64::INFINITY,
+          f64::NEG_INFINITY,
+        );
+        for tag in svg.split("<polygon points=\"").skip(1) {
+          let points = tag.split('"').next().unwrap();
+          for pair in points.split_whitespace() {
+            let mut it = pair.split(',').map(|v| v.parse::<f64>().unwrap());
+            let (x, y) = (it.next().unwrap(), it.next().unwrap());
+            x0 = x0.min(x);
+            x1 = x1.max(x);
+            y0 = y0.min(y);
+            y1 = y1.max(y);
+          }
+        }
+        assert!(x0.is_finite(), "expected a drawn surface: {svg}");
+        (x1 - x0, y1 - y0)
+      }
+
+      const SPINDLE: &str = "RevolutionPlot3D[{t (1 - t), t}, {t, 0, 1}, \
+                             Mesh -> None, Boxed -> False, Axes -> None";
+
+      /// An `{r, z}` profile keeps its true proportions
+      /// (`BoxRatios -> Automatic`): a spindle twice as tall as it is wide
+      /// used to be squashed into a flat disc.
+      #[test]
+      fn parametric_profile_keeps_true_proportions() {
+        let (w, h) = surface_extent(&export_svg(&format!("{SPINDLE}]")));
+        assert!(h > 1.4 * w, "expected a tall spindle, got {w} x {h}");
+        clear_state();
+        assert_eq!(
+          interpret(
+            "BoxRatios /. Options[RevolutionPlot3D[{t, t}, {t, 0, 1}]]"
+          )
+          .unwrap(),
+          "Automatic"
+        );
+      }
+
+      /// An explicit `BoxRatios` reshapes the box of an `{r, z}` profile.
+      #[test]
+      fn parametric_profile_box_ratios() {
+        let (w, h) = surface_extent(&export_svg(&format!(
+          "{SPINDLE}, BoxRatios -> {{1, 1, 1/4}}]"
+        )));
+        assert!(w > 1.5 * h, "expected a flattened spindle, got {w} x {h}");
+      }
+
+      /// The horizontal sides of a full `PlotRange` set the box, so a wider
+      /// box draws the same surface smaller.
+      #[test]
+      fn full_plot_range_sets_horizontal_extent() {
+        let range = |r: f64| {
+          surface_extent(&export_svg(&format!(
+            "{SPINDLE}, PlotRange -> {{{{-{r}, {r}}}, {{-{r}, {r}}}, {{0, 1}}}}]"
+          )))
+        };
+        let (narrow_w, _) = range(0.5);
+        let (wide_w, _) = range(2.0);
+        assert!(
+          wide_w < 0.6 * narrow_w,
+          "expected a smaller surface in the wider box: {wide_w} vs {narrow_w}"
+        );
+      }
+
       /// Every `<polygon>` fill color in the SVG, as `(r, g, b)` triples —
       /// see the identical helper documented in `plot3d::options`.
       fn fill_colors(svg: &str) -> Vec<(u32, u32, u32)> {
