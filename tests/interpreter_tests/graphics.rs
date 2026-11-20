@@ -10433,6 +10433,69 @@ mod plot3d {
       }
     }
 
+    // Regression: the surface plots (`Plot3D`, `ListPlot3D`, …) ignored
+    // `ImagePadding` and filled the whole picture. Like `Graphics3D` they
+    // lay the scene out in the region inside the band and keep their full
+    // `ImageSize`.
+    #[test]
+    fn surface_plot_image_padding_lays_out_the_scene_inside_the_band() {
+      fn polygon_extent(svg: &str) -> (f64, f64, f64, f64) {
+        let mut ext = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for chunk in svg.split("<polygon points=\"").skip(1) {
+          let points = chunk.split('"').next().unwrap();
+          for pair in points.split_whitespace() {
+            let (x, y) = pair.split_once(',').unwrap();
+            let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+            ext = (ext.0.min(x), ext.1.max(x), ext.2.min(y), ext.3.max(y));
+          }
+        }
+        ext
+      }
+      for plot in [
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, Mesh -> None, PlotPoints -> 5",
+        "ListPlot3D[Flatten[Table[{x, y, Sin[x y]}, {x, 0., 3, 0.5}, \
+         {y, 0., 3, 0.5}], 1], Mesh -> None",
+      ] {
+        let padded = export_svg(&format!(
+          "{plot}, ImageSize -> {{300, 200}}, \
+           ImagePadding -> {{{{30, 10}}, {{0, 40}}}}]"
+        ));
+        let inner = export_svg(&format!("{plot}, ImageSize -> {{260, 160}}]"));
+        assert!(
+          padded.starts_with("<svg width=\"300\" height=\"200\""),
+          "{}",
+          &padded[..80]
+        );
+        let (p, q) = (polygon_extent(&padded), polygon_extent(&inner));
+        let close = |a: f64, b: f64| (a - b).abs() < 0.15;
+        assert!(
+          close(p.0, q.0 + 30.0) && close(p.1, q.1 + 30.0),
+          "{plot}: {p:?} {q:?}"
+        );
+        assert!(
+          close(p.2, q.2 + 40.0) && close(p.3, q.3 + 40.0),
+          "{plot}: {p:?} {q:?}"
+        );
+      }
+      // A single number pads every side of a picture whose height follows
+      // the box: the picture grows by the bands.
+      let padded =
+        export_svg("Plot3D[x y, {x, 0, 1}, {y, 0, 1}, ImagePadding -> 20]");
+      let inner =
+        export_svg("Plot3D[x y, {x, 0, 1}, {y, 0, 1}, ImageSize -> 320]");
+      let size = |svg: &str| -> (u32, u32) {
+        let attr = |name: &str| -> u32 {
+          let start = svg.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+          svg[start..].split('"').next().unwrap().parse().unwrap()
+        };
+        (attr("width"), attr("height"))
+      };
+      let (pw, ph) = size(&padded);
+      let (iw, ih) = size(&inner);
+      assert_eq!(pw, 360);
+      assert_eq!((iw, ph), (320, ih + 40));
+    }
+
     /// A `Manipulate` frame frames its 3D graphics by the sphere around
     /// the box, as Wolfram does: a Demonstration's snapshots of a
     /// `Show[Plot3D[…], Graphics3D[…]]` cube of side 15 at `ImageSize ->
