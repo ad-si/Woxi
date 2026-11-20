@@ -21649,6 +21649,18 @@ pub(crate) fn stacked_scripts_markup(sub: &str, sup: &str) -> String {
   }
 }
 
+/// The width of `Spacer[args]` in [`estimate_display_width`]'s units:
+/// advances of the standard 14-point text, 8.4 points each.
+fn spacer_char_width(args: &[Expr]) -> f64 {
+  const CHAR_W: f64 = 8.4;
+  let pts = match args.first() {
+    Some(Expr::List(dims)) => dims.first().and_then(expr_to_f64),
+    Some(w) => expr_to_f64(w),
+    None => None,
+  };
+  pts.unwrap_or(1.0).max(0.0) / CHAR_W
+}
+
 /// The widths of the lines a `Row` part breaks into: one entry for a part
 /// without a line break, and one per line for a string (or a styled
 /// string) that contains `\n`.
@@ -21998,6 +22010,11 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
             .max(estimate_display_width(&args[2]))
             * 0.7
       }
+      // `Spacer[w]` is a gap `w` printer's points wide (`Spacer[{w, h}]`
+      // gives the width first). The estimate counts characters of the
+      // standard 14-point text, so the gap is that many character
+      // advances — not the `Spacer[…]` source text.
+      "Spacer" => spacer_char_width(args),
       // Row[{a, b, …}] concatenates its parts, joined by the separator.
       "Row" if !args.is_empty() => match &args[0] {
         Expr::List(parts) => {
@@ -22006,7 +22023,7 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
             .filter(|s| !crate::syntax::is_rule_expr(s))
             .map_or(0.0, |s| match s {
               Expr::FunctionCall { name, args: sargs } if name == "Spacer" => {
-                sargs.first().and_then(expr_to_f64).unwrap_or(1.0)
+                spacer_char_width(sargs)
               }
               other => estimate_display_width(other),
             });

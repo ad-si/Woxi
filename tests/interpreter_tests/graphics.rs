@@ -62609,6 +62609,47 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(!svg.contains("125%"), "{svg}");
 }
 
+mod grid_spacer_width {
+  use super::*;
+
+  fn grid_svg_width(code: &str) -> u32 {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let rest = svg.split_once("width=\"").expect("svg width").1;
+    rest.split('"').next().unwrap().parse().unwrap()
+  }
+
+  /// Regression: a `Spacer[w]` inside a grid cell was measured as the
+  /// text `Spacer[w]`, so columns of `Row[{…, Spacer[3], …}]` cells came
+  /// out about 90 points too wide. It adds exactly `w` points.
+  #[test]
+  fn spacer_item_adds_its_points() {
+    let base = grid_svg_width(r#"Grid[{{"El"}}]"#);
+    for w in [3, 17, 40] {
+      assert_eq!(
+        grid_svg_width(&format!(r#"Grid[{{{{Row[{{Spacer[{w}], "El"}}]}}}}]"#)),
+        base + w
+      );
+    }
+    let empty = grid_svg_width(r#"Grid[{{""}}]"#);
+    assert_eq!(grid_svg_width("Grid[{{Spacer[{20, 5}]}}]"), empty + 20);
+  }
+
+  /// Regression: a `Spacer[w]` row separator counted `w` characters
+  /// instead of `w` points.
+  #[test]
+  fn spacer_separator_adds_its_points() {
+    let base = grid_svg_width(r#"Grid[{{Row[{"El", "El"}]}}]"#);
+    assert_eq!(
+      grid_svg_width(r#"Grid[{{Row[{"El", "El"}, Spacer[30]]}}]"#),
+      base + 30
+    );
+    assert_eq!(
+      grid_svg_width(r#"Grid[{{Row[{"El", "El", "El"}, Spacer[5]]}}]"#),
+      grid_svg_width(r#"Grid[{{Row[{"El", "El", "El"}]}}]"#) + 10
+    );
+  }
+}
+
 /// `Inset[Rotate[text, θ], pos]` in a plot's `Epilog` draws the text turned
 /// by θ, not the literal `Rotate[…]` source.
 #[test]
