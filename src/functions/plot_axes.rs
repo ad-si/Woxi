@@ -7,8 +7,7 @@
 //! tick labels) to [`origin_axes_svg`].
 
 use crate::functions::plot::{
-  SeriesStyle, axis_tick_step, format_tick_with_step, minor_tick_divisions,
-  style_stroke,
+  SeriesStyle, axis_tick_step, minor_tick_divisions, style_stroke,
 };
 use crate::functions::plot_padding::{TICK_LABEL_GAP, ascent, line_height};
 
@@ -173,9 +172,9 @@ impl AxisTicks {
         let v = if v.abs() < minor * 1e-6 { 0.0 } else { v };
         ticks.majors.push((
           v,
-          crate::functions::graphics::svg_escape(&format_tick_with_step(
-            v, major,
-          )),
+          crate::functions::graphics::svg_escape(
+            &crate::functions::plot::format_axis_tick(v, major, min, max),
+          ),
         ));
       } else {
         ticks.minors.push(v);
