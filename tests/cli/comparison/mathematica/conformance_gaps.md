@@ -9476,7 +9476,8 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - Structured mathematical plot titles and legend entries now use native
   layout boxes, including stacked fractions, binomials and joined radicals.
   Some curve annotations and explicit tick labels still use text markup;
-  `Ticks -> {{Pi/2, 3 Pi/2}}` labels read `π/2` rather than stacked fractions.
+  a `Plot`'s `Ticks -> {{Pi/2, 3 Pi/2}}` labels read `π/2` rather than
+  stacked fractions (a `Graphics` axis already stacks them).
 - `PlotTheme -> "Monochrome"` in a list plot draws every series black but
   without the theme's per-series `PlotMarkers` shapes.
 - `Callout[f, label, Above]` puts the label straight above its anchor with

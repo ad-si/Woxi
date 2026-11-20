@@ -11733,6 +11733,104 @@ enum TickSpec {
   Explicit(Vec<(f64, Option<String>)>),
 }
 
+/// The stacked-fraction label text (in the `"num\n--\nden"` form
+/// [`fraction_label_parts`] reads) of a tick whose position or label is a
+/// fraction — `Pi/2`, `-3 Pi/4`, `1/3` — or `None` for anything else.
+/// Wolfram typesets such tick labels in `TraditionalForm`, numerator over
+/// denominator, not as the inline `π/2`.
+fn tick_fraction_label(e: &Expr) -> Option<String> {
+  use crate::functions::math_ast::{denominator_ast, numerator_ast};
+  // A string, a styled label or an already numeric value is drawn as is.
+  if !matches!(
+    e,
+    Expr::FunctionCall { .. } | Expr::BinaryOp { .. } | Expr::UnaryOp { .. }
+  ) {
+    return None;
+  }
+  let v = crate::evaluator::evaluate_expr_to_expr(e).ok()?;
+  let is_quotient = match &v {
+    Expr::FunctionCall { name, .. } => name == "Rational" || name == "Times",
+    _ => false,
+  };
+  if !is_quotient {
+    return None;
+  }
+  let den = denominator_ast(std::slice::from_ref(&v)).ok()?;
+  if matches!(den, Expr::Integer(1)) {
+    return None;
+  }
+  let num = numerator_ast(&[v]).ok()?;
+  let is_negative_number = |x: &Expr| match x {
+    Expr::Integer(n) => *n < 0,
+    Expr::Real(r) => *r < 0.0,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+    }
+    _ => false,
+  };
+  let negative = match &num {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.first().is_some_and(is_negative_number)
+    }
+    other => is_negative_number(other),
+  };
+  let num = if negative {
+    crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+      name: "Times".to_string(),
+      args: vec![Expr::Integer(-1), num].into(),
+    })
+    .ok()?
+  } else {
+    num
+  };
+  let num = graphics_text_content(&num);
+  let den = graphics_text_content(&den);
+  if num.contains('\n') || den.contains('\n') {
+    return None;
+  }
+  let bar = "-".repeat(num.chars().count().max(den.chars().count()).max(1));
+  Some(if negative {
+    format!("  {num}\n-({bar})\n  {den}")
+  } else {
+    format!("{num}\n{bar}\n{den}")
+  })
+}
+
+/// The width and height of a tick label drawn as a stacked fraction (see
+/// [`tick_fraction_label`]), or `None` for a one-line label.
+fn tick_fraction_size(label: &str, tick_font: f64) -> Option<(f64, f64)> {
+  let f = fraction_label_parts(label)?;
+  let minus = if f.negative {
+    label_fraction_minus_width(tick_font)
+  } else {
+    0.0
+  };
+  Some((
+    2.0 * label_fraction_bar_half(f.num, f.den, tick_font) + minus,
+    2.0 * tick_font * 0.6 + line_height(tick_font),
+  ))
+}
+
+/// A tick label drawn as a stacked fraction centered on `(cx, cy)` (see
+/// [`tick_fraction_label`]), in the tick labels' font and `fill`.
+fn tick_fraction_svg(
+  cx: f64,
+  cy: f64,
+  label: &str,
+  fill: &str,
+  tick_font: f64,
+) -> Option<String> {
+  let fraction = fraction_label_parts(label)?;
+  let text_at = |x: f64, y: f64, anchor: &str, markup: &str| {
+    format!(
+      "<text x=\"{x:.2}\" y=\"{y:.2}\" fill=\"{fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\" dominant-baseline=\"central\">{markup}</text>"
+    )
+  };
+  let svg =
+    label_stacked_fraction_svg(cx, cy, fraction, tick_font, fill, &text_at);
+  Some(format!("{svg}\n"))
+}
+
 /// Parse one side of `Ticks -> {xspec, yspec}`.
 fn parse_tick_spec(expr: &Expr) -> TickSpec {
   match expr {
@@ -11750,7 +11848,8 @@ fn parse_tick_spec(expr: &Expr) -> TickSpec {
             let label = if peel_invisible(&pair[1]).is_some() {
               String::new()
             } else {
-              expr_to_svg_markup(&pair[1])
+              tick_fraction_label(&pair[1])
+                .unwrap_or_else(|| expr_to_svg_markup(&pair[1]))
             };
             Some((expr_to_f64(&pair[0])?, Some(label)))
           }
@@ -11761,7 +11860,9 @@ fn parse_tick_spec(expr: &Expr) -> TickSpec {
             let pos = expr_to_f64(other)?;
             Some((
               pos,
-              Some(crate::functions::plot::bare_tick_label(other, pos)),
+              Some(tick_fraction_label(other).unwrap_or_else(|| {
+                crate::functions::plot::bare_tick_label(other, pos)
+              })),
             ))
           }
         })
@@ -11838,8 +11939,10 @@ fn clamp_tick_label_x(
   margins: (f64, f64),
   tick_font: f64,
 ) -> f64 {
-  let half =
-    crate::functions::plot_padding::tick_label_width(label, tick_font) / 2.0;
+  let half = tick_fraction_size(label, tick_font).map_or_else(
+    || crate::functions::plot_padding::tick_label_width(label, tick_font),
+    |(w, _)| w,
+  ) / 2.0;
   let (left, right) = margins;
   let lo = -left + half;
   let hi = svg_w + right - half;
@@ -12037,6 +12140,19 @@ fn render_axes(
       // to clear the margin, the way Wolfram's image padding keeps the
       // outermost labels whole.
       let x = clamp_tick_label_x(x, &label, svg_w, x_margins, tick_font);
+      // A fraction is stacked, its top 3 pt below the axis.
+      if let Some((_, h)) = tick_fraction_size(&label, tick_font)
+        && let Some(frac) = tick_fraction_svg(
+          x,
+          axis_y_px + TICK_LABEL_GAP + h / 2.0,
+          &label,
+          &tick_label_fill,
+          tick_font,
+        )
+      {
+        svg.push_str(&frac);
+        continue;
+      }
       // The top of the label 3 pt below the axis.
       svg.push_str(&format!(
         "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
@@ -12081,6 +12197,21 @@ fn render_axes(
         && (t - axis_y_data).abs() < step.unwrap_or(1.0) * 1e-6
         && crate::functions::plot_axes::crossing_label_blocked(axis_x_px)
       {
+        continue;
+      }
+      // A fraction is stacked, its right edge 3 pt left of the axis.
+      // `label_stacked_fraction_svg` centers the whole fraction (with any
+      // minus sign before it) on `cx`.
+      if let Some((w, _)) = tick_fraction_size(&label, tick_font)
+        && let Some(markup) = tick_fraction_svg(
+          axis_x_px - TICK_LABEL_GAP - w / 2.0,
+          y,
+          &label,
+          &tick_label_fill,
+          tick_font,
+        )
+      {
+        svg.push_str(&markup);
         continue;
       }
       // 3 pt left of the axis, centered on the tick.
@@ -12354,13 +12485,25 @@ fn graphics_decorations(
   };
   let frac_x = |v: f64| (v - bb.x_min) / (bb.x_max - bb.x_min);
   let frac_y = |v: f64| (v - bb.y_min) / (bb.y_max - bb.y_min);
-  let label_box = |frac: f64, label: &str| LabelBox {
-    frac,
-    width: tick_label_width(label, tick_font).max(
-      crate::functions::plot_padding::exported_text_extent(label, tick_font).1,
-    ),
-    height: line_height(tick_font),
-    at_crossing: false,
+  let label_box = |frac: f64, label: &str| {
+    let (width, height) =
+      tick_fraction_size(label, tick_font).unwrap_or_else(|| {
+        (
+          tick_label_width(label, tick_font).max(
+            crate::functions::plot_padding::exported_text_extent(
+              label, tick_font,
+            )
+            .1,
+          ),
+          line_height(tick_font),
+        )
+      });
+    LabelBox {
+      frac,
+      width,
+      height,
+      at_crossing: false,
+    }
   };
   let auto_labels = |lo: f64, hi: f64| {
     let ticks = generate_ticks(lo, hi);
