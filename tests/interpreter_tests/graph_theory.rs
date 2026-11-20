@@ -708,6 +708,53 @@ mod graph_plot_labeled_edges {
   }
 }
 
+/// Regression: the automatic layout drew every tree in layers, so a large
+/// tree (`GraphPlot` of a permutation tree, say) became a band of
+/// overlapping disks. Like Wolfram, a small tree stays layered while a
+/// large one gets a spring-electrical embedding with unit-length edges.
+mod large_tree_layout {
+  use super::*;
+
+  #[test]
+  fn small_tree_keeps_its_layers() {
+    assert_eq!(
+      interpret(
+        "gp = GraphPlot[Table[Floor[i/2] -> i, {i, 2, 15}]]; \
+         Length[Union[Round[gp[[1, 1, All, 2]], 0.001]]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
+  fn large_tree_is_spread_by_springs() {
+    assert_eq!(
+      interpret(
+        "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; \
+         pts = GraphPlot[edges][[1, 1]]; \
+         {Length[Union[Round[pts[[All, 2]], 0.001]]] > 6, \
+          Round[Mean[EuclideanDistance[pts[[#1]], pts[[#2]]] & @@@ \
+            (List @@@ edges)], 0.001]}"
+      )
+      .unwrap(),
+      "{True, 1.}"
+    );
+  }
+
+  #[test]
+  fn graph_uses_the_same_layout() {
+    assert_eq!(
+      interpret(
+        "edges = Table[Floor[i/2] -> i, {i, 2, 63}]; \
+         GraphEmbedding[Graph[edges]] == GraphPlot[edges][[1, 1]]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+}
+
 /// A plain `GraphPlot` is Wolfram's symbolic `Graphics[GraphicsComplex[
 /// coords, {edges, vertices}], …]`: Demonstrations read the vertex
 /// positions as `GraphPlot[g][[1, 1]]`. It used to be a flat primitive list.

@@ -52,6 +52,9 @@
 - `Manipulate` controls with a real `{min, max, step}` range take their
     values from `Range` (`min + k step`), and an initial value matches a
     choice the way `SameQ` does, so `{{a, 1.8}, 1.6, 2, 0.1}` lights `1.8`.
+- The automatic layout of `Graph` and `GraphPlot` draws a large tree (more
+    than 32 vertices) with a spring-electrical embedding of unit-length edges,
+    as Wolfram does, instead of squeezing it into layers of overlapping disks.
 
 # 2026-11-08 - 0.4.0
 

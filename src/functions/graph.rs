@@ -3081,6 +3081,12 @@ pub(crate) fn computed_graph_embedding(
 /// component (force-directed once a component is big enough) and the
 /// components are packed into a grid, which makes clusters visible — e.g.
 /// `Graph[Table[i -> Mod[i^2, 74], {i, 100}]]` renders as 8 clusters.
+/// The most vertices a (non-path) tree may have for the automatic layout
+/// to draw it as a layered tree; larger trees get a spring-electrical
+/// embedding. Wolfram draws a 16-vertex tree layered and a 65-vertex one
+/// with springs; the exact cutoff in between is not documented.
+const MAX_TIDY_TREE_VERTICES: usize = 32;
+
 fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
   let n = graph.node_count();
   if n == 0 {
@@ -3134,6 +3140,15 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
           }
         }
         return pts;
+      }
+      // A large tree would crowd its deepest layers into a sliver, so
+      // Wolfram spreads it out with a spring-electrical embedding instead
+      // (its branches then fan out radially from the center).
+      if n > MAX_TIDY_TREE_VERTICES {
+        // Its edges keep about unit length, so the vertex disks (sized
+        // by the drawing's extent) shrink as the tree grows.
+        let comp: Vec<usize> = (0..n).collect();
+        return unit_mean_edge(force_layout_component(graph, &comp), graph);
       }
       let pts = tidy_tree(&children, root)
         .into_iter()
