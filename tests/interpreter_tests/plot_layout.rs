@@ -1470,3 +1470,77 @@ mod typeset_labels {
     assert!((translate(&plain) - translate(&styled)).abs() < 1.0);
   }
 }
+
+mod label_directive_lists {
+  use super::*;
+
+  /// The `<text …>` opening tag of the element that draws `label`.
+  fn text_tag(svg: &str, label: &str) -> String {
+    let end = svg.find(&format!(">{label}")).unwrap();
+    let start = svg[..end].rfind("<text").unwrap();
+    svg[start..end].to_string()
+  }
+
+  #[test]
+  fn style_directive_list_applies_each_directive() {
+    let listed =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", {Orange, 18}]]");
+    let spread =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", Orange, 18]]");
+    let tag = text_tag(&listed, "lab");
+    assert!(tag.contains("fill=\"rgb(255,128,0)\""), "{tag}");
+    assert_eq!(tag, text_tag(&spread, "lab"));
+  }
+
+  #[test]
+  fn nested_style_directive_lists_flatten() {
+    let nested = svg_of(
+      "Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", {{Bold, Red}, 14}]]",
+    );
+    let spread =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", Bold, Red, 14]]");
+    assert_eq!(text_tag(&nested, "lab"), text_tag(&spread, "lab"));
+  }
+}
+
+mod tiny_scale_sampling {
+  use super::*;
+
+  /// Adaptive refinement does not depend on the curve's absolute scale: a
+  /// peak of height `10^-12` is sampled as finely as the same peak of
+  /// height 1, instead of staying a coarse zigzag.
+  #[test]
+  fn tiny_curve_refines_like_unit_curve() {
+    let unit = svg_of("Plot[1/(1 + 100 x^2), {x, -1, 1}]");
+    let tiny = svg_of("Plot[10^-12/(1 + 100 x^2), {x, -1, 1}]");
+    let unit_n = polyline_points(&unit, "#3D99CC").len();
+    let tiny_n = polyline_points(&tiny, "#3D99CC").len();
+    assert!(unit_n > 30, "{unit_n}");
+    assert_eq!(unit_n, tiny_n);
+  }
+}
+
+mod scientific_tick_labels {
+  use super::*;
+
+  #[test]
+  fn mantissas_share_decimals_across_decades() {
+    for opts in ["", ", Frame -> True"] {
+      let svg = svg_of(&format!("Plot[x, {{x, 0, 3*10^16}}{opts}]"));
+      for label in ["5.0×10¹⁵", "1.0×10¹⁶", "1.5×10¹⁶", "3.0×10¹⁶"] {
+        assert!(svg.contains(label), "missing {label} ({opts})");
+      }
+      assert!(!svg.contains(">5×10¹⁵"), "{opts}");
+    }
+  }
+
+  #[test]
+  fn integer_mantissas_stay_integers() {
+    let svg = svg_of("Plot[x, {x, 0, 10^7}]");
+    for label in ["2×10⁶", "8×10⁶", "1×10⁷"] {
+      assert!(svg.contains(label), "missing {label}");
+    }
+    let svg = svg_of("Plot[x, {x, 0, 6*10^-12}, Frame -> True]");
+    assert!(svg.contains("1×10⁻¹²") && svg.contains("6×10⁻¹²"));
+  }
+}

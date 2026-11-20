@@ -817,6 +817,13 @@ fn adaptive_sample(
     None => curve_bend,
   };
 
+  // The denominator floor of the relative bend test scales with the curve:
+  // a fixed absolute floor would swamp a curve whose values are all tiny
+  // (an absorption spectrum of height 1e-12, say), so its peaks would never
+  // be refined. Where a bend is visible at all it exceeds `visible_bend`,
+  // which keeps the test unchanged for curves of ordinary size.
+  let range_floor = visible_bend.max(f64::MIN_POSITIVE);
+
   // Adaptive refinement passes, one level of `MaxRecursion` each.
   for _ in 0..max_depth {
     if points.len() >= max_total {
@@ -856,7 +863,7 @@ fn adaptive_sample(
           // Linear interpolation error: how much does the middle point
           // deviate from the line connecting its neighbors?
           let y_interp = y0 + (y2 - y0) * (x1 - x0) / (x2 - x0);
-          let y_range = (y2 - y0).abs().max(1e-10);
+          let y_range = (y2 - y0).abs().max(range_floor);
           let bend = (y1 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -873,7 +880,7 @@ fn adaptive_sample(
         let (xm1, ym1) = points[i - 1];
         if ym1.is_finite() {
           let y_interp = ym1 + (y1 - ym1) * (x0 - xm1) / (x1 - xm1);
-          let y_range = (y1 - ym1).abs().max(1e-10);
+          let y_range = (y1 - ym1).abs().max(range_floor);
           let bend = (y0 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -2320,10 +2327,75 @@ fn tick_step_decimals(step: f64) -> usize {
     .unwrap_or(6)
 }
 
+/// Label a tick of the `step`-spaced tick set that covers `[lo, hi]`.
+///
+/// Like [`format_tick_with_step`], but the scientific labels of the set
+/// share one mantissa precision, as the Wolfram Language writes them: an
+/// axis stepping by `5*10^15` up to `3*10^16` reads `5.0×10^15, 1.0×10^16,
+/// 1.5×10^16, …` because `1.5` needs a decimal, while one stepping by
+/// `10^-12` keeps `1×10^-12, 2×10^-12`.
+pub(crate) fn format_tick_in_range(
+  v: f64,
+  step: f64,
+  lo: f64,
+  hi: f64,
+) -> String {
+  let label = format_tick_with_step(v, step);
+  if !label.contains('\u{d7}') {
+    return label;
+  }
+  let step = step.abs();
+  let (lo, hi) = (lo.min(hi), lo.max(hi));
+  if !step.is_finite() || step == 0.0 || !lo.is_finite() || !hi.is_finite() {
+    return label;
+  }
+  let first = (lo / step - 1e-9).ceil() as i64;
+  let last = (hi / step + 1e-9).floor() as i64;
+  if last < first || last - first > 1000 {
+    return label;
+  }
+  let decimals = (first..=last)
+    .map(|k| k as f64 * step)
+    .filter(|t| format_tick_with_step(*t, step).contains('\u{d7}'))
+    .map(|t| mantissa_decimals(scientific_parts(t).0))
+    .max()
+    .unwrap_or(0);
+  if decimals == 0 {
+    return label;
+  }
+  let (mantissa, exp) = scientific_parts(v);
+  format!(
+    "{mantissa:.decimals$}\u{d7}10{}",
+    crate::functions::graphics::to_unicode_script(&exp.to_string(), true)
+  )
+}
+
+/// `v` split into a mantissa in `[1, 10)` (in magnitude) and an exponent.
+fn scientific_parts(v: f64) -> (f64, i32) {
+  let mut exp = v.abs().log10().floor() as i32;
+  let mut mantissa = v / 10f64.powi(exp);
+  // `log10` can land a hair below an exact power of ten.
+  if (mantissa.abs() - 10.0).abs() < 1e-9 || mantissa.abs() > 10.0 {
+    exp += 1;
+    mantissa /= 10.0;
+  }
+  (mantissa, exp)
+}
+
+/// The decimals a scientific mantissa needs (at most 3, as
+/// [`format_scientific_tick`] writes it).
+fn mantissa_decimals(mantissa: f64) -> usize {
+  (0..=3)
+    .find(|d| {
+      let scaled = mantissa.abs() * 10f64.powi(*d as i32);
+      (scaled - scaled.round()).abs() < 1e-6
+    })
+    .unwrap_or(3)
+}
+
 /// `v` as `m×10^e` with Unicode superscript exponent digits.
 fn format_scientific_tick(v: f64) -> String {
-  let exp = v.abs().log10().floor() as i32;
-  let mantissa = v / 10f64.powi(exp);
+  let (mantissa, exp) = scientific_parts(v);
   let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
     format!("{}", mantissa.round() as i64)
   } else {
@@ -2494,7 +2566,11 @@ fn inject_missing_major_tick_labels(
       };
       let along = if horizontal { x } else { y };
       if !template.occupied.iter().any(|p| (p - along).abs() < 2.0) {
-        svg.push_str(&template.render(x, y, &format_tick_with_step(v, major)));
+        svg.push_str(&template.render(
+          x,
+          y,
+          &format_tick_in_range(v, major, min, max),
+        ));
       }
       v += major;
     }
@@ -6143,7 +6219,7 @@ fn generate_svg_with_options(
                 // Suppress plotters labels; we inject custom SVG with superscripts
                 String::new()
               } else if is_major_tick(*v, x_major) {
-                format_tick_with_step(*v, x_major)
+                format_tick_in_range(*v, x_major, x_min, x_max)
               } else {
                 String::new()
               }
@@ -6155,7 +6231,7 @@ fn generate_svg_with_options(
               if log_y {
                 String::new()
               } else if is_major_tick(*v, y_major) {
-                format_tick_with_step(*v, y_major)
+                format_tick_in_range(*v, y_major, y_min, y_max)
               } else {
                 String::new()
               }
@@ -10897,7 +10973,7 @@ pub(crate) fn generate_horizontal_bar_svg(
         "<text x=\"{tx:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_bottom + tick_len + font_size,
-        html_escape(&format_tick_with_step(v, x_major))
+        html_escape(&format_tick_in_range(v, x_major, x_min, x_max))
       ));
       v += x_major;
     }
@@ -11420,14 +11496,14 @@ pub(crate) fn generate_bubble_chart_svg(
       .y_labels(y_tick_count)
       .x_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, x_major) {
-          format_tick_with_step(*v, x_major)
+          format_tick_in_range(*v, x_major, x_min, x_max)
         } else {
           String::new()
         }
       })
       .y_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
+          format_tick_in_range(*v, y_major, y_min, y_max)
         } else {
           String::new()
         }
@@ -15680,7 +15756,7 @@ pub(crate) fn simple_ticks(min: f64, max: f64) -> Vec<(f64, String)> {
       let label = if k == 0 {
         "0".to_string()
       } else {
-        format_tick_with_step(v, step)
+        format_tick_in_range(v, step, min, max)
       };
       (if k == 0 { 0.0 } else { v }, label)
     })
