@@ -35969,6 +35969,54 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose `Manipulate`
+  /// fits a curve through two `Locator` points and shows it in a
+  /// `Labeled[Plot[…], caption]`. Regression: Wolfram draws each Locator as
+  /// a crosshair marker on the displayed plot, but the widget drew none, so
+  /// nothing showed where the points were. An `Appearance -> None` Locator
+  /// still draws no marker. This is a self-authored, construct-equivalent
+  /// example.
+  #[test]
+  fn locator_controls_draw_markers_on_the_body_graphic() {
+    const MARKER: &str = "rgba(180,180,180,0.35)";
+    let code = "Manipulate[\
+      If[p == q, q = q + {1/100, 0}]; \
+      Labeled[Plot[p[[2]] + (q[[2]] - p[[2]]) (x - p[[1]])/(q[[1]] - p[[1]]), \
+        {x, 0, 10}, Frame -> True, PlotRange -> {{0, 10}, {0, 10}}], \
+        \"a line through two points\"], \
+      {{p, {2, 3}, \"first point\"}, {0, 0}, {10, 10}, Locator}, \
+      {{q, {8, 7}, \"second point\"}, {0, 0}, {10, 10}, ControlType -> Locator}, \
+      {{hidden, {5, 5}}, Locator, Appearance -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let svg = state.current_svg().expect("the plot renders").to_string();
+    assert_eq!(svg.matches(MARKER).count(), 2, "one marker per Locator");
+    // Markers follow their point and leave the plot range alone.
+    for c in state.controls.iter_mut() {
+      if let manipulate::ControlState::Slider2D { name, x, .. } = c
+        && name == "p"
+      {
+        *x = 4.0;
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let moved = state.current_svg().expect("the plot re-renders");
+    assert_eq!(moved.matches(MARKER).count(), 2);
+    assert_ne!(moved, svg, "the marker moves with its point");
+
+    // A body that places its own Locators keeps just those.
+    let own = "Manipulate[\
+      Graphics[{Locator[p], Disk[p, 1/2]}, PlotRange -> 5], \
+      {{p, {1, 1}}, {-5, -5}, {5, 5}, Locator}]";
+    let state = instantiate_stored_manipulate(own, "")
+      .expect("the Manipulate must build a widget");
+    let svg = state.current_svg().expect("the picture renders");
+    assert_eq!(svg.matches(MARKER).count(), 1);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook whose Input cell keeps
   /// the Manipulate's own `Initialization` with the helper's body spelled in
   /// `` $CellContext` ``-qualified symbols while its pattern heads stay bare.

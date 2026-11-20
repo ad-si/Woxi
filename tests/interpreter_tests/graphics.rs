@@ -52804,6 +52804,60 @@ fn explicit_plot_range_clips_lattice_in_wide_image_on_both_sides() {
 }
 
 #[test]
+fn plot_epilog_draws_locator_markers() {
+  // Regression: a `Locator` in a plot's `Epilog` drew nothing (only
+  // `Graphics` placed its marker).
+  const MARKER: &str = "rgba(180,180,180,0.35)";
+  let one = export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}]}]");
+  assert_eq!(one.matches(MARKER).count(), 1, "{one}");
+  let two = export_svg(
+    "Plot[x, {x, 0, 1}, Epilog -> {Locator[{{0.2, 0.2}, {0.7, 0.7}}]}]",
+  );
+  assert_eq!(two.matches(MARKER).count(), 2, "{two}");
+  let hidden =
+    export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}, None]}]");
+  assert_eq!(hidden.matches(MARKER).count(), 0, "{hidden}");
+}
+
+#[test]
+fn show_with_an_option_keeps_a_plot_range_all_plot_unchanged() {
+  // Regression: `Show[p, opt]` of a `PlotRange -> All` plot dropped the
+  // plot's range padding, redrawing it squeezed to its data (and taller).
+  for code in [
+    "Plot[x^2, {x, 0, 5}, PlotRange -> All]",
+    "Plot[30 - 31 Exp[-x], {x, 0, 50}, PlotRange -> All, Frame -> True, \
+     Axes -> False, ImagePadding -> {{65, 25}, {25, 25}}, ImageSize -> 450]",
+    "Plot[Sin[x], {x, 0, 10}, PlotRange -> {{0, 5}, All}]",
+  ] {
+    assert_eq!(
+      export_svg(&format!("Show[{code}, Epilog -> {{}}]")),
+      export_svg(code),
+      "{code}"
+    );
+  }
+}
+
+#[test]
+fn plot_with_explicit_image_padding_clips_labels_at_its_edge() {
+  // Regression: a frame label below a bottom `ImagePadding` too small to
+  // hold it showed under the picture once the plot sat in a `Labeled`
+  // (whose cells let content overflow). Wolfram cuts it off at the image
+  // boundary, also when nested.
+  let code = "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}, \
+              ImagePadding -> {{50, 20}, {20, 20}}, ImageSize -> 300]";
+  let svg = export_svg(code);
+  assert!(svg.contains("<clipPath id=\"imageClip_"), "{svg}");
+  assert!(svg.contains("clip-path=\"url(#imageClip_"), "{svg}");
+  let labeled = export_svg(&format!("Labeled[{code}, \"caption\"]"));
+  assert!(labeled.contains("clip-path=\"url(#imageClip_"), "{labeled}");
+  // Automatic padding grows to hold the labels and clips nothing.
+  let auto = export_svg(
+    "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}]",
+  );
+  assert!(!auto.contains("imageClip_"), "{auto}");
+}
+
+#[test]
 fn lone_text_label_is_not_clipped_to_its_picture() {
   // Regression: a `Text` label wider than its picture (its extent does not
   // count toward an automatic plot range) was cut off at the picture's
