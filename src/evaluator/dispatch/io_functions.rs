@@ -9285,6 +9285,8 @@ fn svg_to_pdf_bytes(svg_str: &str) -> Result<Vec<u8>, InterpreterError> {
   // set_sans_serif_family() etc. must come *after* it.
   fontdb.load_system_fonts();
   crate::functions::image_ast::load_embedded_fonts(&mut fontdb);
+  let svg_str =
+    &crate::functions::image_ast::synthesize_oblique_text(svg_str, &fontdb);
 
   let opt =
     crate::functions::image_ast::svg_render_options(StdArc::new(fontdb));
