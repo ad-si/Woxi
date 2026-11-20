@@ -647,6 +647,24 @@ pub(crate) fn samples_to_mono_wav(samples: &[f64], rate: u32) -> Vec<u8> {
   encode_wav(&pcm, 1, rate)
 }
 
+/// The alert tone `Beep[]` sounds: a short 880 Hz sine burst (with a brief
+/// fade in and out so it does not click), as a base64-encoded WAV.
+pub fn beep_wav_base64() -> String {
+  const RATE: u32 = 8000;
+  const SECONDS: f64 = 0.15;
+  const FADE: f64 = 0.01;
+  let n = (f64::from(RATE) * SECONDS) as usize;
+  let samples: Vec<f64> = (0..n)
+    .map(|i| {
+      let t = i as f64 / f64::from(RATE);
+      let envelope = (t / FADE).min((SECONDS - t) / FADE).clamp(0.0, 1.0);
+      0.5 * envelope * (2.0 * std::f64::consts::PI * 880.0 * t).sin()
+    })
+    .collect();
+  let wav = samples_to_mono_wav(&samples, RATE);
+  base64::engine::general_purpose::STANDARD.encode(&wav)
+}
+
 /// Render a `Sound` expression (containing one or more `Play` segments) into a
 /// base64-encoded WAV byte stream. Returns `None` when the sound contains no
 /// samplable `Play` segment.
