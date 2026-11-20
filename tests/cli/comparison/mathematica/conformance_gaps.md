@@ -10246,6 +10246,16 @@ obtained by directly extracting the exact binary input's decimal digits.
 Woxi currently promotes machine values from their shortest decimal string;
 the general machine digit-extraction and uncertainty rule remains unresolved.
 
+### Studio: string cells of a `Grid` beside `Column` text
+
+A Manipulate body `Column[{Grid[{{"abc", "de"}}, Frame -> All], "text"}]`
+draws the grid's string cells in the sans-serif face and the column's
+string in the monospace one. In Wolfram's rendering both are set in the
+same fixed-width output face, so the grid's cells look narrower and
+uniform with the text below them. Woxi's sans-serif default for unstyled
+`Grid` cells is deliberate elsewhere (top-level `Grid` output); which
+face Wolfram uses for a top-level `Grid` of strings is not yet verified.
+
 ### Studio: Grid `ItemSize` with wider typeset cells
 
 A `Grid` with numeric `ItemSize -> {{w1, w2}}` and a column holding a wide
