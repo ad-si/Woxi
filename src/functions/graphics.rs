@@ -17691,6 +17691,16 @@ pub(crate) fn text_face_family() -> Expr {
 pub(crate) fn in_text_face(content: &Expr) -> Expr {
   let family = text_face_family();
   match content {
+    // A form wrapper only says how its content is typeset: the face goes on
+    // the content inside it, so `TraditionalForm[Style[Grid[…], 24]]` still
+    // lays its grid out (now in the text face) instead of falling back to
+    // its string form.
+    Expr::FunctionCall { name, args }
+      if args.len() == 1
+        && matches!(name.as_str(), "TraditionalForm" | "StandardForm") =>
+    {
+      call(name, vec![in_text_face(&args[0])])
+    }
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
