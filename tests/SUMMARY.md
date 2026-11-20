@@ -1227,6 +1227,7 @@
     - [`In`](expressions/In.md)
     - [`InfiniteLine`](expressions/InfiniteLine.md)
     - [`InfinitePlane`](expressions/InfinitePlane.md)
+    - [`Infix`](expressions/Infix.md)
     - [`Information`](expressions/Information.md)
     - [`InputForm`](expressions/InputForm.md)
     - [`InterpretationBox`](expressions/InterpretationBox.md)

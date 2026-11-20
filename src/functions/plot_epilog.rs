@@ -760,6 +760,19 @@ fn render_item(
           render_item(&inner, style, area, out);
         }
       }
+      // `GraphicsComplex[pts, prims]`: the primitives with their vertex
+      // indices resolved to coordinates, drawn in the current style.
+      "GraphicsComplex" if args.len() >= 2 => {
+        if let Expr::List(points) = &args[0] {
+          let resolved =
+            crate::functions::graphics::graphics_complex_to_normal_form(
+              points,
+              &args[1],
+              &args[2..],
+            );
+          render_item(&resolved, style, area, out);
+        }
+      }
       "Line" if !args.is_empty() => {
         for pts in collect_point_lists(&args[0]) {
           out.push_str(&format!(
@@ -1082,11 +1095,27 @@ fn render_item(
           // several computed values, say) stacks below its first line; the
           // whole block is centered on the anchor the way a single line
           // would be, so the first line moves up by half the extra height.
-          let line_height = font_size * 1.2;
           let extra_lines = styled
             .as_ref()
             .map_or(0, super::chart::StyledLabel::extra_line_count)
             as f64;
+          // Lines styled to their own sizes (`Labeled[Style[n, 100],
+          // Style[k, 40]]`) sit as far apart as those sizes need, and the
+          // block is centered from the first line's top to the last
+          // line's bottom.
+          let advances = styled
+            .as_ref()
+            .map_or_default(|s| s.line_advances(font_size, area.scale));
+          let line_sizes = styled
+            .as_ref()
+            .map_or_default(|s| s.line_font_sizes(font_size, area.scale));
+          let first_size = line_sizes.first().copied().unwrap_or(font_size);
+          let last_size = line_sizes.last().copied().unwrap_or(font_size);
+          let stack_h: f64 = advances.iter().sum();
+          // From the first line's center to the block's center.
+          let center_drop = stack_h / 2.0 + (last_size - first_size) / 4.0;
+          // The whole block's height.
+          let block_h = stack_h + f64::midpoint(first_size, last_size);
           // `Text[label, pt, offset, {dx, dy}]` turns the baseline to run
           // along `{dx, dy}`, read in screen space (y up) as in `Graphics`:
           // its angle does not depend on the plot's x/y scaling. The offset
@@ -1103,7 +1132,7 @@ fn render_item(
               super::chart::StyledLabel::max_line_chars,
             ) as f64;
             let half_w = chars * font_size * 0.55 / 2.0;
-            let half_h = f64::midpoint(font_size, extra_lines * line_height);
+            let half_h = block_h / 2.0;
             let (ux, uy) = (angle.cos(), angle.sin());
             let (vx, vy) = (-uy, ux);
             px += -off_x * half_w * ux + off_y * half_h * vx;
@@ -1113,8 +1142,8 @@ fn render_item(
               angle.to_degrees()
             );
           } else {
-            py -= extra_lines * line_height / 2.0;
-            py += off_y * (font_size + extra_lines * line_height) / 2.0;
+            py -= center_drop;
+            py += off_y * block_h / 2.0;
           }
           if direction.is_some() {
             // Centered on the point computed above.
@@ -1133,9 +1162,29 @@ fn render_item(
           // SVG markup; a plain one goes through the same path, which
           // escapes it. Further lines (if any) become stacked tspans below
           // the first instead of being silently dropped.
+          // A `Column` sets its lines flush left by default (a `Grid`
+          // centers them), so a stacked column label starts every line at
+          // the left side of its block rather than centering each one.
+          let mut line_x = px;
+          if direction.is_none()
+            && extra_lines > 0.0
+            && is_left_aligned_column(body)
+          {
+            let chars = styled
+              .as_ref()
+              .map_or(0, super::chart::StyledLabel::max_line_chars)
+              as f64;
+            let block_w = chars * font_size * 0.6;
+            line_x = match text_anchor {
+              "start" => px,
+              "end" => px - block_w,
+              _ => px - block_w / 2.0,
+            } + font_size * 0.35;
+            text_anchor = "start";
+          }
           let label = styled.as_ref().map_or_else(
             || svg_escape_text(&expr_to_output(body)),
-            |s| s.svg_scaled_stacked(area.scale, px, line_height),
+            |s| s.svg_scaled_stacked_by(area.scale, line_x, &advances),
           );
           // `Text[label, pos, …, Background -> color]` (or an `Inset`'s
           // `Background`, carried over onto its text) lays a borderless
@@ -1159,8 +1208,8 @@ fn render_item(
             };
             out.push_str(&format!(
               "<rect x=\"{left:.1}\" y=\"{:.1}\" width=\"{text_w:.1}\" height=\"{:.1}\" fill=\"{}\" stroke=\"none\"/>\n",
-              py - font_size / 2.0,
-              extra_lines * line_height + font_size,
+              py - first_size / 2.0,
+              block_h,
               color.to_svg_rgb(),
             ));
           }
@@ -1173,11 +1222,11 @@ fn render_item(
               * 0.6;
             // `py` is the first line's own center (shifted up above), so
             // the box starts half a line above it and grows by one more
-            // `line_height` per extra line — not `py`'s center outward,
+            // line advance per extra line — not `py`'s center outward,
             // which would leave it too short and too high once the label
             // stacks below `py`.
-            let box_h = extra_lines * line_height + font_size;
-            let box_y = py - font_size / 2.0;
+            let box_h = block_h;
+            let box_y = py - first_size / 2.0;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
               .map_or_else(
@@ -1196,13 +1245,20 @@ fn render_item(
               ),
               None => " stroke=\"rgb(0,0,0)\"".to_string(),
             };
+            // The border is one printer's point wide whatever the
+            // plot's internal coordinate scale.
+            let stroke = if stroke.is_empty() {
+              stroke
+            } else {
+              format!("{stroke} stroke-width=\"{:.2}\"", area.scale)
+            };
             out.push_str(&format!(
               "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
               px - text_w / 2.0,
             ));
           }
           out.push_str(&format!(
-            "<text x=\"{px:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
+            "<text x=\"{line_x:.1}\" y=\"{py:.1}\" text-anchor=\"{text_anchor}\" \
              dominant-baseline=\"middle\" font-family=\"sans-serif\" \
              font-size=\"{font_size:.0}\"{font_attrs} {fill}{rotate_attr}>{label}</text>\n",
           ));
@@ -1220,7 +1276,8 @@ fn render_item(
         render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
-        let text = call("Text", vec![args[0].clone(), args[1].clone()]);
+        let text =
+          crate::functions::graphics::inset_text(&args[0], &args[1], args);
         render_item(&with_inset_background(text, args), style, area, out);
       }
       "Inset" if !args.is_empty() => {
@@ -1256,8 +1313,8 @@ fn render_item(
         {
           let (w, h) = (w * area.scale, h * area.scale);
           // `opos` names the point of the inset object (a plot's data
-          // coordinates, a display's fractions of its size) that lands on `pos`; the picture is otherwise
-          // centered there.
+          // coordinates, a display's `Text`-style offset) that lands on
+          // `pos`; the picture is otherwise centered there.
           let (fx, fy) = args
             .get(2)
             .and_then(point2)
@@ -1271,6 +1328,21 @@ fn render_item(
             area.py(anchor.1) + (0.5 - fy) * h,
             w,
             h,
+          ));
+        }
+      }
+      // `Locator[pos, appearance]` draws its marker (Wolfram's crosshair or
+      // the appearance graphic) at its own screen size, centered on `pos`.
+      "Locator" if !args.is_empty() => {
+        for (x, y, svg, w, h) in
+          crate::functions::graphics::locator_markers(args)
+        {
+          out.push_str(&crate::functions::graphics::embed_svg_centered(
+            &svg,
+            area.px(x),
+            area.py(y),
+            w * area.scale,
+            h * area.scale,
           ));
         }
       }
@@ -1307,11 +1379,41 @@ fn render_item(
   }
 }
 
+/// Whether a label is a `Column` whose lines are set flush left — the
+/// default, or an explicit `Alignment -> Left`.
+fn is_left_aligned_column(label: &Expr) -> bool {
+  match crate::functions::graphics::strip_style_wrappers(label) {
+    Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      match option_value(&args[1..], "Alignment") {
+        None => true,
+        Some(Expr::Identifier(a)) => a == "Left",
+        Some(_) => false,
+      }
+    }
+    _ => false,
+  }
+}
+
 /// Whether an `Inset` object is plain text (a string, possibly styled or
 /// typeset with scripts) rather than a graphic.
 fn is_text_inset(obj: &Expr) -> bool {
   match crate::functions::graphics::strip_style_wrappers(obj) {
     Expr::String(_) => true,
+    // A framed label or a column of labels (a boxed summary of several
+    // computed values) is still text, typeset like `Text[Framed[…]]`.
+    Expr::FunctionCall { name, args }
+      if name == "Framed" && !args.is_empty() =>
+    {
+      is_text_inset(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Column" && !args.is_empty() =>
+    {
+      matches!(&args[0], Expr::List(items)
+        if !items.is_empty() && items.iter().all(is_text_inset))
+    }
     Expr::FunctionCall { name, args } => {
       matches!(
         name.as_str(),
