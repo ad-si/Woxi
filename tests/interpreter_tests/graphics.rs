@@ -4374,6 +4374,28 @@ mod graphics {
       assert!(off(p, edges[2]) > 1.0, "{edges:?}");
     }
 
+    /// Automatic 3D box ticks step by the smallest of 1, 2 and 5 × 10^k
+    /// that leaves fewer than five intervals: a 10-wide axis by 5 (whole
+    /// labels, no 2.5 steps), a 2-wide axis by 0.5.
+    #[test]
+    fn automatic_3d_ticks_leave_fewer_than_five_intervals() {
+      let labels = |svg: &str| -> Vec<String> {
+        svg
+          .split("</text>")
+          .filter_map(|s| s.rsplit('>').next())
+          .filter(|t| !t.is_empty() && t.parse::<f64>().is_ok())
+          .map(str::to_string)
+          .collect()
+      };
+      let wide = labels(&export_svg(
+        "Graphics3D[Cuboid[{-5, -5, 0}, {5, 5, 10}], Axes -> True]",
+      ));
+      assert_eq!(wide, ["-5", "0", "5", "-5", "0", "5", "0", "5", "10"]);
+      let unit = labels(&export_svg("Graphics3D[Sphere[], Axes -> True]"));
+      assert_eq!(unit.len(), 15, "{unit:?}");
+      assert!(unit.contains(&"-0.5".to_string()), "{unit:?}");
+    }
+
     /// Axes crossing at the center of the box have no outward side, so the
     /// tick labels of the vertical z axis sit left of it, right-aligned,
     /// with the tick marks pointing the other way, for any view point.
@@ -8956,9 +8978,8 @@ mod plot3d {
         "Show[{Plot3D[Sin[x y] + 5, {x, 0, 2}, {y, 0, 2}, \
          PlotRange -> {0, 10}], Graphics3D[{Red, Sphere[{1, 1, 5}, 0.2]}]}]",
       );
-      // The z ticks run from 0 to 10 (Woxi steps them by 2.5 and writes
-      // them with one decimal; wolframscript steps this short axis by 5).
-      for label in [">0.0</text>", ">5.0</text>", ">10.0</text>"] {
+      // The z ticks run from 0 to 10 in steps of 5, as in wolframscript.
+      for label in [">0</text>", ">5</text>", ">10</text>"] {
         assert!(alone.contains(label), "standalone plot lacks {label}");
         assert!(shown.contains(label), "shown plot lacks {label}");
       }

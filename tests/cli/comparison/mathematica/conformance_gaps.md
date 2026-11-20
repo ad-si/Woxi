@@ -9590,8 +9590,10 @@ ends and corners and the slim `Arrow[Tube]` head, upright z axis label,
 unlabeled ticks, ContourPlot3D's default mesh and gradient normals,
 scattered ListPlot3D drawn on its own triangulation, BarChart3D /
 RectangleChart3D / Histogram3D / BubbleChart3D built as wolframscript's
-`Graphics3D`, PieChart3D's view, colors and smooth wall. What still
-differs:
+`Graphics3D`, PieChart3D's view, colors and smooth wall. Later still: automatic 3D tick
+steps (and automatic `FaceGrids` spacing) are the smallest of 1, 2 and
+5 × 10^k leaving fewer than five intervals, so a 0..10 axis steps by 5 and
+a unit sphere's by 0.5, as in wolframscript. What still differs:
 
 - Smooth shading interpolates colors linearly across a facet (Gouraud), so
   a sharp highlight or the edge of a colored light still shows the
@@ -9643,10 +9645,6 @@ differs:
   are ignored. A translucent `EdgeForm` color is faded toward white
   rather than blended with what lies behind it. `Boxed -> {Left, Bottom,
   Back}` (BubbleChart3D's partial box) draws the whole box.
-- 3D tick steps: Woxi picks about four ticks per axis whatever the axis's
-  screen length (wolframscript steps a short z axis over 0..10 by 5, Woxi
-  by 2.5, and a unit sphere's axes by 0.5 where Woxi steps by 1 — also the
-  spacing of automatic `FaceGrids`).
 - 3D charts: the translucent backdrop panels wolframscript puts behind
   BarChart3D and RectangleChart3D (`Scaled` polygons with `VertexColors`)
   are not drawn; BubbleChart3D's largest bubble is a fifth of the data's
