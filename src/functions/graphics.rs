@@ -54926,6 +54926,26 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
   // current value of its variable.
   let released;
   let expr = match expr {
+    // A number format around a `Dynamic` (`NumberForm[Dynamic[x], {3, 1}]`)
+    // formats the held `Dynamic[x]`, which has no number in it: the front
+    // end then shows the live value of `x` as it is, unformatted.
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "NumberForm"
+          | "PaddedForm"
+          | "AccountingForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+      ) && matches!(args.first(), Some(Expr::FunctionCall { name: d, args: da })
+        if d == "Dynamic" && !da.is_empty()) =>
+    {
+      let Some(Expr::FunctionCall { args: da, .. }) = args.first() else {
+        unreachable!()
+      };
+      released = da[0].clone();
+      &released
+    }
     Expr::FunctionCall { name, args } if name == "ProgressIndicator" => {
       fn release(e: &Expr) -> Expr {
         match e {
