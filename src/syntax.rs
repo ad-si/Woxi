@@ -183,6 +183,11 @@ pub struct PlotSource {
   /// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}` frame).
   /// `None` = the ratio follows from `image_size`.
   pub aspect_ratio: Option<f64>,
+  /// Whether the plot settles `PlotRange -> All` into the numeric range of
+  /// its data, as WL's list plots (`ListPlot`, `ListLinePlot`) do: `Show`
+  /// then keeps that range like an automatic one, clipping other graphics
+  /// reaching past it, where a function plot's `All` spans everything shown.
+  pub settles_all_range: bool,
 }
 
 /// Filling specification for a plot series (used by `Show` when merging
@@ -244,6 +249,11 @@ pub struct PlotSeriesData {
   /// …); `None` = the 1.5px default. Travels with the series so a curve keeps
   /// its weight when `Show` merges it into another graphic.
   pub thickness: Option<f64>,
+  /// A relative `Thickness[t]` from `PlotStyle`: the fraction `t` of the
+  /// drawing's width, kept so the curve's weight follows the size of the
+  /// picture it is finally drawn in (`thickness` is then its pixels at the
+  /// default size).
+  pub thickness_fraction: Option<f64>,
   /// Dot size of a scatter series from `PlotStyle` — a fraction of the image
   /// width for `PointSize[…]`, stored negative for the absolute printer's
   /// points of `AbsolutePointSize[…]`, the same sign convention the graphics
@@ -271,6 +281,26 @@ pub struct PlotSeriesData {
   /// (`Filling -> {1 -> {{2}, c1}, 1 -> {Top, c2}}`), drawn after the main
   /// one in rule order. Each carries its own target and appearance.
   pub extra_fills: Vec<SeriesFill>,
+  /// This series carries on the line of the series before it: a
+  /// `ColorFunction` curve is kept as runs of constant color, and a run
+  /// continuing the previous one is still the same line, so its dash
+  /// pattern goes on across the join instead of starting over.
+  pub continues_previous: bool,
+  /// The `ColorFunction` the series' own plot colored its curve with
+  /// (`None` = plain `color`). Travels with the series so that `Show`
+  /// colors only this curve by it, not the curves merged with it.
+  pub color_function: Option<SeriesColorFunction>,
+}
+
+/// A plot's `ColorFunction` as one of its curves was drawn with it: the
+/// function, its `ColorFunctionScaling` per axis, and the data extents
+/// `(x_min, x_max, y_min, y_max)` the scaling rescales over (those of the
+/// plot it came from, not of a picture `Show` later merges it into).
+#[derive(Debug, Clone)]
+pub struct SeriesColorFunction {
+  pub function: Expr,
+  pub scaling: (bool, bool),
+  pub ranges: (f64, f64, f64, f64),
 }
 
 /// One additional fill of a series: its target and its `FillingStyle`
@@ -4209,10 +4239,16 @@ fn apply_prefix_nots(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
     if !marked {
       continue;
     }
-    let Expr::FunctionCall { args, .. } = &terms[i] else {
-      unreachable!()
-    };
-    let inner = args[0].clone();
+    // `!!a` stacks one mark per `!`; they all reach as far as the outermost.
+    let mut inner = terms[i].clone();
+    let mut depth = 0;
+    while let Expr::FunctionCall { name, args } = &inner
+      && name == PREFIX_NOT_MARK
+      && args.len() == 1
+    {
+      inner = args[0].clone();
+      depth += 1;
+    }
     let mut j = i;
     while j < operators.len() && operator_precedence(&operators[j]) > 180 {
       j += 1;
@@ -4220,10 +4256,11 @@ fn apply_prefix_nots(terms: &mut Vec<Expr>, operators: &mut Vec<String>) {
     let mut group_terms: Vec<Expr> = terms.drain(i..=j).collect();
     group_terms[0] = inner;
     let group_ops: Vec<String> = operators.drain(i..j).collect();
-    terms.insert(
-      i,
-      call1("Not", build_operator_chain(group_terms, &group_ops)),
-    );
+    let mut negated = build_operator_chain(group_terms, &group_ops);
+    for _ in 0..depth {
+      negated = call1("Not", negated);
+    }
+    terms.insert(i, negated);
   }
 }
 
@@ -4970,7 +5007,8 @@ fn parse_expression_inner(
   let mut term_was_implicit_times: Vec<bool> = Vec::new();
   let mut operators: Vec<String> = Vec::new();
   let mut leading_minus = false;
-  let mut leading_not = false;
+  // How many prefix `!`s the next term carries (`!!a` is `Not[Not[a]]`).
+  let mut leading_not: usize = 0;
   // True iff the *first* term was prefixed by `!`. Survives operator
   // boundaries (unlike pending_not_on_last, which is flushed eagerly).
   // Used to re-apply Not at the right precedence after the binary tree
@@ -4980,21 +5018,24 @@ fn parse_expression_inner(
   // current term — i.e. after all suffixes (!, !!, \[Transpose], ..) have
   // been applied. This makes "!a!" parse as Not[Factorial[a]] rather than
   // Factorial[Not[a]].
-  let mut pending_not_on_last = false;
-  // Apply a pending Not to the top of `terms` and clear the flag. Used at
+  let mut pending_not_on_last: usize = 0;
+  // Apply the pending Nots to the top of `terms` and clear the flag. Used at
   // every boundary that ends a term block.
   fn flush_pending_not(
-    pending: &mut bool,
+    pending: &mut usize,
     terms: &mut Vec<Expr>,
     origins: &mut Vec<bool>,
   ) {
-    if *pending {
-      if let Some(last) = terms.pop() {
+    if *pending > 0 {
+      if let Some(mut last) = terms.pop() {
         origins.pop();
-        terms.push(call1(PREFIX_NOT_MARK, last));
+        for _ in 0..*pending {
+          last = call1(PREFIX_NOT_MARK, last);
+        }
+        terms.push(last);
         origins.push(false);
       }
-      *pending = false;
+      *pending = 0;
     }
   }
 
@@ -5032,7 +5073,7 @@ fn parse_expression_inner(
       Rule::LeadingNot => {
         // !expr becomes Not[expr]. Deferred until after suffixes so that
         // !a! → Not[Factorial[a]] rather than Factorial[Not[a]].
-        leading_not = true;
+        leading_not += 1;
       }
       Rule::Operator | Rule::ConditionOp => {
         flush_pending_not(
@@ -5207,15 +5248,15 @@ fn parse_expression_inner(
           term_was_implicit_times.push(false);
         }
       }
-      _ if leading_not && leading_minus => {
+      _ if leading_not > 0 && leading_minus => {
         // `!-x`: the Not reaches over the negated operand, so negate it
         // directly rather than splicing in the synthetic `0 NEGATE` pair
         // (which would leave the Not wrapping only `x`).
         terms.push(neg1(pair_to_expr(item)));
         term_was_implicit_times.push(false);
-        pending_not_on_last = true;
+        pending_not_on_last = leading_not;
         leading_minus = false;
-        leading_not = false;
+        leading_not = 0;
       }
       _ => {
         if leading_minus {
@@ -5318,11 +5359,11 @@ fn parse_expression_inner(
           terms.push(expr);
           term_was_implicit_times.push(is_implicit_times);
         }
-        if leading_not {
+        if leading_not > 0 {
           // Defer the Not wrapping until any postfix suffixes have been
           // applied so that operators like `!` bind tighter than the prefix
           // Not, matching Wolfram precedence.
-          pending_not_on_last = true;
+          pending_not_on_last = leading_not;
           // If this is the first term (no operators yet), record the leading
           // `!` so we can re-apply it at the right precedence after the
           // binary tree is built. Mathematica's `!` (prec 230) is looser
@@ -5332,7 +5373,7 @@ fn parse_expression_inner(
           if terms.len() == 1 && operators.is_empty() {
             leading_not_at_start = true;
           }
-          leading_not = false;
+          leading_not = 0;
         }
       }
     }
@@ -12028,6 +12069,13 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
       // in separator position is an option, not a separator; any non-Rule
       // extra argument keeps the expression in its full form (matching
       // wolframscript, e.g. Row[{1, 2}, "|", "x"]).
+      // OutputForm-only: `Infix[{a, b}, h]` lays out as the row `a h b`.
+      if is_output
+        && name == "Infix"
+        && let Some(items) = infix_display_items(args)
+      {
+        return items.iter().map(&fmt).collect();
+      }
       if is_output
         && name == "Row"
         && let Some(Expr::List(items)) = args.first()
@@ -14879,6 +14927,15 @@ pub fn is_rule_expr(expr: &Expr) -> bool {
 /// Extract the width in printer's points from a `Spacer` expression.
 /// Supports `Spacer[w]`, `Spacer[{w, ...}]`.
 pub fn spacer_width_pts(expr: &Expr) -> Option<f64> {
+  // A styled spacer (`Style[Spacer[10], 11]`, which `Style[Row[…], 11]`
+  // makes of each of its items) is still that many points of blank: font
+  // directives don't change a spacer's width.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Style"
+    && !args.is_empty()
+  {
+    return spacer_width_pts(&args[0]);
+  }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Spacer"
     && args.len() == 1
@@ -14903,6 +14960,48 @@ pub fn spacer_width_pts(expr: &Expr) -> Option<f64> {
 /// This is used for the final output in interpret(), not for round-tripping.
 pub fn expr_to_output(expr: &Expr) -> String {
   format_expr(expr, ExprForm::Output)
+}
+
+/// The display items of `Infix[expr, h, …]` (the `args` of the call): the
+/// operands of `expr` with the operator `h` between each pair. A bare
+/// `Infix[f[a, b, …]]` uses its head as the operator, set off by tildes —
+/// `a ~ f ~ b ~ …`. A string item stands for the text it displays; every
+/// display renderer lays the items out as one row, so `Infix` is formatted
+/// in one place. The optional precedence and grouping arguments affect only
+/// parenthesization by an enclosing operator and are not needed to lay the
+/// row out. `None` when the call has no operands to join.
+pub fn infix_display_items(args: &[Expr]) -> Option<Vec<Expr>> {
+  if args.is_empty() || args.len() > 4 {
+    return None;
+  }
+  let (operands, head): (&[Expr], Option<&str>) = match &args[0] {
+    Expr::List(items) => (items, None),
+    Expr::FunctionCall { name, args: items } => (items, Some(name.as_str())),
+    _ => return None,
+  };
+  if operands.is_empty() {
+    return None;
+  }
+  let separator: Vec<Expr> = match (args.get(1), head) {
+    // A list of operators is left as the call.
+    (Some(Expr::List(_)), _) => return None,
+    (Some(op), _) => vec![op.clone()],
+    (None, Some(head)) => vec![
+      Expr::String(" ~ ".to_string()),
+      Expr::Identifier(head.to_string()),
+      Expr::String(" ~ ".to_string()),
+    ],
+    // A bare list has no head to stand in as its operator.
+    (None, None) => return None,
+  };
+  let mut items = Vec::with_capacity(operands.len() * (separator.len() + 1));
+  for (i, operand) in operands.iter().enumerate() {
+    if i > 0 {
+      items.extend(separator.iter().cloned());
+    }
+    items.push(operand.clone());
+  }
+  Some(items)
 }
 
 /// Text that tells apart expressions which differ only in the pictures they
