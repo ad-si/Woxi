@@ -18786,23 +18786,16 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
     // inside `TraditionalForm[note == "…"]`, whose box is the quoted
     // source) typesets as the boxes it spells, not as its escape source.
     Expr::String(s)
-      if inline_box_string_to_box_expr(
-        s.strip_prefix('"')
-          .and_then(|t| t.strip_suffix('"'))
-          .unwrap_or(s),
-      )
-      .is_some() =>
+      if inline_box_string_to_box_expr(&quoted_box_string_value(s))
+        .is_some() =>
     {
-      let text = s
-        .strip_prefix('"')
-        .and_then(|t| t.strip_suffix('"'))
-        .unwrap_or(s);
+      let text = quoted_box_string_value(s);
       let boxes =
-        inline_box_string_to_box_expr(text).expect("checked by the guard");
-      if text.len() == s.len() {
-        layout_box(&boxes, font_size)
-      } else {
+        inline_box_string_to_box_expr(&text).expect("checked by the guard");
+      if s.starts_with('"') {
         with_box_upright_text(true, || layout_box(&boxes, font_size))
+      } else {
+        layout_box(&boxes, font_size)
       }
     }
     // A string box is stored as its quoted source but drawn without quotes.
@@ -23160,8 +23153,13 @@ fn trim_char_slice(cs: &[char]) -> &[char] {
 /// just past the `\*`. Returns the resulting box Expr and the index past the
 /// consumed tokens.
 fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
-  // Read the head name (letters/digits/`$`).
+  // Read the head name (letters/digits/`$`). The source may break the line
+  // after the `\*` (`\!\(\*\nStyleBox[…]\)`, how a saved definition wraps
+  // a long inline cell); that whitespace is no part of the box.
   let mut i = pos;
+  while i < cs.len() && cs[i].is_whitespace() {
+    i += 1;
+  }
   let name_start = i;
   while i < cs.len() && (cs[i].is_alphanumeric() || cs[i] == '$') {
     i += 1;
@@ -24260,6 +24258,23 @@ pub fn box_string_to_svg(s: &str) -> String {
 /// The box expression a string with inline `\!\(\*…\)` box notation
 /// typesets to (`RowBox[{"sweep", SubscriptBox[…], …}]`), for renderers that
 /// lay out boxes rather than SVG label runs. `None` for a plain string.
+/// The text a string box stands for. A box written as a string's quoted
+/// source has its quotes removed — and, when that source is the string's
+/// escaped InputForm (`"\!\(\*StyleBox[\"t\", …]\)"`, as box text spells
+/// it), its escapes resolved, so the inline boxes it carries can be read.
+fn quoted_box_string_value(s: &str) -> String {
+  let Some(inner) = s.strip_prefix('"').and_then(|t| t.strip_suffix('"'))
+  else {
+    return s.to_string();
+  };
+  if inner.contains("\\\"")
+    && let Ok(Expr::String(ref value)) = crate::syntax::string_to_expr(s)
+  {
+    return value.clone();
+  }
+  inner.to_string()
+}
+
 pub fn inline_box_string_to_box_expr(s: &str) -> Option<Expr> {
   // The box source is either the parser's private-use markers or, once a
   // string has been round-tripped through box text, the literal escapes.

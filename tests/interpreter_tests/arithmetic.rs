@@ -8453,6 +8453,37 @@ mod cases {
     );
   }
 
+  /// `±x` and `∓x` typeset as their sign glyph in front of the operand (a
+  /// sum operand parenthesized), and `PlusMinus[a, b]` as the infix `a ± b`,
+  /// bracketed as a factor of a product.
+  #[test]
+  fn traditional_form_plus_minus_uses_its_glyph() {
+    assert_eq!(
+      held_traditional_boxes("±2 Sin[x]"),
+      r#"RowBox[{RowBox[{"±", "2"}], " ", RowBox[{"sin", "(", "x", ")"}]}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("MinusPlus[a + b]"),
+      r#"RowBox[{"∓", RowBox[{"(", RowBox[{"a", "+", "b"}], ")"}]}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("PlusMinus[a, b] c"),
+      r#"RowBox[{RowBox[{"(", RowBox[{"a", "±", "b"}], ")"}], " ", "c"}]"#
+    );
+  }
+
+  /// `DisplayForm[boxes]` inside a TraditionalForm layout draws its boxes,
+  /// not the `RowBox[…]` call that spells them.
+  #[test]
+  fn traditional_form_grid_draws_display_form_boxes() {
+    let svg = woxi::interpret(
+      r#"ExportString[TraditionalForm[Grid[{{"L = ", DisplayForm[RowBox[{"(", FractionBox["a", "2"], ")"}]]}}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("RowBox"), "{svg}");
+    assert!(!svg.contains("FractionBox"), "{svg}");
+  }
+
   /// A derivative sets the differentiated expression over the bar,
   /// `∂ψ(x, t)/∂t`, and only falls back to the operator form `∂/∂x (…)`
   /// for a derivand that is itself two-dimensional.

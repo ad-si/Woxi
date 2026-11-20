@@ -5927,6 +5927,9 @@ fn tf_needs_paren_factor(expr: &Expr) -> bool {
     Expr::Comparison { .. } => true,
     Expr::FunctionCall { name, args } => {
       (name == "Plus" && args.len() >= 2)
+        // `a ± b` binds looser than a product: `(a ± b) c`.
+        || (matches!(name.as_str(), "PlusMinus" | "MinusPlus")
+          && args.len() >= 2)
         || (name == "Times"
           && matches!(args.first(), Some(Expr::Integer(n)) if *n < 0))
     }
@@ -7413,6 +7416,8 @@ fn tf_infix_glyph(head: &str) -> Option<&'static str> {
     "VerticalSeparator" => "\u{F432}",
     "Distributed" => "\u{F3D2}",
     "Dot" => ".",
+    "PlusMinus" => "\u{00B1}",
+    "MinusPlus" => "\u{2213}",
     _ => return None,
   })
 }
@@ -7615,7 +7620,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
   }
   match name {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
-    "RawBoxes" if args.len() == 1 => args[0].clone(),
+    // `DisplayForm[boxes]` shows its boxes typeset, just like `RawBoxes`:
+    // `DisplayForm[RowBox[{"(", FractionBox["a", "2"], ")"}]]` is `(a/2)`.
+    "RawBoxes" | "DisplayForm" if args.len() == 1 => args[0].clone(),
     "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
     // `a | b | c` keeps its infix bar (`P(X | A)` for a conditional
     // probability) instead of falling back to `Alternatives(a, b, c)`.
@@ -8027,6 +8034,12 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     _ if args.len() >= 2 && tf_infix_glyph(name).is_some() => {
       tf_infix(name, args)
     }
+    // The prefix `±x` / `∓x` signs its operand like a unary minus, so a sum
+    // operand is parenthesized: `±(a + b)`.
+    "PlusMinus" | "MinusPlus" if args.len() == 1 => tf_row(vec![
+      tf_string(tf_infix_glyph(name).unwrap_or_default()),
+      tf_factor_boxed(&args[0]),
+    ]),
     "ForAll" | "Exists" | "NotExists" if (2..=3).contains(&args.len()) => {
       tf_quantifier(name, args)
     }
