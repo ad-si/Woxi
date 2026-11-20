@@ -11583,8 +11583,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `SphericalRegion -> True`: frame the picture by the sphere that
   // encloses the contents instead of by their projected outline, so the
   // scale stays put as the view turns or the contents move. A
-  // `Manipulate` frame defaults to it, as the Wolfram FrontEnd does.
-  let mut spherical_region = crate::in_manipulate_frame();
+  // `Manipulate` frame defaults to it for a scene with a set camera or
+  // range, as the Wolfram FrontEnd does (see the automatic rule below).
+  let mut spherical_region = false;
   // `SphericalRegion -> False` given outright (rather than the default
   // `Automatic`), which rules out the automatic sphere framing below.
   let mut spherical_region_off = false;
@@ -11608,6 +11609,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // A `ViewPoint` with an infinite component looks from infinitely far
   // away: an orthographic picture.
   let mut view_point_at_infinity = false;
+  // Whether a `ViewPoint` is given at all (even the default one).
+  let mut view_point_given = false;
   let mut orthographic = false;
   let mut show_axes = false;
   let mut axes_look = AxesLook {
@@ -11695,6 +11698,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             .filter(|p| p.iter().all(|v| v.is_finite() && *v >= 0.0));
         }
         "ViewPoint" => {
+          view_point_given = true;
           // Symbolic viewpoints stand for axis-aligned directions
           // (Wolfram's `Above` is `{0, 0, ∞}`, etc.).
           let symbolic: Option<[f64; 3]> = match replacement.as_ref() {
@@ -12066,22 +12070,32 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // orthographic pipeline below draw them: x and z carry the screen
   // position and y the depth.
   let perspective = view_vector.is_some() && !orthographic;
-  // Under the default `SphericalRegion -> Automatic`, an invisible
-  // (`Boxed -> False`) box in a picture of fixed width and height is framed
-  // like `SphericalRegion -> True`: by the sphere around the box, not by the
-  // box's projected outline. Wolfram's snapshots of such scenes (long tubes
-  // along x in a 13 × 8 × 8 and a 22 × 8.5 × 8.5 pinned box, and a `Show`
-  // of a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}`
-  // from a custom `ViewPoint`) draw them at the sphere-framed size, 0.7×
-  // to 0.86× the outline-fitted one.
+  // Under the default `SphericalRegion -> Automatic`, a scene whose camera
+  // (`ViewPoint`) or displayed range (`PlotRange`) is set explicitly is
+  // framed like `SphericalRegion -> True` — by the sphere around the box,
+  // not by the box's projected outline — inside a `Manipulate` frame, and
+  // when its box is invisible (`Boxed -> False`) in a picture of fixed width
+  // and height. Wolfram's snapshots of such scenes (long tubes along x in a
+  // 13 × 8 × 8 and a 22 × 8.5 × 8.5 pinned box, a `Show` of a `Graphics3D`
+  // and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a custom
+  // `ViewPoint`, and a pinned cube seen from `Below` in a `Manipulate`) draw
+  // them at the sphere-framed size, 0.7× to 0.86× the outline-fitted one.
+  // A scene with neither set keeps the outline fit: a `Manipulate`'s
+  // unboxed `Graphics3D` of stacked cuboids at `ImageSize -> {400, 300}`
+  // fills the picture as the fitted outline does (262 px wide in Wolfram's
+  // snapshot, 250 px fitted, 184 px sphere-framed).
   // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  let scene_pinned =
+    view_point_given || plot_range.is_some() || partial_range.is_some();
   let spherical_region = spherical_region
     || (!spherical_region_off
-      && !show_box
-      && explicit_height
-      && !full_width
-      && !aspect_full
-      && view_angle.is_none());
+      && scene_pinned
+      && (crate::in_manipulate_frame()
+        || (!show_box
+          && explicit_height
+          && !full_width
+          && !aspect_full
+          && view_angle.is_none())));
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
       let b = primitives_bounds(&prims);

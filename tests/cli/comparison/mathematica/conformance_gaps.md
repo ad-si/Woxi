@@ -5642,7 +5642,8 @@ the plot call itself change nothing:
 picture as without the option. The options are kept on the result, so
 `Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
 re-renders the scene through `Graphics3D` and honors them, including the
-`SphericalRegion -> True` framing a `Manipulate` frame defaults to.
+`SphericalRegion -> True` framing a `Manipulate` frame defaults to (see
+"Automatic sphere framing of a 3D scene" below).
 
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
@@ -5667,27 +5668,36 @@ calibrations above fit the box sphere, so no single rule tried so far
 (box sphere, contents sphere, longer vs. shorter image side) reproduces
 all of them.
 
-### Sphere framing of an unboxed box at a fixed `ImageSize`
+### Automatic sphere framing of a 3D scene
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a
 `Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
-displayed box) when the box is invisible (`Boxed -> False`) and the picture
-is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate
-this, none checked with wolframscript: a cylinder from `{-10, 0, 0}` to
-`{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
-4.25}}, ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
+displayed box) when the scene sets its camera (`ViewPoint`) or displayed
+range (`PlotRange`) explicitly and it is either drawn inside a `Manipulate`
+frame, or its box is invisible (`Boxed -> False`) in a picture drawn at
+`ImageSize -> {w, h}`. Demonstrations' snapshots motivate this, none
+checked with wolframscript: a cylinder from `{-10, 0, 0}` to `{10, 0, 0}`
+in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25, 4.25}},
+ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
 box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
 `{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
-244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), and a `Show` of
-a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
+244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), a `Show` of a
+`Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
 custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
-and 0.86× the box fit.
+and 0.86× the box fit, and a pinned cube of side 15 seen from `Below` in a
+`Manipulate` matches the sphere framing.
 
-Which conditions really trigger the sphere framing — `Boxed -> False`, the
-pinned size, an explicit `PlotRange` or `Show` — is unverified. A
+A scene with neither a `ViewPoint` nor a `PlotRange` keeps the outline fit,
+even unboxed at a fixed size inside a `Manipulate`: a Demonstration's
+stepped stack of cuboids (`Boxed -> False`, `ImageSize -> {400, 300}`) is
+262 px wide in its snapshot, where Woxi's outline fit draws 250 px and the
+sphere framing 184 px.
+
+Which conditions really trigger the sphere framing is unverified; the rule
+above is just the simplest one consistent with every snapshot so far. A
 `Boxed -> False` picture given only a width still fits the box outline, and
 `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
-`ViewAngle` turn the sphere framing off. The surface plots
+`ViewAngle` turn the fixed-size sphere framing off. The surface plots
 (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 
 ### `PointSize` in `Graphics3D` draws larger than Wolfram
