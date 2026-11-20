@@ -6168,10 +6168,7 @@ fn rasterize_svg(
   scale_factor: f32,
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<(iced::widget::image::Handle, u32, u32)> {
-  let opts = resvg::usvg::Options {
-    fontdb: fontdb.clone(),
-    ..Default::default()
-  };
+  let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let logical_w = size.width().ceil() as u32;
@@ -8095,10 +8092,7 @@ fn encode_svg_as_png(
   svg_str: &str,
   fontdb: &Arc<resvg::usvg::fontdb::Database>,
 ) -> Option<Vec<u8>> {
-  let opts = resvg::usvg::Options {
-    fontdb: fontdb.clone(),
-    ..Default::default()
-  };
+  let opts = woxi::functions::image_ast::svg_render_options(fontdb.clone());
   let tree = resvg::usvg::Tree::from_str(svg_str, &opts).ok()?;
   let size = tree.size();
   let scale: f32 = 2.0;
@@ -8122,10 +8116,8 @@ fn encode_svg_as_pdf(svg_str: &str) -> Result<Vec<u8>, ()> {
   fontdb.load_system_fonts();
   woxi::functions::image_ast::load_embedded_fonts(&mut fontdb);
 
-  let opt = svg2pdf::usvg::Options {
-    fontdb: std::sync::Arc::new(fontdb),
-    ..Default::default()
-  };
+  let opt =
+    woxi::functions::image_ast::svg_render_options(std::sync::Arc::new(fontdb));
 
   let tree = svg2pdf::usvg::Tree::from_str(svg_str, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
@@ -8487,10 +8479,7 @@ fn document_pdf(cells: &[PdfCell]) -> Result<Vec<u8>, ()> {
   let svg_doc = format!(
     r#"<svg xmlns="http://www.w3.org/2000/svg" width="{PDF_PAGE_WIDTH}" height="{height}" viewBox="0 0 {PDF_PAGE_WIDTH} {height}">{elements}</svg>"#,
   );
-  let opt = svg2pdf::usvg::Options {
-    fontdb: pdf_fontdb(),
-    ..Default::default()
-  };
+  let opt = woxi::functions::image_ast::svg_render_options(pdf_fontdb());
   let tree = svg2pdf::usvg::Tree::from_str(&svg_doc, &opt).map_err(|_| ())?;
   svg2pdf::to_pdf(
     &tree,
@@ -8519,10 +8508,7 @@ fn slide_page_svg(cells: &[PdfCell]) -> String {
 fn slides_pdf(slides: &[Vec<PdfCell>]) -> Result<Vec<u8>, ()> {
   use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref};
 
-  let opt = svg2pdf::usvg::Options {
-    fontdb: pdf_fontdb(),
-    ..Default::default()
-  };
+  let opt = woxi::functions::image_ast::svg_render_options(pdf_fontdb());
   let (slide_w, slide_h) = PDF_SLIDE_SIZE;
   let mut alloc = Ref::new(1);
   let catalog_id = alloc.bump();
