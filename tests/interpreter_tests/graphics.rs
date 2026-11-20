@@ -64930,3 +64930,31 @@ mod show_keeps_color_function_per_curve {
     assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
   }
 }
+
+/// A translucent `Background` keeps its opacity instead of filling the
+/// picture with the opaque color.
+#[test]
+fn graphics_translucent_background_keeps_opacity() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Graphics[Disk[], Background -> RGBColor[1, 0, 0, 0.5]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(
+    svg.contains(r#"fill="rgb(255,0,0)" opacity="0.5"/>"#),
+    "opacity lost: {svg}"
+  );
+  let svg = interpret(
+    r#"ExportString[Graphics[Disk[], Background -> Opacity[0.25, Blue]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(
+    svg.contains(r#"fill="rgb(0,0,255)" opacity="0.25"/>"#),
+    "opacity lost: {svg}"
+  );
+  // An opaque background has no opacity attribute.
+  let svg =
+    interpret(r#"ExportString[Graphics[Disk[], Background -> Red], "SVG"]"#)
+      .unwrap();
+  assert!(svg.contains(r#"fill="rgb(255,0,0)"/>"#), "{svg}");
+}
