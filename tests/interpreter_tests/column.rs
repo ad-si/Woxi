@@ -131,6 +131,25 @@ mod column_visual_mode {
     assert!(!svg.contains("<?xml"));
   }
 
+  /// The front end reads a string alignment (`Column[…, "Center"]`) like
+  /// the symbol: every item is centered, not left-aligned.
+  #[test]
+  fn column_string_alignment_matches_symbol() {
+    for (string, symbol) in [("\"Center\"", "Center"), ("\"Right\"", "Right")] {
+      clear_state();
+      let code = |align: &str| {
+        format!(
+          "Column[{{\"a long line\", \"x\", Graphics[Circle[]]}}, {align}]"
+        )
+      };
+      let by_string = interpret_with_stdout(&code(string)).unwrap().graphics;
+      clear_state();
+      let by_symbol = interpret_with_stdout(&code(symbol)).unwrap().graphics;
+      assert!(by_string.is_some());
+      assert_eq!(by_string, by_symbol, "{string}");
+    }
+  }
+
   /// Count the horizontal rules (`<line … y1 == y2 …>`) in an SVG.
   fn horizontal_lines(svg: &str) -> Vec<f64> {
     svg
