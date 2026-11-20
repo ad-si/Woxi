@@ -49727,6 +49727,21 @@ fn togglerbar_node(
   // The current selection, for the per-choice `selected` state.
   let current = crate::evaluator::evaluate_expr_to_expr(&getter).ok();
   let enabled = display_option_enabled(&args[2..]);
+  // Every choice's value, so a scalar variable that already names one of
+  // them can be kept when another choice is toggled on.
+  let choice_values_code = format!(
+    "{{{}}}",
+    choices
+      .iter()
+      .map(|choice| match choice {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          crate::syntax::expr_to_source_form(pattern)
+        }
+        other => crate::syntax::expr_to_source_form(other),
+      })
+      .collect::<Vec<_>>()
+      .join(", ")
+  );
   let mut buttons = Vec::with_capacity(choices.len());
   for choice in choices {
     let (value, label) = match choice {
@@ -49748,15 +49763,19 @@ fn togglerbar_node(
       Some(single) => crate::syntax::expr_to_source_form(single) == value_code,
       None => false,
     };
-    // A bar whose variable does not hold a list yet (e.g. a CheckboxBar
-    // control declared with initial value `0`, meaning "nothing ticked")
-    // starts a fresh selection list rather than `Append`ing to the scalar;
-    // a scalar equal to this choice (drawn ticked above) is unticked.
+    // A bar whose variable does not hold a list yet reads a scalar that
+    // names one of the choices (drawn ticked above) as a one-element
+    // selection: toggling that choice unticks it, toggling another one
+    // keeps both, like the Wolfram front end (`1` becomes `{1, 2}`). A
+    // scalar outside the choices (e.g. a CheckboxBar control declared with
+    // initial value `0`, meaning "nothing ticked") starts a fresh selection
+    // list rather than `Append`ing to the scalar.
     let toggled = format!(
       "If[ListQ[{getter_code}], If[MemberQ[{getter_code}, {value_code}], \
        DeleteCases[{getter_code}, {value_code}], Append[{getter_code}, \
        {value_code}]], If[{getter_code} === {value_code}, {{}}, \
-       {{{value_code}}}]]"
+       If[MemberQ[{choice_values_code}, {getter_code}], \
+       {{{getter_code}, {value_code}}}, {{{value_code}}}]]]"
     );
     let mutation = match &setter {
       None => format!("{getter_code} = {toggled}"),
