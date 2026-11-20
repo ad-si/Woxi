@@ -51955,6 +51955,29 @@ pub fn continuous_binding_code(
   }
 }
 
+/// The value readout of a continuous `Manipulate` slider whose variable
+/// binds an exact number (see [`continuous_binding_code`]), typeset the way
+/// the FrontEnd shows it: a slider stepping by `1/6` reads a stacked `7/6`
+/// fraction and one stepping by `Pi/4` a stacked `3π/4`, not `1.167` or
+/// `2.356`. `None` when the bound value is a plain integer or machine real,
+/// which stays text.
+pub fn continuous_value_label_svg(
+  value: f64,
+  is_real: bool,
+  imaginary: bool,
+) -> Option<String> {
+  if is_real {
+    return None;
+  }
+  let code = continuous_binding_code(value, false, imaginary);
+  let expr = crate::syntax::string_to_expr(&code).ok()?;
+  let evaluated = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  match evaluated {
+    Expr::Integer(_) | Expr::BigInteger(_) | Expr::Real(_) => None,
+    other => form_box_svg(&other),
+  }
+}
+
 pub fn format_f64_exact(v: f64) -> String {
   if !v.is_finite() || v.fract() == 0.0 || v.abs() >= 1e9 {
     return format_f64_input(v);
