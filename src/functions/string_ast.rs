@@ -2396,6 +2396,37 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     expr_to_str(&args[0])
   };
 
+  // Conditional pattern: `patt /; test`. The whole string must match the
+  // inner pattern, and the `/;` test (with the named captures substituted
+  // in) has to evaluate to True.
+  if let Expr::FunctionCall { name, args: cargs } = &args[1]
+    && name == "Condition"
+    && cargs.len() == 2
+    && let Some((regex_str, constraints)) =
+      string_match_pattern_to_regex_with_state(&cargs[0])
+  {
+    let case_flag = if ignore_case { "(?i)" } else { "" };
+    let re =
+      compile_regex(&format!("{case_flag}^(?:{regex_str})$")).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {e}"
+        ))
+      })?;
+    // Match against the original string so the captures keep their case.
+    let original = expr_to_str(&args[0]);
+    let Some(caps) = re.captures(&original) else {
+      return Ok(bool_expr(false));
+    };
+    if !caps_satisfy_constraints(&caps, &constraints) {
+      return Ok(bool_expr(false));
+    }
+    let test_sub = substitute_captures(&cargs[1], &caps);
+    let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
+    return Ok(bool_expr(
+      matches!(&test_val, Expr::Identifier(t) if t == "True"),
+    ));
+  }
+
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
   if let Some((regex_str, constraints)) =
     string_match_pattern_to_regex_with_state(&args[1])
