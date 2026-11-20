@@ -4877,6 +4877,24 @@ mod tests {
       }
     }
 
+    /// An outer `Style` around `TraditionalForm[Style[layout, …]]` (what
+    /// `Text[…]` wraps its content in) typesets the layout instead of
+    /// printing it as its source.
+    #[test]
+    fn style_around_traditional_form_of_styled_layout() {
+      for code in [
+        "Style[TraditionalForm[Style[Grid[{{a, 2}}], 24]], Red]",
+        "Text[TraditionalForm[Style[Grid[{{a + b, 2}}, Frame -> All], 20]]]",
+        "Style[TraditionalForm[Style[Column[{a, b}], 18]], Bold]",
+      ] {
+        let svg =
+          woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+        assert!(!svg.contains("Grid["), "{code}: {svg}");
+        assert!(!svg.contains("Column["), "{code}: {svg}");
+        assert!(!svg.contains("TraditionalForm"), "{code}: {svg}");
+      }
+    }
+
     /// A bushy tree sets its own picture width from its labels; in a
     /// narrower fixed-size pane it is squeezed to the pane's width rather
     /// than clipped.

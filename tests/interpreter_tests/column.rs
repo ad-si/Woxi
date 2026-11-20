@@ -1024,3 +1024,97 @@ mod row_part_font_family {
     );
   }
 }
+
+mod column_item_style_and_size {
+  use super::*;
+
+  fn svg_dims(svg: &str) -> (f64, f64) {
+    let attr = |name: &str| -> f64 {
+      let start = svg.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      let end = start + svg[start..].find('"').unwrap();
+      svg[start..end].parse().unwrap()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `ItemStyle -> Directive[…]` styles every item of a `Column`: size,
+  /// weight and color reach each item's text.
+  #[test]
+  fn single_item_style_applies_to_every_item() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"a", "b"}, ItemStyle -> Directive[20, Bold, Blue]], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg.matches("font-size=\"20\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("font-weight=\"bold\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
+  }
+
+  /// A list of styles styles the items in turn; a sublist repeats.
+  #[test]
+  fn list_item_style_styles_items_in_turn() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"a", "b", "c"}, ItemStyle -> {Red, {Blue}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
+  }
+
+  /// The option itself never shows up as an item or as text.
+  #[test]
+  fn item_style_with_alignment_and_spacing() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"x", "y"}, Center, 0, ItemStyle -> Directive[18, Red]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("ItemStyle"), "{svg}");
+    assert_eq!(svg.matches("font-size=\"18\"").count(), 2, "{svg}");
+  }
+
+  /// A fixed `ItemSize` width is the whole width of the column.
+  #[test]
+  fn fixed_item_width_is_the_column_width() {
+    for w in [3, 5] {
+      clear_state();
+      let svg = interpret(&format!(
+        r#"ExportString[Column[{{"a", "b"}}, ItemSize -> {w}], "SVG"]"#
+      ))
+      .unwrap();
+      assert_eq!(svg_dims(&svg).0, (w * 14) as f64, "{svg}");
+    }
+  }
+
+  /// Stacked framed boxes are set apart like stacked pictures, whether or
+  /// not the `Column` has an alignment argument.
+  #[test]
+  fn stacked_boxes_have_the_default_gap() {
+    clear_state();
+    let one = interpret(r#"ExportString[Framed["a"], "SVG"]"#).unwrap();
+    let (_, h) = svg_dims(&one);
+    for align in ["", ", Left", ", Center"] {
+      clear_state();
+      let svg = interpret(&format!(
+        r#"ExportString[Column[{{Framed["a"], Framed["b"]}}{align}], "SVG"]"#
+      ))
+      .unwrap();
+      assert_eq!(svg_dims(&svg).1, 2.0 * h + 6.0, "{align}: {svg}");
+    }
+  }
+
+  /// An explicit spacing of 0 keeps the boxes touching.
+  #[test]
+  fn explicit_zero_spacing_keeps_boxes_touching() {
+    clear_state();
+    let one = interpret(r#"ExportString[Framed["a"], "SVG"]"#).unwrap();
+    let (_, h) = svg_dims(&one);
+    let svg = interpret(
+      r#"ExportString[Column[{Framed["a"], Framed["b"]}, Left, 0], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg_dims(&svg).1, 2.0 * h, "{svg}");
+  }
+}

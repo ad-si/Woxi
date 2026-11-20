@@ -35844,9 +35844,11 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
         } else {
           args.clone()
         };
+        // The script sits right on its base: no gap between them.
         return column_to_svg(&[
           Expr::List(stacked.into()),
           Expr::Identifier("Center".to_string()),
+          Expr::Integer(0),
         ]);
       }
       // A text `Underoverscript[base, under, over]` (a `∑` with its
@@ -35875,9 +35877,11 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
           "Overscript" => vec![script(&args[1]), base],
           _ => vec![base, script(&args[1])],
         };
+        // The script sits right on its base: no gap between them.
         return column_to_svg(&[
           Expr::List(stacked.into()),
           Expr::Identifier("Center".to_string()),
+          Expr::Integer(0),
         ]);
       }
       // A `Grid` nested in a layout is laid out too, rather than printed
@@ -36052,11 +36056,60 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Column", args) {
     return column_to_svg(&styled);
   }
+  if let Some(styled) = column_item_style_pushed_args(args) {
+    return column_to_svg(&styled);
+  }
   if let Some(grid_args) = column_as_grid_args(args) {
     return grid_svg_with_gaps(&grid_args, &[]).ok();
   }
   let svg = column_layout_svg(args)?;
   Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
+}
+
+/// The arguments of a `Column` with its `ItemStyle -> spec` option taken
+/// out and each item wrapped in the `Style` the spec gives it: a single
+/// style (`Directive[24, Bold, Red]`, `Red`) styles every item, a list
+/// `{s1, s2, …}` styles the items in turn, and a sublist in it
+/// (`{s1, {s2, s3}}`) repeats cyclically, as in the `Grid` item specs.
+/// `None` when the column has no `ItemStyle`.
+fn column_item_style_pushed_args(args: &[Expr]) -> Option<Vec<Expr>> {
+  let spec = args
+    .get(1..)?
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ItemStyle")
+    .map(|(_, v)| v.clone())?;
+  let Expr::List(items) = args.first()? else {
+    return None;
+  };
+  let n = items.len();
+  let styled: Vec<Expr> = items
+    .iter()
+    .enumerate()
+    .map(|(i, item)| {
+      let style = match &spec {
+        Expr::List(specs) => grid_spec_entry_at(specs, i + 1, n),
+        single => Some(single),
+      };
+      match style {
+        Some(Expr::Identifier(v)) if v == "None" || v == "Automatic" => {
+          item.clone()
+        }
+        Some(s) => call("Style", vec![item.clone(), s.clone()]),
+        None => item.clone(),
+      }
+    })
+    .collect();
+  Some(
+    std::iter::once(Expr::List(styled.into()))
+      .chain(
+        args[1..]
+          .iter()
+          .filter(|a| !matches!(option_kv(a), Some(("ItemStyle", _))))
+          .cloned(),
+      )
+      .collect(),
+  )
 }
 
 /// A `Column` ruled with `Dividers` is a one-column `Grid`: restate it as
@@ -36453,8 +36506,16 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       Cell::Text(..) => 0.0,
     })
     .fold(0.0_f64, f64::max);
-  let col_width = item_size_entry_at(item_size_w, 0, 1)
-    .map_or(col_width, |w| (w * font_size + pad_x).max(widest_picture));
+  // The fixed width is the whole width of the column's items (the width
+  // its text wraps at), with no padding added beside it.
+  let fixed_width = item_size_entry_at(item_size_w, 0, 1);
+  let col_width =
+    fixed_width.map_or(col_width, |w| (w * font_size).max(widest_picture));
+  let edge_pad = if fixed_width.is_some() {
+    0.0
+  } else {
+    pad_x / 2.0
+  };
 
   // A text-labeled `Button` without an explicit `ImageSize` stretches to
   // the column's width, as the FrontEnd lays out a button stacked above a
@@ -36513,8 +36574,19 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .collect();
 
   let n = cells.len();
+  // Without a stated spacing, two pictures stacked one on the other are
+  // set the default 6 pt apart (a text line carries its own leading), as
+  // in a `Column` laid out without an alignment argument; a stack of
+  // framed boxes no longer touches.
+  let spacing_given = spacing_option.is_some() || args.len() >= 3;
+  let gaps: Vec<f64> = (0..n.saturating_sub(1))
+    .map(|i| match (&cells[i], &cells[i + 1]) {
+      (Cell::Svg { .. }, Cell::Svg { .. }) if !spacing_given => 6.0,
+      _ => gap,
+    })
+    .collect();
   let total_height: f64 =
-    row_heights.iter().sum::<f64>() + gap * (n.saturating_sub(1) as f64);
+    row_heights.iter().sum::<f64>() + gaps.iter().sum::<f64>();
   let frame_padding = if frame_all { pad_x / 2.0 } else { 0.0 };
   let total_width = col_width + 2.0 * frame_padding;
 
@@ -36529,8 +36601,8 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   // Compute text x-coordinate based on alignment
   let text_x: f64 = match alignment {
     "middle" => total_width / 2.0,
-    "end" => total_width - pad_x / 2.0,
-    _ => pad_x / 2.0, // "start"
+    "end" => total_width - edge_pad,
+    _ => edge_pad, // "start"
   };
 
   let text_fill = theme().text_primary;
@@ -36620,6 +36692,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         svg.push_str("</svg>\n");
       }
     }
+    let gap = gaps.get(i).copied().unwrap_or(0.0);
     y_cursor += h + gap;
     // `Frame -> All` rules a line between every two items, midway through
     // the gap that separates them.
@@ -37005,7 +37078,13 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
         call1("Row", Expr::List(line.into()))
       })
       .collect();
-    return column_to_svg(&[Expr::List(rows.into())]);
+    // The lines follow at the text's own line pitch, with no gap between
+    // them.
+    return column_to_svg(&[
+      Expr::List(rows.into()),
+      Expr::Identifier("Left".to_string()),
+      Expr::Integer(0),
+    ]);
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
