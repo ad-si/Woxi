@@ -33807,6 +33807,25 @@ mod discrete_plot {
     assert_eq!(result, "6");
   }
 
+  // `{var, {x1, x2, …}}` samples exactly the listed values (evaluated
+  // from a symbol too), in any order and spacing.
+  #[test]
+  fn explicit_sample_list() {
+    clear_state();
+    let svg = export_svg("DiscretePlot[x^2, {x, {1, 2, 4}}]");
+    assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    let svg = export_svg(
+      "pts = {3.5, 0.25, 7, 1.}; DiscretePlot[x, {x, pts}, Filling -> None]",
+    );
+    assert_eq!(svg.matches("<circle").count(), 4, "{svg}");
+    // The listed values are substituted exactly.
+    assert_eq!(
+      interpret("c = {}; DiscretePlot[(AppendTo[c, x]; 1), {x, {1/2, 3}}]; c")
+        .unwrap(),
+      "{1/2, 3}"
+    );
+  }
+
   // {var, max} is shorthand for {var, 1, max} in DiscretePlot, matching Table.
   #[test]
   fn short_iter_spec() {
@@ -47471,6 +47490,37 @@ mod list_plot_markers_and_epilog {
     );
     // The glyph replaces the dot rather than joining it.
     assert_eq!(svg.matches("<circle").count(), 0, "{svg}");
+  }
+
+  // `Text[marker]` draws the marker itself, and a `FontSize -> n` rule
+  // inside `Style` sizes the glyph like a bare `n` does.
+  #[test]
+  fn a_text_wrapped_marker_with_a_font_size_rule() {
+    clear_state();
+    let font_size = |svg: &str| {
+      svg
+        .split("<text ")
+        .find(|tag| tag.contains(">\nB") || tag.contains(">B"))
+        .and_then(|tag| tag.split("font-size=\"").nth(1))
+        .and_then(|f| f.split('"').next())
+        .and_then(|f| f.parse::<f64>().ok())
+        .map(|f| f.round())
+    };
+    let svg = export_svg(
+      "ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> Text[Style[\"B\", FontSize -> 15]]]",
+    );
+    let markers: Vec<_> = marker_glyphs(&svg)
+      .into_iter()
+      .filter(|(t, _)| t == "B")
+      .collect();
+    assert_eq!(markers.len(), 2, "one glyph per data point: {svg}");
+    let by_rule = font_size(&svg);
+    let svg = export_svg(
+      "ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> Style[\"B\", 15]]",
+    );
+    assert_eq!(by_rule, font_size(&svg), "{svg}");
+    let svg = export_svg("ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> \"B\"]");
+    assert_ne!(by_rule, font_size(&svg), "{svg}");
   }
 
   #[test]

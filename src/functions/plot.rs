@@ -14113,6 +14113,10 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         graphics: None,
       })
     }
+    // `Text[marker]` — the same glyph as `marker` itself.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      parse_one_marker(&args[0])
+    }
     // `Style[marker, directives…]` — a color and/or a font size.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -14126,6 +14130,13 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
             (c.b * 255.0).round() as u8,
           ));
         } else if let Some(size) = try_eval_to_f64(directive) {
+          marker.size = size;
+        } else if let Some((name, value)) =
+          crate::functions::graphics::option_name_value(directive)
+          && name == "FontSize"
+          && let Some(size) = try_eval_to_f64(&value)
+        {
+          // `FontSize -> n` (or `FontSize :> n`).
           marker.size = size;
         } else if let Expr::FunctionCall { name, args } = directive
           && name == "FontSize"
