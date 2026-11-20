@@ -6503,6 +6503,19 @@ to the `1.8418…` factor `LaplacianGaussianFilter` uses at radius 1 (see
 above). The exact taps need a wolframscript probe, such as the impulse
 response above, before the kernel is changed.
 
+### `ImageResize` downsampling filter taps are unverified
+
+When an axis shrinks, Woxi averages every source pixel an output pixel
+covers (a box filter weighted by overlap); when it grows, it interpolates
+linearly. A Wolfram front-end snapshot of an 18x reduction of a rasterized
+disk shows the same soft gray edges, but the exact taps of Wolfram's
+antialiasing filter need a wolframscript probe, such as:
+
+```sh
+cargo run -- eval 'ImageData[ImageResize[Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}], 1]]'
+cargo run -- eval 'ImageData[ImageResize[Image[Table[If[i == 3, 1., 0.], {6}, {i, 6}]], {3, 6}]]'
+```
+
 ### Color-space tags do not propagate
 
 `ImageTake` and `ImagePartition` propagate an image's color-space tag;

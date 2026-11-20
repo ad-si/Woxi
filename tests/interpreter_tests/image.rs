@@ -1476,6 +1476,45 @@ mod image_processing {
     );
   }
 
+  // Shrinking an image averages every source pixel an output pixel covers
+  // instead of point-sampling the two nearest ones, so a large reduction
+  // of a hard-edged shape keeps soft gray edges. Regression for an 18x
+  // reduction of a rasterized disk coming out as pure black and white.
+  #[test]
+  fn image_resize_downscale_averages_covered_pixels() {
+    clear_state();
+    // One white pixel in a 3x3 block is a ninth of the 1x1 result.
+    assert_eq!(
+      interpret(
+        "Chop[ImageData[ImageResize[Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}], 1]] - 1/9, 10^-6]"
+      )
+      .unwrap(),
+      "{{0}}"
+    );
+    // A 4x reduction of a shape whose edge does not fall on block
+    // boundaries yields intermediate gray levels.
+    assert_eq!(
+      interpret(
+        "Length[Union[Flatten[ImageData[ImageResize[Image[Table[If[i^2 + j^2 < 30^2, 1., 0.], {i, -60, 59}, {j, -60, 59}]], 30]]]]] > 2"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A uniform image stays uniform under any reduction ratio.
+    assert_eq!(
+      interpret(
+        "Union[Round[Flatten[ImageData[ImageResize[Image[Table[0.5, {37}, {23}]], {7, 5}]]], 10^-12]]"
+      )
+      .unwrap(),
+      "{1/2}"
+    );
+    // Enlarging still interpolates linearly.
+    assert_eq!(
+      interpret("ImageData[ImageResize[Image[{{0., 1.}}], {4, 1}]]").unwrap(),
+      "{{0., 0.25, 0.75, 1.}}"
+    );
+  }
+
   // `{{wmax}, {hmax}}` fits the image inside a box, keeping its aspect ratio.
   #[test]
   fn image_resize_fits_within_box() {
