@@ -995,6 +995,33 @@ fn traditional_row_with_nested_grid_stacks_rows() {
   assert!(!svg.contains(">(<"), "matrix parentheses leaked: {svg}");
 }
 
+/// A `Button[label, action, Appearance -> None]` in a `Grid` cell draws only
+/// its styled label — no plate — while still carrying the hit region a live
+/// widget presses; a default-appearance neighbor keeps its plate.
+#[test]
+fn appearance_none_button_in_grid_draws_label_without_plate() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style["<", Large, Bold], k = k + 1, Appearance -> None], Button["ok", k = 0]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert_eq!(
+    svg.matches("id=\"woxi-btn-").count(),
+    2,
+    "both buttons are pressable: {svg}"
+  );
+  assert_eq!(
+    svg.matches("rx=\"4\"").count(),
+    1,
+    "only the default button draws a plate: {svg}"
+  );
+  let label = svg.find("&lt;</text>").expect("arrow label drawn");
+  let tag = &svg[svg[..label].rfind("<text").unwrap()..label];
+  assert!(tag.contains("font-weight=\"bold\""), "bold label: {tag}");
+  assert!(tag.contains("sans-serif"), "button face font: {tag}");
+}
+
 /// Regression: a styled `Row` (`Style[Row[{…, Spacer[n], …}], size]`)
 /// pushes its style onto every item, and the resulting
 /// `Style[Spacer[n], size]` was typeset as text — dozens of points wide —
