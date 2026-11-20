@@ -270,6 +270,28 @@ mod solids {
     );
     assert!(polygon_count(&s) > 100);
   }
+
+  /// A `Dynamic[x]` nested inside a primitive's coordinates
+  /// (`Cuboid[{0.5 + Dynamic[3], …}, …]`, as `Dynamic[s] {i, j, k}`
+  /// produces) or a directive's arguments (`Hue[Dynamic[h], 1, 1]`) is
+  /// drawn at its current value — the same picture as the plain numbers,
+  /// not a malformed cuboid that falls back to the unit cube.
+  #[test]
+  fn nested_dynamic_coordinates_and_colors_are_drawn_at_their_values() {
+    let with_dynamic = svg(
+      "Graphics3D[Table[{Hue[Dynamic[0.3] i, Dynamic[0.8], 1], \
+       Cuboid[Dynamic[3] {i, 0, 0} - Dynamic[0.5]/2, \
+       Dynamic[3] {i, 0, 0} + Dynamic[0.5]/2]}, {i, 3}], Boxed -> False]",
+    );
+    let plain = svg(
+      "Graphics3D[Table[{Hue[0.3 i, 0.8, 1], \
+       Cuboid[3 {i, 0, 0} - 0.5/2, 3 {i, 0, 0} + 0.5/2]}, {i, 3}], \
+       Boxed -> False]",
+    );
+    assert_eq!(with_dynamic, plain);
+    assert_eq!(polygon_count(&plain), polygon_count(&with_dynamic));
+    assert!(fills(&with_dynamic).len() >= 3, "{with_dynamic}");
+  }
 }
 
 mod vertex_colors {
