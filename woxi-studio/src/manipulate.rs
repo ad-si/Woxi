@@ -929,6 +929,15 @@ pub struct ManipulateState {
   /// away) or ran a `Refresh[…, UpdateInterval -> t]` that asks for a
   /// re-evaluation on a timer.
   self_refreshing: bool,
+  /// `UpdateInterval` code of a `Refresh[…, UpdateInterval -> t]` in the
+  /// body (see `ManipulateSpec::refresh_interval`).
+  refresh_interval: Option<String>,
+  /// The seconds between timed refreshes as of the last frame, or `None`
+  /// when the body does not currently refresh on its own (`t` is
+  /// `Infinity`, e.g. while a "run" checkbox is off).
+  timed_refresh: Option<f64>,
+  /// When the body last re-ran, so a timed refresh honors its interval.
+  last_refresh: Option<std::time::Instant>,
   /// `ControlPlacement -> …`: which side of the output the control panel
   /// sits on. `Top` (Wolfram's default) stacks the controls above it.
   pub control_placement: ControlPlacement,
@@ -1264,6 +1273,9 @@ impl ManipulateState {
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
       self_refreshing: false,
+      refresh_interval: spec.refresh_interval,
+      timed_refresh: None,
+      last_refresh: None,
       tracking: spec.tracking,
       dynamic_bounds: spec.dynamic_bounds,
       default_step_controls,
@@ -2053,7 +2065,9 @@ impl ManipulateState {
   /// Whether the app's timer should drive this widget: it plays an
   /// animation, or its body keeps rewriting its own `DynamicModule` state.
   pub fn wants_tick(&self) -> bool {
-    (self.animated && self.playing) || self.self_refreshing
+    (self.animated && self.playing)
+      || self.self_refreshing
+      || self.timed_refresh.is_some()
   }
 
   /// One timer step: advance the animation, or refresh a self-updating body.
@@ -2066,6 +2080,12 @@ impl ManipulateState {
       woxi::set_mouse_position(self.pointer_graphics_position());
       self.reevaluate();
       woxi::set_mouse_position(None);
+    } else if let Some(interval) = self.timed_refresh
+      && self
+        .last_refresh
+        .is_none_or(|t| t.elapsed().as_secs_f64() >= interval)
+    {
+      self.reevaluate();
     }
   }
 
@@ -2286,6 +2306,7 @@ impl ManipulateState {
     let dynamic_labels = self.dynamic_labels.clone();
     let control_label_code = self.control_label_code.clone();
     let content_width = self.content_width;
+    let refresh_interval = self.refresh_interval.clone();
     let content_height = self.content_height;
     let marked_code = self.display_code(&code);
     // Every bound name (visible controls + hidden state), so a body that
@@ -2305,6 +2326,7 @@ impl ManipulateState {
       resolved_values,
       resolved_labels,
       resolved_button_labels,
+      timed_refresh,
     ) = woxi::with_scoped_globals(&bindings, || {
       // The body runs *before* the captions are built: a Manipulate body
       // may assign to the widget's own variables (`{v, e} = ve[[n]]`),
@@ -2477,8 +2499,14 @@ impl ManipulateState {
         values,
         labels,
         button_labels,
+        // Resolved after the body ran, against the values it left behind.
+        refresh_interval.as_deref().and_then(
+          woxi::functions::graphics::manipulate_refresh_interval_seconds,
+        ),
       )
     });
+    self.timed_refresh = timed_refresh;
+    self.last_refresh = Some(std::time::Instant::now());
     self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
     let timed_refresh = woxi::take_timed_refresh();
@@ -8725,5 +8753,31 @@ mod repeated_option_tests {
       "the body lost the style it applies: {}",
       state.body
     );
+  }
+
+  /// A `Refresh[…, UpdateInterval -> t]` body re-runs on the app's timer
+  /// while `t` is finite (a running simulation advancing its hidden state),
+  /// and stays put while `t` resolves to `Infinity`.
+  #[test]
+  fn refresh_with_update_interval_drives_the_timer() {
+    let code = r#"Manipulate[
+      Refresh[If[run, k = k + 1]; k, UpdateInterval -> If[run, 0, Infinity]],
+      {{run, False}, {True, False}}, {{k, 0}, ControlType -> None}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.text_output.as_deref(), Some("0"));
+    assert!(!state.wants_tick(), "a stopped simulation needs no timer");
+    assert!(state.select_discrete(0, "True"));
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("1"));
+    assert!(state.wants_tick(), "a running simulation keeps refreshing");
+    state.tick();
+    state.tick();
+    assert_eq!(state.text_output.as_deref(), Some("3"));
+    assert!(state.select_discrete(0, "False"));
+    state.reevaluate();
+    assert!(!state.wants_tick());
+    assert_eq!(state.text_output.as_deref(), Some("3"));
   }
 }

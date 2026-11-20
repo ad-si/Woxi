@@ -40812,6 +40812,12 @@ pub struct ManipulateSpec {
   /// mechanism as a `Button`'s `action` — when the preset is selected, then
   /// the body re-evaluates against whatever variables it changed.
   pub bookmarks: Vec<(String, String)>,
+  /// The `UpdateInterval` option of a `Refresh[…, UpdateInterval -> t]`
+  /// in the body, as InputForm. The front end re-evaluates such a body
+  /// every `t` seconds on its own; `t` may depend on the controls
+  /// (`If[running, 0, Infinity]`), so it is resolved against the live
+  /// bindings via [`manipulate_refresh_interval_seconds`] after each frame.
+  pub refresh_interval: Option<String>,
 }
 
 /// Where a Manipulate's control panel sits relative to its output, from the
@@ -43114,6 +43120,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
     body_code = crate::syntax::expr_to_source_form(&stripped);
   }
+  // A `Refresh[…, UpdateInterval -> t]` body re-runs on a timer; `t` is
+  // resolved against the live bindings after each frame.
+  let mut refresh_interval = find_refresh_update_interval(&args[0])
+    .map(|e| crate::syntax::expr_to_input_form(&e));
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
     let rewrite = |code: &mut String| {
@@ -43122,6 +43132,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       }
     };
     rewrite(&mut body_code);
+    if let Some(code) = &mut refresh_interval {
+      rewrite(code);
+    }
     for d in &mut displays {
       rewrite(d);
     }
@@ -43208,6 +43221,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     content_height,
     list_elements,
     bookmarks,
+    refresh_interval,
   })
 }
 
@@ -44142,6 +44156,51 @@ fn find_body_var_reset(expr: &Expr, var: &str) -> Option<Expr> {
     }
     _ => None,
   }
+}
+
+/// The `UpdateInterval` value of the first `Refresh[…, UpdateInterval ->
+/// t]` inside `expr`, if any. A `Refresh` without that option (or with
+/// `None` as its second argument) only refreshes when its tracked symbols
+/// change, so it does not count.
+fn find_refresh_update_interval(expr: &Expr) -> Option<Expr> {
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Refresh" => args
+      .iter()
+      .skip(1)
+      .find_map(|opt| match opt {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "UpdateInterval") => {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      })
+      .or_else(|| args.first().and_then(find_refresh_update_interval)),
+    Expr::FunctionCall { args, .. } => {
+      args.iter().find_map(find_refresh_update_interval)
+    }
+    Expr::List(items) => items.iter().find_map(find_refresh_update_interval),
+    Expr::CompoundExpr(items) => {
+      items.iter().find_map(find_refresh_update_interval)
+    }
+    _ => None,
+  }
+}
+
+/// Resolve a [`ManipulateSpec::refresh_interval`] against the current
+/// globals: the number of seconds between automatic re-evaluations, or
+/// `None` when the body does not refresh on its own (`Infinity`, or a value
+/// that is not a non-negative number).
+pub fn manipulate_refresh_interval_seconds(code: &str) -> Option<f64> {
+  let expr = crate::interpret_to_expr(code).ok()?;
+  let value = crate::evaluator::evaluate_expr_to_expr(&expr).ok()?;
+  let seconds = crate::functions::math_ast::try_eval_to_f64(&value)?;
+  (seconds.is_finite() && seconds >= 0.0).then_some(seconds)
 }
 
 /// Replace every top-level `var = expr` assignment for a promoted
@@ -47668,6 +47727,7 @@ pub fn extract_list_animate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     content_height: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
+    refresh_interval: None,
   })
 }
 
@@ -47751,6 +47811,7 @@ pub fn extract_slide_view_spec(expr: &Expr) -> Option<ManipulateSpec> {
     content_height: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
+    refresh_interval: None,
   })
 }
 
@@ -47848,6 +47909,7 @@ pub fn extract_animator_spec(expr: &Expr) -> Option<ManipulateSpec> {
     content_height: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
+    refresh_interval: None,
   })
 }
 
@@ -48073,6 +48135,7 @@ pub fn extract_locator_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     content_height: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
+    refresh_interval: None,
   })
 }
 
@@ -48138,6 +48201,7 @@ pub fn extract_click_pane_spec(expr: &Expr) -> Option<ManipulateSpec> {
     content_height: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
+    refresh_interval: None,
   })
 }
 
@@ -48213,6 +48277,7 @@ pub fn extract_control_spec(expr: &Expr) -> Option<ManipulateSpec> {
     content_height: None,
     list_elements: Vec::new(),
     bookmarks: Vec::new(),
+    refresh_interval: None,
   })
 }
 
