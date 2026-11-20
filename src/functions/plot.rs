@@ -13417,11 +13417,13 @@ pub(crate) fn parse_image_size(
   // 400 {1, 1}` — the way a Demonstration asks for a square picture —
   // arrives as `Times[400, {1, 1}]`. Evaluate it once so the shapes below
   // see the `{400, 400}` they understand. A variable (`ImageSize -> size`)
-  // likewise still names its value.
+  // likewise still names its value, and so do the entries of a list
+  // (`ImageSize -> {s, s}`).
   let evaluated = match value {
-    Expr::BinaryOp { .. } | Expr::FunctionCall { .. } | Expr::Identifier(_) => {
-      evaluate_expr_to_expr(value).ok()
-    }
+    Expr::BinaryOp { .. }
+    | Expr::FunctionCall { .. }
+    | Expr::Identifier(_)
+    | Expr::List(_) => evaluate_expr_to_expr(value).ok(),
     _ => None,
   };
   let value = evaluated.as_ref().unwrap_or(value);
@@ -16305,15 +16307,17 @@ pub(crate) fn apply_common_plot_option(
   match name {
     "ImageSize" => {
       // A plot holds its options, so `ImageSize -> size` naming a variable
-      // (`size = {380, 290}`) arrives unevaluated.
+      // (`size = {380, 290}`) or a list of them (`{s, s}`) arrives
+      // unevaluated.
       let evaluated;
-      let replacement = if matches!(replacement, Expr::Identifier(_)) {
-        evaluated = evaluate_expr_to_expr(replacement)
-          .unwrap_or_else(|_| replacement.clone());
-        &evaluated
-      } else {
-        replacement
-      };
+      let replacement =
+        if matches!(replacement, Expr::Identifier(_) | Expr::List(_)) {
+          evaluated = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          &evaluated
+        } else {
+          replacement
+        };
       if let Some((w, h, fw)) =
         parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
       {
