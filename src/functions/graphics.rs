@@ -14128,6 +14128,9 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   if !runs.iter().any(styled) {
     return Vec::new();
   }
+  if flatten_label_runs(&runs) == text {
+    return label_runs_ranges(&runs);
+  }
   // Line the runs up with the text. A `Spacer[n]` is a single blank run
   // but `n` blanks of the text (see `spacer_gap_text`), so a blank run
   // stretches over the whole gap; any other difference means the runs do

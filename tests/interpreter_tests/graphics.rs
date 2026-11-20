@@ -4462,11 +4462,11 @@ mod graphics {
          Text[(Subscript[r, 1] Subscript[r, 2])^n, {1, 0}]}]",
       );
       // A graphic's `FormatType` is `TraditionalForm`: the letters are
-      // italic.
+      // italic, and an indexed variable is ordered by its base symbol.
       let i = "<tspan font-style=\"italic\">";
       assert!(
         svg.contains(&format!(
-          ">{i}x</tspan>\u{00B2}\u{2009}{i}t</tspan>\u{2081}\u{2009}{i}t</tspan>\u{2082}<"
+          ">{i}t</tspan>\u{2081}\u{2009}{i}t</tspan>\u{2082}\u{2009}{i}x</tspan>\u{00B2}<"
         )),
         "{svg}"
       );
