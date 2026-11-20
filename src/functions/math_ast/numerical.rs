@@ -8999,15 +8999,41 @@ fn root_coeffs_and_seed(
     return None;
   }
   let coeffs_f = bigint_coeffs_to_f64(&coeffs_i)?;
-  let mut roots = aberth_complex_roots(&coeffs_f);
+  let (re, im, real) = kth_ordered_root(&coeffs_f, k)?;
+  Some((coeffs_i, real, re, im))
+}
+
+/// Whether the machine root `(re, im)` is real up to the root finder's
+/// accuracy.
+fn root_is_real(re: f64, im: f64) -> bool {
+  im.abs() < 1e-8 * (1.0 + re.abs())
+}
+
+/// The `k`-th (1-based) root of the polynomial with machine coefficients
+/// `coeffs` (index = degree) in `Root`'s order — the real roots ascending,
+/// then the non-real ones by real part and then imaginary part — as
+/// `(re, im, is_real)`.
+fn kth_ordered_root(coeffs: &[f64], k: i128) -> Option<(f64, f64, bool)> {
+  if k < 1 {
+    return None;
+  }
+  // A vanishing constant term is an exact root at 0: it is split off so
+  // that it comes out as 0 rather than as the root finder's tiny residue.
+  let zeros = coeffs.iter().take_while(|c| **c == 0.0).count();
+  let rest = &coeffs[zeros.min(coeffs.len())..];
+  let mut roots = if rest.len() >= 2 {
+    aberth_complex_roots(rest)
+  } else {
+    Vec::new()
+  };
+  roots.extend(std::iter::repeat_n((0.0, 0.0), zeros));
   if roots.is_empty() || (k as usize) > roots.len() {
     return None;
   }
-  let is_real = |re: f64, im: f64| im.abs() < 1e-8 * (1.0 + re.abs());
   roots.sort_by(|a, b| {
     use std::cmp::Ordering;
-    let ar = is_real(a.0, a.1);
-    let br = is_real(b.0, b.1);
+    let ar = root_is_real(a.0, a.1);
+    let br = root_is_real(b.0, b.1);
     match (ar, br) {
       (true, false) => Ordering::Less,
       (false, true) => Ordering::Greater,
@@ -9019,7 +9045,22 @@ fn root_coeffs_and_seed(
     }
   });
   let (re, im) = roots[(k - 1) as usize];
-  Some((coeffs_i, is_real(re, im), re, im))
+  Some((re, im, root_is_real(re, im)))
+}
+
+/// `Root[f, k]` for a polynomial with approximate (machine-number)
+/// coefficients `coeffs` (index = degree): Wolfram evaluates such a root
+/// numerically, a real number for a real root and `re + im I` otherwise.
+pub(crate) fn inexact_root_value(coeffs: &[f64], k: i128) -> Option<Expr> {
+  let (re, im, real) = kth_ordered_root(coeffs, k)?;
+  Some(if real {
+    Expr::Real(re)
+  } else {
+    plus(vec![
+      Expr::Real(re),
+      times(vec![Expr::Real(im), id_expr("I")]),
+    ])
+  })
 }
 
 /// Integer polynomial coefficients as machine numbers; `None` when one
