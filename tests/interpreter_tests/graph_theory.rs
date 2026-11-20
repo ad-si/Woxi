@@ -2014,8 +2014,9 @@ mod graph_rendering {
       "ExportString[GraphPlot[{Subscript[x, 1] -> Subscript[x, 2]}, VertexLabeling -> True], \"SVG\"]"
     )
     .unwrap();
-    assert!(svg.contains(">x\u{2081}<"), "SVG: {svg}");
-    assert!(svg.contains(">x\u{2082}<"), "SVG: {svg}");
+    // A graphic's labels are `TraditionalForm`: the letter is italic.
+    assert!(svg.contains(">x</tspan>\u{2081}<"), "SVG: {svg}");
+    assert!(svg.contains(">x</tspan>\u{2082}<"), "SVG: {svg}");
     assert!(
       !svg.contains("Subscript["),
       "vertex label should not leak its literal head name: {svg}"

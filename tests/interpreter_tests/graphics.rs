@@ -4111,8 +4111,21 @@ mod graphics {
         "Graphics[{Text[Subscript[t, 1] Subscript[t, 2] x^2, {0, 0}], \
          Text[(Subscript[r, 1] Subscript[r, 2])^n, {1, 0}]}]",
       );
-      assert!(svg.contains(">x\u{00B2} t\u{2081} t\u{2082}<"), "{svg}");
-      assert!(svg.contains(">(r\u{2081} r\u{2082})\u{207F}<"), "{svg}");
+      // A graphic's `FormatType` is `TraditionalForm`: the letters are
+      // italic.
+      let i = "<tspan font-style=\"italic\">";
+      assert!(
+        svg.contains(&format!(
+          ">{i}x</tspan>\u{00B2}\u{2009}{i}t</tspan>\u{2081}\u{2009}{i}t</tspan>\u{2082}<"
+        )),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(&format!(
+          ">({i}r</tspan>\u{2081}\u{2009}{i}r</tspan>\u{2082})\u{207F}<"
+        )),
+        "{svg}"
+      );
       assert!(!svg.contains("Subscript["), "{svg}");
     }
 
@@ -14125,7 +14138,13 @@ mod plot3d {
            PlotRange -> {{-1, 1}, {-1, 4}}]"#,
       );
       assert!(svg.contains(">50 \u{B0}</text>"), "{svg}");
-      assert!(svg.contains(">2 \u{3C0} x</text>"), "{svg}");
+      // The symbol is italic (`TraditionalForm`), the constant upright.
+      assert!(
+        svg.contains(
+          ">2\u{2009}\u{3C0}\u{2009}<tspan font-style=\"italic\">x</tspan></text>"
+        ),
+        "{svg}"
+      );
       // A string is left alone, and so is a symbol that merely contains a
       // constant's name.
       assert!(svg.contains(">Degree here</text>"), "{svg}");
@@ -26935,7 +26954,11 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Graphics[{Text[TraditionalForm[(1 - Row[{2, x, t}] + t^2)], \
          {0, 0}]}, PlotRange -> 1, ImageSize -> 300]",
       );
-      assert!(svg.contains("2xt"), "the concatenated row: {svg}");
+      let i = "<tspan font-style=\"italic\">";
+      assert!(
+        svg.contains(&format!("2{i}x</tspan>{i}t</tspan>")),
+        "the concatenated row: {svg}"
+      );
       assert!(!svg.contains("Row"), "not the head name: {svg}");
     }
 
@@ -58877,14 +58900,19 @@ mod text_label_powers_and_wrappers {
   #[test]
   fn power_label_is_a_superscript() {
     let svg = export_svg("Graphics[Text[x^2, {0, 0}]]");
-    assert!(svg.contains(">x²</text>"), "{svg}");
-    assert!(!svg.contains("<tspan"), "{svg}");
+    assert!(
+      svg.contains("><tspan font-style=\"italic\">x</tspan>²</text>"),
+      "{svg}"
+    );
   }
 
   #[test]
   fn power_inside_row_label_is_a_superscript() {
     let svg = export_svg("Graphics[Text[Row[{\"<\", b^15, \">\"}], {0, 0}]]");
-    assert!(svg.contains(">&lt;b¹⁵&gt;</text>"), "{svg}");
+    assert!(
+      svg.contains(">&lt;<tspan font-style=\"italic\">b</tspan>¹⁵&gt;</text>"),
+      "{svg}"
+    );
   }
 
   /// `Text[Style[x, 16]]` and `Tooltip[…]` only wrap a label, so the inner
@@ -59785,6 +59813,57 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+/// A graphic's `FormatType` is `TraditionalForm`, so a `Text` label holding
+/// mathematics sets its one-letter symbols in italics and spaces a binary
+/// minus, while its strings and numbers stay upright.
+mod text_label_traditional_form {
+  use super::*;
+
+  fn text_of(code: &str) -> String {
+    let svg = export_svg(&format!("Graphics[{{Text[{code}, {{0, 0}}]}}]"));
+    let start = svg.find("<text ").expect("a text element");
+    let open_end = start + svg[start..].find('>').unwrap() + 1;
+    let close = open_end + svg[open_end..].find("</text>").unwrap();
+    svg[open_end..close].to_string()
+  }
+
+  const I: &str = "<tspan font-style=\"italic\">";
+
+  #[test]
+  fn held_difference_in_a_row() {
+    assert_eq!(
+      text_of(r#"Row[{"|", HoldForm[D - F], "|", " = ", 5.}]"#),
+      format!("|{I}D</tspan> - {I}F</tspan>| = 5.")
+    );
+  }
+
+  #[test]
+  fn held_product() {
+    assert_eq!(
+      text_of(r#"Row[{HoldForm[b c], " = ", 12}]"#),
+      format!("{I}b</tspan>\u{2009}{I}c</tspan> = 12")
+    );
+  }
+
+  #[test]
+  fn bare_symbol_sum_and_power() {
+    assert_eq!(text_of("u"), format!("{I}u</tspan>"));
+    assert_eq!(text_of("u + v"), format!("{I}u</tspan> + {I}v</tspan>"));
+    assert_eq!(text_of("w^2"), format!("{I}w</tspan>\u{00B2}"));
+  }
+
+  #[test]
+  fn function_names_stay_upright() {
+    assert_eq!(text_of("Sin[t]"), format!("sin({I}t</tspan>)"));
+  }
+
+  #[test]
+  fn strings_and_numbers_stay_plain() {
+    assert_eq!(text_of(r#""ab""#), "ab");
+    assert_eq!(text_of(r#"Row[{"a", " = ", 3}]"#), "a = 3");
+  }
 }
 
 /// The stroke widths of an SVG's elements, skipping the thin axis/tick
