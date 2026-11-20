@@ -370,6 +370,24 @@ pub(crate) fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
   (lead * size, width * size)
 }
 
+/// `exported_text_extent` for the text of the `<text …>` start tag `tag`:
+/// a label set in a monospace face (a `Row`/`Column` cell) advances every
+/// glyph by the monospace advance, so it is measured by that rather than by
+/// the wider proportional glyphs (a `%` would otherwise seem to overrun the
+/// canvas and be pulled back onto its neighbor).
+fn exported_tag_text_extent(tag: &str, markup: &str, size: f64) -> (f64, f64) {
+  let family = tag
+    .split_once("font-family=\"")
+    .and_then(|(_, rest)| rest.split_once('"'))
+    .map_or("", |(family, _)| family);
+  let first = family.split(',').next().unwrap_or("").trim();
+  if crate::functions::graphics::is_monospace_font_family(first) {
+    let n = visible_chars(markup).len() as f64;
+    return (0.0, n * crate::functions::graphics::MONO_ADVANCE * size);
+  }
+  exported_text_extent(markup, size)
+}
+
 /// Shift every label of a flat plot SVG that would run past the left or
 /// right edge of its `viewBox` back inside it.
 ///
@@ -456,7 +474,7 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
       continue;
     };
     let size = attr_number(tag, "font-size").map_or(16.0, |(_, _, v)| v);
-    let (lead, w) = exported_text_extent(content, size);
+    let (lead, w) = exported_tag_text_extent(tag, content, size);
     if w <= 0.0 || w - lead > width {
       continue;
     }

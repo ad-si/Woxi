@@ -5163,7 +5163,9 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     .and_then(|(w, _, align, _)| {
       evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0).map(
         |lines| {
-          evaluator::dispatch::io_functions::align_pane_lines(lines, align)
+          evaluator::dispatch::io_functions::align_pane_lines(
+            &expr, lines, align,
+          )
         },
       )
     })
