@@ -5508,6 +5508,31 @@ fn evaluate_function_call_ast_inner(
           }
         }
       }
+      // `PlotStyle -> s` styles the plot's edges (the legacy
+      // `VertexRenderingFunction` draws the vertices on its own); an
+      // explicit `EdgeStyle` wins. `Graph` has no `PlotStyle` option, so it
+      // is taken off on the way through.
+      let is_option = |o: &Expr, key: &str| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key))
+      };
+      let plot_style = forwarded.iter().rev().find_map(|o| match o {
+        Expr::Rule { replacement, .. }
+        | Expr::RuleDelayed { replacement, .. }
+          if is_option(o, "PlotStyle") =>
+        {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      });
+      if let Some(style) = plot_style {
+        forwarded.retain(|o| !is_option(o, "PlotStyle"));
+        let automatic =
+          matches!(&style, Expr::Identifier(s) if s == "Automatic");
+        if !automatic && !forwarded.iter().any(|o| is_option(o, "EdgeStyle")) {
+          forwarded.push(rule_expr(id_expr("EdgeStyle"), style));
+        }
+      }
       // `TreePlot[g, Center]` puts the root in the middle and the deeper
       // layers on circles around it, the root being the one vertex
       // nothing points at (else the graph center).
