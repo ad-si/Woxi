@@ -407,6 +407,53 @@ mod contour_plot3d {
     );
   }
 
+  /// A tube thinner than the sampling grid (here a torus whose minor
+  /// radius is well below a grid step) is traced whole: the grid catches
+  /// it at only a few samples, so the cells around it are subdivided before
+  /// the surface is traced. Regression: only those few samples produced
+  /// triangles, so the ring came out as a dashed line of specks with wide
+  /// gaps between them.
+  #[test]
+  fn tube_thinner_than_the_grid_is_traced_whole() {
+    // The largest angular gap between the ring's vertices around its axis
+    // and the largest distance of a vertex from the ring's center line.
+    let ring = |plane: &str, center: &str, ranges: &str, points: u32| {
+      clear_state();
+      interpret(&format!(
+        "pts = First[Cases[ContourPlot3D[\
+           ({plane} - 1)^2 + ({center})^2 == 0.03^2, {ranges}, \
+           Mesh -> None, PlotPoints -> {points}], \
+           GraphicsComplex[p_, ___] :> p, Infinity]]; \
+         {{Max[Differences[Sort[ArcTan @@@ pts[[All, {{1, 3}}]]]]], \
+           Max[Abs[Sqrt[pts[[All, 1]]^2 + pts[[All, 3]]^2] - 1]]}}"
+      ))
+      .unwrap()
+    };
+    let check = |result: String| {
+      let values: Vec<f64> = result
+        .trim_matches(|c| c == '{' || c == '}')
+        .split(", ")
+        .map(|v| v.parse().unwrap())
+        .collect();
+      assert!(values[0] < 0.05, "the ring has a gap: {result}");
+      assert!(values[1] < 0.05, "a vertex strays off the ring: {result}");
+    };
+    // A ring in the x-z plane, at a y that falls between grid planes.
+    check(ring(
+      "Sqrt[x^2 + z^2]",
+      "y - 0.1",
+      "{x, -1.2, 1.2}, {y, -0.7, 0.9}, {z, -1.2, 1.2}",
+      30,
+    ));
+    // The same ring on a grid plane, sampled more coarsely across it.
+    check(ring(
+      "Sqrt[x^2 + z^2]",
+      "y",
+      "{x, -1.2, 1.2}, {y, -3, 1.2}, {z, -3, 1.2}",
+      50,
+    ));
+  }
+
   /// `ColorFunction` colors each facet by `f[x, y, z, value]` with every
   /// argument scaled to 0..1, so a function of the scaled height paints
   /// the lower and upper half of a sphere differently. A named gradient
@@ -862,6 +909,41 @@ mod outlines {
         .all(|l| l.contains("stroke-linecap=\"round\""))
     );
   }
+
+  /// The `stroke-width` values of the black `<line>` pieces of an SVG.
+  fn black_line_widths(svg: &str) -> Vec<f64> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<line") && l.contains("stroke=\"rgb(0,0,0)\""))
+      .filter_map(|l| {
+        l.split("stroke-width=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|w| w.parse::<f64>().ok())
+      })
+      .collect()
+  }
+
+  // A 3D line with no thickness directive is a hairline, while an explicit
+  // thickness still sets its width.
+  #[test]
+  fn default_line_is_a_hairline() {
+    let widths = black_line_widths(&svg(
+      "Graphics3D[{Black, Line[{{0, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    ));
+    assert!(
+      !widths.is_empty() && widths.iter().all(|w| *w == 0.5),
+      "{widths:?}"
+    );
+    let widths = black_line_widths(&svg(
+      "Graphics3D[{Black, AbsoluteThickness[3], \
+       Line[{{0, 0, 0}, {1, 1, 1}}]}, Boxed -> False]",
+    ));
+    assert!(
+      !widths.is_empty() && widths.iter().all(|w| *w == 3.0),
+      "{widths:?}"
+    );
+  }
 }
 
 mod ticks {
@@ -1209,6 +1291,16 @@ mod fields_and_graphs {
     assert!(polygon_count(&s) > 1000, "{s}");
     let boxed = svg("GraphPlot3D[HypercubeGraph[3], Boxed -> True]");
     assert_ne!(s, boxed);
+  }
+
+  // A `Text` inside a `GraphicsComplex` is anchored at the indexed point.
+  #[test]
+  fn graphics_complex_text_by_index() {
+    let s = svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 1, 1}}, \
+       {Sphere[1, 0.1], Text[\"Qz\", 2]}]]",
+    );
+    assert!(s.contains(">Qz<"), "{s}");
   }
 
   #[test]

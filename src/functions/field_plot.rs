@@ -661,7 +661,10 @@ fn parse_density_contour_options(
             }
             // A lone function stands for a list of one: `MeshFunctions ->
             // (f[#1, #2] &)`.
-            f @ Expr::Function { .. } => mesh_functions = vec![f.clone()],
+            // `Function[{x, y}, body]` is just as much a lone function.
+            f @ (Expr::Function { .. } | Expr::NamedFunction { .. }) => {
+              mesh_functions = vec![f.clone()];
+            }
             _ => {}
           }
         }
@@ -2544,12 +2547,63 @@ struct MeshGrid {
   levels: Vec<f64>,
 }
 
+/// The main plot's already `RegionFunction`-masked sample grid (NaN outside
+/// the region), with how its samples sit over the plot domain, so a mesh
+/// grid of any resolution can look up whether one of its nodes is inside.
+#[derive(Clone, Copy)]
+struct RegionMask<'a> {
+  grid: &'a [Vec<f64>],
+  /// `true` when sample `k` of `m` lies at the center of cell `k`, at
+  /// `(k + 1/2)/m` of the span (`DensityPlot`'s color cells); `false` when
+  /// it lies on node `k`, at `k/(m - 1)` of the span.
+  cell_centered: bool,
+}
+
+impl RegionMask<'_> {
+  /// Whether the point at fractions `(u, v)` of the plot's x and y spans
+  /// lies outside the region. On a cell-centered grid a point is outside
+  /// only when every cell touching it is, so mesh lines run right up to the
+  /// region boundary rather than stopping half a cell short of it.
+  fn excludes(&self, u: f64, v: f64) -> bool {
+    let cols = self.grid.len();
+    let rows = self.grid.first().map_or(0, std::vec::Vec::len);
+    if cols == 0 || rows == 0 {
+      return false;
+    }
+    let outside = |i: usize, j: usize| {
+      self
+        .grid
+        .get(i)
+        .and_then(|r| r.get(j))
+        .is_some_and(|s| !s.is_finite())
+    };
+    if self.cell_centered {
+      // The cells on either side of the point along each axis.
+      let around = |t: f64, m: usize| {
+        let p = t * m as f64 - 0.5;
+        let lo = p.floor().clamp(0.0, (m - 1) as f64) as usize;
+        let hi = p.ceil().clamp(0.0, (m - 1) as f64) as usize;
+        [lo, hi]
+      };
+      let (is, js) = (around(u, cols), around(v, rows));
+      is.iter().all(|&i| js.iter().all(|&j| outside(i, j)))
+    } else {
+      let nearest = |t: f64, m: usize| {
+        (t * (m.max(2) - 1) as f64)
+          .round()
+          .clamp(0.0, (m - 1) as f64) as usize
+      };
+      outside(nearest(u, cols), nearest(v, rows))
+    }
+  }
+}
+
 /// Sample a mesh function over the plot's grid and pick `count` evenly
 /// spaced levels across the values it takes — `MeshFunctions -> {10 #1 &}`
-/// with `Mesh -> 11` gives eleven lines of constant x. `region_mask`, when
-/// given, is the main plot's already `RegionFunction`-masked grid (NaN
-/// outside the region): a cell excluded there is excluded here too, so mesh
-/// lines don't spill past the region boundary the contours/bands stop at.
+/// with `Mesh -> 11` gives eleven lines of constant x. A point that
+/// `region_mask` excludes is excluded here too, so mesh lines don't spill
+/// past the region boundary the contours/bands stop at, and the levels are
+/// spread over the values the function takes inside the region only.
 #[allow(clippy::too_many_arguments)]
 fn sample_mesh_grid(
   f: &Expr,
@@ -2560,19 +2614,18 @@ fn sample_mesh_grid(
   y_min: f64,
   y_max: f64,
   count: usize,
-  region_mask: Option<&[Vec<f64>]>,
+  region_mask: Option<RegionMask>,
 ) -> Option<MeshGrid> {
   let n = FIELD_GRID + 1;
   let mut grid = vec![vec![f64::NAN; n]; n];
   let (mut v_min, mut v_max) = (f64::INFINITY, f64::NEG_INFINITY);
   for i in 0..n {
-    let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+    let u = i as f64 / FIELD_GRID as f64;
+    let x = x_min + u * (x_max - x_min);
     for j in 0..n {
-      let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
-      let masked = region_mask
-        .and_then(|m| m.get(i).and_then(|row| row.get(j)))
-        .is_some_and(|v| !v.is_finite());
-      if masked {
+      let v = j as f64 / FIELD_GRID as f64;
+      let y = y_min + v * (y_max - y_min);
+      if region_mask.is_some_and(|m| m.excludes(u, v)) {
         continue;
       }
       // A mesh function is usually a pure function of the two
@@ -2603,7 +2656,7 @@ fn sample_mesh_grids(
   yvar: &str,
   (x_min, x_max): (f64, f64),
   (y_min, y_max): (f64, f64),
-  region_mask: &[Vec<f64>],
+  region_mask: RegionMask,
 ) -> Vec<MeshGrid> {
   let Some(count) = opts.mesh.filter(|&c| c > 0) else {
     return Vec::new();
@@ -2711,7 +2764,7 @@ fn mesh_function_value(
   y: f64,
 ) -> Option<f64> {
   match f {
-    Expr::Function { .. } => {
+    Expr::Function { .. } | Expr::NamedFunction { .. } => {
       let applied = Expr::CurriedCall {
         func: Box::new(f.clone()),
         args: vec![Expr::Real(x), Expr::Real(y)],
@@ -3060,14 +3113,48 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     );
   }
   // Mesh lines lie over the density, the level curves of each mesh
-  // function (the coordinates themselves by default).
+  // function (the coordinates themselves by default). They are sampled on
+  // the nodes between the color cells, so a `RegionFunction` is tested on
+  // those nodes too: the mesh then ends exactly at the region boundary and
+  // its levels span just the values inside the region.
+  let node_mask = opts
+    .region_function
+    .as_ref()
+    .filter(|_| opts.mesh.is_some_and(|c| c > 0))
+    .map(|r| {
+      let n = FIELD_GRID + 1;
+      let mut mask = vec![vec![f64::NAN; n]; n];
+      for (i, column) in mask.iter_mut().enumerate() {
+        let x = x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min);
+        for (j, node) in column.iter_mut().enumerate() {
+          let y = y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min);
+          if let Some(v) = evaluate_at_xy(body, &xvar, &yvar, x, y)
+            && v.is_finite()
+            && region_allows(r, x, y, v)
+          {
+            *node = v;
+          }
+        }
+      }
+      mask
+    });
+  let mesh_mask = match &node_mask {
+    Some(mask) => RegionMask {
+      grid: mask,
+      cell_centered: false,
+    },
+    None => RegionMask {
+      grid: &grid,
+      cell_centered: true,
+    },
+  };
   let mesh_grids = sample_mesh_grids(
     &opts,
     &xvar,
     &yvar,
     (x_min, x_max),
     (y_min, y_max),
-    &grid,
+    mesh_mask,
   );
   push_mesh_grids(&mut svg, &mesh_grids, &area, &opts);
   push_field_frame(&mut svg, &area, &opts);
@@ -3108,6 +3195,9 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       vec![
         Expr::List(rows.into()),
         Expr::List(vec![corner(x_min, y_min), corner(x_max, y_max)].into()),
+        // The density shades smoothly between its samples, as the
+        // standalone plot draws it, rather than in blocks.
+        rule_expr(id_expr("Resampling"), str_expr("Linear")),
       ],
     )
   });
@@ -3542,7 +3632,10 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &yvar,
     (x_min, x_max),
     (y_min, y_max),
-    &grid,
+    RegionMask {
+      grid: &grid,
+      cell_centered: false,
+    },
   );
 
   let mesh_items =
@@ -3915,6 +4008,7 @@ fn contour_plot_equations(
           fill_opacity: None,
           marker: None,
           thickness: series_thickness,
+          thickness_fraction: None,
           point_size: None,
           point_size_expr: None,
           dashing: style.and_then(|s| s.dashing.clone()),
@@ -3922,6 +4016,8 @@ fn contour_plot_equations(
           labels: Vec::new(),
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
+          continues_previous: false,
+          color_function: None,
         });
       }
     }
@@ -6070,8 +6166,17 @@ pub fn list_density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.cf_expr(),
   );
   let mask = resample_node_grid(&grid, FIELD_GRID + 1, FIELD_GRID + 1);
-  let mesh =
-    sample_mesh_grids(&opts, "x", "y", (x_min, x_max), (y_min, y_max), &mask);
+  let mesh = sample_mesh_grids(
+    &opts,
+    "x",
+    "y",
+    (x_min, x_max),
+    (y_min, y_max),
+    RegionMask {
+      grid: &mask,
+      cell_centered: false,
+    },
+  );
   push_mesh_grids(&mut svg, &mesh, &area, &opts);
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
