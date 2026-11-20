@@ -28550,18 +28550,32 @@ fn alignment_to_anchor(expr: &Expr) -> &'static str {
       "Right" => "end",
       _ => "middle",
     },
-    Expr::String(s) if s == "." => "decimal",
+    _ if alignment_char(expr).is_some() => "decimal",
     _ => "middle",
   }
 }
 
-/// Split a plain (unmarked-up) cell string into its integer-part and
-/// fractional-part widths, in character units, for decimal-point alignment.
-/// The integer part includes any sign and integer digits; the fractional part
-/// includes the decimal point and following digits. A string without a decimal
-/// point has zero fractional width (it aligns with the dot at its right edge).
-fn split_decimal_str(s: &str) -> (f64, f64) {
-  match s.find('.') {
+/// The character a one-character string alignment (`"."`, `":"`, …) lines
+/// a column's entries up on.
+fn alignment_char(expr: &Expr) -> Option<char> {
+  match expr {
+    Expr::String(s) => {
+      let mut chars = s.chars();
+      match (chars.next(), chars.next()) {
+        (Some(c), None) => Some(c),
+        _ => None,
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Split a plain (unmarked-up) cell string at the first `ch` into the widths,
+/// in character units, before it and from it on, for character alignment
+/// (`ch = '.'` lines numbers up on their decimal point). A string without
+/// `ch` has zero width after it (it aligns with `ch` at its right edge).
+fn split_decimal_str(s: &str, ch: char) -> (f64, f64) {
+  match s.find(ch) {
     Some(pos) => (
       s[..pos].chars().count() as f64,
       s[pos..].chars().count() as f64,
@@ -28574,12 +28588,12 @@ fn split_decimal_str(s: &str) -> (f64, f64) {
 /// cell, or `None` when the cell doesn't render as a plain number (e.g. a
 /// fraction or scientific-notation form containing SVG markup), in which case
 /// the caller falls back to centering.
-fn decimal_split_width(cell: &Expr) -> Option<(f64, f64)> {
+fn decimal_split_width(cell: &Expr, ch: char) -> Option<(f64, f64)> {
   let s = expr_to_svg_markup(cell);
   if s.contains('<') {
     return None;
   }
-  Some(split_decimal_str(&s))
+  Some(split_decimal_str(&s, ch))
 }
 
 /// Parse a divider entry: a color expression means "draw with this color",
@@ -29406,6 +29420,13 @@ fn grid_svg_styled_internal_reporting(
   let mut col_align_explicit_start: Vec<&str> = Vec::new();
   let mut col_align_repeating: Vec<&str> = Vec::new();
   let mut col_align_has_repeating = false;
+  // The character each `"c"`-aligned column lines up on (`.` by default),
+  // parallel to the alignments above.
+  let mut align_char = '.';
+  let mut col_align_chars: Vec<char> = Vec::new();
+  let mut col_align_chars_start: Vec<char> = Vec::new();
+  let mut col_align_chars_repeating: Vec<char> = Vec::new();
+  let char_of = |e: &Expr| alignment_char(e).unwrap_or('.');
   for raw_opt in &args[1..] {
     let opt =
       evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
@@ -29649,7 +29670,10 @@ fn grid_svg_styled_internal_reporting(
           _ => {}
         },
         "Alignment" => match replacement.as_ref() {
-          Expr::String(s) if s == "." => alignment_h = "decimal",
+          spec @ Expr::String(_) if alignment_char(spec).is_some() => {
+            alignment_h = "decimal";
+            align_char = char_of(spec);
+          }
           Expr::Identifier(val) => match val.as_str() {
             "Left" => alignment_h = "start",
             "Right" => alignment_h = "end",
@@ -29669,7 +29693,10 @@ fn grid_svg_styled_internal_reporting(
             }
             if let Some(first) = items.first() {
               match first {
-                Expr::String(s) if s == "." => alignment_h = "decimal",
+                spec @ Expr::String(_) if alignment_char(spec).is_some() => {
+                  alignment_h = "decimal";
+                  align_char = char_of(spec);
+                }
                 Expr::Identifier(val) => match val.as_str() {
                   "Left" => alignment_h = "start",
                   "Right" => alignment_h = "end",
@@ -29687,15 +29714,19 @@ fn grid_svg_styled_internal_reporting(
                         before_repeat = false;
                         col_align_repeating =
                           rep_items.iter().map(alignment_to_anchor).collect();
+                        col_align_chars_repeating =
+                          rep_items.iter().map(char_of).collect();
                       } else if before_repeat {
                         col_align_explicit_start
                           .push(alignment_to_anchor(spec));
+                        col_align_chars_start.push(char_of(spec));
                       }
                       // Note: trailing explicit not common for alignment
                     }
                   } else {
                     col_alignments =
                       col_specs.iter().map(alignment_to_anchor).collect();
+                    col_align_chars = col_specs.iter().map(char_of).collect();
                   }
                 }
                 _ => {}
@@ -30056,15 +30087,20 @@ fn grid_svg_styled_internal_reporting(
     let start_len = col_align_explicit_start.len();
     let rep_len = col_align_repeating.len();
     col_alignments = Vec::with_capacity(num_cols);
+    col_align_chars = Vec::with_capacity(num_cols);
     for j in 0..num_cols {
       if j < start_len {
         col_alignments.push(col_align_explicit_start[j]);
+        col_align_chars.push(col_align_chars_start[j]);
       } else {
         let rep_idx = (j - start_len) % rep_len;
         col_alignments.push(col_align_repeating[rep_idx]);
+        col_align_chars.push(col_align_chars_repeating[rep_idx]);
       }
     }
   }
+  let col_char =
+    |j: usize| col_align_chars.get(j).copied().unwrap_or(align_char);
 
   // Decimal-point alignment: for each column aligned on ".", find the widest
   // integer part and the widest fractional part across its cells. The dot sits
@@ -30082,7 +30118,7 @@ fn grid_svg_styled_internal_reporting(
       let (mut max_int, mut max_frac) = (0.0_f64, 0.0_f64);
       for row in &rows {
         if let Some(cell) = row.get(j)
-          && let Some((iw, fw)) = decimal_split_width(cell)
+          && let Some((iw, fw)) = decimal_split_width(cell, col_char(j))
         {
           max_int = max_int.max(iw);
           max_frac = max_frac.max(fw);
@@ -30507,7 +30543,7 @@ fn grid_svg_styled_internal_reporting(
           .flatten()
           .unwrap_or((0.0, 0.0));
         let dot_x = x_offset + col_pad_left[j] + max_int * char_width;
-        match decimal_split_width(cell) {
+        match decimal_split_width(cell, col_char(j)) {
           Some((iw, _)) => ("start", dot_x - iw * char_width),
           None => ("middle", x_offset + col_w / 2.0),
         }
