@@ -53,6 +53,27 @@ $ wo 'BooleanConvert[(a || b) && c, "IF"]'
 If[a, If[c, True, False], If[b, If[c, True, False], False]]
 ```
 
+`"BDT"` is the same binary decision tree:
+
+```scrut
+$ wo 'BooleanConvert[a && !b, "BDT"]'
+If[a, If[b, False, True], False]
+```
+
+`"IMPLIES"` writes the function with `Implies` and `Not` only:
+
+```scrut
+$ wo 'BooleanConvert[a || b, "IMPLIES"]'
+Implies[ !a, b]
+```
+
+`"BFF"` applies the function's `BooleanFunction` object to the variables:
+
+```scrut
+$ wo 'BooleanConvert[Nand[a, b], "BFF"]'
+BooleanFunction[BDD -> {-2, 0, 2, -1, 1, 1, -1}][a, b]
+```
+
 `Majority` holds when more than half its arguments do:
 
 ```scrut
