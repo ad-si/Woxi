@@ -5683,10 +5683,21 @@ a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
 custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
 and 0.86× the box fit.
 
-Which conditions really trigger the sphere framing — `Boxed -> False`, the
-pinned size, an explicit `PlotRange` or `Show` — is unverified. A
-`Boxed -> False` picture given only a width still fits the box outline, and
-`SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
+All three scenes set their region (a `PlotRange`) or their view (a
+`ViewPoint`). A fourth Demonstration sets neither: an unboxed cylinder of
+fixed volume at `ImageSize -> {150, 150}` inside a `Manipulate`, with radii
+from 1.72 to 6.29. In all four snapshots the cylinder fills 95–98 % of the
+frame along its longer side. The sphere framing would give 0.7× to 0.85× of
+that, and the box-outline fit 0.7× to 0.9×. So Woxi applies the automatic
+sphere framing (both the unboxed fixed-size rule and the `Manipulate`
+default) only when a `PlotRange` or a camera option (`ViewPoint`,
+`ViewVector`, `ViewVertical`, `ViewCenter`) is set. An unboxed scene at a
+fixed `{w, h}` with neither is fitted to its projected contents instead of
+its box. None of this is checked with wolframscript; the conditions are
+inferred from the four snapshots.
+
+A `Boxed -> False` picture given only a width still fits the box outline,
+and `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
 `ViewAngle` turn the sphere framing off. The surface plots
 (`ParametricPlot3D`, `Plot3D`, …) drawn on their own are unchanged.
 

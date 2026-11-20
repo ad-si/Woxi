@@ -10667,6 +10667,48 @@ mod plot3d {
       assert_eq!(free.0.round(), free_boxed.0.round());
     }
 
+    /// An unboxed scene in a picture of fixed width and height, with no
+    /// camera option and no `PlotRange`, is fitted to its own contents:
+    /// a Demonstration's snapshots of a cylinder of fixed volume at
+    /// `ImageSize -> {150, 150}` fill 95–98 % of the frame whether the
+    /// cylinder is tall and thin or short and wide. That holds inside a
+    /// `Manipulate` frame too. Neither the sphere around the box nor the
+    /// box outline is used for the fit.
+    #[test]
+    fn an_unboxed_scene_without_a_set_view_fills_a_pinned_picture() {
+      let cylinder = |r: f64, opts: &str| {
+        format!(
+          "Graphics3D[Cylinder[{{{{0, 0, 0}}, {{0, 0, {h}}}}}, {r}], \
+           Boxed -> False, ImageSize -> {{150, 150}}{opts}]",
+          h = 355.0 / (std::f64::consts::PI * r * r)
+        )
+      };
+      for r in [1.7, 3.0, 4.0, 6.3] {
+        for (w, h) in [
+          drawn_extent(&cylinder(r, "")),
+          woxi::with_manipulate_frame(|| drawn_extent(&cylinder(r, ""))),
+        ] {
+          let longer = w.max(h);
+          assert!(
+            (144.0..=150.0).contains(&longer),
+            "r = {r}: expected the cylinder to fill the frame, got {w} x {h}"
+          );
+        }
+        let sphere = drawn_extent(&cylinder(r, ", SphericalRegion -> True"));
+        assert!(sphere.0.max(sphere.1) < 140.0, "r = {r}: {sphere:?}");
+        // A set view point brings the sphere framing back in a
+        // `Manipulate` frame.
+        let viewed = woxi::with_manipulate_frame(|| {
+          drawn_extent(&cylinder(r, ", ViewPoint -> {1.3, -2.4, 2}"))
+        });
+        assert!(
+          (viewed.0 - sphere.0).abs() < 0.5
+            && (viewed.1 - sphere.1).abs() < 0.5,
+          "r = {r}: {viewed:?} vs {sphere:?}"
+        );
+      }
+    }
+
     /// Surface plots honor an explicit `ViewAngle` the same way
     /// `Graphics3D` does, instead of always fitting the box to the frame.
     /// A unit sphere seen from the default `ViewPoint` (`|ViewPoint|` ≈
@@ -58697,10 +58739,18 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   assert_eq!(automatic, sphere);
   assert_ne!(automatic, outline);
 
-  // An automatic range is framed by its sphere as well.
+  // So is an automatic range seen from a set `ViewPoint`…
   let auto_range = "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
      Boxed -> False, ImageSize -> {595, 375}";
   assert_eq!(
+    export_svg(&format!("{auto_range}, ViewPoint -> {{1, -2, 1}}]")),
+    export_svg(&format!(
+      "{auto_range}, ViewPoint -> {{1, -2, 1}}, SphericalRegion -> True]"
+    ))
+  );
+  // …but with neither a view nor a region set, the contents are fitted to
+  // the frame instead.
+  assert_ne!(
     export_svg(&format!("{auto_range}]")),
     export_svg(&format!("{auto_range}, SphericalRegion -> True]"))
   );

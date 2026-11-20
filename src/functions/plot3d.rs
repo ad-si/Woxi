@@ -12890,11 +12890,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  // An invisible box around an automatic range with nothing tied to it (no
-  // axes, no sphere framing, no view volume) is left out: the picture is
-  // fitted to the projected contents themselves (see the `spherical_region`
-  // rule above for the snapshots that show it).
+  // In a picture of fixed width and height, an invisible box around an
+  // automatic range with nothing tied to it (no axes, no sphere framing, no
+  // view volume) is left out: the contents themselves are fitted to the
+  // frame (see the `spherical_region` rule above for the snapshots that
+  // show it). A picture given only a width keeps the box's margins.
   let fit_contents = !show_box
+    && explicit_height
+    && !full_width
+    && !aspect_full
     && !show_axes
     && plot_range.is_none()
     && partial_range.is_none()
