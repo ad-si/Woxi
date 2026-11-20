@@ -51469,7 +51469,21 @@ fn discrete_choice_label_svg(label: &Expr) -> Option<String> {
     // graphical meaning, and evaluating it only yields the typeset echo of
     // its own source — which would put the label's InputForm on the button.
     // `manipulate_label_runs` renders these structurally instead.
-    Expr::FunctionCall { name, .. } if is_text_layout_head(name) => None,
+    //
+    // The exception is a layout that holds a picture and no words — a
+    // `Row[{icon, "   "}]` whose only text is padding — which the FrontEnd
+    // draws as that picture (with its padding); its text alone would leave
+    // the choice blank.
+    Expr::FunctionCall { name, .. } if is_text_layout_head(name) => {
+      if flatten_label_runs(&manipulate_label_runs(label, false))
+        .trim()
+        .is_empty()
+      {
+        control_caption_svg(label)
+      } else {
+        None
+      }
+    }
     Expr::FunctionCall { .. } => {
       let code = crate::syntax::expr_to_source_form(label);
       match crate::interpret_with_stdout(&code) {
@@ -57271,6 +57285,34 @@ mod manipulate_traditional_form_choice_svg_tests {
           assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
         }
         assert!(value_label_svgs[3].is_none());
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A `Row` label pairing a picture with only padding spaces draws the
+  /// picture, while one pairing it with words keeps being labeled by them.
+  #[test]
+  fn row_of_picture_and_padding_labels_render_as_svg_icons() {
+    let control = discrete_control(
+      "Manipulate[k, {{k, 1}, \
+       {1 -> Row[{Graphics[Disk[]], \"   \"}], \
+        2 -> Row[{Graphics[Rectangle[]], \" \"}], \
+        3 -> Row[{Graphics[Disk[]], \" disk\"}]}, \
+       ControlType -> RadioButtonBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_svgs,
+        value_labels,
+        ..
+      } => {
+        for svg in &value_label_svgs[..2] {
+          let svg = svg.as_deref().expect("padded picture must be an icon");
+          assert!(svg.starts_with("<svg"), "not a rendered SVG: {svg}");
+        }
+        assert!(value_label_svgs[2].is_none(), "{value_label_svgs:?}");
+        assert_eq!(value_labels[2].trim(), "disk");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

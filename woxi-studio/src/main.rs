@@ -4350,6 +4350,30 @@ const MANIPULATE_THROTTLE_MS: u64 = 16;
 /// (and the Playground's pace).
 const ANIM_INTERVAL_MS: u64 = 60;
 
+/// Largest box a radio-bar choice icon is drawn in; a bigger picture is
+/// scaled down to fit, keeping its aspect ratio.
+const RADIO_ICON_MAX: (f32, f32) = (160.0, 48.0);
+
+/// The size to draw a radio-bar choice icon at: the size its SVG states
+/// (`Graphics[…, ImageSize -> {30, 30}]` padded by a `Row`'s trailing
+/// spaces is wider than tall), scaled down to fit [`RADIO_ICON_MAX`].
+/// An icon that states no size gets the compact 24×14 slot.
+fn radio_choice_icon_size(icon: &svg::Handle) -> (f32, f32) {
+  let iced::advanced::svg::Data::Bytes(bytes) = icon.data() else {
+    return (24.0, 14.0);
+  };
+  let Some((width, height)) = std::str::from_utf8(bytes)
+    .ok()
+    .and_then(manipulate::svg_root_size)
+  else {
+    return (24.0, 14.0);
+  };
+  let scale = (RADIO_ICON_MAX.0 / width)
+    .min(RADIO_ICON_MAX.1 / height)
+    .min(1.0);
+  (width * scale, height * scale)
+}
+
 /// Maximum number of choices rendered as a segmented SetterBar (a row of
 /// toggle buttons) as long as the whole row still fits
 /// ([`SETTER_BAR_MAX_ROW_CHARS`]). Wolfram picks a SetterBar for up to five
@@ -4964,12 +4988,15 @@ fn render_manipulate_widget<'a>(
                   .text_size(12)
                   .into()
               }
-              (Some(icon), _) => row![
-                radio("", i, selected, on_click).size(14).spacing(0),
-                svg::Svg::new(icon.clone())
-                  .width(iced::Length::Fixed(24.0))
-                  .height(iced::Length::Fixed(14.0)),
-              ]
+              (Some(icon), _) => {
+                let (icon_width, icon_height) = radio_choice_icon_size(icon);
+                row![
+                  radio("", i, selected, on_click).size(14).spacing(0),
+                  svg::Svg::new(icon.clone())
+                    .width(iced::Length::Fixed(icon_width))
+                    .height(iced::Length::Fixed(icon_height)),
+                ]
+              }
               .spacing(4)
               .align_y(Center)
               .into(),
@@ -4987,7 +5014,15 @@ fn render_manipulate_widget<'a>(
           if *is_vertical {
             Column::with_children(items).spacing(4).into()
           } else {
-            Row::with_children(items).spacing(12).align_y(Center).into()
+            // A bar too wide for the cell (seventeen picture choices)
+            // continues on the next line instead of squeezing its choices
+            // together and clipping the last ones out of reach.
+            Row::with_children(items)
+              .spacing(12)
+              .align_y(Center)
+              .wrap()
+              .vertical_spacing(4)
+              .into()
           }
         } else if *force_setter_bar
           || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
@@ -23748,6 +23783,36 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       .map(|_| Some(svg::Handle::from_memory(Vec::new())))
       .collect();
     assert!(renders_as_setter_bar(&icons, &handles));
+  }
+
+  /// A radio-bar choice icon draws at the size its SVG states, so a
+  /// `Graphics[…, ImageSize -> {30, 30}]` label is not squeezed into the
+  /// compact 24×14 slot; a huge picture shrinks to fit, keeping its aspect,
+  /// and an icon stating no size keeps the compact slot.
+  #[test]
+  fn radio_choice_icon_draws_at_its_stated_size() {
+    let icon = |svg: &str| svg::Handle::from_memory(svg.as_bytes().to_vec());
+    assert_eq!(
+      radio_choice_icon_size(&icon(
+        r#"<svg width="92" height="30" xmlns="http://www.w3.org/2000/svg"></svg>"#
+      )),
+      (92.0, 30.0)
+    );
+    let (w, h) = radio_choice_icon_size(&icon(
+      r#"<svg width="360" height="360" xmlns="http://www.w3.org/2000/svg"></svg>"#,
+    ));
+    assert!(
+      (w - RADIO_ICON_MAX.1).abs() < 1e-3
+        && (h - RADIO_ICON_MAX.1).abs() < 1e-3,
+      "a 360×360 icon must shrink to the {}px cap: {w}×{h}",
+      RADIO_ICON_MAX.1
+    );
+    assert_eq!(
+      radio_choice_icon_size(&icon(
+        r#"<svg xmlns="http://www.w3.org/2000/svg"></svg>"#
+      )),
+      (24.0, 14.0)
+    );
   }
 
   /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,
