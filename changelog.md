@@ -30,6 +30,15 @@
     `Graphics[…, PlotLabel -> a/b]`, or the title `Show` keeps from a
     combined plot) stacks the numerator over the denominator, as
     `TraditionalForm` sets it, instead of writing `1/e` inline.
+- `Text[Row[…]]`, `Text[Column[…]]`, `Text[Grid[…]]` and `Text["…"]` set
+    their text in the proportional text face, and fixed-size `Pane`s wrap
+    such text by its proportional width, so a sentence that fits the pane
+    stays on one line.
+- `Arrow[{path1, path2, …}]` in `Graphics3D` draws one arrow per point list,
+    and named `Arrowheads` sizes (`Small`, `Medium`, …) size 3D arrowheads.
+- `Column[…, "Center"]` reads the string alignment like the symbol.
+- In notebooks, `SetOptions[$FrontEnd, …]` accepts front-end options such as
+    `DynamicEvaluationTimeout` without an `optnf` message.
 
 # 2026-11-08 - 0.4.0
 

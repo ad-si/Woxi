@@ -1751,15 +1751,22 @@ pub(crate) fn nice_step(range: f64, target_labels: usize) -> f64 {
 /// Automatic` (`AbsoluteOptions[g, Ticks]` shows them; independent of the
 /// image size). So 0..7.5 steps by 1, 0..8 by 2 and 0..16 by 5.
 pub(crate) fn axis_tick_step(range: f64) -> f64 {
+  tick_step_below(range, 8.0)
+}
+
+/// The smallest of 1, 2 and 5 × 10^k that cuts `range` into fewer than
+/// `max_intervals` intervals — the step rule shared by 2D axes (fewer than
+/// 8) and 3D box axes (fewer than 5).
+pub(crate) fn tick_step_below(range: f64, max_intervals: f64) -> f64 {
   let range = range.abs();
   if !(range.is_finite() && range > 0.0) {
     return 1.0;
   }
-  let mut mag = 10_f64.powf((range / 8.0).log10().floor());
+  let mut mag = 10_f64.powf((range / max_intervals).log10().floor());
   loop {
     for m in [1.0, 2.0, 5.0] {
       let step = m * mag;
-      if range / step < 8.0 * (1.0 - 1e-12) {
+      if range / step < max_intervals * (1.0 - 1e-12) {
         return step;
       }
     }
@@ -3532,6 +3539,10 @@ pub(crate) struct SeriesStyle {
   /// This style came from its own `{…}` entry of a `PlotStyle` list, i.e. it
   /// is one dataset's style rather than a bare directive of a combined one.
   pub from_list: bool,
+  /// The series continues the line of the series before it (a later
+  /// `ColorFunction` run of the same curve; see
+  /// `PlotSeriesData::continues_previous`).
+  pub continues_previous: bool,
 }
 
 /// A single explicit grid line: a position on its axis plus an optional
@@ -4398,6 +4409,10 @@ struct DashedOverlay {
   dashes: Vec<f64>,
   /// Polyline vertices in data space.
   points: Vec<(f64, f64)>,
+  /// The line goes on from the end of the overlay before it (a later
+  /// `ColorFunction` run of the same curve): its dash pattern continues
+  /// from where that one stopped rather than starting afresh.
+  continues: bool,
 }
 
 /// One dash length, in the coordinate system its `<polyline>` is drawn in.
@@ -4419,7 +4434,7 @@ pub(crate) fn dash_len(d: f64, reference: f64, px_per_unit: f64) -> f64 {
 }
 
 /// Render collected dashed lines as single `<polyline stroke-dasharray>`
-/// elements, mapping data coordinates to render-space pixels with the same
+/// elements (one string per overlay, empty when it draws nothing), mapping data coordinates to render-space pixels with the same
 /// linear transform used for axis labels/ticks. Dash lengths use the
 /// plotting-area extent so series dashes match the legend swatches exactly.
 #[allow(clippy::too_many_arguments)]
@@ -4436,7 +4451,7 @@ fn render_dash_overlays(
   y_max: f64,
   log_x: bool,
   log_y: bool,
-) -> String {
+) -> Vec<String> {
   // Log axes place data at the logarithm of its value, so map through `ln`
   // before the linear transform to the plotting area.
   let to_axis = |v: f64, log: bool| if log { v.ln() } else { v };
@@ -4446,21 +4461,38 @@ fn render_dash_overlays(
   let yr = y_max - y_min;
   if !xr.is_finite() || !yr.is_finite() || xr.abs() < 1e-12 || yr.abs() < 1e-12
   {
-    return String::new();
+    return vec![String::new(); overlays.len()];
   }
-  let mut svg = String::new();
+  let mut out: Vec<String> = Vec::with_capacity(overlays.len());
+  // How far along its dash pattern the line drawn last ended, in render
+  // pixels, for an overlay that continues it.
+  let mut phase = 0.0_f64;
   for ov in overlays {
+    let mut svg = String::new();
     if ov.points.len() < 2 {
+      out.push(svg);
       continue;
     }
-    let pts: Vec<String> = ov
+    let screen: Vec<(f64, f64)> = ov
       .points
       .iter()
       .map(|&(x, y)| {
-        let px = plot_x0 + (to_axis(x, log_x) - x_min) / xr * plot_w;
-        let py = plot_y0 + (y_max - to_axis(y, log_y)) / yr * plot_h;
-        format!("{px:.1},{py:.1}")
+        (
+          plot_x0 + (to_axis(x, log_x) - x_min) / xr * plot_w,
+          plot_y0 + (y_max - to_axis(y, log_y)) / yr * plot_h,
+        )
       })
+      .collect();
+    let length: f64 = screen
+      .windows(2)
+      .map(|w| (w[1].0 - w[0].0).hypot(w[1].1 - w[0].1))
+      .filter(|l| l.is_finite())
+      .sum();
+    let offset = if ov.continues { phase } else { 0.0 };
+    phase = offset + length;
+    let pts: Vec<String> = screen
+      .iter()
+      .map(|&(px, py)| format!("{px:.1},{py:.1}"))
       .collect();
     let dash: Vec<String> = ov
       .dashes
@@ -4474,7 +4506,7 @@ fn render_dash_overlays(
     // close the short gaps of a dotted or `{6, 2}` pattern.
     svg.push_str(&format!(
       "<polyline fill=\"none\" stroke=\"rgb({},{},{})\" \
-       {}stroke-width=\"{}\" stroke-dasharray=\"{}\" stroke-linecap=\"butt\" \
+       {}stroke-width=\"{}\" stroke-dasharray=\"{}\"{} stroke-linecap=\"butt\" \
        points=\"{}\"/>\n",
       r,
       g,
@@ -4486,10 +4518,16 @@ fn render_dash_overlays(
       },
       ov.stroke_w,
       dash.join(","),
+      if offset > 0.0 {
+        format!(" stroke-dashoffset=\"{offset:.1}\"")
+      } else {
+        String::new()
+      },
       pts.join(" ")
     ));
+    out.push(svg);
   }
-  svg
+  out
 }
 
 /// Placeholder stroke color marking where the `k`-th deferred dashed line
@@ -4769,7 +4807,6 @@ pub(crate) fn plot_labels_svg(
   let label_pt = plot_padding::plot_label_font(opts);
   let title_pt = plot_padding::plot_title_font(opts);
   let font_size = label_pt * sf;
-  let pitch = line_pitch(label_pt) * sf;
   let lines_of = |t: &str| t.split('\n').count();
   let label_fill_owned =
     label_style_color.map(super::graphics::Color::to_svg_rgb);
@@ -4807,15 +4844,17 @@ pub(crate) fn plot_labels_svg(
     layout.tick_room.map(|r| r * sf);
   let gap = FRAME_LABEL_GAP * sf;
   let mut labels_svg = String::new();
+  // A `Style[label, size]` label is set at its own size, so its lines
+  // stand that much taller and further apart.
+  let pt_of =
+    |label: &str| plot_padding::markup_font_size(label).unwrap_or(label_pt);
   // The label's `xml:space` attribute (kept blank runs) and its content.
+  // Each line keeps the styling (`Style[…, Bold]`) that spans the break.
   let text_svg = |label: &str, x: f64| {
-    let markup = stacked_lines_svg(
-      &crate::functions::graphics::box_string_to_svg_scaled(
-        label,
-        RESOLUTION_SCALE as f64,
-      ),
+    let markup = join_label_lines(
+      &label_markup_lines(label),
       x,
-      pitch,
+      line_pitch(pt_of(label)) * sf,
     );
     (preserve_blanks_attr(&markup), markup)
   };
@@ -4827,8 +4866,8 @@ pub(crate) fn plot_labels_svg(
     && !x_label.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
-    let base_y = bottom_label_top + ascent(label_pt) * sf;
-    bottom_text_h = block_height(lines_of(x_label), label_pt) * sf;
+    let base_y = bottom_label_top + ascent(pt_of(x_label)) * sf;
+    bottom_text_h = block_height(lines_of(x_label), pt_of(x_label)) * sf;
     let (keep, markup) = text_svg(x_label, cx);
     labels_svg.push_str(&format!(
       "<text x=\"{cx:.1}\" y=\"{base_y:.1}\" text-anchor=\"middle\" \
@@ -4867,8 +4906,8 @@ pub(crate) fn plot_labels_svg(
     let box_left = plot_x0
       - room_left
       - gap
-      - block_height(lines_of(y_label), label_pt) * sf;
-    let lx = box_left + ascent(label_pt) * sf;
+      - block_height(lines_of(y_label), pt_of(y_label)) * sf;
+    let lx = box_left + ascent(pt_of(y_label)) * sf;
     let (keep, markup) = text_svg(y_label, lx);
     labels_svg.push_str(&format!(
       "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
@@ -4948,11 +4987,13 @@ pub(crate) fn plot_labels_svg(
     let top = margin_top
       - room_top
       - gap
-      - block_height(lines_of(top_label), label_pt) * sf;
+      - block_height(lines_of(top_label), pt_of(top_label)) * sf;
+    let top_pitch = line_pitch(pt_of(top_label)) * sf;
     // One element per line, so no renderer collapses the breaks.
-    for (i, line) in top_label.split('\n').enumerate() {
-      let ty = top + ascent(label_pt) * sf + i as f64 * pitch;
-      let (keep, markup) = text_svg(line, cx);
+    for (i, line) in label_markup_lines(top_label).iter().enumerate() {
+      let ty = top + ascent(pt_of(top_label)) * sf + i as f64 * top_pitch;
+      let markup = crate::functions::graphics::tspan_line(line);
+      let keep = preserve_blanks_attr(markup);
       labels_svg.push_str(&format!(
         "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font_size:.0}\"{label_weight} \
@@ -4982,7 +5023,8 @@ pub(crate) fn plot_labels_svg(
     && !right_label.is_empty()
   {
     let cy = margin_top + plot_h / 2.0;
-    let rx = plot_x0 + plot_w + room_right + gap + ascent(label_pt) * sf;
+    let rx =
+      plot_x0 + plot_w + room_right + gap + ascent(pt_of(right_label)) * sf;
     let (keep, markup) = text_svg(right_label, rx);
     labels_svg.push_str(&format!(
       "<text x=\"{rx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
@@ -6290,6 +6332,7 @@ fn generate_svg_with_options(
                 stroke_w,
                 dashes,
                 points: vec![(x_min, *gy), (x_max, *gy)],
+                continues: false,
               });
             } else {
               let shape = match rgb {
@@ -6349,6 +6392,7 @@ fn generate_svg_with_options(
                 stroke_w,
                 dashes,
                 points: vec![(*gx, y_min), (*gx, y_max)],
+                continues: false,
               });
             } else {
               let shape = match rgb {
@@ -6715,6 +6759,7 @@ fn generate_svg_with_options(
                     stroke_w: width,
                     dashes,
                     points: line,
+                    continues: false,
                   }),
                   None => {
                     chart
@@ -6868,7 +6913,14 @@ fn generate_svg_with_options(
               if let Some(ref dash_pattern) = dashing {
                 // Defer to a single <polyline stroke-dasharray> per segment,
                 // emitted after the plot is drawn.
-                for segment in segments {
+                // A later `ColorFunction` run of a curve picks up the dash
+                // pattern where the run before it left off.
+                let continues_run = shade.is_none()
+                  && opts
+                    .plot_style
+                    .get(series_idx)
+                    .is_some_and(|st| st.continues_previous);
+                for (seg_idx, segment) in segments.iter().enumerate() {
                   if segment.len() >= 2 {
                     defer_dashed!(chart, DashedOverlay {
                       color: (r, g, b),
@@ -6876,6 +6928,7 @@ fn generate_svg_with_options(
                       stroke_w,
                       dashes: dash_pattern.clone(),
                       points: segment.clone(),
+                      continues: continues_run && seg_idx == 0,
                     });
                   }
                 }
@@ -7172,22 +7225,22 @@ fn generate_svg_with_options(
       - top_margin as f64
       - margin_bottom as f64
       - x_label_area as f64;
-    for (k, overlay) in dashed_overlays.iter().enumerate() {
-      let series_svg = render_dash_overlays(
-        std::slice::from_ref(overlay),
-        plot_x0,
-        plot_y0,
-        plot_w,
-        plot_h,
-        render_width as f64,
-        x_min,
-        x_max,
-        y_min,
-        y_max,
-        opts.log_x,
-        opts.log_y,
-      );
-      replace_dash_overlay_sentinel(&mut buf, k, &series_svg);
+    let rendered = render_dash_overlays(
+      &dashed_overlays,
+      plot_x0,
+      plot_y0,
+      plot_w,
+      plot_h,
+      render_width as f64,
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      opts.log_x,
+      opts.log_y,
+    );
+    for (k, series_svg) in rendered.iter().enumerate() {
+      replace_dash_overlay_sentinel(&mut buf, k, series_svg);
     }
   }
 
@@ -7658,7 +7711,40 @@ fn generate_svg_with_options(
       buf.insert_str(end, &format!("<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"rgb(100%,33%,33%)\" stroke-width=\"{}\"/>\n", 0.6 * sf, 0.6 * sf, render_width as f64 - 1.2 * sf, render_height as f64 - 1.2 * sf, 1.2 * sf));
     }
   }
+  // An explicit `ImagePadding` fixes the picture's edges: a frame label or
+  // tick label that does not fit in the padding is cut off at the image
+  // boundary, also when the picture is nested in a layout (`Labeled`,
+  // `Grid`) whose cells let their content overflow.
+  if opts.image_padding.is_some() {
+    clip_to_image(&mut buf, render_width, render_height);
+  }
   Ok(buf)
+}
+
+/// Clip everything a finished plot SVG draws to its own `width` x `height`
+/// canvas (in viewBox units). The clip region is a `<path>`, so code that
+/// looks for the background as the first `<rect` still finds it.
+fn clip_to_image(buf: &mut String, width: u32, height: u32) {
+  let Some(root) = buf.find("<svg") else {
+    return;
+  };
+  let (Some(open_end), Some(close)) = (
+    buf[root..].find('>').map(|i| root + i + 1),
+    buf.rfind("</svg>"),
+  ) else {
+    return;
+  };
+  if close < open_end {
+    return;
+  }
+  let id = format!("imageClip_{width}x{height}");
+  buf.insert_str(close, "</g>\n");
+  buf.insert_str(
+    open_end,
+    &format!(
+      "\n<defs><clipPath id=\"{id}\"><path d=\"M0 0H{width}V{height}H0Z\"/></clipPath></defs>\n<g clip-path=\"url(#{id})\">"
+    ),
+  );
 }
 
 /// Inject the static `Highlighted[f, Placed[effect, pos]]` highlights into a
@@ -8310,6 +8396,9 @@ pub(crate) fn build_plot_source(
         labels: Vec::new(),
         mesh_full_points: Vec::new(),
         extra_fills: Vec::new(),
+        continues_previous: plot_style
+          .get(i % plot_style.len().max(1))
+          .is_some_and(|s| s.continues_previous),
         color_function: color_function.clone(),
       }
     })
@@ -8325,6 +8414,7 @@ pub(crate) fn build_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    settles_all_range: false,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
   }
 }
@@ -8880,6 +8970,7 @@ pub(crate) fn render_merged_plot_source(
       point_size_expr: s.point_size_expr.clone(),
       dashing: s.dashing.clone(),
       opacity: s.opacity,
+      continues_previous: s.continues_previous,
       ..SeriesStyle::default()
     })
     .collect();
@@ -12535,6 +12626,7 @@ pub(crate) fn histogram_plot_source(
       labels: Vec::new(),
       mesh_full_points: Vec::new(),
       extra_fills: Vec::new(),
+      continues_previous: false,
       color_function: None,
     });
   }
@@ -12550,6 +12642,7 @@ pub(crate) fn histogram_plot_source(
     log_y: false,
     plot_range: None,
     data_x_range: None,
+    settles_all_range: false,
     aspect_ratio: None,
   })
 }
@@ -13121,38 +13214,6 @@ pub(crate) struct PlotArea {
   pub y_max: f64,
 }
 
-/// Which axes a `FrameTicks` setting leaves ticks on, as `(x, y)` — the
-/// bottom and the left edge. Accepts `None | False | All | Automatic`,
-/// `{xspec, yspec}`, `{b, l, t, r}` and `{{l, r}, {b, t}}`; an edge pair
-/// keeps the axis unless both of its sides are `None`/`False`.
-pub(crate) fn frame_tick_axes_visible(value: &Expr) -> (bool, bool) {
-  let hidden =
-    |e: &Expr| matches!(e, Expr::Identifier(v) if v == "None" || v == "False");
-  let is_edge_pair = |e: &Expr| match e {
-    Expr::List(p) if p.len() == 2 => p.iter().all(|x| {
-      !matches!(x, Expr::Integer(_) | Expr::Real(_) | Expr::String(_))
-    }),
-    _ => false,
-  };
-  let pair_visible = |e: &Expr| match e {
-    Expr::List(p) if is_edge_pair(e) => !(hidden(&p[0]) && hidden(&p[1])),
-    other => !hidden(other),
-  };
-  match value {
-    Expr::List(items) if items.len() == 4 => (
-      !(hidden(&items[0]) && hidden(&items[2])),
-      !(hidden(&items[1]) && hidden(&items[3])),
-    ),
-    Expr::List(items) if items.len() == 2 && items.iter().any(is_edge_pair) => {
-      (pair_visible(&items[1]), pair_visible(&items[0]))
-    }
-    Expr::List(items) if items.len() == 2 => {
-      (!hidden(&items[0]), !hidden(&items[1]))
-    }
-    other => (!hidden(other), !hidden(other)),
-  }
-}
-
 /// What a `FrameTicks` setting draws on one frame edge.
 #[derive(Clone, Debug)]
 pub(crate) enum FrameEdgeTicks {
@@ -13172,6 +13233,11 @@ impl FrameEdgeTicks {
   /// and right ones marked only (bottom, left, top, right).
   pub(crate) fn defaults() -> [Self; 4] {
     [Self::Labeled, Self::Labeled, Self::Marks, Self::Marks]
+  }
+
+  /// No ticks on any edge.
+  pub(crate) fn none() -> [Self; 4] {
+    [Self::None, Self::None, Self::None, Self::None]
   }
 
   pub(crate) fn is_none(&self) -> bool {
@@ -14032,7 +14098,7 @@ fn automatic_marker_shape(
 /// WL's font draws it: points around the data point (y down), measured at
 /// font size 10 from wolframscript's SVG glyphs and scaled to `size`, and
 /// the outline's stroke width for the empty shapes (`None` = filled).
-fn glyph_marker_outline(
+pub(crate) fn glyph_marker_outline(
   glyph: &str,
   size: f64,
 ) -> Option<(GlyphOutline, Option<f64>)> {
@@ -14075,7 +14141,7 @@ fn glyph_marker_outline(
 
 /// A shape [`glyph_marker_outline`] draws, in points around the data point
 /// (y down).
-enum GlyphOutline {
+pub(crate) enum GlyphOutline {
   Circle { r: f64, cy: f64 },
   Polygon(Vec<(f64, f64)>),
 }

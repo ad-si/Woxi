@@ -2727,10 +2727,12 @@ mod tests {
     fn grid_spans_a_picture_across_its_columns() {
       // A picture merged over two columns with `SpanFromLeft` is centered
       // across both, instead of widening the first column on its own and
-      // leaving a blank placeholder cell beside it.
+      // leaving a blank placeholder cell beside it. (The row's own third
+      // cell ends the span; a short row ending in `SpanFromLeft` would
+      // span to the grid's right edge instead.)
       let svg = svg_of(
         "Grid[{{\"a\", \"b\", \"c\"}, \
-         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft}}]",
+         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft, \"\"}}]",
       );
       assert!(
         svg.contains("width=\"200.0\" height=\"200.0\""),
@@ -3355,6 +3357,36 @@ mod tests {
          ImageSize -> 200]",
       );
       assert!(svg.contains("stroke-width=\"3.0\""), "{svg}");
+    }
+
+    #[test]
+    fn relative_thickness_follows_the_shorter_side_of_a_pinned_3d_picture() {
+      // In a picture pinned less tall than wide, `Thickness[t]` is a
+      // fraction of the height: `Thickness[0.02]` at `ImageSize -> {500,
+      // 300}` is 6 pixels wide, not 10.
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.02], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> {500, 300}]",
+      );
+      assert!(svg.contains("stroke-width=\"6.0\""), "{svg}");
+      // A picture taller than wide still measures against its width.
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.02], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> {300, 500}]",
+      );
+      assert!(svg.contains("stroke-width=\"6.0\""), "{svg}");
+    }
+
+    #[test]
+    fn relative_point_size_follows_the_shorter_side_of_a_pinned_3d_picture() {
+      // `PointSize[s]` in 3D is measured against the same length as
+      // `Thickness[t]`: at `ImageSize -> {500, 300}` a `PointSize[0.04]`
+      // dot is 12 pixels across (radius 6), not 20.
+      let svg = svg_of(
+        "Graphics3D[{PointSize[0.04], Point[{0, 0, 0}]}, \
+         ImageSize -> {500, 300}]",
+      );
+      assert!(svg.contains("r=\"6.00\""), "{svg}");
     }
 
     #[test]
@@ -5678,6 +5710,99 @@ mod grid_item_style_tests {
       ),
       "{svg}"
     );
+  }
+
+  #[test]
+  fn test_text_sets_row_in_proportional_face() {
+    // `Text[Row[…]]` sets every item of the row in the proportional text
+    // face, as `Text["…"]` is, alone or under `Style`.
+    for code in [
+      r#"ExportString[Text[Row[{"ab ", 1}]], "SVG"]"#,
+      r#"ExportString[Style[Text[Row[{"ab ", 1}]], 16], "SVG"]"#,
+      r#"ExportString[Text["ab"], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("monospace"), "{code}: {svg}");
+      assert!(svg.contains("sans-serif\""), "{code}: {svg}");
+    }
+  }
+
+  #[test]
+  fn test_text_row_in_pane_fits_one_line_in_proportional_face() {
+    // A sentence of 53 characters at size 16 fits a 500-wide pane in the
+    // proportional face, so it stays on one line rather than wrapping its
+    // last word as monospace metrics would.
+    let svg = woxi::interpret(
+      r#"ExportString[Pane[Style[Text[Row[{"At ", 120, " BPM, ", 24, " clock ticks will last ", 0.02083, " seconds."}]], 16], {500, 100}, Alignment -> Center], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("monospace"), "{svg}");
+    let ys: std::collections::BTreeSet<&str> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|t| t.split("y=\"").nth(1)?.split('"').next())
+      .collect();
+    assert_eq!(ys.len(), 1, "{svg}");
+    assert!(svg.contains(" seconds.</text>"), "{svg}");
+  }
+
+  #[test]
+  fn test_text_string_in_pane_wraps_by_proportional_width() {
+    // Long `Text` prose in a fixed pane flows into lines measured in the
+    // proportional face: the laid-out block about fits the pane's width
+    // (give or take the column's padding) instead of running a monospace
+    // measure wider and being shrunk to fit it.
+    let svg = woxi::interpret(
+      r#"ExportString[Pane[Style[Text[StringRepeat["word ", 40]], 16], {500, 100}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("monospace"), "{svg}");
+    let inner = svg.split("<svg").nth(2).unwrap();
+    let width: f64 = inner
+      .split("width=\"")
+      .nth(1)
+      .and_then(|w| w.split('"').next())
+      .and_then(|w| w.parse().ok())
+      .unwrap();
+    assert!(width <= 512.0, "{width}: {svg}");
+    assert!(svg.matches("<text ").count() >= 2, "{svg}");
+  }
+
+  #[test]
+  fn test_column_measures_proportional_font_family_items() {
+    // An item styled in a proportional face is measured with that face's
+    // narrower advance, not the monospace default.
+    let mono = woxi::interpret(
+      r#"ExportString[Column[{Style["abcdefghijklmnopqrst", FontFamily -> "Courier"]}], "SVG"]"#,
+    )
+    .unwrap();
+    let sans = woxi::interpret(
+      r#"ExportString[Column[{Style["abcdefghijklmnopqrst", FontFamily -> "sans-serif"]}], "SVG"]"#,
+    )
+    .unwrap();
+    let width = |svg: &str| -> f64 {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap()
+    };
+    assert!(width(&sans) < width(&mono), "{sans}\n{mono}");
+  }
+
+  #[test]
+  fn test_text_row_in_fixed_pane_output_uses_proportional_face() {
+    // The notebook display of a fixed-size `Pane` (a Manipulate body) sets
+    // `Text[Row[…]]` in the proportional face on one line, as the export
+    // does.
+    let res = woxi::interpret_with_stdout(
+      r#"Pane[Style[Text[Row[{"At ", 120, " BPM, ", 24, " clock ticks will last ", 0.02083, " seconds."}]], 16], {500, 100}, Alignment -> Center]"#,
+    )
+    .unwrap();
+    let svg = res.graphics.expect("pane should render");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(svg.contains(" seconds.</text>"), "{svg}");
   }
 
   // ── Font fallback keeps the text's style ──

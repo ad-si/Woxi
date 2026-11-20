@@ -15,7 +15,14 @@ mod cse;
 mod curve;
 mod dde;
 mod pde_mol;
+mod state_data;
 mod stiff;
+pub use state_data::{
+  iterate_ast as ndsolve_iterate_ast,
+  process_equations_ast as ndsolve_process_equations_ast,
+  process_solutions_ast as ndsolve_process_solutions_ast,
+  reinitialize_ast as ndsolve_reinitialize_ast,
+};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 

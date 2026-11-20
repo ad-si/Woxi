@@ -9250,6 +9250,57 @@ mod graph_coordinates_3d {
     );
   }
 
+  // `VertexRenderingFunction -> Automatic` keeps the default disks (it is
+  // not applied as a function), so labels still appear.
+  #[test]
+  fn graph_plot_vertex_rendering_function_automatic() {
+    assert_eq!(
+      interpret(
+        "g = GraphPlot[{1 -> 2, 2 -> 3}, VertexLabeling -> True, \
+         VertexRenderingFunction -> Automatic]; \
+         {Length[Cases[g, _Disk, Infinity]], \
+         Length[Cases[g, _Text, Infinity]], \
+         Length[Cases[g, _Automatic, Infinity]]}"
+      )
+      .unwrap(),
+      "{3, 3, 0}"
+    );
+  }
+
+  // `VertexLabeling -> True` labels every vertex, `VertexRenderingFunction`
+  // replaces (`None` drops) the spheres, and neither ends up as a
+  // `Graphics3D` option.
+  #[test]
+  fn graph_plot_3d_vertex_labeling_and_rendering() {
+    assert_eq!(
+      interpret(
+        "g = GraphPlot3D[{a -> b, b -> c}, VertexLabeling -> True, \
+         VertexRenderingFunction -> None, Method -> \"SpringEmbedding\"]; \
+         {Cases[g, Text[Style[l_, z_], i_, o_] :> {l, z, i, o}, Infinity], \
+         Length[Cases[g, _Sphere, Infinity]], Options[g]}"
+      )
+      .unwrap(),
+      "{{{a, 10, 1, {-1, -1}}, {b, 10, 2, {-1, -1}}, \
+       {c, 10, 3, {-1, -1}}}, 0, {Boxed -> False}}"
+    );
+    assert_eq!(
+      interpret(
+        "g = GraphPlot3D[{1 -> 2}, VertexRenderingFunction -> (vf[#2] &)]; \
+         {Cases[g, _vf, Infinity], Length[Cases[g, _Sphere, Infinity]]}"
+      )
+      .unwrap(),
+      "{{vf[1], vf[2]}, 0}"
+    );
+    assert_eq!(
+      interpret(
+        "Length[Cases[GraphPlot3D[{1 -> 2}, \
+         VertexRenderingFunction -> Automatic], _Sphere, Infinity]]"
+      )
+      .unwrap(),
+      "2"
+    );
+  }
+
   #[test]
   fn graph_plot_3d_is_graphics3d() {
     assert_eq!(

@@ -760,6 +760,19 @@ fn render_item(
           render_item(&inner, style, area, out);
         }
       }
+      // `GraphicsComplex[pts, prims]`: the primitives with their vertex
+      // indices resolved to coordinates, drawn in the current style.
+      "GraphicsComplex" if args.len() >= 2 => {
+        if let Expr::List(points) = &args[0] {
+          let resolved =
+            crate::functions::graphics::graphics_complex_to_normal_form(
+              points,
+              &args[1],
+              &args[2..],
+            );
+          render_item(&resolved, style, area, out);
+        }
+      }
       "Line" if !args.is_empty() => {
         for pts in collect_point_lists(&args[0]) {
           out.push_str(&format!(
@@ -1315,6 +1328,21 @@ fn render_item(
             area.py(anchor.1) + (0.5 - fy) * h,
             w,
             h,
+          ));
+        }
+      }
+      // `Locator[pos, appearance]` draws its marker (Wolfram's crosshair or
+      // the appearance graphic) at its own screen size, centered on `pos`.
+      "Locator" if !args.is_empty() => {
+        for (x, y, svg, w, h) in
+          crate::functions::graphics::locator_markers(args)
+        {
+          out.push_str(&crate::functions::graphics::embed_svg_centered(
+            &svg,
+            area.px(x),
+            area.py(y),
+            w * area.scale,
+            h * area.scale,
           ));
         }
       }

@@ -2211,6 +2211,10 @@ impl WoxiStudio {
         {
           state.apply_pane_click();
           state.mouse_down();
+          // A `ClickPane` handler may `Beep[]` or `EmitSound[…]`.
+          if let Some(audio) = state.emitted_sound.take() {
+            self.play_emitted_sound(cell_idx, &audio);
+          }
         }
         Task::none()
       }
@@ -5498,6 +5502,15 @@ fn render_manipulate_widget<'a>(
           .into()
       };
     output_col = output_col.push(container(picture).padding(4));
+  } else if let Some(ref handle) = state.typeset_handle {
+    // A textual result is shown typeset, as an ordinary output cell shows
+    // it: `TraditionalForm` math keeps its subscripts and font size.
+    let mut svg_widget =
+      svg::Svg::new(handle.clone()).width(iced::Length::Shrink);
+    if stale {
+      svg_widget = svg_widget.opacity(0.3_f32);
+    }
+    output_col = output_col.push(container(svg_widget).padding(6));
   } else if let Some(ref txt) = state.text_output {
     let mut output_text = text(txt.clone()).size(12).font(Font::MONOSPACE);
     if stale {
@@ -8812,6 +8825,37 @@ fn strip_svg_wrapper(svg: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+  /// A graphic's `<text>` without a `font-family` (a `Text` without
+  /// `FontFamily`) is drawn in the default sans face, as an exported SVG
+  /// and Wolfram draw it, not in usvg's fallback "Times New Roman" (or
+  /// whatever face happens to stand in for it).
+  #[test]
+  fn graphic_text_without_family_renders_in_default_sans_face() {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let db = std::sync::Arc::new(db);
+    let svg = |family: &str| {
+      format!(
+        "<svg width=\"120\" height=\"30\" xmlns=\"http://www.w3.org/2000/svg\">\
+         <text x=\"4\" y=\"20\" font-size=\"16\"{family}>Hamburg 2 (g)</text></svg>"
+      )
+    };
+    let png = |family: &str| {
+      super::encode_svg_as_png(&svg(family), &db).expect("renders")
+    };
+    assert_eq!(
+      woxi::functions::image_ast::svg_render_options(db.clone()).font_family,
+      "Atkinson Hyperlegible Next"
+    );
+    let bare = png("");
+    assert_eq!(
+      bare,
+      png(" font-family=\"Atkinson Hyperlegible Next\""),
+      "bare text must use the default sans face"
+    );
+    assert_ne!(bare, png(" font-family=\"Atkinson Hyperlegible Mono\""));
+  }
+
   /// A slider's value readout marks a whole-number machine real with a
   /// trailing dot (`-10.`), as Wolfram's labeled slider does.
   #[test]
@@ -10690,6 +10734,36 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "Graphics of translated/rotated pieces should render"
     );
   }
+  /// A body that prints an expanded product in a chosen term order — the
+  /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
+  /// `TraditionalForm` at a large size. The widget shows it typeset
+  /// (subscripts, operator, font size), like an output cell, instead of the
+  /// raw `TraditionalForm[Infix[…]]` source text. Independently written, not
+  /// copied from any specific Demonstration.
+  #[test]
+  fn manipulate_typesets_traditional_form_infix_sum() {
+    let code = r#"Manipulate[
+      Pane[Text@Style[TraditionalForm@Infix[
+        Reverse@SortBy[List @@ Expand[Product[1 + Subscript[x, i], {i, n}]],
+          Length], "+"], 18], {500, 200}],
+      {{n, 2}, Range[4], ControlType -> Setter}]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a Setter row should build a ManipulateState");
+    assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
+    let svg = state
+      .typeset_output
+      .as_deref()
+      .expect("the textual result is typeset");
+    assert!(state.typeset_handle.is_some());
+    assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
+    assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
+    assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
+    assert!(svg.contains(">2<"), "the subscripts are drawn: {svg}");
+    assert!(svg.contains("font-size=\"18"), "the style's size: {svg}");
+  }
+
   /// A digit-inspector Manipulate picking among symbolic constants (Pi, E,
   /// GoldenRatio) and rendering the chosen constant's leading digits via
   /// `RealDigits`. Independently written, not copied from any specific
@@ -15694,6 +15768,81 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     state.reevaluate();
     assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
     assert!(state.graphics_handle.is_some());
+  }
+
+  #[test]
+  fn curve_locator_and_inner_animate_become_controls() {
+    // A body laying out a `LocatorPane` whose locator slides along a
+    // plotted curve (`Dynamic[{k, f[k]}, (k = First[#]) &]`, `k` a hidden
+    // `ControlType -> None` scalar no other control writes) above a
+    // literal inner `Animate`. The locator must be drawn on the picture a
+    // helper function returns, `k` must get a slider over the plot's x
+    // range, and the inner animation's time must become the widget's
+    // animated control.
+    woxi::interpret(
+      "bumpCurve[k_] := Sin[k/2]; \
+       bumpPlot[] := Plot[bumpCurve[k], {k, 0, Pi}];",
+    )
+    .unwrap();
+    let code = "Manipulate[Module[{}, DynamicModule[{h}, Column[{\
+        LocatorPane[Dynamic[{kk, h = bumpCurve[kk]}, (kk = First[#]) &], \
+          bumpPlot[]], \
+        Animate[Graphics[Disk[{kk + Cos[tt], h}, 0.1], \
+          PlotRange -> {{-2, 5}, {-1, 2}}], {{tt, 0, \"time\"}, 0, 2 Pi}]\
+      }]]], \
+      {{kk, 1.}, ControlType -> None}, \
+      {{amp, 1, \"amplitude\"}, 0, 2}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the locator Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert!(state.animated, "the inner Animate must animate the widget");
+    assert!(state.playing);
+    assert!(
+      !state.state.iter().any(|(n, _)| n == "kk"),
+      "kk must be a visible control now: {:?}",
+      state.state
+    );
+    let continuous: Vec<(&str, &str, f64, f64, f64)> = state
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        manipulate::ControlState::Continuous {
+          name,
+          label,
+          min,
+          max,
+          current,
+          ..
+        } => Some((name.as_str(), label.as_str(), *min, *max, *current)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(continuous.len(), 3, "{continuous:?}");
+    assert_eq!(continuous[0].0, "amp");
+    assert_eq!(continuous[1].0, "tt");
+    assert_eq!(continuous[1].1, "time");
+    assert!((continuous[1].3 - 2.0 * std::f64::consts::PI).abs() < 1e-9);
+    assert_eq!(continuous[2].0, "kk");
+    assert_eq!(continuous[2].2, 0.0);
+    assert!((continuous[2].3 - std::f64::consts::PI).abs() < 1e-9);
+    assert_eq!(continuous[2].4, 1.0);
+
+    // The locator marker (a circle) and the animated disk are both drawn.
+    let svg = state.check_render().unwrap().graphics.unwrap();
+    assert!(svg.matches("<ellipse").count() >= 2, "{svg}");
+
+    // Advancing the animation moves only the time.
+    state.advance_animation();
+    let tt = state.controls.iter().find_map(|c| match c {
+      manipulate::ControlState::Continuous { name, current, .. }
+        if name == "tt" =>
+      {
+        Some(*current)
+      }
+      _ => None,
+    });
+    assert!(tt.unwrap() > 0.0);
+    assert!(state.error.is_none(), "{:?}", state.error);
   }
 
   #[test]
@@ -35817,6 +35966,54 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`rate$$ = 4}, DynamicBox[\[Ellipsis]
       .map(|c| c.name())
       .collect();
     assert_eq!(names, ["a", "b"]);
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose `Manipulate`
+  /// fits a curve through two `Locator` points and shows it in a
+  /// `Labeled[Plot[…], caption]`. Regression: Wolfram draws each Locator as
+  /// a crosshair marker on the displayed plot, but the widget drew none, so
+  /// nothing showed where the points were. An `Appearance -> None` Locator
+  /// still draws no marker. This is a self-authored, construct-equivalent
+  /// example.
+  #[test]
+  fn locator_controls_draw_markers_on_the_body_graphic() {
+    const MARKER: &str = "rgba(180,180,180,0.35)";
+    let code = "Manipulate[\
+      If[p == q, q = q + {1/100, 0}]; \
+      Labeled[Plot[p[[2]] + (q[[2]] - p[[2]]) (x - p[[1]])/(q[[1]] - p[[1]]), \
+        {x, 0, 10}, Frame -> True, PlotRange -> {{0, 10}, {0, 10}}], \
+        \"a line through two points\"], \
+      {{p, {2, 3}, \"first point\"}, {0, 0}, {10, 10}, Locator}, \
+      {{q, {8, 7}, \"second point\"}, {0, 0}, {10, 10}, ControlType -> Locator}, \
+      {{hidden, {5, 5}}, Locator, Appearance -> None}]";
+    let mut state = instantiate_stored_manipulate(code, "")
+      .expect("the Manipulate must build a widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let svg = state.current_svg().expect("the plot renders").to_string();
+    assert_eq!(svg.matches(MARKER).count(), 2, "one marker per Locator");
+    // Markers follow their point and leave the plot range alone.
+    for c in state.controls.iter_mut() {
+      if let manipulate::ControlState::Slider2D { name, x, .. } = c
+        && name == "p"
+      {
+        *x = 4.0;
+      }
+    }
+    state.reevaluate();
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let moved = state.current_svg().expect("the plot re-renders");
+    assert_eq!(moved.matches(MARKER).count(), 2);
+    assert_ne!(moved, svg, "the marker moves with its point");
+
+    // A body that places its own Locators keeps just those.
+    let own = "Manipulate[\
+      Graphics[{Locator[p], Disk[p, 1/2]}, PlotRange -> 5], \
+      {{p, {1, 1}}, {-5, -5}, {5, 5}, Locator}]";
+    let state = instantiate_stored_manipulate(own, "")
+      .expect("the Manipulate must build a widget");
+    let svg = state.current_svg().expect("the picture renders");
+    assert_eq!(svg.matches(MARKER).count(), 1);
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a

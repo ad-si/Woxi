@@ -5446,6 +5446,20 @@ fn render_styled_layout_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if !functions::graphics::is_style_wrapper(name) || args.len() < 2 {
     return expr;
   }
+  // `Style[Text[Row[…]], 16]`: the `Text` adds the proportional text face
+  // to the directives, nearest the layout.
+  if let Some((layout, family)) =
+    functions::graphics::text_layout_face(&args[0])
+    && !matches!(layout, syntax::Expr::String(_))
+  {
+    let mut styled = vec![layout.clone()];
+    styled.extend(args[1..].iter().cloned());
+    styled.push(family);
+    return render_styled_layout_if_needed(syntax::Expr::FunctionCall {
+      name: name.clone(),
+      args: styled.into(),
+    });
+  }
   // Look through pass-through display wrappers (`Text[…]`, `Pane[…]`, …) to
   // find the Column/Row/Grid underneath — a Demonstration's Manipulate body
   // commonly styles the whole display as `Style[Text[Column[{…}]], size]`,

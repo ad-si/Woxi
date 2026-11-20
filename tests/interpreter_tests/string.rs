@@ -7702,6 +7702,14 @@ mod make_boxes {
       "TagBox[FormBox[RowBox[{SubsuperscriptBox[P, n, m], (, x, )}], \
        TraditionalForm], TraditionalForm, Editable -> True]"
     );
+    // Two indices and two variables: Yₗᵐ(θ, ϕ).
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[SphericalHarmonicY[l, m, t, p]]]")
+        .unwrap(),
+      "TagBox[FormBox[RowBox[{SubsuperscriptBox[Y, l, m], (, \
+       RowBox[{t, ,, p}], )}], TraditionalForm], TraditionalForm, \
+       Editable -> True]"
+    );
     assert_eq!(
       interpret("ToBoxes[TraditionalForm[Row[{2, x, t}]]]").unwrap(),
       "TagBox[FormBox[TemplateBox[{2, x, t}, RowDefault], TraditionalForm], TraditionalForm, \

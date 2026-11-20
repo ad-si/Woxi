@@ -5119,6 +5119,27 @@ mod monitor_evaluates_its_expression {
   }
 }
 
+/// `SetOptions[$FrontEnd, …]` configures the notebook front end.
+mod set_options_front_end {
+  use super::*;
+
+  /// In a notebook front end (the playground, Woxi Studio) the front end
+  /// takes its own options, such as `DynamicEvaluationTimeout`, silently;
+  /// they are not options of a symbol for `SetOptions::optnf` to reject.
+  #[test]
+  fn front_end_options_are_accepted_in_a_notebook() {
+    for target in ["$FrontEnd", "$FrontEndSession"] {
+      clear_state();
+      let result = interpret_with_stdout(&format!(
+        "SetOptions[{target}, DynamicEvaluationTimeout -> Infinity]; 1"
+      ))
+      .unwrap();
+      assert_eq!(result.result, "1");
+      assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+    }
+  }
+}
+
 /// A literal rule that rewrites a call to itself is a fixed point of
 /// evaluation; one with patterns is applied until `$IterationLimit` stops
 /// it. Neither may exhaust `$RecursionLimit`.
