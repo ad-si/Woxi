@@ -194,6 +194,13 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let den2 = &rd * &rd * &id * &id;
     return sqrt_ast(&[make_rational_expr(&num2, &den2)]);
   }
+  // An exact algebraic complex number whose parts involve radicals or
+  // constants (Abs[1 + I Sqrt[3]] = 2, Abs[-1/2 - I Sqrt[3]] = Sqrt[13]/2,
+  // Abs[1 + I Pi] = Sqrt[1 + Pi^2]): |z| = Sqrt[Re[z]^2 + Im[z]^2] exactly,
+  // rather than the machine-precision magnitude below.
+  if let Some(result) = exact_algebraic_complex_abs(&args[0])? {
+    return Ok(result);
+  }
   // Handle floating-point complex numbers: Abs[3.0 + I] = sqrt(10)
   if let Some((re, im)) = try_extract_complex_f64(&args[0]) {
     if im != 0.0 {
@@ -226,6 +233,93 @@ pub fn abs_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(NumericSign::Known(_)) => Ok(args[0].clone()),
     Some(NumericSign::Undecidable) | None => Ok(unevaluated("Abs", args)),
   }
+}
+
+/// `Abs` of an exact complex number built only from integers, rationals,
+/// `I`, positive real constants and rational powers of those, via
+/// Sqrt[Re[z]^2 + Im[z]^2]. Returns None when `z` has another shape, holds a
+/// machine real, or its real and imaginary parts don't separate cleanly.
+fn exact_algebraic_complex_abs(
+  z: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  fn is_exact_algebraic(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_) | Expr::BigInteger(_) => true,
+      Expr::Identifier(s) | Expr::Constant(s) => matches!(
+        s.as_str(),
+        "I" | "Pi" | "E" | "EulerGamma" | "GoldenRatio" | "Degree" | "Catalan"
+      ),
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Rational" | "Complex" => args
+          .iter()
+          .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_))),
+        "Plus" | "Times" => args.iter().all(is_exact_algebraic),
+        "Power" if args.len() == 2 => {
+          is_exact_algebraic(&args[0]) && is_rational_exponent(&args[1])
+        }
+        "Sqrt" if args.len() == 1 => is_exact_algebraic(&args[0]),
+        _ => false,
+      },
+      Expr::BinaryOp { op, left, right } => {
+        use crate::syntax::BinaryOperator as B;
+        match op {
+          B::Plus | B::Minus | B::Times | B::Divide => {
+            is_exact_algebraic(left) && is_exact_algebraic(right)
+          }
+          B::Power => is_exact_algebraic(left) && is_rational_exponent(right),
+          _ => false,
+        }
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => is_exact_algebraic(operand),
+      _ => false,
+    }
+  }
+  fn is_rational_exponent(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_) => true,
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        args.iter().all(|a| matches!(a, Expr::Integer(_)))
+      }
+      Expr::UnaryOp {
+        op: crate::syntax::UnaryOperator::Minus,
+        operand,
+      } => is_rational_exponent(operand),
+      _ => false,
+    }
+  }
+  fn is_clean_real_part(e: &Expr) -> bool {
+    !mentions_imaginary_unit(e)
+      && !contains_head(e, "Re")
+      && !contains_head(e, "Im")
+      && crate::functions::predicate_ast::is_numeric_q(e)
+  }
+  fn contains_head(e: &Expr, head: &str) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } => {
+        name == head || args.iter().any(|a| contains_head(a, head))
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        contains_head(left, head) || contains_head(right, head)
+      }
+      Expr::UnaryOp { operand, .. } => contains_head(operand, head),
+      Expr::List(items) => items.iter().any(|a| contains_head(a, head)),
+      _ => false,
+    }
+  }
+  if !mentions_imaginary_unit(z) || !is_exact_algebraic(z) {
+    return Ok(None);
+  }
+  let re = crate::evaluator::evaluate_expr_to_expr(&call1("Re", z.clone()))?;
+  let im = crate::evaluator::evaluate_expr_to_expr(&call1("Im", z.clone()))?;
+  if !is_clean_real_part(&re) || !is_clean_real_part(&im) {
+    return Ok(None);
+  }
+  let two = Expr::Integer(2);
+  let sum = plus(vec![pow(re, two.clone()), pow(im, two)]);
+  crate::evaluator::evaluate_expr_to_expr(&call1("Sqrt", sum)).map(Some)
 }
 
 /// True iff `expr` mentions the imaginary unit `I` (either as the symbol
