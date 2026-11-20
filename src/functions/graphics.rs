@@ -6349,7 +6349,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     } if operands.iter().any(|o| matches!(o, Expr::String(_))) => {
       let mut text = graphics_text_content(&operands[0]);
       for (op, operand) in operators.iter().zip(&operands[1..]) {
-        text.push_str(comparison_op_text(op));
+        text.push_str(comparison_op_text(*op));
         text.push_str(&graphics_text_content(operand));
       }
       text
@@ -6367,7 +6367,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
 }
 
 /// The operator text a comparison is joined with when set as a plain label.
-fn comparison_op_text(op: &crate::syntax::ComparisonOp) -> &'static str {
+fn comparison_op_text(op: crate::syntax::ComparisonOp) -> &'static str {
   use crate::syntax::ComparisonOp;
   match op {
     ComparisonOp::Equal => " == ",
@@ -49436,7 +49436,11 @@ fn resolve_display_dynamics(
       let mut text = String::new();
       for (i, operand) in operands.iter().enumerate() {
         if i > 0 {
-          text.push_str(operators.get(i - 1).map_or(" ", comparison_op_text));
+          text.push_str(
+            operators
+              .get(i - 1)
+              .map_or(" ", |op| comparison_op_text(*op)),
+          );
         }
         text.push_str(&typeset_caption_operand(&resolve_display_dynamics(
           operand, bindings,
