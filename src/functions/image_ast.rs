@@ -277,6 +277,40 @@ pub fn image_to_svg_document(
   )
 }
 
+/// `Magnify[image]` / `Magnify[image, s]` as the image it displays: the
+/// same raster shown at `s` times its display size (its `ImageSize`, or its
+/// pixel dimensions without one). `None` when `expr` is not a magnified
+/// image or the factor is not a positive number.
+pub fn magnified_image(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Magnify" || args.is_empty() || args.len() > 2 {
+    return None;
+  }
+  let factor = match args.get(1) {
+    Some(f) => crate::functions::math_ast::try_eval_to_f64(f)?,
+    None => 1.0,
+  };
+  if !(factor.is_finite() && factor > 0.0) {
+    return None;
+  }
+  let mut image = args[0].clone();
+  let Expr::Image {
+    width,
+    height,
+    display_size,
+    ..
+  } = &mut image
+  else {
+    return None;
+  };
+  let (w, h) = display_size.unwrap_or((*width, *height));
+  let scale = |v: u32| ((v as f64 * factor).round() as u32).max(1);
+  *display_size = Some((scale(w), scale(h)));
+  Some(image)
+}
+
 // ─── Core functions (Phase 1) ──────────────────────────────────────────────
 
 /// Image[data] / Image[data, type] / Image[data, type, opts…] — construct
@@ -3184,6 +3218,9 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     epilog: Vec::new(),
     color_function: None,
     color_function_scaling: true,
+    aspect_ratio: None,
+    aspect_full: false,
+    fixed_height: false,
   }
 }
 
@@ -13461,6 +13498,40 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 
 // ─── Rasterize ──────────────────────────────────────────────────────────────
 
+/// Serif faces to draw generic "serif" text in, most Times-like first:
+/// Times itself, then the faces metric-compatible with it, then common
+/// general-purpose serif faces.
+#[cfg(not(target_arch = "wasm32"))]
+const SERIF_FAMILY_PREFERENCE: &[&str] = &[
+  "Times New Roman",
+  "Times",
+  "Liberation Serif",
+  "Tinos",
+  "TeX Gyre Termes",
+  "Nimbus Roman",
+  "Nimbus Roman No9 L",
+  "STIX Two Text",
+  "Noto Serif",
+  "DejaVu Serif",
+  "FreeSerif",
+  "Georgia",
+];
+
+/// The most Times-like serif family among the installed font `families`
+/// (compared case-insensitively), or `None` when none of the known serif
+/// faces is installed.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn preferred_serif_family<'a>(
+  families: impl IntoIterator<Item = &'a str>,
+) -> Option<&'static str> {
+  let installed: std::collections::HashSet<String> =
+    families.into_iter().map(str::to_ascii_lowercase).collect();
+  SERIF_FAMILY_PREFERENCE
+    .iter()
+    .copied()
+    .find(|candidate| installed.contains(&candidate.to_ascii_lowercase()))
+}
+
 /// Populate a usvg font database with the embedded fallback fonts and wire
 /// each CSS generic family to a reasonable default. This is shared by the
 /// raster (`rasterize_svg`) and PDF (`svg_to_pdf_bytes`) export paths and by
@@ -13515,11 +13586,219 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
   );
   fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
   fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
-  // We don't ship a dedicated serif face, so fall back to the sans-serif
-  // for "serif" requests rather than leaving them unresolved.
-  fontdb.set_serif_family("Atkinson Hyperlegible Next");
+  // Text set in `FontFamily -> "Times"` is measured with Times-like
+  // advances, so a "serif" request has to be drawn in an installed
+  // Times-like face: the wider sans-serif would overrun the room the
+  // layout gave it. We don't ship a serif face, so only without any
+  // installed one fall back to the sans-serif rather than leaving
+  // "serif" unresolved.
+  let serif = preferred_serif_family(
+    fontdb
+      .faces()
+      .flat_map(|face| face.families.iter().map(|(name, _)| name.as_str())),
+  )
+  .unwrap_or("Atkinson Hyperlegible Next");
+  fontdb.set_serif_family(serif);
   fontdb.set_cursive_family("Atkinson Hyperlegible Next");
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
+}
+
+/// Slant of synthesized oblique text: the 14° CSS uses for
+/// `font-style: oblique` when a font family has no slanted face.
+#[cfg(not(target_arch = "wasm32"))]
+const SYNTHETIC_OBLIQUE_DEGREES: f64 = 14.0;
+
+/// Slant the `<text>` elements of `svg` that are set entirely in italics
+/// but whose font family has no italic (or oblique) face in `fontdb`.
+///
+/// Browsers synthesize an oblique face for `font-style="italic"` when a
+/// family has none, but usvg draws the upright outlines instead. The
+/// embedded Atkinson fonts ship no italic, so `Style[..., Italic]` text
+/// (plot labels, axes labels, `Text` primitives) would rasterize upright.
+/// Each such element gets a `skewX` about its anchor point, which leaves
+/// the anchor where it was and leans the glyphs like an oblique face.
+///
+/// Text that mixes italic and upright runs is left as is: SVG cannot
+/// transform a `<tspan>` on its own. Call this on every SVG before it is
+/// parsed for rasterization or PDF export.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn synthesize_oblique_text<'a>(
+  svg: &'a str,
+  fontdb: &resvg::usvg::fontdb::Database,
+) -> std::borrow::Cow<'a, str> {
+  use resvg::usvg::roxmltree;
+  use std::borrow::Cow;
+
+  if !svg.contains("italic") && !svg.contains("oblique") {
+    return Cow::Borrowed(svg);
+  }
+  let options = roxmltree::ParsingOptions {
+    allow_dtd: true,
+    ..Default::default()
+  };
+  let Ok(doc) = roxmltree::Document::parse_with_options(svg, options) else {
+    return Cow::Borrowed(svg);
+  };
+
+  // (byte offset, text to insert or replace with, length replaced)
+  let mut edits: Vec<(usize, String, usize)> = Vec::new();
+  for text in doc
+    .descendants()
+    .filter(|n| n.is_element() && n.tag_name().name() == "text")
+  {
+    if !text_is_all_italic(text)
+      || has_slanted_face(text, fontdb)
+      || text
+        .ancestors()
+        .skip(1)
+        .any(|a| a.tag_name().name() == "text")
+    {
+      continue;
+    }
+    let (x, y) = text_anchor(text);
+    let skew = format!(
+      "translate({x} {y}) skewX({}) translate({} {})",
+      -SYNTHETIC_OBLIQUE_DEGREES, -x, -y
+    );
+    if let Some(attr) = text.attribute_node("transform") {
+      let range = attr.range_value();
+      let existing = &svg[range.clone()];
+      edits.push((range.start, format!("{existing} {skew}"), range.len()));
+    } else {
+      // Insert the attribute right after the element name.
+      let start = text.range().start + 1;
+      let name_len = svg[start..]
+        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .unwrap_or(0);
+      edits.push((start + name_len, format!(" transform=\"{skew}\""), 0));
+    }
+  }
+  if edits.is_empty() {
+    return Cow::Borrowed(svg);
+  }
+
+  let mut out = String::with_capacity(svg.len() + edits.len() * 64);
+  let mut pos = 0;
+  for (at, insert, replaced) in edits {
+    out.push_str(&svg[pos..at]);
+    out.push_str(&insert);
+    pos = at + replaced;
+  }
+  out.push_str(&svg[pos..]);
+  Cow::Owned(out)
+}
+
+/// The value of the presentation property `name` on `node` itself, from
+/// its `style` attribute (which takes precedence) or the plain attribute.
+#[cfg(not(target_arch = "wasm32"))]
+fn own_svg_property<'a>(
+  node: resvg::usvg::roxmltree::Node<'a, '_>,
+  name: &str,
+) -> Option<&'a str> {
+  let from_style = node.attribute("style").and_then(|style| {
+    style.split(';').find_map(|decl| {
+      let (key, value) = decl.split_once(':')?;
+      (key.trim() == name).then(|| value.trim())
+    })
+  });
+  from_style.or_else(|| node.attribute(name).map(str::trim))
+}
+
+/// The inherited value of the presentation property `name` at `node`.
+#[cfg(not(target_arch = "wasm32"))]
+fn inherited_svg_property<'a>(
+  node: resvg::usvg::roxmltree::Node<'a, '_>,
+  name: &str,
+) -> Option<&'a str> {
+  node
+    .ancestors()
+    .filter(resvg::usvg::roxmltree::Node::is_element)
+    .find_map(|n| own_svg_property(n, name).filter(|v| *v != "inherit"))
+}
+
+/// Whether every visible character of the `<text>` element is drawn in an
+/// italic or oblique style.
+#[cfg(not(target_arch = "wasm32"))]
+fn text_is_all_italic(text: resvg::usvg::roxmltree::Node) -> bool {
+  let mut runs = text
+    .descendants()
+    .filter(|n| n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty()))
+    .peekable();
+  runs.peek().is_some()
+    && runs.all(|run| {
+      run.parent().is_some_and(|parent| {
+        let style = inherited_svg_property(parent, "font-style");
+        style.is_some_and(|s| s == "italic" || s.starts_with("oblique"))
+      })
+    })
+}
+
+/// Whether the font usvg would pick for the `<text>` element has an italic
+/// or oblique face of its own, so no slant needs to be synthesized.
+#[cfg(not(target_arch = "wasm32"))]
+fn has_slanted_face(
+  text: resvg::usvg::roxmltree::Node,
+  fontdb: &resvg::usvg::fontdb::Database,
+) -> bool {
+  use resvg::usvg::fontdb::{Family, Query, Style, Weight};
+
+  // Look at the font of the first visible run, as that decides the face.
+  let run_parent = text
+    .descendants()
+    .find(|n| n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty()))
+    .and_then(|n| n.parent())
+    .unwrap_or(text);
+  // The default family `svg_render_options` gives usvg when none is set.
+  let family_list = inherited_svg_property(run_parent, "font-family")
+    .unwrap_or(DEFAULT_SVG_FONT_FAMILY);
+  let families: Vec<Family> = family_list
+    .split(',')
+    .map(|f| f.trim().trim_matches(|c| c == '"' || c == '\''))
+    .filter(|f| !f.is_empty())
+    .map(|f| match f {
+      "serif" => Family::Serif,
+      "sans-serif" => Family::SansSerif,
+      "monospace" => Family::Monospace,
+      "cursive" => Family::Cursive,
+      "fantasy" => Family::Fantasy,
+      name => Family::Name(name),
+    })
+    .collect();
+  let weight = match inherited_svg_property(run_parent, "font-weight") {
+    Some("bold" | "bolder") => Weight::BOLD,
+    Some("lighter") => Weight::LIGHT,
+    Some(w) => w.parse().map_or(Weight::NORMAL, Weight),
+    None => Weight::NORMAL,
+  };
+  let query = Query {
+    families: &families,
+    weight,
+    style: Style::Italic,
+    ..Default::default()
+  };
+  fontdb
+    .query(&query)
+    .and_then(|id| fontdb.face(id))
+    .is_some_and(|face| face.style != Style::Normal)
+}
+
+/// The anchor point of a `<text>` element: its first `x`/`y` coordinates,
+/// or those of its first positioned `<tspan>`.
+#[cfg(not(target_arch = "wasm32"))]
+fn text_anchor(text: resvg::usvg::roxmltree::Node) -> (f64, f64) {
+  let coordinate = |name: &str| {
+    text
+      .descendants()
+      .filter(resvg::usvg::roxmltree::Node::is_element)
+      .find_map(|n| n.attribute(name))
+      .and_then(|v| {
+        v.split(|c: char| c.is_whitespace() || c == ',')
+          .find(|s| !s.is_empty())
+      })
+      .and_then(|v| v.parse::<f64>().ok())
+      .unwrap_or(0.0)
+  };
+  (coordinate("x"), coordinate("y"))
 }
 
 /// The family usvg gives a `<text>` that sets no `font-family` of its own.
@@ -13925,6 +14204,8 @@ fn rasterize_svg_with(
   fontdb.load_system_fonts();
   load_embedded_fonts(&mut fontdb);
 
+  let svg_str = &synthesize_oblique_text(svg_str, &fontdb);
+
   // Parse SVG
   let opt = svg_render_options(StdArc::new(fontdb));
 
@@ -14090,6 +14371,7 @@ fn rasterize_mask_svg(
   let mut fontdb = resvg::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   load_embedded_fonts(&mut fontdb);
+  let svg_str = &synthesize_oblique_text(svg_str, &fontdb);
   let opt = svg_render_options(StdArc::new(fontdb));
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {

@@ -994,3 +994,31 @@ fn traditional_row_with_nested_grid_stacks_rows() {
   assert!(!svg.contains(">Grid<"), "grid head leaked: {svg}");
   assert!(!svg.contains(">(<"), "matrix parentheses leaked: {svg}");
 }
+
+/// Regression: a `Button` in a `Grid` cell drew a `Style`d label
+/// (`Style[n, "Title"]`, `Style[k, 30, Bold, Red]`) as plain 14-point
+/// black text, dropping the label's font size, color and weight.
+#[test]
+fn styled_button_label_in_grid_keeps_its_style() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style[7, "Title"], x = 1]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("font-size=\"44\""), "Title size lost: {svg}");
+
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style["go", 30, Bold, Red], x = 1, ImageSize -> {120, 60}]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("font-size=\"30\""), "size lost: {svg}");
+  assert!(svg.contains("font-weight=\"bold\""), "weight lost: {svg}");
+  assert!(
+    !svg.contains("fill=\"#000000\" text-anchor"),
+    "color lost: {svg}"
+  );
+
+  // A plain label still draws as the default 14-point text.
+  let svg =
+    interpret(r#"ExportString[Grid[{{Button["go", x = 1]}}], "SVG"]"#).unwrap();
+  assert!(svg.contains("font-size=\"14\""), "{svg}");
+}

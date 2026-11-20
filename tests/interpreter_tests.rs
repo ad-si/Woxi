@@ -4276,6 +4276,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_pane_of_style_applies_its_directives() {
+    // Regression: in `Text[Pane[Style[str, TextAlignment -> Left, size],
+    // w], pos]` the `Style` inside the `Pane` was ignored: the label kept
+    // the default 14-point font, its lines stayed centered, and it wrapped
+    // as if set in that default font.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Pane[Style[\"aaaa aaaa aaaa aaaa aaaa\", \
+       TextAlignment -> Left, 20], 120], {0, 0}], Point[{{-1, -1}, {1, 1}}]}, \
+       ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
+    assert!(svg.contains("font-size=\"20\""), "Style size lost: {svg}");
+    assert!(
+      svg.contains("text-anchor=\"start\""),
+      "TextAlignment -> Left lost: {svg}"
+    );
+    // At 20 points an `a` is about 11 points wide, so two 4-letter words
+    // (about 95 points) fit in the 120-point pane and a third does not.
+    assert!(svg.contains(">aaaa aaaa<"), "not wrapped at 20pt: {svg}");
+    assert!(!svg.contains("aaaa aaaa aaaa"), "wrapped too wide: {svg}");
+    // The left-aligned lines hang from the pane's left edge, 60 points
+    // left of the anchor at the center of the 400-point-wide picture.
+    let x = svg
+      .split("text-anchor=\"start\"")
+      .next()
+      .and_then(|head| head.rsplit("<text x=\"").next())
+      .and_then(|t| t.split('"').next())
+      .and_then(|n| n.parse::<f64>().ok())
+      .expect("text x");
+    assert!((x - 140.0).abs() < 2.0, "left edge at {x}: {svg}");
+  }
+
+  #[test]
   fn test_framed_pane_text_and_defer_in_grid_cell() {
     // Regression: a text `Framed[Pane[x, size]]` printed the literal
     // `Pane[…]` source, and a `Defer[expr]` grid cell kept its wrapper
@@ -5682,7 +5717,8 @@ mod interpreter_tests {
   #[test]
   fn test_axes_label_letter_script_is_typeset() {
     // `Subscript[x, n]` has no Unicode subscript for a letter, so the label
-    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`.
+    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`,
+    // with base and script in `TraditionalForm` italics.
     clear_state();
     let svg = interpret(
       "ExportString[ListLinePlot[{1, 3, 2}, \
@@ -5691,7 +5727,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan></text>"
+        "<tspan font-style=\"italic\">x</tspan><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">n</tspan></tspan></text>"
       ),
       "subscript letter not typeset: {svg}"
     );
@@ -5702,7 +5739,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "y<tspan baseline-shift=\"super\" font-size=\"70%\">k</tspan></text>"
+        "<tspan font-style=\"italic\">y</tspan><tspan baseline-shift=\"super\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">k</tspan></tspan></text>"
       ),
       "superscript letter not typeset: {svg}"
     );
@@ -5742,9 +5780,13 @@ mod interpreter_tests {
          FrameLabel -> {\"t\", x^2}], \"SVG\"]",
     )
     .unwrap();
+    // It is set in TraditionalForm: an italic x with a raised 2.
     assert!(
-      svg.contains("x²"),
-      "a bare Power FrameLabel entry must render as a Unicode superscript, \
+      svg.contains(
+        "<tspan font-style=\"italic\">x</tspan>\
+         <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+      ),
+      "a bare Power FrameLabel entry must render as a superscript, \
        not vanish: {svg}"
     );
 
@@ -5757,8 +5799,13 @@ mod interpreter_tests {
          Style[\"i\", Italic], \"t\"}], \")\"}]], \"SVG\"]",
     )
     .unwrap();
+    // The styled base and exponent keep their styles, the exponent raised.
     assert!(
-      svg2.contains("H(eit)"),
+      svg2.contains(
+        "H(<tspan font-style=\"italic\">e</tspan><tspan \
+         baseline-shift=\"super\" font-size=\"70%\"><tspan \
+         font-style=\"italic\">i</tspan>t</tspan>)"
+      ),
       "a Power nested in a Row must render alongside the row's other text, \
        not leave a gap: {svg2}"
     );

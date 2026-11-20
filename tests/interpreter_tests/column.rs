@@ -448,6 +448,32 @@ mod column_visual_mode {
     assert!(svg.contains("font-style=\"italic\""), "{svg}");
   }
 
+  /// A fixed-size `Pane` re-flows a `Row[list, sep]` (a word list joined by
+  /// ", ") into lines that break after the separators, each set as one
+  /// string, instead of one line far wider than the box — which under
+  /// `ImageSizeAction -> "ShrinkToFit"` had shrunk the text to a sliver.
+  #[test]
+  fn sized_pane_wraps_a_row_with_a_separator() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Pane[Style[Row[Table[\"WORD\" <> ToString[i], {i, 30}], \
+       \", \"], 18], {500, 300}, Alignment -> {Left, Center}, \
+       ImageSizeAction -> \"ShrinkToFit\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"300\""),
+      "{svg}"
+    );
+    // 500 / (18 * 0.632) = 43 characters per line.
+    assert!(
+      svg.contains(">WORD1, WORD2, WORD3, WORD4, WORD5, WORD6,<"),
+      "{svg}"
+    );
+    assert!(svg.contains(">WORD7, WORD8, WORD9, "), "{svg}");
+    assert!(!svg.contains("font-size=\"14\""), "{svg}");
+  }
+
   /// `Style[Column[{…, Pane[text, w]}, opts], "Label", 12]` pushes the style
   /// onto each item; a `Pane` item used to come out as its own source text.
   #[test]
@@ -837,6 +863,67 @@ mod column_item_size_wrapping {
     .unwrap();
     assert!(out.contains(">b</text>"), "{out}");
     assert!(out.contains("height=\"22\""), "{out}");
+  }
+}
+
+mod stretched_button_items {
+  use super::*;
+
+  /// The width of the button plate (the first rounded `rect`) in `svg`.
+  fn plate_width(svg: &str) -> f64 {
+    let at = svg.find("rx=\"4\"").expect("button plate");
+    let rect = &svg[svg[..at].rfind("<rect").unwrap()..at];
+    let w = rect.split("width=\"").nth(1).unwrap();
+    w[..w.find('"').unwrap()].parse().unwrap()
+  }
+
+  // A text-labeled `Button` stacked in a `Column` with a wider item
+  // stretches to the column's width, as the FrontEnd lays it out.
+  #[test]
+  fn button_above_a_picture_spans_the_column() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{Button["go", x = 1], Graphics[Circle[], ImageSize -> 240]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains(">Button<"), "button printed as source");
+    assert!(plate_width(&svg) > 230.0, "{}", plate_width(&svg));
+  }
+
+  #[test]
+  fn button_above_long_text_spans_the_column() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"Column[{Button["go", x = 1], "a considerably longer line of text"}]"#,
+    )
+    .unwrap();
+    let svg = r.graphics.expect("column graphic");
+    let (narrow, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(plate_width(&svg) > narrow - 2.0, "{svg}");
+  }
+
+  // An explicit `ImageSize` keeps the button at its requested width.
+  #[test]
+  fn sized_button_keeps_its_width() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{Button["go", x = 1, ImageSize -> 80], Graphics[Circle[], ImageSize -> 240]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      (plate_width(&svg) - 79.0).abs() < 1.0,
+      "{}",
+      plate_width(&svg)
+    );
+  }
+
+  // A bare `Button` exports as its plate, not its source text.
+  #[test]
+  fn bare_button_exports_as_plate() {
+    clear_state();
+    let svg = interpret(r#"ExportString[Button["go", x = 1], "SVG"]"#).unwrap();
+    assert!(!svg.contains(">Button<"), "{svg}");
+    assert!(plate_width(&svg) < 60.0, "{}", plate_width(&svg));
   }
 }
 

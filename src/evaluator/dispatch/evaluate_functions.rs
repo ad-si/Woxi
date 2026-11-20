@@ -848,6 +848,23 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "PlotLegends`" {
+    // Its exports, so a bare `ShowLegend` read after loading is
+    // `PlotLegends`ShowLegend` (the dispatch entry Woxi implements), and
+    // the legend options it reads answer to their bare names too.
+    for name in [
+      "Legend",
+      "LegendBackground",
+      "LegendBorder",
+      "LegendPosition",
+      "LegendShadow",
+      "LegendSize",
+      "ShowLegend",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "PolyhedronOperations`" {
     // Its exports, so a bare `Truncate` read after loading is
     // `PolyhedronOperations`Truncate` (the dispatch entry Woxi implements).
@@ -5907,6 +5924,13 @@ fn evaluate_function_call_ast_inner(
     return hierarchical_clustering_distance_matrix(args);
   }
 
+  // The legacy PlotLegends` package, once loaded.
+  if name == "PlotLegends`ShowLegend"
+    && package_loaded("PlotLegends`")
+    && args.len() >= 2
+  {
+    return crate::functions::plot_legends_package::show_legend_ast(args);
+  }
   // The legacy ComputationalGeometry` package, once loaded.
   if name.starts_with("ComputationalGeometry`")
     && package_loaded("ComputationalGeometry`")

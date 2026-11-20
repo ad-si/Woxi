@@ -172,6 +172,7 @@ FontSize,"Option specifying the default font size in printer's points",✅,none,
 Frame,"Option specifying whether a frame is drawn around a plot",✅,none,2.0,97
 With,"Substitutes local constants into an expression",✅,pure,2.0,99
 PlotLegends,"Option for adding legends to plots identifying each series",✅,pure,9.0,100
+PlotLegends`ShowLegend,"Legacy package function: places boxed {icon, label} or color-gradient legends over or beside a graphic (bare ShowLegend after loading the package)",✅,pure,1.0,
 BlankNullSequence,"Pattern object matching zero or more expressions (___)",✅,pure,1.0,101
 Reals,"The domain of real numbers used with Element and related functions",✅,none,4.0,102
 FontFamily,"Option specifying the font family for text rendering",✅,none,3.0,103
@@ -1612,7 +1613,7 @@ Tolerance,"Tolerance specification",,unevaluated,2.0,1583
 NetInitialize,"Initialize a neural net",,unevaluated,11.0,1584
 BoundaryMeshRegion,"Region given by the mesh of its boundary; measured and read like any other region",✅,pure,10.0,1586
 Cumulant,"Computes the r-th cumulant of a list or distribution",✅,pure,8.0,1586
-BooleanConvert,"Convert Boolean expressions to the DNF/SOP CNF/POS AND OR NAND NOR ANF or IF form; a normal form carries no clause the others already say and an expression with one value collapses to it",✅,pure,7.0,1588
+BooleanConvert,"Convert Boolean expressions to the DNF/SOP CNF/POS AND OR NAND NOR IMPLIES ANF IF/BDT or BFF form; a normal form carries no clause the others already say and an expression with one value collapses to it",✅,pure,7.0,1588
 GeometricBrownianMotionProcess,"Geometric Brownian motion process with LogNormal time slices",✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,"Discrete uniform distribution over integers",✅,computation,6.0,1593
 MeshCellStyle,"Style mesh cells",,unevaluated,10.0,1593

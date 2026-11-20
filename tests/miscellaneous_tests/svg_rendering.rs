@@ -3423,8 +3423,9 @@ mod tests {
     fn raster3d_renders_voxels() {
       let svg =
         svg_of("Graphics3D[Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]]");
-      // 8 voxel cuboids, 12 triangles each.
-      assert_eq!(svg.matches("<polygon").count(), 96);
+      // A solid volume shows only its outer faces: 6 faces of 2×2 voxels,
+      // none merged (neighbors alternate), 2 triangles each.
+      assert_eq!(svg.matches("<polygon").count(), 48);
       // Voxels with value 0 are black, voxels with value 1 are white; both
       // shades must appear (modulated by lighting, so just check some
       // polygons exist with distinct fills).
@@ -4559,6 +4560,39 @@ mod tests {
         svg.matches(r#"fill="rgb(255,0,0)""#).count(),
         1,
         "only the vertex that asked for it is red: {svg}"
+      );
+    }
+
+    /// The function draws in Wolfram's units, where edges are about 1
+    /// long: on a 40-vertex ring, disks of radius 1/5 stay far apart
+    /// instead of overlapping into one blob.
+    #[test]
+    fn vertex_rendering_function_disks_do_not_overlap_on_a_large_graph() {
+      let svg = svg_of(
+        r#"GraphPlot[Table[i -> Mod[i, 40] + 1, {i, 40}],
+           VertexRenderingFunction -> (Disk[#, 1/5] &)]"#,
+      );
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 40, "{svg}");
+      let radius: f64 = svg
+        .split("<ellipse ")
+        .nth(1)
+        .and_then(|c| c.split("rx=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|r| r.parse().ok())
+        .expect("a circle radius");
+      let closest = centers
+        .iter()
+        .enumerate()
+        .flat_map(|(i, a)| {
+          centers[i + 1..]
+            .iter()
+            .map(move |b| ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt())
+        })
+        .fold(f64::INFINITY, f64::min);
+      assert!(
+        closest > 4.0 * radius,
+        "neighbors {closest} apart with radius {radius}: {svg}"
       );
     }
 

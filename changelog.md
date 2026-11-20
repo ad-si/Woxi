@@ -35,6 +35,30 @@
 - `Column[…, "Center"]` reads the string alignment like the symbol.
 - In notebooks, `SetOptions[$FrontEnd, …]` accepts front-end options such as
     `DynamicEvaluationTimeout` without an `optnf` message.
+- `ImageSize -> {Automatic, h}` adds the margins of `ImagePadding` or a
+    frame to the width the drawing's shape gives, instead of taking them
+    out of it.
+- Woxi Studio fits a picture of automatic size that is taller than a
+    Manipulate's `ContentSize -> {w, h}` area to that height.
+- `Magnify[image, s]` shows the image at `s` times its size in notebooks
+    (also inside a fixed-size `Pane`), and `ExportString` draws it at that
+    size, instead of showing no picture.
+- A `Grid` of pictures with `FrameStyle` keeps the framed picture layout and
+    draws its frame lines in that style, instead of spacing the pictures like
+    a text table.
+- The legacy `PlotLegends`` package's `ShowLegend` draws its boxed legends
+    (`{icon, label}` rows or a color gradient) with `LegendPosition`,
+    `LegendSize`, `LegendShadow`, `LegendBorder` and `LegendBackground`.
+- `Manipulate` controls with a real `{min, max, step}` range take their
+    values from `Range` (`min + k step`), and an initial value matches a
+    choice the way `SameQ` does, so `{{a, 1.8}, 1.6, 2, 0.1}` lights `1.8`.
+- The automatic layout of `Graph` and `GraphPlot` draws a large tree (more
+    than 32 vertices) with a spring-electrical embedding of unit-length edges,
+    as Wolfram does, instead of squeezing it into layers of overlapping disks.
+- `Text[Pane[Style[str, dirs…], w], pos]` honors the `Style` inside the
+    `Pane`: its font size and `TextAlignment` apply, the text wraps at `w`
+    points by the glyph widths of that size, and left- or right-aligned lines
+    hang from the pane's edge.
 
 # 2026-11-08 - 0.4.0
 

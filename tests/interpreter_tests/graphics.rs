@@ -484,6 +484,58 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_samples_a_helper_that_needs_a_numeric_parameter() {
+      // The helper's `FindRoot` cannot run with the parameter symbolic, so
+      // the held body must be sampled with the parameter bound to numbers.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "root[c_] := Part[FindRoot[Cos[s] == c s, {s, 1.}], 1, -1]; \
+           pt[c_] := {c, root[c]}; \
+           l = First[Cases[ParametricPlot[pt[c], {c, 0.5, 2}], \
+             Line[l_] :> l, Infinity]]; \
+           Round[{First[l], Last[l]}, 0.001]"
+        )
+        .unwrap(),
+        "{{0.5, 1.03}, {2., 0.45}}"
+      );
+    }
+
+    #[test]
+    fn parametric_plot_variable_named_like_a_helpers_findroot_variable() {
+      // The helper's own `FindRoot` iterates over `t` too; it must solve its
+      // own equation rather than capture the plot parameter `t`.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "root[c_] := Part[FindRoot[Cos[t] == c t, {t, 1.}], 1, -1]; \
+           pt[c_] := {c, root[c]}; \
+           l = First[Cases[ParametricPlot[pt[t], {t, 0.5, 2}], \
+             Line[l_] :> l, Infinity]]; \
+           Round[{First[l], Last[l]}, 0.001]"
+        )
+        .unwrap(),
+        "{{0.5, 1.03}, {2., 0.45}}"
+      );
+    }
+
+    #[test]
+    fn plot_samples_a_list_valued_helper_that_needs_a_numeric_variable() {
+      // Each curve of a list-valued held body follows the helper's values
+      // at the sampled points, not a value solved once with `x` symbolic.
+      clear_state();
+      assert_eq!(
+        interpret(
+          "h[y_] := {Part[FindRoot[Cos[x] == y x, {x, 1.}], 1, -1], y}; \
+           Round[Cases[Plot[h[x], {x, 0.5, 2}], \
+             Line[l_] :> {First[l], Last[l]}, Infinity], 0.001]"
+        )
+        .unwrap(),
+        "{{{0.5, 1.03}, {2., 0.45}}, {{0.5, 0.5}, {2., 2.}}}"
+      );
+    }
+
+    #[test]
     fn parametric_plot_refines_a_long_winding_curve_all_along() {
       // The refinement budget must reach the end of a curve that winds
       // many times, not run out in its first stretch and leave the rest
@@ -2544,6 +2596,71 @@ mod graphics {
       let line = svg("Line[{{0, 0}, {0.5, 0}}]");
       assert!(line.contains("<polyline "), "{line}");
       assert!(!line.contains(" width=\"19.90\""), "{line}");
+    }
+
+    /// An open `Circle` arc ends like a `Line`: with square caps that
+    /// project half the stroke width past each end unless a `CapForm`
+    /// says otherwise. A very short, thick arc (a disparity marker on an
+    /// eye diagram) therefore still shows as a dot one stroke wide;
+    /// Woxi drew it with butt caps, so it vanished.
+    #[test]
+    fn open_circle_arc_defaults_to_square_cap() {
+      let arc_cap = |prims: &str| -> String {
+        let svg =
+          export_svg(&format!("Graphics[{{Thickness[0.05], {prims}}}]"));
+        let path = svg
+          .split("<path ")
+          .find(|s| s.contains(" A "))
+          .unwrap_or_else(|| panic!("no arc path: {svg}"));
+        path
+          .split("stroke-linecap=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_else(|| panic!("no linecap on arc: {path}"))
+          .to_string()
+      };
+      assert_eq!(arc_cap("Circle[{0, 0}, 1, {0, 1}]"), "square");
+      assert_eq!(arc_cap("Circle[{0, 0}, 1, {0.5, 0.501}]"), "square");
+      assert_eq!(
+        arc_cap("CapForm[\"Round\"], Circle[{0, 0}, 1, {0, 1}]"),
+        "round"
+      );
+      assert_eq!(
+        arc_cap("CapForm[\"Butt\"], Circle[{0, 0}, 1, {0, 1}]"),
+        "butt"
+      );
+      // A full circle has no ends and stays a closed ellipse.
+      let full = export_svg("Graphics[{Thickness[0.05], Circle[{0, 0}, 1]}]");
+      assert!(full.contains("<ellipse "), "{full}");
+      assert!(!full.contains("stroke-linecap"), "{full}");
+    }
+
+    /// A zero-length arc (`Circle[c, r, {a, a}]`) is drawn as its caps
+    /// alone, like a zero-length `Line`: a square dot one stroke width
+    /// across, a round dot under `CapForm["Round"]`, nothing under
+    /// `CapForm["Butt"]`. An SVG arc whose endpoints coincide is dropped
+    /// by renderers, so the dot must be a filled shape.
+    #[test]
+    fn zero_length_circle_arc_draws_cap_dot() {
+      let svg = |prims: &str| {
+        export_svg(&format!(
+          "Graphics[{{Thickness[0.1], {prims}, Point[{{{{-1, -1}}, {{1, 1}}}}]}}, \
+           ImageSize -> 200, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}]"
+        ))
+      };
+      for a in ["0", "Pi/3", "2"] {
+        let out = svg(&format!("Circle[{{0, 0}}, 0.5, {{{a}, {a}}}]"));
+        assert!(
+          out.contains(" width=\"19.90\" height=\"19.90\""),
+          "no square dot for angle {a}: {out}"
+        );
+        assert!(!out.contains(" A "), "{out}");
+      }
+      let round = svg("CapForm[\"Round\"], Circle[{0, 0}, 0.5, {1, 1}]");
+      assert!(round.contains("r=\"9.95\""), "{round}");
+      let butt = svg("CapForm[\"Butt\"], Circle[{0, 0}, 0.5, {1, 1}]");
+      assert!(!butt.contains(" width=\"19.90\""), "{butt}");
+      assert!(!butt.contains(" A "), "{butt}");
     }
 
     /// `JoinForm[…]` sets the SVG `stroke-linejoin` a multi-segment `Line`
@@ -4609,6 +4726,44 @@ mod graphics {
       assert!(svg.contains(">wa</text>"), "{svg}");
     }
 
+    /// A bare real tick position is labeled the way the real is typeset,
+    /// so a whole-valued real keeps its trailing point while an integer
+    /// position does not.
+    #[test]
+    fn bare_real_tick_positions_keep_their_point() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 20}, Ticks -> {{2.5, 10., 15}, {-5., 7}}, \
+         PlotRange -> {{0, 20}, {-10, 20}}]",
+      );
+      assert!(svg.contains(">2.5</text>"), "{svg}");
+      assert!(svg.contains(">10.</text>"), "{svg}");
+      assert!(svg.contains(">15</text>"), "{svg}");
+      assert!(svg.contains(">-5.</text>"), "{svg}");
+      assert!(svg.contains(">7</text>"), "{svg}");
+    }
+
+    /// A tick position computed from real variables evaluates to a real and
+    /// is labeled as one, as in `Ticks -> {{(a - b c)/(1 - c)}, …}`.
+    #[test]
+    fn computed_real_tick_position_keeps_its_point() {
+      let svg = export_svg(
+        "a = 5100; b = 3000; c = 0.7; \
+         Plot[x, {x, 0, 20000}, Ticks -> {{(a - b c)/(1 - c)}, None}]",
+      );
+      assert!(svg.contains(">10000.</text>"), "{svg}");
+    }
+
+    /// `Graphics` axes read bare real tick positions the same way.
+    #[test]
+    fn graphics_bare_real_tick_positions_keep_their_point() {
+      let svg = export_svg(
+        "Graphics[Line[{{0, 0}, {20, 20}}], Axes -> True, \
+         Ticks -> {{5., 12}, None}]",
+      );
+      assert!(svg.contains(">5.</text>"), "{svg}");
+      assert!(svg.contains(">12</text>"), "{svg}");
+    }
+
     /// A tick label that calls a function (`ToString[a]` inside a `Row`)
     /// shows the call's result, not just the literal parts around it.
     #[test]
@@ -5100,6 +5255,72 @@ mod graphics {
         assert!(svg.contains("<line"), "fraction bar missing: {svg}");
         assert!(svg.contains("<path"), "root sign missing: {svg}");
         assert!(!svg.contains("b c/"), "flattened to text: {svg}");
+      }
+
+      // A one-item `Row[{Style["…\\!\\(\\*FractionBox[…]\\)…", Italic]}]`
+      // grid cell lays out like its lone item: the fraction is stacked
+      // instead of written as linear `(a)/(b)` text.
+      #[test]
+      fn grid_single_item_row_of_styled_inline_fraction_string_stacks() {
+        let svg = export_svg(
+          "Grid[{{Row[{Style[\"|\\!\\(\\*FractionBox[\\(p + q\\), \
+           \\(2\\ r\\)]\\)|\", Italic]}]}, {1.5}}, Frame -> All]",
+        );
+        assert!(!svg.contains(")/("), "flattened to text: {svg}");
+        assert!(svg.contains(">p + q<"), "numerator missing: {svg}");
+        assert!(svg.contains(">2 r<"), "denominator missing: {svg}");
+      }
+
+      /// The `x1`/`y1`/`x2`/`y2` coordinates of every `<line>` in `svg`.
+      fn svg_line_coords(svg: &str) -> Vec<[f64; 4]> {
+        svg
+          .split("<line ")
+          .skip(1)
+          .map(|rest| {
+            let attr = |name: &str| -> f64 {
+              let key = format!("{name}=\"");
+              let start = rest.find(&key).unwrap() + key.len();
+              let end = start + rest[start..].find('"').unwrap();
+              rest[start..end].parse().unwrap()
+            };
+            [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+          })
+          .collect()
+      }
+
+      // An `InfiniteLine`/`HalfLine` is drawn only across a box one plot
+      // size past the visible range, not thousands of pixels beyond it (an
+      // extent that made resvg drop a translucent primitive drawn after
+      // it), and a `HalfLine` still starts at its point.
+      #[test]
+      fn infinite_line_is_drawn_near_the_plot_range() {
+        let svg = export_svg(
+          "Graphics[{InfiniteLine[{{0, 0}, {1, 1/2}}], \
+           HalfLine[{0, 0}, {-1, 0}], \
+           {Opacity[0.5], Green, Line[{{0, 0}, {1, 1}}]}}, \
+           PlotRange -> {{-1, 1}, {-1, 1}}, ImageSize -> 200]",
+        );
+        let lines = svg_line_coords(&svg);
+        assert_eq!(lines.len(), 2, "{svg}");
+        for l in &lines {
+          assert!(l.iter().all(|c| c.abs() < 1000.0), "{l:?} in {svg}");
+        }
+        // The half line runs from the origin (the image center) leftward.
+        let half = lines[1];
+        assert!((half[0] - 100.0).abs() < 1.0, "{half:?}");
+        assert!(half[2] < 0.0, "{half:?}");
+        assert!(svg.contains("opacity=\"0.5\""), "{svg}");
+      }
+
+      // An `InfiniteLine` that misses the area around the plot range
+      // entirely draws nothing.
+      #[test]
+      fn infinite_line_far_outside_the_plot_range_is_not_drawn() {
+        let svg = export_svg(
+          "Graphics[{InfiniteLine[{0, 100}, {1, 0}], Point[{0, 0}]}, \
+           PlotRange -> {{-1, 1}, {-1, 1}}]",
+        );
+        assert!(svg_line_coords(&svg).is_empty(), "{svg}");
       }
 
       // A NumberForm in scientific notation inside a Grid cell sets on
@@ -6280,7 +6501,17 @@ mod plot3d {
   /// a grid of unit cubes (e.g. a Menger-style fractal) must not emit them.
   #[test]
   fn touching_cuboids_drop_their_shared_faces() {
-    let polys = |code: &str| export_svg(code).matches("<polygon").count();
+    // Triangles drawn, whether alone or as the pieces of one merged
+    // translucent face `<path>`.
+    let polys = |code: &str| {
+      let svg = export_svg(code);
+      svg.matches("<polygon").count()
+        + svg
+          .lines()
+          .filter(|l| l.starts_with("<path d=\"M"))
+          .map(|l| l.matches(" Z").count())
+          .sum::<usize>()
+    };
     let apart = polys(
       "Graphics3D[{EdgeForm[], Cuboid[{0,0,0},{1,1,1}], Cuboid[{3,0,0},{4,1,1}]}]",
     );
@@ -6580,6 +6811,32 @@ mod plot3d {
          AxesLabel -> {\"f[u]\", None, None}]",
       );
       assert!(svg.contains(">f[u]<"), "{svg}");
+    }
+
+    // Regression: a subscripted label whose script has letters lost its
+    // `TraditionalForm` typesetting: `Subscript[x, n + 1]` read x₁₊ₙ with an
+    // upright x. Base and script are typeset like any expression label,
+    // with italic letters and the sum ordered `n+1`.
+    #[test]
+    fn subscript_axes_labels_typeset_their_parts_in_traditional_form() {
+      let expected = "<tspan font-style=\"italic\">x</tspan>\
+        <tspan baseline-shift=\"sub\" font-size=\"70%\">\
+        <tspan font-style=\"italic\">n</tspan>+1</tspan>";
+      for code in [
+        "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
+         AxesLabel -> {Subscript[x, n + 1], None, None}]",
+        "Plot[t, {t, 0, 1}, AxesLabel -> {Subscript[x, n + 1], None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(expected), "{code}: {svg}");
+        assert!(!svg.contains("1 + n"), "{code}: {svg}");
+      }
+      // A styled script keeps its own styling.
+      let svg = export_svg(
+        "Graphics3D[Point[{0, 0, 0}], Axes -> True, \
+         AxesLabel -> {Subscript[x, Style[\"max\", Bold]], None, None}]",
+      );
+      assert!(svg.contains("font-weight=\"bold\""), "{svg}");
     }
 
     // An `AxesLabel` expression that TraditionalForm typesets as a fraction
@@ -6896,6 +7153,94 @@ mod plot3d {
         !faces.is_empty() && faces.iter().all(|c| *c == (128, 128, 128)),
         "{faces:?}"
       );
+    }
+
+    /// `Show` of a literal `Graphics3D[…]` / `Graphics[…]` evaluates the
+    /// graphic's primitives in the current scope. Regression: they were
+    /// kept unevaluated, so `Sphere[pts[[i]], r]` inside a `Table` stayed
+    /// symbolic and every sphere was drawn at the origin.
+    #[test]
+    fn show_evaluates_the_primitives_of_a_literal_graphic() {
+      clear_state();
+      assert_eq!(
+        interpret("Show[Graphics3D[{Sphere[{1 + 1, 0, 0}]}]][[1]]").unwrap(),
+        "{Sphere[{2, 0, 0}]}"
+      );
+      assert_eq!(
+        interpret("Show[Graphics[{Point[{2 a, 3}]}, Axes -> True]][[1]]")
+          .unwrap(),
+        "{Point[{2*a, 3}]}"
+      );
+      assert_eq!(
+        interpret(
+          "pts = {{1, 2, 3}, {4, 5, 6}}; \
+           Cases[Table[Show[Graphics3D[{Red, Sphere[pts[[i]], 0.1]}]], \
+           {i, 1, 2}], _Sphere, Infinity]"
+        )
+        .unwrap(),
+        "{Sphere[{1, 2, 3}, 0.1], Sphere[{4, 5, 6}, 0.1]}"
+      );
+    }
+
+    /// `BaseStyle -> Italic` slants the axis and tick labels of a 3D box,
+    /// and `TicksStyle -> Plain` sets the tick labels upright again — for
+    /// a `Graphics3D`, a surface plot and a `Show` of a 3D plot alike.
+    #[test]
+    fn base_style_sets_the_face_of_3d_axes_labels() {
+      // (axis labels, tick labels) as (italic, bold) flags of each <text>.
+      let faces = |code: &str| {
+        let svg = export_svg(code);
+        let texts: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<text")).collect();
+        let face = |l: &str| {
+          (
+            l.contains("font-style=\"italic\""),
+            l.contains("font-weight=\"bold\""),
+          )
+        };
+        let is_label =
+          |l: &str| l.ends_with(">x</text>") || l.ends_with(">y</text>");
+        let labels: Vec<_> = texts
+          .iter()
+          .filter(|l| is_label(l))
+          .map(|l| face(l))
+          .collect();
+        let ticks: Vec<_> = texts
+          .iter()
+          .filter(|l| !is_label(l))
+          .map(|l| face(l))
+          .collect();
+        assert!(labels.len() == 2 && !ticks.is_empty(), "{svg}");
+        (labels, ticks)
+      };
+      let all = |v: &[(bool, bool)], f: (bool, bool)| v.iter().all(|x| *x == f);
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> Italic]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (true, false)));
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> Italic, TicksStyle -> Plain]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (false, false)));
+      let (labels, ticks) = faces(
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, AxesLabel -> {\"x\", \"y\", \
+         None}, BaseStyle -> {Bold}]",
+      );
+      assert!(all(&labels, (false, true)) && all(&ticks, (false, true)));
+      let (labels, ticks) = faces(
+        "Show[ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 3}], \
+         AxesLabel -> {\"x\", \"y\", None}, BaseStyle -> Italic, \
+         TicksStyle -> Plain]",
+      );
+      assert!(all(&labels, (true, false)) && all(&ticks, (false, false)));
+      // Without a BaseStyle every label stays upright.
+      let (labels, ticks) = faces(
+        "Graphics3D[Sphere[], Axes -> True, AxesLabel -> {\"x\", \"y\", \
+         None}]",
+      );
+      assert!(all(&labels, (false, false)) && all(&ticks, (false, false)));
     }
 
     /// No `PlotStyle` must render byte-identically to before it was
@@ -7237,6 +7582,46 @@ mod plot3d {
         assert!(svg.contains(" opacity=\"0.2\""), "{svg}");
         assert!(svg.contains("fill=\"rgb("), "{svg}");
         assert!(!svg.contains("rgb(61,153,204)"), "{svg}");
+      }
+
+      // A pure-function `ColorFunction` still draws the smooth boundary
+      // surface (not blocky voxel faces), translucent and in its color
+      // also when combined with other graphics by `Show`.
+      #[test]
+      fn pure_function_color_function_on_smooth_surface() {
+        clear_state();
+        assert_eq!(
+          interpret(
+            "g = RegionPlot3D[x^2 + y^2 + z^2 < 1 && x + y > 0, {x, -1, 1}, \
+             {y, -1, 1}, {z, -1, 1}, \
+             ColorFunction -> (Directive[Green, Opacity[0.3]] &), \
+             Mesh -> None]; \
+             {Head[First[g]], \
+              Union[Cases[First[g], _RGBColor | _Opacity, Infinity]], \
+              MemberQ[List @@ First[g], VertexNormals -> _]}"
+          )
+          .unwrap(),
+          "{GraphicsComplex, {Opacity[0.3], RGBColor[0., 1., 0.]}, True}"
+        );
+        let svg = export_svg(
+          "Show[RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ColorFunction -> (Directive[Green, Opacity[0.3]] &), Mesh -> None], Graphics3D[{}]]",
+        );
+        assert!(svg.contains(" opacity=\"0.3\""), "{svg}");
+        // Greenish facets, not the white of a lost color.
+        assert!(
+          svg.matches("fill=\"rgb(255,255,255)\"").count() <= 1,
+          "{svg}"
+        );
+      }
+
+      // `RegionPlot3D` calls its `ColorFunction` with x, y and z only.
+      #[test]
+      fn color_function_gets_three_arguments() {
+        let svg = export_svg(
+          "RegionPlot3D[x^2 + y^2 + z^2 < 1, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, ColorFunction -> (If[Length[{##}] == 3, Red, Blue] &)]",
+        );
+        assert!(!svg.contains("rgb(0,0,"), "{svg}");
+        assert!(svg.contains("fill=\"rgb(2"), "{svg}");
       }
 
       #[test]
@@ -10643,6 +11028,65 @@ mod plot3d {
       }
     }
 
+    // `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}` confines the scene to that
+    // scaled part of the picture: it is laid out as in a picture of the
+    // region's size and moved into place, the picture keeping its full
+    // `ImageSize`. Regression: the option was ignored, drawing the scene
+    // across the whole picture.
+    #[test]
+    fn graphics3d_plot_region_confines_the_scene() {
+      fn polygon_extent(svg: &str) -> (f64, f64, f64, f64) {
+        let mut ext = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for chunk in svg.split("<polygon points=\"").skip(1) {
+          let points = chunk.split('"').next().unwrap();
+          for pair in points.split_whitespace() {
+            let (x, y) = pair.split_once(',').unwrap();
+            let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+            ext = (ext.0.min(x), ext.1.max(x), ext.2.min(y), ext.3.max(y));
+          }
+        }
+        ext
+      }
+      for camera in ["", ", ViewPoint -> {1, 0, 1}, SphericalRegion -> True"] {
+        let region = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, ImageSize -> {{300, 200}}, \
+           PlotRegion -> {{{{0.1, 0.8}}, {{0.25, 0.75}}}}{camera}]"
+        ));
+        let inner = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, \
+           ImageSize -> {{210, 100}}{camera}]"
+        ));
+        assert!(
+          region.starts_with("<svg width=\"300\" height=\"200\""),
+          "{}",
+          &region[..80]
+        );
+        let (p, q) = (polygon_extent(&region), polygon_extent(&inner));
+        let close = |a: f64, b: f64| (a - b).abs() < 0.15;
+        // 10% of 300 on the left, 25% of 200 on the top.
+        assert!(
+          close(p.0, q.0 + 30.0) && close(p.1, q.1 + 30.0),
+          "{p:?} {q:?}"
+        );
+        assert!(
+          close(p.2, q.2 + 50.0) && close(p.3, q.3 + 50.0),
+          "{p:?} {q:?}"
+        );
+      }
+      // The full unit square, `Automatic` and malformed specs leave the
+      // picture as it is.
+      let plain = export_svg("Graphics3D[Sphere[], ImageSize -> 200]");
+      for spec in ["{{0, 1}, {0, 1}}", "Automatic", "{{0.5, 0.2}, {0, 1}}"] {
+        assert_eq!(
+          export_svg(&format!(
+            "Graphics3D[Sphere[], ImageSize -> 200, PlotRegion -> {spec}]"
+          )),
+          plain,
+          "{spec}"
+        );
+      }
+    }
+
     // Regression: the surface plots (`Plot3D`, `ListPlot3D`, …) ignored
     // `ImagePadding` and filled the whole picture. Like `Graphics3D` they
     // lay the scene out in the region inside the band and keep their full
@@ -11028,6 +11472,56 @@ mod plot3d {
         radius(&plain),
         radius(&sized)
       );
+    }
+
+    /// Regression: a list `PlotStyle -> {color, PointSize[…]}` of a single
+    /// dataset was nested as a sublist in front of the points, which scoped
+    /// its directives away from them: `Show` drew the points in the default
+    /// color and size.
+    #[test]
+    fn plot_style_list_colors_and_sizes_the_merged_points() {
+      let svg = export_svg(
+        "Show[ListPointPlot3D[{{0.3, 0.2, 0.1}, {-0.2, 0.3, -0.1}}, \
+        PlotStyle -> {Red, PointSize[0.06]}], Graphics3D[{}]]",
+      );
+      let circles: Vec<&str> = svg.split("<circle").skip(1).collect();
+      assert_eq!(circles.len(), 2, "{svg}");
+      for c in circles {
+        assert!(c.contains("rgb(255,0,0)"), "points should be red:\n{svg}");
+        let r: f64 = c
+          .split("r=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap();
+        assert!(r > 8.0, "PointSize[0.06] should widen the dots:\n{svg}");
+      }
+    }
+
+    /// The standalone render honors `PlotStyle` too: its color and
+    /// `PointSize` replace the default palette color and dot.
+    #[test]
+    fn standalone_render_honors_plot_style() {
+      let svg = export_svg(
+        "ListPointPlot3D[{{0.1, 0.2, 0.3}, {0.5, 0.5, 0.5}}, \
+        PlotStyle -> {Red, PointSize[0.02]}]",
+      );
+      let circles: Vec<&str> = svg.split("<circle").skip(1).collect();
+      assert_eq!(circles.len(), 2, "{svg}");
+      for c in &circles {
+        assert!(c.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+        assert!(!c.contains("r=\"1.75\""), "{svg}");
+      }
+      // A per-dataset list cycles through the datasets.
+      let svg = export_svg(
+        "ListPointPlot3D[{{{0, 0, 0}, {1, 1, 1}}, {{0, 1, 0}, {1, 0, 1}}}, \
+        PlotStyle -> {Red, Blue}]",
+      );
+      assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 2, "{svg}");
+      assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
     }
   }
 
@@ -13841,6 +14335,34 @@ mod plot3d {
       assert_eq!(styled, ["diameter (cm)", "force (kN)"]);
     }
 
+    /// A mathematical `FrameLabel` entry is set in TraditionalForm, like an
+    /// `AxesLabel`: symbols in italics and `Subscript[q, i][t]` as q_i(t)
+    /// with a lowered index, while string captions stay upright.
+    #[test]
+    fn list_line_plot_frame_label_typesets_math_in_traditional_form() {
+      let svg = export_svg(
+        "ListLinePlot[{1, 3, 2}, Frame -> True, \
+         FrameLabel -> {i, Subscript[q, i][t]}]",
+      );
+      assert!(
+        svg.contains("><tspan font-style=\"italic\">i</tspan></text>"),
+        "{svg}"
+      );
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">q</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\"><tspan font-style=\"italic\">i</tspan></tspan>\
+           (<tspan font-style=\"italic\">t</tspan>)</text>"
+        ),
+        "{svg}"
+      );
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"time\", \"x\"}]",
+      );
+      assert!(svg.contains(">time</text>"), "{svg}");
+      assert!(svg.contains(">x</text>"), "{svg}");
+    }
+
     /// Regression: `Histogram` read the nested `{{left, right}, {bottom,
     /// top}}` `FrameLabel` as `{bottom, left}`, printing each inner list
     /// (`{p, overall risk}`) as one caption instead of one per edge.
@@ -13994,11 +14516,26 @@ mod plot3d {
            FrameLabel -> {{\"p\", {expr}}}]"
         ))
       };
-      assert!(label("a/c^2").contains(">a/c\u{b2}</text>"));
-      assert!(label("(a + b)/c").contains(">(a + b)/c</text>"));
-      assert!(label("2 a - b").contains(">2 a - b</text>"));
+      let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
+      let sup2 = "<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>";
+      assert!(label("a/c^2").contains(&format!(
+        ">{}/{}{sup2}</text>",
+        it("a"),
+        it("c")
+      )));
+      assert!(label("(a + b)/c").contains(&format!(
+        ">({}+{})/{}</text>",
+        it("a"),
+        it("b"),
+        it("c")
+      )));
+      assert!(label("2 a - b").contains(&format!(
+        ">2\u{2009}{}-{}</text>",
+        it("a"),
+        it("b")
+      )));
       assert!(label("Pi").contains(">\u{3c0}</text>"));
-      assert!(label("Subscript[k, n] a/Pi").contains("/\u{3c0}</text>"));
+      assert!(label("Subscript[k, n] a/Pi").contains("\u{3c0}</tspan></text>"));
     }
 
     /// The rotated left `FrameLabel` is anchored by its baseline, whose
@@ -14772,6 +15309,64 @@ mod plot3d {
       assert!(plain.contains("font-size=\"14\""), "{plain}");
     }
 
+    /// The "Label" style sets its text in a proportional sans-serif face,
+    /// not the monospace of plain output text — for a bare string, a `Row`,
+    /// a `Column` and a `Framed` message alike. An explicit `FontFamily`
+    /// still wins over the style's face.
+    #[test]
+    fn label_style_sets_sans_serif_text() {
+      let families = |code: &str| -> Vec<String> {
+        let svg = export_svg(code);
+        svg
+          .match_indices("font-family=\"")
+          .filter_map(|(i, _)| svg[i + 13..].split('"').next())
+          .map(str::to_string)
+          .collect()
+      };
+      for code in [
+        "Style[\"ab cd\", \"Label\", 14]",
+        "Style[Row[{\"ab\", \"cd\"}], \"Label\"]",
+        "Style[Column[{\"ab\", \"cd\"}], \"Label\", 14]",
+        "Style[Framed[\"ab cd\"], \"Label\", 14]",
+        "Grid[{{Style[Framed[\"ab cd\"], \"Label\", 14]}}]",
+      ] {
+        let fams = families(code);
+        assert!(!fams.is_empty(), "{code}: no text");
+        assert!(
+          fams.iter().all(|f| f.ends_with("sans-serif")),
+          "{code}: {fams:?}"
+        );
+      }
+      let courier =
+        families("Style[\"ab cd\", \"Label\", FontFamily -> \"Courier\"]");
+      assert_eq!(courier, vec!["Courier, monospace".to_string()]);
+      // Without a style the string keeps the monospace output face.
+      let plain = families("Framed[\"ab cd\"]");
+      assert!(plain.iter().all(|f| f.ends_with("monospace")), "{plain:?}");
+    }
+
+    /// `Style[Framed[text], FontFamily -> f]` sets the framed text in `f`
+    /// and sizes the frame by that face's (narrower) advances.
+    #[test]
+    fn framed_text_takes_the_enclosing_font_family() {
+      let svg = export_svg(
+        "Style[Framed[\"abcdefghij\"], FontFamily -> \"Arial\", 14]",
+      );
+      assert!(svg.contains("font-family=\"Arial, sans-serif\""), "{svg}");
+      let mono = export_svg("Style[Framed[\"abcdefghij\"], 14]");
+      let width = |s: &str| -> f64 {
+        s.split("width=\"")
+          .nth(1)
+          .unwrap()
+          .split('"')
+          .next()
+          .unwrap()
+          .parse()
+          .unwrap()
+      };
+      assert!(width(&svg) < width(&mono), "{svg}\n{mono}");
+    }
+
     /// A stored box expression typesets rather than printing itself: the
     /// balanced-ternary digit `UnderscriptBox["1", "_"]` is an underlined
     /// 1, not the text `UnderscriptBox[1, _]`.
@@ -14898,7 +15493,7 @@ mod plot3d {
       let svg = export_svg(
         "Plot[{1/10^36, 2/10^36}, {x, 0, 6}, PlotRange -> {0, 1.2/10^35}, Axes -> {False, True}]",
       );
-      for label in ["2×10⁻³⁶", "4×10⁻³⁶", "1.2×10⁻³⁵"] {
+      for label in ["2.0×10⁻³⁶", "4.0×10⁻³⁶", "1.2×10⁻³⁵"] {
         assert!(svg.contains(label), "missing tick {label}: {svg}");
       }
     }
@@ -15045,8 +15640,8 @@ mod plot3d {
     }
 
     /// A list is a perfectly good label — it is typeset as the list itself,
-    /// which is how a Demonstration names the four curves it draws on one
-    /// axis.
+    /// each element keeping its own styling, which is how a plot names (and
+    /// colors) the curves it draws on one axis.
     #[test]
     fn axes_label_given_a_list_prints_the_list() {
       let svg = export_svg(
@@ -15054,7 +15649,38 @@ mod plot3d {
              AxesLabel -> {"t", {Style[a, Blue], Style[b, Green]}}]"#,
       );
       assert!(svg.contains(">t</text>"), "{svg}");
-      assert!(svg.contains(">{a, b}</text>"), "{svg}");
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains('{'))
+        .unwrap_or_else(|| panic!("list label missing: {svg}"));
+      assert!(
+        label.contains("fill=\"rgb(0,0,255)\""),
+        "a is blue: {label}"
+      );
+      assert!(
+        label.contains("fill=\"rgb(0,255,0)\""),
+        "b is green: {label}"
+      );
+      assert!(!svg.contains(">{a, b}</text>"), "{svg}");
+    }
+
+    /// `TraditionalForm` mapped over a list of styled curve names only
+    /// changes the notation: the names read `prey(t)` with an italic `t`
+    /// and keep their colors.
+    #[test]
+    fn traditional_form_list_axes_label_keeps_element_colors() {
+      let svg = export_svg(
+        r#"Plot[x, {x, 0, 1}, AxesLabel -> TraditionalForm /@
+             {t, {Style[prey[t], Red], Style[pred[t], Blue]}}]"#,
+      );
+      let label = svg
+        .split("<text ")
+        .find(|t| t.contains("prey"))
+        .unwrap_or_else(|| panic!("list label missing: {svg}"));
+      assert!(label.contains("fill=\"rgb(255,0,0)\""), "{label}");
+      assert!(label.contains("fill=\"rgb(0,0,255)\""), "{label}");
+      assert!(label.contains("font-style=\"italic\""), "{label}");
+      assert!(!label.contains("prey[t]"), "{label}");
     }
 
     /// A wide y label centered on an axis that sits near the left edge would
@@ -15563,6 +16189,48 @@ mod plot3d {
         assert!((x - f64::midpoint(left, right)).abs() < 1.0, "{code}: {x}");
         assert!((y - f64::midpoint(top, bottom)).abs() < 1.0, "{code}: {y}");
       }
+    }
+
+    /// An explicit `AxesOrigin` outside the data widens an automatic
+    /// `Graphics` range to reach it, so both axes stay in the picture.
+    /// Regression: the axes were placed off the canvas and not shown.
+    #[test]
+    fn graphics_range_grows_to_hold_the_axes_origin() {
+      for (code, below, left) in [
+        // Origin below and left of the data.
+        (
+          "Graphics[Line[{{1, 3}, {2, 4}}], Axes -> True, \
+           AxesOrigin -> {0, 2}]",
+          true,
+          true,
+        ),
+        // Origin above and right of the data.
+        (
+          "Graphics[Line[{{-3, -2}, {-1, -1}}], Axes -> True, \
+           AxesOrigin -> {1, 2}]",
+          false,
+          false,
+        ),
+      ] {
+        let svg = export_svg(code);
+        let dim = |name: &str| -> f64 {
+          let key = format!(" {name}=\"");
+          let i = svg.find(&key).unwrap() + key.len();
+          svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+        };
+        let (w, h) = (dim("width"), dim("height"));
+        let (x, y) = axes_crossing(&svg);
+        assert!(0.0 < x && x < w && 0.0 < y && y < h, "{code}: {x}, {y}");
+        // The crossing sits at the padded edge on the origin's side.
+        assert_eq!(y > 0.8 * h, below, "{code}: x axis at {y} of {h}");
+        assert_eq!(x < 0.2 * w, left, "{code}: y axis at {x} of {w}");
+      }
+      // An explicit `PlotRange` still wins over the origin.
+      let svg = export_svg(
+        "Graphics[Line[{{1, 3}, {2, 4}}], Axes -> True, \
+         AxesOrigin -> {0, 0}, PlotRange -> {{1, 2}, {3, 4}}]",
+      );
+      assert!(!svg.contains(">0.5</text>"), "{svg}");
     }
 
     /// The tick label where the axes cross would collide with the other
@@ -16151,7 +16819,12 @@ mod plot3d {
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[P, B, D][t]}]"#,
       );
       assert!(
-        svg.contains(">PB,D(t)</text>"),
+        svg.contains(
+          "<tspan font-style=\"italic\">P</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\"><tspan font-style=\"italic\">B</tspan>, \
+           <tspan font-style=\"italic\">D</tspan></tspan>\
+           (<tspan font-style=\"italic\">t</tspan>)</text>"
+        ),
         "applied multi-subscript label must be typeset: {svg}"
       );
       assert!(!svg.contains("Subscript["), "raw call leaked: {svg}");
@@ -16159,7 +16832,10 @@ mod plot3d {
         r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"t", Subscript[x, 1, 2]}]"#,
       );
       assert!(
-        svg.contains(">x\u{2081},\u{2082}</text>"),
+        svg.contains(
+          "<tspan font-style=\"italic\">x</tspan><tspan baseline-shift=\"sub\" \
+           font-size=\"70%\">1, 2</tspan></text>"
+        ),
         "several subscripts read comma-separated: {svg}"
       );
     }
@@ -16192,7 +16868,7 @@ mod plot3d {
       };
       let padded: Vec<String> = ["-0.5", "0.0", "0.5", "1.0", "1.5"]
         .iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
       let both = [padded.clone(), padded].concat();
       // An absolute amount replaces the automatic padding …
@@ -16205,7 +16881,7 @@ mod plot3d {
       // Without it, an explicit `PlotRange` is not padded.
       let unpadded: Vec<String> = ["0.0", "0.2", "0.4", "0.6", "0.8", "1.0"]
         .iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
       assert_eq!(
         labels("PlotRange -> {{0, 1}, {0, 1}}"),
@@ -16214,7 +16890,7 @@ mod plot3d {
       // Per side: 1 below x, `None` on y.
       let x: Vec<String> = ["-1.0", "-0.5", "0.0", "0.5", "1.0"]
         .iter()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect();
       assert_eq!(
         labels("PlotRangePadding -> {{1, Automatic}, None}"),
@@ -17316,6 +17992,32 @@ mod plot3d {
       assert_eq!(fills("Plot[x, {x, 0, 1}, Filling -> True]"), 1);
     }
 
+    /// With several curves, `Filling -> True` fills each curve to the next
+    /// one (curve 1 to 2, 2 to 3, …) and leaves the last one unfilled,
+    /// rather than filling every curve down to the axis.
+    #[test]
+    fn filling_true_fills_successive_curves() {
+      let fills = |code: &str| export_svg(code).matches("<polygon").count();
+      assert_eq!(fills("Plot[{x, x^2}, {x, 0, 1}, Filling -> True]"), 1);
+      assert_eq!(
+        fills("Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, Filling -> True]"),
+        2
+      );
+      assert_eq!(
+        fills("Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, Filling -> Axis]"),
+        3
+      );
+      // Filling between the curves does not stretch the range down to the
+      // axis: curves well above zero keep their own automatic range.
+      let between =
+        export_svg("Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, Filling -> True]");
+      let rules = export_svg(
+        "Plot[{1 + x, 2 + x, 3 + x}, {x, 0, 1}, \
+         Filling -> {1 -> {2}, 2 -> {3}}]",
+      );
+      assert_eq!(between, rules);
+    }
+
     /// A fill is drawn beneath every curve, including the curves of the
     /// series listed before the filled one: `Filling -> {2 -> Bottom}` must
     /// not paint over series 1.
@@ -17708,6 +18410,41 @@ mod plot3d {
       insta::assert_snapshot!(export_svg(
         "Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, Filling -> {1 -> {2}}]"
       ));
+    }
+
+    // A plot's primitives (as `Part`, `Show` and `ReplaceAll` see them)
+    // list every fill before any curve, as Wolfram does: the area between
+    // curves 1 and 2 must not be layered over the line of curve 1, which
+    // would hide half its stroke once the primitives are drawn again.
+    #[test]
+    fn plot_primitives_put_fills_beneath_all_curves() {
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Plot[{-Sqrt[1 - x^2], Sqrt[1 - x^2]}, \
+           {x, -1, 1}, Filling -> {1 -> {2}}][[1]], _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2, x^3}, {x, 0, 1}, \
+           Filling -> {1 -> {3}, 2 -> Axis}]], _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
+      // Merged with other graphics, a fill owned by a later series still
+      // goes beneath the earlier series' curve.
+      assert_eq!(
+        interpret(
+          "First /@ Split[Head /@ Cases[Show[Plot[{x, x^2}, {x, 0, 1}, \
+           Filling -> {2 -> {1}}], Graphics[Point[{0, 0}]]], \
+           _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Line}"
+      );
     }
 
     // `Filling -> {1 -> {{2}, {c1, c2}}}` fills the regions where curve 1 is
@@ -20146,6 +20883,70 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(svg.contains("stroke=\"#FEFEFE\""), "{svg}");
       assert!(!svg.contains("stroke=\"#3D99CC\""), "{svg}");
     }
+
+    /// The `ColorFunction` option is evaluated, so a computed choice that
+    /// yields `Automatic` keeps the default plot color instead of being
+    /// applied as a color function (which drew the curve black).
+    #[test]
+    fn plot_color_function_option_is_evaluated() {
+      for plot in [
+        "PolarPlot[Sin[t], {t, 0, 2 Pi}",
+        "Plot[Sin[t], {t, 0, 2 Pi}",
+        "ParametricPlot[{Cos[t], Sin[2 t]}, {t, 0, 2 Pi}",
+      ] {
+        assert_eq!(
+          interpret(&format!(
+            "First[Cases[{plot}, ColorFunction -> If[1 > 2, Hue, Automatic]], \
+             _RGBColor, Infinity]]"
+          ))
+          .unwrap(),
+          "RGBColor[0.24, 0.6, 0.8]",
+          "{plot}"
+        );
+      }
+      // A branch that picks a color function colors the curve with it.
+      assert_eq!(
+        interpret(
+          "First[Cases[PolarPlot[1, {t, 0, 2 Pi}, ColorFunctionScaling -> \
+           False, ColorFunction -> If[1 < 2, (Hue[#4/3] &), Automatic]], \
+           _RGBColor, Infinity]]"
+        )
+        .unwrap(),
+        "RGBColor[0., 1., 0.]"
+      );
+    }
+
+    /// `RegionFunction -> f` in PolarPlot is called as `f[x, y, θ, r]` and
+    /// draws only the stretches of the curve where it is True.
+    #[test]
+    fn polar_plot_region_function() {
+      let pts = |rf: &str| {
+        format!(
+          "Flatten[Cases[PolarPlot[Sin[t], {{t, 0, 2 Pi}}, \
+           RegionFunction -> {rf}], Line[p_] :> p, Infinity], 1]"
+        )
+      };
+      // `r` is the distance from the origin, so the retraced half of the
+      // circle (negative radii) is cut at the same radius as the first.
+      let max_r =
+        interpret(&format!("Max[Norm /@ {}]", pts("(#4 < 1/2 &)"))).unwrap();
+      let max_r: f64 = max_r.parse().unwrap();
+      assert!((max_r - 0.5).abs() < 1e-6, "{max_r}");
+      // The angle is the third argument: only the first quarter turn.
+      let x = interpret(&format!(
+        "MinMax[First /@ {}]",
+        pts("Function[{x, y, th}, th < Pi/2]")
+      ))
+      .unwrap();
+      assert!(x.starts_with("{0.") && x.contains(", 0.4999"), "{x}");
+      // `x` and `y` are the first two: the right half of the circle.
+      let x = interpret(&format!(
+        "Min[First /@ {}] >= 0",
+        pts("Function[{x, y}, x > 0]")
+      ))
+      .unwrap();
+      assert_eq!(x, "True");
+    }
   }
 
   mod charts {
@@ -21328,6 +22129,77 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let svg = export_svg("Histogram[{{1, 2, 2, 3}, {2, 3, 3, 4}}]");
       assert!(svg.contains("opacity=\"0.8\" fill=\"#FFCC00\""), "{svg}");
       assert!(svg.contains("opacity=\"0.7\" fill=\"#00AAF2\""), "{svg}");
+    }
+
+    /// The `(width, height)` of a histogram's plotting area, read off its
+    /// x axis and the y axis rising from the axis' left end.
+    fn histogram_axes_extent(svg: &str) -> (f64, f64) {
+      let lines: Vec<[f64; 4]> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line "))
+        .map(|l| {
+          let attr = |name: &str| -> f64 {
+            let start =
+              l.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+            let end = start + l[start..].find('"').unwrap();
+            l[start..end].parse().unwrap()
+          };
+          [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+        })
+        .collect();
+      let x_axis = lines
+        .iter()
+        .filter(|l| l[1] == l[3])
+        .max_by(|a, b| (a[2] - a[0]).total_cmp(&(b[2] - b[0])))
+        .unwrap();
+      let y_axis = lines
+        .iter()
+        .filter(|l| l[0] == l[2] && l[0] == x_axis[0])
+        .max_by(|a, b| (a[3] - a[1]).total_cmp(&(b[3] - b[1])))
+        .unwrap();
+      (x_axis[2] - x_axis[0], y_axis[3] - y_axis[1])
+    }
+
+    #[test]
+    fn histogram_keeps_aspect_ratio_in_fixed_image_box() {
+      // A wide `ImageSize -> {w, h}` box (as `GraphicsColumn` hands its
+      // panels) keeps the plotting area at 1/GoldenRatio and centers it
+      // horizontally instead of stretching it to the box.
+      let svg = export_svg("Histogram[{1, 2, 2, 3}, ImageSize -> {300, 150}]");
+      assert!(
+        svg.starts_with("<svg width=\"300\" height=\"150\""),
+        "{svg}"
+      );
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 0.618).abs() < 0.02, "{w} x {h}");
+      assert!(w < 2400.0, "{w}");
+
+      // A tall box centers it vertically, spanning the full width.
+      let svg = export_svg("Histogram[{1, 2, 2, 3}, ImageSize -> {300, 400}]");
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 0.618).abs() < 0.02, "{w} x {h}");
+
+      // An explicit `AspectRatio` is kept the same way.
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3}, ImageSize -> {300, 150}, AspectRatio -> 1/2]",
+      );
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 0.5).abs() < 0.02, "{w} x {h}");
+
+      // `AspectRatio -> Full` fills the box.
+      let svg = export_svg(
+        "Histogram[{1, 2, 2, 3}, ImageSize -> {300, 150}, AspectRatio -> Full]",
+      );
+      let (w, _) = histogram_axes_extent(&svg);
+      assert!(w > 2600.0, "{w}");
+    }
+
+    #[test]
+    fn histogram_aspect_ratio_sets_image_height() {
+      let svg = export_svg("Histogram[{1, 2, 2, 3}, AspectRatio -> 1]");
+      assert!(svg.starts_with("<svg width=\"360\""), "{svg}");
+      let (w, h) = histogram_axes_extent(&svg);
+      assert!((h / w - 1.0).abs() < 0.02, "{w} x {h}");
     }
 
     #[test]
@@ -23271,11 +24143,12 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         interpret(
           "svg = ExportString[ContourPlot[u v, {u, -1, 1}, {v, -1, 1}, \
            FrameLabel -> Automatic], \"SVG\"]; \
-           {StringCases[svg, RegularExpression[\">[uv]</text>\"]], \
+           {StringCases[svg, RegularExpression[\
+             \"italic\\\">[uv]</tspan></text>\"]], \
             StringContainsQ[svg, \"Automatic\"]}"
         )
         .unwrap(),
-        "{{>u</text>, >v</text>}, False}"
+        "{{italic\">u</tspan></text>, italic\">v</tspan></text>}, False}"
       );
     }
 
@@ -23516,6 +24389,37 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       insta::assert_snapshot!(export_svg(
         "DensityPlot[Sin[x] * Cos[y], {x, -Pi, Pi}, {y, -Pi, Pi}, ImageSize -> 200]"
       ));
+    }
+
+    /// `AspectRatio -> Automatic` gives the frame the shape of the plotted
+    /// region (one x unit as long as one y unit) instead of the default
+    /// square, for `DensityPlot` and `ContourPlot` alike.
+    #[test]
+    fn density_and_contour_plot_aspect_ratio_automatic_follows_ranges() {
+      let frame = |code: &str| -> (f64, f64) {
+        let svg = export_svg(code);
+        let attr = svg
+          .split("data-plot-frame=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .unwrap_or_else(|| panic!("no plot frame in {svg}"));
+        let v: Vec<f64> = attr.split(' ').map(|n| n.parse().unwrap()).collect();
+        (v[6], v[7])
+      };
+      for head in ["DensityPlot", "ContourPlot"] {
+        for (x_max, y_max) in [(4.0, 1.0), (1.0, 3.0), (0.03, 0.008)] {
+          let (w, h) = frame(&format!(
+            "{head}[x y, {{x, 0, {x_max}}}, {{y, 0, {y_max}}}, \
+             AspectRatio -> Automatic, ImageSize -> 400]"
+          ));
+          let ratio = h / w;
+          let expected = y_max / x_max;
+          assert!(
+            (ratio - expected).abs() < 0.01 * expected,
+            "{head} {x_max}x{y_max}: frame {w}x{h}, ratio {ratio}"
+          );
+        }
+      }
     }
 
     /// Tick labels on a narrow `ImageSize` must not squeeze the bitmap to a
@@ -23998,7 +24902,15 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          FrameLabel -> Automatic]}}]",
       );
       assert!(!grid.contains(">Automatic</text>"), "{grid}");
-      assert!(grid.contains(">u</text>") && grid.contains(">w</text>"));
+      // The variables are set in TraditionalForm italics.
+      for v in ["u", "w"] {
+        assert!(
+          grid.contains(&format!(
+            "><tspan font-style=\"italic\">{v}</tspan></text>"
+          )),
+          "{grid}"
+        );
+      }
     }
 
     /// Contour labels are `Text[level, vertex]` inside the plot's
@@ -24086,14 +24998,20 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let auto = export_svg(
         "DensityPlot[u w, {u, 0, 1}, {w, 0, 1}, FrameLabel -> Automatic]",
       );
-      assert!(auto.contains(">u</text>") && auto.contains(">w</text>"));
+      for v in ["u", "w"] {
+        assert!(
+          auto.contains(&format!(
+            "><tspan font-style=\"italic\">{v}</tspan></text>"
+          )),
+          "{auto}"
+        );
+      }
     }
 
     /// Regression: `ContourPlot` used to ignore `PlotLabel` entirely (no
     /// text drawn, no headroom reserved), unlike `Plot`/`Plot3D`/`PieChart`.
     /// A `Framed[…]` label must also typeset its content rather than
-    /// printing the literal `Framed[…]` wrapper — SVG text markup has no
-    /// room to draw the frame's border, so it typesets the content plain.
+    /// printing the literal `Framed[…]` wrapper.
     #[test]
     fn contour_plot_honors_plot_label() {
       let svg = export_svg(
@@ -24116,6 +25034,85 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         !framed_svg.contains("Framed["),
         "Framed PlotLabel must not leak its literal head:\n{framed_svg}"
       );
+    }
+
+    /// Regression: a `Framed[…]` `PlotLabel` of a `ContourPlot` /
+    /// `DensityPlot` lost its box (only `Plot`-style charts drew it), also
+    /// when wrapped in a `Style`.
+    #[test]
+    fn field_plot_framed_plot_label_is_boxed() {
+      for head in [
+        "ContourPlot[x == y, {x, 0, 1}, {y, 0, 1}",
+        "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}",
+        "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}",
+      ] {
+        let plain = export_svg(&format!("{head}, PlotLabel -> \"ab\"]"));
+        for label in [
+          "Framed[\"ab\"]",
+          "Style[Framed[\"ab\"]]",
+          "Style[Framed[Row[{\"a\", Style[\"b\", Italic]}]], Red]",
+        ] {
+          let svg = export_svg(&format!("{head}, PlotLabel -> {label}]"));
+          assert_eq!(
+            svg.matches("<rect").count(),
+            plain.matches("<rect").count() + 1,
+            "{head} {label}: {svg}"
+          );
+          assert!(!svg.contains("Framed"), "{head} {label}: {svg}");
+        }
+      }
+    }
+
+    /// Regression: the equation form of `ContourPlot` traced a vertical
+    /// line along every pole of `y == Tan[x]`, where `y - Tan[x]` changes
+    /// sign without crossing zero. With the default `Exclusions ->
+    /// Automatic` only the branches are drawn; `Exclusions -> None` keeps
+    /// the sign change as a contour.
+    #[test]
+    fn contour_plot_equation_skips_poles() {
+      // A contour line along a pole runs straight up: sum the height of
+      // every step of the curves steeper than any branch of `Tan` gets in
+      // the plotted y range.
+      fn vertical_length(svg: &str) -> f64 {
+        let mut total = 0.0;
+        for part in svg.split("<polyline points=\"").skip(1) {
+          let pts: Vec<(f64, f64)> = part
+            .split('"')
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .filter_map(|p| {
+              let (x, y) = p.split_once(',')?;
+              Some((x.parse().ok()?, y.parse().ok()?))
+            })
+            .collect();
+          for w in pts.windows(2) {
+            let (dx, dy) = ((w[1].0 - w[0].0).abs(), (w[1].1 - w[0].1).abs());
+            if dx < 0.02 * dy {
+              total += dy;
+            }
+          }
+        }
+        total
+      }
+      let auto = export_svg("ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}]");
+      let none = export_svg(
+        "ContourPlot[y == Tan[x], {x, -3, 3}, {y, -3, 3}, Exclusions -> None]",
+      );
+      let reciprocal =
+        export_svg("ContourPlot[x y == 1, {x, -2, 2}, {y, -2, 2}]");
+      let quotient =
+        export_svg("ContourPlot[y == 1/x, {x, -2, 2}, {y, -2, 2}]");
+      assert!(vertical_length(&auto) < 100.0, "{auto}");
+      assert!(vertical_length(&none) > 1000.0, "{none}");
+      // The branches themselves are kept: as many curves as with the
+      // equivalent pole-free equation `x y == 1`.
+      assert_eq!(
+        quotient.matches("<polyline").count(),
+        reciprocal.matches("<polyline").count(),
+        "{quotient}"
+      );
+      assert!(auto.matches("<polyline").count() >= 3, "{auto}");
     }
 
     /// `PlotLabel -> Text[Grid[…]]` sets the grid's content, not the literal
@@ -24299,8 +25296,9 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(
         interpret(
           "Cases[RegionPlot[{y > x/2 + 1, y < 3 x/2 - 1}, \
-           {x, -5, 5}, {y, -5, 5}][[1]], RGBColor[c__] :> Round[{c}, 1/100], \
-           {3}]"
+           {x, -5, 5}, {y, -5, 5}][[1]], \
+           Directive[RGBColor[c__], Opacity[_]] :> Round[{c}, 1/100], \
+           Infinity]"
         )
         .unwrap(),
         "{{6/25, 3/5, 4/5}, {19/20, 63/100, 7/50}}"
@@ -24308,8 +25306,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // A one-element list is a single region.
       assert_eq!(
         interpret(
-          "Length[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, \
-           {x, -5, 5}, {y, -5, 5}][[1]]]"
+          "Length[Cases[RegionPlot[{y > x/2 + 1 && y < 3 x/2 - 1}, \
+           {x, -5, 5}, {y, -5, 5}][[1]], _Polygon, Infinity]]"
         )
         .unwrap(),
         "1"
@@ -24362,7 +25360,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       let frame = export_svg(
         "Plot[Sinc[u], {u, 0, 10}, Frame -> True, FrameLabel -> Automatic]",
       );
-      assert_eq!(frame.matches(">u</text>").count(), 1, "{frame}");
+      // So is the frame label.
+      assert_eq!(
+        frame
+          .matches("><tspan font-style=\"italic\">u</tspan></text>")
+          .count(),
+        1,
+        "{frame}"
+      );
     }
 
     /// `WorkingPrecision -> p` samples at `p` digits: `Sin[x + 10^20]` is a
@@ -24534,7 +25539,80 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(per_axis[1].contains("rgb(0,0,255)"), "{per_axis:?}");
     }
 
-    /// `PlotStyle` colors a region's fill and its default outline;
+    /// `AxesStyle -> Arrowheads[…]` puts arrowheads on the axis lines of a
+    /// `Graphics`: a bare size heads both axes at their high end, a zero
+    /// size draws no head, and the heads take the axis color.
+    #[test]
+    fn graphics_axes_style_arrowheads() {
+      let polygons = |opts: &str| -> Vec<String> {
+        export_svg(&format!(
+          "Graphics[Point[{{0.5, 0.5}}], Axes -> True, \
+           PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}{opts}]"
+        ))
+        .lines()
+        .filter(|l| l.starts_with("<polygon "))
+        .map(str::to_string)
+        .collect()
+      };
+      assert_eq!(polygons(""), Vec::<String>::new());
+      let heads = polygons(", AxesStyle -> Arrowheads[0.05]");
+      assert_eq!(heads.len(), 2, "{heads:?}");
+      // Only the heads at the high ends: `{0, s}` skips the low end.
+      assert_eq!(polygons(", AxesStyle -> Arrowheads[{0, 0.05}]").len(), 2);
+      // `{-s, s}` heads both ends of both axes.
+      assert_eq!(
+        polygons(", AxesStyle -> Arrowheads[{-0.05, 0.05}]").len(),
+        4
+      );
+      let red = polygons(", AxesStyle -> Directive[Red, Arrowheads[0.05]]");
+      assert_eq!(red.len(), 2, "{red:?}");
+      assert!(red.iter().all(|l| l.contains("fill=\"rgb(255,0,0)\"")));
+      // The x axis's head points right: its tip is its rightmost vertex.
+      let xs: Vec<f64> = heads[0]
+        .split("points=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap()
+        .split(' ')
+        .map(|p| p.split(',').next().unwrap().parse().unwrap())
+        .collect();
+      assert!(xs[1..].iter().all(|&x| x < xs[0]), "{xs:?}");
+    }
+
+    /// `AxesStyle -> Arrowheads[…]` also heads the axes of plots, painted
+    /// like the axis lines.
+    #[test]
+    fn plot_axes_style_arrowheads() {
+      let polygons = |opts: &str| -> Vec<String> {
+        export_svg(&format!(
+          "ListPlot[{{{{-1, -1}}, {{1, 1}}}}, \
+           PlotRange -> {{{{-2, 2}}, {{-2, 2}}}}{opts}]"
+        ))
+        .lines()
+        .filter(|l| l.starts_with("<polygon "))
+        .map(str::to_string)
+        .collect()
+      };
+      let plain = polygons("").len();
+      let heads = polygons(", AxesStyle -> Arrowheads[{0, 0.02}]");
+      assert_eq!(heads.len(), plain + 2, "{heads:?}");
+      let blue = polygons(", AxesStyle -> Directive[Blue, Arrowheads[0.02]]");
+      assert_eq!(
+        blue
+          .iter()
+          .filter(|l| l.contains("fill=\"rgb(0,0,255)\""))
+          .count(),
+        2,
+        "{blue:?}"
+      );
+      let plot =
+        export_svg("Plot[x, {x, -1, 1}, AxesStyle -> Arrowheads[0.03]]");
+      assert_eq!(plot.matches("<polygon ").count(), 2, "{plot}");
+    }
+
+    /// `PlotStyle` colors a region's fill but not its default outline;
     /// `BoundaryStyle -> None` drops the outline.
     #[test]
     fn region_plot_plot_style_and_boundary_style() {
@@ -24542,21 +25620,55 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(
         interpret(
           "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, \
-           PlotStyle -> Red][[1]], _EdgeForm, Infinity]"
+           PlotStyle -> Red][[1]], {s_, __Line} :> s, Infinity]"
         )
         .unwrap(),
         // The outline keeps the palette color, as in Wolfram.
-        "{EdgeForm[{RGBColor[0.23921568627450981, 0.6, 0.8], \
-         AbsoluteThickness[1.6]}]}"
+        "{Directive[RGBColor[0.23921568627450981, 0.6, 0.8], \
+         AbsoluteThickness[1.6]]}"
       );
       assert_eq!(
         interpret(
           "Cases[RegionPlot[y > x, {x, -1, 1}, {y, -1, 1}, \
-           BoundaryStyle -> None][[1]], _EdgeForm, Infinity]"
+           BoundaryStyle -> None][[1]], _Line, Infinity]"
         )
         .unwrap(),
-        "{EdgeForm[]}"
+        "{}"
       );
+    }
+
+    /// Every region's boundary is drawn above all the fills, as in
+    /// Wolfram, so an overlapping later region's translucent face doesn't
+    /// veil an earlier region's outline. Regression: each region's outline
+    /// was the `EdgeForm` of its own polygons, and the next region's fill
+    /// painted over it.
+    #[test]
+    fn region_plot_boundaries_drawn_above_all_fills() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = RegionPlot[{y > x, y < 2 x}, {x, 0, 1}, {y, 0, 1}][[1]]; \
+           Map[Head, Cases[g, _Polygon | _Line, Infinity]]"
+        )
+        .unwrap(),
+        "{Polygon, Polygon, Line, Line}"
+      );
+      // The outlines are closed loops in each region's palette color.
+      assert_eq!(
+        interpret(
+          "Cases[g, {Directive[c_RGBColor, _AbsoluteThickness], \
+           Line[p_]} :> {Round[List @@ c, 1/100], First[p] == Last[p]}, \
+           Infinity]"
+        )
+        .unwrap(),
+        "{{{6/25, 3/5, 4/5}, True}, {{19/20, 63/100, 7/50}, True}}"
+      );
+      // The SVG paints both fills before either outline.
+      let svg =
+        export_svg("RegionPlot[{y > x, y < 2 x}, {x, 0, 1}, {y, 0, 1}]");
+      let last_fill = svg.rfind("<polygon").unwrap();
+      let first_outline = svg.find("stroke=\"rgb(61,153,204)\"").unwrap();
+      assert!(last_fill < first_outline, "{svg}");
     }
 
     /// A `Plus` term with a negative coefficient joins with `-` and drops the
@@ -25662,6 +26774,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_wide_plot_label_shrinks_to_fit() {
+      // Regression: a title wider than a small picture kept its 14-point
+      // font and was clipped at both edges; like a `Graphics` title it
+      // shrinks so the whole line fits the picture's width.
+      // The title's font size and the width of the canvas it sits in.
+      let title_of = |code: &str| -> (f64, f64) {
+        let svg = export_svg(code);
+        let attr = |tag: &str, name: &str| -> f64 {
+          let a = tag.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+          tag[a..a + tag[a..].find('"').unwrap()].parse().unwrap()
+        };
+        let end = svg.find("</text>").unwrap();
+        let start = svg[..end].rfind("<text").unwrap();
+        (
+          attr(&svg[start..end], "font-size"),
+          attr(&svg[..svg.find('>').unwrap()], "width"),
+        )
+      };
+      let long = "\"A rather long caption for a small picture\"";
+      for (head, size) in [("ArrayPlot", 250), ("MatrixPlot", 250)] {
+        let (font, width) = title_of(&format!(
+          "{head}[{{{{0, 1}}, {{1, 0}}}}, ImageSize -> {size}, PlotLabel -> {long}]"
+        ));
+        assert!(font < 14.0, "{head} at {size}: {font}");
+        // The estimated width of the 41 characters stays inside the canvas.
+        assert!(41.0 * 0.52 * font <= width - 8.0 + 0.5, "{head}: {font}");
+      }
+      // A title too long for any legible size stops shrinking at 9 points.
+      let tiny = format!(
+        "ArrayPlot[{{{{0, 1}}, {{1, 0}}}}, ImageSize -> 100, PlotLabel -> {long}]"
+      );
+      assert_eq!(title_of(&tiny).0, 9.0);
+      // A short caption keeps the default size.
+      let short =
+        "ArrayPlot[{{0, 1}, {1, 0}}, ImageSize -> 250, PlotLabel -> \"Short\"]";
+      assert_eq!(title_of(short).0, 14.0);
+    }
+
+    #[test]
     fn array_plot_column_plot_label_stacks_lines() {
       // Regression: a `Column[…]` title was printed as its source text
       // (`Column[{1, {1, 2}}, Center]`) instead of one line per item.
@@ -25904,6 +27055,35 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
       assert!(svg.contains("fill=\"#FF0000\""), "{svg}"); // I -> Red
       assert!(svg.contains("fill=\"#00FF00\""), "{svg}"); // -I -> Green
+    }
+
+    #[test]
+    fn array_plot_color_rules_directive_lists() {
+      // Regression: a ColorRules right-hand side mixing a color with other
+      // directives (`{Hue[h], AbsoluteThickness[t]}` or `Directive[…]`)
+      // was not recognized as a color, so the cell fell back to the
+      // default gray scale instead of taking the color it sets.
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1, 2}}, ColorRules -> {0 -> White, \
+         1 -> {Hue[0.45], AbsoluteThickness[2]}, 2 -> Directive[Red, Thick]}]",
+      );
+      assert!(svg.contains("fill=\"#00FFB2\""), "{svg}"); // Hue[0.45]
+      assert!(svg.contains("fill=\"#FF0000\""), "{svg}"); // Red
+      // The last color of a directive list wins.
+      let svg =
+        export_svg("ArrayPlot[{{1}}, ColorRules -> {1 -> {Red, Thick, Blue}}]");
+      assert!(svg.contains("fill=\"#0000FF\""), "{svg}");
+    }
+
+    #[test]
+    fn matrix_plot_color_rules_directive_list() {
+      // The rule-colored cell takes the directive list's color and stays
+      // out of the scaling of the other cells.
+      let svg = export_svg(
+        "MatrixPlot[{{0, 1, 2}}, ColorRules -> \
+         {1 -> {Hue[0.45], AbsoluteThickness[2]}}]",
+      );
+      assert!(svg.contains("fill=\"#00FFB2\""), "{svg}");
     }
 
     #[test]
@@ -27109,6 +28289,78 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "ListContourPlot[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}, {10, 11, 12}}, ImageSize -> 200]"
       ));
     }
+
+    /// The `<path>` fills of a contour plot's SVG with their vertex count.
+    fn filled_cells(svg: &str) -> Vec<(String, usize)> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<path d=\"M"))
+        .map(|l| {
+          let d = l.split('"').nth(1).unwrap();
+          let fill = l.split("fill=\"").nth(1).unwrap().split('"').next();
+          (fill.unwrap().to_string(), d.matches(['M', 'L']).count())
+        })
+        .collect()
+    }
+
+    /// `InterpolationOrder -> 0` gives every point the value of its nearest
+    /// sample, so scattered samples shade their Voronoi cells — here the
+    /// four corner triangles and the center diamond of the unit square —
+    /// in their band's color, with no contour lines along the jumps.
+    /// Regression: the option was ignored and the samples were blended
+    /// smoothly (with contour lines between them).
+    #[test]
+    fn interpolation_order_zero_shades_voronoi_cells_of_triples() {
+      let svg = export_svg(
+        "ListContourPlot[{{0, 0, 1}, {1, 0, 2}, {0, 1, 3}, {1, 1, 4}, \
+         {0.5, 0.5, 2}}, InterpolationOrder -> 0, \
+         Contours -> {1.5, 2.5, 3.5}, \
+         ContourShading -> {Red, Green, Blue, Black}]",
+      );
+      let mut cells = filled_cells(&svg);
+      cells.sort();
+      let cell = |fill: &str, n: usize| (fill.to_string(), n);
+      assert_eq!(
+        cells,
+        [
+          cell("rgb(0,0,0)", 3),
+          cell("rgb(0,0,255)", 3),
+          cell("rgb(0,255,0)", 3),
+          cell("rgb(0,255,0)", 4),
+          cell("rgb(255,0,0)", 3),
+        ]
+      );
+      assert!(!svg.contains("<polyline"), "no contour lines expected");
+    }
+
+    /// A matrix's nodes shade the square cells around them under
+    /// `InterpolationOrder -> 0`, the first row at the bottom.
+    #[test]
+    fn interpolation_order_zero_shades_square_cells_of_a_matrix() {
+      let svg = export_svg(
+        "ListContourPlot[{{1, 2}, {3, 4}}, InterpolationOrder -> 0, \
+         Contours -> {1.5, 2.5, 3.5}, \
+         ContourShading -> {Red, Green, Blue, Black}]",
+      );
+      let cells = filled_cells(&svg);
+      assert_eq!(cells.len(), 4, "{cells:?}");
+      assert!(cells.iter().all(|(_, n)| *n == 4), "{cells:?}");
+      // The bottom-left cell (value 1) is red, the top-right (value 4)
+      // black: compare the cells' vertical positions.
+      let top_of = |fill: &str| {
+        let line = svg
+          .lines()
+          .find(|l| l.starts_with("<path") && l.contains(fill))
+          .unwrap();
+        let d = line.split('"').nth(1).unwrap();
+        d.split(['M', 'L', 'Z'])
+          .filter(|p| !p.is_empty())
+          .map(|p| p.split(' ').nth(1).unwrap().parse::<f64>().unwrap())
+          .fold(f64::INFINITY, f64::min)
+      };
+      assert!(top_of("rgb(255,0,0)") > top_of("rgb(0,0,0)"));
+      assert!(!svg.contains("<polyline"), "no contour lines expected");
+    }
   }
 
   mod field_plot_aspect_ratio {
@@ -27936,6 +29188,27 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    // A pane whose body is a call of a user-defined function returning a
+    // plot (`LocatorPane[pt, picture[a]]`, or a symbol holding one) has no
+    // graphics call in sight to take the markers; they are drawn over the
+    // picture it evaluates to, keeping that picture's own `Epilog`.
+    #[test]
+    fn locator_pane_draws_its_locator_over_a_helper_plot() {
+      clear_state();
+      let svg = export_svg(
+        "helperPic[a_] := Plot[a Sin[x], {x, 0, Pi}, \
+           Epilog -> {Disk[{1, 0.2}, 0.05]}]; \
+         LocatorPane[{1.5, 0.3}, helperPic[1]]",
+      );
+      // The plot's own disk plus the locator's marker circle.
+      assert_eq!(svg.matches("<ellipse").count(), 2, "{svg}");
+      let svg = export_svg(
+        "storedPic = Plot[x, {x, 0, 1}]; \
+         LocatorPane[Dynamic[{0.5, 0.5}], storedPic]",
+      );
+      assert_eq!(svg.matches("<ellipse").count(), 1, "{svg}");
+    }
+
     // `Appearance -> {g1, g2, …}` gives one picture per locator, drawn about
     // the origin, so each marker is that picture moved onto its point. This
     // is how a Demonstration labels the vertices it lets you drag.
@@ -28213,6 +29486,49 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         signs.iter().all(|s| *s == signs[0]),
         "every triangle must wind the polygon's way: {signs:?} in {svg}"
       );
+    }
+
+    // A polygon whose corners do not lie in one plane (a closed path over
+    // three faces of a cube) has no plane to be flattened onto. Woxi used
+    // to squash it onto one plane and light it with a single normal, so a
+    // box drawn as one such polygon came out as a flat panel. It is drawn
+    // as a fan from its first corner instead, each triangle lit by its own
+    // normal.
+    #[test]
+    fn a_non_planar_polygon_is_a_lit_fan() {
+      let svg = export_svg(
+        "Graphics3D[Polygon[{{0,0,0},{1,0,0},{1,0,1},{1,1,1},{0,1,1},          {0,1,0}}], Boxed -> False]",
+      );
+      let triangles: Vec<(Vec<String>, String)> = svg
+        .lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .map(|l| {
+          let attr = |k: &str| {
+            l.split(&format!("{k}=\""))
+              .nth(1)
+              .and_then(|v| v.split('"').next())
+              .unwrap_or("")
+              .to_string()
+          };
+          let pts = attr("points")
+            .split(' ')
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+          (pts, attr("fill"))
+        })
+        .collect();
+      assert_eq!(triangles.len(), 4, "a hexagon fans into 4: {svg}");
+      assert!(
+        triangles[0]
+          .0
+          .iter()
+          .any(|p| triangles.iter().all(|(pts, _)| pts.contains(p))),
+        "every triangle shares the first corner: {svg}"
+      );
+      let mut fills: Vec<&String> = triangles.iter().map(|t| &t.1).collect();
+      fills.sort();
+      fills.dedup();
+      assert_eq!(fills.len(), 4, "each triangle has its own shade: {svg}");
     }
 
     // Wolfram outlines a flat face in a solid `GrayLevel[0.25]` one pixel
@@ -28885,6 +30201,59 @@ ParametricPlot[f[t], {t, 0, 1}]]",
 
 mod pane_wrapper_display {
   use super::*;
+
+  // Exported on its own or as a `Row` item next to a picture, `Text[…]`
+  // content is set in the proportional text face, like the same `Text` in
+  // a `Grid` cell.
+  #[test]
+  fn exported_text_uses_the_text_face() {
+    clear_state();
+    for code in [
+      "ExportString[Text[\"total\"], \"SVG\"]",
+      "ExportString[Row[{Text[Style[Row[{\"total, \", Style[\"n\", Italic]}], \
+       14]], Graphics[Circle[], ImageSize -> 20]}], \"SVG\"]",
+    ] {
+      let svg = interpret(code).unwrap();
+      let text = svg
+        .split("<text")
+        .find(|t| t.contains("total"))
+        .unwrap_or_else(|| panic!("no text in {svg}"));
+      assert!(text.contains("sans-serif"), "{code}: {text}");
+      assert!(!text.contains("monospace"), "{code}: {text}");
+    }
+  }
+
+  // A Manipulate body's control row — a slider, a `Text` caption whose
+  // `Row` holds a string times a styled symbol, and a second slider whose
+  // maximum is `Dynamic[…]` — draws both sliders and sets the caption in
+  // the proportional text face, not as monospace output or source text.
+  #[test]
+  fn column_of_slider_rows_with_text_captions_renders_in_visual_mode() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "k = 4; j = 2; Pane[Column[{\
+         Row[{Manipulator[Dynamic[k], {1, 10, 1}], Spacer[15], \
+           Text[Style[Row[{\"count, \" Style[\"n\", Italic], \" = \"}], 14]], \
+           Text[Style[Dynamic[k], 14]]}], \
+         Row[{Manipulator[Dynamic[j], {1, Dynamic[k], 1}], \
+           Text[Style[\"at least\", 14]]}], \
+         Graphics[Circle[], ImageSize -> 100]}, Alignment -> Center], \
+         {300, 200}]",
+    )
+    .unwrap();
+    let svg = result.graphics.expect("column should render");
+    assert!(
+      !svg.contains("Manipulator["),
+      "slider drawn as source: {svg}"
+    );
+    assert_eq!(svg.matches("<circle cx=").count(), 2, "{svg}");
+    let caption = svg
+      .split("<text")
+      .find(|t| t.contains("count,"))
+      .expect("caption text");
+    assert!(caption.contains("sans-serif"), "{caption}");
+    assert!(caption.contains("font-style=\"italic\">n<"), "{caption}");
+  }
 
   // In visual hosts (playground, studio — anything driven by
   // interpret_with_stdout), the transparent Pane wrapper displays its
@@ -30644,6 +32013,32 @@ mod list_plot_3d {
       assert_eq!(r.result, code);
       assert_eq!(r.warnings, vec![message.to_string()]);
     }
+  }
+
+  // `DataRange -> {{x0, x1}, {y0, y1}}` spans a height matrix's columns
+  // (x) and rows (y) over those ranges instead of their 1-based indices.
+  #[test]
+  fn list_plot3d_matrix_data_range() {
+    clear_state();
+    let ticks = |code: &str| -> Vec<String> {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      svg
+        .split("</text>")
+        .filter_map(|s| s.rsplit('>').next())
+        .map(str::to_string)
+        .collect()
+    };
+    let data = "Table[Sin[i/3] Cos[j/4], {i, 10}, {j, 40}]";
+    let plain = ticks(&format!("ListPlot3D[{data}]"));
+    assert!(plain.iter().any(|t| t == "40"), "{plain:?}");
+    let ranged = ticks(&format!(
+      "ListPlot3D[{data}, DataRange -> {{{{0, 4}}, {{0, 10}}}}]"
+    ));
+    assert!(ranged.iter().any(|t| t == "4"), "{ranged:?}");
+    // The y axis spans 0 to 10, stepped by 5 (automatic 3D ticks step by
+    // 1, 2 or 5).
+    assert!(ranged.iter().any(|t| t == "5"), "{ranged:?}");
+    assert!(!ranged.iter().any(|t| t == "40" || t == "30"), "{ranged:?}");
   }
 
   #[test]
@@ -35295,6 +36690,66 @@ mod graphics_complex {
     assert_eq!(svg.matches("<polygon").count(), 1682);
   }
 
+  // A 3D complex's `VertexColors` blend across each facet instead of
+  // flattening it to the mean of its corner colors.
+  #[test]
+  fn vertex_colors_3d_blend_across_facet() {
+    let svg = export_svg(
+      "Graphics3D[GraphicsComplex[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+       Polygon[{1, 2, 3}], VertexColors -> {Red, Green, Blue}], \
+       Axes -> False, Boxed -> False]",
+    );
+    assert!(svg.contains("<pattern"), "{svg}");
+  }
+
+  // `VertexNormals` light each corner of a flat face with its own normal,
+  // so the face is shaded with a gradient rather than one flat color.
+  #[test]
+  fn vertex_normals_shade_flat_polygon() {
+    let flat = export_svg(
+      "Graphics3D[{EdgeForm[], Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, \
+       {0, 1, 0}}]}, Axes -> False, Boxed -> False]",
+    );
+    assert!(!flat.contains("linearGradient"));
+    let normals =
+      "VertexNormals -> {{-1, 0, 1}, {1, 0, 1}, {1, 0, 1}, {-1, 0, 1}}";
+    let direct = export_svg(&format!(
+      "Graphics3D[{{EdgeForm[], Polygon[{{{{0, 0, 0}}, {{1, 0, 0}}, \
+       {{1, 1, 0}}, {{0, 1, 0}}}}, {normals}]}}, Axes -> False, \
+       Boxed -> False]"
+    ));
+    assert_eq!(direct.matches("<linearGradient").count(), 2, "{direct}");
+    // The same normals given once for the points of a complex.
+    let complex = export_svg(&format!(
+      "Graphics3D[GraphicsComplex[{{{{0, 0, 0}}, {{1, 0, 0}}, {{1, 1, 0}}, \
+       {{0, 1, 0}}}}, {{EdgeForm[], Polygon[{{1, 2, 3, 4}}]}}, {normals}], \
+       Axes -> False, Boxed -> False]"
+    ));
+    assert_eq!(complex, direct);
+  }
+
+  // A transformed face's normals turn with it: rotating the face and
+  // its normals by hand draws the same picture, while keeping the
+  // normals unrotated does not.
+  #[test]
+  fn vertex_normals_follow_geometric_transformation() {
+    let setup = "r = RotationTransform[Pi/3, {1, 1, 0}]; \
+       m = RotationMatrix[Pi/3, {1, 1, 0}]; \
+       pts = {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}; \
+       ns = {{-1, 0, 1}, {1, 0, 1}, {1, 0, 1}, {-1, 0, 1}}; ";
+    let svg = |g: &str| {
+      export_svg(&format!(
+        "{setup}Graphics3D[{{EdgeForm[], {g}}}, Axes -> False, Boxed -> False]"
+      ))
+    };
+    let transformed =
+      svg("GeometricTransformation[Polygon[pts, VertexNormals -> ns], r]");
+    let by_hand = svg("Polygon[r /@ pts, VertexNormals -> (m . # & /@ ns)]");
+    let unrotated = svg("Polygon[r /@ pts, VertexNormals -> ns]");
+    assert_eq!(transformed, by_hand);
+    assert_ne!(transformed, unrotated);
+  }
+
   #[test]
   fn polygon_with_indices() {
     insta::assert_snapshot!(export_svg(
@@ -35910,6 +37365,24 @@ mod log_linear_plot {
 
 mod contour_plot_3d {
   use super::*;
+
+  // The `ColorFunction` colors stay with the primitives, so `Show` draws
+  // the surface in them, and the option itself is not passed on.
+  #[test]
+  fn color_function_colors_survive_in_primitives() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "g = ContourPlot3D[x == 0, {x, -1, 1}, {y, -1, 1}, {z, -1, 1}, \
+         ColorFunction -> Function[{x, y, z, f}, If[y < 0.5, Red, Black]], \
+         Mesh -> None]; \
+         {Union[Cases[First[g], _RGBColor, Infinity]], \
+          FreeQ[Rest[List @@ g], ColorFunction]}"
+      )
+      .unwrap(),
+      "{{RGBColor[0., 0., 0.], RGBColor[1., 0., 0.]}, True}"
+    );
+  }
 
   // A tube thinner than a grid cell leaves every sample on one side of the
   // level; the surface must still be found, and — like the FrontEnd's
@@ -39805,6 +41278,62 @@ mod manipulate {
     }
   }
 
+  // A literal `Animate[…]` laid out inside the body (beside other content,
+  // under `Module`/`Column`) has its time hoisted into a running
+  // `ControlType -> Animator` control of the outer widget, and the inner
+  // body stays in its place, deferred by `Dynamic`. A hidden scalar that is
+  // one coordinate of a `LocatorPane` point, and that the body never
+  // reassigns, gets a slider along that axis of the pane.
+  #[test]
+  fn spec_body_nested_animate_and_locator_coordinate_become_controls() {
+    let expr = interpret_to_expr(
+      "Manipulate[Module[{}, Column[{\
+         LocatorPane[Dynamic[{k, Sin[k]}, (k = First[#]) &], \
+           Graphics[Point[{k, Sin[k]}], PlotRange -> {{0, 4}, {-1, 1}}]], \
+         Animate[Graphics[Disk[{Cos[t], 0}]], {{t, 0, \"time\"}, 0, 10}, \
+           AnimationRunning -> False]}]], \
+       {{k, 1.}, ControlType -> None}, {{a, 1}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(spec.animated);
+    assert!(!spec.animation_running);
+    assert_eq!(spec.animation_var.as_deref(), Some("t"));
+    assert!(
+      spec.body_code.contains("Dynamic[Graphics[Disk["),
+      "{}",
+      spec.body_code
+    );
+    assert!(!spec.body_code.contains("Animate"), "{}", spec.body_code);
+    assert!(
+      !spec.state.iter().any(|(n, _)| n == "k"),
+      "{:?}",
+      spec.state
+    );
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "t", "k"]);
+    match &spec.controls[2] {
+      ManipulateControl::Continuous {
+        min, max, initial, ..
+      } => assert_eq!((*min, *max, *initial), (0.0, 4.0, 1.0)),
+      other => panic!("expected a slider for k, got {other:?}"),
+    }
+  }
+
+  // The body assigning the hidden coordinate itself keeps it hidden.
+  #[test]
+  fn spec_body_recomputed_locator_coordinate_stays_hidden() {
+    let expr = interpret_to_expr(
+      "Manipulate[k = 2 a; LocatorPane[Dynamic[{k, 0}], \
+         Graphics[Point[{k, 0}], PlotRange -> {{0, 4}, {-1, 1}}]], \
+       {{k, 1.}, ControlType -> None}, {{a, 1}, 0, 2}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(!spec.controls.iter().any(|c| c.name() == "k"));
+  }
+
   // A Demonstration that drags a *list* of points drawn by a body-local
   // `LocatorPane` (e.g. a polygon's vertices) — with no `Specifications`
   // entry for that variable at all, only a plain `var = expr;` statement
@@ -41089,6 +42618,47 @@ mod manipulate {
     }
   }
 
+  /// A caption string joining a `ToString[TraditionalForm[list]]` readout
+  /// (`"v = " <> ToString[TraditionalForm[{1/2, 3}]]`) is typeset: a list
+  /// holding fractions is drawn with them stacked, and a plain list keeps
+  /// the FrontEnd's space after each comma. Regression: both were
+  /// flattened to one line of text, `{1/2,3}`.
+  #[test]
+  fn spec_display_traditional_form_list_readouts_are_typeset() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let expr = interpret_to_expr(
+      "Manipulate[n, {n, 1, 2}, Dynamic[Column[{\
+       StringJoin[\"u = \", ToString[TraditionalForm[{n, 0, 0}]]], \
+       StringJoin[\"v = \", ToString[TraditionalForm[{n/3, Sqrt[2]/5, 0}]]]}]]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("manipulate");
+    assert_eq!(spec.displays.len(), 1);
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      build_manipulate_display(&spec.displays[0], &bindings)
+    });
+    let DisplayNode::Column(items) = &node else {
+      panic!("expected a column: {node:?}");
+    };
+    let [first, second] = items.as_slice() else {
+      panic!("expected two rows: {node:?}");
+    };
+    let DisplayNode::Text { runs } = first else {
+      panic!("plain list should stay text: {first:?}");
+    };
+    let text: String = runs.iter().map(|r| r.text.as_str()).collect();
+    assert_eq!(text, "u = {1, 0, 0}");
+    let DisplayNode::Static { svg: Some(svg), .. } = second else {
+      panic!("fraction list should be typeset: {second:?}");
+    };
+    // The numerator and denominator are separate glyph runs over a bar,
+    // not the one-line `1/3` reading.
+    assert!(svg.starts_with("<svg"), "{svg}");
+    assert!(!svg.contains("1/3"), "{svg}");
+    assert!(svg.contains(">3<") && svg.contains(">5<"), "{svg}");
+  }
+
   #[test]
   fn spec_checkbox_bar_click_on_non_list_value_starts_a_list() {
     use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
@@ -41404,6 +42974,38 @@ mod manipulate {
       })
       .collect();
     assert_eq!(actions, ["n = 1", "n = 2", "n = 3"]);
+  }
+
+  /// A `Manipulator` in a display whose bound is itself live
+  /// (`{1, Dynamic[n], 1}`, a maximum following another control) is a real
+  /// slider ranging up to the bound's current value, not inert source text.
+  #[test]
+  fn display_manipulator_with_dynamic_bound_is_live_slider() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let node = build_manipulate_display(
+      "Row[{Manipulator[Dynamic[m], {1, Dynamic[n], 1}], \"label\"}]",
+      &[
+        ("n".to_string(), "7".to_string()),
+        ("m".to_string(), "3".to_string()),
+      ],
+    );
+    let DisplayNode::Row(items) = &node else {
+      panic!("expected a row, got {node:?}");
+    };
+    match &items[0] {
+      DisplayNode::Slider {
+        target,
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => {
+        assert_eq!(target, "m");
+        assert_eq!((*min, *max, *step, *current), (1.0, 7.0, 1.0, 3.0));
+      }
+      other => panic!("expected a live slider, got {other:?}"),
+    }
   }
 
   /// `Overlay[{layers}, {shown…}, active]` in a display: a control layer Woxi
@@ -42443,6 +44045,50 @@ mod manipulate {
       })
       .collect();
     assert_eq!(flags, [(false, true), (false, false)]);
+  }
+
+  /// A `{min, max, step}` range behind a one-widget-per-value control holds
+  /// exactly the values `Range[min, max, step]` does (`min + k step`), not
+  /// an accumulated sum: `{1.6, 2, 0.1}` used to come out with
+  /// `1.8000000000000003` in place of `1.8`, so an initial value of `1.8`
+  /// matched no button and none of the bar's buttons lit up.
+  #[test]
+  fn setter_bar_real_range_matches_range_values() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b}, \
+       {{a, 1.8, \"a\"}, 1.6, 2, .1, ControlType -> SetterBar}, \
+       {{b, 0.7}, 0, 1, 0.1, ControlType -> SetterBar}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let expected_a = "{1.6, 1.7000000000000002, 1.8, 1.9000000000000001, 2.}";
+    let expected_b = "{0., 0.1, 0.2, 0.30000000000000004, 0.4, 0.5, \
+                      0.6000000000000001, 0.7000000000000001, 0.8, 0.9, 1.}";
+    let summary: Vec<(String, usize, Option<String>)> = spec
+      .controls
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Discrete {
+          values,
+          initial_index,
+          initial_overflow,
+          ..
+        } => (
+          format!("{{{}}}", values.join(", ")),
+          *initial_index,
+          initial_overflow.clone(),
+        ),
+        other => panic!("expected discrete control, got {other:?}"),
+      })
+      .collect();
+    assert_eq!(
+      summary,
+      [
+        (expected_a.to_string(), 2, None),
+        (expected_b.to_string(), 7, None)
+      ],
+      "choices must match Range and the initial value must light its button"
+    );
   }
 
   /// `ControlType -> RadioButton` and `-> RadioButtonBar` force the bar like
@@ -44834,6 +46480,64 @@ mod manipulate {
     }
     let bindings = manipulate_initial_bindings(&spec);
     assert_eq!(bindings, vec![("int".to_string(), "{0, 1}".to_string())]);
+  }
+
+  // Symbolic corner components (`2 Pi`) are evaluated, and an exact
+  // initial vector is bound as given.
+  #[test]
+  fn spec_vector_range_evaluates_symbolic_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[v, {{v, {0, 0, 0}, \"angles\"}, {0, 0, 0}, {2 Pi, 2 Pi, 2 Pi}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert_eq!(spec.controls.len(), 1);
+    match &spec.controls[0] {
+      ManipulateControl::VectorSlider {
+        name,
+        maxs,
+        initial,
+        label,
+        exact_initial,
+        ..
+      } => {
+        assert_eq!(name, "v");
+        assert_eq!(label, "angles");
+        let two_pi = 2.0 * std::f64::consts::PI;
+        assert!(maxs.iter().all(|m| (m - two_pi).abs() < 1e-12), "{maxs:?}");
+        assert_eq!(initial, &vec![0.0; 3]);
+        assert!(*exact_initial);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(bindings, vec![("v".to_string(), "{0, 0, 0}".to_string())]);
+  }
+
+  // Inexact corners start the vector at the minimum corner as machine reals.
+  #[test]
+  fn spec_vector_range_with_inexact_bounds_binds_reals() {
+    let expr = interpret_to_expr(
+      "Manipulate[w, {w, {1., 2., 3., 4.}, {5., 6., 7., 8.}}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    match &spec.controls[0] {
+      ManipulateControl::VectorSlider {
+        initial,
+        exact_initial,
+        ..
+      } => {
+        assert_eq!(initial, &vec![1.0, 2.0, 3.0, 4.0]);
+        assert!(!*exact_initial);
+      }
+      other => panic!("expected VectorSlider, got {other:?}"),
+    }
+    let bindings = manipulate_initial_bindings(&spec);
+    assert_eq!(
+      bindings,
+      vec![("w".to_string(), "{1., 2., 3., 4.}".to_string())]
+    );
   }
 
   #[test]
@@ -48354,12 +50058,12 @@ mod color_data_indexed {
     assert_eq!(
       interpret(
         "Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, {y, -2, 2}, \
-         BoundaryStyle -> Thick][[1]], _EdgeForm, Infinity]"
+         BoundaryStyle -> Thick][[1]], {s_, __Line} :> s, Infinity]"
       )
       .unwrap(),
       // The option is evaluated like any plot option, so `Thick` arrives as
       // its value
-      "{EdgeForm[Thickness[Large]]}"
+      "{Thickness[Large]}"
     );
     // The extracted primitives embed into an outer Graphics.
     let svg = export_svg(
@@ -49900,9 +51604,17 @@ mod demonstration_plot_layout {
       "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, Frame -> True, \
        FrameLabel -> {y[t], y'[t]}, ImageSize -> 250]",
     );
-    assert!(svg.contains(">y(t)<"), "the bottom frame label: {svg}");
+    // Frame labels are set in TraditionalForm too.
+    let y = "<tspan font-style=\"italic\">y</tspan>";
+    let of_t = "(<tspan font-style=\"italic\">t</tspan>)<";
     assert!(
-      svg.contains(">y\u{2032}(t)<"),
+      svg.contains(&format!(">{y}{of_t}")),
+      "the bottom frame label: {svg}"
+    );
+    assert!(
+      svg.contains(&format!(
+        ">{y}<tspan baseline-shift=\"super\" font-size=\"70%\">\u{2032}</tspan>{of_t}"
+      )),
       "the left frame label needs its prime: {svg}"
     );
   }
@@ -50819,6 +52531,57 @@ mod grid_text_in_graphics {
     assert!(width < 100.0, "{svg}");
     assert!(svg.contains("<g opacity=\"0\">"), "{svg}");
     assert!(!svg.contains("Invisible"), "{svg}");
+  }
+
+  /// `FrameStyle` only colors the frame of a `Grid` of pictures: the
+  /// cells keep the framed picture layout's padding. Regression: the option
+  /// sent the grid to the text-table layout, which spaced the pictures
+  /// twelve points apart horizontally and barely at all vertically.
+  #[test]
+  fn frame_style_keeps_framed_picture_grid_padding() {
+    let svg = interpret(
+      r#"g = Graphics[Disk[], ImageSize -> {100, 100}]; ExportString[Grid[{{g, g}, {g, g}}, Frame -> All, FrameStyle -> Gray], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"218\" height=\"218\""),
+      "{svg}"
+    );
+    for (x, y) in [(4, 4), (114, 4), (4, 114), (114, 114)] {
+      assert!(
+        svg.contains(&format!(
+          "<svg x=\"{x}\" y=\"{y}\" width=\"100\" height=\"100\""
+        )),
+        "{svg}"
+      );
+    }
+    assert!(
+      svg.contains(
+        "x1=\"109.00\" y1=\"0.00\" x2=\"109.00\" y2=\"218.00\" stroke=\"rgb(128,128,128)\""
+      ),
+      "{svg}"
+    );
+    assert!(!svg.contains("stroke=\"rgb(0,0,0)\""), "{svg}");
+  }
+
+  /// A `Grid` of composite pictures (a `Column` of two icons per cell) with
+  /// a styled frame is laid out like the same grid with a plain frame.
+  #[test]
+  fn frame_style_grid_of_picture_columns_matches_plain_frame() {
+    let grid = |extra: &str| {
+      interpret(&format!(
+        r#"g = Graphics[Rectangle[], ImageSize -> 30]; ExportString[Grid[{{{{Column[{{g, g}}, Spacings -> 0], Column[{{g, g}}, Spacings -> 0]}}}}, Frame -> All{extra}], "SVG"]"#
+      ))
+      .unwrap()
+    };
+    let plain = grid("");
+    let styled = grid(", FrameStyle -> Red");
+    assert!(styled.contains("stroke=\"rgb(255,0,0)\""), "{styled}");
+    assert_eq!(
+      styled.replace("rgb(255,0,0)", "rgb(0,0,0)"),
+      plain,
+      "styled frame changed the layout"
+    );
   }
 
   /// A framed `Grid` of pictures pads every cell by 4.5 pixels on each
@@ -51955,6 +53718,18 @@ fn grid_column_width_follows_displayed_text() {
   let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
   let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
+  // A StringForm is measured as its filled template, not its call source.
+  let filled = first_divider(
+    "Grid[{{Style[StringForm[\"Q = `1`\", NumberForm[10., {6, 2}]], 16], 1}}, \
+     Frame -> All]",
+  );
+  let literal =
+    first_divider("Grid[{{Style[\"Q = 10.00\", 16], 1}}, Frame -> All]");
+  assert!((filled - literal).abs() < 1.0, "{filled} vs {literal}");
+  let slots =
+    first_divider("Grid[{{StringForm[\"`` of ``\", 2, x], 1}}, Frame -> All]");
+  let text = first_divider("Grid[{{\"2 of x\", 1}}, Frame -> All]");
+  assert!((slots - text).abs() < 1.0, "{slots} vs {text}");
 }
 
 mod traditional_form_typesetting {
@@ -52614,6 +54389,75 @@ mod static_dynamic_controls {
       );
     }
   }
+
+  /// An enclosing `Style`'s color strokes a framed title's box and its
+  /// `Background` fills it.
+  #[test]
+  fn styled_framed_plot_label_takes_style_color_and_background() {
+    let svg = export_svg(
+      "ListPlot[{{1, 5}, {2, 7}}, PlotLabel -> \
+       Style[Framed[\"abc\"], Blue, Background -> Yellow]]",
+    );
+    assert!(
+      svg.contains("fill=\"rgb(255,255,0)\" stroke=\"rgb(0,0,255)\""),
+      "{svg}"
+    );
+  }
+
+  /// A framed 3-D title is boxed too, not drawn as bare text.
+  #[test]
+  fn framed_plot_label_is_boxed_in_3d() {
+    let plain = export_svg("Graphics3D[Sphere[], PlotLabel -> \"abc\"]");
+    let svg = export_svg(
+      "Graphics3D[Sphere[], PlotLabel -> Framed[\"abc\", FrameStyle -> Red]]",
+    );
+    assert_eq!(
+      svg.matches("<rect").count(),
+      plain.matches("<rect").count() + 1,
+      "{svg}"
+    );
+    assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
+  }
+
+  /// One framed line of a stacked 3-D title gets its own box, in the
+  /// color and `Background` of the `Style` around it; the other lines
+  /// stay unboxed and below it.
+  #[test]
+  fn framed_line_of_column_plot_label_is_boxed_in_3d() {
+    let svg = export_svg(
+      "Graphics3D[Sphere[], PlotLabel -> Column[{Style[Framed[\"top\"], 16, \
+       Blue, Background -> Yellow], Style[\"bottom\", 20]}, Center]]",
+    );
+    let boxes: Vec<&str> = svg
+      .match_indices("<rect")
+      .map(|(i, _)| &svg[i..i + svg[i..].find("/>").unwrap()])
+      .filter(|r| r.contains("stroke=\"rgb(0,0,255)\""))
+      .collect();
+    assert_eq!(boxes.len(), 1, "{svg}");
+    assert!(boxes[0].contains("fill=\"rgb(255,255,0)\""), "{svg}");
+    let y = |word: &str| {
+      let end = svg.find(word).unwrap();
+      let start = svg[..end].rfind("<text").unwrap();
+      let tag = &svg[start..end];
+      let y = &tag[tag.find(" y=\"").unwrap() + 4..];
+      y[..y.find('"').unwrap()].parse::<f64>().unwrap()
+    };
+    assert!(y("bottom") > y("top"), "{svg}");
+  }
+
+  /// A plot title is set in `TraditionalForm`, so a sum inside a framed
+  /// line of a stacked title runs from its highest power down.
+  #[test]
+  fn sum_in_column_plot_label_is_traditional() {
+    for head in ["Graphics3D[Sphere[]", "ListPlot[{1, 2}"] {
+      let svg = export_svg(&format!(
+        "{head}, PlotLabel -> Column[{{Framed[x^2 + 3], \"c\"}}]]"
+      ));
+      let x = svg.find(">x<").expect(&svg);
+      let three = svg.find(">3<").or_else(|| svg.find("+3")).expect(&svg);
+      assert!(x < three, "{svg}");
+    }
+  }
 }
 
 #[test]
@@ -52675,6 +54519,60 @@ fn explicit_plot_range_clips_lattice_in_wide_image_on_both_sides() {
     "{svg}"
   );
   assert!(svg.contains("clip-path=\"url("), "{svg}");
+}
+
+#[test]
+fn plot_epilog_draws_locator_markers() {
+  // Regression: a `Locator` in a plot's `Epilog` drew nothing (only
+  // `Graphics` placed its marker).
+  const MARKER: &str = "rgba(180,180,180,0.35)";
+  let one = export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}]}]");
+  assert_eq!(one.matches(MARKER).count(), 1, "{one}");
+  let two = export_svg(
+    "Plot[x, {x, 0, 1}, Epilog -> {Locator[{{0.2, 0.2}, {0.7, 0.7}}]}]",
+  );
+  assert_eq!(two.matches(MARKER).count(), 2, "{two}");
+  let hidden =
+    export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}, None]}]");
+  assert_eq!(hidden.matches(MARKER).count(), 0, "{hidden}");
+}
+
+#[test]
+fn show_with_an_option_keeps_a_plot_range_all_plot_unchanged() {
+  // Regression: `Show[p, opt]` of a `PlotRange -> All` plot dropped the
+  // plot's range padding, redrawing it squeezed to its data (and taller).
+  for code in [
+    "Plot[x^2, {x, 0, 5}, PlotRange -> All]",
+    "Plot[30 - 31 Exp[-x], {x, 0, 50}, PlotRange -> All, Frame -> True, \
+     Axes -> False, ImagePadding -> {{65, 25}, {25, 25}}, ImageSize -> 450]",
+    "Plot[Sin[x], {x, 0, 10}, PlotRange -> {{0, 5}, All}]",
+  ] {
+    assert_eq!(
+      export_svg(&format!("Show[{code}, Epilog -> {{}}]")),
+      export_svg(code),
+      "{code}"
+    );
+  }
+}
+
+#[test]
+fn plot_with_explicit_image_padding_clips_labels_at_its_edge() {
+  // Regression: a frame label below a bottom `ImagePadding` too small to
+  // hold it showed under the picture once the plot sat in a `Labeled`
+  // (whose cells let content overflow). Wolfram cuts it off at the image
+  // boundary, also when nested.
+  let code = "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}, \
+              ImagePadding -> {{50, 20}, {20, 20}}, ImageSize -> 300]";
+  let svg = export_svg(code);
+  assert!(svg.contains("<clipPath id=\"imageClip_"), "{svg}");
+  assert!(svg.contains("clip-path=\"url(#imageClip_"), "{svg}");
+  let labeled = export_svg(&format!("Labeled[{code}, \"caption\"]"));
+  assert!(labeled.contains("clip-path=\"url(#imageClip_"), "{labeled}");
+  // Automatic padding grows to hold the labels and clips nothing.
+  let auto = export_svg(
+    "Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\"x\", \"y\"}]",
+  );
+  assert!(!auto.contains("imageClip_"), "{auto}");
 }
 
 #[test]
@@ -53495,6 +55393,30 @@ mod grid_repeating_decimal_alignment {
     rest.split('"').next().unwrap().parse().unwrap()
   }
 
+  /// `Alignment -> ":"` lines every column's entries up on their first
+  /// colon, the way `"."` lines numbers up on their decimal point.
+  #[test]
+  fn cells_align_on_any_character() {
+    let svg = export_svg(
+      "Grid[{{\"ab: 1\", \"x: 22\"}, {\"abcdef: 333\", \"yyyy: 4\"}}, \
+       Alignment -> \":\"]",
+    );
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+    let char_w = text_x(&svg, "ab: 1") - text_x(&svg, "abcdef: 333");
+    // "ab" is 4 characters narrower than "abcdef" before the colon.
+    assert!(char_w > 0.0, "{svg}");
+    let col2 = text_x(&svg, "x: 22") - text_x(&svg, "yyyy: 4");
+    assert!((col2 - 3.0 * char_w / 4.0).abs() < 1e-6, "{svg}");
+    // A per-column spec takes its own character for each column.
+    let svg = export_svg(
+      "Grid[{{\"a-1\", \"b=1\"}, {\"aaa-1\", \"bbb=1\"}}, \
+       Alignment -> {{\"-\", \"=\"}}]",
+    );
+    let d1 = text_x(&svg, "a-1") - text_x(&svg, "aaa-1");
+    let d2 = text_x(&svg, "b=1") - text_x(&svg, "bbb=1");
+    assert!(d1 > 0.0 && (d1 - d2).abs() < 1e-6, "{svg}");
+  }
+
   /// Regression: `Alignment -> {{Left, {"."}}}` repeats the `"."` alignment
   /// over every column after the first. The repeating pattern was expanded
   /// after the column widths were measured, so decimal columns were sized
@@ -53665,7 +55587,8 @@ mod surface_vertex_colors {
   fn graphics_complex_vertex_colors_color_polygons_in_3d() {
     clear_state();
     // A stored complex colors its facets by their vertices' `VertexColors`
-    // (given as bare `{r, g, b}` triples too) instead of the default fill.
+    // (given as bare `{r, g, b}` triples too), blended across each facet,
+    // instead of the default fill.
     for colors in [
       "{Red, Green, Blue, Yellow}",
       "{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}, {1, 1, 0}}",
@@ -53676,7 +55599,7 @@ mod surface_vertex_colors {
          VertexColors -> {colors}]], \"SVG\"]"
       );
       let svg = interpret(&code).unwrap();
-      assert!(svg.contains("fill=\"rgb(81,46,0)\""), "{svg}");
+      assert!(svg.contains("<pattern"), "{svg}");
     }
   }
 
@@ -58218,6 +60141,76 @@ mod field_plot_conformance {
     assert!(svg.contains("stroke-dasharray"), "{svg}");
   }
 
+  /// The stroke of each `<polyline>` contour line of a plot.
+  fn contour_line_strokes(svg: &str) -> Vec<String> {
+    svg
+      .split("<polyline")
+      .skip(1)
+      .filter_map(|s| {
+        let s = s.split('>').next()?;
+        Some(s.split("stroke=\"").nth(1)?.split('"').next()?.to_string())
+      })
+      .collect()
+  }
+
+  /// A list of per-contour styles styles a single function's contour
+  /// levels in turn, counted from the first level of an explicit
+  /// `Contours` list, also when that level lies outside the plotted range.
+  #[test]
+  fn contour_style_list_styles_each_level() {
+    // `x + y` spans -2..2, so of the levels -5..5 only -1, 0, 1 are drawn;
+    // the 6th style (the one of level 0) is the red one.
+    let svg = export_svg(
+      "ContourPlot[x + y, {x, -1, 1}, {y, -1, 1}, Contours -> Range[-5, 5, 1], \
+       ContourShading -> False, ContourStyle -> {{Black}, {Black}, {Black}, \
+       {Black}, {Blue}, {Red, Thick}, {Green}, {Black}, {Black}, {Black}, {Black}}]",
+    );
+    let strokes = contour_line_strokes(&svg);
+    assert!(strokes.contains(&"rgb(255,0,0)".to_string()), "{strokes:?}");
+    assert!(strokes.contains(&"rgb(0,0,255)".to_string()), "{strokes:?}");
+    assert!(strokes.contains(&"rgb(0,255,0)".to_string()), "{strokes:?}");
+    // Without an explicit list the styles cycle over the drawn levels.
+    let svg = export_svg(
+      "ContourPlot[x, {x, 0, 1}, {y, 0, 1}, Contours -> 4, \
+       ContourShading -> False, ContourStyle -> {{Red}, {Blue}}]",
+    );
+    let strokes = contour_line_strokes(&svg);
+    assert_eq!(
+      strokes,
+      [
+        "rgb(255,0,0)",
+        "rgb(0,0,255)",
+        "rgb(255,0,0)",
+        "rgb(0,0,255)"
+      ],
+    );
+  }
+
+  /// A multi-line `Style[…, {size, Bold}]` frame label keeps its style on
+  /// every line, and the picture makes room for all of its lines.
+  #[test]
+  fn styled_multi_line_frame_label_styles_every_line() {
+    let plot = |label: &str| {
+      export_svg(&format!(
+        "ContourPlot[x, {{x, 0, 1}}, {{y, 0, 1}}, FrameLabel -> {{{label}, \"y\"}}]"
+      ))
+    };
+    let svg = plot("Style[\"first\\nsecond\", {14, Bold}]");
+    let bold = "font-weight=\"bold\">";
+    assert!(svg.contains(&format!("{bold}first")), "{svg}");
+    assert!(svg.contains(&format!("{bold}second")), "{svg}");
+    let height = |svg: &str| -> f64 {
+      svg
+        .split("height=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap()
+    };
+    let one_line = plot("\"first\"");
+    assert!(height(&svg) > height(&one_line) + 20.0, "{svg}");
+  }
+
   #[test]
   fn density_plot_mesh_is_translucent_black() {
     let svg = export_svg(
@@ -58450,6 +60443,89 @@ mod ranges_and_ticks {
       .unwrap(),
       "9.999999795918367"
     );
+  }
+
+  #[test]
+  fn show_keeps_the_settled_all_range_of_a_list_plot() {
+    // A list plot settles `PlotRange -> All` into its data's range, so a
+    // marker line reaching past it is clipped, not zooming the picture out.
+    for head in ["ListPlot", "ListLinePlot"] {
+      assert_eq!(
+        interpret(&format!(
+          "lp = {head}[{{{{1, 1}}, {{2, 2}}, {{3, 3}}}}, PlotRange -> All]; \
+           PlotRange[Show[lp, Graphics[Line[{{{{2, -5}}, {{2, 5}}}}]]]] == \
+           PlotRange[Show[lp, Graphics[Point[{{2, 2}}]]]]"
+        ))
+        .unwrap(),
+        "True",
+        "{head}"
+      );
+    }
+    // A function plot's `All` still spans everything shown.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[Plot[x, {x, 1, 3}, PlotRange -> All], \
+         Graphics[Line[{{2, -5}, {2, 5}}]]]][[2]]"
+      )
+      .unwrap(),
+      "{-5., 5.}"
+    );
+    // So does an `All` given to `Show` itself.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotRange -> All], \
+         Graphics[Line[{{2, -5}, {2, 5}}]], PlotRange -> All]][[2]]"
+      )
+      .unwrap(),
+      "{-5., 5.}"
+    );
+    // Shown with another list plot, the first one's range is kept as well.
+    assert_eq!(
+      interpret(
+        "PlotRange[Show[ListPlot[{{1, 1}, {2, 2}, {3, 3}}, PlotRange -> All], \
+         ListPlot[{{2, -5}, {4, 5}}]]][[2]]"
+      )
+      .unwrap(),
+      "{0., 3.}"
+    );
+  }
+
+  #[test]
+  fn show_draws_glyph_plot_markers_as_their_shapes() {
+    // `●` keeps the radius the plot draws it with (3.17 pt at size 10)
+    // instead of turning into text in an arbitrary font.
+    let svg = export_svg(
+      "Show[ListPlot[{1, 2, 3}, PlotMarkers -> \"●\"], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert!(!svg.contains('●'), "{svg}");
+    assert_eq!(svg.matches("rx=\"3.17\" ry=\"3.17\"").count(), 3, "{svg}");
+    // A hollow glyph is its stroked outline.
+    let svg = export_svg(
+      "Show[ListPlot[{1, 2, 3}, PlotMarkers -> \"□\"], \
+       Graphics[Line[{{0, 0}, {1, 1}}]]]",
+    );
+    assert!(!svg.contains('□'), "{svg}");
+    assert_eq!(svg.matches("stroke-width=\"0.56\"").count(), 3, "{svg}");
+  }
+
+  #[test]
+  fn letterboxed_plot_label_stays_above_the_drawing_area() {
+    // The 1/GoldenRatio area is centered in the 400 pt tall picture; the
+    // label moves down with it rather than staying at the top edge.
+    let svg = export_svg(
+      "Graphics[Line[{{0, 0}, {1, 1}}], PlotLabel -> \"T\", Axes -> True, \
+       AspectRatio -> 1/GoldenRatio, ImageSize -> {450, 400}]",
+    );
+    let end = svg.find(">T</text>").expect("title");
+    let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+    let y: f64 = tag
+      .split(" y=\"")
+      .nth(1)
+      .and_then(|s| s.split('"').next())
+      .and_then(|s| s.parse().ok())
+      .unwrap();
+    assert!((60.0..75.0).contains(&y), "title baseline at {y}: {svg}");
   }
 
   #[test]
@@ -60617,6 +62693,28 @@ mod labeled_text_and_pane_wrapping {
     assert!(svg.starts_with("<svg width=\"100\" height=\"50\""), "{svg}");
   }
 
+  /// Regression: under `ImageSize -> {Automatic, h}` the margins of an
+  /// `ImagePadding` (or of a frame) came out of a width worked out from the
+  /// whole height, leaving a sliver of a drawing area. The drawing area is
+  /// what the margins leave of h, its width follows the data's shape, and
+  /// the margins add to that width.
+  #[test]
+  fn image_size_automatic_width_adds_the_padding() {
+    // The drawing is 350 tall and 8/3 as tall as wide: 131.25 wide, plus
+    // 70 + 150 points of padding.
+    let svg = export_svg(
+      "Graphics[Rectangle[{0, 0}, {1, 3}], PlotRange -> {{-1, 2}, {0, 8}}, \
+       Frame -> {False, True, False, True}, \
+       ImagePadding -> {{70, 150}, {15, 15}}, ImageSize -> {Automatic, 380}]",
+    );
+    assert!(svg.contains("height=\"380\""), "{svg}");
+    let width = svg_width(&svg);
+    assert!((width - 351.25).abs() < 1.0, "{width}: {svg}");
+    // The frame's right edge is the drawing area's: 131.25 points right of
+    // its left edge (both drawn inside the padding's offset).
+    assert!(svg.contains("<line x1=\"131.25\" y1=\"0.00\""), "{svg}");
+  }
+
   /// Regression: `Re`/`Im` of a non-real `Root[…]` (what `ReIm` gives for
   /// the complex roots `Solve` returns) were not taken as numbers, so a
   /// `Point` at such a root was rejected as a bad coordinate.
@@ -60845,16 +62943,10 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
   assert_eq!(automatic, sphere);
   assert_ne!(automatic, outline);
 
-  // An automatic range is framed by its sphere as well.
-  let auto_range = "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
-     Boxed -> False, ImageSize -> {595, 375}";
-  assert_eq!(
-    export_svg(&format!("{auto_range}]")),
-    export_svg(&format!("{auto_range}, SphericalRegion -> True]"))
-  );
-
-  // A visible box or a bare width keep the outline fit.
+  // A visible box, an automatic range or a bare width keep the outline fit.
   for code in [
+    "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, Boxed -> False, \
+     ImageSize -> {595, 375}",
     "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, \
      PlotRange -> {{-6.5, 6.5}, {-4, 4}, {-4, 4}}, ImageSize -> {595, 375}",
     "Graphics3D[{Cylinder[{{-6, 0, 0}, {6, 0, 0}}, 0.9]}, Boxed -> False, \
@@ -60864,6 +62956,59 @@ fn unboxed_pinned_3d_range_at_fixed_size_is_sphere_framed() {
     let explicit_off =
       export_svg(&format!("{code}, SphericalRegion -> False]"));
     assert_eq!(default, explicit_off, "{code}");
+  }
+}
+
+/// Regression: a plain unboxed `Graphics3D` without a `PlotRange` or a
+/// `ViewPoint` at `ImageSize -> {w, h}` fits its box outline to the frame,
+/// also when drawn as a `Manipulate` frame (a tall building of stacked
+/// cuboids fills nearly the whole height of a 300 × 400 Demonstration
+/// snapshot of a `Manipulate`). Woxi framed it by the box's sphere, drawing
+/// it at only about 0.7× that size.
+#[test]
+fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
+  let scene = |extra: &str| {
+    export_svg(&format!(
+      "Graphics3D[{{{{Opacity[0.2], Cuboid[{{-2, 2, 0}}, {{2, -2, 10}}]}}, \
+       {{Orange, Cuboid[{{0, 0, 0}}, {{1, -1, 1}}]}}}}, \
+       Boxed -> False, ImageSize -> {{300, 400}}{extra}]"
+    ))
+  };
+  let automatic = scene("");
+  assert_eq!(automatic, scene(", SphericalRegion -> False"));
+  assert_ne!(automatic, scene(", SphericalRegion -> True"));
+  // The building spans most of the picture's height.
+  let ys: Vec<f64> = automatic
+    .split("points=\"")
+    .skip(1)
+    .flat_map(|rest| {
+      let pts = &rest[..rest.find('"').unwrap()];
+      pts
+        .split_whitespace()
+        .filter_map(|p| p.split(',').nth(1)?.parse::<f64>().ok())
+        .collect::<Vec<_>>()
+    })
+    .collect();
+  let span = ys.iter().copied().fold(f64::MIN, f64::max)
+    - ys.iter().copied().fold(f64::MAX, f64::min);
+  assert!(
+    span > 350.0,
+    "expected the scene to fill the height, got {span}"
+  );
+
+  // A `Manipulate` frame draws the same picture.
+  assert_eq!(woxi::with_manipulate_frame(|| scene("")), automatic);
+  // An explicit `ViewPoint` or `PlotRange` there still keeps one scale by
+  // framing the scene by its sphere.
+  for extra in [
+    ", ViewPoint -> {1.3, -2.4, 2}",
+    ", PlotRange -> {{-2, 2}, {-2, 2}, {0, 10}}",
+  ] {
+    assert_eq!(
+      woxi::with_manipulate_frame(|| scene(extra)),
+      scene(&format!("{extra}, SphericalRegion -> True")),
+      "{extra}"
+    );
   }
 }
 
@@ -61064,6 +63209,430 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+/// The `width`/`height` the root `<svg>` tag of an export states, whichever
+/// quote style it uses.
+fn root_svg_size(svg: &str) -> (f64, f64) {
+  let start = svg.find("<svg").unwrap();
+  let tag = &svg[start..start + svg[start..].find('>').unwrap()];
+  let attr = |name: &str| -> f64 {
+    ['"', '\'']
+      .iter()
+      .find_map(|q| {
+        let key = format!(" {name}={q}");
+        let rest = &tag[tag.find(&key)? + key.len()..];
+        rest[..rest.find(*q)?].parse().ok()
+      })
+      .unwrap_or_else(|| panic!("no {name} in {tag}"))
+  };
+  (attr("width"), attr("height"))
+}
+
+/// `Magnify[img, s]` shows a raster image scaled by `s`. The image exports
+/// with an XML declaration and single-quoted size attributes, which a
+/// resize of the finished document used to skip, leaving the image at its
+/// own size.
+#[test]
+fn magnify_scales_a_raster_image() {
+  let img = "Image[ConstantArray[0.5, {30, 40}]]";
+  let export =
+    |e: &str| interpret(&format!("ExportString[{e}, \"SVG\"]")).unwrap();
+  assert_eq!(root_svg_size(&export(img)), (40.0, 30.0));
+  let svg = export(&format!("Magnify[{img}, 2]"));
+  assert_eq!(root_svg_size(&svg), (80.0, 60.0), "{svg}");
+}
+
+/// A `Grid` cell holding `Magnify[…]` is drawn scaled — an image or plain
+/// text — instead of printing the `Magnify[…]` call as source text.
+#[test]
+fn grid_cell_magnify_is_drawn_not_printed() {
+  let img = "Image[ConstantArray[0.5, {30, 40}]]";
+  let svg = export_svg(&format!("Grid[{{{{Magnify[{img}, 1.5], 1}}}}]"));
+  assert!(!svg.contains("Magnify"), "{svg}");
+  assert!(
+    svg.contains("width=\"60\" height=\"45\"")
+      || svg.contains("width=\"60.0\" height=\"45.0\""),
+    "{svg}"
+  );
+  let text = export_svg("Grid[{{Magnify[x, 2], 1}}]");
+  assert!(!text.contains("Magnify"), "{text}");
+}
+
+/// An image spanning a `Grid` row (`SpanFromLeft`) is drawn at its own size
+/// and the row grows to hold it. It used to be stretched across the columns
+/// in a text-height row, overlapping the grid's top edge.
+#[test]
+fn grid_spanning_image_sizes_its_row() {
+  let img = "Image[ConstantArray[0.5, {30, 40}]]";
+  let svg = export_svg(&format!("Grid[{{{{{img}, SpanFromLeft}}, {{1, 2}}}}]"));
+  assert!(svg.contains("width=\"40.0\" height=\"30.0\""), "{svg}");
+  let (_, height) = root_svg_size(&svg);
+  assert!(height > 30.0 + 14.0, "both rows fit: {svg}");
+  assert!(!svg.contains("y=\"-"), "nothing above the grid: {svg}");
+}
+
+mod graphics_multi_line_axes_label {
+  use super::*;
+
+  /// The `x` attribute of the first `<text>` whose content holds `needle`.
+  fn label_text_x(svg: &str, needle: &str) -> f64 {
+    let at = svg.find(needle).expect("label drawn");
+    let start = svg[..at].rfind("<text ").expect("label <text>");
+    let tag = &svg[start..];
+    let x = tag.find(" x=\"").unwrap() + 4;
+    let len = tag[x..].find('"').unwrap();
+    tag[x..x + len].parse().unwrap()
+  }
+
+  fn graphics_with_labels(x_label: &str, y_label: &str) -> String {
+    export_svg(&format!(
+      "Graphics[{{Rectangle[{{0, 0}}, {{30, 30}}]}}, Axes -> True, \
+       ImageSize -> {{300, 250}}, AxesLabel -> {{\"{x_label}\", \"{y_label}\"}}]"
+    ))
+  }
+
+  #[test]
+  fn lines_of_a_string_label_are_stacked() {
+    // A newline in an `AxesLabel` string starts a new line of the label
+    // instead of collapsing into a space.
+    let svg = graphics_with_labels("wwwwwwww\\nof xx", "kkkkkkkk\\nof yy");
+    for line in ["wwwwwwww", "of xx", "kkkkkkkk", "of yy"] {
+      assert!(
+        svg.contains(&format!("\">{line}</tspan>")),
+        "line {line:?} should be its own <tspan>: {svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn label_room_is_the_widest_line() {
+    // The room reserved right of the x axis is the width of the label's
+    // widest line, not of all its lines joined.
+    let two_lines = graphics_with_labels("wwwwwwww\\nof xx", "y");
+    let first_line = graphics_with_labels("wwwwwwww", "y");
+    let joined = graphics_with_labels("wwwwwwww of xx", "y");
+    let x2 = label_text_x(&two_lines, "wwwwwwww");
+    let x1 = label_text_x(&first_line, "wwwwwwww");
+    let xj = label_text_x(&joined, "wwwwwwww");
+    assert!((x2 - x1).abs() < 0.01, "{x2} vs {x1}");
+    assert!(x2 > xj + 1.0, "{x2} vs {xj}");
+  }
+}
+
+mod magnify_display {
+  use woxi::interpret_with_stdout;
+
+  /// The `width` attribute of the root element, quoted either way (an
+  /// image is shown as an `<img width='…'>` element).
+  fn svg_width(svg: &str) -> f64 {
+    let at = svg.find("width=").unwrap() + 6;
+    let quote = svg[at..].chars().next().unwrap();
+    let rest = &svg[at + 1..];
+    rest[..rest.find(quote).unwrap()].parse().unwrap()
+  }
+
+  /// In a visual host `Magnify[image, s]` shows the image `s` times its
+  /// size. It used to produce no picture at all, so a Manipulate body
+  /// switching to a magnified photo went blank in Woxi Studio.
+  #[test]
+  fn a_magnified_image_is_drawn_scaled() {
+    let r =
+      interpret_with_stdout("Magnify[Image[{{0, 1}, {1, 0}}], 3]").unwrap();
+    let svg = r.graphics.expect("Magnify[image, s] should be drawn");
+    assert!(svg.contains("<image"), "{svg}");
+    assert_eq!(svg_width(&svg), 6.0, "{svg}");
+  }
+
+  #[test]
+  fn a_magnified_graphic_is_drawn_scaled() {
+    let r =
+      interpret_with_stdout("Magnify[Graphics[Circle[], ImageSize -> 100], 2]")
+        .unwrap();
+    let svg = r.graphics.expect("Magnify[graphics, s] should be drawn");
+    assert_eq!(svg_width(&svg), 200.0, "{svg}");
+  }
+
+  /// `Magnify[g]` shows `g` at its own size.
+  #[test]
+  fn magnify_without_a_factor_keeps_the_size() {
+    let r =
+      interpret_with_stdout("Magnify[Graphics[Circle[], ImageSize -> 80]]")
+        .unwrap();
+    let svg = r.graphics.expect("Magnify[graphics] should be drawn");
+    assert_eq!(svg_width(&svg), 80.0, "{svg}");
+  }
+
+  /// A magnified picture in a fixed-size `Pane` fills the pane's box,
+  /// centered at its magnified size.
+  #[test]
+  fn a_magnified_image_in_a_pane_is_centered_at_its_scaled_size() {
+    let r = interpret_with_stdout(
+      "Pane[Magnify[Image[{{0, 1}, {1, 0}}], 3], ImageSize -> {40, 40}, \
+       Alignment -> Center]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the pane should be drawn");
+    assert_eq!(svg_width(&svg), 40.0, "{svg}");
+    assert!(svg.contains("translate(17.0 17.0)"), "{svg}");
+    assert!(svg.contains("<image"), "{svg}");
+  }
+
+  /// The CLI keeps the symbolic echo, matching wolframscript.
+  #[test]
+  fn magnify_stays_symbolic_in_cli() {
+    assert_eq!(
+      woxi::interpret("Magnify[Graphics[Circle[]], 2]").unwrap(),
+      "Magnify[-Graphics-, 2]"
+    );
+  }
+}
+
+/// The legacy `PlotLegends`` package's `ShowLegend`: a boxed legend laid
+/// out in a frame where the graphic's longer side runs from -1 to 1.
+mod plot_legends_show_legend {
+  use super::*;
+
+  const LINE_ITEMS: &str = "{{Graphics[{Blue, Line[{{0, 0}, {1, 0}}]}], \
+     \"first\"}, {Graphics[{Red, Line[{{0, 0}, {1, 0}}]}], \"second\"}}";
+
+  fn svg_size(svg: &str) -> (String, String) {
+    let attr = |name: &str| {
+      let start = svg.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      svg[start..start + svg[start..].find('"').unwrap()].to_string()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  // Until the package is loaded, `ShowLegend` has no definition.
+  #[test]
+  fn unevaluated_before_loading() {
+    clear_state();
+    assert_eq!(
+      interpret("Head[PlotLegends`ShowLegend[Graphics[Circle[]], {{}}]]")
+        .unwrap(),
+      "PlotLegends`ShowLegend"
+    );
+  }
+
+  // A legend inside the graphic leaves the picture at the graphic's own
+  // size and draws each label beside its icon.
+  #[test]
+  fn legend_inside_the_graphic() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(&format!(
+      "PlotLegends`ShowLegend[Graphics[Circle[], ImageSize -> {{200, 200}}], \
+       {{{LINE_ITEMS}, PlotLegends`LegendPosition -> {{-0.5, -0.5}}, \
+       PlotLegends`LegendSize -> {{0.6, 0.4}}}}]"
+    ));
+    assert_eq!(svg_size(&svg), ("200".to_string(), "200".to_string()));
+    assert!(svg.contains("first") && svg.contains("second"), "{svg}");
+  }
+
+  // A legend past the graphic's top edge (`LegendPosition -> {-1, 1}` puts
+  // its lower-left corner on that edge) grows the picture upward, while
+  // the graphic keeps its width; `LegendShadow -> None` drops the shadow.
+  #[test]
+  fn legend_beyond_the_graphic_grows_the_picture() {
+    clear_state();
+    interpret("Needs[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(&format!(
+      "PlotLegends`ShowLegend[Graphics[Circle[], ImageSize -> {{200, 200}}], \
+       {{{LINE_ITEMS}, PlotLegends`LegendPosition -> {{-1, 1}}, \
+       PlotLegends`LegendSize -> {{1, 0.5}}, \
+       PlotLegends`LegendShadow -> None}}]"
+    ));
+    assert_eq!(svg_size(&svg), ("200".to_string(), "250".to_string()));
+  }
+
+  // The bare name works once the package is loaded on an earlier line.
+  #[test]
+  fn bare_name_after_loading() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    assert_eq!(
+      interpret(&format!(
+        "Head[ShowLegend[Graphics[Circle[]], {{{LINE_ITEMS}}}]]"
+      ))
+      .unwrap(),
+      "Graphics"
+    );
+  }
+
+  // The color-gradient form `{f, n, minLabel, maxLabel}` draws `n`
+  // swatches, labeled only at the ends.
+  #[test]
+  fn color_gradient_legend() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(
+      "PlotLegends`ShowLegend[Graphics[Circle[]], \
+       {GrayLevel, 3, \"low\", \"high\", \
+       PlotLegends`LegendPosition -> {-0.5, -0.5}}]",
+    );
+    assert!(svg.contains("low") && svg.contains("high"), "{svg}");
+    assert!(!svg.contains("ShowLegend"), "{svg}");
+  }
+}
+
+mod grid_spacer_width {
+  use super::*;
+
+  fn grid_svg_width(code: &str) -> u32 {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let rest = svg.split_once("width=\"").expect("svg width").1;
+    rest.split('"').next().unwrap().parse().unwrap()
+  }
+
+  /// Regression: a `Spacer[w]` inside a grid cell was measured as the
+  /// text `Spacer[w]`, so columns of `Row[{…, Spacer[3], …}]` cells came
+  /// out about 90 points too wide. It adds exactly `w` points.
+  #[test]
+  fn spacer_item_adds_its_points() {
+    let base = grid_svg_width(r#"Grid[{{"El"}}]"#);
+    for w in [3, 17, 40] {
+      assert_eq!(
+        grid_svg_width(&format!(r#"Grid[{{{{Row[{{Spacer[{w}], "El"}}]}}}}]"#)),
+        base + w
+      );
+    }
+    let empty = grid_svg_width(r#"Grid[{{""}}]"#);
+    assert_eq!(grid_svg_width("Grid[{{Spacer[{20, 5}]}}]"), empty + 20);
+  }
+
+  /// Regression: a `Spacer[w]` row separator counted `w` characters
+  /// instead of `w` points.
+  #[test]
+  fn spacer_separator_adds_its_points() {
+    let base = grid_svg_width(r#"Grid[{{Row[{"El", "El"}]}}]"#);
+    assert_eq!(
+      grid_svg_width(r#"Grid[{{Row[{"El", "El"}, Spacer[30]]}}]"#),
+      base + 30
+    );
+    assert_eq!(
+      grid_svg_width(r#"Grid[{{Row[{"El", "El", "El"}, Spacer[5]]}}]"#),
+      grid_svg_width(r#"Grid[{{Row[{"El", "El", "El"}]}}]"#) + 10
+    );
+  }
+}
+
+/// `Inset[Rotate[text, θ], pos]` in a plot's `Epilog` draws the text turned
+/// by θ, not the literal `Rotate[…]` source.
+#[test]
+fn plot_epilog_inset_of_rotated_text() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Epilog -> {Inset[Rotate[Style["lbl", FontSize -> 14, FontColor -> Purple], 90 Degree], {0.5, 0.5}]}]"#,
+  );
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("transform=\"rotate(-90.000"), "{svg}");
+  assert!(svg.contains(">lbl</text>"), "{svg}");
+  assert!(svg.contains("fill=\"rgb(128,0,128)\""), "{svg}");
+}
+
+/// A rotated non-text inset (a picture) is turned about its anchor.
+#[test]
+fn plot_epilog_inset_of_rotated_graphic() {
+  let svg = export_svg(
+    "Plot[x, {x, 0, 1}, Epilog -> {Inset[Rotate[Graphics[Disk[]], Pi/4], {0.5, 0.5}]}]",
+  );
+  assert!(!svg.contains("Rotate"), "{svg}");
+  assert!(svg.contains("<g transform=\"rotate(-45.000"), "{svg}");
+}
+
+/// A `ScientificForm` (or `NumberForm`) in a frame label sets on one line,
+/// `mantissa×10ⁿ`, not as the two-line `ToString` layout.
+#[test]
+fn frame_label_scientific_form_is_one_line() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {"x", Row[{"I (", ScientificForm[0.00149234, 3], " )"}]}]"#,
+  );
+  assert!(svg.contains(">I (1.49×10⁻³ )</text>"), "{svg}");
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {NumberForm[1.5*^-7, 3], "y"}]"#,
+  );
+  assert!(svg.contains(">1.5×10⁻⁷</text>"), "{svg}");
+}
+
+/// Lettered subscripts inside an arithmetic frame label are lowered with a
+/// `<tspan>`, as a bare `Subscript` label's are (the label is set in
+/// `TraditionalForm`, so its letters are italic).
+#[test]
+fn frame_label_arithmetic_with_letter_subscripts() {
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {(\[Omega] - Subscript[\[Omega], \[Sigma]])/Subscript[\[Gamma], \[Sigma]], "y"}]"#,
+  );
+  let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
+  let sub = format!(
+    "<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
+    it("σ")
+  );
+  assert!(
+    svg.contains(&format!("({}-{}{sub})/{}{sub}", it("ω"), it("ω"), it("γ"))),
+    "{svg}"
+  );
+}
+
+/// `Labeled[v, Style[label, size], "RadialOutside"]` puts each label just
+/// outside its slice at the label's own font size.
+#[test]
+fn pie_chart_labeled_radial_outside() {
+  let svg = export_svg(
+    r#"PieChart[{Labeled[1, Style["a", FontSize -> 14], "RadialOutside"], Labeled[2, "b", "RadialOutside"]}]"#,
+  );
+  let label_pos = |text: &str| -> (f64, f64) {
+    let end = svg.find(&format!(">{text}</text>")).unwrap();
+    let start = svg[..end].rfind("<text ").unwrap();
+    let tag = &svg[start..end];
+    let attr = |name: &str| -> f64 {
+      let i = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[i..].split('"').next().unwrap().parse().unwrap()
+    };
+    (attr("x"), attr("y"))
+  };
+  let path = svg.split("<path d=\"M").nth(1).unwrap();
+  let center: Vec<f64> = path
+    .split(' ')
+    .next()
+    .unwrap()
+    .split(',')
+    .map(|v| v.parse().unwrap())
+    .collect();
+  let radius: f64 = path
+    .split(" A")
+    .nth(1)
+    .unwrap()
+    .split(',')
+    .next()
+    .unwrap()
+    .parse()
+    .unwrap();
+  for text in ["a", "b"] {
+    let (x, y) = label_pos(text);
+    let dist = (x - center[0]).hypot(y - center[1]);
+    assert!(dist > radius, "{text}: {dist} <= {radius}: {svg}");
+  }
+  let a_start = svg.find(">a</text>").unwrap();
+  let a_tag = &svg[svg[..a_start].rfind("<text ").unwrap()..a_start];
+  assert!(a_tag.contains("font-size=\"14\""), "{a_tag}");
+}
+
+/// When `ChartStyle` is given twice, the first one is in effect.
+#[test]
+fn pie_chart_duplicate_option_first_wins() {
+  let first = export_svg(r#"PieChart[{1, 2}, ChartStyle -> {Red, Blue}]"#);
+  let both = export_svg(
+    r#"PieChart[{1, 2}, ChartStyle -> {Red, Blue}, ChartStyle -> {Green, Yellow}]"#,
+  );
+  assert_eq!(first, both);
+}
+
+/// An explicit `ImagePadding` leaves exactly that margin around the pie.
+#[test]
+fn pie_chart_image_padding_sets_radius() {
+  let svg =
+    export_svg("PieChart[{1, 2}, ImageSize -> 130, ImagePadding -> 20]");
+  assert!(svg.contains("A45.00,45.00"), "{svg}");
 }
 
 /// A stacked epilog `Text` label whose lines carry their own sizes
