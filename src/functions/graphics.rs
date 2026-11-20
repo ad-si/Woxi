@@ -14125,10 +14125,43 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   let runs = with_marked_subscripts(|| manipulate_label_runs(content, false));
   let styled =
     |r: &LabelRun| r.italic || r.bold || r.color.is_some() || r.size.is_some();
-  if flatten_label_runs(&runs) != text || !runs.iter().any(styled) {
+  if !runs.iter().any(styled) {
     return Vec::new();
   }
-  label_runs_ranges(&runs)
+  // Line the runs up with the text. A `Spacer[n]` is a single blank run
+  // but `n` blanks of the text (see `spacer_gap_text`), so a blank run
+  // stretches over the whole gap; any other difference means the runs do
+  // not spell the text, and it stays unstyled.
+  let chars: Vec<char> = text.chars().collect();
+  let mut ranges = Vec::new();
+  let mut pos = 0;
+  for r in &runs {
+    let run: Vec<char> = r.text.chars().collect();
+    let mut end = pos + run.len();
+    if end > chars.len() || chars[pos..end] != run[..] {
+      return Vec::new();
+    }
+    if !run.is_empty() && run.iter().all(|&c| c == ' ') {
+      while end < chars.len() && chars[end] == ' ' {
+        end += 1;
+      }
+    }
+    if styled(r) && end > pos {
+      ranges.push(StyledRange {
+        start: pos,
+        end,
+        italic: r.italic,
+        bold: r.bold,
+        color: r.color,
+        size: r.size,
+      });
+    }
+    pos = end;
+  }
+  if pos != chars.len() {
+    return Vec::new();
+  }
+  ranges
 }
 
 /// The runs of a `Text` label as a graphic's `FormatType -> TraditionalForm`
@@ -18255,6 +18288,22 @@ pub(crate) fn is_monospace_font_family(family: &str) -> bool {
 /// Average character advance of the proportional (sans-serif) text face, as
 /// a fraction of the font size; used to size plain `Text[…]` items.
 pub(crate) const SANS_ADVANCE: f64 = 0.55;
+
+/// How wide the content of a plain-text `Text[…]` display sets at `size`
+/// points in the proportional text face: a one-line string glyph by glyph
+/// (the metrics a `Pane` breaks such text into lines by), anything else at
+/// the face's average advance.
+fn text_display_width(content: &Expr, size: f64) -> f64 {
+  match content {
+    Expr::String(s) if !s.contains('\n') => {
+      s.chars()
+        .map(crate::functions::plot_padding::char_width_em)
+        .sum::<f64>()
+        * size
+    }
+    _ => estimate_display_width(content) * SANS_ADVANCE * size,
+  }
+}
 
 /// The `FontFamily` directive of the proportional text face `Text[…]` sets
 /// its content in outside a `Graphics`.
@@ -30019,6 +30068,56 @@ fn is_plain_text_item(item: &Expr) -> bool {
 }
 
 thread_local! {
+  /// Set while the content of a `Text[…]` display is laid out: its text is
+  /// set in the proportional text face, so a grid inside measures its text
+  /// cells glyph by glyph rather than at the monospace advance.
+  static TEXT_DISPLAY_GRID: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` (which lays out the content of a `Text[…]` display) with the
+/// grids inside it sizing their text cells in the proportional text face.
+pub fn with_text_display_grids<T>(f: impl FnOnce() -> T) -> T {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      TEXT_DISPLAY_GRID.with(|t| t.set(self.0));
+    }
+  }
+  let _restore = Restore(TEXT_DISPLAY_GRID.with(|t| t.replace(true)));
+  f()
+}
+
+/// How wide a grid cell of plain text (a string or a number, possibly under
+/// `Style`/`NumberForm`) sets at `font_size` in the proportional text face of
+/// a `Text[…]` display. `None` outside such a display, or for a cell that is
+/// no single line of plain text.
+fn text_display_cell_width(cell: &Expr, font_size: f64) -> Option<f64> {
+  if !TEXT_DISPLAY_GRID.with(std::cell::Cell::get) {
+    return None;
+  }
+  fn plain(e: &Expr) -> bool {
+    match e {
+      Expr::String(s) => !s.contains('\n') && !s.contains("\\!"),
+      Expr::Integer(_) | Expr::Real(_) => true,
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Style" | "NumberForm")
+          && !args.is_empty() =>
+      {
+        plain(&args[0])
+      }
+      _ => false,
+    }
+  }
+  if !plain(cell) {
+    return None;
+  }
+  let markup = expr_to_svg_markup(cell);
+  (!markup.contains('<') && !markup.contains('\n'))
+    .then(|| crate::functions::plot_padding::text_width(&markup, font_size))
+}
+
+thread_local! {
   /// Set by a caller whose display construct reports its cells' formatting
   /// messages even though it is laid out as a grid (`TableForm`).
   static LOUD_GRID_CELLS: std::cell::Cell<bool> =
@@ -30927,7 +31026,9 @@ fn grid_svg_styled_internal_reporting(
         } else {
           char_width
         };
-        estimate_display_width(cell) * advance * cell_text_scale(cell)
+        text_display_cell_width(cell, font_size)
+          .unwrap_or_else(|| estimate_display_width(cell) * advance)
+          * cell_text_scale(cell)
           + col_pad(j)
       };
       let cols = span_width(row, j);
@@ -33697,6 +33798,9 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
     "Graphics"
       | "Graphics3D"
       | "Image"
+      // `Show[g, …]` is the picture it combines: a layout cell made of one
+      // is resized like the bare plot would be.
+      | "Show"
       // 2-D / 3-D plots
       | "Plot"
       | "Plot3D"
@@ -33871,11 +33975,11 @@ fn with_default_image_size_shaped(
 /// `with_default_image_size` for a `GraphicsRow`/`GraphicsColumn`/
 /// `GraphicsGrid` cell. These layouts size every cell to the shared column
 /// width, so a numeric `ImageSize` on the cell itself
-/// (`Graphics[…, ImageSize -> {94, 64}]`, `Plot[…, ImageSize -> {160}]`)
-/// only contributes its aspect
-/// ratio — keeping the absolute size would leave that cell a different
-/// scale than its neighbors (a padded grid whose first cell is a big
-/// picture and whose other cells are tiny). `golden_cells` is as in
+/// (`Graphics[…, ImageSize -> {94, 64}]`, `Plot[…, ImageSize -> 200]`)
+/// only contributes its aspect ratio — keeping the absolute size would
+/// leave that cell a different scale than its neighbors (a padded grid
+/// whose first cell is a big picture and whose other cells are tiny, or a
+/// sized plot over a sized legend `Graphics`). `golden_cells` is as in
 /// `with_default_image_size_shaped`.
 fn with_cell_image_size_shaped(
   expr: &Expr,
@@ -37179,20 +37283,23 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       Cell::Svg { width, .. } => *width,
       Cell::Text(e, plain) => {
         let (style, fs) = text_style(e, font_size);
-        // A plain `Text[…]` item, or one styled in a proportional face,
-        // sets narrower glyphs than the monospace default.
-        let advance = match style.font_family.as_deref() {
-          Some(ff) if !is_monospace_font_family(ff) => {
-            SANS_ADVANCE / MONO_ADVANCE
-          }
-          None if *plain => SANS_ADVANCE / MONO_ADVANCE,
-          _ => 1.0,
+        let width = if *plain && style.font_family.is_none() {
+          text_display_width(style.content, fs)
+        } else {
+          // A item styled in a proportional face sets narrower glyphs than
+          // the monospace default.
+          let advance = match style.font_family.as_deref() {
+            Some(ff) if !is_monospace_font_family(ff) => {
+              SANS_ADVANCE / MONO_ADVANCE
+            }
+            _ => 1.0,
+          };
+          estimate_display_width(style.content)
+            * char_width
+            * advance
+            * (fs / font_size)
         };
-        estimate_display_width(style.content)
-          * char_width
-          * advance
-          * (fs / font_size)
-          + pad_x
+        width + pad_x
       }
     })
     .fold(0.0_f64, f64::max);
@@ -37308,20 +37415,24 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         // `Style[…, FontFamily -> "Times"]` picks the face; without one the
         // column keeps its monospace default, except that a plain
         // `Text[…]` item is set in the proportional text face.
-        let (ff, advance) = match style.font_family.as_deref() {
+        let (ff, advance, proportional) = match style.font_family.as_deref() {
           Some(ff) if !is_monospace_font_family(ff) => {
-            (ff, SANS_ADVANCE / MONO_ADVANCE)
+            (ff, SANS_ADVANCE / MONO_ADVANCE, false)
           }
-          Some(ff) => (ff, 1.0),
-          None if *plain => ("sans-serif", SANS_ADVANCE / MONO_ADVANCE),
-          None => ("monospace", 1.0),
+          Some(ff) => (ff, 1.0, false),
+          None if *plain => ("sans-serif", SANS_ADVANCE / MONO_ADVANCE, true),
+          None => ("monospace", 1.0, false),
         };
         // `Style[…, Background -> c]` paints a panel just behind the text.
         if let Some(bg) = style.background.filter(|_| !style.hidden) {
-          let tw = estimate_display_width(style.content)
-            * char_width
-            * advance
-            * (fs / font_size);
+          let tw = if proportional {
+            text_display_width(style.content, fs)
+          } else {
+            estimate_display_width(style.content)
+              * char_width
+              * advance
+              * (fs / font_size)
+          };
           let left = match alignment {
             "middle" => text_x - tw / 2.0,
             "end" => text_x - tw,

@@ -1024,3 +1024,97 @@ mod row_part_font_family {
     );
   }
 }
+
+mod text_display_face {
+  use super::*;
+
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// A `Text[…]` title in a fixed-size `Pane` is set in the proportional
+  /// text face: a line that would overflow at the monospace advance still
+  /// fits on one line, and it keeps that face.
+  #[test]
+  fn sized_pane_keeps_text_title_on_one_proportional_line() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Pane[Column[{Text[Style[\"   Quarterly sales overview, \
+       revenue by region and product\", 16]], Spacer[10], 1}, \
+       Alignment -> Center], {525, 425}, Alignment -> {Center, Top}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      out.contains(
+        "font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
+         font-size=\"16\""
+      ),
+      "{out}"
+    );
+    assert!(
+      out.contains(
+        ">   Quarterly sales overview, revenue by region and product<"
+      ),
+      "{out}"
+    );
+  }
+
+  /// When a `Text[…]` line in a fixed-size `Pane` does need breaking, the
+  /// lines are measured and drawn in the proportional text face.
+  #[test]
+  fn sized_pane_wraps_text_in_the_proportional_face() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Pane[Text[\"aaa bbb ccc ddd eee fff ggg hhh iii jjj\"], \
+       {150, 100}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(out.contains(">aaa bbb ccc ddd eee fff</text>"), "{out}");
+    assert!(out.contains(">ggg hhh iii jjj</text>"), "{out}");
+    assert!(!out.contains("Hyperlegible Mono"), "{out}");
+  }
+
+  /// A `Column` sizes a plain `Text` string glyph by glyph: narrow letters
+  /// take less room than wide ones.
+  #[test]
+  fn column_measures_text_items_by_glyph() {
+    clear_state();
+    let narrow = interpret(
+      "ExportString[Column[{Text[\"iiiiiiiiiiiiiiiiiiii\"]}], \"SVG\"]",
+    )
+    .unwrap();
+    let wide = interpret(
+      "ExportString[Column[{Text[\"MMMMMMMMMMMMMMMMMMMM\"]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg_width(&narrow) * 2.0 < svg_width(&wide),
+      "{narrow}\n{wide}"
+    );
+  }
+
+  /// `Text@Grid[…]` sets its text cells in the proportional text face, so
+  /// its columns are sized by the glyphs' own widths — narrower than the
+  /// monospace columns of a bare `Grid` — also inside a `Row`.
+  #[test]
+  fn text_grid_columns_use_proportional_widths() {
+    let grid = "Grid[{{\"fit statistic  \", \"value\"}, \
+                {\"alpha\", NumberForm[0.00051234, {10, 4}]}}, \
+                Alignment -> Left, Frame -> True]";
+    clear_state();
+    let plain = interpret(&format!("ExportString[{grid}, \"SVG\"]")).unwrap();
+    let text =
+      interpret(&format!("ExportString[Text[{grid}], \"SVG\"]")).unwrap();
+    let in_row = interpret(&format!(
+      "ExportString[Row[{{Spacer[20], Text[{grid}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    let (plain_w, text_w) = (svg_width(&plain), svg_width(&text));
+    assert!(text_w < plain_w * 0.8, "{plain_w} vs {text_w}");
+    assert_eq!(svg_width(&in_row), text_w + 20.0, "{in_row}");
+    // The value column starts right after the widest label.
+    assert!(text.contains("<text x=\"87.2\""), "{text}");
+  }
+}

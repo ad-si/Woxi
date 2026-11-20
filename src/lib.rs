@@ -3865,7 +3865,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       {
         return graphics_result(svg);
       }
-      match render_grid_if_needed(content) {
+      match functions::graphics::with_text_display_grids(|| {
+        render_grid_if_needed(content)
+      }) {
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }
@@ -4962,13 +4964,17 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     // A picture is drawn from the content set in the text face, so the
     // text of a layout inside (`Text[Row[{"Depth = ", x, " m"}]]`) is
     // proportional too.
-    let in_face = render_inline_display_wrapper(
-      &functions::graphics::in_text_face(&args[0]),
-    );
+    let in_face = functions::graphics::with_text_display_grids(|| {
+      render_inline_display_wrapper(&functions::graphics::in_text_face(
+        &args[0],
+      ))
+    });
     if matches!(in_face, syntax::Expr::Graphics { .. }) {
       return in_face;
     }
-    let inner = render_inline_display_wrapper(&args[0]);
+    let inner = functions::graphics::with_text_display_grids(|| {
+      render_inline_display_wrapper(&args[0])
+    });
     return match inner {
       // A text row (`Text[Style[Row[…], 14]]`) that the inner pass drew as
       // a picture is drawn again with `Text` on each item, so its text is
