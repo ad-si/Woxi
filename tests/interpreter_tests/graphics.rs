@@ -43683,6 +43683,42 @@ mod manipulate {
     );
   }
 
+  /// A visible control that states its own starting value keeps it even
+  /// when a hidden `{{var, init}, ControlType -> None}` spec for the same
+  /// variable follows: Wolfram keeps the first starting value. A sibling
+  /// control whose bound reads that variable also sees the first value.
+  #[test]
+  fn spec_later_hidden_spec_does_not_reset_a_visible_controls_value() {
+    let expr = interpret_to_expr(
+      "Manipulate[{a, b, c}, {{a, -3, \"a\"}, -3, 2, 0.5},        {{b, 1}, 0, Dynamic[5 - a]}, {{c, 2}, None},        {{a, 1.25}, ControlType -> None}, {{c, 7}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let a = spec
+      .controls
+      .iter()
+      .find(|c| c.name() == "a")
+      .expect("a slider");
+    assert!(
+      matches!(a, ManipulateControl::Continuous { initial, .. } if *initial == -3.0),
+      "{a:?}"
+    );
+    assert!(
+      spec.state.iter().all(|(n, _)| n != "a"),
+      "the hidden respec must not shadow the slider: {:?}",
+      spec.state
+    );
+    let b = spec
+      .controls
+      .iter()
+      .find(|c| c.name() == "b")
+      .expect("b slider");
+    assert!(
+      matches!(b, ManipulateControl::Continuous { max, .. } if *max == 8.0),
+      "{b:?}"
+    );
+  }
+
   /// A bare `Checkbox[Dynamic[var], …]` drawn directly by the body — as
   /// opposed to one given as a Manipulate control spec, or as part of a
   /// `Grid`/`Table` of checkboxes passed as a trailing display argument —
