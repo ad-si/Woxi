@@ -40398,12 +40398,35 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           body_locators.iter().find(|(n, _)| *n == name)
           && let Expr::List(items) = &spec
         {
-          let promoted: Vec<Expr> = items
-            .iter()
-            .filter(|it| !is_control_type_marker(it))
-            .cloned()
-            .chain(std::iter::once(id_expr("Locator")))
-            .collect();
+          // A `LocatorPane[Dynamic[var], graphic, {{xmin, ymin}, {xmax,
+          // ymax}}]` in the body confines dragging to the pane's own
+          // range, which overrides the hidden spec's corner bounds (the
+          // spec has no widget, so its bounds never constrain anything).
+          let pane_corners = body_locator_pane_corners(&args[0], &name);
+          let promoted: Vec<Expr> = match pane_corners {
+            Some((lo, hi)) => std::iter::once(items[0].clone())
+              .chain([lo, hi])
+              .chain(
+                items[1..]
+                  .iter()
+                  .filter(|it| {
+                    !is_control_type_marker(it)
+                      && matches!(
+                        it,
+                        Expr::Rule { .. } | Expr::RuleDelayed { .. }
+                      )
+                  })
+                  .cloned(),
+              )
+              .chain(std::iter::once(id_expr("Locator")))
+              .collect(),
+            None => items
+              .iter()
+              .filter(|it| !is_control_type_marker(it))
+              .cloned()
+              .chain(std::iter::once(id_expr("Locator")))
+              .collect(),
+          };
           // Corner bounds may reference other controls (`{-n, -n}` with a
           // slider `n`), so resolve them against the initial control values
           // like every other spec rather than in an empty scope.
@@ -41395,6 +41418,26 @@ fn collect_body_locator_callbacks(
   let mut found = Vec::new();
   walk(expr, &resolve, &mut found);
   found
+}
+
+/// The explicit `{{xmin, ymin}, {xmax, ymax}}` (optionally followed by a
+/// step) range of the body's `LocatorPane[Dynamic[var], graphic, range]`,
+/// as its two corner expressions.
+fn body_locator_pane_corners(body: &Expr, var: &str) -> Option<(Expr, Expr)> {
+  collect_body_locator_pane_vars(body)
+    .into_iter()
+    .find(|(n, _, _)| n == var)
+    .and_then(|(_, range, _)| match &range? {
+      Expr::List(corners)
+        if (2..=3).contains(&corners.len())
+          && corners[..2]
+            .iter()
+            .all(|c| matches!(c, Expr::List(xy) if xy.len() == 2)) =>
+      {
+        Some((corners[0].clone(), corners[1].clone()))
+      }
+      _ => None,
+    })
 }
 
 /// Every `LocatorPane[Dynamic[var], graphic, range…]` drawn directly in a
@@ -53473,6 +53516,39 @@ mod manipulate_dynamic_control_list_tests {
           assert_eq!((*x_max, *y_max), (hi, hi), "range of {name}");
         }
         other => panic!("expected a Slider2D for {name}, got {other:?}"),
+      }
+    }
+  }
+
+  /// A hidden point dragged by a body `LocatorPane[Dynamic[p], g, {{x0, y0},
+  /// {x1, y1}}]` moves within the pane's own range, not the spec's corner
+  /// bounds (positional `None` or `ControlType -> None` alike).
+  #[test]
+  fn body_locator_pane_range_bounds_a_promoted_hidden_point() {
+    for hidden in ["None", "ControlType -> None"] {
+      let s = spec(&format!(
+        "Manipulate[LocatorPane[Dynamic[p], Graphics[Point[p]], \
+         {{{{1/2, -1}}, {{3, 2}}}}], \
+         {{{{p, {{1, 1}}}}, {{0, 0}}, {{4, 4}}, {hidden}}}]"
+      ));
+      match s.controls.iter().find(|c| c.name() == "p") {
+        Some(ManipulateControl::Slider2D {
+          x_min,
+          x_max,
+          y_min,
+          y_max,
+          x_initial,
+          y_initial,
+          ..
+        }) => {
+          assert_eq!(
+            (*x_min, *y_min, *x_max, *y_max),
+            (0.5, -1.0, 3.0, 2.0),
+            "range with {hidden}"
+          );
+          assert_eq!((*x_initial, *y_initial), (1.0, 1.0));
+        }
+        other => panic!("expected a Slider2D, got {other:?}"),
       }
     }
   }
