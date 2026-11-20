@@ -16717,6 +16717,28 @@ mod minimal_polynomial {
     assert_eq!(interpret("MinimalPolynomial[3, x]").unwrap(), "-3 + x");
   }
 
+  // The variable may be any expression, not just a symbol: the minimal
+  // polynomial is evaluated at it, like `MinimalPolynomial[s][x]`.
+  #[test]
+  fn non_symbol_variable_is_substituted() {
+    assert_eq!(interpret("MinimalPolynomial[Sqrt[2], 3]").unwrap(), "7");
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2], 1 + y]").unwrap(),
+      "-2 + (1 + y)^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[GoldenRatio, f[z]]").unwrap(),
+      "-1 - f[z] + f[z]^2"
+    );
+    assert_eq!(
+      interpret(
+        "r = Root[#^3 - #^2 - 1 &, 1]; MinimalPolynomial[r, r] === -1 - r^2 + r^3"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // Sums of radicals over one base live in a single field extension; the
   // pairwise resultant composition used to return a reducible degree-9
   // annihilating polynomial for these instead of the cubic minimal

@@ -8253,6 +8253,16 @@ fn inset_primitives(
       rendered = crate::evaluator::expr_to_svg(call);
       (rendered.starts_with("<svg")).then_some(&rendered)
     }
+    // A `Panel` — e.g. a readout table of computed values a diagram carries
+    // on its canvas — draws as its plate with the content inside, the same
+    // picture it makes on its own, rather than as its source text.
+    call @ Expr::FunctionCall {
+      name,
+      args: call_args,
+    } if name == "Panel" && !call_args.is_empty() => {
+      rendered = crate::evaluator::expr_to_svg(call);
+      (rendered.starts_with("<svg")).then_some(&rendered)
+    }
     _ => None,
   };
   if let Some(svg) = embedded
@@ -19093,6 +19103,94 @@ fn template_box_items(e: &Expr) -> Option<&[Expr]> {
   }
 }
 
+/// The interior dividers a `GridBoxDividers` option rules, as 1-based
+/// divider positions (divider `k` runs before column/row `k`): the
+/// `"ColumnsIndexed"`/`"RowsIndexed"` rules `{k -> True, …}` (a negative
+/// `k` counts from the far edge, `-1` being the last one), or every
+/// interior divider for `"Columns"`/`"Rows" -> {{True}}` or `-> True`.
+fn grid_box_dividers(
+  options: &[Expr],
+  n_cols: usize,
+  n_rows: usize,
+) -> (Vec<usize>, Vec<usize>) {
+  let mut cols = Vec::new();
+  let mut rows = Vec::new();
+  let Some(spec) = options.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "GridBoxDividers") => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  }) else {
+    return (cols, rows);
+  };
+  let Expr::List(rules) = spec else {
+    return (cols, rows);
+  };
+  let is_true = |e: &Expr| matches!(e, Expr::Identifier(t) if t == "True");
+  for rule in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = rule
+    else {
+      continue;
+    };
+    let Expr::String(key) = pattern.as_ref() else {
+      continue;
+    };
+    let (target, count) = match key.as_str() {
+      "Columns" | "ColumnsIndexed" => (&mut cols, n_cols),
+      "Rows" | "RowsIndexed" => (&mut rows, n_rows),
+      _ => continue,
+    };
+    if key.ends_with("Indexed") {
+      let Expr::List(entries) = replacement.as_ref() else {
+        continue;
+      };
+      for entry in entries {
+        let Expr::Rule {
+          pattern: k,
+          replacement: v,
+        } = entry
+        else {
+          continue;
+        };
+        if !is_true(v) {
+          continue;
+        }
+        let k = match k.as_ref() {
+          Expr::Integer(k) => *k,
+          Expr::UnaryOp {
+            op: crate::syntax::UnaryOperator::Minus,
+            operand,
+          } => match operand.as_ref() {
+            Expr::Integer(k) => -k,
+            _ => continue,
+          },
+          _ => continue,
+        };
+        let pos = if k > 0 { k } else { count as i128 + 2 + k };
+        if pos >= 1 {
+          target.push(pos as usize);
+        }
+      }
+    } else {
+      let all = match replacement.as_ref() {
+        Expr::List(outer) => matches!(outer.as_slice(),
+          [Expr::List(inner)] if matches!(inner.as_slice(), [v] if is_true(v))),
+        other => is_true(other),
+      };
+      if all {
+        target.extend(2..=count);
+      }
+    }
+  }
+  (cols, rows)
+}
+
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
@@ -19923,6 +20021,35 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
               x += col_w + gap_x;
             }
             y += row_h + gap_y;
+          }
+          // `GridBoxDividers -> {"ColumnsIndexed" -> {-2 -> True}, …}`
+          // rules a line through the gap at each listed divider.
+          let (col_dividers, row_dividers) =
+            grid_box_dividers(&args[1..], n_cols, row_metrics.len());
+          let stroke = (font_size * 0.05).max(0.6);
+          let mut x = 0.0;
+          for (ci, w) in col_widths.iter().enumerate() {
+            if ci > 0 && col_dividers.contains(&(ci + 1)) {
+              let lx = x - gap_x / 2.0;
+              elements.push_str(&format!(
+                "<line x1=\"{lx:.2}\" y1=\"0\" x2=\"{lx:.2}\" \
+                 y2=\"{total_h:.2}\" stroke=\"currentColor\" \
+                 stroke-width=\"{stroke:.2}\"/>"
+              ));
+            }
+            x += w + gap_x;
+          }
+          let mut y = 0.0;
+          for (ri, (_, h)) in row_metrics.iter().enumerate() {
+            if ri > 0 && row_dividers.contains(&(ri + 1)) {
+              let ly = y - gap_y / 2.0;
+              elements.push_str(&format!(
+                "<line x1=\"0\" y1=\"{ly:.2}\" x2=\"{total_w:.2}\" \
+                 y2=\"{ly:.2}\" stroke=\"currentColor\" \
+                 stroke-width=\"{stroke:.2}\"/>"
+              ));
+            }
+            y += h + gap_y;
           }
           let first_bl = total_h / 2.0 + 0.26 * font_size;
           BoxLayout {
@@ -27588,7 +27715,14 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Mixed case: plot sources + Graphics primitives.
   // Convert plot source series to Line/Point primitives so they can be
   // merged with the other Graphics primitives via graphics_ast.
+  // The leading plot's legend, drawn onto the merged picture afterwards:
+  // the result keeps the first graphic's options, `PlotLegends` included,
+  // so `Show[plot, Graphics[Point[…]]]` still shows the plot's legend.
+  let mut legend_source: Option<crate::syntax::PlotSource> = None;
   if !plot_sources.is_empty() {
+    if first_graphic_is_plot == Some(true) && !is_3d {
+      legend_source = Some(plot_sources[0].clone());
+    }
     // A log axis of the leading plot puts the whole picture in `Log` space:
     // its curves are drawn at `Log` of their values, the other graphics'
     // coordinates are read in that space, and the axis keeps its decade
@@ -27885,11 +28019,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
 
-  let primitives_result = if is_3d {
+  let mut primitives_result = if is_3d {
     crate::functions::plot3d::graphics3d_ast(&graphics_args)
   } else {
     graphics_ast(&graphics_args)
   }?;
+  if let Some(source) = &legend_source
+    && let Expr::Graphics { svg, .. } = &mut primitives_result
+    && let Some(legended) =
+      crate::functions::plot::inject_plot_source_legend(svg, source)
+  {
+    *svg = legended;
+    crate::capture_graphics(svg);
+  }
 
   if rendered_graphics.is_empty() {
     return Ok(primitives_result);
@@ -34263,18 +34405,29 @@ pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
       let shown = evaluate_expr_to_expr(&args[0]).ok()?;
       find_plot_range(&shown)
     });
-  let Some(((x_min, y_min), (x_max, y_max))) = range else {
-    return svg;
+  let area = match range {
+    // A known range spans the whole picture.
+    Some(range) => {
+      let Some(dims) = parse_svg_dimensions(&svg) else {
+        return svg;
+      };
+      let vb: Vec<f64> = dims
+        .view_box
+        .split_whitespace()
+        .filter_map(|v| v.parse().ok())
+        .collect();
+      let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+        return svg;
+      };
+      Some(((vb_x, vb_y, vb_w, vb_h), range))
+    }
+    // Content held behind a variable (`ClickPane[Dynamic[board], …]`) names
+    // no range, but its picture, when drawn with plot-frame markers,
+    // records its drawing area and the coordinates at its edges.
+    None => first_plot_frame_of(&svg),
   };
-  let Some(dims) = parse_svg_dimensions(&svg) else {
-    return svg;
-  };
-  let vb: Vec<f64> = dims
-    .view_box
-    .split_whitespace()
-    .filter_map(|v| v.parse().ok())
-    .collect();
-  let [vb_x, vb_y, vb_w, vb_h] = vb[..] else {
+  let Some(((vb_x, vb_y, vb_w, vb_h), ((x_min, y_min), (x_max, y_max)))) = area
+  else {
     return svg;
   };
   let Some(close) = svg.rfind("</svg>") else {
@@ -34349,6 +34502,29 @@ fn plot_frame_marker(bb: &BBox, left: f64, top: f64, w: f64, h: f64) -> String {
     "<rect id=\"{PLOT_FRAME_ID_PREFIX}{}\" x=\"{left}\" y=\"{top}\" width=\"{w}\" height=\"{h}\" fill=\"#000\" fill-opacity=\"0\"/>\n",
     hex_encode(&range)
   )
+}
+
+/// The first drawing area a plot-frame marker records in `svg` (see
+/// [`plot_frame_marker`]): its rectangle `(x, y, width, height)` in the
+/// picture's coordinates and the graphics coordinates `((xmin, ymin),
+/// (xmax, ymax))` at its edges.
+#[allow(clippy::type_complexity)]
+fn first_plot_frame_of(
+  svg: &str,
+) -> Option<((f64, f64, f64, f64), ((f64, f64), (f64, f64)))> {
+  let start = svg.find(&format!("id=\"{PLOT_FRAME_ID_PREFIX}"))?;
+  let tag_end = start + svg[start..].find("/>")?;
+  let tag = &svg[start..tag_end];
+  let id = tag.strip_prefix("id=\"")?.split('"').next()?;
+  let (x_min, y_min, x_max, y_max) = plot_frame_from_id(id)?;
+  let attr = |name: &str| -> Option<f64> {
+    let key = format!(" {name}=\"");
+    let at = tag.find(&key)? + key.len();
+    tag[at..].split('"').next()?.parse().ok()
+  };
+  let rect = (attr("x")?, attr("y")?, attr("width")?, attr("height")?);
+  (rect.2 > 0.0 && rect.3 > 0.0)
+    .then_some((rect, ((x_min, y_min), (x_max, y_max))))
 }
 
 /// A decoded [`PLOT_FRAME_ID_PREFIX`] id: `(xmin, ymin, xmax, ymax)`.
@@ -35953,11 +36129,63 @@ fn resolve_display_item_content(expr: &Expr) -> Expr {
       // `ClickPane[content, handler]` shows `content`; the handler needs
       // live clicks. `content` is held, so a state variable holding a
       // picture (`ClickPane[Dynamic[board], …]`) still has to be resolved.
+      // A pane laid out in a `Grid`/`Row`/`Column` keeps its click
+      // region: the picture is drawn with plot-frame markers so the
+      // marker can map a click to the pane's coordinates.
       Some(("ClickPane", held)) => {
+        let pane = current.clone();
         let captured = crate::captured_graphics_count();
-        let evaluated = crate::evaluator::evaluate_expr_to_expr(held);
+        let shown = with_plot_frame_markers(|| {
+          let evaluated = crate::evaluator::evaluate_expr_to_expr(held)
+            .unwrap_or_else(|_| held.clone());
+          let shown = resolve_display_item(&evaluated);
+          // A symbolic picture (`Graphics[{}]`, the usual initial value of
+          // the state variable) is drawn here, while markers are on; so is
+          // a picture drawn earlier without them (a state variable that
+          // kept the rendering of an earlier frame), from its symbolic form.
+          let symbolic = match &shown {
+            Expr::Graphics {
+              svg,
+              is_3d: false,
+              structure: Some(symbolic),
+              ..
+            } if !svg.contains(PLOT_FRAME_ID_PREFIX) => symbolic.as_ref(),
+            Expr::FunctionCall { name, .. }
+              if matches!(name.as_str(), "Graphics" | "Show") =>
+            {
+              &shown
+            }
+            _ => return shown,
+          };
+          let svg = crate::evaluator::expr_to_svg(symbolic);
+          if svg.starts_with("<svg") {
+            Expr::Graphics {
+              svg,
+              is_3d: false,
+              source: None,
+              head: None,
+              structure: None,
+            }
+          } else {
+            shown
+          }
+        });
         crate::truncate_captured_graphics(captured);
-        current = evaluated.unwrap_or_else(|_| held.clone());
+        if let Expr::Graphics { svg, .. } = &shown
+          && matches!(&pane, Expr::FunctionCall { args, .. } if args.len() >= 2)
+        {
+          let marked = with_click_pane_marker(svg.clone(), &pane);
+          if marked.len() != svg.len() {
+            return Expr::Graphics {
+              svg: marked,
+              is_3d: false,
+              source: None,
+              head: None,
+              structure: None,
+            };
+          }
+        }
+        current = shown;
       }
       // `Tooltip[expr, hint]` draws as `expr`; the hint shows only on hover.
       Some(("Tooltip", content)) => current = content.clone(),
@@ -38870,8 +39098,19 @@ fn framed_box_to_svg(
   let (area_w, area_h) =
     pane_content_size(content).unwrap_or((content_w, content_h));
   let (align_x, align_y) = pane_content_alignment(content);
-  let total_w = (area_w + left + right).ceil();
-  let total_h = (area_h + bottom + top).ceil();
+  // `ImageSize -> w` (or `{w, h}`) sets the outer size of the box, margins
+  // included. Content is never wrapped or clipped here, so a size smaller
+  // than the content leaves the box at the content's own size.
+  let (size_w, size_h) = args[1..]
+    .iter()
+    .filter_map(option_kv)
+    .find(|(k, _)| *k == "ImageSize")
+    .map_or((None, None), |(_, v)| match v {
+      Expr::List(p) if p.len() == 2 => (expr_to_f64(&p[0]), expr_to_f64(&p[1])),
+      other => (expr_to_f64(other), None),
+    });
+  let total_w = (area_w + left + right).ceil().max(size_w.unwrap_or(0.0));
+  let total_h = (area_h + bottom + top).ceil().max(size_h.unwrap_or(0.0));
   let (child_svg, content_w, content_h) = if pane_content_size(content)
     .is_some()
   {
@@ -39461,26 +39700,25 @@ fn wrap_list_text(
         )
       };
       let measure = |pieces: &[Expr]| cell_width(&styled(line_expr(pieces)));
-      let mut lines: Vec<Vec<Expr>> = vec![vec![str_expr("{")]];
-      for (i, item) in items.iter().enumerate() {
-        let item_boxes =
-          crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
-            item,
-          );
-        let line = lines.last_mut()?;
-        if i > 0 {
-          line.push(str_expr(","));
-        }
-        // The element, and the comma that follows it on the same line.
+      // The list's boxes as unbreakable segments, each ending after a comma
+      // between elements at any depth: a nested list (the period of a
+      // continued fraction) breaks inside too, as in the FrontEnd.
+      let mut segments: Vec<Vec<Expr>> = vec![Vec::new()];
+      list_text_segments(expr, &mut segments);
+      let mut lines: Vec<Vec<Expr>> = vec![Vec::new()];
+      for segment in segments.into_iter().filter(|s| !s.is_empty()) {
+        let line = lines.last()?;
+        // A line holding only opening brackets has no element to keep.
+        let has_element = line
+          .iter()
+          .any(|p| !matches!(p, Expr::String(b) if b == "{"));
         let mut candidate = line.clone();
-        candidate.push(item_boxes.clone());
-        candidate.push(str_expr(","));
-        if i > 0 && line.len() > 1 && measure(&candidate) > width {
+        candidate.extend(segment.iter().cloned());
+        if has_element && measure(&candidate) > width {
           lines.push(Vec::new());
         }
-        lines.last_mut()?.push(item_boxes);
+        lines.last_mut()?.extend(segment);
       }
-      lines.last_mut()?.push(str_expr("}"));
       if lines.len() < 2 {
         return None;
       }
@@ -39491,6 +39729,37 @@ fn wrap_list_text(
       ))
     }
     _ => None,
+  }
+}
+
+/// Append the boxes of `expr` to `segments`, starting a new segment after
+/// every comma between list elements, nested lists included. A nested
+/// list holding a graphic is kept whole.
+fn list_text_segments(expr: &Expr, segments: &mut Vec<Vec<Expr>>) {
+  let push = |segments: &mut Vec<Vec<Expr>>, piece: Expr| {
+    if let Some(last) = segments.last_mut() {
+      last.push(piece);
+    }
+  };
+  match expr {
+    Expr::List(items)
+      if !items.is_empty()
+        && items.iter().all(|item| grid_cell_graphic(item).is_none()) =>
+    {
+      push(segments, str_expr("{"));
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          push(segments, str_expr(","));
+          segments.push(Vec::new());
+        }
+        list_text_segments(item, segments);
+      }
+      push(segments, str_expr("}"));
+    }
+    _ => push(
+      segments,
+      crate::evaluator::dispatch::complex_and_special::expr_to_box_form(expr),
+    ),
   }
 }
 
@@ -48016,8 +48285,10 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       label_runs.push(runs);
       // A bare arithmetic choice (`{1/2, 1, 2}`, `{Pi/4, Pi/2}`) is shown
       // the way the FrontEnd typesets the value — a stacked fraction —
-      // just like an arithmetic `value -> label` rule label.
-      svgs.push(if is_arithmetic_label(item) {
+      // just like an arithmetic `value -> label` rule label. A bare
+      // picture choice (`{Graphics[…], Graphics[…]}` in a popup menu) is
+      // shown as the picture itself, not its InputForm.
+      svgs.push(if is_arithmetic_label(item) || is_picture_choice(item) {
         discrete_choice_label_svg(item)
       } else {
         None
@@ -52199,6 +52470,22 @@ fn parse_manipulate_control(
       display: crate::syntax::expr_to_source_form(&evaluated),
     });
   }
+  // Any other user-defined builder (`tableOf[#, params]&` drawing a `Grid`
+  // that reads other controls) is a picture of the live bindings: keep the
+  // call unevaluated as a display element, so it re-renders whenever the
+  // controls it reads change instead of being dropped.
+  if let Some(built @ Expr::FunctionCall { name: f, .. }) = &built
+    && crate::down_values_with_memo(f).is_some()
+  {
+    let value = explicit_initial
+      .as_ref()
+      .map_or_else(|| "Null".to_string(), crate::syntax::expr_to_source_form);
+    return Some(ParsedControl::StateWithDisplay {
+      name,
+      value,
+      display: crate::syntax::expr_to_source_form(built),
+    });
+  }
 
   // Color form: `{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
   // a color names no domain to choose from (`{u, uinit}` picks the widget
@@ -52808,6 +53095,18 @@ fn has_unmapped_subscript(expr: &Expr) -> bool {
     }
     Expr::FunctionCall { args, .. } => args.iter().any(has_unmapped_subscript),
     Expr::List(items) => items.iter().any(has_unmapped_subscript),
+    _ => false,
+  }
+}
+
+/// Whether a bare choice value is a picture: an evaluated graphic or image,
+/// or a held `Graphics[…]`/`Graphics3D[…]`/`Image[…]` call.
+fn is_picture_choice(item: &Expr) -> bool {
+  match item {
+    Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Graphics" | "Graphics3D" | "Image")
+    }
     _ => false,
   }
 }
@@ -53524,7 +53823,21 @@ pub fn apply_manipulate_button_action(
   let names: Vec<&str> = bindings.iter().map(|(n, _)| n.as_str()).collect();
   let body = format!("{action}; {{{}}}", names.join(", "));
   let code = manipulate_block_code(&body, bindings);
-  match crate::interpret_to_expr(&code) {
+  // A variable holding a picture has no source to bind in the `Block`, so
+  // it is installed as a global while the action runs: the action can read
+  // it, and one that leaves it alone reports the picture back rather than
+  // the bare symbol.
+  let frozen: Vec<(String, String)> = bindings
+    .iter()
+    .filter(|(_, value)| crate::is_frozen_graphic(value))
+    .cloned()
+    .collect();
+  let result = if frozen.is_empty() {
+    crate::interpret_to_expr(&code)
+  } else {
+    crate::with_scoped_globals(&frozen, || crate::interpret_to_expr(&code))
+  };
+  match result {
     Ok(Expr::List(ref vals)) if vals.len() == names.len() => names
       .into_iter()
       .map(str::to_string)
@@ -56270,6 +56583,10 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
             &args[1..],
           ),
         }
+      } else if let Some(text) =
+        r.expr.as_ref().and_then(front_end_number_display_text)
+      {
+        DisplayNode::Static { svg: None, text }
       } else {
         let text = r
           .result
@@ -56287,6 +56604,82 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
       text: String::new(),
     },
   }
+}
+
+/// The one-line text of a dynamic value that holds machine reals or `Root`
+/// objects, shown the way the notebook front end typesets them rather than
+/// in full InputForm: a machine real at 6 significant figures (`1.46557`,
+/// `1.23457×10^6`) and a numeric `Root[…]` elided to its approximate value
+/// (`1.47…`). `None` when the value contains neither, so the caller keeps
+/// its plain text.
+fn front_end_number_display_text(expr: &Expr) -> Option<String> {
+  fn elided_root_value(args: &[Expr]) -> Option<f64> {
+    let root = Expr::FunctionCall {
+      name: "Root".to_string(),
+      args: args.to_vec().into(),
+    };
+    match crate::evaluator::evaluate_expr_to_expr(&call("N", vec![root])) {
+      Ok(Expr::Real(f)) if f.is_finite() => Some(f),
+      _ => None,
+    }
+  }
+  fn real_text(f: f64) -> String {
+    let parts = machine_real_display_parts(f);
+    match parts.exponent {
+      Some(exp) => format!("{}\u{00d7}10^{exp}", parts.mantissa),
+      None => parts.mantissa,
+    }
+  }
+  // A display token for a number, kept as a symbol so the formatter
+  // writes it verbatim; a negative one is negated so `Plus` still prints
+  // `a - 1.5`, not `a + -1.5`.
+  fn token(f: f64, text: impl Fn(f64) -> String) -> Expr {
+    if f < 0.0 {
+      call("Times", vec![Expr::Integer(-1), Expr::Identifier(text(-f))])
+    } else {
+      Expr::Identifier(text(f))
+    }
+  }
+  fn rewrite(e: &Expr, changed: &mut bool) -> Expr {
+    match e {
+      Expr::Real(f) if f.is_finite() => {
+        *changed = true;
+        token(*f, real_text)
+      }
+      Expr::FunctionCall { name, args } if name == "Root" => {
+        match elided_root_value(args) {
+          Some(f) => {
+            *changed = true;
+            token(f, |v| {
+              let r = crate::functions::string_ast::round_shortest_digits(v, 3);
+              format!("{}\u{2026}", machine_real_display_parts(r).mantissa)
+            })
+          }
+          None => e.clone(),
+        }
+      }
+      Expr::FunctionCall { name, args } => Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(|a| rewrite(a, changed)).collect(),
+      },
+      Expr::List(items) => {
+        Expr::List(items.iter().map(|a| rewrite(a, changed)).collect())
+      }
+      Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+        op: *op,
+        left: Box::new(rewrite(left, changed)),
+        right: Box::new(rewrite(right, changed)),
+      },
+      Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+        op: *op,
+        operand: Box::new(rewrite(operand, changed)),
+      },
+      other => other.clone(),
+    }
+  }
+  let mut changed = false;
+  let shown = rewrite(expr, &mut changed);
+  changed.then(|| crate::syntax::expr_to_string(&shown))
 }
 
 /// Serialize a `DisplayNode` tree to the JSON the Playground consumes.

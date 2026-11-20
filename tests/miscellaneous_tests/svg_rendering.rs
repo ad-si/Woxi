@@ -3423,12 +3423,13 @@ mod tests {
       // vertical axis's label on the left edge is not cut off. (Under
       // `SphericalRegion -> True` it still is: see `conformance_gaps.md`.)
       {
-        let svg = svg_of(
+        let region = "False";
+        let svg = svg_of(&format!(
           "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
-         SphericalRegion -> False, \
-         AxesLabel -> {Style[\"x\", Large], Style[\"y\", Large], \
-         Style[\"zzz\", Large, Bold]}]",
-        );
+         SphericalRegion -> {region}, \
+         AxesLabel -> {{Style[\"x\", Large], Style[\"y\", Large], \
+         Style[\"zzz\", Large, Bold]}}]",
+        ));
         let width: f64 = svg
           .split("width=\"")
           .nth(1)
