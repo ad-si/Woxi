@@ -907,6 +907,46 @@ mod list {
         .unwrap(),
       "{1, 2}"
     );
+    // A structural element (`{x__}`, `f[y_]`, a literal) between sequence
+    // slots takes one element per match; every position is enumerated,
+    // not just the first one that matches.
+    assert_eq!(
+      interpret(
+        "ReplaceList[{{1}, {2}}, {u___, {x__}, v___} :> {u, {x, 3}, v}]"
+      )
+      .unwrap(),
+      "{{{1, 3}, {2}}, {{1}, {2, 3}}}"
+    );
+    assert_eq!(
+      interpret("ReplaceList[{a, f[b], c, f[d]}, {x___, f[y_], z___} :> y]")
+        .unwrap(),
+      "{b, d}"
+    );
+    assert_eq!(
+      interpret(
+        "ReplaceList[{1, {2}, 3, {2}}, {x___, {2}, y___} -> {{x}, {y}}]"
+      )
+      .unwrap(),
+      "{{{1}, {3, {2}}}, {{1, {2}, 3}, {}}}"
+    );
+    // A name bound in two structural elements must agree.
+    assert_eq!(
+      interpret(
+        "ReplaceList[{{1}, {1}, {2}, {2}}, {___, {x_}, {x_}, ___} :> x]"
+      )
+      .unwrap(),
+      "{1, 2}"
+    );
+    // Set partitions built by inserting n into each block: Bell numbers.
+    assert_eq!(
+      interpret(
+        "p[1] = {{{1}}}; p[n_] := Flatten[ReplaceList[#, \
+         {{s__} :> {s, {n}}, {u___, {s__}, v___} :> {u, {s, n}, v}}] & /@ \
+         p[n - 1], 1]; Length /@ p /@ Range[5]"
+      )
+      .unwrap(),
+      "{1, 2, 5, 15, 52}"
+    );
     // Flat (Orderless) partition enumeration over Plus.
     assert_eq!(
       interpret("ReplaceList[a + b + c, x_ + y_ -> {x, y}]").unwrap(),

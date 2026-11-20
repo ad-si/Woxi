@@ -174,4 +174,71 @@ mod polyhedron_operations_tests {
     // per stellated face: n * m * n = 8*6*8 = 384.
     assert_eq!(interpret(code).unwrap(), "{384, True}");
   }
+
+  const CUBE: &str = "GraphicsComplex[\
+    {{0,0,0},{1,0,0},{1,1,0},{0,1,0},{0,0,1},{1,0,1},{1,1,1},{0,1,1}}, \
+    Polygon[{{1,4,3,2},{5,6,7,8},{1,2,6,5},{2,3,7,6},{3,4,8,7},{4,1,5,8}}]]";
+
+  /// A `GraphicsComplex` solid (what `PolyhedronData` coordinates and face
+  /// indices build) is truncated face by face, and each of its corners is
+  /// capped by a new face through the cut points around it — a cube turns
+  /// into 6 octagons and 8 triangles.
+  #[test]
+  fn truncate_graphics_complex_caps_every_corner() {
+    let code = format!(
+      "t = PolyhedronOperations`Truncate[{CUBE}, 1/4]; \
+       Sort[Length[First[#]] & /@ Cases[t, _Polygon, Infinity]]"
+    );
+    assert_eq!(
+      interpret(&code).unwrap(),
+      "{3, 3, 3, 3, 3, 3, 3, 3, 8, 8, 8, 8, 8, 8}"
+    );
+  }
+
+  /// The corner cap at the origin passes through the three cut points next
+  /// to it and faces outward, like the solid's own faces.
+  #[test]
+  fn truncate_corner_cap_points_and_orientation() {
+    let code = format!(
+      "c = First[First[Cases[PolyhedronOperations`Truncate[{CUBE}, 1/4], \
+         Polygon[p_ /; Length[p] == 3 && Total[Flatten[p]] < 1], Infinity]]]; \
+       {{Sort[c], Sign[Cross[c[[2]] - c[[1]], c[[3]] - c[[1]]] . (c[[1]] - {{1, 1, 1}}/2)]}}"
+    );
+    assert_eq!(
+      interpret(&code).unwrap(),
+      "{{{0., 0., 0.25}, {0., 0.25, 0.}, {0.25, 0., 0.}}, 1}"
+    );
+  }
+
+  /// A ratio of 0 cuts nothing off: every face keeps its corners (each one
+  /// doubled) and no cap is added.
+  #[test]
+  fn truncate_ratio_zero_keeps_the_solid() {
+    let code = format!(
+      "t = PolyhedronOperations`Truncate[{CUBE}, 0]; \
+       {{Length[Cases[t, _Polygon, Infinity]], \
+         Union[Flatten[Map[Union, Cases[t, Polygon[p_] :> p, Infinity]], 1]] == \
+         Tuples[{{0., 1.}}, 3]}}"
+    );
+    assert_eq!(interpret(&code).unwrap(), "{6, True}");
+  }
+
+  /// Loading the package puts its context on `$ContextPath`, so a bare
+  /// `Truncate` read afterwards is the package's function.
+  #[test]
+  fn bare_truncate_resolves_after_loading_the_package() {
+    for load in ["Needs", "Get"] {
+      assert_eq!(
+        interpret(&format!(
+          "{load}[\"PolyhedronOperations`\"]\n\
+           {{Context[Truncate], Context[Stellate], \
+             Truncate[Polygon[{{{{0,0,0}},{{2,0,0}},{{2,2,0}},{{0,2,0}}}}], 1/4]}}"
+        ))
+        .unwrap(),
+        "{PolyhedronOperations`, PolyhedronOperations`, \
+         Polygon[{{0.5, 0., 0.}, {1.5, 0., 0.}, {2., 0.5, 0.}, {2., 1.5, 0.}, \
+         {1.5, 2., 0.}, {0.5, 2., 0.}, {0., 1.5, 0.}, {0., 0.5, 0.}}]}"
+      );
+    }
+  }
 }

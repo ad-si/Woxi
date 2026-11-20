@@ -2314,6 +2314,39 @@ fn floor_ceil_two_arg(
       return Ok(call("Rational", vec![Expr::Integer(rn), Expr::Integer(rd)]));
     }
   }
+  // Exact symbolic step (Pi/2, Sqrt[2], E, ...): the result is an exact
+  // multiple of `a`, e.g. Floor[3 Pi/5, Pi/2] -> Pi/2 and Ceiling[E, Pi/4]
+  // -> Pi. The quotient x/a is formed symbolically first so that exact
+  // boundaries (Floor[Pi, Pi/2] = Pi) are decided by the single-argument
+  // Floor/Ceiling, not by a lossy machine division.
+  if !crate::functions::predicate_ast::contains_real_literal(a)
+    && let Some(af) = try_eval_to_f64(a)
+    && af != 0.0
+    && af.is_finite()
+    && try_eval_to_f64(x).is_some()
+  {
+    let q = crate::evaluator::evaluate_function_call_ast(
+      "Times",
+      &[
+        x.clone(),
+        crate::evaluator::evaluate_function_call_ast(
+          "Power",
+          &[a.clone(), Expr::Integer(-1)],
+        )?,
+      ],
+    )?;
+    let fq = if is_floor {
+      floor_ast(std::slice::from_ref(&q))?
+    } else {
+      ceiling_ast(std::slice::from_ref(&q))?
+    };
+    if matches!(fq, Expr::Integer(_) | Expr::BigInteger(_)) {
+      return crate::evaluator::evaluate_function_call_ast(
+        "Times",
+        &[fq, a.clone()],
+      );
+    }
+  }
   // Fall back to floating point
   if let (Some(xf), Some(af)) = (try_eval_to_f64(x), try_eval_to_f64(a)) {
     if af == 0.0 {
