@@ -16184,7 +16184,7 @@ mod plot3d {
       };
       let padded: Vec<String> = ["-0.5", "0.0", "0.5", "1.0", "1.5"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect();
       let both = [padded.clone(), padded].concat();
       // An absolute amount replaces the automatic padding …
@@ -16197,7 +16197,7 @@ mod plot3d {
       // Without it, an explicit `PlotRange` is not padded.
       let unpadded: Vec<String> = ["0.0", "0.2", "0.4", "0.6", "0.8", "1.0"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect();
       assert_eq!(
         labels("PlotRange -> {{0, 1}, {0, 1}}"),
@@ -16206,7 +16206,7 @@ mod plot3d {
       // Per side: 1 below x, `None` on y.
       let x: Vec<String> = ["-1.0", "-0.5", "0.0", "0.5", "1.0"]
         .iter()
-        .map(|s| s.to_string())
+        .map(ToString::to_string)
         .collect();
       assert_eq!(
         labels("PlotRangePadding -> {{1, Automatic}, None}"),
