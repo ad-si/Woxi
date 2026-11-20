@@ -2499,7 +2499,17 @@ fn is_solve_constant(s: &str) -> bool {
 fn auto_detect_solve_vars(eqns: &Expr) -> Option<Expr> {
   let mut vars = Vec::new();
   collect_solve_var_exprs(eqns, &mut vars);
-  if solve_equalities(eqns).is_empty() {
+  // A disjunction of equation systems (`x == 1 || x == 2`, the form `Roots`
+  // returns) states equations as long as every alternative does.
+  fn states_equations(eqns: &Expr) -> bool {
+    match eqns {
+      Expr::FunctionCall { name, args } if name == "Or" && !args.is_empty() => {
+        args.iter().all(states_equations)
+      }
+      _ => !solve_equalities(eqns).is_empty(),
+    }
+  }
+  if !states_equations(eqns) {
     return None;
   }
   vars.sort_by(crate::functions::list_helpers_ast::sorting::canonical_cmp);
@@ -22610,12 +22620,21 @@ fn eliminate_machine_numbers(
     return None;
   }
   let nrows = m.len();
+  let Some(rhs) = m.first().map(|row| row.len() - 1) else {
+    return None;
+  };
+  // Pivots are judged against the coefficients alone: a large or tiny
+  // right-hand side says nothing about whether a coefficient is noise.
   let scale = m
     .iter()
-    .flatten()
+    .flat_map(|row| &row[..rhs])
     .fold(0.0f64, |acc, v| acc.max(v.abs()))
     .max(f64::MIN_POSITIVE);
   let tol = scale * 1e-12;
+  // A right-hand side is rounding noise only next to the size of the terms
+  // that cancelled into it, so each row tracks that magnitude. A small value
+  // stated outright (`x == 1.*^-12`) stays.
+  let mut magnitude: Vec<f64> = m.iter().map(|row| row[rhs].abs()).collect();
 
   let mut pivot_row = 0;
   let mut pivot_cols: Vec<(usize, usize)> = Vec::new();
@@ -22630,12 +22649,15 @@ fn eliminate_machine_numbers(
       continue;
     }
     m.swap(pivot_row, best);
+    magnitude.swap(pivot_row, best);
     let pivot = m[pivot_row][col];
     for v in &mut m[pivot_row] {
       *v /= pivot;
     }
+    magnitude[pivot_row] /= pivot.abs();
     m[pivot_row][col] = 1.0;
     let pivot_values = m[pivot_row].clone();
+    let pivot_magnitude = magnitude[pivot_row];
     for (row, values) in m.iter_mut().enumerate() {
       if row == pivot_row {
         continue;
@@ -22645,6 +22667,7 @@ fn eliminate_machine_numbers(
         for (v, p) in values.iter_mut().zip(&pivot_values) {
           *v -= factor * p;
         }
+        magnitude[row] += factor.abs() * pivot_magnitude;
       }
       values[col] = 0.0;
     }
@@ -22653,11 +22676,14 @@ fn eliminate_machine_numbers(
   }
   let reduced = m
     .into_iter()
-    .map(|row| {
+    .zip(magnitude)
+    .map(|(row, magnitude)| {
       row
         .into_iter()
-        .map(|v| {
-          if v.abs() <= tol {
+        .enumerate()
+        .map(|(j, v)| {
+          let noise = if j == rhs { magnitude * 1e-12 } else { tol };
+          if v.abs() <= noise {
             Expr::Integer(0)
           } else {
             Expr::Real(v)
