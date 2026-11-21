@@ -131,6 +131,33 @@ mod legends {
     let height = root_attr(&svg, "height") * 10.0;
     assert!(y < height * 0.2, "near the top: {y} of {height}");
   }
+
+  /// A named `Placed` position aligns the legend inside the plot's frame,
+  /// not the whole image: the frame labels stay clear of it.
+  /// Regression: the legend sat in the image's top margin, over the label.
+  #[test]
+  fn placed_named_position_stays_inside_the_frame() {
+    let y_of = |svg: &str, text: &str| -> f64 {
+      let end = svg.find(&format!(">{text}</text>")).unwrap();
+      let tag = &svg[svg[..end].rfind("<text ").unwrap()..end];
+      let start = tag.find(" y=\"").unwrap() + 4;
+      tag[start..start + tag[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    for pos in ["{Right, Top}", "{Left, Bottom}"] {
+      let svg = svg_of(&format!(
+        r#"Plot[{{Sin[x], Cos[x]}}, {{x, 0, 4}}, Frame -> True, FrameLabel -> {{"xlabel", " ", "title"}}, PlotLegends -> Placed[{{"one", "two"}}, {pos}]]"#
+      ));
+      let title = y_of(&svg, "title");
+      let x_label = y_of(&svg, "xlabel");
+      assert!(title < y_of(&svg, "one"), "{pos}: legend under the title");
+      assert!(
+        y_of(&svg, "two") < x_label,
+        "{pos}: legend above the x label"
+      );
+    }
+  }
 }
 
 mod image_size {
@@ -538,5 +565,313 @@ mod epilog_text_style_background {
     let group = &svg[svg.find("</defs><g clip-path").unwrap()..];
     assert!(group.contains(">ab</text>"), "{svg}");
     assert!(!group.contains("<rect"), "{svg}");
+  }
+}
+
+/// Text and shapes in a plot's `Prolog`/`Epilog` set as in `Graphics`.
+mod epilog_text_rows_and_triangles {
+  use super::*;
+
+  /// The epilog's own group, after its clip path.
+  fn epilog_group(svg: &str) -> &str {
+    &svg[svg.find("</defs><g clip-path").unwrap()..]
+  }
+
+  /// The visible text of each `<tspan x=…>` line in `markup`, plus the
+  /// line before the first of them.
+  fn text_lines(markup: &str) -> Vec<String> {
+    let start = markup.find("<text").unwrap();
+    let body = &markup[start..start + markup[start..].find("</text>").unwrap()];
+    let body = &body[body.find('>').unwrap() + 1..];
+    let strip = |s: &str| {
+      let mut out = String::new();
+      let mut in_tag = false;
+      for c in s.chars() {
+        match c {
+          '<' => in_tag = true,
+          '>' => in_tag = false,
+          _ if !in_tag => out.push(c),
+          _ => {}
+        }
+      }
+      out.replace("&#160;", "")
+    };
+    body
+      .split("<tspan x=")
+      .enumerate()
+      .map(|(i, line)| {
+        // Each split-off line still carries the rest of its opening tag.
+        let line = if i == 0 {
+          line
+        } else {
+          &line[line.find('>').unwrap() + 1..]
+        };
+        strip(line).trim().to_string()
+      })
+      .filter(|line| !line.is_empty())
+      .collect()
+  }
+
+  /// `Triangle[{p1, p2, p3}]` draws the polygon through its corners.
+  #[test]
+  fn triangle_is_drawn_as_a_polygon() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Prolog -> {Orange, Triangle[{{0.5, 0}, {1, 0}, \
+       {1, 1}}]}]",
+    );
+    let polygons = svg.matches("<polygon").count();
+    assert_eq!(polygons, 1, "{svg}");
+  }
+
+  /// A list of triangles draws one polygon each.
+  #[test]
+  fn triangle_list_draws_each_triangle() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Triangle[{{{0, 0}, {1, 0}, {1, 1}}, \
+       {{0, 0}, {0, 1}, {1, 1}}}]]",
+    );
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+  }
+
+  /// An inset `Row` of strings and styled strings is a text label in the
+  /// label font (not a monospaced box layout), keeping its styled runs
+  /// and line breaks.
+  #[test]
+  fn inset_row_is_a_text_label() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Inset[Row[{\"ab \", Style[\"T\", \
+       Italic], \" cd\\nef\"}], {0.5, 0.5}]]",
+    );
+    let group = epilog_group(&svg);
+    assert!(!group.contains("monospace"), "{svg}");
+    assert!(
+      group.contains("<tspan font-style=\"italic\">T</tspan>"),
+      "{svg}"
+    );
+    assert_eq!(text_lines(group), vec!["ab T cd", "ef"], "{svg}");
+  }
+
+  /// `Row[…, ImageSize -> w]` flows its runs into lines at most `w` points
+  /// wide at word boundaries, across differently styled runs; the inset's
+  /// `BaseStyle` sets the size the lines are measured (and drawn) at.
+  #[test]
+  fn inset_row_image_size_wraps_lines() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Inset[Row[{\"one two three \", \
+       Style[\"four\", Italic], \" five six seven eight\"}, ImageSize -> \
+       100], {0.5, 0.5}, BaseStyle -> {14}]]",
+    );
+    let group = epilog_group(&svg);
+    let lines = text_lines(group);
+    assert!(lines.len() > 1, "{lines:?}");
+    // Every word appears once and in order.
+    assert_eq!(
+      lines.join(" "),
+      "one two three four five six seven eight",
+      "{lines:?}"
+    );
+    // At 14pt a 100pt line holds well under 20 characters.
+    for line in &lines {
+      assert!(line.chars().count() < 20, "{line:?} too long: {lines:?}");
+    }
+    assert!(group.contains("font-size=\"140\""), "{svg}");
+  }
+
+  /// A blank line of a multi-line label keeps its height: an empty
+  /// `<tspan>` would be dropped by SVG renderers.
+  #[test]
+  fn blank_label_line_keeps_its_height() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Inset[Row[{\"ab\\n\\ncd\"}], \
+       {0.5, 0.5}]]",
+    );
+    assert!(!epilog_group(&svg).contains("\"></tspan>"), "{svg}");
+  }
+
+  /// The same row wraps inside `Graphics`, where the inset's `BaseStyle`
+  /// sizes the text too.
+  #[test]
+  fn graphics_inset_row_wraps_with_base_style() {
+    let svg = svg_of(
+      "Graphics[Inset[Row[{\"one two three \", Style[\"four\", Italic], \
+       \" five six\"}, ImageSize -> 80], {0, 0}, BaseStyle -> {20}]]",
+    );
+    assert!(svg.contains("font-size=\"20\""), "{svg}");
+    let lines = text_lines(&svg);
+    assert!(lines.len() > 2, "{lines:?}");
+    assert_eq!(lines.join(" ").trim(), "one two three four five six");
+  }
+}
+
+/// `Inset[Framed[Column[{…}]], pos, opos]` in a `Plot` `Epilog` — a boxed
+/// summary of computed values — is typeset as text, like
+/// `Text[Framed[Column[…]], pos, opos]`, not embedded as a picture of
+/// monospace source text.
+mod epilog_framed_column_inset {
+  use super::*;
+
+  const PLOT: &str = "Plot[Max[100 - x, 0], {x, 60, 140}, \
+    ImageSize -> {500, 350}, Epilog -> {Inset[Framed[Column[{\"short\", \
+    \"a longer line\"}], Background -> GrayLevel[0.99]], {110, 20}, {-1, 0}]}]";
+
+  /// The epilog's own group (after its clip path).
+  fn epilog(svg: &str) -> &str {
+    &svg[svg.find("</defs><g clip-path").unwrap()..]
+  }
+
+  fn attr(tag: &str, name: &str) -> f64 {
+    let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    tag[start..start + tag[start..].find('"').unwrap()]
+      .parse()
+      .unwrap()
+  }
+
+  #[test]
+  fn typesets_the_lines_as_sans_serif_text() {
+    let svg = svg_of(PLOT);
+    let group = epilog(&svg);
+    assert!(!group.contains("<svg"), "{group}");
+    assert!(!group.contains("monospace"), "{group}");
+    assert!(group.contains(">short<"), "{group}");
+    assert!(group.contains(">a longer line</tspan>"), "{group}");
+  }
+
+  /// A `Column` sets its lines flush left inside the frame, starting at
+  /// the frame's left side (`opos -> {-1, 0}` puts that side on `pos`).
+  #[test]
+  fn column_lines_start_flush_left_inside_the_frame() {
+    let svg = svg_of(PLOT);
+    let group = epilog(&svg);
+    let rect = &group[group.find("<rect x=").unwrap()..];
+    let rect = &rect[..rect.find('>').unwrap()];
+    let text = &group[group.find("<text ").unwrap()..];
+    let text = &text[..text.find('>').unwrap()];
+    assert!(text.contains("text-anchor=\"start\""), "{text}");
+    let (left, x) = (attr(rect, "x"), attr(text, "x"));
+    assert!(x > left && x < left + 100.0, "{rect} / {text}");
+    // Every further line starts at the same x.
+    let tspan = &group[group.find("<tspan ").unwrap()..];
+    assert_eq!(attr(&tspan[..tspan.find('>').unwrap()], "x"), x);
+  }
+
+  /// The frame's border is one point wide in the plot's 10× coordinates.
+  #[test]
+  fn frame_border_is_one_point_wide() {
+    let svg = svg_of(PLOT);
+    let group = epilog(&svg);
+    let rect = &group[group.find("<rect x=").unwrap()..];
+    let rect = &rect[..rect.find('>').unwrap()];
+    assert_eq!(attr(rect, "stroke-width"), 10.0, "{rect}");
+  }
+
+  /// A `Grid` keeps its centered lines.
+  #[test]
+  fn grid_lines_stay_centered() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> {Text[Framed[Grid[{{\"a\"}, \
+       {\"bcd\"}}]], {0.5, 0.5}]}]",
+    );
+    assert!(!epilog(&svg).contains("text-anchor=\"start\""), "{svg}");
+  }
+}
+
+/// `opos` of an inset display (`Framed`, `Grid`, …) is measured like a
+/// `Text` offset: `{-1, 0}` puts the middle of its left edge on `pos`, so
+/// the display is moved half its width right of where `{0, 0}` (the
+/// default, its center) puts it, and not at all vertically.
+#[test]
+fn epilog_inset_display_offset_is_text_like() {
+  let at = |opos: &str| {
+    let svg = svg_of(&format!(
+      "Plot[Max[100 - x, 0], {{x, 60, 140}}, ImageSize -> 400, \
+       Epilog -> {{Inset[Framed[Grid[{{{{Graphics[Disk[], ImageSize -> 20], \
+       \"label\"}}}}]], {{110, 20}}{opos}]}}]"
+    ));
+    let group = &svg[svg.find("</defs><g clip-path").unwrap()..];
+    let tag = &group[group.find("<svg x=").unwrap()..];
+    let tag = &tag[..tag.find('>').unwrap()];
+    let num = |name: &str| -> f64 {
+      let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+      tag[start..start + tag[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    (num("x"), num("y"), num("width"))
+  };
+  let (cx, cy, w) = at("");
+  let (lx, ly, _) = at(", {-1, 0}");
+  assert!((lx - (cx + w / 2.0)).abs() < 0.1, "{lx} vs {cx} + {w}/2");
+  assert!((ly - cy).abs() < 0.1, "{ly} vs {cy}");
+}
+
+mod relative_thickness {
+  use super::*;
+
+  /// The `stroke-width` of the first element stroked in `color`.
+  fn stroke_width_of(svg: &str, color: &str) -> f64 {
+    let at = svg
+      .find(&format!("stroke=\"{color}\""))
+      .unwrap_or_else(|| panic!("no {color} stroke: {svg}"));
+    let start = svg[..at].rfind('<').unwrap();
+    let tag = &svg[start..start + svg[start..].find('>').unwrap()];
+    let w = tag.find("stroke-width=\"").unwrap() + 14;
+    tag[w..w + tag[w..].find('"').unwrap()].parse().unwrap()
+  }
+
+  #[test]
+  fn curve_thickness_is_a_fraction_of_the_image_width() {
+    // `Thickness[t]` spans the fraction t of the picture's own width, so
+    // halving the ImageSize halves the curve's weight.
+    let wide = svg_of(
+      "Plot[x, {x, 0, 1}, PlotStyle -> {Red, Thickness[0.01]}, \
+       ImageSize -> 400]",
+    );
+    let narrow = svg_of(
+      "Plot[x, {x, 0, 1}, PlotStyle -> {Red, Thickness[0.01]}, \
+       ImageSize -> 200]",
+    );
+    let (w, n) = (
+      stroke_width_of(&wide, "#FF0000"),
+      stroke_width_of(&narrow, "#FF0000"),
+    );
+    assert!((w - 2.0 * n).abs() <= 1.0, "{w} vs {n}");
+    // 0.01 of 400 display pixels, in 10x render units.
+    assert!((w - 40.0).abs() <= 1.0, "{w}");
+  }
+
+  #[test]
+  fn epilog_thickness_is_a_fraction_of_the_image_width() {
+    let wide = svg_of(
+      "Plot[x, {x, 0, 1}, ImageSize -> 400, \
+       Epilog -> {Orange, Thickness[0.01], Line[{{0, 0}, {1, 1}}]}]",
+    );
+    let narrow = svg_of(
+      "Plot[x, {x, 0, 1}, ImageSize -> 200, \
+       Epilog -> {Orange, Thickness[0.01], Line[{{0, 0}, {1, 1}}]}]",
+    );
+    let (w, n) = (
+      stroke_width_of(&wide, "rgb(255,128,0)"),
+      stroke_width_of(&narrow, "rgb(255,128,0)"),
+    );
+    assert!((w - 40.0).abs() <= 0.5, "{w}");
+    assert!((n - 20.0).abs() <= 0.5, "{n}");
+  }
+
+  #[test]
+  fn zero_epilog_thickness_still_draws_a_hairline() {
+    // `Thickness[0]` (e.g. a weight scaled by a parameter that is zero)
+    // draws the thinnest visible line, not an invisible one.
+    for spec in [
+      "Thickness[0]",
+      "Thickness[0.03 c] /. c -> 0",
+      "AbsoluteThickness[0]",
+    ] {
+      let svg = svg_of(&format!(
+        "Plot[x, {{x, 0, 1}}, \
+         Epilog -> {{Orange, {spec}, Line[{{{{0, 0}}, {{1, 1}}}}]}}]"
+      ));
+      let w = stroke_width_of(&svg, "rgb(255,128,0)");
+      assert!(w >= 5.0, "{spec}: {w}");
+    }
   }
 }
