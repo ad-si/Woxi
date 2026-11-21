@@ -8318,6 +8318,52 @@ mod tests {
     assert!(shade.contains("RGBColor[1, 0, 0]"), "{shade}");
   }
 
+  /// `Button[shape, action]` used directly as a primitive inside
+  /// `Graphics` (a clickable map region): each shape must be a pressable
+  /// region running its own action, and drawing the picture must not run
+  /// any of the actions.
+  #[test]
+  fn button_primitives_in_graphics_are_clickable_regions() {
+    let code = r#"Manipulate[
+      Graphics[
+        MapIndexed[
+          Button[{If[on[[#2[[1]]]] == 1, Red, Gray], Rectangle[{#1, 0}]},
+            on[[#2[[1]]]] = 1 - on[[#2[[1]]]], Appearance -> "Graphics"] &,
+          {0, 2, 4}],
+        ImageSize -> 200],
+      {{on, {0, 0, 0}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let value = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(n, _)| n == "on")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert_eq!(value(&state), "{0, 0, 0}", "drawing must not press");
+    assert_eq!(state.button_regions.len(), 3, "one region per shape");
+    let mut xs: Vec<i32> =
+      state.button_regions.iter().map(|r| r.x as i32).collect();
+    xs.sort();
+    xs.dedup();
+    assert_eq!(xs.len(), 3, "shapes must not share a region: {xs:?}");
+
+    let region = state
+      .button_regions
+      .iter()
+      .max_by(|a, b| a.x.total_cmp(&b.x))
+      .expect("rightmost shape")
+      .clone();
+    state.apply_button_action(&region.action);
+    assert!(state.error.is_none(), "button failed: {:?}", state.error);
+    assert_eq!(value(&state), "{0, 0, 1}");
+  }
+
   #[test]
   fn graphics_grid_button_cells_are_pressable_regions() {
     let code = r#"Manipulate[

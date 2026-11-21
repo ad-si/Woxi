@@ -32195,6 +32195,22 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(!plain.contains("woxi-btn-"), "{plain}");
     }
 
+    // `Button[shape, action]` used as a primitive draws `shape` and records
+    // its action on a group around it, like `EventHandler`. Drawing the
+    // picture must not run the held action.
+    #[test]
+    fn a_button_primitive_records_its_action_without_running_it() {
+      clear_state();
+      let svg = export_svg(
+        "c = {0, 0}; Graphics[MapIndexed[Button[Disk[{#1, 0}], \
+         c[[#2[[1]]]] = 1 - c[[#2[[1]]]], Appearance -> \"Graphics\"] &, \
+         {1, 3}]]",
+      );
+      assert_eq!(svg.matches("id=\"woxi-btn-").count(), 2, "{svg}");
+      assert!(!svg.contains("Button"), "not the source: {svg}");
+      assert_eq!(interpret("c").unwrap(), "{0, 0}");
+    }
+
     // `ClickPane[expr, …]` shows `expr`. What it adds is a click handler,
     // which the picture itself does not carry — this is how a Demonstration
     // lets you draw on a grid. It used to export as the call written out.
