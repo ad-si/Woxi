@@ -66935,7 +66935,9 @@ mod styled_fraction_titles {
     };
     let plain = width("Row[{\"K = \", a/b}]");
     let big = width("Style[Row[{\"K = \", a/b}], 28]");
-    assert!((big / plain - 2.0).abs() < 0.05, "{plain} -> {big}");
+    // The typeset picture's fixed margins do not grow with the size, so
+    // twice the font size gives a little under twice the width.
+    assert!((1.8..2.05).contains(&(big / plain)), "{plain} -> {big}");
   }
 }
 
