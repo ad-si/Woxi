@@ -18458,6 +18458,109 @@ mod plot3d {
       assert!(svg.contains("stroke=\"rgb(0,0,255)\""), "{svg}");
     }
 
+    /// The font sizes of a plot's `<text>` elements, in order.
+    fn text_font_sizes(svg: &str) -> Vec<String> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<text"))
+        .filter_map(|l| {
+          l.split("font-size=\"")
+            .nth(1)
+            .and_then(|v| v.split('"').next())
+            .map(str::to_string)
+        })
+        .collect()
+    }
+
+    /// A size in `AxesStyle` (bare or inside `Directive[…]`, for both axes
+    /// or as a `{x, y}` pair) sets the font of the axes' tick labels and
+    /// labels, in a `Plot` as in a `Show` of one.
+    #[test]
+    fn axes_style_size_sets_tick_and_axes_label_font() {
+      for (code, size) in [
+        (
+          "Plot[Sin[t], {t, 0, 1}, AxesStyle -> Directive[Thick, 14], \
+           AxesLabel -> {\"t\", \"v\"}]",
+          "140",
+        ),
+        (
+          "Plot[Sin[t], {t, 0, 1}, AxesStyle -> 22, \
+           AxesLabel -> {\"t\", \"v\"}]",
+          "220",
+        ),
+        (
+          "Show[Plot[Sin[t], {t, 0, 1}, AxesStyle -> {Directive[Thick, 14], \
+           Directive[Thick, 14]}, AxesLabel -> {\"t\", \"v\"}], \
+           Graphics[Line[{{0, 0}, {1, 1}}]]]",
+          "14",
+        ),
+        (
+          "Graphics[Circle[], Axes -> True, AxesStyle -> Directive[Red, 18], \
+           AxesLabel -> {\"x\", \"y\"}]",
+          "18",
+        ),
+      ] {
+        let sizes = text_font_sizes(&export_svg(code));
+        assert!(sizes.len() > 2, "{code}: {sizes:?}");
+        assert!(sizes.iter().all(|s| s == size), "{code}: {sizes:?}");
+      }
+    }
+
+    /// `TicksStyle`'s size beats `AxesStyle`'s for the tick labels; the
+    /// axes labels keep the `AxesStyle` size.
+    #[test]
+    fn ticks_style_size_beats_axes_style_size() {
+      for (code, tick, label) in [
+        (
+          "Plot[Sin[t], {t, 0, 1}, AxesStyle -> 30, TicksStyle -> 8, \
+           AxesLabel -> {\"t\", \"v\"}]",
+          "80",
+          "300",
+        ),
+        (
+          "Graphics[Circle[], Axes -> True, AxesStyle -> 30, \
+           TicksStyle -> 8, AxesLabel -> {\"x\", \"y\"}]",
+          "8",
+          "30",
+        ),
+      ] {
+        let sizes = text_font_sizes(&export_svg(code));
+        let (labels, ticks) = sizes.split_at(sizes.len() - 2);
+        assert!(!ticks.is_empty(), "{code}: {sizes:?}");
+        assert!(labels.iter().all(|s| s == tick), "{code}: {sizes:?}");
+        assert!(ticks.iter().all(|s| s == label), "{code}: {sizes:?}");
+      }
+    }
+
+    /// A larger axes-label font keeps the x label at its size: the gap
+    /// before it is a fixed length, as the automatic padding reserves it,
+    /// rather than growing with the font and squeezing the label.
+    #[test]
+    fn larger_axes_label_font_does_not_shrink_x_label() {
+      for opt in ["LabelStyle -> 14", "AxesStyle -> 14"] {
+        let sizes = text_font_sizes(&export_svg(&format!(
+          "Plot[Sin[t], {{t, 0, 1}}, {opt}, AxesLabel -> {{\"t\", \"v\"}}]"
+        )));
+        assert_eq!(
+          sizes[sizes.len() - 2..],
+          ["140", "140"],
+          "{opt}: {sizes:?}"
+        );
+      }
+    }
+
+    /// A framed plot draws no axes, so `AxesStyle`'s size leaves its tick
+    /// labels at the default.
+    #[test]
+    fn axes_style_size_ignored_by_framed_plot() {
+      let plain =
+        text_font_sizes(&export_svg("Plot[Sin[t], {t, 0, 1}, Frame -> True]"));
+      let styled = text_font_sizes(&export_svg(
+        "Plot[Sin[t], {t, 0, 1}, Frame -> True, AxesStyle -> 30]",
+      ));
+      assert_eq!(plain, styled);
+    }
+
     /// A graphic's `FormatType` is `TraditionalForm`: legend entries,
     /// axes labels and the plot label set a function application under its
     /// traditional name in round brackets (`sin(x)`, `sinc(x)`), not in

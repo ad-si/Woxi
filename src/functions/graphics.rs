@@ -13139,6 +13139,7 @@ fn render_axes(
   origin: (Option<f64>, Option<f64>),
   label_fill: Option<Color>,
   tick_font: f64,
+  label_font: f64,
 ) {
   let t = theme();
   let axis_stroke = t.axis_stroke;
@@ -13354,10 +13355,10 @@ fn render_axes(
         // The lines of a multi-line label stay centered on the axis.
         let x = svg_w + AXES_LABEL_GAP_X;
         let lines = text_label_lines(x_label);
-        let pitch = line_pitch(LABEL_FONT);
+        let pitch = line_pitch(label_font);
         svg.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"start\">{}</text>\n",
-          axis_y_px + center_to_baseline(LABEL_FONT)
+          "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{label_font}\" font-family=\"sans-serif\" text-anchor=\"start\">{}</text>\n",
+          axis_y_px + center_to_baseline(label_font)
             - (lines.len() - 1) as f64 * pitch / 2.0,
           crate::functions::plot::join_label_lines(&lines, x, pitch),
         ));
@@ -13373,11 +13374,11 @@ fn render_axes(
       } else {
         // The last line sits above the axis; earlier lines stack upward.
         let lines = text_label_lines(y_label);
-        let pitch = line_pitch(LABEL_FONT);
+        let pitch = line_pitch(label_font);
         svg.push_str(&format!(
-          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{LABEL_FONT}\" font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
+          "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{label_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
           -AXES_LABEL_GAP_Y
-            - descent(LABEL_FONT)
+            - descent(label_font)
             - (lines.len() - 1) as f64 * pitch,
           crate::functions::plot::join_label_lines(&lines, axis_x_px, pitch),
         ));
@@ -13607,7 +13608,7 @@ fn graphics_decorations(
   axes_label: Option<&(String, String)>,
   title_lines: usize,
   title_font: f64,
-  frame_label_font: f64,
+  label_font: f64,
   tick_font: f64,
 ) -> crate::functions::plot_padding::Decorations {
   use crate::functions::plot_padding::{
@@ -13652,7 +13653,7 @@ fn graphics_decorations(
   let measure = |markup: &str| {
     axes_label_picture_size(markup).unwrap_or_else(|| {
       let size = crate::functions::plot_padding::markup_font_size(markup)
-        .unwrap_or(LABEL_FONT);
+        .unwrap_or(label_font);
       // A multi-line label (`"arrival time\nof A"`) is as wide as its
       // widest line and as tall as its stacked lines.
       let lines = text_label_lines(markup);
@@ -13709,7 +13710,7 @@ fn graphics_decorations(
       let text = |s: &String| {
         (!s.is_empty()).then(|| {
           axes_label_picture_size(s)
-            .map_or(block_height(1, frame_label_font), |(_, h)| h)
+            .map_or(block_height(1, label_font), |(_, h)| h)
         })
       };
       d.frame_labels = [text(b), text(l), text(t), text(r)];
@@ -18009,6 +18010,13 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let label_font =
     GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
   let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
+  // The axes' own `AxesStyle` size sets their tick labels and labels.
+  let axis_font = |spec: &Option<Expr>| {
+    spec
+      .as_ref()
+      .and_then(crate::functions::plot::axis_pair_font_size)
+  };
+  let axes_font = (!frame).then(|| axis_font(&axes_style)).flatten();
   // The same size sets the tick labels of the frame and of the axes, unless
   // the tick style of whichever carries the ticks (`FrameTicksStyle` on a
   // framed picture, `TicksStyle` on its axes) names a size of its own.
@@ -18020,8 +18028,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let tick_font = tick_style_spec
     .and_then(crate::functions::plot::LabelStyleSpec::parse)
     .and_then(|spec| spec.font_size)
+    .or(axes_font)
     .or(label_font.size)
     .unwrap_or(TICK_FONT);
+  // The axes labels take the `AxesStyle` size, else the `LabelStyle` one.
+  let axes_label_font = axes_font.or(label_font.size).unwrap_or(LABEL_FONT);
   let title_font = plot_label
     .iter()
     .flatten()
@@ -18037,7 +18048,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_label.as_ref(),
     plot_label.as_ref().map_or(0, Vec::len),
     title_font,
-    frame_label_font,
+    if frame {
+      frame_label_font
+    } else {
+      axes_label_font
+    },
     tick_font,
   );
   // The shape of the drawing area: what the data (or `AspectRatio`) asks
@@ -18514,6 +18529,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     axes_origin,
     label_color,
     tick_font,
+    axes_label_font,
   );
 
   if frame {
