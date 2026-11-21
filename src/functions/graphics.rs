@@ -24915,6 +24915,16 @@ fn has_explicit_style(e: &Expr) -> bool {
     {
       args.iter().any(has_explicit_style)
     }
+    // `Style["e", Italic]^Row[{Style["i", Italic], "t"}]`: a power keeps
+    // the styling of its base and exponent.
+    Expr::FunctionCall { name, args } if name == "Power" => {
+      args.iter().any(has_explicit_style)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => has_explicit_style(left) || has_explicit_style(right),
     _ => false,
   }
 }
