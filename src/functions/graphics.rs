@@ -12610,24 +12610,18 @@ fn emit_polygon_vertex_gradient(
     }
     hole_indices.push((start..all_pts.len()).collect::<Vec<_>>());
   }
-  // A self-crossing outline is filled by the even-odd rule, the same as a
-  // flat-colored one: the blend is clipped to that region. Every point of
-  // the even-odd region lies in an odd number of the fan's triangles (so in
-  // at least one), which makes the fan a complete cover of it, unlike an
-  // ear-clipping of a non-simple ring.
-  let self_crossing = holes.is_empty() && polygon_self_intersects(points);
   // Wolfram blends a convex polygon over the fan of triangles from its
-  // first vertex; anything else is ear-clipped.
-  let convex = self_crossing
-    || holes.is_empty() && points.len() >= 3 && {
-      let n = points.len();
-      let turn = |i: usize| {
-        let (a, b, c) = (points[i], points[(i + 1) % n], points[(i + 2) % n]);
-        (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0)
-      };
-      let turns: Vec<f64> = (0..n).map(turn).collect();
-      turns.iter().all(|&t| t >= 0.0) || turns.iter().all(|&t| t <= 0.0)
+  // first vertex; anything else is ear-clipped. (A self-crossing outline
+  // never gets here: it is split into its even-odd regions above.)
+  let convex = holes.is_empty() && points.len() >= 3 && {
+    let n = points.len();
+    let turn = |i: usize| {
+      let (a, b, c) = (points[i], points[(i + 1) % n], points[(i + 2) % n]);
+      (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0)
     };
+    let turns: Vec<f64> = (0..n).map(turn).collect();
+    turns.iter().all(|&t| t >= 0.0) || turns.iter().all(|&t| t <= 0.0)
+  };
   let triangles: Vec<[usize; 3]> = if convex {
     (1..points.len() - 1).map(|i| [0, i, i + 1]).collect()
   } else {
@@ -12704,20 +12698,6 @@ fn emit_vertex_color_triangles(
   } else {
     1.0
   };
-  let clip_open = if self_crossing {
-    let mut d = String::new();
-    for (i, &p) in points.iter().enumerate() {
-      let (x, y) = screen(p);
-      d.push_str(&format!("{}{x:.2},{y:.2} ", if i == 0 { "M" } else { "L" }));
-    }
-    let clip_id = format!("vcclip{}", out.len());
-    out.push_str(&format!(
-      "<clipPath id=\"{clip_id}\"><path d=\"{d}Z\" clip-rule=\"evenodd\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\">\n"
-    ));
-    true
-  } else {
-    false
-  };
   let mut emit_tri = |p0: (f64, f64),
                       c0: Color,
                       p1: (f64, f64),
@@ -12791,9 +12771,6 @@ fn emit_vertex_color_triangles(
         }
       }
     }
-  }
-  if clip_open {
-    out.push_str("</g>\n");
   }
 }
 
