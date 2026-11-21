@@ -1028,6 +1028,11 @@ fn compute_builtin_attributes(name: &str) -> Attributes {
     "C" | "InverseFunction" | "Root" => {
       A::NHoldAll | A::Protected | A::ReadProtected
     }
+    // `Derivative[n][f][x]`: N and SetPrecision never touch the order `n`
+    // (`SetPrecision[x'[t] == 1, 8]` keeps `Derivative[1]`, so NDSolve still
+    // sees a differential equation). Like `CircleTimes`, it stays
+    // unprotected so user code can define derivatives.
+    "Derivative" => A::NHoldAll | A::ReadProtected,
     "PrintTemporary" => A::Protected | A::ReadProtected,
 
     // Protected + ReadProtected (additional)
