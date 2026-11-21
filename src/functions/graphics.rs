@@ -19126,7 +19126,7 @@ fn with_box_upright_text<R>(upright: bool, f: impl FnOnce() -> R) -> R {
 /// How much narrower a proportional face sets text than the Arial metrics
 /// of [`crate::functions::plot_padding::char_width_em`]: a serif face such
 /// as Times runs about 10% tighter.
-fn proportional_family_scale(family: &str) -> f64 {
+pub(crate) fn proportional_family_scale(family: &str) -> f64 {
   let f = family.to_ascii_lowercase();
   if f.contains("times") || (f.contains("serif") && !f.contains("sans")) {
     0.9
@@ -38037,9 +38037,16 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         for (k, line) in lines.iter().enumerate() {
           let line_y = cy + (k as f64 - (lines.len() - 1) as f64 / 2.0) * fs;
           svg.push_str(&format!(
-            "<text x=\"{text_x:.1}\" y=\"{line_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+            "<text x=\"{text_x:.1}\" y=\"{line_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\"{preserve}>{content}</text>\n",
             ff = svg_escape(ff),
             deco = style.decoration.svg_attrs(),
+            // A line that starts with a space (re-flowed text continuing
+            // after a break between row items) keeps it as an indent.
+            preserve = if line.starts_with(' ') {
+              " xml:space=\"preserve\""
+            } else {
+              ""
+            },
             // Spans inside the run carry their own `Style` colors; the
             // opacity (inherited by them) is what keeps those unpainted too.
             hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
@@ -38651,8 +38658,14 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       let per_char =
         crate::functions::plot_padding::text_width(&markup, st.font_size);
       // The generic `sans-serif` is the default face itself, which is
-      // always there, so its own advances alone measure it.
-      if st.font_family == "sans-serif" {
+      // always there, so its own advances alone measure it. A serif face
+      // (`"Times"`) falls back to the default serif face, which sets text
+      // narrower than the sans average: its per-character advances bound
+      // it, where the average would leave a centered piece floating in a
+      // gap as wide as a third of its own text.
+      if st.font_family == "sans-serif"
+        || proportional_family_scale(&st.font_family) < 1.0
+      {
         per_char * bold
       } else {
         let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
