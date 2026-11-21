@@ -26364,8 +26364,10 @@ ParametricPlot[f[t], {t, 0, 1}]]",
            {y, 0, 1}, PlotRangePadding -> None], PlotRangePadding]}"
         )
         .unwrap(),
-        "{{PlotRangePadding -> Scaled[0.02]}, \
-         {PlotRangePadding -> Scaled[0.02]}, {PlotRangePadding -> None}}"
+        "{{PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, \
+         {Scaled[0.02], Scaled[0.02]}}}, \
+         {PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, \
+         {Scaled[0.02], Scaled[0.02]}}}, {PlotRangePadding -> None}}"
       );
       let svg = export_svg(
         "Show[{DensityPlot[x y, {x, 0, 2}, {y, 0, 3}, PlotRange -> All], \
