@@ -1125,3 +1125,41 @@ fn row_relation_separator_spaced_in_graphics_text() {
   .unwrap();
   assert!(svg.contains("</tspan>,2.5</text>"), "spaced comma: {svg}");
 }
+
+/// `Text[expr]` sets `expr` in plain text: an enclosing `Bold` does not
+/// reach the `Text` items of a styled row (their size still does), while a
+/// `Style` inside the `Text` applies.
+#[test]
+fn text_items_of_bold_row_are_plain() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Style[Row[{Text["name"], " ", Text[Subscript["CO", 2]]}], 18, Bold], "SVG"]"#,
+  )
+  .unwrap();
+  let text_of = |label: &str| {
+    svg
+      .lines()
+      .find(|l| l.contains("<text") && l.contains(label))
+      .unwrap_or_else(|| panic!("no {label} text: {svg}"))
+      .to_string()
+  };
+  for label in [">name</text>", ">CO<tspan"] {
+    let line = text_of(label);
+    assert!(line.contains("font-size=\"18\""), "size lost: {line}");
+    assert!(!line.contains("font-weight=\"bold\""), "bold: {line}");
+  }
+
+  let svg = interpret(
+    r#"ExportString[Style[Row[{Text[Style["name", Bold]], "x"}], 18], "SVG"]"#,
+  )
+  .unwrap();
+  let line = svg
+    .lines()
+    .find(|l| l.contains(">name</text>"))
+    .unwrap_or_else(|| panic!("no name text: {svg}"));
+  assert!(
+    line.contains("font-weight=\"bold\""),
+    "inner Bold lost: {line}"
+  );
+  assert!(line.contains("font-size=\"18\""), "size lost: {line}");
+}

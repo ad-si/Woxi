@@ -19327,10 +19327,71 @@ pub(crate) fn text_pushed_into_row(content: &Expr) -> Option<Expr> {
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
     {
-      let inner = text_pushed_into_row(&args[0])?;
-      let mut new_args = vec![inner];
-      new_args.extend(args[1..].iter().cloned());
-      Some(call(name.as_str(), new_args))
+      // The directives sit inside the `Text`, so they go inside the `Text`
+      // items too (`Text[Style[Row[{a}], Bold]]` → `Row[{Text[Style[a,
+      // Bold]]}]`): a `Style` around a `Text` item does not make it bold.
+      let mut directives: Vec<Expr> = args[1..].to_vec();
+      let mut content = &args[0];
+      while let Expr::FunctionCall { name, args } = content
+        && is_style_wrapper(name)
+        && !args.is_empty()
+      {
+        directives.splice(0..0, args[1..].iter().cloned());
+        content = &args[0];
+      }
+      let pushed_row = text_pushed_into_row(content)?;
+      let Expr::FunctionCall {
+        name: row,
+        args: row_args,
+      } = &pushed_row
+      else {
+        return None;
+      };
+      let Some(Expr::List(pushed)) = row_args.first() else {
+        return None;
+      };
+      let originals: Vec<Expr> = match content {
+        Expr::FunctionCall { args, .. } => match args.first() {
+          Some(Expr::List(items)) => items.to_vec(),
+          _ => return None,
+        },
+        other => vec![other.clone()],
+      };
+      let styled_row = style_pushed_into_layout(
+        &call(
+          "Row",
+          std::iter::once(Expr::List(originals.clone().into()))
+            .chain(row_args[1..].iter().cloned())
+            .collect(),
+        ),
+        &directives,
+      )?;
+      let Expr::FunctionCall {
+        args: styled_args, ..
+      } = &styled_row
+      else {
+        return None;
+      };
+      let Some(Expr::List(styled)) = styled_args.first() else {
+        return None;
+      };
+      // An item `text_pushed_into_row` wrapped in `Text` takes the style
+      // inside; the others keep the style the layout gave them.
+      let items: Vec<Expr> = pushed
+        .iter()
+        .zip(originals.iter())
+        .zip(styled.iter())
+        .map(|((p, o), st)| {
+          if is_text_display_item(p) && !is_text_display_item(o) {
+            call1("Text", st.clone())
+          } else {
+            st.clone()
+          }
+        })
+        .collect();
+      let mut new_args = vec![Expr::List(items.into())];
+      new_args.extend(styled_args[1..].iter().cloned());
+      Some(call(row.as_str(), new_args))
     }
     _ => None,
   }
@@ -40122,19 +40183,41 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
     // own `<text>` element, so typesetting the whole wrapper would apply
     // them a second time (a relative `Larger` compounding to 156%).
     let mut text_item = item;
-    if let Expr::FunctionCall { name, args: sargs } = item
-      && is_style_wrapper(name)
-      && !sargs.is_empty()
-    {
-      text_item = &sargs[0];
-      for d in style_directives_in_application_order(&sargs[1..]) {
+    let mut apply_directives = |dirs: &[Expr], st: &mut StyleState| {
+      for d in style_directives_in_application_order(dirs) {
         if let Some(a) = text_opacity_directive(d) {
           opacity = a;
         } else if let Some(c) = parse_color(d) {
           color = Some(c);
         } else {
-          apply_text_style_directive(d, &mut st);
+          apply_text_style_directive(d, st);
         }
+      }
+    };
+    if let Expr::FunctionCall { name, args: sargs } = item
+      && is_style_wrapper(name)
+      && !sargs.is_empty()
+    {
+      text_item = &sargs[0];
+      apply_directives(&sargs[1..], &mut st);
+    }
+    // `Text[expr]` sets `expr` in plain text: an enclosing `Bold` does not
+    // carry into it (`Style[Row[{Text[a], …}], 18, Bold]` draws `a`
+    // plain at size 18), while a `Style` inside it still applies
+    // (`Text[Style[a, Bold]]` is bold).
+    let text_inner;
+    if let Expr::FunctionCall { name, args: targs } = text_item
+      && name == "Text"
+      && targs.len() == 1
+    {
+      st.font_weight = "normal".to_string();
+      if let Expr::FunctionCall { name, args: sargs } = &targs[0]
+        && is_style_wrapper(name)
+        && !sargs.is_empty()
+      {
+        apply_directives(&sargs[1..], &mut st);
+        text_inner = call1("Text", sargs[0].clone());
+        text_item = &text_inner;
       }
     }
     let scale = st.font_size / font_size;
