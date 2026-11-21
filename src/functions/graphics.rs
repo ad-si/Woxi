@@ -37233,6 +37233,19 @@ pub(crate) fn text_layout_face(expr: &Expr) -> Option<(&Expr, Expr)> {
 /// option argument keeps its place. A `Framed[…]` takes the directives onto
 /// its content. `None` when the wrapped expression is neither a layout
 /// with a list of items nor a frame.
+/// `e` without the one-argument `Text[…]` wrappers around it: such a
+/// `Text` only marks its content as text, so a layout inside one is still
+/// that layout.
+fn strip_text_wrappers(mut e: &Expr) -> &Expr {
+  while let Expr::FunctionCall { name, args } = e
+    && name == "Text"
+    && args.len() == 1
+  {
+    e = &args[0];
+  }
+  e
+}
+
 pub(crate) fn style_pushed_into_layout(
   inner: &Expr,
   directives: &[Expr],
@@ -37343,15 +37356,19 @@ pub(crate) fn style_pushed_into_layout(
     // set in another face) merges the same way, or its size would be
     // measured at the default and its text would overrun its neighbors.
     // (Any other styled `Row` item is already set inline as it is.)
+    // A one-argument `Text[…]` between the two (`Style[Text[Column[…]],
+    // 14]`) only marks its content as text, so it comes off here too.
     if let Expr::FunctionCall { name, args } = e
       && name == "Style"
-      && let Some(Expr::FunctionCall { name: content, .. }) = args.first()
-      && (matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
-        || (content == "Row" && extract_cell_style(e).font_size.is_some()))
+      && let Some(first) = args.first()
+      && let content @ Expr::FunctionCall { name: head, .. } =
+        strip_text_wrappers(first)
+      && (matches!(head.as_str(), "Column" | "Grid" | "TextGrid")
+        || (head == "Row" && extract_cell_style(e).font_size.is_some()))
     {
       return call(
         "Style",
-        std::iter::once(args[0].clone())
+        std::iter::once(content.clone())
           .chain(directives.iter().cloned())
           .chain(args[1..].iter().cloned())
           .collect(),
@@ -37949,6 +37966,23 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
+        // `Style[Text[Style[Column[…], 12]], 14]`: a one-argument `Text`
+        // only marks its content as text, so the style goes straight onto
+        // that content. Otherwise the wrapper hid the layout below it.
+        if let Expr::FunctionCall {
+          name: t,
+          args: t_args,
+        } = &args[0]
+          && t == "Text"
+          && t_args.len() == 1
+        {
+          return nested_layout_svg(&call(
+            name.as_str(),
+            std::iter::once(t_args[0].clone())
+              .chain(args[1..].iter().cloned())
+              .collect(),
+          ));
+        }
         // `Style[Style[Column[…], Blue], 12]`: the directives of both
         // wrappers apply to the vertical layout, the inner ones taking
         // precedence.
@@ -37958,13 +37992,15 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
             args: inner,
           } = &args[0]
           && n == "Style"
-          && matches!(inner.first(), Some(Expr::FunctionCall { name: c, .. })
-            if matches!(c.as_str(), "Column" | "Grid" | "TextGrid"))
-          && style_pushed_into_layout(&inner[0], &inner[1..]).is_some()
+          && let Some(first) = inner.first()
+          && let content @ Expr::FunctionCall { name: c, .. } =
+            strip_text_wrappers(first)
+          && matches!(c.as_str(), "Column" | "Grid" | "TextGrid")
+          && style_pushed_into_layout(content, &inner[1..]).is_some()
         {
           let merged = call(
             "Style",
-            std::iter::once(inner[0].clone())
+            std::iter::once(content.clone())
               .chain(args[1..].iter().cloned())
               .chain(inner[1..].iter().cloned())
               .collect(),
