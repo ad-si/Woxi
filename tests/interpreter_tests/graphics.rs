@@ -26867,6 +26867,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// The corners of a polygon only a few grid cells across (a thin
+    /// triangle at a coarse `PlotPoints`, like the outer zones of a
+    /// Brillouin-zone plot) are restored exactly too, although the straight
+    /// edges between them are short. Regression: they stayed beveled, each
+    /// corner cut off by up to two cells.
+    #[test]
+    fn region_plot_small_polygon_corners_are_exact() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Round[Cases[RegionPlot[y > 0 && y < x && x + 2 y < 1, \
+           {x, -2, 2}, {y, -2, 2}, PlotPoints -> 25], \
+           Polygon[p_] :> p, Infinity], 1/1000]"
+        )
+        .unwrap(),
+        "{{{0, 0}, {333/1000, 333/1000}, {1, 0}}}"
+      );
+      // Two such triangles meeting at a point stay two exact triangles.
+      assert_eq!(
+        interpret(
+          "Round[Cases[RegionPlot[y > 0 && (y < x && x + 2 y < 1 || \
+           y < -x && 2 y - x < 1), {x, -2, 2}, {y, -2, 2}, \
+           PlotPoints -> 25], Polygon[p_] :> Sort[p], Infinity], 1/1000]"
+        )
+        .unwrap(),
+        "{{{-1, 0}, {-333/1000, 333/1000}, {0, 0}}, \
+         {{0, 0}, {333/1000, 333/1000}, {1, 0}}}"
+      );
+      // A curved boundary is not mistaken for beveled corners.
+      assert_eq!(
+        interpret(
+          "Length[First[Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, \
+           {y, -2, 2}, PlotPoints -> 25], Polygon[p_] :> p, Infinity]]] > 30"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     /// `RegionPlot[{p1, p2, …}, …]` draws one region per predicate, each in
     /// its own `ColorData[97]` color. Regression: a list of predicates
     /// drew nothing at all.
