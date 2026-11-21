@@ -29518,6 +29518,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// Regression: a computed `ColorFunction -> If[flag, f, None]` was kept
+    /// unevaluated, so with `flag = False` the `If[…]` itself was used as
+    /// the color function and every filled curve was painted solid black
+    /// instead of drawn like a plot without the option.
+    #[test]
+    fn plot_color_function_option_value_is_evaluated() {
+      let plain =
+        export_svg("Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis]");
+      let off = export_svg(
+        "flag = False; Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis, \
+         ColorFunction -> If[flag, Function[{x, y}, Hue[x]], None]]",
+      );
+      assert_eq!(off, plain);
+      let on = export_svg(
+        "flag = True; Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis, \
+         ColorFunction -> If[flag, Function[{x, y}, Hue[x]], None]]",
+      );
+      let direct = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis, \
+         ColorFunction -> Function[{x, y}, Hue[x]]]",
+      );
+      assert_eq!(on, direct);
+    }
+
     /// Regression: a `Plot` `ColorFunction` written as a slot function that
     /// uses `#2` (the curve's y value) was handed only `x`, so `#2` stayed
     /// unevaluated and the whole curve fell back to black.

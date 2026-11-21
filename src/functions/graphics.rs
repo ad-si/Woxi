@@ -50530,6 +50530,8 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Style" | "StyleForm" => {
         let styled = italic || args.iter().skip(1).any(is_italic_directive);
         let bold = args.iter().skip(1).any(is_bold_directive);
+        // A held label (a Manipulate control heading) may still carry a
+        // color that only evaluation produces, such as `ColorData[1, 1]`.
         let color = args
           .iter()
           .skip(1)
