@@ -5131,12 +5131,15 @@ mod tests {
       let poly = "x^10 + x^9 - x^3 + x + 1";
       let through_text =
         render(&format!("Style[Text@TraditionalForm[{poly}], 12]"));
+      // The `Text` only changes the face (to the proportional text face):
+      // the formula is typeset the same way, its powers raised as boxes
+      // rather than as inline `baseline-shift` spans.
       let direct = render(&format!("Style[TraditionalForm[{poly}], 12]"));
-      assert_eq!(through_text, direct);
       assert!(!through_text.contains("baseline-shift"), "{through_text}");
+      assert!(!direct.contains("baseline-shift"), "{direct}");
       let nested =
         render(&format!("Style[Text[Text[TraditionalForm[{poly}]]], 12]"));
-      assert_eq!(nested, direct);
+      assert_eq!(nested, through_text);
     }
 
     /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells

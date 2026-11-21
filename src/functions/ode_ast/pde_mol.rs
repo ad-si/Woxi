@@ -426,17 +426,6 @@ impl MolSystem {
       vars[n_vars - 1] = self.xs[g];
       for s in 0..n {
         out[base + s] = match self.rows[g][s] {
-          RowKind::Evolution(e) if self.singular[g] => {
-            // Two-point Gauss quadrature over the cell around the point.
-            let half = cell_gauss_offset(&self.xs, g);
-            let mut sum = 0.0;
-            for off in [-half, half] {
-              vars[n_vars - 1] = self.xs[g] + off;
-              sum += self.evolution_fns[e].eval(&vars)?;
-            }
-            vars[n_vars - 1] = self.xs[g];
-            sum / 2.0
-          }
           RowKind::Evolution(e) => {
             let f = &self.evolution_fns[e];
             let flux_vars;
@@ -447,10 +436,24 @@ impl MolSystem {
               &flux_vars
             };
             let v = f.eval(vars)?;
-            if v.is_finite() {
-              v
-            } else {
+            if !v.is_finite() {
+              // A coefficient singular right at the point (`1/r` at
+              // `r == 0`) has a removable limit there.
               self.removable_limit(f, g, vars)?
+            } else if self.singular[g] && self.flux_form[e].is_empty() {
+              // A near-singular coefficient (finite but spiking at the
+              // point): average the row over the point's cell with
+              // two-point Gauss quadrature instead of reading the spike.
+              let half = cell_gauss_offset(&self.xs, g);
+              let mut avg = vars.to_vec();
+              let mut sum = 0.0;
+              for off in [-half, half] {
+                avg[n_vars - 1] = self.xs[g] + off;
+                sum += f.eval(&avg)?;
+              }
+              sum / 2.0
+            } else {
+              v
             }
           }
           RowKind::Boundary(b) => self.boundary_fns[b].eval(&vars)?,

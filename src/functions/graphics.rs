@@ -12306,9 +12306,10 @@ fn clip_infinite_line_to_box(
   half: bool,
   bb: &BBox,
 ) -> Option<((f64, f64), (f64, f64))> {
-  let margin = bb.width() + bb.height();
-  let (x0, x1) = (bb.x_min - margin, bb.x_max + margin);
-  let (y0, y1) = (bb.y_min - margin, bb.y_max + margin);
+  // The same region as the other unbounded primitives are cut to.
+  let bx = unbounded_draw_box(bb);
+  let (x0, x1) = (bx.x_min, bx.x_max);
+  let (y0, y1) = (bx.y_min, bx.y_max);
   let (mut t_lo, mut t_hi) =
     (if half { 0.0 } else { f64::NEG_INFINITY }, f64::INFINITY);
   for (pc, vc, lo, hi) in [(p.0, v.0, x0, x1), (p.1, v.1, y0, y1)] {
@@ -38613,11 +38614,28 @@ pub(crate) fn style_pushed_into_layout(
         || (name == "Text" && args.len() == 1))
       && !args.is_empty()
     {
+      // `Text[expr]` sets `expr` in plain text: an enclosing weight or
+      // slant (`Style[Row[{Text[a], …}], 18, Bold]`) does not reach it,
+      // while its size and color still do.
+      let plain_text = name == "Text";
+      let is_weight_or_slant = |d: &Expr| match d {
+        Expr::Identifier(n) => {
+          matches!(n.as_str(), "Bold" | "Italic" | "Plain")
+        }
+        Expr::Rule { pattern, .. } => matches!(pattern.as_ref(),
+          Expr::Identifier(n) if n == "FontWeight" || n == "FontSlant"),
+        _ => false,
+      };
       let mut new_args: Vec<Expr> = args.iter().cloned().collect();
       new_args[0] = call(
         "Style",
         std::iter::once(args[0].clone())
-          .chain(directives.iter().cloned())
+          .chain(
+            directives
+              .iter()
+              .filter(|d| !(plain_text && is_weight_or_slant(d)))
+              .cloned(),
+          )
           .collect(),
       );
       return call(name.as_str(), new_args);
@@ -39412,27 +39430,30 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
-  column_to_svg_with_text_items(args, None)
+  column_to_svg_with_text_items(args, None, None)
 }
 
 /// [`column_to_svg`] for a column whose items were already drawn as
 /// pictures: `text_items[i]` tells whether item `i` was text (a string, or
 /// a `Row` of them) before it was drawn, so an explicit spacing is still
-/// measured between its lines rather than its padded box.
+/// measured between its lines rather than its padded box. `pane_items[i]`
+/// tells whether item `i` was a fixed-size `Pane`, which reserves exactly
+/// its own area and sits flush against its neighbors.
 pub fn column_to_svg_with_text_items(
   args: &[Expr],
   text_items: Option<&[bool]>,
+  pane_items: Option<&[bool]>,
 ) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Column", args) {
-    return column_to_svg_with_text_items(&styled, text_items);
+    return column_to_svg_with_text_items(&styled, text_items, pane_items);
   }
   if let Some(styled) = column_item_style_pushed_args(args) {
-    return column_to_svg_with_text_items(&styled, text_items);
+    return column_to_svg_with_text_items(&styled, text_items, pane_items);
   }
   if let Some(grid_args) = column_as_grid_args(args) {
     return grid_svg_with_gaps(&grid_args, &[]).ok();
   }
-  let svg = column_layout_svg(args, text_items)?;
+  let svg = column_layout_svg(args, text_items, pane_items)?;
   Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
 }
 
@@ -39692,6 +39713,7 @@ fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
 fn column_layout_svg(
   args: &[Expr],
   text_items: Option<&[bool]>,
+  pane_items: Option<&[bool]>,
 ) -> Option<String> {
   if args.is_empty() {
     return None;
@@ -39840,15 +39862,11 @@ fn column_layout_svg(
         {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
-            // A framed box is drawn border to border, with no blank text
-            // margin around it.
-            let framed = matches!(&resolved, Expr::FunctionCall { name, .. }
-              if name == "Framed" || name == "Panel");
             Cell::Svg {
               svg,
               width: w,
               height: h,
-              picture: framed,
+              picture: false,
             }
           }
           None => {
@@ -39987,6 +40005,17 @@ fn column_layout_svg(
     if text { text_margin } else { 0.0 }
   };
   let n = cells.len();
+  // A fixed-size `Pane` of text reserves exactly its own area, so it sits
+  // flush against the items beside it (a pane holding a picture is spaced
+  // like the picture).
+  let is_pane = |i: usize| {
+    pane_items
+      .and_then(|p| p.get(i).copied())
+      .unwrap_or_else(|| {
+        fixed_size_pane_svg(&items[i]).is_some()
+          && !crate::evaluator::lays_out_a_graphic(&items[i])
+      })
+  };
   // Without a stated spacing, two pictures stacked one on the other are
   // set the default 6 pt apart (a text line carries its own leading), as
   // in a `Column` laid out without an alignment argument; a stack of
@@ -39995,6 +40024,7 @@ fn column_layout_svg(
     .map(|i| match explicit_spacing {
       Some(s) => s * font_size - f64::midpoint(margin(i - 1), margin(i)),
       None => match (&cells[i - 1], &cells[i]) {
+        _ if is_pane(i - 1) || is_pane(i) => 0.0,
         (Cell::Svg { .. }, Cell::Svg { .. }) => 6.0,
         _ => 0.0,
       },

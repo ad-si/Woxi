@@ -5641,15 +5641,29 @@ pub(crate) fn column_svg_with_rendered_items(
   // Which items are text rather than pictures, told before drawing them
   // turns every one into a picture.
   let mut text_items: Option<Vec<bool>> = None;
+  let mut pane_items: Option<Vec<bool>> = None;
   if let syntax::Expr::List(items) = &new_args[0] {
+    pane_items = Some(
+      items
+        .iter()
+        .map(|item| {
+          pane_fixed_size(item).is_some()
+            && !evaluator::lays_out_a_graphic(item)
+        })
+        .collect(),
+    );
     text_items = Some(
       items
         .iter()
         .map(|item| {
+          // A framed box is drawn border to border, with no blank text
+          // margin beyond its frame.
           !matches!(
             item,
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
-          ) && !evaluator::lays_out_a_graphic(item)
+          ) && !matches!(item, syntax::Expr::FunctionCall { name, .. }
+              if name == "Framed" || name == "Panel")
+            && !evaluator::lays_out_a_graphic(item)
             && pane_fixed_size(item).is_none()
         })
         .collect(),
@@ -5661,6 +5675,7 @@ pub(crate) fn column_svg_with_rendered_items(
   functions::graphics::column_to_svg_with_text_items(
     &new_args,
     text_items.as_deref(),
+    pane_items.as_deref(),
   )
 }
 

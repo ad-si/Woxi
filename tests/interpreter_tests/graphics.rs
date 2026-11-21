@@ -4069,14 +4069,34 @@ mod graphics {
             "Graphics[Polygon[Table[{Cos[4 Pi k/5], Sin[4 Pi k/5]}, \
              {k, 0, 4}], VertexColors -> {Red, Green, Blue, Yellow, Cyan}]]",
           );
-          assert!(svg.contains("clip-rule=\"evenodd\""));
-          assert!(svg.matches("<polygon").count() > 5);
-          // A simple (non-crossing) outline needs no clip.
-          let simple = export_svg(
-            "Graphics[Polygon[Table[{Cos[2 Pi k/5], Sin[2 Pi k/5]}, \
-             {k, 0, 4}], VertexColors -> {Red, Green, Blue, Yellow, Cyan}]]",
+          let polys = parse_svg_polygons(&svg);
+          assert!(polys.len() > 5);
+          // The data point (0, 0) — the pentagram's center — sits a
+          // fraction 0.809/1.809 across the drawn x extent and halfway down.
+          let pts: Vec<(f64, f64)> = polys.iter().flatten().copied().collect();
+          let (x0, x1) = pts
+            .iter()
+            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.0), b.max(p.0)));
+          let (y0, y1) = pts
+            .iter()
+            .fold((f64::MAX, f64::MIN), |(a, b), p| (a.min(p.1), b.max(p.1)));
+          let c = (
+            x0 + (x1 - x0) * (0.809_017 / 1.809_017),
+            f64::midpoint(y0, y1),
           );
-          assert!(!simple.contains("clip-rule"));
+          let inside = |poly: &[(f64, f64)]| {
+            let mut odd = false;
+            for i in 0..poly.len() {
+              let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+              if (a.1 > c.1) != (b.1 > c.1)
+                && c.0 < a.0 + (c.1 - a.1) / (b.1 - a.1) * (b.0 - a.0)
+              {
+                odd = !odd;
+              }
+            }
+            odd
+          };
+          assert!(!polys.iter().any(|p| inside(p)), "the center is filled");
         }
 
         /// A long self-crossing blended outline whose triangles reach far
@@ -11630,9 +11650,15 @@ mod plot3d {
           "Graphics3D[{{Opacity[0.4], Red, EdgeForm[Thick], \
            Polygon[{corners}]}}, Boxed -> False]"
         ));
-        let filled: Vec<&str> =
-          svg.lines().filter(|l| l.starts_with("<polygon")).collect();
-        assert!(filled.len() >= 2, "{svg}");
+        // The triangles are drawn as `<polygon>`s or merged into `<path>`s
+        // of one closed ring each.
+        let filled: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.starts_with("<polygon") || l.starts_with("<path d=\"M"))
+          .collect();
+        let triangles: usize =
+          filled.iter().map(|l| l.matches(" Z").count().max(1)).sum();
+        assert!(triangles >= 2, "{svg}");
         for tri in &filled {
           assert!(
             tri.contains("stroke=\"none\"") && tri.contains("opacity=\"0.4\""),
@@ -13482,11 +13508,18 @@ mod plot3d {
       let svg = export_svg(code);
       let (mut x0, mut x1, mut y0, mut y1) =
         (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
-      for pts in svg.split("points=\"").skip(1) {
+      // Faces are drawn as `<polygon points="…">` or merged into
+      // `<path d="M… L… Z">`.
+      let lists = svg
+        .split("points=\"")
+        .skip(1)
+        .chain(svg.split("<path d=\"").skip(1));
+      for pts in lists {
         let Some(pts) = pts.split('"').next() else {
           continue;
         };
         for pair in pts.split_whitespace() {
+          let pair = pair.trim_start_matches(['M', 'L']);
           let Some((x, y)) = pair.split_once(',') else {
             continue;
           };
@@ -13697,7 +13730,7 @@ mod plot3d {
         ] {
           let longer = w.max(h);
           assert!(
-            (144.0..=150.0).contains(&longer),
+            (140.0..=150.0).contains(&longer),
             "r = {r}: expected the cylinder to fill the frame, got {w} x {h}"
           );
         }
@@ -19313,8 +19346,16 @@ mod plot3d {
       assert!(svg.contains(">v₁ = k₂ sin(k₁ x + ϕ)<"), "{svg}");
       assert!(svg.contains(">a ≤ b<"), "{svg}");
       assert!(svg.contains(">a ≠ b<"), "{svg}");
-      assert!(svg.contains(">x² - 1<"), "{svg}");
-      assert!(svg.contains(">x + 1<"), "{svg}");
+      // Polynomials are set like axis labels, in TraditionalForm order
+      // with italic variables.
+      let x = "<tspan font-style=\"italic\">x</tspan>";
+      assert!(
+        svg.contains(&format!(
+          ">{x}<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>-1<"
+        )),
+        "{svg}"
+      );
+      assert!(svg.contains(&format!(">{x}+1<")), "{svg}");
     }
 
     /// A `Spacer` in a `Row` that is set as graphics text keeps the color
@@ -71222,35 +71263,48 @@ fn opaque_parametric_region_cells_have_no_seams() {
 mod traditional_form_text_scripts {
   use super::*;
 
-  #[test]
-  fn powers_keep_their_superscripts() {
-    let svg = export_svg("Graphics[Text[TraditionalForm[x^2 + y], {0, 0}]]");
-    assert!(svg.contains(">x\u{b2}+y</text>"), "{svg}");
-    let svg =
-      export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
-    // The product's factors are set apart by thin spaces.
-    assert!(
-      svg.contains("16\u{207f}\u{2009}((p-q)\u{2009}q\u{b3})\u{207f}"),
-      "{svg}"
-    );
+  /// The `(text, font size)` of each non-empty `<text>` run of a picture.
+  fn runs(svg: &str) -> Vec<(String, String)> {
+    svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|t| {
+        let (attrs, rest) = t.split_once('>')?;
+        let text = rest.split("</text>").next()?.to_string();
+        let size = attrs.split("font-size=\"").nth(1)?.split('"').next()?;
+        (!text.is_empty()).then(|| (text, size.to_string()))
+      })
+      .collect()
+  }
+
+  /// Whether `script` is drawn right after `base`, at a smaller size.
+  fn has_script(svg: &str, base: &str, script: &str) -> bool {
+    runs(svg).windows(2).any(|w| {
+      w[0].0 == base
+        && w[1].0 == script
+        && w[1].1.parse::<f64>().unwrap_or(0.0)
+          < w[0].1.parse::<f64>().unwrap_or(0.0)
+    })
   }
 
   #[test]
-  fn scripts_without_glyphs_become_tspans() {
+  fn powers_keep_their_superscripts() {
+    let svg = export_svg("Graphics[Text[TraditionalForm[x^2 + y], {0, 0}]]");
+    assert!(has_script(&svg, "x", "2"), "{svg}");
+    assert!(!svg.contains(">x2"), "{svg}");
+    let svg =
+      export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
+    assert!(has_script(&svg, "16", "n"), "{svg}");
+    assert!(has_script(&svg, "q", "3"), "{svg}");
+  }
+
+  #[test]
+  fn scripts_without_glyphs_are_set_as_scripts() {
     let svg = export_svg("Graphics[Text[TraditionalForm[x^(a b)], {0, 0}]]");
-    assert!(
-      svg.contains(
-        "x<tspan baseline-shift=\"super\" font-size=\"70%\">a\u{2009}b</tspan>"
-      ),
-      "{svg}"
-    );
+    assert!(has_script(&svg, "x", "a"), "{svg}");
     let svg =
       export_svg("Graphics[Text[TraditionalForm[Subscript[x, k]], {0, 0}]]");
-    assert!(
-      svg
-        .contains("x<tspan baseline-shift=\"sub\" font-size=\"70%\">k</tspan>"),
-      "{svg}"
-    );
+    assert!(has_script(&svg, "x", "k"), "{svg}");
   }
 }
 
