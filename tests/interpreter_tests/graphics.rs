@@ -22447,6 +22447,23 @@ Plot[{x^2 - 1, 1 - x^2}, {x, -1, 1}, Filling -> {1 -> {{2}, Blue}}]]",
       );
     }
 
+    // Regression: a plot shown together with other graphics cuts its
+    // curves at its own (outlier-trimmed) range, as the plot drawn alone
+    // does, instead of letting them run on into the `PlotRangePadding`
+    // margin down to the frame.
+    #[test]
+    fn show_cuts_plot_curves_at_plot_range_not_padding() {
+      clear_state();
+      let r = interpret(
+        "p = Plot[{PolyGamma[x + 1], Log[x]}, {x, 0, 5}]; \
+         g = Show[p, Graphics[Point[{1, 0}]]]; \
+         lo = Min[Cases[g, Line[pts_] :> pts[[All, 2]], Infinity]]; \
+         {Abs[lo - PlotRange[p][[2, 1]]] < 10^-9, lo > PlotRange[g][[2, 1]]}",
+      )
+      .unwrap();
+      assert_eq!(r, "{True, True}");
+    }
+
     // A `PlotRange` given to `Show` itself still spans every layer.
     #[test]
     fn show_own_plot_range_spans_primitives_over_plot() {
