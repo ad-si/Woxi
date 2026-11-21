@@ -1062,6 +1062,49 @@ mod wavelets {
   }
 
   #[test]
+  fn wavelet_scalogram_forwards_plot_options() {
+    // Options such as ColorFunction and ImageSize used to be dropped.
+    assert_eq!(
+      interpret(
+        "svg = ExportString[WaveletScalogram[ContinuousWaveletTransform[\
+         Table[Sin[k/3.], {k, 8}]], ColorFunction -> (RGBColor[#, 0, 1 - #] &)], \"SVG\"]; \
+         {StringContainsQ[svg, \"fill=\\\"#FF0000\\\"\"], \
+          StringContainsQ[svg, \"fill=\\\"#0000FF\\\"\"]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[WaveletScalogram[ContinuousWaveletTransform[Table[Sin[k/3.], {k, 32}]], \
+         ImageSize -> 300], (ImageSize -> s_) :> s, Infinity]"
+      )
+      .unwrap(),
+      "{300}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[WaveletScalogram[DiscreteWaveletTransform[Range[16.]], \
+         ImageSize -> 250], (ImageSize -> s_) :> s, Infinity]"
+      )
+      .unwrap(),
+      "{250}"
+    );
+  }
+
+  #[test]
+  fn wavelet_list_plot_forwards_plot_options() {
+    assert_eq!(
+      interpret(
+        "Cases[WaveletListPlot[DiscreteWaveletTransform[Range[16.]], \
+         ImageSize -> 222], (ImageSize -> s_) :> s, Infinity]"
+      )
+      .unwrap(),
+      "{222}"
+    );
+  }
+
+  #[test]
   fn wavelet_matrix_plot_returns_graphics() {
     assert_eq!(
       interpret(
