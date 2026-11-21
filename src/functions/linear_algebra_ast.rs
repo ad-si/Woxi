@@ -17505,6 +17505,24 @@ pub fn coordinate_transform_ast(
   if args.len() != 2 {
     return Ok(unevaluated(args));
   }
+  // CoordinateTransform[t, {pt1, pt2, …}] transforms each point (and an
+  // array of points at any depth, element by element). The whole call
+  // stays unevaluated when any point cannot be transformed.
+  if let Expr::List(points) = &args[1]
+    && !points.is_empty()
+    && points.iter().all(|p| matches!(p, Expr::List(_)))
+  {
+    let mut transformed = Vec::with_capacity(points.len());
+    for point in points {
+      let result = coordinate_transform_ast(&[args[0].clone(), point.clone()])?;
+      if matches!(&result, Expr::FunctionCall { name, .. } if name == "CoordinateTransform")
+      {
+        return Ok(unevaluated(args));
+      }
+      transformed.push(result);
+    }
+    return Ok(Expr::List(transformed.into()));
+  }
   // A chart with parameters (`{"Bipolar", {a}}`) or another chart of the
   // table maps to Cartesian coordinates through the chart table.
   if let (

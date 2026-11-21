@@ -7566,8 +7566,9 @@ mod plot3d {
     /// own extent instead of the range asked for.
     #[test]
     fn plot_range_bounds_all_three_axes() {
-      let unbounded =
-        export_svg("Plot3D[1/(x y), {x, -3, 3}, {y, -3, 3}, Mesh -> None]");
+      let unbounded = export_svg(
+        "Plot3D[1/(x y), {x, -3, 3}, {y, -3, 3}, Mesh -> None, PlotRange -> All]",
+      );
       assert!(
         largest_tick(&unbounded) > 10.0,
         "the unbounded surface reaches far past the domain: {unbounded}"
@@ -7608,6 +7609,32 @@ mod plot3d {
         assert!(
           svg.contains(&format!(">{label}<")),
           "expected the {label:?} axis label in the SVG: {svg}"
+        );
+      }
+    }
+
+    // A label with a newline is stacked as one line per tspan; it used to
+    // be written into a single `<text>` with the raw newline, which SVG
+    // collapses into a space.
+    #[test]
+    fn multiline_axes_label_is_stacked() {
+      for code in [
+        "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, \
+         AxesLabel -> {\"first part\\nsecond part\", None, None}]",
+        "ListPlot3D[Table[{i, j, i + j}, {i, 3}, {j, 3}], \
+         AxesLabel -> {None, \"first part\\nsecond part\", None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(!svg.contains("first part\n"), "{code}: {svg}");
+        assert!(svg.contains("\">first part</tspan>"), "{code}: {svg}");
+        let second = svg
+          .split("\">second part</tspan>")
+          .next()
+          .and_then(|s| s.rsplit("dy=\"").next())
+          .and_then(|s| s.parse::<f64>().ok());
+        assert!(
+          matches!(second, Some(dy) if dy > 0.0),
+          "{code}: the second line must sit below the first: {svg}"
         );
       }
     }
@@ -14670,6 +14697,22 @@ mod plot3d {
                          {None, None}}]"#,
       );
       assert!(graphics.contains(">p0.5<"), "{graphics}");
+    }
+
+    // `FrameTicks` naming a `Module` local that holds an explicit tick list
+    // uses the list: the symbol is not called as a tick function, so the
+    // frame is not marked invalid and the right-edge labels are drawn.
+    #[test]
+    fn plot_frame_ticks_from_a_module_local_list() {
+      let plot = export_svg(
+        r#"Module[{tk}, tk = {{0, "ra"}, {0.5, "rb"}, {1, "rc"}};
+          Plot[x, {x, 0, 1}, Frame -> True,
+            FrameTicks -> {{Automatic, tk}, {Automatic, Automatic}}]]"#,
+      );
+      for label in [">ra<", ">rb<", ">rc<"] {
+        assert!(plot.contains(label), "missing {label}: {plot}");
+      }
+      assert!(!plot.contains("100%,33%,33%"), "{plot}");
     }
 
     // Plot options are held, so a value stored in a variable is looked up:
@@ -31310,6 +31353,31 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "Style[Column[{\"a\", Style[Column[{\"b\", \"c\"}], Blue]}], 12]",
         "Style[Style[Column[{\"b\", \"c\"}], Blue], 12]",
         "Column[{\"a\", Style[Style[Column[{\"b\", \"c\"}], Blue], 12]}]",
+      ] {
+        let svg = export_svg(expr);
+        assert!(!svg.contains("Column["), "{expr} dumped source: {svg}");
+        for part in ["b", "c"] {
+          let blue_12 = svg.split("<text").any(|t| {
+            t.contains("font-size=\"12\"")
+              && t.contains("fill=\"rgb(0,0,255)\"")
+              && t.contains(&format!(">{part}<"))
+          });
+          assert!(blue_12, "{expr}: `{part}` not blue at 12pt: {svg}");
+        }
+      }
+    }
+
+    // A one-argument `Text[…]` between nested styles only marks its content
+    // as text: the column inside it is still laid out with both styles
+    // instead of being typeset as the source text `Column[{b, c}]`.
+    #[test]
+    fn text_wrapped_styled_column_inside_styled_layout_is_laid_out() {
+      for expr in [
+        "Style[Column[{\"a\", Style[Text[Column[{\"b\", \"c\"}]], Blue]}], 12]",
+        "Style[Text[Column[{\"a\", Style[Text[Column[{\"b\", \"c\"}]], Blue]}]], 12]",
+        "Column[{\"a\", Style[Style[Text[Column[{\"b\", \"c\"}]], Blue], 12]}]",
+        "Column[{\"a\", Style[Text[Style[Column[{\"b\", \"c\"}], Blue]], 12]}]",
+        "Style[Row[{\"a\", Style[Text[Column[{\"b\", \"c\"}]], Blue]}], 12]",
       ] {
         let svg = export_svg(expr);
         assert!(!svg.contains("Column["), "{expr} dumped source: {svg}");
@@ -54562,6 +54630,60 @@ mod arrowheads_render {
     );
   }
 
+  /// A label placed at a symbolic or `Scaled` position inside a head
+  /// graphic (`Text[label, {Center, Center}]`) names a point of that head
+  /// graphic, not of the enclosing picture: it must sit on the arrow, not
+  /// at the center of the whole image.
+  #[test]
+  fn a_head_graphic_scaled_label_sits_on_the_arrow() {
+    clear_state();
+    for pos in ["{Center, Center}", "Scaled[{0.5, 0.5}]"] {
+      let svg = export_svg(&format!(
+        "Graphics[{{Arrowheads[{{{{0.05, 0.5, Graphics[Text[\"q\", {pos}]]}}}}], \
+         Arrow[{{{{2, 0}}, {{2, 4}}}}]}}, PlotRange -> {{{{0, 10}}, {{0, 10}}}}, \
+         ImageSize -> 200, ImagePadding -> None]"
+      ));
+      let tag = svg
+        .split(">q<")
+        .next()
+        .and_then(|head| head.rsplit("<text ").next())
+        .unwrap_or_else(|| panic!("the label must draw: {svg:.800}"));
+      let attr = |name: &str| -> f64 {
+        format!(" {tag}")
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|t| t.split('"').next())
+          .and_then(|n| n.parse().ok())
+          .unwrap_or_else(|| panic!("missing {name} in {tag}"))
+      };
+      // The arrow's midpoint {2, 2} is 40 px from the left and 160 px
+      // from the top of the 200 px picture.
+      let (x, y) = (attr("x"), attr("y"));
+      assert!(
+        (x - 40.0).abs() < 2.0 && (y - 160.0).abs() < 2.0,
+        "{pos}: the label belongs at the arrow's midpoint (40, 160), got ({x}, {y})"
+      );
+      // It turns with the upward arrow but keeps its font size: the glyph
+      // map is a pure quarter turn, not shrunk to the head's size.
+      let m: Vec<f64> = tag
+        .split("matrix(")
+        .nth(1)
+        .and_then(|t| t.split(')').next())
+        .unwrap_or_else(|| panic!("{pos}: the label must turn: {tag}"))
+        .split_whitespace()
+        .filter_map(|n| n.parse().ok())
+        .collect();
+      assert!(
+        m.len() == 6
+          && m[0].abs() < 1e-3
+          && (m[1] + 1.0).abs() < 1e-3
+          && (m[2] - 1.0).abs() < 1e-3
+          && m[3].abs() < 1e-3,
+        "{pos}: expected a quarter turn at full size, got {m:?}"
+      );
+    }
+  }
+
   /// A named head size is a fraction of the plot width and nothing else,
   /// even when that makes the head as long as the arrow carrying it. A
   /// vector field (the Pólya-plot idiom: hundreds of short arrows under
@@ -56675,6 +56797,53 @@ mod grid_text_in_graphics {
       ),
       expected
     );
+  }
+
+  /// `Pane[Text@Grid[…], {w, h}, Alignment -> …]` reserves the whole
+  /// `w` x `h` box like any other fixed-size pane: a smaller table sits in
+  /// it where the alignment puts it rather than shrinking the pane to the
+  /// table, and a larger one is cut off at the box's edges. An `Automatic`
+  /// size still follows the table.
+  #[test]
+  fn pane_text_wrapped_grid_keeps_the_fixed_pane_box() {
+    clear_state();
+    let svg_of = |code: &str| {
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, "-Graphics-", "{code}");
+      result.graphics.unwrap()
+    };
+    let centered = svg_of(
+      "Pane[Text@Grid[{{1, 2}, {3, 4}}], {300, 200}, \
+       Alignment -> {Center, Center}]",
+    );
+    assert!(
+      centered.starts_with("<svg width=\"300\" height=\"200\""),
+      "{centered}"
+    );
+    assert!(centered.contains(">4</text>"), "{centered}");
+    assert!(!centered.contains("translate(0.0 0.0)"), "{centered}");
+
+    // The size may be computed, as in a Manipulate body that switches
+    // between a fixed and an automatic pane.
+    let computed = svg_of(
+      "big = False; Pane[Text@Grid[{{1, 2}, {3, 4}}], \
+       {If[big, Automatic, 300], If[big, Automatic, 200]}]",
+    );
+    assert!(
+      computed.starts_with("<svg width=\"300\" height=\"200\""),
+      "{computed}"
+    );
+
+    let clipped =
+      svg_of("Pane[Text@Grid[Table[i j, {i, 30}, {j, 30}]], {120, 80}]");
+    assert!(
+      clipped.starts_with("<svg width=\"120\" height=\"80\""),
+      "{clipped}"
+    );
+
+    let automatic =
+      svg_of("Pane[Text@Grid[{{1, 2}, {3, 4}}], {Automatic, Automatic}]");
+    assert!(!automatic.starts_with("<svg width=\"300\""), "{automatic}");
   }
 
   /// A translucent cylinder is one smooth surface: its triangles must not
@@ -67300,6 +67469,35 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+/// A rational part of a `Row` label (`Row[{"mean = ", 14/3}]`, also when a
+/// `NumberForm` leaves it exact) stacks inline next to the text. The label
+/// used to be flattened to text lines with the fraction bar under the whole
+/// row and the text glued onto the numerator.
+#[test]
+fn row_label_with_rational_part_stacks_the_fraction_inline() {
+  for code in [
+    r#"Graphics[Text[Row[{"mean = ", 14/3}], {0, 0}]]"#,
+    r#"Graphics[{Blue, Text[Style[Row[{"mean = ", NumberForm[14/3, {3, 2}]}], 14], {0, 0}]}]"#,
+  ] {
+    let svg = export_svg(code);
+    assert!(svg.contains(">mean = </text>"), "{code}: {svg}");
+    assert!(svg.contains(">14</text>"), "{code}: {svg}");
+    assert!(svg.contains(">3</text>"), "{code}: {svg}");
+    assert!(!svg.contains("mean = 14"), "{code}: {svg}");
+    assert!(!svg.contains("NumberForm"), "{code}: {svg}");
+  }
+}
+
+/// `NumberForm` leaves an exact rational as it is, so its boxes hold the
+/// fraction rather than the literal `NumberForm[…]` call.
+#[test]
+fn number_form_of_rational_boxes_as_fraction() {
+  clear_state();
+  let boxes = interpret("ToBoxes[NumberForm[14/3, {3, 2}]]").unwrap();
+  assert!(boxes.contains("FractionBox[14, 3]"), "{boxes}");
+  assert!(!boxes.starts_with("RowBox[{NumberForm"), "{boxes}");
 }
 
 /// A `NumberForm` around a `Quantity` formats the magnitude and keeps the

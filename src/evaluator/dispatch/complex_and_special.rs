@@ -3841,6 +3841,19 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     let inner_boxes = number_display_list_boxes(items, &parts_for)?;
     return Some(wrap_list_number_display_box(inner_boxes, name));
   }
+  // An exact rational is left as it is by the number-display forms
+  // (`NumberForm[14/3, {3, 2}]` shows `14/3`), so it typesets as the
+  // fraction.
+  if matches!(name, "NumberForm" | "ScientificForm" | "EngineeringForm")
+    && args.len() <= 2
+    && matches!(first, Expr::FunctionCall { name: n, args: r } if n == "Rational" && r.len() == 2)
+  {
+    return Some(wrap_number_display_box(
+      expr_to_box_form(first),
+      first,
+      name,
+    ));
+  }
   let Some((mantissa, exp)) = parts_for(first) else {
     return option_number_form_box(name, args);
   };
