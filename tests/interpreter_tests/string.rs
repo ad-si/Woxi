@@ -4320,6 +4320,36 @@ mod string_match_q_patterns {
   use super::*;
 
   #[test]
+  fn conditional_pattern() {
+    // `patt /; test` matches when the whole string fits `patt` and the test,
+    // with the named captures substituted in, evaluates to True.
+    assert_eq!(
+      interpret(r#"StringMatchQ["hello", x__ /; StringLength[x] > 3]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["hi", x__ /; StringLength[x] > 3]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ[{"ab", "abcd", "xyzd"}, x__ ~~ "d" /; StringLength[x] == 3]"#
+      )
+      .unwrap(),
+      "{False, True, True}"
+    );
+    // The captures keep their original case under IgnoreCase.
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ["Hello", x__ /; StringStartsQ[x, "H"], IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn wildcards_inside_alternatives() {
     // Regression for #1434: `*` and `@` are wildcards in every string literal
     // of a StringMatchQ pattern, not only in a bare top-level string.
@@ -8560,6 +8590,22 @@ mod dictionary_lookup {
   }
 
   #[test]
+  fn conditional_pattern() {
+    assert_eq!(
+      interpret(
+        r#"AllTrue[DictionaryLookup[x__ /; 7 <= StringLength[x] <= 12], 7 <= StringLength[#] <= 12 &]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"Length[DictionaryLookup[x__ /; StringLength[x] == 3, 4]]"#)
+        .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
   fn whole_list_contains_pattern_result() {
     assert_eq!(
       interpret(r#"Length[DictionaryLookup["*"]] > 50000"#).unwrap(),
@@ -9162,6 +9208,21 @@ mod longest_ordered_sequence_tests {
 
 mod string_count_patterns {
   use woxi::interpret;
+
+  /// A literal pattern with few matches in a long text is found by jumping
+  /// from match to match, not by restarting the search at every character
+  /// (which took tens of seconds on a megabyte of SVG).
+  #[test]
+  fn sparse_matches_in_long_text_are_fast() {
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "s = StringJoin[Table[\"<line x=1/>\", 100000]]; \
+       StringCount[s <> \"<text>\" <> s <> \"<text>\", \"<text\"]",
+    )
+    .unwrap();
+    assert_eq!(result, "2");
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+  }
 
   // The empty pattern matches at every character boundary
   // (differential fuzzer, seed 8863040114037283151;

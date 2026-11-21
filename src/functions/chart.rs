@@ -697,7 +697,19 @@ pub(crate) fn parse_style_directive_args(
   let mut italic = false;
   let mut color = None;
   let mut font_size = None;
-  for arg in args {
+  // A list of directives applies each of them in turn, so
+  // `Style[expr, {Orange, 18}]` is the same as `Style[expr, Orange, 18]`.
+  fn flatten_directives<'a>(args: &'a [Expr], out: &mut Vec<&'a Expr>) {
+    for arg in args {
+      match arg {
+        Expr::List(items) => flatten_directives(items, out),
+        other => out.push(other),
+      }
+    }
+  }
+  let mut directives = Vec::new();
+  flatten_directives(args, &mut directives);
+  for arg in directives {
     match arg {
       Expr::Identifier(s) if s == "Bold" => bold = true,
       Expr::Identifier(s) if s == "Italic" => italic = true,
@@ -866,6 +878,19 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // A `Dynamic[x]` label reads as the value `x` currently has.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return parse_styled_label(
+      &crate::functions::graphics::dynamic_current_value(expr),
+    );
+  }
+  // `None` and `Null` (e.g. a one-armed `If[False, label]`) draw no label.
+  if matches!(expr, Expr::Identifier(s) if s == "None" || s == "Null") {
+    return None;
+  }
   // `Text[…]` sets its content in the graphic's own text style, so the font
   // weight and slant it inherits are reset — `Style[Text["a"], Bold]` is not
   // bold in Wolfram, while the color and size still reach through. A

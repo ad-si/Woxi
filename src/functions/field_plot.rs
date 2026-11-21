@@ -117,9 +117,11 @@ fn parse_field_plot_label(
     }
     let value = evaluate_expr_to_expr(replacement)
       .unwrap_or_else(|_| replacement.as_ref().clone());
-    // `Null` typesets as nothing, never as the word "Null".
-    if matches!(&value, Expr::Identifier(s) if s == "Null") {
-      return None;
+    // `None` and `Null` (e.g. a one-armed `If[False, label]`) leave the
+    // plot untitled. Returning `Some(None)` keeps the first `PlotLabel`
+    // decisive.
+    if matches!(&value, Expr::Identifier(n) if n == "None" || n == "Null") {
+      return Some(None);
     }
     // A size on the outermost `Style` is the label's font size, which the
     // caller applies at render resolution; leaving it inside the markup
@@ -132,12 +134,12 @@ fn parse_field_plot_label(
     // A `Column[…]`/`Grid[…]` title stacks its items as separate lines,
     // the same way the generic `Graphics` label pass sets them.
     let lines = crate::functions::graphics::expr_to_svg_markup_lines(&inner);
-    Some(FieldPlotLabel {
+    Some(Some(FieldPlotLabel {
       lines,
       size,
       framed,
-    })
-  })
+    }))
+  })?
 }
 
 /// A field plot's `PlotLabel`: its lines of SVG text markup, top to bottom,
@@ -505,9 +507,9 @@ fn plot_value_range_is_all(value: &Expr) -> bool {
 }
 
 /// The per-contour styles of a `ContourStyle` value whose entries are all
-/// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
-/// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
-/// directive list such as `{Thick, Blue}`.
+/// lists, `Directive[…]`s or colors (`{{Black, Thick}, {Red, Thick}}`,
+/// `{Directive[Red, Dashed], Blue, Directive[Blue, Dashed]}`, `{Red,
+/// Blue}`); empty for a single directive list such as `{Thick, Blue}`.
 fn per_contour_styles(
   value: &Expr,
 ) -> Vec<Option<crate::functions::plot::SeriesStyle>> {
@@ -517,6 +519,7 @@ fn per_contour_styles(
       if !items.is_empty() && items.iter().all(|i| {
         matches!(i, Expr::List(_))
           || matches!(i, Expr::FunctionCall { name, .. } if name == "Directive")
+          || crate::functions::graphics::parse_color(i).is_some()
       }) =>
     {
       items
@@ -2421,7 +2424,16 @@ struct BandRegion {
 
 /// The shaded bands of a contour plot: runs of cells that lie wholly in
 /// one band, and the cells a level crosses clipped to each band it meets.
-fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
+///
+/// As with Wolfram's default `ClippingStyle -> None`, the parts of the
+/// grid whose values lie outside the plotted value range
+/// `(v_min, v_max)` (e.g. near a pole fenced off by the automatic
+/// `PlotRange`) are left blank instead of taking the end band's color.
+fn contour_band_regions(
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+) -> Vec<BandRegion> {
   let cols = grid.len();
   if cols < 2 {
     return Vec::new();
@@ -2472,9 +2484,16 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
       }
       let cmin = v00.min(v10).min(v01).min(v11);
       let cmax = v00.max(v10).max(v01).max(v11);
-      let b_lo = band_of(cmin);
-      let b_hi = band_of(cmax);
-      if b_lo == b_hi {
+      // Wholly outside the plotted value range: clipped away.
+      if cmax < v_min || cmin > v_max {
+        flush(&mut regions, &mut run);
+        continue;
+      }
+      let clip_lo = cmin < v_min;
+      let clip_hi = cmax > v_max;
+      let b_lo = band_of(cmin.max(v_min));
+      let b_hi = band_of(cmax.min(v_max));
+      if b_lo == b_hi && !clip_lo && !clip_hi {
         run = match run {
           Some((b, s, e)) if b == b_lo && e == i => Some((b, s, i + 1)),
           other => {
@@ -2494,8 +2513,18 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
         ((i as f64 + 1.0, j as f64 + 1.0), v11),
         ((i as f64, j as f64 + 1.0), v01),
       ];
+      let mut clipped: Vec<PtV> = base.to_vec();
+      if clip_lo {
+        clipped = clip_polygon(&clipped, v_min, true);
+      }
+      if clip_hi {
+        clipped = clip_polygon(&clipped, v_max, false);
+      }
+      if clipped.len() < 3 {
+        continue;
+      }
       for b in b_lo..=b_hi {
-        let mut poly: Vec<PtV> = base.to_vec();
+        let mut poly: Vec<PtV> = clipped.clone();
         if b > 0 {
           poly = clip_polygon(&poly, levels[b - 1], true);
         }
@@ -2586,7 +2615,7 @@ fn render_contour_bands(
   // the contour lines drawn on top).
   let seam = RESOLUTION_SCALE as f64;
 
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let (r, g, b) = band_color(region.band, levels, v_min, v_max, coloring);
     let fill = format!("rgb({r},{g},{b})");
     let device = |(fx, fy): (f64, f64)| {
@@ -2637,7 +2666,7 @@ fn contour_band_primitives(
   let step_y = (y_max - y_min) / (rows - 1) as f64;
   let mut items: Vec<Expr> = Vec::new();
   let mut last_color: Option<(u8, u8, u8)> = None;
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let color = band_color(region.band, levels, v_min, v_max, coloring);
     if last_color != Some(color) {
       let rgb = call(
@@ -4053,8 +4082,9 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ContourPlot[{f, g}, …]` draws the unshaded level curves of each
   // function (a nested list `{{f, g}, {h}}` counts as its flattened
   // functions); a curve `f == c` is the zero contour of `f - c`. Without
-  // explicit `Contours -> {c, …}` each function gets its own automatic
-  // levels.
+  // a `Contours` option each function draws only its zero contour, as
+  // Wolfram does (the list reads like `{f == 0, g == 0}`); `Contours -> n`
+  // gives each function its own `n` levels.
   let eq_bodies =
     eq_bodies.or_else(|| match body {
       Expr::List(items) if !items.is_empty() => {
@@ -4064,10 +4094,12 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return None;
         }
         let spec = parse_density_contour_options(args, 3).contours;
+        let zero = vec![0.0];
         let fixed = match &spec {
           ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
           ContourSpec::Levels(_) => return None,
-          _ => None,
+          ContourSpec::Automatic => Some(&zero),
+          ContourSpec::Count(_) => None,
         };
         let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
           parse_iterator(&args[1], "ContourPlot"),
@@ -4699,6 +4731,7 @@ fn contour_plot_equations(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: None,
+    legends: Vec::new(),
     settles_all_range: false,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
@@ -6966,7 +6999,7 @@ pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bandwidth = match positional.get(1) {
     None => None,
     Some(Expr::Identifier(a)) if a == "Automatic" => None,
-    Some(e) => match crate::functions::math_ast::try_eval_to_f64(e) {
+    Some(e) => match try_eval_to_f64(e) {
       Some(h) if h > 0.0 => Some(h),
       _ => return unchanged(),
     },
@@ -8217,6 +8250,96 @@ pub fn array_plot_argument_error(head: &str, args: &[Expr]) -> Option<Expr> {
 /// `ArrayPlot`'s default `MeshStyle`: `GrayLevel[2/3]`.
 const ARRAY_PLOT_MESH_COLOR: RGBColor = RGBColor(0xAA, 0xAA, 0xAA);
 
+/// One direction of an `ArrayPlot` `Mesh` spec.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum ArrayMeshLines {
+  /// `False` / `None` (the default): no lines.
+  #[default]
+  None,
+  /// `True` / `All`: a line at every cell boundary, outer edges included.
+  All,
+  /// `{k1, k2, …}`: lines at the listed boundaries, where `0` is the
+  /// leading edge and `n` the trailing edge of an `n`-cell direction.
+  At(Vec<f64>),
+}
+
+impl ArrayMeshLines {
+  fn parse(spec: &Expr) -> Self {
+    match spec {
+      Expr::Identifier(v) if v == "True" || v == "All" => Self::All,
+      Expr::List(items) => Self::At(
+        items
+          .iter()
+          .filter_map(|item| match item {
+            // `{k, style}` places a styled line; only the position is used.
+            Expr::List(pair) if !pair.is_empty() => try_eval_to_f64(&pair[0]),
+            other => try_eval_to_f64(other),
+          })
+          .collect(),
+      ),
+      _ => Self::None,
+    }
+  }
+
+  /// The boundaries that carry a line, in increasing order, for a
+  /// direction of `n` cells. Positions outside `0..=n` are dropped.
+  fn boundaries(&self, n: usize) -> Vec<f64> {
+    match self {
+      Self::None => Vec::new(),
+      Self::All => (0..=n).map(|k| k as f64).collect(),
+      Self::At(positions) => {
+        let mut out: Vec<f64> = positions
+          .iter()
+          .copied()
+          .filter(|k| k.is_finite() && (0.0..=n as f64).contains(k))
+          .collect();
+        out.sort_by(f64::total_cmp);
+        out.dedup();
+        out
+      }
+    }
+  }
+}
+
+/// `ArrayPlot`'s `Mesh` option, split into row and column boundaries.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ArrayMeshSpec {
+  rows: ArrayMeshLines,
+  cols: ArrayMeshLines,
+}
+
+impl ArrayMeshSpec {
+  /// `True`/`All`/`False`/`None` apply to both directions;
+  /// `{rspec, cspec}` gives the row and column boundaries separately.
+  fn parse(spec: &Expr) -> Self {
+    match spec {
+      Expr::List(items)
+        if items.len() == 2
+          && items.iter().all(|i| {
+            matches!(i, Expr::List(_))
+              || matches!(i, Expr::Identifier(v)
+                if matches!(v.as_str(), "True" | "False" | "All" | "None"))
+          }) =>
+      {
+        Self {
+          rows: ArrayMeshLines::parse(&items[0]),
+          cols: ArrayMeshLines::parse(&items[1]),
+        }
+      }
+      other => {
+        let lines = match other {
+          Expr::Identifier(_) => ArrayMeshLines::parse(other),
+          _ => ArrayMeshLines::None,
+        };
+        Self {
+          rows: lines.clone(),
+          cols: lines,
+        }
+      }
+    }
+  }
+}
+
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
@@ -8229,7 +8352,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // be matched by `Replace` semantics — exact values like `I`/`-I` (which
   // have no `f64` form) and patterns alike, not just real numbers.
   let mut color_rules: Option<Expr> = None;
-  let mut mesh = false;
+  // `Mesh -> spec`: which row and column boundaries get a grid line.
+  let mut mesh_spec = ArrayMeshSpec::default();
   // `MeshStyle` / `FrameStyle`: colors of the cell grid and of the border.
   let mut mesh_style_color: Option<RGBColor> = None;
   let mut frame_style_color: Option<RGBColor> = None;
@@ -8330,10 +8454,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .unwrap_or_else(|_| replacement.as_ref().clone()),
           );
         }
-        "Mesh" => match replacement.as_ref() {
-          Expr::Identifier(v) if v == "True" || v == "All" => mesh = true,
-          _ => {}
-        },
+        "Mesh" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_spec = ArrayMeshSpec::parse(&val);
+        }
         "MeshStyle" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
@@ -8497,6 +8622,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
+  // Row boundaries (0 = top edge) and column boundaries (0 = left edge)
+  // that carry a mesh line.
+  let mesh_rows = mesh_spec.rows.boundaries(n_rows);
+  let mesh_cols = mesh_spec.cols.boundaries(n_cols);
+  let mesh = !mesh_rows.is_empty() || !mesh_cols.is_empty();
 
   // Padding in cell units. `Automatic` (the default) leaves a margin of
   // 1/48 (horizontally) and 1/50 (vertically) of the larger dimension
@@ -8723,9 +8853,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if mesh {
       let mesh_color = mesh_style_color.unwrap_or(ARRAY_PLOT_MESH_COLOR);
       let line_w = (s as i32).max(1);
-      // Vertical lines, including the outer edges of the grid
-      for j in 0..=n_cols {
-        let x = (off_x + j as f64 * cell_w).round() as i32;
+      // Vertical lines at the chosen column boundaries
+      for &j in &mesh_cols {
+        let x = (off_x + j * cell_w).round() as i32;
         root
           .draw(&Rectangle::new(
             [
@@ -8741,9 +8871,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
           })?;
       }
-      // Horizontal lines, including the outer edges of the grid
-      for i in 0..=n_rows {
-        let y = (off_y + i as f64 * cell_h).round() as i32;
+      // Horizontal lines at the chosen row boundaries
+      for &i in &mesh_rows {
+        let y = (off_y + i * cell_h).round() as i32;
         root
           .draw(&Rectangle::new(
             [
@@ -8966,18 +9096,24 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         channel(mesh_color.2),
       ],
     ));
-    let point = |x: usize, y: usize| {
-      Expr::List(
-        vec![Expr::Integer(x as i128), Expr::Integer(y as i128)].into(),
-      )
+    // Whole boundaries stay exact integers; others become reals.
+    let coord = |v: f64| {
+      if v.fract() == 0.0 {
+        Expr::Integer(v as i128)
+      } else {
+        Expr::Real(v)
+      }
     };
+    let point = |x: f64, y: f64| Expr::List(vec![coord(x), coord(y)].into());
     let segment =
       |a: Expr, b: Expr| call1("Line", Expr::List(vec![a, b].into()));
-    for j in 0..=n_cols {
-      prims.push(segment(point(j, 0), point(j, n_rows)));
+    let (w, h) = (n_cols as f64, n_rows as f64);
+    for &j in &mesh_cols {
+      prims.push(segment(point(j, 0.0), point(j, h)));
     }
-    for i in 0..=n_rows {
-      prims.push(segment(point(0, i), point(n_cols, i)));
+    // Row boundaries count from the top; the raster's y axis runs upward.
+    for &i in mesh_rows.iter().rev() {
+      prims.push(segment(point(0.0, h - i), point(w, h - i)));
     }
   }
   let content = if prims.len() == 1 {
@@ -9045,6 +9181,14 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
       ),
     ));
+  }
+  // The epilog is drawn over the grid in the same coordinates as the
+  // raster, so redrawing the symbolic form (`Pane`, `Show`) keeps it.
+  if !epilog.is_empty() {
+    structure_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Epilog".to_string())),
+      replacement: Box::new(Expr::List(epilog.clone().into())),
+    });
   }
   // The sizing options travel with the symbolic form, so `Show[ArrayPlot[…],
   // …]` redraws the grid at the size and shape it was plotted with.
@@ -10284,5 +10428,70 @@ mod robust_range_tests {
     let (v_min, v_max) = robust_value_range(&[]);
     assert!(!v_min.is_finite());
     assert!(!v_max.is_finite());
+  }
+}
+
+#[cfg(test)]
+mod contour_clipping_tests {
+  use super::contour_band_regions;
+
+  /// Area of a polygon given in cell-index space (shoelace formula).
+  fn area(points: &[(f64, f64)]) -> f64 {
+    let n = points.len();
+    (0..n)
+      .map(|k| {
+        let (x0, y0) = points[k];
+        let (x1, y1) = points[(k + 1) % n];
+        x0 * y1 - x1 * y0
+      })
+      .sum::<f64>()
+      .abs()
+      / 2.0
+  }
+
+  /// A 3×3 node grid (2×2 cells) whose middle node spikes far above the
+  /// plotted value range, like a pole fenced off by the automatic
+  /// `PlotRange`.
+  fn spiked_grid(spike: f64) -> Vec<Vec<f64>> {
+    let mut grid = vec![vec![0.0; 3]; 3];
+    grid[1][1] = spike;
+    grid
+  }
+
+  #[test]
+  fn values_above_the_range_are_left_blank() {
+    let grid = spiked_grid(10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    // The four cells cover an area of 4. Along the edges into the spike
+    // the value passes 1 a tenth of the way in, so each cell loses the
+    // corner triangle with legs 0.9 there.
+    let expected = 4.0 - 4.0 * 0.5 * 0.9 * 0.9;
+    assert!((total - expected).abs() < 1e-9, "got area {total}");
+  }
+
+  #[test]
+  fn values_below_the_range_are_left_blank() {
+    let grid = spiked_grid(-10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!(
+      total < 4.0 - 1e-6,
+      "expected a blank hole, got area {total}"
+    );
+  }
+
+  #[test]
+  fn values_within_the_range_cover_the_whole_grid() {
+    let grid = spiked_grid(1.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!((total - 4.0).abs() < 1e-9, "got area {total}");
   }
 }

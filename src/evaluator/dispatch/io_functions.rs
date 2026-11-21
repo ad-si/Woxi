@@ -8120,35 +8120,43 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // in text rather than mathematical form — it contributes no box of its
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
-    // Text is set in the proportional text face rather than the monospace
-    // output face, so `Text[Row[{"Depth = ", x, " m"}]]` reads as prose; a
-    // `FontFamily` given inside still wins, as the innermost style does.
-    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      crate::functions::graphics::with_text_display_grids(|| {
-        expr_to_svg(&crate::functions::graphics::in_text_face(
-          &unquoted_display_string(&args[0]),
-        ))
-      })
-    }
-    // `Style[Text[content], directives…]` sets `content` in the text face
-    // with the directives, as `Text[Style[content, directives…]]` does —
-    // which measures it at the styled size, not at the default one.
+    // `Style[Text[expr], d…]` shows the styled `expr` as text, just like
+    // `Text[Style[expr, d…]]`.
     Expr::FunctionCall { name, args }
       if name == "Style"
         && args.len() >= 2
-        && matches!(&args[0], Expr::FunctionCall { name: text, args: targs }
-          if text == "Text" && targs.len() == 1) =>
+        && matches!(&args[0], Expr::FunctionCall { name: t, args: inner }
+          if t == "Text" && inner.len() == 1) =>
     {
-      let Expr::FunctionCall { args: targs, .. } = &args[0] else {
+      let Expr::FunctionCall { args: inner, .. } = &args[0] else {
         unreachable!()
       };
-      let styled = call(
-        "Style",
-        std::iter::once(targs[0].clone())
-          .chain(args[1..].iter().cloned())
-          .collect(),
-      );
-      expr_to_svg(&call1("Text", styled))
+      let mut styled = vec![inner[0].clone()];
+      styled.extend(args[1..].iter().cloned());
+      expr_to_svg(&call1("Text", call("Style", styled)))
+    }
+    // Text is set in the proportional text face rather than the monospace
+    // output face, so `Text[Row[{"Depth = ", x, " m"}]]` reads as prose; a
+    // `FontFamily` given inside still wins, as the innermost style does.
+    // Math inside text is set one script level down, so its fractions
+    // are drawn at the reduced size of a nested one.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      crate::functions::graphics::with_inline_text_math(|| {
+        crate::functions::graphics::with_text_display_grids(|| {
+          expr_to_svg(&crate::functions::graphics::in_text_face(
+            &unquoted_display_string(&args[0]),
+          ))
+        })
+      })
+    }
+    // `Style[TraditionalForm[Text[expr]], 16]`: the `Text` display face
+    // holds for everything it contains, whatever styling or form wrappers
+    // sit around it, so it is hoisted outside them and the wrappers style
+    // the text it shows.
+    _ if let Some(hoisted) =
+      crate::functions::graphics::hoist_text_display(expr) =>
+    {
+      expr_to_svg(&hoisted)
     }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and
     // places its content, so the directives style the content, inside the

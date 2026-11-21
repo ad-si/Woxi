@@ -2396,6 +2396,37 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     expr_to_str(&args[0])
   };
 
+  // Conditional pattern: `patt /; test`. The whole string must match the
+  // inner pattern, and the `/;` test (with the named captures substituted
+  // in) has to evaluate to True.
+  if let Expr::FunctionCall { name, args: cargs } = &args[1]
+    && name == "Condition"
+    && cargs.len() == 2
+    && let Some((regex_str, constraints)) =
+      string_match_pattern_to_regex_with_state(&cargs[0])
+  {
+    let case_flag = if ignore_case { "(?i)" } else { "" };
+    let re =
+      compile_regex(&format!("{case_flag}^(?:{regex_str})$")).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {e}"
+        ))
+      })?;
+    // Match against the original string so the captures keep their case.
+    let original = expr_to_str(&args[0]);
+    let Some(caps) = re.captures(&original) else {
+      return Ok(bool_expr(false));
+    };
+    if !caps_satisfy_constraints(&caps, &constraints) {
+      return Ok(bool_expr(false));
+    }
+    let test_sub = substitute_captures(&cargs[1], &caps);
+    let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
+    return Ok(bool_expr(
+      matches!(&test_val, Expr::Identifier(t) if t == "True"),
+    ));
+  }
+
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
   if let Some((regex_str, constraints)) =
     string_match_pattern_to_regex_with_state(&args[1])
@@ -3038,12 +3069,20 @@ fn find_spans_with_empty(
 ) -> Vec<(usize, usize)> {
   let mut spans = Vec::new();
   let mut i = 0;
-  loop {
-    let matched = re.captures_at(s, i).and_then(|caps| {
-      let m = caps.get(0)?;
-      (m.start() == i && caps_satisfy_constraints(&caps, constraints))
-        .then(|| (m.start(), m.end()))
-    });
+  // The search reports the leftmost match at or after `i`, so no match
+  // starts between `i` and it: jump there instead of retrying every
+  // character (quadratic on a long text with sparse matches). No match at
+  // all ends the scan.
+  while let Some(caps) = re.captures_at(s, i) {
+    let Some(m) = caps.get(0) else {
+      break;
+    };
+    if m.start() > i {
+      i = m.start();
+      continue;
+    }
+    let matched = caps_satisfy_constraints(&caps, constraints)
+      .then(|| (m.start(), m.end()));
     let step = s[i..].chars().next().map_or(0, char::len_utf8);
     if let Some((start, end)) = matched {
       spans.push((start, end));
@@ -18014,9 +18053,13 @@ pub(crate) fn number_form_options(
           opts.block = Some(*n as usize);
         }
       }
-      // A single string sets the integer-side padding only.
+      // A single string pads both the integer and the fraction side, so
+      // `NumberPadding -> ""` drops the trailing zeros (`2.` not `2.000`).
       "NumberPadding" => match replacement.as_ref() {
-        Expr::String(s) => opts.lpad.clone_from(s),
+        Expr::String(s) => {
+          opts.lpad.clone_from(s);
+          opts.rpad.clone_from(s);
+        }
         Expr::List(pad) if pad.len() == 2 => {
           if let Some(s) = text(&pad[0]) {
             opts.lpad = s;
@@ -18727,43 +18770,50 @@ fn apply_mantissa_options(mantissa: &str, opts: &NumberFormOptions) -> String {
 /// Integer spec n: right-aligned to width n + 1. List spec {n, f}:
 /// rounded to f decimals (with trailing zeros) and right-aligned to
 /// width n + 2. None for non-numeric values or malformed specs.
-/// The left NumberPadding string of a display-form argument list: the first
-/// element of a `NumberPadding -> {p1, p2}` rule, or " " when absent.
-fn number_padding_left(args: &[Expr]) -> String {
+/// The `(left, right)` strings of a `NumberPadding` rule in a display-form
+/// argument list: `{p1, p2}` gives each side, and a single string pads both.
+/// A missing side is `None`.
+fn number_padding_rule(args: &[Expr]) -> (Option<String>, Option<String>) {
   for a in args {
     if let Expr::Rule {
       pattern,
       replacement,
     } = a
       && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding")
-      && let Expr::List(pad) = replacement.as_ref()
-      && let Some(Expr::String(p1)) = pad.first()
     {
-      return p1.clone();
+      return match replacement.as_ref() {
+        Expr::String(p) => (Some(p.clone()), Some(p.clone())),
+        Expr::List(pad) => {
+          let side = |i: usize| match pad.get(i) {
+            Some(Expr::String(p)) => Some(p.clone()),
+            _ => None,
+          };
+          (side(0), side(1))
+        }
+        _ => (None, None),
+      };
     }
   }
-  " ".to_string()
+  (None, None)
 }
 
-/// The right NumberPadding string of a display-form argument list: the second
-/// element of a `NumberPadding -> {p1, p2}` rule, or "0" when absent. This pads
-/// the fractional part past the value's significant digits, so an explicit ""
-/// suppresses trailing zeros (e.g. `PaddedForm[1.5, {4, 2}, NumberPadding ->
-/// {"0", ""}]` -> "001.5" rather than "001.50").
+/// The left NumberPadding string of a display-form argument list, or " "
+/// when absent.
+fn number_padding_left(args: &[Expr]) -> String {
+  number_padding_rule(args)
+    .0
+    .unwrap_or_else(|| " ".to_string())
+}
+
+/// The right NumberPadding string of a display-form argument list, or "0"
+/// when absent. This pads the fractional part past the value's significant
+/// digits, so an explicit "" suppresses trailing zeros (e.g.
+/// `PaddedForm[1.5, {4, 2}, NumberPadding -> {"0", ""}]` -> "001.5" rather
+/// than "001.50").
 fn number_padding_right(args: &[Expr]) -> String {
-  for a in args {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = a
-      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding")
-      && let Expr::List(pad) = replacement.as_ref()
-      && let Some(Expr::String(p2)) = pad.get(1)
-    {
-      return p2.clone();
-    }
-  }
-  "0".to_string()
+  number_padding_rule(args)
+    .1
+    .unwrap_or_else(|| "0".to_string())
 }
 
 /// Left-pad `body` to `width` columns with the padding string `lpad`

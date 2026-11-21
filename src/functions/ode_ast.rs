@@ -1859,7 +1859,7 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut flat_eqs = Vec::new();
     flatten_eq_list(&args[0], &mut flat_eqs);
     let opts = pde_mol::MolOptions::from_rules(&args[n_pos..]);
-    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts)? {
+    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts) {
       Some(mut result) => {
         crate::evaluator::share_large_lists(&mut result, 0);
         Ok(result)
@@ -3064,14 +3064,23 @@ fn ndsolve_pde(
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
-  let eq_items = flatten_chained_equalities(&eq_items);
+  let eq_items =
+    extract_summed_dirichlet_conditions(&flatten_chained_equalities(&eq_items));
   // The finite-element form (`NeumannValue`) returns its solutions as
   // functions of the space variable first, then time, like the unknowns'
   // own `u[x, t]` calls, whatever order the domains were declared in.
   let (eq_items, dim0_dom, natural_flux, both_edges) =
     match lower_neumann_values(&eq_items, &u_names, &[&dom_a, &dom_b]) {
       Some((lowered, x_vars)) => {
-        let dim0 = if dom_a.name == x_vars[0] {
+        // The flux variable is first unless the unknowns' calls put it
+        // second (`s[z, r]` with the flux on `r`).
+        let flux_pos = u_names.iter().find_map(|u| {
+          eq_items
+            .iter()
+            .find_map(|e| pde_space_position(e, u, &x_vars[0]))
+        });
+        let flux_first = flux_pos != Some(1);
+        let dim0 = if (dom_a.name == x_vars[0]) == flux_first {
           &dom_a
         } else {
           &dom_b
@@ -3439,6 +3448,54 @@ fn flatten_chained_equalities(items: &[Expr]) -> Vec<Expr> {
       out.push(item.clone());
     }
   }
+  out
+}
+
+/// Split `DirichletCondition[…]` terms added into an equation (the finite
+/// element shorthand `lhs == rhs + NeumannValue[…] + DirichletCondition[…]`)
+/// out into conditions of their own. A `DirichletCondition` is not a
+/// quantity, so the equation itself is what remains of its side without
+/// them. Items without such a term pass through unchanged.
+fn extract_summed_dirichlet_conditions(items: &[Expr]) -> Vec<Expr> {
+  let is_dc = |t: &Expr| {
+    matches!(t, Expr::FunctionCall { name, args }
+      if name == "DirichletCondition" && args.len() == 2)
+  };
+  let mut out = Vec::with_capacity(items.len());
+  let mut conditions = Vec::new();
+  for item in items {
+    let Some((lhs, rhs)) = as_equal_pair(item) else {
+      out.push(item.clone());
+      continue;
+    };
+    let mut sides = Vec::with_capacity(2);
+    let mut found = false;
+    for side in [lhs, rhs] {
+      let terms = flatten_plus_terms(side);
+      if terms.iter().any(is_dc) {
+        found = true;
+        let (dcs, rest): (Vec<Expr>, Vec<Expr>) =
+          terms.into_iter().partition(is_dc);
+        conditions.extend(dcs);
+        sides.push(if rest.is_empty() {
+          Expr::Integer(0)
+        } else {
+          plus(rest)
+        });
+      } else {
+        sides.push(side.clone());
+      }
+    }
+    if found {
+      out.push(Expr::Comparison {
+        operands: sides,
+        operators: vec![ComparisonOp::Equal],
+      });
+    } else {
+      out.push(item.clone());
+    }
+  }
+  out.extend(conditions);
   out
 }
 
@@ -12095,6 +12152,14 @@ fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
         "Coth" => Some(|z: Cx| z.cosh().mul(z.sinh().recip())),
         "Sech" => Some(|z: Cx| z.cosh().recip()),
         "Csch" => Some(|z: Cx| z.sinh().recip()),
+        "Re" => Some(|z: Cx| Cx::real(z.re)),
+        "Im" => Some(|z: Cx| Cx::real(z.im)),
+        "Conjugate" => Some(|z: Cx| Cx {
+          re: z.re,
+          im: -z.im,
+        }),
+        "Abs" => Some(|z: Cx| Cx::real(z.re.hypot(z.im))),
+        "Arg" => Some(|z: Cx| Cx::real(z.im.atan2(z.re))),
         _ => None,
       };
       if let Some(f) = unary
@@ -19820,6 +19885,22 @@ fn dsolve_linear_system(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// `Re`, `Im`, `Abs`, `Arg` and `Conjugate` of a complex subexpression
+  /// compile to machine arithmetic.
+  #[test]
+  fn compiles_real_parts_of_complex_subexpressions() {
+    let vars = ["x".to_string(), "y".to_string()];
+    let eval = |src: &str| {
+      let e = crate::syntax::string_to_expr(src).unwrap();
+      CompiledReal::new(&e, &vars).unwrap().eval(&[3.0, 4.0])
+    };
+    assert_eq!(eval("Re[(x + I y)^2]"), -7.0);
+    assert_eq!(eval("Im[(x + I y)^2 + Complex[1, -2]]"), 22.0);
+    assert_eq!(eval("Abs[x + I y]"), 5.0);
+    assert_eq!(eval("Arg[x + I y]"), 4f64.atan2(3.0));
+    assert_eq!(eval("Im[Conjugate[x + I y]]"), -4.0);
+  }
 
   /// A hand-built 4x4 periodic tridiagonal system whose two corners
   /// (`alpha` at the bottom-left, `beta` at the top-right — see
