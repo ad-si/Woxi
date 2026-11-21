@@ -1026,7 +1026,7 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let uneval = || Ok(unevaluated("ChineseRemainder", args));
   // The optional third argument shifts the result into [d, d + lcm).
   let offset = if args.len() == 3 {
-    match expr_to_i128(&args[2]) {
+    match expr_to_bigint(&args[2]) {
       Some(d) => Some(d),
       None => return uneval(),
     }
@@ -1034,10 +1034,10 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     None
   };
   let Expr::List(remainders) = &args[0] else {
-    return Ok(unevaluated("ChineseRemainder", args));
+    return uneval();
   };
   let Expr::List(moduli) = &args[1] else {
-    return Ok(unevaluated("ChineseRemainder", args));
+    return uneval();
   };
   // Mismatched lengths are a reported argument error, not a hard failure.
   if remainders.len() != moduli.len() {
@@ -1051,51 +1051,55 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return uneval();
   }
 
-  let mut r_vals = Vec::new();
-  let mut m_vals = Vec::new();
+  // Arbitrary-precision integers, so congruences with huge moduli (whose
+  // product overflows any machine type) are solved exactly.
+  let mut r_vals: Vec<BigInt> = Vec::new();
+  let mut m_vals: Vec<BigInt> = Vec::new();
   for (r, m) in remainders.iter().zip(moduli.iter()) {
-    match (r, m) {
-      (r, m) if expr_to_i128(r).is_some() && expr_to_i128(m).is_some() => {
-        let mv = expr_to_i128(m).unwrap();
-        if mv > 0 {
-          r_vals.push(expr_to_i128(r).unwrap());
-          m_vals.push(mv);
-        } else {
-          return Ok(unevaluated("ChineseRemainder", args));
-        }
+    match (expr_to_bigint(r), expr_to_bigint(m)) {
+      (Some(rv), Some(mv)) if mv.is_positive() => {
+        r_vals.push(rv);
+        m_vals.push(mv);
       }
-      _ => {
-        return Ok(unevaluated("ChineseRemainder", args));
-      }
+      _ => return uneval(),
     }
   }
 
-  // Extended GCD helper
-  fn extended_gcd(a: i128, b: i128) -> (i128, i128, i128) {
-    if b == 0 {
-      (a, 1, 0)
-    } else {
-      let (g, x1, y1) = extended_gcd(b, a % b);
-      (g, y1, x1 - (a / b) * y1)
+  // Iterative extended GCD: returns (g, x) with a*x ≡ g (mod b).
+  fn extended_gcd(a: &BigInt, b: &BigInt) -> (BigInt, BigInt) {
+    let (mut old_r, mut r) = (a.clone(), b.clone());
+    let (mut old_s, mut s) = (BigInt::from(1), BigInt::from(0));
+    while !r.is_zero() {
+      let q = &old_r / &r;
+      let next_r = &old_r - &q * &r;
+      old_r = std::mem::replace(&mut r, next_r);
+      let next_s = &old_s - &q * &s;
+      old_s = std::mem::replace(&mut s, next_s);
     }
+    (old_r, old_s)
   }
+
+  let rem_euclid = |a: &BigInt, m: &BigInt| -> BigInt {
+    let r = a % m;
+    if r.is_negative() { r + m } else { r }
+  };
 
   // Solve using CRT iteratively
-  let mut result = r_vals[0].rem_euclid(m_vals[0]);
-  let mut modulus = m_vals[0];
+  let mut result = rem_euclid(&r_vals[0], &m_vals[0]);
+  let mut modulus = m_vals[0].clone();
 
-  for i in 1..r_vals.len() {
-    let ri = r_vals[i].rem_euclid(m_vals[i]);
-    let mi = m_vals[i];
-    let (g, p, _) = extended_gcd(modulus, mi);
-    if (ri - result) % g != 0 {
+  for (ri, mi) in r_vals.iter().zip(m_vals.iter()).skip(1) {
+    let ri = rem_euclid(ri, mi);
+    let (g, p) = extended_gcd(&modulus, mi);
+    let diff = &ri - &result;
+    if !(&diff % &g).is_zero() {
       // Incompatible congruences: no solution. wolframscript leaves the call
       // unevaluated rather than erroring.
       return uneval();
     }
-    let lcm = modulus / g * mi;
-    result =
-      (result + modulus * ((ri - result) / g % (mi / g)) * p).rem_euclid(lcm);
+    let lcm = &modulus / &g * mi;
+    let k = rem_euclid(&(&diff / &g * &p), &(mi / &g));
+    result = rem_euclid(&(&result + &modulus * k), &lcm);
     modulus = lcm;
   }
 
@@ -1103,8 +1107,11 @@ pub fn chinese_remainder_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // [0, modulus)); the 3-argument form returns the smallest solution >= d
   // (in [d, d + modulus)).
   match offset {
-    None => Ok(Expr::Integer(result)),
-    Some(d) => Ok(Expr::Integer(d + (result - d).rem_euclid(modulus))),
+    None => Ok(bigint_to_expr(result)),
+    Some(d) => {
+      let shifted = rem_euclid(&(&result - &d), &modulus);
+      Ok(bigint_to_expr(d + shifted))
+    }
   }
 }
 
