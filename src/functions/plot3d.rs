@@ -175,6 +175,51 @@ impl Default for Camera {
   }
 }
 
+/// The outline of a projected fan triangle's fill, widened by a band of
+/// `overlap` pixels across each internal cut (`boundary[i] == false`) of
+/// its polygon, so the halves of a face overlap and no anti-aliasing seam
+/// traces the cut. Outline edges stay where they are. Near the ends of a
+/// cut the band can leave the polygon, but by at most `overlap` from its
+/// outline, which an outline stroke at least `2 * overlap` wide covers.
+/// Triangles without both kinds of edge — a lone triangle, or a face drawn
+/// without edges, whose outline is unknown — keep their three corners.
+pub(crate) fn widen_across_internal_cuts(
+  corners: [(f64, f64); 3],
+  boundary: [bool; 3],
+  overlap: f64,
+) -> Vec<(f64, f64)> {
+  let signed_area = (corners[1].0 - corners[0].0)
+    * (corners[2].1 - corners[0].1)
+    - (corners[2].0 - corners[0].0) * (corners[1].1 - corners[0].1);
+  if boundary.iter().all(|&b| b)
+    || boundary.iter().all(|&b| !b)
+    || overlap <= 0.0
+    || signed_area.abs() < 1e-9
+  {
+    return corners.to_vec();
+  }
+  let mut out = Vec::with_capacity(7);
+  for i in 0..3 {
+    let (a, b) = (corners[i], corners[(i + 1) % 3]);
+    out.push(a);
+    if boundary[i] {
+      continue;
+    }
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len = dx.hypot(dy);
+    if len < 1e-9 {
+      continue;
+    }
+    // With a positive signed area the corners run counter-clockwise, so
+    // the right-hand normal of each edge points out of the triangle.
+    let sign = signed_area.signum();
+    let (nx, ny) = (sign * dy / len * overlap, -sign * dx / len * overlap);
+    out.push((a.0 + nx, a.1 + ny));
+    out.push((b.0 + nx, b.1 + ny));
+  }
+  out
+}
+
 #[derive(Clone)]
 pub(crate) struct Triangle {
   pub projected: [(f64, f64); 3],
@@ -2180,6 +2225,49 @@ fn compactify_infinite_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   changed.then_some(new_args)
 }
 
+/// The list of surfaces a non-list `Plot3D` body stands for when it
+/// evaluates to a list. Evaluated with the plot variables symbolic, the
+/// list's elements are the surfaces; a body that only yields a list once
+/// the variables are numbers is probed at `(x, y)` and split into
+/// `Part[body, i]` surfaces. `None` for a body that is a list already or
+/// samples to a single value.
+fn list_valued_surface_body(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x: f64,
+  y: f64,
+) -> Option<Expr> {
+  use crate::functions::plot::{
+    eval_body_vars_symbolic, expr_mentions_var, substitute_var,
+  };
+  if matches!(body, Expr::List(_))
+    || !(expr_mentions_var(body, xvar) || expr_mentions_var(body, yvar))
+  {
+    return None;
+  }
+  let evaluated = eval_body_vars_symbolic(body, &[xvar, yvar]);
+  if matches!(&evaluated, Expr::List(items) if !items.is_empty()) {
+    return Some(evaluated);
+  }
+  let at_point = substitute_var(
+    &substitute_var(body, xvar, &Expr::Real(x)),
+    yvar,
+    &Expr::Real(y),
+  );
+  match &evaluate_expr_to_expr(&at_point).ok()? {
+    Expr::List(items) if !items.is_empty() => Some(Expr::List(
+      (1..=items.len())
+        .map(|i| Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![body.clone(), Expr::Integer(i as i128)].into(),
+        })
+        .collect(),
+    )),
+    _ => None,
+  }
+}
+
 pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2202,7 +2290,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
-  let mut show_axes = true;
+  let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
@@ -2332,8 +2420,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
-            Expr::Identifier(s) if s == "False" => show_axes = false,
-            Expr::Identifier(s) if s == "True" => show_axes = true,
+            Expr::Identifier(s) if s == "False" => show_box = false,
+            Expr::Identifier(s) if s == "True" => show_box = true,
             _ => {}
           }
         }
@@ -2356,6 +2444,18 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+
+  // A body that evaluates to a list (`h[x, y]` with `h` returning
+  // `{…, …}`, or `({Re[#], Im[#]} &)[…]`) draws one surface per element,
+  // like an explicit list of functions.
+  let expanded_body = list_valued_surface_body(
+    body,
+    &xvar,
+    &yvar,
+    f64::midpoint(x_min, x_max),
+    f64::midpoint(y_min, y_max),
+  );
+  let body = expanded_body.as_ref().unwrap_or(body);
 
   // Collect function bodies: single function or list of functions
   let bodies: Vec<&Expr> = match body {
@@ -3322,7 +3422,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     mesh_mode,
-    show_axes,
+    show_box,
     box_half,
     &axes_labels,
     !image_height_is_explicit(args),
@@ -3445,7 +3545,7 @@ fn generate_svg(
   svg_height: u32,
   full_width: bool,
   mesh_mode: MeshMode,
-  show_axes: bool,
+  show_box: bool,
   box_ratios: [f64; 3],
   axes_labels: &[Option<String>; 3],
   auto_height: bool,
@@ -3453,6 +3553,13 @@ fn generate_svg(
 ) -> Result<String, InterpreterError> {
   let mut svg_width = svg_width;
   let mut svg_height = svg_height;
+  // `Boxed -> False` hides only the box's edges; the axes go with
+  // `Axes -> False`.
+  let show_axes = !options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False"))
+  });
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
@@ -3476,6 +3583,36 @@ fn generate_svg(
     px_max = px_max.max(px);
     py_min = py_min.min(py);
     py_max = py_max.max(py);
+  }
+
+  // Sphere framing (see `plot_spherical_region`): the picture is fitted to
+  // the circle the sphere around the box projects to, exactly as in
+  // `Graphics3D` (see `spherical_region_span`), so its scale no longer
+  // follows the shape of the contents.
+  let sphere_span = (plot_spherical_region(options)
+    && view_angle_option(options).is_none())
+  .then(|| {
+    let radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
+    spherical_region_span(
+      radius,
+      camera.perspective.as_ref().map(|p| p.distance),
+    )
+  })
+  .filter(|span| *span > 0.0 && span.is_finite());
+  // The box middle (the origin) projects to the sphere's center.
+  let (sphere_cx, sphere_cy) = project(
+    Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    },
+    camera,
+  );
+  if let Some(span) = sphere_span {
+    px_min = px_min.min(sphere_cx - span / 2.0);
+    px_max = px_max.max(sphere_cx + span / 2.0);
+    py_min = py_min.min(sphere_cy - span / 2.0);
+    py_max = py_max.max(sphere_cy + span / 2.0);
   }
 
   let p_width = px_max - px_min;
@@ -3625,6 +3762,11 @@ fn generate_svg(
       }
       _ => (scale, scale_y, p_cx, p_cy),
     };
+  // The sphere spans the shorter side of the picture, centered on the box.
+  let (scale, p_cx, p_cy) = match sphere_span {
+    Some(span) => (inner_side / span, sphere_cx, sphere_cy),
+    None => (scale, p_cx, p_cy),
+  };
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -3656,7 +3798,7 @@ fn generate_svg(
   // Each of the 12 edges is subdivided into small segments so that per-segment
   // depth sorting produces correct occlusion against the surface.
   const EDGE_SUBDIVISIONS: usize = 20;
-  let box_edges = if show_axes {
+  let box_edges = if show_box {
     let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
     let axis_color =
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
@@ -8510,6 +8652,36 @@ fn view_angle_option(options: &[Expr]) -> Option<f64> {
     }
     _ => None,
   })?
+}
+
+/// The last value a plot's options give the option `name`, evaluated.
+fn plot_option_value(options: &[Expr], name: &str) -> Option<Expr> {
+  options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => Some(
+      evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone()),
+    ),
+    _ => None,
+  })
+}
+
+/// Whether a surface plot is framed by the sphere around its box, as
+/// `Graphics3D` is: under `SphericalRegion -> True`, and by default inside a
+/// `Manipulate` frame (so the picture keeps its size while a control moves
+/// the contents), unless `SphericalRegion -> False` turns it off.
+fn plot_spherical_region(options: &[Expr]) -> bool {
+  match plot_option_value(options, "SphericalRegion").as_ref() {
+    Some(Expr::Identifier(v)) if v == "True" => true,
+    Some(Expr::Identifier(v)) if v == "False" => false,
+    _ => crate::in_manipulate_frame(),
+  }
 }
 
 fn strip_dynamic(expr: &Expr) -> &Expr {
@@ -15600,8 +15772,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             d.join(" ")
           ));
         } else if tri.opacity > 0.0 {
+          let corners = [(x0, y0), (x1, y1), (x2, y2)];
+          // An opaque fan triangle reaches a little across the internal
+          // cuts of its polygon, so the two halves of a face overlap there
+          // and no anti-aliasing seam traces the diagonal.
+          // The band may leave the face by up to its own width, which the
+          // solid outline drawn over it covers.
+          let fill = if tri.opacity >= 1.0 && tri.edge_dashing.is_none() {
+            widen_across_internal_cuts(
+              corners,
+              tri.boundary,
+              (edge_width / 2.0).min(0.5),
+            )
+          } else {
+            corners.to_vec()
+          };
+          let points = fill
+            .iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
+            .collect::<Vec<_>>()
+            .join(" ");
           svg.push_str(&format!(
-            "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+            "<polygon points=\"{points}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
           ));
         }
         // The group's faces are `all_triangles[pos..]`, in order.
@@ -15795,10 +15987,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
+        // Blanks padding the label (`"  axis"`) keep their room, as they
+        // do in a 2D `Text`.
+        let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.

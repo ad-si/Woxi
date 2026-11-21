@@ -878,6 +878,15 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // A `Dynamic[x]` label reads as the value `x` currently has.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return parse_styled_label(
+      &crate::functions::graphics::dynamic_current_value(expr),
+    );
+  }
   // `None` and `Null` (e.g. a one-armed `If[False, label]`) draw no label.
   if matches!(expr, Expr::Identifier(s) if s == "None" || s == "Null") {
     return None;

@@ -5744,11 +5744,21 @@ default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
 the plot call itself change nothing (`RevolutionPlot3D` given a
 `ViewPoint`, `ViewVertical` or `ViewVector` is drawn from its symbolic form
 by the `Graphics3D` renderer instead, which honors them):
+
+`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+default camera, so `ViewPoint` and `ViewAngle` given to the plot call
+itself change nothing:
 `Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
 picture as without the option. The options are kept on the result, so
 `Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
 re-renders the scene through `Graphics3D` and honors them, including the
-`SphericalRegion -> True` framing a `Manipulate` frame defaults to.
+`SphericalRegion -> True` framing a `Manipulate` frame defaults to. The
+surface plots drawn through the shared surface renderer (`Plot3D`,
+`ParametricPlot3D`, …) honor `SphericalRegion` and `ImagePadding` on their
+own: a Demonstration's snapshot of a `ParametricPlot3D` at
+`ImageSize -> {450, 450}, ImagePadding -> 20` inside a `Manipulate` drew
+its box 351 px wide (Woxi: 348 px with the sphere framing, 405 px with the
+box-outline fit it used before).
 
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
@@ -10618,3 +10628,16 @@ star polyhedron (vertices out to radius 1.19) in `PlotRange -> 1.53` with
 `SphericalRegion -> True`, `ViewAngle -> 10 Degree`, the default
 `ViewPoint` and `ImageSize -> {460, 460}` spans about 410 px in Wolfram and
 about 457 px (11 % larger) in Woxi.
+
+### `NDSolve` across a jump of a piecewise diffusion coefficient
+
+A PDE whose diffusion coefficient jumps by orders of magnitude inside the
+domain (e.g. `If[Abs[r] <= ri, 10.^-6, 10.^-3]` for a lumen surrounded by
+a porous bed) is solved by the method of lines with the flux kept
+continuous across the jump (each face's coefficient the exact harmonic
+mean `h / ∫ dx / c`), which converges to the continuum solution under grid
+refinement. Wolfram's finite element solution integrates the coefficient
+over mesh elements that straddle the jump, which lets noticeably more flux
+through on its default mesh: in a saved snapshot of such a reactor model
+the outlet averages are about 0.27 (lumen) and 0.11 (bed), where Woxi
+gives 0.41 and 0.14. Matching it would need Wolfram's exact mesh.

@@ -4843,10 +4843,22 @@ fn grid_line_props(
 }
 
 /// The attribute that keeps a run of blanks a label asks for
-/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
-/// space; empty when the markup has no such run.
+/// (`Row[{a, "    ", b}]`), or blanks padding its text (`"  axis"`),
+/// instead of letting SVG collapse or drop them; empty when the markup has
+/// neither.
 pub(crate) fn preserve_blanks_attr(markup: &str) -> &'static str {
-  if markup.contains("  ") {
+  // The visible text, without the `<tspan …>` tags that style it.
+  let mut text = String::with_capacity(markup.len());
+  let mut in_tag = false;
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      _ if !in_tag => text.push(c),
+      _ => {}
+    }
+  }
+  if text.contains("  ") || text.trim() != text {
     " xml:space=\"preserve\""
   } else {
     ""
@@ -8717,6 +8729,7 @@ pub(crate) fn build_plot_source(
     data_x_range: None,
     settles_all_range: false,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
+    legends: Vec::new(),
   }
 }
 
@@ -9251,6 +9264,29 @@ fn merged_plot_source_options(
     .iter()
     .filter(|s| s.is_scatter == all_scatter)
     .collect();
+  // The legend entries of several merged plots, each keyed by the series
+  // it labels (now an index among the drawn series).
+  if !source.legends.is_empty() {
+    let drawn_index = |si: usize| {
+      source
+        .series
+        .get(si)
+        .filter(|s| s.is_scatter == all_scatter)?;
+      Some(
+        source.series[..si]
+          .iter()
+          .filter(|s| s.is_scatter == all_scatter)
+          .count(),
+      )
+    };
+    let (series, labels): (Vec<usize>, Vec<String>) = source
+      .legends
+      .iter()
+      .filter_map(|(si, label)| Some((drawn_index(*si)?, label.clone())))
+      .unzip();
+    opts.plot_legends = labels;
+    opts.legend_series = series;
+  }
 
   // Each series carries the color its own plot resolved, so `PlotStyle`
   // is rebuilt from the series rather than re-read from the options.
@@ -13242,6 +13278,7 @@ pub(crate) fn histogram_plot_source(
     data_x_range: None,
     settles_all_range: false,
     aspect_ratio: None,
+    legends: Vec::new(),
   })
 }
 
@@ -15002,6 +15039,10 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         graphics: None,
       })
     }
+    // `Text[marker]` — the same glyph as `marker` itself.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      parse_one_marker(&args[0])
+    }
     // `Style[marker, directives…]` — a color and/or a font size.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -15015,6 +15056,13 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
             (c.b * 255.0).round() as u8,
           ));
         } else if let Some(size) = try_eval_to_f64(directive) {
+          marker.size = size;
+        } else if let Some((name, value)) =
+          crate::functions::graphics::option_name_value(directive)
+          && name == "FontSize"
+          && let Some(size) = try_eval_to_f64(&value)
+        {
+          // `FontSize -> n` (or `FontSize :> n`).
           marker.size = size;
         } else if let Expr::FunctionCall { name, args } = directive
           && name == "FontSize"
