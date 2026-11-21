@@ -365,6 +365,72 @@ mod list_polar_plot {
     assert!(pts[0].0 > pts[1].0 && pts[1].0 > pts[2].0, "{pts:?}");
   }
 
+  // `PolarGridLines -> Automatic` draws, under the points, 25 spokes every
+  // Pi/12 out to the farthest point and circles at fifths of that radius
+  // (Wolfram's own grid for the axes-free plot), and the plot range spans
+  // the whole grid: the spokes at angles 0 and Pi reach both edges.
+  #[test]
+  fn polar_grid_lines_automatic() {
+    let svg = svg_of(
+      "ListPolarPlot[{{0.5, 1}, {2., -1.5}, {Pi/2, 2}}, \
+       PolarGridLines -> Automatic, Axes -> False, ImageSize -> {200, 200}]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 25, "{svg}");
+    let radii: Vec<f64> = svg
+      .split("<ellipse ")
+      .skip(1)
+      .map(|tag| {
+        let start = tag.find("rx=\"").unwrap() + 4;
+        let end = start + tag[start..].find('"').unwrap();
+        tag[start..end].parse().unwrap()
+      })
+      .collect();
+    assert_eq!(radii.len(), 5, "{svg}");
+    // The first spoke runs from the center along angle 0 to radius 2.
+    let spoke = svg.split("<polyline").nth(1).unwrap();
+    let start = spoke.find("points=\"").unwrap() + 8;
+    let end = start + spoke[start..].find('"').unwrap();
+    let coords: Vec<f64> = spoke[start..end]
+      .split([' ', ','])
+      .map(|c| c.parse().unwrap())
+      .collect();
+    let (cx, cy, x1, y1) = (coords[0], coords[1], coords[2], coords[3]);
+    assert!((cy - y1).abs() < 0.5, "{coords:?}");
+    let r_max = x1 - cx;
+    for (k, r) in radii.iter().enumerate() {
+      assert!(
+        (r - r_max * k as f64 / 5.0).abs() < 0.5,
+        "{radii:?} {r_max}"
+      );
+    }
+    // The plot range takes in the spokes at angles 0 and Pi.
+    assert!(cx - r_max > 0.0 && x1 < 2000.0, "{coords:?}");
+    assert!((2.0 * cx - 2000.0).abs() < 1.0, "{coords:?}");
+    // No grid unless asked for.
+    let plain =
+      svg_of("ListPolarPlot[{{0.5, 1}, {2., -1.5}, {Pi/2, 2}}, Axes -> False]");
+    assert!(!plain.contains("<polyline"), "{plain}");
+    assert!(!plain.contains("<ellipse"), "{plain}");
+  }
+
+  // `PolarGridLines -> {None, Automatic}` keeps only the circles, and
+  // explicit angle lists draw one spoke per angle.
+  #[test]
+  fn polar_grid_lines_parts() {
+    let polylines = |svg: &str| svg.matches("<polyline").count();
+    let radial = svg_of(
+      "ListPolarPlot[{{0, 1}, {Pi/2, 2}}, \
+       PolarGridLines -> {None, Automatic}, Axes -> False]",
+    );
+    assert_eq!(polylines(&radial), 0, "{radial}");
+    assert_eq!(radial.matches("<ellipse").count(), 5, "{radial}");
+    let spokes = svg_of(
+      "ListPolarPlot[{{0, 1}, {Pi/2, 2}}, \
+       PolarGridLines -> {{0, Pi/2, Pi}, None}, Axes -> False]",
+    );
+    assert_eq!(polylines(&spokes), 3, "{spokes}");
+  }
+
   // `Joined -> True` draws a line instead of points.
   #[test]
   fn joined_draws_a_line() {

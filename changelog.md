@@ -2,6 +2,18 @@
 
 # Unreleased
 
+- A `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]` readout in a
+    `Text@Row` or grid keeps its left padding, so the label stays the same
+    width as the value changes. `ToBoxes` of such a `NumberForm` around an
+    arbitrary-precision number (`N[1, 4]`) typesets its padded digits.
+- `Column` honors `ItemStyle`: a single style (`Directive[24, Bold, Red]`)
+    styles every item, a list styles the items in turn. A fixed `ItemSize`
+    width is the column's whole width, and stacked boxes (framed items,
+    rows of them, sized panes) are set 6 pt apart as stacked pictures are,
+    with or without an alignment argument.
+- `Text[TraditionalForm[Style[Grid[…], 24]]]` (and any `Style` around a
+    `TraditionalForm` of a styled layout) typesets the grid instead of
+    printing its source.
 - A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
     inside `Text`) is drawn as its full `w`×`h` box with the table aligned
     inside, so a Manipulate body sized this way no longer shrinks to the
@@ -16,6 +28,18 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `NDSolve` follows a fast transient right at a start of 0 over a long
+    domain (a rate that is huge only while the state is tiny), instead of
+    giving up or stepping across it with a wrong result.
+- A subscripted symbol in an axis or plot label sets its single-letter base
+    in italics, and `PlotLabel` typesets plain mathematical labels (`x`,
+    `f[x]`, `Sin[x]`) in `TraditionalForm` like `AxesLabel` does.
+- `ParametricPlot` breaks a curve at the poles of its coordinates
+    (`{Sec[t], Tan[t]}` at `t == Pi/2`) under the default
+    `Exclusions -> Automatic`, instead of joining the branches with a line.
+- A capital letter typeset in a box label (`"\!\(\*SubscriptBox[\(E\), \(0\)]\)"`)
+    stays the letter `E₀` in Manipulate controls instead of turning into the
+    constant glyph `ⅇ₀` (likewise `I`, `Pi`, `Degree`, …).
 - `Graphics3D` `Text` labels and plot labels keep the blanks padding their
     text (`Text["  axis", pos]`) instead of SVG dropping them.
     3D plot labels keep them too.

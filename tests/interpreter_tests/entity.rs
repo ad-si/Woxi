@@ -354,6 +354,69 @@ mod entity_store_tests {
   }
 }
 
+mod canonical_name_tests {
+  use super::*;
+
+  #[test]
+  fn entity_gives_its_name() {
+    assert_eq!(
+      interpret("CanonicalName[Entity[\"Star\", \"Sirius\"]]").unwrap(),
+      "Sirius"
+    );
+    assert_eq!(
+      interpret("StringQ[CanonicalName[Entity[\"Planet\", \"Earth\"]]]")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn qualified_entity_name_is_a_list() {
+    assert_eq!(
+      interpret(
+        "CanonicalName[Entity[\"City\", {\"Champaign\", \"Illinois\", \
+         \"UnitedStates\"}]]"
+      )
+      .unwrap(),
+      "{Champaign, Illinois, UnitedStates}"
+    );
+  }
+
+  #[test]
+  fn classes_and_properties() {
+    assert_eq!(
+      interpret(
+        "CanonicalName[{EntityClass[\"Star\", \"StarNearest100\"], \
+         EntityProperty[\"Country\", \"Population\"], \
+         EntityPropertyClass[\"Country\", \"Economy\"]}]"
+      )
+      .unwrap(),
+      "{StarNearest100, Population, Economy}"
+    );
+  }
+
+  #[test]
+  fn nested_lists_are_mapped() {
+    assert_eq!(
+      interpret(
+        "CanonicalName[{{Entity[\"Star\", \"Sirius\"]}, \
+         {Entity[\"Star\", \"Procyon\"], Entity[\"Planet\", \"Mars\"]}}]"
+      )
+      .unwrap(),
+      "{{Sirius}, {Procyon, Mars}}"
+    );
+  }
+
+  #[test]
+  fn non_entity_stays_unevaluated() {
+    assert_eq!(interpret("CanonicalName[x]").unwrap(), "CanonicalName[x]");
+    assert_eq!(
+      interpret("CanonicalName[\"Sirius\"]").unwrap(),
+      "CanonicalName[Sirius]"
+    );
+  }
+}
+
 mod city_data_tests {
   use super::*;
 
@@ -451,6 +514,26 @@ mod city_data_tests {
     assert_eq!(
       interpret("CityData[\"Berlin\", \"Longitude\"]").unwrap(),
       "Quantity[13.38, AngularDegrees]"
+    );
+  }
+
+  #[test]
+  fn small_united_states_towns_are_bundled() {
+    assert_eq!(
+      interpret("CityData[{\"Ashland\", \"Ohio\", \"UnitedStates\"}]").unwrap(),
+      "Entity[City, {Ashland, Ohio, UnitedStates}]"
+    );
+    assert_eq!(
+      interpret("Length[CityData[{\"Ashland\", \"UnitedStates\"}]] > 10")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "MatchQ[CityData[{\"Ashland\", \"Oregon\", \"UnitedStates\"}, \"Coordinates\"], {_Real, _Real}]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 }

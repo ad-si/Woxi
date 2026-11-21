@@ -18,8 +18,8 @@ struct City {
 }
 
 /// The verified cities of `city_data.json` first, then every other city of
-/// at least 100 000 people from GeoNames (`resources/cities.tsv.gz`, see
-/// `scripts/gen_city_data.py`).
+/// at least 100 000 people (U.S. towns of at least 500) from GeoNames
+/// (`resources/cities.tsv.gz`, see `scripts/gen_city_data.py`).
 static CITIES: std::sync::LazyLock<Vec<City>> =
   std::sync::LazyLock::new(|| {
     let mut cities: Vec<City> =
@@ -32,20 +32,19 @@ static CITIES: std::sync::LazyLock<Vec<City>> =
     GzDecoder::new(&compressed[..])
       .read_to_string(&mut text)
       .expect("cities.tsv.gz is valid gzip");
-    let verified = cities.len();
+    // A verified city keeps its own (Wolfram-checked) identity.
+    let verified: std::collections::HashSet<(String, String)> = cities
+      .iter()
+      .filter_map(|c| c.entities.first())
+      .map(|e| (normalize(&e[0]), normalize(&e[2])))
+      .collect();
     for line in text.lines().filter(|l| !l.starts_with('#')) {
       let f: Vec<&str> = line.split('\t').collect();
       if f.len() < 7 {
         continue;
       }
       let id = [f[0].to_string(), f[1].to_string(), f[2].to_string()];
-      // A verified city keeps its own (Wolfram-checked) identity.
-      if cities[..verified].iter().any(|c| {
-        c.entities.first().is_some_and(|e| {
-          normalize(&e[0]) == normalize(&id[0])
-            && normalize(&e[2]) == normalize(&id[2])
-        })
-      }) {
+      if verified.contains(&(normalize(&id[0]), normalize(&id[2]))) {
         continue;
       }
       let (Ok(lat), Ok(lon), Ok(population)) =

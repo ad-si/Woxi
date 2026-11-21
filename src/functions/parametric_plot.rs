@@ -824,14 +824,140 @@ pub(crate) fn exclusion_roots(
   roots
 }
 
-/// Break the sampled curves at the excluded parameter values by inserting an
-/// empty sample at each one.
-fn insert_exclusion_gaps(samples: &mut Vec<Sample>, roots: &[f64]) {
+/// Break the sampled curves at the excluded parameter values: the curve runs
+/// up to each excluded value from both sides (as `Plot` draws it), with an
+/// empty sample at the value itself, so no line is drawn across it but no
+/// visible piece of the curve goes missing either.
+fn insert_exclusion_gaps(
+  samples: &mut Vec<Sample>,
+  roots: &[f64],
+  (t_min, t_max): (f64, f64),
+  sample_at: &dyn Fn(f64) -> Option<Vec<(f64, f64)>>,
+) {
   if roots.is_empty() {
     return;
   }
-  samples.extend(roots.iter().map(|&t| (t, None)));
+  let eps = (t_max - t_min).abs() * 1e-9;
+  for &t in roots {
+    samples.retain(|(s, _)| (s - t).abs() > eps);
+    samples.push((t, None));
+    for near in [t - eps, t + eps] {
+      if (t_min..=t_max).contains(&near) {
+        samples.push((near, sample_at(near)));
+      }
+    }
+  }
   samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
+}
+
+/// Bisection steps used to decide whether a sign change of a coordinate
+/// between two neighboring samples is a pole.
+const POLE_BISECTIONS: usize = 60;
+
+/// Whether coordinate `axis` (0 = x, 1 = y) of curve `k` passes through a
+/// pole between the parameter values `ta` and `tb`, where it has the
+/// opposite-signed values `va` and `vb`. Bisecting toward the sign change
+/// closes in on a zero when the coordinate is continuous there (the
+/// smaller magnitude of the bracket shrinks) and on a pole when it is not
+/// (both magnitudes keep growing). Returns the parameter of the pole.
+fn pole_between<F>(
+  sample_at: &F,
+  (k, axis): (usize, usize),
+  (mut ta, mut va): (f64, f64),
+  (mut tb, mut vb): (f64, f64),
+) -> Option<f64>
+where
+  F: Fn(f64) -> Option<Vec<(f64, f64)>>,
+{
+  let start = va.abs().min(vb.abs());
+  for _ in 0..POLE_BISECTIONS {
+    let tm = f64::midpoint(ta, tb);
+    if tm <= ta || tm >= tb {
+      break;
+    }
+    let row = sample_at(tm)?;
+    let p = row.get(k)?;
+    let vm = if axis == 0 { p.0 } else { p.1 };
+    if !vm.is_finite() {
+      return Some(tm);
+    }
+    if vm == 0.0 {
+      return None;
+    }
+    if (vm > 0.0) == (va > 0.0) {
+      (ta, va) = (tm, vm);
+    } else {
+      (tb, vb) = (tm, vm);
+    }
+    // The bracket is settling onto a zero: a continuous crossing.
+    if va.abs().min(vb.abs()) < 0.5 * start {
+      return None;
+    }
+  }
+  Some(f64::midpoint(ta, tb))
+}
+
+/// Break the sampled curves where a coordinate runs off to infinity and
+/// comes back from the opposite side (`{Sec[t], Tan[t]}` at `t == Pi/2`),
+/// as `Exclusions -> Automatic` does in Wolfram: without the break the
+/// polyline joins the two ends with a long straight segment across the
+/// plot. An empty sample is inserted at each pole found.
+fn insert_pole_gaps<F>(samples: &mut Vec<Sample>, sample_at: &F)
+where
+  F: Fn(f64) -> Option<Vec<(f64, f64)>>,
+{
+  // Both sides of a pole are far from zero; a sign change at a sample
+  // that is zero up to rounding (`2 Cos[Pi/2]`) is a crossing, and
+  // bisecting such noise would not settle onto a zero. The scale is the
+  // median magnitude: samples right at a pole are huge and would swamp a
+  // maximum.
+  let mut magnitudes: Vec<f64> = samples
+    .iter()
+    .flat_map(|(_, row)| row.iter().flatten())
+    .flat_map(|&(x, y)| [x.abs(), y.abs()])
+    .filter(|v| v.is_finite())
+    .collect();
+  magnitudes.sort_by(f64::total_cmp);
+  let scale = magnitudes.get(magnitudes.len() / 2).copied().unwrap_or(0.0);
+  let negligible = 1e-8 * scale;
+  let mut poles: Vec<f64> = Vec::new();
+  for pair in samples.windows(2) {
+    let ((ta, Some(ra)), (tb, Some(rb))) = (&pair[0], &pair[1]) else {
+      continue;
+    };
+    if ra.len() != rb.len() {
+      continue;
+    }
+    'curves: for (k, (pa, pb)) in ra.iter().zip(rb).enumerate() {
+      for axis in 0..2 {
+        let (va, vb) = if axis == 0 {
+          (pa.0, pb.0)
+        } else {
+          (pa.1, pb.1)
+        };
+        if !(va.is_finite() && vb.is_finite())
+          || va.abs() <= negligible
+          || vb.abs() <= negligible
+          || (va > 0.0) == (vb > 0.0)
+        {
+          continue;
+        }
+        if let Some(t) =
+          pole_between(sample_at, (k, axis), (*ta, va), (*tb, vb))
+        {
+          poles.push(t);
+          break 'curves;
+        }
+      }
+    }
+  }
+  // A pole is no point of the curve, so only the gap itself goes in: the
+  // samples beside it would lie far off toward infinity.
+  let range = (
+    samples.first().map_or(0.0, |s| s.0),
+    samples.last().map_or(0.0, |s| s.0),
+  );
+  insert_exclusion_gaps(samples, &poles, range, &|_| None);
 }
 
 /// The `RegionFunction -> f` value of a curve plot's options, evaluated
@@ -1167,6 +1293,8 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut all_points: Vec<Vec<(f64, f64)>> = Vec::with_capacity(curves.len());
   let mut all_params: Vec<Vec<f64>> = Vec::with_capacity(curves.len());
   let excluded = exclusion_roots(&args[2..], &var_name, t_min, t_max);
+  let auto_exclusions =
+    crate::functions::plot::automatic_exclusions_enabled(&args[2..]);
   // `RegionFunction -> f`: only the stretches of the curve where
   // `f[x, y, t]` is True are drawn. Evaluated once, like `Plot` does.
   let region_function = curve_region_function(&args[2..]);
@@ -1241,6 +1369,9 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       },
     );
     samples = extend_to_domain_edges(&samples, &sample_at);
+    if auto_exclusions {
+      insert_pole_gaps(&mut samples, &sample_at);
+    }
     if let Some(region) = &region_function {
       samples = clip_samples_to_region(
         samples,
@@ -1249,7 +1380,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         RegionArgs::Parametric,
       );
     }
-    insert_exclusion_gaps(&mut samples, &excluded);
+    insert_exclusion_gaps(&mut samples, &excluded, (t_min, t_max), &sample_at);
     let (series, params) = samples_to_series(samples);
     all_params.extend(std::iter::repeat_n(params, series.len()));
     all_points.extend(series);
@@ -1566,13 +1697,15 @@ fn parametric_region_ast(
   }
 
   // Wolfram draws a region ParametricPlot framed, with axes and equally
-  // scaled ones; the caller's own options come last so they win.
+  // scaled ones. The first setting of an option is the one in force, so
+  // the caller's own options come first and the defaults only fill in the
+  // ones they leave out (`Axes -> False` must remove the axes).
   let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.extend(opt_args.iter().cloned());
   graphics_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
   graphics_args.push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
-  graphics_args.extend(opt_args.iter().cloned());
   let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
   // Keep the primitives on the rendering so `Show` can draw the region
   // together with the other layers of a composite figure instead of
@@ -2176,6 +2309,87 @@ fn parametric_region_layer(
   }
 
   Ok(Expr::List(items.into()))
+}
+
+/// The polar grid `PolarGridLines` asks a `ListPolarPlot` to draw under its
+/// points when the polar axes are off, for data reaching radius `r_max`.
+///
+/// The option is `{angular, radial}` (a lone value applies to both). As in
+/// Wolfram, `Automatic` (or `True`) angular grid lines are 25 spokes from
+/// the origin to `r_max`, one every π/12 from 0 to 2π, and `Automatic`
+/// radial grid lines are the circles at radii `k r_max / 5` for k = 0…4;
+/// an explicit list of angles or radii draws a spoke or circle at each.
+/// Every line is styled `GrayLevel[0.5], Opacity[0.4]`. Returns the grid
+/// primitives and the largest distance from the origin they reach, or
+/// `None` unless the option asks for some grid.
+pub fn polar_grid_lines_prolog(
+  opts: &[Expr],
+  r_max: f64,
+) -> Option<(Vec<Expr>, f64)> {
+  let value = opts.iter().rev().find_map(|opt| {
+    let (name, value) = crate::functions::graphics::option_name_value(opt)?;
+    (name == "PolarGridLines").then(|| value.into_owned())
+  })?;
+  let (angular, radial) = match &value {
+    Expr::List(items)
+      if items.len() == 2
+        && !items.iter().all(|e| try_eval_to_f64(e).is_some()) =>
+    {
+      (items[0].clone(), items[1].clone())
+    }
+    other => (other.clone(), other.clone()),
+  };
+  // `Automatic`/`True` take the default positions; a list its own values.
+  let positions = |spec: &Expr, defaults: Vec<f64>| -> Vec<f64> {
+    match spec {
+      Expr::Identifier(n) if n == "Automatic" || n == "True" => defaults,
+      Expr::List(items) => items.iter().filter_map(try_eval_to_f64).collect(),
+      _ => Vec::new(),
+    }
+  };
+  let r_max = if r_max.is_finite() && r_max > 0.0 {
+    r_max
+  } else {
+    1.0
+  };
+  let angles = positions(
+    &angular,
+    (0..=24)
+      .map(|k| std::f64::consts::PI / 12.0 * f64::from(k))
+      .collect(),
+  );
+  let radii = positions(
+    &radial,
+    (0..5).map(|k| r_max * f64::from(k) / 5.0).collect(),
+  );
+  if angles.is_empty() && radii.is_empty() {
+    return None;
+  }
+  let extent = radii
+    .iter()
+    .map(|r| r.abs())
+    .fold(if angles.is_empty() { 0.0 } else { r_max }, f64::max);
+  let point =
+    |x: f64, y: f64| Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  let mut grid = vec![call(
+    "Directive",
+    vec![
+      call1("GrayLevel", Expr::Real(0.5)),
+      call1("Opacity", Expr::Real(0.4)),
+    ],
+  )];
+  for a in angles {
+    grid.push(call1(
+      "Line",
+      Expr::List(
+        vec![point(0.0, 0.0), point(r_max * a.cos(), r_max * a.sin())].into(),
+      ),
+    ));
+  }
+  for r in radii {
+    grid.push(call("Circle", vec![point(0.0, 0.0), Expr::Real(r)]));
+  }
+  Some((vec![Expr::List(grid.into())], extent))
 }
 
 /// What `PolarAxes`, `PolarTicks` and `PolarGridLines` ask a `PolarPlot` to

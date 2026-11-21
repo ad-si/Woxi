@@ -9024,6 +9024,14 @@ fn root_coeffs_and_seed(
   if coeffs_i.len() < 2 {
     return None;
   }
+  // A real root of a polynomial with few terms is bracketed directly:
+  // the dense root finder takes all the complex roots, and need not
+  // converge for a high degree.
+  if let Some(re) =
+    crate::functions::polynomial_ast::sparse_real_root_value(&coeffs_i, k)
+  {
+    return Some((coeffs_i, true, re, 0.0));
+  }
   let coeffs_f = bigint_coeffs_to_f64(&coeffs_i)?;
   let (re, im, real) = kth_ordered_root(&coeffs_f, k)?;
   Some((coeffs_i, real, re, im))
