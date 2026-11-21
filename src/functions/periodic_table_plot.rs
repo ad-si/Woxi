@@ -214,9 +214,7 @@ fn push_phase_legend(body: &mut String, vb_w: f64, dark: bool) {
 
 /// Escape the small set of characters that matter inside SVG text nodes.
 fn escape_xml(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
+  crate::functions::plot::html_escape(s)
 }
 
 /// What the (optional) first positional argument asks for.
