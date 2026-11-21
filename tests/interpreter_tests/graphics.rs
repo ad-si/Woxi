@@ -16320,6 +16320,37 @@ mod plot3d {
       assert!(svg.contains(">x</text>"), "{svg}");
     }
 
+    /// Regression: a `Spacer[n]` inside a styled `FrameLabel` row kept its
+    /// width in points while the plot draws at `RESOLUTION_SCALE` units per
+    /// point (its `Style` font size was scaled, the gap was not), so the
+    /// gap came out a tenth of its size.
+    #[test]
+    fn frame_label_spacer_gap_scales_with_the_plot() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, Frame -> True, \
+         FrameLabel -> {{None, None}, {None, \
+           Style[Row[{\"a\", Spacer[30], \"b\"}], 12]}}]",
+      );
+      let (width, view_width) = {
+        let attr = |key: &str| -> f64 {
+          let start = svg.find(key).unwrap() + key.len();
+          let rest = &svg[start..];
+          rest[..rest.find(['"', ' ']).unwrap()].parse().unwrap()
+        };
+        (attr("width=\""), {
+          let start = svg.find("viewBox=\"0 0 ").unwrap() + 13;
+          let rest = &svg[start..];
+          rest[..rest.find(' ').unwrap()].parse::<f64>().unwrap()
+        })
+      };
+      let scale = view_width / width;
+      assert!(scale > 1.0, "{svg}");
+      let gap = format!("<tspan dx=\"{:.0}\">b</tspan>", 30.0 * scale);
+      let size = format!("font-size=\"{:.0}\"", 12.0 * scale);
+      assert!(svg.contains(&gap), "{gap} missing in {svg}");
+      assert!(svg.contains(&size), "{size} missing in {svg}");
+    }
+
     /// Regression: `Histogram` read the nested `{{left, right}, {bottom,
     /// top}}` `FrameLabel` as `{bottom, left}`, printing each inner list
     /// (`{p, overall risk}`) as one caption instead of one per edge.

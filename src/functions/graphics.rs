@@ -25927,28 +25927,15 @@ fn script_needs_typesetting(script: &Expr) -> bool {
 /// [`box_string_to_svg`] for a label drawn in a graphic whose user space is
 /// `scale` times its point size (the plot renderers draw at
 /// `RESOLUTION_SCALE`): the explicit `font-size`s a `Style[label, size]`
-/// carries are in points, so they scale along with the base font the
+/// carries are in points, as are the `dx` gaps and `letter-spacing` a
+/// `Spacer[n]` becomes, so they all scale along with the base font the
 /// label's `<text>` element gets.
 pub fn box_string_to_svg_scaled(s: &str, scale: f64) -> String {
   let svg = box_string_to_svg(s);
-  if !s.starts_with(STYLED_LABEL_MARKER) || (scale - 1.0).abs() < 1e-9 {
+  if !s.starts_with(STYLED_LABEL_MARKER) {
     return svg;
   }
-  const KEY: &str = "font-size=\"";
-  let mut out = String::with_capacity(svg.len());
-  let mut rest = svg.as_str();
-  while let Some(i) = rest.find(KEY) {
-    let (head, tail) = rest.split_at(i + KEY.len());
-    out.push_str(head);
-    let end = tail.find('"').unwrap_or(tail.len());
-    match tail[..end].parse::<f64>() {
-      Ok(v) => out.push_str(&format!("{:.0}", v * scale)),
-      Err(_) => out.push_str(&tail[..end]),
-    }
-    rest = &tail[end..];
-  }
-  out.push_str(rest);
-  out
+  crate::functions::chart::scale_markup_lengths(&svg, scale)
 }
 
 /// Render a label string that may contain inline Wolfram box notation into
