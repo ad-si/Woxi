@@ -2692,6 +2692,7 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
   }
 
   let mut result = Vec::new();
+  let mut renormalized = false;
   for (base, c, original, count) in groups {
     if c.is_zero() {
       // Preserve `Real(0.0) * I` as the imaginary marker of an inexact
@@ -2745,10 +2746,55 @@ fn collect_like_terms(terms: &[Expr]) -> Vec<Expr> {
           times_args.push(base);
         }
       }
-      result.push(times(times_args));
+      // A coefficient merged onto a numeric radical (`x/Sqrt[3] -
+      // x/(4 Sqrt[3])` is `3/4 x 3^(-1/2)`) folds into it, as in any
+      // product: the term is `(Sqrt[3] x)/4`, which can now be a like
+      // term of another one in the sum (`- (Sqrt[3] x)/4` cancels it).
+      if matches!(&c, Coeff::Exact(..) | Coeff::BigExact(..))
+        && times_args[1..].iter().any(is_numeric_radical_factor)
+        && let Ok(folded) = times_ast(&times_args)
+      {
+        let raw = times(times_args);
+        if expr_to_string(&folded) != expr_to_string(&raw) {
+          renormalized = true;
+        }
+        result.push(folded);
+      } else {
+        result.push(times(times_args));
+      }
     }
   }
+  if renormalized {
+    return collect_like_terms(&result);
+  }
   result
+}
+
+/// `Power[r, q]` with a positive rational base and a non-integer rational
+/// exponent: a radical such as `Sqrt[3]` or `3^(-1/2)` that an exact
+/// coefficient multiplied onto it folds into.
+fn is_numeric_radical_factor(e: &Expr) -> bool {
+  let (base, exponent) = match e {
+    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
+      (&args[0], &args[1])
+    }
+    Expr::BinaryOp {
+      op: BinaryOperator::Power,
+      left,
+      right,
+    } => (left.as_ref(), right.as_ref()),
+    _ => return false,
+  };
+  let positive_rational = match base {
+    Expr::Integer(n) => *n > 1,
+    Expr::FunctionCall { name, args } if name == "Rational" => {
+      matches!(args.as_slice(), [Expr::Integer(p), Expr::Integer(_)] if *p > 0)
+    }
+    _ => false,
+  };
+  positive_rational
+    && matches!(exponent, Expr::FunctionCall { name, args }
+      if name == "Rational" && args.len() == 2)
 }
 
 /// The factors of a `decompose_term_ref` base: a product stands for its
@@ -4608,6 +4654,24 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
             } else {
               std::cmp::Ordering::Greater
             };
+          }
+        }
+      }
+      // A sum times other factors (`(a + b)/x`, `(a + b)*y`) against a
+      // product of several factors (`c/y`, `c*x`): products compare from
+      // their last factor, as in `Sort` — `(a + b)/x + c/y`,
+      // `c*x + (a + b)*y`.
+      {
+        let (_, none_factors) = wl_coeff_and_factors(none_term);
+        let (_, pair_factors) = wl_coeff_and_factors(pair_term);
+        let sum_factor = none_factors.iter().any(|f| {
+          matches!(f.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
+        });
+        if sum_factor && none_factors.len() >= 2 && pair_factors.len() >= 2 {
+          let ord =
+            crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
           }
         }
       }
@@ -13203,11 +13267,20 @@ fn merge_coefficient_into_radical(
           };
           // Only rewrite when something actually changed; canonical inputs
           // are fixed points and must return through the generic path.
-          let coeff_str = expr_to_string(coeff);
-          let new_coeff_str = expr_to_string(&new_coeff);
-          let factor_str = expr_to_string(&symbolic_args[radical_idx]);
-          let rebuilt_str = expr_to_string(&rebuilt);
-          if coeff_str != new_coeff_str || factor_str != rebuilt_str {
+          // The structural check settles the common fixed-point case without
+          // rendering four expressions to text on every `c * Sqrt[r]`
+          // product; the textual comparison stays the arbiter otherwise.
+          let unchanged_structurally =
+            crate::evaluator::pattern_matching::expr_equal(coeff, &new_coeff)
+              && crate::evaluator::pattern_matching::expr_equal(
+                &symbolic_args[radical_idx],
+                &rebuilt,
+              );
+          if !unchanged_structurally
+            && (expr_to_string(coeff) != expr_to_string(&new_coeff)
+              || expr_to_string(&symbolic_args[radical_idx])
+                != expr_to_string(&rebuilt))
+          {
             if matches!(&new_coeff, Expr::Integer(1)) {
               return with_others(vec![rebuilt]).map(Some);
             }
