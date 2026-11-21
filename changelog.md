@@ -2,6 +2,16 @@
 
 # Unreleased
 
+- `HorizontalGauge`/`VerticalGauge` draw `GaugeMarkers -> "BarMarker"` as
+    thin bars, fill a rounded face panel for `GaugeFaceStyle` (a named face
+    such as `"GlassRectangle"` or a color) and show a `GaugeLabels` title
+    (`Placed[label, Top | Bottom]`).
+- A Manipulate `Animator` control over an unbounded range
+    (`{t, 0, Infinity, dt, Animator}`) plays its variable on forever with
+    play/pause and reset buttons instead of looping a 0..2π slider.
+- Displaying a held graphic (`Hold[Graphics[…]]`, a Manipulate body) no
+    longer evaluates its content for effect, so it neither prints nor
+    reports messages about symbols local to its own context.
 - A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
     inside `Text`) is drawn as its full `w`×`h` box with the table aligned
     inside, so a Manipulate body sized this way no longer shrinks to the

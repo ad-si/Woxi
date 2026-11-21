@@ -844,6 +844,18 @@ pub fn capture_stdout_raw(text: &str) {
   });
 }
 
+/// The length of the captured stdout so far, to roll back to with
+/// [`truncate_captured_stdout`].
+pub(crate) fn captured_stdout_len() -> usize {
+  CAPTURED_STDOUT.with(|buffer| buffer.borrow().len())
+}
+
+/// Drop whatever was captured on stdout after `len` (from
+/// [`captured_stdout_len`]).
+pub(crate) fn truncate_captured_stdout(len: usize) {
+  CAPTURED_STDOUT.with(|buffer| buffer.borrow_mut().truncate(len));
+}
+
 /// Gets the captured stdout content
 fn get_captured_stdout() -> String {
   CAPTURED_STDOUT.with(|buffer| buffer.borrow().clone())

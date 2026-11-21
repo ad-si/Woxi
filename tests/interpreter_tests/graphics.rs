@@ -6920,6 +6920,41 @@ mod graphics3d_dynamic_content {
   }
 }
 
+/// Displaying a held graphic draws it without evaluating its content
+/// for effect: no `Print` output and no messages about symbols that only
+/// have values in the graphic's own context (a `Manipulate` body echoed
+/// before its `Initialization` ran).
+mod held_graphics_display {
+  use super::*;
+
+  #[test]
+  fn held_graphics_neither_print_nor_message() {
+    clear_state();
+    for (code, shown) in [
+      ("Hold[Graphics[{Print[\"drawn\"]}]]", "Hold[-Graphics-]"),
+      (
+        "Hold[Graphics[{MapThread[f, {pts, pts}]}]]",
+        "Hold[-Graphics-]",
+      ),
+      (
+        "Manipulate[Module[{pts}, pts = {1, 2}; \
+         Graphics[{MapThread[Point[{#1, #2}] &, {pts, pts}]}]], {t, 0, 1}]",
+        "Manipulate[Module[{pts}, pts = {1, 2}; -Graphics-], {t, 0, 1}]",
+      ),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      assert_eq!(r.result, shown, "{code}");
+      assert_eq!(r.stdout, "", "{code}");
+      assert!(r.warnings.is_empty(), "{code}: {:?}", r.warnings);
+    }
+    // An evaluated statement still prints as usual.
+    let r =
+      woxi::interpret_with_stdout("Print[\"x\"]; Graphics[{Point[{0, 0}]}]")
+        .unwrap();
+    assert_eq!(r.stdout, "x\n");
+  }
+}
+
 mod dynamic_plot_labels {
   use super::*;
 
@@ -49319,6 +49354,77 @@ mod manipulate {
       }
       other => panic!("expected continuous control, got {other:?}"),
     }
+  }
+
+  /// An `Animator` over `{t, 0, Infinity, dt}` has no slider: it plays
+  /// the variable on forever from its start with play/pause, reset and
+  /// step buttons instead of looping a finite stand-in window. It starts
+  /// running unless `AnimationRunning -> False`.
+  #[test]
+  fn spec_unbounded_animator_runs_forever() {
+    let trigger = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("manipulate");
+      match &spec.controls[..] {
+        [
+          ManipulateControl::Trigger {
+            name,
+            label,
+            min,
+            max,
+            step,
+            initial,
+            running,
+            ..
+          },
+        ] => (
+          name.clone(),
+          label.clone(),
+          *min,
+          *max,
+          *step,
+          *initial,
+          *running,
+        ),
+        other => panic!("expected one trigger control, got {other:?}"),
+      }
+    };
+    assert_eq!(
+      trigger(
+        "Manipulate[x, Row[{Control[{{x, 0, Style[\"go\", 12]}, 0, Infinity, \
+         0.025, Animator, AnimationRunning -> False}]}]]"
+      ),
+      (
+        "x".to_string(),
+        "go".to_string(),
+        0.0,
+        f64::INFINITY,
+        0.025,
+        0.0,
+        false
+      )
+    );
+    assert_eq!(
+      trigger(
+        "Manipulate[x, {{x, 1}, 1, Infinity, 2, ControlType -> Animator}]"
+      ),
+      (
+        "x".to_string(),
+        "x".to_string(),
+        1.0,
+        f64::INFINITY,
+        2.0,
+        1.0,
+        true
+      )
+    );
+    // A bounded Animator stays a looping slider.
+    let expr = interpret_to_expr("Manipulate[x, {x, 0, 5, Animator}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert!(matches!(
+      &spec.controls[..],
+      [ManipulateControl::Continuous { max, .. }] if *max == 5.0
+    ));
   }
 
   #[test]

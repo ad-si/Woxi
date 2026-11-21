@@ -20937,17 +20937,24 @@ fn inline_graphics_box_layout(
     &crate::syntax::expr_to_input_form(expr),
   );
   let graphic = crate::syntax::string_to_expr(&source).ok()?;
-  // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
-  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
-  let rendered = match &evaluated {
-    Expr::FunctionCall { name, args } if name == "Graphics" => {
-      graphics_ast(args).ok()?
-    }
-    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
-      crate::functions::plot3d::graphics3d_ast(args).ok()?
-    }
-    _ => evaluated.clone(),
-  };
+  // Drawing a picture is display, not evaluation: a held graphic
+  // (`Hold[Graphics[{MapThread[f, {pts, pts}]}]]`, or the body of a
+  // `Manipulate` echoed before its `Initialization` ran) must neither
+  // print nor report messages about content that only makes sense in its
+  // own context, so render it silently.
+  let rendered = draw_silently(|| {
+    // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
+    let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
+    Some(match &evaluated {
+      Expr::FunctionCall { name, args } if name == "Graphics" => {
+        graphics_ast(args).ok()?
+      }
+      Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+        crate::functions::plot3d::graphics3d_ast(args).ok()?
+      }
+      _ => evaluated.clone(),
+    })
+  })?;
   let Expr::Graphics { svg, .. } = &rendered else {
     return None;
   };
@@ -20965,6 +20972,22 @@ fn inline_graphics_box_layout(
     baseline: above,
     elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
   })
+}
+
+/// Run `draw` with its messages discarded and its `Print` output
+/// suppressed, as a front end drawing boxes would.
+fn draw_silently<T>(draw: impl FnOnce() -> T) -> T {
+  let snapshot = crate::snapshot_warnings();
+  let quiet_print = crate::is_quiet_print();
+  let stdout_len = crate::captured_stdout_len();
+  crate::push_quiet();
+  crate::set_quiet_print(true);
+  let result = draw();
+  crate::set_quiet_print(quiet_print);
+  crate::truncate_captured_stdout(stdout_len);
+  crate::pop_quiet();
+  crate::restore_warnings(snapshot);
+  result
 }
 
 /// Render a `BoxLayout` into a complete SVG string.
@@ -54381,7 +54404,21 @@ fn parse_manipulate_control(
   // fixed duration" pattern). When this variable already has a visible row
   // from an earlier spec (a plain slider on the same `t`), the Trigger
   // still gets its own row; both rows share the one binding.
-  if control_type.as_deref() == Some("Trigger") {
+  // An `Animator` over an unbounded range (`{t, 0, Infinity, dt,
+  // Animator}`) has no slider to drag: Wolfram draws only its play/pause,
+  // reset and step buttons and lets the variable run on forever, which is
+  // exactly this Trigger control (running unless `AnimationRunning ->
+  // False`) rather than a slider looping over a finite stand-in window.
+  let unbounded_animator = control_type.as_deref() == Some("Animator")
+    && bounds
+      .first()
+      .and_then(|e| eval_manipulate_bound(e))
+      .is_some_and(|(v, _)| v.is_finite())
+    && bounds
+      .get(1)
+      .and_then(|e| eval_manipulate_bound(e))
+      .is_some_and(|(v, _)| v == f64::INFINITY);
+  if control_type.as_deref() == Some("Trigger") || unbounded_animator {
     let (min, min_dynamic) = bounds
       .first()
       .and_then(|e| eval_manipulate_bound(e))
@@ -54422,16 +54459,27 @@ fn parse_manipulate_control(
       .and_then(crate::functions::math_ast::try_eval_to_f64)
       .unwrap_or(min);
     // Wolfram's Trigger sits paused until pressed; only an explicit
-    // `AnimationRunning -> True` starts it sweeping immediately.
-    let running = items.iter().any(|it| {
-      matches!(
-        it,
-        Expr::Rule { pattern, replacement }
-        | Expr::RuleDelayed { pattern, replacement }
-          if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
-            && matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True")
-      )
+    // `AnimationRunning -> True` starts it sweeping immediately. An
+    // Animator is the other way round: it runs unless told
+    // `AnimationRunning -> False`.
+    let running_option = items.iter().find_map(|it| match it {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning") => {
+        match replacement.as_ref() {
+          Expr::Identifier(s) if s == "True" => Some(true),
+          Expr::Identifier(s) if s == "False" => Some(false),
+          _ => None,
+        }
+      }
+      _ => None,
     });
+    let running = running_option.unwrap_or(unbounded_animator);
     let repetitions = items.iter().find_map(|it| match it {
       Expr::Rule {
         pattern,
