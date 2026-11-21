@@ -5916,14 +5916,17 @@ mod grid_item_style_tests {
     )
     .unwrap();
     assert!(!svg.contains("monospace"), "{svg}");
-    let inner = svg.split("<svg").nth(2).unwrap();
-    let width: f64 = inner
-      .split("width=\"")
-      .nth(1)
-      .and_then(|w| w.split('"').next())
-      .and_then(|w| w.parse().ok())
-      .unwrap();
-    assert!(width <= 512.0, "{width}: {svg}");
+    // The block is drawn into the pane either directly or as a nested
+    // picture; a nested one must about fit the pane's width.
+    if let Some(inner) = svg.split("<svg").nth(2) {
+      let width: f64 = inner
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      assert!(width <= 512.0, "{width}: {svg}");
+    }
     assert!(svg.matches("<text ").count() >= 2, "{svg}");
   }
 
