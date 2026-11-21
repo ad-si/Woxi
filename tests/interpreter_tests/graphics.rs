@@ -55460,6 +55460,20 @@ fn the_default_arrowhead_is_four_percent_of_the_width() {
     "a short arrow keeps the same head: {}",
     head_length(&short)
   );
+  // So does an arrow far shorter than its head (a tiny direction marker
+  // along a curve, a fraction of a pixel to a few pixels long), at any
+  // angle: the head is not shrunk to fit the shaft.
+  for (dx, dy) in [("0.005", "0"), ("0", "-0.02"), ("-0.03", "0.01")] {
+    let tiny = export_svg(&format!(
+      "Graphics[{{Arrow[{{{{5, 5}}, {{5 + {dx}, 5 + {dy}}}}}]}}, \
+       PlotRange -> {{{{0, 10}}, {{0, 10}}}}, ImageSize -> 400]"
+    ));
+    assert!(
+      (head_length(&tiny) - head_length(&plain)).abs() < 0.01,
+      "a tiny arrow ({dx}, {dy}) keeps the full head: {}",
+      head_length(&tiny)
+    );
+  }
   // An explicit size still measures against the width.
   let explicit = export_svg(
     "Graphics[{Arrowheads[0.1], Arrow[{{5, 1}, {5, 9}}]}, \
