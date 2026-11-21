@@ -12388,9 +12388,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   #[test]
   fn kepler_trigger_and_period_bounded_sliders() {
     // The "Kepler's Second Law" Demonstration pattern: time sliders bounded
-    // by the orbital-period control P, plus a Trigger animating t. The
+    // by the orbital-period control P, plus a Trigger row animating t. The
     // widget starts paused, the P-referencing ranges follow P as it moves,
-    // and the animation tick targets the Trigger's variable.
+    // and the animation tick advances the Trigger, which the t slider
+    // follows.
     let expr = woxi::interpret_to_expr(
       "Manipulate[{t, dt}, \
        {{t, 0, \"time\"}, 0, P, .01}, \
@@ -12493,12 +12494,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
 
   #[test]
+  fn slider_and_trigger_on_one_variable_stay_in_sync() {
+    // A slider and a Trigger row for the same variable both show (as in
+    // Wolfram); a saved value restores both rows, and playing advances the
+    // Trigger with the slider following it.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[n^2, {{n, 9, \"steps\"}, 1, 9, 1}, \
+       {{n, 1, \"play\"}, 1, 9, 1, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls.len(), 2);
+    let values = |s: &manipulate::ManipulateState| {
+      s.controls
+        .iter()
+        .map(|c| match c {
+          manipulate::ControlState::Continuous { current, .. }
+          | manipulate::ControlState::Trigger { current, .. } => *current,
+          other => panic!("unexpected control {other:?}"),
+        })
+        .collect::<Vec<_>>()
+    };
+    assert!(matches!(
+      &state.controls[1],
+      manipulate::ControlState::Trigger { name, .. } if name == "n"
+    ));
+    // Both rows start from the first row's initial value.
+    assert_eq!(values(&state), vec![9.0, 9.0]);
+
+    state.apply_saved_variables(&[("n".to_string(), "2".to_string())]);
+    assert_eq!(values(&state), vec![2.0, 2.0]);
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+
+    state.advance_animation();
+    assert_eq!(values(&state), vec![3.0, 3.0]);
+    assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
+  #[test]
   fn sole_finite_trigger_builds_a_dedicated_trigger_row() {
-    // A Demonstrations "play once over a fixed duration" control: unlike
-    // Kepler's Trigger (a *second* spec for a variable that already has a
-    // plain slider, so it only steals the animation without a row of its
-    // own), this Trigger is the *only* spec for its variable and its sweep
-    // end is finite — `AppearanceElements` even asks for player buttons
+    // A Demonstrations "play once over a fixed duration" control: this
+    // Trigger is the *only* spec for its variable and its sweep end is
+    // finite — `AppearanceElements` even asks for player buttons
     // instead of a thumb. That must still build a dedicated `Trigger` row
     // (play/pause + step buttons), not fall back to an ordinary slider.
     let expr = woxi::interpret_to_expr(
@@ -32996,22 +33033,24 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     }
 
     // The default weight (HarmonicNumber) must close to a typeset formula,
-    // not a raw unevaluated Sum or an Indeterminate boundary artifact.
+    // not a raw unevaluated Sum or an Indeterminate boundary artifact. The
+    // `Text[TraditionalForm[…]]` body draws that formula as a picture.
     assert!(
-      state.graphics_handle.is_none(),
-      "a Text[...] body draws no graphic"
+      state.graphics_handle.is_some(),
+      "a Text[TraditionalForm[...]] body draws the typeset formula: {:?}",
+      state.text_output
     );
     // The formula reads `HoldForm[Sum[...]] == <closed form>` — the LHS
     // stays an unevaluated `Sum[...]` on purpose (it names the symbolic
     // total being displayed); only the right-hand side is the closed form
-    // this test is pinning down.
-    let formula = state.text_output.clone().unwrap_or_default();
-    let rhs = formula.rsplit("==").next().unwrap_or_default();
+    // this test is pinning down, so exactly one summation sign is drawn.
+    let closed_form = |state: &manipulate::ManipulateState| {
+      let svg = state.check_render().unwrap().graphics.unwrap_or_default();
+      svg.matches('\u{2211}').count() == 1 && !svg.contains("Indeterminate")
+    };
     assert!(
-      rhs.contains("HarmonicNumber")
-        && !rhs.contains("Sum[")
-        && !rhs.contains("Indeterminate"),
-      "expected a closed-form harmonic formula, got: {formula:?}"
+      closed_form(&state),
+      "expected a closed-form harmonic formula"
     );
 
     // Dragging the exponent slider re-evaluates cleanly for every degree in
@@ -33030,11 +33069,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         "exponent {exponent} failed: {:?}",
         state.error
       );
-      let formula = state.text_output.clone().unwrap_or_default();
-      let rhs = formula.rsplit("==").next().unwrap_or_default();
       assert!(
-        !rhs.contains("Sum[") && !rhs.contains("Indeterminate"),
-        "exponent {exponent} did not close to a formula: {formula:?}"
+        closed_form(&state),
+        "exponent {exponent} did not close to a formula"
       );
     }
   }

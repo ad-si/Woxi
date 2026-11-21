@@ -1074,7 +1074,7 @@ fn label_frame(opts: &[Expr], default_color: Color) -> Option<TextFrame> {
       }
       let mut probe = StyleState {
         thickness: f64::NAN,
-        ..StyleState::default()
+        ..Default::default()
       };
       apply_directive(d, &mut probe);
       if !probe.thickness.is_nan() {
@@ -17308,8 +17308,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let spec = parse_plot_range_padding(padding_expr);
     let x_span = x_max - x_min;
     let y_span = y_max - y_min;
-    let (x_lo, x_hi) = spec.x.resolve(x_span, 0.04);
-    let (y_lo, y_hi) = spec.y.resolve(y_span, 0.04);
+    // An `Automatic` side leaves an axis pinned by an explicit `PlotRange`
+    // unpadded, as the default does: a `Plot` stores its graphics with
+    // `PlotRangePadding -> {Scaled[0.02], Automatic}` beside `PlotRange ->
+    // {{xmin, xmax}, {0, 30}}`, padding only the range it determined itself.
+    let automatic_frac = |explicit: bool| if explicit { 0.0 } else { 0.04 };
+    let (x_lo, x_hi) = spec
+      .x
+      .resolve(x_span, automatic_frac(plot_range_x.is_some()));
+    let (y_lo, y_hi) = spec
+      .y
+      .resolve(y_span, automatic_frac(plot_range_y.is_some()));
     bb.x_min = x_min - x_lo;
     bb.x_max = x_max + x_hi;
     bb.y_min = y_min - y_lo;
@@ -19742,8 +19751,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let num = layout_box_nested(&args[0], size);
         let den = layout_box_nested(&args[1], size);
         let frac_w = num.width.max(den.width) + 4.0;
-        let gap = 3.0;
-        let line_thickness = 0.8;
+        // The rule and the space around it grow with large type: a 14 pt
+        // (or smaller) fraction has a 0.8 pt rule with 3 pt gaps, an 80 pt
+        // one a rule and gaps proportionally heavier.
+        let em = (size / 14.0).max(1.0);
+        let gap = 3.0 * em;
+        let line_thickness = 0.8 * em;
 
         // Numerator centered above line
         let num_x = (frac_w - num.width) / 2.0;
@@ -19761,7 +19774,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
 
         let elements = format!(
           "{}\
-           <line x1=\"0\" y1=\"{line_y:.1}\" x2=\"{frac_w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"{line_thickness}\"/>\
+           <line x1=\"0\" y1=\"{line_y:.1}\" x2=\"{frac_w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"{line_thickness:.1}\"/>\
            {}",
           num.translate(num_x, num_y),
           den.translate(den_x, den_y),
@@ -30665,6 +30678,54 @@ fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
 }
 
+/// The `Style` directives (weight, slant, size, color) a grid's style
+/// passes on to a nested layout in one of its cells. The font family is
+/// left to the caller, which decides whether a default applies.
+fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  directives
+}
+
+/// A `Grid` nested in a cell of a styled grid (`Style[Grid[{{Grid[…]},
+/// {Grid[…]}}], 16]`) inherits the outer grid's size, weight, slant, color
+/// and family, just like the plain text cells beside it: the nested grid is
+/// wrapped in the same `Style` so it is drawn whole in that style (its own
+/// `BaseStyle` still takes precedence). Without this the nested grid's text
+/// fell back to the default 14pt black.
+fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, args }
+    if (name == "Grid" || name == "TextGrid")
+      && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return cell.clone();
+  }
+  let mut directives = grid_style_directives(style);
+  if let Some(family) = &style.font_family {
+    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
+  }
+  if directives.is_empty() {
+    return cell.clone();
+  }
+  call(
+    "Style",
+    std::iter::once(cell.clone())
+      .chain(directives)
+      .collect::<Vec<_>>(),
+  )
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -30956,6 +31017,7 @@ fn grid_svg_styled_internal_reporting(
       *cell = resolve_display_item(cell);
       *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
+      *cell = nested_grid_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
       // grid's size, like the plain text cells around it.
@@ -37890,7 +37952,16 @@ fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
   use crate::evaluator::dispatch::io_functions::{
     pane_fixed_size, pane_size_component,
   };
-  let Expr::FunctionCall { name, args } = item else {
+  // `Style[Text[Pane[…, {w, h}]], Bold]`: the style and text wrappers only
+  // dress the pane's content, so the item still reserves the pane's box.
+  let mut pane = item;
+  while let Expr::FunctionCall { name, args } = pane
+    && ((name == "Style" && args.len() >= 2)
+      || (name == "Text" && args.len() == 1))
+  {
+    pane = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = pane else {
     return None;
   };
   if name != "Pane" || args.len() < 2 {
@@ -40630,7 +40701,9 @@ pub(crate) fn clip_svg_to_pane_box(
     return scaled;
   }
   // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
-  // the box (keeping its aspect ratio) instead of cutting it off.
+  // the box (keeping its aspect ratio) instead of cutting it off. The
+  // shrunk content is then placed in the box by the alignment like any
+  // content that fits: the Pane keeps its full `width`x`height`.
   if shrink_to_fit && natural_w > 0.0 && natural_h > 0.0 {
     // The Pane itself keeps its declared size: the shrunk content sits in
     // the full `width` x `height` box where its `Alignment` puts it, so
