@@ -37212,6 +37212,36 @@ mod graphics_grid {
     assert!(text_tag(&svg, "alpha").contains("Times"), "{svg}");
   }
 
+  /// `Text[TraditionalForm[…]]` as a `Column`/`Row` item is set in the
+  /// proportional text face, as it is on its own, rather than in the
+  /// monospace face of typeset output.
+  #[test]
+  fn text_traditional_form_item_uses_text_face() {
+    clear_state();
+    for code in [
+      "Column[{Text[TraditionalForm[3 u^2 + 5 u v]], \"beta\"}]",
+      "Column[{Text[Style[TraditionalForm[3 u^2 + 5 u v], Red]], \"beta\"}, \
+       Alignment -> Center]",
+      "Row[{Text[TraditionalForm[3 u^2 + 5 u v]], \" \", \"beta\"}]",
+      "ExportString[Text[TraditionalForm[3 u^2 + 5 u v]], \"SVG\"]",
+    ] {
+      let out = interpret_with_stdout(code).unwrap();
+      let svg = out.graphics.unwrap_or(out.result);
+      let math: Vec<&str> = svg
+        .split("<text")
+        .skip(1)
+        .filter(|t| t.contains(">u<") || t.contains(">v<"))
+        .collect();
+      assert!(!math.is_empty(), "{code}: {svg}");
+      for tag in math {
+        assert!(
+          tag.contains("sans-serif") && !tag.contains("monospace"),
+          "math in {code} should use the text face, got: {svg}"
+        );
+      }
+    }
+  }
+
   /// A raster image inside a `Row` that is itself an item of a `Column`
   /// with options is drawn as the picture, not as `-Image (w×h)-` text.
   #[test]
