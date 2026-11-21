@@ -15573,17 +15573,24 @@ fn render_primitive(
       // and however thick its shaft. Measured from wolframscript against
       // `Arrowheads[0.1]` in frames of two different aspects.
       //
-      // Two caps remain, for shapes a fixed head would swallow: 45 % of
-      // the path length, and 40 % of the shape's bounding-box diagonal
-      // (which keeps a self-loop's head in proportion to its visible
-      // size rather than its arc length).
+      // A straight two-point arrow keeps that full head even when it is
+      // shorter than the head itself: Wolfram then lets the head overshoot
+      // the tail rather than shrink it.
+      //
+      // Two caps remain for bent paths, which a fixed head would swallow:
+      // 45 % of the path length, and 40 % of the shape's bounding-box
+      // diagonal (which keeps a self-loop's head in proportion to its
+      // visible size rather than its arc length).
       let head_width = style
         .arrowhead_width
         .map_or(svg_w, |w| w * svg_w / bb.width());
-      let default_head = (head_width * 0.04)
-        .min(total_len_px * 0.45)
-        .min(bbox_diag * 0.4)
-        .max(1.0);
+      let full_head = head_width * 0.04;
+      let default_head = if screen.len() <= 2 {
+        full_head
+      } else {
+        full_head.min(total_len_px * 0.45).min(bbox_diag * 0.4)
+      }
+      .max(1.0);
 
       // Where a head at fraction `t` sits, and the unit direction of the
       // path there (pointing toward the tip).
