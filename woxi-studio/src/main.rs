@@ -384,6 +384,9 @@ enum Message {
   // Manipulate interactive widgets
   ManipulateContinuousChanged(usize, usize, f64),
   ManipulateDiscreteChanged(usize, usize, String),
+  /// (cell_idx, ctrl_idx, choice index): a discrete choice picked by its
+  /// position, for widgets whose choices may share a label.
+  ManipulateDiscreteIndexChanged(usize, usize, usize),
   /// (cell_idx, ctrl_idx, axis 0=x/1=y, value)
   ManipulateSlider2DChanged(usize, usize, u8, f64),
   /// (cell_idx, ctrl_idx, endpoint 0=low/1=high, value)
@@ -1976,9 +1979,28 @@ impl WoxiStudio {
       }
 
       Message::ManipulateDiscreteChanged(cell_idx, ctrl_idx, choice) => {
+        let idx = self
+          .cell_editors
+          .get(cell_idx)
+          .and_then(|e| e.manipulate_state.as_ref())
+          .and_then(|state| match state.controls.get(ctrl_idx) {
+            Some(manipulate::ControlState::Discrete {
+              value_labels, ..
+            }) => value_labels.iter().position(|v| *v == choice),
+            _ => None,
+          });
+        match idx {
+          Some(idx) => self.update(Message::ManipulateDiscreteIndexChanged(
+            cell_idx, ctrl_idx, idx,
+          )),
+          None => Task::none(),
+        }
+      }
+
+      Message::ManipulateDiscreteIndexChanged(cell_idx, ctrl_idx, idx) => {
         if let Some(editor) = self.cell_editors.get_mut(cell_idx)
           && let Some(state) = editor.manipulate_state.as_mut()
-          && state.select_discrete(ctrl_idx, &choice)
+          && state.select_discrete_index(ctrl_idx, idx)
         {
           state.apply_tracking(ctrl_idx);
           if state.request_reeval(ctrl_idx) {
@@ -4244,6 +4266,12 @@ fn label_run_spans<'a, L>(
       if let Some((red, green, blue)) = r.color {
         span = span.color(Color::from_rgb(red, green, blue));
       }
+      // `Style[…, Background -> c]` fills the run's box, so a choice label
+      // like `Style["| |", FontColor -> c, Background -> c]` reads as a
+      // solid color swatch.
+      if let Some((red, green, blue)) = r.background {
+        span = span.background(Color::from_rgb(red, green, blue));
+      }
       span
     })
     .collect()
@@ -4488,6 +4516,20 @@ fn renders_as_setter_bar(
   value_labels: &[String],
   value_label_svgs: &[Option<svg::Handle>],
 ) -> bool {
+  setter_bar_fits(value_labels, value_label_svgs, false)
+}
+
+/// [`renders_as_setter_bar`] for a control drawn in the panel column
+/// `beside_output` (`ControlPlacement -> Left`/`Right`) or above/below it.
+/// A side column is only as wide as its widest caption plus a short
+/// control, so the run of compact buttons Wolfram allows past
+/// [`SETTER_BAR_MAX_CHOICES`] in a full-width panel no longer fits there:
+/// seven integer choices beside the output are a dropdown.
+fn setter_bar_fits(
+  value_labels: &[String],
+  value_label_svgs: &[Option<svg::Handle>],
+  beside_output: bool,
+) -> bool {
   let is_icon = |i: usize| value_label_svgs.get(i).is_some_and(Option::is_some);
   let count = value_labels.len();
   if count <= SETTER_BAR_MAX_CHOICES {
@@ -4499,7 +4541,8 @@ fn renders_as_setter_bar(
       .sum();
     return row_chars <= SETTER_BAR_MAX_ROW_CHARS;
   }
-  count <= SETTER_BAR_MAX_COMPACT_CHOICES
+  !beside_output
+    && count <= SETTER_BAR_MAX_COMPACT_CHOICES
     && value_labels.iter().enumerate().all(|(i, label)| {
       is_icon(i) || label.chars().count() <= SETTER_BAR_COMPACT_LABEL_CHARS
     })
@@ -4896,16 +4939,14 @@ fn render_manipulate_widget<'a>(
         // the new index, so the update handler needs no special case.
         if *as_slider && value_labels.len() > 1 {
           let last = value_labels.len() - 1;
-          let choices = value_labels.clone();
           let mut s =
             slider(0..=last as u32, *current_index as u32, move |i| {
-              match choices.get(i as usize) {
-                Some(choice) if enabled => Message::ManipulateDiscreteChanged(
-                  cell_idx,
-                  ctrl_idx,
-                  choice.clone(),
-                ),
-                _ => Message::Noop,
+              if enabled {
+                Message::ManipulateDiscreteIndexChanged(
+                  cell_idx, ctrl_idx, i as usize,
+                )
+              } else {
+                Message::Noop
               }
             })
             .step(1u32)
@@ -4967,7 +5008,7 @@ fn render_manipulate_widget<'a>(
         // spec that stays silent: an explicit `ControlType -> SetterBar` gets
         // its bar however long the choice list is. The button labels are the
         // display labels (rule right-hand sides); pressing one sends its
-        // label, which the update handler maps back to an index. A disabled
+        // index, since several choices may share a label. A disabled
         // control drops its press handlers so it can't be changed.
         let control: Element<Message> = if *as_radio {
           // `ControlType -> RadioButton`/`RadioButtonBar`: Wolfram draws a
@@ -4979,13 +5020,10 @@ fn render_manipulate_widget<'a>(
           let mut items: Vec<Element<Message>> =
             Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
-            let choice = choice_label.clone();
-            let on_click = move |_: usize| {
+            let on_click = move |picked: usize| {
               if enabled {
-                Message::ManipulateDiscreteChanged(
-                  cell_idx,
-                  ctrl_idx,
-                  choice.clone(),
+                Message::ManipulateDiscreteIndexChanged(
+                  cell_idx, ctrl_idx, picked,
                 )
               } else {
                 Message::Noop
@@ -4993,7 +5031,12 @@ fn render_manipulate_widget<'a>(
             };
             let icon = value_label_svgs.get(i).and_then(|s| s.as_ref());
             let styled_runs = value_label_runs.get(i).filter(|runs| {
-              runs.iter().any(|r| r.color.is_some() || r.bold || r.italic)
+              runs.iter().any(|r| {
+                r.color.is_some()
+                  || r.background.is_some()
+                  || r.bold
+                  || r.italic
+              })
             });
             let item: Element<Message> = match (icon, styled_runs) {
               (None, None) => {
@@ -5040,13 +5083,16 @@ fn render_manipulate_widget<'a>(
               .into()
           }
         } else if *force_setter_bar
-          || (renders_as_setter_bar(value_labels, value_label_svgs) && !*popup)
+          || (setter_bar_fits(
+            value_labels,
+            value_label_svgs,
+            matches!(slot, SLOT_LEFT | SLOT_RIGHT),
+          ) && !*popup)
         {
           let is_vertical = *is_vertical;
           let mut buttons = Vec::with_capacity(value_labels.len());
           for (i, choice_label) in value_labels.iter().enumerate() {
             let is_selected = !has_overflow && i == *current_index;
-            let choice = choice_label.clone();
             // A choice whose rule label is a graphic (`"+" -> myIcon[2]`)
             // shows the rendered icon; a text choice shows its label, honoring
             // any `Style[…, color]`/`Bold` directive the rule label carried
@@ -5080,8 +5126,8 @@ fn render_manipulate_widget<'a>(
               },
             );
             if enabled {
-              btn = btn.on_press(Message::ManipulateDiscreteChanged(
-                cell_idx, ctrl_idx, choice,
+              btn = btn.on_press(Message::ManipulateDiscreteIndexChanged(
+                cell_idx, ctrl_idx, i,
               ));
             }
             buttons.push(btn.into());
@@ -5156,6 +5202,9 @@ fn render_manipulate_widget<'a>(
           x_slider = x_slider.style(disabled_slider_style);
           y_slider = y_slider.style(disabled_slider_style);
         }
+        let sliders =
+          axis_sliders(ctrl.slider2d_free_axes(), x_slider, y_slider)
+            .spacing(4);
         let value_widget = text(format!(
           "{{{}, {}}}",
           format_manipulate_number(*x),
@@ -5168,16 +5217,6 @@ fn render_manipulate_widget<'a>(
         // align with the other controls.
         let label_widget =
           manipulate_label_widget(&[], label, label_col_width, enabled);
-        // An axis the bounds pin to one coordinate can't be dragged, so it
-        // gets no (dead) slider of its own.
-        let [x_free, y_free] = ctrl.slider2d_free_axes();
-        let mut sliders = column![].spacing(4).width(Fill);
-        if x_free {
-          sliders = sliders.push(x_slider);
-        }
-        if y_free {
-          sliders = sliders.push(y_slider);
-        }
         let control_row = row![label_widget, sliders, value_widget]
           .align_y(Center)
           .spacing(8);
@@ -5390,7 +5429,12 @@ fn render_manipulate_widget<'a>(
             text(format!("{}", point_idx + 1))
               .size(11)
               .font(Font::MONOSPACE),
-            column![x_slider, y_slider].spacing(2),
+            axis_sliders(
+              manipulate::movable_axes(*x_min, *x_max, *y_min, *y_max),
+              x_slider,
+              y_slider
+            )
+            .spacing(2),
             value_widget
           ]
           .align_y(Center)
@@ -8250,6 +8294,23 @@ fn check_notebook(path: &std::path::Path) -> i32 {
   if ok { 0 } else { 1 }
 }
 
+/// The X and Y sliders of a 2D control, stacked, leaving out pinned axes
+/// (see [`manipulate::movable_axes`]).
+fn axis_sliders<'a>(
+  [x_movable, y_movable]: [bool; 2],
+  x_slider: impl Into<Element<'a, Message>>,
+  y_slider: impl Into<Element<'a, Message>>,
+) -> Column<'a, Message> {
+  let mut sliders = Column::new();
+  if x_movable {
+    sliders = sliders.push(x_slider);
+  }
+  if y_movable {
+    sliders = sliders.push(y_slider);
+  }
+  sliders
+}
+
 /// Whether a `--check` warning is a `Symbol::obsolete` deprecation notice.
 fn is_deprecation_notice(warning: &str) -> bool {
   warning
@@ -9240,6 +9301,68 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`sam$$ = 1, $CellContext`gg$$ = Fals
     widget.reevaluate();
     assert!(!widget.wants_tick(), "a stopped spinner needs no timer");
   }
+  /// A Manipulate body that seeds the generator and computes a start
+  /// configuration (`SeedRandom[k]; With[{p0 = …}, DynamicModule[{p = p0,
+  /// t = 0}, Dynamic[If[go, t = t + 1; p = step[p]]; …]]]`) keeps its
+  /// `DynamicModule` locals between the inner `Dynamic`'s refreshes, so a
+  /// running simulation advances step after step instead of restarting
+  /// from `p0` every frame. Changing a control read outside the inner
+  /// `Dynamic` (the size `n`, the seed `k`) builds a fresh module, whose
+  /// locals start over.
+  #[test]
+  fn tail_dynamic_module_locals_persist_between_refreshes() {
+    let nb_src = r#"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[SeedRandom[k]; With[{p0 = RandomReal[{-1, 1}, {n, 3}]}, DynamicModule[{p = p0, q = p0, t = 0}, Dynamic[If[go, t = t + 1; {p, q} = {2 p - q + 0.01, p}]; Graphics3D[{Point[p], Line[Transpose[{p, q}]]}, PlotLabel -> t]]]], {{n, 5}, 2, 9, 1}, {{go, False}, {False, True}}, {{k, 0}, 0, 9, 1}]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`n$$ = 5, $CellContext`go$$ = False, $CellContext`k$$ = 0}, \"x\"]"], "Output"]
+}, Open]]
+}]"#;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let mut widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the stored Manipulate must instantiate on load");
+    assert!(widget.error.is_none(), "{:?}", widget.error);
+    assert!(widget.graphics_handle.is_some(), "the points must render");
+    let local = |w: &manipulate::ManipulateState, name: &str| {
+      w.state
+        .iter()
+        .find(|(n, _)| n == name)
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| panic!("`{name}` must be widget state"))
+    };
+    assert_eq!(local(&widget, "t"), "0");
+    let start = local(&widget, "p");
+
+    widget.apply_saved_variables(&[("go".to_string(), "True".to_string())]);
+    let steps = |w: &manipulate::ManipulateState| -> u32 {
+      local(w, "t").parse().expect("an integer step count")
+    };
+    let first = steps(&widget);
+    widget.reevaluate();
+    widget.reevaluate();
+    widget.reevaluate();
+    assert_eq!(steps(&widget), first + 3, "every refresh takes one step");
+    assert_ne!(local(&widget, "p"), start, "the points must move");
+    assert!(widget.wants_tick(), "a running body is driven by the timer");
+
+    // `go` is only read inside the inner `Dynamic`: pausing keeps the state.
+    widget.apply_saved_variables(&[("go".to_string(), "False".to_string())]);
+    widget.reevaluate();
+    assert_eq!(steps(&widget), first + 3);
+    widget.reevaluate();
+    assert!(!widget.wants_tick(), "a paused body needs no timer");
+
+    // A new seed rebuilds the module: the locals start over.
+    widget.apply_saved_variables(&[("k".to_string(), "1".to_string())]);
+    widget.reevaluate();
+    assert_eq!(local(&widget, "t"), "0");
+    assert_ne!(local(&widget, "p"), start, "a new seed draws new points");
+    widget.apply_saved_variables(&[("k".to_string(), "0".to_string())]);
+    widget.reevaluate();
+    assert_eq!(local(&widget, "p"), start, "the old seed draws them again");
+  }
   /// A random-walk Manipulate whose plot pins `AxesOrigin -> {0, 0}` and
   /// titles itself with a `Framed` message opens with the plot rendered
   /// (the walk's helper is an initialization cell).
@@ -9472,6 +9595,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       italic: false,
       bold: true,
       color: Some((1.0, 0.0, 0.0)),
+      background: None,
       size: None,
       subscript: false,
     }];
@@ -9558,6 +9682,49 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       w.last().map(|r| (r.text.as_str(), r.subscript)),
       Some(("\u{2093}", false))
     );
+  }
+
+  /// A SetterBar of color swatches — every choice labeled
+  /// `Style["||", FontColor -> c, Background -> c]`, so all labels share the
+  /// same text — must draw each swatch's background and let each button
+  /// select its own choice. Regression: the colors were dropped (eight
+  /// identical plain "||" buttons), and since a press sent the label, every
+  /// button selected the first choice.
+  #[test]
+  fn color_swatch_setter_bar_selects_by_position() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[k, {{k, 0}, Thread[Range[0, 3] -> (Style["||", FontColor -> #, Background -> #] & /@ {Red, Green, Blue, Black})], ControlType -> SetterBar}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let mut state =
+      manipulate::ManipulateState::from_expr(&expr).expect("build widget");
+    let runs = match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        value_label_runs,
+        ..
+      } => {
+        assert!(value_labels.iter().all(|l| l == "||"));
+        value_label_runs.clone()
+      }
+      other => panic!("expected a Discrete control, got {other:?}"),
+    };
+    let spans: Vec<text::Span<'_, ()>> =
+      label_run_spans(&runs[2], Font::MONOSPACE);
+    assert_eq!(spans[0].color, Some(Color::from_rgb(0.0, 0.0, 1.0)));
+    assert_eq!(
+      spans[0].highlight.map(|h| h.background),
+      Some(iced::Background::Color(Color::from_rgb(0.0, 0.0, 1.0)))
+    );
+    assert!(state.select_discrete_index(0, 2));
+    assert!(matches!(
+      &state.controls[0],
+      manipulate::ControlState::Discrete {
+        current_index: 2,
+        ..
+      }
+    ));
+    assert!(!state.select_discrete_index(0, 4), "out of range");
   }
 
   /// A multi-way selector whose choices are `value -> Style["label", color]`
@@ -24303,6 +24470,62 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
     );
   }
 
+  /// A panel column beside the output (`ControlPlacement -> Left`/`Right`)
+  /// is too narrow for the long run of compact buttons a full-width panel
+  /// allows: Wolfram shows a seven-integer count control placed on the left
+  /// as a dropdown, while up to five choices stay a bar on either side.
+  #[test]
+  fn side_panel_turns_long_compact_setter_bar_into_dropdown() {
+    let labels = |range: std::ops::RangeInclusive<i32>| -> Vec<String> {
+      range.map(|n| n.to_string()).collect()
+    };
+    let seven = labels(1..=7);
+    let svgs = vec![None; seven.len()];
+    assert!(setter_bar_fits(&seven, &svgs, false));
+    assert!(!setter_bar_fits(&seven, &svgs, true));
+    assert_eq!(
+      renders_as_setter_bar(&seven, &svgs),
+      setter_bar_fits(&seven, &svgs, false),
+      "the placement-free check is the full-width panel's"
+    );
+
+    let five = labels(2..=6);
+    let svgs = vec![None; five.len()];
+    assert!(setter_bar_fits(&five, &svgs, true));
+    assert!(setter_bar_fits(&five, &svgs, false));
+
+    // The control itself is placed beside the picture, which is what the
+    // panel renderer keys the narrower rule on.
+    let code = r#"Manipulate[
+      Graphics[Table[Circle[{k, 0}, r], {k, n}]],
+      {{n, 3, "count"}, Range[7]},
+      {{r, 0.5, "radius"}, 0.1, 1, Appearance -> "Labeled"},
+      ControlPlacement -> Left]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the count picker should build a ManipulateState");
+    assert_eq!(state.error, None, "got: {:?}", state.error);
+    assert_eq!(
+      placement_slot(state.placement_of(0)),
+      SLOT_LEFT,
+      "the count picker sits in the left column"
+    );
+    match &state.controls[0] {
+      manipulate::ControlState::Discrete {
+        value_labels,
+        value_label_svgs,
+        popup,
+        setter_bar,
+        ..
+      } => {
+        assert!(!*popup && !*setter_bar, "no explicit control type");
+        assert!(!setter_bar_fits(value_labels, value_label_svgs, true));
+      }
+      other => panic!("expected a discrete count picker, got {other:?}"),
+    }
+  }
+
   /// An explicit `Checkbox` control type over numeric choices (`{{k, 1,
   /// "label"}, {1, 0}, Checkbox}`) draws a checkbox, like `Checkbox[k, {1,
   /// 0}]`: unchecked binds the first choice and checking it binds the
@@ -36965,6 +37188,51 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`a$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       "Part::partw: Part 3 of {1, 2} does not exist."
     ));
     assert!(!is_deprecation_notice("obsolete::x is not a tag: here"));
+  }
+
+  #[test]
+  fn pinned_axes_of_2d_controls_get_no_slider() {
+    assert_eq!(manipulate::movable_axes(-1.0, 6.0, -2.0, 2.0), [true, true]);
+    assert_eq!(manipulate::movable_axes(-1.0, 6.0, 0.0, 0.0), [true, false]);
+    assert_eq!(manipulate::movable_axes(3.0, 3.0, -2.0, 5.0), [false, true]);
+    // Pinned on both axes: keep both rather than an empty row.
+    assert_eq!(manipulate::movable_axes(1.0, 1.0, 2.0, 2.0), [true, true]);
+  }
+
+  /// A single-point Locator confined to a horizontal line by equal corner
+  /// y-coordinates keeps that zero-height range, so the Studio offers only
+  /// its x slider while the point still moves along the line.
+  #[test]
+  fn locator_confined_to_a_line_moves_only_along_it() {
+    let code = r#"Manipulate[
+      Graphics[{Line[{{-2, -1}, p, {4, 1}}], Point[p]},
+        PlotRange -> {{-2, 7}, {-2, 2}}],
+      {{p, {1., 0}}, {-1, 0}, {6, 0}, Locator}
+    ]"#;
+    let expr =
+      woxi::interpret_to_expr(code).expect("Manipulate should parse and hold");
+    let mut state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("a line-confined Locator should build a ManipulateState");
+    assert_eq!(state.error, None);
+    assert!(state.graphics_handle.is_some());
+    let manipulate::ControlState::Slider2D {
+      x_min,
+      x_max,
+      y_min,
+      y_max,
+      ..
+    } = &state.controls[0]
+    else {
+      panic!("expected a Slider2D, got {:?}", state.controls[0]);
+    };
+    assert_eq!((*x_min, *x_max, *y_min, *y_max), (-1.0, 6.0, 0.0, 0.0));
+    assert_eq!(state.controls[0].slider2d_free_axes(), [true, false]);
+    state.slider2d_change(0, 0, 4.5);
+    let manipulate::ControlState::Slider2D { x, y, .. } = &state.controls[0]
+    else {
+      unreachable!()
+    };
+    assert_eq!((*x, *y), (4.5, 0.0));
   }
 }
 #[cfg(test)]

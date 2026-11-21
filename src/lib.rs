@@ -4975,7 +4975,7 @@ pub(crate) fn render_traditionalform_list_if_needed(
 /// still a framed box, and `Pane[Column[{…, Graphics[…]}]]` (the shape of
 /// many Manipulate bodies) is still the column underneath.
 fn unwrap_display_pass_through(expr: &syntax::Expr) -> syntax::Expr {
-  functions::graphics::unwrap_display_wrappers(expr)
+  functions::graphics::unwrap_display_wrappers_with(expr, false)
 }
 
 /// In visual (notebook) display mode, `ClickPane[expr, …]` and
@@ -5043,6 +5043,11 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
 }
 
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // `Style[TraditionalForm[Text[…]], 16]` is a text display like a bare
+  // `Text[…]`: the text face covers the styled content.
+  if let Some(hoisted) = functions::graphics::hoist_text_display(expr) {
+    return render_inline_display_wrapper(&hoisted);
+  }
   // `Text[content]` displays `content` in plain text format: a picture
   // inside is still drawn, but text keeps the wrapper so the layout sets it
   // in the proportional text face rather than its monospace default.
@@ -5560,12 +5565,30 @@ pub(crate) fn column_svg_with_rendered_items(
   let mut new_args: Vec<syntax::Expr> =
     functions::graphics::wrap_fixed_width_column_text(args)
       .unwrap_or_else(|| args.to_vec());
+  // Which items are text rather than pictures, told before drawing them
+  // turns every one into a picture.
+  let mut text_items: Option<Vec<bool>> = None;
   if let syntax::Expr::List(items) = &new_args[0] {
+    text_items = Some(
+      items
+        .iter()
+        .map(|item| {
+          !matches!(
+            item,
+            syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
+          ) && !evaluator::lays_out_a_graphic(item)
+            && pane_fixed_size(item).is_none()
+        })
+        .collect(),
+    );
     let new_items: Vec<syntax::Expr> =
       items.iter().map(render_inline_display_wrapper).collect();
     new_args[0] = syntax::Expr::List(new_items.into());
   }
-  functions::graphics::column_to_svg(&new_args)
+  functions::graphics::column_to_svg_with_text_items(
+    &new_args,
+    text_items.as_deref(),
+  )
 }
 
 /// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the
