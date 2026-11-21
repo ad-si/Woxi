@@ -803,3 +803,130 @@ fn epilog_inset_display_offset_is_text_like() {
   assert!((lx - (cx + w / 2.0)).abs() < 0.1, "{lx} vs {cx} + {w}/2");
   assert!((ly - cy).abs() < 0.1, "{ly} vs {cy}");
 }
+
+mod relative_thickness {
+  use super::*;
+
+  /// The `stroke-width` of the first element stroked in `color`.
+  fn stroke_width_of(svg: &str, color: &str) -> f64 {
+    let at = svg
+      .find(&format!("stroke=\"{color}\""))
+      .unwrap_or_else(|| panic!("no {color} stroke: {svg}"));
+    let start = svg[..at].rfind('<').unwrap();
+    let tag = &svg[start..start + svg[start..].find('>').unwrap()];
+    let w = tag.find("stroke-width=\"").unwrap() + 14;
+    tag[w..w + tag[w..].find('"').unwrap()].parse().unwrap()
+  }
+
+  #[test]
+  fn curve_thickness_is_a_fraction_of_the_image_width() {
+    // `Thickness[t]` spans the fraction t of the picture's own width, so
+    // halving the ImageSize halves the curve's weight.
+    let wide = svg_of(
+      "Plot[x, {x, 0, 1}, PlotStyle -> {Red, Thickness[0.01]}, \
+       ImageSize -> 400]",
+    );
+    let narrow = svg_of(
+      "Plot[x, {x, 0, 1}, PlotStyle -> {Red, Thickness[0.01]}, \
+       ImageSize -> 200]",
+    );
+    let (w, n) = (
+      stroke_width_of(&wide, "#FF0000"),
+      stroke_width_of(&narrow, "#FF0000"),
+    );
+    assert!((w - 2.0 * n).abs() <= 1.0, "{w} vs {n}");
+    // 0.01 of 400 display pixels, in 10x render units.
+    assert!((w - 40.0).abs() <= 1.0, "{w}");
+  }
+
+  #[test]
+  fn epilog_thickness_is_a_fraction_of_the_image_width() {
+    let wide = svg_of(
+      "Plot[x, {x, 0, 1}, ImageSize -> 400, \
+       Epilog -> {Orange, Thickness[0.01], Line[{{0, 0}, {1, 1}}]}]",
+    );
+    let narrow = svg_of(
+      "Plot[x, {x, 0, 1}, ImageSize -> 200, \
+       Epilog -> {Orange, Thickness[0.01], Line[{{0, 0}, {1, 1}}]}]",
+    );
+    let (w, n) = (
+      stroke_width_of(&wide, "rgb(255,128,0)"),
+      stroke_width_of(&narrow, "rgb(255,128,0)"),
+    );
+    assert!((w - 40.0).abs() <= 0.5, "{w}");
+    assert!((n - 20.0).abs() <= 0.5, "{n}");
+  }
+
+  #[test]
+  fn zero_epilog_thickness_still_draws_a_hairline() {
+    // `Thickness[0]` (e.g. a weight scaled by a parameter that is zero)
+    // draws the thinnest visible line, not an invisible one.
+    for spec in [
+      "Thickness[0]",
+      "Thickness[0.03 c] /. c -> 0",
+      "AbsoluteThickness[0]",
+    ] {
+      let svg = svg_of(&format!(
+        "Plot[x, {{x, 0, 1}}, \
+         Epilog -> {{Orange, {spec}, Line[{{{{0, 0}}, {{1, 1}}}}]}}]"
+      ));
+      let w = stroke_width_of(&svg, "rgb(255,128,0)");
+      assert!(w >= 5.0, "{spec}: {w}");
+    }
+  }
+}
+
+/// `PlotStyle -> Thickness[f]` is a fraction of the width of the picture
+/// the curve ends up in, not of the default 360px width.
+mod relative_plot_style_thickness {
+  use super::*;
+
+  /// The plot keeps the directive symbolic, as Wolfram does.
+  #[test]
+  fn stays_symbolic_in_the_plot_expression() {
+    assert_eq!(
+      interpret(
+        "Plot[x, {x, 0, 1}, PlotStyle -> {Red, Thickness[0.01]}, \
+         PlotPoints -> 3, MaxRecursion -> 0][[1, 1, 1]]"
+      )
+      .unwrap(),
+      "Directive[RGBColor[1., 0., 0.], Thickness[0.01]]"
+    );
+  }
+
+  /// A larger `ImageSize` draws a proportionally thicker curve
+  /// (render units are 10 per pixel).
+  #[test]
+  fn scales_with_image_size() {
+    for (width, stroke) in [(200, "20"), (500, "50")] {
+      let svg = svg_of(&format!(
+        "ParametricPlot[{{t, t}}, {{t, 0, 1}}, \
+         PlotStyle -> Thickness[0.01], Axes -> False, ImageSize -> {width}]"
+      ));
+      assert!(svg.contains(&format!("stroke-width=\"{stroke}\"")), "{svg}");
+    }
+  }
+
+  /// `Show` with a new `ImageSize` rescales the curve to the new width
+  /// (it used to keep the 3.6px weight of a 360px-wide plot).
+  #[test]
+  fn rescales_in_show() {
+    let svg = svg_of(
+      "Show[ParametricPlot[{t, t}, {t, 0, 1}, \
+       PlotStyle -> {Red, Thickness[0.01]}], Graphics[Point[{0, 0}]], \
+       ImageSize -> 500]",
+    );
+    assert!(svg.contains("stroke-width=\"4.98\""), "{svg}");
+    assert!(!svg.contains("stroke-width=\"3.6"), "{svg}");
+  }
+
+  /// An absolute weight given after the fraction wins.
+  #[test]
+  fn absolute_thickness_overrides_it() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, PlotStyle -> Directive[Thickness[0.01], \
+       AbsoluteThickness[3]], Axes -> False, ImageSize -> 500]",
+    );
+    assert!(svg.contains("stroke-width=\"30\""), "{svg}");
+  }
+}

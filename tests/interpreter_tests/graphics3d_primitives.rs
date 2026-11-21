@@ -318,6 +318,28 @@ mod solids {
     assert!(s.contains("font-style=\"italic\""), "got: {s}");
   }
 
+  /// An accent over a label's base (`\!\(\*OverscriptBox[\(T\), \(^\)]\)`)
+  /// is drawn as its combining mark on the base (`T̂`, `x̃`), not as a
+  /// superscript beside it; a non-accent overscript stays a superscript.
+  #[test]
+  fn accent_overscript_text_label_is_a_combining_mark() {
+    for (over, mark) in
+      [("^", '\u{0302}'), ("~", '\u{0303}'), (".", '\u{0307}')]
+    {
+      let s = svg(&format!(
+        "Graphics3D[{{Text[\"\\!\\(\\*OverscriptBox[\\(T\\), \\({over}\\)]\\)\", \
+         {{0, 0, 0}}]}}]"
+      ));
+      assert!(s.contains(&format!(">T{mark}</text>")), "{over}: {s}");
+      assert!(!s.contains("baseline-shift"), "{over}: {s}");
+    }
+    let s = svg(
+      "Graphics3D[{Text[\"\\!\\(\\*OverscriptBox[\\(T\\), \\(k\\)]\\)\", \
+       {0, 0, 0}]}]",
+    );
+    assert!(s.contains("baseline-shift=\"super\""), "got: {s}");
+  }
+
   /// `BaseStyle` acts like a `Style` round the whole scene: a size (bare or
   /// as `FontSize -> n`) and a font face reach every `Text` label, also
   /// through `Show`, while a label's own size still wins.
@@ -994,6 +1016,51 @@ mod outlines {
     }
   }
 
+  // Two faces crossing along a line through a corner of each are cut
+  // there to be depth-sorted. The cut is not part of either outline, so no
+  // dark line is drawn along it (here the vertical line x = 189.7).
+  #[test]
+  fn a_cut_through_a_corner_is_not_outlined() {
+    let s = svg(
+      "Graphics3D[{Polygon[{{-1, 0, -1}, {1, 0, -1}, {0, 0, 1}}], \
+       Polygon[{{0, -1, -1}, {0, 1, -1}, {0, 0, 1}}]}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&s), 4, "{s}");
+    let outline: Vec<&str> =
+      s.lines().filter(|l| l.starts_with("<line ")).collect();
+    // Each piece keeps the two outline edges it got from its face.
+    assert_eq!(outline.len(), 8, "{s}");
+    assert!(
+      s.lines()
+        .filter(|l| l.starts_with("<polygon"))
+        .all(|l| !l.contains("stroke=\"rgb(64,64,64)\"")),
+      "{s}"
+    );
+    let x = |l: &str, attr: &str| {
+      l.split(&format!("{attr}=\""))
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .map(str::to_string)
+    };
+    assert!(
+      outline.iter().all(|l| x(l, "x1") != x(l, "x2")),
+      "a line runs along the cut: {s}"
+    );
+  }
+
+  // Faces that share an edge only up to the precision of their data (a
+  // corner a millionth off the other face's plane) are not cut into
+  // slivers against each other.
+  #[test]
+  fn faces_meeting_up_to_rounding_are_not_cut() {
+    let s = svg(
+      "Graphics3D[{Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}], \
+       Polygon[{{0, 0, -1*^-6}, {1, 0, 1*^-6}, {1, 0.8, 0.3}, {0, 0.8, 0.3}}]}, \
+       ViewPoint -> {0.3, 2, 3}, Boxed -> False]",
+    );
+    assert_eq!(polygon_count(&s), 4, "{s}");
+  }
+
   // Rods that only cross on screen are not cut along each other's facet
   // planes: such cuts used up a facet's piece budget before the slab the
   // rod really passes through could cut it, so the rod showed through the
@@ -1180,7 +1247,9 @@ mod ticks {
     let hiding_face = lines
       .iter()
       .position(|l| {
-        l.starts_with("<polygon points=\"134.0,170.5 247.1,32.4 245.5,196.0\"")
+        // Its fill may reach across the internal cut by extra corners.
+        l.starts_with("<polygon points=\"134.0,170.5 ")
+          && l.contains(" 247.1,32.4 245.5,196.0\"")
       })
       .expect("hiding face");
     assert!(last_red < hiding_face, "{s}");
@@ -1276,6 +1345,55 @@ mod plot3d_options {
        BoundaryStyle -> None]",
     );
     assert_eq!(lines_with(&none, "stroke=\"rgb(0,0,0)\""), 0);
+  }
+
+  /// The vertical extent of a `Plot3D` from `AbsoluteOptions`.
+  fn z_range(code: &str) -> (f64, f64) {
+    let out = interpret(&format!(
+      "Last[PlotRange /. AbsoluteOptions[{code}, PlotRange]]"
+    ))
+    .unwrap();
+    let inner = out.trim_matches(|c| c == '{' || c == '}');
+    let mut parts = inner.split(',').map(|p| {
+      let p = p.trim();
+      match p.split_once("*^") {
+        Some((m, e)) => {
+          m.parse::<f64>().unwrap() * 10f64.powi(e.parse::<i32>().unwrap())
+        }
+        None => p.parse::<f64>().unwrap(),
+      }
+    });
+    (parts.next().unwrap(), parts.next().unwrap())
+  }
+
+  // The automatic vertical range clips outlying heights off, as WL's
+  // does: a pole or a jump to a far value along one edge of the domain
+  // leaves the box spanning the bulk of the surface.
+  #[test]
+  fn automatic_z_range_clips_outliers() {
+    let (lo, hi) = z_range("Plot3D[1/(x^2 + y^2), {x, -1, 1}, {y, -1, 1}]");
+    assert_eq!(lo, 0.5);
+    assert!(hi > 5.0 && hi < 20.0, "{hi}");
+    // A cliff along the far edge (y > 0.98) is dropped from the range.
+    let (lo, hi) =
+      z_range("Plot3D[If[y > 0.98, -10, x + y], {x, 0, 1}, {y, 0, 1}]");
+    assert!(lo > -2.0 && lo < 0.0, "{lo}");
+    assert!((hi - 1.98).abs() < 1e-9, "{hi}");
+  }
+
+  // `PlotRange -> All`, also in the vertical slot of a three-axis spec,
+  // keeps every sampled height; a smooth surface keeps its whole extent.
+  #[test]
+  fn z_range_all_keeps_outliers() {
+    for opt in ["PlotRange -> All", "PlotRange -> {Full, Full, All}"] {
+      let (lo, hi) = z_range(&format!(
+        "Plot3D[1/(x^2 + y^2), {{x, -1, 1}}, {{y, -1, 1}}, {opt}]"
+      ));
+      assert_eq!(lo, 0.5);
+      assert!(hi > 600.0, "{opt}: {hi}");
+    }
+    let (lo, hi) = z_range("Plot3D[x y, {x, -1, 1}, {y, -1, 1}]");
+    assert_eq!((lo, hi), (-1.0, 1.0));
   }
 
   // `Mesh -> n` draws n lines per direction, in the `MeshStyle`.
@@ -1642,6 +1760,54 @@ mod arrows_and_box {
     assert!(head_area(&large) > 6.0 * head_area(&default));
   }
 
+  /// The first point of every arrowhead `<polygon>` after the arrow's
+  /// `<polyline>` (each head's outline starts at its tip).
+  fn head_tips(svg: &str) -> Vec<(f64, f64)> {
+    let after = svg.split("<polyline").nth(1).unwrap();
+    after
+      .split("<polygon points=\"")
+      .skip(1)
+      .map(|pts| {
+        let first = pts.split(' ').next().unwrap();
+        let mut it = first.split(',').map(|v| v.parse::<f64>().unwrap());
+        (it.next().unwrap(), it.next().unwrap())
+      })
+      .collect()
+  }
+
+  // `Arrowheads[{s1, s2, …}]` spreads its heads evenly from tail to tip, and
+  // a negative size turns its head back along the arrow, so `{-s, s}` is a
+  // double-headed 3D arrow sized like `Arrowheads[s]` (rather than one
+  // default-size head at the tip).
+  #[test]
+  fn arrowheads_list_puts_heads_along_3d_arrow() {
+    let arrow = |heads: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrowheads[{heads}], Arrow[{{{{0, 0, 0}}, {{0, 0, 1}}}}], \
+         Point[{{{{-1, -1, -1}}, {{1, 1, 1}}}}]}}, Boxed -> False]"
+      ))
+    };
+    let single = arrow("0.02");
+    let double = arrow("{-0.02, 0.02}");
+    assert_eq!(head_tips(&single).len(), 1);
+    let tips = head_tips(&double);
+    assert_eq!(tips.len(), 2, "{double}");
+    // The heads keep the size the list gives them, not the default
+    // (a twentieth).
+    let default = head_area(&arrow("0.05"));
+    assert!(head_area(&double) < 0.5 * default, "{double}");
+    // One tip sits at the arrow's head end, the other at its tail end (the
+    // z axis points up the picture, so the tail is lower on screen).
+    let single_tip = head_tips(&single)[0];
+    assert!(
+      tips.iter().any(|t| (t.0 - single_tip.0).abs() < 0.2
+        && (t.1 - single_tip.1).abs() < 0.2)
+    );
+    assert!(tips.iter().any(|t| t.1 > single_tip.1 + 20.0), "{tips:?}");
+    // Three entries put the middle head halfway along.
+    assert_eq!(head_tips(&arrow("{0.02, 0.02, 0.02}")).len(), 3);
+  }
+
   // The head of a 3D line arrow is a cone sized by the scene, not a fixed
   // number of pixels, so it stays about as large on screen however big the
   // scene is.
@@ -1794,6 +1960,28 @@ mod smooth_shading {
     let last_red = colors.iter().rposition(|c| c.0 > c.2).unwrap();
     let first_blue = colors.iter().position(|c| c.2 > c.0).unwrap();
     assert!(last_red < first_blue, "{colors:?}");
+  }
+
+  // A translucent face lying on an opaque one stays beneath it, even when
+  // it is given later: only the opaque face's color shows through.
+  #[test]
+  fn translucent_face_on_opaque_face_stays_beneath() {
+    for (first, second) in [
+      ("Red, ", "Blue, Opacity[0.5], "),
+      ("Blue, Opacity[0.5], ", "Opacity[1], Red, "),
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{{first}Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, \
+         {{2, 2, 0}}, {{0, 2, 0}}}}], {second}Polygon[{{{{0, 0, 0}}, \
+         {{2, 0, 0}}, {{2, 2, 0}}, {{0, 2, 0}}}}]}}, Boxed -> False]"
+      ));
+      let polys: Vec<&str> = s.split("<polygon ").skip(1).collect();
+      assert!(!polys.is_empty(), "{s}");
+      assert!(
+        !polys.last().unwrap().contains("fill-opacity"),
+        "the opaque face must be drawn last: {s}"
+      );
+    }
   }
 }
 
@@ -2141,5 +2329,162 @@ mod box_and_label_options {
       assert!(s.contains("font-size=\"16\""), "no 16pt labels for {expr}");
       assert!(!s.contains("font-size=\"10\""), "10pt ticks left in {expr}");
     }
+  }
+}
+
+mod internal_cut_seams {
+  use super::*;
+
+  /// The point count of every filled `<polygon>` an SVG draws.
+  fn polygon_point_counts(svg: &str) -> Vec<usize> {
+    svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .map(|pts| pts.split_whitespace().count())
+      .collect()
+  }
+
+  const SQUARE: &str = "Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}]";
+
+  /// Each half of a fan-triangulated face reaches across the diagonal it
+  /// was split along with a thin band, so the halves overlap and no
+  /// anti-aliasing seam traces the cut.
+  #[test]
+  fn fan_halves_overlap_across_the_cut() {
+    let s = svg(&format!("Graphics3D[{SQUARE}, Boxed -> False]"));
+    assert_eq!(polygon_point_counts(&s), vec![5, 5], "{s}");
+  }
+
+  /// Every triangle of a hexagon fan widens across each of its cuts: the
+  /// end triangles have one, the middle ones two.
+  #[test]
+  fn every_cut_of_a_larger_fan_widens() {
+    let s = svg(
+      "Graphics3D[Polygon[Table[{Cos[t], Sin[t], 0}, {t, 0, 5 Pi/3, Pi/3}]], Boxed -> False]",
+    );
+    let mut counts = polygon_point_counts(&s);
+    counts.sort_unstable();
+    assert_eq!(counts, vec![5, 5, 7, 7], "{s}");
+  }
+
+  /// Cube faces are fan-triangulated quads as well.
+  #[test]
+  fn cuboid_faces_widen() {
+    let s = svg("Graphics3D[Cuboid[], Boxed -> False]");
+    let counts = polygon_point_counts(&s);
+    assert_ne!(counts, [] as [usize; 0]);
+    assert!(counts.iter().all(|&n| n == 5), "{counts:?}");
+  }
+
+  /// A lone triangle has no internal cut to widen.
+  #[test]
+  fn lone_triangle_keeps_three_corners() {
+    let s = svg(
+      "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}], Boxed -> False]",
+    );
+    assert_eq!(polygon_point_counts(&s), vec![3], "{s}");
+  }
+
+  /// Overlapping translucent halves would darken the diagonal, and without
+  /// a drawn outline the band could show past the face, so neither widens.
+  #[test]
+  fn translucent_or_edgeless_faces_keep_three_corners() {
+    for style in ["Opacity[0.5]", "EdgeForm[]"] {
+      let s = svg(&format!(
+        "Graphics3D[{{{style}, {SQUARE}}}, Boxed -> False]"
+      ));
+      // A translucent face's pieces are filled as one `<path>` instead.
+      let counts = polygon_point_counts(&s);
+      assert!(counts.iter().all(|&n| n == 3), "{style}: {s}");
+      if style == "EdgeForm[]" {
+        assert_eq!(counts, vec![3, 3], "{style}: {s}");
+      }
+    }
+  }
+}
+
+/// A "perforated" face is one polygon running round its outline, across a
+/// bridge to an inner copy shrunk toward the center, and round that copy
+/// (`Join[pts, {p1}, inner, {q1}]`). Wolfram fills it with the even-odd
+/// rule, which also settles the two extremes of the shrink factor.
+mod perforated_faces {
+  use super::*;
+
+  /// The corners as a Wolfram list `{{x, y, z}, …}`.
+  fn coords(outline: &[[i64; 3]]) -> String {
+    let pts: Vec<String> = outline
+      .iter()
+      .map(|p| format!("{{{}, {}, {}}}", p[0], p[1], p[2]))
+      .collect();
+    format!("{{{}}}", pts.join(", "))
+  }
+
+  /// The face's corners, then the inner ring `{1 - d, d} . {p, center}`.
+  fn perforated(outline: &[[i64; 3]], d: &str) -> String {
+    let pts = coords(outline);
+    format!(
+      "With[{{pts = {pts}, d = {d}}}, Module[{{inner = Map[{{1 - d, d}} . {{#, Mean[pts]}} &, pts]}}, \
+       Polygon[Join[pts, pts[[{{1}}]], inner, inner[[{{1}}]]]]]]"
+    )
+  }
+
+  const SQUARE: [[i64; 3]; 4] = [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0]];
+  const TRIANGLE: [[i64; 3]; 3] = [[0, 0, 0], [3, 0, 1], [0, 3, 2]];
+
+  fn scene(prims: &str) -> String {
+    svg(&format!("Graphics3D[{{Yellow, {prims}}}, Boxed -> False]"))
+  }
+
+  /// With the inner ring collapsed onto the center (`d = 1`) the hole
+  /// encloses nothing: the face is drawn exactly as the plain polygon,
+  /// without the bridge stroked from a corner to the center.
+  #[test]
+  fn collapsed_hole_draws_the_plain_face() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let plain = format!("Polygon[{}]", coords(outline));
+      for d in ["1", "1.0"] {
+        assert_eq!(
+          scene(&perforated(outline, d)),
+          scene(&plain),
+          "d = {d} for {plain}"
+        );
+      }
+    }
+  }
+
+  /// With the inner ring on the outline itself (`d = 0`) the face is
+  /// enclosed twice, so the even-odd rule leaves it unfilled and only its
+  /// outline is drawn — as `FaceForm[None]` draws it.
+  #[test]
+  fn retraced_outline_leaves_the_face_empty() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let hollow = format!("FaceForm[None], Polygon[{}]", coords(outline));
+      for d in ["0", "0.0"] {
+        let s = scene(&perforated(outline, d));
+        assert_eq!(s, scene(&hollow), "d = {d} for {hollow}");
+        // Any polygon left is an unfilled outline.
+        assert!(
+          s.lines()
+            .filter(|l| l.starts_with("<polygon"))
+            .all(|l| l.contains("fill-opacity=\"0\"")),
+          "face still filled: {s}"
+        );
+        assert!(
+          s.contains("stroke=\"rgb(64,64,64)\""),
+          "outline missing: {s}"
+        );
+      }
+    }
+  }
+
+  /// In between, the inner ring is a hole: the face stays filled but
+  /// takes more pieces than the solid face to go round it.
+  #[test]
+  fn partial_shrink_cuts_a_hole() {
+    let holed = scene(&perforated(&SQUARE, "0.5"));
+    let solid = scene(&perforated(&SQUARE, "1"));
+    assert!(!holed.contains("fill-opacity=\"0\""));
+    assert!(polygon_count(&holed) > polygon_count(&solid));
   }
 }
