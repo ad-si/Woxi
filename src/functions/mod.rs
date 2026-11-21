@@ -118,6 +118,7 @@ pub mod plot_curve_labels;
 pub mod plot_epilog;
 pub mod plot_highlight;
 pub mod plot_layout;
+pub mod plot_legends_package;
 pub mod plot_mesh;
 pub mod plot_padding;
 pub mod plot_scaling;
