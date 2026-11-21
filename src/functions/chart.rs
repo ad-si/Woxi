@@ -1023,7 +1023,8 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         italic: false,
         color: None,
         font_size: None,
-        framed: false,
+        frame: None,
+        line_frames: Vec::new(),
         segments: Vec::new(),
       });
     }
