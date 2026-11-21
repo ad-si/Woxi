@@ -5257,7 +5257,9 @@ WL's `Rasterize` defaults to 144 dpi and tags the image with
 `Image` carries no resolution, so `Rasterize` keeps 72 dpi (1x) by default.
 The same holds for `ImageSize -> s`: Woxi's raster is `s` pixels wide
 where WL's is `2 s` (both display at `s` points). An explicit `ImageResolution`, and `Export` to a raster format (default
-144 dpi), match WL.
+144 dpi), match WL. An explicit `RasterSize -> {w, h}` around text or a
+formula also matches WL: the content keeps its size at 144 dpi and is
+centered in the raster rather than stretched to fill it.
 
 Topology measured on a rasterized graphic follows from this: a `Thick` curve
 is 2 pixels wide at 1x, and its binarized pixels are partly only diagonally
