@@ -3081,11 +3081,12 @@ fn ndsolve_pde(
             .find_map(|e| pde_space_position(e, u, &x_vars[0]))
         });
         let flux_first = flux_pos != Some(1);
-        let dim0 = call_dim0.unwrap_or(if (dom_a.name == x_vars[0]) == flux_first {
-          &dom_a
-        } else {
-          &dom_b
-        });
+        let dim0 =
+          call_dim0.unwrap_or(if (dom_a.name == x_vars[0]) == flux_first {
+            &dom_a
+          } else {
+            &dom_b
+          });
         (lowered, dim0.clone(), true, x_vars.len() > 1)
       }
       None => (eq_items, call_dim0.unwrap_or(&dom_a).clone(), false, false),
