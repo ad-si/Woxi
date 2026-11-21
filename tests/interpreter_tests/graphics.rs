@@ -11739,8 +11739,10 @@ mod plot3d {
       let dashed = export_svg(
         "Graphics3D[{Gray, Dashed, Line[{{-5,0,0},{5,0,0}}]}, Boxed -> False]",
       );
-      let lines: Vec<&str> =
-        dashed.lines().filter(|l| l.starts_with("<line ")).collect();
+      let lines: Vec<&str> = dashed
+        .lines()
+        .filter(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
+        .collect();
       assert!(!lines.is_empty(), "expected the line to be drawn: {dashed}");
       assert!(
         lines
@@ -11769,24 +11771,20 @@ mod plot3d {
       let svg = export_svg(
         "Graphics3D[{Dotted, Line[Table[{k, 0, 0}, {k, 0, 6}]]}, Boxed -> False]",
       );
-      let offsets: Vec<f64> = svg
+      let dashed: Vec<&str> = svg
         .lines()
-        .filter(|l| l.starts_with("<line ") && l.contains("stroke-dasharray"))
-        .filter_map(|l| {
-          let rest = l.split("stroke-dashoffset=\"").nth(1)?;
-          rest.split('"').next()?.parse().ok()
-        })
+        .filter(|l| l.contains("stroke-dasharray"))
         .collect();
-      assert!(offsets.len() > 6, "{svg}");
-      // Only the very first piece of the line starts the pattern afresh.
-      assert_eq!(
-        offsets.iter().filter(|o| **o == 0.0).count(),
-        1,
-        "{offsets:?}"
-      );
-      // The later pieces keep counting the distance along the line.
-      let max = offsets.iter().copied().fold(0.0, f64::max);
-      assert!(max > 100.0, "{offsets:?}");
+      // The whole line is one stroke, so the pattern runs on through
+      // every vertex instead of restarting at each.
+      assert_eq!(dashed.len(), 1, "{svg}");
+      let vertices = dashed[0]
+        .split("points=\"")
+        .nth(1)
+        .and_then(|p| p.split('"').next())
+        .map_or(0, |p| p.split_whitespace().count());
+      assert!(vertices >= 7, "{svg}");
+      assert!(dashed[0].contains("stroke-dashoffset=\"0.0\""), "{svg}");
     }
 
     /// `Dotted`/`DotDashed` are shorthands for specific `Dashing` patterns
@@ -11839,8 +11837,10 @@ mod plot3d {
         .lines()
         .filter(|l| l.contains("stroke-dasharray"))
         .count();
-      let total_lines =
-        mixed.lines().filter(|l| l.starts_with("<line ")).count();
+      let total_lines = mixed
+        .lines()
+        .filter(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
+        .count();
       assert!(dashed_count > 0 && dashed_count < total_lines, "{mixed}");
     }
 
@@ -32978,8 +32978,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     /// box edges (those are drawn 0.5 wide in gray).
     fn line_3d_stroke_widths(svg: &str) -> Vec<String> {
       svg
-        .split("<line ")
-        .skip(1)
+        .lines()
+        .filter(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
         .filter(|l| l.contains("stroke=\"rgb(0,0,0)\""))
         .filter_map(|l| {
           let w = l.split("stroke-width=\"").nth(1)?;
@@ -33032,12 +33032,17 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "ParametricPlot3D[{{Cos[t], Sin[t], 0}}, {{t, 0, 2 Pi}}{opts}]"
         ));
         let curve: Vec<&str> = svg
-          .split("<line ")
-          .skip(1)
+          .lines()
+          .filter(|l| l.starts_with("<polyline "))
           .filter(|l| !l.contains("stroke-width=\"0.5\""))
           .filter(|l| !l.contains("stroke-width=\"1\""))
           .collect();
-        assert!(curve.len() > 100, "{opts}: curve not drawn");
+        let vertices: usize = curve
+          .iter()
+          .filter_map(|l| l.split("points=\"").nth(1)?.split('"').next())
+          .map(|p| p.split_whitespace().count())
+          .sum();
+        assert!(vertices > 100, "{opts}: curve not drawn");
         assert!(
           curve.iter().all(|l| l.contains("stroke-width=\"2.0\"")),
           "{opts}: curve must be 2 wide"
@@ -57794,6 +57799,33 @@ fn graphics_grid_of_picture_buttons_keeps_button_size() {
   );
 }
 
+/// The on-screen extent `(|dx|, |dy|)` between the end points of the first
+/// stroke in `svg`, drawn either as a `<line>` or as a `<polyline>`.
+fn first_stroke_extent(svg: &str) -> (f64, f64) {
+  let stroke = svg
+    .lines()
+    .find(|l| l.starts_with("<line ") || l.starts_with("<polyline "))
+    .unwrap();
+  let attr = |name: &str| -> Option<String> {
+    let rest = stroke.split(&format!(" {name}=\"")).nth(1)?;
+    Some(rest.split('"').next()?.to_string())
+  };
+  let ((x1, y1), (x2, y2)) = if let Some(points) = attr("points") {
+    let pts: Vec<(f64, f64)> = points
+      .split_whitespace()
+      .map(|p| {
+        let (x, y) = p.split_once(',').unwrap();
+        (x.parse().unwrap(), y.parse().unwrap())
+      })
+      .collect();
+    (pts[0], pts[pts.len() - 1])
+  } else {
+    let num = |n: &str| attr(n).unwrap().parse::<f64>().unwrap();
+    ((num("x1"), num("y1")), (num("x2"), num("y2")))
+  };
+  ((x1 - x2).abs(), (y1 - y2).abs())
+}
+
 /// `ViewVertical` picks the direction that points up on screen: looking
 /// along +y, the z axis is vertical by default but lies flat once the
 /// vertical is the x axis.
@@ -57805,17 +57837,7 @@ fn graphics3d_view_vertical_turns_the_picture() {
          Boxed -> False, ViewPoint -> Front{opts}]"
     ))
   };
-  let extent = |svg: &str| {
-    let line = svg.lines().find(|l| l.starts_with("<line ")).unwrap();
-    let attr = |name: &str| -> f64 {
-      let rest = line.split(&format!("{name}=\"")).nth(1).unwrap();
-      rest.split('"').next().unwrap().parse().unwrap()
-    };
-    (
-      (attr("x1") - attr("x2")).abs(),
-      (attr("y1") - attr("y2")).abs(),
-    )
-  };
+  let extent = |svg: &str| first_stroke_extent(svg);
   let (dx, dy) = extent(&line(""));
   assert!(dx < 1e-6 && dy > 1.0, "default: {dx} {dy}");
   let (dx, dy) = extent(&line(", ViewVertical -> {1, 0, 0}"));
@@ -57833,13 +57855,7 @@ fn graphics3d_view_vertical_is_in_scaled_coordinates() {
        PlotRange -> {{0, 1}, {0, 3}, {0, 1}}, ViewPoint -> Top, \
        ViewVertical -> {1, 1, 0}]",
   );
-  let line = svg.lines().find(|l| l.starts_with("<line ")).unwrap();
-  let attr = |name: &str| -> f64 {
-    let rest = line.split(&format!("{name}=\"")).nth(1).unwrap();
-    rest.split('"').next().unwrap().parse().unwrap()
-  };
-  let dx = (attr("x1") - attr("x2")).abs();
-  let dy = (attr("y1") - attr("y2")).abs();
+  let (dx, dy) = first_stroke_extent(&svg);
   assert!(
     (dx / dy - 1.0 / 3.0).abs() < 0.02,
     "slope {dx}/{dy} = {}",
