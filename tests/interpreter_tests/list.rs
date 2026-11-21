@@ -16157,6 +16157,38 @@ mod list_correlate {
     );
   }
 
+  // Machine-number overhang correlations and convolutions are summed
+  // directly: a sample autocovariance `ListCorrelate[y, y, {1, 1}, 0]` of
+  // a few thousand reals used to build millions of symbolic products.
+  #[test]
+  fn machine_number_overhang_fast_path() {
+    assert_eq!(
+      interpret("ListCorrelate[{1., 2., 3.}, {1., 2., 3.}, {1, 1}, 0]")
+        .unwrap(),
+      "{14., 8., 3.}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{1., 2.}, {3., 4., 5.}, {1, 1}]").unwrap(),
+      "{11., 14., 11.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2.}, {3., 4., 5.}, {1, 1}]").unwrap(),
+      "{13., 10., 13.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2.}, {3., 4., 5.}, {1, 1}, 0]").unwrap(),
+      "{3., 10., 13.}"
+    );
+    assert_eq!(
+      interpret(
+        "y = N[Range[3000]]; r = ListCorrelate[y, y, {1, 1}, 0]; \
+         {Length[r], First[r], Last[r]}"
+      )
+      .unwrap(),
+      "{3000, 9.0045005*^9, 3000.}"
+    );
+  }
+
   // A padding *list* extends the data cyclically: the element at index i
   // outside the data is padding[[(i - 1) mod L + 1]], so which element the
   // first overhanging position takes depends on how many there are.

@@ -19003,6 +19003,14 @@ pub(crate) fn in_text_face(content: &Expr) -> Expr {
       new_args.extend(args[1..].iter().cloned());
       call("Style", new_args)
     }
+    // `TraditionalForm[Style[Grid[…], 24]]`: the face goes inside the form
+    // wrapper, next to the size, so the typeset layout keeps both instead
+    // of falling back to its text.
+    Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1 =>
+    {
+      call1("TraditionalForm", in_text_face(&args[0]))
+    }
     _ => call("Style", vec![content.clone(), family]),
   }
 }
