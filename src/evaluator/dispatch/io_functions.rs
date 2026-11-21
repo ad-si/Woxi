@@ -8097,11 +8097,15 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // Text is set in the proportional text face rather than the monospace
     // output face, so `Text[Row[{"Depth = ", x, " m"}]]` reads as prose; a
     // `FontFamily` given inside still wins, as the innermost style does.
+    // Math inside text is set one script level down, so its fractions
+    // are drawn at the reduced size of a nested one.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      crate::functions::graphics::with_text_display_grids(|| {
-        expr_to_svg(&crate::functions::graphics::in_text_face(
-          &unquoted_display_string(&args[0]),
-        ))
+      crate::functions::graphics::with_inline_text_math(|| {
+        crate::functions::graphics::with_text_display_grids(|| {
+          expr_to_svg(&crate::functions::graphics::in_text_face(
+            &unquoted_display_string(&args[0]),
+          ))
+        })
       })
     }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and

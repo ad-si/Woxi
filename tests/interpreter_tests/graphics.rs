@@ -46790,6 +46790,53 @@ mod manipulate {
     assert!(svg.contains("alpha") && svg.contains("delta"));
   }
 
+  /// A `TabView` of plain values (lists, strings) nested in a `Pane`
+  /// inside a `Column` draws the pane its selector names — the first one
+  /// without a selector — instead of the symbolic `TabView[…]` source.
+  #[test]
+  fn tab_view_value_pane_in_column_draws_selected_pane() {
+    let texts = |code: &str| {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("TabView["), "TabView source leaked: {svg}");
+      svg
+    };
+    let svg = texts(
+      "ExportString[Column[{Pane[TabView[{\"codes\" -> {11, 22}, \
+       \"word\" -> \"zeta\"}]], 7}], \"SVG\"]",
+    );
+    assert!(svg.contains("11") && svg.contains("22"), "{svg}");
+    assert!(!svg.contains("zeta"), "only the first pane shows: {svg}");
+    let svg = texts(
+      "sel = 2; ExportString[Column[{Pane[TabView[{\"codes\" -> {11, 22}, \
+       \"word\" -> \"zeta\"}, Dynamic[sel]]], 7}], \"SVG\"]",
+    );
+    assert!(svg.contains("zeta"), "the selected pane shows: {svg}");
+    assert!(!svg.contains("codes"), "{svg}");
+  }
+
+  /// A string with C0 control characters (e.g. the output of
+  /// `FromCharacterCode` on XOR-ed codes) must still give well-formed SVG:
+  /// such characters are not allowed in XML, so they are dropped.
+  #[test]
+  fn control_characters_are_dropped_from_svg_text() {
+    for code in [
+      "ExportString[FromCharacterCode[{65, 4, 66, 31, 67}], \"SVG\"]",
+      "ExportString[Column[{FromCharacterCode[{65, 4, 66}], 1}], \"SVG\"]",
+      "ExportString[Graphics[Text[FromCharacterCode[{65, 1, 66}]]], \"SVG\"]",
+      "ExportString[Plot[x, {x, 0, 1}, \
+       PlotLabel -> FromCharacterCode[{65, 2, 66}]], \"SVG\"]",
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(
+        !svg
+          .chars()
+          .any(|c| (c as u32) < 0x20 && !matches!(c, '\t' | '\n' | '\r')),
+        "control character in SVG of {code}"
+      );
+      assert!(svg.contains('A') && svg.contains('B'), "{code}");
+    }
+  }
+
   /// A Trigger's `AnimationRepetitions` is a literal count, or the name of
   /// another control (bare or in `Dynamic`); `Infinity` loops forever.
   #[test]
@@ -57049,6 +57096,25 @@ mod traditional_form_typesetting {
     let svg = export_svg("Grid[{{TraditionalForm[1/x]}}]");
     assert!(!svg.contains(">1/x<"), "{svg}");
     assert!(svg.contains("<line"), "{svg}");
+  }
+
+  #[test]
+  fn fractions_inside_text_are_set_one_script_level_down() {
+    // Math inside text sits one script level down: the same fraction,
+    // in a cell or in a `Row` beside a styled letter, shrinks to 3/4.
+    for code in [
+      "Text[Grid[{{1/9, x}}, Frame -> All]]",
+      "Text[Grid[{{Row[{2/3, Style[\"S\", Italic]}]}}]]",
+      "Text[5/7]",
+    ] {
+      let svg = export_svg(code);
+      assert!(svg.contains("<line"), "{code}: {svg}");
+      assert!(svg.contains("font-size=\"10.5\""), "{code}: {svg}");
+      // Only the fraction shrinks: text beside it keeps the full size.
+      if !code.contains("Row") {
+        assert!(!svg.contains("font-size=\"14.0\""), "{code}: {svg}");
+      }
+    }
   }
 
   #[test]

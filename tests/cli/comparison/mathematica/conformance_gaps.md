@@ -2015,6 +2015,20 @@ a positive lower bound — `RandomReal[{$MinNumber, x}]` in Demonstration
 
 ## Algebra and calculus
 
+### `Solve` of a radical identity in one unknown finds a spurious root
+
+An equation that holds for every value of its unknown, with radical
+coefficients on both sides and a sum under a denominator, is solved as if
+its (vanishing) coefficient were not zero:
+
+```sh
+wolframscript -code 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'  # {{}}
+woxi eval 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'            # {{c -> 0}}
+```
+
+Systems of two or more such equations are solved by Gaussian elimination
+and are not affected.
+
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
 ```sh

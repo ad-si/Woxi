@@ -9149,6 +9149,39 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"…\"]"], "Output"]
     assert!(widget.error.is_none(), "{:?}", widget.error);
     assert!(widget.graphics_handle.is_some(), "the solid must render");
   }
+  /// A solid picker over `Join` of the Platonic and Archimedean classes lists
+  /// the choices in Wolfram's order: each class alphabetically, so the
+  /// Platonic block starts with the cube, not the tetrahedron.
+  #[test]
+  fn polyhedron_class_popup_lists_solids_alphabetically() {
+    let src = "Manipulate[Graphics3D[GraphicsComplex[PolyhedronData[s, \"VertexCoordinates\"], Line[PolyhedronData[s, \"EdgeIndices\"]]]], {{s, \"Cube\", \"solid\"}, Join[PolyhedronData[\"Platonic\"], PolyhedronData[\"Archimedean\"]]}]";
+    let expr = woxi::interpret_to_expr(src).unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must instantiate");
+    assert_eq!(state.error, None, "{:?}", state.error);
+    let manipulate::ControlState::Discrete {
+      value_labels,
+      current_index,
+      ..
+    } = &state.controls[0]
+    else {
+      panic!("expected a discrete control: {:?}", state.controls[0]);
+    };
+    assert_eq!(
+      &value_labels[..6],
+      &[
+        "Cube",
+        "Dodecahedron",
+        "Icosahedron",
+        "Octahedron",
+        "Tetrahedron",
+        "Cuboctahedron"
+      ]
+    );
+    assert_eq!(value_labels.len(), 18);
+    assert_eq!(*current_index, 0);
+    assert!(state.graphics_handle.is_some(), "the cube must render");
+  }
   /// A convex-hull / Delaunay / Voronoi demonstration loads the legacy
   /// `ComputationalGeometry`` package in its initialization and draws the
   /// diagrams from `DelaunayTriangulation` and `DiagramPlot`; both were

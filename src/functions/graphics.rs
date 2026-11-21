@@ -1243,7 +1243,9 @@ enum Primitive {
     /// color — `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and
     /// an upright remainder. Empty for a label with no partial styling.
     styled_ranges: Vec<StyledRange>,
-    style: StyleState,
+    /// Boxed: a label carries enough fields of its own that an inline
+    /// style would make it the enum's one oversized variant.
+    style: Box<StyleState>,
   },
   BezierCurvePrim {
     points: Vec<(f64, f64)>,
@@ -1340,10 +1342,10 @@ impl Primitive {
       | Self::RectPrim { style, .. }
       | Self::PolygonPrim { style, .. }
       | Self::ArrowPrim { style, .. }
-      | Self::TextPrim { style, .. }
       | Self::BezierCurvePrim { style, .. }
       | Self::HalfPlanePrim { style, .. }
       | Self::InfiniteLinePrim { style, .. } => Some(style),
+      Self::TextPrim { style, .. } => Some(style),
       Self::ClickGroupStart { .. } | Self::ClickGroupEnd => None,
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
@@ -6033,7 +6035,7 @@ fn grid_item_width_chars(options: &[Expr]) -> Option<usize> {
     }
     _ => None,
   })?;
-  let width = match size {
+  let width = match item_size_dims(size).0 {
     Expr::List(dims) => dims.first()?,
     other => other,
   };
@@ -9673,7 +9675,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     box_offset,
     glyph_map: None,
     styled_ranges,
-    style: local_style,
+    style: Box::new(local_style),
   });
 }
 
@@ -14258,11 +14260,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
   // for them switches the whole run's font; they look like an ASCII `-`.
   let s = s.replace(['\u{2010}', '\u{2011}'], "-");
   let s = crate::syntax::substitute_private_use_glyphs(&s);
-  let escaped = s
-    .replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;");
+  let escaped = crate::functions::plot::html_escape(&s);
   let escaped = render_math_letterlike_glyphs(&escaped);
   let escaped = render_combining_overlines(&escaped);
   if escaped.contains(SUBSCRIPT_START) || escaped.contains(SUPERSCRIPT_START) {
@@ -19310,6 +19308,23 @@ thread_local! {
   /// a string is literal text, so its single letters are not math variables
   /// and stay upright.
   static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while drawing the content of a `Text[expr]` outside graphics.
+  /// Wolfram sets math inside text one script level down (a text style's
+  /// `ScriptLevel -> 1`), so even an outermost fraction there is drawn at
+  /// the reduced size of a nested one.
+  static BOX_INLINE_TEXT_MATH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`BOX_INLINE_TEXT_MATH`] set, restoring it after.
+pub(crate) fn with_inline_text_math<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_INLINE_TEXT_MATH.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(BOX_INLINE_TEXT_MATH.with(|c| c.replace(true)));
+  f()
 }
 
 /// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
@@ -19742,7 +19757,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       "FractionBox"
         if crate::functions::graphics::is_fraction_box_args(args) =>
       {
-        let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+        let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0
+          && !BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get)
+        {
           font_size
         } else {
           let floor = 0.75 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get);
@@ -30444,6 +30461,18 @@ fn item_style_entry_directives(entry: &Expr, out: &mut Vec<Expr>) {
 /// of `n`: `{s1, s2, …}` names only the first positions, while
 /// `{s1, …, {r1, r2, …}, e1, …}` cycles the inner list over the positions
 /// between the explicit leading and trailing entries.
+/// Split an `ItemSize` value into its width and height specs. A list of
+/// two or more entries is read as `{w, h, …}` (entries past the height
+/// are ignored, as Wolfram does), so `{6, 1, 1}` fixes every column at 6
+/// ems rather than naming per-column widths; anything else is a width
+/// alone. Shared by `Grid`, `Column` and their text wrapping.
+pub(crate) fn item_size_dims(spec: &Expr) -> (&Expr, Option<&Expr>) {
+  match spec {
+    Expr::List(dims) if dims.len() >= 2 => (&dims[0], Some(&dims[1])),
+    other => (other, None),
+  }
+}
+
 /// The fixed size an `ItemSize` dimension gives position `pos` (0-based)
 /// of `n`: a number for every position, or a per-position list (in the
 /// `Grid` spec form); `Automatic`/`All` and non-positive sizes leave it to
@@ -31561,13 +31590,11 @@ fn grid_svg_styled_internal_reporting(
         },
         // `ItemSize -> w`, `{w, h}` or `{{w1, w2, …}, {h1, …}}`: column
         // widths in ems and row heights in lines, per position.
-        "ItemSize" => match replacement.as_ref() {
-          Expr::List(items) if items.len() == 2 => {
-            item_size_w = Some(items[0].clone());
-            item_size_h = Some(items[1].clone());
-          }
-          other => item_size_w = Some(other.clone()),
-        },
+        "ItemSize" => {
+          let (w, h) = item_size_dims(replacement);
+          item_size_w = Some(w.clone());
+          item_size_h = h.cloned();
+        }
         "TableSpacing" => {
           // TableForm's TableSpacing -> {rows, cols}: the first value is the
           // gap between rows, the second the gap between columns (the opposite
@@ -36387,6 +36414,13 @@ pub(crate) fn magnified_picture(expr: &Expr) -> Option<Expr> {
 /// `p(x) = 1 + x`, not `p(x) == 1 + x` — so the wrapper is put back, for
 /// the caller to typeset through the traditional box builder.
 pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
+  unwrap_display_wrappers_with(expr, true)
+}
+
+/// `unwrap_display_wrappers`, optionally stopping at a `TabView`: the
+/// top-level display pipeline keeps it, since a `TabView` result has a
+/// dedicated renderer of its own (interactive and `Dynamic` panes).
+pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
   let mut current = expr.clone();
   let mut traditional = false;
   let mut standard = false;
@@ -36438,6 +36472,19 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       "PaneSelector" if args.len() >= 2 => {
         current = selected_pane_content(args);
         continue;
+      }
+      // `TabView[{label -> pane, …}, sel]` nested in a layout shows the
+      // pane its selector names (the first pane without a selector),
+      // like a top-level `TabView` result does, rather than the call's
+      // source text.
+      "TabView" if peel_tabview => {
+        match crate::tabview_selected_content(args) {
+          Some(content) => {
+            current = content;
+            continue;
+          }
+          None => false,
+        }
       }
       // `Style[picture, Magnification -> m]` and `Magnify[picture, m]`
       // draw the picture `m` times its size.
@@ -37706,6 +37753,20 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
           {
             return nested_layout_svg(&inner);
           }
+          // `Style[TraditionalForm[MatrixForm[m]], 12]`: the form wrapper
+          // comes off a picture-like layout (a matrix, a table), which then
+          // takes the style the way a bare `Style[MatrixForm[m], 12]` does,
+          // rather than being written out as one line of text.
+          if !matches!(&unwrapped, Expr::FunctionCall { name: n, .. }
+            if n == "TraditionalForm")
+            && crate::evaluator::lays_out_a_graphic(&unwrapped)
+          {
+            let mut styled = vec![unwrapped.clone()];
+            styled.extend(args[1..].iter().cloned());
+            if let Some(svg) = nested_layout_svg(&call("Style", styled)) {
+              return Some(svg);
+            }
+          }
           // A styled formula, `Style[TraditionalForm[a² + b² = c²], 24]`,
           // is typeset with the style around its boxes.
           if let Expr::FunctionCall {
@@ -37933,12 +37994,7 @@ pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
     .iter()
     .filter_map(option_kv)
     .find(|(k, _)| *k == "ItemSize")
-    .and_then(|(_, v)| match v {
-      Expr::List(dims) if dims.len() == 2 => {
-        item_size_entry_at(Some(&dims[0]), 0, 1)
-      }
-      other => item_size_entry_at(Some(other), 0, 1),
-    })?;
+    .and_then(|(_, v)| item_size_entry_at(Some(item_size_dims(v).0), 0, 1))?;
   // The column sets its text in the monospace face at 14pt.
   let max_chars =
     ((width * 14.0) / (14.0 * MONO_ADVANCE)).floor().max(1.0) as usize;
@@ -38068,10 +38124,10 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .find(|(k, _)| *k == "ItemSize")
     .map(|(_, v)| v)
   {
-    Some(Expr::List(dims)) if dims.len() == 2 => {
-      (Some(&dims[0]), Some(&dims[1]))
+    Some(spec) => {
+      let (w, h) = item_size_dims(spec);
+      (Some(w), h)
     }
-    Some(other) => (Some(other), None),
     None => (None, None),
   };
 

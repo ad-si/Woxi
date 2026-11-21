@@ -86,6 +86,10 @@
     (a grid of rules pointing right and up) comes out as a grid instead of in
     layers.
 
+- `Grid` and `Column` read a flat `ItemSize -> {w, h, …}` with more than
+    two entries as `{w, h}`, so every column gets the `w`-em width instead of
+    only the first one.
+
 # 2026-11-08 - 0.4.0
 
 Version 0.4.0 improves package and notebook compatibility: contexts keep

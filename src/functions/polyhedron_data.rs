@@ -1495,23 +1495,10 @@ fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   if names.is_empty() {
     return Ok(None);
   }
+  // Every class, the Platonic solids included, lists its members
+  // alphabetically: `{"Cube", "Dodecahedron", "Icosahedron", "Octahedron",
+  // "Tetrahedron"}`.
   sort_entity_names(&mut names);
-  // Wolfram lists the five Platonic solids by face count, every other class
-  // alphabetically.
-  if class == "Platonic" {
-    let rank = |n: &&str| {
-      [
-        "Tetrahedron",
-        "Cube",
-        "Octahedron",
-        "Dodecahedron",
-        "Icosahedron",
-      ]
-      .iter()
-      .position(|p| p == n)
-    };
-    names.sort_by_key(rank);
-  }
   Ok(Some(string_list(&names)))
 }
 
