@@ -12061,6 +12061,24 @@ mod join_non_list {
     );
   }
 
+  // GraphPlot lays out a Combinatorica graph like the built-in graph with
+  // the same vertices (isolated ones included) and edges.
+  #[test]
+  fn graph_plot_of_combinatorica_graph() {
+    assert_eq!(
+      interpret(
+        "g = Combinatorica`EmptyGraph[5]; \
+         h = Combinatorica`AddEdges[g, {{1, 2}, {2, 3}}]; \
+         {ExportString[GraphPlot[h, ImageSize -> 200], \"SVG\"] === \
+            ExportString[GraphPlot[Graph[{1, 2, 3, 4, 5}, {1 <-> 2, 2 <-> 3}], \
+              ImageSize -> 200], \"SVG\"], \
+          StringFreeQ[ExportString[GraphPlot[h], \"SVG\"], \"Combinatorica\"]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   // With the package loaded, the bare names reach the package's functions.
   #[test]
   fn combinatorica_bare_names_after_needs() {
