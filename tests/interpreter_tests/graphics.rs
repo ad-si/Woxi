@@ -54963,6 +54963,61 @@ mod grid_text_in_graphics {
     );
   }
 
+  /// A table drawn out of a sized `Pane` (around or inside its `Text`)
+  /// keeps the pane's whole box, placed in it by the pane's `Alignment`,
+  /// instead of shrinking to the table: a Manipulate reserves that area
+  /// for its output. Regression: the box and the centering were dropped.
+  #[test]
+  fn text_grid_in_a_sized_pane_keeps_the_pane_box() {
+    let svg_of = |code: &str| {
+      clear_state();
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, "-Graphics-", "{code}");
+      result.graphics.unwrap()
+    };
+    let translate = |svg: &str| -> (f64, f64) {
+      let i = svg.find("translate(").expect("content is placed") + 10;
+      let mut parts = svg[i..i + svg[i..].find(')').unwrap()]
+        .split_whitespace()
+        .map(|p| p.parse::<f64>().unwrap());
+      (parts.next().unwrap(), parts.next().unwrap())
+    };
+    let grid = "Grid[Table[i j, {i, 3}, {j, 4}], \
+                Dividers -> {{False, True}, {False, True}}]";
+
+    let centered = svg_of(&format!(
+      "Pane[Text@{grid}, {{400, 300}}, Alignment -> {{Center, Center}}]"
+    ));
+    assert!(
+      centered.starts_with("<svg width=\"400\" height=\"300\""),
+      "{centered}"
+    );
+    let (x, y) = translate(&centered);
+    assert!(
+      x > 100.0 && y > 80.0,
+      "table centered in the box: {centered}"
+    );
+    assert!(centered.contains(">12</text>"), "{centered}");
+
+    // Without `Alignment` the table sits at the top left of the box.
+    for code in [
+      format!("Pane[Text[{grid}], {{400, 300}}]"),
+      format!("Text[Pane[{grid}, {{400, 300}}]]"),
+      format!("Pane[Text[{grid}], ImageSize -> {{400, 300}}]"),
+    ] {
+      let svg = svg_of(&code);
+      assert!(
+        svg.starts_with("<svg width=\"400\" height=\"300\""),
+        "{code}: {svg}"
+      );
+      assert_eq!(translate(&svg), (0.0, 0.0), "{code}: {svg}");
+    }
+
+    // An unsized table keeps its own size.
+    let bare = svg_of(&format!("Text[{grid}]"));
+    assert!(!bare.starts_with("<svg width=\"400\""), "{bare}");
+  }
+
   /// A translucent cylinder is one smooth surface: its triangles must not
   /// stroke their shared seams, or the tessellation shows through.
   #[test]
