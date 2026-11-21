@@ -7846,6 +7846,50 @@ mod tests {
     assert!(shown.contains("text: \"1\""), "{shown}");
   }
 
+  /// A `ClickPane` graphic whose `ImageSize` is wider than its square
+  /// `PlotRange` is drawn letterboxed: a click must report the coordinates
+  /// of the graphic under the pointer, not a position stretched over the
+  /// whole picture width.
+  #[test]
+  fn click_pane_maps_clicks_through_a_letterboxed_graphic() {
+    let code = r#"Manipulate[
+      ClickPane[
+        Graphics[{Rectangle[{0, 0}, {10, 10}]},
+          PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> {300, 200}],
+        (pos = #) &],
+      {{pos, {0, 0}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert_eq!(state.click_regions.len(), 1);
+    let region = state.click_regions[0].clone();
+    // The square drawing area is centered: 0 ≤ x ≤ 10 spans the middle
+    // 200 of the 300 pixels, so the picture's edges lie 2.5 units outside.
+    let hit = &region.hit;
+    assert!((hit.x_min + 2.5).abs() < 0.1, "x_min = {}", hit.x_min);
+    assert!((hit.x_max - 12.5).abs() < 0.1, "x_max = {}", hit.x_max);
+    assert_eq!((hit.y_min, hit.y_max), (0.0, 10.0));
+    // Pixel 100 lies 50 pixels into the drawing area: x = 2.5.
+    state.pointer = (region.x + 100.0 / 300.0 * region.width, region.y);
+    state.apply_pane_click();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let pos = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "pos")
+      .map(|(_, v)| v.clone())
+      .unwrap_or_default();
+    let x: f64 = pos
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(',')
+      .next()
+      .and_then(|v| v.trim().parse().ok())
+      .unwrap_or(f64::NAN);
+    assert!((x - 2.5).abs() < 0.1, "pos = {pos}");
+  }
+
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
   /// graphic.
   fn pixel_of(region: &MouseRegion, gx: f64, gy: f64) -> (f32, f32) {

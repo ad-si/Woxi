@@ -35410,13 +35410,44 @@ pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
     // records its drawing area and the coordinates at its edges.
     None => first_plot_frame_of(&svg),
   };
-  let Some(((vb_x, vb_y, vb_w, vb_h), ((x_min, y_min), (x_max, y_max)))) = area
+  let Some((
+    (vb_x, vb_y, vb_w, vb_h),
+    ((mut x_min, mut y_min), (mut x_max, mut y_max)),
+  )) = area
   else {
     return svg;
   };
   let Some(close) = svg.rfind("</svg>") else {
     return svg;
   };
+  // Without an explicit range, a click reports the coordinates of the
+  // graphic under it. A graphic whose `ImageSize` has another shape than
+  // its `PlotRange` is drawn letterboxed with its range widened to fill the
+  // picture, so map the whole picture through the drawing area the graphic
+  // recorded (see `with_plot_frame_markers`) rather than its bare range.
+  if args.len() == 2
+    && let Some((left, top, w, h, (bx0, by0, bx1, by1))) =
+      outer_plot_frame(&svg[..close])
+    && w > 0.0
+    && h > 0.0
+  {
+    // Only an axis the graphic widened is remapped; the other keeps its
+    // range over the whole picture.
+    let widened = |lo: f64, hi: f64, a: f64, b: f64| {
+      let tol = 1e-9 * (hi - lo).abs().max(1.0);
+      (a - lo).abs() > tol || (b - hi).abs() > tol
+    };
+    if widened(x_min, x_max, bx0, bx1) {
+      let sx = (bx1 - bx0) / w;
+      x_min = bx0 - (left - vb_x) * sx;
+      x_max = bx1 + (vb_x + vb_w - left - w) * sx;
+    }
+    if widened(y_min, y_max, by0, by1) {
+      let sy = (by1 - by0) / h;
+      y_max = by1 + (top - vb_y) * sy;
+      y_min = by0 - (vb_y + vb_h - top - h) * sy;
+    }
+  }
   let handler = crate::syntax::expr_to_source_form(&args[args.len() - 1]);
   let mut hex = String::new();
   for b in format!("{x_min} {y_min} {x_max} {y_max}\n{handler}").bytes() {
@@ -35429,6 +35460,30 @@ pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
   ));
   out.push_str(&svg[close..]);
   out
+}
+
+/// The drawing area recorded by the plot frame marker that closes `body`
+/// (an SVG without its final `</svg>`): `(left, top, width, height, range)`
+/// with `range` as in [`plot_frame_from_id`]. Only a marker written last —
+/// the one of the picture's outermost graphic — counts.
+fn outer_plot_frame(
+  body: &str,
+) -> Option<(f64, f64, f64, f64, (f64, f64, f64, f64))> {
+  let body = body.trim_end();
+  let start = body.rfind("<rect ")?;
+  let rect = &body[start..];
+  if !rect.ends_with("/>") || rect[..rect.len() - 2].contains('>') {
+    return None;
+  }
+  let attr = |name: &str| {
+    let key = format!(" {name}=\"");
+    let from = rect.find(&key)? + key.len();
+    let len = rect[from..].find('"')?;
+    Some(&rect[from..from + len])
+  };
+  let range = plot_frame_from_id(attr("id")?)?;
+  let num = |name: &str| attr(name)?.parse::<f64>().ok();
+  Some((num("x")?, num("y")?, num("width")?, num("height")?, range))
 }
 
 /// Prefix of the `id` on the invisible rectangle that marks the drawing area
