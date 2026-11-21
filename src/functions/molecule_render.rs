@@ -583,7 +583,10 @@ fn render_parts(
       let (ux, uy) = if len > 1e-6 {
         (dx / len, dy / len)
       } else {
-        (0.7071, -0.7071)
+        (
+          std::f64::consts::FRAC_1_SQRT_2,
+          -std::f64::consts::FRAC_1_SQRT_2,
+        )
       };
       let dist = if labeled[i] { FONT * 0.95 } else { FONT * 0.6 };
       body.push_str(&format!(
