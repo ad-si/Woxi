@@ -111,6 +111,8 @@ mod infix_visual_mode {
 
   /// `TraditionalForm` typesets the operands — subscripts included — with
   /// the operator text between them instead of echoing the `Infix` call.
+  /// Shown as display text (`Text[Style[TraditionalForm[…], size]]`), the
+  /// formula is drawn as a picture in the style's font size.
   #[test]
   fn traditional_form_typesets_operands_and_operator() {
     clear_state();
@@ -118,7 +120,11 @@ mod infix_visual_mode {
       r#"Text[Style[TraditionalForm[Infix[{Subscript[a, 1] Subscript[a, 2], Subscript[a, 3]}, "+"]], 21]]"#,
     )
     .unwrap();
-    let svg = result.output_svg.expect("typeset output");
+    let svg = result.graphics.expect("typeset picture");
+    assert!(
+      svg.contains("font-size=\"21.0\""),
+      "drawn in the style's size: {svg}"
+    );
     assert!(
       !svg.contains(">Infix<"),
       "the call must not be echoed: {svg}"
