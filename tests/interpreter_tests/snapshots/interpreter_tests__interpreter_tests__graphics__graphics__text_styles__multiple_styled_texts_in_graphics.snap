@@ -1,14 +1,15 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 3889
 expression: "export_svg(concat!(\"Graphics[{\",\n\"Text[Style[\\\"Platten\\\", 12, Bold], {11.5, 3.5}], \",\n\"Text[Style[\\\"Schirm\\\", 11, Italic], {17, -5.0}], \",\n\"Text[Style[\\\"Strahl\\\", 11, Italic, Blue], {10, 0.7}]\", \"}]\"))"
 ---
 <svg width="360" height="402" viewBox="0 0 360 402" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
 <defs>
-<clipPath id="plotClip_359x401"><rect x="0" y="0" width="359.00" height="400.80"/></clipPath>
+<clipPath id="plotClip_359x401"><rect x="0" y="0" width="359.00" height="400.76"/></clipPath>
 </defs>
 <g>
-<text x="88.20" y="6.39" fill="rgb(0,0,0)" font-size="12" font-weight="bold" font-style="normal" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif">Platten</text>
-<text x="339.27" y="394.40" fill="rgb(0,0,0)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif">Schirm</text>
-<text x="19.73" y="134.21" fill="rgb(0,0,255)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif">Strahl</text>
+<text x="88.21" y="6.39" fill="rgb(0,0,0)" font-size="12" font-weight="bold" font-style="normal" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif">Platten</text>
+<text x="339.25" y="394.37" fill="rgb(0,0,0)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif">Schirm</text>
+<text x="19.75" y="134.19" fill="rgb(0,0,255)" font-size="11" font-weight="normal" font-style="italic" text-anchor="middle" dominant-baseline="central" font-family="Atkinson Hyperlegible Next, sans-serif">Strahl</text>
 </g>
 </svg>

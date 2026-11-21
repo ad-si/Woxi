@@ -829,6 +829,57 @@ fn skeleton_graph(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
   ))
 }
 
+/// `"NetGraph"`: the vertex-edge graph of the solid's planar net (see
+/// `"NetCoordinates"` / `"NetFaceIndices"`), laid out at the net's 2D
+/// vertex positions. Every side of every net face is an edge; sides two
+/// faces share in the net (the fold lines) appear once.
+fn net_graph(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
+  let coords = net_data(info, NetPart::Coordinates)?;
+  let faces = net_data(info, NetPart::FaceIndices)?;
+  let (Expr::List(points), Expr::List(rows)) = (&coords, &faces) else {
+    return Err(InterpreterError::EvaluationError(format!(
+      "PolyhedronData: net data for {} is not a list",
+      info.name
+    )));
+  };
+  let mut edges: Vec<(i128, i128)> = Vec::new();
+  for row in rows {
+    let Expr::List(face) = row else {
+      continue;
+    };
+    let idx: Vec<i128> = face
+      .iter()
+      .filter_map(|v| match v {
+        Expr::Integer(i) => Some(*i),
+        _ => None,
+      })
+      .collect();
+    for k in 0..idx.len() {
+      let (a, b) = (idx[k], idx[(k + 1) % idx.len()]);
+      edges.push((a.min(b), a.max(b)));
+    }
+  }
+  edges.sort_unstable();
+  edges.dedup();
+  let vertices = (1..=points.len() as i128)
+    .map(Expr::Integer)
+    .collect::<Vec<_>>();
+  let edges = edges
+    .into_iter()
+    .map(|(a, b)| {
+      call("UndirectedEdge", vec![Expr::Integer(a), Expr::Integer(b)])
+    })
+    .collect::<Vec<_>>();
+  crate::evaluator::evaluate_expr_to_expr(&call(
+    "Graph",
+    vec![
+      Expr::List(vertices.into()),
+      Expr::List(edges.into()),
+      rule_expr(Expr::Identifier("VertexCoordinates".into()), coords.clone()),
+    ],
+  ))
+}
+
 /// `Sphere[{0, 0, 0}, r]` with the polyhedron's exact inradius: the sphere
 /// inscribed in the (origin-centered) solid.
 fn insphere(info: &PolyhedronInfo) -> Result<Expr, InterpreterError> {
@@ -1388,6 +1439,7 @@ static PROPERTIES: &[&str] = &[
   "NetCoordinates",
   "NetFaceIndices",
   "NetFaces",
+  "NetGraph",
   "NetImage",
   "Skeleton",
   "SkeletonGraph",
@@ -1443,23 +1495,10 @@ fn class_members(class: &str) -> Result<Option<Expr>, InterpreterError> {
   if names.is_empty() {
     return Ok(None);
   }
+  // Every class, the Platonic solids included, lists its members
+  // alphabetically: `{"Cube", "Dodecahedron", "Icosahedron", "Octahedron",
+  // "Tetrahedron"}`.
   sort_entity_names(&mut names);
-  // Wolfram lists the five Platonic solids by face count, every other class
-  // alphabetically.
-  if class == "Platonic" {
-    let rank = |n: &&str| {
-      [
-        "Tetrahedron",
-        "Cube",
-        "Octahedron",
-        "Dodecahedron",
-        "Icosahedron",
-      ]
-      .iter()
-      .position(|p| p == n)
-    };
-    names.sort_by_key(rank);
-  }
   Ok(Some(string_list(&names)))
 }
 
@@ -1602,6 +1641,7 @@ pub fn polyhedron_data_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         "Image" => polyhedron_graphics(info),
         "SkeletonImage" => skeleton_image(info),
         "NetImage" => net_image(info),
+        "NetGraph" => net_graph(info),
         _ => unevaluated(),
       }
     }
