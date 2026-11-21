@@ -56485,7 +56485,12 @@ fn display_expr_to_node(
           }
           (r, _) => r.clone(),
         };
-        match slider_node(&[args[0].clone(), range], Vec::new(), false) {
+        match slider_node(
+          &[args[0].clone(), range],
+          Vec::new(),
+          false,
+          bindings,
+        ) {
           Some(node) => node,
           None => static_leaf_node(expr, bindings),
         }
