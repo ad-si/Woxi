@@ -14194,6 +14194,29 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
     max_power_int(base, var_name)
   };
   let mut factored_roots: Option<Vec<Expr>> = None;
+  // A sparse integer polynomial of high degree keeps its canonical form:
+  // factoring the dense polynomial takes time cubic in the degree.
+  if matches!(
+    max_power_int(&expanded_poly, var_name),
+    Some(d) if d > super::sparse_roots::SPARSE_ROOT_MIN_DEGREE as i128
+  ) && super::sparse_roots::sparse_integer_terms(&expanded_poly, var_name)
+    .is_some_and(|t| super::sparse_roots::is_high_degree_sparse(&t))
+    && let Some(p) = primitive_root_polynomial(&expanded_poly, var_name)
+  {
+    let body = crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(&p, var_name, &Expr::Slot(1)),
+    )?;
+    return Ok(call(
+      "Root",
+      vec![
+        Expr::Function {
+          body: Box::new(body),
+        },
+        args[1].clone(),
+        Expr::Integer(0),
+      ],
+    ));
+  }
   if matches!(max_power_int(&expanded_poly, var_name), Some(d) if d >= 3) {
     let factors = crate::functions::polynomial_ast::factor_ast(
       std::slice::from_ref(&expanded_poly),
