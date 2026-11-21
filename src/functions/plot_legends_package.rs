@@ -526,7 +526,7 @@ pub fn plot_with_legend(
     name,
     args,
     legend_at,
-    plot_args,
+    &plot_args,
     legend_options,
   ))
 }
@@ -535,7 +535,7 @@ fn build_plot_legend(
   name: &str,
   args: &[Expr],
   legend_at: usize,
-  plot_args: Vec<Expr>,
+  plot_args: &[Expr],
   mut legend_options: Vec<Expr>,
 ) -> Result<Expr, InterpreterError> {
   let (_, labels) = rule_parts(&args[legend_at]).unwrap();
@@ -543,7 +543,7 @@ fn build_plot_legend(
     Expr::List(ref items) => items.to_vec(),
     single => vec![single],
   };
-  let plot = evaluate_expr_to_expr(&call(name, plot_args.clone()))?;
+  let plot = evaluate_expr_to_expr(&call(name, plot_args.to_vec()))?;
   if labels.is_empty() {
     return Ok(plot);
   }
