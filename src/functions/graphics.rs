@@ -17051,18 +17051,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             Expr::Identifier(s) if s == "Null" => {
               plot_label = Some(vec![String::new()]);
             }
-            other
-              if plot_label_graphic_svg(other)
-                .or_else(|| plot_label_layout_svg(other))
-                .or_else(|| plot_label_grid_svg(other))
-                .or_else(|| plot_label_structured_svg(other))
-                .is_some() =>
-            {
-              let (svg, w, h) = plot_label_graphic_svg(other)
-                .or_else(|| plot_label_layout_svg(other))
-                .or_else(|| plot_label_grid_svg(other))
-                .or_else(|| plot_label_structured_svg(other))
-                .expect("checked by the guard");
+            other if plot_label_picture_svg(other).is_some() => {
+              let (svg, w, h) =
+                plot_label_picture_svg(other).expect("checked by the guard");
               // Reserve as many title lines as the picture is tall.
               let mut lines = 1;
               while block_height(lines, TITLE_FONT) < h {
@@ -24629,6 +24620,19 @@ pub(crate) fn fit_title_font(lines: &[String], base: f64, width: f64) -> f64 {
   }
 }
 
+/// A `PlotLabel` that is drawn as a picture rather than a line of text — a
+/// graphic, a matrix layout, a multi-column `Grid` or stacked
+/// `TraditionalForm` boxes — with its natural width and height. Shared by
+/// the 2-D and 3-D renderers so both set the same labels the same way.
+pub(crate) fn plot_label_picture_svg(
+  expr: &Expr,
+) -> Option<(String, f64, f64)> {
+  plot_label_graphic_svg(expr)
+    .or_else(|| plot_label_layout_svg(expr))
+    .or_else(|| plot_label_grid_svg(expr))
+    .or_else(|| plot_label_structured_svg(expr))
+}
+
 /// A `PlotLabel` that is itself a picture (`PlotLabel -> Graphics[…]`, or
 /// an `Image`): drawn at its own natural size above the graphic instead of
 /// being printed as `Graphics[…]` source text.
@@ -24864,9 +24868,9 @@ fn plot_label_grid_svg(expr: &Expr) -> Option<(String, f64, f64)> {
 
 /// Whether a label sets a matrix inline: a `MatrixForm` of a list of rows,
 /// or a string carrying the `\!\(\*…\)` box text of a grid (what
-/// `ToString[m . x, TraditionalForm]` returns). Items of a `Column`, `Grid`
-/// or `TableForm` are set as lines of text instead, so they are not
-/// searched.
+/// `ToString[m . x, TraditionalForm]` returns), possibly among the lines
+/// of a `Column`. Items of a `Grid` or `TableForm` are set as lines of text
+/// instead, so they are not searched.
 fn label_sets_matrix(expr: &Expr) -> bool {
   match expr {
     Expr::String(s) => {
@@ -24875,7 +24879,12 @@ fn label_sets_matrix(expr: &Expr) -> bool {
     Expr::FunctionCall { name, args } => match name.as_str() {
       "MatrixForm" => matches!(args.first(), Some(Expr::List(rows))
         if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))),
-      "Column" | "Grid" | "TableForm" | "Labeled" => false,
+      // A `Column` stacking a matrix among its lines
+      // (`Column[{MatrixForm[m], ""}]`) is typeset whole, so the matrix
+      // keeps its rows instead of collapsing to one line of text.
+      "Column" => matches!(args.first(), Some(Expr::List(items))
+        if items.iter().any(label_sets_matrix)),
+      "Grid" | "TableForm" | "Labeled" => false,
       _ => args.iter().any(label_sets_matrix),
     },
     Expr::List(items) => items.iter().any(label_sets_matrix),

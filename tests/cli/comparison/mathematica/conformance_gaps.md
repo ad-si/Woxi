@@ -5933,7 +5933,10 @@ which for this box is the lower-right y edge and the right vertical z edge;
 it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
 label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
 …`), so Wolfram seems to thin the ticks of a short box side. One box shape
-doesn't pin down either rule, so both stay as they are.
+doesn't pin down either rule, so both stay as they are. (A Demonstration
+snapshot of a box 1.6 times as tall as it is deep does pin down one
+exception: the x axis, along the front face, stays on the bottom front edge
+although the top back one is nearer the viewer; Woxi follows that.)
 
 ### `Texture` and `VertexTextureCoordinates`
 

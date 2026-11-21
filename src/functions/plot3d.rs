@@ -4210,14 +4210,27 @@ fn automatic_axes_edges(
     c[d] = side_value(d, side);
     side * camera.toward_viewer(pt(c))[d] > 1e-9
   };
+  // Seen from above, the horizontal axis that runs along the front face
+  // (the x axis from the default `ViewPoint`) stays on that face's bottom
+  // edge even when the box is so tall that its top back edge comes nearer
+  // the eye, as Wolfram draws it. The other horizontal axis keeps the
+  // nearest edge (the upper-left one of a cube).
+  let toward = camera.toward_viewer(pt(center));
+  let from_above = toward[2] > 1e-9;
+  let front_axis = usize::from(toward[0].abs() > toward[1].abs());
   let mut out: AxesEdges = [None, None, None];
   for (k, slot) in out.iter_mut().enumerate() {
     let others: Vec<usize> = (0..3).filter(|&d| d != k).collect();
     let (i, j) = (others[0], others[1]);
+    let exposed = |a: f64, b: f64| face_visible(i, a) != face_visible(j, b);
+    // For an x or y axis, `j` is the z dimension.
+    let keep_bottom = k == front_axis
+      && from_above
+      && [-1.0, 1.0].iter().any(|&a| exposed(a, -1.0));
     let mut best: Option<([f64; 2], f64)> = None;
     for a in [-1.0, 1.0] {
       for b in [-1.0, 1.0] {
-        if face_visible(i, a) == face_visible(j, b) {
+        if !exposed(a, b) || (keep_bottom && b > 0.0) {
           continue;
         }
         let mut mid = center;
@@ -16193,6 +16206,12 @@ const PLOT_LABEL_STRIP: u32 = 26;
 fn plot_label_styled(
   opts: &[Expr],
 ) -> Option<crate::functions::chart::StyledLabel> {
+  crate::functions::chart::parse_styled_label(&plot_label_value(opts)?)
+}
+
+/// The evaluated `PlotLabel` value among `opts`; `None` when there is none
+/// or it is `None`/`Null`.
+fn plot_label_value(opts: &[Expr]) -> Option<Expr> {
   for opt in opts {
     let (pattern, replacement): (&Expr, &Expr) = match opt {
       Expr::Rule {
@@ -16214,9 +16233,7 @@ fn plot_label_styled(
     if matches!(&value, Expr::Identifier(s) if s == "None" || s == "Null") {
       return None;
     }
-    if let Some(label) = crate::functions::chart::parse_styled_label(&value) {
-      return Some(label);
-    }
+    return Some(value);
   }
   None
 }
@@ -16322,9 +16339,23 @@ fn with_plot_label(
   // A framed title (or a stacked one with framed lines) sets each line in
   // its own box; otherwise the lines share one `<text>`.
   let framed_layout = framed_label_svg(&styled, cx, font_size);
-  let strip = match &framed_layout {
-    Some((_, h)) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
-    None => PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32,
+  // A label drawn as a picture (a matrix, possibly stacked in a `Column`,
+  // or a graphic) is set the way a 2-D title sets it, shrunk to the
+  // picture's width if it is wider.
+  let picture = plot_label_value(opts)
+    .and_then(|v| crate::functions::graphics::plot_label_picture_svg(&v))
+    .map(|(svg, w, h)| {
+      let k = ((f64::from(width) - 8.0) / w).clamp(0.0, 1.0);
+      (svg, w * k, h * k)
+    });
+  let strip = match (&picture, &framed_layout) {
+    (Some((_, _, h)), _) => {
+      (h + 6.0).max(PLOT_LABEL_STRIP as f64).ceil() as u32
+    }
+    (None, Some((_, h))) => (*h).max(PLOT_LABEL_STRIP as f64).round() as u32,
+    (None, None) => {
+      PLOT_LABEL_STRIP + (extra_lines * line_height).round() as u32
+    }
   };
   // `ImageSize -> {w, h}` fixes the whole image, title included: the
   // picture shrinks (keeping its proportions, centered across the width)
@@ -16389,7 +16420,18 @@ fn with_plot_label(
   if styled.italic {
     style_attrs.push_str(" font-style=\"italic\"");
   }
-  let label = if let Some((lines, _)) = framed_layout {
+  let label = if let Some((picture, w, h)) = &picture {
+    format!(
+      "<g fill=\"{fill}\" color=\"{fill}\">{}</g>\n",
+      crate::functions::graphics::embed_svg_centered(
+        picture,
+        cx,
+        f64::from(strip) / 2.0,
+        *w,
+        *h
+      )
+    )
+  } else if let Some((lines, _)) = framed_layout {
     use std::fmt::Write as _;
     let mut out = String::new();
     for line in lines {
