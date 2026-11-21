@@ -35834,6 +35834,36 @@ mod graphics_grid {
     );
   }
 
+  /// A grid nested in a cell inherits the outer grid's style, so
+  /// `Style[Grid[{{Grid[…]}}], 12]` sets the inner grid's text at 12 points.
+  #[test]
+  fn nested_grid_inherits_outer_style() {
+    for code in [
+      "Style[Grid[{{Grid[{{\"a\", \"b\"}}]}}], 12]",
+      "Grid[{{Grid[{{\"a\", \"b\"}}]}}, BaseStyle -> {12}]",
+      "Style[Grid[{{Column[{\"a\", Grid[{{\"b\"}}]}]}}], 12]",
+      "Style[Grid[{{Row[{\"a\", Grid[{{\"b\"}}]}]}}], 12]",
+    ] {
+      clear_state();
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      assert_eq!(
+        svg.matches("font-size=\"12\"").count(),
+        2,
+        "{code}: both nested cells should be 12 points, got: {svg}"
+      );
+      assert!(!svg.contains("font-size=\"14\""), "{code}: {svg}");
+    }
+    // The inner grid's own `BaseStyle` is nearer its cells and wins.
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Style[Grid[{{Grid[{{\"a\"}}, BaseStyle -> {20}]}}], 12]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(svg.contains("font-size=\"20\""), "{svg}");
+  }
+
   /// `BaseStyle -> {size, FontFamily -> …}` styles every cell of the grid,
   /// and a cell's own `Style` still wins over it.
   #[test]

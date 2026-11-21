@@ -30856,12 +30856,24 @@ fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
 /// and family, just like the plain text cells beside it: the nested grid is
 /// wrapped in the same `Style` so it is drawn whole in that style (its own
 /// `BaseStyle` still takes precedence). Without this the nested grid's text
-/// fell back to the default 14pt black.
+/// fell back to the default 14pt black. A `Row` or `Column` cell drawn as
+/// a picture of its own (one holding a nested grid, say) inherits the style
+/// the same way; a text-only one is set by the grid's own text pass, which
+/// already applies the style.
 fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
-  if !matches!(cell, Expr::FunctionCall { name, args }
-    if (name == "Grid" || name == "TextGrid")
-      && matches!(args.first(), Some(Expr::List(_))))
-  {
+  let nested = match cell {
+    Expr::FunctionCall { name, args }
+      if matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      match name.as_str() {
+        "Grid" | "TextGrid" => true,
+        "Row" | "Column" => grid_cell_graphic(cell).is_some(),
+        _ => false,
+      }
+    }
+    _ => false,
+  };
+  if !nested {
     return cell.clone();
   }
   let mut directives = grid_style_directives(style);
