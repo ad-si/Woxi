@@ -21340,6 +21340,13 @@ fn inline_graphics_box_layout(
     &crate::syntax::expr_to_input_form(expr),
   );
   let graphic = crate::syntax::string_to_expr(&source).ok()?;
+  // Typesetting never evaluates: a picture held unevaluated (the body of a
+  // `Hold[…]` or a `Manipulate[…]`) whose content still has code to run —
+  // a plot, an assignment, a user function — is shown as its source
+  // instead of being run (with its messages and side effects) for display.
+  if runs_code_when_evaluated(&graphic) {
+    return None;
+  }
   // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
   let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
   let rendered = match &evaluated {
@@ -21368,6 +21375,57 @@ fn inline_graphics_box_layout(
     baseline: above,
     elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
   })
+}
+
+/// Whether evaluating `expr` would run code rather than just rebuild data:
+/// it calls a head that holds its arguments for later evaluation (`Plot`,
+/// `Table`, `Set`, `Module`, `CompoundExpression`, …), a symbol with user
+/// definitions, or an operator form (`f /@ list`, `expr /. rules`). Graphics
+/// primitives, directives, options and arithmetic on numbers do not.
+/// Wrappers that keep their argument unevaluated (`Dynamic`, `Function`,
+/// the right side of `:>`) are inert themselves.
+pub(crate) fn runs_code_when_evaluated(expr: &Expr) -> bool {
+  use crate::evaluator::{Attributes, get_builtin_attributes};
+  const HOLDS: u32 = Attributes::HoldAll
+    | Attributes::HoldFirst
+    | Attributes::HoldRest
+    | Attributes::HoldAllComplete;
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      if matches!(
+        name.as_str(),
+        "Dynamic"
+          | "Function"
+          | "Hold"
+          | "HoldForm"
+          | "HoldComplete"
+          | "Unevaluated"
+          | "Defer"
+      ) {
+        return false;
+      }
+      if name == "RuleDelayed" {
+        return args.first().is_some_and(runs_code_when_evaluated);
+      }
+      crate::FUNC_DEFS.with(|m| m.borrow().contains_key(name.as_str()))
+        || get_builtin_attributes(name).contains(HOLDS)
+        || args.iter().any(runs_code_when_evaluated)
+    }
+    Expr::RuleDelayed { pattern, .. } => runs_code_when_evaluated(pattern),
+    Expr::Function { .. } | Expr::NamedFunction { .. } => false,
+    Expr::CompoundExpr(_)
+    | Expr::ReplaceAll { .. }
+    | Expr::ReplaceRepeated { .. }
+    | Expr::Map { .. }
+    | Expr::Apply { .. }
+    | Expr::MapApply { .. }
+    | Expr::PrefixApply { .. }
+    | Expr::Postfix { .. }
+    | Expr::CurriedCall { .. } => true,
+    _ => crate::syntax::expr_children(expr)
+      .into_iter()
+      .any(runs_code_when_evaluated),
+  }
 }
 
 /// Render a `BoxLayout` into a complete SVG string.
