@@ -3220,6 +3220,23 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // In a list, a `True` constrains nothing and a `False` rules out
+  // everything: `Solve[{True}]` is `{{}}`, `Solve[{x == 1, True}, x]` solves
+  // `x == 1` (equations like `0 == 0` evaluate to `True` before Solve sees
+  // them).
+  if let Some(Expr::List(items)) = args.first() {
+    let is = |e: &Expr, v: &str| matches!(e, Expr::Identifier(s) if s == v);
+    if items.iter().any(|e| is(e, "False")) {
+      return Ok(Expr::List(vec![].into()));
+    }
+    if items.iter().any(|e| is(e, "True")) {
+      let kept: Vec<Expr> =
+        items.iter().filter(|e| !is(e, "True")).cloned().collect();
+      let mut new_args = args.to_vec();
+      new_args[0] = Expr::List(kept.into());
+      return solve_ast(&new_args);
+    }
+  }
   // An empty equation list asserts nothing: it is `True`, solved by the one
   // empty substitution (`Solve[{}, x]` is `{{}}`).
   if matches!(args.first(), Some(Expr::List(items)) if items.is_empty()) {
@@ -6832,23 +6849,6 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       if s == "False" {
         return Ok(Expr::List(vec![].into()));
-      }
-    }
-    // In a list, a `True` constrains nothing and a `False` rules out
-    // everything: `Solve[{True}]` is `{{}}`, `Solve[{x == 1, True}]` solves
-    // `x == 1`.
-    if let Expr::List(items) = &args[0] {
-      let is = |e: &Expr, v: &str| matches!(e, Expr::Identifier(s) if s == v);
-      if items.iter().any(|e| is(e, "False")) {
-        return Ok(Expr::List(vec![].into()));
-      }
-      if items.iter().any(|e| is(e, "True")) {
-        let kept: Vec<Expr> =
-          items.iter().filter(|e| !is(e, "True")).cloned().collect();
-        if kept.is_empty() {
-          return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
-        }
-        return solve_ast(&[Expr::List(kept.into())]);
       }
     }
     return match auto_detect_solve_vars(&args[0]) {
@@ -14194,6 +14194,29 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
     max_power_int(base, var_name)
   };
   let mut factored_roots: Option<Vec<Expr>> = None;
+  // A sparse integer polynomial of high degree keeps its canonical form:
+  // factoring the dense polynomial takes time cubic in the degree.
+  if matches!(
+    max_power_int(&expanded_poly, var_name),
+    Some(d) if d > super::sparse_roots::SPARSE_ROOT_MIN_DEGREE as i128
+  ) && super::sparse_roots::sparse_integer_terms(&expanded_poly, var_name)
+    .is_some_and(|t| super::sparse_roots::is_high_degree_sparse(&t))
+    && let Some(p) = primitive_root_polynomial(&expanded_poly, var_name)
+  {
+    let body = crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(&p, var_name, &Expr::Slot(1)),
+    )?;
+    return Ok(call(
+      "Root",
+      vec![
+        Expr::Function {
+          body: Box::new(body),
+        },
+        args[1].clone(),
+        Expr::Integer(0),
+      ],
+    ));
+  }
   if matches!(max_power_int(&expanded_poly, var_name), Some(d) if d >= 3) {
     let factors = crate::functions::polynomial_ast::factor_ast(
       std::slice::from_ref(&expanded_poly),
@@ -22735,7 +22758,66 @@ fn is_expr_zero(e: &Expr) -> bool {
 /// Whether an elimination entry is zero in value (see
 /// `helpers::is_exact_numeric_zero`).
 fn is_entry_zero(e: &Expr) -> bool {
-  is_expr_zero(e) || super::helpers::is_exact_numeric_zero(e)
+  is_expr_zero(e)
+    || super::helpers::is_exact_numeric_zero(e)
+    || is_symbolic_rational_zero(e)
+}
+
+/// Whether `e` has a sum as a denominator (`a/(1 - a)`): a rational
+/// function of the parameters rather than a polynomial in them.
+fn has_sum_denominator(e: &Expr) -> bool {
+  let is_sum = |e: &Expr| {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+  };
+  match e {
+    Expr::BinaryOp { op, left, right } => {
+      let den = match op {
+        BinaryOperator::Power if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) => {
+          is_sum(left)
+        }
+        BinaryOperator::Divide => is_sum(right),
+        _ => false,
+      };
+      den || has_sum_denominator(left) || has_sum_denominator(right)
+    }
+    Expr::FunctionCall { name, args } => {
+      (name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(n) if *n < 0)
+        && is_sum(&args[0]))
+        || args.iter().any(has_sum_denominator)
+    }
+    Expr::UnaryOp { operand, .. } => has_sum_denominator(operand),
+    _ => false,
+  }
+}
+
+/// Whether a symbolic entry is a sum of rational terms that cancels to zero
+/// (`a/(1 - a) + a/(a - 1)`). Such an entry, taken as a pivot, would make a
+/// singular system look regular and lose its parametric solutions.
+fn is_symbolic_rational_zero(e: &Expr) -> bool {
+  if matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::Identifier(_)
+      | Expr::String(_)
+  ) || crate::syntax::contains_inexact(e)
+    || crate::functions::predicate_ast::is_numeric_q(e)
+  {
+    return false;
+  }
+  let together = crate::helpers::call1("Together", e.clone());
+  crate::evaluator::evaluate_expr_to_expr(&together)
+    .is_ok_and(|t| is_expr_zero(&t))
 }
 
 /// Evaluate and simplify an expression (double pass for compound simplifications).
@@ -23228,6 +23310,28 @@ pub(super) fn solve_linear_symbolic(
   let nrows = matrix.len();
   let ncols = n + 1;
 
+  // Coefficients that are rational functions of the parameters are kept
+  // brought together during the elimination: the fraction-free updates
+  // otherwise spread each entry term by term over ever larger products of
+  // denominators, and the entries swell beyond what can be simplified.
+  let rational_mode = matrix.iter().flatten().any(has_sum_denominator);
+  let together_entry = |e: Expr| -> Expr {
+    let together = crate::helpers::call1("Together", e.clone());
+    crate::evaluator::evaluate_expr_to_expr(&together).unwrap_or(e)
+  };
+  let normalize = |e: Expr| -> Expr {
+    if rational_mode && has_sum_denominator(&e) {
+      together_entry(e)
+    } else {
+      e
+    }
+  };
+  if rational_mode {
+    for entry in matrix.iter_mut().flatten() {
+      *entry = normalize(std::mem::replace(entry, Expr::Integer(0)));
+    }
+  }
+
   // Gauss-Jordan elimination, trying the columns in `col_order` for pivots.
   // Each pivot row is normalized so its pivot is 1; returns the reduced
   // matrix and its `(row, col)` pivots.
@@ -23255,6 +23359,20 @@ pub(super) fn solve_linear_symbolic(
         matrix.swap(pivot_row, swap_row);
       }
       pivot_cols.push((pivot_row, col));
+      // Over the field of rational functions the pivot row is scaled to a
+      // unit pivot first, so every update below is `row - factor * pivot
+      // row` brought together: the fraction-free update multiplies each row
+      // by the pivot instead, and without dividing that back out the
+      // degrees of the entries double with every pivot.
+      if rational_mode && !matches!(matrix[pivot_row][col], Expr::Integer(1)) {
+        let pivot = matrix[pivot_row][col].clone();
+        for j in 0..ncols {
+          if !is_expr_zero(&matrix[pivot_row][j]) {
+            matrix[pivot_row][j] =
+              together_entry(div2(matrix[pivot_row][j].clone(), pivot.clone()));
+          }
+        }
+      }
       let pivot = matrix[pivot_row][col].clone();
 
       for row in 0..nrows {
@@ -23266,9 +23384,20 @@ pub(super) fn solve_linear_symbolic(
           matrix[row][col] = Expr::Integer(0);
         } else {
           for j in 0..ncols {
-            let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
-            let t2 = eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
-            matrix[row][j] = eval_entry(minus2(t1, t2));
+            matrix[row][j] = if rational_mode {
+              // Brought together directly: the term-by-term evaluation of
+              // the products is the expensive part here and is undone by
+              // `Together` anyway.
+              together_entry(minus2(
+                matrix[row][j].clone(),
+                multiply_exprs(&factor, &matrix[pivot_row][j]),
+              ))
+            } else {
+              let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
+              let t2 =
+                eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
+              eval_entry(minus2(t1, t2))
+            };
           }
         }
       }
@@ -23280,7 +23409,8 @@ pub(super) fn solve_linear_symbolic(
         for j in 0..ncols {
           let entry = matrix[row][j].clone();
           if !is_expr_zero(&entry) {
-            matrix[row][j] = eval_entry(solve_divide(&entry, &pivot));
+            matrix[row][j] =
+              normalize(eval_entry(solve_divide(&entry, &pivot)));
           }
         }
       }

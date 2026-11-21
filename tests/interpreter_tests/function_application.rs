@@ -2977,6 +2977,29 @@ mod apply_operator_composite_head {
   }
 }
 
+/// Apply on a rendered graphic replaces the head of its symbolic form, as
+/// Part reads it (it used to hand back the graphic itself).
+mod apply_rendered_graphics {
+  use super::*;
+
+  #[test]
+  fn apply_lists_the_parts_of_a_graphic() {
+    assert_eq!(
+      interpret(
+        "g = Graphics3D[{Red, Sphere[{1, 2, 3}]}, ImageSize -> 300]; \
+         {List @@ g, f @@ g}"
+      )
+      .unwrap(),
+      "{{{RGBColor[1, 0, 0], Sphere[{1, 2, 3}]}, ImageSize -> 300}, \
+f[{RGBColor[1, 0, 0], Sphere[{1, 2, 3}]}, ImageSize -> 300]}"
+    );
+    assert_eq!(
+      interpret("List @@ Graphics[Point[{0, 0}], Axes -> True]").unwrap(),
+      "{Point[{0, 0}], Axes -> True}"
+    );
+  }
+}
+
 mod apply_held_arguments {
   use super::*;
 
