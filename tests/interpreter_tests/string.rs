@@ -4320,6 +4320,36 @@ mod string_match_q_patterns {
   use super::*;
 
   #[test]
+  fn conditional_pattern() {
+    // `patt /; test` matches when the whole string fits `patt` and the test,
+    // with the named captures substituted in, evaluates to True.
+    assert_eq!(
+      interpret(r#"StringMatchQ["hello", x__ /; StringLength[x] > 3]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["hi", x__ /; StringLength[x] > 3]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ[{"ab", "abcd", "xyzd"}, x__ ~~ "d" /; StringLength[x] == 3]"#
+      )
+      .unwrap(),
+      "{False, True, True}"
+    );
+    // The captures keep their original case under IgnoreCase.
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ["Hello", x__ /; StringStartsQ[x, "H"], IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn wildcards_inside_alternatives() {
     // Regression for #1434: `*` and `@` are wildcards in every string literal
     // of a StringMatchQ pattern, not only in a bare top-level string.
@@ -4966,6 +4996,25 @@ mod string_form {
   }
 
   #[test]
+  fn to_string_formats_display_wrapper_arguments() {
+    // Regression: a `NumberForm` argument was spliced in as its source
+    // text (`NumberForm[4.123, {5, 2}]`) instead of its formatted digits.
+    assert_eq!(
+      interpret(
+        "ToString[StringForm[\"a = ``, b = ``\", \
+         NumberForm[4.123, {5, 2}], NumberForm[0.0456, {5, 2}]]]"
+      )
+      .unwrap(),
+      "a = 4.12, b = 0.05"
+    );
+    assert_eq!(
+      interpret("ToString[StringForm[\"`1`%\", NumberForm[-1.2345, {4, 1}]]]")
+        .unwrap(),
+      "-1.2%"
+    );
+  }
+
+  #[test]
   fn to_string_multiple_placeholders() {
     assert_eq!(
       interpret("ToString[StringForm[\"x=`` and y=``.\", 5, 10]]").unwrap(),
@@ -5046,6 +5095,36 @@ mod string_form {
   // with the directives, a string's box is its quoted source, and a quotient
   // sets as a `FractionBox`. The escape characters are invisible, so the
   // assertions compare the `InputForm` of the returned String.
+  /// Regression: `ToString[Subscript[…], StandardForm]` (or `FormatType ->
+  /// StandardForm`) took the two-line OutputForm text ("x\n 2") instead of
+  /// typesetting the script into a `SubscriptBox` escape.
+  #[test]
+  fn to_string_standard_form_typesets_scripts() {
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Subscript[x, 2], FormatType -> StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SubscriptBox[\"x\", \"2\"]\)""#
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Subscript[\"Z\", n], StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SubscriptBox[\"\\\"Z\\\"\", \"n\"]\)""#
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Superscript[x, 3], StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SuperscriptBox[\"x\", \"3\"]\)""#
+    );
+    // OutputForm keeps the two-line text.
+    assert_eq!(interpret("ToString[Subscript[x, 2]]").unwrap(), "x\n 2");
+  }
+
   #[test]
   fn to_string_traditional_form_typesets_functions() {
     assert_eq!(
@@ -7005,6 +7084,46 @@ mod to_string_machine_reals {
     assert_eq!(interpret("ToString[0.0001234567]").unwrap(), "0.000123457");
   }
 
+  // The six-digit display applies inside every kind of expression, not
+  // only plain calls and lists: comparisons, rules, associations and pure
+  // function bodies included.
+  #[test]
+  fn reals_round_inside_comparisons_rules_and_functions() {
+    assert_eq!(
+      interpret("ToString[{3} > 6.920776960731741]").unwrap(),
+      "{3} > 6.92078"
+    );
+    assert_eq!(
+      interpret("ToString[x == 2.718281828]").unwrap(),
+      "x == 2.71828"
+    );
+    assert_eq!(
+      interpret("ToString[x <= 2.718281828 <= y]").unwrap(),
+      "x <= 2.71828 <= y"
+    );
+    assert_eq!(
+      interpret("ToString[a -> 123.456789]").unwrap(),
+      "a -> 123.457"
+    );
+    assert_eq!(
+      interpret("ToString[a :> 123.456789]").unwrap(),
+      "a :> 123.457"
+    );
+    assert_eq!(
+      interpret("ToString[<|a -> 123.456789|>]").unwrap(),
+      "<|a -> 123.457|>"
+    );
+    assert_eq!(
+      interpret("ToString[# + 2.718281828 &]").unwrap(),
+      "#1 + 2.71828 & "
+    );
+    // InputForm still keeps every digit.
+    assert_eq!(
+      interpret("ToString[x > 2.718281828, InputForm]").unwrap(),
+      "x > 2.718281828"
+    );
+  }
+
   // InputForm keeps full precision.
   #[test]
   fn input_form_keeps_full_precision() {
@@ -7683,6 +7802,14 @@ mod make_boxes {
       "TagBox[FormBox[RowBox[{SubsuperscriptBox[P, n, m], (, x, )}], \
        TraditionalForm], TraditionalForm, Editable -> True]"
     );
+    // Two indices and two variables: Yₗᵐ(θ, ϕ).
+    assert_eq!(
+      interpret("ToBoxes[TraditionalForm[SphericalHarmonicY[l, m, t, p]]]")
+        .unwrap(),
+      "TagBox[FormBox[RowBox[{SubsuperscriptBox[Y, l, m], (, \
+       RowBox[{t, ,, p}], )}], TraditionalForm], TraditionalForm, \
+       Editable -> True]"
+    );
     assert_eq!(
       interpret("ToBoxes[TraditionalForm[Row[{2, x, t}]]]").unwrap(),
       "TagBox[FormBox[TemplateBox[{2, x, t}, RowDefault], TraditionalForm], TraditionalForm, \
@@ -7813,6 +7940,20 @@ mod make_boxes {
     assert_eq!(
       interpret("MakeBoxes[Subscript[x, 0]]").unwrap(),
       "SubscriptBox[x, 0]"
+    );
+  }
+
+  /// Regression: `Superscript` had no box rule and boxed as the literal
+  /// call `RowBox[{Superscript, [, …, ]}]`.
+  #[test]
+  fn make_boxes_superscript() {
+    assert_eq!(
+      interpret("MakeBoxes[Superscript[x, 3]]").unwrap(),
+      "SuperscriptBox[x, 3]"
+    );
+    assert_eq!(
+      interpret("MakeBoxes[Superscript[a, b + 1], StandardForm]").unwrap(),
+      "SuperscriptBox[a, RowBox[{b, +, 1}]]"
     );
   }
 
@@ -8449,6 +8590,22 @@ mod dictionary_lookup {
   }
 
   #[test]
+  fn conditional_pattern() {
+    assert_eq!(
+      interpret(
+        r#"AllTrue[DictionaryLookup[x__ /; 7 <= StringLength[x] <= 12], 7 <= StringLength[#] <= 12 &]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"Length[DictionaryLookup[x__ /; StringLength[x] == 3, 4]]"#)
+        .unwrap(),
+      "4"
+    );
+  }
+
+  #[test]
   fn whole_list_contains_pattern_result() {
     assert_eq!(
       interpret(r#"Length[DictionaryLookup["*"]] > 50000"#).unwrap(),
@@ -9051,6 +9208,21 @@ mod longest_ordered_sequence_tests {
 
 mod string_count_patterns {
   use woxi::interpret;
+
+  /// A literal pattern with few matches in a long text is found by jumping
+  /// from match to match, not by restarting the search at every character
+  /// (which took tens of seconds on a megabyte of SVG).
+  #[test]
+  fn sparse_matches_in_long_text_are_fast() {
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "s = StringJoin[Table[\"<line x=1/>\", 100000]]; \
+       StringCount[s <> \"<text>\" <> s <> \"<text>\", \"<text\"]",
+    )
+    .unwrap();
+    assert_eq!(result, "2");
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+  }
 
   // The empty pattern matches at every character boundary
   // (differential fuzzer, seed 8863040114037283151;
@@ -12147,6 +12319,54 @@ abb""#,
     assert_case("ToString[NumberForm[3.14159, 3]]", "3.14");
     assert_case("ToString[NumberForm[3.14159, 5]]", "3.1416");
   }
+  // A padded {n, f} field reserves as many sign columns as the widest of
+  // the NumberSigns prefixes needs (none for empty signs), and
+  // AccountingForm's fraction is one slot wider only for a sign suffix such
+  // as its default closing bracket.
+  #[test]
+  fn padded_number_form_sign_columns_follow_number_signs() {
+    let accounting = |value: &str, spec: &str, signs: &str| {
+      format!(
+        "ToString[AccountingForm[{value}, {spec}, NumberSigns -> {signs}, \
+         NumberPadding -> {{\"0\", \"0\"}}, SignPadding -> True]]"
+      )
+    };
+    let empty = r#"{"", ""}"#;
+    let plus = r#"{"-", "+"}"#;
+    assert_case(&accounting("0.111", "{3, 2}", empty), "0.11");
+    assert_case(&accounting("1.", "{3, 1}", empty), "01.0");
+    assert_case(&accounting("10.", "{3, 1}", empty), "10.0");
+    assert_case(&accounting("0.0159", "{4, 3}", empty), "0.016");
+    assert_case(&accounting("1.1077", "{7, 3}", empty), "0001.108");
+    assert_case(&accounting("1", "{3, 2}", empty), "001");
+    assert_case(&accounting("1.", "{2, 1}", plus), "+1.0");
+    assert_case(&accounting("-4.5", "{4, 1}", plus), "-004.5");
+    // A `{prefix, suffix}` sign pair brackets the value; the suffix keeps
+    // its column, as AccountingForm's default parentheses do.
+    let brackets = r#"{{"(", ")"}, ""}"#;
+    assert_case(&accounting("-12.3", "{6, 3}", brackets), "(012.3)00");
+    assert_case(
+      "ToString[AccountingForm[-12.3, {6, 3}, NumberPadding -> {\"0\", \"0\"}, \
+       SignPadding -> True]]",
+      "(012.3)00",
+    );
+    assert_case(&accounting("12.3", "{6, 3}", brackets), "0012.3000");
+    // NumberForm and PaddedForm size the sign column the same way.
+    assert_case(
+      "ToString[NumberForm[2.5, {3, 1}, NumberSigns -> {\"\", \"\"}, \
+       NumberPadding -> {\"0\", \"0\"}]]",
+      "02.5",
+    );
+    assert_case(
+      "ToString[PaddedForm[2.5, {3, 1}, NumberSigns -> {\"\", \"\"}]]",
+      " 2.5",
+    );
+    assert_case(
+      "ToString[PaddedForm[-2.5, {3, 1}, NumberSigns -> {\"neg\", \"\"}]]",
+      " neg2.5",
+    );
+  }
+
   // NumberSigns -> {neg, pos} overrides the sign prefixes: a non-negative
   // number (including zero) gets `pos`, a negative one gets `neg`.
   #[test]
@@ -16272,4 +16492,27 @@ mod to_string_infix_operators_2d {
       "z = f[-3.3 g[x]]"
     );
   }
+}
+
+/// A `Row` part laid out over several lines (a fraction) is set beside the
+/// other parts on its baseline. Its lines used to be glued onto the first
+/// part, so `Row[{x, 14/3}]` read `x14` over a bar over `3`.
+#[test]
+fn to_string_row_sets_multiline_parts_on_the_baseline() {
+  clear_state();
+  assert_eq!(
+    interpret("ToString[Row[{x, 14/3}]]").unwrap(),
+    " 14\nx--\n 3"
+  );
+  // A fraction a display wrapper leaves exact, behind a separator.
+  assert_eq!(
+    interpret(r#"ToString[Row[{"m", NumberForm[14/3, {3, 2}]}, " = "]]"#)
+      .unwrap(),
+    "    14\nm = --\n    3"
+  );
+  // A superscript keeps its exponent above the baseline.
+  assert_eq!(
+    interpret(r#"ToString[Row[{a, x^2, 1/2}, " "]]"#).unwrap(),
+    "   2 1\na x  -\n     2"
+  );
 }
