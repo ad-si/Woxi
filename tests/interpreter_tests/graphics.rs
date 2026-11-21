@@ -6922,6 +6922,24 @@ mod plot_option_evaluate_once {
 }
 
 mod plot3d {
+  /// `Boxed -> False` hides only the bounding box's edges: the axes, their
+  /// tick labels and their `AxesLabel` stay, and go away with `Axes ->
+  /// False` instead.
+  #[test]
+  fn plot3d_unboxed_keeps_axes() {
+    clear_state();
+    let result = interpret(
+      "svg[o___] := ExportString[Plot3D[x y, {x, 0, 1}, {y, 0, 1}, \
+       PlotPoints -> 5, MaxRecursion -> 0, o], \"SVG\"]; \
+       {boxed, unboxed, none} = {svg[], svg[Boxed -> False], \
+       svg[Axes -> False]}; {StringCount[unboxed, \"<text\"] == \
+       StringCount[boxed, \"<text\"] > 0, StringCount[none, \"<text\"], \
+       StringCount[unboxed, \"<line\"] < StringCount[boxed, \"<line\"]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, 0, True}");
+  }
+
   // Regression: `Plot3D` rendered itself with a fixed default camera and
   // a fixed `{1, 1, 0.4}` box, ignoring `ViewPoint` and `BoxRatios` (only
   // re-rendering it through `Show` honored them). A surface asked for in a
@@ -38630,7 +38648,7 @@ mod plot3d_boxed {
 
   #[test]
   fn boxed_false_produces_svg() {
-    // Boxed -> False hides the axis lines on the 3D plot
+    // Boxed -> False hides the box edges but keeps the axes
     insta::assert_snapshot!(export_svg(
       "Plot3D[x + y, {x, -1, 1}, {y, -1, 1}, Boxed -> False]"
     ));

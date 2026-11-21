@@ -2206,7 +2206,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
-  let mut show_axes = true;
+  let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
@@ -2336,8 +2336,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
-            Expr::Identifier(s) if s == "False" => show_axes = false,
-            Expr::Identifier(s) if s == "True" => show_axes = true,
+            Expr::Identifier(s) if s == "False" => show_box = false,
+            Expr::Identifier(s) if s == "True" => show_box = true,
             _ => {}
           }
         }
@@ -3277,7 +3277,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     mesh_mode,
-    show_axes,
+    show_box,
     box_half,
     &axes_labels,
     !image_height_is_explicit(args),
@@ -3400,7 +3400,7 @@ fn generate_svg(
   svg_height: u32,
   full_width: bool,
   mesh_mode: MeshMode,
-  show_axes: bool,
+  show_box: bool,
   box_ratios: [f64; 3],
   axes_labels: &[Option<String>; 3],
   auto_height: bool,
@@ -3408,6 +3408,13 @@ fn generate_svg(
 ) -> Result<String, InterpreterError> {
   let mut svg_width = svg_width;
   let mut svg_height = svg_height;
+  // `Boxed -> False` hides only the box's edges; the axes go with
+  // `Axes -> False`.
+  let show_axes = !options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False"))
+  });
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
@@ -3631,7 +3638,7 @@ fn generate_svg(
   // Each of the 12 edges is subdivided into small segments so that per-segment
   // depth sorting produces correct occlusion against the surface.
   const EDGE_SUBDIVISIONS: usize = 20;
-  let box_edges = if show_axes {
+  let box_edges = if show_box {
     let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
     let axis_color =
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
