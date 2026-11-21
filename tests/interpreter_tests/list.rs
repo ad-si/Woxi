@@ -16175,6 +16175,38 @@ mod list_correlate {
     );
   }
 
+  // Machine-number overhang correlations and convolutions are summed
+  // directly: a sample autocovariance `ListCorrelate[y, y, {1, 1}, 0]` of
+  // a few thousand reals used to build millions of symbolic products.
+  #[test]
+  fn machine_number_overhang_fast_path() {
+    assert_eq!(
+      interpret("ListCorrelate[{1., 2., 3.}, {1., 2., 3.}, {1, 1}, 0]")
+        .unwrap(),
+      "{14., 8., 3.}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{1., 2.}, {3., 4., 5.}, {1, 1}]").unwrap(),
+      "{11., 14., 11.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2.}, {3., 4., 5.}, {1, 1}]").unwrap(),
+      "{13., 10., 13.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2.}, {3., 4., 5.}, {1, 1}, 0]").unwrap(),
+      "{3., 10., 13.}"
+    );
+    assert_eq!(
+      interpret(
+        "y = N[Range[3000]]; r = ListCorrelate[y, y, {1, 1}, 0]; \
+         {Length[r], First[r], Last[r]}"
+      )
+      .unwrap(),
+      "{3000, 9.0045005*^9, 3000.}"
+    );
+  }
+
   // A padding *list* extends the data cyclically: the element at index i
   // outside the data is padding[[(i - 1) mod L + 1]], so which element the
   // first overhanging position takes depends on how many there are.
@@ -19559,6 +19591,39 @@ mod cases {
   fn nest_while_list_m_window() {
     assert_case(r#"NestWhileList[f, x, test, 2]"#, r#"{x, f[x]}"#);
     assert_case(r#"NestWhileList[f, x, test, 3]"#, r#"{x, f[x], f[f[x]]}"#);
+  }
+  // The iteration limit of NestWhile, NestWhileList, FixedPoint and
+  // FixedPointList defaults to Infinity: long runs must not stop early at
+  // an internal cap (regression: they stopped after 10000 steps).
+  #[test]
+  fn nest_while_has_no_default_iteration_cap() {
+    assert_case(r#"NestWhile[# + 1 &, 0, # < 25000 &]"#, r#"25000"#);
+    assert_case(
+      r#"NestWhile[# + 1 &, 0, # < 25000 &, 1, Infinity]"#,
+      r#"25000"#,
+    );
+    assert_case(
+      r#"Length[NestWhileList[# + 1 &, 0, # < 25000 &]]"#,
+      r#"25001"#,
+    );
+    assert_case(
+      r#"Module[{k = 0}, Length[NestWhileList[# &, 0, (k++ < 30000) &]]]"#,
+      r#"30001"#,
+    );
+    assert_case(r#"NestWhile[# + 1 &, 0, # < 25000 &, 1, 7]"#, r#"7"#);
+  }
+  #[test]
+  fn fixed_point_has_no_default_iteration_cap() {
+    assert_case(r#"FixedPoint[Min[# + 1, 25000] &, 0]"#, r#"25000"#);
+    assert_case(
+      r#"Length[FixedPointList[Min[# + 1, 25000] &, 0]]"#,
+      r#"25002"#,
+    );
+    assert_case(
+      r#"Length[FixedPointList[Min[# + 1, 25000] &, 0, Infinity]]"#,
+      r#"25002"#,
+    );
+    assert_case(r#"FixedPointList[Min[# + 1, 3] &, 0, 2]"#, r#"{0, 1, 2}"#);
   }
   #[test]
   fn scan() {
