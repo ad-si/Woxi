@@ -39840,11 +39840,15 @@ fn column_layout_svg(
         {
           Some(svg) => {
             let (w, h) = parse_svg_wh(&svg);
+            // A framed box is drawn border to border, with no blank text
+            // margin around it.
+            let framed = matches!(&resolved, Expr::FunctionCall { name, .. }
+              if name == "Framed" || name == "Panel");
             Cell::Svg {
               svg,
               width: w,
               height: h,
-              picture: false,
+              picture: framed,
             }
           }
           None => {
