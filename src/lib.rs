@@ -19,6 +19,10 @@ pub mod vfs;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+/// Give every `<text>` of an SVG without a font family the sans-serif face
+/// Wolfram sets graphics text in, so a renderer's own default (often a serif
+/// face) never shows through.
+pub use evaluator::dispatch::io_functions::with_default_text_family;
 pub use expr_list::ExprList;
 
 pub use woxi_parser::{Rule, WolframParser};
@@ -391,6 +395,14 @@ thread_local! {
 // The visual hosts turn this into a graphical audio player.
 thread_local! {
     static CAPTURED_SOUND: RefCell<Option<AudioOutput>> = const { RefCell::new(None) };
+}
+
+// Samples (with their rate) of every `EmitSound` since the capture buffer was
+// last cleared. Successive `EmitSound` calls queue up one after another, so a
+// button that emits several sounds (e.g. the notes of a scale) plays them all
+// in order instead of only the last.
+thread_local! {
+    static EMITTED_SAMPLES: RefCell<Option<(Vec<f64>, u32)>> = const { RefCell::new(None) };
 }
 
 // Most-recent evaluated expression for `%` / `Out[]` shortcuts. Set by
@@ -1025,6 +1037,19 @@ pub fn pop_quiet() {
   if let Some(counts) = QUIET_STOP_COUNTS.with(|s| s.borrow_mut().pop()) {
     MESSAGE_STOP_COUNTS.with(|c| *c.borrow_mut() = counts);
   }
+}
+
+/// Run `probe` with every message it emits discarded, as if wrapped in
+/// `Quiet[…]`. For internal, speculative evaluations whose complaints are
+/// bookkeeping no front end should show (a solver probing a candidate, a
+/// held graphic drawn as an inline preview).
+pub(crate) fn quietly<T>(probe: impl FnOnce() -> T) -> T {
+  let snapshot = snapshot_warnings();
+  push_quiet();
+  let result = probe();
+  pop_quiet();
+  restore_warnings(snapshot);
+  result
 }
 
 /// A saved copy of every message buffer, taken before a speculative or quieted
@@ -1794,6 +1819,29 @@ pub fn clear_captured_sound() {
   CAPTURED_SOUND.with(|buffer| {
     *buffer.borrow_mut() = None;
   });
+  EMITTED_SAMPLES.with(|buffer| {
+    *buffer.borrow_mut() = None;
+  });
+}
+
+/// Queue the samples of an `EmitSound` after the ones emitted earlier in the
+/// same evaluation and capture the combined audio.
+pub(crate) fn capture_emitted_sound(samples: Vec<f64>, rate: u32) {
+  use base64::Engine;
+  let wav = EMITTED_SAMPLES.with(|buffer| {
+    let mut buffer = buffer.borrow_mut();
+    if let Some((queued, queued_rate)) = buffer.as_mut() {
+      let resampled =
+        functions::sound::resample_linear(&samples, rate, *queued_rate);
+      queued.extend_from_slice(&resampled);
+      functions::sound::samples_to_mono_wav(queued, *queued_rate)
+    } else {
+      let wav = functions::sound::samples_to_mono_wav(&samples, rate);
+      *buffer = Some((samples, rate));
+      wav
+    }
+  });
+  capture_sound(&base64::engine::general_purpose::STANDARD.encode(&wav));
 }
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
@@ -3989,7 +4037,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Err(_) => expr,
       }
     }
-    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — unwrap and render
+    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — render
+    // the grid with each of its cells typeset in TraditionalForm (`f(x)`,
+    // `f′(x)`), as the front end shows it.
     syntax::Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
@@ -4036,8 +4086,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
     // separate `Labeled`-composition pipeline in `expr_to_svg` already
     // handles for an actual graphic). Each label is itself rendered
     // through the one-cell `Grid` pipeline so its font matches the table
-    // it labels; `RotateLabel` is not honored — a `Left`/`Right` caption
-    // renders upright rather than rotated.
+    // it labels; `RotateLabel -> True` turns a `Left`/`Right` caption.
     // `Style[TraditionalForm[Labeled[…]], 20]`: the style and the form
     // apply to the text of the captioned picture.
     syntax::Expr::FunctionCall { name, .. }
@@ -4116,25 +4165,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           _ => bottom.push(label_svg.clone()),
         }
       }
-      // Stack same-side labels into one cell (rows of a mini grid), an
-      // empty side becoming an empty cell so the 3x3 layout below stays
-      // rectangular.
-      let side_cell = |svgs: &[String]| -> String {
-        match svgs.len() {
-          0 => String::new(),
-          1 => svgs[0].clone(),
-          _ => functions::graphics::combine_graphics_svgs(
-            &svgs.iter().map(|s| vec![s.clone()]).collect::<Vec<_>>(),
-          )
-          .unwrap_or_default(),
-        }
-      };
-      let rows = vec![
-        vec![String::new(), side_cell(&top), String::new()],
-        vec![side_cell(&left), content_svg, side_cell(&right)],
-        vec![String::new(), side_cell(&bottom), String::new()],
-      ];
-      match functions::graphics::combine_graphics_svgs(&rows) {
+      // `RotateLabel -> True` turns the left and right captions.
+      let rotate = args[2..].iter().any(|opt| {
+        matches!(opt, syntax::Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "RotateLabel")
+            && matches!(replacement.as_ref(), syntax::Expr::Identifier(v) if v == "True"))
+      });
+      match functions::graphics::labeled_sides_svg(
+        &content_svg,
+        &[top, left, right, bottom],
+        rotate,
+      ) {
         Some(svg) => graphics_result(svg),
         None => expr,
       }
@@ -5155,9 +5196,30 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       return graphics_result(svg);
     }
   }
-  let expr = unwrap_display_pass_through(expr);
-  let expr = render_interactive_pane_if_needed(expr);
-  let expr = render_dynamic_if_needed(expr);
+  // A `Dynamic` item shows its current value. A `Text[…]` value
+  // (`Dynamic[If[ok, Text[a], Text[b]]]`) is pre-rendered like a `Text`
+  // item, keeping its wrapper so the layout sets it in the proportional
+  // text face; the display pipeline would peel it to bare monospace text.
+  let released = match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if is_visual_mode() && name == "Dynamic" && !args.is_empty() =>
+    {
+      let value = functions::graphics::dynamic_current_value(expr);
+      if functions::graphics::is_text_display_item(&value) {
+        return render_inline_display_wrapper(&value);
+      }
+      Some(value)
+    }
+    _ => None,
+  };
+  // Any other value is displayed as `render_dynamic_if_needed` would.
+  let expr = if let Some(value) = released {
+    render_visual_display_pipeline(&value)
+  } else {
+    let expr = unwrap_display_pass_through(expr);
+    let expr = render_interactive_pane_if_needed(expr);
+    render_dynamic_if_needed(expr)
+  };
   let expr = render_event_handler_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);
@@ -5279,6 +5341,14 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // underneath (a Demonstration's fixed-size Pane rendered in Woxi
   // Studio).
   let pane_box = pane_fixed_size(expr);
+  // A `Pane[content, w]` that sets a width alone wraps its text at `w`
+  // (its height follows the lines the text takes).
+  let pane_width = pane_box.map(|(w, ..)| w).or_else(|| match expr {
+    syntax::Expr::FunctionCall { name, args } if name == "Pane" => {
+      evaluator::dispatch::io_functions::pane_width_only(args)
+    }
+    _ => None,
+  });
 
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
@@ -5298,15 +5368,18 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = unwrap_tooltips(expr);
   // Prose built from a `Row` of strings re-flows to the box width rather
   // than running off its right edge.
-  let expr = pane_box
-    .and_then(|(w, _, align, _)| {
-      evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0).map(
-        |lines| {
+  let expr = pane_width
+    .and_then(|w| {
+      let lines =
+        evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0)?;
+      Some(match pane_box {
+        Some((_, _, align, _)) => {
           evaluator::dispatch::io_functions::align_pane_lines(
             &expr, lines, align,
           )
-        },
-      )
+        }
+        None => lines,
+      })
     })
     .unwrap_or(expr);
   // A list in a grid or column wider than the box breaks into lines that
