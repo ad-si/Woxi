@@ -37967,13 +37967,24 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
+  column_to_svg_with_text_items(args, None)
+}
+
+/// [`column_to_svg`] for a column whose items were already drawn as
+/// pictures: `text_items[i]` tells whether item `i` was text (a string, or
+/// a `Row` of them) before it was drawn, so an explicit spacing is still
+/// measured between its lines rather than its padded box.
+pub fn column_to_svg_with_text_items(
+  args: &[Expr],
+  text_items: Option<&[bool]>,
+) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Column", args) {
-    return column_to_svg(&styled);
+    return column_to_svg_with_text_items(&styled, text_items);
   }
   if let Some(grid_args) = column_as_grid_args(args) {
     return grid_svg_with_gaps(&grid_args, &[]).ok();
   }
-  let svg = column_layout_svg(args)?;
+  let svg = column_layout_svg(args, text_items)?;
   Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
 }
 
@@ -38184,7 +38195,10 @@ fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
   svg.starts_with("<svg").then_some(svg)
 }
 
-fn column_layout_svg(args: &[Expr]) -> Option<String> {
+fn column_layout_svg(
+  args: &[Expr],
+  text_items: Option<&[bool]>,
+) -> Option<String> {
   if args.is_empty() {
     return None;
   }
@@ -38238,17 +38252,12 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       .filter(|(k, _)| *k == "Spacings")
       .and_then(|(_, v)| expr_to_f64(v))
   });
-  let spacing_ems: f64 = if let Some(s) = spacing_option {
-    s
-  } else if args.len() >= 3 {
-    match &args[2] {
-      Expr::Integer(n) => *n as f64,
-      Expr::Real(f) => *f,
-      _ => 0.0,
-    }
-  } else {
-    0.0
-  };
+  let explicit_spacing: Option<f64> =
+    spacing_option.or_else(|| match args.get(2) {
+      Some(Expr::Integer(n)) => Some(*n as f64),
+      Some(Expr::Real(f)) => Some(*f),
+      _ => None,
+    });
 
   // `ItemSize -> w` or `{w, h}`: every item is `w` ems wide and at least
   // `h` lines tall, as in a one-column `Grid`.
@@ -38269,7 +38278,6 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
-  let gap = spacing_ems * font_size;
 
   let frame_all = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
     k == "Frame" && matches!(v, Expr::Identifier(s) if s == "All")
@@ -38284,6 +38292,10 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       svg: String,
       width: f64,
       height: f64,
+      /// A picture (graphic, image or sized pane) fills its box; a laid-out
+      /// nested row or grid of text carries the same blank margin around
+      /// its lines as a text item.
+      picture: bool,
     },
     /// The item, and whether it is a plain `Text[…]` display (set in the
     /// proportional text face rather than the column's monospace default).
@@ -38301,6 +38313,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
           svg,
           width: w,
           height: h,
+          picture: true,
         };
       }
       let resolved = resolve_display_item(item);
@@ -38311,6 +38324,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             svg: svg.clone(),
             width: w,
             height: h,
+            picture: true,
           }
         }
         // A raster image is a picture, drawn at its own size like any other
@@ -38323,6 +38337,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             svg,
             width: w,
             height: h,
+            picture: true,
           }
         }
         _ => match nested_layout_svg(&resolved)
@@ -38335,6 +38350,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
               svg,
               width: w,
               height: h,
+              picture: false,
             }
           }
           None => Cell::Text(resolved, is_text_display_item(item)),
@@ -38447,9 +38463,30 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     })
     .collect();
 
+  // The gap below each item but the last. Without an explicit spacing the
+  // items sit right against each other, each text line in its padded box.
+  // An explicit spacing of `s` (`Column[list, alignment, s]` or
+  // `Spacings -> s`) is `s` ems between the items' contents, as in
+  // Wolfram, which sets a line of text 0.93 em tall: the blank margin a
+  // text box carries beyond that is taken out of the gap, so
+  // `Column[{"a", "b"}, Left, 3]` has its lines 3.93 em apart.
+  let text_margin = pad_y + (1.0 - 0.93) * font_size;
+  let margin = |i: usize| {
+    let text = text_items
+      .and_then(|t| t.get(i).copied())
+      .unwrap_or(!matches!(cells[i], Cell::Svg { picture: true, .. }));
+    if text { text_margin } else { 0.0 }
+  };
   let n = cells.len();
+  let gaps: Vec<f64> = (1..n)
+    .map(|i| {
+      explicit_spacing.map_or(0.0, |s| {
+        s * font_size - f64::midpoint(margin(i - 1), margin(i))
+      })
+    })
+    .collect();
   let total_height: f64 =
-    row_heights.iter().sum::<f64>() + gap * (n.saturating_sub(1) as f64);
+    row_heights.iter().sum::<f64>() + gaps.iter().sum::<f64>();
   let frame_padding = if frame_all { pad_x / 2.0 } else { 0.0 };
   let total_width = col_width + 2.0 * frame_padding;
 
@@ -38547,6 +38584,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         svg: child,
         width: cw,
         height: ch,
+        ..
       } => {
         let x_off: f64 = frame_padding
           + match alignment {
@@ -38566,6 +38604,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         svg.push_str("</svg>\n");
       }
     }
+    let gap = gaps.get(i).copied().unwrap_or(0.0);
     y_cursor += h + gap;
     // `Frame -> All` rules a line between every two items, midway through
     // the gap that separates them.

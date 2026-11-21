@@ -57303,7 +57303,8 @@ mod traditional_form_typesetting {
     let tight = svg_height(&export_svg("Column[{x, y}]"));
     let spaced = svg_height(&export_svg("Column[{x, y}, Spacings -> 1]"));
     let positional = svg_height(&export_svg("Column[{x, y}, Left, 1]"));
-    assert!(spaced > tight + 10.0, "{spaced} vs {tight}");
+    // One em between the lines is more than the default gap.
+    assert!(spaced > tight + 4.0, "{spaced} vs {tight}");
     assert_eq!(spaced, positional);
   }
 

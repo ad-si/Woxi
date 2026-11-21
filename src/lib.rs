@@ -5560,12 +5560,30 @@ pub(crate) fn column_svg_with_rendered_items(
   let mut new_args: Vec<syntax::Expr> =
     functions::graphics::wrap_fixed_width_column_text(args)
       .unwrap_or_else(|| args.to_vec());
+  // Which items are text rather than pictures, told before drawing them
+  // turns every one into a picture.
+  let mut text_items: Option<Vec<bool>> = None;
   if let syntax::Expr::List(items) = &new_args[0] {
+    text_items = Some(
+      items
+        .iter()
+        .map(|item| {
+          !matches!(
+            item,
+            syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
+          ) && !evaluator::lays_out_a_graphic(item)
+            && pane_fixed_size(item).is_none()
+        })
+        .collect(),
+    );
     let new_items: Vec<syntax::Expr> =
       items.iter().map(render_inline_display_wrapper).collect();
     new_args[0] = syntax::Expr::List(new_items.into());
   }
-  functions::graphics::column_to_svg(&new_args)
+  functions::graphics::column_to_svg_with_text_items(
+    &new_args,
+    text_items.as_deref(),
+  )
 }
 
 /// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the
