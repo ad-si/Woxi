@@ -14,6 +14,13 @@ $ wo 'ChineseRemainder[{1, 2}, {3, 5}, 10]'
 22
 ```
 
+Moduli of any size are supported.
+
+```scrut
+$ wo 'ChineseRemainder[{7, 10^25 + 8}, {2 (10^25 + 1), 3 (10^25 + 1)}]'
+40000000000000000000000011
+```
+
 Without congruences there is nothing to solve, so the call is left unevaluated.
 
 ```scrut
