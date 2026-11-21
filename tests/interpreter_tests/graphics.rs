@@ -67775,6 +67775,40 @@ fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
   }
 }
 
+/// Regression: a `Manipulate` frame's unboxed `Graphics3D` with neither a
+/// `ViewPoint` nor a `PlotRange` fills its fixed-size picture by the box
+/// outline, as Wolfram's snapshot of a Demonstration's stepped stack of
+/// cuboids shows (262 px wide at `ImageSize -> {400, 300}`; Woxi's outline
+/// fit gives 250 px, its sphere framing 184 px). A set camera or range
+/// still switches the frame to the sphere framing.
+#[test]
+fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
+  let scene = |opts: &str| {
+    format!(
+      "Graphics3D[Table[Translate[Cuboid[{{-1/2, -1/2, 0}}, \
+       {{1/2, 1/2, 1/2}}], {{x, y, 0}}], {{x, -2, 2}}, {{y, -1, 1}}], \
+       Boxed -> False, ImageSize -> {{400, 300}}{opts}]"
+    )
+  };
+  let outline = export_svg(&scene(", SphericalRegion -> False"));
+  let sphere = export_svg(&scene(", SphericalRegion -> True"));
+  assert_ne!(outline, sphere);
+  assert_eq!(
+    woxi::with_manipulate_frame(|| export_svg(&scene(""))),
+    outline
+  );
+  assert_eq!(export_svg(&scene("")), outline);
+  for pin in [
+    ", ViewPoint -> {1.3, -2.4, 2}",
+    ", PlotRange -> {{-3, 3}, {-2, 2}, {0, 1}}",
+  ] {
+    let framed = woxi::with_manipulate_frame(|| export_svg(&scene(pin)));
+    let spherical =
+      export_svg(&scene(&format!("{pin}, SphericalRegion -> True")));
+    assert_eq!(framed, spherical, "{pin}");
+  }
+}
+
 mod plot_label_number_form_held_assignment {
   use super::*;
 
