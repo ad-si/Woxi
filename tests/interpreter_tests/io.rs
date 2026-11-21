@@ -2552,6 +2552,78 @@ mod grid_graphics {
     );
   }
 
+  /// Collect the `(x1, y1, x2, y2)` endpoints of every `<line>` in an SVG.
+  fn svg_line_endpoints(svg: &str) -> Vec<[f64; 4]> {
+    svg
+      .split("<line")
+      .skip(1)
+      .map(|chunk| {
+        let attr = |name: &str| -> f64 {
+          let key = format!(" {name}=\"");
+          let start = chunk.find(&key).unwrap() + key.len();
+          let end = start + chunk[start..].find('"').unwrap();
+          chunk[start..end].parse().unwrap()
+        };
+        [attr("x1"), attr("y1"), attr("x2"), attr("y2")]
+      })
+      .collect()
+  }
+
+  #[test]
+  fn grid_frame_pair_rules_only_rows() {
+    // `Frame -> {False, All}`: no column lines, a line at every row edge.
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2}, {3, 4}, {5, 6}}, Frame -> {False, All}]",
+    )
+    .unwrap();
+    let lines = svg_line_endpoints(&result.graphics.unwrap());
+    assert_eq!(lines.len(), 4, "3 rows have 4 row edges: {lines:?}");
+    assert!(
+      lines.iter().all(|l| l[1] == l[3]),
+      "all horizontal: {lines:?}"
+    );
+  }
+
+  #[test]
+  fn grid_frame_pair_rules_only_columns() {
+    // `Frame -> {All, None}`: a line at every column edge, no row lines.
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{1, 2, 3}, {4, 5, 6}}, Frame -> {All, None}]",
+    )
+    .unwrap();
+    let lines = svg_line_endpoints(&result.graphics.unwrap());
+    assert_eq!(lines.len(), 4, "3 columns have 4 column edges: {lines:?}");
+    assert!(
+      lines.iter().all(|l| l[0] == l[2]),
+      "all vertical: {lines:?}"
+    );
+  }
+
+  #[test]
+  fn grid_frame_pair_matches_dividers() {
+    // `Frame -> {xspec, yspec}` rules the same lines as `Dividers`.
+    clear_state();
+    for spec in ["{False, All}", "{All, False}", "{None, {True, False}}"] {
+      let framed = interpret_with_stdout(&format!(
+        "Grid[{{{{a, b}}, {{c, d}}, {{e, f}}}}, Frame -> {spec}]"
+      ))
+      .unwrap();
+      let divided = interpret_with_stdout(&format!(
+        "Grid[{{{{a, b}}, {{c, d}}, {{e, f}}}}, Dividers -> {spec}]"
+      ))
+      .unwrap();
+      let framed = svg_line_endpoints(&framed.graphics.unwrap());
+      assert!(!framed.is_empty(), "{spec} draws lines");
+      assert_eq!(
+        framed,
+        svg_line_endpoints(&divided.graphics.unwrap()),
+        "{spec}"
+      );
+    }
+  }
+
   #[test]
   fn grid_no_frame_no_lines() {
     clear_state();
