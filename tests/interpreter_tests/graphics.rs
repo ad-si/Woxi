@@ -57504,6 +57504,34 @@ fn pane_shrink_to_fit_scales_oversized_text_instead_of_clipping() {
 }
 
 #[test]
+fn pane_shrink_to_fit_keeps_the_declared_box_size() {
+  // Regression: a shrunk `Pane` collapsed to the scaled content's height
+  // (a wide one-line grid made a 200 x 5 pane) instead of keeping its
+  // declared `{w, h}` box with the content placed by its `Alignment`.
+  let wide = "Grid[{{StringJoin[Table[\"a\", 80]]}}]";
+  let svg = export_svg(&format!(
+    "Pane[{wide}, {{200, 100}}, ImageSizeAction -> \"ShrinkToFit\"]"
+  ));
+  assert!(
+    svg
+      .starts_with("<svg width=\"200\" height=\"100\" viewBox=\"0 0 200 100\""),
+    "{svg}"
+  );
+  assert!(svg.contains("translate(0.0 0.0)"), "{svg}");
+  assert!(!svg.contains("paneClip"), "{svg}");
+  // The shrunk content still follows the Pane's alignment in the box.
+  let centered = export_svg(&format!(
+    "Pane[{wide}, {{200, 100}}, ImageSizeAction -> \"ShrinkToFit\", \
+     Alignment -> {{Center, Center}}]"
+  ));
+  assert!(
+    centered.starts_with("<svg width=\"200\" height=\"100\""),
+    "{centered}"
+  );
+  assert!(!centered.contains("translate(0.0 0.0)"), "{centered}");
+}
+
+#[test]
 fn pane_keeps_alignment_on_the_axis_that_still_fits() {
   // Regression: content taller than a fixed `Pane` lost its horizontal
   // `Center` alignment and was pinned to the left edge.
