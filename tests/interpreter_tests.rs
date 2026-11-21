@@ -3184,6 +3184,39 @@ mod interpreter_tests {
     assert!(r.sound.is_some(), "EmitSound should capture playable audio");
   }
 
+  #[test]
+  fn test_successive_emit_sounds_play_one_after_another() {
+    // Every EmitSound of one evaluation is queued, so mapping EmitSound over
+    // a list of notes plays all of them in order instead of only the last.
+    let bytes = sound_wav_bytes(
+      "(EmitSound[Play[Sin[#*t], {t, 0, 0.25}]] &) /@ {1000, 1500, 2000};",
+    );
+    // 3 × 0.25s at 8000 Hz, 16-bit mono.
+    assert_eq!(bytes.len(), 44 + 3 * 2000 * 2);
+    // A later evaluation starts a fresh queue.
+    let bytes = sound_wav_bytes("EmitSound[Play[Sin[t], {t, 0, 0.5}]]");
+    assert_eq!(bytes.len(), 44 + 4000 * 2);
+  }
+
+  #[test]
+  fn test_emit_sounds_with_different_sample_rates_keep_their_duration() {
+    // A queued sound at another sample rate is resampled to the first one's.
+    let bytes = sound_wav_bytes(
+      "EmitSound[Play[Sin[1000 t], {t, 0, 0.5}]]; \
+       EmitSound[Play[Sin[1000 t], {t, 0, 0.5}, SampleRate -> 16000]]",
+    );
+    assert_eq!(bytes.len(), 44 + (4000 + 4000) * 2);
+  }
+
+  #[test]
+  fn test_sound_segments_with_different_sample_rates_keep_their_duration() {
+    let bytes = sound_wav_bytes(
+      "Sound[{Play[Sin[1000 t], {t, 0, 0.5}], \
+       Play[Sin[1000 t], {t, 0, 0.25}, SampleRate -> 16000]}]",
+    );
+    assert_eq!(bytes.len(), 44 + (4000 + 2000) * 2);
+  }
+
   /// Decode the `sound` channel of a visual-mode evaluation to WAV bytes.
   fn sound_wav_bytes(code: &str) -> Vec<u8> {
     clear_state();
@@ -7576,6 +7609,7 @@ mod interpreter_tests {
       // an SVG box (`-Graphics-`) in visual mode rather than staying symbolic.
       ("Mouseover[a, b]", "Mouseover[a, b]"),
       ("Magnify[x, 2]", "Magnify[x, 2]"),
+      ("Magnification[1]", "Magnification[1]"),
       ("Ket[0]", "Ket[0]"),
       ("Bra[0]", "Bra[0]"),
     ];

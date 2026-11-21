@@ -5175,6 +5175,62 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A symmetric range is folded onto its right half (even-odd
+  // subdivision). The first wide panel over {-20, 20} only sampled the
+  // zero at the center of these peaks and accepted 0 as converged.
+  #[test]
+  fn symmetric_range_with_zero_at_center() {
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 Exp[-x^2], {x, -20, 20}] - Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 (1 + x) Exp[-x^2], {x, -20, 20}] - \
+         Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Mixed harmonic-oscillator states: <x^2> = (1 - c^2) 5/2 + c^2 7/2.
+    assert_eq!(
+      interpret(
+        "phi[x_, n_] := Pi^(-1/4)/Sqrt[2^n n!] HermiteH[n, x] Exp[-x^2/2]; \
+         psi[x_] := Sqrt[1 - 0.36] phi[x, 2] + 0.6 Exp[0.6 I] phi[x, 3]; \
+         Round[Chop[NIntegrate[x^2 psi[x] Conjugate[psi[x]], {x, -20, 20}]] \
+         - 2.86, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn odd_integrand_over_symmetric_range() {
+    assert_eq!(
+      interpret("NIntegrate[x^3 Exp[-x^2], {x, -20, 20}]").unwrap(),
+      "0."
+    );
+    assert_eq!(interpret("NIntegrate[Sin[x], {x, -1, 1}]").unwrap(), "0.");
+  }
+
+  // A complex constant factor with a zero imaginary part still makes
+  // every sample complex, so the parts are integrated separately.
+  #[test]
+  fn complex_samples_with_zero_imaginary_part() {
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 Exp[-x^2] (1 + 0. I), {x, -20, 20}] - \
+         Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // Infinite ranges are integrated with adaptive Gauss-Kronrod on the
   // mapped interval. Adaptive Simpson accepted oscillating integrands
   // (Hermite polynomials under a Gaussian) too early, e.g. giving 0.0011
@@ -9857,6 +9913,29 @@ mod ndsolve {
       )
       .unwrap(),
       "{{1, 2}, {u1[t], u2[t]}, {841471, 540302}, {367879}}"
+    );
+  }
+
+  // A rate that is huge only while the state is still tiny needs minute
+  // steps right at a start of 0, however long the whole domain is. The
+  // shortest step used to be measured at the domain's far end, so over a
+  // long domain the adaptive steps gave up at once and the fixed grid
+  // stepped straight across the switch (y(1000) came out as 3.84 instead
+  // of 1 - 0.999 E^-10), or no solution was found at all. As part of a
+  // scheduled QA routine, Woxi Studio was tested against a randomly sampled
+  // Wolfram Demonstration notebook whose rate law switched branches this
+  // way; this is a self-authored, construct-equivalent example.
+  #[test]
+  fn fast_transient_at_zero_on_a_long_domain() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{y'[t] == If[y[t] < 10^-3, 10^6, \
+         (1 - y[t])/100], y[0] == 0}, y, {t, 0, 2000}]]; \
+         {(y /. sol)[\"Domain\"], Round[10^6 y[1000] /. sol], \
+          Round[10^6 (1 - 999/1000 E^-10)]}"
+      )
+      .unwrap(),
+      "{{{0., 2000.}}, 999955, 999955}"
     );
   }
 

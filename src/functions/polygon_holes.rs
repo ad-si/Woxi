@@ -376,8 +376,11 @@ pub struct EdgePoint {
 ///
 /// Returns the arrangement's vertices (first the corners in `pts`, then
 /// the crossing points) and the kept regions, as rings of indices into
-/// them, or `None` when no two edges cross, so the rings are
-/// simple and disjoint and need none of this.
+/// them, or `None` when no two edges cross and no ring revisits a corner,
+/// so the rings are simple and disjoint and need none of this.
+/// A revisited corner — an outline that runs around one loop and then a
+/// second loop from the same point — counts as a touch: a loop nested
+/// inside the other is wound twice and left empty, as with a crossing.
 pub fn even_odd_regions(
   pts: &[(f64, f64)],
   rings: &[Vec<usize>],
@@ -419,10 +422,26 @@ pub fn even_odd_regions(
       )
     })
     .collect();
+  // A corner the outline passes through again later (two loops touching
+  // at a point) is one junction of the arrangement: every visit maps to
+  // its first occurrence, so the regions on either side are traced apart.
+  let same = |p: (f64, f64), q: (f64, f64)| {
+    (p.0 - q.0).abs() <= eps && (p.1 - q.1).abs() <= eps
+  };
+  let canon: Vec<usize> = (0..pts.len())
+    .map(|i| (0..i).find(|&j| same(pts[j], pts[i])).unwrap_or(i))
+    .collect();
+  // A ring (already rid of doubled neighbors and its closing repeat) that
+  // comes back to a corner it visited makes two loops touch there.
+  let mut crossed = rings.iter().any(|ring| {
+    let ring = close_ring(pts, ring);
+    let mut seen = std::collections::HashSet::new();
+    ring.iter().any(|&k| !seen.insert(canon[k]))
+  });
   // The points along each edge, as (fraction, vertex index).
   let mut along: Vec<Vec<(f64, usize)>> = edges
     .iter()
-    .map(|&(a, b)| vec![(0.0, a), (1.0, b)])
+    .map(|&(a, b)| vec![(0.0, canon[a]), (1.0, canon[b])])
     .collect();
   let find_or_add =
     |verts: &mut Vec<((f64, f64), EdgePoint)>, p: (f64, f64), at: EdgePoint| {
@@ -436,7 +455,6 @@ pub fn even_odd_regions(
         verts.len() - 1
       }
     };
-  let mut crossed = false;
   for i in 0..edges.len() {
     let (a, b) = (pts[edges[i].0], pts[edges[i].1]);
     for j in i + 1..edges.len() {
@@ -452,7 +470,9 @@ pub fn even_odd_regions(
       let r = (b.0 - a.0, b.1 - a.1);
       let s = (d.0 - c.0, d.1 - c.1);
       let denom = r.0 * s.1 - r.1 * s.0;
-      if denom.abs() <= eps * eps {
+      // (Nearly) parallel edges meet, if at all, only where one's corner
+      // lies on the other, which is handled below.
+      if denom.abs() <= 1e-9 * r.0.hypot(r.1) * s.0.hypot(s.1) {
         continue;
       }
       let t = ((c.0 - a.0) * s.1 - (c.1 - a.1) * s.0) / denom;
@@ -471,6 +491,37 @@ pub fn even_odd_regions(
       let k = find_or_add(&mut verts, p, at);
       along[i].push((t, k));
       along[j].push((u, k));
+    }
+  }
+  // A corner lying on another edge (two loops sharing a stretch of
+  // boundary, as when one is the other scaled about a common corner)
+  // splits that edge there, so overlapping edges are cut into the same
+  // pieces and traced as one.
+  let corners: std::collections::BTreeSet<usize> = edges
+    .iter()
+    .flat_map(|&(a, b)| [canon[a], canon[b]])
+    .collect();
+  for (i, &(ea, eb)) in edges.iter().enumerate() {
+    let (a, b) = (pts[ea], pts[eb]);
+    let r = (b.0 - a.0, b.1 - a.1);
+    let len2 = r.0 * r.0 + r.1 * r.1;
+    if len2 <= eps * eps {
+      continue;
+    }
+    for &c in &corners {
+      if c == canon[ea] || c == canon[eb] {
+        continue;
+      }
+      let p = pts[c];
+      let t = ((p.0 - a.0) * r.0 + (p.1 - a.1) * r.1) / len2;
+      if !(t > 1e-9 && t < 1.0 - 1e-9) {
+        continue;
+      }
+      let off = ((p.0 - a.0) * r.1 - (p.1 - a.1) * r.0).abs() / len2.sqrt();
+      if off <= scale * 1e-9 && !along[i].iter().any(|&(_, v)| v == c) {
+        crossed = true;
+        along[i].push((t, c));
+      }
     }
   }
   if !crossed {
@@ -538,8 +589,17 @@ pub fn even_odd_regions(
         outsides.push(ring);
         continue;
       }
-      // Probe just inside the region, off the middle of its first side.
-      let (a, b) = (flat[0], flat[1]);
+      // Probe just inside the region, off the middle of its longest side:
+      // a short side may end where the region pinches to nothing (at a
+      // corner where two loops touch), leaving no room beside it.
+      let side = |i: usize| {
+        let (a, b) = (flat[i], flat[(i + 1) % flat.len()]);
+        (b.0 - a.0).hypot(b.1 - a.1)
+      };
+      let longest = (0..flat.len())
+        .max_by(|&i, &j| side(i).total_cmp(&side(j)))
+        .unwrap_or(0);
+      let (a, b) = (flat[longest], flat[(longest + 1) % flat.len()]);
       let len = (b.0 - a.0).hypot(b.1 - a.1).max(f64::MIN_POSITIVE);
       let step = len * 1e-6;
       let probe = (
@@ -675,6 +735,88 @@ mod tests {
     let pts = vec![(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)];
     let (_, regions) = even_odd_regions(&pts, &[whole(&pts)]).unwrap();
     assert_eq!(regions.len(), 2);
+  }
+
+  /// Twice around from the same corner: a square, then a smaller square
+  /// inside it that starts where the first one did.
+  fn nested_loops_from_one_corner() -> Vec<(f64, f64)> {
+    vec![
+      (0.0, 0.0),
+      (4.0, 0.0),
+      (4.0, 4.0),
+      (0.0, 4.0),
+      (0.0, 0.0),
+      (3.0, 1.0),
+      (3.0, 3.0),
+      (1.0, 3.0),
+    ]
+  }
+
+  #[test]
+  fn even_odd_regions_leave_a_loop_nested_at_a_shared_corner_empty() {
+    let pts = nested_loops_from_one_corner();
+    let (verts, regions) = even_odd_regions(&pts, &[whole(&pts)]).unwrap();
+    // Nothing crosses; the revisited corner is the only junction.
+    assert_eq!(verts.len(), pts.len());
+    assert_eq!(regions.len(), 1);
+    let flat: Vec<(f64, f64)> =
+      regions[0].outer.iter().map(|&k| verts[k].0).collect();
+    let all: Vec<usize> = (0..flat.len()).collect();
+    // The big square less the inner loop (area 16 - 6), wound once.
+    assert!((signed_area(&flat, &all) - 10.0).abs() < 1e-9);
+    // Triangulated, the region covers that area and not the inner loop.
+    let pts2: Vec<(f64, f64)> = verts.iter().map(|(p, _)| *p).collect();
+    let tris = triangulate_with_holes(&pts2, &regions[0].outer, &[]);
+    assert!((area(&pts2, &tris) - 10.0).abs() < 1e-9);
+    assert!(!tris.triangles.iter().any(|t| point_in_triangle(
+      (2.2, 2.0),
+      pts2[t[0]],
+      pts2[t[1]],
+      pts2[t[2]]
+    )));
+  }
+
+  #[test]
+  fn even_odd_regions_keep_a_crescent_pinched_at_the_shared_corner() {
+    // A circle, then a smaller circle tangent inside it at the corner
+    // both start from: the band between them narrows to nothing there,
+    // so its sides next to that corner leave no room for a probe.
+    for (n, r) in [(48, 5.0 / 6.0), (30, 0.5), (64, 0.9)] {
+      let ring = |r: f64| {
+        (0..n).map(move |k| {
+          let a = std::f64::consts::TAU * k as f64 / n as f64;
+          (r * a.sin(), 1.0 - r + r * a.cos())
+        })
+      };
+      let pts: Vec<(f64, f64)> = ring(1.0).chain(ring(r)).collect();
+      let (verts, regions) = even_odd_regions(&pts, &[whole(&pts)]).unwrap();
+      let pts2: Vec<(f64, f64)> = verts.iter().map(|(p, _)| *p).collect();
+      let filled: f64 = regions
+        .iter()
+        .map(|reg| {
+          area(
+            &pts2,
+            &triangulate_with_holes(&pts2, &reg.outer, &reg.holes),
+          )
+        })
+        .sum();
+      let all = |k: usize| (0..k).collect::<Vec<_>>();
+      let outer = signed_area(&pts[..n], &all(n)).abs();
+      let inner = signed_area(&pts[n..], &all(n)).abs();
+      assert!(
+        (filled - (outer - inner)).abs() < 1e-3 * outer,
+        "n={n} r={r}: filled {filled}, band {}",
+        outer - inner
+      );
+    }
+  }
+
+  #[test]
+  fn even_odd_regions_ignore_doubled_and_closing_corners() {
+    let doubled = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 0.0), (1.0, 1.0)];
+    assert!(even_odd_regions(&doubled, &[whole(&doubled)]).is_none());
+    let closed = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)];
+    assert!(even_odd_regions(&closed, &[whole(&closed)]).is_none());
   }
 
   #[test]
