@@ -2087,6 +2087,55 @@ fn n_eval_beyond_machine_range(expr: &Expr) -> Option<Expr> {
   }
 }
 
+thread_local! {
+  static IN_COMPLEX_BIGFLOAT_FOLD: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// A numeric expression mixing arbitrary-precision reals with `I` (and no
+/// machine reals), such as `(1.`30 + 2.`30 I) (2.1`30 + 0.3`30 I)` or
+/// `(2.1`30 + 0.3`30 I)^-1`, as the arbitrary-precision complex number it
+/// equals, at the lowest precision among its reals. `None` when the
+/// expression is not of that kind or does not evaluate.
+pub fn fold_complex_bigfloat(expr: &Expr) -> Option<Expr> {
+  fn scan(e: &Expr, min: &mut Option<f64>, machine: &mut bool, i: &mut bool) {
+    match e {
+      Expr::Real(_) => *machine = true,
+      Expr::BigFloat(_, p) => *min = Some(min.map_or(*p, |m: f64| m.min(*p))),
+      Expr::Identifier(n) if n == "I" => *i = true,
+      _ => {
+        for child in crate::syntax::expr_children(e) {
+          scan(child, min, machine, i);
+        }
+      }
+    }
+  }
+  if IN_COMPLEX_BIGFLOAT_FOLD.with(|flag| flag.get()) {
+    return None;
+  }
+  let (mut min, mut machine, mut has_i) = (None, false, false);
+  scan(expr, &mut min, &mut machine, &mut has_i);
+  let precision = min?;
+  if machine || !has_i || !crate::functions::predicate_ast::is_numeric_q(expr) {
+    return None;
+  }
+  IN_COMPLEX_BIGFLOAT_FOLD.with(|flag| flag.set(true));
+  let mut cc = astro_consts().ok();
+  let rm = astro_float::RoundingMode::ToEven;
+  let prec_usize = precision.floor().max(1.0) as usize;
+  let bits = nominal_bits(prec_usize) + 64;
+  let value = cc.as_mut().and_then(|cc| {
+    let (re, im) = expr_to_complex_bigfloat(expr, bits, rm, cc).ok()?;
+    if im.is_zero() {
+      let re_str = bigfloat_to_string(&re, None, rm, cc).ok()?;
+      return Some(Expr::BigFloat(re_str, precision));
+    }
+    complex_bigfloat_expr(&re, &im, precision, precision, rm, cc).ok()
+  });
+  IN_COMPLEX_BIGFLOAT_FOLD.with(|flag| flag.set(false));
+  value
+}
+
 /// N[expr, precision] — arbitrary-precision numeric evaluation using BigFloat
 pub fn n_eval_arbitrary(
   expr: &Expr,
