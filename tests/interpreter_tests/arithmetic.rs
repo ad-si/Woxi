@@ -988,6 +988,34 @@ mod plus_radical_like_terms {
       "4*Sqrt[2] + 3/Sqrt[7] + Sqrt[3]*x + Sqrt[3]*y"
     );
   }
+
+  // A coefficient merged onto a radical folds into it, as in a product.
+  #[test]
+  fn merged_coefficient_folds_into_radical() {
+    assert_eq!(interpret("x/Sqrt[2] + x/Sqrt[2]").unwrap(), "Sqrt[2]*x");
+    assert_eq!(
+      interpret("y/Sqrt[3] + y/(2 Sqrt[3])").unwrap(),
+      "(Sqrt[3]*y)/2"
+    );
+    assert_eq!(interpret("x/2^(1/3) + x/2^(1/3)").unwrap(), "2^(2/3)*x");
+  }
+
+  // Folding a merged coefficient can make the term a like term of another
+  // one in the sum, which then combines too. Radicals whose exponents
+  // differ by an integer are not like terms of `Plus` (only `Expand`
+  // combines them).
+  #[test]
+  fn folded_coefficient_recombines() {
+    assert_eq!(
+      interpret("c/Sqrt[3] - Sqrt[3] c/4 - c/(4 Sqrt[3])").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Sqrt[2] + 1/Sqrt[2]").unwrap(),
+      "1/Sqrt[2] + Sqrt[2]"
+    );
+    assert_eq!(interpret("Sqrt[2] + Sqrt[3]").unwrap(), "Sqrt[2] + Sqrt[3]");
+  }
 }
 
 // A quotient over a sum against a power or product with no sum in it
@@ -7169,6 +7197,16 @@ mod qfactorial {
 mod plus_term_ordering {
   use super::*;
 
+  // A sum times other factors against a product of several factors orders
+  // from the last factor, as Sort does.
+  #[test]
+  fn scaled_sum_against_product() {
+    assert_eq!(interpret("(a + b)/x + c/y").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("c/y + (a + b)/x").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("(a + b)*x + c*y").unwrap(), "(a + b)*x + c*y");
+    assert_eq!(interpret("(a + b)*y + c*x").unwrap(), "c*x + (a + b)*y");
+  }
+
   // Powers of one base with symbolic exponents order by the exponents, and a
   // power of a plain sum with a symbolic exponent orders after the variable
   #[test]
@@ -8268,8 +8306,58 @@ mod cases {
     );
   }
 
+  /// An indexed variable `Subscript[k, 1]` is ordered among a product's
+  /// factors as its base symbol `k` is: ahead of later symbols and of
+  /// function applications (`k₁ x`, `k₂ sin(k₁ x + ϕ)`), while a held
+  /// product keeps the order it was written in.
+  #[test]
+  fn traditional_form_orders_indexed_variables_by_their_base() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[x Subscript[k, 1]]]"#,
+      r#"TagBox[FormBox[RowBox[{SubscriptBox[k, 1],  , x}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[y Subscript[k, 1] x]]"#,
+      r#"TagBox[FormBox[RowBox[{SubscriptBox[k, 1],  , x,  , y}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[a Subscript[x, 1]]]"#,
+      r#"TagBox[FormBox[RowBox[{a,  , SubscriptBox[x, 1]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[Subscript[k, 2] Sin[Subscript[k, 1] x + \[Phi]]]]"#,
+      r#"TagBox[FormBox[RowBox[{SubscriptBox[k, 2],  , RowBox[{sin, (, RowBox[{RowBox[{SubscriptBox[k, 1],  , x}], +, ϕ}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[HoldForm[x Subscript[k, 1]]]]"#,
+      r#"TagBox[FormBox[TagBox[RowBox[{x,  , SubscriptBox[k, 1]}], HoldForm], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   /// A negative rational sets its minus sign before the fraction bar in
   /// TraditionalForm, as in StandardForm, not in the numerator.
+  /// `¬` parenthesizes an operand that binds looser than it — an `∨`, an
+  /// `⇒` or an `⊻` — but not a literal it binds tighter than.
+  #[test]
+  fn traditional_form_not_parenthesizes_looser_operands() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!(a || b)]]"#,
+      r#"TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, ∨, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!Xor[a, b]]]"#,
+      r#"TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, ⊻, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!Implies[a, b]]]"#,
+      "TagBox[FormBox[RowBox[{¬, RowBox[{(, RowBox[{a, \u{F523}, b}], )}]}], TraditionalForm], TraditionalForm, Editable -> True]",
+    );
+    assert_case(
+      r#"ToBoxes[TraditionalForm[!a && b]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{¬, a}], ∧, b}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
   #[test]
   fn traditional_form_negative_rational_sign_precedes_the_bar() {
     assert_case(
@@ -8429,6 +8517,37 @@ mod cases {
       held_traditional_boxes("a (b c)"),
       r#"RowBox[{"a", " ", RowBox[{"(", RowBox[{"b", " ", "c"}], ")"}]}]"#
     );
+  }
+
+  /// `±x` and `∓x` typeset as their sign glyph in front of the operand (a
+  /// sum operand parenthesized), and `PlusMinus[a, b]` as the infix `a ± b`,
+  /// bracketed as a factor of a product.
+  #[test]
+  fn traditional_form_plus_minus_uses_its_glyph() {
+    assert_eq!(
+      held_traditional_boxes("±2 Sin[x]"),
+      r#"RowBox[{RowBox[{"±", "2"}], " ", RowBox[{"sin", "(", "x", ")"}]}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("MinusPlus[a + b]"),
+      r#"RowBox[{"∓", RowBox[{"(", RowBox[{"a", "+", "b"}], ")"}]}]"#
+    );
+    assert_eq!(
+      held_traditional_boxes("PlusMinus[a, b] c"),
+      r#"RowBox[{RowBox[{"(", RowBox[{"a", "±", "b"}], ")"}], " ", "c"}]"#
+    );
+  }
+
+  /// `DisplayForm[boxes]` inside a TraditionalForm layout draws its boxes,
+  /// not the `RowBox[…]` call that spells them.
+  #[test]
+  fn traditional_form_grid_draws_display_form_boxes() {
+    let svg = woxi::interpret(
+      r#"ExportString[TraditionalForm[Grid[{{"L = ", DisplayForm[RowBox[{"(", FractionBox["a", "2"], ")"}]]}}]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("RowBox"), "{svg}");
+    assert!(!svg.contains("FractionBox"), "{svg}");
   }
 
   /// A derivative sets the differentiated expression over the bar,
@@ -8678,6 +8797,34 @@ mod cases {
       "ToString[{15.840646417884168, 1/2}, TraditionalForm]",
       "DisplayForm[FormBox[RowBox[{{, RowBox[{15.8406`, ,, FractionBox[1, 2]}], }}], TraditionalForm]]",
     );
+  }
+
+  /// `ToString[TraditionalForm[real]]` shows a machine real at the same 6
+  /// significant digits as `ToString[real, TraditionalForm]`, so a label
+  /// built from it reads `14.6325`, not every stored digit.
+  #[test]
+  fn to_string_of_traditional_form_rounds_machine_reals() {
+    assert_case(
+      "ToString[TraditionalForm[14.63251179826539]]",
+      "DisplayForm[FormBox[14.6325`, TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[TraditionalForm[{0.7967806891350713, x}]]",
+      "DisplayForm[FormBox[RowBox[{{, RowBox[{0.796781`, ,, x}], }}], TraditionalForm]]",
+    );
+  }
+
+  /// A number-display form fixes its own digits, so the 6-digit rounding of
+  /// `ToString` leaves the number inside it alone.
+  #[test]
+  fn to_string_traditional_form_keeps_number_form_digits() {
+    for code in [
+      "ToString[NumberForm[1.23456789, 9], TraditionalForm]",
+      "ToString[TraditionalForm[NumberForm[1.23456789, 9]]]",
+    ] {
+      let out = woxi::interpret(code).unwrap();
+      assert!(out.contains("1.23456789"), "{code}: {out}");
+    }
   }
 
   /// A sum whose later term has a negative rational coefficient sets that
@@ -10631,6 +10778,60 @@ mod set_precision {
     );
   }
 
+  // Derivative is NHoldAll: the order and the function stay exact, only
+  // the point gets the new precision
+  #[test]
+  fn keeps_derivative_order_exact() {
+    assert_eq!(
+      interpret(
+        "{SetPrecision[Derivative[1][x][2], 8], SetPrecision[Derivative[2][f], 8], SetPrecision[Derivative[2][f][3], MachinePrecision], SetPrecision[x'[t] == -y[t], 8]}"
+      )
+      .unwrap(),
+      "{Derivative[1][x][2.`8.], Derivative[2][f], Derivative[2][f][3.], Derivative[1][x][t] == -1.`8.*y[t]}"
+    );
+  }
+
+  #[test]
+  fn derivative_attributes_and_n() {
+    assert_eq!(
+      interpret(
+        "{Attributes[Derivative], N[Derivative[2][f]], N[Derivative[2][f][x], 8], N[Derivative[3][f][1/2], 10]}"
+      )
+      .unwrap(),
+      "{{NHoldAll, ReadProtected}, Derivative[2][f], Derivative[2][f][x], Derivative[3][f][0.5`10.]}"
+    );
+  }
+
+  #[test]
+  fn set_accuracy_keeps_derivative_order_exact() {
+    assert_eq!(
+      interpret("SetAccuracy[Derivative[1][f][2], 5]").unwrap(),
+      "Derivative[1][f][2.`5.301029995663981]"
+    );
+  }
+
+  // A user-set NHoldFirst attribute is honored as well
+  #[test]
+  fn honors_user_nhold_attributes() {
+    assert_eq!(
+      interpret("SetAttributes[g, NHoldFirst]; SetPrecision[g[1, 2], 5]")
+        .unwrap(),
+      "g[1, 2.`5.]"
+    );
+  }
+
+  // NDSolve still sees differential equations after SetPrecision
+  #[test]
+  fn ndsolve_on_set_precision_equations() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[SetPrecision[{x'[t] == -x[t], x[0] == 1}, 8], x, {t, 0, 1}, WorkingPrecision -> 8]; Round[100 x[1] /. sol[[1]]]"
+      )
+      .unwrap(),
+      "37"
+    );
+  }
+
   #[test]
   fn integer_to_bigfloat() {
     assert_eq!(interpret("SetPrecision[3, 20]").unwrap(), "3.`20.");
@@ -11613,6 +11814,27 @@ mod abs_simplifications {
     assert_eq!(interpret("Abs[3 + I]").unwrap(), "Sqrt[10]");
     // Rational components.
     assert_eq!(interpret("Abs[1/2 + 1/2 I]").unwrap(), "1/Sqrt[2]");
+  }
+
+  // Exact complex numbers with radical or constant parts keep an exact
+  // modulus Sqrt[Re^2 + Im^2] instead of collapsing to a machine real.
+  #[test]
+  fn abs_exact_complex_with_radicals() {
+    assert_eq!(interpret("Abs[1 + I Sqrt[3]]").unwrap(), "2");
+    assert_eq!(interpret("Abs[-1/2 - I Sqrt[3]]").unwrap(), "Sqrt[13]/2");
+    assert_eq!(interpret("Abs[-1/2 - I Sqrt[3]/2]").unwrap(), "1");
+    assert_eq!(interpret("Abs[Sqrt[2] + I Sqrt[3]]").unwrap(), "Sqrt[5]");
+    assert_eq!(interpret("Abs[1 + Sqrt[2] I]").unwrap(), "Sqrt[3]");
+    assert_eq!(interpret("Abs[1 + I Pi]").unwrap(), "Sqrt[1 + Pi^2]");
+    assert_eq!(
+      interpret("Abs[2 + b (1/2 - 1 + I Sqrt[3])] /. b -> -1").unwrap(),
+      "Sqrt[37]/2"
+    );
+    // A Mod of the exact modulus stays exact.
+    assert_eq!(
+      interpret("Mod[Abs[-1 - (-1/2 + I Sqrt[3])], 1]").unwrap(),
+      "-1 + Sqrt[13]/2"
+    );
   }
 
   // Machine-precision complex numbers: `a. + b. I` stays Complex in Wolfram
