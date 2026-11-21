@@ -4485,10 +4485,11 @@ fn parse_point(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       style: style.clone(),
     });
   } else if let Some(pts) = expr_to_point_list(&args[0]) {
-    // `VertexColors -> {c1, c2, …}` colors each point on its own; a count
-    // that doesn't match the points leaves the ordinary single color.
+    // `VertexColors -> {c1, c2, …}` colors each point on its own, in order;
+    // surplus trailing colors are ignored (the zip below stops at the last
+    // point). Too few colors leaves the ordinary single color.
     if let Some(colors) =
-      parse_vertex_colors(&args[1..]).filter(|c| c.len() == pts.len())
+      parse_vertex_colors(&args[1..]).filter(|c| c.len() >= pts.len())
     {
       for ((x, y), color) in pts.into_iter().zip(colors) {
         prims.push(Primitive::PointSingle {

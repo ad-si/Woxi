@@ -759,6 +759,22 @@ mod graphics {
       assert!(svg.contains("fill=\"rgb(0,0,255)\""));
     }
 
+    /// More `VertexColors` than points: the points take the leading colors
+    /// in order and the surplus ones are ignored.
+    #[test]
+    fn point_multi_vertex_colors_surplus_colors_ignored() {
+      let svg = export_svg(
+        "Graphics[{PointSize[0.03], Point[{{0, 0}, {1, 1}, {2, 0}}, \
+         VertexColors -> {Red, Green, Blue, Yellow, Cyan}]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,255,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+      assert!(!svg.contains("fill=\"rgb(255,255,0)\""), "{svg}");
+      assert!(!svg.contains("fill=\"rgb(0,255,255)\""), "{svg}");
+      assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    }
+
     #[test]
     fn line() {
       insta::assert_snapshot!(export_svg(
