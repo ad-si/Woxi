@@ -66314,3 +66314,56 @@ fn framed_item_in_column_text_label_keeps_its_frame() {
     assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
   }
 }
+
+/// Pictures that are operands of a formula (`1/6 (g1 + 2 g2) == g3`) are
+/// drawn inline as nested pictures — both as a displayed result and as a
+/// `Text` label inside `Graphics` — instead of as their box source or
+/// `-Graphics-` placeholders, and the rational coefficient keeps its own
+/// small fraction in front of the parenthesized sum.
+mod inline_graphics_operands {
+  use super::*;
+
+  const DEFS: &str = "g1 = Graphics[{Blue, Circle[]}, ImageSize -> 25]; \
+     g2 = Graphics[{Red, Disk[]}, ImageSize -> 25]; ";
+
+  fn nested_pictures(svg: &str) -> usize {
+    svg.matches("<svg x=").count()
+  }
+
+  /// A `Text` label typeset as a picture is itself one nested picture
+  /// around the inline graphics it holds.
+  fn label_pictures(svg: &str) -> usize {
+    nested_pictures(svg) - 1
+  }
+
+  #[test]
+  fn displayed_formula_draws_graphics_inline() {
+    let svg = export_svg(&format!("{DEFS} 1/6 (g1 + 2 g2) == g1"));
+    assert_eq!(nested_pictures(&svg), 3, "{svg}");
+    assert!(!svg.contains("GraphicsBox"), "{svg}");
+    assert!(!svg.contains("CircleBox"), "{svg}");
+    assert!(
+      svg.contains("rgb(0,0,255)") || svg.contains("#0000ff"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn text_label_formula_draws_graphics_inline() {
+    let svg = export_svg(&format!(
+      "{DEFS} Graphics[{{Text[1/6 (g1 + 2 g2) == g2, {{0, 0}}], \
+       Circle[{{0, 0}}, 3]}}]"
+    ));
+    assert_eq!(label_pictures(&svg), 3, "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
+  }
+
+  #[test]
+  fn graphic_sum_label_keeps_each_term() {
+    let svg = export_svg(&format!(
+      "{DEFS} Graphics[{{Text[g1 + g2, {{0, 0}}], Point[{{1, 1}}]}}]"
+    ));
+    assert_eq!(label_pictures(&svg), 2, "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
+  }
+}

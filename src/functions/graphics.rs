@@ -9308,7 +9308,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     Expr::String(s) if has_script_stacked_inline_box(s) => {
       inline_box_string_to_box_expr(s)
     }
-    _ if label_typesets_fraction(content) => {
+    _ if label_typesets_fraction(content)
+      || formula_has_graphics_operand(content) =>
+    {
       Some(crate::strip_number_precision_markers(
         &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
           content,
@@ -20127,6 +20129,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         BoxLayout::text(&text, font_size)
       }
 
+      // A picture typeset among other boxes (`1/6 (g1 + 2 g2) == g3` with
+      // graphics as operands) is drawn inline at its own size, centered on
+      // the math axis like an operand, instead of showing its box source.
+      "GraphicsBox" | "Graphics3DBox" if !args.is_empty() => {
+        inline_graphics_box_layout(expr, font_size)
+          .unwrap_or_else(|| BoxLayout::text(&expr_to_output(expr), font_size))
+      }
+
       // Ordinary expressions inside a box tree (the cells of a
       // `FractionBox` built from `Row`, `Style` and `Short`) lay out as
       // the boxes they stand for.
@@ -20229,6 +20239,49 @@ pub(crate) fn group_digits_str(s: &str) -> String {
     i += 3;
   }
   format!("{sign}{grouped}{frac}")
+}
+
+/// Lay out a `GraphicsBox[…]` / `Graphics3DBox[…]` as the picture it
+/// typesets: the boxes are turned back into the `Graphics` expression,
+/// rendered, and nested at its natural size with its vertical center on the
+/// math axis (a quarter of the font size above the baseline), the way an
+/// inline graphic sits among the operands of a formula.
+fn inline_graphics_box_layout(
+  expr: &Expr,
+  font_size: f64,
+) -> Option<BoxLayout> {
+  let source = crate::notebook::box_source_to_graphics_expr(
+    &crate::syntax::expr_to_input_form(expr),
+  );
+  let graphic = crate::syntax::string_to_expr(&source).ok()?;
+  // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
+  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
+  let rendered = match &evaluated {
+    Expr::FunctionCall { name, args } if name == "Graphics" => {
+      graphics_ast(args).ok()?
+    }
+    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+      crate::functions::plot3d::graphics3d_ast(args).ok()?
+    }
+    _ => evaluated.clone(),
+  };
+  let Expr::Graphics { svg, .. } = &rendered else {
+    return None;
+  };
+  let (w, h) = svg_natural_size(svg)?;
+  if !(w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0) {
+    return None;
+  }
+  let axis = font_size * 0.25;
+  // Keep at least a line of text's height so neighbors stay aligned.
+  let above = (h / 2.0 + axis).max(font_size * 0.8);
+  let below = (h / 2.0 - axis).max(font_size * 0.25);
+  Some(BoxLayout {
+    width: w,
+    height: above + below,
+    baseline: above,
+    elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
+  })
 }
 
 /// Render a `BoxLayout` into a complete SVG string.
@@ -28769,6 +28822,43 @@ fn has_stacked_inline_box(s: &str) -> bool {
 /// arithmetic expression whose box form holds a `FractionBox`, possibly
 /// inside a `Row` or a style wrapper. Strings and other layouts are drawn as
 /// ordinary text.
+/// Whether a label is a formula (arithmetic or a relation) with a picture
+/// among its operands, like `1/6 (g1 + 2 g2) == g3`: it is typeset with the
+/// pictures drawn inline rather than as their `-Graphics-` placeholders.
+fn formula_has_graphics_operand(expr: &Expr) -> bool {
+  fn is_graphic(e: &Expr) -> bool {
+    matches!(e, Expr::Graphics { .. })
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Graphics" || name == "Graphics3D") && !args.is_empty())
+  }
+  fn is_formula_head(name: &str) -> bool {
+    matches!(
+      name,
+      "Plus"
+        | "Times"
+        | "Power"
+        | "Equal"
+        | "Unequal"
+        | "Less"
+        | "Greater"
+        | "LessEqual"
+        | "GreaterEqual"
+    )
+  }
+  fn walk(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } if is_formula_head(name) => {
+        args.iter().any(|a| is_graphic(a) || walk(a))
+      }
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|a| is_graphic(a) || walk(a))
+      }
+      _ => false,
+    }
+  }
+  walk(expr)
+}
+
 fn label_typesets_fraction(expr: &Expr) -> bool {
   match expr {
     // A bare rational number (`-7/4`) is drawn by the numeric fraction

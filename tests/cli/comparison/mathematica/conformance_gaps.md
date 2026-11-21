@@ -10512,3 +10512,13 @@ so half of it falls outside the image. A saved Wolfram snapshot of the same
 construction shows the image padding grown to fit both labels whole,
 beside the bar. The exact rule `ImagePadding -> Automatic` uses to reserve
 room for text primitives has not been measured against `wolframscript`.
+
+### Plot tick labels ignore the `BaseStyle` font family and slant
+
+`Plot[…, Frame -> True, FrameTicks -> {{{0, "x"}, …}, …}, BaseStyle ->
+{FontSize -> 16, FontFamily -> "Times", Italic}]` (or the same `BaseStyle`
+given to a `Show` of such a plot) sets its tick labels at the requested
+size but still in the default sans-serif upright face; Wolfram sets them in
+italic Times like the rest of the plot's text. `LabelStyleSpec` carries only
+the color, size, weight and slant, and the tick label writer applies none
+of the face or slant.
