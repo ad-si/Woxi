@@ -24815,7 +24815,7 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       traditionalize_styled_label(&args[0])
     }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
-    _ if contains_visible_style(e) => e.clone(),
+    _ if has_explicit_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
   }
 }
@@ -24875,6 +24875,36 @@ fn contains_visible_style(e: &Expr) -> bool {
       left,
       right,
     } => contains_visible_style(left) || contains_visible_style(right),
+    _ => false,
+  }
+}
+
+/// Whether `e` is, or holds inside a `Row`, `Text` or script, a
+/// `Style[label, …]` whose directives change how the text is drawn. Unlike
+/// [`contains_visible_style`], a script that merely holds letters
+/// (`Subscript[R, x]`) does not count: such a label carries no styling of
+/// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
+fn has_explicit_style(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Style" => {
+      (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
+        || args.first().is_some_and(has_explicit_style)
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(items)) => items.iter().any(has_explicit_style),
+      _ => false,
+    },
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      has_explicit_style(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript"
+      ) =>
+    {
+      args.iter().any(has_explicit_style)
+    }
     _ => false,
   }
 }

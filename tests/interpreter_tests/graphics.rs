@@ -16666,6 +16666,52 @@ mod plot3d {
       assert!(svg.contains(">ab</text>"), "{svg}");
     }
 
+    /// A subscripted symbol in a label is typeset in `TraditionalForm`
+    /// too: single letters are italic, multi-letter symbols stay upright,
+    /// whether the label is bare or styled, inside a `Row`, on an axis or
+    /// on the frame.
+    /// As part of a scheduled QA routine, Woxi Studio was tested against a
+    /// randomly sampled Wolfram Demonstration notebook whose frame labels
+    /// read `Style[Row[{Subscript[…], " (unit)"}], 14]`; the subscript base
+    /// was drawn upright. This is a self-authored, construct-equivalent
+    /// example.
+    #[test]
+    fn subscripted_labels_set_single_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let sub = |s: &str| {
+        format!("<tspan baseline-shift=\"sub\" font-size=\"70%\">{s}</tspan>")
+      };
+      let r_x = format!("{}{}", italic("R"), sub(&italic("x")));
+      for code in [
+        "Plot[s, {s, 0, 1}, AxesLabel -> {Subscript[R, x], None}]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Subscript[R, x], None}]",
+        "Plot[s, {s, 0, 1}, AxesLabel -> \
+         {Style[Row[{Subscript[R, x], \" (m)\"}], 14], None}]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Style[Row[{Subscript[R, x], \" (m)\"}], 14], None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(&r_x), "{code}: {svg}");
+      }
+      // A multi-letter script stays upright beside the italic base.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Style[Row[{Subscript[R, AB], \" (m)\"}], 14], None}]",
+      );
+      assert!(
+        svg.contains(&format!("{}{} (m)", italic("R"), sub("AB"))),
+        "{svg}"
+      );
+      // An explicitly styled script base keeps its own styling.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> \
+         {Subscript[Style[\"T\", Bold], \"r\"], None}]",
+      );
+      assert!(!svg.contains(&italic("T")), "{svg}");
+    }
+
     /// `Style` only adds font directives around a label; what it wraps is
     /// still set in `TraditionalForm`, so `Style[u, FontSize -> 15]` is an
     /// italic u. As part of a scheduled QA routine, Woxi Studio was tested
