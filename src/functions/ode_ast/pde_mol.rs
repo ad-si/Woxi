@@ -214,7 +214,8 @@ pub(super) fn fd_weights(z: f64, xs: &[f64], m: usize) -> Vec<f64> {
 /// A square banded matrix with `kl` sub- and `ku` super-diagonals, stored
 /// by rows with room for the fill-in of partial pivoting, and its LU
 /// factorization in place (LINPACK `dgbfa`/`dgbsl` order of operations).
-struct Band {
+#[derive(Clone)]
+pub(super) struct Band {
   n: usize,
   kl: usize,
   ku: usize,
@@ -224,7 +225,7 @@ struct Band {
 }
 
 impl Band {
-  fn new(n: usize, kl: usize, ku: usize) -> Self {
+  pub(super) fn new(n: usize, kl: usize, ku: usize) -> Self {
     let ld = 2 * kl + ku + 1;
     Self {
       n,
@@ -244,12 +245,19 @@ impl Band {
     self.a[self.at(i, j)]
   }
 
-  fn add(&mut self, i: usize, j: usize, v: f64) {
+  /// Negate every entry in place.
+  pub(super) fn negate(&mut self) {
+    for v in &mut self.a {
+      *v = -*v;
+    }
+  }
+
+  pub(super) fn add(&mut self, i: usize, j: usize, v: f64) {
     let k = self.at(i, j);
     self.a[k] += v;
   }
 
-  fn factor(&mut self) -> bool {
+  pub(super) fn factor(&mut self) -> bool {
     let n = self.n;
     for k in 0..n {
       let last = (k + self.kl).min(n - 1);
@@ -292,7 +300,7 @@ impl Band {
     true
   }
 
-  fn solve(&self, b: &mut [f64]) {
+  pub(super) fn solve(&self, b: &mut [f64]) {
     let n = self.n;
     for k in 0..n {
       let p = self.piv[k];
