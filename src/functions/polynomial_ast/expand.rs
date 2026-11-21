@@ -1401,7 +1401,16 @@ fn merge_like_terms(terms: &[Expr]) -> MergedTerms {
 fn merged_term_exprs(term_map: MergedTerms) -> Vec<Expr> {
   let mut result_terms: Vec<Expr> = Vec::new();
   for (_, var_factors, coeff) in term_map {
-    let coeff = simplify(coeff);
+    let mut coeff = simplify(coeff);
+    // A merged coefficient is numeric; one still written as a sum of
+    // radicals (`Sqrt[3]/3 - 1/Sqrt[3]`) is evaluated, so that terms which
+    // cancel (or combine) are recognized — the structural simplification
+    // above folds rationals only.
+    if is_coefficient_sum(&coeff)
+      && let Ok(evaluated) = crate::evaluator::evaluate_expr_to_expr(&coeff)
+    {
+      coeff = evaluated;
+    }
     if matches!(&coeff, Expr::Integer(0)) {
       continue; // skip zero terms
     }
@@ -1421,6 +1430,17 @@ fn merged_term_exprs(term_map: MergedTerms) -> Vec<Expr> {
     }
   }
   result_terms
+}
+
+/// Whether a merged coefficient is a sum (as `add_exprs` builds it).
+fn is_coefficient_sum(coeff: &Expr) -> bool {
+  matches!(
+    coeff,
+    Expr::BinaryOp {
+      op: BinaryOperator::Plus | BinaryOperator::Minus,
+      ..
+    }
+  ) || matches!(coeff, Expr::FunctionCall { name, .. } if name == "Plus")
 }
 
 /// Like terms merged, in no particular order: an intermediate of an
