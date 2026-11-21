@@ -4269,6 +4269,46 @@ mod tests {
     assert_eq!(state.error, None);
   }
 
+  /// A body `Pane[Text@Grid[…], {If[big, Automatic, w], …}, Alignment ->
+  /// {Center, Center}]` keeps the widget's display at the fixed `w` x `h`
+  /// box while the checkbox is off (the table centered in it), and lets it
+  /// follow the table once the size turns `Automatic`.
+  #[test]
+  fn text_grid_in_fixed_size_pane_keeps_its_box() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Pane[Text@Grid[Partition[Range[n], 4], Dividers -> {{False, True}, {False, True}}],
+        {If[big, Automatic, 400], If[big, Automatic, 300]},
+        Alignment -> {Center, Center}],
+      {{n, 8}, 4, 400, 4},
+      {{big, False}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let size = |state: &ManipulateState| {
+      let svg = state.current_svg().expect("the table is drawn").to_string();
+      let head: String = svg.chars().take(60).collect();
+      head
+    };
+    assert!(
+      size(&state).starts_with("<svg width=\"400\" height=\"300\""),
+      "{}",
+      size(&state)
+    );
+    let big = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "big")
+      .expect("big control");
+    assert!(state.select_discrete(big, "True"));
+    state.reevaluate();
+    assert!(
+      !size(&state).starts_with("<svg width=\"400\" height=\"300\""),
+      "{}",
+      size(&state)
+    );
+  }
+
   /// A body that computes its table inside a scoping construct and only
   /// *returns* a sized `Pane[Grid[…]]` draws the whole table, header and
   /// footer rows included — not just a nested framed table measured while
