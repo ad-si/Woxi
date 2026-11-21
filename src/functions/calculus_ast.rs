@@ -18908,7 +18908,7 @@ fn integrand_is_complex_on(
     value.is_ok_and(|v| {
       crate::functions::math_ast::try_eval_to_f64(&v).is_none()
         && crate::functions::math_ast::try_extract_complex_float(&v)
-          .is_some_and(|(_, im)| im != 0.0 && im.is_finite())
+          .is_some_and(|(re, im)| re.is_finite() && im.is_finite())
     })
   };
   let points: Vec<f64> = match (lo.is_finite(), hi.is_finite()) {
@@ -20013,6 +20013,48 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(measure) = boole_exact_measure(&bargs[0], &var_name, lo, hi)
   {
     return Ok(Expr::Real(measure));
+  }
+
+  // Even-odd subdivision: a range symmetric about 0 is folded onto its
+  // right half, `∫_{-a}^{a} f(x) dx = ∫_0^a (f(x) + f(-x)) dx`. An odd
+  // part cancels exactly, and the quadrature never has to find a peak
+  // whose only sample in the first, wide panel is a zero at the center
+  // (`x^2 Exp[-x^2]` over `{x, -20, 20}` read as ~0 before).
+  let has_exclusions = args[2..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Exclusions"))
+  });
+  if bounds.len() == 2
+    && lo.is_finite()
+    && lo < 0.0
+    && hi == -lo
+    && monitor.is_none()
+    && working_precision.is_none()
+    && !has_exclusions
+  {
+    let mirrored = crate::syntax::substitute_variable(
+      integrand,
+      &var_name,
+      &call(
+        "Times",
+        vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())],
+      ),
+    );
+    let mut folded_args = args.to_vec();
+    folded_args[0] = call("Plus", vec![integrand.clone(), mirrored]);
+    folded_args[1] = Expr::List(
+      vec![
+        Expr::Identifier(var_name.clone()),
+        Expr::Integer(0),
+        Expr::Real(hi),
+      ]
+      .into(),
+    );
+    let folded = nintegrate_ast_impl(&folded_args)?;
+    return Ok(match folded {
+      Expr::Integer(0) => Expr::Real(0.0),
+      other => other,
+    });
   }
 
   // Evaluate the integrand at a point. A point where the integrand is not

@@ -205,6 +205,32 @@ fn main() {
         state.text_output,
         state.error
       );
+      // The typeset choice labels (popup/setter icons) of each discrete
+      // control, so their rendering can be inspected too.
+      if let Some(dir) = &svg_out_dir {
+        for (ci, control) in state.controls.iter().enumerate() {
+          let manipulate::ControlState::Discrete {
+            value_label_svgs, ..
+          } = control
+          else {
+            continue;
+          };
+          for (vi, handle) in value_label_svgs.iter().enumerate() {
+            if let Some(handle) = handle
+              && let iced::advanced::svg::Data::Bytes(bytes) = handle.data()
+            {
+              std::fs::create_dir_all(dir).expect("create svg out dir");
+              let out = dir.join(format!(
+                "widget-{widget_count}-control-{}-choice-{}.svg",
+                ci + 1,
+                vi + 1
+              ));
+              std::fs::write(&out, bytes).expect("write svg");
+              println!("wrote {}", out.display());
+            }
+          }
+        }
+      }
       // A typeset textual result is drawn as its own SVG.
       if let Some(dir) = &svg_out_dir
         && let Some(svg) = &state.typeset_output
