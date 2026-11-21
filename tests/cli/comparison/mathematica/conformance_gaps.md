@@ -24,6 +24,16 @@ its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
 named list pattern is compiled into a `List` head plus an element condition,
 and the display rebuilds the pattern from the head alone.
 
+### Displaying held `Graphics[…]` evaluates its primitives
+
+A front end draws a typeset `GraphicsBox` as it stands. Woxi's typeset
+display (the Playground/Studio SVG of a result) turns the box back into a
+`Graphics[…]` expression and renders it with the ordinary `Graphics`
+renderer, which evaluates the content. So the display of
+`Hold[Graphics[{n++; Point[{0, 0}]}]]` increments `n`. Messages raised by
+that drawing (`Part::pkspec1` from a held `Graphics[Line[pts[[i]]]]` inside
+a `Table`) are discarded, but side effects are not undone.
+
 ### `Rationalize[x, dx]` sometimes picks a different approximation
 
 Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200
@@ -5953,7 +5963,10 @@ which for this box is the lower-right y edge and the right vertical z edge;
 it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
 label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
 …`), so Wolfram seems to thin the ticks of a short box side. One box shape
-doesn't pin down either rule, so both stay as they are.
+doesn't pin down either rule, so both stay as they are. (A Demonstration
+snapshot of a box 1.6 times as tall as it is deep does pin down one
+exception: the x axis, along the front face, stays on the bottom front edge
+although the top back one is nearer the viewer; Woxi follows that.)
 
 ### `Texture` and `VertexTextureCoordinates`
 
