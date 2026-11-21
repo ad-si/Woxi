@@ -618,6 +618,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_of_styled_traditional_form_draws_formula_in_visual_mode() {
+    // Regression: `Text[Style[TraditionalForm[lhs == rhs], 16, Bold]]` (a
+    // Manipulate body stating an identity) stayed plain text, so Woxi
+    // Studio showed the raw `TraditionalForm[…]` source.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Text[Style[TraditionalForm[HoldForm[Integrate[Tan[x], x]] == \
+       Integrate[Tan[x], x]], 16, Bold]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(svg.contains('\u{222B}'), "integral sign missing: {svg}");
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+    assert!(svg.contains("bold"), "Bold style missing: {svg}");
+  }
+
+  #[test]
+  fn test_pane_of_text_traditional_form_keeps_pane_size_in_visual_mode() {
+    // A `Pane[Text[TraditionalForm[…]], {w, h}, Alignment -> …]` draws the
+    // formula inside the box the pane declares.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Pane[Text[Style[TraditionalForm[a^2 == Sqrt[b]], 14]], {320, 140}, \
+       Alignment -> {Left, Center}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(
+      svg.starts_with("<svg width=\"320\" height=\"140\""),
+      "{svg}"
+    );
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+  }
+
+  #[test]
   fn test_percent_in_cli_mode_collapses_to_out_zero() {
     // `interpret` (CLI / wolframscript-equivalent path) must not consume
     // the visual-mode history. `%` collapses to `Out[0]` exactly as
@@ -2068,7 +2103,7 @@ mod interpreter_tests {
 
   #[test]
   fn test_contour_plot_bar_legend_and_contour_labels() {
-    // `PlotLegends -> Automatic` widens the picture by a color-bar strip
+    // `PlotLegends -> Automatic` sets a color bar beside the picture
     // and `ContourLabels -> True` writes each level on its contour line.
     clear_state();
     let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
@@ -2084,7 +2119,7 @@ mod interpreter_tests {
     .expect("ContourPlot should produce a graphics SVG");
     assert!(plain.starts_with("<svg width=\"360\""), "{plain}");
     assert!(
-      svg.starts_with("<svg width=\"413\""),
+      svg.starts_with("<svg width=\"423\""),
       "legend widens: {svg}"
     );
     assert!(
@@ -3864,6 +3899,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_grid_result_sets_fractions_one_script_level_down() {
+    // Regression: a `Text@Grid[…]` result (a Manipulate body showing a
+    // table of fractions) drew its fractions at the full text size; Wolfram
+    // sets math inside text one script level down, at 3/4 of the size.
+    clear_state();
+    let r =
+      interpret_with_stdout("Text[Grid[{{a, 1/9}, {b, 2/27}}, Frame -> All]]")
+        .unwrap();
+    let svg = r.graphics.expect("expected the table to be drawn");
+    assert!(svg.contains("<line"), "{svg}");
+    assert!(svg.contains("font-size=\"10.5\""), "{svg}");
+    assert!(!svg.contains("font-size=\"14.0\""), "{svg}");
+  }
+
+  #[test]
   fn test_styled_row_quotient_stacks_the_fraction_at_its_size() {
     // Regression: `Style[Row[{a/b, " = ", 3}], 20]` pushes its style into
     // the row's items, and the resulting `Style[a/b, 20]` item was written
@@ -3879,8 +3929,14 @@ mod interpreter_tests {
         svg.contains("<line"),
         "expected a fraction line: {code}\n{svg}"
       );
+      // Inside `Text` the fraction sits one script level down (3/4 size).
+      let size = if code.contains("Text[") {
+        "15.0"
+      } else {
+        "20.0"
+      };
       assert!(
-        svg.contains("font-size=\"20.0\""),
+        svg.contains(&format!("font-size=\"{size}\"")),
         "fraction must take the style's size: {code}\n{svg}"
       );
       assert!(
@@ -4276,6 +4332,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_text_pane_of_style_applies_its_directives() {
+    // Regression: in `Text[Pane[Style[str, TextAlignment -> Left, size],
+    // w], pos]` the `Style` inside the `Pane` was ignored: the label kept
+    // the default 14-point font, its lines stayed centered, and it wrapped
+    // as if set in that default font.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Text[Pane[Style[\"aaaa aaaa aaaa aaaa aaaa\", \
+       TextAlignment -> Left, 20], 120], {0, 0}], Point[{{-1, -1}, {1, 1}}]}, \
+       ImageSize -> 400], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Pane["), "Pane source leaked: {svg}");
+    assert!(svg.contains("font-size=\"20\""), "Style size lost: {svg}");
+    assert!(
+      svg.contains("text-anchor=\"start\""),
+      "TextAlignment -> Left lost: {svg}"
+    );
+    // At 20 points an `a` is about 11 points wide, so two 4-letter words
+    // (about 95 points) fit in the 120-point pane and a third does not.
+    assert!(svg.contains(">aaaa aaaa<"), "not wrapped at 20pt: {svg}");
+    assert!(!svg.contains("aaaa aaaa aaaa"), "wrapped too wide: {svg}");
+    // The left-aligned lines hang from the pane's left edge, 60 points
+    // left of the anchor at the center of the 400-point-wide picture.
+    let x = svg
+      .split("text-anchor=\"start\"")
+      .next()
+      .and_then(|head| head.rsplit("<text x=\"").next())
+      .and_then(|t| t.split('"').next())
+      .and_then(|n| n.parse::<f64>().ok())
+      .expect("text x");
+    assert!((x - 140.0).abs() < 2.0, "left edge at {x}: {svg}");
+  }
+
+  #[test]
   fn test_framed_pane_text_and_defer_in_grid_cell() {
     // Regression: a text `Framed[Pane[x, size]]` printed the literal
     // `Pane[…]` source, and a `Defer[expr]` grid cell kept its wrapper
@@ -4331,6 +4422,59 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_inset_panel_draws_plate() {
+    // Regression: `Inset[Panel[…], pos]` (a readout table placed on a
+    // diagram) printed the literal `Panel[Text[Grid[…]]]` source instead
+    // of drawing the panel's plate with its content.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Circle[], Inset[Panel[Text[Grid[{{\"speed\", 12}, {\"power\", 3.5}}, Alignment -> Left]]], {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Panel["), "Panel source leaked: {svg}");
+    assert!(!svg.contains("Grid["), "Grid source leaked: {svg}");
+    assert!(
+      svg.contains("fill=\"rgb(245,245,245)\""),
+      "no panel plate: {svg}"
+    );
+    assert!(svg.contains(">speed<") && svg.contains(">3.5<"), "{svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Inset[Panel[\"hi\"], Scaled[{0.2, 0.5}]], Point[{1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Panel["), "Panel source leaked: {svg}");
+  }
+
+  #[test]
+  fn test_panel_and_framed_image_size_width() {
+    // `ImageSize -> w` sets the outer width of a `Panel`/`Framed` box; a
+    // size narrower than the content leaves the box at its natural size.
+    clear_state();
+    let svg =
+      interpret("ExportString[Panel[\"hi\", ImageSize -> 100], \"SVG\"]")
+        .unwrap();
+    assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+    let svg = interpret(
+      "ExportString[Framed[\"hi\", ImageSize -> {120, 50}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg width=\"120\" height=\"50\""), "{svg}");
+    let natural =
+      interpret("ExportString[Panel[\"some longer text\"], \"SVG\"]").unwrap();
+    let narrow = interpret(
+      "ExportString[Panel[\"some longer text\", ImageSize -> 10], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      natural.split('\n').next(),
+      narrow.split('\n').next(),
+      "narrow ImageSize shrank the panel"
+    );
+  }
+
+  #[test]
   fn test_greater_less_slant_equal_operators() {
     // `\[GreaterSlantEqual]` (⩾, U+2A7E) and `\[LessSlantEqual]` (⩽,
     // U+2A7D) are glyph variants of GreaterEqual/LessEqual that a
@@ -4351,6 +4495,35 @@ mod interpreter_tests {
     assert_eq!(interpret("1\u{2A7D}2\u{2A7D}3").unwrap(), "True");
     clear_state();
     assert_eq!(interpret("If[3\u{2A7E}2, \"yes\", \"no\"]").unwrap(), "yes");
+  }
+
+  #[test]
+  fn test_inset_without_position_embeds_prerendered_object() {
+    // `Inset[obj]` with no position sits at the origin, like
+    // `Inset[obj, Automatic]`. An object embedded whole (an `Image` of any
+    // channel count, a `Graphics3D`, a rendered plot) must still draw as a
+    // picture. Regression: without a position they fell through to the
+    // text path and printed `-Image-` / `-Graphics3D-` / `-Graphics-`.
+    for (code, needle) in [
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 4}]]]]", "<image"),
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 3}]]]]", "<image"),
+      (
+        "Graphics[{Circle[], Inset[Image[RandomReal[1, {3, 5}]]]}]",
+        "<image",
+      ),
+      ("Graphics[Inset[Graphics3D[Sphere[]]]]", "<svg"),
+      ("Graphics[Inset[Plot[x, {x, 0, 1}]]]", "<svg"),
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(svg.contains(needle), "{code} did not embed: {svg}");
+      for placeholder in ["-Image-", "-Graphics3D-", "-Graphics-"] {
+        assert!(
+          !svg.contains(placeholder),
+          "{code} fell back to the {placeholder} text placeholder"
+        );
+      }
+    }
   }
 
   #[test]
@@ -5114,6 +5287,33 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_manipulate_numeric_fraction_captions_typeset_as_icons() {
+    // A numeric arithmetic caption with a fraction or radical
+    // (`{{r, False, 8/9}, {False, True}}`, `Pi/4`, `Sqrt[2]`) is typeset as
+    // stacked math, so it travels as caption code and renders an icon with
+    // no text runs. A flat numeric caption (`2 Pi`), a symbolic one (`a/b`)
+    // and a string keep their text labels.
+    clear_state();
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{r, s, t, u, v, w}, {{r, False, 8/9}, {False, True}}, {{s, 0, -Pi/4}, 0, 1}, {{t, 0, Sqrt[2]}, 0, 1}, {{u, 0, 2 Pi}, 0, 1}, {{v, 0, a/b}, 0, 1}, {{w, 0, \"1/2\"}, 0, 1}]",
+    )
+    .unwrap();
+    let spec = woxi::functions::graphics::extract_manipulate_spec(&expr)
+      .expect("a Manipulate spec");
+    let mut icons = Vec::new();
+    for (name, code) in &spec.dynamic_labels {
+      let (runs, svg) =
+        woxi::functions::graphics::manipulate_eval_caption(code).unwrap();
+      if let Some(svg) = svg {
+        assert!(runs.is_empty(), "an icon caption has no text: {runs:?}");
+        assert!(svg.starts_with("<svg"), "not an SVG: {svg}");
+        icons.push(name.as_str());
+      }
+    }
+    assert_eq!(icons, ["r", "s", "t"]);
+  }
+
+  #[test]
   fn test_plot_label_matrix_form_typesets_entries_not_source() {
     // `MatrixForm[{{…}}]` in a `PlotLabel` is typeset as a matrix (a
     // picture above the drawing), not printed as the wrapper's source, and
@@ -5682,7 +5882,8 @@ mod interpreter_tests {
   #[test]
   fn test_axes_label_letter_script_is_typeset() {
     // `Subscript[x, n]` has no Unicode subscript for a letter, so the label
-    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`.
+    // flattened to a flat `xn`; it must draw `n` as a lowered `<tspan>`,
+    // with base and script in `TraditionalForm` italics.
     clear_state();
     let svg = interpret(
       "ExportString[ListLinePlot[{1, 3, 2}, \
@@ -5691,7 +5892,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "x<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan></text>"
+        "<tspan font-style=\"italic\">x</tspan><tspan baseline-shift=\"sub\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">n</tspan></tspan></text>"
       ),
       "subscript letter not typeset: {svg}"
     );
@@ -5702,7 +5904,8 @@ mod interpreter_tests {
     .unwrap();
     assert!(
       svg.contains(
-        "y<tspan baseline-shift=\"super\" font-size=\"70%\">k</tspan></text>"
+        "<tspan font-style=\"italic\">y</tspan><tspan baseline-shift=\"super\" \
+         font-size=\"70%\"><tspan font-style=\"italic\">k</tspan></tspan></text>"
       ),
       "superscript letter not typeset: {svg}"
     );
@@ -5742,9 +5945,13 @@ mod interpreter_tests {
          FrameLabel -> {\"t\", x^2}], \"SVG\"]",
     )
     .unwrap();
+    // It is set in TraditionalForm: an italic x with a raised 2.
     assert!(
-      svg.contains("x²"),
-      "a bare Power FrameLabel entry must render as a Unicode superscript, \
+      svg.contains(
+        "<tspan font-style=\"italic\">x</tspan>\
+         <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+      ),
+      "a bare Power FrameLabel entry must render as a superscript, \
        not vanish: {svg}"
     );
 
@@ -5757,8 +5964,13 @@ mod interpreter_tests {
          Style[\"i\", Italic], \"t\"}], \")\"}]], \"SVG\"]",
     )
     .unwrap();
+    // The styled base and exponent keep their styles, the exponent raised.
     assert!(
-      svg2.contains("H(eit)"),
+      svg2.contains(
+        "H(<tspan font-style=\"italic\">e</tspan><tspan \
+         baseline-shift=\"super\" font-size=\"70%\"><tspan \
+         font-style=\"italic\">i</tspan>t</tspan>)"
+      ),
       "a Power nested in a Row must render alongside the row's other text, \
        not leave a gap: {svg2}"
     );

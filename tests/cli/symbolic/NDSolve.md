@@ -41,6 +41,15 @@ $ wo "s = NDSolve[{y'[t] == -y[t], y[0] == 1}, y, {t, 0, 5}]; {y[2.0], y'[2.0]} 
 \{0\.135335\d+, -0\.13533\d+\} (regex)
 ```
 
+A `WhenEvent` may watch a real-valued expression instead of an equation: the
+event fires where the expression crosses zero. Here the integration stops
+once `y` has decayed to `1/4`, at `t = Log[4]`:
+
+```scrut
+$ wo "s = NDSolve[{y'[t] == -y[t], y[0] == 1, WhenEvent[y[t] - 1/4, \"StopIntegration\"]}, y, {t, 0, 5}]; Round[10^4 (y[\"Domain\"] /. First[s])]"
+{{0, 13863}}
+```
+
 ### Step-wise solving
 
 `NDSolve`ProcessEquations` sets a problem up as an `NDSolve`StateData`

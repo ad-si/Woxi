@@ -606,16 +606,19 @@ fn compiled_body(
   let body = resolved.as_ref().unwrap_or(body);
   let key = std::ptr::from_ref::<Expr>(body) as usize;
   if let Some(hit) = COMPILED_BODIES.with(|cache| {
-    cache
-      .borrow()
-      .iter()
-      .find(|entry| {
-        entry.key == key
-          && entry.vars.as_slice() == vars
-          && crate::evaluator::pattern_matching::expr_equal(&entry.body, body)
-          && symbols_unchanged(&entry.symbols)
-      })
-      .map(|entry| entry.compiled.clone())
+    let mut cache = cache.borrow_mut();
+    let entry = cache.iter_mut().find(|entry| {
+      entry.key == key
+        && entry.vars.as_slice() == vars
+        && crate::evaluator::pattern_matching::expr_equal(&entry.body, body)
+        && symbols_unchanged(&entry.symbols)
+    })?;
+    // An equal body left by an earlier evaluation holds its own copies of
+    // the large lists (an `InterpolatingFunction`'s table), which every
+    // sample would compare element by element; the caller's body shares its
+    // lists with the following samples, so they compare by pointer.
+    entry.body = body.clone();
+    Some(entry.compiled.clone())
   }) {
     return hit;
   }
@@ -813,9 +816,18 @@ fn adaptive_sample(
     }
   };
   let visible_bend = match visible_y {
-    Some((lo, hi)) => curve_bend.min((hi - lo).abs() * 1e-3),
-    None => curve_bend,
+    Some((lo, hi)) if !lo.is_nan() && !hi.is_nan() => {
+      curve_bend.min((hi - lo).abs() * 1e-3)
+    }
+    _ => curve_bend,
   };
+
+  // The denominator floor of the relative bend test scales with the curve:
+  // a fixed absolute floor would swamp a curve whose values are all tiny
+  // (an absorption spectrum of height 1e-12, say), so its peaks would never
+  // be refined. Where a bend is visible at all it exceeds `visible_bend`,
+  // which keeps the test unchanged for curves of ordinary size.
+  let range_floor = visible_bend.max(f64::MIN_POSITIVE);
 
   // Adaptive refinement passes, one level of `MaxRecursion` each.
   for _ in 0..max_depth {
@@ -840,6 +852,9 @@ fn adaptive_sample(
       // A stretch whose ends both lie past the same edge of an explicit
       // `PlotRange` is clipped away, so refining it only spends samples.
       let off_screen = visible_y.is_some_and(|(lo, hi)| {
+        // An open (NaN) end of the range does not clip.
+        let lo = if lo.is_nan() { f64::NEG_INFINITY } else { lo };
+        let hi = if hi.is_nan() { f64::INFINITY } else { hi };
         let (lo, hi) = (lo.min(hi), lo.max(hi));
         (y0 > hi && y1 > hi) || (y0 < lo && y1 < lo)
       });
@@ -856,7 +871,7 @@ fn adaptive_sample(
           // Linear interpolation error: how much does the middle point
           // deviate from the line connecting its neighbors?
           let y_interp = y0 + (y2 - y0) * (x1 - x0) / (x2 - x0);
-          let y_range = (y2 - y0).abs().max(1e-10);
+          let y_range = (y2 - y0).abs().max(range_floor);
           let bend = (y1 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -873,7 +888,7 @@ fn adaptive_sample(
         let (xm1, ym1) = points[i - 1];
         if ym1.is_finite() {
           let y_interp = ym1 + (y1 - ym1) * (x0 - xm1) / (x1 - xm1);
-          let y_range = (y1 - ym1).abs().max(1e-10);
+          let y_range = (y1 - ym1).abs().max(range_floor);
           let bend = (y0 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -1108,7 +1123,7 @@ fn drawn_y_range(
 
 /// Whether `Exclusions` leaves the automatic exclusions on: the option is
 /// absent, `Automatic`, or a list that includes `Automatic`.
-fn automatic_exclusions_enabled(options: &[Expr]) -> bool {
+pub(crate) fn automatic_exclusions_enabled(options: &[Expr]) -> bool {
   let value = options.iter().find_map(|opt| match opt {
     Expr::Rule {
       pattern,
@@ -1166,9 +1181,10 @@ fn has_branch_cut(body: &Expr) -> bool {
 
 /// Whether `body` contains a function that jumps between constant (or
 /// separately continuous) pieces, whose discontinuities `Exclusions ->
-/// Automatic` breaks the curve at.
+/// Automatic` breaks the curve at. `ArcCot` counts too: on the reals it
+/// jumps from `-Pi/2` to `Pi/2` where its argument crosses zero.
 fn has_step_function(body: &Expr) -> bool {
-  const STEP_HEADS: [&str; 13] = [
+  const STEP_HEADS: [&str; 14] = [
     "Floor",
     "Ceiling",
     "Round",
@@ -1182,6 +1198,7 @@ fn has_step_function(body: &Expr) -> bool {
     "Boole",
     "SquareWave",
     "SawtoothWave",
+    "ArcCot",
   ];
   if matches!(body, Expr::FunctionCall { name, .. } if STEP_HEADS.contains(&name.as_str()))
   {
@@ -1290,6 +1307,15 @@ fn jump_points(points: &[(f64, f64)], body: &Expr, var: &str) -> Vec<f64> {
   jumps
 }
 
+/// A `PlotRange -> {ymin, ymax}` pair limiting the y axis only: two numbers,
+/// or a number and an open end (`{Automatic, ymax}`).
+fn is_y_only_pair(items: &[Expr]) -> bool {
+  items
+    .iter()
+    .all(|e| try_eval_to_f64(e).is_some() || is_open_range_end(e))
+    && items.iter().any(|e| try_eval_to_f64(e).is_some())
+}
+
 /// True when a `PlotRange` value asks for the whole y extent: `All` itself, or
 /// `All` in the y slot of `{xrange, All}`.
 fn plot_range_requests_all_y(value: &Expr) -> bool {
@@ -1303,6 +1329,10 @@ pub(crate) fn plot_range_all_axes(value: &Expr) -> (bool, bool) {
   let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
   match &val {
     e if is_all(e) => (true, true),
+    // `{ymin, All}` opens only an end of the y range.
+    Expr::List(items) if items.len() == 2 && is_y_only_pair(items) => {
+      (false, false)
+    }
     Expr::List(items) if items.len() == 2 => {
       (is_all(&items[0]), is_all(&items[1]))
     }
@@ -1328,7 +1358,7 @@ pub(crate) fn plot_range_x_from_points(value: &Expr) -> Option<bool> {
   };
   match &val {
     Expr::List(items) if items.len() == 2 => {
-      if items.iter().all(|e| try_eval_to_f64(e).is_some()) {
+      if is_y_only_pair(items) {
         return Some(true);
       }
       spec(&items[0])
@@ -2264,7 +2294,7 @@ fn widest_label_line_len(label: &str) -> usize {
 
 /// The content of a `<text>` holding `lines`: a single line as is, several
 /// as `<tspan>`s that each restart at `x`, `pitch` below the one before.
-fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
+pub(crate) fn join_label_lines(lines: &[String], x: f64, pitch: f64) -> String {
   if lines.len() == 1 {
     return lines[0].clone();
   }
@@ -2313,7 +2343,60 @@ pub(crate) fn format_tick_with_step(v: f64, step: f64) -> String {
     return format_tick(v);
   }
   let v = if effectively_zero { 0.0 } else { v };
-  format!("{v:.decimals$}")
+  crate::functions::graphics::group_digits_str(&format!("{v:.decimals$}"))
+}
+
+/// Label a `step`-spaced tick on an axis spanning `lo..hi`.
+///
+/// Like [`format_tick_with_step`], but the labels written in scientific
+/// notation all show as many mantissa decimals as the axis's largest tick
+/// needs, the way Wolfram labels a set of ticks: an axis stepping by
+/// `5*10^-8` up to `2*10^-7` reads `5.0×10⁻⁸, 1.0×10⁻⁷, 1.5×10⁻⁷, 2.0×10⁻⁷`.
+pub(crate) fn format_axis_tick(v: f64, step: f64, lo: f64, hi: f64) -> String {
+  let label = format_tick_with_step(v, step);
+  let Some(decimals) = axis_scientific_decimals(step, lo, hi) else {
+    return label;
+  };
+  pad_scientific_mantissa(&label, decimals)
+}
+
+/// The mantissa decimals every scientific label of a `step`-spaced axis
+/// over `lo..hi` carries: the most any of its ticks needs.
+fn axis_scientific_decimals(step: f64, lo: f64, hi: f64) -> Option<usize> {
+  if !(step.is_finite() && step > 0.0 && lo.is_finite() && hi.is_finite()) {
+    return None;
+  }
+  let (lo, hi) = (lo.min(hi), lo.max(hi));
+  let first = (lo / step - 1e-9).ceil();
+  let last = (hi / step + 1e-9).floor();
+  if !(last - first).is_finite() || last - first > 1000.0 {
+    return None;
+  }
+  (first as i64..=last as i64)
+    .filter_map(|k| {
+      let label = format_tick_with_step(k as f64 * step, step);
+      let (mantissa, _) = label.split_once('\u{d7}')?;
+      Some(mantissa.split_once('.').map_or(0, |(_, frac)| frac.len()))
+    })
+    .max()
+}
+
+/// Pad the mantissa of a scientific tick label (`5×10⁻⁸`) to `decimals`
+/// decimals (`5.0×10⁻⁸`); any other label is returned as is.
+fn pad_scientific_mantissa(label: &str, decimals: usize) -> String {
+  let Some((mantissa, rest)) = label.split_once('\u{d7}') else {
+    return label.to_string();
+  };
+  let have = mantissa.split_once('.').map_or(0, |(_, frac)| frac.len());
+  if have >= decimals {
+    return label.to_string();
+  }
+  let mut out = mantissa.to_string();
+  if have == 0 {
+    out.push('.');
+  }
+  out.extend(std::iter::repeat_n('0', decimals - have));
+  format!("{out}\u{d7}{rest}")
 }
 
 /// How many decimals it takes to write `step` — the decimals every label of
@@ -2330,10 +2413,21 @@ fn tick_step_decimals(step: f64) -> Option<usize> {
   })
 }
 
+/// `v` split into a mantissa in `[1, 10)` (in magnitude) and an exponent.
+fn scientific_parts(v: f64) -> (f64, i32) {
+  let mut exp = v.abs().log10().floor() as i32;
+  let mut mantissa = v / 10f64.powi(exp);
+  // `log10` can land a hair below an exact power of ten.
+  if (mantissa.abs() - 10.0).abs() < 1e-9 || mantissa.abs() > 10.0 {
+    exp += 1;
+    mantissa /= 10.0;
+  }
+  (mantissa, exp)
+}
+
 /// `v` as `m×10^e` with Unicode superscript exponent digits.
 fn format_scientific_tick(v: f64) -> String {
-  let exp = v.abs().log10().floor() as i32;
-  let mantissa = v / 10f64.powi(exp);
+  let (mantissa, exp) = scientific_parts(v);
   let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
     format!("{}", mantissa.round() as i64)
   } else {
@@ -2346,7 +2440,14 @@ fn format_scientific_tick(v: f64) -> String {
   )
 }
 
+/// Label a single tick. Like every label of a Wolfram tick set, an integer
+/// part of five or more digits is split into blocks of three by thin spaces
+/// (`100000` reads `100 000`).
 pub(crate) fn format_tick(v: f64) -> String {
+  crate::functions::graphics::group_digits_str(&format_tick_ungrouped(v))
+}
+
+fn format_tick_ungrouped(v: f64) -> String {
   // Outside `[10^-5, 10^6)` the Wolfram Language labels a tick in
   // scientific notation — a frequency axis running to 6*10^15 is labeled
   // `2x10^15` with real superscript digits, not `2000000000000000`. The
@@ -2510,7 +2611,11 @@ fn inject_missing_major_tick_labels(
       };
       let along = if horizontal { x } else { y };
       if !template.occupied.iter().any(|p| (p - along).abs() < 2.0) {
-        svg.push_str(&template.render(x, y, &format_tick_with_step(v, major)));
+        svg.push_str(&template.render(
+          x,
+          y,
+          &format_axis_tick(v, major, min, max),
+        ));
       }
       v += major;
     }
@@ -2876,6 +2981,21 @@ pub(crate) fn frame_ticks_svg(l: &FrameTicksLayout) -> String {
         ));
       }
       let Some(label) = label else { continue };
+      // A typeset picture sits where a text label's box would: its top
+      // (bottom edge), bottom (top edge) or its middle (side edges) the
+      // label gap away from the edge.
+      let placed = match edge {
+        0 => ((px, py + gap), (0.5, 0.0)),
+        2 => ((px, py - gap), (0.5, 1.0)),
+        1 => ((px - gap, py), (1.0, 0.5)),
+        _ => ((px + gap, py), (0.0, 0.5)),
+      };
+      if let Some(picture) =
+        tick_label_picture_svg(label, placed.0, placed.1, l.font * sf, &fill)
+      {
+        svg.push_str(&picture);
+        continue;
+      }
       let lines = label.split('\n').count();
       let pitch = line_pitch(l.font) * sf;
       let text = match edge {
@@ -3214,11 +3334,29 @@ pub(crate) fn apply_filling_option(replacement: &Expr, opts: &mut PlotOptions) {
   // list of rules, all of which evaluate to themselves.
   let value =
     evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  opts.filling_successive =
+    matches!(&value, Expr::Identifier(v) if v == "True");
   if let Some(rules) = parse_filling_rules(&value) {
     opts.filling_rules = rules;
   } else {
     opts.filling = parse_filling(&value);
   }
+}
+
+/// Resolve `Filling -> True` for a plot of `series_count` curves: the
+/// curves are filled pairwise, curve `i` to curve `i + 1`, and the last
+/// one is left unfilled (a single curve keeps its fill to the axis).
+pub(crate) fn resolve_successive_filling(
+  opts: &mut PlotOptions,
+  series_count: usize,
+) {
+  if !opts.filling_successive || series_count < 2 {
+    return;
+  }
+  opts.filling = Filling::None;
+  opts.filling_rules = (0..series_count - 1)
+    .map(|i| (i, FillTarget::Series(i + 1), None))
+    .collect();
 }
 
 /// The fills of series `idx` in drawing order, each with the
@@ -3539,6 +3677,9 @@ pub(crate) struct SeriesStyle {
   /// This style came from its own `{…}` entry of a `PlotStyle` list, i.e. it
   /// is one dataset's style rather than a bare directive of a combined one.
   pub from_list: bool,
+  /// `Arrowheads[spec]`'s argument: the heads an axis styled by it
+  /// (`AxesStyle -> Arrowheads[…]`) carries.
+  pub arrowheads: Option<Expr>,
   /// The series continues the line of the series before it (a later
   /// `ColorFunction` run of the same curve; see
   /// `PlotSeriesData::continues_previous`).
@@ -3628,6 +3769,11 @@ pub(crate) struct PlotOptions {
   /// replaces the global `filling`: series without a rule are not filled,
   /// and a series named by several rules gets every one of their fills.
   pub filling_rules: Vec<(usize, FillTarget, Option<FillStyle>)>,
+  /// `Filling -> True`: with several curves, each one is filled to the
+  /// next and the last stays unfilled; a lone curve fills to the axis.
+  /// Resolved into `filling_rules` by `resolve_successive_filling` once
+  /// the number of curves is known.
+  pub filling_successive: bool,
   /// `FillingStyle -> …`: color/opacity for the filled regions (applies to
   /// every filled series). `None` keeps the default appearance (series
   /// color at 0.2 opacity).
@@ -3831,6 +3977,10 @@ pub(crate) struct PlotOptions {
   /// `Mesh -> Full` dots, error bars, and per-point labels. Empty when the
   /// drawn curve is the data itself.
   pub data_points: Vec<Vec<(f64, f64)>>,
+  /// Points of series drawn as overlay primitives rather than as curves of
+  /// their own (a `ListPlot` shown over a `Plot`): `curve_label_specs` past
+  /// the drawn series index into these.
+  pub overlay_label_curves: Vec<Vec<(f64, f64)>>,
   /// `Background -> color`: fill for the whole image, replacing the
   /// theme background. `None` keeps the theme default.
   pub background: Option<RGBColor>,
@@ -4033,6 +4183,18 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Size each relative `Thickness[t]` of `plot_style` as the fraction `t`
+  /// of this plot's image width, as Wolfram does: a wider plot draws the
+  /// same `Thickness` with a heavier line.
+  pub(crate) fn resolve_relative_thickness(&mut self) {
+    let width = self.svg_width as f64;
+    for style in &mut self.plot_style {
+      if let Some(t) = style.thickness_fraction {
+        style.thickness = Some(t * width);
+      }
+    }
+  }
+
   /// Drop every `FrameLabel` edge, plain text and picture alike.
   pub(crate) fn clear_frame_labels(&mut self) {
     self.frame_label_bottom = None;
@@ -4092,6 +4254,7 @@ impl Default for PlotOptions {
       full_width: false,
       filling: Filling::None,
       filling_rules: Vec::new(),
+      filling_successive: false,
       filling_style: None,
       mesh: Mesh::None,
       plot_label: None,
@@ -4162,6 +4325,7 @@ impl Default for PlotOptions {
       interval_markers: IntervalMarkers::default(),
       interval_markers_color: None,
       data_points: Vec::new(),
+      overlay_label_curves: Vec::new(),
       background: None,
       image_padding: None,
       aspect_ratio: None,
@@ -4748,6 +4912,18 @@ pub(crate) fn explicit_ticks_svg(
           axis_y - tick_len,
         ));
       }
+      // A picture's top sits where a text label's top would.
+      let top = axis_y + tick_font - plot_padding::ascent(tick_font_pt) * sf;
+      if let Some(picture) = tick_label_picture_svg(
+        label,
+        (px, top),
+        (0.5, 0.0),
+        tick_font,
+        label_fill,
+      ) {
+        out.push_str(&picture);
+        continue;
+      }
       out.push_str(&format!(
         "<text x=\"{px:.1}\" y=\"{:.1}\" text-anchor=\"middle\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_y + tick_font,
@@ -4766,6 +4942,16 @@ pub(crate) fn explicit_ticks_svg(
           "<line x1=\"{plot_x0:.1}\" y1=\"{py:.1}\" x2=\"{:.1}\" y2=\"{py:.1}\" stroke=\"{label_fill}\" stroke-width=\"{sf:.1}\"/>\n",
           plot_x0 + tick_len,
         ));
+      }
+      if let Some(picture) = tick_label_picture_svg(
+        label,
+        (plot_x0 - tick_len, py),
+        (1.0, 0.5),
+        tick_font,
+        label_fill,
+      ) {
+        out.push_str(&picture);
+        continue;
       }
       out.push_str(&format!(
         "<text x=\"{:.1}\" y=\"{py:.1}\" text-anchor=\"end\" dominant-baseline=\"central\" font-family=\"sans-serif\" font-size=\"{tick_font:.0}\" fill=\"{label_fill}\">{label}</text>\n",
@@ -5043,16 +5229,19 @@ pub(crate) fn plot_labels_svg(
     // A title wider than the picture (a long `Row` of text) shrinks to fit
     // instead of being clipped at both edges.
     let widest = sl.max_line_chars() as f64;
-    let fs = if widest > 0.0 && !sl.framed {
+    let fs = if widest > 0.0 && sl.frame.is_none() {
       fs.min((canvas_width - 8.0 * sf) / (widest * 0.52))
     } else {
       fs
     };
     let ty = layout.title_top + ascent(fs / sf) * sf;
     // A box around the title must stay inside the image, even when a tight
-    // `ImagePadding` leaves less room above the plot than the box needs.
-    let ty = if sl.framed {
-      let top = ty - fs * 0.9 - 6.0 * sf;
+    // `ImagePadding` leaves less room above the plot than the box needs;
+    // its text sits below the frame's 6pt top margin, which the title band
+    // reserves.
+    let ty = if sl.frame.is_some() {
+      let ty = ty + 6.0 * sf;
+      let top = ty - ascent(fs / sf) * sf - 6.0 * sf;
       ty + (sf - top).max(0.0)
     } else {
       ty
@@ -5069,25 +5258,55 @@ pub(crate) fn plot_labels_svg(
       style_attrs.push_str(" font-style=\"italic\"");
     }
     let title_pitch = line_pitch(fs / sf) * sf;
-    if sl.framed {
-      // Box the title: the widest line plus Framed's 6pt margin per side.
+    if let Some(frame) = &sl.frame {
+      // Box the title: the widest line plus Framed's 6pt margin per side,
+      // square-cornered like `Framed`'s default `RoundingRadius -> 0`.
       let margin = 6.0 * sf;
       let w = sl.max_line_chars() as f64 * fs * 0.47 + 2.0 * margin;
       let lines = 1.0 + sl.extra_line_count() as f64;
       let h =
         line_height(fs / sf) * sf + (lines - 1.0) * title_pitch + 2.0 * margin;
       let top = ty - ascent(fs / sf) * sf - margin;
-      // `Background -> color` fills the box behind the title.
-      let fill = sl
-        .background
-        .map_or_else(|| "none".to_string(), super::graphics::Color::to_svg_rgb);
+      // A title with inline pictures (a typeset integral, a fraction) is
+      // boxed around the pictures and text it lays out, centered on the
+      // line those segments are centered on.
+      let (w, h, top) = if sl.segments.is_empty() {
+        (w, h, top)
+      } else {
+        let widths = inline_segment_widths(&sl.segments, fs, sf);
+        let content_h = sl
+          .segments
+          .iter()
+          .filter_map(|seg| match seg {
+            crate::functions::chart::LabelSegment::Graphic { h, .. } => {
+              Some(h * sf)
+            }
+            crate::functions::chart::LabelSegment::Text(_) => None,
+          })
+          .fold(line_height(fs / sf) * sf, f64::max);
+        let mid =
+          ty + sl.extra_line_count() as f64 * title_pitch / 2.0 - fs * 0.3;
+        (
+          widths.iter().sum::<f64>() + 2.0 * margin,
+          content_h + 2.0 * margin,
+          mid - content_h / 2.0 - margin,
+        )
+      };
       labels_svg.push_str(&format!(
         "<rect x=\"{:.1}\" y=\"{top:.1}\" width=\"{w:.1}\" \
-           height=\"{h:.1}\" rx=\"{:.1}\" fill=\"{fill}\" \
+           height=\"{h:.1}\" fill=\"{}\" \
            stroke=\"{}\" stroke-width=\"{:.1}\"/>\n",
         cx - w / 2.0,
-        3.0 * sf,
-        crate::functions::graphics::theme().framed_border,
+        frame
+          .background
+          .as_ref()
+          .map_or_else(|| "none".to_string(), |c| c.to_svg_rgb()),
+        frame.stroke.as_ref().map_or_else(
+          || crate::functions::graphics::theme()
+            .framed_border
+            .to_string(),
+          |c| c.to_svg_rgb()
+        ),
         sf,
       ));
     }
@@ -5133,6 +5352,65 @@ pub(crate) fn plot_labels_svg(
   labels_svg
 }
 
+/// The width in render units of each segment of a title that mixes text
+/// and inline pictures, as [`inline_segments_svg`] lays them out.
+fn inline_segment_widths(
+  segments: &[crate::functions::chart::LabelSegment],
+  fs: f64,
+  sf: f64,
+) -> Vec<f64> {
+  use crate::functions::chart::LabelSegment;
+  segments
+    .iter()
+    .map(|seg| match seg {
+      LabelSegment::Text(m) => {
+        crate::functions::plot_padding::text_width(
+          &crate::functions::chart::svg_markup_visible_text(m),
+          fs / sf,
+        ) * sf
+      }
+      LabelSegment::Graphic { w, .. } => w * sf,
+    })
+    .collect()
+}
+
+/// A chart's `PlotLabel` with its first line's baseline at `ty`, set at
+/// font size `fs` (render units) with `decimals` digits in its position: a
+/// title mixing text with typeset pictures (a stacked fraction) is laid
+/// out as segments, any other as a `<text>` of its stacked lines.
+#[allow(clippy::too_many_arguments)]
+fn chart_title_svg(
+  sl: &StyledLabel,
+  cx: f64,
+  ty: f64,
+  fs: f64,
+  fill: &str,
+  style_attrs: &str,
+  sf: f64,
+  decimals: usize,
+) -> String {
+  let pitch = fs * 1.2;
+  if !sl.segments.is_empty() {
+    // Center the line on the band the tallest picture claims.
+    let ty = ty + sl.extra_line_count() as f64 * pitch / 2.0;
+    return inline_segments_svg(
+      &sl.segments,
+      cx,
+      ty,
+      fs,
+      fill,
+      style_attrs,
+      sf,
+    );
+  }
+  format!(
+    "<text x=\"{cx:.decimals$}\" y=\"{ty:.decimals$}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+       fill=\"{fill}\"{style_attrs}>{}</text>\n",
+    sl.svg_scaled_stacked(sf, cx, pitch)
+  )
+}
+
 /// A title made of text runs and small inline pictures, laid out left to
 /// right and centered on `cx`. `ty` is the text baseline; each picture is
 /// centered on the text's x-height line. Lengths are in render units, with
@@ -5147,18 +5425,7 @@ fn inline_segments_svg(
   sf: f64,
 ) -> String {
   use crate::functions::chart::LabelSegment;
-  let widths: Vec<f64> = segments
-    .iter()
-    .map(|seg| match seg {
-      LabelSegment::Text(m) => {
-        crate::functions::plot_padding::text_width(
-          &crate::functions::chart::svg_markup_visible_text(m),
-          fs / sf,
-        ) * sf
-      }
-      LabelSegment::Graphic { w, .. } => w * sf,
-    })
-    .collect();
+  let widths = inline_segment_widths(segments, fs, sf);
   let mut x = cx - widths.iter().sum::<f64>() / 2.0;
   let mid = ty - fs * 0.3;
   let mut out = format!("<g color=\"{fill}\">");
@@ -5343,6 +5610,7 @@ fn inject_epilog(
     y_min,
     y_max,
     scale,
+    image_w: f64::from(opts.svg_width) * scale,
   };
   let epilog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.epilog,
@@ -5383,6 +5651,7 @@ fn inject_prolog(
     y_min,
     y_max,
     scale,
+    image_w: f64::from(opts.svg_width) * scale,
   };
   let prolog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.prolog,
@@ -5795,9 +6064,16 @@ fn generate_svg_with_options(
   let show_ticks = opts.ticks_visible();
   // Which frame edges (bottom, left, top, right) carry their automatic tick
   // labels; an unframed plot labels its axes.
+  // An edge `Frame -> {{l, r}, {b, t}}` leaves undrawn carries no tick
+  // labels either.
+  let frame_edge_present = {
+    let e = opts.frame_edges;
+    [e.bottom, e.left, e.top, e.right]
+  };
   let frame_edge_labeled: [bool; 4] = std::array::from_fn(|edge| {
     if opts.frame {
-      matches!(opts.frame_tick_edges[edge], FrameEdgeTicks::Labeled)
+      frame_edge_present[edge]
+        && matches!(opts.frame_tick_edges[edge], FrameEdgeTicks::Labeled)
     } else {
       edge < 2
     }
@@ -5916,6 +6192,18 @@ fn generate_svg_with_options(
   // plotting area keeps its ratio and is centered in what the padding
   // leaves (see `padded_margins`). Without an `AspectRatio` the default
   // 1/GoldenRatio applies the same way.
+  // A lone one-line `PlotLabel` sits above the padding, so a canvas sized
+  // here grows by the title's band rather than giving up plotting area.
+  let lone_title = if opts.image_padding.is_some()
+    && !opts.image_size_explicit.1
+    && !has_top_label
+    && axes_label_y.is_none()
+    && plot_label_extra_lines(opts.plot_label.as_ref()) == 0
+  {
+    decorations.title
+  } else {
+    0.0
+  };
   if let Some(ar) = opts
     .aspect_ratio
     .or((!opts.aspect_full).then_some(DEFAULT_ASPECT_RATIO))
@@ -5924,7 +6212,8 @@ fn generate_svg_with_options(
   {
     let plot_w = render_width as f64 - (pad_left + pad_right) * sf;
     if plot_w > 0.0 && ar > 0.0 {
-      let target_render_h = plot_w * ar + (pad_bottom + pad_top) * sf;
+      let target_render_h =
+        plot_w * ar + (pad_bottom + pad_top + lone_title) * sf;
       svg_height =
         ((target_render_h / sf).round() as u32).clamp(1, MAX_SVG_DIMENSION);
       render_height = svg_height * RESOLUTION_SCALE;
@@ -5943,8 +6232,9 @@ fn generate_svg_with_options(
     mut margin_bottom,
   ) = match opts.image_padding {
     Some(padding) => {
+      let [pad_left, pad_right, pad_bottom, pad_top] = padding;
       let m = padded_margins(
-        padding,
+        [pad_left, pad_right, pad_bottom, pad_top + lone_title],
         (render_width, render_height),
         opts.aspect_ratio,
         opts.aspect_full,
@@ -6234,7 +6524,7 @@ fn generate_svg_with_options(
                 // Suppress plotters labels; we inject custom SVG with superscripts
                 String::new()
               } else if is_major_tick(*v, x_major) {
-                format_tick_with_step(*v, x_major)
+                format_axis_tick(*v, x_major, x_min, x_max)
               } else {
                 String::new()
               }
@@ -6246,7 +6536,7 @@ fn generate_svg_with_options(
               if log_y {
                 String::new()
               } else if is_major_tick(*v, y_major) {
-                format_tick_with_step(*v, y_major)
+                format_axis_tick(*v, y_major, y_min, y_max)
               } else {
                 String::new()
               }
@@ -7677,9 +7967,9 @@ fn generate_svg_with_options(
     let mut numbered = opts.clone();
     numbered.plot_legends = placeholder_legends(all_points.len());
     numbered.legend_placeholders = true;
-    inject_legend(&mut buf, &numbered);
+    inject_legend(&mut buf, &numbered, plot_area);
   } else {
-    inject_legend(&mut buf, opts);
+    inject_legend(&mut buf, opts, plot_area);
   }
 
   // `BaselinePosition -> Axis`: record where the x axis lies (display
@@ -7819,6 +8109,17 @@ fn inject_callout_labels(
     all_points
   } else {
     &opts.data_points
+  };
+  let with_overlays: Vec<Vec<(f64, f64)>>;
+  let curves = if opts.overlay_label_curves.is_empty() {
+    curves
+  } else {
+    with_overlays = curves
+      .iter()
+      .chain(&opts.overlay_label_curves)
+      .cloned()
+      .collect();
+    &with_overlays
   };
   let scale = crate::functions::plot_curve_labels::LabelScale {
     kx: plot_w / sf / (x_max - x_min),
@@ -8900,16 +9201,22 @@ pub(crate) fn generate_scatter_svg_with_options(
   generate_svg_with_filling(all_series, x_range, y_range, &opts)
 }
 
-/// Render a merged `PlotSource` (from `Show`).
-///
-/// `Show` keeps the options of the graphics it was given, so the merged
-/// graphic goes back through the ordinary plot renderers rather than a
-/// second implementation that would drift from them: line series render as
-/// a line plot, scatter series as points (as the plot itself, when every
-/// series is one, otherwise drawn over the lines as epilog primitives).
-pub(crate) fn render_merged_plot_source(
+/// The options a merged `PlotSource` renders with: its option rules (the
+/// first plot's `PlotLegends` included), the range overrides they set, and
+/// the per-series styles and markers rebuilt from the series drawn as the
+/// chart itself (every series when all are scatter series, else the line
+/// series), returned with that scatter flag and those series. Shared by
+/// [`render_merged_plot_source`] and [`inject_plot_source_legend`], so a
+/// legend drawn for a plot shown with other graphics keys its entries
+/// exactly as the plot's own legend does.
+fn merged_plot_source_options(
   source: &crate::syntax::PlotSource,
-) -> Result<String, InterpreterError> {
+) -> (
+  PlotOptions,
+  PlotRangeOverrides,
+  bool,
+  Vec<&crate::syntax::PlotSeriesData>,
+) {
   let mut opts = PlotOptions {
     svg_width: source.image_size.0,
     svg_height: source.image_size.1,
@@ -8934,14 +9241,6 @@ pub(crate) fn render_merged_plot_source(
       }
     }
   }
-  if let Some(ar) = overrides.aspect_ratio {
-    opts.aspect_ratio = Some(ar);
-  }
-  opts.aspect_automatic = overrides.aspect_automatic;
-  opts.log_x = source.log_x;
-  opts.log_y = source.log_y;
-  let x_range = overrides.x.unwrap_or(source.x_range);
-  let y_range = overrides.y.unwrap_or(source.y_range);
 
   let all_scatter =
     !source.series.is_empty() && source.series.iter().all(|s| s.is_scatter);
@@ -8984,6 +9283,81 @@ pub(crate) fn render_merged_plot_source(
   if opts.plot_markers.iter().all(Option::is_none) {
     opts.plot_markers.clear();
   }
+  (opts, overrides, all_scatter, drawn)
+}
+
+/// Draw the `PlotLegends` legend of the plot `source` describes onto `svg`,
+/// a picture of that plot shown with other graphics (`Show[plot,
+/// Graphics[…]]`), which is rendered as plain graphics and so drew no
+/// legend itself. The picture is brought to the plot renderer's viewBox
+/// scale first, so the legend is laid out exactly as on the plot alone.
+/// `None` when the plot has no explicit legend or `svg` has no plain
+/// `viewBox="0 0 w h"` root.
+pub(crate) fn inject_plot_source_legend(
+  svg: &str,
+  source: &crate::syntax::PlotSource,
+) -> Option<String> {
+  let (opts, ..) = merged_plot_source_options(source);
+  if opts.plot_legends.is_empty() {
+    return None;
+  }
+  let vb_re =
+    regex::Regex::new(r#"viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)""#)
+      .unwrap();
+  let caps = vb_re.captures(svg)?;
+  let (w, h): (f64, f64) = (caps[1].parse().ok()?, caps[2].parse().ok()?);
+  if w <= 0.0 || h <= 0.0 {
+    return None;
+  }
+  let sf = RESOLUTION_SCALE as f64;
+  let (scaled_w, scaled_h) = ((w * sf).round(), (h * sf).round());
+  let root_end =
+    caps.get(0)?.start() + svg[caps.get(0)?.start()..].find('>')?;
+  let close = svg.rfind("</svg>")?;
+  let mut buf = String::with_capacity(svg.len() + 1024);
+  buf.push_str(&svg[..caps.get(0)?.start()]);
+  buf.push_str(&format!(
+    "viewBox=\"0 0 {} {}\"",
+    scaled_w as u64, scaled_h as u64
+  ));
+  buf.push_str(&svg[caps.get(0)?.end()..=root_end]);
+  buf.push_str(&format!(
+    "<g transform=\"scale({:.6},{:.6})\">",
+    scaled_w / w,
+    scaled_h / h
+  ));
+  buf.push_str(&svg[root_end + 1..close]);
+  buf.push_str("</g></svg>");
+  buf.push_str(&svg[close + "</svg>".len()..]);
+  // The picture's own drawing region is not known here; the whole scaled
+  // picture stands in for it (it only places a legend set inside it).
+  inject_legend(&mut buf, &opts, (0.0, 0.0, scaled_w, scaled_h));
+  Some(buf)
+}
+
+/// Render a merged `PlotSource` (from `Show`).
+///
+/// `Show` keeps the options of the graphics it was given, so the merged
+/// graphic goes back through the ordinary plot renderers rather than a
+/// second implementation that would drift from them: line series render as
+/// a line plot, scatter series as points (as the plot itself, when every
+/// series is one, otherwise drawn over the lines as epilog primitives).
+pub(crate) fn render_merged_plot_source(
+  source: &crate::syntax::PlotSource,
+) -> Result<String, InterpreterError> {
+  let (mut opts, overrides, all_scatter, drawn) =
+    merged_plot_source_options(source);
+  if let Some(ar) = overrides.aspect_ratio {
+    opts.aspect_ratio = Some(ar);
+  }
+  opts.aspect_automatic = overrides.aspect_automatic;
+  opts.log_x = source.log_x;
+  opts.log_y = source.log_y;
+  let x_range =
+    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range);
+  let y_range =
+    fill_range(overrides.y, source.y_range).unwrap_or(source.y_range);
+
   if drawn.iter().any(|s| !s.labels.is_empty()) {
     opts.point_labels = drawn.iter().map(|s| s.labels.clone()).collect();
   }
@@ -9028,11 +9402,96 @@ pub(crate) fn render_merged_plot_source(
 
   let points: Vec<Vec<(f64, f64)>> =
     drawn.iter().map(|s| s.points.clone()).collect();
+  reindex_merged_labels(&mut opts, &source.series, all_scatter);
   if all_scatter {
     generate_scatter_svg_with_options(&points, x_range, y_range, &opts)
   } else {
     generate_svg_with_options(&points, x_range, y_range, &opts)
   }
+}
+
+/// Point the curve labels of a merged plot, given per merged series, at the
+/// curves as drawn: the series drawn as curves keep their order, and the
+/// ones overlaid as primitives (`ListPlot` points shown over a `Plot`) are
+/// anchored to their points after them — an end label sitting right after
+/// the last point, as `ListPlot` puts it.
+fn reindex_merged_labels(
+  opts: &mut PlotOptions,
+  series: &[crate::syntax::PlotSeriesData],
+  all_scatter: bool,
+) {
+  use crate::functions::plot_curve_labels::{LabelAt, LabelSide};
+  if series.iter().all(|s| s.is_scatter == all_scatter) {
+    return;
+  }
+  let drawn_count = series
+    .iter()
+    .filter(|s| s.is_scatter == all_scatter)
+    .count();
+  let mut drawn_index = Vec::with_capacity(series.len());
+  let (mut next_drawn, mut next_overlay) = (0, drawn_count);
+  let mut overlay_curves = Vec::new();
+  for s in series {
+    if s.is_scatter == all_scatter {
+      drawn_index.push(next_drawn);
+      next_drawn += 1;
+    } else {
+      drawn_index.push(next_overlay);
+      next_overlay += 1;
+      overlay_curves.push(s.points.clone());
+    }
+  }
+  // An overlaid series' own plot spanned its points, padded by 2% a side
+  // (`PlotRangePadding` of a `ListPlot`), and laid its labels out there.
+  let own_extent = |j: usize| -> Option<(f64, f64)> {
+    let points = overlay_curves.get(j.checked_sub(drawn_count)?)?;
+    let (lo, hi) = points
+      .iter()
+      .filter(|(x, y): &&(f64, f64)| x.is_finite() && y.is_finite())
+      .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &(x, _)| {
+        (lo.min(x), hi.max(x))
+      });
+    let pad = 0.02 * (hi - lo);
+    (lo <= hi && pad > 0.0).then_some((lo - pad, hi + pad))
+  };
+  for spec in &mut opts.curve_label_specs {
+    if let Some(&i) = drawn_index.get(spec.series) {
+      spec.series = i;
+      spec.x_extent = own_extent(i);
+    }
+  }
+  let mut ends = vec![None; drawn_count];
+  let mut leaders = vec![false; drawn_count];
+  for (i, label) in std::mem::take(&mut opts.plot_labels)
+    .into_iter()
+    .enumerate()
+  {
+    let Some(&j) = drawn_index.get(i) else {
+      continue;
+    };
+    if j < drawn_count {
+      leaders[j] = opts.plot_label_leaders.get(i).copied().unwrap_or(false);
+      ends[j] = label;
+    } else if let Some(text) = label {
+      opts.curve_label_specs.push(
+        crate::functions::plot_curve_labels::CurveLabelSpec {
+          series: j,
+          text,
+          at: LabelAt::Finish,
+          side: Some(LabelSide::Right),
+          callout: false,
+          x_extent: own_extent(j),
+        },
+      );
+    }
+  }
+  if ends.iter().any(Option::is_some) {
+    opts.plot_labels = ends;
+    opts.plot_label_leaders = leaders;
+  } else {
+    opts.plot_label_leaders.clear();
+  }
+  opts.overlay_label_curves = overlay_curves;
 }
 
 /// The `Filling` a merged series was drawn with, or `None` when it is unfilled.
@@ -9198,6 +9657,9 @@ pub(crate) struct BarChartLook {
   /// then centers the plotting area in the box instead of resizing it.
   pub fixed_height: bool,
   /// `ChartLayout`: how the bars of a group share its slot.
+  /// `ChartLabels` name the bars within each group (a flat label list on
+  /// grouped data) rather than the groups themselves.
+  pub labels_per_bar: bool,
   pub layout: BarLayout,
   /// Per-bar colors from `Style[v, color]` data wrappers, in drawing
   /// order (overriding `ChartStyle` and the default palette).
@@ -9235,6 +9697,9 @@ pub(crate) struct BarChartLook {
   /// An explicit `ImagePadding` (left, right, bottom, top in points); a
   /// `None` side is automatic.
   pub image_padding: Option<[Option<f64>; 4]>,
+  /// An explicit `PlotRangePadding`, padding the bars' extent (or the
+  /// explicit `PlotRange`); its `Automatic` sides keep the default padding.
+  pub plot_range_padding: Option<Expr>,
 }
 
 /// A `ChartElements` bar: copies of the rendered picture `svg`, each as
@@ -9280,6 +9745,7 @@ fn pictorial_bar_svg(svg: &str, base: (f64, f64), end: (f64, f64)) -> String {
 impl Default for BarChartLook {
   fn default() -> Self {
     Self {
+      labels_per_bar: false,
       axes: true,
       axes_color: None,
       axes_width: None,
@@ -9305,6 +9771,7 @@ impl Default for BarChartLook {
       ticks_style: None,
       axes_label_fonts: [None, None],
       image_padding: None,
+      plot_range_padding: None,
     }
   }
 }
@@ -9495,6 +9962,32 @@ impl BarSpacing {
 /// The rectangles of a bar chart's groups under `layout`, placed in their
 /// slots by `spacing`. The single canonical bar layout, shared by the SVG
 /// renderer and the chart's `Graphics` structure.
+/// Where each `ChartLabels` entry of a bar chart goes, as `(label index,
+/// group, x center)` in the bars' coordinates (group `g` spans `g..g+1`).
+/// Group labels sit centered under their group. Bar-level labels — a flat
+/// label list on grouped (side-by-side) data — sit under every bar, the
+/// `j`-th label naming the `j`-th bar of each group, as in Wolfram.
+pub(crate) fn bar_label_anchors(
+  rects: &[BarRect],
+  n_groups: usize,
+  label_count: usize,
+  per_bar: bool,
+  layout: BarLayout,
+) -> Vec<(usize, usize, f64)> {
+  let grouped = rects.iter().any(|r| r.index > 0);
+  if per_bar && grouped && !layout.single_column() {
+    rects
+      .iter()
+      .filter(|r| r.index < label_count)
+      .map(|r| (r.index, r.group, f64::midpoint(r.x0, r.x1)))
+      .collect()
+  } else {
+    (0..n_groups.min(label_count))
+      .map(|gi| (gi, gi, gi as f64 + 0.5))
+      .collect()
+  }
+}
+
 pub(crate) fn bar_rects(
   groups: &[Vec<f64>],
   layout: BarLayout,
@@ -9704,6 +10197,41 @@ pub(crate) fn generate_bar_svg(
   });
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
+  // An explicit `PlotRangePadding` pads the bars' own extent (or the
+  // explicit `PlotRange`) instead; an `Automatic` side keeps the default
+  // bound computed above.
+  let ((x_min, x_max), (y_min, y_max)) = match &look.plot_range_padding {
+    Some(padding) => {
+      let spec = crate::functions::graphics::parse_plot_range_padding(padding);
+      let pad = |axis: &crate::functions::graphics::AxisPadding,
+                 (lo, hi): (f64, f64),
+                 (auto_lo, auto_hi): (f64, f64)| {
+        let span = hi - lo;
+        if span <= 0.0 {
+          return (auto_lo, auto_hi);
+        }
+        let (pad_lo, pad_hi) = axis.resolve(span, 0.0);
+        let (keep_lo, keep_hi) = axis.automatic_sides();
+        (
+          if keep_lo { auto_lo } else { lo - pad_lo },
+          if keep_hi { auto_hi } else { hi + pad_hi },
+        )
+      };
+      let x_base =
+        plot_range_x.unwrap_or((slot.margin, n as f64 - slot.margin));
+      let y_base = plot_range_y.unwrap_or(if look.value_axis_negated {
+        (data_lo.min(0.0), 0.0)
+      } else {
+        (data_lo.min(0.0), data_hi.max(0.0))
+      });
+      (
+        pad(&spec.x, x_base, (x_min, x_max)),
+        pad(&spec.y, y_base, (y_min, y_max)),
+      )
+    }
+    None => ((x_min, x_max), (y_min, y_max)),
+  };
+
   let sf = RESOLUTION_SCALE as f64;
 
   // Extra space for labels
@@ -9830,10 +10358,17 @@ pub(crate) fn generate_bar_svg(
   } else {
     BAR_SIDE_MARGIN * sf
   };
+  // A left `FrameLabel` stands beside the y tick labels, in a strip of
+  // its own line's height plus a small gap.
+  let frame_label_left_room = if frame_label_y.is_some() {
+    1.3 * axes_font_pt[1] * sf
+  } else {
+    0.0
+  };
   let mut margin_left = if explicit_pad(0).is_some() {
     0.0
   } else {
-    BAR_SIDE_MARGIN * sf
+    BAR_SIDE_MARGIN * sf + frame_label_left_room
   };
   // Rotated labels below the axis hang as far as their bounding boxes
   // reach; an explicit bottom padding too small for them gives up
@@ -10492,6 +11027,7 @@ pub(crate) fn generate_bar_svg(
       y_min,
       y_max,
       scale: sf,
+      image_w: render_width as f64,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
       epilog, &area, "epilog", false,
@@ -10515,17 +11051,33 @@ pub(crate) fn generate_bar_svg(
       let y_span = y_max - y_min;
       let map_y_val =
         |v: f64| -> f64 { plot_y0 + (y_max - v) / y_span * plot_h };
-      for (i, label) in chart_labels.iter().enumerate().take(n) {
+      let anchors = bar_label_anchors(
+        &rects,
+        n,
+        chart_labels.len(),
+        look.labels_per_bar,
+        layout,
+      );
+      for (li, gi, x_center) in anchors {
+        let label = &chart_labels[li];
         let font_size = label.font_size.map_or(font_size, |f| f * sf);
         let lines = chart_label_lines(label, font_size / sf);
-        let weight = if label.bold || label_bold {
-          " font-weight=\"bold\""
-        } else {
-          ""
-        };
-        let cx = map_x_val(i as f64 + 0.5);
+        let weight = format!(
+          "{}{}",
+          if label.bold || label_bold {
+            " font-weight=\"bold\""
+          } else {
+            ""
+          },
+          if label.italic {
+            " font-style=\"italic\""
+          } else {
+            ""
+          }
+        );
+        let cx = map_x_val(x_center);
         // For Above/Center positioning, use the max value in the group
-        let group_max = group_top(i);
+        let group_max = group_top(gi);
         // Mathematica Rotate is counterclockwise-positive; SVG is clockwise-positive
         let svg_rotation_deg = -label.rotation.to_degrees();
         let is_rotated = svg_rotation_deg.abs() > 0.01;
@@ -10683,7 +11235,14 @@ pub(crate) fn generate_bar_svg(
     }
     if let Some(y_label) = frame_label_y {
       let cy = plot_y0 + plot_h / 2.0;
-      let lx = margin_left + y_axes_font * 0.8;
+      // Rotated, the label's glyphs reach `0.8` em to the left of `lx`
+      // and `0.2` em to the right: it ends just before the tick labels,
+      // which reach the side margin's width left of the plotting area's
+      // label strip.
+      let tick_labels_left =
+        plot_x0 - y_label_area as f64 - BAR_SIDE_MARGIN * sf;
+      // Too tight an `ImagePadding` still keeps it inside the image.
+      let lx = (tick_labels_left - y_axes_font * 0.3).max(y_axes_font * 0.8);
       labels_svg.push_str(&format!(
         "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{y_axes_font:.0}\" \
@@ -10738,11 +11297,15 @@ pub(crate) fn generate_bar_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -11103,7 +11666,7 @@ pub(crate) fn generate_horizontal_bar_svg(
         "<text x=\"{tx:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_bottom + tick_len + font_size,
-        html_escape(&format_tick_with_step(v, x_major))
+        html_escape(&format_axis_tick(v, x_major, x_min, x_max))
       ));
       v += x_major;
     }
@@ -11186,11 +11749,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     if sl.italic {
       style_attrs.push_str(" font-style=\"italic\"");
     }
-    svg.push_str(&format!(
-      "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg_scaled_stacked(sf, cx, fs * 1.2)
-    ));
+    svg.push_str(&chart_title_svg(sl, cx, ty, fs, &fill, &style_attrs, sf, 2));
   }
 
   // Legends to the right of the plot.
@@ -11626,14 +12185,14 @@ pub(crate) fn generate_bubble_chart_svg(
       .y_labels(y_tick_count)
       .x_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, x_major) {
-          format_tick_with_step(*v, x_major)
+          format_axis_tick(*v, x_major, x_min, x_max)
         } else {
           String::new()
         }
       })
       .y_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
+          format_axis_tick(*v, y_major, y_min, y_max)
         } else {
           String::new()
         }
@@ -11842,11 +12401,15 @@ pub(crate) fn generate_bubble_chart_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -11967,12 +12530,25 @@ pub(crate) fn generate_bubble_chart_svg(
   ))
 }
 
-/// Escape special characters for SVG/HTML text content.
+/// Escape special characters for SVG/HTML text content. C0 control
+/// characters other than tab, newline and carriage return (e.g. the `\.04`
+/// in `FromCharacterCode[{65, 4}]`) are not allowed anywhere in an XML
+/// document, so they are dropped: kept, a single one makes the whole SVG
+/// unparsable. They have no visible glyph anyway.
 pub(crate) fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match c {
+      '&' => out.push_str("&amp;"),
+      '<' => out.push_str("&lt;"),
+      '>' => out.push_str("&gt;"),
+      '"' => out.push_str("&quot;"),
+      '\t' | '\n' | '\r' => out.push(c),
+      c if (c as u32) < 0x20 || c == '\u{FFFE}' || c == '\u{FFFF}' => {}
+      c => out.push(c),
+    }
+  }
+  out
 }
 
 /// Width (in viewBox units) of the plotting area, mirroring the margins used
@@ -12070,7 +12646,13 @@ fn legend_swatch_svg(
 
 /// Inject a legend into an SVG plot. Depending on `legend_position`, the legend
 /// is placed on the right (default), top, or bottom of the plot.
-fn inject_legend(buf: &mut String, opts: &PlotOptions) {
+/// `plot_area` is the drawing region in render-space pixels: (left, top,
+/// width, height); `Placed[…, {Right, Top}]`-style legends sit inside it.
+fn inject_legend(
+  buf: &mut String,
+  opts: &PlotOptions,
+  plot_area: (f64, f64, f64, f64),
+) {
   if opts.plot_legends.is_empty() {
     return;
   }
@@ -12305,11 +12887,21 @@ fn inject_legend(buf: &mut String, opts: &PlotOptions) {
             fx * vb_w - (legend_width - legend_padding) / 2.0,
             (1.0 - fy) * vb_h - legend_total_h / 2.0,
           ),
-          LegendPosition::Aligned(fx, fy) => (
-            legend_padding * 0.5 + fx * (vb_w - legend_width),
-            legend_padding * 0.25
-              + (1.0 - fy) * (vb_h - legend_total_h - legend_padding * 0.5),
-          ),
+          // Named positions align the legend inside the plot's frame (not
+          // the whole image, whose margins hold the frame labels), inset
+          // a little from its edges.
+          LegendPosition::Aligned(fx, fy) => {
+            let (area_x0, area_top, area_w, area_h) = plot_area;
+            let inset = legend_padding * 0.5;
+            (
+              area_x0
+                + inset
+                + fx * (area_w - (legend_width - legend_padding) - 2.0 * inset),
+              area_top
+                + inset
+                + (1.0 - fy) * (area_h - legend_total_h - 2.0 * inset),
+            )
+          }
           _ => (vb_w + legend_padding * 0.5, (vb_h - legend_total_h) / 2.0),
         };
         if opts.legend_frame {
@@ -12407,14 +12999,20 @@ fn legend_label_svg(
       x + w / 2.0,
     );
   }
+  // Legend entries are typeset in TraditionalForm.
+  let markup =
+    if label.starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) {
+      crate::functions::graphics::box_string_to_svg_scaled(
+        label,
+        RESOLUTION_SCALE as f64,
+      )
+    } else {
+      crate::functions::graphics::traditional_box_string_to_svg(label)
+    };
   format!(
     "<text x=\"{x:.1}\" y=\"{text_y:.1}\" \
      font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-     fill=\"{fill}\">{}</text>\n",
-    crate::functions::graphics::box_string_to_svg_scaled(
-      label,
-      RESOLUTION_SCALE as f64
-    ),
+     fill=\"{fill}\">{markup}</text>\n",
   )
 }
 
@@ -12653,10 +13251,10 @@ pub(crate) fn generate_histogram_svg(
   height: HistogramHeight,
   opts: &mut ChartOptions,
 ) -> Result<String, InterpreterError> {
-  let (svg_width, svg_height, full_width) =
+  let (svg_width, mut svg_height, full_width) =
     (opts.svg_width, opts.svg_height, opts.full_width);
   let render_width = svg_width * RESOLUTION_SCALE;
-  let render_height = svg_height * RESOLUTION_SCALE;
+  let mut render_height = svg_height * RESOLUTION_SCALE;
 
   // Shared bin edges spanning every dataset, then per-dataset counts and
   // bar heights (heights depend on the height spec: Count, PDF, …).
@@ -12909,7 +13507,7 @@ pub(crate) fn generate_histogram_svg(
     plot_theme();
 
   let side_margin = 2.0 * sf;
-  let right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
+  let mut right_margin = ((x_overhang + 2.0) * sf).max(side_margin) as u32;
   // The y tick labels sit left of the vertical axis. An axis inside the
   // plot already has `origin_frac` of the plot's width to its left, so only
   // what the labels need beyond that is reserved: with `L` the reserved
@@ -12929,6 +13527,41 @@ pub(crate) fn generate_histogram_svg(
     (room + y_frame_room) as u32
   };
 
+  // The plotting area keeps its `AspectRatio` (the golden ratio by
+  // default). In a fixed `ImageSize -> {w, h}` box it is as large as fits
+  // and centered in the room the margins leave; otherwise an explicit
+  // ratio sets the image's height.
+  let mut left_margin = side_margin;
+  let mut bottom_margin = side_margin;
+  let mut top_margin = top_margin;
+  {
+    let right_total =
+      (right_margin + axes_label_margin_right + legend_margin_right) as f64;
+    let area_w =
+      (render_width as f64 - left_margin - y_label_area as f64 - right_total)
+        .max(1.0);
+    let margins_v = top_margin as f64 + bottom_margin + x_label_area as f64;
+    if opts.fixed_height && !opts.aspect_full {
+      let r = opts.aspect_ratio.unwrap_or(DEFAULT_ASPECT_RATIO);
+      let area_h = (render_height as f64 - margins_v).max(1.0);
+      if area_w * r <= area_h {
+        let extra = ((area_h - area_w * r) / 2.0).floor();
+        top_margin += extra as i32;
+        bottom_margin += extra;
+      } else {
+        let extra = ((area_w - area_h / r) / 2.0).floor();
+        left_margin += extra;
+        right_margin += extra as u32;
+      }
+    } else if !opts.fixed_height
+      && let Some(r) = opts.aspect_ratio
+    {
+      svg_height = ((margins_v + area_w * r) / sf).round().max(1.0) as u32;
+      render_height = svg_height * RESOLUTION_SCALE;
+      opts.svg_height = svg_height;
+    }
+  }
+
   let mut buf = String::new();
   {
     let root = SVGBackend::with_string(&mut buf, (render_width, render_height))
@@ -12942,8 +13575,8 @@ pub(crate) fn generate_histogram_svg(
       .margin_right(
         right_margin + axes_label_margin_right + legend_margin_right,
       )
-      .margin_bottom(side_margin as u32)
-      .margin_left(side_margin as u32)
+      .margin_bottom(bottom_margin as u32)
+      .margin_left(left_margin as u32)
       .x_label_area_size(x_label_area)
       .y_label_area_size(y_label_area)
       .build_cartesian_2d(x_lo..x_hi, y_min..y_max)
@@ -13036,7 +13669,7 @@ pub(crate) fn generate_histogram_svg(
   );
 
   // Plot area coordinates (kept in sync with the ChartBuilder margins above).
-  let margin_left = side_margin;
+  let margin_left = left_margin;
   let plot_x0 = margin_left + y_label_area as f64;
   let plot_y0 = top_margin as f64;
   let plot_w = render_width as f64
@@ -13047,7 +13680,7 @@ pub(crate) fn generate_histogram_svg(
     - y_label_area as f64;
   let plot_h = render_height as f64
     - top_margin as f64
-    - side_margin
+    - bottom_margin
     - x_label_area as f64;
 
   {
@@ -13094,6 +13727,7 @@ pub(crate) fn generate_histogram_svg(
       y_min,
       y_max,
       scale: sf,
+      image_w: render_width as f64,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
       &opts.epilog,
@@ -13175,11 +13809,15 @@ pub(crate) fn generate_histogram_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -13854,8 +14492,12 @@ pub(crate) fn series_color_expr(
 
 /// Apply a style directive expression to a SeriesStyle.
 pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
-  // Try as a color first
-  if let Some(c) = parse_color(expr) {
+  // Try as a color first. A directive list is not: `parse_color` reads
+  // `{Opacity[a], Gray}` as its one color, which would drop the opacity
+  // (and any thickness or dashing) — the `List` arm below applies each
+  // directive in turn instead.
+  if let Some(c) = parse_color(expr).filter(|_| !matches!(expr, Expr::List(_)))
+  {
     // A translucent color (`Transparent`, `RGBColor[r, g, b, a]`) fades the
     // curve by its alpha.
     if c.a < 1.0 {
@@ -13893,6 +14535,9 @@ pub(crate) fn apply_style_directive(expr: &Expr, style: &mut SeriesStyle) {
       }
       "DropShadowing" => {
         style.shadow = crate::functions::graphics::parse_drop_shadowing(args);
+      }
+      "Arrowheads" if args.len() == 1 => {
+        style.arrowheads = Some(args[0].clone());
       }
       // `Opacity[a]` fades the curve; `Opacity[a, color]` also sets its color.
       "Opacity" if !args.is_empty() => {
@@ -14357,6 +15002,10 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         graphics: None,
       })
     }
+    // `Text[marker]` — the same glyph as `marker` itself.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      parse_one_marker(&args[0])
+    }
     // `Style[marker, directives…]` — a color and/or a font size.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -14370,6 +15019,13 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
             (c.b * 255.0).round() as u8,
           ));
         } else if let Some(size) = try_eval_to_f64(directive) {
+          marker.size = size;
+        } else if let Some((name, value)) =
+          crate::functions::graphics::option_name_value(directive)
+          && name == "FontSize"
+          && let Some(size) = try_eval_to_f64(&value)
+        {
+          // `FontSize -> n` (or `FontSize :> n`).
           marker.size = size;
         } else if let Expr::FunctionCall { name, args } = directive
           && name == "FontSize"
@@ -15293,7 +15949,8 @@ pub(crate) fn parse_style_directives(value: &Expr) -> Option<SeriesStyle> {
   }
   (style.color.is_some()
     || style.thickness.is_some()
-    || style.dashing.is_some())
+    || style.dashing.is_some()
+    || style.arrowheads.is_some())
   .then_some(style)
 }
 
@@ -15384,6 +16041,17 @@ pub(crate) fn style_stroke(
   (stroke, w)
 }
 
+/// `Automatic`, `All` or `Full` as one end of a `PlotRange` pair.
+fn is_open_range_end(e: &Expr) -> bool {
+  matches!(e, Expr::Identifier(s) if s == "All" || s == "Automatic" || s == "Full")
+}
+
+/// A range without the open (NaN) ends [`parse_plot_range`] can return,
+/// for the plotters that only take a fully explicit range.
+pub(crate) fn closed_range(range: Option<(f64, f64)>) -> Option<(f64, f64)> {
+  range.filter(|(lo, hi)| !lo.is_nan() && !hi.is_nan())
+}
+
 /// Parse a PlotRange option value into (x_range, y_range) overrides.
 ///
 /// Supported forms:
@@ -15391,6 +16059,8 @@ pub(crate) fn style_stroke(
 /// - `r` (a bare number) → (Some((-r, r)), Some((-r, r))) — "r in all
 ///   directions from the origin", equivalent to `{{-r, r}, {-r, r}}`
 /// - `{ymin, ymax}` → (None, Some((ymin, ymax)))
+/// - `{Automatic, ymax}` / `{ymin, All}` → an open end, which comes back as
+///   NaN and follows the data (see [`fill_range`])
 /// - `{{xmin, xmax}, {ymin, ymax}}` → (Some(x), Some(y))
 /// - `{All, {ymin, ymax}}` / `{{xmin,xmax}, All}` → only the specified axis
 #[allow(clippy::type_complexity)]
@@ -15413,20 +16083,34 @@ pub(crate) fn parse_plot_range(
     return (Some((-r, r)), Some((-r, r)));
   }
 
+  // One end of a `{min, max}` pair: a number, or NaN for an open end
+  // (`Automatic`, `All` or `Full`) that follows the data.
+  let parse_end = |e: &Expr| -> Option<f64> {
+    let v = evaluate_expr_to_expr(e).unwrap_or_else(|_| e.clone());
+    if is_open_range_end(&v) {
+      return Some(f64::NAN);
+    }
+    try_eval_to_f64(&v)
+  };
   let parse_pair = |e: &Expr| -> Option<(f64, f64)> {
     if let Expr::List(items) = e
       && items.len() == 2
     {
-      let a = try_eval_to_f64(
-        &evaluate_expr_to_expr(&items[0]).unwrap_or_else(|_| items[0].clone()),
-      )?;
-      let b = try_eval_to_f64(
-        &evaluate_expr_to_expr(&items[1]).unwrap_or_else(|_| items[1].clone()),
-      )?;
+      let a = parse_end(&items[0])?;
+      let b = parse_end(&items[1])?;
+      // At least one end must be fixed; `{Automatic, Automatic}` is no
+      // explicit range at all.
+      if a.is_nan() && b.is_nan() {
+        return None;
+      }
       // Wolfram normalizes a reversed range: `PlotRange -> {3, -3}` plots
       // exactly like `{-3, 3}` (verified against a FrontEnd-saved raster
       // of the oscilloscope Demonstration, which uses the reversed form).
-      Some(if a <= b { (a, b) } else { (b, a) })
+      Some(if a.is_nan() || b.is_nan() || a <= b {
+        (a, b)
+      } else {
+        (b, a)
+      })
     } else {
       None
     }
@@ -15495,7 +16179,9 @@ fn frame_label_entry(e: &Expr) -> String {
   if matches!(e, Expr::Identifier(s) if s == "None" || s == "False") {
     return String::new();
   }
-  crate::functions::graphics::styled_axis_label(e).unwrap_or_default()
+  // A frame label is typeset like an axis label: a mathematical entry
+  // (`i`, `Subscript[q, i][t]`) in TraditionalForm italics.
+  crate::functions::graphics::frame_label_text(e).unwrap_or_default()
 }
 
 /// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant
@@ -15638,7 +16324,14 @@ pub(crate) fn parse_explicit_tick_entries(
         // (`-Infinity`, i.e. `DirectedInfinity[-1]`) is still typeset the
         // way a graphic's `Text` sets it — `{-0.05, -Infinity}` labels its
         // tick "-∞", not with the position.
+        // A quotient (`{Pi/4, Pi/4}`) is set stacked, as TraditionalForm
+        // typesets it.
+        let fraction = crate::functions::graphics::fraction_label_svg(
+          &label_expr,
+          plot_padding::TICK_FONT,
+        );
         let label = match crate::functions::chart::expr_to_label(&label_expr) {
+          _ if fraction.is_some() => fraction.unwrap_or_default(),
           Some(text) => crate::functions::graphics::box_string_to_svg(&text),
           None if matches!(&label_expr, Expr::Identifier(s) if s == "None") => {
             crate::functions::graphics::svg_escape(&format_tick(pos))
@@ -15717,10 +16410,61 @@ pub(crate) fn bare_tick_label(e: &Expr, pos: f64) -> String {
       _ => false,
     }
   }
+  fn is_literal_real(e: &Expr) -> bool {
+    match e {
+      Expr::Real(_) | Expr::BigFloat(..) => true,
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => is_literal_real(operand),
+      _ => false,
+    }
+  }
+  // A machine or arbitrary-precision real is typeset as the number it is,
+  // so a whole-valued real keeps its trailing point: `Ticks -> {{10.}}`
+  // reads "10.", not the "10" an integer position gets.
+  if is_literal_real(e) {
+    return crate::functions::graphics::expr_to_svg_markup(e);
+  }
   if is_literal_number(e) {
     return crate::functions::graphics::svg_escape(&format_tick(pos));
   }
-  crate::functions::graphics::expr_to_svg_markup(e)
+  tick_label_markup(e)
+}
+
+/// The markup of a tick label given as an expression. Tick labels are set in
+/// TraditionalForm, so a quotient (`Pi/2`, `-3 Pi/4`) stacks its numerator
+/// over its denominator: such a label comes back as a picture (a nested
+/// `<svg>` typeset at [`plot_padding::TICK_FONT`]) that
+/// [`tick_label_picture_svg`] places; anything else is the usual text
+/// markup.
+pub(crate) fn tick_label_markup(e: &Expr) -> String {
+  crate::functions::graphics::fraction_label_svg(e, plot_padding::TICK_FONT)
+    .unwrap_or_else(|| crate::functions::graphics::expr_to_svg_markup(e))
+}
+
+/// Draw a tick label that is a typeset picture (see [`tick_label_markup`]):
+/// the point `(ax, ay)` of the picture — fractions of its width and height
+/// from its top left — goes to `(x, y)`, the picture is scaled from the
+/// size it was typeset at to the tick font `font` (in the same units as
+/// `x`/`y`), and its ink takes the tick labels' `fill`. `None` for a label
+/// that is plain text markup, which the caller draws as `<text>`.
+pub(crate) fn tick_label_picture_svg(
+  label: &str,
+  (x, y): (f64, f64),
+  (ax, ay): (f64, f64),
+  font: f64,
+  fill: &str,
+) -> Option<String> {
+  let (w, h) = crate::functions::graphics::axes_label_picture_size(label)?;
+  let k = font / plot_padding::TICK_FONT;
+  let theme_fill = crate::functions::graphics::theme().text_primary;
+  Some(format!(
+    "<g transform=\"translate({:.1},{:.1}) scale({k:.3})\">{}</g>\n",
+    x - ax * w * k,
+    y - ay * h * k,
+    label.replace(&format!("\"{theme_fill}\""), &format!("\"{fill}\""))
+  ))
 }
 
 /// Apply a `FrameLabel` value to a plot's options. Bottom and left reuse
@@ -15949,7 +16693,7 @@ pub(crate) fn simple_ticks(min: f64, max: f64) -> Vec<(f64, String)> {
       let label = if k == 0 {
         "0".to_string()
       } else {
-        format_tick_with_step(v, step)
+        format_axis_tick(v, step, min, max)
       };
       (if k == 0 { 0.0 } else { v }, label)
     })
@@ -16073,7 +16817,17 @@ pub(crate) fn parse_plot_legends(
     && name == "Placed"
     && args.len() == 2
   {
-    let pos = match &args[1] {
+    // `Scaled[{x, y}]` names the same scaled position inside the plot as
+    // a bare `{x, y}` does.
+    let position = match &args[1] {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Scaled" && inner.len() == 1 =>
+      {
+        &inner[0]
+      }
+      other => other,
+    };
+    let pos = match position {
       Expr::Identifier(s) => match s.as_str() {
         "Top" | "Above" => LegendPosition::Top,
         "Bottom" | "Below" => LegendPosition::Bottom,
@@ -16156,7 +16910,10 @@ pub(crate) fn parse_plot_legends(
     Expr::List(items) => {
       let labels = items
         .iter()
-        .map(|item| match item {
+        // A `Dynamic[…]` in a label shows its current value, as it does in
+        // any other displayed text.
+        .map(crate::functions::graphics::release_dynamics)
+        .map(|item| match &item {
           // `TraditionalForm[expr]` is typeset as the label of a
           // `"Expressions"` legend is.
           Expr::FunctionCall { name, args }
@@ -16164,19 +16921,25 @@ pub(crate) fn parse_plot_legends(
           {
             crate::functions::graphics::traditional_legend_label(&args[0])
           }
-          _ => match crate::functions::graphics::structured_label_svg(item) {
+          _ => match crate::functions::graphics::structured_label_svg(&item) {
             Some(svg) => format!(
               "{}{svg}",
               crate::functions::graphics::STYLED_LABEL_MARKER
             ),
-            None => crate::functions::graphics::styled_axis_label(item)
-              .unwrap_or_else(|| expr_to_string(item)),
+            None => crate::functions::graphics::styled_axis_label(&item)
+              .unwrap_or_else(|| expr_to_string(&item)),
           },
         })
         .collect();
       (labels, false, false, LegendPosition::Right)
     }
     Expr::String(s) => (vec![s.clone()], false, false, LegendPosition::Right),
+    // Any other single label (`Text["…"]`, `Style["…", Red]`, `Row[…]`)
+    // labels the one dataset, as a one-element list would. A legend
+    // object (`BarLegend[…]`, …) is drawn by the plot itself instead.
+    Expr::FunctionCall { name, .. } if !name.ends_with("Legend") => {
+      parse_plot_legends(&Expr::List(vec![val.clone()].into()))
+    }
     _ => (Vec::new(), false, false, LegendPosition::Right),
   }
 }
@@ -16420,6 +17183,7 @@ pub(crate) fn placed_label_spec(
     at,
     side,
     callout: *callout,
+    x_extent: None,
   })
 }
 
@@ -16553,6 +17317,9 @@ pub(crate) struct PlotRangeOverrides {
   /// `PlotRange -> All` on the y axis: show every sampled value instead of
   /// the automatic range, which drops extreme outliers.
   pub y_all: bool,
+  /// A half-open vertical `PlotRange -> {min, All}` (or `{All, max}`): the
+  /// given end is pinned, the open one (`None`) follows the data.
+  pub y_half_open: Option<(Option<f64>, Option<f64>)>,
   /// The x range follows the sampled points rather than the iterator
   /// domain, reaching to 0 when close if `Some(true)` (see
   /// [`plot_range_x_from_points`]).
@@ -16560,6 +17327,20 @@ pub(crate) struct PlotRangeOverrides {
   pub aspect_ratio: Option<f64>,
   /// `AspectRatio -> Automatic`.
   pub aspect_automatic: bool,
+}
+
+/// The color function a `ColorFunction -> value` option selects, or
+/// `None` for `Automatic` / `None`. The value is evaluated first, as
+/// Wolfram evaluates plot options, so a computed choice such as
+/// `ColorFunction -> If[cond, Hue[#4] &, Automatic]` resolves to the branch
+/// it picks instead of being applied as an (unevaluated) color function.
+pub(crate) fn color_function_option(replacement: &Expr) -> Option<Expr> {
+  let val =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  match &val {
+    Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
+    _ => Some(val),
+  }
 }
 
 /// Apply one plot option shared by the function plotters (Plot,
@@ -16571,18 +17352,15 @@ pub(crate) fn apply_common_plot_option(
   plot_opts: &mut PlotOptions,
   overrides: &mut PlotRangeOverrides,
 ) -> bool {
+  // A plot holds its options, so a value naming a variable
+  // (`ImagePadding -> padding`, `FrameTicks -> {Automatic, Automatic,
+  // None, ticks}`) arrives unevaluated. Like Wolfram, work it out once
+  // here, so every option below reads the value it stands for.
+  let evaluated =
+    evaluate_expr_to_expr(replacement).unwrap_or_else(|_| replacement.clone());
+  let replacement = &evaluated;
   match name {
     "ImageSize" => {
-      // A plot holds its options, so `ImageSize -> size` naming a variable
-      // (`size = {380, 290}`) arrives unevaluated.
-      let evaluated;
-      let replacement = if matches!(replacement, Expr::Identifier(_)) {
-        evaluated = evaluate_expr_to_expr(replacement)
-          .unwrap_or_else(|_| replacement.clone());
-        &evaluated
-      } else {
-        replacement
-      };
       if let Some((w, h, fw)) =
         parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
       {
@@ -16591,6 +17369,7 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.full_width = fw;
         plot_opts.image_size_explicit = image_size_explicit_dims(replacement);
         plot_opts.image_size_value = Some(replacement.clone());
+        plot_opts.resolve_relative_thickness();
       }
     }
     "ClippingStyle" => {
@@ -16624,12 +17403,10 @@ pub(crate) fn apply_common_plot_option(
     }
     "PlotStyle" => {
       plot_opts.plot_style = parse_plot_style(replacement);
+      plot_opts.resolve_relative_thickness();
     }
     "ColorFunction" => {
-      plot_opts.color_function = match replacement {
-        Expr::Identifier(v) if v == "Automatic" || v == "None" => None,
-        other => Some(other.clone()),
-      };
+      plot_opts.color_function = color_function_option(replacement);
     }
     "ColorFunctionScaling" => {
       // Evaluated: `Table[Plot[…, ColorFunctionScaling -> cf], {cf, …}]`.
@@ -16675,6 +17452,10 @@ pub(crate) fn apply_common_plot_option(
       overrides.x = rx;
       overrides.y = ry;
       overrides.y_all = plot_range_requests_all_y(replacement);
+      let val = evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.clone());
+      overrides.y_half_open =
+        crate::functions::graphics::plot_range_half_open_axes(&val)[1];
       overrides.x_from_points = plot_range_x_from_points(replacement);
     }
     "Axes" => {
@@ -16997,14 +17778,75 @@ pub(crate) fn eval_body_var_symbolic(body: &Expr, var: &str) -> Expr {
 /// list shape once evaluated; Wolfram plots one curve per element of the
 /// result. Returns `None` when the body is already a list or does not
 /// generate one, leaving plain `Plot[f[x], …]` untouched.
-fn expand_generated_bodies(body: &Expr, var: &str) -> Option<Expr> {
+fn expand_generated_bodies(
+  body: &Expr,
+  var: &str,
+  probe_x: f64,
+) -> Option<Expr> {
   if matches!(body, Expr::List(_)) {
     return None;
   }
   match eval_body_var_symbolic(body, var) {
-    evaluated @ Expr::List(_) => Some(evaluated),
+    evaluated @ Expr::List(_)
+      if symbolic_body_agrees(body, &evaluated, var, &[probe_x]) =>
+    {
+      Some(evaluated)
+    }
     _ => None,
   }
+}
+
+/// The numbers of a numeric value or a (nested) list of them, in order.
+fn numeric_leaves(expr: &Expr, out: &mut Vec<f64>) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().all(|i| numeric_leaves(i, out)),
+    other => match try_eval_to_f64(other) {
+      Some(v) => {
+        out.push(v);
+        true
+      }
+      None => false,
+    },
+  }
+}
+
+/// Whether a plot body pre-evaluated with its variable symbolic still
+/// computes what the held body does once the variable is a number.
+///
+/// Plotting heads hold their body and evaluate it per sample with the
+/// variable bound, as Wolfram does. Evaluating it symbolically first is only
+/// a shortcut that reveals its shape, and it is wrong for bodies that use
+/// the variable's *value*: a helper `f[t_] := … FindRoot[g[t] == h[s], {s,
+/// 1.}] …` cannot solve with `t` symbolic, and a helper whose own `FindRoot`
+/// iterates over a variable of the same name as the plot variable solves
+/// for it instead. At each probe where the held body samples to numbers, the
+/// pre-evaluated body has to yield the same numbers.
+pub(crate) fn symbolic_body_agrees(
+  original: &Expr,
+  evaluated: &Expr,
+  var: &str,
+  probes: &[f64],
+) -> bool {
+  probes.iter().all(|&t| {
+    let sample = |e: &Expr| {
+      let value =
+        evaluate_expr_to_expr(&substitute_var(e, var, &Expr::Real(t))).ok()?;
+      let mut leaves = Vec::new();
+      numeric_leaves(&value, &mut leaves).then_some(leaves)
+    };
+    // A held body that is not numeric on its own (`y[t] /. sol` turns into
+    // `y[0.5] /. sol`) needs the symbolic pass; nothing to compare against.
+    let Some(direct) = sample(original) else {
+      return true;
+    };
+    sample(evaluated).is_some_and(|pre| {
+      pre.len() == direct.len()
+        && pre
+          .iter()
+          .zip(&direct)
+          .all(|(a, b)| (a - b).abs() <= 1e-6 * (1.0 + a.abs().max(b.abs())))
+    })
+  })
 }
 
 /// A body that stays unevaluated while the plot variable is symbolic — a
@@ -17160,9 +18002,15 @@ pub(crate) fn scale_range(
     (Some(u), Some(v)) => u < v,
     _ => true,
   };
+  // An open (NaN) end stays open.
+  let (lo, hi) = if a.is_nan() || b.is_nan() {
+    (a, b)
+  } else {
+    (a.min(b), a.max(b))
+  };
   let (fa, fb) = (
-    s.forward(a.min(b)).unwrap_or(f64::NAN),
-    s.forward(a.max(b)).unwrap_or(f64::NAN),
+    s.forward(lo).unwrap_or(f64::NAN),
+    s.forward(hi).unwrap_or(f64::NAN),
   );
   Some(if increasing { (fa, fb) } else { (fb, fa) })
 }
@@ -17497,6 +18345,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let (plot_range_x, plot_range_y) = (overrides.x, overrides.y);
   let plot_range_y_all = overrides.y_all;
+  let plot_range_y_half_open = overrides.y_half_open;
   let plot_range_x_from_points = overrides.x_from_points;
   let _precision = WorkingPrecisionGuard::set(working_precision);
 
@@ -17667,7 +18516,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           .map(|it| resolve_generated_bodies_deep(it, var, probe_x))
           .collect(),
       ),
-      _ => expand_generated_bodies(body, var)
+      _ => expand_generated_bodies(body, var, probe_x)
         .or_else(|| resolve_list_valued_symbol(body, var))
         .or_else(|| resolve_replaced_body(body, var))
         .or_else(|| expand_list_valued_body(body, var, probe_x))
@@ -17893,7 +18742,7 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `PlotRange` (unit height when none is given).
   if !has_finite {
     let x_display = plot_range_x.unwrap_or((x_min, x_max));
-    let y_display = plot_range_y.unwrap_or((0.0, 1.0));
+    let y_display = fill_range(plot_range_y, (0.0, 1.0)).unwrap_or((0.0, 1.0));
     let svg = generate_svg_with_filling(&[], x_display, y_display, &plot_opts)?;
     // Keep the (empty) plot's source, so `Show` can tell it from an opaque
     // picture and merge it as the layer without curves that it is.
@@ -17995,13 +18844,31 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     };
   let y_auto_min = y_data_min - y_pad_lo;
   let y_auto_max = y_data_max + y_pad_hi;
+  resolve_successive_filling(&mut plot_opts, all_points.len());
   let (y_auto_min, y_auto_max) =
     adjust_y_range_for_filling_opts(&plot_opts, (y_auto_min, y_auto_max));
   let x_auto = (x_min - x_pad_lo, x_max + x_pad_hi);
 
   // Apply PlotRange overrides (PlotRange -> {ymin, ymax} or {{xmin,xmax},{ymin,ymax}})
   let plot_range_x = fill_range(plot_range_x, x_auto);
-  let plot_range_y = fill_range(plot_range_y, (y_auto_min, y_auto_max));
+  // A half-open `PlotRange -> {min, All}` pins one end; the open end is
+  // the automatic one (NaN, which `fill_range` fills in).
+  let half_open_y = if plot_range_y.is_some() {
+    None
+  } else {
+    plot_range_y_half_open.map(|(lo, hi)| {
+      let scaled = |v: Option<f64>| {
+        v.and_then(|v| match scaling.1.as_ref() {
+          Some(s) => s.forward(v),
+          None => Some(v),
+        })
+        .unwrap_or(f64::NAN)
+      };
+      (scaled(lo), scaled(hi))
+    })
+  };
+  let plot_range_y =
+    fill_range(plot_range_y.or(half_open_y), (y_auto_min, y_auto_max));
   let (x_display_min, x_display_max) = plot_range_x.unwrap_or(x_auto);
   let (y_display_min, y_display_max) = plot_range_y.unwrap_or_else(|| {
     // Labels placed above or below their curves get room inside the
@@ -18029,10 +18896,18 @@ pub fn plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if plot_range_y.is_none() && !log_clipped_below {
     plot_opts.axes_origin_low.1 = Some(y_data_min);
   }
-  plot_opts.unpadded_range = Some((
-    plot_range_x.unwrap_or((x_min, x_max)),
-    plot_range_y.unwrap_or((y_data_min, y_data_max)),
-  ));
+  // A half-open range reports the data's own (unpadded) extent on its
+  // open end, like a fully automatic one.
+  let unpadded_y = match (plot_range_y, plot_range_y_half_open) {
+    (Some((lo, hi)), Some((pin_lo, pin_hi))) => (
+      if pin_lo.is_none() { y_data_min } else { lo },
+      if pin_hi.is_none() { y_data_max } else { hi },
+    ),
+    (Some(r), None) => r,
+    (None, _) => (y_data_min, y_data_max),
+  };
+  plot_opts.unpadded_range =
+    Some((plot_range_x.unwrap_or((x_min, x_max)), unpadded_y));
   plot_opts.curve_clip_y = Some(plot_range_y.unwrap_or_else(|| {
     include_filling_levels(&plot_opts, (y_data_min, y_data_max))
   }));
@@ -18241,4 +19116,61 @@ fn log_scale_plot_ast(
   });
   scaled.extend_from_slice(&args[2..]);
   plot_ast(&scaled)
+}
+
+#[cfg(test)]
+mod compiled_body_cache_tests {
+  use super::*;
+
+  /// A table with the same values as `share_large_lists` leaves it, but
+  /// built separately (an earlier evaluation's copy).
+  fn table_body(n: usize) -> Expr {
+    let mut table = Expr::List((0..n).map(|i| Expr::Real(i as f64)).collect());
+    crate::evaluator::share_large_lists(&mut table, 0);
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Identifier("x".to_string()), table].into(),
+    }
+  }
+
+  fn cached_table(key_body: &Expr) -> Option<Expr> {
+    let key = std::ptr::from_ref::<Expr>(key_body) as usize;
+    COMPILED_BODIES.with(|cache| {
+      cache
+        .borrow()
+        .iter()
+        .find(|e| e.key == key)
+        .map(|e| e.body.clone())
+    })
+  }
+
+  /// A cache hit on an equal body built by an earlier evaluation adopts the
+  /// caller's body, so the following samples compare its large lists by
+  /// pointer instead of element by element.
+  #[test]
+  fn hit_adopts_the_callers_shared_lists() {
+    let vars = vec!["x".to_string()];
+    let first = table_body(64);
+    let _ = compiled_body(&first, &vars);
+    // Same address, equal content, distinct shared list.
+    let entry = cached_table(&first).expect("an entry");
+    let replacement = table_body(64);
+    COMPILED_BODIES.with(|cache| {
+      for e in cache.borrow_mut().iter_mut() {
+        if crate::evaluator::pattern_matching::expr_equal(&e.body, &entry) {
+          e.body = replacement.clone();
+        }
+      }
+    });
+    let _ = compiled_body(&first, &vars);
+    let stored = cached_table(&first).expect("an entry");
+    let list = |e: &Expr| match e {
+      Expr::FunctionCall { args, .. } => match &args[1] {
+        Expr::List(items) => items.clone(),
+        _ => unreachable!(),
+      },
+      _ => unreachable!(),
+    };
+    assert!(list(&stored).same_shared(&list(&first)));
+  }
 }
