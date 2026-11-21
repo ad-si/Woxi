@@ -126,6 +126,61 @@ fn violin(data: &[f64], x: f64, half_width: f64, smooth: bool) -> Vec<Expr> {
   points
 }
 
+/// `ChartElementFunction -> "HistogramDensity"`: the dataset's histogram
+/// (automatic bins, as `Histogram` places them) turned on its side and
+/// mirrored about `x`, one rectangle per nonempty bin whose half-width is
+/// the bin's count scaled so the fullest bin spans `half_width`.
+fn histogram_violin(data: &[f64], x: f64, half_width: f64) -> Vec<Expr> {
+  let edges = crate::functions::plot::histogram_bin_edges(data, None);
+  if edges.len() < 2 {
+    return Vec::new();
+  }
+  let last = edges.len() - 2;
+  let mut counts = vec![0usize; edges.len() - 1];
+  for &v in data {
+    // Bins are closed on the left and open on the right.
+    if let Some(i) = (0..=last).find(|&i| v >= edges[i] && v < edges[i + 1]) {
+      counts[i] += 1;
+    }
+  }
+  let peak = counts.iter().copied().max().unwrap_or(0);
+  if peak == 0 {
+    return Vec::new();
+  }
+  counts
+    .iter()
+    .enumerate()
+    .filter(|&(_, &c)| c > 0)
+    .map(|(i, &c)| {
+      let w = half_width * c as f64 / peak as f64;
+      call(
+        "Rectangle",
+        vec![pair(x - w, edges[i]), pair(x + w, edges[i + 1])],
+      )
+    })
+    .collect()
+}
+
+/// `ChartElementData[name]`: the built-in `ChartElementFunction` names of
+/// the chart function `name`.
+pub fn chart_element_data_ast(args: &[Expr]) -> Expr {
+  let names: &[&str] = match args {
+    [Expr::String(s)] if s == "DistributionChart" => &[
+      "Density",
+      "DensityQuantile",
+      "FadingQuantile",
+      "GlassQuantile",
+      "HistogramDensity",
+      "LineDensity",
+      "PointDensity",
+      "Quantile",
+      "SmoothDensity",
+    ],
+    _ => return crate::helpers::unevaluated("ChartElementData", args),
+  };
+  Expr::List(names.iter().map(|n| Expr::String(n.to_string())).collect())
+}
+
 /// The RGB channels of a chart fill, `None` for a style that is not a
 /// plain color.
 fn fill_rgb(fill: &Expr) -> Option<(f64, f64, f64)> {
@@ -347,6 +402,8 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fills = chart_styles(style.as_ref(), n);
   let smooth =
     matches!(&element, Some(Expr::String(s)) if s == "SmoothDensity");
+  let histogram =
+    matches!(&element, Some(Expr::String(s)) if s == "HistogramDensity");
   let edge = call(
     "EdgeForm",
     vec![call(
@@ -406,13 +463,18 @@ pub fn distribution_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut content = Vec::with_capacity(n);
   for (i, data) in datasets.iter().enumerate() {
     let x = (i + 1) as f64;
+    let shape = if histogram {
+      Expr::List(histogram_violin(data, x, 0.4).into())
+    } else {
+      call(
+        "Polygon",
+        vec![Expr::List(violin(data, x, 0.4, smooth).into())],
+      )
+    };
     content.push(Expr::List(
       vec![
         call("Directive", vec![edge.clone(), fills[i].clone()]),
-        call(
-          "Polygon",
-          vec![Expr::List(violin(data, x, 0.4, smooth).into())],
-        ),
+        shape,
       ]
       .into(),
     ));
