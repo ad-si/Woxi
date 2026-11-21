@@ -4130,6 +4130,27 @@ fn three_significant_digits(x: f64) -> String {
   }
 }
 
+/// The box of `Spacer[w]` (`TemplateBox[{w}, "Spacer1"]`) or of
+/// `Spacer[{w, h}]` (`TemplateBox[{w, h}, "Spacer2"]`), the templates the
+/// FrontEnd draws as blank room of that many printer's points. `None` for a
+/// size that is not numeric.
+fn spacer_template_box(args: &[Expr]) -> Option<Expr> {
+  let is_size = |e: &Expr| {
+    matches!(e, Expr::Integer(_) | Expr::Real(_) | Expr::BigInteger(_))
+  };
+  let (sizes, template) = match args {
+    [Expr::List(wh)] if wh.len() == 2 && wh.iter().all(is_size) => {
+      (wh.to_vec(), "Spacer2")
+    }
+    [w] if is_size(w) => (vec![w.clone()], "Spacer1"),
+    _ => return None,
+  };
+  Some(call(
+    "TemplateBox",
+    vec![Expr::List(sizes.into()), str_expr(template)],
+  ))
+}
+
 pub fn expr_to_box_form(expr: &Expr) -> Expr {
   // A number format around a `Style` typesets as the style around the
   // formatted number (wolframscript's `StyleBox[InterpretationBox[…]]`).
@@ -4197,6 +4218,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       return expr_to_box_form(&call1("MatrixForm", dense));
     }
     return expr_to_box_form(&args[0]);
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "TransformationFunction"
+    && let Some(boxed) = transformation_function_boxes(args, expr_to_box_form)
+  {
+    return boxed;
   }
   // `f'[x]` is held as `Derivative[1][f][x]`, and no notebook shows that
   // head: the order sets as prime marks on the differentiated function.
@@ -4627,6 +4654,22 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), str_expr(mark)],
       )
     }
+    // `Infix[{a, b}, "+"]` is the row `a + b`: its operands boxed as
+    // expressions, a string operator contributing its text.
+    Expr::FunctionCall { name, args }
+      if name == "Infix"
+        && let Some(items) = crate::syntax::infix_display_items(args) =>
+    {
+      row_box(
+        items
+          .iter()
+          .map(|item| match item {
+            Expr::String(s) => str_expr(s),
+            other => expr_to_box_form(other),
+          })
+          .collect(),
+      )
+    }
     // `Row[{a, b, …}]` is the FrontEnd's row template, its parts boxed as
     // expressions (a string keeps its quotes):
     // `TemplateBox[{a, "\"(\"", b}, "RowDefault"]`.
@@ -4715,6 +4758,25 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
+    // Factorials are written postfix: `Factorial[n]` → `RowBox[{"n", "!"}]`,
+    // `Factorial2[n]` → `RowBox[{"n", "!!"}]`. An operand binding no
+    // tighter than the factorial (a sum, product, power, nested factorial)
+    // or a negative number is parenthesized: `(a+b)!`, `(-2)!`, `(5!)!`.
+    Expr::FunctionCall { name, args }
+      if (name == "Factorial" || name == "Factorial2") && args.len() == 1 =>
+    {
+      let bang = if name == "Factorial" { "!" } else { "!!" };
+      let operand = canonical_operator_call(&args[0]);
+      let boxed = expr_to_box_form(&operand);
+      let needs_paren = needs_paren_as_power_base(&operand)
+        || positive_of_negative_number(&operand).is_some()
+        || matches!(&operand, Expr::FunctionCall { name: r, args: ra }
+          if r == "Rational" && ra.len() == 2)
+        || tf_prec(&operand) <= tf_prec(expr);
+      let operand_box = if needs_paren { paren_box(boxed) } else { boxed };
+      row_box(vec![operand_box, str_expr(bang)])
+    }
+
     // `Superscript[x, n]` sets `n` as a raised script, exactly like the
     // `Subscript` rule above — not as the literal call `Superscript[x, n]`.
     Expr::FunctionCall { name, args }
@@ -4849,6 +4911,11 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         rule_expr(id_expr("NumberMarks"), bool_expr(true)),
       ];
       call("TagBox", vec![call("StyleBox", style), id_expr("FullForm")])
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Spacer" && spacer_template_box(args).is_some() =>
+    {
+      spacer_template_box(args).expect("checked by the guard")
     }
     // Style[content, directives…] → StyleBox[content-box, directives…],
     // keeping the directives (a color, `Bold`, `FontColor -> …`, …) in the
@@ -5721,14 +5788,19 @@ fn tf_is_symbol_token(token: &str) -> bool {
 /// `BesselJ[n, x]` → `Jₙ(x)`, `LegendreP[n, m, x]` → `Pₙᵐ(x)`,
 /// `JacobiP[n, a, b, x]` → `Pₙ⁽ᵃ˒ᵇ⁾(x)`.
 ///
-/// Returns the display letter plus, for the Hankel-style families whose
-/// superscript is part of the name rather than an argument, that fixed
-/// superscript. `arity` is the full argument count — the last argument is
-/// always the function's variable, every earlier one is an index.
+/// Returns the display letter, for the Hankel-style families whose
+/// superscript is part of the name rather than an argument that fixed
+/// superscript, and the number of trailing arguments that are the
+/// function's variables (every earlier one is an index). `arity` is the
+/// full argument count.
 fn tf_indexed_special(
   name: &str,
   arity: usize,
-) -> Option<(&'static str, Option<&'static str>)> {
+) -> Option<(&'static str, Option<&'static str>, usize)> {
+  // Two indices and two angles: SphericalHarmonicY[l, m, θ, ϕ] → Yₗᵐ(θ, ϕ).
+  if name == "SphericalHarmonicY" && arity == 4 {
+    return Some(("Y", None, 2));
+  }
   let entry: (&'static str, Option<&'static str>, &[usize]) = match name {
     "BesselJ" => ("J", None, &[2]),
     "BesselY" => ("Y", None, &[2]),
@@ -5756,19 +5828,21 @@ fn tf_indexed_special(
     "LucasL" => ("L", None, &[2]),
     _ => return None,
   };
-  entry.2.contains(&arity).then_some((entry.0, entry.1))
+  entry.2.contains(&arity).then_some((entry.0, entry.1, 1))
 }
 
 /// Build `letterₙ^sup(x)` for an indexed special function. All but the last
-/// argument are indices: the first becomes the subscript, any further ones
-/// the superscript (parenthesized and comma-separated when there is more
-/// than one, as in `Pₙ⁽ᵃ˒ᵇ⁾(x)`).
+/// `n_vars` arguments are indices: the first becomes the subscript, any
+/// further ones the superscript (parenthesized and comma-separated when
+/// there is more than one, as in `Pₙ⁽ᵃ˒ᵇ⁾(x)`). Several variables are
+/// listed comma-separated inside the parentheses, as in `Yₗᵐ(θ, ϕ)`.
 fn tf_indexed_call(
   letter: &str,
   fixed_sup: Option<&str>,
+  n_vars: usize,
   args: &[Expr],
 ) -> Expr {
-  let (indices, var) = args.split_at(args.len() - 1);
+  let (indices, vars) = args.split_at(args.len() - n_vars);
   let sup = match fixed_sup {
     Some(s) => Some(tf_string(s)),
     None => match &indices[1..] {
@@ -5784,7 +5858,11 @@ fn tf_indexed_call(
     ),
     None => tf_box("SubscriptBox", vec![tf_string(letter), tf(&indices[0])]),
   };
-  tf_row(vec![head, tf_string("("), tf(&var[0]), tf_string(")")])
+  let var = match vars {
+    [single] => tf(single),
+    many => tf_comma_seq(many.iter().map(tf)).unwrap(),
+  };
+  tf_row(vec![head, tf_string("("), var, tf_string(")")])
 }
 
 /// True for a trig/hyperbolic function whose power is written on the name
@@ -5798,6 +5876,59 @@ fn tf_is_trig(name: &str) -> bool {
 
 /// Whether a List is a matrix (a non-empty list whose every element is a
 /// list of equal length ≥ 1).
+/// `TransformationFunction[m]` typesets as its head applied to the
+/// parenthesized augmented matrix `m`, with dividers setting off the last
+/// row and column (the translation part) the way a notebook draws it.
+/// `None` when the argument is no matrix.
+fn transformation_function_boxes(
+  args: &[Expr],
+  cell: fn(&Expr) -> Expr,
+) -> Option<Expr> {
+  use crate::helpers::rule_expr;
+  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let [Expr::List(rows)] = args else {
+    return None;
+  };
+  if !tf_is_matrix(rows) {
+    return None;
+  }
+  let grid_rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => {
+        Expr::List(cells.iter().map(cell).collect::<Vec<_>>().into())
+      }
+      other => Expr::List(vec![cell(other)].into()),
+    })
+    .collect();
+  let no_lines =
+    || Expr::List(vec![Expr::List(vec![sym("False")].into())].into());
+  let before_last =
+    || Expr::List(vec![rule_expr(Expr::Integer(-2), sym("True"))].into());
+  let dividers = Expr::List(
+    vec![
+      rule_expr(tf_string("Columns"), no_lines()),
+      rule_expr(tf_string("ColumnsIndexed"), before_last()),
+      rule_expr(tf_string("Rows"), no_lines()),
+      rule_expr(tf_string("RowsIndexed"), before_last()),
+    ]
+    .into(),
+  );
+  let grid = tf_box(
+    "GridBox",
+    vec![
+      Expr::List(grid_rows.into()),
+      rule_expr(sym("GridBoxDividers"), dividers),
+    ],
+  );
+  Some(tf_row(vec![
+    tf_string("TransformationFunction"),
+    tf_string("["),
+    tf_row(vec![tf_string("("), grid, tf_string(")")]),
+    tf_string("]"),
+  ]))
+}
+
 fn tf_is_matrix(items: &[Expr]) -> bool {
   if items.is_empty() {
     return false;
@@ -5892,6 +6023,9 @@ fn tf_needs_paren_factor(expr: &Expr) -> bool {
     Expr::Comparison { .. } => true,
     Expr::FunctionCall { name, args } => {
       (name == "Plus" && args.len() >= 2)
+        // `a ± b` binds looser than a product: `(a ± b) c`.
+        || (matches!(name.as_str(), "PlusMinus" | "MinusPlus")
+          && args.len() >= 2)
         || (name == "Times"
           && matches!(args.first(), Some(Expr::Integer(n)) if *n < 0))
     }
@@ -6314,10 +6448,8 @@ fn tf_times(expr: &Expr) -> Expr {
   } = product;
   // A literal `1` factor is no factor at all: `a/b 1/c` sets as `a/(b c)`.
   numerators.retain(|f| !matches!(f, Expr::Integer(1)));
-  // Exact numeric factors lead, in their canonical order: `a Pi` is set as
-  // `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`.
-  numerators.sort_by_key(|f| !tf_is_numeric_constant(f));
-  denominators.sort_by_key(|f| !tf_is_numeric_constant(f));
+  tf_order_factors(&mut numerators);
+  tf_order_factors(&mut denominators);
   let row_of = |parts: &[Expr]| -> Expr {
     // A lone factor is set as it is: `a/(b c)` has `b c` under the bar.
     if let [only] = parts {
@@ -6379,6 +6511,63 @@ fn tf_times(expr: &Expr) -> Expr {
   }
 }
 
+/// Put the factors of a product into the order TraditionalForm sets them in.
+/// Exact numeric factors lead, in their canonical order: `a Pi` is set as
+/// `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`. An indexed variable
+/// `Subscript[k, 1]` is ordered as its base symbol `k` would be, so it moves
+/// ahead of later symbols and of function applications: `x Subscript[k, 1]`
+/// is set as `k₁ x` and `Sin[x] Subscript[k, 2]` as `k₂ sin(x)`. A held
+/// product keeps the order it was written in (apart from the numbers).
+pub(crate) fn tf_order_factors(factors: &mut Vec<Expr>) {
+  factors.sort_by_key(|f| !tf_is_numeric_constant(f));
+  if TF_HELD.get() {
+    return;
+  }
+  // The base symbol of `Subscript[sym, …]`, the key it is ordered by.
+  fn indexed_base(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Subscript"
+          && args.len() >= 2
+          && matches!(args[0], Expr::Identifier(_)) =>
+      {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  }
+  if !factors.iter().any(|f| indexed_base(f).is_some()) {
+    return;
+  }
+  let key = |e: &Expr| indexed_base(e).unwrap_or_else(|| e.clone());
+  let (indexed, mut ordered): (Vec<Expr>, Vec<Expr>) = std::mem::take(factors)
+    .into_iter()
+    .partition(|f| indexed_base(f).is_some());
+  let numbers = ordered
+    .iter()
+    .take_while(|f| tf_is_numeric_constant(f))
+    .count();
+  // Insert each indexed variable ahead of the first factor its base symbol
+  // sorts before; ties keep the indexed variable after.
+  for f in indexed {
+    let k = key(&f);
+    let at = (numbers..ordered.len())
+      .find(|&i| {
+        crate::functions::list_helpers_ast::canonical_cmp(&k, &key(&ordered[i]))
+          == std::cmp::Ordering::Less
+      })
+      .unwrap_or(ordered.len());
+    ordered.insert(at, f);
+  }
+  *factors = ordered;
+}
+
+/// The TraditionalForm glyph of a relational operator: `a == b` is set as
+/// `a = b`, `a <= b` as `a ≤ b`.
+pub(crate) fn tf_comparison_op_glyph(op: ComparisonOp) -> &'static str {
+  tf_comparison_glyph(op.head_name()).unwrap_or("=")
+}
+
 /// Is this factor an exact numeric constant TraditionalForm writes ahead of
 /// the other factors of a product — a number, `I`, `E`, `Pi`, `Degree`, or a
 /// power of one with a number exponent (`Sqrt[3]`, `Pi^2`)? The named
@@ -6434,24 +6623,12 @@ fn tf_plus(expr: &Expr) -> Expr {
   }
   // A held sum is set as written; a large one keeps its canonical order.
   let held = TF_HELD.get();
-  let large = held
-    || matches!(
-      crate::functions::predicate_ast::leaf_count_ast(std::slice::from_ref(expr)),
-      Ok(Expr::Integer(n)) if n >= 795
-    );
+  let large = tf_sum_keeps_order(expr);
   // Wolfram's TraditionalForm starts from the order of its older
   // typesetting: by descending power, numbers last, a two-term sum not
   // leading with its negative term (a large sum keeps canonical order).
   if !large {
-    terms.sort_by(|(_, a), (_, b)| {
-      let key = |t: &Expr| (tf_is_number(t), -tf_degree(t));
-      let (ka, kb) = (key(a), key(b));
-      ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
-    });
-    let negative = |(neg, t): &(bool, Expr)| *neg != negated_term(t).is_some();
-    if terms.len() == 2 && negative(&terms[0]) && !negative(&terms[1]) {
-      terms.swap(0, 1);
-    }
+    tf_sort_by_degree(&mut terms);
   }
   // Each term as a sign and the box of its positive part — except the
   // first, which keeps its own box less its first "-".
@@ -6475,33 +6652,10 @@ fn tf_plus(expr: &Expr) -> Expr {
     }
     return tf_row(items);
   }
-  let mut signed: Vec<(bool, Expr)> = terms
-    .iter()
-    .enumerate()
-    .map(|(i, (neg, term))| match negated_term(term) {
-      Some(positive) if i == 0 => {
-        let mut b = tf_operand(term);
-        if !tf_delete_first_minus(&mut b) {
-          b = tf_operand(&positive);
-        }
-        (!*neg, b)
-      }
-      Some(positive) => (!*neg, tf_operand(&positive)),
-      None => (*neg, tf_operand(term)),
-    })
+  let signed: Vec<(bool, Expr)> = tf_order_sum_terms(&terms, large)
+    .into_iter()
+    .map(|(neg, boxed, _)| (neg, boxed))
     .collect();
-  if signed.len() > 1 && !large {
-    // `TraditionalFormDump`ordplus`.
-    let order = tf_plus_order(&signed);
-    signed = order.into_iter().map(|i| signed[i].clone()).collect();
-    // A two-term sum does not lead with its negative term (unless only
-    // the positive one is imaginary): `x^2 - 1`, `cos(x) - x^4`.
-    if let [(true, b2), (false, b3)] = signed.as_slice()
-      && (!tf_free_of_imaginary(b2) || tf_free_of_imaginary(b3))
-    {
-      signed.swap(0, 1);
-    }
-  }
   let mut items: Vec<Expr> = Vec::new();
   for (i, (neg, term)) in signed.into_iter().enumerate() {
     if i == 0 {
@@ -6521,6 +6675,88 @@ fn tf_plus(expr: &Expr) -> Expr {
     }
   }
   tf_row(items)
+}
+
+/// The terms of a sum (as `tf_flatten_additive` gives them, already in the
+/// older by-degree order) in the order TraditionalForm sets them, each as
+/// its sign, the box of its positive part (the first term keeps its own box
+/// less its first "-") and the positive part itself. A `large` sum keeps
+/// the order it has.
+fn tf_order_sum_terms(
+  terms: &[(bool, Expr)],
+  large: bool,
+) -> Vec<(bool, Expr, Expr)> {
+  let mut signed: Vec<(bool, Expr, Expr)> = terms
+    .iter()
+    .enumerate()
+    .map(|(i, (neg, term))| match negated_term(term) {
+      Some(positive) if i == 0 => {
+        let mut b = tf_operand(term);
+        if !tf_delete_first_minus(&mut b) {
+          b = tf_operand(&positive);
+        }
+        (!*neg, b, positive)
+      }
+      Some(positive) => (!*neg, tf_operand(&positive), positive),
+      None => (*neg, tf_operand(term), term.clone()),
+    })
+    .collect();
+  if signed.len() > 1 && !large {
+    // `TraditionalFormDump`ordplus`.
+    let boxes: Vec<(bool, Expr)> =
+      signed.iter().map(|(n, b, _)| (*n, b.clone())).collect();
+    let order = tf_plus_order(&boxes);
+    signed = order.into_iter().map(|i| signed[i].clone()).collect();
+    // A two-term sum does not lead with its negative term (unless only
+    // the positive one is imaginary): `x^2 - 1`, `cos(x) - x^4`.
+    if let [(true, b2, _), (false, b3, _)] = signed.as_slice()
+      && (!tf_free_of_imaginary(b2) || tf_free_of_imaginary(b3))
+    {
+      signed.swap(0, 1);
+    }
+  }
+  signed
+}
+
+/// The terms of a sum in the order TraditionalForm sets them, each as
+/// whether it is subtracted and its positive part: `ϕ + x Subscript[k, 1]`
+/// gives `k₁ x` before `ϕ`, `x^2 - 1` gives `x^2` before `1`. Text
+/// renderers of a graphic's labels set a sum in this same order.
+pub(crate) fn tf_sum_terms_in_order(expr: &Expr) -> Vec<(bool, Expr)> {
+  let mut terms = Vec::new();
+  tf_flatten_additive(expr, false, &mut terms);
+  let large = tf_sum_keeps_order(expr);
+  if !large {
+    tf_sort_by_degree(&mut terms);
+  }
+  tf_order_sum_terms(&terms, large)
+    .into_iter()
+    .map(|(neg, _, positive)| (neg, positive))
+    .collect()
+}
+
+/// Whether a sum is set in the order it has: a held sum as written, a
+/// large one in canonical order.
+fn tf_sum_keeps_order(expr: &Expr) -> bool {
+  TF_HELD.get()
+    || matches!(
+      crate::functions::predicate_ast::leaf_count_ast(std::slice::from_ref(expr)),
+      Ok(Expr::Integer(n)) if n >= 795
+    )
+}
+
+/// The older TraditionalForm order of a sum's terms: by descending power,
+/// numbers last, a two-term sum not leading with its negative term.
+fn tf_sort_by_degree(terms: &mut [(bool, Expr)]) {
+  terms.sort_by(|(_, a), (_, b)| {
+    let key = |t: &Expr| (tf_is_number(t), -tf_degree(t));
+    let (ka, kb) = (key(a), key(b));
+    ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+  });
+  let negative = |(neg, t): &(bool, Expr)| *neg != negated_term(t).is_some();
+  if terms.len() == 2 && negative(&terms[0]) && !negative(&terms[1]) {
+    terms.swap(0, 1);
+  }
 }
 
 /// Whether a term of a sum is a plain number (`2`, `-1/3`, `π`).
@@ -7259,6 +7495,8 @@ fn tf_comparison_glyph(head: &str) -> Option<&'static str> {
     "LessEqual" => "\u{2264}",
     "Greater" => ">",
     "GreaterEqual" => "\u{2265}",
+    "SameQ" => "\u{2261}",
+    "UnsameQ" => "\u{2262}",
     _ => return None,
   })
 }
@@ -7378,6 +7616,8 @@ fn tf_infix_glyph(head: &str) -> Option<&'static str> {
     "VerticalSeparator" => "\u{F432}",
     "Distributed" => "\u{F3D2}",
     "Dot" => ".",
+    "PlusMinus" => "\u{00B1}",
+    "MinusPlus" => "\u{2213}",
     _ => return None,
   })
 }
@@ -7580,8 +7820,22 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
   }
   match name {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
-    "RawBoxes" if args.len() == 1 => args[0].clone(),
+    // `DisplayForm[boxes]` shows its boxes typeset, just like `RawBoxes`:
+    // `DisplayForm[RowBox[{"(", FractionBox["a", "2"], ")"}]]` is `(a/2)`.
+    "RawBoxes" | "DisplayForm" if args.len() == 1 => args[0].clone(),
     "And" | "Or" | "Xor" if args.len() > 1 => tf_logic(name, args),
+    // `a | b | c` keeps its infix bar (`P(X | A)` for a conditional
+    // probability) instead of falling back to `Alternatives(a, b, c)`.
+    "Alternatives" if args.len() > 1 => {
+      let mut parts = Vec::new();
+      for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+          parts.push(tf_string("|"));
+        }
+        parts.push(tf_operand(a));
+      }
+      tf_row(parts)
+    }
     // `Inequality[a, Less, b, LessEqual, c]` is the chain `a < b ≤ c`.
     "Inequality"
       if args.len() >= 5
@@ -7693,6 +7947,10 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       style_args.push(rule_expr(id_expr("StripOnInput"), bool_expr(false)));
       call("StyleBox", style_args)
     }
+    // `Spacer[w]` / `Spacer[{w, h}]` box as the FrontEnd's blank templates.
+    "Spacer" if spacer_template_box(args).is_some() => {
+      spacer_template_box(args).expect("checked by the guard")
+    }
     // `Invisible[expr]` keeps the room `expr` takes but draws nothing: its
     // box is the content's, with `ShowContents -> False`.
     "Invisible" if args.len() == 1 => {
@@ -7778,6 +8036,11 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         })
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
+    }
+    // `Infix[{a, b}, "+"]` lays its operands out with the operator between
+    // them, each item displayed (a string operator contributes its text).
+    "Infix" if let Some(items) = crate::syntax::infix_display_items(args) => {
+      tf_row(items.iter().map(tf_display).collect())
     }
     // `Row[{a, b, …}]` concatenates its parts; `Row[{…}, sep]` joins them
     // with the separator. A row *displays* its parts, so a string item
@@ -7975,6 +8238,12 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     _ if args.len() >= 2 && tf_infix_glyph(name).is_some() => {
       tf_infix(name, args)
     }
+    // The prefix `±x` / `∓x` signs its operand like a unary minus, so a sum
+    // operand is parenthesized: `±(a + b)`.
+    "PlusMinus" | "MinusPlus" if args.len() == 1 => tf_row(vec![
+      tf_string(tf_infix_glyph(name).unwrap_or_default()),
+      tf_factor_boxed(&args[0]),
+    ]),
     "ForAll" | "Exists" | "NotExists" if (2..=3).contains(&args.len()) => {
       tf_quantifier(name, args)
     }
@@ -8095,6 +8364,11 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf(&args[0])
       }
     }
+    "TransformationFunction"
+      if transformation_function_boxes(args, tf).is_some() =>
+    {
+      transformation_function_boxes(args, tf).unwrap()
+    }
     "MatrixForm" | "TableForm" if args.len() == 1 => {
       let dense =
         crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
@@ -8211,8 +8485,9 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     }
     // Indexed special functions: Jₙ(x), Pₙᵐ(x), hₙ⁽¹⁾(x), …
     _ if tf_indexed_special(name, args.len()).is_some() => {
-      let (letter, fixed_sup) = tf_indexed_special(name, args.len()).unwrap();
-      tf_indexed_call(letter, fixed_sup, args)
+      let (letter, fixed_sup, n_vars) =
+        tf_indexed_special(name, args.len()).unwrap();
+      tf_indexed_call(letter, fixed_sup, n_vars, args)
     }
     "Subscript" if args.len() >= 2 => {
       let sub = tf_comma_seq(args[1..].iter().map(tf)).unwrap();
@@ -8424,24 +8699,24 @@ fn tf(expr: &Expr) -> Expr {
     Expr::UnaryOp {
       op: UnaryOperator::Not,
       operand,
-    } => tf_row(vec![tf_string("\u{00AC}"), tf(operand)]),
+    } => {
+      // An operand that binds looser than `¬` is parenthesized:
+      // `¬(a ∨ b)`, `¬(a ⇒ b)`.
+      let not_prec = tf_prec(expr);
+      let body = if tf_prec(operand) < not_prec {
+        tf_parens(tf(operand))
+      } else {
+        tf(operand)
+      };
+      tf_row(vec![tf_string("\u{00AC}"), body])
+    }
     Expr::Comparison {
       operands,
       operators,
     } => {
       let mut parts = vec![tf_operand(&operands[0])];
       for (i, op) in operators.iter().enumerate() {
-        let sym = match op {
-          ComparisonOp::Equal => "=",
-          ComparisonOp::NotEqual => "\u{2260}", // ≠
-          ComparisonOp::Less => "<",
-          ComparisonOp::LessEqual => "\u{2264}", // ≤
-          ComparisonOp::Greater => ">",
-          ComparisonOp::GreaterEqual => "\u{2265}", // ≥
-          ComparisonOp::SameQ => "\u{2261}",        // ≡
-          ComparisonOp::UnsameQ => "\u{2262}",      // ≢
-        };
-        parts.push(tf_string(sym));
+        parts.push(tf_string(tf_comparison_op_glyph(*op)));
         parts.push(tf_operand(&operands[i + 1]));
       }
       tf_row(parts)
