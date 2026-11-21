@@ -67991,3 +67991,57 @@ mod bar_chart_left_frame_label {
     check(", LabelStyle -> 17");
   }
 }
+
+/// An opaque `ParametricPlot` region (`Opacity[1]` in `PlotStyle`, a
+/// `ColorFunction`, or `MeshShading`) is tiled from many small cells; each
+/// cell must be outlined in its own color so that no light anti-aliasing
+/// seams show between neighbors. Translucent regions keep edge-less cells,
+/// since overlapping outlines would draw a darker grid.
+#[test]
+fn opaque_parametric_region_cells_have_no_seams() {
+  let region = |style: &str| {
+    export_svg(&format!(
+      "ParametricPlot[{{r Cos[t], r Sin[t]}}, {{r, 0, 1}}, {{t, 0, 2 Pi}}, \
+       Mesh -> None{style}]"
+    ))
+  };
+  let polygons = |svg: &str| -> Vec<String> {
+    svg
+      .split("<polygon")
+      .skip(1)
+      .map(|p| p.split("/>").next().unwrap_or_default().to_string())
+      .collect()
+  };
+
+  let opaque = region(", PlotStyle -> {RGBColor[0.2, 0.3, 0.6], Opacity[1]}");
+  let cells = polygons(&opaque);
+  assert!(!cells.is_empty(), "{opaque}");
+  for cell in &cells {
+    assert!(cell.contains("fill=\"rgb(51,77,153)\""), "{cell}");
+    assert!(cell.contains("stroke=\"rgb(51,77,153)\""), "{cell}");
+    assert!(!cell.contains("fill-opacity"), "{cell}");
+  }
+
+  let colored = region(", ColorFunction -> (Hue[#1] &)");
+  let cells = polygons(&colored);
+  assert!(!cells.is_empty(), "{colored}");
+  for cell in &cells {
+    let fill = cell
+      .split("fill=\"")
+      .nth(1)
+      .and_then(|f| f.split('"').next());
+    let stroke = cell
+      .split("stroke=\"")
+      .nth(1)
+      .and_then(|f| f.split('"').next());
+    assert!(fill.is_some() && fill == stroke, "{cell}");
+  }
+
+  let translucent = region("");
+  let cells = polygons(&translucent);
+  assert!(!cells.is_empty(), "{translucent}");
+  for cell in &cells {
+    assert!(cell.contains("fill-opacity=\"0.3\""), "{cell}");
+    assert!(!cell.contains("stroke="), "{cell}");
+  }
+}
