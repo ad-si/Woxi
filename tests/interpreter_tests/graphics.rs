@@ -37254,6 +37254,42 @@ mod grid_frame_and_background {
     assert_eq!(horizontal, 2, "top and bottom: {svg}");
   }
 
+  /// In `{{s}, {c1, c2, …}}` the *last* nested list is the cycle and the
+  /// earlier one gives the leading positions, so the cycle starts at the
+  /// second line. Woxi used to cycle `{True, False, False}` from the top,
+  /// ruling the lines one position too high.
+  #[test]
+  fn dividers_cycle_is_the_last_nested_list() {
+    let ys = |spec: &str| -> Vec<f64> {
+      let svg = export_svg(&format!(
+        "Grid[Table[{{i}}, {{i, 7}}], Dividers -> {{None, {spec}}}]"
+      ));
+      grid_lines(&svg)
+        .into_iter()
+        .filter(|l| l.1 == l.3)
+        .map(|l| l.1)
+        .collect()
+    };
+    let leading_list = ys("{{False}, {True, False, False}}");
+    assert_eq!(leading_list, ys("{False, {True, False, False}}"));
+    // Lines 2, 5 and 8 of the 8 positions: below rows 1, 4 and 7.
+    assert_eq!(leading_list.len(), 3, "{leading_list:?}");
+    assert!(leading_list[0] > 0.0, "no top line: {leading_list:?}");
+    // A lone cycle still starts at the top line.
+    assert_eq!(ys("{{True, False, False}}")[0], 0.0);
+  }
+
+  /// The same spec form cycles row backgrounds after their leading entries.
+  #[test]
+  fn background_cycle_is_the_last_nested_list() {
+    let svg = export_svg(
+      "Grid[Table[{i}, {i, 4}], Background -> {None, {{Red}, {None, Blue}}}]",
+    );
+    let red = svg.matches("rgb(255,0,0)").count();
+    let blue = svg.matches("rgb(0,0,255)").count();
+    assert_eq!((red, blue), (1, 1), "{svg}");
+  }
+
   /// The x of each `<text>` in an SVG, in document order.
   fn text_xs(svg: &str) -> Vec<f64> {
     svg

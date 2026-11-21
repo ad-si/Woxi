@@ -30543,10 +30543,6 @@ fn item_style_entry_directives(entry: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
-/// The entry a per-position `Grid` spec list gives (1-based) position `pos`
-/// of `n`: `{s1, s2, …}` names only the first positions, while
-/// `{s1, …, {r1, r2, …}, e1, …}` cycles the inner list over the positions
-/// between the explicit leading and trailing entries.
 /// Split an `ItemSize` value into its width and height specs. A list of
 /// two or more entries is read as `{w, h, …}` (entries past the height
 /// are ignored, as Wolfram does), so `{6, 1, 1}` fixes every column at 6
@@ -30589,19 +30585,41 @@ fn number_form_display_line(name: &str, formatted: &str) -> String {
   }
 }
 
-fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {
-  let Some(rep_at) = items.iter().position(|e| matches!(e, Expr::List(_)))
+/// Split a per-position `Grid` spec `{s1, …, {c1, c2, …}, e1, …}` into its
+/// leading entries, the cycled list and the trailing entries. The *last*
+/// nested list is the cycle; a nested list before it contributes its
+/// members as further leading entries, so `{{False}, {True, False}}` starts
+/// with `False` and cycles `{True, False}` from the second position on.
+fn split_cyclic_spec(items: &[Expr]) -> (Vec<&Expr>, &[Expr], &[Expr]) {
+  let Some(rep_at) = items.iter().rposition(|e| matches!(e, Expr::List(_)))
   else {
+    return (items.iter().collect(), &[], &[]);
+  };
+  let mut start = Vec::new();
+  for item in &items[..rep_at] {
+    match item {
+      Expr::List(members) => start.extend(members.iter()),
+      other => start.push(other),
+    }
+  }
+  let Expr::List(repeat) = &items[rep_at] else {
+    unreachable!("rposition found a list")
+  };
+  (start, repeat, &items[rep_at + 1..])
+}
+
+/// The entry a per-position `Grid` spec list gives (1-based) position `pos`
+/// of `n`: `{s1, s2, …}` names only the first positions, while
+/// `{s1, …, {r1, r2, …}, e1, …}` cycles the inner list over the positions
+/// between the explicit leading and trailing entries.
+fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {
+  if !items.iter().any(|e| matches!(e, Expr::List(_))) {
     return items.get(pos.checked_sub(1)?);
-  };
+  }
   let idx = pos.checked_sub(1)?;
-  let (start, rest) = items.split_at(rep_at);
-  let Expr::List(repeat) = &rest[0] else {
-    return None;
-  };
-  let end = &rest[1..];
+  let (start, repeat, end) = split_cyclic_spec(items);
   if idx < start.len() {
-    return start.get(idx);
+    return start.get(idx).copied();
   }
   if !end.is_empty() && idx + end.len() >= n {
     return end.get(idx + end.len() - n);
@@ -31414,18 +31432,12 @@ fn grid_svg_styled_internal_reporting(
                   };
                   if has_nested {
                     *has_rep_flag = true;
-                    let mut before_repeat = true;
-                    for p in positions {
-                      if let Expr::List(rep_items) = p {
-                        before_repeat = false;
-                        *repeating =
-                          rep_items.iter().map(parse_divider_entry).collect();
-                      } else if before_repeat {
-                        explicit_start.push(parse_divider_entry(p));
-                      } else {
-                        explicit_end.push(parse_divider_entry(p));
-                      }
-                    }
+                    let (start, repeat, end) = split_cyclic_spec(positions);
+                    explicit_start
+                      .extend(start.into_iter().map(parse_divider_entry));
+                    *repeating =
+                      repeat.iter().map(parse_divider_entry).collect();
+                    explicit_end.extend(end.iter().map(parse_divider_entry));
                   } else {
                     *target_dividers =
                       positions.iter().map(parse_divider_entry).collect();
@@ -31477,18 +31489,11 @@ fn grid_svg_styled_internal_reporting(
                 row_cols.iter().any(|c| matches!(c, Expr::List(_)));
               if has_nested {
                 row_bg_has_repeating = true;
-                let mut before_repeat = true;
-                for c in row_cols {
-                  if let Expr::List(repeat_items) = c {
-                    before_repeat = false;
-                    row_bg_repeating =
-                      repeat_items.iter().map(parse_bg_color).collect();
-                  } else if before_repeat {
-                    row_bg_explicit_start.push(parse_bg_color(c));
-                  } else {
-                    row_bg_explicit_end.push(parse_bg_color(c));
-                  }
-                }
+                let (start, repeat, end) = split_cyclic_spec(row_cols);
+                row_bg_explicit_start
+                  .extend(start.into_iter().map(parse_bg_color));
+                row_bg_repeating = repeat.iter().map(parse_bg_color).collect();
+                row_bg_explicit_end.extend(end.iter().map(parse_bg_color));
               } else {
                 (row_backgrounds, row_bg_indexed) =
                   parse_bg_spec_list(row_cols);
