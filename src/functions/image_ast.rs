@@ -13670,9 +13670,11 @@ const SYNTHETIC_OBLIQUE_DEGREES: f64 = 14.0;
 /// but whose font family has no italic (or oblique) face in `fontdb`.
 ///
 /// Browsers synthesize an oblique face for `font-style="italic"` when a
-/// family has none, but usvg draws the upright outlines instead. The
-/// embedded Atkinson fonts ship no italic, so `Style[..., Italic]` text
-/// (plot labels, axes labels, `Text` primitives) would rasterize upright.
+/// family has none, but usvg draws the upright outlines instead, so
+/// `Style[..., Italic]` text (plot labels, axes labels, `Text` primitives)
+/// would rasterize upright. The embedded Atkinson Hyperlegible Next ships
+/// real italic faces; this covers the families that don't, such as the
+/// embedded Atkinson Hyperlegible Mono or an installed font.
 /// Each such element gets a `skewX` about its anchor point, which leaves
 /// the anchor where it was and leans the glyphs like an oblique face.
 ///

@@ -11566,8 +11566,10 @@ mod image_value_positions {
 }
 
 /// usvg draws `font-style="italic"` text with upright outlines when the
-/// family has no italic face (the embedded Atkinson fonts have none), so
-/// rasterizers slant such text themselves, the way browsers do.
+/// family has no italic face, so rasterizers slant such text themselves,
+/// the way browsers do. Among the embedded fonts, Atkinson Hyperlegible
+/// Mono has no italic face (Atkinson Hyperlegible Next does), so the tests
+/// that expect a slant set their text in `monospace`.
 #[cfg(not(target_arch = "wasm32"))]
 mod synthetic_oblique_text {
   use resvg::usvg::fontdb::{Database, FaceInfo, Language, Source, Style};
@@ -11591,7 +11593,7 @@ mod synthetic_oblique_text {
   #[test]
   fn italic_text_is_skewed_about_its_anchor() {
     let input = svg(
-      "<text x=\"20.5\" y=\"10\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
+      "<text x=\"20.5\" y=\"10\" font-family=\"monospace\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(
@@ -11606,7 +11608,7 @@ mod synthetic_oblique_text {
   fn text_set_in_one_italic_tspan_is_skewed() {
     // How a styled PlotLabel or AxesLabel is written.
     let input = svg(
-      "<text x=\"50\" y=\"14\" font-family=\"sans-serif\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
+      "<text x=\"50\" y=\"14\" font-family=\"monospace\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(out.contains("skewX(-14)"), "{out}");
@@ -11614,8 +11616,9 @@ mod synthetic_oblique_text {
 
   #[test]
   fn italic_inherited_from_a_group_is_skewed() {
-    let input =
-      svg("<g style=\"font-style: italic\"><text x=\"1\" y=\"2\">a</text></g>");
+    let input = svg(
+      "<g style=\"font-style: italic; font-family: monospace\"><text x=\"1\" y=\"2\">a</text></g>",
+    );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(out.contains("translate(1 2) skewX(-14) translate(-1 -2)"));
   }
@@ -11623,7 +11626,7 @@ mod synthetic_oblique_text {
   #[test]
   fn existing_transform_is_extended() {
     let input = svg(
-      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-style=\"italic\">y</text>",
+      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-family=\"monospace\" font-style=\"italic\">y</text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(
