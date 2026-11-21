@@ -24,6 +24,16 @@ its left-hand side as `h[g_List, n_]` instead of `h[g:{__}, n_]`: the
 named list pattern is compiled into a `List` head plus an element condition,
 and the display rebuilds the pattern from the head alone.
 
+### Displaying held `Graphics[…]` evaluates its primitives
+
+A front end draws a typeset `GraphicsBox` as it stands. Woxi's typeset
+display (the Playground/Studio SVG of a result) turns the box back into a
+`Graphics[…]` expression and renders it with the ordinary `Graphics`
+renderer, which evaluates the content. So the display of
+`Hold[Graphics[{n++; Point[{0, 0}]}]]` increments `n`. Messages raised by
+that drawing (`Part::pkspec1` from a held `Graphics[Line[pts[[i]]]]` inside
+a `Table`) are discarded, but side effects are not undone.
+
 ### `Rationalize[x, dx]` sometimes picks a different approximation
 
 Fuzzed against wolframscript on 2026-11-12: Woxi agrees on 188 of 200
@@ -5501,6 +5511,14 @@ The `Graphics` renderer pads a `PlotRange -> Full` side by 4 %, where Wolfram
 pads more. In a `MusicPlot` this drops the pitch label just above the highest
 note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which Wolfram shows.
 
+### Symbolic tick labels are set on one line
+
+A bare tick position written as a quotient (`Ticks -> {{0, Pi/2, Pi, 3 Pi/2,
+2 Pi}, Automatic}`) is labeled with its expression, but Woxi writes it as
+in-line text (`π/2`, `3 π/2`), because tick labels are drawn as single
+`<text>` runs. Wolfram typesets the label in TraditionalForm, so the fraction
+is stacked: π over 2, 3π over 2.
+
 ### Tick step from the padded range
 
 Woxi derives the tick step from the *padded* display range, as WL 15 does
@@ -5945,13 +5963,16 @@ which for this box is the lower-right y edge and the right vertical z edge;
 it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
 label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
 …`), so Wolfram seems to thin the ticks of a short box side. One box shape
-doesn't pin down either rule, so both stay as they are.
+doesn't pin down either rule, so both stay as they are. (A Demonstration
+snapshot of a box 1.6 times as tall as it is deep does pin down one
+exception: the x axis, along the front face, stays on the bottom front edge
+although the top back one is nearer the viewer; Woxi follows that.)
 
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
-clip path and affine matrix), but the image is not lit: Wolfram shades it with
-the scene lighting. Textured concave or holed polygons render as plain
+clip path and affine matrix), shaded by the scene lighting of a white surface
+(a color-matrix filter). Textured concave or holed polygons render as plain
 default-blue faces. This cannot be checked against wolframscript by diffing SVG
 (it rasterizes 3D output).
 
@@ -5999,6 +6020,9 @@ overlays clickable areas on them.)
 
 - A `TabView` of controls is flattened — every tab's controls are shown at
   once, since Woxi's control panel is one flat list.
+- A `TabView` in a `Manipulate` body (or any rendered layout) is drawn as
+  just its selected pane: the row of tab labels and the tab frame around the
+  pane are not drawn.
 - One unrecognized control spec makes the **entire** `Manipulate` give up, so a
   single unsupported control takes every other control with it.
 - `Manipulate[…, Initialization :> …]` leaks its definitions into the session.
@@ -6314,6 +6338,16 @@ several items), at that size, as Wolfram draws it. What still differs:
   heights are whole points, so a wrapped list can be 1 pt taller.
 - `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
   (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
+
+### `Column` item heights with `ItemSize` and large text
+
+`Framed[Column[{"10", "♠"}, Center, 0, ItemSize -> {3, 2},
+ItemStyle -> Directive[24, Bold]]]` is 52 pt wide in both engines, but
+Wolfram's box is about 57 pt tall and Woxi's 82 pt: Woxi pads each 24 pt
+text item to 32 pt and reads the item height `2` as two 14 pt lines plus
+padding (36 pt), where Wolfram's items stay about one font size tall. A
+string separator in a `Row` (`"  "`) is also wider in Woxi (monospace
+spaces, about 17 pt) than in Wolfram (about 8 pt).
 
 ### Tables, grids and typeset math: remaining layout differences
 
@@ -6923,8 +6957,14 @@ internal hash order. Woxi keeps input order.
   image, and WL draws long edges as splines through the layers. The
   automatic layout of a connected directed acyclic graph with several
   undirected cycles (a Hasse diagram) is layered the same way, with the
-  layers one unit apart; WL centers each layer, Woxi packs it from the
-  left.
+  layers one unit apart. Within a layer Woxi places the vertices at least
+  one unit apart near the median of their neighbors and snaps them to the
+  unit grid of the widest layer (halves to the right), so the drawing is
+  balanced like WL's; WL's exact coordinate assignment is not decoded, so
+  a symmetric drawing (a diamond) can come out half a unit off center.
+- **`GraphPlot` `PlotStyle`**: Woxi applies `PlotStyle -> s` to the edges
+  only (unless `EdgeStyle` is given); how WL combines it with the default
+  vertex style is not verified.
 - **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
   component on its own unit lattice, pads its bounding rectangle by one
   eighth of the mean sum of coordinate spans plus `0.00001`, and packs
@@ -8039,6 +8079,11 @@ proportional face the FrontEnd uses for digits and spaces. A `Pane[…, {450,
 300}]` holding `Row[{Grid[…], Graphics[…], Grid[…]}]` captions (the
 `Power versus Work` Demonstration) therefore lays out wider than the pane and
 clips its right-hand column, where the FrontEnd fits it.
+
+The same fixed advance (0.6 em per character) under-measures wide capitals,
+so narrow `Spacings` look uneven: in
+`Grid[{{"DN", "≈", 1.26}}, Spacings -> {{1 -> 1.3, 2 -> .3, 3 -> .3}}]`
+the `≈` touches `DN` while a visible gap still separates it from `1.26`.
 
 
 ## Machine complex numbers with a `0.` imaginary part

@@ -272,10 +272,14 @@ pub(crate) fn distance_matrix(
   };
 
   if let Some(func) = distance_fn {
+    // A distance function may return quantities (GeoDistance gives
+    // `Quantity[d, "Kilometers"]`); they are compared in the unit of the
+    // first one.
+    let unit: std::cell::RefCell<Option<Expr>> = std::cell::RefCell::new(None);
     let ok = fill(&|i, j| {
       apply_func_to_two_args(func, &evaluated[i], &evaluated[j])
         .ok()
-        .and_then(|d| try_eval_to_f64(&d))
+        .and_then(|d| distance_value(&d, &unit))
     });
     return if ok { Some(dist) } else { None };
   }
@@ -311,6 +315,48 @@ pub(crate) fn distance_matrix(
   }
 
   None
+}
+
+/// The magnitude of a distance: a real number as is, a quantity in the unit
+/// of the first quantity seen (recorded in `unit`).
+fn distance_value(
+  d: &Expr,
+  unit: &std::cell::RefCell<Option<Expr>>,
+) -> Option<f64> {
+  if let Some(x) = try_eval_to_f64(d) {
+    return Some(x);
+  }
+  let Expr::FunctionCall { name, args } = d else {
+    return None;
+  };
+  if name != "Quantity" || args.len() != 2 {
+    return None;
+  }
+  let mut unit = unit.borrow_mut();
+  match unit.as_ref() {
+    None => {
+      *unit = Some(args[1].clone());
+      try_eval_to_f64(&args[0])
+    }
+    Some(u)
+      if crate::syntax::expr_to_string(u)
+        == crate::syntax::expr_to_string(&args[1]) =>
+    {
+      try_eval_to_f64(&args[0])
+    }
+    Some(u) => {
+      let converted = evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "QuantityMagnitude".into(),
+        args: vec![Expr::FunctionCall {
+          name: "UnitConvert".into(),
+          args: vec![d.clone(), u.clone()].into(),
+        }]
+        .into(),
+      })
+      .ok()?;
+      try_eval_to_f64(&converted)
+    }
+  }
 }
 
 /// Try to interpret every element as a real number.

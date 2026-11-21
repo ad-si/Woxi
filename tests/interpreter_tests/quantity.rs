@@ -1346,6 +1346,82 @@ fn unit_convert_exact_si_constants() {
   );
 }
 
+// ─── Planck, magnetic and electric constants ─────────────────────────────
+// Their SI factors overflow i128 (10^42) or carry a power of Pi.
+
+#[test]
+fn unit_convert_planck_constants() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"PlanckConstant\"]]").unwrap(),
+    "Quantity[132521403/200000000000000000000000000000000000000000, \
+     (Kilograms*Meters^2)/Seconds]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"ReducedPlanckConstant\"]]").unwrap(),
+    "Quantity[132521403/(400000000000000000000000000000000000000000*Pi), \
+     (Kilograms*Meters^2)/Seconds]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[2., \"ReducedPlanckConstant\"]]").unwrap(),
+    "Quantity[2.109143635292313*^-34, (Kilograms*Meters^2)/Seconds]"
+  );
+}
+
+#[test]
+fn unit_convert_magnetic_and_electric_constants() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[1, \"MagneticConstant\"]]").unwrap(),
+    "Quantity[Pi/2500000, (Kilograms*Meters)/(Amperes^2*Seconds^2)]"
+  );
+  assert_eq!(
+    interpret("UnitConvert[Quantity[\"ElectricConstant\"]]").unwrap(),
+    "Quantity[625000/(22468879468420441*Pi), \
+     (Amperes^2*Seconds^4)/(Kilograms*Meters^3)]"
+  );
+}
+
+#[test]
+fn unit_convert_reduced_planck_constant_cancels_pi() {
+  // hbar c / eV in angstroms keeps the 1/Pi of hbar.
+  assert_eq!(
+    interpret(
+      "UnitConvert[Quantity[1, \"ReducedPlanckConstant\"] \
+       Quantity[1, \"SpeedOfLight\"]/Quantity[1, \"Electronvolts\"], \
+       \"Angstroms\"]"
+    )
+    .unwrap(),
+    "Quantity[6621486190496429/(1068117756000*Pi), Angstroms]"
+  );
+  // An angular frequency 2 Pi c/lambda in eV/hbar: the Pis cancel.
+  assert_eq!(
+    interpret(
+      "UnitConvert[2 Pi Quantity[\"SpeedOfLight\"]/Quantity[800, \"Nanometers\"], \
+       \"Electronvolts\"/\"ReducedPlanckConstant\"]"
+    )
+    .unwrap(),
+    "Quantity[6621486190496429/4272471024000000, \
+     Electronvolts/ReducedPlanckConstant]"
+  );
+}
+
+#[test]
+fn unit_convert_to_quantity_target_uses_its_unit() {
+  assert_eq!(
+    interpret("UnitConvert[Quantity[3, \"Kilometers\"], Quantity[\"Meters\"]]")
+      .unwrap(),
+    "Quantity[3000, Meters]"
+  );
+  assert_eq!(
+    interpret(
+      "UnitConvert[2 Pi Quantity[\"SpeedOfLight\"]/Quantity[800, \"Nanometers\"], \
+       1/Quantity[1, \"ReducedPlanckConstant\"/\"Electronvolts\"]]"
+    )
+    .unwrap(),
+    "Quantity[6621486190496429/4272471024000000, \
+     Electronvolts/ReducedPlanckConstant]"
+  );
+}
+
 #[test]
 fn kelvins_in_compound_units() {
   assert_eq!(
