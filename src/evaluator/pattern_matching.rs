@@ -2776,6 +2776,37 @@ fn try_flat_replace_all(
   pattern: &Expr,
   replacement: &Expr,
 ) -> Result<Option<Expr>, InterpreterError> {
+  if let Some(result) = try_flat_replace_here(expr, pattern, replacement)? {
+    return Ok(Some(result));
+  }
+  match expr {
+    Expr::FunctionCall { name, args } => Ok(
+      map_unchanged_lazily(args, |arg| {
+        try_flat_replace_all(arg, pattern, replacement)
+      })?
+      .map(|new_args| Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }),
+    ),
+    Expr::List(items) => Ok(
+      map_unchanged_lazily(items, |item| {
+        try_flat_replace_all(item, pattern, replacement)
+      })?
+      .map(|new_items| Expr::List(new_items.into())),
+    ),
+    _ => Ok(None),
+  }
+}
+
+/// Flat-attribute subsequence matching of `pattern` against the arguments
+/// of `expr` itself (not of its subexpressions): `a x yp /. a yp -> w`
+/// rewrites the `Times` to `w x`.
+fn try_flat_replace_here(
+  expr: &Expr,
+  pattern: &Expr,
+  replacement: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
   match expr {
     Expr::FunctionCall { name, args } => {
       let has_flat = is_builtin_flat(name)
@@ -2869,23 +2900,8 @@ fn try_flat_replace_all(
           }
         }
       }
-      // Recurse into subexpressions
-      Ok(
-        map_unchanged_lazily(args, |arg| {
-          try_flat_replace_all(arg, pattern, replacement)
-        })?
-        .map(|new_args| Expr::FunctionCall {
-          name: name.clone(),
-          args: new_args.into(),
-        }),
-      )
+      Ok(None)
     }
-    Expr::List(items) => Ok(
-      map_unchanged_lazily(items, |item| {
-        try_flat_replace_all(item, pattern, replacement)
-      })?
-      .map(|new_items| Expr::List(new_items.into())),
-    ),
     _ => Ok(None),
   }
 }
@@ -7061,8 +7077,10 @@ fn apply_replace_all_multi_ast_impl(
     // associative — the same path the single-rule branch in
     // `apply_replace_all_ast` takes. Without this, `Q[a, 1, b] /.
     // Dispatch[{rule}]` (rules wrapped in a list) fell through silently
-    // even though `Q[a, 1, b] /. rule` matched.
-    if let Some(result) = try_flat_replace_all(expr, pattern, replacement)? {
+    // even though `Q[a, 1, b] /. rule` matched. Only this node's own
+    // arguments are tried: its subexpressions are visited below, where
+    // every other rule gets its turn as well.
+    if let Some(result) = try_flat_replace_here(expr, pattern, replacement)? {
       return Ok(result);
     }
   }

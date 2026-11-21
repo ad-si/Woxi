@@ -26,12 +26,14 @@ fn real_domain_drops_non_real_polynomial_roots() {
 
 #[test]
 fn real_domain_filters_high_degree_polynomial_roots() {
-  // Degree-100 sparse polynomial with a single real root; the numeric
-  // root finders used to overflow and report every Root[…] as real.
+  // Degree-100 sparse polynomial with four real roots (it changes sign
+  // between -141 and -140, -99/100 and -95/100, -95/100 and -9/10, and
+  // 11/10 and 2); the numeric root finders used to overflow and report
+  // every Root[…] as real, and then failed to converge and found one.
   assert_reduces(
     "Length[{ToRules[Reduce[150 - 129*x^14 + 510*x^17 - 298*x^36 - \
      17*x^84 - 24*x^94 + 588*x^96 + 650*x^98 - 841*x^99 - 6*x^100 == 0, \
      x, Reals]]}]",
-    "1",
+    "4",
   );
 }
