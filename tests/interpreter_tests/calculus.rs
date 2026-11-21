@@ -3360,6 +3360,67 @@ mod series {
     );
   }
 
+  // Sinc[u] is expanded as Sin[u]/u where u vanishes, instead of sampling
+  // its derivatives at the removable singularity (Power::infy).
+  #[test]
+  fn series_sinc_at_zero() {
+    assert_eq!(
+      interpret("Series[Sinc[x], {x, 0, 6}]").unwrap(),
+      "SeriesData[x, 0, {1, 0, -1/6, 0, 1/120, 0, -1/5040}, 0, 7, 1]"
+    );
+    assert_eq!(
+      interpret("Normal[Series[Sinc[2 x], {x, 0, 4}]]").unwrap(),
+      "1 - (2*x^2)/3 + (2*x^4)/15"
+    );
+    assert_eq!(
+      interpret("Normal[Series[x Sinc[x^2], {x, 0, 9}]]").unwrap(),
+      "x - x^5/6 + x^9/120"
+    );
+  }
+
+  #[test]
+  fn series_sinc_shifted_argument() {
+    assert_eq!(
+      interpret("Normal[Series[Sinc[x - 2], {x, 2, 4}]]").unwrap(),
+      "1 - (-2 + x)^2/6 + (-2 + x)^4/120"
+    );
+  }
+
+  #[test]
+  fn series_sinc_high_order_has_no_messages() {
+    let r =
+      interpret_with_stdout("Normal[Series[Sinc[x], {x, 0, 30}]][[{1, -1}]]")
+        .unwrap();
+    assert_eq!(r.result, "1 - x^30/8222838654177922817725562880000000");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected messages: {:?}",
+      r.warnings
+    );
+  }
+
+  // Normal of a series is one flat Plus, so Part addresses its terms
+  // directly instead of the two operands of a nested binary sum.
+  #[test]
+  fn normal_series_parts_address_terms() {
+    assert_eq!(
+      interpret("Normal[Series[Cos[x], {x, 0, 6}]][[2 ;; 3]]").unwrap(),
+      "-1/2*x^2 + x^4/24"
+    );
+    assert_eq!(
+      interpret("Length[Normal[Series[Cos[x], {x, 0, 6}]]]").unwrap(),
+      "4"
+    );
+    assert_eq!(
+      interpret("Normal[Series[Exp[x], {x, 1, 2}]][[2]]").unwrap(),
+      "E*(-1 + x)"
+    );
+    assert_eq!(
+      interpret("Normal[Series[a + b + x, {x, 0, 2}]][[3]]").unwrap(),
+      "x"
+    );
+  }
+
   #[test]
   fn series_tan_order5() {
     assert_eq!(

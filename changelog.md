@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- `Series[Sinc[u], …]` expands where `u` vanishes (`Sinc[x]` about 0,
+    `Sinc[x - 2]` about 2) instead of printing `Power::infy` messages.
+    `Normal` of a series returns one flat sum, so `Part` picks its terms
+    (`Normal[Series[Cos[x], {x, 0, 6}]][[2 ;; 3]]`).
 - A `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]` readout in a
     `Text@Row` or grid keeps its left padding, so the label stays the same
     width as the value changes. `ToBoxes` of such a `NumberForm` around an
