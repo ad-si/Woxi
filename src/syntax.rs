@@ -295,6 +295,10 @@ pub struct PlotSeriesData {
   /// (`None` = plain `color`). Travels with the series so that `Show`
   /// colors only this curve by it, not the curves merged with it.
   pub color_function: Option<SeriesColorFunction>,
+  /// `Arrowheads[spec]` from `PlotStyle`: the plot expression keeps it as
+  /// a directive of the curve, so `plot /. Line -> Arrow` draws the heads
+  /// it asks for (several evenly spaced ones for a list of sizes).
+  pub arrowheads: Option<Expr>,
 }
 
 /// A plot's `ColorFunction` as one of its curves was drawn with it: the
@@ -12170,17 +12174,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && let Expr::Integer(n) = &rargs[0]
-          && let Expr::Integer(d) = &rargs[1]
-          && *d > 0
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && d.sign() == Sign::Plus
           && is_denominator_factor(&args[1])
         {
+          let one = BigInt::from(1);
           let denom_form = denominator_form(&args[1]);
           let denom_str = fmt(&denom_form);
           // When numerator is -1, Wolfram separates the rational
           // from the power term: -1/d*1/base^exp (e.g. -1/2*1/x^2)
-          if *n == -1 {
+          if n == -&one {
             let denom_needs_parens = matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
               || matches!(
                 &denom_form,
@@ -12215,18 +12218,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           };
           if is_output {
             // OutputForm: combine Rational denominator with Power denominator
-            if *n == 1 {
+            if n == one {
               return format!("1/({d}*{denom_str_parened})");
             }
             return format!("{n}/({d}*{denom_str_parened})");
           }
           // For other numerators, combine into n/(d*base^exp)
-          let full_denom = if *d > 1 {
+          let full_denom = if d > one {
             format!("({d}*{denom_str_parened})")
           } else {
             denom_str_parened
           };
-          if *n == 1 {
+          if n == one {
             return format!("1/{full_denom}");
           }
           return format!("{n}/{full_denom}");
@@ -12238,9 +12241,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
-          && let Expr::Integer(d) = &rargs[1]
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(1)
+          && d.sign() == Sign::Plus
         {
           if is_output {
             // OutputForm wraps Plus/Minus inner in parens
@@ -12288,10 +12291,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!(&rargs[0], Expr::Integer(-1))
-          && let Expr::Integer(d) = &rargs[1]
-          && *d > 0
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(-1)
+          && d.sign() == Sign::Plus
           && let Expr::FunctionCall {
             name: pname,
             args: pargs,
@@ -12371,9 +12373,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
-          && let Expr::Integer(d) = &rargs[1]
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(1)
+          && d.sign() == Sign::Plus
           && !args[1..].iter().any(is_denominator_factor)
           && !args[1..]
             .iter()
@@ -12408,10 +12410,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
-          && n.abs() > 1
-          && *d > 1
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n.magnitude() > &num_bigint::BigUint::from(1u32)
+          && d > BigInt::from(1)
           && !args[1..].iter().any(is_denominator_factor)
           && !args[1..]
             .iter()
@@ -12446,9 +12447,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(-1), Expr::Integer(d)) if *d > 1)
-          && let Expr::Integer(d) = &rargs[1]
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(-1)
+          && d > BigInt::from(1)
           && !args[1..]
             .iter()
             .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
@@ -20620,6 +20621,38 @@ pub fn message_with_expr_2d(prefix: &str, expr: &Expr, suffix: &str) -> String {
 /// spans three lines while `Sin[x]` reads `sin(x)`.
 pub fn boxes_to_output_form_2d(expr: &Expr) -> String {
   boxes_to_textbox(expr).to_string()
+}
+
+/// Set the 2D OutputForm texts of a `Row`'s parts side by side, each part
+/// aligned on its baseline: `ToString[Row[{x, 14/3}]]` keeps `x` beside the
+/// fraction bar, with the numerator above and the denominator below it.
+/// Each part is given as its rendered text and the expression it came from;
+/// a multi-line text is on the baseline of that expression's 2D layout when
+/// the layout spells that text, and centered otherwise (the way a fraction
+/// produced by a display wrapper such as `NumberForm[14/3, {3, 2}]` sits).
+pub fn hconcat_output_form_parts(parts: &[(String, Expr)]) -> String {
+  let boxes: Vec<TextBox> = parts
+    .iter()
+    .map(|(text, source)| {
+      if !text.contains('\n') {
+        return TextBox::atom(text);
+      }
+      let lines: Vec<String> = text
+        .split('\n')
+        .map(std::string::ToString::to_string)
+        .collect();
+      let laid_out = with_display_names(source, |e| {
+        with_complex_display(e, expr_to_textbox)
+      });
+      let baseline = if laid_out.to_string() == *text {
+        laid_out.baseline
+      } else {
+        lines.len().saturating_sub(1) / 2
+      };
+      TextBox { lines, baseline }
+    })
+    .collect();
+  TextBox::hconcat(&boxes).to_string()
 }
 
 fn boxes_to_textbox(expr: &Expr) -> TextBox {

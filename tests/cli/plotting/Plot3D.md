@@ -10,6 +10,8 @@ Graphics3D
 ### Options
 
 - **`PlotRange`** — `{zmin, zmax}` or `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}`.
+  The automatic vertical range clips outlying heights (a pole, say);
+  `All` keeps every sampled height.
 - **`PlotStyle`**, **`PlotLabel`**, **`PlotLegends`**,
   **`ImageSize`**, **`Background`**, **`PlotTheme`** — as for `Plot`.
 - **`AxesLabel`** — `{xLabel, yLabel, zLabel}`.

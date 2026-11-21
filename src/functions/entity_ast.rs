@@ -1,7 +1,8 @@
 //! AST-native entity store functions.
 //!
 //! Implements EntityStore, EntityRegister, EntityUnregister, EntityValue,
-//! EntityList, EntityProperties, EntityStores, EntityClassList, and Entity property access.
+//! EntityList, EntityProperties, EntityStores, EntityClassList, CanonicalName, and Entity
+//! property access.
 
 use super::*;
 
@@ -782,6 +783,40 @@ pub fn entity_class_list_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   });
 
   Ok(Expr::List(classes.into()))
+}
+
+/// CanonicalName[entity] — the standard name of an `Entity`, `EntityClass`,
+/// `EntityProperty` or `EntityPropertyClass`: its second argument, as is
+/// (a string, or the list of strings a qualified name like
+/// `Entity["City", {"Champaign", "Illinois", "UnitedStates"}]` uses).
+/// Lists of such objects are mapped over, at any depth; anything else
+/// stays unevaluated.
+pub fn canonical_name_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  fn name_of(expr: &Expr) -> Option<Expr> {
+    match expr {
+      Expr::FunctionCall { name, args }
+        if args.len() >= 2
+          && matches!(
+            name.as_str(),
+            "Entity" | "EntityClass" | "EntityProperty" | "EntityPropertyClass"
+          ) =>
+      {
+        Some(args[1].clone())
+      }
+      Expr::List(items) => items
+        .iter()
+        .map(name_of)
+        .collect::<Option<Vec<_>>>()
+        .map(|names| Expr::List(names.into())),
+      _ => None,
+    }
+  }
+  match args {
+    [arg] => {
+      Ok(name_of(arg).unwrap_or_else(|| unevaluated("CanonicalName", args)))
+    }
+    _ => Ok(unevaluated("CanonicalName", args)),
+  }
 }
 
 /// EntityProperties["type"] — list all properties for a given type.
