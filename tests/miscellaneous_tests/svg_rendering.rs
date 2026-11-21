@@ -2174,6 +2174,50 @@ mod tests {
     }
 
     #[test]
+    fn graphics_grid_lines_stay_inside_letterboxed_plot_range() {
+      // Under `ImageSize -> {w, h}` a square plot range is centered with
+      // blank room on either side. Grid lines belong to the plot range:
+      // they stop at its edges instead of running across the blank room,
+      // and lines positioned outside the range are not drawn at all.
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics[Rectangle[{1, 1}],
+          GridLines -> {Range[0, 4], Range[0, 4]},
+          PlotRange -> {{0, 3}, {0, 3}}, ImageSize -> {400, 200}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let grid: Vec<&str> = svg
+        .lines()
+        .filter(|l| l.starts_with("<line") && l.contains("rgb(128,128,128)"))
+        .collect();
+      // x = 0..3 and y = 0..3 lie in the range; 4 lies outside on both axes.
+      assert_eq!(grid.len(), 8, "expected 4 + 4 grid lines: {svg}");
+      let attr = |line: &str, name: &str| -> f64 {
+        let key = format!(" {name}=\"");
+        let start = line.find(&key).unwrap() + key.len();
+        let end = start + line[start..].find('"').unwrap();
+        line[start..end].parse().unwrap()
+      };
+      // The 200 px tall square range occupies x = 100..300 of the 400 px
+      // wide picture.
+      for line in &grid {
+        for name in ["x1", "x2"] {
+          let x = attr(line, name);
+          assert!(
+            (99.0..=301.0).contains(&x),
+            "grid line leaves the plot range horizontally: {line}"
+          );
+        }
+        for name in ["y1", "y2"] {
+          let y = attr(line, name);
+          assert!(
+            (-1.0..=201.0).contains(&y),
+            "grid line leaves the plot range vertically: {line}"
+          );
+        }
+      }
+    }
+
+    #[test]
     fn graphics_grid_lines_per_line_style() {
       // A {pos, style} entry overrides the style for just that line.
       let svg = woxi::interpret(
@@ -5104,6 +5148,7 @@ mod tests {
         "Style[Grid[{{TraditionalForm[a + b], TraditionalForm[c - a]}}, Frame -> All], 30]",
         "TraditionalForm[Style[Grid[{{a + b, c - a}, {7, -a - b + c}}, Frame -> All], 30]]",
         "Text[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]]]",
+        "Style[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]], FontFamily -> \"Arial\"]",
       ] {
         let svg =
           woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
@@ -5116,6 +5161,24 @@ mod tests {
           !svg.contains("font-size=\"14"),
           "{code}: a cell kept the default size: {svg}"
         );
+      }
+    }
+
+    /// An outer `Style` around `TraditionalForm[Style[layout, …]]` (what
+    /// `Text[…]` wraps its content in) typesets the layout instead of
+    /// printing it as its source.
+    #[test]
+    fn style_around_traditional_form_of_styled_layout() {
+      for code in [
+        "Style[TraditionalForm[Style[Grid[{{a, 2}}], 24]], Red]",
+        "Text[TraditionalForm[Style[Grid[{{a + b, 2}}, Frame -> All], 20]]]",
+        "Style[TraditionalForm[Style[Column[{a, b}], 18]], Bold]",
+      ] {
+        let svg =
+          woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+        assert!(!svg.contains("Grid["), "{code}: {svg}");
+        assert!(!svg.contains("Column["), "{code}: {svg}");
+        assert!(!svg.contains("TraditionalForm"), "{code}: {svg}");
       }
     }
 
