@@ -58,6 +58,7 @@ SVG images.
 - [`AudioPlot`](plotting/AudioPlot.md)
 - [`BarChart3D`](plotting/BarChart3D.md)
 - [`BoxWhiskerChart`](plotting/BoxWhiskerChart.md)
+- [`ChartElementData`](plotting/ChartElementData.md)
 - [`ComplexListPlot`](plotting/ComplexListPlot.md)
 - [`ComplexPlot`](plotting/ComplexPlot.md)
 - [`DateListPlot`](plotting/DateListPlot.md)
