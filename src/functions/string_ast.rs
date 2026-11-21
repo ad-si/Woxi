@@ -2396,6 +2396,37 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     expr_to_str(&args[0])
   };
 
+  // Conditional pattern: `patt /; test`. The whole string must match the
+  // inner pattern, and the `/;` test (with the named captures substituted
+  // in) has to evaluate to True.
+  if let Expr::FunctionCall { name, args: cargs } = &args[1]
+    && name == "Condition"
+    && cargs.len() == 2
+    && let Some((regex_str, constraints)) =
+      string_match_pattern_to_regex_with_state(&cargs[0])
+  {
+    let case_flag = if ignore_case { "(?i)" } else { "" };
+    let re =
+      compile_regex(&format!("{case_flag}^(?:{regex_str})$")).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {e}"
+        ))
+      })?;
+    // Match against the original string so the captures keep their case.
+    let original = expr_to_str(&args[0]);
+    let Some(caps) = re.captures(&original) else {
+      return Ok(bool_expr(false));
+    };
+    if !caps_satisfy_constraints(&caps, &constraints) {
+      return Ok(bool_expr(false));
+    }
+    let test_sub = substitute_captures(&cargs[1], &caps);
+    let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
+    return Ok(bool_expr(
+      matches!(&test_val, Expr::Identifier(t) if t == "True"),
+    ));
+  }
+
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
   if let Some((regex_str, constraints)) =
     string_match_pattern_to_regex_with_state(&args[1])
@@ -3038,12 +3069,20 @@ fn find_spans_with_empty(
 ) -> Vec<(usize, usize)> {
   let mut spans = Vec::new();
   let mut i = 0;
-  loop {
-    let matched = re.captures_at(s, i).and_then(|caps| {
-      let m = caps.get(0)?;
-      (m.start() == i && caps_satisfy_constraints(&caps, constraints))
-        .then(|| (m.start(), m.end()))
-    });
+  // The search reports the leftmost match at or after `i`, so no match
+  // starts between `i` and it: jump there instead of retrying every
+  // character (quadratic on a long text with sparse matches). No match at
+  // all ends the scan.
+  while let Some(caps) = re.captures_at(s, i) {
+    let Some(m) = caps.get(0) else {
+      break;
+    };
+    if m.start() > i {
+      i = m.start();
+      continue;
+    }
+    let matched = caps_satisfy_constraints(&caps, constraints)
+      .then(|| (m.start(), m.end()));
     let step = s[i..].chars().next().map_or(0, char::len_utf8);
     if let Some((start, end)) = matched {
       spans.push((start, end));
@@ -5137,6 +5176,11 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (the size, weight and color) instead of being flattened to its content.
   let is_standard_form = args.len() == 2
     && matches!(&args[1], Expr::Identifier(f) if f == "StandardForm");
+  // Every form that typesets into boxes (TeXForm, TraditionalForm,
+  // StandardForm) skips the 2D-OutputForm text intercepts below, so e.g.
+  // `ToString[Subscript[x, 2], StandardForm]` reaches the box path and is
+  // `\!\(\*SubscriptBox[x, 2]\)` rather than the two-line text "x\n 2".
+  let typesets = is_tex_form || is_standard_form;
 
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
@@ -5146,7 +5190,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "TableForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5163,7 +5207,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Grid"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5178,7 +5222,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "MatrixForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = matrix_form_to_string(&inner_args[0])
   {
@@ -5193,8 +5237,8 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name,
     args: inner_args,
   } = &args[0]
-    && ((name == "Column" && !is_input_form && !is_tex_form)
-      || (name == "ColumnForm" && !is_tex_form))
+    && ((name == "Column" && !is_input_form && !typesets)
+      || (name == "ColumnForm" && !typesets))
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5237,7 +5281,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && (name == "Subscript" || name == "Superscript")
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 2
   {
     let base_str = to_string_default_form(&inner_args[0]);
@@ -5263,8 +5307,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Style"
     && !is_input_form
-    && !is_tex_form
-    && !is_standard_form
+    && !typesets
     && !inner_args.is_empty()
   {
     let mut recursed = args.to_vec();
@@ -5282,7 +5325,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Row"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5295,15 +5338,26 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
         Err(_) => expr_to_output(e),
       }
     };
-    let parts: Vec<String> = items.iter().map(&render).collect();
     // A rule in separator position is an option (`BaseStyle -> 20`), not
     // a separator.
-    let joined = if inner_args.len() >= 2
-      && !crate::syntax::is_rule_expr(&inner_args[1])
-    {
-      parts.join(&render(&inner_args[1]))
+    let separator = (inner_args.len() >= 2
+      && !crate::syntax::is_rule_expr(&inner_args[1]))
+    .then(|| (render(&inner_args[1]), inner_args[1].clone()));
+    let mut parts: Vec<(String, Expr)> = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+      if i > 0
+        && let Some(sep) = &separator
+      {
+        parts.push(sep.clone());
+      }
+      parts.push((render(item), item.clone()));
+    }
+    // A part laid out over several lines (a fraction) is set beside the
+    // others on its baseline rather than having its lines glued on.
+    let joined = if parts.iter().any(|(text, _)| text.contains('\n')) {
+      crate::syntax::hconcat_output_form_parts(&parts)
     } else {
-      parts.concat()
+      parts.into_iter().map(|(text, _)| text).collect()
     };
     return Ok(Expr::String(joined));
   }
@@ -5317,7 +5371,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Quantity"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && let Some(rendered) = quantity_to_text(inner_args, false)
   {
     return Ok(Expr::String(rendered));
@@ -5327,7 +5381,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // are spelled out too: `{1 meter, 2 feet}`.
   if let Expr::List(items) = &args[0]
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && items.iter().any(contains_quantity)
   {
     let parts: Vec<String> = items
@@ -5357,7 +5411,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumberForm" | "PaddedForm" | "AccountingForm"
     )
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Some(rendered) = number_form_family_to_string(name, inner_args)
   {
@@ -5959,17 +6013,28 @@ fn scientific_if_out_of_range(fixed: &str, precision: usize) -> Option<String> {
 /// `ToString[{N[Pi, 5]}]` would wrongly be "{3.1415926535897932385`5.}"
 /// instead of "{3.1416}".
 fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
-  match expr {
-    Expr::Real(f) => Expr::Real(round_real_to_6_sig_digits(*f)),
+  // Every inexact number shows at its display width, wherever it sits:
+  // inside comparisons (`x > 6.92078`), rules, associations and pure
+  // function bodies just as in plain calls and lists.
+  map_expr_tree(expr, &|e| match e {
+    Expr::Real(f) => Some(Expr::Real(round_real_to_6_sig_digits(*f))),
     Expr::BigFloat(digits, prec) => {
-      Expr::Raw(format_bigfloat_for_to_string(digits, *prec))
+      Some(Expr::Raw(format_bigfloat_for_to_string(digits, *prec)))
     }
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(truncate_machine_reals_for_to_string)
-        .collect(),
-    ),
+    // `map_expr_tree` stops at function bodies (slot scoping); display
+    // rounding has no scope, so recurse into them here.
+    Expr::Function { body } => Some(Expr::Function {
+      body: Box::new(truncate_machine_reals_for_to_string(body)),
+    }),
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => Some(Expr::NamedFunction {
+      params: params.clone(),
+      body: Box::new(truncate_machine_reals_for_to_string(body)),
+      bracketed: *bracketed,
+    }),
     // A number-display form already fixes the digits it shows
     // (`NumberForm[x, 9]` keeps nine), so its number is left untouched.
     Expr::FunctionCall { name, .. }
@@ -5983,26 +6048,10 @@ fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
           | "DecimalForm"
       ) =>
     {
-      expr.clone()
+      Some(e.clone())
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(truncate_machine_reals_for_to_string)
-        .collect(),
-    },
-    Expr::BinaryOp { op, left, right } => binop(
-      *op,
-      truncate_machine_reals_for_to_string(left),
-      truncate_machine_reals_for_to_string(right),
-    ),
-    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(truncate_machine_reals_for_to_string(operand)),
-    },
-    _ => expr.clone(),
-  }
+    _ => None,
+  })
 }
 
 /// Recursively replace TeXForm/CForm/FortranForm wrappers with their converted
@@ -18015,9 +18064,13 @@ pub(crate) fn number_form_options(
           opts.block = Some(*n as usize);
         }
       }
-      // A single string sets the integer-side padding only.
+      // A single string pads both the integer and the fraction side, so
+      // `NumberPadding -> ""` drops the trailing zeros (`2.` not `2.000`).
       "NumberPadding" => match replacement.as_ref() {
-        Expr::String(s) => opts.lpad.clone_from(s),
+        Expr::String(s) => {
+          opts.lpad.clone_from(s);
+          opts.rpad.clone_from(s);
+        }
         Expr::List(pad) if pad.len() == 2 => {
           if let Some(s) = text(&pad[0]) {
             opts.lpad = s;
@@ -18728,43 +18781,50 @@ fn apply_mantissa_options(mantissa: &str, opts: &NumberFormOptions) -> String {
 /// Integer spec n: right-aligned to width n + 1. List spec {n, f}:
 /// rounded to f decimals (with trailing zeros) and right-aligned to
 /// width n + 2. None for non-numeric values or malformed specs.
-/// The left NumberPadding string of a display-form argument list: the first
-/// element of a `NumberPadding -> {p1, p2}` rule, or " " when absent.
-fn number_padding_left(args: &[Expr]) -> String {
+/// The `(left, right)` strings of a `NumberPadding` rule in a display-form
+/// argument list: `{p1, p2}` gives each side, and a single string pads both.
+/// A missing side is `None`.
+fn number_padding_rule(args: &[Expr]) -> (Option<String>, Option<String>) {
   for a in args {
     if let Expr::Rule {
       pattern,
       replacement,
     } = a
       && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding")
-      && let Expr::List(pad) = replacement.as_ref()
-      && let Some(Expr::String(p1)) = pad.first()
     {
-      return p1.clone();
+      return match replacement.as_ref() {
+        Expr::String(p) => (Some(p.clone()), Some(p.clone())),
+        Expr::List(pad) => {
+          let side = |i: usize| match pad.get(i) {
+            Some(Expr::String(p)) => Some(p.clone()),
+            _ => None,
+          };
+          (side(0), side(1))
+        }
+        _ => (None, None),
+      };
     }
   }
-  " ".to_string()
+  (None, None)
 }
 
-/// The right NumberPadding string of a display-form argument list: the second
-/// element of a `NumberPadding -> {p1, p2}` rule, or "0" when absent. This pads
-/// the fractional part past the value's significant digits, so an explicit ""
-/// suppresses trailing zeros (e.g. `PaddedForm[1.5, {4, 2}, NumberPadding ->
-/// {"0", ""}]` -> "001.5" rather than "001.50").
+/// The left NumberPadding string of a display-form argument list, or " "
+/// when absent.
+fn number_padding_left(args: &[Expr]) -> String {
+  number_padding_rule(args)
+    .0
+    .unwrap_or_else(|| " ".to_string())
+}
+
+/// The right NumberPadding string of a display-form argument list, or "0"
+/// when absent. This pads the fractional part past the value's significant
+/// digits, so an explicit "" suppresses trailing zeros (e.g.
+/// `PaddedForm[1.5, {4, 2}, NumberPadding -> {"0", ""}]` -> "001.5" rather
+/// than "001.50").
 fn number_padding_right(args: &[Expr]) -> String {
-  for a in args {
-    if let Expr::Rule {
-      pattern,
-      replacement,
-    } = a
-      && matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberPadding")
-      && let Expr::List(pad) = replacement.as_ref()
-      && let Some(Expr::String(p2)) = pad.get(1)
-    {
-      return p2.clone();
-    }
-  }
-  "0".to_string()
+  number_padding_rule(args)
+    .1
+    .unwrap_or_else(|| "0".to_string())
 }
 
 /// Left-pad `body` to `width` columns with the padding string `lpad`

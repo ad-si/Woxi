@@ -3714,6 +3714,55 @@ mod image_processing {
     );
   }
 
+  // A numeric coordinate map (here a complex quadratic, as in Julia set
+  // iterations) is compiled once instead of evaluated per pixel; its
+  // result must equal the per-pixel evaluation of a map restricted to
+  // numbers, which cannot be compiled.
+  #[test]
+  fn image_transformation_compiled_complex_map() {
+    clear_state();
+    let image =
+      "Image[{{0, 0.25, 0.5}, {0.75, 1, 0.125}, {0.375, 0.625, 0.875}}]";
+    let pure = "{Re[(#[[1]] + I #[[2]])^2 + Complex[0.25, -0.5]], \
+                Im[(#[[1]] + I #[[2]])^2 + Complex[0.25, -0.5]]} &";
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[ImageTransformation[{image}, {pure}, 3, \
+         DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]]"
+      ))
+      .unwrap(),
+      "{{0., 0.625, 0.25}, {0.875, 0.625, 0.875}, {0.25, 0.625, 0.}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "sq[{{x_?NumericQ, y_?NumericQ}}] := \
+           ReIm[(x + I y)^2 + 0.25 - 0.5 I]; \
+         ImageData[ImageTransformation[{image}, {pure}, 9, \
+           DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]] === \
+         ImageData[ImageTransformation[{image}, sq, 9, \
+           DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]]"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A map whose symbolic form differs from its numeric values (a
+  // conditional on the coordinates) still gives the per-pixel result.
+  #[test]
+  fn image_transformation_conditional_map() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTransformation[Image[{{0, 0.5, 1}}], \
+         If[#[[1]] > 1.5, {3 - #[[1]], #[[2]]}, #] &, \
+         DataRange -> {{0, 3}, {0, 1}}]]"
+      )
+      .unwrap(),
+      "{{0., 0.5, 0.}}"
+    );
+  }
+
   #[test]
   fn image_transformation_size_and_non_image() {
     clear_state();
@@ -9852,6 +9901,32 @@ mod rasterize_any_expression {
     );
   }
 
+  // Text (unlike a graphic) is not scaled to an ImageSize: it keeps its
+  // natural size, centered in a canvas of that size, and a RasterSize
+  // then resamples the whole canvas. Woxi used to stretch the text to
+  // fill the canvas.
+  #[test]
+  fn image_size_is_a_canvas_for_text() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "t = Style[\"ab\", 30]; \
+         cols[img_] := Union[Position[ImageData[Binarize[img]], 0][[All, 2]]]; \
+         span[img_] := Max[cols[img]] - Min[cols[img]]; \
+         n = Rasterize[t]; \
+         c = Rasterize[t, ImageSize -> {200, 100}]; \
+         s = Rasterize[t, ImageSize -> {200, 100}, RasterSize -> {400, 200}]; \
+         {ImageDimensions[c], span[c] == span[n], \
+          Abs[Min[cols[c]] + Max[cols[c]] - 201] <= 2, \
+          ImageDimensions[s], Abs[span[s] - 2 span[n]] <= 2, \
+          Abs[Min[cols[s]] + Max[cols[s]] - 401] <= 3, \
+          ImageDimensions[Rasterize[t, ImageSize -> 200]][[1]]}"
+      )
+      .unwrap(),
+      "{{200, 100}, True, True, {400, 200}, True, True, 200}"
+    );
+  }
+
   // `ImageSize` is the displayed size in printer's points, so at the
   // default resolution it sets the raster's pixel dimensions; an image
   // argument used to come back at its own size regardless.
@@ -11566,8 +11641,10 @@ mod image_value_positions {
 }
 
 /// usvg draws `font-style="italic"` text with upright outlines when the
-/// family has no italic face (the embedded Atkinson fonts have none), so
-/// rasterizers slant such text themselves, the way browsers do.
+/// family has no italic face, so rasterizers slant such text themselves,
+/// the way browsers do. Among the embedded fonts, Atkinson Hyperlegible
+/// Mono has no italic face (Atkinson Hyperlegible Next does), so the tests
+/// that expect a slant set their text in `monospace`.
 #[cfg(not(target_arch = "wasm32"))]
 mod synthetic_oblique_text {
   use resvg::usvg::fontdb::{Database, FaceInfo, Language, Source, Style};
@@ -11591,7 +11668,7 @@ mod synthetic_oblique_text {
   #[test]
   fn italic_text_is_skewed_about_its_anchor() {
     let input = svg(
-      "<text x=\"20.5\" y=\"10\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
+      "<text x=\"20.5\" y=\"10\" font-family=\"monospace\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(
@@ -11606,7 +11683,7 @@ mod synthetic_oblique_text {
   fn text_set_in_one_italic_tspan_is_skewed() {
     // How a styled PlotLabel or AxesLabel is written.
     let input = svg(
-      "<text x=\"50\" y=\"14\" font-family=\"sans-serif\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
+      "<text x=\"50\" y=\"14\" font-family=\"monospace\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(out.contains("skewX(-14)"), "{out}");
@@ -11614,8 +11691,9 @@ mod synthetic_oblique_text {
 
   #[test]
   fn italic_inherited_from_a_group_is_skewed() {
-    let input =
-      svg("<g style=\"font-style: italic\"><text x=\"1\" y=\"2\">a</text></g>");
+    let input = svg(
+      "<g style=\"font-style: italic; font-family: monospace\"><text x=\"1\" y=\"2\">a</text></g>",
+    );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(out.contains("translate(1 2) skewX(-14) translate(-1 -2)"));
   }
@@ -11623,7 +11701,7 @@ mod synthetic_oblique_text {
   #[test]
   fn existing_transform_is_extended() {
     let input = svg(
-      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-style=\"italic\">y</text>",
+      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-family=\"monospace\" font-style=\"italic\">y</text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(
