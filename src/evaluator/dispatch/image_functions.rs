@@ -1716,61 +1716,11 @@ pub fn dispatch_image_functions(
       if let Expr::String(s) = &args[0]
         && s == "Gradients"
       {
-        let names = [
-          "AlpineColors",
-          "Aquamarine",
-          "ArmyColors",
-          "AtlanticColors",
-          "AuroraColors",
-          "AvocadoColors",
-          "BeachColors",
-          "BlueGreenYellow",
-          "BrassTones",
-          "BrightBands",
-          "BrownCyanTones",
-          "CandyColors",
-          "CherryTones",
-          "CMYKColors",
-          "CoffeeTones",
-          "DarkBands",
-          "DarkRainbow",
-          "DarkTerrain",
-          "DeepSeaColors",
-          "FallColors",
-          "FruitPunchColors",
-          "FuchsiaTones",
-          "GrayTones",
-          "GrayYellowTones",
-          "GreenBrownTerrain",
-          "GreenPinkTones",
-          "IslandColors",
-          "LakeColors",
-          "LightTemperatureMap",
-          "LightTerrain",
-          "MintColors",
-          "NeonColors",
-          "Pastel",
-          "PearlColors",
-          "PigeonTones",
-          "PlumColors",
-          "Rainbow",
-          "RedBlueTones",
-          "RedGreenSplit",
-          "RoseColors",
-          "RustTones",
-          "SandyTerrain",
-          "SiennaTones",
-          "SolarColors",
-          "SouthwestColors",
-          "StarryNightColors",
-          "SunsetColors",
-          "TemperatureMap",
-          "ThermometerColors",
-          "ValentineTones",
-          "WatermelonColors",
-        ];
         return Some(Ok(Expr::List(
-          names.iter().map(|n| str_expr(n)).collect(),
+          crate::functions::chart::GRADIENT_NAMES
+            .iter()
+            .map(|n| str_expr(n))
+            .collect(),
         )));
       }
       // ColorData["Charting"]: the indexed schemes made for charts, 44–62

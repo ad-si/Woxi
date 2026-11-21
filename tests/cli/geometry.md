@@ -231,6 +231,13 @@ $ wo 'PolyhedronData["RhombicTriacontahedron", "Circumradius"]'
 Missing[NotApplicable]
 ```
 
+A class names its members alphabetically:
+
+```scrut
+$ wo 'PolyhedronData["Platonic"]'
+{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}
+```
+
 `"Faces"` gives the corners and the faces that index into them, in one
 `GraphicsComplex`:
 

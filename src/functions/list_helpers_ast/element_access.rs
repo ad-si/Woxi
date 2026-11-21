@@ -2221,6 +2221,27 @@ pub fn replace_part_heads_ast(
     usize::MAX
   };
 
+  // Whether a matcher's leading components agree with the path so far, so
+  // that one of its positions can lie below it.
+  fn prefix_matches(comps: &[Comp], path: &[(i128, i128)]) -> bool {
+    comps
+      .iter()
+      .zip(path)
+      .all(|(comp, &(p_idx, p_len))| match comp {
+        Comp::Index(n) => {
+          let norm = if *n >= 0 { *n } else { p_len + *n + 1 };
+          norm == p_idx
+        }
+        Comp::Pattern(pat) => {
+          crate::evaluator::pattern_matching::match_pattern(
+            &Expr::Integer(p_idx),
+            pat,
+          )
+          .is_some()
+        }
+      })
+  }
+
   // Walk the expression; at each child position try the matchers in rule
   // order against the full path so far
   fn walk(
@@ -2292,17 +2313,21 @@ pub fn replace_part_heads_ast(
       let idx = (i0 + 1) as i128;
       path.push((idx, len));
       // The first rule (in rule order) whose position pattern matches
-      let position = Expr::List(
-        path
-          .iter()
-          .map(|&(i, _)| Expr::Integer(i))
-          .collect::<Vec<_>>()
-          .into(),
-      );
-      let whole_match = whole.iter().find_map(|(pat, ri)| {
-        crate::evaluator::pattern_matching::match_pattern(&position, pat)
-          .map(|bs| (*ri, bs))
-      });
+      let whole_match = if whole.is_empty() {
+        None
+      } else {
+        let position = Expr::List(
+          path
+            .iter()
+            .map(|&(i, _)| Expr::Integer(i))
+            .collect::<Vec<_>>()
+            .into(),
+        );
+        whole.iter().find_map(|(pat, ri)| {
+          crate::evaluator::pattern_matching::match_pattern(&position, pat)
+            .map(|bs| (*ri, bs))
+        })
+      };
       // Try each matcher whose depth equals the current path length
       for (comps, ri) in matchers {
         if comps.len() != path.len() {
@@ -2377,8 +2402,14 @@ pub fn replace_part_heads_ast(
         path.pop();
         continue 'next_item;
       }
-      // No rule applies here: recurse if deeper matchers exist
-      if path.len() < max_depth {
+      // No rule applies here: recurse only where a deeper path could still
+      // match, so replacing one entry of a matrix leaves the other rows be.
+      if path.len() < max_depth
+        && (!whole.is_empty()
+          || matchers.iter().any(|(comps, _)| {
+            comps.len() > path.len() && prefix_matches(comps, path)
+          }))
+      {
         let replaced =
           walk(item, path, matchers, whole, rules, max_depth, heads)?;
         out.push(replaced);
