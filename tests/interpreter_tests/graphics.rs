@@ -6620,6 +6620,50 @@ mod plot_option_evaluate_once {
       "True"
     );
   }
+
+  /// A held plot's `->` option given as a symbol (a Manipulate control
+  /// bound to `Axes -> ax`) uses the symbol's value, exactly as if the
+  /// value had been written in place.
+  #[test]
+  fn symbol_valued_options_use_their_values() {
+    clear_state();
+    for (plot, option, value) in [
+      ("Plot[x, {x, 0, 1}", "Axes", "False"),
+      (
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}",
+        "Axes",
+        "False",
+      ),
+      (
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}",
+        "Frame",
+        "True",
+      ),
+      ("PolarPlot[1 + Cos[t], {t, 0, 2 Pi}", "Axes", "False"),
+      ("Plot[x^2, {x, -1, 1}", "PlotRange", "{{0, 1}, {0, 2}}"),
+    ] {
+      let code = format!(
+        "v = {value}; ExportString[{plot}, {option} -> v], \"SVG\"] === \
+         ExportString[{plot}, {option} -> {value}], \"SVG\"]"
+      );
+      assert_eq!(interpret(&code).unwrap(), "True", "{code}");
+    }
+  }
+
+  /// An option value computed from an expression is evaluated before the
+  /// plot reads it.
+  #[test]
+  fn computed_option_values_are_evaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ExportString[Plot[x, {x, 0, 1}, Axes -> Not[True]], \"SVG\"] === \
+         ExportString[Plot[x, {x, 0, 1}, Axes -> False], \"SVG\"]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod plot3d {
