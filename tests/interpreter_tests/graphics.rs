@@ -12248,38 +12248,39 @@ mod plot3d {
           "Graphics3D[Sphere[], Boxed -> False, ImageSize -> {size}, \
            PlotRegion -> {{{{-0.25, 1.25}}, {{-0.5, 1.5}}}}{extra}]"
         ));
-        let inner_size = if size == "200" { "300" } else { "{300, 400}" };
-        let inner = export_svg(&format!(
-          "Graphics3D[Sphere[], Boxed -> False, \
-           ImageSize -> {inner_size}{extra}]"
+        // The picture keeps the size it has without the region; the scene
+        // is laid out as in a picture the region's size (1.5 by 2 times).
+        let plain = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, ImageSize -> {size}{extra}]"
         ));
-        let (p, q) = (polygon_extent(&region), polygon_extent(&inner));
-        if size == "200" {
-          // The fitted height is cropped back to the region's share.
-          let h = inner
-            .split("height=\"")
+        let dim = |svg: &str, key: &str| -> f64 {
+          svg
+            .split(key)
             .nth(1)
             .and_then(|s| s.split('"').next())
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap();
-          let expected = format!(
-            "<svg width=\"200\" height=\"{}\"",
-            (h / 2.0).round() as i64
-          );
-          assert!(region.starts_with(&expected), "{}", &region[..80]);
-          let dy = 0.5 * h / 2.0;
-          assert!(close(p.2, q.2 - dy), "{p:?} {q:?}");
-        } else {
-          assert!(
-            region.starts_with("<svg width=\"200\" height=\"200\""),
-            "{}",
-            &region[..80]
-          );
-          // 25% of 200 off the left, 50% of 200 off the top.
-          assert!(close(p.2, q.2 - 100.0) && close(p.3, q.3 - 100.0));
-        }
+            .and_then(|s| s.parse().ok())
+            .unwrap()
+        };
+        let (w, h) = (dim(&plain, " width=\""), dim(&plain, " height=\""));
+        assert_eq!(
+          (dim(&region, " width=\""), dim(&region, " height=\"")),
+          (w, h),
+          "{size}{extra}"
+        );
+        let inner = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, \
+           ImageSize -> {{{}, {}}}{extra}]",
+          1.5 * w,
+          2.0 * h
+        ));
+        let (p, q) = (polygon_extent(&region), polygon_extent(&inner));
+        // 25% of the width off the left, 50% of the height off the top.
         assert!(
-          close(p.0, q.0 - 50.0) && close(p.1, q.1 - 50.0),
+          close(p.2, q.2 - 0.5 * h) && close(p.3, q.3 - 0.5 * h),
+          "{size}{extra}: {p:?} {q:?}"
+        );
+        assert!(
+          close(p.0, q.0 - 0.25 * w) && close(p.1, q.1 - 0.25 * w),
           "{size}{extra}: {p:?} {q:?}"
         );
       }
