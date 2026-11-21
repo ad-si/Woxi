@@ -13664,31 +13664,8 @@ fn contents_sphere_radius(
 
 /// Graphics3D[primitives, options...]
 pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  graphics3d_ast_impl(args, true)
-}
-
-/// Draw `Graphics3D[args]` with its content and options as written, the
-/// way the front end draws the `Graphics3DBox` of a held graphic (see
-/// `graphics_ast_unevaluated`).
-pub fn graphics3d_ast_unevaluated(
-  args: &[Expr],
-) -> Result<Expr, InterpreterError> {
-  graphics3d_ast_impl(
-    &crate::functions::graphics::held_drawable_args(args),
-    false,
-  )
-}
-
-fn graphics3d_ast_impl(
-  args: &[Expr],
-  evaluate: bool,
-) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::graphics_option_args(args)[..];
-  let content = if evaluate {
-    evaluate_expr_to_expr(&args[0])?
-  } else {
-    crate::functions::graphics::held_drawable_content(&args[0])
-  };
+  let content = evaluate_expr_to_expr(&args[0])?;
 
   // Parse options
   let mut svg_width = DEFAULT_SIZE;
@@ -13778,11 +13755,7 @@ fn graphics3d_ast_impl(
   // every `Text` label).
   let mut base_style: Option<Expr> = None;
   for opt in &args[1..] {
-    let opt_eval = if evaluate {
-      evaluate_expr_to_expr(opt).unwrap_or(opt.clone())
-    } else {
-      opt.clone()
-    };
+    let opt_eval = evaluate_expr_to_expr(opt).unwrap_or(opt.clone());
     if let Expr::Rule {
       pattern,
       replacement,
