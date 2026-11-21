@@ -685,3 +685,28 @@ pub(super) fn sparse_reals_reduce(expanded: &Expr, var: &str) -> Option<Expr> {
   }
   Some(build_or(equalities))
 }
+
+/// A polynomial of high degree that is one of low degree in `x^g` (the
+/// common factor `g > 1` of its exponents, no root at zero), e.g.
+/// `x^1000 - 3 x^500 + 2`: its terms as a polynomial in `y = x^g`, and `g`.
+/// `Reduce` over the reals solves for `y` and takes the real `g`-th roots,
+/// rather than finding all `deg` complex roots of the dense polynomial.
+pub(super) fn power_substitution(
+  expanded: &Expr,
+  var: &str,
+) -> Option<(Vec<(u64, BigInt)>, u64)> {
+  let terms = sparse_integer_terms(expanded, var)?;
+  if terms.first()?.0 != 0 {
+    return None;
+  }
+  let degree = terms.last()?.0;
+  let g = terms.iter().fold(0u64, |g, (e, _)| {
+    let (mut a, mut b) = (g, *e);
+    while b != 0 {
+      (a, b) = (b, a % b);
+    }
+    a
+  });
+  (g > 1 && degree > SPARSE_ROOT_MIN_DEGREE)
+    .then(|| (terms.iter().map(|(e, c)| (e / g, c.clone())).collect(), g))
+}
