@@ -10672,6 +10672,80 @@ mod reduce {
 mod nsolve {
   use super::*;
 
+  // A line tangent to a circle meets it in a real double root. Rounding of
+  // the machine coefficients used to push the discriminant negative and
+  // split that root into a conjugate pair with ~1e-9 imaginary parts.
+  #[test]
+  fn tangent_line_circle_double_root_is_real() {
+    assert_eq!(
+      interpret(
+        "NSolve[{y == 0., (x - 0.6743742537909496)^2 + \
+         (y - 0.2685912942633248)^2 == 0.2685912942633248^2}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 0.6743742537909496, y -> 0.}, \
+       {x -> 0.6743742537909496, y -> 0.}}"
+    );
+    // A slanted tangent whose circle comes out of a longer computation.
+    assert_eq!(
+      interpret(
+        "Chop[Im[{x, y} /. NSolve[{(y - 0.73) (0.07 - 0.97) == \
+         (0 - 0.73) (x - 0.97), (x - 0.062583012467254)^2 + \
+         (y - 0.02091829882753737)^2 == 0.020918298827542037^2}, \
+         {x, y}]], 0]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
+  // A genuinely complex pair is kept, however small its imaginary parts.
+  #[test]
+  fn tiny_genuine_imaginary_parts_are_kept() {
+    assert_eq!(
+      interpret("NSolve[{y == 2. x, x^2 + y^2 == -1.}, {x, y}]").unwrap(),
+      "{{x -> 0. + 0.4472135954999579*I, y -> 0. + 0.8944271909999159*I}, \
+       {x -> 0. - 0.4472135954999579*I, y -> 0. - 0.8944271909999159*I}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[Im[x /. NSolve[{y == 0., x^2 + y^2 == -1.*^-14}, {x, y}]]]"
+      )
+      .unwrap(),
+      "{-1.*^-7, 1.*^-7}"
+    );
+  }
+
+  // Exact roots are told apart relative to their size: an absolute floor
+  // merged the distinct roots `±I/10^10` of a system into one.
+  #[test]
+  fn tiny_distinct_exact_roots_of_a_system_are_kept() {
+    assert_eq!(
+      interpret("Solve[{y == 0, x^2 + y^2 == -1/10^20}, {x, y}]").unwrap(),
+      "{{x -> -1/10000000000*I, y -> 0}, {x -> I/10000000000, y -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[{y == 0, x^2 == 1/10^20}, {x, y}]").unwrap(),
+      "{{x -> -1/10000000000, y -> 0}, {x -> 1/10000000000, y -> 0}}"
+    );
+  }
+
+  // Factoring the rationalized system's polynomial differentiated its huge
+  // integer coefficients before reducing them mod p, overflowing i128.
+  #[test]
+  fn huge_rationalized_coefficients_do_not_overflow() {
+    assert_eq!(
+      interpret(
+        "NSolve[{(y - 0.44) (0.29 - 0.58) == (0 - 0.44) (x - 0.58), \
+         (x - 0.6043481160101969)^2 + (y - 0.16929966868588614)^2 == \
+         0.16929966868588617^2}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 0.4629899686020044, y -> 0.2624675385685585}, \
+       {x -> 0.4629899686020044, y -> 0.2624675385685585}}"
+    );
+  }
+
   // An InterpolatingFunction is inverted: the first root in its domain,
   // with NSolve::ifun.
   #[test]
