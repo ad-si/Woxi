@@ -20552,6 +20552,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(generated, 3 * single, "{svg}");
     }
 
+    /// A body of calls that each return a point (`{f[u, v], g[u, v]}`) is
+    /// a group of regions, not one region with two scalar coordinates —
+    /// it used to draw nothing at all.
+    #[test]
+    fn parametric_plot_two_parameters_regions_from_point_valued_calls() {
+      clear_state();
+      interpret("ptRegionF[u_, v_] := {u, v}; ptRegionG[u_, v_] := {u + 3, v}; ptRegionH[u_, v_] := u")
+        .unwrap();
+      let svg = export_svg(
+        "ParametricPlot[{ptRegionF[u, v], ptRegionG[u, v]}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      let single = export_svg("ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}]")
+        .matches("<polygon")
+        .count();
+      assert!(single > 0);
+      assert_eq!(svg.matches("<polygon").count(), 2 * single, "{svg}");
+      // The second region is drawn in the second plot color.
+      let two = export_svg(
+        "ParametricPlot[{{u, v}, {u + 3, v}}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      assert_eq!(svg, two);
+      // Scalar-valued calls stay the coordinates of a single region.
+      let scalar = export_svg(
+        "ParametricPlot[{ptRegionH[u, v], v}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      assert_eq!(scalar.matches("<polygon").count(), single, "{scalar}");
+    }
+
     /// `Mesh -> {m, n}` with a 2D `MeshShading` array fills the cells
     /// between the iso-parameter lines like a chessboard and strokes the
     /// mesh lines.
