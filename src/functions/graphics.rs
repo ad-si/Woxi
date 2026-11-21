@@ -36101,6 +36101,7 @@ pub(crate) fn is_graphics_producing_head(name: &str) -> bool {
       | "BodePlot"
       | "AbsArgPlot"
       | "MoleculePlot"
+      | "MoleculePlot3D"
       | "Framed"
   )
 }

@@ -2452,7 +2452,7 @@ TimeSeriesThread,"Applies a function to the values several series share at each 
 ArithmeticGeometricMean,"Arithmetic-geometric mean of two numbers",✅,pure,1.0,2449
 CellLabel,"",🚫,,3.0,2449
 Infix,"Symbol for infix display formatting",✅,pure,1.0,2449
-MoleculePlot3D,"",🚫,,12.0,2449
+MoleculePlot3D,"Draws a 3-D ball-and-stick model of a molecule as a Graphics3D object",✅,pure,12.0,2449
 PreserveImageOptions,"",🚫,,6.0,2449
 ReverseSort,"Sorts a list in reverse order (on an association sorts pairs descending by value)",✅,pure,11.1,2449
 TimeSeriesResample,"Resamples a time series at an even step or on a given weekday",✅,pure,10.0,2449
