@@ -10546,3 +10546,12 @@ blue `RGBColor[0.148, 0.33, 0.54]` through gray and orange to
 `Blend` of it stays unevaluated and a stored legend that uses it is drawn
 with the gray fallback ramp, while the stored plot's bands (explicit
 `RGBColor`s) are right. The exact stops have not been measured.
+
+### Named `Pane` widths other than `Medium`
+
+`Pane[text, Medium]` used as a graphics `Text` label wraps at about 180
+points (measured from a saved snapshot, half a `Graphics`' `Medium` of
+360). Woxi assumes the other named sizes scale the same way (`Tiny` 50,
+`Small` 90, `Large` 288), which has not been checked against wolframscript.
+Woxi's text wrapping also estimates 7 points per character of the default
+font, so the wrapped label can break into more lines than Wolfram's.

@@ -5967,11 +5967,9 @@ fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
     Some(Expr::List(dims)) => dims.first(),
     other => other,
   };
-  match width {
-    Some(Expr::Integer(n)) if *n > 0 => Some(*n as f64),
-    Some(Expr::Real(f)) if *f > 0.0 => Some(*f),
-    _ => None,
-  }
+  width
+    .and_then(crate::evaluator::dispatch::io_functions::pane_size_component)
+    .filter(|w| *w > 0.0)
 }
 
 /// Break `text` into lines no wider than `width` printer's points when set
@@ -6435,8 +6433,9 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     }
     // `Pane[content, width, …]` sets `content` in a box `width` printer's
     // points wide: its text wraps there (in the default 14-point font)
-    // rather than printing as the call. `Pane[content]` and a non-numeric
-    // size just show the content.
+    // rather than printing as the call. A named width
+    // (`Pane[content, Medium]`) is a box size (see `pane_size_component`);
+    // `Pane[content]` and any other size just show the content.
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       let text = graphics_text_content(&args[0]);
       match pane_width_points(args) {

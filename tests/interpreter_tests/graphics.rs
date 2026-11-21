@@ -35117,6 +35117,52 @@ mod graphics_grid {
     );
   }
 
+  /// A `Pane` whose width is a named box size (`Pane[text, Medium]`) wraps
+  /// a graphics `Text` label at that width, exactly like the equivalent
+  /// number of points, instead of running the text past the picture edge.
+  #[test]
+  fn named_width_pane_wraps_graphics_text() {
+    clear_state();
+    let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa \
+                lambda mu nu xi omicron pi rho sigma";
+    let label = |width: &str| {
+      let svg = export_svg(&format!(
+        "Graphics[{{Text[Style[Pane[\"{text}\", {width}], LineIndent -> 0], \
+         {{0, 1}}], Point[{{0, 0}}]}}, ImageSize -> 300]"
+      ));
+      svg
+        .split("<text ")
+        .find(|t| t.contains("alpha"))
+        .expect("the pane text")
+        .split("</text>")
+        .next()
+        .unwrap()
+        .to_string()
+    };
+    let named = |name: &str, points: u32| {
+      let wrapped = label(name);
+      assert_eq!(wrapped, label(&points.to_string()), "{name}");
+      wrapped.matches("<tspan").count()
+    };
+    let (tiny, small, medium, large) = (
+      named("Tiny", 50),
+      named("Small", 90),
+      named("Medium", 180),
+      named("Large", 288),
+    );
+    assert!(large >= 2, "Large must still wrap this text: {large} lines");
+    assert!(
+      tiny > small && small > medium && medium > large,
+      "wider named sizes must wrap into fewer lines: {tiny} {small} \
+       {medium} {large}"
+    );
+    // A `Style` font size of `Medium` is not a pane width.
+    assert_eq!(
+      interpret("Pane[\"abc\", Medium]").unwrap(),
+      "Pane[abc, Medium]"
+    );
+  }
+
   /// The lines a sized `Pane` wraps its text into follow its horizontal
   /// `Alignment`: centered lines are set with a middle text anchor.
   #[test]
