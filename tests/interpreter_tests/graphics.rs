@@ -4966,6 +4966,23 @@ mod graphics {
     }
 
     #[test]
+    fn padded_number_form_keeps_leading_padding_in_grid_text() {
+      // Regression: a `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]`
+      // readout in a `Text@Row` above a graphic lost its left padding, so the
+      // label shifted as the value changed width.
+      let svg = export_svg(
+        "Grid[{{Text[Row[{\"x =\", NumberForm[1.5, {4, 2}, NumberPadding -> {\" \", \"0\"}], \"y =\", NumberForm[-0.25, {4, 2}, NumberPadding -> {\" \", \"0\"}]}]]}, {Graphics[Point[{0, 0}]]}}]",
+      );
+      assert!(svg.contains("preserve\">  1.50</text>"), "{svg}");
+      assert!(svg.contains("preserve\"> -0.25</text>"), "{svg}");
+      // Without padding no space is added.
+      let plain = export_svg(
+        "Grid[{{Text[Row[{\"x =\", NumberForm[1.5, {4, 2}]}]]}, {Graphics[Point[{0, 0}]]}}]",
+      );
+      assert!(plain.contains(">1.50</text>"), "{plain}");
+    }
+
+    #[test]
     fn traditional_form_padded_form_complex_label() {
       // Regression: `Text[TraditionalForm[PaddedForm[z, {4, 3}]]]` (the Argand
       // Diagram readout) printed the raw `PaddedForm(…)` call with unrounded

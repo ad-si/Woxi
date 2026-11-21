@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]` readout in a
+    `Text@Row` or grid keeps its left padding, so the label stays the same
+    width as the value changes. `ToBoxes` of such a `NumberForm` around an
+    arbitrary-precision number (`N[1, 4]`) typesets its padded digits.
 - `Column` honors `ItemStyle`: a single style (`Directive[24, Bold, Red]`)
     styles every item, a list styles the items in turn. A fixed `ItemSize`
     width is the column's whole width, and stacked boxes (framed items,
