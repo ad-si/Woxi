@@ -9980,6 +9980,54 @@ mod ndsolve {
     );
   }
 
+  // A WhenEvent whose event is a real-valued expression rather than a
+  // logical condition fires where that expression crosses zero, and a
+  // `Throw[…, "StopIntegration"]` action ends the integration there.
+  #[test]
+  fn when_event_on_real_valued_expression() {
+    assert_eq!(
+      interpret(
+        "tt = 0; s = NDSolve[{x''[t] == -x[t], x[0] == 1, x'[0] == 0, \
+         WhenEvent[x[t] + 1/2, Throw[tt = t, \"StopIntegration\"]]}, x, \
+         {t, 0, 10}]; {Round[10^6 tt], \
+         Round[10^6 (x[\"Domain\"] /. First[s])]}"
+      )
+      .unwrap(),
+      "{2094395, {{0, 2094395}}}"
+    );
+    // A falling crossing of a product, with a plain "StopIntegration".
+    assert_eq!(
+      interpret(
+        "tt = 0; NDSolve[{x'[t] == -x[t], x[0] == 1, \
+         WhenEvent[2 (x[t] - 1/4), tt = t; \"StopIntegration\"]}, x, \
+         {t, 0, 10}]; Round[10^6 tt]"
+      )
+      .unwrap(),
+      "1386294"
+    );
+  }
+
+  // On a solution much faster than the fixed grid the steps are refined;
+  // an event is looked for on every refined sub-interval (here x first
+  // reaches -1/2 and turns back within one nominal step) and located from
+  // the refined point before it, so the event time and the state the
+  // solution stops in are accurate: x = Cos[w t] stops at t = 2 Pi/(3 w)
+  // with x' = -w Sin[2 Pi/3].
+  #[test]
+  fn when_event_located_inside_refined_steps() {
+    assert_eq!(
+      interpret(
+        "Table[tt = 0; s = NDSolve[{x''[t] == -w^2 x[t], x[0] == 1, \
+         x'[0] == 0, WhenEvent[x[t] + 1/2, tt = t; \"StopIntegration\"]}, \
+         x, {t, 0, 100}]; {Round[10^5 (tt - 2 Pi/(3 w))], \
+         Round[10 ((x'[tt] /. First[s]) / w + Sin[2 Pi/3])]}, \
+         {w, {20, 50, 100, 300}}]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 0}, {0, 0}, {0, 0}}"
+    );
+  }
+
   // A WhenEvent on an implicit curve stops it where the condition turns
   // True, located within the step, and runs its action there
   // (TheFrankKamenetskiiProblemUsingArcLengthContinuation).
@@ -12580,6 +12628,89 @@ mod ndsolve {
       "Expected an unevaluated NDSolve, got: {result}"
     );
   }
+
+  /// Two space variables and time: the separable mode
+  /// `Sin[Pi x] Sin[Pi y]` of the heat equation on the unit square with
+  /// zero Dirichlet edges decays as `Exp[-2 Pi^2 t]`.
+  #[test]
+  fn pde_2d_dirichlet_mode_decays_exactly() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y], w[x, y, 0] == Sin[Pi x] Sin[Pi y], \
+       DirichletCondition[w[x, y, t] == 0, \
+       x == 0 || x == 1 || y == 0 || y == 1]}, w, {x, 0, 1}, {y, 0, 1}, \
+       {t, 0, 0.2}]; {Head[u], Round[1000 u[0.5, 0.5, 0.1]], \
+       Round[1000 Exp[-2 Pi^2 0.1]], Round[10^4 u[0.25, 0.5, 0.2]], \
+       Round[10^4 Exp[-2 Pi^2 0.2] Sin[Pi/4]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{InterpolatingFunction, 139, 139, 137, 136}");
+  }
+
+  /// Dirichlet edges may be written as plain equations, the unknown may
+  /// take time in any argument slot and the domains may be listed in any
+  /// order: the solution takes its arguments in the unknown's own order.
+  #[test]
+  fn pde_2d_argument_order_and_plain_boundary_equations() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x, y], t] == D[w[t, x, y], x, x] + \
+       D[w[t, x, y], y, y], w[0, x, y] == Sin[Pi x] Sin[Pi y], \
+       w[t, 0, y] == 0, w[t, 1, y] == 0, w[t, x, 0] == 0, \
+       w[t, x, 1] == 0}, w, {x, 0, 1}, {t, 0, 0.2}, {y, 0, 1}]; \
+       {u[\"Domain\"], Round[1000 u[0.1, 0.5, 0.5]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{0., 0.2}, {0., 1.}, {0., 1.}}, 139}");
+  }
+
+  /// Without any condition on its edges a rectangle keeps the zero natural
+  /// flux of the finite element method: the total heat stays what it was.
+  #[test]
+  fn pde_2d_insulated_rectangle_conserves_heat() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y], w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
+       {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{1., 2667}");
+  }
+
+  /// `NeumannValue[g, y == 0]` is an inflow `g` per unit length of that
+  /// edge: on a 2 × 1 rectangle the total heat grows by `2 g` per unit
+  /// time.
+  #[test]
+  fn pde_2d_neumann_value_inflow() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] - D[w[x, y, t], x, x] - \
+       D[w[x, y, t], y, y] == NeumannValue[3, y == 0], w[x, y, 0] == 0}, \
+       w, {x, 0, 2}, {y, 0, 1}, {t, 0, 1}]; \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 2}, {y, 0, 1}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "6000");
+  }
+
+  /// Convective cooling of a finite cylinder (radial Laplacian with its
+  /// `1/r` coefficient on a domain starting at the axis, Robin
+  /// `NeumannValue`s on the other edges) matches the exact product of the
+  /// infinite-cylinder and slab series: the center temperature at
+  /// `t == 0.15` is 0.6927, a point on the end face 0.4923.
+  #[test]
+  fn pde_2d_cylinder_convective_cooling() {
+    let result = interpret(
+      "bi = 3/2; u = NDSolveValue[{D[f[r, z, t], t] - \
+       D[r D[f[r, z, t], r], r]/r - D[f[r, z, t], z, z] == \
+       NeumannValue[0, r == 10^-6] + NeumannValue[-bi f[r, z, t], r == 1] + \
+       NeumannValue[-bi f[r, z, t], z == 0 || z == 1], f[r, z, 0] == 1}, \
+       f, {r, 10^-6, 1}, {z, 0, 1}, {t, 0, 1}]; \
+       {Round[1000 u[10^-6, 1/2, 0.15]], Round[1000 u[0.15, 0, 0.15]], \
+       Round[1000 u[0.5, 0.5, 0.5]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{693, 492, 129}");
+  }
 }
 
 mod sinh_cosh {
@@ -14803,6 +14934,65 @@ mod inverse_laplace_transform {
     assert_eq!(
       interpret("InverseLaplaceTransform[Sqrt[s], s, 1.]").unwrap(),
       "InverseLaplaceTransform[Sqrt[s], s, 1.]"
+    );
+  }
+
+  // A rational function with symbolic coefficients is split with Apart and
+  // inverted term by term.
+  #[test]
+  fn symbolic_coefficients_via_apart() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + a^2)), s, t]").unwrap(),
+      "a^(-2) - Cos[a*t]/a^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + Pi^2)), s, t]").unwrap(),
+      "Pi^(-2) - Cos[Pi*t]/Pi^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s + Pi)), s, t]").unwrap(),
+      "Pi^(-1) - 1/(E^(Pi*t)*Pi)"
+    );
+  }
+
+  // The second shift theorem applies to a symbolic-coefficient rational
+  // factor as well.
+  #[test]
+  fn time_shift_with_symbolic_coefficients() {
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. \
+         {a -> 3, t -> 5} // Simplify"
+      )
+      .unwrap(),
+      "(1 - Cos[9])/9"
+    );
+  }
+
+  // Linearity over a sum whose terms carry different time shifts:
+  // a finite square wave built from step functions.
+  #[test]
+  fn sum_of_time_shifted_terms() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s - Exp[-2 s]/s, s, t]").unwrap(),
+      "1 - HeavisideTheta[-2 + t]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/s, {i, 0, 3}], s, t]"
+      )
+      .unwrap(),
+      "1 - HeavisideTheta[-3 + t] + HeavisideTheta[-2 + t] - \
+       HeavisideTheta[-1 + t]"
+    );
+    // Value check of the response to that square wave at t = 5/2.
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/(s (s^2 + Pi^2)), \
+         {i, 0, 3}], s, t] /. t -> 5/2 // Simplify"
+      )
+      .unwrap(),
+      "Pi^(-2)"
     );
   }
 }
@@ -28578,4 +28768,175 @@ fn nminimize_symbolic_objective_reports_nnum_quickly() {
     interpret("NMinimize[(a - 1)^2 + 1, a]").unwrap(),
     "{1., {a -> 1.}}"
   );
+}
+
+/// Interpolating constant data returns the constant exactly: the Lagrange
+/// basis polynomials sum to 1 only up to rounding, so the value has to be
+/// formed relative to a node, not as a plain weighted sum.
+mod interpolation_of_constant_data_is_exact {
+  use super::*;
+
+  #[test]
+  fn interpolation_between_nodes() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 2.5}, {1, 2.5}, {3, 2.5}, {4, 2.5}, {7, 2.5}}]; \
+         Union[Table[f[t] - 2.5, {t, 0, 7, 0.013}]]"
+      )
+      .unwrap(),
+      "{0.}"
+    );
+  }
+
+  #[test]
+  fn ndsolve_with_zero_derivative() {
+    assert_eq!(
+      interpret(
+        "s = First[x /. NDSolve[{x'[t] == 0, x[0] == 0.1}, x, {t, 0, 100}]]; \
+         Union[Table[s[t] - 0.1, {t, 0, 100, 0.37}]]"
+      )
+      .unwrap(),
+      "{0.}"
+    );
+  }
+
+  #[test]
+  fn delay_ndsolve_with_constant_solution() {
+    assert_eq!(
+      interpret(
+        "s = First[x /. NDSolve[{x'[t] == 0 x[t] (1 - x[t - 1/2]), \
+         x[t /; t <= 0] == 0.1}, x, {t, 0, 100}]]; \
+         Union[Table[s[t] - 0.1, {t, 0, 100, 0.37}]]"
+      )
+      .unwrap(),
+      "{0.}"
+    );
+  }
+
+  /// Non-constant data still interpolates through every node and between
+  /// them by the same cubic.
+  #[test]
+  fn nonconstant_data_unchanged() {
+    assert_eq!(
+      interpret(
+        "f = Interpolation[{{0, 0.}, {1, 1.}, {2, 8.}, {3, 27.}, {4, 64.}}]; \
+         {f[2], f[2.5], f[0.5]}"
+      )
+      .unwrap(),
+      "{8., 15.625, 0.125}"
+    );
+  }
+
+  /// A flat curve of an interpolating function plots with the range of a
+  /// constant (0 to twice its value), not a range spanning rounding noise.
+  #[test]
+  fn plot_of_constant_solution_has_constant_range() {
+    let svg = interpret(
+      "s = First[x /. NDSolve[{x'[t] == 0, x[0] == 0.1}, x, {t, 0, 100}]]; \
+       ExportString[Plot[s[t], {t, 0, 100}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains(">0.15</text>"), "{svg}");
+    assert!(!svg.contains("10<tspan"), "{svg}");
+  }
+}
+
+// The step-wise NDSolve framework: ProcessEquations sets up a state,
+// Reinitialize restarts it from new initial conditions, Iterate integrates
+// it (in place) and ProcessSolutions reads the solution rules back.
+mod ndsolve_state_data {
+  use super::*;
+
+  #[test]
+  fn process_equations_gives_state_data() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Map[Head, NDSolve`ProcessEquations[{x'[t] == y[t], \
+         y'[t] == -x[t], x[0] == 1, y[0] == 0}, {x, y}, t]]"
+      )
+      .unwrap(),
+      "{NDSolve`StateData}"
+    );
+  }
+
+  #[test]
+  fn iterate_forward_and_read_solutions() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == y[t], \
+         y'[t] == -x[t], x[0] == 1, y[0] == 0}, {x, y}, t]]; \
+         NDSolve`Iterate[s, 2]; \
+         Chop[({x[2], y[2]} /. NDSolve`ProcessSolutions[s]) - \
+         {Cos[2.], -Sin[2.]}, 10^-5]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn reinitialize_and_iterate_backward() {
+    clear_state();
+    // x = Sin[t - 1], y = Cos[t - 1] through {0, 1} at t == 1.
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == y[t], \
+         y'[t] == -x[t], x[0] == 1, y[0] == 0}, {x, y}, t]]; \
+         s2 = First[NDSolve`Reinitialize[s, {x[1] == 0, y[1] == 1}]]; \
+         NDSolve`Iterate[s2, -2]; \
+         sol = {x, y} /. NDSolve`ProcessSolutions[s2]; \
+         Chop[Through[sol[-2]] - {Sin[-3.], Cos[-3.]}, 10^-5]"
+      )
+      .unwrap(),
+      "{0, 0}"
+    );
+  }
+
+  #[test]
+  fn iterate_changes_the_shared_state() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == x[t], x[0] == 1}, \
+         {x}, t]]; s2 = s; NDSolve`Iterate[s2, 1]; \
+         Chop[(x[1] /. NDSolve`ProcessSolutions[s]) - E, 10^-5]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn iterate_returns_null() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "s = First[NDSolve`ProcessEquations[{x'[t] == x[t], x[0] == 1}, \
+         {x}, t]]; NDSolve`Iterate[s, 1] === Null"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
+  fn part_three_of_interpolating_function_is_its_grid() {
+    clear_state();
+    assert_eq!(
+      interpret("Interpolation[{1, 4, 9, 16}][[3]]").unwrap(),
+      "{{1, 2, 3, 4}}"
+    );
+    assert_eq!(
+      interpret(
+        "f = x /. First[NDSolve[{x'[t] == x[t], x[0] == 1}, x, \
+         {t, 0, 1}]]; g = f[[3, 1]]; \
+         {First[g], Last[g], Length[g] > 3, \
+         Chop[Last[f[g]] - E, 10^-5]}"
+      )
+      .unwrap(),
+      "{0., 1., True, 0}"
+    );
+  }
 }
