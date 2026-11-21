@@ -13912,8 +13912,11 @@ fn data_distribution_pdf_cdf(
   x: &Expr,
   cumulative: bool,
 ) -> Option<Expr> {
-  let (weights, values) = data_distribution_parts(dargs)?;
-  let xf = as_exact_frac(x)?;
+  let exact = data_distribution_parts(dargs)
+    .and_then(|parts| Some((parts, as_exact_frac(x)?)));
+  let Some(((weights, values), xf)) = exact else {
+    return data_distribution_pdf_cdf_numeric(dargs, x, cumulative);
+  };
   let mut num: i128 = 0;
   let mut den: i128 = 1;
   for (w, v) in weights.iter().zip(values.iter()) {
@@ -13942,6 +13945,26 @@ fn data_distribution_pdf_cdf(
   } else {
     make_rational(num, den)
   })
+}
+
+/// PDF / CDF of an empirical distribution with machine-number values or
+/// at a machine-number point: the weights of the matching values, summed
+/// to a machine number.
+fn data_distribution_pdf_cdf_numeric(
+  dargs: &[Expr],
+  x: &Expr,
+  cumulative: bool,
+) -> Option<Expr> {
+  let (weights, values) = empirical_points(dargs)?;
+  let xf = try_eval_to_f64(x)?;
+  let mut total = 0.0;
+  for (w, v) in weights.iter().zip(values.iter()) {
+    let (w, v) = (try_eval_to_f64(w)?, try_eval_to_f64(v)?);
+    if (cumulative && v <= xf) || (!cumulative && v == xf) {
+      total += w;
+    }
+  }
+  Some(Expr::Real(total))
 }
 
 // ─── ProductDistribution ─────────────────────────────────────────────
