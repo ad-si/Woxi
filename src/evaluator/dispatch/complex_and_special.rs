@@ -5459,8 +5459,14 @@ fn tf_parens(inner: Expr) -> Expr {
 
 /// The boxes of an item that is *displayed* rather than printed: a string
 /// contributes its own text, without the quotes a literal would carry.
+///
+/// For a renderer that sets single-letter symbols in italics (see
+/// `expr_to_box_form_traditional_quoted`) the string keeps its quotes: the
+/// renderer draws it without them, upright, while a bare one-letter box is
+/// a symbol.
 fn tf_display(expr: &Expr) -> Expr {
   match expr {
+    Expr::String(_) if TF_QUOTED_DISPLAY.get() => tf(expr),
     Expr::String(s) => tf_string(s),
     other => tf(other),
   }
@@ -8751,6 +8757,29 @@ thread_local! {
   /// and draw a string's box as its bare text.
   static TF_BOX_TEXT: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
+}
+
+thread_local! {
+  /// Set while typesetting for a renderer that tells a string's box from a
+  /// symbol's by its quotes (see `expr_to_box_form_traditional_quoted`).
+  static TF_QUOTED_DISPLAY: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Like `expr_to_box_form_traditional`, but the strings a `Row` or `Style`
+/// displays keep their quotes, for a renderer that sets a bare one-letter
+/// box in italics as a symbol (`TraditionalForm`'s `SingleLetterItalics`)
+/// and draws a quoted string upright without its quotes. Without them the
+/// `"t"` in `Row[{Style["i", Italic], "t"}]` would come out italic.
+pub fn expr_to_box_form_traditional_quoted(expr: &Expr) -> Expr {
+  struct Reset(bool);
+  impl Drop for Reset {
+    fn drop(&mut self) {
+      TF_QUOTED_DISPLAY.set(self.0);
+    }
+  }
+  let _reset = Reset(TF_QUOTED_DISPLAY.replace(true));
+  tf(expr)
 }
 
 /// Like `expr_to_box_form_traditional`, but for boxes written out as text in
