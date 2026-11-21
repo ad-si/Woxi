@@ -2184,6 +2184,49 @@ fn compactify_infinite_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   changed.then_some(new_args)
 }
 
+/// The list of surfaces a non-list `Plot3D` body stands for when it
+/// evaluates to a list. Evaluated with the plot variables symbolic, the
+/// list's elements are the surfaces; a body that only yields a list once
+/// the variables are numbers is probed at `(x, y)` and split into
+/// `Part[body, i]` surfaces. `None` for a body that is a list already or
+/// samples to a single value.
+fn list_valued_surface_body(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x: f64,
+  y: f64,
+) -> Option<Expr> {
+  use crate::functions::plot::{
+    eval_body_vars_symbolic, expr_mentions_var, substitute_var,
+  };
+  if matches!(body, Expr::List(_))
+    || !(expr_mentions_var(body, xvar) || expr_mentions_var(body, yvar))
+  {
+    return None;
+  }
+  let evaluated = eval_body_vars_symbolic(body, &[xvar, yvar]);
+  if matches!(&evaluated, Expr::List(items) if !items.is_empty()) {
+    return Some(evaluated);
+  }
+  let at_point = substitute_var(
+    &substitute_var(body, xvar, &Expr::Real(x)),
+    yvar,
+    &Expr::Real(y),
+  );
+  match &evaluate_expr_to_expr(&at_point).ok()? {
+    Expr::List(items) if !items.is_empty() => Some(Expr::List(
+      (1..=items.len())
+        .map(|i| Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![body.clone(), Expr::Integer(i as i128)].into(),
+        })
+        .collect(),
+    )),
+    _ => None,
+  }
+}
+
 pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2360,6 +2403,18 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+
+  // A body that evaluates to a list (`h[x, y]` with `h` returning
+  // `{…, …}`, or `({Re[#], Im[#]} &)[…]`) draws one surface per element,
+  // like an explicit list of functions.
+  let expanded_body = list_valued_surface_body(
+    body,
+    &xvar,
+    &yvar,
+    f64::midpoint(x_min, x_max),
+    f64::midpoint(y_min, y_max),
+  );
+  let body = expanded_body.as_ref().unwrap_or(body);
 
   // Collect function bodies: single function or list of functions
   let bodies: Vec<&Expr> = match body {

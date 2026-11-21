@@ -5043,6 +5043,11 @@ fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
 }
 
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // `Style[TraditionalForm[Text[…]], 16]` is a text display like a bare
+  // `Text[…]`: the text face covers the styled content.
+  if let Some(hoisted) = functions::graphics::hoist_text_display(expr) {
+    return render_inline_display_wrapper(&hoisted);
+  }
   // `Text[content]` displays `content` in plain text format: a picture
   // inside is still drawn, but text keeps the wrapper so the layout sets it
   // in the proportional text face rather than its monospace default.
