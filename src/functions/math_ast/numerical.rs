@@ -1662,6 +1662,32 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&rewritten)
 }
 
+/// Whether `N`, `SetPrecision` and `SetAccuracy` leave argument `index` of
+/// the call `name[args]` untouched, per its NHoldAll / NHoldFirst /
+/// NHoldRest attributes (built-in or user-set).
+pub(crate) fn n_holds_arg(name: &str, args: &[Expr], index: usize) -> bool {
+  // `Derivative[n][f][x]` stored flat as `Derivative[n, f, x]`: only the
+  // NHoldAll `Derivative[n]` part — order and function — is held, the
+  // point `x` is numericized like any other argument.
+  if name == "Derivative"
+    && args.len() >= 2
+    && matches!(&args[1], Expr::Identifier(_))
+  {
+    return index < 2;
+  }
+  let attrs = {
+    let builtin = crate::evaluator::get_builtin_attributes(name);
+    let user = crate::FUNC_ATTRS
+      .with(|m| m.borrow().get(name).copied().unwrap_or_default());
+    let mut combined = builtin;
+    combined.add(user.to_u32());
+    combined
+  };
+  attrs.contains(Attributes::NHoldAll)
+    || (index == 0 && attrs.contains(Attributes::NHoldFirst))
+    || (index > 0 && attrs.contains(Attributes::NHoldRest))
+}
+
 /// Walk `expr` and convert every numeric leaf to a BigFloat at `precision`.
 fn set_precision_walk(
   expr: &Expr,
@@ -1689,8 +1715,12 @@ fn set_precision_walk(
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args {
-        out.push(set_precision_walk(a, precision, bits, rm, cc)?);
+      for (i, a) in args.iter().enumerate() {
+        out.push(if n_holds_arg(name, args, i) {
+          a.clone()
+        } else {
+          set_precision_walk(a, precision, bits, rm, cc)?
+        });
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -1856,8 +1886,12 @@ fn set_accuracy_walk(
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args {
-        out.push(set_accuracy_walk(a, accuracy, rm, cc)?);
+      for (i, a) in args.iter().enumerate() {
+        out.push(if n_holds_arg(name, args, i) {
+          a.clone()
+        } else {
+          set_accuracy_walk(a, accuracy, rm, cc)?
+        });
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -1936,8 +1970,12 @@ fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args {
-        out.push(set_precision_machine(a)?);
+      for (i, a) in args.iter().enumerate() {
+        out.push(if n_holds_arg(name, args, i) {
+          a.clone()
+        } else {
+          set_precision_machine(a)?
+        });
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -2215,23 +2253,11 @@ fn n_eval_arbitrary_partial(
       // Honor NHoldAll / NHoldFirst / NHoldRest so e.g. `N[Out[0], 50]`
       // doesn't recurse into Out's slot and rewrite the index as a
       // BigFloat. (Out has NHoldFirst; the `0` slot must stay literal.)
-      let attrs = {
-        let builtin = crate::evaluator::get_builtin_attributes(name);
-        let user = crate::FUNC_ATTRS
-          .with(|m| m.borrow().get(name).copied().unwrap_or_default());
-        let mut combined = builtin;
-        combined.add(user.to_u32());
-        combined
-      };
-      let hold_all = attrs.contains(Attributes::NHoldAll);
-      let hold_first = attrs.contains(Attributes::NHoldFirst);
-      let hold_rest = attrs.contains(Attributes::NHoldRest);
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
         .enumerate()
         .map(|(i, a)| {
-          let held = hold_all || (hold_first && i == 0) || (hold_rest && i > 0);
-          if held {
+          if n_holds_arg(name, args, i) {
             Ok(a.clone())
           } else {
             n_eval_arbitrary_partial(a, precision, bits, rm, cc)
@@ -8999,15 +9025,41 @@ fn root_coeffs_and_seed(
     return None;
   }
   let coeffs_f = bigint_coeffs_to_f64(&coeffs_i)?;
-  let mut roots = aberth_complex_roots(&coeffs_f);
+  let (re, im, real) = kth_ordered_root(&coeffs_f, k)?;
+  Some((coeffs_i, real, re, im))
+}
+
+/// Whether the machine root `(re, im)` is real up to the root finder's
+/// accuracy.
+fn root_is_real(re: f64, im: f64) -> bool {
+  im.abs() < 1e-8 * (1.0 + re.abs())
+}
+
+/// The `k`-th (1-based) root of the polynomial with machine coefficients
+/// `coeffs` (index = degree) in `Root`'s order — the real roots ascending,
+/// then the non-real ones by real part and then imaginary part — as
+/// `(re, im, is_real)`.
+fn kth_ordered_root(coeffs: &[f64], k: i128) -> Option<(f64, f64, bool)> {
+  if k < 1 {
+    return None;
+  }
+  // A vanishing constant term is an exact root at 0: it is split off so
+  // that it comes out as 0 rather than as the root finder's tiny residue.
+  let zeros = coeffs.iter().take_while(|c| **c == 0.0).count();
+  let rest = &coeffs[zeros.min(coeffs.len())..];
+  let mut roots = if rest.len() >= 2 {
+    aberth_complex_roots(rest)
+  } else {
+    Vec::new()
+  };
+  roots.extend(std::iter::repeat_n((0.0, 0.0), zeros));
   if roots.is_empty() || (k as usize) > roots.len() {
     return None;
   }
-  let is_real = |re: f64, im: f64| im.abs() < 1e-8 * (1.0 + re.abs());
   roots.sort_by(|a, b| {
     use std::cmp::Ordering;
-    let ar = is_real(a.0, a.1);
-    let br = is_real(b.0, b.1);
+    let ar = root_is_real(a.0, a.1);
+    let br = root_is_real(b.0, b.1);
     match (ar, br) {
       (true, false) => Ordering::Less,
       (false, true) => Ordering::Greater,
@@ -9019,7 +9071,22 @@ fn root_coeffs_and_seed(
     }
   });
   let (re, im) = roots[(k - 1) as usize];
-  Some((coeffs_i, is_real(re, im), re, im))
+  Some((re, im, root_is_real(re, im)))
+}
+
+/// `Root[f, k]` for a polynomial with approximate (machine-number)
+/// coefficients `coeffs` (index = degree): Wolfram evaluates such a root
+/// numerically, a real number for a real root and `re + im I` otherwise.
+pub(crate) fn inexact_root_value(coeffs: &[f64], k: i128) -> Option<Expr> {
+  let (re, im, real) = kth_ordered_root(coeffs, k)?;
+  Some(if real {
+    Expr::Real(re)
+  } else {
+    plus(vec![
+      Expr::Real(re),
+      times(vec![Expr::Real(im), id_expr("I")]),
+    ])
+  })
 }
 
 /// Integer polynomial coefficients as machine numbers; `None` when one

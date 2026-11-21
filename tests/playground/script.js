@@ -779,6 +779,7 @@ function renderManipulate(item) {
           if (run.italic) s.style.fontStyle = "italic"
           if (run.bold) s.style.fontWeight = "bold"
           if (run.color) s.style.color = run.color
+          if (run.background) s.style.background = run.background
           span.appendChild(s)
         }
         return span

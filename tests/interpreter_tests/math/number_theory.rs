@@ -5325,6 +5325,38 @@ mod cases {
     );
   }
 
+  /// A quadratic irrational whose radical sits in a denominator
+  /// (`a/b + c/(d Sqrt[s])`), or which is written as a quotient, product or
+  /// power of surds, still has an eventually periodic expansion.
+  #[test]
+  fn continued_fraction_quadratic_irrational_any_shape() {
+    assert_case(
+      r#"ContinuedFraction[4/7 + 1/Sqrt[5]]"#,
+      "{1, 53, {1, 1, 1, 3, 1, 4, 5, 7, 2, 1, 2, 1, 10, 4, 2, 1, 1, 1, 3, 2, \
+       1, 4, 3, 1, 1, 218, 1, 1, 3, 4, 1, 2, 3, 1, 1, 1, 2, 4, 10, 1, 2, 1, 2, \
+       7, 5, 4, 1, 3, 1, 1, 1, 54, 7, 19, 1, 3, 1, 1, 10, 1, 42, 1, 10, 1, 1, \
+       3, 1, 19, 7, 54}}",
+    );
+    assert_case(
+      r#"ContinuedFraction[29/5 + 11/(5 Sqrt[5])]"#,
+      r#"{6, {1, 3, 1, 1, 1, 2, 8, 9, 1, 2, 1, 1, 3, 2, 5, 1}}"#,
+    );
+    assert_case(r#"ContinuedFraction[1/(1 + Sqrt[2])]"#, r#"{0, {2}}"#);
+    assert_case(r#"ContinuedFraction[Sqrt[2/3]]"#, r#"{0, 1, {4, 2}}"#);
+    assert_case(r#"ContinuedFraction[GoldenRatio^2]"#, r#"{2, {1}}"#);
+    assert_case(r#"ContinuedFraction[-1/Sqrt[2]]"#, r#"{0, -1, {-2}}"#);
+    // The n-term form reads its terms off the same periodic expansion.
+    assert_case(
+      r#"ContinuedFraction[2 + 3/(2 Sqrt[2]), 5]"#,
+      r#"{3, 16, 2, 16, 2}"#,
+    );
+    // Two different radicands are not a quadratic irrational.
+    assert_case(
+      r#"ContinuedFraction[Sqrt[2] + Sqrt[3]]"#,
+      r#"ContinuedFraction[Sqrt[2] + Sqrt[3]]"#,
+    );
+  }
+
   #[test]
   fn from_continued_fraction_big_convergent() {
     // The convergents of a long continued fraction outgrow i128 well before
