@@ -595,7 +595,7 @@ impl StyledLabel {
 /// `letter-spacing:Npx` a lone `Spacer` becomes, and the `dx="N"` a
 /// `Spacer` next to other Row content becomes — by `scale`, leaving
 /// relative ones (`70%`, `1.2em`) as they are.
-fn scale_markup_lengths(markup: &str, scale: f64) -> String {
+pub(crate) fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   if scale == 1.0 {
     return markup.to_string();
   }
@@ -1003,6 +1003,32 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     }
     return Some(label);
   }
+  // A plain mathematical label (`T`, `Subscript[T, opt]`, `f[x]`) is set
+  // in the graphic's `TraditionalForm`, its single-letter symbols in
+  // italics, the same way an `AxesLabel` entry is.
+  if let Some(label) =
+    crate::functions::graphics::traditional_math_axis_label(expr)
+  {
+    let markup = label
+      .strip_prefix(crate::functions::graphics::STYLED_LABEL_MARKER)
+      .map(str::to_string)
+      .unwrap_or(label);
+    let text = svg_markup_visible_text(&markup);
+    if !text.trim().is_empty() {
+      return Some(StyledLabel {
+        text,
+        markup: Some(markup),
+        extra_lines: Vec::new(),
+        bold: false,
+        italic: false,
+        color: None,
+        font_size: None,
+        frame: None,
+        line_frames: Vec::new(),
+        segments: Vec::new(),
+      });
+    }
+  }
   match expr {
     // A string with line breaks stacks like a `Column` title: each line
     // is its own row.
@@ -1126,6 +1152,15 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         match crate::functions::graphics::traditional_application_markup(other)
         {
           Some(markup) => (markup, Vec::new()),
+          // A held formula or an equation (possibly with its numbers
+          // formatted by `NumberForm`) is set in traditional notation:
+          // `HoldForm[z = Sin[2 x]]` reads `z = sin(2 x)`.
+          None if is_traditional_formula_label(other) => {
+            markup_and_extra_lines(&call(
+              "TraditionalForm",
+              vec![other.clone()],
+            ))
+          }
           // A sum reads as `TraditionalForm` sets it, so a polynomial runs
           // from its highest power down (`x^3 - 2 x^2`).
           None => markup_and_extra_lines(&traditional_sums(
@@ -1153,6 +1188,28 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         })
       }
     }
+  }
+}
+
+/// Whether a label is a held formula (`HoldForm[…]`) or an equation or
+/// inequality, possibly inside a number-display form (`NumberForm[HoldForm[
+/// …], {3, 1}]`). A graphic's `FormatType` is `TraditionalForm`, so such a
+/// label is typeset in it rather than printed as its input form.
+fn is_traditional_formula_label(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { .. } => true,
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "NumberForm" | "ScientificForm" | "EngineeringForm" => {
+          is_traditional_formula_label(&args[0])
+        }
+        "HoldForm" => args.len() == 1,
+        "Equal" | "Unequal" | "Less" | "LessEqual" | "Greater"
+        | "GreaterEqual" => args.len() >= 2,
+        _ => false,
+      }
+    }
+    _ => false,
   }
 }
 
