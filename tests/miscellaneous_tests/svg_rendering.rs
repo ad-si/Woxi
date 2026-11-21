@@ -1597,6 +1597,39 @@ mod tests {
     }
 
     #[test]
+    fn plot_legend_box_code_sets_single_letters_in_italics() {
+      // Legend entries are typeset in TraditionalForm: a single-letter
+      // symbol written in the string's box code is italic, while the
+      // string's plain text and multi-letter symbols stay upright.
+      let code = r#"ExportString[Plot[{x, 2 x, 3 x}, {x, 0, 1},
+        PlotLegends -> {"\!\(\*SubscriptBox[\(T\), \(0\)]\)",
+          "k\!\(\*SuperscriptBox[\(y\), \(2\)]\)",
+          "\!\(\*SubscriptBox[\(v\), \(max\)]\)"}], "SVG"]"#;
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">T</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan></text>"
+        ),
+        "box-code symbol not italic in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">k<tspan font-style=\"italic\">y</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+        ),
+        "plain text or box-code symbol styled wrongly in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">v</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan></text>"
+        ),
+        "multi-letter symbol set in italics: {svg}"
+      );
+    }
+
+    #[test]
     fn list_line_plot_joined_false_draws_unconnected_points() {
       let count = |code: &str, tag: &str| {
         woxi::interpret(code)
@@ -1715,6 +1748,37 @@ mod tests {
       )
       .expect("interpret should succeed");
       assert!(svg.contains(">p q r</text>"), "label changed: {svg}");
+      assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
+    }
+
+    #[test]
+    fn graphics3d_text_keeps_padding_blanks() {
+      // A 3D label padded with blanks (`"  axis"`, `"tip "`) used to lose
+      // them, because SVG drops leading/trailing whitespace by default.
+      for (label, expected) in [
+        (r#""  axis""#, "xml:space=\"preserve\">  axis</text>"),
+        (r#""tip ""#, "xml:space=\"preserve\">tip </text>"),
+        (
+          r#"Style["  axis", Italic]"#,
+          "font-style=\"italic\" xml:space=\"preserve\">  axis</text>",
+        ),
+        (
+          r#"Style[Style["  axis", Italic], Medium]"#,
+          "xml:space=\"preserve\"><tspan font-style=\"italic\">  axis</tspan></text>",
+        ),
+        (r#""a  b""#, "xml:space=\"preserve\">a  b</text>"),
+      ] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Graphics3D[{{Text[{label}, {{0, 0, 0}}], Point[{{1, 1, 1}}]}}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        assert!(svg.contains(expected), "blanks dropped in {label}: {svg}");
+      }
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics3D[{Text["p q", {0, 0, 0}], Point[{1, 1, 1}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains(">p q</text>"), "label changed: {svg}");
       assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
     }
 
@@ -2690,14 +2754,16 @@ mod tests {
 
     #[test]
     fn fraction_cell_takes_the_styled_grid_size() {
-      // A quotient cell typeset as a built-up fraction is set at the styled
-      // grid's size, like the text cells beside it, not at the default 14.
+      // A quotient cell typeset as a built-up fraction is set from the
+      // styled grid's size, like the text cells beside it, not from the
+      // default 14: at 0.75 of it, as a grid item sits one script level
+      // deep.
       for code in [
         "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
         "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
       ] {
         let svg = svg_of(code);
-        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(svg.contains("font-size=\"6.8\""), "{code}: {svg}");
         assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
       }
     }
@@ -3084,6 +3150,35 @@ mod tests {
       let none =
         svg_of("Graphics3D[{Line[{{0, 0, 0}, {1, 1, 1}}]}, PlotLabel -> None]");
       assert!(!none.contains("<text"), "PlotLabel -> None draws nothing");
+    }
+
+    #[test]
+    fn plot_label_null_draws_no_label() {
+      // A one-armed `If[False, label]` yields `Null`, which, like `None`,
+      // leaves the picture untitled instead of printing "Null".
+      for code in [
+        "Graphics[Disk[], PlotLabel -> If[False, \"t\"]]",
+        "Graphics3D[Sphere[], PlotLabel -> Null]",
+        "Plot[x, {x, 0, 1}, PlotLabel -> Null]",
+        "ListPlot[{1, 2, 3}, PlotLabel -> Null]",
+        "ListLinePlot[{1, 2, 3}, PlotLabel -> Null]",
+        "MatrixPlot[{{1, 0}, {0, 1}}, PlotLabel -> Null]",
+        "ArrayPlot[{{1, 0}, {0, 1}}, PlotLabel -> Null]",
+        "MatrixPlot[{{1, 0}, {0, 1}}, PlotLabel -> None]",
+        "BarChart[{1, 2, 3}, PlotLabel -> Null]",
+        "PieChart[{1, 2, 3}, PlotLabel -> Null]",
+        "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "Histogram[{1, 2, 2, 3}, PlotLabel -> Null]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.starts_with("<svg"), "expected an SVG for {code}: {svg}");
+        assert!(
+          !svg.contains("Null") && !svg.contains(">None<"),
+          "{code} must not draw a label"
+        );
+      }
     }
 
     #[test]
@@ -4324,6 +4419,30 @@ mod tests {
       );
     }
 
+    /// `GraphPlot` draws a rule list without arrows and so ignores the edge
+    /// directions when laying it out: a grid of rules pointing right and up
+    /// (a directed acyclic graph) comes out as a grid, as in Wolfram, not in
+    /// the layers a directed `Graph` gets.
+    #[test]
+    fn graph_plot_lays_out_an_acyclic_rule_grid_as_a_grid() {
+      let svg = svg_of(
+        r#"With[{r = 4, c = 5}, GraphPlot[Join[
+             Flatten[Table[(a - 1) r + b -> (a - 1) r + b + 1,
+               {a, c}, {b, r - 1}]],
+             Flatten[Table[(a - 1) r + b -> a r + b, {a, c - 1}, {b, r}]]]]]"#,
+      );
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 20, "one vertex circle each: {svg}");
+      // Count the clusters of nearly equal coordinates.
+      let clusters = |mut vs: Vec<f64>| {
+        vs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        1 + vs.windows(2).filter(|w| w[1] - w[0] > 10.0).count()
+      };
+      let xs = clusters(centers.iter().map(|c| c.0).collect());
+      let ys = clusters(centers.iter().map(|c| c.1).collect());
+      assert_eq!((xs, ys), (5, 4), "a 5 by 4 grid of vertices: {svg}");
+    }
+
     /// An explicit `GraphLayout` outranks `Method`, as it does in Wolfram.
     #[test]
     fn graph_layout_wins_over_method() {
@@ -4954,6 +5073,28 @@ mod tests {
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
     }
 
+    /// A column item `Style[Text[TraditionalForm[poly]], size]` is typeset
+    /// like `Style[TraditionalForm[poly], size]` (spaced operators, raised
+    /// exponents), not flattened to one unspaced text run.
+    #[test]
+    fn styled_text_of_traditional_form_typesets_like_styled_form() {
+      let render = |item: &str| {
+        woxi::interpret(&format!(
+          "ExportString[Column[{{{item}}}, Alignment -> Center], \"SVG\"]"
+        ))
+        .expect("interpret should succeed")
+      };
+      let poly = "x^10 + x^9 - x^3 + x + 1";
+      let through_text =
+        render(&format!("Style[Text@TraditionalForm[{poly}], 12]"));
+      let direct = render(&format!("Style[TraditionalForm[{poly}], 12]"));
+      assert_eq!(through_text, direct);
+      assert!(!through_text.contains("baseline-shift"), "{through_text}");
+      let nested =
+        render(&format!("Style[Text[Text[TraditionalForm[{poly}]]], 12]"));
+      assert_eq!(nested, direct);
+    }
+
     /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells
     /// at that size, like its plain text cells, also when the whole styled
     /// grid is put in `TraditionalForm`.
@@ -5269,7 +5410,8 @@ mod tests {
         svg.contains("<tspan dx=\"0.18em\">147</tspan>"),
         "the number keeps its digit groups: {svg}"
       );
-      assert!(svg.contains(">nine ten</text>"), "{svg}");
+      // The last item moves to its own line whole, leading space and all.
+      assert!(svg.contains("> nine ten</text>"), "{svg}");
     }
 
     /// The line-breaking string factor of a product (`Row[…] "\n\n  "`, an
@@ -5296,6 +5438,79 @@ mod tests {
       let line_y =
         y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
+    }
+
+    /// Re-flowed `Pane` text breaks between the items of a `Row` before it
+    /// breaks inside one: the text item the line runs out in moves to the
+    /// next line whole when it fits there, keeping its leading space,
+    /// rather than filling the first line with its first words.
+    #[test]
+    fn pane_text_breaks_between_row_items_first() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two ", Style["three", Italic], " four five six seven"}], {220, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains(">one two </text>"), "{svg}");
+      assert!(svg.contains(">three</text>"), "{svg}");
+      assert!(svg.contains("> four five six seven</text>"), "{svg}");
+      assert!(!svg.contains(">six seven</text>"), "{svg}");
+    }
+
+    /// Text in a proportional `FontFamily` is measured by its own glyph
+    /// widths when a `Pane` re-flows it, so a line that only overflows at
+    /// the monospace advance stays whole.
+    #[test]
+    fn pane_text_in_a_proportional_font_fits_more_per_line() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Style[Row[{"one two three four five six seven"}], FontFamily -> "Times"], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains(">one two three four five six seven</text>"),
+        "{svg}"
+      );
+      let mono = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two three four five six seven"}], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        !mono.contains(">one two three four five six seven</text>"),
+        "the monospace default still breaks: {mono}"
+      );
+    }
+
+    /// A `Row` measures a piece in a serif `FontFamily` by the serif glyph
+    /// widths it is drawn with, not the wider sans-serif average: the
+    /// centered pieces then sit next to each other instead of each floating
+    /// in a gap a third as wide as its own text.
+    #[test]
+    fn row_measures_serif_pieces_by_their_glyph_widths() {
+      let svg = woxi::interpret(
+        r#"ExportString[Row[{Style["Passengers in third class survived the ", FontFamily -> "Times"], Style["word", FontFamily -> "Times", Italic]}], "SVG"]"#,
+      )
+      .unwrap();
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      // 43 characters at the 0.55 em sans average would be 331 wide.
+      assert!(width < 300.0, "{svg}");
+    }
+
+    /// A re-flowed line that continues after a break between row items
+    /// keeps its leading space as an indent.
+    #[test]
+    fn reflowed_line_keeps_its_leading_space() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Column[{Style[Row[{"one two ", Style["three", Italic], " four five six seven"}], FontFamily -> "Times"]}], {200, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains("xml:space=\"preserve\"> four five six seven</text>"),
+        "{svg}"
+      );
     }
 
     /// `Style[TraditionalForm[Labeled[…]], size]` is drawn as the captioned
@@ -5916,16 +6131,17 @@ mod grid_item_style_tests {
     )
     .unwrap();
     assert!(!svg.contains("monospace"), "{svg}");
-    // The block is either laid out inline in the pane or embedded as its
-    // own picture; either way it is no wider than the pane.
-    let inner = svg.split("<svg").nth(2).unwrap_or(&svg);
-    let width: f64 = inner
-      .split("width=\"")
-      .nth(1)
-      .and_then(|w| w.split('"').next())
-      .and_then(|w| w.parse().ok())
-      .unwrap();
-    assert!(width <= 512.0, "{width}: {svg}");
+    // The block is drawn into the pane either directly or as a nested
+    // picture; a nested one must about fit the pane's width.
+    if let Some(inner) = svg.split("<svg").nth(2) {
+      let width: f64 = inner
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      assert!(width <= 512.0, "{width}: {svg}");
+    }
     assert!(svg.matches("<text ").count() >= 2, "{svg}");
   }
 
@@ -6064,5 +6280,79 @@ mod grid_item_style_tests {
         .expect("interpret should succeed");
     assert!(svg.contains(">8000<"), "{svg}");
     assert!(svg.contains("10\u{2009}000"), "{svg}");
+  }
+}
+
+/// Embedded italic faces.
+mod embedded_font_tests {
+
+  /// A font database holding only the embedded fonts, so the result does
+  /// not depend on which system fonts happen to be installed.
+  fn embedded_fontdb() -> resvg::usvg::fontdb::Database {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    db
+  }
+
+  #[test]
+  fn embedded_fonts_provide_italic_faces() {
+    use resvg::usvg::fontdb::{Family, Query, Stretch, Style, Weight};
+    let db = embedded_fontdb();
+    for family in [
+      Family::SansSerif,
+      Family::Serif,
+      Family::Name("Atkinson Hyperlegible Next"),
+    ] {
+      for weight in [Weight::NORMAL, Weight::BOLD] {
+        let id = db
+          .query(&Query {
+            families: &[family],
+            weight,
+            stretch: Stretch::Normal,
+            style: Style::Italic,
+          })
+          .expect("an embedded face matches");
+        let face = db.face(id).unwrap();
+        assert_eq!(face.style, Style::Italic, "{family:?} {weight:?}");
+        assert_eq!(face.weight, weight, "{family:?} {weight:?}");
+      }
+    }
+  }
+
+  /// Rasterize `svg` with the embedded fonts only and return its pixels.
+  fn rasterize_with_embedded_fonts(svg: &str) -> Vec<u8> {
+    let opts = resvg::usvg::Options {
+      fontdb: std::sync::Arc::new(embedded_fontdb()),
+      ..Default::default()
+    };
+    let tree = resvg::usvg::Tree::from_str(svg, &opts).unwrap();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(80, 40).unwrap();
+    resvg::render(
+      &tree,
+      resvg::tiny_skia::Transform::identity(),
+      &mut pixmap.as_mut(),
+    );
+    pixmap.data().to_vec()
+  }
+
+  #[test]
+  fn italic_text_rasterizes_slanted() {
+    // `Style[…, Italic]` text from Text/Row is written as
+    // `font-style="italic"` without a font family; Woxi Studio draws such
+    // SVGs with the embedded fonts, which used to lack an italic face and
+    // drew the text upright.
+    let svg = |attrs: &str| {
+      format!(
+        r#"<svg width="80" height="40" xmlns="http://www.w3.org/2000/svg"><text x="10" y="30" font-size="28"{attrs}>hl</text></svg>"#
+      )
+    };
+    for weight in ["", r#" font-weight="bold""#] {
+      let upright = rasterize_with_embedded_fonts(&svg(weight));
+      let slanted = rasterize_with_embedded_fonts(&svg(&format!(
+        r#"{weight} font-style="italic""#
+      )));
+      assert!(slanted.iter().any(|&b| b != 0), "{weight}: nothing drawn");
+      assert_ne!(upright, slanted, "{weight}: italic drawn upright");
+    }
   }
 }

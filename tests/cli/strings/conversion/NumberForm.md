@@ -43,6 +43,14 @@ $ wo 'ToString[NumberForm[12.3, {8, 3}, NumberPadding -> {"*", "0"}]]'
 ****12.300
 ```
 
+A single string pads both sides, so `NumberPadding -> ""` drops the trailing
+zeros:
+
+```scrut
+$ wo 'ToString[NumberForm[2., {4, 3}, NumberPadding -> ""]]'
+2.
+```
+
 By default the sign stays next to the digits; `SignPadding -> True` moves it
 in front of the padding:
 

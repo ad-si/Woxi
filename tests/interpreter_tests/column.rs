@@ -212,6 +212,54 @@ mod column_visual_mode {
     assert!(svg.contains("width=\"80.0\" height=\"30.0\""), "{svg}");
   }
 
+  /// The `fill` colors of the `<rect>`s in `svg`, top to bottom.
+  fn rect_fills(svg: &str) -> Vec<String> {
+    svg
+      .split("<rect")
+      .skip(1)
+      .filter_map(|r| {
+        let start = r.find(" fill=\"")? + 7;
+        Some(r[start..].split('"').next()?.to_string())
+      })
+      .collect()
+  }
+
+  // As part of a scheduled QA routine, Woxi Studio was tested against a
+  // randomly sampled Wolfram Demonstration notebook whose word list is a
+  // `Column` striped with a cyclic `Background -> {{c1, c2}}`; the row
+  // fills were dropped (only a single color filled the column).
+  #[test]
+  fn column_cyclic_background_stripes_rows() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{\"a\", \"b\", \"c\", \"d\", \"e\"}, Left, \
+       Background -> {{Yellow, Cyan}}, Spacings -> 1]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let (y, c) = ("rgb(255,255,0)", "rgb(0,255,255)");
+    assert_eq!(rect_fills(&svg), [y, c, y, c, y], "{svg}");
+    for item in ["a", "b", "c", "d", "e"] {
+      assert!(svg.contains(&format!(">{item}</text>")), "{svg}");
+    }
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+  }
+
+  // A flat background list colors successive rows once each.
+  #[test]
+  fn column_background_list_colors_successive_rows() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Background -> {Yellow, Cyan}]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(
+      rect_fills(&svg),
+      ["rgb(255,255,0)", "rgb(0,255,255)"],
+      "{svg}"
+    );
+  }
+
   #[test]
   fn column_dividers_all_rules_every_line() {
     clear_state();
@@ -589,13 +637,75 @@ mod column_visual_mode {
     assert!(h2 > h1, "SVG with spacing should be taller: {h2} vs {h1}");
   }
 
-  #[test]
-  fn column_spacing_default_zero() {
+  fn column_svg_height(code: &str) -> f64 {
     clear_state();
-    // Column with explicit 0 spacing should match no-spacing version
-    let no_gap = interpret_with_stdout("Column[{1, 2}]").unwrap();
-    let with_zero = interpret_with_stdout("Column[{1, 2}, Left, 0]").unwrap();
-    assert_eq!(no_gap.graphics.unwrap(), with_zero.graphics.unwrap());
+    let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+    let height_re = regex::Regex::new(r#"height="([\d.]+)""#).unwrap();
+    height_re.captures(&svg).unwrap()[1].parse().unwrap()
+  }
+
+  #[test]
+  fn column_spacing_zero_is_tighter_than_default() {
+    // The default gap between a column's lines is a small fixed offset,
+    // so an explicit spacing of 0 sets the lines closer together.
+    let default = column_svg_height("Column[{1, 2}]");
+    let zero = column_svg_height("Column[{1, 2}, Left, 0]");
+    assert!(zero < default, "{zero} vs {default}");
+  }
+
+  #[test]
+  fn column_spacing_is_measured_between_lines_of_text() {
+    // `s` ems separate the lines themselves (each 0.93 em tall), not
+    // their padded boxes: at 14 pt, lines 3.93 em = 55 pt apart.
+    let pitch = |code: &str| {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let y_re = regex::Regex::new(r#"<text x="[^"]*" y="([\d.]+)""#).unwrap();
+      let ys: Vec<f64> = y_re
+        .captures_iter(&svg)
+        .map(|c| c[1].parse().unwrap())
+        .collect();
+      assert_eq!(ys.len(), 3, "{svg}");
+      (ys[1] - ys[0], ys[2] - ys[1])
+    };
+    clear_state();
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Left, 3]"),
+      (55.0, 55.0)
+    );
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Spacings -> 3]"),
+      (55.0, 55.0)
+    );
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Left, 1]"),
+      (27.0, 27.0)
+    );
+  }
+
+  #[test]
+  fn column_spacing_of_rows_matches_spacing_of_strings() {
+    // A `Row` of text items is a line of text too, even though the column
+    // draws it as a picture first.
+    let strings =
+      column_svg_height("Column[{\"a = 1\", \"b = 2\", \"c = 3\"}, Left, 3]");
+    let rows = column_svg_height(
+      "Column[{Row[{\"a\", \" = \", 1}], Row[{\"b\", \" = \", 2}], \
+       Row[{\"c\", \" = \", 3}]}, Left, 3]",
+    );
+    assert_eq!(rows, strings);
+    assert_eq!(rows, 133.0);
+  }
+
+  #[test]
+  fn column_spacing_between_pictures_is_the_full_gap() {
+    // A picture fills its box, so all of `s` ems stays between two of them.
+    let tight = column_svg_height(
+      "Column[{Graphics[Disk[], ImageSize -> 50], Graphics[Disk[], ImageSize -> 50]}, Left, 0]",
+    );
+    let spaced = column_svg_height(
+      "Column[{Graphics[Disk[], ImageSize -> 50], Graphics[Disk[], ImageSize -> 50]}, Left, 2]",
+    );
+    assert_eq!(spaced - tight, 28.0);
   }
 
   #[test]
