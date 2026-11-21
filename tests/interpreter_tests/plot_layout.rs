@@ -365,6 +365,72 @@ mod list_polar_plot {
     assert!(pts[0].0 > pts[1].0 && pts[1].0 > pts[2].0, "{pts:?}");
   }
 
+  // `PolarGridLines -> Automatic` draws, under the points, 25 spokes every
+  // Pi/12 out to the farthest point and circles at fifths of that radius
+  // (Wolfram's own grid for the axes-free plot), and the plot range spans
+  // the whole grid: the spokes at angles 0 and Pi reach both edges.
+  #[test]
+  fn polar_grid_lines_automatic() {
+    let svg = svg_of(
+      "ListPolarPlot[{{0.5, 1}, {2., -1.5}, {Pi/2, 2}}, \
+       PolarGridLines -> Automatic, Axes -> False, ImageSize -> {200, 200}]",
+    );
+    assert_eq!(svg.matches("<polyline").count(), 25, "{svg}");
+    let radii: Vec<f64> = svg
+      .split("<ellipse ")
+      .skip(1)
+      .map(|tag| {
+        let start = tag.find("rx=\"").unwrap() + 4;
+        let end = start + tag[start..].find('"').unwrap();
+        tag[start..end].parse().unwrap()
+      })
+      .collect();
+    assert_eq!(radii.len(), 5, "{svg}");
+    // The first spoke runs from the center along angle 0 to radius 2.
+    let spoke = svg.split("<polyline").nth(1).unwrap();
+    let start = spoke.find("points=\"").unwrap() + 8;
+    let end = start + spoke[start..].find('"').unwrap();
+    let coords: Vec<f64> = spoke[start..end]
+      .split([' ', ','])
+      .map(|c| c.parse().unwrap())
+      .collect();
+    let (cx, cy, x1, y1) = (coords[0], coords[1], coords[2], coords[3]);
+    assert!((cy - y1).abs() < 0.5, "{coords:?}");
+    let r_max = x1 - cx;
+    for (k, r) in radii.iter().enumerate() {
+      assert!(
+        (r - r_max * k as f64 / 5.0).abs() < 0.5,
+        "{radii:?} {r_max}"
+      );
+    }
+    // The plot range takes in the spokes at angles 0 and Pi.
+    assert!(cx - r_max > 0.0 && x1 < 2000.0, "{coords:?}");
+    assert!((2.0 * cx - 2000.0).abs() < 1.0, "{coords:?}");
+    // No grid unless asked for.
+    let plain =
+      svg_of("ListPolarPlot[{{0.5, 1}, {2., -1.5}, {Pi/2, 2}}, Axes -> False]");
+    assert!(!plain.contains("<polyline"), "{plain}");
+    assert!(!plain.contains("<ellipse"), "{plain}");
+  }
+
+  // `PolarGridLines -> {None, Automatic}` keeps only the circles, and
+  // explicit angle lists draw one spoke per angle.
+  #[test]
+  fn polar_grid_lines_parts() {
+    let polylines = |svg: &str| svg.matches("<polyline").count();
+    let radial = svg_of(
+      "ListPolarPlot[{{0, 1}, {Pi/2, 2}}, \
+       PolarGridLines -> {None, Automatic}, Axes -> False]",
+    );
+    assert_eq!(polylines(&radial), 0, "{radial}");
+    assert_eq!(radial.matches("<ellipse").count(), 5, "{radial}");
+    let spokes = svg_of(
+      "ListPolarPlot[{{0, 1}, {Pi/2, 2}}, \
+       PolarGridLines -> {{0, Pi/2, Pi}, None}, Axes -> False]",
+    );
+    assert_eq!(polylines(&spokes), 3, "{spokes}");
+  }
+
   // `Joined -> True` draws a line instead of points.
   #[test]
   fn joined_draws_a_line() {
@@ -1489,6 +1555,31 @@ mod typeset_labels {
     assert!(!svg.contains("font-style=\"italic\" xml:space=\"preserve\">A<"));
   }
 
+  // A `TraditionalForm` label raises its exponents instead of flattening
+  // `x^n` to the run `xn`, and keeps the size of its `Style` wrapper.
+  #[test]
+  fn text_traditional_form_power_label_raises_exponent() {
+    let svg = svg_of("Graphics[Text[Style[TraditionalForm[x^n], 16], {0, 0}]]");
+    assert!(!svg.contains(">xn</text>"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+    assert!(
+      svg.contains("font-size=\"16.0\" stroke=\"none\" font-style=\"italic\" xml:space=\"preserve\">x</text>"),
+      "{svg}"
+    );
+    assert!(svg.contains("font-size=\"11.2\""), "{svg}");
+    let svg = svg_of("Graphics[Text[TraditionalForm[4^n (a b)^n], {0, 0}]]");
+    assert!(!svg.contains(">4n"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+  }
+
+  // A `TraditionalForm` quotient stacks as a fraction.
+  #[test]
+  fn text_traditional_form_quotient_label_stacks() {
+    let svg = svg_of("Graphics[Text[TraditionalForm[x/y], {0, 0}]]");
+    assert!(!svg.contains(">xy</text>"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+  }
+
   #[test]
   fn text_quotient_label_stacks() {
     let svg = svg_of("Graphics[Text[a^2/b, {0, 0}]]");
@@ -1580,5 +1671,80 @@ mod plot_style_directive_lists {
     let svg =
       svg_of("Plot[Sin[x], {x, 0, 1}, PlotStyle -> {Red, Opacity[0.5]}]");
     assert_eq!(curve_opacities(&svg), ["0.5"], "{svg}");
+  }
+}
+
+mod label_directive_lists {
+  use super::*;
+
+  /// The `<text …>` opening tag of the element that draws `label`.
+  fn text_tag(svg: &str, label: &str) -> String {
+    let end = svg.find(&format!(">{label}")).unwrap();
+    let start = svg[..end].rfind("<text").unwrap();
+    svg[start..end].to_string()
+  }
+
+  #[test]
+  fn style_directive_list_applies_each_directive() {
+    let listed =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", {Orange, 18}]]");
+    let spread =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", Orange, 18]]");
+    let tag = text_tag(&listed, "lab");
+    assert!(tag.contains("fill=\"rgb(255,128,0)\""), "{tag}");
+    assert_eq!(tag, text_tag(&spread, "lab"));
+  }
+
+  #[test]
+  fn nested_style_directive_lists_flatten() {
+    let nested = svg_of(
+      "Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", {{Bold, Red}, 14}]]",
+    );
+    let spread =
+      svg_of("Plot[x, {x, 0, 1}, PlotLabel -> Style[\"lab\", Bold, Red, 14]]");
+    assert_eq!(text_tag(&nested, "lab"), text_tag(&spread, "lab"));
+  }
+}
+
+mod tiny_scale_sampling {
+  use super::*;
+
+  /// Adaptive refinement does not depend on the curve's absolute scale: a
+  /// peak of height `10^-12` is sampled as finely as the same peak of
+  /// height 1, instead of staying a coarse zigzag.
+  #[test]
+  fn tiny_curve_refines_like_unit_curve() {
+    let unit = svg_of("Plot[1/(1 + 100 x^2), {x, -1, 1}]");
+    let tiny = svg_of("Plot[10^-12/(1 + 100 x^2), {x, -1, 1}]");
+    let unit_n = polyline_points(&unit, "#3D99CC").len();
+    let tiny_n = polyline_points(&tiny, "#3D99CC").len();
+    assert!(unit_n > 30, "{unit_n}");
+    assert_eq!(unit_n, tiny_n);
+  }
+}
+
+mod scientific_tick_labels {
+  use super::*;
+
+  #[test]
+  fn mantissas_share_decimals_across_decades() {
+    for opts in ["", ", Frame -> True"] {
+      let svg = svg_of(&format!("Plot[x, {{x, 0, 3*10^16}}{opts}]"));
+      for label in ["5.0×10¹⁵", "1.0×10¹⁶", "1.5×10¹⁶", "3.0×10¹⁶"]
+      {
+        assert!(svg.contains(label), "missing {label} ({opts})");
+      }
+      assert!(!svg.contains(">5×10¹⁵"), "{opts}");
+    }
+  }
+
+  #[test]
+  fn integer_mantissas_stay_integers() {
+    let svg = svg_of("Plot[x, {x, 0, 10^7}]");
+    for label in ["2×10⁶", "8×10⁶", "1×10⁷"] {
+      assert!(svg.contains(label), "missing {label}");
+    }
+    let svg = svg_of("Plot[x, {x, 0, 6*10^-12}, Frame -> True]");
+    assert!(svg.contains("1×10⁻¹²") && svg.contains("6×10⁻¹²"));
   }
 }

@@ -379,6 +379,88 @@ mod graphics_primitives {
     assert!(!square.contains("fill-rule"), "{square}");
   }
 
+  /// Twice around from the same corner: a square, then a smaller loop
+  /// inside it that starts where the square did.
+  const NESTED_LOOPS: &str = "{{0, 0}, {4, 0}, {4, 4}, {0, 4}, {0, 0}, \
+     {3, 1}, {3, 3}, {1, 3}}";
+
+  #[test]
+  fn polygon_revisiting_a_corner_fills_even_odd() {
+    let svg = svg_of(&format!("Graphics[Polygon[{NESTED_LOOPS}]]"));
+    assert!(svg.contains("fill-rule=\"evenodd\""), "{svg}");
+    // A doubled corner or a closing repeat of the first one is no loop.
+    let closed =
+      svg_of("Graphics[Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0, 0}}]]");
+    assert!(!closed.contains("fill-rule"), "{closed}");
+    let doubled =
+      svg_of("Graphics[Polygon[{{0, 0}, {1, 0}, {1, 0}, {1, 1}, {0, 1}}]]");
+    assert!(!doubled.contains("fill-rule"), "{doubled}");
+  }
+
+  /// The centroids of the `<polygon>` facets of a vertex-colored fill, as
+  /// fractions of the facets' joint bounding box (y measured upward).
+  fn facet_centroids(svg: &str) -> Vec<(f64, f64)> {
+    let tris: Vec<Vec<(f64, f64)>> = svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .map(|rest| {
+        rest[..rest.find('"').unwrap()]
+          .split_whitespace()
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect()
+      })
+      .collect();
+    assert!(!tris.is_empty(), "{svg}");
+    let all = tris.iter().flatten();
+    let (x0, x1, y0, y1) = all.fold(
+      (f64::MAX, f64::MIN, f64::MAX, f64::MIN),
+      |(a, b, c, d), &(x, y)| (a.min(x), b.max(x), c.min(y), d.max(y)),
+    );
+    tris
+      .iter()
+      .map(|t| {
+        let k = t.len() as f64;
+        let cx = t.iter().map(|p| p.0).sum::<f64>() / k;
+        let cy = t.iter().map(|p| p.1).sum::<f64>() / k;
+        ((cx - x0) / (x1 - x0), (y1 - cy) / (y1 - y0))
+      })
+      .collect()
+  }
+
+  #[test]
+  fn vertex_colored_polygon_leaves_a_doubly_wound_loop_empty() {
+    // The inner loop is wound twice, so the even-odd rule leaves it empty
+    // even though every point carries a color.
+    let svg = svg_of(&format!(
+      "Graphics[Polygon[{NESTED_LOOPS}, VertexColors -> Table[Hue[k/8], {{k, 8}}]]]"
+    ));
+    let inside =
+      |(x, y): (f64, f64)| (0.45..0.7).contains(&x) && (0.4..0.65).contains(&y);
+    let centroids = facet_centroids(&svg);
+    assert!(!centroids.iter().any(|&c| inside(c)), "{svg}");
+    // The once-wound band between the loops is still filled.
+    assert!(centroids.iter().any(|&(x, y)| x > 0.8 && y > 0.3), "{svg}");
+  }
+
+  #[test]
+  fn vertex_colored_pentagram_leaves_its_center_empty() {
+    let svg = svg_of(
+      "Graphics[Polygon[Table[{Cos[4 Pi k/5 + Pi/2], Sin[4 Pi k/5 + Pi/2]}, \
+       {k, 0, 4}], VertexColors -> {Red, Green, Blue, Yellow, Cyan}]]",
+    );
+    let centroids = facet_centroids(&svg);
+    // The pentagon in the middle (around the center of the star, which
+    // sits at 45% of its height) is wound twice.
+    let center =
+      |(x, y): (f64, f64)| (0.4..0.6).contains(&x) && (0.37..0.53).contains(&y);
+    assert!(!centroids.iter().any(|&c| center(c)), "{svg}");
+    // The tips are filled.
+    assert!(centroids.iter().any(|&(_, y)| y > 0.9), "{svg}");
+  }
+
   #[test]
   fn points_at_the_range_edge_stay_whole() {
     let svg =
@@ -478,6 +560,34 @@ mod graphics_primitives {
     let rx = attr_of(&svg, "ellipse", "rx");
     let w = attr_of(&svg, "svg", "width");
     assert!(close(2.0 * rx / (w - 1.0), 0.6, 0.01), "{svg}");
+  }
+
+  #[test]
+  fn automatic_plot_range_padding_leaves_explicit_ranges_unpadded() {
+    // `Automatic` pads only ranges determined from the primitives, like
+    // the default: a range pinned by `PlotRange` is drawn exactly.
+    for range in ["{{-1, 1}, {-1, 1}}", "{{-3, 2}, {-1, 4}}"] {
+      let plain = svg_of(&format!(
+        "Graphics[Disk[], PlotRange -> {range}, Axes -> True]"
+      ));
+      for padding in ["Automatic", "{Automatic, Automatic}"] {
+        let padded = svg_of(&format!(
+          "Graphics[Disk[], PlotRange -> {range}, Axes -> True, \
+           PlotRangePadding -> {padding}]"
+        ));
+        assert_eq!(padded, plain, "PlotRangePadding -> {padding}");
+      }
+    }
+    // Per axis: the Scaled x side pads, the Automatic y side does not, so
+    // the unit disk fills the height but only 60% of the padded width.
+    let svg = svg_of(
+      "Graphics[Disk[], PlotRange -> {{-1, 1}, {-1, 1}}, \
+       PlotRangePadding -> {Scaled[0.2], Automatic}, AspectRatio -> Full, \
+       ImageSize -> {300, 300}]",
+    );
+    let rx = attr_of(&svg, "ellipse", "rx");
+    let ry = attr_of(&svg, "ellipse", "ry");
+    assert!(close(ry / rx, 1.0 / 0.6, 0.02), "{svg}");
   }
 
   #[test]

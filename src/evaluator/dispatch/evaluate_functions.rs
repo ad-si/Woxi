@@ -300,15 +300,14 @@ pub(crate) fn evaluate_function_call_ast(
 /// symbol's value) costs nothing at all, where rebuilding it as a tree
 /// copied it on every call.
 ///
-/// Threshold of 16 keeps the Vec path for small argument lists where the
-/// one-time conversion would dominate.
+/// Lists shorter than `share_large_lists`' threshold stay plain vectors,
+/// where the one-time conversion would dominate.
 fn promote_lists_for_substitution(values: &mut [Expr]) {
+  // Nested arrays too: a matrix held in a small state list
+  // (`{grid, {x, y}, dir}`) is otherwise copied in full at every place the
+  // body mentions the parameter.
   for v in values {
-    if let Expr::List(items) = v
-      && items.len() > 16
-    {
-      items.share();
-    }
+    crate::evaluator::share_large_lists(v, 0);
   }
 }
 
@@ -1077,25 +1076,71 @@ fn normalize_piecharts_option(arg: &Expr) -> Expr {
       _ => None,
     }
   }
+  // `PieStyle -> {{Red}, {Green, EdgeForm[…]}, …}` gave each wedge a list
+  // of directives; the modern `ChartStyle` spells one wedge's directives
+  // as `Directive[…]`.
+  fn translated_value(new_name: &str, value: &Expr) -> Expr {
+    match value {
+      Expr::List(items) if new_name == "ChartStyle" => Expr::List(
+        items
+          .iter()
+          .map(|item| match item {
+            Expr::List(directives) => Expr::FunctionCall {
+              name: "Directive".to_string(),
+              args: directives.clone(),
+            },
+            other => other.clone(),
+          })
+          .collect(),
+      ),
+      other => other.clone(),
+    }
+  }
   match arg {
     Expr::Rule {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => rule_expr(id_expr(new_name), *replacement.clone()),
+      Some(new_name) => {
+        rule_expr(id_expr(new_name), translated_value(new_name, replacement))
+      }
       None => arg.clone(),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => {
-        rule_delayed_expr(id_expr(new_name), *replacement.clone())
-      }
+      Some(new_name) => rule_delayed_expr(
+        id_expr(new_name),
+        translated_value(new_name, replacement),
+      ),
       None => arg.clone(),
     },
     other => other.clone(),
   }
+}
+
+/// Translate the arguments of a legacy `PieCharts\`PieChart` call to the
+/// modern `PieChart`: rename its options (see
+/// [`normalize_piecharts_option`]) and keep its wedge layout. The package
+/// laid the first wedge out from the positive x axis and went
+/// counterclockwise, whereas `PieChart` starts at 9 o'clock and goes
+/// clockwise, so an explicit `SectorOrigin -> 0` is added unless the call
+/// names one itself.
+fn normalize_piecharts_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out: Vec<Expr> =
+    args.iter().map(normalize_piecharts_option).collect();
+  let names_sector_origin = out.iter().any(|a| {
+    matches!(
+      a,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(id) if id == "SectorOrigin")
+    )
+  });
+  if !names_sector_origin {
+    out.push(rule_expr(id_expr("SectorOrigin"), Expr::Integer(0)));
+  }
+  out
 }
 
 /// Evaluate one stored overload condition against the call's bindings.
@@ -1723,10 +1768,7 @@ fn evaluate_function_call_ast_inner(
   // translate them alongside the head so old demonstrations still render.
   let normalized_pie_args;
   let args: &[Expr] = if original_name == "PieCharts`PieChart" {
-    normalized_pie_args = args
-      .iter()
-      .map(normalize_piecharts_option)
-      .collect::<Vec<_>>();
+    normalized_pie_args = normalize_piecharts_args(args);
     &normalized_pie_args
   } else {
     args
@@ -2557,6 +2599,9 @@ fn evaluate_function_call_ast_inner(
     "EntityList" => return crate::functions::entity_ast::entity_list_ast(args),
     "EntityProperties" => {
       return crate::functions::entity_ast::entity_properties_ast(args);
+    }
+    "CanonicalName" => {
+      return crate::functions::entity_ast::canonical_name_ast(args);
     }
     "EntityClassList" => {
       return crate::functions::entity_ast::entity_class_list_ast(args);
@@ -5548,6 +5593,31 @@ fn evaluate_function_call_ast_inner(
           {
             **pattern = id_expr("GraphLayout");
           }
+        }
+      }
+      // `PlotStyle -> s` styles the plot's edges (the legacy
+      // `VertexRenderingFunction` draws the vertices on its own); an
+      // explicit `EdgeStyle` wins. `Graph` has no `PlotStyle` option, so it
+      // is taken off on the way through.
+      let is_option = |o: &Expr, key: &str| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key))
+      };
+      let plot_style = forwarded.iter().rev().find_map(|o| match o {
+        Expr::Rule { replacement, .. }
+        | Expr::RuleDelayed { replacement, .. }
+          if is_option(o, "PlotStyle") =>
+        {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      });
+      if let Some(style) = plot_style {
+        forwarded.retain(|o| !is_option(o, "PlotStyle"));
+        let automatic =
+          matches!(&style, Expr::Identifier(s) if s == "Automatic");
+        if !automatic && !forwarded.iter().any(|o| is_option(o, "EdgeStyle")) {
+          forwarded.push(rule_expr(id_expr("EdgeStyle"), style));
         }
       }
       // `TreePlot[g, Center]` puts the root in the middle and the deeper
@@ -13212,6 +13282,10 @@ fn evaluate_function_call_ast_inner(
         | "Mouseover"
         | "Magnify"
         | "Shallow"
+        // Magnification[s] is a size specification (`ImageSize ->
+        // Magnification[1]` in a stored image's GraphicsBox); it stays
+        // unevaluated in wolframscript.
+        | "Magnification"
         // Geographic primitives consumed by GeoGraphics (rendered there);
         // they stay symbolic on their own, matching wolframscript, so they
         // are not "unimplemented".

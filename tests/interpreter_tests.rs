@@ -618,6 +618,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_of_styled_traditional_form_draws_formula_in_visual_mode() {
+    // Regression: `Text[Style[TraditionalForm[lhs == rhs], 16, Bold]]` (a
+    // Manipulate body stating an identity) stayed plain text, so Woxi
+    // Studio showed the raw `TraditionalForm[…]` source.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Text[Style[TraditionalForm[HoldForm[Integrate[Tan[x], x]] == \
+       Integrate[Tan[x], x]], 16, Bold]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(svg.contains('\u{222B}'), "integral sign missing: {svg}");
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+    assert!(svg.contains("bold"), "Bold style missing: {svg}");
+  }
+
+  #[test]
+  fn test_pane_of_text_traditional_form_keeps_pane_size_in_visual_mode() {
+    // A `Pane[Text[TraditionalForm[…]], {w, h}, Alignment -> …]` draws the
+    // formula inside the box the pane declares.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Pane[Text[Style[TraditionalForm[a^2 == Sqrt[b]], 14]], {320, 140}, \
+       Alignment -> {Left, Center}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(
+      svg.starts_with("<svg width=\"320\" height=\"140\""),
+      "{svg}"
+    );
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+  }
+
+  #[test]
   fn test_percent_in_cli_mode_collapses_to_out_zero() {
     // `interpret` (CLI / wolframscript-equivalent path) must not consume
     // the visual-mode history. `%` collapses to `Out[0]` exactly as
@@ -2068,7 +2103,7 @@ mod interpreter_tests {
 
   #[test]
   fn test_contour_plot_bar_legend_and_contour_labels() {
-    // `PlotLegends -> Automatic` widens the picture by a color-bar strip
+    // `PlotLegends -> Automatic` sets a color bar beside the picture
     // and `ContourLabels -> True` writes each level on its contour line.
     clear_state();
     let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
@@ -2084,7 +2119,7 @@ mod interpreter_tests {
     .expect("ContourPlot should produce a graphics SVG");
     assert!(plain.starts_with("<svg width=\"360\""), "{plain}");
     assert!(
-      svg.starts_with("<svg width=\"413\""),
+      svg.starts_with("<svg width=\"423\""),
       "legend widens: {svg}"
     );
     assert!(
@@ -3149,6 +3184,39 @@ mod interpreter_tests {
     assert!(r.sound.is_some(), "EmitSound should capture playable audio");
   }
 
+  #[test]
+  fn test_successive_emit_sounds_play_one_after_another() {
+    // Every EmitSound of one evaluation is queued, so mapping EmitSound over
+    // a list of notes plays all of them in order instead of only the last.
+    let bytes = sound_wav_bytes(
+      "(EmitSound[Play[Sin[#*t], {t, 0, 0.25}]] &) /@ {1000, 1500, 2000};",
+    );
+    // 3 × 0.25s at 8000 Hz, 16-bit mono.
+    assert_eq!(bytes.len(), 44 + 3 * 2000 * 2);
+    // A later evaluation starts a fresh queue.
+    let bytes = sound_wav_bytes("EmitSound[Play[Sin[t], {t, 0, 0.5}]]");
+    assert_eq!(bytes.len(), 44 + 4000 * 2);
+  }
+
+  #[test]
+  fn test_emit_sounds_with_different_sample_rates_keep_their_duration() {
+    // A queued sound at another sample rate is resampled to the first one's.
+    let bytes = sound_wav_bytes(
+      "EmitSound[Play[Sin[1000 t], {t, 0, 0.5}]]; \
+       EmitSound[Play[Sin[1000 t], {t, 0, 0.5}, SampleRate -> 16000]]",
+    );
+    assert_eq!(bytes.len(), 44 + (4000 + 4000) * 2);
+  }
+
+  #[test]
+  fn test_sound_segments_with_different_sample_rates_keep_their_duration() {
+    let bytes = sound_wav_bytes(
+      "Sound[{Play[Sin[1000 t], {t, 0, 0.5}], \
+       Play[Sin[1000 t], {t, 0, 0.25}, SampleRate -> 16000]}]",
+    );
+    assert_eq!(bytes.len(), 44 + (4000 + 2000) * 2);
+  }
+
   /// Decode the `sound` channel of a visual-mode evaluation to WAV bytes.
   fn sound_wav_bytes(code: &str) -> Vec<u8> {
     clear_state();
@@ -3864,6 +3932,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_grid_result_sets_fractions_one_script_level_down() {
+    // Regression: a `Text@Grid[…]` result (a Manipulate body showing a
+    // table of fractions) drew its fractions at the full text size; Wolfram
+    // sets math inside text one script level down, at 3/4 of the size.
+    clear_state();
+    let r =
+      interpret_with_stdout("Text[Grid[{{a, 1/9}, {b, 2/27}}, Frame -> All]]")
+        .unwrap();
+    let svg = r.graphics.expect("expected the table to be drawn");
+    assert!(svg.contains("<line"), "{svg}");
+    assert!(svg.contains("font-size=\"10.5\""), "{svg}");
+    assert!(!svg.contains("font-size=\"14.0\""), "{svg}");
+  }
+
+  #[test]
   fn test_styled_row_quotient_stacks_the_fraction_at_its_size() {
     // Regression: `Style[Row[{a/b, " = ", 3}], 20]` pushes its style into
     // the row's items, and the resulting `Style[a/b, 20]` item was written
@@ -3879,8 +3962,14 @@ mod interpreter_tests {
         svg.contains("<line"),
         "expected a fraction line: {code}\n{svg}"
       );
+      // Inside `Text` the fraction sits one script level down (3/4 size).
+      let size = if code.contains("Text[") {
+        "15.0"
+      } else {
+        "20.0"
+      };
       assert!(
-        svg.contains("font-size=\"20.0\""),
+        svg.contains(&format!("font-size=\"{size}\"")),
         "fraction must take the style's size: {code}\n{svg}"
       );
       assert!(
@@ -4366,6 +4455,59 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_graphics_inset_panel_draws_plate() {
+    // Regression: `Inset[Panel[…], pos]` (a readout table placed on a
+    // diagram) printed the literal `Panel[Text[Grid[…]]]` source instead
+    // of drawing the panel's plate with its content.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Circle[], Inset[Panel[Text[Grid[{{\"speed\", 12}, {\"power\", 3.5}}, Alignment -> Left]]], {0, 0}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Panel["), "Panel source leaked: {svg}");
+    assert!(!svg.contains("Grid["), "Grid source leaked: {svg}");
+    assert!(
+      svg.contains("fill=\"rgb(245,245,245)\""),
+      "no panel plate: {svg}"
+    );
+    assert!(svg.contains(">speed<") && svg.contains(">3.5<"), "{svg}");
+
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[{Inset[Panel[\"hi\"], Scaled[{0.2, 0.5}]], Point[{1, 1}]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Panel["), "Panel source leaked: {svg}");
+  }
+
+  #[test]
+  fn test_panel_and_framed_image_size_width() {
+    // `ImageSize -> w` sets the outer width of a `Panel`/`Framed` box; a
+    // size narrower than the content leaves the box at its natural size.
+    clear_state();
+    let svg =
+      interpret("ExportString[Panel[\"hi\", ImageSize -> 100], \"SVG\"]")
+        .unwrap();
+    assert!(svg.starts_with("<svg width=\"100\""), "{svg}");
+    let svg = interpret(
+      "ExportString[Framed[\"hi\", ImageSize -> {120, 50}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.starts_with("<svg width=\"120\" height=\"50\""), "{svg}");
+    let natural =
+      interpret("ExportString[Panel[\"some longer text\"], \"SVG\"]").unwrap();
+    let narrow = interpret(
+      "ExportString[Panel[\"some longer text\", ImageSize -> 10], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(
+      natural.split('\n').next(),
+      narrow.split('\n').next(),
+      "narrow ImageSize shrank the panel"
+    );
+  }
+
+  #[test]
   fn test_greater_less_slant_equal_operators() {
     // `\[GreaterSlantEqual]` (⩾, U+2A7E) and `\[LessSlantEqual]` (⩽,
     // U+2A7D) are glyph variants of GreaterEqual/LessEqual that a
@@ -4386,6 +4528,35 @@ mod interpreter_tests {
     assert_eq!(interpret("1\u{2A7D}2\u{2A7D}3").unwrap(), "True");
     clear_state();
     assert_eq!(interpret("If[3\u{2A7E}2, \"yes\", \"no\"]").unwrap(), "yes");
+  }
+
+  #[test]
+  fn test_inset_without_position_embeds_prerendered_object() {
+    // `Inset[obj]` with no position sits at the origin, like
+    // `Inset[obj, Automatic]`. An object embedded whole (an `Image` of any
+    // channel count, a `Graphics3D`, a rendered plot) must still draw as a
+    // picture. Regression: without a position they fell through to the
+    // text path and printed `-Image-` / `-Graphics3D-` / `-Graphics-`.
+    for (code, needle) in [
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 4}]]]]", "<image"),
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 3}]]]]", "<image"),
+      (
+        "Graphics[{Circle[], Inset[Image[RandomReal[1, {3, 5}]]]}]",
+        "<image",
+      ),
+      ("Graphics[Inset[Graphics3D[Sphere[]]]]", "<svg"),
+      ("Graphics[Inset[Plot[x, {x, 0, 1}]]]", "<svg"),
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(svg.contains(needle), "{code} did not embed: {svg}");
+      for placeholder in ["-Image-", "-Graphics3D-", "-Graphics-"] {
+        assert!(
+          !svg.contains(placeholder),
+          "{code} fell back to the {placeholder} text placeholder"
+        );
+      }
+    }
   }
 
   #[test]
@@ -7438,6 +7609,7 @@ mod interpreter_tests {
       // an SVG box (`-Graphics-`) in visual mode rather than staying symbolic.
       ("Mouseover[a, b]", "Mouseover[a, b]"),
       ("Magnify[x, 2]", "Magnify[x, 2]"),
+      ("Magnification[1]", "Magnification[1]"),
       ("Ket[0]", "Ket[0]"),
       ("Bra[0]", "Bra[0]"),
     ];

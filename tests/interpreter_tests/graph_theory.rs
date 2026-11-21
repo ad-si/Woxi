@@ -8890,7 +8890,7 @@ mod graph_utilities_package {
   fn polyhedron_data_class_lists_members_and_names() {
     assert_eq!(
       interpret("PolyhedronData[\"Platonic\"]").unwrap(),
-      "{Tetrahedron, Cube, Octahedron, Dodecahedron, Icosahedron}"
+      "{Cube, Dodecahedron, Icosahedron, Octahedron, Tetrahedron}"
     );
     assert_eq!(
       interpret("PolyhedronData[\"PlatonicDual\"]").unwrap(),
@@ -9498,6 +9498,21 @@ mod graph_coordinates_3d {
       )
       .unwrap(),
       "{0, GraphicsComplex, {{{1, 2}, {1, 3}, {2, 3}}}, 3, {Hue[0.6, 0.2, 0.8], Hue[0.6, 0.6, 1]}}"
+    );
+  }
+
+  /// `PlotStyle -> s` restyles the edge tubes, and the graph-drawing
+  /// options are used up rather than left on the `Graphics3D`.
+  #[test]
+  fn graph_plot_3d_plot_style_restyles_the_edges() {
+    assert_eq!(
+      interpret(
+        "g = GraphPlot3D[{1 -> 2, 2 -> 3}, PlotStyle -> Gray, \
+         VertexLabeling -> False, ImageSize -> 300]; \
+         {Cases[g[[1]], _GrayLevel | _Hue, Infinity], Rest[List @@ g]}"
+      )
+      .unwrap(),
+      "{{GrayLevel[0.5], Hue[0.6, 0.6, 1]}, {ImageSize -> 300, Boxed -> False}}"
     );
   }
 
@@ -10711,6 +10726,64 @@ mod layered_plot_components {
       )
       .unwrap(),
       "{{0., 1.}, {1., 0.}, {1., 1.}, {2., 1.}}"
+    );
+  }
+
+  /// A Hasse diagram is drawn balanced: each layer sits under the middle
+  /// of the one above instead of every layer being packed from the left
+  /// (the cube's top and bottom vertices used to sit at x = 0).
+  #[test]
+  fn hasse_diagram_layers_are_balanced() {
+    assert_eq!(
+      interpret(
+        "Cases[LayeredGraphPlot[{1 -> 2, 1 -> 3, 1 -> 4, 2 -> 5, 2 -> 6, \
+         3 -> 5, 3 -> 7, 4 -> 6, 4 -> 7, 5 -> 8, 6 -> 8, 7 -> 8}], \
+         Disk[p_, ___] :> p[[1]], Infinity]"
+      )
+      .unwrap(),
+      "{1., 0., 1., 2., 0., 1., 2., 1.}"
+    );
+    // The permutations of {1, 2, 3, 4} ordered by adjacent swaps: the top
+    // and bottom vertices sit within half a unit of the widest layer's
+    // middle, and no two vertices of a layer are closer than one unit.
+    assert_eq!(
+      interpret(
+        "e = Union[Flatten[Table[With[{p = Permutations[Range[4]][[k]]}, \
+         Table[If[p[[i]] < p[[i + 1]], p -> ReplacePart[p, \
+         {i -> p[[i + 1]], i + 1 -> p[[i]]}], Nothing], {i, 3}]], {k, 24}]]]; \
+         pts = Cases[LayeredGraphPlot[e], Disk[q_, ___] :> q, Infinity]; \
+         pos = AssociationThread[VertexList[Graph[e]], pts]; \
+         mid = (Max[pts[[All, 1]]] + Min[pts[[All, 1]]])/2; \
+         rows = GatherBy[pts, Round[#[[2]], 10.^-6] &]; \
+         {Abs[pos[{1, 2, 3, 4}][[1]] - mid] <= 1/2, \
+          Abs[pos[{4, 3, 2, 1}][[1]] - mid] <= 1/2, \
+          Length[rows], \
+          Min[Map[Min[Differences[Sort[#[[All, 1]]]] /. {} -> {1}] &, rows]] >= 1}"
+      )
+      .unwrap(),
+      "{True, True, 7, True}"
+    );
+  }
+
+  /// `PlotStyle -> s` styles the edges of a layered plot; an explicit
+  /// `EdgeStyle` wins over it.
+  #[test]
+  fn plot_style_styles_the_edges() {
+    assert_eq!(
+      interpret(
+        "Union[Cases[LayeredGraphPlot[{1 -> 2, 2 -> 3}, PlotStyle -> Gray], \
+         _GrayLevel | _RGBColor, Infinity]]"
+      )
+      .unwrap(),
+      "{GrayLevel[0], GrayLevel[0.5], RGBColor[0.5, 0.7, 1.]}"
+    );
+    assert_eq!(
+      interpret(
+        "Union[Cases[GraphPlot[{1 -> 2}, PlotStyle -> Gray, \
+         EdgeStyle -> Red], _GrayLevel | _RGBColor, Infinity]]"
+      )
+      .unwrap(),
+      "{GrayLevel[0], RGBColor[0.5, 0.7, 1.], RGBColor[1., 0., 0.]}"
     );
   }
 

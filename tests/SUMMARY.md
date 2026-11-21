@@ -1058,6 +1058,7 @@
     - [`BinomialDistribution`](functions/BinomialDistribution.md)
     - [`Block`](functions/Block.md)
     - [`BlockRandom`](functions/BlockRandom.md)
+    - [`CanonicalName`](functions/CanonicalName.md)
     - [`Catch`](functions/Catch.md)
     - [`CauchyDistribution`](functions/CauchyDistribution.md)
     - [`CensoredDistribution`](functions/CensoredDistribution.md)

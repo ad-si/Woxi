@@ -212,6 +212,54 @@ mod column_visual_mode {
     assert!(svg.contains("width=\"80.0\" height=\"30.0\""), "{svg}");
   }
 
+  /// The `fill` colors of the `<rect>`s in `svg`, top to bottom.
+  fn rect_fills(svg: &str) -> Vec<String> {
+    svg
+      .split("<rect")
+      .skip(1)
+      .filter_map(|r| {
+        let start = r.find(" fill=\"")? + 7;
+        Some(r[start..].split('"').next()?.to_string())
+      })
+      .collect()
+  }
+
+  // As part of a scheduled QA routine, Woxi Studio was tested against a
+  // randomly sampled Wolfram Demonstration notebook whose word list is a
+  // `Column` striped with a cyclic `Background -> {{c1, c2}}`; the row
+  // fills were dropped (only a single color filled the column).
+  #[test]
+  fn column_cyclic_background_stripes_rows() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{\"a\", \"b\", \"c\", \"d\", \"e\"}, Left, \
+       Background -> {{Yellow, Cyan}}, Spacings -> 1]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let (y, c) = ("rgb(255,255,0)", "rgb(0,255,255)");
+    assert_eq!(rect_fills(&svg), [y, c, y, c, y], "{svg}");
+    for item in ["a", "b", "c", "d", "e"] {
+      assert!(svg.contains(&format!(">{item}</text>")), "{svg}");
+    }
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+  }
+
+  // A flat background list colors successive rows once each.
+  #[test]
+  fn column_background_list_colors_successive_rows() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Background -> {Yellow, Cyan}]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(
+      rect_fills(&svg),
+      ["rgb(255,255,0)", "rgb(0,255,255)"],
+      "{svg}"
+    );
+  }
+
   #[test]
   fn column_dividers_all_rules_every_line() {
     clear_state();
@@ -589,13 +637,75 @@ mod column_visual_mode {
     assert!(h2 > h1, "SVG with spacing should be taller: {h2} vs {h1}");
   }
 
-  #[test]
-  fn column_spacing_default_zero() {
+  fn column_svg_height(code: &str) -> f64 {
     clear_state();
-    // Column with explicit 0 spacing should match no-spacing version
-    let no_gap = interpret_with_stdout("Column[{1, 2}]").unwrap();
-    let with_zero = interpret_with_stdout("Column[{1, 2}, Left, 0]").unwrap();
-    assert_eq!(no_gap.graphics.unwrap(), with_zero.graphics.unwrap());
+    let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+    let height_re = regex::Regex::new(r#"height="([\d.]+)""#).unwrap();
+    height_re.captures(&svg).unwrap()[1].parse().unwrap()
+  }
+
+  #[test]
+  fn column_spacing_zero_is_tighter_than_default() {
+    // The default gap between a column's lines is a small fixed offset,
+    // so an explicit spacing of 0 sets the lines closer together.
+    let default = column_svg_height("Column[{1, 2}]");
+    let zero = column_svg_height("Column[{1, 2}, Left, 0]");
+    assert!(zero < default, "{zero} vs {default}");
+  }
+
+  #[test]
+  fn column_spacing_is_measured_between_lines_of_text() {
+    // `s` ems separate the lines themselves (each 0.93 em tall), not
+    // their padded boxes: at 14 pt, lines 3.93 em = 55 pt apart.
+    let pitch = |code: &str| {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let y_re = regex::Regex::new(r#"<text x="[^"]*" y="([\d.]+)""#).unwrap();
+      let ys: Vec<f64> = y_re
+        .captures_iter(&svg)
+        .map(|c| c[1].parse().unwrap())
+        .collect();
+      assert_eq!(ys.len(), 3, "{svg}");
+      (ys[1] - ys[0], ys[2] - ys[1])
+    };
+    clear_state();
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Left, 3]"),
+      (55.0, 55.0)
+    );
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Spacings -> 3]"),
+      (55.0, 55.0)
+    );
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Left, 1]"),
+      (27.0, 27.0)
+    );
+  }
+
+  #[test]
+  fn column_spacing_of_rows_matches_spacing_of_strings() {
+    // A `Row` of text items is a line of text too, even though the column
+    // draws it as a picture first.
+    let strings =
+      column_svg_height("Column[{\"a = 1\", \"b = 2\", \"c = 3\"}, Left, 3]");
+    let rows = column_svg_height(
+      "Column[{Row[{\"a\", \" = \", 1}], Row[{\"b\", \" = \", 2}], \
+       Row[{\"c\", \" = \", 3}]}, Left, 3]",
+    );
+    assert_eq!(rows, strings);
+    assert_eq!(rows, 133.0);
+  }
+
+  #[test]
+  fn column_spacing_between_pictures_is_the_full_gap() {
+    // A picture fills its box, so all of `s` ems stays between two of them.
+    let tight = column_svg_height(
+      "Column[{Graphics[Disk[], ImageSize -> 50], Graphics[Disk[], ImageSize -> 50]}, Left, 0]",
+    );
+    let spaced = column_svg_height(
+      "Column[{Graphics[Disk[], ImageSize -> 50], Graphics[Disk[], ImageSize -> 50]}, Left, 2]",
+    );
+    assert_eq!(spaced - tight, 28.0);
   }
 
   #[test]
@@ -1022,5 +1132,99 @@ mod row_part_font_family {
       svg.contains("<tspan font-family=\"Times, serif\">y</tspan>"),
       "{svg}"
     );
+  }
+}
+
+mod text_display_face {
+  use super::*;
+
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// A `Text[…]` title in a fixed-size `Pane` is set in the proportional
+  /// text face: a line that would overflow at the monospace advance still
+  /// fits on one line, and it keeps that face.
+  #[test]
+  fn sized_pane_keeps_text_title_on_one_proportional_line() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Pane[Column[{Text[Style[\"   Quarterly sales overview, \
+       revenue by region and product\", 16]], Spacer[10], 1}, \
+       Alignment -> Center], {525, 425}, Alignment -> {Center, Top}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      out.contains(
+        "font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
+         font-size=\"16\""
+      ),
+      "{out}"
+    );
+    assert!(
+      out.contains(
+        ">   Quarterly sales overview, revenue by region and product<"
+      ),
+      "{out}"
+    );
+  }
+
+  /// When a `Text[…]` line in a fixed-size `Pane` does need breaking, the
+  /// lines are measured and drawn in the proportional text face.
+  #[test]
+  fn sized_pane_wraps_text_in_the_proportional_face() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Pane[Text[\"aaa bbb ccc ddd eee fff ggg hhh iii jjj\"], \
+       {150, 100}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(out.contains(">aaa bbb ccc ddd eee fff</text>"), "{out}");
+    assert!(out.contains(">ggg hhh iii jjj</text>"), "{out}");
+    assert!(!out.contains("Hyperlegible Mono"), "{out}");
+  }
+
+  /// A `Column` sizes a plain `Text` string glyph by glyph: narrow letters
+  /// take less room than wide ones.
+  #[test]
+  fn column_measures_text_items_by_glyph() {
+    clear_state();
+    let narrow = interpret(
+      "ExportString[Column[{Text[\"iiiiiiiiiiiiiiiiiiii\"]}], \"SVG\"]",
+    )
+    .unwrap();
+    let wide = interpret(
+      "ExportString[Column[{Text[\"MMMMMMMMMMMMMMMMMMMM\"]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg_width(&narrow) * 2.0 < svg_width(&wide),
+      "{narrow}\n{wide}"
+    );
+  }
+
+  /// `Text@Grid[…]` sets its text cells in the proportional text face, so
+  /// its columns are sized by the glyphs' own widths — narrower than the
+  /// monospace columns of a bare `Grid` — also inside a `Row`.
+  #[test]
+  fn text_grid_columns_use_proportional_widths() {
+    let grid = "Grid[{{\"fit statistic  \", \"value\"}, \
+                {\"alpha\", NumberForm[0.00051234, {10, 4}]}}, \
+                Alignment -> Left, Frame -> True]";
+    clear_state();
+    let plain = interpret(&format!("ExportString[{grid}, \"SVG\"]")).unwrap();
+    let text =
+      interpret(&format!("ExportString[Text[{grid}], \"SVG\"]")).unwrap();
+    let in_row = interpret(&format!(
+      "ExportString[Row[{{Spacer[20], Text[{grid}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    let (plain_w, text_w) = (svg_width(&plain), svg_width(&text));
+    assert!(text_w < plain_w * 0.8, "{plain_w} vs {text_w}");
+    assert_eq!(svg_width(&in_row), text_w + 20.0, "{in_row}");
+    // The value column starts right after the widest label (its drawn extent).
+    assert!(text.contains("<text x=\"90.3\""), "{text}");
   }
 }

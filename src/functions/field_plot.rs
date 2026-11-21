@@ -117,6 +117,12 @@ fn parse_field_plot_label(
     }
     let value = evaluate_expr_to_expr(replacement)
       .unwrap_or_else(|_| replacement.as_ref().clone());
+    // `None` and `Null` (e.g. a one-armed `If[False, label]`) leave the
+    // plot untitled. Returning `Some(None)` keeps the first `PlotLabel`
+    // decisive.
+    if matches!(&value, Expr::Identifier(n) if n == "None" || n == "Null") {
+      return Some(None);
+    }
     // A size on the outermost `Style` is the label's font size, which the
     // caller applies at render resolution; leaving it inside the markup
     // would emit it in unscaled units and draw the label ten times too
@@ -128,12 +134,12 @@ fn parse_field_plot_label(
     // A `Column[…]`/`Grid[…]` title stacks its items as separate lines,
     // the same way the generic `Graphics` label pass sets them.
     let lines = crate::functions::graphics::expr_to_svg_markup_lines(&inner);
-    Some(FieldPlotLabel {
+    Some(Some(FieldPlotLabel {
       lines,
       size,
       framed,
-    })
-  })
+    }))
+  })?
 }
 
 /// A field plot's `PlotLabel`: its lines of SVG text markup, top to bottom,
@@ -325,6 +331,7 @@ fn splice_field_plot_prolog(
     y_min: area.y_min,
     y_max: area.y_max,
     scale: f64::from(RESOLUTION_SCALE),
+    image_w: f64::from(area.render_width),
   };
   let overlay = crate::functions::plot_epilog::render_epilog_svg(
     prolog,
@@ -420,9 +427,9 @@ struct DensityContourOptions {
   /// The explicit `Contours -> {…}` levels as written, so a label of an
   /// exact level stays exact.
   contour_level_exprs: Vec<(f64, Expr)>,
-  /// `PlotLegends -> Automatic`: a color bar right of the plot with one
-  /// swatch per shaded band, labeled at the contour levels.
-  bar_legend: bool,
+  /// `PlotLegends -> Automatic` (or `Placed[Automatic, pos]`): where the
+  /// plot's color bar goes — `After` the plot unless placed elsewhere.
+  bar_legend: Option<Expr>,
   /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
   /// range): the values the colors span, instead of the sampled ones.
   value_range: Option<(f64, f64)>,
@@ -500,9 +507,9 @@ fn plot_value_range_is_all(value: &Expr) -> bool {
 }
 
 /// The per-contour styles of a `ContourStyle` value whose entries are all
-/// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
-/// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
-/// directive list such as `{Thick, Blue}`.
+/// lists, `Directive[…]`s or colors (`{{Black, Thick}, {Red, Thick}}`,
+/// `{Directive[Red, Dashed], Blue, Directive[Blue, Dashed]}`, `{Red,
+/// Blue}`); empty for a single directive list such as `{Thick, Blue}`.
 fn per_contour_styles(
   value: &Expr,
 ) -> Vec<Option<crate::functions::plot::SeriesStyle>> {
@@ -512,6 +519,7 @@ fn per_contour_styles(
       if !items.is_empty() && items.iter().all(|i| {
         matches!(i, Expr::List(_))
           || matches!(i, Expr::FunctionCall { name, .. } if name == "Directive")
+          || crate::functions::graphics::parse_color(i).is_some()
       }) =>
     {
       items
@@ -524,6 +532,16 @@ fn per_contour_styles(
 }
 
 impl DensityContourOptions {
+  /// The size of the frame's tick labels, in points: the `LabelStyle` /
+  /// `BaseStyle` font size, else the default 10.
+  fn tick_font(&self) -> f64 {
+    self
+      .label_style
+      .and_then(|s| s.font_size)
+      .filter(|f| f.is_finite() && *f > 0.0)
+      .unwrap_or(FRAME_TICK_FONT)
+  }
+
   /// The value range sampled `values` span: the full range under
   /// `PlotRange -> All`, otherwise the range with outliers fenced off.
   fn sampled_range(&self, values: &[f64]) -> (f64, f64) {
@@ -644,8 +662,11 @@ fn parse_density_contour_options(
   let mut contour_styles = Vec::new();
   let mut boundary_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
+  // `[LabelStyle, BaseStyle]`, combined once every option is read so the
+  // `LabelStyle` wins whichever comes first.
+  let mut label_style_sources: [Option<crate::functions::plot::LabelStyleSpec>;
+    2] = [None, None];
   let mut frame_ticks = crate::functions::plot::FrameEdgeTicks::defaults();
-  let mut label_style = None;
   let mut image_padding = [None; 4];
   let mut frame = true;
   let mut epilog: Vec<Expr> = Vec::new();
@@ -654,7 +675,7 @@ fn parse_density_contour_options(
   let mut color_function_scaling = true;
   let mut contour_labels = false;
   let mut contour_level_exprs: Vec<(f64, Expr)> = Vec::new();
-  let mut bar_legend = false;
+  let mut bar_legend: Option<Expr> = None;
   let mut value_range: Option<(f64, f64)> = None;
   let mut full_value_range = false;
   let mut clipping = Clipping::Blank;
@@ -777,6 +798,14 @@ fn parse_density_contour_options(
             None => crate::functions::plot::parse_frame_label(replacement),
           };
         }
+        "LabelStyle" => {
+          label_style_sources[0] =
+            crate::functions::plot::LabelStyleSpec::parse(replacement);
+        }
+        "BaseStyle" => {
+          label_style_sources[1] =
+            crate::functions::plot::LabelStyleSpec::parse(replacement);
+        }
         // `Frame -> None` draws no frame, like `Frame -> False`.
         "Frame" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -786,10 +815,6 @@ fn parse_density_contour_options(
         }
         "FrameTicks" => {
           frame_ticks = crate::functions::plot::parse_frame_ticks(replacement);
-        }
-        "LabelStyle" => {
-          label_style =
-            crate::functions::plot::LabelStyleSpec::parse(replacement);
         }
         "ImagePadding" => {
           image_padding =
@@ -820,10 +845,7 @@ fn parse_density_contour_options(
           full_value_range = plot_value_range_is_all(replacement);
         }
         "ClippingStyle" => clipping = Clipping::parse(replacement),
-        "PlotLegends" => {
-          bar_legend = matches!(replacement, Expr::Identifier(v)
-            if v == "Automatic");
-        }
+        "PlotLegends" => bar_legend = automatic_legend_position(replacement),
         _ => {}
       }
     }
@@ -851,8 +873,11 @@ fn parse_density_contour_options(
     contour_styles,
     boundary_style,
     frame_labels,
+    label_style: crate::functions::plot::LabelStyleSpec::layered(
+      label_style_sources[1],
+      label_style_sources[0],
+    ),
     frame_ticks,
-    label_style,
     image_padding,
     frame,
     epilog,
@@ -1210,10 +1235,7 @@ impl FieldFrameLayout {
 
 /// The font size of a field plot's tick and frame labels.
 fn field_label_font(opts: &DensityContourOptions) -> f64 {
-  opts
-    .label_style
-    .and_then(|s| s.font_size)
-    .unwrap_or(FRAME_TICK_FONT)
+  opts.tick_font()
 }
 
 /// WL 15's layout of a density or contour plot: the frame lies
@@ -1473,9 +1495,18 @@ fn push_field_frame(
   let font = layout.tick_font * sf;
   let scale = layout.tick_font / FRAME_TICK_FONT;
   let gap = FRAME_TICK_LABEL_GAP * sf;
+  // A `LabelStyle` weight and slant restyle the tick labels too.
+  let weight = match opts.label_style {
+    Some(s) if s.bold && s.italic => {
+      " font-weight=\"bold\" font-style=\"italic\""
+    }
+    Some(s) if s.bold => " font-weight=\"bold\"",
+    Some(s) if s.italic => " font-style=\"italic\"",
+    _ => "",
+  };
   let mut text = |x: f64, y: f64, anchor: &str, label: &str| {
     out.push_str(&format!(
-      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n"
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{label_fill}\">{label}</text>\n"
     ));
   };
   for (v, label) in &bottom.labels {
@@ -1566,6 +1597,7 @@ fn push_epilog_primitives(
     y_min: area.y_min,
     y_max: area.y_max,
     scale: f64::from(RESOLUTION_SCALE),
+    image_w: f64::from(area.render_width),
   };
   svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
     epilog,
@@ -1633,107 +1665,22 @@ fn push_contour_labels(
   }
 }
 
-/// Extra display-pixel width a bar legend adds right of the plot.
-const BAR_LEGEND_STRIP: u32 = 53;
-
-/// `PlotLegends -> Automatic`: widen the picture and draw a vertical color
-/// bar with one swatch per contour band (lowest at the bottom), labeled at
-/// the contour levels — Wolfram's `BarLegend`.
-fn push_bar_legend(
-  svg: &mut String,
-  area: &crate::functions::plot::PlotArea,
-  opts: &DensityContourOptions,
-  levels: &[f64],
-  (v_min, v_max): (f64, f64),
-) {
-  let sf = RESOLUTION_SCALE as f64;
-  // Label every other level once there are too many to fit.
-  let stride = levels.len().div_ceil(8).max(1);
-  let labels: Vec<(f64, String)> = levels
-    .iter()
-    .step_by(stride)
-    .map(|&l| (l, crate::functions::plot::format_tick(l)))
-    .collect();
-  // The strip must reach past the widest label; a tight right margin (an
-  // explicit `ImagePadding`) would otherwise clip it at the canvas edge.
-  let widest = labels
-    .iter()
-    .map(|(_, t)| t.chars().count())
-    .max()
-    .unwrap_or(0) as f64;
-  let right_margin =
-    (area.render_width as f64 - area.plot_x0 - area.plot_w) / sf;
-  let needed = 27.0 + 13.0 + 6.0 + widest * 14.0 * 0.6 + 4.0;
-  let strip =
-    BAR_LEGEND_STRIP.max((needed - right_margin).ceil().max(0.0) as u32);
-  let new_w = opts.svg_width + strip;
-  let new_render_w = new_w * RESOLUTION_SCALE;
-  let render_h = opts.svg_height * RESOLUTION_SCALE;
-  // The background rectangle spans the old canvas; stretch it first.
-  let old_bg = format!("width=\"{}\" height=\"{render_h}\"", area.render_width);
-  let new_bg = format!("width=\"{new_render_w}\" height=\"{render_h}\"");
-  *svg = svg.replacen(&old_bg, &new_bg, 1);
-  rewrite_svg_header(
-    svg,
-    new_w,
-    opts.svg_height,
-    new_render_w,
-    render_h,
-    opts.full_width,
-  );
-
-  let (.., label_fill, _) = plot_theme();
-  let bar_w = 13.0 * sf;
-  let bar_h = area.plot_h * 0.625;
-  let bar_x = area.plot_x0 + area.plot_w + 27.0 * sf;
-  let bar_y = area.plot_y0 + (area.plot_h - bar_h) / 2.0;
-  let span = v_max - v_min;
-  let frac = |v: f64| {
-    if span > 0.0 {
-      ((v - v_min) / span).clamp(0.0, 1.0)
-    } else {
-      0.5
-    }
-  };
-  let mut bounds = Vec::with_capacity(levels.len() + 2);
-  bounds.push(v_min);
-  bounds.extend_from_slice(levels);
-  bounds.push(v_max);
-  for band in 0..bounds.len() - 1 {
-    let (r, g, b) =
-      band_color(band, levels, v_min, v_max, &opts.band_coloring());
-    let y_top = bar_y + bar_h * (1.0 - frac(bounds[band + 1]));
-    let y_bot = bar_y + bar_h * (1.0 - frac(bounds[band]));
-    svg.push_str(&format!(
-      "<rect x=\"{bar_x:.1}\" y=\"{y_top:.1}\" width=\"{bar_w:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
-      y_bot - y_top
-    ));
-  }
-  svg.push_str(&format!(
-    "<rect x=\"{bar_x:.1}\" y=\"{bar_y:.1}\" width=\"{bar_w:.1}\" height=\"{bar_h:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" stroke-width=\"{:.1}\"/>\n",
-    0.8 * sf
-  ));
-  for (level, text) in &labels {
-    svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
-      bar_x + bar_w + 6.0 * sf,
-      bar_y + bar_h * (1.0 - frac(*level)),
-      sf * 14.0,
-      text
-    ));
-  }
-}
-
 /// The bar length of a standalone continuous `BarLegend`, in points.
 pub(crate) const BAR_LEGEND_HEIGHT: f64 = 200.0;
 
 /// A `BarLegend[{colors, {min, max}}]` (or `BarLegend[colors]` over 0..1):
-/// a vertical color bar `bar_height` display pixels tall, labeled to its
-/// right. `colors` is a gradient name or a color function of the rescaled
-/// value. A second argument `{c1, c2, …}` makes it discrete: one band per
-/// interval between the contours, labeled at the contours. `LegendLabel`
-/// is drawn above the bar.
-pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
+/// a color bar `bar_length` points long — vertical and labeled to its
+/// right, or with `horizontal` (a legend `Placed` `Below` or `Above` a
+/// plot) lying flat and labeled underneath. `colors` is a gradient name or
+/// a color function of the rescaled value. A second argument
+/// `{c1, c2, …}` makes it discrete: one equal-sized band per interval
+/// between the contours, labeled at the contours where the bands meet.
+/// `LegendLabel` is drawn above the bar.
+pub(crate) fn bar_legend_svg(
+  args: &[Expr],
+  bar_length: f64,
+  horizontal: bool,
+) -> Option<String> {
   let (colors, (lo, hi)) = match args.first()? {
     Expr::List(spec) if spec.len() == 2 => match &spec[1] {
       Expr::List(range) if range.len() == 2 => (
@@ -1755,11 +1702,15 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
     })
   };
   // `BarLegend[spec, {c1, c2, …}]`: discrete bands between the contours.
+  // A plot's own legend gives each contour as `{c, style}`.
   let contours: Option<Vec<f64>> = match args.get(1) {
     Some(Expr::List(cs)) => {
       let mut v: Vec<f64> = cs
         .iter()
-        .map(try_eval_to_f64)
+        .map(|c| match c {
+          Expr::List(pair) if pair.len() == 2 => try_eval_to_f64(&pair[0]),
+          other => try_eval_to_f64(other),
+        })
         .collect::<Option<Vec<f64>>>()?
         .into_iter()
         .filter(|c| *c > lo && *c < hi)
@@ -1773,22 +1724,47 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   // `ColorFunctionScaling -> True` (as a plot's own legend does).
   let scaling = option("ColorFunctionScaling")
     .is_some_and(|v| matches!(&*v, Expr::Identifier(s) if s == "True"));
-  let name = color_function_scheme_name(colors);
-  let color_at = |t: f64| match &name {
-    Some(name) => apply_named_color_function(name, t),
-    None => scaled_color(t, lo + t * (hi - lo), None, Some((colors, scaling))),
+  // `LegendLayout -> "Row"` lays the bar flat, `"Column"` upright,
+  // whatever side of a plot it is placed on.
+  let horizontal = match option("LegendLayout").as_deref() {
+    Some(Expr::String(layout)) if layout == "Row" => true,
+    Some(Expr::String(layout)) if layout == "Column" => false,
+    _ => horizontal,
   };
-  // Wolfram draws a discrete legend's bands about 20 points each, on a
-  // slightly narrower bar.
-  let (bar_w, default_h) = match &contours {
-    Some(cs) => (12.14, 20.24 * (cs.len() + 1) as f64),
-    None => (13.34, bar_height),
+  let name = color_function_scheme_name(colors);
+  let color_at = |t: f64| match (&name, colors) {
+    (Some(name), _) => apply_named_color_function(name, t),
+    // A list of colors is a gradient through them, as `Blend` makes it
+    // (so a discrete bar with one color per band shows exactly those).
+    (None, Expr::List(cs)) if !cs.is_empty() => {
+      let blend = call("Blend", vec![colors.clone(), Expr::Real(t)]);
+      evaluate_expr_to_expr(&blend)
+        .ok()
+        .and_then(|c| {
+          crate::functions::graphics::parse_color_function_result(&c)
+        })
+        .map_or((128, 128, 128), |c| {
+          let channel = |v: f64| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+          (channel(c.r), channel(c.g), channel(c.b))
+        })
+    }
+    (None, _) => {
+      scaled_color(t, lo + t * (hi - lo), None, Some((colors, scaling)))
+    }
+  };
+  // Wolfram draws a vertical discrete legend's bands about 20 points
+  // each, on a slightly narrower bar; a horizontal one spans the length
+  // it is given.
+  let (bar_w, default_len) = match &contours {
+    Some(cs) if !horizontal => (12.14, 20.24 * (cs.len() + 1) as f64),
+    Some(_) => (12.14, bar_length),
+    None => (13.34, bar_length),
   };
   // `LegendMarkerSize -> h` is the bar's length.
-  let bar_height = option("LegendMarkerSize")
+  let bar_len = option("LegendMarkerSize")
     .and_then(|v| try_eval_to_f64(&v))
     .filter(|h| *h > 0.0)
-    .unwrap_or(default_h);
+    .unwrap_or(default_len);
   let label = option("LegendLabel").filter(
     |v| !matches!(&**v, Expr::Identifier(s) if s == "None" || s == "Automatic"),
   );
@@ -1796,12 +1772,9 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   let (.., label_fill, _) = plot_theme();
   let tick_stroke = "rgb(102,102,102)";
   let font = 12.0;
-  let left = 9.6;
   let label_room = if label.is_some() { font + 6.0 } else { 0.0 };
   let top = 10.6 + label_room;
   let span = hi - lo;
-  let y_of =
-    |v: f64| top + bar_height * (1.0 - ((v - lo) / span).clamp(0.0, 1.0));
 
   // Labeled values, and the unlabeled minor tick values between them.
   let step = crate::functions::plot::nice_step(span, 5);
@@ -1820,26 +1793,77 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
       .collect();
     (majors, minors)
   };
+  // Contour labels are padded to the decimals the most precise contour
+  // needs (`0.2`, …, `1.0`; `0.25`, `0.50`), not the automatic tick step's.
+  let label_step = match &contours {
+    Some(cs) if !cs.is_empty() => {
+      let decimals = cs
+        .iter()
+        .map(|&c| {
+          let text = crate::functions::plot::format_tick(c);
+          text.split_once('.').map_or(0, |(_, frac)| {
+            frac.chars().take_while(char::is_ascii_digit).count()
+          })
+        })
+        .max()
+        .unwrap_or(0)
+        .min(3);
+      10f64.powi(-(decimals as i32))
+    }
+    _ => step,
+  };
   // A legend labels zero as a bare "0" whatever the step's decimals.
   let labels: Vec<String> = majors
     .iter()
     .map(|&v| {
-      if v.abs() < step * 1e-9 {
+      if v.abs() < label_step * 1e-9 {
         "0".to_string()
       } else {
-        crate::functions::plot::format_tick_with_step(v, step)
+        crate::functions::plot::format_tick_with_step(v, label_step)
       }
     })
     .collect();
-  let label_w = labels.iter().map(|l| l.chars().count()).max().unwrap_or(1)
-    as f64
-    * font
-    * 0.6;
+  // Where along the bar (0 at the low end, 1 at the high end) a value
+  // sits; a discrete bar's k-th contour is where its k-th band ends.
+  let n_bands = contours.as_ref().map_or(1, |cs| cs.len() + 1);
+  let major_frac = |k: usize, v: f64| match &contours {
+    Some(_) => (k + 1) as f64 / n_bands as f64,
+    None => ((v - lo) / span).clamp(0.0, 1.0),
+  };
+  let value_frac = |v: f64| ((v - lo) / span).clamp(0.0, 1.0);
+  let label_chars = |l: &String| l.chars().count() as f64 * font * 0.6;
+  let label_w = labels.iter().map(label_chars).fold(font * 0.6, f64::max);
   let title_w = label.as_deref().map_or(0.0, |l| {
     crate::functions::graphics::estimate_display_width(l) * font * 0.6
   });
-  let width = (left + bar_w + 7.0 + label_w + 6.0).max(left + title_w + 4.0);
-  let height = top + bar_height + 12.0 + font / 2.0;
+  // The bar runs from `left` (rightward or upward from the bottom).
+  let left = if horizontal {
+    labels
+      .first()
+      .map_or(9.6, |l| (label_chars(l) / 2.0 + 2.0).max(9.6))
+  } else {
+    9.6
+  };
+  let (width, height) = if horizontal {
+    let last_half = labels.last().map_or(0.0, |l| label_chars(l) / 2.0);
+    (
+      (left + bar_len + last_half + 4.0).max(left + title_w + 4.0),
+      top + bar_w + 7.0 + font + 4.0,
+    )
+  } else {
+    (
+      (left + bar_w + 7.0 + label_w + 6.0).max(left + title_w + 4.0),
+      top + bar_len + 12.0 + font / 2.0,
+    )
+  };
+  // The bar's rectangle from fraction `a` to `b` of its length.
+  let bar_rect = |a: f64, b: f64| -> (f64, f64, f64, f64) {
+    if horizontal {
+      (left + bar_len * a, top, bar_len * (b - a), bar_w)
+    } else {
+      (left, top + bar_len * (1.0 - b), bar_w, bar_len * (b - a))
+    }
+  };
   let mut svg = format!(
     "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   );
@@ -1850,11 +1874,8 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
       crate::functions::graphics::expr_to_svg_markup(l)
     ));
   }
-  if let Some(cs) = &contours {
-    let mut bounds = vec![lo];
-    bounds.extend_from_slice(cs);
-    bounds.push(hi);
-    let n = bounds.len() - 1;
+  if contours.is_some() {
+    let n = n_bands;
     for k in 0..n {
       let t = if n > 1 {
         k as f64 / (n - 1) as f64
@@ -1862,10 +1883,22 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
         0.5
       };
       let (r, g, b) = color_at(t);
-      let y = top + bar_height * (1.0 - (k + 1) as f64 / n as f64);
+      // Overlap the next band a little so no seam shows between them.
+      let overlap = 0.3 / bar_len;
+      let (a, b_end) = if horizontal {
+        (
+          k as f64 / n as f64,
+          ((k + 1) as f64 / n as f64 + overlap).min(1.0),
+        )
+      } else {
+        (
+          (k as f64 / n as f64 - overlap).max(0.0),
+          (k + 1) as f64 / n as f64,
+        )
+      };
+      let (x, y, w, h) = bar_rect(a, b_end);
       svg.push_str(&format!(
-        "<rect x=\"{left:.1}\" y=\"{y:.2}\" width=\"{bar_w:.2}\" height=\"{:.2}\" fill=\"rgb({r},{g},{b})\"/>\n",
-        bar_height / n as f64 + 0.3
+        "<rect x=\"{x:.2}\" y=\"{y:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" fill=\"rgb({r},{g},{b})\"/>\n"
       ));
     }
   } else {
@@ -1882,30 +1915,51 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
     use std::hash::{Hash, Hasher};
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     stops.hash(&mut hash);
+    horizontal.hash(&mut hash);
     let id = format!("woxiLegendGradient{:x}", hash.finish());
-    svg.push_str(&format!("<defs><linearGradient id=\"{id}\" x1=\"0\" y1=\"1\" x2=\"0\" y2=\"0\">{stops}</linearGradient></defs>"));
-    svg.push_str(&format!("<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{bar_w:.2}\" height=\"{bar_height:.1}\" fill=\"url(#{id})\"/>\n"));
+    let direction = if horizontal {
+      "x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\""
+    } else {
+      "x1=\"0\" y1=\"1\" x2=\"0\" y2=\"0\""
+    };
+    let (x, y, w, h) = bar_rect(0.0, 1.0);
+    svg.push_str(&format!("<defs><linearGradient id=\"{id}\" {direction}>{stops}</linearGradient></defs>"));
+    svg.push_str(&format!("<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.2}\" height=\"{h:.1}\" fill=\"url(#{id})\"/>\n"));
   }
+  let (x, y, w, h) = bar_rect(0.0, 1.0);
   svg.push_str(&format!(
-    "<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{bar_w:.2}\" height=\"{bar_height:.1}\" fill=\"none\" stroke=\"black\" stroke-opacity=\"0.3\" stroke-width=\"0.1\"/>\n"
+    "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.2}\" height=\"{h:.1}\" fill=\"none\" stroke=\"black\" stroke-opacity=\"0.3\" stroke-width=\"0.1\"/>\n"
   ));
-  let x0 = left + bar_w;
+  // A tick of `len` points at fraction `f`, out from the labeled side.
+  let tick = |f: f64, len: f64| -> String {
+    let (x1, y1, x2, y2) = if horizontal {
+      let x = left + bar_len * f;
+      (x, top + bar_w, x, top + bar_w + len)
+    } else {
+      let y = top + bar_len * (1.0 - f);
+      (left + bar_w, y, left + bar_w + len, y)
+    };
+    format!(
+      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" stroke=\"{tick_stroke}\" stroke-width=\"0.5\"/>\n"
+    )
+  };
   for v in &minors {
-    let y = y_of(*v);
-    svg.push_str(&format!(
-      "<line x1=\"{x0:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{tick_stroke}\" stroke-width=\"0.5\"/>\n",
-      x0 + 2.5
-    ));
+    svg.push_str(&tick(value_frac(*v), 2.5));
   }
-  for (v, text) in majors.iter().zip(&labels) {
-    let y = y_of(*v);
+  for (k, (v, text)) in majors.iter().zip(&labels).enumerate() {
+    let f = major_frac(k, *v);
+    svg.push_str(&tick(f, 4.0));
+    let (x, y, anchor) = if horizontal {
+      (
+        left + bar_len * f,
+        top + bar_w + 7.0 + font / 2.0,
+        " text-anchor=\"middle\"",
+      )
+    } else {
+      (left + bar_w + 7.0, top + bar_len * (1.0 - f), "")
+    };
     svg.push_str(&format!(
-      "<line x1=\"{x0:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{tick_stroke}\" stroke-width=\"0.5\"/>\n",
-      x0 + 4.0
-    ));
-    svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" font-size=\"{font}\" fill=\"{label_fill}\" dominant-baseline=\"central\">{text}</text>\n",
-      x0 + 7.0
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" font-size=\"{font}\" fill=\"{label_fill}\" dominant-baseline=\"central\"{anchor}>{text}</text>\n"
     ));
   }
   svg.push_str("</svg>\n");
@@ -2370,7 +2424,16 @@ struct BandRegion {
 
 /// The shaded bands of a contour plot: runs of cells that lie wholly in
 /// one band, and the cells a level crosses clipped to each band it meets.
-fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
+///
+/// As with Wolfram's default `ClippingStyle -> None`, the parts of the
+/// grid whose values lie outside the plotted value range
+/// `(v_min, v_max)` (e.g. near a pole fenced off by the automatic
+/// `PlotRange`) are left blank instead of taking the end band's color.
+fn contour_band_regions(
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+) -> Vec<BandRegion> {
   let cols = grid.len();
   if cols < 2 {
     return Vec::new();
@@ -2421,9 +2484,16 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
       }
       let cmin = v00.min(v10).min(v01).min(v11);
       let cmax = v00.max(v10).max(v01).max(v11);
-      let b_lo = band_of(cmin);
-      let b_hi = band_of(cmax);
-      if b_lo == b_hi {
+      // Wholly outside the plotted value range: clipped away.
+      if cmax < v_min || cmin > v_max {
+        flush(&mut regions, &mut run);
+        continue;
+      }
+      let clip_lo = cmin < v_min;
+      let clip_hi = cmax > v_max;
+      let b_lo = band_of(cmin.max(v_min));
+      let b_hi = band_of(cmax.min(v_max));
+      if b_lo == b_hi && !clip_lo && !clip_hi {
         run = match run {
           Some((b, s, e)) if b == b_lo && e == i => Some((b, s, i + 1)),
           other => {
@@ -2443,8 +2513,18 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
         ((i as f64 + 1.0, j as f64 + 1.0), v11),
         ((i as f64, j as f64 + 1.0), v01),
       ];
+      let mut clipped: Vec<PtV> = base.to_vec();
+      if clip_lo {
+        clipped = clip_polygon(&clipped, v_min, true);
+      }
+      if clip_hi {
+        clipped = clip_polygon(&clipped, v_max, false);
+      }
+      if clipped.len() < 3 {
+        continue;
+      }
       for b in b_lo..=b_hi {
-        let mut poly: Vec<PtV> = base.to_vec();
+        let mut poly: Vec<PtV> = clipped.clone();
         if b > 0 {
           poly = clip_polygon(&poly, levels[b - 1], true);
         }
@@ -2535,7 +2615,7 @@ fn render_contour_bands(
   // the contour lines drawn on top).
   let seam = RESOLUTION_SCALE as f64;
 
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let (r, g, b) = band_color(region.band, levels, v_min, v_max, coloring);
     let fill = format!("rgb({r},{g},{b})");
     let device = |(fx, fy): (f64, f64)| {
@@ -2586,7 +2666,7 @@ fn contour_band_primitives(
   let step_y = (y_max - y_min) / (rows - 1) as f64;
   let mut items: Vec<Expr> = Vec::new();
   let mut last_color: Option<(u8, u8, u8)> = None;
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let color = band_color(region.band, levels, v_min, v_max, coloring);
     if last_color != Some(color) {
       let rgb = call(
@@ -3486,6 +3566,22 @@ fn field_plot_structure(
     structure_args
       .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
   }
+  // The `Scaled[0.02]` margin the plot draws between its data and frame
+  // (`FIELD_RANGE_PADDING`) is a real option of the result, so a `Show`
+  // that merges the plot with other graphics keeps it too.
+  if !explicit
+    .iter()
+    .any(|o| name_of(o) == Some("PlotRangePadding"))
+  {
+    let side = || {
+      let s = call("Scaled", vec![Expr::Real(FIELD_RANGE_PADDING)]);
+      Expr::List(vec![s.clone(), s].into())
+    };
+    structure_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(vec![side(), side()].into()),
+    ));
+  }
   structure_args.extend(explicit);
   call("Graphics", structure_args)
 }
@@ -3668,12 +3764,56 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     true,
   );
   let graphic = crate::plot_result_with_structure(svg, structure);
-  if !opts.bar_legend {
-    return Ok(graphic);
-  }
   // `PlotLegends -> Automatic` gives `Legended[plot, Placed[BarLegend[…],
   // After]]`, as in Wolfram: a color bar over the plotted value range,
   // which `Show` keeps when it merges the plot with other graphics.
+  Ok(with_bar_legend(graphic, &opts, (v_min, v_max), None))
+}
+
+/// The `PlotLegends` position of a plot's automatic color bar:
+/// `Automatic` puts it `After` the plot, `Placed[Automatic, pos]` at `pos`.
+fn automatic_legend_position(value: &Expr) -> Option<Expr> {
+  match value {
+    Expr::Identifier(v) if v == "Automatic" => Some(id_expr("After")),
+    Expr::FunctionCall { name, args }
+      if name == "Placed"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(v) if v == "Automatic") =>
+    {
+      Some(args[1].clone())
+    }
+    _ => None,
+  }
+}
+
+/// `x` without the rounding noise of its arithmetic (`0.30000000000000004`
+/// from `3 * 0.1`): rounded to 12 significant digits.
+fn snap_float_noise(x: f64) -> f64 {
+  if x == 0.0 || !x.is_finite() {
+    return x;
+  }
+  let scale = 10f64.powi(11 - x.abs().log10().floor() as i32);
+  let snapped = (x * scale).round() / scale;
+  if (snapped - x).abs() <= x.abs() * 1e-12 {
+    snapped
+  } else {
+    x
+  }
+}
+
+/// Wrap a density or contour plot in the `Legended[plot,
+/// Placed[BarLegend[{colors, {min, max}}, contours], pos]]` its
+/// `PlotLegends` asks for: a color bar over the plotted values, discrete
+/// (one band per region between the contour levels) for a contour plot.
+fn with_bar_legend(
+  graphic: Expr,
+  opts: &DensityContourOptions,
+  (v_min, v_max): (f64, f64),
+  levels: Option<&[f64]>,
+) -> Expr {
+  let Some(position) = &opts.bar_legend else {
+    return graphic;
+  };
   let colors = match (&opts.color_function, &opts.color_function_expr) {
     (_, Some(f)) => f.clone(),
     (Some(name), None) => Expr::String(name.clone()),
@@ -3686,15 +3826,24 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ]
     .into(),
   )];
+  if let Some(levels) = levels {
+    bar_args.push(Expr::List(
+      levels
+        .iter()
+        .map(|&l| Expr::Real(snap_float_noise(l)))
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
   // The plot's color function takes rescaled values, and so does its bar.
   if opts.color_function_expr.is_some() && opts.color_function_scaling {
     bar_args.push(rule_expr(id_expr("ColorFunctionScaling"), bool_expr(true)));
   }
   let bar = call("BarLegend", bar_args);
-  Ok(call(
+  call(
     "Legended",
-    vec![graphic, call("Placed", vec![bar, id_expr("After")])],
-  ))
+    vec![graphic, call("Placed", vec![bar, position.clone()])],
+  )
 }
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -3933,8 +4082,9 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ContourPlot[{f, g}, …]` draws the unshaded level curves of each
   // function (a nested list `{{f, g}, {h}}` counts as its flattened
   // functions); a curve `f == c` is the zero contour of `f - c`. Without
-  // explicit `Contours -> {c, …}` each function gets its own automatic
-  // levels.
+  // a `Contours` option each function draws only its zero contour, as
+  // Wolfram does (the list reads like `{f == 0, g == 0}`); `Contours -> n`
+  // gives each function its own `n` levels.
   let eq_bodies =
     eq_bodies.or_else(|| match body {
       Expr::List(items) if !items.is_empty() => {
@@ -3944,10 +4094,12 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return None;
         }
         let spec = parse_density_contour_options(args, 3).contours;
+        let zero = vec![0.0];
         let fixed = match &spec {
           ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
           ContourSpec::Levels(_) => return None,
-          _ => None,
+          ContourSpec::Automatic => Some(&zero),
+          ContourSpec::Count(_) => None,
         };
         let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
           parse_iterator(&args[1], "ContourPlot"),
@@ -4182,35 +4334,27 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
-  push_contour_annotations(
-    &mut svg,
-    &grid,
-    &levels,
-    &area,
-    &opts,
-    (v_min, v_max),
-  );
+  if opts.contour_labels {
+    push_contour_labels(&mut svg, &grid, &levels, &area);
+  }
 
   svg.push_str("</svg>");
-  Ok(crate::plot_result_with_structure(svg, structure))
+  let graphic = crate::plot_result_with_structure(svg, structure);
+  Ok(contour_legend(graphic, &opts, &levels, (v_min, v_max)))
 }
 
-/// The `ContourLabels` and the `PlotLegends -> Automatic` bar legend of a
-/// contour plot, shared by `ContourPlot` and `ListContourPlot`.
-fn push_contour_annotations(
-  svg: &mut String,
-  grid: &[Vec<f64>],
-  levels: &[f64],
-  area: &crate::functions::plot::PlotArea,
+/// A shaded contour plot's `PlotLegends -> Automatic` color bar: one
+/// band per region between the contour levels.
+fn contour_legend(
+  graphic: Expr,
   opts: &DensityContourOptions,
+  levels: &[f64],
   value_range: (f64, f64),
-) {
-  if opts.contour_labels {
-    push_contour_labels(svg, grid, levels, area);
+) -> Expr {
+  if !opts.contour_shading {
+    return graphic;
   }
-  if opts.bar_legend && opts.contour_shading {
-    push_bar_legend(svg, area, opts, levels, value_range);
-  }
+  with_bar_legend(graphic, opts, value_range, Some(levels))
 }
 
 /// The functions of a (possibly nested) ContourPlot function list.
@@ -4338,14 +4482,9 @@ fn contour_plot_equations(
     svg.truncate(pos);
   }
 
-  let cell_w = area.plot_w / FIELD_GRID as f64;
-  let cell_h = area.plot_h / FIELD_GRID as f64;
-
   // Alongside the standalone SVG, collect every contour chain in *data*
   // coordinates as a line series, so `Show[{ContourPlot[…], Graphics[…]}]`
-  // can merge the curve with other primitives. The chains are traced in a
-  // scaled 0‥1000 space — `chain_segments` keys points on a 1/16 grid,
-  // which would glue distinct points together in small data ranges.
+  // can merge the curve with other primitives.
   let mut series: Vec<crate::syntax::PlotSeriesData> = Vec::new();
   let mut series_per_body: Vec<std::ops::Range<usize>> = Vec::new();
 
@@ -4408,13 +4547,39 @@ fn contour_plot_equations(
       series_per_body.push(first_series..first_series);
       continue;
     }
+    // Where the curve may run, sample finer (Wolfram refines adaptively,
+    // `MaxRecursion`), so branches closer together than a grid cell — the
+    // loops and cusps of an algebraic curve near a singular point — are
+    // still traced apart instead of merging or stopping short.
+    let sampler = crate::functions::plot::PlotBody2::new(body, &xvar, &yvar);
+    let budget = if sampler.is_compiled() {
+      EQUATION_REFINE_BUDGET_COMPILED
+    } else {
+      EQUATION_REFINE_BUDGET_SYMBOLIC
+    };
+    let (grid, refine) = refine_equation_grid(
+      grid,
+      |x, y| {
+        sampler.at(x, y).filter(|v| {
+          v.is_finite()
+            && opts
+              .region_function
+              .as_ref()
+              .is_none_or(|r| region_allows(r, x, y, *v))
+        })
+      },
+      budget,
+      (x_min, x_max),
+      (y_min, y_max),
+    );
     // `Exclusions -> Automatic` (the default): a sign change across a
     // pole (`y == Tan[x]` at `x = Pi/2`) is no part of the curve.
+    let fine = FIELD_GRID * refine;
     let poles = if exclusions_automatic {
       let node_xy = |i: usize, j: usize| {
         (
-          x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min),
-          y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min),
+          x_min + i as f64 / fine as f64 * (x_max - x_min),
+          y_min + j as f64 / fine as f64 * (y_max - y_min),
         )
       };
       PoleEdges::find(&grid, node_xy, |x, y| {
@@ -4423,23 +4588,11 @@ fn contour_plot_equations(
     } else {
       None
     };
-    let screen_segments = marching_squares_segments_excluding(
-      &grid,
-      0.0,
-      area.plot_x0,
-      area.plot_y0,
-      cell_w,
-      cell_h,
-      poles.as_ref(),
-    );
-    push_contour_polylines(
-      &mut svg,
-      &screen_segments,
-      &contour_color,
-      area.render_width as f64 / 1000.0 * contour_weight,
-      &dash,
-    );
-    let scaled_cell = 1000.0 / FIELD_GRID as f64;
+    // The chains are traced in a scaled 0‥1000 space — `chain_segments`
+    // keys points on a 1/16 grid, which would glue distinct points together
+    // in small data ranges — and then mapped to the picture and to data
+    // coordinates alike.
+    let scaled_cell = 1000.0 / fine as f64;
     let segments = marching_squares_segments_excluding(
       &grid,
       0.0,
@@ -4449,7 +4602,26 @@ fn contour_plot_equations(
       scaled_cell,
       poles.as_ref(),
     );
+    let stroke_w = area.render_width as f64 / 1000.0 * contour_weight;
     for chain in chain_segments(&segments) {
+      let chain = simplify_chain(&chain, EQUATION_CHAIN_TOLERANCE);
+      if chain.len() < 2 {
+        continue;
+      }
+      let screen: Vec<String> = chain
+        .iter()
+        .map(|&(u, v)| {
+          format!(
+            "{:.1},{:.1}",
+            area.plot_x0 + u / 1000.0 * area.plot_w,
+            area.plot_y0 + v / 1000.0 * area.plot_h
+          )
+        })
+        .collect();
+      svg.push_str(&format!(
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{contour_color}\" stroke-width=\"{stroke_w:.1}\"{dash} stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+        screen.join(" ")
+      ));
       // The segments come in screen orientation (`v` grows downward from
       // the top edge at `y_max`), so `v` maps back to `y` from `y_max`.
       let points: Vec<(f64, f64)> = chain
@@ -4475,7 +4647,7 @@ fn contour_plot_equations(
           fill_opacity: None,
           marker: None,
           thickness: series_thickness,
-          thickness_fraction: None,
+          thickness_fraction: style.and_then(|s| s.thickness_fraction),
           point_size: None,
           point_size_expr: None,
           dashing: style.and_then(|s| s.dashing.clone()),
@@ -4587,6 +4759,7 @@ fn contour_plot_equations(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: None,
+    legends: Vec::new(),
     settles_all_range: false,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
@@ -4597,6 +4770,133 @@ fn contour_plot_equations(
     *slot = Some(Box::new(structure));
   }
   Ok(result)
+}
+
+/// Subdivision factors of the refined band an equation's curve is traced
+/// on, finest first; the finest one whose sample count fits the budget is
+/// used.
+const EQUATION_REFINEMENTS: [usize; 3] = [8, 4, 2];
+/// How many extra samples refining an equation's curve may take when the
+/// body compiles (cheap to sample) or has to be evaluated symbolically.
+const EQUATION_REFINE_BUDGET_COMPILED: usize = 250_000;
+const EQUATION_REFINE_BUDGET_SYMBOLIC: usize = 5_000;
+/// How far (in the 0‥1000 space spanning the plot) a traced curve may stray
+/// from the samples when its chain is thinned to fewer points: well below a
+/// pixel at any image size.
+const EQUATION_CHAIN_TOLERANCE: f64 = 0.3;
+
+/// Refine the samples of `coarse` (`coarse[i][j]` at the i-th x and j-th y
+/// node of an even lattice over the ranges) where the zero contour may run:
+/// a cell whose corners change sign, or whose corner values are small next
+/// to how much they vary across it (so the curve may pass between them).
+/// Each such cell is resampled `r` times finer, with `r` the finest of
+/// [`EQUATION_REFINEMENTS`] for which that costs at most `budget` samples.
+/// The result is the lattice `r` times finer (NaN outside the refined cells,
+/// which marching squares skips) together with `r`; `r` is 1, and the
+/// coarse lattice comes back unchanged, when nothing needs refining or no
+/// factor fits the budget.
+fn refine_equation_grid(
+  coarse: Vec<Vec<f64>>,
+  sample: impl Fn(f64, f64) -> Option<f64>,
+  budget: usize,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> (Vec<Vec<f64>>, usize) {
+  let cols = coarse.len().saturating_sub(1);
+  let rows = coarse.first().map_or(0, |c| c.len().saturating_sub(1));
+  let mut active = Vec::new();
+  for i in 0..cols {
+    for j in 0..rows {
+      let corners = [
+        coarse[i][j],
+        coarse[i + 1][j],
+        coarse[i][j + 1],
+        coarse[i + 1][j + 1],
+      ];
+      if corners.iter().any(|v| !v.is_finite()) {
+        continue;
+      }
+      let lo = corners.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = corners.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      let nearest = corners.iter().fold(f64::INFINITY, |m, v| m.min(v.abs()));
+      if (lo <= 0.0 && hi >= 0.0) || nearest <= 2.0 * (hi - lo) {
+        active.push((i, j));
+      }
+    }
+  }
+  let Some(r) = EQUATION_REFINEMENTS
+    .iter()
+    .copied()
+    .find(|r| active.len() * r * r <= budget)
+    .filter(|_| !active.is_empty())
+  else {
+    return (coarse, 1);
+  };
+  let (fine_cols, fine_rows) = (cols * r, rows * r);
+  let mut fine = vec![vec![f64::NAN; fine_rows + 1]; fine_cols + 1];
+  let mut sampled = vec![vec![false; fine_rows + 1]; fine_cols + 1];
+  for (i, column) in coarse.iter().enumerate() {
+    for (j, &v) in column.iter().enumerate() {
+      fine[i * r][j * r] = v;
+      sampled[i * r][j * r] = true;
+    }
+  }
+  for (i, j) in active {
+    for fi in i * r..=(i + 1) * r {
+      for fj in j * r..=(j + 1) * r {
+        if std::mem::replace(&mut sampled[fi][fj], true) {
+          continue;
+        }
+        let x = x_min + fi as f64 / fine_cols as f64 * (x_max - x_min);
+        let y = y_min + fj as f64 / fine_rows as f64 * (y_max - y_min);
+        fine[fi][fj] = sample(x, y).unwrap_or(f64::NAN);
+      }
+    }
+  }
+  (fine, r)
+}
+
+/// Thin an open (or closed, first point repeated last) polyline to the
+/// points needed to stay within `tolerance` of it (Douglas–Peucker); the
+/// end points are always kept.
+fn simplify_chain(points: &[(f64, f64)], tolerance: f64) -> Vec<(f64, f64)> {
+  let n = points.len();
+  if n < 3 {
+    return points.to_vec();
+  }
+  let mut keep = vec![false; n];
+  keep[0] = true;
+  keep[n - 1] = true;
+  let mut spans = vec![(0, n - 1)];
+  while let Some((start, end)) = spans.pop() {
+    if end <= start + 1 {
+      continue;
+    }
+    let (a, b) = (points[start], points[end]);
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let length = dx.hypot(dy);
+    let mut farthest = (0.0, start);
+    for (k, p) in points.iter().enumerate().take(end).skip(start + 1) {
+      let distance = if length > 0.0 {
+        ((p.0 - a.0) * dy - (p.1 - a.1) * dx).abs() / length
+      } else {
+        (p.0 - a.0).hypot(p.1 - a.1)
+      };
+      if distance > farthest.0 {
+        farthest = (distance, k);
+      }
+    }
+    if farthest.0 > tolerance {
+      keep[farthest.1] = true;
+      spans.push((start, farthest.1));
+      spans.push((farthest.1, end));
+    }
+  }
+  points
+    .iter()
+    .zip(keep)
+    .filter_map(|(p, k)| k.then_some(*p))
+    .collect()
 }
 
 /// Default `PlotPoints` of a `RegionPlot`: samples per axis of the grid the
@@ -5270,7 +5570,9 @@ fn region_plot_loops(
       }
       let simplified = drop_collinear_points(&chain, span * 1e-9);
       let cell = span / n as f64;
-      let sharpened = sharpen_corners(&simplified, cell);
+      let sharpened = sharpen_corners(&simplified, cell, &|x, y| {
+        evaluate_condition(pred, xvar, yvar, x, y)
+      });
       (sharpened.len() >= 3).then_some(sharpened)
     })
     .collect()
@@ -5279,11 +5581,23 @@ fn region_plot_loops(
 /// Restores the sharp corners marching squares cuts off. Where two straight
 /// boundary pieces meet (`y > x/2 + 1 && y < 3x/2 - 1` at `{2, 2}`), the
 /// corner falls inside a grid cell and the traced loop bevels it with one
-/// to a few short edges. Such a short run between two long straight edges
-/// is replaced by the point where those edges' lines meet, provided it lies
-/// near the run. A curved boundary consists of short edges only, so it is
-/// left alone.
-fn sharpen_corners(ring: &[(f64, f64)], cell: f64) -> Vec<(f64, f64)> {
+/// to a few short edges. Such a short run between two straight edges is
+/// replaced by the point where those edges' lines meet:
+///
+/// - between two long edges, whenever that point lies near the run;
+/// - between edges that are merely longer than the run (the corners of a
+///   small polygon only a few cells across, such as the thin triangles of
+///   an outer Brillouin zone), only when `inside` confirms the point is a
+///   real corner: just past it toward the run the region test differs from
+///   just before it.
+///
+/// A curved boundary bulges between its bevel and the extrapolated corner,
+/// so both probes fall on the same side of it and it is left alone.
+fn sharpen_corners(
+  ring: &[(f64, f64)],
+  cell: f64,
+  inside: &dyn Fn(f64, f64) -> bool,
+) -> Vec<(f64, f64)> {
   let len = ring.len();
   if len < 5 || cell <= 0.0 {
     return ring.to_vec();
@@ -5293,38 +5607,93 @@ fn sharpen_corners(ring: &[(f64, f64)], cell: f64) -> Vec<(f64, f64)> {
   let edge_len = |i: usize| dist(ring[i % len], ring[(i + 1) % len]);
   let long = |i: usize| edge_len(i) > 3.0 * cell;
   let short = |i: usize| edge_len(i) < 2.0 * cell;
-  let mut drop = vec![false; len];
-  let mut replace: Vec<Option<(f64, f64)>> = vec![None; len];
-  for start in 0..len {
-    // `start` is the long edge before a run of 1–3 short edges.
-    if !long(start) {
-      continue;
-    }
-    let mut run = 0;
-    while run < 3 && short(start + 1 + run) {
-      run += 1;
-    }
-    let after = start + 1 + run;
-    if run == 0 || !long(after) {
-      continue;
-    }
+  // The point where the lines of edges `start` and `after` meet, with its
+  // parameters along each (`t` past 1 beyond edge `start`'s end, `s` below
+  // 0 before edge `after`'s start).
+  let meet = |start: usize, after: usize| -> Option<((f64, f64), f64, f64)> {
     let (a, b) = (ring[start % len], ring[(start + 1) % len]);
     let (c, d) = (ring[after % len], ring[(after + 1) % len]);
     let (r, q) = ((b.0 - a.0, b.1 - a.1), (d.0 - c.0, d.1 - c.1));
     let denom = r.0 * q.1 - r.1 * q.0;
     if denom.abs() < 1e-12 * dist(a, b) * dist(c, d) {
-      continue;
+      return None;
     }
     let t = ((c.0 - a.0) * q.1 - (c.1 - a.1) * q.0) / denom;
-    let corner = (a.0 + t * r.0, a.1 + t * r.1);
-    if dist(corner, b) > 2.0 * cell || dist(corner, c) > 2.0 * cell {
-      continue;
-    }
+    let s = ((c.0 - a.0) * r.1 - (c.1 - a.1) * r.0) / denom;
+    Some(((a.0 + t * r.0, a.1 + t * r.1), t, s))
+  };
+  let mut drop = vec![false; len];
+  let mut replace: Vec<Option<(f64, f64)>> = vec![None; len];
+  let mut used = vec![false; len];
+  let mut apply = |start: usize,
+                   after: usize,
+                   corner: (f64, f64),
+                   drop: &mut Vec<bool>,
+                   used: &mut Vec<bool>| {
     replace[(start + 1) % len] = Some(corner);
-    for k in 2..=run {
-      drop[(start + k) % len] = true;
+    for k in start + 2..=after {
+      drop[k % len] = true;
     }
-    drop[after % len] = true;
+    for k in start + 1..=after {
+      used[k % len] = true;
+    }
+  };
+  for start in 0..len {
+    // Between two long edges: a run of 1–3 short edges.
+    if long(start) {
+      let mut run = 0;
+      while run < 3 && short(start + 1 + run) {
+        run += 1;
+      }
+      let after = start + 1 + run;
+      if run > 0
+        && long(after)
+        && let Some((corner, _, _)) = meet(start, after)
+        && dist(corner, ring[(start + 1) % len]) <= 2.0 * cell
+        && dist(corner, ring[after % len]) <= 2.0 * cell
+      {
+        apply(start, after, corner, &mut drop, &mut used);
+        continue;
+      }
+    }
+    // Between shorter edges, confirmed by the region test.
+    for run in 1..=3usize {
+      let after = start + 1 + run;
+      if len < run + 3 || (start + 1..=after).any(|k| used[k % len]) {
+        break;
+      }
+      let run_len: f64 = (start + 1..after).map(edge_len).sum();
+      if edge_len(start) <= run_len || edge_len(after) <= run_len {
+        continue;
+      }
+      let Some((corner, t, s)) = meet(start, after) else {
+        continue;
+      };
+      let (b, c) = (ring[(start + 1) % len], ring[after % len]);
+      if t < 1.0 - 1e-9
+        || s > 1e-9
+        || dist(corner, b) > 4.0 * cell
+        || dist(corner, c) > 4.0 * cell
+      {
+        continue;
+      }
+      let count = (run + 1) as f64;
+      let mid = (start + 1..=after).fold((0.0, 0.0), |acc, k| {
+        let p = ring[k % len];
+        (acc.0 + p.0 / count, acc.1 + p.1 / count)
+      });
+      let h = dist(corner, mid);
+      if h <= cell * 1e-6 {
+        continue;
+      }
+      let step = (0.01 * (mid.0 - corner.0), 0.01 * (mid.1 - corner.1));
+      let toward = inside(corner.0 + step.0, corner.1 + step.1);
+      let away = inside(corner.0 - step.0, corner.1 - step.1);
+      if toward != away {
+        apply(start, after, corner, &mut drop, &mut used);
+        break;
+      }
+    }
   }
   (0..len)
     .filter(|&i| !drop[i] || replace[i].is_some())
@@ -5780,6 +6149,7 @@ fn push_field_primitives_svg(
       y_min: area.y_min,
       y_max: area.y_max,
       scale: f64::from(RESOLUTION_SCALE),
+      image_w: f64::from(area.render_width),
     },
     kind,
   ));
@@ -6784,7 +7154,7 @@ pub fn smooth_histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let bandwidth = match positional.get(1) {
     None => None,
     Some(Expr::Identifier(a)) if a == "Automatic" => None,
-    Some(e) => match crate::functions::math_ast::try_eval_to_f64(e) {
+    Some(e) => match try_eval_to_f64(e) {
       Some(h) if h > 0.0 => Some(h),
       _ => return unchanged(),
     },
@@ -7742,14 +8112,9 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
-  push_contour_annotations(
-    &mut svg,
-    &grid,
-    line_levels,
-    &area,
-    &opts,
-    (v_min, v_max),
-  );
+  if opts.contour_labels {
+    push_contour_labels(&mut svg, &grid, line_levels, &area);
+  }
 
   svg.push_str("</svg>");
   let structure_items = contour_structure_items(
@@ -7769,7 +8134,8 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (y_min, y_max),
     false,
   );
-  Ok(crate::plot_result_with_structure(svg, structure))
+  let graphic = crate::plot_result_with_structure(svg, structure);
+  Ok(contour_legend(graphic, &opts, &levels, (v_min, v_max)))
 }
 
 /// A cell in an ArrayPlot matrix: either a numeric value or an explicit color.
@@ -7782,6 +8148,27 @@ enum ArrayCell {
   Color(GfxColor),
 }
 
+/// Wolfram accepts a gradient's name without its trailing word in a
+/// `ColorFunction` option (`"Thermometer"` for `"ThermometerColors"`,
+/// `"Temperature"` for `"TemperatureMap"`). Expand such a short name to
+/// the single `ColorData["Gradients"]` entry it begins at a word boundary;
+/// any other name (exact, unknown, or ambiguous) is returned unchanged.
+fn expand_gradient_short_name(name: &str) -> String {
+  let gradients = crate::functions::chart::GRADIENT_NAMES;
+  if name.is_empty() || gradients.contains(&name) {
+    return name.to_string();
+  }
+  let mut matches = gradients.iter().filter(|g| {
+    g.strip_prefix(name)
+      .and_then(|rest| rest.chars().next())
+      .is_some_and(|c| c.is_ascii_uppercase())
+  });
+  match (matches.next(), matches.next()) {
+    (Some(full), None) => full.to_string(),
+    _ => name.to_string(),
+  }
+}
+
 /// The gradient scheme name of a `ColorFunction` option value: a bare
 /// string (`"TemperatureMap"`), a `ColorData["TemperatureMap"]` call, or
 /// the structured `ColorDataFunction["TemperatureMap", …]` form the call
@@ -7789,10 +8176,7 @@ enum ArrayCell {
 /// own `ColorFunction` option the same way rather than re-parsing it.
 pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
-    // `"Thermometer"` is the short spelling Wolfram accepts for
-    // `"ThermometerColors"` in a `ColorFunction` option.
-    Expr::String(s) if s == "Thermometer" => Some("ThermometerColors".into()),
-    Expr::String(s) => Some(s.clone()),
+    Expr::String(s) => Some(expand_gradient_short_name(s)),
     // Only the plain gradient: a ranged or reversed `ColorDataFunction`
     // (`ColorData[{"Rainbow", "Reverse"}]`) carries a different blend and
     // is applied per value instead.
@@ -8021,6 +8405,96 @@ pub fn array_plot_argument_error(head: &str, args: &[Expr]) -> Option<Expr> {
 /// `ArrayPlot`'s default `MeshStyle`: `GrayLevel[2/3]`.
 const ARRAY_PLOT_MESH_COLOR: RGBColor = RGBColor(0xAA, 0xAA, 0xAA);
 
+/// One direction of an `ArrayPlot` `Mesh` spec.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum ArrayMeshLines {
+  /// `False` / `None` (the default): no lines.
+  #[default]
+  None,
+  /// `True` / `All`: a line at every cell boundary, outer edges included.
+  All,
+  /// `{k1, k2, …}`: lines at the listed boundaries, where `0` is the
+  /// leading edge and `n` the trailing edge of an `n`-cell direction.
+  At(Vec<f64>),
+}
+
+impl ArrayMeshLines {
+  fn parse(spec: &Expr) -> Self {
+    match spec {
+      Expr::Identifier(v) if v == "True" || v == "All" => Self::All,
+      Expr::List(items) => Self::At(
+        items
+          .iter()
+          .filter_map(|item| match item {
+            // `{k, style}` places a styled line; only the position is used.
+            Expr::List(pair) if !pair.is_empty() => try_eval_to_f64(&pair[0]),
+            other => try_eval_to_f64(other),
+          })
+          .collect(),
+      ),
+      _ => Self::None,
+    }
+  }
+
+  /// The boundaries that carry a line, in increasing order, for a
+  /// direction of `n` cells. Positions outside `0..=n` are dropped.
+  fn boundaries(&self, n: usize) -> Vec<f64> {
+    match self {
+      Self::None => Vec::new(),
+      Self::All => (0..=n).map(|k| k as f64).collect(),
+      Self::At(positions) => {
+        let mut out: Vec<f64> = positions
+          .iter()
+          .copied()
+          .filter(|k| k.is_finite() && (0.0..=n as f64).contains(k))
+          .collect();
+        out.sort_by(f64::total_cmp);
+        out.dedup();
+        out
+      }
+    }
+  }
+}
+
+/// `ArrayPlot`'s `Mesh` option, split into row and column boundaries.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct ArrayMeshSpec {
+  rows: ArrayMeshLines,
+  cols: ArrayMeshLines,
+}
+
+impl ArrayMeshSpec {
+  /// `True`/`All`/`False`/`None` apply to both directions;
+  /// `{rspec, cspec}` gives the row and column boundaries separately.
+  fn parse(spec: &Expr) -> Self {
+    match spec {
+      Expr::List(items)
+        if items.len() == 2
+          && items.iter().all(|i| {
+            matches!(i, Expr::List(_))
+              || matches!(i, Expr::Identifier(v)
+                if matches!(v.as_str(), "True" | "False" | "All" | "None"))
+          }) =>
+      {
+        Self {
+          rows: ArrayMeshLines::parse(&items[0]),
+          cols: ArrayMeshLines::parse(&items[1]),
+        }
+      }
+      other => {
+        let lines = match other {
+          Expr::Identifier(_) => ArrayMeshLines::parse(other),
+          _ => ArrayMeshLines::None,
+        };
+        Self {
+          rows: lines.clone(),
+          cols: lines,
+        }
+      }
+    }
+  }
+}
+
 pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let args = &crate::functions::graphics::splice_option_lists(args)[..];
   let data = evaluate_expr_to_expr(&args[0])?;
@@ -8033,7 +8507,8 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // be matched by `Replace` semantics — exact values like `I`/`-I` (which
   // have no `f64` form) and patterns alike, not just real numbers.
   let mut color_rules: Option<Expr> = None;
-  let mut mesh = false;
+  // `Mesh -> spec`: which row and column boundaries get a grid line.
+  let mut mesh_spec = ArrayMeshSpec::default();
   // `MeshStyle` / `FrameStyle`: colors of the cell grid and of the border.
   let mut mesh_style_color: Option<RGBColor> = None;
   let mut frame_style_color: Option<RGBColor> = None;
@@ -8134,10 +8609,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .unwrap_or_else(|_| replacement.as_ref().clone()),
           );
         }
-        "Mesh" => match replacement.as_ref() {
-          Expr::Identifier(v) if v == "True" || v == "All" => mesh = true,
-          _ => {}
-        },
+        "Mesh" => {
+          let val = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| (**replacement).clone());
+          mesh_spec = ArrayMeshSpec::parse(&val);
+        }
         "MeshStyle" => {
           let val = evaluate_expr_to_expr(replacement)
             .unwrap_or_else(|_| (**replacement).clone());
@@ -8301,6 +8777,11 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let n_rows = matrix.len();
   let n_cols = matrix.iter().map(std::vec::Vec::len).max().unwrap_or(1);
+  // Row boundaries (0 = top edge) and column boundaries (0 = left edge)
+  // that carry a mesh line.
+  let mesh_rows = mesh_spec.rows.boundaries(n_rows);
+  let mesh_cols = mesh_spec.cols.boundaries(n_cols);
+  let mesh = !mesh_rows.is_empty() || !mesh_cols.is_empty();
 
   // Padding in cell units. `Automatic` (the default) leaves a margin of
   // 1/48 (horizontally) and 1/50 (vertically) of the larger dimension
@@ -8527,9 +9008,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if mesh {
       let mesh_color = mesh_style_color.unwrap_or(ARRAY_PLOT_MESH_COLOR);
       let line_w = (s as i32).max(1);
-      // Vertical lines, including the outer edges of the grid
-      for j in 0..=n_cols {
-        let x = (off_x + j as f64 * cell_w).round() as i32;
+      // Vertical lines at the chosen column boundaries
+      for &j in &mesh_cols {
+        let x = (off_x + j * cell_w).round() as i32;
         root
           .draw(&Rectangle::new(
             [
@@ -8545,9 +9026,9 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             InterpreterError::EvaluationError(format!("ArrayPlot: {e}"))
           })?;
       }
-      // Horizontal lines, including the outer edges of the grid
-      for i in 0..=n_rows {
-        let y = (off_y + i as f64 * cell_h).round() as i32;
+      // Horizontal lines at the chosen row boundaries
+      for &i in &mesh_rows {
+        let y = (off_y + i * cell_h).round() as i32;
         root
           .draw(&Rectangle::new(
             [
@@ -8611,6 +9092,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y_min: -pad_b,
       y_max: n_rows as f64 + pad_t,
       scale: RESOLUTION_SCALE as f64,
+      image_w: render_width as f64,
     };
     buf.push_str(&crate::functions::plot_epilog::render_epilog_svg(
       &epilog,
@@ -8769,18 +9251,24 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         channel(mesh_color.2),
       ],
     ));
-    let point = |x: usize, y: usize| {
-      Expr::List(
-        vec![Expr::Integer(x as i128), Expr::Integer(y as i128)].into(),
-      )
+    // Whole boundaries stay exact integers; others become reals.
+    let coord = |v: f64| {
+      if v.fract() == 0.0 {
+        Expr::Integer(v as i128)
+      } else {
+        Expr::Real(v)
+      }
     };
+    let point = |x: f64, y: f64| Expr::List(vec![coord(x), coord(y)].into());
     let segment =
       |a: Expr, b: Expr| call1("Line", Expr::List(vec![a, b].into()));
-    for j in 0..=n_cols {
-      prims.push(segment(point(j, 0), point(j, n_rows)));
+    let (w, h) = (n_cols as f64, n_rows as f64);
+    for &j in &mesh_cols {
+      prims.push(segment(point(j, 0.0), point(j, h)));
     }
-    for i in 0..=n_rows {
-      prims.push(segment(point(0, i), point(n_cols, i)));
+    // Row boundaries count from the top; the raster's y axis runs upward.
+    for &i in mesh_rows.iter().rev() {
+      prims.push(segment(point(0.0, h - i), point(w, h - i)));
     }
   }
   let content = if prims.len() == 1 {
@@ -8848,6 +9336,14 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .into(),
       ),
     ));
+  }
+  // The epilog is drawn over the grid in the same coordinates as the
+  // raster, so redrawing the symbolic form (`Pane`, `Show`) keeps it.
+  if !epilog.is_empty() {
+    structure_args.push(Expr::Rule {
+      pattern: Box::new(Expr::Identifier("Epilog".to_string())),
+      replacement: Box::new(Expr::List(epilog.clone().into())),
+    });
   }
   // The sizing options travel with the symbolic form, so `Show[ArrayPlot[…],
   // …]` redraws the grid at the size and shape it was plotted with.
@@ -10049,7 +10545,10 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 #[cfg(test)]
 mod robust_range_tests {
-  use super::robust_value_range;
+  use super::{
+    EQUATION_REFINEMENTS, refine_equation_grid, robust_value_range,
+    simplify_chain,
+  };
 
   #[test]
   fn robust_value_range_ignores_a_pole() {
@@ -10087,5 +10586,120 @@ mod robust_range_tests {
     let (v_min, v_max) = robust_value_range(&[]);
     assert!(!v_min.is_finite());
     assert!(!v_max.is_finite());
+  }
+
+  #[test]
+  fn simplify_chain_drops_points_within_tolerance_only() {
+    // Collinear interior points go; the corner stays, as do the ends.
+    let chain = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (2.0, 2.0)];
+    assert_eq!(
+      simplify_chain(&chain, 0.1),
+      vec![(0.0, 0.0), (2.0, 0.0), (2.0, 2.0)]
+    );
+    // A closed loop keeps enough points to stay a loop.
+    let square = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)];
+    assert_eq!(simplify_chain(&square, 0.1).len(), 5);
+  }
+
+  #[test]
+  fn refine_equation_grid_resamples_only_cells_near_the_curve() {
+    // f = x - 0.5 on the unit square: only the cells straddling x = 0.5
+    // (and their close neighbors) are refined.
+    let n = 11;
+    let coarse: Vec<Vec<f64>> = (0..n)
+      .map(|i| vec![i as f64 / (n - 1) as f64 - 0.5; n])
+      .collect();
+    let (fine, r) = refine_equation_grid(
+      coarse,
+      |x, _| Some(x - 0.5),
+      1_000_000,
+      (0.0, 1.0),
+      (0.0, 1.0),
+    );
+    assert_eq!(r, EQUATION_REFINEMENTS[0]);
+    assert_eq!(fine.len(), 10 * r + 1);
+    // Next to the curve every fine node is sampled, and correctly.
+    let mid = 5 * r + 1;
+    assert!(
+      (fine[mid][1] - (mid as f64 / (10 * r) as f64 - 0.5)).abs() < 1e-12
+    );
+    // Far from it only the coarse nodes are.
+    assert!(fine[1][1].is_nan());
+    assert_eq!(fine[0][0], -0.5);
+    // Without budget for any refinement the lattice stays coarse.
+    let coarse = vec![vec![-1.0, 1.0], vec![-1.0, 1.0]];
+    let (same, r) = refine_equation_grid(
+      coarse.clone(),
+      |_, _| None,
+      0,
+      (0.0, 1.0),
+      (0.0, 1.0),
+    );
+    assert_eq!((same, r), (coarse, 1));
+  }
+}
+
+#[cfg(test)]
+mod contour_clipping_tests {
+  use super::contour_band_regions;
+
+  /// Area of a polygon given in cell-index space (shoelace formula).
+  fn area(points: &[(f64, f64)]) -> f64 {
+    let n = points.len();
+    (0..n)
+      .map(|k| {
+        let (x0, y0) = points[k];
+        let (x1, y1) = points[(k + 1) % n];
+        x0 * y1 - x1 * y0
+      })
+      .sum::<f64>()
+      .abs()
+      / 2.0
+  }
+
+  /// A 3×3 node grid (2×2 cells) whose middle node spikes far above the
+  /// plotted value range, like a pole fenced off by the automatic
+  /// `PlotRange`.
+  fn spiked_grid(spike: f64) -> Vec<Vec<f64>> {
+    let mut grid = vec![vec![0.0; 3]; 3];
+    grid[1][1] = spike;
+    grid
+  }
+
+  #[test]
+  fn values_above_the_range_are_left_blank() {
+    let grid = spiked_grid(10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    // The four cells cover an area of 4. Along the edges into the spike
+    // the value passes 1 a tenth of the way in, so each cell loses the
+    // corner triangle with legs 0.9 there.
+    let expected = 4.0 - 4.0 * 0.5 * 0.9 * 0.9;
+    assert!((total - expected).abs() < 1e-9, "got area {total}");
+  }
+
+  #[test]
+  fn values_below_the_range_are_left_blank() {
+    let grid = spiked_grid(-10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!(
+      total < 4.0 - 1e-6,
+      "expected a blank hole, got area {total}"
+    );
+  }
+
+  #[test]
+  fn values_within_the_range_cover_the_whole_grid() {
+    let grid = spiked_grid(1.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!((total - 4.0).abs() < 1e-9, "got area {total}");
   }
 }
