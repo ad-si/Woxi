@@ -14838,7 +14838,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  {
+  // In a picture of fixed width and height, an invisible box around an
+  // automatic range with nothing tied to it (no axes, no sphere framing, no
+  // view volume) is left out: the contents themselves are fitted to the
+  // frame. A Demonstration's unboxed cylinder of fixed volume at
+  // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
+  // snapshots, whether it is tall and thin or short and wide. A picture
+  // given only a width keeps the box's margins.
+  let fit_contents = !show_box
+    && explicit_height
+    && !full_width
+    && !aspect_full
+    && !show_axes
+    && plot_range.is_none()
+    && partial_range.is_none()
+    && !spherical_region
+    && view_angle.is_none()
+    && px_min.is_finite();
+  if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
