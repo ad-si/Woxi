@@ -6486,6 +6486,16 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
       );
       graphics_text_content(&Expr::String(filled))
     }
+    // `NumberForm[Quantity[m, u], spec]` formats the magnitude and keeps
+    // the abbreviated unit (`9. Å`).
+    Expr::FunctionCall { name, args }
+      if let Some(q) =
+        crate::evaluator::dispatch::complex_and_special::number_form_of_quantity(
+          name, args,
+        ) =>
+    {
+      graphics_text_content(&q)
+    }
     // A number in scientific notation sets on one line with a raised
     // exponent (`7.08 × 10⁷`), not as the stacked 2D `ToString` layout.
     Expr::FunctionCall { name, args }
@@ -22618,6 +22628,16 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       &args[1..],
       expr_to_svg_markup,
     );
+  }
+  // `NumberForm[Quantity[m, u], spec]` formats the magnitude and keeps the
+  // abbreviated unit (`9. Å`).
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(q) =
+      crate::evaluator::dispatch::complex_and_special::number_form_of_quantity(
+        name, args,
+      )
+  {
+    return expr_to_svg_markup(&q);
   }
   // `Derivative[n][f]` typesets as `f` followed by its prime marks
   // (`θ₁′`), not as the raw `Derivative[1][…]` application.

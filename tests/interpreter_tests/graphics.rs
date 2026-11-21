@@ -69023,6 +69023,38 @@ fn number_form_of_rational_boxes_as_fraction() {
   assert!(!boxes.starts_with("RowBox[{NumberForm"), "{boxes}");
 }
 
+/// A `NumberForm` around a `Quantity` formats the magnitude and keeps the
+/// abbreviated unit, in a plain label, in a `TraditionalForm` one, and as a
+/// 3-D tick label (where it is typeset in `TraditionalForm`).
+#[test]
+fn number_form_of_quantity_label_formats_magnitude() {
+  for label in [
+    r#"NumberForm[Quantity[-125.796, "Angstroms"], 3]"#,
+    r#"TraditionalForm[NumberForm[Quantity[-125.796, "Angstroms"], 3]]"#,
+  ] {
+    let svg = export_svg(&format!("Graphics[Text[{label}]]"));
+    assert_eq!(svg_text_content(&svg), "-126. \u{c5}", "{label}");
+  }
+  let svg = export_svg(
+    r#"Graphics3D[Line[{{0, 0, 0}, {1, 1, 1}}], Axes -> True,
+      Ticks -> {{{0.5, NumberForm[Quantity[83.864, "Angstroms"], 3]}},
+        None, None}]"#,
+  );
+  assert!(svg.contains(">83.9 \u{c5}<"), "{svg}");
+  assert!(!svg.contains("NumberForm"), "{svg}");
+}
+
+/// A quantity's unit in a `TraditionalForm` label is upright text, not an
+/// italic one-letter variable.
+#[test]
+fn traditional_form_quantity_unit_is_upright() {
+  let svg = export_svg(
+    r#"Graphics[Text[TraditionalForm[Quantity[3, "Meters"/"Seconds"]]]]"#,
+  );
+  assert_eq!(svg_text_content(&svg), "3 m/s");
+  assert!(!svg.contains("italic"), "{svg}");
+}
+
 /// The x and y coordinates of every `<polygon>` vertex in an SVG.
 fn polygon_vertices(svg: &str) -> Vec<(f64, f64)> {
   svg

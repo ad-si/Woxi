@@ -12174,17 +12174,16 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && let Expr::Integer(n) = &rargs[0]
-          && let Expr::Integer(d) = &rargs[1]
-          && *d > 0
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && d.sign() == Sign::Plus
           && is_denominator_factor(&args[1])
         {
+          let one = BigInt::from(1);
           let denom_form = denominator_form(&args[1]);
           let denom_str = fmt(&denom_form);
           // When numerator is -1, Wolfram separates the rational
           // from the power term: -1/d*1/base^exp (e.g. -1/2*1/x^2)
-          if *n == -1 {
+          if n == -&one {
             let denom_needs_parens = matches!(&denom_form, Expr::FunctionCall { name, .. } if name == "Plus" || name == "Times")
               || matches!(
                 &denom_form,
@@ -12219,18 +12218,18 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
           };
           if is_output {
             // OutputForm: combine Rational denominator with Power denominator
-            if *n == 1 {
+            if n == one {
               return format!("1/({d}*{denom_str_parened})");
             }
             return format!("{n}/({d}*{denom_str_parened})");
           }
           // For other numerators, combine into n/(d*base^exp)
-          let full_denom = if *d > 1 {
+          let full_denom = if d > one {
             format!("({d}*{denom_str_parened})")
           } else {
             denom_str_parened
           };
-          if *n == 1 {
+          if n == one {
             return format!("1/{full_denom}");
           }
           return format!("{n}/{full_denom}");
@@ -12242,9 +12241,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
-          && let Expr::Integer(d) = &rargs[1]
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(1)
+          && d.sign() == Sign::Plus
         {
           if is_output {
             // OutputForm wraps Plus/Minus inner in parens
@@ -12292,10 +12291,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!(&rargs[0], Expr::Integer(-1))
-          && let Expr::Integer(d) = &rargs[1]
-          && *d > 0
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(-1)
+          && d.sign() == Sign::Plus
           && let Expr::FunctionCall {
             name: pname,
             args: pargs,
@@ -12375,9 +12373,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(1), Expr::Integer(d)) if *d > 0)
-          && let Expr::Integer(d) = &rargs[1]
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(1)
+          && d.sign() == Sign::Plus
           && !args[1..].iter().any(is_denominator_factor)
           && !args[1..]
             .iter()
@@ -12412,10 +12410,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
-          && n.abs() > 1
-          && *d > 1
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n.magnitude() > &num_bigint::BigUint::from(1u32)
+          && d > BigInt::from(1)
           && !args[1..].iter().any(is_denominator_factor)
           && !args[1..]
             .iter()
@@ -12450,9 +12447,9 @@ fn format_expr_impl(expr: &Expr, form: ExprForm) -> String {
             args: rargs,
           } = &args[0]
           && rname == "Rational"
-          && rargs.len() == 2
-          && matches!((&rargs[0], &rargs[1]), (Expr::Integer(-1), Expr::Integer(d)) if *d > 1)
-          && let Expr::Integer(d) = &rargs[1]
+          && let Some((n, d)) = rational_int_parts(rargs)
+          && n == BigInt::from(-1)
+          && d > BigInt::from(1)
           && !args[1..]
             .iter()
             .any(|a| matches!(a, Expr::Identifier(s) if s == "I"))
