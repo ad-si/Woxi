@@ -37706,6 +37706,20 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
           {
             return nested_layout_svg(&inner);
           }
+          // `Style[TraditionalForm[MatrixForm[m]], 12]`: the form wrapper
+          // comes off a picture-like layout (a matrix, a table), which then
+          // takes the style the way a bare `Style[MatrixForm[m], 12]` does,
+          // rather than being written out as one line of text.
+          if !matches!(&unwrapped, Expr::FunctionCall { name: n, .. }
+            if n == "TraditionalForm")
+            && crate::evaluator::lays_out_a_graphic(&unwrapped)
+          {
+            let mut styled = vec![unwrapped.clone()];
+            styled.extend(args[1..].iter().cloned());
+            if let Some(svg) = nested_layout_svg(&call("Style", styled)) {
+              return Some(svg);
+            }
+          }
           // A styled formula, `Style[TraditionalForm[a² + b² = c²], 24]`,
           // is typeset with the style around its boxes.
           if let Expr::FunctionCall {
