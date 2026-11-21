@@ -5094,14 +5094,13 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     }
     _ => None,
   };
-  let expr = match released {
-    // Any other value is displayed as `render_dynamic_if_needed` would.
-    Some(value) => render_visual_display_pipeline(&value),
-    None => {
-      let expr = unwrap_display_pass_through(expr);
-      let expr = render_interactive_pane_if_needed(expr);
-      render_dynamic_if_needed(expr)
-    }
+  // Any other value is displayed as `render_dynamic_if_needed` would.
+  let expr = if let Some(value) = released {
+    render_visual_display_pipeline(&value)
+  } else {
+    let expr = unwrap_display_pass_through(expr);
+    let expr = render_interactive_pane_if_needed(expr);
+    render_dynamic_if_needed(expr)
   };
   let expr = render_event_handler_if_needed(expr);
   let expr = render_grid_if_needed(expr);

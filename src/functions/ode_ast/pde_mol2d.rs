@@ -38,7 +38,7 @@ const TV: &str = "NDSolve$t";
 enum Edge {
   /// `c u_n = alpha + beta u` on the face (outward normal derivative), all
   /// three compiled over `[x, y, t]`. `None` for a zero natural flux.
-  Flux(Option<(NExpr, NExpr, NExpr)>),
+  Flux(Option<Box<(NExpr, NExpr, NExpr)>>),
   /// `u = g` on the face, `g` compiled over `[x, y, t]`.
   Dirichlet(NExpr),
 }
@@ -66,7 +66,8 @@ impl Grid {
     let h = if e < 2 { self.hx } else { self.hy };
     match &self.edges[e] {
       Edge::Flux(None) => u0,
-      Edge::Flux(Some((c, alpha, beta))) => {
+      Edge::Flux(Some(flux)) => {
+        let (c, alpha, beta) = &**flux;
         // c (u_ghost - u0) / h = alpha + beta (u0 + u_ghost) / 2.
         let p = [xf, yf, t];
         let (c, a, b) = (c.eval(&p), alpha.eval(&p), beta.eval(&p));
@@ -538,17 +539,13 @@ fn u_call_side(eq: &Expr, u: &str) -> Option<(Vec<Expr>, Expr)> {
 }
 
 /// Solve `NDSolve[eqs, u, dom1, dom2, dom3]` for a scalar unknown in two
-/// space variables and time (see the module documentation). `Ok(None)`
-/// when the problem does not have the supported shape.
+/// space variables and time (see the module documentation). `None` when
+/// the problem does not have the supported shape.
 pub(super) fn solve_pde_mol_2d(
   eqs: &[Expr],
   rest: &[Expr],
   opts: &MolOptions,
-) -> Result<Option<Expr>, InterpreterError> {
-  Ok(solve(eqs, rest, opts))
-}
-
-fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
+) -> Option<Expr> {
   let Expr::Identifier(u) = &rest[0] else {
     return None;
   };
@@ -806,11 +803,11 @@ fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
         if mentions_any(&c, &[TV]) || mentions_any(beta, &[TV]) {
           jacobian_constant = false;
         }
-        edges.push(Edge::Flux(Some((
+        edges.push(Edge::Flux(Some(Box::new((
           compile_numeric(&c, &space_vars)?,
           compile_numeric(alpha, &space_vars)?,
           compile_numeric(beta, &space_vars)?,
-        ))));
+        )))));
       }
     }
   }
