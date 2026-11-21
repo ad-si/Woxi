@@ -5916,7 +5916,9 @@ mod grid_item_style_tests {
     )
     .unwrap();
     assert!(!svg.contains("monospace"), "{svg}");
-    let inner = svg.split("<svg").nth(2).unwrap();
+    // The block is either laid out inline in the pane or embedded as its
+    // own picture; either way it is no wider than the pane.
+    let inner = svg.split("<svg").nth(2).unwrap_or(&svg);
     let width: f64 = inner
       .split("width=\"")
       .nth(1)
