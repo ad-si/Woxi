@@ -7576,6 +7576,7 @@ mod interpreter_tests {
       // an SVG box (`-Graphics-`) in visual mode rather than staying symbolic.
       ("Mouseover[a, b]", "Mouseover[a, b]"),
       ("Magnify[x, 2]", "Magnify[x, 2]"),
+      ("Magnification[1]", "Magnification[1]"),
       ("Ket[0]", "Ket[0]"),
       ("Bra[0]", "Bra[0]"),
     ];
