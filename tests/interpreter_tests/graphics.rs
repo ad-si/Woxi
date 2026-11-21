@@ -7566,8 +7566,9 @@ mod plot3d {
     /// own extent instead of the range asked for.
     #[test]
     fn plot_range_bounds_all_three_axes() {
-      let unbounded =
-        export_svg("Plot3D[1/(x y), {x, -3, 3}, {y, -3, 3}, Mesh -> None]");
+      let unbounded = export_svg(
+        "Plot3D[1/(x y), {x, -3, 3}, {y, -3, 3}, Mesh -> None, PlotRange -> All]",
+      );
       assert!(
         largest_tick(&unbounded) > 10.0,
         "the unbounded surface reaches far past the domain: {unbounded}"

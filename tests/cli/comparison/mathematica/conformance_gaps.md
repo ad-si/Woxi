@@ -5582,6 +5582,18 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
 
 The adaptive samplers are not decoded, so these cases are skip-listed.
 
+### `Plot3D` draws clipped parts and jumps without WL's caps and refinement
+
+- Heights outside the vertical `PlotRange` (explicit, or the automatic range
+  that clips outliers) are flattened onto the box face in the surface's own
+  color; WL cuts the surface at the face and fills the cut with the
+  `ClippingStyle -> Automatic` light gray cap.
+- Without adaptive refinement, a jump inside the last grid cell (e.g. a
+  `Sum` whose real upper limit crosses an integer at the domain's edge) is
+  drawn as one sloped strip across the cell; WL refines it into a near
+  vertical wall that the surface in front hides.
+
+
 ### `Plot` samples just inside the interval's ends
 
 wolframscript's first and last samples sit about `1*^-6` of the range inside
