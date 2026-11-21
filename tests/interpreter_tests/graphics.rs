@@ -55160,6 +55160,60 @@ mod color_data_indexed {
     assert!(svg.contains("255,255,0"), "appearance fill: {svg}");
   }
 
+  // Regression: a non-graphic `Locator` appearance (a string glyph, a
+  // `Style`d label) fell back to the default crosshair. Wolfram shows the
+  // expression itself, centered on the point.
+  #[test]
+  fn locator_draws_a_textual_appearance() {
+    clear_state();
+    const CROSSHAIR: &str = "rgba(180,180,180,0.35)";
+    let svg = export_svg(
+      "Graphics[{Locator[{1, 2}, \"\\[CirclePlus]\"]}, PlotRange -> 3]",
+    );
+    assert!(svg.contains(">\u{2295}</text>"), "glyph marker: {svg}");
+    assert!(!svg.contains(CROSSHAIR), "no default crosshair: {svg}");
+
+    let svg = export_svg(
+      "Graphics[{Locator[{{0, 0}, {1, 1}}, Style[\"Q\", 20, Red]]}, \
+       PlotRange -> 3]",
+    );
+    assert_eq!(svg.matches(">Q</text>").count(), 2, "one per point: {svg}");
+    assert!(svg.contains("font-size=\"20\""), "Style size kept: {svg}");
+    assert!(svg.contains("rgb(255,0,0)"), "Style color kept: {svg}");
+    assert!(!svg.contains(CROSSHAIR), "no default crosshair: {svg}");
+
+    // The same holds for a Locator in a plot's Epilog.
+    let svg =
+      export_svg("Plot[x, {x, 0, 1}, Epilog -> {Locator[{0.5, 0.5}, 7]}]");
+    assert!(svg.contains(">7</text>"), "number marker: {svg}");
+    assert!(!svg.contains(CROSSHAIR), "no default crosshair: {svg}");
+  }
+
+  // A Manipulate `Locator` control's string `Appearance` is the glyph
+  // drawn on its graphic; slider style names such as "Labeled" are not.
+  #[test]
+  fn manipulate_locator_control_keeps_a_string_appearance() {
+    clear_state();
+    let parse = |code: &str| {
+      let expr = woxi::syntax::string_to_expr(code).unwrap();
+      woxi::functions::graphics::manipulate_locator_markers(&expr)
+    };
+    assert_eq!(
+      parse(
+        "Manipulate[Graphics[Point[p], PlotRange -> 1], \
+         {{p, {0, 0}}, {-1, -1}, {1, 1}, Locator, Appearance -> \"\\[CirclePlus]\"}]"
+      ),
+      vec![("p".to_string(), Some("\"\u{2295}\"".to_string()))]
+    );
+    assert_eq!(
+      parse(
+        "Manipulate[Graphics[Point[p], PlotRange -> 1], \
+         {{p, {0, 0}}, Locator, Appearance -> \"Labeled\"}]"
+      ),
+      vec![("p".to_string(), None)]
+    );
+  }
+
   // `ContourPlot[lhs == rhs, …]` draws the implicit curve `lhs - rhs = 0`,
   // and `plot[[1]]` yields the contour primitives (with the ContourStyle
   // directives) for re-embedding in an outer Graphics — including after
