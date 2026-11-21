@@ -14,6 +14,26 @@ fn symbolic_coefficients_in_sums_keep_monomials_first() {
   }
 }
 
+/// A rational coefficient whose numerator or denominator is a big integer
+/// formats like a machine-size one (`x/d`, `n/(d*x)`), not as
+/// `1/d*x` or `(n*x^(-1))/d`.
+#[test]
+fn big_rational_coefficients_format_like_small_ones() {
+  let d = "40000000000000000000000000000000000000000000000";
+  for (code, expected) in [
+    (format!("x/{d}"), format!("x/{d}")),
+    (format!("Pi/{d}"), format!("Pi/{d}")),
+    (format!("3/({d} x)"), format!("3/({d}*x)")),
+    (format!("1/({d} x)"), format!("1/({d}*x)")),
+    (format!("-(a + b)/{d}"), format!("(-a - b)/{d}")),
+    (format!("x y/{d}"), format!("(x*y)/{d}")),
+    (format!("3 x y/{d}"), format!("(3*x*y)/{d}")),
+    (format!("-x y/{d}"), format!("-1/{d}*(x*y)")),
+  ] {
+    assert_eq!(interpret(&code).unwrap(), expected, "{code}");
+  }
+}
+
 #[test]
 fn n_accepts_positive_precisions_below_one() {
   for (code, expected) in [

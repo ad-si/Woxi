@@ -4885,6 +4885,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       call("SqrtBox", vec![expr_to_box_form(&args[0])])
     }
+    // NumberForm[Quantity[m, u], spec] → the quantity with its magnitude
+    // formatted.
+    Expr::FunctionCall { name, args }
+      if let Some(q) = number_form_of_quantity(name, args) =>
+    {
+      expr_to_box_form(&q)
+    }
     // Quantity[magnitude, unit] → RowBox[{box(magnitude), " ", unit-boxes}]
     Expr::FunctionCall { name, args }
       if name == "Quantity" && args.len() == 2 =>
@@ -7859,6 +7866,32 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf(&args[1]),
       ])
     }
+    // A quantity reads as its magnitude and abbreviated unit (`9. Å`), as
+    // in `StandardForm`.
+    "Quantity" if args.len() == 2 => {
+      // The unit is text, not a symbol: quote its strings so a one-letter
+      // unit (`m`) stays upright instead of becoming an italic variable.
+      fn quote_strings(b: &Expr) -> Expr {
+        match b {
+          Expr::String(s) if !s.starts_with('"') => {
+            Expr::String(format!("\"{s}\""))
+          }
+          Expr::List(items) => {
+            Expr::List(items.iter().map(quote_strings).collect())
+          }
+          Expr::FunctionCall { name, args } => {
+            call(name, args.iter().map(quote_strings).collect())
+          }
+          other => other.clone(),
+        }
+      }
+      let mut parts = vec![tf(&args[0]), str_expr(" ")];
+      parts.push(quote_strings(&unit_to_box_form(&args[1], &args[0])));
+      row_box(parts)
+    }
+    // A number-display form around a quantity formats its magnitude and
+    // keeps the unit: `NumberForm[Quantity[8.998, "Angstroms"], 3]` is `9. Å`.
+    _ if let Some(q) = number_form_of_quantity(name, args) => tf(&q),
     // A number-display form around a matrix typesets like the matrix does
     // in `TraditionalForm` — a parenthesized grid — with each entry shown
     // as the form formats it (`TraditionalForm[NumberForm[m, {3, 2}]]`).
@@ -8766,6 +8799,32 @@ pub fn expr_to_box_form_traditional_text(expr: &Expr) -> Expr {
   }
   let _reset = Reset(TF_BOX_TEXT.replace(true));
   tf(expr)
+}
+
+/// A number-display form (`NumberForm`, `ScientificForm`, …) wrapped around
+/// a `Quantity` applies to the magnitude only: `NumberForm[Quantity[m, u], s]`
+/// displays as `Quantity[NumberForm[m, s], u]`.
+pub fn number_form_of_quantity(name: &str, args: &[Expr]) -> Option<Expr> {
+  if !matches!(
+    name,
+    "NumberForm"
+      | "ScientificForm"
+      | "EngineeringForm"
+      | "PaddedForm"
+      | "AccountingForm"
+  ) {
+    return None;
+  }
+  let (first, rest) = args.split_first()?;
+  let Expr::FunctionCall { name: q, args: qa } = first else {
+    return None;
+  };
+  if q != "Quantity" || qa.len() != 2 {
+    return None;
+  }
+  let mut form_args = vec![qa[0].clone()];
+  form_args.extend(rest.iter().cloned());
+  Some(call("Quantity", vec![call(name, form_args), qa[1].clone()]))
 }
 
 /// Convert a Quantity unit expression to box form with proper abbreviations.
