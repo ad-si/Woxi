@@ -721,9 +721,11 @@ mod graphics {
              {{r, 0, 1}}, {{t, 0, 2*Pi}}{style}], \"SVG\"]"
         ))
         .unwrap();
+        // Touching opaque quads of one color are filled as one `<path>`.
         let quad = svg
           .split("<polygon ")
           .nth(1)
+          .or_else(|| svg.split("<path d=\"M").nth(1))
           .expect("a filled quad")
           .split("/>")
           .next()
@@ -70126,4 +70128,104 @@ mod overlay_and_opacity_labels {
     assert!(label.contains("wide<tspan dx=\"-"), "{label}");
     assert!(label.contains(">n</tspan><tspan dx=\""), "{label}");
   }
+}
+
+#[test]
+fn touching_opaque_polygons_of_one_color_fill_as_one_path() {
+  // Regression: the unit squares of a polyomino, drawn as separate opaque
+  // `Polygon`s, showed light anti-aliasing seams along their shared edges.
+  // Polygons of one color that touch along an edge are filled as a single
+  // path, each ring turned the same way so the union is painted.
+  let svg = export_svg(
+    "Graphics[{Red, Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], \
+     Polygon[{{1, 0}, {1, 1}, {2, 1}, {2, 0}}], \
+     Rotate[Polygon[{{1, 1}, {2, 1}, {2, 2}, {1, 2}}], 0]}]",
+  );
+  assert_eq!(svg.matches("<polygon").count(), 0, "{svg}");
+  assert_eq!(svg.matches("<path d=\"M").count(), 1, "{svg}");
+  let path = svg.split("<path d=\"").nth(1).unwrap();
+  let d = &path[..path.find('"').unwrap()];
+  assert_eq!(d.matches('Z').count(), 3, "{d}");
+  // Every ring has the same (screen) orientation.
+  let rings: Vec<Vec<(f64, f64)>> = d
+    .split('Z')
+    .filter(|r| !r.trim().is_empty())
+    .map(|r| {
+      r.split_whitespace()
+        .map(|p| {
+          let (x, y) = p[1..].split_once(',').unwrap();
+          (x.parse().unwrap(), y.parse().unwrap())
+        })
+        .collect()
+    })
+    .collect();
+  let signs: Vec<bool> = rings
+    .iter()
+    .map(|r| {
+      let n = r.len();
+      (0..n)
+        .map(|i| r[i].0 * r[(i + 1) % n].1 - r[(i + 1) % n].0 * r[i].1)
+        .sum::<f64>()
+        > 0.0
+    })
+    .collect();
+  assert!(signs.iter().all(|&s| s == signs[0]), "{d}");
+}
+
+#[test]
+fn polygons_that_differ_or_do_not_touch_stay_separate() {
+  for code in [
+    // Different colors.
+    "Graphics[{Red, Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], Blue, \
+     Polygon[{{1, 0}, {1, 1}, {2, 1}, {2, 0}}]}]",
+    // Only a corner in common.
+    "Graphics[{Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], \
+     Polygon[{{1, 1}, {2, 1}, {2, 2}, {1, 2}}]}]",
+    // Translucent: overlaps must keep stacking.
+    "Graphics[{Opacity[0.5], Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], \
+     Polygon[{{1, 0}, {1, 1}, {2, 1}, {2, 0}}]}]",
+    // Outlined: each polygon keeps its own edge.
+    "Graphics[{EdgeForm[Black], Polygon[{{0, 0}, {1, 0}, {1, 1}, {0, 1}}], \
+     Polygon[{{1, 0}, {1, 1}, {2, 1}, {2, 0}}]}]",
+  ] {
+    let svg = export_svg(code);
+    assert_eq!(svg.matches("<polygon").count(), 2, "{code}\n{svg}");
+  }
+}
+
+#[test]
+fn default_locator_marker_is_symmetric_about_its_point() {
+  // Regression: the default Locator crosshair ran from 1 to the full
+  // marker size, so it sat off-center from the point it marks.
+  let svg = export_svg("Graphics[{Locator[{0, 0}]}, PlotRange -> 1]");
+  let start = svg.find("<svg x=\"").expect("marker embedded");
+  let marker = &svg[start..];
+  let marker = &marker[..marker.find("</svg>").unwrap()];
+  let attr = |name: &str| -> f64 {
+    let i = marker.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    marker[i..i + marker[i..].find('"').unwrap()]
+      .parse()
+      .unwrap()
+  };
+  let (x, y, w, h) = (attr("x"), attr("y"), attr("width"), attr("height"));
+  let root_attr = |name: &str| -> f64 {
+    let i = svg.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+    svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
+  };
+  let (sw, sh) = (root_attr("width"), root_attr("height"));
+  assert!((x + w / 2.0 - sw / 2.0).abs() < 0.6, "{marker}");
+  assert!((y + h / 2.0 - sh / 2.0).abs() < 0.6, "{marker}");
+  let d_start = marker.find("<path d=\"").unwrap() + 9;
+  let d = &marker[d_start..d_start + marker[d_start..].find('"').unwrap()];
+  let c = w / 2.0;
+  let mut lo = f64::MAX;
+  let mut hi = f64::MIN;
+  for tok in d.split(|ch: char| ch.is_ascii_alphabetic() || ch == ' ') {
+    for v in tok.split(',').filter(|v| !v.is_empty()) {
+      let v: f64 = v.parse().unwrap();
+      lo = lo.min(v);
+      hi = hi.max(v);
+    }
+  }
+  assert!((c - lo - (hi - c)).abs() < 1e-9, "{d}");
 }

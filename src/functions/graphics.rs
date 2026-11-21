@@ -10779,17 +10779,25 @@ pub(crate) fn locator_markers(
   markers
 }
 
-/// Wolfram's default Locator appearance: a small circled crosshair.
+/// Wolfram's default Locator appearance: a dark ring with a translucent
+/// gray face, crossed by hairline ticks that reach past the ring on all
+/// four sides and stop short of the center, leaving the point itself
+/// visible. The glyph is symmetric about its center, which marks the point.
 fn default_locator_marker_svg() -> (String, f64) {
   let size = 16.0;
   let c = size / 2.0;
+  let gap = 1.5;
+  let ticks = format!(
+    "M{c},0 V{a} M{c},{b} V{size} M0,{c} H{a} M{b},{c} H{size}",
+    a = c - gap,
+    b = c + gap,
+  );
   let svg = format!(
     "<svg width=\"{size}\" height=\"{size}\" viewBox=\"0 0 {size} {size}\" xmlns=\"http://www.w3.org/2000/svg\">\
-     <circle cx=\"{c}\" cy=\"{c}\" r=\"{r:.1}\" fill=\"rgba(180,180,180,0.35)\" stroke=\"#606060\" stroke-width=\"1\"/>\
-     <line x1=\"{c}\" y1=\"1\" x2=\"{c}\" y2=\"{size}\" stroke=\"#606060\" stroke-width=\"1\"/>\
-     <line x1=\"1\" y1=\"{c}\" x2=\"{size}\" y2=\"{c}\" stroke=\"#606060\" stroke-width=\"1\"/>\
+     <circle cx=\"{c}\" cy=\"{c}\" r=\"{r:.1}\" fill=\"rgba(180,180,180,0.35)\" stroke=\"#000000\" stroke-width=\"1.2\"/>\
+     <path d=\"{ticks}\" fill=\"none\" stroke=\"#000000\" stroke-width=\"1\"/>\
      </svg>",
-    r = c - 1.0,
+    r = c - 3.0,
   );
   (svg, size)
 }
@@ -15179,10 +15187,135 @@ pub(crate) fn primitives_svg_fragment(
     );
   });
   let mut svg = String::new();
-  for (index, primitive) in primitives.iter().enumerate() {
-    render_primitive(primitive, index, &bb, w, h, &mut svg);
+  let mut index = 0;
+  while index < primitives.len() {
+    let end = emit_polygon_seam_run(&primitives, index, &bb, w, h, &mut svg);
+    if end > index {
+      index = end;
+      continue;
+    }
+    render_primitive(&primitives[index], index, &bb, w, h, &mut svg);
+    index += 1;
   }
   svg
+}
+
+/// A polygon that paints nothing but one opaque flat fill: no outline,
+/// holes, vertex colors, texture, halo or shadow, and an outline that does
+/// not cross itself. Returns its fill color.
+fn plain_opaque_polygon<'a>(
+  prim: &'a Primitive,
+  bb: &BBox,
+  svg_w: f64,
+) -> Option<(Color, &'a [(f64, f64)])> {
+  let Primitive::PolygonPrim {
+    points,
+    holes,
+    vertex_colors,
+    style,
+  } = prim
+  else {
+    return None;
+  };
+  let color = style.effective_face_color();
+  (points.len() >= 3
+    && holes.is_empty()
+    && vertex_colors.is_none()
+    && style.texture.is_none()
+    && style.halo.is_none()
+    && style.drop_shadow.is_none()
+    && edge_stroke(style.edge_form.as_ref(), bb, svg_w).is_none()
+    && color.a >= 1.0
+    && !polygon_self_intersects(points))
+  .then_some((color, points.as_slice()))
+}
+
+/// Opaque polygons of one color that are drawn one after another and
+/// touch along an edge (the unit squares a polyomino is built from) are
+/// filled as a single SVG `<path>`. Painted as separate elements, the
+/// anti-aliased shared edge lets the background show through as a light
+/// seam, which Wolfram's renderer does not show. Each ring is turned the
+/// same way so the nonzero fill rule paints their union.
+///
+/// Returns the index after the run when it emitted one (two or more
+/// polygons), or `start` when there was nothing to join.
+fn emit_polygon_seam_run(
+  primitives: &[Primitive],
+  start: usize,
+  bb: &BBox,
+  svg_w: f64,
+  svg_h: f64,
+  out: &mut String,
+) -> usize {
+  let Some((color, _)) = primitives
+    .get(start)
+    .and_then(|p| plain_opaque_polygon(p, bb, svg_w))
+  else {
+    return start;
+  };
+  let screen = |ring: &[(f64, f64)]| -> Vec<String> {
+    ring
+      .iter()
+      .map(|&(x, y)| {
+        format!("{:.2},{:.2}", coord_x(x, bb, svg_w), coord_y(y, bb, svg_h))
+      })
+      .collect()
+  };
+  let shares_edge = |a: &[String], b: &[String]| {
+    let n = b.len();
+    (0..n).any(|i| {
+      let (p, q) = (&b[i], &b[(i + 1) % n]);
+      a.iter().enumerate().any(|(k, v)| {
+        v == p
+          && (a[(k + 1) % a.len()] == *q
+            || a[(k + a.len() - 1) % a.len()] == *q)
+      })
+    })
+  };
+  let mut rings: Vec<(Vec<String>, f64)> = Vec::new();
+  let mut end = start;
+  while let Some((c, pts)) = primitives
+    .get(end)
+    .and_then(|p| plain_opaque_polygon(p, bb, svg_w))
+  {
+    if c != color {
+      break;
+    }
+    let ring = screen(pts);
+    if end > start && !rings.iter().any(|(r, _)| shares_edge(r, &ring)) {
+      break;
+    }
+    let n = pts.len();
+    let area: f64 = (0..n)
+      .map(|i| {
+        let (a, b) = (pts[i], pts[(i + 1) % n]);
+        a.0 * b.1 - b.0 * a.1
+      })
+      .sum();
+    rings.push((ring, area));
+    end += 1;
+  }
+  if rings.len() < 2 {
+    return start;
+  }
+  let mut d = String::new();
+  for (mut ring, area) in rings {
+    if area < 0.0 {
+      ring.reverse();
+    }
+    for (i, p) in ring.iter().enumerate() {
+      d.push_str(if i == 0 { "M" } else { "L" });
+      d.push_str(p);
+      d.push(' ');
+    }
+    d.push_str("Z ");
+  }
+  out.push_str(&format!(
+    "<path d=\"{}\" fill=\"{}\"/>\n",
+    d.trim_end(),
+    color.to_svg_rgb()
+  ));
+  end
 }
 
 fn render_primitive(
@@ -18692,7 +18825,21 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     rescale_relative_point_sizes(&mut primitives, graphic_share);
   }
   let saved_relative_width = RELATIVE_WIDTH.with(|c| c.replace(drawing_width));
-  for (prim_index, prim) in primitives.iter().enumerate() {
+  let mut prim_index = 0;
+  while prim_index < primitives.len() {
+    let end = emit_polygon_seam_run(
+      &primitives,
+      prim_index,
+      &bb,
+      svg_w,
+      svg_h,
+      &mut svg,
+    );
+    if end > prim_index {
+      prim_index = end;
+      continue;
+    }
+    let prim = &primitives[prim_index];
     let shadow = prim.style().and_then(|s| s.drop_shadow.as_ref());
     if let Some(ds) = shadow {
       svg.push_str(&format!("<g filter=\"url(#{})\">\n", ds.filter_id()));
@@ -18701,6 +18848,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     if shadow.is_some() {
       svg.push_str("</g>\n");
     }
+    prim_index += 1;
   }
   RELATIVE_WIDTH.with(|c| c.set(saved_relative_width));
   svg.push_str("</g>\n");
