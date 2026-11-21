@@ -1754,6 +1754,83 @@ mod graphics {
       }
     }
 
+    /// `Inset[obj, pos, opos, size, {dx, dy}]` names only the direction of
+    /// the object's x axis. A label inset that way runs along it, the same
+    /// as with the full `{{dx, dy}, {ex, ey}}` pair.
+    #[test]
+    fn an_inset_label_follows_a_single_direction_vector() {
+      for dirs in ["{0, 1}", "{{0, 1}, {-1, 0}}"] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Circle[], Inset[\"zzup\", {{0, 0}}, Automatic, \
+           Automatic, {dirs}]}}]"
+        ));
+        let end = svg.find(">zzup</text>").expect(&svg);
+        let start = svg[..end].rfind("<text").expect(&svg);
+        assert!(
+          svg[start..end].contains("rotate(-90.000"),
+          "{dirs}: label must run upward: {svg}"
+        );
+      }
+    }
+
+    /// Font options given as directives in a primitive list
+    /// (`{FontSize -> 20, FontWeight -> Bold, Text[…]}`) style the labels
+    /// after them, framed or inset ones too, but not those outside their
+    /// list.
+    #[test]
+    fn font_option_directives_style_the_following_labels() {
+      let svg = export_svg(
+        "Graphics[{Circle[], {FontSize -> 20, FontWeight -> Bold, \
+         FontColor -> Blue, Text[\"zzbig\", {0, 0}], \
+         Inset[Framed[\"zzframed\"], {0, 0.5}]}, Text[\"zzplain\", {0, -0.5}]}]",
+      );
+      let tag = |label: &str| {
+        let end = svg.find(&format!(">{label}</text>")).expect(&svg);
+        let start = svg[..end].rfind("<text").expect(&svg);
+        svg[start..end].to_string()
+      };
+      for label in ["zzbig", "zzframed"] {
+        let t = tag(label);
+        assert!(t.contains("font-size=\"20\""), "{t}");
+        assert!(t.contains("font-weight=\"bold\""), "{t}");
+        assert!(t.contains("fill=\"rgb(0,0,255)\""), "{t}");
+      }
+      let t = tag("zzplain");
+      assert!(t.contains("font-size=\"14\""), "{t}");
+      assert!(t.contains("font-weight=\"normal\""), "{t}");
+    }
+
+    /// A `Framed` label's border takes the thickness and the corner radius
+    /// its `FrameStyle` and `RoundingRadius` ask for, and turns with the
+    /// label when the label runs along a direction.
+    #[test]
+    fn a_framed_label_keeps_its_frame_style_and_rounding() {
+      let svg = export_svg(
+        "Graphics[{Circle[], Inset[Framed[\"zzbox\", \
+         FrameStyle -> {Thick, Blue}, RoundingRadius -> 5], {0, 0}, \
+         Automatic, Automatic, {0, 1}]}]",
+      );
+      let label = svg.find(">zzbox</text>").expect(&svg);
+      let rect_start = svg[..label].rfind("<rect").expect(&svg);
+      let rect =
+        &svg[rect_start..svg[rect_start..].find("/>").unwrap() + rect_start];
+      assert!(rect.contains("stroke=\"rgb(0,0,255)\""), "{rect}");
+      assert!(rect.contains("stroke-width=\"2.00\""), "{rect}");
+      assert!(rect.contains("rx=\"5.00\""), "{rect}");
+      assert!(rect.contains("rotate(-90.000"), "{rect}");
+
+      // The default frame stays a thin, square, black border.
+      let svg =
+        export_svg("Graphics[{Circle[], Text[Framed[\"zzsq\"], {0, 0}]}]");
+      let label = svg.find(">zzsq</text>").expect(&svg);
+      let rect_start = svg[..label].rfind("<rect").expect(&svg);
+      let rect =
+        &svg[rect_start..svg[rect_start..].find("/>").unwrap() + rect_start];
+      assert!(rect.contains("stroke=\"rgb(0,0,0)\""), "{rect}");
+      assert!(!rect.contains("stroke-width"), "{rect}");
+      assert!(!rect.contains("rx="), "{rect}");
+    }
+
     /// `Style[…, Italic]` / `Style[…, Bold]` around a plot's `Prolog` or
     /// `Epilog` text slants or weights the label, as in `Graphics`.
     #[test]
