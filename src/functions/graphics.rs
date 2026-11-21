@@ -21147,9 +21147,18 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
     }
     other => vec![expr_to_svg_markup(other)],
   };
+  // A newline inside a styled run (`Style["a\nb", Red] Style["c", Blue]`)
+  // closes the run's open `<tspan>`s at the break and reopens them on the
+  // next line, so every line is balanced markup that keeps its styling.
   rows
     .iter()
-    .flat_map(|line| line.split('\n').map(str::to_string).collect::<Vec<_>>())
+    .flat_map(|line| {
+      if line.contains('\n') {
+        split_markup_lines(line)
+      } else {
+        vec![line.clone()]
+      }
+    })
     .collect()
 }
 
