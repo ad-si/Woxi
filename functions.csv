@@ -1182,7 +1182,7 @@ EmpiricalDistribution,"Empirical distribution from data (exact weights via DataD
 NotebookSelection,"",🚫,,3.0,1141
 CellTags,"",🚫,,3.0,1142
 FractionBox,"Low-level box construct for fraction display",✅,pure,3.0,1143
-Magnification,"",🚫,,3.0,1145
+Magnification,"Magnification option and ImageSize magnification spec (stays symbolic)",✅,unevaluated,3.0,1145
 Refresh,"Returns its first argument evaluated; the update-interval options only matter in a Dynamic FrontEnd context",✅,pure,6.0,1145
 KelvinBer,"Kelvin ber function (real part of BesselJ on a rotated argument)",✅,pure,6.0,1146
 NetTrain,"",🚫,,11.0,1147
@@ -2316,7 +2316,7 @@ RandomSeeding,"random options",🚫,None,11.2,2305
 SemanticInterpretation,"natural language processing",🚫,None,10.0,2305
 ShowCellLabel,"notebook UI option",🚫,None,3.0,2305
 WordSeparators,"text processing option",🚫,None,2.0,2305
-ClockGauge,"Analog clock face showing a time of day as a Graphics gauge",✅,pure,9.0,2311
+ClockGauge,"Analog clock face showing a time of day as a Graphics gauge (with GaugeStyle, GaugeFaceStyle, GaugeFrameStyle, ScaleDivisions and ScaleRanges)",✅,pure,9.0,2311
 DeleteDirectory,"file system operation",✅,None,2.0,2311
 FunctionPeriod,"symbolic period analysis (complex)",🚫,None,10.0,2311
 MathieuCPrime,"Derivative of the even Mathieu function with characteristic value a and parameter q",✅,pure,3.0,2311
