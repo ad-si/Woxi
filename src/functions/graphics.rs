@@ -25154,8 +25154,9 @@ fn contains_visible_style(e: &Expr) -> bool {
   }
 }
 
-/// Whether `e` is, or holds inside a `Row`, `Text` or script, a
-/// `Style[label, …]` whose directives change how the text is drawn. Unlike
+/// Whether `e` is, or holds inside a `Row`, `Text`, script or power (a
+/// `Style["e", Italic]^t` base), a `Style[label, …]` whose directives change
+/// how the text is drawn. Unlike
 /// [`contains_visible_style`], a script that merely holds letters
 /// (`Subscript[R, x]`) does not count: such a label carries no styling of
 /// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
@@ -25175,11 +25176,16 @@ fn has_explicit_style(e: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Subscript" | "Superscript" | "Subsuperscript"
+        "Subscript" | "Superscript" | "Subsuperscript" | "Power"
       ) =>
     {
       args.iter().any(has_explicit_style)
     }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => has_explicit_style(left) || has_explicit_style(right),
     _ => false,
   }
 }
@@ -37818,10 +37824,20 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
         // `Style[TraditionalForm[Column[…]], 14]`: the form wrapper comes
         // off first (typesetting each item of the layout traditionally), so
         // the style reaches the layout's items the same way.
-        if matches!(&args[0], Expr::FunctionCall { name: n, .. }
+        // A one-argument `Text[…]` only marks its content as display text,
+        // so `Style[Text[TraditionalForm[poly]], 12]` is typeset the same
+        // way as `Style[TraditionalForm[poly], 12]`.
+        let mut form_body = &args[0];
+        while let Expr::FunctionCall { name: n, args: t } = form_body
+          && n == "Text"
+          && t.len() == 1
+        {
+          form_body = &t[0];
+        }
+        if matches!(form_body, Expr::FunctionCall { name: n, .. }
           if n == "TraditionalForm")
         {
-          let unwrapped = unwrap_display_wrappers(&args[0]);
+          let unwrapped = unwrap_display_wrappers(form_body);
           if let Some(inner) = style_pushed_into_layout(&unwrapped, &args[1..])
           {
             return nested_layout_svg(&inner);
