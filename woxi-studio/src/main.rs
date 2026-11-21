@@ -4384,9 +4384,9 @@ const SETTER_BAR_MAX_CHOICES: usize = 5;
 /// How wide, in characters summed over every label, a SetterBar of at most
 /// [`SETTER_BAR_MAX_CHOICES`] choices may be. Past this the row of buttons no
 /// longer fits the control panel and Wolfram falls back to a PopupMenu. The
-/// sampled Demonstrations bracket it: five figure names totaling 55
+/// sampled Demonstrations bracket it: three plot-selector phrases totaling 67
 /// characters are a bar, five error descriptions totaling 72 are a dropdown.
-const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
+const SETTER_BAR_MAX_ROW_CHARS: usize = 69;
 
 /// Maximum number of *compact* choices — every label at most
 /// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
@@ -4469,6 +4469,7 @@ fn discrete_checkbox_state(
 /// | 4       | `prisoners dilemma`, …              |    57 | SetterBar  |
 /// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
 /// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
+/// | 3       | three plot-selector phrases         |    67 | SetterBar  |
 /// | 8       | `-3` … `4`                          |    16 | SetterBar  |
 /// | 9       | `2` … `10`                          |    10 | PopupMenu  |
 /// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
@@ -23948,6 +23949,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "rhomboid",
       "rectangle",
       "right triangle",
+    ]));
+    // Three phrases totaling 68 characters (just under the 72 that overflow
+    // into a dropdown) still fit as a bar, as in a process-control
+    // Demonstration whose three plot choices total 67.
+    assert!(bar(&[
+      "product concentration",
+      "feed rate adjustment",
+      "condenser outflow heat duty",
     ]));
 
     // Past five, short labels keep the bar...
