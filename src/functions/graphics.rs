@@ -26002,6 +26002,11 @@ fn contains_visible_style(e: &Expr) -> bool {
 /// (`Subscript[R, x]`) does not count: such a label carries no styling of
 /// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
 fn has_explicit_style(e: &Expr) -> bool {
+  // A power is a script too: a styled base or exponent keeps the whole
+  // power as written.
+  if let Some((base, exp)) = as_power(e) {
+    return has_explicit_style(base) || has_explicit_style(exp);
+  }
   match e {
     Expr::FunctionCall { name, args } if name == "Style" => {
       (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
@@ -34767,6 +34772,169 @@ fn overlay_rendered_graphics_svgs(graphics: &[Expr]) -> Option<String> {
 /// into fixed 80-pixel squares that make plots illegible).
 pub fn combine_graphics_svgs(rows: &[Vec<String>]) -> Option<String> {
   combine_svgs_grid(rows, &default_layout_options())
+}
+
+/// `Labeled[content, labels, sides]` laid out as the front end sets it: the
+/// content in the middle, each side's labels (`sides` = top, left, right,
+/// bottom, already rendered) beside it and centered on it. Labels on the
+/// same side stack outward from the content. With `rotate`
+/// (`RotateLabel -> True`) a left label turns to read upward and a right
+/// one downward. An empty `content` leaves its spot blank; `None` when
+/// nothing is drawn at all.
+pub fn labeled_sides_svg(
+  content: &str,
+  sides: &[Vec<String>; 4],
+  rotate: bool,
+) -> Option<String> {
+  // The front end's gaps between a label and its content, in pixels.
+  const H_GAP: f64 = 7.0;
+  const V_GAP: f64 = 4.0;
+  struct Item {
+    view_box: String,
+    inner: String,
+    w: f64,
+    h: f64,
+    /// Quarter turn: -1 counterclockwise, 1 clockwise, 0 upright.
+    turn: i8,
+  }
+  impl Item {
+    /// The width and height the item takes up once turned.
+    fn placed(&self) -> (f64, f64) {
+      if self.turn == 0 {
+        (self.w, self.h)
+      } else {
+        (self.h, self.w)
+      }
+    }
+    fn write(&self, out: &mut String, x: f64, y: f64) {
+      let nested = |out: &mut String, x: f64, y: f64| {
+        out.push_str(&format!(
+          "<svg x=\"{x:.2}\" y=\"{y:.2}\" width=\"{:.2}\" height=\"{:.2}\" \
+           viewBox=\"{}\" overflow=\"visible\">\n{}</svg>\n",
+          self.w, self.h, self.view_box, self.inner,
+        ));
+      };
+      match self.turn {
+        0 => nested(out, x, y),
+        turn => {
+          let (tx, ty, angle) = if turn < 0 {
+            (x, y + self.w, -90)
+          } else {
+            (x + self.h, y, 90)
+          };
+          out.push_str(&format!(
+            "<g transform=\"translate({tx:.2},{ty:.2}) rotate({angle})\">\n"
+          ));
+          nested(out, 0.0, 0.0);
+          out.push_str("</g>\n");
+        }
+      }
+    }
+  }
+  let parse = |svg: &str, turn: i8| {
+    parse_svg_dimensions(svg).map(|p| Item {
+      view_box: p.view_box,
+      inner: p.inner_content,
+      w: p.nat_w,
+      h: p.nat_h,
+      turn,
+    })
+  };
+  let content = if content.is_empty() {
+    None
+  } else {
+    Some(parse(content, 0)?)
+  };
+  let side_items: Vec<Vec<Item>> = sides
+    .iter()
+    .enumerate()
+    .map(|(side, svgs)| {
+      let turn = match (rotate, side) {
+        (true, 1) => -1,
+        (true, 2) => 1,
+        _ => 0,
+      };
+      svgs.iter().filter_map(|svg| parse(svg, turn)).collect()
+    })
+    .collect();
+  // A side's extent: top and bottom labels stack vertically, left and
+  // right ones side by side.
+  let extent = |items: &[Item], vertical: bool| -> (f64, f64) {
+    let dims = items.iter().map(Item::placed);
+    let gaps = items.len().saturating_sub(1) as f64;
+    if vertical {
+      (
+        dims.clone().map(|d| d.0).fold(0.0, f64::max),
+        dims.map(|d| d.1).sum::<f64>() + gaps * V_GAP,
+      )
+    } else {
+      (
+        dims.clone().map(|d| d.0).sum::<f64>() + gaps * H_GAP,
+        dims.map(|d| d.1).fold(0.0, f64::max),
+      )
+    }
+  };
+  let (top_w, top_h) = extent(&side_items[0], true);
+  let (left_w, left_h) = extent(&side_items[1], false);
+  let (right_w, right_h) = extent(&side_items[2], false);
+  let (bottom_w, bottom_h) = extent(&side_items[3], true);
+  let (content_w, content_h) =
+    content.as_ref().map_or((0.0, 0.0), Item::placed);
+  let center_w = content_w.max(top_w).max(bottom_w);
+  let middle_h = content_h.max(left_h).max(right_h);
+  let gap = |size: f64, gap: f64| if size > 0.0 { gap } else { 0.0 };
+  let center_x = left_w + gap(left_w, H_GAP);
+  let right_x = center_x + center_w + gap(right_w, H_GAP);
+  let middle_y = top_h + gap(top_h, V_GAP);
+  let bottom_y = middle_y + middle_h + gap(bottom_h, V_GAP);
+  let total_w = right_x + right_w;
+  let total_h = bottom_y + bottom_h;
+  if total_w <= 0.0 || total_h <= 0.0 {
+    return None;
+  }
+  let (w, h) = ((total_w - 1e-6).ceil(), (total_h - 1e-6).ceil());
+  let mut out = format!(
+    "<svg width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\" \
+     xmlns=\"http://www.w3.org/2000/svg\">\n"
+  );
+  // Written in reading order: the top labels, the content, the rest. Top
+  // labels stack upward from the content, bottom ones downward.
+  let mut y = middle_y - gap(top_h, V_GAP);
+  for item in &side_items[0] {
+    let (iw, ih) = item.placed();
+    y -= ih;
+    item.write(&mut out, center_x + (center_w - iw) / 2.0, y);
+    y -= V_GAP;
+  }
+  if let Some(item) = &content {
+    item.write(
+      &mut out,
+      center_x + (center_w - content_w) / 2.0,
+      middle_y + (middle_h - content_h) / 2.0,
+    );
+  }
+  let mut y = bottom_y;
+  for item in &side_items[3] {
+    let (iw, ih) = item.placed();
+    item.write(&mut out, center_x + (center_w - iw) / 2.0, y);
+    y += ih + V_GAP;
+  }
+  // Left labels line up leftward from the content, right ones rightward.
+  let mut x = center_x - gap(left_w, H_GAP);
+  for item in &side_items[1] {
+    let (iw, ih) = item.placed();
+    x -= iw;
+    item.write(&mut out, x, middle_y + (middle_h - ih) / 2.0);
+    x -= H_GAP;
+  }
+  let mut x = right_x;
+  for item in &side_items[2] {
+    let (iw, ih) = item.placed();
+    item.write(&mut out, x, middle_y + (middle_h - ih) / 2.0);
+    x += iw + H_GAP;
+  }
+  out.push_str("</svg>");
+  Some(out)
 }
 
 /// Like [`combine_graphics_svgs`] but honoring a `Grid`'s own option
@@ -43601,6 +43769,39 @@ pub fn button_visibility_key(label: &str, action: &str) -> String {
   format!("\u{1}button:{label}\u{1}{action}")
 }
 
+/// The `(label, side)` pairs of a list-valued `FrameLabel`: `{bottom,
+/// left}`, `{bottom, left, top, right}` or `{{left, right}, {bottom, top}}`.
+/// `None` and blank entries label nothing.
+fn frame_label_edges(spec: &Expr) -> Vec<(Expr, &'static str)> {
+  let Expr::List(items) = spec else {
+    return Vec::new();
+  };
+  let pairs: Vec<(&Expr, &'static str)> = match items.as_ref() {
+    [Expr::List(lr), Expr::List(bt)] if lr.len() == 2 && bt.len() == 2 => vec![
+      (&bt[0], "Bottom"),
+      (&lr[0], "Left"),
+      (&bt[1], "Top"),
+      (&lr[1], "Right"),
+    ],
+    [bottom, left] => vec![(bottom, "Bottom"), (left, "Left")],
+    [bottom, left, top, right] => vec![
+      (bottom, "Bottom"),
+      (left, "Left"),
+      (top, "Top"),
+      (right, "Right"),
+    ],
+    _ => Vec::new(),
+  };
+  pairs
+    .into_iter()
+    .filter(|(label, _)| {
+      !matches!(label, Expr::Identifier(n) if n == "None")
+        && !matches!(label, Expr::String(s) if s.is_empty())
+    })
+    .map(|(label, side)| (label.clone(), side))
+    .collect()
+}
+
 /// A parsed Manipulate expression ready for interactive rendering.
 #[derive(Debug, Clone)]
 pub struct ManipulateSpec {
@@ -44838,6 +45039,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   let mut control_placement = ControlPlacement::default();
   let mut content_width: Option<f64> = None;
   let mut content_height: Option<f64> = None;
+  // Widget-level `FrameLabel -> {bottom, left}` (or another per-edge form)
+  // as `(label, side)` pairs, and whether `RotateLabel -> True` turns the
+  // left and right ones.
+  let mut frame_edge_labels: Vec<(Expr, &str)> = Vec::new();
+  let mut rotate_label = false;
   // Widget-level `ControlPlacement -> {pos1, pos2, …}`: the sides of
   // successive controls, applied once the controls are known.
   let mut successive_placements: Vec<ControlPlacement> = Vec::new();
@@ -45139,6 +45345,16 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         for label in manipulate_frame_labels(replacement) {
           displays.push(crate::syntax::expr_to_source_form(label));
         }
+      }
+      // The list forms label the edges of the content area.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "FrameLabel")
+        && let Expr::List(_) = replacement.as_ref()
+      {
+        frame_edge_labels = frame_label_edges(replacement);
+      }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "RotateLabel") {
+        rotate_label =
+          matches!(replacement.as_ref(), Expr::Identifier(s) if s == "True");
       }
       // `AnimationRunning -> False` builds the widget paused.
       if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "AnimationRunning")
@@ -46290,6 +46506,24 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     }
   }
 
+  // Edge labels set the body's output in a `Labeled` frame, as Wolfram
+  // draws them around the content area.
+  if !frame_edge_labels.is_empty() {
+    let (labels, sides): (Vec<Expr>, Vec<Expr>) = frame_edge_labels
+      .into_iter()
+      .map(|(label, side)| (label, Expr::Identifier(side.to_string())))
+      .unzip();
+    let mut labeled = format!(
+      "Labeled[({body_code}), {}, {}",
+      crate::syntax::expr_to_source_form(&Expr::List(labels.into())),
+      crate::syntax::expr_to_source_form(&Expr::List(sides.into())),
+    );
+    if rotate_label {
+      labeled.push_str(", RotateLabel -> True");
+    }
+    labeled.push(']');
+    body_code = labeled;
+  }
   // Bake fixed (Locator) bindings into the body so they remain in scope on
   // every re-evaluation, independent of the visible control state. Mutable
   // `state` bindings are not baked — they travel live in the binding set.
@@ -59981,8 +60215,9 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
             &args[1..],
           ),
         }
-      } else if let Some(text) =
-        r.expr.as_ref().and_then(front_end_number_display_text)
+      } else if !is_display_placeholder(&r.result)
+        && let Some(text) =
+          r.expr.as_ref().and_then(front_end_number_display_text)
       {
         DisplayNode::Static { svg: None, text }
       } else {
@@ -60002,6 +60237,17 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
       text: String::new(),
     },
   }
+}
+
+/// Whether a display's output text is the placeholder a visual host shows
+/// for an object it draws on its own (`-Audio-` for a playable `Audio`,
+/// `-Sound-`), which the numbers inside that object must not replace.
+fn is_display_placeholder(text: &str) -> bool {
+  let text = text.trim();
+  text.len() > 2
+    && text.starts_with('-')
+    && text.ends_with('-')
+    && text[1..text.len() - 1].chars().all(char::is_alphanumeric)
 }
 
 /// The one-line text of a dynamic value that holds machine reals or `Root`

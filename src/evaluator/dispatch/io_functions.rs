@@ -8342,37 +8342,45 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       } else {
         expr_to_svg(&unquoted_display_string(&args[0]))
       };
+      // `RotateLabel -> True` turns the labels at the left and right so
+      // they read along the content's height.
+      let rotate = args[2..].iter().any(|opt| {
+        matches!(opt, Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "RotateLabel")
+            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"))
+      });
       // `Labeled[g, {l1, l2, …}, {p1, p2, …}]` sets each label at its own
-      // side; same-side labels stack into one cell of a 3x3 layout.
-      if let (Expr::List(labels), Some(Expr::List(positions))) =
-        (&args[1], args.get(2))
-        && labels.len() == positions.len()
-      {
-        let mut sides: [Vec<Vec<String>>; 4] = Default::default();
-        for (label, position) in labels.iter().zip(positions.iter()) {
+      // side, centered on the content; same-side labels stack. A single
+      // turned `Left`/`Right` label takes the same layout.
+      let side_labels: Option<Vec<(&Expr, &Expr)>> =
+        match (&args[1], args.get(2)) {
+          (Expr::List(labels), Some(Expr::List(positions)))
+            if labels.len() == positions.len() =>
+          {
+            Some(labels.iter().zip(positions.iter()).collect())
+          }
+          (label, Some(position @ Expr::Identifier(p)))
+            if rotate && (p == "Left" || p == "Right") =>
+          {
+            Some(vec![(label, position)])
+          }
+          _ => None,
+        };
+      if let Some(side_labels) = side_labels {
+        let mut sides: [Vec<String>; 4] = Default::default();
+        for (label, position) in side_labels {
           let side = match position {
             Expr::Identifier(p) if p == "Top" => 0,
             Expr::Identifier(p) if p == "Left" => 1,
             Expr::Identifier(p) if p == "Right" => 2,
             _ => 3,
           };
-          sides[side].push(vec![expr_to_svg(&unquoted_display_string(label))]);
+          sides[side].push(expr_to_svg(&unquoted_display_string(label)));
         }
-        let side_cell = |rows: &Vec<Vec<String>>| -> String {
-          match rows.len() {
-            0 => String::new(),
-            1 => rows[0][0].clone(),
-            _ => crate::functions::graphics::combine_graphics_svgs(rows)
-              .unwrap_or_default(),
-          }
-        };
-        let rows = vec![
-          vec![String::new(), side_cell(&sides[0]), String::new()],
-          vec![side_cell(&sides[1]), content, side_cell(&sides[2])],
-          vec![String::new(), side_cell(&sides[3]), String::new()],
-        ];
-        return crate::functions::graphics::combine_graphics_svgs(&rows)
-          .unwrap_or_else(|| expr_text_svg(expr));
+        return crate::functions::graphics::labeled_sides_svg(
+          &content, &sides, rotate,
+        )
+        .unwrap_or_else(|| expr_text_svg(expr));
       }
       // A label is shown as text, so a string one loses its quotes.
       let label = expr_to_svg(&unquoted_display_string(&args[1]));

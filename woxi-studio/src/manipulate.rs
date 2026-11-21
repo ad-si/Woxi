@@ -1022,7 +1022,8 @@ pub struct ManipulateState {
   refresh_interval: Option<String>,
   /// The seconds between timed refreshes as of the last frame, or `None`
   /// when the body does not currently refresh on its own (`t` is
-  /// `Infinity`, e.g. while a "run" checkbox is off).
+  /// `Infinity`, e.g. while a "run" checkbox is off, or the `Refresh` did
+  /// not run).
   timed_refresh: Option<f64>,
   /// When the body last re-ran, so a timed refresh honors its interval.
   last_refresh: Option<std::time::Instant>,
