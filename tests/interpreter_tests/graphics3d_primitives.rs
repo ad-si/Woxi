@@ -1031,6 +1031,92 @@ mod plot_range_clipping {
 mod outlines {
   use super::*;
 
+  // A point at the corner of a solid turned away from the viewer is
+  // hidden by the faces meeting there, which lie wholly in front of it
+  // (wolframscript draws no dot over them). A point on the corner nearest
+  // the viewer, or inside a face, is still drawn over the faces.
+  #[test]
+  fn a_point_on_a_far_corner_is_hidden_by_the_faces_in_front() {
+    for (corner, view) in [
+      ("{0, 0, 0}", ""),
+      ("{1, 0, 0}", ", ViewPoint -> {-2, -1.5, 1.2}"),
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{Cuboid[{{0, 0, 0}}, {{1, 1, 1}}], PointSize[0.05], \
+         Red, Point[{corner}], Green, Point[{{0.5, 0, 0.5}}]}}, \
+         Boxed -> False{view}]"
+      ));
+      let lines: Vec<&str> = s.lines().collect();
+      let attr = |l: &str, name: &str| -> f64 {
+        let rest =
+          &l[l.find(&format!(" {name}=\"")).unwrap() + name.len() + 3..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      let dot = |color: &str| {
+        let n = lines
+          .iter()
+          .position(|l| l.starts_with("<circle") && l.contains(color))
+          .unwrap();
+        (n, attr(lines[n], "cx"), attr(lines[n], "cy"))
+      };
+      // The draw positions of the faces with a corner at, or containing,
+      // a point on screen.
+      let faces = |x: f64, y: f64, inside: bool| -> Vec<usize> {
+        lines
+          .iter()
+          .enumerate()
+          .filter(|(_, l)| l.starts_with("<polygon"))
+          .filter(|(_, l)| {
+            let pts: Vec<(f64, f64)> = l
+              .split("points=\"")
+              .nth(1)
+              .unwrap()
+              .split('"')
+              .next()
+              .unwrap()
+              .split(' ')
+              .map(|p| {
+                let (a, b) = p.split_once(',').unwrap();
+                (a.parse().unwrap(), b.parse().unwrap())
+              })
+              .collect();
+            if !inside {
+              return pts.iter().any(|p| (p.0 - x).hypot(p.1 - y) < 1.0);
+            }
+            let mut odd = false;
+            for i in 0..pts.len() {
+              let (a, b) = (pts[i], pts[(i + 1) % pts.len()]);
+              if (a.1 > y) != (b.1 > y)
+                && x < a.0 + (y - a.1) * (b.0 - a.0) / (b.1 - a.1)
+              {
+                odd = !odd;
+              }
+            }
+            odd
+          })
+          .map(|(n, _)| n)
+          .collect()
+      };
+      let (red, rx, ry) = dot("rgb(255,0,0)");
+      assert!(
+        faces(rx, ry, false).iter().any(|&f| f > red),
+        "far corner dot drawn over all faces at it: {s}"
+      );
+      let (green, gx, gy) = dot("rgb(0,255,0)");
+      let under = faces(gx, gy, true);
+      assert_ne!(under, Vec::<usize>::new());
+      assert!(
+        under.iter().all(|&f| f < green),
+        "face center dot hidden: {s}"
+      );
+    }
+    let s = svg(
+      "Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 1}], PointSize[0.05], Red, \
+       Point[{1, 0, 1}]}, Boxed -> False]",
+    );
+    assert!(s.find("<circle").unwrap() > s.rfind("<polygon").unwrap());
+  }
+
   // Cylinder and cone rims are outlined by the default edge, like
   // wolframscript's; `EdgeForm[]` removes them.
   #[test]
