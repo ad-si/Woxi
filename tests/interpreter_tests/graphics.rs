@@ -17900,6 +17900,56 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_legends_placed_at_a_scaled_point_sit_inside_the_plot() {
+      // `Placed[labels, Scaled[{x, y}]]` puts the legend at the same point
+      // as `Placed[labels, {x, y}]`, inside the picture.
+      let bare = export_svg(
+        r#"Plot[{x, x^2}, {x, 0, 1},
+          PlotLegends -> Placed[{"first", "second"}, {0.8, 0.2}]]"#,
+      );
+      let scaled = export_svg(
+        r#"Plot[{x, x^2}, {x, 0, 1},
+          PlotLegends -> Placed[{"first", "second"}, Scaled[{0.8, 0.2}]]]"#,
+      );
+      assert!(scaled.contains(">first</text"), "{scaled}");
+      assert_eq!(scaled, bare);
+    }
+
+    #[test]
+    fn show_of_a_plot_and_graphics_keeps_the_plot_legends() {
+      // `Show[plot, Graphics[…]]` draws the curves as primitives together
+      // with the other graphics, and keeps the plot's legend on the result.
+      let svg = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1}, PlotLegends -> {"first", "second"}],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
+      assert!(svg.contains(">second</text"), "{svg}");
+    }
+
+    #[test]
+    fn show_of_a_plot_and_graphics_keeps_a_placed_legend_inside() {
+      // A legend `Placed` at a scaled point sits inside the picture: the
+      // width of the picture stays that of the plain `Show`.
+      let plain = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1}],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      let svg = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1},
+            PlotLegends -> Placed[{"first", "second"}, Scaled[{0.8, 0.2}]]],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
+      assert!(svg.contains(">second</text"), "{svg}");
+      let width = |s: &str| {
+        let start = s.find("width=\"").unwrap() + 7;
+        s[start..start + s[start..].find('"').unwrap()].to_string()
+      };
+      assert_eq!(width(&svg), width(&plain));
+    }
+
+    #[test]
     fn show_of_a_plot_with_graphics_keeps_its_legend() {
       // The merged picture keeps the first graphic's options, `PlotLegends`
       // included, also when the other layers are plain graphics.
