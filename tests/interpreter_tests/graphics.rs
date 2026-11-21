@@ -7114,6 +7114,34 @@ mod plot3d {
     assert!(shown.contains("fill=\"rgb(0,0,"), "{shown}");
   }
 
+  /// A named gradient `ColorFunction` (`"Rainbow"` or `ColorData[…]`)
+  /// colors a `SphericalPlot3D` surface by height instead of leaving it
+  /// white.
+  #[test]
+  fn spherical_plot3d_named_color_function_colors_by_height() {
+    let plot = |cf: &str| {
+      export_svg(&format!(
+        "SphericalPlot3D[1, {{t, 0, Pi}}, {{p, 0, 2 Pi}}, ColorFunction -> {cf}]"
+      ))
+    };
+    let named = plot("\"Rainbow\"");
+    assert_eq!(named, plot("ColorData[\"Rainbow\"]"));
+    let fills: Vec<(u8, u8, u8)> = named
+      .split("fill=\"rgb(")
+      .skip(1)
+      .filter_map(|s| {
+        let mut it = s.split(')').next()?.split(',').map(|v| v.parse().ok());
+        Some((it.next()??, it.next()??, it.next()??))
+      })
+      .collect();
+    // The top of the sphere takes the red end of the gradient and the
+    // bottom its purple end; nothing stays the unlit white.
+    assert!(fills.iter().any(|&(r, g, b)| r > 200 && g < 80 && b < 80));
+    assert!(fills.iter().any(|&(r, g, b)| b > r && r > g && g < 60));
+    let white = fills.iter().filter(|&&c| c == (255, 255, 255)).count();
+    assert!(white * 10 < fills.len(), "{white} of {} white", fills.len());
+  }
+
   /// A translucent `PlotStyle` surface must stay translucent when `Show`
   /// re-renders it from its symbolic form together with other graphics,
   /// for every surface plot that carries one.
