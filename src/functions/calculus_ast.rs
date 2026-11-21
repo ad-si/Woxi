@@ -9323,6 +9323,58 @@ fn try_integrate_power_derivative(expr: &Expr, var: &str) -> Option<Expr> {
   crate::evaluator::evaluate_expr_to_expr(&result).ok()
 }
 
+/// ∫ c·u'(x)·f1^a·…·fk^a dx = c·f1^(a+1)·…·fk^(a+1)/(a+1), the substitution
+/// u = f1·…·fk for k ≥ 2 factors sharing one non-integer exponent `a`, which
+/// stay separate powers since they do not merge into `u^a`:
+/// `∫ x (x - 1)^(1/8) (x + 1)^(1/8) dx` → `4/9 (x - 1)^(9/8) (x + 1)^(9/8)`.
+fn try_integrate_split_power_derivative(
+  expr: &Expr,
+  var: &str,
+) -> Option<Expr> {
+  let factors = crate::functions::polynomial_ast::together::flatten_times_args(
+    std::slice::from_ref(expr),
+  );
+  let mut exponent: Option<Expr> = None;
+  let mut bases: Vec<Expr> = Vec::new();
+  let mut rest: Vec<Expr> = Vec::new();
+  for factor in factors {
+    if let Some((base, exp)) = base_and_exponent(&factor)
+      && matches!(&exp, Expr::FunctionCall { name, .. } if name == "Rational")
+      && !is_constant_wrt(&base, var)
+    {
+      match &exponent {
+        None => exponent = Some(exp),
+        Some(a) if expr_str_eq(a, &exp) => {}
+        Some(_) => return None,
+      }
+      bases.push(base);
+    } else {
+      rest.push(factor);
+    }
+  }
+  let exponent = exponent?;
+  if bases.len() < 2 {
+    return None;
+  }
+  let du = differentiate(&times(bases.clone()), var).ok()?;
+  let ratio = crate::evaluator::evaluate_function_call_ast(
+    "Together",
+    &[times(vec![times(rest), pow(du, Expr::Integer(-1))])],
+  )
+  .ok()?;
+  if !is_constant_wrt(&ratio, var) || matches!(&ratio, Expr::Integer(0)) {
+    return None;
+  }
+  let raised = crate::evaluator::evaluate_expr_to_expr(&call(
+    "Plus",
+    vec![exponent, Expr::Integer(1)],
+  ))
+  .ok()?;
+  let mut parts = vec![ratio, pow(raised.clone(), Expr::Integer(-1))];
+  parts.extend(bases.into_iter().map(|b| pow(b, raised.clone())));
+  crate::evaluator::evaluate_expr_to_expr(&times(parts)).ok()
+}
+
 fn try_integrate_log_derivative(expr: &Expr, var: &str) -> Option<Expr> {
   // Decompose into a denominator. Either a literal `a / b` or the canonical
   // Times[..., Power[d, -k]] form.
@@ -9818,6 +9870,11 @@ fn integrate(expr: &Expr, var: &str) -> Option<Expr> {
 
   // ∫ c·g'(x)/g(x)^n dx = c·g(x)^(1-n)/(1-n) (n >= 2), the u = g(x) substitution.
   if let Some(result) = try_integrate_power_derivative(expr, var) {
+    return Some(result);
+  }
+
+  // ∫ c·u'·f1^a·…·fk^a dx with u = f1·…·fk, the factors kept apart.
+  if let Some(result) = try_integrate_split_power_derivative(expr, var) {
     return Some(result);
   }
 
@@ -18908,7 +18965,7 @@ fn integrand_is_complex_on(
     value.is_ok_and(|v| {
       crate::functions::math_ast::try_eval_to_f64(&v).is_none()
         && crate::functions::math_ast::try_extract_complex_float(&v)
-          .is_some_and(|(_, im)| im != 0.0 && im.is_finite())
+          .is_some_and(|(re, im)| re.is_finite() && im.is_finite())
     })
   };
   let points: Vec<f64> = match (lo.is_finite(), hi.is_finite()) {
@@ -20013,6 +20070,48 @@ fn nintegrate_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && let Some(measure) = boole_exact_measure(&bargs[0], &var_name, lo, hi)
   {
     return Ok(Expr::Real(measure));
+  }
+
+  // Even-odd subdivision: a range symmetric about 0 is folded onto its
+  // right half, `∫_{-a}^{a} f(x) dx = ∫_0^a (f(x) + f(-x)) dx`. An odd
+  // part cancels exactly, and the quadrature never has to find a peak
+  // whose only sample in the first, wide panel is a zero at the center
+  // (`x^2 Exp[-x^2]` over `{x, -20, 20}` read as ~0 before).
+  let has_exclusions = args[2..].iter().any(|opt| {
+    matches!(opt, Expr::Rule { pattern, .. }
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "Exclusions"))
+  });
+  if bounds.len() == 2
+    && lo.is_finite()
+    && lo < 0.0
+    && hi == -lo
+    && monitor.is_none()
+    && working_precision.is_none()
+    && !has_exclusions
+  {
+    let mirrored = crate::syntax::substitute_variable(
+      integrand,
+      &var_name,
+      &call(
+        "Times",
+        vec![Expr::Integer(-1), Expr::Identifier(var_name.clone())],
+      ),
+    );
+    let mut folded_args = args.to_vec();
+    folded_args[0] = call("Plus", vec![integrand.clone(), mirrored]);
+    folded_args[1] = Expr::List(
+      vec![
+        Expr::Identifier(var_name.clone()),
+        Expr::Integer(0),
+        Expr::Real(hi),
+      ]
+      .into(),
+    );
+    let folded = nintegrate_ast_impl(&folded_args)?;
+    return Ok(match folded {
+      Expr::Integer(0) => Expr::Real(0.0),
+      other => other,
+    });
   }
 
   // Evaluate the integrand at a point. A point where the integrand is not

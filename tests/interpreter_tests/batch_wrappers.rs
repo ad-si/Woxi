@@ -3181,6 +3181,76 @@ mod batch_unevaluated_wrappers_2 {
     );
   }
   #[test]
+  fn clock_gauge_styles_face_frame_and_hands() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let fill = |c: &str| format!("fill=\"{c}\"");
+    // The default face is white, the bezel light gray, the hands red.
+    let plain = svg("ClockGauge[{3, 0, 0}]");
+    assert!(!plain.contains(&fill("rgb(0,0,0)")), "{plain}");
+    assert!(plain.contains(&fill("rgb(204,0,0)")), "{plain}");
+
+    let face = svg("ClockGauge[{3, 0, 0}, GaugeFaceStyle -> Black]");
+    assert!(face.contains(&fill("rgb(0,0,0)")), "{face}");
+
+    let frame = svg("ClockGauge[{3, 0, 0}, GaugeFrameStyle -> Green]");
+    assert!(frame.contains(&fill("rgb(0,255,0)")), "{frame}");
+    assert!(!frame.contains(&fill("rgb(204,204,204)")), "{frame}");
+
+    // One style for every hand, or one per hour, minute and second hand.
+    let all = svg("ClockGauge[{3, 0, 0}, GaugeStyle -> Blue]");
+    assert!(all.contains(&fill("rgb(0,0,255)")), "{all}");
+    assert!(!all.contains(&fill("rgb(204,0,0)")), "{all}");
+    let each = svg(
+      "ClockGauge[{3, 0, 0}, GaugeStyle -> {Directive[EdgeForm[Black], Yellow], Automatic, Cyan}]",
+    );
+    assert!(each.contains(&fill("rgb(255,255,0)")), "{each}");
+    assert!(each.contains(&fill("rgb(0,255,255)")), "{each}");
+    // The minute hand keeps its default red.
+    assert!(each.contains(&fill("rgb(204,0,0)")), "{each}");
+    assert!(each.contains("stroke=\"rgb(0,0,0)\""), "{each}");
+  }
+  #[test]
+  fn clock_gauge_scale_ranges_and_divisions() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let fill = |c: &str| format!("fill=\"{c}\"");
+    let has_label = |s: &str, l: &str| s.contains(&format!(">{l}</text>"));
+    // Styled bands over hours with radial extents (in either order), a
+    // full sector reaching the center, and an unstyled band at the rim.
+    let ranges = svg(
+      "ClockGauge[{3, 0, 0}, ScaleRanges -> {{{0, 3}, {0.1, 0.3}} -> Cyan, {{3, 12}, {1, 0.4}} -> Magenta, {{6, 9}, {0, 0.05}} -> Orange, {9, 10}}]",
+    );
+    for c in ["rgb(0,255,255)", "rgb(255,0,255)", "rgb(255,128,0)"] {
+      assert!(ranges.contains(&fill(c)), "{c}: {ranges}");
+    }
+    assert!(ranges.contains(&fill("rgb(255,217,217)")), "{ranges}");
+    // A single range spec on its own.
+    let single =
+      svg("ClockGauge[{3, 0, 0}, ScaleRanges -> {{1, 2}, {0, 0.1}} -> Red]");
+    assert!(single.contains(&fill("rgb(255,0,0)")), "{single}");
+    // Rational hours as given by a computed time.
+    let rational = svg(
+      "ClockGauge[{3, 0, 0}, ScaleRanges -> {{{0, 13/5}, {0, 0.05}} -> Red}]",
+    );
+    assert!(rational.contains(&fill("rgb(255,0,0)")), "{rational}");
+
+    // Six majors of two steps each: labels every two hours.
+    let six = svg("ClockGauge[{3, 0, 0}, ScaleDivisions -> {6, 2}]");
+    for l in ["2", "4", "6", "8", "10", "12"] {
+      assert!(has_label(&six, l), "{l}: {six}");
+    }
+    for l in ["1", "3", "11"] {
+      assert!(!has_label(&six, l), "{l}: {six}");
+    }
+    let none = svg("ClockGauge[{3, 0, 0}, ScaleDivisions -> None]");
+    assert!(!has_label(&none, "12"), "{none}");
+    let default = svg("ClockGauge[{3, 0, 0}, ScaleDivisions -> {12, 5}]");
+    assert_eq!(default, svg("ClockGauge[{3, 0, 0}]"));
+  }
+  #[test]
   fn clock_gauge_renders_graphics() {
     assert_eq!(interpret("ClockGauge[{10, 10, 25}]").unwrap(), "-Graphics-");
     assert_eq!(

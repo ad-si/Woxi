@@ -855,9 +855,11 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
       "Legend",
       "LegendBackground",
       "LegendBorder",
+      "LegendLabelSpace",
       "LegendPosition",
       "LegendShadow",
       "LegendSize",
+      "LegendTextSpace",
       "ShowLegend",
     ] {
       crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
@@ -2599,6 +2601,9 @@ fn evaluate_function_call_ast_inner(
     "EntityList" => return crate::functions::entity_ast::entity_list_ast(args),
     "EntityProperties" => {
       return crate::functions::entity_ast::entity_properties_ast(args);
+    }
+    "CanonicalName" => {
+      return crate::functions::entity_ast::canonical_name_ast(args);
     }
     "EntityClassList" => {
       return crate::functions::entity_ast::entity_class_list_ast(args);
@@ -5475,7 +5480,15 @@ fn evaluate_function_call_ast_inner(
   ) && !args.is_empty()
   {
     // Options may arrive as one list of rules, which is not a position.
-    let args = &crate::functions::graphics::splice_option_lists(args)[..];
+    let mut args = crate::functions::graphics::splice_option_lists(args);
+    // A Combinatorica graph is laid out like the built-in graph with the
+    // same vertices and edges.
+    if let Some(g) =
+      crate::functions::combinatorica_graph::to_system_graph(&args[0])
+    {
+      args[0] = g;
+    }
+    let args = &args[..];
     if name == "GraphPlot3D"
       && (matches!(&args[0], Expr::List(_))
         || matches!(&args[0], Expr::FunctionCall { name: n, .. } if n == "Graph"))
@@ -5590,6 +5603,31 @@ fn evaluate_function_call_ast_inner(
           {
             **pattern = id_expr("GraphLayout");
           }
+        }
+      }
+      // `PlotStyle -> s` styles the plot's edges (the legacy
+      // `VertexRenderingFunction` draws the vertices on its own); an
+      // explicit `EdgeStyle` wins. `Graph` has no `PlotStyle` option, so it
+      // is taken off on the way through.
+      let is_option = |o: &Expr, key: &str| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key))
+      };
+      let plot_style = forwarded.iter().rev().find_map(|o| match o {
+        Expr::Rule { replacement, .. }
+        | Expr::RuleDelayed { replacement, .. }
+          if is_option(o, "PlotStyle") =>
+        {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      });
+      if let Some(style) = plot_style {
+        forwarded.retain(|o| !is_option(o, "PlotStyle"));
+        let automatic =
+          matches!(&style, Expr::Identifier(s) if s == "Automatic");
+        if !automatic && !forwarded.iter().any(|o| is_option(o, "EdgeStyle")) {
+          forwarded.push(rule_expr(id_expr("EdgeStyle"), style));
         }
       }
       // `TreePlot[g, Center]` puts the root in the middle and the deeper
@@ -13254,6 +13292,10 @@ fn evaluate_function_call_ast_inner(
         | "Mouseover"
         | "Magnify"
         | "Shallow"
+        // Magnification[s] is a size specification (`ImageSize ->
+        // Magnification[1]` in a stored image's GraphicsBox); it stays
+        // unevaluated in wolframscript.
+        | "Magnification"
         // Geographic primitives consumed by GeoGraphics (rendered there);
         // they stay symbolic on their own, matching wolframscript, so they
         // are not "unimplemented".
