@@ -9007,11 +9007,10 @@ mod dsolve {
   /// for one.
   #[test]
   fn riccati_solver_rejects_other_shapes() {
-    assert_eq!(
-      interpret("DSolve[x y[x] y'[x] + y[x]^2 == x^2, y[x], x]")
+    assert!(
+      !interpret("DSolve[x y[x] y'[x] + y[x]^2 == x^2, y[x], x]")
         .unwrap()
-        .starts_with("{{y[x] -> (x*(BesselJ"),
-      false
+        .starts_with("{{y[x] -> (x*(BesselJ")
     );
   }
 
