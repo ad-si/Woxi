@@ -67454,6 +67454,35 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(!svg.contains("125%"), "{svg}");
 }
 
+/// A rational part of a `Row` label (`Row[{"mean = ", 14/3}]`, also when a
+/// `NumberForm` leaves it exact) stacks inline next to the text. The label
+/// used to be flattened to text lines with the fraction bar under the whole
+/// row and the text glued onto the numerator.
+#[test]
+fn row_label_with_rational_part_stacks_the_fraction_inline() {
+  for code in [
+    r#"Graphics[Text[Row[{"mean = ", 14/3}], {0, 0}]]"#,
+    r#"Graphics[{Blue, Text[Style[Row[{"mean = ", NumberForm[14/3, {3, 2}]}], 14], {0, 0}]}]"#,
+  ] {
+    let svg = export_svg(code);
+    assert!(svg.contains(">mean = </text>"), "{code}: {svg}");
+    assert!(svg.contains(">14</text>"), "{code}: {svg}");
+    assert!(svg.contains(">3</text>"), "{code}: {svg}");
+    assert!(!svg.contains("mean = 14"), "{code}: {svg}");
+    assert!(!svg.contains("NumberForm"), "{code}: {svg}");
+  }
+}
+
+/// `NumberForm` leaves an exact rational as it is, so its boxes hold the
+/// fraction rather than the literal `NumberForm[…]` call.
+#[test]
+fn number_form_of_rational_boxes_as_fraction() {
+  clear_state();
+  let boxes = interpret("ToBoxes[NumberForm[14/3, {3, 2}]]").unwrap();
+  assert!(boxes.contains("FractionBox[14, 3]"), "{boxes}");
+  assert!(!boxes.starts_with("RowBox[{NumberForm"), "{boxes}");
+}
+
 /// The x and y coordinates of every `<polygon>` vertex in an SVG.
 fn polygon_vertices(svg: &str) -> Vec<(f64, f64)> {
   svg
