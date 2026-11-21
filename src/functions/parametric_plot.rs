@@ -1697,13 +1697,15 @@ fn parametric_region_ast(
   }
 
   // Wolfram draws a region ParametricPlot framed, with axes and equally
-  // scaled ones; the caller's own options come last so they win.
+  // scaled ones. The first setting of an option is the one in force, so
+  // the caller's own options come first and the defaults only fill in the
+  // ones they leave out (`Axes -> False` must remove the axes).
   let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.extend(opt_args.iter().cloned());
   graphics_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
   graphics_args.push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
-  graphics_args.extend(opt_args.iter().cloned());
   let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
   // Keep the primitives on the rendering so `Show` can draw the region
   // together with the other layers of a composite figure instead of

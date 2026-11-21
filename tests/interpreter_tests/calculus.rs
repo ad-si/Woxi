@@ -1551,6 +1551,34 @@ mod definite_integrals {
   }
 }
 
+mod integrate_split_power_derivative {
+  use super::*;
+
+  // ∫ u' f1^a f2^a dx with u = f1 f2 keeps the powers apart.
+  #[test]
+  fn shared_fractional_exponent() {
+    assert_eq!(
+      interpret("Integrate[x (x - 1)^(1/8) (x + 1)^(1/8), x]").unwrap(),
+      "(4*(-1 + x)^(9/8)*(1 + x)^(9/8))/9"
+    );
+    assert_eq!(
+      interpret("Integrate[(2 x + 1) x^(1/3) (x + 1)^(1/3), x]").unwrap(),
+      "(3*x^(4/3)*(1 + x)^(4/3))/4"
+    );
+  }
+
+  #[test]
+  fn linear_ode_with_split_integrating_factor() {
+    assert_eq!(
+      interpret(
+        "DSolve[z[x]/(2 (x - 1)) + z[x]/(2 (x + 1)) + 4 z'[x] == x, z[x], x]"
+      )
+      .unwrap(),
+      "{{z[x] -> ((-1 + x)*(1 + x))/9 + C[1]/((-1 + x)^(1/8)*(1 + x)^(1/8))}}"
+    );
+  }
+}
+
 mod integrate_reciprocal_powers {
   use super::*;
 
@@ -12774,6 +12802,85 @@ mod ndsolve {
       result.starts_with("NDSolve["),
       "Expected an unevaluated NDSolve, got: {result}"
     );
+  }
+
+  /// The solution takes its arguments in the order of the unknown's own
+  /// calls, whatever order the domains are declared in: `c[x, t]` solved
+  /// over `{t, …}, {x, …}` is still evaluated as `c[x0, t0]`.
+  #[test]
+  fn ndsolve_pde_solution_follows_the_unknowns_argument_order() {
+    for doms in ["{t, 0, 2}, {x, 0, 1}", "{x, 0, 1}, {t, 0, 2}"] {
+      let code = format!(
+        "sol = NDSolveValue[{{D[c[x, t], t] == D[c[x, t], x, x], \
+         c[x, 0] == Sin[Pi x], c[0, t] == 0, c[1, t] == 0}}, c, {doms}]; \
+         {{sol[\"Domain\"], Round[1000 sol[0.5, 0.1]], \
+         Round[1000 Exp[-Pi^2 0.1]]}}"
+      );
+      assert_eq!(
+        interpret(&code).unwrap(),
+        "{{{0., 1.}, {0., 2.}}, 373, 373}",
+        "{doms}"
+      );
+    }
+  }
+
+  /// The same holds with `NeumannValue` boundary terms on the variable
+  /// that is not the unknown's first argument (`c[x, r]` with the flux on
+  /// `r`): no extrapolation, and values at the inflow `x = 0` are the
+  /// initial ones.
+  #[test]
+  fn ndsolve_neumann_value_solution_follows_the_unknowns_argument_order() {
+    let result = interpret(
+      "sol = NDSolveValue[{D[c[x, r], x] - D[c[x, r], r, r] == \
+       NeumannValue[-c[x, r], r == 0] + NeumannValue[-c[x, r], r == 1], \
+       c[0, r] == 1}, c, {x, 0, 1}, {r, 0, 1}]; \
+       {sol[\"Domain\"], Round[100 sol[0, 0.5]], \
+       0 < sol[1, 0.5] < sol[0.5, 0.5] < 1}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{0., 1.}, {0., 1.}}, 100, True}");
+  }
+
+  /// A radial operator written on a symmetric domain with a regularized
+  /// pole, `1/(r + eps) D[r D[c, r], r]`, puts a grid point right on the
+  /// near-singularity. The coefficients there are averaged over the
+  /// point's cell (as a finite element quadrature would), so the solution
+  /// stays bounded by its inflow value and decays along the flow, instead
+  /// of blowing up at the center line.
+  #[test]
+  fn ndsolve_regularized_radial_pole_on_a_grid_point() {
+    let result = interpret(
+      "R = 1/80; sol = NDSolveValue[{2 (1 - (r/R)^2) D[c[x, r], x] - \
+       5*10^-6/(r + 10^-6) D[r D[c[x, r], r], r] == \
+       NeumannValue[-c[x, r]/100, r == -R] + \
+       NeumannValue[-c[x, r]/100, r == R], c[0, r] == 1}, c, \
+       {x, 0, 25}, {r, -R, R}]; \
+       v = Table[sol[x, r], {x, {1, 5, 25}}, {r, {-R/2, 0, R/2}}]; \
+       {Max[v] <= 1, v[[1, 2]] > v[[2, 2]] > v[[3, 2]] > 0, \
+       Abs[v[[3, 1]] - v[[3, 3]]] < 10^-3}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True, True}");
+  }
+
+  /// The same near-singular radial operator in a countercurrent system
+  /// (the second unknown carries its condition at the far end, making it a
+  /// stationary problem over both variables) stays bounded too.
+  #[test]
+  fn ndsolve_stationary_regularized_radial_pole_on_a_grid_point() {
+    let result = interpret(
+      "R = 1/80; {b, d} = NDSolveValue[{2 (1 - (r/R)^2) D[cb[x, r], x] - \
+       5*10^-6/(r + 10^-6) D[r D[cb[x, r], r], r] == \
+       NeumannValue[-(cb[x, r] - cd[x, r])/100, r == -R] + \
+       NeumannValue[-(cb[x, r] - cd[x, r])/100, r == R], cb[0, r] == 1, \
+       -D[cd[x, r], x] == (cb[x, r] - cd[x, r])/10, cd[25, r] == 0}, \
+       {cb, cd}, {x, 0, 25}, {r, -R, R}]; \
+       v = Table[b[x, r], {x, {1, 5, 25}}, {r, {-R/2, 0, R/2}}]; \
+       {Max[v] <= 1, v[[1, 2]] > v[[2, 2]] > v[[3, 2]] > 0, \
+       0 < d[0, 0] < 1}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True, True}");
   }
 
   /// Two space variables and time: the separable mode

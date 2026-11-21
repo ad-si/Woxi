@@ -937,6 +937,137 @@ fn contains_dynamic(expr: &woxi::syntax::Expr) -> bool {
   }
 }
 
+/// The direct subexpressions of `expr`.
+fn sub_exprs(expr: &woxi::syntax::Expr) -> Vec<&woxi::syntax::Expr> {
+  use woxi::syntax::Expr;
+  match expr {
+    Expr::List(items) | Expr::FunctionCall { args: items, .. } => {
+      items.iter().collect()
+    }
+    Expr::CompoundExpr(items) => items.iter().collect(),
+    Expr::Comparison { operands, .. } => operands.iter().collect(),
+    Expr::Association(pairs) => {
+      pairs.iter().flat_map(|(k, v)| [k, v]).collect()
+    }
+    Expr::BinaryOp { left, right, .. } => vec![left, right],
+    Expr::UnaryOp { operand, .. } => vec![operand],
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => vec![pattern, replacement],
+    Expr::ReplaceAll { expr, rules }
+    | Expr::ReplaceRepeated { expr, rules } => vec![expr, rules],
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => vec![func, list],
+    Expr::PrefixApply { func, arg } => vec![func, arg],
+    Expr::Postfix { expr, func } => vec![expr, func],
+    Expr::Part { expr, index } => vec![expr, index],
+    Expr::CurriedCall { func, args } => {
+      std::iter::once(func.as_ref()).chain(args.iter()).collect()
+    }
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => vec![body],
+    Expr::PatternTest { test, .. } => vec![test],
+    _ => Vec::new(),
+  }
+}
+
+/// The content of a `Dynamic[content, …]` / `Dynamic@content` expression.
+fn dynamic_content(expr: &woxi::syntax::Expr) -> Option<&woxi::syntax::Expr> {
+  use woxi::syntax::Expr;
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Dynamic" => args.first(),
+    Expr::PrefixApply { func, arg } if matches!(func.as_ref(), Expr::Identifier(n) if n == "Dynamic") => {
+      Some(arg)
+    }
+    _ => None,
+  }
+}
+
+/// Collect the symbols `expr` assigns (`writes`) and the ones it reads
+/// (`reads`). The symbol a plain `Set` assigns is not a read of it; an
+/// update such as `AddTo` or `Increment` reads it as well.
+fn collect_reads_and_writes(
+  expr: &woxi::syntax::Expr,
+  reads: &mut Vec<String>,
+  writes: &mut Vec<String>,
+) {
+  use woxi::syntax::Expr;
+  if let Expr::Identifier(name) = expr {
+    reads.push(name.clone());
+    return;
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(target) = args.first()
+  {
+    let updates = matches!(
+      name.as_str(),
+      "AddTo"
+        | "SubtractFrom"
+        | "TimesBy"
+        | "DivideBy"
+        | "Increment"
+        | "Decrement"
+        | "PreIncrement"
+        | "PreDecrement"
+        | "AppendTo"
+        | "PrependTo"
+    );
+    if updates || name == "Set" {
+      let targets: Vec<&Expr> = match target {
+        Expr::List(items) if name == "Set" => items.iter().collect(),
+        other => vec![other],
+      };
+      for t in targets {
+        match t {
+          Expr::Identifier(v) => {
+            writes.push(v.clone());
+            if updates {
+              reads.push(v.clone());
+            }
+          }
+          other => collect_reads_and_writes(other, reads, writes),
+        }
+      }
+      for rest in args.iter().skip(1) {
+        collect_reads_and_writes(rest, reads, writes);
+      }
+      return;
+    }
+  }
+  for sub in sub_exprs(expr) {
+    collect_reads_and_writes(sub, reads, writes);
+  }
+}
+
+/// The symbols that a `Dynamic[…]` inside `body` both reads and assigns,
+/// e.g. `s` and `i` in `Dynamic[s = s + g; i = step[i]; draw[i]]`.
+fn dynamic_feedback_vars(body: &str) -> Vec<String> {
+  fn walk(expr: &woxi::syntax::Expr, out: &mut Vec<String>) {
+    if let Some(content) = dynamic_content(expr) {
+      let (mut reads, mut writes) = (Vec::new(), Vec::new());
+      collect_reads_and_writes(content, &mut reads, &mut writes);
+      for w in writes {
+        if reads.contains(&w) && !out.contains(&w) {
+          out.push(w);
+        }
+      }
+    }
+    for sub in sub_exprs(expr) {
+      walk(sub, out);
+    }
+  }
+  let mut out = Vec::new();
+  if let Ok(parsed) = woxi::syntax::string_to_expr(body) {
+    walk(&parsed, &mut out);
+  }
+  out
+}
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -1017,12 +1148,18 @@ pub struct ManipulateState {
   /// away) or ran a `Refresh[…, UpdateInterval -> t]` that asks for a
   /// re-evaluation on a timer.
   self_refreshing: bool,
+  /// Hidden state variables a `Dynamic[…]` in the body both reads and
+  /// assigns (`Dynamic[s = s + g; …]`). The front end refreshes such a
+  /// `Dynamic` again whenever its own write changed what it reads, so the
+  /// body keeps stepping on its own while the value moves.
+  dynamic_feedback_vars: Vec<String>,
   /// `UpdateInterval` code of a `Refresh[…, UpdateInterval -> t]` in the
   /// body (see `ManipulateSpec::refresh_interval`).
   refresh_interval: Option<String>,
   /// The seconds between timed refreshes as of the last frame, or `None`
   /// when the body does not currently refresh on its own (`t` is
-  /// `Infinity`, e.g. while a "run" checkbox is off).
+  /// `Infinity`, e.g. while a "run" checkbox is off, or the `Refresh` did
+  /// not run).
   timed_refresh: Option<f64>,
   /// When the body last re-ran, so a timed refresh honors its interval.
   last_refresh: Option<std::time::Instant>,
@@ -1242,9 +1379,12 @@ impl ManipulateState {
 
   /// Whether the control at `ctrl_idx` shares a line of the control panel
   /// with the control before it, because one `Row[{Control[…],
-  /// Control[…]}]` argument placed both side by side.
+  /// Control[…]}]` argument placed both side by side. The item before it
+  /// may also be a panel display standing in for a control (a
+  /// `ControlType -> TogglerBar` bar drawn just before `ctrl_idx`), so even
+  /// the first declared control can join a line.
   pub fn joins_previous_control(&self, ctrl_idx: usize) -> bool {
-    ctrl_idx > 0
+    (ctrl_idx > 0 || self.panel_displays.iter().any(|(_, at)| *at == 0))
       && self
         .controls
         .get(ctrl_idx)
@@ -1325,6 +1465,7 @@ impl ManipulateState {
       &spec.body_code,
       &control_names,
     );
+    let dynamic_feedback_vars = dynamic_feedback_vars(&body);
     let mut state = ManipulateState {
       body,
       initialization: spec.initialization,
@@ -1361,6 +1502,7 @@ impl ManipulateState {
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
       self_refreshing: false,
+      dynamic_feedback_vars,
       refresh_interval: spec.refresh_interval,
       timed_refresh: None,
       last_refresh: None,
@@ -2662,18 +2804,24 @@ impl ManipulateState {
         ),
       )
     });
-    self.timed_refresh = timed_refresh;
+    // Whether this pass actually ran a timed `Refresh` (one inside an
+    // untaken `If` branch, e.g. a recorder that is switched off, does not
+    // make the body re-run on its own).
+    let refresh_ran = woxi::take_timed_refresh();
+    self.timed_refresh = timed_refresh.filter(|_| refresh_ran);
     self.last_refresh = Some(std::time::Instant::now());
     self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
-    let timed_refresh = woxi::take_timed_refresh();
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
     self.self_refreshing = false;
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
-        if slot.1 != value && self.module_locals.contains(&name) {
+        if slot.1 != value
+          && (self.module_locals.contains(&name)
+            || self.dynamic_feedback_vars.contains(&name))
+        {
           self.self_refreshing = true;
         }
         slot.1 = value.clone();
@@ -2717,7 +2865,7 @@ impl ManipulateState {
     }
     // A `Refresh` whose interval is known is paced by `timed_refresh`
     // instead, so a finite `UpdateInterval` waits its seconds.
-    self.self_refreshing |= timed_refresh && self.timed_refresh.is_none();
+    self.self_refreshing |= refresh_ran && self.timed_refresh.is_none();
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -5602,6 +5750,49 @@ mod tests {
     );
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose visible sliders
+  /// state their defaults and are followed by hidden `{{var, value},
+  /// ControlType -> None}` specs carrying other values for the same
+  /// variables. This is a self-authored, construct-equivalent example.
+  ///
+  /// Wolfram keeps the first starting value, so the sliders (and the body)
+  /// must start at the visible defaults; the later hidden values used to
+  /// override them.
+  #[test]
+  fn later_hidden_spec_keeps_visible_control_default() {
+    let code = r#"Manipulate[
+      {width, depth, shift},
+      {{width, 10, "width"}, 10, 20},
+      {{depth, -4, "depth"}, -4, -1, 0.01},
+      {{shift, 0}, ControlType -> None},
+      {{width, 17.5}, ControlType -> None},
+      {{depth, -2.25}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let current = |name: &str| {
+      state
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .map(|c| c.current_code())
+    };
+    assert_eq!(current("width").as_deref(), Some("10"));
+    assert_eq!(current("depth").as_deref(), Some("-4"));
+    assert!(
+      state
+        .state
+        .iter()
+        .all(|(n, _)| n != "width" && n != "depth"),
+      "hidden respecs must not shadow the sliders: {:?}",
+      state.state
+    );
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("{10, -4, 0}"));
+  }
+
   /// An interval control whose bounds are wrapped in `QuantityMagnitude`
   /// (a plain number is its own magnitude) must still be a real
   /// `IntervalSlider`; it used to vanish because the bounds stayed symbolic.
@@ -5815,14 +6006,13 @@ mod tests {
   }
 
   /// A Demonstrations idiom declares a control's own default
-  /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
-  /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
-  /// so the variable ends up tracked both by its visible control and by
-  /// `ManipulateState::state`. The widget's own selection must still track
-  /// whatever the body actually binds `n` to (3, from the override spec, as
-  /// narrowed by `If[n < from, n = 3]`), not drift to the last entry of its
-  /// choice list the way a stale `current_index` did before the two tracks
-  /// were kept in sync.
+  /// (`Control[{{n, 2, "n"}, …}]`) and later lists a hidden `{{n, 3}, None}`
+  /// spec for the same variable. Wolfram keeps the first starting value, so
+  /// `n` starts at the control's 2 and is not tracked as hidden state too;
+  /// the body then narrows it to 3 (`If[n < from, n = 3]`). The widget's own
+  /// selection must track whatever the body actually binds `n` to, not drift
+  /// to the last entry of its choice list the way a stale `current_index`
+  /// did.
   #[test]
   fn discrete_control_syncs_with_shadowing_state_override() {
     let expr = woxi::interpret_to_expr(
@@ -5848,16 +6038,14 @@ mod tests {
       .iter()
       .find(|c| c.name() == "n")
       .expect("n control");
-    let n_state = state
-      .state
-      .iter()
-      .find(|(name, _)| name == "n")
-      .map(|(_, v)| v.as_str());
-
-    // The widget's own selection and the shadowing state entry must agree
-    // with each other, and both with the value the body actually bound.
+    // The widget's own selection follows the value the body actually bound,
+    // and the later hidden spec does not shadow the control.
     assert_eq!(n_ctrl.current_code(), "3");
-    assert_eq!(n_state, Some("3"));
+    assert!(
+      state.state.iter().all(|(name, _)| name != "n"),
+      "{:?}",
+      state.state
+    );
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
@@ -7973,6 +8161,31 @@ mod tests {
     assert!(shown.contains("text: \"1\""), "{shown}");
   }
 
+  /// A `Row` of `Control@` specs whose first is a `ControlType ->
+  /// TogglerBar` bar (drawn as a panel display) puts the checkbox written
+  /// after it on the same line, even though that checkbox is the first
+  /// declared control. Regression: `joins_previous_control(0)` was always
+  /// false, so the checkbox dropped to a line of its own.
+  #[test]
+  fn checkbox_after_toggler_bar_in_one_row_shares_its_line() {
+    let code = r#"Manipulate[
+      {u, v, w}[[k]] /. q -> on,
+      Row[{
+        Control@{{k, {2, 3}, "pick"}, Range[3], ControlType -> TogglerBar},
+        Spacer[20],
+        Control@{{on, False, "enabled"}, {True, False}}
+      }]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["on"]);
+    assert_eq!(state.panel_displays, vec![(0, 0)]);
+    assert!(state.joins_previous_control(0));
+  }
+
   /// A `ClickPane` graphic whose `ImageSize` is wider than its square
   /// `PlotRange` is drawn letterboxed: a click must report the coordinates
   /// of the graphic under the pointer, not a position stretched over the
@@ -9931,6 +10144,75 @@ mod control_panel_tabview_tests {
     state.reevaluate();
     assert!(vis(&state, "shift"), "the slider shows on its own tab");
     assert_eq!(state.text_output.as_deref(), Some("{high, 7}"));
+  }
+}
+
+#[cfg(test)]
+mod dynamic_feedback_tests {
+  use super::*;
+
+  fn var(state: &ManipulateState, name: &str) -> String {
+    state
+      .state
+      .iter()
+      .find(|(n, _)| n == name)
+      .map(|(_, v)| v.clone())
+      .unwrap_or_default()
+  }
+
+  #[test]
+  fn feedback_vars_are_read_and_assigned_inside_dynamic() {
+    let vars = dynamic_feedback_vars(
+      "Column[{Dynamic[a], Dynamic@(b = b + 1; c = 5; d += 2; {e} = {f}; \
+       g = Length[g]; Plot[x, {x, 0, b}])}]",
+    );
+    assert_eq!(vars, ["b", "d", "g"]);
+    // Writes outside any `Dynamic` do not count.
+    assert!(dynamic_feedback_vars("n = n + 1; Dynamic[n]").is_empty());
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a cellular automaton
+  /// whose "speed" slider makes a `Dynamic` step its hidden state forward
+  /// on every refresh). The Studio rendered it once and never advanced.
+  /// This is a self-authored, construct-equivalent example.
+  #[test]
+  fn dynamic_writing_its_own_state_keeps_refreshing() {
+    let code = r#"Manipulate[
+      Column[{Row[{"at ", Dynamic[t]}],
+        Dynamic[If[k > 0, t = t + k; seen = Append[seen, t]]; Length[seen]]}],
+      {k, 0, 4, 1},
+      {{t, 0}, ControlType -> None},
+      {{seen, {}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert!(!state.wants_tick(), "nothing moves at speed 0");
+    assert_eq!(var(&state, "t"), "0");
+
+    let t_of = |state: &ManipulateState| -> i64 {
+      var(state, "t").parse().expect("an integer step")
+    };
+    assert!(state.slide_continuous(0, 2.0));
+    state.reevaluate();
+    let first = t_of(&state);
+    assert!(first > 0 && first % 2 == 0, "stepped by the speed: {first}");
+    assert!(state.wants_tick(), "the Dynamic changed what it reads");
+    state.tick();
+    let second = t_of(&state);
+    assert!(second > first, "the tick stepped on: {first} -> {second}");
+    state.tick();
+    assert!(t_of(&state) > second);
+
+    // Back at speed 0 the state stops changing, and so does the timer.
+    assert!(state.slide_continuous(0, 0.0));
+    state.reevaluate();
+    let resting = var(&state, "t");
+    assert!(!state.wants_tick(), "idle once the state settles");
+    state.reevaluate();
+    assert_eq!(var(&state, "t"), resting);
   }
 }
 

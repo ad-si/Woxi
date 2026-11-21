@@ -9317,6 +9317,25 @@ mod find_shortest_tour {
   }
 
   #[test]
+  fn distance_function_returning_quantities() {
+    assert_eq!(
+      interpret(
+        "FindShortestTour[{1, 2, 3, 4}, DistanceFunction -> (Quantity[Abs[#1 - #2], \"Meters\"] &)]"
+      )
+      .unwrap(),
+      "{Quantity[6, Meters], {1, 4, 3, 2, 1}}"
+    );
+    // GeoDistance between {latitude, longitude} pairs.
+    assert_eq!(
+      interpret(
+        "{Head[First[#]], Last[#]} &[FindShortestTour[{{37.2, -93.3}, {42.1, -72.6}, {39.8, -89.6}, {40.7, -74.0}}, DistanceFunction -> GeoDistance]]"
+      )
+      .unwrap(),
+      "{Quantity, {1, 4, 2, 3, 1}}"
+    );
+  }
+
+  #[test]
   fn open_path_between_endpoints() {
     assert_eq!(
       interpret(

@@ -754,6 +754,11 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
             s,
             source.image_size.0,
           ));
+          // `Arrowheads` from `PlotStyle` stays on the curve, so that
+          // `plot /. Line -> Arrow` draws the heads it specifies.
+          if let Some(spec) = &s.arrowheads {
+            style.push(call1("Arrowheads", spec.clone()));
+          }
         }
         // One `Directive`, as in Wolfram's plot primitives, so the line
         // stays the second element of its group.

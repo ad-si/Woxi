@@ -7270,6 +7270,45 @@ fn wrap_pane_text_at(
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
     }
+    // A `Framed` box re-flows its content in the room its margins and
+    // border leave inside the width.
+    "Framed" if !args.is_empty() => {
+      let (left, right, _, _) = crate::functions::graphics::framed_margins(
+        &args[1..],
+        crate::functions::graphics::FRAMED_DEFAULT_MARGIN,
+      );
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width - left - right - 2.0,
+        font_size,
+        family,
+        whole_words,
+        proportional,
+      )?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Framed", new_args))
+    }
+    // `Labeled[body, label]` / `Labeled[body, label, Top | Bottom]` stacks
+    // its caption over or under the body, which re-flows across the whole
+    // width.
+    "Labeled"
+      if args.len() == 2
+        || (args.len() == 3
+          && matches!(&args[2], Expr::Identifier(p) if p == "Top" || p == "Bottom")) =>
+    {
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width,
+        font_size,
+        family,
+        whole_words,
+        proportional,
+      )?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Labeled", new_args))
+    }
     // `Row[{e1, e2, …}, sep]` displays the items with `sep` between them,
     // so it re-flows as the one-argument `Row[{e1, sep, e2, sep, …}]`.
     "Row" if args.len() == 2 => {
@@ -7592,6 +7631,8 @@ fn style_font_size(directives: &[Expr]) -> Option<f64> {
   directives.iter().find_map(|d| match d {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(r) => Some(*r),
+    // A directive list (`Style[text, {11, Bold}]`) holds the size too.
+    Expr::List(items) => style_font_size(items),
     Expr::Rule {
       pattern,
       replacement,
@@ -7768,6 +7809,50 @@ pub(crate) fn align_pane_lines(
   }
 }
 
+/// `Style[TraditionalForm[Style[layout, inner…]], outer…]` — a styled
+/// layout put in `TraditionalForm` and styled again (as `Text[…]` does with
+/// its text face) — is the layout styled by both: `TraditionalForm[Style[
+/// layout, outer…, inner…]]`, the nearer directives last so they win.
+/// `None` for anything else.
+fn traditional_style_merged(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Style" || args.len() < 2 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: form,
+    args: form_args,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if form != "TraditionalForm" || form_args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: style,
+    args: inner,
+  } = &form_args[0]
+  else {
+    return None;
+  };
+  if style != "Style"
+    || inner.len() < 2
+    || !matches!(&inner[0], Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Grid" | "TextGrid" | "Column" | "Row")
+        && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return None;
+  }
+  let directives = std::iter::once(inner[0].clone())
+    .chain(args[1..].iter().cloned())
+    .chain(inner[1..].iter().cloned())
+    .collect();
+  Some(call1("TraditionalForm", call("Style", directives)))
+}
+
 /// Whether pane content is a `Column` of its own, looking through the
 /// `Style`/`Text`/`TraditionalForm`/`Pane` wrappers `wrap_pane_text`
 /// re-flows through.
@@ -7789,6 +7874,9 @@ fn pane_content_is_column(content: &Expr) -> bool {
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
+  }
+  if let Some(merged) = traditional_style_merged(expr) {
+    return expr_to_svg(&merged);
   }
   // A volume is drawn as its flat projection.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Image3D")
@@ -8119,6 +8207,54 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       expr_to_svg(&hoisted)
     }
+    // `Style[TraditionalForm[Style[Grid[…], 24]], directives…]` — what
+    // `Text[TraditionalForm[Style[layout, …]]]` becomes: the form applies
+    // to the items of the styled layout, and the outer directives style
+    // that layout, rather than the whole being printed as its source.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: tf_args }
+          if tf == "TraditionalForm"
+            && tf_args.len() == 1
+            && matches!(&tf_args[0], Expr::FunctionCall { name: w, .. }
+              if w == "Style" || w == "Text")
+            && crate::functions::graphics::is_traditional_layout(&tf_args[0])) =>
+    {
+      let Expr::FunctionCall { args: tf_args, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut styled =
+        vec![crate::functions::graphics::traditionalize_layout_items(
+          &tf_args[0],
+        )];
+      styled.extend(args[1..].iter().cloned());
+      expr_to_svg(&call("Style", styled))
+    }
+    // `Style[TraditionalForm[grid], directives…]` (what `Text` makes of
+    // `Text[TraditionalForm[Style[Grid[…], 24]]]`): the directives style
+    // the typeset grid, so they move inside the `TraditionalForm` and the
+    // grid is typeset with them, rather than flattened into one line of
+    // text by the styled-text path.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: targs }
+          if tf == "TraditionalForm"
+            && targs.len() == 1
+            && typesets_a_grid(&targs[0])) =>
+    {
+      let Expr::FunctionCall { args: targs, .. } = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let styled = call(
+        "Style",
+        std::iter::once(targs[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+      expr_to_svg(&call1("TraditionalForm", styled))
+    }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and
     // places its content, so the directives style the content, inside the
     // pane — which keeps its width (and the wrapping of text at it).
@@ -8247,37 +8383,45 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       } else {
         expr_to_svg(&unquoted_display_string(&args[0]))
       };
+      // `RotateLabel -> True` turns the labels at the left and right so
+      // they read along the content's height.
+      let rotate = args[2..].iter().any(|opt| {
+        matches!(opt, Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "RotateLabel")
+            && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "True"))
+      });
       // `Labeled[g, {l1, l2, …}, {p1, p2, …}]` sets each label at its own
-      // side; same-side labels stack into one cell of a 3x3 layout.
-      if let (Expr::List(labels), Some(Expr::List(positions))) =
-        (&args[1], args.get(2))
-        && labels.len() == positions.len()
-      {
-        let mut sides: [Vec<Vec<String>>; 4] = Default::default();
-        for (label, position) in labels.iter().zip(positions.iter()) {
+      // side, centered on the content; same-side labels stack. A single
+      // turned `Left`/`Right` label takes the same layout.
+      let side_labels: Option<Vec<(&Expr, &Expr)>> =
+        match (&args[1], args.get(2)) {
+          (Expr::List(labels), Some(Expr::List(positions)))
+            if labels.len() == positions.len() =>
+          {
+            Some(labels.iter().zip(positions.iter()).collect())
+          }
+          (label, Some(position @ Expr::Identifier(p)))
+            if rotate && (p == "Left" || p == "Right") =>
+          {
+            Some(vec![(label, position)])
+          }
+          _ => None,
+        };
+      if let Some(side_labels) = side_labels {
+        let mut sides: [Vec<String>; 4] = Default::default();
+        for (label, position) in side_labels {
           let side = match position {
             Expr::Identifier(p) if p == "Top" => 0,
             Expr::Identifier(p) if p == "Left" => 1,
             Expr::Identifier(p) if p == "Right" => 2,
             _ => 3,
           };
-          sides[side].push(vec![expr_to_svg(&unquoted_display_string(label))]);
+          sides[side].push(expr_to_svg(&unquoted_display_string(label)));
         }
-        let side_cell = |rows: &Vec<Vec<String>>| -> String {
-          match rows.len() {
-            0 => String::new(),
-            1 => rows[0][0].clone(),
-            _ => crate::functions::graphics::combine_graphics_svgs(rows)
-              .unwrap_or_default(),
-          }
-        };
-        let rows = vec![
-          vec![String::new(), side_cell(&sides[0]), String::new()],
-          vec![side_cell(&sides[1]), content, side_cell(&sides[2])],
-          vec![String::new(), side_cell(&sides[3]), String::new()],
-        ];
-        return crate::functions::graphics::combine_graphics_svgs(&rows)
-          .unwrap_or_else(|| expr_text_svg(expr));
+        return crate::functions::graphics::labeled_sides_svg(
+          &content, &sides, rotate,
+        )
+        .unwrap_or_else(|| expr_text_svg(expr));
       }
       // A label is shown as text, so a string one loses its quotes.
       let label = expr_to_svg(&unquoted_display_string(&args[1]));
@@ -8493,6 +8637,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
               )) =>
               {
                 "<svg width=\"1\" height=\"1\" viewBox=\"0 0 1 1\" xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string()
+              }
+              // A grid's `BaseStyle` font family reaches the captions of
+              // its `Labeled` pictures.
+              None if name == "Grid" => {
+                expr_to_svg(&unquoted_display_string(
+                  &crate::functions::graphics::labeled_cell_in_grid_options(
+                    c,
+                    &args[1..],
+                  ),
+                ))
               }
               None => expr_to_svg(&unquoted_display_string(c)),
             })
@@ -9714,4 +9868,22 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   format!("{head}{rest}")
+}
+
+/// Whether `expr` is a `Grid`/`TextGrid` call, possibly under `Style`
+/// wrappers.
+fn typesets_a_grid(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      typesets_a_grid(&args[0])
+    }
+    _ => false,
+  }
 }

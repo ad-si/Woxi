@@ -855,9 +855,11 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
       "Legend",
       "LegendBackground",
       "LegendBorder",
+      "LegendLabelSpace",
       "LegendPosition",
       "LegendShadow",
       "LegendSize",
+      "LegendTextSpace",
       "ShowLegend",
     ] {
       crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
@@ -5478,7 +5480,15 @@ fn evaluate_function_call_ast_inner(
   ) && !args.is_empty()
   {
     // Options may arrive as one list of rules, which is not a position.
-    let args = &crate::functions::graphics::splice_option_lists(args)[..];
+    let mut args = crate::functions::graphics::splice_option_lists(args);
+    // A Combinatorica graph is laid out like the built-in graph with the
+    // same vertices and edges.
+    if let Some(g) =
+      crate::functions::combinatorica_graph::to_system_graph(&args[0])
+    {
+      args[0] = g;
+    }
+    let args = &args[..];
     if name == "GraphPlot3D"
       && (matches!(&args[0], Expr::List(_))
         || matches!(&args[0], Expr::FunctionCall { name: n, .. } if n == "Graph"))
