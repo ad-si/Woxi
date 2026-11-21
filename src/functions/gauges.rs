@@ -299,13 +299,16 @@ fn circle_points(r: f64, start: f64, n: usize) -> String {
   format!("{{{}}}", pts.join(", "))
 }
 
-/// The dial's white face and gray bezel ring, starting at angle `start`.
-fn dial_face(start: f64) -> String {
+/// The dial's face and bezel ring, starting at angle `start`: white and
+/// gray unless `face` or `frame` give their fills.
+fn dial_face(start: f64, face: Option<&str>, frame: Option<&str>) -> String {
+  let face = face.unwrap_or("LightDarkSwitched[GrayLevel[1], GrayLevel[1/3]]");
+  let frame = frame.unwrap_or("GrayLevel[0.8]");
   let inner = circle_points(1.0, start, 100);
   let outer = circle_points(1.07, start, 102);
   format!(
-    "{{Directive[EdgeForm[None], LightDarkSwitched[GrayLevel[1], GrayLevel[1/3]]], FilledCurve[{{Line[{inner}]}}]}}, \
-     {{Directive[EdgeForm[{{Thickness[0.01], GrayLevel[0.6]}}], GrayLevel[0.8]], FilledCurve[{{{{Line[{inner}]}}, {{Line[{outer}]}}}}]}}"
+    "{{EdgeForm[None], {face}, FilledCurve[{{Line[{inner}]}}]}}, \
+     {{EdgeForm[{{Thickness[0.01], GrayLevel[0.6]}}], {frame}, FilledCurve[{{{{Line[{inner}]}}, {{Line[{outer}]}}}}]}}"
   )
 }
 
@@ -365,7 +368,7 @@ pub fn angular_gauge_ast(
   // The arc spans 2 across but only 1 + sin 60° up, so a vertical share of
   // the plot range is that much shorter.
   let ky = 2.0 / (1.0 + 60f64.to_radians().sin());
-  let mut parts = vec![dial_face(start)];
+  let mut parts = vec![dial_face(start, None, None)];
   if let Ok(divisions) = scale_divisions(args) {
     let sc = scale(&lo, &hi, divisions);
     let major: Vec<f64> = sc.major.iter().map(|(t, _)| angle(*t)).collect();
@@ -448,8 +451,159 @@ fn clock_time(
   })
 }
 
+/// A style as WL source, unless it is missing or `Automatic`.
+fn style_source(e: Option<&Expr>) -> Option<String> {
+  match e? {
+    Expr::Identifier(a) if a == "Automatic" => None,
+    e => Some(expr_to_source_form(e)),
+  }
+}
+
+/// The style of option `key` as WL source, unless it is unset or
+/// `Automatic`.
+fn style_option(args: &[Expr], key: &str) -> Option<String> {
+  style_source(option(args, key).as_ref())
+}
+
+/// The styles of a clock's hour, minute and second hands: `GaugeStyle ->
+/// style` styles all three, `GaugeStyle -> {hour, minute, second}` each in
+/// turn (`Automatic` or a missing entry keeps that hand's default).
+fn clock_hand_styles(args: &[Expr]) -> [Option<String>; 3] {
+  let pick = style_source;
+  match &option(args, "GaugeStyle") {
+    None => [None, None, None],
+    Some(Expr::List(items)) => {
+      [pick(items.first()), pick(items.get(1)), pick(items.get(2))]
+    }
+    Some(e) => {
+      let s = pick(Some(e));
+      [s.clone(), s.clone(), s]
+    }
+  }
+}
+
+/// `ScaleDivisions` of a clock: `{major, minor}` majors around the dial
+/// with `minor` steps between neighbors, `n` (five steps each) or `None`
+/// (no ticks). The default is 12 hours of five minutes each.
+fn clock_divisions(args: &[Expr]) -> Option<(i128, i128)> {
+  match &option(args, "ScaleDivisions") {
+    Some(Expr::Identifier(n)) if n == "None" => None,
+    Some(Expr::Integer(n)) if *n > 0 => Some((*n, 5)),
+    Some(Expr::List(items)) => match items.as_slice() {
+      [Expr::Integer(a), Expr::Integer(b)] if *a > 0 && *b > 0 => {
+        Some((*a, *b))
+      }
+      _ => Some((12, 5)),
+    },
+    _ => Some((12, 5)),
+  }
+}
+
+/// An annular sector of a clock's `ScaleRanges` from hour `t1` to `t2`
+/// (clockwise from 12), between the radial shares `r1` and `r2`, which
+/// are measured inwards from the scale at radius `rim` (0 is the scale,
+/// 1 the center).
+fn clock_range_sector(
+  (t1, t2): (f64, f64),
+  (r1, r2): (f64, f64),
+  rim: f64,
+  style: &str,
+) -> Option<String> {
+  let (t1, t2) = (t1.clamp(0.0, 12.0), t2.clamp(0.0, 12.0));
+  let (t1, t2) = (t1.min(t2), t1.max(t2));
+  if t2 - t1 < 1e-12 {
+    return None;
+  }
+  let outer = rim * (1.0 - r1.min(r2).clamp(0.0, 1.0));
+  let inner = rim * (1.0 - r1.max(r2).clamp(0.0, 1.0));
+  let at =
+    |t: f64| std::f64::consts::FRAC_PI_2 - t / 12.0 * std::f64::consts::TAU;
+  // About one point per degree of arc.
+  let n = ((t2 - t1) * 30.0).ceil().max(1.0) as usize;
+  let arc = |r: f64| -> Vec<String> {
+    (0..=n)
+      .map(|k| {
+        let a = at(t1 + (t2 - t1) * k as f64 / n as f64);
+        pt(r * a.cos(), r * a.sin())
+      })
+      .collect()
+  };
+  let mut points = arc(outer);
+  if inner > 1e-12 {
+    points.extend(arc(inner).into_iter().rev());
+  } else {
+    points.push(pt(0.0, 0.0));
+  }
+  Some(format!(
+    "{{EdgeForm[None], {style}, Polygon[{{{}}}]}}",
+    points.join(", ")
+  ))
+}
+
+/// The bands of a clock's `ScaleRanges`: each `{t1, t2}`, `{{t1, t2},
+/// {r1, r2}}` or either of them `-> style`.
+fn clock_scale_ranges(args: &[Expr], rim: f64) -> Vec<String> {
+  let Some(spec) = option(args, "ScaleRanges") else {
+    return Vec::new();
+  };
+  let specs: Vec<Expr> = match &spec {
+    Expr::List(items)
+      if items.len() == 2
+        && items.iter().all(|i| try_eval_to_f64(i).is_some()) =>
+    {
+      vec![spec.clone()]
+    }
+    Expr::List(items)
+      if matches!(items.as_slice(), [Expr::List(a), Expr::List(b)]
+        if a.len() == 2 && b.len() == 2
+          && a.iter().chain(b.iter()).all(|i| try_eval_to_f64(i).is_some())) =>
+    {
+      vec![spec.clone()]
+    }
+    Expr::List(items) => items.to_vec(),
+    other => vec![other.clone()],
+  };
+  let pair = |e: &Expr| -> Option<(f64, f64)> {
+    match e {
+      Expr::List(p) if p.len() == 2 => {
+        Some((try_eval_to_f64(&p[0])?, try_eval_to_f64(&p[1])?))
+      }
+      _ => None,
+    }
+  };
+  specs
+    .iter()
+    .filter_map(|s| {
+      let (range, style) = match s {
+        Expr::Rule {
+          pattern,
+          replacement,
+        }
+        | Expr::RuleDelayed {
+          pattern,
+          replacement,
+        } => ((**pattern).clone(), expr_to_source_form(replacement)),
+        other => (other.clone(), CLOCK_RANGE_STYLE.to_string()),
+      };
+      let (hours, radii) = match &range {
+        Expr::List(p) if p.len() == 2 && pair(&p[0]).is_some() => {
+          (pair(&p[0])?, pair(&p[1])?)
+        }
+        other => (pair(other)?, (0.0, 0.05)),
+      };
+      clock_range_sector(hours, radii, rim, &style)
+    })
+    .collect()
+}
+
+/// The fill of a `ScaleRanges` band given without a style.
+const CLOCK_RANGE_STYLE: &str = "RGBColor[1, 0.85, 0.85]";
+
 /// `ClockGauge[time]`: a clock face with an hour tick and label per hour, a
 /// minute tick between, red hour and minute hands and a gray second hand.
+/// `GaugeFaceStyle` and `GaugeFrameStyle` fill the face and the bezel,
+/// `GaugeStyle` the hands, `ScaleDivisions` sets the ticks and
+/// `ScaleRanges` draws colored bands on the face beneath them.
 pub fn clock_gauge_ast(
   args: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
@@ -458,59 +612,81 @@ pub fn clock_gauge_ast(
   };
   let quarter = std::f64::consts::FRAC_PI_2;
   let at = |turns: f64| quarter - turns * std::f64::consts::TAU;
-  // The scale runs from 0 to 12 o'clock, both at the top: 0 is labeled
-  // with an empty string under the 12.
-  let major: Vec<f64> = (0..=12).map(|k| at(f64::from(k) / 12.0)).collect();
-  let minor: Vec<f64> = (0..60)
-    .filter(|k| k % 5 != 0)
-    .map(|k| at(f64::from(k) / 60.0))
-    .collect();
-  let labels: Vec<(f64, String)> = (0..=12)
-    .map(|k| {
-      let label = if k == 0 {
-        "\"\"".to_string()
-      } else {
-        k.to_string()
-      };
-      (at(f64::from(k) / 12.0), label)
-    })
-    .collect();
-  let mut parts = vec![dial_face(quarter)];
-  parts.push(format!(
-    "{{Directive[CapForm[\"Butt\"], Thickness[0.006], {GRAY_25}], {}, {}}}, \
-     Style[{{{}}}, {GRAY_25}, {DIAL_FONT}]",
-    dial_ticks(&major, 0.93, 0.03, 1.0),
-    dial_ticks(&minor, 0.93, 0.02, 1.0),
-    dial_labels(&labels, 0.93, 0.03, 1.0)
-  ));
+  let mut parts = vec![dial_face(
+    quarter,
+    style_option(args, "GaugeFaceStyle").as_deref(),
+    style_option(args, "GaugeFrameStyle").as_deref(),
+  )];
+  parts.extend(clock_scale_ranges(args, 0.93));
+  if let Some((major_n, minor_per)) = clock_divisions(args) {
+    // The scale runs from 0 to 12 o'clock, both at the top: 0 is labeled
+    // with an empty string under the 12.
+    let steps = major_n * minor_per;
+    let major: Vec<f64> = (0..=major_n)
+      .map(|k| at(k as f64 / major_n as f64))
+      .collect();
+    let minor: Vec<f64> = (0..steps)
+      .filter(|k| k % minor_per != 0)
+      .map(|k| at(k as f64 / steps as f64))
+      .collect();
+    let labels: Vec<(f64, String)> = (0..=major_n)
+      .map(|k| {
+        let label = if k == 0 {
+          "\"\"".to_string()
+        } else {
+          let hours = eval(call(
+            "Times",
+            vec![
+              Expr::Integer(12 * k),
+              call("Power", vec![Expr::Integer(major_n), Expr::Integer(-1)]),
+            ],
+          ));
+          match hours {
+            Expr::Integer(_) => expr_to_source_form(&hours),
+            other => num(try_eval_to_f64(&other).unwrap_or(0.0)),
+          }
+        };
+        (at(k as f64 / major_n as f64), label)
+      })
+      .collect();
+    parts.push(format!(
+      "{{Directive[CapForm[\"Butt\"], Thickness[0.006], {GRAY_25}], {}, {}}}, \
+       Style[{{{}}}, {GRAY_25}, {DIAL_FONT}]",
+      dial_ticks(&major, 0.93, 0.03, 1.0),
+      dial_ticks(&minor, 0.93, 0.02, 1.0),
+      dial_labels(&labels, 0.93, 0.03, 1.0)
+    ));
+  }
   let total = sec + 60.0 * m + 3600.0 * h;
-  let hand = |turns: f64, len: f64, color: &str, shape: &str, hub: f64| {
+  let hand = |turns: f64, len: f64, style: &str, shape: &str, hub: f64| {
     let a = at(turns.rem_euclid(1.0));
     let (c, s) = (len * a.cos(), len * a.sin());
     format!(
-      "GeometricTransformation[Inset[Graphics[{{Directive[{color}], {{{{Polygon[{shape}], Disk[{{0, 0}}, {hub}]}}, {{GrayLevel[1], Disk[{{0, 0}}, 0.03]}}}}}}], {{0, 0}}, {{0, 0}}, {{1, 1}}], {{{{{}, {}}}, {{0., 0.}}}}]",
+      "GeometricTransformation[Inset[Graphics[{{{style}, {{{{Polygon[{shape}], Disk[{{0, 0}}, {hub}]}}, {{GrayLevel[1], Disk[{{0, 0}}, 0.03]}}}}}}], {{0, 0}}, {{0, 0}}, {{1, 1}}], {{{{{}, {}}}, {{0., 0.}}}}]",
       pt(c, -s),
       pt(s, c)
     )
   };
+  let [hour_style, minute_style, second_style] = clock_hand_styles(args);
+  let red = "Hue[0, 1, 0.8]";
   parts.push(hand(
     total / 43200.0,
     0.6225,
-    "Hue[0, 1, 0.8]",
+    hour_style.as_deref().unwrap_or(red),
     "{{0, -0.08}, {1, -0.04}, {1, 0.04}, {0, 0.08}}",
     0.09,
   ));
   parts.push(hand(
     total / 3600.0,
     0.996,
-    "Hue[0, 1, 0.8]",
+    minute_style.as_deref().unwrap_or(red),
     "{{0, -0.05}, {1, -0.02}, {1, 0.02}, {0, 0.05}}",
     0.09,
   ));
   parts.push(hand(
     total / 60.0,
     1.079,
-    "GrayLevel[0.6]",
+    second_style.as_deref().unwrap_or("GrayLevel[0.6]"),
     "{{-0.2, -0.03}, {1, -0.01}, {1, 0.01}, {-0.2, 0.03}}",
     0.07,
   ));

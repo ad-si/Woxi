@@ -269,6 +269,75 @@ pub enum ControlState {
   },
 }
 
+/// Whether two expressions are the same up to rounding in their machine
+/// reals: equal structure, with every pair of machine reals within a few
+/// units in the last place of each other. Everything else (exact numbers,
+/// symbols, strings) has to match exactly.
+fn equal_up_to_machine_rounding(
+  a: &woxi::syntax::Expr,
+  b: &woxi::syntax::Expr,
+) -> bool {
+  use woxi::syntax::Expr;
+  fn all_equal(xs: &[Expr], ys: &[Expr]) -> bool {
+    xs.len() == ys.len()
+      && xs
+        .iter()
+        .zip(ys)
+        .all(|(x, y)| equal_up_to_machine_rounding(x, y))
+  }
+  match (a, b) {
+    (Expr::Real(x), Expr::Real(y)) => {
+      x == y
+        || (x.is_finite()
+          && y.is_finite()
+          && (x - y).abs() <= 8.0 * f64::EPSILON * x.abs().max(y.abs()))
+    }
+    (Expr::List(xs), Expr::List(ys)) => all_equal(xs, ys),
+    (
+      Expr::FunctionCall { name: f, args: xs },
+      Expr::FunctionCall { name: g, args: ys },
+    ) => f == g && all_equal(xs, ys),
+    (
+      Expr::BinaryOp {
+        op: p,
+        left: l1,
+        right: r1,
+      },
+      Expr::BinaryOp {
+        op: q,
+        left: l2,
+        right: r2,
+      },
+    ) => {
+      p == q
+        && equal_up_to_machine_rounding(l1, l2)
+        && equal_up_to_machine_rounding(r1, r2)
+    }
+    (
+      Expr::UnaryOp { op: p, operand: x },
+      Expr::UnaryOp { op: q, operand: y },
+    ) => p == q && equal_up_to_machine_rounding(x, y),
+    (
+      Expr::Rule {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::Rule {
+        pattern: p2,
+        replacement: r2,
+      },
+    ) => {
+      equal_up_to_machine_rounding(p1, p2)
+        && equal_up_to_machine_rounding(r1, r2)
+    }
+    (Expr::Real(_), _) | (_, Expr::Real(_)) => false,
+    _ => {
+      woxi::syntax::expr_to_source_form(a)
+        == woxi::syntax::expr_to_source_form(b)
+    }
+  }
+}
+
 impl ControlState {
   pub fn name(&self) -> &str {
     match self {
@@ -439,7 +508,18 @@ impl ControlState {
         // Source form, like the choices: a `TraditionalForm[…]` value has
         // to stay that, not turn into its box rendering.
         let form = woxi::syntax::expr_to_source_form(&expr);
-        if let Some(i) = values.iter().position(|v| *v == form) {
+        // A value saved by another Wolfram build can differ from the
+        // choice recomputed here in the last bits of its machine reals
+        // (`0.23904572186687875` vs `0.23904572186687872`); it is still
+        // that choice, so the popup shows it selected.
+        let index = values.iter().position(|v| *v == form).or_else(|| {
+          let saved = woxi::syntax::string_to_expr(&form).ok()?;
+          values.iter().position(|v| {
+            woxi::syntax::string_to_expr(v)
+              .is_ok_and(|choice| equal_up_to_machine_rounding(&choice, &saved))
+          })
+        });
+        if let Some(i) = index {
           *current_index = i;
           *overflow = None;
         } else {
@@ -4216,6 +4296,69 @@ mod tests {
     }
   }
 
+  /// The controls of one `Grid` row share a line of the panel like a
+  /// `Row`'s, even with a caption, a symbol picture or a live readout
+  /// between them; each row of the grid starts a line of its own.
+  #[test]
+  fn grid_row_of_controls_is_drawn_on_one_line() {
+    let code = r#"Manipulate[
+      {a, b, c, p, q},
+      Grid[{
+        {Row[{"point ", Style["P", Italic]}],
+          Control[{{a, 1, ""}, -3, 3, 1/10}],
+          Control[{{b, 0, ""}, -3, 3, 1/10}], Spacer[10], Dynamic[N@{a, b}]},
+        {Row[{"point ", Style["Q", Italic]}],
+          Control[{{c, 2, ""}, -3, 3, 1/10}]}}],
+      Grid[{
+        {Control[{{p, True, ""}, {True, False}}],
+          Graphics[Disk[], ImageSize -> 12],
+          Control[{{q, False, ""}, {True, False}}], "shown"}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let joins: Vec<(&str, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !c.name().is_empty())
+      .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+      .collect();
+    assert_eq!(
+      joins,
+      vec![
+        ("a", false),
+        ("b", true),
+        ("c", false),
+        ("p", false),
+        ("q", true)
+      ]
+    );
+  }
+
+  /// A live coordinate readout (`Dynamic[N@{x, y, z}]`) in the control
+  /// panel prints its list value inline, `{1., -1., 0.5}`, instead of
+  /// stacking the numbers in a column.
+  #[test]
+  fn numeric_list_readout_prints_inline() {
+    let code = r#"Manipulate[
+      {x, y},
+      Row[{Control[{{x, 1, ""}, -3, 3, 1/10}],
+        Control[{{y, -1, ""}, -3, 3, 1/10}], Dynamic[N@{x, y, 1/2}]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    match state.display_trees.first() {
+      Some(woxi::functions::graphics::DisplayNode::Static { svg, text }) => {
+        assert!(svg.is_none());
+        assert_eq!(text, "{1., -1., 0.5}");
+      }
+      other => panic!("expected an inline list readout, got {other:?}"),
+    }
+  }
+
   /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
   /// control state, so they are drawn side by side on one line, and a
   /// `Style[…, FontSize -> n]` caption keeps its size.
@@ -4917,6 +5060,43 @@ mod tests {
       _ => None,
     });
     assert_eq!(selected, Some((1, None)));
+  }
+
+  /// A popup value saved by Wolfram whose machine reals differ from the
+  /// choice recomputed here only by rounding (one ulp) still selects that
+  /// choice instead of leaving the popup blank; a genuinely different value
+  /// or an exact one that merely rounds close does not.
+  #[test]
+  fn saved_value_selects_choice_equal_up_to_rounding() {
+    let code = r#"Manipulate[p,
+      {{p, {1, 0.1 + 0.2}, "presets"},
+        {{1, 0.1 + 0.2} -> "first", {2, 0.5} -> "second"}, PopupMenu}
+    ]"#;
+    let selection = |saved: &str| {
+      let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+      let mut state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      state.apply_saved_variables(&[("p".to_string(), saved.to_string())]);
+      state.controls.iter().find_map(|c| match c {
+        ControlState::Discrete {
+          current_index,
+          overflow,
+          ..
+        } => Some((*current_index, overflow.clone())),
+        _ => None,
+      })
+    };
+    // `0.1 + 0.2` is 0.30000000000000004 here, one ulp above 0.3.
+    assert_eq!(selection("{1, 0.3}"), Some((0, None)));
+    assert_eq!(selection("{2, 0.5000000000000001}"), Some((1, None)));
+    assert_eq!(
+      selection("{1, 0.31}"),
+      Some((0, Some("{1, 0.31}".to_string())))
+    );
+    assert_eq!(
+      selection("{2, 1/2}"),
+      Some((0, Some("{2, 1/2}".to_string())))
+    );
   }
 
   /// A hidden `ControlType -> None` variable whose default needs helper code
@@ -7757,6 +7937,50 @@ mod tests {
     let shown = format!("{:?}", state.display_trees);
     assert!(shown.contains("text: \"4\""), "{shown}");
     assert!(shown.contains("text: \"1\""), "{shown}");
+  }
+
+  /// A `ClickPane` graphic whose `ImageSize` is wider than its square
+  /// `PlotRange` is drawn letterboxed: a click must report the coordinates
+  /// of the graphic under the pointer, not a position stretched over the
+  /// whole picture width.
+  #[test]
+  fn click_pane_maps_clicks_through_a_letterboxed_graphic() {
+    let code = r#"Manipulate[
+      ClickPane[
+        Graphics[{Rectangle[{0, 0}, {10, 10}]},
+          PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> {300, 200}],
+        (pos = #) &],
+      {{pos, {0, 0}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert_eq!(state.click_regions.len(), 1);
+    let region = state.click_regions[0].clone();
+    // The square drawing area is centered: 0 ≤ x ≤ 10 spans the middle
+    // 200 of the 300 pixels, so the picture's edges lie 2.5 units outside.
+    let hit = &region.hit;
+    assert!((hit.x_min + 2.5).abs() < 0.1, "x_min = {}", hit.x_min);
+    assert!((hit.x_max - 12.5).abs() < 0.1, "x_max = {}", hit.x_max);
+    assert_eq!((hit.y_min, hit.y_max), (0.0, 10.0));
+    // Pixel 100 lies 50 pixels into the drawing area: x = 2.5.
+    state.pointer = (region.x + 100.0 / 300.0 * region.width, region.y);
+    state.apply_pane_click();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let pos = state
+      .state
+      .iter()
+      .find(|(n, _)| n == "pos")
+      .map(|(_, v)| v.clone())
+      .unwrap_or_default();
+    let x: f64 = pos
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(',')
+      .next()
+      .and_then(|v| v.trim().parse().ok())
+      .unwrap_or(f64::NAN);
+    assert!((x - 2.5).abs() < 0.1, "pos = {pos}");
   }
 
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
