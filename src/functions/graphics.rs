@@ -33797,6 +33797,12 @@ fn grid_svg_styled_internal_reporting(
           (top, body)
         } else {
           let lh = markup_line_height(&markup, fs);
+          // resvg misplaces a script nested in a script (`Subscript[d,
+          // Subscript[X, 65]]`) in a centrally aligned line.
+          let markup = pin_nested_tspan_baselines(
+            &flatten_nested_shift_tspans(&markup),
+            "central",
+          );
           (aligned_top(lh).map_or(cy, |t| t + lh / 2.0 - 1.0), markup)
         };
         // `Style[…, Background -> c]` paints a panel just behind the text
@@ -40251,6 +40257,27 @@ fn with_text(item: &Expr, text: &str) -> Expr {
   }
 }
 
+/// How far resvg lifts a centrally aligned (`dominant-baseline="central"`)
+/// span of relative size `s` above the text's baseline: `NESTED_CENTRAL_LIFT
+/// * (1 - s)` text ems (0.105 em for a 70% script, see
+/// `load_embedded_fonts`).
+const NESTED_CENTRAL_LIFT: f64 = 0.35;
+
+/// How far a script span (`baseline-shift="sub"`/`"super"`) of relative
+/// size `s` renders below the line of its parent of relative size `p`, in
+/// ems of the text, as resvg draws it in a centrally aligned line: `sub`
+/// lowers by 0.4 and `super` raises by 0.345 of the span's own em (the
+/// bundled fonts' `OS/2` script offsets), less the span's extra central
+/// lift over its parent. Other shifts are not modeled.
+fn script_baseline_drop(shift: &str, s: f64, p: f64) -> Option<f64> {
+  let own = match shift {
+    "sub" => 0.4 * s,
+    "super" => -0.345 * s,
+    _ => return None,
+  };
+  Some(own - NESTED_CENTRAL_LIFT * (p - s))
+}
+
 /// Rewrite one line of text markup with a shifted (`baseline-shift` or
 /// `dx`) `<tspan>` nested inside another `<tspan>` (e.g. a `Subscript` or a
 /// digit-grouped number under a `Style` color) into a flat run of sibling `<tspan>`s, each carrying the
@@ -40338,43 +40365,63 @@ pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
   if !nested || depth != 0 {
     return markup.to_string();
   }
-  // Each stack entry is the merged attribute list in effect inside it.
-  let mut stack: Vec<Vec<(String, String)>> = Vec::new();
+  // Each stack entry is the merged attribute list in effect inside it,
+  // the entry's size relative to the text's (`None` once an absolute size
+  // makes it unknown) and how far its baseline renders below the text's
+  // (`None` for an unshifted line).
+  struct Entry {
+    attrs: Vec<(String, String)>,
+    size: Option<f64>,
+    drop: Option<f64>,
+  }
+  let mut stack: Vec<Entry> = Vec::new();
   let mut out = String::new();
   for t in toks {
     match t {
       Tok::Open(attrs) => {
-        let mut merged: Vec<(String, String)> =
-          stack.last().map_or_default(|top| {
-            // `baseline-shift` is not inherited: a child sits on its
-            // parent's shifted line, but only the innermost shift is kept.
-            // A parent's `dx` offsets only its own first character.
-            top
-              .iter()
-              .filter(|(k, _)| {
-                k != "dx"
-                  && (k != "baseline-shift"
-                    || !attrs.iter().any(|(a, _)| *a == "baseline-shift"))
-              })
-              .cloned()
-              .collect()
-          });
+        let parent = stack.last();
+        let own_shift = attrs
+          .iter()
+          .find(|(k, _)| *k == "baseline-shift")
+          .map(|(_, v)| *v);
+        let mut merged: Vec<(String, String)> = parent.map_or_default(|top| {
+          // `baseline-shift` is not inherited: a child sits on its
+          // parent's shifted line, so a nested script's shift is
+          // combined with its parent's below.
+          // A parent's `dx` offsets only its own first character.
+          top
+            .attrs
+            .iter()
+            .filter(|(k, _)| {
+              k != "dx" && (k != "baseline-shift" || own_shift.is_none())
+            })
+            .cloned()
+            .collect()
+        });
+        let parent_size = parent.map_or(Some(1.0), |p| p.size);
+        let mut size = parent_size;
         for (k, v) in attrs {
           let mut value = v.to_string();
-          if k == "font-size"
-            && let Some(pct) = v
+          if k == "font-size" {
+            let pct = v
               .strip_suffix('%')
-              .and_then(|p| p.trim().parse::<f64>().ok())
-            && let Some((_, parent)) =
-              merged.iter().find(|(pk, _)| pk == "font-size")
-          {
-            if let Some(pp) = parent
-              .strip_suffix('%')
-              .and_then(|p| p.trim().parse::<f64>().ok())
+              .and_then(|p| p.trim().parse::<f64>().ok());
+            size = match (pct, size) {
+              (Some(pct), Some(ps)) => Some(ps * pct / 100.0),
+              _ => None,
+            };
+            if let Some(pct) = pct
+              && let Some((_, parent)) =
+                merged.iter().find(|(pk, _)| pk == "font-size")
             {
-              value = format!("{}%", pp * pct / 100.0);
-            } else if let Ok(abs) = parent.trim().parse::<f64>() {
-              value = format!("{}", abs * pct / 100.0);
+              if let Some(pp) = parent
+                .strip_suffix('%')
+                .and_then(|p| p.trim().parse::<f64>().ok())
+              {
+                value = format!("{}%", pp * pct / 100.0);
+              } else if let Ok(abs) = parent.trim().parse::<f64>() {
+                value = format!("{}", abs * pct / 100.0);
+              }
             }
           }
           if let Some(slot) = merged.iter_mut().find(|(mk, _)| mk == k) {
@@ -40383,13 +40430,44 @@ pub(crate) fn flatten_nested_shift_tspans(markup: &str) -> String {
             merged.push((k.to_string(), value));
           }
         }
-        stack.push(merged);
+        let parent_drop = parent.and_then(|p| p.drop);
+        let drop = match (own_shift, size, parent_size) {
+          (Some(shift), Some(s), Some(p)) => {
+            script_baseline_drop(shift, s, p).map(|level| {
+              // A centrally aligned span of relative size `p` already
+              // sits `NESTED_CENTRAL_LIFT * (1 - p)` above the text's
+              // baseline, so an unshifted parent contributes that lift.
+              parent_drop.unwrap_or(-NESTED_CENTRAL_LIFT * (1.0 - p)) + level
+            })
+          }
+          (Some(_), _, _) => None,
+          (None, _, _) => parent_drop,
+        };
+        // A script inside a shifted span (`Subscript[d, Subscript[X,
+        // 65]]`) gets the combined shift as a length in its own ems,
+        // since the flattened span no longer sits on its parent's line.
+        if let (Some(_), Some(d), Some(s), Some(_)) =
+          (own_shift, drop, size, parent_drop)
+          && s > 0.0
+        {
+          let em = -(d + NESTED_CENTRAL_LIFT * (1.0 - s)) / s;
+          if let Some(slot) =
+            merged.iter_mut().find(|(k, _)| k == "baseline-shift")
+          {
+            slot.1 = format!("{em:.3}em");
+          }
+        }
+        stack.push(Entry {
+          attrs: merged,
+          size,
+          drop,
+        });
       }
       Tok::Close => {
         stack.pop();
       }
       Tok::Text("") => {}
-      Tok::Text(text) => match stack.last_mut() {
+      Tok::Text(text) => match stack.last_mut().map(|e| &mut e.attrs) {
         Some(attrs) if !attrs.is_empty() => {
           out.push_str("<tspan");
           for (k, v) in attrs.iter() {
