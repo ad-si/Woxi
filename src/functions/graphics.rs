@@ -30272,6 +30272,51 @@ fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
 }
 
+/// A `Labeled[content, caption, …]` cell of a grid that sets a font family
+/// (`BaseStyle -> FontFamily -> "Times"`) draws its caption in that face,
+/// as the text cells beside it are: the caption inherits the grid's style.
+/// A list of captions (one per position) takes the face on each. Any other
+/// cell, or a grid without a family, is returned unchanged.
+fn labeled_cell_in_grid_family(cell: &Expr, style: &GridStyle) -> Expr {
+  let Some(family) = &style.font_family else {
+    return cell.clone();
+  };
+  let Expr::FunctionCall { name, args } = cell else {
+    return cell.clone();
+  };
+  if name != "Labeled" || args.len() < 2 {
+    return cell.clone();
+  }
+  let styled = |e: &Expr| {
+    call(
+      "Style",
+      vec![
+        e.clone(),
+        rule_expr(id_expr("FontFamily"), str_expr(family)),
+      ],
+    )
+  };
+  let mut new_args: Vec<Expr> = args.to_vec();
+  new_args[1] = match &args[1] {
+    Expr::List(captions) => {
+      Expr::List(captions.iter().map(styled).collect::<Vec<_>>().into())
+    }
+    caption => styled(caption),
+  };
+  call("Labeled", new_args)
+}
+
+/// [`labeled_cell_in_grid_family`] for a cell of a grid written with the
+/// options `grid_opts`, for layouts that compose the grid's pictures
+/// without the table engine.
+pub(crate) fn labeled_cell_in_grid_options(
+  cell: &Expr,
+  grid_opts: &[Expr],
+) -> Expr {
+  let style = grid_base_style(grid_opts, &GridStyle::default());
+  labeled_cell_in_grid_family(cell, &style)
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -30527,6 +30572,7 @@ fn grid_svg_styled_internal_reporting(
   }
   for row in &mut rows {
     for cell in row.iter_mut() {
+      *cell = labeled_cell_in_grid_family(cell, default_style);
       // A `Pane[content, {w, h}]` cell reserves exactly that box (clipping
       // what overflows it), so it is drawn by the `Pane` renderer as a
       // picture of that size; peeled to its content, a wide image row in

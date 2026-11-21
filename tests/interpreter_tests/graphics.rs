@@ -34877,6 +34877,45 @@ mod graphics_grid {
     assert!(!own.contains("font-family=\"Times\""), "{own}");
   }
 
+  /// A grid's `BaseStyle -> FontFamily -> f` sets the captions of its
+  /// `Labeled` cells in that face too, not only its plain text cells.
+  #[test]
+  fn grid_base_style_font_family_reaches_labeled_captions() {
+    let caption_tag = |svg: &str, caption: &str| -> String {
+      let end = svg.find(&format!(">{caption}<")).expect("caption drawn");
+      let start = svg[..end].rfind("<text").expect("text element");
+      svg[start..end].to_string()
+    };
+    // Both the picture compositor and (with `Dividers`) the table engine.
+    for extra in ["", ", Dividers -> All"] {
+      clear_state();
+      let svg = interpret_with_stdout(&format!(
+        "Grid[{{{{Labeled[Graphics[Disk[]], \"first cap\"], \
+         Labeled[Graphics[Circle[]], {{\"top cap\", \"left cap\"}}, {{Top, Left}}]}}}}, \
+         BaseStyle -> FontFamily -> \"Times\"{extra}]"
+      ))
+      .unwrap()
+      .graphics
+      .unwrap();
+      for caption in ["first cap", "top cap", "left cap"] {
+        let tag = caption_tag(&svg, caption);
+        assert!(tag.contains("Times"), "{extra} {caption}: {tag}");
+      }
+    }
+    // Without a `BaseStyle` the caption keeps the default face.
+    clear_state();
+    let plain = interpret_with_stdout(
+      "Grid[{{Labeled[Graphics[Disk[]], \"first cap\"]}}]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(
+      !caption_tag(&plain, "first cap").contains("Times"),
+      "{plain}"
+    );
+  }
+
   /// `Style[…, FontFamily -> f]` inside a typeset formula sets only its
   /// own atoms in that face; the rest of the formula keeps the default.
   #[test]
