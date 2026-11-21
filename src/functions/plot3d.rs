@@ -13382,8 +13382,9 @@ fn spherical_region_span(radius: f64, distance: Option<f64>) -> f64 {
 }
 
 /// Parse a `PlotRegion -> {{sx0, sx1}, {sy0, sy1}}` value into
-/// `[sx0, sx1, sy0, sy1]`. Only a proper sub-region of the unit square is
-/// kept; `Automatic` and malformed specs give `None`.
+/// `[sx0, sx1, sy0, sy1]`. The region may reach past the unit square
+/// (`{{-0.3, 1.3}, …}`), which enlarges the scene beyond the picture so its
+/// edges are cropped; `Automatic` and malformed specs give `None`.
 fn parse_plot_region(value: &Expr) -> Option<[f64; 4]> {
   let Expr::List(axes) = value else {
     return None;
@@ -13400,8 +13401,7 @@ fn parse_plot_region(value: &Expr) -> Option<[f64; 4]> {
     };
     let lo = try_eval_to_f64(lo)?;
     let hi = try_eval_to_f64(hi)?;
-    (lo.is_finite() && hi.is_finite() && 0.0 <= lo && lo < hi && hi <= 1.0)
-      .then_some((lo, hi))
+    (lo.is_finite() && hi.is_finite() && lo < hi).then_some((lo, hi))
   };
   let (sx0, sx1) = interval(x)?;
   let (sy0, sy1) = interval(y)?;
@@ -14926,9 +14926,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // With an `ImagePadding` the scene is fitted into the region inside the
   // padding band; the picture keeps its full size around it.
   // A `PlotRegion` is a padding band too, sized as fractions of the
-  // picture. Its vertical part needs the picture's height, which is only
-  // known up front when the height is pinned; otherwise it is worked out
-  // from the fitted scene below.
+  // picture; a region reaching past the unit square gives a negative band,
+  // so the scene is fitted to a larger area and cropped by the picture.
+  // Its vertical part needs the picture's height, which is only known up
+  // front when the height is pinned; otherwise it is worked out from the
+  // fitted scene below. `ImagePadding -> None` (no band at all) leaves the
+  // region in charge.
+  if image_padding == Some([0.0; 4]) && plot_region.is_some() {
+    image_padding = None;
+  }
   let region_height_pending = plot_region.is_some()
     && image_padding.is_none()
     && !full_width
@@ -14946,15 +14952,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   let [pad_left, pad_right, mut pad_bottom, mut pad_top] =
     image_padding.unwrap_or([0.0; 4]);
-  let pad_w = (pad_left + pad_right).round() as u32;
-  let pad_h = (pad_bottom + pad_top).round() as u32;
+  // Signed: a `PlotRegion` past the unit square pads by a negative amount.
+  let pad_w = (pad_left + pad_right).round() as i64;
+  let pad_h = (pad_bottom + pad_top).round() as i64;
   let padded = image_padding.is_some()
     && !full_width
-    && svg_width > pad_w
-    && (!explicit_height || svg_height > pad_h);
+    && i64::from(svg_width) > pad_w
+    && (!explicit_height || i64::from(svg_height) > pad_h);
   if padded {
-    svg_width -= pad_w;
-    svg_height = svg_height.saturating_sub(pad_h).max(1);
+    svg_width = (i64::from(svg_width) - pad_w) as u32;
+    svg_height = (i64::from(svg_height) - pad_h).max(1) as u32;
   }
   // An explicit `AspectRatio` stretches the projected box to the picture's
   // shape (unless the view volume fixes the scale instead).
@@ -15082,12 +15089,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let total = svg_height as f64 / (sy1 - sy0);
       pad_bottom = sy0 * total;
       pad_top = (1.0 - sy1) * total;
-      pad_h = (pad_bottom + pad_top).round() as u32;
+      pad_h = (pad_bottom + pad_top).round() as i64;
     }
     cx += pad_left;
     cy += pad_top;
-    svg_width += pad_w;
-    svg_height += pad_h;
+    svg_width = (i64::from(svg_width) + pad_w).max(1) as u32;
+    svg_height = (i64::from(svg_height) + pad_h).max(1) as u32;
   }
 
   let scale_y = if stretch { stretch_scale_y } else { scale };

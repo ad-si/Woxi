@@ -12219,6 +12219,72 @@ mod plot3d {
       }
     }
 
+    // A `PlotRegion` reaching past the unit square enlarges the scene beyond
+    // the picture, which crops it: the scene is laid out as in a picture of
+    // the region's size and moved by the (negative) offset. Regression: such
+    // regions, and any region given together with `ImagePadding -> None`,
+    // were ignored.
+    #[test]
+    fn graphics3d_plot_region_past_the_unit_square_crops_the_scene() {
+      fn polygon_extent(svg: &str) -> (f64, f64, f64, f64) {
+        let mut ext = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for chunk in svg.split("<polygon points=\"").skip(1) {
+          let points = chunk.split('"').next().unwrap();
+          for pair in points.split_whitespace() {
+            let (x, y) = pair.split_once(',').unwrap();
+            let (x, y): (f64, f64) = (x.parse().unwrap(), y.parse().unwrap());
+            ext = (ext.0.min(x), ext.1.max(x), ext.2.min(y), ext.3.max(y));
+          }
+        }
+        ext
+      }
+      let close = |a: f64, b: f64| (a - b).abs() < 0.15;
+      for (size, extra) in [
+        ("{200, 200}", ""),
+        ("{200, 200}", ", ImagePadding -> None"),
+        ("200", ", SphericalRegion -> True, ViewPoint -> {0, 0, 100}"),
+      ] {
+        let region = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, ImageSize -> {size}, \
+           PlotRegion -> {{{{-0.25, 1.25}}, {{-0.5, 1.5}}}}{extra}]"
+        ));
+        let inner_size = if size == "200" { "300" } else { "{300, 400}" };
+        let inner = export_svg(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, \
+           ImageSize -> {inner_size}{extra}]"
+        ));
+        let (p, q) = (polygon_extent(&region), polygon_extent(&inner));
+        if size == "200" {
+          // The fitted height is cropped back to the region's share.
+          let h = inner
+            .split("height=\"")
+            .nth(1)
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap();
+          let expected = format!(
+            "<svg width=\"200\" height=\"{}\"",
+            (h / 2.0).round() as i64
+          );
+          assert!(region.starts_with(&expected), "{}", &region[..80]);
+          let dy = 0.5 * h / 2.0;
+          assert!(close(p.2, q.2 - dy), "{p:?} {q:?}");
+        } else {
+          assert!(
+            region.starts_with("<svg width=\"200\" height=\"200\""),
+            "{}",
+            &region[..80]
+          );
+          // 25% of 200 off the left, 50% of 200 off the top.
+          assert!(close(p.2, q.2 - 100.0) && close(p.3, q.3 - 100.0));
+        }
+        assert!(
+          close(p.0, q.0 - 50.0) && close(p.1, q.1 - 50.0),
+          "{size}{extra}: {p:?} {q:?}"
+        );
+      }
+    }
+
     // Regression: the surface plots (`Plot3D`, `ListPlot3D`, …) ignored
     // `ImagePadding` and filled the whole picture. Like `Graphics3D` they
     // lay the scene out in the region inside the band and keep their full
