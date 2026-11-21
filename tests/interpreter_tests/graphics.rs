@@ -6672,7 +6672,11 @@ mod plot3d {
       let svg = export_svg(plot);
       let faces: Vec<&str> = svg
         .lines()
-        .filter(|l| l.starts_with("<polygon") && l.contains(" opacity=\""))
+        .filter(|l| {
+          // Faces are drawn as `<polygon>`s, or merged into one `<path>`.
+          (l.starts_with("<polygon") || l.starts_with("<path"))
+            && l.contains(" opacity=\"")
+        })
         .collect();
       assert!(!faces.is_empty(), "{plot}");
       for face in faces {

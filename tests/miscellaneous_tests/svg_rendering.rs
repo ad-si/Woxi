@@ -5916,15 +5916,27 @@ mod grid_item_style_tests {
     )
     .unwrap();
     assert!(!svg.contains("monospace"), "{svg}");
-    let inner = svg.split("<svg").nth(2).unwrap();
-    let width: f64 = inner
-      .split("width=\"")
-      .nth(1)
-      .and_then(|w| w.split('"').next())
-      .and_then(|w| w.parse().ok())
-      .unwrap();
-    assert!(width <= 512.0, "{width}: {svg}");
-    assert!(svg.matches("<text ").count() >= 2, "{svg}");
+    // When the block is set in its own nested picture, that picture is
+    // about the pane's width.
+    if let Some(inner) = svg.split("<svg").nth(2) {
+      let width: f64 = inner
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      assert!(width <= 512.0, "{width}: {svg}");
+    }
+    let lines: Vec<&str> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|t| t.split('>').nth(1)?.split("</text").next())
+      .collect();
+    assert!(lines.len() >= 2, "{svg}");
+    // The proportional face fits more words on a line than the ten a
+    // monospace measure of the 500 pt pane would allow.
+    let first_words = lines[0].split_whitespace().count();
+    assert!(first_words > 10, "{first_words}: {svg}");
   }
 
   #[test]
