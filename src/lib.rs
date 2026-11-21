@@ -6119,6 +6119,23 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
   svg.starts_with("<svg").then_some(svg)
 }
 
+/// The picture of a `Legended[graphic, legend]` around a single graphic
+/// whose legend can be drawn: the graphic with the legend set beside it.
+/// `None` when there is no such legend to add.
+fn legended_picture_svg(expr: &syntax::Expr) -> Option<String> {
+  let syntax::Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Legended" || args.len() != 2 {
+    return None;
+  }
+  let syntax::Expr::Graphics { svg: plot, .. } = &args[0] else {
+    return None;
+  };
+  let svg = evaluator::expr_to_svg(expr);
+  (svg.starts_with("<svg") && svg != *plot).then_some(svg)
+}
+
 /// The SVG an already-evaluated graphics item carries on itself — from
 /// `Expr::Graphics { svg, .. }`, peeling a `Style[…]` wrapper first. `None`
 /// for the bare `-Graphics-`/`-Image-` text placeholder, which carries no
@@ -6163,6 +6180,14 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if let Some(composed) = composed_layout_svg(inner) {
     clear_captured_graphics();
     return graphics_result(composed);
+  }
+  // A legend around a single picture keeps its symbolic echo
+  // (`Legended[-Graphics-, …]`), but the picture a notebook shows is the
+  // plot with its legend set beside or below it.
+  if let Some(svg) = legended_picture_svg(inner) {
+    clear_captured_graphics();
+    capture_graphics(&text_in_view(svg));
+    return expr;
   }
 
   // A list (or nested lists) of pictures that carry their own renderings is

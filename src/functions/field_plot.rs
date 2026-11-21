@@ -424,9 +424,9 @@ struct DensityContourOptions {
   /// The explicit `Contours -> {…}` levels as written, so a label of an
   /// exact level stays exact.
   contour_level_exprs: Vec<(f64, Expr)>,
-  /// `PlotLegends -> Automatic`: a color bar right of the plot with one
-  /// swatch per shaded band, labeled at the contour levels.
-  bar_legend: bool,
+  /// `PlotLegends -> Automatic` (or `Placed[Automatic, pos]`): where the
+  /// plot's color bar goes — `After` the plot unless placed elsewhere.
+  bar_legend: Option<Expr>,
   /// `PlotRange -> {zmin, zmax}` (or the third part of a three-axis
   /// range): the values the colors span, instead of the sampled ones.
   value_range: Option<(f64, f64)>,
@@ -658,7 +658,7 @@ fn parse_density_contour_options(
   let mut color_function_scaling = true;
   let mut contour_labels = false;
   let mut contour_level_exprs: Vec<(f64, Expr)> = Vec::new();
-  let mut bar_legend = false;
+  let mut bar_legend: Option<Expr> = None;
   let mut value_range: Option<(f64, f64)> = None;
   let mut full_value_range = false;
   let mut clipping = Clipping::Blank;
@@ -824,10 +824,7 @@ fn parse_density_contour_options(
           full_value_range = plot_value_range_is_all(replacement);
         }
         "ClippingStyle" => clipping = Clipping::parse(replacement),
-        "PlotLegends" => {
-          bar_legend = matches!(replacement, Expr::Identifier(v)
-            if v == "Automatic");
-        }
+        "PlotLegends" => bar_legend = automatic_legend_position(replacement),
         _ => {}
       }
     }
@@ -1637,107 +1634,22 @@ fn push_contour_labels(
   }
 }
 
-/// Extra display-pixel width a bar legend adds right of the plot.
-const BAR_LEGEND_STRIP: u32 = 53;
-
-/// `PlotLegends -> Automatic`: widen the picture and draw a vertical color
-/// bar with one swatch per contour band (lowest at the bottom), labeled at
-/// the contour levels — Wolfram's `BarLegend`.
-fn push_bar_legend(
-  svg: &mut String,
-  area: &crate::functions::plot::PlotArea,
-  opts: &DensityContourOptions,
-  levels: &[f64],
-  (v_min, v_max): (f64, f64),
-) {
-  let sf = RESOLUTION_SCALE as f64;
-  // Label every other level once there are too many to fit.
-  let stride = levels.len().div_ceil(8).max(1);
-  let labels: Vec<(f64, String)> = levels
-    .iter()
-    .step_by(stride)
-    .map(|&l| (l, crate::functions::plot::format_tick(l)))
-    .collect();
-  // The strip must reach past the widest label; a tight right margin (an
-  // explicit `ImagePadding`) would otherwise clip it at the canvas edge.
-  let widest = labels
-    .iter()
-    .map(|(_, t)| t.chars().count())
-    .max()
-    .unwrap_or(0) as f64;
-  let right_margin =
-    (area.render_width as f64 - area.plot_x0 - area.plot_w) / sf;
-  let needed = 27.0 + 13.0 + 6.0 + widest * 14.0 * 0.6 + 4.0;
-  let strip =
-    BAR_LEGEND_STRIP.max((needed - right_margin).ceil().max(0.0) as u32);
-  let new_w = opts.svg_width + strip;
-  let new_render_w = new_w * RESOLUTION_SCALE;
-  let render_h = opts.svg_height * RESOLUTION_SCALE;
-  // The background rectangle spans the old canvas; stretch it first.
-  let old_bg = format!("width=\"{}\" height=\"{render_h}\"", area.render_width);
-  let new_bg = format!("width=\"{new_render_w}\" height=\"{render_h}\"");
-  *svg = svg.replacen(&old_bg, &new_bg, 1);
-  rewrite_svg_header(
-    svg,
-    new_w,
-    opts.svg_height,
-    new_render_w,
-    render_h,
-    opts.full_width,
-  );
-
-  let (.., label_fill, _) = plot_theme();
-  let bar_w = 13.0 * sf;
-  let bar_h = area.plot_h * 0.625;
-  let bar_x = area.plot_x0 + area.plot_w + 27.0 * sf;
-  let bar_y = area.plot_y0 + (area.plot_h - bar_h) / 2.0;
-  let span = v_max - v_min;
-  let frac = |v: f64| {
-    if span > 0.0 {
-      ((v - v_min) / span).clamp(0.0, 1.0)
-    } else {
-      0.5
-    }
-  };
-  let mut bounds = Vec::with_capacity(levels.len() + 2);
-  bounds.push(v_min);
-  bounds.extend_from_slice(levels);
-  bounds.push(v_max);
-  for band in 0..bounds.len() - 1 {
-    let (r, g, b) =
-      band_color(band, levels, v_min, v_max, &opts.band_coloring());
-    let y_top = bar_y + bar_h * (1.0 - frac(bounds[band + 1]));
-    let y_bot = bar_y + bar_h * (1.0 - frac(bounds[band]));
-    svg.push_str(&format!(
-      "<rect x=\"{bar_x:.1}\" y=\"{y_top:.1}\" width=\"{bar_w:.1}\" height=\"{:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
-      y_bot - y_top
-    ));
-  }
-  svg.push_str(&format!(
-    "<rect x=\"{bar_x:.1}\" y=\"{bar_y:.1}\" width=\"{bar_w:.1}\" height=\"{bar_h:.1}\" fill=\"none\" stroke=\"rgb(110,110,110)\" stroke-width=\"{:.1}\"/>\n",
-    0.8 * sf
-  ));
-  for (level, text) in &labels {
-    svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{:.1}\" font-family=\"sans-serif\" font-size=\"{:.0}\" fill=\"{label_fill}\" dominant-baseline=\"central\">{}</text>\n",
-      bar_x + bar_w + 6.0 * sf,
-      bar_y + bar_h * (1.0 - frac(*level)),
-      sf * 14.0,
-      text
-    ));
-  }
-}
-
 /// The bar length of a standalone continuous `BarLegend`, in points.
 pub(crate) const BAR_LEGEND_HEIGHT: f64 = 200.0;
 
 /// A `BarLegend[{colors, {min, max}}]` (or `BarLegend[colors]` over 0..1):
-/// a vertical color bar `bar_height` display pixels tall, labeled to its
-/// right. `colors` is a gradient name or a color function of the rescaled
-/// value. A second argument `{c1, c2, …}` makes it discrete: one band per
-/// interval between the contours, labeled at the contours. `LegendLabel`
-/// is drawn above the bar.
-pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
+/// a color bar `bar_length` points long — vertical and labeled to its
+/// right, or with `horizontal` (a legend `Placed` `Below` or `Above` a
+/// plot) lying flat and labeled underneath. `colors` is a gradient name or
+/// a color function of the rescaled value. A second argument
+/// `{c1, c2, …}` makes it discrete: one equal-sized band per interval
+/// between the contours, labeled at the contours where the bands meet.
+/// `LegendLabel` is drawn above the bar.
+pub(crate) fn bar_legend_svg(
+  args: &[Expr],
+  bar_length: f64,
+  horizontal: bool,
+) -> Option<String> {
   let (colors, (lo, hi)) = match args.first()? {
     Expr::List(spec) if spec.len() == 2 => match &spec[1] {
       Expr::List(range) if range.len() == 2 => (
@@ -1759,11 +1671,15 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
     })
   };
   // `BarLegend[spec, {c1, c2, …}]`: discrete bands between the contours.
+  // A plot's own legend gives each contour as `{c, style}`.
   let contours: Option<Vec<f64>> = match args.get(1) {
     Some(Expr::List(cs)) => {
       let mut v: Vec<f64> = cs
         .iter()
-        .map(try_eval_to_f64)
+        .map(|c| match c {
+          Expr::List(pair) if pair.len() == 2 => try_eval_to_f64(&pair[0]),
+          other => try_eval_to_f64(other),
+        })
         .collect::<Option<Vec<f64>>>()?
         .into_iter()
         .filter(|c| *c > lo && *c < hi)
@@ -1777,6 +1693,13 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   // `ColorFunctionScaling -> True` (as a plot's own legend does).
   let scaling = option("ColorFunctionScaling")
     .is_some_and(|v| matches!(&*v, Expr::Identifier(s) if s == "True"));
+  // `LegendLayout -> "Row"` lays the bar flat, `"Column"` upright,
+  // whatever side of a plot it is placed on.
+  let horizontal = match option("LegendLayout").as_deref() {
+    Some(Expr::String(layout)) if layout == "Row" => true,
+    Some(Expr::String(layout)) if layout == "Column" => false,
+    _ => horizontal,
+  };
   let name = color_function_scheme_name(colors);
   let color_at = |t: f64| match (&name, colors) {
     (Some(name), _) => apply_named_color_function(name, t),
@@ -1798,17 +1721,19 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
       scaled_color(t, lo + t * (hi - lo), None, Some((colors, scaling)))
     }
   };
-  // Wolfram draws a discrete legend's bands about 20 points each, on a
-  // slightly narrower bar.
-  let (bar_w, default_h) = match &contours {
-    Some(cs) => (12.14, 20.24 * (cs.len() + 1) as f64),
-    None => (13.34, bar_height),
+  // Wolfram draws a vertical discrete legend's bands about 20 points
+  // each, on a slightly narrower bar; a horizontal one spans the length
+  // it is given.
+  let (bar_w, default_len) = match &contours {
+    Some(cs) if !horizontal => (12.14, 20.24 * (cs.len() + 1) as f64),
+    Some(_) => (12.14, bar_length),
+    None => (13.34, bar_length),
   };
   // `LegendMarkerSize -> h` is the bar's length.
-  let bar_height = option("LegendMarkerSize")
+  let bar_len = option("LegendMarkerSize")
     .and_then(|v| try_eval_to_f64(&v))
     .filter(|h| *h > 0.0)
-    .unwrap_or(default_h);
+    .unwrap_or(default_len);
   let label = option("LegendLabel").filter(
     |v| !matches!(&**v, Expr::Identifier(s) if s == "None" || s == "Automatic"),
   );
@@ -1816,12 +1741,9 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
   let (.., label_fill, _) = plot_theme();
   let tick_stroke = "rgb(102,102,102)";
   let font = 12.0;
-  let left = 9.6;
   let label_room = if label.is_some() { font + 6.0 } else { 0.0 };
   let top = 10.6 + label_room;
   let span = hi - lo;
-  let y_of =
-    |v: f64| top + bar_height * (1.0 - ((v - lo) / span).clamp(0.0, 1.0));
 
   // Labeled values, and the unlabeled minor tick values between them.
   let step = crate::functions::plot::nice_step(span, 5);
@@ -1840,26 +1762,77 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
       .collect();
     (majors, minors)
   };
+  // Contour labels are padded to the decimals the most precise contour
+  // needs (`0.2`, …, `1.0`; `0.25`, `0.50`), not the automatic tick step's.
+  let label_step = match &contours {
+    Some(cs) if !cs.is_empty() => {
+      let decimals = cs
+        .iter()
+        .map(|&c| {
+          let text = crate::functions::plot::format_tick(c);
+          text.split_once('.').map_or(0, |(_, frac)| {
+            frac.chars().take_while(char::is_ascii_digit).count()
+          })
+        })
+        .max()
+        .unwrap_or(0)
+        .min(3);
+      10f64.powi(-(decimals as i32))
+    }
+    _ => step,
+  };
   // A legend labels zero as a bare "0" whatever the step's decimals.
   let labels: Vec<String> = majors
     .iter()
     .map(|&v| {
-      if v.abs() < step * 1e-9 {
+      if v.abs() < label_step * 1e-9 {
         "0".to_string()
       } else {
-        crate::functions::plot::format_tick_with_step(v, step)
+        crate::functions::plot::format_tick_with_step(v, label_step)
       }
     })
     .collect();
-  let label_w = labels.iter().map(|l| l.chars().count()).max().unwrap_or(1)
-    as f64
-    * font
-    * 0.6;
+  // Where along the bar (0 at the low end, 1 at the high end) a value
+  // sits; a discrete bar's k-th contour is where its k-th band ends.
+  let n_bands = contours.as_ref().map_or(1, |cs| cs.len() + 1);
+  let major_frac = |k: usize, v: f64| match &contours {
+    Some(_) => (k + 1) as f64 / n_bands as f64,
+    None => ((v - lo) / span).clamp(0.0, 1.0),
+  };
+  let value_frac = |v: f64| ((v - lo) / span).clamp(0.0, 1.0);
+  let label_chars = |l: &String| l.chars().count() as f64 * font * 0.6;
+  let label_w = labels.iter().map(label_chars).fold(font * 0.6, f64::max);
   let title_w = label.as_deref().map_or(0.0, |l| {
     crate::functions::graphics::estimate_display_width(l) * font * 0.6
   });
-  let width = (left + bar_w + 7.0 + label_w + 6.0).max(left + title_w + 4.0);
-  let height = top + bar_height + 12.0 + font / 2.0;
+  // The bar runs from `left` (rightward or upward from the bottom).
+  let left = if horizontal {
+    labels
+      .first()
+      .map_or(9.6, |l| (label_chars(l) / 2.0 + 2.0).max(9.6))
+  } else {
+    9.6
+  };
+  let (width, height) = if horizontal {
+    let last_half = labels.last().map_or(0.0, |l| label_chars(l) / 2.0);
+    (
+      (left + bar_len + last_half + 4.0).max(left + title_w + 4.0),
+      top + bar_w + 7.0 + font + 4.0,
+    )
+  } else {
+    (
+      (left + bar_w + 7.0 + label_w + 6.0).max(left + title_w + 4.0),
+      top + bar_len + 12.0 + font / 2.0,
+    )
+  };
+  // The bar's rectangle from fraction `a` to `b` of its length.
+  let bar_rect = |a: f64, b: f64| -> (f64, f64, f64, f64) {
+    if horizontal {
+      (left + bar_len * a, top, bar_len * (b - a), bar_w)
+    } else {
+      (left, top + bar_len * (1.0 - b), bar_w, bar_len * (b - a))
+    }
+  };
   let mut svg = format!(
     "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n"
   );
@@ -1870,11 +1843,8 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
       crate::functions::graphics::expr_to_svg_markup(l)
     ));
   }
-  if let Some(cs) = &contours {
-    let mut bounds = vec![lo];
-    bounds.extend_from_slice(cs);
-    bounds.push(hi);
-    let n = bounds.len() - 1;
+  if contours.is_some() {
+    let n = n_bands;
     for k in 0..n {
       let t = if n > 1 {
         k as f64 / (n - 1) as f64
@@ -1882,10 +1852,22 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
         0.5
       };
       let (r, g, b) = color_at(t);
-      let y = top + bar_height * (1.0 - (k + 1) as f64 / n as f64);
+      // Overlap the next band a little so no seam shows between them.
+      let overlap = 0.3 / bar_len;
+      let (a, b_end) = if horizontal {
+        (
+          k as f64 / n as f64,
+          ((k + 1) as f64 / n as f64 + overlap).min(1.0),
+        )
+      } else {
+        (
+          (k as f64 / n as f64 - overlap).max(0.0),
+          (k + 1) as f64 / n as f64,
+        )
+      };
+      let (x, y, w, h) = bar_rect(a, b_end);
       svg.push_str(&format!(
-        "<rect x=\"{left:.1}\" y=\"{y:.2}\" width=\"{bar_w:.2}\" height=\"{:.2}\" fill=\"rgb({r},{g},{b})\"/>\n",
-        bar_height / n as f64 + 0.3
+        "<rect x=\"{x:.2}\" y=\"{y:.2}\" width=\"{w:.2}\" height=\"{h:.2}\" fill=\"rgb({r},{g},{b})\"/>\n"
       ));
     }
   } else {
@@ -1902,30 +1884,51 @@ pub(crate) fn bar_legend_svg(args: &[Expr], bar_height: f64) -> Option<String> {
     use std::hash::{Hash, Hasher};
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     stops.hash(&mut hash);
+    horizontal.hash(&mut hash);
     let id = format!("woxiLegendGradient{:x}", hash.finish());
-    svg.push_str(&format!("<defs><linearGradient id=\"{id}\" x1=\"0\" y1=\"1\" x2=\"0\" y2=\"0\">{stops}</linearGradient></defs>"));
-    svg.push_str(&format!("<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{bar_w:.2}\" height=\"{bar_height:.1}\" fill=\"url(#{id})\"/>\n"));
+    let direction = if horizontal {
+      "x1=\"0\" y1=\"0\" x2=\"1\" y2=\"0\""
+    } else {
+      "x1=\"0\" y1=\"1\" x2=\"0\" y2=\"0\""
+    };
+    let (x, y, w, h) = bar_rect(0.0, 1.0);
+    svg.push_str(&format!("<defs><linearGradient id=\"{id}\" {direction}>{stops}</linearGradient></defs>"));
+    svg.push_str(&format!("<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.2}\" height=\"{h:.1}\" fill=\"url(#{id})\"/>\n"));
   }
+  let (x, y, w, h) = bar_rect(0.0, 1.0);
   svg.push_str(&format!(
-    "<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{bar_w:.2}\" height=\"{bar_height:.1}\" fill=\"none\" stroke=\"black\" stroke-opacity=\"0.3\" stroke-width=\"0.1\"/>\n"
+    "<rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{w:.2}\" height=\"{h:.1}\" fill=\"none\" stroke=\"black\" stroke-opacity=\"0.3\" stroke-width=\"0.1\"/>\n"
   ));
-  let x0 = left + bar_w;
+  // A tick of `len` points at fraction `f`, out from the labeled side.
+  let tick = |f: f64, len: f64| -> String {
+    let (x1, y1, x2, y2) = if horizontal {
+      let x = left + bar_len * f;
+      (x, top + bar_w, x, top + bar_w + len)
+    } else {
+      let y = top + bar_len * (1.0 - f);
+      (left + bar_w, y, left + bar_w + len, y)
+    };
+    format!(
+      "<line x1=\"{x1:.1}\" y1=\"{y1:.1}\" x2=\"{x2:.1}\" y2=\"{y2:.1}\" stroke=\"{tick_stroke}\" stroke-width=\"0.5\"/>\n"
+    )
+  };
   for v in &minors {
-    let y = y_of(*v);
-    svg.push_str(&format!(
-      "<line x1=\"{x0:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{tick_stroke}\" stroke-width=\"0.5\"/>\n",
-      x0 + 2.5
-    ));
+    svg.push_str(&tick(value_frac(*v), 2.5));
   }
-  for (v, text) in majors.iter().zip(&labels) {
-    let y = y_of(*v);
+  for (k, (v, text)) in majors.iter().zip(&labels).enumerate() {
+    let f = major_frac(k, *v);
+    svg.push_str(&tick(f, 4.0));
+    let (x, y, anchor) = if horizontal {
+      (
+        left + bar_len * f,
+        top + bar_w + 7.0 + font / 2.0,
+        " text-anchor=\"middle\"",
+      )
+    } else {
+      (left + bar_w + 7.0, top + bar_len * (1.0 - f), "")
+    };
     svg.push_str(&format!(
-      "<line x1=\"{x0:.1}\" y1=\"{y:.1}\" x2=\"{:.1}\" y2=\"{y:.1}\" stroke=\"{tick_stroke}\" stroke-width=\"0.5\"/>\n",
-      x0 + 4.0
-    ));
-    svg.push_str(&format!(
-      "<text x=\"{:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" font-size=\"{font}\" fill=\"{label_fill}\" dominant-baseline=\"central\">{text}</text>\n",
-      x0 + 7.0
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" font-family=\"sans-serif\" font-size=\"{font}\" fill=\"{label_fill}\" dominant-baseline=\"central\"{anchor}>{text}</text>\n"
     ));
   }
   svg.push_str("</svg>\n");
@@ -3688,12 +3691,56 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     true,
   );
   let graphic = crate::plot_result_with_structure(svg, structure);
-  if !opts.bar_legend {
-    return Ok(graphic);
-  }
   // `PlotLegends -> Automatic` gives `Legended[plot, Placed[BarLegend[…],
   // After]]`, as in Wolfram: a color bar over the plotted value range,
   // which `Show` keeps when it merges the plot with other graphics.
+  Ok(with_bar_legend(graphic, &opts, (v_min, v_max), None))
+}
+
+/// The `PlotLegends` position of a plot's automatic color bar:
+/// `Automatic` puts it `After` the plot, `Placed[Automatic, pos]` at `pos`.
+fn automatic_legend_position(value: &Expr) -> Option<Expr> {
+  match value {
+    Expr::Identifier(v) if v == "Automatic" => Some(id_expr("After")),
+    Expr::FunctionCall { name, args }
+      if name == "Placed"
+        && args.len() == 2
+        && matches!(&args[0], Expr::Identifier(v) if v == "Automatic") =>
+    {
+      Some(args[1].clone())
+    }
+    _ => None,
+  }
+}
+
+/// `x` without the rounding noise of its arithmetic (`0.30000000000000004`
+/// from `3 * 0.1`): rounded to 12 significant digits.
+fn snap_float_noise(x: f64) -> f64 {
+  if x == 0.0 || !x.is_finite() {
+    return x;
+  }
+  let scale = 10f64.powi(11 - x.abs().log10().floor() as i32);
+  let snapped = (x * scale).round() / scale;
+  if (snapped - x).abs() <= x.abs() * 1e-12 {
+    snapped
+  } else {
+    x
+  }
+}
+
+/// Wrap a density or contour plot in the `Legended[plot,
+/// Placed[BarLegend[{colors, {min, max}}, contours], pos]]` its
+/// `PlotLegends` asks for: a color bar over the plotted values, discrete
+/// (one band per region between the contour levels) for a contour plot.
+fn with_bar_legend(
+  graphic: Expr,
+  opts: &DensityContourOptions,
+  (v_min, v_max): (f64, f64),
+  levels: Option<&[f64]>,
+) -> Expr {
+  let Some(position) = &opts.bar_legend else {
+    return graphic;
+  };
   let colors = match (&opts.color_function, &opts.color_function_expr) {
     (_, Some(f)) => f.clone(),
     (Some(name), None) => Expr::String(name.clone()),
@@ -3706,15 +3753,24 @@ pub fn density_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ]
     .into(),
   )];
+  if let Some(levels) = levels {
+    bar_args.push(Expr::List(
+      levels
+        .iter()
+        .map(|&l| Expr::Real(snap_float_noise(l)))
+        .collect::<Vec<_>>()
+        .into(),
+    ));
+  }
   // The plot's color function takes rescaled values, and so does its bar.
   if opts.color_function_expr.is_some() && opts.color_function_scaling {
     bar_args.push(rule_expr(id_expr("ColorFunctionScaling"), bool_expr(true)));
   }
   let bar = call("BarLegend", bar_args);
-  Ok(call(
+  call(
     "Legended",
-    vec![graphic, call("Placed", vec![bar, id_expr("After")])],
-  ))
+    vec![graphic, call("Placed", vec![bar, position.clone()])],
+  )
 }
 
 /// ContourPlot[f, {x, xmin, xmax}, {y, ymin, ymax}]
@@ -4202,35 +4258,27 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
-  push_contour_annotations(
-    &mut svg,
-    &grid,
-    &levels,
-    &area,
-    &opts,
-    (v_min, v_max),
-  );
+  if opts.contour_labels {
+    push_contour_labels(&mut svg, &grid, &levels, &area);
+  }
 
   svg.push_str("</svg>");
-  Ok(crate::plot_result_with_structure(svg, structure))
+  let graphic = crate::plot_result_with_structure(svg, structure);
+  Ok(contour_legend(graphic, &opts, &levels, (v_min, v_max)))
 }
 
-/// The `ContourLabels` and the `PlotLegends -> Automatic` bar legend of a
-/// contour plot, shared by `ContourPlot` and `ListContourPlot`.
-fn push_contour_annotations(
-  svg: &mut String,
-  grid: &[Vec<f64>],
-  levels: &[f64],
-  area: &crate::functions::plot::PlotArea,
+/// A shaded contour plot's `PlotLegends -> Automatic` color bar: one
+/// band per region between the contour levels.
+fn contour_legend(
+  graphic: Expr,
   opts: &DensityContourOptions,
+  levels: &[f64],
   value_range: (f64, f64),
-) {
-  if opts.contour_labels {
-    push_contour_labels(svg, grid, levels, area);
+) -> Expr {
+  if !opts.contour_shading {
+    return graphic;
   }
-  if opts.bar_legend && opts.contour_shading {
-    push_bar_legend(svg, area, opts, levels, value_range);
-  }
+  with_bar_legend(graphic, opts, value_range, Some(levels))
 }
 
 /// The functions of a (possibly nested) ContourPlot function list.
@@ -7762,14 +7810,9 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
-  push_contour_annotations(
-    &mut svg,
-    &grid,
-    line_levels,
-    &area,
-    &opts,
-    (v_min, v_max),
-  );
+  if opts.contour_labels {
+    push_contour_labels(&mut svg, &grid, line_levels, &area);
+  }
 
   svg.push_str("</svg>");
   let structure_items = contour_structure_items(
@@ -7789,7 +7832,8 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (y_min, y_max),
     false,
   );
-  Ok(crate::plot_result_with_structure(svg, structure))
+  let graphic = crate::plot_result_with_structure(svg, structure);
+  Ok(contour_legend(graphic, &opts, &levels, (v_min, v_max)))
 }
 
 /// A cell in an ArrayPlot matrix: either a numeric value or an explicit color.
