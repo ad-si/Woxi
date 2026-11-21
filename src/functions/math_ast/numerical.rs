@@ -3061,7 +3061,14 @@ fn complex_bessel_ji_bigfloat(
   let mut tr = one.div(&gamma, wp, rm);
   let mut ti = BigFloat::from_i32(0, wp);
   let (mut sr, mut si) = (tr.clone(), ti.clone());
-  let exp_of = |b: &BigFloat| b.exponent().map_or(i64::MIN / 4, i64::from);
+  // A zero part still reports an exponent, so it is tested for first.
+  let exp_of = |b: &BigFloat| {
+    if b.is_zero() {
+      i64::MIN / 4
+    } else {
+      b.exponent().map_or(i64::MIN / 4, i64::from)
+    }
+  };
   let mut m: i64 = 0;
   loop {
     let k = BigFloat::from_i64(m + 1, wp);
