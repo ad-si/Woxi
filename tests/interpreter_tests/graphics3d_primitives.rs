@@ -69,6 +69,93 @@ mod solids {
     assert_eq!(polygon_count(&in_cylinder), polygon_count(&cylinder));
   }
 
+  /// How jagged the outline of an SVG's polygons is: the longest edge of
+  /// the convex hull of every point they draw, relative to the hull's mean
+  /// radius. A regular n-gon scores `2 sin(pi/n)`.
+  fn outline_roughness(svg: &str) -> f64 {
+    let mut pts: Vec<(f64, f64)> = svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .flat_map(|s| s.split_whitespace())
+      .filter_map(|p| {
+        let (x, y) = p.split_once(',')?;
+        Some((x.parse().ok()?, y.parse().ok()?))
+      })
+      .collect();
+    pts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    pts.dedup();
+    let cross = |o: (f64, f64), a: (f64, f64), b: (f64, f64)| {
+      (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+    };
+    // Andrew's monotone chain: lower hull, then upper hull.
+    let mut hull: Vec<(f64, f64)> = Vec::new();
+    for pass in 0..2 {
+      let start = hull.len();
+      let seq: Vec<(f64, f64)> = if pass == 0 {
+        pts.clone()
+      } else {
+        pts.iter().rev().copied().collect()
+      };
+      for p in seq {
+        while hull.len() >= start + 2
+          && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0
+        {
+          hull.pop();
+        }
+        hull.push(p);
+      }
+      hull.pop();
+    }
+    let n = hull.len() as f64;
+    let cx = hull.iter().map(|p| p.0).sum::<f64>() / n;
+    let cy = hull.iter().map(|p| p.1).sum::<f64>() / n;
+    let r = hull
+      .iter()
+      .map(|p| ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt())
+      .sum::<f64>()
+      / n;
+    let longest = (0..hull.len())
+      .map(|i| {
+        let (a, b) = (hull[i], hull[(i + 1) % hull.len()]);
+        ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+      })
+      .fold(0.0, f64::max);
+    longest / r
+  }
+
+  /// An opaque sphere is tessellated about the line of sight, so its
+  /// outline is its finely divided equator from any view direction — in a
+  /// lone-sphere scene and in one with many spheres. Regression: in a
+  /// scene of a few hundred spheres the larger ones came out as visibly
+  /// jagged 12-gons with saw-toothed intersections, and a lone sphere's
+  /// outline was a slanted cut through its latitude bands.
+  #[test]
+  fn opaque_sphere_outline_is_round_from_any_view() {
+    for view in ["{1.3, -2.4, 2}", "{0, 0, 10}", "{3, -1, 0.5}"] {
+      let lone = svg(&format!(
+        "Graphics3D[Sphere[{{0, 0, 0}}, 1], Boxed -> False, \
+         ViewPoint -> {view}]"
+      ));
+      let rough = outline_roughness(&lone);
+      // A 48-gon scores 0.131; the slanted cut scored 0.18.
+      assert!(
+        rough < 0.15,
+        "{view}: lone sphere outline roughness {rough}"
+      );
+    }
+    // Many spheres: small ones floating in front of a large one stay
+    // inside its outline, which is still round.
+    let crowd = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Table[Sphere[1.3 {0.94, -0.31, \
+       0.16} + 0.04 {Mod[i, 7] - 3, Mod[i, 5] - 2, Mod[i, 3] - 1}, 0.05], \
+       {i, 40}]}, Boxed -> False, ViewPoint -> {3, -1, 0.5}]",
+    );
+    let rough = outline_roughness(&crowd);
+    // A 36-gon scores 0.174.
+    assert!(rough < 0.2, "crowded sphere outline roughness {rough}");
+  }
+
   /// Only the part of a sphere poking out of another stays; a see-through
   /// enclosing solid hides nothing.
   #[test]
@@ -1707,6 +1794,28 @@ mod smooth_shading {
     let last_red = colors.iter().rposition(|c| c.0 > c.2).unwrap();
     let first_blue = colors.iter().position(|c| c.2 > c.0).unwrap();
     assert!(last_red < first_blue, "{colors:?}");
+  }
+
+  // A translucent face lying on an opaque one stays beneath it, even when
+  // it is given later: only the opaque face's color shows through.
+  #[test]
+  fn translucent_face_on_opaque_face_stays_beneath() {
+    for (first, second) in [
+      ("Red, ", "Blue, Opacity[0.5], "),
+      ("Blue, Opacity[0.5], ", "Opacity[1], Red, "),
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{{first}Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, \
+         {{2, 2, 0}}, {{0, 2, 0}}}}], {second}Polygon[{{{{0, 0, 0}}, \
+         {{2, 0, 0}}, {{2, 2, 0}}, {{0, 2, 0}}}}]}}, Boxed -> False]"
+      ));
+      let polys: Vec<&str> = s.split("<polygon ").skip(1).collect();
+      assert!(!polys.is_empty(), "{s}");
+      assert!(
+        !polys.last().unwrap().contains("fill-opacity"),
+        "the opaque face must be drawn last: {s}"
+      );
+    }
   }
 }
 

@@ -1489,6 +1489,31 @@ mod typeset_labels {
     assert!(!svg.contains("font-style=\"italic\" xml:space=\"preserve\">A<"));
   }
 
+  // A `TraditionalForm` label raises its exponents instead of flattening
+  // `x^n` to the run `xn`, and keeps the size of its `Style` wrapper.
+  #[test]
+  fn text_traditional_form_power_label_raises_exponent() {
+    let svg = svg_of("Graphics[Text[Style[TraditionalForm[x^n], 16], {0, 0}]]");
+    assert!(!svg.contains(">xn</text>"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+    assert!(
+      svg.contains("font-size=\"16.0\" stroke=\"none\" font-style=\"italic\" xml:space=\"preserve\">x</text>"),
+      "{svg}"
+    );
+    assert!(svg.contains("font-size=\"11.2\""), "{svg}");
+    let svg = svg_of("Graphics[Text[TraditionalForm[4^n (a b)^n], {0, 0}]]");
+    assert!(!svg.contains(">4n"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+  }
+
+  // A `TraditionalForm` quotient stacks as a fraction.
+  #[test]
+  fn text_traditional_form_quotient_label_stacks() {
+    let svg = svg_of("Graphics[Text[TraditionalForm[x/y], {0, 0}]]");
+    assert!(!svg.contains(">xy</text>"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+  }
+
   #[test]
   fn text_quotient_label_stacks() {
     let svg = svg_of("Graphics[Text[a^2/b, {0, 0}]]");

@@ -3865,7 +3865,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       {
         return graphics_result(svg);
       }
-      match render_grid_if_needed(content) {
+      match functions::graphics::with_text_display_grids(|| {
+        render_grid_if_needed(content)
+      }) {
         graphics @ syntax::Expr::Graphics { .. } => graphics,
         _ => expr,
       }
@@ -3929,16 +3931,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           if (inner == "Grid" || inner == "TextGrid") && !inner_args.is_empty()
         ) =>
     {
-      if let syntax::Expr::FunctionCall {
-        args: grid_args, ..
-      } = &args[0]
-      {
-        match functions::graphics::grid_ast(grid_args) {
-          Ok(result) => result,
-          Err(_) => expr,
-        }
-      } else {
-        expr
+      match functions::graphics::traditional_form_grid_ast(&args[0]) {
+        Ok(result) => result,
+        Err(_) => expr,
       }
     }
     // Style[Grid[...], directives...] — propagate style into grid
@@ -4926,7 +4921,11 @@ fn render_interactive_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if !is_pane {
     return expr;
   }
-  let svg = evaluator::dispatch::io_functions::expr_to_svg(&expr);
+  // Plot-frame markers let a pane whose content names no `PlotRange`
+  // (`ClickPane[Dynamic[board], …]`) still map clicks to coordinates.
+  let svg = functions::graphics::with_plot_frame_markers(|| {
+    evaluator::dispatch::io_functions::expr_to_svg(&expr)
+  });
   if svg.starts_with("<svg") {
     graphics_result(functions::graphics::with_click_pane_marker(svg, &expr))
   } else {
@@ -4969,13 +4968,17 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     // A picture is drawn from the content set in the text face, so the
     // text of a layout inside (`Text[Row[{"Depth = ", x, " m"}]]`) is
     // proportional too.
-    let in_face = render_inline_display_wrapper(
-      &functions::graphics::in_text_face(&args[0]),
-    );
+    let in_face = functions::graphics::with_text_display_grids(|| {
+      render_inline_display_wrapper(&functions::graphics::in_text_face(
+        &args[0],
+      ))
+    });
     if matches!(in_face, syntax::Expr::Graphics { .. }) {
       return in_face;
     }
-    let inner = render_inline_display_wrapper(&args[0]);
+    let inner = functions::graphics::with_text_display_grids(|| {
+      render_inline_display_wrapper(&args[0])
+    });
     return match inner {
       // A text row (`Text[Style[Row[…], 14]]`) that the inner pass drew as
       // a picture is drawn again with `Text` on each item, so its text is

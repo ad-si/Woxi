@@ -117,6 +117,10 @@ fn parse_field_plot_label(
     }
     let value = evaluate_expr_to_expr(replacement)
       .unwrap_or_else(|_| replacement.as_ref().clone());
+    // `Null` typesets as nothing, never as the word "Null".
+    if matches!(&value, Expr::Identifier(s) if s == "Null") {
+      return None;
+    }
     // A size on the outermost `Style` is the label's font size, which the
     // caller applies at render resolution; leaving it inside the markup
     // would emit it in unscaled units and draw the label ten times too

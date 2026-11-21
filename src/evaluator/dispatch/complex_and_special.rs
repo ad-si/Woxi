@@ -4198,6 +4198,12 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     return expr_to_box_form(&args[0]);
   }
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "TransformationFunction"
+    && let Some(boxed) = transformation_function_boxes(args, expr_to_box_form)
+  {
+    return boxed;
+  }
   // `f'[x]` is held as `Derivative[1][f][x]`, and no notebook shows that
   // head: the order sets as prime marks on the differentiated function.
   // Without this the whole call fell through to its plain text, so every
@@ -5833,6 +5839,59 @@ fn tf_is_trig(name: &str) -> bool {
 
 /// Whether a List is a matrix (a non-empty list whose every element is a
 /// list of equal length ≥ 1).
+/// `TransformationFunction[m]` typesets as its head applied to the
+/// parenthesized augmented matrix `m`, with dividers setting off the last
+/// row and column (the translation part) the way a notebook draws it.
+/// `None` when the argument is no matrix.
+fn transformation_function_boxes(
+  args: &[Expr],
+  cell: fn(&Expr) -> Expr,
+) -> Option<Expr> {
+  use crate::helpers::rule_expr;
+  let sym = |s: &str| Expr::Identifier(s.to_string());
+  let [Expr::List(rows)] = args else {
+    return None;
+  };
+  if !tf_is_matrix(rows) {
+    return None;
+  }
+  let grid_rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => {
+        Expr::List(cells.iter().map(cell).collect::<Vec<_>>().into())
+      }
+      other => Expr::List(vec![cell(other)].into()),
+    })
+    .collect();
+  let no_lines =
+    || Expr::List(vec![Expr::List(vec![sym("False")].into())].into());
+  let before_last =
+    || Expr::List(vec![rule_expr(Expr::Integer(-2), sym("True"))].into());
+  let dividers = Expr::List(
+    vec![
+      rule_expr(tf_string("Columns"), no_lines()),
+      rule_expr(tf_string("ColumnsIndexed"), before_last()),
+      rule_expr(tf_string("Rows"), no_lines()),
+      rule_expr(tf_string("RowsIndexed"), before_last()),
+    ]
+    .into(),
+  );
+  let grid = tf_box(
+    "GridBox",
+    vec![
+      Expr::List(grid_rows.into()),
+      rule_expr(sym("GridBoxDividers"), dividers),
+    ],
+  );
+  Some(tf_row(vec![
+    tf_string("TransformationFunction"),
+    tf_string("["),
+    tf_row(vec![tf_string("("), grid, tf_string(")")]),
+    tf_string("]"),
+  ]))
+}
+
 fn tf_is_matrix(items: &[Expr]) -> bool {
   if items.is_empty() {
     return false;
@@ -6352,10 +6411,8 @@ fn tf_times(expr: &Expr) -> Expr {
   } = product;
   // A literal `1` factor is no factor at all: `a/b 1/c` sets as `a/(b c)`.
   numerators.retain(|f| !matches!(f, Expr::Integer(1)));
-  // Exact numeric factors lead, in their canonical order: `a Pi` is set as
-  // `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`.
-  numerators.sort_by_key(|f| !tf_is_numeric_constant(f));
-  denominators.sort_by_key(|f| !tf_is_numeric_constant(f));
+  tf_order_factors(&mut numerators);
+  tf_order_factors(&mut denominators);
   let row_of = |parts: &[Expr]| -> Expr {
     // A lone factor is set as it is: `a/(b c)` has `b c` under the bar.
     if let [only] = parts {
@@ -6417,6 +6474,63 @@ fn tf_times(expr: &Expr) -> Expr {
   }
 }
 
+/// Put the factors of a product into the order TraditionalForm sets them in.
+/// Exact numeric factors lead, in their canonical order: `a Pi` is set as
+/// `π a`, `a E Pi x Sqrt[3]` as `√3 ⅇ π a x`. An indexed variable
+/// `Subscript[k, 1]` is ordered as its base symbol `k` would be, so it moves
+/// ahead of later symbols and of function applications: `x Subscript[k, 1]`
+/// is set as `k₁ x` and `Sin[x] Subscript[k, 2]` as `k₂ sin(x)`. A held
+/// product keeps the order it was written in (apart from the numbers).
+pub(crate) fn tf_order_factors(factors: &mut Vec<Expr>) {
+  factors.sort_by_key(|f| !tf_is_numeric_constant(f));
+  if TF_HELD.get() {
+    return;
+  }
+  // The base symbol of `Subscript[sym, …]`, the key it is ordered by.
+  fn indexed_base(e: &Expr) -> Option<Expr> {
+    match e {
+      Expr::FunctionCall { name, args }
+        if name == "Subscript"
+          && args.len() >= 2
+          && matches!(args[0], Expr::Identifier(_)) =>
+      {
+        Some(args[0].clone())
+      }
+      _ => None,
+    }
+  }
+  if !factors.iter().any(|f| indexed_base(f).is_some()) {
+    return;
+  }
+  let key = |e: &Expr| indexed_base(e).unwrap_or_else(|| e.clone());
+  let (indexed, mut ordered): (Vec<Expr>, Vec<Expr>) = std::mem::take(factors)
+    .into_iter()
+    .partition(|f| indexed_base(f).is_some());
+  let numbers = ordered
+    .iter()
+    .take_while(|f| tf_is_numeric_constant(f))
+    .count();
+  // Insert each indexed variable ahead of the first factor its base symbol
+  // sorts before; ties keep the indexed variable after.
+  for f in indexed {
+    let k = key(&f);
+    let at = (numbers..ordered.len())
+      .find(|&i| {
+        crate::functions::list_helpers_ast::canonical_cmp(&k, &key(&ordered[i]))
+          == std::cmp::Ordering::Less
+      })
+      .unwrap_or(ordered.len());
+    ordered.insert(at, f);
+  }
+  *factors = ordered;
+}
+
+/// The TraditionalForm glyph of a relational operator: `a == b` is set as
+/// `a = b`, `a <= b` as `a ≤ b`.
+pub(crate) fn tf_comparison_op_glyph(op: ComparisonOp) -> &'static str {
+  tf_comparison_glyph(op.head_name()).unwrap_or("=")
+}
+
 /// Is this factor an exact numeric constant TraditionalForm writes ahead of
 /// the other factors of a product — a number, `I`, `E`, `Pi`, `Degree`, or a
 /// power of one with a number exponent (`Sqrt[3]`, `Pi^2`)? The named
@@ -6472,24 +6586,12 @@ fn tf_plus(expr: &Expr) -> Expr {
   }
   // A held sum is set as written; a large one keeps its canonical order.
   let held = TF_HELD.get();
-  let large = held
-    || matches!(
-      crate::functions::predicate_ast::leaf_count_ast(std::slice::from_ref(expr)),
-      Ok(Expr::Integer(n)) if n >= 795
-    );
+  let large = tf_sum_keeps_order(expr);
   // Wolfram's TraditionalForm starts from the order of its older
   // typesetting: by descending power, numbers last, a two-term sum not
   // leading with its negative term (a large sum keeps canonical order).
   if !large {
-    terms.sort_by(|(_, a), (_, b)| {
-      let key = |t: &Expr| (tf_is_number(t), -tf_degree(t));
-      let (ka, kb) = (key(a), key(b));
-      ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
-    });
-    let negative = |(neg, t): &(bool, Expr)| *neg != negated_term(t).is_some();
-    if terms.len() == 2 && negative(&terms[0]) && !negative(&terms[1]) {
-      terms.swap(0, 1);
-    }
+    tf_sort_by_degree(&mut terms);
   }
   // Each term as a sign and the box of its positive part — except the
   // first, which keeps its own box less its first "-".
@@ -6513,33 +6615,10 @@ fn tf_plus(expr: &Expr) -> Expr {
     }
     return tf_row(items);
   }
-  let mut signed: Vec<(bool, Expr)> = terms
-    .iter()
-    .enumerate()
-    .map(|(i, (neg, term))| match negated_term(term) {
-      Some(positive) if i == 0 => {
-        let mut b = tf_operand(term);
-        if !tf_delete_first_minus(&mut b) {
-          b = tf_operand(&positive);
-        }
-        (!*neg, b)
-      }
-      Some(positive) => (!*neg, tf_operand(&positive)),
-      None => (*neg, tf_operand(term)),
-    })
+  let signed: Vec<(bool, Expr)> = tf_order_sum_terms(&terms, large)
+    .into_iter()
+    .map(|(neg, boxed, _)| (neg, boxed))
     .collect();
-  if signed.len() > 1 && !large {
-    // `TraditionalFormDump`ordplus`.
-    let order = tf_plus_order(&signed);
-    signed = order.into_iter().map(|i| signed[i].clone()).collect();
-    // A two-term sum does not lead with its negative term (unless only
-    // the positive one is imaginary): `x^2 - 1`, `cos(x) - x^4`.
-    if let [(true, b2), (false, b3)] = signed.as_slice()
-      && (!tf_free_of_imaginary(b2) || tf_free_of_imaginary(b3))
-    {
-      signed.swap(0, 1);
-    }
-  }
   let mut items: Vec<Expr> = Vec::new();
   for (i, (neg, term)) in signed.into_iter().enumerate() {
     if i == 0 {
@@ -6559,6 +6638,88 @@ fn tf_plus(expr: &Expr) -> Expr {
     }
   }
   tf_row(items)
+}
+
+/// The terms of a sum (as `tf_flatten_additive` gives them, already in the
+/// older by-degree order) in the order TraditionalForm sets them, each as
+/// its sign, the box of its positive part (the first term keeps its own box
+/// less its first "-") and the positive part itself. A `large` sum keeps
+/// the order it has.
+fn tf_order_sum_terms(
+  terms: &[(bool, Expr)],
+  large: bool,
+) -> Vec<(bool, Expr, Expr)> {
+  let mut signed: Vec<(bool, Expr, Expr)> = terms
+    .iter()
+    .enumerate()
+    .map(|(i, (neg, term))| match negated_term(term) {
+      Some(positive) if i == 0 => {
+        let mut b = tf_operand(term);
+        if !tf_delete_first_minus(&mut b) {
+          b = tf_operand(&positive);
+        }
+        (!*neg, b, positive)
+      }
+      Some(positive) => (!*neg, tf_operand(&positive), positive),
+      None => (*neg, tf_operand(term), term.clone()),
+    })
+    .collect();
+  if signed.len() > 1 && !large {
+    // `TraditionalFormDump`ordplus`.
+    let boxes: Vec<(bool, Expr)> =
+      signed.iter().map(|(n, b, _)| (*n, b.clone())).collect();
+    let order = tf_plus_order(&boxes);
+    signed = order.into_iter().map(|i| signed[i].clone()).collect();
+    // A two-term sum does not lead with its negative term (unless only
+    // the positive one is imaginary): `x^2 - 1`, `cos(x) - x^4`.
+    if let [(true, b2, _), (false, b3, _)] = signed.as_slice()
+      && (!tf_free_of_imaginary(b2) || tf_free_of_imaginary(b3))
+    {
+      signed.swap(0, 1);
+    }
+  }
+  signed
+}
+
+/// The terms of a sum in the order TraditionalForm sets them, each as
+/// whether it is subtracted and its positive part: `ϕ + x Subscript[k, 1]`
+/// gives `k₁ x` before `ϕ`, `x^2 - 1` gives `x^2` before `1`. Text
+/// renderers of a graphic's labels set a sum in this same order.
+pub(crate) fn tf_sum_terms_in_order(expr: &Expr) -> Vec<(bool, Expr)> {
+  let mut terms = Vec::new();
+  tf_flatten_additive(expr, false, &mut terms);
+  let large = tf_sum_keeps_order(expr);
+  if !large {
+    tf_sort_by_degree(&mut terms);
+  }
+  tf_order_sum_terms(&terms, large)
+    .into_iter()
+    .map(|(neg, _, positive)| (neg, positive))
+    .collect()
+}
+
+/// Whether a sum is set in the order it has: a held sum as written, a
+/// large one in canonical order.
+fn tf_sum_keeps_order(expr: &Expr) -> bool {
+  TF_HELD.get()
+    || matches!(
+      crate::functions::predicate_ast::leaf_count_ast(std::slice::from_ref(expr)),
+      Ok(Expr::Integer(n)) if n >= 795
+    )
+}
+
+/// The older TraditionalForm order of a sum's terms: by descending power,
+/// numbers last, a two-term sum not leading with its negative term.
+fn tf_sort_by_degree(terms: &mut [(bool, Expr)]) {
+  terms.sort_by(|(_, a), (_, b)| {
+    let key = |t: &Expr| (tf_is_number(t), -tf_degree(t));
+    let (ka, kb) = (key(a), key(b));
+    ka.0.cmp(&kb.0).then(ka.1.total_cmp(&kb.1))
+  });
+  let negative = |(neg, t): &(bool, Expr)| *neg != negated_term(t).is_some();
+  if terms.len() == 2 && negative(&terms[0]) && !negative(&terms[1]) {
+    terms.swap(0, 1);
+  }
 }
 
 /// Whether a term of a sum is a plain number (`2`, `-1/3`, `π`).
@@ -7297,6 +7458,8 @@ fn tf_comparison_glyph(head: &str) -> Option<&'static str> {
     "LessEqual" => "\u{2264}",
     "Greater" => ">",
     "GreaterEqual" => "\u{2265}",
+    "SameQ" => "\u{2261}",
+    "UnsameQ" => "\u{2262}",
     _ => return None,
   })
 }
@@ -8160,6 +8323,11 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf(&args[0])
       }
     }
+    "TransformationFunction"
+      if transformation_function_boxes(args, tf).is_some() =>
+    {
+      transformation_function_boxes(args, tf).unwrap()
+    }
     "MatrixForm" | "TableForm" if args.len() == 1 => {
       let dense =
         crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
@@ -8507,17 +8675,7 @@ fn tf(expr: &Expr) -> Expr {
     } => {
       let mut parts = vec![tf_operand(&operands[0])];
       for (i, op) in operators.iter().enumerate() {
-        let sym = match op {
-          ComparisonOp::Equal => "=",
-          ComparisonOp::NotEqual => "\u{2260}", // ≠
-          ComparisonOp::Less => "<",
-          ComparisonOp::LessEqual => "\u{2264}", // ≤
-          ComparisonOp::Greater => ">",
-          ComparisonOp::GreaterEqual => "\u{2265}", // ≥
-          ComparisonOp::SameQ => "\u{2261}",        // ≡
-          ComparisonOp::UnsameQ => "\u{2262}",      // ≢
-        };
-        parts.push(tf_string(sym));
+        parts.push(tf_string(tf_comparison_op_glyph(*op)));
         parts.push(tf_operand(&operands[i + 1]));
       }
       tf_row(parts)

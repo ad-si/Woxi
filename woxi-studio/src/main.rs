@@ -4789,6 +4789,7 @@ fn render_manipulate_widget<'a>(
         step,
         current,
         is_real,
+        exact_value,
         orientation,
         reversed,
         ..
@@ -4829,7 +4830,7 @@ fn render_manipulate_widget<'a>(
             )
             .width(iced::Length::Fixed(72.0))
             .into(),
-            None => text(format_slider_value(*current, *is_real))
+            None => text(slider_value_text(*current, *is_real, *exact_value))
               .size(11)
               .font(Font::MONOSPACE)
               .width(iced::Length::Fixed(72.0))
@@ -5798,6 +5799,15 @@ fn is_text_table(rows: &[Vec<woxi::functions::graphics::DisplayNode>]) -> bool {
     })
 }
 
+/// Transpose a display grid's rows into columns, padding the columns of a
+/// short (ragged) row with `None` so every column has one slot per row.
+fn grid_columns<T>(rows: &[Vec<T>]) -> Vec<Vec<Option<&T>>> {
+  let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+  (0..width)
+    .map(|c| rows.iter().map(|row| row.get(c)).collect())
+    .collect()
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -5834,15 +5844,21 @@ fn render_display_node<'a>(
       r.into()
     }
     DisplayNode::Grid(rows) => {
-      let mut col = Column::new().spacing(2);
-      for row_cells in rows {
-        let mut r = Row::new().spacing(2).align_y(Center);
-        for cell in row_cells {
-          r = r.push(render_display_node(cell_idx, cell));
+      // Wolfram lines a grid's cells up in columns, each cell centered in
+      // its column (the default `Alignment -> Center`), so the grid is laid
+      // out column by column rather than as independent rows.
+      let mut grid = Row::new().spacing(6);
+      for column_cells in grid_columns(rows) {
+        let mut col = Column::new().spacing(2).align_x(Center);
+        for cell in column_cells {
+          col = col.push(match cell {
+            Some(cell) => render_display_node(cell_idx, cell),
+            None => text(" ").size(12).into(),
+          });
         }
-        col = col.push(r);
+        grid = grid.push(col);
       }
-      col.into()
+      grid.into()
     }
     DisplayNode::Column(children) => {
       let mut col = Column::new().spacing(4);
@@ -6320,6 +6336,19 @@ fn format_slider_value(v: f64, is_real: bool) -> String {
   } else {
     s
   }
+}
+
+/// The slider readout, showing the exact initial value (`π/2`) while the
+/// slider still sits on it, as Wolfram does, and the decimal otherwise.
+fn slider_value_text(
+  current: f64,
+  is_real: bool,
+  exact_value: Option<f64>,
+) -> String {
+  exact_value
+    .filter(|v| *v == current)
+    .and_then(woxi::functions::graphics::format_exact_slider_label)
+    .unwrap_or_else(|| format_slider_value(current, is_real))
 }
 
 fn format_manipulate_number(v: f64) -> String {
@@ -9049,6 +9078,27 @@ mod tests {
     assert_eq!(format_slider_value(100_000.0, true), "100\u{2009}000.");
     assert_eq!(format_slider_value(12345.5, false), "12\u{2009}345.5");
     assert_eq!(format_slider_value(-0.125, false), "-0.125");
+  }
+
+  #[test]
+  fn slider_value_text_shows_exact_initial_value() {
+    use super::slider_value_text;
+    use std::f64::consts::PI;
+    // Still on the exact initial value: typeset exactly, as Wolfram does.
+    assert_eq!(slider_value_text(PI / 2.0, false, Some(PI / 2.0)), "π/2");
+    assert_eq!(slider_value_text(PI / 2.0, true, Some(PI / 2.0)), "π/2");
+    assert_eq!(
+      slider_value_text(3.0 * PI / 4.0, false, Some(3.0 * PI / 4.0)),
+      "3π/4"
+    );
+    assert_eq!(slider_value_text(2.0 * PI, false, Some(2.0 * PI)), "2π");
+    assert_eq!(slider_value_text(-PI / 3.0, false, Some(-PI / 3.0)), "-π/3");
+    assert_eq!(slider_value_text(1.0 / 3.0, false, Some(1.0 / 3.0)), "1/3");
+    // Integers keep the plain readout.
+    assert_eq!(slider_value_text(5.0, false, Some(5.0)), "5");
+    // Once moved off it (or with no exact initial value) the decimal shows.
+    assert_eq!(slider_value_text(2.0, true, Some(PI / 2.0)), "2.");
+    assert_eq!(slider_value_text(PI / 2.0, true, None), "1.571");
   }
 
   /// A Manipulate's helper variables written with Gothic letters
@@ -12472,6 +12522,43 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       (0.0..=50.0).contains(&current),
       "the Trigger must stay within its dynamic bound, got {current}"
     );
+  }
+
+  /// A popup menu whose bare choices are pictures (`{shape, {Graphics[…],
+  /// Graphics[…]}, ControlType -> PopupMenu}`) shows each picture, as
+  /// Wolfram does, instead of its `Graphics[…]` InputForm text.
+  #[test]
+  fn popup_menu_of_bare_graphics_choices_shows_pictures() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[shape], \
+       {{shape, Graphics[{Rectangle[]}], \"shape\"}, \
+       {Graphics[{Rectangle[]}], Graphics[{Circle[{0, 0}, 1]}], \
+       Graphics3D[{Sphere[]}]}, ControlType -> PopupMenu}, \
+       {n, {1, 2}}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          value_label_svgs: shapes,
+          popup: true,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          value_label_svgs: plain,
+          ..
+        },
+      ] => {
+        assert_eq!(shapes.len(), 3);
+        assert!(
+          shapes.iter().all(Option::is_some),
+          "every picture choice carries its rendered icon"
+        );
+        assert!(plain.iter().all(Option::is_none), "numbers stay text");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
   }
 
   #[test]
@@ -18328,6 +18415,28 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         target
       })
       .collect()
+  }
+
+  /// A display grid is drawn column by column so its cells line up, as
+  /// Wolfram's `Grid` does: the label column `{"volume", "surface area"}`
+  /// and the value column stay together, and a short row leaves an empty
+  /// slot instead of shifting later rows' cells into the wrong column.
+  #[test]
+  fn grid_columns_transposes_rows_and_pads_ragged_ones() {
+    let rows = vec![vec!["volume", "24.02"], vec!["surface area", "40.26"]];
+    assert_eq!(
+      grid_columns(&rows),
+      vec![
+        vec![Some(&"volume"), Some(&"surface area")],
+        vec![Some(&"24.02"), Some(&"40.26")],
+      ]
+    );
+    let ragged = vec![vec!["a"], vec!["b", "c"]];
+    assert_eq!(
+      grid_columns(&ragged),
+      vec![vec![Some(&"a"), Some(&"b")], vec![None, Some(&"c")]]
+    );
+    assert!(grid_columns::<&str>(&[]).is_empty());
   }
 
   #[test]

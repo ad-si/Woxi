@@ -3192,6 +3192,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     svg_height: crate::functions::plot::DEFAULT_HEIGHT,
     full_width: false,
     chart_labels: Vec::new(),
+    chart_labels_group_level: false,
     chart_label_position: crate::functions::chart::LabelPosition::Below,
     plot_label: None,
     axes_label: None,
@@ -3735,6 +3736,42 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// ImageResize[img, {w, h}] or ImageResize[img, w] - Resize to target dimensions
+/// The source pixels (and their weights, summing to 1) that make up each
+/// of `dst` output pixels when one image axis is resampled from `src`
+/// pixels. A growing (or unchanged) axis interpolates linearly between the
+/// two nearest source pixel centers; a shrinking axis averages every source
+/// pixel the output pixel's footprint overlaps, weighted by the overlap.
+fn resample_taps(src: usize, dst: usize) -> Vec<Vec<(usize, f64)>> {
+  let scale = src as f64 / dst as f64;
+  let last = src.saturating_sub(1);
+  (0..dst)
+    .map(|d| {
+      if scale <= 1.0 {
+        let f = ((d as f64) + 0.5) * scale - 0.5;
+        let s0 = (f.floor().max(0.0) as usize).min(last);
+        let s1 = (s0 + 1).min(last);
+        let t = (f - s0 as f64).clamp(0.0, 1.0);
+        if s0 == s1 || t == 0.0 {
+          vec![(s0, 1.0)]
+        } else {
+          vec![(s0, 1.0 - t), (s1, t)]
+        }
+      } else {
+        let lo = d as f64 * scale;
+        let hi = lo + scale;
+        let first = lo.floor() as usize;
+        let end = (hi.ceil() as usize).min(src);
+        (first..end)
+          .filter_map(|s| {
+            let overlap = (hi.min(s as f64 + 1.0) - lo.max(s as f64)) / scale;
+            (overlap > 1e-12).then_some((s, overlap))
+          })
+          .collect()
+      }
+    })
+    .collect()
+}
+
 pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coerced;
   let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
@@ -3936,12 +3973,11 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (new_w, new_h) = (new_w.max(1), new_h.max(1));
 
-  // Bilinear interpolation on the f64 buffer (per channel).
   let mut new_data = vec![0.0_f64; (new_w as usize) * (new_h as usize) * ch];
-  let scale_x = src_w as f64 / new_w as f64;
-  let scale_y = src_h as f64 / new_h as f64;
-  for ny in 0..new_h as usize {
-    if nearest {
+  if nearest {
+    let scale_x = src_w as f64 / new_w as f64;
+    let scale_y = src_h as f64 / new_h as f64;
+    for ny in 0..new_h as usize {
       let sy = ((((ny as f64) + 0.5) * scale_y).floor() as usize)
         .min(src_h.saturating_sub(1));
       for nx in 0..new_w as usize {
@@ -3952,26 +3988,36 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             data[(sy * src_w + sx) * ch + c];
         }
       }
-      continue;
     }
-    let sy_f = ((ny as f64) + 0.5) * scale_y - 0.5;
-    let sy0 = sy_f.floor().max(0.0) as usize;
-    let sy1 = (sy0 + 1).min(src_h.saturating_sub(1));
-    let fy = (sy_f - sy0 as f64).clamp(0.0, 1.0);
-    for nx in 0..new_w as usize {
-      let sx_f = ((nx as f64) + 0.5) * scale_x - 0.5;
-      let sx0 = sx_f.floor().max(0.0) as usize;
-      let sx1 = (sx0 + 1).min(src_w.saturating_sub(1));
-      let fx = (sx_f - sx0 as f64).clamp(0.0, 1.0);
-      for c in 0..ch {
-        let v00 = data[(sy0 * src_w + sx0) * ch + c];
-        let v01 = data[(sy0 * src_w + sx1) * ch + c];
-        let v10 = data[(sy1 * src_w + sx0) * ch + c];
-        let v11 = data[(sy1 * src_w + sx1) * ch + c];
-        let v0 = v00 * (1.0 - fx) + v01 * fx;
-        let v1 = v10 * (1.0 - fx) + v11 * fx;
-        let v = v0 * (1.0 - fy) + v1 * fy;
-        new_data[(ny * new_w as usize + nx) * ch + c] = v;
+  } else {
+    // Separable resampling: each axis that grows is interpolated
+    // bilinearly, each axis that shrinks averages the source pixels its
+    // output pixel covers (an antialiasing box filter), so a large
+    // reduction keeps soft gray edges instead of point-sampling a
+    // handful of source pixels.
+    let x_taps = resample_taps(src_w, new_w as usize);
+    let y_taps = resample_taps(src_h, new_h as usize);
+    // Horizontal pass: src_h rows of new_w pixels.
+    let mut rows = vec![0.0_f64; src_h * (new_w as usize) * ch];
+    for sy in 0..src_h {
+      for (nx, taps) in x_taps.iter().enumerate() {
+        for c in 0..ch {
+          rows[(sy * new_w as usize + nx) * ch + c] = taps
+            .iter()
+            .map(|&(sx, w)| data[(sy * src_w + sx) * ch + c] * w)
+            .sum();
+        }
+      }
+    }
+    // Vertical pass.
+    for (ny, taps) in y_taps.iter().enumerate() {
+      for nx in 0..new_w as usize {
+        for c in 0..ch {
+          new_data[(ny * new_w as usize + nx) * ch + c] = taps
+            .iter()
+            .map(|&(sy, w)| rows[(sy * new_w as usize + nx) * ch + c] * w)
+            .sum();
+        }
       }
     }
   }
