@@ -4698,7 +4698,7 @@ mod tests {
     );
     assert_eq!(state.display_trees.len(), 2, "{:?}", state.display_trees);
     let svgs = |tree: &DisplayNode| -> Vec<String> {
-      let DisplayNode::Grid(rows) = tree else {
+      let DisplayNode::Grid(rows, _) = tree else {
         panic!("readout is not a grid: {tree:?}");
       };
       rows
@@ -6490,7 +6490,7 @@ mod tests {
         DisplayNode::Row(c) | DisplayNode::Column(c) => {
           c.iter().any(has_slider)
         }
-        DisplayNode::Grid(rows) => rows.iter().flatten().any(has_slider),
+        DisplayNode::Grid(rows, ..) => rows.iter().flatten().any(has_slider),
         DisplayNode::Panel(inner) => has_slider(inner),
         _ => false,
       }
@@ -7063,7 +7063,7 @@ mod tests {
           on,
           ..
         } => out.push((t.clone(), *checked, on.clone())),
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, ..) => {
           rows.iter().flatten().for_each(|c| radios(c, out))
         }
         DisplayNode::Row(cs) | DisplayNode::Column(cs) => {
@@ -7836,7 +7836,7 @@ mod tests {
       match node {
         DisplayNode::ClickPane { .. } => Some(node),
         DisplayNode::Panel(c) => find_pane(c),
-        DisplayNode::Grid(rows) => rows.iter().flatten().find_map(find_pane),
+        DisplayNode::Grid(rows, _) => rows.iter().flatten().find_map(find_pane),
         DisplayNode::Column(cs) | DisplayNode::Row(cs) => {
           cs.iter().find_map(find_pane)
         }

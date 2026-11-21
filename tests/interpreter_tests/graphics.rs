@@ -46450,7 +46450,7 @@ mod manipulate {
         }
         DisplayNode::Static { text, .. } => out.push(text.clone()),
         DisplayNode::Panel(child) => texts(child, out),
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, _) => {
           for c in rows.iter().flatten() {
             texts(c, out);
           }
@@ -46907,7 +46907,7 @@ mod manipulate {
        Row[{\"c\", \"!\"}] :> (n = 3)}]}}]",
       &[],
     );
-    let DisplayNode::Grid(rows) = node else {
+    let DisplayNode::Grid(rows, _) = node else {
       panic!("expected a grid, got {node:?}");
     };
     let DisplayNode::Row(buttons) = &rows[0][1] else {
@@ -57755,7 +57755,7 @@ fn manipulate_display_style_dynamic_keeps_grid_layout() {
     DisplayNode::Row(children) => {
       assert_eq!(children.len(), 2);
       match &children[1] {
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, _) => {
           assert_eq!(rows.len(), 3);
           assert!(rows.iter().all(|r| r.len() == 3));
         }

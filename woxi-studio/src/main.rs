@@ -4263,6 +4263,9 @@ fn label_run_spans<'a, L>(
       if r.subscript {
         span = span.size(SUBSCRIPT_SPAN_SIZE);
       }
+      if r.underline {
+        span = span.underline(true);
+      }
       if let Some((red, green, blue)) = r.color {
         span = span.color(Color::from_rgb(red, green, blue));
       }
@@ -5815,7 +5818,7 @@ fn display_node_plain_text(
     | DisplayNode::ActionMenu { label: child, .. } => {
       display_node_plain_text(child)
     }
-    DisplayNode::Grid(rows) => rows
+    DisplayNode::Grid(rows, ..) => rows
       .iter()
       .flat_map(|row| row.iter().map(display_node_plain_text))
       .collect(),
@@ -5829,6 +5832,146 @@ fn display_node_plain_text(
     DisplayNode::Popup { current, .. } => current.clone(),
     DisplayNode::Opener { label, .. } => display_node_plain_text(label),
   }
+}
+
+/// Width (px) of a horizontal slider display element.
+const DISPLAY_SLIDER_WIDTH: f32 = 120.0;
+
+/// Draw a `Slider`/`Manipulator` display element `width` px wide (a
+/// vertical one keeps its fixed height). Anything else draws nothing.
+fn render_display_slider<'a>(
+  cell_idx: usize,
+  node: &woxi::functions::graphics::DisplayNode,
+  width: f32,
+) -> Element<'a, Message> {
+  let woxi::functions::graphics::DisplayNode::Slider {
+    target,
+    min,
+    max,
+    step,
+    current,
+    enabled,
+    after,
+    vertical,
+  } = node
+  else {
+    return space::Space::new().into();
+  };
+  // A `Manipulator[Dynamic[lval], {min, max, step}]` display element:
+  // dragging writes `lval = <value>` back, followed by the statements of
+  // an enclosing `EventHandler`'s click/drag actions. A trailing
+  // `Enabled -> cond` reading `False` grays it out and swallows drags.
+  let enabled = *enabled;
+  let target = target.clone();
+  let after = after.clone();
+  let on_change = move |v: f64| {
+    if !enabled {
+      return Message::Noop;
+    }
+    let mut mutation = format!("{target} = {v}");
+    for a in &after {
+      mutation.push_str("; ");
+      mutation.push_str(a);
+    }
+    Message::ManipulateDisplayToggled(cell_idx, mutation)
+  };
+  let step = if *step > 0.0 {
+    *step
+  } else {
+    (max - min) / 1000.0
+  };
+  if *vertical {
+    let mut s = iced::widget::vertical_slider(*min..=*max, *current, on_change)
+      .step(step)
+      .height(120.0);
+    if !enabled {
+      s = s.style(disabled_slider_style);
+    }
+    return s.into();
+  }
+  let mut s = slider(*min..=*max, *current, on_change)
+    .width(iced::Length::Fixed(width))
+    .step(step);
+  if !enabled {
+    s = s.style(disabled_slider_style);
+  }
+  s.into()
+}
+
+/// Width (px) of one `ItemSize` em of a display `Grid` column, as wide as
+/// Wolfram draws one on a Manipulate control panel.
+const GRID_ITEM_EM_PX: f32 = 8.5;
+
+/// Draw a display `Grid`: each row's cells side by side, with the columns
+/// its `ItemSize` fixes held at their width (so they line up from row to
+/// row) and the `Dividers` lines drawn between rows and columns.
+fn render_display_grid<'a>(
+  cell_idx: usize,
+  rows: &[Vec<woxi::functions::graphics::DisplayNode>],
+  layout: &woxi::functions::graphics::DisplayGridLayout,
+) -> Element<'a, Message> {
+  use woxi::functions::graphics::DisplayNode;
+  let row_line = |i: usize| layout.row_dividers.get(i).copied() == Some(true);
+  let col_line =
+    |j: usize| layout.column_dividers.get(j).copied() == Some(true);
+  // Vertical dividers must run unbroken from row to row, so the rows sit
+  // flush and the cells carry the gap instead.
+  let has_col_lines = layout.column_dividers.iter().any(|&on| on);
+  let (row_gap, cell_pad) = if has_col_lines { (0, 1) } else { (2, 0) };
+  let n_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+  let mut col = Column::new().spacing(row_gap);
+  for (i, row_cells) in rows.iter().enumerate() {
+    if row_line(i) {
+      col = col.push(rule::horizontal(1));
+    }
+    let mut r = Row::new().spacing(2).align_y(Center);
+    // A short row of a laid-out grid is padded with empty cells, as
+    // Wolfram pads a ragged grid, so its dividers and widths stay in line.
+    let n = if *layout == Default::default() {
+      row_cells.len()
+    } else {
+      n_cols
+    };
+    for j in 0..n {
+      if col_line(j) {
+        r = r.push(rule::vertical(1));
+      }
+      let blank = DisplayNode::Spacer { width: 0.0 };
+      let cell = row_cells.get(j).unwrap_or(&blank);
+      let content = match layout.column_widths.get(j).copied().flatten() {
+        Some(ems) => {
+          let width = ems as f32 * GRID_ITEM_EM_PX;
+          // A slider shrinks to fit its column rather than spill over the
+          // next one.
+          let content = match cell {
+            DisplayNode::Slider {
+              vertical: false, ..
+            } => render_display_slider(
+              cell_idx,
+              cell,
+              DISPLAY_SLIDER_WIDTH.min(width - 8.0).max(16.0),
+            ),
+            _ => render_display_node(cell_idx, cell),
+          };
+          container(content)
+            .width(iced::Length::Fixed(width))
+            .clip(true)
+        }
+        None => container(render_display_node(cell_idx, cell)),
+      };
+      r = r.push(
+        content.padding(iced::Padding::ZERO.top(cell_pad).bottom(cell_pad)),
+      );
+    }
+    if col_line(n) {
+      r = r.push(rule::vertical(1));
+    }
+    col = col.push(r);
+  }
+  if row_line(rows.len()) {
+    col = col.push(rule::horizontal(1));
+  }
+  col.into()
 }
 
 /// Whether a display grid holds only text cells (styled text or a plain text
@@ -5873,7 +6016,9 @@ fn render_display_node<'a>(
     // up under its heading: text rows share one height, while text widths
     // differ from row to row. Grids holding widgets or pictures keep the
     // row-by-row layout, where a spanning cell cannot widen a whole column.
-    DisplayNode::Grid(rows) if is_text_table(rows) => {
+    DisplayNode::Grid(rows, layout)
+      if *layout == Default::default() && is_text_table(rows) =>
+    {
       let columns = rows.iter().map(Vec::len).max().unwrap_or(0);
       let mut r = Row::new().spacing(12);
       for c in 0..columns {
@@ -5888,7 +6033,7 @@ fn render_display_node<'a>(
       }
       r.into()
     }
-    DisplayNode::Grid(rows) => {
+    DisplayNode::Grid(rows, layout) if *layout == Default::default() => {
       // Wolfram lines a grid's cells up in columns, each cell centered in
       // its column (the default `Alignment -> Center`), so the grid is laid
       // out column by column rather than as independent rows.
@@ -5904,6 +6049,9 @@ fn render_display_node<'a>(
         grid = grid.push(col);
       }
       grid.into()
+    }
+    DisplayNode::Grid(rows, layout) => {
+      render_display_grid(cell_idx, rows, layout)
     }
     DisplayNode::Column(children) => {
       let mut col = Column::new().spacing(4);
@@ -6059,56 +6207,8 @@ fn render_display_node<'a>(
       }
       list.into()
     }
-    DisplayNode::Slider {
-      target,
-      min,
-      max,
-      step,
-      current,
-      enabled,
-      after,
-      vertical,
-    } => {
-      // A `Manipulator[Dynamic[lval], {min, max, step}]` display element:
-      // dragging writes `lval = <value>` back, followed by the statements of
-      // an enclosing `EventHandler`'s click/drag actions. A trailing
-      // `Enabled -> cond` reading `False` grays it out and swallows drags.
-      let enabled = *enabled;
-      let target = target.clone();
-      let after = after.clone();
-      let on_change = move |v: f64| {
-        if !enabled {
-          return Message::Noop;
-        }
-        let mut mutation = format!("{target} = {v}");
-        for a in &after {
-          mutation.push_str("; ");
-          mutation.push_str(a);
-        }
-        Message::ManipulateDisplayToggled(cell_idx, mutation)
-      };
-      let step = if *step > 0.0 {
-        *step
-      } else {
-        (max - min) / 1000.0
-      };
-      if *vertical {
-        let mut s =
-          iced::widget::vertical_slider(*min..=*max, *current, on_change)
-            .step(step)
-            .height(120.0);
-        if !enabled {
-          s = s.style(disabled_slider_style);
-        }
-        return s.into();
-      }
-      let mut s = slider(*min..=*max, *current, on_change)
-        .width(iced::Length::Fixed(120.0))
-        .step(step);
-      if !enabled {
-        s = s.style(disabled_slider_style);
-      }
-      s.into()
+    DisplayNode::Slider { .. } => {
+      render_display_slider(cell_idx, node, DISPLAY_SLIDER_WIDTH)
     }
     DisplayNode::Opener {
       label,
@@ -9598,6 +9698,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       background: None,
       size: None,
       subscript: false,
+      underline: false,
     }];
     let spans: Vec<text::Span<'_, ()>> =
       label_run_spans(&runs, Font::MONOSPACE);
@@ -9607,6 +9708,33 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       spans[0].font.map(|f| f.weight),
       Some(iced::font::Weight::Bold)
     );
+    assert!(!spans[0].underline);
+  }
+
+  /// A `Style["…", Underlined]` caption is drawn underlined; regression:
+  /// the directive was dropped, so a control panel's underlined column
+  /// headings showed as plain text.
+  #[test]
+  fn label_run_spans_honor_underline() {
+    let expr = woxi::interpret_to_expr(
+      r#"Manipulate[u, {{u, 1, Row[{Style["top", Underlined], " rest"}]}, 0, 2}]"#,
+    )
+    .expect("parse Manipulate expr");
+    let widget = manipulate::ManipulateState::from_expr(&expr)
+      .expect("build Manipulate widget");
+    let runs = match widget.controls.as_slice() {
+      [manipulate::ControlState::Continuous { label_runs, .. }] => {
+        label_runs.clone()
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    };
+    let spans: Vec<text::Span<'_, ()>> =
+      label_run_spans(&runs, Font::MONOSPACE);
+    let flags: Vec<(&str, bool)> = spans
+      .iter()
+      .map(|s| (s.text.as_ref(), s.underline))
+      .collect();
+    assert_eq!(flags, vec![("top", true), (" rest", false)]);
   }
 
   /// A `TableForm` readout with `TableHeadings` (a blank corner cell, then
@@ -9621,7 +9749,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
         TableHeadings -> {{Text@Style["H", Italic], "D"}, {"H", "D"}}]"#,
       &[],
     );
-    let DisplayNode::Grid(rows) = &node else {
+    let DisplayNode::Grid(rows, _) = &node else {
       panic!("expected a grid, got {node:?}");
     };
     assert_eq!(rows.len(), 3);
@@ -9632,7 +9760,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       r#"Grid[{{"a", Checkbox[False]}, {"b", "c"}}]"#,
       &[],
     );
-    let DisplayNode::Grid(rows) = &mixed else {
+    let DisplayNode::Grid(rows, _) = &mixed else {
       panic!("expected a grid, got {mixed:?}");
     };
     assert!(!is_text_table(rows), "{rows:?}");
@@ -18638,7 +18766,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         }
         DisplayNode::Panel(child)
         | DisplayNode::Toggler { label: child, .. } => walk(child, out),
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
               walk(cell, out);
@@ -18674,7 +18802,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
         DisplayNode::Panel(child)
         | DisplayNode::Toggler { label: child, .. } => walk(child, out),
         DisplayNode::Button { label, .. } => walk(label, out),
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
               walk(cell, out);
@@ -18828,7 +18956,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
           mutation, selected, ..
         } => out.push((mutation.clone(), *selected)),
         DisplayNode::Panel(child) => walk(child, out),
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
               walk(cell, out);
@@ -18871,7 +18999,7 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       match node {
         DisplayNode::Popup { .. } => out.push(node.clone()),
         DisplayNode::Panel(child) => walk(child, out),
-        DisplayNode::Grid(rows) => {
+        DisplayNode::Grid(rows, ..) => {
           for row in rows {
             for cell in row {
               walk(cell, out);
