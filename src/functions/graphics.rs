@@ -6133,14 +6133,15 @@ const SCRIPT_SCALE: f64 = 0.7;
 ///
 /// The middle of the em box sits about 0.3 em above the baseline; glyphs
 /// reach about 0.75 em above it (ascenders) and 0.2 em below it
-/// (descenders). A script is shifted by `SCRIPT_SHIFT_EM` and drawn at
+/// (descenders) — the ascent is taken as 0.8 em to leave a hairline of
+/// room for renderers that place `central` a little lower. A script is shifted by `SCRIPT_SHIFT_EM` and drawn at
 /// `SCRIPT_SCALE`, so a superscript's top lands only a little above the
 /// line's own glyphs, while a subscript's bottom reaches further down.
 /// The row stays centered, so it grows by the larger overshoot on both
 /// sides — and never shrinks below one em.
 fn scripted_line_height_em(has_super: bool, has_sub: bool) -> f64 {
   const CENTER: f64 = 0.3;
-  const ASCENT: f64 = 0.75;
+  const ASCENT: f64 = 0.8;
   const DESCENT: f64 = 0.2;
   let above = if has_super {
     SCRIPT_SHIFT_EM + SCRIPT_SCALE * ASCENT - CENTER
