@@ -5950,8 +5950,8 @@ doesn't pin down either rule, so both stay as they are.
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
-clip path and affine matrix), but the image is not lit: Wolfram shades it with
-the scene lighting. Textured concave or holed polygons render as plain
+clip path and affine matrix), shaded by the scene lighting of a white surface
+(a color-matrix filter). Textured concave or holed polygons render as plain
 default-blue faces. This cannot be checked against wolframscript by diffing SVG
 (it rasterizes 3D output).
 

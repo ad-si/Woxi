@@ -7308,6 +7308,44 @@ mod plot3d {
     assert_eq!(us("({1.9, 0} &)"), "{1.9}");
   }
 
+  /// The scene lighting shades a textured `Graphics3D` polygon like a
+  /// white surface: the image is multiplied by the lit color through a
+  /// color-matrix filter. Regression: textured faces were drawn unlit, so
+  /// every face of a textured cube showed the same brightness.
+  #[test]
+  fn graphics3d_texture_is_shaded_by_lighting() {
+    let svg = |lighting: &str, color: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{{color}Texture[Image[{{{{{{1, 1, 1}}, {{0, 0, 0}}}}}}]], \
+         Polygon[{{{{0, 0, 0}}, {{1, 0, 0}}, {{1, 0, 1}}, {{0, 0, 1}}}}, \
+         VertexTextureCoordinates -> {{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{0, 1}}}}]}}, \
+         Lighting -> {lighting}]"
+      ))
+    };
+    let shaded = svg("\"Neutral\"", "");
+    assert!(shaded.contains("<image"), "{shaded}");
+    assert!(shaded.contains("<feColorMatrix"), "{shaded}");
+    // Neutral light is white, so the shade is a gray: equal channel scales.
+    let values = shaded
+      .split("values=\"")
+      .nth(1)
+      .and_then(|v| v.split('"').next())
+      .unwrap()
+      .split_whitespace()
+      .map(|x| x.parse::<f64>().unwrap())
+      .collect::<Vec<_>>();
+    assert_eq!(values.len(), 20);
+    assert!(values[0] < 1.0 && values[0] > 0.0, "{values:?}");
+    assert_eq!(values[0], values[6]);
+    assert_eq!(values[0], values[12]);
+    // A surface color does not tint the texture: it replaces it.
+    assert_eq!(svg("\"Neutral\"", "Red, "), shaded);
+    // Full white ambient light leaves the image as it is.
+    let unlit = svg("{{\"Ambient\", White}}", "");
+    assert!(unlit.contains("<image"), "{unlit}");
+    assert!(!unlit.contains("<feColorMatrix"), "{unlit}");
+  }
+
   /// SphericalPlot3D is drawn with the data's own proportions (WL's
   /// `BoxRatios -> Automatic`) and honors `PlotRange`, `Boxed` and `Axes`
   /// like any `Graphics3D`; regression: a sphere came out as a flat disc in
