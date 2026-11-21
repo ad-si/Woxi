@@ -9341,7 +9341,16 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
       None => Some((0.0, 0.0, false)),
     }
   {
-    let layout = layout_box(&boxes, local_style.font_size);
+    // The label is set in the graphic's proportional text face, like the
+    // one-line labels around it, not in the notebook's monospace face.
+    let family = if local_style.font_family.is_empty() {
+      crate::functions::image_ast::DEFAULT_SVG_FONT_FAMILY
+    } else {
+      local_style.font_family.as_str()
+    };
+    let layout = with_box_font_family(Some(family), || {
+      layout_box(&boxes, local_style.font_size)
+    });
     if layout.width > 0.0 && layout.height > 0.0 {
       let (svg, w, h) = align_inset_picture(
         layout_to_svg(&layout, &local_style.effective_color().to_svg_rgb()),
@@ -29001,6 +29010,14 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
     }
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      label_typesets_fraction(&args[0])
+    }
+    // A form wrapper (`TraditionalForm[b/8]`) typesets its content, so a
+    // quotient inside it stacks just as it does on its own.
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "TraditionalForm" | "StandardForm")
+        && args.len() == 1 =>
     {
       label_typesets_fraction(&args[0])
     }

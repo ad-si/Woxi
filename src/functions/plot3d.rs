@@ -13736,9 +13736,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // filling the whole picture, squashed or widened to it.
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
-    || (!spherical_region_off && manipulate_frame
-        && explicitly_framed
-        && aspect_ratio.is_none())
+    || (!spherical_region_off
+      && manipulate_frame
+      && explicitly_framed
+      && aspect_ratio.is_none())
     || (!spherical_region_off
       && explicitly_framed
       && !show_box
