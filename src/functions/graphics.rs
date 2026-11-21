@@ -17901,8 +17901,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         svg.push_str(line);
       } else {
         svg.push_str(&format!(
-          "<tspan x=\"{cx:.1}\" dy=\"{:.2}\">{line}</tspan>",
-          line_pitch(title_size)
+          "<tspan x=\"{cx:.1}\" dy=\"{:.2}\">{}</tspan>",
+          line_pitch(title_size),
+          tspan_line(line)
         ));
       }
     }

@@ -66367,3 +66367,17 @@ mod inline_graphics_operands {
     assert!(!svg.contains("-Graphics-"), "{svg}");
   }
 }
+
+/// A blank line in a multi-line `PlotLabel` keeps its height: the empty line's
+/// `tspan` carries a no-break space, since SVG drops the `dy` of an empty one.
+#[test]
+fn plot_label_blank_lines_keep_their_height() {
+  for code in [
+    r#"Plot[x, {x, 0, 1}, PlotLabel -> "top\n\nbottom"]"#,
+    r#"Show[Plot[x, {x, 0, 1}], PlotLabel -> "top\n\nbottom", Frame -> True]"#,
+  ] {
+    let svg = export_svg(code);
+    assert!(!svg.contains("\"></tspan>"), "{code}: {svg}");
+    assert!(svg.contains("bottom"), "{code}: {svg}");
+  }
+}
