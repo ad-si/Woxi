@@ -25,6 +25,9 @@ pub(crate) struct PlotArea {
   pub y_max: f64,
   /// Render-space pixels per display pixel (RESOLUTION_SCALE).
   pub scale: f64,
+  /// The width of the whole picture in render pixels: what a relative
+  /// `Thickness[t]` is the fraction `t` of.
+  pub image_w: f64,
 }
 
 impl PlotArea {
@@ -44,6 +47,9 @@ impl PlotArea {
   }
 }
 
+/// The thinnest stroke drawn, in display pixels.
+const MIN_STROKE_PX: f64 = 0.5;
+
 /// Graphics-directive state carried while walking an Epilog expression.
 /// Nested lists scope their directives (as in `Graphics`), so the walker
 /// clones this at each list boundary.
@@ -52,6 +58,9 @@ struct EpilogStyle {
   color: Color,
   /// Stroke width in *display* pixels (multiplied by `scale` on emit).
   thickness: f64,
+  /// A relative `Thickness[t]`: the fraction of the image width the
+  /// stroke spans, which overrides `thickness` so it follows the drawn size.
+  thickness_fraction: Option<f64>,
   /// Dash pattern as fractions of the plot width; `None` = solid.
   dashing: Option<Vec<f64>>,
   /// Point diameter as a fraction of the plot width, or — stored
@@ -85,6 +94,7 @@ impl EpilogStyle {
     Self {
       color: default_color,
       thickness: 1.0,
+      thickness_fraction: None,
       dashing: None,
       point_size: 0.012,
       opacity: 1.0,
@@ -104,7 +114,7 @@ impl EpilogStyle {
       let mut stroke = format!(
         " stroke=\"{}\" stroke-width=\"{:.1}\"",
         edge.color.to_svg_rgb(),
-        (edge.thickness * area.scale).max(0.5),
+        edge.stroke_width(area),
       );
       if let Some(dashes) = &edge.dashing {
         let parts: Vec<String> = dashes
@@ -127,11 +137,29 @@ impl EpilogStyle {
     s
   }
 
+  /// Set an absolute stroke width in display pixels.
+  fn set_thickness(&mut self, t: f64) {
+    self.thickness = t;
+    self.thickness_fraction = None;
+  }
+
+  /// The stroke width in render pixels. A relative thickness is a fraction
+  /// of the image width.
+  /// Like Wolfram's renderer, a stroke never vanishes: `Thickness[0]`
+  /// still draws the thinnest visible line, half a display pixel wide.
+  fn stroke_width(&self, area: &PlotArea) -> f64 {
+    let w = match self.thickness_fraction {
+      Some(f) => f * area.image_w,
+      None => self.thickness * area.scale,
+    };
+    w.max(MIN_STROKE_PX * area.scale)
+  }
+
   fn stroke_attrs(&self, area: &PlotArea) -> String {
     let mut s = format!(
       "stroke=\"{}\" stroke-width=\"{:.1}\"",
       self.color.to_svg_rgb(),
-      (self.thickness * area.scale).max(0.5),
+      self.stroke_width(area),
     );
     if let Some(dashes) = &self.dashing {
       let parts: Vec<String> = dashes
@@ -482,8 +510,8 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
   }
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => style.thickness = 2.0,
-      "Thin" => style.thickness = 0.5,
+      "Thick" => style.set_thickness(2.0),
+      "Thin" => style.set_thickness(0.5),
       "Dashed" => style.dashing = Some(vec![0.02, 0.02]),
       "Dotted" => style.dashing = Some(vec![0.002, 0.01]),
       "DotDashed" => style.dashing = Some(vec![0.002, 0.01, 0.02, 0.01]),
@@ -506,7 +534,7 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
           None
         } else {
           let mut edge = EpilogStyle::new();
-          edge.thickness = 0.5;
+          edge.set_thickness(0.5);
           for a in args {
             match a {
               Expr::List(items) => {
@@ -537,22 +565,21 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
       }
       "Thickness" if args.len() == 1 => match &args[0] {
         Expr::Identifier(s) => match s.as_str() {
-          "Large" => style.thickness = 2.0,
-          "Medium" => style.thickness = 1.0,
-          "Small" => style.thickness = 0.75,
-          "Tiny" => style.thickness = 0.5,
+          "Large" => style.set_thickness(2.0),
+          "Medium" => style.set_thickness(1.0),
+          "Small" => style.set_thickness(0.75),
+          "Tiny" => style.set_thickness(0.5),
           _ => return false,
         },
         other => {
           if let Some(t) = try_eval_to_f64(other) {
-            // Fraction of the plot width → display pixels (360px default).
-            style.thickness = t * 360.0;
+            style.thickness_fraction = Some(t.max(0.0));
           }
         }
       },
       "AbsoluteThickness" if args.len() == 1 => {
         if let Some(t) = try_eval_to_f64(&args[0]) {
-          style.thickness = t;
+          style.set_thickness(t);
         }
       }
       "Arrowheads" if args.len() == 1 => {
@@ -760,6 +787,19 @@ fn render_item(
           render_item(&inner, style, area, out);
         }
       }
+      // `GraphicsComplex[pts, prims]`: the primitives with their vertex
+      // indices resolved to coordinates, drawn in the current style.
+      "GraphicsComplex" if args.len() >= 2 => {
+        if let Expr::List(points) = &args[0] {
+          let resolved =
+            crate::functions::graphics::graphics_complex_to_normal_form(
+              points,
+              &args[1],
+              &args[2..],
+            );
+          render_item(&resolved, style, area, out);
+        }
+      }
       "Line" if !args.is_empty() => {
         for pts in collect_point_lists(&args[0]) {
           out.push_str(&format!(
@@ -819,7 +859,7 @@ fn render_item(
           call1("Opacity", Expr::Real(style.opacity)),
           call1(
             "AbsoluteThickness",
-            Expr::Real(style.thickness.max(0.5 / area.scale)),
+            Expr::Real(style.stroke_width(area) / area.scale),
           ),
           call1("CapForm", style.cap_form.clone()),
         ];
@@ -906,6 +946,17 @@ fn render_item(
             polyline_points(&pts, area),
           ));
         }
+      }
+      // `Triangle[{p1, p2, p3}]` (or a list of such triples) is drawn as
+      // the polygon through its corners; `Triangle[]` is the unit triangle.
+      "Triangle" if args.len() <= 1 => {
+        let corners = args.first().cloned().unwrap_or_else(|| {
+          let pt = |x: i128, y: i128| {
+            Expr::List(vec![Expr::Integer(x), Expr::Integer(y)].into())
+          };
+          Expr::List(vec![pt(0, 0), pt(1, 0), pt(0, 1)].into())
+        });
+        render_item(&call("Polygon", vec![corners]), style, area, out);
       }
       // `Translate[content, {dx, dy}]` shifts `content`; a list of offsets
       // draws one shifted copy per entry (matches `Graphics[Translate[…]]`).
@@ -1157,16 +1208,26 @@ fn render_item(
             && extra_lines > 0.0
             && is_left_aligned_column(body)
           {
-            let chars = styled
-              .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64;
-            let block_w = chars * font_size * 0.6;
+            // A framed block is as wide as its frame measures it (by the
+            // proportional glyph widths), and the frame's `FrameMargins`
+            // already keep the lines off the border.
+            let (block_w, inset) = if is_framed {
+              let width_em = styled
+                .as_ref()
+                .map_or(0.0, super::chart::StyledLabel::max_line_width_em);
+              (width_em * font_size, 0.0)
+            } else {
+              let chars = styled
+                .as_ref()
+                .map_or(0, super::chart::StyledLabel::max_line_chars)
+                as f64;
+              (chars * font_size * 0.6, font_size * 0.35)
+            };
             line_x = match text_anchor {
               "start" => px,
               "end" => px - block_w,
               _ => px - block_w / 2.0,
-            } + font_size * 0.35;
+            } + inset;
             text_anchor = "start";
           }
           let label = styled.as_ref().map_or_else(
@@ -1183,11 +1244,15 @@ fn render_item(
             .or_else(|| style_wrapper_background(body))
             .filter(|_| !is_framed && direction.is_none());
           if let Some(color) = text_background {
-            let chars = styled.as_ref().map_or_else(
-              || expr_to_output(body).chars().count(),
-              super::chart::StyledLabel::max_line_chars,
-            ) as f64;
-            let text_w = chars * font_size * 0.6;
+            let text_w = styled.as_ref().map_or_else(
+              || {
+                crate::functions::plot_padding::text_width(
+                  &expr_to_output(body),
+                  font_size,
+                )
+              },
+              |s| s.max_line_width(font_size),
+            );
             let left = match text_anchor {
               "start" => px,
               "end" => px - text_w,
@@ -1203,45 +1268,52 @@ fn render_item(
           if is_framed {
             let text_w = styled
               .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64
-              * font_size
-              * 0.6;
+              .map_or(0.0, super::chart::StyledLabel::max_line_width_em)
+              * font_size;
+            // `Framed` leaves its `FrameMargins` (5 points a side unless
+            // set) between the text and the border.
+            let (m_left, m_right, m_bottom, m_top) =
+              crate::functions::graphics::framed_margins(
+                frame_opts,
+                crate::functions::graphics::FRAMED_DEFAULT_MARGIN,
+              );
+            let (m_left, m_right, m_bottom, m_top) = (
+              m_left * area.scale,
+              m_right * area.scale,
+              m_bottom * area.scale,
+              m_top * area.scale,
+            );
             // `py` is the first line's own center (shifted up above), so
             // the box starts half a line above it and grows by one more
             // line advance per extra line — not `py`'s center outward,
             // which would leave it too short and too high once the label
             // stacks below `py`.
-            let box_h = block_h;
-            let box_y = py - first_size / 2.0;
+            let box_h = block_h + m_bottom + m_top;
+            let box_y = py - first_size / 2.0 - m_top;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
               .map_or_else(
                 || "none".to_string(),
                 super::graphics::Color::to_svg_rgb,
               );
-            // Wolfram draws the box with a thin border unless the label
-            // asks for none; `FrameStyle -> color` recolors it.
-            let stroke = match option_value(frame_opts, "FrameStyle") {
-              Some(Expr::Identifier(s)) if s == "None" => String::new(),
-              Some(spec) => format!(
-                " stroke=\"{}\"",
+            // Wolfram draws the box with a thin (one point) border unless
+            // the label asks for none; `FrameStyle -> color` recolors it.
+            let stroke_color = match option_value(frame_opts, "FrameStyle") {
+              Some(Expr::Identifier(s)) if s == "None" => None,
+              Some(spec) => Some(
                 parse_color(spec)
                   .unwrap_or(Color::new(0.0, 0.0, 0.0))
-                  .to_svg_rgb()
+                  .to_svg_rgb(),
               ),
-              None => " stroke=\"rgb(0,0,0)\"".to_string(),
+              None => Some("rgb(0,0,0)".to_string()),
             };
-            // The border is one printer's point wide whatever the
-            // plot's internal coordinate scale.
-            let stroke = if stroke.is_empty() {
-              stroke
-            } else {
-              format!("{stroke} stroke-width=\"{:.2}\"", area.scale)
-            };
+            let stroke = stroke_color.map_or_else(String::new, |c| {
+              format!(" stroke=\"{c}\" stroke-width=\"{:.1}\"", area.scale)
+            });
             out.push_str(&format!(
-              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
-              px - text_w / 2.0,
+              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
+              px - text_w / 2.0 - m_left,
+              text_w + m_left + m_right,
             ));
           }
           out.push_str(&format!(
@@ -1261,6 +1333,63 @@ fn render_item(
           crate::functions::graphics::text_primitive_inset(args) =>
       {
         render_item(&with_inset_background(text, args), style, area, out);
+      }
+      // A `Row` of text runs is a (possibly wrapped) paragraph label.
+      "Inset"
+        if args.len() >= 2
+          && let Some(label) =
+            crate::functions::graphics::text_row_inset_object(args, 13.0) =>
+      {
+        let text = call("Text", vec![label, args[1].clone()]);
+        render_item(&with_inset_background(text, args), style, area, out);
+      }
+      // `Inset[Rotate[obj, θ], pos, …]` turns the inset object by θ
+      // counterclockwise about its anchor. A text object becomes a `Text`
+      // whose baseline runs along `{Cos[θ], Sin[θ]}`; any other object is
+      // inset as usual and the drawing turned about its anchor point.
+      "Inset"
+        if args.len() >= 2
+          && let Expr::FunctionCall {
+            name: rotate,
+            args: rargs,
+          } = &args[0]
+          && rotate == "Rotate"
+          && rargs.len() == 2
+          && let Some(theta) =
+            crate::functions::graphics::rotation_angle(&rargs[1]) =>
+      {
+        if is_text_inset(&rargs[0]) {
+          let offset = args
+            .get(2)
+            .filter(|o| point2(o).is_some())
+            .cloned()
+            .unwrap_or_else(|| {
+              Expr::List(vec![Expr::Integer(0), Expr::Integer(0)].into())
+            });
+          let direction = Expr::List(
+            vec![Expr::Real(theta.cos()), Expr::Real(theta.sin())].into(),
+          );
+          let text = call(
+            "Text",
+            vec![rargs[0].clone(), args[1].clone(), offset, direction],
+          );
+          render_item(&with_inset_background(text, args), style, area, out);
+        } else {
+          let Some((ax, ay)) = anchor2(&args[1], area) else {
+            return;
+          };
+          let mut inner_args = args.to_vec();
+          inner_args[0] = rargs[0].clone();
+          let mut inner = String::new();
+          render_item(&call("Inset", inner_args), style, area, &mut inner);
+          out.push_str(&format!(
+            "<g transform=\"rotate({:.3} {:.1} {:.1})\">\n{}</g>\n",
+            -theta.to_degrees(),
+            area.px(ax),
+            area.py(ay),
+            inner,
+          ));
+        }
       }
       "Inset" if args.len() >= 2 && is_text_inset(&args[0]) => {
         let text =
@@ -1315,6 +1444,21 @@ fn render_item(
             area.py(anchor.1) + (0.5 - fy) * h,
             w,
             h,
+          ));
+        }
+      }
+      // `Locator[pos, appearance]` draws its marker (Wolfram's crosshair or
+      // the appearance graphic) at its own screen size, centered on `pos`.
+      "Locator" if !args.is_empty() => {
+        for (x, y, svg, w, h) in
+          crate::functions::graphics::locator_markers(args)
+        {
+          out.push_str(&crate::functions::graphics::embed_svg_centered(
+            &svg,
+            area.px(x),
+            area.py(y),
+            w * area.scale,
+            h * area.scale,
           ));
         }
       }
@@ -1498,7 +1642,5 @@ fn render_circle_like(
 
 /// Escape text content for inclusion in an SVG text element.
 fn svg_escape_text(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
+  crate::functions::plot::html_escape(s)
 }

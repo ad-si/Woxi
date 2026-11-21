@@ -133,6 +133,27 @@ mod row_text_mode {
 mod row_visual_mode {
   use super::*;
 
+  /// `Row[{…picture…}, ImageSize -> …]`: the option sizes the row instead of
+  /// being typeset between its items as a separator.
+  #[test]
+  fn option_of_a_row_holding_a_picture_is_not_a_separator() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Row[{"ab", Graphics[{Disk[]}, ImageSize -> 20]},
+        ImageSize -> {120, 30}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("ImageSize"), "option typeset as text: {svg}");
+    assert!(svg.starts_with("<svg width=\"120\""), "row width: {svg}");
+    // A real separator is still set between the items.
+    let svg = interpret(
+      r#"ExportString[Row[{"ab", Graphics[{Disk[]}, ImageSize -> 20]}, "|"],
+        "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains(">|<"), "separator missing: {svg}");
+  }
+
   #[test]
   fn row_renders_svg() {
     clear_state();
@@ -548,12 +569,21 @@ mod row_visual_mode {
     let svg = |code: &str| -> String {
       interpret_with_stdout(code).unwrap().graphics.unwrap()
     };
+    // The lines are `<tspan>`s of one `<text>`, or (a column in the text
+    // face of `Text[…]`) `<text>` elements of their own.
     let line_baselines = |svg: &str, baseline: &str| {
-      let lines: Vec<&str> = svg
+      let mut lines: Vec<&str> = svg
         .split("<tspan x=")
         .skip(1)
         .map(|rest| rest.split('>').next().unwrap())
         .collect();
+      if lines.len() < 2 {
+        lines = svg
+          .split("<text ")
+          .skip(1)
+          .map(|rest| rest.split('>').next().unwrap())
+          .collect();
+      }
       assert!(lines.len() >= 2, "{svg}");
       let attr = format!("dominant-baseline=\"{baseline}\"");
       assert!(lines.iter().all(|attrs| attrs.contains(&attr)), "{svg}");
@@ -963,4 +993,118 @@ fn traditional_row_with_nested_grid_stacks_rows() {
   assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
   assert!(!svg.contains(">Grid<"), "grid head leaked: {svg}");
   assert!(!svg.contains(">(<"), "matrix parentheses leaked: {svg}");
+}
+
+/// A `Button[label, action, Appearance -> None]` in a `Grid` cell draws only
+/// its styled label — no plate — while still carrying the hit region a live
+/// widget presses; a default-appearance neighbor keeps its plate.
+#[test]
+fn appearance_none_button_in_grid_draws_label_without_plate() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style["<", Large, Bold], k = k + 1, Appearance -> None], Button["ok", k = 0]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.starts_with("<svg"), "expected an SVG, got: {svg}");
+  assert_eq!(
+    svg.matches("id=\"woxi-btn-").count(),
+    2,
+    "both buttons are pressable: {svg}"
+  );
+  assert_eq!(
+    svg.matches("rx=\"4\"").count(),
+    1,
+    "only the default button draws a plate: {svg}"
+  );
+  let label = svg.find("&lt;</text>").expect("arrow label drawn");
+  let tag = &svg[svg[..label].rfind("<text").unwrap()..label];
+  assert!(tag.contains("font-weight=\"bold\""), "bold label: {tag}");
+  assert!(tag.contains("sans-serif"), "button face font: {tag}");
+}
+
+/// Regression: a styled `Row` (`Style[Row[{…, Spacer[n], …}], size]`)
+/// pushes its style onto every item, and the resulting
+/// `Style[Spacer[n], size]` was typeset as text — dozens of points wide —
+/// instead of the `n` points of blank the spacer stands for.
+#[test]
+fn styled_spacer_keeps_its_width() {
+  clear_state();
+  let width = |code: &str| -> f64 {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let w = svg.split(" width=\"").nth(1).unwrap();
+    w.split('"').next().unwrap().parse().unwrap()
+  };
+  let plain = width("Row[{x, Spacer[10], b}]");
+  assert_eq!(width("Row[{x, Style[Spacer[10], 11], b}]"), plain);
+  assert_eq!(width("Row[{x, Style[Spacer[10], Red], b}]"), plain);
+  // The styled row's items are set at 11 pt, narrower than the default
+  // 14 pt, so the whole row is no wider than the unstyled one.
+  for opts in ["", ", Frame -> True"] {
+    let styled = width(&format!("Style[Row[{{x, Spacer[10], b}}{opts}], 11]"));
+    assert!(styled <= plain, "{opts}: {styled} > {plain}");
+  }
+}
+
+/// A relation separator is set as an operator, with a space on each side,
+/// while a punctuation separator stays tight.
+#[test]
+fn row_relation_separator_gets_operator_spacing() {
+  clear_state();
+  let svg = interpret(r#"ExportString[Row[{x, 2}, "="], "SVG"]"#).unwrap();
+  assert!(svg.contains("> = </text>"), "unspaced `=`: {svg}");
+  let svg =
+    interpret(r#"ExportString[Row[{x, 2}, "\[Rule]"], "SVG"]"#).unwrap();
+  assert!(svg.contains("> \u{2192} </text>"), "unspaced arrow: {svg}");
+  let svg = interpret(r#"ExportString[Row[{x, 2}, ","], "SVG"]"#).unwrap();
+  assert!(svg.contains(">,</text>"), "spaced comma: {svg}");
+}
+
+/// A `Style` around a row with a separator styles the separator too.
+#[test]
+fn styled_row_styles_its_separator() {
+  clear_state();
+  let svg =
+    interpret(r#"ExportString[Style[Row[{x, 2.5}, "="], 14, Orange], "SVG"]"#)
+      .unwrap();
+  assert!(
+    svg.contains(r#"fill="rgb(255,128,0)"> = </tspan>"#),
+    "separator not orange: {svg}"
+  );
+  // The separator's own style wins over the enclosing one.
+  let svg = interpret(
+    r#"ExportString[Style[Row[{x, y}, Style[" | ", Gray]], Orange], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(
+    svg.contains(r#"fill="rgb(128,128,128)"> | </tspan>"#),
+    "separator not gray: {svg}"
+  );
+}
+
+/// Regression: a `Button` in a `Grid` cell drew a `Style`d label
+/// (`Style[n, "Title"]`, `Style[k, 30, Bold, Red]`) as plain 14-point
+/// black text, dropping the label's font size, color and weight.
+#[test]
+fn styled_button_label_in_grid_keeps_its_style() {
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style[7, "Title"], x = 1]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("font-size=\"44\""), "Title size lost: {svg}");
+
+  let svg = interpret(
+    r#"ExportString[Grid[{{Button[Style["go", 30, Bold, Red], x = 1, ImageSize -> {120, 60}]}}], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("font-size=\"30\""), "size lost: {svg}");
+  assert!(svg.contains("font-weight=\"bold\""), "weight lost: {svg}");
+  assert!(
+    !svg.contains("fill=\"#000000\" text-anchor"),
+    "color lost: {svg}"
+  );
+
+  // A plain label still draws as the default 14-point text.
+  let svg =
+    interpret(r#"ExportString[Grid[{{Button["go", x = 1]}}], "SVG"]"#).unwrap();
+  assert!(svg.contains("font-size=\"14\""), "{svg}");
 }
