@@ -48839,6 +48839,82 @@ mod manipulate {
     );
   }
 
+  /// `If[mode == 1, Control[{{n, …}, 0, 750, 250}], Control[{{n, …}, 1000,
+  /// 10100, 500}]]` in a control row shows one slider for `n` per branch.
+  /// Only one is ever on screen, so they collapse into a single row, and
+  /// that row must take the bounds of whichever branch is active instead of
+  /// keeping the first branch's range in both modes.
+  #[test]
+  fn per_branch_slider_variants_collapse_with_branch_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[{mode, n}, \
+       Row[{\"mode \", Control[{{mode, 1, \"\"}, {1 -> \"small\", 2 -> \"large\"}}]}], \
+       Dynamic@Row[{\"from \", n, If[mode == 1, \
+         Control[{{n, 0, \"\"}, 0, 750, 250}], \
+         Control[{{n, 1000, \"\"}, 1000, 10100, 500}]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let sliders: Vec<(f64, f64, Option<f64>)> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous {
+          name,
+          min,
+          max,
+          step,
+          ..
+        } if name == "n" => Some((*min, *max, *step)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(sliders, vec![(0.0, 750.0, Some(250.0))]);
+    let (_, min_code, max_code, step_code) = spec
+      .dynamic_bounds
+      .iter()
+      .find(|(n, ..)| n == "n")
+      .expect("branch-dependent bounds for n")
+      .clone();
+    let resolve = |mode: &str, code: &Option<String>| {
+      woxi::with_scoped_globals(
+        &[("mode".to_string(), mode.to_string())],
+        || {
+          woxi::functions::graphics::manipulate_eval_bound_code(
+            code.as_deref().unwrap(),
+          )
+        },
+      )
+    };
+    for (mode, expected) in
+      [("1", (0.0, 750.0, 250.0)), ("2", (1000.0, 10100.0, 500.0))]
+    {
+      assert_eq!(
+        (
+          resolve(mode, &min_code),
+          resolve(mode, &max_code),
+          resolve(mode, &step_code)
+        ),
+        (Some(expected.0), Some(expected.1), Some(expected.2)),
+        "bounds of n for mode {mode}"
+      );
+    }
+  }
+
+  /// The same variable declared with identical specs in both branches keeps
+  /// static bounds: nothing changes when the branch does.
+  #[test]
+  fn identical_per_branch_slider_variants_keep_static_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[{mode, n}, {mode, {1, 2}}, \
+       Dynamic@If[mode == 1, Control[{n, 0, 10, 1}], Control[{n, 0, 10, 1}]]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.iter().filter(|c| c.name() == "n").count(), 1);
+    assert!(!spec.dynamic_bounds.iter().any(|(n, ..)| n == "n"));
+  }
+
   /// A bound written `Dynamic[…]` is the front end's way of saying "re-read
   /// this whenever anything it names changes" — a counter slider whose end
   /// is `Dynamic[Binomial[points, 3]]` follows the point count above it.
