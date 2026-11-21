@@ -846,6 +846,12 @@ fn factor_ast_impl(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let Some(coeffs) = extract_poly_coeffs(&expanded, &var) else {
     return Ok(factor_multivariate(&expanded));
   };
+  // The `i128` engine multiplies coefficients together (derivatives,
+  // remainder sequences, Hensel lifting), so a coefficient beyond the
+  // `i64` range can overflow it. Those go through the big-integer engine.
+  if coeffs.iter().any(|c| c.unsigned_abs() > i64::MAX as u128) {
+    return Ok(factor_multivariate(&expanded));
+  }
 
   // Factor out GCD of coefficients
   let gcd_coeff = coeffs
@@ -1020,7 +1026,10 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
     }
 
     // Try rational root theorem
-    if let Some(root) = find_integer_root(&remaining) {
+    let root_search = rational_root_search_is_cheap(&remaining);
+    if let Some(root) =
+      root_search.then(|| find_integer_root(&remaining)).flatten()
+    {
       // Factor out (x - root) which in canonical form is (root_neg + x) → (-root + x)
       factors.push(plus2(Expr::Integer(-root), id_expr(var)));
       remaining = divide_by_root(&remaining, root);
@@ -1028,7 +1037,10 @@ pub fn factor_integer_poly(coeffs: &[i128], var: &str) -> Vec<Expr> {
       // No integer root. Try a non-integer rational root p/q: factor out the
       // primitive linear (q*x - p) and divide it out, e.g.
       // 6x^2+11x+3 -> (2x+3)(3x+1).
-      if let Some((p, q)) = find_rational_root(&remaining) {
+      if let Some((p, q)) = root_search
+        .then(|| find_rational_root(&remaining))
+        .flatten()
+      {
         let linear = vec![-p, q]; // -p + q*x  ==  q*x - p
         if let Some((quot, rem)) = poly_div(&remaining, &linear)
           && rem == [0]
@@ -1232,6 +1244,23 @@ pub fn find_integer_root(coeffs: &[i128]) -> Option<i128> {
     }
   }
   None
+}
+
+/// Whether trying every candidate root `±p/q` (p dividing the constant
+/// term, q the leading coefficient) is affordable. Coefficients with many
+/// divisors give millions of candidates; Zassenhaus, which covers these
+/// degrees, finds the linear factors directly instead.
+fn rational_root_search_is_cheap(coeffs: &[i128]) -> bool {
+  const MAX_CANDIDATES: usize = 4096;
+  let deg = coeffs.len().saturating_sub(1);
+  if !(2..=24).contains(&deg) || coeffs[0] == 0 {
+    return true;
+  }
+  let lead = coeffs[deg];
+  integer_divisors(coeffs[0].abs())
+    .len()
+    .saturating_mul(integer_divisors(lead.abs()).len())
+    <= MAX_CANDIDATES
 }
 
 /// q^deg * poly(p/q) = Σ coeffs[i] * p^i * q^(deg-i). This is 0 exactly when
@@ -3493,14 +3522,15 @@ fn factor_square_free_ast_impl(
 /// where poly = f1^e1 * f2^e2 * ..., and each fi is square-free.
 /// The first entry is always {numeric_coefficient, 1}.
 /// Compute the formal derivative of a polynomial given as coefficient vector.
-fn poly_derivative(p: &[i128]) -> Vec<i128> {
+/// Returns `None` when a coefficient overflows `i128`.
+fn poly_derivative(p: &[i128]) -> Option<Vec<i128>> {
   if p.len() <= 1 {
-    return vec![0];
+    return Some(vec![0]);
   }
   p.iter()
     .enumerate()
     .skip(1)
-    .map(|(i, &c)| c * i as i128)
+    .map(|(i, &c)| c.checked_mul(i as i128))
     .collect()
 }
 
@@ -3524,9 +3554,17 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
     return vec![];
   }
 
-  let fp = poly_derivative(pp);
+  // A derivative or remainder too large for `i128`: the same
+  // decomposition in big-integer arithmetic.
+  let big = || {
+    super::mfactor::square_free_int_coeffs(pp)
+      .unwrap_or_else(|| vec![(pp.to_vec(), 1)])
+  };
+  let Some(fp) = poly_derivative(pp) else {
+    return big();
+  };
   let Some(g) = poly_gcd(pp, &fp) else {
-    return vec![(pp.to_vec(), 1)];
+    return big();
   };
 
   // If GCD is constant (degree 0), polynomial is already square-free
@@ -3537,7 +3575,7 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
   }
 
   let Some(mut w) = poly_exact_divide(pp, &g) else {
-    return vec![(pp.to_vec(), 1)];
+    return big();
   };
 
   let mut result: Vec<(Vec<i128>, i128)> = Vec::new();
@@ -3549,9 +3587,11 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
       break;
     }
 
-    let Some(y) = poly_gcd(&w, &g) else { break };
+    let Some(y) = poly_gcd(&w, &g) else {
+      return big();
+    };
     let Some(z) = poly_exact_divide(&w, &y) else {
-      break;
+      return big();
     };
 
     // z is the square-free factor with multiplicity i
@@ -3572,7 +3612,7 @@ fn yun_square_free(pp: &[i128]) -> Vec<(Vec<i128>, i128)> {
 
     g = match poly_exact_divide(&g, &y) {
       Some(q) => q,
-      None => break,
+      None => return big(),
     };
     w = y;
     i += 1;
