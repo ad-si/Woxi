@@ -25652,13 +25652,30 @@ pub fn styled_axis_label(e: &Expr) -> Option<String> {
 /// Whether `e` is a `Row` label with a mathematical item among its parts
 /// (`Row[{V[x], " / ", "a"}]`): a graphic's `FormatType` is
 /// `TraditionalForm`, so such an item is typeset with italic letters, as
-/// on its own, while the strings beside it stay as written.
+/// on its own, while the strings beside it stay as written. An item made
+/// only of strings and numbers (`Subscript["log", 10]`) has no symbol to
+/// set in italics and keeps the plain label text.
 fn row_holds_math_item(e: &Expr) -> bool {
+  fn holds_symbol(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(_) => true,
+      Expr::FunctionCall { args, .. } => args.iter().any(holds_symbol),
+      Expr::CurriedCall { func, args } => {
+        holds_symbol(func) || args.iter().any(holds_symbol)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        holds_symbol(left) || holds_symbol(right)
+      }
+      Expr::UnaryOp { operand, .. } => holds_symbol(operand),
+      _ => false,
+    }
+  }
   match e {
     Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
-      Some(Expr::List(items)) => items
-        .iter()
-        .any(|i| is_traditional_math_label(i) || row_holds_math_item(i)),
+      Some(Expr::List(items)) => items.iter().any(|i| {
+        (is_traditional_math_label(i) && holds_symbol(i))
+          || row_holds_math_item(i)
+      }),
       _ => false,
     },
     _ => false,
