@@ -1986,6 +1986,25 @@ mod graphics {
       );
     }
 
+    /// A frameless plot lays out its own canvas (its padding differs from
+    /// a plain `Graphics` of the same primitives), so `Rotate[plot, Pi]`
+    /// turns that canvas and keeps its size: set beside the plot it lines
+    /// up with it. It used to re-render the turned primitives at another
+    /// size.
+    #[test]
+    fn a_half_turned_frameless_plot_keeps_its_size() {
+      assert_eq!(
+        interpret(
+          "g = ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 5, \
+           Contours -> 3, Frame -> False, ImageSize -> 80]; \
+           ImageDimensions[Rasterize[Rotate[g, Pi]]] == \
+           ImageDimensions[Rasterize[g]]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     /// `Inset[Rotate[plot, θ], pos]` turns the embedded picture and keeps
     /// it a picture. It used to print `-Graphics-` as rotated text.
     #[test]

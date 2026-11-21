@@ -6945,6 +6945,24 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
       _ => false,
     })
   });
+  // A picture laid out by its own renderer (a frameless plot pads and sizes
+  // its canvas differently from a plain `Graphics` of the same primitives)
+  // also turns as its rendered image: re-rendering its primitives would
+  // change its size, and `Rotate[plot, Pi]` beside `plot` would no longer
+  // line up with it.
+  let literal_graphics_args = literal_graphics_args.filter(|gfx_args| {
+    let Expr::Graphics { svg, .. } = g else {
+      return true;
+    };
+    match crate::functions::graphics::graphics_ast(gfx_args) {
+      Ok(Expr::Graphics { svg: ref plain, .. }) => {
+        let (w, h) = crate::functions::graphics::parse_svg_wh(svg);
+        let (pw, ph) = crate::functions::graphics::parse_svg_wh(plain);
+        (w - pw).abs() < 0.5 && (h - ph).abs() < 0.5
+      }
+      _ => false,
+    }
+  });
   if let Some(mut gfx_args) = literal_graphics_args {
     let rotate_args = std::iter::once(gfx_args[0].clone())
       .chain(rest.iter().cloned())
