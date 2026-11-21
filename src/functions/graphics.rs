@@ -49464,7 +49464,7 @@ fn collect_row_joined_controls(
       for row in rows {
         match row {
           Expr::List(cells) => {
-            joined_line_controls(cells, true, place_map, out)
+            joined_line_controls(cells, true, place_map, out);
           }
           other => collect_row_joined_controls(other, place_map, out),
         }
