@@ -59699,7 +59699,9 @@ mod manipulate_control_placement_tests {
       vec!["Row[{Style[\"rounds \", Bold], Dynamic[n]}]"]
     );
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
-    assert_eq!(spec.row_joined_controls, vec!["g"]);
+    // A static `Style` caption starts a run too (see
+    // `collect_row_joined_controls`), so `h` shares its caption's line.
+    assert_eq!(spec.row_joined_controls, vec!["g", "h"]);
   }
 }
 
