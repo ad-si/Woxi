@@ -13989,6 +13989,7 @@ fn graphics_svg(expr: &Expr) -> Option<String> {
 }
 
 /// `Style[g, …]` (possibly nested) around a `Graphics`/`Graphics3D` `g`.
+#[cfg(not(target_arch = "wasm32"))]
 fn is_styled_graphics(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, args }
