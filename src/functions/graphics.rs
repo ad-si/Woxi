@@ -31183,35 +31183,6 @@ fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
   directives
 }
 
-/// A `Grid[…]` that is a cell of a styled grid (`Style[Grid[…], 12]`,
-/// `BaseStyle -> …`) inherits the outer grid's style, like every other
-/// cell: its text is set at that size, weight, slant, color and face rather
-/// than the default 14 pt. Its own `Style`/`BaseStyle` still wins, being
-/// nearer its cells. Any other cell is returned unchanged.
-fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
-  if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Grid") {
-    return cell.clone();
-  }
-  let mut directives = grid_style_directives(style);
-  if let Some(family) = &style.font_family {
-    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
-  }
-  if directives.is_empty() {
-    return cell.clone();
-  }
-  call(
-    "Style",
-    std::iter::once(cell.clone())
-      .chain(directives)
-      .collect::<Vec<_>>(),
-  )
-}
-
-/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
-/// grid's text: in the grid's face and size, not as a free-standing column
-/// (which defaults to monospace at the base size). A column of plain text
-/// takes the grid's style directives, with the sans face as the default
-/// family. Other cells are returned unchanged.
 /// A grid cell that is drawn as a stacked fraction, wrapped in the grid's
 /// base style (`Style[Grid[…], 16]`, `BaseStyle -> …`) so the fraction is
 /// typeset at that size, weight, slant and color instead of the default
@@ -31354,6 +31325,11 @@ fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   )
 }
 
+/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
+/// grid's text: in the grid's face and size, not as a free-standing column
+/// (which defaults to monospace at the base size). A column of plain text
+/// takes the grid's style directives, with the sans face as the default
+/// family. Other cells are returned unchanged.
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
