@@ -13659,10 +13659,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Below`, a skew view) are drawn at the sphere-framed size, about 0.7×
   // the outline-fitted one. A Manipulate's scene with the default camera
   // and no range (a tall elevator building at `ImageSize -> {300, 400}`)
-  // still fits its box outline to the frame.
+  // still fits its box outline to the frame. An explicit `AspectRatio -> r`
+  // instead asks for the projected box to be stretched to the picture's
+  // shape: the FrontEnd's snapshots of such a frame show the contents
+  // filling the whole picture, squashed or widened to it.
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
-    || (!spherical_region_off && manipulate_frame && explicitly_framed)
+    || (!spherical_region_off && manipulate_frame
+        && explicitly_framed
+        && aspect_ratio.is_none())
     || (!spherical_region_off
       && explicitly_framed
       && !show_box
