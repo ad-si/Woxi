@@ -3537,6 +3537,22 @@ fn field_plot_structure(
     structure_args
       .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
   }
+  // The `Scaled[0.02]` margin the plot draws between its data and frame
+  // (`FIELD_RANGE_PADDING`) is a real option of the result, so a `Show`
+  // that merges the plot with other graphics keeps it too.
+  if !explicit
+    .iter()
+    .any(|o| name_of(o) == Some("PlotRangePadding"))
+  {
+    let side = || {
+      let s = call("Scaled", vec![Expr::Real(FIELD_RANGE_PADDING)]);
+      Expr::List(vec![s.clone(), s].into())
+    };
+    structure_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(vec![side(), side()].into()),
+    ));
+  }
   structure_args.extend(explicit);
   call("Graphics", structure_args)
 }
@@ -7875,6 +7891,27 @@ enum ArrayCell {
   Color(GfxColor),
 }
 
+/// Wolfram accepts a gradient's name without its trailing word in a
+/// `ColorFunction` option (`"Thermometer"` for `"ThermometerColors"`,
+/// `"Temperature"` for `"TemperatureMap"`). Expand such a short name to
+/// the single `ColorData["Gradients"]` entry it begins at a word boundary;
+/// any other name (exact, unknown, or ambiguous) is returned unchanged.
+fn expand_gradient_short_name(name: &str) -> String {
+  let gradients = crate::functions::chart::GRADIENT_NAMES;
+  if name.is_empty() || gradients.contains(&name) {
+    return name.to_string();
+  }
+  let mut matches = gradients.iter().filter(|g| {
+    g.strip_prefix(name)
+      .and_then(|rest| rest.chars().next())
+      .is_some_and(|c| c.is_ascii_uppercase())
+  });
+  match (matches.next(), matches.next()) {
+    (Some(full), None) => full.to_string(),
+    _ => name.to_string(),
+  }
+}
+
 /// The gradient scheme name of a `ColorFunction` option value: a bare
 /// string (`"TemperatureMap"`), a `ColorData["TemperatureMap"]` call, or
 /// the structured `ColorDataFunction["TemperatureMap", …]` form the call
@@ -7882,10 +7919,7 @@ enum ArrayCell {
 /// own `ColorFunction` option the same way rather than re-parsing it.
 pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
-    // `"Thermometer"` is the short spelling Wolfram accepts for
-    // `"ThermometerColors"` in a `ColorFunction` option.
-    Expr::String(s) if s == "Thermometer" => Some("ThermometerColors".into()),
-    Expr::String(s) => Some(s.clone()),
+    Expr::String(s) => Some(expand_gradient_short_name(s)),
     // Only the plain gradient: a ranged or reversed `ColorDataFunction`
     // (`ColorData[{"Rainbow", "Reverse"}]`) carries a different blend and
     // is applied per value instead.
