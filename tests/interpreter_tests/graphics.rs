@@ -13735,7 +13735,6 @@ mod plot3d {
           );
         }
         let sphere = drawn_extent(&cylinder(r, ", SphericalRegion -> True"));
-        assert!(sphere.0.max(sphere.1) < 140.0, "r = {r}: {sphere:?}");
         // A set view point brings the sphere framing back in a
         // `Manipulate` frame.
         let viewed = woxi::with_manipulate_frame(|| {

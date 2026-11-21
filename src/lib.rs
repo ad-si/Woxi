@@ -5638,6 +5638,40 @@ pub(crate) fn column_svg_with_rendered_items(
   let mut new_args: Vec<syntax::Expr> =
     functions::graphics::wrap_fixed_width_column_text(args)
       .unwrap_or_else(|| args.to_vec());
+  // `Text[Text[x]]` displays like `Text[x]`: the inner `Text` adds nothing
+  // to the face the outer one already picks.
+  fn collapse_nested_text(e: &syntax::Expr) -> syntax::Expr {
+    match e {
+      syntax::Expr::FunctionCall { name, args }
+        if name == "Text"
+          && args.len() == 1
+          && matches!(&args[0], syntax::Expr::FunctionCall { name: inner, args: ia }
+            if inner == "Text" && ia.len() == 1) =>
+      {
+        collapse_nested_text(&args[0])
+      }
+      syntax::Expr::FunctionCall { name, args }
+        if functions::graphics::is_style_wrapper(name) && !args.is_empty() =>
+      {
+        let mut new_args: Vec<syntax::Expr> = args.to_vec();
+        new_args[0] = collapse_nested_text(&args[0]);
+        syntax::Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args.into(),
+        }
+      }
+      other => other.clone(),
+    }
+  }
+  if let syntax::Expr::List(items) = &new_args[0] {
+    new_args[0] = syntax::Expr::List(
+      items
+        .iter()
+        .map(collapse_nested_text)
+        .collect::<Vec<_>>()
+        .into(),
+    );
+  }
   // Which items are text rather than pictures, told before drawing them
   // turns every one into a picture.
   let mut text_items: Option<Vec<bool>> = None;
