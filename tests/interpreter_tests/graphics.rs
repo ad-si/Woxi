@@ -70395,23 +70395,26 @@ fn frame_label_scientific_form_is_one_line() {
   assert!(svg.contains(">1.5×10⁻⁷</text>"), "{svg}");
 }
 
-/// Lettered subscripts inside an arithmetic frame label are lowered with a
-/// `<tspan>`, as a bare `Subscript` label's are (the label is set in
-/// `TraditionalForm`, so its letters are italic).
+/// An arithmetic frame label with lettered subscripts that TraditionalForm
+/// sets as a quotient is a stacked fraction picture, not inline
+/// `(ω-ωσ)/γσ` text; a sum of subscripted letters stays inline text with
+/// lowered, italic subscripts.
 #[test]
 fn frame_label_arithmetic_with_letter_subscripts() {
   let svg = export_svg(
     r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {(\[Omega] - Subscript[\[Omega], \[Sigma]])/Subscript[\[Gamma], \[Sigma]], "y"}]"#,
+  );
+  assert_eq!(svg.matches("<svg xmlns").count(), 1, "{svg}");
+  assert!(!svg.contains(")/"), "{svg}");
+  let svg = export_svg(
+    r#"Plot[x, {x, 0, 1}, Frame -> True, FrameLabel -> {\[Omega] - Subscript[\[Omega], \[Sigma]], "y"}]"#,
   );
   let it = |v: &str| format!("<tspan font-style=\"italic\">{v}</tspan>");
   let sub = format!(
     "<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
     it("σ")
   );
-  assert!(
-    svg.contains(&format!("({}-{}{sub})/{}{sub}", it("ω"), it("ω"), it("γ"))),
-    "{svg}"
-  );
+  assert!(svg.contains(&format!("{}-{}{sub}", it("ω"), it("ω"))), "{svg}");
 }
 
 /// `Labeled[v, Style[label, size], "RadialOutside"]` puts each label just
