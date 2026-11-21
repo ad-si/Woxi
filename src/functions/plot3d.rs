@@ -23846,9 +23846,12 @@ fn parametric_plot3d_curve_ast(
     .map(|(fx, fy, fz)| Curve { fx, fy, fz })
     .collect();
 
-  // Sample each curve at SAMPLE_N+1 points uniformly in [t_min, t_max].
-  const SAMPLE_N: usize = 200;
-  let dt = (t_max - t_min) / SAMPLE_N as f64;
+  // Sample each curve at `sample_n + 1` points uniformly in
+  // [t_min, t_max] before the adaptive refinement. `PlotPoints -> n` asks
+  // for `n` initial samples (a long ODE trajectory is often plotted with
+  // `PlotPoints -> 10000`); `Automatic` keeps the default of 201.
+  let mut sample_n: usize = 200;
+  let dt_for = |n: usize| (t_max - t_min) / n as f64;
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
   let mut plot_style: Option<Expr> = None;
@@ -23890,6 +23893,19 @@ fn parametric_plot3d_curve_ast(
     {
       color_scaling =
         !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
+    } else if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "PlotPoints"
+    {
+      // A plot option, not a `Graphics3D` one, so it is not forwarded.
+      if let Ok(Expr::Integer(n)) = evaluate_expr_to_expr(replacement)
+        && n >= 2
+      {
+        sample_n = (n - 1) as usize;
+      }
     } else {
       if let Expr::Rule {
         pattern,
@@ -23931,7 +23947,8 @@ fn parametric_plot3d_curve_ast(
     (Some(_), None) => {
       let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
       for c in &curves {
-        for i in 0..=SAMPLE_N {
+        let dt = dt_for(sample_n);
+        for i in 0..=sample_n {
           let t = t_min + i as f64 * dt;
           if let Some((x, y, z)) =
             evaluate_parametric_at_t(&c.fx, &c.fy, &c.fz, tvar, t)
@@ -24049,7 +24066,7 @@ fn parametric_plot3d_curve_ast(
     };
     let mut prev: Option<(f64, f64, f64, f64)> = None;
     let samples = sample_parametric_curve_adaptive(
-      &curve.fx, &curve.fy, &curve.fz, tvar, t_min, t_max, SAMPLE_N,
+      &curve.fx, &curve.fy, &curve.fz, tvar, t_min, t_max, sample_n,
     );
     for (t, point) in samples {
       if let Some((x, y, z)) = point {
@@ -24132,8 +24149,13 @@ fn parametric_plot3d_curve_ast(
 /// values, then bisect the intervals around every vertex where the polyline
 /// turns sharply, so a curve that winds many times over a long parameter
 /// range (an ODE trajectory, say) is drawn smoothly instead of as a coarse
-/// polygon. Mathematica refines the same way. Non-finite points are kept as
-/// `None` so the caller can break the line there.
+/// polygon. Mathematica refines the same way. Turning angles are measured
+/// with each axis scaled to the curve's extent along it, as the curve is
+/// drawn in a box shaped independently of the data (`BoxRatios -> 1`): an
+/// axis spanning a tiny range is stretched, and bends along it that look
+/// negligible in raw coordinates show up as corners in the picture.
+/// Non-finite points are kept as `None` so the caller can break the line
+/// there.
 fn sample_parametric_curve_adaptive(
   fx: &Expr,
   fy: &Expr,
@@ -24158,6 +24180,26 @@ fn sample_parametric_curve_adaptive(
     })
     .collect();
 
+  // Per-axis scale factors that map the sampled extent to unit length.
+  let mut lo = [f64::INFINITY; 3];
+  let mut hi = [f64::NEG_INFINITY; 3];
+  for (x, y, z) in samples.iter().filter_map(|s| s.1) {
+    for (k, v) in [x, y, z].into_iter().enumerate() {
+      if v.is_finite() {
+        lo[k] = lo[k].min(v);
+        hi[k] = hi[k].max(v);
+      }
+    }
+  }
+  let inv: [f64; 3] = std::array::from_fn(|k| {
+    let range = hi[k] - lo[k];
+    if range.is_finite() && range > 0.0 {
+      1.0 / range
+    } else {
+      1.0
+    }
+  });
+
   for _ in 0..MAX_PASSES {
     if samples.len() >= MAX_TOTAL {
       break;
@@ -24170,8 +24212,16 @@ fn sample_parametric_curve_adaptive(
       else {
         continue;
       };
-      let u = [b.0 - a.0, b.1 - a.1, b.2 - a.2];
-      let v = [c.0 - b.0, c.1 - b.1, c.2 - b.2];
+      let u = [
+        (b.0 - a.0) * inv[0],
+        (b.1 - a.1) * inv[1],
+        (b.2 - a.2) * inv[2],
+      ];
+      let v = [
+        (c.0 - b.0) * inv[0],
+        (c.1 - b.1) * inv[1],
+        (c.2 - b.2) * inv[2],
+      ];
       let nu = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
       let nv = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
       if nu == 0.0 || nv == 0.0 {
