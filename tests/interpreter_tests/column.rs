@@ -131,6 +131,25 @@ mod column_visual_mode {
     assert!(!svg.contains("<?xml"));
   }
 
+  /// The front end reads a string alignment (`Column[…, "Center"]`) like
+  /// the symbol: every item is centered, not left-aligned.
+  #[test]
+  fn column_string_alignment_matches_symbol() {
+    for (string, symbol) in [("\"Center\"", "Center"), ("\"Right\"", "Right")] {
+      clear_state();
+      let code = |align: &str| {
+        format!(
+          "Column[{{\"a long line\", \"x\", Graphics[Circle[]]}}, {align}]"
+        )
+      };
+      let by_string = interpret_with_stdout(&code(string)).unwrap().graphics;
+      clear_state();
+      let by_symbol = interpret_with_stdout(&code(symbol)).unwrap().graphics;
+      assert!(by_string.is_some());
+      assert_eq!(by_string, by_symbol, "{string}");
+    }
+  }
+
   /// Count the horizontal rules (`<line … y1 == y2 …>`) in an SVG.
   fn horizontal_lines(svg: &str) -> Vec<f64> {
     svg
@@ -191,6 +210,54 @@ mod column_visual_mode {
     .unwrap();
     let svg = result.graphics.unwrap();
     assert!(svg.contains("width=\"80.0\" height=\"30.0\""), "{svg}");
+  }
+
+  /// The `fill` colors of the `<rect>`s in `svg`, top to bottom.
+  fn rect_fills(svg: &str) -> Vec<String> {
+    svg
+      .split("<rect")
+      .skip(1)
+      .filter_map(|r| {
+        let start = r.find(" fill=\"")? + 7;
+        Some(r[start..].split('"').next()?.to_string())
+      })
+      .collect()
+  }
+
+  // As part of a scheduled QA routine, Woxi Studio was tested against a
+  // randomly sampled Wolfram Demonstration notebook whose word list is a
+  // `Column` striped with a cyclic `Background -> {{c1, c2}}`; the row
+  // fills were dropped (only a single color filled the column).
+  #[test]
+  fn column_cyclic_background_stripes_rows() {
+    clear_state();
+    let result = interpret_with_stdout(
+      "Column[{\"a\", \"b\", \"c\", \"d\", \"e\"}, Left, \
+       Background -> {{Yellow, Cyan}}, Spacings -> 1]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    let (y, c) = ("rgb(255,255,0)", "rgb(0,255,255)");
+    assert_eq!(rect_fills(&svg), [y, c, y, c, y], "{svg}");
+    for item in ["a", "b", "c", "d", "e"] {
+      assert!(svg.contains(&format!(">{item}</text>")), "{svg}");
+    }
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+  }
+
+  // A flat background list colors successive rows once each.
+  #[test]
+  fn column_background_list_colors_successive_rows() {
+    clear_state();
+    let result =
+      interpret_with_stdout("Column[{1, 2, 3}, Background -> {Yellow, Cyan}]")
+        .unwrap();
+    let svg = result.graphics.unwrap();
+    assert_eq!(
+      rect_fills(&svg),
+      ["rgb(255,255,0)", "rgb(0,255,255)"],
+      "{svg}"
+    );
   }
 
   #[test]
@@ -283,7 +350,11 @@ mod column_visual_mode {
       let result =
         interpret_with_stdout(&format!("Grid[{{{{\"a\", {cell}}}}}]")).unwrap();
       let svg = result.graphics.unwrap();
-      assert!(svg.contains(">2</tspan>"), "{svg}");
+      // (`Text[…]` sets the column in the text face, as `<text>` lines.)
+      assert!(
+        svg.contains(">2</tspan>") || svg.contains(">2</text>"),
+        "{svg}"
+      );
       assert!(!svg.contains("Dynamic"), "{svg}");
     }
   }
@@ -423,6 +494,32 @@ mod column_visual_mode {
     assert!(svg.contains(">alpha beta<"), "{svg}");
     assert!(svg.contains(">second<"), "{svg}");
     assert!(svg.contains("font-style=\"italic\""), "{svg}");
+  }
+
+  /// A fixed-size `Pane` re-flows a `Row[list, sep]` (a word list joined by
+  /// ", ") into lines that break after the separators, each set as one
+  /// string, instead of one line far wider than the box — which under
+  /// `ImageSizeAction -> "ShrinkToFit"` had shrunk the text to a sliver.
+  #[test]
+  fn sized_pane_wraps_a_row_with_a_separator() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Pane[Style[Row[Table[\"WORD\" <> ToString[i], {i, 30}], \
+       \", \"], 18], {500, 300}, Alignment -> {Left, Center}, \
+       ImageSizeAction -> \"ShrinkToFit\"], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"300\""),
+      "{svg}"
+    );
+    // 500 / (18 * 0.632) = 43 characters per line.
+    assert!(
+      svg.contains(">WORD1, WORD2, WORD3, WORD4, WORD5, WORD6,<"),
+      "{svg}"
+    );
+    assert!(svg.contains(">WORD7, WORD8, WORD9, "), "{svg}");
+    assert!(!svg.contains("font-size=\"14\""), "{svg}");
   }
 
   /// `Style[Column[{…, Pane[text, w]}, opts], "Label", 12]` pushes the style
@@ -814,5 +911,258 @@ mod column_item_size_wrapping {
     .unwrap();
     assert!(out.contains(">b</text>"), "{out}");
     assert!(out.contains("height=\"22\""), "{out}");
+  }
+}
+
+mod stretched_button_items {
+  use super::*;
+
+  /// The width of the button plate (the first rounded `rect`) in `svg`.
+  fn plate_width(svg: &str) -> f64 {
+    let at = svg.find("rx=\"4\"").expect("button plate");
+    let rect = &svg[svg[..at].rfind("<rect").unwrap()..at];
+    let w = rect.split("width=\"").nth(1).unwrap();
+    w[..w.find('"').unwrap()].parse().unwrap()
+  }
+
+  // A text-labeled `Button` stacked in a `Column` with a wider item
+  // stretches to the column's width, as the FrontEnd lays it out.
+  #[test]
+  fn button_above_a_picture_spans_the_column() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{Button["go", x = 1], Graphics[Circle[], ImageSize -> 240]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains(">Button<"), "button printed as source");
+    assert!(plate_width(&svg) > 230.0, "{}", plate_width(&svg));
+  }
+
+  #[test]
+  fn button_above_long_text_spans_the_column() {
+    clear_state();
+    let r = woxi::interpret_with_stdout(
+      r#"Column[{Button["go", x = 1], "a considerably longer line of text"}]"#,
+    )
+    .unwrap();
+    let svg = r.graphics.expect("column graphic");
+    let (narrow, _) = woxi::functions::graphics::parse_svg_wh(&svg);
+    assert!(plate_width(&svg) > narrow - 2.0, "{svg}");
+  }
+
+  // An explicit `ImageSize` keeps the button at its requested width.
+  #[test]
+  fn sized_button_keeps_its_width() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{Button["go", x = 1, ImageSize -> 80], Graphics[Circle[], ImageSize -> 240]}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      (plate_width(&svg) - 79.0).abs() < 1.0,
+      "{}",
+      plate_width(&svg)
+    );
+  }
+
+  // A bare `Button` exports as its plate, not its source text.
+  #[test]
+  fn bare_button_exports_as_plate() {
+    clear_state();
+    let svg = interpret(r#"ExportString[Button["go", x = 1], "SVG"]"#).unwrap();
+    assert!(!svg.contains(">Button<"), "{svg}");
+    assert!(plate_width(&svg) < 60.0, "{}", plate_width(&svg));
+  }
+}
+
+mod column_text_cell_in_grid {
+  use super::*;
+
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  fn grid_of_column(items: &str) -> String {
+    clear_state();
+    interpret(&format!(
+      "ExportString[Grid[{{{{Text[Column[{{{items}}}]]}}}}], \"SVG\"]"
+    ))
+    .unwrap()
+  }
+
+  /// A column of text lines in a grid cell is as wide as its widest line,
+  /// not as all of its lines laid end to end — a heading ending in a line
+  /// break must not stretch it either.
+  #[test]
+  fn width_is_the_widest_line() {
+    let one =
+      grid_of_column(r#"Style["Head\n", Bold], "aaaaaaaaaaaaaaaaaaaa""#);
+    let many = grid_of_column(
+      r#"Style["Head\n", Bold], "aaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbb", "cccccccccccccccccccc""#,
+    );
+    assert_eq!(svg_width(&one), svg_width(&many), "{many}");
+    assert!(svg_width(&many) < 250.0, "{many}");
+  }
+
+  /// The lines of a `Column` are left-aligned (its default alignment).
+  #[test]
+  fn lines_are_left_aligned() {
+    let svg = grid_of_column(r#""a", "bbbbbbbbbbbb", "cc""#);
+    assert!(svg.contains("text-anchor=\"start\""), "{svg}");
+    assert!(!svg.contains("text-anchor=\"middle\""), "{svg}");
+  }
+
+  /// A `FontFamily` on one line of the column reaches that line's text.
+  #[test]
+  fn item_font_family_is_kept() {
+    let svg = grid_of_column(
+      r#""Title", Style["0123456789", FontFamily -> "Courier", 10]"#,
+    );
+    // The item keeps its own face and size, whether the column is set as
+    // `<tspan>` runs or (in the text face of `Text[…]`) as `<text>` lines.
+    let line = svg
+      .split('<')
+      .find(|t| t.ends_with(">0123456789"))
+      .unwrap_or_else(|| panic!("no item text in {svg}"));
+    assert!(
+      line.contains("font-family=\"Courier, monospace\"")
+        && line.contains("font-size=\"10\""),
+      "{svg}"
+    );
+  }
+}
+
+mod row_part_font_family {
+  use super::*;
+
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// A `Row` cell whose parts break onto several lines is as wide as its
+  /// widest line.
+  #[test]
+  fn row_cell_with_line_breaks_is_widest_line_wide() {
+    clear_state();
+    let broken = interpret(
+      r#"ExportString[Grid[{{Row[{"aaaaaaaaaa\n", "bbbbbbbbbb\ncc"}]}}], "SVG"]"#,
+    )
+    .unwrap();
+    let single =
+      interpret(r#"ExportString[Grid[{{"aaaaaaaaaa"}}], "SVG"]"#).unwrap();
+    assert_eq!(svg_width(&broken), svg_width(&single), "{broken}");
+  }
+
+  /// `Style[…, FontFamily -> f]` on a part of a `Row` cell sets that part
+  /// in `f`.
+  #[test]
+  fn styled_font_family_in_row_cell() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Grid[{{Row[{"x ", Style["y", FontFamily -> "Times"]}]}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(
+      svg.contains("<tspan font-family=\"Times, serif\">y</tspan>"),
+      "{svg}"
+    );
+  }
+}
+
+mod text_display_face {
+  use super::*;
+
+  fn svg_width(svg: &str) -> f64 {
+    let start = svg.find("width=\"").unwrap() + 7;
+    let end = start + svg[start..].find('"').unwrap();
+    svg[start..end].parse().unwrap()
+  }
+
+  /// A `Text[…]` title in a fixed-size `Pane` is set in the proportional
+  /// text face: a line that would overflow at the monospace advance still
+  /// fits on one line, and it keeps that face.
+  #[test]
+  fn sized_pane_keeps_text_title_on_one_proportional_line() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Pane[Column[{Text[Style[\"   Quarterly sales overview, \
+       revenue by region and product\", 16]], Spacer[10], 1}, \
+       Alignment -> Center], {525, 425}, Alignment -> {Center, Top}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      out.contains(
+        "font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
+         font-size=\"16\""
+      ),
+      "{out}"
+    );
+    assert!(
+      out.contains(
+        ">   Quarterly sales overview, revenue by region and product<"
+      ),
+      "{out}"
+    );
+  }
+
+  /// When a `Text[…]` line in a fixed-size `Pane` does need breaking, the
+  /// lines are measured and drawn in the proportional text face.
+  #[test]
+  fn sized_pane_wraps_text_in_the_proportional_face() {
+    clear_state();
+    let out = interpret(
+      "ExportString[Pane[Text[\"aaa bbb ccc ddd eee fff ggg hhh iii jjj\"], \
+       {150, 100}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(out.contains(">aaa bbb ccc ddd eee fff</text>"), "{out}");
+    assert!(out.contains(">ggg hhh iii jjj</text>"), "{out}");
+    assert!(!out.contains("Hyperlegible Mono"), "{out}");
+  }
+
+  /// A `Column` sizes a plain `Text` string glyph by glyph: narrow letters
+  /// take less room than wide ones.
+  #[test]
+  fn column_measures_text_items_by_glyph() {
+    clear_state();
+    let narrow = interpret(
+      "ExportString[Column[{Text[\"iiiiiiiiiiiiiiiiiiii\"]}], \"SVG\"]",
+    )
+    .unwrap();
+    let wide = interpret(
+      "ExportString[Column[{Text[\"MMMMMMMMMMMMMMMMMMMM\"]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg_width(&narrow) * 2.0 < svg_width(&wide),
+      "{narrow}\n{wide}"
+    );
+  }
+
+  /// `Text@Grid[…]` sets its text cells in the proportional text face, so
+  /// its columns are sized by the glyphs' own widths — narrower than the
+  /// monospace columns of a bare `Grid` — also inside a `Row`.
+  #[test]
+  fn text_grid_columns_use_proportional_widths() {
+    let grid = "Grid[{{\"fit statistic  \", \"value\"}, \
+                {\"alpha\", NumberForm[0.00051234, {10, 4}]}}, \
+                Alignment -> Left, Frame -> True]";
+    clear_state();
+    let plain = interpret(&format!("ExportString[{grid}, \"SVG\"]")).unwrap();
+    let text =
+      interpret(&format!("ExportString[Text[{grid}], \"SVG\"]")).unwrap();
+    let in_row = interpret(&format!(
+      "ExportString[Row[{{Spacer[20], Text[{grid}]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    let (plain_w, text_w) = (svg_width(&plain), svg_width(&text));
+    assert!(text_w < plain_w * 0.8, "{plain_w} vs {text_w}");
+    assert_eq!(svg_width(&in_row), text_w + 20.0, "{in_row}");
+    // The value column starts right after the widest label.
+    assert!(text.contains("<text x=\"87.2\""), "{text}");
   }
 }
