@@ -507,9 +507,9 @@ fn plot_value_range_is_all(value: &Expr) -> bool {
 }
 
 /// The per-contour styles of a `ContourStyle` value whose entries are all
-/// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
-/// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
-/// directive list such as `{Thick, Blue}`.
+/// lists, `Directive[…]`s or colors (`{{Black, Thick}, {Red, Thick}}`,
+/// `{Directive[Red, Dashed], Blue, Directive[Blue, Dashed]}`, `{Red,
+/// Blue}`); empty for a single directive list such as `{Thick, Blue}`.
 fn per_contour_styles(
   value: &Expr,
 ) -> Vec<Option<crate::functions::plot::SeriesStyle>> {
@@ -519,6 +519,7 @@ fn per_contour_styles(
       if !items.is_empty() && items.iter().all(|i| {
         matches!(i, Expr::List(_))
           || matches!(i, Expr::FunctionCall { name, .. } if name == "Directive")
+          || crate::functions::graphics::parse_color(i).is_some()
       }) =>
     {
       items
@@ -2423,7 +2424,16 @@ struct BandRegion {
 
 /// The shaded bands of a contour plot: runs of cells that lie wholly in
 /// one band, and the cells a level crosses clipped to each band it meets.
-fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
+///
+/// As with Wolfram's default `ClippingStyle -> None`, the parts of the
+/// grid whose values lie outside the plotted value range
+/// `(v_min, v_max)` (e.g. near a pole fenced off by the automatic
+/// `PlotRange`) are left blank instead of taking the end band's color.
+fn contour_band_regions(
+  grid: &[Vec<f64>],
+  levels: &[f64],
+  (v_min, v_max): (f64, f64),
+) -> Vec<BandRegion> {
   let cols = grid.len();
   if cols < 2 {
     return Vec::new();
@@ -2474,9 +2484,16 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
       }
       let cmin = v00.min(v10).min(v01).min(v11);
       let cmax = v00.max(v10).max(v01).max(v11);
-      let b_lo = band_of(cmin);
-      let b_hi = band_of(cmax);
-      if b_lo == b_hi {
+      // Wholly outside the plotted value range: clipped away.
+      if cmax < v_min || cmin > v_max {
+        flush(&mut regions, &mut run);
+        continue;
+      }
+      let clip_lo = cmin < v_min;
+      let clip_hi = cmax > v_max;
+      let b_lo = band_of(cmin.max(v_min));
+      let b_hi = band_of(cmax.min(v_max));
+      if b_lo == b_hi && !clip_lo && !clip_hi {
         run = match run {
           Some((b, s, e)) if b == b_lo && e == i => Some((b, s, i + 1)),
           other => {
@@ -2496,8 +2513,18 @@ fn contour_band_regions(grid: &[Vec<f64>], levels: &[f64]) -> Vec<BandRegion> {
         ((i as f64 + 1.0, j as f64 + 1.0), v11),
         ((i as f64, j as f64 + 1.0), v01),
       ];
+      let mut clipped: Vec<PtV> = base.to_vec();
+      if clip_lo {
+        clipped = clip_polygon(&clipped, v_min, true);
+      }
+      if clip_hi {
+        clipped = clip_polygon(&clipped, v_max, false);
+      }
+      if clipped.len() < 3 {
+        continue;
+      }
       for b in b_lo..=b_hi {
-        let mut poly: Vec<PtV> = base.to_vec();
+        let mut poly: Vec<PtV> = clipped.clone();
         if b > 0 {
           poly = clip_polygon(&poly, levels[b - 1], true);
         }
@@ -2588,7 +2615,7 @@ fn render_contour_bands(
   // the contour lines drawn on top).
   let seam = RESOLUTION_SCALE as f64;
 
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let (r, g, b) = band_color(region.band, levels, v_min, v_max, coloring);
     let fill = format!("rgb({r},{g},{b})");
     let device = |(fx, fy): (f64, f64)| {
@@ -2639,7 +2666,7 @@ fn contour_band_primitives(
   let step_y = (y_max - y_min) / (rows - 1) as f64;
   let mut items: Vec<Expr> = Vec::new();
   let mut last_color: Option<(u8, u8, u8)> = None;
-  for region in contour_band_regions(grid, levels) {
+  for region in contour_band_regions(grid, levels, (v_min, v_max)) {
     let color = band_color(region.band, levels, v_min, v_max, coloring);
     if last_color != Some(color) {
       let rgb = call(
@@ -4055,8 +4082,9 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ContourPlot[{f, g}, …]` draws the unshaded level curves of each
   // function (a nested list `{{f, g}, {h}}` counts as its flattened
   // functions); a curve `f == c` is the zero contour of `f - c`. Without
-  // explicit `Contours -> {c, …}` each function gets its own automatic
-  // levels.
+  // a `Contours` option each function draws only its zero contour, as
+  // Wolfram does (the list reads like `{f == 0, g == 0}`); `Contours -> n`
+  // gives each function its own `n` levels.
   let eq_bodies =
     eq_bodies.or_else(|| match body {
       Expr::List(items) if !items.is_empty() => {
@@ -4066,10 +4094,12 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return None;
         }
         let spec = parse_density_contour_options(args, 3).contours;
+        let zero = vec![0.0];
         let fixed = match &spec {
           ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
           ContourSpec::Levels(_) => return None,
-          _ => None,
+          ContourSpec::Automatic => Some(&zero),
+          ContourSpec::Count(_) => None,
         };
         let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
           parse_iterator(&args[1], "ContourPlot"),
@@ -4452,14 +4482,9 @@ fn contour_plot_equations(
     svg.truncate(pos);
   }
 
-  let cell_w = area.plot_w / FIELD_GRID as f64;
-  let cell_h = area.plot_h / FIELD_GRID as f64;
-
   // Alongside the standalone SVG, collect every contour chain in *data*
   // coordinates as a line series, so `Show[{ContourPlot[…], Graphics[…]}]`
-  // can merge the curve with other primitives. The chains are traced in a
-  // scaled 0‥1000 space — `chain_segments` keys points on a 1/16 grid,
-  // which would glue distinct points together in small data ranges.
+  // can merge the curve with other primitives.
   let mut series: Vec<crate::syntax::PlotSeriesData> = Vec::new();
   let mut series_per_body: Vec<std::ops::Range<usize>> = Vec::new();
 
@@ -4522,13 +4547,39 @@ fn contour_plot_equations(
       series_per_body.push(first_series..first_series);
       continue;
     }
+    // Where the curve may run, sample finer (Wolfram refines adaptively,
+    // `MaxRecursion`), so branches closer together than a grid cell — the
+    // loops and cusps of an algebraic curve near a singular point — are
+    // still traced apart instead of merging or stopping short.
+    let sampler = crate::functions::plot::PlotBody2::new(body, &xvar, &yvar);
+    let budget = if sampler.is_compiled() {
+      EQUATION_REFINE_BUDGET_COMPILED
+    } else {
+      EQUATION_REFINE_BUDGET_SYMBOLIC
+    };
+    let (grid, refine) = refine_equation_grid(
+      grid,
+      |x, y| {
+        sampler.at(x, y).filter(|v| {
+          v.is_finite()
+            && opts
+              .region_function
+              .as_ref()
+              .is_none_or(|r| region_allows(r, x, y, *v))
+        })
+      },
+      budget,
+      (x_min, x_max),
+      (y_min, y_max),
+    );
     // `Exclusions -> Automatic` (the default): a sign change across a
     // pole (`y == Tan[x]` at `x = Pi/2`) is no part of the curve.
+    let fine = FIELD_GRID * refine;
     let poles = if exclusions_automatic {
       let node_xy = |i: usize, j: usize| {
         (
-          x_min + i as f64 / FIELD_GRID as f64 * (x_max - x_min),
-          y_min + j as f64 / FIELD_GRID as f64 * (y_max - y_min),
+          x_min + i as f64 / fine as f64 * (x_max - x_min),
+          y_min + j as f64 / fine as f64 * (y_max - y_min),
         )
       };
       PoleEdges::find(&grid, node_xy, |x, y| {
@@ -4537,23 +4588,11 @@ fn contour_plot_equations(
     } else {
       None
     };
-    let screen_segments = marching_squares_segments_excluding(
-      &grid,
-      0.0,
-      area.plot_x0,
-      area.plot_y0,
-      cell_w,
-      cell_h,
-      poles.as_ref(),
-    );
-    push_contour_polylines(
-      &mut svg,
-      &screen_segments,
-      &contour_color,
-      area.render_width as f64 / 1000.0 * contour_weight,
-      &dash,
-    );
-    let scaled_cell = 1000.0 / FIELD_GRID as f64;
+    // The chains are traced in a scaled 0‥1000 space — `chain_segments`
+    // keys points on a 1/16 grid, which would glue distinct points together
+    // in small data ranges — and then mapped to the picture and to data
+    // coordinates alike.
+    let scaled_cell = 1000.0 / fine as f64;
     let segments = marching_squares_segments_excluding(
       &grid,
       0.0,
@@ -4563,7 +4602,26 @@ fn contour_plot_equations(
       scaled_cell,
       poles.as_ref(),
     );
+    let stroke_w = area.render_width as f64 / 1000.0 * contour_weight;
     for chain in chain_segments(&segments) {
+      let chain = simplify_chain(&chain, EQUATION_CHAIN_TOLERANCE);
+      if chain.len() < 2 {
+        continue;
+      }
+      let screen: Vec<String> = chain
+        .iter()
+        .map(|&(u, v)| {
+          format!(
+            "{:.1},{:.1}",
+            area.plot_x0 + u / 1000.0 * area.plot_w,
+            area.plot_y0 + v / 1000.0 * area.plot_h
+          )
+        })
+        .collect();
+      svg.push_str(&format!(
+        "<polyline points=\"{}\" fill=\"none\" stroke=\"{contour_color}\" stroke-width=\"{stroke_w:.1}\"{dash} stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n",
+        screen.join(" ")
+      ));
       // The segments come in screen orientation (`v` grows downward from
       // the top edge at `y_max`), so `v` maps back to `y` from `y_max`.
       let points: Vec<(f64, f64)> = chain
@@ -4598,6 +4656,7 @@ fn contour_plot_equations(
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
           continues_previous: false,
+          arrowheads: None,
           color_function: None,
         });
       }
@@ -4701,6 +4760,7 @@ fn contour_plot_equations(
     plot_range: None,
     data_x_range: None,
     aspect_ratio: None,
+    legends: Vec::new(),
     settles_all_range: false,
   };
   let mut result = crate::graphics_result_with_source(svg, source);
@@ -4711,6 +4771,133 @@ fn contour_plot_equations(
     *slot = Some(Box::new(structure));
   }
   Ok(result)
+}
+
+/// Subdivision factors of the refined band an equation's curve is traced
+/// on, finest first; the finest one whose sample count fits the budget is
+/// used.
+const EQUATION_REFINEMENTS: [usize; 3] = [8, 4, 2];
+/// How many extra samples refining an equation's curve may take when the
+/// body compiles (cheap to sample) or has to be evaluated symbolically.
+const EQUATION_REFINE_BUDGET_COMPILED: usize = 250_000;
+const EQUATION_REFINE_BUDGET_SYMBOLIC: usize = 5_000;
+/// How far (in the 0‥1000 space spanning the plot) a traced curve may stray
+/// from the samples when its chain is thinned to fewer points: well below a
+/// pixel at any image size.
+const EQUATION_CHAIN_TOLERANCE: f64 = 0.3;
+
+/// Refine the samples of `coarse` (`coarse[i][j]` at the i-th x and j-th y
+/// node of an even lattice over the ranges) where the zero contour may run:
+/// a cell whose corners change sign, or whose corner values are small next
+/// to how much they vary across it (so the curve may pass between them).
+/// Each such cell is resampled `r` times finer, with `r` the finest of
+/// [`EQUATION_REFINEMENTS`] for which that costs at most `budget` samples.
+/// The result is the lattice `r` times finer (NaN outside the refined cells,
+/// which marching squares skips) together with `r`; `r` is 1, and the
+/// coarse lattice comes back unchanged, when nothing needs refining or no
+/// factor fits the budget.
+fn refine_equation_grid(
+  coarse: Vec<Vec<f64>>,
+  sample: impl Fn(f64, f64) -> Option<f64>,
+  budget: usize,
+  (x_min, x_max): (f64, f64),
+  (y_min, y_max): (f64, f64),
+) -> (Vec<Vec<f64>>, usize) {
+  let cols = coarse.len().saturating_sub(1);
+  let rows = coarse.first().map_or(0, |c| c.len().saturating_sub(1));
+  let mut active = Vec::new();
+  for i in 0..cols {
+    for j in 0..rows {
+      let corners = [
+        coarse[i][j],
+        coarse[i + 1][j],
+        coarse[i][j + 1],
+        coarse[i + 1][j + 1],
+      ];
+      if corners.iter().any(|v| !v.is_finite()) {
+        continue;
+      }
+      let lo = corners.iter().copied().fold(f64::INFINITY, f64::min);
+      let hi = corners.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+      let nearest = corners.iter().fold(f64::INFINITY, |m, v| m.min(v.abs()));
+      if (lo <= 0.0 && hi >= 0.0) || nearest <= 2.0 * (hi - lo) {
+        active.push((i, j));
+      }
+    }
+  }
+  let Some(r) = EQUATION_REFINEMENTS
+    .iter()
+    .copied()
+    .find(|r| active.len() * r * r <= budget)
+    .filter(|_| !active.is_empty())
+  else {
+    return (coarse, 1);
+  };
+  let (fine_cols, fine_rows) = (cols * r, rows * r);
+  let mut fine = vec![vec![f64::NAN; fine_rows + 1]; fine_cols + 1];
+  let mut sampled = vec![vec![false; fine_rows + 1]; fine_cols + 1];
+  for (i, column) in coarse.iter().enumerate() {
+    for (j, &v) in column.iter().enumerate() {
+      fine[i * r][j * r] = v;
+      sampled[i * r][j * r] = true;
+    }
+  }
+  for (i, j) in active {
+    for fi in i * r..=(i + 1) * r {
+      for fj in j * r..=(j + 1) * r {
+        if std::mem::replace(&mut sampled[fi][fj], true) {
+          continue;
+        }
+        let x = x_min + fi as f64 / fine_cols as f64 * (x_max - x_min);
+        let y = y_min + fj as f64 / fine_rows as f64 * (y_max - y_min);
+        fine[fi][fj] = sample(x, y).unwrap_or(f64::NAN);
+      }
+    }
+  }
+  (fine, r)
+}
+
+/// Thin an open (or closed, first point repeated last) polyline to the
+/// points needed to stay within `tolerance` of it (Douglas–Peucker); the
+/// end points are always kept.
+fn simplify_chain(points: &[(f64, f64)], tolerance: f64) -> Vec<(f64, f64)> {
+  let n = points.len();
+  if n < 3 {
+    return points.to_vec();
+  }
+  let mut keep = vec![false; n];
+  keep[0] = true;
+  keep[n - 1] = true;
+  let mut spans = vec![(0, n - 1)];
+  while let Some((start, end)) = spans.pop() {
+    if end <= start + 1 {
+      continue;
+    }
+    let (a, b) = (points[start], points[end]);
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let length = dx.hypot(dy);
+    let mut farthest = (0.0, start);
+    for (k, p) in points.iter().enumerate().take(end).skip(start + 1) {
+      let distance = if length > 0.0 {
+        ((p.0 - a.0) * dy - (p.1 - a.1) * dx).abs() / length
+      } else {
+        (p.0 - a.0).hypot(p.1 - a.1)
+      };
+      if distance > farthest.0 {
+        farthest = (distance, k);
+      }
+    }
+    if farthest.0 > tolerance {
+      keep[farthest.1] = true;
+      spans.push((start, farthest.1));
+      spans.push((farthest.1, end));
+    }
+  }
+  points
+    .iter()
+    .zip(keep)
+    .filter_map(|(p, k)| k.then_some(*p))
+    .collect()
 }
 
 /// Default `PlotPoints` of a `RegionPlot`: samples per axis of the grid the
@@ -10359,7 +10546,10 @@ pub fn complex_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 #[cfg(test)]
 mod robust_range_tests {
-  use super::robust_value_range;
+  use super::{
+    EQUATION_REFINEMENTS, refine_equation_grid, robust_value_range,
+    simplify_chain,
+  };
 
   #[test]
   fn robust_value_range_ignores_a_pole() {
@@ -10397,5 +10587,120 @@ mod robust_range_tests {
     let (v_min, v_max) = robust_value_range(&[]);
     assert!(!v_min.is_finite());
     assert!(!v_max.is_finite());
+  }
+
+  #[test]
+  fn simplify_chain_drops_points_within_tolerance_only() {
+    // Collinear interior points go; the corner stays, as do the ends.
+    let chain = [(0.0, 0.0), (1.0, 0.0), (2.0, 0.0), (2.0, 1.0), (2.0, 2.0)];
+    assert_eq!(
+      simplify_chain(&chain, 0.1),
+      vec![(0.0, 0.0), (2.0, 0.0), (2.0, 2.0)]
+    );
+    // A closed loop keeps enough points to stay a loop.
+    let square = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0), (0.0, 0.0)];
+    assert_eq!(simplify_chain(&square, 0.1).len(), 5);
+  }
+
+  #[test]
+  fn refine_equation_grid_resamples_only_cells_near_the_curve() {
+    // f = x - 0.5 on the unit square: only the cells straddling x = 0.5
+    // (and their close neighbors) are refined.
+    let n = 11;
+    let coarse: Vec<Vec<f64>> = (0..n)
+      .map(|i| vec![i as f64 / (n - 1) as f64 - 0.5; n])
+      .collect();
+    let (fine, r) = refine_equation_grid(
+      coarse,
+      |x, _| Some(x - 0.5),
+      1_000_000,
+      (0.0, 1.0),
+      (0.0, 1.0),
+    );
+    assert_eq!(r, EQUATION_REFINEMENTS[0]);
+    assert_eq!(fine.len(), 10 * r + 1);
+    // Next to the curve every fine node is sampled, and correctly.
+    let mid = 5 * r + 1;
+    assert!(
+      (fine[mid][1] - (mid as f64 / (10 * r) as f64 - 0.5)).abs() < 1e-12
+    );
+    // Far from it only the coarse nodes are.
+    assert!(fine[1][1].is_nan());
+    assert_eq!(fine[0][0], -0.5);
+    // Without budget for any refinement the lattice stays coarse.
+    let coarse = vec![vec![-1.0, 1.0], vec![-1.0, 1.0]];
+    let (same, r) = refine_equation_grid(
+      coarse.clone(),
+      |_, _| None,
+      0,
+      (0.0, 1.0),
+      (0.0, 1.0),
+    );
+    assert_eq!((same, r), (coarse, 1));
+  }
+}
+
+#[cfg(test)]
+mod contour_clipping_tests {
+  use super::contour_band_regions;
+
+  /// Area of a polygon given in cell-index space (shoelace formula).
+  fn area(points: &[(f64, f64)]) -> f64 {
+    let n = points.len();
+    (0..n)
+      .map(|k| {
+        let (x0, y0) = points[k];
+        let (x1, y1) = points[(k + 1) % n];
+        x0 * y1 - x1 * y0
+      })
+      .sum::<f64>()
+      .abs()
+      / 2.0
+  }
+
+  /// A 3×3 node grid (2×2 cells) whose middle node spikes far above the
+  /// plotted value range, like a pole fenced off by the automatic
+  /// `PlotRange`.
+  fn spiked_grid(spike: f64) -> Vec<Vec<f64>> {
+    let mut grid = vec![vec![0.0; 3]; 3];
+    grid[1][1] = spike;
+    grid
+  }
+
+  #[test]
+  fn values_above_the_range_are_left_blank() {
+    let grid = spiked_grid(10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    // The four cells cover an area of 4. Along the edges into the spike
+    // the value passes 1 a tenth of the way in, so each cell loses the
+    // corner triangle with legs 0.9 there.
+    let expected = 4.0 - 4.0 * 0.5 * 0.9 * 0.9;
+    assert!((total - expected).abs() < 1e-9, "got area {total}");
+  }
+
+  #[test]
+  fn values_below_the_range_are_left_blank() {
+    let grid = spiked_grid(-10.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!(
+      total < 4.0 - 1e-6,
+      "expected a blank hole, got area {total}"
+    );
+  }
+
+  #[test]
+  fn values_within_the_range_cover_the_whole_grid() {
+    let grid = spiked_grid(1.0);
+    let total: f64 = contour_band_regions(&grid, &[0.5], (0.0, 1.0))
+      .iter()
+      .map(|r| area(&r.points))
+      .sum();
+    assert!((total - 4.0).abs() < 1e-9, "got area {total}");
   }
 }

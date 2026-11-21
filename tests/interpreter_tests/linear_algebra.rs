@@ -2528,6 +2528,42 @@ mod eigenvalues {
     }
   }
 
+  // Arbitrary-precision entries are inexact like machine reals, so the
+  // matrix takes the numeric path instead of staying unevaluated.
+  #[test]
+  fn eigenvalues_arbitrary_precision_3x3() {
+    let result = interpret(
+      "Eigenvalues[{{2.6`6, -0.7`6, 0.2`6}, {-0.7`6, 0.3`6, -0.1`6}, \
+       {0.2`6, -0.1`6, 0.1`6}}]",
+    )
+    .unwrap();
+    assert!(!result.contains("Eigenvalues"), "{result}");
+    let vals: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|s| s.parse::<f64>().unwrap())
+      .collect();
+    let expected =
+      [2.8140592879545916, 0.13646374447733417, 0.04947696756807616];
+    assert_eq!(vals.len(), 3);
+    for (v, e) in vals.iter().zip(expected.iter()) {
+      assert!((v - e).abs() < 1e-9, "got {v} expected {e}");
+    }
+  }
+
+  // `Norm` of a matrix is its largest singular value, found from the
+  // eigenvalues of `ConjugateTranspose[m] . m`.
+  #[test]
+  fn norm_of_arbitrary_precision_3x3_matrix() {
+    let result = interpret(
+      "Norm[{{0.425325`6, 0, 0.262866`6}, {0.850651`6, 0, 0}, \
+       {0.688191`6, -0.425325`6, 0.262866`6}}]",
+    )
+    .unwrap();
+    let v: f64 = result.parse().unwrap_or_else(|_| panic!("{result}"));
+    assert!((v - 1.2311941871353818).abs() < 1e-9, "{v}");
+  }
+
   #[test]
   fn eigenvalues_float_3x3_simple() {
     // Simpler diagonal-ish 3x3.
@@ -10721,6 +10757,56 @@ mod coordinate_transform {
     );
   }
 
+  // A list of points (or a deeper array of them) is transformed point by
+  // point.
+  #[test]
+  fn list_of_points() {
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Polar\", {{1, 1}, {0, 2}}]"
+      )
+      .unwrap(),
+      "{{Sqrt[2], Pi/4}, {2, Pi/2}}"
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Polar\" -> \"Cartesian\", \
+         {{{1, Pi}, {2, Pi/2}}, {{1, 0}, {3, 0}}}]"
+      )
+      .unwrap(),
+      "{{{-1, 0}, {0, 2}}, {{1, 0}, {3, 0}}}"
+    );
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Spherical\", {{3., 4., 0.}}]"
+      )
+      .unwrap(),
+      "{{5., 1.5707963267948966, 0.9272952180016122}}"
+    );
+    // A single-point list keeps the list structure, so `Rest /@` drops
+    // each point's radius rather than mapping over the unevaluated call.
+    assert_eq!(
+      interpret(
+        "Rest /@ CoordinateTransform[\"Spherical\" -> \"Cartesian\", \
+         {{1, Pi/2, 0}, {2, 0, 0}}]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 2}}"
+    );
+  }
+
+  // A point of the wrong dimension leaves the whole call unevaluated.
+  #[test]
+  fn list_of_points_with_bad_point_stays_unevaluated() {
+    assert_eq!(
+      interpret(
+        "CoordinateTransform[\"Cartesian\" -> \"Polar\", {{1, 1}, {1, 2, 3}}]"
+      )
+      .unwrap(),
+      "CoordinateTransform[Cartesian -> Polar, {{1, 1}, {1, 2, 3}}]"
+    );
+  }
+
   #[test]
   fn numeric_points_fold() {
     assert_eq!(
@@ -13307,6 +13393,51 @@ mod fit_empty_data_and_properties {
     assert_eq!(
       r.warnings,
       vec!["Fit::noprop: Foo is not a valid property."]
+    );
+  }
+}
+
+/// An input entry that is a sum of rational terms cancelling to zero must
+/// not be taken as a pivot: it made a rank-deficient matrix look regular.
+mod disguised_zero_pivot {
+  use super::*;
+
+  #[test]
+  fn row_reduce_skips_a_zero_in_disguise() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "RowReduce[{{1, a}, {0, (1 + a)/(1 - a)}, {0, a/(1 - a) + a/(a - 1)}}]"
+      )
+      .unwrap(),
+      "{{1, 0}, {0, 1}, {0, 0}}"
+    );
+    assert_eq!(
+      interpret("RowReduce[{{a/(1 - a) + a/(a - 1), 1}, {1, 2}}]").unwrap(),
+      "{{1, 0}, {0, 1}}"
+    );
+  }
+
+  #[test]
+  fn null_space_and_rank_see_the_zero() {
+    clear_state();
+    assert_eq!(
+      interpret("NullSpace[{{1, a}, {a/(1 - a) + a/(a - 1), 0}}]").unwrap(),
+      "{{-a, 1}}"
+    );
+    assert_eq!(
+      interpret("MatrixRank[{{1, a}, {a/(1 - a) + a/(a - 1), 0}}]").unwrap(),
+      "1"
+    );
+  }
+
+  #[test]
+  fn linear_solve_skips_a_zero_in_disguise() {
+    clear_state();
+    assert_eq!(
+      interpret("LinearSolve[{{a/(1 - a) + a/(a - 1), 2}, {1, 3}}, {2, 1}]")
+        .unwrap(),
+      "{-2, 1}"
     );
   }
 }

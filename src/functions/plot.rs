@@ -387,6 +387,11 @@ impl<'a> PlotBody2<'a> {
     }
   }
 
+  /// Whether the body compiled, so sampling it is cheap.
+  pub(crate) fn is_compiled(&self) -> bool {
+    self.compiled.is_some()
+  }
+
   pub(crate) fn at(&self, x: f64, y: f64) -> Option<f64> {
     if let Some(c) = &self.compiled
       && let Some(sample) = c.sample(&[x, y])
@@ -822,6 +827,13 @@ fn adaptive_sample(
     _ => curve_bend,
   };
 
+  // The denominator floor of the relative bend test scales with the curve:
+  // a fixed absolute floor would swamp a curve whose values are all tiny
+  // (an absorption spectrum of height 1e-12, say), so its peaks would never
+  // be refined. Where a bend is visible at all it exceeds `visible_bend`,
+  // which keeps the test unchanged for curves of ordinary size.
+  let range_floor = visible_bend.max(f64::MIN_POSITIVE);
+
   // Adaptive refinement passes, one level of `MaxRecursion` each.
   for _ in 0..max_depth {
     if points.len() >= max_total {
@@ -864,7 +876,7 @@ fn adaptive_sample(
           // Linear interpolation error: how much does the middle point
           // deviate from the line connecting its neighbors?
           let y_interp = y0 + (y2 - y0) * (x1 - x0) / (x2 - x0);
-          let y_range = (y2 - y0).abs().max(1e-10);
+          let y_range = (y2 - y0).abs().max(range_floor);
           let bend = (y1 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -881,7 +893,7 @@ fn adaptive_sample(
         let (xm1, ym1) = points[i - 1];
         if ym1.is_finite() {
           let y_interp = ym1 + (y1 - ym1) * (x0 - xm1) / (x1 - xm1);
-          let y_range = (y1 - ym1).abs().max(1e-10);
+          let y_range = (y1 - ym1).abs().max(range_floor);
           let bend = (y0 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -2166,7 +2178,7 @@ pub(crate) fn axes_label_svg_at(
   (show_x_axis, show_y_axis): (bool, bool),
   font_size: f64,
   label_fill: &str,
-  canvas_width: Option<f64>,
+  canvas: Option<(f64, f64)>,
 ) -> String {
   let Some((x_label, y_label)) = axes_label else {
     return String::new();
@@ -2175,6 +2187,11 @@ pub(crate) fn axes_label_svg_at(
   // A stacked-fraction label is a picture typeset at the label font's
   // point size; it scales up to render units and takes the label color.
   let k = font_size / plot_padding::LABEL_FONT;
+  // The gaps between the axes and their labels are fixed lengths in
+  // points (the automatic padding reserves them so), whatever the label
+  // font; given the canvas, `sf` render units make a point.
+  let gap_unit = canvas.map_or(k, |(_, sf)| sf);
+  let canvas_width = canvas.map(|(cw, _)| cw);
   let picture = |markup: &str, x: f64, y: f64| {
     let theme_fill = crate::functions::graphics::theme().text_primary;
     format!(
@@ -2185,12 +2202,11 @@ pub(crate) fn axes_label_svg_at(
   let picture_size = crate::functions::graphics::axes_label_picture_size;
   if show_x_axis && let Some((_, h)) = picture_size(x_label) {
     // 8 pt past the end of the axis, vertically centered on it.
-    let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
+    let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * gap_unit;
     svg.push_str(&picture(x_label, label_x, axis_y - h * k / 2.0));
   } else if show_x_axis && !x_label.is_empty() {
     // 8 pt past the end of the axis, vertically centered on it.
-    let k = font_size / plot_padding::LABEL_FONT;
-    let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * k;
+    let label_x = x0 + w + plot_padding::AXES_LABEL_GAP_X * gap_unit;
     // A label wider than the room left of the canvas edge (an
     // `ImagePadding` can state less than it needs) shrinks to fit rather
     // than being clipped. The width is measured the way the automatic
@@ -2225,7 +2241,7 @@ pub(crate) fn axes_label_svg_at(
     // Centered over the top of the y axis, 6 pt above it, and kept inside
     // the image.
     let lx = axis_x.max(pw * k / 2.0 + font_size * 0.2);
-    let top = y0 - plot_padding::AXES_LABEL_GAP_Y * k - ph * k;
+    let top = y0 - plot_padding::AXES_LABEL_GAP_Y * gap_unit - ph * k;
     svg.push_str(&picture(y_label, lx - pw * k / 2.0, top));
   } else if show_y_axis && !y_label.is_empty() {
     // Centered over the top of the y axis, but never so far left that the
@@ -2240,7 +2256,7 @@ pub(crate) fn axes_label_svg_at(
     let lines = label_markup_lines(y_label);
     let pitch = plot_padding::line_pitch(font_size);
     let first_baseline = y0
-      - plot_padding::AXES_LABEL_GAP_Y * font_size / plot_padding::LABEL_FONT
+      - plot_padding::AXES_LABEL_GAP_Y * gap_unit
       - plot_padding::descent(font_size)
       - (lines.len() - 1) as f64 * pitch;
     svg.push_str(&format!(
@@ -2406,10 +2422,21 @@ fn tick_step_decimals(step: f64) -> Option<usize> {
   })
 }
 
+/// `v` split into a mantissa in `[1, 10)` (in magnitude) and an exponent.
+fn scientific_parts(v: f64) -> (f64, i32) {
+  let mut exp = v.abs().log10().floor() as i32;
+  let mut mantissa = v / 10f64.powi(exp);
+  // `log10` can land a hair below an exact power of ten.
+  if (mantissa.abs() - 10.0).abs() < 1e-9 || mantissa.abs() > 10.0 {
+    exp += 1;
+    mantissa /= 10.0;
+  }
+  (mantissa, exp)
+}
+
 /// `v` as `m×10^e` with Unicode superscript exponent digits.
 fn format_scientific_tick(v: f64) -> String {
-  let exp = v.abs().log10().floor() as i32;
-  let mantissa = v / 10f64.powi(exp);
+  let (mantissa, exp) = scientific_parts(v);
   let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
     format!("{}", mantissa.round() as i64)
   } else {
@@ -2593,7 +2620,11 @@ fn inject_missing_major_tick_labels(
       };
       let along = if horizontal { x } else { y };
       if !template.occupied.iter().any(|p| (p - along).abs() < 2.0) {
-        svg.push_str(&template.render(x, y, &format_tick_with_step(v, major)));
+        svg.push_str(&template.render(
+          x,
+          y,
+          &format_axis_tick(v, major, min, max),
+        ));
       }
       v += major;
     }
@@ -4052,6 +4083,9 @@ pub(crate) struct PlotOptions {
   /// `TicksStyle -> s | {xs, ys}`: the style of each axis's tick marks and
   /// tick labels.
   pub ticks_style: [Option<SeriesStyle>; 2],
+  /// The font size an `AxesStyle -> size` (or `Directive[…, size]`) gives
+  /// the axes' tick labels and labels, over `LabelStyle`.
+  pub axes_font_size: Option<f64>,
   /// `FrameStyle` per frame edge (bottom, left, top, right): the style of
   /// the edge, its tick marks and its tick labels.
   pub frame_styles: [Option<SeriesStyle>; 4],
@@ -4329,6 +4363,7 @@ impl Default for PlotOptions {
       joined_per_series: None,
       axes_style: [None, None],
       ticks_style: [None, None],
+      axes_font_size: None,
       frame_styles: [None, None, None, None],
       frame_edge_segments: Vec::new(),
       extra_frame_axes: Vec::new(),
@@ -4821,10 +4856,22 @@ fn grid_line_props(
 }
 
 /// The attribute that keeps a run of blanks a label asks for
-/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
-/// space; empty when the markup has no such run.
+/// (`Row[{a, "    ", b}]`), or blanks padding its text (`"  axis"`),
+/// instead of letting SVG collapse or drop them; empty when the markup has
+/// neither.
 pub(crate) fn preserve_blanks_attr(markup: &str) -> &'static str {
-  if markup.contains("  ") {
+  // The visible text, without the `<tspan …>` tags that style it.
+  let mut text = String::with_capacity(markup.len());
+  let mut in_tag = false;
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      _ if !in_tag => text.push(c),
+      _ => {}
+    }
+  }
+  if text.contains("  ") || text.trim() != text {
     " xml:space=\"preserve\""
   } else {
     ""
@@ -5128,7 +5175,7 @@ pub(crate) fn plot_labels_svg(
         opts.axes,
         font_size,
         fill.as_deref().unwrap_or(label_fill),
-        Some(canvas_width),
+        Some((canvas_width, sf)),
       ));
     }
   } else {
@@ -5139,7 +5186,7 @@ pub(crate) fn plot_labels_svg(
       opts.axes,
       font_size,
       label_fill,
-      Some(canvas_width),
+      Some((canvas_width, sf)),
     ));
   }
 
@@ -8679,6 +8726,9 @@ pub(crate) fn build_plot_source(
           .get(i % plot_style.len().max(1))
           .is_some_and(|s| s.continues_previous),
         color_function: color_function.clone(),
+        arrowheads: plot_style
+          .get(i % plot_style.len().max(1))
+          .and_then(|s| s.arrowheads.clone()),
       }
     })
     .collect();
@@ -8695,6 +8745,7 @@ pub(crate) fn build_plot_source(
     data_x_range: None,
     settles_all_range: false,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
+    legends: Vec::new(),
   }
 }
 
@@ -9229,6 +9280,29 @@ fn merged_plot_source_options(
     .iter()
     .filter(|s| s.is_scatter == all_scatter)
     .collect();
+  // The legend entries of several merged plots, each keyed by the series
+  // it labels (now an index among the drawn series).
+  if !source.legends.is_empty() {
+    let drawn_index = |si: usize| {
+      source
+        .series
+        .get(si)
+        .filter(|s| s.is_scatter == all_scatter)?;
+      Some(
+        source.series[..si]
+          .iter()
+          .filter(|s| s.is_scatter == all_scatter)
+          .count(),
+      )
+    };
+    let (series, labels): (Vec<usize>, Vec<String>) = source
+      .legends
+      .iter()
+      .filter_map(|(si, label)| Some((drawn_index(*si)?, label.clone())))
+      .unzip();
+    opts.plot_legends = labels;
+    opts.legend_series = series;
+  }
 
   // Each series carries the color its own plot resolved, so `PlotStyle`
   // is rebuilt from the series rather than re-read from the options.
@@ -9248,6 +9322,7 @@ fn merged_plot_source_options(
       dashing: s.dashing.clone(),
       opacity: s.opacity,
       continues_previous: s.continues_previous,
+      arrowheads: s.arrowheads.clone(),
       ..SeriesStyle::default()
     })
     .collect();
@@ -11644,7 +11719,7 @@ pub(crate) fn generate_horizontal_bar_svg(
         "<text x=\"{tx:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_bottom + tick_len + font_size,
-        html_escape(&format_tick_with_step(v, x_major))
+        html_escape(&format_axis_tick(v, x_major, x_min, x_max))
       ));
       v += x_major;
     }
@@ -12163,14 +12238,14 @@ pub(crate) fn generate_bubble_chart_svg(
       .y_labels(y_tick_count)
       .x_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, x_major) {
-          format_tick_with_step(*v, x_major)
+          format_axis_tick(*v, x_major, x_min, x_max)
         } else {
           String::new()
         }
       })
       .y_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
+          format_axis_tick(*v, y_major, y_min, y_max)
         } else {
           String::new()
         }
@@ -12508,12 +12583,25 @@ pub(crate) fn generate_bubble_chart_svg(
   ))
 }
 
-/// Escape special characters for SVG/HTML text content.
+/// Escape special characters for SVG/HTML text content. C0 control
+/// characters other than tab, newline and carriage return (e.g. the `\.04`
+/// in `FromCharacterCode[{65, 4}]`) are not allowed anywhere in an XML
+/// document, so they are dropped: kept, a single one makes the whole SVG
+/// unparsable. They have no visible glyph anyway.
 pub(crate) fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match c {
+      '&' => out.push_str("&amp;"),
+      '<' => out.push_str("&lt;"),
+      '>' => out.push_str("&gt;"),
+      '"' => out.push_str("&quot;"),
+      '\t' | '\n' | '\r' => out.push(c),
+      c if (c as u32) < 0x20 || c == '\u{FFFE}' || c == '\u{FFFF}' => {}
+      c => out.push(c),
+    }
+  }
+  out
 }
 
 /// Width (in viewBox units) of the plotting area, mirroring the margins used
@@ -13191,6 +13279,7 @@ pub(crate) fn histogram_plot_source(
       extra_fills: Vec::new(),
       continues_previous: false,
       color_function: None,
+      arrowheads: None,
     });
   }
 
@@ -13207,6 +13296,7 @@ pub(crate) fn histogram_plot_source(
     data_x_range: None,
     settles_all_range: false,
     aspect_ratio: None,
+    legends: Vec::new(),
   })
 }
 
@@ -14967,6 +15057,10 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         graphics: None,
       })
     }
+    // `Text[marker]` — the same glyph as `marker` itself.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      parse_one_marker(&args[0])
+    }
     // `Style[marker, directives…]` — a color and/or a font size.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -14980,6 +15074,13 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
             (c.b * 255.0).round() as u8,
           ));
         } else if let Some(size) = try_eval_to_f64(directive) {
+          marker.size = size;
+        } else if let Some((name, value)) =
+          crate::functions::graphics::option_name_value(directive)
+          && name == "FontSize"
+          && let Some(size) = try_eval_to_f64(&value)
+        {
+          // `FontSize -> n` (or `FontSize :> n`).
           marker.size = size;
         } else if let Expr::FunctionCall { name, args } = directive
           && name == "FontSize"
@@ -15975,6 +16076,18 @@ pub(crate) fn parse_axis_pair_styles(value: &Expr) -> [Option<SeriesStyle>; 2] {
   }
 }
 
+/// The font size an axis style option (`AxesStyle`, `TicksStyle`) gives
+/// the axes' text: a bare size or one inside a `Directive[…]`. Of a
+/// `{xstyle, ystyle}` pair the x style's size is taken, else the y style's.
+pub(crate) fn axis_pair_font_size(value: &Expr) -> Option<f64> {
+  let val = evaluate_expr_to_expr(value).unwrap_or_else(|_| value.clone());
+  let size = |e: &Expr| LabelStyleSpec::parse(e).and_then(|s| s.font_size);
+  match &val {
+    Expr::List(items) if items.len() == 2 => items.iter().find_map(size),
+    other => size(other),
+  }
+}
+
 /// The SVG stroke color and width (in render units, `sf` per display pixel)
 /// a style gives a line, falling back to `color` / `width` for whatever it
 /// leaves unset.
@@ -16647,7 +16760,7 @@ pub(crate) fn simple_ticks(min: f64, max: f64) -> Vec<(f64, String)> {
       let label = if k == 0 {
         "0".to_string()
       } else {
-        format_tick_with_step(v, step)
+        format_axis_tick(v, step, min, max)
       };
       (if k == 0 { 0.0 } else { v }, label)
     })
@@ -16880,8 +16993,15 @@ pub(crate) fn parse_plot_legends(
               "{}{svg}",
               crate::functions::graphics::STYLED_LABEL_MARKER
             ),
-            None => crate::functions::graphics::styled_axis_label(&item)
-              .unwrap_or_else(|| expr_to_string(&item)),
+            // A mathematical label (`W[u]`) is set in TraditionalForm,
+            // with italic letters, like an axis label.
+            None => {
+              crate::functions::graphics::traditional_math_axis_label(&item)
+                .or_else(|| {
+                  crate::functions::graphics::styled_axis_label(&item)
+                })
+                .unwrap_or_else(|| expr_to_string(&item))
+            }
           },
         })
         .collect();
@@ -17486,7 +17606,10 @@ pub(crate) fn apply_common_plot_option(
       plot_opts.legend_frame = frame;
       plot_opts.legend_label = legend_label(replacement);
     }
-    "AxesStyle" => plot_opts.axes_style = parse_axis_pair_styles(replacement),
+    "AxesStyle" => {
+      plot_opts.axes_style = parse_axis_pair_styles(replacement);
+      plot_opts.axes_font_size = axis_pair_font_size(replacement);
+    }
     "TicksStyle" => {
       plot_opts.ticks_style = parse_axis_pair_styles(replacement);
       // A bare size (`TicksStyle -> Directive[Red, 14]`) sets the tick

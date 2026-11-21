@@ -988,6 +988,34 @@ mod plus_radical_like_terms {
       "4*Sqrt[2] + 3/Sqrt[7] + Sqrt[3]*x + Sqrt[3]*y"
     );
   }
+
+  // A coefficient merged onto a radical folds into it, as in a product.
+  #[test]
+  fn merged_coefficient_folds_into_radical() {
+    assert_eq!(interpret("x/Sqrt[2] + x/Sqrt[2]").unwrap(), "Sqrt[2]*x");
+    assert_eq!(
+      interpret("y/Sqrt[3] + y/(2 Sqrt[3])").unwrap(),
+      "(Sqrt[3]*y)/2"
+    );
+    assert_eq!(interpret("x/2^(1/3) + x/2^(1/3)").unwrap(), "2^(2/3)*x");
+  }
+
+  // Folding a merged coefficient can make the term a like term of another
+  // one in the sum, which then combines too. Radicals whose exponents
+  // differ by an integer are not like terms of `Plus` (only `Expand`
+  // combines them).
+  #[test]
+  fn folded_coefficient_recombines() {
+    assert_eq!(
+      interpret("c/Sqrt[3] - Sqrt[3] c/4 - c/(4 Sqrt[3])").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Sqrt[2] + 1/Sqrt[2]").unwrap(),
+      "1/Sqrt[2] + Sqrt[2]"
+    );
+    assert_eq!(interpret("Sqrt[2] + Sqrt[3]").unwrap(), "Sqrt[2] + Sqrt[3]");
+  }
 }
 
 // A quotient over a sum against a power or product with no sum in it
@@ -8327,6 +8355,22 @@ mod cases {
     assert_case(
       r#"ToBoxes[TraditionalForm[!a && b]]"#,
       r#"TagBox[FormBox[RowBox[{RowBox[{¬, a}], ∧, b}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+  }
+
+  /// A string subscript (`Subscript[S, "B"]`) ranks a sum's term by the
+  /// letter it shows, not by the quote its box string starts with, so
+  /// `a …` still leads a term in `S_B` and `S_C`.
+  #[test]
+  fn traditional_form_sum_orders_string_subscripts_by_their_letters() {
+    assert_case(
+      r#"ToBoxes[TraditionalForm[S (Subscript[S, w] - 4 R^2) a + 2 R Subscript[S, "B"] Subscript[S, "C"]]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{a,  , S,  , RowBox[{(, RowBox[{SubscriptBox[S, w], -, RowBox[{4,  , SuperscriptBox[R, 2]}]}], )}]}], +, RowBox[{2,  , R,  , SubscriptBox[S, "B"],  , SubscriptBox[S, "C"]}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
+    );
+    // A quoted subscript still sorts with its letter case: `A` before `b`.
+    assert_case(
+      r#"ToBoxes[TraditionalForm[x Subscript[y, "A"] + b z]]"#,
+      r#"TagBox[FormBox[RowBox[{RowBox[{x,  , SubscriptBox[y, "A"]}], +, RowBox[{b,  , z}]}], TraditionalForm], TraditionalForm, Editable -> True]"#,
     );
   }
 

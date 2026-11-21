@@ -175,6 +175,51 @@ impl Default for Camera {
   }
 }
 
+/// The outline of a projected fan triangle's fill, widened by a band of
+/// `overlap` pixels across each internal cut (`boundary[i] == false`) of
+/// its polygon, so the halves of a face overlap and no anti-aliasing seam
+/// traces the cut. Outline edges stay where they are. Near the ends of a
+/// cut the band can leave the polygon, but by at most `overlap` from its
+/// outline, which an outline stroke at least `2 * overlap` wide covers.
+/// Triangles without both kinds of edge — a lone triangle, or a face drawn
+/// without edges, whose outline is unknown — keep their three corners.
+pub(crate) fn widen_across_internal_cuts(
+  corners: [(f64, f64); 3],
+  boundary: [bool; 3],
+  overlap: f64,
+) -> Vec<(f64, f64)> {
+  let signed_area = (corners[1].0 - corners[0].0)
+    * (corners[2].1 - corners[0].1)
+    - (corners[2].0 - corners[0].0) * (corners[1].1 - corners[0].1);
+  if boundary.iter().all(|&b| b)
+    || boundary.iter().all(|&b| !b)
+    || overlap <= 0.0
+    || signed_area.abs() < 1e-9
+  {
+    return corners.to_vec();
+  }
+  let mut out = Vec::with_capacity(7);
+  for i in 0..3 {
+    let (a, b) = (corners[i], corners[(i + 1) % 3]);
+    out.push(a);
+    if boundary[i] {
+      continue;
+    }
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len = dx.hypot(dy);
+    if len < 1e-9 {
+      continue;
+    }
+    // With a positive signed area the corners run counter-clockwise, so
+    // the right-hand normal of each edge points out of the triangle.
+    let sign = signed_area.signum();
+    let (nx, ny) = (sign * dy / len * overlap, -sign * dx / len * overlap);
+    out.push((a.0 + nx, a.1 + ny));
+    out.push((b.0 + nx, b.1 + ny));
+  }
+  out
+}
+
 #[derive(Clone)]
 pub(crate) struct Triangle {
   pub projected: [(f64, f64); 3],
@@ -212,6 +257,10 @@ pub(crate) struct Triangle {
 pub(crate) struct TriangleTexture {
   pub image: std::sync::Arc<image::RgbImage>,
   pub uv: [(f64, f64); 3],
+  /// The lit color of a white surface at this triangle: the image's
+  /// colors are multiplied by it, so the scene lighting shades a textured
+  /// face just as it shades a plain one.
+  pub shade: (u8, u8, u8),
 }
 
 /// Largest scene `painter_order` refines: candidate pairs come from a sweep
@@ -256,6 +305,28 @@ fn projected_triangles_overlap(
   true
 }
 
+/// How far from a plane a corner may lie and still count as on it, scaled
+/// to the size of the triangles compared. Faces that share an edge often
+/// share it only up to the precision of their data (vertices given to six
+/// digits and then rotated); a fixed tiny tolerance would see such faces
+/// cross each other and cut them into slivers whose outlines show through
+/// the faces in front.
+fn plane_tolerance(points: impl Iterator<Item = Point3D>) -> f64 {
+  let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+  for p in points {
+    for (k, c) in [p.x, p.y, p.z].into_iter().enumerate() {
+      lo[k] = lo[k].min(c);
+      hi[k] = hi[k].max(c);
+    }
+  }
+  let size = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
+  if size.is_finite() {
+    (1e-5 * size).max(1e-9)
+  } else {
+    1e-9
+  }
+}
+
 /// Where triangle `t` lies relative to the plane of `plane`, seen from the
 /// viewer: `Some(true)` when wholly behind (or on) it, `Some(false)` when
 /// wholly in front, `None` when it straddles the plane.
@@ -272,7 +343,7 @@ fn side_of_plane(
     n = [-n[0], -n[1], -n[2]];
   }
   // `n` now points toward the viewer.
-  let eps = 1e-9;
+  let eps = plane_tolerance(plane.iter().chain(t.iter()).copied());
   let (mut behind, mut front) = (true, true);
   for v in t {
     let d = n[0] * (v.x - plane[0].x)
@@ -802,7 +873,8 @@ fn clip_polygon_by_plane(
   plane: &[Point3D; 3],
 ) -> (Vec<(Point3D, bool)>, Vec<(Point3D, bool)>) {
   let n = triangle_normal(plane[0], plane[1], plane[2]);
-  let eps = 1e-9;
+  let eps =
+    plane_tolerance(plane.iter().copied().chain(poly.iter().map(|c| c.0)));
   let dist = |p: Point3D| {
     n[0] * (p.x - plane[0].x)
       + n[1] * (p.y - plane[0].y)
@@ -840,6 +912,20 @@ fn clip_polygon_by_plane(
       } else {
         neg.push((m, false));
         pos.push((m, flag));
+      }
+    }
+  }
+  // A cut through an existing corner keeps that corner's flag for the edge
+  // to its next corner, but in a part the next corner is then the cut's
+  // other end. Any edge with both ends on the plane is the cut (an outline
+  // edge lying in the plane leaves nothing on one side to split off), so
+  // it is not part of the outline.
+  for part in [&mut pos, &mut neg] {
+    let m = part.len();
+    for k in 0..m {
+      if dist(part[k].0).abs() <= eps && dist(part[(k + 1) % m].0).abs() <= eps
+      {
+        part[k].1 = false;
       }
     }
   }
@@ -2102,6 +2188,49 @@ fn compactify_infinite_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   changed.then_some(new_args)
 }
 
+/// The list of surfaces a non-list `Plot3D` body stands for when it
+/// evaluates to a list. Evaluated with the plot variables symbolic, the
+/// list's elements are the surfaces; a body that only yields a list once
+/// the variables are numbers is probed at `(x, y)` and split into
+/// `Part[body, i]` surfaces. `None` for a body that is a list already or
+/// samples to a single value.
+fn list_valued_surface_body(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x: f64,
+  y: f64,
+) -> Option<Expr> {
+  use crate::functions::plot::{
+    eval_body_vars_symbolic, expr_mentions_var, substitute_var,
+  };
+  if matches!(body, Expr::List(_))
+    || !(expr_mentions_var(body, xvar) || expr_mentions_var(body, yvar))
+  {
+    return None;
+  }
+  let evaluated = eval_body_vars_symbolic(body, &[xvar, yvar]);
+  if matches!(&evaluated, Expr::List(items) if !items.is_empty()) {
+    return Some(evaluated);
+  }
+  let at_point = substitute_var(
+    &substitute_var(body, xvar, &Expr::Real(x)),
+    yvar,
+    &Expr::Real(y),
+  );
+  match &evaluate_expr_to_expr(&at_point).ok()? {
+    Expr::List(items) if !items.is_empty() => Some(Expr::List(
+      (1..=items.len())
+        .map(|i| Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![body.clone(), Expr::Integer(i as i128)].into(),
+        })
+        .collect(),
+    )),
+    _ => None,
+  }
+}
+
 pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2124,8 +2253,11 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
-  let mut show_axes = true;
+  let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
+  // automatic vertical range clips outliers off.
+  let mut keep_z_outliers = false;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut color_fn = FacetColorFunction::default();
@@ -2231,6 +2363,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          keep_z_outliers = plot_range_keeps_z_outliers(replacement);
           // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
           // full form `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds
           // all three; the horizontal bounds narrow the plotted domain, so
@@ -2254,8 +2387,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
-            Expr::Identifier(s) if s == "False" => show_axes = false,
-            Expr::Identifier(s) if s == "True" => show_axes = true,
+            Expr::Identifier(s) if s == "False" => show_box = false,
+            Expr::Identifier(s) if s == "True" => show_box = true,
             _ => {}
           }
         }
@@ -2278,6 +2411,18 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+
+  // A body that evaluates to a list (`h[x, y]` with `h` returning
+  // `{…, …}`, or `({Re[#], Im[#]} &)[…]`) draws one surface per element,
+  // like an explicit list of functions.
+  let expanded_body = list_valued_surface_body(
+    body,
+    &xvar,
+    &yvar,
+    f64::midpoint(x_min, x_max),
+    f64::midpoint(y_min, y_max),
+  );
+  let body = expanded_body.as_ref().unwrap_or(body);
 
   // Collect function bodies: single function or list of functions
   let bodies: Vec<&Expr> = match body {
@@ -2395,6 +2540,26 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Plot3D: function produced no finite values in the given range".into(),
     ));
+  }
+
+  // The automatic vertical range drops outlying heights, as WL's does: a
+  // pole or a jump at the domain's edge is cut off instead of squashing
+  // the rest of the surface into a sliver of the box.
+  if !keep_z_outliers {
+    let region_masks = region_masks.as_ref();
+    let kept = grids.iter().enumerate().flat_map(|(s, grid)| {
+      grid.iter().enumerate().flat_map(move |(i, row)| {
+        row.iter().enumerate().filter_map(move |(j, &z)| {
+          region_masks.is_none_or(|masks| masks[s][i][j]).then_some(z)
+        })
+      })
+    });
+    if let Some((lo, hi)) =
+      crate::functions::plot::list_value_extent(kept, false)
+    {
+      global_z_min = lo;
+      global_z_max = hi;
+    }
   }
 
   // A numeric `Filling` level is part of the picture: the automatic
@@ -3195,7 +3360,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     mesh_mode,
-    show_axes,
+    show_box,
     box_half,
     &axes_labels,
     !image_height_is_explicit(args),
@@ -3318,7 +3483,7 @@ fn generate_svg(
   svg_height: u32,
   full_width: bool,
   mesh_mode: MeshMode,
-  show_axes: bool,
+  show_box: bool,
   box_ratios: [f64; 3],
   axes_labels: &[Option<String>; 3],
   auto_height: bool,
@@ -3326,6 +3491,13 @@ fn generate_svg(
 ) -> Result<String, InterpreterError> {
   let mut svg_width = svg_width;
   let mut svg_height = svg_height;
+  // `Boxed -> False` hides only the box's edges; the axes go with
+  // `Axes -> False`.
+  let show_axes = !options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False"))
+  });
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
@@ -3349,6 +3521,36 @@ fn generate_svg(
     px_max = px_max.max(px);
     py_min = py_min.min(py);
     py_max = py_max.max(py);
+  }
+
+  // Sphere framing (see `plot_spherical_region`): the picture is fitted to
+  // the circle the sphere around the box projects to, exactly as in
+  // `Graphics3D` (see `spherical_region_span`), so its scale no longer
+  // follows the shape of the contents.
+  let sphere_span = (plot_spherical_region(options)
+    && view_angle_option(options).is_none())
+  .then(|| {
+    let radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
+    spherical_region_span(
+      radius,
+      camera.perspective.as_ref().map(|p| p.distance),
+    )
+  })
+  .filter(|span| *span > 0.0 && span.is_finite());
+  // The box middle (the origin) projects to the sphere's center.
+  let (sphere_cx, sphere_cy) = project(
+    Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    },
+    camera,
+  );
+  if let Some(span) = sphere_span {
+    px_min = px_min.min(sphere_cx - span / 2.0);
+    px_max = px_max.max(sphere_cx + span / 2.0);
+    py_min = py_min.min(sphere_cy - span / 2.0);
+    py_max = py_max.max(sphere_cy + span / 2.0);
   }
 
   let p_width = px_max - px_min;
@@ -3483,6 +3685,11 @@ fn generate_svg(
       }
       _ => (scale, p_cx, p_cy),
     };
+  // The sphere spans the shorter side of the picture, centered on the box.
+  let (scale, p_cx, p_cy) = match sphere_span {
+    Some(span) => (inner_side / span, sphere_cx, sphere_cy),
+    None => (scale, p_cx, p_cy),
+  };
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -3514,7 +3721,7 @@ fn generate_svg(
   // Each of the 12 edges is subdivided into small segments so that per-segment
   // depth sorting produces correct occlusion against the surface.
   const EDGE_SUBDIVISIONS: usize = 20;
-  let box_edges = if show_axes {
+  let box_edges = if show_box {
     let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
     let axis_color =
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
@@ -8060,6 +8267,7 @@ fn fan_texture(
   Some(TriangleTexture {
     image: image.clone(),
     uv: [coords[0], coords[i + 1], coords[i + 2]],
+    shade: (255, 255, 255),
   })
 }
 
@@ -8154,6 +8362,22 @@ fn emit_textured_triangle(
   } else {
     String::new()
   };
+  // Shade the image by the lit color of a white surface: a color matrix
+  // scales each channel, one filter per distinct shade.
+  let filter_attr = if tex.shade == (255, 255, 255) {
+    String::new()
+  } else {
+    let (r, g, b) = tex.shade;
+    let fid = format!("texshade{r:02x}{g:02x}{b:02x}");
+    if !ids.iter().any(|(k, id)| k.is_null() && *id == fid) {
+      ids.push((std::ptr::null(), fid.clone()));
+      let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+      svg.push_str(&format!(
+        "<defs><filter id=\"{fid}\" color-interpolation-filters=\"sRGB\"><feColorMatrix type=\"matrix\" values=\"{r:.4} 0 0 0 0 0 {g:.4} 0 0 0 0 0 {b:.4} 0 0 0 0 0 1 0\"/></filter></defs>\n"
+      ));
+    }
+    format!(" filter=\"url(#{fid})\"")
+  };
   // The copy `k` periods along `u` and `l` along `v` sits `k·w` right of
   // and `l·h` above the base image in texture space.
   let mut copies = String::new();
@@ -8170,7 +8394,7 @@ fn emit_textured_triangle(
     }
   }
   svg.push_str(&format!(
-    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{opacity_attr}>{copies}</g>\n",
+    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{filter_attr}{opacity_attr}>{copies}</g>\n",
     clip_corners[0].0,
     clip_corners[0].1,
     clip_corners[1].0,
@@ -8406,6 +8630,36 @@ fn view_angle_option(options: &[Expr]) -> Option<f64> {
     }
     _ => None,
   })?
+}
+
+/// The last value a plot's options give the option `name`, evaluated.
+fn plot_option_value(options: &[Expr], name: &str) -> Option<Expr> {
+  options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => Some(
+      evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone()),
+    ),
+    _ => None,
+  })
+}
+
+/// Whether a surface plot is framed by the sphere around its box, as
+/// `Graphics3D` is: under `SphericalRegion -> True`, and by default inside a
+/// `Manipulate` frame (so the picture keeps its size while a control moves
+/// the contents), unless `SphericalRegion -> False` turns it off.
+fn plot_spherical_region(options: &[Expr]) -> bool {
+  match plot_option_value(options, "SphericalRegion").as_ref() {
+    Some(Expr::Identifier(v)) if v == "True" => true,
+    Some(Expr::Identifier(v)) if v == "False" => false,
+    _ => crate::in_manipulate_frame(),
+  }
 }
 
 fn strip_dynamic(expr: &Expr) -> &Expr {
@@ -14456,7 +14710,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color: vertex_colors.map_or(color, average_color),
         opacity: prim_opacity,
-        texture: fan_texture(prim, prim_style, i, tri_count),
+        texture: fan_texture(prim, prim_style, i, tri_count).map(|mut t| {
+          // The texture takes the place of the surface color, so the
+          // lighting is that of a white surface.
+          let mut white = prim_style.clone();
+          white.color = None;
+          white.back_color = None;
+          t.shade = shade_facet(
+            SurfaceDefault::Plain((255, 255, 255)),
+            None,
+            Some(&white),
+            normal,
+            center,
+            &scene,
+          )
+          .0;
+          t
+        }),
         vertex_colors,
       });
     }
@@ -14644,7 +14914,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  {
+  // In a picture of fixed width and height, an invisible box around an
+  // automatic range with nothing tied to it (no axes, no sphere framing, no
+  // view volume) is left out: the contents themselves are fitted to the
+  // frame. A Demonstration's unboxed cylinder of fixed volume at
+  // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
+  // snapshots, whether it is tall and thin or short and wide. A picture
+  // given only a width keeps the box's margins.
+  let fit_contents = !show_box
+    && explicit_height
+    && !full_width
+    && !aspect_full
+    && !show_axes
+    && plot_range.is_none()
+    && partial_range.is_none()
+    && !spherical_region
+    && view_angle.is_none()
+    && px_min.is_finite();
+  if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -15492,8 +15779,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             d.join(" ")
           ));
         } else if tri.opacity > 0.0 {
+          let corners = [(x0, y0), (x1, y1), (x2, y2)];
+          // An opaque fan triangle reaches a little across the internal
+          // cuts of its polygon, so the two halves of a face overlap there
+          // and no anti-aliasing seam traces the diagonal.
+          // The band may leave the face by up to its own width, which the
+          // solid outline drawn over it covers.
+          let fill = if tri.opacity >= 1.0 && tri.edge_dashing.is_none() {
+            widen_across_internal_cuts(
+              corners,
+              tri.boundary,
+              (edge_width / 2.0).min(0.5),
+            )
+          } else {
+            corners.to_vec()
+          };
+          let points = fill
+            .iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
+            .collect::<Vec<_>>()
+            .join(" ");
           svg.push_str(&format!(
-            "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+            "<polygon points=\"{points}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
           ));
         }
         // The group's faces are `all_triangles[pos..]`, in order.
@@ -15687,10 +15994,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
+        // Blanks padding the label (`"  axis"`) keep their room, as they
+        // do in a 2D `Text`.
+        let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
@@ -15859,6 +16169,18 @@ fn with_prolog_epilog(
 /// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
 /// by every 3D height-field plot (`Plot3D`, `ListPlot3D`) alongside the
 /// full per-axis form `parse_axis_ranges` handles.
+/// Whether a `Plot3D` `PlotRange` asks for every sampled height, outliers
+/// included: `All`, or `All` in the vertical slot of a three-axis spec.
+fn plot_range_keeps_z_outliers(expr: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  match &val {
+    e if is_all(e) => true,
+    Expr::List(items) if items.len() == 3 => is_all(&items[2]),
+    _ => false,
+  }
+}
+
 fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let Expr::List(items) = expr else {
     return None;
@@ -21363,15 +21685,26 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (z_min, z_max)
   };
 
+  // The automatic dot size shrinks as the data grows, the same adaptive
+  // steps (0.66 printer's points each, at least 1, over a 360-point width)
+  // a 2D `ListPlot` sizes its dots by — a dense trajectory of thousands of
+  // points draws as a thin trail rather than a thick band.
+  let point_size = (0.66
+    * crate::functions::list_plot::adaptive_point_size_steps(
+      datasets.iter().flatten().map(|&(x, y, z)| [x, y, z]),
+    ))
+  .max(1.0)
+    / 360.0;
+
   let svg = generate_scatter_svg(
     &scatter_points,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
     (z_axis_min, z_axis_max),
-    svg_width,
-    svg_height,
+    (svg_width, svg_height),
     full_width,
+    point_size,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -21413,6 +21746,9 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(base_color.2 as f64 / 255.0),
         ],
       )];
+      // The automatic size goes first, so a `PlotStyle` `PointSize`
+      // appended below overrides it.
+      group.push(call1("PointSize", Expr::Real(point_size)));
       if let Some(style_items) = &plot_style_per_dataset
         && !style_items.is_empty()
       {
@@ -21487,9 +21823,9 @@ fn generate_scatter_svg(
   x_range: (f64, f64),
   y_range: (f64, f64),
   z_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
+  (svg_width, svg_height): (u32, u32),
   full_width: bool,
+  point_size: f64,
 ) -> Result<String, InterpreterError> {
   // Find bounding box
   let mut px_min = f64::INFINITY;
@@ -21606,10 +21942,12 @@ fn generate_scatter_svg(
   });
 
   // Merge-render scatter points and box edges back-to-front (painter's algorithm)
+  let auto_radius =
+    crate::functions::graphics::point_radius(point_size, svg_width as f64);
   {
     let mut ei = 0;
     for pt in points {
-      let radius = pt.radius.unwrap_or(1.75);
+      let radius = pt.radius.unwrap_or(auto_radius);
       // Emit any box edges further from camera than this point
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= pt.depth {
         let edge = &sorted_edges[ei];
@@ -21630,7 +21968,7 @@ fn generate_scatter_svg(
       let (sx, sy) = to_svg(pt.sx, pt.sy);
       let (r, g, b) = pt.color;
       svg.push_str(&format!(
-        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
+        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.2}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
         sx, sy, radius, r, g, b,
         (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
       ));
@@ -23560,9 +23898,12 @@ fn parametric_plot3d_curve_ast(
     .map(|(fx, fy, fz)| Curve { fx, fy, fz })
     .collect();
 
-  // Sample each curve at SAMPLE_N+1 points uniformly in [t_min, t_max].
-  const SAMPLE_N: usize = 200;
-  let dt = (t_max - t_min) / SAMPLE_N as f64;
+  // Sample each curve at `sample_n + 1` points uniformly in
+  // [t_min, t_max] before the adaptive refinement. `PlotPoints -> n` asks
+  // for `n` initial samples (a long ODE trajectory is often plotted with
+  // `PlotPoints -> 10000`); `Automatic` keeps the default of 201.
+  let mut sample_n: usize = 200;
+  let dt_for = |n: usize| (t_max - t_min) / n as f64;
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
   let mut plot_style: Option<Expr> = None;
@@ -23604,6 +23945,19 @@ fn parametric_plot3d_curve_ast(
     {
       color_scaling =
         !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
+    } else if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "PlotPoints"
+    {
+      // A plot option, not a `Graphics3D` one, so it is not forwarded.
+      if let Ok(Expr::Integer(n)) = evaluate_expr_to_expr(replacement)
+        && n >= 2
+      {
+        sample_n = (n - 1) as usize;
+      }
     } else {
       if let Expr::Rule {
         pattern,
@@ -23645,7 +23999,8 @@ fn parametric_plot3d_curve_ast(
     (Some(_), None) => {
       let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
       for c in &curves {
-        for i in 0..=SAMPLE_N {
+        let dt = dt_for(sample_n);
+        for i in 0..=sample_n {
           let t = t_min + i as f64 * dt;
           if let Some((x, y, z)) =
             evaluate_parametric_at_t(&c.fx, &c.fy, &c.fz, tvar, t)
@@ -23763,7 +24118,7 @@ fn parametric_plot3d_curve_ast(
     };
     let mut prev: Option<(f64, f64, f64, f64)> = None;
     let samples = sample_parametric_curve_adaptive(
-      &curve.fx, &curve.fy, &curve.fz, tvar, t_min, t_max, SAMPLE_N,
+      &curve.fx, &curve.fy, &curve.fz, tvar, t_min, t_max, sample_n,
     );
     for (t, point) in samples {
       if let Some((x, y, z)) = point {
@@ -23846,8 +24201,13 @@ fn parametric_plot3d_curve_ast(
 /// values, then bisect the intervals around every vertex where the polyline
 /// turns sharply, so a curve that winds many times over a long parameter
 /// range (an ODE trajectory, say) is drawn smoothly instead of as a coarse
-/// polygon. Mathematica refines the same way. Non-finite points are kept as
-/// `None` so the caller can break the line there.
+/// polygon. Mathematica refines the same way. Turning angles are measured
+/// with each axis scaled to the curve's extent along it, as the curve is
+/// drawn in a box shaped independently of the data (`BoxRatios -> 1`): an
+/// axis spanning a tiny range is stretched, and bends along it that look
+/// negligible in raw coordinates show up as corners in the picture.
+/// Non-finite points are kept as `None` so the caller can break the line
+/// there.
 fn sample_parametric_curve_adaptive(
   fx: &Expr,
   fy: &Expr,
@@ -23872,6 +24232,26 @@ fn sample_parametric_curve_adaptive(
     })
     .collect();
 
+  // Per-axis scale factors that map the sampled extent to unit length.
+  let mut lo = [f64::INFINITY; 3];
+  let mut hi = [f64::NEG_INFINITY; 3];
+  for (x, y, z) in samples.iter().filter_map(|s| s.1) {
+    for (k, v) in [x, y, z].into_iter().enumerate() {
+      if v.is_finite() {
+        lo[k] = lo[k].min(v);
+        hi[k] = hi[k].max(v);
+      }
+    }
+  }
+  let inv: [f64; 3] = std::array::from_fn(|k| {
+    let range = hi[k] - lo[k];
+    if range.is_finite() && range > 0.0 {
+      1.0 / range
+    } else {
+      1.0
+    }
+  });
+
   for _ in 0..MAX_PASSES {
     if samples.len() >= MAX_TOTAL {
       break;
@@ -23884,8 +24264,16 @@ fn sample_parametric_curve_adaptive(
       else {
         continue;
       };
-      let u = [b.0 - a.0, b.1 - a.1, b.2 - a.2];
-      let v = [c.0 - b.0, c.1 - b.1, c.2 - b.2];
+      let u = [
+        (b.0 - a.0) * inv[0],
+        (b.1 - a.1) * inv[1],
+        (b.2 - a.2) * inv[2],
+      ];
+      let v = [
+        (c.0 - b.0) * inv[0],
+        (c.1 - b.1) * inv[1],
+        (c.2 - b.2) * inv[2],
+      ];
       let nu = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
       let nv = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
       if nu == 0.0 || nv == 0.0 {

@@ -2,6 +2,18 @@
 
 # Unreleased
 
+- `Column` honors `ItemStyle`: a single style (`Directive[24, Bold, Red]`)
+    styles every item, a list styles the items in turn. A fixed `ItemSize`
+    width is the column's whole width, and stacked boxes (framed items,
+    rows of them, sized panes) are set 6 pt apart as stacked pictures are,
+    with or without an alignment argument.
+- `Text[TraditionalForm[Style[Grid[…], 24]]]` (and any `Style` around a
+    `TraditionalForm` of a styled layout) typesets the grid instead of
+    printing its source.
+- A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
+    inside `Text`) is drawn as its full `w`×`h` box with the table aligned
+    inside, so a Manipulate body sized this way no longer shrinks to the
+    table or changes size as its controls move.
 - A `TransformationFunction` applied to a geometric region (`Cylinder`,
     `Sphere`, `Ball`, `Disk`, `Circle`, `Cone`, `Line`, `Polygon`, …) maps the
     region's points and keeps the primitive, so a rotated `Cylinder` is drawn.
@@ -12,6 +24,20 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `NDSolve` follows a fast transient right at a start of 0 over a long
+    domain (a rate that is huge only while the state is tiny), instead of
+    giving up or stepping across it with a wrong result.
+- A subscripted symbol in an axis or plot label sets its single-letter base
+    in italics, and `PlotLabel` typesets plain mathematical labels (`x`,
+    `f[x]`, `Sin[x]`) in `TraditionalForm` like `AxesLabel` does.
+- `ParametricPlot` breaks a curve at the poles of its coordinates
+    (`{Sec[t], Tan[t]}` at `t == Pi/2`) under the default
+    `Exclusions -> Automatic`, instead of joining the branches with a line.
+- A capital letter typeset in a box label (`"\!\(\*SubscriptBox[\(E\), \(0\)]\)"`)
+    stays the letter `E₀` in Manipulate controls instead of turning into the
+    constant glyph `ⅇ₀` (likewise `I`, `Pi`, `Degree`, …).
+- `Graphics3D` `Text` labels and plot labels keep the blanks padding their
+    text (`Text["  axis", pos]`) instead of SVG dropping them.
     3D plot labels keep them too.
 - `ParametricPlot3D` honors the first of a repeated option, as Wolfram does,
     so `PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws the curve as a tube.
@@ -72,6 +98,23 @@
 - `Column` stripes its rows with a background list
     (`Background -> {c1, c2, …}` or the cyclic `{{c1, c2}}`) instead of
     dropping it.
+- `Apart` splits rational functions with symbolic coefficients over
+    quadratic and repeated factors (`1/(s (s^2 + a^2))`), and
+    `InverseLaplaceTransform` uses it, so `1/(s (s^2 + Pi^2))` inverts.
+    A sum of time-shifted terms (`1/s - E^(-2 s)/s`) inverts term by term.
+- Woxi Studio and PNG/PDF export draw italic text slanted:
+    `Style[…, Italic]`, `FontSlant -> Italic` and TraditionalForm variables
+    use bundled italic and bold-italic Atkinson Hyperlegible Next faces
+    instead of falling back to the upright ones.
+
+- `GraphPlot` of a rule list ignores the edge directions when laying the
+    graph out, as it already did when drawing it, so a directed acyclic list
+    (a grid of rules pointing right and up) comes out as a grid instead of in
+    layers.
+
+- `Grid` and `Column` read a flat `ItemSize -> {w, h, …}` with more than
+    two entries as `{w, h}`, so every column gets the `w`-em width instead of
+    only the first one.
 
 # 2026-11-08 - 0.4.0
 

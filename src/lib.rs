@@ -19,6 +19,10 @@ pub mod vfs;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+/// Give every `<text>` of an SVG without a font family the sans-serif face
+/// Wolfram sets graphics text in, so a renderer's own default (often a serif
+/// face) never shows through.
+pub use evaluator::dispatch::io_functions::with_default_text_family;
 pub use expr_list::ExprList;
 
 pub use woxi_parser::{Rule, WolframParser};
@@ -391,6 +395,14 @@ thread_local! {
 // The visual hosts turn this into a graphical audio player.
 thread_local! {
     static CAPTURED_SOUND: RefCell<Option<AudioOutput>> = const { RefCell::new(None) };
+}
+
+// Samples (with their rate) of every `EmitSound` since the capture buffer was
+// last cleared. Successive `EmitSound` calls queue up one after another, so a
+// button that emits several sounds (e.g. the notes of a scale) plays them all
+// in order instead of only the last.
+thread_local! {
+    static EMITTED_SAMPLES: RefCell<Option<(Vec<f64>, u32)>> = const { RefCell::new(None) };
 }
 
 // Most-recent evaluated expression for `%` / `Out[]` shortcuts. Set by
@@ -1794,6 +1806,29 @@ pub fn clear_captured_sound() {
   CAPTURED_SOUND.with(|buffer| {
     *buffer.borrow_mut() = None;
   });
+  EMITTED_SAMPLES.with(|buffer| {
+    *buffer.borrow_mut() = None;
+  });
+}
+
+/// Queue the samples of an `EmitSound` after the ones emitted earlier in the
+/// same evaluation and capture the combined audio.
+pub(crate) fn capture_emitted_sound(samples: Vec<f64>, rate: u32) {
+  use base64::Engine;
+  let wav = EMITTED_SAMPLES.with(|buffer| {
+    let mut buffer = buffer.borrow_mut();
+    if let Some((queued, queued_rate)) = buffer.as_mut() {
+      let resampled =
+        functions::sound::resample_linear(&samples, rate, *queued_rate);
+      queued.extend_from_slice(&resampled);
+      functions::sound::samples_to_mono_wav(queued, *queued_rate)
+    } else {
+      let wav = functions::sound::samples_to_mono_wav(&samples, rate);
+      *buffer = Some((samples, rate));
+      wav
+    }
+  });
+  capture_sound(&base64::engine::general_purpose::STANDARD.encode(&wav));
 }
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
@@ -3913,8 +3948,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           evaluator::dispatch::io_functions::expr_to_svg(&expr),
         );
       }
-      match functions::graphics::with_text_display_grids(|| {
-        render_grid_if_needed(content)
+      // Math inside text is set one script level down, so its fractions
+      // are drawn at the reduced size of a nested one.
+      match functions::graphics::with_inline_text_math(|| {
+        functions::graphics::with_text_display_grids(|| {
+          render_grid_if_needed(content)
+        })
       }) {
         graphics @ syntax::Expr::Graphics { .. } => {
           keep_fixed_pane_box(&expr, graphics)
@@ -3985,7 +4024,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Err(_) => expr,
       }
     }
-    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — unwrap and render
+    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — render
+    // the grid with each of its cells typeset in TraditionalForm (`f(x)`,
+    // `f′(x)`), as the front end shows it.
     syntax::Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
@@ -4971,7 +5012,7 @@ pub(crate) fn render_traditionalform_list_if_needed(
 /// still a framed box, and `Pane[Column[{…, Graphics[…]}]]` (the shape of
 /// many Manipulate bodies) is still the column underneath.
 fn unwrap_display_pass_through(expr: &syntax::Expr) -> syntax::Expr {
-  functions::graphics::unwrap_display_wrappers(expr)
+  functions::graphics::unwrap_display_wrappers_with(expr, false)
 }
 
 /// In visual (notebook) display mode, `ClickPane[expr, …]` and
@@ -5021,7 +5062,29 @@ fn holds_layout_graphic(expr: &syntax::Expr) -> bool {
 /// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
 /// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
 /// unchanged.
+/// Whether `expr` is a `Pane[…, {w, h}]` of fixed size, possibly inside
+/// `Text[…]` and `Style[…, directives]` wrappers.
+fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if (name == "Text" && args.len() == 1)
+        || (name == "Style" && args.len() >= 2) =>
+    {
+      is_fixed_size_pane_through_text_style(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, .. } if name == "Pane" => {
+      pane_fixed_size(expr).is_some()
+    }
+    _ => false,
+  }
+}
+
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
+  // `Style[TraditionalForm[Text[…]], 16]` is a text display like a bare
+  // `Text[…]`: the text face covers the styled content.
+  if let Some(hoisted) = functions::graphics::hoist_text_display(expr) {
+    return render_inline_display_wrapper(&hoisted);
+  }
   // `Text[content]` displays `content` in plain text format: a picture
   // inside is still drawn, but text keeps the wrapper so the layout sets it
   // in the proportional text face rather than its monospace default.
@@ -5069,6 +5132,20 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // wraps. (Without this it stayed a bare call and the column printed the
   // table's source text.) With directives, the styled-layout pass applies
   // them to the `Column`/`Row`/`Grid` underneath.
+  //
+  // `Style[Text[Pane[…, {w, h}]], Bold]` dresses the content of a
+  // fixed-size pane: the pane keeps its box (see below), so it is drawn
+  // whole rather than peeled down to the styled content.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && functions::graphics::is_style_wrapper(name)
+    && args.len() >= 2
+    && is_fixed_size_pane_through_text_style(&args[0])
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      return graphics_result(svg);
+    }
+  }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && functions::graphics::is_style_wrapper(name)
   {
@@ -5115,9 +5192,30 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
       return graphics_result(svg);
     }
   }
-  let expr = unwrap_display_pass_through(expr);
-  let expr = render_interactive_pane_if_needed(expr);
-  let expr = render_dynamic_if_needed(expr);
+  // A `Dynamic` item shows its current value. A `Text[…]` value
+  // (`Dynamic[If[ok, Text[a], Text[b]]]`) is pre-rendered like a `Text`
+  // item, keeping its wrapper so the layout sets it in the proportional
+  // text face; the display pipeline would peel it to bare monospace text.
+  let released = match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if is_visual_mode() && name == "Dynamic" && !args.is_empty() =>
+    {
+      let value = functions::graphics::dynamic_current_value(expr);
+      if functions::graphics::is_text_display_item(&value) {
+        return render_inline_display_wrapper(&value);
+      }
+      Some(value)
+    }
+    _ => None,
+  };
+  // Any other value is displayed as `render_dynamic_if_needed` would.
+  let expr = if let Some(value) = released {
+    render_visual_display_pipeline(&value)
+  } else {
+    let expr = unwrap_display_pass_through(expr);
+    let expr = render_interactive_pane_if_needed(expr);
+    render_dynamic_if_needed(expr)
+  };
   let expr = render_event_handler_if_needed(expr);
   let expr = render_grid_if_needed(expr);
   let expr = render_dataset_if_needed(expr);
@@ -5525,12 +5623,30 @@ pub(crate) fn column_svg_with_rendered_items(
   let mut new_args: Vec<syntax::Expr> =
     functions::graphics::wrap_fixed_width_column_text(args)
       .unwrap_or_else(|| args.to_vec());
+  // Which items are text rather than pictures, told before drawing them
+  // turns every one into a picture.
+  let mut text_items: Option<Vec<bool>> = None;
   if let syntax::Expr::List(items) = &new_args[0] {
+    text_items = Some(
+      items
+        .iter()
+        .map(|item| {
+          !matches!(
+            item,
+            syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
+          ) && !evaluator::lays_out_a_graphic(item)
+            && pane_fixed_size(item).is_none()
+        })
+        .collect(),
+    );
     let new_items: Vec<syntax::Expr> =
       items.iter().map(render_inline_display_wrapper).collect();
     new_args[0] = syntax::Expr::List(new_items.into());
   }
-  functions::graphics::column_to_svg(&new_args)
+  functions::graphics::column_to_svg_with_text_items(
+    &new_args,
+    text_items.as_deref(),
+  )
 }
 
 /// `Style[Column[{…}], directives…]` / `Style[Row[{…}], …]` displays the

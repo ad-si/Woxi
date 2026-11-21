@@ -364,6 +364,30 @@ struct MolSystem {
   /// Mass coefficients compiled over `[t, x]`, when they vary in time:
   /// `(evolution equation, unknown, coefficient)`.
   mass_t: Vec<(usize, usize, NumFn)>,
+  /// Grid points sitting on a near-singularity of a row coefficient (see
+  /// [`singular_points`]): their evolution rows average the coefficients
+  /// over the point's cell instead of reading them at the point itself.
+  singular: Vec<bool>,
+  /// `flux_form[e]`: the unknowns whose second derivative evolution
+  /// equation `e` multiplies by a piecewise coefficient, with that
+  /// coefficient's per-point [`FluxForm`].
+  flux_form: Vec<Vec<(usize, Vec<FluxForm>)>>,
+}
+
+/// A piecewise coefficient `c(x)` of `u_xx` at one grid point, read the way
+/// the finite element method reads it: `c u_xx == (c u_x)_x - c' u_x` with
+/// `c'` the derivative away from the jumps, so the flux `c u_x` stays
+/// continuous across a jump of `c`.
+#[derive(Clone, Copy)]
+struct FluxForm {
+  /// `c` at the point.
+  c: f64,
+  /// `c'` (the piecewise derivative) at the point.
+  dc: f64,
+  /// The effective coefficients of the faces to the previous and the next
+  /// point: the harmonic mean `h / ∫ dx / c` over the interval.
+  k_lo: f64,
+  k_hi: f64,
 }
 
 impl MolSystem {
@@ -402,13 +426,113 @@ impl MolSystem {
       vars[n_vars - 1] = self.xs[g];
       for s in 0..n {
         out[base + s] = match self.rows[g][s] {
-          RowKind::Evolution(e) => self.evolution_fns[e].eval(&vars)?,
+          RowKind::Evolution(e) if self.singular[g] => {
+            // Two-point Gauss quadrature over the cell around the point.
+            let half = cell_gauss_offset(&self.xs, g);
+            let mut sum = 0.0;
+            for off in [-half, half] {
+              vars[n_vars - 1] = self.xs[g] + off;
+              sum += self.evolution_fns[e].eval(&vars)?;
+            }
+            vars[n_vars - 1] = self.xs[g];
+            sum / 2.0
+          }
+          RowKind::Evolution(e) => {
+            let f = &self.evolution_fns[e];
+            let flux_vars;
+            let vars = if self.flux_form[e].is_empty() {
+              &vars
+            } else {
+              flux_vars = self.flux_form_vars(e, g, y, &vars);
+              &flux_vars
+            };
+            let v = f.eval(vars)?;
+            if v.is_finite() {
+              v
+            } else {
+              self.removable_limit(f, g, vars)?
+            }
+          }
           RowKind::Boundary(b) => self.boundary_fns[b].eval(&vars)?,
           RowKind::NaturalFlux(j) => self.natural_fns[j].eval(&vars)?,
         };
       }
     }
     Ok(out)
+  }
+
+  /// `vars` with the first and second derivatives of the unknowns whose
+  /// `u_xx` evolution equation `e` multiplies by a piecewise coefficient
+  /// replaced by their flux forms — `u_x` the mean face flux over `c`,
+  /// `u_xx` `((c u_x)_x - c' u_x) / c` — from three-point differences, at
+  /// interior points where the coefficient does not vanish.
+  fn flux_form_vars(
+    &self,
+    e: usize,
+    g: usize,
+    y: &[f64],
+    vars: &[f64],
+  ) -> Vec<f64> {
+    let mut out = vars.to_vec();
+    if g == 0 || g + 1 >= self.n_pts {
+      return out;
+    }
+    let n = self.n;
+    let h = self.xs[g + 1] - self.xs[g];
+    for (j, forms) in &self.flux_form[e] {
+      let ff = forms[g];
+      if ff.c == 0.0 || !ff.c.is_finite() {
+        continue;
+      }
+      let (lo, mid, hi) = (
+        y[self.pos(g - 1) + j],
+        y[self.pos(g) + j],
+        y[self.pos(g + 1) + j],
+      );
+      let (flux_lo, flux_hi) =
+        (ff.k_lo * (mid - lo) / h, ff.k_hi * (hi - mid) / h);
+      // The flux is continuous, so the slope at the point is the mean
+      // flux over the point's own coefficient (a central difference would
+      // read the far steeper slope across a jump).
+      let slope = (flux_lo + flux_hi) / (2.0 * ff.c);
+      out[n + j] = slope;
+      out[2 * n + j] = ((flux_hi - flux_lo) / h - ff.dc * slope) / ff.c;
+    }
+    out
+  }
+
+  /// A row with a removable singularity at grid point `g` (the `u_x / x`
+  /// of a radial Laplacian `(1/x) ∂x(x ∂x u)` at `x == 0`): the mean of
+  /// the row at `x ± δ`, with the derivative values carried there by
+  /// their Taylor expansion. The `1/δ` parts of the two sides cancel, and
+  /// `u_x / x` tends to `u_xx` as it should.
+  fn removable_limit(
+    &self,
+    f: &NumFn,
+    g: usize,
+    vars: &[f64],
+  ) -> Result<f64, InterpreterError> {
+    let (n, n_vars) = (self.n, vars.len());
+    let x = self.xs[g];
+    let h = if g + 1 < self.n_pts {
+      self.xs[g + 1] - x
+    } else {
+      x - self.xs[g - 1]
+    };
+    let delta = 1e-4 * h.abs();
+    let mut sum = 0.0;
+    for sign in [-1.0, 1.0] {
+      let d = sign * delta;
+      let mut shifted = vars.to_vec();
+      for k in 0..self.k_max {
+        for j in 0..n {
+          shifted[k * n + j] += d * vars[(k + 1) * n + j];
+        }
+      }
+      shifted[n_vars - 1] = x + d;
+      sum += f.eval(&shifted)?;
+    }
+    Ok(sum / 2.0)
   }
 
   /// Refresh the time-dependent mass coefficients for time `t`.
@@ -445,6 +569,76 @@ impl MolSystem {
     }
     readers
   }
+}
+
+/// The offset of the two Gauss points of grid point `g`'s cell (half a
+/// spacing to either side) from the point: `h / (2√3)`.
+fn cell_gauss_offset(xs: &[f64], g: usize) -> f64 {
+  let h = if g + 1 < xs.len() {
+    xs[g + 1] - xs[g]
+  } else {
+    xs[g] - xs[g - 1]
+  };
+  h / (2.0 * 3.0_f64.sqrt())
+}
+
+/// The response of a compiled row to each of its first `n_inputs` inputs
+/// alone, the others zero: the coefficients of a linear row. `fixed` sets
+/// the remaining inputs (the coordinates).
+fn row_coefficients(f: &NumFn, n_inputs: usize, fixed: &[f64]) -> Vec<f64> {
+  let mut vars = vec![0.0; n_inputs];
+  vars.extend_from_slice(fixed);
+  let base = f.eval(&vars).unwrap_or(f64::NAN);
+  (0..n_inputs)
+    .map(|i| {
+      vars[i] = 1.0;
+      let v = f.eval(&vars).unwrap_or(f64::NAN) - base;
+      vars[i] = 0.0;
+      v
+    })
+    .collect()
+}
+
+/// The interior grid points at which a row coefficient is (nearly)
+/// singular: a pole like the `1/(r + 10^-6)` of a radial operator written
+/// on a symmetric domain lands right on a grid point, where reading the
+/// coefficient gives a value many times that of both neighbors and wrecks
+/// the solution. `at[g]` holds the coefficients at point `g`; a point is
+/// singular when one of them is non-finite or more than 50 times both
+/// neighbors' there (finite ones). Such points take the cell average of the
+/// coefficients, as the quadrature of a finite element method would.
+fn spiking_points(at: &[Vec<f64>]) -> Vec<bool> {
+  let mut flags = vec![false; at.len()];
+  for g in 1..at.len().saturating_sub(1) {
+    flags[g] = (0..at[g].len()).any(|i| {
+      let (c, l, r) = (at[g][i], at[g - 1][i], at[g + 1][i]);
+      l.is_finite()
+        && r.is_finite()
+        && (!c.is_finite() || c.abs() > 50.0 * l.abs().max(r.abs()).max(1e-300))
+    });
+  }
+  flags
+}
+
+/// The grid points of a method-of-lines system whose evolution rows have a
+/// singular coefficient there (see [`spiking_points`]).
+fn singular_points(sys: &MolSystem, t0: f64) -> Vec<bool> {
+  let n_inputs = (sys.k_max + 1) * sys.n;
+  let mut flags = vec![false; sys.n_pts];
+  if sys.periodic {
+    return flags;
+  }
+  for f in &sys.evolution_fns {
+    let at: Vec<Vec<f64>> = sys
+      .xs
+      .iter()
+      .map(|&x| row_coefficients(f, n_inputs, &[t0, x]))
+      .collect();
+    for (flag, s) in flags.iter_mut().zip(spiking_points(&at)) {
+      *flag |= s;
+    }
+  }
+  flags
 }
 
 /// The Jacobian's sparsity: column groups whose grid points no row reads
@@ -935,10 +1129,13 @@ fn solve_pde_mol_inner(
       let Some((Expr::Identifier(v), x0)) = as_equal_pair(pred) else {
         return Ok(None);
       };
-      if v != x_name || nval_to_f64(x0).is_none() {
+      // On the start of the evolution variable it is the initial condition.
+      let on_start =
+        v == t_name && nval_to_f64(x0).is_some_and(|v| near(v, t_dom.min));
+      if !on_start && (v != x_name || nval_to_f64(x0).is_none()) {
         return Ok(None);
       }
-      eqs.push(crate::syntax::substitute_variable(cond, x_name, x0));
+      eqs.push(crate::syntax::substitute_variable(cond, v, x0));
     } else {
       eqs.push(eq.clone());
     }
@@ -1263,6 +1460,69 @@ fn solve_pde_mol_inner(
     stencils.push(per_point);
   }
 
+  // Piecewise coefficients of second derivatives, read in flux form.
+  let mut flux_form: Vec<Vec<(usize, Vec<FluxForm>)>> =
+    vec![Vec::new(); f_exprs.len()];
+  if !periodic && k_max >= 2 {
+    let tx = [t_name.to_string(), x_name.to_string()];
+    for (e, f) in f_exprs.iter().enumerate() {
+      for j in 0..n {
+        let c = partial(f, &format!("NDSolve$D2U{j}"))?;
+        if has_placeholder(&c)
+          || expr_contains_ident(&c, t_name)
+          || !has_discontinuous_head(&c)
+        {
+          continue;
+        }
+        let dc = partial(&c, x_name)?;
+        let (c_fn, dc_fn) = (NumFn::new(c, &tx), NumFn::new(dc, &tx));
+        let at = |fun: &NumFn, x: f64| fun.eval(&[t_dom.min, x]);
+        // `h / ∫ dx / c` over `[a, b]` by the midpoint rule; the
+        // arithmetic mean where `c` vanishes or changes sign.
+        let face = |a: f64, b: f64| -> Result<f64, InterpreterError> {
+          const M: usize = 32;
+          let (mut inv, mut sum, mut sign_ok) = (0.0, 0.0, true);
+          let (ca, cb) = (at(&c_fn, a)?, at(&c_fn, b)?);
+          for i in 0..M {
+            let v = at(&c_fn, a + (b - a) * (i as f64 + 0.5) / M as f64)?;
+            sign_ok &= v != 0.0 && v.signum() == ca.signum();
+            inv += 1.0 / v;
+            sum += v;
+          }
+          Ok(if sign_ok && inv.is_finite() && inv != 0.0 {
+            M as f64 / inv
+          } else if (ca + cb).is_finite() {
+            sum / M as f64
+          } else {
+            f64::NAN
+          })
+        };
+        let mut forms = Vec::with_capacity(n_pts);
+        let mut usable = true;
+        for g in 0..n_pts {
+          let x = xs[g];
+          let k_lo = if g > 0 { face(xs[g - 1], x)? } else { 0.0 };
+          let k_hi = if g + 1 < n_pts {
+            face(x, xs[g + 1])?
+          } else {
+            0.0
+          };
+          let ff = FluxForm {
+            c: at(&c_fn, x)?,
+            dc: at(&dc_fn, x)?,
+            k_lo,
+            k_hi,
+          };
+          usable &= ff.dc.is_finite() && k_lo.is_finite() && k_hi.is_finite();
+          forms.push(ff);
+        }
+        if usable {
+          flux_form[e].push((j, forms));
+        }
+      }
+    }
+  }
+
   // Rows per grid point and their mass coefficients.
   let mass_fns: Vec<Vec<NumFn>> = mass_exprs
     .iter()
@@ -1337,7 +1597,10 @@ fn solve_pde_mol_inner(
     rows,
     mass,
     mass_t,
+    singular: Vec::new(),
+    flux_form,
   };
+  sys.singular = singular_points(&sys, t_dom.min);
   let plan = jacobian_plan(&sys);
 
   // The initial state, consistent with the algebraic rows.
@@ -1456,6 +1719,14 @@ fn solve_pde_mol_inner(
     ));
   }
   Ok(Some(Expr::List(vec![Expr::List(rules.into())].into())))
+}
+
+/// Whether `expr` contains a head that makes a coefficient jump (`If`,
+/// `Piecewise`, `UnitStep`, `HeavisideTheta`, `Boole`).
+fn has_discontinuous_head(expr: &Expr) -> bool {
+  ["If", "Piecewise", "UnitStep", "HeavisideTheta", "Boole"]
+    .iter()
+    .any(|h| mentions_head(expr, h))
 }
 
 // ─── Stationary PDE systems on a rectangle ──────────────────────────────
@@ -1852,6 +2123,27 @@ fn solve_pde_stationary_inner(
     let d = (doms[axis].max - doms[axis].min) / (m - 1) as f64;
     (0..m).map(|i| doms[axis].min + i as f64 * d).collect()
   });
+  // `singular[axis][i]`: a field row has a singular coefficient at index
+  // `i` along the axis (see [`spiking_points`]), probed across the middle
+  // of the other axis.
+  let singular: [Vec<bool>; 2] = [0, 1].map(|axis| {
+    let other = coords[1 - axis][sizes[1 - axis] / 2];
+    let mut flags = vec![false; sizes[axis]];
+    for &fe in &field_of {
+      let f = fns[field_idx[fe]].as_ref().unwrap();
+      let at: Vec<Vec<f64>> = coords[axis]
+        .iter()
+        .map(|&x| {
+          let fixed = if axis == 0 { [x, other] } else { [other, x] };
+          row_coefficients(f, 9 * n, &fixed)
+        })
+        .collect();
+      for (flag, s) in flags.iter_mut().zip(spiking_points(&at)) {
+        *flag |= s;
+      }
+    }
+    flags
+  });
   // `stencils[axis][k - 1][i]`
   let stencils: [Vec<Vec<Stencil>>; 2] = [0, 1].map(|axis| {
     let m = sizes[axis];
@@ -2012,6 +2304,28 @@ fn solve_pde_stationary_inner(
       let base = pos(i);
       for s in 0..n {
         out[base + s] = match kinds[pi][s] {
+          StationaryRow::Field(e) if singular[0][i[0]] || singular[1][i[1]] => {
+            // Two-point Gauss quadrature across the singular axes' cells.
+            let offsets = [0, 1].map(|axis| {
+              if singular[axis][i[axis]] {
+                cell_gauss_offset(&coords[axis], i[axis])
+              } else {
+                0.0
+              }
+            });
+            let f = fns[e].as_ref().unwrap();
+            let mut sum = 0.0;
+            for s0 in [-1.0, 1.0] {
+              for s1 in [-1.0, 1.0] {
+                vars[9 * n] = coords[0][i[0]] + s0 * offsets[0];
+                vars[9 * n + 1] = coords[1][i[1]] + s1 * offsets[1];
+                sum += f.eval(&vars)?;
+              }
+            }
+            vars[9 * n] = coords[0][i[0]];
+            vars[9 * n + 1] = coords[1][i[1]];
+            sum / 4.0
+          }
           StationaryRow::Field(e) | StationaryRow::Boundary(e) => {
             fns[e].as_ref().unwrap().eval(&vars)?
           }

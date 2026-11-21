@@ -637,13 +637,75 @@ mod column_visual_mode {
     assert!(h2 > h1, "SVG with spacing should be taller: {h2} vs {h1}");
   }
 
-  #[test]
-  fn column_spacing_default_zero() {
+  fn column_svg_height(code: &str) -> f64 {
     clear_state();
-    // Column with explicit 0 spacing should match no-spacing version
-    let no_gap = interpret_with_stdout("Column[{1, 2}]").unwrap();
-    let with_zero = interpret_with_stdout("Column[{1, 2}, Left, 0]").unwrap();
-    assert_eq!(no_gap.graphics.unwrap(), with_zero.graphics.unwrap());
+    let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+    let height_re = regex::Regex::new(r#"height="([\d.]+)""#).unwrap();
+    height_re.captures(&svg).unwrap()[1].parse().unwrap()
+  }
+
+  #[test]
+  fn column_spacing_zero_is_tighter_than_default() {
+    // The default gap between a column's lines is a small fixed offset,
+    // so an explicit spacing of 0 sets the lines closer together.
+    let default = column_svg_height("Column[{1, 2}]");
+    let zero = column_svg_height("Column[{1, 2}, Left, 0]");
+    assert!(zero < default, "{zero} vs {default}");
+  }
+
+  #[test]
+  fn column_spacing_is_measured_between_lines_of_text() {
+    // `s` ems separate the lines themselves (each 0.93 em tall), not
+    // their padded boxes: at 14 pt, lines 3.93 em = 55 pt apart.
+    let pitch = |code: &str| {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let y_re = regex::Regex::new(r#"<text x="[^"]*" y="([\d.]+)""#).unwrap();
+      let ys: Vec<f64> = y_re
+        .captures_iter(&svg)
+        .map(|c| c[1].parse().unwrap())
+        .collect();
+      assert_eq!(ys.len(), 3, "{svg}");
+      (ys[1] - ys[0], ys[2] - ys[1])
+    };
+    clear_state();
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Left, 3]"),
+      (55.0, 55.0)
+    );
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Spacings -> 3]"),
+      (55.0, 55.0)
+    );
+    assert_eq!(
+      pitch("Column[{\"a\", \"b\", \"c\"}, Left, 1]"),
+      (27.0, 27.0)
+    );
+  }
+
+  #[test]
+  fn column_spacing_of_rows_matches_spacing_of_strings() {
+    // A `Row` of text items is a line of text too, even though the column
+    // draws it as a picture first.
+    let strings =
+      column_svg_height("Column[{\"a = 1\", \"b = 2\", \"c = 3\"}, Left, 3]");
+    let rows = column_svg_height(
+      "Column[{Row[{\"a\", \" = \", 1}], Row[{\"b\", \" = \", 2}], \
+       Row[{\"c\", \" = \", 3}]}, Left, 3]",
+    );
+    assert_eq!(rows, strings);
+    assert_eq!(rows, 133.0);
+  }
+
+  #[test]
+  fn column_spacing_between_pictures_is_the_full_gap() {
+    // A picture fills its box, so all of `s` ems stays between two of them.
+    let tight = column_svg_height(
+      "Column[{Graphics[Disk[], ImageSize -> 50], Graphics[Disk[], ImageSize -> 50]}, Left, 0]",
+    );
+    let spaced = column_svg_height(
+      "Column[{Graphics[Disk[], ImageSize -> 50], Graphics[Disk[], ImageSize -> 50]}, Left, 2]",
+    );
+    assert_eq!(spaced - tight, 28.0);
   }
 
   #[test]
@@ -1162,7 +1224,101 @@ mod text_display_face {
     let (plain_w, text_w) = (svg_width(&plain), svg_width(&text));
     assert!(text_w < plain_w * 0.8, "{plain_w} vs {text_w}");
     assert_eq!(svg_width(&in_row), text_w + 20.0, "{in_row}");
-    // The value column starts right after the widest label.
-    assert!(text.contains("<text x=\"87.2\""), "{text}");
+    // The value column starts right after the widest label (its drawn extent).
+    assert!(text.contains("<text x=\"90.3\""), "{text}");
+  }
+}
+
+mod column_item_style_and_size {
+  use super::*;
+
+  fn svg_dims(svg: &str) -> (f64, f64) {
+    let attr = |name: &str| -> f64 {
+      let start = svg.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+      let end = start + svg[start..].find('"').unwrap();
+      svg[start..end].parse().unwrap()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  /// `ItemStyle -> Directive[…]` styles every item of a `Column`: size,
+  /// weight and color reach each item's text.
+  #[test]
+  fn single_item_style_applies_to_every_item() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"a", "b"}, ItemStyle -> Directive[20, Bold, Blue]], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg.matches("font-size=\"20\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("font-weight=\"bold\"").count(), 2, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
+  }
+
+  /// A list of styles styles the items in turn; a sublist repeats.
+  #[test]
+  fn list_item_style_styles_items_in_turn() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"a", "b", "c"}, ItemStyle -> {Red, {Blue}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 1, "{svg}");
+    assert_eq!(svg.matches("fill=\"rgb(0,0,255)\"").count(), 2, "{svg}");
+  }
+
+  /// The option itself never shows up as an item or as text.
+  #[test]
+  fn item_style_with_alignment_and_spacing() {
+    clear_state();
+    let svg = interpret(
+      r#"ExportString[Column[{"x", "y"}, Center, 0, ItemStyle -> Directive[18, Red]], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("ItemStyle"), "{svg}");
+    assert_eq!(svg.matches("font-size=\"18\"").count(), 2, "{svg}");
+  }
+
+  /// A fixed `ItemSize` width is the whole width of the column.
+  #[test]
+  fn fixed_item_width_is_the_column_width() {
+    for w in [3, 5] {
+      clear_state();
+      let svg = interpret(&format!(
+        r#"ExportString[Column[{{"a", "b"}}, ItemSize -> {w}], "SVG"]"#
+      ))
+      .unwrap();
+      assert_eq!(svg_dims(&svg).0, (w * 14) as f64, "{svg}");
+    }
+  }
+
+  /// Stacked framed boxes are set apart like stacked pictures, whether or
+  /// not the `Column` has an alignment argument.
+  #[test]
+  fn stacked_boxes_have_the_default_gap() {
+    clear_state();
+    let one = interpret(r#"ExportString[Framed["a"], "SVG"]"#).unwrap();
+    let (_, h) = svg_dims(&one);
+    for align in ["", ", Left", ", Center"] {
+      clear_state();
+      let svg = interpret(&format!(
+        r#"ExportString[Column[{{Framed["a"], Framed["b"]}}{align}], "SVG"]"#
+      ))
+      .unwrap();
+      assert_eq!(svg_dims(&svg).1, 2.0 * h + 6.0, "{align}: {svg}");
+    }
+  }
+
+  /// An explicit spacing of 0 keeps the boxes touching.
+  #[test]
+  fn explicit_zero_spacing_keeps_boxes_touching() {
+    clear_state();
+    let one = interpret(r#"ExportString[Framed["a"], "SVG"]"#).unwrap();
+    let (_, h) = svg_dims(&one);
+    let svg = interpret(
+      r#"ExportString[Column[{Framed["a"], Framed["b"]}, Left, 0], "SVG"]"#,
+    )
+    .unwrap();
+    assert_eq!(svg_dims(&svg).1, 2.0 * h, "{svg}");
   }
 }

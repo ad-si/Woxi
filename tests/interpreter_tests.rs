@@ -3184,6 +3184,39 @@ mod interpreter_tests {
     assert!(r.sound.is_some(), "EmitSound should capture playable audio");
   }
 
+  #[test]
+  fn test_successive_emit_sounds_play_one_after_another() {
+    // Every EmitSound of one evaluation is queued, so mapping EmitSound over
+    // a list of notes plays all of them in order instead of only the last.
+    let bytes = sound_wav_bytes(
+      "(EmitSound[Play[Sin[#*t], {t, 0, 0.25}]] &) /@ {1000, 1500, 2000};",
+    );
+    // 3 × 0.25s at 8000 Hz, 16-bit mono.
+    assert_eq!(bytes.len(), 44 + 3 * 2000 * 2);
+    // A later evaluation starts a fresh queue.
+    let bytes = sound_wav_bytes("EmitSound[Play[Sin[t], {t, 0, 0.5}]]");
+    assert_eq!(bytes.len(), 44 + 4000 * 2);
+  }
+
+  #[test]
+  fn test_emit_sounds_with_different_sample_rates_keep_their_duration() {
+    // A queued sound at another sample rate is resampled to the first one's.
+    let bytes = sound_wav_bytes(
+      "EmitSound[Play[Sin[1000 t], {t, 0, 0.5}]]; \
+       EmitSound[Play[Sin[1000 t], {t, 0, 0.5}, SampleRate -> 16000]]",
+    );
+    assert_eq!(bytes.len(), 44 + (4000 + 4000) * 2);
+  }
+
+  #[test]
+  fn test_sound_segments_with_different_sample_rates_keep_their_duration() {
+    let bytes = sound_wav_bytes(
+      "Sound[{Play[Sin[1000 t], {t, 0, 0.5}], \
+       Play[Sin[1000 t], {t, 0, 0.25}, SampleRate -> 16000]}]",
+    );
+    assert_eq!(bytes.len(), 44 + (4000 + 2000) * 2);
+  }
+
   /// Decode the `sound` channel of a visual-mode evaluation to WAV bytes.
   fn sound_wav_bytes(code: &str) -> Vec<u8> {
     clear_state();
@@ -3899,6 +3932,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_grid_result_sets_fractions_one_script_level_down() {
+    // Regression: a `Text@Grid[…]` result (a Manipulate body showing a
+    // table of fractions) drew its fractions at the full text size; Wolfram
+    // sets math inside text one script level down, at 3/4 of the size.
+    clear_state();
+    let r =
+      interpret_with_stdout("Text[Grid[{{a, 1/9}, {b, 2/27}}, Frame -> All]]")
+        .unwrap();
+    let svg = r.graphics.expect("expected the table to be drawn");
+    assert!(svg.contains("<line"), "{svg}");
+    assert!(svg.contains("font-size=\"10.5\""), "{svg}");
+    assert!(!svg.contains("font-size=\"14.0\""), "{svg}");
+  }
+
+  #[test]
   fn test_styled_row_quotient_stacks_the_fraction_at_its_size() {
     // Regression: `Style[Row[{a/b, " = ", 3}], 20]` pushes its style into
     // the row's items, and the resulting `Style[a/b, 20]` item was written
@@ -3914,8 +3962,14 @@ mod interpreter_tests {
         svg.contains("<line"),
         "expected a fraction line: {code}\n{svg}"
       );
+      // Inside `Text` the fraction sits one script level down (3/4 size).
+      let size = if code.contains("Text[") {
+        "15.0"
+      } else {
+        "20.0"
+      };
       assert!(
-        svg.contains("font-size=\"20.0\""),
+        svg.contains(&format!("font-size=\"{size}\"")),
         "fraction must take the style's size: {code}\n{svg}"
       );
       assert!(
@@ -7555,6 +7609,7 @@ mod interpreter_tests {
       // an SVG box (`-Graphics-`) in visual mode rather than staying symbolic.
       ("Mouseover[a, b]", "Mouseover[a, b]"),
       ("Magnify[x, 2]", "Magnify[x, 2]"),
+      ("Magnification[1]", "Magnification[1]"),
       ("Ket[0]", "Ket[0]"),
       ("Bra[0]", "Bra[0]"),
     ];

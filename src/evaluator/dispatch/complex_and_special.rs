@@ -3841,6 +3841,19 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     let inner_boxes = number_display_list_boxes(items, &parts_for)?;
     return Some(wrap_list_number_display_box(inner_boxes, name));
   }
+  // An exact rational is left as it is by the number-display forms
+  // (`NumberForm[14/3, {3, 2}]` shows `14/3`), so it typesets as the
+  // fraction.
+  if matches!(name, "NumberForm" | "ScientificForm" | "EngineeringForm")
+    && args.len() <= 2
+    && matches!(first, Expr::FunctionCall { name: n, args: r } if n == "Rational" && r.len() == 2)
+  {
+    return Some(wrap_number_display_box(
+      expr_to_box_form(first),
+      first,
+      name,
+    ));
+  }
   let Some((mantissa, exp)) = parts_for(first) else {
     return option_number_form_box(name, args);
   };
@@ -4702,53 +4715,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let Expr::List(rows) = &args[0] else {
         unreachable!("guarded by the match arm")
       };
-      let rows: Vec<Expr> = rows
-        .iter()
-        .map(|row| match row {
-          Expr::List(cells) => {
-            Expr::List(cells.iter().map(expr_to_box_form).collect())
-          }
-          _ => unreachable!("guarded by the match arm"),
-        })
-        .collect();
-      let rule = |k: Expr, v: Expr| Expr::Rule {
-        pattern: Box::new(k),
-        replacement: Box::new(v),
-      };
-      let automatic = || {
-        Expr::List(
-          vec![Expr::List(
-            vec![Expr::Identifier("Automatic".into())].into(),
-          )]
-          .into(),
-        )
-      };
-      call(
-        "TagBox",
-        vec![
-          call(
-            "GridBox",
-            vec![
-              Expr::List(rows.into()),
-              rule(
-                Expr::Identifier("AutoDelete".into()),
-                Expr::Identifier("False".into()),
-              ),
-              rule(
-                Expr::Identifier("GridBoxItemSize".into()),
-                Expr::List(
-                  vec![
-                    rule(str_expr("Columns"), automatic()),
-                    rule(str_expr("Rows"), automatic()),
-                  ]
-                  .into(),
-                ),
-              ),
-            ],
-          ),
-          str_expr("Grid"),
-        ],
-      )
+      grid_tag_box(rows, expr_to_box_form)
     }
     Expr::FunctionCall { name, args }
       if name == "Subscript" && args.len() == 2 =>
@@ -6996,6 +6963,9 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
     .map(|(_, b)| {
       let mut names: Vec<String> = Vec::new();
       tf_visit_strings(b, &mut |s| {
+        // A string subscript (`Subscript[S, "B"]`) is boxed as the quoted
+        // text `"B"`; it ranks by the letters it shows.
+        let s = tf_unquoted(s);
         if is_variable(s) {
           names.push(s.to_string());
         }
@@ -7065,6 +7035,14 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
   order
 }
 
+/// A box string less the quotes a string atom is boxed with: `"B"` → `B`.
+fn tf_unquoted(s: &str) -> &str {
+  s.strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .filter(|t| !t.is_empty())
+    .unwrap_or(s)
+}
+
 /// Calls `f` on the exponent of every `SuperscriptBox[base, e, …]` in a box
 /// whose base mentions `eb`: a bare `x^2` as well as a parenthesized
 /// `(x - 1)^2`, so powers of a shifted variable rank by their degree.
@@ -7073,7 +7051,7 @@ fn tf_superscripts_of(b: &Expr, eb: &str, f: &mut impl FnMut(&Expr)) {
     Expr::FunctionCall { name, args } => {
       if name == "SuperscriptBox" && args.len() >= 2 && {
         let mut found = false;
-        tf_visit_strings(&args[0], &mut |s| found |= s == eb);
+        tf_visit_strings(&args[0], &mut |s| found |= tf_unquoted(s) == eb);
         found
       } {
         f(&args[1]);
@@ -7413,6 +7391,66 @@ fn tf_matrix_grid(rows: &[Expr]) -> Expr {
     })
     .collect();
   tf_box("GridBox", vec![Expr::List(grid_rows.into())])
+}
+
+/// The rows `MatrixForm` lays out for `items`: a matrix keeps its rows, a
+/// flat list becomes a column vector (one element per row). `None` for an
+/// empty or ragged list, which has no grid layout.
+fn tf_matrixform_rows(items: &[Expr]) -> Option<Vec<Expr>> {
+  if tf_is_matrix(items) {
+    Some(items.to_vec())
+  } else if !items.is_empty()
+    && items.iter().all(|item| !matches!(item, Expr::List(_)))
+  {
+    Some(
+      items
+        .iter()
+        .map(|item| Expr::List(vec![item.clone()].into()))
+        .collect(),
+    )
+  } else {
+    None
+  }
+}
+
+/// The `GridBox` of a `MatrixForm`. Unlike a plain matrix, a cell that is
+/// itself a list is laid out as a nested parenthesized grid rather than
+/// spelled with braces: the cells of a 3D array such as
+/// `MatrixForm[{{{a, b}, {c, d}}}]` are column vectors `(a b)ᵀ (c d)ᵀ`.
+/// `options` are appended to every grid, the nested ones included.
+fn tf_matrixform_grid(rows: &[Expr], options: &[Expr]) -> Expr {
+  let cell = |e: &Expr| match e {
+    Expr::List(items) => match tf_matrixform_rows(items) {
+      Some(inner) => {
+        let joiner = tf_string("\u{2060}");
+        let mut parts = vec![tf_string("(")];
+        if !options.is_empty() {
+          parts.push(joiner.clone());
+        }
+        parts.push(tf_matrixform_grid(&inner, options));
+        if !options.is_empty() {
+          parts.push(joiner);
+        }
+        parts.push(tf_string(")"));
+        tf_row(parts)
+      }
+      None => tf(e),
+    },
+    _ => tf(e),
+  };
+  let grid_rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| {
+      if let Expr::List(cells) = row {
+        Expr::List(cells.iter().map(cell).collect::<Vec<_>>().into())
+      } else {
+        Expr::List(vec![cell(row)].into())
+      }
+    })
+    .collect();
+  let mut grid_args = vec![Expr::List(grid_rows.into())];
+  grid_args.extend(options.iter().cloned());
+  tf_box("GridBox", grid_args)
 }
 
 /// Generic `head(arg, …)` rendering (unknown functions). The head is shown
@@ -7907,6 +7945,19 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       tf(&args[0])
     }
+    // A number-display form around an expression that is no number itself
+    // (`NumberForm[HoldForm[z == 3.25 x], {3, 1}]`) formats each
+    // approximate number inside it and typesets the rest as usual; with no
+    // such number it typesets just its content.
+    "NumberForm" | "ScientificForm" | "EngineeringForm"
+      if !args.is_empty()
+        && !matches!(args[0], Expr::List(_))
+        && !is_number_expr(&args[0])
+        && !is_number_display_call(&args[0]) =>
+    {
+      let formatted = format_reals_with(&args[0], name, &args[1..]);
+      call("TagBox", vec![tf(&formatted), id_expr(name)])
+    }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
     "HoldForm" if args.len() == 1 => {
@@ -8013,6 +8064,20 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         .map(|item| Expr::List(vec![tf_display(item)].into()))
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
+    }
+    // In box text a `Grid` is the FrontEnd's tagged grid box, as in
+    // StandardForm, its items boxed as expressions, so the text reads back
+    // as the same `Grid` (and draws as a grid, not `Grid[(…)]`).
+    "Grid"
+      if TF_BOX_TEXT.get()
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(rows)
+          if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
+    {
+      let Expr::List(rows) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      grid_tag_box(rows, tf)
     }
     // `Grid[{{a, b}, {c, d}}]` lays its items out in rows and columns, each
     // typeset in place (a string item contributes its text), instead of
@@ -8324,25 +8389,19 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "MatrixForm" if args.len() == 1 && TF_BOX_TEXT.get() => {
       let dense =
         crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
-      if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
-        && tf_is_matrix(rows)
+      if let Expr::List(items) = dense.as_ref().unwrap_or(&args[0])
+        && let Some(rows) = tf_matrixform_rows(items)
       {
-        let mut grid = tf_matrix_grid(rows);
-        if let Expr::FunctionCall {
-          args: grid_args, ..
-        } = &mut grid
-        {
-          let mut extended = grid_args.to_vec();
-          for (option, value) in [
-            ("RowSpacings", Expr::Integer(1)),
-            ("ColumnSpacings", Expr::Integer(1)),
-            ("RowAlignments", id_expr("Baseline")),
-            ("ColumnAlignments", id_expr("Center")),
-          ] {
-            extended.push(rule_expr(id_expr(option), value));
-          }
-          *grid_args = extended.into();
-        }
+        let options: Vec<Expr> = [
+          ("RowSpacings", Expr::Integer(1)),
+          ("ColumnSpacings", Expr::Integer(1)),
+          ("RowAlignments", id_expr("Baseline")),
+          ("ColumnAlignments", id_expr("Center")),
+        ]
+        .into_iter()
+        .map(|(option, value)| rule_expr(id_expr(option), value))
+        .collect();
+        let grid = tf_matrixform_grid(&rows, &options);
         let joiner = tf_string("\u{2060}");
         let bracketed = tf_row(vec![
           tf_string("("),
@@ -8368,7 +8427,22 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       transformation_function_boxes(args, tf).unwrap()
     }
-    "MatrixForm" | "TableForm" if args.len() == 1 => {
+    "MatrixForm" if args.len() == 1 => {
+      let dense =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      if let Expr::List(items) = dense.as_ref().unwrap_or(&args[0])
+        && let Some(rows) = tf_matrixform_rows(items)
+      {
+        tf_row(vec![
+          tf_string("("),
+          tf_matrixform_grid(&rows, &[]),
+          tf_string(")"),
+        ])
+      } else {
+        tf(&args[0])
+      }
+    }
+    "TableForm" if args.len() == 1 => {
       let dense =
         crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
       if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
@@ -8724,8 +8798,71 @@ fn tf(expr: &Expr) -> Expr {
       pattern,
       replacement,
     } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
+    // A replacement left unevaluated (its rules were no rules) has no
+    // traditional notation: like any other built-in function without one it
+    // keeps its name and brackets, `ReplaceAll[f(a), {g(x)}]`.
+    Expr::ReplaceAll { expr: e, rules } => {
+      tf_call("ReplaceAll", &[e.as_ref().clone(), rules.as_ref().clone()])
+    }
+    Expr::ReplaceRepeated { expr: e, rules } => tf_call(
+      "ReplaceRepeated",
+      &[e.as_ref().clone(), rules.as_ref().clone()],
+    ),
     _ => expr_to_box_form(expr),
   }
+}
+
+/// The FrontEnd's grid box for the rows of a `Grid[{{a, b}, …}]` (every row
+/// a list), each item boxed by `cell` and tagged so it reads back as a
+/// `Grid`: `TagBox[GridBox[{{a, b}, …}, AutoDelete -> False,
+/// GridBoxItemSize -> {…}], "Grid"]`. Shared by the StandardForm and the
+/// TraditionalForm box text.
+fn grid_tag_box(rows: &[Expr], cell: impl Fn(&Expr) -> Expr) -> Expr {
+  let rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => Expr::List(cells.iter().map(&cell).collect()),
+      other => Expr::List(vec![cell(other)].into()),
+    })
+    .collect();
+  let rule = |k: Expr, v: Expr| Expr::Rule {
+    pattern: Box::new(k),
+    replacement: Box::new(v),
+  };
+  let automatic = || {
+    Expr::List(
+      vec![Expr::List(
+        vec![Expr::Identifier("Automatic".into())].into(),
+      )]
+      .into(),
+    )
+  };
+  call(
+    "TagBox",
+    vec![
+      call(
+        "GridBox",
+        vec![
+          Expr::List(rows.into()),
+          rule(
+            Expr::Identifier("AutoDelete".into()),
+            Expr::Identifier("False".into()),
+          ),
+          rule(
+            Expr::Identifier("GridBoxItemSize".into()),
+            Expr::List(
+              vec![
+                rule(str_expr("Columns"), automatic()),
+                rule(str_expr("Rows"), automatic()),
+              ]
+              .into(),
+            ),
+          ),
+        ],
+      ),
+      str_expr("Grid"),
+    ],
+  )
 }
 
 /// Convert an expression to its TraditionalForm box tree for typeset SVG
@@ -8736,6 +8873,83 @@ fn tf(expr: &Expr) -> Expr {
 /// render as `head(args)`.
 pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
   tf(expr)
+}
+
+/// Whether `expr` is a bare number (or a negated one), which the
+/// number-display forms format directly.
+fn is_number_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => is_number_expr(operand),
+    _ => false,
+  }
+}
+
+/// Whether `expr` is already a number-display form, which formats its own
+/// numbers (and so is left alone by an enclosing one).
+fn is_number_display_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "NumberForm" | "ScientificForm"
+      | "EngineeringForm" | "PaddedForm" | "AccountingForm"))
+}
+
+/// `expr` with every approximate number in it wrapped in the number-display
+/// form `head[x, spec…]`. A negative number keeps its sign outside the form
+/// (`-NumberForm[3.3, …]`), so a product or sum still reads its sign the way
+/// the bare number would.
+fn format_reals_with(expr: &Expr, head: &str, spec: &[Expr]) -> Expr {
+  let wrap = |x: Expr| {
+    let mut args = vec![x];
+    args.extend(spec.iter().cloned());
+    call(head, args)
+  };
+  let rec = |e: &Expr| format_reals_with(e, head, spec);
+  match expr {
+    Expr::Real(v) if *v < 0.0 => {
+      call("Times", vec![Expr::Integer(-1), wrap(Expr::Real(-*v))])
+    }
+    Expr::Real(_) | Expr::BigFloat(_, _) => wrap(expr.clone()),
+    _ if is_number_display_call(expr) => expr.clone(),
+    Expr::List(items) => Expr::List(items.iter().map(rec).collect()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(rec).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(rec(left)),
+      right: Box::new(rec(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(rec(operand)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(rec).collect(),
+      operators: operators.clone(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    other => other.clone(),
+  }
 }
 
 thread_local! {
