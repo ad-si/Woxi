@@ -25817,6 +25817,44 @@ mod replace_part_position_patterns {
     );
   }
 
+  // Only the subtrees a position can reach are rebuilt; these mix index
+  // and pattern components so pruning must still find every position.
+  #[test]
+  fn deep_positions_beside_untouched_rows() {
+    assert_eq!(
+      interpret(
+        "ReplacePart[{{1, 2, 3}, {4, 5, 6}, {7, 8, 9}}, {{_?OddQ, 2} -> x, {2, -1} -> y}]"
+      )
+      .unwrap(),
+      "{{1, x, 3}, {4, 5, y}, {7, x, 9}}"
+    );
+    assert_eq!(
+      interpret(
+        "ReplacePart[{{a, {b, c}}, {d, {e, f}}}, {{2, 2, 1} -> x, {1, 2} -> y}]"
+      )
+      .unwrap(),
+      "{{a, y}, {d, {x, f}}}"
+    );
+    // The first rule naming a position wins, however it is spelled.
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {{-1, 1} -> x, {2, 1} -> y}]")
+        .unwrap(),
+      "{{1, 2}, {x, 4}}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{{1, 2}, {3, 4}}, {{3, 1} -> x}]").unwrap(),
+      "{{1, 2}, {3, 4}}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[{f[1, 2], g[3]}, {2, 0} -> h]").unwrap(),
+      "{f[1, 2], h[3]}"
+    );
+    assert_eq!(
+      interpret("ReplacePart[Table[0, {3}, {3}], 1, {2, 3}]").unwrap(),
+      "{{0, 0, 0}, {0, 0, 1}, {0, 0, 0}}"
+    );
+  }
+
   #[test]
   fn a_sparse_array_is_replaced_as_its_array() {
     assert_eq!(
