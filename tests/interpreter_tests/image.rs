@@ -3714,6 +3714,55 @@ mod image_processing {
     );
   }
 
+  // A numeric coordinate map (here a complex quadratic, as in Julia set
+  // iterations) is compiled once instead of evaluated per pixel; its
+  // result must equal the per-pixel evaluation of a map restricted to
+  // numbers, which cannot be compiled.
+  #[test]
+  fn image_transformation_compiled_complex_map() {
+    clear_state();
+    let image =
+      "Image[{{0, 0.25, 0.5}, {0.75, 1, 0.125}, {0.375, 0.625, 0.875}}]";
+    let pure = "{Re[(#[[1]] + I #[[2]])^2 + Complex[0.25, -0.5]], \
+                Im[(#[[1]] + I #[[2]])^2 + Complex[0.25, -0.5]]} &";
+    assert_eq!(
+      interpret(&format!(
+        "ImageData[ImageTransformation[{image}, {pure}, 3, \
+         DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]]"
+      ))
+      .unwrap(),
+      "{{0., 0.625, 0.25}, {0.875, 0.625, 0.875}, {0.25, 0.625, 0.}}"
+    );
+    assert_eq!(
+      interpret(&format!(
+        "sq[{{x_?NumericQ, y_?NumericQ}}] := \
+           ReIm[(x + I y)^2 + 0.25 - 0.5 I]; \
+         ImageData[ImageTransformation[{image}, {pure}, 9, \
+           DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]] === \
+         ImageData[ImageTransformation[{image}, sq, 9, \
+           DataRange -> {{{{-1, 1}}, {{-1, 1}}}}]]"
+      ))
+      .unwrap(),
+      "True"
+    );
+  }
+
+  // A map whose symbolic form differs from its numeric values (a
+  // conditional on the coordinates) still gives the per-pixel result.
+  #[test]
+  fn image_transformation_conditional_map() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ImageData[ImageTransformation[Image[{{0, 0.5, 1}}], \
+         If[#[[1]] > 1.5, {3 - #[[1]], #[[2]]}, #] &, \
+         DataRange -> {{0, 3}, {0, 1}}]]"
+      )
+      .unwrap(),
+      "{{0., 0.5, 0.}}"
+    );
+  }
+
   #[test]
   fn image_transformation_size_and_non_image() {
     clear_state();

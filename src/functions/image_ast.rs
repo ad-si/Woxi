@@ -16434,22 +16434,24 @@ pub fn image_transformation_ast(
     None => Some(vec![0.0; ch]),
   };
 
+  // The source point of output point (x, y): the mapping compiled to
+  // machine arithmetic where it can be, so that each pixel costs a few
+  // float operations rather than an evaluation of the function.
+  let compiled = compiled_point_map(&args[1]);
+  let map_point = |x: f64, y: f64| -> Option<(f64, f64)> {
+    let source = match &compiled {
+      Some([fx, fy]) => Some((fx.eval(&[x, y]), fy.eval(&[x, y]))),
+      None => evaluate_point_map(&args[1], x, y),
+    };
+    source.filter(|(sx, sy)| sx.is_finite() && sy.is_finite())
+  };
+
   let mut out = Vec::with_capacity(ow * oh * ch);
   for iy in 0..oh {
     let y = plot_range[3] - ph * (iy as f64 + 0.5) / oh as f64;
     for ix in 0..ow {
       let x = plot_range[0] + pw * (ix as f64 + 0.5) / ow as f64;
-      let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-      let source = crate::evaluator::apply_function_to_arg(&args[1], &point)
-        .ok()
-        .and_then(|r| match &r {
-          Expr::List(p) if p.len() == 2 => Some((
-            crate::functions::math_ast::try_eval_to_f64(&p[0])?,
-            crate::functions::math_ast::try_eval_to_f64(&p[1])?,
-          )),
-          _ => None,
-        })
-        .filter(|(sx, sy)| sx.is_finite() && sy.is_finite());
+      let source = map_point(x, y);
       // Continuous source pixel position (pixel centers at +½, y down).
       let uv = source.map(|(sx, sy)| {
         (
@@ -16508,6 +16510,72 @@ pub fn image_transformation_ast(
     data: Arc::new(out),
     image_type: *image_type,
   })
+}
+
+/// The image of the point `{x, y}` under the coordinate map `f`, evaluated
+/// by the interpreter; `None` unless it is a pair of real numbers.
+fn evaluate_point_map(f: &Expr, x: f64, y: f64) -> Option<(f64, f64)> {
+  let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  match &crate::evaluator::apply_function_to_arg(f, &point).ok()? {
+    Expr::List(p) if p.len() == 2 => Some((
+      crate::functions::math_ast::try_eval_to_f64(&p[0])?,
+      crate::functions::math_ast::try_eval_to_f64(&p[1])?,
+    )),
+    _ => None,
+  }
+}
+
+/// The coordinate map `f` of `ImageTransformation` compiled to machine
+/// arithmetic: `f` applied to a symbolic point `{x, y}` must give a pair of
+/// numeric expressions in `x` and `y`. The compiled pair is checked against
+/// the interpreter at a few points, so a map whose symbolic evaluation
+/// differs from its numeric one (a definition restricted to numbers, say)
+/// keeps being evaluated point by point.
+fn compiled_point_map(
+  f: &Expr,
+) -> Option<[crate::functions::ode_ast::CompiledReal; 2]> {
+  use crate::functions::ode_ast::CompiledReal;
+  let vars = [
+    "ImageTransformation$x".to_string(),
+    "ImageTransformation$y".to_string(),
+  ];
+  let point = Expr::List(
+    vec![
+      Expr::Identifier(vars[0].clone()),
+      Expr::Identifier(vars[1].clone()),
+    ]
+    .into(),
+  );
+  crate::push_quiet();
+  let image = crate::evaluator::apply_function_to_arg(f, &point);
+  crate::pop_quiet();
+  let Ok(Expr::List(p)) = &image else {
+    return None;
+  };
+  let [px, py] = &p[..] else {
+    return None;
+  };
+  let compiled = [CompiledReal::new(px, &vars)?, CompiledReal::new(py, &vars)?];
+  let probes = [(0.25, -0.5), (-0.75, 0.125), (1.5, 0.875)];
+  for (x, y) in probes {
+    let fast = (compiled[0].eval(&[x, y]), compiled[1].eval(&[x, y]));
+    let close = |a: f64, b: f64| {
+      (a.is_nan() && b.is_nan())
+        || a == b
+        || (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0)
+    };
+    crate::push_quiet();
+    let slow = evaluate_point_map(f, x, y);
+    crate::pop_quiet();
+    let agrees = match slow {
+      Some((sx, sy)) => close(fast.0, sx) && close(fast.1, sy),
+      None => !(fast.0.is_finite() && fast.1.is_finite()),
+    };
+    if !agrees {
+      return None;
+    }
+  }
+  Some(compiled)
 }
 
 /// Bounding box `[xmin, xmax, ymin, ymax]` of the 2D points in a graphics
