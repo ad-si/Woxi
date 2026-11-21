@@ -8281,6 +8281,18 @@ fn inset_primitives(
     }
     _ => None,
   };
+  // `Inset[obj]` with no position sits at the origin, like `Automatic`. A
+  // symbolic `Graphics[…]` is folded in below, which already handles that;
+  // anything embedded whole (an `Image`, a `Graphics3D`, a rendered plot)
+  // needs the anchor here or it would fall through to the text path.
+  let symbolic_graphics = matches!(
+    peel_style_wrapper(&args[0]),
+    Expr::FunctionCall { name, .. } if name == "Graphics" || name == "GraphicsBox"
+  );
+  let anchor = match (anchor, args.get(1)) {
+    (None, None) if !symbolic_graphics => Some((0.0, 0.0, false)),
+    (anchor, _) => anchor,
+  };
   if let Some(svg) = embedded
     && let Some(dims) = parse_svg_dimensions(svg)
     && let Some((x, y, scaled)) = anchor
