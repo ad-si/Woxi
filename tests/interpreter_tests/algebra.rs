@@ -16069,6 +16069,41 @@ mod root {
     );
   }
 
+  // With approximate coefficients a root is evaluated numerically, in
+  // Root's order: the real roots ascending, then the complex ones.
+  #[test]
+  fn inexact_coefficients_give_a_number() {
+    assert_eq!(
+      interpret("Root[#^2 - 2. &, 2]").unwrap(),
+      "1.4142135623730951"
+    );
+    assert_eq!(
+      interpret("Root[#^2 - 2. &, 1]").unwrap(),
+      "-1.4142135623730951"
+    );
+    assert_eq!(interpret("Root[#^3 - 0.5 # &, 2]").unwrap(), "0.");
+    assert_eq!(
+      interpret("Round[100 Root[x^3 - 2.5 x + 1., 3]]").unwrap(),
+      "132"
+    );
+    assert_eq!(interpret("Im[Root[#^2 + 1. &, 2]]").unwrap(), "1.");
+    assert_eq!(interpret("Im[Root[#^2 + 1. &, 1]]").unwrap(), "-1.");
+  }
+
+  // `Root[poly, x, k]` is the k-th root of the polynomial in `x`.
+  #[test]
+  fn polynomial_and_variable_form() {
+    assert_eq!(interpret("Root[x^2 - 2, x, 2]").unwrap(), "Sqrt[2]");
+    assert_eq!(
+      interpret("Root[x^3 - 2, x, 1]").unwrap(),
+      "Root[-2 + #1^3 & , 1, 0]"
+    );
+    assert_eq!(
+      interpret("Array[Root[t^3 - t + 0., t, #] &, 3]").unwrap(),
+      "{-1., 0., 1.}"
+    );
+  }
+
   // A Root is a constant to the polynomial machinery.
   #[test]
   fn root_is_a_constant() {
@@ -16680,6 +16715,28 @@ mod minimal_polynomial {
   #[test]
   fn integer() {
     assert_eq!(interpret("MinimalPolynomial[3, x]").unwrap(), "-3 + x");
+  }
+
+  // The variable may be any expression, not just a symbol: the minimal
+  // polynomial is evaluated at it, like `MinimalPolynomial[s][x]`.
+  #[test]
+  fn non_symbol_variable_is_substituted() {
+    assert_eq!(interpret("MinimalPolynomial[Sqrt[2], 3]").unwrap(), "7");
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2], 1 + y]").unwrap(),
+      "-2 + (1 + y)^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[GoldenRatio, f[z]]").unwrap(),
+      "-1 - f[z] + f[z]^2"
+    );
+    assert_eq!(
+      interpret(
+        "r = Root[#^3 - #^2 - 1 &, 1]; MinimalPolynomial[r, r] === -1 - r^2 + r^3"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 
   // Sums of radicals over one base live in a single field extension; the

@@ -568,6 +568,141 @@ mod epilog_text_style_background {
   }
 }
 
+/// Text and shapes in a plot's `Prolog`/`Epilog` set as in `Graphics`.
+mod epilog_text_rows_and_triangles {
+  use super::*;
+
+  /// The epilog's own group, after its clip path.
+  fn epilog_group(svg: &str) -> &str {
+    &svg[svg.find("</defs><g clip-path").unwrap()..]
+  }
+
+  /// The visible text of each `<tspan x=…>` line in `markup`, plus the
+  /// line before the first of them.
+  fn text_lines(markup: &str) -> Vec<String> {
+    let start = markup.find("<text").unwrap();
+    let body = &markup[start..start + markup[start..].find("</text>").unwrap()];
+    let body = &body[body.find('>').unwrap() + 1..];
+    let strip = |s: &str| {
+      let mut out = String::new();
+      let mut in_tag = false;
+      for c in s.chars() {
+        match c {
+          '<' => in_tag = true,
+          '>' => in_tag = false,
+          _ if !in_tag => out.push(c),
+          _ => {}
+        }
+      }
+      out.replace("&#160;", "")
+    };
+    body
+      .split("<tspan x=")
+      .enumerate()
+      .map(|(i, line)| {
+        // Each split-off line still carries the rest of its opening tag.
+        let line = if i == 0 {
+          line
+        } else {
+          &line[line.find('>').unwrap() + 1..]
+        };
+        strip(line).trim().to_string()
+      })
+      .filter(|line| !line.is_empty())
+      .collect()
+  }
+
+  /// `Triangle[{p1, p2, p3}]` draws the polygon through its corners.
+  #[test]
+  fn triangle_is_drawn_as_a_polygon() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Prolog -> {Orange, Triangle[{{0.5, 0}, {1, 0}, \
+       {1, 1}}]}]",
+    );
+    let polygons = svg.matches("<polygon").count();
+    assert_eq!(polygons, 1, "{svg}");
+  }
+
+  /// A list of triangles draws one polygon each.
+  #[test]
+  fn triangle_list_draws_each_triangle() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Triangle[{{{0, 0}, {1, 0}, {1, 1}}, \
+       {{0, 0}, {0, 1}, {1, 1}}}]]",
+    );
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+  }
+
+  /// An inset `Row` of strings and styled strings is a text label in the
+  /// label font (not a monospaced box layout), keeping its styled runs
+  /// and line breaks.
+  #[test]
+  fn inset_row_is_a_text_label() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Inset[Row[{\"ab \", Style[\"T\", \
+       Italic], \" cd\\nef\"}], {0.5, 0.5}]]",
+    );
+    let group = epilog_group(&svg);
+    assert!(!group.contains("monospace"), "{svg}");
+    assert!(
+      group.contains("<tspan font-style=\"italic\">T</tspan>"),
+      "{svg}"
+    );
+    assert_eq!(text_lines(group), vec!["ab T cd", "ef"], "{svg}");
+  }
+
+  /// `Row[…, ImageSize -> w]` flows its runs into lines at most `w` points
+  /// wide at word boundaries, across differently styled runs; the inset's
+  /// `BaseStyle` sets the size the lines are measured (and drawn) at.
+  #[test]
+  fn inset_row_image_size_wraps_lines() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Inset[Row[{\"one two three \", \
+       Style[\"four\", Italic], \" five six seven eight\"}, ImageSize -> \
+       100], {0.5, 0.5}, BaseStyle -> {14}]]",
+    );
+    let group = epilog_group(&svg);
+    let lines = text_lines(group);
+    assert!(lines.len() > 1, "{lines:?}");
+    // Every word appears once and in order.
+    assert_eq!(
+      lines.join(" "),
+      "one two three four five six seven eight",
+      "{lines:?}"
+    );
+    // At 14pt a 100pt line holds well under 20 characters.
+    for line in &lines {
+      assert!(line.chars().count() < 20, "{line:?} too long: {lines:?}");
+    }
+    assert!(group.contains("font-size=\"140\""), "{svg}");
+  }
+
+  /// A blank line of a multi-line label keeps its height: an empty
+  /// `<tspan>` would be dropped by SVG renderers.
+  #[test]
+  fn blank_label_line_keeps_its_height() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, Epilog -> Inset[Row[{\"ab\\n\\ncd\"}], \
+       {0.5, 0.5}]]",
+    );
+    assert!(!epilog_group(&svg).contains("\"></tspan>"), "{svg}");
+  }
+
+  /// The same row wraps inside `Graphics`, where the inset's `BaseStyle`
+  /// sizes the text too.
+  #[test]
+  fn graphics_inset_row_wraps_with_base_style() {
+    let svg = svg_of(
+      "Graphics[Inset[Row[{\"one two three \", Style[\"four\", Italic], \
+       \" five six\"}, ImageSize -> 80], {0, 0}, BaseStyle -> {20}]]",
+    );
+    assert!(svg.contains("font-size=\"20\""), "{svg}");
+    let lines = text_lines(&svg);
+    assert!(lines.len() > 2, "{lines:?}");
+    assert_eq!(lines.join(" ").trim(), "one two three four five six");
+  }
+}
+
 /// `Inset[Framed[Column[{…}]], pos, opos]` in a `Plot` `Epilog` — a boxed
 /// summary of computed values — is typeset as text, like
 /// `Text[Framed[Column[…]], pos, opos]`, not embedded as a picture of

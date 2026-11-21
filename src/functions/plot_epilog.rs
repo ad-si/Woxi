@@ -920,6 +920,17 @@ fn render_item(
           ));
         }
       }
+      // `Triangle[{p1, p2, p3}]` (or a list of such triples) is drawn as
+      // the polygon through its corners; `Triangle[]` is the unit triangle.
+      "Triangle" if args.len() <= 1 => {
+        let corners = args.first().cloned().unwrap_or_else(|| {
+          let pt = |x: i128, y: i128| {
+            Expr::List(vec![Expr::Integer(x), Expr::Integer(y)].into())
+          };
+          Expr::List(vec![pt(0, 0), pt(1, 0), pt(0, 1)].into())
+        });
+        render_item(&call("Polygon", vec![corners]), style, area, out);
+      }
       // `Translate[content, {dx, dy}]` shifts `content`; a list of offsets
       // draws one shifted copy per entry (matches `Graphics[Translate[…]]`).
       // A Demonstration's own custom-shape helper (e.g. a spring coil built
@@ -1170,16 +1181,26 @@ fn render_item(
             && extra_lines > 0.0
             && is_left_aligned_column(body)
           {
-            let chars = styled
-              .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64;
-            let block_w = chars * font_size * 0.6;
+            // A framed block is as wide as its frame measures it (by the
+            // proportional glyph widths), and the frame's `FrameMargins`
+            // already keep the lines off the border.
+            let (block_w, inset) = if is_framed {
+              let width_em = styled
+                .as_ref()
+                .map_or(0.0, super::chart::StyledLabel::max_line_width_em);
+              (width_em * font_size, 0.0)
+            } else {
+              let chars = styled
+                .as_ref()
+                .map_or(0, super::chart::StyledLabel::max_line_chars)
+                as f64;
+              (chars * font_size * 0.6, font_size * 0.35)
+            };
             line_x = match text_anchor {
               "start" => px,
               "end" => px - block_w,
               _ => px - block_w / 2.0,
-            } + font_size * 0.35;
+            } + inset;
             text_anchor = "start";
           }
           let label = styled.as_ref().map_or_else(
@@ -1196,11 +1217,15 @@ fn render_item(
             .or_else(|| style_wrapper_background(body))
             .filter(|_| !is_framed && direction.is_none());
           if let Some(color) = text_background {
-            let chars = styled.as_ref().map_or_else(
-              || expr_to_output(body).chars().count(),
-              super::chart::StyledLabel::max_line_chars,
-            ) as f64;
-            let text_w = chars * font_size * 0.6;
+            let text_w = styled.as_ref().map_or_else(
+              || {
+                crate::functions::plot_padding::text_width(
+                  &expr_to_output(body),
+                  font_size,
+                )
+              },
+              |s| s.max_line_width(font_size),
+            );
             let left = match text_anchor {
               "start" => px,
               "end" => px - text_w,
@@ -1216,45 +1241,52 @@ fn render_item(
           if is_framed {
             let text_w = styled
               .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64
-              * font_size
-              * 0.6;
+              .map_or(0.0, super::chart::StyledLabel::max_line_width_em)
+              * font_size;
+            // `Framed` leaves its `FrameMargins` (5 points a side unless
+            // set) between the text and the border.
+            let (m_left, m_right, m_bottom, m_top) =
+              crate::functions::graphics::framed_margins(
+                frame_opts,
+                crate::functions::graphics::FRAMED_DEFAULT_MARGIN,
+              );
+            let (m_left, m_right, m_bottom, m_top) = (
+              m_left * area.scale,
+              m_right * area.scale,
+              m_bottom * area.scale,
+              m_top * area.scale,
+            );
             // `py` is the first line's own center (shifted up above), so
             // the box starts half a line above it and grows by one more
             // line advance per extra line — not `py`'s center outward,
             // which would leave it too short and too high once the label
             // stacks below `py`.
-            let box_h = block_h;
-            let box_y = py - first_size / 2.0;
+            let box_h = block_h + m_bottom + m_top;
+            let box_y = py - first_size / 2.0 - m_top;
             let background = option_value(frame_opts, "Background")
               .and_then(parse_color)
               .map_or_else(
                 || "none".to_string(),
                 super::graphics::Color::to_svg_rgb,
               );
-            // Wolfram draws the box with a thin border unless the label
-            // asks for none; `FrameStyle -> color` recolors it.
-            let stroke = match option_value(frame_opts, "FrameStyle") {
-              Some(Expr::Identifier(s)) if s == "None" => String::new(),
-              Some(spec) => format!(
-                " stroke=\"{}\"",
+            // Wolfram draws the box with a thin (one point) border unless
+            // the label asks for none; `FrameStyle -> color` recolors it.
+            let stroke_color = match option_value(frame_opts, "FrameStyle") {
+              Some(Expr::Identifier(s)) if s == "None" => None,
+              Some(spec) => Some(
                 parse_color(spec)
                   .unwrap_or(Color::new(0.0, 0.0, 0.0))
-                  .to_svg_rgb()
+                  .to_svg_rgb(),
               ),
-              None => " stroke=\"rgb(0,0,0)\"".to_string(),
+              None => Some("rgb(0,0,0)".to_string()),
             };
-            // The border is one printer's point wide whatever the
-            // plot's internal coordinate scale.
-            let stroke = if stroke.is_empty() {
-              stroke
-            } else {
-              format!("{stroke} stroke-width=\"{:.2}\"", area.scale)
-            };
+            let stroke = stroke_color.map_or_else(String::new, |c| {
+              format!(" stroke=\"{c}\" stroke-width=\"{:.1}\"", area.scale)
+            });
             out.push_str(&format!(
-              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{text_w:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
-              px - text_w / 2.0,
+              "<rect x=\"{:.1}\" y=\"{box_y:.1}\" width=\"{:.1}\" height=\"{box_h:.1}\" fill=\"{background}\"{stroke}/>\n",
+              px - text_w / 2.0 - m_left,
+              text_w + m_left + m_right,
             ));
           }
           out.push_str(&format!(
@@ -1273,6 +1305,15 @@ fn render_item(
         if let Some(text) =
           crate::functions::graphics::text_primitive_inset(args) =>
       {
+        render_item(&with_inset_background(text, args), style, area, out);
+      }
+      // A `Row` of text runs is a (possibly wrapped) paragraph label.
+      "Inset"
+        if args.len() >= 2
+          && let Some(label) =
+            crate::functions::graphics::text_row_inset_object(args, 13.0) =>
+      {
+        let text = call("Text", vec![label, args[1].clone()]);
         render_item(&with_inset_background(text, args), style, area, out);
       }
       // `Inset[Rotate[obj, θ], pos, …]` turns the inset object by θ

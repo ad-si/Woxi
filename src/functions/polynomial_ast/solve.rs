@@ -13877,6 +13877,33 @@ fn transcendental_root_ast(arg: &Expr) -> Result<Expr, InterpreterError> {
   held()
 }
 
+/// The machine-number coefficients (index = degree) of the expanded
+/// polynomial `poly` in `var`, or `None` when one is not numeric or the
+/// leading one vanishes.
+fn inexact_poly_coeffs(poly: &Expr, var: &str) -> Option<Vec<f64>> {
+  let degree = match max_power_int(poly, var) {
+    Some(d) if d >= 1 => d as usize,
+    _ => return None,
+  };
+  let terms = collect_additive_terms(poly);
+  let mut coeffs = vec![0.0f64; degree + 1];
+  for term in &terms {
+    let mut matched = false;
+    for (d, slot) in coeffs.iter_mut().enumerate() {
+      if let Some(c) = extract_coefficient_of_power(term, var, d as i128) {
+        *slot += try_eval_to_f64(&simplify(c))?;
+        matched = true;
+        break;
+      }
+    }
+    if !matched {
+      return None;
+    }
+  }
+  (coeffs[degree] != 0.0 && coeffs.iter().all(|c| c.is_finite()))
+    .then_some(coeffs)
+}
+
 pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if let [arg] = args {
     return transcendental_root_ast(arg);
@@ -13915,6 +13942,18 @@ pub fn root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() != 2 && args.len() != 3 {
     return Ok(unevaluated("Root", args));
+  }
+
+  // `Root[poly, x, k]` names the k-th root of the polynomial `poly` in the
+  // variable `x`; it is the same number as `Root[poly /. x -> #1 &, k]`.
+  if let [poly, Expr::Identifier(var), k @ Expr::Integer(_)] = args {
+    let body = crate::syntax::substitute_variable(poly, var, &Expr::Slot(1));
+    return root_ast(&[
+      Expr::Function {
+        body: Box::new(body),
+      },
+      k.clone(),
+    ]);
   }
 
   // Root[f, k, 0] is the exact form (same as Root[f, k]). Root[f, k, 1]
@@ -13981,6 +14020,15 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
     && k > degree
   {
     return Ok(root_degree_message(args));
+  }
+  // Approximate coefficients: the root is evaluated numerically, e.g.
+  // `Root[#^2 - 2. &, 2]` is `1.41421`.
+  if crate::syntax::contains_inexact(&expanded_poly)
+    && let Some(coeffs) = inexact_poly_coeffs(&expanded_poly, var_name)
+    && let Some(value) =
+      crate::functions::math_ast::numerical::inexact_root_value(&coeffs, k)
+  {
+    return Ok(value);
   }
   // Symbolic coefficients: the polynomial collected in #1, and two
   // arguments, as wolframscript keeps it —

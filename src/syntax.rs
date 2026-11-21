@@ -14927,6 +14927,15 @@ pub fn is_rule_expr(expr: &Expr) -> bool {
 /// Extract the width in printer's points from a `Spacer` expression.
 /// Supports `Spacer[w]`, `Spacer[{w, ...}]`.
 pub fn spacer_width_pts(expr: &Expr) -> Option<f64> {
+  // A styled spacer (`Style[Spacer[10], 11]`, which `Style[Row[…], 11]`
+  // makes of each of its items) is still that many points of blank: font
+  // directives don't change a spacer's width.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Style"
+    && !args.is_empty()
+  {
+    return spacer_width_pts(&args[0]);
+  }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Spacer"
     && args.len() == 1
@@ -18105,6 +18114,10 @@ pub fn collect_identifier_names<S: std::hash::BuildHasher>(
         collect_identifier_names(a, out);
       }
     }
+    // A shared array of numbers or strings names no symbol; its memoized
+    // flag answers in O(1) where walking it costs O(N) on every substitution
+    // that checks a value for capture.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {}
     Expr::List(items) => {
       for it in items {
         collect_identifier_names(it, out);
@@ -18249,6 +18262,12 @@ fn substitute_variable_impl(
   match expr {
     Expr::Identifier(name) | Expr::Constant(name) if name == var_name => {
       value.clone()
+    }
+    // A shared array of numbers or strings holds no symbol to replace:
+    // copying the pointer keeps it shared, where rebuilding it would copy
+    // the array and make every later walk over it O(N) again.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
+      expr.clone()
     }
     Expr::List(items) => Expr::List(
       items
