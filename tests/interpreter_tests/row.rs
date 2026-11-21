@@ -390,7 +390,9 @@ mod row_visual_mode {
     let one = height("Row[{\"has \", x, \" red balls\"}]");
     let prose =
       height("Row[{\"has \", x, \" red balls.\\n\\nProbability for\"}]");
-    assert!(prose > one * 2.5, "one = {one}, prose = {prose}");
+    // Three lines at the text's own line pitch, each shorter than the
+    // padded box of a lone line.
+    assert!(prose > one * 2.0, "one = {one}, prose = {prose}");
     let fraction = height("Row[{\"y = \", \"1\\n-\\n3\"}]");
     assert!(fraction < one * 3.0, "one = {one}, fraction = {fraction}");
   }
@@ -416,8 +418,10 @@ mod row_visual_mode {
     let one = svg("Row[{\"ab\", Row[{\"= \", 4}]}]");
     let product = svg("Row[{\"ab\", Row[{\"= \", 4}] \" \\n\\n  \"}]");
     // The string's two newlines put the row factor two lines further down.
+    // (Three lines at the text's own line pitch, each shorter than the
+    // padded box of a lone line.)
     assert!(
-      height(&product) > height(&one) * 2.5,
+      height(&product) > height(&one) * 2.0,
       "one = {}, product = {}",
       height(&one),
       height(&product)
@@ -872,7 +876,8 @@ mod traditional_row_layout {
       "Text[TraditionalForm[Row[{\"The \", \"real\" \" roots are \\n\", x, \
        \" = 1\"}]]]",
     );
-    assert!(out.starts_with("<svg width=\"") && out.contains("height=\"44\""));
+    // Two lines at the text's own line pitch.
+    assert!(out.starts_with("<svg width=\"") && out.contains("height=\"36\""));
     let t = texts(&out);
     let pos = |s: &str| t.iter().position(|x| x == s).unwrap();
     assert!(pos("real") < pos(" roots are "), "{t:?}");
@@ -1153,9 +1158,10 @@ fn text_items_of_bold_row_are_plain() {
     r#"ExportString[Style[Row[{Text[Style["name", Bold]], "x"}], 18], "SVG"]"#,
   )
   .unwrap();
+  // The weight sits on the `<text>` or on a `<tspan>` around the word.
   let line = svg
     .lines()
-    .find(|l| l.contains(">name</text>"))
+    .find(|l| l.contains(">name</text>") || l.contains(">name</tspan>"))
     .unwrap_or_else(|| panic!("no name text: {svg}"));
   assert!(
     line.contains("font-weight=\"bold\""),
