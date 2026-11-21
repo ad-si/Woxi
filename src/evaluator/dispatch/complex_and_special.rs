@@ -3841,6 +3841,19 @@ fn number_display_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
     let inner_boxes = number_display_list_boxes(items, &parts_for)?;
     return Some(wrap_list_number_display_box(inner_boxes, name));
   }
+  // An exact rational is left as it is by the number-display forms
+  // (`NumberForm[14/3, {3, 2}]` shows `14/3`), so it typesets as the
+  // fraction.
+  if matches!(name, "NumberForm" | "ScientificForm" | "EngineeringForm")
+    && args.len() <= 2
+    && matches!(first, Expr::FunctionCall { name: n, args: r } if n == "Rational" && r.len() == 2)
+  {
+    return Some(wrap_number_display_box(
+      expr_to_box_form(first),
+      first,
+      name,
+    ));
+  }
   let Some((mantissa, exp)) = parts_for(first) else {
     return option_number_form_box(name, args);
   };
@@ -4702,53 +4715,7 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
       let Expr::List(rows) = &args[0] else {
         unreachable!("guarded by the match arm")
       };
-      let rows: Vec<Expr> = rows
-        .iter()
-        .map(|row| match row {
-          Expr::List(cells) => {
-            Expr::List(cells.iter().map(expr_to_box_form).collect())
-          }
-          _ => unreachable!("guarded by the match arm"),
-        })
-        .collect();
-      let rule = |k: Expr, v: Expr| Expr::Rule {
-        pattern: Box::new(k),
-        replacement: Box::new(v),
-      };
-      let automatic = || {
-        Expr::List(
-          vec![Expr::List(
-            vec![Expr::Identifier("Automatic".into())].into(),
-          )]
-          .into(),
-        )
-      };
-      call(
-        "TagBox",
-        vec![
-          call(
-            "GridBox",
-            vec![
-              Expr::List(rows.into()),
-              rule(
-                Expr::Identifier("AutoDelete".into()),
-                Expr::Identifier("False".into()),
-              ),
-              rule(
-                Expr::Identifier("GridBoxItemSize".into()),
-                Expr::List(
-                  vec![
-                    rule(str_expr("Columns"), automatic()),
-                    rule(str_expr("Rows"), automatic()),
-                  ]
-                  .into(),
-                ),
-              ),
-            ],
-          ),
-          str_expr("Grid"),
-        ],
-      )
+      grid_tag_box(rows, expr_to_box_form)
     }
     Expr::FunctionCall { name, args }
       if name == "Subscript" && args.len() == 2 =>
@@ -4884,6 +4851,13 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
     }
     Expr::FunctionCall { name, args } if name == "Sqrt" && args.len() == 1 => {
       call("SqrtBox", vec![expr_to_box_form(&args[0])])
+    }
+    // NumberForm[Quantity[m, u], spec] → the quantity with its magnitude
+    // formatted.
+    Expr::FunctionCall { name, args }
+      if let Some(q) = number_form_of_quantity(name, args) =>
+    {
+      expr_to_box_form(&q)
     }
     // Quantity[magnitude, unit] → RowBox[{box(magnitude), " ", unit-boxes}]
     Expr::FunctionCall { name, args }
@@ -5461,6 +5435,7 @@ fn tf_parens(inner: Expr) -> Expr {
 /// contributes its own text, without the quotes a literal would carry.
 fn tf_display(expr: &Expr) -> Expr {
   match expr {
+    Expr::String(_) if TF_QUOTED_DISPLAY.get() => tf(expr),
     Expr::String(s) => tf_string(s),
     other => tf(other),
   }
@@ -6996,6 +6971,9 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
     .map(|(_, b)| {
       let mut names: Vec<String> = Vec::new();
       tf_visit_strings(b, &mut |s| {
+        // A string subscript (`Subscript[S, "B"]`) is boxed as the quoted
+        // text `"B"`; it ranks by the letters it shows.
+        let s = tf_unquoted(s);
         if is_variable(s) {
           names.push(s.to_string());
         }
@@ -7065,6 +7043,14 @@ fn tf_plus_order(terms: &[(bool, Expr)]) -> Vec<usize> {
   order
 }
 
+/// A box string less the quotes a string atom is boxed with: `"B"` → `B`.
+fn tf_unquoted(s: &str) -> &str {
+  s.strip_prefix('"')
+    .and_then(|t| t.strip_suffix('"'))
+    .filter(|t| !t.is_empty())
+    .unwrap_or(s)
+}
+
 /// Calls `f` on the exponent of every `SuperscriptBox[base, e, …]` in a box
 /// whose base mentions `eb`: a bare `x^2` as well as a parenthesized
 /// `(x - 1)^2`, so powers of a shifted variable rank by their degree.
@@ -7073,7 +7059,7 @@ fn tf_superscripts_of(b: &Expr, eb: &str, f: &mut impl FnMut(&Expr)) {
     Expr::FunctionCall { name, args } => {
       if name == "SuperscriptBox" && args.len() >= 2 && {
         let mut found = false;
-        tf_visit_strings(&args[0], &mut |s| found |= s == eb);
+        tf_visit_strings(&args[0], &mut |s| found |= tf_unquoted(s) == eb);
         found
       } {
         f(&args[1]);
@@ -7919,6 +7905,32 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         tf(&args[1]),
       ])
     }
+    // A quantity reads as its magnitude and abbreviated unit (`9. Å`), as
+    // in `StandardForm`.
+    "Quantity" if args.len() == 2 => {
+      // The unit is text, not a symbol: quote its strings so a one-letter
+      // unit (`m`) stays upright instead of becoming an italic variable.
+      fn quote_strings(b: &Expr) -> Expr {
+        match b {
+          Expr::String(s) if !s.starts_with('"') => {
+            Expr::String(format!("\"{s}\""))
+          }
+          Expr::List(items) => {
+            Expr::List(items.iter().map(quote_strings).collect())
+          }
+          Expr::FunctionCall { name, args } => {
+            call(name, args.iter().map(quote_strings).collect())
+          }
+          other => other.clone(),
+        }
+      }
+      let mut parts = vec![tf(&args[0]), str_expr(" ")];
+      parts.push(quote_strings(&unit_to_box_form(&args[1], &args[0])));
+      row_box(parts)
+    }
+    // A number-display form around a quantity formats its magnitude and
+    // keeps the unit: `NumberForm[Quantity[8.998, "Angstroms"], 3]` is `9. Å`.
+    _ if let Some(q) = number_form_of_quantity(name, args) => tf(&q),
     // A number-display form around a matrix typesets like the matrix does
     // in `TraditionalForm` — a parenthesized grid — with each entry shown
     // as the form formats it (`TraditionalForm[NumberForm[m, {3, 2}]]`).
@@ -7966,6 +7978,19 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         Some(Expr::FunctionCall { name: n, .. }) if n == "Rational") =>
     {
       tf(&args[0])
+    }
+    // A number-display form around an expression that is no number itself
+    // (`NumberForm[HoldForm[z == 3.25 x], {3, 1}]`) formats each
+    // approximate number inside it and typesets the rest as usual; with no
+    // such number it typesets just its content.
+    "NumberForm" | "ScientificForm" | "EngineeringForm"
+      if !args.is_empty()
+        && !matches!(args[0], Expr::List(_))
+        && !is_number_expr(&args[0])
+        && !is_number_display_call(&args[0]) =>
+    {
+      let formatted = format_reals_with(&args[0], name, &args[1..]);
+      call("TagBox", vec![tf(&formatted), id_expr(name)])
     }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
@@ -8073,6 +8098,20 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
         .map(|item| Expr::List(vec![tf_display(item)].into()))
         .collect();
       tf_box("GridBox", vec![Expr::List(rows.into())])
+    }
+    // In box text a `Grid` is the FrontEnd's tagged grid box, as in
+    // StandardForm, its items boxed as expressions, so the text reads back
+    // as the same `Grid` (and draws as a grid, not `Grid[(…)]`).
+    "Grid"
+      if TF_BOX_TEXT.get()
+        && args.len() == 1
+        && matches!(&args[0], Expr::List(rows)
+          if !rows.is_empty() && rows.iter().all(|r| matches!(r, Expr::List(_)))) =>
+    {
+      let Expr::List(rows) = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      grid_tag_box(rows, tf)
     }
     // `Grid[{{a, b}, {c, d}}]` lays its items out in rows and columns, each
     // typeset in place (a string item contributes its text), instead of
@@ -8807,6 +8846,59 @@ fn tf(expr: &Expr) -> Expr {
   }
 }
 
+/// The FrontEnd's grid box for the rows of a `Grid[{{a, b}, …}]` (every row
+/// a list), each item boxed by `cell` and tagged so it reads back as a
+/// `Grid`: `TagBox[GridBox[{{a, b}, …}, AutoDelete -> False,
+/// GridBoxItemSize -> {…}], "Grid"]`. Shared by the StandardForm and the
+/// TraditionalForm box text.
+fn grid_tag_box(rows: &[Expr], cell: impl Fn(&Expr) -> Expr) -> Expr {
+  let rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| match row {
+      Expr::List(cells) => Expr::List(cells.iter().map(&cell).collect()),
+      other => Expr::List(vec![cell(other)].into()),
+    })
+    .collect();
+  let rule = |k: Expr, v: Expr| Expr::Rule {
+    pattern: Box::new(k),
+    replacement: Box::new(v),
+  };
+  let automatic = || {
+    Expr::List(
+      vec![Expr::List(
+        vec![Expr::Identifier("Automatic".into())].into(),
+      )]
+      .into(),
+    )
+  };
+  call(
+    "TagBox",
+    vec![
+      call(
+        "GridBox",
+        vec![
+          Expr::List(rows.into()),
+          rule(
+            Expr::Identifier("AutoDelete".into()),
+            Expr::Identifier("False".into()),
+          ),
+          rule(
+            Expr::Identifier("GridBoxItemSize".into()),
+            Expr::List(
+              vec![
+                rule(str_expr("Columns"), automatic()),
+                rule(str_expr("Rows"), automatic()),
+              ]
+              .into(),
+            ),
+          ),
+        ],
+      ),
+      str_expr("Grid"),
+    ],
+  )
+}
+
 /// Convert an expression to its TraditionalForm box tree for typeset SVG
 /// display (Playground / Studio) and for `MakeBoxes[…, TraditionalForm]`.
 /// Produces conventional mathematical notation: `∑`/`∫`/`∏` operators with
@@ -8815,6 +8907,83 @@ fn tf(expr: &Expr) -> Expr {
 /// render as `head(args)`.
 pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
   tf(expr)
+}
+
+/// Whether `expr` is a bare number (or a negated one), which the
+/// number-display forms format directly.
+fn is_number_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => is_number_expr(operand),
+    _ => false,
+  }
+}
+
+/// Whether `expr` is already a number-display form, which formats its own
+/// numbers (and so is left alone by an enclosing one).
+fn is_number_display_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "NumberForm" | "ScientificForm"
+      | "EngineeringForm" | "PaddedForm" | "AccountingForm"))
+}
+
+/// `expr` with every approximate number in it wrapped in the number-display
+/// form `head[x, spec…]`. A negative number keeps its sign outside the form
+/// (`-NumberForm[3.3, …]`), so a product or sum still reads its sign the way
+/// the bare number would.
+fn format_reals_with(expr: &Expr, head: &str, spec: &[Expr]) -> Expr {
+  let wrap = |x: Expr| {
+    let mut args = vec![x];
+    args.extend(spec.iter().cloned());
+    call(head, args)
+  };
+  let rec = |e: &Expr| format_reals_with(e, head, spec);
+  match expr {
+    Expr::Real(v) if *v < 0.0 => {
+      call("Times", vec![Expr::Integer(-1), wrap(Expr::Real(-*v))])
+    }
+    Expr::Real(_) | Expr::BigFloat(_, _) => wrap(expr.clone()),
+    _ if is_number_display_call(expr) => expr.clone(),
+    Expr::List(items) => Expr::List(items.iter().map(rec).collect()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(rec).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(rec(left)),
+      right: Box::new(rec(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(rec(operand)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(rec).collect(),
+      operators: operators.clone(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    other => other.clone(),
+  }
 }
 
 thread_local! {
@@ -8832,6 +9001,29 @@ thread_local! {
     const { std::cell::Cell::new(false) };
 }
 
+thread_local! {
+  /// Set while typesetting for an SVG renderer that sets single-letter
+  /// symbols in italics: displayed strings (a `Row` item, a `Style` body)
+  /// keep their quotes, so the renderer draws them as upright literal text
+  /// rather than mistaking a one-letter string for a symbol.
+  static TF_QUOTED_DISPLAY: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Like `expr_to_box_form_traditional`, but every string keeps its quotes
+/// (see `TF_QUOTED_DISPLAY`), for renderers that tell literal text from
+/// symbols by them.
+pub fn expr_to_box_form_traditional_quoted(expr: &Expr) -> Expr {
+  struct Reset(bool);
+  impl Drop for Reset {
+    fn drop(&mut self) {
+      TF_QUOTED_DISPLAY.set(self.0);
+    }
+  }
+  let _reset = Reset(TF_QUOTED_DISPLAY.replace(true));
+  tf(expr)
+}
+
 /// Like `expr_to_box_form_traditional`, but for boxes written out as text in
 /// a `\!\(\*…\)` escape, which has to read back as the expression it was
 /// built from: a `Row` becomes wolframscript's `TemplateBox[…, "RowDefault"]`
@@ -8845,6 +9037,32 @@ pub fn expr_to_box_form_traditional_text(expr: &Expr) -> Expr {
   }
   let _reset = Reset(TF_BOX_TEXT.replace(true));
   tf(expr)
+}
+
+/// A number-display form (`NumberForm`, `ScientificForm`, …) wrapped around
+/// a `Quantity` applies to the magnitude only: `NumberForm[Quantity[m, u], s]`
+/// displays as `Quantity[NumberForm[m, s], u]`.
+pub fn number_form_of_quantity(name: &str, args: &[Expr]) -> Option<Expr> {
+  if !matches!(
+    name,
+    "NumberForm"
+      | "ScientificForm"
+      | "EngineeringForm"
+      | "PaddedForm"
+      | "AccountingForm"
+  ) {
+    return None;
+  }
+  let (first, rest) = args.split_first()?;
+  let Expr::FunctionCall { name: q, args: qa } = first else {
+    return None;
+  };
+  if q != "Quantity" || qa.len() != 2 {
+    return None;
+  }
+  let mut form_args = vec![qa[0].clone()];
+  form_args.extend(rest.iter().cloned());
+  Some(call("Quantity", vec![call(name, form_args), qa[1].clone()]))
 }
 
 /// Convert a Quantity unit expression to box form with proper abbreviations.

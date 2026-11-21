@@ -67,6 +67,15 @@ $ wo 'Head[GeoGraphics[{Red, EdgeForm[{Black, Thin}], Polygon /@ (Entity["Countr
 GeoGraphics
 ```
 
+`Polygon[Entity["TimeZone", "GMT±h"]]` shades the places keeping that
+standard time: the zone's 15°-wide ocean band plus the countries on that time,
+drawn translucently:
+
+```scrut
+$ wo 'Head[GeoGraphics[{Red, EdgeForm[Thin], Polygon[Entity["TimeZone", "GMT+9"]]}, GeoRange -> "World"]]'
+GeoGraphics
+```
+
 ### Geographic entities
 
 A position may be given as an `Entity[…]`, resolved to coordinates through an

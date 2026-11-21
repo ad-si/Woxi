@@ -8,6 +8,14 @@ $ wo 'Reduce[x^2 == 4, x]'
 x == -2 || x == 2
 ```
 
+The real roots of a sparse polynomial are counted directly, so even a
+degree in the thousands is answered at once:
+
+```scrut
+$ wo 'Length[{ToRules[Reduce[x^10000 - 3 x^7 + 1 == 0, x, Reals]]}]'
+2
+```
+
 Woxi keeps specialized built-in paths for polynomial equations, integer
 intervals, complex algebra, and common transcendental forms. Exact linear
 formulas over the reals and rationals use Woxi's self-contained exact

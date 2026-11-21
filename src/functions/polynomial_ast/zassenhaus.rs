@@ -144,7 +144,8 @@ fn ext_gcd(
   Some((scale(&r0), scale(&s0), scale(&t0)))
 }
 
-fn derivative(v: &[i128]) -> Vec<i128> {
+/// The formal derivative reduced mod `p` (exact for any coefficient size).
+fn derivative_mod(v: &[i128], p: i128) -> Vec<i128> {
   if v.len() <= 1 {
     return vec![0];
   }
@@ -152,7 +153,7 @@ fn derivative(v: &[i128]) -> Vec<i128> {
     .iter()
     .enumerate()
     .skip(1)
-    .map(|(i, &c)| c * i as i128)
+    .map(|(i, &c)| (c.rem_euclid(p) * (i as i128 % p)).rem_euclid(p))
     .collect();
   trim(&mut out);
   out
@@ -287,10 +288,7 @@ pub(super) fn zassenhaus_int_factors(
     if lc % p == 0 {
       continue;
     }
-    // Differentiate the residues: the derivative is only needed mod p,
-    // and multiplying a large coefficient by its degree overflows.
-    let f_mod_p: Vec<i128> = f.iter().map(|c| c.rem_euclid(p)).collect();
-    let fp = derivative(&f_mod_p);
+    let fp = derivative_mod(&f, p);
     let Some((g, _, _)) = ext_gcd(&f, &fp, p) else {
       continue;
     };
@@ -317,7 +315,32 @@ pub(super) fn zassenhaus_int_factors(
   if modp_factors.len() > MAX_MODP_FACTORS {
     return None;
   }
+  let mut result = lift_and_recombine(&f, lc, n, &modp_factors, p)
+    .or_else(|| big::lift_and_recombine(&f, &modp_factors, p))?;
+  // wolframscript lists the factors in ascending degree order, e.g.
+  // Factor of a product of degree-3 and degree-(1+2) polynomials returns
+  // -((1 + x)*(-4 + 2*x + 3*x^2)*(-1 + x^2 + x^3)).
+  result.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+  if result.len() == 1 && content == 1 {
+    return Some(result); // proven irreducible
+  }
+  if content != 1 {
+    result.push(vec![content]);
+  }
+  Some(result)
+}
 
+/// Hensel-lift the modular factors of the primitive `f` (leading
+/// coefficient `lc`, degree `n`) and recombine them into its irreducible
+/// factors over Z, in checked `i128` arithmetic. None when a bound or
+/// modulus exceeds what `i128` can hold.
+fn lift_and_recombine(
+  f: &[i128],
+  lc: i128,
+  n: usize,
+  modp_factors: &[Vec<i128>],
+  p: i128,
+) -> Option<Vec<Vec<i128>>> {
   // Landau–Mignotte bound: a factor of degree j has |coeff| <= 2^j *
   // ||f||_2, and candidates are premultiplied by lc. Only *proper* factors
   // are ever recombined, so j <= n - 1 — halving the bound against the
@@ -342,11 +365,11 @@ pub(super) fn zassenhaus_int_factors(
       return None;
     }
   }
-  let lifted = hensel_lift_tree(&f, &modp_factors, p, target)?;
+  let lifted = hensel_lift_tree(f, modp_factors, p, target)?;
 
   // Subset recombination by trial division over Z.
   let mut avail: Vec<Vec<i128>> = lifted;
-  let mut remaining = f.clone();
+  let mut remaining = f.to_vec();
   let mut result: Vec<Vec<i128>> = Vec::new();
   let mut size = 1usize;
   'outer: while 2 * size <= avail.len() {
@@ -383,16 +406,6 @@ pub(super) fn zassenhaus_int_factors(
     let (prim, _) = primitive_part(&remaining);
     result.push(prim);
   }
-  // wolframscript lists the factors in ascending degree order, e.g.
-  // Factor of a product of degree-3 and degree-(1+2) polynomials returns
-  // -((1 + x)*(-4 + 2*x + 3*x^2)*(-1 + x^2 + x^3)).
-  result.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
-  if result.len() == 1 && content == 1 {
-    return Some(result); // proven irreducible
-  }
-  if content != 1 {
-    result.push(vec![content]);
-  }
   Some(result)
 }
 
@@ -421,5 +434,294 @@ fn combinations(items: &[usize], k: usize) -> Vec<Vec<usize>> {
     for j in i + 1..k {
       idx[j] = idx[j - 1] + 1;
     }
+  }
+}
+
+/// The lift and recombination of [`lift_and_recombine`] in big-integer
+/// arithmetic, for polynomials whose coefficient bound puts the lifting
+/// modulus beyond `i128`.
+mod big {
+  use super::{combinations, ext_gcd};
+  use num_bigint::BigInt;
+  use num_traits::{One, Signed, ToPrimitive, Zero};
+
+  type Poly = Vec<BigInt>;
+
+  fn trim(v: &mut Poly) {
+    while v.len() > 1 && v.last().is_some_and(num_traits::Zero::is_zero) {
+      v.pop();
+    }
+    if v.is_empty() {
+      v.push(BigInt::zero());
+    }
+  }
+
+  fn is_zero(v: &Poly) -> bool {
+    v.iter().all(num_traits::Zero::is_zero)
+  }
+
+  fn deg(v: &Poly) -> usize {
+    v.len() - 1
+  }
+
+  fn md(c: &BigInt, m: &BigInt) -> BigInt {
+    let r = c % m;
+    if r.is_negative() { r + m } else { r }
+  }
+
+  fn gcd(a: &BigInt, b: &BigInt) -> BigInt {
+    let (mut a, mut b) = (a.abs(), b.abs());
+    while !b.is_zero() {
+      let r = &a % &b;
+      a = std::mem::replace(&mut b, r);
+    }
+    a
+  }
+
+  fn from_small(v: &[i128]) -> Poly {
+    v.iter().map(|&c| BigInt::from(c)).collect()
+  }
+
+  fn mod_inv(a: &BigInt, m: &BigInt) -> Option<BigInt> {
+    let (mut old_r, mut r) = (md(a, m), m.clone());
+    let (mut old_s, mut s) = (BigInt::one(), BigInt::zero());
+    while !r.is_zero() {
+      let q = &old_r / &r;
+      let next_r = &old_r - &q * &r;
+      old_r = std::mem::replace(&mut r, next_r);
+      let next_s = &old_s - &q * &s;
+      old_s = std::mem::replace(&mut s, next_s);
+    }
+    old_r.is_one().then(|| md(&old_s, m))
+  }
+
+  fn pmul(a: &Poly, b: &Poly, m: &BigInt) -> Poly {
+    if is_zero(a) || is_zero(b) {
+      return vec![BigInt::zero()];
+    }
+    let mut out = vec![BigInt::zero(); a.len() + b.len() - 1];
+    for (i, x) in a.iter().enumerate() {
+      if x.is_zero() {
+        continue;
+      }
+      for (j, y) in b.iter().enumerate() {
+        out[i + j] += x * y;
+      }
+    }
+    let mut out: Poly = out.iter().map(|c| md(c, m)).collect();
+    trim(&mut out);
+    out
+  }
+
+  fn padd(a: &Poly, b: &Poly, m: &BigInt) -> Poly {
+    let mut out = vec![BigInt::zero(); a.len().max(b.len())];
+    for (i, x) in a.iter().enumerate() {
+      out[i] += x;
+    }
+    for (i, y) in b.iter().enumerate() {
+      out[i] += y;
+    }
+    let mut out: Poly = out.iter().map(|c| md(c, m)).collect();
+    trim(&mut out);
+    out
+  }
+
+  fn psub(a: &Poly, b: &Poly, m: &BigInt) -> Poly {
+    let neg: Poly = b.iter().map(|c| -c).collect();
+    padd(a, &neg, m)
+  }
+
+  fn pdivrem(a: &Poly, b: &Poly, m: &BigInt) -> Option<(Poly, Poly)> {
+    let db = deg(b);
+    let inv = mod_inv(b.last()?, m)?;
+    let mut r: Poly = a.iter().map(|c| md(c, m)).collect();
+    trim(&mut r);
+    if is_zero(&r) || deg(&r) < db {
+      return Some((vec![BigInt::zero()], r));
+    }
+    let mut q = vec![BigInt::zero(); deg(&r) - db + 1];
+    while !is_zero(&r) && deg(&r) >= db {
+      let dr = deg(&r);
+      let c = md(&(&r[dr] * &inv), m);
+      for (i, bc) in b.iter().enumerate() {
+        let idx = dr - db + i;
+        r[idx] = md(&(&r[idx] - &c * bc), m);
+      }
+      q[dr - db] = c;
+      trim(&mut r);
+      if dr == 0 {
+        break;
+      }
+    }
+    trim(&mut q);
+    Some((q, r))
+  }
+
+  /// Quadratic Hensel step (see `super::hensel_step`) mod `m` to mod `m²`.
+  fn hensel_step(
+    f: &Poly,
+    g: &Poly,
+    h: &Poly,
+    s: &Poly,
+    t: &Poly,
+    m: &BigInt,
+  ) -> Option<(Poly, Poly, Poly, Poly)> {
+    let m2 = m * m;
+    let e = psub(f, &pmul(g, h, &m2), &m2);
+    let (q, r) = pdivrem(&pmul(s, &e, &m2), h, &m2)?;
+    let g1 = padd(g, &padd(&pmul(t, &e, &m2), &pmul(&q, g, &m2), &m2), &m2);
+    let h1 = padd(h, &r, &m2);
+    let one = vec![BigInt::one()];
+    let b = psub(
+      &padd(&pmul(s, &g1, &m2), &pmul(t, &h1, &m2), &m2),
+      &one,
+      &m2,
+    );
+    let (c, d) = pdivrem(&pmul(s, &b, &m2), &h1, &m2)?;
+    let s1 = psub(s, &d, &m2);
+    let t1 = psub(t, &padd(&pmul(t, &b, &m2), &pmul(&c, &g1, &m2), &m2), &m2);
+    Some((g1, h1, s1, t1))
+  }
+
+  /// Lift f ≡ lc·g1···gr (mod p) to monic factors mod `modulus`, the
+  /// power of `p` the lift reaches.
+  fn lift_tree(
+    f: &Poly,
+    factors: &[Vec<i128>],
+    p: i128,
+    modulus: &BigInt,
+  ) -> Option<Vec<Poly>> {
+    if factors.len() == 1 {
+      let inv = mod_inv(f.last()?, modulus)?;
+      let mut g: Poly = f.iter().map(|c| md(&(c * &inv), modulus)).collect();
+      trim(&mut g);
+      return Some(vec![g]);
+    }
+    let pb = BigInt::from(p);
+    let mid = factors.len() / 2;
+    let (left, right) = factors.split_at(mid);
+    let mut g = vec![md(f.last()?, &pb)];
+    for fac in left {
+      g = pmul(&g, &from_small(fac), &pb);
+    }
+    let mut h = vec![BigInt::one()];
+    for fac in right {
+      h = pmul(&h, &from_small(fac), &pb);
+    }
+    let small = |v: &Poly| -> Option<Vec<i128>> {
+      v.iter().map(ToPrimitive::to_i128).collect()
+    };
+    let (one, s, t) = ext_gcd(&small(&g)?, &small(&h)?, p)?;
+    if one != [1] {
+      return None;
+    }
+    let (mut gl, mut hl, mut sl, mut tl) =
+      (g, h, from_small(&s), from_small(&t));
+    let mut m = pb;
+    while &m < modulus {
+      (gl, hl, sl, tl) = hensel_step(f, &gl, &hl, &sl, &tl, &m)?;
+      m = &m * &m;
+    }
+    let mut out = lift_tree(&gl, left, p, modulus)?;
+    out.extend(lift_tree(&hl, right, p, modulus)?);
+    Some(out)
+  }
+
+  /// Primitive part with a positive leading coefficient.
+  fn primitive(v: &Poly) -> Poly {
+    let content = v.iter().fold(BigInt::zero(), |g, c| gcd(&g, c));
+    if content.is_zero() {
+      return v.clone();
+    }
+    let content = if v.last().is_some_and(num_traits::Signed::is_negative) {
+      -content
+    } else {
+      content
+    };
+    v.iter().map(|c| c / &content).collect()
+  }
+
+  /// Exact quotient of `a` by `b` over Z, None unless `b` divides `a`.
+  fn exact_div(a: &Poly, b: &Poly) -> Option<Poly> {
+    let db = deg(b);
+    let lb = b.last()?;
+    let mut r = a.clone();
+    trim(&mut r);
+    if deg(&r) < db {
+      return None;
+    }
+    let mut q = vec![BigInt::zero(); deg(&r) - db + 1];
+    for i in (0..q.len()).rev() {
+      if !(&r[i + db] % lb).is_zero() {
+        return None;
+      }
+      let c = &r[i + db] / lb;
+      for (j, bc) in b.iter().enumerate() {
+        r[i + j] -= &c * bc;
+      }
+      q[i] = c;
+    }
+    is_zero(&r).then_some(q)
+  }
+
+  pub(super) fn lift_and_recombine(
+    f: &[i128],
+    modp_factors: &[Vec<i128>],
+    p: i128,
+  ) -> Option<Vec<Vec<i128>>> {
+    let fb = from_small(f);
+    let n = deg(&fb);
+    let lc = fb.last()?.abs();
+    // Landau–Mignotte bound for proper factors (see the i128 version).
+    let norm_sq: BigInt = fb.iter().map(|c| c * c).sum();
+    let norm = norm_sq.sqrt() + BigInt::one();
+    let bound = (BigInt::one() << (n - 1)) * norm * &lc;
+    let target = bound * 2 + 1;
+    let mut modulus = BigInt::from(p);
+    while modulus < target {
+      modulus = &modulus * &modulus;
+    }
+    let half = &modulus / 2;
+    let mut avail = lift_tree(&fb, modp_factors, p, &modulus)?;
+    let mut remaining = fb;
+    let mut result: Vec<Poly> = Vec::new();
+    let mut size = 1usize;
+    'outer: while 2 * size <= avail.len() {
+      let idxs: Vec<usize> = (0..avail.len()).collect();
+      for combo in combinations(&idxs, size) {
+        let mut cand = vec![md(remaining.last()?, &modulus)];
+        for &i in &combo {
+          cand = pmul(&cand, &avail[i], &modulus);
+        }
+        let mut cand: Poly = cand
+          .iter()
+          .map(|c| if c > &half { c - &modulus } else { c.clone() })
+          .collect();
+        trim(&mut cand);
+        let cand = primitive(&cand);
+        if deg(&cand) == 0 {
+          continue;
+        }
+        if let Some(q) = exact_div(&remaining, &cand) {
+          result.push(cand);
+          remaining = q;
+          trim(&mut remaining);
+          let mut combo = combo;
+          combo.sort_unstable_by(|a, b| b.cmp(a));
+          for i in combo {
+            avail.remove(i);
+          }
+          continue 'outer;
+        }
+      }
+      size += 1;
+    }
+    if deg(&remaining) > 0 {
+      result.push(primitive(&remaining));
+    }
+    result
+      .iter()
+      .map(|v| v.iter().map(ToPrimitive::to_i128).collect())
+      .collect()
   }
 }
