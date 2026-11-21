@@ -6205,3 +6205,77 @@ mod grid_item_style_tests {
     assert!(svg.contains("10\u{2009}000"), "{svg}");
   }
 }
+
+/// Embedded italic faces.
+mod embedded_font_tests {
+
+  /// A font database holding only the embedded fonts, so the result does
+  /// not depend on which system fonts happen to be installed.
+  fn embedded_fontdb() -> resvg::usvg::fontdb::Database {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    db
+  }
+
+  #[test]
+  fn embedded_fonts_provide_italic_faces() {
+    use resvg::usvg::fontdb::{Family, Query, Stretch, Style, Weight};
+    let db = embedded_fontdb();
+    for family in [
+      Family::SansSerif,
+      Family::Serif,
+      Family::Name("Atkinson Hyperlegible Next"),
+    ] {
+      for weight in [Weight::NORMAL, Weight::BOLD] {
+        let id = db
+          .query(&Query {
+            families: &[family],
+            weight,
+            stretch: Stretch::Normal,
+            style: Style::Italic,
+          })
+          .expect("an embedded face matches");
+        let face = db.face(id).unwrap();
+        assert_eq!(face.style, Style::Italic, "{family:?} {weight:?}");
+        assert_eq!(face.weight, weight, "{family:?} {weight:?}");
+      }
+    }
+  }
+
+  /// Rasterize `svg` with the embedded fonts only and return its pixels.
+  fn rasterize_with_embedded_fonts(svg: &str) -> Vec<u8> {
+    let opts = resvg::usvg::Options {
+      fontdb: std::sync::Arc::new(embedded_fontdb()),
+      ..Default::default()
+    };
+    let tree = resvg::usvg::Tree::from_str(svg, &opts).unwrap();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(80, 40).unwrap();
+    resvg::render(
+      &tree,
+      resvg::tiny_skia::Transform::identity(),
+      &mut pixmap.as_mut(),
+    );
+    pixmap.data().to_vec()
+  }
+
+  #[test]
+  fn italic_text_rasterizes_slanted() {
+    // `Style[…, Italic]` text from Text/Row is written as
+    // `font-style="italic"` without a font family; Woxi Studio draws such
+    // SVGs with the embedded fonts, which used to lack an italic face and
+    // drew the text upright.
+    let svg = |attrs: &str| {
+      format!(
+        r#"<svg width="80" height="40" xmlns="http://www.w3.org/2000/svg"><text x="10" y="30" font-size="28"{attrs}>hl</text></svg>"#
+      )
+    };
+    for weight in ["", r#" font-weight="bold""#] {
+      let upright = rasterize_with_embedded_fonts(&svg(weight));
+      let slanted = rasterize_with_embedded_fonts(&svg(&format!(
+        r#"{weight} font-style="italic""#
+      )));
+      assert!(slanted.iter().any(|&b| b != 0), "{weight}: nothing drawn");
+      assert_ne!(upright, slanted, "{weight}: italic drawn upright");
+    }
+  }
+}
