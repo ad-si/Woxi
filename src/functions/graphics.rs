@@ -25033,8 +25033,9 @@ fn contains_visible_style(e: &Expr) -> bool {
   }
 }
 
-/// Whether `e` is, or holds inside a `Row`, `Text` or script, a
-/// `Style[label, …]` whose directives change how the text is drawn. Unlike
+/// Whether `e` is, or holds inside a `Row`, `Text`, script or power (a
+/// `Style["e", Italic]^t` base), a `Style[label, …]` whose directives change
+/// how the text is drawn. Unlike
 /// [`contains_visible_style`], a script that merely holds letters
 /// (`Subscript[R, x]`) does not count: such a label carries no styling of
 /// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
@@ -25054,11 +25055,16 @@ fn has_explicit_style(e: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Subscript" | "Superscript" | "Subsuperscript"
+        "Subscript" | "Superscript" | "Subsuperscript" | "Power"
       ) =>
     {
       args.iter().any(has_explicit_style)
     }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => has_explicit_style(left) || has_explicit_style(right),
     _ => false,
   }
 }
