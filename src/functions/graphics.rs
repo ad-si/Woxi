@@ -23778,6 +23778,14 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           );
         }
         let over_svg = boxes_to_svg(&args[1]);
+        // An accent (`^`, `~`, `.`, `→`) over a plain-text base is drawn as
+        // its combining mark on the base (`T̂`), not as a superscript beside
+        // it; markup or entities in the base keep the superscript fallback.
+        if !base_svg.contains(['<', '&'])
+          && combining_accent(over_svg.trim(), true).is_some()
+        {
+          return accent_text(&base_svg, &over_svg, true);
+        }
         format!(
           "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
         )
