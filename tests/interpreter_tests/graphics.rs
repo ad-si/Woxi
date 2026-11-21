@@ -33092,6 +33092,68 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// `(rx, ry)` of the first `<ellipse>` in an SVG.
+    fn first_ellipse_radii(svg: &str) -> (f64, f64) {
+      let tag = &svg[svg.find("<ellipse").expect("an ellipse")..];
+      let tag = &tag[..tag.find('>').unwrap()];
+      let attr = |name: &str| -> f64 {
+        let start = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+        let rest = &tag[start..];
+        rest[..rest.find('"').unwrap()].parse().unwrap()
+      };
+      (attr("rx"), attr("ry"))
+    }
+
+    // The default locator marker is a fixed-size circle on screen, so it
+    // stays round in a pane whose axes are stretched differently — a plot
+    // with `AspectRatio -> 1` over an x range far wider than its y range.
+    #[test]
+    fn locator_pane_default_marker_stays_round_on_stretched_axes() {
+      for body in [
+        "Plot[x/100, {x, 2, 40}, PlotRange -> {{2, 40}, {-0.5, 0.1}}, \
+         AspectRatio -> 1, ImageSize -> 270]",
+        "Graphics[{Point[{5, 0}]}, PlotRange -> {{2, 40}, {-0.5, 0.1}}, \
+         AspectRatio -> 1, ImageSize -> 270]",
+        "Graphics[{Point[{5, 0}]}, PlotRange -> {{0, 1}, {0, 50}}, \
+         AspectRatio -> 1/2, ImageSize -> 270]",
+      ] {
+        let svg = export_svg(&format!("LocatorPane[{{10, 0}}, {body}]"));
+        let (rx, ry) = first_ellipse_radii(&svg);
+        assert!(
+          rx > 0.0 && (rx - ry).abs() / rx < 0.05,
+          "marker must be round, got rx={rx} ry={ry} for {body}"
+        );
+      }
+    }
+
+    // In a plot's `Epilog`, `Translate` moves a circle's center but not its
+    // `{rx, ry}` radius (a length that would otherwise pass for a point),
+    // and `Scale` stretches the radius along with the center.
+    #[test]
+    fn plot_epilog_transforms_scale_but_do_not_shift_circle_radii() {
+      let plot = |epilog: &str| {
+        export_svg(&format!(
+          "Plot[x, {{x, 0, 4}}, PlotRange -> {{{{0, 4}}, {{0, 4}}}}, \
+           AspectRatio -> 1, Epilog -> {epilog}]"
+        ))
+      };
+      let base = first_ellipse_radii(&plot("Circle[{1, 1}, {0.5, 0.25}]"));
+      let shifted = first_ellipse_radii(&plot(
+        "Translate[Circle[{0, 0}, {0.5, 0.25}], {1, 1}]",
+      ));
+      assert!(
+        (base.0 - shifted.0).abs() < 0.5 && (base.1 - shifted.1).abs() < 0.5,
+        "Translate must keep the radii: {base:?} vs {shifted:?}"
+      );
+      let scaled = first_ellipse_radii(&plot(
+        "Scale[Circle[{1, 1}, 0.25], {2, 1}, {1, 1}]",
+      ));
+      assert!(
+        (scaled.0 - base.0).abs() < 0.5 && (scaled.1 - base.1).abs() < 0.5,
+        "Scale must stretch the radius: {base:?} vs {scaled:?}"
+      );
+    }
+
     // A pane whose body is a call of a user-defined function returning a
     // plot (`LocatorPane[pt, picture[a]]`, or a symbol holding one) has no
     // graphics call in sight to take the markers; they are drawn over the

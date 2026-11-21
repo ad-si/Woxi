@@ -5651,6 +5651,13 @@ pub(crate) fn column_svg_with_rendered_items(
             syntax::Expr::Graphics { .. } | syntax::Expr::Image { .. }
           ) && !evaluator::lays_out_a_graphic(item)
             && pane_fixed_size(item).is_none()
+            // A `Framed` box is drawn edge to edge — its frame is its
+            // outline, with no blank line margin around it to take out
+            // of an explicit spacing.
+            && !matches!(
+              item,
+              syntax::Expr::FunctionCall { name, .. } if name == "Framed"
+            )
         })
         .collect(),
     );

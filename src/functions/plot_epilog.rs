@@ -726,6 +726,36 @@ fn affine_map_points(expr: &Expr, m: [[f64; 2]; 2], v: (f64, f64)) -> Expr {
         let composed = compose_affine((m, v), local);
         return affine_map_points(&args[0], composed.0, composed.1);
       }
+      // `Circle`/`Disk[center, r, …]`: only the center is a point. The
+      // radius — a number or an `{rx, ry}` pair, which would otherwise pass
+      // for a point — is a length, so it is scaled but never shifted, and
+      // an angle range after it is left alone.
+      if (name == "Circle" || name == "Disk") && args.len() >= 2 {
+        let mut new_args: Vec<Expr> = args.to_vec();
+        new_args[0] = affine_map_points(&args[0], m, v);
+        // The length each unit axis vector is stretched to (exact for a
+        // scaling, rotation or reflection of the circle).
+        let (sx, sy) = (m[0][0].hypot(m[1][0]), m[0][1].hypot(m[1][1]));
+        let radii = match &args[1] {
+          Expr::List(r) if r.len() == 2 => {
+            try_eval_to_f64(&r[0]).zip(try_eval_to_f64(&r[1]))
+          }
+          other => try_eval_to_f64(other).map(|r| (r, r)),
+        };
+        if let Some((rx, ry)) = radii
+          && (sx != 1.0 || sy != 1.0)
+        {
+          new_args[1] = if sx == sy && !matches!(args[1], Expr::List(_)) {
+            Expr::Real(rx * sx)
+          } else {
+            Expr::List(vec![Expr::Real(rx * sx), Expr::Real(ry * sy)].into())
+          };
+        }
+        return Expr::FunctionCall {
+          name: name.clone(),
+          args: new_args.into(),
+        };
+      }
       Expr::FunctionCall {
         name: name.clone(),
         args: args
