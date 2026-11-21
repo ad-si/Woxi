@@ -243,7 +243,10 @@ pub fn dispatch_polynomial_functions(
       return Some(Ok(unevaluated("PrimitivePolynomialQ", args)));
     }
     "Simplify" if !args.is_empty() => {
-      return Some(crate::functions::polynomial_ast::simplify_ast(args));
+      return Some(reevaluate_simplified(
+        args,
+        crate::functions::polynomial_ast::simplify_ast,
+      ));
     }
     "FullSimplify"
       if args.len() <= 2
@@ -251,7 +254,10 @@ pub fn dispatch_polynomial_functions(
           && matches!(&args[2], Expr::Rule { pattern, .. }
             if matches!(pattern.as_ref(), Expr::Identifier(o) if o == "Assumptions")) =>
     {
-      return Some(crate::functions::polynomial_ast::full_simplify_ast(args));
+      return Some(reevaluate_simplified(
+        args,
+        crate::functions::polynomial_ast::full_simplify_ast,
+      ));
     }
     "Refine"
       if args.len() <= 2
@@ -2388,4 +2394,27 @@ fn factor_square_free_list_mod(
   let mut out = vec![Expr::List(vec![constant, Expr::Integer(1)].into())];
   out.extend(sorted.iter().cloned());
   Ok(Some(Expr::List(out.into())))
+}
+
+/// A simplified result is evaluated once more, as Wolfram evaluates the
+/// value every built-in returns: a candidate assembled from parts can hold
+/// factors that cancel (`(2 (1 + Sqrt[5]))/(1 + Sqrt[5])^2` is
+/// `2/(1 + Sqrt[5])`). What that evaluation produces is simplified again,
+/// so the answer does not depend on the form the input came in.
+fn reevaluate_simplified(
+  args: &[Expr],
+  simplify: fn(&[Expr]) -> Result<Expr, InterpreterError>,
+) -> Result<Expr, InterpreterError> {
+  let evaluate =
+    |e: Expr| crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e);
+  let result = simplify(args)?;
+  let evaluated = evaluate(result.clone());
+  if crate::syntax::expr_to_string(&evaluated)
+    == crate::syntax::expr_to_string(&result)
+  {
+    return Ok(result);
+  }
+  let mut again = args.to_vec();
+  again[0] = evaluated;
+  Ok(evaluate(simplify(&again)?))
 }
