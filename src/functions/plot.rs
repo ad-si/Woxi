@@ -606,16 +606,19 @@ fn compiled_body(
   let body = resolved.as_ref().unwrap_or(body);
   let key = std::ptr::from_ref::<Expr>(body) as usize;
   if let Some(hit) = COMPILED_BODIES.with(|cache| {
-    cache
-      .borrow()
-      .iter()
-      .find(|entry| {
-        entry.key == key
-          && entry.vars.as_slice() == vars
-          && crate::evaluator::pattern_matching::expr_equal(&entry.body, body)
-          && symbols_unchanged(&entry.symbols)
-      })
-      .map(|entry| entry.compiled.clone())
+    let mut cache = cache.borrow_mut();
+    let entry = cache.iter_mut().find(|entry| {
+      entry.key == key
+        && entry.vars.as_slice() == vars
+        && crate::evaluator::pattern_matching::expr_equal(&entry.body, body)
+        && symbols_unchanged(&entry.symbols)
+    })?;
+    // An equal body left by an earlier evaluation holds its own copies of
+    // the large lists (an `InterpolatingFunction`'s table), which every
+    // sample would compare element by element; the caller's body shares its
+    // lists with the following samples, so they compare by pointer.
+    entry.body = body.clone();
+    Some(entry.compiled.clone())
   }) {
     return hit;
   }
@@ -4158,6 +4161,18 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Size each relative `Thickness[t]` of `plot_style` as the fraction `t`
+  /// of this plot's image width, as Wolfram does: a wider plot draws the
+  /// same `Thickness` with a heavier line.
+  pub(crate) fn resolve_relative_thickness(&mut self) {
+    let width = self.svg_width as f64;
+    for style in &mut self.plot_style {
+      if let Some(t) = style.thickness_fraction {
+        style.thickness = Some(t * width);
+      }
+    }
+  }
+
   /// Drop every `FrameLabel` edge, plain text and picture alike.
   pub(crate) fn clear_frame_labels(&mut self) {
     self.frame_label_bottom = None;
@@ -5335,6 +5350,43 @@ fn inline_segment_widths(
       LabelSegment::Graphic { w, .. } => w * sf,
     })
     .collect()
+}
+
+/// A chart's `PlotLabel` with its first line's baseline at `ty`, set at
+/// font size `fs` (render units) with `decimals` digits in its position: a
+/// title mixing text with typeset pictures (a stacked fraction) is laid
+/// out as segments, any other as a `<text>` of its stacked lines.
+#[allow(clippy::too_many_arguments)]
+fn chart_title_svg(
+  sl: &StyledLabel,
+  cx: f64,
+  ty: f64,
+  fs: f64,
+  fill: &str,
+  style_attrs: &str,
+  sf: f64,
+  decimals: usize,
+) -> String {
+  let pitch = fs * 1.2;
+  if !sl.segments.is_empty() {
+    // Center the line on the band the tallest picture claims.
+    let ty = ty + sl.extra_line_count() as f64 * pitch / 2.0;
+    return inline_segments_svg(
+      &sl.segments,
+      cx,
+      ty,
+      fs,
+      fill,
+      style_attrs,
+      sf,
+    );
+  }
+  format!(
+    "<text x=\"{cx:.decimals$}\" y=\"{ty:.decimals$}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+       fill=\"{fill}\"{style_attrs}>{}</text>\n",
+    sl.svg_scaled_stacked(sf, cx, pitch)
+  )
 }
 
 /// A title made of text runs and small inline pictures, laid out left to
@@ -10245,10 +10297,17 @@ pub(crate) fn generate_bar_svg(
   } else {
     BAR_SIDE_MARGIN * sf
   };
+  // A left `FrameLabel` stands beside the y tick labels, in a strip of
+  // its own line's height plus a small gap.
+  let frame_label_left_room = if frame_label_y.is_some() {
+    1.3 * axes_font_pt[1] * sf
+  } else {
+    0.0
+  };
   let mut margin_left = if explicit_pad(0).is_some() {
     0.0
   } else {
-    BAR_SIDE_MARGIN * sf
+    BAR_SIDE_MARGIN * sf + frame_label_left_room
   };
   // Rotated labels below the axis hang as far as their bounding boxes
   // reach; an explicit bottom padding too small for them gives up
@@ -10942,11 +11001,19 @@ pub(crate) fn generate_bar_svg(
         let label = &chart_labels[li];
         let font_size = label.font_size.map_or(font_size, |f| f * sf);
         let lines = chart_label_lines(label, font_size / sf);
-        let weight = if label.bold || label_bold {
-          " font-weight=\"bold\""
-        } else {
-          ""
-        };
+        let weight = format!(
+          "{}{}",
+          if label.bold || label_bold {
+            " font-weight=\"bold\""
+          } else {
+            ""
+          },
+          if label.italic {
+            " font-style=\"italic\""
+          } else {
+            ""
+          }
+        );
         let cx = map_x_val(x_center);
         // For Above/Center positioning, use the max value in the group
         let group_max = group_top(gi);
@@ -11107,7 +11174,14 @@ pub(crate) fn generate_bar_svg(
     }
     if let Some(y_label) = frame_label_y {
       let cy = plot_y0 + plot_h / 2.0;
-      let lx = margin_left + y_axes_font * 0.8;
+      // Rotated, the label's glyphs reach `0.8` em to the left of `lx`
+      // and `0.2` em to the right: it ends just before the tick labels,
+      // which reach the side margin's width left of the plotting area's
+      // label strip.
+      let tick_labels_left =
+        plot_x0 - y_label_area as f64 - BAR_SIDE_MARGIN * sf;
+      // Too tight an `ImagePadding` still keeps it inside the image.
+      let lx = (tick_labels_left - y_axes_font * 0.3).max(y_axes_font * 0.8);
       labels_svg.push_str(&format!(
         "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{y_axes_font:.0}\" \
@@ -11162,11 +11236,15 @@ pub(crate) fn generate_bar_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -11610,11 +11688,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     if sl.italic {
       style_attrs.push_str(" font-style=\"italic\"");
     }
-    svg.push_str(&format!(
-      "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg_scaled_stacked(sf, cx, fs * 1.2)
-    ));
+    svg.push_str(&chart_title_svg(sl, cx, ty, fs, &fill, &style_attrs, sf, 2));
   }
 
   // Legends to the right of the plot.
@@ -12266,11 +12340,15 @@ pub(crate) fn generate_bubble_chart_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -12847,14 +12925,20 @@ fn legend_label_svg(
       x + w / 2.0,
     );
   }
+  // Legend entries are typeset in TraditionalForm.
+  let markup =
+    if label.starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) {
+      crate::functions::graphics::box_string_to_svg_scaled(
+        label,
+        RESOLUTION_SCALE as f64,
+      )
+    } else {
+      crate::functions::graphics::traditional_box_string_to_svg(label)
+    };
   format!(
     "<text x=\"{x:.1}\" y=\"{text_y:.1}\" \
      font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-     fill=\"{fill}\">{}</text>\n",
-    crate::functions::graphics::box_string_to_svg_scaled(
-      label,
-      RESOLUTION_SCALE as f64
-    ),
+     fill=\"{fill}\">{markup}</text>\n",
   )
 }
 
@@ -13651,11 +13735,15 @@ pub(crate) fn generate_histogram_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -17196,6 +17284,7 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.full_width = fw;
         plot_opts.image_size_explicit = image_size_explicit_dims(replacement);
         plot_opts.image_size_value = Some(replacement.clone());
+        plot_opts.resolve_relative_thickness();
       }
     }
     "ClippingStyle" => {
@@ -17229,6 +17318,7 @@ pub(crate) fn apply_common_plot_option(
     }
     "PlotStyle" => {
       plot_opts.plot_style = parse_plot_style(replacement);
+      plot_opts.resolve_relative_thickness();
     }
     "ColorFunction" => {
       plot_opts.color_function = color_function_option(replacement);
@@ -18941,4 +19031,61 @@ fn log_scale_plot_ast(
   });
   scaled.extend_from_slice(&args[2..]);
   plot_ast(&scaled)
+}
+
+#[cfg(test)]
+mod compiled_body_cache_tests {
+  use super::*;
+
+  /// A table with the same values as `share_large_lists` leaves it, but
+  /// built separately (an earlier evaluation's copy).
+  fn table_body(n: usize) -> Expr {
+    let mut table = Expr::List((0..n).map(|i| Expr::Real(i as f64)).collect());
+    crate::evaluator::share_large_lists(&mut table, 0);
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Identifier("x".to_string()), table].into(),
+    }
+  }
+
+  fn cached_table(key_body: &Expr) -> Option<Expr> {
+    let key = std::ptr::from_ref::<Expr>(key_body) as usize;
+    COMPILED_BODIES.with(|cache| {
+      cache
+        .borrow()
+        .iter()
+        .find(|e| e.key == key)
+        .map(|e| e.body.clone())
+    })
+  }
+
+  /// A cache hit on an equal body built by an earlier evaluation adopts the
+  /// caller's body, so the following samples compare its large lists by
+  /// pointer instead of element by element.
+  #[test]
+  fn hit_adopts_the_callers_shared_lists() {
+    let vars = vec!["x".to_string()];
+    let first = table_body(64);
+    let _ = compiled_body(&first, &vars);
+    // Same address, equal content, distinct shared list.
+    let entry = cached_table(&first).expect("an entry");
+    let replacement = table_body(64);
+    COMPILED_BODIES.with(|cache| {
+      for e in cache.borrow_mut().iter_mut() {
+        if crate::evaluator::pattern_matching::expr_equal(&e.body, &entry) {
+          e.body = replacement.clone();
+        }
+      }
+    });
+    let _ = compiled_body(&first, &vars);
+    let stored = cached_table(&first).expect("an entry");
+    let list = |e: &Expr| match e {
+      Expr::FunctionCall { args, .. } => match &args[1] {
+        Expr::List(items) => items.clone(),
+        _ => unreachable!(),
+      },
+      _ => unreachable!(),
+    };
+    assert!(list(&stored).same_shared(&list(&first)));
+  }
 }

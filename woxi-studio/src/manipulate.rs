@@ -2112,7 +2112,8 @@ impl ManipulateState {
   /// repetitions starts over from the beginning.
   pub fn toggle_play(&mut self) {
     if !self.playing {
-      for c in &mut self.controls {
+      let mut restarted = Vec::new();
+      for (i, c) in self.controls.iter_mut().enumerate() {
         if let ControlState::Trigger {
           min,
           current,
@@ -2123,7 +2124,11 @@ impl ManipulateState {
         {
           *completed = 0;
           *current = *min;
+          restarted.push(i);
         }
+      }
+      for i in restarted {
+        self.sync_named_siblings(i);
       }
     }
     self.playing = !self.playing;
@@ -2135,19 +2140,30 @@ impl ManipulateState {
   /// `ControlType -> Trigger`/`Animator` variable when the spec named one
   /// (always a dedicated `Trigger` row, which wraps for a finite sweep and
   /// runs forever for an infinite one), else the first continuous control.
+  /// When a slider row shares the Trigger's variable, the Trigger row
+  /// drives the sweep (its bounds, step and repetitions) and the slider
+  /// follows along.
   pub fn advance_animation(&mut self) {
     let target = self.animation_var.clone();
-    let idx = self.controls.iter().position(|c| match &target {
-      Some(name) => matches!(
-        c,
-        ControlState::Continuous { name: n, .. }
-        | ControlState::Trigger { name: n, .. } if n == name
-      ),
-      None => matches!(
-        c,
-        ControlState::Continuous { .. } | ControlState::Trigger { .. }
-      ),
-    });
+    let idx = match &target {
+      Some(name) => self
+        .controls
+        .iter()
+        .position(
+          |c| matches!(c, ControlState::Trigger { name: n, .. } if n == name),
+        )
+        .or_else(|| {
+          self.controls.iter().position(|c| {
+            matches!(c, ControlState::Continuous { name: n, .. } if n == name)
+          })
+        }),
+      None => self.controls.iter().position(|c| {
+        matches!(
+          c,
+          ControlState::Continuous { .. } | ControlState::Trigger { .. }
+        )
+      }),
+    };
     let Some(idx) = idx else { return };
     // A Trigger's `AnimationRepetitions` may name another control.
     let limit = self.trigger_repetition_limit(idx);
@@ -2192,6 +2208,7 @@ impl ManipulateState {
       }
       _ => return,
     }
+    self.sync_named_siblings(idx);
     if finished {
       self.playing = false;
     }
@@ -4983,6 +5000,36 @@ mod tests {
     assert_eq!(labels, vec!["A\u{2082}", "C\u{2083}\u{207A}", "B\u{00B2}"]);
   }
 
+  /// A popup choice labeled with a power whose exponent negates a styled
+  /// piece (`e^(-Style["x", Italic])`) raises the whole exponent, its
+  /// letter slanted, instead of spelling out the `Style[…]` source in
+  /// script glyphs.
+  #[test]
+  fn popup_label_raises_negated_styled_exponent() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[g, {g, {Sin -> s, (Exp[-#^2] &) -> e^(-Style[\"t\", Italic])}}]",
+    )
+    .expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let (labels, runs) = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        ControlState::Discrete {
+          value_labels,
+          value_label_runs,
+          ..
+        } => Some((value_labels.clone(), value_label_runs.clone())),
+        _ => None,
+      })
+      .expect("popup control");
+    assert_eq!(labels[1], "e\u{207B}\u{1D57}");
+    let exponent = runs[1].last().expect("exponent run");
+    assert_eq!(exponent.text, "\u{1D57}");
+    assert!(exponent.italic, "{:?}", runs[1]);
+  }
+
   /// A slider label typed as a subscripted `π` reads back as the symbol
   /// `Pi`; it must still be drawn as the glyph, not the word "Pi".
   #[test]
@@ -7521,6 +7568,39 @@ mod tests {
     assert_eq!(moves.as_deref(), Some("1"));
     let audio = state.emitted_sound.take().expect("the beep's tone");
     assert_eq!(audio.mime, "audio/wav");
+  }
+
+  /// Live counters written between the control specs
+  /// (`Row[{Style["left "], Dynamic[left]}]`) are panel rows at their
+  /// declared place that follow the state a click changes, and a control
+  /// written in one `Row` after such a counter shares its line.
+  #[test]
+  fn live_counter_rows_sit_in_the_panel_and_follow_clicks() {
+    let code = r#"Manipulate[
+      ClickPane[Graphics[Rectangle[{0, 0}, {2, 1}], PlotRange -> {{0, 2}, {0, 1}},
+          ImageSize -> {200, 100}], (left--; n++) &],
+      {{mode, 1, ""}, {1 -> "a", 2 -> "b"}, ControlType -> SetterBar},
+      Row[{Style["left "], Dynamic[left]}],
+      Row[{Style["rounds ", Bold], Dynamic[n],
+        Control[{{back, 0, ""}, {1 -> "undo"}, ControlType -> SetterBar}]}],
+      {{left, 5}, ControlType -> None},
+      {{n, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["mode", "back"]);
+    // Both counters sit in the panel just before the "undo" bar.
+    assert_eq!(state.panel_displays, vec![(0, 1), (1, 1)]);
+    assert!(state.joins_previous_control(1));
+    state.pointer = (50.0, 50.0);
+    state.apply_pane_click();
+    assert!(state.error.is_none(), "click failed: {:?}", state.error);
+    let shown = format!("{:?}", state.display_trees);
+    assert!(shown.contains("text: \"4\""), "{shown}");
+    assert!(shown.contains("text: \"1\""), "{shown}");
   }
 
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
