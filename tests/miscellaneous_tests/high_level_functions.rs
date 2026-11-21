@@ -7615,6 +7615,59 @@ mod high_level_functions {
     }
 
     #[test]
+    fn test_geographics_polygon_edge_defaults_to_black() {
+      // An EdgeForm without a color strokes the polygon black, not in the
+      // fill color.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, EdgeForm[Thick], \
+         Polygon[Entity[\"Country\", \"France\"]]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains(
+          "fill=\"rgb(255,0,0)\" fill-rule=\"evenodd\" \
+                      stroke=\"rgb(0,0,0)\""
+        ),
+        "edge not black"
+      );
+    }
+
+    #[test]
+    fn test_geographics_polygon_time_zone() {
+      // `Polygon[Entity["TimeZone", "GMT+9"]]` shades the zone's ocean band
+      // (127.5°E to 142.5°E) and the countries keeping GMT+9, translucently.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, EdgeForm[Thin], \
+         Polygon[Entity[\"TimeZone\", \"GMT+9\"]]}, \
+         GeoRange -> \"World\", ImageSize -> {720, 360}], \"SVG\"]",
+      )
+      .unwrap();
+      let zone = svg
+        .lines()
+        .find(|l| l.contains("fill-opacity=\"0.2\""))
+        .expect("time zone not drawn");
+      assert!(zone.contains("fill=\"rgb(255,0,0)\""), "zone color");
+      assert!(zone.contains("stroke=\"rgb(0,0,0)\""), "zone edge");
+      // At 2 px per degree the band spans x = 615 to 645.
+      assert!(zone.contains("M 615.0 360.0 L 645.0 360.0"), "band missing");
+      let other = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         Polygon[Entity[\"TimeZone\", \"GMT-5\"]]}, \
+         GeoRange -> \"World\", ImageSize -> {720, 360}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(other.contains("M 195.0 360.0 L 225.0 360.0"), "GMT-5 band");
+      // An unknown zone draws nothing.
+      let unknown = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         Polygon[Entity[\"TimeZone\", \"Nowhere\"]]}, \
+         GeoRange -> \"World\"], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(!unknown.contains("fill-opacity=\"0.2\""));
+    }
+
+    #[test]
     fn test_geographics_background_country_borders() {
       // "CountryBorders" draws only the borders on white; None drops the map.
       let svg = interpret(
