@@ -195,6 +195,36 @@ mod polyhedron_operations_tests {
     );
   }
 
+  /// An open surface is only corner-cut: the vertex where four faces of a
+  /// 2x2 sheet meet becomes a hole (what lies behind it shows through),
+  /// not a capped corner — only a closed solid gets caps. A closed cube
+  /// next to it in the same call is still capped.
+  #[test]
+  fn truncate_open_surface_leaves_holes_at_interior_vertices() {
+    let sheet = "Flatten[Table[Polygon[{{i, j, 0}, {i + 1, j, 0}, \
+      {i + 1, j + 1, 0}, {i, j + 1, 0}}], {i, 0, 1}, {j, 0, 1}]]";
+    assert_eq!(
+      interpret(&format!(
+        "Length[First[#]] & /@ \
+          Cases[PolyhedronOperations`Truncate[{sheet}, 1/4], _Polygon, Infinity]"
+      ))
+      .unwrap(),
+      "{8, 8, 8, 8}"
+    );
+    // A tent of quads that all meet at an apex (a repeated corner there)
+    // is open along its rim, so its apex is not capped either.
+    assert_eq!(
+      interpret(
+        "tent = Table[Polygon[{{Cos[t], Sin[t], 0}, \
+            {Cos[t + Pi/2], Sin[t + Pi/2], 0}, {0, 0, 1}, {0, 0, 1}}], \
+            {t, 0, 3 Pi/2, Pi/2}]; \
+          Length[Cases[PolyhedronOperations`Truncate[tent, 0.2], _Polygon, Infinity]]"
+      )
+      .unwrap(),
+      "4"
+    );
+  }
+
   /// The corner cap at the origin passes through the three cut points next
   /// to it and faces outward, like the solid's own faces.
   #[test]
