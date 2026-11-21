@@ -13948,8 +13948,7 @@ fn graphics_decorations(
     if let Some((b, l, t, r)) = frame_label {
       let text = |s: &String| {
         (!s.is_empty()).then(|| {
-          // A `"a
-b"` label stands one line taller per break.
+          // A `"a\nb"` label stands one line taller per break.
           axes_label_picture_size(s).map_or(
             block_height(text_label_lines(s).len(), label_font),
             |(_, h)| h,
