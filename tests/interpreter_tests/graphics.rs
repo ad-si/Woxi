@@ -2366,7 +2366,7 @@ mod graphics {
           panic!("expected a Grid for {code}");
         };
         assert_eq!(name, "Grid");
-        woxi::functions::graphics::grid_svg_with_gaps(&args, &[]).unwrap()
+        woxi::functions::graphics::grid_svg_with_gaps(args, &[]).unwrap()
       };
       // A 300 x 250 image is not shrunk to 240 points across.
       let svg = grid_svg(
