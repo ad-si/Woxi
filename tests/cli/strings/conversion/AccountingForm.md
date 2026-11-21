@@ -44,6 +44,19 @@ $ wo 'ToString[AccountingForm[-12.3, NumberSigns -> {"<", ">"}]]'
 <12.3
 ```
 
+A padded field reserves only as many sign columns as the given signs need,
+so empty signs leave just the digits:
+
+```scrut
+$ wo 'ToString[AccountingForm[0.111, {3, 2}, NumberSigns -> {"", ""}, NumberPadding -> {"0", "0"}]]'
+0.11
+```
+
+```scrut
+$ wo 'ToString[AccountingForm[1., {2, 1}, NumberSigns -> {"-", "+"}, NumberPadding -> {"0", "0"}, SignPadding -> True]]'
++1.0
+```
+
 A list is formatted element-wise:
 
 ```scrut
