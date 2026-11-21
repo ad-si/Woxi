@@ -3822,6 +3822,23 @@ fn wraps_a_raster_image(expr: &syntax::Expr) -> bool {
 /// render it as SVG and return `-Graphics-`. Grid/TextGrid stay symbolic
 /// during evaluation so that part-assignment works; rendering only happens
 /// at the output stage.  Also unwraps TraditionalForm[Grid[…]] wrappers.
+/// Whether `expr` is `TraditionalForm[formula]`, possibly inside `Style`
+/// wrappers (`Style[TraditionalForm[a == b], 16, Bold]`).
+fn styled_traditional_form(expr: &syntax::Expr) -> bool {
+  let mut current = expr;
+  while let syntax::Expr::FunctionCall { name, args } = current
+    && name == "Style"
+    && let Some(first) = args.first()
+  {
+    current = first;
+  }
+  matches!(
+    current,
+    syntax::Expr::FunctionCall { name, args }
+      if name == "TraditionalForm" && args.len() == 1
+  )
+}
+
 /// A table drawn out of a `Pane[content, {w, h}]` (also under `Text`)
 /// still takes up the pane's whole `w`×`h` box, placed in it by the pane's
 /// `Alignment`, as in a notebook: the table alone would shrink the area a
@@ -3888,6 +3905,14 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       {
         return graphics_result(svg);
       }
+      // `Text[Style[TraditionalForm[formula], size, weight]]`: a typeset
+      // formula shown as display text (a Manipulate body that states an
+      // identity) is drawn as the formula, in the style's font.
+      if styled_traditional_form(&content) {
+        return graphics_result(
+          evaluator::dispatch::io_functions::expr_to_svg(&expr),
+        );
+      }
       match functions::graphics::with_text_display_grids(|| {
         render_grid_if_needed(content)
       }) {
@@ -3933,6 +3958,18 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           Some(syntax::Expr::FunctionCall { name: inner, .. }) if inner == "Text"
         ) =>
     {
+      // A pane around a typeset formula keeps its size and alignment: the
+      // formula sits where the pane places it in the box it declares.
+      if let syntax::Expr::FunctionCall {
+        args: text_args, ..
+      } = &args[0]
+        && text_args.len() == 1
+        && styled_traditional_form(&text_args[0])
+      {
+        return graphics_result(
+          evaluator::dispatch::io_functions::expr_to_svg(&expr),
+        );
+      }
       match render_grid_if_needed(args[0].clone()) {
         graphics @ syntax::Expr::Graphics { .. } => {
           keep_fixed_pane_box(&expr, graphics)
@@ -4984,6 +5021,23 @@ fn holds_layout_graphic(expr: &syntax::Expr) -> bool {
 /// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
 /// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
 /// unchanged.
+/// Whether `expr` is a `Pane[…, {w, h}]` of fixed size, possibly inside
+/// `Text[…]` and `Style[…, directives]` wrappers.
+fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if (name == "Text" && args.len() == 1)
+        || (name == "Style" && args.len() >= 2) =>
+    {
+      is_fixed_size_pane_through_text_style(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, .. } if name == "Pane" => {
+      pane_fixed_size(expr).is_some()
+    }
+    _ => false,
+  }
+}
+
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // `Text[content]` displays `content` in plain text format: a picture
   // inside is still drawn, but text keeps the wrapper so the layout sets it
@@ -5032,6 +5086,20 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // wraps. (Without this it stayed a bare call and the column printed the
   // table's source text.) With directives, the styled-layout pass applies
   // them to the `Column`/`Row`/`Grid` underneath.
+  //
+  // `Style[Text[Pane[…, {w, h}]], Bold]` dresses the content of a
+  // fixed-size pane: the pane keeps its box (see below), so it is drawn
+  // whole rather than peeled down to the styled content.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && functions::graphics::is_style_wrapper(name)
+    && args.len() >= 2
+    && is_fixed_size_pane_through_text_style(&args[0])
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      return graphics_result(svg);
+    }
+  }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && functions::graphics::is_style_wrapper(name)
   {

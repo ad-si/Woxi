@@ -67,7 +67,7 @@ impl Grid {
     match &self.edges[e] {
       Edge::Flux(None) => u0,
       Edge::Flux(Some(flux)) => {
-        let (c, alpha, beta) = flux.as_ref();
+        let (c, alpha, beta) = &**flux;
         // c (u_ghost - u0) / h = alpha + beta (u0 + u_ghost) / 2.
         let p = [xf, yf, t];
         let (c, a, b) = (c.eval(&p), alpha.eval(&p), beta.eval(&p));
@@ -546,10 +546,6 @@ pub(super) fn solve_pde_mol_2d(
   rest: &[Expr],
   opts: &MolOptions,
 ) -> Option<Expr> {
-  solve(eqs, rest, opts)
-}
-
-fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
   let Expr::Identifier(u) = &rest[0] else {
     return None;
   };

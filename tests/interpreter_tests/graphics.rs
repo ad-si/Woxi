@@ -26348,6 +26348,55 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A field plot keeps its `Scaled[0.02]` frame margin as a
+    /// `PlotRangePadding` option, so a `Show` that redraws it (merged with
+    /// a curve, even with `PlotRange -> All`) leaves the margin between the
+    /// raster and the frame instead of drawing the raster flush with it.
+    #[test]
+    fn field_plot_padding_survives_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "{Options[DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, \
+           PlotRange -> All], PlotRangePadding], \
+           Options[ContourPlot[x y, {x, 0, 1}, {y, 0, 1}], \
+           PlotRangePadding], Options[DensityPlot[x y, {x, 0, 1}, \
+           {y, 0, 1}, PlotRangePadding -> None], PlotRangePadding]}"
+        )
+        .unwrap(),
+        "{{PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, \
+         {Scaled[0.02], Scaled[0.02]}}}, \
+         {PlotRangePadding -> {{Scaled[0.02], Scaled[0.02]}, \
+         {Scaled[0.02], Scaled[0.02]}}}, {PlotRangePadding -> None}}"
+      );
+      let svg = export_svg(
+        "Show[{DensityPlot[x y, {x, 0, 2}, {y, 0, 3}, PlotRange -> All], \
+         ParametricPlot[{t, t^2}, {t, 0, 1}]}, Frame -> True, \
+         FrameTicks -> None, AspectRatio -> 3/2, ImageSize -> {200, 300}]",
+      );
+      let frame = svg
+        .split("<rect x=\"0\" y=\"0\" width=\"")
+        .nth(1)
+        .and_then(|r| r.split('"').next())
+        .and_then(|w| w.parse::<f64>().ok())
+        .expect("no frame rect");
+      let image = &svg[svg.find("<image").expect("no raster")..];
+      let attr = |name: &str| {
+        image
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse::<f64>().ok())
+          .expect("raster attribute")
+      };
+      let (x, width) = (attr("x"), attr("width"));
+      assert!((x - 0.02 * frame).abs() < 0.5, "x {x} in frame {frame}");
+      assert!(
+        (width - 0.96 * frame).abs() < 0.5,
+        "width {width} in frame {frame}"
+      );
+    }
+
     #[test]
     fn density_plot_image_size() {
       insta::assert_snapshot!(export_svg(
@@ -28878,6 +28927,56 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       // 3 horizontal lines for a 2x2 array.
       let svg = export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]");
       assert_eq!(svg.matches("fill=\"#AAAAAA\"").count(), 6, "{svg}");
+    }
+
+    #[test]
+    fn array_plot_mesh_per_direction_spec() {
+      // Regression: `Mesh -> {rspec, cspec}` drew no lines at all. Explicit
+      // row boundaries (0 = top edge) and `True` for every column boundary:
+      // 3 horizontal + 4 vertical lines for a 3x3 array.
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, Mesh -> {{0, 1, 3}, True}]",
+      );
+      assert_eq!(svg.matches("fill=\"#AAAAAA\"").count(), 7, "{svg}");
+      // `False` turns a direction off; out-of-range boundaries are dropped.
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1, 0}, {1, 0, 1}}, Mesh -> {False, {1, 2, 7}}]",
+      );
+      assert_eq!(svg.matches("fill=\"#AAAAAA\"").count(), 2, "{svg}");
+      // Per-direction `{True, True}` is the same grid as `Mesh -> True`.
+      assert_eq!(
+        export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> {True, True}]"),
+        export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]")
+      );
+    }
+
+    #[test]
+    fn array_plot_symbolic_form_keeps_partial_mesh_and_epilog() {
+      // Regression: redrawing an `ArrayPlot` from its symbolic form (as
+      // `Pane` and `Show` do) lost the `Epilog` and a per-direction mesh.
+      // The row boundary 1 (below the top row) of a 2-row array is y = 1.
+      assert_eq!(
+        interpret(
+          "Cases[ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> {{1}, False}], \
+           _Line, Infinity]"
+        )
+        .unwrap(),
+        "{Line[{{0, 1}, {2, 1}}]}"
+      );
+      assert_eq!(
+        interpret(
+          "Epilog /. Options[ArrayPlot[{{0, 1}}, \
+           Epilog -> {Point[{1, 1}]}]]"
+        )
+        .unwrap(),
+        "{Point[{1, 1}]}"
+      );
+      let svg = export_svg(
+        "Pane[ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> {{0, 1, 2}, True}, \
+         Epilog -> {Polygon[{{0, 0}, {1, 0}, {1, 1}}]}], {200, 200}]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 1, "{svg}");
+      assert_eq!(svg.matches("<polyline").count(), 6, "{svg}");
     }
 
     #[test]
