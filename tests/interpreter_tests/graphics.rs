@@ -67895,7 +67895,13 @@ mod plot_legends_show_legend {
     let end = svg.find(&format!(">{label}</text>")).expect(label);
     let start = svg[..end].rfind("<text").unwrap();
     let tag = &svg[start..end];
-    let y = tag.split(" y=\"").nth(1).unwrap().split('"').next().unwrap();
+    let y = tag
+      .split(" y=\"")
+      .nth(1)
+      .unwrap()
+      .split('"')
+      .next()
+      .unwrap();
     y.parse().unwrap()
   }
 
@@ -67932,8 +67938,11 @@ mod plot_legends_show_legend {
        LegendLabel -> \"title\", PlotLegends`LegendLabelSpace -> 2, \
        PlotLegends`LegendTextSpace -> 8}]",
     );
-    let (title, low, high) =
-      (text_y(&svg, "title"), text_y(&svg, "low"), text_y(&svg, "high"));
+    let (title, low, high) = (
+      text_y(&svg, "title"),
+      text_y(&svg, "low"),
+      text_y(&svg, "high"),
+    );
     assert!(title < low && low < high, "{svg}");
     // Two rows of title space: the gap down to the first row's center
     // is wider than the rows' own spacing.

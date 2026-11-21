@@ -7952,8 +7952,12 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     Some(region) if !nearest => {
       let grid =
         region_masked_grid(&grid, region, (x_min, x_max), (y_min, y_max));
-      let kept: Vec<f64> =
-        grid.iter().flatten().copied().filter(|v| v.is_finite()).collect();
+      let kept: Vec<f64> = grid
+        .iter()
+        .flatten()
+        .copied()
+        .filter(|v| v.is_finite())
+        .collect();
       if kept.is_empty() {
         // Nothing passes the region test: an empty frame.
         (grid, v_min, v_max)
