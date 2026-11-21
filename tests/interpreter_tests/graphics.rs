@@ -43882,6 +43882,51 @@ mod manipulate {
     );
   }
 
+  // `Dynamic[ButtonBar[Which[n == 1, {…}, n == 2, {…}]]]` inside a control
+  // `Row`: the buttons on offer follow another control. Every branch's
+  // buttons join the panel once, each shown only while a branch offering it
+  // is selected. Without this the bar contributed no buttons at all.
+  #[test]
+  fn spec_conditional_button_bar_shows_buttons_per_branch() {
+    let expr = interpret_to_expr(
+      "Manipulate[s, \
+       {{n, 1, \"n\"}, {1, 2}, ControlType -> SetterBar}, \
+       Row[{\"pick\", Dynamic[ButtonBar[Which[\
+         n == 1, {\"x\" :> (s = s <> \"x\"), \"y\" :> (s = s <> \"y\")}, \
+         n == 2, {\"x\" :> (s = s <> \"x\"), \"y\" :> (s = s <> \"y\"), \
+                  \"z\" :> (s = s <> \"z\")}]]]}], \
+       {{s, \"\"}, ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let buttons: Vec<&ManipulateControl> = spec
+      .controls
+      .iter()
+      .filter(|c| matches!(c, ManipulateControl::Button { .. }))
+      .collect();
+    let labels: Vec<&str> = buttons
+      .iter()
+      .map(|c| match c {
+        ManipulateControl::Button { label, .. } => label.as_str(),
+        _ => unreachable!(),
+      })
+      .collect();
+    assert_eq!(labels, vec!["x", "y", "z"], "controls: {:?}", spec.controls);
+    let shown = |c: &ManipulateControl, n: i64| {
+      let (_, cond) = spec
+        .control_visible
+        .iter()
+        .find(|(k, _)| *k == c.visibility_key())
+        .unwrap_or_else(|| panic!("no condition for {c:?}"));
+      let code = format!("Block[{{n = {n}}}, {cond}]");
+      woxi::interpret(&code).unwrap()
+    };
+    assert_eq!(shown(buttons[0], 1), "True");
+    assert_eq!(shown(buttons[0], 2), "True");
+    assert_eq!(shown(buttons[2], 1), "False");
+    assert_eq!(shown(buttons[2], 2), "True");
+  }
+
   // A 3-vector `{{u, init}, min, max}` inside the `"XYZ" -> spec` form is a
   // vector control and binds its variable to the initial value, as Wolfram
   // does.

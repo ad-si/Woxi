@@ -3074,6 +3074,54 @@ fn leading_assignments(body: &Expr) -> Vec<&Expr> {
     .collect()
 }
 
+/// The branches of a `Which[c1, v1, c2, v2, …]`, `If[c, v1, v2]` or
+/// `Switch[e, p1, v1, p2, v2, …]` together with the source of a *selector*:
+/// the same conditional with each branch value replaced by its 1-based
+/// index, so evaluating the selector tells which branch is in effect.
+/// `None` for anything else.
+fn conditional_branches(expr: &Expr) -> Option<(Vec<Expr>, String)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let int = |i: usize| Expr::Integer(i as i128);
+  let (branches, selector_args): (Vec<Expr>, Vec<Expr>) = match name.as_str() {
+    "Which" if args.len() >= 2 && args.len() % 2 == 0 => {
+      let mut sel = Vec::new();
+      let mut branches = Vec::new();
+      for (i, pair) in args.chunks(2).enumerate() {
+        sel.push(pair[0].clone());
+        sel.push(int(i + 1));
+        branches.push(pair[1].clone());
+      }
+      (branches, sel)
+    }
+    "If" if args.len() == 2 || args.len() == 3 => {
+      let branches: Vec<Expr> = args[1..].to_vec();
+      let mut sel = vec![args[0].clone(), int(1)];
+      if args.len() == 3 {
+        sel.push(int(2));
+      }
+      (branches, sel)
+    }
+    "Switch" if args.len() >= 3 && args.len() % 2 == 1 => {
+      let mut sel = vec![args[0].clone()];
+      let mut branches = Vec::new();
+      for (i, pair) in args[1..].chunks(2).enumerate() {
+        sel.push(pair[0].clone());
+        sel.push(int(i + 1));
+        branches.push(pair[1].clone());
+      }
+      (branches, sel)
+    }
+    _ => return None,
+  };
+  let selector = Expr::FunctionCall {
+    name: name.clone(),
+    args: selector_args.into(),
+  };
+  Some((branches, crate::syntax::expr_to_source_form(&selector)))
+}
+
 /// Whether a Manipulate argument is a `ButtonBar[…]` — a row of buttons
 /// whose labels and actions are computed from a list.
 fn is_button_bar(spec: &Expr) -> bool {
@@ -42113,6 +42161,9 @@ impl ManipulateControl {
   pub fn visibility_key(&self) -> String {
     match self {
       Self::Heading { label, .. } => heading_visibility_key(label),
+      Self::Button { label, action, .. } => {
+        button_visibility_key(label, action)
+      }
       _ => self.name().to_string(),
     }
   }
@@ -42122,6 +42173,13 @@ impl ManipulateControl {
 /// leading control character keeps it from ever colliding with a variable.
 pub fn heading_visibility_key(label: &str) -> String {
   format!("\u{1}heading:{label}")
+}
+
+/// The `control_visible` key of a button labeled `label` that runs
+/// `action`. Like a heading, a button binds no variable, so it is filed under
+/// what tells it apart from the other buttons of the panel.
+pub fn button_visibility_key(label: &str, action: &str) -> String {
+  format!("\u{1}button:{label}\u{1}{action}")
 }
 
 /// A parsed Manipulate expression ready for interactive rendering.
@@ -43840,8 +43898,77 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Expr::FunctionCall { name, args }
         if name == "ButtonBar" && !args.is_empty() =>
       {
-        let entries =
-          evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+        // `Dynamic[ButtonBar[Which[n == 2, {…}, n == 3, {…}]]]`: the set of
+        // buttons follows another control. Every branch's buttons join the
+        // panel, each shown only while a branch that offers it is selected.
+        if let Some((branches, selector)) = conditional_branches(&args[0]) {
+          let mut buttons: Vec<(ManipulateControl, Vec<usize>)> = Vec::new();
+          for (idx, branch) in branches.iter().enumerate() {
+            let entries = crate::with_scoped_globals(&initial_bindings, || {
+              evaluate_expr_to_expr(branch)
+            })
+            .unwrap_or_else(|_| branch.clone());
+            let Expr::List(items) = &entries else {
+              continue;
+            };
+            for item in items {
+              let (Expr::Rule {
+                pattern,
+                replacement,
+              }
+              | Expr::RuleDelayed {
+                pattern,
+                replacement,
+              }) = item
+              else {
+                continue;
+              };
+              let label_runs = manipulate_label_runs(pattern, false);
+              let label = flatten_label_runs(&label_runs);
+              let action = crate::syntax::expr_to_source_form(replacement);
+              let known = buttons.iter_mut().find(|(b, _)| {
+                matches!(b, ManipulateControl::Button { label: l, action: a, .. }
+                  if *l == label && *a == action)
+              });
+              if let Some((_, in_branches)) = known {
+                in_branches.push(idx + 1);
+              } else {
+                let joins_previous = !buttons.is_empty();
+                buttons.push((
+                  ManipulateControl::Button {
+                    label,
+                    label_runs,
+                    action,
+                    enabled: None,
+                    label_code: dynamic_button_label_code(pattern),
+                    joins_previous,
+                    background: None,
+                  },
+                  vec![idx + 1],
+                ));
+              }
+            }
+          }
+          if !buttons.is_empty() {
+            for (button, in_branches) in buttons {
+              let list = in_branches
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+              control_visible.push((
+                button.visibility_key(),
+                format!("MemberQ[{{{list}}}, {selector}]"),
+              ));
+              controls.push(button);
+            }
+            continue;
+          }
+        }
+        let entries = crate::with_scoped_globals(&initial_bindings, || {
+          evaluate_expr_to_expr(&args[0])
+        })
+        .unwrap_or_else(|_| args[0].clone());
         if let Expr::List(items) = &entries {
           let mut any = false;
           for item in items {
@@ -48055,7 +48182,8 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
       if name == "Dynamic"
         && matches!(
           args.first(),
-          Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+          Some(Expr::FunctionCall { name: inner, .. })
+            if inner == "Control" || inner == "ButtonBar"
         ) =>
     {
       args[0].clone()
