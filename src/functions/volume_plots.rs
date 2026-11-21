@@ -638,21 +638,30 @@ fn slice_setup(
 }
 
 /// Wrap a plot in `Legended[…, Placed[BarLegend[{colors, {lo, hi}}], After]]`
-/// when `PlotLegends` asks for a legend.
+/// when `PlotLegends` asks for a legend. A contour plot passes its levels
+/// and the colors of its bands, which its discrete bar shows one per band.
 fn with_legend(
   plot: Expr,
   opts: &PlotOptions,
   (lo, hi): (f64, f64),
-  levels: Option<&[f64]>,
+  bands: Option<(&[f64], Vec<Expr>)>,
 ) -> Expr {
   if !opts.legend {
     return plot;
   }
-  let mut bar_args = vec![Expr::List(
-    vec![opts.colors.as_expr(), reals(&[lo, hi])].into(),
-  )];
+  let (colors, levels) = match bands {
+    Some((levels, colors)) => (Expr::List(colors.into()), Some(levels)),
+    None => (opts.colors.as_expr(), None),
+  };
+  let mut bar_args = vec![Expr::List(vec![colors, reals(&[lo, hi])].into())];
   if let Some(levels) = levels {
     bar_args.push(reals(levels));
+  } else if opts.scaling && matches!(opts.colors, Colors::Function(_)) {
+    // The plot's color function takes rescaled values, and so does its bar.
+    bar_args.push(rule(
+      "ColorFunctionScaling",
+      Expr::Identifier("True".into()),
+    ));
   }
   call(
     "Legended",
@@ -796,10 +805,8 @@ pub fn slice_contour_plot3d_ast(
   // Band k of the n + 1 bands takes the color at k/(n + 2) (exactly, as
   // a rational) of the color function's scale.
   let band_count = bands.len() as i128;
+  let mut band_colors = Vec::with_capacity(bands.len());
   for (b, polygons) in bands.iter().enumerate() {
-    if polygons.is_empty() {
-      continue;
-    }
     let t = evaluate_expr_to_expr(&call(
       "Rational",
       vec![Expr::Integer(b as i128 + 1), Expr::Integer(band_count + 1)],
@@ -809,14 +816,15 @@ pub fn slice_contour_plot3d_ast(
     } else {
       Expr::Real(lo + (hi - lo) * (b as f64 + 1.0) / (band_count as f64 + 1.0))
     };
+    let color = opts.colors.at_expr(t);
+    band_colors.push(color.clone());
+    if polygons.is_empty() {
+      continue;
+    }
     let polys: Vec<Expr> =
       polygons.iter().map(|p| vertices.polygon(p)).collect();
     primitives.push(Expr::List(
-      vec![
-        opts.colors.at_expr(t),
-        call("Polygon", vec![Expr::List(polys.into())]),
-      ]
-      .into(),
+      vec![color, call("Polygon", vec![Expr::List(polys.into())])].into(),
     ));
   }
   let plot = graphics3d(
@@ -824,7 +832,12 @@ pub fn slice_contour_plot3d_ast(
     opts.graphics_options(&vol),
   );
   let plot = evaluate_expr_to_expr(&plot)?;
-  Ok(Some(with_legend(plot, &opts, (lo, hi), Some(&levels))))
+  Ok(Some(with_legend(
+    plot,
+    &opts,
+    (lo, hi),
+    Some((&levels, band_colors)),
+  )))
 }
 
 /// `DensityPlot3D[f, {x, …}, {y, …}, {z, …}]`: the values sampled on an

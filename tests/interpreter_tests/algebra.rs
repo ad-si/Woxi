@@ -1735,6 +1735,53 @@ mod simplify {
     assert_eq!(interpret("Simplify[a/x + b/x]").unwrap(), "(a + b)/x");
   }
 
+  // A number built from square roots that equals a rational is reduced to
+  // it, whatever form it comes in.
+  #[test]
+  fn square_radical_numbers_reduce_to_rationals() {
+    assert_eq!(
+      interpret("Simplify[(-6 - 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Simplify[(6 + 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(1 + Sqrt[2]) + 1/(1 - Sqrt[2])]").unwrap(),
+      "-2"
+    );
+    // Irrational ones keep their form.
+    assert_eq!(
+      interpret("Simplify[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "Sqrt[2] + Sqrt[3]"
+    );
+  }
+
+  // A sum over a quadratic radical denominator is rationalized when that is
+  // simpler.
+  #[test]
+  fn rationalizes_sum_over_radical_denominator() {
+    assert_eq!(
+      interpret("FullSimplify[(1 + Sqrt[5])/(6 + 2 Sqrt[5])]").unwrap(),
+      "(-1 + Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + Sqrt[3])/(1 + Sqrt[3])]").unwrap(),
+      "(1 + Sqrt[3])/2"
+    );
+  }
+
+  // The result is evaluated (and simplified) again, so factors that cancel
+  // do and the form of the input does not matter.
+  #[test]
+  fn result_is_reevaluated() {
+    assert_eq!(
+      interpret("FullSimplify[(-2 (-1 - Sqrt[5]))/(1 + Sqrt[5])^2]").unwrap(),
+      interpret("FullSimplify[2/(1 + Sqrt[5])]").unwrap()
+    );
+  }
+
   #[test]
   fn combine_like_denominator_with_extra() {
     assert_eq!(
@@ -3317,6 +3364,36 @@ mod together_integer_denominator_form {
 
 mod together {
   use super::*;
+
+  // A bare integer numerator cancels against the denominator's content.
+  #[test]
+  fn integer_numerator_cancels_content() {
+    assert_eq!(
+      interpret("Together[(1/2)/(-1/2 + x^2)] === 1/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Together[(-3/2)/(-1/2 + x^2)] === -3/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Inverse[{{1/2, x}, {x, 1}}][[2, 2]] === -1/(-1 + 2 x^2)")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // The combined fraction is an evaluated expression.
+  #[test]
+  fn result_is_evaluated() {
+    assert_eq!(
+      interpret(
+        "Together[(-1 - Sqrt[5])/(-(1 + Sqrt[5])^2)] === 1/(1 + Sqrt[5])"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 
   // Combining a sum reads `c^(-1 + n)` as `c^n/c`; a lone power keeps it
   #[test]
@@ -7459,6 +7536,22 @@ mod solve_one_argument_unknowns {
        {{}}, {{x -> 1}}, {}}"
     );
   }
+
+  /// A disjunction of equations — the form `Roots` returns — is solved
+  /// for the unknowns of its alternatives.
+  #[test]
+  fn disjunction_of_equations() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "{Solve[x == 1 || x == 2], Solve[Roots[x^2 - 3 x + 2 == 0, x]], \
+         Solve[(x == 1 && y == 2) || (x == 3 && y == 4)]}"
+      )
+      .unwrap(),
+      "{{{x -> 1}, {x -> 2}}, {{x -> 1}, {x -> 2}}, \
+       {{x -> 1, y -> 2}, {x -> 3, y -> 4}}}"
+    );
+  }
 }
 
 mod solve_ratnz_only_for_polynomial_systems {
@@ -10655,6 +10748,80 @@ mod reduce {
 
 mod nsolve {
   use super::*;
+
+  // A line tangent to a circle meets it in a real double root. Rounding of
+  // the machine coefficients used to push the discriminant negative and
+  // split that root into a conjugate pair with ~1e-9 imaginary parts.
+  #[test]
+  fn tangent_line_circle_double_root_is_real() {
+    assert_eq!(
+      interpret(
+        "NSolve[{y == 0., (x - 0.6743742537909496)^2 + \
+         (y - 0.2685912942633248)^2 == 0.2685912942633248^2}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 0.6743742537909496, y -> 0.}, \
+       {x -> 0.6743742537909496, y -> 0.}}"
+    );
+    // A slanted tangent whose circle comes out of a longer computation.
+    assert_eq!(
+      interpret(
+        "Chop[Im[{x, y} /. NSolve[{(y - 0.73) (0.07 - 0.97) == \
+         (0 - 0.73) (x - 0.97), (x - 0.062583012467254)^2 + \
+         (y - 0.02091829882753737)^2 == 0.020918298827542037^2}, \
+         {x, y}]], 0]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
+  // A genuinely complex pair is kept, however small its imaginary parts.
+  #[test]
+  fn tiny_genuine_imaginary_parts_are_kept() {
+    assert_eq!(
+      interpret("NSolve[{y == 2. x, x^2 + y^2 == -1.}, {x, y}]").unwrap(),
+      "{{x -> 0. + 0.4472135954999579*I, y -> 0. + 0.8944271909999159*I}, \
+       {x -> 0. - 0.4472135954999579*I, y -> 0. - 0.8944271909999159*I}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[Im[x /. NSolve[{y == 0., x^2 + y^2 == -1.*^-14}, {x, y}]]]"
+      )
+      .unwrap(),
+      "{-1.*^-7, 1.*^-7}"
+    );
+  }
+
+  // Exact roots are told apart relative to their size: an absolute floor
+  // merged the distinct roots `±I/10^10` of a system into one.
+  #[test]
+  fn tiny_distinct_exact_roots_of_a_system_are_kept() {
+    assert_eq!(
+      interpret("Solve[{y == 0, x^2 + y^2 == -1/10^20}, {x, y}]").unwrap(),
+      "{{x -> -1/10000000000*I, y -> 0}, {x -> I/10000000000, y -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[{y == 0, x^2 == 1/10^20}, {x, y}]").unwrap(),
+      "{{x -> -1/10000000000, y -> 0}, {x -> 1/10000000000, y -> 0}}"
+    );
+  }
+
+  // Factoring the rationalized system's polynomial differentiated its huge
+  // integer coefficients before reducing them mod p, overflowing i128.
+  #[test]
+  fn huge_rationalized_coefficients_do_not_overflow() {
+    assert_eq!(
+      interpret(
+        "NSolve[{(y - 0.44) (0.29 - 0.58) == (0 - 0.44) (x - 0.58), \
+         (x - 0.6043481160101969)^2 + (y - 0.16929966868588614)^2 == \
+         0.16929966868588617^2}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 0.4629899686020044, y -> 0.2624675385685585}, \
+       {x -> 0.4629899686020044, y -> 0.2624675385685585}}"
+    );
+  }
 
   // An InterpolatingFunction is inverted: the first root in its domain,
   // with NSolve::ifun.
@@ -16053,6 +16220,41 @@ mod root {
     );
   }
 
+  // With approximate coefficients a root is evaluated numerically, in
+  // Root's order: the real roots ascending, then the complex ones.
+  #[test]
+  fn inexact_coefficients_give_a_number() {
+    assert_eq!(
+      interpret("Root[#^2 - 2. &, 2]").unwrap(),
+      "1.4142135623730951"
+    );
+    assert_eq!(
+      interpret("Root[#^2 - 2. &, 1]").unwrap(),
+      "-1.4142135623730951"
+    );
+    assert_eq!(interpret("Root[#^3 - 0.5 # &, 2]").unwrap(), "0.");
+    assert_eq!(
+      interpret("Round[100 Root[x^3 - 2.5 x + 1., 3]]").unwrap(),
+      "132"
+    );
+    assert_eq!(interpret("Im[Root[#^2 + 1. &, 2]]").unwrap(), "1.");
+    assert_eq!(interpret("Im[Root[#^2 + 1. &, 1]]").unwrap(), "-1.");
+  }
+
+  // `Root[poly, x, k]` is the k-th root of the polynomial in `x`.
+  #[test]
+  fn polynomial_and_variable_form() {
+    assert_eq!(interpret("Root[x^2 - 2, x, 2]").unwrap(), "Sqrt[2]");
+    assert_eq!(
+      interpret("Root[x^3 - 2, x, 1]").unwrap(),
+      "Root[-2 + #1^3 & , 1, 0]"
+    );
+    assert_eq!(
+      interpret("Array[Root[t^3 - t + 0., t, #] &, 3]").unwrap(),
+      "{-1., 0., 1.}"
+    );
+  }
+
   // A Root is a constant to the polynomial machinery.
   #[test]
   fn root_is_a_constant() {
@@ -16664,6 +16866,28 @@ mod minimal_polynomial {
   #[test]
   fn integer() {
     assert_eq!(interpret("MinimalPolynomial[3, x]").unwrap(), "-3 + x");
+  }
+
+  // The variable may be any expression, not just a symbol: the minimal
+  // polynomial is evaluated at it, like `MinimalPolynomial[s][x]`.
+  #[test]
+  fn non_symbol_variable_is_substituted() {
+    assert_eq!(interpret("MinimalPolynomial[Sqrt[2], 3]").unwrap(), "7");
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2], 1 + y]").unwrap(),
+      "-2 + (1 + y)^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[GoldenRatio, f[z]]").unwrap(),
+      "-1 - f[z] + f[z]^2"
+    );
+    assert_eq!(
+      interpret(
+        "r = Root[#^3 - #^2 - 1 &, 1]; MinimalPolynomial[r, r] === -1 - r^2 + r^3"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 
   // Sums of radicals over one base live in a single field extension; the
@@ -26806,5 +27030,71 @@ fn solve_degenerate_systems() {
     ),
   ] {
     assert_eq!(interpret(code).unwrap(), expected, "{code}");
+  }
+}
+
+// A linear system with machine numbers keeps a small right-hand side it
+// states outright: only rounding noise left by cancellation is snapped to
+// zero, judged against the terms that cancelled, and pivots are judged
+// against the coefficients alone, never against the right-hand side.
+mod solve_linear_machine_small_right_hand_sides {
+  use super::*;
+
+  fn solve(input: &str) -> (String, bool) {
+    clear_state();
+    let out = interpret(input).unwrap();
+    let ratnz = woxi::get_captured_messages_raw()
+      .iter()
+      .any(|m| m.contains("ratnz"));
+    (out, ratnz)
+  }
+
+  #[test]
+  fn small_stated_values_stay() {
+    assert_eq!(
+      solve("Solve[{x == 1.*^-12, y == 1}, {x, y}]"),
+      ("{{x -> 1.*^-12, y -> 1.}}".to_string(), false)
+    );
+    assert_eq!(
+      solve("Solve[{2.*x + y == 1.*^-12, -2.*x + y == -1.*^-12}, {x, y}]"),
+      ("{{x -> 5.*^-13, y -> 0.}}".to_string(), false)
+    );
+    assert_eq!(
+      solve("Solve[{4.*x == 2.*^-20, y - x == 0}, {x, y}]"),
+      ("{{x -> 5.*^-21, y -> 5.*^-21}}".to_string(), false)
+    );
+  }
+
+  /// Two nearly parallel lines meeting close to the origin.
+  #[test]
+  fn nearly_parallel_lines() {
+    let (out, ratnz) = solve(
+      "Solve[{y == 0.8 - 22918.311790689946*(0.00003490658506198784 + x), \
+       y == 0.8 + 22918.311790689946*(-0.00003490658506208581 + x)}, {x, y}]",
+    );
+    assert!(!ratnz);
+    assert!(out.starts_with("{{x -> 4.898"), "{out}");
+  }
+
+  #[test]
+  fn large_right_hand_side() {
+    assert_eq!(
+      solve("Solve[{x + y == 1.*^15, x - y == 1.}, {x, y}]"),
+      (
+        "{{x -> 5.000000000000005*^14, y -> 4.999999999999995*^14}}"
+          .to_string(),
+        false
+      )
+    );
+  }
+
+  /// Rounding noise from cancellation still vanishes, so a dependent
+  /// system stays underdetermined rather than inconsistent.
+  #[test]
+  fn cancellation_noise_vanishes() {
+    assert_eq!(
+      solve("Solve[{0.1 x + 0.2 y == 0.3, 0.3 x + 0.6 y == 0.9}, {x, y}]").0,
+      "{{y -> 1.5 - 0.5*x}}"
+    );
   }
 }
