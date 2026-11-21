@@ -645,7 +645,15 @@ pub fn pre_v6_graph_plot(
 /// Render a Graph[{vertices}, {edges}, options...] expression to SVG
 /// via the Graphics pipeline, using petgraph as the underlying data structure.
 pub fn graph_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
-  graph_render(args, None)
+  graph_render(args, None, false)
+}
+
+/// `GraphPlot`'s rendered picture of a Graph: drawn as [`graph_ast`] draws
+/// it, but in Wolfram's plot units — a computed layout has edges 1 long on
+/// average and starts at the origin — so graphics `Show`n with it, and the
+/// rendering functions it calls, share its coordinates.
+pub fn graph_plot_render(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  graph_render(args, None, true)
 }
 
 /// `GraphPlot`'s symbolic picture of a Graph (see [`legacy_graph_plot`]),
@@ -654,14 +662,17 @@ pub fn graph_plot_ast(
   args: &[Expr],
   directed: bool,
 ) -> Result<Expr, InterpreterError> {
-  graph_render(args, Some(directed))
+  graph_render(args, Some(directed), true)
 }
 
 /// `legacy_plot` asks for `GraphPlot`'s GraphicsComplex form (with the
 /// edge directedness it should show) instead of the rendered graph.
+/// `plot_units` puts a computed layout in `GraphPlot`'s units (see
+/// [`graph_plot_render`]).
 fn graph_render(
   args: &[Expr],
   legacy_plot: Option<bool>,
+  plot_units: bool,
 ) -> Result<Expr, InterpreterError> {
   // A `Graph` restored via `Uncompress[Compress[…]]` packs every option
   // into one trailing list argument (`Graph[verts, edges, {opt1, opt2,
@@ -871,10 +882,12 @@ fn graph_render(
           vertex_shape_default = directives.into_iter().next();
         }
         "VertexRenderingFunction" => {
-          vertex_render = Some(match replacement {
-            Expr::Identifier(s) if s == "None" => VertexRender::Hidden,
-            other => VertexRender::Func(other.clone()),
-          });
+          // `Automatic` keeps the default vertex drawing.
+          vertex_render = match replacement {
+            Expr::Identifier(s) if s == "Automatic" => None,
+            Expr::Identifier(s) if s == "None" => Some(VertexRender::Hidden),
+            other => Some(VertexRender::Func(other.clone())),
+          };
         }
         // `VertexSize -> s` (every vertex), `{v -> s, …}` (per vertex, with
         // an optional bare default in the list).
@@ -1034,6 +1047,7 @@ fn graph_render(
   let mut coord_scale = 1.0_f64;
   // Center of the caller's coordinates, mapped to the origin.
   let mut coord_center = (0.0_f64, 0.0_f64);
+  let layout_is_computed = explicit_coordinates.is_none();
   let positions: Vec<(f64, f64)> = if let Some(pts) = explicit_coordinates {
     if let Some(((x0, x1), (y0, y1))) = explicit_range {
       // Keep the caller's window: map it onto the same diameter-2 scale
@@ -1042,17 +1056,12 @@ fn graph_render(
       coord_scale = scale;
       let (cx, cy) = (f64::midpoint(x0, x1), f64::midpoint(y0, y1));
       coord_center = (cx, cy);
+      // The picture is drawn in the caller's units (see the end).
       let pair =
         |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
       shown_range = Some(rule_expr(
         id_expr("PlotRange"),
-        Expr::List(
-          vec![
-            pair((x0 - cx) * scale, (x1 - cx) * scale),
-            pair((y0 - cy) * scale, (y1 - cy) * scale),
-          ]
-          .into(),
-        ),
+        Expr::List(vec![pair(x0, x1), pair(y0, y1)].into()),
       ));
       pts
         .into_iter()
@@ -1065,20 +1074,63 @@ fn graph_render(
       pts
     }
   } else {
-    layout_choice.plain_lines = !draw_directed;
-    layout_choice.positions(&graph, &index_map)
+    // `GraphPlot` drawing undirected lines (a rule list's plot) lays out
+    // the undirected graph.
+    layout_choice.plain_lines = !draw_directed || legacy_plot == Some(false);
+    let pts = layout_choice.positions(&graph, &index_map);
+    // `GraphPlot` reports its layout with edges 1 long on average, moved
+    // to the origin; the drawing keeps the internal scale and maps back.
+    if plot_units {
+      let lengths: Vec<f64> = graph
+        .edge_references()
+        .map(|e| {
+          let (p, q) = (pts[e.source().index()], pts[e.target().index()]);
+          ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).sqrt()
+        })
+        .filter(|d| *d > 1e-12)
+        .collect();
+      if !lengths.is_empty() {
+        let mean = lengths.iter().sum::<f64>() / lengths.len() as f64;
+        let low = |f: fn(&(f64, f64)) -> f64| {
+          pts.iter().map(f).fold(f64::INFINITY, f64::min)
+        };
+        coord_scale = mean;
+        coord_center = (-low(|p| p.0) / mean, -low(|p| p.1) / mean);
+      }
+    }
+    pts
+  };
+  // The caller's units of an internal point, and the transform taking
+  // graphics drawn in the caller's units onto the internal scale.
+  let to_caller = |(x, y): (f64, f64)| {
+    (
+      snap_coord(x / coord_scale + coord_center.0),
+      snap_coord(y / coord_scale + coord_center.1),
+    )
+  };
+  let transformed = coord_scale != 1.0 || coord_center != (0.0, 0.0);
+  let pair =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  let to_internal = |layer: Expr| -> Expr {
+    if !transformed {
+      return layer;
+    }
+    call(
+      "Scale",
+      vec![
+        call(
+          "Translate",
+          vec![layer, pair(-coord_center.0, -coord_center.1)],
+        ),
+        pair(coord_scale, coord_scale),
+        pair(0.0, 0.0),
+      ],
+    )
   };
   if let Some(directed) = legacy_plot {
     // The picture keeps the caller's own `VertexCoordinates` units.
-    let coords: Vec<(f64, f64)> = positions
-      .iter()
-      .map(|&(x, y)| {
-        (
-          x / coord_scale + coord_center.0,
-          y / coord_scale + coord_center.1,
-        )
-      })
-      .collect();
+    let coords: Vec<(f64, f64)> =
+      positions.iter().map(|&p| to_caller(p)).collect();
     if let Some(plot) =
       legacy_graph_plot(&vertices, &raw_edges, &coords, directed)
     {
@@ -1499,7 +1551,10 @@ fn graph_render(
         _ => primitives.push(line_or_arrow(edge_data.directed, &default_pts)),
       },
       Some((EdgeShape::Func(f), edge_expr, label)) => {
-        let pts_expr = points_expr(&shape_pts);
+        // The function sees the layout in the caller's own units.
+        let caller_pts: Vec<(f64, f64)> =
+          shape_pts.iter().map(|&p| to_caller(p)).collect();
+        let pts_expr = points_expr(&caller_pts);
         let mut call_args = vec![pts_expr, edge_expr];
         call_args.extend(label);
         match crate::functions::list_helpers_ast::apply_func_to_n_args(
@@ -1508,14 +1563,7 @@ fn graph_render(
           // The result is wrapped in a list so that any directives it
           // sets stay scoped to this edge.
           Ok(drawn) => {
-            // `GraphPlot`'s legacy function sees the layout in the
-            // caller's own units, where an `Arrow` setback is absolute.
-            let drawn = if edge_arg_as_list && coord_scale != 1.0 {
-              scale_arrow_setbacks(&drawn, coord_scale)
-            } else {
-              drawn
-            };
-            primitives.push(Expr::List(vec![drawn].into()));
+            primitives.push(Expr::List(vec![to_internal(drawn)].into()));
           }
           Err(_) => {
             primitives.push(line_or_arrow(edge_data.directed, &default_pts));
@@ -1604,6 +1652,32 @@ fn graph_render(
   // Wolfram's `Hue[0.6, 0.5, 1]`.
   let default_fill = Color::new(0.5, 0.7, 1.0);
 
+  // `VertexRenderingFunction` draws in the caller's units: the coordinates
+  // `VertexCoordinates` gave, or, for a computed layout, Wolfram's own
+  // embedding scale where edges are about 1 long. Without this a
+  // `Disk[#, 1/5]` covers a fifth of the whole internal diameter-2 drawing
+  // and the vertices of a large graph melt into one blob.
+  // `GraphPlot`'s plot units already are that scale (see `plot_units`).
+  let (render_scale, render_center) = if layout_is_computed && !plot_units {
+    let lengths: Vec<f64> = graph
+      .edge_references()
+      .map(|e| {
+        let (p, q) =
+          (positions[e.source().index()], positions[e.target().index()]);
+        ((p.0 - q.0).powi(2) + (p.1 - q.1).powi(2)).sqrt()
+      })
+      .filter(|d| *d > 1e-12)
+      .collect();
+    let mean = if lengths.is_empty() {
+      1.0
+    } else {
+      lengths.iter().sum::<f64>() / lengths.len() as f64
+    };
+    (mean, (0.0, 0.0))
+  } else {
+    (coord_scale, coord_center)
+  };
+
   for node_idx in graph.node_indices() {
     let i = node_idx.index();
     let (x, y) = positions[i];
@@ -1613,7 +1687,13 @@ fn graph_render(
     match &vertex_render {
       Some(VertexRender::Hidden) => continue,
       Some(VertexRender::Func(f)) => {
-        let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+        let point = Expr::List(
+          vec![
+            Expr::Real(x / render_scale + render_center.0),
+            Expr::Real(y / render_scale + render_center.1),
+          ]
+          .into(),
+        );
         let name = unwrap_vertex_style(&vertices[i]).0.clone();
         if let Ok(drawn) =
           crate::functions::list_helpers_ast::apply_func_to_two_args(
@@ -1621,8 +1701,14 @@ fn graph_render(
           )
         {
           // Wrapped in a list so any directives it sets stay scoped to
-          // this vertex.
-          primitives.push(Expr::List(vec![drawn].into()));
+          // this vertex, and mapped from the caller's units onto the
+          // internal scale the graph is drawn in.
+          let drawn = Expr::List(vec![drawn].into());
+          primitives.push(to_internal_units(
+            drawn,
+            render_scale,
+            render_center,
+          ));
           continue;
         }
       }
@@ -1631,22 +1717,18 @@ fn graph_render(
 
     // `VertexShapeFunction -> f` hands the drawing of the vertex to `f`.
     if let Some(f) = &vertex_shape_func {
-      let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+      let (cx, cy) = to_caller((x, y));
+      let point = pair(cx, cy);
       let name = unwrap_vertex_style(&vertices[i]).0.clone();
-      let size = Expr::List(
-        vec![
-          Expr::Real(vertex_radius * 2.0),
-          Expr::Real(vertex_radius * 2.0),
-        ]
-        .into(),
-      );
+      let diameter = vertex_radius * 2.0 / coord_scale;
+      let size = pair(diameter, diameter);
       if let Ok(drawn) =
         crate::functions::list_helpers_ast::apply_func_to_n_args(
           f,
           &[point, name, size],
         )
       {
-        primitives.push(Expr::List(vec![drawn].into()));
+        primitives.push(Expr::List(vec![to_internal(drawn)].into()));
         if vertex_labels {
           push_vertex_label(&mut primitives, &vertices[i], x, y, vertex_radius);
         }
@@ -1775,35 +1857,32 @@ fn graph_render(
     primitives.push(call("Text", vec![styled, point]));
   }
 
-  // Prolog / Epilog are given in the caller's coordinates; bring them onto
-  // the internal scale the graph itself is drawn in.
-  let to_internal = |layer: Expr| -> Expr {
-    if coord_scale == 1.0 && coord_center == (0.0, 0.0) {
-      return layer;
-    }
-    let row =
-      |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
-    call(
-      "GeometricTransformation",
+  // The graph is drawn on the internal scale and handed back in the
+  // caller's coordinates, which Prolog / Epilog (and any graphics `Show`n
+  // with it) are given in. `Scale` moves text without resizing its glyphs.
+  let mut primitives = if transformed {
+    vec![call(
+      "Translate",
       vec![
-        layer,
-        Expr::List(
+        call(
+          "Scale",
           vec![
-            Expr::List(
-              vec![row(coord_scale, 0.0), row(0.0, coord_scale)].into(),
-            ),
-            row(-coord_center.0 * coord_scale, -coord_center.1 * coord_scale),
-          ]
-          .into(),
+            Expr::List(primitives.into()),
+            pair(1.0 / coord_scale, 1.0 / coord_scale),
+            pair(0.0, 0.0),
+          ],
         ),
+        pair(coord_center.0, coord_center.1),
       ],
-    )
+    )]
+  } else {
+    primitives
   };
   if let Some(p) = prolog {
-    primitives.insert(0, to_internal(p));
+    primitives.insert(0, p);
   }
   if let Some(e) = epilog {
-    primitives.push(to_internal(e));
+    primitives.push(e);
   }
   let content = Expr::List(primitives.into());
   // A graph is drawn at Wolfram's 360-point default unless the caller
@@ -2967,6 +3046,17 @@ impl LayoutChoice {
         self.plain_lines,
       );
     }
+    // `GraphPlot` of a rule list builds an *undirected* graph, so no other
+    // layout may read the rules' direction: an acyclic rule list is spring
+    // embedded rather than layered like a digraph, and circular orders are
+    // those of the undirected graph.
+    let undirected;
+    let graph = if self.plain_lines {
+      undirected = undirected_render_graph(graph);
+      &undirected
+    } else {
+      graph
+    };
     if self.circular {
       let optimal = !matches!(
         self.named,
@@ -2992,10 +3082,26 @@ impl LayoutChoice {
     if self.planar {
       return planar_layout(n, &render_graph_pairs(graph))
         .map(normalize_explicit_positions)
-        .map_or_else(|| compute_layout(graph), |(pts, _, _)| pts);
+        .map_or_else(
+          || compute_layout(graph, self.plain_lines),
+          |(pts, _, _)| pts,
+        );
     }
-    compute_layout(graph)
+    compute_layout(graph, self.plain_lines)
   }
+}
+
+/// A copy of the rendering graph with every edge marked undirected.
+fn undirected_render_graph(
+  graph: &DiGraph<usize, RenderEdgeData>,
+) -> DiGraph<usize, RenderEdgeData> {
+  graph.map(
+    |_, &node| node,
+    |_, edge| RenderEdgeData {
+      directed: false,
+      ..edge.clone()
+    },
+  )
 }
 
 /// `GraphEmbedding[Graph[vertices, edges, opts…]]` for a graph without
@@ -3034,7 +3140,21 @@ pub(crate) fn computed_graph_embedding(
 /// component (force-directed once a component is big enough) and the
 /// components are packed into a grid, which makes clusters visible — e.g.
 /// `Graph[Table[i -> Mod[i^2, 74], {i, 100}]]` renders as 8 clusters.
-fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
+/// The most vertices a (non-path) tree may have for the automatic layout
+/// to draw it as a layered tree; larger trees get a spring-electrical
+/// embedding. Wolfram draws a 16-vertex tree layered and a 65-vertex one
+/// with springs; the exact cutoff in between is not documented.
+const MAX_TIDY_TREE_VERTICES: usize = 32;
+
+/// Automatic layout of `graph`. `plain_lines` says the edges are drawn
+/// without arrows (`GraphPlot` of a rule list): the plot then ignores edge
+/// directions, so a directed acyclic graph is not put in layers but
+/// embedded like an undirected one (a grid of rules `i -> j` comes out as a
+/// grid).
+fn compute_layout(
+  graph: &DiGraph<usize, RenderEdgeData>,
+  plain_lines: bool,
+) -> Vec<(f64, f64)> {
   let n = graph.node_count();
   if n == 0 {
     return vec![];
@@ -3088,6 +3208,15 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
         }
         return pts;
       }
+      // A large tree would crowd its deepest layers into a sliver, so
+      // Wolfram spreads it out with a spring-electrical embedding instead
+      // (its branches then fan out radially from the center).
+      if n > MAX_TIDY_TREE_VERTICES {
+        // Its edges keep about unit length, so the vertex disks (sized
+        // by the drawing's extent) shrink as the tree grows.
+        let comp: Vec<usize> = (0..n).collect();
+        return unit_mean_edge(force_layout_component(graph, &comp), graph);
+      }
       let pts = tidy_tree(&children, root)
         .into_iter()
         .map(|(along, depth)| orient_layers(along, depth, LayerDirection::Top))
@@ -3100,7 +3229,8 @@ fn compute_layout(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<(f64, f64)> {
       // A directed acyclic graph (a Hasse diagram, say) is drawn in
       // layers instead, every vertex below the longest chain of edges
       // leading to it, as Wolfram's automatic layout does.
-      if graph.edge_references().all(|e| e.weight().directed)
+      if !plain_lines
+        && graph.edge_references().all(|e| e.weight().directed)
         && !petgraph::algo::is_cyclic_directed(graph)
       {
         return layered_layout(
@@ -3208,6 +3338,7 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
     list.sort_unstable_by(|a, b| b.cmp(a));
     list.dedup();
   }
+  let undirected = edge_order_adjacency(graph);
   let mut seen = vec![false; n];
   let mut parent = vec![usize::MAX; n];
   let mut order = Vec::with_capacity(n);
@@ -3279,7 +3410,61 @@ fn circular_vertex_order(graph: &DiGraph<usize, RenderEdgeData>) -> Vec<usize> {
       comp[..run].reverse();
     }
   }
+  // A graph whose edges, read without direction, form one simple cycle
+  // (`a -> x, b -> y, a -> y, b -> x`) is drawn as that cycle: the
+  // directed search above can visit it out of turn (from several roots),
+  // which would put non-adjacent vertices next to each other on the
+  // circle and cross the edges.
+  walk_undirected_cycle(&undirected, &mut order);
   order
+}
+
+/// Reorder `comp` (the vertices of a graph, starting at a root) into a walk
+/// around its cycle when its edges, ignoring direction, form exactly one
+/// simple cycle and `comp` does not already follow it. The walk leaves the
+/// root toward the neighbor `comp` visited first.
+fn walk_undirected_cycle(adj: &[Vec<usize>], comp: &mut [usize]) {
+  let m = comp.len();
+  if m < 4 {
+    return;
+  }
+  let members: std::collections::HashSet<usize> =
+    comp.iter().copied().collect();
+  if comp.iter().any(|&v| {
+    adj[v].len() != 2
+      || adj[v][0] == adj[v][1]
+      || adj[v].iter().any(|w| !members.contains(w))
+  }) {
+    return;
+  }
+  let follows = comp.windows(2).all(|w| adj[w[0]].contains(&w[1]))
+    && adj[comp[m - 1]].contains(&comp[0]);
+  if follows {
+    return;
+  }
+  let root = comp[0];
+  let rank = |v: usize| comp.iter().position(|&c| c == v).unwrap_or(m);
+  let first = if rank(adj[root][0]) <= rank(adj[root][1]) {
+    adj[root][0]
+  } else {
+    adj[root][1]
+  };
+  let mut walk = Vec::with_capacity(m);
+  walk.push(root);
+  let (mut prev, mut cur) = (root, first);
+  while cur != root && walk.len() < m {
+    walk.push(cur);
+    let next = if adj[cur][0] == prev {
+      adj[cur][1]
+    } else {
+      adj[cur][0]
+    };
+    prev = cur;
+    cur = next;
+  }
+  if walk.len() == m && cur == root {
+    comp.copy_from_slice(&walk);
+  }
 }
 
 /// `1/φ`, the golden ratio's reciprocal: Wolfram's height-to-width ratio
@@ -3672,6 +3857,29 @@ fn linear_layout(n: usize) -> Vec<(f64, f64)> {
     .collect()
 }
 
+/// `layer`, drawn in the caller's units, mapped onto the internal drawing
+/// scale: internal = (caller - `center`) * `scale`.
+fn to_internal_units(layer: Expr, scale: f64, center: (f64, f64)) -> Expr {
+  if scale == 1.0 && center == (0.0, 0.0) {
+    return layer;
+  }
+  let row =
+    |a: f64, b: f64| Expr::List(vec![Expr::Real(a), Expr::Real(b)].into());
+  call(
+    "GeometricTransformation",
+    vec![
+      layer,
+      Expr::List(
+        vec![
+          Expr::List(vec![row(scale, 0.0), row(0.0, scale)].into()),
+          row(-center.0 * scale, -center.1 * scale),
+        ]
+        .into(),
+      ),
+    ],
+  )
+}
+
 /// Rescale explicit `VertexCoordinates` — which can be given in any unit
 /// (a Demonstration's sequence positions commonly run `1..118`, say) — to
 /// the same rough diameter-2 extent the auto layouts already produce, so
@@ -3704,41 +3912,6 @@ fn normalize_explicit_positions(
     .map(|(x, y)| ((x - cx) * scale, (y - cy) * scale))
     .collect();
   (scaled, scale, (cx, cy))
-}
-
-/// Convert the setbacks of `Arrow[path, setback]` primitives from the
-/// caller's coordinate units to the internal scale (`factor` = internal /
-/// caller), so an absolute setback keeps its length relative to the edge.
-fn scale_arrow_setbacks(e: &Expr, factor: f64) -> Expr {
-  match e {
-    Expr::FunctionCall { name, args } if name == "Arrow" && args.len() == 2 => {
-      let setback = match &args[1] {
-        Expr::Real(r) => Some(*r),
-        Expr::Integer(i) => Some(*i as f64),
-        _ => None,
-      };
-      match setback {
-        Some(s) => call("Arrow", vec![args[0].clone(), Expr::Real(s * factor)]),
-        None => e.clone(),
-      }
-    }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(|a| scale_arrow_setbacks(a, factor))
-        .collect::<Vec<_>>()
-        .into(),
-    },
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(|a| scale_arrow_setbacks(a, factor))
-        .collect::<Vec<_>>()
-        .into(),
-    ),
-    other => other.clone(),
-  }
 }
 
 /// Weakly connected components of `graph` (directed edges treated as
@@ -3975,6 +4148,55 @@ fn force_layout_component(
     }
   }
 
+  let mut pos = if m >= MULTILEVEL_MIN_VERTICES {
+    multilevel_spring_layout(&adj)
+  } else {
+    two_start_spring_layout(&adj)
+  };
+
+  // Turn the layout so its long axis runs horizontally, the way Wolfram's
+  // spring embeddings come out.
+  let (mx, my) = pos
+    .iter()
+    .fold((0.0, 0.0), |(a, b), &(x, y)| (a + x, b + y));
+  let (mx, my) = (mx / m as f64, my / m as f64);
+  let (mut cxx, mut cyy, mut cxy) = (0.0_f64, 0.0_f64, 0.0_f64);
+  for &(x, y) in &pos {
+    cxx += (x - mx) * (x - mx);
+    cyy += (y - my) * (y - my);
+    cxy += (x - mx) * (y - my);
+  }
+  let theta = 0.5 * (2.0 * cxy).atan2(cxx - cyy);
+  let (sin, cos) = (-theta).sin_cos();
+  for p in &mut pos {
+    let (x, y) = (p.0 - mx, p.1 - my);
+    *p = (x * cos - y * sin, x * sin + y * cos);
+  }
+
+  // Center on the origin and scale the layout to fit [-1, 1]^2 so the
+  // spread is kept as it is instead of being squashed against the border.
+  let (mut min_x, mut max_x, mut min_y, mut max_y) =
+    (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+  for &(x, y) in &pos {
+    min_x = min_x.min(x);
+    max_x = max_x.max(x);
+    min_y = min_y.min(y);
+    max_y = max_y.max(y);
+  }
+  let (cx, cy) = (f64::midpoint(min_x, max_x), f64::midpoint(min_y, max_y));
+  let half = ((max_x - min_x).max(max_y - min_y) / 2.0).max(1e-9);
+  for p in &mut pos {
+    *p = ((p.0 - cx) / half, (p.1 - cy) / half);
+  }
+
+  pos
+}
+
+/// The single-level spring layout of a small component (given as an
+/// undirected adjacency list): two deterministic starts, a sunflower spiral
+/// and a DFS circle, compete by their final spring energy.
+fn two_start_spring_layout(adj: &[Vec<usize>]) -> Vec<(f64, f64)> {
+  let m = adj.len();
   // Deterministic initial placement on a sunflower spiral.
   let golden_angle = PI * (3.0 - (5.0_f64).sqrt());
   let sunflower: Vec<(f64, f64)> = (0..m)
@@ -4013,62 +4235,10 @@ fn force_layout_component(
   let mut best_energy = f64::INFINITY;
   let mut best_positions = Vec::new();
   for mut pos in [sunflower, circular] {
-    let mut temp = w * 0.1;
+    let temp = w * 0.1;
     let cool = (0.01_f64 / temp).powf(1.0 / iterations as f64);
 
-    for _ in 0..iterations {
-      let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
-
-      // Repulsive force between every pair.
-      for i in 0..m {
-        for j in (i + 1)..m {
-          let dx = pos[i].0 - pos[j].0;
-          let dy = pos[i].1 - pos[j].1;
-          let d2 = dx * dx + dy * dy;
-          let d = d2.sqrt().max(1e-4);
-          let force = (k * k) / d;
-          let fx = dx / d * force;
-          let fy = dy / d * force;
-          disp[i].0 += fx;
-          disp[i].1 += fy;
-          disp[j].0 -= fx;
-          disp[j].1 -= fy;
-        }
-      }
-
-      // Attractive force along edges (each undirected edge is listed twice
-      // in `adj`, so we guard on i < j to count it once).
-      for i in 0..m {
-        for &j in &adj[i] {
-          if i >= j {
-            continue;
-          }
-          let dx = pos[i].0 - pos[j].0;
-          let dy = pos[i].1 - pos[j].1;
-          let d = (dx * dx + dy * dy).sqrt().max(1e-4);
-          let force = (d * d) / k;
-          let fx = dx / d * force;
-          let fy = dy / d * force;
-          disp[i].0 -= fx;
-          disp[i].1 -= fy;
-          disp[j].0 += fx;
-          disp[j].1 += fy;
-        }
-      }
-
-      // Apply displacement, clamped by the current temperature, and keep
-      // everything inside [-w/2, w/2] × [-h/2, h/2].
-      for i in 0..m {
-        let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
-          .sqrt()
-          .max(1e-9);
-        let step = dlen.min(temp);
-        pos[i].0 += disp[i].0 / dlen * step;
-        pos[i].1 += disp[i].1 / dlen * step;
-      }
-
-      temp *= cool;
-    }
+    spring_iterations(&mut pos, adj, k, temp, cool, iterations);
 
     // Potential whose gradient gives the forces above. Compare before
     // normalization so an expanded, tangled drawing cannot win by scale.
@@ -4091,43 +4261,166 @@ fn force_layout_component(
       best_positions = pos;
     }
   }
-  let mut pos = best_positions;
+  best_positions
+}
 
-  // Turn the layout so its long axis runs horizontally, the way Wolfram's
-  // spring embeddings come out.
-  let (mx, my) = pos
-    .iter()
-    .fold((0.0, 0.0), |(a, b), &(x, y)| (a + x, b + y));
-  let (mx, my) = (mx / m as f64, my / m as f64);
-  let (mut cxx, mut cyy, mut cxy) = (0.0_f64, 0.0_f64, 0.0_f64);
-  for &(x, y) in &pos {
-    cxx += (x - mx) * (x - mx);
-    cyy += (y - my) * (y - my);
-    cxy += (x - mx) * (y - my);
-  }
-  let theta = 0.5 * (2.0 * cxy).atan2(cxx - cyy);
-  let (sin, cos) = (-theta).sin_cos();
-  for p in &mut pos {
-    let (x, y) = (p.0 - mx, p.1 - my);
-    *p = (x * cos - y * sin, x * sin + y * cos);
-  }
+/// Fruchterman-Reingold iterations on `pos` with natural edge length `k`:
+/// every pair repels, every edge attracts, and each step is clamped by a
+/// temperature that starts at `temp` and shrinks by `cool` per iteration.
+fn spring_iterations(
+  pos: &mut [(f64, f64)],
+  adj: &[Vec<usize>],
+  k: f64,
+  mut temp: f64,
+  cool: f64,
+  iterations: usize,
+) {
+  let m = pos.len();
+  for _ in 0..iterations {
+    let mut disp: Vec<(f64, f64)> = vec![(0.0, 0.0); m];
 
-  // Center on the origin and scale the layout to fit [-1, 1]^2 so the
-  // spread is kept as it is instead of being squashed against the border.
-  let (mut min_x, mut max_x, mut min_y, mut max_y) =
-    (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
-  for &(x, y) in &pos {
-    min_x = min_x.min(x);
-    max_x = max_x.max(x);
-    min_y = min_y.min(y);
-    max_y = max_y.max(y);
-  }
-  let (cx, cy) = (f64::midpoint(min_x, max_x), f64::midpoint(min_y, max_y));
-  let half = ((max_x - min_x).max(max_y - min_y) / 2.0).max(1e-9);
-  for p in &mut pos {
-    *p = ((p.0 - cx) / half, (p.1 - cy) / half);
-  }
+    // Repulsive force between every pair.
+    for i in 0..m {
+      for j in (i + 1)..m {
+        let dx = pos[i].0 - pos[j].0;
+        let dy = pos[i].1 - pos[j].1;
+        let d2 = dx * dx + dy * dy;
+        let d = d2.sqrt().max(1e-4);
+        let force = (k * k) / d;
+        let fx = dx / d * force;
+        let fy = dy / d * force;
+        disp[i].0 += fx;
+        disp[i].1 += fy;
+        disp[j].0 -= fx;
+        disp[j].1 -= fy;
+      }
+    }
 
+    // Attractive force along edges (each undirected edge is listed twice
+    // in `adj`, so we guard on i < j to count it once).
+    for i in 0..m {
+      for &j in &adj[i] {
+        if i >= j {
+          continue;
+        }
+        let dx = pos[i].0 - pos[j].0;
+        let dy = pos[i].1 - pos[j].1;
+        let d = (dx * dx + dy * dy).sqrt().max(1e-4);
+        let force = (d * d) / k;
+        let fx = dx / d * force;
+        let fy = dy / d * force;
+        disp[i].0 -= fx;
+        disp[i].1 -= fy;
+        disp[j].0 += fx;
+        disp[j].1 += fy;
+      }
+    }
+
+    // Apply displacement, clamped by the current temperature, and keep
+    // everything inside [-w/2, w/2] × [-h/2, h/2].
+    for i in 0..m {
+      let dlen = (disp[i].0 * disp[i].0 + disp[i].1 * disp[i].1)
+        .sqrt()
+        .max(1e-9);
+      let step = dlen.min(temp);
+      pos[i].0 += disp[i].0 / dlen * step;
+      pos[i].1 += disp[i].1 / dlen * step;
+    }
+
+    temp *= cool;
+  }
+}
+
+/// Components at least this large are laid out by multilevel refinement:
+/// a single-level spring layout started from a fixed guess cannot untangle
+/// hundreds of vertices, which come out folded over themselves.
+const MULTILEVEL_MIN_VERTICES: usize = 64;
+
+/// The coarsest graph of the multilevel hierarchy has at most this many
+/// vertices; it is small enough for the two-start layout to settle.
+const MULTILEVEL_COARSEST_VERTICES: usize = 24;
+
+/// One coarsening step: a maximal matching that visits vertices by
+/// increasing degree and pairs each with its unmatched neighbor of least
+/// degree. Returns the coarse adjacency and each vertex's coarse parent, or
+/// `None` when the matching shrinks the graph by less than a fifth (a star,
+/// say), where further levels would not pay off.
+fn coarsen_graph(adj: &[Vec<usize>]) -> Option<(Vec<Vec<usize>>, Vec<usize>)> {
+  let n = adj.len();
+  let mut order: Vec<usize> = (0..n).collect();
+  order.sort_by_key(|&v| (adj[v].len(), v));
+  let mut parent = vec![usize::MAX; n];
+  let mut count = 0;
+  for &v in &order {
+    if parent[v] != usize::MAX {
+      continue;
+    }
+    parent[v] = count;
+    if let Some(&u) = adj[v]
+      .iter()
+      .filter(|&&u| u != v && parent[u] == usize::MAX)
+      .min_by_key(|&&u| (adj[u].len(), u))
+    {
+      parent[u] = count;
+    }
+    count += 1;
+  }
+  if count * 5 > n * 4 {
+    return None;
+  }
+  let mut coarse: Vec<Vec<usize>> = vec![Vec::new(); count];
+  for (v, neighbors) in adj.iter().enumerate() {
+    for &u in neighbors {
+      if parent[v] != parent[u] {
+        coarse[parent[v]].push(parent[u]);
+      }
+    }
+  }
+  for list in &mut coarse {
+    list.sort_unstable();
+    list.dedup();
+  }
+  Some((coarse, parent))
+}
+
+/// A multilevel spring layout (in the manner of Walshaw's and Hu's
+/// multilevel force-directed placement, which Wolfram's
+/// `"SpringElectricalEmbedding"` also uses): repeatedly coarsen the graph by
+/// matchings, lay out the coarsest graph, then at each finer level start
+/// every vertex next to its coarse parent and refine with spring iterations.
+/// The global shape is fixed while the graph is small, so large meshes and
+/// chains come out unfolded.
+fn multilevel_spring_layout(adj: &[Vec<usize>]) -> Vec<(f64, f64)> {
+  let mut levels = vec![adj.to_vec()];
+  let mut parents = Vec::new();
+  while levels.last().map_or(0, Vec::len) > MULTILEVEL_COARSEST_VERTICES {
+    let Some((coarse, parent)) = coarsen_graph(levels.last().unwrap()) else {
+      break;
+    };
+    levels.push(coarse);
+    parents.push(parent);
+  }
+  let mut pos = two_start_spring_layout(levels.last().unwrap());
+  let golden_angle = PI * (3.0 - (5.0_f64).sqrt());
+  let iterations = 80;
+  for (fine, parent) in levels.iter().rev().skip(1).zip(parents.iter().rev()) {
+    let n = fine.len();
+    // The layout keeps an extent of about 2 at every level, so the natural
+    // edge length shrinks with the vertex count.
+    let k = (4.0 / n as f64).sqrt();
+    // Matched siblings share a parent; fan them out on a small circle so
+    // they never coincide.
+    pos = (0..n)
+      .map(|v| {
+        let (x, y) = pos[parent[v]];
+        let angle = v as f64 * golden_angle;
+        (x + 0.1 * k * angle.cos(), y + 0.1 * k * angle.sin())
+      })
+      .collect();
+    let temp = 1.5 * k;
+    let cool = (0.01_f64 / 1.5).powf(1.0 / iterations as f64);
+    spring_iterations(&mut pos, fine, k, temp, cool, iterations);
+  }
   pos
 }
 
@@ -4410,6 +4703,86 @@ pub fn edge_endpoints(e: &Expr) -> Option<(Expr, Expr, bool)> {
     } => Some((pattern.as_ref().clone(), replacement.as_ref().clone(), true)),
     _ => None,
   }
+}
+
+/// The vertex `TreePlot` hangs a drawing from when none is named and no
+/// single source vertex is there to be the root (a graph with several
+/// sources such as a recombining lattice, a cyclic or an undirected one):
+/// the graph center, with every edge taken as undirected — the vertex of
+/// smallest eccentricity, then of smallest total distance to the others,
+/// the last such vertex on a tie. `None` when the graph has a unique source
+/// (that vertex is the root) or its edges cannot be read.
+pub(crate) fn tree_plot_center_root(graph: &Expr) -> Option<Expr> {
+  if unique_source_vertex(graph).is_some() {
+    return None;
+  }
+  let (listed, edges) = match graph {
+    Expr::List(edges) => (None, edges),
+    Expr::FunctionCall { name, args } if name == "Graph" => {
+      match (args.first(), args.get(1)) {
+        (Some(Expr::List(vs)), Some(Expr::List(es))) => (Some(vs), es),
+        (Some(Expr::List(es)), _) => (None, es),
+        _ => return None,
+      }
+    }
+    _ => return None,
+  };
+  let mut vertices: Vec<Expr> = Vec::new();
+  let mut index: HashMap<String, usize> = HashMap::new();
+  let mut add = |v: &Expr, vertices: &mut Vec<Expr>| -> usize {
+    *index.entry(vertex_key(v)).or_insert_with(|| {
+      vertices.push(v.clone());
+      vertices.len() - 1
+    })
+  };
+  if let Some(vs) = listed {
+    for v in vs {
+      add(v, &mut vertices);
+    }
+  }
+  let mut pairs: Vec<(usize, usize)> = Vec::new();
+  for e in edges {
+    let (u, v, _) = edge_endpoints(e)?;
+    let (a, b) = (add(&u, &mut vertices), add(&v, &mut vertices));
+    pairs.push((a, b));
+  }
+  let n = vertices.len();
+  if n == 0 {
+    return None;
+  }
+  let mut adj: Vec<Vec<usize>> = vec![Vec::new(); n];
+  for &(a, b) in &pairs {
+    if a != b {
+      adj[a].push(b);
+      adj[b].push(a);
+    }
+  }
+  // (eccentricity, total distance) of a vertex; vertices another
+  // component holds are left out of both.
+  let spread = |s: usize| {
+    let mut dist = vec![usize::MAX; n];
+    dist[s] = 0;
+    let mut queue = std::collections::VecDeque::from([s]);
+    let (mut far, mut total) = (0, 0);
+    while let Some(v) = queue.pop_front() {
+      far = far.max(dist[v]);
+      total += dist[v];
+      for &w in &adj[v] {
+        if dist[w] == usize::MAX {
+          dist[w] = dist[v] + 1;
+          queue.push_back(w);
+        }
+      }
+    }
+    (far, total)
+  };
+  // Of several equally central vertices the later one wins (`max_by_key`
+  // keeps the last maximum).
+  let center = (0..n).max_by_key(|&v| {
+    let (far, total) = spread(v);
+    std::cmp::Reverse((far, total))
+  })?;
+  Some(vertices.swap_remove(center))
 }
 
 /// The one vertex that directed edges leave but none enter, in an edge
@@ -11374,11 +11747,14 @@ fn same_edge(a: &Expr, b: &Expr) -> bool {
   let Some((b1, b2, b_directed)) = edge_endpoints(b) else {
     return false;
   };
-  (same_vertex(&a1, &b1) && same_vertex(&a2, &b2))
+  // A `Style[v, …]` endpoint (as written in a `GraphPlot` edge list) names
+  // the vertex `v`, which is how the drawn edge refers to it.
+  let [a1, a2, b1, b2] = [&a1, &a2, &b1, &b2].map(|v| unwrap_vertex_style(v).0);
+  (same_vertex(a1, b1) && same_vertex(a2, b2))
     || (!a_directed
       && !b_directed
-      && same_vertex(&a1, &b2)
-      && same_vertex(&a2, &b1))
+      && same_vertex(a1, b2)
+      && same_vertex(a2, b1))
 }
 
 /// Whether two vertex names are the same vertex: equal as printed (a
@@ -12549,6 +12925,21 @@ pub(crate) fn graph_coordinates(
   Ok(Some((vertices.to_vec(), edges, coords)))
 }
 
+/// Options of `GraphPlot3D` that steer the graph drawing rather than the
+/// `Graphics3D` it produces.
+const GRAPH_PLOT_ONLY_OPTIONS: &[&str] = &[
+  "DirectedEdges",
+  "EdgeLabeling",
+  "EdgeRenderingFunction",
+  "Method",
+  "MultiedgeStyle",
+  "PackingMethod",
+  "SelfLoopStyle",
+  "VertexCoordinateRules",
+  "VertexLabeling",
+  "VertexRenderingFunction",
+];
+
 /// `GraphPlot3D[edges]`: the graph drawn the way wolframscript draws it, a
 /// `GraphicsComplex` over the vertex positions holding one tube per edge
 /// (`Arrow[Tube[{{i, j}, …}], r]`, the vertex pairs sorted) and a sphere
@@ -12557,8 +12948,38 @@ pub(crate) fn graph_plot3d_ast(
   graph_input: &Expr,
   options: &[Expr],
 ) -> Result<Option<Expr>, InterpreterError> {
-  let Some((_, edges, coords)) = graph_coordinates(graph_input, 3)? else {
+  let Some((vertices, edges, coords)) = graph_coordinates(graph_input, 3)?
+  else {
     return Ok(None);
+  };
+  let option = |name: &str| {
+    options.iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })
+  };
+  // `VertexLabeling -> True` puts each vertex's name next to it.
+  let labeling = matches!(
+    option("VertexLabeling"),
+    Some(Expr::Identifier(ref s)) if s == "True"
+  );
+  // `VertexRenderingFunction -> None` leaves the spheres out, a function
+  // `f` draws vertex `v` at `p` as `f[p, v]`, and `Automatic` keeps the
+  // default sphere.
+  let vertex_render = match option("VertexRenderingFunction") {
+    Some(Expr::Identifier(ref s)) if s == "None" => Some(VertexRender::Hidden),
+    Some(Expr::Identifier(ref s)) if s == "Automatic" => None,
+    Some(f) => Some(VertexRender::Func(f)),
+    None => None,
   };
   let point =
     |i: usize| Expr::List(coords[i].iter().map(|&x| Expr::Real(x)).collect());
@@ -12617,18 +13038,63 @@ pub(crate) fn graph_plot3d_ast(
       vec![Expr::Real(0.6), Expr::Real(0.6), Expr::Integer(1)],
     )],
   )];
-  vertex_group.extend(
-    (0..coords.len()).map(|i| call("Sphere", vec![int(i), radius.clone()])),
-  );
+  match &vertex_render {
+    None => vertex_group.extend(
+      (0..coords.len()).map(|i| call("Sphere", vec![int(i), radius.clone()])),
+    ),
+    Some(VertexRender::Hidden) => vertex_group.clear(),
+    Some(VertexRender::Func(f)) => {
+      vertex_group.extend((0..coords.len()).map(|i| {
+        Expr::FunctionCall {
+          name: "Apply".into(),
+          args: vec![
+            f.clone(),
+            Expr::List(vec![point(i), vertices[i].clone()].into()),
+          ]
+          .into(),
+        }
+      }));
+    }
+  }
+  let mut groups = vec![edge_group];
+  if !vertex_group.is_empty() {
+    groups.push(Expr::List(vertex_group.into()));
+  }
+  if labeling {
+    let mut label_group = vec![call1("GrayLevel", Expr::Integer(0))];
+    label_group.extend((0..coords.len()).map(|i| {
+      call(
+        "Text",
+        vec![
+          call("Style", vec![vertices[i].clone(), Expr::Integer(10)]),
+          int(i),
+          Expr::List(vec![Expr::Integer(-1), Expr::Integer(-1)].into()),
+        ],
+      )
+    }));
+    groups.push(Expr::List(label_group.into()));
+  }
   let complex = call(
     "GraphicsComplex",
     vec![
       Expr::List((0..coords.len()).map(point).collect()),
-      Expr::List(vec![edge_group, Expr::List(vertex_group.into())].into()),
+      Expr::List(groups.into()),
     ],
   );
   let mut args = vec![complex];
-  args.extend(options.iter().cloned());
+  // The graph-drawing options shape the picture above; the rest are
+  // `Graphics3D` options.
+  args.extend(
+    options
+      .iter()
+      .filter(|o| match o {
+        Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. } => {
+          !matches!(pattern.as_ref(), Expr::Identifier(n) if GRAPH_PLOT_ONLY_OPTIONS.contains(&n.as_str()))
+        }
+        _ => true,
+      })
+      .cloned(),
+  );
   // wolframscript draws the graph without its bounding box.
   if !options.iter().any(|o| {
     matches!(o, Expr::Rule { pattern, .. }
