@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- 3D scenes whose hidden faces cross one another no longer draw the faces
+    of a solid before the hidden parts behind it: stacks of slabs poking
+    out of a cube are drawn emerging from its faces instead of wholly over
+    them.
 - A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
     inside `Text`) is drawn as its full `w`×`h` box with the table aligned
     inside, so a Manipulate body sized this way no longer shrinks to the
