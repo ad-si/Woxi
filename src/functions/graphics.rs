@@ -14168,11 +14168,33 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   if !runs.iter().any(styled) {
     return Vec::new();
   }
+  // The runs spell their text with Wolfram's private-use characters
+  // already substituted (an `\[InvisibleSpace]` is dropped), while `text`
+  // keeps them until it is drawn. Map each position of the substituted
+  // text back to its character in `text`, so a run's range covers the
+  // characters it was built from.
+  let mut origin = Vec::new();
+  let mut chars: Vec<char> = Vec::new();
+  for (i, c) in text.chars().enumerate() {
+    let mut buf = [0u8; 4];
+    let glyphs =
+      crate::syntax::substitute_private_use_glyphs(c.encode_utf8(&mut buf));
+    for g in glyphs.chars() {
+      origin.push(i);
+      chars.push(g);
+    }
+  }
+  let text_len = text.chars().count();
+  let to_text = |p: usize| origin.get(p).copied().unwrap_or(text_len);
+  let to_text_end = |p: usize| {
+    p.checked_sub(1)
+      .and_then(|q| origin.get(q))
+      .map_or(text_len, |&i| i + 1)
+  };
   // Line the runs up with the text. A `Spacer[n]` is a single blank run
   // but `n` blanks of the text (see `spacer_gap_text`), so a blank run
   // stretches over the whole gap; any other difference means the runs do
   // not spell the text, and it stays unstyled.
-  let chars: Vec<char> = text.chars().collect();
   let mut ranges = Vec::new();
   let mut pos = 0;
   for r in &runs {
@@ -14188,8 +14210,8 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
     }
     if styled(r) && end > pos {
       ranges.push(StyledRange {
-        start: pos,
-        end,
+        start: to_text(pos),
+        end: to_text_end(end),
         italic: r.italic,
         bold: r.bold,
         color: r.color,
@@ -50162,8 +50184,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         let mut runs = args
           .first()
           .map_or_default(|a| manipulate_label_runs(a, styled));
+        // An `Italic` directive slants everything it wraps, the scripts
+        // of a `Subscript` included, as it does for `Bold`.
+        let slant = args.iter().skip(1).any(is_italic_directive);
         for run in &mut runs {
           run.bold |= bold;
+          run.italic |= slant;
           if run.color.is_none() {
             run.color = color;
           }
@@ -57561,6 +57587,39 @@ mod manipulate_label_tests {
     assert_eq!(
       graphics_text_content(&integral),
       "\u{222B}\u{208B}\u{2082}\u{00B3}f \u{2146}t"
+    );
+  }
+
+  #[test]
+  fn invisible_space_keeps_italic_part_of_text_row() {
+    // `\[InvisibleSpace]` draws as nothing, but the styled part holding it
+    // must still be matched against the drawn text.
+    for size in ["", ", 14"] {
+      let svg = crate::interpret(&format!(
+        "ExportString[Graphics[Text[Style[Row[{{Style[\"x\\[InvisibleSpace]y\", \
+Italic], \" = \", 7}}]{size}]]], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">xy</tspan> = 7"),
+        "{svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn italic_style_slants_subscript_of_text_row() {
+    let svg = crate::interpret(
+      "ExportString[Graphics[Text[Row[{Style[Subscript[\"K\", \"eq\"], \
+Italic], \" = \", 3}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">K</tspan><tspan font-style=\"italic\">\
+<tspan baseline-shift=\"sub\" font-size=\"70%\">eq</tspan></tspan> = 3"
+      ),
+      "{svg}"
     );
   }
 
