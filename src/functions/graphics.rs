@@ -37430,22 +37430,22 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
 }
 
-/// A `Column` ruled with `Dividers` is a one-column `Grid`: restate it as
-/// the `Grid` arguments (each item in its own row, the positional
-/// alignment and spacing turned into `Alignment`/`Spacings` options) so the
-/// one grid renderer draws the dividers at their positions. Columns
-/// without `Dividers` keep their own layout.
+/// A `Column` ruled with `Dividers`, or with per-row backgrounds
+/// (`Background -> {c1, c2, …}` or the cyclic `{{c1, c2}}`), is a one-column
+/// `Grid`: restate it as the `Grid` arguments (each item in its own row, the
+/// positional alignment and spacing turned into `Alignment`/`Spacings`
+/// options, the row backgrounds as the `Grid`'s vertical background spec) so
+/// the one grid renderer draws the dividers and row fills at their
+/// positions. Other columns keep their own layout.
 fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
   let Expr::List(items) = args.first()? else {
     return None;
   };
   let rest = args.get(1..).unwrap_or(&[]);
-  if items.is_empty()
-    || !rest
-      .iter()
-      .filter_map(option_kv)
-      .any(|(k, _)| k == "Dividers")
-  {
+  let needs_grid = |(k, v): (&str, &Expr)| {
+    k == "Dividers" || (k == "Background" && matches!(v, Expr::List(_)))
+  };
+  if items.is_empty() || !rest.iter().filter_map(option_kv).any(needs_grid) {
     return None;
   }
   let rule = |key: &str, value: Expr| Expr::Rule {
@@ -37481,6 +37481,16 @@ fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
           "Spacings",
           Expr::List(
             vec![Expr::Identifier("Automatic".to_string()), v.clone()].into(),
+          ),
+        ));
+      }
+      // A `Column`'s background list runs down its rows: the `Grid`'s
+      // vertical (second) background spec.
+      Some(("Background", v @ Expr::List(_))) => {
+        grid_args.push(rule(
+          "Background",
+          Expr::List(
+            vec![Expr::Identifier("None".to_string()), v.clone()].into(),
           ),
         ));
       }
