@@ -1194,6 +1194,9 @@ pub(crate) struct ChartOptions {
   /// leave this `true` (the explicit list still overrides individual axes
   /// via `ticks_x`/`ticks_y` above).
   pub ticks: bool,
+  /// `FrameTicks -> None | False`: a framed chart keeps its border but
+  /// loses the tick marks and labels on it.
+  pub frame_ticks: bool,
   /// `ChartLayout -> "Stacked"` / `"Percentile"` / `"Overlapped"` /
   /// `"Stepped"`: how the bars of each group share its slot.
   pub layout: crate::functions::plot::BarLayout,
@@ -3403,6 +3406,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    frame_ticks: true,
     layout: crate::functions::plot::BarLayout::Grouped,
     bar_origin_top: false,
     log_x: false,
@@ -3634,6 +3638,12 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
           _ => {}
         },
+        "FrameTicks" => {
+          opts.frame_ticks = !matches!(
+            replacement,
+            Expr::Identifier(s) if s == "None" || s == "False"
+          );
+        }
         "BarOrigin" => {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.
           if let Expr::Identifier(side) = replacement {
@@ -4114,7 +4124,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
     &bar_labels,
     bar_label_placement,
-    opts.ticks,
+    // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
+    opts.ticks && (opts.frame_ticks || !look.frame),
     &opts.epilog,
     &look,
   )?;
@@ -4399,6 +4410,9 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       "ImagePadding" => {
         look.image_padding =
           crate::functions::plot::parse_image_padding_sides(&value);
+      }
+      "PlotRangePadding" => {
+        look.plot_range_padding = Some(value);
       }
       // An `EdgeForm` in `ChartStyle` overrides one in `ChartBaseStyle`.
       "ChartBaseStyle" | "ChartStyle" | "PlotStyle" => {

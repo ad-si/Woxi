@@ -1754,6 +1754,83 @@ mod graphics {
       }
     }
 
+    /// `Inset[obj, pos, opos, size, {dx, dy}]` names only the direction of
+    /// the object's x axis. A label inset that way runs along it, the same
+    /// as with the full `{{dx, dy}, {ex, ey}}` pair.
+    #[test]
+    fn an_inset_label_follows_a_single_direction_vector() {
+      for dirs in ["{0, 1}", "{{0, 1}, {-1, 0}}"] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Circle[], Inset[\"zzup\", {{0, 0}}, Automatic, \
+           Automatic, {dirs}]}}]"
+        ));
+        let end = svg.find(">zzup</text>").expect(&svg);
+        let start = svg[..end].rfind("<text").expect(&svg);
+        assert!(
+          svg[start..end].contains("rotate(-90.000"),
+          "{dirs}: label must run upward: {svg}"
+        );
+      }
+    }
+
+    /// Font options given as directives in a primitive list
+    /// (`{FontSize -> 20, FontWeight -> Bold, Text[…]}`) style the labels
+    /// after them, framed or inset ones too, but not those outside their
+    /// list.
+    #[test]
+    fn font_option_directives_style_the_following_labels() {
+      let svg = export_svg(
+        "Graphics[{Circle[], {FontSize -> 20, FontWeight -> Bold, \
+         FontColor -> Blue, Text[\"zzbig\", {0, 0}], \
+         Inset[Framed[\"zzframed\"], {0, 0.5}]}, Text[\"zzplain\", {0, -0.5}]}]",
+      );
+      let tag = |label: &str| {
+        let end = svg.find(&format!(">{label}</text>")).expect(&svg);
+        let start = svg[..end].rfind("<text").expect(&svg);
+        svg[start..end].to_string()
+      };
+      for label in ["zzbig", "zzframed"] {
+        let t = tag(label);
+        assert!(t.contains("font-size=\"20\""), "{t}");
+        assert!(t.contains("font-weight=\"bold\""), "{t}");
+        assert!(t.contains("fill=\"rgb(0,0,255)\""), "{t}");
+      }
+      let t = tag("zzplain");
+      assert!(t.contains("font-size=\"14\""), "{t}");
+      assert!(t.contains("font-weight=\"normal\""), "{t}");
+    }
+
+    /// A `Framed` label's border takes the thickness and the corner radius
+    /// its `FrameStyle` and `RoundingRadius` ask for, and turns with the
+    /// label when the label runs along a direction.
+    #[test]
+    fn a_framed_label_keeps_its_frame_style_and_rounding() {
+      let svg = export_svg(
+        "Graphics[{Circle[], Inset[Framed[\"zzbox\", \
+         FrameStyle -> {Thick, Blue}, RoundingRadius -> 5], {0, 0}, \
+         Automatic, Automatic, {0, 1}]}]",
+      );
+      let label = svg.find(">zzbox</text>").expect(&svg);
+      let rect_start = svg[..label].rfind("<rect").expect(&svg);
+      let rect =
+        &svg[rect_start..svg[rect_start..].find("/>").unwrap() + rect_start];
+      assert!(rect.contains("stroke=\"rgb(0,0,255)\""), "{rect}");
+      assert!(rect.contains("stroke-width=\"2.00\""), "{rect}");
+      assert!(rect.contains("rx=\"5.00\""), "{rect}");
+      assert!(rect.contains("rotate(-90.000"), "{rect}");
+
+      // The default frame stays a thin, square, black border.
+      let svg =
+        export_svg("Graphics[{Circle[], Text[Framed[\"zzsq\"], {0, 0}]}]");
+      let label = svg.find(">zzsq</text>").expect(&svg);
+      let rect_start = svg[..label].rfind("<rect").expect(&svg);
+      let rect =
+        &svg[rect_start..svg[rect_start..].find("/>").unwrap() + rect_start];
+      assert!(rect.contains("stroke=\"rgb(0,0,0)\""), "{rect}");
+      assert!(!rect.contains("stroke-width"), "{rect}");
+      assert!(!rect.contains("rx="), "{rect}");
+    }
+
     /// `Style[…, Italic]` / `Style[…, Bold]` around a plot's `Prolog` or
     /// `Epilog` text slants or weights the label, as in `Graphics`.
     #[test]
@@ -1926,6 +2003,45 @@ mod graphics {
         !svg.contains("<rect width=\"360\""),
         "without its background plate: {svg}"
       );
+    }
+
+    /// An inset drawn at its own pixel size is kept whole by an automatic
+    /// plot range: the range grows until the picture, centered on its
+    /// anchor, fits in the canvas instead of being cut off at the edge.
+    #[test]
+    fn a_natural_size_inset_widens_the_automatic_plot_range() {
+      let svg = export_svg(
+        "Graphics[{Disk[], Inset[Graphics[{Red, Disk[]}, \
+         ImageSize -> {100, 100}], {3, 0}]}, ImageSize -> {400, 200}]",
+      );
+      let nested = svg
+        .split("<svg ")
+        .nth(2)
+        .and_then(|s| s.split_once('>'))
+        .expect("a nested picture")
+        .0
+        .to_string();
+      let attr = |name: &str| -> f64 {
+        nested
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap_or_else(|| panic!("no {name}: {nested}"))
+      };
+      let (x, w) = (attr("x"), attr("width"));
+      assert_eq!(w, 100.0, "natural size: {nested}");
+      assert!(
+        x >= 0.0 && x + w <= 400.0,
+        "the inset lies inside the canvas: {nested}"
+      );
+      // An explicit plot range still pins the axis: the inset may overflow.
+      let pinned = export_svg(
+        "Graphics[{Disk[], Inset[Graphics[{Red, Disk[]}, \
+         ImageSize -> {100, 100}], {3, 0}]}, ImageSize -> {400, 200}, \
+         PlotRange -> {{-1, 3}, {-1, 1}}]",
+      );
+      assert!(pinned.contains("<svg x=\"348.50\""), "{pinned}");
     }
 
     /// A `Scaled[{w, h}]` inset size is a fraction of the plot, so a
@@ -4417,6 +4533,58 @@ mod graphics {
       assert!(svg.contains("<line"), "{svg}");
       assert!(svg.contains("rgb(255,0,0)"), "{svg}");
       assert!(svg.contains(">top<") && svg.contains(">side<"), "{svg}");
+    }
+
+    #[test]
+    fn text_grid_keeps_base_style_and_cell_styles() {
+      // Regression: `Text[Grid[…, BaseStyle -> {20}]]` and a grid of
+      // `Style[…, color]` cells were flattened to one line of 14pt black
+      // text, dropping the font size and the per-cell colors.
+      let svg = export_svg(
+        "Graphics[{Text[Grid[{{Style[\"major\", Red], Style[\"minor\", Blue]}}, \
+         BaseStyle -> {20}], {0, 0}]}, PlotRange -> 11, ImageSize -> 450]",
+      );
+      assert!(!svg.contains(">major  minor<"), "{svg}");
+      assert!(svg.contains("font-size=\"20\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+
+      let svg = export_svg(
+        "Graphics[{Text[Grid[{{\"left\", \"right\"}}, BaseStyle -> {20}], \
+         {0, 0}]}, PlotRange -> 11, ImageSize -> 450]",
+      );
+      assert!(svg.contains("font-size=\"20\""), "{svg}");
+      assert!(svg.contains(">left<") && svg.contains(">right<"), "{svg}");
+    }
+
+    #[test]
+    fn text_grid_offset_is_relative_to_its_center() {
+      // Regression: `Text[Grid[…], pos, {0, 0}]` set as a table put the
+      // grid's lower left corner on `pos`, reading the `Text` offset as an
+      // `Inset` object position; `{0, 0}` is the grid's center.
+      let inset_box = |offset: &str| -> (f64, f64, f64, f64) {
+        let svg = export_svg(&format!(
+          "Graphics[{{Text[Grid[{{{{\"ab\", \"cd\"}}}}, Frame -> All], \
+           {{0, 0}}{offset}]}}, PlotRange -> 10, ImageSize -> 400]"
+        ));
+        let start = svg.find("<svg x=\"").expect(&svg);
+        let tag = &svg[start..svg[start..].find('>').unwrap() + start];
+        let attr = |name: &str| -> f64 {
+          let key = format!(" {name}=\"");
+          let i = tag.find(&key).unwrap() + key.len();
+          tag[i..i + tag[i..].find('"').unwrap()].parse().unwrap()
+        };
+        (attr("x"), attr("y"), attr("width"), attr("height"))
+      };
+      let centered = inset_box("");
+      let (x, y, w, h) = inset_box(", {0, 0}");
+      assert_eq!((x, y, w, h), centered);
+      assert!((x + w / 2.0 - 199.5).abs() < 1.0, "{x} {w}");
+      assert!((y + h / 2.0 - 199.5).abs() < 1.0, "{y} {h}");
+      // `{-1, 0}` puts the grid's left edge on the anchor.
+      let (lx, ly, lw, lh) = inset_box(", {-1, 0}");
+      assert!((lx + lw / 2.0 - 199.5).abs() < 1.0, "{lx} {lw}");
+      assert!(lw > w && (ly + lh / 2.0 - 199.5).abs() < 1.0);
     }
 
     #[test]
@@ -12514,6 +12682,40 @@ mod plot3d {
       assert_eq!(
         fitted("{7, 20, 0}").0.round(),
         fitted("{14, 40, 0}").0.round()
+      );
+    }
+
+    /// With an automatic range, the box `ViewPoint` (and so `ViewAngle`) is
+    /// measured in is the *padded* box: the 2% `PlotRangePadding` on each
+    /// side makes a unit sphere's box 2.08 long, so seen from 10 box sides
+    /// away under a 6° field of view its silhouette spans
+    /// `tan(asin(1 / 20.8)) / tan(3°)` ≈ 0.919 of the frame. A Demonstration
+    /// snapshot of a sphere-and-cylinder cluster under these options is
+    /// drawn at this padded scale, not 4% larger.
+    #[test]
+    fn an_explicit_view_angle_measures_the_padded_box() {
+      let sphere = |opts: &str| {
+        drawn_extent(&format!(
+          "Graphics3D[Sphere[], Boxed -> False, ViewPoint -> {{0, 0, 10}}, \
+           ViewAngle -> Pi/30, ImageSize -> 400{opts}]"
+        ))
+      };
+      let expected =
+        (1.0_f64 / 20.8).asin().tan() / 3.0_f64.to_radians().tan() * 400.0;
+      for opts in ["", ", SphericalRegion -> True"] {
+        let (w, h) = sphere(opts);
+        assert!(
+          (w - expected).abs() < 3.0 && (h - expected).abs() < 3.0,
+          "{opts}: expected about {expected:.1} px, got {w:.1} x {h:.1}"
+        );
+      }
+      // Without padding the box is the sphere's own: 1.04 times larger.
+      let (w, _) = sphere(", PlotRangePadding -> None");
+      let unpadded =
+        (1.0_f64 / 20.0).asin().tan() / 3.0_f64.to_radians().tan() * 400.0;
+      assert!(
+        (w - unpadded).abs() < 3.0,
+        "expected about {unpadded:.1} px without padding, got {w:.1}"
       );
     }
 
@@ -22988,6 +23190,71 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           "{centers:?} {ticks:?}"
         );
       }
+    }
+
+    /// `FrameTicks -> None` keeps a bar chart's frame but drops its tick
+    /// marks and labels (regression: the value labels stayed), while
+    /// `Ticks -> None` alone leaves a frame's ticks alone.
+    #[test]
+    fn bar_chart_frame_ticks_none_drops_the_frame_ticks() {
+      let bare = export_svg(
+        "BarChart[{5, 3, 8}, Frame -> True, FrameTicks -> None, Axes -> False]",
+      );
+      assert!(y_tick_labels(&bare).is_empty(), "{bare}");
+      for side in ["None", "False"] {
+        let svg = export_svg(&format!(
+          "BarChart[{{5, 3, 8}}, Frame -> True, FrameTicks -> {side}]"
+        ));
+        assert!(y_tick_labels(&svg).is_empty(), "{side}: {svg}");
+      }
+      let framed = export_svg("BarChart[{5, 3, 8}, Frame -> True]");
+      assert!(!y_tick_labels(&framed).is_empty(), "{framed}");
+      // Without a frame `FrameTicks` has nothing to act on.
+      let unframed = export_svg("BarChart[{5, 3, 8}, FrameTicks -> None]");
+      assert!(!y_tick_labels(&unframed).is_empty(), "{unframed}");
+    }
+
+    /// `PlotRangePadding` pads a bar chart's range: `None` puts the frame
+    /// right at the explicit `PlotRange` edges, and `Scaled[f]` on the top
+    /// leaves that fraction of the padded range above it.
+    #[test]
+    fn bar_chart_plot_range_padding_pads_the_range() {
+      // The frame's top and bottom, from the closed polyline drawing it.
+      let frame_rect = |svg: &str| -> (f64, f64) {
+        let points = svg
+          .split("<polyline")
+          .nth(1)
+          .and_then(|t| t.split(" points=\"").nth(1))
+          .and_then(|t| t.split('"').next())
+          .expect("a frame polyline");
+        let ys: Vec<f64> = points
+          .split_whitespace()
+          .filter_map(|p| p.split(',').nth(1)?.parse().ok())
+          .collect();
+        let top = ys.iter().copied().fold(f64::MAX, f64::min);
+        let bottom = ys.iter().copied().fold(f64::MIN, f64::max);
+        (top, bottom)
+      };
+      let bar_top = |svg: &str| -> f64 {
+        bar_rects(svg)
+          .iter()
+          .map(|b| b.1 as f64)
+          .fold(f64::MAX, f64::min)
+      };
+      let opts = "Frame -> True, FrameTicks -> None, Axes -> False, \
+                  PlotRange -> {{0.5, 2.5}, {0, 10}}";
+      let plain = export_svg(&format!("BarChart[{{10, 5}}, {opts}]"));
+      let padded = export_svg(&format!(
+        "BarChart[{{10, 5}}, {opts}, \
+         PlotRangePadding -> {{None, {{None, Scaled[0.2]}}}}]"
+      ));
+      // Unpadded, the tallest bar reaches the top of the range; padded,
+      // a fifth of the frame's height stays free above it.
+      let (top, _) = frame_rect(&plain);
+      assert!((bar_top(&plain) - top).abs() <= 2.0, "{plain}");
+      let (top, bottom) = frame_rect(&padded);
+      let free = (bar_top(&padded) - top) / (bottom - top);
+      assert!((free - 0.2).abs() < 0.02, "free fraction {free}: {padded}");
     }
 
     /// `ChartLegends` are set beside the chart, whose own size stays, with
