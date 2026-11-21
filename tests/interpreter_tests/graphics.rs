@@ -45495,6 +45495,71 @@ mod manipulate {
     );
   }
 
+  // An invisible bare Locator (`{{p, init}, Locator, Appearance -> None}`,
+  // no corner bounds) moves over the picture the body draws, exactly like a
+  // visible one: its pad spans the body's `PlotRange`, not a tiny box
+  // padded around the start point. Regression: the `Appearance -> None`
+  // promotion skipped that bounding, leaving `{{105, 107}, {-1, 1}}` for a
+  // start point of `{106, 0}`.
+  #[test]
+  fn invisible_bare_locator_spans_the_body_plot_range() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[Rectangle[p - {5, 5}, p + {5, 5}], \
+       PlotRange -> {{-30, 150}, {-45, 45}}], \
+       {{p, {106, 0}}, Locator, Appearance -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    let bounds = spec.controls.iter().find_map(|c| match c {
+      ManipulateControl::Slider2D {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      }
+      | ManipulateControl::Locator {
+        name,
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+        ..
+      } if name == "p" => Some((*x_min, *x_max, *y_min, *y_max)),
+      _ => None,
+    });
+    assert_eq!(bounds, Some((-30.0, 150.0, -45.0, 45.0)));
+  }
+
+  // Blank `""` cells only pad a control-panel `Grid` (the empty corners
+  // around a cross of arrow buttons); they must not turn into empty
+  // heading rows between the controls.
+  #[test]
+  fn blank_cells_of_a_control_grid_add_no_heading_rows() {
+    let expr = interpret_to_expr(
+      "Manipulate[Graphics[Disk[{0, 0}, r]], {{r, 1}, 1, 2}, \
+       Grid[{{\"\", Button[\"up\", r = r + 0.1], \"\"}, \
+       {Button[\"down\", r = r - 0.1], \" \", Button[\"reset\", r = 1]}}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(
+      !spec.controls.iter().any(|c| matches!(
+        c,
+        ManipulateControl::Heading { label, .. } if label.trim().is_empty()
+      )),
+      "got {:?}",
+      spec.controls
+    );
+    let buttons = spec
+      .controls
+      .iter()
+      .filter(|c| matches!(c, ManipulateControl::Button { .. }))
+      .count();
+    assert_eq!(buttons, 3, "got {:?}", spec.controls);
+  }
+
   // A control function that calls a user-defined helper building the
   // `LocatorPane` (`{{p, init, label}, makeDial[#1, …] &}`, how a dial is
   // written in a Demonstration's initialization code) is still a draggable
