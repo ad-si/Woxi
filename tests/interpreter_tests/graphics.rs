@@ -18646,14 +18646,15 @@ mod plot3d {
         svg.contains(">sinc(<tspan font-style=\"italic\">x</tspan>)</text>"),
         "{svg}"
       );
-      // The title sets its argument in italics like the axis label; the
-      // legend entries keep their upright text.
+      // The title and the legend entries set their variables in italics.
       assert!(
         svg.contains(">sin(<tspan font-style=\"italic\">x</tspan>)</text>"),
         "{svg}"
       );
-      assert_eq!(svg.matches(">sin(x)</text>").count(), 1, "{svg}");
-      assert!(svg.contains(">cos(x)</text>"), "{svg}");
+      assert!(
+        svg.contains(">cos(<tspan font-style=\"italic\">x</tspan>)</text>"),
+        "{svg}"
+      );
       assert!(!svg.contains("Sin["), "{svg}");
     }
 
@@ -18665,7 +18666,13 @@ mod plot3d {
           Cos[Subscript[a, 3]], a < b}]",
       );
       assert!(svg.contains("v₁ = k₂ sin(k₁ x)"), "{svg}");
-      assert!(svg.contains("cos(a₃)"), "{svg}");
+      assert!(
+        svg.contains(
+          "cos(<tspan font-style=\"italic\">a</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">3</tspan>)"
+        ),
+        "{svg}"
+      );
       assert!(svg.contains("a &lt; b"), "{svg}");
       assert!(!svg.contains("Subscript["), "{svg}");
     }
@@ -66962,6 +66969,30 @@ mod style_box_italic {
        {Style[\"dK\", Italic]/Style[\"dx\", Italic]}]",
     );
     assert_eq!(svg.matches("<g font-style=\"italic\">").count(), 2, "{svg}");
+  }
+
+  /// Regression: a mathematical legend label (`W[u]`) printed as upright
+  /// text; like an axis label it is set in TraditionalForm, with italic
+  /// letters.
+  #[test]
+  fn mathematical_plot_legend_is_italic() {
+    let svg = export_svg("Plot[x, {x, 0, 1}, PlotLegends -> {W[u]}]");
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">W</tspan>(<tspan font-style=\"italic\">u</tspan>)"
+      ),
+      "{svg}"
+    );
+  }
+
+  /// Regression: a fraction inside a legend label (`W[u, r/B]`) stacked
+  /// its parts at the size of the text beside it; a label is set one
+  /// script level down, so they take script size (0.75 of the text).
+  #[test]
+  fn fraction_in_plot_legend_takes_script_size() {
+    let svg = export_svg("Plot[x, {x, 0, 1}, PlotLegends -> {W[u, r/B]}]");
+    assert_eq!(svg.matches("font-size=\"10.5\"").count(), 2, "{svg}");
+    assert!(svg.contains("font-size=\"14.0\""), "{svg}");
   }
 }
 

@@ -25178,14 +25178,27 @@ fn label_sets_matrix(expr: &Expr) -> bool {
 }
 
 /// Structured mathematical labels need a picture host instead of a text span.
+///
+/// A label is inline text of the graphic, which Wolfram sets one script
+/// level down: a fraction in it (`W[u, r/B]`) stacks its numerator and
+/// denominator at script size rather than at the size of the text beside.
 pub(crate) fn structured_label_svg(expr: &Expr) -> Option<String> {
-  structured_label_svg_sized(expr, 14.0)
+  structured_label_svg_impl(expr, 14.0, true)
 }
 
-/// [`structured_label_svg`] typeset at a base font size of `size` points.
+/// [`structured_label_svg`] typeset at a base font size of `size` points,
+/// at the top script level.
 pub(crate) fn structured_label_svg_sized(
   expr: &Expr,
   size: f64,
+) -> Option<String> {
+  structured_label_svg_impl(expr, size, false)
+}
+
+fn structured_label_svg_impl(
+  expr: &Expr,
+  size: f64,
+  script_level_one: bool,
 ) -> Option<String> {
   let boxes=crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(expr);
   let source = crate::syntax::expr_to_string(&boxes);
@@ -25204,7 +25217,21 @@ pub(crate) fn structured_label_svg_sized(
     return None;
   }
   let boxes = crate::strip_number_precision_markers(&boxes);
-  Some(layout_to_svg(&layout_box(&boxes, size), "currentColor"))
+  let layout = if script_level_one {
+    layout_box_at_script_level_one(&boxes, size)
+  } else {
+    layout_box(&boxes, size)
+  };
+  Some(layout_to_svg(&layout, "currentColor"))
+}
+
+/// `layout_box` with `expr` already one script level deep, its level-0
+/// text size being `font_size` (see [`BOX_SCRIPT_LEVEL`]).
+fn layout_box_at_script_level_one(expr: &Expr, font_size: f64) -> BoxLayout {
+  if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+    BOX_ROOT_FONT_SIZE.with(|r| r.set(font_size));
+  }
+  layout_box_nested(expr, font_size)
 }
 
 /// A one-line `PlotLabel` whose `TraditionalForm` boxes stack — a fraction

@@ -16988,8 +16988,15 @@ pub(crate) fn parse_plot_legends(
               "{}{svg}",
               crate::functions::graphics::STYLED_LABEL_MARKER
             ),
-            None => crate::functions::graphics::styled_axis_label(&item)
-              .unwrap_or_else(|| expr_to_string(&item)),
+            // A mathematical label (`W[u]`) is set in TraditionalForm,
+            // with italic letters, like an axis label.
+            None => {
+              crate::functions::graphics::traditional_math_axis_label(&item)
+                .or_else(|| {
+                  crate::functions::graphics::styled_axis_label(&item)
+                })
+                .unwrap_or_else(|| expr_to_string(&item))
+            }
           },
         })
         .collect();
