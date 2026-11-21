@@ -2749,9 +2749,18 @@ differences:
   with `"MaxCellMeasure"` 0.0005 and 0.0001; Woxi gives 0.407, stable
   under grid refinement), and on the line `r == 0`, where the equation's
   `1/(r + 10^-6)` regularization is singular, Woxi's values exceed 1.
-- Two space dimensions plus time (SpatioTemporalEpidemicSpread) and
-  non-rectangular regions (StokesFlowInContainerWithConcaveBottom) are not
-  covered.
+- Two space dimensions plus time (`NDSolve[eqns, u, {x, …}, {y, …}, {t,
+  …}]`) is covered for one unknown on a rectangle
+  (`src/functions/ode_ast/pde_mol2d.rs`): second-order finite differences
+  on a 32 × 32 cell-centered grid, Dirichlet, `NeumannValue` (affine in
+  the unknown) or zero-flux edges, Rodas4 in time. Values agree with the
+  exact solutions to 3–4 digits (the convectively cooled finite cylinder
+  of UnsteadyStateHeatConductionInACylinder: center temperature 0.69262
+  vs. 0.69274 at `τ == 0.15`), but are not WL's finite element numbers,
+  and the solution is a grid `InterpolatingFunction`, not a mesh one.
+  Coupled systems (SpatioTemporalEpidemicSpread), mixed derivatives
+  `u_xy` and non-rectangular regions (StokesFlowInContainerWithConcaveBottom)
+  are not covered.
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).
@@ -5498,6 +5507,22 @@ fixed 100×100 grid, whatever the options say. Wolfram starts from a
 with `PlotPoints -> 5`, and 27 with `PlotPoints -> 5, MaxRecursion -> 0`.
 Woxi makes 10000 every time. The pictures look alike, but an expensive body
 (a compiled iteration, say) runs about 10–50 times longer than in Wolfram.
+
+### Frameless `ContourPlot`: band colors and side padding
+
+Seen in the UnsteadyStateHeatConductionInACylinder Demonstration
+(`ContourPlot[…, Contours -> 10, Frame -> False, ColorFunction ->
+"TemperatureMap", AspectRatio -> 5, ImageSize -> 80]` beside its own
+`Rotate[…, Pi]`), compared with the notebook's stored snapshot (not yet
+checked with wolframscript):
+
+- The snapshot's bands use the `TemperatureMap` colors at `k/11` for every
+  `k` but 1, so the band just below the top is `RGB[223, 132, 55]/255`.
+  Woxi colors the middle bands by their midpoint value and skips `k == 10`
+  instead: its second band from the top is `RGB[236, 188, 66]/255`, one
+  step lower.
+- Woxi pads a frameless plot by about 2 px on each side, so the two halves
+  leave a thin white seam where the snapshot's halves touch.
 
 ### Plot parts nest differently
 

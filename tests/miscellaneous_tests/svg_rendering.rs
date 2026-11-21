@@ -1597,6 +1597,39 @@ mod tests {
     }
 
     #[test]
+    fn plot_legend_box_code_sets_single_letters_in_italics() {
+      // Legend entries are typeset in TraditionalForm: a single-letter
+      // symbol written in the string's box code is italic, while the
+      // string's plain text and multi-letter symbols stay upright.
+      let code = r#"ExportString[Plot[{x, 2 x, 3 x}, {x, 0, 1},
+        PlotLegends -> {"\!\(\*SubscriptBox[\(T\), \(0\)]\)",
+          "k\!\(\*SuperscriptBox[\(y\), \(2\)]\)",
+          "\!\(\*SubscriptBox[\(v\), \(max\)]\)"}], "SVG"]"#;
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">T</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan></text>"
+        ),
+        "box-code symbol not italic in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">k<tspan font-style=\"italic\">y</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+        ),
+        "plain text or box-code symbol styled wrongly in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">v</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan></text>"
+        ),
+        "multi-letter symbol set in italics: {svg}"
+      );
+    }
+
+    #[test]
     fn list_line_plot_joined_false_draws_unconnected_points() {
       let count = |code: &str, tag: &str| {
         woxi::interpret(code)
@@ -5272,7 +5305,8 @@ mod tests {
         svg.contains("<tspan dx=\"0.18em\">147</tspan>"),
         "the number keeps its digit groups: {svg}"
       );
-      assert!(svg.contains(">nine ten</text>"), "{svg}");
+      // The last item moves to its own line whole, leading space and all.
+      assert!(svg.contains("> nine ten</text>"), "{svg}");
     }
 
     /// The line-breaking string factor of a product (`Row[…] "\n\n  "`, an
@@ -5299,6 +5333,79 @@ mod tests {
       let line_y =
         y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
+    }
+
+    /// Re-flowed `Pane` text breaks between the items of a `Row` before it
+    /// breaks inside one: the text item the line runs out in moves to the
+    /// next line whole when it fits there, keeping its leading space,
+    /// rather than filling the first line with its first words.
+    #[test]
+    fn pane_text_breaks_between_row_items_first() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two ", Style["three", Italic], " four five six seven"}], {220, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains(">one two </text>"), "{svg}");
+      assert!(svg.contains(">three</text>"), "{svg}");
+      assert!(svg.contains("> four five six seven</text>"), "{svg}");
+      assert!(!svg.contains(">six seven</text>"), "{svg}");
+    }
+
+    /// Text in a proportional `FontFamily` is measured by its own glyph
+    /// widths when a `Pane` re-flows it, so a line that only overflows at
+    /// the monospace advance stays whole.
+    #[test]
+    fn pane_text_in_a_proportional_font_fits_more_per_line() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Style[Row[{"one two three four five six seven"}], FontFamily -> "Times"], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains(">one two three four five six seven</text>"),
+        "{svg}"
+      );
+      let mono = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two three four five six seven"}], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        !mono.contains(">one two three four five six seven</text>"),
+        "the monospace default still breaks: {mono}"
+      );
+    }
+
+    /// A `Row` measures a piece in a serif `FontFamily` by the serif glyph
+    /// widths it is drawn with, not the wider sans-serif average: the
+    /// centered pieces then sit next to each other instead of each floating
+    /// in a gap a third as wide as its own text.
+    #[test]
+    fn row_measures_serif_pieces_by_their_glyph_widths() {
+      let svg = woxi::interpret(
+        r#"ExportString[Row[{Style["Passengers in third class survived the ", FontFamily -> "Times"], Style["word", FontFamily -> "Times", Italic]}], "SVG"]"#,
+      )
+      .unwrap();
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      // 43 characters at the 0.55 em sans average would be 331 wide.
+      assert!(width < 300.0, "{svg}");
+    }
+
+    /// A re-flowed line that continues after a break between row items
+    /// keeps its leading space as an indent.
+    #[test]
+    fn reflowed_line_keeps_its_leading_space() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Column[{Style[Row[{"one two ", Style["three", Italic], " four five six seven"}], FontFamily -> "Times"]}], {200, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains("xml:space=\"preserve\"> four five six seven</text>"),
+        "{svg}"
+      );
     }
 
     /// `Style[TraditionalForm[Labeled[…]], size]` is drawn as the captioned

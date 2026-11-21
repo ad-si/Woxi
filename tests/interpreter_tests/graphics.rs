@@ -1986,6 +1986,25 @@ mod graphics {
       );
     }
 
+    /// A frameless plot lays out its own canvas (its padding differs from
+    /// a plain `Graphics` of the same primitives), so `Rotate[plot, Pi]`
+    /// turns that canvas and keeps its size: set beside the plot it lines
+    /// up with it. It used to re-render the turned primitives at another
+    /// size.
+    #[test]
+    fn a_half_turned_frameless_plot_keeps_its_size() {
+      assert_eq!(
+        interpret(
+          "g = ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, AspectRatio -> 5, \
+           Contours -> 3, Frame -> False, ImageSize -> 80]; \
+           ImageDimensions[Rasterize[Rotate[g, Pi]]] == \
+           ImageDimensions[Rasterize[g]]"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     /// `Inset[Rotate[plot, θ], pos]` turns the embedded picture and keeps
     /// it a picture. It used to print `-Graphics-` as rotated text.
     #[test]
@@ -6598,6 +6617,50 @@ mod plot_option_evaluate_once {
       .unwrap(),
       // wolframscript evaluates it 6 times over the two plots, Woxi twice;
       // what matters is that it does not run at each sample point.
+      "True"
+    );
+  }
+
+  /// A held plot's `->` option given as a symbol (a Manipulate control
+  /// bound to `Axes -> ax`) uses the symbol's value, exactly as if the
+  /// value had been written in place.
+  #[test]
+  fn symbol_valued_options_use_their_values() {
+    clear_state();
+    for (plot, option, value) in [
+      ("Plot[x, {x, 0, 1}", "Axes", "False"),
+      (
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}",
+        "Axes",
+        "False",
+      ),
+      (
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}",
+        "Frame",
+        "True",
+      ),
+      ("PolarPlot[1 + Cos[t], {t, 0, 2 Pi}", "Axes", "False"),
+      ("Plot[x^2, {x, -1, 1}", "PlotRange", "{{0, 1}, {0, 2}}"),
+    ] {
+      let code = format!(
+        "v = {value}; ExportString[{plot}, {option} -> v], \"SVG\"] === \
+         ExportString[{plot}, {option} -> {value}], \"SVG\"]"
+      );
+      assert_eq!(interpret(&code).unwrap(), "True", "{code}");
+    }
+  }
+
+  /// An option value computed from an expression is evaluated before the
+  /// plot reads it.
+  #[test]
+  fn computed_option_values_are_evaluated() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ExportString[Plot[x, {x, 0, 1}, Axes -> Not[True]], \"SVG\"] === \
+         ExportString[Plot[x, {x, 0, 1}, Axes -> False], \"SVG\"]"
+      )
+      .unwrap(),
       "True"
     );
   }
@@ -15596,6 +15659,56 @@ mod plot3d {
       assert!(y >= 0.0, "title starts above the image: {line}");
     }
 
+    /// A line break inside one styled run of a product of styled strings
+    /// closes the run at the break and reopens it on the next line, so the
+    /// next line is its own positioned `<tspan>`; the break used to leave
+    /// the run open across lines and draw the rest on the first line.
+    #[test]
+    fn plot_label_line_break_inside_styled_run_starts_new_line() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, \
+         PlotLabel -> Style[\"abc\\nxyz\", Red] Style[\"def\", Blue]]",
+      );
+      let line = svg.lines().find(|l| l.contains("abc")).expect("title text");
+      assert!(
+        line.contains(
+          "<tspan fill=\"rgb(255,0,0)\">abc</tspan><tspan x=\"1842.0\" \
+           dy=\"167.6\"><tspan fill=\"rgb(255,0,0)\">xyz</tspan> \
+           <tspan fill=\"rgb(0,0,255)\">def</tspan></tspan>"
+        ),
+        "{line}"
+      );
+    }
+
+    /// Trailing blank lines of a stacked `PlotLabel` hold a no-break space:
+    /// SVG drops the `dy` of an empty `<tspan>`, so they used to vanish.
+    #[test]
+    fn plot_label_trailing_blank_lines_keep_their_height() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> Style[\"abc\\n\\n\", Red]]",
+      );
+      let line = svg.lines().find(|l| l.contains("abc")).expect("title text");
+      assert!(!line.contains("\"></tspan>"), "{line}");
+      assert_eq!(line.matches("dy=\"167.6\">&#160;</tspan>").count(), 2);
+    }
+
+    /// A styled string with inline box notation and a line break stacks
+    /// one line per row; the break used to stay a raw newline inside one
+    /// `<text>`, so both lines ran together.
+    #[test]
+    fn styled_box_notation_plot_label_with_line_break_stacks() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> \
+         Style[\"a \\!\\(\\*SuperscriptBox[\\(10\\), \\(3\\)]\\)\\nnext\", \
+         Red]]",
+      );
+      let line = svg
+        .lines()
+        .find(|l| l.contains("baseline-shift=\"super\""))
+        .expect("title text");
+      assert!(line.contains("dy=\"167.6\">next</tspan></text>"), "{line}");
+    }
+
     /// A `PlotLabel` stacked above a top `FrameLabel` under a tight explicit
     /// `ImagePadding` used to be drawn above the canvas, so the title was
     /// invisible.
@@ -16614,6 +16727,52 @@ mod plot3d {
       );
       assert!(svg.contains(">p[s]</text>"), "{svg}");
       assert!(svg.contains(">ab</text>"), "{svg}");
+    }
+
+    /// A subscripted symbol in a label is typeset in `TraditionalForm`
+    /// too: single letters are italic, multi-letter symbols stay upright,
+    /// whether the label is bare or styled, inside a `Row`, on an axis or
+    /// on the frame.
+    /// As part of a scheduled QA routine, Woxi Studio was tested against a
+    /// randomly sampled Wolfram Demonstration notebook whose frame labels
+    /// read `Style[Row[{Subscript[…], " (unit)"}], 14]`; the subscript base
+    /// was drawn upright. This is a self-authored, construct-equivalent
+    /// example.
+    #[test]
+    fn subscripted_labels_set_single_letters_in_italics() {
+      let italic =
+        |s: &str| format!("<tspan font-style=\"italic\">{s}</tspan>");
+      let sub = |s: &str| {
+        format!("<tspan baseline-shift=\"sub\" font-size=\"70%\">{s}</tspan>")
+      };
+      let r_x = format!("{}{}", italic("R"), sub(&italic("x")));
+      for code in [
+        "Plot[s, {s, 0, 1}, AxesLabel -> {Subscript[R, x], None}]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Subscript[R, x], None}]",
+        "Plot[s, {s, 0, 1}, AxesLabel -> \
+         {Style[Row[{Subscript[R, x], \" (m)\"}], 14], None}]",
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Style[Row[{Subscript[R, x], \" (m)\"}], 14], None}]",
+      ] {
+        let svg = export_svg(code);
+        assert!(svg.contains(&r_x), "{code}: {svg}");
+      }
+      // A multi-letter script stays upright beside the italic base.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, Frame -> True, \
+         FrameLabel -> {Style[Row[{Subscript[R, AB], \" (m)\"}], 14], None}]",
+      );
+      assert!(
+        svg.contains(&format!("{}{} (m)", italic("R"), sub("AB"))),
+        "{svg}"
+      );
+      // An explicitly styled script base keeps its own styling.
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> \
+         {Subscript[Style[\"T\", Bold], \"r\"], None}]",
+      );
+      assert!(!svg.contains(&italic("T")), "{svg}");
     }
 
     /// `Style` only adds font directives around a label; what it wraps is
@@ -22213,6 +22372,33 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod charts {
     use super::*;
 
+    /// `Style[label, Italic]` slants a chart label, upright or rotated, and
+    /// combines with `Bold`; the slant used to be dropped.
+    #[test]
+    fn bar_chart_italic_labels() {
+      let svg = export_svg(
+        "BarChart[{{1, 2}, {3, 4}}, ChartLabels -> {{Style[\"p\", Italic], \
+         Rotate[Style[\"q\", Italic, Bold], Pi/4]}, None}]",
+      );
+      let label = |text: &str| {
+        svg
+          .lines()
+          .flat_map(|l| l.split("<text"))
+          .find(|t| t.contains(&format!(">{text}</text>")))
+          .unwrap_or_else(|| panic!("label {text}: {svg}"))
+          .to_string()
+      };
+      let p = label("p");
+      assert!(p.contains("font-style=\"italic\""), "{p}");
+      assert!(!p.contains("font-weight"), "{p}");
+      let q = label("q");
+      assert!(q.contains("font-style=\"italic\""), "{q}");
+      assert!(q.contains("font-weight=\"bold\""), "{q}");
+      // An unstyled label stays upright.
+      let plain = export_svg("BarChart[{1, 2}, ChartLabels -> {\"r\", \"s\"}]");
+      assert!(!plain.contains("font-style=\"italic\""), "{plain}");
+    }
+
     /// A `Column` chart label stacks its lines (each in its own style)
     /// and a rotated one turns as a block; the lines used to run together
     /// into one line of text.
@@ -26790,6 +26976,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       );
     }
 
+    /// The corners of a polygon only a few grid cells across (a thin
+    /// triangle at a coarse `PlotPoints`, like the outer zones of a
+    /// Brillouin-zone plot) are restored exactly too, although the straight
+    /// edges between them are short. Regression: they stayed beveled, each
+    /// corner cut off by up to two cells.
+    #[test]
+    fn region_plot_small_polygon_corners_are_exact() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Round[Cases[RegionPlot[y > 0 && y < x && x + 2 y < 1, \
+           {x, -2, 2}, {y, -2, 2}, PlotPoints -> 25], \
+           Polygon[p_] :> p, Infinity], 1/1000]"
+        )
+        .unwrap(),
+        "{{{0, 0}, {333/1000, 333/1000}, {1, 0}}}"
+      );
+      // Two such triangles meeting at a point stay two exact triangles.
+      assert_eq!(
+        interpret(
+          "Round[Cases[RegionPlot[y > 0 && (y < x && x + 2 y < 1 || \
+           y < -x && 2 y - x < 1), {x, -2, 2}, {y, -2, 2}, \
+           PlotPoints -> 25], Polygon[p_] :> Sort[p], Infinity], 1/1000]"
+        )
+        .unwrap(),
+        "{{{-1, 0}, {-333/1000, 333/1000}, {0, 0}}, \
+         {{0, 0}, {333/1000, 333/1000}, {1, 0}}}"
+      );
+      // A curved boundary is not mistaken for beveled corners.
+      assert_eq!(
+        interpret(
+          "Length[First[Cases[RegionPlot[x^2 + y^2 < 1, {x, -2, 2}, \
+           {y, -2, 2}, PlotPoints -> 25], Polygon[p_] :> p, Infinity]]] > 30"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
     /// `RegionPlot[{p1, p2, …}, …]` draws one region per predicate, each in
     /// its own `ColorData[97]` color. Regression: a list of predicates
     /// drew nothing at all.
@@ -29335,6 +29560,30 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         left[2] > 150 && left[1] < 80,
         "expected a blue/violet pixel at the left edge, got {left:?}"
       );
+    }
+
+    /// Regression: a computed `ColorFunction -> If[flag, f, None]` was kept
+    /// unevaluated, so with `flag = False` the `If[…]` itself was used as
+    /// the color function and every filled curve was painted solid black
+    /// instead of drawn like a plot without the option.
+    #[test]
+    fn plot_color_function_option_value_is_evaluated() {
+      let plain =
+        export_svg("Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis]");
+      let off = export_svg(
+        "flag = False; Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis, \
+         ColorFunction -> If[flag, Function[{x, y}, Hue[x]], None]]",
+      );
+      assert_eq!(off, plain);
+      let on = export_svg(
+        "flag = True; Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis, \
+         ColorFunction -> If[flag, Function[{x, y}, Hue[x]], None]]",
+      );
+      let direct = export_svg(
+        "Plot[{Sin[x], Cos[x]}, {x, 0, 6}, Filling -> Axis, \
+         ColorFunction -> Function[{x, y}, Hue[x]]]",
+      );
+      assert_eq!(on, direct);
     }
 
     /// Regression: a `Plot` `ColorFunction` written as a slot function that
@@ -33284,6 +33533,77 @@ mod show {
     );
     let svg = export_svg("Graphics[First[Plot[Sin[t], {t, 0, 3}]]]");
     assert!(svg.contains("stroke-width=\"2.00\""), "{svg}");
+  }
+
+  /// A relative `Thickness[t]` in `PlotStyle` is a fraction of the image
+  /// width: a wider plot draws a heavier curve, and the curve extracted
+  /// from the plot stays relative, scaling with the graphic it is drawn in.
+  /// Regression: it was frozen to `t` times the default 360 px width, so a
+  /// `PolarPlot` curve redrawn in a 500 px `Graphics` was too thin.
+  #[test]
+  fn relative_plot_style_thickness_follows_the_image_width() {
+    clear_state();
+    let curve_width = |code: &str| -> f64 {
+      let svg = export_svg(code);
+      // The curve is the one stroke wider than the 2-unit axes and ticks.
+      svg
+        .split("stroke-width=\"")
+        .skip(1)
+        .filter_map(|s| s.split('"').next()?.parse::<f64>().ok())
+        .fold(0.0, f64::max)
+    };
+    for (plotter, width) in
+      [("Plot", 360), ("Plot", 720), ("ListLinePlot", 720)]
+    {
+      let data = if plotter == "Plot" {
+        "x, {x, 0, 1}"
+      } else {
+        "{1, 3, 2}"
+      };
+      let w = curve_width(&format!(
+        "{plotter}[{data}, PlotStyle -> Thickness[0.01], ImageSize -> {width}]"
+      ));
+      // Rendered at 10 units per pixel.
+      assert!(
+        (w - width as f64 * 0.01 * 10.0).abs() < 0.5,
+        "{plotter} at {width}: {w}"
+      );
+    }
+    // `ImageSize` before `PlotStyle` resolves the same way.
+    let w = curve_width(
+      "Plot[x, {x, 0, 1}, ImageSize -> 720, PlotStyle -> {Red, Thickness[0.01]}]",
+    );
+    assert!((w - 72.0).abs() < 0.5, "{w}");
+    // `Show` keeps the first plot's width for the merged curves.
+    let w = curve_width(
+      "Show[Plot[x, {x, 0, 1}, PlotStyle -> Thickness[0.01], \
+       ImageSize -> 720], Plot[2 x, {x, 0, 1}]]",
+    );
+    assert!((w - 72.0).abs() < 0.5, "{w}");
+    // A later absolute weight overrides the relative one.
+    assert_eq!(
+      interpret(
+        "Cases[First[PolarPlot[1, {t, 0, Pi}, \
+         PlotStyle -> {Thickness[0.006], AbsoluteThickness[3]}]], \
+         _Thickness | _AbsoluteThickness, Infinity]"
+      )
+      .unwrap(),
+      "{AbsoluteThickness[3.]}"
+    );
+    assert_eq!(
+      interpret(
+        "Cases[First[PolarPlot[1, {t, 0, Pi}, \
+         PlotStyle -> {Thickness[0.006]}]], _Thickness | _AbsoluteThickness, \
+         Infinity]"
+      )
+      .unwrap(),
+      "{Thickness[0.006]}"
+    );
+    let svg = export_svg(
+      "Graphics[First[Plot[x, {x, 0, 1}, PlotStyle -> Thickness[0.01]]], \
+       ImageSize -> 720]",
+    );
+    assert!(svg.contains("stroke-width=\"7.19\""), "{svg}");
   }
 
   /// `Show` merges the primitives of the graphics it is given, so a
@@ -48768,6 +49088,82 @@ mod manipulate {
     );
   }
 
+  /// `If[mode == 1, Control[{{n, …}, 0, 750, 250}], Control[{{n, …}, 1000,
+  /// 10100, 500}]]` in a control row shows one slider for `n` per branch.
+  /// Only one is ever on screen, so they collapse into a single row, and
+  /// that row must take the bounds of whichever branch is active instead of
+  /// keeping the first branch's range in both modes.
+  #[test]
+  fn per_branch_slider_variants_collapse_with_branch_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[{mode, n}, \
+       Row[{\"mode \", Control[{{mode, 1, \"\"}, {1 -> \"small\", 2 -> \"large\"}}]}], \
+       Dynamic@Row[{\"from \", n, If[mode == 1, \
+         Control[{{n, 0, \"\"}, 0, 750, 250}], \
+         Control[{{n, 1000, \"\"}, 1000, 10100, 500}]]}]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    let sliders: Vec<(f64, f64, Option<f64>)> = spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous {
+          name,
+          min,
+          max,
+          step,
+          ..
+        } if name == "n" => Some((*min, *max, *step)),
+        _ => None,
+      })
+      .collect();
+    assert_eq!(sliders, vec![(0.0, 750.0, Some(250.0))]);
+    let (_, min_code, max_code, step_code) = spec
+      .dynamic_bounds
+      .iter()
+      .find(|(n, ..)| n == "n")
+      .expect("branch-dependent bounds for n")
+      .clone();
+    let resolve = |mode: &str, code: &Option<String>| {
+      woxi::with_scoped_globals(
+        &[("mode".to_string(), mode.to_string())],
+        || {
+          woxi::functions::graphics::manipulate_eval_bound_code(
+            code.as_deref().unwrap(),
+          )
+        },
+      )
+    };
+    for (mode, expected) in
+      [("1", (0.0, 750.0, 250.0)), ("2", (1000.0, 10100.0, 500.0))]
+    {
+      assert_eq!(
+        (
+          resolve(mode, &min_code),
+          resolve(mode, &max_code),
+          resolve(mode, &step_code)
+        ),
+        (Some(expected.0), Some(expected.1), Some(expected.2)),
+        "bounds of n for mode {mode}"
+      );
+    }
+  }
+
+  /// The same variable declared with identical specs in both branches keeps
+  /// static bounds: nothing changes when the branch does.
+  #[test]
+  fn identical_per_branch_slider_variants_keep_static_bounds() {
+    let expr = interpret_to_expr(
+      "Manipulate[{mode, n}, {mode, {1, 2}}, \
+       Dynamic@If[mode == 1, Control[{n, 0, 10, 1}], Control[{n, 0, 10, 1}]]]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    assert_eq!(spec.controls.iter().filter(|c| c.name() == "n").count(), 1);
+    assert!(!spec.dynamic_bounds.iter().any(|(n, ..)| n == "n"));
+  }
+
   /// A bound written `Dynamic[…]` is the front end's way of saying "re-read
   /// this whenever anything it names changes" — a counter slider whose end
   /// is `Dynamic[Binomial[points, 3]]` follows the point count above it.
@@ -48821,11 +49217,11 @@ mod manipulate {
   }
 
   #[test]
-  fn spec_trigger_animates_an_already_bound_variable() {
-    // A `ControlType -> Trigger` spec for a variable that already has a
-    // slider (Kepler's "animate time since perihelion") must not bind the
-    // variable twice — it only makes the widget animate that variable,
-    // starting paused.
+  fn spec_trigger_on_an_already_bound_variable_gets_its_own_row() {
+    // A labeled `ControlType -> Trigger` spec for a variable that already
+    // has a slider keeps its own row (Wolfram draws both the slider and the
+    // Trigger's play buttons); the widget animates that variable, starting
+    // paused.
     let expr = interpret_to_expr(
       "Manipulate[t, {{t, 0, \"time\"}, 0, 10, .01}, \
        {{t, 0, \"animate\"}, 0, 10, .01, ControlType -> Trigger}, \
@@ -48833,7 +49229,22 @@ mod manipulate {
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    assert_eq!(spec.controls.len(), 1, "the Trigger adds no second row");
+    assert_eq!(spec.controls.len(), 2, "slider row plus Trigger row");
+    assert!(
+      matches!(
+        &spec.controls[0],
+        ManipulateControl::Continuous { name, .. } if name == "t"
+      ),
+      "{:?}",
+      spec.controls[0]
+    );
+    match &spec.controls[1] {
+      ManipulateControl::Trigger { name, label, .. } => {
+        assert_eq!(name, "t");
+        assert_eq!(label, "animate");
+      }
+      other => panic!("expected a Trigger control, got {other:?}"),
+    }
     assert!(spec.animated);
     assert!(!spec.animation_running, "a Trigger starts paused");
     assert_eq!(spec.animation_var.as_deref(), Some("t"));
@@ -49086,7 +49497,7 @@ mod manipulate {
   fn spec_keplers_second_law_demonstration() {
     // The full Manipulate cell of the "Kepler's Second Law" Demonstration
     // notebook: four labeled sliders (two bounded by the period P), a
-    // Trigger on t, and a body that renders an SVG under the initial
+    // labeled Trigger row on t, and a body that renders an SVG under the initial
     // bindings.
     let expr = interpret_to_expr(
       "Manipulate[\n\
@@ -49125,10 +49536,13 @@ mod manipulate {
       .controls
       .iter()
       .map(|c| match c {
-        ManipulateControl::Continuous { name, label, .. } => {
+        ManipulateControl::Continuous { name, label, .. }
+        | ManipulateControl::Trigger { name, label, .. } => {
           (name.as_str(), label.as_str())
         }
-        other => panic!("expected continuous control, got {other:?}"),
+        other => {
+          panic!("expected continuous or Trigger control, got {other:?}")
+        }
       })
       .collect();
     assert_eq!(
@@ -49138,8 +49552,13 @@ mod manipulate {
         ("e", "eccentricity"),
         ("P", "orbital period (years)"),
         ("dt", "time span (years)"),
+        ("t", "animate time since perihelion"),
       ]
     );
+    assert!(matches!(
+      spec.controls[4],
+      ManipulateControl::Trigger { .. }
+    ));
     assert!(spec.animated && !spec.animation_running);
     assert_eq!(spec.animation_var.as_deref(), Some("t"));
 
@@ -57126,6 +57545,34 @@ fn pane_shrink_to_fit_scales_oversized_text_instead_of_clipping() {
     "Pane[Style[Column[{{{long}}}], 20], {{300, 200}}]"
   ));
   assert!(clipped.contains("paneClip"), "{clipped}");
+}
+
+#[test]
+fn pane_shrink_to_fit_keeps_the_declared_box_size() {
+  // Regression: a shrunk `Pane` collapsed to the scaled content's height
+  // (a wide one-line grid made a 200 x 5 pane) instead of keeping its
+  // declared `{w, h}` box with the content placed by its `Alignment`.
+  let wide = "Grid[{{StringJoin[Table[\"a\", 80]]}}]";
+  let svg = export_svg(&format!(
+    "Pane[{wide}, {{200, 100}}, ImageSizeAction -> \"ShrinkToFit\"]"
+  ));
+  assert!(
+    svg
+      .starts_with("<svg width=\"200\" height=\"100\" viewBox=\"0 0 200 100\""),
+    "{svg}"
+  );
+  assert!(svg.contains("translate(0.0 0.0)"), "{svg}");
+  assert!(!svg.contains("paneClip"), "{svg}");
+  // The shrunk content still follows the Pane's alignment in the box.
+  let centered = export_svg(&format!(
+    "Pane[{wide}, {{200, 100}}, ImageSizeAction -> \"ShrinkToFit\", \
+     Alignment -> {{Center, Center}}]"
+  ));
+  assert!(
+    centered.starts_with("<svg width=\"200\" height=\"100\""),
+    "{centered}"
+  );
+  assert!(!centered.contains("translate(0.0 0.0)"), "{centered}");
 }
 
 #[test]
