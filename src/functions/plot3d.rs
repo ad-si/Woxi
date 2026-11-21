@@ -7879,6 +7879,19 @@ fn is_function_value(expr: &Expr) -> bool {
     || matches!(expr, Expr::FunctionCall { name, .. } if name == "Function")
 }
 
+/// A bare color head given as a `ColorFunction` (`ColorFunction -> Hue`)
+/// colors a surface by its scaled height, like a named gradient: it reads
+/// as `Hue[#3] &`, so the hue runs once around the color wheel from the
+/// lowest point to the highest.
+fn height_color_head(expr: &Expr) -> Option<Expr> {
+  let Expr::Identifier(head) = expr else {
+    return None;
+  };
+  matches!(head.as_str(), "Hue" | "GrayLevel").then(|| Expr::Function {
+    body: Box::new(call1(head, Expr::Slot(3))),
+  })
+}
+
 /// `ColorFunction -> Function[{x, y, z}, …]` of a `Plot3D`/`RegionPlot3D`:
 /// the style (color and, for `Directive[Opacity[o], color]`, opacity) it
 /// gives the facet at a point. A named gradient (`ColorFunction ->
@@ -7903,8 +7916,11 @@ impl FacetColorFunction {
       Expr::Identifier(name) if name == "ColorFunction" => {
         // `Function[{x, y, z}, …]`, `Function[x, …]` or a pure function
         // like `Directive[Green, Opacity[0.3]] &`.
-        self.function =
-          is_function_value(replacement).then(|| replacement.clone());
+        self.function = if is_function_value(replacement) {
+          Some(replacement.clone())
+        } else {
+          height_color_head(replacement)
+        };
         self.scheme = if self.function.is_some() {
           None
         } else {

@@ -5328,6 +5328,14 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   // underneath (a Demonstration's fixed-size Pane rendered in Woxi
   // Studio).
   let pane_box = pane_fixed_size(expr);
+  // A `Pane[content, w]` that sets a width alone wraps its text at `w`
+  // (its height follows the lines the text takes).
+  let pane_width = pane_box.map(|(w, ..)| w).or_else(|| match expr {
+    syntax::Expr::FunctionCall { name, args } if name == "Pane" => {
+      evaluator::dispatch::io_functions::pane_width_only(args)
+    }
+    _ => None,
+  });
 
   // Strip the wrappers that only say how to set what they hold, so the
   // passes below see the wrapped content (e.g. Pane[Column[{…,
@@ -5347,15 +5355,18 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = unwrap_tooltips(expr);
   // Prose built from a `Row` of strings re-flows to the box width rather
   // than running off its right edge.
-  let expr = pane_box
-    .and_then(|(w, _, align, _)| {
-      evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0).map(
-        |lines| {
+  let expr = pane_width
+    .and_then(|w| {
+      let lines =
+        evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0)?;
+      Some(match pane_box {
+        Some((_, _, align, _)) => {
           evaluator::dispatch::io_functions::align_pane_lines(
             &expr, lines, align,
           )
-        },
-      )
+        }
+        None => lines,
+      })
     })
     .unwrap_or(expr);
   // A list in a grid or column wider than the box breaks into lines that
