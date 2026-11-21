@@ -7060,6 +7060,39 @@ mod graphics3d_dynamic_content {
   }
 }
 
+/// Typesetting a held `Graphics`/`Graphics3D` whose primitives cannot
+/// evaluate yet (an unbound part index, as in a `Manipulate` body before a
+/// control binds it) only draws the picture: it must not report the
+/// messages the evaluation would. Regression: `Part::pkspec1` was printed
+/// twice for `Hold[Graphics[{{a, b}[[k]]}]]`.
+mod held_graphics_typesetting_is_silent {
+  use super::*;
+
+  #[test]
+  fn hold_of_2d_and_3d_graphics_with_symbolic_part() {
+    for head in ["Graphics", "Graphics3D"] {
+      clear_state();
+      let r =
+        interpret_with_stdout(&format!("Hold[{head}[{{{{p, q, r}}[[k]]}}]]"))
+          .unwrap();
+      assert_eq!(r.result, format!("Hold[-{head}-]"));
+      assert!(r.warnings.is_empty(), "{head}: {:?}", r.warnings);
+      assert!(!r.stdout.contains("pkspec1"), "{head}: {}", r.stdout);
+    }
+  }
+
+  #[test]
+  fn manipulate_with_graphics_body_indexed_by_a_control() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Manipulate[Graphics[{{Red, Blue}[[c]], Disk[]}], {{c, 1}, {1, 2}}]",
+    )
+    .unwrap();
+    assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+    assert!(!r.stdout.contains("pkspec"), "{}", r.stdout);
+  }
+}
+
 mod dynamic_plot_labels {
   use super::*;
 

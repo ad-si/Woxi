@@ -21354,17 +21354,26 @@ fn inline_graphics_box_layout(
     &crate::syntax::expr_to_input_form(expr),
   );
   let graphic = crate::syntax::string_to_expr(&source).ok()?;
+  // Typesetting only draws the picture: a held `Graphics[{list[[i]]}]`
+  // whose primitives cannot evaluate yet (an unbound `i` in a Manipulate
+  // body) must not report `Part::pkspec1` & co. as if it had been run, so
+  // the drawing happens inside a quiet block.
+  crate::push_quiet();
   // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
-  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
-  let rendered = match &evaluated {
-    Expr::FunctionCall { name, args } if name == "Graphics" => {
-      graphics_ast(args).ok()?
-    }
-    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
-      crate::functions::plot3d::graphics3d_ast(args).ok()?
-    }
-    _ => evaluated.clone(),
-  };
+  let rendered =
+    evaluate_expr_to_expr(&graphic).ok().and_then(
+      |evaluated| match &evaluated {
+        Expr::FunctionCall { name, args } if name == "Graphics" => {
+          graphics_ast(args).ok()
+        }
+        Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+          crate::functions::plot3d::graphics3d_ast(args).ok()
+        }
+        _ => Some(evaluated),
+      },
+    );
+  crate::pop_quiet();
+  let rendered = rendered?;
   let Expr::Graphics { svg, .. } = &rendered else {
     return None;
   };
