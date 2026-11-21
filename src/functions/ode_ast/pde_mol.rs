@@ -364,6 +364,10 @@ struct MolSystem {
   /// Mass coefficients compiled over `[t, x]`, when they vary in time:
   /// `(evolution equation, unknown, coefficient)`.
   mass_t: Vec<(usize, usize, NumFn)>,
+  /// Grid points sitting on a near-singularity of a row coefficient (see
+  /// [`singular_points`]): their evolution rows average the coefficients
+  /// over the point's cell instead of reading them at the point itself.
+  singular: Vec<bool>,
   /// `flux_form[e]`: the unknowns whose second derivative evolution
   /// equation `e` multiplies by a piecewise coefficient, with that
   /// coefficient's per-point [`FluxForm`].
@@ -422,6 +426,17 @@ impl MolSystem {
       vars[n_vars - 1] = self.xs[g];
       for s in 0..n {
         out[base + s] = match self.rows[g][s] {
+          RowKind::Evolution(e) if self.singular[g] => {
+            // Two-point Gauss quadrature over the cell around the point.
+            let half = cell_gauss_offset(&self.xs, g);
+            let mut sum = 0.0;
+            for off in [-half, half] {
+              vars[n_vars - 1] = self.xs[g] + off;
+              sum += self.evolution_fns[e].eval(&vars)?;
+            }
+            vars[n_vars - 1] = self.xs[g];
+            sum / 2.0
+          }
           RowKind::Evolution(e) => {
             let f = &self.evolution_fns[e];
             let flux_vars;
@@ -554,6 +569,76 @@ impl MolSystem {
     }
     readers
   }
+}
+
+/// The offset of the two Gauss points of grid point `g`'s cell (half a
+/// spacing to either side) from the point: `h / (2√3)`.
+fn cell_gauss_offset(xs: &[f64], g: usize) -> f64 {
+  let h = if g + 1 < xs.len() {
+    xs[g + 1] - xs[g]
+  } else {
+    xs[g] - xs[g - 1]
+  };
+  h / (2.0 * 3.0_f64.sqrt())
+}
+
+/// The response of a compiled row to each of its first `n_inputs` inputs
+/// alone, the others zero: the coefficients of a linear row. `fixed` sets
+/// the remaining inputs (the coordinates).
+fn row_coefficients(f: &NumFn, n_inputs: usize, fixed: &[f64]) -> Vec<f64> {
+  let mut vars = vec![0.0; n_inputs];
+  vars.extend_from_slice(fixed);
+  let base = f.eval(&vars).unwrap_or(f64::NAN);
+  (0..n_inputs)
+    .map(|i| {
+      vars[i] = 1.0;
+      let v = f.eval(&vars).unwrap_or(f64::NAN) - base;
+      vars[i] = 0.0;
+      v
+    })
+    .collect()
+}
+
+/// The interior grid points at which a row coefficient is (nearly)
+/// singular: a pole like the `1/(r + 10^-6)` of a radial operator written
+/// on a symmetric domain lands right on a grid point, where reading the
+/// coefficient gives a value many times that of both neighbors and wrecks
+/// the solution. `at[g]` holds the coefficients at point `g`; a point is
+/// singular when one of them is non-finite or more than 50 times both
+/// neighbors' there (finite ones). Such points take the cell average of the
+/// coefficients, as the quadrature of a finite element method would.
+fn spiking_points(at: &[Vec<f64>]) -> Vec<bool> {
+  let mut flags = vec![false; at.len()];
+  for g in 1..at.len().saturating_sub(1) {
+    flags[g] = (0..at[g].len()).any(|i| {
+      let (c, l, r) = (at[g][i], at[g - 1][i], at[g + 1][i]);
+      l.is_finite()
+        && r.is_finite()
+        && (!c.is_finite() || c.abs() > 50.0 * l.abs().max(r.abs()).max(1e-300))
+    });
+  }
+  flags
+}
+
+/// The grid points of a method-of-lines system whose evolution rows have a
+/// singular coefficient there (see [`spiking_points`]).
+fn singular_points(sys: &MolSystem, t0: f64) -> Vec<bool> {
+  let n_inputs = (sys.k_max + 1) * sys.n;
+  let mut flags = vec![false; sys.n_pts];
+  if sys.periodic {
+    return flags;
+  }
+  for f in &sys.evolution_fns {
+    let at: Vec<Vec<f64>> = sys
+      .xs
+      .iter()
+      .map(|&x| row_coefficients(f, n_inputs, &[t0, x]))
+      .collect();
+    for (flag, s) in flags.iter_mut().zip(spiking_points(&at)) {
+      *flag |= s;
+    }
+  }
+  flags
 }
 
 /// The Jacobian's sparsity: column groups whose grid points no row reads
@@ -1512,8 +1597,10 @@ fn solve_pde_mol_inner(
     rows,
     mass,
     mass_t,
+    singular: Vec::new(),
     flux_form,
   };
+  sys.singular = singular_points(&sys, t_dom.min);
   let plan = jacobian_plan(&sys);
 
   // The initial state, consistent with the algebraic rows.
@@ -2036,6 +2123,27 @@ fn solve_pde_stationary_inner(
     let d = (doms[axis].max - doms[axis].min) / (m - 1) as f64;
     (0..m).map(|i| doms[axis].min + i as f64 * d).collect()
   });
+  // `singular[axis][i]`: a field row has a singular coefficient at index
+  // `i` along the axis (see [`spiking_points`]), probed across the middle
+  // of the other axis.
+  let singular: [Vec<bool>; 2] = [0, 1].map(|axis| {
+    let other = coords[1 - axis][sizes[1 - axis] / 2];
+    let mut flags = vec![false; sizes[axis]];
+    for &fe in &field_of {
+      let f = fns[field_idx[fe]].as_ref().unwrap();
+      let at: Vec<Vec<f64>> = coords[axis]
+        .iter()
+        .map(|&x| {
+          let fixed = if axis == 0 { [x, other] } else { [other, x] };
+          row_coefficients(f, 9 * n, &fixed)
+        })
+        .collect();
+      for (flag, s) in flags.iter_mut().zip(spiking_points(&at)) {
+        *flag |= s;
+      }
+    }
+    flags
+  });
   // `stencils[axis][k - 1][i]`
   let stencils: [Vec<Vec<Stencil>>; 2] = [0, 1].map(|axis| {
     let m = sizes[axis];
@@ -2196,6 +2304,28 @@ fn solve_pde_stationary_inner(
       let base = pos(i);
       for s in 0..n {
         out[base + s] = match kinds[pi][s] {
+          StationaryRow::Field(e) if singular[0][i[0]] || singular[1][i[1]] => {
+            // Two-point Gauss quadrature across the singular axes' cells.
+            let offsets = [0, 1].map(|axis| {
+              if singular[axis][i[axis]] {
+                cell_gauss_offset(&coords[axis], i[axis])
+              } else {
+                0.0
+              }
+            });
+            let f = fns[e].as_ref().unwrap();
+            let mut sum = 0.0;
+            for s0 in [-1.0, 1.0] {
+              for s1 in [-1.0, 1.0] {
+                vars[9 * n] = coords[0][i[0]] + s0 * offsets[0];
+                vars[9 * n + 1] = coords[1][i[1]] + s1 * offsets[1];
+                sum += f.eval(&vars)?;
+              }
+            }
+            vars[9 * n] = coords[0][i[0]];
+            vars[9 * n + 1] = coords[1][i[1]];
+            sum / 4.0
+          }
           StationaryRow::Field(e) | StationaryRow::Boundary(e) => {
             fns[e].as_ref().unwrap().eval(&vars)?
           }
