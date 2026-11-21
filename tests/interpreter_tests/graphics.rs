@@ -38971,28 +38971,29 @@ mod grid_rasterize {
       .graphics
       .expect("framed Column should draw")
     };
-    // 11 ems at the 14 pt base size plus the 12 px item padding, and two
-    // items of at least 2 lines (28 px plus 8 px padding) each.
+    // 11 ems at the 14 pt base size, the fixed width being the column's
+    // whole width, and two items of at least 2 lines (28 px plus 8 px
+    // padding) each.
     let short = column_svg("\"a\", \"b\"", ", ItemSize -> {11, 2}");
     assert!(
-      short.starts_with("<svg width=\"166\" height=\"72\""),
+      short.starts_with("<svg width=\"154\" height=\"72\""),
       "{short}"
     );
     let long =
       column_svg("Style[\"abcdef\", 24, Bold], \"\"", ", ItemSize -> {11, 2}");
     assert!(
-      long.starts_with("<svg width=\"166\" height=\"72\""),
+      long.starts_with("<svg width=\"154\" height=\"72\""),
       "{long}"
     );
     // A bare width fixes only the width; the height stays the content's.
     let width_only = column_svg("\"a\", \"b\"", ", ItemSize -> 5");
     assert!(
-      width_only.starts_with("<svg width=\"82\" height=\"44\""),
+      width_only.starts_with("<svg width=\"70\" height=\"44\""),
       "{width_only}"
     );
     // Without ItemSize the column still hugs its content.
     let natural = column_svg("\"a\", \"b\"", "");
-    assert!(!natural.starts_with("<svg width=\"166\""), "{natural}");
+    assert!(!natural.starts_with("<svg width=\"154\""), "{natural}");
   }
 
   /// Regression: a `PaddedForm` inside a `Row` lost its leading padding,
@@ -67493,8 +67494,9 @@ mod pane_layout {
            ImageSize -> {600, 75}, Alignment -> Center], \
          Pane[Graphics[Disk[]], ImageSize -> {600, 300}, Alignment -> Center]}]",
     );
+    // The two boxes, stacked the default 6 pt apart.
     assert!(
-      svg.starts_with("<svg width=\"600\" height=\"375\""),
+      svg.starts_with("<svg width=\"600\" height=\"381\""),
       "{svg}"
     );
     assert!(

@@ -8119,6 +8119,30 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       expr_to_svg(&hoisted)
     }
+    // `Style[TraditionalForm[Style[Grid[…], 24]], directives…]` — what
+    // `Text[TraditionalForm[Style[layout, …]]]` becomes: the form applies
+    // to the items of the styled layout, and the outer directives style
+    // that layout, rather than the whole being printed as its source.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: tf_args }
+          if tf == "TraditionalForm"
+            && tf_args.len() == 1
+            && matches!(&tf_args[0], Expr::FunctionCall { name: w, .. }
+              if w == "Style" || w == "Text")
+            && crate::functions::graphics::is_traditional_layout(&tf_args[0])) =>
+    {
+      let Expr::FunctionCall { args: tf_args, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut styled =
+        vec![crate::functions::graphics::traditionalize_layout_items(
+          &tf_args[0],
+        )];
+      styled.extend(args[1..].iter().cloned());
+      expr_to_svg(&call("Style", styled))
+    }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and
     // places its content, so the directives style the content, inside the
     // pane — which keeps its width (and the wrapping of text at it).

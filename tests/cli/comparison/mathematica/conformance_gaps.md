@@ -6323,6 +6323,16 @@ several items), at that size, as Wolfram draws it. What still differs:
 - `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
   (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
 
+### `Column` item heights with `ItemSize` and large text
+
+`Framed[Column[{"10", "♠"}, Center, 0, ItemSize -> {3, 2},
+ItemStyle -> Directive[24, Bold]]]` is 52 pt wide in both engines, but
+Wolfram's box is about 57 pt tall and Woxi's 82 pt: Woxi pads each 24 pt
+text item to 32 pt and reads the item height `2` as two 14 pt lines plus
+padding (36 pt), where Wolfram's items stay about one font size tall. A
+string separator in a `Row` (`"  "`) is also wider in Woxi (monospace
+spaces, about 17 pt) than in Wolfram (about 8 pt).
+
 ### Tables, grids and typeset math: remaining layout differences
 
 Found comparing `Export[…, "SVG"]` of both engines:
