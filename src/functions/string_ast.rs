@@ -10290,11 +10290,9 @@ pub fn to_expression_ast_as(
     return Ok(interpreted);
   }
   // ToExpression[GraphicsBox[…]] reads the drawing boxes back as the
-  // `Graphics` they typeset (CircleBox → Circle, LineBox → Line, …).
-  if matches!(&args[0], Expr::FunctionCall { name, .. } if name == "GraphicsBox")
-  {
-    let text =
-      crate::notebook::box_source_to_graphics_expr(&expr_to_output(&args[0]));
+  // `Graphics` they typeset (CircleBox → Circle, LineBox → Line, …), and
+  // a `Graphics3DBox` as its `Graphics3D` (SphereBox → Sphere, …).
+  if let Some(text) = graphics_box_to_input(&args[0]) {
     let mut text_args = vec![Expr::String(text)];
     if let Some(h) = args.get(2) {
       text_args.push(Expr::Identifier("InputForm".to_string()));
@@ -10388,7 +10386,27 @@ fn box_input_head(name: &str) -> bool {
 /// The input text a box expression stands for: `SqrtBox["x"]` is
 /// `Sqrt[(x)]`, `SuperscriptBox["x", "3"]` is `Power[(x),(3)]`, and a
 /// `RowBox` joins its parts. `None` for a box this does not read.
+/// The input text of a `GraphicsBox[…]`/`Graphics3DBox[…]`: the
+/// `Graphics`/`Graphics3D` expression its drawing boxes typeset.
+fn graphics_box_to_input(e: &Expr) -> Option<String> {
+  match e {
+    Expr::FunctionCall { name, .. }
+      if name == "GraphicsBox" || name == "Graphics3DBox" =>
+    {
+      Some(crate::notebook::box_source_to_graphics_expr(
+        &expr_to_output(e),
+      ))
+    }
+    _ => None,
+  }
+}
+
 fn boxes_to_input(e: &Expr) -> Option<String> {
+  // A picture typed into an input line (`x = <picture>` stores it as
+  // `RowBox[{"x", "=", Graphics3DBox[…]}]`) reads as the graphics it shows.
+  if let Some(text) = graphics_box_to_input(e) {
+    return Some(format!("({text})"));
+  }
   let Expr::FunctionCall { name, args } = e else {
     return match e {
       Expr::String(s) => Some(s.clone()),

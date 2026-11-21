@@ -9321,14 +9321,16 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
   // `Framed[content, opts…]` boxes the label: a border around it and, with
   // `Background -> color`, a panel behind it. Peel it off first so the
   // `Style` directives it usually wraps still reach the primitive.
+  // Its options may come as one list, `Framed[x, {Background -> c, …}]`.
   let (framed_body, frame_opts) = match first_arg {
     Expr::FunctionCall { name, args: fargs }
       if name == "Framed" && !fargs.is_empty() =>
     {
-      (&fargs[0], &fargs[1..])
+      (&fargs[0], splice_option_lists(fargs).split_off(1))
     }
-    other => (other, &[] as &[Expr]),
+    other => (other, Vec::new()),
   };
+  let frame_opts = &frame_opts[..];
   // A `Framed` box's border takes the label's color (a `Style[Text[Framed[
   // …]], Red]` caption is boxed in red), not the color of a `Style` inside
   // the frame.
@@ -39974,6 +39976,9 @@ fn framed_box_to_svg(
   if args.is_empty() {
     return None;
   }
+  // `Framed[expr, {Background -> c, FrameStyle -> s}]` takes its options
+  // as one list just as well as spelled out flat.
+  let args = &splice_option_lists(args)[..];
 
   let content = &args[0];
 

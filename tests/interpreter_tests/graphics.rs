@@ -4928,6 +4928,32 @@ mod graphics {
       );
     }
 
+    /// Regression: `Framed[x, {opts…}]` — the options given as one list —
+    /// ignored them, so a white-on-white label frame was drawn black.
+    #[test]
+    fn framed_label_takes_an_option_list() {
+      for expr in [
+        "Graphics[{Text[Framed[\"hi\", {Background -> Yellow, \
+         FrameStyle -> Red}], {0, 0}]}]",
+        "Framed[\"hi\", {Background -> Yellow, FrameStyle -> Red}]",
+      ] {
+        let svg = export_svg(expr);
+        let drawn = svg.split("</defs>").nth(1).unwrap_or(&svg);
+        let rect = drawn
+          .split("<rect ")
+          .nth(1)
+          .and_then(|r| r.split_once("/>"))
+          .expect("a frame rectangle")
+          .0
+          .to_string();
+        assert!(
+          rect.contains("fill=\"rgb(255,255,0)\"")
+            && rect.contains("stroke=\"rgb(255,0,0)\""),
+          "{expr}: the listed options style the frame: {rect}"
+        );
+      }
+    }
+
     /// Regression: a styled rational was printed as the flat text `31/10`
     /// instead of a stacked fraction set in the styled font.
     #[test]
