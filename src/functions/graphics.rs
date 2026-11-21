@@ -38545,6 +38545,7 @@ fn column_layout_svg(
           svg,
           width: w,
           height: h,
+          picture: true,
         }
       }
       _ => cell,
