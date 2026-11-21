@@ -27334,6 +27334,47 @@ ParametricPlot[f[t], {t, 0, 1}]]",
   mod field_plots {
     use super::*;
 
+    /// Vector and stream plots keep their frame, `FrameLabel` and square
+    /// aspect ratio when `Show` merges them with other graphics, as the
+    /// standalone plot draws them.
+    #[test]
+    fn show_vector_and_stream_plots_keep_frame() {
+      clear_state();
+      for plot in [
+        "VectorPlot[{x (1 - y), y (x - 1)}, {x, 0, 4}, {y, 0, 3}, \
+         StreamPoints -> Automatic, FrameLabel -> {\"p\", \"q\"}]",
+        "StreamPlot[{-y, x}, {x, -2, 2}, {y, -1, 1}, \
+         FrameLabel -> {\"p\", \"q\"}]",
+        "VectorDensityPlot[{-y, x}, {x, -2, 2}, {y, -1, 1}, \
+         FrameLabel -> {\"p\", \"q\"}]",
+        "StreamDensityPlot[{-y, x}, {x, -2, 2}, {y, -1, 1}, \
+         FrameLabel -> {\"p\", \"q\"}]",
+      ] {
+        let opts = interpret(&format!(
+          "Options[{plot}, {{Frame, AspectRatio, FrameLabel}}]"
+        ))
+        .unwrap();
+        assert_eq!(
+          opts, "{Frame -> True, AspectRatio -> 1, FrameLabel -> {p, q}}",
+          "{plot}"
+        );
+        let svg =
+          export_svg(&format!("Show[{plot}, Graphics[Disk[{{0, 0}}, 0.1]]]"));
+        assert!(svg.contains(">p<") && svg.contains(">q<"), "{plot}: {svg}");
+        // Tick labels on the bottom and left frame edges.
+        assert!(svg.contains(">0<") || svg.contains(">0.<"), "{plot}: {svg}");
+      }
+      // `Frame -> False` given to the plot is kept as well.
+      assert_eq!(
+        interpret(
+          "Options[VectorPlot[{1, 1}, {x, 0, 1}, {y, 0, 1}, Frame -> False], \
+           Frame]"
+        )
+        .unwrap(),
+        "{Frame -> False}"
+      );
+    }
+
     /// Explicit `FrameTicks` on the right edge of a `DensityPlot` frame
     /// are drawn there with their (typeset) labels, and the edges set to
     /// `None` lose their automatic ticks and labels.
