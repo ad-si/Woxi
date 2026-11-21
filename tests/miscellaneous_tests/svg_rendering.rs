@@ -1710,7 +1710,8 @@ mod tests {
         (
           r#"Plot[x, {x, 0, 1}, Frame -> True,
           FrameLabel -> {t, Row[{x, ",", "    ", y}]}]"#,
-          "xml:space=\"preserve\">x,    y</text>",
+          "xml:space=\"preserve\"><tspan font-style=\"italic\">x</tspan>,    \
+           <tspan font-style=\"italic\">y</tspan></text>",
         ),
         (
           r#"ListLinePlot[{1, 2, 3}, Frame -> True,

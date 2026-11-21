@@ -12306,9 +12306,9 @@ fn clip_infinite_line_to_box(
   half: bool,
   bb: &BBox,
 ) -> Option<((f64, f64), (f64, f64))> {
-  let margin = bb.width() + bb.height();
-  let (x0, x1) = (bb.x_min - margin, bb.x_max + margin);
-  let (y0, y1) = (bb.y_min - margin, bb.y_max + margin);
+  let bx = unbounded_draw_box(bb);
+  let (x0, x1) = (bx.x_min, bx.x_max);
+  let (y0, y1) = (bx.y_min, bx.y_max);
   let (mut t_lo, mut t_hi) =
     (if half { 0.0 } else { f64::NEG_INFINITY }, f64::INFINITY);
   for (pc, vc, lo, hi) in [(p.0, v.0, x0, x1), (p.1, v.1, y0, y1)] {
@@ -25939,13 +25939,46 @@ pub fn styled_axis_label(e: &Expr) -> Option<String> {
   // The styling stays on the outside while the expressions it wraps are
   // set in traditional notation, like an unstyled label: `Style[θ[ξ], 14]`
   // reads `θ(ξ)`.
-  if contains_visible_style(e) {
+  if contains_visible_style(e) || row_holds_math_item(e) {
     return Some(format!(
       "{STYLED_LABEL_MARKER}{}",
       expr_to_svg_markup(&traditionalize_styled_label(e))
     ));
   }
   crate::functions::chart::expr_to_label(e)
+}
+
+/// Whether `e` is a `Row` label with a mathematical item among its parts
+/// (`Row[{V[x], " / ", "a"}]`): a graphic's `FormatType` is
+/// `TraditionalForm`, so such an item is typeset with italic letters, as
+/// on its own, while the strings beside it stay as written. An item made
+/// only of strings and numbers (`Subscript["log", 10]`) has no symbol to
+/// set in italics and keeps the plain label text.
+fn row_holds_math_item(e: &Expr) -> bool {
+  fn holds_symbol(e: &Expr) -> bool {
+    match e {
+      Expr::Identifier(_) => true,
+      Expr::FunctionCall { args, .. } => args.iter().any(holds_symbol),
+      Expr::CurriedCall { func, args } => {
+        holds_symbol(func) || args.iter().any(holds_symbol)
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        holds_symbol(left) || holds_symbol(right)
+      }
+      Expr::UnaryOp { operand, .. } => holds_symbol(operand),
+      _ => false,
+    }
+  }
+  match e {
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(items)) => items.iter().any(|i| {
+        (is_traditional_math_label(i) && holds_symbol(i))
+          || row_holds_math_item(i)
+      }),
+      _ => false,
+    },
+    _ => false,
+  }
 }
 
 /// Whether an axis label is a plain mathematical expression that
