@@ -1959,8 +1959,25 @@ impl ManipulateState {
     ctrl_idx: usize,
     choice_label: &str,
   ) -> bool {
+    let idx = match self.controls.get(ctrl_idx) {
+      Some(ControlState::Discrete { value_labels, .. }) => {
+        value_labels.iter().position(|v| v == choice_label)
+      }
+      _ => None,
+    };
+    idx.is_some_and(|idx| self.select_discrete_index(ctrl_idx, idx))
+  }
+
+  /// Select the choice at position `idx` of the discrete control at
+  /// `ctrl_idx`. Widgets that know which button was pressed use this rather
+  /// than [`Self::select_discrete`]: choice labels need not be distinct
+  /// (eight color swatches all labeled `Style["| |", Background -> c]`
+  /// share the text `| |`), and a label lookup would always land on the
+  /// first of them. Returns `true` if the control exists and `idx` is one
+  /// of its choices.
+  pub fn select_discrete_index(&mut self, ctrl_idx: usize, idx: usize) -> bool {
     let Some(ControlState::Discrete {
-      value_labels,
+      values,
       current_index,
       overflow,
       ..
@@ -1968,9 +1985,9 @@ impl ManipulateState {
     else {
       return false;
     };
-    let Some(idx) = value_labels.iter().position(|v| v == choice_label) else {
+    if idx >= values.len() {
       return false;
-    };
+    }
     *current_index = idx;
     *overflow = None;
     true

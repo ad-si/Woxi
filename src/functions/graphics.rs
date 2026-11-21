@@ -42241,8 +42241,13 @@ pub struct LabelRun {
   pub text: String,
   pub italic: bool,
   pub bold: bool,
-  /// The run's color as `(r, g, b)` in 0..1, when `Style` gave it one.
+  /// The run's color as `(r, g, b)` in 0..1, when `Style` gave it one
+  /// (a bare color directive or `FontColor -> c`).
   pub color: Option<(f32, f32, f32)>,
+  /// The run's background as `(r, g, b)` in 0..1, when `Style` gave it one
+  /// (`Background -> c`). A choice label like
+  /// `Style["| |", FontColor -> c, Background -> c]` is a color swatch.
+  pub background: Option<(f32, f32, f32)>,
   /// The run's font size in points, when `Style` gave it one
   /// (`Style["t", 16]` or `FontSize -> 16`).
   pub size: Option<f64>,
@@ -42269,6 +42274,33 @@ fn style_directive_font_size<'a>(
       _ => None,
     })
     .filter(|v| v.is_finite() && *v > 0.0)
+    .last()
+}
+
+/// The color a `Style`'s directives set: a bare color (`Red`,
+/// `RGBColor[…]`) when `key` is `FontColor`, or `key -> color`, the last
+/// one winning as in Wolfram.
+fn style_directive_color<'a>(
+  directives: impl Iterator<Item = &'a Expr>,
+  key: &str,
+) -> Option<(f32, f32, f32)> {
+  directives
+    .filter_map(|d| match d {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(k) if k == key => label_style_color(replacement),
+        _ => None,
+      },
+      _ if key == "FontColor" => label_style_color(d),
+      _ => None,
+    })
+    .map(|c| (c.r as f32, c.g as f32, c.b as f32))
     .last()
 }
 
@@ -51757,11 +51789,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         let bold = args.iter().skip(1).any(is_bold_directive);
         // A held label (a Manipulate control heading) may still carry a
         // color that only evaluation produces, such as `ColorData[1, 1]`.
-        let color = args
-          .iter()
-          .skip(1)
-          .find_map(label_style_color)
-          .map(|c| (c.r as f32, c.g as f32, c.b as f32));
+        let color = style_directive_color(args.iter().skip(1), "FontColor");
+        let background =
+          style_directive_color(args.iter().skip(1), "Background");
         let size = style_directive_font_size(args.iter().skip(1));
         let mut runs = args
           .first()
@@ -51774,6 +51804,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           run.italic |= slant;
           if run.color.is_none() {
             run.color = color;
+          }
+          if run.background.is_none() {
+            run.background = background;
           }
           if run.size.is_none() {
             run.size = size;
@@ -55911,9 +55944,9 @@ fn label_runs_to_json(runs: &[LabelRun]) -> String {
   let parts: Vec<String> = runs
     .iter()
     .map(|r| {
-      let color = match r.color {
+      let css = |key: &str, c: Option<(f32, f32, f32)>| match c {
         Some((cr, cg, cb)) => format!(
-          r#","color":"rgb({},{},{})""#,
+          r#","{key}":"rgb({},{},{})""#,
           (cr.clamp(0.0, 1.0) * 255.0).round() as u8,
           (cg.clamp(0.0, 1.0) * 255.0).round() as u8,
           (cb.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -55921,11 +55954,12 @@ fn label_runs_to_json(runs: &[LabelRun]) -> String {
         None => String::new(),
       };
       format!(
-        r#"{{"text":"{}","italic":{},"bold":{}{}}}"#,
+        r#"{{"text":"{}","italic":{},"bold":{}{}{}}}"#,
         json_escape_manipulate(&r.text),
         r.italic,
         r.bold,
-        color,
+        css("color", r.color),
+        css("background", r.background),
       )
     })
     .collect();
@@ -56020,7 +56054,9 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         // styled runs, parallel to `values`; omitted when every choice is
         // plain text, matching `svg_json`'s all-or-nothing shape above.
         let runs_json = if value_label_runs.iter().any(|runs| {
-          runs.iter().any(|r| r.color.is_some() || r.bold || r.italic)
+          runs.iter().any(|r| {
+            r.color.is_some() || r.background.is_some() || r.bold || r.italic
+          })
         }) {
           let parts: Vec<String> = value_label_runs
             .iter()
@@ -61440,6 +61476,62 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["{x₁(t), y}", "{z}"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// Choice labels styled with option rules (`FontColor -> c`,
+  /// `Background -> c`) rather than a bare color directive must keep both
+  /// colors as styled runs: a row of color-swatch choices whose label text
+  /// is identical would otherwise be indistinguishable plain text.
+  #[test]
+  fn font_color_and_background_choice_labels_keep_their_colors() {
+    let control = discrete_control(
+      "Manipulate[k, {{k, 0}, \
+       {0 -> Style[\"||\", FontColor -> RGBColor[1, 0, 0], \
+          Background -> RGBColor[1, 0, 0]], \
+        1 -> Style[\"||\", FontColor -> Blue, Background -> Yellow]}, \
+       ControlType -> SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_labels,
+        value_label_runs,
+        ..
+      } => {
+        assert_eq!(value_labels, &["||", "||"]);
+        let colors: Vec<_> = value_label_runs
+          .iter()
+          .map(|runs| (runs[0].color, runs[0].background))
+          .collect();
+        assert_eq!(
+          colors,
+          vec![
+            (Some((1.0, 0.0, 0.0)), Some((1.0, 0.0, 0.0))),
+            (Some((0.0, 0.0, 1.0)), Some((1.0, 1.0, 0.0))),
+          ]
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `Style[…, Red, Blue]` and `Style[…, FontColor -> Red, Blue]`: as in
+  /// Wolfram, the last color directive wins.
+  #[test]
+  fn style_label_last_color_directive_wins() {
+    let control = discrete_control(
+      "Manipulate[k, {{k, 0}, \
+       {0 -> Style[\"a\", Red, Blue], 1 -> Style[\"b\", FontColor -> Red, Blue]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_runs, ..
+      } => {
+        assert_eq!(value_label_runs[0][0].color, Some((0.0, 0.0, 1.0)));
+        assert_eq!(value_label_runs[1][0].color, Some((0.0, 0.0, 1.0)));
+        assert_eq!(value_label_runs[0][0].background, None);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
