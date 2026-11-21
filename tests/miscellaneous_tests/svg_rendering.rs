@@ -1752,6 +1752,37 @@ mod tests {
     }
 
     #[test]
+    fn graphics3d_text_keeps_padding_blanks() {
+      // A 3D label padded with blanks (`"  axis"`, `"tip "`) used to lose
+      // them, because SVG drops leading/trailing whitespace by default.
+      for (label, expected) in [
+        (r#""  axis""#, "xml:space=\"preserve\">  axis</text>"),
+        (r#""tip ""#, "xml:space=\"preserve\">tip </text>"),
+        (
+          r#"Style["  axis", Italic]"#,
+          "font-style=\"italic\" xml:space=\"preserve\">  axis</text>",
+        ),
+        (
+          r#"Style[Style["  axis", Italic], Medium]"#,
+          "xml:space=\"preserve\"><tspan font-style=\"italic\">  axis</tspan></text>",
+        ),
+        (r#""a  b""#, "xml:space=\"preserve\">a  b</text>"),
+      ] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Graphics3D[{{Text[{label}, {{0, 0, 0}}], Point[{{1, 1, 1}}]}}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        assert!(svg.contains(expected), "blanks dropped in {label}: {svg}");
+      }
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics3D[{Text["p q", {0, 0, 0}], Point[{1, 1, 1}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains(">p q</text>"), "label changed: {svg}");
+      assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
+    }
+
+    #[test]
     fn list_line_plot_frame_label_renders_box_notation() {
       // FrameLabel with a SqrtBox renders as a radical, not raw box text.
       let svg = woxi::interpret(
