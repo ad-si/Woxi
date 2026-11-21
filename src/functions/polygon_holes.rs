@@ -497,8 +497,10 @@ pub fn even_odd_regions(
   // boundary, as when one is the other scaled about a common corner)
   // splits that edge there, so overlapping edges are cut into the same
   // pieces and traced as one.
-  let corners: std::collections::BTreeSet<usize> =
-    edges.iter().flat_map(|&(a, b)| [canon[a], canon[b]]).collect();
+  let corners: std::collections::BTreeSet<usize> = edges
+    .iter()
+    .flat_map(|&(a, b)| [canon[a], canon[b]])
+    .collect();
   for (i, &(ea, eb)) in edges.iter().enumerate() {
     let (a, b) = (pts[ea], pts[eb]);
     let r = (b.0 - a.0, b.1 - a.1);
@@ -792,7 +794,10 @@ mod tests {
       let filled: f64 = regions
         .iter()
         .map(|reg| {
-          area(&pts2, &triangulate_with_holes(&pts2, &reg.outer, &reg.holes))
+          area(
+            &pts2,
+            &triangulate_with_holes(&pts2, &reg.outer, &reg.holes),
+          )
         })
         .sum();
       let all = |k: usize| (0..k).collect::<Vec<_>>();
