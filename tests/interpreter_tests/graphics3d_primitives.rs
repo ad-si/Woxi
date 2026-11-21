@@ -1104,7 +1104,7 @@ mod outlines {
       );
       let (green, gx, gy) = dot("rgb(0,255,0)");
       let under = faces(gx, gy, true);
-      assert!(!under.is_empty());
+      assert_ne!(under, Vec::<usize>::new());
       assert!(
         under.iter().all(|&f| f < green),
         "face center dot hidden: {s}"
