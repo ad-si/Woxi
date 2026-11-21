@@ -1286,7 +1286,19 @@ mod number_form_options {
         r#"ToString[NumberForm[12.3, {8, 3}, NumberPadding -> {"*", "0"}]]"#,
         "****12.300",
       ),
-      // A single string sets the integer-side padding only.
+      // A single string pads both sides: `""` drops the trailing zeros.
+      (
+        r#"ToString[NumberForm[2., {4, 3}, NumberPadding -> ""]]"#,
+        "2.",
+      ),
+      (
+        r#"ToString[NumberForm[-2.5, {4, 3}, NumberPadding -> ""]]"#,
+        "-2.5",
+      ),
+      (
+        r#"ToString[PaddedForm[1.5, {4, 2}, NumberPadding -> ""]]"#,
+        "1.5",
+      ),
       (
         r#"ToString[PaddedForm[123, 6, NumberPadding -> "0"]]"#,
         "0000123",

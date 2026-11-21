@@ -2467,7 +2467,7 @@ mod default_protection {
   }
 
   #[test]
-  fn symbols_wolfram_leaves_unprotected_have_no_attributes() {
+  fn symbols_wolfram_leaves_unprotected_are_not_protected() {
     for name in [
       "Wedge",
       "CircleTimes",
@@ -2479,7 +2479,14 @@ mod default_protection {
       "VonMisesDistribution",
     ] {
       let attrs = interpret(&format!("Attributes[{name}]")).unwrap();
-      assert!(!attrs.contains("Protected"), "{name} got {attrs}");
+      // `ReadProtected` (Derivative's) is fine, only `Protected` is not.
+      assert!(
+        !attrs
+          .trim_matches(|c| c == '{' || c == '}')
+          .split(", ")
+          .any(|a| a == "Protected"),
+        "{name} got {attrs}"
+      );
     }
   }
 

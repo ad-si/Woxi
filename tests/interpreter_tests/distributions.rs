@@ -3186,6 +3186,31 @@ mod empirical_distribution {
     );
   }
 
+  // Machine-number data or points sum the matching weights to a machine
+  // number.
+  #[test]
+  fn pdf_cdf_of_machine_numbers() {
+    assert_eq!(
+      interpret("CDF[EmpiricalDistribution[{30., 40., 50.}], 40.]").unwrap(),
+      "0.6666666666666666"
+    );
+    assert_eq!(
+      interpret("CDF[EmpiricalDistribution[{30., 40., 50.}], 39]").unwrap(),
+      "0.3333333333333333"
+    );
+    assert_eq!(
+      interpret("PDF[EmpiricalDistribution[{1.5, 2.5, 2.5}], 2.5]").unwrap(),
+      "0.6666666666666666"
+    );
+    assert_eq!(
+      interpret(
+        "Map[CDF[EmpiricalDistribution[{3., 1., 2., 2.}], #] &, {1., 2., 3.}]"
+      )
+      .unwrap(),
+      "{0.25, 0.75, 1.}"
+    );
+  }
+
   #[test]
   fn cdf_steps() {
     assert_eq!(
