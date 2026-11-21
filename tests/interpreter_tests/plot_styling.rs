@@ -875,3 +875,58 @@ mod relative_thickness {
     }
   }
 }
+
+/// `PlotStyle -> Thickness[f]` is a fraction of the width of the picture
+/// the curve ends up in, not of the default 360px width.
+mod relative_plot_style_thickness {
+  use super::*;
+
+  /// The plot keeps the directive symbolic, as Wolfram does.
+  #[test]
+  fn stays_symbolic_in_the_plot_expression() {
+    assert_eq!(
+      interpret(
+        "Plot[x, {x, 0, 1}, PlotStyle -> {Red, Thickness[0.01]}, \
+         PlotPoints -> 3, MaxRecursion -> 0][[1, 1, 1]]"
+      )
+      .unwrap(),
+      "Directive[RGBColor[1., 0., 0.], Thickness[0.01]]"
+    );
+  }
+
+  /// A larger `ImageSize` draws a proportionally thicker curve
+  /// (render units are 10 per pixel).
+  #[test]
+  fn scales_with_image_size() {
+    for (width, stroke) in [(200, "20"), (500, "50")] {
+      let svg = svg_of(&format!(
+        "ParametricPlot[{{t, t}}, {{t, 0, 1}}, \
+         PlotStyle -> Thickness[0.01], Axes -> False, ImageSize -> {width}]"
+      ));
+      assert!(svg.contains(&format!("stroke-width=\"{stroke}\"")), "{svg}");
+    }
+  }
+
+  /// `Show` with a new `ImageSize` rescales the curve to the new width
+  /// (it used to keep the 3.6px weight of a 360px-wide plot).
+  #[test]
+  fn rescales_in_show() {
+    let svg = svg_of(
+      "Show[ParametricPlot[{t, t}, {t, 0, 1}, \
+       PlotStyle -> {Red, Thickness[0.01]}], Graphics[Point[{0, 0}]], \
+       ImageSize -> 500]",
+    );
+    assert!(svg.contains("stroke-width=\"4.98\""), "{svg}");
+    assert!(!svg.contains("stroke-width=\"3.6"), "{svg}");
+  }
+
+  /// An absolute weight given after the fraction wins.
+  #[test]
+  fn absolute_thickness_overrides_it() {
+    let svg = svg_of(
+      "Plot[x, {x, 0, 1}, PlotStyle -> Directive[Thickness[0.01], \
+       AbsoluteThickness[3]], Axes -> False, ImageSize -> 500]",
+    );
+    assert!(svg.contains("stroke-width=\"30\""), "{svg}");
+  }
+}

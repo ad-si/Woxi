@@ -1752,6 +1752,37 @@ mod tests {
     }
 
     #[test]
+    fn graphics3d_text_keeps_padding_blanks() {
+      // A 3D label padded with blanks (`"  axis"`, `"tip "`) used to lose
+      // them, because SVG drops leading/trailing whitespace by default.
+      for (label, expected) in [
+        (r#""  axis""#, "xml:space=\"preserve\">  axis</text>"),
+        (r#""tip ""#, "xml:space=\"preserve\">tip </text>"),
+        (
+          r#"Style["  axis", Italic]"#,
+          "font-style=\"italic\" xml:space=\"preserve\">  axis</text>",
+        ),
+        (
+          r#"Style[Style["  axis", Italic], Medium]"#,
+          "xml:space=\"preserve\"><tspan font-style=\"italic\">  axis</tspan></text>",
+        ),
+        (r#""a  b""#, "xml:space=\"preserve\">a  b</text>"),
+      ] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Graphics3D[{{Text[{label}, {{0, 0, 0}}], Point[{{1, 1, 1}}]}}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        assert!(svg.contains(expected), "blanks dropped in {label}: {svg}");
+      }
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics3D[{Text["p q", {0, 0, 0}], Point[{1, 1, 1}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains(">p q</text>"), "label changed: {svg}");
+      assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
+    }
+
+    #[test]
     fn list_line_plot_frame_label_renders_box_notation() {
       // FrameLabel with a SqrtBox renders as a radical, not raw box text.
       let svg = woxi::interpret(
@@ -3122,6 +3153,35 @@ mod tests {
     }
 
     #[test]
+    fn plot_label_null_draws_no_label() {
+      // A one-armed `If[False, label]` yields `Null`, which, like `None`,
+      // leaves the picture untitled instead of printing "Null".
+      for code in [
+        "Graphics[Disk[], PlotLabel -> If[False, \"t\"]]",
+        "Graphics3D[Sphere[], PlotLabel -> Null]",
+        "Plot[x, {x, 0, 1}, PlotLabel -> Null]",
+        "ListPlot[{1, 2, 3}, PlotLabel -> Null]",
+        "ListLinePlot[{1, 2, 3}, PlotLabel -> Null]",
+        "MatrixPlot[{{1, 0}, {0, 1}}, PlotLabel -> Null]",
+        "ArrayPlot[{{1, 0}, {0, 1}}, PlotLabel -> Null]",
+        "MatrixPlot[{{1, 0}, {0, 1}}, PlotLabel -> None]",
+        "BarChart[{1, 2, 3}, PlotLabel -> Null]",
+        "PieChart[{1, 2, 3}, PlotLabel -> Null]",
+        "ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "DensityPlot[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotLabel -> Null]",
+        "Histogram[{1, 2, 2, 3}, PlotLabel -> Null]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.starts_with("<svg"), "expected an SVG for {code}: {svg}");
+        assert!(
+          !svg.contains("Null") && !svg.contains(">None<"),
+          "{code} must not draw a label"
+        );
+      }
+    }
+
+    #[test]
     fn plot3d_heads_draw_their_plot_label() {
       // The label reaches every 3-D plot head, not only `Graphics3D`.
       for code in [
@@ -4359,6 +4419,30 @@ mod tests {
       );
     }
 
+    /// `GraphPlot` draws a rule list without arrows and so ignores the edge
+    /// directions when laying it out: a grid of rules pointing right and up
+    /// (a directed acyclic graph) comes out as a grid, as in Wolfram, not in
+    /// the layers a directed `Graph` gets.
+    #[test]
+    fn graph_plot_lays_out_an_acyclic_rule_grid_as_a_grid() {
+      let svg = svg_of(
+        r#"With[{r = 4, c = 5}, GraphPlot[Join[
+             Flatten[Table[(a - 1) r + b -> (a - 1) r + b + 1,
+               {a, c}, {b, r - 1}]],
+             Flatten[Table[(a - 1) r + b -> a r + b, {a, c - 1}, {b, r}]]]]]"#,
+      );
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 20, "one vertex circle each: {svg}");
+      // Count the clusters of nearly equal coordinates.
+      let clusters = |mut vs: Vec<f64>| {
+        vs.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        1 + vs.windows(2).filter(|w| w[1] - w[0] > 10.0).count()
+      };
+      let xs = clusters(centers.iter().map(|c| c.0).collect());
+      let ys = clusters(centers.iter().map(|c| c.1).collect());
+      assert_eq!((xs, ys), (5, 4), "a 5 by 4 grid of vertices: {svg}");
+    }
+
     /// An explicit `GraphLayout` outranks `Method`, as it does in Wolfram.
     #[test]
     fn graph_layout_wins_over_method() {
@@ -4987,6 +5071,28 @@ mod tests {
       assert!(svg.contains("<svg"), "{svg}");
       assert!(!svg.contains("SuperscriptBox"), "box source leaked: {svg}");
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
+    }
+
+    /// A column item `Style[Text[TraditionalForm[poly]], size]` is typeset
+    /// like `Style[TraditionalForm[poly], size]` (spaced operators, raised
+    /// exponents), not flattened to one unspaced text run.
+    #[test]
+    fn styled_text_of_traditional_form_typesets_like_styled_form() {
+      let render = |item: &str| {
+        woxi::interpret(&format!(
+          "ExportString[Column[{{{item}}}, Alignment -> Center], \"SVG\"]"
+        ))
+        .expect("interpret should succeed")
+      };
+      let poly = "x^10 + x^9 - x^3 + x + 1";
+      let through_text =
+        render(&format!("Style[Text@TraditionalForm[{poly}], 12]"));
+      let direct = render(&format!("Style[TraditionalForm[{poly}], 12]"));
+      assert_eq!(through_text, direct);
+      assert!(!through_text.contains("baseline-shift"), "{through_text}");
+      let nested =
+        render(&format!("Style[Text[Text[TraditionalForm[{poly}]]], 12]"));
+      assert_eq!(nested, direct);
     }
 
     /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells
@@ -6175,5 +6281,79 @@ mod grid_item_style_tests {
         .expect("interpret should succeed");
     assert!(svg.contains(">8000<"), "{svg}");
     assert!(svg.contains("10\u{2009}000"), "{svg}");
+  }
+}
+
+/// Embedded italic faces.
+mod embedded_font_tests {
+
+  /// A font database holding only the embedded fonts, so the result does
+  /// not depend on which system fonts happen to be installed.
+  fn embedded_fontdb() -> resvg::usvg::fontdb::Database {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    db
+  }
+
+  #[test]
+  fn embedded_fonts_provide_italic_faces() {
+    use resvg::usvg::fontdb::{Family, Query, Stretch, Style, Weight};
+    let db = embedded_fontdb();
+    for family in [
+      Family::SansSerif,
+      Family::Serif,
+      Family::Name("Atkinson Hyperlegible Next"),
+    ] {
+      for weight in [Weight::NORMAL, Weight::BOLD] {
+        let id = db
+          .query(&Query {
+            families: &[family],
+            weight,
+            stretch: Stretch::Normal,
+            style: Style::Italic,
+          })
+          .expect("an embedded face matches");
+        let face = db.face(id).unwrap();
+        assert_eq!(face.style, Style::Italic, "{family:?} {weight:?}");
+        assert_eq!(face.weight, weight, "{family:?} {weight:?}");
+      }
+    }
+  }
+
+  /// Rasterize `svg` with the embedded fonts only and return its pixels.
+  fn rasterize_with_embedded_fonts(svg: &str) -> Vec<u8> {
+    let opts = resvg::usvg::Options {
+      fontdb: std::sync::Arc::new(embedded_fontdb()),
+      ..Default::default()
+    };
+    let tree = resvg::usvg::Tree::from_str(svg, &opts).unwrap();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(80, 40).unwrap();
+    resvg::render(
+      &tree,
+      resvg::tiny_skia::Transform::identity(),
+      &mut pixmap.as_mut(),
+    );
+    pixmap.data().to_vec()
+  }
+
+  #[test]
+  fn italic_text_rasterizes_slanted() {
+    // `Style[…, Italic]` text from Text/Row is written as
+    // `font-style="italic"` without a font family; Woxi Studio draws such
+    // SVGs with the embedded fonts, which used to lack an italic face and
+    // drew the text upright.
+    let svg = |attrs: &str| {
+      format!(
+        r#"<svg width="80" height="40" xmlns="http://www.w3.org/2000/svg"><text x="10" y="30" font-size="28"{attrs}>hl</text></svg>"#
+      )
+    };
+    for weight in ["", r#" font-weight="bold""#] {
+      let upright = rasterize_with_embedded_fonts(&svg(weight));
+      let slanted = rasterize_with_embedded_fonts(&svg(&format!(
+        r#"{weight} font-style="italic""#
+      )));
+      assert!(slanted.iter().any(|&b| b != 0), "{weight}: nothing drawn");
+      assert_ne!(upright, slanted, "{weight}: italic drawn upright");
+    }
   }
 }

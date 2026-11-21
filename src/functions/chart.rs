@@ -697,7 +697,19 @@ pub(crate) fn parse_style_directive_args(
   let mut italic = false;
   let mut color = None;
   let mut font_size = None;
-  for arg in args {
+  // A list of directives applies each of them in turn, so
+  // `Style[expr, {Orange, 18}]` is the same as `Style[expr, Orange, 18]`.
+  fn flatten_directives<'a>(args: &'a [Expr], out: &mut Vec<&'a Expr>) {
+    for arg in args {
+      match arg {
+        Expr::List(items) => flatten_directives(items, out),
+        other => out.push(other),
+      }
+    }
+  }
+  let mut directives = Vec::new();
+  flatten_directives(args, &mut directives);
+  for arg in directives {
     match arg {
       Expr::Identifier(s) if s == "Bold" => bold = true,
       Expr::Identifier(s) if s == "Italic" => italic = true,
@@ -866,6 +878,19 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // A `Dynamic[x]` label reads as the value `x` currently has.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return parse_styled_label(
+      &crate::functions::graphics::dynamic_current_value(expr),
+    );
+  }
+  // `None` and `Null` (e.g. a one-armed `If[False, label]`) draw no label.
+  if matches!(expr, Expr::Identifier(s) if s == "None" || s == "Null") {
+    return None;
+  }
   // `Text[…]` sets its content in the graphic's own text style, so the font
   // weight and slant it inherits are reset — `Style[Text["a"], Bold]` is not
   // bold in Wolfram, while the color and size still reach through. A
@@ -1194,6 +1219,9 @@ pub(crate) struct ChartOptions {
   /// leave this `true` (the explicit list still overrides individual axes
   /// via `ticks_x`/`ticks_y` above).
   pub ticks: bool,
+  /// `FrameTicks -> None | False`: a framed chart keeps its border but
+  /// loses the tick marks and labels on it.
+  pub frame_ticks: bool,
   /// `ChartLayout -> "Stacked"` / `"Percentile"` / `"Overlapped"` /
   /// `"Stepped"`: how the bars of each group share its slot.
   pub layout: crate::functions::plot::BarLayout,
@@ -3403,6 +3431,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    frame_ticks: true,
     layout: crate::functions::plot::BarLayout::Grouped,
     bar_origin_top: false,
     log_x: false,
@@ -3634,6 +3663,12 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
           _ => {}
         },
+        "FrameTicks" => {
+          opts.frame_ticks = !matches!(
+            replacement,
+            Expr::Identifier(s) if s == "None" || s == "False"
+          );
+        }
         "BarOrigin" => {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.
           if let Expr::Identifier(side) = replacement {
@@ -4114,7 +4149,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
     &bar_labels,
     bar_label_placement,
-    opts.ticks,
+    // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
+    opts.ticks && (opts.frame_ticks || !look.frame),
     &opts.epilog,
     &look,
   )?;
@@ -4399,6 +4435,9 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       "ImagePadding" => {
         look.image_padding =
           crate::functions::plot::parse_image_padding_sides(&value);
+      }
+      "PlotRangePadding" => {
+        look.plot_range_padding = Some(value);
       }
       // An `EdgeForm` in `ChartStyle` overrides one in `ChartBaseStyle`.
       "ChartBaseStyle" | "ChartStyle" | "PlotStyle" => {

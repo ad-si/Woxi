@@ -117,6 +117,36 @@ mod layout_display {
     );
   }
 
+  /// Regression: a `Grid` cell's `Style[…, Background -> c]` (e.g. a
+  /// "YES"/"NO" verdict label) dropped its panel; it is painted just behind
+  /// the text, sized to it rather than filling the whole cell.
+  #[test]
+  fn grid_cell_style_background_paints_behind_text() {
+    let svg = svg_of(
+      "Grid[{{\"a\", Style[\"NO\", Large, Background -> Pink]}}, \
+       ItemSize -> {{4, 10}, Automatic}]",
+    );
+    let rect = rects(&svg)
+      .into_iter()
+      .find(|r| r.contains("fill=\"rgb(255,128,128)\""))
+      .unwrap_or_else(|| panic!("no pink panel: {svg}"));
+    let width: f64 = rect
+      .split("width=\"")
+      .nth(1)
+      .unwrap()
+      .split('"')
+      .next()
+      .unwrap()
+      .parse()
+      .unwrap();
+    // Two large glyphs wide, far narrower than the 10-em column.
+    assert!(width > 15.0 && width < 60.0, "{rect}");
+    // The panel sits under the text: it is drawn before it.
+    let panel_at = svg.find(rect).unwrap();
+    let text_at = svg.find(">NO</text>").unwrap();
+    assert!(panel_at < text_at, "{svg}");
+  }
+
   /// `Underlined`, `Struckthrough` and the `FontVariations` spellings draw
   /// their lines; "SmallCaps" sets the caps variant.
   #[test]
@@ -274,6 +304,34 @@ mod layout_display {
       }
       _ => panic!("SVG rasterization did not produce images"),
     }
+  }
+
+  /// resvg never synthesizes an oblique face, so italic text (e.g.
+  /// `Text[Style["a", Italic], …]` labels in `Graphics3D`) only renders
+  /// slanted when a real italic face of the default family is embedded.
+  /// Regression: italic and bold-italic labels rasterized pixel-identical
+  /// to their upright forms.
+  #[test]
+  fn italic_text_rasterizes_slanted() {
+    let raster = |style: &str| {
+      let svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" \
+         height=\"40\"><text x=\"10\" y=\"30\" font-family=\"sans-serif\" \
+         font-size=\"28\" {style}>lab</text></svg>"
+      );
+      match woxi::functions::image_ast::rasterize_svg(&svg, 72.0).unwrap() {
+        woxi::syntax::Expr::Image { ref data, .. } => data.clone(),
+        _ => panic!("SVG rasterization did not produce an image"),
+      }
+    };
+    assert_ne!(raster(""), raster("font-style=\"italic\""));
+    assert_ne!(
+      raster("font-weight=\"bold\""),
+      raster("font-weight=\"bold\" font-style=\"italic\"")
+    );
+    // The Graphics3D label path emits italic text for Style[…, Italic].
+    let svg = svg_of("Graphics3D[{Text[Style[\"a\", 20, Italic], {0, 0, 0}]}]");
+    assert!(svg.contains("font-style=\"italic\""));
   }
 
   /// Regression: a label with a character the requested face lacks (such
@@ -683,6 +741,26 @@ mod layout_display {
       svg[i..i + svg[i..].find('"').unwrap()].parse().unwrap()
     };
     assert!(width(&wide) > 4.0 * width(&plain), "{wide}");
+  }
+
+  /// A flat `ItemSize -> {w, h, …}` with more than two entries still reads
+  /// as `{w, h}`: every column is `w` ems wide, not just the first one.
+  #[test]
+  fn grid_item_size_flat_list_longer_than_two() {
+    let cells = "{{\"ab\", \"c\", 1}, {2, 3, 4}}";
+    let long = svg_of(&format!("Grid[{cells}, ItemSize -> {{6, 1, 1}}]"));
+    let pair = svg_of(&format!("Grid[{cells}, ItemSize -> {{6, 1}}]"));
+    let scalar = svg_of(&format!("Grid[{cells}, ItemSize -> 6]"));
+    let width = |svg: &str| -> String {
+      let i = svg.find("width=\"").unwrap() + 7;
+      svg[i..i + svg[i..].find('"').unwrap()].to_string()
+    };
+    assert_eq!(width(&long), width(&pair), "{long}");
+    assert_eq!(width(&long), width(&scalar), "{long}");
+    // Same for a one-column `Column`.
+    let col_long = svg_of("Column[{\"a\", \"b\"}, ItemSize -> {11, 2, 1}]");
+    let col_pair = svg_of("Column[{\"a\", \"b\"}, ItemSize -> {11, 2}]");
+    assert_eq!(width(&col_long), width(&col_pair), "{col_long}");
   }
 
   /// A heading merged across fixed-width columns with `SpanFromLeft` wraps
@@ -1845,5 +1923,121 @@ fn styled_pane_keeps_its_width() {
     clear_state();
     let svg = interpret(&format!("ExportString[{pane}, \"SVG\"]")).unwrap();
     assert!(svg.starts_with("<svg width=\"200\""), "{pane}: {svg}");
+  }
+}
+
+/// `Text[…]` sets its content in the proportional text face, a fixed-size
+/// `Pane` keeps its box under `Style`/`Text` wrappers and when its content
+/// is shrunk to fit, and a large fraction gets a proportionally heavier
+/// rule.
+mod text_in_fixed_panes {
+  use super::*;
+
+  fn svg_of(expr: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+  }
+
+  /// The body of an SVG after its embedded stylesheet.
+  fn body(svg: &str) -> &str {
+    svg.find("</defs>").map_or(svg, |i| &svg[i..])
+  }
+
+  fn root_size(svg: &str) -> (String, String) {
+    let attr = |name: &str| {
+      let key = format!("{name}=\"");
+      let start = svg.find(&key).unwrap() + key.len();
+      svg[start..start + svg[start..].find('"').unwrap()].to_string()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  #[test]
+  fn text_of_a_styled_string_uses_the_sans_serif_face() {
+    let svg = svg_of(r#"Text[Style["No, try again", 24, Red]]"#);
+    let body = body(&svg);
+    assert!(
+      body.contains("Atkinson Hyperlegible Next, sans-serif"),
+      "{svg}"
+    );
+    assert!(!body.contains("monospace"), "{svg}");
+  }
+
+  #[test]
+  fn styled_text_of_a_fraction_uses_the_sans_serif_face() {
+    let svg =
+      svg_of(r#"Style[Text[Row[{HoldForm[4]/HoldForm[66], "?"}]], 80]"#);
+    let body = body(&svg);
+    assert!(
+      body.contains("Atkinson Hyperlegible Next, sans-serif"),
+      "{svg}"
+    );
+    assert!(!body.contains("monospace"), "{svg}");
+  }
+
+  #[test]
+  fn text_keeps_an_explicit_font_family() {
+    let svg = svg_of(r#"Text[Style["abc", FontFamily -> "Courier"]]"#);
+    assert!(body(&svg).contains("Courier"), "{svg}");
+  }
+
+  #[test]
+  fn plain_output_stays_monospace() {
+    let svg = svg_of(r#"Style["abc", 24]"#);
+    assert!(body(&svg).contains("monospace"), "{svg}");
+  }
+
+  #[test]
+  fn styled_pane_keeps_its_box() {
+    let svg = svg_of(
+      r#"Style[Pane[Row[{47, "x", 87}, " "], {500, 25}, Alignment -> Center], Bold]"#,
+    );
+    assert_eq!(root_size(&svg), ("500".into(), "25".into()), "{svg}");
+    assert!(svg.contains("font-weight=\"bold\""), "{svg}");
+  }
+
+  #[test]
+  fn styled_text_pane_in_a_column_keeps_its_box() {
+    let svg = svg_of(
+      r#"Column[{Pane["", {300, 50}], Style[Text[Pane[Row[{47, "x", 87}, " "], {500, 25}, Alignment -> Center]], Bold]}, Alignment -> Center]"#,
+    );
+    assert_eq!(root_size(&svg), ("500".into(), "75".into()), "{svg}");
+    let row = svg.lines().find(|l| l.contains(">87</text>")).unwrap();
+    assert!(
+      row.contains("Atkinson Hyperlegible Next, sans-serif"),
+      "{row}"
+    );
+    assert!(row.contains("font-weight=\"bold\""), "{row}");
+  }
+
+  #[test]
+  fn shrink_to_fit_pane_keeps_its_box() {
+    // The 80 pt fraction is taller than the 200 x 200 pane, so it is
+    // shrunk — and centered in the pane, which stays 200 x 200.
+    let svg = svg_of(
+      r#"Pane[Style[HoldForm[4]/HoldForm[66], 80], {200, 200}, Alignment -> Center, ImageSizeAction -> "ShrinkToFit"]"#,
+    );
+    assert_eq!(root_size(&svg), ("200".into(), "200".into()), "{svg}");
+  }
+
+  /// The stroke widths of the `<line>` elements of an SVG.
+  fn line_widths(svg: &str) -> Vec<f64> {
+    svg
+      .match_indices("<line")
+      .filter_map(|(i, _)| {
+        let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+        let start = tag.find("stroke-width=\"")? + "stroke-width=\"".len();
+        tag[start..start + tag[start..].find('"')?].parse().ok()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn fraction_rule_scales_with_large_type() {
+    assert_eq!(line_widths(&svg_of("HoldForm[4]/HoldForm[66]")), vec![0.8]);
+    assert_eq!(
+      line_widths(&svg_of("Style[HoldForm[4]/HoldForm[66], 70]")),
+      vec![4.0]
+    );
   }
 }
