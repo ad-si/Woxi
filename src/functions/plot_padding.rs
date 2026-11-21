@@ -123,6 +123,8 @@ pub(crate) fn char_width_em(c: char) -> f64 {
     '\u{00D7}' => 1196.0 / 2048.0,
     // Narrow combining marks and zero-width characters.
     '\u{200B}'..='\u{200D}' | '\u{2061}'..='\u{2063}' => 0.0,
+    // The thin space between digit blocks (`10 000`).
+    '\u{2009}' => DIGIT_BLOCK_GAP_EM,
     _ => 1139.0 / 2048.0,
   }
 }
@@ -147,7 +149,7 @@ fn atkinson_lsb_em(c: char) -> f64 {
 }
 
 /// Width of `c` in the face the exported SVG actually draws with.
-fn atkinson_width_em(c: char) -> f64 {
+pub(crate) fn atkinson_width_em(c: char) -> f64 {
   match c {
     ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
     '\u{2212}' => 0.606,
@@ -219,7 +221,7 @@ pub(crate) fn text_width(markup: &str, size: f64) -> f64 {
 /// How much wider Arial Bold sets a run of text than Arial Regular, on
 /// average over mixed-case labels (`"Displacement x"` widens from 6.84 em
 /// to 7.34 em).
-const BOLD_WIDTH_SCALE: f64 = 1.075;
+pub(crate) const BOLD_WIDTH_SCALE: f64 = 1.075;
 
 /// The width factor the weight of label markup gives it: a bold label
 /// (`Style[label, Bold]`, which typesets as `font-weight="bold"`) is wider
@@ -319,11 +321,18 @@ pub(crate) fn truncate_label(markup: &str, width: f64) -> String {
 /// hyphen, and an integer part of five or more digits split into blocks
 /// of three by thin spaces.
 pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
+  // A typeset picture (a stacked fraction) is as wide as it was laid out,
+  // at the tick font it was typeset in.
+  if let Some((w, _)) =
+    crate::functions::graphics::axes_label_picture_size(markup)
+  {
+    return w * size / TICK_FONT;
+  }
   let chars = visible_chars(markup);
   let numeric = !chars.is_empty()
-    && chars
-      .iter()
-      .all(|c| c.is_ascii_digit() || matches!(c, '-' | '.' | '\u{2212}'))
+    && chars.iter().all(|c| {
+      c.is_ascii_digit() || matches!(c, '-' | '.' | '\u{2212}' | '\u{2009}')
+    })
     && chars.iter().any(char::is_ascii_digit);
   if !numeric {
     return text_width(markup, size);
@@ -338,6 +347,9 @@ pub(crate) fn tick_label_width(markup: &str, size: f64) -> f64 {
         in_int = false;
         em += char_width_em('.');
       }
+      // A digit-block separator the label already carries: the gaps are
+      // counted from the integer digits below.
+      '\u{2009}' => {}
       d => {
         if in_int {
           int_digits += 1;
@@ -361,6 +373,24 @@ pub(crate) fn exported_text_extent(markup: &str, size: f64) -> (f64, f64) {
   let lead = chars.first().map_or(0.0, |&c| atkinson_lsb_em(c));
   let width = chars.iter().copied().map(atkinson_width_em).sum::<f64>();
   (lead * size, width * size)
+}
+
+/// `exported_text_extent` for the text of the `<text …>` start tag `tag`:
+/// a label set in a monospace face (a `Row`/`Column` cell) advances every
+/// glyph by the monospace advance, so it is measured by that rather than by
+/// the wider proportional glyphs (a `%` would otherwise seem to overrun the
+/// canvas and be pulled back onto its neighbor).
+fn exported_tag_text_extent(tag: &str, markup: &str, size: f64) -> (f64, f64) {
+  let family = tag
+    .split_once("font-family=\"")
+    .and_then(|(_, rest)| rest.split_once('"'))
+    .map_or("", |(family, _)| family);
+  let first = family.split(',').next().unwrap_or("").trim();
+  if crate::functions::graphics::is_monospace_font_family(first) {
+    let n = visible_chars(markup).len() as f64;
+    return (0.0, n * crate::functions::graphics::MONO_ADVANCE * size);
+  }
+  exported_text_extent(markup, size)
 }
 
 /// Shift every label of a flat plot SVG that would run past the left or
@@ -449,7 +479,7 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
       continue;
     };
     let size = attr_number(tag, "font-size").map_or(16.0, |(_, _, v)| v);
-    let (lead, w) = exported_text_extent(content, size);
+    let (lead, w) = exported_tag_text_extent(tag, content, size);
     if w <= 0.0 || w - lead > width {
       continue;
     }
@@ -809,6 +839,16 @@ impl Decorations {
   }
 }
 
+/// The height of a tick label's markup at `size`: a typeset picture (a
+/// stacked fraction) is as tall as it was laid out at the tick font, text
+/// takes a line per line.
+pub(crate) fn tick_label_height(markup: &str, size: f64) -> f64 {
+  match crate::functions::graphics::axes_label_picture_size(markup) {
+    Some((_, h)) => h * size / TICK_FONT,
+    None => block_height(label_lines(markup), size),
+  }
+}
+
 /// Lines in a label string (`"a\nb"` has two).
 fn label_lines(text: &str) -> usize {
   text.split('\n').count()
@@ -894,7 +934,14 @@ pub(crate) fn plot_title_band(
   match &opts.plot_label {
     Some(sl) if !sl.text.is_empty() => {
       let lines = 1 + sl.extra_line_count().max(label_lines(&sl.text) - 1);
-      block_height(lines, plot_title_font(opts))
+      // A `Framed` title also claims the frame's 6pt margin above and
+      // below and its stroke, so its box does not reach into the plot.
+      let frame = if sl.frame.is_some() {
+        2.0 * 6.0 + 1.0
+      } else {
+        0.0
+      };
+      block_height(lines, plot_title_font(opts)) + frame
     }
     _ => 0.0,
   }
@@ -934,7 +981,7 @@ pub(crate) fn plot_decorations(
           .split('\n')
           .map(|line| tick_label_width(line, tick_font))
           .fold(0.0, f64::max),
-        height: block_height(label_lines(l), tick_font),
+        height: tick_label_height(l, tick_font),
       })
       .filter(|b| b.frac.is_finite())
       .collect::<Vec<_>>()
@@ -1116,6 +1163,9 @@ mod tests {
     assert!((tick_label_width("-1.0", 10.0) - 20.204).abs() < 1e-3);
     // `10 000`: a thin space between the digit blocks.
     assert!((tick_label_width("10000", 10.0) - 29.199).abs() < 1e-3);
+    // A label that already carries its digit-block separator measures the
+    // same.
+    assert!((tick_label_width("10\u{2009}000", 10.0) - 29.199).abs() < 1e-3);
     assert!((text_width("time", 10.0) - 18.892).abs() < 1e-3);
   }
 
