@@ -5501,6 +5501,14 @@ The `Graphics` renderer pads a `PlotRange -> Full` side by 4 %, where Wolfram
 pads more. In a `MusicPlot` this drops the pitch label just above the highest
 note (the `C5` of `MusicPlot[MusicVoice[{"C4", "B4"}]]`), which Wolfram shows.
 
+### Symbolic tick labels are set on one line
+
+A bare tick position written as a quotient (`Ticks -> {{0, Pi/2, Pi, 3 Pi/2,
+2 Pi}, Automatic}`) is labeled with its expression, but Woxi writes it as
+in-line text (`π/2`, `3 π/2`), because tick labels are drawn as single
+`<text>` runs. Wolfram typesets the label in TraditionalForm, so the fraction
+is stacked: π over 2, 3π over 2.
+
 ### Tick step from the padded range
 
 Woxi derives the tick step from the *padded* display range, as WL 15 does
@@ -6314,6 +6322,16 @@ several items), at that size, as Wolfram draws it. What still differs:
   heights are whole points, so a wrapped list can be 1 pt taller.
 - `Grid`/`Column` cells are 6 pt apart, Wolfram's gap is about 5.5 pt
   (`Grid[{{g, g, g}}]` of 100 pt pictures is 312 wide, Wolfram 311).
+
+### `Column` item heights with `ItemSize` and large text
+
+`Framed[Column[{"10", "♠"}, Center, 0, ItemSize -> {3, 2},
+ItemStyle -> Directive[24, Bold]]]` is 52 pt wide in both engines, but
+Wolfram's box is about 57 pt tall and Woxi's 82 pt: Woxi pads each 24 pt
+text item to 32 pt and reads the item height `2` as two 14 pt lines plus
+padding (36 pt), where Wolfram's items stay about one font size tall. A
+string separator in a `Row` (`"  "`) is also wider in Woxi (monospace
+spaces, about 17 pt) than in Wolfram (about 8 pt).
 
 ### Tables, grids and typeset math: remaining layout differences
 
@@ -8045,6 +8063,11 @@ proportional face the FrontEnd uses for digits and spaces. A `Pane[…, {450,
 300}]` holding `Row[{Grid[…], Graphics[…], Grid[…]}]` captions (the
 `Power versus Work` Demonstration) therefore lays out wider than the pane and
 clips its right-hand column, where the FrontEnd fits it.
+
+The same fixed advance (0.6 em per character) under-measures wide capitals,
+so narrow `Spacings` look uneven: in
+`Grid[{{"DN", "≈", 1.26}}, Spacings -> {{1 -> 1.3, 2 -> .3, 3 -> .3}}]`
+the `≈` touches `DN` while a visible gap still separates it from `1.26`.
 
 
 ## Machine complex numbers with a `0.` imaginary part

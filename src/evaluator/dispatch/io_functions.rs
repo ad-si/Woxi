@@ -7768,6 +7768,50 @@ pub(crate) fn align_pane_lines(
   }
 }
 
+/// `Style[TraditionalForm[Style[layout, inner…]], outer…]` — a styled
+/// layout put in `TraditionalForm` and styled again (as `Text[…]` does with
+/// its text face) — is the layout styled by both: `TraditionalForm[Style[
+/// layout, outer…, inner…]]`, the nearer directives last so they win.
+/// `None` for anything else.
+fn traditional_style_merged(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Style" || args.len() < 2 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: form,
+    args: form_args,
+  } = &args[0]
+  else {
+    return None;
+  };
+  if form != "TraditionalForm" || form_args.len() != 1 {
+    return None;
+  }
+  let Expr::FunctionCall {
+    name: style,
+    args: inner,
+  } = &form_args[0]
+  else {
+    return None;
+  };
+  if style != "Style"
+    || inner.len() < 2
+    || !matches!(&inner[0], Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Grid" | "TextGrid" | "Column" | "Row")
+        && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return None;
+  }
+  let directives = std::iter::once(inner[0].clone())
+    .chain(args[1..].iter().cloned())
+    .chain(inner[1..].iter().cloned())
+    .collect();
+  Some(call1("TraditionalForm", call("Style", directives)))
+}
+
 /// Whether pane content is a `Column` of its own, looking through the
 /// `Style`/`Text`/`TraditionalForm`/`Pane` wrappers `wrap_pane_text`
 /// re-flows through.
@@ -7789,6 +7833,9 @@ fn pane_content_is_column(content: &Expr) -> bool {
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
+  }
+  if let Some(merged) = traditional_style_merged(expr) {
+    return expr_to_svg(&merged);
   }
   // A volume is drawn as its flat projection.
   if matches!(expr, Expr::FunctionCall { name, .. } if name == "Image3D")
@@ -8118,6 +8165,54 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       crate::functions::graphics::hoist_text_display(expr) =>
     {
       expr_to_svg(&hoisted)
+    }
+    // `Style[TraditionalForm[Style[Grid[…], 24]], directives…]` — what
+    // `Text[TraditionalForm[Style[layout, …]]]` becomes: the form applies
+    // to the items of the styled layout, and the outer directives style
+    // that layout, rather than the whole being printed as its source.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: tf_args }
+          if tf == "TraditionalForm"
+            && tf_args.len() == 1
+            && matches!(&tf_args[0], Expr::FunctionCall { name: w, .. }
+              if w == "Style" || w == "Text")
+            && crate::functions::graphics::is_traditional_layout(&tf_args[0])) =>
+    {
+      let Expr::FunctionCall { args: tf_args, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut styled =
+        vec![crate::functions::graphics::traditionalize_layout_items(
+          &tf_args[0],
+        )];
+      styled.extend(args[1..].iter().cloned());
+      expr_to_svg(&call("Style", styled))
+    }
+    // `Style[TraditionalForm[grid], directives…]` (what `Text` makes of
+    // `Text[TraditionalForm[Style[Grid[…], 24]]]`): the directives style
+    // the typeset grid, so they move inside the `TraditionalForm` and the
+    // grid is typeset with them, rather than flattened into one line of
+    // text by the styled-text path.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: targs }
+          if tf == "TraditionalForm"
+            && targs.len() == 1
+            && typesets_a_grid(&targs[0])) =>
+    {
+      let Expr::FunctionCall { args: targs, .. } = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let styled = call(
+        "Style",
+        std::iter::once(targs[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+      expr_to_svg(&call1("TraditionalForm", styled))
     }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and
     // places its content, so the directives style the content, inside the
@@ -9395,7 +9490,7 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
 /// the opening tag.
-fn with_default_text_family(svg: &str) -> String {
+pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
@@ -9714,4 +9809,22 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   format!("{head}{rest}")
+}
+
+/// Whether `expr` is a `Grid`/`TextGrid` call, possibly under `Style`
+/// wrappers.
+fn typesets_a_grid(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      typesets_a_grid(&args[0])
+    }
+    _ => false,
+  }
 }

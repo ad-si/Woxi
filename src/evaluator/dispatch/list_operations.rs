@@ -10835,17 +10835,21 @@ fn list_convolve_ast(
 /// index `i` takes element `(i - 1) mod L` — position n+1 of a 4-element list
 /// therefore takes the first padding element when there are two of them and
 /// the second when there are three.
-fn correlate_element(data: &[Expr], idx: i128, padding: Option<&Expr>) -> Expr {
+fn correlate_element<'a>(
+  data: &'a [Expr],
+  idx: i128,
+  padding: Option<&'a Expr>,
+) -> &'a Expr {
   let n = data.len() as i128;
   if (1..=n).contains(&idx) {
-    return data[(idx - 1) as usize].clone();
+    return &data[(idx - 1) as usize];
   }
   match padding {
-    None => data[(idx - 1).rem_euclid(n) as usize].clone(),
+    None => &data[(idx - 1).rem_euclid(n) as usize],
     Some(Expr::List(pads)) if !pads.is_empty() => {
-      pads[(idx - 1).rem_euclid(pads.len() as i128) as usize].clone()
+      &pads[(idx - 1).rem_euclid(pads.len() as i128) as usize]
     }
-    Some(p) => p.clone(),
+    Some(p) => p,
   }
 }
 
@@ -11234,10 +11238,26 @@ fn list_convolve_overhang(
 
   let mut result = Vec::with_capacity(out_len as usize);
   for t in 1..=out_len {
+    // Machine numbers under the default Times/Plus are summed directly
+    // instead of building and evaluating an m-term `Plus` per element,
+    // in the same data order as the symbolic path below.
+    if g.is_none()
+      && h.is_none()
+      && let Some(v) = machine_dot((1..=m).rev().map(|i| {
+        let idx = t + kl as i128 - i as i128;
+        (&ker[i - 1], correlate_element(data, idx, padding))
+      }))
+    {
+      result.push(v);
+      continue;
+    }
     let mut terms: Vec<(Expr, Expr)> = Vec::with_capacity(m);
     for i in 1..=m {
       let idx = t + kl as i128 - i as i128; // 1-based index into data
-      terms.push((ker[i - 1].clone(), correlate_element(data, idx, padding)));
+      terms.push((
+        ker[i - 1].clone(),
+        correlate_element(data, idx, padding).clone(),
+      ));
     }
     // Convolution walks the kernel backwards over the data, and
     // wolframscript lists the terms in data order, which only shows up once
@@ -11320,10 +11340,25 @@ fn list_correlate_overhang(
 
   let mut result = Vec::with_capacity(out_len as usize);
   for t in 1..=out_len {
+    // Machine numbers under the default Times/Plus: sum them directly
+    // (a 5000-element autocorrelation is 25 million products).
+    if g.is_none()
+      && h.is_none()
+      && let Some(v) = machine_dot((1..=m).map(|i| {
+        let idx = t + i as i128 - kl as i128;
+        (&ker[i - 1], correlate_element(data, idx, padding))
+      }))
+    {
+      result.push(v);
+      continue;
+    }
     let mut terms: Vec<(Expr, Expr)> = Vec::with_capacity(m);
     for i in 1..=m {
       let idx = t + i as i128 - kl as i128; // 1-based index into data
-      terms.push((ker[i - 1].clone(), correlate_element(data, idx, padding)));
+      terms.push((
+        ker[i - 1].clone(),
+        correlate_element(data, idx, padding).clone(),
+      ));
     }
     let sum = correlate_combine(terms, g, h);
     result.push(evaluate_expr_to_expr(&sum).unwrap_or(sum));
