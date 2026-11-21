@@ -17798,9 +17798,12 @@ pub(crate) struct NumberFormOptions {
   lpad: String,
   /// `NumberPadding[[2]]` — fills the fraction past its significant digits.
   rpad: String,
-  /// `NumberSigns -> {neg, pos}`, when given: a prefix replacing the default
-  /// sign (and, for AccountingForm, the parentheses).
-  signs: Option<(String, String)>,
+  /// `NumberSigns -> {neg, pos}` as `(prefix, suffix)` pairs. A plain
+  /// string is a prefix with an empty suffix; the defaults are `{"-", ""}`,
+  /// or `{{"(", ")"}, ""}` for AccountingForm. The widest prefix sets the
+  /// sign column and the widest suffix the closing column of a padded field.
+  neg_sign: (String, String),
+  pos_sign: (String, String),
   /// `SignPadding` — True puts the sign before the padding, False (the
   /// default) keeps it next to the digits.
   sign_padding: bool,
@@ -17941,7 +17944,12 @@ pub(crate) fn number_form_options(
     block: None,
     lpad: if head == "PaddedForm" { " " } else { "" }.to_string(),
     rpad: if head == "AccountingForm" { "" } else { "0" }.to_string(),
-    signs: None,
+    neg_sign: if head == "AccountingForm" {
+      ("(".to_string(), ")".to_string())
+    } else {
+      ("-".to_string(), String::new())
+    },
+    pos_sign: (String::new(), String::new()),
     sign_padding: false,
     suppress_exponent: exponent_function_suppresses(args),
   };
@@ -18002,11 +18010,21 @@ pub(crate) fn number_form_options(
         _ => {}
       },
       "NumberSigns" => {
+        // Each sign is a prefix string or a `{prefix, suffix}` pair.
+        let sign_pair = |e: &Expr| match e {
+          Expr::String(s) => Some((s.clone(), String::new())),
+          Expr::List(pair) if pair.len() == 2 => {
+            Some((text(&pair[0])?, text(&pair[1])?))
+          }
+          _ => None,
+        };
         if let Expr::List(signs) = replacement.as_ref()
           && signs.len() == 2
-          && let (Some(neg), Some(pos)) = (text(&signs[0]), text(&signs[1]))
+          && let (Some(neg), Some(pos)) =
+            (sign_pair(&signs[0]), sign_pair(&signs[1]))
         {
-          opts.signs = Some((neg, pos));
+          opts.neg_sign = neg;
+          opts.pos_sign = pos;
         }
       }
       "SignPadding" => {
@@ -18109,21 +18127,33 @@ fn number_form_family_scalar(
     Some((ip, fp)) => (ip.to_string(), fp.to_string(), true),
     None => (body.clone(), String::new(), false),
   };
-  // AccountingForm brackets a negative value; the closing bracket sits right
-  // after the significant fractional digits, before any padding.
-  let close = if head == "AccountingForm" && neg && opts.signs.is_none() {
-    ")"
-  } else {
-    ""
-  };
+  // The sign's prefix leads the digits; its suffix (AccountingForm's
+  // closing bracket) sits right after the significant fractional digits,
+  // before any padding.
+  let (sign, close) = if neg { &opts.neg_sign } else { &opts.pos_sign };
+  let (sign, close) = (sign.clone(), close.as_str());
+  // A padded field reserves as many columns for the sign (and for its
+  // suffix) as the widest of the negative and positive ones needs.
+  let sign_cols = opts
+    .neg_sign
+    .0
+    .chars()
+    .count()
+    .max(opts.pos_sign.0.chars().count());
+  let close_cols = opts
+    .neg_sign
+    .1
+    .chars()
+    .count()
+    .max(opts.pos_sign.1.chars().count());
   // Past the value's significant fractional digits the right NumberPadding
   // string fills the remaining slots, so an empty one suppresses the trailing
-  // zeros that the fixed rendering produced. AccountingForm keeps one extra
-  // slot for the closing bracket.
+  // zeros that the fixed rendering produced. A sign suffix keeps extra slots
+  // for itself (AccountingForm's closing bracket).
   let mut fill = String::new();
   // An integer ignores the fractional spec entirely: no point, no padding.
   if let Some((_, f)) = fixed.filter(|_| !is_integer) {
-    let slots = f as usize + usize::from(head == "AccountingForm");
+    let slots = f as usize + close_cols;
     // A scientific mantissa keeps all `f` decimals (`1.000 × 10^-7`).
     let keep = if exp.is_some() {
       frac_digits.chars().count()
@@ -18151,21 +18181,6 @@ fn number_form_family_scalar(
     frac_digits = group_digits_from_left(&frac_digits, b, &opts.frac_sep);
   }
 
-  let sign = match &opts.signs {
-    Some((n, p)) => {
-      if neg {
-        n.clone()
-      } else {
-        p.clone()
-      }
-    }
-    None => match (head, neg) {
-      ("AccountingForm", true) => "(".to_string(),
-      (_, true) => "-".to_string(),
-      _ => String::new(),
-    },
-  };
-
   // In scientific notation the 2D form is assembled straight from the
   // mantissa, which PaddedForm[x, {n, f}] still pads to its n digit
   // columns plus a sign and a point column ("  1.94 × 10^-23").
@@ -18178,7 +18193,8 @@ fn number_form_family_scalar(
     if head == "PaddedForm"
       && let Some((n, _)) = fixed
     {
-      mantissa = pad_left(&mantissa, n.max(0) as usize + 2, &opts.lpad);
+      mantissa =
+        pad_left(&mantissa, n.max(0) as usize + sign_cols + 1, &opts.lpad);
     }
     return Some(sci_parts_to_2d_string(&mantissa, Some(e)));
   }
@@ -18205,7 +18221,7 @@ fn number_form_family_scalar(
         (n - f).max(0) as usize
       };
       (
-        digits + 1 + digit_block_separators(digits, opts.block),
+        digits + sign_cols + digit_block_separators(digits, opts.block),
         int_body.clone(),
       )
     }
@@ -18214,7 +18230,7 @@ fn number_form_family_scalar(
       let has_point = had_point && !is_integer;
       (
         digits
-          + 1
+          + sign_cols
           + usize::from(has_point)
           + digit_block_separators(digits, opts.block),
         format!("{int_body}{tail}"),
@@ -18225,9 +18241,9 @@ fn number_form_family_scalar(
     }
   };
 
-  // A value wider than the requested field widens it, but a column is always
-  // reserved for the sign.
-  let field = field.max(padded_part.chars().count() + 1);
+  // A value wider than the requested field widens it, but the sign columns
+  // stay reserved.
+  let field = field.max(padded_part.chars().count() + sign_cols);
   // With SignPadding the sign leads the padding; by default it stays next to
   // the digits, so the padding fills the columns before it.
   let padded = if opts.sign_padding && !sign.is_empty() {

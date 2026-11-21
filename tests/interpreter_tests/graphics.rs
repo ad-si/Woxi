@@ -6525,6 +6525,59 @@ mod plot_option_evaluate_once {
 }
 
 mod plot3d {
+  // Regression: `Plot3D` rendered itself with a fixed default camera and
+  // a fixed `{1, 1, 0.4}` box, ignoring `ViewPoint` and `BoxRatios` (only
+  // re-rendering it through `Show` honored them). A surface asked for in a
+  // cube seen from the front-right came out squat and seen from the
+  // default corner.
+  fn plot3d_svg(opts: &str) -> String {
+    clear_state();
+    export_svg(&format!(
+      "Plot3D[Exp[x/4] y, {{x, 0, 20}}, {{y, 0, 40}}, PlotRange -> \
+       {{{{0, 20}}, {{0, 40}}, {{0, 10}}}}{opts}]"
+    ))
+  }
+
+  #[test]
+  fn plot3d_view_point_turns_the_standalone_surface() {
+    let default_view = plot3d_svg("");
+    let turned = plot3d_svg(", ViewPoint -> {1., -3.4, 2}");
+    let above = plot3d_svg(", ViewPoint -> Above");
+    assert_ne!(default_view, turned);
+    assert_ne!(default_view, above);
+    assert_ne!(turned, above);
+  }
+
+  #[test]
+  fn plot3d_view_point_at_infinity_is_orthographic() {
+    let near = plot3d_svg(", ViewPoint -> {0, -2, 2}");
+    let infinite = plot3d_svg(", ViewPoint -> {0, -Infinity, Infinity}");
+    assert_ne!(near, infinite);
+  }
+
+  #[test]
+  fn plot3d_box_ratios_reshape_the_standalone_box() {
+    let default_box = plot3d_svg("");
+    // The default box spelled out draws the very same picture…
+    assert_eq!(default_box, plot3d_svg(", BoxRatios -> {1, 1, 0.4}"));
+    // …a cube does not, and a lone number means equal sides.
+    let cube = plot3d_svg(", BoxRatios -> {1, 1, 1}");
+    assert_ne!(default_box, cube);
+    assert_eq!(cube, plot3d_svg(", BoxRatios -> 1"));
+    // Only the proportions matter.
+    assert_eq!(cube, plot3d_svg(", BoxRatios -> {2, 2, 2}"));
+  }
+
+  #[test]
+  fn plot3d_multi_line_axes_label_is_stacked() {
+    let svg = plot3d_svg(
+      ", AxesLabel -> {\"x\", \"y\", \"rate constant\\n(arbitrary units)\"}",
+    );
+    let first = svg.find(">rate constant</tspan>").expect("first line");
+    let second = svg.find(">(arbitrary units)</tspan>").expect("second line");
+    assert!(first < second);
+  }
+
   /// `PlotPoints -> {nu, nv}` sets the sample count of each parameter
   /// separately; the second entry must not be ignored.
   #[test]
@@ -6608,6 +6661,12 @@ mod plot3d {
        Mesh -> None]",
       "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
        PlotStyle -> Directive[Yellow, Opacity[0.6]], Mesh -> None]",
+      // A translucent quad or pentagon is cut into triangles, whose
+      // inner cuts must not show (only the outline is stroked).
+      "Graphics3D[{Opacity[0.2], Orange, \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0.3}, {0, 1, 0.3}}]}]",
+      "Graphics3D[{Opacity[0.5], \
+       Polygon[{{0, 0, 0}, {2, 0, 0}, {3, 1, 1}, {1, 2, 1}, {-1, 1, 0}}]}]",
     ] {
       let svg = export_svg(plot);
       let faces: Vec<&str> = svg
@@ -11764,6 +11823,38 @@ mod plot3d {
       // The frame ends with the closure.
       woxi::with_manipulate_frame(|| ());
       assert!(!woxi::in_manipulate_frame());
+    }
+
+    /// Regression: framing by the sphere around the box ignored how far the
+    /// axes' labels reach, so in a `Manipulate` frame a long `AxesLabel`
+    /// beside the vertical axis ran off the left edge of the picture. The
+    /// scene now shrinks about its center until every label fits.
+    #[test]
+    fn spherical_region_keeps_long_axes_labels_inside_the_picture() {
+      let label = "rate constant of the reaction";
+      let scene = format!(
+        "Graphics3D[Sphere[{{10, 20, 5}}, 1], PlotRange -> {{{{0, 20}}, \
+         {{0, 40}}, {{0, 10}}}}, BoxRatios -> {{1, 1, 1}}, Axes -> True, \
+         ViewPoint -> {{1., -3.4, 2}}, AxesLabel -> {{\"x\", \"y\", \
+         \"{label}\"}}, ImageSize -> {{415, 385}}, SphericalRegion -> True]"
+      );
+      for svg in [
+        export_svg(&scene),
+        woxi::with_manipulate_frame(|| {
+          export_svg(&scene.replace(", SphericalRegion -> True", ""))
+        }),
+      ] {
+        let end = svg.find(&format!(">{label}<")).expect("label drawn");
+        let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+        let attr = |name: &str| -> f64 {
+          let at = tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[at..at + tag[at..].find('"').unwrap()].parse().unwrap()
+        };
+        let half_width = label.len() as f64 * attr("font-size") * 0.28;
+        let x = attr("x");
+        assert!(x - half_width >= 0.0, "label starts at {}", x - half_width);
+        assert!(x + half_width <= 415.0, "label ends at {}", x + half_width);
+      }
     }
 
     // `ViewCenter` moves the point the camera looks at; the box middle is
@@ -17075,6 +17166,36 @@ mod plot3d {
           Plot[x^2, {x, 0, 1}, Filling -> Axis]]"#,
       );
       assert!(svg.contains(">first</text"), "{svg}");
+    }
+
+    #[test]
+    fn show_of_a_plot_with_graphics_keeps_its_legend() {
+      // The merged picture keeps the first graphic's options, `PlotLegends`
+      // included, also when the other layers are plain graphics.
+      for plot in [
+        r#"Plot[{x, 2 x}, {x, 0, 1}, PlotLegends -> {"first", "second"}]"#,
+        r#"ListLinePlot[{{1, 2, 3}, {3, 2, 1}},
+          PlotLegends -> Placed[LineLegend[{"first", "second"}], {Right, Top}]]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "Show[{plot}, Graphics[{{Red, PointSize[0.05], Point[{{1, 1}}]}}]]"
+        ));
+        assert!(svg.contains(">first</text"), "{plot}: {svg}");
+        assert!(svg.contains(">second</text"), "{plot}: {svg}");
+      }
+    }
+
+    #[test]
+    fn plot_legends_show_the_current_value_of_a_dynamic_label() {
+      // A `Dynamic[…]` in a legend label shows its value, as in any other
+      // displayed text.
+      let svg = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 1}}, PlotLegends ->
+          {Row[{"a = ", Dynamic[1 + 1]}], Style[Dynamic[3 + 4], 11]}]"#,
+      );
+      assert!(svg.contains(">a = 2</text"), "{svg}");
+      assert!(svg.contains(">7</tspan>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
     }
 
     #[test]
@@ -32302,6 +32423,45 @@ mod matrix_form {
     );
   }
 
+  /// `TransformationFunction[m]` typesets its augmented matrix as a grid
+  /// whose last row and column (the translation part) are set off by
+  /// divider lines. It used to print as a one-line `{{…}, …}` listing.
+  #[test]
+  fn transformation_function_typesets_divided_matrix() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[TranslationTransform[{a, b}]]").unwrap(),
+      "RowBox[{TransformationFunction, [, RowBox[{(, GridBox[{{1, 0, a}, \
+       {0, 1, b}, {0, 0, 1}}, GridBoxDividers -> {Columns -> {{False}}, \
+       ColumnsIndexed -> {-2 -> True}, Rows -> {{False}}, \
+       RowsIndexed -> {-2 -> True}}], )}], ]}]"
+    );
+    let svg = interpret(
+      "ExportString[Row[{\"H = \", MatrixForm[TranslationTransform[{a, b}]]}], \
+       \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("{{"), "matrix printed as a list: {svg}");
+    assert_eq!(
+      svg.matches("<line ").count(),
+      2,
+      "one column and one row divider expected: {svg}"
+    );
+  }
+
+  /// `GridBoxDividers -> {"Columns" -> {{True}}}` rules every interior
+  /// column divider.
+  #[test]
+  fn grid_box_dividers_between_all_columns() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[DisplayForm[GridBox[{{\"a\", \"b\", \"c\"}}, \
+       GridBoxDividers -> {\"Columns\" -> {{True}}}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert_eq!(svg.matches("<line ").count(), 2, "{svg}");
+  }
+
   #[test]
   fn matrix_form_visual_2d() {
     clear_state();
@@ -32958,6 +33118,29 @@ mod show {
     let svg = export_svg(
       r#"Show[Plot[Sin[x], {x, 0, 6}, PlotLabel -> "inner"],
         Graphics[{Point[{2, 0}]}], PlotLabel -> "outer"]"#,
+    );
+    assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
+  }
+
+  /// `Show[Histogram[…, opts], Plot[…]]` takes its options from the
+  /// histogram, the first graphic: its `PlotLabel` (here a `Grid` of lines)
+  /// labels the combined picture. Regression: the histogram's options were
+  /// dropped, so the label vanished as soon as a curve was overlaid.
+  #[test]
+  fn show_histogram_with_plot_keeps_histogram_options() {
+    clear_state();
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, {0, 4, 1}, "ProbabilityDensity",
+          PlotLabel -> Grid[{{"top line"}, {"bottom line"}}],
+          ChartStyle -> Red],
+        Plot[x/8, {x, 0, 4}], PlotRange -> All]"#,
+    );
+    assert!(svg.contains(">top line<"), "{svg}");
+    assert!(svg.contains(">bottom line<"), "{svg}");
+    // An option given to Show itself still wins over the histogram's.
+    let svg = export_svg(
+      r#"Show[Histogram[{1, 2, 2, 3}, PlotLabel -> "inner"],
+        Plot[x, {x, 0, 4}], PlotLabel -> "outer"]"#,
     );
     assert!(svg.contains(">outer</text>") && !svg.contains(">inner</text>"));
   }
@@ -44045,6 +44228,60 @@ mod manipulate {
       texts(&node, &mut found);
       assert_eq!(found, ["9/10", "3/4", "0.25"], "{display}: {node:?}");
     }
+  }
+
+  /// A `Dynamic` caption shows machine reals at the notebook's 6
+  /// significant figures and a `Root` object elided to its approximate
+  /// value, as the front end typesets them, not their full InputForm.
+  #[test]
+  fn spec_display_dynamic_numbers_use_front_end_precision() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    fn texts(node: &DisplayNode, out: &mut Vec<String>) {
+      match node {
+        DisplayNode::Text { runs } => {
+          out.push(runs.iter().map(|r| r.text.as_str()).collect());
+        }
+        DisplayNode::Static { text, .. } => out.push(text.clone()),
+        DisplayNode::Row(children) | DisplayNode::Column(children) => {
+          for c in children {
+            texts(c, out);
+          }
+        }
+        _ => {}
+      }
+    }
+    let expr = interpret_to_expr(
+      "Manipulate[x, {x, 1, 2}, \
+       Dynamic[Row[{N[x Pi], \" \", -x/3., \" \", 10.^7 x, \" \", \
+       MinimalPolynomial[Root[#^3 - #^2 - 1 &, 1], y], \" \", \
+       Root[#^3 - #^2 - 1 &, 1] - x, \" \", MinimalPolynomial[r, r]}]], \
+       {r, Root[-1 - #^2 + #^3 &, 1, 0], ControlType -> None}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("manipulate");
+    let bindings = manipulate_initial_bindings(&spec);
+    let node = woxi::with_scoped_globals(&bindings, || {
+      build_manipulate_display(&spec.displays[0], &bindings)
+    });
+    let mut found = Vec::new();
+    texts(&node, &mut found);
+    assert_eq!(
+      found,
+      [
+        "3.14159",
+        " ",
+        "-0.333333",
+        " ",
+        "1.\u{d7}10^7",
+        " ",
+        "-1 - y^2 + y^3",
+        " ",
+        "-1 + 1.47\u{2026}",
+        " ",
+        "-1 - 1.47\u{2026}^2 + 1.47\u{2026}^3"
+      ],
+      "{node:?}"
+    );
   }
 
   /// `NumberForm[Dynamic[x], spec]` formats the held `Dynamic`, so the
@@ -60561,6 +60798,24 @@ mod plot_content_regressions {
     assert_eq!(pieces("Plot[Sin[Floor[x]], {x, 0, 10}]"), 10);
     assert_eq!(pieces("Plot[Floor[x], {x, 0, 5}, Exclusions -> None]"), 1);
     assert_eq!(pieces("Plot[Sin[x] + x, {x, 0, 5}]"), 1);
+  }
+
+  /// `ArcCot` jumps from `-Pi/2` to `Pi/2` where its argument crosses
+  /// zero, so `Exclusions -> Automatic` breaks its curve there instead of
+  /// drawing a vertical riser; an argument that never changes sign keeps
+  /// the curve in one piece.
+  #[test]
+  fn arc_cot_is_excluded_at_its_jump() {
+    let pieces = |code: &str| {
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(pieces("Plot[ArcCot[x], {x, -2, 2}]"), 2);
+    assert_eq!(pieces("Plot[ArcCot[x - 1] + x, {x, -2, 2}]"), 2);
+    assert_eq!(pieces("Plot[ArcCot[x^2 + 1], {x, -2, 2}]"), 1);
+    assert_eq!(pieces("Plot[ArcCot[x], {x, -2, 2}, Exclusions -> None]"), 1);
   }
 
   /// A conditional (`Which`, `If`, `Piecewise`) that jumps between its

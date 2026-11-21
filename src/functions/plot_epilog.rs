@@ -1181,16 +1181,26 @@ fn render_item(
             && extra_lines > 0.0
             && is_left_aligned_column(body)
           {
-            let chars = styled
-              .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64;
-            let block_w = chars * font_size * 0.6;
+            // A framed block is as wide as its frame measures it (by the
+            // proportional glyph widths), and the frame's `FrameMargins`
+            // already keep the lines off the border.
+            let (block_w, inset) = if is_framed {
+              let width_em = styled
+                .as_ref()
+                .map_or(0.0, super::chart::StyledLabel::max_line_width_em);
+              (width_em * font_size, 0.0)
+            } else {
+              let chars = styled
+                .as_ref()
+                .map_or(0, super::chart::StyledLabel::max_line_chars)
+                as f64;
+              (chars * font_size * 0.6, font_size * 0.35)
+            };
             line_x = match text_anchor {
               "start" => px,
               "end" => px - block_w,
               _ => px - block_w / 2.0,
-            } + font_size * 0.35;
+            } + inset;
             text_anchor = "start";
           }
           let label = styled.as_ref().map_or_else(

@@ -4789,6 +4789,7 @@ fn render_manipulate_widget<'a>(
         step,
         current,
         is_real,
+        exact_value,
         orientation,
         reversed,
         ..
@@ -4829,7 +4830,7 @@ fn render_manipulate_widget<'a>(
             )
             .width(iced::Length::Fixed(72.0))
             .into(),
-            None => text(format_slider_value(*current, *is_real))
+            None => text(slider_value_text(*current, *is_real, *exact_value))
               .size(11)
               .font(Font::MONOSPACE)
               .width(iced::Length::Fixed(72.0))
@@ -6335,6 +6336,19 @@ fn format_slider_value(v: f64, is_real: bool) -> String {
   } else {
     s
   }
+}
+
+/// The slider readout, showing the exact initial value (`π/2`) while the
+/// slider still sits on it, as Wolfram does, and the decimal otherwise.
+fn slider_value_text(
+  current: f64,
+  is_real: bool,
+  exact_value: Option<f64>,
+) -> String {
+  exact_value
+    .filter(|v| *v == current)
+    .and_then(woxi::functions::graphics::format_exact_slider_label)
+    .unwrap_or_else(|| format_slider_value(current, is_real))
 }
 
 fn format_manipulate_number(v: f64) -> String {
@@ -9064,6 +9078,27 @@ mod tests {
     assert_eq!(format_slider_value(100_000.0, true), "100\u{2009}000.");
     assert_eq!(format_slider_value(12345.5, false), "12\u{2009}345.5");
     assert_eq!(format_slider_value(-0.125, false), "-0.125");
+  }
+
+  #[test]
+  fn slider_value_text_shows_exact_initial_value() {
+    use super::slider_value_text;
+    use std::f64::consts::PI;
+    // Still on the exact initial value: typeset exactly, as Wolfram does.
+    assert_eq!(slider_value_text(PI / 2.0, false, Some(PI / 2.0)), "π/2");
+    assert_eq!(slider_value_text(PI / 2.0, true, Some(PI / 2.0)), "π/2");
+    assert_eq!(
+      slider_value_text(3.0 * PI / 4.0, false, Some(3.0 * PI / 4.0)),
+      "3π/4"
+    );
+    assert_eq!(slider_value_text(2.0 * PI, false, Some(2.0 * PI)), "2π");
+    assert_eq!(slider_value_text(-PI / 3.0, false, Some(-PI / 3.0)), "-π/3");
+    assert_eq!(slider_value_text(1.0 / 3.0, false, Some(1.0 / 3.0)), "1/3");
+    // Integers keep the plain readout.
+    assert_eq!(slider_value_text(5.0, false, Some(5.0)), "5");
+    // Once moved off it (or with no exact initial value) the decimal shows.
+    assert_eq!(slider_value_text(2.0, true, Some(PI / 2.0)), "2.");
+    assert_eq!(slider_value_text(PI / 2.0, true, None), "1.571");
   }
 
   /// A Manipulate's helper variables written with Gothic letters
@@ -12487,6 +12522,43 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       (0.0..=50.0).contains(&current),
       "the Trigger must stay within its dynamic bound, got {current}"
     );
+  }
+
+  /// A popup menu whose bare choices are pictures (`{shape, {Graphics[…],
+  /// Graphics[…]}, ControlType -> PopupMenu}`) shows each picture, as
+  /// Wolfram does, instead of its `Graphics[…]` InputForm text.
+  #[test]
+  fn popup_menu_of_bare_graphics_choices_shows_pictures() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[shape], \
+       {{shape, Graphics[{Rectangle[]}], \"shape\"}, \
+       {Graphics[{Rectangle[]}], Graphics[{Circle[{0, 0}, 1]}], \
+       Graphics3D[{Sphere[]}]}, ControlType -> PopupMenu}, \
+       {n, {1, 2}}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          value_label_svgs: shapes,
+          popup: true,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          value_label_svgs: plain,
+          ..
+        },
+      ] => {
+        assert_eq!(shapes.len(), 3);
+        assert!(
+          shapes.iter().all(Option::is_some),
+          "every picture choice carries its rendered icon"
+        );
+        assert!(plain.iter().all(Option::is_none), "numbers stay text");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
   }
 
   #[test]
