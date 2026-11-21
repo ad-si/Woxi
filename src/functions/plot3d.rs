@@ -257,6 +257,10 @@ pub(crate) struct Triangle {
 pub(crate) struct TriangleTexture {
   pub image: std::sync::Arc<image::RgbImage>,
   pub uv: [(f64, f64); 3],
+  /// The lit color of a white surface at this triangle: the image's
+  /// colors are multiplied by it, so the scene lighting shades a textured
+  /// face just as it shades a plain one.
+  pub shade: (u8, u8, u8),
 }
 
 /// Largest scene `painter_order` refines: candidate pairs come from a sweep
@@ -2251,6 +2255,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
+  // automatic vertical range clips outliers off.
+  let mut keep_z_outliers = false;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut color_fn = FacetColorFunction::default();
@@ -2356,6 +2363,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          keep_z_outliers = plot_range_keeps_z_outliers(replacement);
           // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
           // full form `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds
           // all three; the horizontal bounds narrow the plotted domain, so
@@ -2532,6 +2540,26 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Plot3D: function produced no finite values in the given range".into(),
     ));
+  }
+
+  // The automatic vertical range drops outlying heights, as WL's does: a
+  // pole or a jump at the domain's edge is cut off instead of squashing
+  // the rest of the surface into a sliver of the box.
+  if !keep_z_outliers {
+    let region_masks = region_masks.as_ref();
+    let kept = grids.iter().enumerate().flat_map(|(s, grid)| {
+      grid.iter().enumerate().flat_map(move |(i, row)| {
+        row.iter().enumerate().filter_map(move |(j, &z)| {
+          region_masks.is_none_or(|masks| masks[s][i][j]).then_some(z)
+        })
+      })
+    });
+    if let Some((lo, hi)) =
+      crate::functions::plot::list_value_extent(kept, false)
+    {
+      global_z_min = lo;
+      global_z_max = hi;
+    }
   }
 
   // A numeric `Filling` level is part of the picture: the automatic
@@ -8239,6 +8267,7 @@ fn fan_texture(
   Some(TriangleTexture {
     image: image.clone(),
     uv: [coords[0], coords[i + 1], coords[i + 2]],
+    shade: (255, 255, 255),
   })
 }
 
@@ -8253,10 +8282,34 @@ fn emit_textured_triangle(
 ) -> bool {
   use base64::Engine;
   let (w, h) = (tex.image.width() as f64, tex.image.height() as f64);
+  // Textures repeat outside the unit square, so the coordinates are first
+  // shifted by whole periods to start in it; a triangle that still reaches
+  // past it shows the neighboring copies too (`tiles` below).
+  let (u_lo, u_hi, v_lo, v_hi) = tex.uv.iter().fold(
+    (
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    ),
+    |(a, b, c, d), &(u, v)| (a.min(u), b.max(u), c.min(v), d.max(v)),
+  );
+  if !(u_lo.is_finite()
+    && u_hi.is_finite()
+    && v_lo.is_finite()
+    && v_hi.is_finite())
+  {
+    return false;
+  }
+  let (du, dv) = (u_lo.floor(), v_lo.floor());
+  // Copies needed along each direction (a facet spanning many periods
+  // is capped, as it cannot show them distinctly anyway).
+  let tiles_u = ((u_hi - du).ceil().max(1.0) as i64).min(8);
+  let tiles_v = ((v_hi - dv).ceil().max(1.0) as i64).min(8);
   let s: Vec<(f64, f64)> = tex
     .uv
     .iter()
-    .map(|&(u, v)| (u * w, (1.0 - v) * h))
+    .map(|&(u, v)| ((u - du) * w, (1.0 - (v - dv)) * h))
     .collect();
   let det = (s[1].0 - s[0].0) * (s[2].1 - s[0].1)
     - (s[2].0 - s[0].0) * (s[1].1 - s[0].1);
@@ -8309,8 +8362,39 @@ fn emit_textured_triangle(
   } else {
     String::new()
   };
+  // Shade the image by the lit color of a white surface: a color matrix
+  // scales each channel, one filter per distinct shade.
+  let filter_attr = if tex.shade == (255, 255, 255) {
+    String::new()
+  } else {
+    let (r, g, b) = tex.shade;
+    let fid = format!("texshade{r:02x}{g:02x}{b:02x}");
+    if !ids.iter().any(|(k, id)| k.is_null() && *id == fid) {
+      ids.push((std::ptr::null(), fid.clone()));
+      let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+      svg.push_str(&format!(
+        "<defs><filter id=\"{fid}\" color-interpolation-filters=\"sRGB\"><feColorMatrix type=\"matrix\" values=\"{r:.4} 0 0 0 0 0 {g:.4} 0 0 0 0 0 {b:.4} 0 0 0 0 0 1 0\"/></filter></defs>\n"
+      ));
+    }
+    format!(" filter=\"url(#{fid})\"")
+  };
+  // The copy `k` periods along `u` and `l` along `v` sits `k·w` right of
+  // and `l·h` above the base image in texture space.
+  let mut copies = String::new();
+  for l in 0..tiles_v {
+    for k in 0..tiles_u {
+      let translate = if k == 0 && l == 0 {
+        String::new()
+      } else {
+        format!(" translate({} {})", k as f64 * w, -(l as f64) * h)
+      };
+      copies.push_str(&format!(
+        "<use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4}){translate}\"/>"
+      ));
+    }
+  }
   svg.push_str(&format!(
-    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{opacity_attr}><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{filter_attr}{opacity_attr}>{copies}</g>\n",
     clip_corners[0].0,
     clip_corners[0].1,
     clip_corners[1].0,
@@ -14626,7 +14710,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color: vertex_colors.map_or(color, average_color),
         opacity: prim_opacity,
-        texture: fan_texture(prim, prim_style, i, tri_count),
+        texture: fan_texture(prim, prim_style, i, tri_count).map(|mut t| {
+          // The texture takes the place of the surface color, so the
+          // lighting is that of a white surface.
+          let mut white = prim_style.clone();
+          white.color = None;
+          white.back_color = None;
+          t.shade = shade_facet(
+            SurfaceDefault::Plain((255, 255, 255)),
+            None,
+            Some(&white),
+            normal,
+            center,
+            &scene,
+          )
+          .0;
+          t
+        }),
         vertex_colors,
       });
     }
@@ -14814,7 +14914,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  {
+  // In a picture of fixed width and height, an invisible box around an
+  // automatic range with nothing tied to it (no axes, no sphere framing, no
+  // view volume) is left out: the contents themselves are fitted to the
+  // frame. A Demonstration's unboxed cylinder of fixed volume at
+  // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
+  // snapshots, whether it is tall and thin or short and wide. A picture
+  // given only a width keeps the box's margins.
+  let fit_contents = !show_box
+    && explicit_height
+    && !full_width
+    && !aspect_full
+    && !show_axes
+    && plot_range.is_none()
+    && partial_range.is_none()
+    && !spherical_region
+    && view_angle.is_none()
+    && px_min.is_finite();
+  if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -16052,6 +16169,18 @@ fn with_prolog_epilog(
 /// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
 /// by every 3D height-field plot (`Plot3D`, `ListPlot3D`) alongside the
 /// full per-axis form `parse_axis_ranges` handles.
+/// Whether a `Plot3D` `PlotRange` asks for every sampled height, outliers
+/// included: `All`, or `All` in the vertical slot of a three-axis spec.
+fn plot_range_keeps_z_outliers(expr: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  match &val {
+    e if is_all(e) => true,
+    Expr::List(items) if items.len() == 3 => is_all(&items[2]),
+    _ => false,
+  }
+}
+
 fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let Expr::List(items) = expr else {
     return None;
@@ -21556,15 +21685,26 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (z_min, z_max)
   };
 
+  // The automatic dot size shrinks as the data grows, the same adaptive
+  // steps (0.66 printer's points each, at least 1, over a 360-point width)
+  // a 2D `ListPlot` sizes its dots by — a dense trajectory of thousands of
+  // points draws as a thin trail rather than a thick band.
+  let point_size = (0.66
+    * crate::functions::list_plot::adaptive_point_size_steps(
+      datasets.iter().flatten().map(|&(x, y, z)| [x, y, z]),
+    ))
+  .max(1.0)
+    / 360.0;
+
   let svg = generate_scatter_svg(
     &scatter_points,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
     (z_axis_min, z_axis_max),
-    svg_width,
-    svg_height,
+    (svg_width, svg_height),
     full_width,
+    point_size,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -21606,6 +21746,9 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(base_color.2 as f64 / 255.0),
         ],
       )];
+      // The automatic size goes first, so a `PlotStyle` `PointSize`
+      // appended below overrides it.
+      group.push(call1("PointSize", Expr::Real(point_size)));
       if let Some(style_items) = &plot_style_per_dataset
         && !style_items.is_empty()
       {
@@ -21680,9 +21823,9 @@ fn generate_scatter_svg(
   x_range: (f64, f64),
   y_range: (f64, f64),
   z_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
+  (svg_width, svg_height): (u32, u32),
   full_width: bool,
+  point_size: f64,
 ) -> Result<String, InterpreterError> {
   // Find bounding box
   let mut px_min = f64::INFINITY;
@@ -21799,10 +21942,12 @@ fn generate_scatter_svg(
   });
 
   // Merge-render scatter points and box edges back-to-front (painter's algorithm)
+  let auto_radius =
+    crate::functions::graphics::point_radius(point_size, svg_width as f64);
   {
     let mut ei = 0;
     for pt in points {
-      let radius = pt.radius.unwrap_or(1.75);
+      let radius = pt.radius.unwrap_or(auto_radius);
       // Emit any box edges further from camera than this point
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= pt.depth {
         let edge = &sorted_edges[ei];
@@ -21823,7 +21968,7 @@ fn generate_scatter_svg(
       let (sx, sy) = to_svg(pt.sx, pt.sy);
       let (r, g, b) = pt.color;
       svg.push_str(&format!(
-        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
+        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.2}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
         sx, sy, radius, r, g, b,
         (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
       ));
@@ -23093,66 +23238,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // ── Standalone rendering: the symbolic form drawn by `Graphics3D`, so
   // `PlotRange`, `BoxRatios` (the data's own proportions by default),
   // `Boxed`, `Axes` and the view options behave as they do for any 3D
-  // graphic. An unstyled surface takes the next color of WL 15's
-  // `DefaultPlotStyle`. ──
-  let render_items: Vec<Expr> = complexes.clone();
-  // The options only the plot itself reads stay behind.
-  const PLOT_ONLY_OPTIONS: &[&str] = &[
-    "PlotStyle",
-    "TextureCoordinateFunction",
-    "TextureCoordinateScaling",
-    "ColorFunction",
-    "ColorFunctionScaling",
-    "Mesh",
-    "MeshFunctions",
-    "MeshStyle",
-    "MeshShading",
-    "PlotPoints",
-    "MaxRecursion",
-    "RegionFunction",
-    "BoundaryStyle",
-    "PlotLabel",
-    "PlotLegends",
-    "PerformanceGoal",
-    "Exclusions",
-    "ExclusionsStyle",
-    "EvaluationMonitor",
-    "WorkingPrecision",
-    "Method",
-  ];
-  let option_name = |o: &Expr| {
-    crate::functions::graphics::option_name_value(o).map(|(n, _)| n.to_string())
-  };
-  let mut render_args = vec![Expr::List(render_items.into())];
-  render_args.extend(
-    args[3..]
-      .iter()
-      .filter(|o| {
-        option_name(o).is_some_and(|n| !PLOT_ONLY_OPTIONS.contains(&n.as_str()))
-      })
-      .cloned(),
-  );
-  if !args[3..]
-    .iter()
-    .any(|o| option_name(o).as_deref() == Some("Axes"))
-  {
-    render_args
-      .push(rule_expr(Expr::Identifier("Axes".into()), bool_expr(true)));
-  }
-  // Evaluated like any `Graphics3D[…]`, so a held `Texture[Image[…]]`
-  // becomes the image it names.
-  let svg = match &crate::evaluator::evaluate_function_call_ast(
-    "Graphics3D",
-    &render_args,
-  )? {
-    Expr::Graphics { svg, .. } => svg.clone(),
-    other => {
-      return Err(InterpreterError::EvaluationError(format!(
-        "SphericalPlot3D: could not render {}",
-        crate::syntax::expr_to_string(other)
-      )));
-    }
-  };
+  // graphic. ──
+  let svg =
+    render_surface_structure("SphericalPlot3D", complexes.clone(), &args[3..])?;
   let svg = with_plot_label(svg, args, svg_width, svg_height);
 
   let content = if complexes.len() == 1 {
@@ -23167,6 +23255,76 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect::<Vec<_>>(),
   );
   Ok(crate::plot3d_result_with_structure(svg, structure))
+}
+
+/// The options only a surface plot itself reads; the rest are passed on to
+/// the `Graphics3D` that draws its symbolic surfaces.
+const SURFACE_PLOT_ONLY_OPTIONS: &[&str] = &[
+  "PlotStyle",
+  "TextureCoordinateFunction",
+  "TextureCoordinateScaling",
+  "ColorFunction",
+  "ColorFunctionScaling",
+  "Mesh",
+  "MeshFunctions",
+  "MeshStyle",
+  "MeshShading",
+  "PlotPoints",
+  "MaxRecursion",
+  "RegionFunction",
+  "BoundaryStyle",
+  "PlotLabel",
+  "PlotLegends",
+  "PerformanceGoal",
+  "Exclusions",
+  "ExclusionsStyle",
+  "EvaluationMonitor",
+  "WorkingPrecision",
+  "Method",
+];
+
+/// Draw a surface plot's symbolic `items` (its `GraphicsComplex`es) as a
+/// `Graphics3D` with the plot's options `opts`, so `PlotRange`,
+/// `BoxRatios`, `Boxed`, `Lighting`, textures and the view options behave
+/// as they do for any 3D graphic. Like the plots, it draws axes unless
+/// told otherwise.
+fn render_surface_structure(
+  plot: &str,
+  items: Vec<Expr>,
+  opts: &[Expr],
+) -> Result<String, InterpreterError> {
+  let option_name = |o: &Expr| {
+    crate::functions::graphics::option_name_value(o).map(|(n, _)| n.to_string())
+  };
+  let mut render_args = vec![Expr::List(items.into())];
+  render_args.extend(
+    opts
+      .iter()
+      .filter(|o| {
+        option_name(o)
+          .is_some_and(|n| !SURFACE_PLOT_ONLY_OPTIONS.contains(&n.as_str()))
+      })
+      .cloned(),
+  );
+  if !opts
+    .iter()
+    .any(|o| option_name(o).as_deref() == Some("Axes"))
+  {
+    render_args
+      .push(rule_expr(Expr::Identifier("Axes".into()), bool_expr(true)));
+  }
+  // Evaluated like any `Graphics3D[…]`, so a held `Texture[Image[…]]`
+  // becomes the image it names.
+  match &crate::evaluator::evaluate_function_call_ast(
+    "Graphics3D",
+    &render_args,
+  )? {
+    Expr::Graphics { svg, .. } => Ok(svg.clone()),
+    other => Err(InterpreterError::EvaluationError(format!(
+      "{plot}: could not render {}",
+      crate::syntax::expr_to_string(other)
+    ))),
+  }
 }
 
 /// How far a `DiscretePlot3D` bar reaches either side of its point
@@ -23740,9 +23898,12 @@ fn parametric_plot3d_curve_ast(
     .map(|(fx, fy, fz)| Curve { fx, fy, fz })
     .collect();
 
-  // Sample each curve at SAMPLE_N+1 points uniformly in [t_min, t_max].
-  const SAMPLE_N: usize = 200;
-  let dt = (t_max - t_min) / SAMPLE_N as f64;
+  // Sample each curve at `sample_n + 1` points uniformly in
+  // [t_min, t_max] before the adaptive refinement. `PlotPoints -> n` asks
+  // for `n` initial samples (a long ODE trajectory is often plotted with
+  // `PlotPoints -> 10000`); `Automatic` keeps the default of 201.
+  let mut sample_n: usize = 200;
+  let dt_for = |n: usize| (t_max - t_min) / n as f64;
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
   let mut plot_style: Option<Expr> = None;
@@ -23784,6 +23945,19 @@ fn parametric_plot3d_curve_ast(
     {
       color_scaling =
         !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
+    } else if let Expr::Rule {
+      pattern,
+      replacement,
+    } = opt
+      && let Expr::Identifier(name) = pattern.as_ref()
+      && name == "PlotPoints"
+    {
+      // A plot option, not a `Graphics3D` one, so it is not forwarded.
+      if let Ok(Expr::Integer(n)) = evaluate_expr_to_expr(replacement)
+        && n >= 2
+      {
+        sample_n = (n - 1) as usize;
+      }
     } else {
       if let Expr::Rule {
         pattern,
@@ -23825,7 +23999,8 @@ fn parametric_plot3d_curve_ast(
     (Some(_), None) => {
       let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
       for c in &curves {
-        for i in 0..=SAMPLE_N {
+        let dt = dt_for(sample_n);
+        for i in 0..=sample_n {
           let t = t_min + i as f64 * dt;
           if let Some((x, y, z)) =
             evaluate_parametric_at_t(&c.fx, &c.fy, &c.fz, tvar, t)
@@ -23943,7 +24118,7 @@ fn parametric_plot3d_curve_ast(
     };
     let mut prev: Option<(f64, f64, f64, f64)> = None;
     let samples = sample_parametric_curve_adaptive(
-      &curve.fx, &curve.fy, &curve.fz, tvar, t_min, t_max, SAMPLE_N,
+      &curve.fx, &curve.fy, &curve.fz, tvar, t_min, t_max, sample_n,
     );
     for (t, point) in samples {
       if let Some((x, y, z)) = point {
@@ -24026,8 +24201,13 @@ fn parametric_plot3d_curve_ast(
 /// values, then bisect the intervals around every vertex where the polyline
 /// turns sharply, so a curve that winds many times over a long parameter
 /// range (an ODE trajectory, say) is drawn smoothly instead of as a coarse
-/// polygon. Mathematica refines the same way. Non-finite points are kept as
-/// `None` so the caller can break the line there.
+/// polygon. Mathematica refines the same way. Turning angles are measured
+/// with each axis scaled to the curve's extent along it, as the curve is
+/// drawn in a box shaped independently of the data (`BoxRatios -> 1`): an
+/// axis spanning a tiny range is stretched, and bends along it that look
+/// negligible in raw coordinates show up as corners in the picture.
+/// Non-finite points are kept as `None` so the caller can break the line
+/// there.
 fn sample_parametric_curve_adaptive(
   fx: &Expr,
   fy: &Expr,
@@ -24052,6 +24232,26 @@ fn sample_parametric_curve_adaptive(
     })
     .collect();
 
+  // Per-axis scale factors that map the sampled extent to unit length.
+  let mut lo = [f64::INFINITY; 3];
+  let mut hi = [f64::NEG_INFINITY; 3];
+  for (x, y, z) in samples.iter().filter_map(|s| s.1) {
+    for (k, v) in [x, y, z].into_iter().enumerate() {
+      if v.is_finite() {
+        lo[k] = lo[k].min(v);
+        hi[k] = hi[k].max(v);
+      }
+    }
+  }
+  let inv: [f64; 3] = std::array::from_fn(|k| {
+    let range = hi[k] - lo[k];
+    if range.is_finite() && range > 0.0 {
+      1.0 / range
+    } else {
+      1.0
+    }
+  });
+
   for _ in 0..MAX_PASSES {
     if samples.len() >= MAX_TOTAL {
       break;
@@ -24064,8 +24264,16 @@ fn sample_parametric_curve_adaptive(
       else {
         continue;
       };
-      let u = [b.0 - a.0, b.1 - a.1, b.2 - a.2];
-      let v = [c.0 - b.0, c.1 - b.1, c.2 - b.2];
+      let u = [
+        (b.0 - a.0) * inv[0],
+        (b.1 - a.1) * inv[1],
+        (b.2 - a.2) * inv[2],
+      ];
+      let v = [
+        (c.0 - b.0) * inv[0],
+        (c.1 - b.1) * inv[1],
+        (c.2 - b.2) * inv[2],
+      ];
       let nu = (u[0] * u[0] + u[1] * u[1] + u[2] * u[2]).sqrt();
       let nv = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
       if nu == 0.0 || nv == 0.0 {
@@ -24518,6 +24726,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // over the plotted region and u, v over their parameter intervals.
   let mut surface_color_fn: Option<Expr> = None;
   let mut color_scaling = true;
+  // `TextureCoordinateFunction -> f`: the point `f[x, y, z, u, v]` of a
+  // `Texture` image painted at each surface point (by default the
+  // parameters `{u, v}`). With `TextureCoordinateScaling` (the default)
+  // the arguments arrive rescaled to 0..1 like `ColorFunction`'s.
+  let mut texture_fn: Option<Expr> = None;
+  let mut texture_scaling = true;
 
   for opt in &args[3..] {
     if let Expr::Rule {
@@ -24553,6 +24767,12 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "ColorFunctionScaling" => {
           color_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
+        }
+        Expr::Identifier(name) if name == "TextureCoordinateFunction" => {
+          texture_fn = Some(replacement.as_ref().clone());
+        }
+        Expr::Identifier(name) if name == "TextureCoordinateScaling" => {
+          texture_scaling = !matches!(replacement.as_ref(), Expr::Identifier(n) if n == "False");
         }
         Expr::Identifier(name) if name == "BoundaryStyle" => {
           let value = evaluate_expr_to_expr(replacement)
@@ -24953,6 +25173,54 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })
     .collect();
 
+  // The `Texture[…]` of the `PlotStyle` (its image evaluated), painted
+  // over the surfaces whose style carries it.
+  let texture_expr: Option<Expr> = plot_style_expr
+    .and_then(find_texture_expr)
+    .map(|t| evaluate_expr_to_expr(&t).unwrap_or(t));
+  let is_textured = |surface_idx: usize| {
+    texture_expr.is_some()
+      && plot_style_for_surface(&plot_styles, surface_idx)
+        .is_some_and(|s| s.texture.is_some())
+  };
+  // The texture coordinates of the surface point `(x, y, z)` at parameters
+  // `(u, v)`.
+  let texture_uv = |(x, y, z): (f64, f64, f64), u: f64, v: f64| {
+    let unit = |t: f64, lo: f64, hi: f64| {
+      if !texture_scaling {
+        t
+      } else if (hi - lo).abs() < 1e-15 {
+        0.0
+      } else {
+        (t - lo) / (hi - lo)
+      }
+    };
+    let (su, sv) = (unit(u, u_min, u_max), unit(v, v_min, v_max));
+    let Some(f) = &texture_fn else {
+      return (su, sv);
+    };
+    let call = Expr::CurriedCall {
+      func: Box::new(f.clone()),
+      args: [
+        unit(x, gx_min, gx_max),
+        unit(y, gy_min, gy_max),
+        unit(z, gz_min, gz_max),
+        su,
+        sv,
+      ]
+      .iter()
+      .map(|a| Expr::Real(*a))
+      .collect(),
+    };
+    match &evaluate_expr_to_expr(&call) {
+      Ok(Expr::List(uv)) if uv.len() == 2 => (
+        try_eval_to_f64(&uv[0]).unwrap_or(0.0),
+        try_eval_to_f64(&uv[1]).unwrap_or(0.0),
+      ),
+      _ => (0.0, 0.0),
+    }
+  };
+
   // ── Symbolic structure: Graphics3D[GraphicsComplex[points, {…}]] ──
   // `Show` merges the *primitives* of the graphics it is given, so a
   // surface that exists only as a rendering is dropped when it is shown
@@ -24967,10 +25235,20 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut index_of: Vec<Vec<Option<usize>>> =
           vec![vec![None; grid_v + 1]; grid_u + 1];
         let mut point_exprs: Vec<Expr> = Vec::new();
+        let textured = is_textured(surface_idx);
+        let mut point_uvs: Vec<Expr> = Vec::new();
         for (i, row) in sg.iter().enumerate() {
           for (j, p) in row.iter().enumerate() {
             if let Some((x, y, z)) = p {
               index_of[i][j] = Some(point_exprs.len());
+              if textured {
+                let u = u_min + i as f64 * u_step;
+                let v = v_ranges[i].0 + j as f64 * v_step_at(i);
+                let (tu, tv) = texture_uv((*x, *y, *z), u, v);
+                point_uvs.push(Expr::List(
+                  vec![Expr::Real(tu), Expr::Real(tv)].into(),
+                ));
+              }
               point_exprs.push(Expr::List(
                 vec![Expr::Real(*x), Expr::Real(*y), Expr::Real(*z)].into(),
               ));
@@ -24988,6 +25266,9 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           content.push(call0("EdgeForm"));
         }
         content.extend(surface_opacity_directive(&plot_styles, surface_idx));
+        if textured && let Some(texture) = &texture_expr {
+          content.push(texture.clone());
+        }
         // The look the standalone render shades the surface with (the
         // default theme's color, specularity and lights), so the extracted
         // complex keeps it wherever it is drawn — a color directive placed
@@ -25059,16 +25340,26 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               .is_none()
               .then(|| surface_style.and_then(|s| s.back_color))
               .flatten();
-            let polygon = call1(
-              "Polygon",
+            let indices = |ks: &[usize]| {
               Expr::List(
-                [a, b, c, d]
-                  .iter()
+                ks.iter()
                   .map(|&k| Expr::Integer(k as i128 + 1))
                   .collect::<Vec<_>>()
                   .into(),
-              ),
-            );
+              )
+            };
+            // A textured cell is split into two triangles, each of which
+            // carries the image affinely.
+            let polygon = if textured {
+              call1(
+                "Polygon",
+                Expr::List(
+                  vec![indices(&[a, b, c]), indices(&[a, c, d])].into(),
+                ),
+              )
+            } else {
+              call1("Polygon", indices(&[a, b, c, d]))
+            };
             let Some(front) = explicit else {
               content.push(polygon);
               continue;
@@ -25178,10 +25469,15 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             }
           }
         }
-        call(
-          "GraphicsComplex",
-          vec![Expr::List(point_exprs.into()), Expr::List(content.into())],
-        )
+        let mut complex_args =
+          vec![Expr::List(point_exprs.into()), Expr::List(content.into())];
+        if textured {
+          complex_args.push(rule_expr(
+            id_expr("VertexTextureCoordinates"),
+            Expr::List(point_uvs.into()),
+          ));
+        }
+        call("GraphicsComplex", complex_args)
       })
       .collect();
     let content = if complexes.len() == 1 {
@@ -25204,6 +25500,21 @@ pub fn parametric_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
     call("Graphics3D", structure_args)
   };
+
+  // A textured surface is drawn from its symbolic form, by the `Graphics3D`
+  // renderer that maps images onto facets.
+  if (0..surfaces.len()).any(is_textured)
+    && let Expr::FunctionCall { args: parts, .. } = &structure
+    && let Some(content) = parts.first()
+  {
+    let items = match content {
+      Expr::List(items) => items.to_vec(),
+      single => vec![single.clone()],
+    };
+    let svg = render_surface_structure("ParametricPlot3D", items, &args[3..])?;
+    let svg = with_plot_label(svg, args, svg_width, svg_height);
+    return Ok(crate::plot3d_result_with_structure(svg, structure));
+  }
 
   // Phase 2: Build triangles
   let mut all_triangles: Vec<Triangle> = Vec::new();

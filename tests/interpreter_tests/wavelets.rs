@@ -1062,6 +1062,20 @@ mod wavelets {
   }
 
   #[test]
+  fn wavelet_scalogram_is_landscape_with_octave_ticks() {
+    // Whatever the matrix shape, the scalogram is a 1/GoldenRatio picture
+    // with the octaves labeled down the right edge (octave 1 at the top)
+    // and the sample positions along the bottom.
+    assert_eq!(
+      interpret(
+        "g = WaveletScalogram[ContinuousWaveletTransform[Table[Sin[k/3.], {k, 64}], MorletWavelet[], {3, 2}]]; {AspectRatio, FrameTicks} /. Options[g]"
+      )
+      .unwrap(),
+      "{GoldenRatio^(-1), {{None, {{6., 1}, {4., 2}, {2., 3}}}, {{{0., 0}, {20., 20}, {40., 40}, {60., 60}}, None}}}"
+    );
+  }
+
+  #[test]
   fn wavelet_scalogram_forwards_plot_options() {
     // Options such as ColorFunction and ImageSize used to be dropped.
     assert_eq!(
@@ -1089,6 +1103,33 @@ mod wavelets {
       )
       .unwrap(),
       "{250}"
+    );
+  }
+
+  #[test]
+  fn wavelet_scalogram_passes_plot_options() {
+    // Explicit frame ticks are placed in sample coordinates, `None` hides
+    // an edge pair, and ColorFunction reaches the cells.
+    assert_eq!(
+      interpret(
+        "g = WaveletScalogram[ContinuousWaveletTransform[Table[Sin[k/3.], {k, 64}], MorletWavelet[], {3, 2}], ColorFunction -> Hue, FrameTicks -> {None, {{{0, x}, {32, y}}, Automatic}}]; {FrameTicks /. Options[g], StringContainsQ[ExportString[g, \"SVG\"], \"#FF0000\"]}"
+      )
+      .unwrap(),
+      "{{{None, None}, {{{0., x}, {32., y}}, None}}, True}"
+    );
+    assert_eq!(
+      interpret(
+        "AspectRatio /. Options[WaveletScalogram[DiscreteWaveletTransform[Table[Sin[k/3.], {k, 16}]], AspectRatio -> 1]]"
+      )
+      .unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret(
+        "FreeQ[Options[WaveletScalogram[DiscreteWaveletTransform[Table[Sin[k/3.], {k, 16}]], Frame -> False]], FrameTicks]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 
