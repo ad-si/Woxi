@@ -11923,6 +11923,35 @@ mod to_expression_graphics_box {
       "{RGBColor[0, 0, 1], Line[{{0, 0}, {1, 1}}]}"
     );
   }
+
+  /// Regression: a `Graphics3DBox` was returned unevaluated.
+  #[test]
+  fn graphics3d_box_reads_back_as_graphics3d() {
+    assert_eq!(
+      interpret(
+        "g = ToExpression[Graphics3DBox[{Red, SphereBox[{1, 2, 3}, 2]}, \
+         Boxed -> False]]; {Head[g], g[[1]], g[[2]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {RGBColor[1, 0, 0], Sphere[{1, 2, 3}, 2]}, Boxed -> False}"
+    );
+  }
+
+  /// Regression: a picture inside an input line (`x = <picture>`, stored as
+  /// a `RowBox` holding the graphics box) left the assignment undone.
+  #[test]
+  fn graphics_boxes_inside_a_row_box_are_assigned() {
+    assert_eq!(
+      interpret(
+        "ToExpression[RowBox[{\"x\", \"=\", RowBox[{\"{\", \
+         RowBox[{Graphics3DBox[{SphereBox[{0, 0, 0}]}], \",\", \
+         GraphicsBox[{DiskBox[{0, 0}]}]}], \"}\"}]}]]; \
+         {Head /@ x, x[[1, 1]], x[[2, 1]]}"
+      )
+      .unwrap(),
+      "{{Graphics3D, Graphics}, {Sphere[{0, 0, 0}]}, {Disk[{0, 0}]}}"
+    );
+  }
 }
 
 mod line_reading {

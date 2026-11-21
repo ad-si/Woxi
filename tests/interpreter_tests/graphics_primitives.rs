@@ -712,4 +712,26 @@ mod graphics_primitives {
       "{outlined} of {facets}"
     );
   }
+  /// A label anchored outside an explicit `PlotRange` lies off the canvas,
+  /// as in Wolfram; it is not pinned to the image edge. Regression: the
+  /// pass that keeps tick labels inside the canvas dragged it to `x = 4.2`.
+  #[test]
+  fn text_outside_explicit_plot_range_stays_out_of_view() {
+    let svg = svg_of(
+      "Graphics[{Circle[], Text[\"A\", {-7, 0.5}], Text[\"B\", {7, 0.5}, \
+       {0, -2}]}, PlotRange -> {{-2, 2}, {-2, 2}}, ImageSize -> 200]",
+    );
+    let a = &svg[svg
+      .find(">A<")
+      .map(|e| svg[..e].rfind("<text").unwrap())
+      .unwrap()..];
+    let b = &svg[svg
+      .find(">B<")
+      .map(|e| svg[..e].rfind("<text").unwrap())
+      .unwrap()..];
+    let ax = attr_of(a, "text", "x");
+    let bx = attr_of(b, "text", "x");
+    assert!(ax < -200.0, "{ax}");
+    assert!(bx > 400.0, "{bx}");
+  }
 }

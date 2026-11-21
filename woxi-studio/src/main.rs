@@ -4515,6 +4515,7 @@ fn discrete_checkbox_state(
 /// A choice whose label is a rendered icon counts as compact: it draws at a
 /// fixed 24px, narrower than a three-character button, so it costs the row
 /// nothing.
+#[cfg(test)]
 fn renders_as_setter_bar(
   value_labels: &[String],
   value_label_svgs: &[Option<svg::Handle>],
