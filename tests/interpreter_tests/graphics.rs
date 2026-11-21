@@ -10811,14 +10811,25 @@ mod plot3d {
         !svg.contains("Grid["),
         "Grid[…] must not leak into the SVG as raw syntax:\n{svg}"
       );
-      assert!(
-        svg.contains(">A B<"),
-        "Graphics3D SVG missing first PlotLabel line:\n{svg}"
-      );
-      assert!(
-        svg.contains("<tspan") && svg.contains(">1 2</tspan>"),
-        "Graphics3D SVG missing stacked second PlotLabel line:\n{svg}"
-      );
+      // Set as a table, as a 2-D graphic sets it: each cell on its own,
+      // the rows stacked and the columns lined up.
+      let cell = |c: &str| -> (f64, f64) {
+        let end = svg
+          .find(&format!(">{c}</text>"))
+          .unwrap_or_else(|| panic!("cell {c} missing:\n{svg}"));
+        let tag = &svg[svg[..end].rfind("<text").unwrap()..end];
+        let attr = |name: &str| -> f64 {
+          let start =
+            tag.find(&format!(" {name}=\"")).unwrap() + name.len() + 3;
+          tag[start..start + tag[start..].find('"').unwrap()]
+            .parse()
+            .unwrap()
+        };
+        (attr("x"), attr("y"))
+      };
+      let (a, b, one, two) = (cell("A"), cell("B"), cell("1"), cell("2"));
+      assert!(a.1 == b.1 && one.1 == two.1 && a.1 < one.1, "{svg}");
+      assert!(a.0 == one.0 && b.0 == two.0 && a.0 < b.0, "{svg}");
     }
 
     /// `PlotLabel -> Graphics[…]` draws the picture above the graphic at its
@@ -68295,7 +68306,8 @@ mod column_text_label_fractions {
 /// `AxesEdge -> Automatic` puts each 3-D axis on the exposed (silhouette)
 /// box edge nearest the viewer. For a cube seen from the default
 /// `ViewPoint` that is the upper-left edge for the y axis; for a flat box
-/// it is the lower-right one.
+/// it is the lower-right one. The x axis, along the front face, stays on
+/// the bottom edge even of a tall box.
 mod automatic_axes_edge_3d {
   use super::*;
 
@@ -68328,6 +68340,23 @@ mod automatic_axes_edge_3d {
     assert_eq!(
       flat(""),
       flat(", AxesEdge -> {{-1, -1}, {1, -1}, {-1, -1}}")
+    );
+  }
+
+  #[test]
+  fn tall_box_keeps_x_axis_on_bottom_front_edge() {
+    // A box taller than about 1.2 times its depth brings its top back x
+    // edge nearer the eye than the bottom front one; Wolfram still puts
+    // the x axis on the bottom front edge. The y axis keeps the nearest
+    // (upper-left) edge, as for a cube.
+    let tall = |extra: &str| {
+      export_svg(&format!(
+        "Graphics3D[Cuboid[{{0, 0, 0}}, {{1, 1, 1.6}}], Axes -> True{extra}]"
+      ))
+    };
+    assert_eq!(
+      tall(""),
+      tall(", AxesEdge -> {{-1, -1}, {-1, 1}, {-1, -1}}")
     );
   }
 
