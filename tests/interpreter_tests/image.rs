@@ -135,6 +135,66 @@ mod image_core {
     }
   }
 
+  // Regression: `Magnify[image, s]` showed no picture at all (only the
+  // `Magnify[-Image-, s]` echo), also inside a fixed-size `Pane` — the way a
+  // Manipulate body switches to an archived photograph. The image is shown
+  // at `s` times its size.
+  #[test]
+  fn magnified_image_is_shown_scaled() {
+    clear_state();
+    for (code, size) in [
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]], 2]",
+        "width='40' height='60'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]], 1/2]",
+        "width='10' height='15'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}]]]",
+        "width='20' height='30'",
+      ),
+      (
+        "Magnify[Image[ConstantArray[0.5, {30, 20}], ImageSize -> {50, 75}], 2]",
+        "width='100' height='150'",
+      ),
+      (
+        "Pane[If[True, Magnify[Image[ConstantArray[0.5, {30, 20}]], 3], 0], \
+         ImageSize -> {100, 100}, Alignment -> Center]",
+        "width='60' height='90'",
+      ),
+    ] {
+      let r = woxi::interpret_with_stdout(code).unwrap();
+      let svg = r.graphics.expect("expected the image as graphics output");
+      assert!(svg.contains("<image"), "{code}: {svg}");
+      assert!(svg.contains(size), "{code}: {svg}");
+    }
+  }
+
+  // `ExportString` of a magnified image draws the raster at the magnified
+  // size (the image document's XML declaration kept the generic resize from
+  // applying, so it stayed at its own size).
+  #[test]
+  fn exported_magnified_image_is_scaled() {
+    clear_state();
+    let svg = interpret(
+      "ExportString[Magnify[Image[ConstantArray[0.5, {30, 20}]], 2], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(svg.contains("width='40' height='60'"), "{svg}");
+  }
+
+  // The CLI keeps the symbolic echo of a magnified image, like wolframscript.
+  #[test]
+  fn magnified_image_echo_in_cli() {
+    clear_state();
+    assert_eq!(
+      interpret("Magnify[Image[{{0, 1}, {1, 0}}], 2]").unwrap(),
+      "Magnify[-Image-, 2]"
+    );
+  }
+
   // Regression: an image's SVG writes its size in single quotes
   // (`width='20'`), which the pane layout didn't read, so `ExportString`
   // placed the picture as if it were 100 x 30.
@@ -1413,6 +1473,45 @@ mod image_processing {
       interpret("ImageDimensions[ImageResize[Graphics[Disk[]], {5, 5}]]")
         .unwrap(),
       "{5, 5}"
+    );
+  }
+
+  // Shrinking an image averages every source pixel an output pixel covers
+  // instead of point-sampling the two nearest ones, so a large reduction
+  // of a hard-edged shape keeps soft gray edges. Regression for an 18x
+  // reduction of a rasterized disk coming out as pure black and white.
+  #[test]
+  fn image_resize_downscale_averages_covered_pixels() {
+    clear_state();
+    // One white pixel in a 3x3 block is a ninth of the 1x1 result.
+    assert_eq!(
+      interpret(
+        "Chop[ImageData[ImageResize[Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}], 1]] - 1/9, 10^-6]"
+      )
+      .unwrap(),
+      "{{0}}"
+    );
+    // A 4x reduction of a shape whose edge does not fall on block
+    // boundaries yields intermediate gray levels.
+    assert_eq!(
+      interpret(
+        "Length[Union[Flatten[ImageData[ImageResize[Image[Table[If[i^2 + j^2 < 30^2, 1., 0.], {i, -60, 59}, {j, -60, 59}]], 30]]]]] > 2"
+      )
+      .unwrap(),
+      "True"
+    );
+    // A uniform image stays uniform under any reduction ratio.
+    assert_eq!(
+      interpret(
+        "Union[Round[Flatten[ImageData[ImageResize[Image[Table[0.5, {37}, {23}]], {7, 5}]]], 10^-12]]"
+      )
+      .unwrap(),
+      "{1/2}"
+    );
+    // Enlarging still interpolates linearly.
+    assert_eq!(
+      interpret("ImageData[ImageResize[Image[{{0., 1.}}], {4, 1}]]").unwrap(),
+      "{{0., 0.25, 0.75, 1.}}"
     );
   }
 
@@ -9796,6 +9895,43 @@ mod rasterize_any_expression {
     );
   }
 
+  // A `RasterSize -> {w, h}` around typeset text is a pane: the text keeps
+  // its own size (drawn at 144 dpi) and is centered instead of being
+  // stretched to fill the raster.
+  #[test]
+  fn raster_size_box_keeps_text_at_its_size() {
+    // The ink's {height, width, center row, center column}.
+    let ink = |opts: &str| {
+      interpret(&format!(
+        "p = Position[ImageData[Binarize[Rasterize[Style[\"key\", 20], \
+         {opts}]]], 0]; \
+         {{r1, r2}} = MinMax[p[[All, 1]]]; {{c1, c2}} = MinMax[p[[All, 2]]]; \
+         Round[{{r2 - r1, c2 - c1, (r1 + r2)/2, (c1 + c2)/2}}, 10]"
+      ))
+      .unwrap()
+    };
+    // At 144 dpi the 20pt text is about 40 pixels tall, centered in the
+    // 300 x 100 raster.
+    assert_eq!(
+      ink("RasterSize -> {300, 100}, ImageSize -> {300, 100}"),
+      "{30, 70, 50, 150}"
+    );
+    // An explicit ImageResolution sets the scale instead.
+    assert_eq!(
+      ink("RasterSize -> {300, 100}, ImageResolution -> 72"),
+      "{20, 30, 50, 150}"
+    );
+    // Text larger than the raster is cropped, not shrunk.
+    assert_eq!(
+      interpret(
+        "ImageDimensions[Rasterize[Style[\"a long line of text\", 20], \
+         RasterSize -> {40, 30}]]"
+      )
+      .unwrap(),
+      "{40, 30}"
+    );
+  }
+
   // Wolfram's Rasterize gives an RGB image (the drawing is composited on
   // white); Woxi's used to carry a redundant alpha channel.
   #[test]
@@ -11426,5 +11562,203 @@ mod image_value_positions {
        {{0.5, 0.5}, {2.5, 0.5}}, {{1.5, 0.5}, {2.5, 0.5}}, {{1.5, 0.5}}, \
        {{1.5, 0.5}}}"
     );
+  }
+}
+
+/// usvg draws `font-style="italic"` text with upright outlines when the
+/// family has no italic face (the embedded Atkinson fonts have none), so
+/// rasterizers slant such text themselves, the way browsers do.
+#[cfg(not(target_arch = "wasm32"))]
+mod synthetic_oblique_text {
+  use resvg::usvg::fontdb::{Database, FaceInfo, Language, Source, Style};
+  use std::borrow::Cow;
+  use woxi::functions::image_ast::{
+    load_embedded_fonts, rasterize_svg, synthesize_oblique_text,
+  };
+
+  fn embedded_fonts() -> Database {
+    let mut db = Database::new();
+    load_embedded_fonts(&mut db);
+    db
+  }
+
+  fn svg(body: &str) -> String {
+    format!(
+      "<svg width=\"100\" height=\"40\" xmlns=\"http://www.w3.org/2000/svg\">{body}</svg>"
+    )
+  }
+
+  #[test]
+  fn italic_text_is_skewed_about_its_anchor() {
+    let input = svg(
+      "<text x=\"20.5\" y=\"10\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
+    );
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(
+      out.contains(
+        "<text transform=\"translate(20.5 10) skewX(-14) translate(-20.5 -10)\" x=\"20.5\""
+      ),
+      "{out}"
+    );
+  }
+
+  #[test]
+  fn text_set_in_one_italic_tspan_is_skewed() {
+    // How a styled PlotLabel or AxesLabel is written.
+    let input = svg(
+      "<text x=\"50\" y=\"14\" font-family=\"sans-serif\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
+    );
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(out.contains("skewX(-14)"), "{out}");
+  }
+
+  #[test]
+  fn italic_inherited_from_a_group_is_skewed() {
+    let input =
+      svg("<g style=\"font-style: italic\"><text x=\"1\" y=\"2\">a</text></g>");
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(out.contains("translate(1 2) skewX(-14) translate(-1 -2)"));
+  }
+
+  #[test]
+  fn existing_transform_is_extended() {
+    let input = svg(
+      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-style=\"italic\">y</text>",
+    );
+    let out = synthesize_oblique_text(&input, &embedded_fonts());
+    assert!(
+      out.contains(
+        "transform=\"rotate(-90) translate(3 4) skewX(-14) translate(-3 -4)\""
+      ),
+      "{out}"
+    );
+    assert_eq!(out.matches("transform=").count(), 1, "{out}");
+  }
+
+  #[test]
+  fn upright_and_mixed_text_is_left_alone() {
+    let db = embedded_fonts();
+    for body in [
+      "<text x=\"1\" y=\"2\">plain</text>",
+      "<text x=\"1\" y=\"2\" font-weight=\"bold\">bold</text>",
+      // Mixed runs: a <tspan> cannot be transformed on its own.
+      "<text x=\"1\" y=\"2\"><tspan font-style=\"italic\">x</tspan>(t)</text>",
+      "<text x=\"1\" y=\"2\" font-style=\"italic\">a<tspan font-style=\"normal\">b</tspan></text>",
+    ] {
+      let input = svg(body);
+      let out = synthesize_oblique_text(&input, &db);
+      assert!(matches!(out, Cow::Borrowed(_)), "{body} became {out}");
+    }
+  }
+
+  #[test]
+  fn family_with_an_italic_face_is_not_skewed() {
+    let mut db = embedded_fonts();
+    db.push_face_info(FaceInfo {
+      id: resvg::usvg::fontdb::ID::dummy(),
+      source: Source::Binary(std::sync::Arc::new(Vec::<u8>::new())),
+      index: 0,
+      families: vec![(
+        "Slanted Sans".to_string(),
+        Language::English_UnitedStates,
+      )],
+      post_script_name: "SlantedSans-Italic".to_string(),
+      style: Style::Italic,
+      weight: resvg::usvg::fontdb::Weight::NORMAL,
+      stretch: resvg::usvg::fontdb::Stretch::Normal,
+      monospaced: false,
+    });
+    let input = svg(
+      "<text x=\"1\" y=\"2\" font-family=\"Slanted Sans\" font-style=\"italic\">a</text>",
+    );
+    let out = synthesize_oblique_text(&input, &db);
+    assert!(matches!(out, Cow::Borrowed(_)), "{out}");
+  }
+
+  #[test]
+  fn rasterized_italic_text_differs_from_upright_text() {
+    let upright = svg(
+      "<text x=\"10\" y=\"30\" font-family=\"sans-serif\" font-size=\"24\">Il</text>",
+    );
+    let italic = upright.replace("<text ", "<text font-style=\"italic\" ");
+    let pixels = |s: &str| match rasterize_svg(s, 72.0).unwrap() {
+      woxi::syntax::Expr::Image { ref data, .. } => data.clone(),
+      other => panic!("not an image: {other:?}"),
+    };
+    assert_ne!(pixels(&upright), pixels(&italic));
+  }
+
+  #[test]
+  fn styled_graphics_text_rasterizes_slanted() {
+    // End to end: Text[Style[..., Bold, Italic]] in Graphics.
+    let pixels = |style: &str| {
+      woxi::interpret(&format!(
+        "ImageData[Rasterize[Graphics[Text[Style[\"Il\", 24, {style}], {{0, 0}}], ImageSize -> 60]]]"
+      ))
+      .unwrap()
+    };
+    assert_ne!(pixels("Bold"), pixels("Bold, Italic"));
+  }
+}
+
+mod svg_default_font_family {
+  use std::sync::Arc;
+  use woxi::functions::image_ast::{
+    DEFAULT_SVG_FONT_FAMILY, load_embedded_fonts, svg_render_options,
+  };
+
+  /// The font families usvg resolves for each text span of `svg`.
+  fn span_families(svg: &str) -> Vec<Vec<String>> {
+    let mut db = resvg::usvg::fontdb::Database::new();
+    load_embedded_fonts(&mut db);
+    let tree =
+      resvg::usvg::Tree::from_str(svg, &svg_render_options(Arc::new(db)))
+        .unwrap();
+    fn walk(group: &resvg::usvg::Group, out: &mut Vec<Vec<String>>) {
+      for node in group.children() {
+        match node {
+          resvg::usvg::Node::Group(g) => walk(g, out),
+          resvg::usvg::Node::Text(t) => {
+            for chunk in t.chunks() {
+              for span in chunk.spans() {
+                out.push(
+                  span
+                    .font()
+                    .families()
+                    .iter()
+                    .map(std::string::ToString::to_string)
+                    .collect(),
+                );
+              }
+            }
+          }
+          _ => {}
+        }
+      }
+    }
+    let mut out = Vec::new();
+    walk(tree.root(), &mut out);
+    out
+  }
+
+  /// A `Graphics` `Text` without `FontFamily` is drawn as a bare `<text>`.
+  /// usvg used to give it its own default, "Times New Roman", so wherever
+  /// that font is installed (macOS, Windows) Woxi Studio, `Rasterize` and
+  /// `Export` drew such labels serif instead of in Woxi's sans default.
+  #[test]
+  fn bare_text_gets_default_sans_family() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="20" font-size="15">label</text></svg>"#;
+    let families = span_families(svg);
+    assert_ne!(families, Vec::<Vec<String>>::new());
+    for f in &families {
+      assert_eq!(f, &vec![format!("\"{DEFAULT_SVG_FONT_FAMILY}\"")]);
+    }
+  }
+
+  /// An explicit family still wins over the default.
+  #[test]
+  fn explicit_family_is_kept() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100" height="40"><text x="10" y="20" font-family="monospace">label</text></svg>"#;
+    assert_eq!(span_families(svg), vec![vec!["monospace".to_string()]]);
   }
 }
