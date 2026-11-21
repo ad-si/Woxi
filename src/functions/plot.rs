@@ -5073,7 +5073,28 @@ pub(crate) fn plot_labels_svg(
   // the tick labels of their edge.
   let bottom_label_top = axis_y + room_bottom + gap;
   let mut bottom_text_h = 0.0;
+  // A stacked-fraction label is a picture, at its natural size scaled to
+  // the rendering.
+  let picture_h = |label: &str| {
+    crate::functions::graphics::axes_label_picture_size(label)
+      .map(|(_, h)| h * sf)
+  };
+  let picture = |label: &str, cx: f64, cy: f64, rotated: bool| {
+    crate::functions::graphics::frame_label_picture_svg(
+      label, cx, cy, rotated, sf,
+    )
+  };
   if let Some(x_label) = &opts.frame_label_bottom
+    && let Some(h) = picture_h(x_label)
+  {
+    bottom_text_h = h;
+    labels_svg.push_str(&picture(
+      x_label,
+      plot_x0 + plot_w / 2.0,
+      bottom_label_top + h / 2.0,
+      false,
+    ));
+  } else if let Some(x_label) = &opts.frame_label_bottom
     && !x_label.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
@@ -5109,6 +5130,15 @@ pub(crate) fn plot_labels_svg(
     ));
   }
   if let Some(y_label) = &opts.frame_label_left
+    && let Some(h) = picture_h(y_label)
+  {
+    labels_svg.push_str(&picture(
+      y_label,
+      plot_x0 - room_left - gap - h / 2.0,
+      margin_top + plot_h / 2.0,
+      true,
+    ));
+  } else if let Some(y_label) = &opts.frame_label_left
     && !y_label.is_empty()
   {
     let cy = margin_top + plot_h / 2.0;
@@ -5192,6 +5222,15 @@ pub(crate) fn plot_labels_svg(
 
   // Top FrameLabel: 6 pt above the frame (and its tick labels).
   if let Some(top_label) = &opts.frame_label_top
+    && let Some(h) = picture_h(top_label)
+  {
+    labels_svg.push_str(&picture(
+      top_label,
+      plot_x0 + plot_w / 2.0,
+      margin_top - room_top - gap - h / 2.0,
+      false,
+    ));
+  } else if let Some(top_label) = &opts.frame_label_top
     && !top_label.is_empty()
   {
     let cx = plot_x0 + plot_w / 2.0;
@@ -5231,6 +5270,15 @@ pub(crate) fn plot_labels_svg(
   // Right FrameLabel: 6 pt right of the frame, reading upwards like the
   // left one (the glyphs rise to the left of the baseline).
   if let Some(right_label) = &opts.frame_label_right
+    && let Some(h) = picture_h(right_label)
+  {
+    labels_svg.push_str(&picture(
+      right_label,
+      plot_x0 + plot_w + room_right + gap + h / 2.0,
+      margin_top + plot_h / 2.0,
+      true,
+    ));
+  } else if let Some(right_label) = &opts.frame_label_right
     && !right_label.is_empty()
   {
     let cy = margin_top + plot_h / 2.0;
@@ -16237,6 +16285,22 @@ pub(crate) struct FrameLabels {
   /// Likewise for the top edge, e.g. a `Row[…]` legend whose entries
   /// embed small `Graphics`.
   pub top_graphic: Option<GraphicLabel>,
+  /// The bottom, left, top and right labels that typeset as a stacked
+  /// fraction (`Subscript[c, p]/Subscript[c, a][0]`), as a picture (a nested
+  /// `<svg>`) — drawn in place of the edge's inline text by the renderers
+  /// that can embed one.
+  pub pictures: [Option<String>; 4],
+}
+
+impl FrameLabels {
+  /// The label of `edge` (bottom, left, top, right) as the markup to draw:
+  /// its stacked-fraction picture when it has one, else its text.
+  pub(crate) fn markup(&self, edge: usize) -> String {
+    if let Some(picture) = &self.pictures[edge] {
+      return picture.clone();
+    }
+    [&self.bottom, &self.left, &self.top, &self.right][edge].clone()
+  }
 }
 
 /// Convert a single FrameLabel entry to a label string. `None` and `False`
@@ -16249,6 +16313,15 @@ fn frame_label_entry(e: &Expr) -> String {
   // A frame label is typeset like an axis label: a mathematical entry
   // (`i`, `Subscript[q, i][t]`) in TraditionalForm italics.
   crate::functions::graphics::frame_label_text(e).unwrap_or_default()
+}
+
+/// A `FrameLabel` entry that TraditionalForm typesets as a stacked fraction,
+/// as a picture — the same typesetting an `AxesLabel` fraction gets.
+fn frame_label_picture(e: &Expr) -> Option<String> {
+  if matches!(e, Expr::Identifier(s) if s == "None" || s == "False") {
+    return None;
+  }
+  crate::functions::graphics::axes_label_fraction_picture(e)
 }
 
 /// A `FrameLabel` entry that is a `Grid[…]`/`TableForm[…]` — a table meant
@@ -16789,23 +16862,26 @@ pub(crate) fn parse_frame_option(value: &Expr) -> bool {
 
 pub(crate) fn apply_frame_label_option(value: &Expr, opts: &mut PlotOptions) {
   let fl = parse_frame_label(value);
-  if !fl.bottom.is_empty() {
-    opts.frame_label_bottom = Some(fl.bottom);
+  // A stacked-fraction label is kept as its picture markup, which the
+  // label drawing and padding recognize (`axes_label_picture_size`).
+  let [bottom, left, top, right] = std::array::from_fn(|edge| fl.markup(edge));
+  if !bottom.is_empty() {
+    opts.frame_label_bottom = Some(bottom);
   }
   if fl.bottom_graphic.is_some() {
     opts.frame_label_bottom_graphic = fl.bottom_graphic;
   }
-  if !fl.left.is_empty() {
-    opts.frame_label_left = Some(fl.left);
+  if !left.is_empty() {
+    opts.frame_label_left = Some(left);
   }
-  if !fl.top.is_empty() {
-    opts.frame_label_top = Some(fl.top);
+  if !top.is_empty() {
+    opts.frame_label_top = Some(top);
   }
   if fl.top_graphic.is_some() {
     opts.frame_label_top_graphic = fl.top_graphic;
   }
-  if !fl.right.is_empty() {
-    opts.frame_label_right = Some(fl.right);
+  if !right.is_empty() {
+    opts.frame_label_right = Some(right);
   }
 }
 
@@ -16834,17 +16910,21 @@ fn parse_frame_label_edges(value: &Expr) -> FrameLabels {
     {
       if let Some(e) = lr.first() {
         out.left = frame_label_entry(e);
+        out.pictures[1] = frame_label_picture(e);
       }
       if let Some(e) = lr.get(1) {
         out.right = frame_label_entry(e);
+        out.pictures[3] = frame_label_picture(e);
       }
       if let Some(e) = bt.first() {
         out.bottom = frame_label_entry(e);
         out.bottom_graphic = frame_label_graphic(e);
+        out.pictures[0] = frame_label_picture(e);
       }
       if let Some(e) = bt.get(1) {
         out.top = frame_label_entry(e);
         out.top_graphic = frame_label_graphic(e);
+        out.pictures[2] = frame_label_picture(e);
       }
       return out;
     }
@@ -16852,22 +16932,27 @@ fn parse_frame_label_edges(value: &Expr) -> FrameLabels {
     if let Some(e) = items.first() {
       out.bottom = frame_label_entry(e);
       out.bottom_graphic = frame_label_graphic(e);
+      out.pictures[0] = frame_label_picture(e);
     }
     if let Some(e) = items.get(1) {
       out.left = frame_label_entry(e);
+      out.pictures[1] = frame_label_picture(e);
     }
     // Flat 4-element form `{bottom, left, top, right}`.
     if let Some(e) = items.get(2) {
       out.top = frame_label_entry(e);
       out.top_graphic = frame_label_graphic(e);
+      out.pictures[2] = frame_label_picture(e);
     }
     if let Some(e) = items.get(3) {
       out.right = frame_label_entry(e);
+      out.pictures[3] = frame_label_picture(e);
     }
   } else {
     // A bare label labels the bottom edge.
     out.bottom = frame_label_entry(&val);
     out.bottom_graphic = frame_label_graphic(&val);
+    out.pictures[0] = frame_label_picture(&val);
   }
   out
 }
