@@ -35205,7 +35205,7 @@ pub fn combine_layout_svgs(
   // `Spacings -> {0, 1}` stacks two pictures one em apart.
   let ems = |spec: SpacingSpec| match spec {
     SpacingSpec::Points(s) => SpacingSpec::Points(s * GRID_EM_POINTS * 0.75),
-    scaled => scaled,
+    scaled @ SpacingSpec::Scaled(_) => scaled,
   };
   if opts.spacings_explicit {
     opts.h_spacing = ems(opts.h_spacing);
