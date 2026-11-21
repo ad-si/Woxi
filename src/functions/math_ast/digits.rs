@@ -360,169 +360,252 @@ fn extract_sqrt_integer(expr: &Expr) -> Option<i128> {
   }
 }
 
-/// Match 1/√d (Power[d, Rational[-1, 2]], the canonical form of
-/// Sqrt[d]/d) and return d.
-fn extract_reciprocal_sqrt_integer(expr: &Expr) -> Option<i128> {
-  let rational_minus_half = |e: &Expr| -> bool {
-    matches!(e, Expr::FunctionCall { name, args }
-      if name == "Rational"
-        && args.len() == 2
-        && matches!(args[0], Expr::Integer(-1))
-        && matches!(args[1], Expr::Integer(2)))
-  };
-  match expr {
-    Expr::FunctionCall { name, args } if name == "Power" && args.len() == 2 => {
-      if let Expr::Integer(d) = &args[0]
-        && rational_minus_half(&args[1])
-      {
-        return Some(*d);
-      }
-      None
-    }
-    Expr::BinaryOp {
-      op: BinaryOperator::Power,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(d) = left.as_ref()
-        && rational_minus_half(right)
-      {
-        return Some(*d);
-      }
-      None
-    }
-    _ => None,
-  }
-}
-
 /// Extract a quadratic-irrational expression of the form `(p + q · √d) / r`
 /// where `p`, `q`, `r` are integers and `d` is a positive integer (not a
 /// perfect square — caller verifies). Returns `None` if the input doesn't
 /// match.
+///
+/// The expression may be any sum, product, quotient or integer power of
+/// rationals and square roots of one rational radicand, e.g.
+/// `4/7 + 1/Sqrt[5]`, `29/5 + 11/(5 Sqrt[5])` or `(1 + Sqrt[5])/(3 Sqrt[5])`.
 fn extract_quadratic_irrational(
   expr: &Expr,
 ) -> Option<(i128, i128, i128, i128)> {
-  // 1/√d = √d/d = (0 + 1·√d)/d
-  if let Some(d) = extract_reciprocal_sqrt_integer(expr) {
-    return Some((0, 1, d, d));
+  let quad = QuadraticSurd::of(expr, 0)?;
+  if quad.q.0 == 0 || quad.d == 0 {
+    return None;
   }
-  // Peel off outer scale: (scale_num/scale_den) · inner, collecting the
-  // overall Rational coefficient and whatever Plus-sum remains.
-  let (inner_owned, scale_num, scale_den): (Expr, i128, i128) = match expr {
-    Expr::BinaryOp {
-      op: BinaryOperator::Divide,
-      left,
-      right,
-    } => {
-      if let Expr::Integer(r) = right.as_ref() {
-        (left.as_ref().clone(), 1, *r)
-      } else {
-        (expr.clone(), 1, 1)
-      }
+  // (pn/pd) + (qn/qd)·√d = (pn·r/pd + qn·r/qd·√d) / r with r = lcm(pd, qd).
+  let (pn, pd) = quad.p;
+  let (qn, qd) = quad.q;
+  let r = (pd / gcd_i128(pd, qd).max(1)).checked_mul(qd)?;
+  let p = pn.checked_mul(r / pd)?;
+  let q = qn.checked_mul(r / qd)?;
+  let g = gcd_i128(gcd_i128(p, q), r).max(1);
+  Some((p / g, q / g, quad.d, r / g))
+}
+
+/// An exact number `p + q·√d` with rational `p` and `q` (as reduced
+/// numerator/denominator pairs with a positive denominator) and an integer
+/// radicand `d`, where `d == 0` means no radical has been seen yet.
+#[derive(Clone, Copy)]
+struct QuadraticSurd {
+  p: (i128, i128),
+  q: (i128, i128),
+  d: i128,
+}
+
+impl QuadraticSurd {
+  /// Deepest nesting of Plus/Times/Power that is decomposed.
+  const MAX_DEPTH: usize = 64;
+
+  fn rational(r: (i128, i128)) -> Self {
+    QuadraticSurd {
+      p: r,
+      q: (0, 1),
+      d: 0,
     }
-    Expr::FunctionCall { name, args } if name == "Times" => {
-      let mut scale_n: i128 = 1;
-      let mut scale_d: i128 = 1;
-      let mut remaining: Vec<Expr> = Vec::new();
-      for a in args {
-        match a {
-          Expr::Integer(n) => scale_n = scale_n.checked_mul(*n)?,
-          Expr::FunctionCall { name, args: rargs }
-            if name == "Rational" && rargs.len() == 2 =>
-          {
-            if let (Expr::Integer(n), Expr::Integer(d)) = (&rargs[0], &rargs[1])
-            {
-              scale_n = scale_n.checked_mul(*n)?;
-              scale_d = scale_d.checked_mul(*d)?;
-            } else {
-              return None;
-            }
+  }
+
+  fn frac(n: i128, d: i128) -> Option<(i128, i128)> {
+    if d == 0 {
+      return None;
+    }
+    let g = gcd_i128(n, d).max(1);
+    let (n, d) = (n / g, d / g);
+    if d < 0 {
+      Some((n.checked_neg()?, d.checked_neg()?))
+    } else {
+      Some((n, d))
+    }
+  }
+
+  fn frac_add(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+    let n = a.0.checked_mul(b.1)?.checked_add(b.0.checked_mul(a.1)?)?;
+    Self::frac(n, a.1.checked_mul(b.1)?)
+  }
+
+  fn frac_mul(a: (i128, i128), b: (i128, i128)) -> Option<(i128, i128)> {
+    let g1 = gcd_i128(a.0, b.1).max(1);
+    let g2 = gcd_i128(b.0, a.1).max(1);
+    Self::frac(
+      (a.0 / g1).checked_mul(b.0 / g2)?,
+      (a.1 / g2).checked_mul(b.1 / g1)?,
+    )
+  }
+
+  /// The radicand two operands share, or `None` for two different ones.
+  fn common_radicand(a: i128, b: i128) -> Option<i128> {
+    match (a, b) {
+      (0, d) | (d, 0) => Some(d),
+      (a, b) if a == b => Some(a),
+      _ => None,
+    }
+  }
+
+  fn add(self, other: Self) -> Option<Self> {
+    Some(QuadraticSurd {
+      p: Self::frac_add(self.p, other.p)?,
+      q: Self::frac_add(self.q, other.q)?,
+      d: Self::common_radicand(self.d, other.d)?,
+    })
+  }
+
+  fn neg(self) -> Option<Self> {
+    Some(QuadraticSurd {
+      p: (self.p.0.checked_neg()?, self.p.1),
+      q: (self.q.0.checked_neg()?, self.q.1),
+      d: self.d,
+    })
+  }
+
+  /// (p1 + q1√d)(p2 + q2√d) = (p1·p2 + q1·q2·d) + (p1·q2 + p2·q1)√d
+  fn mul(self, other: Self) -> Option<Self> {
+    let d = Self::common_radicand(self.d, other.d)?;
+    let qq = Self::frac_mul(Self::frac_mul(self.q, other.q)?, (d, 1))?;
+    Some(QuadraticSurd {
+      p: Self::frac_add(Self::frac_mul(self.p, other.p)?, qq)?,
+      q: Self::frac_add(
+        Self::frac_mul(self.p, other.q)?,
+        Self::frac_mul(other.p, self.q)?,
+      )?,
+      d,
+    })
+  }
+
+  /// 1 / (p + q√d) = (p − q√d) / (p² − q²·d)
+  fn recip(self) -> Option<Self> {
+    let norm = Self::frac_add(
+      Self::frac_mul(self.p, self.p)?,
+      Self::frac_mul(
+        Self::frac_mul(self.q, self.q)?,
+        (self.d.checked_neg()?, 1),
+      )?,
+    )?;
+    if norm.0 == 0 {
+      return None;
+    }
+    let inv = Self::frac(norm.1, norm.0)?;
+    Some(QuadraticSurd {
+      p: Self::frac_mul(self.p, inv)?,
+      q: Self::frac_mul((self.q.0.checked_neg()?, self.q.1), inv)?,
+      d: self.d,
+    })
+  }
+
+  fn pow(self, exponent: i128) -> Option<Self> {
+    if exponent.unsigned_abs() > Self::MAX_DEPTH as u128 {
+      return None;
+    }
+    let base = if exponent < 0 { self.recip()? } else { self };
+    let mut result = Self::rational((1, 1));
+    for _ in 0..exponent.unsigned_abs() {
+      result = result.mul(base)?;
+    }
+    Some(result)
+  }
+
+  /// √r or 1/√r for a positive rational r = n/m: √(n·m)/m resp. √(n·m)/n.
+  fn sqrt_of_rational((n, m): (i128, i128), inverse: bool) -> Option<Self> {
+    if n <= 0 {
+      return None;
+    }
+    let radicand = n.checked_mul(m)?;
+    let root = integer_sqrt(radicand);
+    let scale = if inverse { n } else { m };
+    if root.checked_mul(root)? == radicand {
+      return Some(Self::rational(Self::frac(root, scale)?));
+    }
+    Some(QuadraticSurd {
+      p: (0, 1),
+      q: Self::frac(1, scale)?,
+      d: radicand,
+    })
+  }
+
+  fn of(expr: &Expr, depth: usize) -> Option<Self> {
+    if depth > Self::MAX_DEPTH {
+      return None;
+    }
+    let sub = |e: &Expr| Self::of(e, depth + 1);
+    let as_rational = |e: &Expr| -> Option<(i128, i128)> {
+      match e {
+        Expr::Integer(n) => Some((*n, 1)),
+        Expr::FunctionCall { name, args }
+          if name == "Rational" && args.len() == 2 =>
+        {
+          match (&args[0], &args[1]) {
+            (Expr::Integer(n), Expr::Integer(d)) => Self::frac(*n, *d),
+            _ => None,
           }
-          _ => remaining.push(a.clone()),
         }
+        _ => None,
       }
-      let inner = match remaining.len() {
-        0 => return None,
-        1 => remaining.into_iter().next().unwrap(),
-        _ => times(remaining),
-      };
-      (inner, scale_n, scale_d)
+    };
+    let power = |base: &Expr, exponent: &Expr| -> Option<Self> {
+      match exponent {
+        Expr::Integer(k) => sub(base)?.pow(*k),
+        _ => match as_rational(exponent)? {
+          (1, 2) => Self::sqrt_of_rational(as_rational(base)?, false),
+          (-1, 2) => Self::sqrt_of_rational(as_rational(base)?, true),
+          _ => None,
+        },
+      }
+    };
+    if let Some(r) = as_rational(expr) {
+      return Some(Self::rational(r));
     }
-    _ => (expr.clone(), 1, 1),
-  };
-  let inner = &inner_owned;
-  // Inner: a sum of rationals and rational multiples of one Sqrt[d], as
-  // the exact fractions p = pn/pd and q = qn/qd.
-  let rational = |e: &Expr| -> Option<(i128, i128)> {
-    match e {
-      Expr::Integer(n) => Some((*n, 1)),
-      Expr::FunctionCall { name, args }
-        if name == "Rational" && args.len() == 2 =>
-      {
-        match (&args[0], &args[1]) {
-          (Expr::Integer(n), Expr::Integer(d)) => Some((*n, *d)),
+    match expr {
+      Expr::Identifier(s) | Expr::Constant(s) if s == "GoldenRatio" => {
+        Some(QuadraticSurd {
+          p: (1, 2),
+          q: (1, 2),
+          d: 5,
+        })
+      }
+      Expr::FunctionCall { name, args } => match (name.as_str(), &args[..]) {
+        ("Sqrt", [x]) => power(
+          x,
+          &Expr::FunctionCall {
+            name: "Rational".into(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+          },
+        ),
+        ("Power", [b, e]) => power(b, e),
+        ("Plus", terms) if !terms.is_empty() => {
+          let mut acc = Self::rational((0, 1));
+          for t in terms {
+            acc = acc.add(sub(t)?)?;
+          }
+          Some(acc)
+        }
+        ("Times", factors) if !factors.is_empty() => {
+          let mut acc = Self::rational((1, 1));
+          for f in factors {
+            acc = acc.mul(sub(f)?)?;
+          }
+          Some(acc)
+        }
+        _ => None,
+      },
+      Expr::BinaryOp { op, left, right } => {
+        let (l, r) = (left.as_ref(), right.as_ref());
+        match op {
+          BinaryOperator::Plus => sub(l)?.add(sub(r)?),
+          BinaryOperator::Minus => sub(l)?.add(sub(r)?.neg()?),
+          BinaryOperator::Times => sub(l)?.mul(sub(r)?),
+          BinaryOperator::Divide => sub(l)?.mul(sub(r)?.recip()?),
+          BinaryOperator::Power => power(l, r),
           _ => None,
         }
       }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => sub(operand)?.neg(),
       _ => None,
     }
-  };
-  let add =
-    |(an, ad): (i128, i128), (bn, bd): (i128, i128)| -> Option<(i128, i128)> {
-      let n = an.checked_mul(bd)?.checked_add(bn.checked_mul(ad)?)?;
-      let d = ad.checked_mul(bd)?;
-      let g = gcd_i128(n, d).max(1);
-      Some((n / g, d / g))
-    };
-  let (mut p, mut q): ((i128, i128), (i128, i128)) = ((0, 1), (0, 1));
-  let mut d: i128 = 0;
-  let terms: Vec<&Expr> = match inner {
-    Expr::BinaryOp {
-      op: BinaryOperator::Plus,
-      left,
-      right,
-    } => vec![left.as_ref(), right.as_ref()],
-    Expr::FunctionCall { name, args } if name == "Plus" => {
-      args.iter().collect()
-    }
-    _ => vec![inner],
-  };
-  for t in &terms {
-    if let Some(r) = rational(t) {
-      p = add(p, r)?;
-      continue;
-    }
-    // Sqrt[d], or k * Sqrt[d] (canonically Times[k, Sqrt[d]]).
-    let (coeff, sqrt_expr) = match t {
-      Expr::BinaryOp {
-        op: BinaryOperator::Times,
-        left,
-        right,
-      } => (rational(left)?, right.as_ref()),
-      Expr::FunctionCall { name, args }
-        if name == "Times" && args.len() == 2 =>
-      {
-        (rational(&args[0])?, &args[1])
-      }
-      _ => ((1, 1), *t),
-    };
-    let dd = extract_sqrt_integer(sqrt_expr)?;
-    q = add(q, coeff)?;
-    if d != 0 && d != dd {
-      return None;
-    }
-    d = dd;
   }
-  if q.0 == 0 || d == 0 {
-    return None;
-  }
-  // Compose with the outer scale: (scale_num/scale_den) · (p + q√d)
-  //   = (sn·pn·qd + sn·qn·pd·√d) / (sd·pd·qd).
-  let final_p = scale_num.checked_mul(p.0)?.checked_mul(q.1)?;
-  let final_q = scale_num.checked_mul(q.0)?.checked_mul(p.1)?;
-  let final_r = scale_den.checked_mul(p.1)?.checked_mul(q.1)?;
-  let g = gcd_i128(gcd_i128(final_p, final_q), final_r).max(1);
-  Some((final_p / g, final_q / g, d, final_r / g))
 }
 
 fn is_perfect_square(d: i128) -> bool {
@@ -1707,59 +1790,22 @@ fn apply_exponent(n: i128, d: i128, exp: i32) -> Option<(i128, i128)> {
 
 /// Compute RealDigits for a rational number in an arbitrary base.
 fn real_digits_rational_base(
-  numer: i128,
-  denom: i128,
+  numer: &BigInt,
+  denom: &BigInt,
   base: i128,
 ) -> (Vec<Expr>, i128) {
   use std::collections::HashMap;
 
-  let n = numer.abs();
   let d = denom.abs();
-
-  // Compute exponent: number of digits in integer part
-  let integer_part = n / d;
-
-  let exponent: i128 = if integer_part == 0 {
-    // For numbers < 1, exponent is 0 or negative
-    // Count leading zeros after decimal point
-    let mut temp = n * base;
-    let mut leading_zeros: i128 = 0;
-    while temp < d && temp > 0 {
-      leading_zeros += 1;
-      temp *= base;
-    }
-    -leading_zeros
-  } else {
-    // Count digits in integer part
-    let mut count = 0i128;
-    let mut temp = integer_part;
-    while temp > 0 {
-      count += 1;
-      temp /= base;
-    }
-    count
-  };
-
-  // Normalize: bring remainder into [0, d) range and extract integer part digits
-  let mut remainder = n;
-  let int_part = remainder / d;
-  remainder %= d;
-
-  // Extract integer part digits
-  let mut int_digits: Vec<i128> = Vec::new();
-  if int_part > 0 {
-    let mut temp = int_part;
-    while temp > 0 {
-      int_digits.push(temp % base);
-      temp /= base;
-    }
-    int_digits.reverse();
-  }
+  let n = numer.abs();
+  let (int_part, mut remainder) = (&n / &d, &n % &d);
+  let (exponent, int_digits) =
+    big_rational_exponent(&int_part, &remainder, &d, base);
 
   // A pure fraction starts at its first nonzero digit: the leading zeros
   // are the (negative) exponent, not digits, and the recurring block is
   // counted from there (RealDigits[1/7, 2] is {{{1, 0, 0}}, -2}).
-  if int_part == 0 {
+  if int_part.is_zero() {
     for _ in 0..(-exponent) {
       remainder *= base;
     }
@@ -1768,24 +1814,16 @@ fn real_digits_rational_base(
   // Now do long division for the fractional part
   // Track remainder -> position for cycle detection
   let mut digits: Vec<i128> = int_digits;
-  let mut remainder_positions: HashMap<i128, usize> = HashMap::new();
+  let mut remainder_positions: HashMap<BigInt, usize> = HashMap::new();
   let mut cycle_start: Option<usize> = None;
 
-  loop {
-    if remainder == 0 {
-      break;
-    }
-
+  while !remainder.is_zero() {
     if let Some(&pos) = remainder_positions.get(&remainder) {
       cycle_start = Some(pos);
       break;
     }
-
-    remainder_positions.insert(remainder, digits.len());
-    remainder *= base;
-    let digit = remainder / d;
-    remainder %= d;
-    digits.push(digit);
+    remainder_positions.insert(remainder.clone(), digits.len());
+    digits.push(next_long_division_digit(&mut remainder, &d, base));
   }
 
   // Build the result
@@ -1817,6 +1855,48 @@ fn real_digits_rational_base(
       digits.iter().map(|&d| Expr::Integer(d)).collect();
     (digit_exprs, exponent)
   }
+}
+
+/// The RealDigits exponent of the exact value `int_part + remainder / d`
+/// (`0 <= remainder < d`) in `base` — the number of digits left of the
+/// point, or minus the number of leading fractional zeros — together with
+/// the base-`base` digits of `int_part` (empty when it is zero).
+fn big_rational_exponent(
+  int_part: &BigInt,
+  remainder: &BigInt,
+  d: &BigInt,
+  base: i128,
+) -> (i128, Vec<i128>) {
+  if int_part.is_zero() {
+    let mut temp = remainder * base;
+    let mut leading_zeros: i128 = 0;
+    while temp < *d && temp.is_positive() {
+      leading_zeros += 1;
+      temp *= base;
+    }
+    (-leading_zeros, Vec::new())
+  } else {
+    let digits: Vec<i128> = int_part
+      .to_radix_be(base as u32)
+      .1
+      .into_iter()
+      .map(i128::from)
+      .collect();
+    (digits.len() as i128, digits)
+  }
+}
+
+/// One step of base-`base` long division by `d`: the next digit, leaving
+/// the new remainder in `remainder`.
+fn next_long_division_digit(
+  remainder: &mut BigInt,
+  d: &BigInt,
+  base: i128,
+) -> i128 {
+  *remainder *= base;
+  let digit = &*remainder / d;
+  *remainder %= d;
+  digit.to_i128().unwrap_or(0)
 }
 
 /// RealDigits[x, base, num_digits] — extract decimal digits of a real number.
@@ -2009,7 +2089,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         | Expr::Real(_)
         | Expr::BigFloat(..)
     )
-    && expr_to_rational(expr).is_none()
+    && expr_to_big_rational(expr).is_none()
     && crate::functions::predicate_ast::is_numeric_q(expr)
   {
     crate::emit_message(
@@ -2130,7 +2210,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // the f64 rounding tail (…5,4,9,9,9,…) that the astro-float path produces
   // from the raw bit pattern.
   let rational_from_real = if let Expr::Real(r) = &abs_expr {
-    real_to_rational(r.abs())
+    real_to_rational(r.abs()).map(|(n, d)| (BigInt::from(n), BigInt::from(d)))
   } else {
     None
   };
@@ -2141,9 +2221,11 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let treat_as_explicit = rational_from_real.is_some() || explicit_num_digits;
 
   // For rationals, use long division with cycle detection
-  if let Some((numer, denom)) =
-    rational_from_real.or_else(|| expr_to_rational(&abs_expr))
-    && denom != 0
+  if let Some((numer, denom)) = rational_from_real
+    .clone()
+    .or_else(|| expr_to_big_rational(&abs_expr))
+    .or_else(|| expr_to_big_rational(expr))
+    && !denom.is_zero()
   {
     if treat_as_explicit {
       // With explicit num_digits: use long division and produce exactly
@@ -2151,31 +2233,15 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // The rational long division already gives us digits starting
       // from the most significant, but the integer part may be 0 so
       // we need to generate enough fractional digits.
-      let mut remainder = numer.abs();
       let d = denom.abs();
-      let int_part = remainder / d;
-      remainder %= d;
+      let n = numer.abs();
+      let (int_part, mut remainder) = (&n / &d, &n % &d);
 
       // Determine exponent from integer part (Wolfram convention: number
       // of digits to the left of the decimal point, so first digit sits
       // at position `exponent - 1`).
-      let exponent: i128 = if int_part == 0 {
-        let mut temp = remainder * base;
-        let mut leading_zeros: i128 = 0;
-        while temp < d && temp > 0 {
-          leading_zeros += 1;
-          temp *= base;
-        }
-        -leading_zeros
-      } else {
-        let mut count = 0i128;
-        let mut temp = int_part;
-        while temp > 0 {
-          count += 1;
-          temp /= base;
-        }
-        count
-      };
+      let (exponent, int_digits) =
+        big_rational_exponent(&int_part, &remainder, &d, base);
 
       // When the caller provides `start_pos = p`, we need to collect
       // digits at positions p, p-1, …, p-num_digits+1. Pre-extract more
@@ -2198,19 +2264,10 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       };
 
       // Extract integer part digits
-      let mut digits: Vec<i128> = Vec::new();
-      if int_part > 0 {
-        let mut temp = int_part;
-        let mut int_digs = Vec::new();
-        while temp > 0 {
-          int_digs.push(temp % base);
-          temp /= base;
-        }
-        int_digs.reverse();
-        digits.extend(int_digs);
-      } else {
+      let mut digits: Vec<i128> = int_digits;
+      if int_part.is_zero() {
         // Skip leading fractional zeros (they're accounted for in exponent)
-        while remainder > 0 && remainder * base < d {
+        while remainder.is_positive() && &remainder * base < d {
           remainder *= base;
         }
       }
@@ -2231,10 +2288,7 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
       // Generate up to `max_known` known digits.
       while digits.len() < max_known {
-        remainder *= base;
-        let digit = remainder / d;
-        remainder %= d;
-        digits.push(digit);
+        digits.push(next_long_division_digit(&mut remainder, &d, base));
       }
       digits.truncate(max_known);
 
@@ -2281,7 +2335,8 @@ pub fn real_digits_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         vec![Expr::List(digit_exprs.into()), Expr::Integer(exponent)].into(),
       ));
     }
-    let (digit_list, exponent) = real_digits_rational_base(numer, denom, base);
+    let (digit_list, exponent) =
+      real_digits_rational_base(&numer, &denom, base);
     return Ok(Expr::List(
       vec![Expr::List(digit_list.into()), Expr::Integer(exponent)].into(),
     ));
