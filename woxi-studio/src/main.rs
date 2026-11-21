@@ -6996,12 +6996,60 @@ fn instantiate_stored_manipulate(
   // when the file was last saved (see `apply_saved_variables`).
   let saved_vars =
     woxi::notebook::extract_saved_manipulate_variables(stored_output);
-  if saved_vars.is_empty() {
-    state.reevaluate();
-  } else {
-    state.apply_saved_variables(&saved_vars);
-  }
+  state.restore_saved_variables(&saved_vars);
+  clamp_restored_values_to_live_ranges(&mut state, stored_output);
+  state.reevaluate();
   Some(state)
+}
+
+/// A slider bounded by data the notebook computes — `{i, 1, Length[runs],
+/// 1}` over a list grown from `SeedRandom`/`RandomInteger` calls — gets a
+/// different range here than in the author's session whenever that data
+/// cannot be reproduced (Woxi's random streams differ from Wolfram's). The
+/// saved position then refers to Wolfram's range and can lie past the end
+/// of the live one, which would index beyond the data Woxi computed. When
+/// the dump's "Specifications" show that the saved position was within the
+/// widget's own range back then, but the live range differs, the position
+/// is clamped into the live range. A saved value outside an unchanged range
+/// is genuine widget state and stays as it is.
+fn clamp_restored_values_to_live_ranges(
+  state: &mut manipulate::ManipulateState,
+  stored_output: &str,
+) {
+  let out_of_range = |c: &manipulate::ControlState| {
+    matches!(c, manipulate::ControlState::Continuous { min, max, current, .. }
+      if *current < *min || *current > *max)
+  };
+  if !state.controls.iter().any(out_of_range) {
+    return;
+  }
+  let Some(saved) =
+    woxi::notebook::reconstruct_manipulate_from_box_dump(stored_output)
+      .and_then(|code| woxi::interpret_to_expr(&code).ok())
+      .and_then(|expr| {
+        manipulate::ManipulateState::from_expr_unrendered(&expr)
+      })
+  else {
+    return;
+  };
+  for control in state.controls.iter_mut().filter(|c| out_of_range(c)) {
+    let Some(manipulate::ControlState::Continuous {
+      min: s_min,
+      max: s_max,
+      ..
+    }) = saved.controls.iter().find(|s| s.name() == control.name())
+    else {
+      continue;
+    };
+    if let manipulate::ControlState::Continuous {
+      min, max, current, ..
+    } = control
+      && (*s_min != *min || *s_max != *max)
+      && (*s_min..=*s_max).contains(current)
+    {
+      *current = current.clamp(*min, *max);
+    }
+  }
 }
 
 /// A slider bounded by something the live source cannot resolve here —
@@ -34893,6 +34941,69 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     match &state.controls[..] {
       [manipulate::ControlState::Continuous { current, .. }] => {
         assert_eq!(*current, 0.8, "saved value must load, not the default 0");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+  }
+
+  /// Checked a randomly sampled Wolfram Demonstration whose slider walks
+  /// through a list the `Initialization` grows from seeded random draws
+  /// (`{i, 1, Length[runs], 1}`). Woxi's random stream differs from
+  /// Wolfram's, so the list — and the slider's range — came out shorter
+  /// here, while the saved position pointed far past its end: every render
+  /// failed with `Part::partw`. A saved position inside the range the dump
+  /// recorded, but outside a live range that differs from it, is clamped.
+  #[test]
+  fn stored_dump_clamps_saved_value_into_a_diverged_live_range() {
+    let code = r#"Manipulate[
+      runs[[i]],
+      {i, 1, Length[runs], 1},
+      Initialization :> (runs = Range[10, 50, 10])
+    ]"#;
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`i$$ = 60}, \n\
+      \"Body\" :> Part[$CellContext`runs, $CellContext`i$$], \n\
+      \"Specifications\" :> {{{$CellContext`i$$, 60}, 1, 80, 1}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate(code, dump).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    match &state.controls[..] {
+      [manipulate::ControlState::Continuous { current, max, .. }] => {
+        assert_eq!(*max, 5.0);
+        assert_eq!(*current, 5.0, "saved 60 must clamp to the live end 5");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
+    let render = state.check_render().expect("render");
+    assert!(
+      render.warnings.is_empty(),
+      "warnings: {:?}",
+      render.warnings
+    );
+    assert_eq!(render.result, "50");
+  }
+
+  /// The clamp only applies when the range itself diverged: with the same
+  /// range as the dump, a saved value outside it is the widget's genuine
+  /// state (Wolfram keeps such a value too) and loads unchanged.
+  #[test]
+  fn stored_dump_keeps_out_of_range_saved_value_on_unchanged_range() {
+    let code = r#"Manipulate[x, {x, 0, 1}]"#;
+    let dump = "DynamicModuleBox[{}, DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`x$$ = 3}, \n\
+      \"Body\" :> $CellContext`x$$, \n\
+      \"Specifications\" :> {{$CellContext`x$$, 0, 1}}, \n\
+      \"Options\" :> {}],\n\
+      DynamicModuleValues:>{}]]";
+    let state =
+      instantiate_stored_manipulate(code, dump).expect("should build a widget");
+    match &state.controls[..] {
+      [manipulate::ControlState::Continuous { current, .. }] => {
+        assert_eq!(*current, 3.0);
       }
       other => panic!("unexpected controls: {other:?}"),
     }
