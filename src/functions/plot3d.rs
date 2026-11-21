@@ -1845,6 +1845,47 @@ pub(crate) fn triangle_normal(
   }
 }
 
+/// The part of a sampled surface triangle `tri` that a `RegionFunction`
+/// keeps, given which corners are inside (`ins`, at least one of them).
+/// Each edge with one end inside and one outside crosses the region's
+/// edge where bisection along the surface (`surface_at`) finds it.
+/// Returns the clipped polygon and the cut points along the region's edge.
+fn clip_surface_triangle(
+  tri: [[f64; 3]; 3],
+  ins: [bool; 3],
+  surface_at: &dyn Fn(f64, f64) -> Option<[f64; 3]>,
+  inside: &dyn Fn(&[f64; 3]) -> bool,
+) -> (Vec<[f64; 3]>, Vec<[f64; 3]>) {
+  let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
+    let (mut lo, mut hi) = (a, b); // lo inside, hi outside
+    for _ in 0..12 {
+      let mx = f64::midpoint(lo[0], hi[0]);
+      let my = f64::midpoint(lo[1], hi[1]);
+      match surface_at(mx, my) {
+        Some(m) if inside(&m) => lo = m,
+        Some(m) => hi = m,
+        None => hi = [mx, my, f64::midpoint(lo[2], hi[2])],
+      }
+    }
+    lo
+  };
+  let mut poly: Vec<[f64; 3]> = Vec::new();
+  let mut cut: Vec<[f64; 3]> = Vec::new();
+  for e in 0..3 {
+    let (a, b) = (tri[e], tri[(e + 1) % 3]);
+    let (ia, ib) = (ins[e], ins[(e + 1) % 3]);
+    if ia {
+      poly.push(a);
+    }
+    if ia != ib {
+      let c = if ia { cross(a, b) } else { cross(b, a) };
+      poly.push(c);
+      cut.push(c);
+    }
+  }
+  (poly, cut)
+}
+
 /// Evaluates a `MeshFunctions`/`RegionFunction`-style function at a
 /// facet's `(x, y, z)`, called positionally exactly like
 /// `Plot3D`/`ContourPlot3D`'s region function (see
@@ -2640,9 +2681,12 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         let mut index_of: Vec<Vec<Option<usize>>> =
           vec![vec![None; grid_n + 1]; grid_n + 1];
         let mut point_exprs: Vec<Expr> = Vec::new();
+        // A `RegionFunction` drops the samples it rejects here too, so a
+        // `Show` of the plot draws only the part the standalone render does.
+        let mask = region_masks.as_ref().map(|masks| &masks[surface_idx]);
         for (i, row) in grid.iter().enumerate() {
           for (j, &z) in row.iter().enumerate() {
-            if !z.is_finite() {
+            if !z.is_finite() || mask.is_some_and(|m| !m[i][j]) {
               continue;
             }
             index_of[i][j] = Some(point_exprs.len());
@@ -2710,6 +2754,78 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               ),
             ));
             content.push(Expr::List(quad.into()));
+          }
+        }
+        // The cells a `RegionFunction` cuts: the parts of their two
+        // triangles inside the region, clipped as the standalone render
+        // clips them, with the cut points appended to the shared points.
+        if let (Some(mask), Some(rf)) = (mask, &region_function) {
+          let compiled = crate::functions::plot::PlotBody2::new(
+            bodies[surface_idx],
+            &xvar,
+            &yvar,
+          );
+          let surface_at = |x: f64, y: f64| -> Option<[f64; 3]> {
+            compiled
+              .at(x, y)
+              .filter(|z| z.is_finite())
+              .map(|z| [x, y, z])
+          };
+          let inside = |p: &[f64; 3]| {
+            crate::functions::field_plot::region_allows(rf, p[0], p[1], p[2])
+          };
+          let mut clipped: Vec<Expr> = Vec::new();
+          for i in 0..grid_n {
+            for j in 0..grid_n {
+              let cell = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)];
+              if cell.iter().all(|&(a, b)| mask[a][b])
+                || !cell.iter().any(|&(a, b)| mask[a][b])
+              {
+                continue;
+              }
+              for corners in [
+                [(i, j), (i + 1, j), (i, j + 1)],
+                [(i + 1, j + 1), (i, j + 1), (i + 1, j)],
+              ] {
+                if corners.iter().any(|&(a, b)| !grid[a][b].is_finite()) {
+                  continue;
+                }
+                let ins = corners.map(|(a, b)| mask[a][b]);
+                if !ins.iter().any(|b| *b) {
+                  continue;
+                }
+                let tri = corners.map(|(a, b)| {
+                  [
+                    x_min + a as f64 * x_step,
+                    y_min + b as f64 * y_step,
+                    grid[a][b],
+                  ]
+                });
+                let (poly, _) =
+                  clip_surface_triangle(tri, ins, &surface_at, &inside);
+                if poly.len() < 3 {
+                  continue;
+                }
+                let indices: Vec<Expr> = poly
+                  .iter()
+                  .map(|p| {
+                    point_exprs.push(Expr::List(
+                      vec![
+                        Expr::Real(p[0]),
+                        Expr::Real(p[1]),
+                        Expr::Real(p[2].clamp(z_lo, z_hi)),
+                      ]
+                      .into(),
+                    ));
+                    Expr::Integer(point_exprs.len() as i128)
+                  })
+                  .collect();
+                clipped.push(call1("Polygon", Expr::List(indices.into())));
+              }
+            }
+          }
+          if !clipped.is_empty() {
+            content.push(Expr::List(clipped.into()));
           }
         }
         // The mesh, at the spacing the standalone render rules it with.
@@ -3020,35 +3136,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           if ins.iter().all(|b| *b) {
             push_triangle(tri, &mut all_triangles, &mut facets);
           } else if ins.iter().any(|b| *b) {
-            // Cut along the region's edge: each edge with one end inside
-            // and one outside crosses it where bisection finds it.
-            let cross = |a: [f64; 3], b: [f64; 3]| -> [f64; 3] {
-              let (mut lo, mut hi) = (a, b); // lo inside, hi outside
-              for _ in 0..12 {
-                let mx = f64::midpoint(lo[0], hi[0]);
-                let my = f64::midpoint(lo[1], hi[1]);
-                match surface_at(mx, my) {
-                  Some(m) if inside(&m) => lo = m,
-                  Some(m) => hi = m,
-                  None => hi = [mx, my, f64::midpoint(lo[2], hi[2])],
-                }
-              }
-              lo
-            };
-            let mut poly: Vec<[f64; 3]> = Vec::new();
-            let mut cut: Vec<[f64; 3]> = Vec::new();
-            for e in 0..3 {
-              let (a, b) = (tri[e], tri[(e + 1) % 3]);
-              let (ia, ib) = (ins[e], ins[(e + 1) % 3]);
-              if ia {
-                poly.push(a);
-              }
-              if ia != ib {
-                let c = if ia { cross(a, b) } else { cross(b, a) };
-                poly.push(c);
-                cut.push(c);
-              }
-            }
+            // Cut along the region's edge.
+            let (poly, cut) =
+              clip_surface_triangle(tri, ins, &surface_at, &inside);
             for k in 1..poly.len().saturating_sub(1) {
               push_triangle(
                 [poly[0], poly[k], poly[k + 1]],
@@ -3642,11 +3732,26 @@ fn generate_svg(
     svg_width -= pad_w;
     svg_height = svg_height.saturating_sub(pad_h).max(1);
   }
-  let ((scale, _), mut cx, mut cy, w, h) = fit_3d_frame(
+  // An explicit `AspectRatio -> r` stretches the projected box to the
+  // picture's shape, as in `Graphics3D` (unless a `ViewAngle` fixes the
+  // scale instead).
+  let stretch = view_angle_option(options).is_none()
+    && options.iter().rev().find_map(|option| match option {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(&**pattern, Expr::Identifier(n) if n == "AspectRatio") => {
+        let value = evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| (**replacement).clone());
+        Some(try_eval_to_f64(&value).is_some_and(|r| r > 0.0 && r.is_finite()))
+      }
+      _ => None,
+    }) == Some(true);
+  let ((scale, scale_y), mut cx, mut cy, w, h) = fit_3d_frame(
     svg_width,
     (!auto_height || full_width).then_some(svg_height),
     (px_min, px_max, py_min, py_max),
-    false,
+    stretch,
     &axes_extent,
   );
   svg_width = w;
@@ -3665,7 +3770,7 @@ fn generate_svg(
   // `Graphics3D`: the frame spans `2 · d · tan(θ/2)` about the middle of the
   // box, where `d` is the eye's distance (already in the box's normalized
   // units), instead of being fitted to the box's outline.
-  let (scale, p_cx, p_cy) =
+  let (scale, scale_y, p_cx, p_cy) =
     match (view_angle_option(options), camera.perspective) {
       (Some(theta), Some(eye)) => {
         let span = 2.0 * eye.distance * (theta / 2.0).tan();
@@ -3678,12 +3783,12 @@ fn generate_svg(
             },
             camera,
           );
-          (inner_side / span, bcx, bcy)
+          (inner_side / span, inner_side / span, bcx, bcy)
         } else {
-          (scale, p_cx, p_cy)
+          (scale, scale_y, p_cx, p_cy)
         }
       }
-      _ => (scale, p_cx, p_cy),
+      _ => (scale, scale_y, p_cx, p_cy),
     };
   // The sphere spans the shorter side of the picture, centered on the box.
   let (scale, p_cx, p_cy) = match sphere_span {
@@ -3693,7 +3798,7 @@ fn generate_svg(
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
-    let sy = cy - (py - p_cy) * scale; // flip Y for SVG
+    let sy = cy - (py - p_cy) * scale_y; // flip Y for SVG
     (sx, sy)
   };
 
@@ -4179,7 +4284,8 @@ fn parse_axes_edge(value: &Expr) -> Option<AxesEdges> {
 
 fn parse_ticks_3d(value: &Expr) -> [Option<TickList3D>; 3] {
   let mut out: [Option<TickList3D>; 3] = [None, None, None];
-  if matches!(value, Expr::Identifier(s) if s == "None") {
+  // `Ticks -> False` draws no ticks, like `None`.
+  if matches!(value, Expr::Identifier(s) if s == "None" || s == "False") {
     return [Some(Vec::new()), Some(Vec::new()), Some(Vec::new())];
   }
   let Expr::List(axes) = value else {
@@ -4187,7 +4293,7 @@ fn parse_ticks_3d(value: &Expr) -> [Option<TickList3D>; 3] {
   };
   for (slot, axis) in out.iter_mut().zip(axes.iter()) {
     *slot = match axis {
-      Expr::Identifier(s) if s == "None" => Some(Vec::new()),
+      Expr::Identifier(s) if s == "None" || s == "False" => Some(Vec::new()),
       Expr::List(items) => Some(
         items
           .iter()
@@ -14049,7 +14155,10 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // outline-fitted one. An unboxed scene with neither (a tall 4 × 4 × 10
   // building at `ImageSize -> {300, 400}`) still fits its box outline to
   // the frame.
-  // `AspectRatio -> Full` instead stretches the scene to fill the picture.
+  // `AspectRatio -> Full`, or an explicit `AspectRatio -> r`, instead
+  // stretches the scene to fill the picture (an unboxed `Show` of a
+  // `Plot3D` and polygons at `ViewPoint -> {2, 1, .5}`, `AspectRatio -> 1`
+  // and `ImageSize -> {300, 300}` fills the square in Wolfram's snapshot).
   // Inside a `Manipulate` frame the same explicitly aimed or pinned scenes
   // are sphere-framed whatever their box and size, so the picture keeps one
   // scale as controls turn the view: Wolfram's snapshots of boxed scenes in
@@ -14073,6 +14182,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       && explicit_height
       && !full_width
       && !aspect_full
+      && aspect_ratio.is_none()
       && view_angle.is_none());
   if let Some((eye, target)) = view_vector {
     let target = target.unwrap_or_else(|| {
