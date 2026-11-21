@@ -6582,7 +6582,7 @@ fn stored_output_editor(cell: &Cell) -> Option<CellEditor> {
     })?;
   // The svg handle is a fallback for when rasterization fails; the normal
   // path shows the pre-rasterized image.
-  let handle = svg::Handle::from_memory(svg.clone().into_bytes());
+  let handle = manipulate::text_svg_handle(&svg);
   Some(CellEditor {
     content: text_editor::Content::with_text(&cell.content),
     style: cell.style,
@@ -7314,7 +7314,7 @@ fn evaluate_cell_statements(
   editor.graphics_handle = editor
     .graphics_svg
     .as_ref()
-    .map(|s| svg::Handle::from_memory(s.as_bytes().to_vec()));
+    .map(|s| manipulate::text_svg_handle(s));
   editor.graphics_image = editor
     .graphics_svg
     .as_ref()
@@ -8413,7 +8413,8 @@ fn check_notebook(path: &std::path::Path) -> i32 {
         if let Some(svg) = &result.graphics {
           // `WOXI_CHECK_SVG=FILE` saves the rendered graphic for a look.
           if let Some(out) = std::env::var_os("WOXI_CHECK_SVG") {
-            let _ = std::fs::write(out, svg);
+            // What the editor draws: text with no family set in the sans face.
+            let _ = std::fs::write(out, woxi::with_default_text_family(svg));
           }
           println!("widget {i}: graphics");
         } else if result.result == "\0" || result.result.trim().is_empty() {

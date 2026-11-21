@@ -8046,6 +8046,11 @@ proportional face the FrontEnd uses for digits and spaces. A `Pane[…, {450,
 `Power versus Work` Demonstration) therefore lays out wider than the pane and
 clips its right-hand column, where the FrontEnd fits it.
 
+The same fixed advance (0.6 em per character) under-measures wide capitals,
+so narrow `Spacings` look uneven: in
+`Grid[{{"DN", "≈", 1.26}}, Spacings -> {{1 -> 1.3, 2 -> .3, 3 -> .3}}]`
+the `≈` touches `DN` while a visible gap still separates it from `1.26`.
+
 
 ## Machine complex numbers with a `0.` imaginary part
 

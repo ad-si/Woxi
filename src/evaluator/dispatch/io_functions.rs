@@ -9395,7 +9395,7 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
 /// the opening tag.
-fn with_default_text_family(svg: &str) -> String {
+pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.

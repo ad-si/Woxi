@@ -31164,16 +31164,9 @@ fn grid_base_style(opts: &[Expr], outer: &GridStyle) -> GridStyle {
   gs
 }
 
-/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
-/// grid's text: in the grid's face and size, not as a free-standing column
-/// (which defaults to monospace at the base size). A column of plain text
-/// takes the grid's style directives, with the sans face as the default
-/// family. Other cells are returned unchanged.
-/// A grid cell that is drawn as a stacked fraction, wrapped in the grid's
-/// base style (`Style[Grid[…], 16]`, `BaseStyle -> …`) so the fraction is
-/// typeset at that size, weight, slant and color instead of the default
-/// 14 pt. Any other cell, or a grid without such a style, is returned as is.
-fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+/// The `Style` directives (weight, slant, size, color) a grid's base style
+/// passes on to a cell that is typeset on its own.
+fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
   let mut directives: Vec<Expr> = Vec::new();
   if style.font_weight == Some("bold") {
     directives.push(id_expr("Bold"));
@@ -31187,6 +31180,15 @@ fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if let Some(color) = style.color {
     directives.push(color.to_expr());
   }
+  directives
+}
+
+/// A grid cell that is drawn as a stacked fraction, wrapped in the grid's
+/// base style (`Style[Grid[…], 16]`, `BaseStyle -> …`) so the fraction is
+/// typeset at that size, weight, slant and color instead of the default
+/// 14 pt. Any other cell, or a grid without such a style, is returned as is.
+fn fraction_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  let directives = grid_style_directives(style);
   if directives.is_empty() || standard_fraction_cell_svg(cell, 14.0).is_none() {
     return cell.clone();
   }
@@ -31283,26 +31285,6 @@ fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
 }
 
-/// The `Style` directives (weight, slant, size, color) a grid's style
-/// passes on to a nested layout in one of its cells. The font family is
-/// left to the caller, which decides whether a default applies.
-fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
-  let mut directives: Vec<Expr> = Vec::new();
-  if style.font_weight == Some("bold") {
-    directives.push(id_expr("Bold"));
-  }
-  if style.font_style == Some("italic") {
-    directives.push(id_expr("Italic"));
-  }
-  if let Some(size) = style.font_size {
-    directives.push(Expr::Real(size));
-  }
-  if let Some(color) = style.color {
-    directives.push(color.to_expr());
-  }
-  directives
-}
-
 /// A `Grid` nested in a cell of a styled grid (`Style[Grid[{{Grid[…]},
 /// {Grid[…]}}], 16]`) inherits the outer grid's size, weight, slant, color
 /// and family, just like the plain text cells beside it: the nested grid is
@@ -31343,6 +31325,11 @@ fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   )
 }
 
+/// A `Column[…]` that is a cell of a `Grid` is set like the rest of the
+/// grid's text: in the grid's face and size, not as a free-standing column
+/// (which defaults to monospace at the base size). A column of plain text
+/// takes the grid's style directives, with the sans face as the default
+/// family. Other cells are returned unchanged.
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
