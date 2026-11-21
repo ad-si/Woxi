@@ -4158,6 +4158,18 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Size each relative `Thickness[t]` of `plot_style` as the fraction `t`
+  /// of this plot's image width, as Wolfram does: a wider plot draws the
+  /// same `Thickness` with a heavier line.
+  pub(crate) fn resolve_relative_thickness(&mut self) {
+    let width = self.svg_width as f64;
+    for style in &mut self.plot_style {
+      if let Some(t) = style.thickness_fraction {
+        style.thickness = Some(t * width);
+      }
+    }
+  }
+
   /// Drop every `FrameLabel` edge, plain text and picture alike.
   pub(crate) fn clear_frame_labels(&mut self) {
     self.frame_label_bottom = None;
@@ -17255,6 +17267,7 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.full_width = fw;
         plot_opts.image_size_explicit = image_size_explicit_dims(replacement);
         plot_opts.image_size_value = Some(replacement.clone());
+        plot_opts.resolve_relative_thickness();
       }
     }
     "ClippingStyle" => {
@@ -17288,6 +17301,7 @@ pub(crate) fn apply_common_plot_option(
     }
     "PlotStyle" => {
       plot_opts.plot_style = parse_plot_style(replacement);
+      plot_opts.resolve_relative_thickness();
     }
     "ColorFunction" => {
       plot_opts.color_function = color_function_option(replacement);
