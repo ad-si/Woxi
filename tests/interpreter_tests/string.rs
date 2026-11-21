@@ -4320,6 +4320,36 @@ mod string_match_q_patterns {
   use super::*;
 
   #[test]
+  fn conditional_pattern() {
+    // `patt /; test` matches when the whole string fits `patt` and the test,
+    // with the named captures substituted in, evaluates to True.
+    assert_eq!(
+      interpret(r#"StringMatchQ["hello", x__ /; StringLength[x] > 3]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["hi", x__ /; StringLength[x] > 3]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ[{"ab", "abcd", "xyzd"}, x__ ~~ "d" /; StringLength[x] == 3]"#
+      )
+      .unwrap(),
+      "{False, True, True}"
+    );
+    // The captures keep their original case under IgnoreCase.
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ["Hello", x__ /; StringStartsQ[x, "H"], IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn wildcards_inside_alternatives() {
     // Regression for #1434: `*` and `@` are wildcards in every string literal
     // of a StringMatchQ pattern, not only in a bare top-level string.
@@ -8557,6 +8587,22 @@ mod dictionary_lookup {
   #[test]
   fn no_match() {
     assert_eq!(interpret(r#"DictionaryLookup["qqqzzz*"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn conditional_pattern() {
+    assert_eq!(
+      interpret(
+        r#"AllTrue[DictionaryLookup[x__ /; 7 <= StringLength[x] <= 12], 7 <= StringLength[#] <= 12 &]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"Length[DictionaryLookup[x__ /; StringLength[x] == 3, 4]]"#)
+        .unwrap(),
+      "4"
+    );
   }
 
   #[test]

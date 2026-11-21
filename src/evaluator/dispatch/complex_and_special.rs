@@ -7422,6 +7422,66 @@ fn tf_matrix_grid(rows: &[Expr]) -> Expr {
   tf_box("GridBox", vec![Expr::List(grid_rows.into())])
 }
 
+/// The rows `MatrixForm` lays out for `items`: a matrix keeps its rows, a
+/// flat list becomes a column vector (one element per row). `None` for an
+/// empty or ragged list, which has no grid layout.
+fn tf_matrixform_rows(items: &[Expr]) -> Option<Vec<Expr>> {
+  if tf_is_matrix(items) {
+    Some(items.to_vec())
+  } else if !items.is_empty()
+    && items.iter().all(|item| !matches!(item, Expr::List(_)))
+  {
+    Some(
+      items
+        .iter()
+        .map(|item| Expr::List(vec![item.clone()].into()))
+        .collect(),
+    )
+  } else {
+    None
+  }
+}
+
+/// The `GridBox` of a `MatrixForm`. Unlike a plain matrix, a cell that is
+/// itself a list is laid out as a nested parenthesized grid rather than
+/// spelled with braces: the cells of a 3D array such as
+/// `MatrixForm[{{{a, b}, {c, d}}}]` are column vectors `(a b)ᵀ (c d)ᵀ`.
+/// `options` are appended to every grid, the nested ones included.
+fn tf_matrixform_grid(rows: &[Expr], options: &[Expr]) -> Expr {
+  let cell = |e: &Expr| match e {
+    Expr::List(items) => match tf_matrixform_rows(items) {
+      Some(inner) => {
+        let joiner = tf_string("\u{2060}");
+        let mut parts = vec![tf_string("(")];
+        if !options.is_empty() {
+          parts.push(joiner.clone());
+        }
+        parts.push(tf_matrixform_grid(&inner, options));
+        if !options.is_empty() {
+          parts.push(joiner);
+        }
+        parts.push(tf_string(")"));
+        tf_row(parts)
+      }
+      None => tf(e),
+    },
+    _ => tf(e),
+  };
+  let grid_rows: Vec<Expr> = rows
+    .iter()
+    .map(|row| {
+      if let Expr::List(cells) = row {
+        Expr::List(cells.iter().map(cell).collect::<Vec<_>>().into())
+      } else {
+        Expr::List(vec![cell(row)].into())
+      }
+    })
+    .collect();
+  let mut grid_args = vec![Expr::List(grid_rows.into())];
+  grid_args.extend(options.iter().cloned());
+  tf_box("GridBox", grid_args)
+}
+
 /// Generic `head(arg, …)` rendering (unknown functions). The head is shown
 /// verbatim — the constant glyph map (E→ⅇ, I→ⅈ, …) is deliberately *not*
 /// applied here, so a symbol used as a function head (e.g. the field `E` in
@@ -8357,25 +8417,19 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     "MatrixForm" if args.len() == 1 && TF_BOX_TEXT.get() => {
       let dense =
         crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
-      if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
-        && tf_is_matrix(rows)
+      if let Expr::List(items) = dense.as_ref().unwrap_or(&args[0])
+        && let Some(rows) = tf_matrixform_rows(items)
       {
-        let mut grid = tf_matrix_grid(rows);
-        if let Expr::FunctionCall {
-          args: grid_args, ..
-        } = &mut grid
-        {
-          let mut extended = grid_args.to_vec();
-          for (option, value) in [
-            ("RowSpacings", Expr::Integer(1)),
-            ("ColumnSpacings", Expr::Integer(1)),
-            ("RowAlignments", id_expr("Baseline")),
-            ("ColumnAlignments", id_expr("Center")),
-          ] {
-            extended.push(rule_expr(id_expr(option), value));
-          }
-          *grid_args = extended.into();
-        }
+        let options: Vec<Expr> = [
+          ("RowSpacings", Expr::Integer(1)),
+          ("ColumnSpacings", Expr::Integer(1)),
+          ("RowAlignments", id_expr("Baseline")),
+          ("ColumnAlignments", id_expr("Center")),
+        ]
+        .into_iter()
+        .map(|(option, value)| rule_expr(id_expr(option), value))
+        .collect();
+        let grid = tf_matrixform_grid(&rows, &options);
         let joiner = tf_string("\u{2060}");
         let bracketed = tf_row(vec![
           tf_string("("),
@@ -8401,7 +8455,22 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       transformation_function_boxes(args, tf).unwrap()
     }
-    "MatrixForm" | "TableForm" if args.len() == 1 => {
+    "MatrixForm" if args.len() == 1 => {
+      let dense =
+        crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
+      if let Expr::List(items) = dense.as_ref().unwrap_or(&args[0])
+        && let Some(rows) = tf_matrixform_rows(items)
+      {
+        tf_row(vec![
+          tf_string("("),
+          tf_matrixform_grid(&rows, &[]),
+          tf_string(")"),
+        ])
+      } else {
+        tf(&args[0])
+      }
+    }
+    "TableForm" if args.len() == 1 => {
       let dense =
         crate::functions::list_helpers_ast::densify_sparse_array(&args[0]);
       if let Expr::List(rows) = dense.as_ref().unwrap_or(&args[0])
@@ -8757,6 +8826,16 @@ fn tf(expr: &Expr) -> Expr {
       pattern,
       replacement,
     } => tf_row(vec![tf(pattern), tf_string("\u{2192}"), tf(replacement)]),
+    // A replacement left unevaluated (its rules were no rules) has no
+    // traditional notation: like any other built-in function without one it
+    // keeps its name and brackets, `ReplaceAll[f(a), {g(x)}]`.
+    Expr::ReplaceAll { expr: e, rules } => {
+      tf_call("ReplaceAll", &[e.as_ref().clone(), rules.as_ref().clone()])
+    }
+    Expr::ReplaceRepeated { expr: e, rules } => tf_call(
+      "ReplaceRepeated",
+      &[e.as_ref().clone(), rules.as_ref().clone()],
+    ),
     _ => expr_to_box_form(expr),
   }
 }

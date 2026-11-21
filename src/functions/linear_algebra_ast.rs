@@ -5872,10 +5872,12 @@ pub fn eigenvalues_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       float_mat.push(frow);
     }
     if all_floats {
+      // Arbitrary-precision entries (`0.425325`6.`) are inexact too, so
+      // they take the numeric path like machine reals.
       let any_real_literal = matrix
         .iter()
-        .flat_map(|r| r.iter())
-        .any(|c| matches!(c, Expr::Real(_)));
+        .flatten()
+        .any(crate::functions::math_ast::contains_inexact_real);
       if any_real_literal {
         let roots = numeric_eigenvalues(&float_mat, n);
         if roots.len() == n {
