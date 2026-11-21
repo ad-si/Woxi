@@ -4277,6 +4277,30 @@ mod graphics {
       assert!(!svg.contains("dy=\"-"), "{svg}");
     }
 
+    /// An unevaluated caption equation with a string side typesets each
+    /// side on its own: a `NumberForm`/`ScientificForm` side shows its
+    /// formatted number and a linear-syntax string side its glyphs, instead
+    /// of printing as `NumberForm[...]` source or box markup.
+    #[test]
+    fn text_equation_with_string_side_typesets_each_side() {
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"gain\" == NumberForm[7.948, 3], \" kHz\"}], {0, 0}]}]",
+      );
+      assert!(svg.contains(">gain == 7.95 kHz</text>"), "{svg}");
+
+      let svg = export_svg(
+        "Graphics[{Text[\"\\!\\(\\*SubscriptBox[\\(V\\), \\(in\\)]\\)\" == ScientificForm[1989.4, 2], {0, 0}]}]",
+      );
+      assert!(
+        svg.contains(
+          "V<tspan baseline-shift=\"sub\" font-size=\"70%\">in</tspan> == 2.\u{00d7}10\u{00b3}</text>"
+        ),
+        "{svg}"
+      );
+      assert!(!svg.contains("ScientificForm"), "{svg}");
+      assert!(!svg.contains("SubscriptBox"), "{svg}");
+    }
+
     /// `Overscript[y, ".."]` in a label draws as the accented letter.
     #[test]
     fn text_overscript_accent() {
