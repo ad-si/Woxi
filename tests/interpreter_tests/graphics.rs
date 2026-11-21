@@ -66680,6 +66680,34 @@ mod plot_tooltip_list_and_image_size_variable {
     let svg = export_svg("w = 300; Plot[Sin[x], {x, 0, 4}, ImageSize -> w]");
     assert!(svg.starts_with("<svg width=\"300\""), "{}", &svg[..80]);
   }
+
+  /// Regression: the entries of `ImageSize -> {s, s}` stayed unevaluated
+  /// symbols, so the held plot functions fell back to the default size.
+  #[test]
+  fn image_size_list_of_variables() {
+    for expr in [
+      "Plot[Sin[x], {x, 0, 4}, ImageSize -> {w, h}]",
+      "LogPlot[Exp[x], {x, 0, 4}, ImageSize -> {w, h}]",
+      "LogLogPlot[x^2, {x, 1, 4}, ImageSize -> {w, h}]",
+      "DiscretePlot[n, {n, 1, 5}, ImageSize -> {w, h}]",
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, ImageSize -> {w, h}]",
+    ] {
+      let svg = export_svg(&format!("w = 240; h = 210; {expr}"));
+      assert!(
+        svg.starts_with("<svg width=\"240\" height=\"210\""),
+        "expected a 240x210 picture for {expr}, got: {}",
+        &svg[..svg.len().min(80)]
+      );
+    }
+    // Inside a Grid the plot keeps that size instead of overflowing its cell.
+    let svg =
+      export_svg("s = 230; Grid[{{Plot[x, {x, 0, 1}, ImageSize -> {s, s}]}}]");
+    assert!(
+      svg.starts_with("<svg width=\"230\" height=\"230\""),
+      "{}",
+      &svg[..80]
+    );
+  }
 }
 
 mod display_form_fraction_boxes_in_layouts {
