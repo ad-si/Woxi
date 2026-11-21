@@ -357,6 +357,14 @@ fn gcd(a: &Poly, b: &Poly) -> Poly {
   {
     return g;
   }
+  // One variable: a modular gcd keeps every step in word-sized residues,
+  // where the heuristic gcd and the remainder sequence below grow huge
+  // integers for higher degrees.
+  if a.vars().iter().chain(b.vars().iter()).all(|&v| v == var)
+    && let Some(g) = univariate_modular_gcd(&a.prim(), &b.prim(), var)
+  {
+    return g;
+  }
   if let Some(g) = gcd_heu(&a.prim(), &b.prim(), 0, &mut { GCD_HEU_BUDGET }) {
     return g;
   }
@@ -385,6 +393,111 @@ fn gcd(a: &Poly, b: &Poly) -> Poly {
     pb = r.div_exact(&content(&r, var)).unwrap().prim();
   }
   g.mul(&pb.div_exact(&content(&pb, var)).unwrap()).prim()
+}
+
+/// The primitive gcd of two primitive univariate integer polynomials in
+/// `var`, from their gcds modulo word-sized primes combined by the Chinese
+/// remainder theorem. A candidate is accepted once it stops changing and
+/// divides both inputs exactly, which makes the result certain whatever
+/// primes turned out unlucky. None when the coefficients are not integers
+/// or the primes run out.
+fn univariate_modular_gcd(a: &Poly, b: &Poly, var: usize) -> Option<Poly> {
+  use num_traits::ToPrimitive;
+  let ints = |p: &Poly| -> Option<Vec<BigInt>> {
+    u_from(p, var)
+      .iter()
+      .map(|q| q.d.is_one().then(|| q.n.clone()))
+      .collect()
+  };
+  let (ua, ub) = (ints(a)?, ints(b)?);
+  let lc_gcd = big_gcd(ua.last()?, ub.last()?);
+  let residues = |v: &[BigInt], p: i128| -> Vec<i128> {
+    let bp = BigInt::from(p);
+    v.iter()
+      .map(|c| (c % &bp).to_i128().unwrap_or(0).rem_euclid(p))
+      .collect()
+  };
+  let mod_pow = |mut base: i128, mut e: i128, p: i128| {
+    let mut acc = 1i128;
+    base = base.rem_euclid(p);
+    while e > 0 {
+      if e & 1 == 1 {
+        acc = acc * base % p;
+      }
+      base = base * base % p;
+      e >>= 1;
+    }
+    acc
+  };
+  // Combined coefficients (scaled so the leading one is `lc_gcd`) and
+  // their modulus.
+  let mut acc: Option<(Vec<BigInt>, BigInt)> = None;
+  let mut last_candidate: Option<Vec<BigInt>> = None;
+  let mut p: i128 = (1 << 31) - 1;
+  for _ in 0..400 {
+    // Next prime below `p`.
+    p -= 2;
+    while (3..)
+      .step_by(2)
+      .take_while(|d| d * d <= p)
+      .any(|d| p % d == 0)
+    {
+      p -= 2;
+    }
+    let (ra, rb) = (residues(&ua, p), residues(&ub, p));
+    if ra.last() == Some(&0) || rb.last() == Some(&0) {
+      continue; // p divides a leading coefficient
+    }
+    let g = super::polynomial_gcd::poly_gcd_coeffs_mod(&ra, &rb, p);
+    if g.len() == 1 {
+      return Some(Poly::one(a.nv)); // coprime mod p, hence over Z
+    }
+    let scale = residues(std::slice::from_ref(&lc_gcd), p)[0];
+    let g: Vec<i128> = g.iter().map(|c| c * scale % p).collect();
+    let bp = BigInt::from(p);
+    acc = match acc {
+      // A smaller degree than before: the earlier primes were unlucky.
+      Some((coeffs, _)) if g.len() < coeffs.len() => {
+        Some((g.iter().map(|&c| BigInt::from(c)).collect(), bp))
+      }
+      // A larger degree: this prime is unlucky.
+      Some((coeffs, m)) if g.len() > coeffs.len() => Some((coeffs, m)),
+      Some((coeffs, m)) => {
+        let m_mod_p = (&m % &bp).to_i128().unwrap_or(0);
+        let inv = mod_pow(m_mod_p, p - 2, p);
+        let combined = coeffs
+          .iter()
+          .zip(&g)
+          .map(|(c, &r)| {
+            let c_mod_p = (c % &bp).to_i128().unwrap_or(0).rem_euclid(p);
+            let t = ((r - c_mod_p).rem_euclid(p) * inv) % p;
+            c + &m * BigInt::from(t)
+          })
+          .collect();
+        Some((combined, m * bp))
+      }
+      None => Some((g.iter().map(|&c| BigInt::from(c)).collect(), bp)),
+    };
+    let (coeffs, m) = acc.as_ref()?;
+    let half: BigInt = m / 2;
+    let candidate: Vec<BigInt> = coeffs
+      .iter()
+      .map(|c| if c > &half { c - m } else { c.clone() })
+      .collect();
+    if last_candidate.as_ref() == Some(&candidate) {
+      let poly = u_to(
+        &candidate.iter().map(|c| Q::int(c.clone())).collect(),
+        a.nv,
+        var,
+      )
+      .prim();
+      if a.div_exact(&poly).is_some() && b.div_exact(&poly).is_some() {
+        return Some(poly);
+      }
+    }
+    last_candidate = Some(candidate);
+  }
+  None
 }
 
 /// Monic gcd of two univariate polynomials over Q.
@@ -597,22 +710,93 @@ fn is_square_free_by_image(p: &Poly, var: usize) -> Option<bool> {
       continue;
     }
     let image = u_from(&eval(p), var);
-    let (s, _) = u_ext_gcd(&image, &u_deriv(&image)).unzip();
-    if s.is_some() {
+    if image_square_free_mod_prime(&image) {
       return Some(true);
     }
   }
   None
 }
 
-fn u_deriv(a: &UPoly) -> UPoly {
-  u_trim(
-    a.iter()
+/// Whether a univariate polynomial with rational coefficients is
+/// square-free, proven by `gcd(f mod q, f' mod q) = 1` for a prime `q` that
+/// divides neither its leading coefficient nor a denominator (degree is
+/// preserved mod q, so a repeated factor over Q would show up mod q). A
+/// gcd over Q itself lets the remainders' coefficients explode. False when
+/// no tried prime proves it.
+fn image_square_free_mod_prime(image: &UPoly) -> bool {
+  use num_traits::ToPrimitive;
+  // Primes below 2^31, so products of residues fit in i128 with room.
+  const PRIMES: [i128; 4] = [2147483647, 2147483629, 2147483587, 2147483579];
+  if image.len() <= 2 {
+    return true;
+  }
+  'primes: for q in PRIMES {
+    let big_q = BigInt::from(q);
+    let mut coeffs: Vec<i128> = Vec::with_capacity(image.len());
+    for c in image {
+      let d = (&c.d % &big_q).to_i128().unwrap_or(0);
+      if d == 0 {
+        continue 'primes;
+      }
+      let n = (&c.n % &big_q).to_i128().unwrap_or(0).rem_euclid(q);
+      // n / d mod q via Fermat's little theorem.
+      let mut inv = 1i128;
+      let (mut base, mut e) = (d.rem_euclid(q), q - 2);
+      while e > 0 {
+        if e & 1 == 1 {
+          inv = inv * base % q;
+        }
+        base = base * base % q;
+        e >>= 1;
+      }
+      coeffs.push(n * inv % q);
+    }
+    if coeffs.last().is_none_or(|&c| c == 0) {
+      continue;
+    }
+    let deriv: Vec<i128> = coeffs
+      .iter()
       .enumerate()
       .skip(1)
-      .map(|(k, c)| c.mul(&Q::int(BigInt::from(k))))
-      .collect(),
-  )
+      .map(|(k, &c)| c * (k as i128 % q) % q)
+      .collect();
+    let g = super::polynomial_gcd::poly_gcd_coeffs_mod(&coeffs, &deriv, q);
+    if g.len() == 1 {
+      return true;
+    }
+  }
+  false
+}
+
+/// Yun's square-free decomposition, in big-integer arithmetic, of a
+/// primitive univariate integer polynomial given by its ascending
+/// coefficients: pairs of (square-free part, multiplicity), each part
+/// primitive with a positive leading coefficient. None when a part's
+/// coefficients do not fit an `i128`.
+pub(super) fn square_free_int_coeffs(
+  coeffs: &[i128],
+) -> Option<Vec<(Vec<i128>, i128)>> {
+  use num_traits::ToPrimitive;
+  let mut p = Poly::zero(1);
+  for (k, &c) in coeffs.iter().enumerate() {
+    p.add_term(vec![k as u32], Q::int(BigInt::from(c)));
+  }
+  if p.is_zero() {
+    return None;
+  }
+  let mut out = Vec::new();
+  for (part, k) in square_free(&p.prim(), 0) {
+    let part = part.prim();
+    let mut v = vec![0i128; part.deg(0) as usize + 1];
+    for (m, c) in &part.t {
+      if !c.d.is_one() {
+        return None;
+      }
+      v[m[0] as usize] = c.n.to_i128()?;
+    }
+    out.push((v, k as i128));
+  }
+  Some(out)
 }
 
 /// Yun's square-free decomposition of a primitive polynomial with respect
@@ -939,7 +1123,7 @@ fn factor_square_free(p: &Poly, main: usize) -> Option<Vec<Poly>> {
     }
     let image = eval(p);
     let uimage = u_from(&image, main);
-    if u_ext_gcd(&uimage, &u_deriv(&uimage)).is_none() {
+    if !image_square_free_mod_prime(&uimage) {
       continue;
     }
     let factors = factor_univariate(&image, main)?;
