@@ -329,6 +329,7 @@ fn splice_field_plot_prolog(
     y_min: area.y_min,
     y_max: area.y_max,
     scale: f64::from(RESOLUTION_SCALE),
+    image_w: f64::from(area.render_width),
   };
   let overlay = crate::functions::plot_epilog::render_epilog_svg(
     prolog,
@@ -1567,6 +1568,7 @@ fn push_epilog_primitives(
     y_min: area.y_min,
     y_max: area.y_max,
     scale: f64::from(RESOLUTION_SCALE),
+    image_w: f64::from(area.render_width),
   };
   svg.push_str(&crate::functions::plot_epilog::render_epilog_svg(
     epilog,
@@ -4543,7 +4545,7 @@ fn contour_plot_equations(
           fill_opacity: None,
           marker: None,
           thickness: series_thickness,
-          thickness_fraction: None,
+          thickness_fraction: style.and_then(|s| s.thickness_fraction),
           point_size: None,
           point_size_expr: None,
           dashing: style.and_then(|s| s.dashing.clone()),
@@ -5848,6 +5850,7 @@ fn push_field_primitives_svg(
       y_min: area.y_min,
       y_max: area.y_max,
       scale: f64::from(RESOLUTION_SCALE),
+      image_w: f64::from(area.render_width),
     },
     kind,
   ));
@@ -8675,6 +8678,7 @@ pub fn array_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       y_min: -pad_b,
       y_max: n_rows as f64 + pad_t,
       scale: RESOLUTION_SCALE as f64,
+      image_w: render_width as f64,
     };
     buf.push_str(&crate::functions::plot_epilog::render_epilog_svg(
       &epilog,
