@@ -2184,6 +2184,49 @@ fn compactify_infinite_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   changed.then_some(new_args)
 }
 
+/// The list of surfaces a non-list `Plot3D` body stands for when it
+/// evaluates to a list. Evaluated with the plot variables symbolic, the
+/// list's elements are the surfaces; a body that only yields a list once
+/// the variables are numbers is probed at `(x, y)` and split into
+/// `Part[body, i]` surfaces. `None` for a body that is a list already or
+/// samples to a single value.
+fn list_valued_surface_body(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x: f64,
+  y: f64,
+) -> Option<Expr> {
+  use crate::functions::plot::{
+    eval_body_vars_symbolic, expr_mentions_var, substitute_var,
+  };
+  if matches!(body, Expr::List(_))
+    || !(expr_mentions_var(body, xvar) || expr_mentions_var(body, yvar))
+  {
+    return None;
+  }
+  let evaluated = eval_body_vars_symbolic(body, &[xvar, yvar]);
+  if matches!(&evaluated, Expr::List(items) if !items.is_empty()) {
+    return Some(evaluated);
+  }
+  let at_point = substitute_var(
+    &substitute_var(body, xvar, &Expr::Real(x)),
+    yvar,
+    &Expr::Real(y),
+  );
+  match &evaluate_expr_to_expr(&at_point).ok()? {
+    Expr::List(items) if !items.is_empty() => Some(Expr::List(
+      (1..=items.len())
+        .map(|i| Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![body.clone(), Expr::Integer(i as i128)].into(),
+        })
+        .collect(),
+    )),
+    _ => None,
+  }
+}
+
 pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2206,8 +2249,11 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
-  let mut show_axes = true;
+  let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
+  // automatic vertical range clips outliers off.
+  let mut keep_z_outliers = false;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut color_fn = FacetColorFunction::default();
@@ -2313,6 +2359,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          keep_z_outliers = plot_range_keeps_z_outliers(replacement);
           // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
           // full form `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds
           // all three; the horizontal bounds narrow the plotted domain, so
@@ -2336,8 +2383,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
-            Expr::Identifier(s) if s == "False" => show_axes = false,
-            Expr::Identifier(s) if s == "True" => show_axes = true,
+            Expr::Identifier(s) if s == "False" => show_box = false,
+            Expr::Identifier(s) if s == "True" => show_box = true,
             _ => {}
           }
         }
@@ -2360,6 +2407,18 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+
+  // A body that evaluates to a list (`h[x, y]` with `h` returning
+  // `{…, …}`, or `({Re[#], Im[#]} &)[…]`) draws one surface per element,
+  // like an explicit list of functions.
+  let expanded_body = list_valued_surface_body(
+    body,
+    &xvar,
+    &yvar,
+    f64::midpoint(x_min, x_max),
+    f64::midpoint(y_min, y_max),
+  );
+  let body = expanded_body.as_ref().unwrap_or(body);
 
   // Collect function bodies: single function or list of functions
   let bodies: Vec<&Expr> = match body {
@@ -2477,6 +2536,26 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Plot3D: function produced no finite values in the given range".into(),
     ));
+  }
+
+  // The automatic vertical range drops outlying heights, as WL's does: a
+  // pole or a jump at the domain's edge is cut off instead of squashing
+  // the rest of the surface into a sliver of the box.
+  if !keep_z_outliers {
+    let region_masks = region_masks.as_ref();
+    let kept = grids.iter().enumerate().flat_map(|(s, grid)| {
+      grid.iter().enumerate().flat_map(move |(i, row)| {
+        row.iter().enumerate().filter_map(move |(j, &z)| {
+          region_masks.is_none_or(|masks| masks[s][i][j]).then_some(z)
+        })
+      })
+    });
+    if let Some((lo, hi)) =
+      crate::functions::plot::list_value_extent(kept, false)
+    {
+      global_z_min = lo;
+      global_z_max = hi;
+    }
   }
 
   // A numeric `Filling` level is part of the picture: the automatic
@@ -3277,7 +3356,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     mesh_mode,
-    show_axes,
+    show_box,
     box_half,
     &axes_labels,
     !image_height_is_explicit(args),
@@ -3400,7 +3479,7 @@ fn generate_svg(
   svg_height: u32,
   full_width: bool,
   mesh_mode: MeshMode,
-  show_axes: bool,
+  show_box: bool,
   box_ratios: [f64; 3],
   axes_labels: &[Option<String>; 3],
   auto_height: bool,
@@ -3408,6 +3487,13 @@ fn generate_svg(
 ) -> Result<String, InterpreterError> {
   let mut svg_width = svg_width;
   let mut svg_height = svg_height;
+  // `Boxed -> False` hides only the box's edges; the axes go with
+  // `Axes -> False`.
+  let show_axes = !options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False"))
+  });
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
@@ -3631,7 +3717,7 @@ fn generate_svg(
   // Each of the 12 edges is subdivided into small segments so that per-segment
   // depth sorting produces correct occlusion against the surface.
   const EDGE_SUBDIVISIONS: usize = 20;
-  let box_edges = if show_axes {
+  let box_edges = if show_box {
     let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
     let axis_color =
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
@@ -15815,10 +15901,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
+        // Blanks padding the label (`"  axis"`) keep their room, as they
+        // do in a 2D `Text`.
+        let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
@@ -15987,6 +16076,18 @@ fn with_prolog_epilog(
 /// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
 /// by every 3D height-field plot (`Plot3D`, `ListPlot3D`) alongside the
 /// full per-axis form `parse_axis_ranges` handles.
+/// Whether a `Plot3D` `PlotRange` asks for every sampled height, outliers
+/// included: `All`, or `All` in the vertical slot of a three-axis spec.
+fn plot_range_keeps_z_outliers(expr: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  match &val {
+    e if is_all(e) => true,
+    Expr::List(items) if items.len() == 3 => is_all(&items[2]),
+    _ => false,
+  }
+}
+
 fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let Expr::List(items) = expr else {
     return None;
