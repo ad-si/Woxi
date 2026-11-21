@@ -22,6 +22,9 @@
 - A subscripted symbol in an axis or plot label sets its single-letter base
     in italics, and `PlotLabel` typesets plain mathematical labels (`x`,
     `f[x]`, `Sin[x]`) in `TraditionalForm` like `AxesLabel` does.
+- `ParametricPlot` breaks a curve at the poles of its coordinates
+    (`{Sec[t], Tan[t]}` at `t == Pi/2`) under the default
+    `Exclusions -> Automatic`, instead of joining the branches with a line.
 - A capital letter typeset in a box label (`"\!\(\*SubscriptBox[\(E\), \(0\)]\)"`)
     stays the letter `E₀` in Manipulate controls instead of turning into the
     constant glyph `ⅇ₀` (likewise `I`, `Pi`, `Degree`, …).
