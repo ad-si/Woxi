@@ -166,7 +166,8 @@ pub fn fixed_point_ast(
   max_iterations: Option<i128>,
   same_test: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  let max = max_iterations.unwrap_or(10000);
+  // No bound by default: Wolfram's iteration limit defaults to Infinity.
+  let max = max_iterations.unwrap_or(i128::MAX);
   let mut current = init.clone();
 
   for _ in 0..max {
@@ -1013,7 +1014,8 @@ pub fn fixed_point_list_ast(
   max_iterations: Option<i128>,
   same_test: Option<&Expr>,
 ) -> Result<Expr, InterpreterError> {
-  let max = max_iterations.unwrap_or(10000);
+  // No bound by default: Wolfram's iteration limit defaults to Infinity.
+  let max = max_iterations.unwrap_or(i128::MAX);
   let mut results = vec![init.clone()];
   let mut current = init.clone();
 
@@ -1111,7 +1113,8 @@ fn nest_while_history(
   m: NestWhileM,
   max_iterations: Option<i128>,
 ) -> Result<Vec<Expr>, InterpreterError> {
-  let max = max_iterations.unwrap_or(10000);
+  // No bound by default: Wolfram's iteration limit defaults to Infinity.
+  let max = max_iterations.unwrap_or(i128::MAX);
   let mut history = vec![init.clone()];
   for _ in 0..max {
     // `NestWhile[f, expr, test, m]` supplies the m most recent results to
