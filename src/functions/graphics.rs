@@ -20676,6 +20676,10 @@ fn inline_graphics_box_layout(
     &crate::syntax::expr_to_input_form(expr),
   );
   let graphic = crate::syntax::string_to_expr(&source).ok()?;
+  // The boxes may hold code that was never evaluated (a `Graphics[…]`
+  // inside `Hold`, or the held body of a `Manipulate`). Typesetting must
+  // not run it, so keep only the parts that draw as they stand.
+  let graphic = drawable_box_graphic(graphic);
   // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
   let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
   let rendered = match &evaluated {
@@ -20704,6 +20708,82 @@ fn inline_graphics_box_layout(
     baseline: above,
     elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
   })
+}
+
+/// Whether `expr` is plain graphics data — numbers, strings, built-in
+/// symbols, and calls of side-effect-free built-ins on such data — that a
+/// notebook front end draws as it stands. Anything referring to a user
+/// symbol (a variable, a function, a `Part` of one) or to a built-in with
+/// side effects is code that only evaluation could turn into a picture.
+fn is_inert_graphics_data(expr: &Expr) -> bool {
+  use crate::evaluator::functions::{
+    is_builtin_symbol, is_side_effecting_builtin,
+  };
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::String(_) => true,
+    Expr::Identifier(name) => is_builtin_symbol(name),
+    Expr::List(items) => items.iter().all(is_inert_graphics_data),
+    Expr::FunctionCall { name, args } => {
+      is_builtin_symbol(name)
+        && !is_side_effecting_builtin(name)
+        && args.iter().all(is_inert_graphics_data)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => is_inert_graphics_data(pattern) && is_inert_graphics_data(replacement),
+    Expr::BinaryOp { left, right, .. } => {
+      is_inert_graphics_data(left) && is_inert_graphics_data(right)
+    }
+    Expr::UnaryOp { operand, .. } => is_inert_graphics_data(operand),
+    _ => false,
+  }
+}
+
+/// Keep only the elements of a primitives list that are inert graphics
+/// data, recursing into nested lists.
+fn drawable_primitives(content: &Expr) -> Expr {
+  match content {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .filter(|item| {
+          matches!(item, Expr::List(_)) || is_inert_graphics_data(item)
+        })
+        .map(drawable_primitives)
+        .collect(),
+    ),
+    other if is_inert_graphics_data(other) => other.clone(),
+    _ => Expr::List(vec![].into()),
+  }
+}
+
+/// The part of a `Graphics[…]` / `Graphics3D[…]` expression (rebuilt from
+/// its boxes) that a front end draws without evaluating anything: primitives
+/// and options that are not plain graphics data are dropped, so typesetting
+/// never runs held code (and never reports messages or prints from it).
+fn drawable_box_graphic(graphic: Expr) -> Expr {
+  match &graphic {
+    Expr::FunctionCall { name, args }
+      if (name == "Graphics" || name == "Graphics3D") && !args.is_empty() =>
+    {
+      let mut kept = vec![drawable_primitives(&args[0])];
+      kept.extend(args[1..].iter().filter(|o| is_inert_graphics_data(o)).cloned());
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: kept.into(),
+      }
+    }
+    _ => graphic,
+  }
 }
 
 /// Render a `BoxLayout` into a complete SVG string.

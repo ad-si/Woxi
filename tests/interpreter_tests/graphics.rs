@@ -68436,6 +68436,43 @@ mod inline_graphics_operands {
     assert_eq!(label_pictures(&svg), 2, "{svg}");
     assert!(!svg.contains("-Graphics-"), "{svg}");
   }
+
+  /// Regression: typesetting a held graphic evaluated its primitives, so
+  /// held code ran (`Print`) while the picture was drawn.
+  #[test]
+  fn held_graphic_is_drawn_without_running_its_code() {
+    clear_state();
+    let result = interpret_with_stdout(
+      r#"Hold[Graphics[{Print["side effect"], Red, Disk[]}]]"#,
+    )
+    .unwrap();
+    assert_eq!(result.result, "Hold[-Graphics-]");
+    assert!(!result.stdout.contains("side effect"), "{}", result.stdout);
+    let svg = result.output_svg.expect("held graphic is typeset");
+    // The plain primitives still draw.
+    assert!(
+      svg.contains("rgb(255,0,0)") || svg.contains("#ff0000"),
+      "{svg}"
+    );
+  }
+
+  /// Regression: the held body of a `Manipulate` whose primitives refer to
+  /// its (not yet bound) control variables reported messages from
+  /// evaluating them while the output was typeset.
+  #[test]
+  fn held_graphic_with_unbound_variables_reports_no_messages() {
+    for code in [
+      "Hold[Graphics3D[{If[h, Sphere[], {}], \
+       {Cuboid[]}[[First[First[Position[{a, b}, s]]]]], pts[[k]]}]]",
+      "Manipulate[Graphics[{Disk[{First[First[Position[{a, b}, s]]], 0}], \
+       {Circle[]}[[ax]]}], {{s, a}, {a, b}}, {{ax, 1}, Range[1]}]",
+    ] {
+      clear_state();
+      let result = interpret_with_stdout(code).unwrap();
+      assert!(result.warnings.is_empty(), "{code}: {:?}", result.warnings);
+      assert!(result.stdout.is_empty(), "{code}: {}", result.stdout);
+    }
+  }
 }
 
 /// A blank line in a multi-line `PlotLabel` keeps its height: the empty line's
