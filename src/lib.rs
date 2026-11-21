@@ -5021,6 +5021,23 @@ fn holds_layout_graphic(expr: &syntax::Expr) -> bool {
 /// as real `Expr::Graphics` sub-SVGs when embedded into a parent layout
 /// (e.g. items of a `Column[…]`). Plain text / numeric items are returned
 /// unchanged.
+/// Whether `expr` is a `Pane[…, {w, h}]` of fixed size, possibly inside
+/// `Text[…]` and `Style[…, directives]` wrappers.
+fn is_fixed_size_pane_through_text_style(expr: &syntax::Expr) -> bool {
+  match expr {
+    syntax::Expr::FunctionCall { name, args }
+      if (name == "Text" && args.len() == 1)
+        || (name == "Style" && args.len() >= 2) =>
+    {
+      is_fixed_size_pane_through_text_style(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, .. } if name == "Pane" => {
+      pane_fixed_size(expr).is_some()
+    }
+    _ => false,
+  }
+}
+
 fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // `Text[content]` displays `content` in plain text format: a picture
   // inside is still drawn, but text keeps the wrapper so the layout sets it
@@ -5069,6 +5086,20 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
   // wraps. (Without this it stayed a bare call and the column printed the
   // table's source text.) With directives, the styled-layout pass applies
   // them to the `Column`/`Row`/`Grid` underneath.
+  //
+  // `Style[Text[Pane[…, {w, h}]], Bold]` dresses the content of a
+  // fixed-size pane: the pane keeps its box (see below), so it is drawn
+  // whole rather than peeled down to the styled content.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && functions::graphics::is_style_wrapper(name)
+    && args.len() >= 2
+    && is_fixed_size_pane_through_text_style(&args[0])
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      return graphics_result(svg);
+    }
+  }
   if let syntax::Expr::FunctionCall { name, args } = expr
     && functions::graphics::is_style_wrapper(name)
   {

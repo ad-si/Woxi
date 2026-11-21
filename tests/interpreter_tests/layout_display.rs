@@ -1821,3 +1821,119 @@ fn styled_pane_keeps_its_width() {
     assert!(svg.starts_with("<svg width=\"200\""), "{pane}: {svg}");
   }
 }
+
+/// `Text[…]` sets its content in the proportional text face, a fixed-size
+/// `Pane` keeps its box under `Style`/`Text` wrappers and when its content
+/// is shrunk to fit, and a large fraction gets a proportionally heavier
+/// rule.
+mod text_in_fixed_panes {
+  use super::*;
+
+  fn svg_of(expr: &str) -> String {
+    clear_state();
+    interpret(&format!("ExportString[{expr}, \"SVG\"]")).unwrap()
+  }
+
+  /// The body of an SVG after its embedded stylesheet.
+  fn body(svg: &str) -> &str {
+    svg.find("</defs>").map_or(svg, |i| &svg[i..])
+  }
+
+  fn root_size(svg: &str) -> (String, String) {
+    let attr = |name: &str| {
+      let key = format!("{name}=\"");
+      let start = svg.find(&key).unwrap() + key.len();
+      svg[start..start + svg[start..].find('"').unwrap()].to_string()
+    };
+    (attr("width"), attr("height"))
+  }
+
+  #[test]
+  fn text_of_a_styled_string_uses_the_sans_serif_face() {
+    let svg = svg_of(r#"Text[Style["No, try again", 24, Red]]"#);
+    let body = body(&svg);
+    assert!(
+      body.contains("Atkinson Hyperlegible Next, sans-serif"),
+      "{svg}"
+    );
+    assert!(!body.contains("monospace"), "{svg}");
+  }
+
+  #[test]
+  fn styled_text_of_a_fraction_uses_the_sans_serif_face() {
+    let svg =
+      svg_of(r#"Style[Text[Row[{HoldForm[4]/HoldForm[66], "?"}]], 80]"#);
+    let body = body(&svg);
+    assert!(
+      body.contains("Atkinson Hyperlegible Next, sans-serif"),
+      "{svg}"
+    );
+    assert!(!body.contains("monospace"), "{svg}");
+  }
+
+  #[test]
+  fn text_keeps_an_explicit_font_family() {
+    let svg = svg_of(r#"Text[Style["abc", FontFamily -> "Courier"]]"#);
+    assert!(body(&svg).contains("Courier"), "{svg}");
+  }
+
+  #[test]
+  fn plain_output_stays_monospace() {
+    let svg = svg_of(r#"Style["abc", 24]"#);
+    assert!(body(&svg).contains("monospace"), "{svg}");
+  }
+
+  #[test]
+  fn styled_pane_keeps_its_box() {
+    let svg = svg_of(
+      r#"Style[Pane[Row[{47, "x", 87}, " "], {500, 25}, Alignment -> Center], Bold]"#,
+    );
+    assert_eq!(root_size(&svg), ("500".into(), "25".into()), "{svg}");
+    assert!(svg.contains("font-weight=\"bold\""), "{svg}");
+  }
+
+  #[test]
+  fn styled_text_pane_in_a_column_keeps_its_box() {
+    let svg = svg_of(
+      r#"Column[{Pane["", {300, 50}], Style[Text[Pane[Row[{47, "x", 87}, " "], {500, 25}, Alignment -> Center]], Bold]}, Alignment -> Center]"#,
+    );
+    assert_eq!(root_size(&svg), ("500".into(), "75".into()), "{svg}");
+    let row = svg.lines().find(|l| l.contains(">87</text>")).unwrap();
+    assert!(
+      row.contains("Atkinson Hyperlegible Next, sans-serif"),
+      "{row}"
+    );
+    assert!(row.contains("font-weight=\"bold\""), "{row}");
+  }
+
+  #[test]
+  fn shrink_to_fit_pane_keeps_its_box() {
+    // The 80 pt fraction is taller than the 200 x 200 pane, so it is
+    // shrunk — and centered in the pane, which stays 200 x 200.
+    let svg = svg_of(
+      r#"Pane[Style[HoldForm[4]/HoldForm[66], 80], {200, 200}, Alignment -> Center, ImageSizeAction -> "ShrinkToFit"]"#,
+    );
+    assert_eq!(root_size(&svg), ("200".into(), "200".into()), "{svg}");
+  }
+
+  /// The stroke widths of the `<line>` elements of an SVG.
+  fn line_widths(svg: &str) -> Vec<f64> {
+    svg
+      .match_indices("<line")
+      .filter_map(|(i, _)| {
+        let tag = &svg[i..i + svg[i..].find('>').unwrap()];
+        let start = tag.find("stroke-width=\"")? + "stroke-width=\"".len();
+        tag[start..start + tag[start..].find('"')?].parse().ok()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn fraction_rule_scales_with_large_type() {
+    assert_eq!(line_widths(&svg_of("HoldForm[4]/HoldForm[66]")), vec![0.8]);
+    assert_eq!(
+      line_widths(&svg_of("Style[HoldForm[4]/HoldForm[66], 70]")),
+      vec![4.0]
+    );
+  }
+}
