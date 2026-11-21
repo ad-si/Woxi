@@ -390,9 +390,7 @@ mod row_visual_mode {
     let one = height("Row[{\"has \", x, \" red balls\"}]");
     let prose =
       height("Row[{\"has \", x, \" red balls.\\n\\nProbability for\"}]");
-    // Three lines at the text's own line pitch, each shorter than the
-    // padded box of a lone line.
-    assert!(prose > one * 2.0, "one = {one}, prose = {prose}");
+    assert!(prose > one * 2.5, "one = {one}, prose = {prose}");
     let fraction = height("Row[{\"y = \", \"1\\n-\\n3\"}]");
     assert!(fraction < one * 3.0, "one = {one}, fraction = {fraction}");
   }
@@ -418,10 +416,8 @@ mod row_visual_mode {
     let one = svg("Row[{\"ab\", Row[{\"= \", 4}]}]");
     let product = svg("Row[{\"ab\", Row[{\"= \", 4}] \" \\n\\n  \"}]");
     // The string's two newlines put the row factor two lines further down.
-    // (Three lines at the text's own line pitch, each shorter than the
-    // padded box of a lone line.)
     assert!(
-      height(&product) > height(&one) * 2.0,
+      height(&product) > height(&one) * 2.5,
       "one = {}, product = {}",
       height(&one),
       height(&product)
@@ -876,8 +872,7 @@ mod traditional_row_layout {
       "Text[TraditionalForm[Row[{\"The \", \"real\" \" roots are \\n\", x, \
        \" = 1\"}]]]",
     );
-    // Two lines at the text's own line pitch.
-    assert!(out.starts_with("<svg width=\"") && out.contains("height=\"36\""));
+    assert!(out.starts_with("<svg width=\"") && out.contains("height=\"44\""));
     let t = texts(&out);
     let pos = |s: &str| t.iter().position(|x| x == s).unwrap();
     assert!(pos("real") < pos(" roots are "), "{t:?}");
