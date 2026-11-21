@@ -505,7 +505,8 @@ pub fn is_atomic_object(expr: &Expr) -> bool {
 }
 
 /// Objects that are atoms through and through, despite their compound head:
-/// a `Tree` and a (well-formed) `MeshRegion`/`BoundaryMeshRegion`. `Length`
+/// a `Tree`, a `Graph[vertices, edges, …]` object and a (well-formed)
+/// `MeshRegion`/`BoundaryMeshRegion`. `Length`
 /// is 0, `Depth` 1, `Dimensions` `{}`, `Map`/`Apply` leave them unchanged and
 /// `Part` cannot reach inside.
 pub fn is_fully_atomic_object(expr: &Expr) -> bool {
@@ -515,6 +516,11 @@ pub fn is_fully_atomic_object(expr: &Expr) -> bool {
       matches!(args.first(), Some(Expr::List(_)))
     }
     Expr::FunctionCall { name, args } if name == "Tree" => is_tree_object(args),
+    Expr::FunctionCall { name, args } if name == "Graph" => {
+      args.len() >= 2
+        && matches!(args[0], Expr::List(_))
+        && matches!(args[1], Expr::List(_))
+    }
     Expr::FunctionCall { name, args }
       if name == "MeshRegion" || name == "BoundaryMeshRegion" =>
     {
