@@ -1131,14 +1131,16 @@ mod graphics {
       let opts = "Boxed -> False, Lighting -> {{\"Ambient\", White}}, \
                   ViewPoint -> {0, 0, 10}, \
                   PlotRange -> {{-2, 2}, {-2, 2}, {-1, 1}}";
+      // Without edges no fan triangle widens across its cut, so the
+      // areas add up exactly.
       let crossing = export_svg(&format!(
-        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+        "Graphics3D[{{EdgeForm[], Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
          {{-1, 1, 0}}}} -> {{{{0.5, -0.25, 0}}, {{1.5, -0.25, 0}}, \
-         {{1.5, 0.25, 0}}, {{0.5, 0.25, 0}}}}], {opts}]"
+         {{1.5, 0.25, 0}}, {{0.5, 0.25, 0}}}}]}}, {opts}]"
       ));
       let solid = export_svg(&format!(
-        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
-         {{-1, 1, 0}}}}], {opts}]"
+        "Graphics3D[{{EdgeForm[], Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+         {{-1, 1, 0}}}}]}}, {opts}]"
       ));
       let (crossing_area, crossing_x) = svg_polygon_area_and_max_x(&crossing);
       let (solid_area, solid_x) = svg_polygon_area_and_max_x(&solid);
@@ -2327,6 +2329,58 @@ mod graphics {
       assert!(inset("{0, 0}").contains("translate(2.00,0.00)"));
       // Upper-right pixel corner on the origin: down and to the left.
       assert!(inset("{2, 2}").contains("translate(0.00,2.00)"));
+    }
+
+    /// `Inset[obj]` is `Inset[obj, Center]` (and an `Automatic` position is
+    /// `Center` too): the image is drawn in the middle of the picture. A
+    /// missing position used to leave the image unanchored, so it fell back
+    /// to printing its `-Image-` short form as text.
+    #[test]
+    fn an_image_inset_without_a_position_is_centered() {
+      for pos in ["", ", Center", ", Automatic"] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Inset[Image[{{{{0.2, 0.8, 0.4}}, {{0.9, 0.1, 0.6}}}}, \
+           ImageSize -> {{30, 20}}]{pos}]}}, PlotRange -> {{{{0, 4}}, {{0, 2}}}}, \
+           ImageSize -> 200]"
+        ));
+        assert!(!svg.contains("-Image-"), "pos {pos:?}: {svg}");
+        assert!(svg.contains("<image"), "pos {pos:?}: {svg}");
+        // Centered on the middle of the 200 x 100 picture, not on the
+        // origin in its lower-left corner.
+        assert!(
+          svg.contains("<svg x=\"84.50\" y=\"39.75\" width=\"30.00\""),
+          "pos {pos:?}: {svg}"
+        );
+      }
+    }
+
+    /// An image in a grid is shown at its own size — its `ImageSize`, else
+    /// its pixel size — like the image on its own. The grid layout used to
+    /// cap every image at 240 points across and stretch it to the column.
+    #[test]
+    fn a_grid_image_cell_keeps_its_own_size() {
+      let grid_svg = |code: &str| {
+        let Ok(woxi::syntax::Expr::FunctionCall { ref name, ref args }) =
+          woxi::interpret_to_expr(code)
+        else {
+          panic!("expected a Grid for {code}");
+        };
+        assert_eq!(name, "Grid");
+        woxi::functions::graphics::grid_svg_with_gaps(&args, &[]).unwrap()
+      };
+      // A 300 x 250 image is not shrunk to 240 points across.
+      let svg = grid_svg(
+        "Grid[{{\"a\", Image[ConstantArray[0.5, {250, 300}], \
+         ImageSize -> All]}}]",
+      );
+      assert!(svg.contains("width=\"300.0\" height=\"250.0\""), "{svg}");
+      // An explicit `ImageSize` is kept, and a wider column (from the text
+      // in the row below) does not stretch the image to fill it.
+      let svg = grid_svg(
+        "Grid[{{Image[ConstantArray[0.5, {10, 20}], ImageSize -> {40, 20}]}, \
+         {\"a long line of text in this column\"}}]",
+      );
+      assert!(svg.contains("width=\"40.0\" height=\"20.0\""), "{svg}");
     }
 
     /// `Inset[Graphics[…], pos, {Center, Bottom}, {w, h}]` folds the
@@ -6692,6 +6746,39 @@ mod graphics3d_dynamic_content {
   }
 }
 
+mod dynamic_plot_labels {
+  use super::*;
+
+  /// A `PlotLabel`/`AxesLabel` holding `Dynamic[x]` (e.g. a Manipulate
+  /// variable initialized to a `Dynamic[…]` caption) typesets the value `x`
+  /// has now, not the `Dynamic[…]` wrapper.
+  #[test]
+  fn dynamic_plot_label_on_2d_graphics() {
+    clear_state();
+    let svg = interpret(
+      "k = 7; ExportString[Graphics[Circle[], \
+       PlotLabel -> Dynamic[Subscript[\"T\", k]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Dynamic"), "{svg}");
+    assert!(svg.contains('7'), "{svg}");
+  }
+
+  #[test]
+  fn dynamic_text_plot_and_axes_labels_on_3d_plot() {
+    clear_state();
+    let svg = interpret(
+      "k = 7; ExportString[Plot3D[a b, {a, 0, 1}, {b, 0, 1}, \
+       PlotLabel -> Dynamic[Text[Subscript[\"T\", k]]], \
+       AxesLabel -> {None, None, Dynamic[Row[{\"q\", k}]]}], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("Dynamic"), "{svg}");
+    assert!(!svg.contains("Text["), "{svg}");
+    assert!(svg.contains("q7"), "{svg}");
+  }
+}
+
 mod plot_body_with_large_shared_data {
   use super::*;
 
@@ -10516,12 +10603,14 @@ mod plot3d {
 
     /// A plane cuts a quadrilateral out of the box. Comparing the whole
     /// SVG would compare the triangle fan's starting corner too, so this
-    /// checks the drawn corners as a set.
+    /// checks the drawn corners as a set. Without edges the fan halves do
+    /// not widen across their cut, so only true corners are drawn.
     #[test]
     fn unbounded_planes_fill_their_cross_section_of_the_box() {
       let corners = |code: &str| -> Vec<String> {
-        let svg =
-          export_svg(&format!("Graphics3D[{{{code}}}, PlotRange -> 10]"));
+        let svg = export_svg(&format!(
+          "Graphics3D[{{EdgeForm[], {code}}}, PlotRange -> 10]"
+        ));
         let mut pts: Vec<String> = svg
           .split("<polygon points=\"")
           .skip(1)
@@ -32168,7 +32257,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(dashed_edges.iter().all(|e| !e.contains("stroke-linecap")));
     }
 
-    /// The filled triangles and the dark outline edges of a 3D SVG, in draw
+    /// The filled faces and the dark outline edges of a 3D SVG, in draw
     /// order: `(index, corners)` and `(index, from, to)`.
     #[allow(clippy::type_complexity)]
     fn svg_faces_and_outlines(
@@ -32206,13 +32295,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       (faces, outlines)
     }
 
-    /// How far `p` lies inside the triangle `t` (negative outside).
+    /// How far `p` lies inside the convex polygon `t` (negative outside):
+    /// a triangle, or a fan triangle widened across its internal cuts.
     fn inset(t: &[(f64, f64)], p: (f64, f64)) -> f64 {
       let side = |a: (f64, f64), b: (f64, f64)| {
         let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
         ((b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0)) / len
       };
-      let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
+      let s: Vec<f64> = (0..t.len())
+        .map(|k| (t[k], t[(k + 1) % t.len()]))
+        .filter(|(a, b)| a != b)
+        .map(|(a, b)| side(a, b))
+        .collect();
       let lo = s.iter().copied().fold(f64::MAX, f64::min);
       let hi = s.iter().copied().fold(f64::MIN, f64::max);
       lo.max(-hi)
@@ -32238,7 +32332,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           let mid = (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1));
           let cover = faces
             .iter()
-            .filter(|(j, pts)| *j > i && pts.len() == 3 && pts[0] != pts[1])
+            .filter(|(j, pts)| *j > i && pts.len() >= 3 && pts[0] != pts[1])
             .map(|(_, pts)| inset(pts, mid))
             .fold(f64::MIN, f64::max);
           (a, b, cover)
@@ -32375,7 +32469,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
             let p = (a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1));
             !faces.iter().any(|(j, pts)| {
               j > i
-                && pts.len() == 3
+                && pts.len() >= 3
                 && pts[0] != pts[1]
                 && inset(pts, p) > -0.15
             })
@@ -39871,6 +39965,25 @@ mod discrete_plot {
     )
     .unwrap();
     assert_eq!(result, "6");
+  }
+
+  // `{var, {x1, x2, …}}` samples exactly the listed values (evaluated
+  // from a symbol too), in any order and spacing.
+  #[test]
+  fn explicit_sample_list() {
+    clear_state();
+    let svg = export_svg("DiscretePlot[x^2, {x, {1, 2, 4}}]");
+    assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    let svg = export_svg(
+      "pts = {3.5, 0.25, 7, 1.}; DiscretePlot[x, {x, pts}, Filling -> None]",
+    );
+    assert_eq!(svg.matches("<circle").count(), 4, "{svg}");
+    // The listed values are substituted exactly.
+    assert_eq!(
+      interpret("c = {}; DiscretePlot[(AppendTo[c, x]; 1), {x, {1/2, 3}}]; c")
+        .unwrap(),
+      "{1/2, 3}"
+    );
   }
 
   // {var, max} is shorthand for {var, 1, max} in DiscretePlot, matching Table.
@@ -54398,6 +54511,37 @@ mod list_plot_markers_and_epilog {
     assert_eq!(svg.matches("<circle").count(), 0, "{svg}");
   }
 
+  // `Text[marker]` draws the marker itself, and a `FontSize -> n` rule
+  // inside `Style` sizes the glyph like a bare `n` does.
+  #[test]
+  fn a_text_wrapped_marker_with_a_font_size_rule() {
+    clear_state();
+    let font_size = |svg: &str| {
+      svg
+        .split("<text ")
+        .find(|tag| tag.contains(">\nB") || tag.contains(">B"))
+        .and_then(|tag| tag.split("font-size=\"").nth(1))
+        .and_then(|f| f.split('"').next())
+        .and_then(|f| f.parse::<f64>().ok())
+        .map(f64::round)
+    };
+    let svg = export_svg(
+      "ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> Text[Style[\"B\", FontSize -> 15]]]",
+    );
+    let markers: Vec<_> = marker_glyphs(&svg)
+      .into_iter()
+      .filter(|(t, _)| t == "B")
+      .collect();
+    assert_eq!(markers.len(), 2, "one glyph per data point: {svg}");
+    let by_rule = font_size(&svg);
+    let svg = export_svg(
+      "ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> Style[\"B\", 15]]",
+    );
+    assert_eq!(by_rule, font_size(&svg), "{svg}");
+    let svg = export_svg("ListPlot[{{0, 1.}, {1, 2.}}, PlotMarkers -> \"B\"]");
+    assert_ne!(by_rule, font_size(&svg), "{svg}");
+  }
+
   #[test]
   fn a_marker_list_is_cycled_over_the_series() {
     clear_state();
@@ -66847,6 +66991,93 @@ fn row_styled_part_applies_relative_size_once() {
   let svg = export_svg(r#"Row[{Style["sample size = ", Larger], 20}]"#);
   assert!(svg.contains("font-size=\"17.5\""), "{svg}");
   assert!(!svg.contains("125%"), "{svg}");
+}
+
+/// The x and y coordinates of every `<polygon>` vertex in an SVG.
+fn polygon_vertices(svg: &str) -> Vec<(f64, f64)> {
+  svg
+    .split("<polygon ")
+    .skip(1)
+    .filter_map(|p| p.split("points=\"").nth(1)?.split('"').next())
+    .flat_map(|pts| {
+      pts
+        .split_whitespace()
+        .filter_map(|pair| {
+          let (x, y) = pair.split_once(',')?;
+          Some((x.parse().ok()?, y.parse().ok()?))
+        })
+        .collect::<Vec<_>>()
+    })
+    .collect()
+}
+
+/// A surface plot drawn inside a `Manipulate` frame is framed by the sphere
+/// around its box, as a `Graphics3D` there is, so the picture keeps its
+/// scale while a control reshapes the surface. A Demonstration's snapshot
+/// of a `ParametricPlot3D` at `ImageSize -> {450, 450}` drew its box about
+/// 0.87× as wide as the outline-fitted box. `SphericalRegion -> True` gives
+/// the same framing outside a frame, and `SphericalRegion -> False` keeps
+/// the outline fit inside one.
+#[test]
+fn manipulate_frame_frames_surface_plots_by_their_sphere() {
+  let plot = |opts: &str| {
+    format!(
+      "ParametricPlot3D[{{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}}, \
+       {{u, 0, 2 Pi}}, {{v, 0, Pi}}, PlotPoints -> 8, Mesh -> None, \
+       ImageSize -> {{300, 300}}{opts}]"
+    )
+  };
+  let plain = export_svg(&plot(""));
+  let spherical = export_svg(&plot(", SphericalRegion -> True"));
+  assert_ne!(plain, spherical);
+  assert_eq!(
+    woxi::with_manipulate_frame(|| export_svg(&plot(""))),
+    spherical
+  );
+  assert_eq!(
+    woxi::with_manipulate_frame(|| {
+      export_svg(&plot(", SphericalRegion -> False"))
+    }),
+    plain
+  );
+  // The sphere around a cube-shaped box is wider than the box's outline,
+  // so the surface is drawn smaller.
+  let width = |svg: &str| {
+    let xs: Vec<f64> = polygon_vertices(svg).iter().map(|p| p.0).collect();
+    xs.iter().copied().fold(f64::MIN, f64::max)
+      - xs.iter().copied().fold(f64::MAX, f64::min)
+  };
+  let ratio = width(&spherical) / width(&plain);
+  assert!(ratio > 0.7 && ratio < 0.95, "{ratio}");
+}
+
+/// `ImagePadding` keeps a surface plot's scene out of a band around the
+/// picture, which keeps its full `ImageSize`.
+#[test]
+fn surface_plot_image_padding_insets_the_scene() {
+  let plot = |opts: &str| {
+    export_svg(&format!(
+      "Plot3D[x y, {{x, -1, 1}}, {{y, -1, 1}}, PlotPoints -> 6, \
+       Mesh -> None, Axes -> False, ImageSize -> {{300, 300}}{opts}]"
+    ))
+  };
+  let plain = plot("");
+  let padded = plot(", ImagePadding -> 40");
+  assert!(
+    padded.starts_with("<svg width=\"300\" height=\"300\""),
+    "{padded}"
+  );
+  let bounds = |svg: &str| {
+    polygon_vertices(svg).iter().fold(
+      [f64::MAX, f64::MIN, f64::MAX, f64::MIN],
+      |[x0, x1, y0, y1], &(x, y)| [x0.min(x), x1.max(x), y0.min(y), y1.max(y)],
+    )
+  };
+  let [x0, x1, y0, y1] = bounds(&padded);
+  assert!(x0 >= 39.0 && x1 <= 261.0, "{x0} {x1}");
+  assert!(y0 >= 39.0 && y1 <= 261.0, "{y0} {y1}");
+  let [px0, px1, ..] = bounds(&plain);
+  assert!(px0 < 39.0 || px1 > 261.0, "{px0} {px1}");
 }
 
 /// Visible text of an SVG: the contents of its `<text>` elements.

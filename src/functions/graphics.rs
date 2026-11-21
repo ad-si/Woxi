@@ -1618,6 +1618,10 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
   {
     return Some((x, y, true));
   }
+  // A bare `Center` is the middle of the whole picture.
+  if matches!(expr, Expr::Identifier(c) if c == "Center") {
+    return Some((0.5, 0.5, true));
+  }
   // `{Left, Top}` names the corner of the plot range: the same point as
   // `Scaled[{0, 1}]`. `Center` is the middle on either axis.
   if let Expr::List(items) = expr
@@ -8316,11 +8320,12 @@ fn inset_primitives(
       return Some(prims);
     }
   }
-  // An `Automatic` position is the plot's origin, the same point a missing
-  // one falls back to when the object is folded in below.
+  // A missing or `Automatic` position is `Center`: the middle of the whole
+  // picture (`Inset[obj]` is `Inset[obj, Center]`).
   let anchor = match args.get(1) {
-    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.0, 0.0, false)),
-    other => other.and_then(expr_to_anchor),
+    None => Some((0.5, 0.5, true)),
+    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.5, 0.5, true)),
+    Some(other) => expr_to_anchor(other),
   };
   // Without a `size`, an inset is the object at its own natural size — not
   // stretched or shrunk to whatever extent its primitives happen to span in
@@ -8417,7 +8422,10 @@ fn inset_primitives(
         || name == "Graphics3DBox"
         || ((natural_size
           || inset_size_is_scaled(args)
-          || anchor.is_some_and(|(_, _, scaled)| scaled))
+          || args
+            .get(1)
+            .and_then(expr_to_anchor)
+            .is_some_and(|(_, _, scaled)| scaled))
           && (name == "Graphics" || name == "GraphicsBox")) =>
     {
       let svg = crate::evaluator::expr_to_svg(call);
@@ -21819,6 +21827,15 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some(styled) = normalize_display_style(expr) {
     return expr_to_svg_markup(&styled);
   }
+  // A typeset `Dynamic[x]` shows the value `x` currently has, not the
+  // wrapper (e.g. a Manipulate variable initialized to `Dynamic[…]` and
+  // then used as a plot or axis label).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return expr_to_svg_markup(&dynamic_current_value(expr));
+  }
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
   // `Print`/OutputForm in a script, which show the literal wrapper because
@@ -24405,6 +24422,12 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 pub fn traditional_label(e: &Expr) -> String {
   match e {
     Expr::String(s) => s.clone(),
+    // A `Dynamic[x]` label reads as the value `x` currently has.
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      traditional_label(&dynamic_current_value(e))
+    }
     // `Rotate[content, angle]` (a vertical axis label idiom) typesets its
     // content unrotated, as `expr_to_svg_markup` does, rather than the
     // `Rotate(…)` call `TraditionalForm` would print. A `Text[content]`
@@ -25131,8 +25154,9 @@ fn contains_visible_style(e: &Expr) -> bool {
   }
 }
 
-/// Whether `e` is, or holds inside a `Row`, `Text` or script, a
-/// `Style[label, …]` whose directives change how the text is drawn. Unlike
+/// Whether `e` is, or holds inside a `Row`, `Text`, script or power (a
+/// `Style["e", Italic]^t` base), a `Style[label, …]` whose directives change
+/// how the text is drawn. Unlike
 /// [`contains_visible_style`], a script that merely holds letters
 /// (`Subscript[R, x]`) does not count: such a label carries no styling of
 /// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
@@ -25152,11 +25176,16 @@ fn has_explicit_style(e: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if matches!(
         name.as_str(),
-        "Subscript" | "Superscript" | "Subsuperscript"
+        "Subscript" | "Superscript" | "Subsuperscript" | "Power"
       ) =>
     {
       args.iter().any(has_explicit_style)
     }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => has_explicit_style(left) || has_explicit_style(right),
     _ => false,
   }
 }
@@ -30101,6 +30130,23 @@ fn parse_position_spacings(spec: &Expr) -> Vec<Option<f64>> {
   out
 }
 
+/// The size an image cell is shown at in a grid: its `ImageSize`, else its
+/// pixel size — the same size the image has on its own.
+fn grid_image_shown_size(cell: &Expr) -> Option<(f64, f64)> {
+  match unwrap_to_image(cell)? {
+    Expr::Image {
+      width,
+      height,
+      display_size,
+      ..
+    } => {
+      let (w, h) = display_size.unwrap_or((*width, *height));
+      Some((w as f64, h as f64))
+    }
+    _ => None,
+  }
+}
+
 /// Check if a cell is or contains an Expr::Image (unwrapping Style).
 fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
   match cell {
@@ -31193,7 +31239,14 @@ fn grid_svg_styled_internal_reporting(
     } = &opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
-      match name.as_str() {
+      // `Frame -> {xspec, yspec}` rules the grid's column and row lines
+      // exactly as `Dividers -> {xspec, yspec}` does, so it shares that
+      // parser (e.g. `Frame -> {False, All}` draws only horizontal lines).
+      let key = match replacement.as_ref() {
+        Expr::List(items) if name == "Frame" && items.len() == 2 => "Dividers",
+        _ => name.as_str(),
+      };
+      match key {
         "Frame" => match replacement.as_ref() {
           Expr::Identifier(val) if val == "All" => frame_all = true,
           Expr::Identifier(val) if val == "True" => frame_outer = true,
@@ -31811,6 +31864,8 @@ fn grid_svg_styled_internal_reporting(
       }
       let w = if let Some((_, nat_w, _)) = grid_cell_graphic(cell) {
         nat_w + col_pad(j)
+      } else if let Some((img_w, _)) = grid_image_shown_size(cell) {
+        img_w + col_pad(j)
       } else {
         let advance = if contains_base_form(cell) {
           font_size * MONO_ADVANCE
@@ -31941,21 +31996,9 @@ fn grid_svg_styled_internal_reporting(
       if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
         cell_h = cell_h.max(nat_h + pad_y);
       }
-      // An Image cell is scaled to fit the column width, which fixes its height.
-      if let Some(img) = unwrap_to_image(cell)
-        && let Expr::Image {
-          width: iw,
-          height: ih,
-          ..
-        } = img
-      {
-        let col_w = if j < col_widths.len() {
-          col_widths[j] - col_pad(j)
-        } else {
-          200.0
-        };
-        let scale = col_w / (*iw as f64);
-        cell_h = cell_h.max((*ih as f64) * scale + pad_y);
+      // An Image cell keeps the size it is shown at on its own.
+      if let Some((_, img_h)) = grid_image_shown_size(cell) {
+        cell_h = cell_h.max(img_h + pad_y);
       }
       let span = span_height(&rows, i, j);
       if span > 1 {
@@ -32381,11 +32424,17 @@ fn grid_svg_styled_internal_reporting(
           ..
         } = img
         {
-          let avail_w = col_w - col_pad(j);
-          let scale = avail_w / (*iw as f64);
-          let draw_w = avail_w;
-          let draw_h = (*ih as f64) * scale;
-          let ix = x_offset + col_pad_left[j];
+          let (draw_w, draw_h) =
+            grid_image_shown_size(cell).unwrap_or((*iw as f64, *ih as f64));
+          // Placed by the column's alignment, like a graphic cell.
+          let ix = match anchor {
+            "start" => x_offset + col_pad_left[j],
+            "end" => {
+              let span_end = (j + span_width(row, j)).min(num_cols) - 1;
+              x_offset + col_w - col_pad_right[span_end] - draw_w
+            }
+            _ => x_offset + (col_w - draw_w) / 2.0,
+          };
           let vis_h = cell_bottom - cell_top;
           let iy =
             aligned_top(draw_h).unwrap_or(cell_top + (vis_h - draw_h) / 2.0);
@@ -32414,7 +32463,7 @@ fn grid_svg_styled_internal_reporting(
           color: cell_color,
           hidden: cell_hidden,
           decoration: cell_decoration,
-          ..
+          background: cell_background,
         } = extract_cell_style(cell);
 
         // Detect `Hyperlink[displayText, url]` cells so the grid can render
@@ -32512,6 +32561,11 @@ fn grid_svg_styled_internal_reporting(
         // A line break starts a new line: one `<tspan>` per line, the block
         // centered on the cell. Stacked fractions are drawn elsewhere.
         let multiline = markup.contains('\n') && !has_fraction(cell);
+        let n_lines = if multiline {
+          split_markup_lines(&markup).len().max(1) as f64
+        } else {
+          1.0
+        };
         // A centered cell whose lines are aligned on one side
         // (`TextAlignment -> Left`, as a `Column` cell sets) keeps the block
         // centered but starts (or ends) every line at the block's edge.
@@ -32562,6 +32616,31 @@ fn grid_svg_styled_internal_reporting(
           let lh = markup_line_height(&markup, fs);
           (aligned_top(lh).map_or(cy, |t| t + lh / 2.0 - 1.0), markup)
         };
+        // `Style[…, Background -> c]` paints a panel just behind the text
+        // (not the whole cell, which `Item[…, Background -> c]` fills).
+        if let Some(bg) = cell_background.filter(|_| !cell_hidden) {
+          let advance = if contains_base_form(cell) {
+            font_size * MONO_ADVANCE
+          } else {
+            char_width
+          };
+          let tw = estimate_display_width(cell) * advance * (fs / font_size);
+          let bh = n_lines * fs;
+          let left = match anchor {
+            "middle" => cx - tw / 2.0,
+            "end" => cx - tw,
+            _ => cx,
+          };
+          let top = if multiline {
+            text_y - fs / 2.0
+          } else {
+            text_y - bh / 2.0
+          };
+          svg.push_str(&format!(
+            "<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{tw:.1}\" height=\"{bh:.1}\" fill=\"{}\"/>\n",
+            bg.to_svg_rgb(),
+          ));
+        }
         let text_elem = format!(
           "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr}{deco_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
           ff = svg_escape(ff),
@@ -37745,10 +37824,20 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
         // `Style[TraditionalForm[Column[…]], 14]`: the form wrapper comes
         // off first (typesetting each item of the layout traditionally), so
         // the style reaches the layout's items the same way.
-        if matches!(&args[0], Expr::FunctionCall { name: n, .. }
+        // A one-argument `Text[…]` only marks its content as display text,
+        // so `Style[Text[TraditionalForm[poly]], 12]` is typeset the same
+        // way as `Style[TraditionalForm[poly], 12]`.
+        let mut form_body = &args[0];
+        while let Expr::FunctionCall { name: n, args: t } = form_body
+          && n == "Text"
+          && t.len() == 1
+        {
+          form_body = &t[0];
+        }
+        if matches!(form_body, Expr::FunctionCall { name: n, .. }
           if n == "TraditionalForm")
         {
-          let unwrapped = unwrap_display_wrappers(&args[0]);
+          let unwrapped = unwrap_display_wrappers(form_body);
           if let Some(inner) = style_pushed_into_layout(&unwrapped, &args[1..])
           {
             return nested_layout_svg(&inner);
@@ -56452,6 +56541,34 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `Animator[Dynamic[lval], {min, max[, step]}[, step], opts…]` written
+      // inside a display element (e.g. next to a setter bar in a `Row`):
+      // like `Trigger`, it sweeps `lval` over its range, so draw it as a
+      // slider over that range. A bare third positional step folds into the
+      // range; options (rules) only affect playback and appearance.
+      "Animator" if args.len() >= 2 => {
+        let range = match (&args[1], args.get(2)) {
+          (Expr::List(b), Some(step))
+            if b.len() == 2
+              && !matches!(
+                step,
+                Expr::Rule { .. } | Expr::RuleDelayed { .. }
+              ) =>
+          {
+            Expr::List(vec![b[0].clone(), b[1].clone(), step.clone()].into())
+          }
+          (r, _) => r.clone(),
+        };
+        match slider_node(
+          &[args[0].clone(), range],
+          Vec::new(),
+          false,
+          bindings,
+        ) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
       // `EventHandler[content, "MouseClicked" :> action, …]`: draws as its
       // content. When the content is a slider, the click/drag actions run
       // after each of its write-backs.
@@ -60218,6 +60335,34 @@ mod manipulate_control_placement_tests {
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
   }
 
+  /// Live captions written among the controls (a bare `Dynamic[…]`, a
+  /// `Row`/`Style` holding one, or what a `Row[{Control[…], …}]` keeps
+  /// beside its control) are rows of the control panel, each at the place
+  /// it holds among the controls, not extras above the output.
+  #[test]
+  fn live_captions_keep_their_place_in_the_control_panel() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{a, b, msg}, \
+       Row[{Control[{{a, 1, \"a\"}, {1, 2}, ControlType -> PopupMenu}], \
+         Style[\" \"], Dynamic[{a, b}]}], \
+       {{b, 0.5, \"b\"}, 0, 1}, \
+       Row[{Style[\"b = \"], Dynamic[b]}], \
+       Delimiter, \
+       Dynamic[Style[msg, Bold, Red]], \
+       {{msg, \"\"}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "b", ""]);
+    assert_eq!(spec.displays.len(), 3, "{:?}", spec.displays);
+    assert!(spec.displays[0].contains("Dynamic[{a, b}]"));
+    assert!(spec.displays[1].contains("Dynamic[b]"));
+    assert!(spec.displays[2].contains("Dynamic[Style[msg"));
+    assert_eq!(spec.panel_displays, vec![(0, 1), (1, 2), (2, 3)]);
+  }
+
   /// A live caption row (`Row[{Style["left "], Dynamic[left]}]`) between
   /// control specs is a row of the control panel at its declared place,
   /// not a display under the panel; a trailing one closes the panel.
@@ -61446,6 +61591,56 @@ mod manipulate_traditional_form_equation_tests {
     assert!(
       !dump.contains("TraditionalForm["),
       "TraditionalForm source leaked: {dump}"
+    );
+  }
+}
+
+#[cfg(test)]
+mod animator_display_tests {
+  use super::*;
+
+  fn slider_of(node: &DisplayNode) -> Option<(String, f64, f64, f64)> {
+    match node {
+      DisplayNode::Slider {
+        target,
+        min,
+        max,
+        step,
+        ..
+      } => Some((target.clone(), *min, *max, *step)),
+      DisplayNode::Row(parts) => parts.iter().find_map(slider_of),
+      _ => None,
+    }
+  }
+
+  /// An `Animator[Dynamic[v], {min, max, step}, opts…]` placed in a display
+  /// `Row` (next to a setter bar) draws as a live control over its range,
+  /// not as the literal `Animator[…]` source.
+  #[test]
+  fn animator_in_row_with_step_in_range() {
+    let node = build_manipulate_display(
+      "Row[{\"animate \", Animator[Dynamic[n], {2, 4, 1}, \
+       AnimationRunning -> False, Appearance -> Small]}]",
+      &[("n".to_string(), "3".to_string())],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("n".to_string(), 2.0, 4.0, 1.0)),
+      "{node:?}"
+    );
+  }
+
+  /// The step may also follow the range as a separate positional argument.
+  #[test]
+  fn animator_with_positional_step() {
+    let node = build_manipulate_display(
+      "Animator[Dynamic[t], {0, 10}, 0.5, AnimationRunning -> False]",
+      &[],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("t".to_string(), 0.0, 10.0, 0.5)),
+      "{node:?}"
     );
   }
 }
