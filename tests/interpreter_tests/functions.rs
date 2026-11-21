@@ -4174,6 +4174,31 @@ mod play {
   }
 }
 
+mod beep {
+  use super::*;
+
+  #[test]
+  fn returns_null() {
+    assert_eq!(interpret("Beep[] === Null").unwrap(), "True");
+    assert_eq!(interpret("x = Beep[]; x === Null").unwrap(), "True");
+  }
+
+  #[test]
+  fn captures_a_playable_tone() {
+    woxi::clear_captured_sound();
+    interpret("Beep[]").unwrap();
+    let audio = woxi::get_captured_sound().expect("Beep[] captures audio");
+    assert_eq!(audio.mime, "audio/wav");
+    assert_ne!(audio.base64, "");
+  }
+
+  #[test]
+  fn runs_inside_compound_expressions() {
+    // A handler that beeps after a move must still carry on afterwards.
+    assert_eq!(interpret("n = 1; Beep[]; n + 1").unwrap(), "2");
+  }
+}
+
 mod sound_volume {
   use super::*;
 
@@ -7543,6 +7568,40 @@ mod mouse_position {
   }
 }
 
+mod refresh_update_interval {
+  use super::*;
+
+  /// `Refresh[expr, UpdateInterval -> t]` with a finite `t` asks a front
+  /// end to re-evaluate the enclosing `Dynamic` on a timer.
+  #[test]
+  fn a_finite_interval_requests_a_timed_refresh() {
+    woxi::take_timed_refresh();
+    assert_eq!(
+      interpret("Refresh[1 + 1, UpdateInterval -> 0]").unwrap(),
+      "2"
+    );
+    assert!(woxi::take_timed_refresh());
+    assert!(!woxi::take_timed_refresh(), "the request is cleared");
+    assert_eq!(
+      interpret("dt = 1/2; Refresh[3, UpdateInterval :> dt]").unwrap(),
+      "3"
+    );
+    assert!(woxi::take_timed_refresh());
+  }
+
+  #[test]
+  fn no_or_an_infinite_interval_requests_none() {
+    woxi::take_timed_refresh();
+    assert_eq!(interpret("Refresh[3, None]").unwrap(), "3");
+    assert_eq!(
+      interpret("Refresh[3, UpdateInterval -> Infinity]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Refresh[3, TrackedSymbols :> {x}]").unwrap(), "3");
+    assert!(!woxi::take_timed_refresh());
+  }
+}
+
 mod event_handler_mouse_markers {
   use super::*;
   use woxi::functions::graphics::{
@@ -7607,5 +7666,60 @@ mod event_handler_mouse_markers {
       assert!(!svg.contains(MOUSE_EVENTS_ID_PREFIX), "{code}");
       assert!(!svg.contains(PLOT_FRAME_ID_PREFIX), "{code}");
     }
+  }
+}
+
+mod click_pane_markers {
+  use super::*;
+  use woxi::functions::graphics::{
+    CLICK_PANE_HIT_ID_PREFIX, ClickPaneHit, click_pane_from_hit_id,
+  };
+
+  fn click_hit(code: &str) -> ClickPaneHit {
+    let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+    let i = svg
+      .find(&format!("id=\"{CLICK_PANE_HIT_ID_PREFIX}"))
+      .unwrap()
+      + 4;
+    let end = i + svg[i..].find('"').unwrap();
+    click_pane_from_hit_id(&svg[i..end]).unwrap()
+  }
+
+  /// A `ClickPane` reports the coordinates of its graphic over the whole
+  /// picture.
+  #[test]
+  fn coordinates_follow_the_plot_range() {
+    let hit = click_hit(
+      "ClickPane[Graphics[Rectangle[{0, 0}, {4, 1}], \
+       PlotRange -> {{0, 4}, {0, 1}}, ImageSize -> {400, 100}], f]",
+    );
+    // The 399×99 drawing area of the 400×100 picture is a hair wider than
+    // 4:1, so x widens by a fraction of a pixel.
+    assert!(
+      hit.x_min.abs() < 0.05 && (hit.x_max - 4.0).abs() < 0.05,
+      "{hit:?}"
+    );
+    assert_eq!((hit.y_min, hit.y_max), (0.0, 1.0));
+    assert_eq!(hit.handler, "f");
+  }
+
+  /// A graphic drawn letterboxed (its `ImageSize` has another shape than
+  /// its `PlotRange`) widens the reported range to the picture's edges.
+  #[test]
+  fn letterboxed_graphic_widens_the_range() {
+    let hit = click_hit(
+      "ClickPane[Graphics[Rectangle[{0, 0}, {10, 10}], \
+       PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> {300, 200}], f]",
+    );
+    assert!((hit.x_min + 2.5).abs() < 0.1, "{hit:?}");
+    assert!((hit.x_max - 12.5).abs() < 0.1, "{hit:?}");
+    assert_eq!((hit.y_min, hit.y_max), (0.0, 10.0));
+    let hit = click_hit(
+      "ClickPane[Graphics[Rectangle[{0, 0}, {10, 10}], \
+       PlotRange -> {{0, 10}, {0, 10}}, ImageSize -> {200, 300}], f]",
+    );
+    assert_eq!((hit.x_min, hit.x_max), (0.0, 10.0));
+    assert!((hit.y_min + 2.5).abs() < 0.1, "{hit:?}");
+    assert!((hit.y_max - 12.5).abs() < 0.1, "{hit:?}");
   }
 }
