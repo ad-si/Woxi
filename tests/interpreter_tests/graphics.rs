@@ -68436,6 +68436,22 @@ mod inline_graphics_operands {
     assert_eq!(label_pictures(&svg), 2, "{svg}");
     assert!(!svg.contains("-Graphics-"), "{svg}");
   }
+
+  /// Displaying held code raises no messages: a picture whose primitives
+  /// use a `Table` iterator (as in an unevaluated `Manipulate` body) must
+  /// not raise `Part::pkspec1` while it is drawn out of the iterator's scope.
+  #[test]
+  fn held_graphics_display_raises_no_messages() {
+    for code in [
+      "Hold[Table[Graphics[Line[{{1, 2}, {3, 4}}[[i]]]], {i, 2}]]",
+      "Manipulate[Table[Graphics[{Red, Line[{{1, 2}, {3, 4}}[[k]]]}], \
+       {k, 2}], {x, {True, False}}]",
+    ] {
+      let res = woxi::interpret_with_stdout(code).unwrap();
+      assert!(res.warnings.is_empty(), "{code}: {:?}", res.warnings);
+      assert!(!res.stdout.contains("pkspec1"), "{code}: {}", res.stdout);
+    }
+  }
 }
 
 /// A blank line in a multi-line `PlotLabel` keeps its height: the empty line's
