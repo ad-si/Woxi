@@ -17979,6 +17979,56 @@ mod plot3d {
     }
 
     #[test]
+    fn plot_legends_placed_at_a_scaled_point_sit_inside_the_plot() {
+      // `Placed[labels, Scaled[{x, y}]]` puts the legend at the same point
+      // as `Placed[labels, {x, y}]`, inside the picture.
+      let bare = export_svg(
+        r#"Plot[{x, x^2}, {x, 0, 1},
+          PlotLegends -> Placed[{"first", "second"}, {0.8, 0.2}]]"#,
+      );
+      let scaled = export_svg(
+        r#"Plot[{x, x^2}, {x, 0, 1},
+          PlotLegends -> Placed[{"first", "second"}, Scaled[{0.8, 0.2}]]]"#,
+      );
+      assert!(scaled.contains(">first</text"), "{scaled}");
+      assert_eq!(scaled, bare);
+    }
+
+    #[test]
+    fn show_of_a_plot_and_graphics_keeps_the_plot_legends() {
+      // `Show[plot, Graphics[…]]` draws the curves as primitives together
+      // with the other graphics, and keeps the plot's legend on the result.
+      let svg = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1}, PlotLegends -> {"first", "second"}],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
+      assert!(svg.contains(">second</text"), "{svg}");
+    }
+
+    #[test]
+    fn show_of_a_plot_and_graphics_keeps_a_placed_legend_inside() {
+      // A legend `Placed` at a scaled point sits inside the picture: the
+      // width of the picture stays that of the plain `Show`.
+      let plain = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1}],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      let svg = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1},
+            PlotLegends -> Placed[{"first", "second"}, Scaled[{0.8, 0.2}]]],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
+      assert!(svg.contains(">second</text"), "{svg}");
+      let width = |s: &str| {
+        let start = s.find("width=\"").unwrap() + 7;
+        s[start..start + s[start..].find('"').unwrap()].to_string()
+      };
+      assert_eq!(width(&svg), width(&plain));
+    }
+
+    #[test]
     fn show_of_a_plot_with_graphics_keeps_its_legend() {
       // The merged picture keeps the first graphic's options, `PlotLegends`
       // included, also when the other layers are plain graphics.
@@ -37709,7 +37759,7 @@ mod grid_frame_and_background {
   /// `Spacings -> h` still spaces every column equally.
   #[test]
   fn uniform_spacings_keeps_columns_evenly_spaced() {
-    let svg = export_svg(r#"Grid[{{"a", "b", "c"}}, Spacings -> 2]"#);
+    let svg = export_svg(r#"Grid[{{"a", "a", "a"}}, Spacings -> 2]"#);
     let xs = text_xs(&svg);
     assert_eq!(xs.len(), 3, "{svg}");
     assert!(
@@ -57734,7 +57784,9 @@ fn grid_column_width_follows_displayed_text() {
   let long = first_divider("Grid[{{0.1 + 0.2, 1}}, Frame -> All]");
   let short = first_divider("Grid[{{0.3, 1}}, Frame -> All]");
   assert_eq!(long, short);
-  // A derivative is measured as the function plus its prime marks.
+  // A derivative is measured as the function plus its prime marks: one
+  // character wider than the bare function, not its `Derivative[1][y]`
+  // source.
   let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
   let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
@@ -57750,6 +57802,50 @@ fn grid_column_width_follows_displayed_text() {
     first_divider("Grid[{{StringForm[\"`` of ``\", 2, x], 1}}, Frame -> All]");
   let text = first_divider("Grid[{{\"2 of x\", 1}}, Frame -> All]");
   assert!((slots - text).abs() < 1.0, "{slots} vs {text}");
+}
+
+/// The plain-text cells of a `Text@Grid` are drawn in a proportional face,
+/// so their columns are as wide as the words they hold, not a fixed
+/// monospace advance per character. Regression: a bold 20 pt header row of
+/// `"fraction"`, `"decimal"`, `"percent"` came out about 30% wider than the
+/// front end sets it, pushing a table past the `Pane` it was sized for.
+#[test]
+fn grid_text_columns_follow_proportional_text_width() {
+  fn dividers(code: &str) -> Vec<f64> {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let mut xs: Vec<f64> = svg
+      .split("<line x1=\"")
+      .skip(1)
+      .filter_map(|l| {
+        let x1: f64 = l.split('"').next()?.parse().ok()?;
+        let x2: f64 =
+          l.split("x2=\"").nth(1)?.split('"').next()?.parse().ok()?;
+        (x1 == x2).then_some(x1)
+      })
+      .collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup();
+    xs
+  }
+  // Narrow letters make a narrower column than wide ones of equal count.
+  let narrow = dividers(r#"Text[Grid[{{"iiiiiiii"}}, Frame -> All]]"#);
+  let wide = dividers(r#"Text[Grid[{{"MMMMMMMM"}}, Frame -> All]]"#);
+  assert!(narrow[1] + 30.0 < wide[1], "{narrow:?} vs {wide:?}");
+  // Bold text is set wider than regular text.
+  let regular = dividers(r#"Text[Grid[{{"fraction"}}, Frame -> All]]"#);
+  let bold =
+    dividers(r#"Text[Style[Grid[{{"fraction"}}, Frame -> All], Bold]]"#);
+  assert!(bold[1] > regular[1], "{bold:?} vs {regular:?}");
+  // Each bold 20 pt header column is about as wide as the front end's
+  // (about 85 pt), not ~110 pt.
+  let header = dividers(
+    r#"Text[Style[Grid[{{"fraction", "decimal", "percent"}}, Frame -> All], 20, Bold]]"#,
+  );
+  assert_eq!(header.len(), 4, "{header:?}");
+  for pair in header.windows(2) {
+    let w = pair[1] - pair[0];
+    assert!((75.0..100.0).contains(&w), "column width {w}: {header:?}");
+  }
 }
 
 mod traditional_form_typesetting {

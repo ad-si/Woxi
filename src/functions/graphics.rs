@@ -31233,7 +31233,11 @@ pub fn with_text_display_grids<T>(f: impl FnOnce() -> T) -> T {
 /// `Style`/`NumberForm`) sets at `font_size` in the proportional text face of
 /// a `Text[…]` display. `None` outside such a display, or for a cell that is
 /// no single line of plain text.
-fn text_display_cell_width(cell: &Expr, font_size: f64) -> Option<f64> {
+fn text_display_cell_width(
+  cell: &Expr,
+  default_style: &GridStyle,
+  font_size: f64,
+) -> Option<f64> {
   if !TEXT_DISPLAY_GRID.with(std::cell::Cell::get) {
     return None;
   }
@@ -31254,8 +31258,24 @@ fn text_display_cell_width(cell: &Expr, font_size: f64) -> Option<f64> {
     return None;
   }
   let markup = expr_to_svg_markup(cell);
-  (!markup.contains('<') && !markup.contains('\n'))
-    .then(|| crate::functions::plot_padding::text_width(&markup, font_size))
+  if markup.contains('<') || markup.contains('\n') {
+    return None;
+  }
+  // The larger of the front end's Arial layout and the extent of the face
+  // the SVG actually draws, so the column matches Wolfram's while the drawn
+  // text still fits inside it. Bold text is set wider (a bold 20 pt
+  // `"fraction"` heading takes about 85 pt).
+  let layout = crate::functions::plot_padding::text_width(&markup, font_size);
+  let (_, drawn) =
+    crate::functions::plot_padding::exported_text_extent(&markup, font_size);
+  let bold = extract_cell_style(cell).font_weight == "bold"
+    || default_style.font_weight == Some("bold");
+  let weight = if bold {
+    crate::functions::plot_padding::BOLD_WIDTH_SCALE
+  } else {
+    1.0
+  };
+  Some(layout.max(drawn) * weight)
 }
 
 thread_local! {
@@ -32174,7 +32194,7 @@ fn grid_svg_styled_internal_reporting(
         } else {
           char_width
         };
-        text_display_cell_width(cell, font_size)
+        text_display_cell_width(cell, default_style, font_size)
           .unwrap_or_else(|| estimate_display_width(cell) * advance)
           * cell_text_scale(cell)
           + col_pad(j)
@@ -35456,13 +35476,44 @@ pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
     // records its drawing area and the coordinates at its edges.
     None => first_plot_frame_of(&svg),
   };
-  let Some(((vb_x, vb_y, vb_w, vb_h), ((x_min, y_min), (x_max, y_max)))) = area
+  let Some((
+    (vb_x, vb_y, vb_w, vb_h),
+    ((mut x_min, mut y_min), (mut x_max, mut y_max)),
+  )) = area
   else {
     return svg;
   };
   let Some(close) = svg.rfind("</svg>") else {
     return svg;
   };
+  // Without an explicit range, a click reports the coordinates of the
+  // graphic under it. A graphic whose `ImageSize` has another shape than
+  // its `PlotRange` is drawn letterboxed with its range widened to fill the
+  // picture, so map the whole picture through the drawing area the graphic
+  // recorded (see `with_plot_frame_markers`) rather than its bare range.
+  if args.len() == 2
+    && let Some((left, top, w, h, (bx0, by0, bx1, by1))) =
+      outer_plot_frame(&svg[..close])
+    && w > 0.0
+    && h > 0.0
+  {
+    // Only an axis the graphic widened is remapped; the other keeps its
+    // range over the whole picture.
+    let widened = |lo: f64, hi: f64, a: f64, b: f64| {
+      let tol = 1e-9 * (hi - lo).abs().max(1.0);
+      (a - lo).abs() > tol || (b - hi).abs() > tol
+    };
+    if widened(x_min, x_max, bx0, bx1) {
+      let sx = (bx1 - bx0) / w;
+      x_min = bx0 - (left - vb_x) * sx;
+      x_max = bx1 + (vb_x + vb_w - left - w) * sx;
+    }
+    if widened(y_min, y_max, by0, by1) {
+      let sy = (by1 - by0) / h;
+      y_max = by1 + (top - vb_y) * sy;
+      y_min = by0 - (vb_y + vb_h - top - h) * sy;
+    }
+  }
   let handler = crate::syntax::expr_to_source_form(&args[args.len() - 1]);
   let mut hex = String::new();
   for b in format!("{x_min} {y_min} {x_max} {y_max}\n{handler}").bytes() {
@@ -35475,6 +35526,30 @@ pub fn with_click_pane_marker(svg: String, pane: &Expr) -> String {
   ));
   out.push_str(&svg[close..]);
   out
+}
+
+/// The drawing area recorded by the plot frame marker that closes `body`
+/// (an SVG without its final `</svg>`): `(left, top, width, height, range)`
+/// with `range` as in [`plot_frame_from_id`]. Only a marker written last —
+/// the one of the picture's outermost graphic — counts.
+fn outer_plot_frame(
+  body: &str,
+) -> Option<(f64, f64, f64, f64, (f64, f64, f64, f64))> {
+  let body = body.trim_end();
+  let start = body.rfind("<rect ")?;
+  let rect = &body[start..];
+  if !rect.ends_with("/>") || rect[..rect.len() - 2].contains('>') {
+    return None;
+  }
+  let attr = |name: &str| {
+    let key = format!(" {name}=\"");
+    let from = rect.find(&key)? + key.len();
+    let len = rect[from..].find('"')?;
+    Some(&rect[from..from + len])
+  };
+  let range = plot_frame_from_id(attr("id")?)?;
+  let num = |name: &str| attr(name)?.parse::<f64>().ok();
+  Some((num("x")?, num("y")?, num("width")?, num("height")?, range))
 }
 
 /// Prefix of the `id` on the invisible rectangle that marks the drawing area
