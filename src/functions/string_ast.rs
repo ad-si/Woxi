@@ -3069,14 +3069,11 @@ fn find_spans_with_empty(
 ) -> Vec<(usize, usize)> {
   let mut spans = Vec::new();
   let mut i = 0;
-  loop {
-    // The search reports the leftmost match at or after `i`, so no match
-    // starts between `i` and it: jump there instead of retrying every
-    // character (quadratic on a long text with sparse matches). No match
-    // at all ends the scan.
-    let Some(caps) = re.captures_at(s, i) else {
-      break;
-    };
+  // The search reports the leftmost match at or after `i`, so no match
+  // starts between `i` and it: jump there instead of retrying every
+  // character (quadratic on a long text with sparse matches). No match at
+  // all ends the scan.
+  while let Some(caps) = re.captures_at(s, i) {
     let Some(m) = caps.get(0) else {
       break;
     };
