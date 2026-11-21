@@ -43290,6 +43290,32 @@ mod periodic_table_plot {
 mod manipulate {
   use super::*;
 
+  // Typesetting a held graphic must not evaluate it with its control
+  // variables unbound: the result's typeset SVG once drew the body as a
+  // picture and reported `Table::iterb` / `Part::pkspec1` from it.
+  #[test]
+  fn held_graphics_body_reports_no_messages() {
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "Manipulate[Graphics[{Table[Point[{i, 0}], {i, 1, m^2}], \
+       Circle[]}[[k]]], {{m, 2}, {2, 4}}, {{k, 1}, {1, 2}}]",
+    )
+    .unwrap();
+    assert_eq!(result.warnings, Vec::<String>::new());
+    assert_eq!(
+      result.result,
+      "Manipulate[-Graphics-, {{m, 2}, {2, 4}}, {{k, 1}, {1, 2}}]"
+    );
+
+    clear_state();
+    let result = woxi::interpret_with_stdout(
+      "Hold[Graphics[{Table[Point[{i, 0}], {i, 1, n}]}]]",
+    )
+    .unwrap();
+    assert_eq!(result.warnings, Vec::<String>::new());
+    assert_eq!(result.result, "Hold[-Graphics-]");
+  }
+
   #[test]
   fn continuous_parameter() {
     // Manipulate echoes itself back with body and spec preserved.
@@ -68750,5 +68776,33 @@ fn opaque_parametric_region_cells_have_no_seams() {
   for cell in &cells {
     assert!(cell.contains("fill-opacity=\"0.3\""), "{cell}");
     assert!(!cell.contains("stroke="), "{cell}");
+  }
+}
+
+mod rational_font_size {
+  use super::*;
+
+  /// `Style[expr, p/q]` sizes the text at the rational's value, like an
+  /// integer or real size. Regression: only integers and reals were read,
+  /// so `Style["a", 80/m]` with `m = 6` fell back to the default size.
+  #[test]
+  fn rational_style_size_sets_the_font_size() {
+    clear_state();
+    let svg = export_svg("Graphics[Text[Style[\"zzr\", 40/3], {0, 0}]]");
+    let end = svg.find(">zzr</text>").expect(&svg);
+    let start = svg[..end].rfind("<text").expect(&svg);
+    let tag = &svg[start..end];
+    assert!(tag.contains("font-size=\"13.33"), "{tag}");
+
+    let svg =
+      export_svg("Graphics[Text[Style[\"zzs\", 80/m /. m -> 6], {0, 0}]]");
+    assert!(svg.contains("font-size=\"13.33"), "{svg}");
+  }
+
+  #[test]
+  fn rational_style_size_sizes_grid_text() {
+    clear_state();
+    let svg = export_svg("Style[Grid[{{\"zzg\"}}], 45/2]");
+    assert!(svg.contains("font-size=\"22.5"), "{svg}");
   }
 }

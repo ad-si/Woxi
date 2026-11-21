@@ -3324,6 +3324,26 @@ fn text_opacity_directive(d: &Expr) -> Option<f64> {
   }
 }
 
+/// A number written out as a style directive: an integer, a real or an
+/// exact rational (`Style[x, 40/3]`), as opposed to a symbol or a call
+/// whose numeric value would have to be computed.
+fn is_literal_number(e: &Expr) -> bool {
+  match e {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..) => true,
+    Expr::FunctionCall { name, args } => {
+      name == "Rational"
+        && args.len() == 2
+        && args
+          .iter()
+          .all(|a| matches!(a, Expr::Integer(_) | Expr::BigInteger(_)))
+    }
+    _ => false,
+  }
+}
+
 fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
   if style.text_decoration.apply(d) {
     return true;
@@ -3349,12 +3369,10 @@ fn apply_text_style_directive(d: &Expr, style: &mut StyleState) -> bool {
       style.font_size = named_font_size(s, style.font_size).unwrap();
       true
     }
-    Expr::Integer(n) => {
-      style.font_size = *n as f64;
-      true
-    }
-    Expr::Real(f) => {
-      style.font_size = *f;
+    // `Style[expr, 40/3]` — any number is a font size, an exact rational
+    // (`80/m` with `m = 6`) as much as an integer or a real.
+    d if is_literal_number(d) && expr_to_f64(d).is_some() => {
+      style.font_size = expr_to_f64(d).unwrap();
       true
     }
     // A named style ("Section", "Label", …) brings its own size, color
@@ -20676,17 +20694,25 @@ fn inline_graphics_box_layout(
     &crate::syntax::expr_to_input_form(expr),
   );
   let graphic = crate::syntax::string_to_expr(&source).ok()?;
-  // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
-  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
-  let rendered = match &evaluated {
-    Expr::FunctionCall { name, args } if name == "Graphics" => {
-      graphics_ast(args).ok()?
-    }
-    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
-      crate::functions::plot3d::graphics3d_ast(args).ok()?
-    }
-    _ => evaluated.clone(),
-  };
+  // Drawing the picture evaluates its primitives, but typesetting a held
+  // graphic (the body of a `Manipulate`, `Hold[Graphics[…]]`) must not
+  // report messages from code that only makes sense once its variables are
+  // bound (`Table[…, {i, m^2}]` with `m` a control): Wolfram never
+  // evaluates a graphic it typesets. The preview is speculative, so any
+  // complaint is dropped and the box falls back to text.
+  let rendered = crate::quietly(|| -> Option<Expr> {
+    // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
+    let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
+    Some(match &evaluated {
+      Expr::FunctionCall { name, args } if name == "Graphics" => {
+        graphics_ast(args).ok()?
+      }
+      Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+        crate::functions::plot3d::graphics3d_ast(args).ok()?
+      }
+      _ => evaluated.clone(),
+    })
+  })?;
   let Expr::Graphics { svg, .. } = &rendered else {
     return None;
   };
@@ -29348,8 +29374,9 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
       Expr::Identifier(s) if s == "Medium" => gs.font_size = Some(12.0),
       Expr::Identifier(s) if s == "Large" => gs.font_size = Some(18.0),
       Expr::Identifier(s) if s == "Huge" => gs.font_size = Some(26.0),
-      Expr::Integer(n) => gs.font_size = Some(*n as f64),
-      Expr::Real(f) => gs.font_size = Some(*f),
+      d if is_literal_number(d) && expr_to_f64(d).is_some() => {
+        gs.font_size = expr_to_f64(d);
+      }
       // `Style[Grid[…], "Label"]` — the stylesheet entry's size and color.
       Expr::String(name) => {
         if let Some((size, rgb)) = named_style_appearance(name) {
@@ -29369,11 +29396,9 @@ pub fn parse_grid_style(directives: &[Expr]) -> GridStyle {
       } => {
         if let Expr::Identifier(k) = pattern.as_ref() {
           match k.as_str() {
-            "FontSize" => match replacement.as_ref() {
-              Expr::Integer(n) => gs.font_size = Some(*n as f64),
-              Expr::Real(f) => gs.font_size = Some(*f),
-              _ => {}
-            },
+            "FontSize" if is_literal_number(replacement) => {
+              gs.font_size = expr_to_f64(replacement).or(gs.font_size);
+            }
             "FontFamily" => {
               if let Expr::String(f) | Expr::Identifier(f) =
                 replacement.as_ref()

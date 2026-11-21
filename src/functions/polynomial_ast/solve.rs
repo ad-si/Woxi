@@ -601,7 +601,7 @@ fn real_part_solution(eqns: &Expr, sol: &Expr) -> Option<Expr> {
       let substituted = point
         .iter()
         .fold(term, |e, (var, v)| substitute_expr(&e, var, v));
-      let Some(value) = quietly(|| {
+      let Some(value) = crate::quietly(|| {
         crate::evaluator::evaluate_function_call_ast("N", &[substituted])
       })
       .ok()
@@ -926,7 +926,7 @@ fn numerically_violates(eqns: &Expr, solution: &Expr) -> bool {
       let substituted = point
         .iter()
         .fold(side.clone(), |e, (var, v)| substitute_expr(&e, var, v));
-      quietly(|| {
+      crate::quietly(|| {
         crate::evaluator::evaluate_function_call_ast("N", &[substituted])
       })
       .ok()
@@ -4399,7 +4399,8 @@ fn solve_real_exp_log_inexact(args: &[Expr]) -> Option<Expr> {
   let eval_at = |x: f64| -> Option<f64> {
     let substituted = substitute_expr(&residual, var, &Expr::Real(x));
     let evaled =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+        .ok()?;
     try_eval_to_f64(&evaled).filter(|v| v.is_finite())
   };
   const SAMPLES: usize = 6000;
@@ -4540,10 +4541,12 @@ fn solve_real_exp_log_inexact(args: &[Expr]) -> Option<Expr> {
     )
     .ok()?;
     for _ in 0..3 {
-      let Ok(fx) = quietly(|| n40(substitute_expr(&exact, var, &x))) else {
+      let Ok(fx) = crate::quietly(|| n40(substitute_expr(&exact, var, &x)))
+      else {
         break;
       };
-      let Ok(dfx) = quietly(|| n40(substitute_expr(&derivative, var, &x)))
+      let Ok(dfx) =
+        crate::quietly(|| n40(substitute_expr(&derivative, var, &x)))
       else {
         break;
       };
@@ -10813,7 +10816,7 @@ fn try_solve_inexact_trig(eq: &Expr, var: &str) -> Option<Expr> {
   ) {
     return None;
   }
-  let roots = quietly(|| {
+  let roots = crate::quietly(|| {
     solve_ast(&[
       Expr::Comparison {
         operands: vec![polynomial, Expr::Integer(0)],
@@ -12094,7 +12097,7 @@ fn try_solve_through_undefined_function(
     return None;
   }
   let values =
-    quietly(|| solve_ast(&[substituted, placeholder.clone()])).ok()?;
+    crate::quietly(|| solve_ast(&[substituted, placeholder.clone()])).ok()?;
   let Expr::List(ref values) = values else {
     return None;
   };
@@ -12108,7 +12111,7 @@ fn try_solve_through_undefined_function(
     };
     let (inner, inverse_value) =
       undefined_function_inverse(&atom, replacement, var)?;
-    let solved = quietly(|| {
+    let solved = crate::quietly(|| {
       solve_ast(&[
         Expr::Comparison {
           operands: vec![inner, inverse_value],
@@ -12485,7 +12488,7 @@ fn try_solve_by_radical_norms(
     operands: vec![f, Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
-  let solved = quietly(|| solve_ast(&[reduced, id_expr(var)])).ok()?;
+  let solved = crate::quietly(|| solve_ast(&[reduced, id_expr(var)])).ok()?;
   let Expr::List(ref candidates) = solved else {
     return None;
   };
@@ -12538,7 +12541,8 @@ fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
   let eval_at = |x: f64| -> Option<f64> {
     let substituted = substitute_expr(&residual, var, &Expr::Real(x));
     let evaled =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+        .ok()?;
     try_eval_to_f64(&evaled).filter(|v| v.is_finite())
   };
 
@@ -12720,14 +12724,15 @@ fn try_nsolve_bracketed(args: &[Expr]) -> Option<Expr> {
   let eval_at = |x: f64| -> Option<f64> {
     let substituted = substitute_expr(&residual, &var, &Expr::Real(x));
     let evaled =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+        .ok()?;
     try_eval_to_f64(&evaled).filter(|v| v.is_finite())
   };
   let admissible = |x: f64| {
     constraints.iter().all(|c| {
       let substituted = substitute_expr(c, &var, &Expr::Real(x));
       matches!(
-        quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
+        crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
         Ok(Expr::Identifier(ref t)) if t == "True"
       )
     })
@@ -12924,7 +12929,8 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
           e = substitute_expr(&e, v, &Expr::Real(*x));
         }
         let value =
-          quietly(|| crate::evaluator::evaluate_expr_to_expr(&e)).ok()?;
+          crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&e))
+            .ok()?;
         try_eval_to_f64(&value).filter(|v| v.is_finite())
       })
       .collect()
@@ -13306,7 +13312,7 @@ fn drop_failing_system_solutions(args: &[Expr], result: Expr) -> Expr {
           crate::syntax::substitute_variable(&e, var, value)
         });
         matches!(
-          quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
+          crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
           Ok(Expr::Identifier(ref f)) if f == "False"
         )
       })
@@ -13344,7 +13350,8 @@ fn equation_holds_at(equation: &Expr, var: &str, value: &Expr) -> Option<bool> {
   };
   let at_value = |side: &Expr| {
     let substituted = crate::syntax::substitute_variable(side, var, value);
-    quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()
+    crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+      .ok()
   };
   let left = at_value(&lhs)?;
   let right = at_value(&rhs)?;
@@ -15170,7 +15177,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // an unusable symbolic derivative drops through to the numerical branch.
     let symbolic_fpx = deriv_expr
       .as_ref()
-      .and_then(|d| quietly(|| find_root_eval_at(d, &var, x)).ok())
+      .and_then(|d| crate::quietly(|| find_root_eval_at(d, &var, x)).ok())
       .filter(|v| v.is_finite());
     let fpx = if let Some(fpx) = symbolic_fpx {
       fpx
@@ -15902,23 +15909,6 @@ fn find_root_eval_at(
   }
 }
 
-/// Run `probe` with every message it emits discarded.
-///
-/// FindRoot's symbolic derivative is speculative: when it does not reduce to a
-/// number the iteration falls back to a difference quotient, so whatever the
-/// attempt complained about on the way (`D::ivar` from differentiating a
-/// user function at an already-substituted point, a division by zero in a
-/// branch that is never used, …) is internal bookkeeping. wolframscript
-/// reports none of it, so neither does Woxi.
-fn quietly<T>(probe: impl FnOnce() -> T) -> T {
-  let snapshot = crate::snapshot_warnings();
-  crate::push_quiet();
-  let result = probe();
-  crate::pop_quiet();
-  crate::restore_warnings(snapshot);
-  result
-}
-
 /// Parse a number from an expression for FindRoot starting point.
 fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
@@ -16423,7 +16413,7 @@ fn find_root_multivariate(
         substitute_expr(&e, v, &Expr::Real(*x0))
       });
     if let Ok(Expr::List(ref values)) =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&at_start))
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&at_start))
       && values.len() == n
     {
       let black_box = black_box.clone();
@@ -16585,7 +16575,7 @@ fn find_root_multivariate(
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
-          Some(d) => quietly(|| find_root_eval_multivar_at(d, bindings))
+          Some(d) => crate::quietly(|| find_root_eval_multivar_at(d, bindings))
             .ok()
             .filter(|v| v.is_finite()),
           None => None,
@@ -18613,7 +18603,7 @@ fn minimize_find_critical_points_numerical(
   f: &Expr,
   var: &str,
 ) -> Result<Vec<Expr>, InterpreterError> {
-  quietly(|| minimize_find_critical_points_newton(f, var))
+  crate::quietly(|| minimize_find_critical_points_newton(f, var))
 }
 
 fn minimize_find_critical_points_newton(
@@ -20101,7 +20091,8 @@ fn minimize_constrained_1d(
   for &cx in &candidates {
     // A bound can be a singular point of the objective; its value there
     // just loses the comparison.
-    let fx = quietly(|| find_root_eval_at(f, var, cx)).unwrap_or(f64::INFINITY);
+    let fx =
+      crate::quietly(|| find_root_eval_at(f, var, cx)).unwrap_or(f64::INFINITY);
     if fx < best_f {
       best_f = fx;
       best_x_f64 = cx;
@@ -22103,7 +22094,7 @@ fn find_minimum_inner(
   {
     let sign = if maximize { -1.0 } else { 1.0 };
     let objective = |x: f64| {
-      quietly(|| find_root_eval_at(f, var, x))
+      crate::quietly(|| find_root_eval_at(f, var, x))
         .ok()
         .filter(|v| v.is_finite())
         .map_or(f64::INFINITY, |v| sign * v)
