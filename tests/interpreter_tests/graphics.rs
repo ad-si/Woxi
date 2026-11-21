@@ -56641,6 +56641,42 @@ mod grid_text_in_graphics {
     assert!(!bare.starts_with("<svg width=\"400\""), "{bare}");
   }
 
+  /// A `Pane[…, {w, h}]` of numeric size around a `Text`-marked table (or
+  /// inside `Text`) draws exactly `w`×`h`, as `ExportString[…, "SVG"]`
+  /// does, instead of shrinking to the table. A Manipulate body sized this
+  /// way keeps the same box whatever its controls hold.
+  #[test]
+  fn fixed_size_pane_around_text_table_keeps_its_box() {
+    let size_of = |code: &str| {
+      clear_state();
+      let result = interpret_with_stdout(code).unwrap();
+      assert_eq!(result.result, "-Graphics-", "{code}");
+      let svg = result.graphics.unwrap();
+      let head = svg.lines().next().unwrap().to_string();
+      assert!(svg.contains(">12</text>"), "{svg}");
+      head
+    };
+    let expected = "<svg width=\"400\" height=\"300\" viewBox=\"0 0 400 300\" \
+       xmlns=\"http://www.w3.org/2000/svg\">";
+    for (a, b) in [(3, 4), (2, 6)] {
+      assert_eq!(
+        size_of(&format!(
+          "Pane[Text[Style[Grid[{{{{Row[{{{a}, \" x \", {b}}}]}}, \
+           {{{a}*{b}}}}}], 20, Bold]], {{400, 300}}, \
+           Alignment -> {{Center, Center}}]"
+        )),
+        expected
+      );
+    }
+    assert_eq!(
+      size_of(
+        "Text[Pane[Grid[{{Graphics[Disk[], ImageSize -> 50], 12}}], \
+               {400, 300}]]"
+      ),
+      expected
+    );
+  }
+
   /// A translucent cylinder is one smooth surface: its triangles must not
   /// stroke their shared seams, or the tessellation shows through.
   #[test]
