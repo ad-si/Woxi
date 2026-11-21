@@ -1424,16 +1424,20 @@ impl ManipulateState {
       let suffixed = format!("{name}$$");
       // Every row bound to the variable (a slider and a Trigger playing
       // it) reopens on the saved value, not just the first.
-      let mut restored = false;
-      for control in self
+      let matching: Vec<usize> = self
         .controls
         .iter()
-        .position(|c| c.name() == name || c.name() == suffixed)
-      {
+        .enumerate()
+        .filter(|(_, c)| c.name() == name || c.name() == suffixed)
+        .map(|(i, _)| i)
+        .collect();
+      for &control in &matching {
         self.controls[control].set_current_from_code(code);
-        // Every row bound to the variable shows the saved value, not just
-        // the first: the binding is read from the last such row.
-        self.sync_named_siblings(control);
+      }
+      if let Some(&last) = matching.last() {
+        // The binding is read from the last such row, so keep any other
+        // siblings in step with it.
+        self.sync_named_siblings(last);
       } else if let Some(slot) = self
         .state
         .iter_mut()

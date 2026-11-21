@@ -13631,6 +13631,19 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
     )
     .to_vec(),
   );
+  // Real italic faces: usvg never synthesizes a slant, and an italic run
+  // inside upright text (`Row[{"2", Style["s", Italic]}]`) is a `<tspan>`,
+  // which `synthesize_oblique_text` cannot skew on its own.
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-BoldItalic.ttf")
+      .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!(
+      "../../resources/AtkinsonHyperlegibleNext-Italic-VariableFont_wght.ttf"
+    )
+    .to_vec(),
+  );
   fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
   fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
   // Text set in `FontFamily -> "Times"` is measured with Times-like
@@ -13660,8 +13673,9 @@ const SYNTHETIC_OBLIQUE_DEGREES: f64 = 14.0;
 ///
 /// Browsers synthesize an oblique face for `font-style="italic"` when a
 /// family has none, but usvg draws the upright outlines instead. The
-/// embedded Atkinson fonts ship no italic, so `Style[..., Italic]` text
-/// (plot labels, axes labels, `Text` primitives) would rasterize upright.
+/// embedded Atkinson Hyperlegible Next has italic faces, but a family
+/// without one (an installed font, the Atkinson Mono) would rasterize
+/// `Style[..., Italic]` text (plot labels, `Text` primitives) upright.
 /// Each such element gets a `skewX` about its anchor point, which leaves
 /// the anchor where it was and leans the glyphs like an oblique face.
 ///

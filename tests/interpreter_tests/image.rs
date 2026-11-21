@@ -11592,8 +11592,8 @@ mod image_value_positions {
 }
 
 /// usvg draws `font-style="italic"` text with upright outlines when the
-/// family has no italic face (the embedded Atkinson fonts have none), so
-/// rasterizers slant such text themselves, the way browsers do.
+/// family has no italic face (the embedded Atkinson Hyperlegible Mono has
+/// none), so rasterizers slant such text themselves, the way browsers do.
 #[cfg(not(target_arch = "wasm32"))]
 mod synthetic_oblique_text {
   use resvg::usvg::fontdb::{Database, FaceInfo, Language, Source, Style};
@@ -11617,7 +11617,7 @@ mod synthetic_oblique_text {
   #[test]
   fn italic_text_is_skewed_about_its_anchor() {
     let input = svg(
-      "<text x=\"20.5\" y=\"10\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
+      "<text x=\"20.5\" y=\"10\" font-family=\"monospace\" font-style=\"italic\" font-weight=\"bold\">MC</text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(
@@ -11632,7 +11632,7 @@ mod synthetic_oblique_text {
   fn text_set_in_one_italic_tspan_is_skewed() {
     // How a styled PlotLabel or AxesLabel is written.
     let input = svg(
-      "<text x=\"50\" y=\"14\" font-family=\"sans-serif\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
+      "<text x=\"50\" y=\"14\" font-family=\"monospace\"><tspan font-size=\"16\" font-style=\"italic\">Profit</tspan></text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(out.contains("skewX(-14)"), "{out}");
@@ -11640,8 +11640,9 @@ mod synthetic_oblique_text {
 
   #[test]
   fn italic_inherited_from_a_group_is_skewed() {
-    let input =
-      svg("<g style=\"font-style: italic\"><text x=\"1\" y=\"2\">a</text></g>");
+    let input = svg(
+      "<g style=\"font-style: italic\" font-family=\"monospace\"><text x=\"1\" y=\"2\">a</text></g>",
+    );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(out.contains("translate(1 2) skewX(-14) translate(-1 -2)"));
   }
@@ -11649,7 +11650,7 @@ mod synthetic_oblique_text {
   #[test]
   fn existing_transform_is_extended() {
     let input = svg(
-      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-style=\"italic\">y</text>",
+      "<text transform=\"rotate(-90)\" x=\"3\" y=\"4\" font-family=\"monospace\" font-style=\"italic\">y</text>",
     );
     let out = synthesize_oblique_text(&input, &embedded_fonts());
     assert!(
@@ -11699,6 +11700,48 @@ mod synthetic_oblique_text {
     );
     let out = synthesize_oblique_text(&input, &db);
     assert!(matches!(out, Cow::Borrowed(_)), "{out}");
+  }
+
+  /// The default family (Atkinson Hyperlegible Next) ships real italic
+  /// faces, so its italic text needs no synthesized slant.
+  #[test]
+  fn default_family_has_italic_faces() {
+    let db = embedded_fonts();
+    for weight in ["normal", "bold"] {
+      let input = svg(&format!(
+        "<text x=\"1\" y=\"2\" font-weight=\"{weight}\" font-style=\"italic\">a</text>"
+      ));
+      let out = synthesize_oblique_text(&input, &db);
+      assert!(matches!(out, Cow::Borrowed(_)), "{weight}: {out}");
+    }
+  }
+
+  /// Regression: an italic `<tspan>` inside upright text (an orbital label
+  /// `Row[{"2", Style["s", Italic]}]`) rasterized upright, since a tspan
+  /// cannot be skewed on its own and no italic face was embedded.
+  #[test]
+  fn italic_tspan_in_upright_text_rasterizes_slanted() {
+    let pixels = |run: &str| {
+      let s = svg(&format!(
+        "<text x=\"5\" y=\"30\" font-size=\"24\">2{run}</text>"
+      ));
+      match rasterize_svg(&s, 72.0).unwrap() {
+        woxi::syntax::Expr::Image { ref data, .. } => data.clone(),
+        other => panic!("not an image: {other:?}"),
+      }
+    };
+    assert_ne!(
+      pixels("<tspan>dl</tspan>"),
+      pixels("<tspan font-style=\"italic\">dl</tspan>")
+    );
+    // End to end through Graphics Text with a mixed Row.
+    let raster = |inner: &str| {
+      woxi::interpret(&format!(
+        "ImageData[Rasterize[Graphics[Text[Style[Row[{{\"2\", {inner}}}], 24], {{0, 0}}], ImageSize -> 60]]]"
+      ))
+      .unwrap()
+    };
+    assert_ne!(raster("\"dl\""), raster("Style[\"dl\", Italic]"));
   }
 
   #[test]
