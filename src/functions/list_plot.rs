@@ -1457,6 +1457,8 @@ struct ParsedOptions {
   data_range: Option<DataRangeSpec>,
   /// `ScalingFunctions -> {sx, sy}` (the first one given).
   scaling: Option<(Option<Scaling>, Option<Scaling>)>,
+  /// An explicit `PlotRangePadding`.
+  range_padding: Option<crate::functions::graphics::PlotRangePaddingSpec>,
 }
 
 thread_local! {
@@ -1498,6 +1500,8 @@ fn has_date_stamps(data: &Expr) -> bool {
 }
 
 /// Parse common plot options from args[1..].
+/// Matching Wolfram Language, the first occurrence of a repeated option
+/// wins (`PlotRange -> All, …, PlotRange -> {{1, 20}, {1, 9}}` uses `All`).
 fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   let mut out = ParsedOptions::default();
   out.opts.date_axis = DATE_AXIS.with(std::cell::Cell::get);
@@ -1506,10 +1510,14 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
   opts.simple_ticks = simple_ticks;
   // Joined data points are joined as given, also across a jump.
   opts.join_across_jumps = true;
+  let mut seen = std::collections::HashSet::new();
   for opt in &options {
     if let Some((name, replacement)) =
       crate::functions::graphics::option_name_value(opt)
     {
+      if !seen.insert(name.to_string()) {
+        continue;
+      }
       let replacement = &*replacement;
       match name {
         "ScalingFunctions" if out.scaling.is_none() => {
@@ -1531,6 +1539,12 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           }
           _ => {}
         },
+        "PlotRangePadding" if out.range_padding.is_none() => {
+          let value = evaluate_expr_to_expr(replacement)
+            .unwrap_or_else(|_| replacement.clone());
+          out.range_padding =
+            Some(crate::functions::graphics::parse_plot_range_padding(&value));
+        }
         "PlotRange" => {
           let (rx, ry) =
             crate::functions::plot::parse_series_plot_range(replacement);
@@ -1754,7 +1768,7 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         }
         "GridLinesStyle" => {
           opts.grid_lines_style =
-            crate::functions::plot::parse_style_directives(replacement);
+            crate::functions::plot::parse_grid_lines_style(replacement);
         }
         _ => {}
       }
@@ -1770,6 +1784,8 @@ struct RangeRequest {
   explicit: (bool, bool),
   /// `All`: the whole extent of the points, outliers included.
   keep_outliers: (bool, bool),
+  /// An explicit `PlotRangePadding`, in place of the default padding.
+  padding: Option<crate::functions::graphics::PlotRangePaddingSpec>,
 }
 
 impl ParsedOptions {
@@ -1778,6 +1794,7 @@ impl ParsedOptions {
     RangeRequest {
       explicit: (self.plot_range_x.is_some(), self.plot_range_y.is_some()),
       keep_outliers: self.plot_range_all,
+      padding: self.range_padding,
     }
   }
 }
@@ -1790,10 +1807,25 @@ fn apply_plot_range_override(
   x_range: (f64, f64),
   y_range: (f64, f64),
 ) -> ((f64, f64), (f64, f64)) {
-  (
-    log_safe_range(parsed.plot_range_x, x_range),
-    log_safe_range(parsed.plot_range_y, y_range),
-  )
+  let x = log_safe_range(parsed.plot_range_x, x_range);
+  let y = log_safe_range(parsed.plot_range_y, y_range);
+  // An explicit `PlotRangePadding` pads an explicit `PlotRange` too (the
+  // automatic axes were padded by it already).
+  match &parsed.range_padding {
+    Some(spec) => (
+      if parsed.plot_range_x.is_some() {
+        spec.x.pad_over(x, x)
+      } else {
+        x
+      },
+      if parsed.plot_range_y.is_some() {
+        spec.y.pad_over(y, y)
+      } else {
+        y
+      },
+    ),
+    None => (x, y),
+  }
 }
 
 /// An explicit `PlotRange` side, with the ends a scaled axis cannot reach
@@ -2211,10 +2243,16 @@ fn list_plot_ranges(
     opts.axes_origin_low.1 = Some(y.0);
   }
   opts.grid_interior = (!explicit_x && !explicit_y).then_some((x, y));
-  let (x, y_padded) = (
-    pad_list_axis(x, ListAxis::X, nx),
-    pad_list_axis(y, ListAxis::Y, ny),
-  );
+  let (x, y_padded) = match &request.padding {
+    Some(spec) => (
+      spec.x.pad_over(x, pad_list_axis(x, ListAxis::X, nx)),
+      spec.y.pad_over(y, pad_list_axis(y, ListAxis::Y, ny)),
+    ),
+    None => (
+      pad_list_axis(x, ListAxis::X, nx),
+      pad_list_axis(y, ListAxis::Y, ny),
+    ),
+  };
   // The range does not reach out to a filling's level: `Filling -> Axis`
   // fills to wherever the horizontal axis crosses, which is not 0 when the
   // range leaves 0 out.
@@ -3107,6 +3145,7 @@ pub fn list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   source.plot_range = opts.grid_interior;
   source.log_x = opts.log_x;
+  source.settles_all_range = true;
   source.aspect_ratio = source
     .aspect_ratio
     .or_else(|| crate::functions::plot::drawn_aspect_ratio(opts));
@@ -3348,6 +3387,7 @@ pub fn list_line_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   source.plot_range = parsed.opts.grid_interior;
   source.log_x = parsed.opts.log_x;
+  source.settles_all_range = true;
   source.aspect_ratio = source
     .aspect_ratio
     .or_else(|| crate::functions::plot::drawn_aspect_ratio(&parsed.opts));
@@ -3756,6 +3796,11 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   if let Some((left, right)) = extent {
     let palette = crate::functions::plot::PLOT_COLORS_RGB;
+    // `FillingStyle` paints the area under the steps: its color replaces
+    // the series color and its opacity the default 0.2 translucency (a
+    // bare color fills opaquely), as for `Plot`'s filling.
+    let filling_style = option("FillingStyle")
+      .and_then(|fs| crate::functions::plot::parse_filling_style(&fs));
     let mut items: Vec<Expr> = Vec::new();
     let (mut y_lo, mut y_hi) = (0.0_f64, 0.0_f64);
     for (k, points) in all_series.iter().enumerate() {
@@ -3764,9 +3809,10 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         name: "RGBColor".to_string(),
         args: vec![Expr::Real(r), Expr::Real(g), Expr::Real(b)].into(),
       };
-      let style = |extra: Vec<Expr>| {
+      // `Directive[extra…, paint, AbsoluteThickness[2]]`.
+      let style = |extra: Vec<Expr>, paint: Expr| {
         let mut directives = extra;
-        directives.push(color.clone());
+        directives.push(paint);
         directives.push(Expr::FunctionCall {
           name: "AbsoluteThickness".to_string(),
           args: vec![Expr::Integer(2)].into(),
@@ -3777,10 +3823,28 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
       };
       if filling {
-        let mut group = vec![style(vec![Expr::FunctionCall {
-          name: "Opacity".to_string(),
-          args: vec![Expr::Real(0.2)].into(),
-        }])];
+        let opacity = filling_style
+          .and_then(|fs| fs.effective_opacity())
+          .unwrap_or(0.2);
+        let fill_color =
+          filling_style.and_then(|fs| fs.color).map(|(r, g, b)| {
+            Expr::FunctionCall {
+              name: "RGBColor".to_string(),
+              args: vec![
+                Expr::Real(r as f64 / 255.0),
+                Expr::Real(g as f64 / 255.0),
+                Expr::Real(b as f64 / 255.0),
+              ]
+              .into(),
+            }
+          });
+        let mut group = vec![style(
+          vec![Expr::FunctionCall {
+            name: "Opacity".to_string(),
+            args: vec![Expr::Real(opacity)].into(),
+          }],
+          fill_color.unwrap_or_else(|| color.clone()),
+        )];
         group.extend(points.iter().map(|&(n, y)| Expr::FunctionCall {
           name: "Rectangle".to_string(),
           args: vec![point(n + left, 0.0), point(n + right, y)].into(),
@@ -3797,7 +3861,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         .collect();
       items.push(Expr::List(
         vec![
-          style(Vec::new()),
+          style(Vec::new(), color.clone()),
           Expr::FunctionCall {
             name: "Line".to_string(),
             args: vec![Expr::List(steps.into())].into(),
@@ -3815,6 +3879,7 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     graphics_args.extend(passed_options(&[
       "ExtentSize",
       "Filling",
+      "FillingStyle",
       "PlotLegends",
       "PlotStyle",
     ]));
