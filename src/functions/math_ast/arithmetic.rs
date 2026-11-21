@@ -13221,11 +13221,20 @@ fn merge_coefficient_into_radical(
           };
           // Only rewrite when something actually changed; canonical inputs
           // are fixed points and must return through the generic path.
-          let coeff_str = expr_to_string(coeff);
-          let new_coeff_str = expr_to_string(&new_coeff);
-          let factor_str = expr_to_string(&symbolic_args[radical_idx]);
-          let rebuilt_str = expr_to_string(&rebuilt);
-          if coeff_str != new_coeff_str || factor_str != rebuilt_str {
+          // The structural check settles the common fixed-point case without
+          // rendering four expressions to text on every `c * Sqrt[r]`
+          // product; the textual comparison stays the arbiter otherwise.
+          let unchanged_structurally =
+            crate::evaluator::pattern_matching::expr_equal(coeff, &new_coeff)
+              && crate::evaluator::pattern_matching::expr_equal(
+                &symbolic_args[radical_idx],
+                &rebuilt,
+              );
+          if !unchanged_structurally
+            && (expr_to_string(coeff) != expr_to_string(&new_coeff)
+              || expr_to_string(&symbolic_args[radical_idx])
+                != expr_to_string(&rebuilt))
+          {
             if matches!(&new_coeff, Expr::Integer(1)) {
               return with_others(vec![rebuilt]).map(Some);
             }

@@ -208,14 +208,20 @@ fn with_symbol_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   renamed.then_some(out)
 }
 
-/// The arguments with every `opt -> (Evaluate[…] &)` option value
-/// evaluated, or `None` when there is none. (A pure function whose body is
-/// not wrapped in `Evaluate` evaluates to itself; other option values are
-/// evaluated by each plot as it reads them.)
+/// The arguments with every `opt -> (Evaluate[…] &)` option value and
+/// every `opt -> symbol` naming a symbol that has a value evaluated, or
+/// `None` when there is none. (A pure function whose body is not wrapped in
+/// `Evaluate` evaluates to itself; other option values are evaluated by
+/// each plot as it reads them.) A symbol is what a held plot sees for an
+/// option set from a variable (`Boxed -> boxed` with a `Manipulate` or
+/// `Module` local `boxed`), and the plots read their option values by shape.
 fn with_evaluated_options(args: &[Expr]) -> Option<Vec<Expr>> {
   let evaluate_body = |e: &Expr| match e {
     Expr::Function { body } | Expr::NamedFunction { body, .. } => {
       matches!(body.as_ref(), Expr::FunctionCall { name, .. } if name == "Evaluate")
+    }
+    Expr::Identifier(name) => {
+      crate::ENV.with(|env| env.borrow().contains_key(name))
     }
     _ => false,
   };
@@ -234,6 +240,7 @@ fn with_evaluated_options(args: &[Expr]) -> Option<Vec<Expr>> {
     }
     if let Ok(value) =
       crate::evaluator::evaluate_expr_to_expr(replacement.as_ref())
+      && !crate::functions::boolean_ast::same_q_pair(&value, replacement)
     {
       *arg = Expr::Rule {
         pattern: pattern.clone(),
@@ -1356,6 +1363,9 @@ pub fn dispatch_plotting(
     {
       Some(Ok(crate::functions::chart::invalid_dataset(name, args)))
     }
+    "ChartElementData" => Some(Ok(
+      crate::functions::distribution_chart::chart_element_data_ast(args),
+    )),
     "DistributionChart" if !args.is_empty() => Some(quiet_plot(|| {
       crate::functions::distribution_chart::distribution_chart_ast(args)
     })),

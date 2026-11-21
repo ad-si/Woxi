@@ -11185,9 +11185,18 @@ fn find_fit_weighted(
     x_vals[i].iter().chain(params).copied().collect()
   };
 
-  // Gauss-Newton iteration
+  // Levenberg-Marquardt iteration: Gauss-Newton steps, damped by a
+  // multiple `lambda` of the identity added to JᵀJ. The damping keeps the
+  // step small along a direction the residuals barely depend on: a term
+  // `a x^c` that has all but vanished at every data point (`0 < x < 1`,
+  // large `c`) has a near-zero Jacobian column, and an undamped step would
+  // fling `c` toward infinity, where the power over- or underflows. Near
+  // the minimum the damping decays and the iteration is Gauss-Newton, so
+  // the fixed point it converges to is the same. A model linear in its
+  // parameters is solved in one undamped step.
   let max_iter = 100;
   let tol = 1e-12;
+  let mut lambda: Option<f64> = None;
 
   for _ in 0..max_iter {
     // Evaluate model at each data point with current parameters
@@ -11322,16 +11331,73 @@ fn find_fit_weighted(
       }
       if total.is_nan() { f64::INFINITY } else { total }
     };
+    // The damped step: least squares on J stacked over sqrt(lambda) I
+    // (the zero right-hand side below r), restricted to the free columns.
+    let free: Vec<usize> = (0..n_params)
+      .filter(|&j| !(pinned.iter().any(|&p| p) && pinned[j]))
+      .collect();
+    let damped_step = |lambda: f64| -> Option<Vec<f64>> {
+      let root = lambda.sqrt();
+      let mut rows: Vec<Vec<f64>> = jacobian
+        .iter()
+        .map(|row| free.iter().map(|&j| row[j]).collect())
+        .collect();
+      let mut rhs = residuals.clone();
+      for k in 0..free.len() {
+        let mut row = vec![0.0; free.len()];
+        row[k] = root;
+        rows.push(row);
+        rhs.push(0.0);
+      }
+      let d = least_squares_qr(&rows, &rhs, false).ok()?;
+      let mut full = vec![0.0; n_params];
+      for (k, &j) in free.iter().enumerate() {
+        full[j] = d[k];
+      }
+      Some(full)
+    };
+    let damping = !linear_model && current_ssr.is_finite();
+    if damping && lambda.is_none() {
+      // Start the damping at a small fraction of the largest diagonal
+      // entry of JᵀJ, so it is in proportion to the problem's scale.
+      let max_diag = (0..n_params)
+        .map(|j| jacobian.iter().map(|row| row[j] * row[j]).sum::<f64>())
+        .fold(0.0f64, f64::max);
+      lambda = Some(1e-3 * max_diag.max(f64::MIN_POSITIVE));
+    }
     let mut step = 1.0;
     for _ in 0..40 {
-      for j in 0..n_params {
-        param_values[j] = before[j] + step * delta[j];
+      let trial = match lambda {
+        Some(l) if damping => damped_step(l),
+        _ => None,
+      };
+      match &trial {
+        Some(d) => {
+          for j in 0..n_params {
+            param_values[j] = before[j] + d[j];
+          }
+        }
+        None => {
+          for j in 0..n_params {
+            param_values[j] = before[j] + step * delta[j];
+          }
+        }
       }
       clamp(&mut param_values);
       if !current_ssr.is_finite() || ssr_at(&param_values) <= current_ssr {
+        // An accepted step loosens the damping.
+        if trial.is_some() {
+          lambda = lambda.map(|l| l / 10.0);
+        }
         break;
       }
-      step *= 0.5;
+      // A rejected step tightens it (or, undamped, halves the step).
+      if trial.is_some() {
+        lambda = lambda.map(|l| l * 10.0);
+      } else {
+        step *= 0.5;
+      }
+      param_values.copy_from_slice(&before);
     }
     let max_change = param_values
       .iter()
