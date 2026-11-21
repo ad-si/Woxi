@@ -56001,8 +56001,13 @@ mod graphics3d_painters_algorithm_face_subdivision {
       export_svg("Graphics3D[{Cylinder[{{0, 0, 0}, {1, 0, 0}}, 0.01]}]");
     let lone_count = count(&lone);
 
+    // Packed closely side by side, so the scene's span (which also caps
+    // the rings, see `scene_span_caps_rings_of_a_long_thin_cylinder`)
+    // stays that of a single one.
     let few_code: String = (0..8)
-      .map(|i| format!("Cylinder[{{{{0, {i}, 0}}, {{1, {i}, 0}}}}, 0.01]"))
+      .map(|i| {
+        format!("Cylinder[{{{{0, 3 {i}/100, 0}}, {{1, 3 {i}/100, 0}}}}, 0.01]")
+      })
       .collect::<Vec<_>>()
       .join(", ");
     let few = export_svg(&format!("Graphics3D[{{{few_code}}}]"));
@@ -56014,6 +56019,52 @@ mod graphics3d_painters_algorithm_face_subdivision {
       "8 or fewer thin cylinders must each keep the full subdivision \
        budget, not the throttled one"
     );
+  }
+}
+
+mod graphics3d_cylinder_scene_ring_cap {
+  use super::*;
+
+  fn polygons(code: &str) -> usize {
+    clear_state();
+    export_svg(code).matches("<polygon").count()
+  }
+
+  /// Regression: a long, thin `Cylinder` was cut into rings as short as its
+  /// circumference facets are wide, so a rod 100x longer than its radius
+  /// hit the 200-ring cap (~19,000 triangles). Rings only need to be short
+  /// compared with the scene, so the side is cut into at most 24 rings per
+  /// scene span: 24 rings of 48 quads plus two 48-triangle caps.
+  #[test]
+  fn scene_span_caps_rings_of_a_long_thin_cylinder() {
+    let rod = polygons("Graphics3D[Cylinder[{{0, 0, 0}, {0, 0, 10}}, 0.1]]");
+    assert!(
+      rod <= 24 * 48 * 2 + 2 * 48,
+      "a lone thin rod must not get more than 24 rings: {rod} polygons"
+    );
+    // The cap scales with the rod's share of the scene: next to a long
+    // second rod, a rod half as long gets about half as many rings.
+    let both = polygons(
+      "Graphics3D[{Cylinder[{{0, 0, 0}, {0, 0, 10}}, 0.1], \
+       Cylinder[{{1, 0, 0}, {1, 0, 5}}, 0.1]}]",
+    );
+    let short_rod = both - rod;
+    assert!(
+      short_rod <= 12 * 48 * 2 + 2 * 48,
+      "a rod spanning half the scene gets at most 12 rings: {short_rod}"
+    );
+  }
+
+  /// A dozen thin bars through wide translucent drums (a motor model) used
+  /// to export a 16 MB SVG; the bars now cost a few rings each.
+  #[test]
+  fn thin_bars_through_wide_drums_stay_small() {
+    let n = polygons(
+      "Graphics3D[{{Opacity[0.3], Cylinder[{{0, 0, 10}, {0, 0, -10}}, 32]}, \
+       Table[Cylinder[{{18 Cos[k], 18 Sin[k], 12}, \
+       {18 Cos[k + 0.3], 18 Sin[k + 0.3], -12}}, 2], {k, 0, 11 Pi/6, Pi/6}]}]",
+    );
+    assert!(n < 15_000, "12 bars and a drum drew {n} polygons");
   }
 }
 
