@@ -97,8 +97,26 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::List(results?.into()));
   }
 
+  // A fraction nested inside a product, such as `y (x/(x^2 - 1) + c)`, is
+  // brought over a common denominator first, as `Together` would.
+  let mut expr = args[0].clone();
+  let (_num, mut den_check) = super::together::extract_num_den(&expr);
+  if matches!(&den_check, Expr::Integer(1)) && has_nested_fraction(&expr) {
+    let together = crate::evaluator::evaluate_expr_to_expr(
+      &crate::helpers::call("Together", vec![expr.clone()]),
+    )?;
+    let (_n, den) = super::together::extract_num_den(&together);
+    if !matches!(&den, Expr::Integer(1)) {
+      expr = together;
+      den_check = den;
+    }
+  }
+  let args: Vec<Expr> = std::iter::once(expr)
+    .chain(args.iter().skip(1).cloned())
+    .collect();
+  let args = args.as_slice();
+
   // Short-circuit: if the expression has no denominator, Apart is a no-op.
-  let (_num, den_check) = super::together::extract_num_den(&args[0]);
   if matches!(&den_check, Expr::Integer(1)) {
     // A polynomial has no partial fractions, but Apart still multiplies it
     // out: Apart[(x - 1)^2] → 1 - 2*x + x^2.
@@ -143,11 +161,207 @@ pub fn apart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if crate::functions::predicate_ast::is_numeric_q(&args[0]) {
         return Ok(args[0].clone());
       }
+      if let Some(result) = apart_in_denominator_variable(&args[0], &den_check)?
+      {
+        return Ok(result);
+      }
       return Ok(unevaluated("Apart", args));
     }
   };
 
-  apart_expr(&args[0], &var)
+  apart_in_var(&args[0], &var)
+}
+
+/// Whether `expr` holds a negative power (a denominator) below its top
+/// level, e.g. inside a sum that is itself a factor of a product.
+fn has_nested_fraction(expr: &Expr) -> bool {
+  fn is_neg_power(e: &Expr) -> bool {
+    let exp = match e {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        &args[1]
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        right,
+        ..
+      } => right.as_ref(),
+      Expr::BinaryOp {
+        op: BinaryOperator::Divide,
+        ..
+      } => return true,
+      _ => return false,
+    };
+    match exp {
+      Expr::Integer(n) => *n < 0,
+      Expr::FunctionCall { name, args } if name == "Rational" => {
+        matches!(args.first(), Some(Expr::Integer(n)) if *n < 0)
+      }
+      _ => false,
+    }
+  }
+  fn walk(e: &Expr, depth: usize) -> bool {
+    if depth > 0 && is_neg_power(e) {
+      return true;
+    }
+    match e {
+      Expr::FunctionCall { args, .. } => {
+        args.iter().any(|a| walk(a, depth + 1))
+      }
+      Expr::BinaryOp { left, right, .. } => {
+        walk(left, depth + 1) || walk(right, depth + 1)
+      }
+      Expr::UnaryOp { operand, .. } => walk(operand, depth + 1),
+      _ => false,
+    }
+  }
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Times" => {
+      args.iter().any(|a| walk(a, 1) && !is_neg_power(a))
+    }
+    _ => false,
+  }
+}
+
+/// Evaluate the Wolfram Language `template`, with each placeholder
+/// identifier bound to its expression.
+fn eval_template(
+  template: &str,
+  bindings: &[(&str, &Expr)],
+) -> Result<Expr, InterpreterError> {
+  let template = crate::syntax::string_to_expr(template)?;
+  crate::evaluator::evaluate_expr_to_expr(&crate::syntax::substitute_variables(
+    &template, bindings,
+  ))
+}
+
+/// Whether `expr` still is an unevaluated `Apart[…]` call.
+fn is_unevaluated_apart(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. } if name == "Apart")
+}
+
+/// `Apart[expr]` of an expression in several variables whose denominator
+/// involves just one of them (as `Variables` counts them, so `y[x]` is a
+/// variable too) decomposes in that variable:
+/// `Apart[(y[x] + x y'[x])/y[x]^2]` → `1/y[x] + x y'[x]/y[x]^2`.
+fn apart_in_denominator_variable(
+  expr: &Expr,
+  den: &Expr,
+) -> Result<Option<Expr>, InterpreterError> {
+  let vars = crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call(
+    "Variables",
+    vec![den.clone()],
+  ))?;
+  let Expr::List(ref vars) = vars else {
+    return Ok(None);
+  };
+  if vars.len() != 1 {
+    return Ok(None);
+  }
+  let var = &vars[0];
+  if let Expr::Identifier(name) = var {
+    let result = apart_in_var(expr, name)?;
+    return Ok((!is_unevaluated_apart(&result)).then_some(result));
+  }
+  // A non-symbol variable such as `y[x]` is decomposed as a fresh symbol.
+  const TMP: &str = "apart$Var";
+  let substituted = eval_template(
+    "e$Apart /. v$Apart -> apart$Var",
+    &[("e$Apart", expr), ("v$Apart", var)],
+  )?;
+  let result = apart_in_var(&substituted, TMP)?;
+  if is_unevaluated_apart(&result) {
+    return Ok(None);
+  }
+  eval_template(
+    "r$Apart /. apart$Var -> v$Apart",
+    &[("r$Apart", &result), ("v$Apart", var)],
+  )
+  .map(Some)
+}
+
+/// Partial fractions in `var`, where `var` may also appear with rational
+/// exponents: those are decomposed in the root `var^(1/L)`, `L` being the
+/// least common denominator of the exponents, so that
+/// `Apart[(1 + x)/Sqrt[x]]` → `1/Sqrt[x] + Sqrt[x]`.
+fn apart_in_var(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
+  let var_expr = Expr::Identifier(var.to_string());
+  // Other variables that merely mention `var`, such as `y[x]` or `y'[x]`
+  // when decomposing in `x`, are constants like any other: they stand in
+  // as fresh symbols so that no root of the denominator is substituted
+  // into them.
+  let dependents = eval_template(
+    "Select[Variables[e$Apart], Head[#] =!= Symbol && !FreeQ[#, v$Apart] &]",
+    &[("e$Apart", expr), ("v$Apart", &var_expr)],
+  )?;
+  if let Expr::List(ref deps) = dependents
+    && !deps.is_empty()
+  {
+    let symbols: Vec<Expr> = (1..=deps.len())
+      .map(|i| Expr::Identifier(format!("apart$Dep{i}")))
+      .collect();
+    let rules = |from: &[Expr], to: &[Expr]| {
+      Expr::List(
+        from
+          .iter()
+          .zip(to)
+          .map(|(f, t)| crate::helpers::rule_expr(f.clone(), t.clone()))
+          .collect(),
+      )
+    };
+    let forward = rules(deps, &symbols);
+    let backward = rules(&symbols, deps);
+    let replaced = eval_template(
+      "e$Apart /. r$Apart",
+      &[("e$Apart", expr), ("r$Apart", &forward)],
+    )?;
+    let result = apart_in_var(&replaced, var)?;
+    if is_unevaluated_apart(&result) {
+      return Ok(result);
+    }
+    return eval_template(
+      "e$Apart /. r$Apart",
+      &[("e$Apart", &result), ("r$Apart", &backward)],
+    );
+  }
+  let dens = eval_template(
+    "Cases[e$Apart, Power[v$Apart, r_Rational] :> Denominator[r], {0, Infinity}]",
+    &[("e$Apart", expr), ("v$Apart", &var_expr)],
+  )?;
+  let mut lcm: i128 = 1;
+  if let Expr::List(items) = &dens {
+    for d in items.iter() {
+      let Expr::Integer(d) = d else {
+        return apart_expr(expr, var);
+      };
+      let g = gcd_i128(lcm, *d);
+      lcm = match (lcm / g).checked_mul(*d) {
+        Some(v) if v <= 1000 => v,
+        _ => return apart_expr(expr, var),
+      };
+    }
+  }
+  if lcm == 1 {
+    return apart_expr(expr, var);
+  }
+  const ROOT: &str = "apart$Root";
+  let l = Expr::Integer(lcm);
+  let in_root = eval_template(
+    "e$Apart /. {Power[v$Apart, r_Rational] :> Power[apart$Root, r l$Apart], \
+     v$Apart -> apart$Root^l$Apart}",
+    &[("e$Apart", expr), ("v$Apart", &var_expr), ("l$Apart", &l)],
+  )?;
+  let result = apart_expr(&in_root, ROOT)?;
+  eval_template(
+    "r$Apart /. {Power[apart$Root, k_] :> Power[v$Apart, k/l$Apart], \
+     apart$Root -> v$Apart^(1/l$Apart)}",
+    &[
+      ("r$Apart", &result),
+      ("v$Apart", &var_expr),
+      ("l$Apart", &l),
+    ],
+  )
 }
 
 fn apart_expr(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
@@ -1220,6 +1434,44 @@ fn apart_symbolic(
       return Ok(result);
     }
     return Ok(expr.clone());
+  }
+
+  // An improper fraction splits off its polynomial part first:
+  // `Apart[(x a^2 + 2 a b (x^2 - 1))/(x^2 - 1), x]` →
+  // `2 a b + a^2/(2 (-1 + x)) + a^2/(2 (1 + x))`.
+  let den_degree = factors
+    .iter()
+    .filter(|f| crate::functions::polynomial_ast::contains_var(f, var))
+    .count();
+  if den_degree > 0
+    && super::polynomial_q::is_polynomial(num, var)
+    && let Expr::Integer(num_degree) =
+      crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call(
+        "Exponent",
+        vec![num.clone(), Expr::Identifier(var.to_string())],
+      ))?
+    && num_degree >= den_degree as i128
+    && let Expr::List(ref qr) =
+      crate::evaluator::evaluate_expr_to_expr(&crate::helpers::call(
+        "PolynomialQuotientRemainder",
+        vec![
+          num.clone(),
+          expand_and_combine(den),
+          Expr::Identifier(var.to_string()),
+        ],
+      ))?
+    && qr.len() == 2
+  {
+    let quotient = qr[0].clone();
+    let remainder =
+      crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(&qr[1]))?;
+    let mut parts = vec![quotient];
+    if !matches!(remainder, Expr::Integer(0)) {
+      let frac = div2(remainder.clone(), den.clone());
+      let rest = apart_symbolic(&frac, &remainder, den, var)?;
+      flatten_plus(&rest, &mut parts);
+    }
+    return crate::functions::math_ast::plus_ast(&parts);
   }
 
   // Separate linear (in var) factors from non-linear/constant factors

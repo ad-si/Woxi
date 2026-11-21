@@ -1551,6 +1551,34 @@ mod definite_integrals {
   }
 }
 
+mod integrate_split_power_derivative {
+  use super::*;
+
+  // ∫ u' f1^a f2^a dx with u = f1 f2 keeps the powers apart.
+  #[test]
+  fn shared_fractional_exponent() {
+    assert_eq!(
+      interpret("Integrate[x (x - 1)^(1/8) (x + 1)^(1/8), x]").unwrap(),
+      "(4*(-1 + x)^(9/8)*(1 + x)^(9/8))/9"
+    );
+    assert_eq!(
+      interpret("Integrate[(2 x + 1) x^(1/3) (x + 1)^(1/3), x]").unwrap(),
+      "(3*x^(4/3)*(1 + x)^(4/3))/4"
+    );
+  }
+
+  #[test]
+  fn linear_ode_with_split_integrating_factor() {
+    assert_eq!(
+      interpret(
+        "DSolve[z[x]/(2 (x - 1)) + z[x]/(2 (x + 1)) + 4 z'[x] == x, z[x], x]"
+      )
+      .unwrap(),
+      "{{z[x] -> ((-1 + x)*(1 + x))/9 + C[1]/((-1 + x)^(1/8)*(1 + x)^(1/8))}}"
+    );
+  }
+}
+
 mod integrate_reciprocal_powers {
   use super::*;
 

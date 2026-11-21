@@ -4201,6 +4201,66 @@ mod together {
 mod apart {
   use super::*;
 
+  // Without a variable, a multivariate expression whose denominator has a
+  // single variable decomposes in it, also when that is `y[x]`.
+  #[test]
+  fn apart_in_single_denominator_variable() {
+    assert_eq!(
+      interpret("Apart[(a + b x)/a^2]").unwrap(),
+      "a^(-1) + (b*x)/a^2"
+    );
+    assert_eq!(
+      interpret("Apart[(y[x] + x y'[x])/y[x]^2]").unwrap(),
+      "y[x]^(-1) + (x*Derivative[1][y][x])/y[x]^2"
+    );
+    assert_eq!(
+      interpret("Apart[(2 y[x] + y'[x])/y[x]^2]").unwrap(),
+      "2/y[x] + Derivative[1][y][x]/y[x]^2"
+    );
+  }
+
+  // Variables that only mention the decomposition variable, like `y[x]`
+  // in `x`, stay untouched constants.
+  #[test]
+  fn apart_keeps_dependent_variables_constant() {
+    assert_eq!(
+      interpret("Apart[((x y[x])/(x^2 - 1) + 2 y'[x]) y[x]]").unwrap(),
+      "y[x]^2/(2*(-1 + x)) + y[x]^2/(2*(1 + x)) + 2*y[x]*Derivative[1][y][x]"
+    );
+  }
+
+  // A product holding a fraction is brought over a common denominator.
+  #[test]
+  fn apart_nested_fraction_in_product() {
+    assert_eq!(
+      interpret("Apart[((x a)/(x^2 - 1) + 2 b) a]").unwrap(),
+      "2*a*b + a^2/(2*(-1 + x)) + a^2/(2*(1 + x))"
+    );
+  }
+
+  // The polynomial part of an improper fraction with symbolic coefficients
+  // is kept.
+  #[test]
+  fn apart_symbolic_improper_linear_factors() {
+    assert_eq!(
+      interpret("Apart[(x a^2 + 2 x^2 a b - 2 a b)/(x^2 - 1), x]").unwrap(),
+      "2*a*b + a^2/(2*(-1 + x)) + a^2/(2*(1 + x))"
+    );
+  }
+
+  // Rational powers of the variable decompose in its root.
+  #[test]
+  fn apart_rational_powers() {
+    assert_eq!(
+      interpret("Apart[(1 + x)/Sqrt[x]]").unwrap(),
+      "1/Sqrt[x] + Sqrt[x]"
+    );
+    assert_eq!(
+      interpret("Apart[(-4 y[x] + x y'[x])/Sqrt[y[x]]]").unwrap(),
+      "-4*Sqrt[y[x]] + (x*Derivative[1][y][x])/Sqrt[y[x]]"
+    );
+  }
+
   // Nonlinear and repeated factors with symbolic coefficients are split by
   // undetermined coefficients.
   #[test]
