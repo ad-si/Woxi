@@ -300,15 +300,14 @@ pub(crate) fn evaluate_function_call_ast(
 /// symbol's value) costs nothing at all, where rebuilding it as a tree
 /// copied it on every call.
 ///
-/// Threshold of 16 keeps the Vec path for small argument lists where the
-/// one-time conversion would dominate.
+/// Lists shorter than `share_large_lists`' threshold stay plain vectors,
+/// where the one-time conversion would dominate.
 fn promote_lists_for_substitution(values: &mut [Expr]) {
+  // Nested arrays too: a matrix held in a small state list
+  // (`{grid, {x, y}, dir}`) is otherwise copied in full at every place the
+  // body mentions the parameter.
   for v in values {
-    if let Expr::List(items) = v
-      && items.len() > 16
-    {
-      items.share();
-    }
+    crate::evaluator::share_large_lists(v, 0);
   }
 }
 
@@ -848,6 +847,23 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
     }
     crate::prepend_to_context_path(ctx);
   }
+  if ctx == "PlotLegends`" {
+    // Its exports, so a bare `ShowLegend` read after loading is
+    // `PlotLegends`ShowLegend` (the dispatch entry Woxi implements), and
+    // the legend options it reads answer to their bare names too.
+    for name in [
+      "Legend",
+      "LegendBackground",
+      "LegendBorder",
+      "LegendPosition",
+      "LegendShadow",
+      "LegendSize",
+      "ShowLegend",
+    ] {
+      crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
+    }
+    crate::prepend_to_context_path(ctx);
+  }
   if ctx == "PolyhedronOperations`" {
     // Its exports, so a bare `Truncate` read after loading is
     // `PolyhedronOperations`Truncate` (the dispatch entry Woxi implements).
@@ -1060,25 +1076,71 @@ fn normalize_piecharts_option(arg: &Expr) -> Expr {
       _ => None,
     }
   }
+  // `PieStyle -> {{Red}, {Green, EdgeForm[…]}, …}` gave each wedge a list
+  // of directives; the modern `ChartStyle` spells one wedge's directives
+  // as `Directive[…]`.
+  fn translated_value(new_name: &str, value: &Expr) -> Expr {
+    match value {
+      Expr::List(items) if new_name == "ChartStyle" => Expr::List(
+        items
+          .iter()
+          .map(|item| match item {
+            Expr::List(directives) => Expr::FunctionCall {
+              name: "Directive".to_string(),
+              args: directives.clone(),
+            },
+            other => other.clone(),
+          })
+          .collect(),
+      ),
+      other => other.clone(),
+    }
+  }
   match arg {
     Expr::Rule {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => rule_expr(id_expr(new_name), *replacement.clone()),
+      Some(new_name) => {
+        rule_expr(id_expr(new_name), translated_value(new_name, replacement))
+      }
       None => arg.clone(),
     },
     Expr::RuleDelayed {
       pattern,
       replacement,
     } => match renamed_option(pattern) {
-      Some(new_name) => {
-        rule_delayed_expr(id_expr(new_name), *replacement.clone())
-      }
+      Some(new_name) => rule_delayed_expr(
+        id_expr(new_name),
+        translated_value(new_name, replacement),
+      ),
       None => arg.clone(),
     },
     other => other.clone(),
   }
+}
+
+/// Translate the arguments of a legacy `PieCharts\`PieChart` call to the
+/// modern `PieChart`: rename its options (see
+/// [`normalize_piecharts_option`]) and keep its wedge layout. The package
+/// laid the first wedge out from the positive x axis and went
+/// counterclockwise, whereas `PieChart` starts at 9 o'clock and goes
+/// clockwise, so an explicit `SectorOrigin -> 0` is added unless the call
+/// names one itself.
+fn normalize_piecharts_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out: Vec<Expr> =
+    args.iter().map(normalize_piecharts_option).collect();
+  let names_sector_origin = out.iter().any(|a| {
+    matches!(
+      a,
+      Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(id) if id == "SectorOrigin")
+    )
+  });
+  if !names_sector_origin {
+    out.push(rule_expr(id_expr("SectorOrigin"), Expr::Integer(0)));
+  }
+  out
 }
 
 /// Evaluate one stored overload condition against the call's bindings.
@@ -1706,10 +1768,7 @@ fn evaluate_function_call_ast_inner(
   // translate them alongside the head so old demonstrations still render.
   let normalized_pie_args;
   let args: &[Expr] = if original_name == "PieCharts`PieChart" {
-    normalized_pie_args = args
-      .iter()
-      .map(normalize_piecharts_option)
-      .collect::<Vec<_>>();
+    normalized_pie_args = normalize_piecharts_args(args);
     &normalized_pie_args
   } else {
     args
@@ -2444,7 +2503,7 @@ fn evaluate_function_call_ast_inner(
       },
       None => crate::functions::polyhedron_operations::DEFAULT_TRUNCATE_RATIO,
     };
-    if !(0.0..0.5).contains(&ratio) {
+    if !(0.0..=0.5).contains(&ratio) {
       return Ok(unevaluated(name, args));
     }
     return Ok(crate::functions::polyhedron_operations::truncate(
@@ -5784,13 +5843,19 @@ fn evaluate_function_call_ast_inner(
       } = &evaluated
         && en == "Graph"
         && eargs.len() >= 2
-        && let Ok(rendered) = crate::functions::graph::graph_ast(&{
+        && let Ok(rendered) = {
           let mut a = eargs.to_vec();
           if plain_lines {
             a.push(rule_expr(id_expr("DirectedEdges"), id_expr("False")));
           }
-          a
-        })
+          // `GraphPlot` draws in its own plot units, which the rendering
+          // functions and any graphics `Show`n with it share.
+          if name == "GraphPlot" {
+            crate::functions::graph::graph_plot_render(&a)
+          } else {
+            crate::functions::graph::graph_ast(&a)
+          }
+        }
       {
         if let Expr::Graphics { svg, .. } = &rendered {
           crate::capture_graphics(svg);
@@ -5907,6 +5972,13 @@ fn evaluate_function_call_ast_inner(
     return hierarchical_clustering_distance_matrix(args);
   }
 
+  // The legacy PlotLegends` package, once loaded.
+  if name == "PlotLegends`ShowLegend"
+    && package_loaded("PlotLegends`")
+    && args.len() >= 2
+  {
+    return crate::functions::plot_legends_package::show_legend_ast(args);
+  }
   // The legacy ComputationalGeometry` package, once loaded.
   if name.starts_with("ComputationalGeometry`")
     && package_loaded("ComputationalGeometry`")

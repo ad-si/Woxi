@@ -181,7 +181,15 @@ fn main() {
         println!("display trees:");
         for t in &state.display_trees {
           let dbg = format!("{t:?}");
-          let snippet: String = dbg.chars().take(300).collect();
+          let snippet: String = dbg
+            .chars()
+            .take(
+              std::env::var("DUMP_TREE_CHARS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(300),
+            )
+            .collect();
           println!("  {snippet}");
         }
       }
@@ -236,6 +244,12 @@ fn main() {
           state
             .content_width
             .and_then(|w| manipulate::flow_to_content_width(&res, w))
+            .unwrap_or(res)
+        });
+        let render = render.map(|res| {
+          state
+            .content_height
+            .and_then(|h| manipulate::fit_to_content_height(&res, h))
             .unwrap_or(res)
         });
         if let Ok(res) = render

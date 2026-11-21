@@ -421,6 +421,18 @@ fn draws_nothing(s: &str) -> bool {
     .is_empty()
 }
 
+/// The base a prefix script keeps when its box base `draws_nothing`: a
+/// blank space (`SuperscriptBox[" ", "1"]`, as in the term symbol `1s² ¹S`)
+/// still typesets its gap, while an invisible base
+/// (`\[InvisiblePrefixScriptBase]`) or an empty one typesets nothing.
+fn blank_base_text(s: &str) -> &'static str {
+  if crate::syntax::substitute_private_use_glyphs(s).contains(' ') {
+    " "
+  } else {
+    ""
+  }
+}
+
 /// The part specification inside a `⟦…⟧` group, or None when `s` is an
 /// ordinary subscript. The double-bracket characters are what
 /// `\[LeftDoubleBracket]` / `\[RightDoubleBracket]` unescape to.
@@ -1110,6 +1122,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         && !a[1..a.len() - 1].contains("\\\"")
       {
         unescape_code_string(&a[1..a.len() - 1])
+      } else if a.len() >= 2 && a.starts_with("\"\\\"") && a.ends_with('"') {
+        // A string literal (`"\"…\""`) — possibly an inline cell such as
+        // `"\"\<\!\(\*StyleBox[\"t\", …]\)\>\""` — keeps its inner
+        // quotes escaped, so it still reads back as one string.
+        box_part_source(a)
       } else {
         extract_cell_content(a)
       }
@@ -1164,7 +1181,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
       // evaluated, drop the script entirely (`x^1` is `x`). `Superscript`
       // stays unevaluated and keeps it.
       "SuperscriptBox" if args.len() == 2 && draws_nothing(&conv(&args[0])) => {
-        format!("Superscript[\"\", {}]", conv(&args[1]))
+        format!(
+          "Superscript[\"{}\", {}]",
+          blank_base_text(&conv(&args[0])),
+          conv(&args[1])
+        )
       }
       // `SuperscriptBox[f, TagBox[order, Derivative]]` is the typeset form
       // of a mixed or higher-order partial derivative — emit
@@ -1258,7 +1279,7 @@ fn extract_typeset_box(s: &str) -> Option<String> {
           // Prefix subscript, as above — keep an explicit empty string
           // so the result still parses.
           if draws_nothing(&base) {
-            format!("Subscript[\"\", {sub}]")
+            format!("Subscript[\"{}\", {sub}]", blank_base_text(&base))
           } else {
             format!("Subscript[{base}, {sub}]")
           }
@@ -2074,6 +2095,13 @@ fn has_real_predecessor(
     // Inside a row a line break is layout, not a statement boundary
     if t == "\"\\n\"" && !newline_ends_statement {
       continue;
+    }
+    // Between the items of a `BoxData[{…}]` statement list, the
+    // FrontEnd's `\[IndentingNewLine]` separates statements just like a
+    // literal `"\n"`: `BoxData[{RowBox[{a = 1, ";"}], "\[IndentingNewLine]",
+    // RowBox[{b = 2, ";"}]}]` is two lines, not `a = 1; (b = 2);`.
+    if t == "\"\\[IndentingNewLine]\"" && newline_ends_statement {
+      return false;
     }
     // A literal `"\n"` multi-statement separator, a list/argument comma or
     // statement `;`, or an opening delimiter starting the enclosing group
@@ -2993,6 +3021,22 @@ fn strip_number_precision_mark(text: &str) -> Option<String> {
   (is_number && is_mark).then(|| number.to_string())
 }
 
+thread_local! {
+  /// Set while [`render_traditional_boxes_text`] renders a box tree.
+  static SPACE_AFTER_COMMAS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// [`render_boxes_text`] for a `ToString[expr, TraditionalForm]` box tree:
+/// the typeset readout of a value (`{925, 0, 0}`), whose list commas are
+/// followed by a space as the FrontEnd draws them.
+pub(crate) fn render_traditional_boxes_text(s: &str) -> String {
+  let previous = SPACE_AFTER_COMMAS.replace(true);
+  let text = render_boxes_text(s);
+  SPACE_AFTER_COMMAS.set(previous);
+  text
+}
+
 pub(crate) fn render_boxes_text(s: &str) -> String {
   let s = s.trim();
 
@@ -3029,6 +3073,16 @@ pub(crate) fn render_boxes_text(s: &str) -> String {
         continue;
       }
       out.push_str(&render_boxes_text(items[i]));
+      // A `TraditionalForm` readout sets a separating comma with a space
+      // after it (`{1, 2}`), unless the boxes already spell one out.
+      if SPACE_AFTER_COMMAS.get()
+        && is_bare_char(items[i], ',')
+        && items
+          .get(i + 1)
+          .is_some_and(|next| !render_boxes_text(next).starts_with(' '))
+      {
+        out.push(' ');
+      }
       i += 1;
     }
     return out;
@@ -6862,6 +6916,23 @@ Cell["Chapter 2", "Chapter"]
   }
 
   #[test]
+  fn fraction_box_string_literal_keeps_inline_cell_quotes_escaped() {
+    // An inline `StyleBox` written as a string numerator stays one string
+    // literal: its inner quotes must not close it early.
+    let nb = parse_notebook(
+      r#"Notebook[{Cell[BoxData[RowBox[{"f", "[", FractionBox["\"\<\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)\>\"", "T"], "]"}]], "Input"]}]"#,
+    )
+    .unwrap();
+    let CellEntry::Single(cell) = &nb.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(
+      cell.content,
+      r#"f[(("\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)")/(T))]"#
+    );
+  }
+
+  #[test]
   fn test_string_literal_source_preserves_already_escaped_quotes() {
     // A tooltip string containing an embedded quoted phrase (e.g. "Pareto
     // superior") round-trips through the front end as `\<...\\\"...\\\"...\>`:
@@ -10193,6 +10264,17 @@ Cell[BoxData[RowBox[{"arrowHead", "=", RowBox[{"{", RowBox[{"Line", "[", RowBox[
        a corrupted `Times[…]` target carrying a stray `Null` factor from \
        the previous statement), got: {result:?} from {expr_src:?}"
     );
+  }
+
+  #[test]
+  fn boxdata_statement_list_indenting_newline_keeps_statements_bare() {
+    // A multi-line Input cell is stored as a `BoxData[{…}]` list whose
+    // statements are separated by `\[IndentingNewLine]`. Each item is its
+    // own line, so a later assignment must not be parenthesized as if it
+    // were juxtaposed onto the previous statement.
+    let boxes = r#"BoxData[{RowBox[{RowBox[{RowBox[{"f", "[", "x_", "]"}], ":=", RowBox[{"x", "+", "1"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{RowBox[{"g", "[", "x_", "]"}], ":=", RowBox[{"f", "[", "x", "]"}]}], ";"}], "\[IndentingNewLine]", RowBox[{RowBox[{"h", "=", "2"}], ";"}]}]"#;
+    let src = extract_cell_content(boxes);
+    assert_eq!(src, "f[x_]:=x+1;\ng[x_]:=f[x];\nh=2;");
   }
 
   #[test]
