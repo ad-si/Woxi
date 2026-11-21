@@ -697,7 +697,19 @@ pub(crate) fn parse_style_directive_args(
   let mut italic = false;
   let mut color = None;
   let mut font_size = None;
-  for arg in args {
+  // A list of directives applies each of them in turn, so
+  // `Style[expr, {Orange, 18}]` is the same as `Style[expr, Orange, 18]`.
+  fn flatten_directives<'a>(args: &'a [Expr], out: &mut Vec<&'a Expr>) {
+    for arg in args {
+      match arg {
+        Expr::List(items) => flatten_directives(items, out),
+        other => out.push(other),
+      }
+    }
+  }
+  let mut directives = Vec::new();
+  flatten_directives(args, &mut directives);
+  for arg in directives {
     match arg {
       Expr::Identifier(s) if s == "Bold" => bold = true,
       Expr::Identifier(s) if s == "Italic" => italic = true,
