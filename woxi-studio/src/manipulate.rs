@@ -855,6 +855,137 @@ fn contains_dynamic(expr: &woxi::syntax::Expr) -> bool {
   }
 }
 
+/// The direct subexpressions of `expr`.
+fn sub_exprs(expr: &woxi::syntax::Expr) -> Vec<&woxi::syntax::Expr> {
+  use woxi::syntax::Expr;
+  match expr {
+    Expr::List(items) | Expr::FunctionCall { args: items, .. } => {
+      items.iter().collect()
+    }
+    Expr::CompoundExpr(items) => items.iter().collect(),
+    Expr::Comparison { operands, .. } => operands.iter().collect(),
+    Expr::Association(pairs) => {
+      pairs.iter().flat_map(|(k, v)| [k, v]).collect()
+    }
+    Expr::BinaryOp { left, right, .. } => vec![left, right],
+    Expr::UnaryOp { operand, .. } => vec![operand],
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => vec![pattern, replacement],
+    Expr::ReplaceAll { expr, rules }
+    | Expr::ReplaceRepeated { expr, rules } => vec![expr, rules],
+    Expr::Map { func, list }
+    | Expr::Apply { func, list }
+    | Expr::MapApply { func, list } => vec![func, list],
+    Expr::PrefixApply { func, arg } => vec![func, arg],
+    Expr::Postfix { expr, func } => vec![expr, func],
+    Expr::Part { expr, index } => vec![expr, index],
+    Expr::CurriedCall { func, args } => {
+      std::iter::once(func.as_ref()).chain(args.iter()).collect()
+    }
+    Expr::Function { body } | Expr::NamedFunction { body, .. } => vec![body],
+    Expr::PatternTest { test, .. } => vec![test],
+    _ => Vec::new(),
+  }
+}
+
+/// The content of a `Dynamic[content, …]` / `Dynamic@content` expression.
+fn dynamic_content(expr: &woxi::syntax::Expr) -> Option<&woxi::syntax::Expr> {
+  use woxi::syntax::Expr;
+  match expr {
+    Expr::FunctionCall { name, args } if name == "Dynamic" => args.first(),
+    Expr::PrefixApply { func, arg } if matches!(func.as_ref(), Expr::Identifier(n) if n == "Dynamic") => {
+      Some(arg)
+    }
+    _ => None,
+  }
+}
+
+/// Collect the symbols `expr` assigns (`writes`) and the ones it reads
+/// (`reads`). The symbol a plain `Set` assigns is not a read of it; an
+/// update such as `AddTo` or `Increment` reads it as well.
+fn collect_reads_and_writes(
+  expr: &woxi::syntax::Expr,
+  reads: &mut Vec<String>,
+  writes: &mut Vec<String>,
+) {
+  use woxi::syntax::Expr;
+  if let Expr::Identifier(name) = expr {
+    reads.push(name.clone());
+    return;
+  }
+  if let Expr::FunctionCall { name, args } = expr
+    && let Some(target) = args.first()
+  {
+    let updates = matches!(
+      name.as_str(),
+      "AddTo"
+        | "SubtractFrom"
+        | "TimesBy"
+        | "DivideBy"
+        | "Increment"
+        | "Decrement"
+        | "PreIncrement"
+        | "PreDecrement"
+        | "AppendTo"
+        | "PrependTo"
+    );
+    if updates || name == "Set" {
+      let targets: Vec<&Expr> = match target {
+        Expr::List(items) if name == "Set" => items.iter().collect(),
+        other => vec![other],
+      };
+      for t in targets {
+        match t {
+          Expr::Identifier(v) => {
+            writes.push(v.clone());
+            if updates {
+              reads.push(v.clone());
+            }
+          }
+          other => collect_reads_and_writes(other, reads, writes),
+        }
+      }
+      for rest in args.iter().skip(1) {
+        collect_reads_and_writes(rest, reads, writes);
+      }
+      return;
+    }
+  }
+  for sub in sub_exprs(expr) {
+    collect_reads_and_writes(sub, reads, writes);
+  }
+}
+
+/// The symbols that a `Dynamic[…]` inside `body` both reads and assigns,
+/// e.g. `s` and `i` in `Dynamic[s = s + g; i = step[i]; draw[i]]`.
+fn dynamic_feedback_vars(body: &str) -> Vec<String> {
+  fn walk(expr: &woxi::syntax::Expr, out: &mut Vec<String>) {
+    if let Some(content) = dynamic_content(expr) {
+      let (mut reads, mut writes) = (Vec::new(), Vec::new());
+      collect_reads_and_writes(content, &mut reads, &mut writes);
+      for w in writes {
+        if reads.contains(&w) && !out.contains(&w) {
+          out.push(w);
+        }
+      }
+    }
+    for sub in sub_exprs(expr) {
+      walk(sub, out);
+    }
+  }
+  let mut out = Vec::new();
+  if let Ok(parsed) = woxi::syntax::string_to_expr(body) {
+    walk(&parsed, &mut out);
+  }
+  out
+}
+
 /// Full state for a Manipulate cell: the held body plus its rendered
 /// output.
 #[derive(Debug, Clone)]
@@ -935,6 +1066,11 @@ pub struct ManipulateState {
   /// away) or ran a `Refresh[…, UpdateInterval -> t]` that asks for a
   /// re-evaluation on a timer.
   self_refreshing: bool,
+  /// Hidden state variables a `Dynamic[…]` in the body both reads and
+  /// assigns (`Dynamic[s = s + g; …]`). The front end refreshes such a
+  /// `Dynamic` again whenever its own write changed what it reads, so the
+  /// body keeps stepping on its own while the value moves.
+  dynamic_feedback_vars: Vec<String>,
   /// `UpdateInterval` code of a `Refresh[…, UpdateInterval -> t]` in the
   /// body (see `ManipulateSpec::refresh_interval`).
   refresh_interval: Option<String>,
@@ -1243,6 +1379,7 @@ impl ManipulateState {
       &spec.body_code,
       &control_names,
     );
+    let dynamic_feedback_vars = dynamic_feedback_vars(&body);
     let mut state = ManipulateState {
       body,
       initialization: spec.initialization,
@@ -1279,6 +1416,7 @@ impl ManipulateState {
       animation_var: spec.animation_var,
       module_locals: spec.module_locals,
       self_refreshing: false,
+      dynamic_feedback_vars,
       refresh_interval: spec.refresh_interval,
       timed_refresh: None,
       last_refresh: None,
@@ -2552,18 +2690,24 @@ impl ManipulateState {
         ),
       )
     });
-    self.timed_refresh = timed_refresh;
+    // Only a `Refresh` this frame actually ran (not one in an `If` branch
+    // left untaken, e.g. while a recorder is off) re-runs on a timer.
+    let refresh_ran = woxi::take_timed_refresh();
+    self.timed_refresh = timed_refresh.filter(|_| refresh_ran);
     self.last_refresh = Some(std::time::Instant::now());
     self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
-    let timed_refresh = woxi::take_timed_refresh();
+    let timed_refresh = refresh_ran;
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
     self.self_refreshing = false;
     for (name, value) in updated_bindings {
       if let Some(slot) = self.state.iter_mut().find(|(n, _)| *n == name) {
-        if slot.1 != value && self.module_locals.contains(&name) {
+        if slot.1 != value
+          && (self.module_locals.contains(&name)
+            || self.dynamic_feedback_vars.contains(&name))
+        {
           self.self_refreshing = true;
         }
         slot.1 = value.clone();
@@ -9475,5 +9619,74 @@ mod control_panel_tabview_tests {
     state.reevaluate();
     assert!(vis(&state, "shift"), "the slider shows on its own tab");
     assert_eq!(state.text_output.as_deref(), Some("{high, 7}"));
+  }
+}
+
+#[cfg(test)]
+mod dynamic_feedback_tests {
+  use super::*;
+
+  fn var(state: &ManipulateState, name: &str) -> String {
+    state
+      .state
+      .iter()
+      .find(|(n, _)| n == name)
+      .map(|(_, v)| v.clone())
+      .unwrap_or_default()
+  }
+
+  #[test]
+  fn feedback_vars_are_read_and_assigned_inside_dynamic() {
+    let vars = dynamic_feedback_vars(
+      "Column[{Dynamic[a], Dynamic@(b = b + 1; c = 5; d += 2; {e} = {f}; \
+       g = Length[g]; Plot[x, {x, 0, b}])}]",
+    );
+    assert_eq!(vars, ["b", "d", "g"]);
+    // Writes outside any `Dynamic` do not count.
+    assert!(dynamic_feedback_vars("n = n + 1; Dynamic[n]").is_empty());
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook (a cellular automaton
+  /// whose "speed" slider makes a `Dynamic` step its hidden state forward
+  /// on every refresh). The Studio rendered it once and never advanced.
+  /// This is a self-authored, construct-equivalent example.
+  #[test]
+  fn dynamic_writing_its_own_state_keeps_refreshing() {
+    let code = r#"Manipulate[
+      Column[{Row[{"at ", Dynamic[t]}],
+        Dynamic[If[k > 0, t = t + k; seen = Append[seen, t]]; Length[seen]]}],
+      {k, 0, 4, 1},
+      {{t, 0}, ControlType -> None},
+      {{seen, {}}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    assert!(!state.wants_tick(), "nothing moves at speed 0");
+    assert_eq!(var(&state, "t"), "0");
+
+    let t_of = |state: &ManipulateState| -> i64 {
+      var(state, "t").parse().expect("an integer step")
+    };
+    assert!(state.slide_continuous(0, 2.0));
+    state.reevaluate();
+    let first = t_of(&state);
+    assert!(first > 0 && first % 2 == 0, "stepped by the speed: {first}");
+    assert!(state.wants_tick(), "the Dynamic changed what it reads");
+    state.tick();
+    let second = t_of(&state);
+    assert!(second > first, "the tick stepped on: {first} -> {second}");
+    state.tick();
+    assert!(t_of(&state) > second);
+
+    // Back at speed 0 the state stops changing, and so does the timer.
+    assert!(state.slide_continuous(0, 0.0));
+    state.reevaluate();
+    let resting = var(&state, "t");
+    assert!(!state.wants_tick(), "idle once the state settles");
+    state.reevaluate();
+    assert_eq!(var(&state, "t"), resting);
   }
 }
