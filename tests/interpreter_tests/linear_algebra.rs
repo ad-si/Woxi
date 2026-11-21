@@ -2528,6 +2528,42 @@ mod eigenvalues {
     }
   }
 
+  // Arbitrary-precision entries are inexact like machine reals, so the
+  // matrix takes the numeric path instead of staying unevaluated.
+  #[test]
+  fn eigenvalues_arbitrary_precision_3x3() {
+    let result = interpret(
+      "Eigenvalues[{{2.6`6, -0.7`6, 0.2`6}, {-0.7`6, 0.3`6, -0.1`6}, \
+       {0.2`6, -0.1`6, 0.1`6}}]",
+    )
+    .unwrap();
+    assert!(!result.contains("Eigenvalues"), "{result}");
+    let vals: Vec<f64> = result
+      .trim_matches(|c| c == '{' || c == '}')
+      .split(", ")
+      .map(|s| s.parse::<f64>().unwrap())
+      .collect();
+    let expected =
+      [2.8140592879545916, 0.13646374447733417, 0.04947696756807616];
+    assert_eq!(vals.len(), 3);
+    for (v, e) in vals.iter().zip(expected.iter()) {
+      assert!((v - e).abs() < 1e-9, "got {v} expected {e}");
+    }
+  }
+
+  // `Norm` of a matrix is its largest singular value, found from the
+  // eigenvalues of `ConjugateTranspose[m] . m`.
+  #[test]
+  fn norm_of_arbitrary_precision_3x3_matrix() {
+    let result = interpret(
+      "Norm[{{0.425325`6, 0, 0.262866`6}, {0.850651`6, 0, 0}, \
+       {0.688191`6, -0.425325`6, 0.262866`6}}]",
+    )
+    .unwrap();
+    let v: f64 = result.parse().unwrap_or_else(|_| panic!("{result}"));
+    assert!((v - 1.2311941871353818).abs() < 1e-9, "{v}");
+  }
+
   #[test]
   fn eigenvalues_float_3x3_simple() {
     // Simpler diagonal-ish 3x3.
