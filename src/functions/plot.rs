@@ -8726,6 +8726,9 @@ pub(crate) fn build_plot_source(
           .get(i % plot_style.len().max(1))
           .is_some_and(|s| s.continues_previous),
         color_function: color_function.clone(),
+        arrowheads: plot_style
+          .get(i % plot_style.len().max(1))
+          .and_then(|s| s.arrowheads.clone()),
       }
     })
     .collect();
@@ -9319,6 +9322,7 @@ fn merged_plot_source_options(
       dashing: s.dashing.clone(),
       opacity: s.opacity,
       continues_previous: s.continues_previous,
+      arrowheads: s.arrowheads.clone(),
       ..SeriesStyle::default()
     })
     .collect();
@@ -13275,6 +13279,7 @@ pub(crate) fn histogram_plot_source(
       extra_fills: Vec::new(),
       continues_previous: false,
       color_function: None,
+      arrowheads: None,
     });
   }
 

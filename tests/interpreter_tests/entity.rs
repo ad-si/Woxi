@@ -516,6 +516,26 @@ mod city_data_tests {
       "Quantity[13.38, AngularDegrees]"
     );
   }
+
+  #[test]
+  fn small_united_states_towns_are_bundled() {
+    assert_eq!(
+      interpret("CityData[{\"Ashland\", \"Ohio\", \"UnitedStates\"}]").unwrap(),
+      "Entity[City, {Ashland, Ohio, UnitedStates}]"
+    );
+    assert_eq!(
+      interpret("Length[CityData[{\"Ashland\", \"UnitedStates\"}]] > 10")
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(
+        "MatchQ[CityData[{\"Ashland\", \"Oregon\", \"UnitedStates\"}, \"Coordinates\"], {_Real, _Real}]"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
 }
 
 mod country_data_tests {

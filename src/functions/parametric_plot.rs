@@ -824,13 +824,29 @@ pub(crate) fn exclusion_roots(
   roots
 }
 
-/// Break the sampled curves at the excluded parameter values by inserting an
-/// empty sample at each one.
-fn insert_exclusion_gaps(samples: &mut Vec<Sample>, roots: &[f64]) {
+/// Break the sampled curves at the excluded parameter values: the curve runs
+/// up to each excluded value from both sides (as `Plot` draws it), with an
+/// empty sample at the value itself, so no line is drawn across it but no
+/// visible piece of the curve goes missing either.
+fn insert_exclusion_gaps(
+  samples: &mut Vec<Sample>,
+  roots: &[f64],
+  (t_min, t_max): (f64, f64),
+  sample_at: &dyn Fn(f64) -> Option<Vec<(f64, f64)>>,
+) {
   if roots.is_empty() {
     return;
   }
-  samples.extend(roots.iter().map(|&t| (t, None)));
+  let eps = (t_max - t_min).abs() * 1e-9;
+  for &t in roots {
+    samples.retain(|(s, _)| (s - t).abs() > eps);
+    samples.push((t, None));
+    for near in [t - eps, t + eps] {
+      if (t_min..=t_max).contains(&near) {
+        samples.push((near, sample_at(near)));
+      }
+    }
+  }
   samples.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal));
 }
 
@@ -935,7 +951,13 @@ where
       }
     }
   }
-  insert_exclusion_gaps(samples, &poles);
+  // A pole is no point of the curve, so only the gap itself goes in: the
+  // samples beside it would lie far off toward infinity.
+  let range = (
+    samples.first().map_or(0.0, |s| s.0),
+    samples.last().map_or(0.0, |s| s.0),
+  );
+  insert_exclusion_gaps(samples, &poles, range, &|_| None);
 }
 
 /// The `RegionFunction -> f` value of a curve plot's options, evaluated
@@ -1358,7 +1380,7 @@ pub fn parametric_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         RegionArgs::Parametric,
       );
     }
-    insert_exclusion_gaps(&mut samples, &excluded);
+    insert_exclusion_gaps(&mut samples, &excluded, (t_min, t_max), &sample_at);
     let (series, params) = samples_to_series(samples);
     all_params.extend(std::iter::repeat_n(params, series.len()));
     all_points.extend(series);
@@ -1675,13 +1697,15 @@ fn parametric_region_ast(
   }
 
   // Wolfram draws a region ParametricPlot framed, with axes and equally
-  // scaled ones; the caller's own options come last so they win.
+  // scaled ones. The first setting of an option is the one in force, so
+  // the caller's own options come first and the defaults only fill in the
+  // ones they leave out (`Axes -> False` must remove the axes).
   let mut graphics_args = vec![Expr::List(items.into())];
+  graphics_args.extend(opt_args.iter().cloned());
   graphics_args.push(rule_expr(id_expr("Frame"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("Axes"), bool_expr(true)));
   graphics_args.push(rule_expr(id_expr("AspectRatio"), id_expr("Automatic")));
   graphics_args.push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
-  graphics_args.extend(opt_args.iter().cloned());
   let mut result = crate::functions::graphics::graphics_ast(&graphics_args)?;
   // Keep the primitives on the rendering so `Show` can draw the region
   // together with the other layers of a composite figure instead of

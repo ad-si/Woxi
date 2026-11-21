@@ -5373,6 +5373,46 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_plot_label_column_holding_matrix_form_is_typeset() {
+    // A `Column` stacking a `MatrixForm` among its lines keeps the matrix
+    // a two-dimensional picture with each entry typeset (`Cos[x]` as
+    // `cos(x)`), instead of collapsing it to a `(…; …)` line of text.
+    clear_state();
+    let svg = interpret(
+      "ExportString[Graphics[Circle[], PlotLabel -> \
+       Column[{MatrixForm[{{a Cos[x]}, {-b}}], \"\"}]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(!svg.contains("MatrixForm"), "wrapper leaked: {svg}");
+    assert!(!svg.contains("Cos["), "entry not typeset: {svg}");
+    assert!(!svg.contains("; -b"), "matrix set on one line: {svg}");
+    for entry in [">a</text>", ">b</text>", ">cos</text>"] {
+      assert!(svg.contains(entry), "matrix entry {entry} missing: {svg}");
+    }
+  }
+
+  #[test]
+  fn test_plot_label_matrix_form_on_3d_graphic_is_typeset() {
+    // A 3-D picture sets a matrix `PlotLabel` (bare or in a `Column`) as
+    // the same two-dimensional picture a 2-D graphic draws above itself.
+    for label in [
+      "MatrixForm[{{a^2}, {b}}]",
+      "Column[{MatrixForm[{{a^2}, {b}}], \"\"}]",
+    ] {
+      clear_state();
+      let svg = interpret(&format!(
+        "ExportString[Graphics3D[Sphere[], PlotLabel -> {label}], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(!svg.contains("MatrixForm"), "wrapper leaked: {svg}");
+      assert!(!svg.contains("; b"), "matrix set on one line: {svg}");
+      for entry in [">a</text>", ">2</text>", ">b</text>"] {
+        assert!(svg.contains(entry), "{label}: entry {entry} missing");
+      }
+    }
+  }
+
+  #[test]
   fn test_plot_label_traditional_form_matrix_product_is_typeset() {
     // `ToString[m . x, TraditionalForm]` in a `Row` label is the box text of
     // a matrix times a vector. It is drawn as a two-dimensional matrix, not
