@@ -3626,6 +3626,85 @@ mod graphics {
       assert_eq!(width("AbsoluteThickness[1]"), "1.00");
     }
 
+    /// Unbounded primitives are cut to a margin around the plot range
+    /// instead of being written out tens of thousands of pixels past the
+    /// picture (which made resvg drop translucent primitives drawn next to
+    /// them). The cut keeps their position and direction.
+    #[test]
+    fn unbounded_primitives_stay_near_the_picture() {
+      let svg = |prim: &str| {
+        export_svg(&format!(
+          "Graphics[{{{prim}}}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}, \
+           ImageSize -> 100]"
+        ))
+      };
+      let numbers = |tag: &str, svg: &str| -> Vec<f64> {
+        let start = svg.find(tag).expect(tag);
+        let elem = &svg[start..start + svg[start..].find("/>").unwrap()];
+        elem
+          .split('"')
+          .skip(1)
+          .step_by(2)
+          .flat_map(|v| v.split([',', ' ']))
+          .filter_map(|v| v.parse::<f64>().ok())
+          .collect()
+      };
+      let line = svg("InfiniteLine[{{0, 0}, {1, 1}}]");
+      let l = numbers("<line", &line);
+      // x1 y1 x2 y2: through the center (49.5, 49.5) with slope -1.
+      assert_eq!(&l[..4], &[-99.0, 198.0, 198.0, -99.0], "{line}");
+      let half = svg("HalfLine[{0, 0}, {1, 0}]");
+      assert_eq!(
+        &numbers("<line", &half)[..4],
+        &[49.5, 49.5, 198.0, 49.5],
+        "{half}"
+      );
+      // The upper half plane y >= 0.
+      let plane = svg("HalfPlane[{0, 0}, {1, 0}, {0, 1}]");
+      let mut pts = numbers("<polygon", &plane);
+      pts.truncate(8);
+      assert_eq!(
+        pts,
+        vec![-99.0, -99.0, -99.0, 49.5, 198.0, 49.5, 198.0, -99.0],
+        "{plane}"
+      );
+      // A line far outside the range is not drawn at all.
+      assert!(!svg("InfiniteLine[{0, 50}, {1, 0}]").contains("<line"));
+    }
+
+    /// A bare size name in `Style` is a font size, not a thickness, so it
+    /// keeps an earlier `Thick` (and the default width) of the primitive.
+    #[test]
+    fn style_size_name_keeps_stroke_thickness() {
+      let width = |code: &str| {
+        let svg = export_svg(code);
+        let i = svg.find("stroke-width=\"").expect("a stroke width")
+          + "stroke-width=\"".len();
+        svg[i..].split('"').next().unwrap().to_string()
+      };
+      for size in ["Tiny", "Small", "Medium", "Large"] {
+        assert_eq!(
+          width(&format!(
+            "Graphics[Style[Circle[{{0,0}},1], Thick, {size}, Red]]"
+          )),
+          "2.00",
+          "Thick then {size}"
+        );
+        assert_eq!(
+          width(&format!(
+            "Graphics[Style[Line[{{{{0,0}},{{1,1}}}}], {size}, Thick]]"
+          )),
+          "2.00",
+          "{size} then Thick"
+        );
+      }
+      // `Thin` itself still names a width.
+      assert_eq!(
+        width("Graphics[Style[Line[{{0,0},{1,1}}], Thick, Thin]]"),
+        "0.20"
+      );
+    }
+
     /// `AbsoluteDashing` is `Dashing`'s absolute counterpart — every length
     /// is literal pixels, the same relationship `AbsoluteThickness` has to
     /// `Thickness` — so it must reach the SVG as a `stroke-dasharray` too,

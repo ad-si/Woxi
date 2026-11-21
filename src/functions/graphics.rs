@@ -2910,7 +2910,10 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
       _ => false,
     },
     // `Thin` / `Thick` name absolute widths (negative = absolute pixels).
-    Expr::Identifier(s) if symbolic_thickness(s).is_some() => {
+    // A bare size name (`Tiny`, `Large`, …) is no thickness: it only names
+    // one inside `Thickness[…]`, and in `Style[prim, Tiny]` it is a font
+    // size, so it must not override an earlier `Thick`.
+    Expr::Identifier(s) if s == "Thin" || s == "Thick" => {
       style.thickness = symbolic_thickness(s).unwrap();
       true
     }
@@ -12051,6 +12054,64 @@ fn coord_y(y: f64, bb: &BBox, svg_h: f64) -> f64 {
   (bb.y_max - y) / bb.height() * svg_h
 }
 
+/// The region an unbounded primitive (`InfiniteLine`, `HalfPlane`, …) is
+/// cut to before it is written out: the plot range grown by its own size
+/// on every side, so whatever the viewport shows (padding included) is
+/// covered. Emitting the primitive tens of thousands of pixels past the
+/// picture instead makes SVG renderers size the clipped group's layer
+/// from those far ends, and resvg (Woxi Studio's renderer) then drops
+/// every translucent primitive drawn in the same group.
+fn unbounded_draw_box(bb: &BBox) -> BBox {
+  let (w, h) = (bb.width(), bb.height());
+  BBox {
+    x_min: bb.x_min - w,
+    x_max: bb.x_max + w,
+    y_min: bb.y_min - h,
+    y_max: bb.y_max + h,
+  }
+}
+
+/// Cut a convex polygon to the box `bx` (Sutherland–Hodgman).
+fn clip_polygon_to_box(poly: &[(f64, f64)], bx: &BBox) -> Vec<(f64, f64)> {
+  // Each edge as (axis, bound, keep-greater-side).
+  let edges = [
+    (0, bx.x_min, true),
+    (0, bx.x_max, false),
+    (1, bx.y_min, true),
+    (1, bx.y_max, false),
+  ];
+  let mut pts = poly.to_vec();
+  for (axis, bound, keep_greater) in edges {
+    if pts.is_empty() {
+      break;
+    }
+    let coord = |q: &(f64, f64)| if axis == 0 { q.0 } else { q.1 };
+    let inside = |q: &(f64, f64)| {
+      if keep_greater {
+        coord(q) >= bound
+      } else {
+        coord(q) <= bound
+      }
+    };
+    let mut out = Vec::with_capacity(pts.len() + 2);
+    for i in 0..pts.len() {
+      let cur = pts[i];
+      let prev = pts[(i + pts.len() - 1) % pts.len()];
+      let (ci, pi) = (inside(&cur), inside(&prev));
+      if ci != pi {
+        let t = (bound - coord(&prev)) / (coord(&cur) - coord(&prev));
+        out
+          .push((prev.0 + t * (cur.0 - prev.0), prev.1 + t * (cur.1 - prev.1)));
+      }
+      if ci {
+        out.push(cur);
+      }
+    }
+    pts = out;
+  }
+  pts
+}
+
 /// The width named by a thickness symbol, in the negative encoding this
 /// module uses for `AbsoluteThickness`. `Thin` evaluates to
 /// `Thickness[Tiny]` and `Thick` to `Thickness[Large]`, and Wolfram
@@ -15519,7 +15580,8 @@ fn render_primitive(
       style,
     } => {
       // Build a parallelogram that extends far past the visible plot range
-      // in every relevant direction; the SVG viewport clips it.
+      // in every relevant direction, then cut it to a margin around that
+      // range (see `unbounded_draw_box`).
       let ext = 10.0 * (bb.width() + bb.height());
       let corners: Vec<(f64, f64)> = if *full {
         vec![
@@ -15542,6 +15604,10 @@ fn render_primitive(
           (p.0 - vx + wx, p.1 - vy + wy),
         ]
       };
+      let corners = clip_polygon_to_box(&corners, &unbounded_draw_box(bb));
+      if corners.len() < 3 {
+        return;
+      }
       let color = style.effective_color();
       let pts: Vec<String> = corners
         .iter()
