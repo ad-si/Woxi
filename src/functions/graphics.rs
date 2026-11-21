@@ -5866,12 +5866,74 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         &mut inner,
         &mut Vec::new(),
       );
+      resolve_scaled_anchors(&mut inner);
       for p in &inner {
         prims.push(match transform {
-          Some(m) => affine_primitive(p, m, (x, y)),
+          Some(m) => {
+            let mut mapped = affine_primitive(p, m, (x, y));
+            // A label in the head turns with the arrow but keeps its own
+            // font size: only the rotation part of the head's map applies
+            // to its glyphs, as text in an inset graphic is not scaled.
+            if let (
+              Primitive::TextPrim { glyph_map, .. },
+              Primitive::TextPrim {
+                glyph_map: mapped_glyphs @ Some(_),
+                ..
+              },
+            ) = (p, &mut mapped)
+            {
+              let s = m[0][0].hypot(m[1][0]);
+              if s > 0.0 {
+                let r =
+                  [[m[0][0] / s, m[0][1] / s], [m[1][0] / s, m[1][1] / s]];
+                let g = glyph_map.unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
+                *mapped_glyphs = Some([
+                  [
+                    r[0][0] * g[0][0] + r[0][1] * g[1][0],
+                    r[0][0] * g[0][1] + r[0][1] * g[1][1],
+                  ],
+                  [
+                    r[1][0] * g[0][0] + r[1][1] * g[1][0],
+                    r[1][0] * g[0][1] + r[1][1] * g[1][1],
+                  ],
+                ]);
+              }
+            }
+            mapped
+          }
           None => translate_primitive(p, x, y),
         });
       }
+    }
+  }
+}
+
+/// Turn the `Scaled`/symbolic anchors (`{Center, Center}`, …) of a nested
+/// graphic's primitives into points of that graphic's own range, so they
+/// stay inside it once it is mapped into the enclosing picture instead of
+/// naming a point of the outer plot range. The range is what the
+/// graphic's unscaled primitives span; with none it collapses onto the
+/// origin, where a lone label of an arrowhead graphic belongs.
+fn resolve_scaled_anchors(prims: &mut [Primitive]) {
+  let mut bb = BBox::empty();
+  for p in prims.iter() {
+    bb.merge(&primitive_bbox(p));
+  }
+  if bb.is_empty() {
+    bb = BBox {
+      x_min: 0.0,
+      x_max: 0.0,
+      y_min: 0.0,
+      y_max: 0.0,
+    };
+  }
+  for p in prims.iter_mut() {
+    if let Primitive::TextPrim { x, y, scaled, .. }
+    | Primitive::InsetGraphic { x, y, scaled, .. } = p
+      && *scaled
+    {
+      (*x, *y) = resolve_anchor(*x, *y, true, &bb);
+      *scaled = false;
     }
   }
 }
@@ -29466,7 +29528,7 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
       !has_string_operand(expr) && typesets_fraction_box(expr)
     }
     Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty() => {
-      matches!(&args[0], Expr::List(items) if items.iter().any(label_typesets_fraction))
+      matches!(&args[0], Expr::List(items) if items.iter().any(row_item_typesets_fraction))
     }
     Expr::FunctionCall { name, args }
       if is_style_wrapper(name) && !args.is_empty() =>
@@ -29518,6 +29580,27 @@ fn label_typesets_fraction(expr: &Expr) -> bool {
       operand,
     } => label_typesets_fraction(operand),
     _ => false,
+  }
+}
+
+/// Whether an item of a `Row` label typesets as a built-up fraction. Next to
+/// other items a rational number (`Row[{"mean = ", 14/3}]`) stacks inline
+/// too, and so does one a `NumberForm` leaves exact (`NumberForm[14/3,
+/// {3, 2}]` only formats approximate numbers).
+fn row_item_typesets_fraction(item: &Expr) -> bool {
+  match item {
+    Expr::FunctionCall { name, args } if name == "Rational" => args.len() == 2,
+    Expr::FunctionCall { name, args }
+      if name == "NumberForm" && !args.is_empty() =>
+    {
+      row_item_typesets_fraction(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if is_style_wrapper(name) && !args.is_empty() =>
+    {
+      row_item_typesets_fraction(&args[0])
+    }
+    _ => label_typesets_fraction(item),
   }
 }
 
@@ -37233,6 +37316,19 @@ pub(crate) fn text_layout_face(expr: &Expr) -> Option<(&Expr, Expr)> {
 /// option argument keeps its place. A `Framed[…]` takes the directives onto
 /// its content. `None` when the wrapped expression is neither a layout
 /// with a list of items nor a frame.
+/// `e` without the one-argument `Text[…]` wrappers around it: such a
+/// `Text` only marks its content as text, so a layout inside one is still
+/// that layout.
+fn strip_text_wrappers(mut e: &Expr) -> &Expr {
+  while let Expr::FunctionCall { name, args } = e
+    && name == "Text"
+    && args.len() == 1
+  {
+    e = &args[0];
+  }
+  e
+}
+
 pub(crate) fn style_pushed_into_layout(
   inner: &Expr,
   directives: &[Expr],
@@ -37343,15 +37439,19 @@ pub(crate) fn style_pushed_into_layout(
     // set in another face) merges the same way, or its size would be
     // measured at the default and its text would overrun its neighbors.
     // (Any other styled `Row` item is already set inline as it is.)
+    // A one-argument `Text[…]` between the two (`Style[Text[Column[…]],
+    // 14]`) only marks its content as text, so it comes off here too.
     if let Expr::FunctionCall { name, args } = e
       && name == "Style"
-      && let Some(Expr::FunctionCall { name: content, .. }) = args.first()
-      && (matches!(content.as_str(), "Column" | "Grid" | "TextGrid")
-        || (content == "Row" && extract_cell_style(e).font_size.is_some()))
+      && let Some(first) = args.first()
+      && let content @ Expr::FunctionCall { name: head, .. } =
+        strip_text_wrappers(first)
+      && (matches!(head.as_str(), "Column" | "Grid" | "TextGrid")
+        || (head == "Row" && extract_cell_style(e).font_size.is_some()))
     {
       return call(
         "Style",
-        std::iter::once(args[0].clone())
+        std::iter::once(content.clone())
           .chain(directives.iter().cloned())
           .chain(args[1..].iter().cloned())
           .collect(),
@@ -37949,6 +38049,23 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
       // by what it wraps. Pushing the directives inwards is what lets the
       // row renderer, which reads each item's own style, apply them.
       "Style" | "StyleForm" => {
+        // `Style[Text[Style[Column[…], 12]], 14]`: a one-argument `Text`
+        // only marks its content as text, so the style goes straight onto
+        // that content. Otherwise the wrapper hid the layout below it.
+        if let Expr::FunctionCall {
+          name: t,
+          args: t_args,
+        } = &args[0]
+          && t == "Text"
+          && t_args.len() == 1
+        {
+          return nested_layout_svg(&call(
+            name.as_str(),
+            std::iter::once(t_args[0].clone())
+              .chain(args[1..].iter().cloned())
+              .collect(),
+          ));
+        }
         // `Style[Style[Column[…], Blue], 12]`: the directives of both
         // wrappers apply to the vertical layout, the inner ones taking
         // precedence.
@@ -37958,13 +38075,15 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
             args: inner,
           } = &args[0]
           && n == "Style"
-          && matches!(inner.first(), Some(Expr::FunctionCall { name: c, .. })
-            if matches!(c.as_str(), "Column" | "Grid" | "TextGrid"))
-          && style_pushed_into_layout(&inner[0], &inner[1..]).is_some()
+          && let Some(first) = inner.first()
+          && let content @ Expr::FunctionCall { name: c, .. } =
+            strip_text_wrappers(first)
+          && matches!(c.as_str(), "Column" | "Grid" | "TextGrid")
+          && style_pushed_into_layout(content, &inner[1..]).is_some()
         {
           let merged = call(
             "Style",
-            std::iter::once(inner[0].clone())
+            std::iter::once(content.clone())
               .chain(args[1..].iter().cloned())
               .chain(inner[1..].iter().cloned())
               .collect(),
@@ -42122,8 +42241,13 @@ pub struct LabelRun {
   pub text: String,
   pub italic: bool,
   pub bold: bool,
-  /// The run's color as `(r, g, b)` in 0..1, when `Style` gave it one.
+  /// The run's color as `(r, g, b)` in 0..1, when `Style` gave it one
+  /// (a bare color directive or `FontColor -> c`).
   pub color: Option<(f32, f32, f32)>,
+  /// The run's background as `(r, g, b)` in 0..1, when `Style` gave it one
+  /// (`Background -> c`). A choice label like
+  /// `Style["| |", FontColor -> c, Background -> c]` is a color swatch.
+  pub background: Option<(f32, f32, f32)>,
   /// The run's font size in points, when `Style` gave it one
   /// (`Style["t", 16]` or `FontSize -> 16`).
   pub size: Option<f64>,
@@ -42150,6 +42274,33 @@ fn style_directive_font_size<'a>(
       _ => None,
     })
     .filter(|v| v.is_finite() && *v > 0.0)
+    .last()
+}
+
+/// The color a `Style`'s directives set: a bare color (`Red`,
+/// `RGBColor[…]`) when `key` is `FontColor`, or `key -> color`, the last
+/// one winning as in Wolfram.
+fn style_directive_color<'a>(
+  directives: impl Iterator<Item = &'a Expr>,
+  key: &str,
+) -> Option<(f32, f32, f32)> {
+  directives
+    .filter_map(|d| match d {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } => match pattern.as_ref() {
+        Expr::Identifier(k) if k == key => label_style_color(replacement),
+        _ => None,
+      },
+      _ if key == "FontColor" => label_style_color(d),
+      _ => None,
+    })
+    .map(|c| (c.r as f32, c.g as f32, c.b as f32))
     .last()
 }
 
@@ -43645,11 +43796,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // re-creating fresh ones every frame.
     let mut dynamic_module_state = Vec::new();
     let mut module_initializations = Vec::new();
-    let unwrapped = unwrap_dynamic_module_locals(
+    let mut unwrapped = unwrap_dynamic_module_locals(
       &args[0],
       &mut dynamic_module_state,
       &mut module_initializations,
     );
+    if dynamic_module_state.is_empty() {
+      let control_names: Vec<String> =
+        args[1..].iter().filter_map(control_spec_variable).collect();
+      if let Some(hoisted) = hoist_tail_dynamic_module(
+        &unwrapped,
+        &control_names,
+        &mut dynamic_module_state,
+        &mut module_initializations,
+      ) {
+        unwrapped = hoisted;
+      }
+    }
     module_locals = dynamic_module_state
       .iter()
       .map(|(n, _)| n.clone())
@@ -47309,6 +47472,158 @@ fn unwrap_dynamic_module_locals(
       }
       _ => return cur.clone(),
     }
+  }
+}
+
+/// Hidden state variable remembering the control values a tail
+/// `DynamicModule`'s locals were last initialized for (see
+/// [`hoist_tail_dynamic_module`]).
+const TAIL_MODULE_KEY: &str = "woxiTailModuleKey$$";
+
+/// Hoist the locals of a `DynamicModule[{locals…}, Dynamic[…]]` that is not
+/// the whole Manipulate body but its *tail*: the last statement of a
+/// `pre; …` sequence, possibly inside `With[{c = …}, …]` (`SeedRandom[s];
+/// With[{p = RandomReal[…]}, DynamicModule[{q = p, i = 0}, Dynamic[…]]]`).
+///
+/// The inner `Dynamic` that advances the locals is refreshed on its own,
+/// so the locals persist across those refreshes and across changes of
+/// controls read only inside it. The surrounding code is the Manipulate's
+/// (outer) dynamic part: when a control it reads changes, the front end
+/// re-evaluates it, building a fresh `DynamicModule` whose locals start
+/// over from their initializers. The rewrite keeps both behaviors: the
+/// locals become hidden widget state, and a guard re-runs their
+/// initializers only when the values of those outer controls differ from
+/// the ones the locals were last initialized for.
+fn hoist_tail_dynamic_module(
+  body: &Expr,
+  control_names: &[String],
+  state: &mut Vec<(String, String)>,
+  initializations: &mut Vec<String>,
+) -> Option<Expr> {
+  let mut outer_symbols = std::collections::HashSet::new();
+  let mut locals = Vec::new();
+  let mut module_inits = Vec::new();
+  let rewritten = rewrite_tail_dynamic_module(
+    body,
+    &mut outer_symbols,
+    &mut locals,
+    &mut module_inits,
+  )?;
+  if locals.is_empty() || state.iter().any(|(n, _)| n == TAIL_MODULE_KEY) {
+    return None;
+  }
+  let key_vars: Vec<&str> = control_names
+    .iter()
+    .filter(|n| outer_symbols.contains(n.as_str()))
+    .map(String::as_str)
+    .collect();
+  let key = format!("{{{}}}", key_vars.join(", "));
+  let assignments: Vec<String> = locals
+    .iter()
+    .map(|(name, init)| format!("{name} = {init}"))
+    .collect();
+  let guard_code = format!(
+    "If[{TAIL_MODULE_KEY} =!= {key}, {TAIL_MODULE_KEY} = {key}; {}]",
+    assignments.join("; ")
+  );
+  let guard = crate::syntax::string_to_expr(&guard_code).ok()?;
+  let rewritten = replace_tail_guard(&rewritten, &guard);
+  state.push((TAIL_MODULE_KEY.to_string(), "Null".to_string()));
+  for (name, _) in &locals {
+    state.push((name.clone(), "Null".to_string()));
+  }
+  initializations.extend(module_inits);
+  Some(rewritten)
+}
+
+/// Placeholder head marking where [`hoist_tail_dynamic_module`] puts the
+/// initialization guard.
+const TAIL_MODULE_GUARD: &str = "woxiTailModuleGuard$$";
+
+fn rewrite_tail_dynamic_module(
+  e: &Expr,
+  outer_symbols: &mut std::collections::HashSet<String>,
+  locals: &mut Vec<(String, String)>,
+  inits: &mut Vec<String>,
+) -> Option<Expr> {
+  fn collect_symbols(e: &Expr, out: &mut std::collections::HashSet<String>) {
+    if let Expr::Identifier(name) = e {
+      out.insert(name.clone());
+    }
+    for child in crate::syntax::expr_children(e) {
+      collect_symbols(child, out);
+    }
+  }
+  match e {
+    Expr::CompoundExpr(items) if !items.is_empty() => {
+      let (last, pre) = items.split_last()?;
+      let tail =
+        rewrite_tail_dynamic_module(last, outer_symbols, locals, inits)?;
+      for stmt in pre {
+        collect_symbols(stmt, outer_symbols);
+      }
+      let mut items = pre.to_vec();
+      items.push(tail);
+      Some(Expr::CompoundExpr(items))
+    }
+    Expr::FunctionCall { name, args }
+      if name == "CompoundExpression" && !args.is_empty() =>
+    {
+      let (last, pre) = args.split_last()?;
+      let tail =
+        rewrite_tail_dynamic_module(last, outer_symbols, locals, inits)?;
+      for stmt in pre {
+        collect_symbols(stmt, outer_symbols);
+      }
+      let mut items = pre.to_vec();
+      items.push(tail);
+      Some(Expr::CompoundExpr(items))
+    }
+    Expr::FunctionCall { name, args } if name == "With" && args.len() == 2 => {
+      let tail =
+        rewrite_tail_dynamic_module(&args[1], outer_symbols, locals, inits)?;
+      collect_symbols(&args[0], outer_symbols);
+      Some(Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![args[0].clone(), tail].into(),
+      })
+    }
+    // Only a module whose body is itself an explicit `Dynamic[…]`: that
+    // inner `Dynamic` is the author's own refresh boundary.
+    Expr::FunctionCall { name, args }
+      if name == "DynamicModule"
+        && args.len() >= 2
+        && matches!(&args[1], Expr::FunctionCall { name: inner, .. } if inner == "Dynamic") =>
+    {
+      let inner = unwrap_dynamic_module_locals(e, locals, inits);
+      for (_, init) in locals.iter() {
+        if let Ok(init) = crate::syntax::string_to_expr(init) {
+          collect_symbols(&init, outer_symbols);
+        }
+      }
+      Some(Expr::CompoundExpr(vec![
+        Expr::Identifier(TAIL_MODULE_GUARD.to_string()),
+        inner,
+      ]))
+    }
+    _ => None,
+  }
+}
+
+/// Swap the [`TAIL_MODULE_GUARD`] placeholder for the real guard.
+fn replace_tail_guard(e: &Expr, guard: &Expr) -> Expr {
+  match e {
+    Expr::Identifier(name) if name == TAIL_MODULE_GUARD => guard.clone(),
+    Expr::CompoundExpr(items) => Expr::CompoundExpr(
+      items.iter().map(|i| replace_tail_guard(i, guard)).collect(),
+    ),
+    Expr::FunctionCall { name, args } if name == "With" && args.len() == 2 => {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: vec![args[0].clone(), replace_tail_guard(&args[1], guard)].into(),
+      }
+    }
+    other => other.clone(),
   }
 }
 
@@ -51474,11 +51789,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         let bold = args.iter().skip(1).any(is_bold_directive);
         // A held label (a Manipulate control heading) may still carry a
         // color that only evaluation produces, such as `ColorData[1, 1]`.
-        let color = args
-          .iter()
-          .skip(1)
-          .find_map(label_style_color)
-          .map(|c| (c.r as f32, c.g as f32, c.b as f32));
+        let color = style_directive_color(args.iter().skip(1), "FontColor");
+        let background =
+          style_directive_color(args.iter().skip(1), "Background");
         let size = style_directive_font_size(args.iter().skip(1));
         let mut runs = args
           .first()
@@ -51491,6 +51804,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           run.italic |= slant;
           if run.color.is_none() {
             run.color = color;
+          }
+          if run.background.is_none() {
+            run.background = background;
           }
           if run.size.is_none() {
             run.size = size;
@@ -52242,6 +52558,43 @@ fn marked_subscript_box_runs(
   ])
 }
 
+/// Label runs for a `SubscriptBox` whose base is a plain atom and whose
+/// script is a text atom of spaced words (`SubscriptBox[y, "1 max"]`): the
+/// same runs as `Subscript[y, "1 max"]`. None for any other box.
+fn spaced_text_script_runs(
+  boxes: &Expr,
+  italic: bool,
+) -> Option<Vec<LabelRun>> {
+  let Expr::FunctionCall { name, args } = boxes else {
+    return None;
+  };
+  if name != "SubscriptBox" {
+    return None;
+  }
+  let [base, script] = args.as_slice() else {
+    return None;
+  };
+  let atom_text = |e: &Expr| match e {
+    Expr::String(s) => Some(s.clone()),
+    Expr::Identifier(s) => Some(s.clone()),
+    Expr::Integer(n) => Some(n.to_string()),
+    _ => None,
+  };
+  let base = atom_text(base)?;
+  let Expr::String(script) = script else {
+    return None;
+  };
+  if base.trim().contains(' ') {
+    return None;
+  }
+  let label = Expr::FunctionCall {
+    name: "Subscript".to_string(),
+    args: vec![Expr::String(base), Expr::String(script.trim().to_string())]
+      .into(),
+  };
+  Some(manipulate_label_runs(&label, italic))
+}
+
 fn box_has_spaced_text(e: &Expr) -> bool {
   match e {
     // Padding around an atom (`"12 "`) draws nothing; only a gap between
@@ -52271,6 +52624,63 @@ fn is_interpretation_display(boxes: &Expr) -> bool {
     },
     _ => false,
   }
+}
+
+/// Quote every bare symbol in source reconstructed from boxes whose name is
+/// spelled like a typeset constant (`E`, `I`, `Pi`, `Degree`, …). A box atom
+/// is the text it draws: `SubscriptBox[E, 0]` shows the capital letter E,
+/// whereas the constant ℯ is stored as its own glyph (`\[ExponentialE]`).
+/// Read back as an expression, the bare `E` would become that constant and
+/// be drawn as `ⅇ`. Names inside string literals, called heads (`Pi[…]`),
+/// and longer identifiers (`Eq`, `x$E`) are left untouched.
+fn quote_box_constant_names(code: &str) -> String {
+  let chars: Vec<char> = code.chars().collect();
+  let mut out = String::with_capacity(code.len());
+  let mut i = 0;
+  while i < chars.len() {
+    let c = chars[i];
+    if c == '"' {
+      // Copy the string literal verbatim, honoring backslash escapes.
+      out.push(c);
+      i += 1;
+      while i < chars.len() {
+        out.push(chars[i]);
+        if chars[i] == '\\' && i + 1 < chars.len() {
+          i += 1;
+          out.push(chars[i]);
+        } else if chars[i] == '"' {
+          break;
+        }
+        i += 1;
+      }
+      i += 1;
+      continue;
+    }
+    let is_ident_char =
+      |ch: char| ch.is_alphanumeric() || ch == '$' || ch == '`';
+    if is_ident_char(c) {
+      let start = i;
+      while i < chars.len() && is_ident_char(chars[i]) {
+        i += 1;
+      }
+      let word: String = chars[start..i].iter().collect();
+      let is_head = chars.get(i) == Some(&'[');
+      if !is_head
+        && word.starts_with(|ch: char| ch.is_ascii_alphabetic())
+        && typeset_constant_glyph(&word).is_some()
+      {
+        out.push('"');
+        out.push_str(&word);
+        out.push('"');
+      } else {
+        out.push_str(&word);
+      }
+      continue;
+    }
+    out.push(c);
+    i += 1;
+  }
+  out
 }
 
 fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
@@ -52307,6 +52717,13 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     if let Ok(boxes) = crate::parse_to_expr(&seg.text)
       && box_has_spaced_text(&boxes)
     {
+      // A script made of spaced words (`SubscriptBox[y, "1 max"]`) is
+      // still a typeset script: set it lowered/raised like any other
+      // script instead of flattening it to `y_(1 max)`.
+      if let Some(script) = spaced_text_script_runs(&boxes, italic) {
+        runs.extend(script);
+        continue;
+      }
       runs.push(LabelRun {
         text: crate::notebook::render_boxes_text(&seg.text),
         italic,
@@ -52346,6 +52763,7 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     let rendered = (!seg.text.contains("GridBox["))
       .then(|| crate::notebook::box_source_to_expression(&seg.text))
       .flatten()
+      .map(|code| quote_box_constant_names(&code))
       .and_then(|code| crate::parse_to_expr(&code).ok())
       .map(|expr| {
         // This is frozen source reconstructed from boxes, not an evaluated
@@ -55628,9 +56046,9 @@ fn label_runs_to_json(runs: &[LabelRun]) -> String {
   let parts: Vec<String> = runs
     .iter()
     .map(|r| {
-      let color = match r.color {
+      let css = |key: &str, c: Option<(f32, f32, f32)>| match c {
         Some((cr, cg, cb)) => format!(
-          r#","color":"rgb({},{},{})""#,
+          r#","{key}":"rgb({},{},{})""#,
           (cr.clamp(0.0, 1.0) * 255.0).round() as u8,
           (cg.clamp(0.0, 1.0) * 255.0).round() as u8,
           (cb.clamp(0.0, 1.0) * 255.0).round() as u8,
@@ -55638,11 +56056,12 @@ fn label_runs_to_json(runs: &[LabelRun]) -> String {
         None => String::new(),
       };
       format!(
-        r#"{{"text":"{}","italic":{},"bold":{}{}}}"#,
+        r#"{{"text":"{}","italic":{},"bold":{}{}{}}}"#,
         json_escape_manipulate(&r.text),
         r.italic,
         r.bold,
-        color,
+        css("color", r.color),
+        css("background", r.background),
       )
     })
     .collect();
@@ -55737,7 +56156,9 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
         // styled runs, parallel to `values`; omitted when every choice is
         // plain text, matching `svg_json`'s all-or-nothing shape above.
         let runs_json = if value_label_runs.iter().any(|runs| {
-          runs.iter().any(|r| r.color.is_some() || r.bold || r.italic)
+          runs.iter().any(|r| {
+            r.color.is_some() || r.background.is_some() || r.bold || r.italic
+          })
         }) {
           let parts: Vec<String> = value_label_runs
             .iter()
@@ -58781,6 +59202,28 @@ mod manipulate_label_tests {
   }
 
   #[test]
+  fn linear_syntax_box_letters_stay_literal_glyphs() {
+    // A typeset box holds the characters it draws: a capital `E` (or `I`,
+    // `Pi`, …) in `SubscriptBox[\(E\), \(0\)]` is the letter E, not the
+    // constant ℯ, so it must not turn into `ⅇ` (or `ⅈ`, `π`, …).
+    let label_text = |source: &str| -> String {
+      let label = crate::parse_to_expr(source).unwrap();
+      runs(&label).iter().map(|r| r.text.as_str()).collect()
+    };
+    for (letter, sub) in [("E", 0), ("I", 1), ("Pi", 2), ("Degree", 3)] {
+      let source =
+        format!(r#""\!\(\*SubscriptBox[\({letter}\), \({sub}\)]\)""#);
+      let digit = char::from_u32(0x2080 + sub).unwrap();
+      assert_eq!(label_text(&source), format!("{letter}{digit}"));
+    }
+    // The typeset glyph itself still draws as that glyph.
+    assert_eq!(
+      label_text(r#""\!\(\*SubscriptBox[\(\[ExponentialE]\), \(0\)]\)""#),
+      "\u{2147}\u{2080}"
+    );
+  }
+
+  #[test]
   fn style_italic_string_is_one_italic_run() {
     let label = call("Style", vec![str_expr("t"), id_expr("Italic")]);
     assert_eq!(runs(&label), vec![run("t", true)]);
@@ -58851,6 +59294,35 @@ mod manipulate_label_tests {
   /// capital) keeps its plain text but is flagged as a subscript so the UI
   /// sets it smaller, instead of drawing `Subscript["V", "y"]` as a
   /// full-size "Vy". Mappable scripts keep their Unicode glyphs.
+  /// A label whose inline `SubscriptBox` holds spaced words (`y` with the
+  /// subscript "1 max", as a FrontEnd stores `\(1\ max\)`) sets the words
+  /// as a lowered script rather than flattening them to `y_(1 max)`.
+  #[test]
+  fn inline_spaced_word_subscript_is_a_subscript_run() {
+    use crate::functions::string_ast::{
+      BOX_CLOSE, BOX_OPEN, BOX_SEP, BOX_START,
+    };
+    let sub_run = |t: &str| LabelRun {
+      subscript: true,
+      ..run(t, false)
+    };
+    for (base, script, spelled) in [
+      ("y", "1 max", "1 max"),
+      ("y", "1 max", "1\\ max"),
+      ("T", "air in", "air\\ in"),
+    ] {
+      let label = format!(
+        "{BOX_START}{BOX_OPEN}{BOX_SEP}SubscriptBox[{BOX_OPEN}{base}{BOX_CLOSE}, \
+         {BOX_OPEN}{spelled}{BOX_CLOSE}]{BOX_CLOSE}"
+      );
+      assert_eq!(
+        runs(&str_expr(&label)),
+        vec![run(base, false), sub_run(script)],
+        "{label}"
+      );
+    }
+  }
+
   #[test]
   fn unmappable_subscript_is_flagged_as_subscript_run() {
     let sub_run = |t: &str| LabelRun {
@@ -61157,6 +61629,62 @@ mod manipulate_traditional_form_choice_svg_tests {
     match &control {
       ManipulateControl::Discrete { value_labels, .. } => {
         assert_eq!(value_labels, &["{x₁(t), y}", "{z}"]);
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// Choice labels styled with option rules (`FontColor -> c`,
+  /// `Background -> c`) rather than a bare color directive must keep both
+  /// colors as styled runs: a row of color-swatch choices whose label text
+  /// is identical would otherwise be indistinguishable plain text.
+  #[test]
+  fn font_color_and_background_choice_labels_keep_their_colors() {
+    let control = discrete_control(
+      "Manipulate[k, {{k, 0}, \
+       {0 -> Style[\"||\", FontColor -> RGBColor[1, 0, 0], \
+          Background -> RGBColor[1, 0, 0]], \
+        1 -> Style[\"||\", FontColor -> Blue, Background -> Yellow]}, \
+       ControlType -> SetterBar}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_labels,
+        value_label_runs,
+        ..
+      } => {
+        assert_eq!(value_labels, &["||", "||"]);
+        let colors: Vec<_> = value_label_runs
+          .iter()
+          .map(|runs| (runs[0].color, runs[0].background))
+          .collect();
+        assert_eq!(
+          colors,
+          vec![
+            (Some((1.0, 0.0, 0.0)), Some((1.0, 0.0, 0.0))),
+            (Some((0.0, 0.0, 1.0)), Some((1.0, 1.0, 0.0))),
+          ]
+        );
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// `Style[…, Red, Blue]` and `Style[…, FontColor -> Red, Blue]`: as in
+  /// Wolfram, the last color directive wins.
+  #[test]
+  fn style_label_last_color_directive_wins() {
+    let control = discrete_control(
+      "Manipulate[k, {{k, 0}, \
+       {0 -> Style[\"a\", Red, Blue], 1 -> Style[\"b\", FontColor -> Red, Blue]}}]",
+    );
+    match &control {
+      ManipulateControl::Discrete {
+        value_label_runs, ..
+      } => {
+        assert_eq!(value_label_runs[0][0].color, Some((0.0, 0.0, 1.0)));
+        assert_eq!(value_label_runs[1][0].color, Some((0.0, 0.0, 1.0)));
+        assert_eq!(value_label_runs[0][0].background, None);
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }

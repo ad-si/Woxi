@@ -118,8 +118,7 @@ mod infix_visual_mode {
       r#"Text[Style[TraditionalForm[Infix[{Subscript[a, 1] Subscript[a, 2], Subscript[a, 3]}, "+"]], 21]]"#,
     )
     .unwrap();
-    // The `Text` display is drawn as a picture in the text face; either
-    // way the host shows typeset markup.
+    // A `Text`-wrapped typeset formula is drawn as a picture.
     let svg = result
       .graphics
       .or(result.output_svg)

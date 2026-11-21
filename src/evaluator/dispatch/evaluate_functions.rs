@@ -2602,6 +2602,9 @@ fn evaluate_function_call_ast_inner(
     "EntityProperties" => {
       return crate::functions::entity_ast::entity_properties_ast(args);
     }
+    "CanonicalName" => {
+      return crate::functions::entity_ast::canonical_name_ast(args);
+    }
     "EntityClassList" => {
       return crate::functions::entity_ast::entity_class_list_ast(args);
     }
