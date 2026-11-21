@@ -31167,7 +31167,11 @@ pub fn with_text_display_grids<T>(f: impl FnOnce() -> T) -> T {
 /// `Style`/`NumberForm`) sets at `font_size` in the proportional text face of
 /// a `Text[…]` display. `None` outside such a display, or for a cell that is
 /// no single line of plain text.
-fn text_display_cell_width(cell: &Expr, font_size: f64) -> Option<f64> {
+fn text_display_cell_width(
+  cell: &Expr,
+  default_style: &GridStyle,
+  font_size: f64,
+) -> Option<f64> {
   if !TEXT_DISPLAY_GRID.with(std::cell::Cell::get) {
     return None;
   }
@@ -31188,8 +31192,24 @@ fn text_display_cell_width(cell: &Expr, font_size: f64) -> Option<f64> {
     return None;
   }
   let markup = expr_to_svg_markup(cell);
-  (!markup.contains('<') && !markup.contains('\n'))
-    .then(|| crate::functions::plot_padding::text_width(&markup, font_size))
+  if markup.contains('<') || markup.contains('\n') {
+    return None;
+  }
+  // The larger of the front end's Arial layout and the extent of the face
+  // the SVG actually draws, so the column matches Wolfram's while the drawn
+  // text still fits inside it. Bold text is set wider (a bold 20 pt
+  // `"fraction"` heading takes about 85 pt).
+  let layout = crate::functions::plot_padding::text_width(&markup, font_size);
+  let (_, drawn) =
+    crate::functions::plot_padding::exported_text_extent(&markup, font_size);
+  let bold = extract_cell_style(cell).font_weight == "bold"
+    || default_style.font_weight == Some("bold");
+  let weight = if bold {
+    crate::functions::plot_padding::BOLD_WIDTH_SCALE
+  } else {
+    1.0
+  };
+  Some(layout.max(drawn) * weight)
 }
 
 thread_local! {
@@ -32108,7 +32128,7 @@ fn grid_svg_styled_internal_reporting(
         } else {
           char_width
         };
-        text_display_cell_width(cell, font_size)
+        text_display_cell_width(cell, default_style, font_size)
           .unwrap_or_else(|| estimate_display_width(cell) * advance)
           * cell_text_scale(cell)
           + col_pad(j)
