@@ -70983,3 +70983,97 @@ fn graphics_translucent_background_keeps_opacity() {
       .unwrap();
   assert!(svg.contains(r#"fill="rgb(255,0,0)"/>"#), "{svg}");
 }
+
+mod manipulate_label_style {
+  use woxi::functions::graphics::{
+    LabelRun, ManipulateControl, extract_manipulate_spec,
+  };
+  use woxi::interpret_to_expr;
+
+  fn label_runs(code: &str) -> Vec<Vec<LabelRun>> {
+    let expr = interpret_to_expr(code).unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
+    spec
+      .controls
+      .iter()
+      .filter_map(|c| match c {
+        ManipulateControl::Continuous { label_runs, .. }
+        | ManipulateControl::Discrete { label_runs, .. }
+        | ManipulateControl::Heading { label_runs, .. } => {
+          Some(label_runs.clone())
+        }
+        _ => None,
+      })
+      .collect()
+  }
+
+  /// A Manipulate's own `LabelStyle -> {color, size}` styles the captions
+  /// of all its controls, headings included.
+  #[test]
+  fn widget_label_style_colors_every_caption() {
+    let labels = label_runs(
+      r#"Manipulate[a + b, "Parameters", {{a, 1, "first"}, 0, 2},
+        {b, {1, 2}}, LabelStyle -> {Darker[Green], Medium}]"#,
+    );
+    assert_eq!(labels.len(), 3, "{labels:?}");
+    for runs in &labels {
+      assert_ne!(runs.as_slice(), []);
+      for run in runs {
+        let (r, g, b) = run.color.expect("styled caption");
+        assert!(
+          r.abs() < 1e-6 && (g - 2.0 / 3.0).abs() < 1e-6 && b.abs() < 1e-6
+        );
+        assert_eq!(run.size, Some(12.0));
+      }
+    }
+  }
+
+  /// A `Directive[…]` spec and a subscripted caption: every run, the
+  /// subscript included, takes the style.
+  #[test]
+  fn widget_label_style_directive_reaches_subscript_runs() {
+    let labels = label_runs(
+      r#"Manipulate[m, {{m, 0.5, Subscript["\[Mu]", "gain"]}, 0, 1},
+        LabelStyle -> Directive[Red, Bold]]"#,
+    );
+    assert!(labels[0].len() >= 2, "{labels:?}");
+    for run in &labels[0] {
+      assert_eq!(run.color, Some((1.0, 0.0, 0.0)));
+      assert!(run.bold);
+    }
+  }
+
+  /// A control's own `LabelStyle` takes precedence over the widget's, and a
+  /// color the caption sets itself with `Style` wins over both.
+  #[test]
+  fn control_label_style_overrides_widget_label_style() {
+    let labels = label_runs(
+      r#"Manipulate[{a, b, c}, {{a, 1, "a"}, 0, 2, LabelStyle -> Blue},
+        {{b, 1, Style["b", Red]}, 0, 2}, {{c, 1, "c"}, 0, 2},
+        LabelStyle -> {Gray, Large}]"#,
+    );
+    assert_eq!(labels[0][0].color, Some((0.0, 0.0, 1.0)));
+    assert_eq!(labels[0][0].size, Some(24.0));
+    assert_eq!(labels[1][0].color, Some((1.0, 0.0, 0.0)));
+    assert_eq!(labels[2][0].color, Some((0.5, 0.5, 0.5)));
+  }
+
+  /// `Style[caption, Medium]` and `FontSize -> Small` set the named sizes.
+  #[test]
+  fn named_font_sizes_in_caption_style() {
+    let labels = label_runs(
+      r#"Manipulate[{a, b}, {{a, 1, Style["a", Medium]}, 0, 2},
+        {{b, 1, Style["b", FontSize -> Small]}, 0, 2}]"#,
+    );
+    assert_eq!(labels[0][0].size, Some(12.0));
+    assert_eq!(labels[1][0].size, Some(9.0));
+  }
+
+  /// Without any `LabelStyle` the captions stay unstyled.
+  #[test]
+  fn captions_without_label_style_stay_plain() {
+    let labels = label_runs(r#"Manipulate[a, {{a, 1, "a"}, 0, 2}]"#);
+    assert_eq!(labels[0][0].color, None);
+    assert_eq!(labels[0][0].size, None);
+  }
+}

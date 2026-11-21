@@ -2367,12 +2367,7 @@ fn legend_label_style(opts: &[Expr]) -> Vec<Expr> {
   else {
     return Vec::new();
   };
-  match spec {
-    Expr::List(items) => items.to_vec(),
-    Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
-    Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
-    other => vec![other.clone()],
-  }
+  label_style_spec_directives(spec)
 }
 
 /// A legend label as typeset in its legend: in the proportional face of a
@@ -43446,11 +43441,28 @@ fn style_directive_font_size<'a>(
   directives
     .filter_map(|d| match d {
       Expr::Integer(_) | Expr::Real(_) => expr_to_f64(d),
+      // The absolute named sizes (`Style["t", Medium]`); `Larger`/`Smaller`
+      // depend on the size in force, which a label does not know.
+      Expr::Identifier(name)
+        if matches!(name.as_str(), "Tiny" | "Small" | "Medium" | "Large") =>
+      {
+        named_font_size(name, 0.0)
+      }
       Expr::Rule {
         pattern,
         replacement,
       } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontSize") => {
-        expr_to_f64(replacement)
+        match replacement.as_ref() {
+          Expr::Identifier(name)
+            if matches!(
+              name.as_str(),
+              "Tiny" | "Small" | "Medium" | "Large"
+            ) =>
+          {
+            named_font_size(name, 0.0)
+          }
+          other => expr_to_f64(other),
+        }
       }
       _ => None,
     })
@@ -45364,6 +45376,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // which options were already given so later repeats are skipped below.
   let mut seen_options: std::collections::HashSet<String> =
     std::collections::HashSet::new();
+  let mut widget_label_style: Vec<Expr> = Vec::new();
   // The bounds of every slider variant of a pane- or branch-governed
   // variable, in declaration order (see `variant_dynamic_bounds`).
   let mut variant_bounds: Vec<(String, Vec<(f64, f64, Option<f64>)>)> =
@@ -45419,6 +45432,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         && let Some(placement) = ControlPlacement::from_symbol(side)
       {
         control_placement = placement;
+      }
+      // `LabelStyle -> spec` styles the captions of all the controls.
+      if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LabelStyle") {
+        widget_label_style = label_style_spec_directives(replacement);
       }
       // `ContentSize -> w` or `{w, h}` (possibly computed, as in
       // `1.25 {400, 300}`) fixes the width of the content area.
@@ -46644,6 +46661,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       state.push((name.clone(), value.clone()));
     }
   }
+
+  apply_widget_label_style(&mut controls, &widget_label_style);
 
   // Hand out the successive placements to the named controls in order; a
   // control's own `ControlPlacement` option keeps precedence.
@@ -53029,6 +53048,102 @@ fn label_style_color(directive: &Expr) -> Option<Color> {
   })
 }
 
+/// Apply `Style` directives (`Bold`, `Italic`, a color, a font size) to
+/// the runs of a label. A run that already carries its own color or size —
+/// set by a `Style` nested deeper inside the label — keeps it, as the
+/// innermost style wins in Wolfram. An `Italic` directive slants everything
+/// it wraps, the scripts of a `Subscript` included, as `Bold` does.
+fn apply_label_style(runs: &mut [LabelRun], directives: &[Expr]) {
+  if directives.is_empty() {
+    return;
+  }
+  let bold = directives.iter().any(is_bold_directive);
+  // An `Italic` directive slants everything it wraps, the scripts of a
+  // `Subscript` included, as it does for `Bold`.
+  let slant = directives.iter().any(is_italic_directive);
+  // A held label (a Manipulate control heading) may still carry a color
+  // that only evaluation produces, such as `ColorData[1, 1]`.
+  let color = style_directive_color(directives.iter(), "FontColor");
+  let background = style_directive_color(directives.iter(), "Background");
+  let size = style_directive_font_size(directives.iter());
+  let mut decoration = TextDecoration::default();
+  for d in directives {
+    decoration.apply(d);
+  }
+  for run in runs {
+    run.bold |= bold;
+    run.underline |= decoration.underline;
+    run.italic |= slant;
+    if run.color.is_none() {
+      run.color = color;
+    }
+    if run.background.is_none() {
+      run.background = background;
+    }
+    if run.size.is_none() {
+      run.size = size;
+    }
+  }
+}
+
+/// The `Style` directives a `LabelStyle -> spec` setting stands for: the
+/// items of a list or `Directive[…]`, or the single directive itself.
+/// `None`/`Automatic` add no styling.
+fn label_style_spec_directives(spec: &Expr) -> Vec<Expr> {
+  match spec {
+    Expr::List(items) => items.to_vec(),
+    Expr::FunctionCall { name, args } if name == "Directive" => args.to_vec(),
+    Expr::Identifier(s) if s == "None" || s == "Automatic" => Vec::new(),
+    other => vec![other.clone()],
+  }
+}
+
+/// The directives of the first `LabelStyle -> spec` among a control spec's
+/// (or a Manipulate's) options.
+fn label_style_option_directives(items: &[Expr]) -> Vec<Expr> {
+  items
+    .iter()
+    .find_map(|item| match item {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "LabelStyle") => {
+        Some(label_style_spec_directives(replacement))
+      }
+      _ => None,
+    })
+    .unwrap_or_default()
+}
+
+/// Style the caption of every control (and every heading row) with the
+/// directives of a Manipulate's own `LabelStyle` option. A control's own
+/// `LabelStyle`, already applied when it was parsed, keeps precedence.
+fn apply_widget_label_style(
+  controls: &mut [ManipulateControl],
+  directives: &[Expr],
+) {
+  if directives.is_empty() {
+    return;
+  }
+  for control in controls {
+    match control {
+      ManipulateControl::Continuous { label_runs, .. }
+      | ManipulateControl::Discrete { label_runs, .. }
+      | ManipulateControl::VectorSlider { label_runs, .. }
+      | ManipulateControl::Trigger { label_runs, .. }
+      | ManipulateControl::Heading { label_runs, .. }
+      | ManipulateControl::Color { label_runs, .. } => {
+        apply_label_style(label_runs, directives);
+      }
+      _ => {}
+    }
+  }
+}
+
 fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   let output_run = |italic: bool| {
     let text =
@@ -53238,37 +53353,11 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // has already set its own color by then and keeps it.
       "Style" | "StyleForm" => {
         let styled = italic || args.iter().skip(1).any(is_italic_directive);
-        let bold = args.iter().skip(1).any(is_bold_directive);
-        // A held label (a Manipulate control heading) may still carry a
-        // color that only evaluation produces, such as `ColorData[1, 1]`.
-        let color = style_directive_color(args.iter().skip(1), "FontColor");
-        let background =
-          style_directive_color(args.iter().skip(1), "Background");
-        let size = style_directive_font_size(args.iter().skip(1));
-        let mut decoration = TextDecoration::default();
-        for d in args.iter().skip(1) {
-          decoration.apply(d);
-        }
         let mut runs = args
           .first()
           .map_or_default(|a| manipulate_label_runs(a, styled));
-        // An `Italic` directive slants everything it wraps, the scripts
-        // of a `Subscript` included, as it does for `Bold`.
-        let slant = args.iter().skip(1).any(is_italic_directive);
-        for run in &mut runs {
-          run.bold |= bold;
-          run.underline |= decoration.underline;
-          run.italic |= slant;
-          if run.color.is_none() {
-            run.color = color;
-          }
-          if run.background.is_none() {
-            run.background = background;
-          }
-          if run.size.is_none() {
-            run.size = size;
-          }
-        }
+        let directives: Vec<Expr> = args.iter().skip(1).cloned().collect();
+        apply_label_style(&mut runs, &directives);
         runs
       }
       // Presentation wrappers whose content may nest styling/subscripts —
@@ -54904,6 +54993,9 @@ fn parse_manipulate_control(
     }
     _ => return None,
   };
+  // The control's own `LabelStyle -> spec` styles its caption.
+  let mut label_runs = label_runs;
+  apply_label_style(&mut label_runs, &label_style_option_directives(items));
   let label = flatten_label_runs(&label_runs);
 
   // `Enabled -> cond` / `Enabled :> cond` gates the control.
