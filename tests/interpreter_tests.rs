@@ -618,6 +618,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_of_styled_traditional_form_draws_formula_in_visual_mode() {
+    // Regression: `Text[Style[TraditionalForm[lhs == rhs], 16, Bold]]` (a
+    // Manipulate body stating an identity) stayed plain text, so Woxi
+    // Studio showed the raw `TraditionalForm[…]` source.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Text[Style[TraditionalForm[HoldForm[Integrate[Tan[x], x]] == \
+       Integrate[Tan[x], x]], 16, Bold]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(svg.contains('\u{222B}'), "integral sign missing: {svg}");
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+    assert!(svg.contains("bold"), "Bold style missing: {svg}");
+  }
+
+  #[test]
+  fn test_pane_of_text_traditional_form_keeps_pane_size_in_visual_mode() {
+    // A `Pane[Text[TraditionalForm[…]], {w, h}, Alignment -> …]` draws the
+    // formula inside the box the pane declares.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Pane[Text[Style[TraditionalForm[a^2 == Sqrt[b]], 14]], {320, 140}, \
+       Alignment -> {Left, Center}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(
+      svg.starts_with("<svg width=\"320\" height=\"140\""),
+      "{svg}"
+    );
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+  }
+
+  #[test]
   fn test_percent_in_cli_mode_collapses_to_out_zero() {
     // `interpret` (CLI / wolframscript-equivalent path) must not consume
     // the visual-mode history. `%` collapses to `Out[0]` exactly as
@@ -3864,6 +3899,21 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_grid_result_sets_fractions_one_script_level_down() {
+    // Regression: a `Text@Grid[…]` result (a Manipulate body showing a
+    // table of fractions) drew its fractions at the full text size; Wolfram
+    // sets math inside text one script level down, at 3/4 of the size.
+    clear_state();
+    let r =
+      interpret_with_stdout("Text[Grid[{{a, 1/9}, {b, 2/27}}, Frame -> All]]")
+        .unwrap();
+    let svg = r.graphics.expect("expected the table to be drawn");
+    assert!(svg.contains("<line"), "{svg}");
+    assert!(svg.contains("font-size=\"10.5\""), "{svg}");
+    assert!(!svg.contains("font-size=\"14.0\""), "{svg}");
+  }
+
+  #[test]
   fn test_styled_row_quotient_stacks_the_fraction_at_its_size() {
     // Regression: `Style[Row[{a/b, " = ", 3}], 20]` pushes its style into
     // the row's items, and the resulting `Style[a/b, 20]` item was written
@@ -3879,8 +3929,14 @@ mod interpreter_tests {
         svg.contains("<line"),
         "expected a fraction line: {code}\n{svg}"
       );
+      // Inside `Text` the fraction sits one script level down (3/4 size).
+      let size = if code.contains("Text[") {
+        "15.0"
+      } else {
+        "20.0"
+      };
       assert!(
-        svg.contains("font-size=\"20.0\""),
+        svg.contains(&format!("font-size=\"{size}\"")),
         "fraction must take the style's size: {code}\n{svg}"
       );
       assert!(
@@ -4439,6 +4495,35 @@ mod interpreter_tests {
     assert_eq!(interpret("1\u{2A7D}2\u{2A7D}3").unwrap(), "True");
     clear_state();
     assert_eq!(interpret("If[3\u{2A7E}2, \"yes\", \"no\"]").unwrap(), "yes");
+  }
+
+  #[test]
+  fn test_inset_without_position_embeds_prerendered_object() {
+    // `Inset[obj]` with no position sits at the origin, like
+    // `Inset[obj, Automatic]`. An object embedded whole (an `Image` of any
+    // channel count, a `Graphics3D`, a rendered plot) must still draw as a
+    // picture. Regression: without a position they fell through to the
+    // text path and printed `-Image-` / `-Graphics3D-` / `-Graphics-`.
+    for (code, needle) in [
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 4}]]]]", "<image"),
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 3}]]]]", "<image"),
+      (
+        "Graphics[{Circle[], Inset[Image[RandomReal[1, {3, 5}]]]}]",
+        "<image",
+      ),
+      ("Graphics[Inset[Graphics3D[Sphere[]]]]", "<svg"),
+      ("Graphics[Inset[Plot[x, {x, 0, 1}]]]", "<svg"),
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(svg.contains(needle), "{code} did not embed: {svg}");
+      for placeholder in ["-Image-", "-Graphics3D-", "-Graphics-"] {
+        assert!(
+          !svg.contains(placeholder),
+          "{code} fell back to the {placeholder} text placeholder"
+        );
+      }
+    }
   }
 
   #[test]

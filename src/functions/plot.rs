@@ -606,16 +606,19 @@ fn compiled_body(
   let body = resolved.as_ref().unwrap_or(body);
   let key = std::ptr::from_ref::<Expr>(body) as usize;
   if let Some(hit) = COMPILED_BODIES.with(|cache| {
-    cache
-      .borrow()
-      .iter()
-      .find(|entry| {
-        entry.key == key
-          && entry.vars.as_slice() == vars
-          && crate::evaluator::pattern_matching::expr_equal(&entry.body, body)
-          && symbols_unchanged(&entry.symbols)
-      })
-      .map(|entry| entry.compiled.clone())
+    let mut cache = cache.borrow_mut();
+    let entry = cache.iter_mut().find(|entry| {
+      entry.key == key
+        && entry.vars.as_slice() == vars
+        && crate::evaluator::pattern_matching::expr_equal(&entry.body, body)
+        && symbols_unchanged(&entry.symbols)
+    })?;
+    // An equal body left by an earlier evaluation holds its own copies of
+    // the large lists (an `InterpolatingFunction`'s table), which every
+    // sample would compare element by element; the caller's body shares its
+    // lists with the following samples, so they compare by pointer.
+    entry.body = body.clone();
+    Some(entry.compiled.clone())
   }) {
     return hit;
   }
@@ -819,6 +822,13 @@ fn adaptive_sample(
     _ => curve_bend,
   };
 
+  // The denominator floor of the relative bend test scales with the curve:
+  // a fixed absolute floor would swamp a curve whose values are all tiny
+  // (an absorption spectrum of height 1e-12, say), so its peaks would never
+  // be refined. Where a bend is visible at all it exceeds `visible_bend`,
+  // which keeps the test unchanged for curves of ordinary size.
+  let range_floor = visible_bend.max(f64::MIN_POSITIVE);
+
   // Adaptive refinement passes, one level of `MaxRecursion` each.
   for _ in 0..max_depth {
     if points.len() >= max_total {
@@ -861,7 +871,7 @@ fn adaptive_sample(
           // Linear interpolation error: how much does the middle point
           // deviate from the line connecting its neighbors?
           let y_interp = y0 + (y2 - y0) * (x1 - x0) / (x2 - x0);
-          let y_range = (y2 - y0).abs().max(1e-10);
+          let y_range = (y2 - y0).abs().max(range_floor);
           let bend = (y1 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -878,7 +888,7 @@ fn adaptive_sample(
         let (xm1, ym1) = points[i - 1];
         if ym1.is_finite() {
           let y_interp = ym1 + (y1 - ym1) * (x0 - xm1) / (x1 - xm1);
-          let y_range = (y1 - ym1).abs().max(1e-10);
+          let y_range = (y1 - ym1).abs().max(range_floor);
           let bend = (y0 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -2403,10 +2413,21 @@ fn tick_step_decimals(step: f64) -> Option<usize> {
   })
 }
 
+/// `v` split into a mantissa in `[1, 10)` (in magnitude) and an exponent.
+fn scientific_parts(v: f64) -> (f64, i32) {
+  let mut exp = v.abs().log10().floor() as i32;
+  let mut mantissa = v / 10f64.powi(exp);
+  // `log10` can land a hair below an exact power of ten.
+  if (mantissa.abs() - 10.0).abs() < 1e-9 || mantissa.abs() > 10.0 {
+    exp += 1;
+    mantissa /= 10.0;
+  }
+  (mantissa, exp)
+}
+
 /// `v` as `m×10^e` with Unicode superscript exponent digits.
 fn format_scientific_tick(v: f64) -> String {
-  let exp = v.abs().log10().floor() as i32;
-  let mantissa = v / 10f64.powi(exp);
+  let (mantissa, exp) = scientific_parts(v);
   let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
     format!("{}", mantissa.round() as i64)
   } else {
@@ -2590,7 +2611,11 @@ fn inject_missing_major_tick_labels(
       };
       let along = if horizontal { x } else { y };
       if !template.occupied.iter().any(|p| (p - along).abs() < 2.0) {
-        svg.push_str(&template.render(x, y, &format_tick_with_step(v, major)));
+        svg.push_str(&template.render(
+          x,
+          y,
+          &format_axis_tick(v, major, min, max),
+        ));
       }
       v += major;
     }
@@ -4158,6 +4183,18 @@ impl LabelStyleSpec {
 }
 
 impl PlotOptions {
+  /// Size each relative `Thickness[t]` of `plot_style` as the fraction `t`
+  /// of this plot's image width, as Wolfram does: a wider plot draws the
+  /// same `Thickness` with a heavier line.
+  pub(crate) fn resolve_relative_thickness(&mut self) {
+    let width = self.svg_width as f64;
+    for style in &mut self.plot_style {
+      if let Some(t) = style.thickness_fraction {
+        style.thickness = Some(t * width);
+      }
+    }
+  }
+
   /// Drop every `FrameLabel` edge, plain text and picture alike.
   pub(crate) fn clear_frame_labels(&mut self) {
     self.frame_label_bottom = None;
@@ -4806,10 +4843,22 @@ fn grid_line_props(
 }
 
 /// The attribute that keeps a run of blanks a label asks for
-/// (`Row[{a, "    ", b}]`) instead of letting SVG collapse it into one
-/// space; empty when the markup has no such run.
+/// (`Row[{a, "    ", b}]`), or blanks padding its text (`"  axis"`),
+/// instead of letting SVG collapse or drop them; empty when the markup has
+/// neither.
 pub(crate) fn preserve_blanks_attr(markup: &str) -> &'static str {
-  if markup.contains("  ") {
+  // The visible text, without the `<tspan …>` tags that style it.
+  let mut text = String::with_capacity(markup.len());
+  let mut in_tag = false;
+  for c in markup.chars() {
+    match c {
+      '<' => in_tag = true,
+      '>' => in_tag = false,
+      _ if !in_tag => text.push(c),
+      _ => {}
+    }
+  }
+  if text.contains("  ") || text.trim() != text {
     " xml:space=\"preserve\""
   } else {
     ""
@@ -5335,6 +5384,43 @@ fn inline_segment_widths(
       LabelSegment::Graphic { w, .. } => w * sf,
     })
     .collect()
+}
+
+/// A chart's `PlotLabel` with its first line's baseline at `ty`, set at
+/// font size `fs` (render units) with `decimals` digits in its position: a
+/// title mixing text with typeset pictures (a stacked fraction) is laid
+/// out as segments, any other as a `<text>` of its stacked lines.
+#[allow(clippy::too_many_arguments)]
+fn chart_title_svg(
+  sl: &StyledLabel,
+  cx: f64,
+  ty: f64,
+  fs: f64,
+  fill: &str,
+  style_attrs: &str,
+  sf: f64,
+  decimals: usize,
+) -> String {
+  let pitch = fs * 1.2;
+  if !sl.segments.is_empty() {
+    // Center the line on the band the tallest picture claims.
+    let ty = ty + sl.extra_line_count() as f64 * pitch / 2.0;
+    return inline_segments_svg(
+      &sl.segments,
+      cx,
+      ty,
+      fs,
+      fill,
+      style_attrs,
+      sf,
+    );
+  }
+  format!(
+    "<text x=\"{cx:.decimals$}\" y=\"{ty:.decimals$}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+       fill=\"{fill}\"{style_attrs}>{}</text>\n",
+    sl.svg_scaled_stacked(sf, cx, pitch)
+  )
 }
 
 /// A title made of text runs and small inline pictures, laid out left to
@@ -8643,6 +8729,7 @@ pub(crate) fn build_plot_source(
     data_x_range: None,
     settles_all_range: false,
     aspect_ratio: opts.fixed_height_area_aspect(x_range, y_range),
+    legends: Vec::new(),
   }
 }
 
@@ -9177,6 +9264,29 @@ fn merged_plot_source_options(
     .iter()
     .filter(|s| s.is_scatter == all_scatter)
     .collect();
+  // The legend entries of several merged plots, each keyed by the series
+  // it labels (now an index among the drawn series).
+  if !source.legends.is_empty() {
+    let drawn_index = |si: usize| {
+      source
+        .series
+        .get(si)
+        .filter(|s| s.is_scatter == all_scatter)?;
+      Some(
+        source.series[..si]
+          .iter()
+          .filter(|s| s.is_scatter == all_scatter)
+          .count(),
+      )
+    };
+    let (series, labels): (Vec<usize>, Vec<String>) = source
+      .legends
+      .iter()
+      .filter_map(|(si, label)| Some((drawn_index(*si)?, label.clone())))
+      .unzip();
+    opts.plot_legends = labels;
+    opts.legend_series = series;
+  }
 
   // Each series carries the color its own plot resolved, so `PlotStyle`
   // is rebuilt from the series rather than re-read from the options.
@@ -9623,6 +9733,9 @@ pub(crate) struct BarChartLook {
   /// An explicit `ImagePadding` (left, right, bottom, top in points); a
   /// `None` side is automatic.
   pub image_padding: Option<[Option<f64>; 4]>,
+  /// An explicit `PlotRangePadding`, padding the bars' extent (or the
+  /// explicit `PlotRange`); its `Automatic` sides keep the default padding.
+  pub plot_range_padding: Option<Expr>,
 }
 
 /// A `ChartElements` bar: copies of the rendered picture `svg`, each as
@@ -9694,6 +9807,7 @@ impl Default for BarChartLook {
       ticks_style: None,
       axes_label_fonts: [None, None],
       image_padding: None,
+      plot_range_padding: None,
     }
   }
 }
@@ -10119,6 +10233,41 @@ pub(crate) fn generate_bar_svg(
   });
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
 
+  // An explicit `PlotRangePadding` pads the bars' own extent (or the
+  // explicit `PlotRange`) instead; an `Automatic` side keeps the default
+  // bound computed above.
+  let ((x_min, x_max), (y_min, y_max)) = match &look.plot_range_padding {
+    Some(padding) => {
+      let spec = crate::functions::graphics::parse_plot_range_padding(padding);
+      let pad = |axis: &crate::functions::graphics::AxisPadding,
+                 (lo, hi): (f64, f64),
+                 (auto_lo, auto_hi): (f64, f64)| {
+        let span = hi - lo;
+        if span <= 0.0 {
+          return (auto_lo, auto_hi);
+        }
+        let (pad_lo, pad_hi) = axis.resolve(span, 0.0);
+        let (keep_lo, keep_hi) = axis.automatic_sides();
+        (
+          if keep_lo { auto_lo } else { lo - pad_lo },
+          if keep_hi { auto_hi } else { hi + pad_hi },
+        )
+      };
+      let x_base =
+        plot_range_x.unwrap_or((slot.margin, n as f64 - slot.margin));
+      let y_base = plot_range_y.unwrap_or(if look.value_axis_negated {
+        (data_lo.min(0.0), 0.0)
+      } else {
+        (data_lo.min(0.0), data_hi.max(0.0))
+      });
+      (
+        pad(&spec.x, x_base, (x_min, x_max)),
+        pad(&spec.y, y_base, (y_min, y_max)),
+      )
+    }
+    None => ((x_min, x_max), (y_min, y_max)),
+  };
+
   let sf = RESOLUTION_SCALE as f64;
 
   // Extra space for labels
@@ -10245,10 +10394,17 @@ pub(crate) fn generate_bar_svg(
   } else {
     BAR_SIDE_MARGIN * sf
   };
+  // A left `FrameLabel` stands beside the y tick labels, in a strip of
+  // its own line's height plus a small gap.
+  let frame_label_left_room = if frame_label_y.is_some() {
+    1.3 * axes_font_pt[1] * sf
+  } else {
+    0.0
+  };
   let mut margin_left = if explicit_pad(0).is_some() {
     0.0
   } else {
-    BAR_SIDE_MARGIN * sf
+    BAR_SIDE_MARGIN * sf + frame_label_left_room
   };
   // Rotated labels below the axis hang as far as their bounding boxes
   // reach; an explicit bottom padding too small for them gives up
@@ -10942,11 +11098,19 @@ pub(crate) fn generate_bar_svg(
         let label = &chart_labels[li];
         let font_size = label.font_size.map_or(font_size, |f| f * sf);
         let lines = chart_label_lines(label, font_size / sf);
-        let weight = if label.bold || label_bold {
-          " font-weight=\"bold\""
-        } else {
-          ""
-        };
+        let weight = format!(
+          "{}{}",
+          if label.bold || label_bold {
+            " font-weight=\"bold\""
+          } else {
+            ""
+          },
+          if label.italic {
+            " font-style=\"italic\""
+          } else {
+            ""
+          }
+        );
         let cx = map_x_val(x_center);
         // For Above/Center positioning, use the max value in the group
         let group_max = group_top(gi);
@@ -11107,7 +11271,14 @@ pub(crate) fn generate_bar_svg(
     }
     if let Some(y_label) = frame_label_y {
       let cy = plot_y0 + plot_h / 2.0;
-      let lx = margin_left + y_axes_font * 0.8;
+      // Rotated, the label's glyphs reach `0.8` em to the left of `lx`
+      // and `0.2` em to the right: it ends just before the tick labels,
+      // which reach the side margin's width left of the plotting area's
+      // label strip.
+      let tick_labels_left =
+        plot_x0 - y_label_area as f64 - BAR_SIDE_MARGIN * sf;
+      // Too tight an `ImagePadding` still keeps it inside the image.
+      let lx = (tick_labels_left - y_axes_font * 0.3).max(y_axes_font * 0.8);
       labels_svg.push_str(&format!(
         "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{y_axes_font:.0}\" \
@@ -11162,11 +11333,15 @@ pub(crate) fn generate_bar_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -11527,7 +11702,7 @@ pub(crate) fn generate_horizontal_bar_svg(
         "<text x=\"{tx:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_bottom + tick_len + font_size,
-        html_escape(&format_tick_with_step(v, x_major))
+        html_escape(&format_axis_tick(v, x_major, x_min, x_max))
       ));
       v += x_major;
     }
@@ -11610,11 +11785,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     if sl.italic {
       style_attrs.push_str(" font-style=\"italic\"");
     }
-    svg.push_str(&format!(
-      "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg_scaled_stacked(sf, cx, fs * 1.2)
-    ));
+    svg.push_str(&chart_title_svg(sl, cx, ty, fs, &fill, &style_attrs, sf, 2));
   }
 
   // Legends to the right of the plot.
@@ -12050,14 +12221,14 @@ pub(crate) fn generate_bubble_chart_svg(
       .y_labels(y_tick_count)
       .x_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, x_major) {
-          format_tick_with_step(*v, x_major)
+          format_axis_tick(*v, x_major, x_min, x_max)
         } else {
           String::new()
         }
       })
       .y_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
+          format_axis_tick(*v, y_major, y_min, y_max)
         } else {
           String::new()
         }
@@ -12266,11 +12437,15 @@ pub(crate) fn generate_bubble_chart_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -12391,12 +12566,25 @@ pub(crate) fn generate_bubble_chart_svg(
   ))
 }
 
-/// Escape special characters for SVG/HTML text content.
+/// Escape special characters for SVG/HTML text content. C0 control
+/// characters other than tab, newline and carriage return (e.g. the `\.04`
+/// in `FromCharacterCode[{65, 4}]`) are not allowed anywhere in an XML
+/// document, so they are dropped: kept, a single one makes the whole SVG
+/// unparsable. They have no visible glyph anyway.
 pub(crate) fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match c {
+      '&' => out.push_str("&amp;"),
+      '<' => out.push_str("&lt;"),
+      '>' => out.push_str("&gt;"),
+      '"' => out.push_str("&quot;"),
+      '\t' | '\n' | '\r' => out.push(c),
+      c if (c as u32) < 0x20 || c == '\u{FFFE}' || c == '\u{FFFF}' => {}
+      c => out.push(c),
+    }
+  }
+  out
 }
 
 /// Width (in viewBox units) of the plotting area, mirroring the margins used
@@ -12847,14 +13035,20 @@ fn legend_label_svg(
       x + w / 2.0,
     );
   }
+  // Legend entries are typeset in TraditionalForm.
+  let markup =
+    if label.starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) {
+      crate::functions::graphics::box_string_to_svg_scaled(
+        label,
+        RESOLUTION_SCALE as f64,
+      )
+    } else {
+      crate::functions::graphics::traditional_box_string_to_svg(label)
+    };
   format!(
     "<text x=\"{x:.1}\" y=\"{text_y:.1}\" \
      font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-     fill=\"{fill}\">{}</text>\n",
-    crate::functions::graphics::box_string_to_svg_scaled(
-      label,
-      RESOLUTION_SCALE as f64
-    ),
+     fill=\"{fill}\">{markup}</text>\n",
   )
 }
 
@@ -13084,6 +13278,7 @@ pub(crate) fn histogram_plot_source(
     data_x_range: None,
     settles_all_range: false,
     aspect_ratio: None,
+    legends: Vec::new(),
   })
 }
 
@@ -13651,11 +13846,15 @@ pub(crate) fn generate_histogram_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -14840,6 +15039,10 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
         graphics: None,
       })
     }
+    // `Text[marker]` — the same glyph as `marker` itself.
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      parse_one_marker(&args[0])
+    }
     // `Style[marker, directives…]` — a color and/or a font size.
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -14853,6 +15056,13 @@ fn parse_one_marker(expr: &Expr) -> Option<PlotMarker> {
             (c.b * 255.0).round() as u8,
           ));
         } else if let Some(size) = try_eval_to_f64(directive) {
+          marker.size = size;
+        } else if let Some((name, value)) =
+          crate::functions::graphics::option_name_value(directive)
+          && name == "FontSize"
+          && let Some(size) = try_eval_to_f64(&value)
+        {
+          // `FontSize -> n` (or `FontSize :> n`).
           marker.size = size;
         } else if let Expr::FunctionCall { name, args } = directive
           && name == "FontSize"
@@ -16520,7 +16730,7 @@ pub(crate) fn simple_ticks(min: f64, max: f64) -> Vec<(f64, String)> {
       let label = if k == 0 {
         "0".to_string()
       } else {
-        format_tick_with_step(v, step)
+        format_axis_tick(v, step, min, max)
       };
       (if k == 0 { 0.0 } else { v }, label)
     })
@@ -17196,6 +17406,7 @@ pub(crate) fn apply_common_plot_option(
         plot_opts.full_width = fw;
         plot_opts.image_size_explicit = image_size_explicit_dims(replacement);
         plot_opts.image_size_value = Some(replacement.clone());
+        plot_opts.resolve_relative_thickness();
       }
     }
     "ClippingStyle" => {
@@ -17229,6 +17440,7 @@ pub(crate) fn apply_common_plot_option(
     }
     "PlotStyle" => {
       plot_opts.plot_style = parse_plot_style(replacement);
+      plot_opts.resolve_relative_thickness();
     }
     "ColorFunction" => {
       plot_opts.color_function = color_function_option(replacement);
@@ -18941,4 +19153,61 @@ fn log_scale_plot_ast(
   });
   scaled.extend_from_slice(&args[2..]);
   plot_ast(&scaled)
+}
+
+#[cfg(test)]
+mod compiled_body_cache_tests {
+  use super::*;
+
+  /// A table with the same values as `share_large_lists` leaves it, but
+  /// built separately (an earlier evaluation's copy).
+  fn table_body(n: usize) -> Expr {
+    let mut table = Expr::List((0..n).map(|i| Expr::Real(i as f64)).collect());
+    crate::evaluator::share_large_lists(&mut table, 0);
+    Expr::FunctionCall {
+      name: "Plus".to_string(),
+      args: vec![Expr::Identifier("x".to_string()), table].into(),
+    }
+  }
+
+  fn cached_table(key_body: &Expr) -> Option<Expr> {
+    let key = std::ptr::from_ref::<Expr>(key_body) as usize;
+    COMPILED_BODIES.with(|cache| {
+      cache
+        .borrow()
+        .iter()
+        .find(|e| e.key == key)
+        .map(|e| e.body.clone())
+    })
+  }
+
+  /// A cache hit on an equal body built by an earlier evaluation adopts the
+  /// caller's body, so the following samples compare its large lists by
+  /// pointer instead of element by element.
+  #[test]
+  fn hit_adopts_the_callers_shared_lists() {
+    let vars = vec!["x".to_string()];
+    let first = table_body(64);
+    let _ = compiled_body(&first, &vars);
+    // Same address, equal content, distinct shared list.
+    let entry = cached_table(&first).expect("an entry");
+    let replacement = table_body(64);
+    COMPILED_BODIES.with(|cache| {
+      for e in cache.borrow_mut().iter_mut() {
+        if crate::evaluator::pattern_matching::expr_equal(&e.body, &entry) {
+          e.body = replacement.clone();
+        }
+      }
+    });
+    let _ = compiled_body(&first, &vars);
+    let stored = cached_table(&first).expect("an entry");
+    let list = |e: &Expr| match e {
+      Expr::FunctionCall { args, .. } => match &args[1] {
+        Expr::List(items) => items.clone(),
+        _ => unreachable!(),
+      },
+      _ => unreachable!(),
+    };
+    assert!(list(&stored).same_shared(&list(&first)));
+  }
 }
