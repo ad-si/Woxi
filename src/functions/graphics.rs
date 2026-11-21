@@ -21819,6 +21819,15 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some(styled) = normalize_display_style(expr) {
     return expr_to_svg_markup(&styled);
   }
+  // A typeset `Dynamic[x]` shows the value `x` currently has, not the
+  // wrapper (e.g. a Manipulate variable initialized to `Dynamic[…]` and
+  // then used as a plot or axis label).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return expr_to_svg_markup(&dynamic_current_value(expr));
+  }
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
   // `Print`/OutputForm in a script, which show the literal wrapper because
@@ -24405,6 +24414,12 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 pub fn traditional_label(e: &Expr) -> String {
   match e {
     Expr::String(s) => s.clone(),
+    // A `Dynamic[x]` label reads as the value `x` currently has.
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      traditional_label(&dynamic_current_value(e))
+    }
     // `Rotate[content, angle]` (a vertical axis label idiom) typesets its
     // content unrotated, as `expr_to_svg_markup` does, rather than the
     // `Rotate(…)` call `TraditionalForm` would print. A `Text[content]`
@@ -56452,6 +56467,34 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `Animator[Dynamic[lval], {min, max[, step]}[, step], opts…]` written
+      // inside a display element (e.g. next to a setter bar in a `Row`):
+      // like `Trigger`, it sweeps `lval` over its range, so draw it as a
+      // slider over that range. A bare third positional step folds into the
+      // range; options (rules) only affect playback and appearance.
+      "Animator" if args.len() >= 2 => {
+        let range = match (&args[1], args.get(2)) {
+          (Expr::List(b), Some(step))
+            if b.len() == 2
+              && !matches!(
+                step,
+                Expr::Rule { .. } | Expr::RuleDelayed { .. }
+              ) =>
+          {
+            Expr::List(vec![b[0].clone(), b[1].clone(), step.clone()].into())
+          }
+          (r, _) => r.clone(),
+        };
+        match slider_node(
+          &[args[0].clone(), range],
+          Vec::new(),
+          false,
+          bindings,
+        ) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
       // `EventHandler[content, "MouseClicked" :> action, …]`: draws as its
       // content. When the content is a slider, the click/drag actions run
       // after each of its write-backs.
@@ -61446,6 +61489,56 @@ mod manipulate_traditional_form_equation_tests {
     assert!(
       !dump.contains("TraditionalForm["),
       "TraditionalForm source leaked: {dump}"
+    );
+  }
+}
+
+#[cfg(test)]
+mod animator_display_tests {
+  use super::*;
+
+  fn slider_of(node: &DisplayNode) -> Option<(String, f64, f64, f64)> {
+    match node {
+      DisplayNode::Slider {
+        target,
+        min,
+        max,
+        step,
+        ..
+      } => Some((target.clone(), *min, *max, *step)),
+      DisplayNode::Row(parts) => parts.iter().find_map(slider_of),
+      _ => None,
+    }
+  }
+
+  /// An `Animator[Dynamic[v], {min, max, step}, opts…]` placed in a display
+  /// `Row` (next to a setter bar) draws as a live control over its range,
+  /// not as the literal `Animator[…]` source.
+  #[test]
+  fn animator_in_row_with_step_in_range() {
+    let node = build_manipulate_display(
+      "Row[{\"animate \", Animator[Dynamic[n], {2, 4, 1}, \
+       AnimationRunning -> False, Appearance -> Small]}]",
+      &[("n".to_string(), "3".to_string())],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("n".to_string(), 2.0, 4.0, 1.0)),
+      "{node:?}"
+    );
+  }
+
+  /// The step may also follow the range as a separate positional argument.
+  #[test]
+  fn animator_with_positional_step() {
+    let node = build_manipulate_display(
+      "Animator[Dynamic[t], {0, 10}, 0.5, AnimationRunning -> False]",
+      &[],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("t".to_string(), 0.0, 10.0, 0.5)),
+      "{node:?}"
     );
   }
 }
