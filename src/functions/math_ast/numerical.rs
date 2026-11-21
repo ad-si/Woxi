@@ -2110,7 +2110,7 @@ pub fn fold_complex_bigfloat(expr: &Expr) -> Option<Expr> {
       }
     }
   }
-  if IN_COMPLEX_BIGFLOAT_FOLD.with(|flag| flag.get()) {
+  if IN_COMPLEX_BIGFLOAT_FOLD.with(std::cell::Cell::get) {
     return None;
   }
   let (mut min, mut machine, mut has_i) = (None, false, false);

@@ -14269,7 +14269,7 @@ fn solve_power_riccati(
       && crate::functions::calculus_ast::is_constant_wrt(e, &y_sym_name)
   };
   let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
-  let simp = |e: Expr| ev("Simplify", &[e.clone()]).unwrap_or(e);
+  let simp = |e: Expr| ev("Simplify", std::slice::from_ref(&e)).unwrap_or(e);
   let a = simp(times(vec![a_x, pow(x.clone(), Expr::Integer(-1))]));
   if !is_const(&a) || is_zero(&a) || !is_const(&b) || !is_const(&c) {
     return None;

@@ -2051,7 +2051,7 @@ fn bessel_complex_numeric(
   // arbitrary-precision complex series, evaluated at the lowest precision
   // among the arguments (machine reals make the result machine).
   if matches!(kind, 'J' | 'I')
-    && !IN_ARBITRARY_BESSEL.with(|flag| flag.get())
+    && !IN_ARBITRARY_BESSEL.with(std::cell::Cell::get)
     && let Some(precision) = arbitrary_precision_of(&[n_expr, z_expr])
   {
     let name = if kind == 'J' { "BesselJ" } else { "BesselI" };
