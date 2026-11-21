@@ -1642,6 +1642,54 @@ mod arrows_and_box {
     assert!(head_area(&large) > 6.0 * head_area(&default));
   }
 
+  /// The first point of every arrowhead `<polygon>` after the arrow's
+  /// `<polyline>` (each head's outline starts at its tip).
+  fn head_tips(svg: &str) -> Vec<(f64, f64)> {
+    let after = svg.split("<polyline").nth(1).unwrap();
+    after
+      .split("<polygon points=\"")
+      .skip(1)
+      .map(|pts| {
+        let first = pts.split(' ').next().unwrap();
+        let mut it = first.split(',').map(|v| v.parse::<f64>().unwrap());
+        (it.next().unwrap(), it.next().unwrap())
+      })
+      .collect()
+  }
+
+  // `Arrowheads[{s1, s2, …}]` spreads its heads evenly from tail to tip, and
+  // a negative size turns its head back along the arrow, so `{-s, s}` is a
+  // double-headed 3D arrow sized like `Arrowheads[s]` (rather than one
+  // default-size head at the tip).
+  #[test]
+  fn arrowheads_list_puts_heads_along_3d_arrow() {
+    let arrow = |heads: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrowheads[{heads}], Arrow[{{{{0, 0, 0}}, {{0, 0, 1}}}}], \
+         Point[{{{{-1, -1, -1}}, {{1, 1, 1}}}}]}}, Boxed -> False]"
+      ))
+    };
+    let single = arrow("0.02");
+    let double = arrow("{-0.02, 0.02}");
+    assert_eq!(head_tips(&single).len(), 1);
+    let tips = head_tips(&double);
+    assert_eq!(tips.len(), 2, "{double}");
+    // The heads keep the size the list gives them, not the default
+    // (a twentieth).
+    let default = head_area(&arrow("0.05"));
+    assert!(head_area(&double) < 0.5 * default, "{double}");
+    // One tip sits at the arrow's head end, the other at its tail end (the
+    // z axis points up the picture, so the tail is lower on screen).
+    let single_tip = head_tips(&single)[0];
+    assert!(
+      tips.iter().any(|t| (t.0 - single_tip.0).abs() < 0.2
+        && (t.1 - single_tip.1).abs() < 0.2)
+    );
+    assert!(tips.iter().any(|t| t.1 > single_tip.1 + 20.0), "{tips:?}");
+    // Three entries put the middle head halfway along.
+    assert_eq!(head_tips(&arrow("{0.02, 0.02, 0.02}")).len(), 3);
+  }
+
   // The head of a 3D line arrow is a cone sized by the scene, not a fixed
   // number of pixels, so it stays about as large on screen however big the
   // scene is.

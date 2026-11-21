@@ -5466,6 +5466,15 @@ Wolfram.
 against Woxi's 500. The values agree exactly and the shape is the same; only
 small-scale wiggles are under-resolved.
 
+### A two-parameter `ParametricPlot` drops the padding of an explicit range
+
+`ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, PlotRange -> {{-15, 15},
+{-16, 16}}]` (or a `Show` of it with that range) is drawn with the range
+flush against the image edges, as a plain `Graphics` would be. The
+one-parameter curve plot keeps a small padding around the same explicit
+range, and Wolfram frames both alike, so the region version comes out a
+little tighter than WL.
+
 ### 2D field plots ignore `PlotPoints` and `MaxRecursion`
 
 `DensityPlot`, `ContourPlot`, `RegionPlot` and the other field plots sample a
@@ -5595,6 +5604,15 @@ leader. A curve that leaves the top of the plot range is labeled from where
 it crosses the range's edge. Woxi starts the leader at the range's right
 edge. Seen in a Demonstration snapshot; WL's leader optimizer has not been
 measured.
+
+### A legend placed at a named corner is aligned to the whole image
+
+`PlotLegends -> Placed[legend, {Right, Top}]` (and the other named
+`{horizontal, vertical}` alignments) puts the legend in that corner of the
+whole picture, where WL aligns it to the plot region inside the frame. A
+framed plot with a `PlotLabel` therefore has its legend overlapping the
+label in Woxi. The same holds for a plot's legend kept by
+`Show[plot, Graphics[…]]`.
 
 ### An `AxesLabel` carrying a reciprocal power
 
@@ -6493,6 +6511,19 @@ pixel error 0.0014–0.005) than Woxi's kernel (0.049). That scale is close
 to the `1.8418…` factor `LaplacianGaussianFilter` uses at radius 1 (see
 above). The exact taps need a wolframscript probe, such as the impulse
 response above, before the kernel is changed.
+
+### `ImageResize` downsampling filter taps are unverified
+
+When an axis shrinks, Woxi averages every source pixel an output pixel
+covers (a box filter weighted by overlap); when it grows, it interpolates
+linearly. A Wolfram front-end snapshot of an 18x reduction of a rasterized
+disk shows the same soft gray edges, but the exact taps of Wolfram's
+antialiasing filter need a wolframscript probe, such as:
+
+```sh
+cargo run -- eval 'ImageData[ImageResize[Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}], 1]]'
+cargo run -- eval 'ImageData[ImageResize[Image[Table[If[i == 3, 1., 0.], {6}, {i, 6}]], {3, 6}]]'
+```
 
 ### Color-space tags do not propagate
 
@@ -10481,3 +10512,13 @@ so half of it falls outside the image. A saved Wolfram snapshot of the same
 construction shows the image padding grown to fit both labels whole,
 beside the bar. The exact rule `ImagePadding -> Automatic` uses to reserve
 room for text primitives has not been measured against `wolframscript`.
+
+### Plot tick labels ignore the `BaseStyle` font family and slant
+
+`Plot[…, Frame -> True, FrameTicks -> {{{0, "x"}, …}, …}, BaseStyle ->
+{FontSize -> 16, FontFamily -> "Times", Italic}]` (or the same `BaseStyle`
+given to a `Show` of such a plot) sets its tick labels at the requested
+size but still in the default sans-serif upright face; Wolfram sets them in
+italic Times like the rest of the plot's text. `LabelStyleSpec` carries only
+the color, size, weight and slant, and the tick label writer applies none
+of the face or slant.

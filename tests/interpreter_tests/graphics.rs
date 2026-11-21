@@ -17170,6 +17170,36 @@ mod plot3d {
     }
 
     #[test]
+    fn show_of_a_plot_with_graphics_keeps_its_legend() {
+      // The merged picture keeps the first graphic's options, `PlotLegends`
+      // included, also when the other layers are plain graphics.
+      for plot in [
+        r#"Plot[{x, 2 x}, {x, 0, 1}, PlotLegends -> {"first", "second"}]"#,
+        r#"ListLinePlot[{{1, 2, 3}, {3, 2, 1}},
+          PlotLegends -> Placed[LineLegend[{"first", "second"}], {Right, Top}]]"#,
+      ] {
+        let svg = export_svg(&format!(
+          "Show[{plot}, Graphics[{{Red, PointSize[0.05], Point[{{1, 1}}]}}]]"
+        ));
+        assert!(svg.contains(">first</text"), "{plot}: {svg}");
+        assert!(svg.contains(">second</text"), "{plot}: {svg}");
+      }
+    }
+
+    #[test]
+    fn plot_legends_show_the_current_value_of_a_dynamic_label() {
+      // A `Dynamic[…]` in a legend label shows its value, as in any other
+      // displayed text.
+      let svg = export_svg(
+        r#"ListLinePlot[{{1, 2}, {2, 1}}, PlotLegends ->
+          {Row[{"a = ", Dynamic[1 + 1]}], Style[Dynamic[3 + 4], 11]}]"#,
+      );
+      assert!(svg.contains(">a = 2</text"), "{svg}");
+      assert!(svg.contains(">7</tspan>"), "{svg}");
+      assert!(!svg.contains("Dynamic"), "{svg}");
+    }
+
+    #[test]
     fn plot_legends_line_legend_names_the_series() {
       // `LineLegend[{labels}, opts]` labels the curves like a plain list.
       let plain = export_svg(
@@ -20521,6 +20551,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         .matches("<polygon")
         .count();
       assert_eq!(generated, 3 * single, "{svg}");
+    }
+
+    /// A body of calls that each return a point (`{f[u, v], g[u, v]}`) is
+    /// a group of regions, not one region with two scalar coordinates —
+    /// it used to draw nothing at all.
+    #[test]
+    fn parametric_plot_two_parameters_regions_from_point_valued_calls() {
+      clear_state();
+      interpret("ptRegionF[u_, v_] := {u, v}; ptRegionG[u_, v_] := {u + 3, v}; ptRegionH[u_, v_] := u")
+        .unwrap();
+      let svg = export_svg(
+        "ParametricPlot[{ptRegionF[u, v], ptRegionG[u, v]}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      let single = export_svg("ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}]")
+        .matches("<polygon")
+        .count();
+      assert!(single > 0);
+      assert_eq!(svg.matches("<polygon").count(), 2 * single, "{svg}");
+      // The second region is drawn in the second plot color.
+      let two = export_svg(
+        "ParametricPlot[{{u, v}, {u + 3, v}}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      assert_eq!(svg, two);
+      // Scalar-valued calls stay the coordinates of a single region.
+      let scalar = export_svg(
+        "ParametricPlot[{ptRegionH[u, v], v}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      assert_eq!(scalar.matches("<polygon").count(), single, "{scalar}");
     }
 
     /// `Mesh -> {m, n}` with a 2D `MeshShading` array fills the cells
@@ -32662,6 +32720,24 @@ mod matrix_form {
          ({color} missing): {svg}"
       );
     }
+  }
+
+  // A `StringForm` grid cell is as wide as its filled template — the
+  // column of `StringForm["(``, ``)", 1.3, 1.3]` matches that of the string
+  // "(1.3, 1.3)" — not as wide as its `StringForm[…]` source.
+  #[test]
+  fn grid_cell_of_string_form_is_as_wide_as_its_filled_template() {
+    clear_state();
+    let width = |code: &str| -> String {
+      let svg =
+        interpret(&format!("ExportString[Grid[{{{{{code}}}}}], \"SVG\"]"))
+          .unwrap();
+      svg.split('"').nth(1).unwrap().to_string()
+    };
+    assert_eq!(
+      width(r#"StringForm["(``, ``)", 1.3, NumberForm[1.34, {10, 1}]]"#),
+      width(r#""(1.3, 1.3)""#)
+    );
   }
 
   // A `StringForm` string argument substitutes as its raw text, not the
@@ -60807,6 +60883,24 @@ mod plot_content_regressions {
     assert_eq!(pieces("Plot[Sin[x] + x, {x, 0, 5}]"), 1);
   }
 
+  /// `ArcCot` jumps from `-Pi/2` to `Pi/2` where its argument crosses
+  /// zero, so `Exclusions -> Automatic` breaks its curve there instead of
+  /// drawing a vertical riser; an argument that never changes sign keeps
+  /// the curve in one piece.
+  #[test]
+  fn arc_cot_is_excluded_at_its_jump() {
+    let pieces = |code: &str| {
+      export_svg(code)
+        .lines()
+        .filter(|l| l.starts_with("<polyline") && l.contains("#3D99CC"))
+        .count()
+    };
+    assert_eq!(pieces("Plot[ArcCot[x], {x, -2, 2}]"), 2);
+    assert_eq!(pieces("Plot[ArcCot[x - 1] + x, {x, -2, 2}]"), 2);
+    assert_eq!(pieces("Plot[ArcCot[x^2 + 1], {x, -2, 2}]"), 1);
+    assert_eq!(pieces("Plot[ArcCot[x], {x, -2, 2}, Exclusions -> None]"), 1);
+  }
+
   /// A conditional (`Which`, `If`, `Piecewise`) that jumps between its
   /// branches is broken there too — also when it is hidden behind a user
   /// function, which Wolfram works out with the variable left symbolic.
@@ -66255,5 +66349,58 @@ fn framed_item_in_column_text_label_keeps_its_frame() {
   assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
   for label in ["heading", "first", "second"] {
     assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
+  }
+}
+
+/// Pictures that are operands of a formula (`1/6 (g1 + 2 g2) == g3`) are
+/// drawn inline as nested pictures — both as a displayed result and as a
+/// `Text` label inside `Graphics` — instead of as their box source or
+/// `-Graphics-` placeholders, and the rational coefficient keeps its own
+/// small fraction in front of the parenthesized sum.
+mod inline_graphics_operands {
+  use super::*;
+
+  const DEFS: &str = "g1 = Graphics[{Blue, Circle[]}, ImageSize -> 25]; \
+     g2 = Graphics[{Red, Disk[]}, ImageSize -> 25]; ";
+
+  fn nested_pictures(svg: &str) -> usize {
+    svg.matches("<svg x=").count()
+  }
+
+  /// A `Text` label typeset as a picture is itself one nested picture
+  /// around the inline graphics it holds.
+  fn label_pictures(svg: &str) -> usize {
+    nested_pictures(svg) - 1
+  }
+
+  #[test]
+  fn displayed_formula_draws_graphics_inline() {
+    let svg = export_svg(&format!("{DEFS} 1/6 (g1 + 2 g2) == g1"));
+    assert_eq!(nested_pictures(&svg), 3, "{svg}");
+    assert!(!svg.contains("GraphicsBox"), "{svg}");
+    assert!(!svg.contains("CircleBox"), "{svg}");
+    assert!(
+      svg.contains("rgb(0,0,255)") || svg.contains("#0000ff"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn text_label_formula_draws_graphics_inline() {
+    let svg = export_svg(&format!(
+      "{DEFS} Graphics[{{Text[1/6 (g1 + 2 g2) == g2, {{0, 0}}], \
+       Circle[{{0, 0}}, 3]}}]"
+    ));
+    assert_eq!(label_pictures(&svg), 3, "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
+  }
+
+  #[test]
+  fn graphic_sum_label_keeps_each_term() {
+    let svg = export_svg(&format!(
+      "{DEFS} Graphics[{{Text[g1 + g2, {{0, 0}}], Point[{{1, 1}}]}}]"
+    ));
+    assert_eq!(label_pictures(&svg), 2, "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
   }
 }

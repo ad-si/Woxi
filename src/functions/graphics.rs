@@ -798,6 +798,22 @@ fn parse_arrowheads(spec: &Expr) -> Option<Vec<ArrowHead>> {
   }
 }
 
+/// The heads an `Arrowheads[spec]` directive puts on a 3D arrow, as
+/// `(size, absolute, position)`: `size` is a fraction of the scene, or with
+/// `absolute` a named size in printer's points (negative points the head
+/// back towards the tail), and `position` runs from 0 at the tail to 1 at
+/// the tip. Custom head graphics are not drawn in 3D.
+pub(crate) fn arrowhead_placements(
+  spec: &Expr,
+) -> Option<Vec<(f64, bool, f64)>> {
+  Some(
+    parse_arrowheads(spec)?
+      .into_iter()
+      .map(|h| (h.size, h.absolute, h.position.clamp(0.0, 1.0)))
+      .collect(),
+  )
+}
+
 /// The default (triangular) heads an `Arrowheads` specification puts on a
 /// straight segment from `from` to `to`, in screen coordinates. A head's
 /// relative size is a fraction of `head_width`; an absolute one (a named
@@ -9292,7 +9308,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     Expr::String(s) if has_script_stacked_inline_box(s) => {
       inline_box_string_to_box_expr(s)
     }
-    _ if label_typesets_fraction(content) => {
+    _ if label_typesets_fraction(content)
+      || formula_has_graphics_operand(content) =>
+    {
       Some(crate::strip_number_precision_markers(
         &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
           content,
@@ -20111,6 +20129,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         BoxLayout::text(&text, font_size)
       }
 
+      // A picture typeset among other boxes (`1/6 (g1 + 2 g2) == g3` with
+      // graphics as operands) is drawn inline at its own size, centered on
+      // the math axis like an operand, instead of showing its box source.
+      "GraphicsBox" | "Graphics3DBox" if !args.is_empty() => {
+        inline_graphics_box_layout(expr, font_size)
+          .unwrap_or_else(|| BoxLayout::text(&expr_to_output(expr), font_size))
+      }
+
       // Ordinary expressions inside a box tree (the cells of a
       // `FractionBox` built from `Row`, `Style` and `Short`) lay out as
       // the boxes they stand for.
@@ -20213,6 +20239,49 @@ pub(crate) fn group_digits_str(s: &str) -> String {
     i += 3;
   }
   format!("{sign}{grouped}{frac}")
+}
+
+/// Lay out a `GraphicsBox[…]` / `Graphics3DBox[…]` as the picture it
+/// typesets: the boxes are turned back into the `Graphics` expression,
+/// rendered, and nested at its natural size with its vertical center on the
+/// math axis (a quarter of the font size above the baseline), the way an
+/// inline graphic sits among the operands of a formula.
+fn inline_graphics_box_layout(
+  expr: &Expr,
+  font_size: f64,
+) -> Option<BoxLayout> {
+  let source = crate::notebook::box_source_to_graphics_expr(
+    &crate::syntax::expr_to_input_form(expr),
+  );
+  let graphic = crate::syntax::string_to_expr(&source).ok()?;
+  // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
+  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
+  let rendered = match &evaluated {
+    Expr::FunctionCall { name, args } if name == "Graphics" => {
+      graphics_ast(args).ok()?
+    }
+    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+      crate::functions::plot3d::graphics3d_ast(args).ok()?
+    }
+    _ => evaluated.clone(),
+  };
+  let Expr::Graphics { svg, .. } = &rendered else {
+    return None;
+  };
+  let (w, h) = svg_natural_size(svg)?;
+  if !(w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0) {
+    return None;
+  }
+  let axis = font_size * 0.25;
+  // Keep at least a line of text's height so neighbors stay aligned.
+  let above = (h / 2.0 + axis).max(font_size * 0.8);
+  let below = (h / 2.0 - axis).max(font_size * 0.25);
+  Some(BoxLayout {
+    width: w,
+    height: above + below,
+    baseline: above,
+    elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
+  })
 }
 
 /// Render a `BoxLayout` into a complete SVG string.
@@ -22616,6 +22685,21 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
       (order.to_string().len() + 2) as f64 * 0.7
     };
     return estimate_display_width(func) + marks;
+  }
+
+  // A `StringForm` typesets as its filled template, so it is as wide as its
+  // literal runs and slot values together — not its `StringForm[…]` source.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "StringForm"
+    && let Some(Expr::String(template)) = args.first()
+  {
+    return crate::functions::string_ast::string_form_parts(
+      template,
+      &args[1..],
+    )
+    .iter()
+    .map(estimate_display_width)
+    .sum();
   }
 
   match expr {
@@ -27715,7 +27799,14 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Mixed case: plot sources + Graphics primitives.
   // Convert plot source series to Line/Point primitives so they can be
   // merged with the other Graphics primitives via graphics_ast.
+  // The leading plot's legend, drawn onto the merged picture afterwards:
+  // the result keeps the first graphic's options, `PlotLegends` included,
+  // so `Show[plot, Graphics[Point[…]]]` still shows the plot's legend.
+  let mut legend_source: Option<crate::syntax::PlotSource> = None;
   if !plot_sources.is_empty() {
+    if first_graphic_is_plot == Some(true) && !is_3d {
+      legend_source = Some(plot_sources[0].clone());
+    }
     // A log axis of the leading plot puts the whole picture in `Log` space:
     // its curves are drawn at `Log` of their values, the other graphics'
     // coordinates are read in that space, and the axis keeps its decade
@@ -28012,11 +28103,19 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut graphics_args = vec![content];
   graphics_args.extend(merged_options);
 
-  let primitives_result = if is_3d {
+  let mut primitives_result = if is_3d {
     crate::functions::plot3d::graphics3d_ast(&graphics_args)
   } else {
     graphics_ast(&graphics_args)
   }?;
+  if let Some(source) = &legend_source
+    && let Expr::Graphics { svg, .. } = &mut primitives_result
+    && let Some(legended) =
+      crate::functions::plot::inject_plot_source_legend(svg, source)
+  {
+    *svg = legended;
+    crate::capture_graphics(svg);
+  }
 
   if rendered_graphics.is_empty() {
     return Ok(primitives_result);
@@ -28723,6 +28822,43 @@ fn has_stacked_inline_box(s: &str) -> bool {
 /// arithmetic expression whose box form holds a `FractionBox`, possibly
 /// inside a `Row` or a style wrapper. Strings and other layouts are drawn as
 /// ordinary text.
+/// Whether a label is a formula (arithmetic or a relation) with a picture
+/// among its operands, like `1/6 (g1 + 2 g2) == g3`: it is typeset with the
+/// pictures drawn inline rather than as their `-Graphics-` placeholders.
+fn formula_has_graphics_operand(expr: &Expr) -> bool {
+  fn is_graphic(e: &Expr) -> bool {
+    matches!(e, Expr::Graphics { .. })
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Graphics" || name == "Graphics3D") && !args.is_empty())
+  }
+  fn is_formula_head(name: &str) -> bool {
+    matches!(
+      name,
+      "Plus"
+        | "Times"
+        | "Power"
+        | "Equal"
+        | "Unequal"
+        | "Less"
+        | "Greater"
+        | "LessEqual"
+        | "GreaterEqual"
+    )
+  }
+  fn walk(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } if is_formula_head(name) => {
+        args.iter().any(|a| is_graphic(a) || walk(a))
+      }
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|a| is_graphic(a) || walk(a))
+      }
+      _ => false,
+    }
+  }
+  walk(expr)
+}
+
 fn label_typesets_fraction(expr: &Expr) -> bool {
   match expr {
     // A bare rational number (`-7/4`) is drawn by the numeric fraction
@@ -43458,7 +43594,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
         }
-        state.push((name, value));
+        // Several readouts may share one placeholder variable; it is still
+        // a single variable, bound once.
+        if !state.iter().any(|(n, _)| *n == name) {
+          state.push((name, value));
+        }
         panel_displays.push((displays.len(), controls.len()));
         displays.push(display);
       }
@@ -48321,8 +48461,10 @@ fn discrete_choice_columns(items: &[Expr]) -> DiscreteChoiceColumns {
       label_runs.push(runs);
       // A bare arithmetic choice (`{1/2, 1, 2}`, `{Pi/4, Pi/2}`) is shown
       // the way the FrontEnd typesets the value — a stacked fraction —
-      // just like an arithmetic `value -> label` rule label.
-      svgs.push(if is_arithmetic_label(item) {
+      // just like an arithmetic `value -> label` rule label. A bare
+      // picture choice (`{Graphics[…], Graphics[…]}` in a popup menu) is
+      // shown as the picture itself, not its InputForm.
+      svgs.push(if is_arithmetic_label(item) || is_picture_choice(item) {
         discrete_choice_label_svg(item)
       } else {
         None
@@ -52521,7 +52663,7 @@ fn parse_manipulate_control(
     });
   }
 
-  // Color form: `{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
+  // Color form:`{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
   // a color names no domain to choose from (`{u, uinit}` picks the widget
   // from the type of `uinit`), so Wolfram draws the same full `ColorSlider`
   // (swatch plus hue/saturation picker) the explicit marker produces above,
@@ -53129,6 +53271,18 @@ fn has_unmapped_subscript(expr: &Expr) -> bool {
     }
     Expr::FunctionCall { args, .. } => args.iter().any(has_unmapped_subscript),
     Expr::List(items) => items.iter().any(has_unmapped_subscript),
+    _ => false,
+  }
+}
+
+/// Whether a bare choice value is a picture: an evaluated graphic or image,
+/// or a held `Graphics[…]`/`Graphics3D[…]`/`Image[…]` call.
+fn is_picture_choice(item: &Expr) -> bool {
+  match item {
+    Expr::Graphics { .. } | Expr::Image { .. } => true,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Graphics" | "Graphics3D" | "Image")
+    }
     _ => false,
   }
 }
@@ -56384,6 +56538,16 @@ fn assign_checkbox_state(
   }
 }
 
+/// Whether `expr` holds a `NumberForm`/`PaddedForm`/`AccountingForm`
+/// wrapper anywhere, which only a typeset rendering turns into digits.
+fn holds_number_format(expr: &Expr) -> bool {
+  ["NumberForm", "PaddedForm", "AccountingForm"]
+    .iter()
+    .any(|head| {
+      crate::functions::math_ast::numeric_utils::expr_contains_head(expr, head)
+    })
+}
+
 /// Frame a `TableForm` display grid with its `TableHeadings -> {rows,
 /// cols}`: column headings become a leading row and row headings a leading
 /// column (with a blank corner cell when both are present). `Automatic`
@@ -56592,6 +56756,23 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
           formatted.replace('\n', " ").trim().to_string()
         };
         DisplayNode::Static { svg: None, text }
+      } else if let Some(value) = &r.expr
+        && holds_number_format(value)
+        && let Ok(svg) = grid_svg_with_gaps(
+          &[Expr::List(
+            vec![Expr::List(vec![value.clone()].into())].into(),
+          )],
+          &[],
+        )
+      {
+        // A number format inside a larger readout (`NumberForm[t, {4, 1}]^
+        // "∘"`, or a `StringForm` slot filled by one) is typeset as the
+        // notebook shows it — formatted digits, a raised exponent — rather
+        // than printed as the held wrapper.
+        DisplayNode::Static {
+          svg: Some(svg),
+          text: String::new(),
+        }
       } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
         && name == "StringForm"
         && let Some(Expr::String(template)) = args.first()

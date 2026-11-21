@@ -1171,9 +1171,10 @@ fn has_branch_cut(body: &Expr) -> bool {
 
 /// Whether `body` contains a function that jumps between constant (or
 /// separately continuous) pieces, whose discontinuities `Exclusions ->
-/// Automatic` breaks the curve at.
+/// Automatic` breaks the curve at. `ArcCot` counts too: on the reals it
+/// jumps from `-Pi/2` to `Pi/2` where its argument crosses zero.
 fn has_step_function(body: &Expr) -> bool {
-  const STEP_HEADS: [&str; 13] = [
+  const STEP_HEADS: [&str; 14] = [
     "Floor",
     "Ceiling",
     "Round",
@@ -1187,6 +1188,7 @@ fn has_step_function(body: &Expr) -> bool {
     "Boole",
     "SquareWave",
     "SawtoothWave",
+    "ArcCot",
   ];
   if matches!(body, Expr::FunctionCall { name, .. } if STEP_HEADS.contains(&name.as_str()))
   {
@@ -9123,16 +9125,22 @@ pub(crate) fn generate_scatter_svg_with_options(
   generate_svg_with_filling(all_series, x_range, y_range, &opts)
 }
 
-/// Render a merged `PlotSource` (from `Show`).
-///
-/// `Show` keeps the options of the graphics it was given, so the merged
-/// graphic goes back through the ordinary plot renderers rather than a
-/// second implementation that would drift from them: line series render as
-/// a line plot, scatter series as points (as the plot itself, when every
-/// series is one, otherwise drawn over the lines as epilog primitives).
-pub(crate) fn render_merged_plot_source(
+/// The options a merged `PlotSource` renders with: its option rules (the
+/// first plot's `PlotLegends` included), the range overrides they set, and
+/// the per-series styles and markers rebuilt from the series drawn as the
+/// chart itself (every series when all are scatter series, else the line
+/// series), returned with that scatter flag and those series. Shared by
+/// [`render_merged_plot_source`] and [`inject_plot_source_legend`], so a
+/// legend drawn for a plot shown with other graphics keys its entries
+/// exactly as the plot's own legend does.
+fn merged_plot_source_options(
   source: &crate::syntax::PlotSource,
-) -> Result<String, InterpreterError> {
+) -> (
+  PlotOptions,
+  PlotRangeOverrides,
+  bool,
+  Vec<&crate::syntax::PlotSeriesData>,
+) {
   let mut opts = PlotOptions {
     svg_width: source.image_size.0,
     svg_height: source.image_size.1,
@@ -9157,16 +9165,6 @@ pub(crate) fn render_merged_plot_source(
       }
     }
   }
-  if let Some(ar) = overrides.aspect_ratio {
-    opts.aspect_ratio = Some(ar);
-  }
-  opts.aspect_automatic = overrides.aspect_automatic;
-  opts.log_x = source.log_x;
-  opts.log_y = source.log_y;
-  let x_range =
-    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range);
-  let y_range =
-    fill_range(overrides.y, source.y_range).unwrap_or(source.y_range);
 
   let all_scatter =
     !source.series.is_empty() && source.series.iter().all(|s| s.is_scatter);
@@ -9209,6 +9207,81 @@ pub(crate) fn render_merged_plot_source(
   if opts.plot_markers.iter().all(Option::is_none) {
     opts.plot_markers.clear();
   }
+  (opts, overrides, all_scatter, drawn)
+}
+
+/// Draw the `PlotLegends` legend of the plot `source` describes onto `svg`,
+/// a picture of that plot shown with other graphics (`Show[plot,
+/// Graphics[…]]`), which is rendered as plain graphics and so drew no
+/// legend itself. The picture is brought to the plot renderer's viewBox
+/// scale first, so the legend is laid out exactly as on the plot alone.
+/// `None` when the plot has no explicit legend or `svg` has no plain
+/// `viewBox="0 0 w h"` root.
+pub(crate) fn inject_plot_source_legend(
+  svg: &str,
+  source: &crate::syntax::PlotSource,
+) -> Option<String> {
+  let (opts, ..) = merged_plot_source_options(source);
+  if opts.plot_legends.is_empty() {
+    return None;
+  }
+  let vb_re =
+    regex::Regex::new(r#"viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)""#)
+      .unwrap();
+  let caps = vb_re.captures(svg)?;
+  let (w, h): (f64, f64) = (caps[1].parse().ok()?, caps[2].parse().ok()?);
+  if w <= 0.0 || h <= 0.0 {
+    return None;
+  }
+  let sf = RESOLUTION_SCALE as f64;
+  let (scaled_w, scaled_h) = ((w * sf).round(), (h * sf).round());
+  let root_end =
+    caps.get(0)?.start() + svg[caps.get(0)?.start()..].find('>')?;
+  let close = svg.rfind("</svg>")?;
+  let mut buf = String::with_capacity(svg.len() + 1024);
+  buf.push_str(&svg[..caps.get(0)?.start()]);
+  buf.push_str(&format!(
+    "viewBox=\"0 0 {} {}\"",
+    scaled_w as u64, scaled_h as u64
+  ));
+  buf.push_str(&svg[caps.get(0)?.end()..=root_end]);
+  buf.push_str(&format!(
+    "<g transform=\"scale({:.6},{:.6})\">",
+    scaled_w / w,
+    scaled_h / h
+  ));
+  buf.push_str(&svg[root_end + 1..close]);
+  buf.push_str("</g></svg>");
+  buf.push_str(&svg[close + "</svg>".len()..]);
+  // The picture's own drawing region is not known here; the whole scaled
+  // picture stands in for it (it only places a legend set inside it).
+  inject_legend(&mut buf, &opts, (0.0, 0.0, scaled_w, scaled_h));
+  Some(buf)
+}
+
+/// Render a merged `PlotSource` (from `Show`).
+///
+/// `Show` keeps the options of the graphics it was given, so the merged
+/// graphic goes back through the ordinary plot renderers rather than a
+/// second implementation that would drift from them: line series render as
+/// a line plot, scatter series as points (as the plot itself, when every
+/// series is one, otherwise drawn over the lines as epilog primitives).
+pub(crate) fn render_merged_plot_source(
+  source: &crate::syntax::PlotSource,
+) -> Result<String, InterpreterError> {
+  let (mut opts, overrides, all_scatter, drawn) =
+    merged_plot_source_options(source);
+  if let Some(ar) = overrides.aspect_ratio {
+    opts.aspect_ratio = Some(ar);
+  }
+  opts.aspect_automatic = overrides.aspect_automatic;
+  opts.log_x = source.log_x;
+  opts.log_y = source.log_y;
+  let x_range =
+    fill_range(overrides.x, source.x_range).unwrap_or(source.x_range);
+  let y_range =
+    fill_range(overrides.y, source.y_range).unwrap_or(source.y_range);
+
   if drawn.iter().any(|s| !s.labels.is_empty()) {
     opts.point_labels = drawn.iter().map(|s| s.labels.clone()).collect();
   }
@@ -16660,7 +16733,10 @@ pub(crate) fn parse_plot_legends(
     Expr::List(items) => {
       let labels = items
         .iter()
-        .map(|item| match item {
+        // A `Dynamic[…]` in a label shows its current value, as it does in
+        // any other displayed text.
+        .map(crate::functions::graphics::release_dynamics)
+        .map(|item| match &item {
           // `TraditionalForm[expr]` is typeset as the label of a
           // `"Expressions"` legend is.
           Expr::FunctionCall { name, args }
@@ -16668,13 +16744,13 @@ pub(crate) fn parse_plot_legends(
           {
             crate::functions::graphics::traditional_legend_label(&args[0])
           }
-          _ => match crate::functions::graphics::structured_label_svg(item) {
+          _ => match crate::functions::graphics::structured_label_svg(&item) {
             Some(svg) => format!(
               "{}{svg}",
               crate::functions::graphics::STYLED_LABEL_MARKER
             ),
-            None => crate::functions::graphics::styled_axis_label(item)
-              .unwrap_or_else(|| expr_to_string(item)),
+            None => crate::functions::graphics::styled_axis_label(&item)
+              .unwrap_or_else(|| expr_to_string(&item)),
           },
         })
         .collect();
