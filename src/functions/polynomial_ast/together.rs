@@ -2554,15 +2554,17 @@ fn fraction_has_polynomial_gcd(num: &Expr, den: &Expr) -> bool {
   };
   let n = crate::functions::polynomial_ast::expand::expand_and_combine(num);
   let d = crate::functions::polynomial_ast::expand::expand_and_combine(den);
-  let (Some(cn), Some(cd)) = (
+  let small_gcd = match (
     super::simplify::extract_poly_coeffs(&n, &var),
     super::simplify::extract_poly_coeffs(&d, &var),
-  ) else {
-    return false;
+  ) {
+    (Some(cn), Some(cd)) => super::cancel::poly_gcd(&cn, &cd),
+    _ => None,
   };
-  match super::cancel::poly_gcd(&cn, &cd) {
+  match small_gcd {
     Some(g) => g.iter().rposition(|&c| c != 0).unwrap_or(0) >= 1,
-    None => false,
+    // Coefficients (or remainders) beyond `i128`: the big-integer gcd.
+    None => super::mfactor::cancel_polynomial_gcd(&n, &d).is_some(),
   }
 }
 

@@ -496,11 +496,11 @@ fn cancel_expr_impl(expr: &Expr, canonicalize_sign: bool) -> Expr {
         }
       }
 
-      // Several variables: divide out the polynomial gcd of numerator and
+      // Several variables, or one with coefficients too large for the
+      // `i128` route above: divide out the polynomial gcd of numerator and
       // denominator, e.g. (a x^2 - a y^2)/(x + y) → a (x - y).
-      if find_single_variable_both(&num, &den).is_none()
-        && let Some((new_num, new_den)) =
-          super::mfactor::cancel_polynomial_gcd(&num, &den)
+      if let Some((new_num, new_den)) =
+        super::mfactor::cancel_polynomial_gcd(&num, &den)
       {
         let new_num = expand_and_combine(&new_num);
         let new_den = expand_and_combine(&new_den);
