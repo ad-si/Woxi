@@ -39171,11 +39171,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
           args.clone()
         };
         // The script sits right on its base: no gap between them.
-        return column_to_svg(&[
-          Expr::List(stacked.into()),
-          Expr::Identifier("Center".to_string()),
-          Expr::Integer(0),
-        ]);
+        return stacked_boxes_svg(stacked, "Center");
       }
       // A text `Underoverscript[base, under, over]` (a `∑` with its
       // limits), or an over/underscript longer than a one-character accent,
@@ -39204,11 +39200,7 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
           _ => vec![base, script(&args[1])],
         };
         // The script sits right on its base: no gap between them.
-        return column_to_svg(&[
-          Expr::List(stacked.into()),
-          Expr::Identifier("Center".to_string()),
-          Expr::Integer(0),
-        ]);
+        return stacked_boxes_svg(stacked, "Center");
       }
       // A `Grid` nested in a layout is laid out too, rather than printed
       // as its own expression text.
@@ -39431,6 +39423,22 @@ pub fn is_framed_box(e: &Expr) -> bool {
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   column_to_svg_with_text_items(args, None)
+}
+
+/// The already-laid-out `items` stacked one right on the next, with no gap
+/// between their boxes (a script on its base, the lines of a broken row):
+/// unlike `Column[items, align, 0]`, whose spacing is measured between the
+/// lines of text and so takes their blank margins out of the gap.
+fn stacked_boxes_svg(items: Vec<Expr>, align: &str) -> Option<String> {
+  let boxes = vec![false; items.len()];
+  column_to_svg_with_text_items(
+    &[
+      Expr::List(items.into()),
+      Expr::Identifier(align.to_string()),
+      Expr::Integer(0),
+    ],
+    Some(&boxes),
+  )
 }
 
 /// [`column_to_svg`] for a column whose items were already drawn as
@@ -40548,11 +40556,7 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       .collect();
     // The lines follow at the text's own line pitch, with no gap between
     // them.
-    return column_to_svg(&[
-      Expr::List(rows.into()),
-      Expr::Identifier("Left".to_string()),
-      Expr::Integer(0),
-    ]);
+    return stacked_boxes_svg(rows, "Left");
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
