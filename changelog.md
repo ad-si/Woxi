@@ -77,6 +77,11 @@
     use bundled italic and bold-italic Atkinson Hyperlegible Next faces
     instead of falling back to the upright ones.
 
+- `GraphPlot` of a rule list ignores the edge directions when laying the
+    graph out, as it already did when drawing it, so a directed acyclic list
+    (a grid of rules pointing right and up) comes out as a grid instead of in
+    layers.
+
 # 2026-11-08 - 0.4.0
 
 Version 0.4.0 improves package and notebook compatibility: contexts keep
