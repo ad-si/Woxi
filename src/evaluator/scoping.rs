@@ -1285,11 +1285,14 @@ pub fn with_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       for var in locals {
         // `With[{x := v}, …]` substitutes `v` unevaluated.
         let init = var.init.unwrap_or(null_expr());
-        let val = if var.delayed {
+        let mut val = if var.delayed {
           init
         } else {
           evaluate_expr_to_expr(&init)?
         };
+        // Shared once here, so every place the body mentions the local
+        // gets a pointer copy of a large array instead of the array.
+        share_large_lists(&mut val, 0);
         vars.push((var.name, val));
       }
       vars
