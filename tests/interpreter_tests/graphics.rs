@@ -68199,7 +68199,7 @@ mod manipulate_label_style {
     );
     assert_eq!(labels.len(), 3, "{labels:?}");
     for runs in &labels {
-      assert!(!runs.is_empty());
+      assert_ne!(runs.as_slice(), []);
       for run in runs {
         let (r, g, b) = run.color.expect("styled caption");
         assert!(
