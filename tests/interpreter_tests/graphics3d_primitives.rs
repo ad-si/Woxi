@@ -318,6 +318,28 @@ mod solids {
     assert!(s.contains("font-style=\"italic\""), "got: {s}");
   }
 
+  /// An accent over a label's base (`\!\(\*OverscriptBox[\(T\), \(^\)]\)`)
+  /// is drawn as its combining mark on the base (`T̂`, `x̃`), not as a
+  /// superscript beside it; a non-accent overscript stays a superscript.
+  #[test]
+  fn accent_overscript_text_label_is_a_combining_mark() {
+    for (over, mark) in
+      [("^", '\u{0302}'), ("~", '\u{0303}'), (".", '\u{0307}')]
+    {
+      let s = svg(&format!(
+        "Graphics3D[{{Text[\"\\!\\(\\*OverscriptBox[\\(T\\), \\({over}\\)]\\)\", \
+         {{0, 0, 0}}]}}]"
+      ));
+      assert!(s.contains(&format!(">T{mark}</text>")), "{over}: {s}");
+      assert!(!s.contains("baseline-shift"), "{over}: {s}");
+    }
+    let s = svg(
+      "Graphics3D[{Text[\"\\!\\(\\*OverscriptBox[\\(T\\), \\(k\\)]\\)\", \
+       {0, 0, 0}]}]",
+    );
+    assert!(s.contains("baseline-shift=\"super\""), "got: {s}");
+  }
+
   /// `BaseStyle` acts like a `Style` round the whole scene: a size (bare or
   /// as `FontSize -> n`) and a font face reach every `Text` label, also
   /// through `Show`, while a label's own size still wins.
@@ -1225,7 +1247,9 @@ mod ticks {
     let hiding_face = lines
       .iter()
       .position(|l| {
-        l.starts_with("<polygon points=\"134.0,170.5 247.1,32.4 245.5,196.0\"")
+        // Its fill may reach across the internal cut by extra corners.
+        l.starts_with("<polygon points=\"134.0,170.5 ")
+          && l.contains(" 247.1,32.4 245.5,196.0\"")
       })
       .expect("hiding face");
     assert!(last_red < hiding_face, "{s}");
@@ -1321,6 +1345,55 @@ mod plot3d_options {
        BoundaryStyle -> None]",
     );
     assert_eq!(lines_with(&none, "stroke=\"rgb(0,0,0)\""), 0);
+  }
+
+  /// The vertical extent of a `Plot3D` from `AbsoluteOptions`.
+  fn z_range(code: &str) -> (f64, f64) {
+    let out = interpret(&format!(
+      "Last[PlotRange /. AbsoluteOptions[{code}, PlotRange]]"
+    ))
+    .unwrap();
+    let inner = out.trim_matches(|c| c == '{' || c == '}');
+    let mut parts = inner.split(',').map(|p| {
+      let p = p.trim();
+      match p.split_once("*^") {
+        Some((m, e)) => {
+          m.parse::<f64>().unwrap() * 10f64.powi(e.parse::<i32>().unwrap())
+        }
+        None => p.parse::<f64>().unwrap(),
+      }
+    });
+    (parts.next().unwrap(), parts.next().unwrap())
+  }
+
+  // The automatic vertical range clips outlying heights off, as WL's
+  // does: a pole or a jump to a far value along one edge of the domain
+  // leaves the box spanning the bulk of the surface.
+  #[test]
+  fn automatic_z_range_clips_outliers() {
+    let (lo, hi) = z_range("Plot3D[1/(x^2 + y^2), {x, -1, 1}, {y, -1, 1}]");
+    assert_eq!(lo, 0.5);
+    assert!(hi > 5.0 && hi < 20.0, "{hi}");
+    // A cliff along the far edge (y > 0.98) is dropped from the range.
+    let (lo, hi) =
+      z_range("Plot3D[If[y > 0.98, -10, x + y], {x, 0, 1}, {y, 0, 1}]");
+    assert!(lo > -2.0 && lo < 0.0, "{lo}");
+    assert!((hi - 1.98).abs() < 1e-9, "{hi}");
+  }
+
+  // `PlotRange -> All`, also in the vertical slot of a three-axis spec,
+  // keeps every sampled height; a smooth surface keeps its whole extent.
+  #[test]
+  fn z_range_all_keeps_outliers() {
+    for opt in ["PlotRange -> All", "PlotRange -> {Full, Full, All}"] {
+      let (lo, hi) = z_range(&format!(
+        "Plot3D[1/(x^2 + y^2), {{x, -1, 1}}, {{y, -1, 1}}, {opt}]"
+      ));
+      assert_eq!(lo, 0.5);
+      assert!(hi > 600.0, "{opt}: {hi}");
+    }
+    let (lo, hi) = z_range("Plot3D[x y, {x, -1, 1}, {y, -1, 1}]");
+    assert_eq!((lo, hi), (-1.0, 1.0));
   }
 
   // `Mesh -> n` draws n lines per direction, in the `MeshStyle`.
@@ -2255,6 +2328,78 @@ mod box_and_label_options {
       let s = svg(&expr);
       assert!(s.contains("font-size=\"16\""), "no 16pt labels for {expr}");
       assert!(!s.contains("font-size=\"10\""), "10pt ticks left in {expr}");
+    }
+  }
+}
+
+mod internal_cut_seams {
+  use super::*;
+
+  /// The point count of every filled `<polygon>` an SVG draws.
+  fn polygon_point_counts(svg: &str) -> Vec<usize> {
+    svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .map(|pts| pts.split_whitespace().count())
+      .collect()
+  }
+
+  const SQUARE: &str = "Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}]";
+
+  /// Each half of a fan-triangulated face reaches across the diagonal it
+  /// was split along with a thin band, so the halves overlap and no
+  /// anti-aliasing seam traces the cut.
+  #[test]
+  fn fan_halves_overlap_across_the_cut() {
+    let s = svg(&format!("Graphics3D[{SQUARE}, Boxed -> False]"));
+    assert_eq!(polygon_point_counts(&s), vec![5, 5], "{s}");
+  }
+
+  /// Every triangle of a hexagon fan widens across each of its cuts: the
+  /// end triangles have one, the middle ones two.
+  #[test]
+  fn every_cut_of_a_larger_fan_widens() {
+    let s = svg(
+      "Graphics3D[Polygon[Table[{Cos[t], Sin[t], 0}, {t, 0, 5 Pi/3, Pi/3}]], Boxed -> False]",
+    );
+    let mut counts = polygon_point_counts(&s);
+    counts.sort_unstable();
+    assert_eq!(counts, vec![5, 5, 7, 7], "{s}");
+  }
+
+  /// Cube faces are fan-triangulated quads as well.
+  #[test]
+  fn cuboid_faces_widen() {
+    let s = svg("Graphics3D[Cuboid[], Boxed -> False]");
+    let counts = polygon_point_counts(&s);
+    assert_ne!(counts, [] as [usize; 0]);
+    assert!(counts.iter().all(|&n| n == 5), "{counts:?}");
+  }
+
+  /// A lone triangle has no internal cut to widen.
+  #[test]
+  fn lone_triangle_keeps_three_corners() {
+    let s = svg(
+      "Graphics3D[Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}], Boxed -> False]",
+    );
+    assert_eq!(polygon_point_counts(&s), vec![3], "{s}");
+  }
+
+  /// Overlapping translucent halves would darken the diagonal, and without
+  /// a drawn outline the band could show past the face, so neither widens.
+  #[test]
+  fn translucent_or_edgeless_faces_keep_three_corners() {
+    for style in ["Opacity[0.5]", "EdgeForm[]"] {
+      let s = svg(&format!(
+        "Graphics3D[{{{style}, {SQUARE}}}, Boxed -> False]"
+      ));
+      // A translucent face's pieces are filled as one `<path>` instead.
+      let counts = polygon_point_counts(&s);
+      assert!(counts.iter().all(|&n| n == 3), "{style}: {s}");
+      if style == "EdgeForm[]" {
+        assert_eq!(counts, vec![3, 3], "{style}: {s}");
+      }
     }
   }
 }

@@ -286,13 +286,8 @@ impl ControlState {
     }
   }
 
-  /// Which axes (`[x, y]`) of a `Slider2D` the user can actually move.
-  ///
-  /// A Locator whose corner bounds share a coordinate —
-  /// `{{p, {2, 0}}, {1.5, 0}, {4, 0}, Locator}` slides along a horizontal
-  /// segment — is pinned on that axis, so dragging it there can never change
-  /// the value. Such an axis gets no slider; only the free one is offered.
-  /// Every other control reports no free axis.
+  /// Which axes (`[x, y]`) of a `Slider2D` the user can actually move
+  /// (see [`movable_axes`]). Every other control reports no free axis.
   pub fn slider2d_free_axes(&self) -> [bool; 2] {
     match self {
       ControlState::Slider2D {
@@ -301,7 +296,7 @@ impl ControlState {
         y_min,
         y_max,
         ..
-      } => [x_max != x_min, y_max != y_min],
+      } => movable_axes(*x_min, *x_max, *y_min, *y_max),
       _ => [false, false],
     }
   }
@@ -1965,8 +1960,25 @@ impl ManipulateState {
     ctrl_idx: usize,
     choice_label: &str,
   ) -> bool {
+    let idx = match self.controls.get(ctrl_idx) {
+      Some(ControlState::Discrete { value_labels, .. }) => {
+        value_labels.iter().position(|v| v == choice_label)
+      }
+      _ => None,
+    };
+    idx.is_some_and(|idx| self.select_discrete_index(ctrl_idx, idx))
+  }
+
+  /// Select the choice at position `idx` of the discrete control at
+  /// `ctrl_idx`. Widgets that know which button was pressed use this rather
+  /// than [`Self::select_discrete`]: choice labels need not be distinct
+  /// (eight color swatches all labeled `Style["| |", Background -> c]`
+  /// share the text `| |`), and a label lookup would always land on the
+  /// first of them. Returns `true` if the control exists and `idx` is one
+  /// of its choices.
+  pub fn select_discrete_index(&mut self, ctrl_idx: usize, idx: usize) -> bool {
     let Some(ControlState::Discrete {
-      value_labels,
+      values,
       current_index,
       overflow,
       ..
@@ -1974,9 +1986,9 @@ impl ManipulateState {
     else {
       return false;
     };
-    let Some(idx) = value_labels.iter().position(|v| v == choice_label) else {
+    if idx >= values.len() {
       return false;
-    };
+    }
     *current_index = idx;
     *overflow = None;
     true
@@ -2081,18 +2093,18 @@ impl ManipulateState {
   pub fn tick(&mut self) {
     if self.animated && self.playing {
       self.advance_animation();
-    } else if self.self_refreshing {
+    } else if self.self_refreshing
+      || self.timed_refresh.is_some_and(|interval| {
+        self
+          .last_refresh
+          .is_none_or(|t| t.elapsed().as_secs_f64() >= interval)
+      })
+    {
       // A timed `Refresh` body polling `MousePosition["Graphics"]` (a
       // mouse-trail recorder) sees where the cursor is now.
       woxi::set_mouse_position(self.pointer_graphics_position());
       self.reevaluate();
       woxi::set_mouse_position(None);
-    } else if let Some(interval) = self.timed_refresh
-      && self
-        .last_refresh
-        .is_none_or(|t| t.elapsed().as_secs_f64() >= interval)
-    {
-      self.reevaluate();
     }
   }
 
@@ -2609,7 +2621,9 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
-    self.self_refreshing |= timed_refresh_ran;
+    // A `Refresh` whose interval is known is paced by `timed_refresh`
+    // instead, so a finite `UpdateInterval` waits its seconds.
+    self.self_refreshing |= timed_refresh_ran && self.timed_refresh.is_none();
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -4026,6 +4040,42 @@ mod tests {
     );
   }
 
+  /// A layout template `Row[{Spacer[…], Place[1], Spacer[…], Place[2]}]`
+  /// puts the controls declared with `ControlPlacement -> 1` and `-> 2` on
+  /// one line, just like a row of literal `Control[…]` items. Both the bare
+  /// `Place` of hand-written source and the `` Manipulate`Place `` of a
+  /// saved notebook's dump are recognized, and a control outside the row
+  /// starts a line of its own.
+  #[test]
+  fn row_of_placed_controls_is_drawn_on_one_line() {
+    for place in ["Place", "Manipulate`Place"] {
+      let code = format!(
+        r#"Manipulate[
+          {{p, q, r}},
+          {{{{p, 1, ""}}, {{1 -> "left", 2 -> "right"}}, ControlPlacement -> 1}},
+          {{{{q, 1, ""}}, {{1 -> "first", 2 -> "second"}}, ControlPlacement -> 2}},
+          Row[{{Spacer[25], {place}[1], Spacer[40], {place}[2]}}],
+          {{{{r, 0, "r"}}, 0, 1, 0.1}}
+        ]"#
+      );
+      let expr = woxi::interpret_to_expr(&code).expect("parse Manipulate expr");
+      let state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      let joins: Vec<(&str, bool)> = state
+        .controls
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| !c.name().is_empty())
+        .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+        .collect();
+      assert_eq!(
+        joins,
+        vec![("p", false), ("q", true), ("r", false)],
+        "with head {place}"
+      );
+    }
+  }
+
   /// A `Row[{"caption", Spacer[…], Control[…], Spacer[…], Control[…]}]`
   /// draws its caption and both controls on one line, as Wolfram does: the
   /// caption becomes a heading row and the first control joins its line
@@ -4240,6 +4290,46 @@ mod tests {
     );
     state.reevaluate();
     assert_eq!(state.error, None);
+  }
+
+  /// A body `Pane[Text@Grid[…], {If[big, Automatic, w], …}, Alignment ->
+  /// {Center, Center}]` keeps the widget's display at the fixed `w` x `h`
+  /// box while the checkbox is off (the table centered in it), and lets it
+  /// follow the table once the size turns `Automatic`.
+  #[test]
+  fn text_grid_in_fixed_size_pane_keeps_its_box() {
+    woxi::clear_state();
+    let code = r#"Manipulate[
+      Pane[Text@Grid[Partition[Range[n], 4], Dividers -> {{False, True}, {False, True}}],
+        {If[big, Automatic, 400], If[big, Automatic, 300]},
+        Alignment -> {Center, Center}],
+      {{n, 8}, 4, 400, 4},
+      {{big, False}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let size = |state: &ManipulateState| {
+      let svg = state.current_svg().expect("the table is drawn").to_string();
+      let head: String = svg.chars().take(60).collect();
+      head
+    };
+    assert!(
+      size(&state).starts_with("<svg width=\"400\" height=\"300\""),
+      "{}",
+      size(&state)
+    );
+    let big = state
+      .controls
+      .iter()
+      .position(|c| c.name() == "big")
+      .expect("big control");
+    assert!(state.select_discrete(big, "True"));
+    state.reevaluate();
+    assert!(
+      !size(&state).starts_with("<svg width=\"400\" height=\"300\""),
+      "{}",
+      size(&state)
+    );
   }
 
   /// A body that computes its table inside a scoping construct and only
@@ -7652,6 +7742,74 @@ mod tests {
     (f.x + f.width * fx as f32, f.y + f.height * fy as f32)
   }
 
+  /// A body wrapped in `Refresh[…, UpdateInterval -> If[running, 0,
+  /// Infinity]]` with start/stop buttons: once started, the app's timer
+  /// must keep re-evaluating it (each pass advancing its counter) until it
+  /// is stopped, rather than advancing a single step per button press.
+  #[test]
+  fn refresh_update_interval_drives_the_timer() {
+    let code = r#"Manipulate[
+      Refresh[If[running, n++]; Graphics[Disk[], PlotLabel -> n],
+        UpdateInterval -> If[running, 0, Infinity]],
+      {{running, False}, None},
+      {{n, 0}, ControlType -> None},
+      Row[{Button["start", running = True], Button["stop", running = False]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let n = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "n")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert!(!state.wants_tick(), "an Infinity interval never refreshes");
+    assert_eq!(n(&state), "0");
+
+    state.apply_button_action("running = True");
+    assert!(state.wants_tick(), "a zero interval refreshes continuously");
+    let after_start = n(&state).parse::<i64>().unwrap();
+    state.tick();
+    state.tick();
+    assert_eq!(n(&state).parse::<i64>().unwrap(), after_start + 2);
+
+    state.apply_button_action("running = False");
+    assert!(!state.wants_tick(), "stopping returns to Infinity");
+    let stopped = n(&state);
+    state.tick();
+    assert_eq!(n(&state), stopped);
+  }
+
+  /// A finite `UpdateInterval` is honored: the timer only re-evaluates the
+  /// body once that many seconds passed since the last evaluation.
+  #[test]
+  fn refresh_update_interval_waits_its_seconds() {
+    let code = r#"Manipulate[
+      Refresh[n++; Graphics[Disk[]], UpdateInterval -> 3600],
+      {{n, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.wants_tick());
+    let value = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "n")
+        .unwrap()
+        .1
+        .clone()
+    };
+    let before = value(&state);
+    state.tick();
+    assert_eq!(value(&state), before, "an hour has not passed yet");
+  }
+
   /// An `EventHandler[Dynamic[…], {"MouseDown" :> …, "MouseDragged" :> …}]`
   /// body (a sliding-token board): pressing and dragging over the picture
   /// must run the actions with `MousePosition["Graphics"]` at the pointer,
@@ -9443,5 +9601,22 @@ mod control_panel_tabview_tests {
     state.reevaluate();
     assert!(vis(&state, "shift"), "the slider shows on its own tab");
     assert_eq!(state.text_output.as_deref(), Some("{high, 7}"));
+  }
+}
+
+/// Which axes (`[x, y]`) of a 2D control (`Slider2D`, a `Locator` point) the
+/// user can move. An axis whose bounds coincide is pinned: a Locator
+/// confined to a horizontal line (`{{p, {1, 0}}, {-1, 0}, {6, 0}, Locator}`)
+/// only ever moves in x, so a slider over the empty y range would be dead.
+/// A point pinned on both axes keeps both sliders, so its row stays visible.
+pub fn movable_axes(
+  x_min: f64,
+  x_max: f64,
+  y_min: f64,
+  y_max: f64,
+) -> [bool; 2] {
+  match [x_min != x_max, y_min != y_max] {
+    [false, false] => [true, true],
+    axes => axes,
   }
 }
