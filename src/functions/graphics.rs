@@ -16397,6 +16397,14 @@ pub(crate) struct AxisPadding {
 }
 
 impl AxisPadding {
+  /// Whether the `(low, high)` sides are left `Automatic`.
+  pub(crate) fn automatic_sides(&self) -> (bool, bool) {
+    (
+      matches!(self.lo, PlotPadAmount::Automatic),
+      matches!(self.hi, PlotPadAmount::Automatic),
+    )
+  }
+
   /// The `(low, high)` padding in data units for an axis of the given
   /// (unpadded) span, with `Automatic` resolving to `automatic_frac` of it.
   /// A `Scaled[f]` side is the fraction `f` of the whole padded range:
@@ -17525,6 +17533,40 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if plot_range_y.is_none() && text_h < svg_height as f64 {
         grown.y_min = grown.y_min.min(cy - half_h + room_y);
         grown.y_max = grown.y_max.max(cy + half_h - room_y);
+      }
+    }
+    // An inset drawn at its own pixel size (`Inset[g, pos]` with no `size`)
+    // is likewise kept whole: it is centered on its anchor, so the range
+    // grows by half its width and height in data units — plus the default
+    // padding (1/50 of the padded width) unless `PlotRangePadding` is set.
+    let inset_margin = if plot_range_padding.is_none() {
+      plot_w / 50.0
+    } else {
+      0.0
+    };
+    for prim in &primitives {
+      let Primitive::InsetGraphic {
+        x,
+        y,
+        w,
+        h,
+        scaled: false,
+        size: None,
+        ..
+      } = prim
+      else {
+        continue;
+      };
+      let (half_w, half_h) =
+        ((w / 2.0 + inset_margin) / kx, (h / 2.0 + inset_margin) / ky);
+      let (room_x, room_y) = (slack_x / kx, slack_y / ky);
+      if plot_range_x.is_none() && *w < svg_width as f64 {
+        grown.x_min = grown.x_min.min(x - half_w + room_x);
+        grown.x_max = grown.x_max.max(x + half_w - room_x);
+      }
+      if plot_range_y.is_none() && *h < svg_height as f64 {
+        grown.y_min = grown.y_min.min(y - half_h + room_y);
+        grown.y_max = grown.y_max.max(y + half_h - room_y);
       }
     }
     if grown == bb {
@@ -30578,6 +30620,54 @@ fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
 }
 
+/// The `Style` directives (weight, slant, size, color) a grid's style
+/// passes on to a nested layout in one of its cells. The font family is
+/// left to the caller, which decides whether a default applies.
+fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  directives
+}
+
+/// A `Grid` nested in a cell of a styled grid (`Style[Grid[{{Grid[…]},
+/// {Grid[…]}}], 16]`) inherits the outer grid's size, weight, slant, color
+/// and family, just like the plain text cells beside it: the nested grid is
+/// wrapped in the same `Style` so it is drawn whole in that style (its own
+/// `BaseStyle` still takes precedence). Without this the nested grid's text
+/// fell back to the default 14pt black.
+fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, args }
+    if (name == "Grid" || name == "TextGrid")
+      && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return cell.clone();
+  }
+  let mut directives = grid_style_directives(style);
+  if let Some(family) = &style.font_family {
+    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
+  }
+  if directives.is_empty() {
+    return cell.clone();
+  }
+  call(
+    "Style",
+    std::iter::once(cell.clone())
+      .chain(directives)
+      .collect::<Vec<_>>(),
+  )
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -30869,6 +30959,7 @@ fn grid_svg_styled_internal_reporting(
       *cell = resolve_display_item(cell);
       *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
+      *cell = nested_grid_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
       // grid's size, like the plain text cells around it.
