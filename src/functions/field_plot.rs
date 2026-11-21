@@ -3537,6 +3537,22 @@ fn field_plot_structure(
     structure_args
       .push(rule_expr(id_expr("PlotRangeClipping"), bool_expr(true)));
   }
+  // The `Scaled[0.02]` margin the plot draws between its data and frame
+  // (`FIELD_RANGE_PADDING`) is a real option of the result, so a `Show`
+  // that merges the plot with other graphics keeps it too.
+  if !explicit
+    .iter()
+    .any(|o| name_of(o) == Some("PlotRangePadding"))
+  {
+    let side = || {
+      let s = call("Scaled", vec![Expr::Real(FIELD_RANGE_PADDING)]);
+      Expr::List(vec![s.clone(), s].into())
+    };
+    structure_args.push(rule_expr(
+      id_expr("PlotRangePadding"),
+      Expr::List(vec![side(), side()].into()),
+    ));
+  }
   structure_args.extend(explicit);
   call("Graphics", structure_args)
 }
@@ -5366,7 +5382,9 @@ fn region_plot_loops(
       }
       let simplified = drop_collinear_points(&chain, span * 1e-9);
       let cell = span / n as f64;
-      let sharpened = sharpen_corners(&simplified, cell);
+      let sharpened = sharpen_corners(&simplified, cell, &|x, y| {
+        evaluate_condition(pred, xvar, yvar, x, y)
+      });
       (sharpened.len() >= 3).then_some(sharpened)
     })
     .collect()
@@ -5375,11 +5393,23 @@ fn region_plot_loops(
 /// Restores the sharp corners marching squares cuts off. Where two straight
 /// boundary pieces meet (`y > x/2 + 1 && y < 3x/2 - 1` at `{2, 2}`), the
 /// corner falls inside a grid cell and the traced loop bevels it with one
-/// to a few short edges. Such a short run between two long straight edges
-/// is replaced by the point where those edges' lines meet, provided it lies
-/// near the run. A curved boundary consists of short edges only, so it is
-/// left alone.
-fn sharpen_corners(ring: &[(f64, f64)], cell: f64) -> Vec<(f64, f64)> {
+/// to a few short edges. Such a short run between two straight edges is
+/// replaced by the point where those edges' lines meet:
+///
+/// - between two long edges, whenever that point lies near the run;
+/// - between edges that are merely longer than the run (the corners of a
+///   small polygon only a few cells across, such as the thin triangles of
+///   an outer Brillouin zone), only when `inside` confirms the point is a
+///   real corner: just past it toward the run the region test differs from
+///   just before it.
+///
+/// A curved boundary bulges between its bevel and the extrapolated corner,
+/// so both probes fall on the same side of it and it is left alone.
+fn sharpen_corners(
+  ring: &[(f64, f64)],
+  cell: f64,
+  inside: &dyn Fn(f64, f64) -> bool,
+) -> Vec<(f64, f64)> {
   let len = ring.len();
   if len < 5 || cell <= 0.0 {
     return ring.to_vec();
@@ -5389,38 +5419,93 @@ fn sharpen_corners(ring: &[(f64, f64)], cell: f64) -> Vec<(f64, f64)> {
   let edge_len = |i: usize| dist(ring[i % len], ring[(i + 1) % len]);
   let long = |i: usize| edge_len(i) > 3.0 * cell;
   let short = |i: usize| edge_len(i) < 2.0 * cell;
-  let mut drop = vec![false; len];
-  let mut replace: Vec<Option<(f64, f64)>> = vec![None; len];
-  for start in 0..len {
-    // `start` is the long edge before a run of 1–3 short edges.
-    if !long(start) {
-      continue;
-    }
-    let mut run = 0;
-    while run < 3 && short(start + 1 + run) {
-      run += 1;
-    }
-    let after = start + 1 + run;
-    if run == 0 || !long(after) {
-      continue;
-    }
+  // The point where the lines of edges `start` and `after` meet, with its
+  // parameters along each (`t` past 1 beyond edge `start`'s end, `s` below
+  // 0 before edge `after`'s start).
+  let meet = |start: usize, after: usize| -> Option<((f64, f64), f64, f64)> {
     let (a, b) = (ring[start % len], ring[(start + 1) % len]);
     let (c, d) = (ring[after % len], ring[(after + 1) % len]);
     let (r, q) = ((b.0 - a.0, b.1 - a.1), (d.0 - c.0, d.1 - c.1));
     let denom = r.0 * q.1 - r.1 * q.0;
     if denom.abs() < 1e-12 * dist(a, b) * dist(c, d) {
-      continue;
+      return None;
     }
     let t = ((c.0 - a.0) * q.1 - (c.1 - a.1) * q.0) / denom;
-    let corner = (a.0 + t * r.0, a.1 + t * r.1);
-    if dist(corner, b) > 2.0 * cell || dist(corner, c) > 2.0 * cell {
-      continue;
-    }
+    let s = ((c.0 - a.0) * r.1 - (c.1 - a.1) * r.0) / denom;
+    Some(((a.0 + t * r.0, a.1 + t * r.1), t, s))
+  };
+  let mut drop = vec![false; len];
+  let mut replace: Vec<Option<(f64, f64)>> = vec![None; len];
+  let mut used = vec![false; len];
+  let mut apply = |start: usize,
+                   after: usize,
+                   corner: (f64, f64),
+                   drop: &mut Vec<bool>,
+                   used: &mut Vec<bool>| {
     replace[(start + 1) % len] = Some(corner);
-    for k in 2..=run {
-      drop[(start + k) % len] = true;
+    for k in start + 2..=after {
+      drop[k % len] = true;
     }
-    drop[after % len] = true;
+    for k in start + 1..=after {
+      used[k % len] = true;
+    }
+  };
+  for start in 0..len {
+    // Between two long edges: a run of 1–3 short edges.
+    if long(start) {
+      let mut run = 0;
+      while run < 3 && short(start + 1 + run) {
+        run += 1;
+      }
+      let after = start + 1 + run;
+      if run > 0
+        && long(after)
+        && let Some((corner, _, _)) = meet(start, after)
+        && dist(corner, ring[(start + 1) % len]) <= 2.0 * cell
+        && dist(corner, ring[after % len]) <= 2.0 * cell
+      {
+        apply(start, after, corner, &mut drop, &mut used);
+        continue;
+      }
+    }
+    // Between shorter edges, confirmed by the region test.
+    for run in 1..=3usize {
+      let after = start + 1 + run;
+      if len < run + 3 || (start + 1..=after).any(|k| used[k % len]) {
+        break;
+      }
+      let run_len: f64 = (start + 1..after).map(edge_len).sum();
+      if edge_len(start) <= run_len || edge_len(after) <= run_len {
+        continue;
+      }
+      let Some((corner, t, s)) = meet(start, after) else {
+        continue;
+      };
+      let (b, c) = (ring[(start + 1) % len], ring[after % len]);
+      if t < 1.0 - 1e-9
+        || s > 1e-9
+        || dist(corner, b) > 4.0 * cell
+        || dist(corner, c) > 4.0 * cell
+      {
+        continue;
+      }
+      let count = (run + 1) as f64;
+      let mid = (start + 1..=after).fold((0.0, 0.0), |acc, k| {
+        let p = ring[k % len];
+        (acc.0 + p.0 / count, acc.1 + p.1 / count)
+      });
+      let h = dist(corner, mid);
+      if h <= cell * 1e-6 {
+        continue;
+      }
+      let step = (0.01 * (mid.0 - corner.0), 0.01 * (mid.1 - corner.1));
+      let toward = inside(corner.0 + step.0, corner.1 + step.1);
+      let away = inside(corner.0 - step.0, corner.1 - step.1);
+      if toward != away {
+        apply(start, after, corner, &mut drop, &mut used);
+        break;
+      }
+    }
   }
   (0..len)
     .filter(|&i| !drop[i] || replace[i].is_some())
@@ -7875,6 +7960,27 @@ enum ArrayCell {
   Color(GfxColor),
 }
 
+/// Wolfram accepts a gradient's name without its trailing word in a
+/// `ColorFunction` option (`"Thermometer"` for `"ThermometerColors"`,
+/// `"Temperature"` for `"TemperatureMap"`). Expand such a short name to
+/// the single `ColorData["Gradients"]` entry it begins at a word boundary;
+/// any other name (exact, unknown, or ambiguous) is returned unchanged.
+fn expand_gradient_short_name(name: &str) -> String {
+  let gradients = crate::functions::chart::GRADIENT_NAMES;
+  if name.is_empty() || gradients.contains(&name) {
+    return name.to_string();
+  }
+  let mut matches = gradients.iter().filter(|g| {
+    g.strip_prefix(name)
+      .and_then(|rest| rest.chars().next())
+      .is_some_and(|c| c.is_ascii_uppercase())
+  });
+  match (matches.next(), matches.next()) {
+    (Some(full), None) => full.to_string(),
+    _ => name.to_string(),
+  }
+}
+
 /// The gradient scheme name of a `ColorFunction` option value: a bare
 /// string (`"TemperatureMap"`), a `ColorData["TemperatureMap"]` call, or
 /// the structured `ColorDataFunction["TemperatureMap", …]` form the call
@@ -7882,10 +7988,7 @@ enum ArrayCell {
 /// own `ColorFunction` option the same way rather than re-parsing it.
 pub(crate) fn color_function_scheme_name(val: &Expr) -> Option<String> {
   match val {
-    // `"Thermometer"` is the short spelling Wolfram accepts for
-    // `"ThermometerColors"` in a `ColorFunction` option.
-    Expr::String(s) if s == "Thermometer" => Some("ThermometerColors".into()),
-    Expr::String(s) => Some(s.clone()),
+    Expr::String(s) => Some(expand_gradient_short_name(s)),
     // Only the plain gradient: a ranged or reversed `ColorDataFunction`
     // (`ColorData[{"Rainbow", "Reverse"}]`) carries a different blend and
     // is applied per value instead.

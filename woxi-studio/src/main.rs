@@ -4742,12 +4742,12 @@ fn render_manipulate_widget<'a>(
     if joined_through.is_some_and(|last| ctrl_idx <= last) {
       continue;
     }
-    let mut trees = panel_trees_at(ctrl_idx).peekable();
-    if trees.peek().is_some() {
+    // Each such display starts a line of its own; the control after it may
+    // join that line (a live caption written in one `Row` with the control,
+    // see `ManipulateState::joins_previous_control`).
+    for tree in panel_trees_at(ctrl_idx) {
       flush_control_line(&mut controls_col, &mut line);
-    }
-    for tree in trees {
-      controls_col = controls_col.push(render_display_node(cell_idx, tree));
+      line.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
     // showing is left out of the panel entirely, the way Wolfram swaps one
@@ -11954,6 +11954,94 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(state.control_is_visible, vec![true, false, false]);
   }
 
+  /// Regression: a control-area heading `Style["t", ColorData[1, 2], Bold]`
+  /// is held unevaluated by `Manipulate`, so its color — which only
+  /// evaluating `ColorData[…]` yields — was dropped and the heading drawn
+  /// in the default color.
+  #[test]
+  fn manipulate_heading_color_from_color_data() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[a, Style[\"first\", ColorData[1, 2], Bold], \
+       {a, 0, 1}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let heading = state
+      .controls
+      .iter()
+      .find_map(|c| match c {
+        manipulate::ControlState::Heading { label_runs, .. } => {
+          Some(label_runs.clone())
+        }
+        _ => None,
+      })
+      .expect("a heading control");
+    let channel = |i: usize| -> f32 {
+      woxi::interpret(&format!("ColorData[1, 2][[{i}]]"))
+        .unwrap()
+        .parse()
+        .unwrap()
+    };
+    let expected = (channel(1), channel(2), channel(3));
+    let color = heading[0].color.expect("heading keeps its color");
+    assert!(heading[0].bold);
+    assert!(
+      (color.0 - expected.0).abs() < 1e-4
+        && (color.1 - expected.1).abs() < 1e-4
+        && (color.2 - expected.2).abs() < 1e-4,
+      "{color:?} vs {expected:?}"
+    );
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose modes each
+  /// declare the same slider variable with its own range inside a
+  /// `PaneSelector` pane. This is a self-authored, construct-equivalent
+  /// example.
+  ///
+  /// Regression: the slider kept the first pane's range in every mode, so
+  /// switching modes could never reach the other panes' values.
+  #[test]
+  fn manipulate_pane_selector_slider_range_follows_pane() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{mode, r}, {{mode, 1, \"\"}, {1 -> \"small\", \
+       2 -> \"big\"}}, PaneSelector[{1 -> Control[{r, 0, 10, 2}], \
+       2 -> Control[{r, 10^6, 10^9, 3*10^8}]}, Dynamic[mode]]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["mode", "r"]);
+    let range = |state: &manipulate::ManipulateState| match &state.controls[1] {
+      manipulate::ControlState::Continuous {
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => (*min, *max, *step, *current),
+      other => panic!("expected a slider, got {other:?}"),
+    };
+    assert_eq!(range(&state), (0.0, 10.0, 2.0, 0.0));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    // The second pane's range and step apply, and the value moves into it.
+    assert_eq!(range(&state), (1e6, 1e9, 3e8, 1e6));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 0;
+    }
+    state.reevaluate();
+    assert_eq!(range(&state), (0.0, 10.0, 2.0, 10.0));
+  }
+
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook (a pie chart editor)
   /// whose `PaneSelector` panes each wrap their sliders in a collapsible
@@ -12262,7 +12350,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
     assert!(state.animated, "the Trigger makes the widget animatable");
     assert!(!state.playing, "a Trigger widget starts paused");
-    assert_eq!(state.controls.len(), 3, "the Trigger adds no second t row");
+    assert_eq!(state.controls.len(), 4, "the Trigger gets its own t row");
+    assert!(matches!(
+      &state.controls[3],
+      manipulate::ControlState::Trigger { name, .. } if name == "t"
+    ));
 
     let bounds =
       |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
@@ -12296,12 +12388,56 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(bounds(&state, 2), (0.1, 1.0));
     assert_eq!(current(&state, 2), 1.0, "dt must clamp to the new max");
 
-    // The animation targets the Trigger's variable t.
+    // The animation targets the Trigger's variable t, and the time slider
+    // sharing that variable follows the Trigger's sweep.
     state.advance_animation();
     assert!(
       (current(&state, 0) - 0.01).abs() < 1e-12,
       "the tick must advance t by its step"
     );
+    match &state.controls[3] {
+      manipulate::ControlState::Trigger { current, .. } => {
+        assert!((current - 0.01).abs() < 1e-12)
+      }
+      other => panic!("expected trigger control, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn trigger_row_shares_its_variable_with_a_slider_row() {
+    // A slider plus a labeled Trigger on the same variable: both rows are
+    // shown, the Trigger drives the sweep with its own step, the slider
+    // follows it, and dragging the slider moves the Trigger's position too.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[s, {{s, 0, \"position\"}, 0, 4, 1}, \
+       {{s, 0, \"run\"}, 0, 4, 0.5, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls.len(), 2);
+    assert!(matches!(
+      &state.controls[1],
+      manipulate::ControlState::Trigger { label, .. } if label == "run"
+    ));
+    let slider = |s: &manipulate::ManipulateState| match &s.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current,
+      other => panic!("expected continuous control, got {other:?}"),
+    };
+    let trigger = |s: &manipulate::ManipulateState| match &s.controls[1] {
+      manipulate::ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected trigger control, got {other:?}"),
+    };
+    state.toggle_play();
+    state.advance_animation();
+    assert_eq!(trigger(&state), 0.5, "the Trigger's own step drives t");
+    assert_eq!(slider(&state), 0.5, "the slider follows the Trigger");
+
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 3.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.apply_tracking(0);
+    assert_eq!(trigger(&state), 3.0, "the Trigger resumes from the slider");
   }
 
   #[test]
