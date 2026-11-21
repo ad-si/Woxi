@@ -277,6 +277,40 @@ pub fn image_to_svg_document(
   )
 }
 
+/// `Magnify[image]` / `Magnify[image, s]` as the image it displays: the
+/// same raster shown at `s` times its display size (its `ImageSize`, or its
+/// pixel dimensions without one). `None` when `expr` is not a magnified
+/// image or the factor is not a positive number.
+pub fn magnified_image(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Magnify" || args.is_empty() || args.len() > 2 {
+    return None;
+  }
+  let factor = match args.get(1) {
+    Some(f) => crate::functions::math_ast::try_eval_to_f64(f)?,
+    None => 1.0,
+  };
+  if !(factor.is_finite() && factor > 0.0) {
+    return None;
+  }
+  let mut image = args[0].clone();
+  let Expr::Image {
+    width,
+    height,
+    display_size,
+    ..
+  } = &mut image
+  else {
+    return None;
+  };
+  let (w, h) = display_size.unwrap_or((*width, *height));
+  let scale = |v: u32| ((v as f64 * factor).round() as u32).max(1);
+  *display_size = Some((scale(w), scale(h)));
+  Some(image)
+}
+
 // ─── Core functions (Phase 1) ──────────────────────────────────────────────
 
 /// Image[data] / Image[data, type] / Image[data, type, opts…] — construct
@@ -3158,6 +3192,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     svg_height: crate::functions::plot::DEFAULT_HEIGHT,
     full_width: false,
     chart_labels: Vec::new(),
+    chart_labels_group_level: false,
     chart_label_position: crate::functions::chart::LabelPosition::Below,
     plot_label: None,
     axes_label: None,
@@ -3170,11 +3205,13 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     legend_layout: crate::functions::plot::LegendLayout::Column,
     plot_range_x: Some((0.0, 255.0)),
     plot_range_y: None,
+    axes_origin: (None, None),
     bar_origin_left: false,
     labeling_function: None,
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    frame_ticks: true,
     layout: crate::functions::plot::BarLayout::Grouped,
     bar_origin_top: false,
     log_x: false,
@@ -3183,6 +3220,9 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     epilog: Vec::new(),
     color_function: None,
     color_function_scaling: true,
+    aspect_ratio: None,
+    aspect_full: false,
+    fixed_height: false,
   }
 }
 
@@ -3697,6 +3737,42 @@ pub fn image_rotate_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 }
 
 /// ImageResize[img, {w, h}] or ImageResize[img, w] - Resize to target dimensions
+/// The source pixels (and their weights, summing to 1) that make up each
+/// of `dst` output pixels when one image axis is resampled from `src`
+/// pixels. A growing (or unchanged) axis interpolates linearly between the
+/// two nearest source pixel centers; a shrinking axis averages every source
+/// pixel the output pixel's footprint overlaps, weighted by the overlap.
+fn resample_taps(src: usize, dst: usize) -> Vec<Vec<(usize, f64)>> {
+  let scale = src as f64 / dst as f64;
+  let last = src.saturating_sub(1);
+  (0..dst)
+    .map(|d| {
+      if scale <= 1.0 {
+        let f = ((d as f64) + 0.5) * scale - 0.5;
+        let s0 = (f.floor().max(0.0) as usize).min(last);
+        let s1 = (s0 + 1).min(last);
+        let t = (f - s0 as f64).clamp(0.0, 1.0);
+        if s0 == s1 || t == 0.0 {
+          vec![(s0, 1.0)]
+        } else {
+          vec![(s0, 1.0 - t), (s1, t)]
+        }
+      } else {
+        let lo = d as f64 * scale;
+        let hi = lo + scale;
+        let first = lo.floor() as usize;
+        let end = (hi.ceil() as usize).min(src);
+        (first..end)
+          .filter_map(|s| {
+            let overlap = (hi.min(s as f64 + 1.0) - lo.max(s as f64)) / scale;
+            (overlap > 1e-12).then_some((s, overlap))
+          })
+          .collect()
+      }
+    })
+    .collect()
+}
+
 pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let coerced;
   let args: &[Expr] = if !matches!(&args[0], Expr::Image { .. })
@@ -3898,12 +3974,11 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   let (new_w, new_h) = (new_w.max(1), new_h.max(1));
 
-  // Bilinear interpolation on the f64 buffer (per channel).
   let mut new_data = vec![0.0_f64; (new_w as usize) * (new_h as usize) * ch];
-  let scale_x = src_w as f64 / new_w as f64;
-  let scale_y = src_h as f64 / new_h as f64;
-  for ny in 0..new_h as usize {
-    if nearest {
+  if nearest {
+    let scale_x = src_w as f64 / new_w as f64;
+    let scale_y = src_h as f64 / new_h as f64;
+    for ny in 0..new_h as usize {
       let sy = ((((ny as f64) + 0.5) * scale_y).floor() as usize)
         .min(src_h.saturating_sub(1));
       for nx in 0..new_w as usize {
@@ -3914,26 +3989,36 @@ pub fn image_resize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             data[(sy * src_w + sx) * ch + c];
         }
       }
-      continue;
     }
-    let sy_f = ((ny as f64) + 0.5) * scale_y - 0.5;
-    let sy0 = sy_f.floor().max(0.0) as usize;
-    let sy1 = (sy0 + 1).min(src_h.saturating_sub(1));
-    let fy = (sy_f - sy0 as f64).clamp(0.0, 1.0);
-    for nx in 0..new_w as usize {
-      let sx_f = ((nx as f64) + 0.5) * scale_x - 0.5;
-      let sx0 = sx_f.floor().max(0.0) as usize;
-      let sx1 = (sx0 + 1).min(src_w.saturating_sub(1));
-      let fx = (sx_f - sx0 as f64).clamp(0.0, 1.0);
-      for c in 0..ch {
-        let v00 = data[(sy0 * src_w + sx0) * ch + c];
-        let v01 = data[(sy0 * src_w + sx1) * ch + c];
-        let v10 = data[(sy1 * src_w + sx0) * ch + c];
-        let v11 = data[(sy1 * src_w + sx1) * ch + c];
-        let v0 = v00 * (1.0 - fx) + v01 * fx;
-        let v1 = v10 * (1.0 - fx) + v11 * fx;
-        let v = v0 * (1.0 - fy) + v1 * fy;
-        new_data[(ny * new_w as usize + nx) * ch + c] = v;
+  } else {
+    // Separable resampling: each axis that grows is interpolated
+    // bilinearly, each axis that shrinks averages the source pixels its
+    // output pixel covers (an antialiasing box filter), so a large
+    // reduction keeps soft gray edges instead of point-sampling a
+    // handful of source pixels.
+    let x_taps = resample_taps(src_w, new_w as usize);
+    let y_taps = resample_taps(src_h, new_h as usize);
+    // Horizontal pass: src_h rows of new_w pixels.
+    let mut rows = vec![0.0_f64; src_h * (new_w as usize) * ch];
+    for sy in 0..src_h {
+      for (nx, taps) in x_taps.iter().enumerate() {
+        for c in 0..ch {
+          rows[(sy * new_w as usize + nx) * ch + c] = taps
+            .iter()
+            .map(|&(sx, w)| data[(sy * src_w + sx) * ch + c] * w)
+            .sum();
+        }
+      }
+    }
+    // Vertical pass.
+    for (ny, taps) in y_taps.iter().enumerate() {
+      for nx in 0..new_w as usize {
+        for c in 0..ch {
+          new_data[(ny * new_w as usize + nx) * ch + c] = taps
+            .iter()
+            .map(|&(sy, w)| rows[(sy * new_w as usize + nx) * ch + c] * w)
+            .sum();
+        }
       }
     }
   }
@@ -13460,6 +13545,40 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 
 // ─── Rasterize ──────────────────────────────────────────────────────────────
 
+/// Serif faces to draw generic "serif" text in, most Times-like first:
+/// Times itself, then the faces metric-compatible with it, then common
+/// general-purpose serif faces.
+#[cfg(not(target_arch = "wasm32"))]
+const SERIF_FAMILY_PREFERENCE: &[&str] = &[
+  "Times New Roman",
+  "Times",
+  "Liberation Serif",
+  "Tinos",
+  "TeX Gyre Termes",
+  "Nimbus Roman",
+  "Nimbus Roman No9 L",
+  "STIX Two Text",
+  "Noto Serif",
+  "DejaVu Serif",
+  "FreeSerif",
+  "Georgia",
+];
+
+/// The most Times-like serif family among the installed font `families`
+/// (compared case-insensitively), or `None` when none of the known serif
+/// faces is installed.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn preferred_serif_family<'a>(
+  families: impl IntoIterator<Item = &'a str>,
+) -> Option<&'static str> {
+  let installed: std::collections::HashSet<String> =
+    families.into_iter().map(str::to_ascii_lowercase).collect();
+  SERIF_FAMILY_PREFERENCE
+    .iter()
+    .copied()
+    .find(|candidate| installed.contains(&candidate.to_ascii_lowercase()))
+}
+
 /// Populate a usvg font database with the embedded fallback fonts and wire
 /// each CSS generic family to a reasonable default. This is shared by the
 /// raster (`rasterize_svg`) and PDF (`svg_to_pdf_bytes`) export paths and by
@@ -13481,6 +13600,10 @@ pub fn import_image(path: &str) -> Result<Expr, InterpreterError> {
 /// - Static **Bold** instances of both (`fonttools varLib.instancer
 ///   wght=700`) for the same reason: usvg would otherwise draw
 ///   `font-weight="bold"` text with the regular outlines.
+/// - Static **Italic** and **Bold Italic** instances of Atkinson
+///   Hyperlegible Next: usvg never slants glyphs itself, so without a
+///   dedicated italic face `font-style="italic"` text (`Style[…, Italic]`,
+///   `FontSlant -> Italic`, TraditionalForm variables) would draw upright.
 ///
 /// All bundled Atkinson files carry an `OS/2.ySubscriptYOffset` of 400
 /// (upstream: 75). usvg lowers `baseline-shift="sub"` by exactly that
@@ -13512,13 +13635,354 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
     )
     .to_vec(),
   );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-Italic.ttf")
+      .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-BoldItalic.ttf")
+      .to_vec(),
+  );
   fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
   fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
-  // We don't ship a dedicated serif face, so fall back to the sans-serif
-  // for "serif" requests rather than leaving them unresolved.
-  fontdb.set_serif_family("Atkinson Hyperlegible Next");
+  // Text set in `FontFamily -> "Times"` is measured with Times-like
+  // advances, so a "serif" request has to be drawn in an installed
+  // Times-like face: the wider sans-serif would overrun the room the
+  // layout gave it. We don't ship a serif face, so only without any
+  // installed one fall back to the sans-serif rather than leaving
+  // "serif" unresolved.
+  let serif = preferred_serif_family(
+    fontdb
+      .faces()
+      .flat_map(|face| face.families.iter().map(|(name, _)| name.as_str())),
+  )
+  .unwrap_or("Atkinson Hyperlegible Next");
+  fontdb.set_serif_family(serif);
   fontdb.set_cursive_family("Atkinson Hyperlegible Next");
   fontdb.set_fantasy_family("Atkinson Hyperlegible Next");
+}
+
+/// Slant of synthesized oblique text: the 14° CSS uses for
+/// `font-style: oblique` when a font family has no slanted face.
+#[cfg(not(target_arch = "wasm32"))]
+const SYNTHETIC_OBLIQUE_DEGREES: f64 = 14.0;
+
+/// Slant the `<text>` elements of `svg` that are set entirely in italics
+/// but whose font family has no italic (or oblique) face in `fontdb`.
+///
+/// Browsers synthesize an oblique face for `font-style="italic"` when a
+/// family has none, but usvg draws the upright outlines instead, so
+/// `Style[..., Italic]` text (plot labels, axes labels, `Text` primitives)
+/// would rasterize upright. The embedded Atkinson Hyperlegible Next ships
+/// real italic faces; this covers the families that don't, such as the
+/// embedded Atkinson Hyperlegible Mono or an installed font.
+/// Each such element gets a `skewX` about its anchor point, which leaves
+/// the anchor where it was and leans the glyphs like an oblique face.
+///
+/// Text that mixes italic and upright runs is left as is: SVG cannot
+/// transform a `<tspan>` on its own. Call this on every SVG before it is
+/// parsed for rasterization or PDF export.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn synthesize_oblique_text<'a>(
+  svg: &'a str,
+  fontdb: &resvg::usvg::fontdb::Database,
+) -> std::borrow::Cow<'a, str> {
+  use resvg::usvg::roxmltree;
+  use std::borrow::Cow;
+
+  if !svg.contains("italic") && !svg.contains("oblique") {
+    return Cow::Borrowed(svg);
+  }
+  let options = roxmltree::ParsingOptions {
+    allow_dtd: true,
+    ..Default::default()
+  };
+  let Ok(doc) = roxmltree::Document::parse_with_options(svg, options) else {
+    return Cow::Borrowed(svg);
+  };
+
+  // (byte offset, text to insert or replace with, length replaced)
+  let mut edits: Vec<(usize, String, usize)> = Vec::new();
+  for text in doc
+    .descendants()
+    .filter(|n| n.is_element() && n.tag_name().name() == "text")
+  {
+    if !text_is_all_italic(text)
+      || has_slanted_face(text, fontdb)
+      || text
+        .ancestors()
+        .skip(1)
+        .any(|a| a.tag_name().name() == "text")
+    {
+      continue;
+    }
+    let (x, y) = text_anchor(text);
+    let skew = format!(
+      "translate({x} {y}) skewX({}) translate({} {})",
+      -SYNTHETIC_OBLIQUE_DEGREES, -x, -y
+    );
+    if let Some(attr) = text.attribute_node("transform") {
+      let range = attr.range_value();
+      let existing = &svg[range.clone()];
+      edits.push((range.start, format!("{existing} {skew}"), range.len()));
+    } else {
+      // Insert the attribute right after the element name.
+      let start = text.range().start + 1;
+      let name_len = svg[start..]
+        .find(|c: char| c.is_whitespace() || c == '>' || c == '/')
+        .unwrap_or(0);
+      edits.push((start + name_len, format!(" transform=\"{skew}\""), 0));
+    }
+  }
+  if edits.is_empty() {
+    return Cow::Borrowed(svg);
+  }
+
+  let mut out = String::with_capacity(svg.len() + edits.len() * 64);
+  let mut pos = 0;
+  for (at, insert, replaced) in edits {
+    out.push_str(&svg[pos..at]);
+    out.push_str(&insert);
+    pos = at + replaced;
+  }
+  out.push_str(&svg[pos..]);
+  Cow::Owned(out)
+}
+
+/// The value of the presentation property `name` on `node` itself, from
+/// its `style` attribute (which takes precedence) or the plain attribute.
+#[cfg(not(target_arch = "wasm32"))]
+fn own_svg_property<'a>(
+  node: resvg::usvg::roxmltree::Node<'a, '_>,
+  name: &str,
+) -> Option<&'a str> {
+  let from_style = node.attribute("style").and_then(|style| {
+    style.split(';').find_map(|decl| {
+      let (key, value) = decl.split_once(':')?;
+      (key.trim() == name).then(|| value.trim())
+    })
+  });
+  from_style.or_else(|| node.attribute(name).map(str::trim))
+}
+
+/// The inherited value of the presentation property `name` at `node`.
+#[cfg(not(target_arch = "wasm32"))]
+fn inherited_svg_property<'a>(
+  node: resvg::usvg::roxmltree::Node<'a, '_>,
+  name: &str,
+) -> Option<&'a str> {
+  node
+    .ancestors()
+    .filter(resvg::usvg::roxmltree::Node::is_element)
+    .find_map(|n| own_svg_property(n, name).filter(|v| *v != "inherit"))
+}
+
+/// Whether every visible character of the `<text>` element is drawn in an
+/// italic or oblique style.
+#[cfg(not(target_arch = "wasm32"))]
+fn text_is_all_italic(text: resvg::usvg::roxmltree::Node) -> bool {
+  let mut runs = text
+    .descendants()
+    .filter(|n| n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty()))
+    .peekable();
+  runs.peek().is_some()
+    && runs.all(|run| {
+      run.parent().is_some_and(|parent| {
+        let style = inherited_svg_property(parent, "font-style");
+        style.is_some_and(|s| s == "italic" || s.starts_with("oblique"))
+      })
+    })
+}
+
+/// Whether the font usvg would pick for the `<text>` element has an italic
+/// or oblique face of its own, so no slant needs to be synthesized.
+#[cfg(not(target_arch = "wasm32"))]
+fn has_slanted_face(
+  text: resvg::usvg::roxmltree::Node,
+  fontdb: &resvg::usvg::fontdb::Database,
+) -> bool {
+  use resvg::usvg::fontdb::{Family, Query, Style, Weight};
+
+  // Look at the font of the first visible run, as that decides the face.
+  let run_parent = text
+    .descendants()
+    .find(|n| n.is_text() && n.text().is_some_and(|t| !t.trim().is_empty()))
+    .and_then(|n| n.parent())
+    .unwrap_or(text);
+  // The default family `svg_render_options` gives usvg when none is set.
+  let family_list = inherited_svg_property(run_parent, "font-family")
+    .unwrap_or(DEFAULT_SVG_FONT_FAMILY);
+  let families: Vec<Family> = family_list
+    .split(',')
+    .map(|f| f.trim().trim_matches(|c| c == '"' || c == '\''))
+    .filter(|f| !f.is_empty())
+    .map(|f| match f {
+      "serif" => Family::Serif,
+      "sans-serif" => Family::SansSerif,
+      "monospace" => Family::Monospace,
+      "cursive" => Family::Cursive,
+      "fantasy" => Family::Fantasy,
+      name => Family::Name(name),
+    })
+    .collect();
+  let weight = match inherited_svg_property(run_parent, "font-weight") {
+    Some("bold" | "bolder") => Weight::BOLD,
+    Some("lighter") => Weight::LIGHT,
+    Some(w) => w.parse().map_or(Weight::NORMAL, Weight),
+    None => Weight::NORMAL,
+  };
+  let query = Query {
+    families: &families,
+    weight,
+    style: Style::Italic,
+    ..Default::default()
+  };
+  fontdb
+    .query(&query)
+    .and_then(|id| fontdb.face(id))
+    .is_some_and(|face| face.style != Style::Normal)
+}
+
+/// The anchor point of a `<text>` element: its first `x`/`y` coordinates,
+/// or those of its first positioned `<tspan>`.
+#[cfg(not(target_arch = "wasm32"))]
+fn text_anchor(text: resvg::usvg::roxmltree::Node) -> (f64, f64) {
+  let coordinate = |name: &str| {
+    text
+      .descendants()
+      .filter(resvg::usvg::roxmltree::Node::is_element)
+      .find_map(|n| n.attribute(name))
+      .and_then(|v| {
+        v.split(|c: char| c.is_whitespace() || c == ',')
+          .find(|s| !s.is_empty())
+      })
+      .and_then(|v| v.parse::<f64>().ok())
+      .unwrap_or(0.0)
+  };
+  (coordinate("x"), coordinate("y"))
+}
+
+/// The family usvg gives a `<text>` that sets no `font-family` of its own.
+///
+/// Woxi emits a bare `<text>` for a `Graphics` `Text` without `FontFamily`
+/// and expects it in its default sans-serif face (WL's default graphics
+/// font is sans-serif too). usvg's own default is "Times New Roman", which
+/// is installed on macOS and Windows, so such labels came out serif there.
+pub const DEFAULT_SVG_FONT_FAMILY: &str = "Atkinson Hyperlegible Next";
+
+/// usvg options for rendering a Woxi SVG with `fontdb`: every parse that
+/// lays out text must go through this so unstyled text gets
+/// [`DEFAULT_SVG_FONT_FAMILY`] rather than usvg's serif default.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn svg_render_options(
+  fontdb: Arc<resvg::usvg::fontdb::Database>,
+) -> resvg::usvg::Options<'static> {
+  resvg::usvg::Options {
+    font_family: DEFAULT_SVG_FONT_FAMILY.to_string(),
+    fontdb,
+    font_resolver: font_resolver(),
+    ..Default::default()
+  }
+}
+
+/// usvg's font resolver with a fallback that keeps the text's style.
+///
+/// When the chosen font lacks a glyph, the fallback face is picked by
+/// [`same_style_fallback_selector`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn font_resolver() -> resvg::usvg::FontResolver<'static> {
+  resvg::usvg::FontResolver {
+    select_font: resvg::usvg::FontResolver::default_font_selector(),
+    select_fallback: same_style_fallback_selector(),
+  }
+}
+
+/// Whether the font face `id` has a glyph for `c`.
+#[cfg(not(target_arch = "wasm32"))]
+fn face_has_char(
+  fontdb: &resvg::usvg::fontdb::Database,
+  id: resvg::usvg::fontdb::ID,
+  c: char,
+) -> bool {
+  fontdb
+    .with_face_data(id, |data, index| {
+      ttf_parser::Face::parse(data, index)
+        .ok()
+        .and_then(|face| face.glyph_index(c))
+        .is_some()
+    })
+    .unwrap_or(false)
+}
+
+/// How well a fallback face's (slant, weight, width) matches the base
+/// face's; lower is better.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn fallback_face_rank(
+  face: (
+    resvg::usvg::fontdb::Style,
+    u16,
+    resvg::usvg::fontdb::Stretch,
+  ),
+  base: (
+    resvg::usvg::fontdb::Style,
+    u16,
+    resvg::usvg::fontdb::Stretch,
+  ),
+) -> (bool, u16, bool) {
+  (face.0 != base.0, face.1.abs_diff(base.1), face.2 != base.2)
+}
+
+/// Fallback face selection for characters missing from the requested
+/// font (e.g. Greek letters, which the embedded Atkinson faces lack).
+///
+/// usvg's default selector takes the first face in the database that has
+/// the character unless its style, weight *and* stretch all differ, and
+/// when that face covers the whole text run, usvg reshapes the entire run
+/// with it. A label like "at ρ = 0" could thus come out entirely in some
+/// bold oblique system face. This selector instead prefers faces whose
+/// style matches exactly, then the closest weight, then the same kind of
+/// family (monospaced or proportional, serif or sans-serif), then the
+/// same stretch.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn same_style_fallback_selector()
+-> resvg::usvg::FallbackSelectionFn<'static> {
+  Box::new(|c, exclude_fonts, fontdb| {
+    // Font metadata has no serif flag, so go by the family names
+    // ("DejaVu Serif", "Noto Serif", but not "PT Sans Serif").
+    let is_serif = |face: &resvg::usvg::fontdb::FaceInfo| {
+      face
+        .families
+        .iter()
+        .any(|(name, _)| name.contains("Serif") && !name.contains("Sans"))
+    };
+    let base = fontdb.face(*exclude_fonts.first()?)?;
+    let (style, weight, stretch) = (base.style, base.weight, base.stretch);
+    let (monospaced, serif) = (base.monospaced, is_serif(base));
+    let mut candidates: Vec<_> = fontdb
+      .faces()
+      .filter(|face| !exclude_fonts.contains(&face.id))
+      .map(|face| {
+        let (slant, weight_diff, stretch_diff) = fallback_face_rank(
+          (face.style, face.weight.0, face.stretch),
+          (style, weight.0, stretch),
+        );
+        let rank = (
+          slant,
+          weight_diff,
+          face.monospaced != monospaced,
+          is_serif(face) != serif,
+          stretch_diff,
+        );
+        (rank, face.id)
+      })
+      .collect();
+    // Stable sort: ties keep the database order.
+    candidates.sort_by_key(|(rank, _)| *rank);
+    candidates
+      .into_iter()
+      .map(|(_, id)| id)
+      .find(|&id| face_has_char(fontdb, id, c))
+  })
 }
 
 /// Extract an SVG rendering of `expr` when it is a `Graphics`/`Graphics3D`
@@ -13641,6 +14105,7 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse ImageResolution option. 72 dpi rasterizes one printer point
   // (one SVG unit) to one pixel.
   let mut dpi: f64 = 72.0;
+  let mut explicit_resolution = false;
   for opt in &args[1..] {
     if let Expr::Rule {
       pattern,
@@ -13652,8 +14117,9 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match replacement.as_ref() {
         Expr::Integer(n) => dpi = *n as f64,
         Expr::Real(f) => dpi = *f,
-        _ => {}
+        _ => continue,
       }
+      explicit_resolution = true;
     }
   }
 
@@ -13698,7 +14164,9 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Get SVG string from the expression
-  let svg_str = if let Some(svg) = graphics_svg(&args[0]) {
+  let graphics = graphics_svg(&args[0]);
+  let is_graphics = graphics.is_some();
+  let svg_str = if let Some(svg) = graphics {
     svg
   } else {
     match &args[0] {
@@ -13741,9 +14209,44 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An explicit RasterSize wins; otherwise an ImageSize box holds the
   // drawing scaled to fit, centered, without distorting it.
   match (raster_size, image_size) {
+    // Typeset content (text, formulas) is laid out at its own size: a
+    // `w` x `h` raster is a pane around it, not a box it is stretched to
+    // fill. Like WL, the content is drawn at 144 dpi (`ImageResolution`
+    // when given) and centered in the raster, cropped if it overflows.
+    (Some((w, Some(h))), _) if !is_graphics => {
+      let pane_dpi = if explicit_resolution { dpi } else { 144.0 };
+      rasterize_svg_with(
+        &svg_str,
+        pane_dpi,
+        Some((w, Some(h))),
+        RasterFit::Natural,
+        None,
+      )
+    }
+    // Without a RasterSize, typeset content keeps its natural size too,
+    // centered in a canvas of the ImageSize (a scalar ImageSize fixes only
+    // the width).
+    (None, Some((w, h))) if !is_graphics => {
+      let scale = dpi / 72.0;
+      let canvas = (w as f64 / scale, h.map(|h| h as f64 / scale));
+      rasterize_svg_with(&svg_str, dpi, None, RasterFit::Stretch, Some(canvas))
+    }
     (None, Some(size)) => rasterize_svg_fit(&svg_str, dpi, size),
     _ => rasterize_svg_to(&svg_str, dpi, raster_size),
   }
+}
+
+/// How [`rasterize_svg_with`] places the drawing in an explicit `w` x `h`
+/// raster.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, PartialEq)]
+enum RasterFit {
+  /// Scaled independently along each axis to fill the raster exactly.
+  Stretch,
+  /// Scaled uniformly to fit inside, and centered.
+  Contain,
+  /// Kept at its size for the resolution, and centered.
+  Natural,
 }
 
 /// Rasterize `svg_str` into a `w` x `h` pixel box (`h` following the aspect
@@ -13758,7 +14261,7 @@ fn rasterize_svg_fit(
   let Some(h) = h else {
     return rasterize_svg_to(svg_str, dpi, Some((w, None)));
   };
-  rasterize_svg_with(svg_str, dpi, Some((w, Some(h))), true)
+  rasterize_svg_with(svg_str, dpi, Some((w, Some(h))), RasterFit::Contain, None)
 }
 
 /// Rasterize an SVG string to an Expr::Image at the given DPI.
@@ -13779,17 +14282,21 @@ fn rasterize_svg_to(
   dpi: f64,
   raster_size: Option<(u32, Option<u32>)>,
 ) -> Result<Expr, InterpreterError> {
-  rasterize_svg_with(svg_str, dpi, raster_size, false)
+  rasterize_svg_with(svg_str, dpi, raster_size, RasterFit::Stretch, None)
 }
 
-/// [`rasterize_svg_to`], where `fit` keeps the drawing's aspect ratio for a
-/// `(w, Some(h))` size: it is scaled to fit inside and centered.
+/// [`rasterize_svg_to`], where `fit` decides how the drawing is placed in
+/// a `(w, Some(h))` raster. A `canvas` of `(w, h)` printer's points (`h`
+/// defaulting to the drawing's height) places the drawing unscaled at the
+/// center of a canvas of that size, cropping what overflows; the canvas is
+/// what gets rasterized.
 #[cfg(not(target_arch = "wasm32"))]
 fn rasterize_svg_with(
   svg_str: &str,
   dpi: f64,
   raster_size: Option<(u32, Option<u32>)>,
-  fit: bool,
+  fit: RasterFit,
+  canvas: Option<(f64, Option<f64>)>,
 ) -> Result<Expr, InterpreterError> {
   use std::sync::Arc as StdArc;
 
@@ -13801,11 +14308,10 @@ fn rasterize_svg_with(
   fontdb.load_system_fonts();
   load_embedded_fonts(&mut fontdb);
 
+  let svg_str = &synthesize_oblique_text(svg_str, &fontdb);
+
   // Parse SVG
-  let opt = resvg::usvg::Options {
-    fontdb: StdArc::new(fontdb),
-    ..Default::default()
-  };
+  let opt = svg_render_options(StdArc::new(fontdb));
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
@@ -13818,17 +14324,31 @@ fn rasterize_svg_with(
   // SVG units are printer points (1/72 inch), as in Wolfram Language:
   // `ImageSize -> 360` at `ImageResolution -> 144` is 720 pixels wide.
   let scale = dpi / 72.0;
-  let (svg_w, svg_h) = (svg_size.width() as f64, svg_size.height() as f64);
+  let (draw_w, draw_h) = (svg_size.width() as f64, svg_size.height() as f64);
+  // The area that is rasterized, and where the drawing sits in it.
+  let (svg_w, svg_h) = match canvas {
+    Some((cw, ch)) => (cw, ch.unwrap_or(draw_h)),
+    None => (draw_w, draw_h),
+  };
+  let (origin_x, origin_y) = ((svg_w - draw_w) / 2.0, (svg_h - draw_h) / 2.0);
   let (pix_w, pix_h, scale_x, scale_y) = match raster_size {
-    Some((w, Some(h))) if fit => {
+    Some((w, Some(h))) if fit == RasterFit::Contain => {
       let k = (w as f64 / svg_w).min(h as f64 / svg_h);
       (w, h, k, k)
     }
+    Some((w, Some(h))) if fit == RasterFit::Natural => (w, h, scale, scale),
     Some((w, Some(h))) => (w, h, w as f64 / svg_w, h as f64 / svg_h),
     Some((w, None)) => {
       let k = w as f64 / svg_w;
       (w, ((svg_h * k).round() as u32).max(1), k, k)
     }
+    // A canvas came from a whole-pixel ImageSize: keep that pixel size.
+    None if canvas.is_some() => (
+      ((svg_w * scale).round() as u32).max(1),
+      ((svg_h * scale).round() as u32).max(1),
+      scale,
+      scale,
+    ),
     None => (
       (svg_w * scale).ceil() as u32,
       (svg_h * scale).ceil() as u32,
@@ -13858,9 +14378,12 @@ fn rasterize_svg_with(
     (pix_w as f64 - svg_w * scale_x) / 2.0,
     (pix_h as f64 - svg_h * scale_y) / 2.0,
   );
-  let transform =
-    resvg::tiny_skia::Transform::from_scale(scale_x as f32, scale_y as f32)
-      .post_translate(dx as f32, dy as f32);
+  let transform = resvg::tiny_skia::Transform::from_translate(
+    origin_x as f32,
+    origin_y as f32,
+  )
+  .post_scale(scale_x as f32, scale_y as f32)
+  .post_translate(dx as f32, dy as f32);
   resvg::render(&tree, transform, &mut pixmap.as_mut());
 
   // The drawing sits on an opaque white background, so the alpha channel
@@ -13969,10 +14492,8 @@ fn rasterize_mask_svg(
   let mut fontdb = resvg::usvg::fontdb::Database::new();
   fontdb.load_system_fonts();
   load_embedded_fonts(&mut fontdb);
-  let opt = resvg::usvg::Options {
-    fontdb: StdArc::new(fontdb),
-    ..Default::default()
-  };
+  let svg_str = &synthesize_oblique_text(svg_str, &fontdb);
+  let opt = svg_render_options(StdArc::new(fontdb));
 
   let tree = resvg::usvg::Tree::from_str(svg_str, &opt).map_err(|e| {
     InterpreterError::EvaluationError(format!(
@@ -15913,22 +16434,24 @@ pub fn image_transformation_ast(
     None => Some(vec![0.0; ch]),
   };
 
+  // The source point of output point (x, y): the mapping compiled to
+  // machine arithmetic where it can be, so that each pixel costs a few
+  // float operations rather than an evaluation of the function.
+  let compiled = compiled_point_map(&args[1]);
+  let map_point = |x: f64, y: f64| -> Option<(f64, f64)> {
+    let source = match &compiled {
+      Some([fx, fy]) => Some((fx.eval(&[x, y]), fy.eval(&[x, y]))),
+      None => evaluate_point_map(&args[1], x, y),
+    };
+    source.filter(|(sx, sy)| sx.is_finite() && sy.is_finite())
+  };
+
   let mut out = Vec::with_capacity(ow * oh * ch);
   for iy in 0..oh {
     let y = plot_range[3] - ph * (iy as f64 + 0.5) / oh as f64;
     for ix in 0..ow {
       let x = plot_range[0] + pw * (ix as f64 + 0.5) / ow as f64;
-      let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
-      let source = crate::evaluator::apply_function_to_arg(&args[1], &point)
-        .ok()
-        .and_then(|r| match &r {
-          Expr::List(p) if p.len() == 2 => Some((
-            crate::functions::math_ast::try_eval_to_f64(&p[0])?,
-            crate::functions::math_ast::try_eval_to_f64(&p[1])?,
-          )),
-          _ => None,
-        })
-        .filter(|(sx, sy)| sx.is_finite() && sy.is_finite());
+      let source = map_point(x, y);
       // Continuous source pixel position (pixel centers at +½, y down).
       let uv = source.map(|(sx, sy)| {
         (
@@ -15987,6 +16510,72 @@ pub fn image_transformation_ast(
     data: Arc::new(out),
     image_type: *image_type,
   })
+}
+
+/// The image of the point `{x, y}` under the coordinate map `f`, evaluated
+/// by the interpreter; `None` unless it is a pair of real numbers.
+fn evaluate_point_map(f: &Expr, x: f64, y: f64) -> Option<(f64, f64)> {
+  let point = Expr::List(vec![Expr::Real(x), Expr::Real(y)].into());
+  match &crate::evaluator::apply_function_to_arg(f, &point).ok()? {
+    Expr::List(p) if p.len() == 2 => Some((
+      crate::functions::math_ast::try_eval_to_f64(&p[0])?,
+      crate::functions::math_ast::try_eval_to_f64(&p[1])?,
+    )),
+    _ => None,
+  }
+}
+
+/// The coordinate map `f` of `ImageTransformation` compiled to machine
+/// arithmetic: `f` applied to a symbolic point `{x, y}` must give a pair of
+/// numeric expressions in `x` and `y`. The compiled pair is checked against
+/// the interpreter at a few points, so a map whose symbolic evaluation
+/// differs from its numeric one (a definition restricted to numbers, say)
+/// keeps being evaluated point by point.
+fn compiled_point_map(
+  f: &Expr,
+) -> Option<[crate::functions::ode_ast::CompiledReal; 2]> {
+  use crate::functions::ode_ast::CompiledReal;
+  let vars = [
+    "ImageTransformation$x".to_string(),
+    "ImageTransformation$y".to_string(),
+  ];
+  let point = Expr::List(
+    vec![
+      Expr::Identifier(vars[0].clone()),
+      Expr::Identifier(vars[1].clone()),
+    ]
+    .into(),
+  );
+  crate::push_quiet();
+  let image = crate::evaluator::apply_function_to_arg(f, &point);
+  crate::pop_quiet();
+  let Ok(Expr::List(p)) = &image else {
+    return None;
+  };
+  let [px, py] = &p[..] else {
+    return None;
+  };
+  let compiled = [CompiledReal::new(px, &vars)?, CompiledReal::new(py, &vars)?];
+  let probes = [(0.25, -0.5), (-0.75, 0.125), (1.5, 0.875)];
+  for (x, y) in probes {
+    let fast = (compiled[0].eval(&[x, y]), compiled[1].eval(&[x, y]));
+    let close = |a: f64, b: f64| {
+      (a.is_nan() && b.is_nan())
+        || a == b
+        || (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0)
+    };
+    crate::push_quiet();
+    let slow = evaluate_point_map(f, x, y);
+    crate::pop_quiet();
+    let agrees = match slow {
+      Some((sx, sy)) => close(fast.0, sx) && close(fast.1, sy),
+      None => !(fast.0.is_finite() && fast.1.is_finite()),
+    };
+    if !agrees {
+      return None;
+    }
+  }
+  Some(compiled)
 }
 
 /// Bounding box `[xmin, xmax, ymin, ymax]` of the 2D points in a graphics

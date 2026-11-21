@@ -6050,6 +6050,9 @@ fn reciprocal_inside_sum_factor(e: &Expr) -> bool {
 /// combining handles the case where combining the whole expression makes the
 /// leaf count larger but combining an inner fraction still helps.
 fn simplify_expr_with_together(expr: &Expr) -> Expr {
+  if let Some(value) = rational_value_of_square_radicals(expr) {
+    return value;
+  }
   let simplified = simplify_expr(expr);
   // A sum of exponentials regroups to `E^(k_min u) · P(E^(g u))` when that
   // is cheaper: `E^(-t)/2 - E^(-2 t) + E^(-3 t)/2` → `(-1 + E^t)^2/(2
@@ -6785,6 +6788,253 @@ fn prefer_factored_numeric_radical_sum(best: Expr) -> Expr {
   }
 }
 
+/// The rational number that `expr`, a number built from rationals and
+/// square roots of them, is equal to — `(-6 - 2 Sqrt[5])/(1 + Sqrt[5])^2`
+/// is `-1` — or `None` when it is irrational or not such a number.
+fn rational_value_of_square_radicals(expr: &Expr) -> Option<Expr> {
+  // A plain rational is already as simple as it gets.
+  if crate::functions::math_ast::expr_to_rational(expr).is_some() {
+    return None;
+  }
+  let value = QuadraticNumber::from_expr(expr)?;
+  if value.radicand.is_some() && !value.b.is_zero() {
+    return None;
+  }
+  Some(value.a.to_expr())
+}
+
+/// An exact rational with checked `i128` parts, kept in lowest terms with a
+/// positive denominator.
+#[derive(Clone, Copy, PartialEq)]
+struct ExactRational {
+  num: i128,
+  den: i128,
+}
+
+impl ExactRational {
+  fn new(num: i128, den: i128) -> Option<Self> {
+    if den == 0 {
+      return None;
+    }
+    let g = gcd_u128(num.unsigned_abs(), den.unsigned_abs()) as i128;
+    let (mut num, mut den) = (num / g, den / g);
+    if den < 0 {
+      num = num.checked_neg()?;
+      den = den.checked_neg()?;
+    }
+    Some(Self { num, den })
+  }
+  fn int(n: i128) -> Self {
+    Self { num: n, den: 1 }
+  }
+  fn is_zero(&self) -> bool {
+    self.num == 0
+  }
+  fn add(self, o: Self) -> Option<Self> {
+    Self::new(
+      self
+        .num
+        .checked_mul(o.den)?
+        .checked_add(o.num.checked_mul(self.den)?)?,
+      self.den.checked_mul(o.den)?,
+    )
+  }
+  fn mul(self, o: Self) -> Option<Self> {
+    Self::new(self.num.checked_mul(o.num)?, self.den.checked_mul(o.den)?)
+  }
+  fn neg(self) -> Option<Self> {
+    Self::new(self.num.checked_neg()?, self.den)
+  }
+  fn inv(self) -> Option<Self> {
+    Self::new(self.den, self.num)
+  }
+  fn to_expr(self) -> Expr {
+    if self.den == 1 {
+      Expr::Integer(self.num)
+    } else {
+      Expr::FunctionCall {
+        name: "Rational".to_string(),
+        args: vec![Expr::Integer(self.num), Expr::Integer(self.den)].into(),
+      }
+    }
+  }
+}
+
+fn gcd_u128(a: u128, b: u128) -> u128 {
+  if b == 0 { a.max(1) } else { gcd_u128(b, a % b) }
+}
+
+/// `a + b Sqrt[radicand]` with a square-free radicand greater than 1: an
+/// element of one real quadratic field, computed exactly.
+#[derive(Clone, Copy)]
+struct QuadraticNumber {
+  a: ExactRational,
+  b: ExactRational,
+  radicand: Option<i128>,
+}
+
+impl QuadraticNumber {
+  fn rational(a: ExactRational) -> Self {
+    Self {
+      a,
+      b: ExactRational::int(0),
+      radicand: None,
+    }
+  }
+
+  /// The common radicand of two numbers, if they have at most one between
+  /// them.
+  fn join(x: Option<i128>, y: Option<i128>) -> Option<Option<i128>> {
+    match (x, y) {
+      (Some(p), Some(q)) if p != q => None,
+      (Some(p), _) | (_, Some(p)) => Some(Some(p)),
+      (None, None) => Some(None),
+    }
+  }
+
+  fn add(self, o: Self) -> Option<Self> {
+    Some(Self {
+      a: self.a.add(o.a)?,
+      b: self.b.add(o.b)?,
+      radicand: Self::join(self.radicand, o.radicand)?,
+    })
+  }
+
+  fn mul(self, o: Self) -> Option<Self> {
+    let radicand = Self::join(self.radicand, o.radicand)?;
+    let d = ExactRational::int(radicand.unwrap_or(0));
+    Some(Self {
+      a: self.a.mul(o.a)?.add(self.b.mul(o.b)?.mul(d)?)?,
+      b: self.a.mul(o.b)?.add(self.b.mul(o.a)?)?,
+      radicand,
+    })
+  }
+
+  fn inv(self) -> Option<Self> {
+    // 1/(a + b√d) = (a - b√d)/(a² - d b²); the norm is nonzero for a
+    // nonzero number since √d is irrational.
+    let d = ExactRational::int(self.radicand.unwrap_or(0));
+    let norm = self
+      .a
+      .mul(self.a)?
+      .add(self.b.mul(self.b)?.mul(d)?.neg()?)?;
+    let inv = norm.inv()?;
+    Some(Self {
+      a: self.a.mul(inv)?,
+      b: self.b.neg()?.mul(inv)?,
+      radicand: self.radicand,
+    })
+  }
+
+  fn pow(self, n: i128) -> Option<Self> {
+    if n.unsigned_abs() > 64 {
+      return None;
+    }
+    let base = if n < 0 { self.inv()? } else { self };
+    let mut result = Self::rational(ExactRational::int(1));
+    for _ in 0..n.unsigned_abs() {
+      result = result.mul(base)?;
+    }
+    Some(result)
+  }
+
+  /// The square root of a nonnegative rational, `s Sqrt[d]` with `d`
+  /// square-free.
+  fn sqrt(q: ExactRational) -> Option<Self> {
+    if q.num < 0 {
+      return None;
+    }
+    // √(p/q) = √(p q)/q.
+    let mut rest = q.num.checked_mul(q.den)?;
+    if rest > 1_000_000_000_000 {
+      return None;
+    }
+    let mut square = 1i128;
+    let mut f = 2i128;
+    while f * f <= rest {
+      while rest % (f * f) == 0 {
+        rest /= f * f;
+        square *= f;
+      }
+      f += 1;
+    }
+    let coefficient = ExactRational::new(square, q.den)?;
+    Some(if rest == 1 {
+      Self::rational(coefficient)
+    } else {
+      Self {
+        a: ExactRational::int(0),
+        b: coefficient,
+        radicand: Some(rest),
+      }
+    })
+  }
+
+  fn from_expr(e: &Expr) -> Option<Self> {
+    if let Some((n, d)) = crate::functions::math_ast::expr_to_rational(e) {
+      return Some(Self::rational(ExactRational::new(n, d)?));
+    }
+    let power = |base: &Expr, exponent: &Expr| -> Option<Self> {
+      let (n, d) = crate::functions::math_ast::expr_to_rational(exponent)?;
+      match d {
+        1 => Self::from_expr(base)?.pow(n),
+        2 => {
+          let base = Self::from_expr(base)?;
+          if !base.b.is_zero() {
+            return None;
+          }
+          Self::sqrt(base.a)?.pow(n)
+        }
+        _ => None,
+      }
+    };
+    match e {
+      Expr::FunctionCall { name, args } => match name.as_str() {
+        "Plus" => args
+          .iter()
+          .try_fold(Self::rational(ExactRational::int(0)), |acc, t| {
+            acc.add(Self::from_expr(t)?)
+          }),
+        "Times" => args
+          .iter()
+          .try_fold(Self::rational(ExactRational::int(1)), |acc, t| {
+            acc.mul(Self::from_expr(t)?)
+          }),
+        "Power" if args.len() == 2 => power(&args[0], &args[1]),
+        "Sqrt" if args.len() == 1 => power(
+          &args[0],
+          &Expr::FunctionCall {
+            name: "Rational".to_string(),
+            args: vec![Expr::Integer(1), Expr::Integer(2)].into(),
+          },
+        ),
+        _ => None,
+      },
+      Expr::BinaryOp { op, left, right } => {
+        let l = || Self::from_expr(left);
+        let r = || Self::from_expr(right);
+        match op {
+          BinaryOperator::Plus => l()?.add(r()?),
+          BinaryOperator::Minus => {
+            l()?.add(r()?.mul(Self::rational(ExactRational::int(-1)))?)
+          }
+          BinaryOperator::Times => l()?.mul(r()?),
+          BinaryOperator::Divide => l()?.mul(r()?.inv()?),
+          BinaryOperator::Power => power(left, right),
+          _ => None,
+        }
+      }
+      Expr::UnaryOp {
+        op: UnaryOperator::Minus,
+        operand,
+      } => {
+        Self::from_expr(operand)?.mul(Self::rational(ExactRational::int(-1)))
+      }
+      _ => None,
+    }
+  }
+}
+
 // Reuse algebraic-number reduction for a quadratic radical reciprocal,
 // retaining the numerator as a factor instead of constructing a higher root.
 fn prefer_rationalized_radical_quotient(best: Expr) -> Expr {
@@ -6827,7 +7077,14 @@ fn prefer_rationalized_radical_quotient(best: Expr) -> Expr {
   };
   let candidate = (|| -> Option<Expr> {
     let (num, den) = super::together::extract_num_den(&best);
-    classify_radical_term(&num)?;
+    // The numerator may be a single radical term or a sum of them, as in
+    // `(1 + Sqrt[5])/(6 + 2 Sqrt[5])`, which reduces to `(-1 + Sqrt[5])/4`.
+    if !collect_additive_terms(&num)
+      .iter()
+      .all(|term| classify_radical_term(term).is_some())
+    {
+      return None;
+    }
     let terms = collect_additive_terms(&den);
     if terms.len() != 2 {
       return None;
@@ -6846,7 +7103,18 @@ fn prefer_rationalized_radical_quotient(best: Expr) -> Expr {
     let expanded = expand_and_combine(&candidate);
     let expanded = crate::evaluator::evaluate_expr_to_expr(&expanded).ok()?;
     if wl_simplify_count(&expanded) < wl_simplify_count(&candidate) {
-      candidate = expanded;
+      candidate = expanded.clone();
+    }
+    // Over a common denominator the sum is often smaller still:
+    // `(1 + Sqrt[3])/2` rather than `1/2 + Sqrt[3]/2`.
+    let combined =
+      crate::evaluator::evaluate_expr_to_expr(&Expr::FunctionCall {
+        name: "Together".to_string(),
+        args: vec![expanded].into(),
+      })
+      .ok()?;
+    if wl_simplify_count(&combined) < wl_simplify_count(&candidate) {
+      candidate = combined;
     }
     Some(candidate)
   })();
@@ -7813,6 +8081,9 @@ fn flatten_nested_sum(expr: Expr) -> Expr {
 /// Full-simplify variant that also tries Together (whole and sub-expression)
 /// and picks the simpler form.
 fn full_simplify_expr_with_together(expr: &Expr) -> Expr {
+  if let Some(value) = rational_value_of_square_radicals(expr) {
+    return value;
+  }
   let simplified = full_simplify_expr(expr);
   let mut best = simplified.clone();
   let mut best_c = wl_simplify_count(&best);
