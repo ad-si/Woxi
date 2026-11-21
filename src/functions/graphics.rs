@@ -22310,9 +22310,11 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
         "TraditionalForm"
           if args.len() == 1 && !matches!(args[0], Expr::String(_)) =>
         {
+          // Strings keep their quotes, so a one-letter string (`"t"` in
+          // `Row[{Style["i", Italic], "t"}]`) stays upright literal text.
           let boxes = crate::strip_number_precision_markers(
             &crate::evaluator::dispatch::complex_and_special::
-              expr_to_box_form_traditional(&args[0]),
+              expr_to_box_form_traditional_quoted(&args[0]),
           );
           with_single_letter_italics(|| boxes_to_svg(&boxes))
         }

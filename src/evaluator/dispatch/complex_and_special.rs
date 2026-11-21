@@ -5461,6 +5461,7 @@ fn tf_parens(inner: Expr) -> Expr {
 /// contributes its own text, without the quotes a literal would carry.
 fn tf_display(expr: &Expr) -> Expr {
   match expr {
+    Expr::String(_) if TF_QUOTED_DISPLAY.get() => tf(expr),
     Expr::String(s) => tf_string(s),
     other => tf(other),
   }
@@ -8751,6 +8752,29 @@ thread_local! {
   /// and draw a string's box as its bare text.
   static TF_BOX_TEXT: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
+}
+
+thread_local! {
+  /// Set while typesetting for an SVG renderer that sets single-letter
+  /// symbols in italics: displayed strings (a `Row` item, a `Style` body)
+  /// keep their quotes, so the renderer draws them as upright literal text
+  /// rather than mistaking a one-letter string for a symbol.
+  static TF_QUOTED_DISPLAY: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// Like `expr_to_box_form_traditional`, but every string keeps its quotes
+/// (see `TF_QUOTED_DISPLAY`), for renderers that tell literal text from
+/// symbols by them.
+pub fn expr_to_box_form_traditional_quoted(expr: &Expr) -> Expr {
+  struct Reset(bool);
+  impl Drop for Reset {
+    fn drop(&mut self) {
+      TF_QUOTED_DISPLAY.set(self.0);
+    }
+  }
+  let _reset = Reset(TF_QUOTED_DISPLAY.replace(true));
+  tf(expr)
 }
 
 /// Like `expr_to_box_form_traditional`, but for boxes written out as text in
