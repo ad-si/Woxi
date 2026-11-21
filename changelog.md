@@ -12,6 +12,63 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+    3D plot labels keep them too.
+- `ParametricPlot3D` honors the first of a repeated option, as Wolfram does,
+    so `PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws the curve as a tube.
+- A standalone `LineLegend` draws relative `Thickness`/`Dashing` samples at
+    the weight of the plotted curves, honors `LabelStyle`, sets its labels in
+    a proportional face, and continues a multi-line label under its own
+    first line.
+- `Show` keeps a curve's `ColorFunction` on that curve alone: a plot merged
+    with it keeps its own color, and the colored curve stays colored when a
+    `Graphics` comes first (drawn with `VertexColors`).
+- A plot title holding a fraction (`Style[Row[{"P = ", q^(1/e)}], 12]`,
+    `Graphics[…, PlotLabel -> a/b]`, or the title `Show` keeps from a
+    combined plot) stacks the numerator over the denominator, as
+    `TraditionalForm` sets it, instead of writing `1/e` inline.
+- `Text[Row[…]]`, `Text[Column[…]]`, `Text[Grid[…]]` and `Text["…"]` set
+    their text in the proportional text face, and fixed-size `Pane`s wrap
+    such text by its proportional width, so a sentence that fits the pane
+    stays on one line.
+- `Arrow[{path1, path2, …}]` in `Graphics3D` draws one arrow per point list,
+    and named `Arrowheads` sizes (`Small`, `Medium`, …) size 3D arrowheads.
+- `Column[…, "Center"]` reads the string alignment like the symbol.
+- In notebooks, `SetOptions[$FrontEnd, …]` accepts front-end options such as
+    `DynamicEvaluationTimeout` without an `optnf` message.
+- `ImageSize -> {Automatic, h}` adds the margins of `ImagePadding` or a
+    frame to the width the drawing's shape gives, instead of taking them
+    out of it.
+- Woxi Studio fits a picture of automatic size that is taller than a
+    Manipulate's `ContentSize -> {w, h}` area to that height.
+- `Magnify[image, s]` shows the image at `s` times its size in notebooks
+    (also inside a fixed-size `Pane`), and `ExportString` draws it at that
+    size, instead of showing no picture.
+- A `Grid` of pictures with `FrameStyle` keeps the framed picture layout and
+    draws its frame lines in that style, instead of spacing the pictures like
+    a text table.
+- The legacy `PlotLegends`` package's `ShowLegend` draws its boxed legends
+    (`{icon, label}` rows or a color gradient) with `LegendPosition`,
+    `LegendSize`, `LegendShadow`, `LegendBorder` and `LegendBackground`.
+- `Manipulate` controls with a real `{min, max, step}` range take their
+    values from `Range` (`min + k step`), and an initial value matches a
+    choice the way `SameQ` does, so `{{a, 1.8}, 1.6, 2, 0.1}` lights `1.8`.
+- The automatic layout of `Graph` and `GraphPlot` draws a large tree (more
+    than 32 vertices) with a spring-electrical embedding of unit-length edges,
+    as Wolfram does, instead of squeezing it into layers of overlapping disks.
+- `Text[Pane[Style[str, dirs…], w], pos]` honors the `Style` inside the
+    `Pane`: its font size and `TextAlignment` apply, the text wraps at `w`
+    points by the glyph widths of that size, and left- or right-aligned lines
+    hang from the pane's edge.
+- `GraphPlot` gives a computed layout in Wolfram's units (edges 1 long on
+    average, starting at the origin) to its rendering functions and to
+    graphics `Show`n with it, so a caption placed at the center of a drawn
+    cycle lands there. A graph with explicit `VertexCoordinates` is likewise
+    drawn in the caller's coordinates.
+- `Plot3D[…, AxesLabel -> Automatic]` names the two variable axes in
+    `TraditionalForm` (italic letters) and leaves the value axis unlabeled,
+    instead of adding an upright `z` label.
+- Woxi Studio draws the controls of a custom Manipulate layout
+    `Row[{Place[1], Spacer[…], Place[2]}]` side by side on one line.
 - Woxi Studio and PNG/PDF export draw italic text slanted:
     `Style[…, Italic]`, `FontSlant -> Italic` and TraditionalForm variables
     use bundled italic and bold-italic Atkinson Hyperlegible Next faces
