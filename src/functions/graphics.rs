@@ -14387,10 +14387,8 @@ fn label_runs_ranges(runs: &[LabelRun]) -> Vec<StyledRange> {
     if (r.italic || r.bold || r.color.is_some() || r.size.is_some()) && len > 0
     {
       ranges.push(StyledRange {
-        start: to_text(pos),
-        end: origin
-          .get(pos + len - 1)
-          .map_or_else(|| text.chars().count(), |&i| i + 1),
+        start: pos,
+        end: pos + len,
         italic: r.italic,
         bold: r.bold,
         color: r.color,
