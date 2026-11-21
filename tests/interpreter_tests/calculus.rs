@@ -14936,6 +14936,65 @@ mod inverse_laplace_transform {
       "InverseLaplaceTransform[Sqrt[s], s, 1.]"
     );
   }
+
+  // A rational function with symbolic coefficients is split with Apart and
+  // inverted term by term.
+  #[test]
+  fn symbolic_coefficients_via_apart() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + a^2)), s, t]").unwrap(),
+      "a^(-2) - Cos[a*t]/a^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + Pi^2)), s, t]").unwrap(),
+      "Pi^(-2) - Cos[Pi*t]/Pi^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s + Pi)), s, t]").unwrap(),
+      "Pi^(-1) - 1/(E^(Pi*t)*Pi)"
+    );
+  }
+
+  // The second shift theorem applies to a symbolic-coefficient rational
+  // factor as well.
+  #[test]
+  fn time_shift_with_symbolic_coefficients() {
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. \
+         {a -> 3, t -> 5} // Simplify"
+      )
+      .unwrap(),
+      "(1 - Cos[9])/9"
+    );
+  }
+
+  // Linearity over a sum whose terms carry different time shifts:
+  // a finite square wave built from step functions.
+  #[test]
+  fn sum_of_time_shifted_terms() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s - Exp[-2 s]/s, s, t]").unwrap(),
+      "1 - HeavisideTheta[-2 + t]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/s, {i, 0, 3}], s, t]"
+      )
+      .unwrap(),
+      "1 - HeavisideTheta[-3 + t] + HeavisideTheta[-2 + t] - \
+       HeavisideTheta[-1 + t]"
+    );
+    // Value check of the response to that square wave at t = 5/2.
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/(s (s^2 + Pi^2)), \
+         {i, 0, 3}], s, t] /. t -> 5/2 // Simplify"
+      )
+      .unwrap(),
+      "Pi^(-2)"
+    );
+  }
 }
 
 mod laplacian {
