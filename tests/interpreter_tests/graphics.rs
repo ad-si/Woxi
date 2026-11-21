@@ -44099,6 +44099,43 @@ mod manipulate {
     assert_eq!(secs("Automatic"), None);
   }
 
+  // The per-side `FrameLabel -> {{left, right}, {bottom, top}}` form of a
+  // Manipulate shows every set side as a caption (top first); it used to be
+  // dropped entirely, losing e.g. a live `Dynamic[…]` readout on top.
+  #[test]
+  fn per_side_frame_label_sides_are_displays() {
+    let expr = interpret_to_expr(
+      r#"Manipulate[Graphics[Disk[{0, 0}, r]], {r, 1, 2},
+        FrameLabel -> {{None, "east"}, {"south", Dynamic[Style["r = " <> ToString[r], Red]]}}]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("captioned Manipulate");
+    assert_eq!(spec.displays.len(), 3, "{:?}", spec.displays);
+    assert!(
+      spec.displays[0].starts_with("Dynamic[Style["),
+      "{:?}",
+      spec.displays
+    );
+    assert_eq!(spec.displays[1], "\"east\"");
+    assert_eq!(spec.displays[2], "\"south\"");
+
+    // A single label stays one caption; an all-`None` spec adds none.
+    let single = interpret_to_expr(
+      r#"Manipulate[Graphics[Disk[{0, 0}, r]], {r, 1, 2}, FrameLabel -> "radius"]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&single).unwrap();
+    assert_eq!(spec.displays, vec!["\"radius\"".to_string()]);
+    let none = interpret_to_expr(
+      r#"Manipulate[Graphics[Disk[{0, 0}, r]], {r, 1, 2}, FrameLabel -> {{None, None}, {None, None}}]"#,
+    )
+    .unwrap();
+    assert_eq!(
+      extract_manipulate_spec(&none).unwrap().displays,
+      Vec::<String>::new()
+    );
+  }
+
   // A Manipulate whose trailing arguments are all options shows its body
   // with no controls; it used to fall back to an unrendered Manipulate.
   #[test]
