@@ -14415,12 +14415,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (mut z3_min, mut z3_max),
   ] = primitives_bounds(&prims);
 
-  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
-  // longest side of the *displayed* box, before the framing padding below,
-  // which Wolfram does not apply to an automatic 3D range.
-  let mut view_box_side =
-    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
-
   // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
   // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
   if range_padding.is_none() {
@@ -14444,7 +14438,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y3_max = yh;
     z3_min = zl;
     z3_max = zh;
-    view_box_side = (xh - xl).max(yh - yl).max(zh - zl);
   }
 
   // An explicit `PlotRangePadding` widens (or, when negative, narrows)
@@ -14463,6 +14456,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       **hi = padded_hi;
     }
   }
+
+  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
+  // longest side of the *displayed* box, padding included. An automatic
+  // range is padded by 2% per side before it becomes that box, so a scene
+  // under an explicit `ViewAngle` is drawn 1/1.04 of its unpadded size.
+  let view_box_side =
+    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
   // Build box corners
   let box_corners = [
