@@ -12922,14 +12922,20 @@ fn legend_label_svg(
       x + w / 2.0,
     );
   }
+  // Legend entries are typeset in TraditionalForm.
+  let markup =
+    if label.starts_with(crate::functions::graphics::STYLED_LABEL_MARKER) {
+      crate::functions::graphics::box_string_to_svg_scaled(
+        label,
+        RESOLUTION_SCALE as f64,
+      )
+    } else {
+      crate::functions::graphics::traditional_box_string_to_svg(label)
+    };
   format!(
     "<text x=\"{x:.1}\" y=\"{text_y:.1}\" \
      font-family=\"sans-serif\" font-size=\"{font_size:.0}\" \
-     fill=\"{fill}\">{}</text>\n",
-    crate::functions::graphics::box_string_to_svg_scaled(
-      label,
-      RESOLUTION_SCALE as f64
-    ),
+     fill=\"{fill}\">{markup}</text>\n",
   )
 }
 
