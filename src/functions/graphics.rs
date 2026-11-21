@@ -14768,7 +14768,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
   let escaped = render_math_letterlike_glyphs(&escaped);
   let escaped = render_combining_overlines(&escaped);
   if escaped.contains(SUBSCRIPT_START) || escaped.contains(SUPERSCRIPT_START) {
-    escaped
+    stack_adjacent_marked_scripts(&escaped)
       .replace(
         SUBSCRIPT_START,
         "<tspan baseline-shift=\"sub\" font-size=\"70%\">",
@@ -14781,6 +14781,41 @@ pub(crate) fn svg_escape(s: &str) -> String {
   } else {
     escaped
   }
+}
+
+/// Replace each marked subscript immediately followed by a marked
+/// superscript (the pair a `Subsuperscript` label flattens to) with the two
+/// scripts stacked over one another ([`stacked_scripts_markup`]). Other
+/// markers are left for the caller to turn into shifted `<tspan>`s.
+fn stack_adjacent_marked_scripts(s: &str) -> String {
+  let is_marker = |c: char| {
+    matches!(
+      c,
+      SUBSCRIPT_START | SUBSCRIPT_END | SUPERSCRIPT_START | SUPERSCRIPT_END
+    )
+  };
+  let mut out = String::with_capacity(s.len());
+  let mut rest = s;
+  while let Some(start) = rest.find(SUBSCRIPT_START) {
+    out.push_str(&rest[..start]);
+    let after = &rest[start + SUBSCRIPT_START.len_utf8()..];
+    let stacked = after.find(is_marker).and_then(|sub_end| {
+      let tail = after[sub_end..].strip_prefix(SUBSCRIPT_END)?;
+      let tail = tail.strip_prefix(SUPERSCRIPT_START)?;
+      let sup_end = tail.find(is_marker)?;
+      let remainder = tail[sup_end..].strip_prefix(SUPERSCRIPT_END)?;
+      Some((&after[..sub_end], &tail[..sup_end], remainder))
+    });
+    if let Some((sub, sup, remainder)) = stacked {
+      out.push_str(&stacked_scripts_markup(sub, sup));
+      rest = remainder;
+    } else {
+      out.push(SUBSCRIPT_START);
+      rest = after;
+    }
+  }
+  out.push_str(rest);
+  out
 }
 
 /// A character range (`start..end`, counted in `char`s of a label's text)
@@ -40529,12 +40564,19 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       })
       .collect();
     // The lines follow at the text's own line pitch, with no gap between
-    // them.
-    return column_to_svg(&[
-      Expr::List(rows.into()),
-      Expr::Identifier("Left".to_string()),
-      Expr::Integer(0),
-    ]);
+    // them: each line's padded box sits right against the next. The lines
+    // are not flagged as text, as an explicit `Column` spacing is otherwise
+    // measured between the text contents and would pull the lines over
+    // one another by their boxes' blank margins.
+    let not_text = vec![false; rows.len()];
+    return column_to_svg_with_text_items(
+      &[
+        Expr::List(rows.into()),
+        Expr::Identifier("Left".to_string()),
+        Expr::Integer(0),
+      ],
+      Some(&not_text),
+    );
   }
 
   // Split the tail into an optional separator (a non-rule second argument)
@@ -53724,6 +53766,9 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       // Plain text can't stack a sub- and superscript at once, so the two
       // render in sequence: the subscript first, then the superscript.
       "Subsuperscript" | "SubsuperscriptBox" if args.len() == 3 => {
+        if let Some(runs) = marked_subsuperscript_runs(args, italic) {
+          return runs;
+        }
         let mut runs = script_runs(&args[..2], italic, false);
         let sup = to_unicode_script(
           &flatten_label_runs(&manipulate_label_runs(
@@ -54612,27 +54657,60 @@ fn label_line_width_em(line: &str) -> f64 {
 
 /// Sum `char_width` over the drawn characters of a one-line label: the
 /// sub-/superscript markers add nothing and each script level is set at
-/// 70 % of the size around it.
+/// 70 % of the size around it. A marked subscript directly followed by a
+/// marked superscript is drawn stacked (see
+/// [`stack_adjacent_marked_scripts`]), so the pair is as wide as the wider
+/// of the two.
 fn label_line_width(line: &str, char_width: impl Fn(char) -> f64) -> f64 {
   let mut depth = 0i32;
   let mut units = 0.0;
+  // While inside a superscript stacked over the subscript just before it:
+  // that subscript's width and the superscript's so far.
+  let mut stacked: Option<(f64, f64)> = None;
+  // Where the current top-level subscript started, to measure it.
+  let mut sub_start: Option<f64> = None;
+  let mut prev: Option<char> = None;
   for c in line.chars() {
     match c {
-      SUBSCRIPT_START | SUPERSCRIPT_START => depth += 1,
-      SUBSCRIPT_END | SUPERSCRIPT_END => depth = (depth - 1).max(0),
+      SUBSCRIPT_START | SUPERSCRIPT_START => {
+        if depth == 0 {
+          if c == SUBSCRIPT_START {
+            sub_start = Some(units);
+          } else if prev == Some(SUBSCRIPT_END)
+            && let Some(start) = sub_start.take()
+          {
+            stacked = Some((units - start, 0.0));
+          }
+        }
+        depth += 1;
+      }
+      SUBSCRIPT_END | SUPERSCRIPT_END => {
+        depth = (depth - 1).max(0);
+        if depth == 0
+          && c == SUPERSCRIPT_END
+          && let Some((sub_w, sup_w)) = stacked.take()
+        {
+          units += (sup_w - sub_w).max(0.0);
+        }
+      }
       _ => {
         let unicode_script = matches!(
           c,
           '\u{2070}'..='\u{209F}' | '\u{00B9}' | '\u{00B2}' | '\u{00B3}'
         );
-        units += char_width(c)
+        let w = char_width(c)
           * if depth > 0 || unicode_script {
             0.7f64.powi(depth.max(1))
           } else {
             1.0
           };
+        match stacked.as_mut() {
+          Some((_, sup_w)) => *sup_w += w,
+          None => units += w,
+        }
       }
     }
+    prev = Some(c);
   }
   units
 }
@@ -54660,6 +54738,42 @@ fn unquote_box_string(e: &Expr) -> Expr {
     }
     other => other.clone(),
   }
+}
+
+/// Runs for a `Subsuperscript[base, sub, sup]` in a picture label (while
+/// labels are flattened with marked scripts): the base, then the subscript
+/// and the superscript each wrapped in their markers, back to back, so the
+/// SVG writer stacks the two over one another the way the front end sets a
+/// `SubsuperscriptBox` (`SO₄` with `2-` right above the `4`, not after it).
+/// `None` when not marking or when either script is empty.
+fn marked_subsuperscript_runs(
+  args: &[Expr],
+  italic: bool,
+) -> Option<Vec<LabelRun>> {
+  if !MARK_UNMAPPED_SUBSCRIPTS.with(std::cell::Cell::get) {
+    return None;
+  }
+  let script = |e: &Expr| -> Vec<LabelRun> {
+    manipulate_label_runs(&unquote_box_string(e), false)
+      .into_iter()
+      .filter(|r| !r.text.is_empty())
+      .collect()
+  };
+  let (sub, sup) = (script(&args[1]), script(&args[2]));
+  if sub.is_empty() || sup.is_empty() {
+    return None;
+  }
+  let marker = |text: String| LabelRun {
+    text,
+    ..Default::default()
+  };
+  let mut runs = manipulate_label_runs(&args[0], italic);
+  runs.push(marker(SUBSCRIPT_START.to_string()));
+  runs.extend(sub);
+  runs.push(marker(format!("{SUBSCRIPT_END}{SUPERSCRIPT_START}")));
+  runs.extend(sup);
+  runs.push(marker(SUPERSCRIPT_END.to_string()));
+  Some(runs)
 }
 
 /// Build the runs for a `Subscript`/`Superscript`: the base rendered in the
@@ -64757,5 +64871,51 @@ mod grid_display_null_cell_tests {
       DisplayNode::Static { svg: None, text } => assert_eq!(text, ""),
       other => panic!("expected a blank cell, got {other:?}"),
     }
+  }
+}
+
+#[cfg(test)]
+mod stacked_label_script_tests {
+  use super::*;
+
+  fn sub(s: &str) -> String {
+    format!("{SUBSCRIPT_START}{s}{SUBSCRIPT_END}")
+  }
+
+  fn sup(s: &str) -> String {
+    format!("{SUPERSCRIPT_START}{s}{SUPERSCRIPT_END}")
+  }
+
+  /// A subscript directly followed by a superscript is drawn stacked, so
+  /// the pair is only as wide as the wider script; scripts set apart by
+  /// other text still sit in sequence and both count.
+  #[test]
+  fn stacked_pair_counts_the_wider_script() {
+    let stacked = format!("SO{}{}", sub("4"), sup("2-"));
+    assert!(
+      (label_line_width_units(&stacked) - (2.0 + 2.0 * 0.7)).abs() < 1e-9
+    );
+    let wider_sub = format!("N{}{}", sub("abc"), sup("d"));
+    assert!(
+      (label_line_width_units(&wider_sub) - (1.0 + 3.0 * 0.7)).abs() < 1e-9
+    );
+    let apart = format!("x{} y{}", sub("1"), sup("2"));
+    assert!((label_line_width_units(&apart) - (3.0 + 2.0 * 0.7)).abs() < 1e-9);
+  }
+
+  /// Only an adjacent marked pair is stacked; a lone marked script is left
+  /// for the plain `<tspan>` replacement.
+  #[test]
+  fn only_adjacent_pairs_are_stacked() {
+    let stacked =
+      stack_adjacent_marked_scripts(&format!("SO{}{}!", sub("4"), sup("2-")));
+    assert_eq!(
+      stacked,
+      "SO<tspan baseline-shift=\"sub\" font-size=\"70%\">4</tspan>\
+       <tspan dx=\"-0.5em\" baseline-shift=\"super\" font-size=\"70%\">2-\
+       </tspan>!"
+    );
+    let lone = format!("x{} y{}", sub("1"), sup("2"));
+    assert_eq!(stack_adjacent_marked_scripts(&lone), lone);
   }
 }
