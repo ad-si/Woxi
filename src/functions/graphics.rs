@@ -13257,7 +13257,7 @@ fn render_axes(
         // The lines of a multi-line label stay centered on the axis.
         let x = svg_w + AXES_LABEL_GAP_X;
         let lines = text_label_lines(x_label);
-        let pitch = line_pitch(LABEL_FONT);
+        let pitch = line_pitch(label_font);
         svg.push_str(&format!(
           "<text x=\"{x:.2}\" y=\"{:.2}\" fill=\"{x_label_fill}\" font-size=\"{label_font}\" font-family=\"sans-serif\" text-anchor=\"start\">{}</text>\n",
           axis_y_px + center_to_baseline(label_font)
@@ -13276,7 +13276,7 @@ fn render_axes(
       } else {
         // The last line sits above the axis; earlier lines stack upward.
         let lines = text_label_lines(y_label);
-        let pitch = line_pitch(LABEL_FONT);
+        let pitch = line_pitch(label_font);
         svg.push_str(&format!(
           "<text x=\"{axis_x_px:.2}\" y=\"{:.2}\" fill=\"{y_label_fill}\" font-size=\"{label_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
           -AXES_LABEL_GAP_Y
