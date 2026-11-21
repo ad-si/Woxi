@@ -19310,6 +19310,23 @@ thread_local! {
   /// a string is literal text, so its single letters are not math variables
   /// and stay upright.
   static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while drawing the content of a `Text[expr]` outside graphics.
+  /// Wolfram sets math inside text one script level down (a text style's
+  /// `ScriptLevel -> 1`), so even an outermost fraction there is drawn at
+  /// the reduced size of a nested one.
+  static BOX_INLINE_TEXT_MATH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`BOX_INLINE_TEXT_MATH`] set, restoring it after.
+pub(crate) fn with_inline_text_math<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_INLINE_TEXT_MATH.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(BOX_INLINE_TEXT_MATH.with(|c| c.replace(true)));
+  f()
 }
 
 /// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
@@ -19742,7 +19759,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       "FractionBox"
         if crate::functions::graphics::is_fraction_box_args(args) =>
       {
-        let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+        let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0
+          && !BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get)
+        {
           font_size
         } else {
           let floor = 0.75 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get);

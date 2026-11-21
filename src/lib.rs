@@ -3913,8 +3913,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           evaluator::dispatch::io_functions::expr_to_svg(&expr),
         );
       }
-      match functions::graphics::with_text_display_grids(|| {
-        render_grid_if_needed(content)
+      // Math inside text is set one script level down, so its fractions
+      // are drawn at the reduced size of a nested one.
+      match functions::graphics::with_inline_text_math(|| {
+        functions::graphics::with_text_display_grids(|| {
+          render_grid_if_needed(content)
+        })
       }) {
         graphics @ syntax::Expr::Graphics { .. } => {
           keep_fixed_pane_box(&expr, graphics)
