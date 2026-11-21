@@ -16992,7 +16992,9 @@ pub(crate) fn parse_plot_legends(
             // with italic letters, like an axis label.
             None => {
               crate::functions::graphics::traditional_math_axis_label(&item)
-                .or_else(|| crate::functions::graphics::styled_axis_label(&item))
+                .or_else(|| {
+                  crate::functions::graphics::styled_axis_label(&item)
+                })
                 .unwrap_or_else(|| expr_to_string(&item))
             }
           },
