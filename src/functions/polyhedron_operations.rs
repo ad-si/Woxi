@@ -357,13 +357,40 @@ fn corner_faces(faces: &[Vec<Vec3>], ratio: f64) -> Vec<Expr> {
   caps
 }
 
+/// Whether the faces bound a closed solid: every edge (ignoring the
+/// zero-length ones a face with a repeated corner has) is shared by
+/// exactly two faces. An open surface — a sheet, a tent of quads — has
+/// boundary edges that only one face uses.
+fn is_closed_surface(faces: &[Vec<Vec3>]) -> bool {
+  use std::collections::HashMap;
+  let mut edge_uses: HashMap<([i64; 3], [i64; 3]), usize> = HashMap::new();
+  for face in faces {
+    let n = face.len();
+    for i in 0..n {
+      let a = point_key(face[i]);
+      let b = point_key(face[(i + 1) % n]);
+      if a == b {
+        continue;
+      }
+      let key = if a < b { (a, b) } else { (b, a) };
+      *edge_uses.entry(key).or_insert(0) += 1;
+    }
+  }
+  !edge_uses.is_empty() && edge_uses.values().all(|&uses| uses == 2)
+}
+
 /// `` PolyhedronOperations`Truncate[expr, ratio] ``: corner-cut every face
-/// and, for a closed solid, cap each cut-off vertex with a new face.
+/// and, for a closed solid, cap each cut-off vertex with a new face. The
+/// faces of an open surface are only corner-cut, so its interior vertices
+/// become holes (as the Wolfram package draws them), not capped corners.
 pub(crate) fn truncate(expr: &Expr, ratio: f64) -> Expr {
   let resolved = resolve_transforms(expr);
   let cut = map_faces(&resolved, &|pts| truncate_face(pts, ratio));
   let mut faces = Vec::new();
   collect_faces(&resolved, &mut faces);
+  if !is_closed_surface(&faces) {
+    return cut;
+  }
   let caps = corner_faces(&faces, ratio);
   if caps.is_empty() {
     cut
