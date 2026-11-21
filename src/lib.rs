@@ -3822,6 +3822,29 @@ fn wraps_a_raster_image(expr: &syntax::Expr) -> bool {
 /// render it as SVG and return `-Graphics-`. Grid/TextGrid stay symbolic
 /// during evaluation so that part-assignment works; rendering only happens
 /// at the output stage.  Also unwraps TraditionalForm[Grid[…]] wrappers.
+/// A table drawn out of a `Pane[content, {w, h}]` (also under `Text`)
+/// still takes up the pane's whole `w`×`h` box, placed in it by the pane's
+/// `Alignment`, as in a notebook: the table alone would shrink the area a
+/// Manipulate reserved for it and drop the centering. Anything else is
+/// returned as drawn.
+fn keep_fixed_pane_box(
+  source: &syntax::Expr,
+  rendered: syntax::Expr,
+) -> syntax::Expr {
+  let Some((w, h, align, shrink)) = pane_fixed_size(source) else {
+    return rendered;
+  };
+  let auto_sized = functions::graphics::pane_picture_is_auto_sized(&rendered);
+  let syntax::Expr::Graphics { svg, .. } = &rendered else {
+    return rendered;
+  };
+  // The boxed picture replaces the bare table the cell would show.
+  remove_captured_graphics(svg);
+  graphics_result(functions::graphics::clip_svg_to_pane_box(
+    svg, w, h, align, auto_sized, shrink,
+  ))
+}
+
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     // `Text[Grid[…]]`/`Text[TextGrid[…]]` — the Demonstrations idiom for a
@@ -3868,7 +3891,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       match functions::graphics::with_text_display_grids(|| {
         render_grid_if_needed(content)
       }) {
-        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        graphics @ syntax::Expr::Graphics { .. } => {
+          keep_fixed_pane_box(&expr, graphics)
+        }
         _ => expr,
       }
     }
@@ -3898,7 +3923,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         content = inner;
       }
       content.clone()
-    } // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane only
+    } // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane
     // sizes the table `Text` marks for drawing. A pane around a bare
     // `Grid` of plain text stays textual, so only look through to `Text`.
     syntax::Expr::FunctionCall { name, args }
@@ -3909,7 +3934,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         ) =>
     {
       match render_grid_if_needed(args[0].clone()) {
-        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        graphics @ syntax::Expr::Graphics { .. } => {
+          keep_fixed_pane_box(&expr, graphics)
+        }
         _ => expr,
       }
     }
@@ -6119,6 +6146,23 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
   svg.starts_with("<svg").then_some(svg)
 }
 
+/// The picture of a `Legended[graphic, legend]` around a single graphic
+/// whose legend can be drawn: the graphic with the legend set beside it.
+/// `None` when there is no such legend to add.
+fn legended_picture_svg(expr: &syntax::Expr) -> Option<String> {
+  let syntax::Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Legended" || args.len() != 2 {
+    return None;
+  }
+  let syntax::Expr::Graphics { svg: plot, .. } = &args[0] else {
+    return None;
+  };
+  let svg = evaluator::expr_to_svg(expr);
+  (svg.starts_with("<svg") && svg != *plot).then_some(svg)
+}
+
 /// The SVG an already-evaluated graphics item carries on itself — from
 /// `Expr::Graphics { svg, .. }`, peeling a `Style[…]` wrapper first. `None`
 /// for the bare `-Graphics-`/`-Image-` text placeholder, which carries no
@@ -6163,6 +6207,14 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if let Some(composed) = composed_layout_svg(inner) {
     clear_captured_graphics();
     return graphics_result(composed);
+  }
+  // A legend around a single picture keeps its symbolic echo
+  // (`Legended[-Graphics-, …]`), but the picture a notebook shows is the
+  // plot with its legend set beside or below it.
+  if let Some(svg) = legended_picture_svg(inner) {
+    clear_captured_graphics();
+    capture_graphics(&text_in_view(svg));
+    return expr;
   }
 
   // A list (or nested lists) of pictures that carry their own renderings is

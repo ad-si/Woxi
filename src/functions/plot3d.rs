@@ -9443,7 +9443,13 @@ fn collect_3d_primitives(
             {
               (pts, Vec::new())
             } else {
-              split_nested_loops(pts)
+              let (points, holes, filled) = split_nested_loops(pts);
+              // Loops that retrace each other cancel under the even-odd
+              // rule: only their outline is left.
+              if !filled {
+                style.faces = false;
+              }
+              (points, holes)
             };
             prims.push(Primitive3D::Polygon3D {
               points,
@@ -10948,9 +10954,19 @@ fn resolve_named_gradients(expr: &Expr) -> Expr {
 /// Wolfram fills such a polygon with the even-odd rule, so a loop lying
 /// inside the first one is a hole; any loop that does not is kept as part
 /// of the outline, leaving the polygon untouched.
+///
+/// The even-odd rule also decides the degenerate cases a "perforated
+/// face" (`Join[pts, {p1}, inner, {q1}]` with `inner` shrunk toward the
+/// center) runs into at its extremes:
+/// - a loop that retraces an earlier one encloses its area twice, so the
+///   pair cancels; when nothing else is left, the face is empty and only
+///   its outline is drawn (the third result is `false`);
+/// - pieces enclosing no area (a hole collapsed onto one point, and the
+///   bridge leading to it) fill nothing and are dropped, so the bridge is
+///   not stroked across the face.
 fn split_nested_loops(
   points: Vec<Point3D>,
-) -> (Vec<Point3D>, Vec<Vec<Point3D>>) {
+) -> (Vec<Point3D>, Vec<Vec<Point3D>>, bool) {
   let same = |a: &Point3D, b: &Point3D| {
     (a.x - b.x).abs() < 1e-12
       && (a.y - b.y).abs() < 1e-12
@@ -10973,8 +10989,63 @@ fn split_nested_loops(
   if current.len() >= 3 {
     loops.push(current);
   }
+  // A ring with fewer than three distinct corners encloses no area.
+  loops.retain(|ring| {
+    let mut distinct: Vec<&Point3D> = Vec::new();
+    for p in ring {
+      if !distinct.iter().any(|q| same(q, p)) {
+        distinct.push(p);
+      }
+    }
+    distinct.len() >= 3
+  });
+  // Whether two rings trace the same cycle (from any start, either way).
+  let same_cycle = |a: &[Point3D], b: &[Point3D]| {
+    let n = a.len();
+    if n != b.len() {
+      return false;
+    }
+    (0..n).any(|shift| {
+      (0..n).all(|i| same(&a[i], &b[(i + shift) % n]))
+        || (0..n).all(|i| same(&a[i], &b[(shift + n - i) % n]))
+    })
+  };
+  let mut cancelled = vec![false; loops.len()];
+  for i in 0..loops.len() {
+    if cancelled[i] {
+      continue;
+    }
+    if let Some(j) = (i + 1..loops.len())
+      .find(|&j| !cancelled[j] && same_cycle(&loops[i], &loops[j]))
+    {
+      cancelled[i] = true;
+      cancelled[j] = true;
+    }
+  }
+  if cancelled.iter().all(|&c| c) {
+    return match loops.into_iter().next() {
+      Some(outline) => (outline, Vec::new(), false),
+      None => (points, Vec::new(), true),
+    };
+  }
+  let had_cancelled = cancelled.iter().any(|&c| c);
+  let loops: Vec<Vec<Point3D>> = loops
+    .into_iter()
+    .zip(cancelled)
+    .filter_map(|(ring, c)| (!c).then_some(ring))
+    .collect();
   if loops.len() < 2 {
-    return (points, Vec::new());
+    // Only one loop encloses area: it alone is the face. The polygon's
+    // own point list is kept when it visits no corner off that loop (an
+    // ordinary polygon, or one that repeats a corner), so its per-vertex
+    // data still lines up.
+    let ring = loops.into_iter().next().unwrap_or_default();
+    let on_ring = |p: &Point3D| ring.iter().any(|q| same(q, p));
+    return if !had_cancelled && points.iter().all(on_ring) {
+      (points, Vec::new(), true)
+    } else {
+      (ring, Vec::new(), true)
+    };
   }
   // Drop the axis the outer loop's normal points along; containment is
   // then a 2D ray cast.
@@ -11011,11 +11082,11 @@ fn split_nested_loops(
     .iter()
     .all(|l| l.iter().all(|p| inside(&loops[0], p)))
   {
-    return (points, Vec::new());
+    return (points, Vec::new(), true);
   }
   let mut it = loops.into_iter();
   let outer = it.next().unwrap_or_default();
-  (outer, it.collect())
+  (outer, it.collect(), true)
 }
 
 /// The (unnormalized) Newell normal of a polygon: twice its vector area,
@@ -13659,10 +13730,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Below`, a skew view) are drawn at the sphere-framed size, about 0.7×
   // the outline-fitted one. A Manipulate's scene with the default camera
   // and no range (a tall elevator building at `ImageSize -> {300, 400}`)
-  // still fits its box outline to the frame.
+  // still fits its box outline to the frame. An explicit `AspectRatio -> r`
+  // instead asks for the projected box to be stretched to the picture's
+  // shape: the FrontEnd's snapshots of such a frame show the contents
+  // filling the whole picture, squashed or widened to it.
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
-    || (!spherical_region_off && manipulate_frame && explicitly_framed)
+    || (!spherical_region_off
+      && manipulate_frame
+      && explicitly_framed
+      && aspect_ratio.is_none())
     || (!spherical_region_off
       && explicitly_framed
       && !show_box
@@ -23402,7 +23479,7 @@ fn parametric_plot3d_curve_ast(
   let dt = (t_max - t_min) / SAMPLE_N as f64;
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
-  let mut plot_style: Option<&Expr> = None;
+  let mut plot_style: Option<Expr> = None;
   let mut color_function: Option<Expr> = None;
   let mut color_scaling = true;
   let mut plot_range: Option<[(f64, f64); 3]> = None;
@@ -23415,7 +23492,14 @@ fn parametric_plot3d_curve_ast(
       && let Expr::Identifier(name) = pattern.as_ref()
       && name == "PlotStyle"
     {
-      plot_style = Some(replacement.as_ref());
+      // ParametricPlot3D holds its arguments, so the style arrives as
+      // written. Evaluate it first: a computed style such as
+      // `If[tube, {Tube[r]}, Automatic]` (a Manipulate checkbox toggling
+      // the tube) must reduce to its `Tube` before that is lifted out.
+      plot_style = Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      );
     } else if let Expr::Rule {
       pattern,
       replacement,
@@ -23451,7 +23535,7 @@ fn parametric_plot3d_curve_ast(
   // radius `r` instead of as a line — how a Demonstration gives a knot its
   // thickness. It is not a color or a thickness, so it comes out of the
   // style list and turns each sampled polyline into a `Tube` instead.
-  let (tube_args, plot_style) = match plot_style {
+  let (tube_args, plot_style) = match &plot_style {
     Some(ps) => {
       let (tube, rest) = take_tube_directive(ps);
       (tube, Some(rest))

@@ -14090,6 +14090,7 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Parse ImageResolution option. 72 dpi rasterizes one printer point
   // (one SVG unit) to one pixel.
   let mut dpi: f64 = 72.0;
+  let mut explicit_resolution = false;
   for opt in &args[1..] {
     if let Expr::Rule {
       pattern,
@@ -14101,8 +14102,9 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       match replacement.as_ref() {
         Expr::Integer(n) => dpi = *n as f64,
         Expr::Real(f) => dpi = *f,
-        _ => {}
+        _ => continue,
       }
+      explicit_resolution = true;
     }
   }
 
@@ -14147,7 +14149,9 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   }
 
   // Get SVG string from the expression
-  let svg_str = if let Some(svg) = graphics_svg(&args[0]) {
+  let graphics = graphics_svg(&args[0]);
+  let is_graphics = graphics.is_some();
+  let svg_str = if let Some(svg) = graphics {
     svg
   } else {
     match &args[0] {
@@ -14190,9 +14194,44 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An explicit RasterSize wins; otherwise an ImageSize box holds the
   // drawing scaled to fit, centered, without distorting it.
   match (raster_size, image_size) {
+    // Typeset content (text, formulas) is laid out at its own size: a
+    // `w` x `h` raster is a pane around it, not a box it is stretched to
+    // fill. Like WL, the content is drawn at 144 dpi (`ImageResolution`
+    // when given) and centered in the raster, cropped if it overflows.
+    (Some((w, Some(h))), _) if !is_graphics => {
+      let pane_dpi = if explicit_resolution { dpi } else { 144.0 };
+      rasterize_svg_with(
+        &svg_str,
+        pane_dpi,
+        Some((w, Some(h))),
+        RasterFit::Natural,
+        None,
+      )
+    }
+    // Without a RasterSize, typeset content keeps its natural size too,
+    // centered in a canvas of the ImageSize (a scalar ImageSize fixes only
+    // the width).
+    (None, Some((w, h))) if !is_graphics => {
+      let scale = dpi / 72.0;
+      let canvas = (w as f64 / scale, h.map(|h| h as f64 / scale));
+      rasterize_svg_with(&svg_str, dpi, None, RasterFit::Stretch, Some(canvas))
+    }
     (None, Some(size)) => rasterize_svg_fit(&svg_str, dpi, size),
     _ => rasterize_svg_to(&svg_str, dpi, raster_size),
   }
+}
+
+/// How [`rasterize_svg_with`] places the drawing in an explicit `w` x `h`
+/// raster.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy, PartialEq)]
+enum RasterFit {
+  /// Scaled independently along each axis to fill the raster exactly.
+  Stretch,
+  /// Scaled uniformly to fit inside, and centered.
+  Contain,
+  /// Kept at its size for the resolution, and centered.
+  Natural,
 }
 
 /// Rasterize `svg_str` into a `w` x `h` pixel box (`h` following the aspect
@@ -14207,7 +14246,7 @@ fn rasterize_svg_fit(
   let Some(h) = h else {
     return rasterize_svg_to(svg_str, dpi, Some((w, None)));
   };
-  rasterize_svg_with(svg_str, dpi, Some((w, Some(h))), true)
+  rasterize_svg_with(svg_str, dpi, Some((w, Some(h))), RasterFit::Contain, None)
 }
 
 /// Rasterize an SVG string to an Expr::Image at the given DPI.
@@ -14228,17 +14267,21 @@ fn rasterize_svg_to(
   dpi: f64,
   raster_size: Option<(u32, Option<u32>)>,
 ) -> Result<Expr, InterpreterError> {
-  rasterize_svg_with(svg_str, dpi, raster_size, false)
+  rasterize_svg_with(svg_str, dpi, raster_size, RasterFit::Stretch, None)
 }
 
-/// [`rasterize_svg_to`], where `fit` keeps the drawing's aspect ratio for a
-/// `(w, Some(h))` size: it is scaled to fit inside and centered.
+/// [`rasterize_svg_to`], where `fit` decides how the drawing is placed in
+/// a `(w, Some(h))` raster. A `canvas` of `(w, h)` printer's points (`h`
+/// defaulting to the drawing's height) places the drawing unscaled at the
+/// center of a canvas of that size, cropping what overflows; the canvas is
+/// what gets rasterized.
 #[cfg(not(target_arch = "wasm32"))]
 fn rasterize_svg_with(
   svg_str: &str,
   dpi: f64,
   raster_size: Option<(u32, Option<u32>)>,
-  fit: bool,
+  fit: RasterFit,
+  canvas: Option<(f64, Option<f64>)>,
 ) -> Result<Expr, InterpreterError> {
   use std::sync::Arc as StdArc;
 
@@ -14266,17 +14309,31 @@ fn rasterize_svg_with(
   // SVG units are printer points (1/72 inch), as in Wolfram Language:
   // `ImageSize -> 360` at `ImageResolution -> 144` is 720 pixels wide.
   let scale = dpi / 72.0;
-  let (svg_w, svg_h) = (svg_size.width() as f64, svg_size.height() as f64);
+  let (draw_w, draw_h) = (svg_size.width() as f64, svg_size.height() as f64);
+  // The area that is rasterized, and where the drawing sits in it.
+  let (svg_w, svg_h) = match canvas {
+    Some((cw, ch)) => (cw, ch.unwrap_or(draw_h)),
+    None => (draw_w, draw_h),
+  };
+  let (origin_x, origin_y) = ((svg_w - draw_w) / 2.0, (svg_h - draw_h) / 2.0);
   let (pix_w, pix_h, scale_x, scale_y) = match raster_size {
-    Some((w, Some(h))) if fit => {
+    Some((w, Some(h))) if fit == RasterFit::Contain => {
       let k = (w as f64 / svg_w).min(h as f64 / svg_h);
       (w, h, k, k)
     }
+    Some((w, Some(h))) if fit == RasterFit::Natural => (w, h, scale, scale),
     Some((w, Some(h))) => (w, h, w as f64 / svg_w, h as f64 / svg_h),
     Some((w, None)) => {
       let k = w as f64 / svg_w;
       (w, ((svg_h * k).round() as u32).max(1), k, k)
     }
+    // A canvas came from a whole-pixel ImageSize: keep that pixel size.
+    None if canvas.is_some() => (
+      ((svg_w * scale).round() as u32).max(1),
+      ((svg_h * scale).round() as u32).max(1),
+      scale,
+      scale,
+    ),
     None => (
       (svg_w * scale).ceil() as u32,
       (svg_h * scale).ceil() as u32,
@@ -14306,9 +14363,12 @@ fn rasterize_svg_with(
     (pix_w as f64 - svg_w * scale_x) / 2.0,
     (pix_h as f64 - svg_h * scale_y) / 2.0,
   );
-  let transform =
-    resvg::tiny_skia::Transform::from_scale(scale_x as f32, scale_y as f32)
-      .post_translate(dx as f32, dy as f32);
+  let transform = resvg::tiny_skia::Transform::from_translate(
+    origin_x as f32,
+    origin_y as f32,
+  )
+  .post_scale(scale_x as f32, scale_y as f32)
+  .post_translate(dx as f32, dy as f32);
   resvg::render(&tree, transform, &mut pixmap.as_mut());
 
   // The drawing sits on an opaque white background, so the alpha channel

@@ -191,6 +191,18 @@ Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 `ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
 prints `0.1 × 10^-6` without padding.
 
+### A `NumberForm` nested in a list or call shows its head
+
+At the top level a number-display form prints as its formatted number, but
+inside another expression Woxi keeps the wrapper:
+
+```sh
+wolframscript -code '{NumberForm[1.23456789, 9], 2.5}'  # {1.23456789, 2.5}
+woxi eval '{NumberForm[1.23456789, 9], 2.5}'            # {NumberForm[1.23456789, 9], 2.5}
+```
+
+The same happens under `ToString` and for `f[NumberForm[…]]`.
+
 ### `NumberForm`/`ScientificForm` round half-to-even, wolframscript rounds half-up
 
 ```sh
@@ -2737,9 +2749,18 @@ differences:
   with `"MaxCellMeasure"` 0.0005 and 0.0001; Woxi gives 0.407, stable
   under grid refinement), and on the line `r == 0`, where the equation's
   `1/(r + 10^-6)` regularization is singular, Woxi's values exceed 1.
-- Two space dimensions plus time (SpatioTemporalEpidemicSpread) and
-  non-rectangular regions (StokesFlowInContainerWithConcaveBottom) are not
-  covered.
+- Two space dimensions plus time (`NDSolve[eqns, u, {x, …}, {y, …}, {t,
+  …}]`) is covered for one unknown on a rectangle
+  (`src/functions/ode_ast/pde_mol2d.rs`): second-order finite differences
+  on a 32 × 32 cell-centered grid, Dirichlet, `NeumannValue` (affine in
+  the unknown) or zero-flux edges, Rodas4 in time. Values agree with the
+  exact solutions to 3–4 digits (the convectively cooled finite cylinder
+  of UnsteadyStateHeatConductionInACylinder: center temperature 0.69262
+  vs. 0.69274 at `τ == 0.15`), but are not WL's finite element numbers,
+  and the solution is a grid `InterpolatingFunction`, not a mesh one.
+  Coupled systems (SpatioTemporalEpidemicSpread), mixed derivatives
+  `u_xy` and non-rectangular regions (StokesFlowInContainerWithConcaveBottom)
+  are not covered.
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).
@@ -5245,7 +5266,9 @@ WL's `Rasterize` defaults to 144 dpi and tags the image with
 `Image` carries no resolution, so `Rasterize` keeps 72 dpi (1x) by default.
 The same holds for `ImageSize -> s`: Woxi's raster is `s` pixels wide
 where WL's is `2 s` (both display at `s` points). An explicit `ImageResolution`, and `Export` to a raster format (default
-144 dpi), match WL.
+144 dpi), match WL. An explicit `RasterSize -> {w, h}` around text or a
+formula also matches WL: the content keeps its size at 144 dpi and is
+centered in the raster rather than stretched to fill it.
 
 Topology measured on a rasterized graphic follows from this: a `Thick` curve
 is 2 pixels wide at 1x, and its binarized pixels are partly only diagonally
@@ -5484,6 +5507,22 @@ fixed 100×100 grid, whatever the options say. Wolfram starts from a
 with `PlotPoints -> 5`, and 27 with `PlotPoints -> 5, MaxRecursion -> 0`.
 Woxi makes 10000 every time. The pictures look alike, but an expensive body
 (a compiled iteration, say) runs about 10–50 times longer than in Wolfram.
+
+### Frameless `ContourPlot`: band colors and side padding
+
+Seen in the UnsteadyStateHeatConductionInACylinder Demonstration
+(`ContourPlot[…, Contours -> 10, Frame -> False, ColorFunction ->
+"TemperatureMap", AspectRatio -> 5, ImageSize -> 80]` beside its own
+`Rotate[…, Pi]`), compared with the notebook's stored snapshot (not yet
+checked with wolframscript):
+
+- The snapshot's bands use the `TemperatureMap` colors at `k/11` for every
+  `k` but 1, so the band just below the top is `RGB[223, 132, 55]/255`.
+  Woxi colors the middle bands by their midpoint value and skips `k == 10`
+  instead: its second band from the top is `RGB[236, 188, 66]/255`, one
+  step lower.
+- Woxi pads a frameless plot by about 2 px on each side, so the two halves
+  leave a thin white seam where the snapshot's halves touch.
 
 ### Plot parts nest differently
 
@@ -9860,6 +9899,10 @@ session) and still need checking:
   `Style[…]` (not its color or weight), and big tick labels show the known
   Arial-versus-Atkinson width gap more: at 30 pt the first glyph of a long
   left tick label touches the image edge.
+- A `PlotLabel` holding a stacked fraction (`Row[{…, a/b, …}]`, also inside
+  `Style[…, size]`) is typeset as one picture by the box layout, whose text
+  is set in the monospace typesetting font; Wolfram keeps the title's
+  proportional font, so such a title comes out wider than the reference.
 
 ## Unit conformance follow-up (2026-11-06)
 
@@ -10522,3 +10565,22 @@ size but still in the default sans-serif upright face; Wolfram sets them in
 italic Times like the rest of the plot's text. `LabelStyleSpec` carries only
 the color, size, weight and slant, and the tick label writer applies none
 of the face or slant.
+
+### `"M10DefaultDensityGradient"` is not a known color scheme
+
+Contour plots saved by Mathematica 14.1 and earlier color their bands and
+their `BarLegend` with `Blend["M10DefaultDensityGradient", #] &` (dark
+blue `RGBColor[0.148, 0.33, 0.54]` through gray and orange to
+`RGBColor[1., 0.95, 0.75]`). Woxi does not know that gradient's stops, so
+`Blend` of it stays unevaluated and a stored legend that uses it is drawn
+with the gray fallback ramp, while the stored plot's bands (explicit
+`RGBColor`s) are right. The exact stops have not been measured.
+
+### Named `Pane` widths other than `Medium`
+
+`Pane[text, Medium]` used as a graphics `Text` label wraps at about 180
+points (measured from a saved snapshot, half a `Graphics`' `Medium` of
+360). Woxi assumes the other named sizes scale the same way (`Tiny` 50,
+`Small` 90, `Large` 288), which has not been checked against wolframscript.
+Woxi's text wrapping also estimates 7 points per character of the default
+font, so the wrapped label can break into more lines than Wolfram's.

@@ -2213,3 +2213,88 @@ mod box_and_label_options {
     }
   }
 }
+
+/// A "perforated" face is one polygon running round its outline, across a
+/// bridge to an inner copy shrunk toward the center, and round that copy
+/// (`Join[pts, {p1}, inner, {q1}]`). Wolfram fills it with the even-odd
+/// rule, which also settles the two extremes of the shrink factor.
+mod perforated_faces {
+  use super::*;
+
+  /// The corners as a Wolfram list `{{x, y, z}, …}`.
+  fn coords(outline: &[[i64; 3]]) -> String {
+    let pts: Vec<String> = outline
+      .iter()
+      .map(|p| format!("{{{}, {}, {}}}", p[0], p[1], p[2]))
+      .collect();
+    format!("{{{}}}", pts.join(", "))
+  }
+
+  /// The face's corners, then the inner ring `{1 - d, d} . {p, center}`.
+  fn perforated(outline: &[[i64; 3]], d: &str) -> String {
+    let pts = coords(outline);
+    format!(
+      "With[{{pts = {pts}, d = {d}}}, Module[{{inner = Map[{{1 - d, d}} . {{#, Mean[pts]}} &, pts]}}, \
+       Polygon[Join[pts, pts[[{{1}}]], inner, inner[[{{1}}]]]]]]"
+    )
+  }
+
+  const SQUARE: [[i64; 3]; 4] = [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0]];
+  const TRIANGLE: [[i64; 3]; 3] = [[0, 0, 0], [3, 0, 1], [0, 3, 2]];
+
+  fn scene(prims: &str) -> String {
+    svg(&format!("Graphics3D[{{Yellow, {prims}}}, Boxed -> False]"))
+  }
+
+  /// With the inner ring collapsed onto the center (`d = 1`) the hole
+  /// encloses nothing: the face is drawn exactly as the plain polygon,
+  /// without the bridge stroked from a corner to the center.
+  #[test]
+  fn collapsed_hole_draws_the_plain_face() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let plain = format!("Polygon[{}]", coords(outline));
+      for d in ["1", "1.0"] {
+        assert_eq!(
+          scene(&perforated(outline, d)),
+          scene(&plain),
+          "d = {d} for {plain}"
+        );
+      }
+    }
+  }
+
+  /// With the inner ring on the outline itself (`d = 0`) the face is
+  /// enclosed twice, so the even-odd rule leaves it unfilled and only its
+  /// outline is drawn — as `FaceForm[None]` draws it.
+  #[test]
+  fn retraced_outline_leaves_the_face_empty() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let hollow = format!("FaceForm[None], Polygon[{}]", coords(outline));
+      for d in ["0", "0.0"] {
+        let s = scene(&perforated(outline, d));
+        assert_eq!(s, scene(&hollow), "d = {d} for {hollow}");
+        // Any polygon left is an unfilled outline.
+        assert!(
+          s.lines()
+            .filter(|l| l.starts_with("<polygon"))
+            .all(|l| l.contains("fill-opacity=\"0\"")),
+          "face still filled: {s}"
+        );
+        assert!(
+          s.contains("stroke=\"rgb(64,64,64)\""),
+          "outline missing: {s}"
+        );
+      }
+    }
+  }
+
+  /// In between, the inner ring is a hole: the face stays filled but
+  /// takes more pieces than the solid face to go round it.
+  #[test]
+  fn partial_shrink_cuts_a_hole() {
+    let holed = scene(&perforated(&SQUARE, "0.5"));
+    let solid = scene(&perforated(&SQUARE, "1"));
+    assert!(!holed.contains("fill-opacity=\"0\""));
+    assert!(polygon_count(&holed) > polygon_count(&solid));
+  }
+}
