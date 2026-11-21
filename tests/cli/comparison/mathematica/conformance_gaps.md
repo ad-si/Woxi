@@ -191,6 +191,18 @@ Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 `ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
 prints `0.1 × 10^-6` without padding.
 
+### A `NumberForm` nested in a list or call shows its head
+
+At the top level a number-display form prints as its formatted number, but
+inside another expression Woxi keeps the wrapper:
+
+```sh
+wolframscript -code '{NumberForm[1.23456789, 9], 2.5}'  # {1.23456789, 2.5}
+woxi eval '{NumberForm[1.23456789, 9], 2.5}'            # {NumberForm[1.23456789, 9], 2.5}
+```
+
+The same happens under `ToString` and for `f[NumberForm[…]]`.
+
 ### `NumberForm`/`ScientificForm` round half-to-even, wolframscript rounds half-up
 
 ```sh
@@ -2003,6 +2015,20 @@ a positive lower bound — `RandomReal[{$MinNumber, x}]` in Demonstration
 
 ## Algebra and calculus
 
+### `Solve` of a radical identity in one unknown finds a spurious root
+
+An equation that holds for every value of its unknown, with radical
+coefficients on both sides and a sum under a denominator, is solved as if
+its (vanishing) coefficient were not zero:
+
+```sh
+wolframscript -code 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'  # {{}}
+woxi eval 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'            # {{c -> 0}}
+```
+
+Systems of two or more such equations are solved by Gaussian elimination
+and are not affected.
+
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
 ```sh
@@ -2737,9 +2763,18 @@ differences:
   with `"MaxCellMeasure"` 0.0005 and 0.0001; Woxi gives 0.407, stable
   under grid refinement), and on the line `r == 0`, where the equation's
   `1/(r + 10^-6)` regularization is singular, Woxi's values exceed 1.
-- Two space dimensions plus time (SpatioTemporalEpidemicSpread) and
-  non-rectangular regions (StokesFlowInContainerWithConcaveBottom) are not
-  covered.
+- Two space dimensions plus time (`NDSolve[eqns, u, {x, …}, {y, …}, {t,
+  …}]`) is covered for one unknown on a rectangle
+  (`src/functions/ode_ast/pde_mol2d.rs`): second-order finite differences
+  on a 32 × 32 cell-centered grid, Dirichlet, `NeumannValue` (affine in
+  the unknown) or zero-flux edges, Rodas4 in time. Values agree with the
+  exact solutions to 3–4 digits (the convectively cooled finite cylinder
+  of UnsteadyStateHeatConductionInACylinder: center temperature 0.69262
+  vs. 0.69274 at `τ == 0.15`), but are not WL's finite element numbers,
+  and the solution is a grid `InterpolatingFunction`, not a mesh one.
+  Coupled systems (SpatioTemporalEpidemicSpread), mixed derivatives
+  `u_xy` and non-rectangular regions (StokesFlowInContainerWithConcaveBottom)
+  are not covered.
 - A `DirichletCondition` written inside an equation's right-hand side
   (`D[u[x, t], t] == … + DirichletCondition[…]`) stays unevaluated; WL fails
   on it too (`NDSolveValue::fempsf`).
@@ -3828,6 +3863,18 @@ reproducible. 2×2 float matrices with complex eigenvalues stay as before.
 
 Generic dense float matrices also differ in the last 1–2 digits from
 WL/LAPACK.
+
+### Eigenvalues of arbitrary-precision matrices come back at machine precision
+
+```sh
+wolframscript -code 'Eigenvalues[{{2.6`6, -0.7`6, 0.2`6}, {-0.7`6, 0.3`6, -0.1`6}, {0.2`6, -0.1`6, 0.1`6}}]'  # arbitrary-precision reals (not measured)
+woxi eval 'Eigenvalues[{{2.6`6, -0.7`6, 0.2`6}, {-0.7`6, 0.3`6, -0.1`6}, {0.2`6, -0.1`6, 0.1`6}}]'            # {2.8140592879545916, 0.13646374447733417, 0.04947696756807616}
+```
+
+Woxi computes the eigenvalues of a matrix with arbitrary-precision entries
+(and so `Norm` of such a matrix) in machine arithmetic. Wolfram keeps
+arbitrary precision and tags the result with a precision derived from the
+input's, which was not measured.
 
 ### `SchurDecomposition` and `SmithDecomposition` factors are non-unique
 
@@ -5245,7 +5292,9 @@ WL's `Rasterize` defaults to 144 dpi and tags the image with
 `Image` carries no resolution, so `Rasterize` keeps 72 dpi (1x) by default.
 The same holds for `ImageSize -> s`: Woxi's raster is `s` pixels wide
 where WL's is `2 s` (both display at `s` points). An explicit `ImageResolution`, and `Export` to a raster format (default
-144 dpi), match WL.
+144 dpi), match WL. An explicit `RasterSize -> {w, h}` around text or a
+formula also matches WL: the content keeps its size at 144 dpi and is
+centered in the raster rather than stretched to fill it.
 
 Topology measured on a rasterized graphic follows from this: a `Thick` curve
 is 2 pixels wide at 1x, and its binarized pixels are partly only diagonally
@@ -5466,6 +5515,15 @@ Wolfram.
 against Woxi's 500. The values agree exactly and the shape is the same; only
 small-scale wiggles are under-resolved.
 
+### A two-parameter `ParametricPlot` drops the padding of an explicit range
+
+`ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}, PlotRange -> {{-15, 15},
+{-16, 16}}]` (or a `Show` of it with that range) is drawn with the range
+flush against the image edges, as a plain `Graphics` would be. The
+one-parameter curve plot keeps a small padding around the same explicit
+range, and Wolfram frames both alike, so the region version comes out a
+little tighter than WL.
+
 ### 2D field plots ignore `PlotPoints` and `MaxRecursion`
 
 `DensityPlot`, `ContourPlot`, `RegionPlot` and the other field plots sample a
@@ -5475,6 +5533,22 @@ fixed 100×100 grid, whatever the options say. Wolfram starts from a
 with `PlotPoints -> 5`, and 27 with `PlotPoints -> 5, MaxRecursion -> 0`.
 Woxi makes 10000 every time. The pictures look alike, but an expensive body
 (a compiled iteration, say) runs about 10–50 times longer than in Wolfram.
+
+### Frameless `ContourPlot`: band colors and side padding
+
+Seen in the UnsteadyStateHeatConductionInACylinder Demonstration
+(`ContourPlot[…, Contours -> 10, Frame -> False, ColorFunction ->
+"TemperatureMap", AspectRatio -> 5, ImageSize -> 80]` beside its own
+`Rotate[…, Pi]`), compared with the notebook's stored snapshot (not yet
+checked with wolframscript):
+
+- The snapshot's bands use the `TemperatureMap` colors at `k/11` for every
+  `k` but 1, so the band just below the top is `RGB[223, 132, 55]/255`.
+  Woxi colors the middle bands by their midpoint value and skips `k == 10`
+  instead: its second band from the top is `RGB[236, 188, 66]/255`, one
+  step lower.
+- Woxi pads a frameless plot by about 2 px on each side, so the two halves
+  leave a thin white seam where the snapshot's halves touch.
 
 ### Plot parts nest differently
 
@@ -5507,6 +5581,18 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
   different (rotated) mesh than the default axis.
 
 The adaptive samplers are not decoded, so these cases are skip-listed.
+
+### `Plot3D` draws clipped parts and jumps without WL's caps and refinement
+
+- Heights outside the vertical `PlotRange` (explicit, or the automatic range
+  that clips outliers) are flattened onto the box face in the surface's own
+  color; WL cuts the surface at the face and fills the cut with the
+  `ClippingStyle -> Automatic` light gray cap.
+- Without adaptive refinement, a jump inside the last grid cell (e.g. a
+  `Sum` whose real upper limit crosses an integer at the domain's edge) is
+  drawn as one sloped strip across the cell; WL refines it into a near
+  vertical wall that the surface in front hides.
+
 
 ### `Plot` samples just inside the interval's ends
 
@@ -5596,6 +5682,15 @@ it crosses the range's edge. Woxi starts the leader at the range's right
 edge. Seen in a Demonstration snapshot; WL's leader optimizer has not been
 measured.
 
+### A legend placed at a named corner is aligned to the whole image
+
+`PlotLegends -> Placed[legend, {Right, Top}]` (and the other named
+`{horizontal, vertical}` alignments) puts the legend in that corner of the
+whole picture, where WL aligns it to the plot region inside the frame. A
+framed plot with a `PlotLabel` therefore has its legend overlapping the
+label in Woxi. The same holds for a plot's legend kept by
+`Show[plot, Graphics[…]]`.
+
 ### An `AxesLabel` carrying a reciprocal power
 
 A label's `Power[x, -1]` renders as `x⁻¹` in SVG markup where Wolfram stacks it
@@ -5656,14 +5751,26 @@ colors — wolframscript draws no highlight even though the plot's style names
 ### Standalone 3D plots ignore the camera options
 
 `Plot3D` and most other 3D plot functions (`ParametricPlot3D`,
-`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+`ContourPlot3D`, …) draw their own picture with the
 default camera, so `ViewPoint`, `ViewAngle` and `SphericalRegion` given to
-the plot call itself change nothing:
+the plot call itself change nothing (`RevolutionPlot3D` given a
+`ViewPoint`, `ViewVertical` or `ViewVector` is drawn from its symbolic form
+by the `Graphics3D` renderer instead, which honors them):
+
+`ContourPlot3D`, `RevolutionPlot3D`, …) draw their own picture with the
+default camera, so `ViewPoint` and `ViewAngle` given to the plot call
+itself change nothing:
 `Plot3D[x y, {x, -1, 1}, {y, -1, 1}, ViewPoint -> Above]` draws the same
 picture as without the option. The options are kept on the result, so
 `Show[Plot3D[…], …]` (and a `Show` combining the plot with a `Graphics3D`)
 re-renders the scene through `Graphics3D` and honors them, including the
-`SphericalRegion -> True` framing a `Manipulate` frame defaults to.
+`SphericalRegion -> True` framing a `Manipulate` frame defaults to. The
+surface plots drawn through the shared surface renderer (`Plot3D`,
+`ParametricPlot3D`, …) honor `SphericalRegion` and `ImagePadding` on their
+own: a Demonstration's snapshot of a `ParametricPlot3D` at
+`ImageSize -> {450, 450}, ImagePadding -> 20` inside a `Manipulate` drew
+its box 351 px wide (Woxi: 348 px with the sphere framing, 405 px with the
+box-outline fit it used before).
 
 ### `SphericalRegion -> True` draws about 6 % larger than Wolfram
 
@@ -5729,20 +5836,35 @@ documented "sphere drawn around the bounding box", under which a lone
 
 Under the default `SphericalRegion -> Automatic`, Woxi frames a
 `Graphics3D` scene like `SphericalRegion -> True` (by the sphere around the
-displayed box) when the box is invisible (`Boxed -> False`) and the picture
-is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate
-this, none checked with wolframscript: a cylinder from `{-10, 0, 0}` to
-`{10, 0, 0}` in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25,
-4.25}}, ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
+displayed box) when the box is invisible (`Boxed -> False`), the scene is
+pinned by an explicit `PlotRange` or seen from an explicit `ViewPoint`,
+and the picture is drawn at `ImageSize -> {w, h}`. Three Demonstrations' snapshots motivate this, none
+checked with wolframscript: a cylinder from `{-10, 0, 0}` to `{10, 0, 0}`
+in `Show[g, PlotRange -> {{-11, 11}, {-4.25, 4.25}, {-4.25, 4.25}},
+ImageSize -> {575, 350}]` is about 246 px wide (Woxi: 243 px; the
 box-outline fit gave 357 px), a tube from `{-6, 0, 0}` to `{6, 0, 0}` in a
 `{{-6.5, 6.5}, {-4, 4}, {-4, 4}}` box at `ImageSize -> {595, 375}` is
 244.5 px wide (Woxi: 243 px; the outline fit gave 295 px), and a `Show` of
 a `Graphics3D` and a `ParametricPlot3D` at `ImageSize -> {400, 400}` from a
-custom `ViewPoint` without a `PlotRange` is about 1.02× the sphere framing
-and 0.86× the box fit.
+custom `ViewPoint` is about 1.02× the sphere framing and 0.86× the box fit.
 
-Which conditions really trigger the sphere framing — `Boxed -> False`, the
-pinned size, an explicit `PlotRange` or `Show` — is unverified. A
+A `Manipulate` frame sphere-frames such explicitly aimed or pinned scenes
+whatever their box and size (boxed scenes in a pinned `PlotRange` switched
+between view points, `ViewPoint -> Below` and a skew view, measure about
+0.7× the outline fit).
+
+Without a `PlotRange` or `ViewPoint` the outline fit stays, inside a
+`Manipulate` too: a plain `Boxed -> False` `Graphics3D` of a tall
+4 × 4 × 10 building at `ImageSize -> {300, 400}` in a `Manipulate`
+fills about 383 px of the snapshot's 400 px height, where the sphere
+framing would draw it about 0.73× as tall, and a `SphericalRegion -> False`
+cylinder without a `PlotRange` at `ImageSize -> {550, 350}` fills the width
+(532/550).
+
+`Show` keeps only its first graphic's options, so the `Show` snapshot has
+no `PlotRange` and its explicit `ViewPoint` is what sets it apart from the
+building. Whether `PlotRange` and `ViewPoint` are really the triggers, or
+merely correlate with them in these four snapshots, is unverified. A
 `Boxed -> False` picture given only a width still fits the box outline, and
 `SphericalRegion -> False`, `AspectRatio -> Full` and an explicit
 `ViewAngle` turn the sphere framing off. The surface plots
@@ -5758,6 +5880,20 @@ and from the rule above, gives 38 px per unit. The view point is much
 farther away (`|ViewPoint|` = 10) than in the cases that fit the sphere
 (about 2 to 3.4), but which property turns the sphere framing off is
 unverified.
+
+A close `ViewPoint` contradicts the rule. A Demonstration's snapshot of a
+`Show` of three `Boxed -> False` `Graphics3D`s (a desk fan: rings of radius
+up to 1 in the y-z plane, on a stand reaching down to z = -1.5) at
+`ImageSize -> {600, 400}` from `ViewPoint -> {1, -1, 0}` draws the fan
+about 380 px tall, 0.95 of the height. Woxi's sphere framing draws it
+284 px tall, and even the box-outline fit (`SphericalRegion -> False`)
+only 300 px. The width-to-height ratio (0.58) matches a perspective eye at
+`|ViewPoint|` box sides, so only the scale is off: Wolfram fits roughly the
+projected contents, not the box (whose perspective outline is about 1.25×
+the contents here) nor its sphere. No single rule found so far reproduces
+this and the three snapshots above; unverified with wolframscript.
+
+### `PointSize` in `Graphics3D` draws larger than Wolfram
 
 ### Base length of relative `Thickness` / `PointSize` in `Graphics3D`
 
@@ -5785,6 +5921,31 @@ unchanged. The same snapshot's `Tube[BSplineCurve[…]]` with no radius
 (a curve 24 units long) is drawn with a radius of about 0.11, where Woxi
 uses 1/100 of the curve's extent (0.24); the rule behind Wolfram's default
 radius is unknown.
+
+### 3D tick step on an exact unit `PlotRange`
+
+Woxi picks the automatic 3D tick step from about four intervals with the
+1, 2, 2.5, 5 multipliers, so an axis whose `PlotRange` is exactly `{0, 1}`
+ticks at 0.25 (`0.00, 0.25, …`). A Demonstration snapshot of a
+`ParametricPlot3D` with `PlotRange -> {{0, 1}, {0, 1}, {0, 1}}` shown at
+`ImageSize -> {400, 400}` with `SphericalRegion -> True` ticks every axis
+at 0.5 (`0.0, 0.5, 1.0`) with minor ticks between. The wider labels also
+push the left z-axis label partly out of the picture. Whether Wolfram's
+step depends on the projected axis length or drops the 2.5 multiplier in
+3D can't be told from one snapshot, so the current rule stays.
+
+### Axis edges and tick density on an elongated 3D box
+
+A Demonstration's snapshots of a `Graphics3D` with `BoxRatios -> {2, 1, 1}`,
+the default `ViewPoint`, `PlotRange -> {All, {-5, 5}, {-5, 5}}` and
+`ImageSize -> {500, 400}` put the y axis on the upper-left box edge
+(x low, z high) and the z axis on the left vertical edge (x low, y low).
+Woxi's `AxesEdge -> Automatic` takes the exposed edge nearest the viewer,
+which for this box is the lower-right y edge and the right vertical z edge;
+it matches Wolfram for a cube and for a `{1, 1, 0.4}` box. The same snapshots
+label the two short axes `-5, 0, 5`, where Woxi steps by 2.5 (`-5.0, -2.5,
+…`), so Wolfram seems to thin the ticks of a short box side. One box shape
+doesn't pin down either rule, so both stay as they are.
 
 ### `Texture` and `VertexTextureCoordinates`
 
@@ -6438,6 +6599,19 @@ to the `1.8418…` factor `LaplacianGaussianFilter` uses at radius 1 (see
 above). The exact taps need a wolframscript probe, such as the impulse
 response above, before the kernel is changed.
 
+### `ImageResize` downsampling filter taps are unverified
+
+When an axis shrinks, Woxi averages every source pixel an output pixel
+covers (a box filter weighted by overlap); when it grows, it interpolates
+linearly. A Wolfram front-end snapshot of an 18x reduction of a rasterized
+disk shows the same soft gray edges, but the exact taps of Wolfram's
+antialiasing filter need a wolframscript probe, such as:
+
+```sh
+cargo run -- eval 'ImageData[ImageResize[Image[{{0., 0., 0.}, {0., 1., 0.}, {0., 0., 0.}}], 1]]'
+cargo run -- eval 'ImageData[ImageResize[Image[Table[If[i == 3, 1., 0.], {6}, {i, 6}]], {3, 6}]]'
+```
+
 ### Color-space tags do not propagate
 
 `ImageTake` and `ImagePartition` propagate an image's color-space tag;
@@ -6703,13 +6877,22 @@ internal hash order. Woxi keeps input order.
 
 ### Graph layouts that only approximate Wolfram's
 
+- **Large trees** in the automatic layout: Wolfram draws a 16-vertex tree in
+  layers and a 65-vertex tree with springs; the exact cutoff is undocumented.
+  Woxi switches to its spring embedding above 32 vertices.
 - **Spring-electrical layouts** (the automatic layout of a non-tree graph
-  with more than 8 vertices or more than one cycle, `"SpringElectricalEmbedding"`,
+  with more than 8 vertices or more than one cycle, or of a tree with more
+  than 32 vertices, `"SpringElectricalEmbedding"`,
   `HypercubeGraph`, `GraphPlot` of a general graph): Woxi runs its own
   Fruchterman–Reingold layout turned so the long axis is horizontal. It
   relaxes a sunflower start and a DFS-circle start and retains the lower
   spring-energy result, avoiding the crossed local minimum of the reviewed
-  six-vertex graph. WL's
+  six-vertex graph. Components of 64 or more vertices are laid out
+  multilevel instead (coarsened by matchings, the coarsest graph laid out
+  as above, then refined level by level), so long meshes and chains come
+  out unfolded as in WL; `GraphPlot` of a rule list lays out the
+  undirected graph, so an acyclic rule list is spring embedded rather than
+  layered. WL's
   coordinates, orientation and choice between symmetry-equivalent vertex
   placements are not reproduced. Small graphs with several cycles now use
   this layout too, including `HypercubeGraph[3]` and the reviewed six-vertex
@@ -7667,7 +7850,7 @@ outward-wound unit triangles of mutual second neighbors, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
 
-### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"` and `"NetImage"` are unverified
+### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"`, `"NetImage"` and `"NetGraph"` are unverified
 
 Implemented without access to `wolframscript`. `"Dual"` gives the dual's
 entity for the Platonic, Archimedean/Catalan and Kepler–Poinsot solids and
@@ -7678,7 +7861,10 @@ answer is unknown. `PolyhedronData[e, "Dual", "Name"]` returns the same
 entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
 `"SkeletonImage"` draws a Schlegel diagram (convex solids) or a view down
 the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
-styling, layout and lighting of these pictures differ.
+styling, layout and lighting of these pictures differ. `"NetGraph"` is the
+vertex-edge graph of the `"NetCoordinates"`/`"NetFaceIndices"` net, with
+`VertexCoordinates` set to the net's points and edges sorted; Wolfram's
+vertex and edge order may differ.
 
 ### `PolyhedronData[]` lists fewer entities than Wolfram, so positions differ
 
@@ -8860,7 +9046,8 @@ Found comparing the graphics-tests renders (2026-11):
   - `Plot[{Sin[x], Cos[x]}, {x, 0, 2 Pi}, PlotLegends -> Automatic]` is
     442 wide (WL 414): the legend takes more room.
   - Tick labels are measured as WL sets them (a minus 0.63 em wide,
-    `10 000` in digit blocks) but drawn with a hyphen and no blocks.
+    `10 000` in digit blocks) and drawn in digit blocks, but with a
+    hyphen for the minus.
   - Explicit `Ticks` labels of an unframed plot without axes
     (`explicit_ticks_svg`) and the decade labels of a framed log axis are
     still drawn at Woxi's old sizes and offsets (13 / 14.5 px), though the
@@ -9466,6 +9653,13 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
 - `GraphicsGrid[…, ImageSize -> 400]` of labeled graphics is 456 pt tall
   (wolframscript 414): wolframscript shrinks each item to about 81 pt across
   inside a 100 pt column, the layout rule is not decoded.
+- `GraphicsRow[{Graphics[…, ImageSize -> 250], GraphicsColumn[{Show[Plot[…,
+  ImageSize -> 200], …], Graphics[…, ImageSize -> 200]}]}, ImageSize -> {500,
+  350}]` (a tall 19 x 27 picture beside a plot over a legend): Wolfram draws
+  the left picture only about 128 pt wide (0.51 of its `ImageSize`) and the
+  column about 207 pt wide, together spanning only about 365 x 218 pt of the
+  500 x 350 picture; Woxi gives each cell half the width (left about 238 pt
+  wide). Same undecoded shrink as the item above.
 - `Dashing[{0, d}]` with `CapForm["Round"]`: wolframscript's SVG shows short
   ticks, Woxi round dots.
 - `Framed` labels in a list (`Framed[i, Background -> Yellow]`): Woxi adds a
@@ -9523,10 +9717,9 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   line), using two characters per em; wolframscript also breaks inside a
   word ("cont"/"ent") and aligns the cells of a row on their first
   baseline. Row heights from `ItemSize -> {…, {h…}}` are approximate.
-- `FontSlant -> Italic` and `FontWeight -> "Thin"`/`"Black"` are written to
-  the SVG (`font-style`, `font-weight="100"`/`"900"`), but the embedded
-  Atkinson house font has no italic or extra weights, so they draw upright
-  and regular.
+- `FontWeight -> "Thin"`/`"Black"` are written to the SVG
+  (`font-weight="100"`/`"900"`), but the embedded Atkinson house font has
+  only regular and bold weights (plus their italics), so they draw regular.
 - `Underscript[x, "_"]` (a one-character accent) is drawn as an underlined
   `x` rather than a separate `_` below it.
 - `BarLegend` labels use an ASCII hyphen-minus (`-10`) where wolframscript
@@ -9539,6 +9732,8 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   Some curve annotations and explicit tick labels still use text markup;
   a `Plot`'s `Ticks -> {{Pi/2, 3 Pi/2}}` labels read `π/2` rather than
   stacked fractions (a `Graphics` axis already stacks them).
+
+  Some curve annotations still use text markup.
 - `PlotTheme -> "Monochrome"` in a list plot draws every series black but
   without the theme's per-series `PlotMarkers` shapes.
 - `Callout[f, label, Above]` puts the label straight above its anchor with
@@ -9666,8 +9861,7 @@ a unit sphere's by 0.5, as in wolframscript. What still differs:
   RevolutionPlot3D flattens the box of a plain profile `z = f(t)` to
   `BoxRatios -> {2, 2, 1/GoldenRatio}` as wolframscript does, but keeps the
   x/y ratio 1 for a partial sweep (wolframscript: `{2, 1, …}` for
-  `θ ∈ [0, π]`) and a fixed z ratio for `{r, z}` profiles (wolframscript:
-  `Automatic`).
+  `θ ∈ [0, π]`).
 - DensityPlot3D's default `OpacityFunction` (mid values transparent) is
   not reproduced: the voxels stay near opaque.
 - `PlotTheme -> "Marketing"` and `Exclusions`/`ExclusionsStyle` in Plot3D
@@ -9755,6 +9949,10 @@ session) and still need checking:
   `Style[…]` (not its color or weight), and big tick labels show the known
   Arial-versus-Atkinson width gap more: at 30 pt the first glyph of a long
   left tick label touches the image edge.
+- A `PlotLabel` holding a stacked fraction (`Row[{…, a/b, …}]`, also inside
+  `Style[…, size]`) is typeset as one picture by the box layout, whose text
+  is set in the monospace typesetting font; Wolfram keeps the title's
+  proportional font, so such a title comes out wider than the reference.
 
 ## Unit conformance follow-up (2026-11-06)
 
@@ -10294,6 +10492,19 @@ Times}`, which makes such cells roughly a third wider than in Wolfram.
 Not yet verified against the kernel's clipping/wrapping rule for
 over-wide items.
 
+### Studio: Grid `ItemSize -> w` columns are wider than the front end's
+
+Woxi sizes a fixed `ItemSize -> w` column as `w` ems at the 14 px base font
+plus the 12 px cell padding, so `Grid[table, Frame -> All, ItemSize -> 4]`
+gives 68 px per column. A front-end snapshot of the same grid (text about
+14 px tall, `Frame -> All`) measures about 49.5 px per column, i.e. about
+27% narrower. A six-column grid like that inside a
+`Pane[…, Alignment -> Center, ImageSize -> {400, 200}]` therefore overflows
+the pane in Woxi (409 px) and loses its right frame line and its centering,
+while Wolfram draws it about 297 px wide, centered. The front end's em unit
+for `ItemSize` and whether it includes the grid's `Spacings` have not been
+verified against `wolframscript`, so the width rule is left unchanged.
+
 ### `Plot` runs the cells of a multi-column `Grid` title together
 
 `PlotLabel -> Grid[{{"sum:", 6.}, {"product:", 9.}}, Alignment -> Left]`
@@ -10321,6 +10532,23 @@ picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
 
+### `WaveletScalogram` frame coordinates are inferred
+
+The scalogram's shape (`AspectRatio -> 1/GoldenRatio`, 2% plot range
+padding), its octave labels on the right edge and the sample-index
+horizontal coordinates were measured from a stored notebook rendering, not
+diffed against `wolframscript`. Explicit vertical `FrameTicks` positions are
+read in octave units; Wolfram's own vertical coordinate system for the
+scalogram is unverified, as are the default tick labels for a
+`DiscreteWaveletData` scalogram and its default color function.
+
+A stored rendering of a Morlet scalogram over a sine with a short gap also
+shows the coarsest octave colored mostly by the edges and the gap, whereas
+Woxi's coarsest octave also resonates with the sine itself. The scales agree
+with Wolfram's (`"Scales"`), so the difference is probably in the boundary
+extension or the magnitude normalization; it has not been diffed against
+`wolframscript`.
+
 ### Tick side of 3D axes crossing at the box center
 
 With `AxesOrigin` at the center of an unboxed `Graphics3D` (for example
@@ -10347,3 +10575,98 @@ like `s_NDSolve`StateData`, match.
 above a `Graphics3D` picture (the way Wolfram draws it), but `Plot` and the
 other 2D charts (`src/functions/plot.rs`) set the framed line as plain text.
 Only a title that is framed as a whole gets a box there.
+
+### Symbols inside a `Style`d `Row` `PlotLabel` drawn upright
+
+A saved snapshot of `ListPlot[…, PlotLabel -> Style[Row[{x^m, "  vs.  ",
+y^n}], 16]]` (with `x` and `y` unassigned symbols) shows the letters
+upright, while Woxi sets single-letter symbols in a plot label in italics as
+`TraditionalForm` does elsewhere. Not verified against `wolframscript`; it
+is open whether `Row`/`Style` keep `StandardForm` here or the snapshot was
+rendered with another `FormatType`.
+
+### `SliceContourPlot3D` automatic contour levels on coarse slices
+
+With `Contours -> n` Woxi spaces the levels over the range of its own slice
+samples. For a distance function sampled with `PlotPoints -> 10` on
+`"BackPlanes"`, a saved snapshot shows the bar legend's levels one step
+higher than Woxi's (15.6–31.2 instead of 11.7–27.3, same 3.9 spacing): Wolfram's
+value range starts above Woxi's sampled minimum, and its slice even shows a
+band below the lowest legend band. How Wolfram samples the slice planes
+for the value range has not been measured.
+
+### Large 3D axis labels under `SphericalRegion -> True`
+
+`Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, SphericalRegion ->
+True, AxesLabel -> {…, …, Style["zzz", Large, Bold]}]` draws the vertical
+axis's large label partly outside the picture's left edge (its center about
+10 px from it). Without `SphericalRegion` the picture leaves the label room.
+Shrinking the framing sphere to fit the labels (fitting them together with
+the contents sphere) does not settle on a layout that keeps the label
+inside, and was not checked against `wolframscript`.
+
+### `Style[…, "Input"]` text weight
+
+The `"Input"` named style sets text in Wolfram's bold input font (a saved
+snapshot of `Style[Row[{…}], Gray, 20, "Input"]` shows bold monospace text),
+while Woxi ignores the style name and draws the text in regular weight.
+Its stylesheet font size, which applies when no explicit size is given, has
+not been measured against wolframscript yet.
+
+### Text placed on the edge of a `Graphics` is clipped instead of padded
+
+`Graphics[{Text["left", Scaled[{0, .5}]], Text["right", Scaled[{1, .5}]]},
+AspectRatio -> .035, ImageSize -> 500, Axes -> {True, False}]` (a labeled
+color bar) draws each label centered on the picture's left and right edges,
+so half of it falls outside the image. A saved Wolfram snapshot of the same
+construction shows the image padding grown to fit both labels whole,
+beside the bar. The exact rule `ImagePadding -> Automatic` uses to reserve
+room for text primitives has not been measured against `wolframscript`.
+
+### Plot tick labels ignore the `BaseStyle` font family and slant
+
+`Plot[…, Frame -> True, FrameTicks -> {{{0, "x"}, …}, …}, BaseStyle ->
+{FontSize -> 16, FontFamily -> "Times", Italic}]` (or the same `BaseStyle`
+given to a `Show` of such a plot) sets its tick labels at the requested
+size but still in the default sans-serif upright face; Wolfram sets them in
+italic Times like the rest of the plot's text. `LabelStyleSpec` carries only
+the color, size, weight and slant, and the tick label writer applies none
+of the face or slant.
+
+### `"M10DefaultDensityGradient"` is not a known color scheme
+
+Contour plots saved by Mathematica 14.1 and earlier color their bands and
+their `BarLegend` with `Blend["M10DefaultDensityGradient", #] &` (dark
+blue `RGBColor[0.148, 0.33, 0.54]` through gray and orange to
+`RGBColor[1., 0.95, 0.75]`). Woxi does not know that gradient's stops, so
+`Blend` of it stays unevaluated and a stored legend that uses it is drawn
+with the gray fallback ramp, while the stored plot's bands (explicit
+`RGBColor`s) are right. The exact stops have not been measured.
+
+### Named `Pane` widths other than `Medium`
+
+`Pane[text, Medium]` used as a graphics `Text` label wraps at about 180
+points (measured from a saved snapshot, half a `Graphics`' `Medium` of
+360). Woxi assumes the other named sizes scale the same way (`Tiny` 50,
+`Small` 90, `Large` 288), which has not been checked against wolframscript.
+Woxi's text wrapping also estimates 7 points per character of the default
+font, so the wrapped label can break into more lines than Wolfram's.
+
+A second Demonstration snapshot points the same way, by more: an unboxed
+star polyhedron (vertices out to radius 1.19) in `PlotRange -> 1.53` with
+`SphericalRegion -> True`, `ViewAngle -> 10 Degree`, the default
+`ViewPoint` and `ImageSize -> {460, 460}` spans about 410 px in Wolfram and
+about 457 px (11 % larger) in Woxi.
+
+### `NDSolve` across a jump of a piecewise diffusion coefficient
+
+A PDE whose diffusion coefficient jumps by orders of magnitude inside the
+domain (e.g. `If[Abs[r] <= ri, 10.^-6, 10.^-3]` for a lumen surrounded by
+a porous bed) is solved by the method of lines with the flux kept
+continuous across the jump (each face's coefficient the exact harmonic
+mean `h / ∫ dx / c`), which converges to the continuum solution under grid
+refinement. Wolfram's finite element solution integrates the coefficient
+over mesh elements that straddle the jump, which lets noticeably more flux
+through on its default mesh: in a saved snapshot of such a reactor model
+the outlet averages are about 0.27 (lumen) and 0.11 (bed), where Woxi
+gives 0.41 and 0.14. Matching it would need Wolfram's exact mesh.

@@ -183,6 +183,11 @@ pub struct PlotSource {
   /// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}` frame).
   /// `None` = the ratio follows from `image_size`.
   pub aspect_ratio: Option<f64>,
+  /// The legend entries of a `Show` of several plots, each paired with the
+  /// index of the series it labels: every plot's `PlotLegends` survives
+  /// the merge, as Wolfram combines the `Legended` plots it is given.
+  /// Empty = the legend comes from `options` (a single plot).
+  pub legends: Vec<(usize, String)>,
   /// Whether the plot settles `PlotRange -> All` into the numeric range of
   /// its data, as WL's list plots (`ListPlot`, `ListLinePlot`) do: `Show`
   /// then keeps that range like an automatic one, clipping other graphics
@@ -14927,6 +14932,15 @@ pub fn is_rule_expr(expr: &Expr) -> bool {
 /// Extract the width in printer's points from a `Spacer` expression.
 /// Supports `Spacer[w]`, `Spacer[{w, ...}]`.
 pub fn spacer_width_pts(expr: &Expr) -> Option<f64> {
+  // A styled spacer (`Style[Spacer[10], 11]`, which `Style[Row[…], 11]`
+  // makes of each of its items) is still that many points of blank: font
+  // directives don't change a spacer's width.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Style"
+    && !args.is_empty()
+  {
+    return spacer_width_pts(&args[0]);
+  }
   if let Expr::FunctionCall { name, args } = expr
     && name == "Spacer"
     && args.len() == 1
@@ -18105,6 +18119,10 @@ pub fn collect_identifier_names<S: std::hash::BuildHasher>(
         collect_identifier_names(a, out);
       }
     }
+    // A shared array of numbers or strings names no symbol; its memoized
+    // flag answers in O(1) where walking it costs O(N) on every substitution
+    // that checks a value for capture.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {}
     Expr::List(items) => {
       for it in items {
         collect_identifier_names(it, out);
@@ -18249,6 +18267,12 @@ fn substitute_variable_impl(
   match expr {
     Expr::Identifier(name) | Expr::Constant(name) if name == var_name => {
       value.clone()
+    }
+    // A shared array of numbers or strings holds no symbol to replace:
+    // copying the pointer keeps it shared, where rebuilding it would copy
+    // the array and make every later walk over it O(N) again.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
+      expr.clone()
     }
     Expr::List(items) => Expr::List(
       items
@@ -20596,6 +20620,38 @@ pub fn message_with_expr_2d(prefix: &str, expr: &Expr, suffix: &str) -> String {
 /// spans three lines while `Sin[x]` reads `sin(x)`.
 pub fn boxes_to_output_form_2d(expr: &Expr) -> String {
   boxes_to_textbox(expr).to_string()
+}
+
+/// Set the 2D OutputForm texts of a `Row`'s parts side by side, each part
+/// aligned on its baseline: `ToString[Row[{x, 14/3}]]` keeps `x` beside the
+/// fraction bar, with the numerator above and the denominator below it.
+/// Each part is given as its rendered text and the expression it came from;
+/// a multi-line text is on the baseline of that expression's 2D layout when
+/// the layout spells that text, and centered otherwise (the way a fraction
+/// produced by a display wrapper such as `NumberForm[14/3, {3, 2}]` sits).
+pub fn hconcat_output_form_parts(parts: &[(String, Expr)]) -> String {
+  let boxes: Vec<TextBox> = parts
+    .iter()
+    .map(|(text, source)| {
+      if !text.contains('\n') {
+        return TextBox::atom(text);
+      }
+      let lines: Vec<String> = text
+        .split('\n')
+        .map(std::string::ToString::to_string)
+        .collect();
+      let laid_out = with_display_names(source, |e| {
+        with_complex_display(e, expr_to_textbox)
+      });
+      let baseline = if laid_out.to_string() == *text {
+        laid_out.baseline
+      } else {
+        lines.len().saturating_sub(1) / 2
+      };
+      TextBox { lines, baseline }
+    })
+    .collect();
+  TextBox::hconcat(&boxes).to_string()
 }
 
 fn boxes_to_textbox(expr: &Expr) -> TextBox {
