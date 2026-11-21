@@ -10729,9 +10729,11 @@ mod plot3d {
       let plain = first_cell_picture_y(&row("Row[{\"Na\", \"x\"}]"));
       let svg = row("Row[{\"Na\", Superscript[\"x\", \"+\"]}]");
       let raised = first_cell_picture_y(&svg);
-      assert!(raised > plain + 5.0, "{plain} vs {raised}: {svg}");
-      // The text is centered on its row (nudged up by 1 for ascenders):
-      // half the row must hold half the line plus the script's shift.
+      assert!(raised > plain + 1.0, "{plain} vs {raised}: {svg}");
+      // The text is centered on its row, whose middle sits about 0.3 em
+      // above the baseline. The script is raised by 1/3 em and drawn at
+      // 70 %, so its ascenders (0.75 em) reach this far above the middle;
+      // the top half of the row must hold them.
       let text_y: f64 = svg
         .split("<text")
         .nth(1)
@@ -10739,7 +10741,9 @@ mod plot3d {
         .and_then(|s| s.split('"').next())
         .and_then(|v| v.parse().ok())
         .unwrap();
-      assert!(text_y + 1.0 >= 16.0 * (0.5 + 1.0 / 3.0), "{svg}");
+      assert!(text_y >= 16.0 * (1.0 / 3.0 + 0.7 * 0.75 - 0.3), "{svg}");
+      // …but the row does not spread far past a plain one.
+      assert!(raised < plain + 6.0, "{plain} vs {raised}: {svg}");
     }
 
     // Regression: a `Spacer` before a part with its own spans (an italic

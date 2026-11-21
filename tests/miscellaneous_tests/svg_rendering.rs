@@ -5117,6 +5117,51 @@ mod tests {
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
     }
 
+    /// A grid row whose string holds a superscript grows only slightly
+    /// past a plain row: the raised script barely clears the line's own
+    /// ascenders, so the rows stay evenly spaced (as in Wolfram) instead of
+    /// spreading the scripted rows apart. A subscript reaches further below
+    /// the baseline and grows its row more.
+    #[test]
+    fn grid_script_rows_grow_only_by_the_script_overshoot() {
+      let row_centers = |code: &str| -> Vec<f64> {
+        let svg = woxi::interpret(code).expect("interpret should succeed");
+        let mut ys: Vec<f64> = svg
+          .split("<text ")
+          .skip(1)
+          .filter_map(|t| {
+            t.split(" y=\"").nth(1)?.split('"').next()?.parse().ok()
+          })
+          .collect();
+        ys.dedup();
+        ys
+      };
+      let steps = |ys: &[f64]| -> Vec<f64> {
+        ys.windows(2).map(|w| w[1] - w[0]).collect()
+      };
+
+      let sup = row_centers(
+        r#"ExportString[Grid[{{"\!\(\*SuperscriptBox[\(9\), \(th\)]\) row", 1}, {"\!\(\*SuperscriptBox[\(7\), \(th\)]\) row", 2}, {"plain a", 3}, {"plain b", 4}}], "SVG"]"#,
+      );
+      assert_eq!(sup.len(), 4, "{sup:?}");
+      let d = steps(&sup);
+      let plain_step = d[2];
+      let script_step = d[0];
+      assert!(
+        script_step > plain_step && script_step < plain_step * 1.2,
+        "superscript rows should be only a little taller: {d:?}"
+      );
+
+      let sub = row_centers(
+        r#"ExportString[Grid[{{"\!\(\*SubscriptBox[\(x\), \(i\)]\) row", 1}, {"\!\(\*SubscriptBox[\(y\), \(j\)]\) row", 2}, {"plain a", 3}, {"plain b", 4}}], "SVG"]"#,
+      );
+      let ds = steps(&sub);
+      assert!(
+        ds[0] > script_step && ds[0] < ds[2] * 1.6,
+        "subscript rows grow more than superscript rows: {ds:?}"
+      );
+    }
+
     /// A column item `Style[Text[TraditionalForm[poly]], size]` is typeset
     /// like `Style[TraditionalForm[poly], size]` (spaced operators, raised
     /// exponents), not flattened to one unspaced text run.
