@@ -1160,9 +1160,12 @@ impl ManipulateState {
 
   /// Whether the control at `ctrl_idx` shares a line of the control panel
   /// with the control before it, because one `Row[{Control[…],
-  /// Control[…]}]` argument placed both side by side.
+  /// Control[…]}]` argument placed both side by side. The item before it
+  /// may also be a panel display standing in for a control (a
+  /// `ControlType -> TogglerBar` bar drawn just before `ctrl_idx`), so even
+  /// the first declared control can join a line.
   pub fn joins_previous_control(&self, ctrl_idx: usize) -> bool {
-    ctrl_idx > 0
+    (ctrl_idx > 0 || self.panel_displays.iter().any(|(_, at)| *at == 0))
       && self
         .controls
         .get(ctrl_idx)
@@ -7673,6 +7676,31 @@ mod tests {
     let shown = format!("{:?}", state.display_trees);
     assert!(shown.contains("text: \"4\""), "{shown}");
     assert!(shown.contains("text: \"1\""), "{shown}");
+  }
+
+  /// A `Row` of `Control@` specs whose first is a `ControlType ->
+  /// TogglerBar` bar (drawn as a panel display) puts the checkbox written
+  /// after it on the same line, even though that checkbox is the first
+  /// declared control. Regression: `joins_previous_control(0)` was always
+  /// false, so the checkbox dropped to a line of its own.
+  #[test]
+  fn checkbox_after_toggler_bar_in_one_row_shares_its_line() {
+    let code = r#"Manipulate[
+      {u, v, w}[[k]] /. q -> on,
+      Row[{
+        Control@{{k, {2, 3}, "pick"}, Range[3], ControlType -> TogglerBar},
+        Spacer[20],
+        Control@{{on, False, "enabled"}, {True, False}}
+      }]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["on"]);
+    assert_eq!(state.panel_displays, vec![(0, 0)]);
+    assert!(state.joins_previous_control(0));
   }
 
   /// A picture pixel showing graphics point `(gx, gy)` of `region`'s first
