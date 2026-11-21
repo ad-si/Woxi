@@ -4174,6 +4174,31 @@ mod play {
   }
 }
 
+mod beep {
+  use super::*;
+
+  #[test]
+  fn returns_null() {
+    assert_eq!(interpret("Beep[] === Null").unwrap(), "True");
+    assert_eq!(interpret("x = Beep[]; x === Null").unwrap(), "True");
+  }
+
+  #[test]
+  fn captures_a_playable_tone() {
+    woxi::clear_captured_sound();
+    interpret("Beep[]").unwrap();
+    let audio = woxi::get_captured_sound().expect("Beep[] captures audio");
+    assert_eq!(audio.mime, "audio/wav");
+    assert_ne!(audio.base64, "");
+  }
+
+  #[test]
+  fn runs_inside_compound_expressions() {
+    // A handler that beeps after a move must still carry on afterwards.
+    assert_eq!(interpret("n = 1; Beep[]; n + 1").unwrap(), "2");
+  }
+}
+
 mod sound_volume {
   use super::*;
 
@@ -7540,6 +7565,40 @@ mod mouse_position {
     assert_eq!(graphics.unwrap(), "{1, -3}");
     assert_eq!(with_default.unwrap(), "{1.5, -2.25}");
     assert_eq!(interpret("MousePosition[\"Graphics\"]").unwrap(), "$Failed");
+  }
+}
+
+mod refresh_update_interval {
+  use super::*;
+
+  /// `Refresh[expr, UpdateInterval -> t]` with a finite `t` asks a front
+  /// end to re-evaluate the enclosing `Dynamic` on a timer.
+  #[test]
+  fn a_finite_interval_requests_a_timed_refresh() {
+    woxi::take_timed_refresh();
+    assert_eq!(
+      interpret("Refresh[1 + 1, UpdateInterval -> 0]").unwrap(),
+      "2"
+    );
+    assert!(woxi::take_timed_refresh());
+    assert!(!woxi::take_timed_refresh(), "the request is cleared");
+    assert_eq!(
+      interpret("dt = 1/2; Refresh[3, UpdateInterval :> dt]").unwrap(),
+      "3"
+    );
+    assert!(woxi::take_timed_refresh());
+  }
+
+  #[test]
+  fn no_or_an_infinite_interval_requests_none() {
+    woxi::take_timed_refresh();
+    assert_eq!(interpret("Refresh[3, None]").unwrap(), "3");
+    assert_eq!(
+      interpret("Refresh[3, UpdateInterval -> Infinity]").unwrap(),
+      "3"
+    );
+    assert_eq!(interpret("Refresh[3, TrackedSymbols :> {x}]").unwrap(), "3");
+    assert!(!woxi::take_timed_refresh());
   }
 }
 
