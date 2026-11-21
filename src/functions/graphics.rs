@@ -14196,10 +14196,16 @@ fn grid_positions(
 /// positions, horizontal lines at the `grid_y` positions; `Automatic` uses the
 /// tick positions. `default_style` (from `GridLinesStyle`) applies to lines
 /// without a per-line override.
+///
+/// `area` is the plot range before it was widened to the picture's shape:
+/// the letterbox room beside a picture under `ImageSize -> {w, h}` is not
+/// part of the plot, so the lines stop at the range's edges and a line
+/// positioned outside the range is not drawn (as in Wolfram).
 #[allow(clippy::too_many_arguments)]
 fn render_grid_lines(
   svg: &mut String,
   bb: &BBox,
+  area: &BBox,
   svg_w: f64,
   svg_h: f64,
   (grid_x, grid_y): (&GridSpec, &GridSpec),
@@ -14207,17 +14213,33 @@ fn render_grid_lines(
 ) {
   let x_ticks = generate_ticks(bb.x_min, bb.x_max);
   let y_ticks = generate_ticks(bb.y_min, bb.y_max);
+  // The drawing area's pixel extent, never past the canvas.
+  let left = coord_x(area.x_min, bb, svg_w).clamp(0.0, svg_w);
+  let right = coord_x(area.x_max, bb, svg_w).clamp(0.0, svg_w);
+  let top = coord_y(area.y_max, bb, svg_h).clamp(0.0, svg_h);
+  let bottom = coord_y(area.y_min, bb, svg_h).clamp(0.0, svg_h);
+  // Half a pixel of slack keeps lines sitting exactly on the range's edges.
+  let tol = 0.5;
+  // A line reaching the canvas's own edge starts at a bare `0`.
+  let edge = |v: f64| {
+    if v == 0.0 {
+      String::from("0")
+    } else {
+      format!("{v:.2}")
+    }
+  };
+  let (left_attr, top_attr) = (edge(left), edge(top));
 
   for (pos, style) in
     grid_positions(grid_x, &x_ticks, (bb.x_min, bb.x_max), default_x)
   {
     let x = coord_x(pos, bb, svg_w);
-    if !x.is_finite() {
+    if !x.is_finite() || x < left - tol || x > right + tol {
       continue;
     }
     let color = style.effective_color();
     svg.push_str(&format!(
-      "<line x1=\"{x:.2}\" y1=\"0\" x2=\"{x:.2}\" y2=\"{svg_h:.2}\" \
+      "<line x1=\"{x:.2}\" y1=\"{top_attr}\" x2=\"{x:.2}\" y2=\"{bottom:.2}\" \
        stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
       thickness_px(style.thickness, bb, svg_w),
@@ -14229,12 +14251,12 @@ fn render_grid_lines(
     grid_positions(grid_y, &y_ticks, (bb.y_min, bb.y_max), default_y)
   {
     let y = coord_y(pos, bb, svg_h);
-    if !y.is_finite() {
+    if !y.is_finite() || y < top - tol || y > bottom + tol {
       continue;
     }
     let color = style.effective_color();
     svg.push_str(&format!(
-      "<line x1=\"0\" y1=\"{y:.2}\" x2=\"{svg_w:.2}\" y2=\"{y:.2}\" \
+      "<line x1=\"{left_attr}\" y1=\"{y:.2}\" x2=\"{right:.2}\" y2=\"{y:.2}\" \
        stroke=\"{}\" stroke-width=\"{:.2}\"{}{}/>\n",
       color.to_svg_rgb(),
       thickness_px(style.thickness, bb, svg_w),
@@ -18439,6 +18461,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     render_grid_lines(
       &mut svg,
       &bb,
+      &requested_bb,
       svg_w,
       svg_h,
       (&grid_x, &grid_y),
