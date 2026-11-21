@@ -56317,6 +56317,66 @@ mod arrowheads_render {
       );
     }
   }
+
+  /// The default head of a straight arrow keeps its full size on an
+  /// arrow shorter than the head itself, overshooting the tail, as
+  /// wolframscript draws it. Regression: it was shrunk to 45% of the
+  /// arrow, leaving a short `Epilog` arrow with a barely visible head.
+  #[test]
+  fn a_default_head_is_not_shrunk_on_a_short_arrow() {
+    clear_state();
+    // The extent along x of the (only) head polygon of a horizontal
+    // arrow from {0, 0} to {-len, 0}.
+    let head_extent = |len: &str| -> f64 {
+      let svg = export_svg(&format!(
+        "Graphics[{{Arrow[{{{{0, 0}}, {{-{len}, 0}}}}]}}, \
+         PlotRange -> {{{{-4, 4}}, {{-1, 1}}}}, ImageSize -> 400]"
+      ));
+      let points = svg
+        .split("<polygon points=\"")
+        .nth(1)
+        .and_then(|tag| tag.split('"').next())
+        .expect("the arrow must have a head");
+      let xs: Vec<f64> = points
+        .split_whitespace()
+        .filter_map(|p| p.split_once(','))
+        .filter_map(|(x, _)| x.parse().ok())
+        .collect();
+      xs.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+        - xs.iter().copied().fold(f64::INFINITY, f64::min)
+    };
+    // 0.1 of the 8 units across is 5 px, far less than the 16 px head.
+    let short = head_extent("0.1");
+    let long = head_extent("2");
+    assert!(
+      (short - long).abs() < 0.05 * long,
+      "short arrow head {short} vs long arrow head {long}"
+    );
+  }
+
+  /// A bent path still caps its default head so a tiny polyline is not
+  /// swallowed by it.
+  #[test]
+  fn a_default_head_is_capped_on_a_short_bent_path() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics[{Arrow[{{0, 0}, {0.05, 0.05}, {0.1, 0}}]}, \
+       PlotRange -> {{-4, 4}, {-1, 1}}, ImageSize -> 400]",
+    );
+    let points = svg
+      .split("<polygon points=\"")
+      .nth(1)
+      .and_then(|tag| tag.split('"').next())
+      .expect("the arrow must have a head");
+    let xs: Vec<f64> = points
+      .split_whitespace()
+      .filter_map(|p| p.split_once(','))
+      .filter_map(|(x, _)| x.parse().ok())
+      .collect();
+    let extent = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+      - xs.iter().copied().fold(f64::INFINITY, f64::min);
+    assert!(extent < 8.0, "head of a 7 px path spans {extent}");
+  }
 }
 
 mod text_offset {
