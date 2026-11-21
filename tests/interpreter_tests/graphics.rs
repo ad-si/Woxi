@@ -2329,6 +2329,58 @@ mod graphics {
       assert!(inset("{2, 2}").contains("translate(0.00,2.00)"));
     }
 
+    /// `Inset[obj]` is `Inset[obj, Center]` (and an `Automatic` position is
+    /// `Center` too): the image is drawn in the middle of the picture. A
+    /// missing position used to leave the image unanchored, so it fell back
+    /// to printing its `-Image-` short form as text.
+    #[test]
+    fn an_image_inset_without_a_position_is_centered() {
+      for pos in ["", ", Center", ", Automatic"] {
+        let svg = export_svg(&format!(
+          "Graphics[{{Inset[Image[{{{{0.2, 0.8, 0.4}}, {{0.9, 0.1, 0.6}}}}, \
+           ImageSize -> {{30, 20}}]{pos}]}}, PlotRange -> {{{{0, 4}}, {{0, 2}}}}, \
+           ImageSize -> 200]"
+        ));
+        assert!(!svg.contains("-Image-"), "pos {pos:?}: {svg}");
+        assert!(svg.contains("<image"), "pos {pos:?}: {svg}");
+        // Centered on the middle of the 200 x 100 picture, not on the
+        // origin in its lower-left corner.
+        assert!(
+          svg.contains("<svg x=\"84.50\" y=\"39.75\" width=\"30.00\""),
+          "pos {pos:?}: {svg}"
+        );
+      }
+    }
+
+    /// An image in a grid is shown at its own size — its `ImageSize`, else
+    /// its pixel size — like the image on its own. The grid layout used to
+    /// cap every image at 240 points across and stretch it to the column.
+    #[test]
+    fn a_grid_image_cell_keeps_its_own_size() {
+      let grid_svg = |code: &str| {
+        let Ok(woxi::syntax::Expr::FunctionCall { ref name, ref args }) =
+          woxi::interpret_to_expr(code)
+        else {
+          panic!("expected a Grid for {code}");
+        };
+        assert_eq!(name, "Grid");
+        woxi::functions::graphics::grid_svg_with_gaps(&args, &[]).unwrap()
+      };
+      // A 300 x 250 image is not shrunk to 240 points across.
+      let svg = grid_svg(
+        "Grid[{{\"a\", Image[ConstantArray[0.5, {250, 300}], \
+         ImageSize -> All]}}]",
+      );
+      assert!(svg.contains("width=\"300.0\" height=\"250.0\""), "{svg}");
+      // An explicit `ImageSize` is kept, and a wider column (from the text
+      // in the row below) does not stretch the image to fill it.
+      let svg = grid_svg(
+        "Grid[{{Image[ConstantArray[0.5, {10, 20}], ImageSize -> {40, 20}]}, \
+         {\"a long line of text in this column\"}}]",
+      );
+      assert!(svg.contains("width=\"40.0\" height=\"20.0\""), "{svg}");
+    }
+
     /// `Inset[Graphics[…], pos, {Center, Bottom}, {w, h}]` folds the
     /// picture's primitives in with its bottom-center on `pos`. The symbolic
     /// `opos` used to be ignored, centering the picture on `pos` instead, so

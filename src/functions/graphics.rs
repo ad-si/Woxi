@@ -1618,6 +1618,10 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
   {
     return Some((x, y, true));
   }
+  // A bare `Center` is the middle of the whole picture.
+  if matches!(expr, Expr::Identifier(c) if c == "Center") {
+    return Some((0.5, 0.5, true));
+  }
   // `{Left, Top}` names the corner of the plot range: the same point as
   // `Scaled[{0, 1}]`. `Center` is the middle on either axis.
   if let Expr::List(items) = expr
@@ -8316,11 +8320,12 @@ fn inset_primitives(
       return Some(prims);
     }
   }
-  // An `Automatic` position is the plot's origin, the same point a missing
-  // one falls back to when the object is folded in below.
+  // A missing or `Automatic` position is `Center`: the middle of the whole
+  // picture (`Inset[obj]` is `Inset[obj, Center]`).
   let anchor = match args.get(1) {
-    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.0, 0.0, false)),
-    other => other.and_then(expr_to_anchor),
+    None => Some((0.5, 0.5, true)),
+    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.5, 0.5, true)),
+    Some(other) => expr_to_anchor(other),
   };
   // Without a `size`, an inset is the object at its own natural size — not
   // stretched or shrunk to whatever extent its primitives happen to span in
@@ -8417,7 +8422,10 @@ fn inset_primitives(
         || name == "Graphics3DBox"
         || ((natural_size
           || inset_size_is_scaled(args)
-          || anchor.is_some_and(|(_, _, scaled)| scaled))
+          || args
+            .get(1)
+            .and_then(expr_to_anchor)
+            .is_some_and(|(_, _, scaled)| scaled))
           && (name == "Graphics" || name == "GraphicsBox")) =>
     {
       let svg = crate::evaluator::expr_to_svg(call);
@@ -30116,6 +30124,23 @@ fn parse_position_spacings(spec: &Expr) -> Vec<Option<f64>> {
   out
 }
 
+/// The size an image cell is shown at in a grid: its `ImageSize`, else its
+/// pixel size — the same size the image has on its own.
+fn grid_image_shown_size(cell: &Expr) -> Option<(f64, f64)> {
+  match unwrap_to_image(cell)? {
+    Expr::Image {
+      width,
+      height,
+      display_size,
+      ..
+    } => {
+      let (w, h) = display_size.unwrap_or((*width, *height));
+      Some((w as f64, h as f64))
+    }
+    _ => None,
+  }
+}
+
 /// Check if a cell is or contains an Expr::Image (unwrapping Style).
 fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
   match cell {
@@ -31826,6 +31851,8 @@ fn grid_svg_styled_internal_reporting(
       }
       let w = if let Some((_, nat_w, _)) = grid_cell_graphic(cell) {
         nat_w + col_pad(j)
+      } else if let Some((img_w, _)) = grid_image_shown_size(cell) {
+        img_w + col_pad(j)
       } else {
         let advance = if contains_base_form(cell) {
           font_size * MONO_ADVANCE
@@ -31956,21 +31983,9 @@ fn grid_svg_styled_internal_reporting(
       if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
         cell_h = cell_h.max(nat_h + pad_y);
       }
-      // An Image cell is scaled to fit the column width, which fixes its height.
-      if let Some(img) = unwrap_to_image(cell)
-        && let Expr::Image {
-          width: iw,
-          height: ih,
-          ..
-        } = img
-      {
-        let col_w = if j < col_widths.len() {
-          col_widths[j] - col_pad(j)
-        } else {
-          200.0
-        };
-        let scale = col_w / (*iw as f64);
-        cell_h = cell_h.max((*ih as f64) * scale + pad_y);
+      // An Image cell keeps the size it is shown at on its own.
+      if let Some((_, img_h)) = grid_image_shown_size(cell) {
+        cell_h = cell_h.max(img_h + pad_y);
       }
       let span = span_height(&rows, i, j);
       if span > 1 {
@@ -32396,11 +32411,17 @@ fn grid_svg_styled_internal_reporting(
           ..
         } = img
         {
-          let avail_w = col_w - col_pad(j);
-          let scale = avail_w / (*iw as f64);
-          let draw_w = avail_w;
-          let draw_h = (*ih as f64) * scale;
-          let ix = x_offset + col_pad_left[j];
+          let (draw_w, draw_h) =
+            grid_image_shown_size(cell).unwrap_or((*iw as f64, *ih as f64));
+          // Placed by the column's alignment, like a graphic cell.
+          let ix = match anchor {
+            "start" => x_offset + col_pad_left[j],
+            "end" => {
+              let span_end = (j + span_width(row, j)).min(num_cols) - 1;
+              x_offset + col_w - col_pad_right[span_end] - draw_w
+            }
+            _ => x_offset + (col_w - draw_w) / 2.0,
+          };
           let vis_h = cell_bottom - cell_top;
           let iy =
             aligned_top(draw_h).unwrap_or(cell_top + (vis_h - draw_h) / 2.0);
