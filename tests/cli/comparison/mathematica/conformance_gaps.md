@@ -2015,6 +2015,20 @@ a positive lower bound — `RandomReal[{$MinNumber, x}]` in Demonstration
 
 ## Algebra and calculus
 
+### `Solve` of a radical identity in one unknown finds a spurious root
+
+An equation that holds for every value of its unknown, with radical
+coefficients on both sides and a sum under a denominator, is solved as if
+its (vanishing) coefficient were not zero:
+
+```sh
+wolframscript -code 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'  # {{}}
+woxi eval 'Solve[(1 + Sqrt[3] c)/3 == 1/3 + c/Sqrt[3], c]'            # {{c -> 0}}
+```
+
+Systems of two or more such equations are solved by Gaussian elimination
+and are not affected.
+
 ### `NSolve` of a polynomial system: multiplicities and order of points
 
 ```sh
@@ -3849,6 +3863,18 @@ reproducible. 2×2 float matrices with complex eigenvalues stay as before.
 
 Generic dense float matrices also differ in the last 1–2 digits from
 WL/LAPACK.
+
+### Eigenvalues of arbitrary-precision matrices come back at machine precision
+
+```sh
+wolframscript -code 'Eigenvalues[{{2.6`6, -0.7`6, 0.2`6}, {-0.7`6, 0.3`6, -0.1`6}, {0.2`6, -0.1`6, 0.1`6}}]'  # arbitrary-precision reals (not measured)
+woxi eval 'Eigenvalues[{{2.6`6, -0.7`6, 0.2`6}, {-0.7`6, 0.3`6, -0.1`6}, {0.2`6, -0.1`6, 0.1`6}}]'            # {2.8140592879545916, 0.13646374447733417, 0.04947696756807616}
+```
+
+Woxi computes the eigenvalues of a matrix with arbitrary-precision entries
+(and so `Norm` of such a matrix) in machine arithmetic. Wolfram keeps
+arbitrary precision and tags the result with a precision derived from the
+input's, which was not measured.
 
 ### `SchurDecomposition` and `SmithDecomposition` factors are non-unique
 
@@ -7802,7 +7828,7 @@ outward-wound unit triangles of mutual second neighbors, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
 
-### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"` and `"NetImage"` are unverified
+### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"`, `"NetImage"` and `"NetGraph"` are unverified
 
 Implemented without access to `wolframscript`. `"Dual"` gives the dual's
 entity for the Platonic, Archimedean/Catalan and Kepler–Poinsot solids and
@@ -7813,7 +7839,10 @@ answer is unknown. `PolyhedronData[e, "Dual", "Name"]` returns the same
 entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
 `"SkeletonImage"` draws a Schlegel diagram (convex solids) or a view down
 the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
-styling, layout and lighting of these pictures differ.
+styling, layout and lighting of these pictures differ. `"NetGraph"` is the
+vertex-edge graph of the `"NetCoordinates"`/`"NetFaceIndices"` net, with
+`VertexCoordinates` set to the net's points and edges sorted; Wolfram's
+vertex and edge order may differ.
 
 ### `PolyhedronData[]` lists fewer entities than Wolfram, so positions differ
 
@@ -9666,10 +9695,9 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   line), using two characters per em; wolframscript also breaks inside a
   word ("cont"/"ent") and aligns the cells of a row on their first
   baseline. Row heights from `ItemSize -> {…, {h…}}` are approximate.
-- `FontSlant -> Italic` and `FontWeight -> "Thin"`/`"Black"` are written to
-  the SVG (`font-style`, `font-weight="100"`/`"900"`), but the embedded
-  Atkinson house font has no italic or extra weights, so they draw upright
-  and regular.
+- `FontWeight -> "Thin"`/`"Black"` are written to the SVG
+  (`font-weight="100"`/`"900"`), but the embedded Atkinson house font has
+  only regular and bold weights (plus their italics), so they draw regular.
 - `Underscript[x, "_"]` (a one-character accent) is drawn as an underlined
   `x` rather than a separate `_` below it.
 - `BarLegend` labels use an ASCII hyphen-minus (`-10`) where wolframscript
@@ -10584,3 +10612,9 @@ points (measured from a saved snapshot, half a `Graphics`' `Medium` of
 `Small` 90, `Large` 288), which has not been checked against wolframscript.
 Woxi's text wrapping also estimates 7 points per character of the default
 font, so the wrapped label can break into more lines than Wolfram's.
+
+A second Demonstration snapshot points the same way, by more: an unboxed
+star polyhedron (vertices out to radius 1.19) in `PlotRange -> 1.53` with
+`SphericalRegion -> True`, `ViewAngle -> 10 Degree`, the default
+`ViewPoint` and `ImageSize -> {460, 460}` spans about 410 px in Wolfram and
+about 457 px (11 % larger) in Woxi.

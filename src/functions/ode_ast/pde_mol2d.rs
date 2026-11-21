@@ -547,6 +547,10 @@ pub(super) fn solve_pde_mol_2d(
   rest: &[Expr],
   opts: &MolOptions,
 ) -> Option<Expr> {
+  solve(eqs, rest, opts)
+}
+
+fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
   let Expr::Identifier(u) = &rest[0] else {
     return None;
   };
