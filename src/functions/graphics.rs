@@ -20787,7 +20787,12 @@ fn drawable_box_graphic(graphic: Expr) -> Expr {
       if (name == "Graphics" || name == "Graphics3D") && !args.is_empty() =>
     {
       let mut kept = vec![drawable_primitives(&args[0])];
-      kept.extend(args[1..].iter().filter(|o| is_inert_graphics_data(o)).cloned());
+      kept.extend(
+        args[1..]
+          .iter()
+          .filter(|o| is_inert_graphics_data(o))
+          .cloned(),
+      );
       Expr::FunctionCall {
         name: name.clone(),
         args: kept.into(),
