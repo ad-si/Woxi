@@ -54587,6 +54587,60 @@ mod arrowheads_render {
     );
   }
 
+  /// A label placed at a symbolic or `Scaled` position inside a head
+  /// graphic (`Text[label, {Center, Center}]`) names a point of that head
+  /// graphic, not of the enclosing picture: it must sit on the arrow, not
+  /// at the center of the whole image.
+  #[test]
+  fn a_head_graphic_scaled_label_sits_on_the_arrow() {
+    clear_state();
+    for pos in ["{Center, Center}", "Scaled[{0.5, 0.5}]"] {
+      let svg = export_svg(&format!(
+        "Graphics[{{Arrowheads[{{{{0.05, 0.5, Graphics[Text[\"q\", {pos}]]}}}}], \
+         Arrow[{{{{2, 0}}, {{2, 4}}}}]}}, PlotRange -> {{{{0, 10}}, {{0, 10}}}}, \
+         ImageSize -> 200, ImagePadding -> None]"
+      ));
+      let tag = svg
+        .split(">q<")
+        .next()
+        .and_then(|head| head.rsplit("<text ").next())
+        .unwrap_or_else(|| panic!("the label must draw: {svg:.800}"));
+      let attr = |name: &str| -> f64 {
+        format!(" {tag}")
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|t| t.split('"').next())
+          .and_then(|n| n.parse().ok())
+          .unwrap_or_else(|| panic!("missing {name} in {tag}"))
+      };
+      // The arrow's midpoint {2, 2} is 40 px from the left and 160 px
+      // from the top of the 200 px picture.
+      let (x, y) = (attr("x"), attr("y"));
+      assert!(
+        (x - 40.0).abs() < 2.0 && (y - 160.0).abs() < 2.0,
+        "{pos}: the label belongs at the arrow's midpoint (40, 160), got ({x}, {y})"
+      );
+      // It turns with the upward arrow but keeps its font size: the glyph
+      // map is a pure quarter turn, not shrunk to the head's size.
+      let m: Vec<f64> = tag
+        .split("matrix(")
+        .nth(1)
+        .and_then(|t| t.split(')').next())
+        .unwrap_or_else(|| panic!("{pos}: the label must turn: {tag}"))
+        .split_whitespace()
+        .filter_map(|n| n.parse().ok())
+        .collect();
+      assert!(
+        m.len() == 6
+          && m[0].abs() < 1e-3
+          && (m[1] + 1.0).abs() < 1e-3
+          && (m[2] - 1.0).abs() < 1e-3
+          && m[3].abs() < 1e-3,
+        "{pos}: expected a quarter turn at full size, got {m:?}"
+      );
+    }
+  }
+
   /// A named head size is a fraction of the plot width and nothing else,
   /// even when that makes the head as long as the arrow carrying it. A
   /// vector field (the Pólya-plot idiom: hundreds of short arrows under

@@ -5866,12 +5866,74 @@ fn parse_arrow(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
         &mut inner,
         &mut Vec::new(),
       );
+      resolve_scaled_anchors(&mut inner);
       for p in &inner {
         prims.push(match transform {
-          Some(m) => affine_primitive(p, m, (x, y)),
+          Some(m) => {
+            let mut mapped = affine_primitive(p, m, (x, y));
+            // A label in the head turns with the arrow but keeps its own
+            // font size: only the rotation part of the head's map applies
+            // to its glyphs, as text in an inset graphic is not scaled.
+            if let (
+              Primitive::TextPrim { glyph_map, .. },
+              Primitive::TextPrim {
+                glyph_map: mapped_glyphs @ Some(_),
+                ..
+              },
+            ) = (p, &mut mapped)
+            {
+              let s = m[0][0].hypot(m[1][0]);
+              if s > 0.0 {
+                let r =
+                  [[m[0][0] / s, m[0][1] / s], [m[1][0] / s, m[1][1] / s]];
+                let g = glyph_map.unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
+                *mapped_glyphs = Some([
+                  [
+                    r[0][0] * g[0][0] + r[0][1] * g[1][0],
+                    r[0][0] * g[0][1] + r[0][1] * g[1][1],
+                  ],
+                  [
+                    r[1][0] * g[0][0] + r[1][1] * g[1][0],
+                    r[1][0] * g[0][1] + r[1][1] * g[1][1],
+                  ],
+                ]);
+              }
+            }
+            mapped
+          }
           None => translate_primitive(p, x, y),
         });
       }
+    }
+  }
+}
+
+/// Turn the `Scaled`/symbolic anchors (`{Center, Center}`, …) of a nested
+/// graphic's primitives into points of that graphic's own range, so they
+/// stay inside it once it is mapped into the enclosing picture instead of
+/// naming a point of the outer plot range. The range is what the
+/// graphic's unscaled primitives span; with none it collapses onto the
+/// origin, where a lone label of an arrowhead graphic belongs.
+fn resolve_scaled_anchors(prims: &mut [Primitive]) {
+  let mut bb = BBox::empty();
+  for p in prims.iter() {
+    bb.merge(&primitive_bbox(p));
+  }
+  if bb.is_empty() {
+    bb = BBox {
+      x_min: 0.0,
+      x_max: 0.0,
+      y_min: 0.0,
+      y_max: 0.0,
+    };
+  }
+  for p in prims.iter_mut() {
+    if let Primitive::TextPrim { x, y, scaled, .. }
+    | Primitive::InsetGraphic { x, y, scaled, .. } = p
+      && *scaled
+    {
+      (*x, *y) = resolve_anchor(*x, *y, true, &bb);
+      *scaled = false;
     }
   }
 }
