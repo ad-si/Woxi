@@ -1224,7 +1224,7 @@ mod text_display_face {
     let (plain_w, text_w) = (svg_width(&plain), svg_width(&text));
     assert!(text_w < plain_w * 0.8, "{plain_w} vs {text_w}");
     assert_eq!(svg_width(&in_row), text_w + 20.0, "{in_row}");
-    // The value column starts right after the widest label.
-    assert!(text.contains("<text x=\"87.2\""), "{text}");
+    // The value column starts right after the widest label (its drawn extent).
+    assert!(text.contains("<text x=\"90.3\""), "{text}");
   }
 }
