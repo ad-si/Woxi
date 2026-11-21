@@ -2354,6 +2354,38 @@ mod box_and_tick_styles {
     assert!(s.matches(orange).count() >= 6, "{s}");
   }
 
+  // A font size in `TicksStyle` sizes the tick labels of the axes it
+  // styles, overriding a `LabelStyle` size.
+  #[test]
+  fn ticks_style_font_size_sizes_tick_labels() {
+    let s = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> True, \
+       TicksStyle -> Directive[17, Gray]]",
+    );
+    let gray17 = "font-size=\"17\" fill=\"rgb(128,128,128)\"";
+    assert!(s.matches(gray17).count() >= 6, "{s}");
+    assert!(!s.contains("font-size=\"10\""), "{s}");
+
+    let s = svg(
+      "Graphics3D[Line[{{0, 0, 0}, {4, 1, 1}}], Axes -> True, \
+       LabelStyle -> 12, TicksStyle -> {Red, 19, Blue}]",
+    );
+    assert!(s.contains("font-size=\"12\" fill=\"rgb(255,0,0)\""), "{s}");
+    assert!(s.contains("font-size=\"19\""), "{s}");
+    assert!(s.contains("font-size=\"12\" fill=\"rgb(0,0,255)\""), "{s}");
+  }
+
+  // `Plot3D` styles its tick labels with `TicksStyle` too.
+  #[test]
+  fn plot3d_ticks_style_colors_and_sizes_tick_labels() {
+    let s = svg(
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, PlotPoints -> 5, Mesh -> None, \
+       TicksStyle -> Directive[15, Red]]",
+    );
+    let red15 = "font-size=\"15\" fill=\"rgb(255,0,0)\"";
+    assert!(s.matches(red15).count() >= 6, "{s}");
+  }
+
   // Options of a parametric plot carry into `Show`, where a mixed
   // `PlotRange` then widens one axis.
   #[test]
