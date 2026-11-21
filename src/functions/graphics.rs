@@ -17557,8 +17557,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let label_font =
     GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
   let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
-  // The same size sets the tick labels of the frame and of the axes.
-  let tick_font = label_font.size.unwrap_or(TICK_FONT);
+  // The same size sets the tick labels of the frame and of the axes, unless
+  // the tick style of whichever carries the ticks (`FrameTicksStyle` on a
+  // framed picture, `TicksStyle` on its axes) names a size of its own.
+  let tick_style_spec = if frame {
+    frame_ticks_style.as_ref()
+  } else {
+    ticks_style.as_ref()
+  };
+  let tick_font = tick_style_spec
+    .and_then(crate::functions::plot::LabelStyleSpec::parse)
+    .and_then(|spec| spec.font_size)
+    .or(label_font.size)
+    .unwrap_or(TICK_FONT);
   let title_font = plot_label
     .iter()
     .flatten()
