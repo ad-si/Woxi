@@ -118,7 +118,12 @@ mod infix_visual_mode {
       r#"Text[Style[TraditionalForm[Infix[{Subscript[a, 1] Subscript[a, 2], Subscript[a, 3]}, "+"]], 21]]"#,
     )
     .unwrap();
-    let svg = result.output_svg.expect("typeset output");
+    // A `Text`-wrapped TraditionalForm formula is drawn as a typeset
+    // picture, so its SVG is the result's graphic.
+    let svg = result
+      .graphics
+      .or(result.output_svg)
+      .expect("typeset output");
     assert!(
       !svg.contains(">Infix<"),
       "the call must not be echoed: {svg}"
