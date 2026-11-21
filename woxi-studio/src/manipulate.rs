@@ -28,9 +28,15 @@ pub struct LabelIcon {
 
 /// An iced `svg` handle for an SVG Woxi rendered. iced draws it with its own
 /// usvg options, whose default family is a serif face, so text that names no
-/// family first gets the sans-serif face Wolfram sets graphics text in.
+/// family first gets the sans-serif face Wolfram sets graphics text in. Text
+/// that names only the generic `sans-serif` family gets that same face (as
+/// in an exported SVG) rather than whichever system face iced picks for it.
 pub fn text_svg_handle(svg: &str) -> svg::Handle {
-  svg::Handle::from_memory(woxi::with_default_text_family(svg).into_bytes())
+  let svg = svg.replace(
+    "font-family=\"sans-serif\"",
+    "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+  );
+  svg::Handle::from_memory(woxi::with_default_text_family(&svg).into_bytes())
 }
 
 impl LabelIcon {

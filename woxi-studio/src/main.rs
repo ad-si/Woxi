@@ -11381,10 +11381,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
   /// A body that prints an expanded product in a chosen term order — the
   /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
-  /// `TraditionalForm` at a large size. The widget shows it typeset
-  /// (subscripts, operator, font size), like an output cell, instead of the
-  /// raw `TraditionalForm[Infix[…]]` source text. Independently written, not
-  /// copied from any specific Demonstration.
+  /// `TraditionalForm` at a large size, in a fixed-size `Pane`. The widget
+  /// shows it typeset (subscripts, operator, font size) in the pane's box,
+  /// like an output cell, instead of the raw `TraditionalForm[Infix[…]]`
+  /// source text. Independently written, not copied from any specific
+  /// Demonstration.
   #[test]
   fn manipulate_typesets_traditional_form_infix_sum() {
     let code = r#"Manipulate[
@@ -11397,11 +11398,13 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("a Setter row should build a ManipulateState");
     assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
-    let svg = state
-      .typeset_output
-      .as_deref()
-      .expect("the textual result is typeset");
-    assert!(state.typeset_handle.is_some());
+    // The fixed-size `Pane` is drawn as a picture of that size, its
+    // content typeset inside it.
+    let svg = state.current_svg().expect("the result is drawn");
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "the pane's box: {svg}"
+    );
     assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
     assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
