@@ -4975,7 +4975,7 @@ pub(crate) fn render_traditionalform_list_if_needed(
 /// still a framed box, and `Pane[Column[{…, Graphics[…]}]]` (the shape of
 /// many Manipulate bodies) is still the column underneath.
 fn unwrap_display_pass_through(expr: &syntax::Expr) -> syntax::Expr {
-  functions::graphics::unwrap_display_wrappers(expr)
+  functions::graphics::unwrap_display_wrappers_with(expr, false)
 }
 
 /// In visual (notebook) display mode, `ClickPane[expr, …]` and

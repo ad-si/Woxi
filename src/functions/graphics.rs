@@ -14260,11 +14260,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
   // for them switches the whole run's font; they look like an ASCII `-`.
   let s = s.replace(['\u{2010}', '\u{2011}'], "-");
   let s = crate::syntax::substitute_private_use_glyphs(&s);
-  let escaped = s
-    .replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;");
+  let escaped = crate::functions::plot::html_escape(&s);
   let escaped = render_math_letterlike_glyphs(&escaped);
   let escaped = render_combining_overlines(&escaped);
   if escaped.contains(SUBSCRIPT_START) || escaped.contains(SUPERSCRIPT_START) {
@@ -36418,6 +36414,13 @@ pub(crate) fn magnified_picture(expr: &Expr) -> Option<Expr> {
 /// `p(x) = 1 + x`, not `p(x) == 1 + x` — so the wrapper is put back, for
 /// the caller to typeset through the traditional box builder.
 pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
+  unwrap_display_wrappers_with(expr, true)
+}
+
+/// `unwrap_display_wrappers`, optionally stopping at a `TabView`: the
+/// top-level display pipeline keeps it, since a `TabView` result has a
+/// dedicated renderer of its own (interactive and `Dynamic` panes).
+pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
   let mut current = expr.clone();
   let mut traditional = false;
   let mut standard = false;
@@ -36469,6 +36472,19 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       "PaneSelector" if args.len() >= 2 => {
         current = selected_pane_content(args);
         continue;
+      }
+      // `TabView[{label -> pane, …}, sel]` nested in a layout shows the
+      // pane its selector names (the first pane without a selector),
+      // like a top-level `TabView` result does, rather than the call's
+      // source text.
+      "TabView" if peel_tabview => {
+        match crate::tabview_selected_content(args) {
+          Some(content) => {
+            current = content;
+            continue;
+          }
+          None => false,
+        }
       }
       // `Style[picture, Magnification -> m]` and `Magnify[picture, m]`
       // draw the picture `m` times its size.
