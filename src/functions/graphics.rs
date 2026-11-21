@@ -63203,6 +63203,10 @@ mod manipulate_display_grid_layout_tests {
     ));
     assert_eq!(spec.displays.len(), 2);
     assert_eq!(spec.panel_displays, vec![(0, 0), (1, 1)]);
+  }
+}
+
+#[cfg(test)]
 mod click_pane_display_tests {
   use super::*;
 
