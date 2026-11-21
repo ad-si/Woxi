@@ -331,7 +331,7 @@ fn apart_in_var(expr: &Expr, var: &str) -> Result<Expr, InterpreterError> {
   )?;
   let mut lcm: i128 = 1;
   if let Expr::List(items) = &dens {
-    for d in items.iter() {
+    for d in items {
       let Expr::Integer(d) = d else {
         return apart_expr(expr, var);
       };
