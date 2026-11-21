@@ -618,6 +618,65 @@ mod det {
   }
 }
 
+mod det_radicals {
+  use super::*;
+
+  // Radicals count as numbers: products of them multiply out.
+  #[test]
+  fn radical_products_expand() {
+    assert_eq!(
+      interpret("Det[{{1 + Sqrt[2], 1}, {1, 1 - Sqrt[2]}}]").unwrap(),
+      "-2"
+    );
+    assert_eq!(
+      interpret("Det[{{1 + Sqrt[2], 1}, {1, 1 + Sqrt[2]}}]").unwrap(),
+      "2 + 2*Sqrt[2]"
+    );
+  }
+
+  // Radicals left in a denominator are reduced to the exact value.
+  #[test]
+  fn radical_denominators_reduce() {
+    assert_eq!(
+      interpret("Det[{{1/(1 + Sqrt[2]), 1}, {1, 1/(1 - Sqrt[2])}}]").unwrap(),
+      "-2"
+    );
+    // A rotation-reflection matrix written with golden-ratio entries.
+    assert_eq!(
+      interpret(
+        "Det[{{(1 - Sqrt[5])/4, 1/2, (-3 + Sqrt[5] - 8/(1 + Sqrt[5]))/4}, \
+         {1/2, 1/2 + 1/(1 + Sqrt[5]), 1/(1 + Sqrt[5])}, \
+         {(-1 - Sqrt[5])/4, (-1 + Sqrt[5])/4, 1/2}}]"
+      )
+      .unwrap(),
+      "-1"
+    );
+  }
+
+  // The 60 rotations of the icosahedron, built from one face and sorted by
+  // determinant, all have determinant 1.
+  #[test]
+  fn icosahedral_rotation_determinants() {
+    assert_eq!(
+      interpret(
+        "t = (1 + Sqrt[5])/2; \
+         v = {{0, t, 1}, {0, t, -1}, {0, -t, 1}, {0, -t, -1}, {1, 0, t}, \
+           {-1, 0, t}, {1, 0, -t}, {-1, 0, -t}, {t, 1, 0}, {t, -1, 0}, \
+           {-t, 1, 0}, {-t, -1, 0}}; \
+         f = {{1, 2, 9}, {1, 2, 11}, {1, 5, 9}, {1, 5, 6}, {1, 6, 11}, \
+           {2, 7, 9}, {2, 8, 11}, {5, 9, 10}, {3, 5, 6}, {6, 11, 12}, \
+           {7, 9, 10}, {2, 7, 8}, {8, 11, 12}, {3, 5, 10}, {3, 6, 12}, \
+           {4, 7, 10}, {4, 7, 8}, {4, 8, 12}, {3, 4, 10}, {3, 4, 12}}; \
+         inv = FullSimplify[Inverse[v[[f[[1]]]]]]; \
+         ms = FullSimplify[inv . v[[#]]] & /@ Flatten[Permutations /@ f, 1]; \
+         Tally[Det /@ ms]"
+      )
+      .unwrap(),
+      "{{1, 60}, {-1, 60}}"
+    );
+  }
+}
+
 mod permanent {
   use super::*;
 
@@ -5655,6 +5714,42 @@ mod nonlinear_model_fit {
       )
       .unwrap(),
       "{3466667, {347797}}"
+    );
+  }
+
+  // A term that vanishes at every data point (`x^c` with `0 < x < 1` and
+  // a growing `c`) has a near-zero Jacobian column. An undamped
+  // Gauss-Newton step flung `c` to ~10^8, where the power underflowed with
+  // `General::unfl`, so code checking `$MessageList` saw a failed fit. The
+  // damped (Levenberg-Marquardt) step keeps `c` finite and the fit quiet,
+  // converging the other parameters to the values wolframscript reports.
+  #[test]
+  fn vanishing_term_keeps_parameter_finite() {
+    assert_eq!(
+      interpret(
+        "fm = NonlinearModelFit[{{0.078, 2.5}, {0.176, 4.7}, {0.33, 7.2}}, \
+         {p (x^q + x^r), q < 1}, {{p, 13.}, {q, 0.5}, {r, 2.5}}, x]; \
+         {Round[10^6 {p, q} /. fm[\"BestFitParameters\"]], \
+          (r > 10 && r < 1000) /. fm[\"BestFitParameters\"], \
+          Round[10^6 fm[\"RSquared\"]], $MessageList}"
+      )
+      .unwrap(),
+      "{{16015275, 716998}, True, 999819, {}}"
+    );
+  }
+
+  // Three points and three parameters: the damped iteration converges to
+  // the same exact fit wolframscript finds from these starting values.
+  #[test]
+  fn exact_three_parameter_fit_from_start_values() {
+    assert_eq!(
+      interpret(
+        "Round[10^6 ({u, v, w} /. FindFit[{{0.33, 7.2}, {0.58, 11.2}, \
+         {0.84, 17.2}}, u v w x/((1 - w x) (1 - w x + v w x)), \
+         {{u, 5.}, {v, 8.}, {w, 0.9}}, x])]"
+      )
+      .unwrap(),
+      "{8356617, 7222343, 668512}"
     );
   }
 
