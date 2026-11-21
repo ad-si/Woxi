@@ -397,6 +397,14 @@ thread_local! {
     static CAPTURED_SOUND: RefCell<Option<AudioOutput>> = const { RefCell::new(None) };
 }
 
+// Samples (with their rate) of every `EmitSound` since the capture buffer was
+// last cleared. Successive `EmitSound` calls queue up one after another, so a
+// button that emits several sounds (e.g. the notes of a scale) plays them all
+// in order instead of only the last.
+thread_local! {
+    static EMITTED_SAMPLES: RefCell<Option<(Vec<f64>, u32)>> = const { RefCell::new(None) };
+}
+
 // Most-recent evaluated expression for `%` / `Out[]` shortcuts. Set by
 // `interpret_with_stdout` after each successful evaluation and consulted by
 // the `Out[]` dispatch path. Kept alongside the numbered history below
@@ -1798,6 +1806,29 @@ pub fn clear_captured_sound() {
   CAPTURED_SOUND.with(|buffer| {
     *buffer.borrow_mut() = None;
   });
+  EMITTED_SAMPLES.with(|buffer| {
+    *buffer.borrow_mut() = None;
+  });
+}
+
+/// Queue the samples of an `EmitSound` after the ones emitted earlier in the
+/// same evaluation and capture the combined audio.
+pub(crate) fn capture_emitted_sound(samples: Vec<f64>, rate: u32) {
+  use base64::Engine;
+  let wav = EMITTED_SAMPLES.with(|buffer| {
+    let mut buffer = buffer.borrow_mut();
+    if let Some((queued, queued_rate)) = buffer.as_mut() {
+      let resampled =
+        functions::sound::resample_linear(&samples, rate, *queued_rate);
+      queued.extend_from_slice(&resampled);
+      functions::sound::samples_to_mono_wav(queued, *queued_rate)
+    } else {
+      let wav = functions::sound::samples_to_mono_wav(&samples, rate);
+      *buffer = Some((samples, rate));
+      wav
+    }
+  });
+  capture_sound(&base64::engine::general_purpose::STANDARD.encode(&wav));
 }
 
 /// Stores synthesized audio as a base64-encoded WAV (from Play/Sound).
@@ -3993,7 +4024,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Err(_) => expr,
       }
     }
-    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — unwrap and render
+    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — render
+    // the grid with each of its cells typeset in TraditionalForm (`f(x)`,
+    // `f′(x)`), as the front end shows it.
     syntax::Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1

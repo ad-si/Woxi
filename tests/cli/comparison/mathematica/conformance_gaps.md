@@ -5950,8 +5950,8 @@ doesn't pin down either rule, so both stay as they are.
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
-clip path and affine matrix), but the image is not lit: Wolfram shades it with
-the scene lighting. Textured concave or holed polygons render as plain
+clip path and affine matrix), shaded by the scene lighting of a white surface
+(a color-matrix filter). Textured concave or holed polygons render as plain
 default-blue faces. This cannot be checked against wolframscript by diffing SVG
 (it rasterizes 3D output).
 
@@ -6923,8 +6923,14 @@ internal hash order. Woxi keeps input order.
   image, and WL draws long edges as splines through the layers. The
   automatic layout of a connected directed acyclic graph with several
   undirected cycles (a Hasse diagram) is layered the same way, with the
-  layers one unit apart; WL centers each layer, Woxi packs it from the
-  left.
+  layers one unit apart. Within a layer Woxi places the vertices at least
+  one unit apart near the median of their neighbors and snaps them to the
+  unit grid of the widest layer (halves to the right), so the drawing is
+  balanced like WL's; WL's exact coordinate assignment is not decoded, so
+  a symmetric drawing (a diamond) can come out half a unit off center.
+- **`GraphPlot` `PlotStyle`**: Woxi applies `PlotStyle -> s` to the edges
+  only (unless `EdgeStyle` is given); how WL combines it with the default
+  vertex style is not verified.
 - **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
   component on its own unit lattice, pads its bounding rectangle by one
   eighth of the mean sum of coordinate spans plus `0.00001`, and packs
