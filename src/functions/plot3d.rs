@@ -12323,6 +12323,26 @@ fn cylinder_max_subdivisions(
 /// Total longitudinal rings shared by all `Cylinder`s of a crowded scene.
 const TOTAL_CYLINDER_RING_BUDGET: usize = 1500;
 
+/// The finest a `Cylinder` side is ever cut along its length, as a fraction
+/// of the span of the scene's cylinders: no ring is shorter than
+/// `1 / CYLINDER_SCENE_RING_DIVISIONS` of that span.
+const CYLINDER_SCENE_RING_DIVISIONS: f64 = 24.0;
+
+/// Caps the rings of a `Cylinder` side of length `len` by the scene's span.
+/// The rings only keep each face's centroid a good depth estimate for the
+/// painter's sort, and a depth error matters relative to the scene, not to
+/// the cylinder's own radius: cutting a thin rod into faces as short as it
+/// is wide (`side_subdivision_steps`) made every long, thin rod of a scene
+/// thousands of triangles. Regression: a motor model with a dozen thin bars
+/// through translucent drums drew a 16 MB SVG per animation frame.
+fn cylinder_scene_ring_cap(len: f64, scene_extent: f64) -> usize {
+  if scene_extent.is_nan() || scene_extent <= 0.0 || !len.is_finite() {
+    return MAX_SIDE_SUBDIVISIONS;
+  }
+  ((CYLINDER_SCENE_RING_DIVISIONS * len / scene_extent).ceil() as usize)
+    .clamp(1, MAX_SIDE_SUBDIVISIONS)
+}
+
 thread_local! {
   /// Width in pixels of the `Graphics3D` currently being collected, which
   /// a relative `Thickness[t]` is a fraction of.
@@ -14449,14 +14469,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           radius,
           style,
         } => {
+          let len = ((p2.x - p1.x).powi(2)
+            + (p2.y - p1.y).powi(2)
+            + (p2.z - p1.z).powi(2))
+          .sqrt();
           let max_subdiv =
-            cylinder_max_subdivisions(*radius, cyl_extent, cyl_count);
+            cylinder_max_subdivisions(*radius, cyl_extent, cyl_count)
+              .min(cylinder_scene_ring_cap(len, cyl_extent));
           let tris = tessellate_cylinder(p1, p2, *radius, max_subdiv);
           if style.edges {
-            let len = ((p2.x - p1.x).powi(2)
-              + (p2.y - p1.y).powi(2)
-              + (p2.z - p1.z).powi(2))
-            .sqrt();
             let steps = cylinder_side_steps(len, *radius, max_subdiv);
             holed_boundaries = cylinder_edge_flags(steps, CYLINDER_SIDES);
           }

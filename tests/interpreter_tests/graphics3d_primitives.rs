@@ -1125,9 +1125,11 @@ mod outlines {
          ViewPoint -> {{-2.5, 2, 2}}]"
       )))
     };
+    // Rod and bar each span the whole scene (23 units) on their own, so a
+    // `Cylinder`'s scene-span ring cap cuts them the same in every scene.
     let slab = "Cuboid[{-6, -9, -4.5}, {6, 6, -3.5}]";
-    let rod = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 7}}, 0.5]";
-    let bar = "Cylinder[{{-7.5, -10, 8.5}, {-7.5, 10, 8.5}}, 0.5]";
+    let rod = "Cylinder[{{-4.5, -8, -12}, {-4.5, -8, 10}}, 0.5]";
+    let bar = "Cylinder[{{-7.5, -11, 8.5}, {-7.5, 11, 8.5}}, 0.5]";
     let pierced = scene(&format!("{slab}, {rod}"));
     let alone = scene(bar);
     let all = scene(&format!("{slab}, {rod}, {bar}"));
