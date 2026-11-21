@@ -191,6 +191,18 @@ Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 `ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
 prints `0.1 × 10^-6` without padding.
 
+### A `NumberForm` nested in a list or call shows its head
+
+At the top level a number-display form prints as its formatted number, but
+inside another expression Woxi keeps the wrapper:
+
+```sh
+wolframscript -code '{NumberForm[1.23456789, 9], 2.5}'  # {1.23456789, 2.5}
+woxi eval '{NumberForm[1.23456789, 9], 2.5}'            # {NumberForm[1.23456789, 9], 2.5}
+```
+
+The same happens under `ToString` and for `f[NumberForm[…]]`.
+
 ### `NumberForm`/`ScientificForm` round half-to-even, wolframscript rounds half-up
 
 ```sh
@@ -10512,3 +10524,23 @@ so half of it falls outside the image. A saved Wolfram snapshot of the same
 construction shows the image padding grown to fit both labels whole,
 beside the bar. The exact rule `ImagePadding -> Automatic` uses to reserve
 room for text primitives has not been measured against `wolframscript`.
+
+### Plot tick labels ignore the `BaseStyle` font family and slant
+
+`Plot[…, Frame -> True, FrameTicks -> {{{0, "x"}, …}, …}, BaseStyle ->
+{FontSize -> 16, FontFamily -> "Times", Italic}]` (or the same `BaseStyle`
+given to a `Show` of such a plot) sets its tick labels at the requested
+size but still in the default sans-serif upright face; Wolfram sets them in
+italic Times like the rest of the plot's text. `LabelStyleSpec` carries only
+the color, size, weight and slant, and the tick label writer applies none
+of the face or slant.
+
+### `"M10DefaultDensityGradient"` is not a known color scheme
+
+Contour plots saved by Mathematica 14.1 and earlier color their bands and
+their `BarLegend` with `Blend["M10DefaultDensityGradient", #] &` (dark
+blue `RGBColor[0.148, 0.33, 0.54]` through gray and orange to
+`RGBColor[1., 0.95, 0.75]`). Woxi does not know that gradient's stops, so
+`Blend` of it stays unevaluated and a stored legend that uses it is drawn
+with the gray fallback ramp, while the stored plot's bands (explicit
+`RGBColor`s) are right. The exact stops have not been measured.

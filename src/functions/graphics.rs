@@ -9308,7 +9308,9 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     Expr::String(s) if has_script_stacked_inline_box(s) => {
       inline_box_string_to_box_expr(s)
     }
-    _ if label_typesets_fraction(content) => {
+    _ if label_typesets_fraction(content)
+      || formula_has_graphics_operand(content) =>
+    {
       Some(crate::strip_number_precision_markers(
         &crate::evaluator::dispatch::complex_and_special::expr_to_box_form(
           content,
@@ -17899,8 +17901,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         svg.push_str(line);
       } else {
         svg.push_str(&format!(
-          "<tspan x=\"{cx:.1}\" dy=\"{:.2}\">{line}</tspan>",
-          line_pitch(title_size)
+          "<tspan x=\"{cx:.1}\" dy=\"{:.2}\">{}</tspan>",
+          line_pitch(title_size),
+          tspan_line(line)
         ));
       }
     }
@@ -20127,6 +20130,14 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         BoxLayout::text(&text, font_size)
       }
 
+      // A picture typeset among other boxes (`1/6 (g1 + 2 g2) == g3` with
+      // graphics as operands) is drawn inline at its own size, centered on
+      // the math axis like an operand, instead of showing its box source.
+      "GraphicsBox" | "Graphics3DBox" if !args.is_empty() => {
+        inline_graphics_box_layout(expr, font_size)
+          .unwrap_or_else(|| BoxLayout::text(&expr_to_output(expr), font_size))
+      }
+
       // Ordinary expressions inside a box tree (the cells of a
       // `FractionBox` built from `Row`, `Style` and `Short`) lay out as
       // the boxes they stand for.
@@ -20229,6 +20240,49 @@ pub(crate) fn group_digits_str(s: &str) -> String {
     i += 3;
   }
   format!("{sign}{grouped}{frac}")
+}
+
+/// Lay out a `GraphicsBox[…]` / `Graphics3DBox[…]` as the picture it
+/// typesets: the boxes are turned back into the `Graphics` expression,
+/// rendered, and nested at its natural size with its vertical center on the
+/// math axis (a quarter of the font size above the baseline), the way an
+/// inline graphic sits among the operands of a formula.
+fn inline_graphics_box_layout(
+  expr: &Expr,
+  font_size: f64,
+) -> Option<BoxLayout> {
+  let source = crate::notebook::box_source_to_graphics_expr(
+    &crate::syntax::expr_to_input_form(expr),
+  );
+  let graphic = crate::syntax::string_to_expr(&source).ok()?;
+  // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
+  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
+  let rendered = match &evaluated {
+    Expr::FunctionCall { name, args } if name == "Graphics" => {
+      graphics_ast(args).ok()?
+    }
+    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+      crate::functions::plot3d::graphics3d_ast(args).ok()?
+    }
+    _ => evaluated.clone(),
+  };
+  let Expr::Graphics { svg, .. } = &rendered else {
+    return None;
+  };
+  let (w, h) = svg_natural_size(svg)?;
+  if !(w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0) {
+    return None;
+  }
+  let axis = font_size * 0.25;
+  // Keep at least a line of text's height so neighbors stay aligned.
+  let above = (h / 2.0 + axis).max(font_size * 0.8);
+  let below = (h / 2.0 - axis).max(font_size * 0.25);
+  Some(BoxLayout {
+    width: w,
+    height: above + below,
+    baseline: above,
+    elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
+  })
 }
 
 /// Render a `BoxLayout` into a complete SVG string.
@@ -28769,6 +28823,43 @@ fn has_stacked_inline_box(s: &str) -> bool {
 /// arithmetic expression whose box form holds a `FractionBox`, possibly
 /// inside a `Row` or a style wrapper. Strings and other layouts are drawn as
 /// ordinary text.
+/// Whether a label is a formula (arithmetic or a relation) with a picture
+/// among its operands, like `1/6 (g1 + 2 g2) == g3`: it is typeset with the
+/// pictures drawn inline rather than as their `-Graphics-` placeholders.
+fn formula_has_graphics_operand(expr: &Expr) -> bool {
+  fn is_graphic(e: &Expr) -> bool {
+    matches!(e, Expr::Graphics { .. })
+      || matches!(e, Expr::FunctionCall { name, args }
+        if (name == "Graphics" || name == "Graphics3D") && !args.is_empty())
+  }
+  fn is_formula_head(name: &str) -> bool {
+    matches!(
+      name,
+      "Plus"
+        | "Times"
+        | "Power"
+        | "Equal"
+        | "Unequal"
+        | "Less"
+        | "Greater"
+        | "LessEqual"
+        | "GreaterEqual"
+    )
+  }
+  fn walk(e: &Expr) -> bool {
+    match e {
+      Expr::FunctionCall { name, args } if is_formula_head(name) => {
+        args.iter().any(|a| is_graphic(a) || walk(a))
+      }
+      Expr::Comparison { operands, .. } => {
+        operands.iter().any(|a| is_graphic(a) || walk(a))
+      }
+      _ => false,
+    }
+  }
+  walk(expr)
+}
+
 fn label_typesets_fraction(expr: &Expr) -> bool {
   match expr {
     // A bare rational number (`-7/4`) is drawn by the numeric fraction
@@ -42843,7 +42934,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     // up the condition under which they are on screen.
     collect_pane_visibility(spec, &place_map, &mut control_visible, None);
     collect_row_joined_buttons(spec, &mut row_joined_buttons);
-    collect_row_joined_controls(spec, &mut row_joined_controls);
+    collect_row_joined_controls(spec, &place_map, &mut row_joined_controls);
     if let Some(items) = named_control_group_items(spec) {
       arg_items.extend(items);
       continue;
@@ -46569,7 +46660,15 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
 /// `Spacer[…]` items keep the run going, and a caption piece (a string or
 /// `Style[…]`/`Text[…]` label holding no control, which the panel draws as
 /// a heading row) starts or continues it; any other item breaks the run.
-fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
+/// A `Place[n]` item stands for the controls of layout slot `n` (resolved
+/// through `place_map`, see `place_slot_variables`), so a custom layout
+/// `Row[{Place[1], Spacer[50], Place[2]}]` joins those controls the same
+/// way.
+fn collect_row_joined_controls(
+  spec: &Expr,
+  place_map: &[Vec<String>],
+  out: &mut Vec<String>,
+) {
   match spec {
     Expr::FunctionCall { name, args } if name == "Row" => {
       let Some(Expr::List(items)) = args.first() else {
@@ -46599,6 +46698,23 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
               None => after_control = false,
             }
           }
+          Expr::FunctionCall { name, args: p } if is_place_head(name) => {
+            let vars = match p.as_slice() {
+              [Expr::Integer(n)] if *n >= 1 => {
+                place_map.get(*n as usize - 1).map_or_default(Vec::as_slice)
+              }
+              _ => &[],
+            };
+            if vars.is_empty() {
+              after_control = false;
+            }
+            for var in vars {
+              if after_control {
+                out.push(var.clone());
+              }
+              after_control = true;
+            }
+          }
           Expr::FunctionCall { name, .. } if name == "Spacer" => {}
           Expr::String(_) => after_control = true,
           Expr::FunctionCall { name, .. }
@@ -46609,19 +46725,19 @@ fn collect_row_joined_controls(spec: &Expr, out: &mut Vec<String>) {
           }
           other => {
             after_control = false;
-            collect_row_joined_controls(other, out);
+            collect_row_joined_controls(other, place_map, out);
           }
         }
       }
     }
     Expr::FunctionCall { args, .. } => {
       for a in args {
-        collect_row_joined_controls(a, out);
+        collect_row_joined_controls(a, place_map, out);
       }
     }
     Expr::List(items) => {
       for a in items {
-        collect_row_joined_controls(a, out);
+        collect_row_joined_controls(a, place_map, out);
       }
     }
     _ => {}
