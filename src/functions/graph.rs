@@ -2635,6 +2635,38 @@ pub(crate) fn tidy_tree(
   pts
 }
 
+/// Positions for vertices kept in this order, at least one unit apart,
+/// as close as possible (least squares) to the `wanted` positions: runs
+/// of vertices that would crowd each other are spread evenly about the
+/// mean of where they want to be (pool-adjacent-violators on
+/// `wanted[i] - i`).
+fn spread_in_order(wanted: &[f64]) -> Vec<f64> {
+  // Blocks of (sum of shifted targets, count).
+  let mut blocks: Vec<(f64, usize)> = Vec::with_capacity(wanted.len());
+  for (i, &w) in wanted.iter().enumerate() {
+    blocks.push((w - i as f64, 1));
+    while blocks.len() > 1 {
+      let (s2, c2) = blocks[blocks.len() - 1];
+      let (s1, c1) = blocks[blocks.len() - 2];
+      if s1 / c1 as f64 > s2 / c2 as f64 {
+        blocks.pop();
+        let top = blocks.len() - 1;
+        blocks[top] = (s1 + s2, c1 + c2);
+      } else {
+        break;
+      }
+    }
+  }
+  let mut out = Vec::with_capacity(wanted.len());
+  for (sum, count) in blocks {
+    let level = sum / count as f64;
+    for _ in 0..count {
+      out.push(level + out.len() as f64);
+    }
+  }
+  out
+}
+
 /// Layered ("hierarchical") vertex positions.
 ///
 /// A tree (edge directions aside) is drawn tidily from its root — the
@@ -2643,7 +2675,8 @@ pub(crate) fn tidy_tree(
 /// every vertex one layer below the longest chain of edges leading to it
 /// (breadth-first from `root` when one is given), vertices ordered within
 /// a layer by the mean position of their neighbors to keep crossings
-/// down, and packed from the left one unit apart. With `close_up`, as in
+/// down, and placed at least one unit apart near the median of their
+/// neighbors, so the drawing comes out balanced. With `close_up`, as in
 /// Wolfram's named layered embeddings, the layers of a wide drawing close
 /// up so it is at most 1/φ times as tall as it is wide; the automatic
 /// layout of a directed acyclic graph keeps its layers one unit apart.
@@ -2900,41 +2933,60 @@ fn layered_layout(
   }
 
   // Across a layer the vertices keep their order, one unit apart at
-  // least, each as close as that allows to the median of its neighbors
-  // in the layer above (the right one of the middle two for an even
-  // count), so a vertex with many parents sits under them. Where that
-  // would make the drawing wider than its widest layer, the layers stay
-  // packed from the left instead.
-  let packed_width = rows
-    .iter()
-    .map(Vec::len)
-    .max()
-    .unwrap_or(1)
-    .saturating_sub(1) as f64;
-  let packed = slot.clone();
-  for l in 1..layers {
-    let mut prev: Option<f64> = None;
-    for &v in &rows[l] {
-      let mut above: Vec<f64> = up[v].iter().map(|&u| slot[u]).collect();
-      above.sort_by(f64::total_cmp);
-      let wanted = above
-        .get(above.len() / 2)
-        .copied()
-        .unwrap_or_else(|| prev.map_or(0.0, |p| p + 1.0));
-      let x = prev.map_or(wanted, |p| wanted.max(p + 1.0));
-      slot[v] = x;
-      prev = Some(x);
+  // least. Sweeps down and up the layers pull every vertex toward the
+  // median of its neighbors in the layer just swept (the middle of an
+  // even number of them), and the vertices of a layer that want to be
+  // closer than one unit spread out evenly around where they want to be
+  // (see [`spread_in_order`]), so a diamond or a Hasse diagram comes out
+  // balanced rather than packed from the left. The positions then snap
+  // to the unit grid of the widest layer, halves rounding to the right:
+  // a vertex under an even number of parents sits under the right one of
+  // their middle two, as in Wolfram's drawings.
+  let median = |mut xs: Vec<f64>| -> Option<f64> {
+    if xs.is_empty() {
+      return None;
     }
+    xs.sort_by(f64::total_cmp);
+    let m = xs.len() / 2;
+    Some(if xs.len() % 2 == 1 {
+      xs[m]
+    } else {
+      f64::midpoint(xs[m - 1], xs[m])
+    })
+  };
+  const PLACEMENT_ROUNDS: usize = 4;
+  let place = |l: usize, neighbors: &[Vec<usize>], slot: &mut [f64]| {
+    let wanted: Vec<f64> = rows[l]
+      .iter()
+      .map(|&v| {
+        median(neighbors[v].iter().map(|&u| slot[u]).collect())
+          .unwrap_or(slot[v])
+      })
+      .collect();
+    for (&v, x) in rows[l].iter().zip(spread_in_order(&wanted)) {
+      slot[v] = x;
+    }
+  };
+  for round in 0..=PLACEMENT_ROUNDS {
+    for l in 1..layers {
+      place(l, &up, &mut slot);
+    }
+    if round == PLACEMENT_ROUNDS {
+      break;
+    }
+    for l in (0..layers.saturating_sub(1)).rev() {
+      place(l, &down, &mut slot);
+    }
+  }
+  let widest = (0..layers).max_by_key(|&l| rows[l].len()).unwrap_or(0);
+  let origin = rows[widest].first().map_or(0.0, |&v| slot[v]);
+  for x in &mut slot {
+    *x = (*x - origin + 1e-6).round();
   }
   let width = (0..total)
     .map(|v| slot[v])
     .fold(f64::NEG_INFINITY, f64::max)
     - (0..total).map(|v| slot[v]).fold(f64::INFINITY, f64::min);
-  let (slot, width) = if width > packed_width + 1e-9 {
-    (packed, packed_width)
-  } else {
-    (slot, width)
-  };
   let offsets = layer_offsets(layer_size, layers - 1);
   let depth_span = offsets[layers - 1].max(0.0);
   let step = if close_up && width > 0.0 && depth_span > 0.0 {
@@ -13023,9 +13075,31 @@ pub(crate) fn graph_plot3d_ast(
       call("Hue", vec![Expr::Real(0.6), Expr::Real(s), Expr::Real(b)]),
     )
   };
+  let option = |key: &str| {
+    options.iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key) => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })
+  };
+  let not_automatic =
+    |e: &Expr| !matches!(e, Expr::Identifier(s) if s == "Automatic");
+  // `EdgeStyle -> s`, else `PlotStyle -> s`, restyles the edge tubes.
+  let edge_directive = option("EdgeStyle")
+    .filter(not_automatic)
+    .or_else(|| option("PlotStyle").filter(not_automatic))
+    .map_or_else(|| hue(0.2, 0.8), |s| call1("Directive", s));
   let edge_group = Expr::List(
     vec![
-      hue(0.2, 0.8),
+      edge_directive,
       call1("Arrowheads", Expr::Real(0.0)),
       Expr::List(vec![call("Arrow", vec![tube, radius.clone()])].into()),
     ]

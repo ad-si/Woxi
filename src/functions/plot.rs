@@ -387,6 +387,11 @@ impl<'a> PlotBody2<'a> {
     }
   }
 
+  /// Whether the body compiled, so sampling it is cheap.
+  pub(crate) fn is_compiled(&self) -> bool {
+    self.compiled.is_some()
+  }
+
   pub(crate) fn at(&self, x: f64, y: f64) -> Option<f64> {
     if let Some(c) = &self.compiled
       && let Some(sample) = c.sample(&[x, y])
