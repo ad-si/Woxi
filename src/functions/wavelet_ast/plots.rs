@@ -50,10 +50,7 @@ fn plot_winds(dwd: &Dwd, spec: Option<&Expr>) -> Option<Vec<Vec<u8>>> {
 
 pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fname = "WaveletScalogram";
-  let positional: Vec<&Expr> = args
-    .iter()
-    .filter(|a| !matches!(a, Expr::Rule { .. }))
-    .collect();
+  let positional: Vec<&Expr> = args.iter().filter(|a| !is_option(a)).collect();
   if positional.is_empty() || positional.len() > 3 {
     crate::emit_message(&format!(
       "{fname}::argt: {fname} called with an invalid number of arguments."
@@ -330,16 +327,25 @@ fn scalogram_frame_ticks(
   )
 }
 
+/// Whether a call argument is an option (`name -> value` or `name :> value`).
+fn is_option(e: &Expr) -> bool {
+  matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+}
+
+/// The plot data followed by every option rule of the original call.
+fn with_plot_options(data: Expr, args: &[Expr]) -> Vec<Expr> {
+  let mut plot_args = vec![data];
+  plot_args.extend(args.iter().filter(|a| is_option(a)).cloned());
+  plot_args
+}
+
 // ---------------------------------------------------------------------------
 // WaveletListPlot
 // ---------------------------------------------------------------------------
 
 pub fn wavelet_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fname = "WaveletListPlot";
-  let positional: Vec<&Expr> = args
-    .iter()
-    .filter(|a| !matches!(a, Expr::Rule { .. }))
-    .collect();
+  let positional: Vec<&Expr> = args.iter().filter(|a| !is_option(a)).collect();
   if positional.is_empty() || positional.len() > 3 {
     crate::emit_message(&format!(
       "{fname}::argt: {fname} called with an invalid number of arguments."
@@ -407,7 +413,10 @@ pub fn wavelet_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if series.is_empty() {
     return Ok(unevaluated(fname, args));
   }
-  call("ListLinePlot", &[Expr::List(series.into())])
+  call(
+    "ListLinePlot",
+    &with_plot_options(Expr::List(series.into()), args),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -522,10 +531,7 @@ fn matrix_or_image_plot(
   args: &[Expr],
   image: bool,
 ) -> Result<Expr, InterpreterError> {
-  let positional: Vec<&Expr> = args
-    .iter()
-    .filter(|a| !matches!(a, Expr::Rule { .. }))
-    .collect();
+  let positional: Vec<&Expr> = args.iter().filter(|a| !is_option(a)).collect();
   if positional.is_empty() || positional.len() > 3 {
     crate::emit_message(&format!(
       "{fname}::argt: {fname} called with an invalid number of arguments."
@@ -577,14 +583,10 @@ fn matrix_or_image_plot(
   );
   // Plot options (ColorFunction, Frame, ImageSize, …) go to the underlying
   // plot / image constructor unchanged.
-  let mut plot_args = vec![matrix_expr];
-  plot_args.extend(
-    args
-      .iter()
-      .filter(|a| matches!(a, Expr::Rule { .. }))
-      .cloned(),
-  );
-  call(if image { "Image" } else { "MatrixPlot" }, &plot_args)
+  call(
+    if image { "Image" } else { "MatrixPlot" },
+    &with_plot_options(matrix_expr, args),
+  )
 }
 
 pub fn wavelet_matrix_plot_ast(
