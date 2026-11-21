@@ -2000,9 +2000,6 @@ fn bessel_complex_value(kind: char, nu: f64, z: Cx) -> Cx {
   }
 }
 
-/// Numeric BesselJ/I/Y/K for an inexact complex argument, or a negative real
-/// argument where the real-line evaluators have no value (Y, K, and J, I at
-/// non-integer order). Returns `None` when the arguments don't qualify.
 thread_local! {
   static IN_ARBITRARY_BESSEL: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
@@ -2029,6 +2026,9 @@ fn arbitrary_precision_of(exprs: &[&Expr]) -> Option<f64> {
   if machine { None } else { min }
 }
 
+/// Numeric BesselJ/I/Y/K for an inexact complex argument, or a negative real
+/// argument where the real-line evaluators have no value (Y, K, and J, I at
+/// non-integer order). Returns `None` when the arguments don't qualify.
 fn bessel_complex_numeric(
   kind: char,
   n_expr: &Expr,

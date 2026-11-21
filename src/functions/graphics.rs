@@ -25026,6 +25026,27 @@ fn trim_char_slice(cs: &[char]) -> &[char] {
 /// Parse a `\*Head[\(arg\),\(arg\),…]` explicit box, with `cs[pos..]` pointing
 /// just past the `\*`. Returns the resulting box Expr and the index past the
 /// consumed tokens.
+/// Whether a box argument read as text is an option setting
+/// (`MultilineFunction -> None`, `Rule[MultilineFunction, None]`).
+fn is_box_option_text(arg: &Expr) -> bool {
+  let Expr::String(text) = arg else {
+    return false;
+  };
+  match crate::parse_to_expr(text.trim()) {
+    Ok(
+      Expr::Rule { ref pattern, .. } | Expr::RuleDelayed { ref pattern, .. },
+    ) => {
+      matches!(pattern.as_ref(), Expr::Identifier(_))
+    }
+    Ok(Expr::FunctionCall { ref name, ref args })
+      if matches!(name.as_str(), "Rule" | "RuleDelayed") && args.len() == 2 =>
+    {
+      matches!(&args[0], Expr::Identifier(_))
+    }
+    _ => false,
+  }
+}
+
 fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   // Read the head name (letters/digits/`$`). The source may break the line
   // after the `\*` (`\!\(\*\nStyleBox[…]\)`, how a saved definition wraps
@@ -25096,6 +25117,14 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
           args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..i])));
         }
         i += 1; // consume ']'
+        // Trailing display options of a box other than a `StyleBox`
+        // (`SuperscriptBox["y", "′", MultilineFunction -> None]`) set how
+        // the box behaves when edited, not what it shows.
+        if name != "StyleBox" {
+          while args.len() > 1 && args.last().is_some_and(is_box_option_text) {
+            args.pop();
+          }
+        }
         return (
           Expr::FunctionCall {
             name,
@@ -25237,6 +25266,54 @@ fn parse_box_units_tagged(cs: &[char]) -> Vec<(Expr, bool)> {
             None => i += 1,
           }
           continue;
+        }
+        // `base\^script` and `base\_script` set a superscript or a
+        // subscript on the token just before: the last word of the plain
+        // text, or the last unit when the text ends there. The script is
+        // the `\(…\)` group or the word that follows.
+        '^' | '_' => {
+          let tail_start = plain
+            .char_indices()
+            .rev()
+            .take_while(|(_, c)| c.is_alphanumeric() || *c == '.')
+            .last()
+            .map(|(k, _)| k);
+          let base = match tail_start {
+            Some(k) => {
+              let word = plain.split_off(k);
+              if !plain.is_empty() {
+                res.push((Expr::String(std::mem::take(&mut plain)), false));
+              }
+              Some(Expr::String(word))
+            }
+            None if plain.is_empty() => res.pop().map(|(unit, _)| unit),
+            None => None,
+          };
+          if let Some(base) = base {
+            let (script, next) = if cs.get(i + 2) == Some(&'\\')
+              && cs.get(i + 3) == Some(&'(')
+              && let Some(close) = find_box_group_close(cs, i + 4)
+            {
+              (parse_box_to_expr(&cs[i + 4..close]), close + 2)
+            } else {
+              let mut j = i + 2;
+              while j < cs.len() && (cs[j].is_alphanumeric() || cs[j] == '.') {
+                j += 1;
+              }
+              if j == i + 2 && j < cs.len() {
+                j += 1;
+              }
+              (Expr::String(cs[i + 2..j].iter().collect()), j)
+            };
+            let head = if cs[i + 1] == '^' {
+              "SuperscriptBox"
+            } else {
+              "SubscriptBox"
+            };
+            res.push((call(head, vec![base, script]), true));
+            i = next;
+            continue;
+          }
         }
         // Lone `\!` interpret marker (the following `\(` is handled next
         // iteration) and a stray `\)` — skip the two-char marker.
