@@ -14698,6 +14698,22 @@ mod plot3d {
       assert!(graphics.contains(">p0.5<"), "{graphics}");
     }
 
+    // `FrameTicks` naming a `Module` local that holds an explicit tick list
+    // uses the list: the symbol is not called as a tick function, so the
+    // frame is not marked invalid and the right-edge labels are drawn.
+    #[test]
+    fn plot_frame_ticks_from_a_module_local_list() {
+      let plot = export_svg(
+        r#"Module[{tk}, tk = {{0, "ra"}, {0.5, "rb"}, {1, "rc"}};
+          Plot[x, {x, 0, 1}, Frame -> True,
+            FrameTicks -> {{Automatic, tk}, {Automatic, Automatic}}]]"#,
+      );
+      for label in [">ra<", ">rb<", ">rc<"] {
+        assert!(plot.contains(label), "missing {label}: {plot}");
+      }
+      assert!(!plot.contains("100%,33%,33%"), "{plot}");
+    }
+
     // Plot options are held, so a value stored in a variable is looked up:
     // a `FrameTicks` edge list labels its edge instead of being called as
     // a tick function (which tinted the plot as invalid), and an
