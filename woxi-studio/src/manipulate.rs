@@ -619,10 +619,6 @@ impl ControlState {
   }
 }
 
-/// A control's freshly typeset caption, as `(control name, (styled runs,
-/// picture SVG))`.
-type ResolvedLabel = (String, (Vec<LabelRun>, Option<String>));
-
 /// A discrete control's freshly resolved choice list, as
 /// `(control name, (values, labels, rendered labels, styled-label runs))`.
 type ResolvedChoices = (

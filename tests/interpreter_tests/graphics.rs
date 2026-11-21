@@ -36640,7 +36640,7 @@ mod graphics_grid {
   /// (size, weight, color, face) like any other cell, instead of falling
   /// back to the default 14 pt; the nested grid's own style still wins.
   #[test]
-  fn nested_grid_inherits_outer_grid_style() {
+  fn nested_grid_inherits_outer_grid_style_and_face() {
     clear_state();
     let svg_of =
       |code: &str| interpret_with_stdout(code).unwrap().graphics.unwrap();
