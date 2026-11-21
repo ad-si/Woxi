@@ -1122,6 +1122,11 @@ fn extract_typeset_box(s: &str) -> Option<String> {
         && !a[1..a.len() - 1].contains("\\\"")
       {
         unescape_code_string(&a[1..a.len() - 1])
+      } else if a.len() >= 2 && a.starts_with("\"\\\"") && a.ends_with('"') {
+        // A string literal (`"\"…\""`) — possibly an inline cell such as
+        // `"\"\<\!\(\*StyleBox[\"t\", …]\)\>\""` — keeps its inner
+        // quotes escaped, so it still reads back as one string.
+        box_part_source(a)
       } else {
         extract_cell_content(a)
       }
@@ -6907,6 +6912,23 @@ Cell["Chapter 2", "Chapter"]
     assert_eq!(
       flat[0].1.content,
       r#"f[{k,1,"surface 1"},Appearance->"Labeled"]"#
+    );
+  }
+
+  #[test]
+  fn fraction_box_string_literal_keeps_inline_cell_quotes_escaped() {
+    // An inline `StyleBox` written as a string numerator stays one string
+    // literal: its inner quotes must not close it early.
+    let nb = parse_notebook(
+      r#"Notebook[{Cell[BoxData[RowBox[{"f", "[", FractionBox["\"\<\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)\>\"", "T"], "]"}]], "Input"]}]"#,
+    )
+    .unwrap();
+    let CellEntry::Single(cell) = &nb.cells[0] else {
+      panic!("expected a single cell");
+    };
+    assert_eq!(
+      cell.content,
+      r#"f[(("\!\(\*StyleBox[\"t\",FontSlant->\"Italic\"]\)")/(T))]"#
     );
   }
 

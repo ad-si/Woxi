@@ -287,7 +287,10 @@ pub(super) fn zassenhaus_int_factors(
     if lc % p == 0 {
       continue;
     }
-    let fp = derivative(&f);
+    // Differentiate the residues: the derivative is only needed mod p,
+    // and multiplying a large coefficient by its degree overflows.
+    let f_mod_p: Vec<i128> = f.iter().map(|c| c.rem_euclid(p)).collect();
+    let fp = derivative(&f_mod_p);
     let Some((g, _, _)) = ext_gcd(&f, &fp, p) else {
       continue;
     };
