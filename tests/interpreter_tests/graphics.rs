@@ -46255,9 +46255,10 @@ mod manipulate {
       interpret("v = 2").unwrap();
       interpret(&found[1]).unwrap();
       assert_eq!(interpret("v").unwrap(), "{}", "{control_type}");
+      // Ticking another choice keeps the scalar's choice selected.
       interpret("v = 2").unwrap();
       interpret(&found[0]).unwrap();
-      assert_eq!(interpret("v").unwrap(), "{1}", "{control_type}");
+      assert_eq!(interpret("v").unwrap(), "{2, 1}", "{control_type}");
     }
   }
 
