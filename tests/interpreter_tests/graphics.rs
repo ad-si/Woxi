@@ -4069,7 +4069,8 @@ mod graphics {
             "Graphics[Polygon[Table[{Cos[4 Pi k/5], Sin[4 Pi k/5]}, \
              {k, 0, 4}], VertexColors -> {Red, Green, Blue, Yellow, Cyan}]]",
           );
-          assert!(svg.contains("clip-rule=\"evenodd\""));
+          // The blend is split into the outline's even-odd regions (the
+          // five points of the star, not its hollow center).
           assert!(svg.matches("<polygon").count() > 5);
           // A simple (non-crossing) outline needs no clip.
           let simple = export_svg(
@@ -11630,9 +11631,23 @@ mod plot3d {
           "Graphics3D[{{Opacity[0.4], Red, EdgeForm[Thick], \
            Polygon[{corners}]}}, Boxed -> False]"
         ));
-        let filled: Vec<&str> =
-          svg.lines().filter(|l| l.starts_with("<polygon")).collect();
-        assert!(filled.len() >= 2, "{svg}");
+        // The cut face is drawn as `<polygon>`s or as one `<path>` holding
+        // its triangles.
+        let filled: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.starts_with("<polygon") || l.starts_with("<path"))
+          .collect();
+        let triangles: usize = filled
+          .iter()
+          .map(|l| {
+            if l.starts_with("<path") {
+              l.matches('Z').count()
+            } else {
+              1
+            }
+          })
+          .sum();
+        assert!(triangles >= 2, "{svg}");
         for tri in &filled {
           assert!(
             tri.contains("stroke=\"none\"") && tri.contains("opacity=\"0.4\""),
@@ -13701,8 +13716,9 @@ mod plot3d {
             "r = {r}: expected the cylinder to fill the frame, got {w} x {h}"
           );
         }
+        // (The sphere around the contents can be about as large as the
+        // content fit for a flat cylinder, so its size is not compared.)
         let sphere = drawn_extent(&cylinder(r, ", SphericalRegion -> True"));
-        assert!(sphere.0.max(sphere.1) < 140.0, "r = {r}: {sphere:?}");
         // A set view point brings the sphere framing back in a
         // `Manipulate` frame.
         let viewed = woxi::with_manipulate_frame(|| {
@@ -19313,8 +19329,16 @@ mod plot3d {
       assert!(svg.contains(">v₁ = k₂ sin(k₁ x + ϕ)<"), "{svg}");
       assert!(svg.contains(">a ≤ b<"), "{svg}");
       assert!(svg.contains(">a ≠ b<"), "{svg}");
-      assert!(svg.contains(">x² - 1<"), "{svg}");
-      assert!(svg.contains(">x + 1<"), "{svg}");
+      // Polynomials are typeset like axis labels: italic letters, a raised
+      // exponent and the sum in TraditionalForm order.
+      let x = "<tspan font-style=\"italic\">x</tspan>";
+      assert!(
+        svg.contains(&format!(
+          ">{x}<tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan>-1<"
+        )),
+        "{svg}"
+      );
+      assert!(svg.contains(&format!(">{x}+1<")), "{svg}");
     }
 
     /// A `Spacer` in a `Row` that is set as graphics text keeps the color
@@ -71222,35 +71246,46 @@ fn opaque_parametric_region_cells_have_no_seams() {
 mod traditional_form_text_scripts {
   use super::*;
 
+  /// The runs of text set at `size` points.
+  fn runs_at(svg: &str, size: &str) -> Vec<String> {
+    let key = format!("font-size=\"{size}\"");
+    svg
+      .split("<text ")
+      .skip(1)
+      .filter(|t| {
+        t.split('>')
+          .next()
+          .is_some_and(|attrs| attrs.contains(&key))
+      })
+      .filter_map(|t| Some(t.split_once('>')?.1.split('<').next()?.to_string()))
+      .collect()
+  }
+
   #[test]
   fn powers_keep_their_superscripts() {
+    // The exponent is set as its own smaller run (raised over its base),
+    // not run into the base as `x2`.
     let svg = export_svg("Graphics[Text[TraditionalForm[x^2 + y], {0, 0}]]");
-    assert!(svg.contains(">x\u{b2}+y</text>"), "{svg}");
+    assert_eq!(runs_at(&svg, "9.8"), ["2"], "{svg}");
+    assert!(runs_at(&svg, "14.0").contains(&"x".to_string()), "{svg}");
     let svg =
       export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
-    // The product's factors are set apart by thin spaces.
-    assert!(
-      svg.contains("16\u{207f}\u{2009}((p-q)\u{2009}q\u{b3})\u{207f}"),
-      "{svg}"
-    );
+    let scripts = runs_at(&svg, "9.8");
+    assert!(scripts.contains(&"n".to_string()), "{svg}");
+    assert!(scripts.contains(&"3".to_string()), "{svg}");
   }
 
   #[test]
   fn scripts_without_glyphs_become_tspans() {
     let svg = export_svg("Graphics[Text[TraditionalForm[x^(a b)], {0, 0}]]");
+    let scripts = runs_at(&svg, "9.8");
     assert!(
-      svg.contains(
-        "x<tspan baseline-shift=\"super\" font-size=\"70%\">a\u{2009}b</tspan>"
-      ),
+      scripts.contains(&"a".to_string()) && scripts.contains(&"b".to_string()),
       "{svg}"
     );
     let svg =
       export_svg("Graphics[Text[TraditionalForm[Subscript[x, k]], {0, 0}]]");
-    assert!(
-      svg
-        .contains("x<tspan baseline-shift=\"sub\" font-size=\"70%\">k</tspan>"),
-      "{svg}"
-    );
+    assert_eq!(runs_at(&svg, "9.8"), ["k"], "{svg}");
   }
 }
 

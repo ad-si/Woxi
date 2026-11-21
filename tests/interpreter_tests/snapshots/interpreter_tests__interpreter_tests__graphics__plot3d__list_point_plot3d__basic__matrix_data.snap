@@ -1,6 +1,5 @@
 ---
 source: tests/interpreter_tests/graphics.rs
-assertion_line: 7849
 expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 ---
 <svg width="360" height="360" viewBox="0 0 360 360" xmlns="http://www.w3.org/2000/svg">
@@ -83,7 +82,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="150.0" y1="88.4" x2="149.9" y2="85.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="131.5" y1="138.4" x2="136.6" y2="133.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="199.8" y1="135.0" x2="208.2" y2="137.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="149.9" cy="83.7" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="149.9" cy="83.7" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="149.9" y1="85.1" x2="149.8" y2="81.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="208.2" y1="137.6" x2="216.7" y2="140.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="149.8" y1="81.8" x2="149.7" y2="78.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -110,7 +109,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="269.4" y1="156.1" x2="278.5" y2="158.9" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="165.8" y1="59.0" x2="174.3" y2="61.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="138.6" y1="62.7" x2="143.8" y2="58.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="206.2" cy="89.7" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="206.2" cy="89.7" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="278.5" y1="158.9" x2="287.7" y2="161.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="104.9" y1="162.9" x2="110.4" y2="157.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="174.3" y1="61.2" x2="183.0" y2="63.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -142,7 +141,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="81.8" y1="184.3" x2="87.7" y2="178.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="327.8" y1="156.6" x2="328.2" y2="153.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="246.3" y1="80.2" x2="255.7" y2="82.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="267.7" cy="96.3" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="267.7" cy="96.3" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="328.2" y1="153.2" x2="328.7" y2="149.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="111.1" y1="84.6" x2="116.8" y2="80.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="328.7" y1="149.8" x2="329.2" y2="146.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -180,7 +179,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="334.5" y1="107.2" x2="335.0" y2="103.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="298.9" y1="213.2" x2="302.9" y2="207.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="50.1" y1="213.5" x2="56.7" y2="207.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="335.0" cy="103.5" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="335.0" cy="103.5" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="331.3" y1="108.6" x2="335.0" y2="103.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="80.8" y1="108.8" x2="87.1" y2="103.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="294.8" y1="219.4" x2="298.9" y2="213.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -189,7 +188,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="74.3" y1="114.0" x2="80.8" y2="108.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="290.6" y1="225.7" x2="294.8" y2="219.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="36.5" y1="226.1" x2="43.3" y2="219.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="36.5" cy="226.1" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="36.5" cy="226.1" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="323.6" y1="119.0" x2="327.5" y2="113.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="67.7" y1="119.3" x2="74.3" y2="114.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="36.5" y1="226.1" x2="35.9" y2="222.7" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -227,7 +226,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="29.8" y1="183.7" x2="29.2" y2="180.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="268.1" y1="259.6" x2="272.8" y2="252.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="29.2" y1="180.0" x2="28.6" y2="176.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="97.2" cy="240.5" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="97.2" cy="240.5" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="111.1" y1="255.5" x2="120.9" y2="259.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="28.6" y1="176.3" x2="28.0" y2="172.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="302.8" y1="147.0" x2="307.2" y2="141.2" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -259,7 +258,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="193.3" y1="288.0" x2="204.2" y2="292.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="284.5" y1="171.8" x2="289.2" y2="165.4" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="63.9" y1="167.0" x2="74.0" y2="170.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="164.4" cy="256.5" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="164.4" cy="256.5" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="243.0" y1="297.4" x2="248.3" y2="289.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="204.2" y1="292.3" x2="215.2" y2="296.6" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="74.0" y1="170.5" x2="84.2" y2="174.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>
@@ -286,7 +285,7 @@ expression: "export_svg(\"ListPointPlot3D[{{1, 2, 3, 4}, {5, 6, 7, 8}}]\")"
 <line x1="239.1" y1="280.2" x2="239.3" y2="276.5" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="148.2" y1="196.4" x2="159.3" y2="200.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="239.3" y1="276.5" x2="239.5" y2="272.8" stroke="rgb(102,102,102)" stroke-width="0.5"/>
-<circle cx="239.4" cy="274.4" r="1.75" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
+<circle cx="239.4" cy="274.4" r="2.31" fill="rgb(55,138,184)" stroke="rgb(38,96,128)" stroke-width="0.5" opacity="0.85"/>
 <line x1="159.3" y1="200.3" x2="170.6" y2="204.3" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="258.9" y1="206.4" x2="264.3" y2="199.1" stroke="rgb(102,102,102)" stroke-width="0.5"/>
 <line x1="239.5" y1="272.8" x2="239.7" y2="269.0" stroke="rgb(102,102,102)" stroke-width="0.5"/>

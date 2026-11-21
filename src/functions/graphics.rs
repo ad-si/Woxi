@@ -12306,9 +12306,10 @@ fn clip_infinite_line_to_box(
   half: bool,
   bb: &BBox,
 ) -> Option<((f64, f64), (f64, f64))> {
-  let margin = bb.width() + bb.height();
-  let (x0, x1) = (bb.x_min - margin, bb.x_max + margin);
-  let (y0, y1) = (bb.y_min - margin, bb.y_max + margin);
+  // The same region `HalfPlane`s are cut to (see `unbounded_draw_box`).
+  let bx = unbounded_draw_box(bb);
+  let (x0, x1) = (bx.x_min, bx.x_max);
+  let (y0, y1) = (bx.y_min, bx.y_max);
   let (mut t_lo, mut t_hi) =
     (if half { 0.0 } else { f64::NEG_INFINITY }, f64::INFINITY);
   for (pc, vc, lo, hi) in [(p.0, v.0, x0, x1), (p.1, v.1, y0, y1)] {
@@ -38609,16 +38610,25 @@ pub(crate) fn style_pushed_into_layout(
     // typeset as the source text of the `Pane` call. A `Text[line]` item
     // (one re-flowed line of prose) only picks the text face, so the style
     // goes onto its line too and the line is measured at the styled size.
+    // `Text[expr]` sets `expr` in plain text, so an enclosing `Bold` stays
+    // outside it (`Style[Row[{Text[a], …}], 18, Bold]` draws `a` plain at
+    // size 18).
     if let Expr::FunctionCall { name, args } = e
       && (matches!(name.as_str(), "Pane" | "Item")
         || (name == "Text" && args.len() == 1))
       && !args.is_empty()
     {
+      let is_text = name == "Text";
       let mut new_args: Vec<Expr> = args.iter().cloned().collect();
       new_args[0] = call(
         "Style",
         std::iter::once(args[0].clone())
-          .chain(directives.iter().cloned())
+          .chain(
+            directives
+              .iter()
+              .filter(|d| !(is_text && is_bold_directive(d)))
+              .cloned(),
+          )
           .collect(),
       );
       return call(name.as_str(), new_args);
@@ -39410,6 +39420,14 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
   None
 }
 
+/// Whether a layout item is a framed box (`Framed[…]`, `Panel[…]`): it is
+/// bounded by its frame, with no blank text margin around it, so an
+/// explicit `Column` spacing of 0 makes two frames touch.
+pub fn is_framed_box(e: &Expr) -> bool {
+  matches!(e, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "Framed" | "Panel"))
+}
+
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
@@ -39845,7 +39863,7 @@ fn column_layout_svg(
               svg,
               width: w,
               height: h,
-              picture: false,
+              picture: is_framed_box(&resolved),
             }
           }
           None => {
