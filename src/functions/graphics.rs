@@ -17260,8 +17260,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let spec = parse_plot_range_padding(padding_expr);
     let x_span = x_max - x_min;
     let y_span = y_max - y_min;
-    let (x_lo, x_hi) = spec.x.resolve(x_span, 0.04);
-    let (y_lo, y_hi) = spec.y.resolve(y_span, 0.04);
+    // An `Automatic` side leaves an axis pinned by an explicit `PlotRange`
+    // unpadded, as the default does: a `Plot` stores its graphics with
+    // `PlotRangePadding -> {Scaled[0.02], Automatic}` beside `PlotRange ->
+    // {{xmin, xmax}, {0, 30}}`, padding only the range it determined itself.
+    let automatic_frac = |explicit: bool| if explicit { 0.0 } else { 0.04 };
+    let (x_lo, x_hi) = spec
+      .x
+      .resolve(x_span, automatic_frac(plot_range_x.is_some()));
+    let (y_lo, y_hi) = spec
+      .y
+      .resolve(y_span, automatic_frac(plot_range_y.is_some()));
     bb.x_min = x_min - x_lo;
     bb.x_max = x_max + x_hi;
     bb.y_min = y_min - y_lo;
