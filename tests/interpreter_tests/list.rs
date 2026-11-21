@@ -12061,6 +12061,24 @@ mod join_non_list {
     );
   }
 
+  // GraphPlot lays out a Combinatorica graph like the built-in graph with
+  // the same vertices (isolated ones included) and edges.
+  #[test]
+  fn graph_plot_of_combinatorica_graph() {
+    assert_eq!(
+      interpret(
+        "g = Combinatorica`EmptyGraph[5]; \
+         h = Combinatorica`AddEdges[g, {{1, 2}, {2, 3}}]; \
+         {ExportString[GraphPlot[h, ImageSize -> 200], \"SVG\"] === \
+            ExportString[GraphPlot[Graph[{1, 2, 3, 4, 5}, {1 <-> 2, 2 <-> 3}], \
+              ImageSize -> 200], \"SVG\"], \
+          StringFreeQ[ExportString[GraphPlot[h], \"SVG\"], \"Combinatorica\"]}"
+      )
+      .unwrap(),
+      "{True, True}"
+    );
+  }
+
   // With the package loaded, the bare names reach the package's functions.
   #[test]
   fn combinatorica_bare_names_after_needs() {
@@ -16154,6 +16172,38 @@ mod list_correlate {
     assert_eq!(
       interpret("ListCorrelate[{1, 1}, {1, 2, 3, 4}, {1, 1}, 0]").unwrap(),
       "{3, 5, 7, 4}"
+    );
+  }
+
+  // Machine-number overhang correlations and convolutions are summed
+  // directly: a sample autocovariance `ListCorrelate[y, y, {1, 1}, 0]` of
+  // a few thousand reals used to build millions of symbolic products.
+  #[test]
+  fn machine_number_overhang_fast_path() {
+    assert_eq!(
+      interpret("ListCorrelate[{1., 2., 3.}, {1., 2., 3.}, {1, 1}, 0]")
+        .unwrap(),
+      "{14., 8., 3.}"
+    );
+    assert_eq!(
+      interpret("ListCorrelate[{1., 2.}, {3., 4., 5.}, {1, 1}]").unwrap(),
+      "{11., 14., 11.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2.}, {3., 4., 5.}, {1, 1}]").unwrap(),
+      "{13., 10., 13.}"
+    );
+    assert_eq!(
+      interpret("ListConvolve[{1., 2.}, {3., 4., 5.}, {1, 1}, 0]").unwrap(),
+      "{3., 10., 13.}"
+    );
+    assert_eq!(
+      interpret(
+        "y = N[Range[3000]]; r = ListCorrelate[y, y, {1, 1}, 0]; \
+         {Length[r], First[r], Last[r]}"
+      )
+      .unwrap(),
+      "{3000, 9.0045005*^9, 3000.}"
     );
   }
 

@@ -1022,7 +1022,8 @@ pub struct ManipulateState {
   refresh_interval: Option<String>,
   /// The seconds between timed refreshes as of the last frame, or `None`
   /// when the body does not currently refresh on its own (`t` is
-  /// `Infinity`, e.g. while a "run" checkbox is off).
+  /// `Infinity`, e.g. while a "run" checkbox is off, or the `Refresh` did
+  /// not run).
   timed_refresh: Option<f64>,
   /// When the body last re-ran, so a timed refresh honors its interval.
   last_refresh: Option<std::time::Instant>,
@@ -2662,11 +2663,14 @@ impl ManipulateState {
         ),
       )
     });
-    self.timed_refresh = timed_refresh;
+    // Whether this pass actually ran a timed `Refresh` (one inside an
+    // untaken `If` branch, e.g. a recorder that is switched off, does not
+    // make the body re-run on its own).
+    let refresh_ran = woxi::take_timed_refresh();
+    self.timed_refresh = timed_refresh.filter(|_| refresh_ran);
     self.last_refresh = Some(std::time::Instant::now());
     self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
-    let timed_refresh = woxi::take_timed_refresh();
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
@@ -2717,7 +2721,7 @@ impl ManipulateState {
     }
     // A `Refresh` whose interval is known is paced by `timed_refresh`
     // instead, so a finite `UpdateInterval` waits its seconds.
-    self.self_refreshing |= timed_refresh && self.timed_refresh.is_none();
+    self.self_refreshing |= refresh_ran && self.timed_refresh.is_none();
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -5602,6 +5606,49 @@ mod tests {
     );
   }
 
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose visible sliders
+  /// state their defaults and are followed by hidden `{{var, value},
+  /// ControlType -> None}` specs carrying other values for the same
+  /// variables. This is a self-authored, construct-equivalent example.
+  ///
+  /// Wolfram keeps the first starting value, so the sliders (and the body)
+  /// must start at the visible defaults; the later hidden values used to
+  /// override them.
+  #[test]
+  fn later_hidden_spec_keeps_visible_control_default() {
+    let code = r#"Manipulate[
+      {width, depth, shift},
+      {{width, 10, "width"}, 10, 20},
+      {{depth, -4, "depth"}, -4, -1, 0.01},
+      {{shift, 0}, ControlType -> None},
+      {{width, 17.5}, ControlType -> None},
+      {{depth, -2.25}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let current = |name: &str| {
+      state
+        .controls
+        .iter()
+        .find(|c| c.name() == name)
+        .map(|c| c.current_code())
+    };
+    assert_eq!(current("width").as_deref(), Some("10"));
+    assert_eq!(current("depth").as_deref(), Some("-4"));
+    assert!(
+      state
+        .state
+        .iter()
+        .all(|(n, _)| n != "width" && n != "depth"),
+      "hidden respecs must not shadow the sliders: {:?}",
+      state.state
+    );
+    state.reevaluate();
+    assert_eq!(state.text_output.as_deref(), Some("{10, -4, 0}"));
+  }
+
   /// An interval control whose bounds are wrapped in `QuantityMagnitude`
   /// (a plain number is its own magnitude) must still be a real
   /// `IntervalSlider`; it used to vanish because the bounds stayed symbolic.
@@ -5815,14 +5862,13 @@ mod tests {
   }
 
   /// A Demonstrations idiom declares a control's own default
-  /// (`Control[{{n, 2, "n"}, …}]`) and then redeclares the same variable's
-  /// *actual* starting value via a separate, hidden `{{n, 3}, None}` spec —
-  /// so the variable ends up tracked both by its visible control and by
-  /// `ManipulateState::state`. The widget's own selection must still track
-  /// whatever the body actually binds `n` to (3, from the override spec, as
-  /// narrowed by `If[n < from, n = 3]`), not drift to the last entry of its
-  /// choice list the way a stale `current_index` did before the two tracks
-  /// were kept in sync.
+  /// (`Control[{{n, 2, "n"}, …}]`) and later lists a hidden `{{n, 3}, None}`
+  /// spec for the same variable. Wolfram keeps the first starting value, so
+  /// `n` starts at the control's 2 and is not tracked as hidden state too;
+  /// the body then narrows it to 3 (`If[n < from, n = 3]`). The widget's own
+  /// selection must track whatever the body actually binds `n` to, not drift
+  /// to the last entry of its choice list the way a stale `current_index`
+  /// did.
   #[test]
   fn discrete_control_syncs_with_shadowing_state_override() {
     let expr = woxi::interpret_to_expr(
@@ -5848,16 +5894,14 @@ mod tests {
       .iter()
       .find(|c| c.name() == "n")
       .expect("n control");
-    let n_state = state
-      .state
-      .iter()
-      .find(|(name, _)| name == "n")
-      .map(|(_, v)| v.as_str());
-
-    // The widget's own selection and the shadowing state entry must agree
-    // with each other, and both with the value the body actually bound.
+    // The widget's own selection follows the value the body actually bound,
+    // and the later hidden spec does not shadow the control.
     assert_eq!(n_ctrl.current_code(), "3");
-    assert_eq!(n_state, Some("3"));
+    assert!(
+      state.state.iter().all(|(name, _)| name != "n"),
+      "{:?}",
+      state.state
+    );
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a

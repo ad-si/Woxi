@@ -2,6 +2,14 @@
 
 # Unreleased
 
+- `Column` honors `ItemStyle`: a single style (`Directive[24, Bold, Red]`)
+    styles every item, a list styles the items in turn. A fixed `ItemSize`
+    width is the column's whole width, and stacked boxes (framed items,
+    rows of them, sized panes) are set 6 pt apart as stacked pictures are,
+    with or without an alignment argument.
+- `Text[TraditionalForm[Style[Grid[…], 24]]]` (and any `Style` around a
+    `TraditionalForm` of a styled layout) typesets the grid instead of
+    printing its source.
 - A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
     inside `Text`) is drawn as its full `w`×`h` box with the table aligned
     inside, so a Manipulate body sized this way no longer shrinks to the

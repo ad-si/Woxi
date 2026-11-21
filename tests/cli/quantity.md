@@ -206,6 +206,16 @@ $ wo 'UnitConvert[Quantity[1, "SpeedOfLight"], "km/h"]'
 Quantity[5396264244/5, Kilometers/Hours]
 ```
 
+## ReducedPlanckConstant
+
+The reduced Planck constant `h/(2 Pi)` converts exactly,
+keeping its factor of `Pi`:
+
+```scrut
+$ wo 'UnitConvert[Quantity[1, "ReducedPlanckConstant"]]'
+Quantity[132521403/(400000000000000000000000000000000000000000*Pi), (Kilograms*Meters^2)/Seconds]
+```
+
 ## Compound Unit Simplification
 
 Same-dimension units are simplified during arithmetic:
