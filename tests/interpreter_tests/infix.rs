@@ -118,9 +118,7 @@ mod infix_visual_mode {
       r#"Text[Style[TraditionalForm[Infix[{Subscript[a, 1] Subscript[a, 2], Subscript[a, 3]}, "+"]], 21]]"#,
     )
     .unwrap();
-    // `Text[Style[TraditionalForm[…], size]]` is drawn as a formula
-    // picture (the `Text` layout-item path); a bare form is typeset into
-    // `output_svg`. Either way the picture is checked.
+    // A `Text`-wrapped typeset formula is drawn as a picture.
     let svg = result
       .graphics
       .or(result.output_svg)
