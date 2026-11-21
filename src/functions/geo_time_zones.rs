@@ -532,20 +532,20 @@ mod tests {
     let xs: Vec<f64> = clipped.iter().map(|p| p.0).collect();
     assert_eq!(clipped.len(), 4);
     assert!(xs.iter().all(|&x| (5.0..=10.0).contains(&x)));
-    assert!(clip_ring(&square, (20.0, 30.0, 0.0, 10.0)).is_empty());
+    assert_eq!(clip_ring(&square, (20.0, 30.0, 0.0, 10.0)), Vec::new());
   }
 
   #[test]
   fn country_boxes_follow_standard_time() {
     assert_eq!(country_boxes("Japan", 9.0).len(), 1);
-    assert!(country_boxes("Japan", 8.0).is_empty());
+    assert_eq!(country_boxes("Japan", 8.0), Vec::new());
     // Only the eastern provinces of Indonesia keep GMT+9.
     assert_eq!(
       country_boxes("Indonesia", 9.0),
       vec![(126.0, 141.1, -11.0, 6.0)]
     );
     // Half-hour zones never match a whole-hour one.
-    assert!(country_boxes("India", 5.0).is_empty());
+    assert_eq!(country_boxes("India", 5.0), Vec::new());
     assert_eq!(country_boxes("India", 5.5).len(), 1);
   }
 
