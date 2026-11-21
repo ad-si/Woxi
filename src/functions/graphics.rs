@@ -48170,78 +48170,27 @@ fn collect_row_joined_controls(
   out: &mut Vec<String>,
 ) {
   match spec {
+    // Each row of a `Grid` lays its cells out side by side like a `Row`.
+    // Cells that hold no control (a symbol picture, a live readout) are
+    // drawn outside Woxi's control panel, so they do not break the line.
+    Expr::FunctionCall { name, args } if name == "Grid" => {
+      let Some(Expr::List(rows)) = args.first() else {
+        return;
+      };
+      for row in rows {
+        match row {
+          Expr::List(cells) => {
+            joined_line_controls(cells, true, place_map, out)
+          }
+          other => collect_row_joined_controls(other, place_map, out),
+        }
+      }
+    }
     Expr::FunctionCall { name, args } if name == "Row" => {
       let Some(Expr::List(items)) = args.first() else {
         return;
       };
-      let mut after_control = false;
-      // The non-control pieces since the last control: they form the
-      // caption `control_group_items` puts in front of the next control.
-      let mut caption: Vec<&Expr> = Vec::new();
-      for item in items {
-        let item = match item {
-          Expr::FunctionCall { name, args: inner }
-            if name == "Item" && !inner.is_empty() =>
-          {
-            &inner[0]
-          }
-          _ => item,
-        };
-        match item {
-          Expr::FunctionCall { name, args: c }
-            if name == "Control" && !c.is_empty() =>
-          {
-            match control_spec_variable(&c[0]) {
-              Some(var) => {
-                if after_control || is_live_panel_caption(&caption) {
-                  out.push(var);
-                }
-                after_control = true;
-              }
-              None => after_control = false,
-            }
-            caption.clear();
-          }
-          Expr::FunctionCall { name, args: p } if is_place_head(name) => {
-            let vars = match p.as_slice() {
-              [Expr::Integer(n)] if *n >= 1 => {
-                place_map.get(*n as usize - 1).map_or_default(Vec::as_slice)
-              }
-              _ => &[],
-            };
-            if vars.is_empty() {
-              after_control = false;
-            }
-            for var in vars {
-              if after_control {
-                out.push(var.clone());
-              }
-              after_control = true;
-            }
-          }
-          Expr::FunctionCall { name, .. } if name == "Spacer" => {}
-          Expr::String(_) => {
-            after_control = true;
-            caption.push(item);
-          }
-          Expr::FunctionCall { name, .. }
-            if (name == "Style" || name == "Text")
-              && !row_item_holds_control(item) =>
-          {
-            after_control = true;
-            caption.push(item);
-          }
-          other => {
-            after_control = false;
-            if expr_contains_call(other, &["Control"]) {
-              caption.clear();
-              collect_row_joined_controls(other, place_map, out);
-            } else {
-              caption.push(other);
-            }
-          }
-        }
-      }
+      joined_line_controls(items, false, place_map, out);
     }
     Expr::FunctionCall { args, .. } => {
       for a in args {
@@ -48254,6 +48203,87 @@ fn collect_row_joined_controls(
       }
     }
     _ => {}
+  }
+}
+
+/// The `collect_row_joined_controls` walk over the items of one layout
+/// line (a `Row`'s items or a `Grid` row's cells). With
+/// `skip_non_controls`, an item holding no control keeps the run going
+/// instead of breaking it.
+fn joined_line_controls(
+  items: &[Expr],
+  skip_non_controls: bool,
+  place_map: &[Vec<String>],
+  out: &mut Vec<String>,
+) {
+  let mut after_control = false;
+  // The non-control pieces since the last control: they form the
+  // caption `control_group_items` puts in front of the next control.
+  let mut caption: Vec<&Expr> = Vec::new();
+  for item in items {
+    let item = match item {
+      Expr::FunctionCall { name, args: inner }
+        if name == "Item" && !inner.is_empty() =>
+      {
+        &inner[0]
+      }
+      _ => item,
+    };
+    match item {
+      Expr::FunctionCall { name, args: c }
+        if name == "Control" && !c.is_empty() =>
+      {
+        match control_spec_variable(&c[0]) {
+          Some(var) => {
+            if after_control || is_live_panel_caption(&caption) {
+              out.push(var);
+            }
+            after_control = true;
+          }
+          None => after_control = false,
+        }
+        caption.clear();
+      }
+      Expr::FunctionCall { name, args: p } if is_place_head(name) => {
+        let vars = match p.as_slice() {
+          [Expr::Integer(n)] if *n >= 1 => {
+            place_map.get(*n as usize - 1).map_or_default(Vec::as_slice)
+          }
+          _ => &[],
+        };
+        if vars.is_empty() {
+          after_control = false;
+        }
+        for var in vars {
+          if after_control {
+            out.push(var.clone());
+          }
+          after_control = true;
+        }
+      }
+      Expr::FunctionCall { name, .. } if name == "Spacer" => {}
+      Expr::String(_) => {
+        after_control = true;
+        caption.push(item);
+      }
+      Expr::FunctionCall { name, .. }
+        if (name == "Style" || name == "Text")
+          && !row_item_holds_control(item) =>
+      {
+        after_control = true;
+        caption.push(item);
+      }
+      other if skip_non_controls && !contains_control_call(other) => {}
+      other => {
+        after_control = false;
+        if expr_contains_call(other, &["Control"]) {
+          caption.clear();
+          collect_row_joined_controls(other, place_map, out);
+        } else {
+          caption.push(other);
+        }
+      }
+    }
   }
 }
 
@@ -57513,6 +57543,12 @@ fn display_expr_to_node(
       }
       _ => static_leaf_node(expr, bindings),
     },
+    // A list of plain numbers (a coordinate readout such as
+    // `Dynamic[N@{x, y, z}]`) is a value, printed inline as `{1., -1., 1.}`
+    // like the front end does — not a stack of display elements.
+    Expr::List(_) if is_numeric_array_value(expr) => {
+      static_leaf_node(expr, bindings)
+    }
     // A bare list of display elements stacks vertically, like `Column`.
     Expr::List(_) => {
       DisplayNode::Column(list_children(expr, bindings, probes, ons))
@@ -57806,6 +57842,27 @@ fn pane_selector_content<'a>(
 }
 
 /// Render the children of a `Column[{…}]` / `Row[{…}]` (or a bare list).
+/// Whether `expr` is a non-empty list whose leaves are all explicit numbers
+/// (integers, reals, rationals, complex numbers), possibly nested.
+fn is_numeric_array_value(expr: &Expr) -> bool {
+  fn is_number(e: &Expr) -> bool {
+    match e {
+      Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..) => true,
+      Expr::FunctionCall { name, args }
+        if (name == "Rational" || name == "Complex") && args.len() == 2 =>
+      {
+        args.iter().all(is_number)
+      }
+      Expr::List(items) => !items.is_empty() && items.iter().all(is_number),
+      _ => false,
+    }
+  }
+  matches!(expr, Expr::List(_)) && is_number(expr)
+}
+
 fn list_children(
   list: &Expr,
   bindings: &[(String, String)],

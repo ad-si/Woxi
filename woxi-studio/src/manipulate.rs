@@ -4266,6 +4266,69 @@ mod tests {
     }
   }
 
+  /// The controls of one `Grid` row share a line of the panel like a
+  /// `Row`'s, even with a caption, a symbol picture or a live readout
+  /// between them; each row of the grid starts a line of its own.
+  #[test]
+  fn grid_row_of_controls_is_drawn_on_one_line() {
+    let code = r#"Manipulate[
+      {a, b, c, p, q},
+      Grid[{
+        {Row[{"point ", Style["P", Italic]}],
+          Control[{{a, 1, ""}, -3, 3, 1/10}],
+          Control[{{b, 0, ""}, -3, 3, 1/10}], Spacer[10], Dynamic[N@{a, b}]},
+        {Row[{"point ", Style["Q", Italic]}],
+          Control[{{c, 2, ""}, -3, 3, 1/10}]}}],
+      Grid[{
+        {Control[{{p, True, ""}, {True, False}}],
+          Graphics[Disk[], ImageSize -> 12],
+          Control[{{q, False, ""}, {True, False}}], "shown"}}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let joins: Vec<(&str, bool)> = state
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !c.name().is_empty())
+      .map(|(i, c)| (c.name(), state.joins_previous_control(i)))
+      .collect();
+    assert_eq!(
+      joins,
+      vec![
+        ("a", false),
+        ("b", true),
+        ("c", false),
+        ("p", false),
+        ("q", true)
+      ]
+    );
+  }
+
+  /// A live coordinate readout (`Dynamic[N@{x, y, z}]`) in the control
+  /// panel prints its list value inline, `{1., -1., 0.5}`, instead of
+  /// stacking the numbers in a column.
+  #[test]
+  fn numeric_list_readout_prints_inline() {
+    let code = r#"Manipulate[
+      {x, y},
+      Row[{Control[{{x, 1, ""}, -3, 3, 1/10}],
+        Control[{{y, -1, ""}, -3, 3, 1/10}], Dynamic[N@{x, y, 1/2}]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    state.reevaluate();
+    match state.display_trees.first() {
+      Some(woxi::functions::graphics::DisplayNode::Static { svg, text }) => {
+        assert!(svg.is_none());
+        assert_eq!(text, "{1., -1., 0.5}");
+      }
+      other => panic!("expected an inline list readout, got {other:?}"),
+    }
+  }
+
   /// Buttons sharing one `Row[{…}]` keep that grouping in the Studio's
   /// control state, so they are drawn side by side on one line, and a
   /// `Style[…, FontSize -> n]` caption keeps its size.
