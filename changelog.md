@@ -2,6 +2,13 @@
 
 # Unreleased
 
+- `HorizontalGauge`/`VerticalGauge` draw `GaugeMarkers -> "BarMarker"` as
+    thin bars, fill a rounded face panel for `GaugeFaceStyle` (a named face
+    such as `"GlassRectangle"` or a color) and show a `GaugeLabels` title
+    (`Placed[label, Top | Bottom]`).
+- A Manipulate `Animator` control over an unbounded range
+    (`{t, 0, Infinity, dt, Animator}`) plays its variable on forever with
+    play/pause and reset buttons instead of looping a 0..2π slider.
 - A `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]` readout in a
     `Text@Row` or grid keeps its left padding, so the label stays the same
     width as the value changes. `ToBoxes` of such a `NumberForm` around an

@@ -50307,6 +50307,77 @@ mod manipulate {
     }
   }
 
+  /// An `Animator` over `{t, 0, Infinity, dt}` has no slider: it plays
+  /// the variable on forever from its start with play/pause, reset and
+  /// step buttons instead of looping a finite stand-in window. It starts
+  /// running unless `AnimationRunning -> False`.
+  #[test]
+  fn spec_unbounded_animator_runs_forever() {
+    let trigger = |code: &str| {
+      let expr = interpret_to_expr(code).unwrap();
+      let spec = extract_manipulate_spec(&expr).expect("manipulate");
+      match &spec.controls[..] {
+        [
+          ManipulateControl::Trigger {
+            name,
+            label,
+            min,
+            max,
+            step,
+            initial,
+            running,
+            ..
+          },
+        ] => (
+          name.clone(),
+          label.clone(),
+          *min,
+          *max,
+          *step,
+          *initial,
+          *running,
+        ),
+        other => panic!("expected one trigger control, got {other:?}"),
+      }
+    };
+    assert_eq!(
+      trigger(
+        "Manipulate[x, Row[{Control[{{x, 0, Style[\"go\", 12]}, 0, Infinity, \
+         0.025, Animator, AnimationRunning -> False}]}]]"
+      ),
+      (
+        "x".to_string(),
+        "go".to_string(),
+        0.0,
+        f64::INFINITY,
+        0.025,
+        0.0,
+        false
+      )
+    );
+    assert_eq!(
+      trigger(
+        "Manipulate[x, {{x, 1}, 1, Infinity, 2, ControlType -> Animator}]"
+      ),
+      (
+        "x".to_string(),
+        "x".to_string(),
+        1.0,
+        f64::INFINITY,
+        2.0,
+        1.0,
+        true
+      )
+    );
+    // A bounded Animator stays a looping slider.
+    let expr = interpret_to_expr("Manipulate[x, {x, 0, 5, Animator}]").unwrap();
+    let spec = extract_manipulate_spec(&expr).unwrap();
+    assert!(matches!(
+      &spec.controls[..],
+      [ManipulateControl::Continuous { max, .. }] if *max == 5.0
+    ));
+  }
+
   #[test]
   fn spec_nested_animate_body_flattens() {
     // A Manipulate whose body is an `Animate[…]` renders as one combined
