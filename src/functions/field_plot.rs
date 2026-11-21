@@ -7810,14 +7810,9 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   );
   push_field_frame(&mut svg, &area, &opts);
   push_field_plot_overlays(&mut svg, &area, &opts);
-  push_contour_annotations(
-    &mut svg,
-    &grid,
-    line_levels,
-    &area,
-    &opts,
-    (v_min, v_max),
-  );
+  if opts.contour_labels {
+    push_contour_labels(&mut svg, &grid, line_levels, &area);
+  }
 
   svg.push_str("</svg>");
   let structure_items = contour_structure_items(
