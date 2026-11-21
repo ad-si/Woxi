@@ -69,6 +69,26 @@
     instead of adding an upright `z` label.
 - Woxi Studio draws the controls of a custom Manipulate layout
     `Row[{Place[1], Spacer[…], Place[2]}]` side by side on one line.
+- `Column` stripes its rows with a background list
+    (`Background -> {c1, c2, …}` or the cyclic `{{c1, c2}}`) instead of
+    dropping it.
+- `Apart` splits rational functions with symbolic coefficients over
+    quadratic and repeated factors (`1/(s (s^2 + a^2))`), and
+    `InverseLaplaceTransform` uses it, so `1/(s (s^2 + Pi^2))` inverts.
+    A sum of time-shifted terms (`1/s - E^(-2 s)/s`) inverts term by term.
+- Woxi Studio and PNG/PDF export draw italic text slanted:
+    `Style[…, Italic]`, `FontSlant -> Italic` and TraditionalForm variables
+    use bundled italic and bold-italic Atkinson Hyperlegible Next faces
+    instead of falling back to the upright ones.
+
+- `GraphPlot` of a rule list ignores the edge directions when laying the
+    graph out, as it already did when drawing it, so a directed acyclic list
+    (a grid of rules pointing right and up) comes out as a grid instead of in
+    layers.
+
+- `Grid` and `Column` read a flat `ItemSize -> {w, h, …}` with more than
+    two entries as `{w, h}`, so every column gets the `w`-em width instead of
+    only the first one.
 
 # 2026-11-08 - 0.4.0
 

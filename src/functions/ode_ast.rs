@@ -15,6 +15,7 @@ mod cse;
 mod curve;
 mod dde;
 mod pde_mol;
+mod pde_mol2d;
 mod state_data;
 mod stiff;
 pub use state_data::{
@@ -1851,6 +1852,20 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       },
       Err(e) => Err(e),
     });
+  }
+  if n_pos == 5 {
+    // `NDSolve[eqns, u, {x, …}, {y, …}, {t, …}]`: a PDE in two space
+    // variables and time.
+    let mut flat_eqs = Vec::new();
+    flatten_eq_list(&args[0], &mut flat_eqs);
+    let opts = pde_mol::MolOptions::from_rules(&args[n_pos..]);
+    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts) {
+      Some(mut result) => {
+        crate::evaluator::share_large_lists(&mut result, 0);
+        Ok(result)
+      }
+      None => Ok(unevaluated("NDSolve", args)),
+    };
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
@@ -12115,6 +12130,14 @@ fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
         "Coth" => Some(|z: Cx| z.cosh().mul(z.sinh().recip())),
         "Sech" => Some(|z: Cx| z.cosh().recip()),
         "Csch" => Some(|z: Cx| z.sinh().recip()),
+        "Re" => Some(|z: Cx| Cx::real(z.re)),
+        "Im" => Some(|z: Cx| Cx::real(z.im)),
+        "Conjugate" => Some(|z: Cx| Cx {
+          re: z.re,
+          im: -z.im,
+        }),
+        "Abs" => Some(|z: Cx| Cx::real(z.re.hypot(z.im))),
+        "Arg" => Some(|z: Cx| Cx::real(z.im.atan2(z.re))),
         _ => None,
       };
       if let Some(f) = unary
@@ -19840,6 +19863,22 @@ fn dsolve_linear_system(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// `Re`, `Im`, `Abs`, `Arg` and `Conjugate` of a complex subexpression
+  /// compile to machine arithmetic.
+  #[test]
+  fn compiles_real_parts_of_complex_subexpressions() {
+    let vars = ["x".to_string(), "y".to_string()];
+    let eval = |src: &str| {
+      let e = crate::syntax::string_to_expr(src).unwrap();
+      CompiledReal::new(&e, &vars).unwrap().eval(&[3.0, 4.0])
+    };
+    assert_eq!(eval("Re[(x + I y)^2]"), -7.0);
+    assert_eq!(eval("Im[(x + I y)^2 + Complex[1, -2]]"), 22.0);
+    assert_eq!(eval("Abs[x + I y]"), 5.0);
+    assert_eq!(eval("Arg[x + I y]"), 4f64.atan2(3.0));
+    assert_eq!(eval("Im[Conjugate[x + I y]]"), -4.0);
+  }
 
   /// A hand-built 4x4 periodic tridiagonal system whose two corners
   /// (`alpha` at the bottom-left, `beta` at the top-right — see

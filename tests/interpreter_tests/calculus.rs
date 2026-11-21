@@ -12707,6 +12707,89 @@ mod ndsolve {
     .unwrap();
     assert_eq!(result, "{True, True, True}");
   }
+
+  /// Two space variables and time: the separable mode
+  /// `Sin[Pi x] Sin[Pi y]` of the heat equation on the unit square with
+  /// zero Dirichlet edges decays as `Exp[-2 Pi^2 t]`.
+  #[test]
+  fn pde_2d_dirichlet_mode_decays_exactly() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y], w[x, y, 0] == Sin[Pi x] Sin[Pi y], \
+       DirichletCondition[w[x, y, t] == 0, \
+       x == 0 || x == 1 || y == 0 || y == 1]}, w, {x, 0, 1}, {y, 0, 1}, \
+       {t, 0, 0.2}]; {Head[u], Round[1000 u[0.5, 0.5, 0.1]], \
+       Round[1000 Exp[-2 Pi^2 0.1]], Round[10^4 u[0.25, 0.5, 0.2]], \
+       Round[10^4 Exp[-2 Pi^2 0.2] Sin[Pi/4]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{InterpolatingFunction, 139, 139, 137, 136}");
+  }
+
+  /// Dirichlet edges may be written as plain equations, the unknown may
+  /// take time in any argument slot and the domains may be listed in any
+  /// order: the solution takes its arguments in the unknown's own order.
+  #[test]
+  fn pde_2d_argument_order_and_plain_boundary_equations() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x, y], t] == D[w[t, x, y], x, x] + \
+       D[w[t, x, y], y, y], w[0, x, y] == Sin[Pi x] Sin[Pi y], \
+       w[t, 0, y] == 0, w[t, 1, y] == 0, w[t, x, 0] == 0, \
+       w[t, x, 1] == 0}, w, {x, 0, 1}, {t, 0, 0.2}, {y, 0, 1}]; \
+       {u[\"Domain\"], Round[1000 u[0.1, 0.5, 0.5]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{0., 0.2}, {0., 1.}, {0., 1.}}, 139}");
+  }
+
+  /// Without any condition on its edges a rectangle keeps the zero natural
+  /// flux of the finite element method: the total heat stays what it was.
+  #[test]
+  fn pde_2d_insulated_rectangle_conserves_heat() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y], w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
+       {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{1., 2667}");
+  }
+
+  /// `NeumannValue[g, y == 0]` is an inflow `g` per unit length of that
+  /// edge: on a 2 × 1 rectangle the total heat grows by `2 g` per unit
+  /// time.
+  #[test]
+  fn pde_2d_neumann_value_inflow() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] - D[w[x, y, t], x, x] - \
+       D[w[x, y, t], y, y] == NeumannValue[3, y == 0], w[x, y, 0] == 0}, \
+       w, {x, 0, 2}, {y, 0, 1}, {t, 0, 1}]; \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 2}, {y, 0, 1}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "6000");
+  }
+
+  /// Convective cooling of a finite cylinder (radial Laplacian with its
+  /// `1/r` coefficient on a domain starting at the axis, Robin
+  /// `NeumannValue`s on the other edges) matches the exact product of the
+  /// infinite-cylinder and slab series: the center temperature at
+  /// `t == 0.15` is 0.6927, a point on the end face 0.4923.
+  #[test]
+  fn pde_2d_cylinder_convective_cooling() {
+    let result = interpret(
+      "bi = 3/2; u = NDSolveValue[{D[f[r, z, t], t] - \
+       D[r D[f[r, z, t], r], r]/r - D[f[r, z, t], z, z] == \
+       NeumannValue[0, r == 10^-6] + NeumannValue[-bi f[r, z, t], r == 1] + \
+       NeumannValue[-bi f[r, z, t], z == 0 || z == 1], f[r, z, 0] == 1}, \
+       f, {r, 10^-6, 1}, {z, 0, 1}, {t, 0, 1}]; \
+       {Round[1000 u[10^-6, 1/2, 0.15]], Round[1000 u[0.15, 0, 0.15]], \
+       Round[1000 u[0.5, 0.5, 0.5]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{693, 492, 129}");
+  }
 }
 
 mod sinh_cosh {
@@ -14930,6 +15013,65 @@ mod inverse_laplace_transform {
     assert_eq!(
       interpret("InverseLaplaceTransform[Sqrt[s], s, 1.]").unwrap(),
       "InverseLaplaceTransform[Sqrt[s], s, 1.]"
+    );
+  }
+
+  // A rational function with symbolic coefficients is split with Apart and
+  // inverted term by term.
+  #[test]
+  fn symbolic_coefficients_via_apart() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + a^2)), s, t]").unwrap(),
+      "a^(-2) - Cos[a*t]/a^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + Pi^2)), s, t]").unwrap(),
+      "Pi^(-2) - Cos[Pi*t]/Pi^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s + Pi)), s, t]").unwrap(),
+      "Pi^(-1) - 1/(E^(Pi*t)*Pi)"
+    );
+  }
+
+  // The second shift theorem applies to a symbolic-coefficient rational
+  // factor as well.
+  #[test]
+  fn time_shift_with_symbolic_coefficients() {
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. \
+         {a -> 3, t -> 5} // Simplify"
+      )
+      .unwrap(),
+      "(1 - Cos[9])/9"
+    );
+  }
+
+  // Linearity over a sum whose terms carry different time shifts:
+  // a finite square wave built from step functions.
+  #[test]
+  fn sum_of_time_shifted_terms() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s - Exp[-2 s]/s, s, t]").unwrap(),
+      "1 - HeavisideTheta[-2 + t]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/s, {i, 0, 3}], s, t]"
+      )
+      .unwrap(),
+      "1 - HeavisideTheta[-3 + t] + HeavisideTheta[-2 + t] - \
+       HeavisideTheta[-1 + t]"
+    );
+    // Value check of the response to that square wave at t = 5/2.
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/(s (s^2 + Pi^2)), \
+         {i, 0, 3}], s, t] /. t -> 5/2 // Simplify"
+      )
+      .unwrap(),
+      "Pi^(-2)"
     );
   }
 }

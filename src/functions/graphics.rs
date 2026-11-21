@@ -95,6 +95,10 @@ pub(crate) struct TextFrame {
   /// The `{left, right, bottom, top}` space, in points, between the text
   /// and the border (`FrameMargins`).
   pub(crate) margins: (f64, f64, f64, f64),
+  /// Stroke width in printer points.
+  pub(crate) width: f64,
+  /// Corner radius in printer points (`0` for square corners).
+  pub(crate) radius: f64,
 }
 
 // ── Color ────────────────────────────────────────────────────────────────
@@ -1026,6 +1030,80 @@ use crate::functions::plot_padding::{
 
 // ── Primitives ───────────────────────────────────────────────────────────
 
+/// The value of the `key -> value` (or `key :> value`) option among `opts`.
+fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
+  opts.iter().find_map(|o| match o {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })
+}
+
+/// The border `Framed[label, opts…]` draws around a graphics label (its
+/// `FrameStyle` color and stroke width, its `RoundingRadius` and its
+/// `FrameMargins`), or `None` under `FrameStyle -> None`. `FrameStyle`
+/// takes a color, a thickness, or a list or `Directive` of such directives
+/// (`{Thick, Black}`); without a color the border takes `default_color`,
+/// the label's own color.
+fn label_frame(opts: &[Expr], default_color: Color) -> Option<TextFrame> {
+  let mut color = default_color;
+  let mut width = 1.0;
+  if let Some(spec) = option_value(opts, "FrameStyle") {
+    if matches!(spec, Expr::Identifier(s) if s == "None") {
+      return None;
+    }
+    let directives: Vec<&Expr> = match spec {
+      Expr::List(items) => items.iter().collect(),
+      Expr::FunctionCall { name, args } if name == "Directive" => {
+        args.iter().collect()
+      }
+      other => vec![other],
+    };
+    for d in directives {
+      if let Some(c) = parse_color(d) {
+        color = c;
+        continue;
+      }
+      let mut probe = StyleState {
+        thickness: f64::NAN,
+        ..Default::default()
+      };
+      apply_directive(d, &mut probe);
+      if !probe.thickness.is_nan() {
+        // Thickness fractions are of a picture's width; a frame around a
+        // label has no picture of its own, so read them against Wolfram's
+        // default 360-point graphic.
+        width = if probe.thickness < 0.0 {
+          -probe.thickness
+        } else {
+          probe.thickness * 360.0
+        };
+      }
+    }
+  }
+  let radius = option_value(opts, "RoundingRadius")
+    .and_then(|r| match r {
+      Expr::List(items) if !items.is_empty() => try_eval_to_f64(&items[0]),
+      other => try_eval_to_f64(other),
+    })
+    .unwrap_or(0.0)
+    .max(0.0);
+  Some(TextFrame {
+    color,
+    margins: framed_margins(opts, FRAMED_DEFAULT_MARGIN),
+    width,
+    radius,
+  })
+}
+
 #[derive(Debug, Clone)]
 enum Primitive {
   /// Opens a `<g>` carrying the hex-encoded action of an
@@ -1140,7 +1218,7 @@ enum Primitive {
     background: Option<Color>,
     /// `Framed[…]`: the border drawn around the label, or `None` for an
     /// unframed one (including `FrameStyle -> None`).
-    frame: Option<TextFrame>,
+    frame: Option<Box<TextFrame>>,
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
@@ -1165,7 +1243,9 @@ enum Primitive {
     /// color — `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and
     /// an upright remainder. Empty for a label with no partial styling.
     styled_ranges: Vec<StyledRange>,
-    style: StyleState,
+    /// Boxed: a label carries enough fields of its own that an inline
+    /// style would make it the enum's one oversized variant.
+    style: Box<StyleState>,
   },
   BezierCurvePrim {
     points: Vec<(f64, f64)>,
@@ -1262,10 +1342,10 @@ impl Primitive {
       | Self::RectPrim { style, .. }
       | Self::PolygonPrim { style, .. }
       | Self::ArrowPrim { style, .. }
-      | Self::TextPrim { style, .. }
       | Self::BezierCurvePrim { style, .. }
       | Self::HalfPlanePrim { style, .. }
       | Self::InfiniteLinePrim { style, .. } => Some(style),
+      Self::TextPrim { style, .. } => Some(style),
       Self::ClickGroupStart { .. } | Self::ClickGroupEnd => None,
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
@@ -1537,6 +1617,10 @@ fn expr_to_anchor(expr: &Expr) -> Option<(f64, f64, bool)> {
     && let Some((x, y)) = expr_to_point(&args[0])
   {
     return Some((x, y, true));
+  }
+  // A bare `Center` is the middle of the whole picture.
+  if matches!(expr, Expr::Identifier(c) if c == "Center") {
+    return Some((0.5, 0.5, true));
   }
   // `{Left, Top}` names the corner of the plot range: the same point as
   // `Scaled[{0, 1}]`. `Center` is the middle on either axis.
@@ -2996,6 +3080,54 @@ fn leading_assignments(body: &Expr) -> Vec<&Expr> {
     .collect()
 }
 
+/// The branches of a `Which[c1, v1, c2, v2, …]`, `If[c, v1, v2]` or
+/// `Switch[e, p1, v1, p2, v2, …]` together with the source of a *selector*:
+/// the same conditional with each branch value replaced by its 1-based
+/// index, so evaluating the selector tells which branch is in effect.
+/// `None` for anything else.
+fn conditional_branches(expr: &Expr) -> Option<(Vec<Expr>, String)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let int = |i: usize| Expr::Integer(i as i128);
+  let (branches, selector_args): (Vec<Expr>, Vec<Expr>) = match name.as_str() {
+    "Which" if args.len() >= 2 && args.len() % 2 == 0 => {
+      let mut sel = Vec::new();
+      let mut branches = Vec::new();
+      for (i, pair) in args.chunks(2).enumerate() {
+        sel.push(pair[0].clone());
+        sel.push(int(i + 1));
+        branches.push(pair[1].clone());
+      }
+      (branches, sel)
+    }
+    "If" if args.len() == 2 || args.len() == 3 => {
+      let branches: Vec<Expr> = args[1..].to_vec();
+      let mut sel = vec![args[0].clone(), int(1)];
+      if args.len() == 3 {
+        sel.push(int(2));
+      }
+      (branches, sel)
+    }
+    "Switch" if args.len() >= 3 && args.len() % 2 == 1 => {
+      let mut sel = vec![args[0].clone()];
+      let mut branches = Vec::new();
+      for (i, pair) in args[1..].chunks(2).enumerate() {
+        sel.push(pair[0].clone());
+        sel.push(int(i + 1));
+        branches.push(pair[1].clone());
+      }
+      (branches, sel)
+    }
+    _ => return None,
+  };
+  let selector = Expr::FunctionCall {
+    name: name.clone(),
+    args: selector_args.into(),
+  };
+  Some((branches, crate::syntax::expr_to_source_form(&selector)))
+}
+
 /// Whether a Manipulate argument is a `ButtonBar[…]` — a row of buttons
 /// whose labels and actions are computed from a list.
 fn is_button_bar(spec: &Expr) -> bool {
@@ -3674,7 +3806,7 @@ fn collect_primitives(
             Expr::FunctionCall { name, args: gargs }
               if name == "Grid" && grid_needs_table_layout(gargs) =>
             {
-              match inset_primitives(args, errors) {
+              match inset_primitives(&text_offset_as_inset_args(args), errors) {
                 Some(inner) => prims.extend(inner),
                 None => parse_text(args, style, prims),
               }
@@ -4233,9 +4365,17 @@ fn collect_primitives(
       apply_directive(expr, &mut *style);
       let _ = name;
     }
-    // `Thickness -> t` and friends in a primitive list act as directives.
-    Expr::Rule { .. } => {
-      apply_directive(expr, &mut *style);
+    // `Thickness -> t` and friends in a primitive list act as directives,
+    // and so do the font options (`FontSize -> 16`, `FontWeight -> Bold`,
+    // …): they style every label that follows them in the list.
+    Expr::Rule { pattern, .. }
+      if !apply_directive(expr, &mut *style)
+        && matches!(pattern.as_ref(), Expr::Identifier(k)
+          if matches!(k.as_str(),
+            "FontSize" | "FontWeight" | "FontSlant" | "FontFamily"
+              | "FontColor")) =>
+    {
+      apply_text_style_directive(expr, &mut *style);
     }
     _ => {}
   }
@@ -5899,7 +6039,7 @@ fn grid_item_width_chars(options: &[Expr]) -> Option<usize> {
     }
     _ => None,
   })?;
-  let width = match size {
+  let width = match item_size_dims(size).0 {
     Expr::List(dims) => dims.first()?,
     other => other,
   };
@@ -5967,11 +6107,9 @@ fn pane_width_points(pane_args: &[Expr]) -> Option<f64> {
     Some(Expr::List(dims)) => dims.first(),
     other => other,
   };
-  match width {
-    Some(Expr::Integer(n)) if *n > 0 => Some(*n as f64),
-    Some(Expr::Real(f)) if *f > 0.0 => Some(*f),
-    _ => None,
-  }
+  width
+    .and_then(crate::evaluator::dispatch::io_functions::pane_size_component)
+    .filter(|w| *w > 0.0)
 }
 
 /// Break `text` into lines no wider than `width` printer's points when set
@@ -6435,8 +6573,9 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
     }
     // `Pane[content, width, …]` sets `content` in a box `width` printer's
     // points wide: its text wraps there (in the default 14-point font)
-    // rather than printing as the call. `Pane[content]` and a non-numeric
-    // size just show the content.
+    // rather than printing as the call. A named width
+    // (`Pane[content, Medium]`) is a box size (see `pane_size_component`);
+    // `Pane[content]` and any other size just show the content.
     Expr::FunctionCall { name, args } if name == "Pane" && !args.is_empty() => {
       let text = graphics_text_content(&args[0]);
       match pane_width_points(args) {
@@ -7869,8 +8008,8 @@ pub(crate) fn inset_text(obj: &Expr, pos: &Expr, inset_args: &[Expr]) -> Expr {
 /// The `Text` arguments that place `Inset[obj, pos, opos, size, dirs, opts…]`
 /// when `obj` is drawn as a label. `Text`'s fourth slot is a direction, but
 /// `Inset`'s is a size, so it must not be passed through: the label's
-/// baseline follows the first vector of `dirs` (the direction of the object's
-/// x axis) instead. Options such as `Background -> …` are kept.
+/// baseline follows the direction of the object's x axis that `dirs` gives
+/// instead. Options such as `Background -> …` are kept.
 fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
   let is_option =
     |e: &Expr| matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. });
@@ -7878,10 +8017,13 @@ fn inset_as_text_args(args: &[Expr]) -> Vec<Expr> {
     args.iter().take_while(|e| !is_option(e)).collect();
   let mut text_args: Vec<Expr> =
     positional.iter().take(3).map(|e| (*e).clone()).collect();
+  // `dirs` is either the pair `{{dx, dy}, {ex, ey}}` of the object's axis
+  // directions or just the x direction `{dx, dy}`.
   let x_direction = match positional.get(4) {
     Some(Expr::List(rows)) if rows.len() == 2 => match &rows[0] {
       Expr::List(v) if v.len() == 2 => Some(rows[0].clone()),
-      _ => None,
+      Expr::List(_) => None,
+      _ => Some(Expr::List(rows.clone())),
     },
     _ => None,
   };
@@ -7953,12 +8095,48 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
     Expr::List(cells) => cells.iter().any(is_span_marker),
     _ => false,
   });
+  // A `BaseStyle` (`BaseStyle -> {20}` sets the font size) applies to
+  // every cell, which the flattened single-line text would drop.
   let has_chrome = args[1..].iter().any(|opt| {
     matches!(opt, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n)
-        if matches!(n.as_str(), "Dividers" | "Background" | "Frame")))
+        if matches!(n.as_str(), "Dividers" | "Background" | "Frame" | "BaseStyle")))
   });
-  has_span || has_chrome
+  // Cells styled on their own (`Style["major", Green]`) keep their colors
+  // and sizes only when each cell is set separately.
+  let has_styled_cell = rows.iter().any(|row| match row {
+    Expr::List(cells) => cells.iter().any(|cell| {
+      matches!(cell, Expr::FunctionCall { name, args }
+        if name == "Style" && args.len() > 1)
+    }),
+    _ => false,
+  });
+  has_span || has_chrome || has_styled_cell
+}
+
+/// `Text[expr, pos, {ox, oy}]` puts the point `{ox, oy}` of the text's box
+/// (`{0, 0}` its center, `{±1, ±1}` its corners) on `pos`. When the
+/// expression is embedded as a picture the way `Inset` embeds one, that
+/// offset becomes the matching `Scaled` point of the object, since an
+/// `Inset` reads a bare `{0, 0}` as the object's lower left corner.
+fn text_offset_as_inset_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out = args.to_vec();
+  if let Some(offset) = out.get_mut(2)
+    && let Some((ox, oy)) = expr_to_point(offset)
+  {
+    *offset = Expr::FunctionCall {
+      name: "Scaled".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::Real(f64::midpoint(ox, 1.0)),
+          Expr::Real(f64::midpoint(oy, 1.0)),
+        ]
+        .into(),
+      )]
+      .into(),
+    };
+  }
+  out
 }
 
 /// Embedded inset pictures always center on their anchor. To put the point
@@ -8142,11 +8320,12 @@ fn inset_primitives(
       return Some(prims);
     }
   }
-  // An `Automatic` position is the plot's origin, the same point a missing
-  // one falls back to when the object is folded in below.
+  // A missing or `Automatic` position is `Center`: the middle of the whole
+  // picture (`Inset[obj]` is `Inset[obj, Center]`).
   let anchor = match args.get(1) {
-    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.0, 0.0, false)),
-    other => other.and_then(expr_to_anchor),
+    None => Some((0.5, 0.5, true)),
+    Some(Expr::Identifier(s)) if s == "Automatic" => Some((0.5, 0.5, true)),
+    Some(other) => expr_to_anchor(other),
   };
   // Without a `size`, an inset is the object at its own natural size — not
   // stretched or shrunk to whatever extent its primitives happen to span in
@@ -8243,7 +8422,10 @@ fn inset_primitives(
         || name == "Graphics3DBox"
         || ((natural_size
           || inset_size_is_scaled(args)
-          || anchor.is_some_and(|(_, _, scaled)| scaled))
+          || args
+            .get(1)
+            .and_then(expr_to_anchor)
+            .is_some_and(|(_, _, scaled)| scaled))
           && (name == "Graphics" || name == "GraphicsBox")) =>
     {
       let svg = crate::evaluator::expr_to_svg(call);
@@ -9433,21 +9615,6 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     explicit_direction.or_else(|| rotation.map(|a| (a.cos(), a.sin())));
   // `Background -> color`, written either as a trailing option of the
   // `Text` or as a directive of the `Style` it wraps.
-  fn option_value<'a>(opts: &'a [Expr], key: &str) -> Option<&'a Expr> {
-    opts.iter().find_map(|o| match o {
-      Expr::Rule {
-        pattern,
-        replacement,
-      }
-      | Expr::RuleDelayed {
-        pattern,
-        replacement,
-      } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == key) => {
-        Some(replacement.as_ref())
-      }
-      _ => None,
-    })
-  }
   let background_of =
     |opts: &[Expr]| option_value(opts, "Background").and_then(parse_color);
   // A `Style` the label is written inside — around the `Text` or around its
@@ -9464,24 +9631,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     Expr::FunctionCall { name, args: fargs } if name == "Framed" && !fargs.is_empty()
   );
   let frame = if is_framed {
-    match option_value(frame_opts, "FrameStyle") {
-      Some(Expr::Identifier(s)) if s == "None" => None,
-      // A color, or a list / `Directive` of directives holding one.
-      Some(spec) => Some(
-        parse_color(spec)
-          .or_else(|| {
-            crate::functions::plot::parse_style_directives(spec)
-              .and_then(|s| s.color_expr)
-              .and_then(|c| parse_color(&c))
-          })
-          .unwrap_or(frame_default_color),
-      ),
-      None => Some(frame_default_color),
-    }
-    .map(|color| TextFrame {
-      color,
-      margins: framed_margins(frame_opts, FRAMED_DEFAULT_MARGIN),
-    })
+    label_frame(frame_opts, frame_default_color)
   } else {
     None
   };
@@ -9527,13 +9677,13 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     y,
     offset,
     background,
-    frame,
+    frame: frame.map(Box::new),
     scaled,
     direction,
     box_offset,
     glyph_map: None,
     styled_ranges,
-    style: local_style,
+    style: Box::new(local_style),
   });
 }
 
@@ -11110,7 +11260,7 @@ fn rotate_primitive(
         y: ny,
         offset: *offset,
         background: *background,
-        frame: *frame,
+        frame: frame.clone(),
         scaled: *scaled,
         // A label without a `direction` has its baseline along the x-axis,
         // so a rotation tilts that baseline; a zero angle changes nothing.
@@ -11369,7 +11519,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       y: if *scaled { *y } else { y + dy },
       offset: *offset,
       background: *background,
-      frame: *frame,
+      frame: frame.clone(),
       scaled: *scaled,
       direction: *direction,
       box_offset: *box_offset,
@@ -11680,7 +11830,7 @@ fn scale_primitive(
         y: ny,
         offset: *offset,
         background: *background,
-        frame: *frame,
+        frame: frame.clone(),
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         box_offset: *box_offset,
@@ -14118,11 +14268,7 @@ pub(crate) fn svg_escape(s: &str) -> String {
   // for them switches the whole run's font; they look like an ASCII `-`.
   let s = s.replace(['\u{2010}', '\u{2011}'], "-");
   let s = crate::syntax::substitute_private_use_glyphs(&s);
-  let escaped = s
-    .replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;");
+  let escaped = crate::functions::plot::html_escape(&s);
   let escaped = render_math_letterlike_glyphs(&escaped);
   let escaped = render_combining_overlines(&escaped);
   if escaped.contains(SUBSCRIPT_START) || escaped.contains(SUPERSCRIPT_START) {
@@ -14169,11 +14315,33 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   if !runs.iter().any(styled) {
     return Vec::new();
   }
+  // The runs spell their text with Wolfram's private-use characters
+  // already substituted (an `\[InvisibleSpace]` is dropped), while `text`
+  // keeps them until it is drawn. Map each position of the substituted
+  // text back to its character in `text`, so a run's range covers the
+  // characters it was built from.
+  let mut origin = Vec::new();
+  let mut chars: Vec<char> = Vec::new();
+  for (i, c) in text.chars().enumerate() {
+    let mut buf = [0u8; 4];
+    let glyphs =
+      crate::syntax::substitute_private_use_glyphs(c.encode_utf8(&mut buf));
+    for g in glyphs.chars() {
+      origin.push(i);
+      chars.push(g);
+    }
+  }
+  let text_len = text.chars().count();
+  let to_text = |p: usize| origin.get(p).copied().unwrap_or(text_len);
+  let to_text_end = |p: usize| {
+    p.checked_sub(1)
+      .and_then(|q| origin.get(q))
+      .map_or(text_len, |&i| i + 1)
+  };
   // Line the runs up with the text. A `Spacer[n]` is a single blank run
   // but `n` blanks of the text (see `spacer_gap_text`), so a blank run
   // stretches over the whole gap; any other difference means the runs do
   // not spell the text, and it stays unstyled.
-  let chars: Vec<char> = text.chars().collect();
   let mut ranges = Vec::new();
   let mut pos = 0;
   for r in &runs {
@@ -14189,8 +14357,8 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
     }
     if styled(r) && end > pos {
       ranges.push(StyledRange {
-        start: pos,
-        end,
+        start: to_text(pos),
+        end: to_text_end(end),
         italic: r.italic,
         bold: r.bold,
         color: r.color,
@@ -15628,7 +15796,16 @@ fn render_primitive(
           None => ("none".to_string(), String::new()),
         };
         let stroke = match frame {
-          Some(f) => format!(" stroke=\"{}\"", f.color.to_svg_rgb()),
+          Some(f) => {
+            let mut attrs = format!(" stroke=\"{}\"", f.color.to_svg_rgb());
+            if f.width != 1.0 {
+              attrs.push_str(&format!(" stroke-width=\"{:.2}\"", f.width));
+            }
+            if f.radius > 0.0 {
+              attrs.push_str(&format!(" rx=\"{:.2}\"", f.radius));
+            }
+            attrs
+          }
           None => String::new(),
         };
         // The panel hugs the glyphs' advance width, as Wolfram's does; a
@@ -15645,7 +15822,7 @@ fn render_primitive(
             1.0
           };
         let (m_left, m_right, m_bottom, m_top) =
-          frame.map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
+          frame.as_ref().map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
         let panel_w = glyphs_w + m_left + m_right;
         let panel_h = text_h + m_bottom + m_top;
         // A tilted label's panel turns with it, about the same point.
@@ -16271,6 +16448,14 @@ pub(crate) struct AxisPadding {
 }
 
 impl AxisPadding {
+  /// Whether the `(low, high)` sides are left `Automatic`.
+  pub(crate) fn automatic_sides(&self) -> (bool, bool) {
+    (
+      matches!(self.lo, PlotPadAmount::Automatic),
+      matches!(self.hi, PlotPadAmount::Automatic),
+    )
+  }
+
   /// The `(low, high)` padding in data units for an axis of the given
   /// (unpadded) span, with `Automatic` resolving to `automatic_frac` of it.
   /// A `Scaled[f]` side is the fraction `f` of the whole padded range:
@@ -17129,8 +17314,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let spec = parse_plot_range_padding(padding_expr);
     let x_span = x_max - x_min;
     let y_span = y_max - y_min;
-    let (x_lo, x_hi) = spec.x.resolve(x_span, 0.04);
-    let (y_lo, y_hi) = spec.y.resolve(y_span, 0.04);
+    // An `Automatic` side leaves an axis pinned by an explicit `PlotRange`
+    // unpadded, as the default does: a `Plot` stores its graphics with
+    // `PlotRangePadding -> {Scaled[0.02], Automatic}` beside `PlotRange ->
+    // {{xmin, xmax}, {0, 30}}`, padding only the range it determined itself.
+    let automatic_frac = |explicit: bool| if explicit { 0.0 } else { 0.04 };
+    let (x_lo, x_hi) = spec
+      .x
+      .resolve(x_span, automatic_frac(plot_range_x.is_some()));
+    let (y_lo, y_hi) = spec
+      .y
+      .resolve(y_span, automatic_frac(plot_range_y.is_some()));
     bb.x_min = x_min - x_lo;
     bb.x_max = x_max + x_hi;
     bb.y_min = y_min - y_lo;
@@ -17401,6 +17595,40 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         grown.y_max = grown.y_max.max(cy + half_h - room_y);
       }
     }
+    // An inset drawn at its own pixel size (`Inset[g, pos]` with no `size`)
+    // is likewise kept whole: it is centered on its anchor, so the range
+    // grows by half its width and height in data units — plus the default
+    // padding (1/50 of the padded width) unless `PlotRangePadding` is set.
+    let inset_margin = if plot_range_padding.is_none() {
+      plot_w / 50.0
+    } else {
+      0.0
+    };
+    for prim in &primitives {
+      let Primitive::InsetGraphic {
+        x,
+        y,
+        w,
+        h,
+        scaled: false,
+        size: None,
+        ..
+      } = prim
+      else {
+        continue;
+      };
+      let (half_w, half_h) =
+        ((w / 2.0 + inset_margin) / kx, (h / 2.0 + inset_margin) / ky);
+      let (room_x, room_y) = (slack_x / kx, slack_y / ky);
+      if plot_range_x.is_none() && *w < svg_width as f64 {
+        grown.x_min = grown.x_min.min(x - half_w + room_x);
+        grown.x_max = grown.x_max.max(x + half_w - room_x);
+      }
+      if plot_range_y.is_none() && *h < svg_height as f64 {
+        grown.y_min = grown.y_min.min(y - half_h + room_y);
+        grown.y_max = grown.y_max.max(y + half_h - room_y);
+      }
+    }
     if grown == bb {
       break;
     }
@@ -17557,8 +17785,19 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let label_font =
     GraphicsLabelFont::from_styles(base_style.as_ref(), label_style.as_ref());
   let frame_label_font = label_font.size.unwrap_or(LABEL_FONT);
-  // The same size sets the tick labels of the frame and of the axes.
-  let tick_font = label_font.size.unwrap_or(TICK_FONT);
+  // The same size sets the tick labels of the frame and of the axes, unless
+  // the tick style of whichever carries the ticks (`FrameTicksStyle` on a
+  // framed picture, `TicksStyle` on its axes) names a size of its own.
+  let tick_style_spec = if frame {
+    frame_ticks_style.as_ref()
+  } else {
+    ticks_style.as_ref()
+  };
+  let tick_font = tick_style_spec
+    .and_then(crate::functions::plot::LabelStyleSpec::parse)
+    .and_then(|spec| spec.font_size)
+    .or(label_font.size)
+    .unwrap_or(TICK_FONT);
   let title_font = plot_label
     .iter()
     .flatten()
@@ -18999,6 +19238,16 @@ impl BoxLayout {
     let w = match family.as_deref() {
       // A proportional face (`StyleBox[…, FontFamily -> "Times"]`, a
       // grid's `BaseStyle`) advances each glyph by its own width.
+      // The generic sans family is drawn in the embedded Atkinson
+      // Hyperlegible Next, whose digits run wider than Arial's: measure
+      // with its own advances, or a number's last digit is clipped.
+      Some(ff) if is_embedded_sans_family(ff) => {
+        s.chars()
+          .filter(|c| !zero_width(c))
+          .map(crate::functions::plot_padding::atkinson_width_em)
+          .sum::<f64>()
+          * font_size
+      }
       Some(ff) => {
         s.chars()
           .filter(|c| !zero_width(c))
@@ -19067,6 +19316,23 @@ thread_local! {
   /// a string is literal text, so its single letters are not math variables
   /// and stay upright.
   static BOX_UPRIGHT_TEXT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+  /// Set while drawing the content of a `Text[expr]` outside graphics.
+  /// Wolfram sets math inside text one script level down (a text style's
+  /// `ScriptLevel -> 1`), so even an outermost fraction there is drawn at
+  /// the reduced size of a nested one.
+  static BOX_INLINE_TEXT_MATH: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Run `f` with [`BOX_INLINE_TEXT_MATH`] set, restoring it after.
+pub(crate) fn with_inline_text_math<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_INLINE_TEXT_MATH.with(|c| c.set(self.0));
+    }
+  }
+  let _restore = Restore(BOX_INLINE_TEXT_MATH.with(|c| c.replace(true)));
+  f()
 }
 
 /// Run `f` with [`BOX_UPRIGHT_TEXT`] set to `upright`, restoring it after.
@@ -19084,13 +19350,20 @@ fn with_box_upright_text<R>(upright: bool, f: impl FnOnce() -> R) -> R {
 /// How much narrower a proportional face sets text than the Arial metrics
 /// of [`crate::functions::plot_padding::char_width_em`]: a serif face such
 /// as Times runs about 10% tighter.
-fn proportional_family_scale(family: &str) -> f64 {
+pub(crate) fn proportional_family_scale(family: &str) -> f64 {
   let f = family.to_ascii_lowercase();
   if f.contains("times") || (f.contains("serif") && !f.contains("sans")) {
     0.9
   } else {
     1.0
   }
+}
+
+/// Whether `family` is the sans face SVG text is drawn in by default (the
+/// generic `sans-serif`, or Atkinson Hyperlegible Next by name).
+fn is_embedded_sans_family(family: &str) -> bool {
+  let f = family.trim().to_ascii_lowercase();
+  f == "sans-serif" || f.starts_with("atkinson hyperlegible next")
 }
 
 /// Run `f` with the box text atoms set in `family` (`None`: monospace, or
@@ -19223,6 +19496,14 @@ fn grid_box_dividers(
   (cols, rows)
 }
 
+/// A size in a `Spacer` template box: a number, or the box text of one.
+fn spacer_size(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::String(s) => s.trim_matches('"').parse().ok(),
+    other => try_eval_to_f64(other),
+  }
+}
+
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
@@ -19297,6 +19578,39 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           })
           .collect();
         layout_box(&call1("RowBox", Expr::List(parts.into())), font_size)
+      }
+      // `TemplateBox[{w}, "Spacer1"]` / `TemplateBox[{w, h}, "Spacer2"]`,
+      // the boxes of `Spacer`: blank room `w` points wide (and `h` high).
+      "TemplateBox"
+        if args.len() == 2
+          && matches!(&args[1], Expr::String(t) if t == "Spacer1" || t == "Spacer2")
+          && template_box_items(&args[0]).is_some_and(|items| {
+            !items.is_empty() && items.iter().all(|i| spacer_size(i).is_some())
+          }) =>
+      {
+        let items = template_box_items(&args[0]).unwrap();
+        let size = |i: usize| {
+          items
+            .get(i)
+            .and_then(spacer_size)
+            .map_or(0.0, |v| v.max(0.0))
+        };
+        let blank = BoxLayout::text("", font_size);
+        let height = if items.len() > 1 {
+          size(1)
+        } else {
+          blank.height
+        };
+        BoxLayout {
+          width: size(0),
+          height,
+          baseline: if items.len() > 1 {
+            height
+          } else {
+            blank.baseline
+          },
+          elements: String::new(),
+        }
       }
       // RowBox: lay out children left-to-right, align baselines
       "RowBox" if args.len() == 1 => {
@@ -19451,7 +19765,9 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
       "FractionBox"
         if crate::functions::graphics::is_fraction_box_args(args) =>
       {
-        let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
+        let size = if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0
+          && !BOX_INLINE_TEXT_MATH.with(std::cell::Cell::get)
+        {
           font_size
         } else {
           let floor = 0.75 * BOX_ROOT_FONT_SIZE.with(std::cell::Cell::get);
@@ -19460,8 +19776,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let num = layout_box_nested(&args[0], size);
         let den = layout_box_nested(&args[1], size);
         let frac_w = num.width.max(den.width) + 4.0;
-        let gap = 3.0;
-        let line_thickness = 0.8;
+        // The rule and the space around it grow with large type: a 14 pt
+        // (or smaller) fraction has a 0.8 pt rule with 3 pt gaps, an 80 pt
+        // one a rule and gaps proportionally heavier.
+        let em = (size / 14.0).max(1.0);
+        let gap = 3.0 * em;
+        let line_thickness = 0.8 * em;
 
         // Numerator centered above line
         let num_x = (frac_w - num.width) / 2.0;
@@ -19479,7 +19799,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
 
         let elements = format!(
           "{}\
-           <line x1=\"0\" y1=\"{line_y:.1}\" x2=\"{frac_w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"{line_thickness}\"/>\
+           <line x1=\"0\" y1=\"{line_y:.1}\" x2=\"{frac_w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"{line_thickness:.1}\"/>\
            {}",
           num.translate(num_x, num_y),
           den.translate(den_x, den_y),
@@ -21057,9 +21377,18 @@ pub fn expr_to_svg_markup_lines(expr: &Expr) -> Vec<String> {
     }
     other => vec![expr_to_svg_markup(other)],
   };
+  // A newline inside a styled run (`Style["a\nb", Red] Style["c", Blue]`)
+  // closes the run's open `<tspan>`s at the break and reopens them on the
+  // next line, so every line is balanced markup that keeps its styling.
   rows
     .iter()
-    .flat_map(|line| line.split('\n').map(str::to_string).collect::<Vec<_>>())
+    .flat_map(|line| {
+      if line.contains('\n') {
+        split_markup_lines(line)
+      } else {
+        vec![line.clone()]
+      }
+    })
     .collect()
 }
 
@@ -21497,6 +21826,15 @@ fn pin_nested_tspan_baselines(markup: &str, baseline: &str) -> String {
 pub fn expr_to_svg_markup(expr: &Expr) -> String {
   if let Some(styled) = normalize_display_style(expr) {
     return expr_to_svg_markup(&styled);
+  }
+  // A typeset `Dynamic[x]` shows the value `x` currently has, not the
+  // wrapper (e.g. a Manipulate variable initialized to `Dynamic[…]` and
+  // then used as a plot or axis label).
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return expr_to_svg_markup(&dynamic_current_value(expr));
   }
   // `StringForm["template", args…]` substitutes its placeholders wherever
   // it is *typeset* — a graphic's label is exactly that (unlike
@@ -23732,6 +24070,19 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   // Parse bracketed, comma-separated args. Commas inside nested `\(...\)`
   // groups or `[...]` brackets do not split.
   i += 1; // consume '['
+  // A `StyleBox`'s arguments after the content are style directives
+  // (`Italic`, `FontSize -> 20`, `RGBColor[1, 0, 0]`), not boxes: read
+  // them as expressions so the renderer recognizes them, instead of as
+  // the box strings "Italic" and "FontSize -> 20" that style nothing.
+  let parse_arg = |index: usize, src: &[char]| -> Expr {
+    if name == "StyleBox" && index > 0 {
+      let text: String = src.iter().collect();
+      if let Ok(directive) = crate::parse_to_expr(&text) {
+        return directive;
+      }
+    }
+    parse_box_to_expr(src)
+  };
   let mut args: Vec<Expr> = Vec::new();
   let mut arg_start = i;
   let mut gdepth = 0usize; // `\(` group depth
@@ -23766,7 +24117,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
       ']' if bdepth == 0 => {
         // End of the argument list.
         if !(args.is_empty() && arg_start == i) {
-          args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+          args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..i])));
         }
         i += 1; // consume ']'
         return (
@@ -23782,7 +24133,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
         i += 1;
       }
       ',' if bdepth == 0 => {
-        args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+        args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..i])));
         i += 1;
         arg_start = i;
       }
@@ -23791,7 +24142,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   }
   // Unbalanced — consume what we have.
   if arg_start < cs.len() {
-    args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..])));
+    args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..])));
   }
   (
     Expr::FunctionCall {
@@ -23853,7 +24204,17 @@ fn quoted_box_literal(cs: &[char]) -> Option<String> {
 /// Parse a sequence of box-notation units (plain runs, `\(...\)` groups and
 /// `\*Head[...]` explicit boxes) into a list of box Exprs.
 fn parse_box_units(cs: &[char]) -> Vec<Expr> {
-  let mut res: Vec<Expr> = Vec::new();
+  parse_box_units_tagged(cs)
+    .into_iter()
+    .map(|(unit, _)| unit)
+    .collect()
+}
+
+/// [`parse_box_units`], with each unit tagged by whether it was written as
+/// box code (a `\(...\)` group or an explicit `\*Head[...]` box) rather than
+/// as a plain text run of the string.
+fn parse_box_units_tagged(cs: &[char]) -> Vec<(Expr, bool)> {
+  let mut res: Vec<(Expr, bool)> = Vec::new();
   let mut plain = String::new();
   // A linear-syntax group may open with the form it is typeset in —
   // `\!\(TraditionalForm\`16 …\)`. The name says how to read the rest and
@@ -23881,20 +24242,20 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
         }
         '*' => {
           if !plain.is_empty() {
-            res.push(Expr::String(std::mem::take(&mut plain)));
+            res.push((Expr::String(std::mem::take(&mut plain)), false));
           }
           let (e, ni) = parse_explicit_box(cs, i + 2);
-          res.push(e);
+          res.push((e, true));
           i = ni;
           continue;
         }
         '(' => {
           if !plain.is_empty() {
-            res.push(Expr::String(std::mem::take(&mut plain)));
+            res.push((Expr::String(std::mem::take(&mut plain)), false));
           }
           match find_box_group_close(cs, i + 2) {
             Some(close) => {
-              res.push(parse_box_to_expr(&cs[i + 2..close]));
+              res.push((parse_box_to_expr(&cs[i + 2..close]), true));
               i = close + 2;
             }
             None => i += 1,
@@ -23912,9 +24273,9 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
     }
     if let Some((e, ni)) = bare_box_head_at(cs, i) {
       if !plain.is_empty() {
-        res.push(Expr::String(std::mem::take(&mut plain)));
+        res.push((Expr::String(std::mem::take(&mut plain)), false));
       }
-      res.push(e);
+      res.push((e, true));
       i = ni;
       continue;
     }
@@ -23922,7 +24283,7 @@ fn parse_box_units(cs: &[char]) -> Vec<Expr> {
     i += 1;
   }
   if !plain.is_empty() {
-    res.push(Expr::String(plain));
+    res.push((Expr::String(plain), false));
   }
   res
 }
@@ -24061,6 +24422,12 @@ pub const STYLED_LABEL_MARKER: char = '\u{E000}';
 pub fn traditional_label(e: &Expr) -> String {
   match e {
     Expr::String(s) => s.clone(),
+    // A `Dynamic[x]` label reads as the value `x` currently has.
+    Expr::FunctionCall { name, args }
+      if name == "Dynamic" && !args.is_empty() =>
+    {
+      traditional_label(&dynamic_current_value(e))
+    }
     // `Rotate[content, angle]` (a vertical axis label idiom) typesets its
     // content unrotated, as `expr_to_svg_markup` does, rather than the
     // `Rotate(…)` call `TraditionalForm` would print. A `Text[content]`
@@ -24689,6 +25056,26 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       items.push(Expr::String(")".into()));
       call1("Row", Expr::List(items.into()))
     }
+    // `Style["e", Italic]^Row[{Style["i", Italic], "t"}]`: base and
+    // exponent are each set on their own, so their styling (and the plain
+    // strings beside it) stays as written instead of being typeset again.
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && contains_visible_style(e) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(traditionalize_styled_label).collect(),
+      }
+    }
+    Expr::BinaryOp {
+      op: op @ crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if contains_visible_style(e) => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(traditionalize_styled_label(left)),
+      right: Box::new(traditionalize_styled_label(right)),
+    },
     // A list label keeps its braces; each element is set on its own.
     Expr::List(items) if contains_visible_style(e) => {
       Expr::List(items.iter().map(traditionalize_styled_label).collect())
@@ -24703,7 +25090,7 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       traditionalize_styled_label(&args[0])
     }
     Expr::String(_) | Expr::Integer(_) | Expr::Real(_) => e.clone(),
-    _ if contains_visible_style(e) => e.clone(),
+    _ if has_explicit_style(e) => e.clone(),
     _ => traditionalize_layout_items(e),
   }
 }
@@ -24767,6 +25154,42 @@ fn contains_visible_style(e: &Expr) -> bool {
   }
 }
 
+/// Whether `e` is, or holds inside a `Row`, `Text`, script or power (a
+/// `Style["e", Italic]^t` base), a `Style[label, …]` whose directives change
+/// how the text is drawn. Unlike
+/// [`contains_visible_style`], a script that merely holds letters
+/// (`Subscript[R, x]`) does not count: such a label carries no styling of
+/// its own and is typeset in `TraditionalForm` (italic `R` and `x`).
+fn has_explicit_style(e: &Expr) -> bool {
+  match e {
+    Expr::FunctionCall { name, args } if name == "Style" => {
+      (args.len() >= 2 && !style_directives_to_svg_attrs(&args[1..]).is_empty())
+        || args.first().is_some_and(has_explicit_style)
+    }
+    Expr::FunctionCall { name, args } if name == "Row" => match args.first() {
+      Some(Expr::List(items)) => items.iter().any(has_explicit_style),
+      _ => false,
+    },
+    Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
+      has_explicit_style(&args[0])
+    }
+    Expr::FunctionCall { name, args }
+      if matches!(
+        name.as_str(),
+        "Subscript" | "Superscript" | "Subsuperscript" | "Power"
+      ) =>
+    {
+      args.iter().any(has_explicit_style)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => has_explicit_style(left) || has_explicit_style(right),
+    _ => false,
+  }
+}
+
 /// Whether a script argument holds letters. The Unicode script characters a
 /// plain-text label falls back to exist for digits and signs only, so
 /// `Subscript[x, n]` would flatten to a flat `xn`; it has to be typeset as a
@@ -24813,6 +25236,28 @@ pub fn box_string_to_svg(s: &str) -> String {
   let norm = normalize_box_markers(s);
   let cs: Vec<char> = norm.chars().collect();
   parse_box_units(&cs).iter().map(boxes_to_svg).collect()
+}
+
+/// [`box_string_to_svg`] for a label typeset in `TraditionalForm`, as plot
+/// legend entries are: the symbols spelt with a single letter in the
+/// string's box code (`"\!\(\*SubscriptBox[\(T\), \(0\)]\)"`) are set in
+/// italics, while its plain text runs and quoted strings stay upright.
+pub fn traditional_box_string_to_svg(s: &str) -> String {
+  if s.starts_with(STYLED_LABEL_MARKER) {
+    return box_string_to_svg(s);
+  }
+  let norm = normalize_box_markers(s);
+  let cs: Vec<char> = norm.chars().collect();
+  parse_box_units_tagged(&cs)
+    .iter()
+    .map(|(unit, is_box_code)| {
+      if *is_box_code {
+        with_single_letter_italics(|| boxes_to_svg(unit))
+      } else {
+        boxes_to_svg(unit)
+      }
+    })
+    .collect()
 }
 
 /// The box expression a string with inline `\!\(\*…\)` box notation
@@ -27045,6 +27490,26 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Legended", vec![shown, legend]))
 }
 
+/// A plot's legend entries, each paired with the index of the series it
+/// labels: the entries a previous `Show` merged, else the explicit labels
+/// of its `PlotLegends` option.
+fn plot_source_legends(ps: &crate::syntax::PlotSource) -> Vec<(usize, String)> {
+  if !ps.legends.is_empty() {
+    return ps.legends.clone();
+  }
+  ps.options
+    .iter()
+    .find_map(|o| match option_name_value(o) {
+      Some(("PlotLegends", value)) => {
+        let (labels, _, _, _) =
+          crate::functions::plot::parse_plot_legends(&value);
+        Some(labels.into_iter().enumerate().collect())
+      }
+      _ => None,
+    })
+    .unwrap_or_default()
+}
+
 /// `Show` of symbolic `Graphics[…]` (or `Graphics3D[…]`) expressions, the
 /// way Wolfram builds the result: `Show[g]` of an option-free `g` is `g`;
 /// otherwise the
@@ -27610,6 +28075,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A plot without any curve (every function `Null`) has no data to
     // contribute to the combined ranges — unless nothing else does either.
     let any_curves = plot_sources.iter().any(|ps| !ps.series.is_empty());
+    // Every plot keeps its legend entries, keyed by the merged index of
+    // the series each one labels: `Show` of two plots with `PlotLegends`
+    // shows both legends, as Wolfram does for the `Legended` plots.
+    let mut legends: Vec<(usize, String)> = Vec::new();
+    let mut legend_sources = 0;
     for ps in &plot_sources {
       if any_curves && ps.series.is_empty() {
         continue;
@@ -27617,6 +28087,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A curve-to-curve fill names its partner by index within its own
       // plot; in the merged list that plot's curves start further on.
       let offset = all_series.len();
+      let own_legends = plot_source_legends(ps);
+      if !own_legends.is_empty() {
+        legend_sources += 1;
+        legends.extend(own_legends.into_iter().map(|(i, l)| (offset + i, l)));
+      }
       let shift = |f: &mut crate::syntax::SeriesFilling| {
         if let crate::syntax::SeriesFilling::Series(j) = f {
           *j += offset;
@@ -27785,6 +28260,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       aspect_ratio: plot_sources[0].aspect_ratio,
       settles_all_range: plot_sources[0].settles_all_range,
       data_x_range,
+      // A legend of the first plot alone stays in its options (with its
+      // styling); entries from several plots, or a later one, are listed.
+      legends: if legend_sources > 1
+        || (legend_sources == 1
+          && plot_source_legends(&plot_sources[0]).is_empty())
+      {
+        legends
+      } else {
+        Vec::new()
+      },
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
         plot_sources
@@ -29095,8 +29580,35 @@ fn traditional_inline_box_cell_svg(cell: &Expr) -> Option<String> {
   // `Style[…, FontFamily -> "Times"]` sets the typeset numerator,
   // denominator and scripts in that face too.
   with_box_font_family(family.as_deref(), || {
-    traditional_inline_box_content_svg(content, styled, size)
+    with_grid_item_script_level(size, || {
+      traditional_inline_box_content_svg(content, styled, size)
+    })
   })
+}
+
+/// Run `f`, which typesets a cell at `size`, one script level deep when the
+/// cell is an item of a grid being laid out: Wolfram's `GridBox` raises the
+/// `ScriptLevel` of its items, so a fraction in a `Grid`, `Column` or
+/// `TableForm` cell is set at 0.75 of the cell's size, while the rest of
+/// the cell (`f'(x)` beside the quotient) keeps that size.
+fn with_grid_item_script_level<T>(size: f64, f: impl FnOnce() -> T) -> T {
+  if GRID_ITEM_DEPTH.with(std::cell::Cell::get) == 0
+    || BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) != 0
+  {
+    return f();
+  }
+  struct Restore(f64);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      BOX_SCRIPT_LEVEL.with(|l| l.set(0));
+      BOX_ROOT_FONT_SIZE.with(|r| r.set(self.0));
+    }
+  }
+  // The level-0 size the nested fractions' 0.75 floor is taken from is
+  // the cell's own size, not whatever was laid out last.
+  let _restore = Restore(BOX_ROOT_FONT_SIZE.with(|r| r.replace(size)));
+  BOX_SCRIPT_LEVEL.with(|l| l.set(1));
+  f()
 }
 
 /// [`traditional_inline_box_cell_svg`] for a cell already stripped of its
@@ -29666,6 +30178,23 @@ fn parse_position_spacings(spec: &Expr) -> Vec<Option<f64>> {
   out
 }
 
+/// The size an image cell is shown at in a grid: its `ImageSize`, else its
+/// pixel size — the same size the image has on its own.
+fn grid_image_shown_size(cell: &Expr) -> Option<(f64, f64)> {
+  match unwrap_to_image(cell)? {
+    Expr::Image {
+      width,
+      height,
+      display_size,
+      ..
+    } => {
+      let (w, h) = display_size.unwrap_or((*width, *height));
+      Some((w as f64, h as f64))
+    }
+    _ => None,
+  }
+}
+
 /// Check if a cell is or contains an Expr::Image (unwrapping Style).
 fn unwrap_to_image(cell: &Expr) -> Option<&Expr> {
   match cell {
@@ -30026,6 +30555,18 @@ fn item_style_entry_directives(entry: &Expr, out: &mut Vec<Expr>) {
 /// of `n`: `{s1, s2, …}` names only the first positions, while
 /// `{s1, …, {r1, r2, …}, e1, …}` cycles the inner list over the positions
 /// between the explicit leading and trailing entries.
+/// Split an `ItemSize` value into its width and height specs. A list of
+/// two or more entries is read as `{w, h, …}` (entries past the height
+/// are ignored, as Wolfram does), so `{6, 1, 1}` fixes every column at 6
+/// ems rather than naming per-column widths; anything else is a width
+/// alone. Shared by `Grid`, `Column` and their text wrapping.
+pub(crate) fn item_size_dims(spec: &Expr) -> (&Expr, Option<&Expr>) {
+  match spec {
+    Expr::List(dims) if dims.len() >= 2 => (&dims[0], Some(&dims[1])),
+    other => (other, None),
+  }
+}
+
 /// The fixed size an `ItemSize` dimension gives position `pos` (0-based)
 /// of `n`: a number for every position, or a per-position list (in the
 /// `Grid` spec form); `Automatic`/`All` and non-positive sizes leave it to
@@ -30280,6 +30821,54 @@ fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
 }
 
+/// The `Style` directives (weight, slant, size, color) a grid's style
+/// passes on to a nested layout in one of its cells. The font family is
+/// left to the caller, which decides whether a default applies.
+fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  directives
+}
+
+/// A `Grid` nested in a cell of a styled grid (`Style[Grid[{{Grid[…]},
+/// {Grid[…]}}], 16]`) inherits the outer grid's size, weight, slant, color
+/// and family, just like the plain text cells beside it: the nested grid is
+/// wrapped in the same `Style` so it is drawn whole in that style (its own
+/// `BaseStyle` still takes precedence). Without this the nested grid's text
+/// fell back to the default 14pt black.
+fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, args }
+    if (name == "Grid" || name == "TextGrid")
+      && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return cell.clone();
+  }
+  let mut directives = grid_style_directives(style);
+  if let Some(family) = &style.font_family {
+    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
+  }
+  if directives.is_empty() {
+    return cell.clone();
+  }
+  call(
+    "Style",
+    std::iter::once(cell.clone())
+      .chain(directives)
+      .collect::<Vec<_>>(),
+  )
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -30407,6 +30996,10 @@ thread_local! {
   /// messages even though it is laid out as a grid (`TableForm`).
   static LOUD_GRID_CELLS: std::cell::Cell<bool> =
     const { std::cell::Cell::new(false) };
+  /// How many grids are being laid out around the current cell (see
+  /// [`with_grid_item_script_level`]).
+  static GRID_ITEM_DEPTH: std::cell::Cell<u32> =
+    const { std::cell::Cell::new(0) };
 }
 
 /// Run `f` (which renders a grid) so that the grid's cells report the
@@ -30430,6 +31023,14 @@ fn grid_svg_styled_internal(
   // `MatrixForm`. Only the outermost grid consults the flag; grids nested in
   // its cells are plain `Grid`s again.
   let loud = LOUD_GRID_CELLS.with(|l| l.replace(false));
+  struct LeaveGrid;
+  impl Drop for LeaveGrid {
+    fn drop(&mut self) {
+      GRID_ITEM_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    }
+  }
+  GRID_ITEM_DEPTH.with(|d| d.set(d.get() + 1));
+  let _leave = LeaveGrid;
   if parens || loud {
     let result =
       grid_svg_styled_internal_reporting(args, group_gaps, parens, outer_style);
@@ -30559,6 +31160,7 @@ fn grid_svg_styled_internal_reporting(
       *cell = resolve_display_item(cell);
       *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
+      *cell = nested_grid_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
       // grid's size, like the plain text cells around it.
@@ -30574,19 +31176,19 @@ fn grid_svg_styled_internal_reporting(
       *cell = fraction_cell_in_grid_style(cell, default_style);
       // A typeset cell (a `Row` holding a quotient, a `TraditionalForm`
       // formula) is set in the grid's `BaseStyle` face and size, like the
-      // grid's plain text cells, rather than the monospace default. An
+      // grid's plain text cells, rather than the monospace default. Without
+      // a `FontFamily`, that is the sans face the text cells default to; an
       // enclosing `Style[Grid[…], 30]` sizes them the same way.
-      if (default_style.font_family.is_some()
-        || default_style.font_size.is_some())
-        && traditional_inline_box_cell_svg(cell).is_some()
-      {
-        let mut directives = vec![cell.clone()];
-        if let Some(family) = &default_style.font_family {
-          directives.push(Expr::Rule {
+      if traditional_inline_box_cell_svg(cell).is_some() {
+        let family =
+          default_style.font_family.as_deref().unwrap_or("sans-serif");
+        let mut directives = vec![
+          cell.clone(),
+          Expr::Rule {
             pattern: Box::new(id_expr("FontFamily")),
             replacement: Box::new(str_expr(family)),
-          });
-        }
+          },
+        ];
         if let Some(size) = default_style.font_size {
           directives.push(Expr::Real(size));
         }
@@ -30685,7 +31287,14 @@ fn grid_svg_styled_internal_reporting(
     } = &opt
       && let Expr::Identifier(name) = pattern.as_ref()
     {
-      match name.as_str() {
+      // `Frame -> {xspec, yspec}` rules the grid's column and row lines
+      // exactly as `Dividers -> {xspec, yspec}` does, so it shares that
+      // parser (e.g. `Frame -> {False, All}` draws only horizontal lines).
+      let key = match replacement.as_ref() {
+        Expr::List(items) if name == "Frame" && items.len() == 2 => "Dividers",
+        _ => name.as_str(),
+      };
+      match key {
         "Frame" => match replacement.as_ref() {
           Expr::Identifier(val) if val == "All" => frame_all = true,
           Expr::Identifier(val) if val == "True" => frame_outer = true,
@@ -31082,13 +31691,11 @@ fn grid_svg_styled_internal_reporting(
         },
         // `ItemSize -> w`, `{w, h}` or `{{w1, w2, …}, {h1, …}}`: column
         // widths in ems and row heights in lines, per position.
-        "ItemSize" => match replacement.as_ref() {
-          Expr::List(items) if items.len() == 2 => {
-            item_size_w = Some(items[0].clone());
-            item_size_h = Some(items[1].clone());
-          }
-          other => item_size_w = Some(other.clone()),
-        },
+        "ItemSize" => {
+          let (w, h) = item_size_dims(replacement);
+          item_size_w = Some(w.clone());
+          item_size_h = h.cloned();
+        }
         "TableSpacing" => {
           // TableForm's TableSpacing -> {rows, cols}: the first value is the
           // gap between rows, the second the gap between columns (the opposite
@@ -31305,6 +31912,8 @@ fn grid_svg_styled_internal_reporting(
       }
       let w = if let Some((_, nat_w, _)) = grid_cell_graphic(cell) {
         nat_w + col_pad(j)
+      } else if let Some((img_w, _)) = grid_image_shown_size(cell) {
+        img_w + col_pad(j)
       } else {
         let advance = if contains_base_form(cell) {
           font_size * MONO_ADVANCE
@@ -31435,21 +32044,9 @@ fn grid_svg_styled_internal_reporting(
       if let Some((_, _, nat_h)) = grid_cell_graphic(cell) {
         cell_h = cell_h.max(nat_h + pad_y);
       }
-      // An Image cell is scaled to fit the column width, which fixes its height.
-      if let Some(img) = unwrap_to_image(cell)
-        && let Expr::Image {
-          width: iw,
-          height: ih,
-          ..
-        } = img
-      {
-        let col_w = if j < col_widths.len() {
-          col_widths[j] - col_pad(j)
-        } else {
-          200.0
-        };
-        let scale = col_w / (*iw as f64);
-        cell_h = cell_h.max((*ih as f64) * scale + pad_y);
+      // An Image cell keeps the size it is shown at on its own.
+      if let Some((_, img_h)) = grid_image_shown_size(cell) {
+        cell_h = cell_h.max(img_h + pad_y);
       }
       let span = span_height(&rows, i, j);
       if span > 1 {
@@ -31875,11 +32472,17 @@ fn grid_svg_styled_internal_reporting(
           ..
         } = img
         {
-          let avail_w = col_w - col_pad(j);
-          let scale = avail_w / (*iw as f64);
-          let draw_w = avail_w;
-          let draw_h = (*ih as f64) * scale;
-          let ix = x_offset + col_pad_left[j];
+          let (draw_w, draw_h) =
+            grid_image_shown_size(cell).unwrap_or((*iw as f64, *ih as f64));
+          // Placed by the column's alignment, like a graphic cell.
+          let ix = match anchor {
+            "start" => x_offset + col_pad_left[j],
+            "end" => {
+              let span_end = (j + span_width(row, j)).min(num_cols) - 1;
+              x_offset + col_w - col_pad_right[span_end] - draw_w
+            }
+            _ => x_offset + (col_w - draw_w) / 2.0,
+          };
           let vis_h = cell_bottom - cell_top;
           let iy =
             aligned_top(draw_h).unwrap_or(cell_top + (vis_h - draw_h) / 2.0);
@@ -31908,7 +32511,7 @@ fn grid_svg_styled_internal_reporting(
           color: cell_color,
           hidden: cell_hidden,
           decoration: cell_decoration,
-          ..
+          background: cell_background,
         } = extract_cell_style(cell);
 
         // Detect `Hyperlink[displayText, url]` cells so the grid can render
@@ -32006,6 +32609,11 @@ fn grid_svg_styled_internal_reporting(
         // A line break starts a new line: one `<tspan>` per line, the block
         // centered on the cell. Stacked fractions are drawn elsewhere.
         let multiline = markup.contains('\n') && !has_fraction(cell);
+        let n_lines = if multiline {
+          split_markup_lines(&markup).len().max(1) as f64
+        } else {
+          1.0
+        };
         // A centered cell whose lines are aligned on one side
         // (`TextAlignment -> Left`, as a `Column` cell sets) keeps the block
         // centered but starts (or ends) every line at the block's edge.
@@ -32056,6 +32664,31 @@ fn grid_svg_styled_internal_reporting(
           let lh = markup_line_height(&markup, fs);
           (aligned_top(lh).map_or(cy, |t| t + lh / 2.0 - 1.0), markup)
         };
+        // `Style[…, Background -> c]` paints a panel just behind the text
+        // (not the whole cell, which `Item[…, Background -> c]` fills).
+        if let Some(bg) = cell_background.filter(|_| !cell_hidden) {
+          let advance = if contains_base_form(cell) {
+            font_size * MONO_ADVANCE
+          } else {
+            char_width
+          };
+          let tw = estimate_display_width(cell) * advance * (fs / font_size);
+          let bh = n_lines * fs;
+          let left = match anchor {
+            "middle" => cx - tw / 2.0,
+            "end" => cx - tw,
+            _ => cx,
+          };
+          let top = if multiline {
+            text_y - fs / 2.0
+          } else {
+            text_y - bh / 2.0
+          };
+          svg.push_str(&format!(
+            "<rect x=\"{left:.1}\" y=\"{top:.1}\" width=\"{tw:.1}\" height=\"{bh:.1}\" fill=\"{}\"/>\n",
+            bg.to_svg_rgb(),
+          ));
+        }
         let text_elem = format!(
           "<text x=\"{cx:.1}\" y=\"{text_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\"{fw_attr}{fst_attr}{deco_attr} fill=\"{text_fill}\"{hidden_attr} text-anchor=\"{anchor}\" dominant-baseline=\"central\"{space_attr}>{markup}</text>\n",
           ff = svg_escape(ff),
@@ -35908,6 +36541,13 @@ pub(crate) fn magnified_picture(expr: &Expr) -> Option<Expr> {
 /// `p(x) = 1 + x`, not `p(x) == 1 + x` — so the wrapper is put back, for
 /// the caller to typeset through the traditional box builder.
 pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
+  unwrap_display_wrappers_with(expr, true)
+}
+
+/// `unwrap_display_wrappers`, optionally stopping at a `TabView`: the
+/// top-level display pipeline keeps it, since a `TabView` result has a
+/// dedicated renderer of its own (interactive and `Dynamic` panes).
+pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
   let mut current = expr.clone();
   let mut traditional = false;
   let mut standard = false;
@@ -35959,6 +36599,19 @@ pub fn unwrap_display_wrappers(expr: &Expr) -> Expr {
       "PaneSelector" if args.len() >= 2 => {
         current = selected_pane_content(args);
         continue;
+      }
+      // `TabView[{label -> pane, …}, sel]` nested in a layout shows the
+      // pane its selector names (the first pane without a selector),
+      // like a top-level `TabView` result does, rather than the call's
+      // source text.
+      "TabView" if peel_tabview => {
+        match crate::tabview_selected_content(args) {
+          Some(content) => {
+            current = content;
+            continue;
+          }
+          None => false,
+        }
       }
       // `Style[picture, Magnification -> m]` and `Magnify[picture, m]`
       // draw the picture `m` times its size.
@@ -36268,7 +36921,23 @@ fn resolve_display_item_content(expr: &Expr) -> Expr {
           Err(_) => break,
         }
       }
-      Some(("EventHandler", content)) => current = content.clone(),
+      // A handler with mouse events a live widget can deliver (a sketch
+      // pad laid out in a `Grid` cell below its caption) renders its
+      // picture with the events and drawing areas recorded, as a
+      // top-level `EventHandler` does, so presses and drags over it reach
+      // the actions.
+      Some(("EventHandler", content)) => {
+        if let Expr::FunctionCall { args, .. } = &current
+          && crate::is_visual_mode()
+          && !live_mouse_events(&args[1..]).is_empty()
+          && let rendered @ Expr::Graphics { .. } =
+            crate::render_event_handler_if_needed(current.clone())
+        {
+          current = rendered;
+          break;
+        }
+        current = content.clone();
+      }
       // `ClickPane[content, handler]` shows `content`; the handler needs
       // live clicks. `content` is held, so a state variable holding a
       // picture (`ClickPane[Dynamic[board], …]`) still has to be resolved.
@@ -37203,13 +37872,37 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
         // `Style[TraditionalForm[Column[…]], 14]`: the form wrapper comes
         // off first (typesetting each item of the layout traditionally), so
         // the style reaches the layout's items the same way.
-        if matches!(&args[0], Expr::FunctionCall { name: n, .. }
+        // A one-argument `Text[…]` only marks its content as display text,
+        // so `Style[Text[TraditionalForm[poly]], 12]` is typeset the same
+        // way as `Style[TraditionalForm[poly], 12]`.
+        let mut form_body = &args[0];
+        while let Expr::FunctionCall { name: n, args: t } = form_body
+          && n == "Text"
+          && t.len() == 1
+        {
+          form_body = &t[0];
+        }
+        if matches!(form_body, Expr::FunctionCall { name: n, .. }
           if n == "TraditionalForm")
         {
-          let unwrapped = unwrap_display_wrappers(&args[0]);
+          let unwrapped = unwrap_display_wrappers(form_body);
           if let Some(inner) = style_pushed_into_layout(&unwrapped, &args[1..])
           {
             return nested_layout_svg(&inner);
+          }
+          // `Style[TraditionalForm[MatrixForm[m]], 12]`: the form wrapper
+          // comes off a picture-like layout (a matrix, a table), which then
+          // takes the style the way a bare `Style[MatrixForm[m], 12]` does,
+          // rather than being written out as one line of text.
+          if !matches!(&unwrapped, Expr::FunctionCall { name: n, .. }
+            if n == "TraditionalForm")
+            && crate::evaluator::lays_out_a_graphic(&unwrapped)
+          {
+            let mut styled = vec![unwrapped.clone()];
+            styled.extend(args[1..].iter().cloned());
+            if let Some(svg) = nested_layout_svg(&call("Style", styled)) {
+              return Some(svg);
+            }
           }
           // A styled formula, `Style[TraditionalForm[a² + b² = c²], 24]`,
           // is typeset with the style around its boxes.
@@ -37287,22 +37980,22 @@ pub fn column_to_svg(args: &[Expr]) -> Option<String> {
   Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
 }
 
-/// A `Column` ruled with `Dividers` is a one-column `Grid`: restate it as
-/// the `Grid` arguments (each item in its own row, the positional
-/// alignment and spacing turned into `Alignment`/`Spacings` options) so the
-/// one grid renderer draws the dividers at their positions. Columns
-/// without `Dividers` keep their own layout.
+/// A `Column` ruled with `Dividers`, or with per-row backgrounds
+/// (`Background -> {c1, c2, …}` or the cyclic `{{c1, c2}}`), is a one-column
+/// `Grid`: restate it as the `Grid` arguments (each item in its own row, the
+/// positional alignment and spacing turned into `Alignment`/`Spacings`
+/// options, the row backgrounds as the `Grid`'s vertical background spec) so
+/// the one grid renderer draws the dividers and row fills at their
+/// positions. Other columns keep their own layout.
 fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
   let Expr::List(items) = args.first()? else {
     return None;
   };
   let rest = args.get(1..).unwrap_or(&[]);
-  if items.is_empty()
-    || !rest
-      .iter()
-      .filter_map(option_kv)
-      .any(|(k, _)| k == "Dividers")
-  {
+  let needs_grid = |(k, v): (&str, &Expr)| {
+    k == "Dividers" || (k == "Background" && matches!(v, Expr::List(_)))
+  };
+  if items.is_empty() || !rest.iter().filter_map(option_kv).any(needs_grid) {
     return None;
   }
   let rule = |key: &str, value: Expr| Expr::Rule {
@@ -37338,6 +38031,16 @@ fn column_as_grid_args(args: &[Expr]) -> Option<Vec<Expr>> {
           "Spacings",
           Expr::List(
             vec![Expr::Identifier("Automatic".to_string()), v.clone()].into(),
+          ),
+        ));
+      }
+      // A `Column`'s background list runs down its rows: the `Grid`'s
+      // vertical (second) background spec.
+      Some(("Background", v @ Expr::List(_))) => {
+        grid_args.push(rule(
+          "Background",
+          Expr::List(
+            vec![Expr::Identifier("None".to_string()), v.clone()].into(),
           ),
         ));
       }
@@ -37428,12 +38131,7 @@ pub(crate) fn wrap_fixed_width_column_text(args: &[Expr]) -> Option<Vec<Expr>> {
     .iter()
     .filter_map(option_kv)
     .find(|(k, _)| *k == "ItemSize")
-    .and_then(|(_, v)| match v {
-      Expr::List(dims) if dims.len() == 2 => {
-        item_size_entry_at(Some(&dims[0]), 0, 1)
-      }
-      other => item_size_entry_at(Some(other), 0, 1),
-    })?;
+    .and_then(|(_, v)| item_size_entry_at(Some(item_size_dims(v).0), 0, 1))?;
   // The column sets its text in the monospace face at 14pt.
   let max_chars =
     ((width * 14.0) / (14.0 * MONO_ADVANCE)).floor().max(1.0) as usize;
@@ -37467,7 +38165,16 @@ fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
   use crate::evaluator::dispatch::io_functions::{
     pane_fixed_size, pane_size_component,
   };
-  let Expr::FunctionCall { name, args } = item else {
+  // `Style[Text[Pane[…, {w, h}]], Bold]`: the style and text wrappers only
+  // dress the pane's content, so the item still reserves the pane's box.
+  let mut pane = item;
+  while let Expr::FunctionCall { name, args } = pane
+    && ((name == "Style" && args.len() >= 2)
+      || (name == "Text" && args.len() == 1))
+  {
+    pane = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = pane else {
     return None;
   };
   if name != "Pane" || args.len() < 2 {
@@ -37554,10 +38261,10 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     .find(|(k, _)| *k == "ItemSize")
     .map(|(_, v)| v)
   {
-    Some(Expr::List(dims)) if dims.len() == 2 => {
-      (Some(&dims[0]), Some(&dims[1]))
+    Some(spec) => {
+      let (w, h) = item_size_dims(spec);
+      (Some(w), h)
     }
-    Some(other) => (Some(other), None),
     None => (None, None),
   };
 
@@ -37822,9 +38529,16 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         for (k, line) in lines.iter().enumerate() {
           let line_y = cy + (k as f64 - (lines.len() - 1) as f64 / 2.0) * fs;
           svg.push_str(&format!(
-            "<text x=\"{text_x:.1}\" y=\"{line_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\">{content}</text>\n",
+            "<text x=\"{text_x:.1}\" y=\"{line_y:.1}\" font-family=\"{ff}\" font-size=\"{fs}\" font-weight=\"{fw}\" font-style=\"{fst}\"{deco} fill=\"{fill}\"{hidden_attr} text-anchor=\"{alignment}\" dominant-baseline=\"central\"{preserve}>{content}</text>\n",
             ff = svg_escape(ff),
             deco = style.decoration.svg_attrs(),
+            // A line that starts with a space (re-flowed text continuing
+            // after a break between row items) keeps it as an indent.
+            preserve = if line.starts_with(' ') {
+              " xml:space=\"preserve\""
+            } else {
+              ""
+            },
             // Spans inside the run carry their own `Style` colors; the
             // opacity (inherited by them) is what keeps those unpainted too.
             hidden_attr = if style.hidden { " fill-opacity=\"0\"" } else { "" },
@@ -38436,8 +39150,14 @@ fn row_layout_svg(args: &[Expr]) -> Option<String> {
       let per_char =
         crate::functions::plot_padding::text_width(&markup, st.font_size);
       // The generic `sans-serif` is the default face itself, which is
-      // always there, so its own advances alone measure it.
-      if st.font_family == "sans-serif" {
+      // always there, so its own advances alone measure it. A serif face
+      // (`"Times"`) falls back to the default serif face, which sets text
+      // narrower than the sans average: its per-character advances bound
+      // it, where the average would leave a centered piece floating in a
+      // gap as wide as a third of its own text.
+      if st.font_family == "sans-serif"
+        || proportional_family_scale(&st.font_family) < 1.0
+      {
         per_char * bold
       } else {
         let average = chars * char_width * scale * SANS_ADVANCE / MONO_ADVANCE;
@@ -40183,37 +40903,7 @@ pub(crate) fn clip_svg_to_pane_box(
 ) -> String {
   let (natural_w, natural_h) = parse_svg_wh(svg);
   if natural_w <= width && natural_h <= height {
-    // Content that fits still takes up the whole box, placed where the
-    // Pane's `Alignment` puts it (top left by default), as in WL:
-    // `Pane[Graphics[…, ImageSize -> 50], {200, 100}]` is 200 x 100.
-    let align = align.unwrap_or((0.0, 0.0));
-    if natural_w == width && natural_h == height {
-      return svg.to_string();
-    }
-    let x = (width - natural_w) * align.0;
-    let y = (height - natural_h) * align.1;
-    let root = svg.find("<svg").unwrap_or(0);
-    // Text running past the picture's own edges (a wide caption in a
-    // picture shrunk to the box) is still drawn; the box clips it.
-    let picture = &svg[root..];
-    let picture = match picture.find('>') {
-      Some(end) if !picture[..end].contains("overflow=") => {
-        let end = if picture[..end].ends_with('/') {
-          end - 1
-        } else {
-          end
-        };
-        format!(
-          "{} overflow=\"visible\"{}",
-          &picture[..end],
-          &picture[end..]
-        )
-      }
-      _ => picture.to_string(),
-    };
-    return format!(
-      "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{picture}\n</g>\n</svg>"
-    );
+    return place_in_pane_box(svg, natural_w, natural_h, width, height, align);
   }
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
@@ -40224,10 +40914,23 @@ pub(crate) fn clip_svg_to_pane_box(
     return scaled;
   }
   // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
-  // the box (keeping its aspect ratio) instead of cutting it off.
+  // the box (keeping its aspect ratio) instead of cutting it off. The
+  // shrunk content is then placed in the box by the alignment like any
+  // content that fits: the Pane keeps its full `width`x`height`.
   if shrink_to_fit && natural_w > 0.0 && natural_h > 0.0 {
+    // The Pane itself keeps its declared size: the shrunk content sits in
+    // the full `width` x `height` box where its `Alignment` puts it, so
+    // `Pane[wideGrid, {550, 305}, ImageSizeAction -> "ShrinkToFit"]` is
+    // still 550 x 305, not as short as the scaled grid.
     let scale = (width / natural_w).min(height / natural_h);
-    return resize_svg_root(svg, natural_w * scale, natural_h * scale);
+    let (scaled_w, scaled_h) = (
+      (natural_w * scale).min(width),
+      (natural_h * scale).min(height),
+    );
+    let scaled = resize_svg_root(svg, scaled_w, scaled_h);
+    return place_in_pane_box(
+      &scaled, scaled_w, scaled_h, width, height, align,
+    );
   }
   let inner = strip_svg_wrapper(svg);
   let clip_id = format!("paneClip_{width:.0}x{height:.0}");
@@ -40253,6 +40956,49 @@ pub(crate) fn clip_svg_to_pane_box(
   };
   format!(
     "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<defs><clipPath id=\"{clip_id}\"><rect x=\"0\" y=\"0\" width=\"{width:.0}\" height=\"{height:.0}\"/></clipPath></defs>\n<g clip-path=\"url(#{clip_id})\">\n{inner}\n</g>\n</svg>"
+  )
+}
+
+/// Place content that fits inside a `width` x `height` Pane box: the box
+/// keeps its full size and the content sits where `align` puts it.
+fn place_in_pane_box(
+  svg: &str,
+  natural_w: f64,
+  natural_h: f64,
+  width: f64,
+  height: f64,
+  align: Option<(f64, f64)>,
+) -> String {
+  // Content that fits still takes up the whole box, placed where the
+  // Pane's `Alignment` puts it (top left by default), as in WL:
+  // `Pane[Graphics[…, ImageSize -> 50], {200, 100}]` is 200 x 100.
+  let align = align.unwrap_or((0.0, 0.0));
+  if natural_w == width && natural_h == height {
+    return svg.to_string();
+  }
+  let x = (width - natural_w) * align.0;
+  let y = (height - natural_h) * align.1;
+  let root = svg.find("<svg").unwrap_or(0);
+  // Text running past the picture's own edges (a wide caption in a
+  // picture shrunk to the box) is still drawn; the box clips it.
+  let picture = &svg[root..];
+  let picture = match picture.find('>') {
+    Some(end) if !picture[..end].contains("overflow=") => {
+      let end = if picture[..end].ends_with('/') {
+        end - 1
+      } else {
+        end
+      };
+      format!(
+        "{} overflow=\"visible\"{}",
+        &picture[..end],
+        &picture[end..]
+      )
+    }
+    _ => picture.to_string(),
+  };
+  format!(
+    "<svg width=\"{width:.0}\" height=\"{height:.0}\" viewBox=\"0 0 {width:.0} {height:.0}\" xmlns=\"http://www.w3.org/2000/svg\">\n<g transform=\"translate({x:.1} {y:.1})\">\n{picture}\n</g>\n</svg>"
   )
 }
 
@@ -41628,6 +42374,9 @@ impl ManipulateControl {
   pub fn visibility_key(&self) -> String {
     match self {
       Self::Heading { label, .. } => heading_visibility_key(label),
+      Self::Button { label, action, .. } => {
+        button_visibility_key(label, action)
+      }
       _ => self.name().to_string(),
     }
   }
@@ -41637,6 +42386,13 @@ impl ManipulateControl {
 /// leading control character keeps it from ever colliding with a variable.
 pub fn heading_visibility_key(label: &str) -> String {
   format!("\u{1}heading:{label}")
+}
+
+/// The `control_visible` key of a button labeled `label` that runs
+/// `action`. Like a heading, a button binds no variable, so it is filed under
+/// what tells it apart from the other buttons of the panel.
+pub fn button_visibility_key(label: &str, action: &str) -> String {
+  format!("\u{1}button:{label}\u{1}{action}")
 }
 
 /// A parsed Manipulate expression ready for interactive rendering.
@@ -43075,6 +43831,10 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // which options were already given so later repeats are skipped below.
   let mut seen_options: std::collections::HashSet<String> =
     std::collections::HashSet::new();
+  // The bounds of every slider variant of a pane- or branch-governed
+  // variable, in declaration order (see `variant_dynamic_bounds`).
+  let mut variant_bounds: Vec<(String, Vec<(f64, f64, Option<f64>)>)> =
+    Vec::new();
   for spec in &arg_items {
     if let Expr::Rule {
       pattern,
@@ -43277,6 +44037,8 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       // through to the generic "extra display element" handling below so it
       // re-renders from the live bindings every frame instead of being
       // frozen into a `Heading` with the `Dynamic` wrapper's bare source.
+      // Like a static heading, it is a row of the control panel at the
+      // place it holds among the control specs.
       Expr::FunctionCall { name, .. }
         if is_manipulate_annotation_head(name)
           && annotation_contains_dynamic(spec) =>
@@ -43349,8 +44111,77 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Expr::FunctionCall { name, args }
         if name == "ButtonBar" && !args.is_empty() =>
       {
-        let entries =
-          evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+        // `Dynamic[ButtonBar[Which[n == 2, {…}, n == 3, {…}]]]`: the set of
+        // buttons follows another control. Every branch's buttons join the
+        // panel, each shown only while a branch that offers it is selected.
+        if let Some((branches, selector)) = conditional_branches(&args[0]) {
+          let mut buttons: Vec<(ManipulateControl, Vec<usize>)> = Vec::new();
+          for (idx, branch) in branches.iter().enumerate() {
+            let entries = crate::with_scoped_globals(&initial_bindings, || {
+              evaluate_expr_to_expr(branch)
+            })
+            .unwrap_or_else(|_| branch.clone());
+            let Expr::List(items) = &entries else {
+              continue;
+            };
+            for item in items {
+              let (Expr::Rule {
+                pattern,
+                replacement,
+              }
+              | Expr::RuleDelayed {
+                pattern,
+                replacement,
+              }) = item
+              else {
+                continue;
+              };
+              let label_runs = manipulate_label_runs(pattern, false);
+              let label = flatten_label_runs(&label_runs);
+              let action = crate::syntax::expr_to_source_form(replacement);
+              let known = buttons.iter_mut().find(|(b, _)| {
+                matches!(b, ManipulateControl::Button { label: l, action: a, .. }
+                  if *l == label && *a == action)
+              });
+              if let Some((_, in_branches)) = known {
+                in_branches.push(idx + 1);
+              } else {
+                let joins_previous = !buttons.is_empty();
+                buttons.push((
+                  ManipulateControl::Button {
+                    label,
+                    label_runs,
+                    action,
+                    enabled: None,
+                    label_code: dynamic_button_label_code(pattern),
+                    joins_previous,
+                    background: None,
+                  },
+                  vec![idx + 1],
+                ));
+              }
+            }
+          }
+          if !buttons.is_empty() {
+            for (button, in_branches) in buttons {
+              let list = in_branches
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+              control_visible.push((
+                button.visibility_key(),
+                format!("MemberQ[{{{list}}}, {selector}]"),
+              ));
+              controls.push(button);
+            }
+            continue;
+          }
+        }
+        let entries = crate::with_scoped_globals(&initial_bindings, || {
+          evaluate_expr_to_expr(&args[0])
+        })
+        .unwrap_or_else(|_| args[0].clone());
         if let Expr::List(items) = &entries {
           let mut any = false;
           for item in items {
@@ -43529,20 +44360,34 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           animation_var = Some(c.name().to_string());
         }
         // A second spec for an already-bound variable merges into the
-        // earlier row — contributing only the animation/enabled semantics
-        // captured above — in the two cases Wolfram itself collapses: a
-        // `Trigger` pairing with an existing slider (Kepler's time slider
-        // plus a `Trigger` on the same `t`), and a variable declared inside
-        // a `PaneSelector`/`TabView` pane (only one pane is ever on screen,
+        // earlier row — contributing only the enabled semantics captured
+        // above — when the variable is declared inside a
+        // `PaneSelector`/`TabView` pane (only one pane is ever on screen,
         // so a shared widget — or a per-pane variant of one, with its own
         // bounds or choice list — still gets a single row; see
-        // `pane_or_tab_governed_names`). Two *different* ordinary specs
-        // sharing a variable outside any pane (e.g. a coarse and a fine
-        // SetterBar preset row for the same count, as in "Polypath
-        // Iterations") are a real Wolfram pattern instead: both stay
-        // visible, independently interactive, and read/write the same
-        // binding, so those get their own rows.
-        if (animate.is_some() || pane_governed_names.contains(c.name()))
+        // `pane_or_tab_governed_names`). Every other spec sharing a
+        // variable gets its own row, as in Wolfram: a coarse and a fine
+        // SetterBar preset row for the same count, or a labeled `Trigger`
+        // ("animate") next to a slider for the same time variable. Both
+        // rows stay visible, independently interactive, and read/write the
+        // same binding.
+        if let ManipulateControl::Continuous {
+          name,
+          min,
+          max,
+          step,
+          ..
+        } = &c
+          && animate.is_none()
+          && pane_governed_names.contains(name)
+        {
+          let bounds = (*min, *max, *step);
+          match variant_bounds.iter_mut().find(|(n, _)| n == name) {
+            Some((_, all)) => all.push(bounds),
+            None => variant_bounds.push((name.clone(), vec![bounds])),
+          }
+        }
+        if pane_governed_names.contains(c.name())
           && !c.name().is_empty()
           && controls.iter().any(|prev| prev.name() == c.name())
         {
@@ -44091,6 +44936,23 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
     });
   }
 
+  // A variable whose slider differs per `If` branch or `PaneSelector` pane
+  // got a single row above; let that row take the bounds of whichever
+  // variant is on screen. Bounds the spec already made dynamic win.
+  if !variant_bounds.is_empty() {
+    let conditions = branch_variant_conditions(&spliced_specs, &place_map);
+    for (name, bounds) in &variant_bounds {
+      if dynamic_bounds.iter().any(|(n, ..)| n == name) {
+        continue;
+      }
+      if let Some((_, conds)) = conditions.iter().find(|(n, _)| n == name)
+        && let Some(bound) = variant_dynamic_bounds(name, bounds, conds)
+      {
+        dynamic_bounds.push(bound);
+      }
+    }
+  }
+
   // A Manipulate with no controls or state at all (e.g. `Manipulate[x^2,
   // badspec]`, where `badspec` is neither a spec nor an option) isn't
   // renderable as an interactive widget — fall back to the plain path.
@@ -44142,6 +45004,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // resolved against the live bindings after each frame.
   let mut refresh_interval = find_refresh_update_interval(&args[0])
     .map(|e| crate::syntax::expr_to_input_form(&e));
+  // A slider declared in several `PaneSelector` panes with different
+  // bounds per pane (one mode of a Demonstration sweeping 100..10^4, another
+  // 10^7..10^10) collapses to a single row above; its range follows the
+  // selector so each pane's variant applies while that pane is on screen.
+  for (var, min_code, max_code, step_code) in
+    pane_variant_slider_bounds(&spliced_specs)
+  {
+    let is_slider = controls.iter().any(|c| {
+      c.name() == var && matches!(c, ManipulateControl::Continuous { .. })
+    });
+    if is_slider && !dynamic_bounds.iter().any(|(n, ..)| *n == var) {
+      dynamic_bounds.push((var, min_code, max_code, step_code));
+    }
+  }
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
     let rewrite = |code: &mut String| {
@@ -46680,7 +47556,9 @@ fn collect_row_joined_buttons(spec: &Expr, out: &mut Vec<(String, String)>) {
 /// containers (`Column[{Row[…], Row[…]}]`, …) are searched for such rows.
 /// `Spacer[…]` items keep the run going, and a caption piece (a string or
 /// `Style[…]`/`Text[…]` label holding no control, which the panel draws as
-/// a heading row) starts or continues it; any other item breaks the run.
+/// a heading row) starts or continues it; any other item breaks the run,
+/// except that a live caption (pieces holding a `Dynamic[…]`, see
+/// `is_live_panel_caption`) still joins the control after it.
 /// A `Place[n]` item stands for the controls of layout slot `n` (resolved
 /// through `place_map`, see `place_slot_variables`), so a custom layout
 /// `Row[{Place[1], Spacer[50], Place[2]}]` joins those controls the same
@@ -46696,6 +47574,9 @@ fn collect_row_joined_controls(
         return;
       };
       let mut after_control = false;
+      // The non-control pieces since the last control: they form the
+      // caption `control_group_items` puts in front of the next control.
+      let mut caption: Vec<&Expr> = Vec::new();
       for item in items {
         let item = match item {
           Expr::FunctionCall { name, args: inner }
@@ -46711,13 +47592,14 @@ fn collect_row_joined_controls(
           {
             match control_spec_variable(&c[0]) {
               Some(var) => {
-                if after_control {
+                if after_control || is_live_panel_caption(&caption) {
                   out.push(var);
                 }
                 after_control = true;
               }
               None => after_control = false,
             }
+            caption.clear();
           }
           Expr::FunctionCall { name, args: p } if is_place_head(name) => {
             let vars = match p.as_slice() {
@@ -46737,16 +47619,25 @@ fn collect_row_joined_controls(
             }
           }
           Expr::FunctionCall { name, .. } if name == "Spacer" => {}
-          Expr::String(_) => after_control = true,
+          Expr::String(_) => {
+            after_control = true;
+            caption.push(item);
+          }
           Expr::FunctionCall { name, .. }
             if (name == "Style" || name == "Text")
               && !row_item_holds_control(item) =>
           {
             after_control = true;
+            caption.push(item);
           }
           other => {
             after_control = false;
-            collect_row_joined_controls(other, place_map, out);
+            if expr_contains_call(other, &["Control"]) {
+              caption.clear();
+              collect_row_joined_controls(other, place_map, out);
+            } else {
+              caption.push(other);
+            }
           }
         }
       }
@@ -46762,6 +47653,23 @@ fn collect_row_joined_controls(
       }
     }
     _ => {}
+  }
+}
+
+/// Whether the caption pieces a `Row` places in front of a `Control[…]`
+/// (see `control_group_items`, which joins several pieces into one `Row`)
+/// become a live annotation row of the control panel — a `Row`/`Style`/…
+/// holding a `Dynamic[…]`, e.g. `Style["rounds "], Dynamic[n]`. Such a
+/// caption shares its line with the control after it.
+fn is_live_panel_caption(caption: &[&Expr]) -> bool {
+  match caption {
+    [] => false,
+    [Expr::FunctionCall { name, .. }] => {
+      is_manipulate_annotation_head(name)
+        && annotation_contains_dynamic(caption[0])
+    }
+    [_] => false,
+    pieces => pieces.iter().any(|p| annotation_contains_dynamic(p)),
   }
 }
 
@@ -47487,7 +48395,8 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
       if name == "Dynamic"
         && matches!(
           args.first(),
-          Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+          Some(Expr::FunctionCall { name: inner, .. })
+            if inner == "Control" || inner == "ButtonBar"
         ) =>
     {
       args[0].clone()
@@ -47841,6 +48750,144 @@ fn collect_pane_visibility(
   }
 }
 
+/// Per-pane bounds of a slider variable declared in more than one pane of
+/// a `PaneSelector` (`PaneSelector[{1 -> Control[{r, 1, 10}], 2 ->
+/// Control[{r, 100, 1000, 10}]}, Dynamic[mode]]`), as `(variable, min code,
+/// max code, step code)` where each side that differs between the panes is
+/// a `Which` over the pane conditions. Only sides that actually differ get
+/// code; a variable whose panes all agree is left out.
+fn pane_variant_slider_bounds(specs: &[Expr]) -> Vec<DynamicBound> {
+  /// Every `(variable, spec)` of the `Control[…]` rows inside a pane.
+  fn pane_controls(e: &Expr, out: &mut Vec<(String, Vec<Expr>)>) {
+    match e {
+      Expr::FunctionCall { name, .. } if name == "Invisible" => {}
+      Expr::FunctionCall { name, args } => {
+        if name == "Control"
+          && let Some(spec @ Expr::List(items)) = args.first()
+          && let Some(var) = control_spec_variable(spec)
+        {
+          out.push((var, items.to_vec()));
+          return;
+        }
+        for arg in args {
+          pane_controls(arg, out);
+        }
+      }
+      Expr::List(items) => {
+        for item in items {
+          pane_controls(item, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  /// Every top-level `PaneSelector` as `(selector code, panes)`.
+  fn selectors<'a>(e: &'a Expr, out: &mut Vec<(String, &'a [Expr])>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "PaneSelector" => {
+        if let (Some(Expr::List(panes)), Some(selector)) =
+          (args.first(), args.get(1))
+        {
+          let selector =
+            crate::syntax::expr_to_source_form(unwrap_pane_selector(selector));
+          out.push((selector, panes));
+        }
+      }
+      Expr::FunctionCall { args, .. } => {
+        for arg in args {
+          selectors(arg, out);
+        }
+      }
+      Expr::List(items) => {
+        for item in items {
+          selectors(item, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  for spec in specs {
+    selectors(spec, &mut found);
+  }
+  let mut out = Vec::new();
+  for (selector, panes) in found {
+    // variable -> [(pane condition, [min, max, step] codes)]
+    let mut variants: Vec<(String, Vec<(String, [Option<String>; 3])>)> =
+      Vec::new();
+    for pane in panes {
+      let (Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      }) = pane
+      else {
+        continue;
+      };
+      let cond = format!(
+        "({}) == ({})",
+        selector,
+        crate::syntax::expr_to_source_form(pattern)
+      );
+      let mut rows = Vec::new();
+      pane_controls(replacement, &mut rows);
+      for (var, items) in rows {
+        // The positional `min, max, step` after the variable; a choice list
+        // or option makes this something other than a numeric slider.
+        let positional: Vec<&Expr> = items[1..]
+          .iter()
+          .take_while(|it| {
+            !matches!(
+              it,
+              Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+            ) && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
+          })
+          .collect();
+        if positional.len() < 2 {
+          continue;
+        }
+        let code = |i: usize| {
+          positional
+            .get(i)
+            .map(|e| crate::syntax::expr_to_source_form(e))
+        };
+        let bounds = [code(0), code(1), code(2)];
+        match variants.iter_mut().find(|(v, _)| *v == var) {
+          Some((_, list)) => list.push((cond.clone(), bounds)),
+          None => variants.push((var, vec![(cond.clone(), bounds)])),
+        }
+      }
+    }
+    for (var, list) in variants {
+      if list.len() < 2 {
+        continue;
+      }
+      let side = |k: usize| -> Option<String> {
+        let first = list[0].1[k].clone();
+        if list.iter().all(|(_, b)| b[k] == first) {
+          return None;
+        }
+        let mut code = String::from("Which[");
+        for (cond, b) in &list {
+          // A pane without its own step keeps the slider's default step.
+          let value = b[k].clone()?;
+          code.push_str(&format!("{cond}, {value}, "));
+        }
+        code.push_str(&format!("True, {}]", first?));
+        Some(code)
+      };
+      let (min, max, step) = (side(0), side(1), side(2));
+      if min.is_some() || max.is_some() || step.is_some() {
+        out.push((var, min, max, step));
+      }
+    }
+  }
+  out
+}
+
 /// The Manipulate variable names declared inside a `PaneSelector`/`TabView`
 /// pane or tab, anywhere among `args` (a Manipulate's control-spec
 /// arguments). Only one pane/tab is ever on screen at a time, so a
@@ -47865,6 +48912,17 @@ fn pane_or_tab_governed_names(
     }
     match e {
       Expr::FunctionCall { name, args } => {
+        // `If[cond, Control[{{n, …}, a, b}], Control[{{n, …}, c, d}]]` puts
+        // a per-branch variant of one variable's control on screen at a
+        // time, exactly like two panes of a `PaneSelector` would.
+        if name == "If" && args.len() >= 3 {
+          let in_else = pane_control_variables(&args[2], place_map);
+          out.extend(
+            pane_control_variables(&args[1], place_map)
+              .into_iter()
+              .filter(|v| in_else.contains(v)),
+          );
+        }
         if (name == "PaneSelector" || name == "TabView")
           && let Some(panes) = args.first().and_then(tabview_panes)
         {
@@ -47897,6 +48955,180 @@ fn pane_or_tab_governed_names(
     walk(a, place_map, &mut out);
   }
   out
+}
+
+/// For every variable that has one control variant per branch of an
+/// `If[cond, …, …]` or per pane of a `PaneSelector[{v -> …, …}, sel]`
+/// (see `pane_or_tab_governed_names`), the condition under which each
+/// variant is on screen, in the order the variants are declared. A variant
+/// written as a `Manipulate\`Place[n]` reference is declared at slot `n`,
+/// so variants that are all such references are ordered by their slot.
+///
+/// The merged control row of such a variable follows these conditions to
+/// take the bounds of whichever variant is currently showing (see
+/// `variant_dynamic_bounds`).
+fn branch_variant_conditions(
+  args: &[Expr],
+  place_map: &[Vec<String>],
+) -> Vec<(String, Vec<String>)> {
+  type Variants = Vec<(String, Vec<(String, Option<i128>)>)>;
+  fn place_slot(e: &Expr) -> Option<i128> {
+    match e {
+      Expr::FunctionCall { name, args } if is_place_head(name) => {
+        match args.as_slice() {
+          [Expr::Integer(n)] => Some(*n),
+          _ => None,
+        }
+      }
+      _ => None,
+    }
+  }
+  fn record(
+    out: &mut Variants,
+    branch: &Expr,
+    vars: &[String],
+    cond: &str,
+    place_map: &[Vec<String>],
+  ) {
+    for var in pane_control_variables(branch, place_map) {
+      if !vars.contains(&var) {
+        continue;
+      }
+      let entry = (cond.to_string(), place_slot(branch));
+      match out.iter_mut().find(|(n, _)| *n == var) {
+        Some((_, conds)) => conds.push(entry),
+        None => out.push((var, vec![entry])),
+      }
+    }
+  }
+  fn walk(e: &Expr, place_map: &[Vec<String>], out: &mut Variants) {
+    if let Some(selector) = switch_as_pane_selector(e) {
+      return walk(&selector, place_map, out);
+    }
+    match e {
+      Expr::FunctionCall { name, args } if name == "If" && args.len() >= 3 => {
+        let in_else = pane_control_variables(&args[2], place_map);
+        let shared: Vec<String> = pane_control_variables(&args[1], place_map)
+          .into_iter()
+          .filter(|v| in_else.contains(v))
+          .collect();
+        let cond = crate::syntax::expr_to_source_form(&args[0]);
+        record(out, &args[1], &shared, &format!("({cond})"), place_map);
+        record(out, &args[2], &shared, &format!("!({cond})"), place_map);
+        for a in args {
+          walk(a, place_map, out);
+        }
+      }
+      Expr::FunctionCall { name, args } if name == "PaneSelector" => {
+        if let (Some(Expr::List(panes)), Some(selector)) =
+          (args.first(), args.get(1))
+        {
+          let selector =
+            crate::syntax::expr_to_source_form(unwrap_pane_selector(selector));
+          let mut counts: Vec<(String, usize)> = Vec::new();
+          for pane in panes {
+            if let Expr::Rule { replacement, .. }
+            | Expr::RuleDelayed { replacement, .. } = pane
+            {
+              for v in pane_control_variables(replacement, place_map) {
+                match counts.iter_mut().find(|(n, _)| *n == v) {
+                  Some((_, c)) => *c += 1,
+                  None => counts.push((v, 1)),
+                }
+              }
+            }
+          }
+          let shared: Vec<String> = counts
+            .into_iter()
+            .filter(|(_, c)| *c > 1)
+            .map(|(v, _)| v)
+            .collect();
+          for pane in panes {
+            if let Expr::Rule {
+              pattern,
+              replacement,
+            }
+            | Expr::RuleDelayed {
+              pattern,
+              replacement,
+            } = pane
+            {
+              let cond = format!(
+                "({}) == ({})",
+                selector,
+                crate::syntax::expr_to_source_form(pattern)
+              );
+              record(out, replacement, &shared, &cond, place_map);
+            }
+          }
+        }
+        for a in args {
+          walk(a, place_map, out);
+        }
+      }
+      Expr::FunctionCall { args, .. } => {
+        for a in args {
+          walk(a, place_map, out);
+        }
+      }
+      Expr::List(items) => {
+        for it in items {
+          walk(it, place_map, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut out = Variants::new();
+  for a in args {
+    walk(a, place_map, &mut out);
+  }
+  out
+    .into_iter()
+    .map(|(var, mut conds)| {
+      if conds.iter().all(|(_, slot)| slot.is_some()) {
+        conds.sort_by_key(|(_, slot)| *slot);
+      }
+      (var, conds.into_iter().map(|(c, _)| c).collect())
+    })
+    .collect()
+}
+
+/// The dynamic bounds of the single row a variable's per-branch slider
+/// variants collapse into (see `branch_variant_conditions`): each of min,
+/// max and step becomes a `Which` over the variants' conditions, so the
+/// slider takes the range of whichever variant Wolfram would be showing.
+/// `None` when the variants and conditions do not line up one to one, or
+/// when every variant has the same bounds anyway.
+fn variant_dynamic_bounds(
+  name: &str,
+  bounds: &[(f64, f64, Option<f64>)],
+  conds: &[String],
+) -> Option<DynamicBound> {
+  if bounds.len() < 2
+    || bounds.len() != conds.len()
+    || bounds.iter().all(|b| *b == bounds[0])
+  {
+    return None;
+  }
+  let num = |v: f64| {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+      format!("{}", v as i64)
+    } else {
+      format!("{v:?}")
+    }
+  };
+  let which = |pick: &dyn Fn(&(f64, f64, Option<f64>)) -> Option<f64>| {
+    let mut parts = Vec::new();
+    for (b, c) in bounds.iter().zip(conds) {
+      parts.push(format!("{c}, {}", num(pick(b)?)));
+    }
+    Some(format!("Which[{}]", parts.join(", ")))
+  };
+  let min_code = which(&|b| Some(b.0));
+  let max_code = which(&|b| Some(b.1));
+  let step_code = which(&|b| b.2);
+  Some((name.to_string(), min_code, max_code, step_code))
 }
 
 /// The control variables a `PaneSelector` pane declares: the variable of
@@ -50095,6 +51327,8 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       "Style" | "StyleForm" => {
         let styled = italic || args.iter().skip(1).any(is_italic_directive);
         let bold = args.iter().skip(1).any(is_bold_directive);
+        // A held label (a Manipulate control heading) may still carry a
+        // color that only evaluation produces, such as `ColorData[1, 1]`.
         let color = args
           .iter()
           .skip(1)
@@ -50104,8 +51338,12 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
         let mut runs = args
           .first()
           .map_or_default(|a| manipulate_label_runs(a, styled));
+        // An `Italic` directive slants everything it wraps, the scripts
+        // of a `Subscript` included, as it does for `Bold`.
+        let slant = args.iter().skip(1).any(is_italic_directive);
         for run in &mut runs {
           run.bold |= bold;
+          run.italic |= slant;
           if run.color.is_none() {
             run.color = color;
           }
@@ -50403,6 +51641,21 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
       italic,
       true,
     ),
+    // A held negation of a typeset piece (`-Style["x", Italic]`, an
+    // exponent in a Demonstration's popup label) sets as a minus sign
+    // before the piece's own styled runs.
+    Expr::UnaryOp {
+      op: UnaryOperator::Minus,
+      operand,
+    } if contains_presentation_head(operand) => {
+      let mut runs = vec![LabelRun {
+        text: "-".to_string(),
+        italic: false,
+        ..Default::default()
+      }];
+      runs.extend(grouped_label_runs(operand, italic));
+      runs
+    }
     // Arithmetic joining typeset label pieces — a Demonstrations setter
     // writes a quotient of two typeset rows as `Row[…]/Row[…]`. Recurse into
     // the operands so their `Row`/`Style`/`Superscript` structure keeps
@@ -50583,6 +51836,19 @@ fn reciprocal_base(expr: &Expr) -> Option<&Expr> {
 /// evaluates to — sets as a quotient rather than as a product with a
 /// negative exponent.
 fn product_label_runs(factors: &[Expr], italic: bool) -> Vec<LabelRun> {
+  // A factor of -1 negates the product (`-Style["x", Italic]` evaluates to
+  // `Times[-1, Style[…]]`): it sets as a leading minus sign, not `-1*`.
+  if let [Expr::Integer(-1), rest @ ..] = factors
+    && !rest.is_empty()
+  {
+    let mut runs = vec![LabelRun {
+      text: "-".to_string(),
+      italic: false,
+      ..Default::default()
+    }];
+    runs.extend(product_label_runs(rest, italic));
+    return runs;
+  }
   let (denominators, numerators): (Vec<&Expr>, Vec<&Expr>) =
     factors.iter().partition(|f| reciprocal_base(f).is_some());
   let numerators: Vec<Expr> = numerators.into_iter().cloned().collect();
@@ -51999,10 +53265,8 @@ fn parse_manipulate_control(
   // Demonstrations "run/stop simulation" control) or finite (`{{t, 0, ""},
   // 0, tmax, .01, Trigger, DefaultDuration -> tmax}`, the "play once over a
   // fixed duration" pattern). When this variable already has a visible row
-  // from an earlier spec (Kepler pairs a `Trigger` with a plain slider on
-  // the same `t`), the row built here is dropped by the caller's dedup
-  // check and only this control's `animate` field takes effect, so building
-  // the dedicated widget here is safe either way.
+  // from an earlier spec (a plain slider on the same `t`), the Trigger
+  // still gets its own row; both rows share the one binding.
   if control_type.as_deref() == Some("Trigger") {
     let (min, min_dynamic) = bounds
       .first()
@@ -55325,6 +56589,34 @@ fn display_expr_to_node(
           None => static_leaf_node(expr, bindings),
         }
       }
+      // `Animator[Dynamic[lval], {min, max[, step]}[, step], opts…]` written
+      // inside a display element (e.g. next to a setter bar in a `Row`):
+      // like `Trigger`, it sweeps `lval` over its range, so draw it as a
+      // slider over that range. A bare third positional step folds into the
+      // range; options (rules) only affect playback and appearance.
+      "Animator" if args.len() >= 2 => {
+        let range = match (&args[1], args.get(2)) {
+          (Expr::List(b), Some(step))
+            if b.len() == 2
+              && !matches!(
+                step,
+                Expr::Rule { .. } | Expr::RuleDelayed { .. }
+              ) =>
+          {
+            Expr::List(vec![b[0].clone(), b[1].clone(), step.clone()].into())
+          }
+          (r, _) => r.clone(),
+        };
+        match slider_node(
+          &[args[0].clone(), range],
+          Vec::new(),
+          false,
+          bindings,
+        ) {
+          Some(node) => node,
+          None => static_leaf_node(expr, bindings),
+        }
+      }
       // `EventHandler[content, "MouseClicked" :> action, …]`: draws as its
       // content. When the content is a slider, the click/drag actions run
       // after each of its write-backs.
@@ -57479,6 +58771,39 @@ mod manipulate_label_tests {
   }
 
   #[test]
+  fn invisible_space_keeps_italic_part_of_text_row() {
+    // `\[InvisibleSpace]` draws as nothing, but the styled part holding it
+    // must still be matched against the drawn text.
+    for size in ["", ", 14"] {
+      let svg = crate::interpret(&format!(
+        "ExportString[Graphics[Text[Style[Row[{{Style[\"x\\[InvisibleSpace]y\", \
+Italic], \" = \", 7}}]{size}]]], \"SVG\"]"
+      ))
+      .unwrap();
+      assert!(
+        svg.contains("<tspan font-style=\"italic\">xy</tspan> = 7"),
+        "{svg}"
+      );
+    }
+  }
+
+  #[test]
+  fn italic_style_slants_subscript_of_text_row() {
+    let svg = crate::interpret(
+      "ExportString[Graphics[Text[Row[{Style[Subscript[\"K\", \"eq\"], \
+Italic], \" = \", 3}]]], \"SVG\"]",
+    )
+    .unwrap();
+    assert!(
+      svg.contains(
+        "<tspan font-style=\"italic\">K</tspan><tspan font-style=\"italic\">\
+<tspan baseline-shift=\"sub\" font-size=\"70%\">eq</tspan></tspan> = 3"
+      ),
+      "{svg}"
+    );
+  }
+
+  #[test]
   fn integrate_label_keeps_italic_parts_of_its_row() {
     let svg = crate::interpret(
       "ExportString[Graphics[Text[Row[{Style[\"S\", Italic], \" = \", \
@@ -59058,6 +60383,81 @@ mod manipulate_control_placement_tests {
     assert_eq!(spec.panel_displays, vec![(0, 1)]);
   }
 
+  /// Live captions written among the controls (a bare `Dynamic[…]`, a
+  /// `Row`/`Style` holding one, or what a `Row[{Control[…], …}]` keeps
+  /// beside its control) are rows of the control panel, each at the place
+  /// it holds among the controls, not extras above the output.
+  #[test]
+  fn live_captions_keep_their_place_in_the_control_panel() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{a, b, msg}, \
+       Row[{Control[{{a, 1, \"a\"}, {1, 2}, ControlType -> PopupMenu}], \
+         Style[\" \"], Dynamic[{a, b}]}], \
+       {{b, 0.5, \"b\"}, 0, 1}, \
+       Row[{Style[\"b = \"], Dynamic[b]}], \
+       Delimiter, \
+       Dynamic[Style[msg, Bold, Red]], \
+       {{msg, \"\"}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "b", ""]);
+    assert_eq!(spec.displays.len(), 3, "{:?}", spec.displays);
+    assert!(spec.displays[0].contains("Dynamic[{a, b}]"));
+    assert!(spec.displays[1].contains("Dynamic[b]"));
+    assert!(spec.displays[2].contains("Dynamic[Style[msg"));
+    assert_eq!(spec.panel_displays, vec![(0, 1), (1, 2), (2, 3)]);
+  }
+
+  /// A live caption row (`Row[{Style["left "], Dynamic[left]}]`) between
+  /// control specs is a row of the control panel at its declared place,
+  /// not a display under the panel; a trailing one closes the panel.
+  #[test]
+  fn live_caption_rows_keep_their_place_among_the_controls() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{a, b, c}, {{a, 1}, {1, 2}}, \
+       Row[{Style[\"a is \"], Dynamic[a]}], {{b, 1}, {1, 2}}, \
+       Row[{Style[\"b is \", Bold], Dynamic[b]}]]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["a", "b"]);
+    assert_eq!(spec.displays.len(), 2, "{:?}", spec.displays);
+    assert_eq!(spec.panel_displays, vec![(0, 1), (1, 2)]);
+  }
+
+  /// `Row[{Style["rounds "], Dynamic[n], Control[…]}]`: the live caption
+  /// becomes a panel row and the control shares its line, as does a
+  /// control after a static caption, while a control alone in a `Row`
+  /// starts a line of its own.
+  #[test]
+  fn control_after_live_caption_in_a_row_joins_its_line() {
+    let expr = crate::parse_to_expr(
+      "Manipulate[{n, g, d}, \
+       Row[{Control[{{d, 1, \"\"}, {1, 2}, ControlType -> SetterBar}]}], \
+       Row[{Style[\"rounds \", Bold], Dynamic[n], \
+         Control[{{g, 0, \"\"}, {1 -> \"back\"}, ControlType -> SetterBar}]}], \
+       Row[{Style[\"static\"], \
+         Control[{{h, 0, \"\"}, {1, 2}, ControlType -> SetterBar}]}], \
+       {{n, 0}, ControlType -> None}]",
+    )
+    .expect("parse");
+    let spec = extract_manipulate_spec(&expr).expect("extract spec");
+    let names: Vec<&str> =
+      spec.controls.iter().map(ManipulateControl::name).collect();
+    assert_eq!(names, vec!["d", "g", "", "h"]);
+    assert_eq!(
+      spec.displays,
+      vec!["Row[{Style[\"rounds \", Bold], Dynamic[n]}]"]
+    );
+    assert_eq!(spec.panel_displays, vec![(0, 1)]);
+    assert_eq!(spec.row_joined_controls, vec!["g", "h"]);
+  }
+
   /// A free-standing display among the control specs (a `Grid` of live
   /// readouts after a `Delimiter`, a `Row` with a `Dynamic` before a
   /// slider) is a row of the control panel at the place it was written,
@@ -60239,6 +61639,56 @@ mod manipulate_traditional_form_equation_tests {
     assert!(
       !dump.contains("TraditionalForm["),
       "TraditionalForm source leaked: {dump}"
+    );
+  }
+}
+
+#[cfg(test)]
+mod animator_display_tests {
+  use super::*;
+
+  fn slider_of(node: &DisplayNode) -> Option<(String, f64, f64, f64)> {
+    match node {
+      DisplayNode::Slider {
+        target,
+        min,
+        max,
+        step,
+        ..
+      } => Some((target.clone(), *min, *max, *step)),
+      DisplayNode::Row(parts) => parts.iter().find_map(slider_of),
+      _ => None,
+    }
+  }
+
+  /// An `Animator[Dynamic[v], {min, max, step}, opts…]` placed in a display
+  /// `Row` (next to a setter bar) draws as a live control over its range,
+  /// not as the literal `Animator[…]` source.
+  #[test]
+  fn animator_in_row_with_step_in_range() {
+    let node = build_manipulate_display(
+      "Row[{\"animate \", Animator[Dynamic[n], {2, 4, 1}, \
+       AnimationRunning -> False, Appearance -> Small]}]",
+      &[("n".to_string(), "3".to_string())],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("n".to_string(), 2.0, 4.0, 1.0)),
+      "{node:?}"
+    );
+  }
+
+  /// The step may also follow the range as a separate positional argument.
+  #[test]
+  fn animator_with_positional_step() {
+    let node = build_manipulate_display(
+      "Animator[Dynamic[t], {0, 10}, 0.5, AnimationRunning -> False]",
+      &[],
+    );
+    assert_eq!(
+      slider_of(&node),
+      Some(("t".to_string(), 0.0, 10.0, 0.5)),
+      "{node:?}"
     );
   }
 }

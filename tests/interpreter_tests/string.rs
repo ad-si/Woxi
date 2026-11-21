@@ -4320,6 +4320,36 @@ mod string_match_q_patterns {
   use super::*;
 
   #[test]
+  fn conditional_pattern() {
+    // `patt /; test` matches when the whole string fits `patt` and the test,
+    // with the named captures substituted in, evaluates to True.
+    assert_eq!(
+      interpret(r#"StringMatchQ["hello", x__ /; StringLength[x] > 3]"#)
+        .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"StringMatchQ["hi", x__ /; StringLength[x] > 3]"#).unwrap(),
+      "False"
+    );
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ[{"ab", "abcd", "xyzd"}, x__ ~~ "d" /; StringLength[x] == 3]"#
+      )
+      .unwrap(),
+      "{False, True, True}"
+    );
+    // The captures keep their original case under IgnoreCase.
+    assert_eq!(
+      interpret(
+        r#"StringMatchQ["Hello", x__ /; StringStartsQ[x, "H"], IgnoreCase -> True]"#
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
+  #[test]
   fn wildcards_inside_alternatives() {
     // Regression for #1434: `*` and `@` are wildcards in every string literal
     // of a StringMatchQ pattern, not only in a bare top-level string.
@@ -5065,6 +5095,36 @@ mod string_form {
   // with the directives, a string's box is its quoted source, and a quotient
   // sets as a `FractionBox`. The escape characters are invisible, so the
   // assertions compare the `InputForm` of the returned String.
+  /// Regression: `ToString[Subscript[…], StandardForm]` (or `FormatType ->
+  /// StandardForm`) took the two-line OutputForm text ("x\n 2") instead of
+  /// typesetting the script into a `SubscriptBox` escape.
+  #[test]
+  fn to_string_standard_form_typesets_scripts() {
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Subscript[x, 2], FormatType -> StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SubscriptBox[\"x\", \"2\"]\)""#
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Subscript[\"Z\", n], StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SubscriptBox[\"\\\"Z\\\"\", \"n\"]\)""#
+    );
+    assert_eq!(
+      interpret(
+        "ToString[ToString[Superscript[x, 3], StandardForm], InputForm]"
+      )
+      .unwrap(),
+      r#""\!\(\*SuperscriptBox[\"x\", \"3\"]\)""#
+    );
+    // OutputForm keeps the two-line text.
+    assert_eq!(interpret("ToString[Subscript[x, 2]]").unwrap(), "x\n 2");
+  }
+
   #[test]
   fn to_string_traditional_form_typesets_functions() {
     assert_eq!(
@@ -7024,6 +7084,46 @@ mod to_string_machine_reals {
     assert_eq!(interpret("ToString[0.0001234567]").unwrap(), "0.000123457");
   }
 
+  // The six-digit display applies inside every kind of expression, not
+  // only plain calls and lists: comparisons, rules, associations and pure
+  // function bodies included.
+  #[test]
+  fn reals_round_inside_comparisons_rules_and_functions() {
+    assert_eq!(
+      interpret("ToString[{3} > 6.920776960731741]").unwrap(),
+      "{3} > 6.92078"
+    );
+    assert_eq!(
+      interpret("ToString[x == 2.718281828]").unwrap(),
+      "x == 2.71828"
+    );
+    assert_eq!(
+      interpret("ToString[x <= 2.718281828 <= y]").unwrap(),
+      "x <= 2.71828 <= y"
+    );
+    assert_eq!(
+      interpret("ToString[a -> 123.456789]").unwrap(),
+      "a -> 123.457"
+    );
+    assert_eq!(
+      interpret("ToString[a :> 123.456789]").unwrap(),
+      "a :> 123.457"
+    );
+    assert_eq!(
+      interpret("ToString[<|a -> 123.456789|>]").unwrap(),
+      "<|a -> 123.457|>"
+    );
+    assert_eq!(
+      interpret("ToString[# + 2.718281828 &]").unwrap(),
+      "#1 + 2.71828 & "
+    );
+    // InputForm still keeps every digit.
+    assert_eq!(
+      interpret("ToString[x > 2.718281828, InputForm]").unwrap(),
+      "x > 2.718281828"
+    );
+  }
+
   // InputForm keeps full precision.
   #[test]
   fn input_form_keeps_full_precision() {
@@ -7843,6 +7943,20 @@ mod make_boxes {
     );
   }
 
+  /// Regression: `Superscript` had no box rule and boxed as the literal
+  /// call `RowBox[{Superscript, [, …, ]}]`.
+  #[test]
+  fn make_boxes_superscript() {
+    assert_eq!(
+      interpret("MakeBoxes[Superscript[x, 3]]").unwrap(),
+      "SuperscriptBox[x, 3]"
+    );
+    assert_eq!(
+      interpret("MakeBoxes[Superscript[a, b + 1], StandardForm]").unwrap(),
+      "SuperscriptBox[a, RowBox[{b, +, 1}]]"
+    );
+  }
+
   #[test]
   fn make_boxes_subsuperscript() {
     assert_eq!(
@@ -8473,6 +8587,22 @@ mod dictionary_lookup {
   #[test]
   fn no_match() {
     assert_eq!(interpret(r#"DictionaryLookup["qqqzzz*"]"#).unwrap(), "{}");
+  }
+
+  #[test]
+  fn conditional_pattern() {
+    assert_eq!(
+      interpret(
+        r#"AllTrue[DictionaryLookup[x__ /; 7 <= StringLength[x] <= 12], 7 <= StringLength[#] <= 12 &]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret(r#"Length[DictionaryLookup[x__ /; StringLength[x] == 3, 4]]"#)
+        .unwrap(),
+      "4"
+    );
   }
 
   #[test]

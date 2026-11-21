@@ -2396,6 +2396,37 @@ pub fn string_match_q_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     expr_to_str(&args[0])
   };
 
+  // Conditional pattern: `patt /; test`. The whole string must match the
+  // inner pattern, and the `/;` test (with the named captures substituted
+  // in) has to evaluate to True.
+  if let Expr::FunctionCall { name, args: cargs } = &args[1]
+    && name == "Condition"
+    && cargs.len() == 2
+    && let Some((regex_str, constraints)) =
+      string_match_pattern_to_regex_with_state(&cargs[0])
+  {
+    let case_flag = if ignore_case { "(?i)" } else { "" };
+    let re =
+      compile_regex(&format!("{case_flag}^(?:{regex_str})$")).map_err(|e| {
+        InterpreterError::EvaluationError(format!(
+          "Invalid string pattern: {e}"
+        ))
+      })?;
+    // Match against the original string so the captures keep their case.
+    let original = expr_to_str(&args[0]);
+    let Some(caps) = re.captures(&original) else {
+      return Ok(bool_expr(false));
+    };
+    if !caps_satisfy_constraints(&caps, &constraints) {
+      return Ok(bool_expr(false));
+    }
+    let test_sub = substitute_captures(&cargs[1], &caps);
+    let test_val = crate::evaluator::evaluate_expr_to_expr(&test_sub)?;
+    return Ok(bool_expr(
+      matches!(&test_val, Expr::Identifier(t) if t == "True"),
+    ));
+  }
+
   // Try pattern-based matching (DigitCharacter, LetterCharacter, Repeated, etc.)
   if let Some((regex_str, constraints)) =
     string_match_pattern_to_regex_with_state(&args[1])
@@ -5137,6 +5168,11 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (the size, weight and color) instead of being flattened to its content.
   let is_standard_form = args.len() == 2
     && matches!(&args[1], Expr::Identifier(f) if f == "StandardForm");
+  // Every form that typesets into boxes (TeXForm, TraditionalForm,
+  // StandardForm) skips the 2D-OutputForm text intercepts below, so e.g.
+  // `ToString[Subscript[x, 2], StandardForm]` reaches the box path and is
+  // `\!\(\*SubscriptBox[x, 2]\)` rather than the two-line text "x\n 2".
+  let typesets = is_tex_form || is_standard_form;
 
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
@@ -5146,7 +5182,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "TableForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5163,7 +5199,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Grid"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5178,7 +5214,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "MatrixForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = matrix_form_to_string(&inner_args[0])
   {
@@ -5193,8 +5229,8 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name,
     args: inner_args,
   } = &args[0]
-    && ((name == "Column" && !is_input_form && !is_tex_form)
-      || (name == "ColumnForm" && !is_tex_form))
+    && ((name == "Column" && !is_input_form && !typesets)
+      || (name == "ColumnForm" && !typesets))
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5237,7 +5273,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && (name == "Subscript" || name == "Superscript")
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 2
   {
     let base_str = to_string_default_form(&inner_args[0]);
@@ -5263,8 +5299,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Style"
     && !is_input_form
-    && !is_tex_form
-    && !is_standard_form
+    && !typesets
     && !inner_args.is_empty()
   {
     let mut recursed = args.to_vec();
@@ -5282,7 +5317,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Row"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5317,7 +5352,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Quantity"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && let Some(rendered) = quantity_to_text(inner_args, false)
   {
     return Ok(Expr::String(rendered));
@@ -5327,7 +5362,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // are spelled out too: `{1 meter, 2 feet}`.
   if let Expr::List(items) = &args[0]
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && items.iter().any(contains_quantity)
   {
     let parts: Vec<String> = items
@@ -5357,7 +5392,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumberForm" | "PaddedForm" | "AccountingForm"
     )
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Some(rendered) = number_form_family_to_string(name, inner_args)
   {
@@ -5959,17 +5994,28 @@ fn scientific_if_out_of_range(fixed: &str, precision: usize) -> Option<String> {
 /// `ToString[{N[Pi, 5]}]` would wrongly be "{3.1415926535897932385`5.}"
 /// instead of "{3.1416}".
 fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
-  match expr {
-    Expr::Real(f) => Expr::Real(round_real_to_6_sig_digits(*f)),
+  // Every inexact number shows at its display width, wherever it sits:
+  // inside comparisons (`x > 6.92078`), rules, associations and pure
+  // function bodies just as in plain calls and lists.
+  map_expr_tree(expr, &|e| match e {
+    Expr::Real(f) => Some(Expr::Real(round_real_to_6_sig_digits(*f))),
     Expr::BigFloat(digits, prec) => {
-      Expr::Raw(format_bigfloat_for_to_string(digits, *prec))
+      Some(Expr::Raw(format_bigfloat_for_to_string(digits, *prec)))
     }
-    Expr::List(items) => Expr::List(
-      items
-        .iter()
-        .map(truncate_machine_reals_for_to_string)
-        .collect(),
-    ),
+    // `map_expr_tree` stops at function bodies (slot scoping); display
+    // rounding has no scope, so recurse into them here.
+    Expr::Function { body } => Some(Expr::Function {
+      body: Box::new(truncate_machine_reals_for_to_string(body)),
+    }),
+    Expr::NamedFunction {
+      params,
+      body,
+      bracketed,
+    } => Some(Expr::NamedFunction {
+      params: params.clone(),
+      body: Box::new(truncate_machine_reals_for_to_string(body)),
+      bracketed: *bracketed,
+    }),
     // A number-display form already fixes the digits it shows
     // (`NumberForm[x, 9]` keeps nine), so its number is left untouched.
     Expr::FunctionCall { name, .. }
@@ -5983,26 +6029,10 @@ fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
           | "DecimalForm"
       ) =>
     {
-      expr.clone()
+      Some(e.clone())
     }
-    Expr::FunctionCall { name, args } => Expr::FunctionCall {
-      name: name.clone(),
-      args: args
-        .iter()
-        .map(truncate_machine_reals_for_to_string)
-        .collect(),
-    },
-    Expr::BinaryOp { op, left, right } => binop(
-      *op,
-      truncate_machine_reals_for_to_string(left),
-      truncate_machine_reals_for_to_string(right),
-    ),
-    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
-      op: *op,
-      operand: Box::new(truncate_machine_reals_for_to_string(operand)),
-    },
-    _ => expr.clone(),
-  }
+    _ => None,
+  })
 }
 
 /// Recursively replace TeXForm/CForm/FortranForm wrappers with their converted

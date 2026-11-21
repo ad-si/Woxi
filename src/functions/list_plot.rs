@@ -3,11 +3,10 @@ use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
 use crate::functions::math_ast::try_eval_to_f64;
 use crate::functions::plot::{
-  DEFAULT_HEIGHT, DEFAULT_WIDTH, FillTarget, Filling, IntervalMarkers,
-  PlotOptions, SeriesStyle, adjust_y_range_for_filling_opts,
-  apply_filling_option, build_plot_source, expand_plot_theme,
-  generate_scatter_svg_with_options, generate_svg_with_filling,
-  parse_image_size, parse_plot_style,
+  FillTarget, Filling, IntervalMarkers, PlotOptions, SeriesStyle,
+  adjust_y_range_for_filling_opts, apply_filling_option, build_plot_source,
+  expand_plot_theme, generate_scatter_svg_with_options,
+  generate_svg_with_filling,
 };
 use crate::functions::plot_scaling::Scaling;
 use crate::functions::sound::audio_sample_rate;
@@ -1526,18 +1525,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
             .unwrap_or_else(|_| replacement.clone());
           out.scaling = Scaling::parse_option(&value);
         }
-        "ImageSize" => {
-          if let Some((w, h, fw)) =
-            parse_image_size(replacement, DEFAULT_WIDTH, DEFAULT_HEIGHT)
-          {
-            opts.svg_width = w;
-            opts.svg_height = h;
-            opts.full_width = fw;
-            opts.image_size_explicit =
-              crate::functions::plot::image_size_explicit_dims(replacement);
-            opts.image_size_value = Some(replacement.clone());
-          }
-        }
         "Joined" => match replacement {
           Expr::Identifier(v) if v == "True" => out.joined = true,
           // `Joined -> {b1, b2, ...}`: join series `i` only when `bi` is
@@ -1609,9 +1596,6 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
           opts.background =
             crate::functions::plot::parse_background_option(replacement);
         }
-        "PlotStyle" => {
-          opts.plot_style = parse_plot_style(replacement);
-        }
         // `PlotMarkers -> marker` draws that glyph at every data point
         // instead of the default round dot, one marker per series.
         "PlotMarkers" => {
@@ -1639,7 +1623,9 @@ fn parse_plot_options(args: &[Expr]) -> ParsedOptions {
         | "MeshShading"
         | "MeshStyle"
         | "PlotLabels"
-        | "PlotLegends" => {
+        | "PlotLegends"
+        | "ImageSize"
+        | "PlotStyle" => {
           let mut overrides =
             crate::functions::plot::PlotRangeOverrides::default();
           crate::functions::plot::apply_common_plot_option(
@@ -3659,7 +3645,8 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(crate::graphics_result_with_source(svg, source))
 }
 
-/// DiscretePlot[expr, {n, nmin, nmax}] or DiscretePlot[expr, {n, nmin, nmax, step}]
+/// DiscretePlot[expr, {n, nmax}], DiscretePlot[expr, {n, nmin, nmax}],
+/// DiscretePlot[expr, {n, nmin, nmax, step}] or DiscretePlot[expr, {n, {n1, n2, …}}]
 pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   use crate::functions::plot::substitute_var;
 
@@ -3694,47 +3681,93 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     }
   };
 
-  // {var, max} → {var, 1, max}
-  let (n_min, n_max) = if iter_spec.len() == 2 {
-    let n_max_expr = evaluate_expr_to_expr(&iter_spec[1])?;
-    let n_max = try_eval_to_f64(&n_max_expr).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "DiscretePlot: max must be numeric".into(),
-      )
-    })?;
-    (1.0, n_max)
+  let numeric = |e: &Expr, what: &str| -> Result<f64, InterpreterError> {
+    try_eval_to_f64(&evaluate_expr_to_expr(e)?).ok_or_else(|| {
+      InterpreterError::EvaluationError(format!(
+        "DiscretePlot: {what} must be numeric"
+      ))
+    })
+  };
+
+  // `{var, {x1, x2, …}}` samples exactly the listed values; the other
+  // forms step from `min` to `max` (`{var, max}` starts at 1).
+  let explicit = if iter_spec.len() == 2 {
+    match &evaluate_expr_to_expr(&iter_spec[1])? {
+      Expr::List(items) => Some(items.clone()),
+      _ => None,
+    }
   } else {
-    let n_min_expr = evaluate_expr_to_expr(&iter_spec[1])?;
-    let n_max_expr = evaluate_expr_to_expr(&iter_spec[2])?;
-    let n_min = try_eval_to_f64(&n_min_expr).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "DiscretePlot: min must be numeric".into(),
+    None
+  };
+
+  // Each sample as its exact value (substituted into the body) and its
+  // coordinate.
+  let mut samples: Vec<(Expr, f64)> = Vec::new();
+  let step = if let Some(items) = explicit {
+    for item in &items {
+      let x = try_eval_to_f64(item).ok_or_else(|| {
+        InterpreterError::EvaluationError(
+          "DiscretePlot: the sample values must be numeric".into(),
+        )
+      })?;
+      samples.push((item.clone(), x));
+    }
+    // The cell width of `ExtentSize` is the closest spacing between two
+    // distinct sample values.
+    let mut xs: Vec<f64> = samples.iter().map(|(_, x)| *x).collect();
+    xs.sort_by(f64::total_cmp);
+    xs.windows(2)
+      .map(|w| w[1] - w[0])
+      .filter(|d| *d > 0.0)
+      .fold(None, |acc: Option<f64>, d| {
+        Some(acc.map_or(d, |a| a.min(d)))
+      })
+      .unwrap_or(1.0)
+  } else {
+    let (n_min, n_max) = if iter_spec.len() == 2 {
+      (1.0, numeric(&iter_spec[1], "max")?)
+    } else {
+      (
+        numeric(&iter_spec[1], "min")?,
+        numeric(&iter_spec[2], "max")?,
       )
-    })?;
-    let n_max = try_eval_to_f64(&n_max_expr).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "DiscretePlot: max must be numeric".into(),
-      )
-    })?;
+    };
+    let step = if iter_spec.len() == 4 {
+      numeric(&iter_spec[3], "step")?
+    } else {
+      1.0
+    };
+    if step <= 0.0 {
+      return Err(InterpreterError::EvaluationError(
+        "DiscretePlot: step must be positive".into(),
+      ));
+    }
+    let max_points = 10000;
+    let mut n = n_min;
+    while n <= n_max + step * 0.5e-10 && samples.len() < max_points {
+      let n_expr = if n == n.floor() && n.abs() < 1e15 {
+        Expr::Integer(n as i128)
+      } else {
+        Expr::Real(n)
+      };
+      samples.push((n_expr, n));
+      n += step;
+    }
+    step
+  };
+  let n_min = samples
+    .iter()
+    .map(|(_, x)| *x)
+    .fold(f64::INFINITY, f64::min);
+  let n_max = samples
+    .iter()
+    .map(|(_, x)| *x)
+    .fold(f64::NEG_INFINITY, f64::max);
+  let (n_min, n_max) = if samples.is_empty() {
+    (0.0, 0.0)
+  } else {
     (n_min, n_max)
   };
-
-  let step = if iter_spec.len() == 4 {
-    let step_expr = evaluate_expr_to_expr(&iter_spec[3])?;
-    try_eval_to_f64(&step_expr).ok_or_else(|| {
-      InterpreterError::EvaluationError(
-        "DiscretePlot: step must be numeric".into(),
-      )
-    })?
-  } else {
-    1.0
-  };
-
-  if step <= 0.0 {
-    return Err(InterpreterError::EvaluationError(
-      "DiscretePlot: step must be positive".into(),
-    ));
-  }
 
   // A single function or a (possibly nested) list of functions: Wolfram
   // flattens `DiscretePlot[{f, g}, …]` into two separately-colored series,
@@ -3743,25 +3776,17 @@ pub fn discrete_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::functions::plot::flatten_plot_bodies(expr, &mut bodies);
 
   // Generate data points by evaluating each body at each discrete value.
-  let max_points = 10000;
   let mut all_series: Vec<Vec<(f64, f64)>> = Vec::with_capacity(bodies.len());
   for body in &bodies {
     let mut points: Vec<(f64, f64)> = Vec::new();
-    let mut n = n_min;
-    while n <= n_max + step * 0.5e-10 && points.len() < max_points {
-      let n_expr = if n == n.floor() && n.abs() < 1e15 {
-        Expr::Integer(n as i128)
-      } else {
-        Expr::Real(n)
-      };
-      let substituted = substitute_var(body, &var_name, &n_expr);
+    for (n_expr, n) in &samples {
+      let substituted = substitute_var(body, &var_name, n_expr);
       if let Ok(result) = evaluate_expr_to_expr(&substituted)
         && let Some(y) = try_eval_to_f64(&result)
         && y.is_finite()
       {
-        points.push((n, y));
+        points.push((*n, y));
       }
-      n += step;
     }
     all_series.push(points);
   }

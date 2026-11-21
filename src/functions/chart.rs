@@ -697,7 +697,19 @@ pub(crate) fn parse_style_directive_args(
   let mut italic = false;
   let mut color = None;
   let mut font_size = None;
-  for arg in args {
+  // A list of directives applies each of them in turn, so
+  // `Style[expr, {Orange, 18}]` is the same as `Style[expr, Orange, 18]`.
+  fn flatten_directives<'a>(args: &'a [Expr], out: &mut Vec<&'a Expr>) {
+    for arg in args {
+      match arg {
+        Expr::List(items) => flatten_directives(items, out),
+        other => out.push(other),
+      }
+    }
+  }
+  let mut directives = Vec::new();
+  flatten_directives(args, &mut directives);
+  for arg in directives {
     match arg {
       Expr::Identifier(s) if s == "Bold" => bold = true,
       Expr::Identifier(s) if s == "Italic" => italic = true,
@@ -866,6 +878,19 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // A `Dynamic[x]` label reads as the value `x` currently has.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return parse_styled_label(
+      &crate::functions::graphics::dynamic_current_value(expr),
+    );
+  }
+  // `None` and `Null` (e.g. a one-armed `If[False, label]`) draw no label.
+  if matches!(expr, Expr::Identifier(s) if s == "None" || s == "Null") {
+    return None;
+  }
   // `Text[…]` sets its content in the graphic's own text style, so the font
   // weight and slant it inherits are reset — `Style[Text["a"], Bold]` is not
   // bold in Wolfram, while the color and size still reach through. A
@@ -1037,21 +1062,22 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     {
       let mut extra_lines = Vec::new();
       let (text, markup) = match &args[0] {
-        // Inline `\!\(\*…\)` box notation typesets like a bare string's.
-        Expr::String(s)
-          if s.contains(crate::functions::string_ast::BOX_START) =>
-        {
-          let markup = crate::functions::graphics::box_string_to_svg(s);
-          (svg_markup_visible_text(&markup), Some(markup))
-        }
-        // A multi-line string stacks like a bare one: each line is a row.
+        // A multi-line string stacks like a bare one: each line is a row
+        // (typeset on its own, so inline box notation on any line works).
         Expr::String(s) if s.contains('\n') => {
           let mut lines = s
             .split('\n')
             .map(crate::functions::graphics::box_string_to_svg);
           let first = lines.next().unwrap_or_default();
           extra_lines = lines.collect();
-          (s.replace('\n', " "), Some(first))
+          (stacked_visible_text(&first, &extra_lines), Some(first))
+        }
+        // Inline `\!\(\*…\)` box notation typesets like a bare string's.
+        Expr::String(s)
+          if s.contains(crate::functions::string_ast::BOX_START) =>
+        {
+          let markup = crate::functions::graphics::box_string_to_svg(s);
+          (svg_markup_visible_text(&markup), Some(markup))
         }
         Expr::String(s) => (s.clone(), None),
         Expr::Identifier(s) => (s.clone(), None),
@@ -1193,6 +1219,9 @@ pub(crate) struct ChartOptions {
   /// leave this `true` (the explicit list still overrides individual axes
   /// via `ticks_x`/`ticks_y` above).
   pub ticks: bool,
+  /// `FrameTicks -> None | False`: a framed chart keeps its border but
+  /// loses the tick marks and labels on it.
+  pub frame_ticks: bool,
   /// `ChartLayout -> "Stacked"` / `"Percentile"` / `"Overlapped"` /
   /// `"Stepped"`: how the bars of each group share its slot.
   pub layout: crate::functions::plot::BarLayout,
@@ -1236,6 +1265,8 @@ pub(crate) struct ChartLabel {
   pub font_size: Option<f64>,
   /// `Style[label, Bold]`.
   pub bold: bool,
+  /// `Style[label, Italic]`.
+  pub italic: bool,
   /// The styles of a stacked (`Column[{…}]`) label's lines, one per
   /// `\n`-separated line of `text`; empty when the lines share the label's
   /// style.
@@ -1302,17 +1333,22 @@ impl ChartLabel {
   }
 }
 
-/// The font size and weight the `Style[…]` wrappers around a label give it
-/// (looking through `Rotate`, `Text`, `Tooltip` and the like). An inner
-/// `Style` wins over an outer one, as it is the one applied to the text.
-pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool) {
+/// The font size, weight and slant the `Style[…]` wrappers around a label
+/// give it (looking through `Rotate`, `Text`, `Tooltip` and the like). An
+/// inner `Style` wins over an outer one, as it is the one applied to the
+/// text.
+pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool, bool) {
   match e {
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
-      let (bold, _, _, size) = parse_style_directive_args(&args[1..]);
-      let (inner_size, inner_bold) = label_font_style(&args[0]);
-      (inner_size.or(size), bold || inner_bold)
+      let (bold, italic, _, size) = parse_style_directive_args(&args[1..]);
+      let (inner_size, inner_bold, inner_italic) = label_font_style(&args[0]);
+      (
+        inner_size.or(size),
+        bold || inner_bold,
+        italic || inner_italic,
+      )
     }
     Expr::FunctionCall { name, args }
       if matches!(
@@ -1330,9 +1366,10 @@ pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool) {
     {
       let size = items.iter().find_map(|item| label_font_style(item).0);
       let bold = items.iter().any(|item| label_font_style(item).1);
-      (size, bold)
+      let italic = items.iter().any(|item| label_font_style(item).2);
+      (size, bold, italic)
     }
-    _ => (None, false),
+    _ => (None, false, false),
   }
 }
 
@@ -1857,7 +1894,7 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
     && name == "Rotate"
     && args.len() >= 2
   {
-    let (font_size, bold) = label_font_style(&args[0]);
+    let (font_size, bold, italic) = label_font_style(&args[0]);
     let text =
       pane_wrapped_label(&args[0], expr_to_label(&args[0])?, font_size);
     let angle = try_eval_to_f64(
@@ -1869,6 +1906,7 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
       rotation: angle,
       font_size,
       bold,
+      italic,
       line_styles: column_line_styles(&args[0]),
     });
   }
@@ -1879,11 +1917,12 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
     return None;
   }
   // Plain label
-  let (font_size, bold) = label_font_style(e);
+  let (font_size, bold, italic) = label_font_style(e);
   expr_to_label(e).map(|text| ChartLabel {
     text: pane_wrapped_label(e, text, font_size),
     font_size,
     bold,
+    italic,
     line_styles: column_line_styles(e),
     ..ChartLabel::default()
   })
@@ -3090,6 +3129,61 @@ const BUSINESS_THEME_GRADIENT: [(f64, f64, f64); 8] = [
   (0.409582, 0.542008, 0.909424),
 ];
 
+/// The names `ColorData["Gradients"]` lists, in its order.
+pub(crate) const GRADIENT_NAMES: &[&str] = &[
+  "AlpineColors",
+  "Aquamarine",
+  "ArmyColors",
+  "AtlanticColors",
+  "AuroraColors",
+  "AvocadoColors",
+  "BeachColors",
+  "BlueGreenYellow",
+  "BrassTones",
+  "BrightBands",
+  "BrownCyanTones",
+  "CandyColors",
+  "CherryTones",
+  "CMYKColors",
+  "CoffeeTones",
+  "DarkBands",
+  "DarkRainbow",
+  "DarkTerrain",
+  "DeepSeaColors",
+  "FallColors",
+  "FruitPunchColors",
+  "FuchsiaTones",
+  "GrayTones",
+  "GrayYellowTones",
+  "GreenBrownTerrain",
+  "GreenPinkTones",
+  "IslandColors",
+  "LakeColors",
+  "LightTemperatureMap",
+  "LightTerrain",
+  "MintColors",
+  "NeonColors",
+  "Pastel",
+  "PearlColors",
+  "PigeonTones",
+  "PlumColors",
+  "Rainbow",
+  "RedBlueTones",
+  "RedGreenSplit",
+  "RoseColors",
+  "RustTones",
+  "SandyTerrain",
+  "SiennaTones",
+  "SolarColors",
+  "SouthwestColors",
+  "StarryNightColors",
+  "SunsetColors",
+  "TemperatureMap",
+  "ThermometerColors",
+  "ValentineTones",
+  "WatermelonColors",
+];
+
 /// Resolve a named ChartStyle / `ColorData` color scheme to its gradient
 /// control points. Covers every name in `ColorData["Gradients"]`.
 pub(crate) fn named_color_scheme(
@@ -3337,6 +3431,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    frame_ticks: true,
     layout: crate::functions::plot::BarLayout::Grouped,
     bar_origin_top: false,
     log_x: false,
@@ -3568,6 +3663,12 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
           _ => {}
         },
+        "FrameTicks" => {
+          opts.frame_ticks = !matches!(
+            replacement,
+            Expr::Identifier(s) if s == "None" || s == "False"
+          );
+        }
         "BarOrigin" => {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.
           if let Expr::Identifier(side) = replacement {
@@ -4048,7 +4149,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
     &bar_labels,
     bar_label_placement,
-    opts.ticks,
+    // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
+    opts.ticks && (opts.frame_ticks || !look.frame),
     &opts.epilog,
     &look,
   )?;
@@ -4333,6 +4435,9 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       "ImagePadding" => {
         look.image_padding =
           crate::functions::plot::parse_image_padding_sides(&value);
+      }
+      "PlotRangePadding" => {
+        look.plot_range_padding = Some(value);
       }
       // An `EdgeForm` in `ChartStyle` overrides one in `ChartBaseStyle`.
       "ChartBaseStyle" | "ChartStyle" | "PlotStyle" => {
