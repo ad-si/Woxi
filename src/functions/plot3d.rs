@@ -257,6 +257,10 @@ pub(crate) struct Triangle {
 pub(crate) struct TriangleTexture {
   pub image: std::sync::Arc<image::RgbImage>,
   pub uv: [(f64, f64); 3],
+  /// The lit color of a white surface at this triangle: the image's
+  /// colors are multiplied by it, so the scene lighting shades a textured
+  /// face just as it shades a plain one.
+  pub shade: (u8, u8, u8),
 }
 
 /// Largest scene `painter_order` refines: candidate pairs come from a sweep
@@ -8263,6 +8267,7 @@ fn fan_texture(
   Some(TriangleTexture {
     image: image.clone(),
     uv: [coords[0], coords[i + 1], coords[i + 2]],
+    shade: (255, 255, 255),
   })
 }
 
@@ -8333,8 +8338,24 @@ fn emit_textured_triangle(
   } else {
     String::new()
   };
+  // Shade the image by the lit color of a white surface: a color matrix
+  // scales each channel, one filter per distinct shade.
+  let filter_attr = if tex.shade == (255, 255, 255) {
+    String::new()
+  } else {
+    let (r, g, b) = tex.shade;
+    let fid = format!("texshade{r:02x}{g:02x}{b:02x}");
+    if !ids.iter().any(|(k, id)| k.is_null() && *id == fid) {
+      ids.push((std::ptr::null(), fid.clone()));
+      let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+      svg.push_str(&format!(
+        "<defs><filter id=\"{fid}\" color-interpolation-filters=\"sRGB\"><feColorMatrix type=\"matrix\" values=\"{r:.4} 0 0 0 0 0 {g:.4} 0 0 0 0 0 {b:.4} 0 0 0 0 0 1 0\"/></filter></defs>\n"
+      ));
+    }
+    format!(" filter=\"url(#{fid})\"")
+  };
   svg.push_str(&format!(
-    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{opacity_attr}><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{filter_attr}{opacity_attr}><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
     clip_corners[0].0,
     clip_corners[0].1,
     clip_corners[1].0,
@@ -14650,7 +14671,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color: vertex_colors.map_or(color, average_color),
         opacity: prim_opacity,
-        texture: fan_texture(prim, prim_style, i, tri_count),
+        texture: fan_texture(prim, prim_style, i, tri_count).map(|mut t| {
+          // The texture takes the place of the surface color, so the
+          // lighting is that of a white surface.
+          let mut white = prim_style.clone();
+          white.color = None;
+          white.back_color = None;
+          t.shade = shade_facet(
+            SurfaceDefault::Plain((255, 255, 255)),
+            None,
+            Some(&white),
+            normal,
+            center,
+            &scene,
+          )
+          .0;
+          t
+        }),
         vertex_colors,
       });
     }
@@ -14838,7 +14875,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  {
+  // In a picture of fixed width and height, an invisible box around an
+  // automatic range with nothing tied to it (no axes, no sphere framing, no
+  // view volume) is left out: the contents themselves are fitted to the
+  // frame. A Demonstration's unboxed cylinder of fixed volume at
+  // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
+  // snapshots, whether it is tall and thin or short and wide. A picture
+  // given only a width keeps the box's margins.
+  let fit_contents = !show_box
+    && explicit_height
+    && !full_width
+    && !aspect_full
+    && !show_axes
+    && plot_range.is_none()
+    && partial_range.is_none()
+    && !spherical_region
+    && view_angle.is_none()
+    && px_min.is_finite();
+  if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -21592,15 +21646,26 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (z_min, z_max)
   };
 
+  // The automatic dot size shrinks as the data grows, the same adaptive
+  // steps (0.66 printer's points each, at least 1, over a 360-point width)
+  // a 2D `ListPlot` sizes its dots by — a dense trajectory of thousands of
+  // points draws as a thin trail rather than a thick band.
+  let point_size = (0.66
+    * crate::functions::list_plot::adaptive_point_size_steps(
+      datasets.iter().flatten().map(|&(x, y, z)| [x, y, z]),
+    ))
+  .max(1.0)
+    / 360.0;
+
   let svg = generate_scatter_svg(
     &scatter_points,
     &camera,
     (x_min, x_max),
     (y_min, y_max),
     (z_axis_min, z_axis_max),
-    svg_width,
-    svg_height,
+    (svg_width, svg_height),
     full_width,
+    point_size,
   )?;
   // A `PlotLabel` sets a title above the finished picture.
   let svg = with_plot_label(svg, args, svg_width, svg_height);
@@ -21642,6 +21707,9 @@ pub fn list_point_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           Expr::Real(base_color.2 as f64 / 255.0),
         ],
       )];
+      // The automatic size goes first, so a `PlotStyle` `PointSize`
+      // appended below overrides it.
+      group.push(call1("PointSize", Expr::Real(point_size)));
       if let Some(style_items) = &plot_style_per_dataset
         && !style_items.is_empty()
       {
@@ -21716,9 +21784,9 @@ fn generate_scatter_svg(
   x_range: (f64, f64),
   y_range: (f64, f64),
   z_range: (f64, f64),
-  svg_width: u32,
-  svg_height: u32,
+  (svg_width, svg_height): (u32, u32),
   full_width: bool,
+  point_size: f64,
 ) -> Result<String, InterpreterError> {
   // Find bounding box
   let mut px_min = f64::INFINITY;
@@ -21835,10 +21903,12 @@ fn generate_scatter_svg(
   });
 
   // Merge-render scatter points and box edges back-to-front (painter's algorithm)
+  let auto_radius =
+    crate::functions::graphics::point_radius(point_size, svg_width as f64);
   {
     let mut ei = 0;
     for pt in points {
-      let radius = pt.radius.unwrap_or(1.75);
+      let radius = pt.radius.unwrap_or(auto_radius);
       // Emit any box edges further from camera than this point
       while ei < sorted_edges.len() && sorted_edges[ei].depth >= pt.depth {
         let edge = &sorted_edges[ei];
@@ -21859,7 +21929,7 @@ fn generate_scatter_svg(
       let (sx, sy) = to_svg(pt.sx, pt.sy);
       let (r, g, b) = pt.color;
       svg.push_str(&format!(
-        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
+        "<circle cx=\"{:.1}\" cy=\"{:.1}\" r=\"{:.2}\" fill=\"rgb({},{},{})\" stroke=\"rgb({},{},{})\" stroke-width=\"0.5\" opacity=\"0.85\"/>\n",
         sx, sy, radius, r, g, b,
         (r as f64 * 0.7) as u8, (g as f64 * 0.7) as u8, (b as f64 * 0.7) as u8,
       ));

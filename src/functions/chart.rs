@@ -1003,6 +1003,32 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     }
     return Some(label);
   }
+  // A plain mathematical label (`T`, `Subscript[T, opt]`, `f[x]`) is set
+  // in the graphic's `TraditionalForm`, its single-letter symbols in
+  // italics, the same way an `AxesLabel` entry is.
+  if let Some(label) =
+    crate::functions::graphics::traditional_math_axis_label(expr)
+  {
+    let markup = label
+      .strip_prefix(crate::functions::graphics::STYLED_LABEL_MARKER)
+      .map(str::to_string)
+      .unwrap_or(label);
+    let text = svg_markup_visible_text(&markup);
+    if !text.trim().is_empty() {
+      return Some(StyledLabel {
+        text,
+        markup: Some(markup),
+        extra_lines: Vec::new(),
+        bold: false,
+        italic: false,
+        color: None,
+        font_size: None,
+        frame: None,
+        line_frames: Vec::new(),
+        segments: Vec::new(),
+      });
+    }
+  }
   match expr {
     // A string with line breaks stacks like a `Column` title: each line
     // is its own row.
