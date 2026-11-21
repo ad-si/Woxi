@@ -69748,6 +69748,49 @@ mod show_keeps_color_function_per_curve {
   }
 }
 
+mod plot_style_arrowheads {
+  use super::*;
+
+  #[test]
+  fn arrowheads_stay_on_the_curve() {
+    assert_eq!(
+      interpret(
+        "Cases[Plot[x^2, {x, 0, 1}, PlotStyle -> {{Red, \
+         Arrowheads[{0.05, 0.05, 0.05}]}}], _Arrowheads, Infinity]"
+      )
+      .unwrap(),
+      "{Arrowheads[{0.05, 0.05, 0.05}]}"
+    );
+  }
+
+  #[test]
+  fn line_to_arrow_draws_every_head_of_the_spec() {
+    // Three heads on the first curve, the default single head on the
+    // second: the first curve's `Arrowheads` must not carry over to it.
+    let svg = export_svg(
+      "Plot[{x, -x}, {x, 0, 1}, PlotStyle -> {{Red, \
+       Arrowheads[{0.05, 0.05, 0.05}]}, Blue}] /. Line -> Arrow",
+    );
+    let heads = |color: &str| {
+      svg
+        .split("<polygon")
+        .skip(1)
+        .filter(|p| p.contains(&format!("fill=\"{color}\"")))
+        .count()
+    };
+    assert_eq!(heads("rgb(255,0,0)"), 3, "{svg}");
+    assert_eq!(heads("rgb(0,0,255)"), 1, "{svg}");
+  }
+
+  #[test]
+  fn plain_plot_draws_no_heads() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, PlotStyle -> {{Red, Arrowheads[{0.05, 0.05}]}}]",
+    );
+    assert!(!svg.contains("<polygon"), "{svg}");
+  }
+}
+
 /// The `x`/`y` attributes of the first `<text>` element whose content is
 /// `label`.
 fn text_position(svg: &str, label: &str) -> (f64, f64) {

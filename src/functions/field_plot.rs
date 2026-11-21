@@ -4656,6 +4656,7 @@ fn contour_plot_equations(
           mesh_full_points: Vec::new(),
           extra_fills: Vec::new(),
           continues_previous: false,
+          arrowheads: None,
           color_function: None,
         });
       }
