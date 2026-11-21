@@ -5970,8 +5970,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if matches!(expr, Expr::FunctionCall { name, args }
     if !args.is_empty()
       && name != "Framed"
-      && (name == "Show"
-        || crate::functions::graphics::is_graphics_producing_head(name)))
+      && crate::functions::graphics::is_graphics_producing_head(name))
   {
     return true;
   }
@@ -6024,6 +6023,7 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
     && crate::functions::field_plot::bar_legend_svg(
       args,
       crate::functions::field_plot::BAR_LEGEND_HEIGHT,
+      false,
     )
     .is_some()
   {
@@ -6041,6 +6041,14 @@ pub(crate) fn lays_out_a_graphic(expr: &Expr) -> bool {
   if let Expr::FunctionCall { name, args } = expr
     && name == "Rotate"
     && args.len() >= 2
+    && lays_out_a_graphic(&args[0])
+  {
+    return true;
+  }
+  // Likewise `Magnify[g, s]`: the rendered graphic `g`, scaled by `s`.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Magnify"
+    && (args.len() == 1 || args.len() == 2)
     && lays_out_a_graphic(&args[0])
   {
     return true;
@@ -6509,7 +6517,7 @@ fn rendered_graphic_epilog(body: &Expr) -> Option<Expr> {
 /// in the same data coordinates, without changing the call's arity the
 /// way appending a plain positional argument would.
 fn accepts_epilog_option(name: &str) -> bool {
-  name == "Show" || crate::functions::graphics::is_graphics_producing_head(name)
+  crate::functions::graphics::is_graphics_producing_head(name)
 }
 
 /// Add `Epilog -> markers` (merging with any `Epilog` already there) to a
@@ -6777,10 +6785,12 @@ fn layout_rows(name: &str, args: &[Expr]) -> Vec<Vec<Expr>> {
     // `Row[{a, b, …}, sep]` sets `sep` between neighboring items; a rule in
     // that position is an option (`ImageSize -> …`), not a separator.
     "Row" if args.len() >= 2 && !crate::syntax::is_rule_expr(&args[1]) => {
+      let separator =
+        crate::functions::graphics::spaced_row_separator(&args[1]);
       let mut cells = Vec::with_capacity(2 * items.len());
       for (i, item) in items.iter().enumerate() {
         if i > 0 {
-          cells.push(args[1].clone());
+          cells.push(separator.clone());
         }
         cells.push(item.clone());
       }
@@ -6935,6 +6945,24 @@ pub(crate) fn rotate_graphic_svg(g: &Expr, rest: &[Expr]) -> String {
       _ => false,
     })
   });
+  // A picture laid out by its own renderer (a frameless plot pads and sizes
+  // its canvas differently from a plain `Graphics` of the same primitives)
+  // also turns as its rendered image: re-rendering its primitives would
+  // change its size, and `Rotate[plot, Pi]` beside `plot` would no longer
+  // line up with it.
+  let literal_graphics_args = literal_graphics_args.filter(|gfx_args| {
+    let Expr::Graphics { svg, .. } = g else {
+      return true;
+    };
+    match crate::functions::graphics::graphics_ast(gfx_args) {
+      Ok(Expr::Graphics { svg: ref plain, .. }) => {
+        let (w, h) = crate::functions::graphics::parse_svg_wh(svg);
+        let (pw, ph) = crate::functions::graphics::parse_svg_wh(plain);
+        (w - pw).abs() < 0.5 && (h - ph).abs() < 0.5
+      }
+      _ => false,
+    }
+  });
   if let Some(mut gfx_args) = literal_graphics_args {
     let rotate_args = std::iter::once(gfx_args[0].clone())
       .chain(rest.iter().cloned())
@@ -7034,6 +7062,8 @@ struct PaneTextUnit {
   text: String,
   cols: usize,
   idx: usize,
+  /// How wide the unit is drawn, in points.
+  width: f64,
 }
 
 /// Split `text` into the units `wrap_pane_text` lays out: single characters,
@@ -7115,41 +7145,22 @@ pub(crate) fn wrap_pane_text(
   width: f64,
   font_size: f64,
 ) -> Option<Expr> {
-  wrap_pane_text_at(content, width, font_size, false)
-}
-
-/// How many monospace columns of text fit in the width one column of the
-/// face a `Style`'s `FontFamily` directive picks takes: above 1 for a
-/// proportional face, 1 for a monospace one or without a `FontFamily`.
-fn style_face_advance_ratio(directives: &[Expr]) -> f64 {
-  use crate::functions::graphics::{
-    MONO_ADVANCE, SANS_ADVANCE, is_monospace_font_family,
-  };
-  let family = directives.iter().rev().find_map(|d| match d {
-    Expr::Rule {
-      pattern,
-      replacement,
-    } if matches!(pattern.as_ref(), Expr::Identifier(k) if k == "FontFamily") => {
-      match replacement.as_ref() {
-        Expr::String(f) => Some(f.as_str()),
-        _ => None,
-      }
-    }
-    _ => None,
-  });
-  match family {
-    Some(f) if !is_monospace_font_family(f) => MONO_ADVANCE / SANS_ADVANCE,
-    _ => 1.0,
-  }
+  wrap_pane_text_at(content, width, font_size, None, false, false)
 }
 
 /// `wrap_pane_text`, which with `whole_words` gives up (`None`) rather than
-/// break a word too long for a line in two.
+/// break a word too long for a line in two. `family` is the `FontFamily`
+/// an enclosing `Style` sets (`None`: the monospace default). With
+/// `proportional` the text is measured glyph by glyph in the proportional
+/// text face (it sits under a `Text[…]`) rather than at the monospace
+/// advance.
 fn wrap_pane_text_at(
   content: &Expr,
   width: f64,
   font_size: f64,
+  family: Option<&str>,
   whole_words: bool,
+  proportional: bool,
 ) -> Option<Expr> {
   // A bare string re-flows as the one-piece `Row` of it.
   if let Expr::String(_) = content {
@@ -7157,7 +7168,9 @@ fn wrap_pane_text_at(
       &call1("Row", Expr::List(vec![content.clone()].into())),
       width,
       font_size,
+      family,
       whole_words,
+      proportional,
     );
   }
   let Expr::FunctionCall { name, args } = content else {
@@ -7166,32 +7179,37 @@ fn wrap_pane_text_at(
   match name.as_str() {
     "Style" if !args.is_empty() => {
       let size = style_font_size(&args[1..]).unwrap_or(font_size);
-      // Lines are counted in monospace columns; a proportional face
-      // (`FontFamily -> "sans-serif"`, as `Text[Row[…]]` sets) fits more
-      // glyphs, as many as a proportionally wider monospace line holds.
-      let width = width * style_face_advance_ratio(&args[1..]);
-      let inner = wrap_pane_text_at(&args[0], width, size, whole_words)?;
+      let own_family = style_font_family(&args[1..]);
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width,
+        size,
+        own_family.as_deref().or(family),
+        whole_words,
+        proportional,
+      )?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Style", new_args))
     }
+    // `Text[…]` sets its lines in the proportional text face: they are
+    // measured in it, and each line keeps the `Text` so it is drawn in it.
     "Text" if args.len() == 1 => {
-      match crate::functions::graphics::text_layout_face(content) {
-        // `Text[Row[…]]` flows in the proportional text face.
-        Some((layout, family)) => wrap_pane_text_at(
-          &call("Style", vec![layout.clone(), family]),
-          width,
-          font_size,
-          whole_words,
-        ),
-        None => wrap_pane_text_at(&args[0], width, font_size, whole_words),
-      }
+      wrap_pane_text_at(&args[0], width, font_size, family, whole_words, true)
+        .map(|lines| text_display_lines(&lines))
     }
     // `TraditionalForm` only changes how math in the text is typeset; the
     // re-flowed lines keep it.
     "TraditionalForm" if args.len() == 1 => Some(call1(
       "TraditionalForm",
-      wrap_pane_text_at(&args[0], width, font_size, whole_words)?,
+      wrap_pane_text_at(
+        &args[0],
+        width,
+        font_size,
+        family,
+        whole_words,
+        proportional,
+      )?,
     )),
     // A `Column` of prose re-flows item by item: each line of text (a
     // `Row` of strings, or one string under `Style`) breaks at the width
@@ -7210,10 +7228,19 @@ fn wrap_pane_text_at(
               &call1("Row", Expr::List(vec![item.clone()].into())),
               width,
               font_size,
+              family,
               true,
+              proportional,
             )
           } else {
-            wrap_pane_text_at(item, width, font_size, true)
+            wrap_pane_text_at(
+              item,
+              width,
+              font_size,
+              family,
+              true,
+              proportional,
+            )
           };
           changed |= flowed.is_some();
           flowed.unwrap_or_else(|| item.clone())
@@ -7229,10 +7256,39 @@ fn wrap_pane_text_at(
     // An inner size-less `Pane` (e.g. a `Switch` branch under a sized outer
     // `Pane[Text[…], {w, h}]`) is looked through; its options are kept.
     "Pane" if !args.is_empty() => {
-      let inner = wrap_pane_text_at(&args[0], width, font_size, whole_words)?;
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width,
+        font_size,
+        family,
+        whole_words,
+        proportional,
+      )?;
       let mut new_args = vec![inner];
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
+    }
+    // `Row[{e1, e2, …}, sep]` displays the items with `sep` between them,
+    // so it re-flows as the one-argument `Row[{e1, sep, e2, sep, …}]`.
+    "Row" if args.len() == 2 => {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      let mut joined = Vec::with_capacity(items.len() * 2);
+      for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+          joined.push(args[1].clone());
+        }
+        joined.push(item.clone());
+      }
+      wrap_pane_text_at(
+        &call1("Row", Expr::List(joined.into())),
+        width,
+        font_size,
+        family,
+        whole_words,
+        proportional,
+      )
     }
     "Row" if args.len() == 1 => {
       let Expr::List(items) = &args[0] else {
@@ -7263,11 +7319,14 @@ fn wrap_pane_text_at(
         if let Some((text, directives)) = pane_row_piece(item) {
           styles.push(directives);
           atoms.push(None);
-          units.extend(
-            pane_text_units(&text)
-              .into_iter()
-              .map(|(text, cols)| PaneTextUnit { text, cols, idx }),
-          );
+          units.extend(pane_text_units(&text).into_iter().map(
+            |(text, cols)| PaneTextUnit {
+              text,
+              cols,
+              idx,
+              width: 0.0,
+            },
+          ));
         } else {
           let cols = crate::functions::graphics::estimate_display_width(item)
             .ceil() as usize;
@@ -7277,6 +7336,7 @@ fn wrap_pane_text_at(
             text: String::new(),
             cols: cols.max(1),
             idx,
+            width: 0.0,
           });
         }
       }
@@ -7294,13 +7354,55 @@ fn wrap_pane_text_at(
       } else {
         font_size
       };
-      let per_line = ((width
-        / (line_size * crate::functions::graphics::MONO_ADVANCE))
-        .floor() as usize)
-        .max(1);
+      let mono = line_size * crate::functions::graphics::MONO_ADVANCE;
+      let per_line = ((width / mono).floor() as usize).max(1);
+      // A line holds `per_line` monospace columns. Text in a proportional
+      // `FontFamily` (`"Times"`) advances each glyph by its own, mostly
+      // narrower, width instead, so more of it fits.
+      // Text under `Text[…]` is set in the proportional text face, so a
+      // line holds the pane's width of its glyphs.
+      let capacity = if proportional {
+        width.max(mono)
+      } else {
+        per_line as f64 * mono
+      };
+      for u in &mut units {
+        if proportional
+          && atoms[u.idx].is_none()
+          && u.text.chars().count() == u.cols
+        {
+          u.width = u
+            .text
+            .chars()
+            .map(crate::functions::plot_padding::char_width_em)
+            .sum::<f64>()
+            * line_size;
+          continue;
+        }
+        let piece_family = styles[u.idx]
+          .as_deref()
+          .and_then(style_font_family)
+          .or_else(|| family.map(str::to_string))
+          .filter(|f| !crate::functions::graphics::is_monospace_font_family(f));
+        u.width = match (&atoms[u.idx], piece_family) {
+          (None, Some(f)) if u.text.chars().count() == 1 => {
+            let size = styles[u.idx]
+              .as_deref()
+              .and_then(style_font_size)
+              .unwrap_or(font_size);
+            u.text
+              .chars()
+              .map(crate::functions::plot_padding::char_width_em)
+              .sum::<f64>()
+              * size
+              * crate::functions::graphics::proportional_family_scale(&f)
+          }
+          _ => u.cols as f64 * mono,
+        };
+      }
       let is_newline = |u: &PaneTextUnit| u.text == "\n";
-      let total: usize = units.iter().map(|u| u.cols).sum();
-      if total <= per_line && !units.iter().any(is_newline) {
+      let total: f64 = units.iter().map(|u| u.width).sum();
+      if total <= capacity + 1e-9 && !units.iter().any(is_newline) {
         return None;
       }
       let mut lines: Vec<Vec<PaneTextUnit>> = Vec::new();
@@ -7308,18 +7410,53 @@ fn wrap_pane_text_at(
         let mut rest = hard;
         loop {
           // The longest run of units that fits on the line.
-          let mut cols = 0;
+          let mut used = 0.0;
           let mut fit = 0;
           for u in rest {
-            if cols + u.cols > per_line {
+            if used + u.width > capacity + 1e-9 {
               break;
             }
-            cols += u.cols;
+            used += u.width;
             fit += 1;
           }
           if fit == rest.len() {
             lines.push(rest.to_vec());
             break;
+          }
+          // The FrontEnd breaks a row between its items before it breaks
+          // inside one: when the text item the line runs out in starts on
+          // this line and fits on a line of its own, the line ends before
+          // it.
+          let overflow_idx = rest[fit].idx;
+          let item_start =
+            rest[..fit].iter().rposition(|u| u.idx != overflow_idx);
+          // A separator (`", "`) the line runs out at stays on the line it
+          // follows.
+          let starts_with_separator = rest[fit]
+            .text
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_whitespace() || ",;:.!?)".contains(c));
+          if let Some(prev) = item_start
+            && atoms[overflow_idx].is_none()
+            && !starts_with_separator
+          {
+            let start = prev + 1;
+            let item_width: f64 = rest[start..]
+              .iter()
+              .take_while(|u| u.idx == overflow_idx)
+              .map(|u| u.width)
+              .sum();
+            if start > 0 && item_width <= capacity + 1e-9 {
+              // The line ends before the item, without trailing blanks.
+              let mut end = start;
+              while end > 0 && rest[end - 1].text == " " {
+                end -= 1;
+              }
+              lines.push(rest[..end].to_vec());
+              rest = &rest[start..];
+              continue;
+            }
           }
           // Break at the last space that fits, else mid-word.
           match rest[..=fit].iter().rposition(|u| u.text == " ") {
@@ -7336,6 +7473,13 @@ fn wrap_pane_text_at(
           }
         }
       }
+      let style_key = |d: &Option<Vec<Expr>>| {
+        d.as_ref().map(|d| {
+          d.iter()
+            .map(crate::syntax::expr_to_input_form)
+            .collect::<Vec<_>>()
+        })
+      };
       let rows: Vec<Expr> = lines
         .iter()
         .map(|line| {
@@ -7343,8 +7487,17 @@ fn wrap_pane_text_at(
           let mut i = 0;
           while i < line.len() {
             let idx = line[i].idx;
+            // Neighboring text items in the same style (the items and
+            // separators of a `Row[list, sep]`) form one run, so the line
+            // is set as one string rather than many abutting pieces.
+            let same_text = |u: &&PaneTextUnit| {
+              u.idx == idx
+                || (atoms[idx].is_none()
+                  && atoms[u.idx].is_none()
+                  && style_key(&styles[u.idx]) == style_key(&styles[idx]))
+            };
             let run: Vec<&PaneTextUnit> =
-              line[i..].iter().take_while(|u| u.idx == idx).collect();
+              line[i..].iter().take_while(same_text).collect();
             i += run.len();
             if let Some(atom) = &atoms[idx] {
               pieces.push(atom.clone());
@@ -7374,6 +7527,33 @@ fn wrap_pane_text_at(
   }
 }
 
+/// Mark the lines `wrap_pane_text` broke a `Text[…]` into as `Text`
+/// displays, looking through the `Column`s and `Style`s that hold them, so
+/// each is drawn in the proportional text face it was measured in.
+fn text_display_lines(lines: &Expr) -> Expr {
+  match lines {
+    Expr::FunctionCall { name, args }
+      if matches!(name.as_str(), "Column" | "Style" | "TraditionalForm")
+        && !args.is_empty() =>
+    {
+      let mut args = args.to_vec();
+      args[0] = match (name.as_str(), &args[0]) {
+        ("Column", Expr::List(items)) => Expr::List(
+          items
+            .iter()
+            .map(text_display_lines)
+            .collect::<Vec<_>>()
+            .into(),
+        ),
+        ("Column", other) => other.clone(),
+        (_, inner) => text_display_lines(inner),
+      };
+      call(name, args)
+    }
+    other => call1("Text", other.clone()),
+  }
+}
+
 /// A pane filled with a table/column/row layout (`Text@Grid[…]`, the common
 /// way a Demonstration puts prose and data in a tab), looking through the
 /// `Text`/`Pane`/`Panel` wrappers around it.
@@ -7389,6 +7569,22 @@ fn is_tabular_layout(expr: &Expr) -> bool {
     if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
 }
 
+/// The `FontFamily` a `Style` directive list sets, if any.
+fn style_font_family(directives: &[Expr]) -> Option<String> {
+  directives.iter().find_map(|d| match d {
+    Expr::Rule {
+      pattern,
+      replacement,
+    } if matches!(&**pattern, Expr::Identifier(n) if n == "FontFamily") => {
+      match &**replacement {
+        Expr::String(f) => Some(f.clone()),
+        _ => None,
+      }
+    }
+    _ => None,
+  })
+}
+
 /// The font size a `Style` directive list sets, if any.
 fn style_font_size(directives: &[Expr]) -> Option<f64> {
   directives.iter().find_map(|d| match d {
@@ -7398,7 +7594,11 @@ fn style_font_size(directives: &[Expr]) -> Option<f64> {
       pattern,
       replacement,
     } if matches!(&**pattern, Expr::Identifier(n) if n == "FontSize") => {
-      pane_size_component(replacement)
+      match &**replacement {
+        Expr::Integer(n) => Some(*n as f64),
+        Expr::Real(r) => Some(*r),
+        _ => None,
+      }
     }
     _ => None,
   })
@@ -7498,10 +7698,21 @@ pub(crate) fn pane_width_only(args: &[Expr]) -> Option<f64> {
   })
 }
 
+/// One dimension of a `Pane` size, in points: an explicit number, or one of
+/// the named box sizes. The FrontEnd sizes a box (`Pane[text, Medium]`)
+/// half as wide as a `Graphics` of the same named size, so `Medium` wraps
+/// text at 180 points rather than a picture's 360.
 pub(crate) fn pane_size_component(expr: &Expr) -> Option<f64> {
   match expr {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(r) => Some(*r),
+    Expr::Identifier(name) => match name.as_str() {
+      "Tiny" => Some(50.0),
+      "Small" => Some(90.0),
+      "Medium" => Some(180.0),
+      "Large" => Some(288.0),
+      _ => None,
+    },
     _ => None,
   }
 }
@@ -7517,10 +7728,18 @@ fn is_display_box(expr: &Expr) -> bool {
 /// The lines a sized `Pane` broke its text into follow the pane's
 /// horizontal `Alignment`: `Alignment -> Center` (or `{Center, Top}`)
 /// centers every line in the pane, `Right` sets them flush right.
+///
+/// A `Column` the pane's `content` already is keeps its own item
+/// alignment (`Left` by default): the pane only places the column as a
+/// whole, so re-flowing one of its items must not re-align the others.
 pub(crate) fn align_pane_lines(
+  content: &Expr,
   lines: Expr,
   alignment: Option<(f64, f64)>,
 ) -> Expr {
+  if pane_content_is_column(content) {
+    return lines;
+  }
   let anchor = match alignment {
     Some((0.5, _)) => "Center",
     Some((1.0, _)) => "Right",
@@ -7540,10 +7759,28 @@ pub(crate) fn align_pane_lines(
         && !args.is_empty() =>
     {
       let mut new_args = args.to_vec();
-      new_args[0] = align_pane_lines(args[0].clone(), alignment);
+      new_args[0] = align_pane_lines(content, args[0].clone(), alignment);
       call(name.as_str(), new_args)
     }
     _ => lines,
+  }
+}
+
+/// Whether pane content is a `Column` of its own, looking through the
+/// `Style`/`Text`/`TraditionalForm`/`Pane` wrappers `wrap_pane_text`
+/// re-flows through.
+fn pane_content_is_column(content: &Expr) -> bool {
+  match content {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "Column" => true,
+        "Style" | "Text" | "TraditionalForm" | "Pane" => {
+          pane_content_is_column(&args[0])
+        }
+        _ => false,
+      }
+    }
+    _ => false,
   }
 }
 
@@ -7617,7 +7854,9 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       let wrapped = match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => pane_size_component(&size[0])
           .and_then(|w| wrap_pane_text(&args[0], w, 14.0))
-          .map(|lines| align_pane_lines(lines, pane_alignment(&args[1..]))),
+          .map(|lines| {
+            align_pane_lines(&args[0], lines, pane_alignment(&args[1..]))
+          }),
         _ => None,
       };
       // A list in a grid or column wider than the pane breaks into lines
@@ -7840,13 +8079,43 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     // in text rather than mathematical form — it contributes no box of its
     // own, so export what it holds. (In a `Grid` cell this is the
     // difference between the typeset row and the string `Text[Row[…]]`.)
+    // `Style[Text[expr], d…]` shows the styled `expr` as text, just like
+    // `Text[Style[expr, d…]]`.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: t, args: inner }
+          if t == "Text" && inner.len() == 1) =>
+    {
+      let Expr::FunctionCall { args: inner, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut styled = vec![inner[0].clone()];
+      styled.extend(args[1..].iter().cloned());
+      expr_to_svg(&call1("Text", call("Style", styled)))
+    }
     // Text is set in the proportional text face rather than the monospace
     // output face, so `Text[Row[{"Depth = ", x, " m"}]]` reads as prose; a
     // `FontFamily` given inside still wins, as the innermost style does.
+    // Math inside text is set one script level down, so its fractions
+    // are drawn at the reduced size of a nested one.
     Expr::FunctionCall { name, args } if name == "Text" && args.len() == 1 => {
-      expr_to_svg(&crate::functions::graphics::in_text_face(
-        &unquoted_display_string(&args[0]),
-      ))
+      crate::functions::graphics::with_inline_text_math(|| {
+        crate::functions::graphics::with_text_display_grids(|| {
+          expr_to_svg(&crate::functions::graphics::in_text_face(
+            &unquoted_display_string(&args[0]),
+          ))
+        })
+      })
+    }
+    // `Style[TraditionalForm[Text[expr]], 16]`: the `Text` display face
+    // holds for everything it contains, whatever styling or form wrappers
+    // sit around it, so it is hoisted outside them and the wrappers style
+    // the text it shows.
+    _ if let Some(hoisted) =
+      crate::functions::graphics::hoist_text_display(expr) =>
+    {
+      expr_to_svg(&hoisted)
     }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and
     // places its content, so the directives style the content, inside the
@@ -8291,28 +8560,45 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     }
     // Legended[graphics, legend]: a `BarLegend` (optionally `Placed`) is
     // drawn right of the graphics, its bar 5/8 of their height, as Wolfram
-    // places a plot's color bar. Other legends are baked into the wrapped
-    // graphics' SVG already (e.g. PeriodicTablePlot["Phase"]).
+    // places a plot's color bar — or, `Placed` `Below` or `Above` them,
+    // lying flat across most of their width. Other legends are baked into
+    // the wrapped graphics' SVG already (e.g. PeriodicTablePlot["Phase"]).
     Expr::FunctionCall { name, args }
       if name == "Legended" && !args.is_empty() =>
     {
       let graphic = expr_to_svg(&args[0]);
-      let legend = match args.get(1) {
+      let (legend, position) = match args.get(1) {
         Some(Expr::FunctionCall { name, args: placed })
           if name == "Placed" && !placed.is_empty() =>
         {
-          Some(&placed[0])
+          (Some(&placed[0]), placed.get(1))
         }
-        other => other,
+        other => (other, None),
       };
+      let side = match position {
+        Some(Expr::Identifier(p))
+          if matches!(p.as_str(), "Below" | "Bottom" | "Above" | "Top") =>
+        {
+          p.as_str()
+        }
+        Some(Expr::Identifier(p)) if p == "Before" || p == "Left" => "Before",
+        _ => "After",
+      };
+      let horizontal = matches!(side, "Below" | "Bottom" | "Above" | "Top");
       let bar = match legend {
         Some(Expr::FunctionCall {
           name,
           args: bar_args,
         }) if name == "BarLegend" => {
-          let height = crate::functions::graphics::svg_natural_size(&graphic)
-            .map_or(225.0, |(_, h)| h * 0.625);
-          crate::functions::field_plot::bar_legend_svg(bar_args, height)
+          let size = crate::functions::graphics::svg_natural_size(&graphic);
+          let length = if horizontal {
+            size.map_or(300.0, |(w, _)| w * 0.85)
+          } else {
+            size.map_or(225.0, |(_, h)| h * 0.625)
+          };
+          crate::functions::field_plot::bar_legend_svg(
+            bar_args, length, horizontal,
+          )
         }
         // A swatch or line legend is typeset beside the graphics the same
         // way a bare one is drawn on its own.
@@ -8329,11 +8615,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         }
         _ => None,
       };
+      let layout = |bar: String| -> Vec<Vec<String>> {
+        match side {
+          "Below" | "Bottom" => vec![vec![graphic.clone()], vec![bar]],
+          "Above" | "Top" => vec![vec![bar], vec![graphic.clone()]],
+          "Before" => vec![vec![bar, graphic.clone()]],
+          _ => vec![vec![graphic.clone(), bar]],
+        }
+      };
       match bar.and_then(|bar| {
-        crate::functions::graphics::combine_graphics_svgs(&[vec![
-          graphic.clone(),
-          bar,
-        ]])
+        crate::functions::graphics::combine_graphics_svgs(&layout(bar))
       }) {
         Some(svg) => svg,
         None => graphic,
@@ -8385,6 +8676,7 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         && let Some(svg) = crate::functions::field_plot::bar_legend_svg(
           args,
           crate::functions::field_plot::BAR_LEGEND_HEIGHT,
+          false,
         ) =>
     {
       svg
@@ -8488,15 +8780,10 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
         if (name == "Grid" || name == "TextGrid") && !args.is_empty()
       ) =>
     {
-      if let Expr::FunctionCall {
-        args: grid_args, ..
-      } = &tf_args[0]
+      if crate::functions::graphics::traditional_form_grid_ast(&tf_args[0])
+        .is_ok()
       {
-        if crate::functions::graphics::grid_ast(grid_args).is_ok() {
-          crate::get_captured_graphics().unwrap_or_default()
-        } else {
-          String::new()
-        }
+        crate::get_captured_graphics().unwrap_or_default()
       } else {
         String::new()
       }
@@ -9385,6 +9672,14 @@ pub(crate) fn readlist_inputstream(
 /// `viewBox` so the content scales with it. Anything that is not an `<svg
 /// width=".." height="..">` root is returned unchanged.
 fn scale_svg_size(svg: &str, factor: f64) -> String {
+  // A raster `Image` exports with an XML declaration before its root tag;
+  // the size lives on the `<svg …>` tag that follows it.
+  let svg = match svg.strip_prefix("<?xml") {
+    Some(rest) => rest
+      .find("?>")
+      .map_or(svg, |end| rest[end + 2..].trim_start()),
+    None => svg,
+  };
   if (factor - 1.0).abs() < f64::EPSILON || !svg.starts_with("<svg") {
     return svg.to_string();
   }
@@ -9402,13 +9697,17 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   for attr in ["width", "height"] {
-    let key = format!(" {attr}=\"");
-    if let Some(start) = head.find(&key) {
-      let vstart = start + key.len();
-      if let Some(vlen) = head[vstart..].find('"')
-        && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
-      {
-        head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+    // An `Image`'s root tag quotes its attributes with `'`.
+    for quote in ['"', '\''] {
+      let key = format!(" {attr}={quote}");
+      if let Some(start) = head.find(&key) {
+        let vstart = start + key.len();
+        if let Some(vlen) = head[vstart..].find(quote)
+          && let Ok(v) = head[vstart..vstart + vlen].parse::<f64>()
+        {
+          head.replace_range(vstart..vstart + vlen, &format!("{}", v * factor));
+        }
+        break;
       }
     }
   }

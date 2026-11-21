@@ -50,10 +50,7 @@ fn plot_winds(dwd: &Dwd, spec: Option<&Expr>) -> Option<Vec<Vec<u8>>> {
 
 pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fname = "WaveletScalogram";
-  let positional: Vec<&Expr> = args
-    .iter()
-    .filter(|a| !matches!(a, Expr::Rule { .. }))
-    .collect();
+  let positional: Vec<&Expr> = args.iter().filter(|a| !is_option(a)).collect();
   if positional.is_empty() || positional.len() > 3 {
     crate::emit_message(&format!(
       "{fname}::argt: {fname} called with an invalid number of arguments."
@@ -64,6 +61,9 @@ pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Rows of |coefficients|, stretched to the data length.
   let mut rows: Vec<Vec<f64>> = Vec::new();
+  // For continuous data: the first row of each octave, which the
+  // automatic vertical ticks label with the octave number.
+  let mut octave_rows: Vec<(i64, usize)> = Vec::new();
   if let Some(dwd) = Dwd::from_expr(positional[0]) {
     if dwd.rank() != 1 {
       crate::emit_message(&format!(
@@ -102,7 +102,10 @@ pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       rows.push(stretched);
     }
   } else if let Some(cwd) = Cwd::from_expr(positional[0]) {
-    for (_, coefs) in &cwd.rules {
+    for ((octave, _), coefs) in &cwd.rules {
+      if !octave_rows.iter().any(|(o, _)| o == octave) {
+        octave_rows.push((*octave, rows.len()));
+      }
       rows.push(
         coefs
           .iter()
@@ -121,6 +124,34 @@ pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if rows.is_empty() {
     return Ok(unevaluated(fname, args));
   }
+  let n_cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+  let options: Vec<&Expr> = args
+    .iter()
+    .filter(|a| matches!(a, Expr::Rule { .. }))
+    .collect();
+  let option = |name: &str| {
+    options.iter().rev().find_map(|o| match o {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => {
+        Some(replacement.as_ref().clone())
+      }
+      _ => None,
+    })
+  };
+  let rule = |name: &str, value: Expr| Expr::Rule {
+    pattern: Box::new(Expr::Identifier(name.to_string())),
+    replacement: Box::new(value),
+  };
+  // Without a frame there are no frame ticks either.
+  let frameless = matches!(option("Frame").as_ref(),
+    Some(Expr::Identifier(f)) if f == "False" || f == "None");
+  let frame_ticks = if frameless {
+    Expr::Identifier("None".to_string())
+  } else {
+    scalogram_frame_ticks(option("FrameTicks").as_ref(), n_cols, &octave_rows)
+  };
   let matrix = Expr::List(
     rows
       .into_iter()
@@ -130,7 +161,182 @@ pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       .collect::<Vec<_>>()
       .into(),
   );
-  call("ArrayPlot", &[matrix])
+  // A scalogram is a framed, landscape picture of the coefficient
+  // magnitudes (time across, scale down), whatever the matrix shape; the
+  // remaining plot options (ColorFunction, ImageSize, …) go to the
+  // underlying ArrayPlot unchanged.
+  let mut plot_args = vec![matrix];
+  for (name, default) in [
+    (
+      "AspectRatio",
+      call(
+        "Power",
+        &[Expr::Identifier("GoldenRatio".into()), Expr::Integer(-1)],
+      )?,
+    ),
+    ("PlotRangePadding", call("Scaled", &[Expr::Real(0.02)])?),
+    ("Frame", Expr::Identifier("True".into())),
+  ] {
+    plot_args.push(rule(name, option(name).unwrap_or(default)));
+  }
+  plot_args.push(rule("FrameTicks", frame_ticks));
+  plot_args.extend(
+    options
+      .into_iter()
+      .filter(|o| {
+        !matches!(o, Expr::Rule { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n)
+            if matches!(n.as_str(), "AspectRatio" | "PlotRangePadding" | "Frame" | "FrameTicks")))
+      })
+      .cloned(),
+  );
+  call("ArrayPlot", &plot_args)
+}
+
+/// The scalogram's `FrameTicks` as explicit `{{left, right}, {bottom,
+/// top}}` tick lists in `ArrayPlot` coordinates (the center of column `j`
+/// and of row `i` from the top sit at `j` and `i`).
+///
+/// Scalogram coordinates run along the samples horizontally (the left edge
+/// of the first sample is 0) and along the octaves vertically (octave `o`
+/// starts at `o`). By default the octaves are labeled on the right edge and
+/// the sample positions along the bottom; a two-element spec gives the
+/// vertical and the horizontal edges, each either a `{first, second}` pair
+/// or one spec for both edges, where `Automatic` keeps that edge's default.
+fn scalogram_frame_ticks(
+  spec: Option<&Expr>,
+  n_cols: usize,
+  octave_rows: &[(i64, usize)],
+) -> Expr {
+  let none = || Expr::Identifier("None".to_string());
+  let tick =
+    |pos: f64, label: Expr| Expr::List(vec![Expr::Real(pos), label].into());
+  let octave_ticks = || {
+    if octave_rows.is_empty() {
+      return none();
+    }
+    Expr::List(
+      octave_rows
+        .iter()
+        .map(|(o, row)| tick(*row as f64 + 0.5, Expr::Integer(*o as i128)))
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  };
+  let sample_ticks = || {
+    if n_cols == 0 {
+      return none();
+    }
+    let span = n_cols as f64;
+    let step = crate::functions::plot::nice_step(span, 5).max(1.0);
+    let mut ticks = Vec::new();
+    let mut k = 0.0;
+    while k * step <= span + 1e-9 {
+      let v = k * step;
+      ticks.push(tick(v + 0.5, Expr::Integer(v.round() as i128)));
+      k += 1.0;
+    }
+    Expr::List(ticks.into())
+  };
+  // A scalogram's octave position `o` begins at the first row of octave
+  // `o`; positions between octaves interpolate linearly.
+  let octave_pos = |o: f64| -> f64 {
+    let voices = match octave_rows {
+      [(_, a), (_, b), ..] => (*b - *a) as f64,
+      _ => 1.0,
+    };
+    let first = octave_rows.first().map_or(1, |(o, _)| *o) as f64;
+    (o - first) * voices + 0.5
+  };
+  let is = |e: &Expr, names: &[&str]| matches!(e, Expr::Identifier(n) if names.contains(&n.as_str()));
+  // One edge's ticks: its default, none, or explicit positions mapped
+  // into ArrayPlot coordinates.
+  let edge = |e: &Expr, default: &dyn Fn() -> Expr, vertical: bool| -> Expr {
+    if is(e, &["Automatic", "True", "All"]) {
+      return default();
+    }
+    let Expr::List(items) = e else {
+      return none();
+    };
+    let map_pos = |p: f64| if vertical { octave_pos(p) } else { p + 0.5 };
+    Expr::List(
+      items
+        .iter()
+        .filter_map(|item| match item {
+          Expr::List(parts) if !parts.is_empty() => {
+            let p = crate::functions::math_ast::try_eval_to_f64(&parts[0])?;
+            let mut out = parts.to_vec();
+            out[0] = Expr::Real(map_pos(p));
+            Some(Expr::List(out.into()))
+          }
+          other => {
+            let p = crate::functions::math_ast::try_eval_to_f64(other)?;
+            Some(tick(map_pos(p), other.clone()))
+          }
+        })
+        .collect::<Vec<_>>()
+        .into(),
+    )
+  };
+  let automatic = Expr::Identifier("Automatic".to_string());
+  let (vertical, horizontal) = match spec {
+    None => (automatic.clone(), automatic.clone()),
+    Some(e) if is(e, &["Automatic", "True", "All"]) => {
+      (automatic.clone(), automatic.clone())
+    }
+    Some(Expr::List(items)) if items.len() == 2 => {
+      (items[0].clone(), items[1].clone())
+    }
+    Some(_) => (none(), none()),
+  };
+  // Split a spec into its two edges; a lone spec covers both, with
+  // `Automatic` meaning each edge's own default.
+  // A two-element list is an edge pair when one of its parts is a
+  // symbolic spec or a whole tick list; otherwise it is itself a list of
+  // two ticks.
+  let split = |e: &Expr| match e {
+    Expr::List(p)
+      if p.len() == 2
+        && p.iter().any(|x| match x {
+          Expr::Identifier(_) => true,
+          Expr::List(t) => t.iter().any(|y| matches!(y, Expr::List(_))),
+          _ => false,
+        }) =>
+    {
+      (p[0].clone(), p[1].clone())
+    }
+    other => (other.clone(), other.clone()),
+  };
+  let (left, right) = split(&vertical);
+  let (bottom, top) = split(&horizontal);
+  Expr::List(
+    vec![
+      Expr::List(
+        vec![edge(&left, &none, true), edge(&right, &octave_ticks, true)]
+          .into(),
+      ),
+      Expr::List(
+        vec![
+          edge(&bottom, &sample_ticks, false),
+          edge(&top, &none, false),
+        ]
+        .into(),
+      ),
+    ]
+    .into(),
+  )
+}
+
+/// Whether a call argument is an option (`name -> value` or `name :> value`).
+fn is_option(e: &Expr) -> bool {
+  matches!(e, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+}
+
+/// The plot data followed by every option rule of the original call.
+fn with_plot_options(data: Expr, args: &[Expr]) -> Vec<Expr> {
+  let mut plot_args = vec![data];
+  plot_args.extend(args.iter().filter(|a| is_option(a)).cloned());
+  plot_args
 }
 
 // ---------------------------------------------------------------------------
@@ -139,10 +345,7 @@ pub fn wavelet_scalogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
 pub fn wavelet_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let fname = "WaveletListPlot";
-  let positional: Vec<&Expr> = args
-    .iter()
-    .filter(|a| !matches!(a, Expr::Rule { .. }))
-    .collect();
+  let positional: Vec<&Expr> = args.iter().filter(|a| !is_option(a)).collect();
   if positional.is_empty() || positional.len() > 3 {
     crate::emit_message(&format!(
       "{fname}::argt: {fname} called with an invalid number of arguments."
@@ -210,7 +413,10 @@ pub fn wavelet_list_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if series.is_empty() {
     return Ok(unevaluated(fname, args));
   }
-  call("ListLinePlot", &[Expr::List(series.into())])
+  call(
+    "ListLinePlot",
+    &with_plot_options(Expr::List(series.into()), args),
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -325,10 +531,7 @@ fn matrix_or_image_plot(
   args: &[Expr],
   image: bool,
 ) -> Result<Expr, InterpreterError> {
-  let positional: Vec<&Expr> = args
-    .iter()
-    .filter(|a| !matches!(a, Expr::Rule { .. }))
-    .collect();
+  let positional: Vec<&Expr> = args.iter().filter(|a| !is_option(a)).collect();
   if positional.is_empty() || positional.len() > 3 {
     crate::emit_message(&format!(
       "{fname}::argt: {fname} called with an invalid number of arguments."
@@ -380,14 +583,10 @@ fn matrix_or_image_plot(
   );
   // Plot options (ColorFunction, Frame, ImageSize, …) go to the underlying
   // plot / image constructor unchanged.
-  let mut plot_args = vec![matrix_expr];
-  plot_args.extend(
-    args
-      .iter()
-      .filter(|a| matches!(a, Expr::Rule { .. }))
-      .cloned(),
-  );
-  call(if image { "Image" } else { "MatrixPlot" }, &plot_args)
+  call(
+    if image { "Image" } else { "MatrixPlot" },
+    &with_plot_options(matrix_expr, args),
+  )
 }
 
 pub fn wavelet_matrix_plot_ast(

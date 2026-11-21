@@ -181,7 +181,15 @@ fn main() {
         println!("display trees:");
         for t in &state.display_trees {
           let dbg = format!("{t:?}");
-          let snippet: String = dbg.chars().take(300).collect();
+          let snippet: String = dbg
+            .chars()
+            .take(
+              std::env::var("DUMP_TREE_CHARS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(300),
+            )
+            .collect();
           println!("  {snippet}");
         }
       }
