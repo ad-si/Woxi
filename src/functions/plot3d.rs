@@ -223,6 +223,10 @@ const PAINTER_ORDER_MAX_TRIANGLES: usize = 200000;
 /// triangle count, which must stay within `PAINTER_ORDER_MAX_TRIANGLES`.
 const SPLIT_MAX_TRIANGLES: usize = 60000;
 
+/// Most triangles `split_interpenetrating` may leave behind, which keeps the
+/// exported markup of a heavily self-crossing scene to a few megabytes.
+const SPLIT_MAX_RESULT_TRIANGLES: usize = 60000;
+
 /// Whether two projected triangles share interior area (touching along an
 /// edge or at a corner does not count).
 fn projected_triangles_overlap(
@@ -929,6 +933,37 @@ fn interpolate_corner_color(
   )
 }
 
+/// Cuts triangle `tri` (with the boundary flags of its edges) by the planes
+/// of the triangles `others` indexes in `all`, returning the convex pieces.
+fn cut_triangle(
+  tri: &[Point3D; 3],
+  boundary: [bool; 3],
+  others: &[usize],
+  all: &[[Point3D; 3]],
+) -> Vec<Vec<(Point3D, bool)>> {
+  let mut pieces =
+    vec![(0..3).map(|c| (tri[c], boundary[c])).collect::<Vec<_>>()];
+  for &other in others {
+    // A triangle that many surfaces cross (a thick tube wound tighter
+    // than its radius) would split into thousands of slivers.
+    if pieces.len() >= MAX_PIECES_PER_TRIANGLE {
+      break;
+    }
+    let mut next = Vec::with_capacity(pieces.len() + 1);
+    for piece in pieces {
+      let (a, b) = clip_polygon_by_plane(&piece, &all[other]);
+      if a.len() >= 3 && b.len() >= 3 {
+        next.push(a);
+        next.push(b);
+      } else {
+        next.push(piece);
+      }
+    }
+    pieces = next;
+  }
+  pieces
+}
+
 /// Splits triangles that pass through one another where they overlap on
 /// screen, so each piece lies wholly on one side of every triangle it
 /// crosses and a back-to-front sort can order them (the cones of a
@@ -975,65 +1010,57 @@ fn split_interpenetrating(
     return;
   }
   let original = verts.clone();
-  // Triangles each one is expected to end up as: a cut by `p` planes
-  // leaves at most `p + 1` pieces of up to a few corners each. Assuming
-  // the worst case (`MAX_PIECES_PER_TRIANGLE` for every triangle) kept all
-  // but the last few thousand triangles of a larger scene whole.
-  let estimate = |k: usize| {
-    if planes[k].is_empty() {
-      1
-    } else {
-      (2 * (planes[k].len() + 1)).min(2 * MAX_PIECES_PER_TRIANGLE)
-    }
+  // Cut every triangle first, then count what the cuts cost.
+  let mut cuts: Vec<Option<Vec<Vec<(Point3D, bool)>>>> = triangles
+    .iter()
+    .enumerate()
+    .map(|(k, tri)| {
+      if planes[k].is_empty() || tri.texture.is_some() {
+        return None;
+      }
+      let pieces =
+        cut_triangle(&original[k], tri.boundary, &planes[k], &original);
+      (pieces.len() > 1).then_some(pieces)
+    })
+    .collect();
+  // The split scene has to stay small enough to sort and to export. When it
+  // would not, the triangles cut into the most pieces stay whole, so the
+  // many triangles crossed only a few times are still split, wherever they
+  // lie in the list.
+  let piece_triangles = |pieces: &Vec<Vec<(Point3D, bool)>>| -> usize {
+    pieces.iter().map(|poly| poly.len() - 2).sum()
   };
-  // `still_to_come[k]`: the expected triangles from `k` on.
-  let mut still_to_come = vec![0usize; n + 1];
-  for k in (0..n).rev() {
-    still_to_come[k] = still_to_come[k + 1] + estimate(k);
-  }
-  // The split scene has to stay within what `painter_order` sorts, and a
-  // scene whose faces cross everywhere (a tube thicker than its curve) must
-  // not grow without bound.
-  let budget = PAINTER_ORDER_MAX_TRIANGLES
+  // Besides the absolute cap, a scene whose faces cross everywhere (a tube
+  // thicker than its curve) must not grow beyond a few times its size.
+  let limit = SPLIT_MAX_RESULT_TRIANGLES
     .min((SPLIT_MAX_GROWTH * n).max(SPLIT_MIN_BUDGET));
-  let mut new_verts = Vec::with_capacity(n);
-  let mut new_tris = Vec::with_capacity(n);
-  for (k, tri) in triangles.drain(..).enumerate() {
-    // The triangle being cut is charged its worst case, so whatever the
-    // earlier ones became, the scene ends within `budget`: once the
-    // triangles still to come would no longer fit, they stay whole.
-    if planes[k].is_empty()
-      || tri.texture.is_some()
-      || new_tris.len() + 2 * MAX_PIECES_PER_TRIANGLE + still_to_come[k + 1]
-        > budget
-    {
+  let mut total: usize = cuts
+    .iter()
+    .map(|c| c.as_ref().map_or(1, piece_triangles))
+    .sum();
+  if total > limit {
+    let mut costly: Vec<(usize, usize)> = cuts
+      .iter()
+      .enumerate()
+      .filter_map(|(k, c)| c.as_ref().map(|c| (piece_triangles(c), k)))
+      .collect();
+    costly.sort_unstable_by(|a, b| b.cmp(a));
+    for (count, k) in costly {
+      if total <= limit {
+        break;
+      }
+      cuts[k] = None;
+      total -= count - 1;
+    }
+  }
+  let mut new_verts = Vec::with_capacity(total);
+  let mut new_tris = Vec::with_capacity(total);
+  for ((k, tri), cut) in triangles.drain(..).enumerate().zip(cuts) {
+    let Some(pieces) = cut else {
       new_verts.push(original[k]);
       new_tris.push(tri);
       continue;
-    }
-    let mut pieces = vec![
-      (0..3)
-        .map(|c| (original[k][c], tri.boundary[c]))
-        .collect::<Vec<_>>(),
-    ];
-    for &other in &planes[k] {
-      // A triangle that many surfaces cross (a thick tube wound tighter
-      // than its radius) would split into thousands of slivers.
-      if pieces.len() >= MAX_PIECES_PER_TRIANGLE {
-        break;
-      }
-      let mut next = Vec::with_capacity(pieces.len() + 1);
-      for piece in pieces {
-        let (a, b) = clip_polygon_by_plane(&piece, &original[other]);
-        if a.len() >= 3 && b.len() >= 3 {
-          next.push(a);
-          next.push(b);
-        } else {
-          next.push(piece);
-        }
-      }
-      pieces = next;
-    }
+    };
     for poly in pieces {
       let m = poly.len();
       for c in 1..m - 1 {
@@ -25415,6 +25442,39 @@ mod painter_order_tests {
       verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
     split_interpenetrating(&mut verts, &mut tris, &camera);
     assert!(verts.len() > 2);
+    assert_eq!(verts.len(), tris.len());
+    let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
+    for_each_overlapping_pair(&projected, |i, j| {
+      assert!(
+        side_of_plane(&verts[i], &verts[j], &camera).is_some()
+          || side_of_plane(&verts[j], &verts[i], &camera).is_some()
+      );
+    });
+  }
+
+  /// A crossing pair at the front of a long list is still split: the split
+  /// budget is spent on the triangles that actually get cut, not reserved
+  /// for a worst case of every remaining triangle.
+  #[test]
+  fn crossing_triangles_are_split_ahead_of_many_others() {
+    let camera = Camera {
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let mut verts = vec![
+      [p(-1.0, -1.0, 0.0), p(1.0, -1.0, 0.0), p(0.0, 1.0, 0.0)],
+      [p(-1.0, 0.0, -1.0), p(1.0, 0.0, -1.0), p(0.0, 0.0, 1.0)],
+    ];
+    // Small, mutually disjoint triangles off to the side.
+    for i in 0..5000 {
+      let x = 10.0 + 0.01 * i as f64;
+      verts.push([p(x, 5.0, 0.0), p(x + 0.005, 5.0, 0.0), p(x, 5.005, 0.0)]);
+    }
+    let mut tris: Vec<Triangle> =
+      verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+    split_interpenetrating(&mut verts, &mut tris, &camera);
+    assert!(verts.len() > 5002);
     assert_eq!(verts.len(), tris.len());
     let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
     for_each_overlapping_pair(&projected, |i, j| {
