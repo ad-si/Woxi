@@ -23101,6 +23101,9 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // `ColorFunction`: the color of every facet, from `f` at the facet's
   // centroid and its center in parameter space.
+  let color_scheme = color_fn
+    .as_ref()
+    .and_then(crate::functions::field_plot::color_function_scheme_name);
   let facet_colors: Vec<Vec<Option<(u8, u8, u8)>>> = surface_tris
     .iter()
     .enumerate()
@@ -23138,6 +23141,16 @@ pub fn spherical_plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           } else {
             [c[0], c[1], c[2], theta, phi, r]
           };
+          // A named gradient (`"Rainbow"`, `ColorData["Rainbow"]`) colors
+          // the surface by height, like `ColorData[name][z]`.
+          if let Some(name) = &color_scheme {
+            return Some(
+              crate::functions::field_plot::apply_named_color_function(
+                name,
+                call_args[2],
+              ),
+            );
+          }
           let mut value = evaluate_expr_to_expr(&Expr::CurriedCall {
             func: Box::new(cf.clone()),
             args: call_args.iter().map(|a| Expr::Real(*a)).collect(),
