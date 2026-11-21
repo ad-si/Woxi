@@ -20680,17 +20680,25 @@ fn inline_graphics_box_layout(
   // inside `Hold`, or the held body of a `Manipulate`). Typesetting must
   // not run it, so keep only the parts that draw as they stand.
   let graphic = drawable_box_graphic(graphic);
-  // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
-  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
-  let rendered = match &evaluated {
-    Expr::FunctionCall { name, args } if name == "Graphics" => {
-      graphics_ast(args).ok()?
+  // The picture is embedded in the surrounding typeset output, not a
+  // standalone result: drop whatever rendering it captures, so it cannot
+  // replace the picture the cell already shows (an `Animate`'s first frame).
+  let captured = crate::captured_graphics_count();
+  let rendered = (|| {
+    // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
+    let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
+    match &evaluated {
+      Expr::FunctionCall { name, args } if name == "Graphics" => {
+        graphics_ast(args).ok()
+      }
+      Expr::FunctionCall { name, args } if name == "Graphics3D" => {
+        crate::functions::plot3d::graphics3d_ast(args).ok()
+      }
+      _ => Some(evaluated.clone()),
     }
-    Expr::FunctionCall { name, args } if name == "Graphics3D" => {
-      crate::functions::plot3d::graphics3d_ast(args).ok()?
-    }
-    _ => evaluated.clone(),
-  };
+  })();
+  crate::truncate_captured_graphics(captured);
+  let rendered = rendered?;
   let Expr::Graphics { svg, .. } = &rendered else {
     return None;
   };
@@ -49700,10 +49708,13 @@ pub(crate) fn animate_snapshot_svg(args: &[Expr]) -> Option<String> {
   if bindings.is_empty() {
     return None;
   }
-  let rendered =
-    crate::with_scoped_globals(&bindings, || evaluate_expr_to_expr(&args[0]));
-  let evaluated = rendered.ok()?;
-  let svg = crate::evaluator::expr_to_svg(&evaluated);
+  // Draw the frame while the control variables are still bound: drawing
+  // typesets the graphic, and its primitives may still refer to them.
+  let svg = crate::with_scoped_globals(&bindings, || {
+    evaluate_expr_to_expr(&args[0])
+      .ok()
+      .map(|evaluated| crate::evaluator::expr_to_svg(&evaluated))
+  })?;
   (!svg.is_empty()).then_some(svg)
 }
 
