@@ -2075,18 +2075,18 @@ impl ManipulateState {
   pub fn tick(&mut self) {
     if self.animated && self.playing {
       self.advance_animation();
-    } else if self.self_refreshing {
+    } else if self.self_refreshing
+      || self.timed_refresh.is_some_and(|interval| {
+        self
+          .last_refresh
+          .is_none_or(|t| t.elapsed().as_secs_f64() >= interval)
+      })
+    {
       // A timed `Refresh` body polling `MousePosition["Graphics"]` (a
       // mouse-trail recorder) sees where the cursor is now.
       woxi::set_mouse_position(self.pointer_graphics_position());
       self.reevaluate();
       woxi::set_mouse_position(None);
-    } else if let Some(interval) = self.timed_refresh
-      && self
-        .last_refresh
-        .is_none_or(|t| t.elapsed().as_secs_f64() >= interval)
-    {
-      self.reevaluate();
     }
   }
 
@@ -2600,7 +2600,9 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
-    self.self_refreshing |= timed_refresh;
+    // A `Refresh` whose interval is known is paced by `timed_refresh`
+    // instead, so a finite `UpdateInterval` waits its seconds.
+    self.self_refreshing |= timed_refresh && self.timed_refresh.is_none();
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
@@ -7717,6 +7719,74 @@ mod tests {
     let fx = (gx - f.x_min) / (f.x_max - f.x_min);
     let fy = (f.y_max - gy) / (f.y_max - f.y_min);
     (f.x + f.width * fx as f32, f.y + f.height * fy as f32)
+  }
+
+  /// A body wrapped in `Refresh[…, UpdateInterval -> If[running, 0,
+  /// Infinity]]` with start/stop buttons: once started, the app's timer
+  /// must keep re-evaluating it (each pass advancing its counter) until it
+  /// is stopped, rather than advancing a single step per button press.
+  #[test]
+  fn refresh_update_interval_drives_the_timer() {
+    let code = r#"Manipulate[
+      Refresh[If[running, n++]; Graphics[Disk[], PlotLabel -> n],
+        UpdateInterval -> If[running, 0, Infinity]],
+      {{running, False}, None},
+      {{n, 0}, ControlType -> None},
+      Row[{Button["start", running = True], Button["stop", running = False]}]
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.error.is_none(), "body failed: {:?}", state.error);
+    let n = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "n")
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default()
+    };
+    assert!(!state.wants_tick(), "an Infinity interval never refreshes");
+    assert_eq!(n(&state), "0");
+
+    state.apply_button_action("running = True");
+    assert!(state.wants_tick(), "a zero interval refreshes continuously");
+    let after_start = n(&state).parse::<i64>().unwrap();
+    state.tick();
+    state.tick();
+    assert_eq!(n(&state).parse::<i64>().unwrap(), after_start + 2);
+
+    state.apply_button_action("running = False");
+    assert!(!state.wants_tick(), "stopping returns to Infinity");
+    let stopped = n(&state);
+    state.tick();
+    assert_eq!(n(&state), stopped);
+  }
+
+  /// A finite `UpdateInterval` is honored: the timer only re-evaluates the
+  /// body once that many seconds passed since the last evaluation.
+  #[test]
+  fn refresh_update_interval_waits_its_seconds() {
+    let code = r#"Manipulate[
+      Refresh[n++; Graphics[Disk[]], UpdateInterval -> 3600],
+      {{n, 0}, ControlType -> None}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("should parse");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("should build a widget");
+    assert!(state.wants_tick());
+    let value = |state: &ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "n")
+        .unwrap()
+        .1
+        .clone()
+    };
+    let before = value(&state);
+    state.tick();
+    assert_eq!(value(&state), before, "an hour has not passed yet");
   }
 
   /// An `EventHandler[Dynamic[…], {"MouseDown" :> …, "MouseDragged" :> …}]`
