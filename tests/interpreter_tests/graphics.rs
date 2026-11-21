@@ -2072,6 +2072,39 @@ mod graphics {
       );
     }
 
+    /// An inset size `{w, Automatic}` gives the width in the enclosing
+    /// picture's coordinates; the height follows from the picture's own
+    /// aspect ratio on screen, even where the plot's x and y units differ
+    /// in length. The size used to be dropped, leaving the inset at its
+    /// natural pixel size.
+    #[test]
+    fn an_inset_size_with_an_automatic_height_keeps_the_aspect_ratio() {
+      for (size, expected) in [
+        ("{1, Automatic}", ("49.50", "25.85")),
+        ("{Automatic, 2}", ("47.39", "24.75")),
+      ] {
+        let svg = export_svg(&format!(
+          "d = Graphics[Raster[{{{{{{1, 0, 0}}, {{0, 1, 0}}}}}}]]; \
+           Graphics[{{Point[{{0, 0}}], Point[{{4, 8}}], Inset[d, {{2, 4}}, \
+           Automatic, {size}]}}, PlotRange -> {{{{0, 4}}, {{0, 8}}}}, \
+           AspectRatio -> 1/2, ImageSize -> {{200, 100}}]",
+        ));
+        let nested = svg
+          .split("<svg ")
+          .nth(2)
+          .and_then(|s| s.split_once('>'))
+          .expect("a nested picture")
+          .0
+          .to_string();
+        assert!(
+          nested.contains(&format!("width=\"{}\"", expected.0))
+            && nested.contains(&format!("height=\"{}\"", expected.1)),
+          "size {size}: the given side, at the picture's own \
+           shape: {nested}"
+        );
+      }
+    }
+
     /// `Inset[Graphics3D[…], pos]` embeds a whole three-dimensional
     /// picture in a flat one, at its own size — a Demonstration puts a
     /// little schematic of its apparatus in the corner that way. It used
@@ -3624,6 +3657,85 @@ mod graphics {
       assert_eq!(width("Thickness[Large]"), "2.00");
       assert_eq!(width("Thickness[Medium]"), "1.00");
       assert_eq!(width("AbsoluteThickness[1]"), "1.00");
+    }
+
+    /// Unbounded primitives are cut to a margin around the plot range
+    /// instead of being written out tens of thousands of pixels past the
+    /// picture (which made resvg drop translucent primitives drawn next to
+    /// them). The cut keeps their position and direction.
+    #[test]
+    fn unbounded_primitives_stay_near_the_picture() {
+      let svg = |prim: &str| {
+        export_svg(&format!(
+          "Graphics[{{{prim}}}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}}}, \
+           ImageSize -> 100]"
+        ))
+      };
+      let numbers = |tag: &str, svg: &str| -> Vec<f64> {
+        let start = svg.find(tag).expect(tag);
+        let elem = &svg[start..start + svg[start..].find("/>").unwrap()];
+        elem
+          .split('"')
+          .skip(1)
+          .step_by(2)
+          .flat_map(|v| v.split([',', ' ']))
+          .filter_map(|v| v.parse::<f64>().ok())
+          .collect()
+      };
+      let line = svg("InfiniteLine[{{0, 0}, {1, 1}}]");
+      let l = numbers("<line", &line);
+      // x1 y1 x2 y2: through the center (49.5, 49.5) with slope -1.
+      assert_eq!(&l[..4], &[-99.0, 198.0, 198.0, -99.0], "{line}");
+      let half = svg("HalfLine[{0, 0}, {1, 0}]");
+      assert_eq!(
+        &numbers("<line", &half)[..4],
+        &[49.5, 49.5, 198.0, 49.5],
+        "{half}"
+      );
+      // The upper half plane y >= 0.
+      let plane = svg("HalfPlane[{0, 0}, {1, 0}, {0, 1}]");
+      let mut pts = numbers("<polygon", &plane);
+      pts.truncate(8);
+      assert_eq!(
+        pts,
+        vec![-99.0, -99.0, -99.0, 49.5, 198.0, 49.5, 198.0, -99.0],
+        "{plane}"
+      );
+      // A line far outside the range is not drawn at all.
+      assert!(!svg("InfiniteLine[{0, 50}, {1, 0}]").contains("<line"));
+    }
+
+    /// A bare size name in `Style` is a font size, not a thickness, so it
+    /// keeps an earlier `Thick` (and the default width) of the primitive.
+    #[test]
+    fn style_size_name_keeps_stroke_thickness() {
+      let width = |code: &str| {
+        let svg = export_svg(code);
+        let i = svg.find("stroke-width=\"").expect("a stroke width")
+          + "stroke-width=\"".len();
+        svg[i..].split('"').next().unwrap().to_string()
+      };
+      for size in ["Tiny", "Small", "Medium", "Large"] {
+        assert_eq!(
+          width(&format!(
+            "Graphics[Style[Circle[{{0,0}},1], Thick, {size}, Red]]"
+          )),
+          "2.00",
+          "Thick then {size}"
+        );
+        assert_eq!(
+          width(&format!(
+            "Graphics[Style[Line[{{{{0,0}},{{1,1}}}}], {size}, Thick]]"
+          )),
+          "2.00",
+          "{size} then Thick"
+        );
+      }
+      // `Thin` itself still names a width.
+      assert_eq!(
+        width("Graphics[Style[Line[{{0,0},{1,1}}], Thick, Thin]]"),
+        "0.20"
+      );
     }
 
     /// `AbsoluteDashing` is `Dashing`'s absolute counterpart — every length
@@ -7194,6 +7306,44 @@ mod plot3d {
     };
     assert_eq!(us("({0.1, 0} &)"), "{0.1}");
     assert_eq!(us("({1.9, 0} &)"), "{1.9}");
+  }
+
+  /// The scene lighting shades a textured `Graphics3D` polygon like a
+  /// white surface: the image is multiplied by the lit color through a
+  /// color-matrix filter. Regression: textured faces were drawn unlit, so
+  /// every face of a textured cube showed the same brightness.
+  #[test]
+  fn graphics3d_texture_is_shaded_by_lighting() {
+    let svg = |lighting: &str, color: &str| {
+      export_svg(&format!(
+        "Graphics3D[{{{color}Texture[Image[{{{{{{1, 1, 1}}, {{0, 0, 0}}}}}}]], \
+         Polygon[{{{{0, 0, 0}}, {{1, 0, 0}}, {{1, 0, 1}}, {{0, 0, 1}}}}, \
+         VertexTextureCoordinates -> {{{{0, 0}}, {{1, 0}}, {{1, 1}}, {{0, 1}}}}]}}, \
+         Lighting -> {lighting}]"
+      ))
+    };
+    let shaded = svg("\"Neutral\"", "");
+    assert!(shaded.contains("<image"), "{shaded}");
+    assert!(shaded.contains("<feColorMatrix"), "{shaded}");
+    // Neutral light is white, so the shade is a gray: equal channel scales.
+    let values = shaded
+      .split("values=\"")
+      .nth(1)
+      .and_then(|v| v.split('"').next())
+      .unwrap()
+      .split_whitespace()
+      .map(|x| x.parse::<f64>().unwrap())
+      .collect::<Vec<_>>();
+    assert_eq!(values.len(), 20);
+    assert!(values[0] < 1.0 && values[0] > 0.0, "{values:?}");
+    assert_eq!(values[0], values[6]);
+    assert_eq!(values[0], values[12]);
+    // A surface color does not tint the texture: it replaces it.
+    assert_eq!(svg("\"Neutral\"", "Red, "), shaded);
+    // Full white ambient light leaves the image as it is.
+    let unlit = svg("{{\"Ambient\", White}}", "");
+    assert!(unlit.contains("<image"), "{unlit}");
+    assert!(!unlit.contains("<feColorMatrix"), "{unlit}");
   }
 
   /// SphericalPlot3D is drawn with the data's own proportions (WL's
@@ -11091,6 +11241,35 @@ mod plot3d {
       assert_eq!(svg.lines().filter(|l| l.starts_with("<line ")).count(), 0);
     }
 
+    /// A translucent quad is fan-triangulated too, but its triangles must
+    /// not stroke their own color at all: the hairlines of the two halves
+    /// overlap along the internal cut and draw a darker diagonal across
+    /// the see-through face. The quad's outline is still drawn as lines.
+    #[test]
+    fn graphics3d_translucent_quad_face_has_no_diagonal_seam() {
+      for corners in [
+        "{{0,0,0}, {1,0,0}, {1,1,0}, {0,1,0}}",
+        "{{0,0,0}, {2,0,1}, {2,1,1}, {1,2,1}, {0,1,0}}",
+      ] {
+        let svg = export_svg(&format!(
+          "Graphics3D[{{Opacity[0.4], Red, EdgeForm[Thick], \
+           Polygon[{corners}]}}, Boxed -> False]"
+        ));
+        let filled: Vec<&str> =
+          svg.lines().filter(|l| l.starts_with("<polygon")).collect();
+        assert!(filled.len() >= 2, "{svg}");
+        for tri in &filled {
+          assert!(
+            tri.contains("stroke=\"none\"") && tri.contains("opacity=\"0.4\""),
+            "a translucent face must not stroke its internal cuts: {tri}"
+          );
+        }
+        let corner_count = corners.matches('{').count() - 1;
+        let outline = svg.lines().filter(|l| l.starts_with("<line ")).count();
+        assert_eq!(outline, corner_count, "{svg}");
+      }
+    }
+
     // Part indexes the symbolic form of a rendered Graphics3D, as in
     // Wolfram where Graphics3D[…][[1]] returns the content.
     #[test]
@@ -13009,6 +13188,113 @@ mod plot3d {
         (1.0..1.04).contains(&ratio),
         "expected the cuboid nearly unchanged, got {auto:?} vs {padded:?}"
       );
+    }
+
+    /// An unboxed scene in a picture of fixed width and height, with no
+    /// camera option and no `PlotRange`, is fitted to its own contents:
+    /// a Demonstration's snapshots of a cylinder of fixed volume at
+    /// `ImageSize -> {150, 150}` fill 95–98 % of the frame whether the
+    /// cylinder is tall and thin or short and wide. That holds inside a
+    /// `Manipulate` frame too. Neither the sphere around the box nor the
+    /// box outline is used for the fit.
+    #[test]
+    fn an_unboxed_scene_without_a_set_view_fills_a_pinned_picture() {
+      let cylinder = |r: f64, opts: &str| {
+        format!(
+          "Graphics3D[Cylinder[{{{{0, 0, 0}}, {{0, 0, {h}}}}}, {r}], \
+           Boxed -> False, ImageSize -> {{150, 150}}{opts}]",
+          h = 355.0 / (std::f64::consts::PI * r * r)
+        )
+      };
+      for r in [1.7, 3.0, 4.0, 6.3] {
+        for (w, h) in [
+          drawn_extent(&cylinder(r, "")),
+          woxi::with_manipulate_frame(|| drawn_extent(&cylinder(r, ""))),
+        ] {
+          let longer = w.max(h);
+          assert!(
+            (144.0..=150.0).contains(&longer),
+            "r = {r}: expected the cylinder to fill the frame, got {w} x {h}"
+          );
+        }
+        let sphere = drawn_extent(&cylinder(r, ", SphericalRegion -> True"));
+        assert!(sphere.0.max(sphere.1) < 140.0, "r = {r}: {sphere:?}");
+        // A set view point brings the sphere framing back in a
+        // `Manipulate` frame.
+        let viewed = woxi::with_manipulate_frame(|| {
+          drawn_extent(&cylinder(r, ", ViewPoint -> {1.3, -2.4, 2}"))
+        });
+        assert!(
+          (viewed.0 - sphere.0).abs() < 0.5
+            && (viewed.1 - sphere.1).abs() < 0.5,
+          "r = {r}: {viewed:?} vs {sphere:?}"
+        );
+      }
+    }
+
+    /// A cylinder's round cap is drawn as a smooth circle, not a visible
+    /// polygon: seen from above, its outline covers more than 99.5 % of the
+    /// circle around it. Wolfram's snapshots show smooth rims even on a
+    /// cylinder that fills a 150 pt picture; the 24-sided tessellation
+    /// covered only 98.9 %, leaving corners along the outlined rim.
+    #[test]
+    fn a_cylinder_cap_is_drawn_as_a_smooth_circle() {
+      let svg = export_svg(
+        "Graphics3D[Cylinder[{{0, 0, 0}, {0, 0, 0.1}}, 1], \
+         ViewPoint -> {0, 0, Infinity}, Boxed -> False, \
+         ImageSize -> {300, 300}]",
+      );
+      let mut pts: Vec<(f64, f64)> = Vec::new();
+      for chunk in svg.split("points=\"").skip(1) {
+        for pair in chunk.split('"').next().unwrap().split_whitespace() {
+          if let Some((x, y)) = pair.split_once(',')
+            && let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>())
+          {
+            pts.push((x, y));
+          }
+        }
+      }
+      assert!(pts.len() > 3, "{svg}");
+      // Convex hull (monotone chain) and its area.
+      pts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+      let cross = |o: (f64, f64), a: (f64, f64), b: (f64, f64)| {
+        (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+      };
+      let mut hull: Vec<(f64, f64)> = Vec::new();
+      for pass in 0..2 {
+        let start = hull.len();
+        let iter: Box<dyn Iterator<Item = &(f64, f64)>> = if pass == 0 {
+          Box::new(pts.iter())
+        } else {
+          Box::new(pts.iter().rev())
+        };
+        for &p in iter {
+          while hull.len() >= start + 2
+            && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0
+          {
+            hull.pop();
+          }
+          hull.push(p);
+        }
+        hull.pop();
+      }
+      let area = hull
+        .iter()
+        .zip(hull.iter().cycle().skip(1))
+        .map(|(a, b)| a.0 * b.1 - b.0 * a.1)
+        .sum::<f64>()
+        .abs()
+        / 2.0;
+      let (cx, cy) = (
+        hull.iter().map(|p| p.0).sum::<f64>() / hull.len() as f64,
+        hull.iter().map(|p| p.1).sum::<f64>() / hull.len() as f64,
+      );
+      let radius = hull
+        .iter()
+        .map(|p| (p.0 - cx).hypot(p.1 - cy))
+        .fold(0.0, f64::max);
+      let coverage = area / (std::f64::consts::PI * radius * radius);
+      assert!(coverage > 0.995, "cap outline covers only {coverage}");
     }
 
     /// Surface plots honor an explicit `ViewAngle` the same way
@@ -17897,6 +18183,56 @@ mod plot3d {
           Plot[x^2, {x, 0, 1}, Filling -> Axis]]"#,
       );
       assert!(svg.contains(">first</text"), "{svg}");
+    }
+
+    #[test]
+    fn plot_legends_placed_at_a_scaled_point_sit_inside_the_plot() {
+      // `Placed[labels, Scaled[{x, y}]]` puts the legend at the same point
+      // as `Placed[labels, {x, y}]`, inside the picture.
+      let bare = export_svg(
+        r#"Plot[{x, x^2}, {x, 0, 1},
+          PlotLegends -> Placed[{"first", "second"}, {0.8, 0.2}]]"#,
+      );
+      let scaled = export_svg(
+        r#"Plot[{x, x^2}, {x, 0, 1},
+          PlotLegends -> Placed[{"first", "second"}, Scaled[{0.8, 0.2}]]]"#,
+      );
+      assert!(scaled.contains(">first</text"), "{scaled}");
+      assert_eq!(scaled, bare);
+    }
+
+    #[test]
+    fn show_of_a_plot_and_graphics_keeps_the_plot_legends() {
+      // `Show[plot, Graphics[…]]` draws the curves as primitives together
+      // with the other graphics, and keeps the plot's legend on the result.
+      let svg = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1}, PlotLegends -> {"first", "second"}],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
+      assert!(svg.contains(">second</text"), "{svg}");
+    }
+
+    #[test]
+    fn show_of_a_plot_and_graphics_keeps_a_placed_legend_inside() {
+      // A legend `Placed` at a scaled point sits inside the picture: the
+      // width of the picture stays that of the plain `Show`.
+      let plain = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1}],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      let svg = export_svg(
+        r#"Show[Plot[{x, x^2}, {x, 0, 1},
+            PlotLegends -> Placed[{"first", "second"}, Scaled[{0.8, 0.2}]]],
+          Graphics[{Line[{{0, 0.5}, {1, 0.5}}]}]]"#,
+      );
+      assert!(svg.contains(">first</text"), "{svg}");
+      assert!(svg.contains(">second</text"), "{svg}");
+      let width = |s: &str| {
+        let start = s.find("width=\"").unwrap() + 7;
+        s[start..start + s[start..].find('"').unwrap()].to_string()
+      };
+      assert_eq!(width(&svg), width(&plain));
     }
 
     #[test]
@@ -37630,7 +37966,7 @@ mod grid_frame_and_background {
   /// `Spacings -> h` still spaces every column equally.
   #[test]
   fn uniform_spacings_keeps_columns_evenly_spaced() {
-    let svg = export_svg(r#"Grid[{{"a", "b", "c"}}, Spacings -> 2]"#);
+    let svg = export_svg(r#"Grid[{{"a", "a", "a"}}, Spacings -> 2]"#);
     let xs = text_xs(&svg);
     assert_eq!(xs.len(), 3, "{svg}");
     assert!(
@@ -45855,6 +46191,28 @@ mod manipulate {
     assert_eq!(on.matches("\"enabled\":true").count(), 4, "{on}");
   }
 
+  /// A display whose value is a list of numbers (a coordinate readout) is
+  /// one inline value, while a list of display elements still stacks.
+  #[test]
+  fn numeric_list_display_is_one_inline_value() {
+    use woxi::functions::graphics::{DisplayNode, build_manipulate_display};
+    let bindings = vec![("x".to_string(), "3/2".to_string())];
+    match build_manipulate_display("Dynamic[N@{x, -1, {2, 1/4}}]", &bindings) {
+      DisplayNode::Static { svg: None, text } => {
+        assert_eq!(text, "{1.5, -1., {2., 0.25}}");
+      }
+      other => panic!("expected an inline value, got {other:?}"),
+    }
+    match build_manipulate_display("Dynamic[{x, 2/3}]", &bindings) {
+      DisplayNode::Static { svg: None, text } => assert_eq!(text, "{3/2, 2/3}"),
+      other => panic!("expected an inline value, got {other:?}"),
+    }
+    assert!(matches!(
+      build_manipulate_display("{\"a\", \"b\"}", &[]),
+      DisplayNode::Column(_)
+    ));
+  }
+
   /// An in-body `SetterBar[Dynamic[v], …, Enabled -> False]` draws every
   /// button disabled, and one without the option stays enabled.
   #[test]
@@ -46141,9 +46499,10 @@ mod manipulate {
       interpret("v = 2").unwrap();
       interpret(&found[1]).unwrap();
       assert_eq!(interpret("v").unwrap(), "{}", "{control_type}");
+      // Ticking another choice keeps the scalar's choice selected.
       interpret("v = 2").unwrap();
       interpret(&found[0]).unwrap();
-      assert_eq!(interpret("v").unwrap(), "{1}", "{control_type}");
+      assert_eq!(interpret("v").unwrap(), "{2, 1}", "{control_type}");
     }
   }
 
@@ -54589,6 +54948,59 @@ mod revolution_plot3d_part_extraction {
     assert!(fills.iter().any(|&(r, g, b)| b > 2 * r && b > 2 * g));
   }
 
+  /// A curve given by its coordinates (`{r, z}` or `{x, y, z}`) keeps its
+  /// true proportions (`BoxRatios -> Automatic`), while a plain profile
+  /// `z = f(t)` keeps the flattened box. Regression: every curve was
+  /// squashed into a box of height ratio 0.4, so a tall goblet rendered as
+  /// a flat dish.
+  #[test]
+  fn revolution_plot3d_curves_keep_true_proportions() {
+    clear_state();
+    assert_eq!(
+      interpret("Options[RevolutionPlot3D[{1, t}, {t, 0, 10}], BoxRatios]")
+        .unwrap(),
+      "{BoxRatios -> Automatic}"
+    );
+    assert_eq!(
+      interpret(
+        "Options[RevolutionPlot3D[{t Sin[t] + 3, t Cos[t], -2 t}, \
+         {t, 0, 5}], BoxRatios]"
+      )
+      .unwrap(),
+      "{BoxRatios -> Automatic}"
+    );
+    assert_eq!(
+      interpret("Options[RevolutionPlot3D[t^2, {t, 0, 2}], BoxRatios]")
+        .unwrap(),
+      "{BoxRatios -> {1, 1, 0.30901699437494745}}"
+    );
+  }
+
+  /// A tall revolved curve renders taller than wide, a flat one wider than
+  /// tall.
+  #[test]
+  fn revolution_plot3d_curve_image_follows_its_proportions() {
+    clear_state();
+    let size = |code: &str| -> (f64, f64) {
+      let svg = interpret(code).unwrap();
+      let attr = |name: &str| -> f64 {
+        svg
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap()
+      };
+      (attr("width"), attr("height"))
+    };
+    let (w, h) =
+      size("ExportString[RevolutionPlot3D[{1, t}, {t, 0, 10}], \"SVG\"]");
+    assert!(h > 1.5 * w, "tall cylinder rendered {w}x{h}");
+    let (w, h) =
+      size("ExportString[RevolutionPlot3D[{10, t}, {t, 0, 1}], \"SVG\"]");
+    assert!(w > 1.5 * h, "flat disk rendered {w}x{h}");
+  }
+
   /// A full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` `PlotRange` clips
   /// the height just like `{zmin, zmax}`.
   #[test]
@@ -57692,7 +58104,9 @@ fn grid_column_width_follows_displayed_text() {
   let long = first_divider("Grid[{{0.1 + 0.2, 1}}, Frame -> All]");
   let short = first_divider("Grid[{{0.3, 1}}, Frame -> All]");
   assert_eq!(long, short);
-  // A derivative is measured as the function plus its prime marks.
+  // A derivative is measured as the function plus its prime marks: one
+  // character wider than the bare function, not its `Derivative[1][y]`
+  // source.
   let deriv = first_divider("Grid[{{Derivative[1][y], 1}}, Frame -> All]");
   let plain = first_divider("Grid[{{\"y'\", 1}}, Frame -> All]");
   assert!((deriv - plain).abs() < 1.0, "{deriv} vs {plain}");
@@ -57708,6 +58122,50 @@ fn grid_column_width_follows_displayed_text() {
     first_divider("Grid[{{StringForm[\"`` of ``\", 2, x], 1}}, Frame -> All]");
   let text = first_divider("Grid[{{\"2 of x\", 1}}, Frame -> All]");
   assert!((slots - text).abs() < 1.0, "{slots} vs {text}");
+}
+
+/// The plain-text cells of a `Text@Grid` are drawn in a proportional face,
+/// so their columns are as wide as the words they hold, not a fixed
+/// monospace advance per character. Regression: a bold 20 pt header row of
+/// `"fraction"`, `"decimal"`, `"percent"` came out about 30% wider than the
+/// front end sets it, pushing a table past the `Pane` it was sized for.
+#[test]
+fn grid_text_columns_follow_proportional_text_width() {
+  fn dividers(code: &str) -> Vec<f64> {
+    let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+    let mut xs: Vec<f64> = svg
+      .split("<line x1=\"")
+      .skip(1)
+      .filter_map(|l| {
+        let x1: f64 = l.split('"').next()?.parse().ok()?;
+        let x2: f64 =
+          l.split("x2=\"").nth(1)?.split('"').next()?.parse().ok()?;
+        (x1 == x2).then_some(x1)
+      })
+      .collect();
+    xs.sort_by(f64::total_cmp);
+    xs.dedup();
+    xs
+  }
+  // Narrow letters make a narrower column than wide ones of equal count.
+  let narrow = dividers(r#"Text[Grid[{{"iiiiiiii"}}, Frame -> All]]"#);
+  let wide = dividers(r#"Text[Grid[{{"MMMMMMMM"}}, Frame -> All]]"#);
+  assert!(narrow[1] + 30.0 < wide[1], "{narrow:?} vs {wide:?}");
+  // Bold text is set wider than regular text.
+  let regular = dividers(r#"Text[Grid[{{"fraction"}}, Frame -> All]]"#);
+  let bold =
+    dividers(r#"Text[Style[Grid[{{"fraction"}}, Frame -> All], Bold]]"#);
+  assert!(bold[1] > regular[1], "{bold:?} vs {regular:?}");
+  // Each bold 20 pt header column is about as wide as the front end's
+  // (about 85 pt), not ~110 pt.
+  let header = dividers(
+    r#"Text[Style[Grid[{{"fraction", "decimal", "percent"}}, Frame -> All], 20, Bold]]"#,
+  );
+  assert_eq!(header.len(), 4, "{header:?}");
+  for pair in header.windows(2) {
+    let w = pair[1] - pair[0];
+    assert!((75.0..100.0).contains(&w), "column width {w}: {header:?}");
+  }
 }
 
 mod traditional_form_typesetting {
@@ -66114,6 +66572,23 @@ fn contour_plot_equation_line_lies_on_the_curve() {
   );
 }
 
+/// Two branches of an equation's curve that are closer together than a
+/// sampling cell (here tangent at the origin, `x^2` apart) are still traced
+/// apart near where they meet: the curve is sampled finer where it runs.
+#[test]
+fn contour_plot_equation_resolves_branches_closer_than_a_cell() {
+  assert_eq!(
+    interpret(
+      "pts = Flatten[Cases[Normal[ContourPlot[(y - x^2) (y - 2 x^2) == 0, \
+       {x, -1, 1}, {y, -1, 1}]], Line[p_] :> p, Infinity], 1]; \
+       Length[Select[pts, Abs[#[[2]] - 2 #[[1]]^2] < 10^-3 && \
+       0 < Abs[#[[1]]] < 0.08 &]] > 0"
+    )
+    .unwrap(),
+    "True"
+  );
+}
+
 mod frame_style_font_size {
   use super::*;
 
@@ -66241,6 +66716,34 @@ mod plot_tooltip_list_and_image_size_variable {
     }
     let svg = export_svg("w = 300; Plot[Sin[x], {x, 0, 4}, ImageSize -> w]");
     assert!(svg.starts_with("<svg width=\"300\""), "{}", &svg[..80]);
+  }
+
+  /// Regression: the entries of `ImageSize -> {s, s}` stayed unevaluated
+  /// symbols, so the held plot functions fell back to the default size.
+  #[test]
+  fn image_size_list_of_variables() {
+    for expr in [
+      "Plot[Sin[x], {x, 0, 4}, ImageSize -> {w, h}]",
+      "LogPlot[Exp[x], {x, 0, 4}, ImageSize -> {w, h}]",
+      "LogLogPlot[x^2, {x, 1, 4}, ImageSize -> {w, h}]",
+      "DiscretePlot[n, {n, 1, 5}, ImageSize -> {w, h}]",
+      "Plot3D[x y, {x, 0, 1}, {y, 0, 1}, ImageSize -> {w, h}]",
+    ] {
+      let svg = export_svg(&format!("w = 240; h = 210; {expr}"));
+      assert!(
+        svg.starts_with("<svg width=\"240\" height=\"210\""),
+        "expected a 240x210 picture for {expr}, got: {}",
+        &svg[..svg.len().min(80)]
+      );
+    }
+    // Inside a Grid the plot keeps that size instead of overflowing its cell.
+    let svg =
+      export_svg("s = 230; Grid[{{Plot[x, {x, 0, 1}, ImageSize -> {s, s}]}}]");
+    assert!(
+      svg.starts_with("<svg width=\"230\" height=\"230\""),
+      "{}",
+      &svg[..80]
+    );
   }
 }
 
@@ -67306,6 +67809,40 @@ fn unboxed_unranged_3d_scene_at_fixed_size_fits_its_outline() {
       scene(&format!("{extra}, SphericalRegion -> True")),
       "{extra}"
     );
+  }
+}
+
+/// Regression: a `Manipulate` frame's unboxed `Graphics3D` with neither a
+/// `ViewPoint` nor a `PlotRange` fills its fixed-size picture by the box
+/// outline, as Wolfram's snapshot of a Demonstration's stepped stack of
+/// cuboids shows (262 px wide at `ImageSize -> {400, 300}`; Woxi's outline
+/// fit gives 250 px, its sphere framing 184 px). A set camera or range
+/// still switches the frame to the sphere framing.
+#[test]
+fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
+  let scene = |opts: &str| {
+    format!(
+      "Graphics3D[Table[Translate[Cuboid[{{-1/2, -1/2, 0}}, \
+       {{1/2, 1/2, 1/2}}], {{x, y, 0}}], {{x, -2, 2}}, {{y, -1, 1}}], \
+       Boxed -> False, ImageSize -> {{400, 300}}{opts}]"
+    )
+  };
+  let outline = export_svg(&scene(", SphericalRegion -> False"));
+  let sphere = export_svg(&scene(", SphericalRegion -> True"));
+  assert_ne!(outline, sphere);
+  assert_eq!(
+    woxi::with_manipulate_frame(|| export_svg(&scene(""))),
+    outline
+  );
+  assert_eq!(export_svg(&scene("")), outline);
+  for pin in [
+    ", ViewPoint -> {1.3, -2.4, 2}",
+    ", PlotRange -> {{-3, 3}, {-2, 2}, {0, 1}}",
+  ] {
+    let framed = woxi::with_manipulate_frame(|| export_svg(&scene(pin)));
+    let spherical =
+      export_svg(&scene(&format!("{pin}, SphericalRegion -> True")));
+    assert_eq!(framed, spherical, "{pin}");
   }
 }
 

@@ -18521,6 +18521,58 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
     );
   }
 
+  /// A `TogglerBar` control whose variable starts as a scalar choice
+  /// (`{{layer, 1, "show"}, {1 -> "a", 2 -> "b"}, ControlType ->
+  /// TogglerBar}`): the scalar reads as a one-element selection, so
+  /// toggling the other choice on keeps it (`{1, 2}`, as in the Wolfram
+  /// front end) instead of replacing it with `{2}`, and toggling the
+  /// scalar's own choice clears the selection.
+  #[test]
+  fn togglerbar_scalar_initial_value_keeps_its_choice_when_extended() {
+    let code = "Manipulate[\
+      {Graphics[Disk[]], Graphics[Circle[]]}[[layer]], \
+      Control[{{layer, 1, \"show\"}, {1 -> \"a\", 2 -> \"b\"}, \
+        ControlType -> TogglerBar}]]";
+    let build = || {
+      instantiate_stored_manipulate(code, "")
+        .expect("scalar-valued TogglerBar Manipulate must build a widget")
+    };
+
+    let mut state = build();
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(
+      togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+      vec![true, false],
+      "the scalar 1 must draw its own choice selected"
+    );
+    let value = |state: &manipulate::ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "layer")
+        .map(|(_, v)| v.clone())
+    };
+
+    // Toggling "b" on keeps "a": both pictures are drawn.
+    state.apply_display_mutation(&togglers[1].0);
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(value(&state).as_deref(), Some("{1, 2}"));
+    assert_eq!(
+      collect_togglers(&state.display_trees)
+        .iter()
+        .map(|(_, s)| *s)
+        .collect::<Vec<_>>(),
+      vec![true, true]
+    );
+
+    // Toggling the scalar's own choice "a" unselects it.
+    let mut state = build();
+    let togglers = collect_togglers(&state.display_trees);
+    state.apply_display_mutation(&togglers[0].0);
+    assert_eq!(value(&state).as_deref(), Some("{}"));
+  }
+
   #[test]
   fn control_spec_custom_builder_togglerbar_with_setter() {
     // A control-spec row's second element may be a user-defined "custom
