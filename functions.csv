@@ -172,6 +172,7 @@ FontSize,"Option specifying the default font size in printer's points",✅,none,
 Frame,"Option specifying whether a frame is drawn around a plot",✅,none,2.0,97
 With,"Substitutes local constants into an expression",✅,pure,2.0,99
 PlotLegends,"Option for adding legends to plots identifying each series",✅,pure,9.0,100
+PlotLegends`ShowLegend,"Legacy package function: places boxed {icon, label} or color-gradient legends over or beside a graphic (bare ShowLegend after loading the package)",✅,pure,1.0,
 BlankNullSequence,"Pattern object matching zero or more expressions (___)",✅,pure,1.0,101
 Reals,"The domain of real numbers used with Element and related functions",✅,none,4.0,102
 FontFamily,"Option specifying the font family for text rendering",✅,none,3.0,103
@@ -223,7 +224,7 @@ Total,"Sums the elements of a list down to a level spec — AllowedHeads -> All 
 ColorFunction,"Option specifying the color function for visualization",✅,none,2.0,152
 ContourPlot,"Creates a contour plot of a function",✅,pure,1.0,155
 RandomInteger,"Generate random integers — RandomInteger[n] draws from 0 through n so a negative n draws downwards",✅,contextual,6.0,156
-NDSolve,"Solves ordinary differential equations numerically (including vector-valued unknowns solved component-wise and delay equations with constant history and coupled systems compound unknowns and EventLocator events) and 1-D PDEs (unknowns given bare or applied to the domain variables) via the method of lines (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries; and complex-valued first-order-in-time 1-D PDEs with periodic boundaries (e.g. nonlinear Schroedinger) via a Fourier pseudospectral discretization; and implicit curves given by algebraic equations plus a unit-speed condition on the derivatives traced by arclength continuation",✅,contextual,2.0,157
+NDSolve,"Solves ordinary differential equations numerically (including vector-valued unknowns solved component-wise and delay equations with constant history and coupled systems compound unknowns and EventLocator events) and 1-D PDEs (unknowns given bare or applied to the domain variables) via the method of lines (piecewise diffusion coefficients in flux form keeping the flux continuous across a jump and removable singularities such as the axis of a radial Laplacian taken in the limit) (systems may mix parabolic groups with groups that only differentiate in the evolution variable): parabolic (single or coupled reaction-diffusion-convection systems) and hyperbolic (single second-order-in-time wave-type equations even with an implicit mixed space/time derivative on the right) with Dirichlet Neumann or (hyperbolic-only) periodic boundaries; and complex-valued first-order-in-time 1-D PDEs with periodic boundaries (e.g. nonlinear Schroedinger) via a Fourier pseudospectral discretization; and implicit curves given by algebraic equations plus a unit-speed condition on the derivatives traced by arclength continuation",✅,contextual,2.0,157
 Integers,"Domain symbol representing the set of integers",✅,pure,4.0,158
 Large,"Named size symbol used as option value for ImageSize and Style",✅,pure,6.0,159
 Limit,"Computes the limit of an expression",✅,pure,1.0,160
@@ -680,7 +681,7 @@ DownValues,"Returns the downvalues of a symbol",✅,pure,2.0,627
 Sound,"Represents a sound object",✅,none,2.0,629
 Binarize,"Converts an image to black and white using a threshold (number; range; function or Method option)",✅,pure,7.0,630
 ImageScaled,"Coordinates scaled to image dimensions",✅,none,6.0,631
-DirichletCondition,"Dirichlet boundary condition for PDEs",✅,none,10.0,632
+DirichletCondition,"Dirichlet boundary condition for PDEs; NDSolve also accepts it added into the equation (next to NeumannValue terms) and reads one on the start of the evolution variable as the initial condition",✅,none,10.0,632
 ChartStyle,"Style specification for chart elements",✅,pure,7.0,634
 SelectionMove,"Move the selection in a notebook",✅,none,3.0,636
 RotateLeft,"Rotates list elements to the left",✅,pure,1.0,637
@@ -1612,7 +1613,7 @@ Tolerance,"Tolerance specification",,unevaluated,2.0,1583
 NetInitialize,"Initialize a neural net",,unevaluated,11.0,1584
 BoundaryMeshRegion,"Region given by the mesh of its boundary; measured and read like any other region",✅,pure,10.0,1586
 Cumulant,"Computes the r-th cumulant of a list or distribution",✅,pure,8.0,1586
-BooleanConvert,"Convert Boolean expressions to the DNF/SOP CNF/POS AND OR NAND NOR ANF or IF form; a normal form carries no clause the others already say and an expression with one value collapses to it",✅,pure,7.0,1588
+BooleanConvert,"Convert Boolean expressions to the DNF/SOP CNF/POS AND OR NAND NOR IMPLIES ANF IF/BDT or BFF form; a normal form carries no clause the others already say and an expression with one value collapses to it",✅,pure,7.0,1588
 GeometricBrownianMotionProcess,"Geometric Brownian motion process with LogNormal time slices",✅,unevaluated,9.0,1588
 DiscreteUniformDistribution,"Discrete uniform distribution over integers",✅,computation,6.0,1593
 MeshCellStyle,"Style mesh cells",,unevaluated,10.0,1593
@@ -2469,7 +2470,7 @@ Sharpen,"Sharpens an image using unsharp mask",✅,pure,7.0,2462
 SystemsModelSeriesConnect,"",🚫,,8.0,2462
 VerticalGauge,"Display one or more values on a vertical scale as a Graphics gauge",✅,pure,9.0,2462
 Algebraics,"",🚫,,4.0,2468
-Beep,"",🚫,,6.0,2468
+Beep,"Sounds the alert tone (captured as playable audio for visual hosts; returns Null)",✅,io,6.0,2468
 GaussianIntegers,"",🚫,,2.0,2468
 HalfPlane,"Half-plane geometric region; symbolic region consumed by region functions and rendered in Graphics; drawn in Graphics3D clipped to the plot range",✅,unevaluated,10.0,2468
 MantissaExponent,"Decompose a number into mantissa and exponent",✅,pure,2.0,2468
@@ -6464,3 +6465,9 @@ Combinatorica`ConnectedQ,"Whether a Combinatorica graph is (weakly or strongly) 
 Combinatorica`Vertices,"The vertex coordinates of a Combinatorica graph (with All the vertices with their options)",✅,pure,6.0,
 TetGenLink`TetGenConvexHull,"Convex hull of a 3D point set as the points and the inward-wound boundary triangles (after Get[TetGenLink`])",✅,pure,8.0,
 GraphicsArray,"Arranges graphics in a row or grid (superseded by GraphicsGrid)",✅,pure,1.0,
+NDSolve`ProcessEquations,"Sets up a differential-equation problem as an NDSolve`StateData object without solving it",✅,stateful,5.0,
+NDSolve`Reinitialize,"Gives a new NDSolve`StateData for the same equations started from other initial conditions",✅,stateful,5.0,
+NDSolve`Iterate,"Integrates an NDSolve`StateData in place up to a given time (forward or backward)",✅,stateful,5.0,
+NDSolve`ProcessSolutions,"Gives the solution rules computed so far for an NDSolve`StateData",✅,contextual,5.0,
+NDSolve`StateData,"Represents the state of a step-wise NDSolve problem set up by NDSolve`ProcessEquations",✅,none,5.0,
+ChartElementData,"Lists the built-in ChartElementFunction names of a chart function",✅,pure,7.0,
