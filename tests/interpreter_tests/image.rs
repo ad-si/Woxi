@@ -9932,6 +9932,27 @@ mod rasterize_any_expression {
     );
   }
 
+  // A styled graphic is still a graphic: `RasterSize -> {w, h}` fits the
+  // whole drawing into the raster instead of cropping it like typeset text.
+  #[test]
+  fn raster_size_fits_a_styled_graphic() {
+    assert_eq!(
+      interpret(
+        "r = Rasterize[Style[Graphics[{Red, Disk[]}], Antialiasing -> True], \
+         RasterSize -> {50, 50}]; \
+         {ImageDimensions[r], ImageData[r][[1, 1]], ImageData[r][[25, 25]], \
+         ImageDimensions[ImageCrop[r]]}"
+      )
+      .unwrap(),
+      interpret(
+        "r = Rasterize[Graphics[{Red, Disk[]}], RasterSize -> {50, 50}]; \
+         {ImageDimensions[r], ImageData[r][[1, 1]], ImageData[r][[25, 25]], \
+         ImageDimensions[ImageCrop[r]]}"
+      )
+      .unwrap()
+    );
+  }
+
   // Wolfram's Rasterize gives an RGB image (the drawing is composited on
   // white); Woxi's used to carry a redundant alpha channel.
   #[test]

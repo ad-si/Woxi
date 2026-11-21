@@ -13988,6 +13988,21 @@ fn graphics_svg(expr: &Expr) -> Option<String> {
   }
 }
 
+/// `Style[g, …]` (possibly nested) around a `Graphics`/`Graphics3D` `g`.
+fn is_styled_graphics(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      matches!(&args[0], Expr::Graphics { .. })
+        || matches!(&args[0], Expr::FunctionCall { name, .. }
+          if name == "Graphics" || name == "Graphics3D")
+        || is_styled_graphics(&args[0])
+    }
+    _ => false,
+  }
+}
+
 /// Coerce a `Graphics`/`Graphics3D` expression into an `Image` by
 /// rasterizing it, matching wolframscript's image-processing functions
 /// (`ImageResize`, `ImageData`, `ImageAdjust`, ...), which transparently
@@ -14150,7 +14165,10 @@ pub fn rasterize_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Get SVG string from the expression
   let graphics = graphics_svg(&args[0]);
-  let is_graphics = graphics.is_some();
+  // A styled graphic (`Style[Graphics[…], Antialiasing -> True]`) is still a
+  // graphic: it fills an explicit raster like the bare graphic does, rather
+  // than being laid out at its natural size like typeset content.
+  let is_graphics = graphics.is_some() || is_styled_graphics(&args[0]);
   let svg_str = if let Some(svg) = graphics {
     svg
   } else {
