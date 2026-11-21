@@ -53,6 +53,10 @@ pub(crate) struct CurveLabelSpec {
   pub side: Option<LabelSide>,
   /// A callout: hung off a leader line instead of sitting at the curve.
   pub callout: bool,
+  /// The x range of the plot the label was laid out in, when it differs
+  /// from the one drawn: a `Show`n plot's label placed `Before` / `After`
+  /// its data sits beside that plot's own range, not the combined one.
+  pub x_extent: Option<(f64, f64)>,
 }
 
 /// Parse a label position (the third argument of `Labeled` / `Callout`, or
@@ -235,7 +239,8 @@ pub(crate) fn layout_curve_labels(
     // Gaps WL leaves: 3% of the y span between the curve and a label above
     // or below it, the x padding (1/48 of the span) before / after it.
     let y_gap = 0.027 * (y_range.1 - y_range.0);
-    let x_gap = (x_range.1 - x_range.0) / 50.0;
+    let own_x = spec.x_extent.unwrap_or(x_range);
+    let x_gap = (own_x.1 - own_x.0) / 50.0;
     let above = (-w / 2.0, 0.0, w / 2.0, h);
     let below = (-w / 2.0, -h, w / 2.0, 0.0);
     let placed = if spec.callout {
@@ -245,13 +250,12 @@ pub(crate) fn layout_curve_labels(
         Some(LabelSide::Above) => ((p.0, p.1 + y_gap), above),
         Some(LabelSide::Below) => ((p.0, p.1 - y_gap), below),
         Some(LabelSide::Left) => (
-          (x_range.0.min(p.0 - x_gap), p.1),
+          (own_x.0.min(p.0 - x_gap), p.1),
           (-w, -h / 2.0, 0.0, h / 2.0),
         ),
-        Some(LabelSide::Right) => (
-          (x_range.1.max(p.0 + x_gap), p.1),
-          (0.0, -h / 2.0, w, h / 2.0),
-        ),
+        Some(LabelSide::Right) => {
+          ((own_x.1.max(p.0 + x_gap), p.1), (0.0, -h / 2.0, w, h / 2.0))
+        }
         None => {
           // Over a flat stretch the label sits above the point (below
           // when above leaves the range); on a slope it moves a step

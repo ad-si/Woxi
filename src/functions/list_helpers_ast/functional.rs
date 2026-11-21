@@ -1180,6 +1180,14 @@ pub(crate) fn expr_children(expr: &Expr) -> Option<Vec<Expr>> {
   if super::sparse_array_background(expr).is_some() {
     return sparse_array_parts(expr);
   }
+  // A rendered graphic's parts are those of its symbolic form
+  // (`Graphics3D[prims, opts…]`, as Part reads it): `List @@ g` lists them.
+  if matches!(expr, Expr::Graphics { .. })
+    && let Some(symbolic) =
+      crate::evaluator::part_extraction::graphics_symbolic_form(expr)
+  {
+    return expr_children(&symbolic);
+  }
   match expr {
     Expr::List(items) => Some(items.to_vec()),
     Expr::FunctionCall { args, .. } => Some(args.to_vec()),

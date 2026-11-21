@@ -504,14 +504,35 @@ pub fn sound_to_samples(sound_expr: &Expr) -> Option<(Vec<f64>, u32)> {
   if segments.is_empty() {
     return None;
   }
-  // Use the first segment's sample rate for the whole sound (the common case
-  // is a single segment; mixed-rate Sound objects are rare).
+  // Play the whole sound at the first segment's sample rate, resampling any
+  // segment recorded at another rate so it keeps its duration and pitch.
   let rate = segments[0].1;
   let mut samples = Vec::new();
-  for (seg, _) in &segments {
-    samples.extend_from_slice(seg);
+  for (seg, seg_rate) in &segments {
+    samples.extend_from_slice(&resample_linear(seg, *seg_rate, rate));
   }
   (!samples.is_empty()).then_some((samples, rate))
+}
+
+/// Resample `samples` recorded at `from` Hz to `to` Hz by linear
+/// interpolation, keeping their duration.
+pub(crate) fn resample_linear(samples: &[f64], from: u32, to: u32) -> Vec<f64> {
+  if from == to || from == 0 || to == 0 || samples.is_empty() {
+    return samples.to_vec();
+  }
+  let len =
+    ((samples.len() as f64) * f64::from(to) / f64::from(from)).round() as usize;
+  let step = f64::from(from) / f64::from(to);
+  (0..len)
+    .map(|i| {
+      let pos = i as f64 * step;
+      let idx = pos.floor() as usize;
+      let frac = pos - idx as f64;
+      let a = samples[idx.min(samples.len() - 1)];
+      let b = samples[(idx + 1).min(samples.len() - 1)];
+      a + (b - a) * frac
+    })
+    .collect()
 }
 
 /// Width of the sound box drawn for a `Sound` object inside a layout (px).
@@ -526,6 +547,9 @@ const SOUND_BOX_COLUMNS: usize = 60;
 /// synthesized samples. Layout functions (`Grid`, `Column`, `Row`) draw a
 /// sound cell with this instead of printing the `Play[…]` source, which is
 /// what a notebook front end shows in that position.
+///
+/// The play button carries a [`crate::functions::graphics::BUTTON_HIT_ID_PREFIX`]
+/// hit region whose action is `EmitSound[sound]`, so a live widget plays it.
 ///
 /// Returns `None` for expressions that hold no samplable sound.
 pub fn sound_svg(expr: &Expr) -> Option<String> {
@@ -566,6 +590,14 @@ pub fn sound_svg(expr: &Expr) -> Option<String> {
     button_cx + 6.0,
     mid_y,
     theme.text_secondary,
+  ));
+  // In a live widget (Woxi Studio) pressing the play button plays the sound.
+  svg.push_str(&crate::functions::graphics::button_hit_rect(
+    &format!("EmitSound[{}]", crate::syntax::expr_to_source_form(expr)),
+    button_cx - 12.0,
+    mid_y - 12.0,
+    24.0,
+    24.0,
   ));
   // Zero line, then one min/max bar per column of the waveform.
   svg.push_str(&format!(
@@ -645,6 +677,24 @@ fn quantize_i16(v: f64) -> i16 {
 pub(crate) fn samples_to_mono_wav(samples: &[f64], rate: u32) -> Vec<u8> {
   let pcm: Vec<i16> = samples.iter().map(|s| quantize_i16(*s)).collect();
   encode_wav(&pcm, 1, rate)
+}
+
+/// The alert tone `Beep[]` sounds: a short 880 Hz sine burst (with a brief
+/// fade in and out so it does not click), as a base64-encoded WAV.
+pub fn beep_wav_base64() -> String {
+  const RATE: u32 = 8000;
+  const SECONDS: f64 = 0.15;
+  const FADE: f64 = 0.01;
+  let n = (f64::from(RATE) * SECONDS) as usize;
+  let samples: Vec<f64> = (0..n)
+    .map(|i| {
+      let t = i as f64 / f64::from(RATE);
+      let envelope = (t / FADE).min((SECONDS - t) / FADE).clamp(0.0, 1.0);
+      0.5 * envelope * (2.0 * std::f64::consts::PI * 880.0 * t).sin()
+    })
+    .collect();
+  let wav = samples_to_mono_wav(&samples, RATE);
+  base64::engine::general_purpose::STANDARD.encode(&wav)
 }
 
 /// Render a `Sound` expression (containing one or more `Play` segments) into a
