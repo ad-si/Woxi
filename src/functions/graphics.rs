@@ -13488,8 +13488,11 @@ fn graphics_decorations(
     if let Some((b, l, t, r)) = frame_label {
       let text = |s: &String| {
         (!s.is_empty()).then(|| {
-          axes_label_picture_size(s)
-            .map_or(block_height(1, frame_label_font), |(_, h)| h)
+          // A `"a\nb"` label stands one line taller per break.
+          axes_label_picture_size(s).map_or(
+            block_height(text_label_lines(s).len(), frame_label_font),
+            |(_, h)| h,
+          )
         })
       };
       d.frame_labels = [text(b), text(l), text(t), text(r)];
@@ -13504,8 +13507,14 @@ fn graphics_decorations(
             // The label is SVG markup already (typeset when the option
             // was read), so it is measured as drawn rather than parsed
             // as box notation again, which read the quotes of its
-            // attributes as string literals and counted the tags.
-            crate::functions::plot_padding::text_width(s, size)
+            // attributes as string literals and counted the tags. A
+            // multi-line label is as long as its longest line.
+            text_label_lines(s)
+              .iter()
+              .map(|line| {
+                crate::functions::plot_padding::text_width(line, size)
+              })
+              .fold(0.0, f64::max)
           },
           |(w, _)| w,
         )
@@ -18247,36 +18256,44 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
 
   // Frame captions: the bottom/top ones centered outside their edge, the
   // left/right ones rotated along theirs, 6 pt beyond the edge's tick
-  // labels.
+  // labels. A multi-line caption (`"a\nb"`) stacks its lines outward from
+  // the edge, its first line nearest to it except on the left edge, where
+  // the quarter turn puts the first line outermost.
   if let Some((bottom, left, top, right)) = &frame_label {
     let flf = frame_label_font;
     let fl_attrs = label_font.attrs();
+    let pitch = line_pitch(flf);
     let room =
       |edge: usize| decorations.frame_tick_room(edge, 0.0) + FRAME_LABEL_GAP;
     if !bottom.is_empty() {
+      let x = svg_w / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{bottom}</text>\n",
-        svg_w / 2.0,
+        "<text x=\"{x:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
         svg_h + room(0) + ascent(flf),
         frame_label_fills[0],
+        crate::functions::plot::join_label_lines(&text_label_lines(bottom), x, pitch),
       ));
     }
     if !left.is_empty() {
       // Rotated counterclockwise the glyphs rise to the left of the
       // baseline.
-      let lx = -(room(1) + line_height(flf)) + ascent(flf);
+      let lines = text_label_lines(left);
+      let lx = -(room(1) + block_height(lines.len(), flf)) + ascent(flf);
       let ly = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{left}</text>\n",
+        "<text x=\"{lx:.1}\" y=\"{ly:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{lx:.1},{ly:.1})\">{}</text>\n",
         frame_label_fills[1],
+        crate::functions::plot::join_label_lines(&lines, lx, pitch),
       ));
     }
     if !top.is_empty() {
+      let lines = text_label_lines(top);
+      let x = svg_w / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{top}</text>\n",
-        svg_w / 2.0,
-        -room(2) - descent(flf),
+        "<text x=\"{x:.1}\" y=\"{:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\">{}</text>\n",
+        -room(2) - descent(flf) - (lines.len() - 1) as f64 * pitch,
         frame_label_fills[2],
+        crate::functions::plot::join_label_lines(&lines, x, pitch),
       ));
     }
     if !right.is_empty() {
@@ -18284,8 +18301,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       let rx = svg_w + room(3) + ascent(flf);
       let ry = svg_h / 2.0;
       svg.push_str(&format!(
-        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{rx:.1},{ry:.1})\">{right}</text>\n",
+        "<text x=\"{rx:.1}\" y=\"{ry:.1}\" fill=\"{}\" font-size=\"{flf}\"{fl_attrs} font-family=\"sans-serif\" text-anchor=\"middle\" transform=\"rotate(-90,{rx:.1},{ry:.1})\">{}</text>\n",
         frame_label_fills[3],
+        crate::functions::plot::join_label_lines(&text_label_lines(right), rx, pitch),
       ));
     }
   }
@@ -24328,9 +24346,14 @@ pub fn traditional_label(e: &Expr) -> String {
     // `Rotate[content, angle]` (a vertical axis label idiom) typesets its
     // content unrotated, as `expr_to_svg_markup` does, rather than the
     // `Rotate(…)` call `TraditionalForm` would print. A `Text[content]`
-    // wrapper is its content too, keeping a `Text[Style[…]]`'s styling.
+    // wrapper is its content too, keeping a `Text[Style[…]]`'s styling, and
+    // so are the hover wrappers `Tooltip[content, hint]` and
+    // `Annotation[content, …]`, whose extra arguments are never drawn.
     Expr::FunctionCall { name, args }
-      if (name == "Rotate" || name == "Text") && !args.is_empty() =>
+      if matches!(
+        name.as_str(),
+        "Rotate" | "Text" | "Tooltip" | "Annotation"
+      ) && !args.is_empty() =>
     {
       traditional_label(&args[0])
     }
@@ -25057,6 +25080,16 @@ fn has_explicit_style(e: &Expr) -> bool {
     {
       args.iter().any(has_explicit_style)
     }
+    // `Style["e", Italic]^Row[{…}]`: a power whose base or exponent is
+    // styled keeps that styling as written, its strings upright.
+    Expr::FunctionCall { name, args } if name == "Power" => {
+      args.iter().any(has_explicit_style)
+    }
+    Expr::BinaryOp {
+      op: crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } => has_explicit_style(left) || has_explicit_style(right),
     _ => false,
   }
 }
@@ -36959,9 +36992,12 @@ pub(crate) fn style_pushed_into_layout(
     }
     // `Pane`/`Item` only size or place their content, so the style goes
     // onto the content; `Style[Pane[…], …]` as an item would otherwise be
-    // typeset as the source text of the `Pane` call.
+    // typeset as the source text of the `Pane` call. A `Text[line]` item
+    // (one re-flowed line of prose) only picks the text face, so the style
+    // goes onto its line too and the line is measured at the styled size.
     if let Expr::FunctionCall { name, args } = e
-      && matches!(name.as_str(), "Pane" | "Item")
+      && (matches!(name.as_str(), "Pane" | "Item")
+        || (name == "Text" && args.len() == 1))
       && !args.is_empty()
     {
       let mut new_args: Vec<Expr> = args.iter().cloned().collect();
@@ -39618,16 +39654,20 @@ fn framed_box_to_svg(
   };
 
   // A text layout — `Framed[Pane[Style[Grid[…], 96], …]]`, a Demonstration's
-  // flash card — is typeset and framed rather than printed as source.
+  // flash card — is typeset and framed rather than printed as source. A
+  // captioned `Labeled[body, label, Top]` is laid out the same way, its
+  // caption stacked beside the body rather than spelled out as a call.
   let (inner_svg, inner_w, inner_h) = match inner_svg {
     None => {
       let unwrapped = unwrap_framed_layout(content);
+      let is_layout =
+        |name: &str| matches!(name, "Grid" | "Column" | "Row" | "Labeled");
       if matches!(&unwrapped, Expr::FunctionCall { name, args }
-        if matches!(name.as_str(), "Grid" | "Column" | "Row") && !args.is_empty())
+        if is_layout(name) && !args.is_empty())
         || matches!(&unwrapped, Expr::FunctionCall { name, args }
           if name == "Style" && args.len() >= 2
             && matches!(&args[0], Expr::FunctionCall { name, .. }
-              if matches!(name.as_str(), "Grid" | "Column" | "Row")))
+              if is_layout(name)))
       {
         let svg = crate::evaluator::expr_to_svg(&unwrapped);
         if svg.starts_with("<svg") {
