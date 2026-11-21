@@ -639,3 +639,55 @@ mod count_and_position_in_rendered_graphics {
     );
   }
 }
+
+/// Regression: a pattern spelled `Graphics3D[g_, opts___]` evaluated to a
+/// rendering, so it never matched a 3D graphic (`MatchQ` was False) and a
+/// rule built from it fired without binding its pattern variables.
+mod graphics3d_call_patterns {
+  use super::*;
+
+  #[test]
+  fn match_q() {
+    assert_eq!(
+      interpret(
+        "MatchQ[Graphics3D[Point[{0, 0, 0}], Boxed -> False], \
+         Graphics3D[p_, o___]]"
+      )
+      .unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("MatchQ[Graphics3D[Point[{0, 0, 0}]], Graphics3D[_Line]]")
+        .unwrap(),
+      "False"
+    );
+  }
+
+  #[test]
+  fn rules_bind_the_parts() {
+    assert_eq!(
+      interpret(
+        "g = Graphics3D[Point[{0, 0, 0}], Boxed -> False]; \
+         {Replace[g, Graphics3D[p_, o___] :> {p, o}], \
+         g /. Graphics3D[p_, o___] :> f[p], \
+         Cases[{g}, Graphics3D[p_, ___] :> p]}"
+      )
+      .unwrap(),
+      "{{Point[{0, 0, 0}], Boxed -> False}, f[Point[{0, 0, 0}]], \
+{Point[{0, 0, 0}]}}"
+    );
+  }
+
+  #[test]
+  fn rewritten_plot_keeps_its_surface() {
+    assert_eq!(
+      interpret(
+        "g = RevolutionPlot3D[r, {r, 0, 1}] /. \
+         Graphics3D[p_, o___] :> Graphics3D[{p, Scale[p, 1/2]}, o]; \
+         {Head[g], Head /@ g[[1]]}"
+      )
+      .unwrap(),
+      "{Graphics3D, {GraphicsComplex, Scale}}"
+    );
+  }
+}
