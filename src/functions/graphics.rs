@@ -12229,8 +12229,7 @@ fn emit_polygon_vertex_gradient(
     }
     let clip_id = format!("vcclip{}", out.len());
     out.push_str(&format!(
-      "<clipPath id=\"{clip_id}\"><path d=\"{}Z\" clip-rule=\"evenodd\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\">\n",
-      d
+      "<clipPath id=\"{clip_id}\"><path d=\"{d}Z\" clip-rule=\"evenodd\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\">\n"
     ));
     true
   } else {

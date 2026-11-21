@@ -1181,16 +1181,17 @@ fn render_item(
             && extra_lines > 0.0
             && is_left_aligned_column(body)
           {
-            let chars = styled
+            // Measured the same way as a `Framed` border around the block,
+            // so the lines start at that frame's inner left side.
+            let block_w = styled
               .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64;
-            let block_w = chars * font_size * 0.6;
+              .map_or(0.0, super::chart::StyledLabel::max_line_width_em)
+              * font_size;
             line_x = match text_anchor {
               "start" => px,
               "end" => px - block_w,
               _ => px - block_w / 2.0,
-            } + font_size * 0.35;
+            };
             text_anchor = "start";
           }
           let label = styled.as_ref().map_or_else(
