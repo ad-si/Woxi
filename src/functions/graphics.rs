@@ -44495,6 +44495,20 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // resolved against the live bindings after each frame.
   let mut refresh_interval = find_refresh_update_interval(&args[0])
     .map(|e| crate::syntax::expr_to_input_form(&e));
+  // A slider declared in several `PaneSelector` panes with different
+  // bounds per pane (one mode of a Demonstration sweeping 100..10^4, another
+  // 10^7..10^10) collapses to a single row above; its range follows the
+  // selector so each pane's variant applies while that pane is on screen.
+  for (var, min_code, max_code, step_code) in
+    pane_variant_slider_bounds(&spliced_specs)
+  {
+    let is_slider = controls.iter().any(|c| {
+      c.name() == var && matches!(c, ManipulateControl::Continuous { .. })
+    });
+    if is_slider && !dynamic_bounds.iter().any(|(n, ..)| *n == var) {
+      dynamic_bounds.push((var, min_code, max_code, step_code));
+    }
+  }
   if !renames.is_empty() {
     renames.sort_by_key(|(orig, _)| std::cmp::Reverse(orig.len()));
     let rewrite = |code: &mut String| {
@@ -48224,6 +48238,144 @@ fn collect_pane_visibility(
       }
     }
   }
+}
+
+/// Per-pane bounds of a slider variable declared in more than one pane of
+/// a `PaneSelector` (`PaneSelector[{1 -> Control[{r, 1, 10}], 2 ->
+/// Control[{r, 100, 1000, 10}]}, Dynamic[mode]]`), as `(variable, min code,
+/// max code, step code)` where each side that differs between the panes is
+/// a `Which` over the pane conditions. Only sides that actually differ get
+/// code; a variable whose panes all agree is left out.
+fn pane_variant_slider_bounds(specs: &[Expr]) -> Vec<DynamicBound> {
+  /// Every `(variable, spec)` of the `Control[…]` rows inside a pane.
+  fn pane_controls(e: &Expr, out: &mut Vec<(String, Vec<Expr>)>) {
+    match e {
+      Expr::FunctionCall { name, .. } if name == "Invisible" => {}
+      Expr::FunctionCall { name, args } => {
+        if name == "Control"
+          && let Some(spec @ Expr::List(items)) = args.first()
+          && let Some(var) = control_spec_variable(spec)
+        {
+          out.push((var, items.to_vec()));
+          return;
+        }
+        for arg in args {
+          pane_controls(arg, out);
+        }
+      }
+      Expr::List(items) => {
+        for item in items {
+          pane_controls(item, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  /// Every top-level `PaneSelector` as `(selector code, panes)`.
+  fn selectors<'a>(e: &'a Expr, out: &mut Vec<(String, &'a [Expr])>) {
+    match e {
+      Expr::FunctionCall { name, args } if name == "PaneSelector" => {
+        if let (Some(Expr::List(panes)), Some(selector)) =
+          (args.first(), args.get(1))
+        {
+          let selector =
+            crate::syntax::expr_to_source_form(unwrap_pane_selector(selector));
+          out.push((selector, panes));
+        }
+      }
+      Expr::FunctionCall { args, .. } => {
+        for arg in args {
+          selectors(arg, out);
+        }
+      }
+      Expr::List(items) => {
+        for item in items {
+          selectors(item, out);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut found = Vec::new();
+  for spec in specs {
+    selectors(spec, &mut found);
+  }
+  let mut out = Vec::new();
+  for (selector, panes) in found {
+    // variable -> [(pane condition, [min, max, step] codes)]
+    let mut variants: Vec<(String, Vec<(String, [Option<String>; 3])>)> =
+      Vec::new();
+    for pane in panes {
+      let (Expr::Rule {
+        pattern,
+        replacement,
+      }
+      | Expr::RuleDelayed {
+        pattern,
+        replacement,
+      }) = pane
+      else {
+        continue;
+      };
+      let cond = format!(
+        "({}) == ({})",
+        selector,
+        crate::syntax::expr_to_source_form(pattern)
+      );
+      let mut rows = Vec::new();
+      pane_controls(replacement, &mut rows);
+      for (var, items) in rows {
+        // The positional `min, max, step` after the variable; a choice list
+        // or option makes this something other than a numeric slider.
+        let positional: Vec<&Expr> = items[1..]
+          .iter()
+          .take_while(|it| {
+            !matches!(
+              it,
+              Expr::Rule { .. } | Expr::RuleDelayed { .. } | Expr::List(_)
+            ) && !matches!(it, Expr::Identifier(s) if is_control_type_name(s))
+          })
+          .collect();
+        if positional.len() < 2 {
+          continue;
+        }
+        let code = |i: usize| {
+          positional
+            .get(i)
+            .map(|e| crate::syntax::expr_to_source_form(e))
+        };
+        let bounds = [code(0), code(1), code(2)];
+        match variants.iter_mut().find(|(v, _)| *v == var) {
+          Some((_, list)) => list.push((cond.clone(), bounds)),
+          None => variants.push((var, vec![(cond.clone(), bounds)])),
+        }
+      }
+    }
+    for (var, list) in variants {
+      if list.len() < 2 {
+        continue;
+      }
+      let side = |k: usize| -> Option<String> {
+        let first = list[0].1[k].clone();
+        if list.iter().all(|(_, b)| b[k] == first) {
+          return None;
+        }
+        let mut code = String::from("Which[");
+        for (cond, b) in &list {
+          // A pane without its own step keeps the slider's default step.
+          let value = b[k].clone()?;
+          code.push_str(&format!("{cond}, {value}, "));
+        }
+        code.push_str(&format!("True, {}]", first?));
+        Some(code)
+      };
+      let (min, max, step) = (side(0), side(1), side(2));
+      if min.is_some() || max.is_some() || step.is_some() {
+        out.push((var, min, max, step));
+      }
+    }
+  }
+  out
 }
 
 /// The Manipulate variable names declared inside a `PaneSelector`/`TabView`
