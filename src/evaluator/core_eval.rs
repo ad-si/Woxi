@@ -341,18 +341,18 @@ pub(crate) fn is_evaluated_data(expr: &Expr) -> bool {
   }
 }
 
-/// A shared list (a large OwnValue) whose elements are inert data: it holds
-/// no symbols, slots or calls to evaluate, and is answered in O(1) after
-/// the first time.
+/// A shared list (a large OwnValue) or a tree-backed one (built by
+/// `Prepend`) whose elements are inert data: it holds no symbols, slots or
+/// calls to evaluate, and is answered in O(1) after the first time.
 pub(crate) fn is_shared_inert_list(items: &crate::ExprList) -> bool {
-  items.is_shared() && is_inert_list(items)
+  (items.is_shared() || items.is_tree()) && is_inert_list(items)
 }
 
-/// `is_inert_data` of a list's elements, memoized on shared lists so a
-/// symbol holding a large array answers in O(1) on every lookup.
+/// `is_inert_data` of a list's elements, memoized on shared and tree-backed
+/// lists so a symbol holding a large array answers in O(1) on every lookup.
 fn is_inert_list(items: &crate::ExprList) -> bool {
-  if items.is_shared() {
-    items.cached_flag(|xs| xs.iter().all(is_inert_data))
+  if items.is_shared() || items.is_tree() {
+    items.cached_all(is_inert_data)
   } else {
     items.iter().all(is_inert_data)
   }
@@ -528,7 +528,7 @@ pub(super) fn needs_reevaluation(expr: &Expr, self_name: &str) -> bool {
       n == self_name || ENV.with(|e| e.borrow().contains_key(n))
     }
     Expr::List(items) => {
-      !(items.is_shared() && is_inert_list(items))
+      !is_shared_inert_list(items)
         && items.iter().any(|a| needs_reevaluation(a, self_name))
     }
     // FunctionCall / BinaryOp / UnaryOp / CurriedCall stored via SetDelayed
@@ -1850,9 +1850,11 @@ fn evaluate_expr_to_expr_uncached(
     // (a symbol's array, substituted into a function body) is returned as
     // the pointer it is instead of being rebuilt element by element.
     // A shared list answers from its cached inert flag in O(1), the same
-    // test a symbol's stored value is given (`needs_reevaluation`).
+    // test a symbol's stored value is given (`needs_reevaluation`); so does
+    // a tree-backed one, which only `Prepend` and friends build from
+    // already evaluated parts.
     Expr::List(items)
-      if (if items.is_shared() {
+      if (if items.is_shared() || items.is_tree() {
         is_inert_list(items)
       } else {
         items.iter().all(is_evaluated_data)

@@ -12,9 +12,10 @@ Options: `ImageSize`, `PlotRange`, `BoxRatios`, `Boxed`, `Axes`,
 `AxesLabel`, `Lighting`, `ViewPoint`, `ViewVertical`, `Background`,
 `SphericalRegion`.
 
-`SphericalRegion -> True` scales the picture so a sphere drawn around the
-3D bounding box fits the display area, which keeps the scale fixed as the
-view turns or the contents move:
+`SphericalRegion -> True` scales the picture so a sphere centered on the
+3D bounding box and enclosing the contents (or the box of an explicit
+`PlotRange`) fits the display area, which keeps the scale fixed as the
+view turns:
 
 ```scrut
 $ wo 'Head[Graphics3D[Sphere[], SphericalRegion -> True]]'

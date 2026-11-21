@@ -582,6 +582,10 @@ pub fn extract_part_ast(
     return extract_part_ast(&symbolic, index);
   }
 
+  if let Some(coords) = interpolating_function_coordinates_part(expr, index) {
+    return Ok(coords);
+  }
+
   // A tree is an atom: Part cannot reach inside it, so the call stays
   // unevaluated and the caller reports Part::partd.
   if crate::functions::predicate_ast::is_fully_atomic_object(expr) {
@@ -608,6 +612,35 @@ pub fn extract_part_ast(
     });
   }
   extract_part_ast_rest(expr, index)
+}
+
+/// Part 3 of a one-dimensional `InterpolatingFunction` is its list of grid
+/// coordinates in the Wolfram Language's layout (`f[[3, 1]]` is the grid of
+/// sample points, the common idiom for the steps `NDSolve` took). Woxi keeps
+/// the samples as `InterpolatingFunction[domain, {{x, y}, …}, order]`, so
+/// that part is read through the function's "Coordinates" property.
+fn interpolating_function_coordinates_part(
+  expr: &Expr,
+  index: &Expr,
+) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "InterpolatingFunction"
+    || !matches!(index, Expr::Integer(3))
+    || args.len() != 3
+    || !matches!(args[2], Expr::Integer(_))
+    || !matches!(&args[0], Expr::List(domain) if domain.len() == 1)
+  {
+    return None;
+  }
+  match crate::functions::ode_ast::evaluate_interpolating_function(
+    args,
+    &[Expr::String("Coordinates".to_string())],
+  ) {
+    Ok(coords @ Expr::List(_)) => Some(coords),
+    _ => None,
+  }
 }
 
 /// Whether `expr` is one of the numbers that Wolfram stores as a compound
@@ -655,10 +688,14 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
     // is a line with `y = x`.
     let source = crate::functions::graphics::log_scaled_plot_source(source);
     let source = source.as_ref();
-    let series: Vec<Expr> = source
+    // Each series yields its curve group and its fill polygons; every fill
+    // is placed before every curve (below), as in Wolfram's own plot
+    // primitives, so a `Filling -> {1 -> {2}}` area never covers the line
+    // of curve 1 when the primitives are drawn again.
+    let (fill_groups, curve_groups): (Vec<Vec<Expr>>, Vec<Expr>) = source
       .series
       .iter()
-      .flat_map(|s| {
+      .map(|s| {
         let to_list = |pts: &[(f64, f64)]| {
           Expr::List(
             pts
@@ -677,18 +714,26 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         let draws: Vec<Expr> = if s.is_scatter {
           vec![call1("Point", to_list(&s.points))]
         } else {
-          let runs: Vec<&[(f64, f64)]> = s
+          // The plot's own y range clips the curve, as in Wolfram: the
+          // pole of `First[Plot[1/x, {x, 0, 9}, PlotRange -> {0, 1.4}]]`
+          // must not reach y = 10^6 and stretch the range of the
+          // `Graphics` the line is drawn in.
+          let pieces: Vec<Vec<(f64, f64)>> = s
             .points
             .split(|(x, y)| !x.is_finite() || !y.is_finite())
             .filter(|run| !run.is_empty())
+            .flat_map(|run| {
+              crate::functions::graphics::clip_segment_to_y_range(
+                run,
+                source.y_range,
+              )
+            })
+            .filter(|piece| !piece.is_empty())
             .collect();
-          if runs.len() <= 1 {
+          if pieces.is_empty() {
             vec![call1("Line", to_list(&s.points))]
           } else {
-            runs
-              .into_iter()
-              .map(|r| call1("Line", to_list(r)))
-              .collect()
+            pieces.iter().map(|r| call1("Line", to_list(r))).collect()
           }
         };
         let mut style = vec![crate::functions::plot::series_color_expr(s)];
@@ -700,12 +745,11 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         }
         // A curve keeps its weight and dashes: the plot draws it with
         // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
-        // extracted line is drawn the same way wherever it is placed.
+        // extracted line is drawn the same way wherever it is placed. A
+        // relative `Thickness[t]` stays relative, so the line scales with
+        // the graphic it is placed in.
         if !s.is_scatter {
-          style.push(call1(
-            "AbsoluteThickness",
-            Expr::Real(s.thickness.unwrap_or(2.0)),
-          ));
+          style.push(crate::functions::graphics::series_thickness_expr(s, 2.0));
           style.extend(crate::functions::graphics::series_dashing_expr(
             s,
             source.image_size.0,
@@ -720,7 +764,7 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         };
         let mut group = vec![style];
         group.extend(draws);
-        let mut prims = vec![Expr::List(group.into())];
+        let mut fills = Vec::new();
         // `Filling` draws a shaded region under the curve — bake it in as
         // an explicit `Polygon` primitive alongside the `Line`, the way
         // Wolfram does. Without this, a Demonstration's `region =
@@ -748,10 +792,15 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
                 .collect(),
             ),
           );
-          prims.push(Expr::List(vec![styled_fill, polygon].into()));
+          fills.push(Expr::List(vec![styled_fill, polygon].into()));
         }
-        prims
+        (fills, Expr::List(group.into()))
       })
+      .unzip();
+    let series: Vec<Expr> = fill_groups
+      .into_iter()
+      .flatten()
+      .chain(curve_groups)
       .collect();
     // The options a plot shares with `Graphics` (an `Epilog`, a
     // `Background`, a `PlotRange`, …) stay with the drawing, so editing it —
