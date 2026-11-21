@@ -38,7 +38,6 @@ const TV: &str = "NDSolve$t";
 enum Edge {
   /// `c u_n = alpha + beta u` on the face (outward normal derivative), all
   /// three compiled over `[x, y, t]`. `None` for a zero natural flux.
-  /// Boxed so the enum stays about the size of its `Dirichlet` variant.
   Flux(Option<Box<(NExpr, NExpr, NExpr)>>),
   /// `u = g` on the face, `g` compiled over `[x, y, t]`.
   Dirichlet(NExpr),
@@ -547,6 +546,10 @@ pub(super) fn solve_pde_mol_2d(
   rest: &[Expr],
   opts: &MolOptions,
 ) -> Option<Expr> {
+  solve(eqs, rest, opts)
+}
+
+fn solve(eqs: &[Expr], rest: &[Expr], opts: &MolOptions) -> Option<Expr> {
   let Expr::Identifier(u) = &rest[0] else {
     return None;
   };

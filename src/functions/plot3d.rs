@@ -256,6 +256,28 @@ fn projected_triangles_overlap(
   true
 }
 
+/// How far from a plane a corner may lie and still count as on it, scaled
+/// to the size of the triangles compared. Faces that share an edge often
+/// share it only up to the precision of their data (vertices given to six
+/// digits and then rotated); a fixed tiny tolerance would see such faces
+/// cross each other and cut them into slivers whose outlines show through
+/// the faces in front.
+fn plane_tolerance(points: impl Iterator<Item = Point3D>) -> f64 {
+  let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+  for p in points {
+    for (k, c) in [p.x, p.y, p.z].into_iter().enumerate() {
+      lo[k] = lo[k].min(c);
+      hi[k] = hi[k].max(c);
+    }
+  }
+  let size = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
+  if size.is_finite() {
+    (1e-5 * size).max(1e-9)
+  } else {
+    1e-9
+  }
+}
+
 /// Where triangle `t` lies relative to the plane of `plane`, seen from the
 /// viewer: `Some(true)` when wholly behind (or on) it, `Some(false)` when
 /// wholly in front, `None` when it straddles the plane.
@@ -272,7 +294,7 @@ fn side_of_plane(
     n = [-n[0], -n[1], -n[2]];
   }
   // `n` now points toward the viewer.
-  let eps = 1e-9;
+  let eps = plane_tolerance(plane.iter().chain(t.iter()).copied());
   let (mut behind, mut front) = (true, true);
   for v in t {
     let d = n[0] * (v.x - plane[0].x)
@@ -802,7 +824,8 @@ fn clip_polygon_by_plane(
   plane: &[Point3D; 3],
 ) -> (Vec<(Point3D, bool)>, Vec<(Point3D, bool)>) {
   let n = triangle_normal(plane[0], plane[1], plane[2]);
-  let eps = 1e-9;
+  let eps =
+    plane_tolerance(plane.iter().copied().chain(poly.iter().map(|c| c.0)));
   let dist = |p: Point3D| {
     n[0] * (p.x - plane[0].x)
       + n[1] * (p.y - plane[0].y)
@@ -840,6 +863,20 @@ fn clip_polygon_by_plane(
       } else {
         neg.push((m, false));
         pos.push((m, flag));
+      }
+    }
+  }
+  // A cut through an existing corner keeps that corner's flag for the edge
+  // to its next corner, but in a part the next corner is then the cut's
+  // other end. Any edge with both ends on the plane is the cut (an outline
+  // edge lying in the plane leaves nothing on one side to split off), so
+  // it is not part of the outline.
+  for part in [&mut pos, &mut neg] {
+    let m = part.len();
+    for k in 0..m {
+      if dist(part[k].0).abs() <= eps && dist(part[(k + 1) % m].0).abs() <= eps
+      {
+        part[k].1 = false;
       }
     }
   }
