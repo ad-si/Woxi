@@ -1182,7 +1182,7 @@ EmpiricalDistribution,"Empirical distribution from data (exact weights via DataD
 NotebookSelection,"",🚫,,3.0,1141
 CellTags,"",🚫,,3.0,1142
 FractionBox,"Low-level box construct for fraction display",✅,pure,3.0,1143
-Magnification,"",🚫,,3.0,1145
+Magnification,"Magnification option and ImageSize magnification spec (stays symbolic)",✅,unevaluated,3.0,1145
 Refresh,"Returns its first argument evaluated; the update-interval options only matter in a Dynamic FrontEnd context",✅,pure,6.0,1145
 KelvinBer,"Kelvin ber function (real part of BesselJ on a rotated argument)",✅,pure,6.0,1146
 NetTrain,"",🚫,,11.0,1147
