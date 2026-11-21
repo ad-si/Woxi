@@ -10998,11 +10998,19 @@ pub(crate) fn generate_bar_svg(
         let label = &chart_labels[li];
         let font_size = label.font_size.map_or(font_size, |f| f * sf);
         let lines = chart_label_lines(label, font_size / sf);
-        let weight = if label.bold || label_bold {
-          " font-weight=\"bold\""
-        } else {
-          ""
-        };
+        let weight = format!(
+          "{}{}",
+          if label.bold || label_bold {
+            " font-weight=\"bold\""
+          } else {
+            ""
+          },
+          if label.italic {
+            " font-style=\"italic\""
+          } else {
+            ""
+          }
+        );
         let cx = map_x_val(x_center);
         // For Above/Center positioning, use the max value in the group
         let group_max = group_top(gi);
