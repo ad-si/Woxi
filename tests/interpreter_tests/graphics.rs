@@ -655,6 +655,36 @@ mod graphics {
     }
 
     #[test]
+    fn parametric_plot_exclusions_run_the_curve_up_to_the_root() {
+      // The pieces on either side of an excluded parameter value reach it,
+      // like `Plot`'s do: no visible stretch of the curve goes missing.
+      let svg = export_svg(
+        "ParametricPlot[{Cos[t], Sin[t]}, {t, 0, 2 Pi}, \
+           Exclusions -> {t == Pi/2}, Axes -> False]",
+      );
+      let ends: Vec<((f64, f64), (f64, f64))> = svg
+        .split("points=\"")
+        .skip(1)
+        .map(|rest| {
+          let pts: Vec<(f64, f64)> = rest[..rest.find('"').unwrap()]
+            .split_whitespace()
+            .map(|p| {
+              let (x, y) = p.split_once(',').unwrap();
+              (x.parse().unwrap(), y.parse().unwrap())
+            })
+            .collect();
+          (pts[0], *pts.last().unwrap())
+        })
+        .collect();
+      assert_eq!(ends.len(), 2, "{svg}");
+      let (_, first_end) = ends[0];
+      let (second_start, _) = ends[1];
+      let gap =
+        (first_end.0 - second_start.0).hypot(first_end.1 - second_start.1);
+      assert!(gap < 3.0, "gap {gap}: {svg}");
+    }
+
+    #[test]
     fn plot_exclusions_break_curve_at_listed_points() {
       // A jump at an excluded x is not bridged by a vertical line: the
       // curve is split there, whether given as numbers or as equations.
@@ -18771,6 +18801,49 @@ mod plot3d {
         "{svg}"
       );
       assert!(!svg.contains("Sin["), "{svg}");
+    }
+
+    /// A held formula or an equation as `PlotLabel` is typeset in
+    /// `TraditionalForm` too: `HoldForm[z = Sin[2 x]]` reads `z = sin(2 x)`
+    /// with italic letters, not the StandardForm `z = Sin[2 x]`.
+    #[test]
+    fn held_formula_plot_label_uses_traditional_notation() {
+      for label in ["HoldForm[z = Sin[2 x]]", "z == Sin[2 x]"] {
+        let svg =
+          export_svg(&format!("Plot[x, {{x, 0, 1}}, PlotLabel -> {label}]"));
+        assert!(
+          svg.contains("<tspan font-style=\"italic\">z</tspan> = sin(2"),
+          "{label}: {svg}"
+        );
+        assert!(
+          svg.contains("<tspan font-style=\"italic\">x</tspan>)</text>"),
+          "{label}: {svg}"
+        );
+        assert!(!svg.contains("Sin["), "{label}: {svg}");
+        assert!(!svg.contains("=="), "{label}: {svg}");
+      }
+    }
+
+    /// `NumberForm[HoldForm[…], spec]` as a label formats the approximate
+    /// numbers inside the held formula and typesets the rest, instead of
+    /// printing the `NumberForm[…]` call; a negative number keeps its sign.
+    #[test]
+    fn number_form_of_held_formula_plot_label() {
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> NumberForm[HoldForm[z = \
+         Cos[-3. y] + 1.24 w], {3, 1}, NumberPadding -> {\"\", \"0\"}]]",
+      );
+      assert!(svg.contains("cos(-3.0"), "{svg}");
+      assert!(svg.contains(")+1.2"), "{svg}");
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      assert!(!svg.contains("Cos["), "{svg}");
+      // With no approximate number inside, the content is typeset as is.
+      let svg = export_svg(
+        "Plot[x, {x, 0, 1}, PlotLabel -> NumberForm[HoldForm[z = Cos[10 y]], \
+         {3, 1}]]",
+      );
+      assert!(svg.contains("cos(10"), "{svg}");
+      assert!(!svg.contains("NumberForm"), "{svg}");
     }
 
     #[test]
@@ -68342,13 +68415,19 @@ fn manipulate_frame_keeps_outline_fit_for_unpinned_3d_scene() {
 mod plot_label_number_form_held_assignment {
   use super::*;
 
+  /// A graphic's `FormatType` is `TraditionalForm`, so the held assignment
+  /// reads `w = sin(-1.3 x)`, its number formatted by the `NumberForm`.
   #[test]
-  fn label_reads_as_output_form() {
+  fn label_reads_in_traditional_form() {
     let svg = export_svg(
       "Plot[x, {x, 0, 1}, PlotLabel -> With[{c = -1.27, g = Sin}, \
        NumberForm[HoldForm[w = g[c x]], {3, 1}]]]",
     );
-    assert!(svg.contains(">w = Sin[-1.3 x]</text>"), "{svg}");
+    assert!(
+      svg.contains("<tspan font-style=\"italic\">w</tspan> = sin(-1.3"),
+      "{svg}"
+    );
+    assert!(!svg.contains("Sin["), "{svg}");
     assert!(!svg.contains('*'), "{svg}");
   }
 }

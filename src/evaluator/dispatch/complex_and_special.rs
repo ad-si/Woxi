@@ -7980,6 +7980,19 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
     {
       tf(&args[0])
     }
+    // A number-display form around an expression that is no number itself
+    // (`NumberForm[HoldForm[z == 3.25 x], {3, 1}]`) formats each
+    // approximate number inside it and typesets the rest as usual; with no
+    // such number it typesets just its content.
+    "NumberForm" | "ScientificForm" | "EngineeringForm"
+      if !args.is_empty()
+        && !matches!(args[0], Expr::List(_))
+        && !is_number_expr(&args[0])
+        && !is_number_display_call(&args[0]) =>
+    {
+      let formatted = format_reals_with(&args[0], name, &args[1..]);
+      call("TagBox", vec![tf(&formatted), id_expr(name)])
+    }
     // `HoldForm` leaves a mark on the box tree — a `TagBox` naming it — so
     // the boxes still say the expression was held; it draws as its content.
     "HoldForm" if args.len() == 1 => {
@@ -8828,6 +8841,83 @@ fn tf(expr: &Expr) -> Expr {
 /// render as `head(args)`.
 pub fn expr_to_box_form_traditional(expr: &Expr) -> Expr {
   tf(expr)
+}
+
+/// Whether `expr` is a bare number (or a negated one), which the
+/// number-display forms format directly.
+fn is_number_expr(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(_, _) => true,
+    Expr::UnaryOp { operand, .. } => is_number_expr(operand),
+    _ => false,
+  }
+}
+
+/// Whether `expr` is already a number-display form, which formats its own
+/// numbers (and so is left alone by an enclosing one).
+fn is_number_display_call(expr: &Expr) -> bool {
+  matches!(expr, Expr::FunctionCall { name, .. }
+    if matches!(name.as_str(), "NumberForm" | "ScientificForm"
+      | "EngineeringForm" | "PaddedForm" | "AccountingForm"))
+}
+
+/// `expr` with every approximate number in it wrapped in the number-display
+/// form `head[x, spec…]`. A negative number keeps its sign outside the form
+/// (`-NumberForm[3.3, …]`), so a product or sum still reads its sign the way
+/// the bare number would.
+fn format_reals_with(expr: &Expr, head: &str, spec: &[Expr]) -> Expr {
+  let wrap = |x: Expr| {
+    let mut args = vec![x];
+    args.extend(spec.iter().cloned());
+    call(head, args)
+  };
+  let rec = |e: &Expr| format_reals_with(e, head, spec);
+  match expr {
+    Expr::Real(v) if *v < 0.0 => {
+      call("Times", vec![Expr::Integer(-1), wrap(Expr::Real(-*v))])
+    }
+    Expr::Real(_) | Expr::BigFloat(_, _) => wrap(expr.clone()),
+    _ if is_number_display_call(expr) => expr.clone(),
+    Expr::List(items) => Expr::List(items.iter().map(rec).collect()),
+    Expr::FunctionCall { name, args } => Expr::FunctionCall {
+      name: name.clone(),
+      args: args.iter().map(rec).collect(),
+    },
+    Expr::BinaryOp { op, left, right } => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(rec(left)),
+      right: Box::new(rec(right)),
+    },
+    Expr::UnaryOp { op, operand } => Expr::UnaryOp {
+      op: *op,
+      operand: Box::new(rec(operand)),
+    },
+    Expr::Comparison {
+      operands,
+      operators,
+    } => Expr::Comparison {
+      operands: operands.iter().map(rec).collect(),
+      operators: operators.clone(),
+    },
+    Expr::Rule {
+      pattern,
+      replacement,
+    } => Expr::Rule {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => Expr::RuleDelayed {
+      pattern: Box::new(rec(pattern)),
+      replacement: Box::new(rec(replacement)),
+    },
+    other => other.clone(),
+  }
 }
 
 thread_local! {

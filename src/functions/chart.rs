@@ -1152,6 +1152,15 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         match crate::functions::graphics::traditional_application_markup(other)
         {
           Some(markup) => (markup, Vec::new()),
+          // A held formula or an equation (possibly with its numbers
+          // formatted by `NumberForm`) is set in traditional notation:
+          // `HoldForm[z = Sin[2 x]]` reads `z = sin(2 x)`.
+          None if is_traditional_formula_label(other) => {
+            markup_and_extra_lines(&call(
+              "TraditionalForm",
+              vec![other.clone()],
+            ))
+          }
           // A sum reads as `TraditionalForm` sets it, so a polynomial runs
           // from its highest power down (`x^3 - 2 x^2`).
           None => markup_and_extra_lines(&traditional_sums(
@@ -1179,6 +1188,28 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         })
       }
     }
+  }
+}
+
+/// Whether a label is a held formula (`HoldForm[…]`) or an equation or
+/// inequality, possibly inside a number-display form (`NumberForm[HoldForm[
+/// …], {3, 1}]`). A graphic's `FormatType` is `TraditionalForm`, so such a
+/// label is typeset in it rather than printed as its input form.
+fn is_traditional_formula_label(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { .. } => true,
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "NumberForm" | "ScientificForm" | "EngineeringForm" => {
+          is_traditional_formula_label(&args[0])
+        }
+        "HoldForm" => args.len() == 1,
+        "Equal" | "Unequal" | "Less" | "LessEqual" | "Greater"
+        | "GreaterEqual" => args.len() >= 2,
+        _ => false,
+      }
+    }
+    _ => false,
   }
 }
 
