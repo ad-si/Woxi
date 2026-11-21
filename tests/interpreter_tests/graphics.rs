@@ -66993,6 +66993,93 @@ fn row_styled_part_applies_relative_size_once() {
   assert!(!svg.contains("125%"), "{svg}");
 }
 
+/// The x and y coordinates of every `<polygon>` vertex in an SVG.
+fn polygon_vertices(svg: &str) -> Vec<(f64, f64)> {
+  svg
+    .split("<polygon ")
+    .skip(1)
+    .filter_map(|p| p.split("points=\"").nth(1)?.split('"').next())
+    .flat_map(|pts| {
+      pts
+        .split_whitespace()
+        .filter_map(|pair| {
+          let (x, y) = pair.split_once(',')?;
+          Some((x.parse().ok()?, y.parse().ok()?))
+        })
+        .collect::<Vec<_>>()
+    })
+    .collect()
+}
+
+/// A surface plot drawn inside a `Manipulate` frame is framed by the sphere
+/// around its box, as a `Graphics3D` there is, so the picture keeps its
+/// scale while a control reshapes the surface. A Demonstration's snapshot
+/// of a `ParametricPlot3D` at `ImageSize -> {450, 450}` drew its box about
+/// 0.87× as wide as the outline-fitted box. `SphericalRegion -> True` gives
+/// the same framing outside a frame, and `SphericalRegion -> False` keeps
+/// the outline fit inside one.
+#[test]
+fn manipulate_frame_frames_surface_plots_by_their_sphere() {
+  let plot = |opts: &str| {
+    format!(
+      "ParametricPlot3D[{{Cos[u] Sin[v], Sin[u] Sin[v], Cos[v]}}, \
+       {{u, 0, 2 Pi}}, {{v, 0, Pi}}, PlotPoints -> 8, Mesh -> None, \
+       ImageSize -> {{300, 300}}{opts}]"
+    )
+  };
+  let plain = export_svg(&plot(""));
+  let spherical = export_svg(&plot(", SphericalRegion -> True"));
+  assert_ne!(plain, spherical);
+  assert_eq!(
+    woxi::with_manipulate_frame(|| export_svg(&plot(""))),
+    spherical
+  );
+  assert_eq!(
+    woxi::with_manipulate_frame(|| {
+      export_svg(&plot(", SphericalRegion -> False"))
+    }),
+    plain
+  );
+  // The sphere around a cube-shaped box is wider than the box's outline,
+  // so the surface is drawn smaller.
+  let width = |svg: &str| {
+    let xs: Vec<f64> = polygon_vertices(svg).iter().map(|p| p.0).collect();
+    xs.iter().copied().fold(f64::MIN, f64::max)
+      - xs.iter().copied().fold(f64::MAX, f64::min)
+  };
+  let ratio = width(&spherical) / width(&plain);
+  assert!(ratio > 0.7 && ratio < 0.95, "{ratio}");
+}
+
+/// `ImagePadding` keeps a surface plot's scene out of a band around the
+/// picture, which keeps its full `ImageSize`.
+#[test]
+fn surface_plot_image_padding_insets_the_scene() {
+  let plot = |opts: &str| {
+    export_svg(&format!(
+      "Plot3D[x y, {{x, -1, 1}}, {{y, -1, 1}}, PlotPoints -> 6, \
+       Mesh -> None, Axes -> False, ImageSize -> {{300, 300}}{opts}]"
+    ))
+  };
+  let plain = plot("");
+  let padded = plot(", ImagePadding -> 40");
+  assert!(
+    padded.starts_with("<svg width=\"300\" height=\"300\""),
+    "{padded}"
+  );
+  let bounds = |svg: &str| {
+    polygon_vertices(svg).iter().fold(
+      [f64::MAX, f64::MIN, f64::MAX, f64::MIN],
+      |[x0, x1, y0, y1], &(x, y)| [x0.min(x), x1.max(x), y0.min(y), y1.max(y)],
+    )
+  };
+  let [x0, x1, y0, y1] = bounds(&padded);
+  assert!(x0 >= 39.0 && x1 <= 261.0, "{x0} {x1}");
+  assert!(y0 >= 39.0 && y1 <= 261.0, "{y0} {y1}");
+  let [px0, px1, ..] = bounds(&plain);
+  assert!(px0 < 39.0 || px1 > 261.0, "{px0} {px1}");
+}
+
 /// Visible text of an SVG: the contents of its `<text>` elements.
 fn svg_text_content(svg: &str) -> String {
   let mut out = String::new();
