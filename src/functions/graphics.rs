@@ -1072,8 +1072,10 @@ fn label_frame(opts: &[Expr], default_color: Color) -> Option<TextFrame> {
         color = c;
         continue;
       }
-      let mut probe = StyleState::default();
-      probe.thickness = f64::NAN;
+      let mut probe = StyleState {
+        thickness: f64::NAN,
+        ..Default::default()
+      };
       apply_directive(d, &mut probe);
       if !probe.thickness.is_nan() {
         // Thickness fractions are of a picture's width; a frame around a
@@ -1216,7 +1218,7 @@ enum Primitive {
     background: Option<Color>,
     /// `Framed[…]`: the border drawn around the label, or `None` for an
     /// unframed one (including `FrameStyle -> None`).
-    frame: Option<TextFrame>,
+    frame: Option<Box<TextFrame>>,
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
@@ -9617,7 +9619,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     y,
     offset,
     background,
-    frame,
+    frame: frame.map(Box::new),
     scaled,
     direction,
     box_offset,
@@ -11200,7 +11202,7 @@ fn rotate_primitive(
         y: ny,
         offset: *offset,
         background: *background,
-        frame: *frame,
+        frame: frame.clone(),
         scaled: *scaled,
         // A label without a `direction` has its baseline along the x-axis,
         // so a rotation tilts that baseline; a zero angle changes nothing.
@@ -11459,7 +11461,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       y: if *scaled { *y } else { y + dy },
       offset: *offset,
       background: *background,
-      frame: *frame,
+      frame: frame.clone(),
       scaled: *scaled,
       direction: *direction,
       box_offset: *box_offset,
@@ -11770,7 +11772,7 @@ fn scale_primitive(
         y: ny,
         offset: *offset,
         background: *background,
-        frame: *frame,
+        frame: frame.clone(),
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         box_offset: *box_offset,
@@ -15766,7 +15768,7 @@ fn render_primitive(
             1.0
           };
         let (m_left, m_right, m_bottom, m_top) =
-          frame.map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
+          frame.as_ref().map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
         let panel_w = glyphs_w + m_left + m_right;
         let panel_h = text_h + m_bottom + m_top;
         // A tilted label's panel turns with it, about the same point.
@@ -24911,6 +24913,26 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       items.push(Expr::String(")".into()));
       call1("Row", Expr::List(items.into()))
     }
+    // `Style["e", Italic]^Row[{Style["i", Italic], "t"}]`: base and
+    // exponent are each set on their own, so their styling (and the plain
+    // strings beside it) stays as written instead of being typeset again.
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && contains_visible_style(e) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(traditionalize_styled_label).collect(),
+      }
+    }
+    Expr::BinaryOp {
+      op: op @ crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if contains_visible_style(e) => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(traditionalize_styled_label(left)),
+      right: Box::new(traditionalize_styled_label(right)),
+    },
     // A list label keeps its braces; each element is set on its own.
     Expr::List(items) if contains_visible_style(e) => {
       Expr::List(items.iter().map(traditionalize_styled_label).collect())
