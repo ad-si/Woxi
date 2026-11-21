@@ -7870,6 +7870,57 @@ fn render_voronoi_bands(
 
 /// ListContourPlot[data] - contour plot from data
 /// Accepts same data formats as ListDensityPlot.
+/// A list plot's interpolated node `grid` (columns along x over `xr`,
+/// rows along y over `yr`) with the nodes `RegionFunction -> region`
+/// rejects set to NaN, so they are left blank. The grid is first refined
+/// by bilinear interpolation to the finer sampling `ContourPlot` uses with
+/// a `RegionFunction`, so the cut follows the region's edge closely
+/// rather than the data spacing.
+fn region_masked_grid(
+  grid: &[Vec<f64>],
+  region: &Expr,
+  xr: (f64, f64),
+  yr: (f64, f64),
+) -> Vec<Vec<f64>> {
+  let (nc, nr) = (grid.len(), grid[0].len());
+  let fine = FIELD_GRID * 4 + 1;
+  let refine = nc >= 2 && nr >= 2 && (nc < fine || nr < fine);
+  let (mc, mr) = if refine {
+    (nc.max(fine), nr.max(fine))
+  } else {
+    (nc, nr)
+  };
+  let frac = |k: usize, m: usize| {
+    if m > 1 {
+      k as f64 / (m - 1) as f64
+    } else {
+      0.0
+    }
+  };
+  (0..mc)
+    .map(|i| {
+      let u = frac(i, mc);
+      let x = xr.0 + u * (xr.1 - xr.0);
+      (0..mr)
+        .map(|j| {
+          let w = frac(j, mr);
+          let v = if refine {
+            bilinear_grid_value(grid, u, w)
+          } else {
+            grid[i][j]
+          };
+          let y = yr.0 + w * (yr.1 - yr.0);
+          if v.is_finite() && region_allows(region, x, y, v) {
+            v
+          } else {
+            f64::NAN
+          }
+        })
+        .collect()
+    })
+    .collect()
+}
+
 pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let data = evaluate_expr_to_expr(&args[0])?;
   let rows = match &data {
@@ -7894,6 +7945,26 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
 
+  // As in `ContourPlot`, the levels are chosen over all the data and the
+  // colors over the part a `RegionFunction` keeps.
+  let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
+  let (grid, v_min, v_max) = match &opts.region_function {
+    Some(region) if !nearest => {
+      let grid =
+        region_masked_grid(&grid, region, (x_min, x_max), (y_min, y_max));
+      let kept: Vec<f64> =
+        grid.iter().flatten().copied().filter(|v| v.is_finite()).collect();
+      if kept.is_empty() {
+        // Nothing passes the region test: an empty frame.
+        (grid, v_min, v_max)
+      } else {
+        let (lo, hi) = opts.sampled_range(&kept);
+        (grid, lo, hi)
+      }
+    }
+    _ => (grid, v_min, v_max),
+  };
+
   let mut area = field_plot_axes((x_min, x_max), (y_min, y_max), &mut opts);
 
   // Taken out of `area` so the geometry stays available for the overlays
@@ -7908,8 +7979,6 @@ pub fn list_contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let grid_rows = grid[0].len();
   let cell_w = area.plot_w / (grid_cols.max(2) - 1) as f64;
   let cell_h = area.plot_h / (grid_rows.max(2) - 1) as f64;
-
-  let levels = resolve_contour_levels(&opts.contours, v_min, v_max);
 
   if nearest {
     // `InterpolationOrder -> 0`: every point of the plane takes the value

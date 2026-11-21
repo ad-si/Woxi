@@ -30836,6 +30836,45 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       ));
     }
 
+    // `RegionFunction -> f` leaves blank every part of the plane where
+    // `f[x, y, z]` is not `True`: the bands of {x, y, x + y} triples cut
+    // at x < 2 stop at x = 2.
+    #[test]
+    fn list_contour_plot_region_function_triples() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "g = ListContourPlot[Flatten[Table[{x, y, x + y}, {x, 0, 4}, \
+           {y, 0, 4}], 1], RegionFunction -> Function[{x, y, z}, x < 2]]; \
+           p = Flatten[Cases[Normal[g], Polygon[q_] :> q, Infinity], 1]; \
+           {Length[p] > 0, Max[p[[All, 1]]] <= 2, Max[p[[All, 1]]] > 1.9, \
+           Min[p[[All, 1]]] == 0}"
+        )
+        .unwrap(),
+        "{True, True, True, True}"
+      );
+    }
+
+    // On matrix data the cut follows the region's edge (here the
+    // diagonal x + y = 4 of the index coordinates), not the data spacing,
+    // and the plotted value is the third argument.
+    #[test]
+    fn list_contour_plot_region_function_matrix() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "m = {{1, 2, 3}, {2, 3, 4}, {3, 4, 5}}; \
+           pts[r_] := Flatten[Cases[Normal[ListContourPlot[m, \
+           RegionFunction -> r]], Polygon[q_] :> q, Infinity], 1]; \
+           a = pts[#1 + #2 < 4 &]; b = pts[#3 > 3 &]; \
+           {Max[Total /@ a] <= 4, Max[Total /@ a] > 3.9, \
+           Min[Total /@ b] >= 4, Min[Total /@ b] < 4.1}"
+        )
+        .unwrap(),
+        "{True, True, True, True}"
+      );
+    }
+
     /// The `<path>` fills of a contour plot's SVG with their vertex count.
     fn filled_cells(svg: &str) -> Vec<(String, usize)> {
       svg
@@ -67849,6 +67888,56 @@ mod plot_legends_show_legend {
     );
     assert!(svg.contains("low") && svg.contains("high"), "{svg}");
     assert!(!svg.contains("ShowLegend"), "{svg}");
+  }
+
+  /// The y coordinate of the SVG `<text>` element showing `label`.
+  fn text_y(svg: &str, label: &str) -> f64 {
+    let end = svg.find(&format!(">{label}</text>")).expect(label);
+    let start = svg[..end].rfind("<text").unwrap();
+    let tag = &svg[start..end];
+    let y = tag.split(" y=\"").nth(1).unwrap().split('"').next().unwrap();
+    y.parse().unwrap()
+  }
+
+  // A gradient legend runs from the function's value at 0 at the top
+  // (named by the first label) to its value at 1 at the bottom (the
+  // second label), as in the package's own `GrayLevel[1 - #] &` example
+  // where white tops a column labeled " 1" over "-1".
+  #[test]
+  fn color_gradient_legend_runs_from_zero_at_the_top() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(
+      "PlotLegends`ShowLegend[Graphics[Circle[]], \
+       {RGBColor[#, 0, 1 - #] &, 3, \"first\", \"second\", \
+       PlotLegends`LegendPosition -> {-0.5, -0.5}}]",
+    );
+    // SVG y grows downward.
+    assert!(text_y(&svg, "first") < text_y(&svg, "second"), "{svg}");
+    let blue = svg.find("rgb(0,0,255)").expect("blue swatch");
+    let red = svg.find("rgb(255,0,0)").expect("red swatch");
+    assert!(blue < red, "the f[0] swatch comes first: {svg}");
+  }
+
+  // `LegendLabel` puts a title above the rows, in a strip
+  // `LegendLabelSpace` rows tall; `LegendTextSpace` narrows the keys.
+  #[test]
+  fn legend_label_above_the_rows() {
+    clear_state();
+    interpret("Get[\"PlotLegends`\"]").unwrap();
+    let svg = export_svg(
+      "PlotLegends`ShowLegend[Graphics[Circle[]], \
+       {GrayLevel, 4, \"low\", \"high\", \
+       PlotLegends`LegendPosition -> {-0.5, -0.5}, \
+       LegendLabel -> \"title\", PlotLegends`LegendLabelSpace -> 2, \
+       PlotLegends`LegendTextSpace -> 8}]",
+    );
+    let (title, low, high) =
+      (text_y(&svg, "title"), text_y(&svg, "low"), text_y(&svg, "high"));
+    assert!(title < low && low < high, "{svg}");
+    // Two rows of title space: the gap down to the first row's center
+    // is wider than the rows' own spacing.
+    assert!(low - title > (high - low) / 3.0, "{svg}");
   }
 }
 
