@@ -8597,6 +8597,16 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
               {
                 "<svg width=\"1\" height=\"1\" viewBox=\"0 0 1 1\" xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_string()
               }
+              // A grid's `BaseStyle` font family reaches the captions of
+              // its `Labeled` pictures.
+              None if name == "Grid" => {
+                expr_to_svg(&unquoted_display_string(
+                  &crate::functions::graphics::labeled_cell_in_grid_options(
+                    c,
+                    &args[1..],
+                  ),
+                ))
+              }
               None => expr_to_svg(&unquoted_display_string(c)),
             })
             .collect()
