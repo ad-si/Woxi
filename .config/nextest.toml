@@ -14,6 +14,13 @@ slow-timeout = { period = "20s", terminate-after = 1 }
 filter = 'test(high_order_derivative_of_x_x_does_not_panic)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `interface_exchange_manipulate_solves_a_coupled_pde_with_a_shared_flux_condition`
+# numerically solves a coupled PDE system for a Woxi Studio widget: ~25s
+# standalone, past the default 20s timeout. Give it a wider window.
+[[profile.default.overrides]]
+filter = 'test(interface_exchange_manipulate_solves_a_coupled_pde_with_a_shared_flux_condition)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # `inner_integrate_without_closed_form` nests an `NIntegrate` whose inner
 # integral has no closed form, so the outer integration re-runs the numeric
 # inner one at every sample: ~14s standalone in debug builds, close enough to
@@ -23,11 +30,26 @@ slow-timeout = { period = "60s", terminate-after = 1 }
 filter = 'test(inner_integrate_without_closed_form)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
+# `interface_exchange_manipulate_solves_a_coupled_pde_with_a_shared_flux_condition`
+# solves a coupled PDE system with NDSolve at every widget render: ~40s
+# standalone in debug builds, so it always exceeded the default 20s timeout.
+[[profile.default.overrides]]
+filter = 'test(interface_exchange_manipulate_solves_a_coupled_pde_with_a_shared_flux_condition)'
+slow-timeout = { period = "120s", terminate-after = 1 }
+
 # `sheet_thinner_than_a_cell_is_found_with_vertex_normals` subdivides cells
 # to find a sheet thinner than the grid: ~9s standalone, close enough to the
 # default 20s timeout to time out under full parallel load.
 [[profile.default.overrides]]
 filter = 'test(sheet_thinner_than_a_cell_is_found_with_vertex_normals)'
+slow-timeout = { period = "60s", terminate-after = 1 }
+
+# `long_grid_strip_has_no_edge_crossings` lays out a 240-vertex grid strip
+# and then checks every pair of its ~420 edges for a crossing in the
+# interpreter (~86k pairs): ~9s standalone, close enough to the default 20s
+# timeout to time out on a CI runner under parallel load.
+[[profile.default.overrides]]
+filter = 'test(long_grid_strip_has_no_edge_crossings)'
 slow-timeout = { period = "60s", terminate-after = 1 }
 
 # `reduce_over_reals_gives_the_real_points` reduces a polynomial system with

@@ -15,6 +15,7 @@ mod cse;
 mod curve;
 mod dde;
 mod pde_mol;
+mod pde_mol2d;
 mod state_data;
 mod stiff;
 pub use state_data::{
@@ -1852,6 +1853,20 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Err(e) => Err(e),
     });
   }
+  if n_pos == 5 {
+    // `NDSolve[eqns, u, {x, …}, {y, …}, {t, …}]`: a PDE in two space
+    // variables and time.
+    let mut flat_eqs = Vec::new();
+    flatten_eq_list(&args[0], &mut flat_eqs);
+    let opts = pde_mol::MolOptions::from_rules(&args[n_pos..]);
+    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts) {
+      Some(mut result) => {
+        crate::evaluator::share_large_lists(&mut result, 0);
+        Ok(result)
+      }
+      None => Ok(unevaluated("NDSolve", args)),
+    };
+  }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
   }
@@ -3049,14 +3064,23 @@ fn ndsolve_pde(
     Expr::List(items) => items.to_vec(),
     other => vec![other.clone()],
   };
-  let eq_items = flatten_chained_equalities(&eq_items);
+  let eq_items =
+    extract_summed_dirichlet_conditions(&flatten_chained_equalities(&eq_items));
   // The finite-element form (`NeumannValue`) returns its solutions as
   // functions of the space variable first, then time, like the unknowns'
   // own `u[x, t]` calls, whatever order the domains were declared in.
   let (eq_items, dim0_dom, natural_flux, both_edges) =
     match lower_neumann_values(&eq_items, &u_names, &[&dom_a, &dom_b]) {
       Some((lowered, x_vars)) => {
-        let dim0 = if dom_a.name == x_vars[0] {
+        // The flux variable is first unless the unknowns' calls put it
+        // second (`s[z, r]` with the flux on `r`).
+        let flux_pos = u_names.iter().find_map(|u| {
+          eq_items
+            .iter()
+            .find_map(|e| pde_space_position(e, u, &x_vars[0]))
+        });
+        let flux_first = flux_pos != Some(1);
+        let dim0 = if (dom_a.name == x_vars[0]) == flux_first {
           &dom_a
         } else {
           &dom_b
@@ -3424,6 +3448,54 @@ fn flatten_chained_equalities(items: &[Expr]) -> Vec<Expr> {
       out.push(item.clone());
     }
   }
+  out
+}
+
+/// Split `DirichletCondition[…]` terms added into an equation (the finite
+/// element shorthand `lhs == rhs + NeumannValue[…] + DirichletCondition[…]`)
+/// out into conditions of their own. A `DirichletCondition` is not a
+/// quantity, so the equation itself is what remains of its side without
+/// them. Items without such a term pass through unchanged.
+fn extract_summed_dirichlet_conditions(items: &[Expr]) -> Vec<Expr> {
+  let is_dc = |t: &Expr| {
+    matches!(t, Expr::FunctionCall { name, args }
+      if name == "DirichletCondition" && args.len() == 2)
+  };
+  let mut out = Vec::with_capacity(items.len());
+  let mut conditions = Vec::new();
+  for item in items {
+    let Some((lhs, rhs)) = as_equal_pair(item) else {
+      out.push(item.clone());
+      continue;
+    };
+    let mut sides = Vec::with_capacity(2);
+    let mut found = false;
+    for side in [lhs, rhs] {
+      let terms = flatten_plus_terms(side);
+      if terms.iter().any(is_dc) {
+        found = true;
+        let (dcs, rest): (Vec<Expr>, Vec<Expr>) =
+          terms.into_iter().partition(is_dc);
+        conditions.extend(dcs);
+        sides.push(if rest.is_empty() {
+          Expr::Integer(0)
+        } else {
+          plus(rest)
+        });
+      } else {
+        sides.push(side.clone());
+      }
+    }
+    if found {
+      out.push(Expr::Comparison {
+        operands: sides,
+        operators: vec![ComparisonOp::Equal],
+      });
+    } else {
+      out.push(item.clone());
+    }
+  }
+  out.extend(conditions);
   out
 }
 
@@ -7983,6 +8055,26 @@ enum StateTrigger {
   Condition(Expr),
 }
 
+/// Whether a `WhenEvent` event is a real-valued expression (a sum,
+/// product, power, negation or quotient) rather than a logical condition.
+fn is_arithmetic_event(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+    ),
+    Expr::UnaryOp { op, .. } => *op == UnaryOperator::Minus,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Plus" | "Times" | "Power")
+    }
+    _ => false,
+  }
+}
+
 /// A state event ready for integration. Its trigger is rewritten over the
 /// state placeholders; the action is kept as written, since a rule
 /// `f[x] -> value` in it names the state component it resets.
@@ -8049,6 +8141,12 @@ impl StateEvent {
       (raw.condition.clone(), None)
     };
     let trigger = match as_equal_pair(&condition) {
+      // A real-valued event `f` (not a logical condition) fires where it
+      // crosses zero, like `f == 0`.
+      None if is_arithmetic_event(&condition) => {
+        let rewritten = substitute_function_values(&condition, funcs, x_name);
+        StateTrigger::Crossing(NumFn::new(rewritten, var_names))
+      }
       Some((lhs, rhs)) => {
         let diff = Expr::FunctionCall {
           name: "Plus".to_string(),
@@ -8817,16 +8915,39 @@ fn integrate_leg(
         if !ev.active.get() {
           continue;
         }
-        let (Some(g0), Some(g1)) =
-          (prev_state_values[ei], state_value(ev, new_x, &new_state))
-        else {
+        let Some(g0) = prev_state_values[ei] else {
           continue;
         };
-        if !ev.fires(g0, g1) {
-          continue;
+        // The crossing is looked for between consecutive points the step's
+        // refinement visited (the last of them is `new_x`), so a trigger
+        // that crosses and recrosses within one nominal step still fires,
+        // and it is located with partial RK4 steps from the point before
+        // it, which are as short (and so as accurate) as the refinement
+        // found the step needs. Comparing only the step's two ends missed
+        // such a crossing, and one partial step across the whole nominal
+        // step was far off where the refinement had to subdivide it.
+        let mut base_x = x;
+        let mut base_state: &[f64] = &state;
+        let mut g_base = g0;
+        let mut found: Option<(f64, Vec<f64>)> = None;
+        for (xr, sr) in &refined {
+          let g = state_value(ev, *xr, sr);
+          if let Some(g) = g
+            && ev.fires(g_base, g)
+          {
+            found = Some((xr - base_x, sr.clone()));
+            break;
+          }
+          base_x = *xr;
+          base_state = sr;
+          if let Some(g) = g {
+            g_base = g;
+          }
         }
-        let (mut lo, mut hi) = (0.0_f64, h);
-        let mut hi_state = new_state.clone();
+        let Some((span, mut hi_state)) = found else {
+          continue;
+        };
+        let (mut lo, mut hi) = (0.0_f64, span);
         for _ in 0..60 {
           let mid = f64::midpoint(lo, hi);
           if mid == lo || mid == hi {
@@ -8836,32 +8957,33 @@ fn integrate_leg(
             residuals,
             funcs,
             state_offset,
-            &state,
-            x,
+            base_state,
+            base_x,
             mid,
             cached_m,
           )?
           else {
             break;
           };
-          match state_value(ev, x + mid, &s_mid) {
-            Some(g) if ev.fires(g0, g) => {
+          match state_value(ev, base_x + mid, &s_mid) {
+            Some(g) if ev.fires(g_base, g) => {
               hi = mid;
               hi_state = s_mid;
             }
             _ => lo = mid,
           }
         }
-        if !ev.guard_holds(x + hi, &hi_state, state_events.var_names) {
+        let t_hit = base_x + hi;
+        if !ev.guard_holds(t_hit, &hi_state, state_events.var_names) {
           continue;
         }
         // "Earliest" along the leg's direction (a backward leg runs down).
         let dir = h.signum();
         if earliest
           .as_ref()
-          .is_none_or(|(t, _, _)| dir * (x + hi) < dir * *t)
+          .is_none_or(|(t, _, _)| dir * t_hit < dir * *t)
         {
-          earliest = Some((x + hi, hi_state, ei));
+          earliest = Some((t_hit, hi_state, ei));
         }
       }
       if let Some((te, state_at, ei)) = earliest {
@@ -12030,6 +12152,14 @@ fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
         "Coth" => Some(|z: Cx| z.cosh().mul(z.sinh().recip())),
         "Sech" => Some(|z: Cx| z.cosh().recip()),
         "Csch" => Some(|z: Cx| z.sinh().recip()),
+        "Re" => Some(|z: Cx| Cx::real(z.re)),
+        "Im" => Some(|z: Cx| Cx::real(z.im)),
+        "Conjugate" => Some(|z: Cx| Cx {
+          re: z.re,
+          im: -z.im,
+        }),
+        "Abs" => Some(|z: Cx| Cx::real(z.re.hypot(z.im))),
+        "Arg" => Some(|z: Cx| Cx::real(z.im.atan2(z.re))),
         _ => None,
       };
       if let Some(f) = unary
@@ -19755,6 +19885,22 @@ fn dsolve_linear_system(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// `Re`, `Im`, `Abs`, `Arg` and `Conjugate` of a complex subexpression
+  /// compile to machine arithmetic.
+  #[test]
+  fn compiles_real_parts_of_complex_subexpressions() {
+    let vars = ["x".to_string(), "y".to_string()];
+    let eval = |src: &str| {
+      let e = crate::syntax::string_to_expr(src).unwrap();
+      CompiledReal::new(&e, &vars).unwrap().eval(&[3.0, 4.0])
+    };
+    assert_eq!(eval("Re[(x + I y)^2]"), -7.0);
+    assert_eq!(eval("Im[(x + I y)^2 + Complex[1, -2]]"), 22.0);
+    assert_eq!(eval("Abs[x + I y]"), 5.0);
+    assert_eq!(eval("Arg[x + I y]"), 4f64.atan2(3.0));
+    assert_eq!(eval("Im[Conjugate[x + I y]]"), -4.0);
+  }
 
   /// A hand-built 4x4 periodic tridiagonal system whose two corners
   /// (`alpha` at the bottom-left, `beta` at the top-right — see
