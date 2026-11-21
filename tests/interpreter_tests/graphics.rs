@@ -1131,14 +1131,16 @@ mod graphics {
       let opts = "Boxed -> False, Lighting -> {{\"Ambient\", White}}, \
                   ViewPoint -> {0, 0, 10}, \
                   PlotRange -> {{-2, 2}, {-2, 2}, {-1, 1}}";
+      // Without edges no fan triangle widens across its cut, so the
+      // areas add up exactly.
       let crossing = export_svg(&format!(
-        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+        "Graphics3D[{{EdgeForm[], Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
          {{-1, 1, 0}}}} -> {{{{0.5, -0.25, 0}}, {{1.5, -0.25, 0}}, \
-         {{1.5, 0.25, 0}}, {{0.5, 0.25, 0}}}}], {opts}]"
+         {{1.5, 0.25, 0}}, {{0.5, 0.25, 0}}}}]}}, {opts}]"
       ));
       let solid = export_svg(&format!(
-        "Graphics3D[Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
-         {{-1, 1, 0}}}}], {opts}]"
+        "Graphics3D[{{EdgeForm[], Polygon[{{{{-1, -1, 0}}, {{1, -1, 0}}, {{1, 1, 0}}, \
+         {{-1, 1, 0}}}}]}}, {opts}]"
       ));
       let (crossing_area, crossing_x) = svg_polygon_area_and_max_x(&crossing);
       let (solid_area, solid_x) = svg_polygon_area_and_max_x(&solid);
@@ -10601,12 +10603,14 @@ mod plot3d {
 
     /// A plane cuts a quadrilateral out of the box. Comparing the whole
     /// SVG would compare the triangle fan's starting corner too, so this
-    /// checks the drawn corners as a set.
+    /// checks the drawn corners as a set. Without edges the fan halves do
+    /// not widen across their cut, so only true corners are drawn.
     #[test]
     fn unbounded_planes_fill_their_cross_section_of_the_box() {
       let corners = |code: &str| -> Vec<String> {
-        let svg =
-          export_svg(&format!("Graphics3D[{{{code}}}, PlotRange -> 10]"));
+        let svg = export_svg(&format!(
+          "Graphics3D[{{EdgeForm[], {code}}}, PlotRange -> 10]"
+        ));
         let mut pts: Vec<String> = svg
           .split("<polygon points=\"")
           .skip(1)
@@ -32253,7 +32257,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(dashed_edges.iter().all(|e| !e.contains("stroke-linecap")));
     }
 
-    /// The filled triangles and the dark outline edges of a 3D SVG, in draw
+    /// The filled faces and the dark outline edges of a 3D SVG, in draw
     /// order: `(index, corners)` and `(index, from, to)`.
     #[allow(clippy::type_complexity)]
     fn svg_faces_and_outlines(
@@ -32291,13 +32295,18 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       (faces, outlines)
     }
 
-    /// How far `p` lies inside the triangle `t` (negative outside).
+    /// How far `p` lies inside the convex polygon `t` (negative outside):
+    /// a triangle, or a fan triangle widened across its internal cuts.
     fn inset(t: &[(f64, f64)], p: (f64, f64)) -> f64 {
       let side = |a: (f64, f64), b: (f64, f64)| {
         let len = ((b.0 - a.0).powi(2) + (b.1 - a.1).powi(2)).sqrt();
         ((b.0 - a.0) * (p.1 - a.1) - (b.1 - a.1) * (p.0 - a.0)) / len
       };
-      let s = [side(t[0], t[1]), side(t[1], t[2]), side(t[2], t[0])];
+      let s: Vec<f64> = (0..t.len())
+        .map(|k| (t[k], t[(k + 1) % t.len()]))
+        .filter(|(a, b)| a != b)
+        .map(|(a, b)| side(a, b))
+        .collect();
       let lo = s.iter().copied().fold(f64::MAX, f64::min);
       let hi = s.iter().copied().fold(f64::MIN, f64::max);
       lo.max(-hi)
@@ -32323,7 +32332,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
           let mid = (f64::midpoint(a.0, b.0), f64::midpoint(a.1, b.1));
           let cover = faces
             .iter()
-            .filter(|(j, pts)| *j > i && pts.len() == 3 && pts[0] != pts[1])
+            .filter(|(j, pts)| *j > i && pts.len() >= 3 && pts[0] != pts[1])
             .map(|(_, pts)| inset(pts, mid))
             .fold(f64::MIN, f64::max);
           (a, b, cover)
@@ -32460,7 +32469,7 @@ ParametricPlot[f[t], {t, 0, 1}]]",
             let p = (a.0 + t * (b.0 - a.0), a.1 + t * (b.1 - a.1));
             !faces.iter().any(|(j, pts)| {
               j > i
-                && pts.len() == 3
+                && pts.len() >= 3
                 && pts[0] != pts[1]
                 && inset(pts, p) > -0.15
             })

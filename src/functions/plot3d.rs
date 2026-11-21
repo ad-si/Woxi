@@ -175,6 +175,51 @@ impl Default for Camera {
   }
 }
 
+/// The outline of a projected fan triangle's fill, widened by a band of
+/// `overlap` pixels across each internal cut (`boundary[i] == false`) of
+/// its polygon, so the halves of a face overlap and no anti-aliasing seam
+/// traces the cut. Outline edges stay where they are. Near the ends of a
+/// cut the band can leave the polygon, but by at most `overlap` from its
+/// outline, which an outline stroke at least `2 * overlap` wide covers.
+/// Triangles without both kinds of edge — a lone triangle, or a face drawn
+/// without edges, whose outline is unknown — keep their three corners.
+pub(crate) fn widen_across_internal_cuts(
+  corners: [(f64, f64); 3],
+  boundary: [bool; 3],
+  overlap: f64,
+) -> Vec<(f64, f64)> {
+  let signed_area = (corners[1].0 - corners[0].0)
+    * (corners[2].1 - corners[0].1)
+    - (corners[2].0 - corners[0].0) * (corners[1].1 - corners[0].1);
+  if boundary.iter().all(|&b| b)
+    || boundary.iter().all(|&b| !b)
+    || overlap <= 0.0
+    || signed_area.abs() < 1e-9
+  {
+    return corners.to_vec();
+  }
+  let mut out = Vec::with_capacity(7);
+  for i in 0..3 {
+    let (a, b) = (corners[i], corners[(i + 1) % 3]);
+    out.push(a);
+    if boundary[i] {
+      continue;
+    }
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len = dx.hypot(dy);
+    if len < 1e-9 {
+      continue;
+    }
+    // With a positive signed area the corners run counter-clockwise, so
+    // the right-hand normal of each edge points out of the triangle.
+    let sign = signed_area.signum();
+    let (nx, ny) = (sign * dy / len * overlap, -sign * dx / len * overlap);
+    out.push((a.0 + nx, a.1 + ny));
+    out.push((b.0 + nx, b.1 + ny));
+  }
+  out
+}
+
 #[derive(Clone)]
 pub(crate) struct Triangle {
   pub projected: [(f64, f64); 3],
@@ -15490,8 +15535,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             d.join(" ")
           ));
         } else if tri.opacity > 0.0 {
+          let corners = [(x0, y0), (x1, y1), (x2, y2)];
+          // An opaque fan triangle reaches a little across the internal
+          // cuts of its polygon, so the two halves of a face overlap there
+          // and no anti-aliasing seam traces the diagonal.
+          // The band may leave the face by up to its own width, which the
+          // solid outline drawn over it covers.
+          let fill = if tri.opacity >= 1.0 && tri.edge_dashing.is_none() {
+            widen_across_internal_cuts(
+              corners,
+              tri.boundary,
+              (edge_width / 2.0).min(0.5),
+            )
+          } else {
+            corners.to_vec()
+          };
+          let points = fill
+            .iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
+            .collect::<Vec<_>>()
+            .join(" ");
           svg.push_str(&format!(
-            "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+            "<polygon points=\"{points}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
           ));
         }
         // The group's faces are `all_triangles[pos..]`, in order.
