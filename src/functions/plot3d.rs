@@ -12336,7 +12336,7 @@ const CYLINDER_SCENE_RING_DIVISIONS: f64 = 24.0;
 /// thousands of triangles. Regression: a motor model with a dozen thin bars
 /// through translucent drums drew a 16 MB SVG per animation frame.
 fn cylinder_scene_ring_cap(len: f64, scene_extent: f64) -> usize {
-  if !(scene_extent > 0.0) || !len.is_finite() {
+  if scene_extent.is_nan() || scene_extent <= 0.0 || !len.is_finite() {
     return MAX_SIDE_SUBDIVISIONS;
   }
   ((CYLINDER_SCENE_RING_DIVISIONS * len / scene_extent).ceil() as usize)
