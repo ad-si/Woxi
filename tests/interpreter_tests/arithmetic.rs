@@ -8761,6 +8761,34 @@ mod cases {
     );
   }
 
+  /// `ToString[TraditionalForm[real]]` shows a machine real at the same 6
+  /// significant digits as `ToString[real, TraditionalForm]`, so a label
+  /// built from it reads `14.6325`, not every stored digit.
+  #[test]
+  fn to_string_of_traditional_form_rounds_machine_reals() {
+    assert_case(
+      "ToString[TraditionalForm[14.63251179826539]]",
+      "DisplayForm[FormBox[14.6325`, TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[TraditionalForm[{0.7967806891350713, x}]]",
+      "DisplayForm[FormBox[RowBox[{{, RowBox[{0.796781`, ,, x}], }}], TraditionalForm]]",
+    );
+  }
+
+  /// A number-display form fixes its own digits, so the 6-digit rounding of
+  /// `ToString` leaves the number inside it alone.
+  #[test]
+  fn to_string_traditional_form_keeps_number_form_digits() {
+    for code in [
+      "ToString[NumberForm[1.23456789, 9], TraditionalForm]",
+      "ToString[TraditionalForm[NumberForm[1.23456789, 9]]]",
+    ] {
+      let out = woxi::interpret(code).unwrap();
+      assert!(out.contains("1.23456789"), "{code}: {out}");
+    }
+  }
+
   /// A sum whose later term has a negative rational coefficient sets that
   /// term with a minus sign, not as `+ (-1 π)/4`.
   #[test]

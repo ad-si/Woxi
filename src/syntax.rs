@@ -18118,6 +18118,10 @@ pub fn collect_identifier_names<S: std::hash::BuildHasher>(
         collect_identifier_names(a, out);
       }
     }
+    // A shared array of numbers or strings names no symbol; its memoized
+    // flag answers in O(1) where walking it costs O(N) on every substitution
+    // that checks a value for capture.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {}
     Expr::List(items) => {
       for it in items {
         collect_identifier_names(it, out);
@@ -18262,6 +18266,12 @@ fn substitute_variable_impl(
   match expr {
     Expr::Identifier(name) | Expr::Constant(name) if name == var_name => {
       value.clone()
+    }
+    // A shared array of numbers or strings holds no symbol to replace:
+    // copying the pointer keeps it shared, where rebuilding it would copy
+    // the array and make every later walk over it O(N) again.
+    Expr::List(items) if crate::evaluator::is_shared_inert_list(items) => {
+      expr.clone()
     }
     Expr::List(items) => Expr::List(
       items

@@ -4384,9 +4384,9 @@ const SETTER_BAR_MAX_CHOICES: usize = 5;
 /// How wide, in characters summed over every label, a SetterBar of at most
 /// [`SETTER_BAR_MAX_CHOICES`] choices may be. Past this the row of buttons no
 /// longer fits the control panel and Wolfram falls back to a PopupMenu. The
-/// sampled Demonstrations bracket it: five figure names totaling 55
+/// sampled Demonstrations bracket it: three plot-selector phrases totaling 67
 /// characters are a bar, five error descriptions totaling 72 are a dropdown.
-const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
+const SETTER_BAR_MAX_ROW_CHARS: usize = 69;
 
 /// Maximum number of *compact* choices — every label at most
 /// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
@@ -4469,6 +4469,7 @@ fn discrete_checkbox_state(
 /// | 4       | `prisoners dilemma`, …              |    57 | SetterBar  |
 /// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
 /// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
+/// | 3       | three plot-selector phrases         |    67 | SetterBar  |
 /// | 8       | `-3` … `4`                          |    16 | SetterBar  |
 /// | 9       | `2` … `10`                          |    10 | PopupMenu  |
 /// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
@@ -23949,6 +23950,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "rectangle",
       "right triangle",
     ]));
+    // Three phrases totaling 68 characters (just under the 72 that overflow
+    // into a dropdown) still fit as a bar, as in a process-control
+    // Demonstration whose three plot choices total 67.
+    assert!(bar(&[
+      "product concentration",
+      "feed rate adjustment",
+      "condenser outflow heat duty",
+    ]));
 
     // Past five, short labels keep the bar...
     assert!(bar(&["-3", "-2", "-1", "1", "2", "3", "4"]));
@@ -25601,6 +25610,73 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
       pressure_view,
       render(&widget),
       "the Switch must render a different picture for the other choice"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// fractal arrangement of 3D polyhedra) against Woxi Studio's Manipulate
+  /// pipeline. Its shape: an `Initialization` builds `GraphicsComplex`es
+  /// from `PolyhedronData[name, "VertexCoordinates"]` and `"FaceIndices"`,
+  /// one wrapped in `Rotate[…, Pi, {0, 0, 1}]`; the body `Scale`s and
+  /// `Translate`s copies of them onto a solid's vertices and draws them in
+  /// a `Graphics3D` with `ViewPoint`/`ViewAngle`, toggling extra parts with
+  /// `If[flag, part]`. A reversed-range slider (`{{g, 4, …}, 4, 1}`) and two
+  /// `{True, False}` checkboxes with numbered `ControlPlacement -> n` drive
+  /// it, the checkboxes laid out side by side by a custom
+  /// `Row[{Manipulate`Place[1], Spacer[…], Manipulate`Place[2]}]`.
+  ///
+  /// This is a self-authored, construct-equivalent example — not the
+  /// notebook's own code, which is copyrighted. It doubles as a regression
+  /// test for the `Place` row, whose checkboxes used to land on separate
+  /// lines instead of sharing one.
+  #[test]
+  fn demonstration_polyhedra_fractal_place_row_shares_one_line() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{small, ring},
+  small = Scale[cube, 1/2^g {1, 1, 1}, {0, 0, 0}];
+  ring = Map[Translate[small, #] &, 2 octv];
+  Graphics3D[{{Orange, oct}, {Cyan, ring}, If[showCube, {Red, cube}], If[showRing, Scale[{Green, ring}, 0.5 {1, 1, 1}, {0, 0, 0}]]},
+   PlotRange -> 3, SphericalRegion -> True, Boxed -> False, ViewPoint -> {0, 0, 10}, ViewAngle -> 0.2, ImageSize -> {300, 260}]],
+ {{g, 4, \"shrink cubes\"}, 4, 1, Appearance -> \"Labeled\"},
+ {{showCube, False, \"show cube\"}, {True, False}, ControlPlacement -> 1},
+ {{showRing, False, \"show ring\"}, {True, False}, ControlPlacement -> 2},
+ Row[{Manipulate`Place[1], Spacer[40], Manipulate`Place[2]}],
+ TrackedSymbols -> {g, showCube, showRing}, ControlPlacement -> Top,
+ Initialization :> (
+  cube = GraphicsComplex[PolyhedronData[\"Cube\", \"VertexCoordinates\"], Polygon[PolyhedronData[\"Cube\", \"FaceIndices\"]]];
+  octv = PolyhedronData[\"Octahedron\", \"VertexCoordinates\"];
+  oct = {Rotate[GraphicsComplex[octv, Polygon[PolyhedronData[\"Octahedron\", \"FaceIndices\"]]], Pi, {0, 0, 1}]})]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`g$$ = 4, $CellContext`showCube$$ = False, $CellContext`showRing$$ = False}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the scaled and translated polyhedra must draw"
+    );
+    let rows: Vec<(&str, bool)> = widget
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !c.name().is_empty())
+      .map(|(i, c)| (c.name(), widget.joins_previous_control(i)))
+      .collect();
+    assert_eq!(
+      rows,
+      vec![("g", false), ("showCube", false), ("showRing", true)],
+      "the Place row must put both checkboxes on one line"
     );
   }
 

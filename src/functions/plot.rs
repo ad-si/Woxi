@@ -5536,6 +5536,7 @@ fn inject_epilog(
     y_min,
     y_max,
     scale,
+    image_w: f64::from(opts.svg_width) * scale,
   };
   let epilog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.epilog,
@@ -5576,6 +5577,7 @@ fn inject_prolog(
     y_min,
     y_max,
     scale,
+    image_w: f64::from(opts.svg_width) * scale,
   };
   let prolog_svg = crate::functions::plot_epilog::render_overlay_svg(
     &opts.prolog,
@@ -10909,6 +10911,7 @@ pub(crate) fn generate_bar_svg(
       y_min,
       y_max,
       scale: sf,
+      image_w: render_width as f64,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
       epilog, &area, "epilog", false,
@@ -13571,6 +13574,7 @@ pub(crate) fn generate_histogram_svg(
       y_min,
       y_max,
       scale: sf,
+      image_w: render_width as f64,
     };
     let overlay = crate::functions::plot_epilog::render_overlay_svg(
       &opts.epilog,

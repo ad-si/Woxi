@@ -759,6 +759,22 @@ mod graphics {
       assert!(svg.contains("fill=\"rgb(0,0,255)\""));
     }
 
+    /// More `VertexColors` than points: the points take the leading colors
+    /// in order and the surplus ones are ignored.
+    #[test]
+    fn point_multi_vertex_colors_surplus_colors_ignored() {
+      let svg = export_svg(
+        "Graphics[{PointSize[0.03], Point[{{0, 0}, {1, 1}, {2, 0}}, \
+         VertexColors -> {Red, Green, Blue, Yellow, Cyan}]}]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,255,0)\""), "{svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "{svg}");
+      assert!(!svg.contains("fill=\"rgb(255,255,0)\""), "{svg}");
+      assert!(!svg.contains("fill=\"rgb(0,255,255)\""), "{svg}");
+      assert_eq!(svg.matches("<circle").count(), 3, "{svg}");
+    }
+
     #[test]
     fn line() {
       insta::assert_snapshot!(export_svg(
@@ -11857,6 +11873,43 @@ mod plot3d {
       }
     }
 
+    /// An explicit `AspectRatio -> r` stretches the projected box to the
+    /// picture's shape inside a `Manipulate` frame too, rather than being
+    /// overridden by the frame's default sphere framing: a Demonstration's
+    /// snapshots of a tall column of spheres at `AspectRatio -> 0.8` show
+    /// them widened into flat ellipses that span the whole picture.
+    #[test]
+    fn manipulate_frame_keeps_explicit_aspect_ratio_stretch() {
+      for (ratio, size) in [("0.8", "500"), ("1/2", "300"), ("1.5", "400")] {
+        let scene = |opts: &str| {
+          format!(
+            "Graphics3D[{{Sphere[{{0, 0, 10}}, 1], Sphere[{{0, 0, 60}}, 6]}}, \
+             AspectRatio -> {ratio}, Boxed -> False, ImageSize -> {size}{opts}]"
+          )
+        };
+        let plain = export_svg(&scene(""));
+        let in_frame = woxi::with_manipulate_frame(|| export_svg(&scene("")));
+        assert_eq!(in_frame, plain, "{ratio}");
+        // The stretched column fills the picture's width, far wider than
+        // the round spheres' own width/height proportion would allow.
+        let (x0, x1) = in_frame
+          .split("<polygon points=\"")
+          .skip(1)
+          .flat_map(|c| c.split('"').next().unwrap().split_whitespace())
+          .map(|pair| pair.split_once(',').unwrap().0.parse::<f64>().unwrap())
+          .fold((f64::MAX, f64::MIN), |(a, b), x| (a.min(x), b.max(x)));
+        let width: f64 = size.parse().unwrap();
+        assert!(x1 - x0 > 0.6 * width, "{ratio}: {x0} {x1}");
+        // An explicit `SphericalRegion -> True` is still honored.
+        let spherical = export_svg(&scene(", SphericalRegion -> True"));
+        let forced_on = woxi::with_manipulate_frame(|| {
+          export_svg(&scene(", SphericalRegion -> True"))
+        });
+        assert_eq!(forced_on, spherical, "{ratio}");
+        assert_ne!(forced_on, plain, "{ratio}");
+      }
+    }
+
     // `ViewCenter` moves the point the camera looks at; the box middle is
     // the default, so naming it changes nothing.
     #[test]
@@ -14566,38 +14619,34 @@ mod plot3d {
          PlotLegends -> Automatic, \
          ImagePadding -> {{Automatic, 10}, {Automatic, 10}}]",
       );
-      let vb_w: f64 = svg
-        .split("viewBox=\"0 0 ")
-        .nth(1)
-        .and_then(|r| r.split_whitespace().next())
-        .and_then(|w| w.parse().ok())
-        .unwrap();
+      // The legend is its own picture set beside the plot; its labels
+      // must end inside it.
+      let legend = svg.rsplit("<svg x=").next().unwrap();
+      let attr = |head: &str, name: &str| -> f64 {
+        head
+          .split(&format!(" {name}=\""))
+          .nth(1)
+          .and_then(|r| r.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap_or(0.0)
+      };
+      let legend_w = attr(legend, "width");
       let mut widest_end = 0.0_f64;
-      for tag in svg.split("<text ").skip(1) {
-        if !tag.contains("dominant-baseline=\"central\"") {
-          continue;
-        }
+      for tag in legend.split("<text ").skip(1) {
         let Some((head, rest)) = tag.split_once('>') else {
           continue;
         };
-        let attr = |name: &str| -> f64 {
-          head
-            .split(&format!("{name}=\""))
-            .nth(1)
-            .and_then(|r| r.split('"').next())
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0)
-        };
+        let head = format!(" {head}");
         let label = rest.split('<').next().unwrap_or("");
-        if attr("font-size") > 130.0 && attr("x") > vb_w * 0.8 {
-          widest_end = widest_end
-            .max(attr("x") + label.len() as f64 * attr("font-size") * 0.5);
-        }
+        widest_end = widest_end.max(
+          attr(&head, "x")
+            + label.len() as f64 * attr(&head, "font-size") * 0.5,
+        );
       }
       assert!(widest_end > 0.0, "no legend labels found: {svg}");
       assert!(
-        widest_end <= vb_w,
-        "legend labels end at {widest_end}, past canvas {vb_w}"
+        widest_end <= legend_w,
+        "legend labels end at {widest_end}, past legend width {legend_w}"
       );
     }
 
@@ -20552,6 +20601,34 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert_eq!(generated, 3 * single, "{svg}");
     }
 
+    /// A body of calls that each return a point (`{f[u, v], g[u, v]}`) is
+    /// a group of regions, not one region with two scalar coordinates —
+    /// it used to draw nothing at all.
+    #[test]
+    fn parametric_plot_two_parameters_regions_from_point_valued_calls() {
+      clear_state();
+      interpret("ptRegionF[u_, v_] := {u, v}; ptRegionG[u_, v_] := {u + 3, v}; ptRegionH[u_, v_] := u")
+        .unwrap();
+      let svg = export_svg(
+        "ParametricPlot[{ptRegionF[u, v], ptRegionG[u, v]}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      let single = export_svg("ParametricPlot[{u, v}, {u, 0, 1}, {v, 0, 1}]")
+        .matches("<polygon")
+        .count();
+      assert!(single > 0);
+      assert_eq!(svg.matches("<polygon").count(), 2 * single, "{svg}");
+      // The second region is drawn in the second plot color.
+      let two = export_svg(
+        "ParametricPlot[{{u, v}, {u + 3, v}}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      assert_eq!(svg, two);
+      // Scalar-valued calls stay the coordinates of a single region.
+      let scalar = export_svg(
+        "ParametricPlot[{ptRegionH[u, v], v}, {u, 0, 1}, {v, 0, 1}]",
+      );
+      assert_eq!(scalar.matches("<polygon").count(), single, "{scalar}");
+    }
+
     /// `Mesh -> {m, n}` with a 2D `MeshShading` array fills the cells
     /// between the iso-parameter lines like a chessboard and strokes the
     /// mesh lines.
@@ -25504,6 +25581,137 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         svg.contains(">-1.5<") && svg.contains(">1.5<"),
         "bar labels"
       );
+    }
+
+    /// A shaded `ContourPlot`'s `PlotLegends -> Automatic` is a discrete
+    /// `BarLegend` over the contour levels in a `Legended` wrapper, so
+    /// `Show` keeps it when merging the plot with other graphics (it used
+    /// to be baked into the plot's picture and lost).
+    #[test]
+    fn contour_plot_legend_survives_show() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "c = ContourPlot[x y, {x, 0, 1}, {y, 0, 1}, \
+           PlotLegends -> Automatic]; {Head[c], c[[2]]}"
+        )
+        .unwrap(),
+        "{Legended, Placed[BarLegend[{WL14DefaultDensityGradient, {0., 1.}}, \
+         {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9}], After]}"
+      );
+      assert_eq!(
+        interpret(
+          "s = Show[c, Graphics[{Red, Point[{0.5, 0.5}]}]]; \
+           {Head[s], s[[2]] === c[[2]], Head[First[s]]}"
+        )
+        .unwrap(),
+        "{Legended, True, Graphics}"
+      );
+      let svg = export_svg("s");
+      // Ten bands between the nine levels, each level labeled.
+      assert!(svg.contains(">0.1<") && svg.contains(">0.9<"), "bar labels");
+      assert!(
+        !svg.contains("woxiLegendGradient"),
+        "discrete, not a gradient"
+      );
+    }
+
+    /// `PlotLegends -> Placed[Automatic, Below]` puts a contour plot's
+    /// color bar under the plot, lying flat and labeled underneath (it
+    /// used to be dropped).
+    #[test]
+    fn contour_plot_legend_placed_below() {
+      clear_state();
+      assert_eq!(
+        interpret(
+          "Last[ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, Contours -> 3, \
+           PlotLegends -> Placed[Automatic, Below]]]"
+        )
+        .unwrap(),
+        "Placed[BarLegend[{WL14DefaultDensityGradient, {0., 2.}}, \
+         {0.5, 1., 1.5}], Below]"
+      );
+      let svg_size = |svg: &str| -> (f64, f64) {
+        let attr = |name: &str| -> f64 {
+          let key = format!("{name}=\"");
+          let start = svg.find(&key).unwrap() + key.len();
+          svg[start..start + svg[start..].find('"').unwrap()]
+            .parse()
+            .unwrap()
+        };
+        (attr("width"), attr("height"))
+      };
+      let plain = export_svg("ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}]");
+      let below = export_svg(
+        "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, \
+         PlotLegends -> Placed[Automatic, Below]]",
+      );
+      let after = export_svg(
+        "ContourPlot[x + y, {x, 0, 1}, {y, 0, 1}, PlotLegends -> Automatic]",
+      );
+      let (pw, ph) = svg_size(&plain);
+      let (bw, bh) = svg_size(&below);
+      let (aw, ah) = svg_size(&after);
+      // Below: taller, not wider; After: wider, not taller.
+      assert!(bh > ph + 20.0 && (bw - pw).abs() < 1.0, "{bw}x{bh}");
+      assert!(aw > pw + 20.0 && (ah - ph).abs() < 1.0, "{aw}x{ah}");
+      // Centered labels under a horizontal bar.
+      assert!(below.contains("text-anchor=\"middle\">1.0<"), "{below}");
+    }
+
+    /// The legend a Wolfram contour plot carries — contours as
+    /// `{level, style}` pairs, `LegendLayout -> "Row"` and the bar length
+    /// as `LegendMarkerSize` — draws a flat discrete bar of that length
+    /// under the plot (it used to be dropped as an unreadable spec).
+    #[test]
+    fn plot_bar_legend_with_styled_contours_and_row_layout() {
+      let svg = export_svg(
+        "Legended[Graphics[Disk[], ImageSize -> 200], Placed[BarLegend[\
+         {\"Rainbow\", {0., 1.}}, {{0.25, Directive[GrayLevel[0]]}, \
+         {0.5, Directive[GrayLevel[0]]}, {0.75, Directive[GrayLevel[0]]}}, \
+         LegendLayout -> \"Row\", LegendMarkerSize -> 150], Below, Identity]]",
+      );
+      for label in ["0.25", "0.50", "0.75"] {
+        assert!(
+          svg.contains(&format!("text-anchor=\"middle\">{label}<")),
+          "{label}: {svg}"
+        );
+      }
+      // Four equal bands spanning the 150-point bar.
+      let widths: Vec<f64> = svg
+        .match_indices("<rect x=")
+        .filter_map(|(i, _)| {
+          let tag = &svg[i..i + svg[i..].find("/>")?];
+          if !tag.contains("fill=\"rgb(") {
+            return None;
+          }
+          let start = tag.find("width=\"")? + 7;
+          tag[start..start + tag[start..].find('"')?].parse().ok()
+        })
+        .collect();
+      assert_eq!(widths.len(), 4, "{widths:?}");
+      assert!(widths.iter().all(|w| (w - 37.5).abs() < 0.5), "{widths:?}");
+    }
+
+    /// A discrete `BarLegend` draws equal-sized bands and labels each
+    /// contour where two bands meet, however unevenly the contours are
+    /// spaced (labels used to sit at value-proportional heights, off the
+    /// band edges).
+    #[test]
+    fn discrete_bar_legend_labels_band_edges() {
+      let svg = export_svg("BarLegend[{\"Rainbow\", {0, 10}}, {1, 2, 9}]");
+      let label_y = |label: &str| -> f64 {
+        let at = svg.find(&format!(">{label}<")).unwrap();
+        let start = svg[..at].rfind("<text").unwrap();
+        svg[start..at]
+          .split(" y=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap()
+      };
+      let (y1, y2, y9) = (label_y("1"), label_y("2"), label_y("9"));
+      assert!(((y1 - y2) - (y2 - y9)).abs() < 0.2, "{y1} {y2} {y9}");
     }
 
     /// `PlotRange -> {zmin, zmax}` stretches the colors over exactly that
@@ -32691,6 +32899,24 @@ mod matrix_form {
          ({color} missing): {svg}"
       );
     }
+  }
+
+  // A `StringForm` grid cell is as wide as its filled template — the
+  // column of `StringForm["(``, ``)", 1.3, 1.3]` matches that of the string
+  // "(1.3, 1.3)" — not as wide as its `StringForm[…]` source.
+  #[test]
+  fn grid_cell_of_string_form_is_as_wide_as_its_filled_template() {
+    clear_state();
+    let width = |code: &str| -> String {
+      let svg =
+        interpret(&format!("ExportString[Grid[{{{{{code}}}}}], \"SVG\"]"))
+          .unwrap();
+      svg.split('"').nth(1).unwrap().to_string()
+    };
+    assert_eq!(
+      width(r#"StringForm["(``, ``)", 1.3, NumberForm[1.34, {10, 1}]]"#),
+      width(r#""(1.3, 1.3)""#)
+    );
   }
 
   // A `StringForm` string argument substitutes as its raw text, not the
@@ -66309,5 +66535,72 @@ fn framed_item_in_column_text_label_keeps_its_frame() {
   assert!(svg.contains("stroke=\"rgb(255,0,0)\""), "{svg}");
   for label in ["heading", "first", "second"] {
     assert!(svg.contains(&format!(">{label}</text>")), "{label}: {svg}");
+  }
+}
+
+/// Pictures that are operands of a formula (`1/6 (g1 + 2 g2) == g3`) are
+/// drawn inline as nested pictures — both as a displayed result and as a
+/// `Text` label inside `Graphics` — instead of as their box source or
+/// `-Graphics-` placeholders, and the rational coefficient keeps its own
+/// small fraction in front of the parenthesized sum.
+mod inline_graphics_operands {
+  use super::*;
+
+  const DEFS: &str = "g1 = Graphics[{Blue, Circle[]}, ImageSize -> 25]; \
+     g2 = Graphics[{Red, Disk[]}, ImageSize -> 25]; ";
+
+  fn nested_pictures(svg: &str) -> usize {
+    svg.matches("<svg x=").count()
+  }
+
+  /// A `Text` label typeset as a picture is itself one nested picture
+  /// around the inline graphics it holds.
+  fn label_pictures(svg: &str) -> usize {
+    nested_pictures(svg) - 1
+  }
+
+  #[test]
+  fn displayed_formula_draws_graphics_inline() {
+    let svg = export_svg(&format!("{DEFS} 1/6 (g1 + 2 g2) == g1"));
+    assert_eq!(nested_pictures(&svg), 3, "{svg}");
+    assert!(!svg.contains("GraphicsBox"), "{svg}");
+    assert!(!svg.contains("CircleBox"), "{svg}");
+    assert!(
+      svg.contains("rgb(0,0,255)") || svg.contains("#0000ff"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn text_label_formula_draws_graphics_inline() {
+    let svg = export_svg(&format!(
+      "{DEFS} Graphics[{{Text[1/6 (g1 + 2 g2) == g2, {{0, 0}}], \
+       Circle[{{0, 0}}, 3]}}]"
+    ));
+    assert_eq!(label_pictures(&svg), 3, "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
+  }
+
+  #[test]
+  fn graphic_sum_label_keeps_each_term() {
+    let svg = export_svg(&format!(
+      "{DEFS} Graphics[{{Text[g1 + g2, {{0, 0}}], Point[{{1, 1}}]}}]"
+    ));
+    assert_eq!(label_pictures(&svg), 2, "{svg}");
+    assert!(!svg.contains("-Graphics-"), "{svg}");
+  }
+}
+
+/// A blank line in a multi-line `PlotLabel` keeps its height: the empty line's
+/// `tspan` carries a no-break space, since SVG drops the `dy` of an empty one.
+#[test]
+fn plot_label_blank_lines_keep_their_height() {
+  for code in [
+    r#"Plot[x, {x, 0, 1}, PlotLabel -> "top\n\nbottom"]"#,
+    r#"Show[Plot[x, {x, 0, 1}], PlotLabel -> "top\n\nbottom", Frame -> True]"#,
+  ] {
+    let svg = export_svg(code);
+    assert!(!svg.contains("\"></tspan>"), "{code}: {svg}");
+    assert!(svg.contains("bottom"), "{code}: {svg}");
   }
 }
