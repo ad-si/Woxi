@@ -1039,6 +1039,19 @@ pub fn pop_quiet() {
   }
 }
 
+/// Run `probe` with every message it emits discarded, as if wrapped in
+/// `Quiet[…]`. For internal, speculative evaluations whose complaints are
+/// bookkeeping no front end should show (a solver probing a candidate, a
+/// held graphic drawn as an inline preview).
+pub(crate) fn quietly<T>(probe: impl FnOnce() -> T) -> T {
+  let snapshot = snapshot_warnings();
+  push_quiet();
+  let result = probe();
+  pop_quiet();
+  restore_warnings(snapshot);
+  result
+}
+
 /// A saved copy of every message buffer, taken before a speculative or quieted
 /// evaluation so it can be rolled back afterwards.
 #[derive(Clone, Default)]
