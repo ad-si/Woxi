@@ -7814,7 +7814,7 @@ outward-wound unit triangles of mutual second neighbors, derived from the
 geometry without access to `wolframscript`; Wolfram's vertex/face order may
 differ. `"Volume"` is not derived and reports `Missing["NotAvailable"]`.
 
-### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"` and `"NetImage"` are unverified
+### `PolyhedronData` `"Dual"`, `"Image"`, `"SkeletonImage"`, `"NetImage"` and `"NetGraph"` are unverified
 
 Implemented without access to `wolframscript`. `"Dual"` gives the dual's
 entity for the Platonic, Archimedean/Catalan and Kepler–Poinsot solids and
@@ -7825,7 +7825,10 @@ answer is unknown. `PolyhedronData[e, "Dual", "Name"]` returns the same
 entity. `"Image"` is the same `Graphics3D` as `PolyhedronData[e]`;
 `"SkeletonImage"` draws a Schlegel diagram (convex solids) or a view down
 the z axis, and `"NetImage"` fills the `"NetFaces"` polygons. Wolfram's
-styling, layout and lighting of these pictures differ.
+styling, layout and lighting of these pictures differ. `"NetGraph"` is the
+vertex-edge graph of the `"NetCoordinates"`/`"NetFaceIndices"` net, with
+`VertexCoordinates` set to the net's points and edges sorted; Wolfram's
+vertex and edge order may differ.
 
 ### `PolyhedronData[]` lists fewer entities than Wolfram, so positions differ
 
