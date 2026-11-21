@@ -3576,13 +3576,15 @@ mod high_level_functions {
         !svg.contains("font-size=\"14.0\""),
         "no glyph should keep the default 14 pt: {svg}"
       );
-      // The same holds through `BaseStyle`, along with the color.
+      // The same holds through `BaseStyle`, along with the color. A grid
+      // item sits one script level deep, so its fraction is set at 0.75 of
+      // that size.
       let svg = interpret(
         "ExportString[Grid[{{1/2}}, BaseStyle -> {20, Red}], \"SVG\"]",
       )
       .unwrap();
       assert!(
-        svg.contains("font-size=\"20.0\""),
+        svg.contains("font-size=\"15.0\""),
         "BaseStyle size should reach the fraction: {svg}"
       );
       assert!(
@@ -3594,8 +3596,8 @@ mod high_level_functions {
         interpret("ExportString[Grid[{{Style[1/2, 20, Red]}}], \"SVG\"]")
           .unwrap();
       assert!(
-        svg.contains("rgb(255,0,0)") && svg.contains("font-size=\"20.0\""),
-        "styled fraction cell should be red at 20 pt: {svg}"
+        svg.contains("rgb(255,0,0)") && svg.contains("font-size=\"15.0\""),
+        "styled fraction cell should be red at 0.75 of 20 pt: {svg}"
       );
     }
 
