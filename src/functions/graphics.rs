@@ -25016,6 +25016,26 @@ fn traditionalize_styled_label(e: &Expr) -> Expr {
       items.push(Expr::String(")".into()));
       call1("Row", Expr::List(items.into()))
     }
+    // `Style["e", Italic]^Row[{Style["i", Italic], "t"}]`: base and
+    // exponent are each set on their own, so their styling (and the plain
+    // strings beside it) stays as written instead of being typeset again.
+    Expr::FunctionCall { name, args }
+      if name == "Power" && args.len() == 2 && contains_visible_style(e) =>
+    {
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: args.iter().map(traditionalize_styled_label).collect(),
+      }
+    }
+    Expr::BinaryOp {
+      op: op @ crate::syntax::BinaryOperator::Power,
+      left,
+      right,
+    } if contains_visible_style(e) => Expr::BinaryOp {
+      op: *op,
+      left: Box::new(traditionalize_styled_label(left)),
+      right: Box::new(traditionalize_styled_label(right)),
+    },
     // A list label keeps its braces; each element is set on its own.
     Expr::List(items) if contains_visible_style(e) => {
       Expr::List(items.iter().map(traditionalize_styled_label).collect())
