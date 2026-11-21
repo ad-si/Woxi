@@ -13595,6 +13595,33 @@ Manipulate[
     assert_eq!(state.display_trees.len(), 1);
   }
 
+  /// A dump whose `FrameLabel` uses the per-side `{{left, right}, {bottom,
+  /// top}}` form must show its top caption — here a `Grid` of
+  /// `Dynamic[Style[…]]` readouts of the slider — instead of dropping it.
+  #[test]
+  fn share_link_dump_keeps_per_side_frame_label_caption() {
+    let dump = "DynamicModuleBox[{$CellContext`k$$ = 0}, \
+      DynamicBox[Manipulate`ManipulateBoxes[\n\
+      1, StandardForm, \n\
+      \"Variables\" :> {$CellContext`k$$ = 0}, \n\
+      \"Body\" :> Graphics[Disk[{0, 0}, 1 + $CellContext`k$$]], \n\
+      \"Specifications\" :> {{{$CellContext`k$$, 0, \"size\"}, 0, 2}}, \n\
+      \"Options\" :> {FrameLabel -> {{None, None}, {None, Grid[{{Dynamic[\
+      Style[\"size is \" <> ToString[$CellContext`k$$], 12]]}}]}}}],\n\
+      DynamicModuleValues:>{}]]";
+    let state = instantiate_manipulate_from_box_dump(dump)
+      .expect("the dump must rebuild a live widget");
+    assert!(state.error.is_none(), "{:?}", state.error);
+    assert_eq!(state.displays.len(), 1, "{:?}", state.displays);
+    assert!(
+      state.displays[0].starts_with("Grid["),
+      "{:?}",
+      state.displays
+    );
+    let trees = format!("{:?}", state.display_trees);
+    assert!(trees.contains("size is 0"), "{trees}");
+  }
+
   /// A Setter whose choices are `ToString[f[x], TraditionalForm]` typesets
   /// as `sin(x)`, not as the box row's elements joined by commas
   /// (`sin(, x, )`).
@@ -18620,6 +18647,58 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
       vec![false, true]
     );
+  }
+
+  /// A `TogglerBar` control whose variable starts as a scalar choice
+  /// (`{{layer, 1, "show"}, {1 -> "a", 2 -> "b"}, ControlType ->
+  /// TogglerBar}`): the scalar reads as a one-element selection, so
+  /// toggling the other choice on keeps it (`{1, 2}`, as in the Wolfram
+  /// front end) instead of replacing it with `{2}`, and toggling the
+  /// scalar's own choice clears the selection.
+  #[test]
+  fn togglerbar_scalar_initial_value_keeps_its_choice_when_extended() {
+    let code = "Manipulate[\
+      {Graphics[Disk[]], Graphics[Circle[]]}[[layer]], \
+      Control[{{layer, 1, \"show\"}, {1 -> \"a\", 2 -> \"b\"}, \
+        ControlType -> TogglerBar}]]";
+    let build = || {
+      instantiate_stored_manipulate(code, "")
+        .expect("scalar-valued TogglerBar Manipulate must build a widget")
+    };
+
+    let mut state = build();
+    assert!(state.error.is_none(), "body must render: {:?}", state.error);
+    let togglers = collect_togglers(&state.display_trees);
+    assert_eq!(
+      togglers.iter().map(|(_, s)| *s).collect::<Vec<_>>(),
+      vec![true, false],
+      "the scalar 1 must draw its own choice selected"
+    );
+    let value = |state: &manipulate::ManipulateState| {
+      state
+        .state
+        .iter()
+        .find(|(name, _)| name == "layer")
+        .map(|(_, v)| v.clone())
+    };
+
+    // Toggling "b" on keeps "a": both pictures are drawn.
+    state.apply_display_mutation(&togglers[1].0);
+    assert!(state.error.is_none(), "re-render failed: {:?}", state.error);
+    assert_eq!(value(&state).as_deref(), Some("{1, 2}"));
+    assert_eq!(
+      collect_togglers(&state.display_trees)
+        .iter()
+        .map(|(_, s)| *s)
+        .collect::<Vec<_>>(),
+      vec![true, true]
+    );
+
+    // Toggling the scalar's own choice "a" unselects it.
+    let mut state = build();
+    let togglers = collect_togglers(&state.display_trees);
+    state.apply_display_mutation(&togglers[0].0);
+    assert_eq!(value(&state).as_deref(), Some("{}"));
   }
 
   #[test]

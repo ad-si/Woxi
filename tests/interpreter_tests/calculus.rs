@@ -5175,6 +5175,62 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A symmetric range is folded onto its right half (even-odd
+  // subdivision). The first wide panel over {-20, 20} only sampled the
+  // zero at the center of these peaks and accepted 0 as converged.
+  #[test]
+  fn symmetric_range_with_zero_at_center() {
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 Exp[-x^2], {x, -20, 20}] - Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 (1 + x) Exp[-x^2], {x, -20, 20}] - \
+         Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Mixed harmonic-oscillator states: <x^2> = (1 - c^2) 5/2 + c^2 7/2.
+    assert_eq!(
+      interpret(
+        "phi[x_, n_] := Pi^(-1/4)/Sqrt[2^n n!] HermiteH[n, x] Exp[-x^2/2]; \
+         psi[x_] := Sqrt[1 - 0.36] phi[x, 2] + 0.6 Exp[0.6 I] phi[x, 3]; \
+         Round[Chop[NIntegrate[x^2 psi[x] Conjugate[psi[x]], {x, -20, 20}]] \
+         - 2.86, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn odd_integrand_over_symmetric_range() {
+    assert_eq!(
+      interpret("NIntegrate[x^3 Exp[-x^2], {x, -20, 20}]").unwrap(),
+      "0."
+    );
+    assert_eq!(interpret("NIntegrate[Sin[x], {x, -1, 1}]").unwrap(), "0.");
+  }
+
+  // A complex constant factor with a zero imaginary part still makes
+  // every sample complex, so the parts are integrated separately.
+  #[test]
+  fn complex_samples_with_zero_imaginary_part() {
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 Exp[-x^2] (1 + 0. I), {x, -20, 20}] - \
+         Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // Infinite ranges are integrated with adaptive Gauss-Kronrod on the
   // mapped interval. Adaptive Simpson accepted oscillating integrands
   // (Hermite polynomials under a Gaussian) too early, e.g. giving 0.0011
