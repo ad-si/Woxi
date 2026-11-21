@@ -23478,7 +23478,7 @@ fn parametric_plot3d_curve_ast(
   let dt = (t_max - t_min) / SAMPLE_N as f64;
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
-  let mut plot_style: Option<&Expr> = None;
+  let mut plot_style: Option<Expr> = None;
   let mut color_function: Option<Expr> = None;
   let mut color_scaling = true;
   let mut plot_range: Option<[(f64, f64); 3]> = None;
@@ -23491,7 +23491,14 @@ fn parametric_plot3d_curve_ast(
       && let Expr::Identifier(name) = pattern.as_ref()
       && name == "PlotStyle"
     {
-      plot_style = Some(replacement.as_ref());
+      // ParametricPlot3D holds its arguments, so the style arrives as
+      // written. Evaluate it first: a computed style such as
+      // `If[tube, {Tube[r]}, Automatic]` (a Manipulate checkbox toggling
+      // the tube) must reduce to its `Tube` before that is lifted out.
+      plot_style = Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      );
     } else if let Expr::Rule {
       pattern,
       replacement,
@@ -23527,7 +23534,7 @@ fn parametric_plot3d_curve_ast(
   // radius `r` instead of as a line — how a Demonstration gives a knot its
   // thickness. It is not a color or a thickness, so it comes out of the
   // style list and turns each sampled polyline into a `Tube` instead.
-  let (tube_args, plot_style) = match plot_style {
+  let (tube_args, plot_style) = match &plot_style {
     Some(ps) => {
       let (tube, rest) = take_tube_directive(ps);
       (tube, Some(rest))
