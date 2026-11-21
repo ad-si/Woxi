@@ -30752,12 +30752,13 @@ fn item_size_entry_at(
 
 /// The one-line text a formatted `NumberForm`/`PaddedForm`/`AccountingForm`
 /// displays as. Multi-line 2-D forms are flattened and edge whitespace is
-/// trimmed, except the leading padding that is the whole point of a
-/// `PaddedForm`: WL keeps it, so `Row[{"x", PaddedForm[6., {3, 2}]}]`
-/// shows `x  6.00`.
+/// trimmed, except the leading padding of a one-line form: WL keeps it, so
+/// `Row[{"x", PaddedForm[6., {3, 2}]}]` shows `x  6.00` and
+/// `NumberForm[0.5, {4, 2}, NumberPadding -> {" ", "0"}]` shows `  0.50`,
+/// keeping a readout the same width as its value changes.
 fn number_form_display_line(name: &str, formatted: &str) -> String {
   let line = formatted.replace('\n', " ");
-  if name == "PaddedForm" {
+  if name == "PaddedForm" || !formatted.contains('\n') {
     line.trim_end().to_string()
   } else {
     line.trim().to_string()

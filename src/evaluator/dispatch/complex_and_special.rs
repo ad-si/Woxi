@@ -3889,7 +3889,8 @@ fn number_display_list_boxes(
 }
 
 /// `NumberForm[x, spec, opts…]` with display options (`NumberPadding`,
-/// `DigitBlock`, `ExponentFunction`, …) for a numeric `x`: the option-aware
+/// `DigitBlock`, `ExponentFunction`, …) for a numeric `x` (machine or
+/// arbitrary-precision, as `N[1, 4]` gives): the option-aware
 /// text rendering of `ToString` is boxed as a single string, so the number
 /// typesets as its formatted digits instead of as a literal function call.
 fn option_number_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
@@ -3899,7 +3900,7 @@ fn option_number_form_box(name: &str, args: &[Expr]) -> Option<Expr> {
       matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
         || matches!(a, Expr::FunctionCall { name, .. } if name == "Rule" || name == "RuleDelayed")
     })
-    || !matches!(args[0], Expr::Real(_) | Expr::Integer(_))
+    || !matches!(args[0], Expr::Real(_) | Expr::Integer(_) | Expr::BigFloat(..))
   {
     return None;
   }

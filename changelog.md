@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `NumberForm[x, {n, f}, NumberPadding -> {" ", "0"}]` readout in a
+    `Text@Row` or grid keeps its left padding, so the label stays the same
+    width as the value changes. `ToBoxes` of such a `NumberForm` around an
+    arbitrary-precision number (`N[1, 4]`) typesets its padded digits.
 - A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
     inside `Text`) is drawn as its full `w`×`h` box with the table aligned
     inside, so a Manipulate body sized this way no longer shrinks to the

@@ -16385,6 +16385,28 @@ mod typeset_boxes_regressions {
     );
   }
 
+  /// An arbitrary-precision value (`N[1, 4]`) under a `NumberForm` with
+  /// display options typesets as its padded digits, not as the literal call.
+  #[test]
+  fn option_number_form_box_of_arbitrary_precision_real() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "ToBoxes[NumberForm[N[1, 4], {4, 2}, NumberPadding -> {\" \", \"0\"}]]"
+      )
+      .unwrap(),
+      "TagBox[InterpretationBox[StyleBox[  1.00, ShowStringCharacters -> \
+       False], 1.`4., AutoDelete -> True], NumberForm]"
+    );
+    assert_eq!(
+      interpret(
+        "ToBoxes[NumberForm[N[-1/3, 10], {5, 3}, NumberPadding -> {\" \", \"0\"}]] // First // First // First"
+      )
+      .unwrap(),
+      " -0.333"
+    );
+  }
+
   /// Strings compare with their whitespace left out first, so a product of
   /// strings keeps `"complex" " roots"` in reading order.
   #[test]
