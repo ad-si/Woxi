@@ -23170,7 +23170,10 @@ fn solve_after_linear_elimination(
   Some(Expr::List(results.into()))
 }
 
-fn solve_linear_symbolic(eqs: &[Expr], var_names: &[String]) -> Option<Expr> {
+pub(super) fn solve_linear_symbolic(
+  eqs: &[Expr],
+  var_names: &[String],
+) -> Option<Expr> {
   let n = var_names.len();
   let mut matrix: Vec<Vec<Expr>> = Vec::new();
 
