@@ -3995,8 +3995,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
     // separate `Labeled`-composition pipeline in `expr_to_svg` already
     // handles for an actual graphic). Each label is itself rendered
     // through the one-cell `Grid` pipeline so its font matches the table
-    // it labels; `RotateLabel` is not honored — a `Left`/`Right` caption
-    // renders upright rather than rotated.
+    // it labels; `RotateLabel -> True` turns a `Left`/`Right` caption.
     // `Style[TraditionalForm[Labeled[…]], 20]`: the style and the form
     // apply to the text of the captioned picture.
     syntax::Expr::FunctionCall { name, .. }
@@ -4075,25 +4074,17 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           _ => bottom.push(label_svg.clone()),
         }
       }
-      // Stack same-side labels into one cell (rows of a mini grid), an
-      // empty side becoming an empty cell so the 3x3 layout below stays
-      // rectangular.
-      let side_cell = |svgs: &[String]| -> String {
-        match svgs.len() {
-          0 => String::new(),
-          1 => svgs[0].clone(),
-          _ => functions::graphics::combine_graphics_svgs(
-            &svgs.iter().map(|s| vec![s.clone()]).collect::<Vec<_>>(),
-          )
-          .unwrap_or_default(),
-        }
-      };
-      let rows = vec![
-        vec![String::new(), side_cell(&top), String::new()],
-        vec![side_cell(&left), content_svg, side_cell(&right)],
-        vec![String::new(), side_cell(&bottom), String::new()],
-      ];
-      match functions::graphics::combine_graphics_svgs(&rows) {
+      // `RotateLabel -> True` turns the left and right captions.
+      let rotate = args[2..].iter().any(|opt| {
+        matches!(opt, syntax::Expr::Rule { pattern, replacement }
+          if matches!(pattern.as_ref(), syntax::Expr::Identifier(n) if n == "RotateLabel")
+            && matches!(replacement.as_ref(), syntax::Expr::Identifier(v) if v == "True"))
+      });
+      match functions::graphics::labeled_sides_svg(
+        &content_svg,
+        &[top, left, right, bottom],
+        rotate,
+      ) {
         Some(svg) => graphics_result(svg),
         None => expr,
       }

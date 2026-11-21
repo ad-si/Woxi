@@ -3828,6 +3828,54 @@ mod graphics {
       assert!(bottom.find("body").unwrap() < bottom.find("cap").unwrap());
     }
 
+    /// `Labeled[g, {labels…}, {sides…}]` centers each side's label on the
+    /// content (not on the whole layout), and `RotateLabel -> True` turns a
+    /// left label to read upward and a right one downward — both in an
+    /// exported picture and in the one a notebook front end shows.
+    #[test]
+    fn labeled_side_labels_center_on_content_and_rotate() {
+      let code = "Labeled[Graphics[Disk[], ImageSize -> 100], \
+        {\"bottom\", \"left side\", \"right\"}, {Bottom, Left, Right}";
+      let exported = interpret(&format!(
+        "ExportString[{code}, RotateLabel -> True], \"SVG\"]"
+      ))
+      .unwrap();
+      let shown =
+        woxi::interpret_with_stdout(&format!("{code}, RotateLabel -> True]"))
+          .unwrap()
+          .graphics
+          .expect("a labeled picture renders as a graphic");
+      for svg in [&exported, &shown] {
+        assert!(svg.contains("rotate(-90)"), "{svg}");
+        assert!(svg.contains("rotate(90)"), "{svg}");
+        // The picture sits right of the turned left label; the bottom label
+        // is centered under it.
+        let attr = |tag_at: usize, name: &str| -> f64 {
+          let rest = &svg[tag_at..];
+          let start =
+            rest.find(&format!("{name}=\"")).unwrap() + name.len() + 2;
+          let end = start + rest[start..].find('"').unwrap();
+          rest[start..end].parse().unwrap()
+        };
+        let picture = svg.find("<svg x=").and_then(|_| {
+          svg
+            .match_indices("<svg x=")
+            .map(|(i, _)| i)
+            .find(|&i| (attr(i, "width") - 100.0).abs() < 0.5)
+        });
+        let picture = picture.expect("the picture's cell");
+        let center = attr(picture, "x") + 50.0;
+        let label = svg[..svg.find(">bottom<").unwrap()]
+          .rfind("<svg x=")
+          .unwrap();
+        let label_center = attr(label, "x") + attr(label, "width") / 2.0;
+        assert!((center - label_center).abs() < 1.0, "{svg}");
+      }
+      let upright =
+        interpret(&format!("ExportString[{code}], \"SVG\"]")).unwrap();
+      assert!(!upright.contains("rotate("), "{upright}");
+    }
+
     /// `PlotLabel -> Null` draws no text, so the word "Null" never shows.
     /// On a `Graphics` (including a `Show` of several) it still takes up the
     /// title's line, unlike `None`.
@@ -42683,6 +42731,56 @@ mod manipulate {
         &["x".to_string()],
       ),
       "f[xs_] -> x"
+    );
+  }
+
+  // A list-valued `FrameLabel` labels the edges of the content area: the
+  // body's output is set in a `Labeled` frame (bottom and left here), and
+  // `RotateLabel -> True` turns the left caption.
+  #[test]
+  fn manipulate_frame_label_list_labels_content_edges() {
+    clear_state();
+    let expr = interpret_to_expr(
+      r#"Manipulate[Plot[a x, {x, 0, 1}], {a, 1, 2},
+        FrameLabel -> {"time", "amount"}, RotateLabel -> True]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a Manipulate spec");
+    assert!(spec.displays.is_empty(), "{:?}", spec.displays);
+    assert!(
+      spec.body_code.starts_with("Labeled[")
+        && spec
+          .body_code
+          .contains(r#"{"time", "amount"}, {Bottom, Left}"#)
+        && spec.body_code.contains("RotateLabel -> True"),
+      "{}",
+      spec.body_code
+    );
+    let code = manipulate_block_code(
+      &spec.body_code,
+      &[("a".to_string(), "1".to_string())],
+    );
+    let svg = woxi::interpret_with_stdout(&code)
+      .unwrap()
+      .graphics
+      .expect("the labeled plot renders as a graphic");
+    assert!(svg.contains(">time<") && svg.contains(">amount<"), "{svg}");
+    assert!(svg.contains("rotate(-90)"), "{svg}");
+
+    // The `{{left, right}, {bottom, top}}` form, with `None` skipped and
+    // the labels upright by default.
+    let expr = interpret_to_expr(
+      r#"Manipulate[Plot[a x, {x, 0, 1}], {a, 1, 2},
+        FrameLabel -> {{"L", None}, {"B", "T"}}]"#,
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a Manipulate spec");
+    assert!(
+      spec
+        .body_code
+        .contains(r#"{"B", "L", "T"}, {Bottom, Left, Top}]"#),
+      "{}",
+      spec.body_code
     );
   }
 

@@ -934,7 +934,8 @@ pub struct ManipulateState {
   refresh_interval: Option<String>,
   /// The seconds between timed refreshes as of the last frame, or `None`
   /// when the body does not currently refresh on its own (`t` is
-  /// `Infinity`, e.g. while a "run" checkbox is off).
+  /// `Infinity`, e.g. while a "run" checkbox is off, or the `Refresh` did
+  /// not run).
   timed_refresh: Option<f64>,
   /// When the body last re-ran, so a timed refresh honors its interval.
   last_refresh: Option<std::time::Instant>,
@@ -2546,11 +2547,14 @@ impl ManipulateState {
         ),
       )
     });
-    self.timed_refresh = timed_refresh;
+    // A `Refresh` the body holds only refreshes while it actually runs: one
+    // in the branch of an `If` not taken (a recorder that is not recording
+    // yet) leaves the widget idle.
+    let timed_refresh_ran = woxi::take_timed_refresh();
+    self.timed_refresh = timed_refresh.filter(|_| timed_refresh_ran);
     self.last_refresh = Some(std::time::Instant::now());
     self.body_value = raw_render.as_ref().ok().and_then(|r| r.expr.clone());
     self.last_render = Some(raw_render);
-    let timed_refresh = woxi::take_timed_refresh();
     // Keep the body's writes to the widget's own variables, so the next
     // frame (and any caption) builds on them — whether that variable is
     // hidden state or a visible control's own slider/picker.
@@ -2599,7 +2603,7 @@ impl ManipulateState {
       self.reevaluate_inner(false);
       return;
     }
-    self.self_refreshing |= timed_refresh;
+    self.self_refreshing |= timed_refresh_ran;
 
     // Double-buffer the render: build the new SVG handle in a local and only
     // swap the cached field once the replacement is ready, rather than nulling
