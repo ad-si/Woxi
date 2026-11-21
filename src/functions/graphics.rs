@@ -21379,17 +21379,23 @@ fn inline_graphics_box_layout(
     &crate::syntax::expr_to_input_form(expr),
   );
   let graphic = crate::syntax::string_to_expr(&source).ok()?;
+  // The boxes may hold code that was never evaluated (a `Graphics[…]`
+  // inside `Hold`, or the held body of a `Manipulate`). Typesetting must
+  // not run it, so keep only the parts that draw as they stand.
+  let graphic = drawable_box_graphic(graphic);
+  // The picture is embedded in the surrounding typeset output, not a
+  // standalone result: drop whatever rendering it captures, so it cannot
+  // replace the picture the cell already shows (an `Animate`'s first frame).
+  let captured = crate::captured_graphics_count();
   // Drawing a typeset picture is display work, not an evaluation the user
-  // asked for: the box may be the display form of held code (a
-  // `Graphics[Line[pts[[i]]]]` inside the `Table` of an unevaluated
-  // `Manipulate` body), whose primitives only make sense in their own scope.
-  // Whatever the drawing complains about (`Part::pkspec1` for the
-  // out-of-scope iterator) is discarded, as the front end shows none of it.
+  // asked for: whatever the drawing still complains about is discarded, as
+  // the front end shows none of it.
   let snapshot = crate::snapshot_warnings();
   crate::push_quiet();
   let rendered = draw_typeset_graphic(&graphic);
   crate::pop_quiet();
   crate::restore_warnings(snapshot);
+  crate::truncate_captured_graphics(captured);
   let rendered = rendered?;
   let Expr::Graphics { svg, .. } = &rendered else {
     return None;
@@ -21408,6 +21414,90 @@ fn inline_graphics_box_layout(
     baseline: above,
     elements: embed_svg_centered(svg, w / 2.0, above - axis, w, h),
   })
+}
+
+/// Whether `expr` is graphics data that evaluates to a picture without
+/// running held code: numbers, strings, built-in symbols, symbols that have
+/// a value (such as a control variable bound while a frame is drawn), and
+/// calls without side effects on such data. A symbol without a value (the
+/// unbound control variable of a held `Manipulate` body) or a built-in with
+/// side effects (`Print`) marks code that must not be evaluated.
+fn is_inert_graphics_data(expr: &Expr) -> bool {
+  use crate::evaluator::functions::{
+    is_builtin_symbol, is_side_effecting_builtin,
+  };
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::String(_) => true,
+    Expr::Identifier(name) => {
+      is_builtin_symbol(name)
+        || crate::ENV.with(|e| e.borrow().contains_key(name.as_str()))
+    }
+    Expr::List(items) => items.iter().all(is_inert_graphics_data),
+    Expr::FunctionCall { name, args } => {
+      !is_side_effecting_builtin(name)
+        && args.iter().all(is_inert_graphics_data)
+    }
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => is_inert_graphics_data(pattern) && is_inert_graphics_data(replacement),
+    Expr::BinaryOp { left, right, .. } => {
+      is_inert_graphics_data(left) && is_inert_graphics_data(right)
+    }
+    Expr::UnaryOp { operand, .. } => is_inert_graphics_data(operand),
+    _ => false,
+  }
+}
+
+/// Keep only the elements of a primitives list that are inert graphics
+/// data, recursing into nested lists.
+fn drawable_primitives(content: &Expr) -> Expr {
+  match content {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .filter(|item| {
+          matches!(item, Expr::List(_)) || is_inert_graphics_data(item)
+        })
+        .map(drawable_primitives)
+        .collect(),
+    ),
+    other if is_inert_graphics_data(other) => other.clone(),
+    _ => Expr::List(vec![].into()),
+  }
+}
+
+/// The part of a `Graphics[…]` / `Graphics3D[…]` expression (rebuilt from
+/// its boxes) that a front end draws without evaluating anything: primitives
+/// and options that are not plain graphics data are dropped, so typesetting
+/// never runs held code (and never reports messages or prints from it).
+fn drawable_box_graphic(graphic: Expr) -> Expr {
+  match &graphic {
+    Expr::FunctionCall { name, args }
+      if (name == "Graphics" || name == "Graphics3D") && !args.is_empty() =>
+    {
+      let mut kept = vec![drawable_primitives(&args[0])];
+      kept.extend(
+        args[1..]
+          .iter()
+          .filter(|o| is_inert_graphics_data(o))
+          .cloned(),
+      );
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: kept.into(),
+      }
+    }
+    _ => graphic,
+  }
 }
 
 /// Draw the `Graphics[…]` / `Graphics3D[…]` expression a typeset box
@@ -49390,7 +49480,7 @@ fn collect_row_joined_controls(
       for row in rows {
         match row {
           Expr::List(cells) => {
-            joined_line_controls(cells, true, place_map, out)
+            joined_line_controls(cells, true, place_map, out);
           }
           other => collect_row_joined_controls(other, place_map, out),
         }
@@ -51453,10 +51543,13 @@ pub(crate) fn animate_snapshot_svg(args: &[Expr]) -> Option<String> {
   if bindings.is_empty() {
     return None;
   }
-  let rendered =
-    crate::with_scoped_globals(&bindings, || evaluate_expr_to_expr(&args[0]));
-  let evaluated = rendered.ok()?;
-  let svg = crate::evaluator::expr_to_svg(&evaluated);
+  // Draw the frame while the control variables are still bound: drawing
+  // typesets the graphic, and its primitives may still refer to them.
+  let svg = crate::with_scoped_globals(&bindings, || {
+    evaluate_expr_to_expr(&args[0])
+      .ok()
+      .map(|evaluated| crate::evaluator::expr_to_svg(&evaluated))
+  })?;
   (!svg.is_empty()).then_some(svg)
 }
 
