@@ -54704,6 +54704,59 @@ mod revolution_plot3d_part_extraction {
     assert!(fills.iter().any(|&(r, g, b)| b > 2 * r && b > 2 * g));
   }
 
+  /// A curve given by its coordinates (`{r, z}` or `{x, y, z}`) keeps its
+  /// true proportions (`BoxRatios -> Automatic`), while a plain profile
+  /// `z = f(t)` keeps the flattened box. Regression: every curve was
+  /// squashed into a box of height ratio 0.4, so a tall goblet rendered as
+  /// a flat dish.
+  #[test]
+  fn revolution_plot3d_curves_keep_true_proportions() {
+    clear_state();
+    assert_eq!(
+      interpret("Options[RevolutionPlot3D[{1, t}, {t, 0, 10}], BoxRatios]")
+        .unwrap(),
+      "{BoxRatios -> Automatic}"
+    );
+    assert_eq!(
+      interpret(
+        "Options[RevolutionPlot3D[{t Sin[t] + 3, t Cos[t], -2 t}, \
+         {t, 0, 5}], BoxRatios]"
+      )
+      .unwrap(),
+      "{BoxRatios -> Automatic}"
+    );
+    assert_eq!(
+      interpret("Options[RevolutionPlot3D[t^2, {t, 0, 2}], BoxRatios]")
+        .unwrap(),
+      "{BoxRatios -> {1, 1, 0.30901699437494745}}"
+    );
+  }
+
+  /// A tall revolved curve renders taller than wide, a flat one wider than
+  /// tall.
+  #[test]
+  fn revolution_plot3d_curve_image_follows_its_proportions() {
+    clear_state();
+    let size = |code: &str| -> (f64, f64) {
+      let svg = interpret(code).unwrap();
+      let attr = |name: &str| -> f64 {
+        svg
+          .split(&format!("{name}=\""))
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap()
+      };
+      (attr("width"), attr("height"))
+    };
+    let (w, h) =
+      size("ExportString[RevolutionPlot3D[{1, t}, {t, 0, 10}], \"SVG\"]");
+    assert!(h > 1.5 * w, "tall cylinder rendered {w}x{h}");
+    let (w, h) =
+      size("ExportString[RevolutionPlot3D[{10, t}, {t, 0, 1}], \"SVG\"]");
+    assert!(w > 1.5 * h, "flat disk rendered {w}x{h}");
+  }
+
   /// A full `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` `PlotRange` clips
   /// the height just like `{zmin, zmax}`.
   #[test]
