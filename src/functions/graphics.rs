@@ -25286,7 +25286,7 @@ pub fn frame_label_text(e: &Expr) -> Option<String> {
 /// label (`x`, `x[t]`, `TraditionalForm[v[t]]`, `a/b`) sets its letters in
 /// italics — `x(t)` with an italic x and t — the way Wolfram draws it.
 /// `None` for any other label (see [`is_traditional_math_label`]).
-fn traditional_math_axis_label(e: &Expr) -> Option<String> {
+pub(crate) fn traditional_math_axis_label(e: &Expr) -> Option<String> {
   if !is_traditional_math_label(e) {
     return None;
   }
