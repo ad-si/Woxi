@@ -7650,8 +7650,9 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
       }
       // `Glow[color]` makes the surfaces that follow emit light of their
       // own; like `Specularity` its color never repaints the face.
-      "Glow" if args.len() == 1 => {
-        style.glow = parse_glow(&args[0]);
+      // `Glow[]` is `Glow[Black]`: it switches an earlier glow off.
+      "Glow" if args.len() <= 1 => {
+        style.glow = args.first().and_then(parse_glow);
         return true;
       }
       // `Texture[image]` paints the surfaces that follow with the image.
