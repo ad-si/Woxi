@@ -672,6 +672,20 @@ const MAX_PIECES_PER_TRIANGLE: usize = 64;
 /// than the other for `split_interpenetrating` to cut only the smaller one.
 const SPLIT_AREA_RATIO: f64 = 4.0;
 
+/// Largest share of the scene's projected extent (its bounding rectangle on
+/// screen) a triangle may cover and still count as a speck for
+/// `split_interpenetrating`: at the few hundred pixels a 3D picture is
+/// drawn at, one forty-thousandth of it is a couple of square pixels.
+const SPLIT_SPECK_AREA_FRACTION: f64 = 1.0 / 40000.0;
+
+/// Area of a projected (screen-plane) triangle.
+fn projected_triangle_area(t: &[(f64, f64); 3]) -> f64 {
+  0.5
+    * ((t[1].0 - t[0].0) * (t[2].1 - t[0].1)
+      - (t[2].0 - t[0].0) * (t[1].1 - t[0].1))
+      .abs()
+}
+
 /// Area of a triangle in 3-D.
 fn triangle_area(t: &[Point3D; 3]) -> f64 {
   let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
@@ -979,6 +993,25 @@ fn split_interpenetrating(
   }
   let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
   let areas: Vec<f64> = verts.iter().map(triangle_area).collect();
+  // Two specks drawn in the wrong order differ by a pixel or two, so they
+  // are left whole. Where many hair-thin tubes meet at a point (the edges
+  // of a unit-distance graph), cutting each of their facets by all the
+  // others' planes more than doubled the scene into ~100,000 slivers,
+  // taking seconds to draw on every redraw of a `Manipulate`.
+  let (mut x_min, mut x_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  let (mut y_min, mut y_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  for &(x, y) in projected.iter().flatten() {
+    x_min = x_min.min(x);
+    x_max = x_max.max(x);
+    y_min = y_min.min(y);
+    y_max = y_max.max(y);
+  }
+  let speck_area =
+    (x_max - x_min) * (y_max - y_min) * SPLIT_SPECK_AREA_FRACTION;
+  let speck: Vec<bool> = projected
+    .iter()
+    .map(|t| projected_triangle_area(t) < speck_area)
+    .collect();
   let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(&projected, |i, j| {
     // Two triangles that each straddle the other's plane without touching
@@ -986,7 +1019,8 @@ fn split_interpenetrating(
     // all their shared screen area, so they need no cut. Cutting them anyway
     // spends a triangle's piece budget before the faces it really passes
     // through get to cut it.
-    if side_of_plane(&verts[i], &verts[j], camera).is_none()
+    if !(speck[i] && speck[j])
+      && side_of_plane(&verts[i], &verts[j], camera).is_none()
       && side_of_plane(&verts[j], &verts[i], camera).is_none()
       && triangles_intersect(&verts[i], &verts[j])
     {
@@ -14415,12 +14449,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (mut z3_min, mut z3_max),
   ] = primitives_bounds(&prims);
 
-  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
-  // longest side of the *displayed* box, before the framing padding below,
-  // which Wolfram does not apply to an automatic 3D range.
-  let mut view_box_side =
-    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
-
   // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
   // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
   if range_padding.is_none() {
@@ -14444,7 +14472,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y3_max = yh;
     z3_min = zl;
     z3_max = zh;
-    view_box_side = (xh - xl).max(yh - yl).max(zh - zl);
   }
 
   // An explicit `PlotRangePadding` widens (or, when negative, narrows)
@@ -14463,6 +14490,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       **hi = padded_hi;
     }
   }
+
+  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
+  // longest side of the *displayed* box, padding included. An automatic
+  // range is padded by 2% per side before it becomes that box, so a scene
+  // under an explicit `ViewAngle` is drawn 1/1.04 of its unpadded size.
+  let view_box_side =
+    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
   // Build box corners
   let box_corners = [
@@ -25613,6 +25647,38 @@ mod painter_order_tests {
           }
         }
       }
+    }
+  }
+
+  /// Two crossing triangles too small to see in a much larger scene (the
+  /// facets where hair-thin tubes meet) are left whole: drawing them in the
+  /// wrong order changes a pixel or two, while cutting them multiplied the
+  /// polygons of a many-tube scene. The same pair at full size is cut.
+  #[test]
+  fn crossing_specks_in_a_large_scene_are_not_split() {
+    let camera = Camera {
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let crossing = |s: f64| {
+      vec![
+        [p(-s, -s, 0.0), p(s, -s, 0.0), p(0.0, s, 0.0)],
+        [p(-s, 0.0, -s), p(s, 0.0, -s), p(0.0, 0.0, s)],
+      ]
+    };
+    // Two distant big faces stretch the scene's extent.
+    let far =
+      |z: f64| [p(-10.0, -10.0, z), p(-9.0, -10.0, z), p(-10.0, -9.0, z)];
+    let far2 = |z: f64| [p(10.0, 10.0, z), p(9.0, 10.0, z), p(10.0, 9.0, z)];
+    for (s, split) in [(0.01, false), (1.0, true)] {
+      let mut verts = crossing(s);
+      verts.push(far(0.0));
+      verts.push(far2(0.0));
+      let mut tris: Vec<Triangle> =
+        verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+      split_interpenetrating(&mut verts, &mut tris, &camera);
+      assert_eq!(verts.len() > 4, split, "half-size {s}");
     }
   }
 
