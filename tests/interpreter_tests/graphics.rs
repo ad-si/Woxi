@@ -26526,8 +26526,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     /// A nested function list counts as its flattened functions, and a
-    /// function list without explicit `Contours` gets automatic levels for
-    /// each function; both used to yield an opaque, primitive-less plot.
+    /// function list with `Contours -> n` gets `n` levels for each
+    /// function; both used to yield an opaque, primitive-less plot.
     #[test]
     fn contour_plot_nested_function_list_and_automatic_levels() {
       assert_eq!(
@@ -26539,8 +26539,8 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         "List"
       );
       let lines = interpret(
-        "Length[Cases[ContourPlot[{x, y}, {x, 0, 1}, {y, 0, 1}], _Line, \
-         Infinity]]",
+        "Length[Cases[ContourPlot[{x, y}, {x, 0, 1}, {y, 0, 1}, \
+         Contours -> 5], _Line, Infinity]]",
       )
       .unwrap()
       .parse::<usize>()
@@ -26549,6 +26549,62 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         lines >= 10,
         "expected level lines of both functions: {lines}"
       );
+    }
+
+    /// Without a `Contours` option, `ContourPlot[{f, g}, …]` draws only the
+    /// zero contour of each function, like `{f == 0, g == 0}`; it used to
+    /// draw about ten automatic levels per function.
+    #[test]
+    fn contour_plot_function_list_draws_zero_contours() {
+      let count = |code: &str| {
+        interpret(&format!("Length[Cases[{code}, _Line, Infinity]]"))
+          .unwrap()
+          .parse::<usize>()
+          .unwrap()
+      };
+      // `x y - 1/2` and `x - y/2` each cross zero along one curve per
+      // branch, and the plain list matches the equation list exactly.
+      let functions = count(
+        "ContourPlot[{x y - 1/2, x^2 + y^2 - 9/4}, {x, -2, 2}, {y, -2, 2}]",
+      );
+      let equations = count(
+        "ContourPlot[{x y - 1/2 == 0, x^2 + y^2 - 9/4 == 0}, {x, -2, 2}, \
+         {y, -2, 2}]",
+      );
+      assert_eq!(functions, equations);
+      assert!(functions <= 6, "expected only zero contours: {functions}");
+      // A linear function's zero set is a single straight line.
+      assert_eq!(
+        interpret(
+          "Max[Abs[Flatten[Cases[Normal[ContourPlot[{2 y - 1/3}, \
+           {x, -1, 1}, {y, -1, 1}]], Line[p_] :> p[[All, 2]], Infinity]] \
+           - 1/6]] < 10^-6"
+        )
+        .unwrap(),
+        "True"
+      );
+    }
+
+    /// A `ContourStyle` list that mixes bare colors and `Directive`s
+    /// (`{Directive[{Black, Dashed}], Black, Directive[{Blue, Dashed}],
+    /// Blue}`) styles each function's curve with its own entry; it used to
+    /// merge the entries into one style, drawing every curve in the last
+    /// color.
+    #[test]
+    fn contour_plot_mixed_color_directive_style_list_is_per_curve() {
+      let svg = export_svg(
+        "ContourPlot[{x - 1/3, y - 1/3, x + y}, {x, -1, 1}, {y, -1, 1}, \
+         ContourStyle -> {Directive[{Red, Dashed}], Green, \
+         Directive[{Blue, Dashed}]}]",
+      );
+      for color in ["rgb(255,0,0)", "rgb(0,255,0)", "rgb(0,0,255)"] {
+        assert!(svg.contains(color), "missing {color} curve in: {svg}");
+      }
+      let svg = export_svg(
+        "ContourPlot[{x - 1/3, y - 1/3}, {x, -1, 1}, {y, -1, 1}, \
+         ContourStyle -> {Red, Blue}]",
+      );
+      assert!(svg.contains("rgb(255,0,0)") && svg.contains("rgb(0,0,255)"));
     }
 
     /// Regression: a pole in the sampled domain (`1/Sqrt[x^2 + y^2]` blows

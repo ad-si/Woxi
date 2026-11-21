@@ -507,9 +507,9 @@ fn plot_value_range_is_all(value: &Expr) -> bool {
 }
 
 /// The per-contour styles of a `ContourStyle` value whose entries are all
-/// lists or `Directive[…]`s (`{{Black, Thick}, {Red, Thick}}`,
-/// `{Directive[Red, Dashed], Directive[Blue]}`); empty for a single
-/// directive list such as `{Thick, Blue}`.
+/// lists, `Directive[…]`s or colors (`{{Black, Thick}, {Red, Thick}}`,
+/// `{Directive[Red, Dashed], Blue, Directive[Blue, Dashed]}`, `{Red,
+/// Blue}`); empty for a single directive list such as `{Thick, Blue}`.
 fn per_contour_styles(
   value: &Expr,
 ) -> Vec<Option<crate::functions::plot::SeriesStyle>> {
@@ -519,6 +519,7 @@ fn per_contour_styles(
       if !items.is_empty() && items.iter().all(|i| {
         matches!(i, Expr::List(_))
           || matches!(i, Expr::FunctionCall { name, .. } if name == "Directive")
+          || crate::functions::graphics::parse_color(i).is_some()
       }) =>
     {
       items
@@ -4055,8 +4056,9 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // `ContourPlot[{f, g}, …]` draws the unshaded level curves of each
   // function (a nested list `{{f, g}, {h}}` counts as its flattened
   // functions); a curve `f == c` is the zero contour of `f - c`. Without
-  // explicit `Contours -> {c, …}` each function gets its own automatic
-  // levels.
+  // a `Contours` option each function draws only its zero contour, as
+  // Wolfram does (the list reads like `{f == 0, g == 0}`); `Contours -> n`
+  // gives each function its own `n` levels.
   let eq_bodies =
     eq_bodies.or_else(|| match body {
       Expr::List(items) if !items.is_empty() => {
@@ -4066,10 +4068,12 @@ pub fn contour_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           return None;
         }
         let spec = parse_density_contour_options(args, 3).contours;
+        let zero = vec![0.0];
         let fixed = match &spec {
           ContourSpec::Levels(levels) if !levels.is_empty() => Some(levels),
           ContourSpec::Levels(_) => return None,
-          _ => None,
+          ContourSpec::Automatic => Some(&zero),
+          ContourSpec::Count(_) => None,
         };
         let (Ok((xvar, x_min, x_max)), Ok((yvar, y_min, y_max))) = (
           parse_iterator(&args[1], "ContourPlot"),
