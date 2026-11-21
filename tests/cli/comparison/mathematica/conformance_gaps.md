@@ -10715,3 +10715,12 @@ over mesh elements that straddle the jump, which lets noticeably more flux
 through on its default mesh: in a saved snapshot of such a reactor model
 the outlet averages are about 0.27 (lumen) and 0.11 (bed), where Woxi
 gives 0.41 and 0.14. Matching it would need Wolfram's exact mesh.
+
+### Default 3D edge color of thick outlines
+
+Woxi draws the default `Graphics3D` face outline in a flat dark gray
+(`rgb(64,64,64)`), whatever its width. In a saved snapshot of a white
+`Cuboid` under `EdgeForm[AbsoluteThickness[6]]` (no edge color given), the
+core of Wolfram's outline is pure black, so the dark gray of thin default
+edges may come from anti-aliasing a black hairline rather than from the
+edge color itself. Not yet checked against wolframscript.
