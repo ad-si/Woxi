@@ -298,7 +298,7 @@ mod polyhedron_data_tests {
       interpret(r#"PolyhedronData["Properties"]"#).unwrap(),
       "{Circumradius, Classes, Dual, EdgeCount, EdgeIndices, Edges, FaceCount, \
        FaceCountRules, FaceIndices, Faces, Image, Inradius, Insphere, Midradius, Name, NetCoordinates, NetFaceIndices, NetFaces, \
-       NetImage, Skeleton, SkeletonGraph, SkeletonImage, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
+       NetGraph, NetImage, Skeleton, SkeletonGraph, SkeletonImage, SurfaceArea, VertexCoordinates, VertexCount, Volume}"
     );
   }
 
@@ -1727,6 +1727,44 @@ mod polyhedron_data_tests {
       )
       .unwrap(),
       "8"
+    );
+  }
+
+  // "NetGraph" is the vertex-edge graph of the planar net: one vertex per
+  // net coordinate, and the net's outline plus fold lines as edges
+  // (V' - 1 + F edges for a tree-shaped unfolding of F faces).
+  #[test]
+  fn net_graph() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        r#"Table[g = PolyhedronData[s, "NetGraph"];
+          {Head[g], VertexCount[g] == Length[PolyhedronData[s, "NetCoordinates"]],
+           EdgeCount[g] == VertexCount[g] - 1 + PolyhedronData[s, "FaceCount"],
+           ConnectedGraphQ[g]},
+          {s, {"Cube", "Tetrahedron", "Cuboctahedron", "TruncatedIcosahedron"}}]"#
+      )
+      .unwrap(),
+      "{{Graph, True, True, True}, {Graph, True, True, True}, \
+       {Graph, True, True, True}, {Graph, True, True, True}}"
+    );
+    // The graph is laid out at the net's 2D coordinates.
+    assert_eq!(
+      interpret(
+        r#"g = PolyhedronData["Octahedron", "NetGraph"];
+          GraphEmbedding[g] == N[PolyhedronData["Octahedron", "NetCoordinates"]]"#
+      )
+      .unwrap(),
+      "True"
+    );
+    // Mapped over a class, like the other properties.
+    assert_eq!(
+      interpret(
+        r#"Union[Head /@ Map[PolyhedronData[#, "NetGraph"] &,
+          PolyhedronData["Archimedean"]]]"#
+      )
+      .unwrap(),
+      "{Graph}"
     );
   }
 

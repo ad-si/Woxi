@@ -4657,6 +4657,24 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
+      // A sum times other factors (`(a + b)/x`, `(a + b)*y`) against a
+      // product of several factors (`c/y`, `c*x`): products compare from
+      // their last factor, as in `Sort` — `(a + b)/x + c/y`,
+      // `c*x + (a + b)*y`.
+      {
+        let (_, none_factors) = wl_coeff_and_factors(none_term);
+        let (_, pair_factors) = wl_coeff_and_factors(pair_term);
+        let sum_factor = none_factors.iter().any(|f| {
+          matches!(f.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
+        });
+        if sum_factor && none_factors.len() >= 2 && pair_factors.len() >= 2 {
+          let ord =
+            crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+        }
+      }
       // For compound algebraic terms with free variables, compare by
       // latest variable relative to the monomial's variable:
       //   latest > monomial → monomial first (e.g. b + Sqrt[a*c])
@@ -13249,11 +13267,20 @@ fn merge_coefficient_into_radical(
           };
           // Only rewrite when something actually changed; canonical inputs
           // are fixed points and must return through the generic path.
-          let coeff_str = expr_to_string(coeff);
-          let new_coeff_str = expr_to_string(&new_coeff);
-          let factor_str = expr_to_string(&symbolic_args[radical_idx]);
-          let rebuilt_str = expr_to_string(&rebuilt);
-          if coeff_str != new_coeff_str || factor_str != rebuilt_str {
+          // The structural check settles the common fixed-point case without
+          // rendering four expressions to text on every `c * Sqrt[r]`
+          // product; the textual comparison stays the arbiter otherwise.
+          let unchanged_structurally =
+            crate::evaluator::pattern_matching::expr_equal(coeff, &new_coeff)
+              && crate::evaluator::pattern_matching::expr_equal(
+                &symbolic_args[radical_idx],
+                &rebuilt,
+              );
+          if !unchanged_structurally
+            && (expr_to_string(coeff) != expr_to_string(&new_coeff)
+              || expr_to_string(&symbolic_args[radical_idx])
+                != expr_to_string(&rebuilt))
+          {
             if matches!(&new_coeff, Expr::Integer(1)) {
               return with_others(vec![rebuilt]).map(Some);
             }
