@@ -68752,3 +68752,74 @@ fn opaque_parametric_region_cells_have_no_seams() {
     assert!(!cell.contains("stroke="), "{cell}");
   }
 }
+
+mod held_graphics_display {
+  use super::*;
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook. Its `Manipulate`
+  /// keeps helper definitions such as
+  /// `f[] := Table[Graphics[{c[[j]], Point[…]}], {j, n}]` in its held
+  /// `Initialization`, and drawing the held `GraphicsBox` evaluated those
+  /// primitives, printing `Part::pkspec1` and `ReplaceAll::reps` messages
+  /// for the unbound iterator. A held graphic is drawn, never evaluated.
+  #[test]
+  fn drawing_held_graphics_emits_no_messages() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Hold[Graphics[{c[[j]], Point[{x[t] /. s[[j]], 0}], Disk[]}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Hold[-Graphics-]");
+    assert!(
+      r.warnings.is_empty(),
+      "unexpected warnings: {:?}",
+      r.warnings
+    );
+  }
+
+  #[test]
+  fn drawing_held_graphics_runs_no_side_effects() {
+    clear_state();
+    let r =
+      interpret_with_stdout("Hold[Graphics[{Print[\"side\"]; Red, Disk[]}]]")
+        .unwrap();
+    assert_eq!(r.result, "Hold[-Graphics-]");
+    assert!(!r.stdout.contains("side"), "stdout: {:?}", r.stdout);
+  }
+
+  #[test]
+  fn drawing_held_graphics3d_runs_no_side_effects() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Hold[Graphics3D[{Print[\"side\"]; Red, Sphere[]}]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Hold[-Graphics3D-]");
+    assert!(!r.stdout.contains("side"), "stdout: {:?}", r.stdout);
+  }
+
+  #[test]
+  fn drawing_held_graphics_skips_unevaluated_options() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Hold[Graphics[Disk[], ImageSize -> (Print[\"opt\"]; 100)]]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "Hold[-Graphics-]");
+    assert!(!r.stdout.contains("opt"), "stdout: {:?}", r.stdout);
+  }
+
+  /// The held primitives that are already finished are still drawn.
+  #[test]
+  fn held_graphics_is_still_drawn() {
+    clear_state();
+    let r = interpret_with_stdout("Hold[Graphics[{Red, Disk[]}]]").unwrap();
+    let svg = r.output_svg.expect("output SVG");
+    assert!(svg.contains("<svg"), "{svg}");
+    assert!(
+      svg.contains("rgb(255,0,0)") || svg.contains("#ff0000"),
+      "{svg}"
+    );
+  }
+}

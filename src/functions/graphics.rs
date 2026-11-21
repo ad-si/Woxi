@@ -16866,11 +16866,178 @@ pub fn graphics_option_args(args: &[Expr]) -> Vec<Expr> {
 }
 
 pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  graphics_ast_impl(args, true)
+}
+
+/// Draw `Graphics[args]` exactly as written, without evaluating its
+/// content or options first — the way the front end draws the
+/// `GraphicsBox` of a held graphic. Primitives that are not finished
+/// (`Point[{x[t] /. sol[[j]], 0}]` inside `Hold`) are skipped instead of
+/// being evaluated, so drawing never runs side effects or emits messages.
+pub fn graphics_ast_unevaluated(
+  args: &[Expr],
+) -> Result<Expr, InterpreterError> {
+  graphics_ast_impl(&held_drawable_args(args), false)
+}
+
+/// The arguments of a held `Graphics[content, opts…]` with every option
+/// that is not literal drawing data left out (see `is_held_drawable`).
+pub(crate) fn held_drawable_args(args: &[Expr]) -> Vec<Expr> {
+  args
+    .iter()
+    .enumerate()
+    .filter(|(i, arg)| *i == 0 || is_held_drawable(arg))
+    .map(|(_, arg)| arg.clone())
+    .collect()
+}
+
+/// Heads a held graphic may contain and still be drawn as written: the
+/// primitives, directives, colors and wrappers a front end draws from a
+/// `GraphicsBox`, plus exact numbers and plain arithmetic on numbers.
+const HELD_DRAWABLE_HEADS: &[&str] = &[
+  // Primitives and primitive wrappers.
+  "Annulus",
+  "Arrow",
+  "Ball",
+  "BezierCurve",
+  "BSplineCurve",
+  "Circle",
+  "Cone",
+  "Cuboid",
+  "Cylinder",
+  "Disk",
+  "Ellipsoid",
+  "FilledCurve",
+  "GeometricTransformation",
+  "GraphicsComplex",
+  "GraphicsGroup",
+  "HalfLine",
+  "HalfPlane",
+  "InfiniteLine",
+  "InfinitePlane",
+  "Inset",
+  "JoinedCurve",
+  "Line",
+  "Parallelogram",
+  "Point",
+  "Polygon",
+  "Raster",
+  "Rectangle",
+  "RegularPolygon",
+  "Rotate",
+  "Scale",
+  "Simplex",
+  "Sphere",
+  "StadiumShape",
+  "Style",
+  "Text",
+  "Translate",
+  "Triangle",
+  "Tube",
+  // Directives and colors.
+  "AbsoluteDashing",
+  "AbsolutePointSize",
+  "AbsoluteThickness",
+  "Arrowheads",
+  "CapForm",
+  "CMYKColor",
+  "Dashing",
+  "Directive",
+  "EdgeForm",
+  "FaceForm",
+  "GrayLevel",
+  "Hue",
+  "JoinForm",
+  "LABColor",
+  "LCHColor",
+  "LUVColor",
+  "Opacity",
+  "PointSize",
+  "RGBColor",
+  "Specularity",
+  "Thickness",
+  "XYZColor",
+  // Coordinates and numbers.
+  "Complex",
+  "ImageScaled",
+  "Offset",
+  "Rational",
+  "Scaled",
+  "Plus",
+  "Times",
+  "Power",
+  "Sqrt",
+];
+
+/// Whether a held expression is literal drawing data: atoms, lists, rules
+/// and the `HELD_DRAWABLE_HEADS`. Anything else (`c[[j]]`, `x /. s`,
+/// `Print[…]; Red`, a user function) would have to be evaluated first.
+fn is_held_drawable(expr: &Expr) -> bool {
+  match expr {
+    Expr::Integer(_)
+    | Expr::BigInteger(_)
+    | Expr::Real(_)
+    | Expr::BigFloat(..)
+    | Expr::String(_)
+    | Expr::Identifier(_) => true,
+    Expr::List(items) => items.iter().all(is_held_drawable),
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => is_held_drawable(pattern) && is_held_drawable(replacement),
+    Expr::FunctionCall { name, args } => {
+      HELD_DRAWABLE_HEADS.contains(&name.as_str())
+        && args.iter().all(is_held_drawable)
+    }
+    Expr::UnaryOp {
+      op: crate::syntax::UnaryOperator::Minus,
+      operand,
+    } => is_held_drawable(operand),
+    Expr::BinaryOp { op, left, right } => {
+      use crate::syntax::BinaryOperator as B;
+      matches!(op, B::Plus | B::Minus | B::Times | B::Divide | B::Power)
+        && is_held_drawable(left)
+        && is_held_drawable(right)
+    }
+    _ => false,
+  }
+}
+
+/// The content of a held graphic with every item that is not literal
+/// drawing data left out, as a front end leaves out a primitive it cannot
+/// draw from its box form.
+pub(crate) fn held_drawable_content(content: &Expr) -> Expr {
+  match content {
+    Expr::List(items) => Expr::List(
+      items
+        .iter()
+        .filter(|item| matches!(item, Expr::List(_)) || is_held_drawable(item))
+        .map(held_drawable_content)
+        .collect::<Vec<_>>()
+        .into(),
+    ),
+    item if is_held_drawable(item) => item.clone(),
+    _ => Expr::List(Vec::new().into()),
+  }
+}
+
+fn graphics_ast_impl(
+  args: &[Expr],
+  evaluate: bool,
+) -> Result<Expr, InterpreterError> {
   let args = &graphics_option_args(args)[..];
   // First arg is the content (primitives + directives)
   // Evaluate it so that Table/Map/etc. produce concrete lists
   // Remaining args are options as Rule expressions
-  let content = evaluate_expr_to_expr(&args[0])?;
+  let content = if evaluate {
+    evaluate_expr_to_expr(&args[0])?
+  } else {
+    held_drawable_content(&args[0])
+  };
 
   // `Graphics[g]` where `g` is itself a finished picture — a plot, or
   // another `Graphics` — is just `g`: the wrapper adds nothing and the
@@ -16979,8 +17146,11 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut clipping_requested = false;
 
   for raw_opt in &args[1..] {
-    let opt =
-      evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone());
+    let opt = if evaluate {
+      evaluate_expr_to_expr(raw_opt).unwrap_or_else(|_| raw_opt.clone())
+    } else {
+      raw_opt.clone()
+    };
     if let Some((name, replacement)) = option_name_value(&opt) {
       let replacement = &*replacement;
       match name {
@@ -20676,16 +20846,19 @@ fn inline_graphics_box_layout(
     &crate::syntax::expr_to_input_form(expr),
   );
   let graphic = crate::syntax::string_to_expr(&source).ok()?;
-  // `Graphics[…]` stays symbolic when evaluated; draw it explicitly.
-  let evaluated = evaluate_expr_to_expr(&graphic).ok()?;
-  let rendered = match &evaluated {
+  // A box is only drawn, never evaluated: the typeset form of a held
+  // graphic (`Hold[Graphics[{c[[j]], Point[…]}]]`) keeps its primitives
+  // as written, so evaluating them here would run side effects (`Print`)
+  // and emit messages (`Part::pkspec1`) that the held expression never
+  // produces.
+  let rendered = match &graphic {
     Expr::FunctionCall { name, args } if name == "Graphics" => {
-      graphics_ast(args).ok()?
+      graphics_ast_unevaluated(args).ok()?
     }
     Expr::FunctionCall { name, args } if name == "Graphics3D" => {
-      crate::functions::plot3d::graphics3d_ast(args).ok()?
+      crate::functions::plot3d::graphics3d_ast_unevaluated(args).ok()?
     }
-    _ => evaluated.clone(),
+    _ => return None,
   };
   let Expr::Graphics { svg, .. } = &rendered else {
     return None;
