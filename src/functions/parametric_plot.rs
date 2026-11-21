@@ -951,7 +951,13 @@ where
       }
     }
   }
-  insert_exclusion_gaps(samples, &poles);
+  // A pole is no point of the curve, so only the gap itself goes in: the
+  // samples beside it would lie far off toward infinity.
+  let range = (
+    samples.first().map_or(0.0, |s| s.0),
+    samples.last().map_or(0.0, |s| s.0),
+  );
+  insert_exclusion_gaps(samples, &poles, range, &|_| None);
 }
 
 /// The `RegionFunction -> f` value of a curve plot's options, evaluated
