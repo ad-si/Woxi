@@ -1484,9 +1484,17 @@ fn push_field_frame(
   let font = layout.tick_font * sf;
   let scale = layout.tick_font / FRAME_TICK_FONT;
   let gap = FRAME_TICK_LABEL_GAP * sf;
+  // A bold or italic `LabelStyle` sets the tick labels that way too.
+  let mut face = String::new();
+  if opts.label_style.is_some_and(|s| s.bold) {
+    face.push_str(" font-weight=\"bold\"");
+  }
+  if opts.label_style.is_some_and(|s| s.italic) {
+    face.push_str(" font-style=\"italic\"");
+  }
   let mut text = |x: f64, y: f64, anchor: &str, label: &str| {
     out.push_str(&format!(
-      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n"
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\"{face}>{label}</text>\n"
     ));
   };
   for (v, label) in &bottom.labels {
