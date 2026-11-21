@@ -286,13 +286,8 @@ impl ControlState {
     }
   }
 
-  /// Which axes (`[x, y]`) of a `Slider2D` the user can actually move.
-  ///
-  /// A Locator whose corner bounds share a coordinate —
-  /// `{{p, {2, 0}}, {1.5, 0}, {4, 0}, Locator}` slides along a horizontal
-  /// segment — is pinned on that axis, so dragging it there can never change
-  /// the value. Such an axis gets no slider; only the free one is offered.
-  /// Every other control reports no free axis.
+  /// Which axes (`[x, y]`) of a `Slider2D` the user can actually move
+  /// (see [`movable_axes`]). Every other control reports no free axis.
   pub fn slider2d_free_axes(&self) -> [bool; 2] {
     match self {
       ControlState::Slider2D {
@@ -301,7 +296,7 @@ impl ControlState {
         y_min,
         y_max,
         ..
-      } => [x_max != x_min, y_max != y_min],
+      } => movable_axes(*x_min, *x_max, *y_min, *y_max),
       _ => [false, false],
     }
   }
@@ -9475,5 +9470,22 @@ mod control_panel_tabview_tests {
     state.reevaluate();
     assert!(vis(&state, "shift"), "the slider shows on its own tab");
     assert_eq!(state.text_output.as_deref(), Some("{high, 7}"));
+  }
+}
+
+/// Which axes (`[x, y]`) of a 2D control (`Slider2D`, a `Locator` point) the
+/// user can move. An axis whose bounds coincide is pinned: a Locator
+/// confined to a horizontal line (`{{p, {1, 0}}, {-1, 0}, {6, 0}, Locator}`)
+/// only ever moves in x, so a slider over the empty y range would be dead.
+/// A point pinned on both axes keeps both sliders, so its row stays visible.
+pub fn movable_axes(
+  x_min: f64,
+  x_max: f64,
+  y_min: f64,
+  y_max: f64,
+) -> [bool; 2] {
+  match [x_min != x_max, y_min != y_max] {
+    [false, false] => [true, true],
+    axes => axes,
   }
 }
