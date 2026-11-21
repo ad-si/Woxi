@@ -204,6 +204,70 @@ mod evaluation_reuse {
     }
 
     #[test]
+    fn replacing_one_entry_of_a_large_matrix_is_cheap() {
+      clear_state();
+      interpret("g = Table[0, {200}, {200}];").unwrap();
+      let start = std::time::Instant::now();
+      assert_eq!(
+        interpret("Do[ReplacePart[g, 1, {5, 7}], {500}]; Total[ReplacePart[g, 1, {5, 7}], 2]")
+          .unwrap(),
+        "1"
+      );
+      let elapsed = start.elapsed();
+      assert!(
+        elapsed.as_secs() < 2,
+        "500 single-entry ReplaceParts of a 200x200 matrix took {elapsed:?}"
+      );
+    }
+
+    // Each step walks a matrix through nested With scopes, the way a
+    // cellular-automaton step function threads its grid; the grid sits in
+    // a small state list and was copied in full at every mention.
+    #[test]
+    fn threading_a_matrix_through_nested_with_is_cheap() {
+      clear_state();
+      interpret(
+        "step[{g_List, {r_, c_}}] := With[{n = Length[g]}, \
+           With[{v = g[[r, c]]}, \
+             With[{d = If[v == 0, 1, -1]}, \
+               {ReplacePart[g, 1 - v, {r, c}], {Mod[r + d, n] + 1, c}}]]];",
+      )
+      .unwrap();
+      let start = std::time::Instant::now();
+      assert_eq!(
+        interpret(
+          "Total[First[Nest[step, {Table[0, {150}, {150}], {1, 1}}, 400]], 2]"
+        )
+        .unwrap(),
+        "74"
+      );
+      let elapsed = start.elapsed();
+      assert!(
+        elapsed.as_secs() < 4,
+        "400 steps over a 150x150 matrix took {elapsed:?}"
+      );
+    }
+
+    // `Prepend` builds a tree-backed list, which must stay O(1) to check for
+    // symbols when renaming the locals of an inner With.
+    #[test]
+    fn a_prepended_matrix_through_nested_with_is_cheap() {
+      clear_state();
+      interpret(
+        "m = Prepend[Table[0, {150}, {150}], Table[1, {150}]]; \
+         f[h_List] := With[{a = 1}, With[{b = 2}, {Length[h], a, b}]];",
+      )
+      .unwrap();
+      let start = std::time::Instant::now();
+      assert_eq!(interpret("Do[f[m], {1000}]; f[m]").unwrap(), "{151, 1, 2}");
+      let elapsed = start.elapsed();
+      assert!(
+        elapsed.as_secs() < 3,
+        "1000 nested-With calls on a prepended matrix took {elapsed:?}"
+      );
+    }
+
+    #[test]
     fn replacing_a_symbol_that_does_not_occur_is_cheap() {
       clear_state();
       interpret("r = Expand[(a + b + c + d)^12];").unwrap();
