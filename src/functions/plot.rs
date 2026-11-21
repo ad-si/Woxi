@@ -5337,6 +5337,43 @@ fn inline_segment_widths(
     .collect()
 }
 
+/// A chart's `PlotLabel` with its first line's baseline at `ty`, set at
+/// font size `fs` (render units) with `decimals` digits in its position: a
+/// title mixing text with typeset pictures (a stacked fraction) is laid
+/// out as segments, any other as a `<text>` of its stacked lines.
+#[allow(clippy::too_many_arguments)]
+fn chart_title_svg(
+  sl: &StyledLabel,
+  cx: f64,
+  ty: f64,
+  fs: f64,
+  fill: &str,
+  style_attrs: &str,
+  sf: f64,
+  decimals: usize,
+) -> String {
+  let pitch = fs * 1.2;
+  if !sl.segments.is_empty() {
+    // Center the line on the band the tallest picture claims.
+    let ty = ty + sl.extra_line_count() as f64 * pitch / 2.0;
+    return inline_segments_svg(
+      &sl.segments,
+      cx,
+      ty,
+      fs,
+      fill,
+      style_attrs,
+      sf,
+    );
+  }
+  format!(
+    "<text x=\"{cx:.decimals$}\" y=\"{ty:.decimals$}\" text-anchor=\"middle\" \
+       font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
+       fill=\"{fill}\"{style_attrs}>{}</text>\n",
+    sl.svg_scaled_stacked(sf, cx, pitch)
+  )
+}
+
 /// A title made of text runs and small inline pictures, laid out left to
 /// right and centered on `cx`. `ty` is the text baseline; each picture is
 /// centered on the text's x-height line. Lengths are in render units, with
@@ -10245,10 +10282,17 @@ pub(crate) fn generate_bar_svg(
   } else {
     BAR_SIDE_MARGIN * sf
   };
+  // A left `FrameLabel` stands beside the y tick labels, in a strip of
+  // its own line's height plus a small gap.
+  let frame_label_left_room = if frame_label_y.is_some() {
+    1.3 * axes_font_pt[1] * sf
+  } else {
+    0.0
+  };
   let mut margin_left = if explicit_pad(0).is_some() {
     0.0
   } else {
-    BAR_SIDE_MARGIN * sf
+    BAR_SIDE_MARGIN * sf + frame_label_left_room
   };
   // Rotated labels below the axis hang as far as their bounding boxes
   // reach; an explicit bottom padding too small for them gives up
@@ -11107,7 +11151,14 @@ pub(crate) fn generate_bar_svg(
     }
     if let Some(y_label) = frame_label_y {
       let cy = plot_y0 + plot_h / 2.0;
-      let lx = margin_left + y_axes_font * 0.8;
+      // Rotated, the label's glyphs reach `0.8` em to the left of `lx`
+      // and `0.2` em to the right: it ends just before the tick labels,
+      // which reach the side margin's width left of the plotting area's
+      // label strip.
+      let tick_labels_left =
+        plot_x0 - y_label_area as f64 - BAR_SIDE_MARGIN * sf;
+      // Too tight an `ImagePadding` still keeps it inside the image.
+      let lx = (tick_labels_left - y_axes_font * 0.3).max(y_axes_font * 0.8);
       labels_svg.push_str(&format!(
         "<text x=\"{lx:.1}\" y=\"{cy:.1}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{y_axes_font:.0}\" \
@@ -11162,11 +11213,15 @@ pub(crate) fn generate_bar_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -11610,11 +11665,7 @@ pub(crate) fn generate_horizontal_bar_svg(
     if sl.italic {
       style_attrs.push_str(" font-style=\"italic\"");
     }
-    svg.push_str(&format!(
-      "<text x=\"{cx:.2}\" y=\"{ty:.2}\" text-anchor=\"middle\" \
-       font-family=\"sans-serif\" font-size=\"{fs:.0}\" fill=\"{fill}\"{style_attrs}>{}</text>\n",
-      sl.svg_scaled_stacked(sf, cx, fs * 1.2)
-    ));
+    svg.push_str(&chart_title_svg(sl, cx, ty, fs, &fill, &style_attrs, sf, 2));
   }
 
   // Legends to the right of the plot.
@@ -12266,11 +12317,15 @@ pub(crate) fn generate_bubble_chart_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 
@@ -13651,11 +13706,15 @@ pub(crate) fn generate_histogram_svg(
       if sl.italic {
         style_attrs.push_str(" font-style=\"italic\"");
       }
-      labels_svg.push_str(&format!(
-        "<text x=\"{cx:.1}\" y=\"{ty:.1}\" text-anchor=\"middle\" \
-           font-family=\"sans-serif\" font-size=\"{fs:.0}\" \
-           fill=\"{fill}\"{style_attrs}>{}</text>\n",
-        sl.svg_scaled_stacked(sf, cx, fs * 1.2)
+      labels_svg.push_str(&chart_title_svg(
+        sl,
+        cx,
+        ty,
+        fs,
+        &fill,
+        &style_attrs,
+        sf,
+        1,
       ));
     }
 

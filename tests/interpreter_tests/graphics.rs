@@ -66838,3 +66838,147 @@ fn grid_sans_typeset_number_is_not_clipped() {
   // 4.43 em of Atkinson Hyperlegible Next at 18 pt.
   assert!(width >= 79.0, "{width}: {svg}");
 }
+
+/// `Spacer` boxes as the FrontEnd's blank templates — `Spacer1` for a
+/// width, `Spacer2` for a width and a height — not as its call's source.
+mod spacer_boxes {
+  use super::*;
+
+  #[test]
+  fn width_spacer_boxes_as_spacer1_template() {
+    assert_eq!(
+      interpret("ToBoxes[Spacer[5]]").unwrap(),
+      "TemplateBox[{5}, Spacer1]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Row[{a, Spacer[2.5], b}]]").unwrap(),
+      "TemplateBox[{a, TemplateBox[{2.5}, Spacer1], b}, RowDefault]"
+    );
+  }
+
+  #[test]
+  fn width_height_spacer_boxes_as_spacer2_template() {
+    assert_eq!(
+      interpret("ToBoxes[Spacer[{5, 3}]]").unwrap(),
+      "TemplateBox[{5, 3}, Spacer2]"
+    );
+    assert_eq!(
+      interpret("ToBoxes[Spacer[{5, 3}], TraditionalForm]").unwrap(),
+      "FormBox[TemplateBox[{5, 3}, Spacer2], TraditionalForm]"
+    );
+  }
+
+  #[test]
+  fn non_numeric_spacer_keeps_its_call() {
+    assert_eq!(
+      interpret("ToBoxes[Spacer[x]]").unwrap(),
+      "RowBox[{Spacer, [, x, ]}]"
+    );
+  }
+
+  /// In a typeset title (one holding a fraction) a `Spacer` is blank room
+  /// of its width, not the text `Spacer[40]`.
+  #[test]
+  fn spacer_in_typeset_title_is_blank_room() {
+    let title_width = |gap: &str| -> f64 {
+      let svg = export_svg(&format!(
+        "Plot[x, {{x, 0, 1}}, PlotLabel -> Row[{{\"q\"{gap}, a/b}}]]"
+      ));
+      assert!(!svg.contains("Spacer"), "{svg}");
+      let pic =
+        &svg[svg.find("<g color=").unwrap_or_else(|| panic!("{svg}"))..];
+      let w = pic.split("width=\"").nth(1).unwrap();
+      w[..w.find('"').unwrap()].parse().unwrap()
+    };
+    let plain = title_width("");
+    let spaced = title_width(", Spacer[40]");
+    assert!(spaced > plain + 100.0, "{plain} -> {spaced}");
+  }
+}
+
+/// A `Style[Row[{…, a/b}], size]` title keeps the stacked fraction an
+/// unstyled one gets (it was flattened to `a/b`), in `Plot` and in charts,
+/// and a chart's `Row` title stacks its fraction too.
+mod styled_fraction_titles {
+  use super::*;
+
+  fn stacked(svg: &str) -> bool {
+    svg.contains("<g color=") && !svg.contains("</tspan>/<tspan")
+  }
+
+  #[test]
+  fn plot_styled_row_title_stacks_fraction() {
+    let svg = export_svg(
+      "Plot[x, {x, 0, 1}, PlotLabel -> Style[Row[{\"K = \", a/b}], 18]]",
+    );
+    assert!(stacked(&svg), "{svg}");
+  }
+
+  #[test]
+  fn bar_chart_row_title_stacks_fraction() {
+    for label in ["Row[{\"K = \", a/b}]", "Style[Row[{\"K = \", a/b}], 18]"] {
+      let svg =
+        export_svg(&format!("BarChart[{{1, 2}}, PlotLabel -> {label}]"));
+      assert!(stacked(&svg), "{label}: {svg}");
+    }
+  }
+
+  /// The styled size scales the typeset picture.
+  #[test]
+  fn styled_size_scales_title_picture() {
+    let width = |label: &str| -> f64 {
+      let svg =
+        export_svg(&format!("BarChart[{{1, 2}}, PlotLabel -> {label}]"));
+      let pic = &svg[svg.find("<g color=").unwrap()..];
+      let w = pic.split("width=\"").nth(1).unwrap();
+      w[..w.find('"').unwrap()].parse().unwrap()
+    };
+    let plain = width("Row[{\"K = \", a/b}]");
+    let big = width("Style[Row[{\"K = \", a/b}], 28]");
+    // The typeset picture's fixed margins do not grow with the size, so
+    // twice the font size gives a little under twice the width.
+    assert!((1.8..2.05).contains(&(big / plain)), "{plain} -> {big}");
+  }
+}
+
+/// A framed `BarChart`'s left `FrameLabel` stands left of the y tick
+/// labels; it was drawn over them at any font size.
+mod bar_chart_left_frame_label {
+  use super::*;
+
+  fn attr(tag: &str, name: &str) -> f64 {
+    let v = tag.split(&format!(" {name}=\"")).nth(1).unwrap();
+    v[..v.find('"').unwrap()].parse().unwrap()
+  }
+
+  fn check(options: &str) {
+    let svg = export_svg(&format!(
+      "BarChart[{{10, 20}}, Frame -> True, \
+       FrameLabel -> {{None, \"amount\"}}{options}]"
+    ));
+    let label = svg
+      .lines()
+      .find(|l| l.contains(">amount</text>"))
+      .unwrap_or_else(|| panic!("{svg}"));
+    let tick = svg
+      .lines()
+      .find(|l| l.contains(">20</text>"))
+      .unwrap_or_else(|| panic!("{svg}"));
+    let fs = attr(label, "font-size");
+    // The rotated label's right edge and the two-digit tick label's left.
+    let label_right = attr(label, "x") + 0.25 * fs;
+    let tick_left = attr(tick, "x") - 2.0 * 0.55 * attr(tick, "font-size");
+    assert!(label_right <= tick_left, "{label}\n{tick}");
+    assert!(attr(label, "x") - 0.8 * fs >= 0.0, "{label}");
+  }
+
+  #[test]
+  fn default_font() {
+    check("");
+  }
+
+  #[test]
+  fn large_label_style() {
+    check(", LabelStyle -> 17");
+  }
+}

@@ -19272,6 +19272,14 @@ fn grid_box_dividers(
   (cols, rows)
 }
 
+/// A size in a `Spacer` template box: a number, or the box text of one.
+fn spacer_size(e: &Expr) -> Option<f64> {
+  match e {
+    Expr::String(s) => s.trim_matches('"').parse().ok(),
+    other => try_eval_to_f64(other),
+  }
+}
+
 pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
   let ch = font_size * MONO_ADVANCE;
   if BOX_SCRIPT_LEVEL.with(std::cell::Cell::get) == 0 {
@@ -19346,6 +19354,39 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
           })
           .collect();
         layout_box(&call1("RowBox", Expr::List(parts.into())), font_size)
+      }
+      // `TemplateBox[{w}, "Spacer1"]` / `TemplateBox[{w, h}, "Spacer2"]`,
+      // the boxes of `Spacer`: blank room `w` points wide (and `h` high).
+      "TemplateBox"
+        if args.len() == 2
+          && matches!(&args[1], Expr::String(t) if t == "Spacer1" || t == "Spacer2")
+          && template_box_items(&args[0]).is_some_and(|items| {
+            !items.is_empty() && items.iter().all(|i| spacer_size(i).is_some())
+          }) =>
+      {
+        let items = template_box_items(&args[0]).unwrap();
+        let size = |i: usize| {
+          items
+            .get(i)
+            .and_then(spacer_size)
+            .map_or(0.0, |v| v.max(0.0))
+        };
+        let blank = BoxLayout::text("", font_size);
+        let height = if items.len() > 1 {
+          size(1)
+        } else {
+          blank.height
+        };
+        BoxLayout {
+          width: size(0),
+          height,
+          baseline: if items.len() > 1 {
+            height
+          } else {
+            blank.baseline
+          },
+          elements: String::new(),
+        }
       }
       // RowBox: lay out children left-to-right, align baselines
       "RowBox" if args.len() == 1 => {
