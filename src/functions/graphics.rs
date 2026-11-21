@@ -6528,7 +6528,7 @@ pub(crate) fn graphics_text_content(expr: &Expr) -> String {
         && args.len() == 1
         && !matches!(args[0], Expr::String(_)) =>
     {
-      box_expr_to_plain(&crate::strip_number_precision_markers(
+      box_expr_to_label_text(&crate::strip_number_precision_markers(
         &crate::evaluator::dispatch::complex_and_special::
           expr_to_box_form_traditional(&args[0]),
       ))
@@ -22143,6 +22143,17 @@ pub fn expr_to_svg_markup(expr: &Expr) -> String {
       derivative_prime_marks(order)
     );
   }
+  // An applied derivative `Derivative[n][f][x]`, held flattened as
+  // `Derivative[n, f, x]`, typesets as `f′[x]`.
+  if let Some((func, order, applied)) = as_applied_derivative(expr) {
+    let parts: Vec<String> = applied.iter().map(expr_to_svg_markup).collect();
+    return format!(
+      "{}{}[{}]",
+      expr_to_svg_markup(func),
+      derivative_prime_marks(order),
+      parts.join(", ")
+    );
+  }
   // A unit-fraction power is a radical, not a superscript: `Sqrt[2]`
   // (which is `2^(1/2)`) typesets as √2 under its vinculum, and a cube
   // root carries its index in the hook.
@@ -23308,13 +23319,23 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
 
   // `f'[x]`-style derivatives type as the function with prime marks (see
   // `as_derivative_of`), not as the `Derivative[n][f]` source.
-  if let Some((func, order)) = as_derivative_of(expr) {
-    let marks = if order <= 3 {
+  let prime_width = |order: u32| {
+    if order <= 3 {
       order as f64
     } else {
       (order.to_string().len() + 2) as f64 * 0.7
-    };
-    return estimate_display_width(func) + marks;
+    }
+  };
+  if let Some((func, order)) = as_derivative_of(expr) {
+    return estimate_display_width(func) + prime_width(order);
+  }
+  if let Some((func, order, applied)) = as_applied_derivative(expr) {
+    let args_width: f64 = applied.iter().map(estimate_display_width).sum();
+    return estimate_display_width(func)
+      + prime_width(order)
+      + 2.0
+      + args_width
+      + (applied.len().saturating_sub(1) * 2) as f64;
   }
 
   // A `StringForm` typesets as its filled template, so it is as wide as its
@@ -25909,6 +25930,20 @@ fn box_expr_to_plain_in(e: &Expr, spaced: bool) -> String {
         &box_expr_to_plain_in(&args[1], false),
         name == "OverscriptBox",
       ),
+      "SubscriptBox" | "SuperscriptBox" | "SubsuperscriptBox"
+        if RAISE_BOX_SCRIPTS.with(std::cell::Cell::get) && args.len() >= 2 =>
+      {
+        let mut text = box_expr_to_plain_in(&args[0], false);
+        for (i, a) in args.iter().enumerate().skip(1) {
+          let superscript =
+            name == "SuperscriptBox" || (name == "SubsuperscriptBox" && i == 2);
+          text.push_str(&picture_script_text(
+            &box_expr_to_plain_in(a, false),
+            superscript,
+          ));
+        }
+        text
+      }
       "SubscriptBox" | "SuperscriptBox" | "SubsuperscriptBox"
       | "UnderoverscriptBox" => args
         .iter()
@@ -53082,6 +53117,43 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
 }
 
 thread_local! {
+  /// Set while a typeset (`TraditionalForm`) picture label's boxes are
+  /// flattened to text, so its scripts stay raised or lowered (see
+  /// [`picture_script_text`]) instead of running into their base (`x2`).
+  static RAISE_BOX_SCRIPTS: std::cell::Cell<bool> =
+    const { std::cell::Cell::new(false) };
+}
+
+/// The text of a box tree drawn as a one-line picture label, with its
+/// sub- and superscripts kept as scripts.
+fn box_expr_to_label_text(e: &Expr) -> String {
+  let prev = RAISE_BOX_SCRIPTS.with(|flag| flag.replace(true));
+  let out = box_expr_to_plain(e);
+  RAISE_BOX_SCRIPTS.with(|flag| flag.set(prev));
+  out
+}
+
+/// A script of a one-line picture label: Unicode script glyphs where the
+/// font reliably has them, else the script wrapped in the markers the SVG
+/// writer raises or lowers with a `<tspan>`.
+fn picture_script_text(script: &str, superscript: bool) -> String {
+  if superscript {
+    if script
+      .chars()
+      .all(|c| unicode_script_char(c, true).is_some())
+    {
+      to_unicode_script(script, true)
+    } else {
+      format!("{SUPERSCRIPT_START}{script}{SUPERSCRIPT_END}")
+    }
+  } else if picture_subscript_needs_lowering(script) {
+    format!("{SUBSCRIPT_START}{script}{SUBSCRIPT_END}")
+  } else {
+    to_unicode_script(script, false)
+  }
+}
+
+thread_local! {
   /// Set while a picture label is flattened to text: a subscript with a
   /// letter Unicode has no subscript form for (a capital, as in `F_N`) is
   /// then wrapped in [`SUBSCRIPT_START`]/[`SUBSCRIPT_END`] so the SVG writer
@@ -53377,6 +53449,22 @@ pub(crate) fn as_derivative_of(expr: &Expr) -> Option<(&Expr, u32)> {
       if name == "Derivative" && hargs.len() == 1 =>
     {
       order_of(&hargs[0]).map(|n| (&args[0], n))
+    }
+    _ => None,
+  }
+}
+
+/// Split the flattened form `Derivative[n, f, x, …]` of an applied
+/// derivative `Derivative[n][f][x, …]` into the function, the order and the
+/// arguments it is applied to.
+pub(crate) fn as_applied_derivative(
+  expr: &Expr,
+) -> Option<(&Expr, u32, &[Expr])> {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if name == "Derivative" && args.len() > 2 =>
+    {
+      order_of(&args[0]).map(|n| (&args[1], n, &args[2..]))
     }
     _ => None,
   }

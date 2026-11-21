@@ -32033,7 +32033,14 @@ ParametricPlot[f[t], {t, 0, 1}]]",
          {n, 0, Infinity}]]}], 24], {0, 0}]}, \
          PlotRange -> 1, ImageSize -> 300]",
       );
-      for part in ["Pn(x) = ", "\u{2211}", "n=0", "\u{221E}"] {
+      // The index of `Pₙ` stays a lowered script rather than running into
+      // its base as `Pn`.
+      for part in [
+        "P<tspan baseline-shift=\"sub\" font-size=\"70%\">n</tspan>(x) = ",
+        "\u{2211}",
+        "n=0",
+        "\u{221E}",
+      ] {
         assert!(svg.contains(part), "{part} must be set: {svg}");
       }
       assert!(!svg.contains("LegendreP"), "not the head name: {svg}");
@@ -69663,5 +69670,70 @@ fn opaque_parametric_region_cells_have_no_seams() {
   for cell in &cells {
     assert!(cell.contains("fill-opacity=\"0.3\""), "{cell}");
     assert!(!cell.contains("stroke="), "{cell}");
+  }
+}
+
+/// A `TraditionalForm` label in a picture keeps its scripts raised or
+/// lowered instead of running them into their base (`x2`).
+mod traditional_form_text_scripts {
+  use super::*;
+
+  #[test]
+  fn powers_keep_their_superscripts() {
+    let svg = export_svg("Graphics[Text[TraditionalForm[x^2 + y], {0, 0}]]");
+    assert!(svg.contains(">x\u{b2}+y</text>"), "{svg}");
+    let svg =
+      export_svg("Graphics[Text[TraditionalForm[(16 (p - q) q^3)^n], {0, 0}]]");
+    // The product's factors are set apart by thin spaces.
+    assert!(
+      svg.contains("16\u{207f}\u{2009}((p-q)\u{2009}q\u{b3})\u{207f}"),
+      "{svg}"
+    );
+  }
+
+  #[test]
+  fn scripts_without_glyphs_become_tspans() {
+    let svg = export_svg("Graphics[Text[TraditionalForm[x^(a b)], {0, 0}]]");
+    assert!(
+      svg.contains(
+        "x<tspan baseline-shift=\"super\" font-size=\"70%\">a\u{2009}b</tspan>"
+      ),
+      "{svg}"
+    );
+    let svg =
+      export_svg("Graphics[Text[TraditionalForm[Subscript[x, k]], {0, 0}]]");
+    assert!(
+      svg
+        .contains("x<tspan baseline-shift=\"sub\" font-size=\"70%\">k</tspan>"),
+      "{svg}"
+    );
+  }
+}
+
+/// An applied derivative `Derivative[n][f][x]` in a grid cell shows its
+/// primes, not the flattened `Derivative[1, f, x]`.
+mod grid_applied_derivative {
+  use super::*;
+
+  #[test]
+  fn grid_cell_shows_primes() {
+    let svg = export_svg("Grid[{{D[f[a], a], D[f[a], {a, 2}]}}]");
+    assert!(svg.contains(">f\u{2032}[a]</text>"), "{svg}");
+    assert!(svg.contains(">f\u{2033}[a]</text>"), "{svg}");
+    assert!(!svg.contains("Derivative"), "{svg}");
+  }
+
+  /// In a notebook, `TraditionalForm[Grid[…]]` typesets each cell in
+  /// TraditionalForm: `f(a)` and `f′(a)`.
+  #[test]
+  fn traditional_form_grid_typesets_its_cells() {
+    clear_state();
+    let r =
+      interpret_with_stdout("TraditionalForm[Grid[{{f[a], D[f[a], a]}}]]")
+        .unwrap();
+    let svg = r.graphics.expect("grid renders");
+    assert!(!svg.contains("f[a]"), "{svg}");
+    assert!(!svg.contains("Derivative"), "{svg}");
+    assert!(svg.contains("\u{2032}"), "{svg}");
   }
 }

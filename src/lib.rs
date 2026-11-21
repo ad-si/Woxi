@@ -4020,7 +4020,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         Err(_) => expr,
       }
     }
-    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — unwrap and render
+    // TraditionalForm[Grid[...]] or TraditionalForm[TextGrid[...]] — render
+    // the grid with each of its cells typeset in TraditionalForm (`f(x)`,
+    // `f′(x)`), as the front end shows it.
     syntax::Expr::FunctionCall { name, args }
       if name == "TraditionalForm"
         && args.len() == 1
