@@ -16904,6 +16904,38 @@ mod plot3d {
       }
     }
 
+    /// Regression: a `Graphics` frame caption holding a line break (also
+    /// inside a `Tooltip`) was drawn as one run of text, so SVG folded the
+    /// break into a space. Each line now gets its own `<tspan>`, and the
+    /// left caption's two lines are pushed outward so the inner one keeps
+    /// clear of the tick labels.
+    #[test]
+    fn graphics_frame_label_breaks_lines() {
+      let one = export_svg(
+        "Graphics[{Point[{0, 0}]}, Frame -> True, \
+         FrameLabel -> {\"bottom\", \"left\"}]",
+      );
+      let two = export_svg(
+        "Graphics[{Point[{0, 0}]}, Frame -> True, \
+         FrameLabel -> {Tooltip[\"b1\\nb2\", \"tip\"], \"l1\\nl2\"}]",
+      );
+      for line in ["b1", "b2", "l1", "l2"] {
+        assert!(two.contains(&format!(">{line}</tspan>")), "{two}");
+      }
+      assert!(!two.contains("b1\nb2"), "{two}");
+      // The x of the left caption's (rotated) first line.
+      let left_x = |svg: &str, start: &str| -> f64 {
+        let i = svg.find(start).expect(start);
+        let tag = &svg[svg[..i].rfind("<text").unwrap()..i];
+        let x = tag.split("x=\"").nth(1).unwrap();
+        x[..x.find('"').unwrap()].parse().unwrap()
+      };
+      assert!(
+        left_x(&two, ">l1</tspan>") < left_x(&one, ">left<"),
+        "a two-line left caption starts further out: {two}"
+      );
+    }
+
     /// A `Graphics` frame carries the same captions, so a plot merged into
     /// a `Show` with other primitives keeps them.
     #[test]
@@ -36126,6 +36158,32 @@ mod list_plot_3d {
       "the label must not leak its Rotate[…] wrapper as literal text: {svg}"
     );
   }
+
+  /// Regression: a `Tooltip[label, hint]` or `Annotation[label, …]` 3-D
+  /// axis label printed as `Tooltip[label, hint]`, hint text and all, and
+  /// the long caption pushed the whole scene off the canvas. Only the label
+  /// is drawn; the hint shows on hover.
+  #[test]
+  fn graphics3d_axes_label_hover_wrapper_shows_only_its_label() {
+    clear_state();
+    let svg = export_svg(
+      "Graphics3D[{Cuboid[{0, 0, 0}, {1, 1, 1000}]}, Axes -> True, \
+       BoxRatios -> {1, 1, 1}, ImageSize -> 300, AxesLabel -> \
+       {Tooltip[\"first\\nline\", \"a long hint that is only shown on hover\"], \
+       Annotation[\"depth\", \"note\"], \"height\"}]",
+    );
+    for label in [">first</tspan>", ">line</tspan>", ">depth<", ">height<"] {
+      assert!(svg.contains(label), "expected {label:?} in the SVG: {svg}");
+    }
+    for leaked in ["Tooltip", "Annotation", "hover", "note"] {
+      assert!(!svg.contains(leaked), "{leaked:?} leaked into: {svg}");
+    }
+    // Every label sits inside the 300-wide picture.
+    for chunk in svg.split("<text x=\"").skip(1) {
+      let x: f64 = chunk[..chunk.find('"').unwrap()].parse().unwrap();
+      assert!((0.0..=300.0).contains(&x), "label at x = {x}: {svg}");
+    }
+  }
 }
 
 mod tree_form_graphics {
@@ -39249,6 +39307,92 @@ mod grid_rasterize {
     // WL's framed box puts the content 5 points inside its edge.
     assert!(svg.contains("width=\"110\" height=\"70\""), "{svg}");
     assert!(!svg.contains("stroke=\"rgb(190,190,190)\""), "{svg}");
+  }
+
+  /// Regression: a `Labeled` inside `Framed` was spelled out as its source
+  /// (`Labeled[a, b, Top]`) instead of stacking the caption over the body.
+  #[test]
+  fn framed_labeled_stacks_its_caption() {
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Framed[Labeled[Text@Style[\"body\", {11}], \
+       Text@Style[\"title\", {11, Bold}], Top], Background -> Yellow]",
+    )
+    .unwrap()
+    .graphics
+    .expect("framed labeled should draw");
+    assert!(!svg.contains("Labeled"), "{svg}");
+    let title = svg.find(">title<").expect("caption drawn");
+    let body = svg.find(">body<").expect("body drawn");
+    assert!(title < body, "the Top caption comes first: {svg}");
+  }
+
+  /// Regression: a font size given in a directive list (`Style[text,
+  /// {11}]`) was missed when a `Pane` broke the text into lines, so the
+  /// lines were measured at the 14 pt default and broke too early.
+  #[test]
+  fn pane_wraps_text_at_a_listed_font_size() {
+    clear_state();
+    let text = "one two three four five six seven eight nine ten eleven \
+                twelve thirteen fourteen fifteen sixteen";
+    let svg = |style: &str| {
+      woxi::interpret_with_stdout(&format!(
+        "Pane[Style[\"{text}\", {style}], 150]"
+      ))
+      .unwrap()
+      .graphics
+      .expect("pane should draw")
+    };
+    assert_eq!(svg("{11}"), svg("11"));
+  }
+
+  /// Regression: a `Style` size outside a `Text` (`Style[Text[s], 11]`,
+  /// and the same for each `Text` line of a styled `Column`) drew the text
+  /// at that size but measured it at the 14 pt default, so the picture was
+  /// far wider than its text.
+  #[test]
+  fn style_around_text_measures_at_the_styled_size() {
+    clear_state();
+    let width = |code: &str| {
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      let head = &svg[..svg.find('>').unwrap()];
+      let w = head.split("width=\"").nth(1).unwrap();
+      w[..w.find('"').unwrap()].parse::<f64>().unwrap()
+    };
+    let s = "\"five six seven eight\"";
+    assert_eq!(
+      width(&format!("Style[Text[{s}], 11]")),
+      width(&format!("Text[Style[{s}, 11]]"))
+    );
+    assert_eq!(
+      width(&format!("Style[Column[{{Text[{s}]}}], 11]")),
+      width(&format!("Column[{{Text[Style[{s}, 11]]}}]"))
+    );
+  }
+
+  /// Regression: a width-only `Pane` around a `Framed[Labeled[…]]` left its
+  /// text on one long line far past the pane. The text now re-flows inside
+  /// the frame's margins, under the caption.
+  #[test]
+  fn pane_wraps_text_inside_framed_labeled() {
+    clear_state();
+    let svg = woxi::interpret_with_stdout(
+      "Pane[Framed[Labeled[Text@Style[\"one two three four five six seven \
+       eight nine ten eleven twelve\", {11}], \"title\", Top]], 120]",
+    )
+    .unwrap()
+    .graphics
+    .expect("pane should draw");
+    assert!(!svg.contains("one two three four five six seven"), "{svg}");
+    assert!(
+      svg.contains(">twelve<") || svg.contains(" twelve<"),
+      "{svg}"
+    );
+    // Every nested box fits in the pane.
+    for chunk in svg.split(" width=\"").skip(1) {
+      let w: f64 = chunk[..chunk.find('"').unwrap()].parse().unwrap_or(0.0);
+      assert!(w <= 120.0, "box {w} wide in a 120-wide pane: {svg}");
+    }
   }
 
   /// Regression: `Column`'s `ItemSize` was ignored, so framed columns in a
@@ -61056,6 +61200,30 @@ mod grid_repeating_decimal_alignment {
 
 mod surface_vertex_colors {
   use super::*;
+
+  /// Regression: a bare color head as `ColorFunction` (`ColorFunction ->
+  /// Hue`) was ignored, leaving the surface in the default orange. It
+  /// colors by the scaled height, the same as `Hue[#3] &`, so the facets
+  /// of a surface extracted with `[[1]]` keep their colors.
+  #[test]
+  fn plot3d_bare_color_head_colors_by_height() {
+    clear_state();
+    let colors = |cf: &str| {
+      interpret(&format!(
+        "Cases[Plot3D[x + y^2, {{x, 0, 1}}, {{y, 0, 1}}, ColorFunction -> {cf}, \
+         Mesh -> None, PlotPoints -> 4, MaxRecursion -> 0][[1]], \
+         {{c_RGBColor, _Polygon}} :> c, Infinity]"
+      ))
+      .unwrap()
+    };
+    for (head, by_height) in
+      [("Hue", "(Hue[#3] &)"), ("GrayLevel", "(GrayLevel[#3] &)")]
+    {
+      let bare = colors(head);
+      assert!(bare.contains("RGBColor"), "{head}: {bare}");
+      assert_eq!(bare, colors(by_height), "{head}");
+    }
+  }
 
   #[test]
   fn parametric_plot3d_color_function_colors_facets() {

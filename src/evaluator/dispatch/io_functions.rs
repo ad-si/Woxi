@@ -7270,6 +7270,45 @@ fn wrap_pane_text_at(
       new_args.extend(args[1..].iter().cloned());
       Some(call("Pane", new_args))
     }
+    // A `Framed` box re-flows its content in the room its margins and
+    // border leave inside the width.
+    "Framed" if !args.is_empty() => {
+      let (left, right, _, _) = crate::functions::graphics::framed_margins(
+        &args[1..],
+        crate::functions::graphics::FRAMED_DEFAULT_MARGIN,
+      );
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width - left - right - 2.0,
+        font_size,
+        family,
+        whole_words,
+        proportional,
+      )?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Framed", new_args))
+    }
+    // `Labeled[body, label]` / `Labeled[body, label, Top | Bottom]` stacks
+    // its caption over or under the body, which re-flows across the whole
+    // width.
+    "Labeled"
+      if args.len() == 2
+        || (args.len() == 3
+          && matches!(&args[2], Expr::Identifier(p) if p == "Top" || p == "Bottom")) =>
+    {
+      let inner = wrap_pane_text_at(
+        &args[0],
+        width,
+        font_size,
+        family,
+        whole_words,
+        proportional,
+      )?;
+      let mut new_args = vec![inner];
+      new_args.extend(args[1..].iter().cloned());
+      Some(call("Labeled", new_args))
+    }
     // `Row[{e1, e2, …}, sep]` displays the items with `sep` between them,
     // so it re-flows as the one-argument `Row[{e1, sep, e2, sep, …}]`.
     "Row" if args.len() == 2 => {
@@ -7592,6 +7631,8 @@ fn style_font_size(directives: &[Expr]) -> Option<f64> {
   directives.iter().find_map(|d| match d {
     Expr::Integer(n) => Some(*n as f64),
     Expr::Real(r) => Some(*r),
+    // A directive list (`Style[text, {11, Bold}]`) holds the size too.
+    Expr::List(items) => style_font_size(items),
     Expr::Rule {
       pattern,
       replacement,
