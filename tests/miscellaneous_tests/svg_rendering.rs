@@ -1752,6 +1752,37 @@ mod tests {
     }
 
     #[test]
+    fn graphics3d_text_keeps_padding_blanks() {
+      // A 3D label padded with blanks (`"  axis"`, `"tip "`) used to lose
+      // them, because SVG drops leading/trailing whitespace by default.
+      for (label, expected) in [
+        (r#""  axis""#, "xml:space=\"preserve\">  axis</text>"),
+        (r#""tip ""#, "xml:space=\"preserve\">tip </text>"),
+        (
+          r#"Style["  axis", Italic]"#,
+          "font-style=\"italic\" xml:space=\"preserve\">  axis</text>",
+        ),
+        (
+          r#"Style[Style["  axis", Italic], Medium]"#,
+          "xml:space=\"preserve\"><tspan font-style=\"italic\">  axis</tspan></text>",
+        ),
+        (r#""a  b""#, "xml:space=\"preserve\">a  b</text>"),
+      ] {
+        let svg = woxi::interpret(&format!(
+          r#"ExportString[Graphics3D[{{Text[{label}, {{0, 0, 0}}], Point[{{1, 1, 1}}]}}], "SVG"]"#
+        ))
+        .expect("interpret should succeed");
+        assert!(svg.contains(expected), "blanks dropped in {label}: {svg}");
+      }
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics3D[{Text["p q", {0, 0, 0}], Point[{1, 1, 1}]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains(">p q</text>"), "label changed: {svg}");
+      assert!(!svg.contains("xml:space"), "needless xml:space: {svg}");
+    }
+
+    #[test]
     fn list_line_plot_frame_label_renders_box_notation() {
       // FrameLabel with a SqrtBox renders as a radical, not raw box text.
       let svg = woxi::interpret(
@@ -5040,6 +5071,28 @@ mod tests {
       assert!(svg.contains("<svg"), "{svg}");
       assert!(!svg.contains("SuperscriptBox"), "box source leaked: {svg}");
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
+    }
+
+    /// A column item `Style[Text[TraditionalForm[poly]], size]` is typeset
+    /// like `Style[TraditionalForm[poly], size]` (spaced operators, raised
+    /// exponents), not flattened to one unspaced text run.
+    #[test]
+    fn styled_text_of_traditional_form_typesets_like_styled_form() {
+      let render = |item: &str| {
+        woxi::interpret(&format!(
+          "ExportString[Column[{{{item}}}, Alignment -> Center], \"SVG\"]"
+        ))
+        .expect("interpret should succeed")
+      };
+      let poly = "x^10 + x^9 - x^3 + x + 1";
+      let through_text =
+        render(&format!("Style[Text@TraditionalForm[{poly}], 12]"));
+      let direct = render(&format!("Style[TraditionalForm[{poly}], 12]"));
+      assert_eq!(through_text, direct);
+      assert!(!through_text.contains("baseline-shift"), "{through_text}");
+      let nested =
+        render(&format!("Style[Text[Text[TraditionalForm[{poly}]]], 12]"));
+      assert_eq!(nested, direct);
     }
 
     /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells

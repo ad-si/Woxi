@@ -20,7 +20,8 @@ $ wo 'ToString[PaddedForm[{1, 22, 333}, 4]]'
 {    1,    22,   333}
 ```
 
-`NumberPadding` given as a single string sets the fill of the integer field:
+`NumberPadding` given as a single string fills both the integer field and
+the fractional slots:
 
 ```scrut
 $ wo 'ToString[PaddedForm[-123, 6, NumberPadding -> "0"]]'
