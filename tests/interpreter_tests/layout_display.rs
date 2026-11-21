@@ -276,6 +276,34 @@ mod layout_display {
     }
   }
 
+  /// resvg never synthesizes an oblique face, so italic text (e.g.
+  /// `Text[Style["a", Italic], …]` labels in `Graphics3D`) only renders
+  /// slanted when a real italic face of the default family is embedded.
+  /// Regression: italic and bold-italic labels rasterized pixel-identical
+  /// to their upright forms.
+  #[test]
+  fn italic_text_rasterizes_slanted() {
+    let raster = |style: &str| {
+      let svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"120\" \
+         height=\"40\"><text x=\"10\" y=\"30\" font-family=\"sans-serif\" \
+         font-size=\"28\" {style}>lab</text></svg>"
+      );
+      match woxi::functions::image_ast::rasterize_svg(&svg, 72.0).unwrap() {
+        woxi::syntax::Expr::Image { ref data, .. } => data.clone(),
+        _ => panic!("SVG rasterization did not produce an image"),
+      }
+    };
+    assert_ne!(raster(""), raster("font-style=\"italic\""));
+    assert_ne!(
+      raster("font-weight=\"bold\""),
+      raster("font-weight=\"bold\" font-style=\"italic\"")
+    );
+    // The Graphics3D label path emits italic text for Style[…, Italic].
+    let svg = svg_of("Graphics3D[{Text[Style[\"a\", 20, Italic], {0, 0, 0}]}]");
+    assert!(svg.contains("font-style=\"italic\""));
+  }
+
   /// Regression: a label with a character the requested face lacks (such
   /// as "ρ") was redrawn entirely in the first database face that had
   /// it, even when that face's weight or style differed (e.g. a bold
