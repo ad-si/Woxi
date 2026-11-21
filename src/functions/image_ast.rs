@@ -3211,6 +3211,7 @@ fn image_histogram_chart_options() -> crate::functions::chart::ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    frame_ticks: true,
     layout: crate::functions::plot::BarLayout::Grouped,
     bar_origin_top: false,
     log_x: false,
@@ -13599,6 +13600,10 @@ pub fn preferred_serif_family<'a>(
 /// - Static **Bold** instances of both (`fonttools varLib.instancer
 ///   wght=700`) for the same reason: usvg would otherwise draw
 ///   `font-weight="bold"` text with the regular outlines.
+/// - Static **Italic** and **Bold Italic** instances of Atkinson
+///   Hyperlegible Next: usvg never slants glyphs itself, so without a
+///   dedicated italic face `font-style="italic"` text (`Style[…, Italic]`,
+///   `FontSlant -> Italic`, TraditionalForm variables) would draw upright.
 ///
 /// All bundled Atkinson files carry an `OS/2.ySubscriptYOffset` of 400
 /// (upstream: 75). usvg lowers `baseline-shift="sub"` by exactly that
@@ -13630,6 +13635,14 @@ pub fn load_embedded_fonts(fontdb: &mut resvg::usvg::fontdb::Database) {
     )
     .to_vec(),
   );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-Italic.ttf")
+      .to_vec(),
+  );
+  fontdb.load_font_data(
+    include_bytes!("../../resources/AtkinsonHyperlegibleNext-BoldItalic.ttf")
+      .to_vec(),
+  );
   fontdb.set_monospace_family("Atkinson Hyperlegible Mono");
   fontdb.set_sans_serif_family("Atkinson Hyperlegible Next");
   // Text set in `FontFamily -> "Times"` is measured with Times-like
@@ -13658,9 +13671,11 @@ const SYNTHETIC_OBLIQUE_DEGREES: f64 = 14.0;
 /// but whose font family has no italic (or oblique) face in `fontdb`.
 ///
 /// Browsers synthesize an oblique face for `font-style="italic"` when a
-/// family has none, but usvg draws the upright outlines instead. The
-/// embedded Atkinson fonts ship no italic, so `Style[..., Italic]` text
-/// (plot labels, axes labels, `Text` primitives) would rasterize upright.
+/// family has none, but usvg draws the upright outlines instead, so
+/// `Style[..., Italic]` text (plot labels, axes labels, `Text` primitives)
+/// would rasterize upright. The embedded Atkinson Hyperlegible Next ships
+/// real italic faces; this covers the families that don't, such as the
+/// embedded Atkinson Hyperlegible Mono or an installed font.
 /// Each such element gets a `skewX` about its anchor point, which leaves
 /// the anchor where it was and leans the glyphs like an oblique face.
 ///

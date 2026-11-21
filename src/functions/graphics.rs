@@ -3074,6 +3074,54 @@ fn leading_assignments(body: &Expr) -> Vec<&Expr> {
     .collect()
 }
 
+/// The branches of a `Which[c1, v1, c2, v2, …]`, `If[c, v1, v2]` or
+/// `Switch[e, p1, v1, p2, v2, …]` together with the source of a *selector*:
+/// the same conditional with each branch value replaced by its 1-based
+/// index, so evaluating the selector tells which branch is in effect.
+/// `None` for anything else.
+fn conditional_branches(expr: &Expr) -> Option<(Vec<Expr>, String)> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let int = |i: usize| Expr::Integer(i as i128);
+  let (branches, selector_args): (Vec<Expr>, Vec<Expr>) = match name.as_str() {
+    "Which" if args.len() >= 2 && args.len() % 2 == 0 => {
+      let mut sel = Vec::new();
+      let mut branches = Vec::new();
+      for (i, pair) in args.chunks(2).enumerate() {
+        sel.push(pair[0].clone());
+        sel.push(int(i + 1));
+        branches.push(pair[1].clone());
+      }
+      (branches, sel)
+    }
+    "If" if args.len() == 2 || args.len() == 3 => {
+      let branches: Vec<Expr> = args[1..].to_vec();
+      let mut sel = vec![args[0].clone(), int(1)];
+      if args.len() == 3 {
+        sel.push(int(2));
+      }
+      (branches, sel)
+    }
+    "Switch" if args.len() >= 3 && args.len() % 2 == 1 => {
+      let mut sel = vec![args[0].clone()];
+      let mut branches = Vec::new();
+      for (i, pair) in args[1..].chunks(2).enumerate() {
+        sel.push(pair[0].clone());
+        sel.push(int(i + 1));
+        branches.push(pair[1].clone());
+      }
+      (branches, sel)
+    }
+    _ => return None,
+  };
+  let selector = Expr::FunctionCall {
+    name: name.clone(),
+    args: selector_args.into(),
+  };
+  Some((branches, crate::syntax::expr_to_source_form(&selector)))
+}
+
 /// Whether a Manipulate argument is a `ButtonBar[…]` — a row of buttons
 /// whose labels and actions are computed from a list.
 fn is_button_bar(spec: &Expr) -> bool {
@@ -16394,6 +16442,14 @@ pub(crate) struct AxisPadding {
 }
 
 impl AxisPadding {
+  /// Whether the `(low, high)` sides are left `Automatic`.
+  pub(crate) fn automatic_sides(&self) -> (bool, bool) {
+    (
+      matches!(self.lo, PlotPadAmount::Automatic),
+      matches!(self.hi, PlotPadAmount::Automatic),
+    )
+  }
+
   /// The `(low, high)` padding in data units for an axis of the given
   /// (unpadded) span, with `Automatic` resolving to `automatic_frac` of it.
   /// A `Scaled[f]` side is the fraction `f` of the whole padded range:
@@ -17252,8 +17308,17 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let spec = parse_plot_range_padding(padding_expr);
     let x_span = x_max - x_min;
     let y_span = y_max - y_min;
-    let (x_lo, x_hi) = spec.x.resolve(x_span, 0.04);
-    let (y_lo, y_hi) = spec.y.resolve(y_span, 0.04);
+    // An `Automatic` side leaves an axis pinned by an explicit `PlotRange`
+    // unpadded, as the default does: a `Plot` stores its graphics with
+    // `PlotRangePadding -> {Scaled[0.02], Automatic}` beside `PlotRange ->
+    // {{xmin, xmax}, {0, 30}}`, padding only the range it determined itself.
+    let automatic_frac = |explicit: bool| if explicit { 0.0 } else { 0.04 };
+    let (x_lo, x_hi) = spec
+      .x
+      .resolve(x_span, automatic_frac(plot_range_x.is_some()));
+    let (y_lo, y_hi) = spec
+      .y
+      .resolve(y_span, automatic_frac(plot_range_y.is_some()));
     bb.x_min = x_min - x_lo;
     bb.x_max = x_max + x_hi;
     bb.y_min = y_min - y_lo;
@@ -17522,6 +17587,40 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if plot_range_y.is_none() && text_h < svg_height as f64 {
         grown.y_min = grown.y_min.min(cy - half_h + room_y);
         grown.y_max = grown.y_max.max(cy + half_h - room_y);
+      }
+    }
+    // An inset drawn at its own pixel size (`Inset[g, pos]` with no `size`)
+    // is likewise kept whole: it is centered on its anchor, so the range
+    // grows by half its width and height in data units — plus the default
+    // padding (1/50 of the padded width) unless `PlotRangePadding` is set.
+    let inset_margin = if plot_range_padding.is_none() {
+      plot_w / 50.0
+    } else {
+      0.0
+    };
+    for prim in &primitives {
+      let Primitive::InsetGraphic {
+        x,
+        y,
+        w,
+        h,
+        scaled: false,
+        size: None,
+        ..
+      } = prim
+      else {
+        continue;
+      };
+      let (half_w, half_h) =
+        ((w / 2.0 + inset_margin) / kx, (h / 2.0 + inset_margin) / ky);
+      let (room_x, room_y) = (slack_x / kx, slack_y / ky);
+      if plot_range_x.is_none() && *w < svg_width as f64 {
+        grown.x_min = grown.x_min.min(x - half_w + room_x);
+        grown.x_max = grown.x_max.max(x + half_w - room_x);
+      }
+      if plot_range_y.is_none() && *h < svg_height as f64 {
+        grown.y_min = grown.y_min.min(y - half_h + room_y);
+        grown.y_max = grown.y_max.max(y + half_h - room_y);
       }
     }
     if grown == bb {
@@ -19652,8 +19751,12 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
         let num = layout_box_nested(&args[0], size);
         let den = layout_box_nested(&args[1], size);
         let frac_w = num.width.max(den.width) + 4.0;
-        let gap = 3.0;
-        let line_thickness = 0.8;
+        // The rule and the space around it grow with large type: a 14 pt
+        // (or smaller) fraction has a 0.8 pt rule with 3 pt gaps, an 80 pt
+        // one a rule and gaps proportionally heavier.
+        let em = (size / 14.0).max(1.0);
+        let gap = 3.0 * em;
+        let line_thickness = 0.8 * em;
 
         // Numerator centered above line
         let num_x = (frac_w - num.width) / 2.0;
@@ -19671,7 +19774,7 @@ pub fn layout_box(expr: &Expr, font_size: f64) -> BoxLayout {
 
         let elements = format!(
           "{}\
-           <line x1=\"0\" y1=\"{line_y:.1}\" x2=\"{frac_w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"{line_thickness}\"/>\
+           <line x1=\"0\" y1=\"{line_y:.1}\" x2=\"{frac_w:.1}\" y2=\"{line_y:.1}\" stroke=\"currentColor\" stroke-width=\"{line_thickness:.1}\"/>\
            {}",
           num.translate(num_x, num_y),
           den.translate(den_x, den_y),
@@ -30595,6 +30698,54 @@ fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
 }
 
+/// The `Style` directives (weight, slant, size, color) a grid's style
+/// passes on to a nested layout in one of its cells. The font family is
+/// left to the caller, which decides whether a default applies.
+fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  directives
+}
+
+/// A `Grid` nested in a cell of a styled grid (`Style[Grid[{{Grid[…]},
+/// {Grid[…]}}], 16]`) inherits the outer grid's size, weight, slant, color
+/// and family, just like the plain text cells beside it: the nested grid is
+/// wrapped in the same `Style` so it is drawn whole in that style (its own
+/// `BaseStyle` still takes precedence). Without this the nested grid's text
+/// fell back to the default 14pt black.
+fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, args }
+    if (name == "Grid" || name == "TextGrid")
+      && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return cell.clone();
+  }
+  let mut directives = grid_style_directives(style);
+  if let Some(family) = &style.font_family {
+    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
+  }
+  if directives.is_empty() {
+    return cell.clone();
+  }
+  call(
+    "Style",
+    std::iter::once(cell.clone())
+      .chain(directives)
+      .collect::<Vec<_>>(),
+  )
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -30886,6 +31037,7 @@ fn grid_svg_styled_internal_reporting(
       *cell = resolve_display_item(cell);
       *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
+      *cell = nested_grid_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
       // grid's size, like the plain text cells around it.
@@ -37820,7 +37972,16 @@ fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
   use crate::evaluator::dispatch::io_functions::{
     pane_fixed_size, pane_size_component,
   };
-  let Expr::FunctionCall { name, args } = item else {
+  // `Style[Text[Pane[…, {w, h}]], Bold]`: the style and text wrappers only
+  // dress the pane's content, so the item still reserves the pane's box.
+  let mut pane = item;
+  while let Expr::FunctionCall { name, args } = pane
+    && ((name == "Style" && args.len() >= 2)
+      || (name == "Text" && args.len() == 1))
+  {
+    pane = &args[0];
+  }
+  let Expr::FunctionCall { name, args } = pane else {
     return None;
   };
   if name != "Pane" || args.len() < 2 {
@@ -40560,7 +40721,9 @@ pub(crate) fn clip_svg_to_pane_box(
     return scaled;
   }
   // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
-  // the box (keeping its aspect ratio) instead of cutting it off.
+  // the box (keeping its aspect ratio) instead of cutting it off. The
+  // shrunk content is then placed in the box by the alignment like any
+  // content that fits: the Pane keeps its full `width`x`height`.
   if shrink_to_fit && natural_w > 0.0 && natural_h > 0.0 {
     // The Pane itself keeps its declared size: the shrunk content sits in
     // the full `width` x `height` box where its `Alignment` puts it, so
@@ -42018,6 +42181,9 @@ impl ManipulateControl {
   pub fn visibility_key(&self) -> String {
     match self {
       Self::Heading { label, .. } => heading_visibility_key(label),
+      Self::Button { label, action, .. } => {
+        button_visibility_key(label, action)
+      }
       _ => self.name().to_string(),
     }
   }
@@ -42027,6 +42193,13 @@ impl ManipulateControl {
 /// leading control character keeps it from ever colliding with a variable.
 pub fn heading_visibility_key(label: &str) -> String {
   format!("\u{1}heading:{label}")
+}
+
+/// The `control_visible` key of a button labeled `label` that runs
+/// `action`. Like a heading, a button binds no variable, so it is filed under
+/// what tells it apart from the other buttons of the panel.
+pub fn button_visibility_key(label: &str, action: &str) -> String {
+  format!("\u{1}button:{label}\u{1}{action}")
 }
 
 /// A parsed Manipulate expression ready for interactive rendering.
@@ -43745,8 +43918,77 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
       Expr::FunctionCall { name, args }
         if name == "ButtonBar" && !args.is_empty() =>
       {
-        let entries =
-          evaluate_expr_to_expr(&args[0]).unwrap_or_else(|_| args[0].clone());
+        // `Dynamic[ButtonBar[Which[n == 2, {…}, n == 3, {…}]]]`: the set of
+        // buttons follows another control. Every branch's buttons join the
+        // panel, each shown only while a branch that offers it is selected.
+        if let Some((branches, selector)) = conditional_branches(&args[0]) {
+          let mut buttons: Vec<(ManipulateControl, Vec<usize>)> = Vec::new();
+          for (idx, branch) in branches.iter().enumerate() {
+            let entries = crate::with_scoped_globals(&initial_bindings, || {
+              evaluate_expr_to_expr(branch)
+            })
+            .unwrap_or_else(|_| branch.clone());
+            let Expr::List(items) = &entries else {
+              continue;
+            };
+            for item in items {
+              let (Expr::Rule {
+                pattern,
+                replacement,
+              }
+              | Expr::RuleDelayed {
+                pattern,
+                replacement,
+              }) = item
+              else {
+                continue;
+              };
+              let label_runs = manipulate_label_runs(pattern, false);
+              let label = flatten_label_runs(&label_runs);
+              let action = crate::syntax::expr_to_source_form(replacement);
+              let known = buttons.iter_mut().find(|(b, _)| {
+                matches!(b, ManipulateControl::Button { label: l, action: a, .. }
+                  if *l == label && *a == action)
+              });
+              if let Some((_, in_branches)) = known {
+                in_branches.push(idx + 1);
+              } else {
+                let joins_previous = !buttons.is_empty();
+                buttons.push((
+                  ManipulateControl::Button {
+                    label,
+                    label_runs,
+                    action,
+                    enabled: None,
+                    label_code: dynamic_button_label_code(pattern),
+                    joins_previous,
+                    background: None,
+                  },
+                  vec![idx + 1],
+                ));
+              }
+            }
+          }
+          if !buttons.is_empty() {
+            for (button, in_branches) in buttons {
+              let list = in_branches
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+              control_visible.push((
+                button.visibility_key(),
+                format!("MemberQ[{{{list}}}, {selector}]"),
+              ));
+              controls.push(button);
+            }
+            continue;
+          }
+        }
+        let entries = crate::with_scoped_globals(&initial_bindings, || {
+          evaluate_expr_to_expr(&args[0])
+        })
+        .unwrap_or_else(|_| args[0].clone());
         if let Expr::List(items) = &entries {
           let mut any = false;
           for item in items {
@@ -47960,7 +48202,8 @@ fn unwrap_control_wrapper(spec: Expr) -> Expr {
       if name == "Dynamic"
         && matches!(
           args.first(),
-          Some(Expr::FunctionCall { name: inner, .. }) if inner == "Control"
+          Some(Expr::FunctionCall { name: inner, .. })
+            if inner == "Control" || inner == "ButtonBar"
         ) =>
     {
       args[0].clone()
