@@ -21265,6 +21265,28 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       assert!(half > 0 && half < all, "{half} of {all}");
     }
 
+    /// The caller's `Axes`/`Frame` options override the region plot's own
+    /// defaults: the first setting of an option is the one in force, and
+    /// the defaults used to be listed before the caller's options.
+    #[test]
+    fn parametric_plot_two_parameters_caller_options_win() {
+      let axis_lines =
+        |code: &str| export_svg(code).matches("stroke-width=\"0.2\"").count();
+      let region =
+        "ParametricPlot[{u, v}, {u, -2, 2}, {v, -2, 2}, PlotPoints -> 3";
+      assert_eq!(axis_lines(&format!("{region}]")), 2);
+      assert_eq!(axis_lines(&format!("{region}, Axes -> False]")), 0);
+      assert_eq!(
+        axis_lines(&format!("{region}, Axes -> {{True, False}}]")),
+        1
+      );
+      assert_eq!(
+        interpret(&format!("Lookup[Options[{region}, Axes -> False]], Axes]"))
+          .unwrap(),
+        "False"
+      );
+    }
+
     /// The body is held, so a generated list of maps (`Table[…]`) must be
     /// evaluated into several regions instead of leaving the plot empty.
     #[test]
