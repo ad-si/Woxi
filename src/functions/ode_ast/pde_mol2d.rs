@@ -539,8 +539,8 @@ fn u_call_side(eq: &Expr, u: &str) -> Option<(Vec<Expr>, Expr)> {
 }
 
 /// Solve `NDSolve[eqs, u, dom1, dom2, dom3]` for a scalar unknown in two
-/// space variables and time (see the module documentation). `None`
-/// when the problem does not have the supported shape.
+/// space variables and time (see the module documentation). `None` when
+/// the problem does not have the supported shape.
 pub(super) fn solve_pde_mol_2d(
   eqs: &[Expr],
   rest: &[Expr],

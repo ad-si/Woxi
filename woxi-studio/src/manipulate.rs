@@ -405,6 +405,7 @@ impl ControlState {
       ControlState::Continuous {
         current,
         is_real,
+        exact_value,
         step,
         min,
         max,
@@ -412,6 +413,11 @@ impl ControlState {
       } => {
         if let Some(v) = as_f64(&expr) {
           *current = v;
+          // An exact value (`2/3` from a linked `{2/3 -> "astroid", …}`
+          // setter row) binds exactly again, as in Wolfram, even after a
+          // drag had made the slider bind machine reals.
+          *exact_value =
+            (!matches!(expr, Expr::Real(_) | Expr::BigFloat(..))).then_some(v);
           // A machine real assigned to a slider whose spec was all exact
           // integers (`{c, -2, 2}`) shows Wolfram's slider is continuous:
           // an integer step could never have produced that value.
@@ -4283,6 +4289,36 @@ mod tests {
       "the body must draw a picture, got text {:?}",
       state.text_output
     );
+  }
+
+  /// A `Pane[Module[…, Text@Style[TraditionalForm[lhs == rhs], …]], size]`
+  /// body driven by a 2D slider draws the typeset identity, not the raw
+  /// `TraditionalForm[…]` call as text, and follows the slider.
+  #[test]
+  fn pane_of_text_traditional_form_body_draws_a_picture() {
+    let code = r#"Manipulate[
+      Pane[Module[{f = {Sin, Cos, Exp}[[p[[1]]]], g = {Tan, Log, Sqrt}[[p[[2]]]]},
+        Text[Style[TraditionalForm[
+          HoldForm[Integrate[f[g[x]], x]] == Integrate[f[g[x]], x]], 15, Bold]]],
+        If[wide, {480, Automatic}, {480, 300}], Alignment -> {Left, Center}],
+      {{p, {1, 2}, "pick"}, {1, 1}, {3, 3}, {1, 1}},
+      {{wide, False, "resize"}, {True, False}}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert!(
+      state.graphics_handle.is_some(),
+      "the body must draw a picture, got text {:?}",
+      state.text_output
+    );
+    let svg = state.check_render().unwrap().graphics.unwrap();
+    assert!(svg.contains("log"), "{svg}");
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+    state.slider2d_change(0, 1, 1.0);
+    state.reevaluate();
+    let svg = state.check_render().unwrap().graphics.unwrap();
+    assert!(svg.contains("tan"), "{svg}");
   }
 
   /// A choice list `Dynamic[Range[top]]` that follows a free variable the
@@ -9211,6 +9247,71 @@ mod repeated_option_tests {
     state.reevaluate();
     assert!(!state.wants_tick());
     assert_eq!(state.text_output.as_deref(), Some("3"));
+  }
+
+  /// A slider and a setter row sharing one variable: the slider starts on
+  /// the exact `2/3`, whose `"Labeled"` readout Wolfram typesets as a stacked
+  /// fraction. A drag makes it bind machine reals, but picking a setter
+  /// choice binds that choice's exact value again (`2/3`, `1`), and the
+  /// readout follows.
+  #[test]
+  fn linked_setter_restores_exact_slider_value_and_fraction_readout() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[r, {{r, 2/3, \"r\"}, 0.1, 20, Appearance -> \"Labeled\"}, \
+       {{r, 2/3, \"r\"}, {2/3 -> \"low\", 1 -> \"mid\", 2 -> \"high\"}}]",
+    )
+    .expect("parse Manipulate expr");
+    let mut state = ManipulateState::from_expr(&expr).expect("build widget");
+    state.reevaluate();
+    let slider = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Continuous { .. }))
+      .expect("slider");
+    let setter = state
+      .controls
+      .iter()
+      .position(|c| matches!(c, ControlState::Discrete { .. }))
+      .expect("setter");
+    assert_eq!(state.controls[slider].current_code(), "2/3");
+    assert!(
+      state
+        .continuous_value_icon(&state.controls[slider])
+        .is_some(),
+      "2/3 readout is stacked"
+    );
+
+    assert!(state.slide_continuous(slider, 5.0));
+    state.apply_tracking(slider);
+    state.reevaluate();
+    assert_eq!(state.controls[slider].current_code(), "5.");
+    assert!(
+      state
+        .continuous_value_icon(&state.controls[slider])
+        .is_none()
+    );
+
+    assert!(state.select_discrete(setter, "low"));
+    state.apply_tracking(setter);
+    state.reevaluate();
+    assert_eq!(state.controls[slider].current_code(), "2/3");
+    assert!(
+      state
+        .continuous_value_icon(&state.controls[slider])
+        .is_some(),
+      "exact again after setter"
+    );
+
+    assert!(state.select_discrete(setter, "mid"));
+    state.apply_tracking(setter);
+    state.reevaluate();
+    assert_eq!(state.controls[slider].current_code(), "1");
+    assert!(
+      state
+        .continuous_value_icon(&state.controls[slider])
+        .is_none(),
+      "an integer reads as text"
+    );
   }
 }
 

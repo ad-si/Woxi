@@ -9678,10 +9678,9 @@ Found by the visual Graphics-Tests comparison; not fixed yet.
   line), using two characters per em; wolframscript also breaks inside a
   word ("cont"/"ent") and aligns the cells of a row on their first
   baseline. Row heights from `ItemSize -> {…, {h…}}` are approximate.
-- `FontSlant -> Italic` and `FontWeight -> "Thin"`/`"Black"` are written to
-  the SVG (`font-style`, `font-weight="100"`/`"900"`), but the embedded
-  Atkinson house font has no italic or extra weights, so they draw upright
-  and regular.
+- `FontWeight -> "Thin"`/`"Black"` are written to the SVG
+  (`font-weight="100"`/`"900"`), but the embedded Atkinson house font has
+  only regular and bold weights (plus their italics), so they draw regular.
 - `Underscript[x, "_"]` (a one-character accent) is drawn as an underlined
   `x` rather than a separate `_` below it.
 - `BarLegend` labels use an ASCII hyphen-minus (`-10`) where wolframscript
