@@ -519,6 +519,114 @@ fn solve_interpolating_function(head: &str, args: &[Expr]) -> Option<Expr> {
 }
 
 pub fn nsolve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  let solved = nsolve_ast_unpolished(args)?;
+  match (&solved, args.first()) {
+    (Expr::List(_), Some(eqns @ Expr::List(eqs)))
+      if eqs.len() >= 2
+        && crate::functions::math_ast::contains_inexact_real(eqns) =>
+    {
+      Ok(realize_rounded_double_roots(eqns, solved))
+    }
+    _ => Ok(solved),
+  }
+}
+
+/// A system with machine coefficients whose solution touches a curve (a
+/// line tangent to a circle) has a double root there. The rounding of its
+/// coefficients pushes the discriminant either way, so the root comes out
+/// either real or as a conjugate pair split by ~1e-9 i — the tangent point
+/// of a dragged geometry figure flickers between drawn and invalid. A
+/// solution whose imaginary parts are that small and whose real part
+/// already satisfies every equation to within rounding error is that real
+/// double root.
+fn realize_rounded_double_roots(eqns: &Expr, solved: Expr) -> Expr {
+  let Expr::List(sols) = &solved else {
+    return solved;
+  };
+  let realized = sols
+    .iter()
+    .map(|sol| real_part_solution(eqns, sol).unwrap_or_else(|| sol.clone()))
+    .collect();
+  Expr::List(realized)
+}
+
+/// `sol` with its complex values replaced by their real parts, when those
+/// imaginary parts are rounding noise of a double root (see
+/// [`realize_rounded_double_roots`]).
+fn real_part_solution(eqns: &Expr, sol: &Expr) -> Option<Expr> {
+  let Expr::List(rules) = sol else {
+    return None;
+  };
+  let mut changed = false;
+  let mut point = Vec::with_capacity(rules.len());
+  for rule in rules {
+    let Expr::Rule {
+      pattern,
+      replacement,
+    } = rule
+    else {
+      return None;
+    };
+    let (re, im) = try_extract_complex_f64(replacement)?;
+    if im == 0.0 {
+      point.push((pattern.as_ref().clone(), replacement.as_ref().clone()));
+    } else {
+      if im.abs() > 1e-6 * (1.0 + re.abs()) {
+        return None;
+      }
+      changed = true;
+      point.push((pattern.as_ref().clone(), Expr::Real(re)));
+    }
+  }
+  if !changed {
+    return None;
+  }
+  let Expr::List(equations) = eqns else {
+    return None;
+  };
+  let holds = equations.iter().all(|eq| {
+    let Some((lhs, rhs, CompOp::Equal)) =
+      crate::functions::polynomial_ast::reduce::extract_comparison(eq)
+    else {
+      return false;
+    };
+    // Judge the residual against the terms that cancel in it. Coordinates
+    // computed through a chain of machine operations carry thousands of
+    // ulps of error, so that is the tolerance; a genuinely complex pair
+    // (`x^2 + 1.*^-20 == 0`) leaves a residual as large as its terms.
+    let difference = expand_and_combine(&minus2(lhs.clone(), rhs.clone()));
+    let mut residual = 0.0;
+    let mut scale = 0.0;
+    for term in collect_additive_terms(&difference) {
+      let substituted = point
+        .iter()
+        .fold(term, |e, (var, v)| substitute_expr(&e, var, v));
+      let Some(value) = quietly(|| {
+        crate::evaluator::evaluate_function_call_ast("N", &[substituted])
+      })
+      .ok()
+      .and_then(|v| try_extract_complex_f64(&v)) else {
+        return false;
+      };
+      if value.1 != 0.0 {
+        return false;
+      }
+      residual += value.0;
+      scale += value.0.abs();
+    }
+    residual.abs() <= 1e-12 * scale
+  });
+  holds.then(|| {
+    Expr::List(
+      point
+        .into_iter()
+        .map(|(var, value)| rule_expr(var, value))
+        .collect(),
+    )
+  })
+}
+
+fn nsolve_ast_unpolished(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // An empty equation list is `True` (see solve_ast).
   if matches!(args.first(), Some(Expr::List(items)) if items.is_empty()) {
     let mut truth = args.to_vec();
@@ -9683,7 +9791,13 @@ fn values_equal(a: &Expr, b: &Expr) -> bool {
   else {
     return false;
   };
-  let scale = 1.0 + are.hypot(aim).max(bre.hypot(bim));
+  let magnitude = are.hypot(aim).max(bre.hypot(bim));
+  // Exact values carry no rounding error, so they are compared relative to
+  // their size alone: an absolute floor would merge the distinct roots
+  // `±I/10^10` of `x^2 == -1/10^20`.
+  let exact = !crate::functions::math_ast::contains_inexact_real(a)
+    && !crate::functions::math_ast::contains_inexact_real(b);
+  let scale = if exact { magnitude } else { 1.0 + magnitude };
   (are - bre).hypot(aim - bim) <= 1e-9 * scale
 }
 

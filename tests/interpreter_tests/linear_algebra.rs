@@ -618,6 +618,65 @@ mod det {
   }
 }
 
+mod det_radicals {
+  use super::*;
+
+  // Radicals count as numbers: products of them multiply out.
+  #[test]
+  fn radical_products_expand() {
+    assert_eq!(
+      interpret("Det[{{1 + Sqrt[2], 1}, {1, 1 - Sqrt[2]}}]").unwrap(),
+      "-2"
+    );
+    assert_eq!(
+      interpret("Det[{{1 + Sqrt[2], 1}, {1, 1 + Sqrt[2]}}]").unwrap(),
+      "2 + 2*Sqrt[2]"
+    );
+  }
+
+  // Radicals left in a denominator are reduced to the exact value.
+  #[test]
+  fn radical_denominators_reduce() {
+    assert_eq!(
+      interpret("Det[{{1/(1 + Sqrt[2]), 1}, {1, 1/(1 - Sqrt[2])}}]").unwrap(),
+      "-2"
+    );
+    // A rotation-reflection matrix written with golden-ratio entries.
+    assert_eq!(
+      interpret(
+        "Det[{{(1 - Sqrt[5])/4, 1/2, (-3 + Sqrt[5] - 8/(1 + Sqrt[5]))/4}, \
+         {1/2, 1/2 + 1/(1 + Sqrt[5]), 1/(1 + Sqrt[5])}, \
+         {(-1 - Sqrt[5])/4, (-1 + Sqrt[5])/4, 1/2}}]"
+      )
+      .unwrap(),
+      "-1"
+    );
+  }
+
+  // The 60 rotations of the icosahedron, built from one face and sorted by
+  // determinant, all have determinant 1.
+  #[test]
+  fn icosahedral_rotation_determinants() {
+    assert_eq!(
+      interpret(
+        "t = (1 + Sqrt[5])/2; \
+         v = {{0, t, 1}, {0, t, -1}, {0, -t, 1}, {0, -t, -1}, {1, 0, t}, \
+           {-1, 0, t}, {1, 0, -t}, {-1, 0, -t}, {t, 1, 0}, {t, -1, 0}, \
+           {-t, 1, 0}, {-t, -1, 0}}; \
+         f = {{1, 2, 9}, {1, 2, 11}, {1, 5, 9}, {1, 5, 6}, {1, 6, 11}, \
+           {2, 7, 9}, {2, 8, 11}, {5, 9, 10}, {3, 5, 6}, {6, 11, 12}, \
+           {7, 9, 10}, {2, 7, 8}, {8, 11, 12}, {3, 5, 10}, {3, 6, 12}, \
+           {4, 7, 10}, {4, 7, 8}, {4, 8, 12}, {3, 4, 10}, {3, 4, 12}}; \
+         inv = FullSimplify[Inverse[v[[f[[1]]]]]]; \
+         ms = FullSimplify[inv . v[[#]]] & /@ Flatten[Permutations /@ f, 1]; \
+         Tally[Det /@ ms]"
+      )
+      .unwrap(),
+      "{{1, 60}, {-1, 60}}"
+    );
+  }
+}
+
 mod permanent {
   use super::*;
 

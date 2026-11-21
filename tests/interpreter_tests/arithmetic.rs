@@ -7169,6 +7169,16 @@ mod qfactorial {
 mod plus_term_ordering {
   use super::*;
 
+  // A sum times other factors against a product of several factors orders
+  // from the last factor, as Sort does.
+  #[test]
+  fn scaled_sum_against_product() {
+    assert_eq!(interpret("(a + b)/x + c/y").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("c/y + (a + b)/x").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("(a + b)*x + c*y").unwrap(), "(a + b)*x + c*y");
+    assert_eq!(interpret("(a + b)*y + c*x").unwrap(), "c*x + (a + b)*y");
+  }
+
   // Powers of one base with symbolic exponents order by the exponents, and a
   // power of a plain sum with a symbolic exponent orders after the variable
   #[test]
@@ -8759,6 +8769,34 @@ mod cases {
       "ToString[{15.840646417884168, 1/2}, TraditionalForm]",
       "DisplayForm[FormBox[RowBox[{{, RowBox[{15.8406`, ,, FractionBox[1, 2]}], }}], TraditionalForm]]",
     );
+  }
+
+  /// `ToString[TraditionalForm[real]]` shows a machine real at the same 6
+  /// significant digits as `ToString[real, TraditionalForm]`, so a label
+  /// built from it reads `14.6325`, not every stored digit.
+  #[test]
+  fn to_string_of_traditional_form_rounds_machine_reals() {
+    assert_case(
+      "ToString[TraditionalForm[14.63251179826539]]",
+      "DisplayForm[FormBox[14.6325`, TraditionalForm]]",
+    );
+    assert_case(
+      "ToString[TraditionalForm[{0.7967806891350713, x}]]",
+      "DisplayForm[FormBox[RowBox[{{, RowBox[{0.796781`, ,, x}], }}], TraditionalForm]]",
+    );
+  }
+
+  /// A number-display form fixes its own digits, so the 6-digit rounding of
+  /// `ToString` leaves the number inside it alone.
+  #[test]
+  fn to_string_traditional_form_keeps_number_form_digits() {
+    for code in [
+      "ToString[NumberForm[1.23456789, 9], TraditionalForm]",
+      "ToString[TraditionalForm[NumberForm[1.23456789, 9]]]",
+    ] {
+      let out = woxi::interpret(code).unwrap();
+      assert!(out.contains("1.23456789"), "{code}: {out}");
+    }
   }
 
   /// A sum whose later term has a negative rational coefficient sets that
@@ -10709,6 +10747,60 @@ mod set_precision {
       interpret("{SetPrecision[{x == 1.5, a -> 2.5}, 20], SetPrecision[x == 1.5, MachinePrecision]}")
         .unwrap(),
       "{{x == 1.5`20., a -> 2.5`20.}, x == 1.5}"
+    );
+  }
+
+  // Derivative is NHoldAll: the order and the function stay exact, only
+  // the point gets the new precision
+  #[test]
+  fn keeps_derivative_order_exact() {
+    assert_eq!(
+      interpret(
+        "{SetPrecision[Derivative[1][x][2], 8], SetPrecision[Derivative[2][f], 8], SetPrecision[Derivative[2][f][3], MachinePrecision], SetPrecision[x'[t] == -y[t], 8]}"
+      )
+      .unwrap(),
+      "{Derivative[1][x][2.`8.], Derivative[2][f], Derivative[2][f][3.], Derivative[1][x][t] == -1.`8.*y[t]}"
+    );
+  }
+
+  #[test]
+  fn derivative_attributes_and_n() {
+    assert_eq!(
+      interpret(
+        "{Attributes[Derivative], N[Derivative[2][f]], N[Derivative[2][f][x], 8], N[Derivative[3][f][1/2], 10]}"
+      )
+      .unwrap(),
+      "{{NHoldAll, ReadProtected}, Derivative[2][f], Derivative[2][f][x], Derivative[3][f][0.5`10.]}"
+    );
+  }
+
+  #[test]
+  fn set_accuracy_keeps_derivative_order_exact() {
+    assert_eq!(
+      interpret("SetAccuracy[Derivative[1][f][2], 5]").unwrap(),
+      "Derivative[1][f][2.`5.301029995663981]"
+    );
+  }
+
+  // A user-set NHoldFirst attribute is honored as well
+  #[test]
+  fn honors_user_nhold_attributes() {
+    assert_eq!(
+      interpret("SetAttributes[g, NHoldFirst]; SetPrecision[g[1, 2], 5]")
+        .unwrap(),
+      "g[1, 2.`5.]"
+    );
+  }
+
+  // NDSolve still sees differential equations after SetPrecision
+  #[test]
+  fn ndsolve_on_set_precision_equations() {
+    assert_eq!(
+      interpret(
+        "sol = NDSolve[SetPrecision[{x'[t] == -x[t], x[0] == 1}, 8], x, {t, 0, 1}, WorkingPrecision -> 8]; Round[100 x[1] /. sol[[1]]]"
+      )
+      .unwrap(),
+      "37"
     );
   }
 

@@ -1642,6 +1642,54 @@ mod arrows_and_box {
     assert!(head_area(&large) > 6.0 * head_area(&default));
   }
 
+  /// The first point of every arrowhead `<polygon>` after the arrow's
+  /// `<polyline>` (each head's outline starts at its tip).
+  fn head_tips(svg: &str) -> Vec<(f64, f64)> {
+    let after = svg.split("<polyline").nth(1).unwrap();
+    after
+      .split("<polygon points=\"")
+      .skip(1)
+      .map(|pts| {
+        let first = pts.split(' ').next().unwrap();
+        let mut it = first.split(',').map(|v| v.parse::<f64>().unwrap());
+        (it.next().unwrap(), it.next().unwrap())
+      })
+      .collect()
+  }
+
+  // `Arrowheads[{s1, s2, …}]` spreads its heads evenly from tail to tip, and
+  // a negative size turns its head back along the arrow, so `{-s, s}` is a
+  // double-headed 3D arrow sized like `Arrowheads[s]` (rather than one
+  // default-size head at the tip).
+  #[test]
+  fn arrowheads_list_puts_heads_along_3d_arrow() {
+    let arrow = |heads: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrowheads[{heads}], Arrow[{{{{0, 0, 0}}, {{0, 0, 1}}}}], \
+         Point[{{{{-1, -1, -1}}, {{1, 1, 1}}}}]}}, Boxed -> False]"
+      ))
+    };
+    let single = arrow("0.02");
+    let double = arrow("{-0.02, 0.02}");
+    assert_eq!(head_tips(&single).len(), 1);
+    let tips = head_tips(&double);
+    assert_eq!(tips.len(), 2, "{double}");
+    // The heads keep the size the list gives them, not the default
+    // (a twentieth).
+    let default = head_area(&arrow("0.05"));
+    assert!(head_area(&double) < 0.5 * default, "{double}");
+    // One tip sits at the arrow's head end, the other at its tail end (the
+    // z axis points up the picture, so the tail is lower on screen).
+    let single_tip = head_tips(&single)[0];
+    assert!(
+      tips.iter().any(|t| (t.0 - single_tip.0).abs() < 0.2
+        && (t.1 - single_tip.1).abs() < 0.2)
+    );
+    assert!(tips.iter().any(|t| t.1 > single_tip.1 + 20.0), "{tips:?}");
+    // Three entries put the middle head halfway along.
+    assert_eq!(head_tips(&arrow("{0.02, 0.02, 0.02}")).len(), 3);
+  }
+
   // The head of a 3D line arrow is a cone sized by the scene, not a fixed
   // number of pixels, so it stays about as large on screen however big the
   // scene is.
@@ -2163,5 +2211,90 @@ mod box_and_label_options {
       assert!(s.contains("font-size=\"16\""), "no 16pt labels for {expr}");
       assert!(!s.contains("font-size=\"10\""), "10pt ticks left in {expr}");
     }
+  }
+}
+
+/// A "perforated" face is one polygon running round its outline, across a
+/// bridge to an inner copy shrunk toward the center, and round that copy
+/// (`Join[pts, {p1}, inner, {q1}]`). Wolfram fills it with the even-odd
+/// rule, which also settles the two extremes of the shrink factor.
+mod perforated_faces {
+  use super::*;
+
+  /// The corners as a Wolfram list `{{x, y, z}, …}`.
+  fn coords(outline: &[[i64; 3]]) -> String {
+    let pts: Vec<String> = outline
+      .iter()
+      .map(|p| format!("{{{}, {}, {}}}", p[0], p[1], p[2]))
+      .collect();
+    format!("{{{}}}", pts.join(", "))
+  }
+
+  /// The face's corners, then the inner ring `{1 - d, d} . {p, center}`.
+  fn perforated(outline: &[[i64; 3]], d: &str) -> String {
+    let pts = coords(outline);
+    format!(
+      "With[{{pts = {pts}, d = {d}}}, Module[{{inner = Map[{{1 - d, d}} . {{#, Mean[pts]}} &, pts]}}, \
+       Polygon[Join[pts, pts[[{{1}}]], inner, inner[[{{1}}]]]]]]"
+    )
+  }
+
+  const SQUARE: [[i64; 3]; 4] = [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0]];
+  const TRIANGLE: [[i64; 3]; 3] = [[0, 0, 0], [3, 0, 1], [0, 3, 2]];
+
+  fn scene(prims: &str) -> String {
+    svg(&format!("Graphics3D[{{Yellow, {prims}}}, Boxed -> False]"))
+  }
+
+  /// With the inner ring collapsed onto the center (`d = 1`) the hole
+  /// encloses nothing: the face is drawn exactly as the plain polygon,
+  /// without the bridge stroked from a corner to the center.
+  #[test]
+  fn collapsed_hole_draws_the_plain_face() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let plain = format!("Polygon[{}]", coords(outline));
+      for d in ["1", "1.0"] {
+        assert_eq!(
+          scene(&perforated(outline, d)),
+          scene(&plain),
+          "d = {d} for {plain}"
+        );
+      }
+    }
+  }
+
+  /// With the inner ring on the outline itself (`d = 0`) the face is
+  /// enclosed twice, so the even-odd rule leaves it unfilled and only its
+  /// outline is drawn — as `FaceForm[None]` draws it.
+  #[test]
+  fn retraced_outline_leaves_the_face_empty() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let hollow = format!("FaceForm[None], Polygon[{}]", coords(outline));
+      for d in ["0", "0.0"] {
+        let s = scene(&perforated(outline, d));
+        assert_eq!(s, scene(&hollow), "d = {d} for {hollow}");
+        // Any polygon left is an unfilled outline.
+        assert!(
+          s.lines()
+            .filter(|l| l.starts_with("<polygon"))
+            .all(|l| l.contains("fill-opacity=\"0\"")),
+          "face still filled: {s}"
+        );
+        assert!(
+          s.contains("stroke=\"rgb(64,64,64)\""),
+          "outline missing: {s}"
+        );
+      }
+    }
+  }
+
+  /// In between, the inner ring is a hole: the face stays filled but
+  /// takes more pieces than the solid face to go round it.
+  #[test]
+  fn partial_shrink_cuts_a_hole() {
+    let holed = scene(&perforated(&SQUARE, "0.5"));
+    let solid = scene(&perforated(&SQUARE, "1"));
+    assert!(!holed.contains("fill-opacity=\"0\""));
+    assert!(polygon_count(&holed) > polygon_count(&solid));
   }
 }

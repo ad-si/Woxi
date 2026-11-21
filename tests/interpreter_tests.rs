@@ -2068,7 +2068,7 @@ mod interpreter_tests {
 
   #[test]
   fn test_contour_plot_bar_legend_and_contour_labels() {
-    // `PlotLegends -> Automatic` widens the picture by a color-bar strip
+    // `PlotLegends -> Automatic` sets a color bar beside the picture
     // and `ContourLabels -> True` writes each level on its contour line.
     clear_state();
     let plain = interpret_with_stdout("ContourPlot[x y, {x, 0, 3}, {y, 0, 3}]")
@@ -2084,7 +2084,7 @@ mod interpreter_tests {
     .expect("ContourPlot should produce a graphics SVG");
     assert!(plain.starts_with("<svg width=\"360\""), "{plain}");
     assert!(
-      svg.starts_with("<svg width=\"413\""),
+      svg.starts_with("<svg width=\"423\""),
       "legend widens: {svg}"
     );
     assert!(
@@ -4439,6 +4439,35 @@ mod interpreter_tests {
     assert_eq!(interpret("1\u{2A7D}2\u{2A7D}3").unwrap(), "True");
     clear_state();
     assert_eq!(interpret("If[3\u{2A7E}2, \"yes\", \"no\"]").unwrap(), "yes");
+  }
+
+  #[test]
+  fn test_inset_without_position_embeds_prerendered_object() {
+    // `Inset[obj]` with no position sits at the origin, like
+    // `Inset[obj, Automatic]`. An object embedded whole (an `Image` of any
+    // channel count, a `Graphics3D`, a rendered plot) must still draw as a
+    // picture. Regression: without a position they fell through to the
+    // text path and printed `-Image-` / `-Graphics3D-` / `-Graphics-`.
+    for (code, needle) in [
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 4}]]]]", "<image"),
+      ("Graphics[Inset[Image[RandomReal[1, {4, 4, 3}]]]]", "<image"),
+      (
+        "Graphics[{Circle[], Inset[Image[RandomReal[1, {3, 5}]]]}]",
+        "<image",
+      ),
+      ("Graphics[Inset[Graphics3D[Sphere[]]]]", "<svg"),
+      ("Graphics[Inset[Plot[x, {x, 0, 1}]]]", "<svg"),
+    ] {
+      clear_state();
+      let svg = interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+      assert!(svg.contains(needle), "{code} did not embed: {svg}");
+      for placeholder in ["-Image-", "-Graphics3D-", "-Graphics-"] {
+        assert!(
+          !svg.contains(placeholder),
+          "{code} fell back to the {placeholder} text placeholder"
+        );
+      }
+    }
   }
 
   #[test]

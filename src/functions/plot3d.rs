@@ -223,6 +223,10 @@ const PAINTER_ORDER_MAX_TRIANGLES: usize = 200000;
 /// triangle count, which must stay within `PAINTER_ORDER_MAX_TRIANGLES`.
 const SPLIT_MAX_TRIANGLES: usize = 60000;
 
+/// Most triangles `split_interpenetrating` may leave behind, which keeps the
+/// exported markup of a heavily self-crossing scene to a few megabytes.
+const SPLIT_MAX_RESULT_TRIANGLES: usize = 60000;
+
 /// Whether two projected triangles share interior area (touching along an
 /// edge or at a corner does not count).
 fn projected_triangles_overlap(
@@ -668,6 +672,20 @@ const MAX_PIECES_PER_TRIANGLE: usize = 64;
 /// than the other for `split_interpenetrating` to cut only the smaller one.
 const SPLIT_AREA_RATIO: f64 = 4.0;
 
+/// Largest share of the scene's projected extent (its bounding rectangle on
+/// screen) a triangle may cover and still count as a speck for
+/// `split_interpenetrating`: at the few hundred pixels a 3D picture is
+/// drawn at, one forty-thousandth of it is a couple of square pixels.
+const SPLIT_SPECK_AREA_FRACTION: f64 = 1.0 / 40000.0;
+
+/// Area of a projected (screen-plane) triangle.
+fn projected_triangle_area(t: &[(f64, f64); 3]) -> f64 {
+  0.5
+    * ((t[1].0 - t[0].0) * (t[2].1 - t[0].1)
+      - (t[2].0 - t[0].0) * (t[1].1 - t[0].1))
+      .abs()
+}
+
 /// Area of a triangle in 3-D.
 fn triangle_area(t: &[Point3D; 3]) -> f64 {
   let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
@@ -929,6 +947,37 @@ fn interpolate_corner_color(
   )
 }
 
+/// Cuts triangle `tri` (with the boundary flags of its edges) by the planes
+/// of the triangles `others` indexes in `all`, returning the convex pieces.
+fn cut_triangle(
+  tri: &[Point3D; 3],
+  boundary: [bool; 3],
+  others: &[usize],
+  all: &[[Point3D; 3]],
+) -> Vec<Vec<(Point3D, bool)>> {
+  let mut pieces =
+    vec![(0..3).map(|c| (tri[c], boundary[c])).collect::<Vec<_>>()];
+  for &other in others {
+    // A triangle that many surfaces cross (a thick tube wound tighter
+    // than its radius) would split into thousands of slivers.
+    if pieces.len() >= MAX_PIECES_PER_TRIANGLE {
+      break;
+    }
+    let mut next = Vec::with_capacity(pieces.len() + 1);
+    for piece in pieces {
+      let (a, b) = clip_polygon_by_plane(&piece, &all[other]);
+      if a.len() >= 3 && b.len() >= 3 {
+        next.push(a);
+        next.push(b);
+      } else {
+        next.push(piece);
+      }
+    }
+    pieces = next;
+  }
+  pieces
+}
+
 /// Splits triangles that pass through one another where they overlap on
 /// screen, so each piece lies wholly on one side of every triangle it
 /// crosses and a back-to-front sort can order them (the cones of a
@@ -944,6 +993,25 @@ fn split_interpenetrating(
   }
   let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
   let areas: Vec<f64> = verts.iter().map(triangle_area).collect();
+  // Two specks drawn in the wrong order differ by a pixel or two, so they
+  // are left whole. Where many hair-thin tubes meet at a point (the edges
+  // of a unit-distance graph), cutting each of their facets by all the
+  // others' planes more than doubled the scene into ~100,000 slivers,
+  // taking seconds to draw on every redraw of a `Manipulate`.
+  let (mut x_min, mut x_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  let (mut y_min, mut y_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  for &(x, y) in projected.iter().flatten() {
+    x_min = x_min.min(x);
+    x_max = x_max.max(x);
+    y_min = y_min.min(y);
+    y_max = y_max.max(y);
+  }
+  let speck_area =
+    (x_max - x_min) * (y_max - y_min) * SPLIT_SPECK_AREA_FRACTION;
+  let speck: Vec<bool> = projected
+    .iter()
+    .map(|t| projected_triangle_area(t) < speck_area)
+    .collect();
   let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(&projected, |i, j| {
     // Two triangles that each straddle the other's plane without touching
@@ -951,7 +1019,8 @@ fn split_interpenetrating(
     // all their shared screen area, so they need no cut. Cutting them anyway
     // spends a triangle's piece budget before the faces it really passes
     // through get to cut it.
-    if side_of_plane(&verts[i], &verts[j], camera).is_none()
+    if !(speck[i] && speck[j])
+      && side_of_plane(&verts[i], &verts[j], camera).is_none()
       && side_of_plane(&verts[j], &verts[i], camera).is_none()
       && triangles_intersect(&verts[i], &verts[j])
     {
@@ -975,65 +1044,57 @@ fn split_interpenetrating(
     return;
   }
   let original = verts.clone();
-  // Triangles each one is expected to end up as: a cut by `p` planes
-  // leaves at most `p + 1` pieces of up to a few corners each. Assuming
-  // the worst case (`MAX_PIECES_PER_TRIANGLE` for every triangle) kept all
-  // but the last few thousand triangles of a larger scene whole.
-  let estimate = |k: usize| {
-    if planes[k].is_empty() {
-      1
-    } else {
-      (2 * (planes[k].len() + 1)).min(2 * MAX_PIECES_PER_TRIANGLE)
-    }
+  // Cut every triangle first, then count what the cuts cost.
+  let mut cuts: Vec<Option<Vec<Vec<(Point3D, bool)>>>> = triangles
+    .iter()
+    .enumerate()
+    .map(|(k, tri)| {
+      if planes[k].is_empty() || tri.texture.is_some() {
+        return None;
+      }
+      let pieces =
+        cut_triangle(&original[k], tri.boundary, &planes[k], &original);
+      (pieces.len() > 1).then_some(pieces)
+    })
+    .collect();
+  // The split scene has to stay small enough to sort and to export. When it
+  // would not, the triangles cut into the most pieces stay whole, so the
+  // many triangles crossed only a few times are still split, wherever they
+  // lie in the list.
+  let piece_triangles = |pieces: &Vec<Vec<(Point3D, bool)>>| -> usize {
+    pieces.iter().map(|poly| poly.len() - 2).sum()
   };
-  // `still_to_come[k]`: the expected triangles from `k` on.
-  let mut still_to_come = vec![0usize; n + 1];
-  for k in (0..n).rev() {
-    still_to_come[k] = still_to_come[k + 1] + estimate(k);
-  }
-  // The split scene has to stay within what `painter_order` sorts, and a
-  // scene whose faces cross everywhere (a tube thicker than its curve) must
-  // not grow without bound.
-  let budget = PAINTER_ORDER_MAX_TRIANGLES
+  // Besides the absolute cap, a scene whose faces cross everywhere (a tube
+  // thicker than its curve) must not grow beyond a few times its size.
+  let limit = SPLIT_MAX_RESULT_TRIANGLES
     .min((SPLIT_MAX_GROWTH * n).max(SPLIT_MIN_BUDGET));
-  let mut new_verts = Vec::with_capacity(n);
-  let mut new_tris = Vec::with_capacity(n);
-  for (k, tri) in triangles.drain(..).enumerate() {
-    // The triangle being cut is charged its worst case, so whatever the
-    // earlier ones became, the scene ends within `budget`: once the
-    // triangles still to come would no longer fit, they stay whole.
-    if planes[k].is_empty()
-      || tri.texture.is_some()
-      || new_tris.len() + 2 * MAX_PIECES_PER_TRIANGLE + still_to_come[k + 1]
-        > budget
-    {
+  let mut total: usize = cuts
+    .iter()
+    .map(|c| c.as_ref().map_or(1, piece_triangles))
+    .sum();
+  if total > limit {
+    let mut costly: Vec<(usize, usize)> = cuts
+      .iter()
+      .enumerate()
+      .filter_map(|(k, c)| c.as_ref().map(|c| (piece_triangles(c), k)))
+      .collect();
+    costly.sort_unstable_by(|a, b| b.cmp(a));
+    for (count, k) in costly {
+      if total <= limit {
+        break;
+      }
+      cuts[k] = None;
+      total -= count - 1;
+    }
+  }
+  let mut new_verts = Vec::with_capacity(total);
+  let mut new_tris = Vec::with_capacity(total);
+  for ((k, tri), cut) in triangles.drain(..).enumerate().zip(cuts) {
+    let Some(pieces) = cut else {
       new_verts.push(original[k]);
       new_tris.push(tri);
       continue;
-    }
-    let mut pieces = vec![
-      (0..3)
-        .map(|c| (original[k][c], tri.boundary[c]))
-        .collect::<Vec<_>>(),
-    ];
-    for &other in &planes[k] {
-      // A triangle that many surfaces cross (a thick tube wound tighter
-      // than its radius) would split into thousands of slivers.
-      if pieces.len() >= MAX_PIECES_PER_TRIANGLE {
-        break;
-      }
-      let mut next = Vec::with_capacity(pieces.len() + 1);
-      for piece in pieces {
-        let (a, b) = clip_polygon_by_plane(&piece, &original[other]);
-        if a.len() >= 3 && b.len() >= 3 {
-          next.push(a);
-          next.push(b);
-        } else {
-          next.push(piece);
-        }
-      }
-      pieces = next;
-    }
+    };
     for poly in pieces {
       let m = poly.len();
       for c in 1..m - 1 {
@@ -6896,9 +6957,11 @@ struct StyleState3D {
   /// lighting each corner with its own normal so a mesh of flat facets
   /// shades as the smooth surface it samples.
   vertex_normals: Option<std::sync::Arc<Vec<[f64; 3]>>>,
-  /// `Arrowheads[s]`: the arrowhead length. `None` keeps the default
-  /// twentieth of the scene.
-  arrowhead: Option<ArrowheadSize3D>,
+  /// `Arrowheads[spec]`: the heads of the arrows that follow, as
+  /// `(size, absolute, position)` (see
+  /// [`crate::functions::graphics::arrowhead_placements`]). `None` keeps
+  /// the default single head (a twentieth of the scene) at the tip.
+  arrowheads: Option<std::sync::Arc<Vec<(f64, bool, f64)>>>,
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
@@ -6933,7 +6996,7 @@ impl Default for StyleState3D {
       texture_coords: None,
       vertex_colors: None,
       vertex_normals: None,
-      arrowhead: None,
+      arrowheads: None,
       font_size: None,
       font_face: (false, false),
       text_background: None,
@@ -7132,21 +7195,18 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     );
   }
 
-  // `Arrowheads[s]` (or `{{s, …}}`): the size of the heads of the arrows
-  // that follow, as a fraction of the picture's width.
+  // `Arrowheads[s]`, `Arrowheads[{s1, s2, …}]` (heads spread evenly from
+  // tail to tip, so `{-s, s}` is a double-headed arrow) or `{{s, pos}, …}`:
+  // the heads of the arrows that follow.
   if let Expr::FunctionCall { name, args } = expr
     && name == "Arrowheads"
     && !args.is_empty()
   {
-    let size = match &args[0] {
-      Expr::List(specs) => specs.first().and_then(|spec| match spec {
-        Expr::List(parts) => parts.first().and_then(ArrowheadSize3D::parse),
-        other => ArrowheadSize3D::parse(other),
-      }),
-      other => ArrowheadSize3D::parse(other),
-    };
-    if let Some(size) = size {
-      style.arrowhead = Some(size);
+    if let Some(heads) =
+      crate::functions::graphics::arrowhead_placements(&args[0])
+        .filter(|hs| hs.iter().all(|(s, _, p)| s.is_finite() && p.is_finite()))
+    {
+      style.arrowheads = Some(std::sync::Arc::new(heads));
     }
     return true;
   }
@@ -9417,7 +9477,13 @@ fn collect_3d_primitives(
             {
               (pts, Vec::new())
             } else {
-              split_nested_loops(pts)
+              let (points, holes, filled) = split_nested_loops(pts);
+              // Loops that retrace each other cancel under the even-odd
+              // rule: only their outline is left.
+              if !filled {
+                style.faces = false;
+              }
+              (points, holes)
             };
             prims.push(Primitive3D::Polygon3D {
               points,
@@ -9568,8 +9634,15 @@ fn collect_3d_primitives(
               let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
                 v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
               });
-              let len = ArrowheadSize3D::length(style.arrowhead, diag, None)
-                .min(curve_len);
+              // The head at the tip: the last entry of an `Arrowheads` list.
+              let fractions =
+                arrowhead_fractions(style.arrowheads.as_deref(), None);
+              let size = fractions
+                .as_ref()
+                .map_or(ArrowheadSize3D::DEFAULT_FRACTION, |hs| {
+                  hs.last().map_or(0.0, |h| h.0.abs())
+                });
+              let len = (size * diag).min(curve_len);
               if !(curve_len > 0.0 && len > 0.0) {
                 return None;
               }
@@ -10915,9 +10988,19 @@ fn resolve_named_gradients(expr: &Expr) -> Expr {
 /// Wolfram fills such a polygon with the even-odd rule, so a loop lying
 /// inside the first one is a hole; any loop that does not is kept as part
 /// of the outline, leaving the polygon untouched.
+///
+/// The even-odd rule also decides the degenerate cases a "perforated
+/// face" (`Join[pts, {p1}, inner, {q1}]` with `inner` shrunk toward the
+/// center) runs into at its extremes:
+/// - a loop that retraces an earlier one encloses its area twice, so the
+///   pair cancels; when nothing else is left, the face is empty and only
+///   its outline is drawn (the third result is `false`);
+/// - pieces enclosing no area (a hole collapsed onto one point, and the
+///   bridge leading to it) fill nothing and are dropped, so the bridge is
+///   not stroked across the face.
 fn split_nested_loops(
   points: Vec<Point3D>,
-) -> (Vec<Point3D>, Vec<Vec<Point3D>>) {
+) -> (Vec<Point3D>, Vec<Vec<Point3D>>, bool) {
   let same = |a: &Point3D, b: &Point3D| {
     (a.x - b.x).abs() < 1e-12
       && (a.y - b.y).abs() < 1e-12
@@ -10940,8 +11023,63 @@ fn split_nested_loops(
   if current.len() >= 3 {
     loops.push(current);
   }
+  // A ring with fewer than three distinct corners encloses no area.
+  loops.retain(|ring| {
+    let mut distinct: Vec<&Point3D> = Vec::new();
+    for p in ring {
+      if !distinct.iter().any(|q| same(q, p)) {
+        distinct.push(p);
+      }
+    }
+    distinct.len() >= 3
+  });
+  // Whether two rings trace the same cycle (from any start, either way).
+  let same_cycle = |a: &[Point3D], b: &[Point3D]| {
+    let n = a.len();
+    if n != b.len() {
+      return false;
+    }
+    (0..n).any(|shift| {
+      (0..n).all(|i| same(&a[i], &b[(i + shift) % n]))
+        || (0..n).all(|i| same(&a[i], &b[(shift + n - i) % n]))
+    })
+  };
+  let mut cancelled = vec![false; loops.len()];
+  for i in 0..loops.len() {
+    if cancelled[i] {
+      continue;
+    }
+    if let Some(j) = (i + 1..loops.len())
+      .find(|&j| !cancelled[j] && same_cycle(&loops[i], &loops[j]))
+    {
+      cancelled[i] = true;
+      cancelled[j] = true;
+    }
+  }
+  if cancelled.iter().all(|&c| c) {
+    return match loops.into_iter().next() {
+      Some(outline) => (outline, Vec::new(), false),
+      None => (points, Vec::new(), true),
+    };
+  }
+  let had_cancelled = cancelled.iter().any(|&c| c);
+  let loops: Vec<Vec<Point3D>> = loops
+    .into_iter()
+    .zip(cancelled)
+    .filter_map(|(ring, c)| (!c).then_some(ring))
+    .collect();
   if loops.len() < 2 {
-    return (points, Vec::new());
+    // Only one loop encloses area: it alone is the face. The polygon's
+    // own point list is kept when it visits no corner off that loop (an
+    // ordinary polygon, or one that repeats a corner), so its per-vertex
+    // data still lines up.
+    let ring = loops.into_iter().next().unwrap_or_default();
+    let on_ring = |p: &Point3D| ring.iter().any(|q| same(q, p));
+    return if !had_cancelled && points.iter().all(on_ring) {
+      (points, Vec::new(), true)
+    } else {
+      (ring, Vec::new(), true)
+    };
   }
   // Drop the axis the outer loop's normal points along; containment is
   // then a 2D ray cast.
@@ -10978,11 +11116,11 @@ fn split_nested_loops(
     .iter()
     .all(|l| l.iter().all(|p| inside(&loops[0], p)))
   {
-    return (points, Vec::new());
+    return (points, Vec::new(), true);
   }
   let mut it = loops.into_iter();
   let outer = it.next().unwrap_or_default();
-  (outer, it.collect())
+  (outer, it.collect(), true)
 }
 
 /// The (unnormalized) Newell normal of a polygon: twice its vector area,
@@ -11783,6 +11921,67 @@ thread_local! {
     const { std::cell::Cell::new(None) };
 }
 
+/// Where the heads an `Arrowheads` list gives sit on a 3D line arrow: for
+/// each `(size, position)` a two-point segment whose last point is the
+/// head's tip and which points the way the head does (back along the arrow
+/// for a negative size), with the head's length as a fraction of the scene.
+/// `None` heads mean Wolfram's default: one twentieth-size head at the tip.
+fn arrow3d_head_anchors(
+  points: &[Point3D],
+  heads: Option<&[(f64, f64)]>,
+) -> Vec<([Point3D; 2], f64)> {
+  let segs: Vec<(Point3D, Point3D, f64)> = points
+    .windows(2)
+    .map(|w| {
+      let d = [w[1].x - w[0].x, w[1].y - w[0].y, w[1].z - w[0].z];
+      (w[0], w[1], v_len(d))
+    })
+    .filter(|(_, _, l)| l.is_finite() && *l > 0.0)
+    .collect();
+  let total: f64 = segs.iter().map(|s| s.2).sum();
+  if segs.is_empty() || total <= 0.0 {
+    return Vec::new();
+  }
+  let default_head = [(0.05, 1.0)];
+  heads
+    .unwrap_or(&default_head)
+    .iter()
+    .filter(|(size, _)| *size != 0.0)
+    .map(|&(size, pos)| {
+      let target = pos * total;
+      let mut acc = 0.0;
+      let mut chosen = segs[segs.len() - 1];
+      let mut t = 1.0;
+      for &seg in &segs {
+        if acc + seg.2 >= target {
+          chosen = seg;
+          t = ((target - acc) / seg.2).clamp(0.0, 1.0);
+          break;
+        }
+        acc += seg.2;
+      }
+      let (a, b, len) = chosen;
+      let sign = size.signum();
+      let u = [
+        sign * (b.x - a.x) / len,
+        sign * (b.y - a.y) / len,
+        sign * (b.z - a.z) / len,
+      ];
+      let tip = Point3D {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+      let tail = Point3D {
+        x: tip.x - u[0],
+        y: tip.y - u[1],
+        z: tip.z - u[2],
+      };
+      ([tail, tip], size.abs())
+    })
+    .collect()
+}
+
 /// The corners whose projected convex hull outlines the cone head of a
 /// line `Arrow` in 3D: the tip (the arrow's last point) followed by a ring
 /// of points around the cone's base. The cone is `len` long, points along
@@ -11850,15 +12049,8 @@ fn contains_tube_arrow(expr: &Expr) -> bool {
   }
 }
 
-/// The size `Arrowheads[s]` gives the heads of 3D arrows.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum ArrowheadSize3D {
-  /// A number: the head's length as a fraction of the scene.
-  Fraction(f64),
-  /// A named size (`Small`, `Medium`, …): a length in printer's points,
-  /// whatever the size of the picture.
-  Points(f64),
-}
+/// Sizes of 3D arrowheads.
+struct ArrowheadSize3D;
 
 impl ArrowheadSize3D {
   /// The default 3D head: a twentieth of the scene.
@@ -11866,32 +12058,26 @@ impl ArrowheadSize3D {
   /// The width the picture is assumed to have while its scene is collected,
   /// before the actual image size is known (`Graphics3D`'s default).
   const DEFAULT_WIDTH: f64 = 360.0;
+}
 
-  fn parse(spec: &Expr) -> Option<Self> {
-    if let Expr::Identifier(name) = spec
-      && let Some(points) =
-        crate::functions::graphics::named_arrowhead_size(name)
-    {
-      return Some(Self::Points(points));
-    }
-    crate::functions::math_ast::expr_to_f64(spec)
-      .filter(|s| s.is_finite() && *s >= 0.0)
-      .map(Self::Fraction)
-  }
-
-  /// The head's length in scene units, for a scene whose box has diagonal
-  /// `scene_diag` drawn `width` pixels wide (the box's diagonal spans about
-  /// the width of the picture).
-  fn length(size: Option<Self>, scene_diag: f64, width: Option<f64>) -> f64 {
-    let fraction = match size {
-      None => Self::DEFAULT_FRACTION,
-      Some(Self::Fraction(f)) => f,
-      Some(Self::Points(p)) => {
-        p / width.filter(|w| *w > 0.0).unwrap_or(Self::DEFAULT_WIDTH)
-      }
-    };
-    fraction * scene_diag
-  }
+/// The `(size, position)` of each head in `heads` (see
+/// [`StyleState3D::arrowheads`]) with its size as a fraction of the scene:
+/// a named size in printer's points is that fraction of a picture `width`
+/// pixels wide (the box's diagonal spans about the width of the picture).
+fn arrowhead_fractions(
+  heads: Option<&Vec<(f64, bool, f64)>>,
+  width: Option<f64>,
+) -> Option<Vec<(f64, f64)>> {
+  let width = width
+    .filter(|w| *w > 0.0)
+    .unwrap_or(ArrowheadSize3D::DEFAULT_WIDTH);
+  heads.map(|hs| {
+    hs.iter()
+      .map(|&(size, absolute, pos)| {
+        (if absolute { size / width } else { size }, pos)
+      })
+      .collect()
+  })
 }
 
 thread_local! {
@@ -13578,10 +13764,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Below`, a skew view) are drawn at the sphere-framed size, about 0.7×
   // the outline-fitted one. A Manipulate's scene with the default camera
   // and no range (a tall elevator building at `ImageSize -> {300, 400}`)
-  // still fits its box outline to the frame.
+  // still fits its box outline to the frame. An explicit `AspectRatio -> r`
+  // instead asks for the projected box to be stretched to the picture's
+  // shape: the FrontEnd's snapshots of such a frame show the contents
+  // filling the whole picture, squashed or widened to it.
   let explicitly_framed = plot_range.is_some() || explicit_view_point;
   let spherical_region = spherical_region
-    || (!spherical_region_off && manipulate_frame && explicitly_framed)
+    || (!spherical_region_off
+      && manipulate_frame
+      && explicitly_framed
+      && aspect_ratio.is_none())
     || (!spherical_region_off
       && explicitly_framed
       && !show_box
@@ -13911,7 +14103,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             texture_coords: None,
             vertex_colors: None,
             vertex_normals: None,
-            arrowhead: None,
+            arrowheads: None,
             font_size: None,
             font_face: (false, false),
             text_background: None,
@@ -14257,12 +14449,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (mut z3_min, mut z3_max),
   ] = primitives_bounds(&prims);
 
-  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
-  // longest side of the *displayed* box, before the framing padding below,
-  // which Wolfram does not apply to an automatic 3D range.
-  let mut view_box_side =
-    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
-
   // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
   // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
   if range_padding.is_none() {
@@ -14286,7 +14472,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y3_max = yh;
     z3_min = zl;
     z3_max = zh;
-    view_box_side = (xh - xl).max(yh - yl).max(zh - zl);
   }
 
   // An explicit `PlotRangePadding` widens (or, when negative, narrows)
@@ -14305,6 +14490,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       **hi = padded_hi;
     }
   }
+
+  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
+  // longest side of the *displayed* box, padding included. An automatic
+  // range is padded by 2% per side before it becomes that box, so a scene
+  // under an explicit `ViewAngle` is drawn 1/1.04 of its unpadded size.
+  let view_box_side =
+    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
   // Build box corners
   let box_corners = [
@@ -15495,14 +15687,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // foreshortens with the view like the rest of the scene.
         let scene_diag =
           v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
-        if let Some(head) = arrow3d_head_outline(
+        for (segment, size) in arrow3d_head_anchors(
           points,
-          ArrowheadSize3D::length(
-            style.arrowhead,
-            scene_diag,
+          arrowhead_fractions(
+            style.arrowheads.as_deref(),
             Some(svg_width as f64),
-          ),
+          )
+          .as_deref(),
         ) {
+          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
+          else {
+            continue;
+          };
           let screen: Vec<(f64, f64, usize)> = head
             .iter()
             .enumerate()
@@ -23317,7 +23513,7 @@ fn parametric_plot3d_curve_ast(
   let dt = (t_max - t_min) / SAMPLE_N as f64;
 
   // Extract PlotStyle option (if any). Other options are kept verbatim.
-  let mut plot_style: Option<&Expr> = None;
+  let mut plot_style: Option<Expr> = None;
   let mut color_function: Option<Expr> = None;
   let mut color_scaling = true;
   let mut plot_range: Option<[(f64, f64); 3]> = None;
@@ -23330,7 +23526,14 @@ fn parametric_plot3d_curve_ast(
       && let Expr::Identifier(name) = pattern.as_ref()
       && name == "PlotStyle"
     {
-      plot_style = Some(replacement.as_ref());
+      // ParametricPlot3D holds its arguments, so the style arrives as
+      // written. Evaluate it first: a computed style such as
+      // `If[tube, {Tube[r]}, Automatic]` (a Manipulate checkbox toggling
+      // the tube) must reduce to its `Tube` before that is lifted out.
+      plot_style = Some(
+        evaluate_expr_to_expr(replacement)
+          .unwrap_or_else(|_| replacement.as_ref().clone()),
+      );
     } else if let Expr::Rule {
       pattern,
       replacement,
@@ -23366,7 +23569,7 @@ fn parametric_plot3d_curve_ast(
   // radius `r` instead of as a line — how a Demonstration gives a knot its
   // thickness. It is not a color or a thickness, so it comes out of the
   // style list and turns each sampled polyline into a `Tube` instead.
-  let (tube_args, plot_style) = match plot_style {
+  let (tube_args, plot_style) = match &plot_style {
     Some(ps) => {
       let (tube, rest) = take_tube_directive(ps);
       (tube, Some(rest))
@@ -25367,6 +25570,39 @@ mod painter_order_tests {
     });
   }
 
+  /// A crossing pair at the front of a long list is still split: the split
+  /// budget is spent on the triangles that actually get cut, not reserved
+  /// for a worst case of every remaining triangle.
+  #[test]
+  fn crossing_triangles_are_split_ahead_of_many_others() {
+    let camera = Camera {
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let mut verts = vec![
+      [p(-1.0, -1.0, 0.0), p(1.0, -1.0, 0.0), p(0.0, 1.0, 0.0)],
+      [p(-1.0, 0.0, -1.0), p(1.0, 0.0, -1.0), p(0.0, 0.0, 1.0)],
+    ];
+    // Small, mutually disjoint triangles off to the side.
+    for i in 0..5000 {
+      let x = 10.0 + 0.01 * i as f64;
+      verts.push([p(x, 5.0, 0.0), p(x + 0.005, 5.0, 0.0), p(x, 5.005, 0.0)]);
+    }
+    let mut tris: Vec<Triangle> =
+      verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+    split_interpenetrating(&mut verts, &mut tris, &camera);
+    assert!(verts.len() > 5002);
+    assert_eq!(verts.len(), tris.len());
+    let projected: Vec<_> = tris.iter().map(|t| t.projected).collect();
+    for_each_overlapping_pair(&projected, |i, j| {
+      assert!(
+        side_of_plane(&verts[i], &verts[j], &camera).is_some()
+          || side_of_plane(&verts[j], &verts[i], &camera).is_some()
+      );
+    });
+  }
+
   /// Every outlined edge of a cut polygon's parts must run along one of
   /// the polygon's own outlined edges: the cut itself is never outlined,
   /// also when the plane passes through a corner (as where two touching
@@ -25411,6 +25647,38 @@ mod painter_order_tests {
           }
         }
       }
+    }
+  }
+
+  /// Two crossing triangles too small to see in a much larger scene (the
+  /// facets where hair-thin tubes meet) are left whole: drawing them in the
+  /// wrong order changes a pixel or two, while cutting them multiplied the
+  /// polygons of a many-tube scene. The same pair at full size is cut.
+  #[test]
+  fn crossing_specks_in_a_large_scene_are_not_split() {
+    let camera = Camera {
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let crossing = |s: f64| {
+      vec![
+        [p(-s, -s, 0.0), p(s, -s, 0.0), p(0.0, s, 0.0)],
+        [p(-s, 0.0, -s), p(s, 0.0, -s), p(0.0, 0.0, s)],
+      ]
+    };
+    // Two distant big faces stretch the scene's extent.
+    let far =
+      |z: f64| [p(-10.0, -10.0, z), p(-9.0, -10.0, z), p(-10.0, -9.0, z)];
+    let far2 = |z: f64| [p(10.0, 10.0, z), p(9.0, 10.0, z), p(10.0, 9.0, z)];
+    for (s, split) in [(0.01, false), (1.0, true)] {
+      let mut verts = crossing(s);
+      verts.push(far(0.0));
+      verts.push(far2(0.0));
+      let mut tris: Vec<Triangle> =
+        verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+      split_interpenetrating(&mut verts, &mut tris, &camera);
+      assert_eq!(verts.len() > 4, split, "half-size {s}");
     }
   }
 

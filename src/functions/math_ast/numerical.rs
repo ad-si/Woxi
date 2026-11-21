@@ -1662,6 +1662,32 @@ pub fn set_precision_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   crate::evaluator::evaluate_expr_to_expr(&rewritten)
 }
 
+/// Whether `N`, `SetPrecision` and `SetAccuracy` leave argument `index` of
+/// the call `name[args]` untouched, per its NHoldAll / NHoldFirst /
+/// NHoldRest attributes (built-in or user-set).
+pub(crate) fn n_holds_arg(name: &str, args: &[Expr], index: usize) -> bool {
+  // `Derivative[n][f][x]` stored flat as `Derivative[n, f, x]`: only the
+  // NHoldAll `Derivative[n]` part — order and function — is held, the
+  // point `x` is numericized like any other argument.
+  if name == "Derivative"
+    && args.len() >= 2
+    && matches!(&args[1], Expr::Identifier(_))
+  {
+    return index < 2;
+  }
+  let attrs = {
+    let builtin = crate::evaluator::get_builtin_attributes(name);
+    let user = crate::FUNC_ATTRS
+      .with(|m| m.borrow().get(name).copied().unwrap_or_default());
+    let mut combined = builtin;
+    combined.add(user.to_u32());
+    combined
+  };
+  attrs.contains(Attributes::NHoldAll)
+    || (index == 0 && attrs.contains(Attributes::NHoldFirst))
+    || (index > 0 && attrs.contains(Attributes::NHoldRest))
+}
+
 /// Walk `expr` and convert every numeric leaf to a BigFloat at `precision`.
 fn set_precision_walk(
   expr: &Expr,
@@ -1689,8 +1715,12 @@ fn set_precision_walk(
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args {
-        out.push(set_precision_walk(a, precision, bits, rm, cc)?);
+      for (i, a) in args.iter().enumerate() {
+        out.push(if n_holds_arg(name, args, i) {
+          a.clone()
+        } else {
+          set_precision_walk(a, precision, bits, rm, cc)?
+        });
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -1856,8 +1886,12 @@ fn set_accuracy_walk(
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args {
-        out.push(set_accuracy_walk(a, accuracy, rm, cc)?);
+      for (i, a) in args.iter().enumerate() {
+        out.push(if n_holds_arg(name, args, i) {
+          a.clone()
+        } else {
+          set_accuracy_walk(a, accuracy, rm, cc)?
+        });
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -1936,8 +1970,12 @@ fn set_precision_machine(expr: &Expr) -> Result<Expr, InterpreterError> {
     }
     Expr::FunctionCall { name, args } => {
       let mut out = Vec::with_capacity(args.len());
-      for a in args {
-        out.push(set_precision_machine(a)?);
+      for (i, a) in args.iter().enumerate() {
+        out.push(if n_holds_arg(name, args, i) {
+          a.clone()
+        } else {
+          set_precision_machine(a)?
+        });
       }
       Ok(Expr::FunctionCall {
         name: name.clone(),
@@ -2215,23 +2253,11 @@ fn n_eval_arbitrary_partial(
       // Honor NHoldAll / NHoldFirst / NHoldRest so e.g. `N[Out[0], 50]`
       // doesn't recurse into Out's slot and rewrite the index as a
       // BigFloat. (Out has NHoldFirst; the `0` slot must stay literal.)
-      let attrs = {
-        let builtin = crate::evaluator::get_builtin_attributes(name);
-        let user = crate::FUNC_ATTRS
-          .with(|m| m.borrow().get(name).copied().unwrap_or_default());
-        let mut combined = builtin;
-        combined.add(user.to_u32());
-        combined
-      };
-      let hold_all = attrs.contains(Attributes::NHoldAll);
-      let hold_first = attrs.contains(Attributes::NHoldFirst);
-      let hold_rest = attrs.contains(Attributes::NHoldRest);
       let new_args: Result<Vec<Expr>, _> = args
         .iter()
         .enumerate()
         .map(|(i, a)| {
-          let held = hold_all || (hold_first && i == 0) || (hold_rest && i > 0);
-          if held {
+          if n_holds_arg(name, args, i) {
             Ok(a.clone())
           } else {
             n_eval_arbitrary_partial(a, precision, bits, rm, cc)
