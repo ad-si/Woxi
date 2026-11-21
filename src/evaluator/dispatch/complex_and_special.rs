@@ -4758,6 +4758,16 @@ pub fn expr_to_box_form(expr: &Expr) -> Expr {
         vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
       )
     }
+    // `Superscript[x, n]` sets `n` as a raised script, exactly like the
+    // `Subscript` rule above — not as the literal call `Superscript[x, n]`.
+    Expr::FunctionCall { name, args }
+      if name == "Superscript" && args.len() == 2 =>
+    {
+      call(
+        "SuperscriptBox",
+        vec![expr_to_box_form(&args[0]), expr_to_box_form(&args[1])],
+      )
+    }
     // Factorials are written postfix: `Factorial[n]` → `RowBox[{"n", "!"}]`,
     // `Factorial2[n]` → `RowBox[{"n", "!!"}]`. An operand binding no
     // tighter than the factorial (a sum, product, power, nested factorial)

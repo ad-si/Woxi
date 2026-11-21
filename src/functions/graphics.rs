@@ -23822,6 +23822,19 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   // Parse bracketed, comma-separated args. Commas inside nested `\(...\)`
   // groups or `[...]` brackets do not split.
   i += 1; // consume '['
+  // A `StyleBox`'s arguments after the content are style directives
+  // (`Italic`, `FontSize -> 20`, `RGBColor[1, 0, 0]`), not boxes: read
+  // them as expressions so the renderer recognizes them, instead of as
+  // the box strings "Italic" and "FontSize -> 20" that style nothing.
+  let parse_arg = |index: usize, src: &[char]| -> Expr {
+    if name == "StyleBox" && index > 0 {
+      let text: String = src.iter().collect();
+      if let Ok(directive) = crate::parse_to_expr(&text) {
+        return directive;
+      }
+    }
+    parse_box_to_expr(src)
+  };
   let mut args: Vec<Expr> = Vec::new();
   let mut arg_start = i;
   let mut gdepth = 0usize; // `\(` group depth
@@ -23856,7 +23869,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
       ']' if bdepth == 0 => {
         // End of the argument list.
         if !(args.is_empty() && arg_start == i) {
-          args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+          args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..i])));
         }
         i += 1; // consume ']'
         return (
@@ -23872,7 +23885,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
         i += 1;
       }
       ',' if bdepth == 0 => {
-        args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..i])));
+        args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..i])));
         i += 1;
         arg_start = i;
       }
@@ -23881,7 +23894,7 @@ fn parse_explicit_box(cs: &[char], pos: usize) -> (Expr, usize) {
   }
   // Unbalanced — consume what we have.
   if arg_start < cs.len() {
-    args.push(parse_box_to_expr(trim_char_slice(&cs[arg_start..])));
+    args.push(parse_arg(args.len(), trim_char_slice(&cs[arg_start..])));
   }
   (
     Expr::FunctionCall {

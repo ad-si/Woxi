@@ -5137,6 +5137,11 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (the size, weight and color) instead of being flattened to its content.
   let is_standard_form = args.len() == 2
     && matches!(&args[1], Expr::Identifier(f) if f == "StandardForm");
+  // Every form that typesets into boxes (TeXForm, TraditionalForm,
+  // StandardForm) skips the 2D-OutputForm text intercepts below, so e.g.
+  // `ToString[Subscript[x, 2], StandardForm]` reaches the box path and is
+  // `\!\(\*SubscriptBox[x, 2]\)` rather than the two-line text "x\n 2".
+  let typesets = is_tex_form || is_standard_form;
 
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
@@ -5146,7 +5151,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "TableForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5163,7 +5168,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Grid"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5178,7 +5183,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "MatrixForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = matrix_form_to_string(&inner_args[0])
   {
@@ -5193,8 +5198,8 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name,
     args: inner_args,
   } = &args[0]
-    && ((name == "Column" && !is_input_form && !is_tex_form)
-      || (name == "ColumnForm" && !is_tex_form))
+    && ((name == "Column" && !is_input_form && !typesets)
+      || (name == "ColumnForm" && !typesets))
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5237,7 +5242,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && (name == "Subscript" || name == "Superscript")
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 2
   {
     let base_str = to_string_default_form(&inner_args[0]);
@@ -5263,8 +5268,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Style"
     && !is_input_form
-    && !is_tex_form
-    && !is_standard_form
+    && !typesets
     && !inner_args.is_empty()
   {
     let mut recursed = args.to_vec();
@@ -5282,7 +5286,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Row"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5317,7 +5321,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Quantity"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && let Some(rendered) = quantity_to_text(inner_args, false)
   {
     return Ok(Expr::String(rendered));
@@ -5327,7 +5331,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // are spelled out too: `{1 meter, 2 feet}`.
   if let Expr::List(items) = &args[0]
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && items.iter().any(contains_quantity)
   {
     let parts: Vec<String> = items
@@ -5357,7 +5361,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumberForm" | "PaddedForm" | "AccountingForm"
     )
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Some(rendered) = number_form_family_to_string(name, inner_args)
   {
