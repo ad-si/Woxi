@@ -1243,11 +1243,13 @@ pub fn dispatch_io_functions(
     // EmitSound[sound] — play a sound. Woxi has no audio device of its own,
     // so the synthesized WAV is captured for visual hosts (Woxi Studio plays
     // the audio of a pressed `Button[…, EmitSound[…]]`); the call itself
-    // returns Null, as in Wolfram.
+    // returns Null, as in Wolfram. Several `EmitSound`s in one evaluation
+    // play one after another.
     "EmitSound" if args.len() == 1 => {
-      if let Some(wav) = crate::functions::sound::sound_to_wav_base64(&args[0])
+      if let Some((samples, rate)) =
+        crate::functions::sound::sound_to_samples(&args[0])
       {
-        crate::capture_sound(&wav);
+        crate::capture_emitted_sound(samples, rate);
       }
       return Some(Ok(null_expr()));
     }
@@ -8164,6 +8166,54 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     {
       expr_to_svg(&hoisted)
     }
+    // `Style[TraditionalForm[Style[Grid[…], 24]], directives…]` — what
+    // `Text[TraditionalForm[Style[layout, …]]]` becomes: the form applies
+    // to the items of the styled layout, and the outer directives style
+    // that layout, rather than the whole being printed as its source.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: tf_args }
+          if tf == "TraditionalForm"
+            && tf_args.len() == 1
+            && matches!(&tf_args[0], Expr::FunctionCall { name: w, .. }
+              if w == "Style" || w == "Text")
+            && crate::functions::graphics::is_traditional_layout(&tf_args[0])) =>
+    {
+      let Expr::FunctionCall { args: tf_args, .. } = &args[0] else {
+        unreachable!()
+      };
+      let mut styled =
+        vec![crate::functions::graphics::traditionalize_layout_items(
+          &tf_args[0],
+        )];
+      styled.extend(args[1..].iter().cloned());
+      expr_to_svg(&call("Style", styled))
+    }
+    // `Style[TraditionalForm[grid], directives…]` (what `Text` makes of
+    // `Text[TraditionalForm[Style[Grid[…], 24]]]`): the directives style
+    // the typeset grid, so they move inside the `TraditionalForm` and the
+    // grid is typeset with them, rather than flattened into one line of
+    // text by the styled-text path.
+    Expr::FunctionCall { name, args }
+      if name == "Style"
+        && args.len() >= 2
+        && matches!(&args[0], Expr::FunctionCall { name: tf, args: targs }
+          if tf == "TraditionalForm"
+            && targs.len() == 1
+            && typesets_a_grid(&targs[0])) =>
+    {
+      let Expr::FunctionCall { args: targs, .. } = &args[0] else {
+        unreachable!("guarded by the match arm")
+      };
+      let styled = call(
+        "Style",
+        std::iter::once(targs[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect(),
+      );
+      expr_to_svg(&call1("TraditionalForm", styled))
+    }
     // `Style[Pane[content, size…], directives…]`: the pane only sizes and
     // places its content, so the directives style the content, inside the
     // pane — which keeps its width (and the wrapping of text at it).
@@ -9440,7 +9490,7 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
 /// the opening tag.
-fn with_default_text_family(svg: &str) -> String {
+pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
@@ -9759,4 +9809,22 @@ fn scale_svg_size(svg: &str, factor: f64) -> String {
     }
   }
   format!("{head}{rest}")
+}
+
+/// Whether `expr` is a `Grid`/`TextGrid` call, possibly under `Style`
+/// wrappers.
+fn typesets_a_grid(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args }
+      if (name == "Grid" || name == "TextGrid") && !args.is_empty() =>
+    {
+      true
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Style" && !args.is_empty() =>
+    {
+      typesets_a_grid(&args[0])
+    }
+    _ => false,
+  }
 }

@@ -8792,6 +8792,12 @@ fn row_reduce_impl(matrix: &[Vec<Expr>]) -> Vec<Vec<Expr>> {
     // Find a non-zero pivot in this column
     let mut found = None;
     for row in pivot_row..nrows {
+      // An entry of the input that was never touched by an elimination
+      // step may be a zero in disguise (rational terms that cancel), which
+      // must not become a pivot, so normalize symbolic candidates first.
+      if !is_zero_expr(&m[row][col]) && !is_numeric_atom(&m[row][col]) {
+        m[row][col] = simplify_expr(&m[row][col]);
+      }
       if !is_zero_expr(&m[row][col]) {
         found = Some(row);
         break;
@@ -8844,6 +8850,18 @@ fn is_zero_expr(e: &Expr) -> bool {
   matches!(e, Expr::Integer(0))
     || matches!(e, Expr::Real(x) if *x == 0.0)
     || matches!(e, Expr::BigInteger(n) if n == &BigInt::from(0))
+}
+
+/// Whether an expression is a plain number or symbol, already in the
+/// simplest form `simplify_expr` would give.
+fn is_numeric_atom(e: &Expr) -> bool {
+  matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::Real(_)
+      | Expr::BigInteger(_)
+      | Expr::Identifier(_)
+  )
 }
 
 /// Check if an expression is one
@@ -9924,6 +9942,11 @@ pub fn linear_solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Find a non-zero pivot at or below next_row in column `col`.
     let mut pivot_row = None;
     for row in next_row..n {
+      // Like `row_reduce_impl`: an untouched input entry may be a zero in
+      // disguise, which must not become the pivot.
+      if !is_zero_expr(&aug[row][col]) && !is_numeric_atom(&aug[row][col]) {
+        aug[row][col] = simplify_expr(&aug[row][col]);
+      }
       if !is_zero_expr(&aug[row][col]) {
         pivot_row = Some(row);
         break;
@@ -17504,6 +17527,24 @@ pub fn coordinate_transform_ast(
   let unevaluated = |args: &[Expr]| unevaluated("CoordinateTransform", args);
   if args.len() != 2 {
     return Ok(unevaluated(args));
+  }
+  // CoordinateTransform[t, {pt1, pt2, …}] transforms each point (and an
+  // array of points at any depth, element by element). The whole call
+  // stays unevaluated when any point cannot be transformed.
+  if let Expr::List(points) = &args[1]
+    && !points.is_empty()
+    && points.iter().all(|p| matches!(p, Expr::List(_)))
+  {
+    let mut transformed = Vec::with_capacity(points.len());
+    for point in points {
+      let result = coordinate_transform_ast(&[args[0].clone(), point.clone()])?;
+      if matches!(&result, Expr::FunctionCall { name, .. } if name == "CoordinateTransform")
+      {
+        return Ok(unevaluated(args));
+      }
+      transformed.push(result);
+    }
+    return Ok(Expr::List(transformed.into()));
   }
   // A chart with parameters (`{"Bipolar", {a}}`) or another chart of the
   // table maps to Cartesian coordinates through the chart table.
