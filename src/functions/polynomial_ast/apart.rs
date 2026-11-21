@@ -1209,6 +1209,19 @@ fn apart_symbolic(
   let mut factors = Vec::new();
   flatten_product_factors(&den_factored, &mut factors);
 
+  // A factor of degree two or more in var, or a repeated factor, is out of
+  // the cover-up method's reach: solve for the numerators instead.
+  let needs_general = factors.iter().any(|f| {
+    crate::functions::polynomial_ast::contains_var(f, var)
+      && extract_linear_coeffs(f, var).is_none()
+  });
+  if needs_general {
+    if let Some(result) = apart_undetermined_coefficients(num, &factors, var)? {
+      return Ok(result);
+    }
+    return Ok(expr.clone());
+  }
+
   // Separate linear (in var) factors from non-linear/constant factors
   let mut linear_factors: Vec<Expr> = Vec::new(); // the full factor expression
   let mut linear_roots: Vec<Expr> = Vec::new(); // root = -constant/coeff
@@ -1335,6 +1348,219 @@ fn apart_symbolic(
       result
     });
   Ok(summed)
+}
+
+/// Coefficients of `poly` in `var`, lowest power first, padded with zeros
+/// to `len` entries. `None` if `poly` is not a polynomial in `var` or has
+/// more than `len` coefficients.
+fn symbolic_coeffs_padded(
+  poly: &Expr,
+  var: &str,
+  len: usize,
+) -> Option<Vec<Expr>> {
+  let expanded =
+    crate::evaluator::evaluate_expr_to_expr(&expand_and_combine(poly)).ok()?;
+  if !super::polynomial_q::is_polynomial(&expanded, var) {
+    return None;
+  }
+  let Expr::List(ref items) =
+    coefficient_list_ast(&[expanded, Expr::Identifier(var.to_string())])
+      .ok()?
+  else {
+    return None;
+  };
+  let mut coeffs: Vec<Expr> = items.iter().cloned().collect();
+  // CoefficientList[0, x] is {}.
+  while coeffs.len() > len {
+    if matches!(coeffs.last(), Some(Expr::Integer(0))) {
+      coeffs.pop();
+    } else {
+      return None;
+    }
+  }
+  coeffs.resize(len, Expr::Integer(0));
+  Some(coeffs)
+}
+
+/// Partial fractions over the denominator's factors `den_factors` (as
+/// `Factor` returns them, so pairwise coprime) by undetermined
+/// coefficients: each factor `f^k` of degree `d` in `var` contributes
+/// `P_1/f + … + P_k/f^k` with every `P_j` of degree below `d`, and
+/// matching powers of `var` in `num = Σ P_j D/f^j` gives a square
+/// linear system whose coefficients may be symbolic:
+/// `Apart[1/(s (s^2 + a^2)), s]` → `1/(a^2 s) - s/(a^2 (a^2 + s^2))`.
+/// An improper fraction has its polynomial part split off first.
+/// `None` when the factors aren't polynomials in `var` or the system
+/// can't be solved.
+fn apart_undetermined_coefficients(
+  num: &Expr,
+  den_factors: &[Expr],
+  var: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  use crate::helpers::call;
+  let var_expr = Expr::Identifier(var.to_string());
+  let eval = crate::evaluator::evaluate_expr_to_expr;
+
+  // Split off the var-free content and collect (base, multiplicity, degree).
+  let mut content: Vec<Expr> = Vec::new();
+  let mut bases: Vec<(Expr, usize, usize)> = Vec::new();
+  for f in den_factors {
+    if !crate::functions::polynomial_ast::contains_var(f, var) {
+      content.push(f.clone());
+      continue;
+    }
+    let power = match f {
+      Expr::FunctionCall { name, args }
+        if name == "Power" && args.len() == 2 =>
+      {
+        Some((args[0].clone(), args[1].clone()))
+      }
+      Expr::BinaryOp {
+        op: BinaryOperator::Power,
+        left,
+        right,
+      } => Some((left.as_ref().clone(), right.as_ref().clone())),
+      _ => None,
+    };
+    let (base, k) = match power {
+      Some((b, Expr::Integer(k))) if k >= 1 => (b, k as usize),
+      _ => (f.clone(), 1),
+    };
+    if !super::polynomial_q::is_polynomial(&base, var) {
+      return Ok(None);
+    }
+    let Expr::List(ref cl) =
+      coefficient_list_ast(&[base.clone(), var_expr.clone()])?
+    else {
+      return Ok(None);
+    };
+    if cl.len() < 2 {
+      return Ok(None);
+    }
+    bases.push((base, k, cl.len() - 1));
+  }
+  let terms_count: usize = bases.iter().map(|(_, k, _)| k).sum();
+  let deg: usize = bases.iter().map(|(_, k, d)| k * d).sum();
+  if deg > 12 {
+    return Ok(None);
+  }
+  let den_poly = times_ast(
+    &bases
+      .iter()
+      .map(|(b, k, _)| {
+        crate::helpers::pow2(b.clone(), Expr::Integer(*k as i128))
+      })
+      .collect::<Vec<_>>(),
+  )?;
+  let content_expr = times_ast(&content)?;
+
+  // Polynomial part of an improper fraction.
+  let mut quotient = Expr::Integer(0);
+  let mut remainder = eval(&expand_and_combine(num))?;
+  if !super::polynomial_q::is_polynomial(&remainder, var) {
+    return Ok(None);
+  }
+  if symbolic_coeffs_padded(&remainder, var, deg).is_none() {
+    let qr = eval(&call(
+      "PolynomialQuotientRemainder",
+      vec![
+        remainder.clone(),
+        eval(&expand_and_combine(&den_poly))?,
+        var_expr.clone(),
+      ],
+    ))?;
+    let Expr::List(ref parts) = qr else {
+      return Ok(None);
+    };
+    if parts.len() != 2 {
+      return Ok(None);
+    }
+    quotient = parts[0].clone();
+    remainder = parts[1].clone();
+  }
+  let Some(rhs) = symbolic_coeffs_padded(&remainder, var, deg) else {
+    return Ok(None);
+  };
+  // A proper fraction over a single unrepeated factor is already apart.
+  if terms_count < 2 && matches!(quotient, Expr::Integer(0)) {
+    return Ok(None);
+  }
+
+  // One column per unknown coefficient: var^m D/f^j.
+  let mut columns: Vec<Vec<Expr>> = Vec::with_capacity(deg);
+  let mut layout: Vec<(usize, usize, usize)> = Vec::with_capacity(deg);
+  for (i, (base, k, d)) in bases.iter().enumerate() {
+    for j in 1..=*k {
+      let cofactor = div2(
+        den_poly.clone(),
+        crate::helpers::pow2(base.clone(), Expr::Integer(j as i128)),
+      );
+      let cofactor = eval(&call("Cancel", vec![cofactor]))?;
+      for m in 0..*d {
+        let basis = times2(
+          crate::helpers::pow2(var_expr.clone(), Expr::Integer(m as i128)),
+          cofactor.clone(),
+        );
+        let Some(col) = symbolic_coeffs_padded(&basis, var, deg) else {
+          return Ok(None);
+        };
+        columns.push(col);
+        layout.push((i, j, m));
+      }
+    }
+  }
+  let matrix = Expr::List(
+    (0..deg)
+      .map(|row| Expr::List(columns.iter().map(|c| c[row].clone()).collect()))
+      .collect(),
+  );
+  let solved = eval(&call(
+    "LinearSolve",
+    vec![matrix, Expr::List(rhs.into_iter().collect())],
+  ));
+  let solution: Vec<Expr> = match &solved {
+    Ok(Expr::List(values)) if values.len() == deg => values.to_vec(),
+    _ => return Ok(None),
+  };
+
+  let mut terms: Vec<Expr> = Vec::new();
+  if !matches!(quotient, Expr::Integer(0)) {
+    terms.push(eval(&div2(quotient, content_expr.clone()))?);
+  }
+  for (i, (base, k, _)) in bases.iter().enumerate() {
+    for j in 1..=*k {
+      let numerator: Vec<Expr> = layout
+        .iter()
+        .zip(solution.iter())
+        .filter(|((li, lj, _), _)| *li == i && *lj == j)
+        .map(|((_, _, m), c)| {
+          times2(
+            c.clone(),
+            crate::helpers::pow2(var_expr.clone(), Expr::Integer(*m as i128)),
+          )
+        })
+        .collect();
+      let numerator = eval(&call(
+        "Together",
+        vec![crate::functions::math_ast::plus_ast(&numerator)?],
+      ))?;
+      if matches!(numerator, Expr::Integer(0)) {
+        continue;
+      }
+      let term = div2(
+        numerator,
+        times2(
+          content_expr.clone(),
+          crate::helpers::pow2(base.clone(), Expr::Integer(j as i128)),
+        ),
+      );
+      terms.push(eval(&term)?);
+    }
+  }
+  if terms.is_empty() {
+    return Ok(Some(Expr::Integer(0)));
+  }
+  Ok(Some(crate::functions::math_ast::plus_ast(&terms)?))
 }
 
 /// ApartSquareFree[expr] / ApartSquareFree[expr, var] — partial fraction
