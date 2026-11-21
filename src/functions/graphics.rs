@@ -1072,8 +1072,10 @@ fn label_frame(opts: &[Expr], default_color: Color) -> Option<TextFrame> {
         color = c;
         continue;
       }
-      let mut probe = StyleState::default();
-      probe.thickness = f64::NAN;
+      let mut probe = StyleState {
+        thickness: f64::NAN,
+        ..StyleState::default()
+      };
       apply_directive(d, &mut probe);
       if !probe.thickness.is_nan() {
         // Thickness fractions are of a picture's width; a frame around a
@@ -1241,7 +1243,9 @@ enum Primitive {
     /// color — `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and
     /// an upright remainder. Empty for a label with no partial styling.
     styled_ranges: Vec<StyledRange>,
-    style: StyleState,
+    /// Boxed: a label carries enough fields of its own that an inline
+    /// style would make it the enum's one oversized variant.
+    style: Box<StyleState>,
   },
   BezierCurvePrim {
     points: Vec<(f64, f64)>,
@@ -1338,10 +1342,10 @@ impl Primitive {
       | Self::RectPrim { style, .. }
       | Self::PolygonPrim { style, .. }
       | Self::ArrowPrim { style, .. }
-      | Self::TextPrim { style, .. }
       | Self::BezierCurvePrim { style, .. }
       | Self::HalfPlanePrim { style, .. }
       | Self::InfiniteLinePrim { style, .. } => Some(style),
+      Self::TextPrim { style, .. } => Some(style),
       Self::ClickGroupStart { .. } | Self::ClickGroupEnd => None,
       Self::RasterPrim { .. }
       | Self::MarkerPrim { .. }
@@ -9623,7 +9627,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     box_offset,
     glyph_map: None,
     styled_ranges,
-    style: local_style,
+    style: Box::new(local_style),
   });
 }
 
