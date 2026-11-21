@@ -38661,6 +38661,33 @@ mod grid_frame_and_background {
     assert_eq!((red, blue), (1, 1), "{svg}");
   }
 
+  /// `Automatic` as the spec of one axis rules every line of that axis,
+  /// like `True`, while the other axis keeps its own explicit list.
+  /// Regression: `Automatic` was ignored, so a readout ruled with
+  /// `Dividers -> {{True, False, True}, Automatic}` lost its top and bottom
+  /// edges.
+  #[test]
+  fn dividers_automatic_axis_rules_every_line_of_that_axis() {
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {{True, False, True}, Automatic}]"#,
+    );
+    let lines = grid_lines(&svg);
+    let horizontal = lines.iter().filter(|l| l.1 == l.3).count();
+    let vertical = lines.iter().filter(|l| l.0 == l.2).count();
+    assert_eq!(horizontal, 3, "top, middle and bottom: {svg}");
+    assert_eq!(vertical, 2, "left and right edges only: {svg}");
+
+    let svg = export_svg(
+      r#"Grid[{{"a", "b"}, {"c", "d"}}, Dividers -> {Automatic, None}]"#,
+    );
+    let lines = grid_lines(&svg);
+    assert!(
+      lines.iter().all(|l| l.0 == l.2),
+      "no horizontal rules: {svg}"
+    );
+    assert_eq!(lines.len(), 3, "left, middle and right: {svg}");
+  }
+
   /// The x of each `<text>` in an SVG, in document order.
   fn text_xs(svg: &str) -> Vec<f64> {
     svg

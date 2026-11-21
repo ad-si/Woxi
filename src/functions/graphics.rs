@@ -32332,7 +32332,12 @@ fn grid_svg_styled_internal_reporting(
             // Each spec can be: True/All, or a list with optional repeating pattern
             for (idx, spec) in items.iter().enumerate() {
               match spec {
-                Expr::Identifier(v) if v == "All" || v == "True" => {
+                // `Automatic` for one axis rules every line of that axis in
+                // the default style, like `True`: `Dividers -> {{True,
+                // False, True}, Automatic}` frames the row above and below.
+                Expr::Identifier(v)
+                  if v == "All" || v == "True" || v == "Automatic" =>
+                {
                   if idx == 0 {
                     dividers_col = true;
                     dividers_col_border = true;
