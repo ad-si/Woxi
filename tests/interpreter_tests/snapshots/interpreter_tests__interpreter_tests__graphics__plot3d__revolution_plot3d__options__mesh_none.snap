@@ -1,5 +1,6 @@
 ---
 source: tests/interpreter_tests/graphics.rs
+assertion_line: 7426
 expression: "export_svg(\"RevolutionPlot3D[{t^2, t}, {t, 0, 2}, Mesh -> None]\")"
 ---
 <svg width="360" height="260" viewBox="0 0 360 260" xmlns="http://www.w3.org/2000/svg">
