@@ -14816,7 +14816,10 @@ fn traditional_text_runs(content: &Expr) -> Option<Vec<LabelRun>> {
       };
       let separator = match args.get(1) {
         None => None,
-        Some(Expr::String(s)) => Some(s.clone()),
+        Some(sep @ Expr::String(_)) => match &spaced_row_separator(sep) {
+          Expr::String(s) => Some(s.clone()),
+          _ => return None,
+        },
         Some(_) => return None,
       };
       let mut runs = Vec::new();
@@ -17106,8 +17109,17 @@ pub(crate) fn parse_plot_range_padding(expr: &Expr) -> PlotRangePaddingSpec {
   }
 }
 
+/// A `Background` color: any color directive, with an `Opacity[a, color]`
+/// or `Directive[color, Opacity[a]]` folded into its alpha.
 fn parse_background(expr: &Expr) -> Option<Color> {
-  parse_color(expr)
+  match expr {
+    Expr::FunctionCall { name, .. }
+      if name == "Opacity" || name == "Directive" =>
+    {
+      parse_style_color(expr)
+    }
+    _ => parse_color(expr),
+  }
 }
 
 fn parse_axes(expr: &Expr) -> Option<(bool, bool)> {
@@ -18654,8 +18666,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // Background (covers the full SVG including margins)
   if let Some(bg) = background {
     svg.push_str(&format!(
-      "<rect width=\"{total_width:.0}\" height=\"{total_height:.0}\" fill=\"{}\"/>\n",
+      "<rect width=\"{total_width:.0}\" height=\"{total_height:.0}\" fill=\"{}\"{}/>\n",
       bg.to_svg_rgb(),
+      bg.opacity_attr(),
     ));
   }
 
@@ -35299,8 +35312,9 @@ fn combine_svgs_grid(
   ));
   if let Some(bg) = &opts.background {
     svg.push_str(&format!(
-      "<rect width=\"100%\" height=\"100%\" fill=\"{}\"/>\n",
+      "<rect width=\"100%\" height=\"100%\" fill=\"{}\"{}/>\n",
       bg.to_svg_rgb(),
+      bg.opacity_attr(),
     ));
   }
 
@@ -52839,7 +52853,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
           // second argument that is an option (`BaseStyle -> …`) is not one.
           let separator = match (name.as_str(), args.get(1)) {
             ("Row", Some(sep)) if !crate::syntax::is_rule_expr(sep) => {
-              manipulate_label_runs(sep, italic)
+              manipulate_label_runs(&spaced_row_separator(sep), italic)
             }
             _ => Vec::new(),
           };
