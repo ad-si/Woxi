@@ -1422,10 +1422,7 @@ impl ManipulateState {
       // `$$` uniquification suffix on its control names, while the saved
       // variable names arrive with it already stripped.
       let suffixed = format!("{name}$$");
-      // Every row bound to the variable (a slider and a Trigger playing
-      // it) reopens on the saved value, not just the first.
-      let mut restored = false;
-      for control in self
+      if let Some(control) = self
         .controls
         .iter()
         .position(|c| c.name() == name || c.name() == suffixed)
