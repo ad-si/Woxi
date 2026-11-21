@@ -1720,6 +1720,36 @@ mod lookup {
   use super::*;
 
   #[test]
+  fn lookup_in_a_list_of_rules() {
+    // Regression: a list of rules was threaded over rule by rule
+    // (`Lookup::invrl` for each) instead of being searched as one table.
+    assert_eq!(interpret("Lookup[{a -> 1, b -> 2}, b]").unwrap(), "2");
+    assert_eq!(interpret("Lookup[{a -> {1, 2}}, a, {}]").unwrap(), "{1, 2}");
+    assert_eq!(interpret("Lookup[{a -> 1, b :> 2 + 3}, b]").unwrap(), "5");
+    assert_eq!(interpret("Lookup[{a -> 1}, c, 0]").unwrap(), "0");
+    assert_eq!(
+      interpret("Lookup[{a -> 1}, c]").unwrap(),
+      "Missing[KeyAbsent, c]"
+    );
+    assert_eq!(
+      interpret("Lookup[{a -> 1, b -> 2, c -> 3}, {c, a}]").unwrap(),
+      "{3, 1}"
+    );
+    // Lists of rule lists still thread.
+    assert_eq!(
+      interpret("Lookup[{{a -> 1}, {a -> 2}}, a]").unwrap(),
+      "{1, 2}"
+    );
+    assert_eq!(
+      interpret(
+        "Lookup[Options[Graphics[{}, Epilog -> {Red}], Epilog], Epilog]"
+      )
+      .unwrap(),
+      "{RGBColor[1, 0, 0]}"
+    );
+  }
+
+  #[test]
   fn lookup_threads_over_list_of_associations() {
     assert_eq!(
       interpret("Lookup[{<|a -> 1, b -> 2|>, <|a -> 3, c -> 4|>}, a]").unwrap(),
