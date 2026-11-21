@@ -822,6 +822,13 @@ fn adaptive_sample(
     _ => curve_bend,
   };
 
+  // The denominator floor of the relative bend test scales with the curve:
+  // a fixed absolute floor would swamp a curve whose values are all tiny
+  // (an absorption spectrum of height 1e-12, say), so its peaks would never
+  // be refined. Where a bend is visible at all it exceeds `visible_bend`,
+  // which keeps the test unchanged for curves of ordinary size.
+  let range_floor = visible_bend.max(f64::MIN_POSITIVE);
+
   // Adaptive refinement passes, one level of `MaxRecursion` each.
   for _ in 0..max_depth {
     if points.len() >= max_total {
@@ -864,7 +871,7 @@ fn adaptive_sample(
           // Linear interpolation error: how much does the middle point
           // deviate from the line connecting its neighbors?
           let y_interp = y0 + (y2 - y0) * (x1 - x0) / (x2 - x0);
-          let y_range = (y2 - y0).abs().max(1e-10);
+          let y_range = (y2 - y0).abs().max(range_floor);
           let bend = (y1 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -881,7 +888,7 @@ fn adaptive_sample(
         let (xm1, ym1) = points[i - 1];
         if ym1.is_finite() {
           let y_interp = ym1 + (y1 - ym1) * (x0 - xm1) / (x1 - xm1);
-          let y_range = (y1 - ym1).abs().max(1e-10);
+          let y_range = (y1 - ym1).abs().max(range_floor);
           let bend = (y0 - y_interp).abs();
           bend / y_range > 0.05 && bend > visible_bend
         } else {
@@ -2406,10 +2413,21 @@ fn tick_step_decimals(step: f64) -> Option<usize> {
   })
 }
 
+/// `v` split into a mantissa in `[1, 10)` (in magnitude) and an exponent.
+fn scientific_parts(v: f64) -> (f64, i32) {
+  let mut exp = v.abs().log10().floor() as i32;
+  let mut mantissa = v / 10f64.powi(exp);
+  // `log10` can land a hair below an exact power of ten.
+  if (mantissa.abs() - 10.0).abs() < 1e-9 || mantissa.abs() > 10.0 {
+    exp += 1;
+    mantissa /= 10.0;
+  }
+  (mantissa, exp)
+}
+
 /// `v` as `m×10^e` with Unicode superscript exponent digits.
 fn format_scientific_tick(v: f64) -> String {
-  let exp = v.abs().log10().floor() as i32;
-  let mantissa = v / 10f64.powi(exp);
+  let (mantissa, exp) = scientific_parts(v);
   let mantissa = if (mantissa - mantissa.round()).abs() < 1e-9 {
     format!("{}", mantissa.round() as i64)
   } else {
@@ -2593,7 +2611,11 @@ fn inject_missing_major_tick_labels(
       };
       let along = if horizontal { x } else { y };
       if !template.occupied.iter().any(|p| (p - along).abs() < 2.0) {
-        svg.push_str(&template.render(x, y, &format_tick_with_step(v, major)));
+        svg.push_str(&template.render(
+          x,
+          y,
+          &format_axis_tick(v, major, min, max),
+        ));
       }
       v += major;
     }
@@ -9675,6 +9697,9 @@ pub(crate) struct BarChartLook {
   /// An explicit `ImagePadding` (left, right, bottom, top in points); a
   /// `None` side is automatic.
   pub image_padding: Option<[Option<f64>; 4]>,
+  /// An explicit `PlotRangePadding`, padding the bars' extent (or the
+  /// explicit `PlotRange`); its `Automatic` sides keep the default padding.
+  pub plot_range_padding: Option<Expr>,
 }
 
 /// A `ChartElements` bar: copies of the rendered picture `svg`, each as
@@ -9746,6 +9771,7 @@ impl Default for BarChartLook {
       ticks_style: None,
       axes_label_fonts: [None, None],
       image_padding: None,
+      plot_range_padding: None,
     }
   }
 }
@@ -10170,6 +10196,41 @@ pub(crate) fn generate_bar_svg(
     }
   });
   let x_max = if x_max <= x_min { x_min + 1.0 } else { x_max };
+
+  // An explicit `PlotRangePadding` pads the bars' own extent (or the
+  // explicit `PlotRange`) instead; an `Automatic` side keeps the default
+  // bound computed above.
+  let ((x_min, x_max), (y_min, y_max)) = match &look.plot_range_padding {
+    Some(padding) => {
+      let spec = crate::functions::graphics::parse_plot_range_padding(padding);
+      let pad = |axis: &crate::functions::graphics::AxisPadding,
+                 (lo, hi): (f64, f64),
+                 (auto_lo, auto_hi): (f64, f64)| {
+        let span = hi - lo;
+        if span <= 0.0 {
+          return (auto_lo, auto_hi);
+        }
+        let (pad_lo, pad_hi) = axis.resolve(span, 0.0);
+        let (keep_lo, keep_hi) = axis.automatic_sides();
+        (
+          if keep_lo { auto_lo } else { lo - pad_lo },
+          if keep_hi { auto_hi } else { hi + pad_hi },
+        )
+      };
+      let x_base =
+        plot_range_x.unwrap_or((slot.margin, n as f64 - slot.margin));
+      let y_base = plot_range_y.unwrap_or(if look.value_axis_negated {
+        (data_lo.min(0.0), 0.0)
+      } else {
+        (data_lo.min(0.0), data_hi.max(0.0))
+      });
+      (
+        pad(&spec.x, x_base, (x_min, x_max)),
+        pad(&spec.y, y_base, (y_min, y_max)),
+      )
+    }
+    None => ((x_min, x_max), (y_min, y_max)),
+  };
 
   let sf = RESOLUTION_SCALE as f64;
 
@@ -11605,7 +11666,7 @@ pub(crate) fn generate_horizontal_bar_svg(
         "<text x=\"{tx:.2}\" y=\"{:.2}\" text-anchor=\"middle\" \
          font-family=\"sans-serif\" font-size=\"{font_size:.0}\" fill=\"{label_fill}\">{}</text>\n",
         axis_bottom + tick_len + font_size,
-        html_escape(&format_tick_with_step(v, x_major))
+        html_escape(&format_axis_tick(v, x_major, x_min, x_max))
       ));
       v += x_major;
     }
@@ -12124,14 +12185,14 @@ pub(crate) fn generate_bubble_chart_svg(
       .y_labels(y_tick_count)
       .x_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, x_major) {
-          format_tick_with_step(*v, x_major)
+          format_axis_tick(*v, x_major, x_min, x_max)
         } else {
           String::new()
         }
       })
       .y_label_formatter(&move |v: &f64| {
         if is_major_tick(*v, y_major) {
-          format_tick_with_step(*v, y_major)
+          format_axis_tick(*v, y_major, y_min, y_max)
         } else {
           String::new()
         }
@@ -12469,12 +12530,25 @@ pub(crate) fn generate_bubble_chart_svg(
   ))
 }
 
-/// Escape special characters for SVG/HTML text content.
+/// Escape special characters for SVG/HTML text content. C0 control
+/// characters other than tab, newline and carriage return (e.g. the `\.04`
+/// in `FromCharacterCode[{65, 4}]`) are not allowed anywhere in an XML
+/// document, so they are dropped: kept, a single one makes the whole SVG
+/// unparsable. They have no visible glyph anyway.
 pub(crate) fn html_escape(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
-    .replace('"', "&quot;")
+  let mut out = String::with_capacity(s.len());
+  for c in s.chars() {
+    match c {
+      '&' => out.push_str("&amp;"),
+      '<' => out.push_str("&lt;"),
+      '>' => out.push_str("&gt;"),
+      '"' => out.push_str("&quot;"),
+      '\t' | '\n' | '\r' => out.push(c),
+      c if (c as u32) < 0x20 || c == '\u{FFFE}' || c == '\u{FFFF}' => {}
+      c => out.push(c),
+    }
+  }
+  out
 }
 
 /// Width (in viewBox units) of the plotting area, mirroring the margins used
@@ -16608,7 +16682,7 @@ pub(crate) fn simple_ticks(min: f64, max: f64) -> Vec<(f64, String)> {
       let label = if k == 0 {
         "0".to_string()
       } else {
-        format_tick_with_step(v, step)
+        format_axis_tick(v, step, min, max)
       };
       (if k == 0 { 0.0 } else { v }, label)
     })

@@ -4742,12 +4742,12 @@ fn render_manipulate_widget<'a>(
     if joined_through.is_some_and(|last| ctrl_idx <= last) {
       continue;
     }
-    let mut trees = panel_trees_at(ctrl_idx).peekable();
-    if trees.peek().is_some() {
+    // Each such display starts a line of its own; the control after it may
+    // join that line (a live caption written in one `Row` with the control,
+    // see `ManipulateState::joins_previous_control`).
+    for tree in panel_trees_at(ctrl_idx) {
       flush_control_line(&mut controls_col, &mut line);
-    }
-    for tree in trees {
-      controls_col = controls_col.push(render_display_node(cell_idx, tree));
+      line.push(render_display_node(cell_idx, tree));
     }
     // A control belonging to a `PaneSelector` pane the selector is not
     // showing is left out of the panel entirely, the way Wolfram swaps one
@@ -9149,6 +9149,39 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1}, \"…\"]"], "Output"]
     assert!(widget.error.is_none(), "{:?}", widget.error);
     assert!(widget.graphics_handle.is_some(), "the solid must render");
   }
+  /// A solid picker over `Join` of the Platonic and Archimedean classes lists
+  /// the choices in Wolfram's order: each class alphabetically, so the
+  /// Platonic block starts with the cube, not the tetrahedron.
+  #[test]
+  fn polyhedron_class_popup_lists_solids_alphabetically() {
+    let src = "Manipulate[Graphics3D[GraphicsComplex[PolyhedronData[s, \"VertexCoordinates\"], Line[PolyhedronData[s, \"EdgeIndices\"]]]], {{s, \"Cube\", \"solid\"}, Join[PolyhedronData[\"Platonic\"], PolyhedronData[\"Archimedean\"]]}]";
+    let expr = woxi::interpret_to_expr(src).unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr)
+      .expect("the Manipulate must instantiate");
+    assert_eq!(state.error, None, "{:?}", state.error);
+    let manipulate::ControlState::Discrete {
+      value_labels,
+      current_index,
+      ..
+    } = &state.controls[0]
+    else {
+      panic!("expected a discrete control: {:?}", state.controls[0]);
+    };
+    assert_eq!(
+      &value_labels[..6],
+      &[
+        "Cube",
+        "Dodecahedron",
+        "Icosahedron",
+        "Octahedron",
+        "Tetrahedron",
+        "Cuboctahedron"
+      ]
+    );
+    assert_eq!(value_labels.len(), 18);
+    assert_eq!(*current_index, 0);
+    assert!(state.graphics_handle.is_some(), "the cube must render");
+  }
   /// A convex-hull / Delaunay / Voronoi demonstration loads the legacy
   /// `ComputationalGeometry`` package in its initialization and draws the
   /// diagrams from `DelaunayTriangulation` and `DiagramPlot`; both were
@@ -11994,6 +12027,55 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose modes each
+  /// declare the same slider variable with its own range inside a
+  /// `PaneSelector` pane. This is a self-authored, construct-equivalent
+  /// example.
+  ///
+  /// Regression: the slider kept the first pane's range in every mode, so
+  /// switching modes could never reach the other panes' values.
+  #[test]
+  fn manipulate_pane_selector_slider_range_follows_pane() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[{mode, r}, {{mode, 1, \"\"}, {1 -> \"small\", \
+       2 -> \"big\"}}, PaneSelector[{1 -> Control[{r, 0, 10, 2}], \
+       2 -> Control[{r, 10^6, 10^9, 3*10^8}]}, Dynamic[mode]]]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let names: Vec<&str> = state.controls.iter().map(|c| c.name()).collect();
+    assert_eq!(names, vec!["mode", "r"]);
+    let range = |state: &manipulate::ManipulateState| match &state.controls[1] {
+      manipulate::ControlState::Continuous {
+        min,
+        max,
+        step,
+        current,
+        ..
+      } => (*min, *max, *step, *current),
+      other => panic!("expected a slider, got {other:?}"),
+    };
+    assert_eq!(range(&state), (0.0, 10.0, 2.0, 0.0));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    // The second pane's range and step apply, and the value moves into it.
+    assert_eq!(range(&state), (1e6, 1e9, 3e8, 1e6));
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 0;
+    }
+    state.reevaluate();
+    assert_eq!(range(&state), (0.0, 10.0, 2.0, 10.0));
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook (a pie chart editor)
   /// whose `PaneSelector` panes each wrap their sliders in a collapsible
   /// `OpenerView[{title, Column[{Control[…], …}]}, True]`, and whose slider
@@ -12081,6 +12163,58 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     }
     state.reevaluate();
     assert!(!state.control_is_visible[w_idx]);
+  }
+
+  /// A `Dynamic[ButtonBar[Which[n == 1, {…}, n == 2, {…}]]]` in a control
+  /// `Row` offers a different set of buttons for each value of another
+  /// control. The bar used to contribute no buttons at all, so nothing could
+  /// be pressed. Every branch's buttons now join the panel once, and only the
+  /// ones the selected branch offers are on screen.
+  #[test]
+  fn conditional_button_bar_follows_its_selector() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[StringLength[s], \
+       {{n, 1, \"letters\"}, {1, 2}, ControlType -> SetterBar}, \
+       Row[{\"add\", Spacer[5], Dynamic[ButtonBar[Which[\
+         n == 1, {\"p\" :> (s = s <> \"p\"), \"q\" :> (s = s <> \"q\")}, \
+         n == 2, {\"p\" :> (s = s <> \"p\"), \"q\" :> (s = s <> \"q\"), \
+                  \"r\" :> (s = s <> \"r\")}]]]}], \
+       {{s, \"\"}, ControlType -> None}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    let button = |state: &manipulate::ManipulateState, want: &str| {
+      state
+        .controls
+        .iter()
+        .position(|c| {
+          matches!(c, manipulate::ControlState::Button { label, .. }
+            if label == want)
+        })
+        .unwrap_or_else(|| panic!("no {want} button: {:?}", state.controls))
+    };
+    let (p, r) = (button(&state, "p"), button(&state, "r"));
+    assert!(state.control_is_visible[p]);
+    assert!(!state.control_is_visible[r], "n = 1 offers no r");
+
+    if let manipulate::ControlState::Discrete { current_index, .. } =
+      &mut state.controls[0]
+    {
+      *current_index = 1;
+    }
+    state.reevaluate();
+    assert!(state.control_is_visible[p]);
+    assert!(state.control_is_visible[r], "n = 2 offers r");
+
+    // Pressing a button runs its action against the live bindings.
+    let action = match &state.controls[r] {
+      manipulate::ControlState::Button { action, .. } => action.clone(),
+      _ => unreachable!(),
+    };
+    state.apply_button_action(&action);
+    assert!(state.error.is_none(), "{:?}", state.error);
+    let rendered = state.check_render().unwrap();
+    assert_eq!(rendered.result, "1");
   }
 
   /// A `PaneSelector` keyed by strings (`"a" -> …`, `"b" -> …`) rather than
@@ -12287,9 +12421,10 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   #[test]
   fn kepler_trigger_and_period_bounded_sliders() {
     // The "Kepler's Second Law" Demonstration pattern: time sliders bounded
-    // by the orbital-period control P, plus a Trigger animating t. The
+    // by the orbital-period control P, plus a Trigger row animating t. The
     // widget starts paused, the P-referencing ranges follow P as it moves,
-    // and the animation tick targets the Trigger's variable.
+    // and the animation tick advances the Trigger, which the t slider
+    // follows.
     let expr = woxi::interpret_to_expr(
       "Manipulate[{t, dt}, \
        {{t, 0, \"time\"}, 0, P, .01}, \
@@ -12392,12 +12527,48 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   }
 
   #[test]
+  fn slider_and_trigger_on_one_variable_stay_in_sync() {
+    // A slider and a Trigger row for the same variable both show (as in
+    // Wolfram); a saved value restores both rows, and playing advances the
+    // Trigger with the slider following it.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[n^2, {{n, 9, \"steps\"}, 1, 9, 1}, \
+       {{n, 1, \"play\"}, 1, 9, 1, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls.len(), 2);
+    let values = |s: &manipulate::ManipulateState| {
+      s.controls
+        .iter()
+        .map(|c| match c {
+          manipulate::ControlState::Continuous { current, .. }
+          | manipulate::ControlState::Trigger { current, .. } => *current,
+          other => panic!("unexpected control {other:?}"),
+        })
+        .collect::<Vec<_>>()
+    };
+    assert!(matches!(
+      &state.controls[1],
+      manipulate::ControlState::Trigger { name, .. } if name == "n"
+    ));
+    // Both rows start from the first row's initial value.
+    assert_eq!(values(&state), vec![9.0, 9.0]);
+
+    state.apply_saved_variables(&[("n".to_string(), "2".to_string())]);
+    assert_eq!(values(&state), vec![2.0, 2.0]);
+    assert_eq!(state.text_output.as_deref(), Some("4"));
+
+    state.advance_animation();
+    assert_eq!(values(&state), vec![3.0, 3.0]);
+    assert_eq!(state.text_output.as_deref(), Some("9"));
+  }
+
+  #[test]
   fn sole_finite_trigger_builds_a_dedicated_trigger_row() {
-    // A Demonstrations "play once over a fixed duration" control: unlike
-    // Kepler's Trigger (a *second* spec for a variable that already has a
-    // plain slider, so it only steals the animation without a row of its
-    // own), this Trigger is the *only* spec for its variable and its sweep
-    // end is finite — `AppearanceElements` even asks for player buttons
+    // A Demonstrations "play once over a fixed duration" control: this
+    // Trigger is the *only* spec for its variable and its sweep end is
+    // finite — `AppearanceElements` even asks for player buttons
     // instead of a thumb. That must still build a dedicated `Trigger` row
     // (play/pause + step buttons), not fall back to an ordinary slider.
     let expr = woxi::interpret_to_expr(
@@ -32895,22 +33066,24 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
     }
 
     // The default weight (HarmonicNumber) must close to a typeset formula,
-    // not a raw unevaluated Sum or an Indeterminate boundary artifact.
+    // not a raw unevaluated Sum or an Indeterminate boundary artifact. The
+    // `Text[TraditionalForm[…]]` body draws that formula as a picture.
     assert!(
-      state.graphics_handle.is_none(),
-      "a Text[...] body draws no graphic"
+      state.graphics_handle.is_some(),
+      "a Text[TraditionalForm[...]] body draws the typeset formula: {:?}",
+      state.text_output
     );
     // The formula reads `HoldForm[Sum[...]] == <closed form>` — the LHS
     // stays an unevaluated `Sum[...]` on purpose (it names the symbolic
     // total being displayed); only the right-hand side is the closed form
-    // this test is pinning down.
-    let formula = state.text_output.clone().unwrap_or_default();
-    let rhs = formula.rsplit("==").next().unwrap_or_default();
+    // this test is pinning down, so exactly one summation sign is drawn.
+    let closed_form = |state: &manipulate::ManipulateState| {
+      let svg = state.check_render().unwrap().graphics.unwrap_or_default();
+      svg.matches('\u{2211}').count() == 1 && !svg.contains("Indeterminate")
+    };
     assert!(
-      rhs.contains("HarmonicNumber")
-        && !rhs.contains("Sum[")
-        && !rhs.contains("Indeterminate"),
-      "expected a closed-form harmonic formula, got: {formula:?}"
+      closed_form(&state),
+      "expected a closed-form harmonic formula"
     );
 
     // Dragging the exponent slider re-evaluates cleanly for every degree in
@@ -32929,11 +33102,9 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`count$$ = 3, $CellContext`offset$$ 
         "exponent {exponent} failed: {:?}",
         state.error
       );
-      let formula = state.text_output.clone().unwrap_or_default();
-      let rhs = formula.rsplit("==").next().unwrap_or_default();
       assert!(
-        !rhs.contains("Sum[") && !rhs.contains("Indeterminate"),
-        "exponent {exponent} did not close to a formula: {formula:?}"
+        closed_form(&state),
+        "exponent {exponent} did not close to a formula"
       );
     }
   }
