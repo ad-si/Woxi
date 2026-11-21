@@ -13788,8 +13788,21 @@ fn render_frame(
           svg.push_str(&picture);
           continue;
         }
-        svg.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
+        // Below the bottom edge the block hangs from its first line;
+        // above the top edge it stands on its last.
+        let lines = label.split('\n').count() as f64;
+        let first_baseline = if i == 0 {
+          anchor_y
+        } else {
+          anchor_y - (lines - 1.0) * line_pitch(tick_font)
+        };
+        svg.push_str(&frame_tick_label(
+          x,
+          first_baseline,
+          "middle",
+          label,
+          tick_label_fill,
+          tick_font,
         ));
       }
     }
@@ -13855,13 +13868,50 @@ fn render_frame(
           svg.push_str(&picture);
           continue;
         }
-        svg.push_str(&format!(
-          "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
-          y + center_to_baseline(tick_font),
+        // A multi-line label is centered on its tick as a block.
+        let lines = label.split('\n').count() as f64;
+        svg.push_str(&frame_tick_label(
+          anchor_x,
+          y + center_to_baseline(tick_font)
+            - (lines - 1.0) * line_pitch(tick_font) / 2.0,
+          anchor,
+          label,
+          tick_label_fill,
+          tick_font,
         ));
       }
     }
   }
+}
+
+/// One frame tick label whose first line has its baseline at `y`. A label
+/// with newlines (`"Mean\noutcome"`) is stacked one line per `<tspan>`,
+/// the way Wolfram draws it, instead of running together on one line.
+fn frame_tick_label(
+  x: f64,
+  y: f64,
+  anchor: &str,
+  label: &str,
+  fill: &str,
+  font: f64,
+) -> String {
+  let open = format!(
+    "<text x=\"{x:.2}\" y=\"{y:.2}\" fill=\"{fill}\" font-size=\"{font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">"
+  );
+  if !label.contains('\n') {
+    return format!("{open}{label}</text>\n");
+  }
+  let pitch = line_pitch(font);
+  let mut out = open;
+  for (i, line) in label.split('\n').enumerate() {
+    let dy = if i == 0 { 0.0 } else { pitch };
+    out.push_str(&format!(
+      "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+      tspan_line(line)
+    ));
+  }
+  out.push_str("</text>\n");
+  out
 }
 
 /// Wolfram's grid lines: mid gray, 0.2 points wide, under whatever
