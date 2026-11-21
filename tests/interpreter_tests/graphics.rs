@@ -7500,6 +7500,64 @@ mod plot3d {
     assert!(!unlit.contains("<feColorMatrix"), "{unlit}");
   }
 
+  /// A `Texture` in a `ParametricPlot3D` `PlotStyle` paints the surface with
+  /// the image, placed by `TextureCoordinateFunction` (with its arguments
+  /// scaled to 0..1 by default); the symbolic surface keeps the texture.
+  #[test]
+  fn parametric_plot3d_paints_a_texture() {
+    let torus = |opts: &str| {
+      format!(
+        "ParametricPlot3D[{{(2 + Cos[v]) Cos[u], (2 + Cos[v]) Sin[u], \
+         Sin[v]}}, {{u, 0, 2 Pi}}, {{v, 0, 2 Pi}}, PlotPoints -> 6, \
+         PlotStyle -> Directive[Texture[Image[{{{{{{1, 0, 0}}, \
+         {{0, 0, 1}}}}}}]]]{opts}]"
+      )
+    };
+    let svg = export_svg(&torus(", Axes -> False, Boxed -> False"));
+    assert!(svg.contains("<image"), "texture image drawn: {svg}");
+    assert!(svg.contains("<clipPath"), "{svg}");
+    // The extracted surface carries the texture and one texture coordinate
+    // per vertex.
+    clear_state();
+    assert_eq!(
+      interpret(&format!(
+        "gc = First[{}]; {{Length[Cases[gc[[2]], _Texture]], \
+         Length[VertexTextureCoordinates /. gc[[3]]] == Length[gc[[1]]]}}",
+        torus("")
+      ))
+      .unwrap(),
+      "{1, True}"
+    );
+    // By default the coordinates are the scaled parameters; a
+    // `TextureCoordinateFunction` of them repeats the image.
+    let coords = |opts: &str| {
+      clear_state();
+      interpret(&format!(
+        "MinMax /@ Transpose[VertexTextureCoordinates /. First[{}][[3]]]",
+        torus(opts)
+      ))
+      .unwrap()
+    };
+    assert_eq!(coords(""), "{{0., 1.}, {0., 1.}}");
+    assert_eq!(
+      coords(", TextureCoordinateFunction -> ({3 #4 + 0.5, 2 #5} &)"),
+      "{{0.5, 3.5}, {0., 2.}}"
+    );
+  }
+
+  /// Texture coordinates outside the unit square repeat the image: a facet
+  /// reaching across a period boundary draws the neighboring copy too.
+  #[test]
+  fn texture_coordinates_repeat_the_image() {
+    let svg = export_svg(
+      "Graphics3D[{Texture[Image[{{{1, 0, 0}, {0, 0, 1}}}]], \
+       Polygon[{{0, 0, 0}, {1, 0, 0}, {0, 1, 0}}, \
+       VertexTextureCoordinates -> {{1.5, 0.2}, {2.5, 0.2}, {1.5, 0.8}}]}]",
+    );
+    assert_eq!(svg.matches("<use ").count(), 2, "{svg}");
+    assert!(svg.contains("translate("), "{svg}");
+  }
+
   /// SphericalPlot3D is drawn with the data's own proportions (WL's
   /// `BoxRatios -> Automatic`) and honors `PlotRange`, `Boxed` and `Axes`
   /// like any `Graphics3D`; regression: a sphere came out as a flat disc in
