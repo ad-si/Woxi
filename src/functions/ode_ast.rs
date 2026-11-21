@@ -624,6 +624,15 @@ fn dsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // The term classifier only understands equations that are linear in y.
     // An equation it rejects may still be separable (`y' == g(x) h(y)`), so
     // try quadrature before giving up.
+    // `a x y' + b y + c y^2 + d x^k == 0` is a Riccati equation that
+    // linearizes to a Bessel equation.
+    Err(_)
+      if initial_conditions.is_empty()
+        && let Some(solution) =
+          solve_power_riccati(&ode_normalized, &y_name, &x_name) =>
+    {
+      return Ok(build_dsolve_result(solution, y_name, x_name, function_form));
+    }
     Err(err) => match solve_separable_first_order(
       &ode_expr,
       &y_name,
@@ -14175,6 +14184,179 @@ fn fresh_symbol_name(expr: &Expr, base: &str) -> Option<String> {
     crate::functions::calculus_ast::is_constant_wrt(expr, &candidate)
       .then_some(candidate)
   })
+}
+
+/// Replace every `y'[x]` in `expr` with `value`.
+fn replace_first_derivative(
+  expr: &Expr,
+  y_name: &str,
+  x_name: &str,
+  value: &Expr,
+) -> Expr {
+  if let Some((1, point)) = extract_derivative_order_and_point(expr, y_name)
+    && matches!(&point, Expr::Identifier(n) if n == x_name)
+  {
+    return value.clone();
+  }
+  map_children(expr, &|child| {
+    replace_first_derivative(child, y_name, x_name, value)
+  })
+}
+
+/// The Riccati equation with power coefficients
+/// `a x y' + b y + c y^2 + d x^k == 0` (constants `a, c, d, k` nonzero, `b`
+/// any constant). With `y = (a/c) x u'/u` it turns into the Bessel-type
+/// equation `x^2 u'' + (1 + b/a) x u' + (c d/a^2) x^k u == 0`, whose
+/// solutions are `u = x^p Z_ν(λ x^q)` with `p = -b/(2a)`, `q = k/2`,
+/// `ν = b/(a k)` and `λ = 2 Sqrt[c d/a^2]/k`. Through
+/// `Z_ν'(z) = Z_(ν-1)(z) - ν Z_ν(z)/z` the general solution is
+/// `y = (a/c) (p - q ν + λ q x^q (J_(ν-1)(z) + C[1] Y_(ν-1)(z)) /
+/// (J_ν(z) + C[1] Y_ν(z)))` with `z = λ x^q`.
+fn solve_power_riccati(
+  ode_normalized: &Expr,
+  y_name: &str,
+  x_name: &str,
+) -> Option<Expr> {
+  use crate::evaluator::evaluate_function_call_ast as ev;
+  let p_name = fresh_symbol_name(ode_normalized, "dy")?;
+  let y_sym_name = fresh_symbol_name(ode_normalized, "yv")?;
+  let p_sym = Expr::Identifier(p_name.clone());
+  let y_sym = Expr::Identifier(y_sym_name.clone());
+  let x = Expr::Identifier(x_name.to_string());
+  let replaced = replace_y_call(
+    &replace_first_derivative(ode_normalized, y_name, x_name, &p_sym),
+    y_name,
+    x_name,
+    &y_sym,
+  );
+  if contains_derivative(&replaced)
+    || !is_free_of_y(&replaced, y_name)
+    || replaced_has_call(&replaced, y_name)
+  {
+    return None;
+  }
+  let expanded = ev("Expand", &[replaced]).ok()?;
+  let coefficient = |e: &Expr, var: &Expr, n: i128| -> Option<Expr> {
+    ev("Coefficient", &[e.clone(), var.clone(), Expr::Integer(n)]).ok()
+  };
+  // The equation is polynomial in (y', y): degree 1 in y' with a
+  // y-free coefficient, degree 2 in y, and no y y' cross term.
+  let a_x = coefficient(&expanded, &p_sym, 1)?;
+  let rest = coefficient(&expanded, &p_sym, 0)?;
+  let b = coefficient(&rest, &y_sym, 1)?;
+  let c = coefficient(&rest, &y_sym, 2)?;
+  let d_x = coefficient(&rest, &y_sym, 0)?;
+  let rebuilt = plus(vec![
+    times(vec![a_x.clone(), p_sym.clone()]),
+    times(vec![b.clone(), y_sym.clone()]),
+    times(vec![c.clone(), pow(y_sym.clone(), Expr::Integer(2))]),
+    d_x.clone(),
+  ]);
+  let leftover = ev(
+    "Expand",
+    &[plus(vec![
+      expanded.clone(),
+      times(vec![Expr::Integer(-1), rebuilt]),
+    ])],
+  )
+  .ok()?;
+  if !matches!(leftover, Expr::Integer(0)) {
+    return None;
+  }
+  let is_const = |e: &Expr| {
+    crate::functions::calculus_ast::is_constant_wrt(e, x_name)
+      && crate::functions::calculus_ast::is_constant_wrt(e, &p_name)
+      && crate::functions::calculus_ast::is_constant_wrt(e, &y_sym_name)
+  };
+  let is_zero = |e: &Expr| matches!(e, Expr::Integer(0));
+  let simp = |e: Expr| ev("Simplify", &[e.clone()]).unwrap_or(e);
+  let a = simp(times(vec![a_x, pow(x.clone(), Expr::Integer(-1))]));
+  if !is_const(&a) || is_zero(&a) || !is_const(&b) || !is_const(&c) {
+    return None;
+  }
+  if is_zero(&c) || is_zero(&d_x) {
+    return None;
+  }
+  // d_x = d x^k: k = x d_x'/d_x must come out constant and nonzero.
+  let k = simp(times(vec![
+    x.clone(),
+    differentiate_expr(&d_x, x_name).ok()?,
+    pow(d_x.clone(), Expr::Integer(-1)),
+  ]));
+  if !is_const(&k) || is_zero(&k) {
+    return None;
+  }
+  let d = simp(times(vec![
+    d_x,
+    pow(x.clone(), times(vec![Expr::Integer(-1), k.clone()])),
+  ]));
+  if !is_const(&d) {
+    return None;
+  }
+
+  let half = || crate::functions::math_ast::make_rational(1, 2);
+  let inv = |e: &Expr| pow(e.clone(), Expr::Integer(-1));
+  let p = simp(times(vec![Expr::Integer(-1), b.clone(), half(), inv(&a)]));
+  let q = simp(times(vec![k.clone(), half()]));
+  let mut nu = simp(times(vec![b.clone(), inv(&a), inv(&k)]));
+  // A numeric order is taken non-negative; ±ν give the same family.
+  if let Some(v) = crate::functions::math_ast::try_eval_to_f64(&nu)
+    && v < 0.0
+  {
+    nu = simp(times(vec![Expr::Integer(-1), nu]));
+  }
+  let lambda = simp(times(vec![
+    Expr::Integer(2),
+    inv(&k),
+    make_sqrt(simp(times(vec![
+      c.clone(),
+      d.clone(),
+      pow(a.clone(), Expr::Integer(-2)),
+    ]))),
+  ]));
+  let x_q = pow(x.clone(), q.clone());
+  let z = times(vec![lambda.clone(), x_q.clone()]);
+  let nu_minus_1 = simp(plus(vec![nu.clone(), Expr::Integer(-1)]));
+  let constant = Expr::FunctionCall {
+    name: "C".to_string(),
+    args: vec![Expr::Integer(1)].into(),
+  };
+  let bessel_pair = |order: &Expr| {
+    plus(vec![
+      call("BesselJ", vec![order.clone(), z.clone()]),
+      times(vec![
+        constant.clone(),
+        call("BesselY", vec![order.clone(), z.clone()]),
+      ]),
+    ])
+  };
+  let a_over_c = times(vec![a.clone(), inv(&c)]);
+  let solution = times(vec![
+    a_over_c,
+    plus(vec![
+      p,
+      times(vec![Expr::Integer(-1), q.clone(), nu.clone()]),
+      times(vec![
+        lambda,
+        q,
+        x_q,
+        bessel_pair(&nu_minus_1),
+        inv(&bessel_pair(&nu)),
+      ]),
+    ]),
+  ]);
+  crate::evaluator::evaluate_expr_to_expr(&solution).ok()
+}
+
+/// Does `expr` still mention `y` as a function head (e.g. `y[2 x]`)?
+fn replaced_has_call(expr: &Expr, y_name: &str) -> bool {
+  match expr {
+    Expr::FunctionCall { name, .. } if name == y_name => true,
+    Expr::Identifier(name) if name == y_name => true,
+    _ => expr_children(expr)
+      .iter()
+      .any(|child| replaced_has_call(child, y_name)),
+  }
 }
 
 /// Replace every `y[x]` in `expr` with `value`.
