@@ -183,6 +183,11 @@ pub struct PlotSource {
   /// 1/GoldenRatio letterboxed into an `ImageSize -> {w, h}` frame).
   /// `None` = the ratio follows from `image_size`.
   pub aspect_ratio: Option<f64>,
+  /// The legend entries of a `Show` of several plots, each paired with the
+  /// index of the series it labels: every plot's `PlotLegends` survives
+  /// the merge, as Wolfram combines the `Legended` plots it is given.
+  /// Empty = the legend comes from `options` (a single plot).
+  pub legends: Vec<(usize, String)>,
   /// Whether the plot settles `PlotRange -> All` into the numeric range of
   /// its data, as WL's list plots (`ListPlot`, `ListLinePlot`) do: `Show`
   /// then keeps that range like an automatic one, clipping other graphics
