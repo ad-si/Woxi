@@ -15,7 +15,15 @@ mod cse;
 mod curve;
 mod dde;
 mod pde_mol;
+mod pde_mol2d;
+mod state_data;
 mod stiff;
+pub use state_data::{
+  iterate_ast as ndsolve_iterate_ast,
+  process_equations_ast as ndsolve_process_equations_ast,
+  process_solutions_ast as ndsolve_process_solutions_ast,
+  reinitialize_ast as ndsolve_reinitialize_ast,
+};
 
 // ─── DSolve ────────────────────────────────────────────────────────────
 
@@ -1844,6 +1852,20 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       },
       Err(e) => Err(e),
     });
+  }
+  if n_pos == 5 {
+    // `NDSolve[eqns, u, {x, …}, {y, …}, {t, …}]`: a PDE in two space
+    // variables and time.
+    let mut flat_eqs = Vec::new();
+    flatten_eq_list(&args[0], &mut flat_eqs);
+    let opts = pde_mol::MolOptions::from_rules(&args[n_pos..]);
+    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts) {
+      Some(mut result) => {
+        crate::evaluator::share_large_lists(&mut result, 0);
+        Ok(result)
+      }
+      None => Ok(unevaluated("NDSolve", args)),
+    };
   }
   if n_pos != 3 {
     return Ok(unevaluated("NDSolve", args));
@@ -7976,6 +7998,26 @@ enum StateTrigger {
   Condition(Expr),
 }
 
+/// Whether a `WhenEvent` event is a real-valued expression (a sum,
+/// product, power, negation or quotient) rather than a logical condition.
+fn is_arithmetic_event(expr: &Expr) -> bool {
+  match expr {
+    Expr::BinaryOp { op, .. } => matches!(
+      op,
+      BinaryOperator::Plus
+        | BinaryOperator::Minus
+        | BinaryOperator::Times
+        | BinaryOperator::Divide
+        | BinaryOperator::Power
+    ),
+    Expr::UnaryOp { op, .. } => *op == UnaryOperator::Minus,
+    Expr::FunctionCall { name, .. } => {
+      matches!(name.as_str(), "Plus" | "Times" | "Power")
+    }
+    _ => false,
+  }
+}
+
 /// A state event ready for integration. Its trigger is rewritten over the
 /// state placeholders; the action is kept as written, since a rule
 /// `f[x] -> value` in it names the state component it resets.
@@ -8042,6 +8084,12 @@ impl StateEvent {
       (raw.condition.clone(), None)
     };
     let trigger = match as_equal_pair(&condition) {
+      // A real-valued event `f` (not a logical condition) fires where it
+      // crosses zero, like `f == 0`.
+      None if is_arithmetic_event(&condition) => {
+        let rewritten = substitute_function_values(&condition, funcs, x_name);
+        StateTrigger::Crossing(NumFn::new(rewritten, var_names))
+      }
       Some((lhs, rhs)) => {
         let diff = Expr::FunctionCall {
           name: "Plus".to_string(),
@@ -8810,16 +8858,39 @@ fn integrate_leg(
         if !ev.active.get() {
           continue;
         }
-        let (Some(g0), Some(g1)) =
-          (prev_state_values[ei], state_value(ev, new_x, &new_state))
-        else {
+        let Some(g0) = prev_state_values[ei] else {
           continue;
         };
-        if !ev.fires(g0, g1) {
-          continue;
+        // The crossing is looked for between consecutive points the step's
+        // refinement visited (the last of them is `new_x`), so a trigger
+        // that crosses and recrosses within one nominal step still fires,
+        // and it is located with partial RK4 steps from the point before
+        // it, which are as short (and so as accurate) as the refinement
+        // found the step needs. Comparing only the step's two ends missed
+        // such a crossing, and one partial step across the whole nominal
+        // step was far off where the refinement had to subdivide it.
+        let mut base_x = x;
+        let mut base_state: &[f64] = &state;
+        let mut g_base = g0;
+        let mut found: Option<(f64, Vec<f64>)> = None;
+        for (xr, sr) in &refined {
+          let g = state_value(ev, *xr, sr);
+          if let Some(g) = g
+            && ev.fires(g_base, g)
+          {
+            found = Some((xr - base_x, sr.clone()));
+            break;
+          }
+          base_x = *xr;
+          base_state = sr;
+          if let Some(g) = g {
+            g_base = g;
+          }
         }
-        let (mut lo, mut hi) = (0.0_f64, h);
-        let mut hi_state = new_state.clone();
+        let Some((span, mut hi_state)) = found else {
+          continue;
+        };
+        let (mut lo, mut hi) = (0.0_f64, span);
         for _ in 0..60 {
           let mid = f64::midpoint(lo, hi);
           if mid == lo || mid == hi {
@@ -8829,32 +8900,33 @@ fn integrate_leg(
             residuals,
             funcs,
             state_offset,
-            &state,
-            x,
+            base_state,
+            base_x,
             mid,
             cached_m,
           )?
           else {
             break;
           };
-          match state_value(ev, x + mid, &s_mid) {
-            Some(g) if ev.fires(g0, g) => {
+          match state_value(ev, base_x + mid, &s_mid) {
+            Some(g) if ev.fires(g_base, g) => {
               hi = mid;
               hi_state = s_mid;
             }
             _ => lo = mid,
           }
         }
-        if !ev.guard_holds(x + hi, &hi_state, state_events.var_names) {
+        let t_hit = base_x + hi;
+        if !ev.guard_holds(t_hit, &hi_state, state_events.var_names) {
           continue;
         }
         // "Earliest" along the leg's direction (a backward leg runs down).
         let dir = h.signum();
         if earliest
           .as_ref()
-          .is_none_or(|(t, _, _)| dir * (x + hi) < dir * *t)
+          .is_none_or(|(t, _, _)| dir * t_hit < dir * *t)
         {
-          earliest = Some((x + hi, hi_state, ei));
+          earliest = Some((t_hit, hi_state, ei));
         }
       }
       if let Some((te, state_at, ei)) = earliest {
@@ -10031,16 +10103,27 @@ const DDE_NOMINAL_STEPS: usize = 10_000;
 const DDE_INTERPOLATION_NODES: usize = 6;
 
 /// The value at `x` of the polynomial through the points `(xs, ys)`.
+///
+/// The Lagrange basis polynomials sum to 1 only up to rounding, so the
+/// weighted sum over equal values wobbles by a few ulps (`0.1 ± 3e-17`);
+/// the polynomial through equal values is that value, which a flat
+/// stretch of an `NDSolve` solution has to reproduce exactly (a plot of
+/// it would otherwise span the rounding noise).
 fn lagrange_value(xs: &[f64], ys: &[f64], x: f64) -> f64 {
+  if let Some((first, rest)) = ys.split_first()
+    && rest.iter().all(|y| y == first)
+  {
+    return *first;
+  }
   let mut sum = 0.0;
   for (j, (xj, yj)) in xs.iter().zip(ys).enumerate() {
-    let mut w = *yj;
+    let mut basis = 1.0;
     for (k, xk) in xs.iter().enumerate() {
       if k != j {
-        w *= (x - xk) / (xj - xk);
+        basis *= (x - xk) / (xj - xk);
       }
     }
-    sum += w;
+    sum += yj * basis;
   }
   sum
 }
@@ -12012,6 +12095,14 @@ fn compile_complex(expr: &Expr, var_names: &[String]) -> Option<CExpr> {
         "Coth" => Some(|z: Cx| z.cosh().mul(z.sinh().recip())),
         "Sech" => Some(|z: Cx| z.cosh().recip()),
         "Csch" => Some(|z: Cx| z.sinh().recip()),
+        "Re" => Some(|z: Cx| Cx::real(z.re)),
+        "Im" => Some(|z: Cx| Cx::real(z.im)),
+        "Conjugate" => Some(|z: Cx| Cx {
+          re: z.re,
+          im: -z.im,
+        }),
+        "Abs" => Some(|z: Cx| Cx::real(z.re.hypot(z.im))),
+        "Arg" => Some(|z: Cx| Cx::real(z.im.atan2(z.re))),
         _ => None,
       };
       if let Some(f) = unary
@@ -15982,18 +16073,7 @@ fn interp_1d_xy_f64(xs: &[f64], ys: &[f64], x_val: f64, order: usize) -> f64 {
   }
   let eff_order = order.min(n - 1).max(1);
   let (start, end) = lagrange_window(n, lo, eff_order);
-  let m = end - start;
-  let mut result = 0.0;
-  for i in 0..m {
-    let mut basis = 1.0;
-    for j in 0..m {
-      if j != i {
-        basis *= (x_val - xs[start + j]) / (xs[start + i] - xs[start + j]);
-      }
-    }
-    result += ys[start + i] * basis;
-  }
-  result
+  lagrange_value(&xs[start..end], &ys[start..end], x_val)
 }
 
 /// `d`-th derivative at `x_val` of the Lagrange polynomial through the whole
@@ -17236,19 +17316,7 @@ fn lagrange_interpolate(
     ys.push(y);
   }
 
-  // Lagrange basis polynomials
-  let m = xs.len();
-  let mut result = 0.0;
-  for i in 0..m {
-    let mut basis = 1.0;
-    for j in 0..m {
-      if j != i {
-        basis *= (x_val - xs[j]) / (xs[i] - xs[j]);
-      }
-    }
-    result += ys[i] * basis;
-  }
-  Ok(result)
+  Ok(lagrange_value(&xs, &ys, x_val))
 }
 
 /// Extract (x, y) from a List[x, y] expression
@@ -19760,6 +19828,22 @@ fn dsolve_linear_system(
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// `Re`, `Im`, `Abs`, `Arg` and `Conjugate` of a complex subexpression
+  /// compile to machine arithmetic.
+  #[test]
+  fn compiles_real_parts_of_complex_subexpressions() {
+    let vars = ["x".to_string(), "y".to_string()];
+    let eval = |src: &str| {
+      let e = crate::syntax::string_to_expr(src).unwrap();
+      CompiledReal::new(&e, &vars).unwrap().eval(&[3.0, 4.0])
+    };
+    assert_eq!(eval("Re[(x + I y)^2]"), -7.0);
+    assert_eq!(eval("Im[(x + I y)^2 + Complex[1, -2]]"), 22.0);
+    assert_eq!(eval("Abs[x + I y]"), 5.0);
+    assert_eq!(eval("Arg[x + I y]"), 4f64.atan2(3.0));
+    assert_eq!(eval("Im[Conjugate[x + I y]]"), -4.0);
+  }
 
   /// A hand-built 4x4 periodic tridiagonal system whose two corners
   /// (`alpha` at the bottom-left, `beta` at the top-right — see

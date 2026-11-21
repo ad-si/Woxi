@@ -7,8 +7,7 @@
 //! tick labels) to [`origin_axes_svg`].
 
 use crate::functions::plot::{
-  SeriesStyle, axis_tick_step, format_tick_in_range, minor_tick_divisions,
-  style_stroke,
+  SeriesStyle, axis_tick_step, minor_tick_divisions, style_stroke,
 };
 use crate::functions::plot_padding::{TICK_LABEL_GAP, ascent, line_height};
 
@@ -173,9 +172,9 @@ impl AxisTicks {
         let v = if v.abs() < minor * 1e-6 { 0.0 } else { v };
         ticks.majors.push((
           v,
-          crate::functions::graphics::svg_escape(&format_tick_in_range(
-            v, major, min, max,
-          )),
+          crate::functions::graphics::svg_escape(
+            &crate::functions::plot::format_axis_tick(v, major, min, max),
+          ),
         ));
       } else {
         ticks.minors.push(v);
@@ -193,6 +192,12 @@ impl AxisTicks {
 /// A rough width for a tick label's markup: its visible characters at
 /// ~0.6 em each.
 fn label_width(markup: &str) -> f64 {
+  // A typeset picture (a stacked fraction) is as wide as it was laid out.
+  if let Some((w, _)) =
+    crate::functions::graphics::axes_label_picture_size(markup)
+  {
+    return w * AXIS_TICK_FONT / crate::functions::plot_padding::TICK_FONT;
+  }
   let mut visible = 0usize;
   let mut in_tag = false;
   let mut in_entity = false;
@@ -306,12 +311,29 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
        stroke=\"{color}\" stroke-width=\"{width:.0}\"/>\n"
     ));
   };
+  // `AxesStyle -> Arrowheads[…]`: heads on the axis line, from its low
+  // end to its high end, sized against the plotting area's width and
+  // painted like the line.
+  let heads = |svg: &mut String,
+               i: usize,
+               color: &str,
+               from: (f64, f64),
+               to: (f64, f64)| {
+    if let Some(spec) =
+      a.axes_style[i].as_ref().and_then(|s| s.arrowheads.as_ref())
+    {
+      svg.push_str(&crate::functions::graphics::axis_arrowheads_svg(
+        spec, from, to, w, sf, color,
+      ));
+    }
+  };
   let major_len = AXIS_MAJOR_TICK_LEN * sf;
   let minor_len = AXIS_MINOR_TICK_LEN * sf;
 
   if a.show.0 {
     let (axis_line, mark, fill) = paint(0);
     line(&mut svg, &axis_line, (x0, axis_y, x0 + w, axis_y));
+    heads(&mut svg, 0, &axis_line.0, (x0, axis_y), (x0 + w, axis_y));
     if let Some((ticks, _)) = a.ticks {
       for &v in &ticks.minors {
         let x = px(v);
@@ -333,6 +355,16 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           continue;
         }
         // The top of the label sits 3 pt below the axis.
+        if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+          label,
+          (x, axis_y + TICK_LABEL_GAP * sf),
+          (0.5, 0.0),
+          font,
+          &fill,
+        ) {
+          svg.push_str(&picture);
+          continue;
+        }
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
@@ -346,6 +378,7 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
   if a.show.1 {
     let (axis_line, mark, fill) = paint(1);
     line(&mut svg, &axis_line, (axis_x, y0, axis_x, y0 + h));
+    heads(&mut svg, 1, &axis_line.0, (axis_x, y0 + h), (axis_x, y0));
     if let Some((_, ticks)) = a.ticks {
       for &v in &ticks.minors {
         let y = py(v);
@@ -365,6 +398,16 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           && crossing_label_blocked((axis_x - x0) / sf)
           && (y - axis_y).abs() < font * 0.6
         {
+          continue;
+        }
+        if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+          label,
+          (axis_x - TICK_LABEL_GAP * sf, y),
+          (1.0, 0.5),
+          font,
+          &fill,
+        ) {
+          svg.push_str(&picture);
           continue;
         }
         svg.push_str(&format!(

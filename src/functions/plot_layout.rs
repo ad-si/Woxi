@@ -11,7 +11,7 @@
 use crate::InterpreterError;
 use crate::functions::plot::{
   DEFAULT_ASPECT_RATIO, PlotOptions, collapse_style_for_single_series,
-  format_tick_in_range, parse_image_size, plot_theme,
+  parse_image_size, plot_theme,
 };
 use crate::functions::plot_axes::{AXIS_TICK_FONT, AxisScale, AxisTicks};
 use crate::syntax::Expr;
@@ -175,9 +175,9 @@ fn panel_ticks(
             let v = if v.abs() < step * 1e-6 { 0.0 } else { v };
             (
               v,
-              crate::functions::graphics::svg_escape(&format_tick_in_range(
-                v, step, lo, hi,
-              )),
+              crate::functions::graphics::svg_escape(
+                &crate::functions::plot::format_axis_tick(v, step, lo, hi),
+              ),
             )
           })
           .collect();
