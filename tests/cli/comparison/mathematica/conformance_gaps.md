@@ -5582,6 +5582,18 @@ draw the same surfaces, but the primitive tree differs from wolframscript's:
 
 The adaptive samplers are not decoded, so these cases are skip-listed.
 
+### `Plot3D` draws clipped parts and jumps without WL's caps and refinement
+
+- Heights outside the vertical `PlotRange` (explicit, or the automatic range
+  that clips outliers) are flattened onto the box face in the surface's own
+  color; WL cuts the surface at the face and fills the cut with the
+  `ClippingStyle -> Automatic` light gray cap.
+- Without adaptive refinement, a jump inside the last grid cell (e.g. a
+  `Sum` whose real upper limit crosses an integer at the domain's edge) is
+  drawn as one sloped strip across the cell; WL refines it into a near
+  vertical wall that the surface in front hides.
+
+
 ### `Plot` samples just inside the interval's ends
 
 wolframscript's first and last samples sit about `1*^-6` of the range inside
@@ -5938,8 +5950,8 @@ doesn't pin down either rule, so both stay as they are.
 ### `Texture` and `VertexTextureCoordinates`
 
 A textured convex `Polygon` in `Graphics3D` is drawn with its image (per-triangle
-clip path and affine matrix), but the image is not lit: Wolfram shades it with
-the scene lighting. Textured concave or holed polygons render as plain
+clip path and affine matrix), shaded by the scene lighting of a white surface
+(a color-matrix filter). Textured concave or holed polygons render as plain
 default-blue faces. This cannot be checked against wolframscript by diffing SVG
 (it rasterizes 3D output).
 
@@ -6911,8 +6923,14 @@ internal hash order. Woxi keeps input order.
   image, and WL draws long edges as splines through the layers. The
   automatic layout of a connected directed acyclic graph with several
   undirected cycles (a Hasse diagram) is layered the same way, with the
-  layers one unit apart; WL centers each layer, Woxi packs it from the
-  left.
+  layers one unit apart. Within a layer Woxi places the vertices at least
+  one unit apart near the median of their neighbors and snaps them to the
+  unit grid of the widest layer (halves to the right), so the drawing is
+  balanced like WL's; WL's exact coordinate assignment is not decoded, so
+  a symmetric drawing (a diamond) can come out half a unit off center.
+- **`GraphPlot` `PlotStyle`**: Woxi applies `PlotStyle -> s` to the edges
+  only (unless `EdgeStyle` is given); how WL combines it with the default
+  vertex style is not verified.
 - **`"GridEmbedding"` of a disconnected graph**: Woxi now lays out each
   component on its own unit lattice, pads its bounding rectangle by one
   eighth of the mean sum of coordinate spans plus `0.00001`, and packs
@@ -10519,6 +10537,23 @@ scene about 4% larger than wolframscript, so the outermost solids touch the
 picture's top and bottom edges. With an explicit `ViewAngle` the scale comes
 from the view volume alone (calibrated without `SphericalRegion`); how
 wolframscript combines the two has not been measured.
+
+### `WaveletScalogram` frame coordinates are inferred
+
+The scalogram's shape (`AspectRatio -> 1/GoldenRatio`, 2% plot range
+padding), its octave labels on the right edge and the sample-index
+horizontal coordinates were measured from a stored notebook rendering, not
+diffed against `wolframscript`. Explicit vertical `FrameTicks` positions are
+read in octave units; Wolfram's own vertical coordinate system for the
+scalogram is unverified, as are the default tick labels for a
+`DiscreteWaveletData` scalogram and its default color function.
+
+A stored rendering of a Morlet scalogram over a sine with a short gap also
+shows the coarsest octave colored mostly by the edges and the gap, whereas
+Woxi's coarsest octave also resonates with the sine itself. The scales agree
+with Wolfram's (`"Scales"`), so the difference is probably in the boundary
+extension or the magnitude normalization; it has not been diffed against
+`wolframscript`.
 
 ### Tick side of 3D axes crossing at the box center
 

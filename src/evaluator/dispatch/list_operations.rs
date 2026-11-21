@@ -4560,8 +4560,10 @@ pub fn dispatch_list_operations(
       let max_iter = if pos.len() == 3 {
         // The iteration bound must be a non-negative integer; anything else
         // (e.g. All) is rejected with intnm rather than silently ignored,
-        // which would otherwise run to the internal iteration cap.
+        // which would otherwise iterate without bound. Infinity is the
+        // default.
         match expr_to_i128(&pos[2]) {
+          _ if is_infinity_symbol(&pos[2]) => None,
           Some(n) if n >= 0 => Some(n),
           _ => {
             crate::emit_message(&format!(

@@ -257,6 +257,10 @@ pub(crate) struct Triangle {
 pub(crate) struct TriangleTexture {
   pub image: std::sync::Arc<image::RgbImage>,
   pub uv: [(f64, f64); 3],
+  /// The lit color of a white surface at this triangle: the image's
+  /// colors are multiplied by it, so the scene lighting shades a textured
+  /// face just as it shades a plain one.
+  pub shade: (u8, u8, u8),
 }
 
 /// Largest scene `painter_order` refines: candidate pairs come from a sweep
@@ -2251,6 +2255,9 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut mesh_mode = MeshMode::Default;
   let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
+  // automatic vertical range clips outliers off.
+  let mut keep_z_outliers = false;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut color_fn = FacetColorFunction::default();
@@ -2356,6 +2363,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          keep_z_outliers = plot_range_keeps_z_outliers(replacement);
           // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
           // full form `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds
           // all three; the horizontal bounds narrow the plotted domain, so
@@ -2532,6 +2540,26 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Plot3D: function produced no finite values in the given range".into(),
     ));
+  }
+
+  // The automatic vertical range drops outlying heights, as WL's does: a
+  // pole or a jump at the domain's edge is cut off instead of squashing
+  // the rest of the surface into a sliver of the box.
+  if !keep_z_outliers {
+    let region_masks = region_masks.as_ref();
+    let kept = grids.iter().enumerate().flat_map(|(s, grid)| {
+      grid.iter().enumerate().flat_map(move |(i, row)| {
+        row.iter().enumerate().filter_map(move |(j, &z)| {
+          region_masks.is_none_or(|masks| masks[s][i][j]).then_some(z)
+        })
+      })
+    });
+    if let Some((lo, hi)) =
+      crate::functions::plot::list_value_extent(kept, false)
+    {
+      global_z_min = lo;
+      global_z_max = hi;
+    }
   }
 
   // A numeric `Filling` level is part of the picture: the automatic
@@ -8239,6 +8267,7 @@ fn fan_texture(
   Some(TriangleTexture {
     image: image.clone(),
     uv: [coords[0], coords[i + 1], coords[i + 2]],
+    shade: (255, 255, 255),
   })
 }
 
@@ -8309,8 +8338,24 @@ fn emit_textured_triangle(
   } else {
     String::new()
   };
+  // Shade the image by the lit color of a white surface: a color matrix
+  // scales each channel, one filter per distinct shade.
+  let filter_attr = if tex.shade == (255, 255, 255) {
+    String::new()
+  } else {
+    let (r, g, b) = tex.shade;
+    let fid = format!("texshade{r:02x}{g:02x}{b:02x}");
+    if !ids.iter().any(|(k, id)| k.is_null() && *id == fid) {
+      ids.push((std::ptr::null(), fid.clone()));
+      let (r, g, b) = (r as f64 / 255.0, g as f64 / 255.0, b as f64 / 255.0);
+      svg.push_str(&format!(
+        "<defs><filter id=\"{fid}\" color-interpolation-filters=\"sRGB\"><feColorMatrix type=\"matrix\" values=\"{r:.4} 0 0 0 0 0 {g:.4} 0 0 0 0 0 {b:.4} 0 0 0 0 0 1 0\"/></filter></defs>\n"
+      ));
+    }
+    format!(" filter=\"url(#{fid})\"")
+  };
   svg.push_str(&format!(
-    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{opacity_attr}><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
+    "<clipPath id=\"{clip}\"><polygon points=\"{:.1},{:.1} {:.1},{:.1} {:.1},{:.1}\"/></clipPath>\n<g clip-path=\"url(#{clip})\"{filter_attr}{opacity_attr}><use href=\"#{id}\" transform=\"matrix({a:.6} {b:.6} {c:.6} {d:.6} {e:.4} {f:.4})\"/></g>\n",
     clip_corners[0].0,
     clip_corners[0].1,
     clip_corners[1].0,
@@ -14626,7 +14671,23 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         depth: depth(center, &camera),
         color: vertex_colors.map_or(color, average_color),
         opacity: prim_opacity,
-        texture: fan_texture(prim, prim_style, i, tri_count),
+        texture: fan_texture(prim, prim_style, i, tri_count).map(|mut t| {
+          // The texture takes the place of the surface color, so the
+          // lighting is that of a white surface.
+          let mut white = prim_style.clone();
+          white.color = None;
+          white.back_color = None;
+          t.shade = shade_facet(
+            SurfaceDefault::Plain((255, 255, 255)),
+            None,
+            Some(&white),
+            normal,
+            center,
+            &scene,
+          )
+          .0;
+          t
+        }),
         vertex_colors,
       });
     }
@@ -14814,7 +14875,24 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     py_min = f64::INFINITY;
     py_max = f64::NEG_INFINITY;
   }
-  {
+  // In a picture of fixed width and height, an invisible box around an
+  // automatic range with nothing tied to it (no axes, no sphere framing, no
+  // view volume) is left out: the contents themselves are fitted to the
+  // frame. A Demonstration's unboxed cylinder of fixed volume at
+  // `ImageSize -> {150, 150}` fills 95–98 % of the frame in all four
+  // snapshots, whether it is tall and thin or short and wide. A picture
+  // given only a width keeps the box's margins.
+  let fit_contents = !show_box
+    && explicit_height
+    && !full_width
+    && !aspect_full
+    && !show_axes
+    && plot_range.is_none()
+    && partial_range.is_none()
+    && !spherical_region
+    && view_angle.is_none()
+    && px_min.is_finite();
+  if !fit_contents {
     for &corner in &box_corners {
       let (px, py) = project(corner, &camera);
       px_min = px_min.min(px);
@@ -16052,6 +16130,18 @@ fn with_prolog_epilog(
 /// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
 /// by every 3D height-field plot (`Plot3D`, `ListPlot3D`) alongside the
 /// full per-axis form `parse_axis_ranges` handles.
+/// Whether a `Plot3D` `PlotRange` asks for every sampled height, outliers
+/// included: `All`, or `All` in the vertical slot of a three-axis spec.
+fn plot_range_keeps_z_outliers(expr: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  match &val {
+    e if is_all(e) => true,
+    Expr::List(items) if items.len() == 3 => is_all(&items[2]),
+    _ => false,
+  }
+}
+
 fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let Expr::List(items) = expr else {
     return None;
