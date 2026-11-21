@@ -6205,6 +6205,23 @@ Still different:
 - `DiscretePlot`: `ExtentSize`.
 - `Grid`: `ItemSize`.
 
+### Automatic histogram bins are too narrow for large samples
+
+`HistogramList`/`Histogram` without a bin spec take the Freedman–Diaconis
+width `2 IQR / n^(1/3)` rounded to 1, 2 or 5 times a power of ten. That
+matches Wolfram for small and medium samples (all the `HistogramList` unit
+tests, and samples of 10 to a few hundred skewed means, where Wolfram uses
+widths of 0.2, 0.1, 0.05 and 0.02). For a sample of 10,000 reals from
+`SkewNormalDistribution[0, 1, 8]`, Wolfram (14.1, from a stored notebook
+snapshot) draws bins of width 0.2. Its own bin counts put the IQR at about
+0.835, so the Freedman–Diaconis estimate is 0.078, which Woxi rounds to 0.1.
+Wolfram's widths are about twice as wide here, so for large `n` it is not
+using plain Freedman–Diaconis. Two rules fit all of these observations: one
+caps the `n` in the estimate somewhere between about 400 and 1,300, and the
+other switches to Sturges' rule for large samples. Without a `wolframscript`
+run on deterministic large data, there is not enough evidence to choose
+between them.
+
 ### Curve meshes: remaining differences
 
 `Mesh`, `MeshFunctions`, `MeshStyle` and `MeshShading` on the curves of
