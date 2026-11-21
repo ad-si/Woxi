@@ -269,6 +269,75 @@ pub enum ControlState {
   },
 }
 
+/// Whether two expressions are the same up to rounding in their machine
+/// reals: equal structure, with every pair of machine reals within a few
+/// units in the last place of each other. Everything else (exact numbers,
+/// symbols, strings) has to match exactly.
+fn equal_up_to_machine_rounding(
+  a: &woxi::syntax::Expr,
+  b: &woxi::syntax::Expr,
+) -> bool {
+  use woxi::syntax::Expr;
+  fn all_equal(xs: &[Expr], ys: &[Expr]) -> bool {
+    xs.len() == ys.len()
+      && xs
+        .iter()
+        .zip(ys)
+        .all(|(x, y)| equal_up_to_machine_rounding(x, y))
+  }
+  match (a, b) {
+    (Expr::Real(x), Expr::Real(y)) => {
+      x == y
+        || (x.is_finite()
+          && y.is_finite()
+          && (x - y).abs() <= 8.0 * f64::EPSILON * x.abs().max(y.abs()))
+    }
+    (Expr::List(xs), Expr::List(ys)) => all_equal(xs, ys),
+    (
+      Expr::FunctionCall { name: f, args: xs },
+      Expr::FunctionCall { name: g, args: ys },
+    ) => f == g && all_equal(xs, ys),
+    (
+      Expr::BinaryOp {
+        op: p,
+        left: l1,
+        right: r1,
+      },
+      Expr::BinaryOp {
+        op: q,
+        left: l2,
+        right: r2,
+      },
+    ) => {
+      p == q
+        && equal_up_to_machine_rounding(l1, l2)
+        && equal_up_to_machine_rounding(r1, r2)
+    }
+    (
+      Expr::UnaryOp { op: p, operand: x },
+      Expr::UnaryOp { op: q, operand: y },
+    ) => p == q && equal_up_to_machine_rounding(x, y),
+    (
+      Expr::Rule {
+        pattern: p1,
+        replacement: r1,
+      },
+      Expr::Rule {
+        pattern: p2,
+        replacement: r2,
+      },
+    ) => {
+      equal_up_to_machine_rounding(p1, p2)
+        && equal_up_to_machine_rounding(r1, r2)
+    }
+    (Expr::Real(_), _) | (_, Expr::Real(_)) => false,
+    _ => {
+      woxi::syntax::expr_to_source_form(a)
+        == woxi::syntax::expr_to_source_form(b)
+    }
+  }
+}
+
 impl ControlState {
   pub fn name(&self) -> &str {
     match self {
@@ -439,7 +508,18 @@ impl ControlState {
         // Source form, like the choices: a `TraditionalForm[…]` value has
         // to stay that, not turn into its box rendering.
         let form = woxi::syntax::expr_to_source_form(&expr);
-        if let Some(i) = values.iter().position(|v| *v == form) {
+        // A value saved by another Wolfram build can differ from the
+        // choice recomputed here in the last bits of its machine reals
+        // (`0.23904572186687875` vs `0.23904572186687872`); it is still
+        // that choice, so the popup shows it selected.
+        let index = values.iter().position(|v| *v == form).or_else(|| {
+          let saved = woxi::syntax::string_to_expr(&form).ok()?;
+          values.iter().position(|v| {
+            woxi::syntax::string_to_expr(v)
+              .is_ok_and(|choice| equal_up_to_machine_rounding(&choice, &saved))
+          })
+        });
+        if let Some(i) = index {
           *current_index = i;
           *overflow = None;
         } else {
@@ -4887,6 +4967,43 @@ mod tests {
       _ => None,
     });
     assert_eq!(selected, Some((1, None)));
+  }
+
+  /// A popup value saved by Wolfram whose machine reals differ from the
+  /// choice recomputed here only by rounding (one ulp) still selects that
+  /// choice instead of leaving the popup blank; a genuinely different value
+  /// or an exact one that merely rounds close does not.
+  #[test]
+  fn saved_value_selects_choice_equal_up_to_rounding() {
+    let code = r#"Manipulate[p,
+      {{p, {1, 0.1 + 0.2}, "presets"},
+        {{1, 0.1 + 0.2} -> "first", {2, 0.5} -> "second"}, PopupMenu}
+    ]"#;
+    let selection = |saved: &str| {
+      let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+      let mut state =
+        ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+      state.apply_saved_variables(&[("p".to_string(), saved.to_string())]);
+      state.controls.iter().find_map(|c| match c {
+        ControlState::Discrete {
+          current_index,
+          overflow,
+          ..
+        } => Some((*current_index, overflow.clone())),
+        _ => None,
+      })
+    };
+    // `0.1 + 0.2` is 0.30000000000000004 here, one ulp above 0.3.
+    assert_eq!(selection("{1, 0.3}"), Some((0, None)));
+    assert_eq!(selection("{2, 0.5000000000000001}"), Some((1, None)));
+    assert_eq!(
+      selection("{1, 0.31}"),
+      Some((0, Some("{1, 0.31}".to_string())))
+    );
+    assert_eq!(
+      selection("{2, 1/2}"),
+      Some((0, Some("{2, 1/2}".to_string())))
+    );
   }
 
   /// A hidden `ControlType -> None` variable whose default needs helper code
