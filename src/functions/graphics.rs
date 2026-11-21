@@ -12151,17 +12151,24 @@ fn emit_polygon_vertex_gradient(
     }
     hole_indices.push((start..all_pts.len()).collect::<Vec<_>>());
   }
+  // A self-crossing outline is filled by the even-odd rule, the same as a
+  // flat-colored one: the blend is clipped to that region. Every point of
+  // the even-odd region lies in an odd number of the fan's triangles (so in
+  // at least one), which makes the fan a complete cover of it, unlike an
+  // ear-clipping of a non-simple ring.
+  let self_crossing = holes.is_empty() && polygon_self_intersects(points);
   // Wolfram blends a convex polygon over the fan of triangles from its
   // first vertex; anything else is ear-clipped.
-  let convex = holes.is_empty() && points.len() >= 3 && {
-    let n = points.len();
-    let turn = |i: usize| {
-      let (a, b, c) = (points[i], points[(i + 1) % n], points[(i + 2) % n]);
-      (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0)
+  let convex = self_crossing
+    || holes.is_empty() && points.len() >= 3 && {
+      let n = points.len();
+      let turn = |i: usize| {
+        let (a, b, c) = (points[i], points[(i + 1) % n], points[(i + 2) % n]);
+        (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0)
+      };
+      let turns: Vec<f64> = (0..n).map(turn).collect();
+      turns.iter().all(|&t| t >= 0.0) || turns.iter().all(|&t| t <= 0.0)
     };
-    let turns: Vec<f64> = (0..n).map(turn).collect();
-    turns.iter().all(|&t| t >= 0.0) || turns.iter().all(|&t| t <= 0.0)
-  };
   let triangles: Vec<[usize; 3]> = if convex {
     (1..points.len() - 1).map(|i| [0, i, i + 1]).collect()
   } else {
@@ -12188,6 +12195,46 @@ fn emit_polygon_vertex_gradient(
       a: w * tri_c[0].a + u * tri_c[1].a + v * tri_c[2].a,
     };
     (p, c)
+  };
+  // Facets about 4 points across, so the blend reads as smooth.
+  let subdivs: Vec<usize> = triangles
+    .iter()
+    .map(|&[i, j, k]| {
+      let tri_p = [all_pts[i], all_pts[j], all_pts[k]];
+      let longest = [(0, 1), (1, 2), (2, 0)]
+        .iter()
+        .map(|&(a, b)| {
+          let (pa, pb) = (screen(tri_p[a]), screen(tri_p[b]));
+          ((pa.0 - pb.0).powi(2) + (pa.1 - pb.1).powi(2)).sqrt()
+        })
+        .fold(0.0, f64::max);
+      ((longest / 4.0).ceil() as usize).clamp(8, 48)
+    })
+    .collect();
+  // A polygon of many large (e.g. overlapping) triangles would otherwise
+  // emit hundreds of thousands of facets: coarsen them all evenly so the
+  // whole blend stays within a fixed facet budget.
+  const MAX_FACETS: f64 = 40_000.0;
+  let total: f64 = subdivs.iter().map(|&s| (s * s) as f64).sum();
+  let scale = if total > MAX_FACETS {
+    (MAX_FACETS / total).sqrt()
+  } else {
+    1.0
+  };
+  let clip_open = if self_crossing {
+    let mut d = String::new();
+    for (i, &p) in points.iter().enumerate() {
+      let (x, y) = screen(p);
+      d.push_str(&format!("{}{x:.2},{y:.2} ", if i == 0 { "M" } else { "L" }));
+    }
+    let clip_id = format!("vcclip{}", out.len());
+    out.push_str(&format!(
+      "<clipPath id=\"{clip_id}\"><path d=\"{}Z\" clip-rule=\"evenodd\"/></clipPath>\n<g clip-path=\"url(#{clip_id})\">\n",
+      d
+    ));
+    true
+  } else {
+    false
   };
   let mut emit_tri = |p0: (f64, f64),
                       c0: Color,
@@ -12226,18 +12273,21 @@ fn emit_polygon_vertex_gradient(
       fill_opacity,
     ));
   };
-  for [i, j, k] in triangles {
+  // A facet wholly beyond one edge of the picture cannot be seen.
+  let offscreen = |ps: [(f64, f64); 3]| {
+    let s = ps.map(screen);
+    s.iter().all(|p| p.0 < 0.0)
+      || s.iter().all(|p| p.0 > svg_w)
+      || s.iter().all(|p| p.1 < 0.0)
+      || s.iter().all(|p| p.1 > svg_h)
+  };
+  for (&[i, j, k], &subdiv) in triangles.iter().zip(&subdivs) {
     let tri_p = [all_pts[i], all_pts[j], all_pts[k]];
+    if offscreen(tri_p) {
+      continue;
+    }
     let tri_c = [all_colors[i], all_colors[j], all_colors[k]];
-    // Facets about 4 points across, so the blend reads as smooth.
-    let longest = [(0, 1), (1, 2), (2, 0)]
-      .iter()
-      .map(|&(a, b)| {
-        let (pa, pb) = (screen(tri_p[a]), screen(tri_p[b]));
-        ((pa.0 - pb.0).powi(2) + (pa.1 - pb.1).powi(2)).sqrt()
-      })
-      .fold(0.0, f64::max);
-    let subdiv = ((longest / 4.0).ceil() as usize).clamp(8, 48);
+    let subdiv = ((subdiv as f64 * scale).round() as usize).max(2);
     let n = subdiv as f64;
     for row in 0..subdiv {
       for col in 0..(subdiv - row) {
@@ -12248,13 +12298,20 @@ fn emit_polygon_vertex_gradient(
         let (p00, c00) = at(&tri_p, &tri_c, u0, v0);
         let (p10, c10) = at(&tri_p, &tri_c, u1, v0);
         let (p01, c01) = at(&tri_p, &tri_c, u0, v1);
-        emit_tri(p00, c00, p10, c10, p01, c01);
+        if !offscreen([p00, p10, p01]) {
+          emit_tri(p00, c00, p10, c10, p01, c01);
+        }
         if col + row < subdiv - 1 {
           let (p11, c11) = at(&tri_p, &tri_c, u1, v1);
-          emit_tri(p10, c10, p11, c11, p01, c01);
+          if !offscreen([p10, p11, p01]) {
+            emit_tri(p10, c10, p11, c11, p01, c01);
+          }
         }
       }
     }
+  }
+  if clip_open {
+    out.push_str("</g>\n");
   }
 }
 

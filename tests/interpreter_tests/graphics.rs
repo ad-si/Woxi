@@ -3530,6 +3530,41 @@ mod graphics {
           assert!(svg.matches("<polygon").count() > 2);
         }
 
+        /// A self-crossing outline is filled by the even-odd rule whether
+        /// it is flat-colored or blended: the blend is clipped to the
+        /// even-odd region, so a pentagram's center stays hollow.
+        #[test]
+        fn self_crossing_polygon_blend_is_clipped_even_odd() {
+          let svg = export_svg(
+            "Graphics[Polygon[Table[{Cos[4 Pi k/5], Sin[4 Pi k/5]}, \
+             {k, 0, 4}], VertexColors -> {Red, Green, Blue, Yellow, Cyan}]]",
+          );
+          assert!(svg.contains("clip-rule=\"evenodd\""));
+          assert!(svg.matches("<polygon").count() > 5);
+          // A simple (non-crossing) outline needs no clip.
+          let simple = export_svg(
+            "Graphics[Polygon[Table[{Cos[2 Pi k/5], Sin[2 Pi k/5]}, \
+             {k, 0, 4}], VertexColors -> {Red, Green, Blue, Yellow, Cyan}]]",
+          );
+          assert!(!simple.contains("clip-rule"));
+        }
+
+        /// A long self-crossing blended outline whose triangles reach far
+        /// past the plot range stays within a bounded number of facets
+        /// (it used to emit hundreds of thousands, a ~40 MB SVG), and
+        /// facets wholly outside the picture are dropped.
+        #[test]
+        fn large_blended_polygon_stays_within_facet_budget() {
+          let svg = export_svg(
+            "Graphics[Polygon[Table[5 {Cos[2.4 k], Sin[3.7 k]}, \
+             {k, 150}], VertexColors -> Table[Hue[k/150], {k, 150}]], \
+             PlotRange -> 2]",
+          );
+          let facets = svg.matches("<polygon").count();
+          assert!(facets > 100, "{facets}");
+          assert!(facets <= 40_000, "{facets}");
+        }
+
         /// Parse every `<polygon points="x1,y1 x2,y2 …">` in an SVG string
         /// into its screen-space vertex list.
         fn parse_svg_polygons(svg: &str) -> Vec<Vec<(f64, f64)>> {
