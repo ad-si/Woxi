@@ -70414,7 +70414,10 @@ fn frame_label_arithmetic_with_letter_subscripts() {
     "<tspan baseline-shift=\"sub\" font-size=\"70%\">{}</tspan>",
     it("σ")
   );
-  assert!(svg.contains(&format!("{}-{}{sub}", it("ω"), it("ω"))), "{svg}");
+  assert!(
+    svg.contains(&format!("{}-{}{sub}", it("ω"), it("ω"))),
+    "{svg}"
+  );
 }
 
 /// `Labeled[v, Style[label, size], "RadialOutside"]` puts each label just
