@@ -20710,11 +20710,12 @@ fn inline_graphics_box_layout(
   })
 }
 
-/// Whether `expr` is plain graphics data — numbers, strings, built-in
-/// symbols, and calls of side-effect-free built-ins on such data — that a
-/// notebook front end draws as it stands. Anything referring to a user
-/// symbol (a variable, a function, a `Part` of one) or to a built-in with
-/// side effects is code that only evaluation could turn into a picture.
+/// Whether `expr` is graphics data that evaluates to a picture without
+/// running held code: numbers, strings, built-in symbols, symbols that have
+/// a value (such as a control variable bound while a frame is drawn), and
+/// calls without side effects on such data. A symbol without a value (the
+/// unbound control variable of a held `Manipulate` body) or a built-in with
+/// side effects (`Print`) marks code that must not be evaluated.
 fn is_inert_graphics_data(expr: &Expr) -> bool {
   use crate::evaluator::functions::{
     is_builtin_symbol, is_side_effecting_builtin,
@@ -20725,11 +20726,13 @@ fn is_inert_graphics_data(expr: &Expr) -> bool {
     | Expr::Real(_)
     | Expr::BigFloat(..)
     | Expr::String(_) => true,
-    Expr::Identifier(name) => is_builtin_symbol(name),
+    Expr::Identifier(name) => {
+      is_builtin_symbol(name)
+        || crate::ENV.with(|e| e.borrow().contains_key(name.as_str()))
+    }
     Expr::List(items) => items.iter().all(is_inert_graphics_data),
     Expr::FunctionCall { name, args } => {
-      is_builtin_symbol(name)
-        && !is_side_effecting_builtin(name)
+      !is_side_effecting_builtin(name)
         && args.iter().all(is_inert_graphics_data)
     }
     Expr::Rule {
