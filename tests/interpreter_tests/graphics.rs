@@ -70279,6 +70279,115 @@ mod plot_legends_show_legend {
     // is wider than the rows' own spacing.
     assert!(low - title > (high - low) / 3.0, "{svg}");
   }
+
+  /// How many times `msg` occurs in the stdout of `code`.
+  fn obspkg_count(code: &str) -> usize {
+    woxi::interpret_with_stdout(code)
+      .unwrap()
+      .stdout
+      .matches("General::obspkg: PlotLegends` is now obsolete.")
+      .count()
+  }
+
+  // Reading the package announces that it is obsolete; `Needs` reads it
+  // only the first time, `Get` every time.
+  #[test]
+  fn loading_prints_obspkg() {
+    clear_state();
+    assert_eq!(obspkg_count("Needs[\"PlotLegends`\"]"), 1);
+    assert_eq!(obspkg_count("Needs[\"PlotLegends`\"]"), 0);
+    assert_eq!(obspkg_count("Get[\"PlotLegends`\"]"), 1);
+  }
+
+  // `VectorFieldPlots`` is obsolete too.
+  #[test]
+  fn vector_field_plots_prints_obspkg() {
+    clear_state();
+    let out = woxi::interpret_with_stdout("Get[\"VectorFieldPlots`\"]")
+      .unwrap()
+      .stdout;
+    assert!(
+      out.contains("General::obspkg: VectorFieldPlots` is now obsolete."),
+      "{out}"
+    );
+  }
+
+  // Until the package is loaded, `PlotLegend` adds no legend.
+  #[test]
+  fn plot_legend_ignored_before_loading() {
+    clear_state();
+    let svg = export_svg(
+      "Plot[{Sin[t], Cos[t]}, {t, 0, 5}, \
+       PlotLegends`PlotLegend -> {\"first\", \"second\"}]",
+    );
+    assert!(!svg.contains("first"), "{svg}");
+  }
+
+  // With the package loaded, a plot's `PlotLegend` labels set a boxed,
+  // shadowed legend over the plot's lower-left corner, one key per label
+  // in the colors of the package's era: hues stepping by Sqrt[5] - 2 from
+  // 0.67 at saturation and brightness 0.6.
+  #[test]
+  fn plot_legend_draws_a_legend() {
+    clear_state();
+    interpret("Needs[\"PlotLegends`\"]").unwrap();
+    assert_eq!(
+      interpret(
+        "Head[Plot[{Sin[t], Cos[t]}, {t, 0, 5}, \
+         PlotLegend -> {\"first\", \"second\"}]]"
+      )
+      .unwrap(),
+      "Graphics"
+    );
+    let svg = export_svg(
+      "Plot[{Sin[t], Cos[t]}, {t, 0, 5}, \
+       PlotLegend -> {\"first\", \"second\"}]",
+    );
+    assert!(svg.contains(">first</text>"), "{svg}");
+    assert!(svg.contains(">second</text>"), "{svg}");
+    // Hue[0.67, 0.6, 0.6] and Hue[0.906068, 0.6, 0.6].
+    assert!(svg.contains("rgb(63,61,153)"), "{svg}");
+    assert!(svg.contains("rgb(153,61,113)"), "{svg}");
+  }
+
+  // A `PlotStyle` colors the keys; legend options given to the plot reach
+  // the legend, and a `LegendPosition` past the right edge widens the
+  // picture.
+  #[test]
+  fn plot_legend_takes_plot_style_and_legend_options() {
+    clear_state();
+    interpret("Needs[\"PlotLegends`\"]").unwrap();
+    let plain = export_svg("Plot[t, {t, 0, 1}, ImageSize -> 200]");
+    let svg = export_svg(
+      "Plot[{t, 2 t}, {t, 0, 1}, ImageSize -> 200, \
+       PlotStyle -> {Red, Green}, PlotLegend -> {\"a\", \"b\"}, \
+       LegendPosition -> {1.1, -0.4}, LegendShadow -> None]",
+    );
+    assert!(svg.contains("rgb(255,0,0)") && svg.contains("rgb(0,255,0)"));
+    let width = |svg: &str| -> f64 {
+      let start = svg.find("width=\"").unwrap() + 7;
+      svg[start..start + svg[start..].find('"').unwrap()]
+        .parse()
+        .unwrap()
+    };
+    // The legend reaches from 1.1 to 1.9 past the plot's -1..1 span.
+    assert_eq!(width(&svg), width(&plain) * 2.9 / 2.0, "{svg}");
+  }
+
+  // A `PlotLegend` option in some other context is not the package's: the
+  // legend keeps its default position inside the plot.
+  #[test]
+  fn foreign_legend_position_is_ignored() {
+    clear_state();
+    interpret("Needs[\"PlotLegends`\"]").unwrap();
+    assert_eq!(
+      export_svg(
+        "Plot[t, {t, 0, 1}, PlotLegend -> {\"a\"}, \
+         Other`LegendPosition -> {3, 3}]"
+      ),
+      export_svg("Plot[t, {t, 0, 1}, PlotLegend -> {\"a\"}]")
+    );
+  }
 }
 
 mod grid_spacer_width {
