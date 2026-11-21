@@ -2315,13 +2315,21 @@ fn widen_for_point_labels(
 /// bins classes the data as even (below 2), clustered (above 10) or in
 /// between.
 pub(crate) fn point_size_steps(all_series: &[Vec<(f64, f64)>]) -> f64 {
+  adaptive_point_size_steps(all_series.iter().flatten().map(|&(x, y)| [x, y]))
+}
+
+/// [`point_size_steps`] for points of any dimension: the distinct finite
+/// points are binned 10 to a side along every coordinate (so a 3D cloud
+/// into 10 × 10 × 10 cells) before the fullest bin is weighed against the
+/// mean of the non-empty ones.
+pub(crate) fn adaptive_point_size_steps<const D: usize>(
+  points: impl IntoIterator<Item = [f64; D]>,
+) -> f64 {
   let mut seen = std::collections::HashSet::new();
-  let points: Vec<(f64, f64)> = all_series
-    .iter()
-    .flatten()
-    .filter(|(x, y)| x.is_finite() && y.is_finite())
-    .filter(|(x, y)| seen.insert((x.to_bits(), y.to_bits())))
-    .copied()
+  let points: Vec<[f64; D]> = points
+    .into_iter()
+    .filter(|p| p.iter().all(|c| c.is_finite()))
+    .filter(|p| seen.insert(p.map(f64::to_bits)))
     .collect();
   let n = points.len();
   match n {
@@ -2332,35 +2340,37 @@ pub(crate) fn point_size_steps(all_series: &[Vec<(f64, f64)>]) -> f64 {
     15001.. => return 1.0,
     _ => {}
   }
-  let span = |sel: fn(&(f64, f64)) -> f64| {
+  // Per coordinate: the lower end of the data range and its bin width.
+  let bins_of: [(f64, f64); D] = std::array::from_fn(|d| {
     let (lo, hi) = points
       .iter()
-      .map(sel)
+      .map(|p| p[d])
       .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
         (lo.min(v), hi.max(v))
       });
-    if lo == hi {
+    let (lo, hi) = if lo == hi {
       (lo - 1.0, hi + 1.0)
     } else {
       (lo, hi)
-    }
-  };
-  let (x1, x2) = span(|p| p.0);
-  let (y1, y2) = span(|p| p.1);
-  let width = |lo: f64, hi: f64| (hi - lo + 0.0001 * (hi - lo)) / 10.0;
-  let (wx, wy) = (width(x1, x2), width(y1, y2));
-  let mut bins = [[0usize; 10]; 10];
-  for &(x, y) in &points {
-    let i = ((x - x1) / wx).floor();
-    let j = ((y - y1) / wy).floor();
-    if (0.0..10.0).contains(&i) && (0.0..10.0).contains(&j) {
-      bins[i as usize][j as usize] += 1;
+    };
+    (lo, (hi - lo + 0.0001 * (hi - lo)) / 10.0)
+  });
+  let mut bins: std::collections::HashMap<[usize; D], usize> =
+    std::collections::HashMap::new();
+  for p in &points {
+    let mut cell = [0usize; D];
+    let inside = (0..D).all(|d| {
+      let (lo, w) = bins_of[d];
+      let i = ((p[d] - lo) / w).floor();
+      cell[d] = i.max(0.0) as usize;
+      (0.0..10.0).contains(&i)
+    });
+    if inside {
+      *bins.entry(cell).or_default() += 1;
     }
   }
-  let filled: Vec<usize> =
-    bins.iter().flatten().copied().filter(|&c| c > 0).collect();
-  let max = filled.iter().copied().max().unwrap_or(0) as f64;
-  let mean = filled.iter().sum::<usize>() as f64 / filled.len().max(1) as f64;
+  let max = bins.values().copied().max().unwrap_or(0) as f64;
+  let mean = bins.values().sum::<usize>() as f64 / bins.len().max(1) as f64;
   let density = max / mean;
   let class = if density < 2.0 {
     0
@@ -3603,7 +3613,25 @@ pub fn list_polar_plot_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if parsed.opts.aspect_ratio.is_none() {
     parsed.opts.aspect_automatic = true;
   }
-  let (x_range, y_range) = compute_ranges(&polar_series);
+  // `PolarGridLines` draws spokes and circles out to the farthest point;
+  // the automatic plot range then spans the whole grid, like any other
+  // primitive in the picture.
+  let r_max = polar_series
+    .iter()
+    .flatten()
+    .map(|&(x, y)| x.hypot(y))
+    .filter(|r| r.is_finite())
+    .fold(0.0_f64, f64::max);
+  let grid = crate::functions::parametric_plot::polar_grid_lines_prolog(
+    &args[1..],
+    r_max,
+  );
+  let mut range_series = polar_series.clone();
+  if let Some((grid, extent)) = grid {
+    parsed.opts.prolog.extend(grid);
+    range_series.push(vec![(-extent, -extent), (extent, extent)]);
+  }
+  let (x_range, y_range) = compute_ranges(&range_series);
   let y_range = adjust_y_range_for_filling_opts(&parsed.opts, y_range);
   let (x_range, y_range) = apply_plot_range_override(&parsed, x_range, y_range);
   // Like ListPlot, the points stay unconnected unless `Joined -> True`,
@@ -4484,5 +4512,32 @@ mod tests {
     assert_eq!(point_size_steps(&[a.clone(), a.clone(), a]), 4.0);
     // Below 1 the size stays 1/360 of the image width.
     assert_eq!(list_plot_point_size(&golden(20000, false)), 1.0 / 360.0);
+  }
+
+  #[test]
+  fn adaptive_point_size_steps_bin_every_coordinate() {
+    // A helix spreads evenly over the 10 × 10 × 10 bins …
+    let helix = |n: usize| {
+      (0..n).map(move |i| {
+        let t = i as f64 * 0.005;
+        [t.cos(), t.sin(), t]
+      })
+    };
+    assert_eq!(adaptive_point_size_steps(helix(30)), 7.0);
+    assert_eq!(adaptive_point_size_steps(helix(6000)), 2.0);
+    // … while a cloud piled into one corner is uneven.
+    let piled = (0..6000).map(|i| {
+      let f = i as f64;
+      if i < 300 {
+        [f, f, f]
+      } else {
+        [
+          (f * std::f64::consts::SQRT_2).fract(),
+          (f * std::f64::consts::E).fract(),
+          (f * std::f64::consts::PI).fract(),
+        ]
+      }
+    });
+    assert_eq!(adaptive_point_size_steps(piled), 1.0);
   }
 }

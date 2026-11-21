@@ -432,7 +432,11 @@ pub(super) fn poly_extended_gcd_mod(
 }
 
 /// GCD of two coefficient vectors over GF(p), returned monic.
-fn poly_gcd_coeffs_mod(a: &[i128], b: &[i128], p: i128) -> Vec<i128> {
+pub(super) fn poly_gcd_coeffs_mod(
+  a: &[i128],
+  b: &[i128],
+  p: i128,
+) -> Vec<i128> {
   let mut a: Vec<i128> = a.iter().map(|&x| mod_norm(x, p)).collect();
   let mut b: Vec<i128> = b.iter().map(|&x| mod_norm(x, p)).collect();
   trim_high(&mut a);
@@ -583,6 +587,17 @@ fn poly_gcd_pair(
   if p_deg == 0 && q_deg == 0 {
     // Both are constants w.r.t. this variable - compute numeric GCD
     return integer_gcd_two(p, q);
+  }
+
+  // Polynomials with rational coefficients: big-integer arithmetic
+  // (heuristic gcd, then a primitive remainder sequence). The Euclidean
+  // steps over Q below let the remainders' coefficients explode for higher
+  // degrees.
+  if let Some(g) = super::mfactor::gcd_multivariate_polys(&[
+    expand_and_combine(p),
+    expand_and_combine(q),
+  ]) {
+    return crate::evaluator::evaluate_expr_to_expr(&g);
   }
 
   // Extract integer content of both polynomials

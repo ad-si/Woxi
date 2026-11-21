@@ -2406,6 +2406,28 @@ mod rule_display {
     assert_eq!(interpret("f[x, y] /. {x -> 1, y -> 2}").unwrap(), "f[1, 2]");
   }
 
+  // A rule matching part of a product must not keep the other rules from
+  // rewriting the rest of the expression.
+  #[test]
+  fn replace_all_list_with_partial_product_rule() {
+    assert_eq!(
+      interpret("f[b, x yp a] /. {yp a -> w, b -> z}").unwrap(),
+      "f[z, w*x]"
+    );
+    assert_eq!(
+      interpret("(1/y + x yp/y^2) /. {yp/y^2 -> w, 1/y -> z}").unwrap(),
+      "w*x + z"
+    );
+    assert_eq!(
+      interpret(
+        "(y[x]^(-1) + (x*y'[x])/y[x]^2 == -x) /. \
+         {y'[x]/y[x]^2 -> -z'[x], y[x]^(-1) -> z[x]}"
+      )
+      .unwrap(),
+      "z[x] - x*Derivative[1][z][x] == -x"
+    );
+  }
+
   #[test]
   fn replace_all_head_list_to_sequence() {
     // List -> Sequence should flatten nested lists into function args

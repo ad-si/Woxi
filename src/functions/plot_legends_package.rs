@@ -13,8 +13,14 @@
 //! gradient `{colorFunction, n, minLabel, maxLabel}`, both followed by
 //! options: `LegendPosition` (default `{-1, -1}`), `LegendSize` (`0.8`),
 //! `LegendShadow` (`{0.05, -0.05}`, or `None`), `LegendBorder` (a thin
-//! black frame, or `False`/`None`/a color) and `LegendBackground`
-//! (white).
+//! black frame, or `False`/`None`/a color), `LegendBackground` (white),
+//! `LegendLabel` (a title above the rows, in a strip `LegendLabelSpace`
+//! rows tall) and `LegendTextSpace` (the width of the labels as a multiple
+//! of the key width).
+//!
+//! A gradient legend lists the function's values from 0 at the top to 1 at
+//! the bottom, in a column of touching swatches: `minLabel` names the top
+//! swatch and `maxLabel` the bottom one.
 
 use super::*;
 use crate::evaluator::evaluate_expr_to_expr;
@@ -60,6 +66,14 @@ struct LegendSpec {
   /// The border's directive, `None` for no border.
   border: Option<Expr>,
   background: Expr,
+  /// The rows are color swatches of a gradient, drawn touching.
+  gradient: bool,
+  /// `LegendLabel`: a title above the rows.
+  label: Option<Expr>,
+  /// `LegendLabelSpace`: the height of the title strip, in rows.
+  label_space: Option<f64>,
+  /// `LegendTextSpace`: the width of the labels over that of the keys.
+  text_space: Option<f64>,
 }
 
 impl LegendSpec {
@@ -96,21 +110,58 @@ impl LegendSpec {
       vec![self.background.clone(), edge, rect(x0, y0)].into(),
     ));
     let n = self.items.len().max(1) as f64;
-    let row_h = h / n;
+    // The title's strip takes `label_space` rows (one by default) above
+    // the items.
+    let label_rows = if self.label.is_some() {
+      self.label_space.unwrap_or(1.0).max(0.0)
+    } else {
+      0.0
+    };
+    // A gradient's column keeps a margin of half a row all around.
+    let units = if self.gradient {
+      n + label_rows + 1.0
+    } else {
+      n + label_rows
+    };
+    let row_h = h / units;
+    if let Some(label) = &self.label {
+      let strip_top = if self.gradient { 0.5 * row_h } else { 0.0 };
+      out.push(call(
+        "Text",
+        vec![
+          label.clone(),
+          point(x0 + w / 2.0, y0 + h - strip_top - label_rows * row_h / 2.0),
+        ],
+      ));
+    }
+    let rows_top = y0 + h - label_rows * row_h;
     // A square key box filling most of its row, never wider than a third
-    // of the legend so the labels keep their room.
-    let key = (0.8 * row_h).min(w / 3.0);
-    let margin = (row_h - key) / 2.0;
+    // of the legend so the labels keep their room; `LegendTextSpace -> t`
+    // makes the labels `t` key widths wide instead.
+    let (key_w, key_h, margin, rows_top) = if self.gradient {
+      let margin = 0.5 * row_h;
+      let key_w = match self.text_space {
+        Some(t) if t >= 0.0 => (w - 2.0 * margin) / (1.0 + t),
+        _ => row_h.min(w / 3.0),
+      };
+      (key_w, row_h, margin, rows_top - margin)
+    } else {
+      let key = match self.text_space {
+        Some(t) if t >= 0.0 => (0.8 * row_h).min(w / (1.0 + t)),
+        _ => (0.8 * row_h).min(w / 3.0),
+      };
+      (key, key, (row_h - key) / 2.0, rows_top)
+    };
     for (i, (icon, label)) in self.items.iter().enumerate() {
-      let cy = y0 + h - (i as f64 + 0.5) * row_h;
-      let kx = x0 + margin + key / 2.0;
+      let cy = rows_top - (i as f64 + 0.5) * row_h;
+      let kx = x0 + margin + key_w / 2.0;
       out.push(call(
         "Inset",
         vec![
           icon.clone(),
           point(kx, cy),
           Expr::Identifier("Center".into()),
-          point(key, key),
+          point(key_w, key_h),
         ],
       ));
       let is_empty_label = matches!(label, Expr::String(s) if s.is_empty());
@@ -119,7 +170,7 @@ impl LegendSpec {
           "Text",
           vec![
             label.clone(),
-            point(x0 + 2.0 * margin + key + 0.25 * margin, cy),
+            point(x0 + margin + key_w + (0.25 * margin).max(0.02 * w), cy),
             point(-1.0, 0.0),
           ],
         ));
@@ -156,22 +207,31 @@ fn parse_legend(arg: &Expr) -> Option<LegendSpec> {
         Expr::Integer(n) if n >= 2 => n as usize,
         _ => return None,
       };
-      // The top row shows the function's value at 1, the bottom row at 0.
+      // The top row shows the function's value at 0, the bottom row at 1.
       (0..n)
-        .rev()
         .map(|k| {
           let t = k as f64 / (n - 1) as f64;
           let color =
             evaluate_expr_to_expr(&call_value(function, real(t))).ok()?;
           let swatch = evaluate_expr_to_expr(&call(
             "Graphics",
-            vec![Expr::List(vec![color, call("Rectangle", vec![])].into())],
+            vec![
+              Expr::List(vec![color, call("Rectangle", vec![])].into()),
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier("AspectRatio".into())),
+                replacement: Box::new(Expr::Identifier("Full".into())),
+              },
+              Expr::Rule {
+                pattern: Box::new(Expr::Identifier("PlotRangePadding".into())),
+                replacement: Box::new(Expr::Identifier("None".into())),
+              },
+            ],
           ))
           .ok()?;
-          let label = if k == n - 1 {
-            (*max_label).clone()
-          } else if k == 0 {
+          let label = if k == 0 {
             (*min_label).clone()
+          } else if k == n - 1 {
+            (*max_label).clone()
           } else {
             Expr::String(String::new())
           };
@@ -184,6 +244,7 @@ fn parse_legend(arg: &Expr) -> Option<LegendSpec> {
   if items.is_empty() {
     return None;
   }
+  let gradient = !matches!(content.as_slice(), [Expr::List(_)]);
 
   let mut spec = LegendSpec {
     items,
@@ -192,6 +253,10 @@ fn parse_legend(arg: &Expr) -> Option<LegendSpec> {
     shadow: Some((0.05, -0.05)),
     border: Some(call("GrayLevel", vec![real(0.0)])),
     background: call("GrayLevel", vec![real(1.0)]),
+    gradient,
+    label: None,
+    label_space: None,
+    text_space: None,
   };
   for option in options {
     let (Expr::Rule {
@@ -236,6 +301,15 @@ fn parse_legend(arg: &Expr) -> Option<LegendSpec> {
         } else {
           Some(value)
         };
+      }
+      Some("LegendLabel") => {
+        spec.label = (!is_none_like(&value)).then_some(value);
+      }
+      Some("LegendLabelSpace") => {
+        spec.label_space = try_eval_to_f64(&value);
+      }
+      Some("LegendTextSpace") => {
+        spec.text_space = try_eval_to_f64(&value);
       }
       Some("LegendBackground") => {
         spec.background = if is_none_like(&value) {

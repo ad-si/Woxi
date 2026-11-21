@@ -142,7 +142,7 @@ pub(super) fn rosenbrock_leg_limited(
       .collect();
     let Some(lu) = MassLu::factor(w) else {
       h /= 2.0;
-      if h < h_min {
+      if h < min_step_at(x) {
         return Ok(None);
       }
       continue;
@@ -218,7 +218,7 @@ pub(super) fn rosenbrock_leg_limited(
       .sqrt();
     if !error.is_finite() {
       h /= 4.0;
-      if h < h_min {
+      if h < min_step_at(x) {
         return Ok(None);
       }
       continue;
@@ -226,7 +226,7 @@ pub(super) fn rosenbrock_leg_limited(
     let factor = (0.9 * error.powf(-0.25)).clamp(0.2, 6.0);
     if error > 1.0 {
       h *= factor;
-      if h < h_min {
+      if h < min_step_at(x) {
         return Ok(None);
       }
       continue;
@@ -533,6 +533,16 @@ fn jacobian(
   Ok(Some(jac))
 }
 
+/// The shortest step from `x` that still counts as one: a few units in the
+/// last place of `x` itself. Measured at the current point rather than at
+/// the leg's far end, so that a fast transient right at a start of 0 (a rate
+/// that is huge only while the state is still tiny) can take the minute
+/// steps it needs however long the whole leg is; at `x == 0` any positive
+/// step moves on.
+fn min_step_at(x: f64) -> f64 {
+  (16.0 * f64::EPSILON * x.abs()).max(f64::MIN_POSITIVE)
+}
+
 /// Steps the explicit adaptive fallback may take before handing a leg to
 /// the stiff method.
 const MAX_EXPLICIT_STEPS: usize = 1_000_000;
@@ -710,7 +720,7 @@ pub(super) fn dormand_prince_leg_until(
       return Ok((points, LegEnd::Done));
     }
     h = h.min((x_to - x).abs());
-    if h < h_min {
+    if h < min_step_at(x) {
       return Ok((points, LegEnd::Failed));
     }
     let hs = h * dir;

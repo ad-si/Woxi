@@ -41,6 +41,7 @@ mod resultant;
 mod simplify;
 pub mod solve;
 mod sparse_roots;
+pub(crate) use sparse_roots::sparse_real_root_value;
 mod symmetric_reduction;
 mod to_radicals;
 pub mod together;

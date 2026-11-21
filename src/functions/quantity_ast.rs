@@ -744,10 +744,92 @@ fn resolve_lowercase_unit(name: &str) -> Option<String> {
 struct CompoundUnitInfo {
   /// Each base unit and its exponent, e.g. [("Kilometers", 1), ("Seconds", -2)]
   components: Vec<(String, i64)>,
-  /// Combined SI conversion factor as rational numer/denom
-  si: (i128, i128),
+  /// Combined SI conversion factor
+  si: Si,
   /// Dimension exponent map for compatibility checking
   dimensions: BTreeMap<Dimension, i64>,
+}
+
+/// An exact SI conversion factor `num/den * Pi^pi`. Physical constants such
+/// as `PlanckConstant` (whose SI value has a 10^42 denominator) overflow
+/// `i128`, and `ReducedPlanckConstant` or `MagneticConstant` carry a power of
+/// `Pi`, so compound factors are kept as big rationals times a power of Pi.
+#[derive(Debug, Clone, PartialEq)]
+struct Si {
+  num: num_bigint::BigInt,
+  den: num_bigint::BigInt,
+  pi: i64,
+}
+
+impl Si {
+  fn new(num: &num_bigint::BigInt, den: &num_bigint::BigInt, pi: i64) -> Si {
+    let (num, den) = crate::functions::math_ast::rat_reduce_bigint(num, den);
+    Si { num, den, pi }
+  }
+
+  fn rat((n, d): (i128, i128)) -> Si {
+    Si::new(&n.into(), &d.into(), 0)
+  }
+
+  fn mul(&self, o: &Si) -> Si {
+    Si::new(&(&self.num * &o.num), &(&self.den * &o.den), self.pi + o.pi)
+  }
+
+  fn div(&self, o: &Si) -> Si {
+    Si::new(&(&self.num * &o.den), &(&self.den * &o.num), self.pi - o.pi)
+  }
+
+  fn pow(&self, exp: i64) -> Si {
+    let e = exp.unsigned_abs() as u32;
+    let (n, d) = (self.num.pow(e), self.den.pow(e));
+    if exp >= 0 {
+      Si::new(&n, &d, self.pi * exp)
+    } else {
+      Si::new(&d, &n, self.pi * exp)
+    }
+  }
+
+  fn is_one(&self) -> bool {
+    self.pi == 0 && self.num == self.den
+  }
+
+  /// The factor as a plain `i128` rational, when it has no Pi and fits.
+  fn as_i128(&self) -> Option<(i128, i128)> {
+    use num_traits::ToPrimitive;
+    if self.pi != 0 {
+      return None;
+    }
+    Some((self.num.to_i128()?, self.den.to_i128()?))
+  }
+
+  fn to_f64(&self) -> f64 {
+    use num_traits::ToPrimitive;
+    let n = self.num.to_f64().unwrap_or(f64::NAN);
+    let d = self.den.to_f64().unwrap_or(f64::NAN);
+    n / d * std::f64::consts::PI.powi(self.pi as i32)
+  }
+
+  /// The exact factor as an evaluated expression, e.g. `Rational[a, b]/Pi`.
+  fn to_expr(&self) -> Result<Expr, InterpreterError> {
+    let rat =
+      crate::functions::math_ast::make_rational_expr(&self.num, &self.den);
+    if self.pi == 0 {
+      return Ok(rat);
+    }
+    crate::evaluator::evaluate_expr_to_expr(&call(
+      "Times",
+      vec![
+        rat,
+        call(
+          "Power",
+          vec![
+            Expr::Identifier("Pi".to_string()),
+            Expr::Integer(self.pi as i128),
+          ],
+        ),
+      ],
+    ))
+  }
 }
 
 fn rat_div(a: (i128, i128), b: (i128, i128)) -> (i128, i128) {
@@ -933,20 +1015,29 @@ fn resolve_unit_abbreviation(s: &str) -> Option<Expr> {
 
 /// Resolve named compound constants like SpeedOfLight.
 /// Returns (magnitude_factor, unit_components).
-fn resolve_compound_constant(
-  name: &str,
-) -> Option<((i128, i128), Vec<(String, i64)>)> {
+fn resolve_compound_constant(name: &str) -> Option<(Si, Vec<(String, i64)>)> {
+  let ten = |e: u32| num_bigint::BigInt::from(10).pow(e);
+  let s = |n: &str, e: i64| (n.to_string(), e);
+  // Exact SI value of the Planck constant (2019 redefinition), in J s.
+  let planck = || Si::new(&662607015.into(), &ten(42), 0);
+  // Wolfram keeps the magnetic constant at its pre-2019 exact value
+  // 4 Pi / 10^7 N/A^2.
+  let magnetic = || Si::new(&4.into(), &ten(7), 1);
+  let c = || Si::rat((299792458, 1));
+  let planck_units = vec![s("Kilograms", 1), s("Meters", 2), s("Seconds", -1)];
+  let rat_const =
+    |r: (i128, i128), units: Vec<(String, i64)>| Some((Si::rat(r), units));
   match name {
-    "SpeedOfLight" => Some((
+    "SpeedOfLight" => rat_const(
       (299792458, 1),
       vec![("Meters".to_string(), 1), ("Seconds".to_string(), -1)],
-    )),
+    ),
     // Exact by the 2019 SI redefinition.
-    "AvogadroConstant" => Some((
+    "AvogadroConstant" => rat_const(
       (602214076000000000000000, 1),
       vec![("Moles".to_string(), -1)],
-    )),
-    "BoltzmannConstant" => Some((
+    ),
+    "BoltzmannConstant" => rat_const(
       (1380649, 100000000000000000000000000000),
       vec![
         ("Kilograms".to_string(), 1),
@@ -954,15 +1045,39 @@ fn resolve_compound_constant(
         ("Kelvins".to_string(), -1),
         ("Seconds".to_string(), -2),
       ],
-    )),
-    "ElementaryCharge" => Some((
+    ),
+    "ElementaryCharge" => rat_const(
       (801088317, 5000000000000000000000000000),
       vec![("Amperes".to_string(), 1), ("Seconds".to_string(), 1)],
-    )),
+    ),
     // Standard gravity, 9.80665 m/s^2 by definition.
-    "StandardAccelerationOfGravity" => Some((
+    "StandardAccelerationOfGravity" => rat_const(
       (196133, 20000),
       vec![("Meters".to_string(), 1), ("Seconds".to_string(), -2)],
+    ),
+    "PlanckConstant" => Some((planck(), planck_units)),
+    "ReducedPlanckConstant" => Some((
+      planck().div(&Si::new(&2.into(), &1.into(), 1)),
+      planck_units,
+    )),
+    "MagneticConstant" => Some((
+      magnetic(),
+      vec![
+        s("Kilograms", 1),
+        s("Meters", 1),
+        s("Amperes", -2),
+        s("Seconds", -2),
+      ],
+    )),
+    // 1/(mu0 c^2)
+    "ElectricConstant" => Some((
+      magnetic().mul(&c().pow(2)).pow(-1),
+      vec![
+        s("Amperes", 2),
+        s("Seconds", 4),
+        s("Kilograms", -1),
+        s("Meters", -3),
+      ],
     )),
     _ => None,
   }
@@ -1017,7 +1132,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       // Dimensionless numeric factor (e.g. the 1 in "1/Seconds")
       Some(CompoundUnitInfo {
         components: vec![],
-        si: (*n, 1),
+        si: Si::rat((*n, 1)),
         dimensions: BTreeMap::new(),
       })
     }
@@ -1030,7 +1145,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       if let Some(info) = get_unit_info(name) {
         return Some(CompoundUnitInfo {
           components: vec![(name.clone(), 1)],
-          si: info.to_si,
+          si: Si::rat(info.to_si),
           dimensions: info.dimensions,
         });
       }
@@ -1041,18 +1156,16 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       }
       // Try compound constants (e.g. SpeedOfLight)
       if let Some((mag, components)) = resolve_compound_constant(name) {
-        let mut si: (i128, i128) = mag;
+        let mut si = mag;
         let mut dims = BTreeMap::new();
         for (unit_name, exp) in &components {
           let uinfo = get_unit_info(unit_name)?;
-          let (pn, pd) = rat_pow(uinfo.to_si, *exp);
-          si.0 *= pn;
-          si.1 *= pd;
+          si = si.mul(&Si::rat(uinfo.to_si).pow(*exp));
           for (dim, dim_exp) in &uinfo.dimensions {
             *dims.entry(*dim).or_insert(0) += dim_exp * exp;
           }
         }
-        si = rat_reduce(si.0, si.1);
+        dims.retain(|_, v| *v != 0);
         // The constant stays one opaque component: products keep it by name
         // (Seconds*SpeedOfLight) instead of canceling its base units while
         // dropping its magnitude.
@@ -1079,7 +1192,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       if let Some(info) = get_unit_info(&plural) {
         return Some(CompoundUnitInfo {
           components: vec![(plural, 1)],
-          si: info.to_si,
+          si: Si::rat(info.to_si),
           dimensions: info.dimensions,
         });
       }
@@ -1089,7 +1202,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
       {
         return Some(CompoundUnitInfo {
           components: vec![(canonical, 1)],
-          si: info.to_si,
+          si: Si::rat(info.to_si),
           dimensions: info.dimensions,
         });
       }
@@ -1105,7 +1218,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             left_info.components.push((name.clone(), -exp));
           }
           // SI factor: left / right
-          left_info.si = rat_div(left_info.si, right_info.si);
+          left_info.si = left_info.si.div(&right_info.si);
           // Merge dimensions
           for (dim, exp) in &right_info.dimensions {
             *left_info.dimensions.entry(*dim).or_insert(0) -= exp;
@@ -1119,7 +1232,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
           for (name, exp) in &right_info.components {
             left_info.components.push((name.clone(), *exp));
           }
-          left_info.si = rat_mul(left_info.si, right_info.si);
+          left_info.si = left_info.si.mul(&right_info.si);
           for (dim, exp) in &right_info.dimensions {
             *left_info.dimensions.entry(*dim).or_insert(0) += exp;
           }
@@ -1137,7 +1250,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             .iter()
             .map(|(n, e)| (n.clone(), e * exp_val))
             .collect();
-          let (pn, pd) = rat_pow(base_info.si, exp_val);
+          let si = base_info.si.pow(exp_val);
           let dims: BTreeMap<Dimension, i64> = base_info
             .dimensions
             .iter()
@@ -1146,7 +1259,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             .collect();
           Some(CompoundUnitInfo {
             components,
-            si: (pn, pd),
+            si,
             dimensions: dims,
           })
         }
@@ -1163,7 +1276,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
             for (name, exp) in &info.components {
               r.components.push((name.clone(), *exp));
             }
-            r.si = rat_mul(r.si, info.si);
+            r.si = r.si.mul(&info.si);
             for (dim, exp) in &info.dimensions {
               *r.dimensions.entry(*dim).or_insert(0) += exp;
             }
@@ -1187,7 +1300,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         .iter()
         .map(|(n, e)| (n.clone(), e * exp_val))
         .collect();
-      let (pn, pd) = rat_pow(base_info.si, exp_val);
+      let si = base_info.si.pow(exp_val);
       let dims: BTreeMap<Dimension, i64> = base_info
         .dimensions
         .iter()
@@ -1196,7 +1309,7 @@ fn decompose_unit_expr(expr: &Expr) -> Option<CompoundUnitInfo> {
         .collect();
       Some(CompoundUnitInfo {
         components,
-        si: (pn, pd),
+        si,
         dimensions: dims,
       })
     }
@@ -1644,6 +1757,25 @@ fn convert_magnitude(
   let conv = rat_div(from.to_si, to.to_si);
 
   multiply_magnitude_by_rational(magnitude, conv)
+}
+
+/// Multiply a magnitude expression by an exact SI conversion factor.
+fn multiply_magnitude_by_si(
+  magnitude: &Expr,
+  conv: &Si,
+) -> Result<Expr, InterpreterError> {
+  if let Some(rat) = conv.as_i128() {
+    return multiply_magnitude_by_rational(magnitude, rat);
+  }
+  match magnitude {
+    // A machine-precision magnitude stays machine precision, as for a
+    // rational factor.
+    Expr::Real(f) => Ok(Expr::Real(f * conv.to_f64())),
+    _ => crate::functions::math_ast::times_ast(&[
+      magnitude.clone(),
+      conv.to_expr()?,
+    ]),
+  }
 }
 
 /// Multiply a magnitude expression by a rational (numer/denom).
@@ -2234,7 +2366,12 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     ));
   }
   if let Some((mag, unit)) = is_quantity(&args[0]) {
-    let target = &args[1];
+    // A Quantity as the target names its unit, e.g.
+    // UnitConvert[q, Quantity["Angstroms"]] or the 1/Quantity[1, u] form.
+    let target = match is_quantity(&args[1]) {
+      Some((_, target_unit)) => target_unit,
+      None => &args[1],
+    };
 
     // Wolfram doesn't recognize compound expressions with bare symbols as units.
     // E.g. Kilometers/Seconds^2 is symbolic, not a unit specification.
@@ -2257,8 +2394,8 @@ pub fn unit_convert_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         )));
       }
       // Convert: new_mag = mag * (from_si / to_si)
-      let conv = rat_div(from.si, to.si);
-      let new_mag = multiply_magnitude_by_rational(mag, conv)?;
+      let conv = from.si.div(&to.si);
+      let new_mag = multiply_magnitude_by_si(mag, &conv)?;
       // Build target unit expression from decomposed target components
       // (preserves the user's target unit naming)
       // UnitConvert normalizes the target to canonical form
@@ -2394,14 +2531,13 @@ pub fn try_quantity_plus(
   // first quantity's unit.
   let mut target_idx = 0usize;
   {
-    let mut best: Option<(i128, i128)> = None;
+    let mut best: Option<Si> = None;
     for (i, q) in quantity_args.iter().enumerate() {
       let (_m, u) = is_quantity(q).unwrap();
       if let Some(info) = decompose_unit_expr(u) {
-        // Compare (info.si.0 / info.si.1) with best via cross-multiply.
-        if let Some((bn, bd)) = best {
-          // info < best iff info.si.0 * bd < bn * info.si.1
-          if info.si.0 * bd < bn * info.si.1 {
+        if let Some(b) = &best {
+          // info < best iff info / best < 1.
+          if info.si.div(b).to_f64() < 1.0 {
             best = Some(info.si);
             target_idx = i;
           }
@@ -2431,11 +2567,11 @@ pub fn try_quantity_plus(
     if let (Some(source_info), Some(target_info)) =
       (decompose_unit_expr(u), &target_decomposed)
     {
-      let conv = rat_div(source_info.si, target_info.si);
-      if conv.0 == conv.1 {
+      let conv = source_info.si.div(&target_info.si);
+      if conv.is_one() {
         magnitudes.push(m.clone());
       } else {
-        match multiply_magnitude_by_rational(m, conv) {
+        match multiply_magnitude_by_si(m, &conv) {
           Ok(converted) => magnitudes.push(converted),
           Err(e) => return Some(Err(e)),
         }
@@ -2784,11 +2920,11 @@ pub fn try_quantity_compare(
   let right_info = decompose_unit_expr(unit_r);
 
   let converted_r = if let (Some(li), Some(ri)) = (left_info, right_info) {
-    let conv = rat_div(ri.si, li.si);
-    if conv.0 == conv.1 {
+    let conv = ri.si.div(&li.si);
+    if conv.is_one() {
       mag_r.clone()
     } else {
-      multiply_magnitude_by_rational(mag_r, conv).ok()?
+      multiply_magnitude_by_si(mag_r, &conv).ok()?
     }
   } else {
     // Fallback to simple conversion
@@ -2814,11 +2950,11 @@ fn convert_mag(mag: &Expr, from_unit: &Expr, to_unit: &Expr) -> Option<Expr> {
     (decompose_unit_expr(from_unit), decompose_unit_expr(to_unit))
   {
     // factor = from_si / to_si.
-    let conv = rat_div(fi.si, ti.si);
-    if conv.0 == conv.1 {
+    let conv = fi.si.div(&ti.si);
+    if conv.is_one() {
       Some(mag.clone())
     } else {
-      multiply_magnitude_by_rational(mag, conv).ok()
+      multiply_magnitude_by_si(mag, &conv).ok()
     }
   } else {
     let from = unit_name(from_unit)?;
@@ -2884,6 +3020,7 @@ pub(crate) fn unit_abbreviation(name: &str) -> Option<&'static str> {
     "Millimeters" => "mm",
     "Micrometers" => "\u{3bc}m",
     "Nanometers" => "nm",
+    "Angstroms" => "\u{c5}",
     "NauticalMiles" => "nmi",
     "Feet" => "ft",
     "Inches" => "in",
