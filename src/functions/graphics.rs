@@ -53431,6 +53431,11 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
   if builds_string
     && let Ok(Expr::String(ref text)) = evaluate_expr_to_expr(expr)
   {
+    // `ToString[expr, TraditionalForm]` builds a string of inline boxes,
+    // which typesets like any other box-carrying label.
+    if let Some(runs) = inline_box_label_runs(text, italic) {
+      return runs;
+    }
     return if text.is_empty() {
       vec![]
     } else {
@@ -54451,7 +54456,8 @@ fn inline_box_label_runs(s: &str, italic: bool) -> Option<Vec<LabelRun>> {
     // A `ToString[expr, TraditionalForm]` segment is typeset display text
     // (`sin(x)`), not source to evaluate: reading `sin(x)` back as an
     // expression would give `Sin[x]` or a product.
-    if seg.text.starts_with("FormBox[RowBox[")
+    if (seg.text.starts_with("FormBox[RowBox[")
+      || seg.text.starts_with("FormBox[TagBox[RowBox["))
       && seg.text.ends_with(", TraditionalForm]")
     {
       runs.push(LabelRun {
@@ -63613,6 +63619,24 @@ mod manipulate_traditional_form_choice_svg_tests {
         assert_eq!(value_labels[1], "ab");
       }
       other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A heading written as `Style[ToString[HoldForm[eq], TraditionalForm]]`
+  /// typesets the equation its inline boxes hold (scripts raised, the
+  /// product gaps kept), not the raw `FormBox[TagBox[…, HoldForm], …]`
+  /// markup the string carries.
+  #[test]
+  fn traditional_form_string_heading_typesets_its_boxes() {
+    let control = discrete_control(
+      "Manipulate[p, Style[ToString[HoldForm[u = p t^3 + q t], \
+       TraditionalForm]], {{p, 2}, 0, 5}]",
+    );
+    match &control {
+      ManipulateControl::Heading { label, .. } => {
+        assert_eq!(label, "u=p t³+q t");
+      }
+      other => panic!("expected a heading, got {other:?}"),
     }
   }
 

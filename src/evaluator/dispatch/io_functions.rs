@@ -9592,6 +9592,17 @@ pub fn with_default_text_family(svg: &str) -> String {
     }
     let has_family = tag.contains("font-family=");
     let inherited = stack.iter().any(|&f| f);
+    // A bare generic `sans-serif` names the default face only by its
+    // generic family, which a host maps onto Atkinson Hyperlegible Next;
+    // spell that mapping out so a renderer without the host's CSS uses it.
+    const GENERIC: &str = " font-family=\"sans-serif\"";
+    if name == "text"
+      && let Some(at) = tag.find(GENERIC)
+    {
+      out.push_str(&svg[copied..start + at]);
+      out.push_str(ATTR);
+      copied = start + at + GENERIC.len();
+    }
     if name == "text" && !has_family && !inherited {
       let close_at = if tag.ends_with("/>") { end - 1 } else { end };
       out.push_str(&svg[copied..close_at]);

@@ -11382,7 +11382,7 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
   /// A body that prints an expanded product in a chosen term order — the
   /// terms of the `Plus` sorted and joined with `Infix` — and sets it in
   /// `TraditionalForm` at a large size. The widget shows it typeset
-  /// (subscripts, operator, font size), like an output cell, instead of the
+  /// (subscripts, operator, font size) in the `Pane`'s picture, instead of the
   /// raw `TraditionalForm[Infix[…]]` source text. Independently written, not
   /// copied from any specific Demonstration.
   #[test]
@@ -11397,11 +11397,17 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("a Setter row should build a ManipulateState");
     assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
-    let svg = state
-      .typeset_output
-      .as_deref()
-      .expect("the textual result is typeset");
-    assert!(state.typeset_handle.is_some());
+    // The `Pane` lays the typeset text out at its stated size as a picture.
+    let Some(iced::advanced::svg::Data::Bytes(bytes)) =
+      state.graphics_handle.as_ref().map(|h| h.data())
+    else {
+      panic!("the paned result is drawn");
+    };
+    let svg = String::from_utf8_lossy(bytes);
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "{svg}"
+    );
     assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
     assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
