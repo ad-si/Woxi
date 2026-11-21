@@ -1072,8 +1072,10 @@ fn label_frame(opts: &[Expr], default_color: Color) -> Option<TextFrame> {
         color = c;
         continue;
       }
-      let mut probe = StyleState::default();
-      probe.thickness = f64::NAN;
+      let mut probe = StyleState {
+        thickness: f64::NAN,
+        ..StyleState::default()
+      };
       apply_directive(d, &mut probe);
       if !probe.thickness.is_nan() {
         // Thickness fractions are of a picture's width; a frame around a
@@ -1236,7 +1238,7 @@ enum Primitive {
     /// A data-space linear map a `GeometricTransformation` applied to the
     /// label: the glyphs are sheared/stretched about the anchor with it
     /// (the anchor itself is already moved). `None` for untransformed text.
-    glyph_map: Option<[[f64; 2]; 2]>,
+    glyph_map: Option<Box<[[f64; 2]; 2]>>,
     /// Character ranges a nested `Style` sets in its own slant, weight or
     /// color — `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and
     /// an upright remainder. Empty for a label with no partial styling.
@@ -10844,8 +10846,11 @@ fn affine_primitive(
     {
       *nx = m[0][0] * x + m[0][1] * y + v.0;
       *ny = m[1][0] * x + m[1][1] * y + v.1;
-      let g = glyph_map.unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
-      *ngm = Some([
+      let g = glyph_map
+        .as_deref()
+        .copied()
+        .unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
+      *ngm = Some(Box::new([
         [
           m[0][0] * g[0][0] + m[0][1] * g[1][0],
           m[0][0] * g[0][1] + m[0][1] * g[1][1],
@@ -10854,7 +10859,7 @@ fn affine_primitive(
           m[1][0] * g[0][0] + m[1][1] * g[1][0],
           m[1][0] * g[0][1] + m[1][1] * g[1][1],
         ],
-      ]);
+      ]));
     }
     return out;
   }
@@ -11212,7 +11217,7 @@ fn rotate_primitive(
           None => None,
         },
         box_offset: *box_offset,
-        glyph_map: *glyph_map,
+        glyph_map: glyph_map.clone(),
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
       }
@@ -11463,7 +11468,7 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       scaled: *scaled,
       direction: *direction,
       box_offset: *box_offset,
-      glyph_map: *glyph_map,
+      glyph_map: glyph_map.clone(),
       styled_ranges: styled_ranges.clone(),
       style: style.clone(),
     },
@@ -11774,7 +11779,7 @@ fn scale_primitive(
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         box_offset: *box_offset,
-        glyph_map: *glyph_map,
+        glyph_map: glyph_map.clone(),
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
       }
