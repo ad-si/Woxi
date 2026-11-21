@@ -34,13 +34,13 @@ pub fn minimal_polynomial_core(
   }
 
   let alpha = &args[0];
-  let var = match &args[1] {
-    Expr::Identifier(name) => name.clone(),
-    _ => {
-      return Err(InterpreterError::EvaluationError(
-        "Second argument of MinimalPolynomial must be a symbol".into(),
-      ));
-    }
+  // The polynomial is built in a symbol; any other second argument (a
+  // number, a compound expression, even an algebraic number) is plugged
+  // into the polynomial afterward, like `MinimalPolynomial[α][x]`.
+  const PLACEHOLDER: &str = "MinimalPolynomial`x$";
+  let (var, substitute) = match &args[1] {
+    Expr::Identifier(name) => (name.clone(), None),
+    other => (PLACEHOLDER.to_string(), Some(other)),
   };
 
   // Try to compute the minimal polynomial coefficients
@@ -55,7 +55,10 @@ pub fn minimal_polynomial_core(
       // 3 (1 + Sqrt[2]), whose minimal polynomial has degree 4); keep the
       // irreducible factor alpha satisfies.
       let coeffs = refine_minimal_coeffs(alpha, &make_square_free(&coeffs));
-      let poly = coeffs_to_expr(&coeffs, &var);
+      let mut poly = coeffs_to_expr(&coeffs, &var);
+      if let Some(value) = substitute {
+        poly = crate::syntax::substitute_variable(&poly, &var, value);
+      }
       let simplified = crate::evaluator::evaluate_expr_to_expr(&poly)?;
       Ok(simplified)
     }
