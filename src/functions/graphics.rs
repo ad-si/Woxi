@@ -44824,6 +44824,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
   // Filled in on demand by the spec loop below, when a spec only parses
   // once the body has run (see the retry there).
   let mut post_body_bindings: Option<Vec<(String, String)>> = None;
+  // Visible controls whose spec states its own starting value
+  // (`{{v, init, …}, …}`); a later hidden spec for the same variable must not
+  // reset it (see `spec_states_initial_value`).
+  let mut explicitly_initialized: std::collections::HashSet<String> =
+    std::collections::HashSet::new();
   // A slider's bounds may be symbols the body assigns before doing
   // anything else — `Manipulate[tmin = 0; tmax = 2 Pi; …, {{t, 0}, tmin,
   // tmax}]`. Wolfram evaluates the body before laying the controls out, so
@@ -45478,6 +45483,9 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         // "actual starting value" override idiom.)
         if !c.name().is_empty() {
           state.retain(|(n, _)| n != c.name());
+          if spec_states_initial_value(&spec) {
+            explicitly_initialized.insert(c.name().to_string());
+          }
         }
         controls.push(c);
       }
@@ -45529,6 +45537,15 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             matches!(it, Expr::Rule { .. } | Expr::RuleDelayed { .. })
           })
         {
+          continue;
+        }
+        // Wolfram keeps the first starting value a variable is given: a
+        // hidden `{{var, init}, ControlType -> None}` listed after a visible
+        // control that already states `{{var, init0, …}, …}` leaves the
+        // control at `init0` (a demonstration exported with its last
+        // session's values appended as hidden specs still opens at the
+        // visible controls' stated defaults).
+        if explicitly_initialized.contains(&name) {
           continue;
         }
         // A hidden variable driven by an in-body `Locator[Dynamic[…]]`
@@ -46361,22 +46378,7 @@ fn seed_bare_control_from_hidden_state(
   let Some(Expr::Identifier(name)) = items.first() else {
     return spec;
   };
-  let hides = |it: &Expr| match it {
-    Expr::Identifier(s) => s == "None",
-    Expr::Rule {
-      pattern,
-      replacement,
-    }
-    | Expr::RuleDelayed {
-      pattern,
-      replacement,
-    } => {
-      matches!(pattern.as_ref(), Expr::Identifier(p) if p == "ControlType")
-        && matches!(replacement.as_ref(), Expr::Identifier(r) if r == "None")
-    }
-    _ => false,
-  };
-  if items[1..].iter().any(hides) {
+  if spec_hides_control(items) {
     return spec;
   }
   let Some((_, code)) = state.iter().find(|(n, _)| n == name) else {
@@ -50673,11 +50675,60 @@ fn control_spec_variable(spec: &Expr) -> Option<String> {
 /// initial value). Installed as scoped globals while the specs are parsed so
 /// a bound referencing another control variable resolves to its build-time
 /// value regardless of declaration order.
+/// Whether a control spec states its variable's starting value itself, as
+/// `{{var, init, …}, …}`.
+fn spec_states_initial_value(spec: &Expr) -> bool {
+  matches!(
+    spec,
+    Expr::List(items) if matches!(
+      items.first(),
+      Some(Expr::List(head))
+        if head.len() >= 2 && matches!(head.first(), Some(Expr::Identifier(_)))
+    )
+  )
+}
+
+/// Whether a control spec hides its control (`ControlType -> None`, or the
+/// bare `None` marker after the variable).
+fn spec_hides_control(items: &[Expr]) -> bool {
+  items.iter().skip(1).any(|it| match it {
+    Expr::Identifier(s) => s == "None",
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } => {
+      matches!(pattern.as_ref(), Expr::Identifier(p) if p == "ControlType")
+        && matches!(replacement.as_ref(), Expr::Identifier(r) if r == "None")
+    }
+    _ => false,
+  })
+}
+
 fn manipulate_initial_value_bindings(specs: &[Expr]) -> Vec<(String, String)> {
+  // Variables a visible control already gave a starting value; a later
+  // hidden spec for one of them does not rebind it (Wolfram keeps the first
+  // starting value).
+  let mut visible_initialized: Vec<&str> = Vec::new();
   specs
     .iter()
     .filter_map(|spec| {
       let Expr::List(items) = spec else { return None };
+      if let Some(Expr::List(head)) = items.first()
+        && let Some(Expr::Identifier(name)) = head.first()
+        && head.len() >= 2
+      {
+        if spec_hides_control(items) {
+          if visible_initialized.contains(&name.as_str()) {
+            return None;
+          }
+        } else {
+          visible_initialized.push(name);
+        }
+      }
       match items.first()? {
         Expr::List(head) => {
           let Expr::Identifier(name) = head.first()? else {
