@@ -226,11 +226,7 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   // evaluated Times, so its sign and the denominator's content merge
   // (`-1/2*(x*(-3 + 4*x))/(2 + y)`, wolframscript-verified).
   let finish = |e: Expr| -> Expr {
-    if oriented.is_some() {
-      crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
-    } else {
-      e
-    }
+    crate::evaluator::evaluate_expr_to_expr(&e).unwrap_or(e)
   };
   let original_num = num.clone();
   let num = oriented.clone().unwrap_or(num);
@@ -262,6 +258,12 @@ fn canonicalize_together_result(expr: &Expr) -> Expr {
   if let Some((rn, rd)) = reduce_shared_integer_content(&rnum, &rden) {
     if matches!(&rd, Expr::Integer(1)) {
       return finish(rn);
+    }
+    // A bare integer over the rest is already in lowest terms; evaluating
+    // the quotient gives the canonical `Times[-1, Power[…, -1]]`.
+    if matches!(&rn, Expr::Integer(_)) {
+      let q = div2(rn, rd);
+      return crate::evaluator::evaluate_expr_to_expr(&q).unwrap_or(q);
     }
     return finish(hoist_numerator_content(
       &distribute_unit_negative_numerator(&div2(rn, rd)),
@@ -655,10 +657,11 @@ pub(super) fn reduce_shared_integer_content(
       Expr::Integer(k) if *k > 1 => Some((i, *k)),
       _ => None,
     })?;
-  // A content-wrapped numerator (Times[c, …] from an earlier hoist)
-  // cancels its coefficient against the denominator's integer factor.
+  // A content-wrapped numerator (Times[c, …] from an earlier hoist), or a
+  // bare integer one (`2/(2*(-1 + 2*x^2))`), cancels its coefficient
+  // against the denominator's integer factor.
   let num_factors = flatten_times_args(std::slice::from_ref(num));
-  if num_factors.len() >= 2
+  if (num_factors.len() >= 2 || matches!(num, Expr::Integer(_)))
     && let Some(c) = num_factors.iter().find_map(|f| match f {
       Expr::Integer(c) if c.abs() > 1 => Some(*c),
       _ => None,
@@ -2551,15 +2554,17 @@ fn fraction_has_polynomial_gcd(num: &Expr, den: &Expr) -> bool {
   };
   let n = crate::functions::polynomial_ast::expand::expand_and_combine(num);
   let d = crate::functions::polynomial_ast::expand::expand_and_combine(den);
-  let (Some(cn), Some(cd)) = (
+  let small_gcd = match (
     super::simplify::extract_poly_coeffs(&n, &var),
     super::simplify::extract_poly_coeffs(&d, &var),
-  ) else {
-    return false;
+  ) {
+    (Some(cn), Some(cd)) => super::cancel::poly_gcd(&cn, &cd),
+    _ => None,
   };
-  match super::cancel::poly_gcd(&cn, &cd) {
+  match small_gcd {
     Some(g) => g.iter().rposition(|&c| c != 0).unwrap_or(0) >= 1,
-    None => false,
+    // Coefficients (or remainders) beyond `i128`: the big-integer gcd.
+    None => super::mfactor::cancel_polynomial_gcd(&n, &d).is_some(),
   }
 }
 

@@ -1735,6 +1735,53 @@ mod simplify {
     assert_eq!(interpret("Simplify[a/x + b/x]").unwrap(), "(a + b)/x");
   }
 
+  // A number built from square roots that equals a rational is reduced to
+  // it, whatever form it comes in.
+  #[test]
+  fn square_radical_numbers_reduce_to_rationals() {
+    assert_eq!(
+      interpret("Simplify[(-6 - 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Simplify[(6 + 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(1 + Sqrt[2]) + 1/(1 - Sqrt[2])]").unwrap(),
+      "-2"
+    );
+    // Irrational ones keep their form.
+    assert_eq!(
+      interpret("Simplify[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "Sqrt[2] + Sqrt[3]"
+    );
+  }
+
+  // A sum over a quadratic radical denominator is rationalized when that is
+  // simpler.
+  #[test]
+  fn rationalizes_sum_over_radical_denominator() {
+    assert_eq!(
+      interpret("FullSimplify[(1 + Sqrt[5])/(6 + 2 Sqrt[5])]").unwrap(),
+      "(-1 + Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + Sqrt[3])/(1 + Sqrt[3])]").unwrap(),
+      "(1 + Sqrt[3])/2"
+    );
+  }
+
+  // The result is evaluated (and simplified) again, so factors that cancel
+  // do and the form of the input does not matter.
+  #[test]
+  fn result_is_reevaluated() {
+    assert_eq!(
+      interpret("FullSimplify[(-2 (-1 - Sqrt[5]))/(1 + Sqrt[5])^2]").unwrap(),
+      interpret("FullSimplify[2/(1 + Sqrt[5])]").unwrap()
+    );
+  }
+
   #[test]
   fn combine_like_denominator_with_extra() {
     assert_eq!(
@@ -3318,6 +3365,36 @@ mod together_integer_denominator_form {
 mod together {
   use super::*;
 
+  // A bare integer numerator cancels against the denominator's content.
+  #[test]
+  fn integer_numerator_cancels_content() {
+    assert_eq!(
+      interpret("Together[(1/2)/(-1/2 + x^2)] === 1/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Together[(-3/2)/(-1/2 + x^2)] === -3/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Inverse[{{1/2, x}, {x, 1}}][[2, 2]] === -1/(-1 + 2 x^2)")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // The combined fraction is an evaluated expression.
+  #[test]
+  fn result_is_evaluated() {
+    assert_eq!(
+      interpret(
+        "Together[(-1 - Sqrt[5])/(-(1 + Sqrt[5])^2)] === 1/(1 + Sqrt[5])"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // Combining a sum reads `c^(-1 + n)` as `c^n/c`; a lone power keeps it
   #[test]
   fn integer_exponent_offsets_join_the_denominator() {
@@ -4123,6 +4200,53 @@ mod together {
 
 mod apart {
   use super::*;
+
+  // Nonlinear and repeated factors with symbolic coefficients are split by
+  // undetermined coefficients.
+  #[test]
+  fn apart_symbolic_nonlinear_factors() {
+    assert_eq!(
+      interpret("Apart[1/(s (s^2 + a^2)), s]").unwrap(),
+      "1/(a^2*s) - s/(a^2*(a^2 + s^2))"
+    );
+    assert_eq!(
+      interpret("Apart[1/(s (s^2 + Pi^2)), s]").unwrap(),
+      "1/(Pi^2*s) - s/(Pi^2*(Pi^2 + s^2))"
+    );
+    assert_eq!(
+      interpret("Apart[1/((x^2 + a) (x^2 + b)), x]").unwrap(),
+      "1/((-a + b)*(a + x^2)) + 1/((a - b)*(b + x^2))"
+    );
+  }
+
+  #[test]
+  fn apart_symbolic_repeated_factors() {
+    assert_eq!(
+      interpret("Apart[s/(s + a)^2, s]").unwrap(),
+      "-(a/(a + s)^2) + (a + s)^(-1)"
+    );
+    assert_eq!(
+      interpret("Apart[1/((s + a)^2 (s + b)), s]").unwrap(),
+      "1/((-a + b)*(a + s)^2) - 1/((a - b)^2*(a + s)) + 1/((a - b)^2*(b + s))"
+    );
+  }
+
+  #[test]
+  fn apart_symbolic_improper_fraction() {
+    assert_eq!(
+      interpret("Apart[s^3/(s^2 + a^2), s]").unwrap(),
+      "s - (a^2*s)/(a^2 + s^2)"
+    );
+    assert_eq!(
+      interpret("Apart[(x^2 + 1)/(x^2 + a^2), x]").unwrap(),
+      "1 + (1 - a^2)/(a^2 + x^2)"
+    );
+    // A proper fraction over one irreducible factor is already apart.
+    assert_eq!(
+      interpret("Apart[1/(x^2 + a^2), x]").unwrap(),
+      "(a^2 + x^2)^(-1)"
+    );
+  }
 
   // A polynomial has no denominator to split, but Apart multiplies it out.
   #[test]
@@ -10411,6 +10535,37 @@ mod reduce {
     );
   }
 
+  // A linear system with radical coefficients — the invariance conditions
+  // of a matrix under a 60° rotation, a dependent system — is eliminated
+  // exactly, never dividing by an unrecognized zero coefficient.
+  #[test]
+  fn linear_system_with_radical_coefficients() {
+    assert_eq!(
+      interpret(
+        "With[{m = Array[a, {3, 3}], r = {{1/2, -Sqrt[3]/2, 0}, \
+         {Sqrt[3]/2, 1/2, 0}, {0, 0, 1}}}, \
+         Reduce[m == r.m.Transpose[r], Flatten[m]]]"
+      )
+      .unwrap(),
+      "a[1, 3] == 0 && a[2, 1] == -a[1, 2] && a[2, 2] == a[1, 1] && \
+       a[2, 3] == 0 && a[3, 1] == 0 && a[3, 2] == 0"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + Sqrt[2] y == 1, Sqrt[2] x + 2 y == 0}, {x, y}]")
+        .unwrap(),
+      "False"
+    );
+    assert!(
+      !interpret(
+        "Reduce[{a == (a/2 - (Sqrt[3]*c)/2)/2 - \
+         (Sqrt[3]*(b/2 - (Sqrt[3]*d)/2))/2, d == (Sqrt[3]*((Sqrt[3]*a)/2 \
+         + c/2))/2 + ((Sqrt[3]*b)/2 + d/2)/2}, {a, b, c, d}]"
+      )
+      .unwrap()
+      .contains("Indeterminate")
+    );
+  }
+
   // A congruence in a system of equations restricts the lattice.
   #[test]
   fn diophantine_system_with_congruence() {
@@ -10671,6 +10826,80 @@ mod reduce {
 
 mod nsolve {
   use super::*;
+
+  // A line tangent to a circle meets it in a real double root. Rounding of
+  // the machine coefficients used to push the discriminant negative and
+  // split that root into a conjugate pair with ~1e-9 imaginary parts.
+  #[test]
+  fn tangent_line_circle_double_root_is_real() {
+    assert_eq!(
+      interpret(
+        "NSolve[{y == 0., (x - 0.6743742537909496)^2 + \
+         (y - 0.2685912942633248)^2 == 0.2685912942633248^2}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 0.6743742537909496, y -> 0.}, \
+       {x -> 0.6743742537909496, y -> 0.}}"
+    );
+    // A slanted tangent whose circle comes out of a longer computation.
+    assert_eq!(
+      interpret(
+        "Chop[Im[{x, y} /. NSolve[{(y - 0.73) (0.07 - 0.97) == \
+         (0 - 0.73) (x - 0.97), (x - 0.062583012467254)^2 + \
+         (y - 0.02091829882753737)^2 == 0.020918298827542037^2}, \
+         {x, y}]], 0]"
+      )
+      .unwrap(),
+      "{{0, 0}, {0, 0}}"
+    );
+  }
+
+  // A genuinely complex pair is kept, however small its imaginary parts.
+  #[test]
+  fn tiny_genuine_imaginary_parts_are_kept() {
+    assert_eq!(
+      interpret("NSolve[{y == 2. x, x^2 + y^2 == -1.}, {x, y}]").unwrap(),
+      "{{x -> 0. + 0.4472135954999579*I, y -> 0. + 0.8944271909999159*I}, \
+       {x -> 0. - 0.4472135954999579*I, y -> 0. - 0.8944271909999159*I}}"
+    );
+    assert_eq!(
+      interpret(
+        "Sort[Im[x /. NSolve[{y == 0., x^2 + y^2 == -1.*^-14}, {x, y}]]]"
+      )
+      .unwrap(),
+      "{-1.*^-7, 1.*^-7}"
+    );
+  }
+
+  // Exact roots are told apart relative to their size: an absolute floor
+  // merged the distinct roots `±I/10^10` of a system into one.
+  #[test]
+  fn tiny_distinct_exact_roots_of_a_system_are_kept() {
+    assert_eq!(
+      interpret("Solve[{y == 0, x^2 + y^2 == -1/10^20}, {x, y}]").unwrap(),
+      "{{x -> -1/10000000000*I, y -> 0}, {x -> I/10000000000, y -> 0}}"
+    );
+    assert_eq!(
+      interpret("Solve[{y == 0, x^2 == 1/10^20}, {x, y}]").unwrap(),
+      "{{x -> -1/10000000000, y -> 0}, {x -> 1/10000000000, y -> 0}}"
+    );
+  }
+
+  // Factoring the rationalized system's polynomial differentiated its huge
+  // integer coefficients before reducing them mod p, overflowing i128.
+  #[test]
+  fn huge_rationalized_coefficients_do_not_overflow() {
+    assert_eq!(
+      interpret(
+        "NSolve[{(y - 0.44) (0.29 - 0.58) == (0 - 0.44) (x - 0.58), \
+         (x - 0.6043481160101969)^2 + (y - 0.16929966868588614)^2 == \
+         0.16929966868588617^2}, {x, y}]"
+      )
+      .unwrap(),
+      "{{x -> 0.4629899686020044, y -> 0.2624675385685585}, \
+       {x -> 0.4629899686020044, y -> 0.2624675385685585}}"
+    );
+  }
 
   // An InterpolatingFunction is inverted: the first root in its domain,
   // with NSolve::ifun.
@@ -16715,6 +16944,28 @@ mod minimal_polynomial {
   #[test]
   fn integer() {
     assert_eq!(interpret("MinimalPolynomial[3, x]").unwrap(), "-3 + x");
+  }
+
+  // The variable may be any expression, not just a symbol: the minimal
+  // polynomial is evaluated at it, like `MinimalPolynomial[s][x]`.
+  #[test]
+  fn non_symbol_variable_is_substituted() {
+    assert_eq!(interpret("MinimalPolynomial[Sqrt[2], 3]").unwrap(), "7");
+    assert_eq!(
+      interpret("MinimalPolynomial[Sqrt[2], 1 + y]").unwrap(),
+      "-2 + (1 + y)^2"
+    );
+    assert_eq!(
+      interpret("MinimalPolynomial[GoldenRatio, f[z]]").unwrap(),
+      "-1 - f[z] + f[z]^2"
+    );
+    assert_eq!(
+      interpret(
+        "r = Root[#^3 - #^2 - 1 &, 1]; MinimalPolynomial[r, r] === -1 - r^2 + r^3"
+      )
+      .unwrap(),
+      "True"
+    );
   }
 
   // Sums of radicals over one base live in a single field extension; the
@@ -26922,6 +27173,148 @@ mod solve_linear_machine_small_right_hand_sides {
     assert_eq!(
       solve("Solve[{0.1 x + 0.2 y == 0.3, 0.3 x + 0.6 y == 0.9}, {x, y}]").0,
       "{{y -> 1.5 - 0.5*x}}"
+    );
+  }
+}
+
+/// Linear systems whose coefficients are rational functions of a parameter.
+mod solve_rational_function_coefficients {
+  use super::*;
+
+  /// The coefficient of `x` cancels to zero, so `x` stays free.
+  #[test]
+  fn singular_system_keeps_its_free_variable() {
+    clear_state();
+    let r = interpret_with_stdout(
+      "Solve[{c0 + c1 (a/(1 - a) + a/(a - 1)) == 0, c1 - c2 == 0}, {c0, c1, c2}]",
+    )
+    .unwrap();
+    assert_eq!(r.result, "{{c0 -> 0, c2 -> c1}}");
+  }
+
+  /// The parametric solution of a singular system is found, not just the
+  /// trivial one, and its coefficients come out brought together.
+  #[test]
+  fn parametric_solution_is_found_and_reduced() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Quiet[Solve[{c0 + (1 + 1/(1 - a)) c1 == 0, \
+         (a/(1 - a) + 1) c0 + (2 - a)/(1 - a)^2 c1 == 0}, {c0, c1}]]"
+      )
+      .unwrap(),
+      interpret("Quiet[Solve[{c0 + (2 - a)/(1 - a) c1 == 0}, {c0, c1}]]")
+        .unwrap()
+    );
+  }
+
+  #[test]
+  fn regular_system_with_rational_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[{a/(1 - a) x + y == 1, x - y/(a + 1) == 2}, {x, y}]")
+        .unwrap(),
+      "{{x -> (-3 + a + 2*a^2)/(-1 - a + a^2), y -> (1 - 2*a - 3*a^2)/(1 + a - a^2)}}"
+    );
+  }
+}
+
+/// `True` among the equations (what `0 == 0` evaluates to) constrains
+/// nothing; `False` rules out every solution.
+mod solve_with_boolean_equations {
+  use super::*;
+
+  #[test]
+  fn true_entries_are_dropped() {
+    clear_state();
+    assert_eq!(
+      interpret("Solve[{x + y == 1, True, x - y == 0}, {x, y}]").unwrap(),
+      "{{x -> 1/2, y -> 1/2}}"
+    );
+    assert_eq!(
+      interpret("Solve[{x - 1 == 0, True}, x]").unwrap(),
+      "{{x -> 1}}"
+    );
+  }
+
+  #[test]
+  fn false_entry_has_no_solution() {
+    clear_state();
+    assert_eq!(interpret("Solve[{x == 1, False}, x]").unwrap(), "{}");
+  }
+}
+
+/// Polynomials whose coefficients (or the arithmetic on them) exceed the
+/// machine-integer range.
+mod large_coefficient_polynomials {
+  use super::*;
+
+  /// The Hensel lift needs a modulus beyond `i128`.
+  #[test]
+  fn factor_needs_a_big_lifting_modulus() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "Factor[Expand[(1368 x^3 - 6144 x^2 + 1378 x - 17) \
+         (13608 x^5 - 32958 x^4 + 45061 x^3 - 20426 x^2 + 486 x + 8)]]"
+      )
+      .unwrap(),
+      "(-17 + 1378*x - 6144*x^2 + 1368*x^3)*(8 + 486*x - 20426*x^2 + \
+       45061*x^3 - 32958*x^4 + 13608*x^5)"
+    );
+  }
+
+  /// Coefficients near the `i128` limit overflowed the derivative and the
+  /// Zassenhaus arithmetic (a panic).
+  #[test]
+  fn factor_coefficients_near_the_machine_limit() {
+    clear_state();
+    let poly = "Expand[(9 + 320 x)^3 (-729 - 49464 x + 50000 x^2)^4 \
+                (-243 - 35028 x + 100000 x^2)^2]";
+    let factored = "(9 + 320*x)^3*(-729 - 49464*x + 50000*x^2)^4*\
+                    (-243 - 35028*x + 100000*x^2)^2";
+    assert_eq!(interpret(&format!("Factor[{poly}]")).unwrap(), factored);
+    assert_eq!(
+      interpret(&format!("FactorSquareFree[{poly}]")).unwrap(),
+      factored
+    );
+  }
+
+  /// The machine-integer square-free decomposition gave up and reported
+  /// the whole polynomial as square-free.
+  #[test]
+  fn square_free_list_with_large_coefficients() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "FactorSquareFreeList[Expand[(9 + 320 x)^3 (-729 - 49464 x + 50000 x^2)^4]]"
+      )
+      .unwrap(),
+      "{{1, 1}, {9 + 320*x, 3}, {-729 - 49464*x + 50000*x^2, 4}}"
+    );
+  }
+
+  /// A common factor whose coefficients exceed `i128` is still cancelled.
+  #[test]
+  fn together_and_cancel_divide_out_a_large_gcd() {
+    clear_state();
+    let frac =
+      "Expand[(3 x^2 + 7 x - 5)^9 (x - 1)]/Expand[(3 x^2 + 7 x - 5)^8 (x + 2)]";
+    let reduced = "(5 - 12*x + 4*x^2 + 3*x^3)/(2 + x)";
+    assert_eq!(interpret(&format!("Together[{frac}]")).unwrap(), reduced);
+    assert_eq!(interpret(&format!("Cancel[{frac}]")).unwrap(), reduced);
+  }
+
+  #[test]
+  fn polynomial_gcd_of_high_degree_polynomials() {
+    clear_state();
+    assert_eq!(
+      interpret(
+        "PolynomialGCD[Expand[(3 x^2 + 7 x - 5)^9 (x - 1)], \
+         Expand[(3 x^2 + 7 x - 5)^8 (x + 2)]] === Expand[(3 x^2 + 7 x - 5)^8]"
+      )
+      .unwrap(),
+      "True"
     );
   }
 }

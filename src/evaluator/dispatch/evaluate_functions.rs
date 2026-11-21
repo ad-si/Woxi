@@ -300,15 +300,14 @@ pub(crate) fn evaluate_function_call_ast(
 /// symbol's value) costs nothing at all, where rebuilding it as a tree
 /// copied it on every call.
 ///
-/// Threshold of 16 keeps the Vec path for small argument lists where the
-/// one-time conversion would dominate.
+/// Lists shorter than `share_large_lists`' threshold stay plain vectors,
+/// where the one-time conversion would dominate.
 fn promote_lists_for_substitution(values: &mut [Expr]) {
+  // Nested arrays too: a matrix held in a small state list
+  // (`{grid, {x, y}, dir}`) is otherwise copied in full at every place the
+  // body mentions the parameter.
   for v in values {
-    if let Expr::List(items) = v
-      && items.len() > 16
-    {
-      items.share();
-    }
+    crate::evaluator::share_large_lists(v, 0);
   }
 }
 
@@ -2600,6 +2599,9 @@ fn evaluate_function_call_ast_inner(
     "EntityList" => return crate::functions::entity_ast::entity_list_ast(args),
     "EntityProperties" => {
       return crate::functions::entity_ast::entity_properties_ast(args);
+    }
+    "CanonicalName" => {
+      return crate::functions::entity_ast::canonical_name_ast(args);
     }
     "EntityClassList" => {
       return crate::functions::entity_ast::entity_class_list_ast(args);
@@ -5591,6 +5593,31 @@ fn evaluate_function_call_ast_inner(
           {
             **pattern = id_expr("GraphLayout");
           }
+        }
+      }
+      // `PlotStyle -> s` styles the plot's edges (the legacy
+      // `VertexRenderingFunction` draws the vertices on its own); an
+      // explicit `EdgeStyle` wins. `Graph` has no `PlotStyle` option, so it
+      // is taken off on the way through.
+      let is_option = |o: &Expr, key: &str| {
+        matches!(o, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+          if matches!(pattern.as_ref(), Expr::Identifier(n) if n == key))
+      };
+      let plot_style = forwarded.iter().rev().find_map(|o| match o {
+        Expr::Rule { replacement, .. }
+        | Expr::RuleDelayed { replacement, .. }
+          if is_option(o, "PlotStyle") =>
+        {
+          Some(replacement.as_ref().clone())
+        }
+        _ => None,
+      });
+      if let Some(style) = plot_style {
+        forwarded.retain(|o| !is_option(o, "PlotStyle"));
+        let automatic =
+          matches!(&style, Expr::Identifier(s) if s == "Automatic");
+        if !automatic && !forwarded.iter().any(|o| is_option(o, "EdgeStyle")) {
+          forwarded.push(rule_expr(id_expr("EdgeStyle"), style));
         }
       }
       // `TreePlot[g, Center]` puts the root in the middle and the deeper
@@ -13255,6 +13282,10 @@ fn evaluate_function_call_ast_inner(
         | "Mouseover"
         | "Magnify"
         | "Shallow"
+        // Magnification[s] is a size specification (`ImageSize ->
+        // Magnification[1]` in a stored image's GraphicsBox); it stays
+        // unevaluated in wolframscript.
+        | "Magnification"
         // Geographic primitives consumed by GeoGraphics (rendered there);
         // they stay symbolic on their own, matching wolframscript, so they
         // are not "unimplemented".

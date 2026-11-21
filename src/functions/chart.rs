@@ -595,7 +595,7 @@ impl StyledLabel {
 /// `letter-spacing:Npx` a lone `Spacer` becomes, and the `dx="N"` a
 /// `Spacer` next to other Row content becomes — by `scale`, leaving
 /// relative ones (`70%`, `1.2em`) as they are.
-fn scale_markup_lengths(markup: &str, scale: f64) -> String {
+pub(crate) fn scale_markup_lengths(markup: &str, scale: f64) -> String {
   if scale == 1.0 {
     return markup.to_string();
   }
@@ -697,7 +697,19 @@ pub(crate) fn parse_style_directive_args(
   let mut italic = false;
   let mut color = None;
   let mut font_size = None;
-  for arg in args {
+  // A list of directives applies each of them in turn, so
+  // `Style[expr, {Orange, 18}]` is the same as `Style[expr, Orange, 18]`.
+  fn flatten_directives<'a>(args: &'a [Expr], out: &mut Vec<&'a Expr>) {
+    for arg in args {
+      match arg {
+        Expr::List(items) => flatten_directives(items, out),
+        other => out.push(other),
+      }
+    }
+  }
+  let mut directives = Vec::new();
+  flatten_directives(args, &mut directives);
+  for arg in directives {
     match arg {
       Expr::Identifier(s) if s == "Bold" => bold = true,
       Expr::Identifier(s) if s == "Italic" => italic = true,
@@ -866,6 +878,19 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
 pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
+  // A `Dynamic[x]` label reads as the value `x` currently has.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Dynamic"
+    && !args.is_empty()
+  {
+    return parse_styled_label(
+      &crate::functions::graphics::dynamic_current_value(expr),
+    );
+  }
+  // `None` and `Null` (e.g. a one-armed `If[False, label]`) draw no label.
+  if matches!(expr, Expr::Identifier(s) if s == "None" || s == "Null") {
+    return None;
+  }
   // `Text[…]` sets its content in the graphic's own text style, so the font
   // weight and slant it inherits are reset — `Style[Text["a"], Bold]` is not
   // bold in Wolfram, while the color and size still reach through. A
@@ -978,6 +1003,32 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     }
     return Some(label);
   }
+  // A plain mathematical label (`T`, `Subscript[T, opt]`, `f[x]`) is set
+  // in the graphic's `TraditionalForm`, its single-letter symbols in
+  // italics, the same way an `AxesLabel` entry is.
+  if let Some(label) =
+    crate::functions::graphics::traditional_math_axis_label(expr)
+  {
+    let markup = label
+      .strip_prefix(crate::functions::graphics::STYLED_LABEL_MARKER)
+      .map(str::to_string)
+      .unwrap_or(label);
+    let text = svg_markup_visible_text(&markup);
+    if !text.trim().is_empty() {
+      return Some(StyledLabel {
+        text,
+        markup: Some(markup),
+        extra_lines: Vec::new(),
+        bold: false,
+        italic: false,
+        color: None,
+        font_size: None,
+        frame: None,
+        line_frames: Vec::new(),
+        segments: Vec::new(),
+      });
+    }
+  }
   match expr {
     // A string with line breaks stacks like a `Column` title: each line
     // is its own row.
@@ -1037,21 +1088,22 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
     {
       let mut extra_lines = Vec::new();
       let (text, markup) = match &args[0] {
-        // Inline `\!\(\*…\)` box notation typesets like a bare string's.
-        Expr::String(s)
-          if s.contains(crate::functions::string_ast::BOX_START) =>
-        {
-          let markup = crate::functions::graphics::box_string_to_svg(s);
-          (svg_markup_visible_text(&markup), Some(markup))
-        }
-        // A multi-line string stacks like a bare one: each line is a row.
+        // A multi-line string stacks like a bare one: each line is a row
+        // (typeset on its own, so inline box notation on any line works).
         Expr::String(s) if s.contains('\n') => {
           let mut lines = s
             .split('\n')
             .map(crate::functions::graphics::box_string_to_svg);
           let first = lines.next().unwrap_or_default();
           extra_lines = lines.collect();
-          (s.replace('\n', " "), Some(first))
+          (stacked_visible_text(&first, &extra_lines), Some(first))
+        }
+        // Inline `\!\(\*…\)` box notation typesets like a bare string's.
+        Expr::String(s)
+          if s.contains(crate::functions::string_ast::BOX_START) =>
+        {
+          let markup = crate::functions::graphics::box_string_to_svg(s);
+          (svg_markup_visible_text(&markup), Some(markup))
         }
         Expr::String(s) => (s.clone(), None),
         Expr::Identifier(s) => (s.clone(), None),
@@ -1100,6 +1152,15 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         match crate::functions::graphics::traditional_application_markup(other)
         {
           Some(markup) => (markup, Vec::new()),
+          // A held formula or an equation (possibly with its numbers
+          // formatted by `NumberForm`) is set in traditional notation:
+          // `HoldForm[z = Sin[2 x]]` reads `z = sin(2 x)`.
+          None if is_traditional_formula_label(other) => {
+            markup_and_extra_lines(&call(
+              "TraditionalForm",
+              vec![other.clone()],
+            ))
+          }
           // A sum reads as `TraditionalForm` sets it, so a polynomial runs
           // from its highest power down (`x^3 - 2 x^2`).
           None => markup_and_extra_lines(&traditional_sums(
@@ -1130,6 +1191,28 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
   }
 }
 
+/// Whether a label is a held formula (`HoldForm[…]`) or an equation or
+/// inequality, possibly inside a number-display form (`NumberForm[HoldForm[
+/// …], {3, 1}]`). A graphic's `FormatType` is `TraditionalForm`, so such a
+/// label is typeset in it rather than printed as its input form.
+fn is_traditional_formula_label(expr: &Expr) -> bool {
+  match expr {
+    Expr::Comparison { .. } => true,
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      match name.as_str() {
+        "NumberForm" | "ScientificForm" | "EngineeringForm" => {
+          is_traditional_formula_label(&args[0])
+        }
+        "HoldForm" => args.len() == 1,
+        "Equal" | "Unequal" | "Less" | "LessEqual" | "Greater"
+        | "GreaterEqual" => args.len() >= 2,
+        _ => false,
+      }
+    }
+    _ => false,
+  }
+}
+
 /// Position for chart labels placed with `Placed[labels, position]`.
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum LabelPosition {
@@ -1148,6 +1231,10 @@ pub(crate) struct ChartOptions {
   pub svg_height: u32,
   pub full_width: bool,
   pub chart_labels: Vec<ChartLabel>,
+  /// Set when `ChartLabels -> {groupLabels, barLabels}` named the groups
+  /// explicitly. A flat label list instead names the bars of each group
+  /// (repeated in every group) when a `BarChart` groups its data.
+  pub chart_labels_group_level: bool,
   pub chart_label_position: LabelPosition,
   pub plot_label: Option<StyledLabel>,
   pub axes_label: Option<(String, String)>,
@@ -1189,6 +1276,9 @@ pub(crate) struct ChartOptions {
   /// leave this `true` (the explicit list still overrides individual axes
   /// via `ticks_x`/`ticks_y` above).
   pub ticks: bool,
+  /// `FrameTicks -> None | False`: a framed chart keeps its border but
+  /// loses the tick marks and labels on it.
+  pub frame_ticks: bool,
   /// `ChartLayout -> "Stacked"` / `"Percentile"` / `"Overlapped"` /
   /// `"Stepped"`: how the bars of each group share its slot.
   pub layout: crate::functions::plot::BarLayout,
@@ -1232,6 +1322,8 @@ pub(crate) struct ChartLabel {
   pub font_size: Option<f64>,
   /// `Style[label, Bold]`.
   pub bold: bool,
+  /// `Style[label, Italic]`.
+  pub italic: bool,
   /// The styles of a stacked (`Column[{…}]`) label's lines, one per
   /// `\n`-separated line of `text`; empty when the lines share the label's
   /// style.
@@ -1298,17 +1390,22 @@ impl ChartLabel {
   }
 }
 
-/// The font size and weight the `Style[…]` wrappers around a label give it
-/// (looking through `Rotate`, `Text`, `Tooltip` and the like). An inner
-/// `Style` wins over an outer one, as it is the one applied to the text.
-pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool) {
+/// The font size, weight and slant the `Style[…]` wrappers around a label
+/// give it (looking through `Rotate`, `Text`, `Tooltip` and the like). An
+/// inner `Style` wins over an outer one, as it is the one applied to the
+/// text.
+pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool, bool) {
   match e {
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
     {
-      let (bold, _, _, size) = parse_style_directive_args(&args[1..]);
-      let (inner_size, inner_bold) = label_font_style(&args[0]);
-      (inner_size.or(size), bold || inner_bold)
+      let (bold, italic, _, size) = parse_style_directive_args(&args[1..]);
+      let (inner_size, inner_bold, inner_italic) = label_font_style(&args[0]);
+      (
+        inner_size.or(size),
+        bold || inner_bold,
+        italic || inner_italic,
+      )
     }
     Expr::FunctionCall { name, args }
       if matches!(
@@ -1326,9 +1423,10 @@ pub(crate) fn label_font_style(e: &Expr) -> (Option<f64>, bool) {
     {
       let size = items.iter().find_map(|item| label_font_style(item).0);
       let bold = items.iter().any(|item| label_font_style(item).1);
-      (size, bold)
+      let italic = items.iter().any(|item| label_font_style(item).2);
+      (size, bold, italic)
     }
-    _ => (None, false),
+    _ => (None, false, false),
   }
 }
 
@@ -1584,25 +1682,20 @@ pub(crate) fn expr_to_label(e: &Expr) -> Option<String> {
     {
       arithmetic_label(e)
     }
-    // A comparison reads as its sides joined by the operator, each side set
-    // as a label itself — `PlotLegends -> {Subscript[v, 1] == Sin[x]}` shows
-    // `v₁ == Sin[x]`, not the raw `Subscript[v, 1]` call.
+    // A comparison reads as its sides joined by the operator's
+    // TraditionalForm glyph, each side set as a label itself —
+    // `PlotLegends -> {Subscript[v, 1] == Sin[x]}` shows `v₁ = sin(x)`, not
+    // the raw `Subscript[v, 1]` call.
     Expr::Comparison {
       operands,
       operators,
     } => {
       let mut out = expr_to_label(operands.first()?)?;
       for (op, operand) in operators.iter().zip(&operands[1..]) {
-        let sym = match op {
-          ComparisonOp::Equal => "==",
-          ComparisonOp::NotEqual => "!=",
-          ComparisonOp::Less => "<",
-          ComparisonOp::LessEqual => "<=",
-          ComparisonOp::Greater => ">",
-          ComparisonOp::GreaterEqual => ">=",
-          ComparisonOp::SameQ => "===",
-          ComparisonOp::UnsameQ => "=!=",
-        };
+        let sym =
+          crate::evaluator::dispatch::complex_and_special::tf_comparison_op_glyph(
+            *op,
+          );
         out.push_str(&format!(" {sym} {}", expr_to_label(operand)?));
       }
       Some(out)
@@ -1719,9 +1812,10 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
     }
   }
 
-  let mut sum = Vec::new();
-  terms(e, &mut sum, false);
-  if sum.len() > 1 {
+  if is_sum(e) {
+    // The terms are set in TraditionalForm's order: `k₁ x + ϕ`.
+    let sum =
+      crate::evaluator::dispatch::complex_and_special::tf_sum_terms_in_order(e);
     let mut out = String::new();
     for (i, (neg, t)) in sum.iter().enumerate() {
       let mut text = expr_to_label(t)?;
@@ -1745,6 +1839,9 @@ fn arithmetic_label(e: &Expr) -> Option<String> {
 
   let (mut num, mut den) = (Vec::new(), Vec::new());
   factors(e, &mut num, &mut den, false);
+  // The factors are set in TraditionalForm's order: `k₂ sin(k₁ x)`.
+  crate::evaluator::dispatch::complex_and_special::tf_order_factors(&mut num);
+  crate::evaluator::dispatch::complex_and_special::tf_order_factors(&mut den);
   let join = |parts: &[Expr]| -> Option<String> {
     let texts = parts
       .iter()
@@ -1854,7 +1951,7 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
     && name == "Rotate"
     && args.len() >= 2
   {
-    let (font_size, bold) = label_font_style(&args[0]);
+    let (font_size, bold, italic) = label_font_style(&args[0]);
     let text =
       pane_wrapped_label(&args[0], expr_to_label(&args[0])?, font_size);
     let angle = try_eval_to_f64(
@@ -1866,6 +1963,7 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
       rotation: angle,
       font_size,
       bold,
+      italic,
       line_styles: column_line_styles(&args[0]),
     });
   }
@@ -1876,11 +1974,12 @@ fn expr_to_chart_label(e: &Expr) -> Option<ChartLabel> {
     return None;
   }
   // Plain label
-  let (font_size, bold) = label_font_style(e);
+  let (font_size, bold, italic) = label_font_style(e);
   expr_to_label(e).map(|text| ChartLabel {
     text: pane_wrapped_label(e, text, font_size),
     font_size,
     bold,
+    italic,
     line_styles: column_line_styles(e),
     ..ChartLabel::default()
   })
@@ -3087,6 +3186,61 @@ const BUSINESS_THEME_GRADIENT: [(f64, f64, f64); 8] = [
   (0.409582, 0.542008, 0.909424),
 ];
 
+/// The names `ColorData["Gradients"]` lists, in its order.
+pub(crate) const GRADIENT_NAMES: &[&str] = &[
+  "AlpineColors",
+  "Aquamarine",
+  "ArmyColors",
+  "AtlanticColors",
+  "AuroraColors",
+  "AvocadoColors",
+  "BeachColors",
+  "BlueGreenYellow",
+  "BrassTones",
+  "BrightBands",
+  "BrownCyanTones",
+  "CandyColors",
+  "CherryTones",
+  "CMYKColors",
+  "CoffeeTones",
+  "DarkBands",
+  "DarkRainbow",
+  "DarkTerrain",
+  "DeepSeaColors",
+  "FallColors",
+  "FruitPunchColors",
+  "FuchsiaTones",
+  "GrayTones",
+  "GrayYellowTones",
+  "GreenBrownTerrain",
+  "GreenPinkTones",
+  "IslandColors",
+  "LakeColors",
+  "LightTemperatureMap",
+  "LightTerrain",
+  "MintColors",
+  "NeonColors",
+  "Pastel",
+  "PearlColors",
+  "PigeonTones",
+  "PlumColors",
+  "Rainbow",
+  "RedBlueTones",
+  "RedGreenSplit",
+  "RoseColors",
+  "RustTones",
+  "SandyTerrain",
+  "SiennaTones",
+  "SolarColors",
+  "SouthwestColors",
+  "StarryNightColors",
+  "SunsetColors",
+  "TemperatureMap",
+  "ThermometerColors",
+  "ValentineTones",
+  "WatermelonColors",
+];
+
 /// Resolve a named ChartStyle / `ColorData` color scheme to its gradient
 /// control points. Covers every name in `ColorData["Gradients"]`.
 pub(crate) fn named_color_scheme(
@@ -3315,6 +3469,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     svg_height: DEFAULT_HEIGHT,
     full_width: false,
     chart_labels: Vec::new(),
+    chart_labels_group_level: false,
     chart_label_position: LabelPosition::Below,
     plot_label: None,
     axes_label: None,
@@ -3333,6 +3488,7 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
     ticks_x: None,
     ticks_y: None,
     ticks: true,
+    frame_ticks: true,
     layout: crate::functions::plot::BarLayout::Grouped,
     bar_origin_top: false,
     log_x: false,
@@ -3426,7 +3582,10 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
               // `{groupLabels, barLabels}` — the first sublist names the
               // groups, which are what the category axis shows.
               let labels = match items.first() {
-                Some(Expr::List(group_labels)) => group_labels,
+                Some(Expr::List(group_labels)) => {
+                  opts.chart_labels_group_level = true;
+                  group_labels
+                }
                 _ => items,
               };
               for item in labels {
@@ -3561,6 +3720,12 @@ fn parse_chart_options(args: &[Expr]) -> ChartOptions {
           }
           _ => {}
         },
+        "FrameTicks" => {
+          opts.frame_ticks = !matches!(
+            replacement,
+            Expr::Identifier(s) if s == "None" || s == "False"
+          );
+        }
         "BarOrigin" => {
           // Left/Right give horizontal bars; Bottom/Top stay vertical.
           if let Expr::Identifier(side) = replacement {
@@ -3980,6 +4145,7 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     })?;
   }
   look.layout = opts.layout;
+  look.labels_per_bar = !opts.chart_labels_group_level;
   let decor = extract_grouped_decor(&args[0]).unwrap_or_default();
   if DatumDecor::any(&decor) {
     let to_u8 = |c: &Color| {
@@ -4040,7 +4206,8 @@ pub fn bar_chart_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     opts.plot_range_y,
     &bar_labels,
     bar_label_placement,
-    opts.ticks,
+    // `Ticks` governs the axes and `FrameTicks` the frame, as in `Plot`.
+    opts.ticks && (opts.frame_ticks || !look.frame),
     &opts.epilog,
     &look,
   )?;
@@ -4325,6 +4492,9 @@ fn bar_chart_look(args: &[Expr]) -> crate::functions::plot::BarChartLook {
       "ImagePadding" => {
         look.image_padding =
           crate::functions::plot::parse_image_padding_sides(&value);
+      }
+      "PlotRangePadding" => {
+        look.plot_range_padding = Some(value);
       }
       // An `EdgeForm` in `ChartStyle` overrides one in `ChartBaseStyle`.
       "ChartBaseStyle" | "ChartStyle" | "PlotStyle" => {
@@ -5136,19 +5306,27 @@ fn bar_chart_structure(
       });
     }
   }
-  // `ChartLabels` name the groups below the baseline (one label per group,
-  // centered on it).
+  // `ChartLabels` sit below the baseline: centered under each group, or
+  // under each bar when a flat list labels the bars of grouped data.
   if !opts.chart_labels.is_empty() {
     let mut labels: Vec<Expr> = vec![Expr::FunctionCall {
       name: "GrayLevel".to_string(),
       args: vec![Expr::Integer(0)].into(),
     }];
-    for (gi, label) in opts.chart_labels.iter().take(groups.len()).enumerate() {
+    let anchors = crate::functions::plot::bar_label_anchors(
+      &rects,
+      groups.len(),
+      opts.chart_labels.len(),
+      !opts.chart_labels_group_level,
+      opts.layout,
+    );
+    for (li, _, x_center) in anchors {
+      let label = &opts.chart_labels[li];
       labels.push(Expr::FunctionCall {
         name: "Text".to_string(),
         args: vec![
           Expr::String(label.text.clone()),
-          Expr::List(vec![Expr::Real(gi as f64 + 1.0), Expr::Real(0.0)].into()),
+          Expr::List(vec![Expr::Real(x_center + 0.5), Expr::Real(0.0)].into()),
           Expr::List(vec![Expr::Integer(0), Expr::Real(1.5)].into()),
         ]
         .into(),
@@ -7768,9 +7946,39 @@ pub fn histogram_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     &colors,
     (opts.svg_width, opts.svg_height),
   ) {
-    Some(src) => Ok(crate::graphics_result_with_source(svg, src)),
+    Some(mut src) => {
+      // The histogram's graphic carries its graphics options (`PlotLabel`,
+      // `Frame`, …), so `Show[Histogram[…, opts], Plot[…]]` keeps them as
+      // the options of its first graphic. Chart-only options style the
+      // bars and are not options of the resulting `Graphics`.
+      src.options = args[1..]
+        .iter()
+        .filter(|a| {
+          matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+            && !matches!(
+              crate::functions::graphics::option_name_value(a),
+              Some((name, _)) if is_chart_only_option(name)
+            )
+        })
+        .cloned()
+        .collect();
+      Ok(crate::graphics_result_with_source(svg, src))
+    }
     None => Ok(crate::graphics_result(svg)),
   }
+}
+
+/// Options that style a chart's elements rather than the `Graphics` the
+/// chart produces (`ChartStyle`, `ColorFunction`, …).
+fn is_chart_only_option(name: &str) -> bool {
+  name.starts_with("Chart")
+    || matches!(
+      name,
+      "ColorFunction"
+        | "ColorFunctionScaling"
+        | "LabelingFunction"
+        | "PerformanceGoal"
+    )
 }
 
 /// Parse a Histogram bin specification (`bspec`): an integer bin count,

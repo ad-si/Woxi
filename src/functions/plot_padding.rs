@@ -149,7 +149,7 @@ fn atkinson_lsb_em(c: char) -> f64 {
 }
 
 /// Width of `c` in the face the exported SVG actually draws with.
-fn atkinson_width_em(c: char) -> f64 {
+pub(crate) fn atkinson_width_em(c: char) -> f64 {
   match c {
     ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
     '\u{2212}' => 0.606,
@@ -478,6 +478,14 @@ pub(crate) fn keep_text_in_view(svg: &str) -> std::borrow::Cow<'_, str> {
     let Some((x_at, len, x)) = attr_number(tag, "x") else {
       continue;
     };
+    // A label whose own anchor lies off the canvas belongs to a primitive
+    // placed outside the plot range (`Text[…, {-7, 0}]` under
+    // `PlotRange -> {{-2, 2}, …}`): Wolfram leaves it there, out of view,
+    // so it is not dragged back to the edge. Only labels the layout put
+    // inside the canvas can overhang it through the wider exported face.
+    if !(0.0..=width).contains(&x) {
+      continue;
+    }
     let size = attr_number(tag, "font-size").map_or(16.0, |(_, _, v)| v);
     let (lead, w) = exported_tag_text_extent(tag, content, size);
     if w <= 0.0 || w - lead > width {
@@ -887,6 +895,7 @@ pub(crate) fn plot_tick_font(
     .tick_label_style
     .and_then(|s| s.font_size)
     .or(frame_font(opts))
+    .or(axes_font(opts))
     // `LabelStyle` sizes every label, the tick labels of a frame and of
     // the origin axes included.
     .or(opts.label_style.and_then(|s| s.font_size))
@@ -898,8 +907,15 @@ pub(crate) fn plot_label_font(
   opts: &crate::functions::plot::PlotOptions,
 ) -> f64 {
   frame_font(opts)
+    .or(axes_font(opts))
     .or(opts.label_style.and_then(|s| s.font_size))
     .unwrap_or(LABEL_FONT)
+}
+
+/// The font size `AxesStyle` gives the labels of a plot's axes, if any
+/// (a framed plot draws no axes).
+fn axes_font(opts: &crate::functions::plot::PlotOptions) -> Option<f64> {
+  opts.axes_font_size.filter(|_| !opts.frame)
 }
 
 /// The font size `FrameStyle` gives a framed plot's labels, if any.
@@ -1181,6 +1197,16 @@ mod tests {
                text-anchor=\"middle\" font-size=\"10\">100</text></svg>";
     let out = keep_text_in_view(svg);
     assert!(out.contains("x=\"391.5\""), "{out}");
+    // A label anchored off the canvas (a `Text` placed outside an explicit
+    // `PlotRange`) stays out of view instead of being pinned to the edge.
+    let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"-114\" y=\"9\" \
+               text-anchor=\"middle\" font-size=\"20\">A</text><text \
+               x=\"420\" y=\"9\" text-anchor=\"middle\" font-size=\"20\">\
+               B</text></svg>";
+    assert!(matches!(
+      keep_text_in_view(svg),
+      std::borrow::Cow::Borrowed(_)
+    ));
     // Labels already inside, and labels in a transformed group, stay.
     let svg = "<svg viewBox=\"0 0 400 200\"><text x=\"30\" \
                text-anchor=\"end\" font-size=\"10\">0.08</text>\

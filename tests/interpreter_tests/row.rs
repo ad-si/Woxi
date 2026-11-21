@@ -1109,6 +1109,23 @@ fn styled_button_label_in_grid_keeps_its_style() {
   assert!(svg.contains("font-size=\"14\""), "{svg}");
 }
 
+/// A relation separator of a `Row` inside a `Graphics` `Text` label is
+/// spaced like the operator, as in a standalone `Row`.
+#[test]
+fn row_relation_separator_spaced_in_graphics_text() {
+  clear_state();
+  let svg = interpret(
+    r#"ExportString[Graphics[Text[Row[{v, 2.5}, "="], {0, 0}]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("</tspan> = 2.5</text>"), "unspaced `=`: {svg}");
+  let svg = interpret(
+    r#"ExportString[Graphics[Text[Row[{v, 2.5}, ","], {0, 0}]], "SVG"]"#,
+  )
+  .unwrap();
+  assert!(svg.contains("</tspan>,2.5</text>"), "spaced comma: {svg}");
+}
+
 /// `Text[expr]` sets `expr` in plain text: an enclosing `Bold` does not
 /// reach the `Text` items of a styled row (their size still does), while a
 /// `Style` inside the `Text` applies.

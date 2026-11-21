@@ -5175,6 +5175,62 @@ mod pade_approximant {
 mod nintegrate {
   use super::*;
 
+  // A symmetric range is folded onto its right half (even-odd
+  // subdivision). The first wide panel over {-20, 20} only sampled the
+  // zero at the center of these peaks and accepted 0 as converged.
+  #[test]
+  fn symmetric_range_with_zero_at_center() {
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 Exp[-x^2], {x, -20, 20}] - Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 (1 + x) Exp[-x^2], {x, -20, 20}] - \
+         Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+    // Mixed harmonic-oscillator states: <x^2> = (1 - c^2) 5/2 + c^2 7/2.
+    assert_eq!(
+      interpret(
+        "phi[x_, n_] := Pi^(-1/4)/Sqrt[2^n n!] HermiteH[n, x] Exp[-x^2/2]; \
+         psi[x_] := Sqrt[1 - 0.36] phi[x, 2] + 0.6 Exp[0.6 I] phi[x, 3]; \
+         Round[Chop[NIntegrate[x^2 psi[x] Conjugate[psi[x]], {x, -20, 20}]] \
+         - 2.86, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
+  #[test]
+  fn odd_integrand_over_symmetric_range() {
+    assert_eq!(
+      interpret("NIntegrate[x^3 Exp[-x^2], {x, -20, 20}]").unwrap(),
+      "0."
+    );
+    assert_eq!(interpret("NIntegrate[Sin[x], {x, -1, 1}]").unwrap(), "0.");
+  }
+
+  // A complex constant factor with a zero imaginary part still makes
+  // every sample complex, so the parts are integrated separately.
+  #[test]
+  fn complex_samples_with_zero_imaginary_part() {
+    assert_eq!(
+      interpret(
+        "Round[NIntegrate[x^2 Exp[-x^2] (1 + 0. I), {x, -20, 20}] - \
+         Sqrt[Pi]/2, 10^-8]"
+      )
+      .unwrap(),
+      "0"
+    );
+  }
+
   // Infinite ranges are integrated with adaptive Gauss-Kronrod on the
   // mapped interval. Adaptive Simpson accepted oscillating integrands
   // (Hermite polynomials under a Gaussian) too early, e.g. giving 0.0011
@@ -9860,6 +9916,29 @@ mod ndsolve {
     );
   }
 
+  // A rate that is huge only while the state is still tiny needs minute
+  // steps right at a start of 0, however long the whole domain is. The
+  // shortest step used to be measured at the domain's far end, so over a
+  // long domain the adaptive steps gave up at once and the fixed grid
+  // stepped straight across the switch (y(1000) came out as 3.84 instead
+  // of 1 - 0.999 E^-10), or no solution was found at all. As part of a
+  // scheduled QA routine, Woxi Studio was tested against a randomly sampled
+  // Wolfram Demonstration notebook whose rate law switched branches this
+  // way; this is a self-authored, construct-equivalent example.
+  #[test]
+  fn fast_transient_at_zero_on_a_long_domain() {
+    assert_eq!(
+      interpret(
+        "sol = First[NDSolve[{y'[t] == If[y[t] < 10^-3, 10^6, \
+         (1 - y[t])/100], y[0] == 0}, y, {t, 0, 2000}]]; \
+         {(y /. sol)[\"Domain\"], Round[10^6 y[1000] /. sol], \
+          Round[10^6 (1 - 999/1000 E^-10)]}"
+      )
+      .unwrap(),
+      "{{{0., 2000.}}, 999955, 999955}"
+    );
+  }
+
   // A zero-length domain keeps the slope at its one point
   // (SpecularAndDiffuseReflection restarts a bounce at the domain's end).
   #[test]
@@ -12329,6 +12408,74 @@ mod ndsolve {
     assert_eq!(result, "{True, True, True}");
   }
 
+  /// `DirichletCondition`s added into the equation itself (the finite
+  /// element shorthand next to `NeumannValue` terms) are conditions of
+  /// their own: the heat equation with zero ends decays as
+  /// `Exp[-Pi^2 t] Sin[Pi x]`.
+  #[test]
+  fn pde_summed_dirichlet_conditions_are_split_out() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == D[w[t, x], x, x] + \
+       DirichletCondition[w[t, x] == 0, x == 0] + \
+       DirichletCondition[w[t, x] == 0, x == 1], w[0, x] == Sin[Pi x]}, \
+       w, {t, 0, 0.1}, {x, 0, 1}]; \
+       Round[{u[0.1, 0.5], u[0.1, 0.25]}, 10^-3] == \
+       Round[Exp[-Pi^2 0.1] {1, Sin[Pi/4]}, 10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  /// A `DirichletCondition` on the start of the evolution variable is the
+  /// initial condition, and the solution takes its arguments in the order
+  /// of the unknown's own calls (`w[t, x]`), not with the `NeumannValue`
+  /// variable first.
+  #[test]
+  fn pde_dirichlet_condition_at_start_is_initial_condition() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == D[w[t, x], x, x] + \
+       NeumannValue[0, x == 0] + NeumannValue[0, x == 1] + \
+       DirichletCondition[w[t, x] == Cos[Pi x], t == 0]}, w, {t, 0, 0.1}, \
+       {x, 0, 1}]; {u[\"Domain\"], Round[u[0.1, 0.25], 10^-3] == \
+       Round[Exp[-Pi^2 0.1] Cos[Pi/4], 10^-3]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{0., 0.1}, {0., 1.}}, True}");
+  }
+
+  /// A radial Laplacian `(1/r) D[r D[w, r], r]` on a grid through `r == 0`:
+  /// the removable singularity takes its limit `2 w_rr` there, so the
+  /// Bessel mode `BesselJ[0, j r]` decays as `Exp[-j^2 t]`.
+  #[test]
+  fn pde_radial_laplacian_through_axis() {
+    let result = interpret(
+      "j = N[BesselJZero[0, 1]]; u = NDSolveValue[{D[w[t, r], t] == \
+       1/r D[r D[w[t, r], r], r], w[0, r] == BesselJ[0, j r], \
+       w[t, -1] == 0, w[t, 1] == 0}, w, {t, 0, 0.1}, {r, -1, 1}]; \
+       Round[{u[0.1, 0], u[0.1, 0.5]}, 10^-3] == \
+       Round[Exp[-j^2 0.1] {1, BesselJ[0, j/2]}, 10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  /// A piecewise diffusion coefficient reads as `D[c D[w, x], x]` (the
+  /// finite element form, `D` of a piecewise constant vanishing): the
+  /// flux stays continuous across the jump, so the steady profile between
+  /// `w == 0` and `w == 1` bends at `x == 1/2` to `w == 9/10` there for
+  /// `c` jumping from 1 to 9.
+  #[test]
+  fn pde_piecewise_coefficient_keeps_flux_continuous() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == If[x <= 0.5, 1, 9] \
+       D[w[t, x], x, x], w[0, x] == x, w[t, 0] == 0, w[t, 1] == 1}, w, \
+       {t, 0, 5}, {x, 0, 1}]; Round[{u[5, 0.25], u[5, 0.5], u[5, 0.75]}, \
+       10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "{9/20, 9/10, 19/20}");
+  }
+
   /// A counter-current pair: `p` carried from `x == 0`, `q` from `x == 1`
   /// (conditions at both ends of the first variable), so no variable is an
   /// evolution variable and the system is solved as a stationary problem.
@@ -12627,6 +12774,168 @@ mod ndsolve {
       result.starts_with("NDSolve["),
       "Expected an unevaluated NDSolve, got: {result}"
     );
+  }
+
+  /// The solution takes its arguments in the order of the unknown's own
+  /// calls, whatever order the domains are declared in: `c[x, t]` solved
+  /// over `{t, …}, {x, …}` is still evaluated as `c[x0, t0]`.
+  #[test]
+  fn ndsolve_pde_solution_follows_the_unknowns_argument_order() {
+    for doms in ["{t, 0, 2}, {x, 0, 1}", "{x, 0, 1}, {t, 0, 2}"] {
+      let code = format!(
+        "sol = NDSolveValue[{{D[c[x, t], t] == D[c[x, t], x, x], \
+         c[x, 0] == Sin[Pi x], c[0, t] == 0, c[1, t] == 0}}, c, {doms}]; \
+         {{sol[\"Domain\"], Round[1000 sol[0.5, 0.1]], \
+         Round[1000 Exp[-Pi^2 0.1]]}}"
+      );
+      assert_eq!(
+        interpret(&code).unwrap(),
+        "{{{0., 1.}, {0., 2.}}, 373, 373}",
+        "{doms}"
+      );
+    }
+  }
+
+  /// The same holds with `NeumannValue` boundary terms on the variable
+  /// that is not the unknown's first argument (`c[x, r]` with the flux on
+  /// `r`): no extrapolation, and values at the inflow `x = 0` are the
+  /// initial ones.
+  #[test]
+  fn ndsolve_neumann_value_solution_follows_the_unknowns_argument_order() {
+    let result = interpret(
+      "sol = NDSolveValue[{D[c[x, r], x] - D[c[x, r], r, r] == \
+       NeumannValue[-c[x, r], r == 0] + NeumannValue[-c[x, r], r == 1], \
+       c[0, r] == 1}, c, {x, 0, 1}, {r, 0, 1}]; \
+       {sol[\"Domain\"], Round[100 sol[0, 0.5]], \
+       0 < sol[1, 0.5] < sol[0.5, 0.5] < 1}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{0., 1.}, {0., 1.}}, 100, True}");
+  }
+
+  /// A radial operator written on a symmetric domain with a regularized
+  /// pole, `1/(r + eps) D[r D[c, r], r]`, puts a grid point right on the
+  /// near-singularity. The coefficients there are averaged over the
+  /// point's cell (as a finite element quadrature would), so the solution
+  /// stays bounded by its inflow value and decays along the flow, instead
+  /// of blowing up at the center line.
+  #[test]
+  fn ndsolve_regularized_radial_pole_on_a_grid_point() {
+    let result = interpret(
+      "R = 1/80; sol = NDSolveValue[{2 (1 - (r/R)^2) D[c[x, r], x] - \
+       5*10^-6/(r + 10^-6) D[r D[c[x, r], r], r] == \
+       NeumannValue[-c[x, r]/100, r == -R] + \
+       NeumannValue[-c[x, r]/100, r == R], c[0, r] == 1}, c, \
+       {x, 0, 25}, {r, -R, R}]; \
+       v = Table[sol[x, r], {x, {1, 5, 25}}, {r, {-R/2, 0, R/2}}]; \
+       {Max[v] <= 1, v[[1, 2]] > v[[2, 2]] > v[[3, 2]] > 0, \
+       Abs[v[[3, 1]] - v[[3, 3]]] < 10^-3}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True, True}");
+  }
+
+  /// The same near-singular radial operator in a countercurrent system
+  /// (the second unknown carries its condition at the far end, making it a
+  /// stationary problem over both variables) stays bounded too.
+  #[test]
+  fn ndsolve_stationary_regularized_radial_pole_on_a_grid_point() {
+    let result = interpret(
+      "R = 1/80; {b, d} = NDSolveValue[{2 (1 - (r/R)^2) D[cb[x, r], x] - \
+       5*10^-6/(r + 10^-6) D[r D[cb[x, r], r], r] == \
+       NeumannValue[-(cb[x, r] - cd[x, r])/100, r == -R] + \
+       NeumannValue[-(cb[x, r] - cd[x, r])/100, r == R], cb[0, r] == 1, \
+       -D[cd[x, r], x] == (cb[x, r] - cd[x, r])/10, cd[25, r] == 0}, \
+       {cb, cd}, {x, 0, 25}, {r, -R, R}]; \
+       v = Table[b[x, r], {x, {1, 5, 25}}, {r, {-R/2, 0, R/2}}]; \
+       {Max[v] <= 1, v[[1, 2]] > v[[2, 2]] > v[[3, 2]] > 0, \
+       0 < d[0, 0] < 1}",
+    )
+    .unwrap();
+    assert_eq!(result, "{True, True, True}");
+  }
+
+  /// Two space variables and time: the separable mode
+  /// `Sin[Pi x] Sin[Pi y]` of the heat equation on the unit square with
+  /// zero Dirichlet edges decays as `Exp[-2 Pi^2 t]`.
+  #[test]
+  fn pde_2d_dirichlet_mode_decays_exactly() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y], w[x, y, 0] == Sin[Pi x] Sin[Pi y], \
+       DirichletCondition[w[x, y, t] == 0, \
+       x == 0 || x == 1 || y == 0 || y == 1]}, w, {x, 0, 1}, {y, 0, 1}, \
+       {t, 0, 0.2}]; {Head[u], Round[1000 u[0.5, 0.5, 0.1]], \
+       Round[1000 Exp[-2 Pi^2 0.1]], Round[10^4 u[0.25, 0.5, 0.2]], \
+       Round[10^4 Exp[-2 Pi^2 0.2] Sin[Pi/4]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{InterpolatingFunction, 139, 139, 137, 136}");
+  }
+
+  /// Dirichlet edges may be written as plain equations, the unknown may
+  /// take time in any argument slot and the domains may be listed in any
+  /// order: the solution takes its arguments in the unknown's own order.
+  #[test]
+  fn pde_2d_argument_order_and_plain_boundary_equations() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x, y], t] == D[w[t, x, y], x, x] + \
+       D[w[t, x, y], y, y], w[0, x, y] == Sin[Pi x] Sin[Pi y], \
+       w[t, 0, y] == 0, w[t, 1, y] == 0, w[t, x, 0] == 0, \
+       w[t, x, 1] == 0}, w, {x, 0, 1}, {t, 0, 0.2}, {y, 0, 1}]; \
+       {u[\"Domain\"], Round[1000 u[0.1, 0.5, 0.5]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{0., 0.2}, {0., 1.}, {0., 1.}}, 139}");
+  }
+
+  /// Without any condition on its edges a rectangle keeps the zero natural
+  /// flux of the finite element method: the total heat stays what it was.
+  #[test]
+  fn pde_2d_insulated_rectangle_conserves_heat() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] == 2 D[w[x, y, t], x, x] + \
+       D[w[x, y, t], y, y], w[x, y, 0] == x^2 + y}, w, {x, 0, 1}, \
+       {y, 0, 2}, {t, 0, 1}]; {u[0, 1, 0], \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 1}, {y, 0, 2}]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{1., 2667}");
+  }
+
+  /// `NeumannValue[g, y == 0]` is an inflow `g` per unit length of that
+  /// edge: on a 2 × 1 rectangle the total heat grows by `2 g` per unit
+  /// time.
+  #[test]
+  fn pde_2d_neumann_value_inflow() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[x, y, t], t] - D[w[x, y, t], x, x] - \
+       D[w[x, y, t], y, y] == NeumannValue[3, y == 0], w[x, y, 0] == 0}, \
+       w, {x, 0, 2}, {y, 0, 1}, {t, 0, 1}]; \
+       Round[1000 NIntegrate[u[x, y, 1], {x, 0, 2}, {y, 0, 1}]]",
+    )
+    .unwrap();
+    assert_eq!(result, "6000");
+  }
+
+  /// Convective cooling of a finite cylinder (radial Laplacian with its
+  /// `1/r` coefficient on a domain starting at the axis, Robin
+  /// `NeumannValue`s on the other edges) matches the exact product of the
+  /// infinite-cylinder and slab series: the center temperature at
+  /// `t == 0.15` is 0.6927, a point on the end face 0.4923.
+  #[test]
+  fn pde_2d_cylinder_convective_cooling() {
+    let result = interpret(
+      "bi = 3/2; u = NDSolveValue[{D[f[r, z, t], t] - \
+       D[r D[f[r, z, t], r], r]/r - D[f[r, z, t], z, z] == \
+       NeumannValue[0, r == 10^-6] + NeumannValue[-bi f[r, z, t], r == 1] + \
+       NeumannValue[-bi f[r, z, t], z == 0 || z == 1], f[r, z, 0] == 1}, \
+       f, {r, 10^-6, 1}, {z, 0, 1}, {t, 0, 1}]; \
+       {Round[1000 u[10^-6, 1/2, 0.15]], Round[1000 u[0.15, 0, 0.15]], \
+       Round[1000 u[0.5, 0.5, 0.5]]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{693, 492, 129}");
   }
 }
 
@@ -14851,6 +15160,65 @@ mod inverse_laplace_transform {
     assert_eq!(
       interpret("InverseLaplaceTransform[Sqrt[s], s, 1.]").unwrap(),
       "InverseLaplaceTransform[Sqrt[s], s, 1.]"
+    );
+  }
+
+  // A rational function with symbolic coefficients is split with Apart and
+  // inverted term by term.
+  #[test]
+  fn symbolic_coefficients_via_apart() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + a^2)), s, t]").unwrap(),
+      "a^(-2) - Cos[a*t]/a^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + Pi^2)), s, t]").unwrap(),
+      "Pi^(-2) - Cos[Pi*t]/Pi^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s + Pi)), s, t]").unwrap(),
+      "Pi^(-1) - 1/(E^(Pi*t)*Pi)"
+    );
+  }
+
+  // The second shift theorem applies to a symbolic-coefficient rational
+  // factor as well.
+  #[test]
+  fn time_shift_with_symbolic_coefficients() {
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. \
+         {a -> 3, t -> 5} // Simplify"
+      )
+      .unwrap(),
+      "(1 - Cos[9])/9"
+    );
+  }
+
+  // Linearity over a sum whose terms carry different time shifts:
+  // a finite square wave built from step functions.
+  #[test]
+  fn sum_of_time_shifted_terms() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s - Exp[-2 s]/s, s, t]").unwrap(),
+      "1 - HeavisideTheta[-2 + t]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/s, {i, 0, 3}], s, t]"
+      )
+      .unwrap(),
+      "1 - HeavisideTheta[-3 + t] + HeavisideTheta[-2 + t] - \
+       HeavisideTheta[-1 + t]"
+    );
+    // Value check of the response to that square wave at t = 5/2.
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/(s (s^2 + Pi^2)), \
+         {i, 0, 3}], s, t] /. t -> 5/2 // Simplify"
+      )
+      .unwrap(),
+      "Pi^(-2)"
     );
   }
 }

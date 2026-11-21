@@ -25,6 +25,9 @@ pub(crate) struct PlotArea {
   pub y_max: f64,
   /// Render-space pixels per display pixel (RESOLUTION_SCALE).
   pub scale: f64,
+  /// The width of the whole picture in render pixels: what a relative
+  /// `Thickness[t]` is the fraction `t` of.
+  pub image_w: f64,
 }
 
 impl PlotArea {
@@ -44,6 +47,9 @@ impl PlotArea {
   }
 }
 
+/// The thinnest stroke drawn, in display pixels.
+const MIN_STROKE_PX: f64 = 0.5;
+
 /// Graphics-directive state carried while walking an Epilog expression.
 /// Nested lists scope their directives (as in `Graphics`), so the walker
 /// clones this at each list boundary.
@@ -52,6 +58,9 @@ struct EpilogStyle {
   color: Color,
   /// Stroke width in *display* pixels (multiplied by `scale` on emit).
   thickness: f64,
+  /// A relative `Thickness[t]`: the fraction of the image width the
+  /// stroke spans, which overrides `thickness` so it follows the drawn size.
+  thickness_fraction: Option<f64>,
   /// Dash pattern as fractions of the plot width; `None` = solid.
   dashing: Option<Vec<f64>>,
   /// Point diameter as a fraction of the plot width, or — stored
@@ -85,6 +94,7 @@ impl EpilogStyle {
     Self {
       color: default_color,
       thickness: 1.0,
+      thickness_fraction: None,
       dashing: None,
       point_size: 0.012,
       opacity: 1.0,
@@ -104,7 +114,7 @@ impl EpilogStyle {
       let mut stroke = format!(
         " stroke=\"{}\" stroke-width=\"{:.1}\"",
         edge.color.to_svg_rgb(),
-        (edge.thickness * area.scale).max(0.5),
+        edge.stroke_width(area),
       );
       if let Some(dashes) = &edge.dashing {
         let parts: Vec<String> = dashes
@@ -127,11 +137,29 @@ impl EpilogStyle {
     s
   }
 
+  /// Set an absolute stroke width in display pixels.
+  fn set_thickness(&mut self, t: f64) {
+    self.thickness = t;
+    self.thickness_fraction = None;
+  }
+
+  /// The stroke width in render pixels. A relative thickness is a fraction
+  /// of the image width.
+  /// Like Wolfram's renderer, a stroke never vanishes: `Thickness[0]`
+  /// still draws the thinnest visible line, half a display pixel wide.
+  fn stroke_width(&self, area: &PlotArea) -> f64 {
+    let w = match self.thickness_fraction {
+      Some(f) => f * area.image_w,
+      None => self.thickness * area.scale,
+    };
+    w.max(MIN_STROKE_PX * area.scale)
+  }
+
   fn stroke_attrs(&self, area: &PlotArea) -> String {
     let mut s = format!(
       "stroke=\"{}\" stroke-width=\"{:.1}\"",
       self.color.to_svg_rgb(),
-      (self.thickness * area.scale).max(0.5),
+      self.stroke_width(area),
     );
     if let Some(dashes) = &self.dashing {
       let parts: Vec<String> = dashes
@@ -482,8 +510,8 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
   }
   match expr {
     Expr::Identifier(s) => match s.as_str() {
-      "Thick" => style.thickness = 2.0,
-      "Thin" => style.thickness = 0.5,
+      "Thick" => style.set_thickness(2.0),
+      "Thin" => style.set_thickness(0.5),
       "Dashed" => style.dashing = Some(vec![0.02, 0.02]),
       "Dotted" => style.dashing = Some(vec![0.002, 0.01]),
       "DotDashed" => style.dashing = Some(vec![0.002, 0.01, 0.02, 0.01]),
@@ -506,7 +534,7 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
           None
         } else {
           let mut edge = EpilogStyle::new();
-          edge.thickness = 0.5;
+          edge.set_thickness(0.5);
           for a in args {
             match a {
               Expr::List(items) => {
@@ -537,22 +565,21 @@ fn apply_directive(expr: &Expr, style: &mut EpilogStyle) -> bool {
       }
       "Thickness" if args.len() == 1 => match &args[0] {
         Expr::Identifier(s) => match s.as_str() {
-          "Large" => style.thickness = 2.0,
-          "Medium" => style.thickness = 1.0,
-          "Small" => style.thickness = 0.75,
-          "Tiny" => style.thickness = 0.5,
+          "Large" => style.set_thickness(2.0),
+          "Medium" => style.set_thickness(1.0),
+          "Small" => style.set_thickness(0.75),
+          "Tiny" => style.set_thickness(0.5),
           _ => return false,
         },
         other => {
           if let Some(t) = try_eval_to_f64(other) {
-            // Fraction of the plot width → display pixels (360px default).
-            style.thickness = t * 360.0;
+            style.thickness_fraction = Some(t.max(0.0));
           }
         }
       },
       "AbsoluteThickness" if args.len() == 1 => {
         if let Some(t) = try_eval_to_f64(&args[0]) {
-          style.thickness = t;
+          style.set_thickness(t);
         }
       }
       "Arrowheads" if args.len() == 1 => {
@@ -832,7 +859,7 @@ fn render_item(
           call1("Opacity", Expr::Real(style.opacity)),
           call1(
             "AbsoluteThickness",
-            Expr::Real(style.thickness.max(0.5 / area.scale)),
+            Expr::Real(style.stroke_width(area) / area.scale),
           ),
           call1("CapForm", style.cap_form.clone()),
         ];
@@ -1181,16 +1208,26 @@ fn render_item(
             && extra_lines > 0.0
             && is_left_aligned_column(body)
           {
-            let chars = styled
-              .as_ref()
-              .map_or(0, super::chart::StyledLabel::max_line_chars)
-              as f64;
-            let block_w = chars * font_size * 0.6;
+            // A framed block is as wide as its frame measures it (by the
+            // proportional glyph widths), and the frame's `FrameMargins`
+            // already keep the lines off the border.
+            let (block_w, inset) = if is_framed {
+              let width_em = styled
+                .as_ref()
+                .map_or(0.0, super::chart::StyledLabel::max_line_width_em);
+              (width_em * font_size, 0.0)
+            } else {
+              let chars = styled
+                .as_ref()
+                .map_or(0, super::chart::StyledLabel::max_line_chars)
+                as f64;
+              (chars * font_size * 0.6, font_size * 0.35)
+            };
             line_x = match text_anchor {
               "start" => px,
               "end" => px - block_w,
               _ => px - block_w / 2.0,
-            } + font_size * 0.35;
+            } + inset;
             text_anchor = "start";
           }
           let label = styled.as_ref().map_or_else(
@@ -1605,7 +1642,5 @@ fn render_circle_like(
 
 /// Escape text content for inclusion in an SVG text element.
 fn svg_escape_text(s: &str) -> String {
-  s.replace('&', "&amp;")
-    .replace('<', "&lt;")
-    .replace('>', "&gt;")
+  crate::functions::plot::html_escape(s)
 }

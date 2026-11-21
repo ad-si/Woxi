@@ -745,13 +745,20 @@ pub fn graphics_symbolic_form(expr: &Expr) -> Option<Expr> {
         }
         // A curve keeps its weight and dashes: the plot draws it with
         // `AbsoluteThickness[2]` unless `PlotStyle` says otherwise, and the
-        // extracted line is drawn the same way wherever it is placed.
+        // extracted line is drawn the same way wherever it is placed. A
+        // relative `Thickness[t]` stays relative, so the line scales with
+        // the graphic it is placed in.
         if !s.is_scatter {
           style.push(crate::functions::graphics::series_thickness_expr(s, 2.0));
           style.extend(crate::functions::graphics::series_dashing_expr(
             s,
             source.image_size.0,
           ));
+          // `Arrowheads` from `PlotStyle` stays on the curve, so that
+          // `plot /. Line -> Arrow` draws the heads it specifies.
+          if let Some(spec) = &s.arrowheads {
+            style.push(call1("Arrowheads", spec.clone()));
+          }
         }
         // One `Directive`, as in Wolfram's plot primitives, so the line
         // stays the second element of its group.

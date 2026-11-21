@@ -1146,6 +1146,33 @@ mod high_level_functions {
       );
     }
 
+    // Moduli whose product overflows 128-bit integers are solved exactly
+    // (they used to leave the call unevaluated).
+    #[test]
+    fn test_big_moduli() {
+      assert_eq!(
+        interpret(
+          "ChineseRemainder[{12345678901234567890, 98765432109876543210, 5}, \
+           {10^30 + 1, 10^30 + 3, 10^30 + 7}]"
+        )
+        .unwrap(),
+        "458333333322016460894701646094833333333244855966974485596713374999999935185184981018518509"
+      );
+      // Non-coprime moduli: the result lies in [0, LCM).
+      assert_eq!(
+        interpret(
+          "ChineseRemainder[{7, 10^25 + 8}, {2 (10^25 + 1), 3 (10^25 + 1)}]"
+        )
+        .unwrap(),
+        "40000000000000000000000011"
+      );
+      // A big offset in the three-argument form.
+      assert_eq!(
+        interpret("ChineseRemainder[{1, 2}, {3, 5}, 10^40]").unwrap(),
+        "10000000000000000000000000000000000000012"
+      );
+    }
+
     // Incompatible congruences have no solution: wolframscript leaves the
     // call unevaluated (rather than erroring).
     #[test]
@@ -3576,13 +3603,15 @@ mod high_level_functions {
         !svg.contains("font-size=\"14.0\""),
         "no glyph should keep the default 14 pt: {svg}"
       );
-      // The same holds through `BaseStyle`, along with the color.
+      // The same holds through `BaseStyle`, along with the color. A grid
+      // item sits one script level deep, so its fraction is set at 0.75 of
+      // that size.
       let svg = interpret(
         "ExportString[Grid[{{1/2}}, BaseStyle -> {20, Red}], \"SVG\"]",
       )
       .unwrap();
       assert!(
-        svg.contains("font-size=\"20.0\""),
+        svg.contains("font-size=\"15.0\""),
         "BaseStyle size should reach the fraction: {svg}"
       );
       assert!(
@@ -3594,8 +3623,8 @@ mod high_level_functions {
         interpret("ExportString[Grid[{{Style[1/2, 20, Red]}}], \"SVG\"]")
           .unwrap();
       assert!(
-        svg.contains("rgb(255,0,0)") && svg.contains("font-size=\"20.0\""),
-        "styled fraction cell should be red at 20 pt: {svg}"
+        svg.contains("rgb(255,0,0)") && svg.contains("font-size=\"15.0\""),
+        "styled fraction cell should be red at 0.75 of 20 pt: {svg}"
       );
     }
 
@@ -7583,6 +7612,59 @@ mod high_level_functions {
       )
       .unwrap();
       assert_eq!(list.matches("stroke=\"none\"").count(), 2);
+    }
+
+    #[test]
+    fn test_geographics_polygon_edge_defaults_to_black() {
+      // An EdgeForm without a color strokes the polygon black, not in the
+      // fill color.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, EdgeForm[Thick], \
+         Polygon[Entity[\"Country\", \"France\"]]}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(
+        svg.contains(
+          "fill=\"rgb(255,0,0)\" fill-rule=\"evenodd\" \
+                      stroke=\"rgb(0,0,0)\""
+        ),
+        "edge not black"
+      );
+    }
+
+    #[test]
+    fn test_geographics_polygon_time_zone() {
+      // `Polygon[Entity["TimeZone", "GMT+9"]]` shades the zone's ocean band
+      // (127.5°E to 142.5°E) and the countries keeping GMT+9, translucently.
+      let svg = interpret(
+        "ExportString[GeoGraphics[{Red, EdgeForm[Thin], \
+         Polygon[Entity[\"TimeZone\", \"GMT+9\"]]}, \
+         GeoRange -> \"World\", ImageSize -> {720, 360}], \"SVG\"]",
+      )
+      .unwrap();
+      let zone = svg
+        .lines()
+        .find(|l| l.contains("fill-opacity=\"0.2\""))
+        .expect("time zone not drawn");
+      assert!(zone.contains("fill=\"rgb(255,0,0)\""), "zone color");
+      assert!(zone.contains("stroke=\"rgb(0,0,0)\""), "zone edge");
+      // At 2 px per degree the band spans x = 615 to 645.
+      assert!(zone.contains("M 615.0 360.0 L 645.0 360.0"), "band missing");
+      let other = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         Polygon[Entity[\"TimeZone\", \"GMT-5\"]]}, \
+         GeoRange -> \"World\", ImageSize -> {720, 360}], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(other.contains("M 195.0 360.0 L 225.0 360.0"), "GMT-5 band");
+      // An unknown zone draws nothing.
+      let unknown = interpret(
+        "ExportString[GeoGraphics[{Red, \
+         Polygon[Entity[\"TimeZone\", \"Nowhere\"]]}, \
+         GeoRange -> \"World\"], \"SVG\"]",
+      )
+      .unwrap();
+      assert!(!unknown.contains("fill-opacity=\"0.2\""));
     }
 
     #[test]
