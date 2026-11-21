@@ -3798,7 +3798,7 @@ fn collect_primitives(
             Expr::FunctionCall { name, args: gargs }
               if name == "Grid" && grid_needs_table_layout(gargs) =>
             {
-              match inset_primitives(args, errors) {
+              match inset_primitives(&text_offset_as_inset_args(args), errors) {
                 Some(inner) => prims.extend(inner),
                 None => parse_text(args, style, prims),
               }
@@ -8087,12 +8087,48 @@ fn grid_needs_table_layout(args: &[Expr]) -> bool {
     Expr::List(cells) => cells.iter().any(is_span_marker),
     _ => false,
   });
+  // A `BaseStyle` (`BaseStyle -> {20}` sets the font size) applies to
+  // every cell, which the flattened single-line text would drop.
   let has_chrome = args[1..].iter().any(|opt| {
     matches!(opt, Expr::Rule { pattern, .. }
       if matches!(pattern.as_ref(), Expr::Identifier(n)
-        if matches!(n.as_str(), "Dividers" | "Background" | "Frame")))
+        if matches!(n.as_str(), "Dividers" | "Background" | "Frame" | "BaseStyle")))
   });
-  has_span || has_chrome
+  // Cells styled on their own (`Style["major", Green]`) keep their colors
+  // and sizes only when each cell is set separately.
+  let has_styled_cell = rows.iter().any(|row| match row {
+    Expr::List(cells) => cells.iter().any(|cell| {
+      matches!(cell, Expr::FunctionCall { name, args }
+        if name == "Style" && args.len() > 1)
+    }),
+    _ => false,
+  });
+  has_span || has_chrome || has_styled_cell
+}
+
+/// `Text[expr, pos, {ox, oy}]` puts the point `{ox, oy}` of the text's box
+/// (`{0, 0}` its center, `{±1, ±1}` its corners) on `pos`. When the
+/// expression is embedded as a picture the way `Inset` embeds one, that
+/// offset becomes the matching `Scaled` point of the object, since an
+/// `Inset` reads a bare `{0, 0}` as the object's lower left corner.
+fn text_offset_as_inset_args(args: &[Expr]) -> Vec<Expr> {
+  let mut out = args.to_vec();
+  if let Some(offset) = out.get_mut(2)
+    && let Some((ox, oy)) = expr_to_point(offset)
+  {
+    *offset = Expr::FunctionCall {
+      name: "Scaled".to_string(),
+      args: vec![Expr::List(
+        vec![
+          Expr::Real(f64::midpoint(ox, 1.0)),
+          Expr::Real(f64::midpoint(oy, 1.0)),
+        ]
+        .into(),
+      )]
+      .into(),
+    };
+  }
+  out
 }
 
 /// Embedded inset pictures always center on their anchor. To put the point
@@ -16404,6 +16440,14 @@ pub(crate) struct AxisPadding {
 }
 
 impl AxisPadding {
+  /// Whether the `(low, high)` sides are left `Automatic`.
+  pub(crate) fn automatic_sides(&self) -> (bool, bool) {
+    (
+      matches!(self.lo, PlotPadAmount::Automatic),
+      matches!(self.hi, PlotPadAmount::Automatic),
+    )
+  }
+
   /// The `(low, high)` padding in data units for an axis of the given
   /// (unpadded) span, with `Automatic` resolving to `automatic_frac` of it.
   /// A `Scaled[f]` side is the fraction `f` of the whole padded range:
@@ -17532,6 +17576,40 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       if plot_range_y.is_none() && text_h < svg_height as f64 {
         grown.y_min = grown.y_min.min(cy - half_h + room_y);
         grown.y_max = grown.y_max.max(cy + half_h - room_y);
+      }
+    }
+    // An inset drawn at its own pixel size (`Inset[g, pos]` with no `size`)
+    // is likewise kept whole: it is centered on its anchor, so the range
+    // grows by half its width and height in data units — plus the default
+    // padding (1/50 of the padded width) unless `PlotRangePadding` is set.
+    let inset_margin = if plot_range_padding.is_none() {
+      plot_w / 50.0
+    } else {
+      0.0
+    };
+    for prim in &primitives {
+      let Primitive::InsetGraphic {
+        x,
+        y,
+        w,
+        h,
+        scaled: false,
+        size: None,
+        ..
+      } = prim
+      else {
+        continue;
+      };
+      let (half_w, half_h) =
+        ((w / 2.0 + inset_margin) / kx, (h / 2.0 + inset_margin) / ky);
+      let (room_x, room_y) = (slack_x / kx, slack_y / ky);
+      if plot_range_x.is_none() && *w < svg_width as f64 {
+        grown.x_min = grown.x_min.min(x - half_w + room_x);
+        grown.x_max = grown.x_max.max(x + half_w - room_x);
+      }
+      if plot_range_y.is_none() && *h < svg_height as f64 {
+        grown.y_min = grown.y_min.min(y - half_h + room_y);
+        grown.y_max = grown.y_max.max(y + half_h - room_y);
       }
     }
     if grown == bb {
