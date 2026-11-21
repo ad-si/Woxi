@@ -1597,6 +1597,39 @@ mod tests {
     }
 
     #[test]
+    fn plot_legend_box_code_sets_single_letters_in_italics() {
+      // Legend entries are typeset in TraditionalForm: a single-letter
+      // symbol written in the string's box code is italic, while the
+      // string's plain text and multi-letter symbols stay upright.
+      let code = r#"ExportString[Plot[{x, 2 x, 3 x}, {x, 0, 1},
+        PlotLegends -> {"\!\(\*SubscriptBox[\(T\), \(0\)]\)",
+          "k\!\(\*SuperscriptBox[\(y\), \(2\)]\)",
+          "\!\(\*SubscriptBox[\(v\), \(max\)]\)"}], "SVG"]"#;
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">T</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">0</tspan></text>"
+        ),
+        "box-code symbol not italic in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          ">k<tspan font-style=\"italic\">y</tspan>\
+           <tspan baseline-shift=\"super\" font-size=\"70%\">2</tspan></text>"
+        ),
+        "plain text or box-code symbol styled wrongly in legend: {svg}"
+      );
+      assert!(
+        svg.contains(
+          "><tspan font-style=\"italic\">v</tspan>\
+           <tspan baseline-shift=\"sub\" font-size=\"70%\">max</tspan></text>"
+        ),
+        "multi-letter symbol set in italics: {svg}"
+      );
+    }
+
+    #[test]
     fn list_line_plot_joined_false_draws_unconnected_points() {
       let count = |code: &str, tag: &str| {
         woxi::interpret(code)
@@ -1878,6 +1911,132 @@ mod tests {
           && !svg.contains("stroke=\"rgb(255,0,0)\""),
         "per-line style should override GridLinesStyle: {svg}"
       );
+    }
+
+    /// `GridLinesStyle -> {xstyle, ystyle}` styles the vertical and the
+    /// horizontal grid lines apart — in a plot, in a `Show` of plots and in
+    /// a plain `Graphics` — instead of drawing both in the last color.
+    #[test]
+    fn grid_lines_style_per_axis() {
+      for code in [
+        r#"ExportString[ListLinePlot[{{28, 3}, {68, 1}},
+           GridLines -> {{40}, {2}},
+           GridLinesStyle -> {{Black, Dashed}, {Red, Dashed}}], "SVG"]"#,
+        r#"ExportString[Show[ListLinePlot[{{28, 3}, {68, 1}},
+           GridLines -> {{40}, {2}},
+           GridLinesStyle -> {{Black, Dashed}, {Red, Dashed}}],
+           ListPlot[{{40, 2.5}}]], "SVG"]"#,
+      ] {
+        let svg = woxi::interpret(code).expect("interpret should succeed");
+        let dashed: Vec<&str> = svg
+          .lines()
+          .filter(|l| l.contains("stroke-dasharray="))
+          .collect();
+        assert!(
+          dashed.iter().any(|l| l.contains("stroke=\"rgb(0,0,0)\"")),
+          "vertical grid line should be black: {code}"
+        );
+        assert!(
+          dashed.iter().any(|l| l.contains("stroke=\"rgb(255,0,0)\"")),
+          "horizontal grid line should be red: {code}"
+        );
+      }
+      let svg = woxi::interpret(
+        r#"ExportString[Graphics[Line[{{0, 0}, {1, 1}}],
+          GridLines -> {{0.5}, {0.5}},
+          GridLinesStyle -> {Directive[Blue], Directive[Red]}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let vertical = svg
+        .lines()
+        .find(|l| l.starts_with("<line") && l.contains("y1=\"0\""))
+        .expect("vertical grid line");
+      let horizontal = svg
+        .lines()
+        .find(|l| l.starts_with("<line") && l.contains("x1=\"0\""))
+        .expect("horizontal grid line");
+      assert!(vertical.contains("rgb(0,0,255)"), "{vertical}");
+      assert!(horizontal.contains("rgb(255,0,0)"), "{horizontal}");
+    }
+
+    /// A `Framed` plot title fills its box with the `Background` it names.
+    #[test]
+    fn framed_plot_label_background() {
+      let svg = woxi::interpret(
+        r#"ExportString[ListLinePlot[{{1, 2}, {2, 3}, {3, 1}},
+          PlotLabel -> Framed["title", Background -> LightGreen]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(
+        svg.contains("<rect") && svg.contains("fill=\"rgb(224,255,224)\""),
+        "framed title should sit on a light green panel"
+      );
+    }
+
+    /// A stacked plot title whose lines lead with small legend pictures
+    /// (`Framed[Column[{Row[{Graphics[…], "text"}], …}]]`) is drawn as a
+    /// picture — swatches, text, box and background — not printed as the
+    /// source of the `Graphics` in it.
+    #[test]
+    fn framed_column_plot_label_with_pictures() {
+      let svg = woxi::interpret(
+        r#"swatch[c_] := Graphics[{c, Thick, Line[{{0, 0}, {20, 0}}]},
+             ImageSize -> {50, 5}];
+           ExportString[ListLinePlot[{{1, 2}, {2, 3}, {3, 1}},
+             PlotLabel -> Framed[Column[{
+               Row[{swatch[Red], "first: ", 7.5}],
+               Row[{swatch[Blue], "second: ", 6.25}]}],
+               Background -> LightGreen]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(!svg.contains("Thickness"), "Graphics source leaked: {svg}");
+      assert!(!svg.contains("ImageSize"), "Graphics source leaked");
+      assert!(svg.contains("first: "), "first line missing");
+      assert!(svg.contains("second: "), "second line missing");
+      assert!(svg.contains("rgb(224,255,224)"), "background missing");
+      assert!(
+        svg.contains("rgb(255,0,0)") && svg.contains("rgb(0,0,255)"),
+        "swatches missing"
+      );
+    }
+
+    /// `Show[plot, ListPlot[{{x, y}}]]` with `PlotRange -> All` on the plot
+    /// spans the shown data: the lone marker point does not widen the range
+    /// to its own 0..2x default.
+    #[test]
+    fn show_plot_range_all_ignores_lone_point_default_range() {
+      let svg = woxi::interpret(
+        r#"ExportString[Show[ListLinePlot[{{28, 3}, {68, 1}},
+          PlotRange -> All], ListPlot[{{40, 2.5}}]], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      let labels: Vec<&str> = svg
+        .split("<text")
+        .skip(1)
+        .filter_map(|t| t.split('>').nth(1))
+        .map(|t| t.split('<').next().unwrap_or(""))
+        .collect();
+      assert!(labels.contains(&"30"), "{labels:?}");
+      assert!(labels.contains(&"60"), "{labels:?}");
+      assert!(!labels.contains(&"80"), "{labels:?}");
+    }
+
+    /// `ListPlot3D` keeps its axes when `Show` re-renders it with another
+    /// option, as `Plot3D` does.
+    #[test]
+    fn show_list_plot3d_keeps_axes() {
+      assert_eq!(
+        woxi::interpret("Options[ListPlot3D[Table[i + j, {j, 3}, {i, 3}]]]")
+          .unwrap(),
+        "{Axes -> True, BoxRatios -> {1, 1, 0.4}}"
+      );
+      let svg = woxi::interpret(
+        r#"ExportString[Show[ListPlot3D[Table[i + j, {j, 5}, {i, 5}],
+          AxesLabel -> {"a", "b", "c"}], ImageSize -> {400, 300}], "SVG"]"#,
+      )
+      .expect("interpret should succeed");
+      assert!(svg.contains("<text"), "axes lost under Show");
+      assert!(svg.contains(">a<") || svg.contains(">a</"), "x label lost");
     }
 
     /// `Axes -> False` hides the axes of a `ListPlot`, which the scatter
@@ -2564,14 +2723,16 @@ mod tests {
 
     #[test]
     fn fraction_cell_takes_the_styled_grid_size() {
-      // A quotient cell typeset as a built-up fraction is set at the styled
-      // grid's size, like the text cells beside it, not at the default 14.
+      // A quotient cell typeset as a built-up fraction is set from the
+      // styled grid's size, like the text cells beside it, not from the
+      // default 14: at 0.75 of it, as a grid item sits one script level
+      // deep.
       for code in [
         "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
         "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
       ] {
         let svg = svg_of(code);
-        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(svg.contains("font-size=\"6.8\""), "{code}: {svg}");
         assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
       }
     }
@@ -2601,10 +2762,12 @@ mod tests {
     fn grid_spans_a_picture_across_its_columns() {
       // A picture merged over two columns with `SpanFromLeft` is centered
       // across both, instead of widening the first column on its own and
-      // leaving a blank placeholder cell beside it.
+      // leaving a blank placeholder cell beside it. (The row's own third
+      // cell ends the span; a short row ending in `SpanFromLeft` would
+      // span to the grid's right edge instead.)
       let svg = svg_of(
         "Grid[{{\"a\", \"b\", \"c\"}, \
-         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft}}]",
+         {Graphics[Rectangle[], ImageSize -> 200], SpanFromLeft, \"\"}}]",
       );
       assert!(
         svg.contains("width=\"200.0\" height=\"200.0\""),
@@ -2623,6 +2786,47 @@ mod tests {
         .next()
         .expect("text c");
       assert!(c_x > 206.0, "third column starts after the span: {svg}");
+    }
+
+    #[test]
+    fn grid_trailing_span_in_a_short_row_reaches_the_last_column() {
+      // A row shorter than the grid that ends in `SpanFromLeft` keeps
+      // spanning to the grid's last column: the wide picture is centered
+      // over all three columns, which keep their natural widths.
+      let svg = svg_of(
+        "Grid[{{Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100]}, \
+         {Graphics[Rectangle[{0, 0}, {3, 1}], ImageSize -> 250], \
+         SpanFromLeft}}]",
+      );
+      let xs: Vec<f64> = svg
+        .split("<svg x=\"")
+        .skip(1)
+        .map(|chunk| chunk.split('"').next().unwrap().parse().unwrap())
+        .collect();
+      assert_eq!(xs.len(), 4, "{svg}");
+      // The three disks sit in equally wide columns.
+      assert!(
+        ((xs[1] - xs[0]) - (xs[2] - xs[1])).abs() < 0.5,
+        "columns stay even: {svg}"
+      );
+      // The spanned picture is centered across the whole grid.
+      let total_w = picture_width(&svg);
+      assert!(
+        (xs[3] + 125.0 - total_w / 2.0).abs() < 1.0,
+        "picture centered across all columns: {svg}"
+      );
+    }
+
+    /// The width of the outermost `<svg>`.
+    fn picture_width(svg: &str) -> f64 {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .expect("svg width")
     }
 
     /// The `y` of the nested `<svg>` with the given `width`.
@@ -2827,6 +3031,60 @@ mod tests {
         !line.contains("<polygon"),
         "a curve without Tube stays a line: {line}"
       );
+    }
+
+    #[test]
+    fn parametric_plot3d_first_repeated_plot_style_wins() {
+      // A repeated option takes its first setting, so the later
+      // `PlotStyle -> Specularity[…]` must not replace the `Tube` style.
+      let tube = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> {Tube[0.2]}, PlotStyle -> Specularity[White, 20]]",
+      );
+      assert!(
+        tube.matches("<polygon").count() > 100,
+        "expected the first PlotStyle's tube: {tube}"
+      );
+      // And the other way round: a later `Tube` style is ignored.
+      let line = svg_of(
+        "ParametricPlot3D[{Cos[t], Sin[t], t/5}, {t, 0, 6.2}, \
+         PlotStyle -> Red, PlotStyle -> {Tube[0.2]}]",
+      );
+      assert!(
+        !line.contains("<polygon"),
+        "a later Tube PlotStyle is ignored: {line}"
+      );
+    }
+
+    #[test]
+    fn plot3d_plot_label_keeps_runs_of_spaces() {
+      // SVG collapses consecutive blanks unless told otherwise.
+      let svg = svg_of(
+        r#"ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6},
+        PlotLabel -> Row[{"a = 1", "   b = 2"}]]"#,
+      );
+      assert!(
+        svg.contains("xml:space=\"preserve\">a = 1   b = 2</text>"),
+        "expected the label's blank run to be kept: {svg}"
+      );
+      let single = svg_of(
+        r#"ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 6},
+        PlotLabel -> "a b"]"#,
+      );
+      assert!(!single.contains("xml:space"), "{single}");
+    }
+
+    #[test]
+    fn parametric_plot3d_surface_first_repeated_plot_style_wins() {
+      let first = svg_of(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotStyle -> Red, PlotStyle -> Blue, Mesh -> None]",
+      );
+      let only = svg_of(
+        "ParametricPlot3D[{u, v, u v}, {u, 0, 1}, {v, 0, 1}, \
+         PlotStyle -> Red, Mesh -> None]",
+      );
+      assert_eq!(first, only);
     }
 
     #[test]
@@ -3042,42 +3300,40 @@ mod tests {
     }
 
     #[test]
-    fn spherical_region_scales_by_the_bounding_box_sphere() {
-      // `SphericalRegion -> True` fits the sphere drawn around the 3D
-      // bounding box, not the projected box itself. A unit sphere's box is
-      // the cube [-1, 1]³, whose circumsphere is √3 times as wide as the
-      // ball, so the ball spans a little more than 1/√3 of the frame
-      // (perspective widens the view just enough for the circumsphere to
-      // fit). Without the option the frame hugs the projected cube, which
-      // is narrower than its circumsphere, so the ball is drawn larger.
+    fn spherical_region_scales_by_the_contents_sphere() {
+      // `SphericalRegion -> True` with an automatic range fits the sphere
+      // around the box center that encloses the contents (2 % widened),
+      // not the projected box itself. For a unit ball that sphere is the
+      // ball, so the ball spans nearly the whole frame (perspective widens
+      // the view just enough for the sphere to fit). A pinned range keeps
+      // the sphere through its box corners, √3 times as wide as the ball.
       let with = ink_extent(&svg_of(
         "Graphics3D[Sphere[{0, 0, 0}, 1], SphericalRegion -> True, \
          Boxed -> False, ImageSize -> 200]",
       ));
-      let without = ink_extent(&svg_of(
-        "Graphics3D[Sphere[{0, 0, 0}, 1], Boxed -> False, ImageSize -> 200]",
-      ));
       let ratio = with.0 / 200.0;
       assert!(
-        (0.5..0.6).contains(&ratio),
-        "expected about a 1/√3 shrink, got {ratio}: {with:?}"
+        (0.9..1.0).contains(&ratio),
+        "expected the ball to nearly fill the frame, got {ratio}: {with:?}"
       );
+      let pinned = ink_extent(&svg_of(
+        "Graphics3D[Sphere[{0, 0, 0}, 1], SphericalRegion -> True, \
+         Boxed -> False, PlotRange -> 1, ImageSize -> 200]",
+      ));
+      let ratio = pinned.0 / 200.0;
       assert!(
-        with.0 < without.0 * 0.9,
-        "the circumsphere frame must draw the ball smaller: \
-         {with:?} vs {without:?}"
+        (0.5..0.62).contains(&ratio),
+        "expected about a 1/√3 shrink, got {ratio}: {pinned:?}"
       );
 
-      // A flat square seen face on. Its box is given the range {-1, 1}
-      // along the flat axis (as Wolfram does), so with the option the
-      // frame spans that box's circumsphere (radius √3 after 2% padding),
-      // seen from 3 box sides away.
+      // A flat square seen face on: the frame spans the sphere through its
+      // corners (radius √2, 2 % widened), seen from 3 box sides away.
       let flat = "Graphics3D[Polygon[{{-1, -1, 0}, {1, -1, 0}, {1, 1, 0}, \
                   {-1, 1, 0}}], Boxed -> False, ImageSize -> 200, \
                   ViewPoint -> {0, 0, 3}, SphericalRegion -> True]";
       let with = ink_extent(&svg_of(flat));
       let ratio = with.0 / 200.0;
-      let r = 1.02 * 3f64.sqrt();
+      let r = 1.02 * 2f64.sqrt();
       let d = 6.0;
       let expected = 2.0 / (2.0 * r * d / (d * d - r * r).sqrt());
       assert!(
@@ -3087,20 +3343,79 @@ mod tests {
     }
 
     #[test]
-    fn spherical_region_sphere_surrounds_the_box_not_the_contents() {
-      // Two disks a distance apart: the contents' own enclosing sphere is
-      // smaller than the one around their bounding box (it misses the
-      // box's corners), and Wolfram frames by the latter. Wolfram draws
-      // a pair of unit circles this far apart about 55% as wide as a
-      // 400×400 picture.
+    fn spherical_region_sphere_encloses_the_contents_not_the_box_corners() {
+      // Two disks a distance apart: the contents' own enclosing sphere
+      // (radius √2 around the box center) is smaller than the one through
+      // their bounding box's corners (radius √3). With an automatic range
+      // the picture is framed by the former, as Wolfram's snapshots of
+      // closed polyhedra in similar 2 × 2 × 2 boxes show, so the disks
+      // span about three quarters of a 400×400 picture rather than the
+      // 55 % the box sphere gives.
       let rings = "Graphics3D[{Polygon[Table[{Cos[t], Sin[t], 0}, \
                    {t, 0, 2 Pi, Pi/50}]], Polygon[Table[{Cos[t], Sin[t], 2}, \
                    {t, 0, 2 Pi, Pi/50}]]}, Boxed -> False, \
-                   SphericalRegion -> True, ImageSize -> {400, 400}]";
-      let (w, _) = ink_extent(&svg_of(rings));
+                   SphericalRegion -> True, ImageSize -> {400, 400}";
+      let (w, _) = ink_extent(&svg_of(&format!("{rings}]")));
       assert!(
-        (200.0..240.0).contains(&w),
-        "rings should span about 55% of the width, got {w}"
+        (280.0..320.0).contains(&w),
+        "rings should span about 75% of the width, got {w}"
+      );
+      // A pinned range keeps the sphere through the corners of its
+      // (unpadded) box.
+      let (pinned, _) = ink_extent(&svg_of(&format!(
+        "{rings}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{0, 2}}}}]"
+      )));
+      assert!(
+        (220.0..260.0).contains(&pinned),
+        "pinned rings should span about 60% of the width, got {pinned}"
+      );
+    }
+
+    #[test]
+    fn spherical_region_band_frames_inside_the_box_sphere() {
+      // A band of narrow faces around the z-axis (radius 1, height 1). Its
+      // 2 × 2 × 1 box has a circumsphere of radius 1.5, but the contents
+      // stay within about 1.12 of the center, so the band is framed by a
+      // smaller sphere and drawn larger than the box's sphere would draw it
+      // (63 % of the width). A cylinder of triangles in a Demonstration
+      // snapshot spans about 82 %; Woxi draws about 90 % (see
+      // conformance_gaps.md). The same band built by rotating one face
+      // (`Rotate` of a `Polygon`) frames identically.
+      let face = |t: &str| {
+        format!(
+          "Polygon[{{{{Cos[{t}], Sin[{t}], 0}}, {{Cos[{t} + Pi/12], \
+           Sin[{t} + Pi/12], 0}}, {{Cos[{t} + Pi/12], Sin[{t} + Pi/12], 1}}, \
+           {{Cos[{t}], Sin[{t}], 1}}}}]"
+        )
+      };
+      let opts = "Boxed -> False, SphericalRegion -> True, \
+                  ImageSize -> {400, 400}";
+      let band = format!(
+        "Graphics3D[Table[{}, {{t, 0, 2 Pi - Pi/12, Pi/12}}], {opts}]",
+        face("t")
+      );
+      let rotated = format!(
+        "Graphics3D[Table[Rotate[{}, t, {{0, 0, 1}}], \
+         {{t, 0, 2 Pi - Pi/12, Pi/12}}], {opts}]",
+        face("0")
+      );
+      let (w, _) = ink_extent(&svg_of(&band));
+      assert!(
+        (300.0..380.0).contains(&w),
+        "the band should span 75–95% of the width, got {w}"
+      );
+      let (w_rot, _) = ink_extent(&svg_of(&rotated));
+      assert!((w - w_rot).abs() < 2.0, "{w} vs {w_rot}");
+
+      // A pinned `PlotRange` is still framed by the sphere around it.
+      let pinned = band.replace(
+        opts,
+        &format!("{opts}, PlotRange -> {{{{-1, 1}}, {{-1, 1}}, {{0, 1}}}}"),
+      );
+      let (w_pinned, _) = ink_extent(&svg_of(&pinned));
+      assert!(
+        w_pinned < w * 0.85,
+        "a pinned box frames by its own sphere: {w_pinned} vs {w}"
       );
     }
 
@@ -3118,6 +3433,96 @@ mod tests {
          ImageSize -> 200]",
       );
       assert!(svg.contains("stroke-width=\"3.0\""), "{svg}");
+    }
+
+    #[test]
+    fn thick_3d_line_is_two_pixels_wide() {
+      // `Thick` is `Thickness[Large]`, a 2-pixel stroke in 3D as in 2D,
+      // whatever the picture's size.
+      for code in [
+        "Graphics3D[{Thick, Line[{{0, 0, 0}, {1, 1, 1}}]}, ImageSize -> 400]",
+        "Graphics3D[{Thickness[Large], Line[{{0, 0, 0}, {1, 1, 1}}]}]",
+        "ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 2 Pi}, \
+         PlotStyle -> {Blue, Thick}]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("stroke-width=\"2.0\""), "{code}: {svg}");
+        assert!(!svg.contains("stroke-width=\"3.0\""), "{code}: {svg}");
+      }
+    }
+
+    #[test]
+    fn large_styled_3d_axes_labels_stay_inside_the_picture() {
+      // A label set in a large font (`Style[…, Large]`) is fitted into the
+      // picture at its own size, not at the default label size, so the
+      // vertical axis's label on the left edge is not cut off. (Under
+      // `SphericalRegion -> True` it still is: see `conformance_gaps.md`.)
+      {
+        let region = "False";
+        let svg = svg_of(&format!(
+          "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
+         SphericalRegion -> {region}, \
+         AxesLabel -> {{Style[\"x\", Large], Style[\"y\", Large], \
+         Style[\"zzz\", Large, Bold]}}]",
+        ));
+        let width: f64 = svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap();
+        let label = svg
+          .split("<text ")
+          .find(|t| t.contains(">zzz<"))
+          .unwrap_or_else(|| panic!("no z label: {svg}"));
+        let attr = |name: &str| -> f64 {
+          label
+            .split(&format!(" {name}=\""))
+            .nth(1)
+            .or_else(|| label.split(&format!("{name}=\"")).nth(1))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap()
+        };
+        let x = attr("x");
+        // Three Large (24 px) characters are about 40 px wide, so a centered
+        // label needs its anchor at least 20 px from either edge.
+        let half = 3.0 * 24.0 * 0.56 / 2.0;
+        assert!(
+          x - half >= 0.0 && x + half <= width,
+          "z label at x = {x} spills out of the {width} px picture: {svg}"
+        );
+      }
+    }
+
+    #[test]
+    fn relative_thickness_follows_the_shorter_side_of_a_pinned_3d_picture() {
+      // In a picture pinned less tall than wide, `Thickness[t]` is a
+      // fraction of the height: `Thickness[0.02]` at `ImageSize -> {500,
+      // 300}` is 6 pixels wide, not 10.
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.02], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> {500, 300}]",
+      );
+      assert!(svg.contains("stroke-width=\"6.0\""), "{svg}");
+      // A picture taller than wide still measures against its width.
+      let svg = svg_of(
+        "Graphics3D[{Thickness[0.02], Line[{{0, 0, 0}, {1, 1, 1}}]}, \
+         ImageSize -> {300, 500}]",
+      );
+      assert!(svg.contains("stroke-width=\"6.0\""), "{svg}");
+    }
+
+    #[test]
+    fn relative_point_size_follows_the_shorter_side_of_a_pinned_3d_picture() {
+      // `PointSize[s]` in 3D is measured against the same length as
+      // `Thickness[t]`: at `ImageSize -> {500, 300}` a `PointSize[0.04]`
+      // dot is 12 pixels across (radius 6), not 20.
+      let svg = svg_of(
+        "Graphics3D[{PointSize[0.04], Point[{0, 0, 0}]}, \
+         ImageSize -> {500, 300}]",
+      );
+      assert!(svg.contains("r=\"6.00\""), "{svg}");
     }
 
     #[test]
@@ -3154,8 +3559,9 @@ mod tests {
     fn raster3d_renders_voxels() {
       let svg =
         svg_of("Graphics3D[Raster3D[{{{0, 1}, {1, 0}}, {{1, 0}, {0, 1}}}]]");
-      // 8 voxel cuboids, 12 triangles each.
-      assert_eq!(svg.matches("<polygon").count(), 96);
+      // A solid volume shows only its outer faces: 6 faces of 2×2 voxels,
+      // none merged (neighbors alternate), 2 triangles each.
+      assert_eq!(svg.matches("<polygon").count(), 48);
       // Voxels with value 0 are black, voxels with value 1 are white; both
       // shades must appear (modulated by lighting, so just check some
       // polygons exist with distinct fills).
@@ -4293,6 +4699,39 @@ mod tests {
       );
     }
 
+    /// The function draws in Wolfram's units, where edges are about 1
+    /// long: on a 40-vertex ring, disks of radius 1/5 stay far apart
+    /// instead of overlapping into one blob.
+    #[test]
+    fn vertex_rendering_function_disks_do_not_overlap_on_a_large_graph() {
+      let svg = svg_of(
+        r#"GraphPlot[Table[i -> Mod[i, 40] + 1, {i, 40}],
+           VertexRenderingFunction -> (Disk[#, 1/5] &)]"#,
+      );
+      let centers = circle_centers(&svg);
+      assert_eq!(centers.len(), 40, "{svg}");
+      let radius: f64 = svg
+        .split("<ellipse ")
+        .nth(1)
+        .and_then(|c| c.split("rx=\"").nth(1))
+        .and_then(|r| r.split('"').next())
+        .and_then(|r| r.parse().ok())
+        .expect("a circle radius");
+      let closest = centers
+        .iter()
+        .enumerate()
+        .flat_map(|(i, a)| {
+          centers[i + 1..]
+            .iter()
+            .map(move |b| ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt())
+        })
+        .fold(f64::INFINITY, f64::min);
+      assert!(
+        closest > 4.0 * radius,
+        "neighbors {closest} apart with radius {radius}: {svg}"
+      );
+    }
+
     /// `VertexRenderingFunction -> None` leaves the edges without any
     /// vertices drawn on their ends.
     #[test]
@@ -4548,6 +4987,30 @@ mod tests {
       assert!(svg.contains("<svg"), "{svg}");
       assert!(!svg.contains("SuperscriptBox"), "box source leaked: {svg}");
       assert!(!svg.contains("\\!"), "escape source leaked: {svg}");
+    }
+
+    /// A `Style[Grid[…], size]` sets its typeset (`TraditionalForm`) cells
+    /// at that size, like its plain text cells, also when the whole styled
+    /// grid is put in `TraditionalForm`.
+    #[test]
+    fn styled_grid_sizes_its_traditional_form_cells() {
+      for code in [
+        "Style[Grid[{{TraditionalForm[a + b], TraditionalForm[c - a]}}, Frame -> All], 30]",
+        "TraditionalForm[Style[Grid[{{a + b, c - a}, {7, -a - b + c}}, Frame -> All], 30]]",
+        "Text[TraditionalForm[Style[Grid[{{a + b, 2}}], 24]]]",
+      ] {
+        let svg =
+          woxi::interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap();
+        let size = if code.contains("24") { "24" } else { "30" };
+        assert!(
+          svg.contains(&format!("font-size=\"{size}")),
+          "{code}: cells not set at size {size}: {svg}"
+        );
+        assert!(
+          !svg.contains("font-size=\"14"),
+          "{code}: a cell kept the default size: {svg}"
+        );
+      }
     }
 
     /// A bushy tree sets its own picture width from its labels; in a
@@ -4841,7 +5304,8 @@ mod tests {
         svg.contains("<tspan dx=\"0.18em\">147</tspan>"),
         "the number keeps its digit groups: {svg}"
       );
-      assert!(svg.contains(">nine ten</text>"), "{svg}");
+      // The last item moves to its own line whole, leading space and all.
+      assert!(svg.contains("> nine ten</text>"), "{svg}");
     }
 
     /// The line-breaking string factor of a product (`Row[…] "\n\n  "`, an
@@ -4868,6 +5332,79 @@ mod tests {
       let line_y =
         y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
+    }
+
+    /// Re-flowed `Pane` text breaks between the items of a `Row` before it
+    /// breaks inside one: the text item the line runs out in moves to the
+    /// next line whole when it fits there, keeping its leading space,
+    /// rather than filling the first line with its first words.
+    #[test]
+    fn pane_text_breaks_between_row_items_first() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two ", Style["three", Italic], " four five six seven"}], {220, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(svg.contains(">one two </text>"), "{svg}");
+      assert!(svg.contains(">three</text>"), "{svg}");
+      assert!(svg.contains("> four five six seven</text>"), "{svg}");
+      assert!(!svg.contains(">six seven</text>"), "{svg}");
+    }
+
+    /// Text in a proportional `FontFamily` is measured by its own glyph
+    /// widths when a `Pane` re-flows it, so a line that only overflows at
+    /// the monospace advance stays whole.
+    #[test]
+    fn pane_text_in_a_proportional_font_fits_more_per_line() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Style[Row[{"one two three four five six seven"}], FontFamily -> "Times"], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains(">one two three four five six seven</text>"),
+        "{svg}"
+      );
+      let mono = woxi::interpret(
+        r#"ExportString[Pane[Row[{"one two three four five six seven"}], {240, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        !mono.contains(">one two three four five six seven</text>"),
+        "the monospace default still breaks: {mono}"
+      );
+    }
+
+    /// A `Row` measures a piece in a serif `FontFamily` by the serif glyph
+    /// widths it is drawn with, not the wider sans-serif average: the
+    /// centered pieces then sit next to each other instead of each floating
+    /// in a gap a third as wide as its own text.
+    #[test]
+    fn row_measures_serif_pieces_by_their_glyph_widths() {
+      let svg = woxi::interpret(
+        r#"ExportString[Row[{Style["Passengers in third class survived the ", FontFamily -> "Times"], Style["word", FontFamily -> "Times", Italic]}], "SVG"]"#,
+      )
+      .unwrap();
+      let width: f64 = svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|v| v.split('"').next())
+        .and_then(|v| v.parse().ok())
+        .unwrap();
+      // 43 characters at the 0.55 em sans average would be 331 wide.
+      assert!(width < 300.0, "{svg}");
+    }
+
+    /// A re-flowed line that continues after a break between row items
+    /// keeps its leading space as an indent.
+    #[test]
+    fn reflowed_line_keeps_its_leading_space() {
+      let svg = woxi::interpret(
+        r#"ExportString[Pane[Column[{Style[Row[{"one two ", Style["three", Italic], " four five six seven"}], FontFamily -> "Times"]}], {200, 300}], "SVG"]"#,
+      )
+      .unwrap();
+      assert!(
+        svg.contains("xml:space=\"preserve\"> four five six seven</text>"),
+        "{svg}"
+      );
     }
 
     /// `Style[TraditionalForm[Labeled[…]], size]` is drawn as the captioned
@@ -5441,5 +5978,201 @@ mod grid_item_style_tests {
       ),
       "{svg}"
     );
+  }
+
+  #[test]
+  fn test_text_sets_row_in_proportional_face() {
+    // `Text[Row[…]]` sets every item of the row in the proportional text
+    // face, as `Text["…"]` is, alone or under `Style`.
+    for code in [
+      r#"ExportString[Text[Row[{"ab ", 1}]], "SVG"]"#,
+      r#"ExportString[Style[Text[Row[{"ab ", 1}]], 16], "SVG"]"#,
+      r#"ExportString[Text["ab"], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).unwrap();
+      assert!(!svg.contains("monospace"), "{code}: {svg}");
+      assert!(svg.contains("sans-serif\""), "{code}: {svg}");
+    }
+  }
+
+  #[test]
+  fn test_text_row_in_pane_fits_one_line_in_proportional_face() {
+    // A sentence of 53 characters at size 16 fits a 500-wide pane in the
+    // proportional face, so it stays on one line rather than wrapping its
+    // last word as monospace metrics would.
+    let svg = woxi::interpret(
+      r#"ExportString[Pane[Style[Text[Row[{"At ", 120, " BPM, ", 24, " clock ticks will last ", 0.02083, " seconds."}]], 16], {500, 100}, Alignment -> Center], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("monospace"), "{svg}");
+    let ys: std::collections::BTreeSet<&str> = svg
+      .split("<text ")
+      .skip(1)
+      .filter_map(|t| t.split("y=\"").nth(1)?.split('"').next())
+      .collect();
+    assert_eq!(ys.len(), 1, "{svg}");
+    assert!(svg.contains(" seconds.</text>"), "{svg}");
+  }
+
+  #[test]
+  fn test_text_string_in_pane_wraps_by_proportional_width() {
+    // Long `Text` prose in a fixed pane flows into lines measured in the
+    // proportional face: the laid-out block about fits the pane's width
+    // (give or take the column's padding) instead of running a monospace
+    // measure wider and being shrunk to fit it.
+    let svg = woxi::interpret(
+      r#"ExportString[Pane[Style[Text[StringRepeat["word ", 40]], 16], {500, 100}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!svg.contains("monospace"), "{svg}");
+    // The block is drawn into the pane either directly or as a nested
+    // picture; a nested one must about fit the pane's width.
+    if let Some(inner) = svg.split("<svg").nth(2) {
+      let width: f64 = inner
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      assert!(width <= 512.0, "{width}: {svg}");
+    }
+    assert!(svg.matches("<text ").count() >= 2, "{svg}");
+  }
+
+  #[test]
+  fn test_column_measures_proportional_font_family_items() {
+    // An item styled in a proportional face is measured with that face's
+    // narrower advance, not the monospace default.
+    let mono = woxi::interpret(
+      r#"ExportString[Column[{Style["abcdefghijklmnopqrst", FontFamily -> "Courier"]}], "SVG"]"#,
+    )
+    .unwrap();
+    let sans = woxi::interpret(
+      r#"ExportString[Column[{Style["abcdefghijklmnopqrst", FontFamily -> "sans-serif"]}], "SVG"]"#,
+    )
+    .unwrap();
+    let width = |svg: &str| -> f64 {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap()
+    };
+    assert!(width(&sans) < width(&mono), "{sans}\n{mono}");
+  }
+
+  #[test]
+  fn test_text_row_in_fixed_pane_output_uses_proportional_face() {
+    // The notebook display of a fixed-size `Pane` (a Manipulate body) sets
+    // `Text[Row[…]]` in the proportional face on one line, as the export
+    // does.
+    let res = woxi::interpret_with_stdout(
+      r#"Pane[Style[Text[Row[{"At ", 120, " BPM, ", 24, " clock ticks will last ", 0.02083, " seconds."}]], 16], {500, 100}, Alignment -> Center]"#,
+    )
+    .unwrap();
+    let svg = res.graphics.expect("pane should render");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(svg.contains(" seconds.</text>"), "{svg}");
+  }
+
+  // ── Font fallback keeps the text's style ──
+
+  #[test]
+  fn test_fallback_face_rank_prefers_same_slant_then_weight() {
+    use resvg::usvg::fontdb::{Stretch, Style};
+    use woxi::functions::image_ast::fallback_face_rank;
+    let base = (Style::Normal, 400, Stretch::Normal);
+    let regular =
+      fallback_face_rank((Style::Normal, 400, Stretch::Normal), base);
+    let medium =
+      fallback_face_rank((Style::Normal, 500, Stretch::Normal), base);
+    let bold = fallback_face_rank((Style::Normal, 700, Stretch::Normal), base);
+    let italic =
+      fallback_face_rank((Style::Italic, 400, Stretch::Normal), base);
+    let bold_italic =
+      fallback_face_rank((Style::Italic, 800, Stretch::Normal), base);
+    let condensed =
+      fallback_face_rank((Style::Normal, 400, Stretch::Condensed), base);
+    assert!(regular < condensed);
+    assert!(condensed < medium);
+    assert!(medium < bold);
+    assert!(bold < italic);
+    assert!(italic < bold_italic);
+  }
+
+  #[test]
+  fn test_font_fallback_keeps_regular_weight() {
+    // A regular face lacking a glyph must not fall back to a bold (or
+    // italic) face just because one of its other attributes matches,
+    // as usvg's built-in selector does.
+    use resvg::usvg::fontdb::{Database, Style};
+    let mut db = Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let base = db
+      .faces()
+      .find(|f| {
+        f.families
+          .iter()
+          .any(|(n, _)| n == "Atkinson Hyperlegible Mono")
+          && f.weight.0 == 400
+      })
+      .expect("embedded regular mono face")
+      .id;
+    let mut db = std::sync::Arc::new(db);
+    let resolver = woxi::functions::image_ast::font_resolver();
+    let chosen = (resolver.select_fallback)('A', &[base], &mut db)
+      .expect("a fallback face");
+    let face = db.face(chosen).unwrap();
+    assert_eq!(face.style, Style::Normal);
+    assert!(
+      face.weight.0 < 600,
+      "fell back to a bold face: {:?} {:?}",
+      face.families,
+      face.weight
+    );
+  }
+
+  #[test]
+  fn test_svg_options_use_style_preserving_fallback() {
+    use resvg::usvg::fontdb::{Database, Style};
+    let mut db = Database::new();
+    woxi::functions::image_ast::load_embedded_fonts(&mut db);
+    let base = db
+      .faces()
+      .find(|f| f.weight.0 == 400 && f.style == Style::Normal)
+      .unwrap()
+      .id;
+    let mut opts =
+      woxi::functions::image_ast::svg_render_options(std::sync::Arc::new(db));
+    let chosen =
+      (opts.font_resolver.select_fallback)('A', &[base], &mut opts.fontdb)
+        .unwrap();
+    assert!(opts.fontdb.face(chosen).unwrap().weight.0 < 600);
+  }
+
+  /// Tick labels with an integer part of five or more digits are split
+  /// into blocks of three by a thin space (U+2009), as Wolfram sets them
+  /// (`100 000`), on every kind of axis; shorter ones stay whole.
+  #[test]
+  fn long_tick_labels_are_set_in_digit_blocks() {
+    for code in [
+      r#"ExportString[Plot[x, {x, 0, 200000}, Frame -> True], "SVG"]"#,
+      r#"ExportString[ListPlot[{{0, 0}, {200000, 1}}], "SVG"]"#,
+      r#"ExportString[Graphics[Line[{{0, 0}, {200000, 100000}}],
+        Frame -> True], "SVG"]"#,
+      r#"ExportString[Graphics[Line[{{0, 0}, {200000, 100000}}],
+        Axes -> True], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(svg.contains("100\u{2009}000"), "{code}: {svg}");
+      assert!(!svg.contains("100000<"), "{code}: {svg}");
+    }
+    // Four-digit labels are not grouped; five-digit ones are.
+    let svg =
+      woxi::interpret(r#"ExportString[Plot[x, {x, 0, 12345.6}], "SVG"]"#)
+        .expect("interpret should succeed");
+    assert!(svg.contains(">8000<"), "{svg}");
+    assert!(svg.contains("10\u{2009}000"), "{svg}");
   }
 }
