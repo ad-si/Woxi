@@ -15496,6 +15496,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .sqrt();
     let bias = diag * 1e-3;
     const LINE_SUBDIVISIONS: usize = 8;
+    // Shortest on-screen length (in pixels) worth a piece of its own.
+    const LINE_PIECE_PX: f64 = 8.0;
     let mut polyline_id = 0usize;
     for prim in &prims {
       let Primitive3D::Line3D { segments, style } = prim else {
@@ -15523,9 +15525,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (apx, apy) = to_svg(project(a, &camera).0, project(a, &camera).1);
           let (bpx, bpy) = to_svg(project(b, &camera).0, project(b, &camera).1);
           let total_px = ((bpx - apx).powi(2) + (bpy - apy).powi(2)).sqrt();
-          for s in 0..LINE_SUBDIVISIONS {
-            let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
-            let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
+          // Pieces only need to be short enough on screen to be ordered
+          // against the faces around them: a finely sampled curve whose
+          // segments are a pixel long is not cut any further.
+          let pieces = ((total_px / LINE_PIECE_PX).ceil() as usize)
+            .clamp(1, LINE_SUBDIVISIONS);
+          for s in 0..pieces {
+            let t0 = s as f64 / pieces as f64;
+            let t1 = (s + 1) as f64 / pieces as f64;
             let tm = f64::midpoint(t0, t1);
             let lerp = |t: f64| Point3D {
               x: a.x + (b.x - a.x) * t,
@@ -15654,10 +15661,12 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ex0, ey0, ex1, ey1, edge.color, edge.width, cap, opacity_attr, dash_attr
       ));
     };
-    // Emit the line pieces of one draw slot. Translucent pieces cut from
-    // one polyline are joined into a single `<polyline>`: drawn as
-    // separate elements, every joint between two pieces shows as an
-    // anti-aliasing notch where the background bleeds through.
+    // Emit the line pieces of one draw slot. The pieces cut from one
+    // polyline are joined into a single `<polyline>`: drawn as separate
+    // elements, translucent pieces show an anti-aliasing notch at every
+    // joint where the background bleeds through, and the overlapping
+    // round caps of a finely sampled opaque curve pile up their
+    // anti-aliased edges until a thin line looks bold.
     let emit_edge_run = |svg: &mut String, run: &[&SceneEdge]| {
       let mut done = vec![false; run.len()];
       for i in 0..run.len() {
@@ -15665,16 +15674,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           continue;
         }
         let edge = run[i];
-        let Some((line_id, _)) = edge.piece_of.filter(|_| edge.opacity < 1.0)
-        else {
+        let Some((line_id, _)) = edge.piece_of else {
           emit_edge(svg, edge);
           continue;
         };
         let mut pieces: Vec<usize> = (i..run.len())
           .filter(|&k| {
-            !done[k]
-              && run[k].opacity < 1.0
-              && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
+            !done[k] && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
           })
           .collect();
         pieces.sort_by_key(|&k| run[k].piece_of.map(|(_, n)| n));
@@ -15713,12 +15719,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             svg_width as f64,
             first.dash_offset,
           );
+          // Translucent lines keep the butt caps of their pieces (see
+          // `emit_edge`); opaque ones the round caps.
+          let (cap, opacity_attr) = if first.opacity < 1.0 {
+            ("butt", format!(" opacity=\"{}\"", first.opacity))
+          } else {
+            ("round", String::new())
+          };
           svg.push_str(&format!(
-            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"butt\" stroke-linejoin=\"round\" opacity=\"{}\"{}/>\n",
+            "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{:.1}\" stroke-linecap=\"{cap}\" stroke-linejoin=\"round\"{opacity_attr}{}/>\n",
             points.join(" "),
             first.color,
             first.width,
-            first.opacity,
             dash_attr
           ));
         }

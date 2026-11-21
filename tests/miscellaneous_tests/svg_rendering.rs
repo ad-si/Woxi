@@ -3058,9 +3058,19 @@ mod tests {
         "Graphics3D[BSplineCurve[Table[{Sin[t], Cos[t], 0}, \
          {t, 0, 6.0, 0.5}], SplineClosed -> True]]",
       );
-      assert!(open.contains("<line"), "expected an open spline: {open}");
+      // Vertices drawn, whether as `<line>` pieces or one `<polyline>`.
+      let vertices = |svg: &str| {
+        svg.matches("<line").count() * 2
+          + svg
+            .split("<polyline points=\"")
+            .skip(1)
+            .filter_map(|p| p.split('"').next())
+            .map(|p| p.split_whitespace().count())
+            .sum::<usize>()
+      };
+      assert!(vertices(&open) > 0, "expected an open spline: {open}");
       assert!(
-        closed.matches("<line").count() > open.matches("<line").count(),
+        vertices(&closed) > vertices(&open),
         "a closed spline runs further than the open one"
       );
     }
