@@ -70080,3 +70080,50 @@ mod grid_applied_derivative {
     assert!(svg.contains("\u{2032}"), "{svg}");
   }
 }
+
+mod overlay_and_opacity_labels {
+  use super::*;
+
+  fn export_svg(code: &str) -> String {
+    interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+  }
+
+  #[test]
+  fn style_opacity_fades_label_text() {
+    let svg = export_svg(
+      "Graphics[Point[{0, 0}], Axes -> True, \
+       AxesLabel -> {Style[\"u\", Opacity[0.25]], \"v\"}]",
+    );
+    assert!(svg.contains("fill-opacity=\"0.25\">u</tspan>"), "{svg}");
+  }
+
+  #[test]
+  fn overlay_label_stacks_its_layers_instead_of_printing_source() {
+    // Both layers are drawn, the second one moved back over the first.
+    let svg = export_svg(
+      "Graphics[Point[{0, 0}], Axes -> True, \
+       AxesLabel -> {Overlay[{Style[\"abc\", Opacity[0.5]], \
+       Style[\"x\", Italic, Opacity[0.5]]}, Alignment -> Center], \"v\"}]",
+    );
+    assert!(!svg.contains("Overlay"), "{svg}");
+    assert!(!svg.contains("Alignment"), "{svg}");
+    assert!(svg.contains(">abc</tspan><tspan dx=\"-"), "{svg}");
+    assert!(svg.contains("font-style=\"italic\""), "{svg}");
+  }
+
+  #[test]
+  fn left_aligned_overlay_rewinds_to_the_start() {
+    // Default alignment: the second layer starts where the first did, and
+    // the pen then advances to the end of the wider first layer.
+    let svg = export_svg(
+      "Graphics[Point[{0, 0}], Axes -> True, \
+       AxesLabel -> {Overlay[{\"wide\", \"n\"}], \"v\"}]",
+    );
+    let label = svg
+      .split("<text")
+      .find(|t| t.contains(">wide"))
+      .expect("label text");
+    assert!(label.contains("wide<tspan dx=\"-"), "{label}");
+    assert!(label.contains(">n</tspan><tspan dx=\""), "{label}");
+  }
+}
