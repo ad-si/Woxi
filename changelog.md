@@ -72,6 +72,10 @@
 - `Column` stripes its rows with a background list
     (`Background -> {c1, c2, …}` or the cyclic `{{c1, c2}}`) instead of
     dropping it.
+- Woxi Studio and PNG/PDF export draw italic text slanted:
+    `Style[…, Italic]`, `FontSlant -> Italic` and TraditionalForm variables
+    use bundled italic and bold-italic Atkinson Hyperlegible Next faces
+    instead of falling back to the upright ones.
 
 # 2026-11-08 - 0.4.0
 

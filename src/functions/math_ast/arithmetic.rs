@@ -4611,6 +4611,24 @@ fn compare_plus_terms(a: &Expr, b: &Expr) -> std::cmp::Ordering {
           }
         }
       }
+      // A sum times other factors (`(a + b)/x`, `(a + b)*y`) against a
+      // product of several factors (`c/y`, `c*x`): products compare from
+      // their last factor, as in `Sort` — `(a + b)/x + c/y`,
+      // `c*x + (a + b)*y`.
+      {
+        let (_, none_factors) = wl_coeff_and_factors(none_term);
+        let (_, pair_factors) = wl_coeff_and_factors(pair_term);
+        let sum_factor = none_factors.iter().any(|f| {
+          matches!(f.as_ref(), Expr::FunctionCall { name, .. } if name == "Plus")
+        });
+        if sum_factor && none_factors.len() >= 2 && pair_factors.len() >= 2 {
+          let ord =
+            crate::functions::list_helpers_ast::sorting::canonical_cmp(a, b);
+          if ord != std::cmp::Ordering::Equal {
+            return ord;
+          }
+        }
+      }
       // For compound algebraic terms with free variables, compare by
       // latest variable relative to the monomial's variable:
       //   latest > monomial → monomial first (e.g. b + Sqrt[a*c])
