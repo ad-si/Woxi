@@ -762,30 +762,30 @@ struct Si {
 }
 
 impl Si {
-  fn new(num: num_bigint::BigInt, den: num_bigint::BigInt, pi: i64) -> Si {
-    let (num, den) = crate::functions::math_ast::rat_reduce_bigint(&num, &den);
+  fn new(num: &num_bigint::BigInt, den: &num_bigint::BigInt, pi: i64) -> Si {
+    let (num, den) = crate::functions::math_ast::rat_reduce_bigint(num, den);
     Si { num, den, pi }
   }
 
   fn rat((n, d): (i128, i128)) -> Si {
-    Si::new(n.into(), d.into(), 0)
+    Si::new(&n.into(), &d.into(), 0)
   }
 
   fn mul(&self, o: &Si) -> Si {
-    Si::new(&self.num * &o.num, &self.den * &o.den, self.pi + o.pi)
+    Si::new(&(&self.num * &o.num), &(&self.den * &o.den), self.pi + o.pi)
   }
 
   fn div(&self, o: &Si) -> Si {
-    Si::new(&self.num * &o.den, &self.den * &o.num, self.pi - o.pi)
+    Si::new(&(&self.num * &o.den), &(&self.den * &o.num), self.pi - o.pi)
   }
 
   fn pow(&self, exp: i64) -> Si {
     let e = exp.unsigned_abs() as u32;
     let (n, d) = (self.num.pow(e), self.den.pow(e));
     if exp >= 0 {
-      Si::new(n, d, self.pi * exp)
+      Si::new(&n, &d, self.pi * exp)
     } else {
-      Si::new(d, n, self.pi * exp)
+      Si::new(&d, &n, self.pi * exp)
     }
   }
 
@@ -1019,10 +1019,10 @@ fn resolve_compound_constant(name: &str) -> Option<(Si, Vec<(String, i64)>)> {
   let ten = |e: u32| num_bigint::BigInt::from(10).pow(e);
   let s = |n: &str, e: i64| (n.to_string(), e);
   // Exact SI value of the Planck constant (2019 redefinition), in J s.
-  let planck = || Si::new(662607015.into(), ten(42), 0);
+  let planck = || Si::new(&662607015.into(), &ten(42), 0);
   // Wolfram keeps the magnetic constant at its pre-2019 exact value
   // 4 Pi / 10^7 N/A^2.
-  let magnetic = || Si::new(4.into(), ten(7), 1);
+  let magnetic = || Si::new(&4.into(), &ten(7), 1);
   let c = || Si::rat((299792458, 1));
   let planck_units = vec![s("Kilograms", 1), s("Meters", 2), s("Seconds", -1)];
   let rat_const =
@@ -1056,9 +1056,10 @@ fn resolve_compound_constant(name: &str) -> Option<(Si, Vec<(String, i64)>)> {
       vec![("Meters".to_string(), 1), ("Seconds".to_string(), -2)],
     ),
     "PlanckConstant" => Some((planck(), planck_units)),
-    "ReducedPlanckConstant" => {
-      Some((planck().div(&Si::new(2.into(), 1.into(), 1)), planck_units))
-    }
+    "ReducedPlanckConstant" => Some((
+      planck().div(&Si::new(&2.into(), &1.into(), 1)),
+      planck_units,
+    )),
     "MagneticConstant" => Some((
       magnetic(),
       vec![
