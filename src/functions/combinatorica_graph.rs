@@ -1208,6 +1208,32 @@ fn connected_q(g: &CGraph, strong: bool) -> bool {
   reach(&out) && reach(&inn)
 }
 
+/// A Combinatorica graph as the equivalent built-in
+/// `Graph[{1, …, n}, edges]`: every vertex (isolated ones included) and
+/// each edge as an `UndirectedEdge` (or `DirectedEdge` for a graph with
+/// `EdgeDirection -> True`). `None` for anything else. The plot functions
+/// of the built-in graph framework read Combinatorica graphs through it.
+pub fn to_system_graph(expr: &Expr) -> Option<Expr> {
+  let g = CGraph::parse(expr)?;
+  let head = if g.directed {
+    "DirectedEdge"
+  } else {
+    "UndirectedEdge"
+  };
+  let edges = g
+    .edges
+    .iter()
+    .map(|&(u, v)| Expr::FunctionCall {
+      name: head.to_string(),
+      args: vec![int(u), int(v)].into(),
+    })
+    .collect();
+  Some(Expr::FunctionCall {
+    name: "Graph".to_string(),
+    args: vec![int_list(0..g.n), Expr::List(edges)].into(),
+  })
+}
+
 pub fn combinatorica_graph_ast(
   name: &str,
   args: &[Expr],
