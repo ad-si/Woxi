@@ -3426,6 +3426,31 @@ mod graphics {
       assert!(!svg.contains("<line"), "{svg}");
     }
 
+    /// A quotient under a form wrapper (`TraditionalForm[b/8]`), alone or
+    /// as a part of a `Row`, stacks in a label instead of running its
+    /// numerator and denominator together as `b8`.
+    #[test]
+    fn text_label_form_wrapped_quotient_stacks() {
+      for label in [
+        "TraditionalForm[w/8]",
+        "StandardForm[w/8]",
+        "Row[{\"r = \", TraditionalForm[Style[\"w\", Italic]/8], \" = \", 0.5}]",
+        "Style[Row[{Style[\"r\", Italic], \" = \", TraditionalForm[w/4]}], 12, Blue]",
+      ] {
+        let svg = export_svg(&format!("Graphics[{{Text[{label}, {{0, 0}}]}}]"));
+        assert!(svg.contains("<line"), "{label}: {svg}");
+        assert!(
+          !svg.contains(">w8<") && !svg.contains("w4<"),
+          "{label}: {svg}"
+        );
+      }
+      // The italic part of the numerator stays italic.
+      let svg = export_svg(
+        "Graphics[{Text[Row[{\"r = \", TraditionalForm[Style[\"w\", Italic]/8]}], {0, 0}]}]",
+      );
+      assert!(svg.contains("font-style=\"italic\""), "{svg}");
+    }
+
     /// A nested `Style[…, size]` part of a label inside a `Style` of
     /// another size is drawn at its own size.
     #[test]
