@@ -17725,9 +17725,13 @@ mod plot3d {
         assert!(svg.contains(&applied), "{code}: {svg}");
       }
       // A bare symbol item is italic beside the unit string.
-      let svg =
-        export_svg("Plot[s, {s, 0, 1}, AxesLabel -> {Row[{t, \" (s)\"}], None}]");
-      assert!(svg.contains(&format!(">{} (s)</text>", italic("t"))), "{svg}");
+      let svg = export_svg(
+        "Plot[s, {s, 0, 1}, AxesLabel -> {Row[{t, \" (s)\"}], None}]",
+      );
+      assert!(
+        svg.contains(&format!(">{} (s)</text>", italic("t"))),
+        "{svg}"
+      );
       // `LabelStyle` still sizes the label.
       let svg = export_svg(
         "Plot[s, {s, 0, 1}, LabelStyle -> 14, \

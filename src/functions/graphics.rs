@@ -12272,9 +12272,9 @@ fn clip_infinite_line_to_box(
   half: bool,
   bb: &BBox,
 ) -> Option<((f64, f64), (f64, f64))> {
-  let margin = bb.width() + bb.height();
-  let (x0, x1) = (bb.x_min - margin, bb.x_max + margin);
-  let (y0, y1) = (bb.y_min - margin, bb.y_max + margin);
+  let bx = unbounded_draw_box(bb);
+  let (x0, x1) = (bx.x_min, bx.x_max);
+  let (y0, y1) = (bx.y_min, bx.y_max);
   let (mut t_lo, mut t_hi) =
     (if half { 0.0 } else { f64::NEG_INFINITY }, f64::INFINITY);
   for (pc, vc, lo, hi) in [(p.0, v.0, x0, x1), (p.1, v.1, y0, y1)] {
@@ -48758,7 +48758,7 @@ fn collect_row_joined_controls(
       for row in rows {
         match row {
           Expr::List(cells) => {
-            joined_line_controls(cells, true, place_map, out)
+            joined_line_controls(cells, true, place_map, out);
           }
           other => collect_row_joined_controls(other, place_map, out),
         }
