@@ -35479,6 +35479,37 @@ mod graphics_grid {
     );
   }
 
+  /// A `Grid` nested in a cell of a styled grid inherits the outer style
+  /// (size, color, weight) like plain text cells do, while the nested grid's
+  /// own `BaseStyle` still takes precedence.
+  #[test]
+  fn nested_grid_inherits_outer_grid_style() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Style[Grid[{{Grid[{{\"a\", \"b\"}}]}, {Grid[{{\"c\"}}]}}], 17, Red, Bold]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert_eq!(
+      svg.matches("font-size=\"17\"").count(),
+      3,
+      "every nested cell should inherit the size, got: {svg}"
+    );
+    assert_eq!(svg.matches("fill=\"rgb(255,0,0)\"").count(), 3, "{svg}");
+    assert_eq!(svg.matches("font-weight=\"bold\"").count(), 3, "{svg}");
+
+    let svg = interpret_with_stdout(
+      "Grid[{{Grid[{{\"a\"}}]}, {Grid[{{\"b\"}}, BaseStyle -> 20]}}, \
+       BaseStyle -> 13]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    assert!(svg.contains("font-size=\"13\""), "{svg}");
+    assert!(svg.contains("font-size=\"20\""), "{svg}");
+  }
+
   /// A `FontFamily` on the whole grid reaches every cell that does not name
   /// a face of its own.
   #[test]

@@ -30615,6 +30615,54 @@ fn framed_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   }
 }
 
+/// The `Style` directives (weight, slant, size, color) a grid's style
+/// passes on to a nested layout in one of its cells. The font family is
+/// left to the caller, which decides whether a default applies.
+fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
+  let mut directives: Vec<Expr> = Vec::new();
+  if style.font_weight == Some("bold") {
+    directives.push(id_expr("Bold"));
+  }
+  if style.font_style == Some("italic") {
+    directives.push(id_expr("Italic"));
+  }
+  if let Some(size) = style.font_size {
+    directives.push(Expr::Real(size));
+  }
+  if let Some(color) = style.color {
+    directives.push(color.to_expr());
+  }
+  directives
+}
+
+/// A `Grid` nested in a cell of a styled grid (`Style[Grid[{{Grid[…]},
+/// {Grid[…]}}], 16]`) inherits the outer grid's size, weight, slant, color
+/// and family, just like the plain text cells beside it: the nested grid is
+/// wrapped in the same `Style` so it is drawn whole in that style (its own
+/// `BaseStyle` still takes precedence). Without this the nested grid's text
+/// fell back to the default 14pt black.
+fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
+  if !matches!(cell, Expr::FunctionCall { name, args }
+    if (name == "Grid" || name == "TextGrid")
+      && matches!(args.first(), Some(Expr::List(_))))
+  {
+    return cell.clone();
+  }
+  let mut directives = grid_style_directives(style);
+  if let Some(family) = &style.font_family {
+    directives.push(rule_expr(id_expr("FontFamily"), str_expr(family)));
+  }
+  if directives.is_empty() {
+    return cell.clone();
+  }
+  call(
+    "Style",
+    std::iter::once(cell.clone())
+      .chain(directives)
+      .collect::<Vec<_>>(),
+  )
+}
+
 fn column_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
   if !matches!(cell, Expr::FunctionCall { name, .. } if name == "Column") {
     return cell.clone();
@@ -30906,6 +30954,7 @@ fn grid_svg_styled_internal_reporting(
       *cell = resolve_display_item(cell);
       *cell = framed_cell_in_grid_style(cell, default_style);
       *cell = column_cell_in_grid_style(cell, default_style);
+      *cell = nested_grid_cell_in_grid_style(cell, default_style);
       // A string with inline box notation, or an arithmetic cell that
       // typesets as a built-up fraction (`"ab"/"cd"`), is typeset at the
       // grid's size, like the plain text cells around it.
