@@ -618,6 +618,41 @@ mod interpreter_tests {
   }
 
   #[test]
+  fn test_text_of_styled_traditional_form_draws_formula_in_visual_mode() {
+    // Regression: `Text[Style[TraditionalForm[lhs == rhs], 16, Bold]]` (a
+    // Manipulate body stating an identity) stayed plain text, so Woxi
+    // Studio showed the raw `TraditionalForm[…]` source.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Text[Style[TraditionalForm[HoldForm[Integrate[Tan[x], x]] == \
+       Integrate[Tan[x], x]], 16, Bold]]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(svg.contains('\u{222B}'), "integral sign missing: {svg}");
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+    assert!(svg.contains("bold"), "Bold style missing: {svg}");
+  }
+
+  #[test]
+  fn test_pane_of_text_traditional_form_keeps_pane_size_in_visual_mode() {
+    // A `Pane[Text[TraditionalForm[…]], {w, h}, Alignment -> …]` draws the
+    // formula inside the box the pane declares.
+    clear_state();
+    let r = interpret_with_stdout(
+      "Pane[Text[Style[TraditionalForm[a^2 == Sqrt[b]], 14]], {320, 140}, \
+       Alignment -> {Left, Center}]",
+    )
+    .unwrap();
+    let svg = r.graphics.expect("the formula must be drawn");
+    assert!(
+      svg.starts_with("<svg width=\"320\" height=\"140\""),
+      "{svg}"
+    );
+    assert!(!svg.contains("TraditionalForm"), "{svg}");
+  }
+
+  #[test]
   fn test_percent_in_cli_mode_collapses_to_out_zero() {
     // `interpret` (CLI / wolframscript-equivalent path) must not consume
     // the visual-mode history. `%` collapses to `Out[0]` exactly as

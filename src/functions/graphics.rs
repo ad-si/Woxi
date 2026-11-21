@@ -1074,7 +1074,7 @@ fn label_frame(opts: &[Expr], default_color: Color) -> Option<TextFrame> {
       }
       let mut probe = StyleState {
         thickness: f64::NAN,
-        ..StyleState::default()
+        ..Default::default()
       };
       apply_directive(d, &mut probe);
       if !probe.thickness.is_nan() {
@@ -1218,7 +1218,7 @@ enum Primitive {
     background: Option<Color>,
     /// `Framed[…]`: the border drawn around the label, or `None` for an
     /// unframed one (including `FrameStyle -> None`).
-    frame: Option<TextFrame>,
+    frame: Option<Box<TextFrame>>,
     /// `x`/`y` are `Scaled[…]` fractions of the plot range, resolved when
     /// the range is known — see [`resolve_anchor`].
     scaled: bool,
@@ -1238,7 +1238,7 @@ enum Primitive {
     /// A data-space linear map a `GeometricTransformation` applied to the
     /// label: the glyphs are sheared/stretched about the anchor with it
     /// (the anchor itself is already moved). `None` for untransformed text.
-    glyph_map: Option<Box<[[f64; 2]; 2]>>,
+    glyph_map: Option<[[f64; 2]; 2]>,
     /// Character ranges a nested `Style` sets in its own slant, weight or
     /// color — `Row[{Style["y", Italic], " = 1"}]` draws an italic `y` and
     /// an upright remainder. Empty for a label with no partial styling.
@@ -9619,7 +9619,7 @@ fn parse_text(args: &[Expr], style: &StyleState, prims: &mut Vec<Primitive>) {
     y,
     offset,
     background,
-    frame,
+    frame: frame.map(Box::new),
     scaled,
     direction,
     box_offset,
@@ -10846,11 +10846,8 @@ fn affine_primitive(
     {
       *nx = m[0][0] * x + m[0][1] * y + v.0;
       *ny = m[1][0] * x + m[1][1] * y + v.1;
-      let g = glyph_map
-        .as_deref()
-        .copied()
-        .unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
-      *ngm = Some(Box::new([
+      let g = glyph_map.unwrap_or([[1.0, 0.0], [0.0, 1.0]]);
+      *ngm = Some([
         [
           m[0][0] * g[0][0] + m[0][1] * g[1][0],
           m[0][0] * g[0][1] + m[0][1] * g[1][1],
@@ -10859,7 +10856,7 @@ fn affine_primitive(
           m[1][0] * g[0][0] + m[1][1] * g[1][0],
           m[1][0] * g[0][1] + m[1][1] * g[1][1],
         ],
-      ]));
+      ]);
     }
     return out;
   }
@@ -11205,7 +11202,7 @@ fn rotate_primitive(
         y: ny,
         offset: *offset,
         background: *background,
-        frame: *frame,
+        frame: frame.clone(),
         scaled: *scaled,
         // A label without a `direction` has its baseline along the x-axis,
         // so a rotation tilts that baseline; a zero angle changes nothing.
@@ -11217,7 +11214,7 @@ fn rotate_primitive(
           None => None,
         },
         box_offset: *box_offset,
-        glyph_map: glyph_map.clone(),
+        glyph_map: *glyph_map,
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
       }
@@ -11464,11 +11461,11 @@ fn translate_primitive(prim: &Primitive, dx: f64, dy: f64) -> Primitive {
       y: if *scaled { *y } else { y + dy },
       offset: *offset,
       background: *background,
-      frame: *frame,
+      frame: frame.clone(),
       scaled: *scaled,
       direction: *direction,
       box_offset: *box_offset,
-      glyph_map: glyph_map.clone(),
+      glyph_map: *glyph_map,
       styled_ranges: styled_ranges.clone(),
       style: style.clone(),
     },
@@ -11775,11 +11772,11 @@ fn scale_primitive(
         y: ny,
         offset: *offset,
         background: *background,
-        frame: *frame,
+        frame: frame.clone(),
         scaled: *scaled,
         direction: direction.map(|(dx, dy)| (dx * sx, dy * sy)),
         box_offset: *box_offset,
-        glyph_map: glyph_map.clone(),
+        glyph_map: *glyph_map,
         styled_ranges: styled_ranges.clone(),
         style: style.clone(),
       }
@@ -15771,7 +15768,7 @@ fn render_primitive(
             1.0
           };
         let (m_left, m_right, m_bottom, m_top) =
-          frame.map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
+          frame.as_ref().map_or((0.0, 0.0, 0.0, 0.0), |f| f.margins);
         let panel_w = glyphs_w + m_left + m_right;
         let panel_h = text_h + m_bottom + m_top;
         // A tilted label's panel turns with it, about the same point.

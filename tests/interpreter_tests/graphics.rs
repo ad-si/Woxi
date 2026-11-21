@@ -28988,6 +28988,56 @@ ParametricPlot[f[t], {t, 0, 1}]]",
     }
 
     #[test]
+    fn array_plot_mesh_per_direction_spec() {
+      // Regression: `Mesh -> {rspec, cspec}` drew no lines at all. Explicit
+      // row boundaries (0 = top edge) and `True` for every column boundary:
+      // 3 horizontal + 4 vertical lines for a 3x3 array.
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1, 0}, {1, 0, 1}, {0, 1, 0}}, Mesh -> {{0, 1, 3}, True}]",
+      );
+      assert_eq!(svg.matches("fill=\"#AAAAAA\"").count(), 7, "{svg}");
+      // `False` turns a direction off; out-of-range boundaries are dropped.
+      let svg = export_svg(
+        "ArrayPlot[{{0, 1, 0}, {1, 0, 1}}, Mesh -> {False, {1, 2, 7}}]",
+      );
+      assert_eq!(svg.matches("fill=\"#AAAAAA\"").count(), 2, "{svg}");
+      // Per-direction `{True, True}` is the same grid as `Mesh -> True`.
+      assert_eq!(
+        export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> {True, True}]"),
+        export_svg("ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> True]")
+      );
+    }
+
+    #[test]
+    fn array_plot_symbolic_form_keeps_partial_mesh_and_epilog() {
+      // Regression: redrawing an `ArrayPlot` from its symbolic form (as
+      // `Pane` and `Show` do) lost the `Epilog` and a per-direction mesh.
+      // The row boundary 1 (below the top row) of a 2-row array is y = 1.
+      assert_eq!(
+        interpret(
+          "Cases[ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> {{1}, False}], \
+           _Line, Infinity]"
+        )
+        .unwrap(),
+        "{Line[{{0, 1}, {2, 1}}]}"
+      );
+      assert_eq!(
+        interpret(
+          "Epilog /. Options[ArrayPlot[{{0, 1}}, \
+           Epilog -> {Point[{1, 1}]}]]"
+        )
+        .unwrap(),
+        "{Point[{1, 1}]}"
+      );
+      let svg = export_svg(
+        "Pane[ArrayPlot[{{0, 1}, {1, 0}}, Mesh -> {{0, 1, 2}, True}, \
+         Epilog -> {Polygon[{{0, 0}, {1, 0}, {1, 1}}]}], {200, 200}]",
+      );
+      assert_eq!(svg.matches("<polygon").count(), 1, "{svg}");
+      assert_eq!(svg.matches("<polyline").count(), 6, "{svg}");
+    }
+
+    #[test]
     fn array_plot_plot_label_is_drawn_above() {
       let svg =
         export_svg("ArrayPlot[{{0, 1}, {1, 0}}, PlotLabel -> \"Caption\"]");

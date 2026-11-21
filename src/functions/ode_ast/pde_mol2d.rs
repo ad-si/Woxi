@@ -66,8 +66,8 @@ impl Grid {
     let h = if e < 2 { self.hx } else { self.hy };
     match &self.edges[e] {
       Edge::Flux(None) => u0,
-      Edge::Flux(Some(coeffs)) => {
-        let (c, alpha, beta) = &**coeffs;
+      Edge::Flux(Some(flux)) => {
+        let (c, alpha, beta) = &**flux;
         // c (u_ghost - u0) / h = alpha + beta (u0 + u_ghost) / 2.
         let p = [xf, yf, t];
         let (c, a, b) = (c.eval(&p), alpha.eval(&p), beta.eval(&p));
