@@ -6896,9 +6896,11 @@ struct StyleState3D {
   /// lighting each corner with its own normal so a mesh of flat facets
   /// shades as the smooth surface it samples.
   vertex_normals: Option<std::sync::Arc<Vec<[f64; 3]>>>,
-  /// `Arrowheads[s]`: the arrowhead length. `None` keeps the default
-  /// twentieth of the scene.
-  arrowhead: Option<ArrowheadSize3D>,
+  /// `Arrowheads[spec]`: the heads of the arrows that follow, as
+  /// `(size, absolute, position)` (see
+  /// [`crate::functions::graphics::arrowhead_placements`]). `None` keeps
+  /// the default single head (a twentieth of the scene) at the tip.
+  arrowheads: Option<std::sync::Arc<Vec<(f64, bool, f64)>>>,
   /// The font size `Style[…, size]` gives the `Text` labels inside it.
   /// `None` leaves the default 12.
   font_size: Option<f64>,
@@ -6933,7 +6935,7 @@ impl Default for StyleState3D {
       texture_coords: None,
       vertex_colors: None,
       vertex_normals: None,
-      arrowhead: None,
+      arrowheads: None,
       font_size: None,
       font_face: (false, false),
       text_background: None,
@@ -7132,21 +7134,18 @@ fn apply_3d_directive(expr: &Expr, style: &mut StyleState3D) -> bool {
     );
   }
 
-  // `Arrowheads[s]` (or `{{s, …}}`): the size of the heads of the arrows
-  // that follow, as a fraction of the picture's width.
+  // `Arrowheads[s]`, `Arrowheads[{s1, s2, …}]` (heads spread evenly from
+  // tail to tip, so `{-s, s}` is a double-headed arrow) or `{{s, pos}, …}`:
+  // the heads of the arrows that follow.
   if let Expr::FunctionCall { name, args } = expr
     && name == "Arrowheads"
     && !args.is_empty()
   {
-    let size = match &args[0] {
-      Expr::List(specs) => specs.first().and_then(|spec| match spec {
-        Expr::List(parts) => parts.first().and_then(ArrowheadSize3D::parse),
-        other => ArrowheadSize3D::parse(other),
-      }),
-      other => ArrowheadSize3D::parse(other),
-    };
-    if let Some(size) = size {
-      style.arrowhead = Some(size);
+    if let Some(heads) =
+      crate::functions::graphics::arrowhead_placements(&args[0])
+        .filter(|hs| hs.iter().all(|(s, _, p)| s.is_finite() && p.is_finite()))
+    {
+      style.arrowheads = Some(std::sync::Arc::new(heads));
     }
     return true;
   }
@@ -9568,8 +9567,15 @@ fn collect_3d_primitives(
               let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
                 v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
               });
-              let len = ArrowheadSize3D::length(style.arrowhead, diag, None)
-                .min(curve_len);
+              // The head at the tip: the last entry of an `Arrowheads` list.
+              let fractions =
+                arrowhead_fractions(style.arrowheads.as_deref(), None);
+              let size = fractions
+                .as_ref()
+                .map_or(ArrowheadSize3D::DEFAULT_FRACTION, |hs| {
+                  hs.last().map_or(0.0, |h| h.0.abs())
+                });
+              let len = (size * diag).min(curve_len);
               if !(curve_len > 0.0 && len > 0.0) {
                 return None;
               }
@@ -11783,6 +11789,67 @@ thread_local! {
     const { std::cell::Cell::new(None) };
 }
 
+/// Where the heads an `Arrowheads` list gives sit on a 3D line arrow: for
+/// each `(size, position)` a two-point segment whose last point is the
+/// head's tip and which points the way the head does (back along the arrow
+/// for a negative size), with the head's length as a fraction of the scene.
+/// `None` heads mean Wolfram's default: one twentieth-size head at the tip.
+fn arrow3d_head_anchors(
+  points: &[Point3D],
+  heads: Option<&[(f64, f64)]>,
+) -> Vec<([Point3D; 2], f64)> {
+  let segs: Vec<(Point3D, Point3D, f64)> = points
+    .windows(2)
+    .map(|w| {
+      let d = [w[1].x - w[0].x, w[1].y - w[0].y, w[1].z - w[0].z];
+      (w[0], w[1], v_len(d))
+    })
+    .filter(|(_, _, l)| l.is_finite() && *l > 0.0)
+    .collect();
+  let total: f64 = segs.iter().map(|s| s.2).sum();
+  if segs.is_empty() || total <= 0.0 {
+    return Vec::new();
+  }
+  let default_head = [(0.05, 1.0)];
+  heads
+    .unwrap_or(&default_head)
+    .iter()
+    .filter(|(size, _)| *size != 0.0)
+    .map(|&(size, pos)| {
+      let target = pos * total;
+      let mut acc = 0.0;
+      let mut chosen = segs[segs.len() - 1];
+      let mut t = 1.0;
+      for &seg in &segs {
+        if acc + seg.2 >= target {
+          chosen = seg;
+          t = ((target - acc) / seg.2).clamp(0.0, 1.0);
+          break;
+        }
+        acc += seg.2;
+      }
+      let (a, b, len) = chosen;
+      let sign = size.signum();
+      let u = [
+        sign * (b.x - a.x) / len,
+        sign * (b.y - a.y) / len,
+        sign * (b.z - a.z) / len,
+      ];
+      let tip = Point3D {
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+      let tail = Point3D {
+        x: tip.x - u[0],
+        y: tip.y - u[1],
+        z: tip.z - u[2],
+      };
+      ([tail, tip], size.abs())
+    })
+    .collect()
+}
+
 /// The corners whose projected convex hull outlines the cone head of a
 /// line `Arrow` in 3D: the tip (the arrow's last point) followed by a ring
 /// of points around the cone's base. The cone is `len` long, points along
@@ -11850,15 +11917,8 @@ fn contains_tube_arrow(expr: &Expr) -> bool {
   }
 }
 
-/// The size `Arrowheads[s]` gives the heads of 3D arrows.
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum ArrowheadSize3D {
-  /// A number: the head's length as a fraction of the scene.
-  Fraction(f64),
-  /// A named size (`Small`, `Medium`, …): a length in printer's points,
-  /// whatever the size of the picture.
-  Points(f64),
-}
+/// Sizes of 3D arrowheads.
+struct ArrowheadSize3D;
 
 impl ArrowheadSize3D {
   /// The default 3D head: a twentieth of the scene.
@@ -11866,32 +11926,26 @@ impl ArrowheadSize3D {
   /// The width the picture is assumed to have while its scene is collected,
   /// before the actual image size is known (`Graphics3D`'s default).
   const DEFAULT_WIDTH: f64 = 360.0;
+}
 
-  fn parse(spec: &Expr) -> Option<Self> {
-    if let Expr::Identifier(name) = spec
-      && let Some(points) =
-        crate::functions::graphics::named_arrowhead_size(name)
-    {
-      return Some(Self::Points(points));
-    }
-    crate::functions::math_ast::expr_to_f64(spec)
-      .filter(|s| s.is_finite() && *s >= 0.0)
-      .map(Self::Fraction)
-  }
-
-  /// The head's length in scene units, for a scene whose box has diagonal
-  /// `scene_diag` drawn `width` pixels wide (the box's diagonal spans about
-  /// the width of the picture).
-  fn length(size: Option<Self>, scene_diag: f64, width: Option<f64>) -> f64 {
-    let fraction = match size {
-      None => Self::DEFAULT_FRACTION,
-      Some(Self::Fraction(f)) => f,
-      Some(Self::Points(p)) => {
-        p / width.filter(|w| *w > 0.0).unwrap_or(Self::DEFAULT_WIDTH)
-      }
-    };
-    fraction * scene_diag
-  }
+/// The `(size, position)` of each head in `heads` (see
+/// [`StyleState3D::arrowheads`]) with its size as a fraction of the scene:
+/// a named size in printer's points is that fraction of a picture `width`
+/// pixels wide (the box's diagonal spans about the width of the picture).
+fn arrowhead_fractions(
+  heads: Option<&Vec<(f64, bool, f64)>>,
+  width: Option<f64>,
+) -> Option<Vec<(f64, f64)>> {
+  let width = width
+    .filter(|w| *w > 0.0)
+    .unwrap_or(ArrowheadSize3D::DEFAULT_WIDTH);
+  heads.map(|hs| {
+    hs.iter()
+      .map(|&(size, absolute, pos)| {
+        (if absolute { size / width } else { size }, pos)
+      })
+      .collect()
+  })
 }
 
 thread_local! {
@@ -13911,7 +13965,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             texture_coords: None,
             vertex_colors: None,
             vertex_normals: None,
-            arrowhead: None,
+            arrowheads: None,
             font_size: None,
             font_face: (false, false),
             text_background: None,
@@ -15495,14 +15549,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         // foreshortens with the view like the rest of the scene.
         let scene_diag =
           v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
-        if let Some(head) = arrow3d_head_outline(
+        for (segment, size) in arrow3d_head_anchors(
           points,
-          ArrowheadSize3D::length(
-            style.arrowhead,
-            scene_diag,
+          arrowhead_fractions(
+            style.arrowheads.as_deref(),
             Some(svg_width as f64),
-          ),
+          )
+          .as_deref(),
         ) {
+          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
+          else {
+            continue;
+          };
           let screen: Vec<(f64, f64, usize)> = head
             .iter()
             .enumerate()

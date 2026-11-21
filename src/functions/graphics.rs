@@ -798,6 +798,22 @@ fn parse_arrowheads(spec: &Expr) -> Option<Vec<ArrowHead>> {
   }
 }
 
+/// The heads an `Arrowheads[spec]` directive puts on a 3D arrow, as
+/// `(size, absolute, position)`: `size` is a fraction of the scene, or with
+/// `absolute` a named size in printer's points (negative points the head
+/// back towards the tail), and `position` runs from 0 at the tail to 1 at
+/// the tip. Custom head graphics are not drawn in 3D.
+pub(crate) fn arrowhead_placements(
+  spec: &Expr,
+) -> Option<Vec<(f64, bool, f64)>> {
+  Some(
+    parse_arrowheads(spec)?
+      .into_iter()
+      .map(|h| (h.size, h.absolute, h.position.clamp(0.0, 1.0)))
+      .collect(),
+  )
+}
+
 /// The default (triangular) heads an `Arrowheads` specification puts on a
 /// straight segment from `from` to `to`, in screen coordinates. A head's
 /// relative size is a fraction of `head_width`; an absolute one (a named
@@ -22618,6 +22634,21 @@ pub fn estimate_display_width(expr: &Expr) -> f64 {
     return estimate_display_width(func) + marks;
   }
 
+  // A `StringForm` typesets as its filled template, so it is as wide as its
+  // literal runs and slot values together — not its `StringForm[…]` source.
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "StringForm"
+    && let Some(Expr::String(template)) = args.first()
+  {
+    return crate::functions::string_ast::string_form_parts(
+      template,
+      &args[1..],
+    )
+    .iter()
+    .map(estimate_display_width)
+    .sum();
+  }
+
   match expr {
     // Atoms
     // A string carrying inline linear syntax
@@ -43465,7 +43496,11 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
         if let Some((_, orig_form, synth)) = &rename {
           renames.push((orig_form.clone(), synth.clone()));
         }
-        state.push((name, value));
+        // Several readouts may share one placeholder variable; it is still
+        // a single variable, bound once.
+        if !state.iter().any(|(n, _)| *n == name) {
+          state.push((name, value));
+        }
         panel_displays.push((displays.len(), controls.len()));
         displays.push(display);
       }
@@ -52487,7 +52522,7 @@ fn parse_manipulate_control(
     });
   }
 
-  // Color form: `{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
+  // Color form:`{{u, uinit, ulbl}, color}` or the bare `{u, color}` —
   // a color names no domain to choose from (`{u, uinit}` picks the widget
   // from the type of `uinit`), so Wolfram draws the same full `ColorSlider`
   // (swatch plus hue/saturation picker) the explicit marker produces above,
@@ -56362,6 +56397,16 @@ fn assign_checkbox_state(
   }
 }
 
+/// Whether `expr` holds a `NumberForm`/`PaddedForm`/`AccountingForm`
+/// wrapper anywhere, which only a typeset rendering turns into digits.
+fn holds_number_format(expr: &Expr) -> bool {
+  ["NumberForm", "PaddedForm", "AccountingForm"]
+    .iter()
+    .any(|head| {
+      crate::functions::math_ast::numeric_utils::expr_contains_head(expr, head)
+    })
+}
+
 /// Frame a `TableForm` display grid with its `TableHeadings -> {rows,
 /// cols}`: column headings become a leading row and row headings a leading
 /// column (with a blank corner cell when both are present). `Automatic`
@@ -56570,6 +56615,23 @@ fn static_leaf_node(expr: &Expr, bindings: &[(String, String)]) -> DisplayNode {
           formatted.replace('\n', " ").trim().to_string()
         };
         DisplayNode::Static { svg: None, text }
+      } else if let Some(value) = &r.expr
+        && holds_number_format(value)
+        && let Ok(svg) = grid_svg_with_gaps(
+          &[Expr::List(
+            vec![Expr::List(vec![value.clone()].into())].into(),
+          )],
+          &[],
+        )
+      {
+        // A number format inside a larger readout (`NumberForm[t, {4, 1}]^
+        // "∘"`, or a `StringForm` slot filled by one) is typeset as the
+        // notebook shows it — formatted digits, a raised exponent — rather
+        // than printed as the held wrapper.
+        DisplayNode::Static {
+          svg: Some(svg),
+          text: String::new(),
+        }
       } else if let Some(Expr::FunctionCall { name, args }) = &r.expr
         && name == "StringForm"
         && let Some(Expr::String(template)) = args.first()

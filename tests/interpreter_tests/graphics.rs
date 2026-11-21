@@ -32693,6 +32693,24 @@ mod matrix_form {
     }
   }
 
+  // A `StringForm` grid cell is as wide as its filled template — the
+  // column of `StringForm["(``, ``)", 1.3, 1.3]` matches that of the string
+  // "(1.3, 1.3)" — not as wide as its `StringForm[…]` source.
+  #[test]
+  fn grid_cell_of_string_form_is_as_wide_as_its_filled_template() {
+    clear_state();
+    let width = |code: &str| -> String {
+      let svg =
+        interpret(&format!("ExportString[Grid[{{{{{code}}}}}], \"SVG\"]"))
+          .unwrap();
+      svg.split('"').nth(1).unwrap().to_string()
+    };
+    assert_eq!(
+      width(r#"StringForm["(``, ``)", 1.3, NumberForm[1.34, {10, 1}]]"#),
+      width(r#""(1.3, 1.3)""#)
+    );
+  }
+
   // A `StringForm` string argument substitutes as its raw text, not the
   // quoted literal `expr_to_box_form` gives an ordinary string expression
   // — `StringForm["x = ``", "hello"]` typesets as `x = hello`, not

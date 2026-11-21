@@ -4317,6 +4317,70 @@ mod tests {
     assert_eq!(shp(&state), (vec!["sqr".into(), "hex".into()], 0, 1));
   }
 
+  /// A custom control whose builder calls a user-defined function returning
+  /// a readout (`Control@{{u, 1, ""}, (readout[#, s] &)}` with `readout[_,
+  /// s_] := Text[Grid[…]]`) shows that readout in the panel, recomputed as
+  /// the other controls move. Two readouts may share the placeholder
+  /// variable, which is bound once. A `NumberForm[…]^"∘"` cell typesets as
+  /// formatted digits with a raised degree sign, and a `StringForm` cell
+  /// with its slots filled by formatted numbers.
+  #[test]
+  fn user_function_custom_control_shows_live_readout() {
+    let code = r#"
+      angleReadout[_, s_] := Text[Grid[{
+        {"angle =", NumberForm[N[s 45], {10, 1}]^"∘"},
+        {"pair =", StringForm["(``, ``)", NumberForm[N[s/3], {10, 1}], s]}}]];
+      sizeReadout[_, s_] := Text[Grid[{{"size =", s}}]];
+      Manipulate[s,
+        {{s, 2, "scale"}, 1, 5, 1},
+        Control@{{shown, 1, ""}, (angleReadout[#1, s] &)},
+        Control@{{shown, 1, ""}, (sizeReadout[#1, s] &)}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let mut state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    assert_eq!(state.error, None);
+    assert_eq!(
+      state.state.iter().filter(|(n, _)| n == "shown").count(),
+      1,
+      "{:?}",
+      state.state
+    );
+    assert_eq!(state.display_trees.len(), 2, "{:?}", state.display_trees);
+    let svgs = |tree: &DisplayNode| -> Vec<String> {
+      let DisplayNode::Grid(rows) = tree else {
+        panic!("readout is not a grid: {tree:?}");
+      };
+      rows
+        .iter()
+        .filter_map(|row| match row.last() {
+          Some(DisplayNode::Static { svg: Some(svg), .. }) => Some(svg.clone()),
+          _ => None,
+        })
+        .collect()
+    };
+    let cells = svgs(&state.display_trees[0]);
+    assert_eq!(cells.len(), 2, "{:?}", state.display_trees[0]);
+    assert!(cells[0].contains(">90.0<tspan"), "{}", cells[0]);
+    assert!(
+      cells[0].contains("baseline-shift=\"super\""),
+      "{}",
+      cells[0]
+    );
+    assert!(cells[1].contains(">(0.7, 2)<"), "{}", cells[1]);
+    // The cell is as wide as the filled template, not its source.
+    let width: f64 = cells[1]
+      .split('"')
+      .nth(1)
+      .and_then(|w| w.parse().ok())
+      .expect("svg width");
+    assert!(width < 100.0, "{}", cells[1]);
+    assert!(state.slide_continuous(0, 4.0));
+    state.reevaluate();
+    let cells = svgs(&state.display_trees[0]);
+    assert!(cells[0].contains(">180.0<tspan"), "{}", cells[0]);
+    assert!(cells[1].contains(">(1.3, 4)<"), "{}", cells[1]);
+  }
+
   /// A sound-player display built with `Audio`Waveform` evaluates to an
   /// Audio object (shown as `-Audio-`), not the raw unevaluated call.
   #[test]
