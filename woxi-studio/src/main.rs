@@ -12262,7 +12262,11 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
     assert!(state.animated, "the Trigger makes the widget animatable");
     assert!(!state.playing, "a Trigger widget starts paused");
-    assert_eq!(state.controls.len(), 3, "the Trigger adds no second t row");
+    assert_eq!(state.controls.len(), 4, "the Trigger gets its own t row");
+    assert!(matches!(
+      &state.controls[3],
+      manipulate::ControlState::Trigger { name, .. } if name == "t"
+    ));
 
     let bounds =
       |s: &manipulate::ManipulateState, i: usize| match &s.controls[i] {
@@ -12296,12 +12300,56 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     assert_eq!(bounds(&state, 2), (0.1, 1.0));
     assert_eq!(current(&state, 2), 1.0, "dt must clamp to the new max");
 
-    // The animation targets the Trigger's variable t.
+    // The animation targets the Trigger's variable t, and the time slider
+    // sharing that variable follows the Trigger's sweep.
     state.advance_animation();
     assert!(
       (current(&state, 0) - 0.01).abs() < 1e-12,
       "the tick must advance t by its step"
     );
+    match &state.controls[3] {
+      manipulate::ControlState::Trigger { current, .. } => {
+        assert!((current - 0.01).abs() < 1e-12)
+      }
+      other => panic!("expected trigger control, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn trigger_row_shares_its_variable_with_a_slider_row() {
+    // A slider plus a labeled Trigger on the same variable: both rows are
+    // shown, the Trigger drives the sweep with its own step, the slider
+    // follows it, and dragging the slider moves the Trigger's position too.
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[s, {{s, 0, \"position\"}, 0, 4, 1}, \
+       {{s, 0, \"run\"}, 0, 4, 0.5, ControlType -> Trigger}]",
+    )
+    .unwrap();
+    let mut state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    assert_eq!(state.controls.len(), 2);
+    assert!(matches!(
+      &state.controls[1],
+      manipulate::ControlState::Trigger { label, .. } if label == "run"
+    ));
+    let slider = |s: &manipulate::ManipulateState| match &s.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current,
+      other => panic!("expected continuous control, got {other:?}"),
+    };
+    let trigger = |s: &manipulate::ManipulateState| match &s.controls[1] {
+      manipulate::ControlState::Trigger { current, .. } => *current,
+      other => panic!("expected trigger control, got {other:?}"),
+    };
+    state.toggle_play();
+    state.advance_animation();
+    assert_eq!(trigger(&state), 0.5, "the Trigger's own step drives t");
+    assert_eq!(slider(&state), 0.5, "the slider follows the Trigger");
+
+    match &mut state.controls[0] {
+      manipulate::ControlState::Continuous { current, .. } => *current = 3.0,
+      other => panic!("expected continuous control, got {other:?}"),
+    }
+    state.apply_tracking(0);
+    assert_eq!(trigger(&state), 3.0, "the Trigger resumes from the slider");
   }
 
   #[test]

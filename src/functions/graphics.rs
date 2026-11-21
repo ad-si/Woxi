@@ -43748,19 +43748,17 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
           animation_var = Some(c.name().to_string());
         }
         // A second spec for an already-bound variable merges into the
-        // earlier row — contributing only the animation/enabled semantics
-        // captured above — in the two cases Wolfram itself collapses: a
-        // `Trigger` pairing with an existing slider (Kepler's time slider
-        // plus a `Trigger` on the same `t`), and a variable declared inside
-        // a `PaneSelector`/`TabView` pane (only one pane is ever on screen,
+        // earlier row — contributing only the enabled semantics captured
+        // above — when the variable is declared inside a
+        // `PaneSelector`/`TabView` pane (only one pane is ever on screen,
         // so a shared widget — or a per-pane variant of one, with its own
         // bounds or choice list — still gets a single row; see
-        // `pane_or_tab_governed_names`). Two *different* ordinary specs
-        // sharing a variable outside any pane (e.g. a coarse and a fine
-        // SetterBar preset row for the same count, as in "Polypath
-        // Iterations") are a real Wolfram pattern instead: both stay
-        // visible, independently interactive, and read/write the same
-        // binding, so those get their own rows.
+        // `pane_or_tab_governed_names`). Every other spec sharing a
+        // variable gets its own row, as in Wolfram: a coarse and a fine
+        // SetterBar preset row for the same count, or a labeled `Trigger`
+        // ("animate") next to a slider for the same time variable. Both
+        // rows stay visible, independently interactive, and read/write the
+        // same binding.
         if let ManipulateControl::Continuous {
           name,
           min,
@@ -43777,7 +43775,7 @@ pub fn extract_manipulate_spec(expr: &Expr) -> Option<ManipulateSpec> {
             None => variant_bounds.push((name.clone(), vec![bounds])),
           }
         }
-        if (animate.is_some() || pane_governed_names.contains(c.name()))
+        if pane_governed_names.contains(c.name())
           && !c.name().is_empty()
           && controls.iter().any(|prev| prev.name() == c.name())
         {
@@ -52468,10 +52466,8 @@ fn parse_manipulate_control(
   // Demonstrations "run/stop simulation" control) or finite (`{{t, 0, ""},
   // 0, tmax, .01, Trigger, DefaultDuration -> tmax}`, the "play once over a
   // fixed duration" pattern). When this variable already has a visible row
-  // from an earlier spec (Kepler pairs a `Trigger` with a plain slider on
-  // the same `t`), the row built here is dropped by the caller's dedup
-  // check and only this control's `animate` field takes effect, so building
-  // the dedicated widget here is safe either way.
+  // from an earlier spec (a plain slider on the same `t`), the Trigger
+  // still gets its own row; both rows share the one binding.
   if control_type.as_deref() == Some("Trigger") {
     let (min, min_dynamic) = bounds
       .first()

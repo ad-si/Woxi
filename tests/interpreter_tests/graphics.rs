@@ -49130,11 +49130,11 @@ mod manipulate {
   }
 
   #[test]
-  fn spec_trigger_animates_an_already_bound_variable() {
-    // A `ControlType -> Trigger` spec for a variable that already has a
-    // slider (Kepler's "animate time since perihelion") must not bind the
-    // variable twice — it only makes the widget animate that variable,
-    // starting paused.
+  fn spec_trigger_on_an_already_bound_variable_gets_its_own_row() {
+    // A labeled `ControlType -> Trigger` spec for a variable that already
+    // has a slider keeps its own row (Wolfram draws both the slider and the
+    // Trigger's play buttons); the widget animates that variable, starting
+    // paused.
     let expr = interpret_to_expr(
       "Manipulate[t, {{t, 0, \"time\"}, 0, 10, .01}, \
        {{t, 0, \"animate\"}, 0, 10, .01, ControlType -> Trigger}, \
@@ -49142,7 +49142,22 @@ mod manipulate {
     )
     .unwrap();
     let spec = extract_manipulate_spec(&expr).expect("well-formed manipulate");
-    assert_eq!(spec.controls.len(), 1, "the Trigger adds no second row");
+    assert_eq!(spec.controls.len(), 2, "slider row plus Trigger row");
+    assert!(
+      matches!(
+        &spec.controls[0],
+        ManipulateControl::Continuous { name, .. } if name == "t"
+      ),
+      "{:?}",
+      spec.controls[0]
+    );
+    match &spec.controls[1] {
+      ManipulateControl::Trigger { name, label, .. } => {
+        assert_eq!(name, "t");
+        assert_eq!(label, "animate");
+      }
+      other => panic!("expected a Trigger control, got {other:?}"),
+    }
     assert!(spec.animated);
     assert!(!spec.animation_running, "a Trigger starts paused");
     assert_eq!(spec.animation_var.as_deref(), Some("t"));
@@ -49395,7 +49410,7 @@ mod manipulate {
   fn spec_keplers_second_law_demonstration() {
     // The full Manipulate cell of the "Kepler's Second Law" Demonstration
     // notebook: four labeled sliders (two bounded by the period P), a
-    // Trigger on t, and a body that renders an SVG under the initial
+    // labeled Trigger row on t, and a body that renders an SVG under the initial
     // bindings.
     let expr = interpret_to_expr(
       "Manipulate[\n\
@@ -49434,10 +49449,13 @@ mod manipulate {
       .controls
       .iter()
       .map(|c| match c {
-        ManipulateControl::Continuous { name, label, .. } => {
+        ManipulateControl::Continuous { name, label, .. }
+        | ManipulateControl::Trigger { name, label, .. } => {
           (name.as_str(), label.as_str())
         }
-        other => panic!("expected continuous control, got {other:?}"),
+        other => {
+          panic!("expected continuous or Trigger control, got {other:?}")
+        }
       })
       .collect();
     assert_eq!(
@@ -49447,8 +49465,13 @@ mod manipulate {
         ("e", "eccentricity"),
         ("P", "orbital period (years)"),
         ("dt", "time span (years)"),
+        ("t", "animate time since perihelion"),
       ]
     );
+    assert!(matches!(
+      spec.controls[4],
+      ManipulateControl::Trigger { .. }
+    ));
     assert!(spec.animated && !spec.animation_running);
     assert_eq!(spec.animation_var.as_deref(), Some("t"));
 
