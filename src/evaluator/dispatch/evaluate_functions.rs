@@ -855,9 +855,11 @@ pub(crate) fn register_standard_context_symbols(ctx: &str) {
       "Legend",
       "LegendBackground",
       "LegendBorder",
+      "LegendLabelSpace",
       "LegendPosition",
       "LegendShadow",
       "LegendSize",
+      "LegendTextSpace",
       "ShowLegend",
     ] {
       crate::evaluator::contexts::create_symbol(&format!("{ctx}{name}"));
