@@ -17752,6 +17752,45 @@ mod plot3d {
     }
 
     #[test]
+    fn show_combines_the_plot_legends_of_every_plot() {
+      // Like Wolfram's `Show` of `Legended` plots, every plot's legend
+      // entries survive, each keyed by the color of the curve it labels.
+      let svg = export_svg(
+        r#"Show[Plot[x, {x, 0, 1}, PlotLegends -> {"a"}],
+          Plot[2 x, {x, 0, 1}, PlotStyle -> Red, PlotLegends -> {"b"}]]"#,
+      );
+      let a = svg.find(">a</text").expect("legend a");
+      let b = svg.find(">b</text").expect("legend b");
+      assert!(a < b, "{svg}");
+      let swatch_b = &svg[..b];
+      let swatch_b = &swatch_b[swatch_b.rfind("<line").unwrap()..];
+      assert!(swatch_b.contains("rgb(255,0,0)"), "{swatch_b}");
+    }
+
+    #[test]
+    fn show_keeps_the_legend_of_a_later_plot() {
+      // A legend on a later plot only still labels that plot's curve,
+      // skipping the unlabeled curves before it.
+      let svg = export_svg(
+        r#"Show[Plot[{x, 3 x}, {x, 0, 1}, PlotLegends -> {"a", "c"}],
+          Plot[2 x, {x, 0, 1}],
+          Plot[x^2, {x, 0, 1}, PlotStyle -> Green, PlotLegends -> {"d"}]]"#,
+      );
+      for label in ["a", "c", "d"] {
+        assert!(svg.contains(&format!(">{label}</text")), "{label}: {svg}");
+      }
+      let d = svg.find(">d</text").unwrap();
+      let swatch_d = &svg[..d];
+      let swatch_d = &swatch_d[swatch_d.rfind("<line").unwrap()..];
+      assert!(swatch_d.contains("rgb(0,255,0)"), "{swatch_d}");
+
+      let later_only = export_svg(
+        r#"Show[Plot[x, {x, 0, 1}], Plot[2 x, {x, 0, 1}, PlotLegends -> {"b"}]]"#,
+      );
+      assert!(later_only.contains(">b</text"), "{later_only}");
+    }
+
+    #[test]
     fn plot_legends_show_the_current_value_of_a_dynamic_label() {
       // A `Dynamic[…]` in a legend label shows its value, as in any other
       // displayed text.

@@ -27482,6 +27482,26 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Legended", vec![shown, legend]))
 }
 
+/// A plot's legend entries, each paired with the index of the series it
+/// labels: the entries a previous `Show` merged, else the explicit labels
+/// of its `PlotLegends` option.
+fn plot_source_legends(ps: &crate::syntax::PlotSource) -> Vec<(usize, String)> {
+  if !ps.legends.is_empty() {
+    return ps.legends.clone();
+  }
+  ps.options
+    .iter()
+    .find_map(|o| match option_name_value(o) {
+      Some(("PlotLegends", value)) => {
+        let (labels, _, _, _) =
+          crate::functions::plot::parse_plot_legends(&value);
+        Some(labels.into_iter().enumerate().collect())
+      }
+      _ => None,
+    })
+    .unwrap_or_default()
+}
+
 /// `Show` of symbolic `Graphics[…]` (or `Graphics3D[…]`) expressions, the
 /// way Wolfram builds the result: `Show[g]` of an option-free `g` is `g`;
 /// otherwise the
@@ -28047,6 +28067,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A plot without any curve (every function `Null`) has no data to
     // contribute to the combined ranges — unless nothing else does either.
     let any_curves = plot_sources.iter().any(|ps| !ps.series.is_empty());
+    // Every plot keeps its legend entries, keyed by the merged index of
+    // the series each one labels: `Show` of two plots with `PlotLegends`
+    // shows both legends, as Wolfram does for the `Legended` plots.
+    let mut legends: Vec<(usize, String)> = Vec::new();
+    let mut legend_sources = 0;
     for ps in &plot_sources {
       if any_curves && ps.series.is_empty() {
         continue;
@@ -28054,6 +28079,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A curve-to-curve fill names its partner by index within its own
       // plot; in the merged list that plot's curves start further on.
       let offset = all_series.len();
+      let own_legends = plot_source_legends(ps);
+      if !own_legends.is_empty() {
+        legend_sources += 1;
+        legends.extend(own_legends.into_iter().map(|(i, l)| (offset + i, l)));
+      }
       let shift = |f: &mut crate::syntax::SeriesFilling| {
         if let crate::syntax::SeriesFilling::Series(j) = f {
           *j += offset;
@@ -28222,6 +28252,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       aspect_ratio: plot_sources[0].aspect_ratio,
       settles_all_range: plot_sources[0].settles_all_range,
       data_x_range,
+      // A legend of the first plot alone stays in its options (with its
+      // styling); entries from several plots, or a later one, are listed.
+      legends: if legend_sources > 1
+        || (legend_sources == 1
+          && plot_source_legends(&plot_sources[0]).is_empty())
+      {
+        legends
+      } else {
+        Vec::new()
+      },
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
         plot_sources
