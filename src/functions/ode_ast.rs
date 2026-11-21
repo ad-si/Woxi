@@ -1859,7 +1859,7 @@ fn ndsolve_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     let mut flat_eqs = Vec::new();
     flatten_eq_list(&args[0], &mut flat_eqs);
     let opts = pde_mol::MolOptions::from_rules(&args[n_pos..]);
-    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts)? {
+    return match pde_mol2d::solve_pde_mol_2d(&flat_eqs, &args[1..5], &opts) {
       Some(mut result) => {
         crate::evaluator::share_large_lists(&mut result, 0);
         Ok(result)
