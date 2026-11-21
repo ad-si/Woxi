@@ -891,6 +891,76 @@ fn entity_country_name(expr: &Expr) -> Option<&str> {
   None
 }
 
+/// The UTC offset of an `Entity["TimeZone", "GMT±h"]` (or `None`).
+fn entity_time_zone_offset(expr: &Expr) -> Option<f64> {
+  if let Expr::FunctionCall { name, args } = expr
+    && name == "Entity"
+    && args.len() == 2
+    && let (Expr::String(kind), Expr::String(zone)) = (&args[0], &args[1])
+    && kind == "TimeZone"
+  {
+    return crate::functions::geo_time_zones::parse_gmt_offset(zone);
+  }
+  None
+}
+
+/// The rings of the region keeping standard time `offset` (see
+/// [`crate::functions::geo_time_zones`]).
+fn time_zone_rings(offset: f64) -> Vec<crate::functions::geo_time_zones::Ring> {
+  crate::functions::geo_time_zones::zone_rings(
+    offset,
+    world_countries()
+      .iter()
+      .map(|c| (c.name.as_str(), c.polygons.as_slice())),
+  )
+}
+
+/// Fill a time zone's rings with `color` at the translucency Wolfram uses
+/// for time-zone regions, stroked by the `EdgeForm`.
+fn render_time_zone(
+  svg: &mut String,
+  rings: &[crate::functions::geo_time_zones::Ring],
+  proj: &GeoView,
+  color: &Color,
+  edge: Option<(Option<Color>, f64)>,
+) {
+  let mut d = String::new();
+  for ring in rings {
+    for (k, &(lon, lat)) in ring.iter().enumerate() {
+      let (x, y) = proj.project(lon, lat);
+      d.push_str(&format!(
+        "{} {x:.1} {y:.1} ",
+        if k == 0 { "M" } else { "L" }
+      ));
+    }
+    d.push_str("Z ");
+  }
+  if d.is_empty() {
+    return;
+  }
+  svg.push_str(&format!(
+    "<path d=\"{d}\" fill=\"{}\" fill-rule=\"evenodd\" \
+     fill-opacity=\"0.2\" {}/>\n",
+    color.to_svg_rgb(),
+    edge_stroke(edge)
+  ));
+}
+
+/// The SVG stroke attributes of an `EdgeForm` edge. An edge without a color
+/// is black, as in Wolfram.
+fn edge_stroke(edge: Option<(Option<Color>, f64)>) -> String {
+  match edge {
+    Some((c, w)) => format!(
+      "stroke=\"{}\" stroke-width=\"{w}\" stroke-linejoin=\"round\"",
+      c.map_or_else(
+        || "rgb(0,0,0)".to_string(),
+        super::graphics::Color::to_svg_rgb
+      )
+    ),
+    None => "stroke=\"none\"".to_string(),
+  }
+}
+
 /// Bounding box `(lat_min, lat_max, lon_min, lon_max)` of a country's polygons.
 fn polygons_bbox(polys: &[Polygon]) -> Option<(f64, f64, f64, f64)> {
   let mut b: Option<(f64, f64, f64, f64)> = None;
@@ -959,13 +1029,7 @@ fn render_entity_polygon(
     return;
   }
   let fill = color.to_svg_rgb();
-  let stroke = match edge {
-    Some((c, w)) => format!(
-      "stroke=\"{}\" stroke-width=\"{w}\" stroke-linejoin=\"round\"",
-      c.as_ref().unwrap_or(color).to_svg_rgb()
-    ),
-    None => "stroke=\"none\"".to_string(),
-  };
+  let stroke = edge_stroke(edge);
   svg.push_str(&format!(
     "<path d=\"{d}\" fill=\"{fill}\" fill-rule=\"evenodd\" {stroke}/>\n"
   ));
@@ -1159,6 +1223,15 @@ fn parse_edge_form(args: &[Expr], width: f64) -> Option<(Option<Color>, f64)> {
   Some((color, thickness))
 }
 
+/// The time-zone offsets named by a `Polygon[…]` argument: one
+/// `Entity["TimeZone", …]` or a list of them.
+fn polygon_time_zones(expr: &Expr) -> Vec<f64> {
+  match expr {
+    Expr::List(items) => items.iter().flat_map(polygon_time_zones).collect(),
+    _ => entity_time_zone_offset(expr).into_iter().collect(),
+  }
+}
+
 /// The country polygons named by a `Polygon[…]` argument: one
 /// `Entity["Country", …]` or a list of them.
 fn polygon_entities(expr: &Expr) -> Vec<&'static [Polygon]> {
@@ -1177,7 +1250,10 @@ fn is_entity_polygon(expr: &Expr) -> bool {
     Expr::List(items) => {
       !items.is_empty() && items.iter().all(is_entity_polygon)
     }
-    _ => entity_country_name(expr).is_some(),
+    _ => {
+      entity_country_name(expr).is_some()
+        || entity_time_zone_offset(expr).is_some()
+    }
   }
 }
 
@@ -1224,6 +1300,12 @@ fn collect_positions(expr: &Expr, out: &mut Vec<(f64, f64)>) {
         {
           out.push((la0, lo0));
           out.push((la1, lo1));
+        }
+        // Frame a time zone to the bounding box of its region.
+        if let Some(offset) = entity_time_zone_offset(expr) {
+          for ring in time_zone_rings(offset) {
+            out.extend(ring.iter().map(|&(lon, lat)| (lat, lon)));
+          }
         }
       }
       _ => {}
@@ -1288,6 +1370,10 @@ fn render_content(
       "Polygon" if args.len() == 1 && is_entity_polygon(&args[0]) => {
         for polys in polygon_entities(&args[0]) {
           render_entity_polygon(svg, polys, proj, &style.color, style.edge);
+        }
+        for offset in polygon_time_zones(&args[0]) {
+          let rings = time_zone_rings(offset);
+          render_time_zone(svg, &rings, proj, &style.color, style.edge);
         }
       }
       "GeoMarker" if !args.is_empty() => {
@@ -2245,6 +2331,29 @@ mod entity_resolution_tests {
         .sum::<usize>()
         > 4000
     );
+  }
+
+  #[test]
+  fn time_zone_tables_name_natural_earth_countries() {
+    for name in crate::functions::geo_time_zones::table_country_names() {
+      assert!(
+        world_countries().iter().any(|c| c.name == name),
+        "{name} is not a Natural Earth country"
+      );
+    }
+  }
+
+  #[test]
+  fn every_civil_country_is_in_a_time_zone_table() {
+    let names: Vec<&str> =
+      crate::functions::geo_time_zones::table_country_names().collect();
+    for c in world_countries() {
+      assert!(
+        c.name == "Antarctica" || names.contains(&c.name.as_str()),
+        "{} has no time zone",
+        c.name
+      );
+    }
   }
 
   #[test]
