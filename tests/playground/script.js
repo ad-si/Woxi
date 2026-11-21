@@ -447,6 +447,8 @@ function renderManipulate(item) {
       current[ctrl.name] = { x: ctrl.xInit, y: ctrl.yInit }
     } else if (ctrl.kind === "interval") {
       current[ctrl.name] = { low: ctrl.lowInit, high: ctrl.highInit }
+    } else if (ctrl.kind === "vector") {
+      current[ctrl.name] = { values: ctrl.initial.slice(), exact: ctrl.exactInit }
     } else if (ctrl.kind === "locator") {
       current[ctrl.name] = { points: ctrl.points.map((p) => [p[0], p[1]]) }
     }
@@ -531,6 +533,11 @@ function renderManipulate(item) {
         bindings[ctrl.name] = `{${v.x}, ${v.y}}`
       } else if (ctrl.kind === "interval") {
         bindings[ctrl.name] = `{${v.low}, ${v.high}}`
+      } else if (ctrl.kind === "vector") {
+        // Exact while untouched, machine reals once a slider moved.
+        const real = (n) => (Number.isInteger(n) ? `${n}.` : String(n))
+        bindings[ctrl.name] =
+          `{${v.values.map((n) => (v.exact ? String(n) : real(n))).join(", ")}}`
       } else if (ctrl.kind === "locator") {
         // Locator positions are machine reals: integral coordinates keep a
         // trailing dot so they substitute as Real, not Integer.
@@ -1252,6 +1259,45 @@ function renderManipulate(item) {
         condition: ctrl.enabledWhen || "",
         apply: (on) => {
           pad.style.pointerEvents = on ? "" : "none"
+          row.classList.toggle("disabled", !on)
+        },
+      })
+    } else if (ctrl.kind === "vector") {
+      // One range input per component, side by side, each with its value.
+      const strip = document.createElement("div")
+      strip.className = "manipulate-vector"
+      strip.style.display = "flex"
+      strip.style.gap = "8px"
+      const inputs = ctrl.initial.map((init, i) => {
+        const cell = document.createElement("span")
+        const input = document.createElement("input")
+        input.type = "range"
+        input.min = ctrl.mins[i]
+        input.max = ctrl.maxs[i]
+        const step = ctrl.steps
+          ? ctrl.steps[i]
+          : (ctrl.maxs[i] - ctrl.mins[i]) / 100
+        input.step = step > 0 ? step : "any"
+        input.value = init
+        const value = document.createElement("span")
+        value.className = "manipulate-value"
+        value.textContent = fmt(init)
+        input.addEventListener("input", () => {
+          current[ctrl.name].values[i] = Number(input.value)
+          current[ctrl.name].exact = false
+          value.textContent = fmt(input.value)
+          requestUpdate()
+        })
+        cell.appendChild(input)
+        cell.appendChild(value)
+        strip.appendChild(cell)
+        return input
+      })
+      row.appendChild(strip)
+      widget.enabledControls.push({
+        condition: ctrl.enabledWhen || "",
+        apply: (on) => {
+          for (const input of inputs) input.disabled = !on
           row.classList.toggle("disabled", !on)
         },
       })
