@@ -69,6 +69,9 @@
     instead of adding an upright `z` label.
 - Woxi Studio draws the controls of a custom Manipulate layout
     `Row[{Place[1], Spacer[…], Place[2]}]` side by side on one line.
+- `Column` stripes its rows with a background list
+    (`Background -> {c1, c2, …}` or the cyclic `{{c1, c2}}`) instead of
+    dropping it.
 - Woxi Studio and PNG/PDF export draw italic text slanted:
     `Style[…, Italic]`, `FontSlant -> Italic` and TraditionalForm variables
     use bundled italic and bold-italic Atkinson Hyperlegible Next faces
