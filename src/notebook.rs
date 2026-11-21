@@ -5733,6 +5733,20 @@ pub fn box_source_to_graphics_expr(s: &str) -> String {
     return format!("{{{}}}", items.join(", "));
   }
 
+  // An option rule (`Epilog -> InsetBox[…]`): convert its value.
+  for arrow in ["->", ":>"] {
+    if let Some(pos) = s.find(arrow)
+      && !s[..pos].trim().is_empty()
+      && s[..pos]
+        .trim()
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '`')
+    {
+      let value = box_source_to_graphics_expr(&s[pos + arrow.len()..]);
+      return format!("{}{arrow}{value}", &s[..pos]);
+    }
+  }
+
   let box_call = |head: &str| -> Option<Vec<String>> {
     let rest = s.strip_prefix(head)?.strip_prefix('[')?;
     let (inner, _) = find_matching_bracket(rest).ok()?;
@@ -5764,6 +5778,19 @@ pub fn box_source_to_graphics_expr(s: &str) -> String {
     && let Some(first) = args.first()
   {
     return box_source_to_graphics_expr(first);
+  }
+
+  // `InsetBox[content, pos, …]` places typeset boxes (e.g. an `Epilog`
+  // label `BoxData[FormBox[StyleBox["\"↓\"", 24, Bold], …]]`) in the
+  // picture. Its first argument is box content rather than graphics, so
+  // rebuild the displayed expression it typesets; the placement arguments
+  // are ordinary coordinates.
+  if let Some(args) = box_call("InsetBox")
+    && let Some(first) = args.first()
+  {
+    let mut parts = vec![inset_box_content_to_expr(first)];
+    parts.extend(args[1..].iter().map(|a| box_source_to_graphics_expr(a)));
+    return format!("Inset[{}]", parts.join(", "));
   }
 
   for (box_head, head) in
@@ -5873,6 +5900,47 @@ pub fn box_source_to_graphics_expr(s: &str) -> String {
   }
 
   s.to_string()
+}
+
+/// The displayed expression an `InsetBox`'s box content typesets:
+/// `BoxData`/`FormBox` wrappers are dropped and a `StyleBox` becomes the
+/// `Style[…]` it was typeset from, keeping its size, weight and color
+/// (only the FrontEnd-internal `StripOnInput` option is left out).
+fn inset_box_content_to_expr(s: &str) -> String {
+  let s = s.trim();
+  let args_of = |head: &str| -> Option<Vec<String>> {
+    let rest = s.strip_prefix(head)?.strip_prefix('[')?;
+    let (inner, tail) = find_matching_bracket(rest).ok()?;
+    if !tail.trim().is_empty() {
+      return None;
+    }
+    Some(
+      split_top_level_commas(inner)
+        .into_iter()
+        .map(|a| a.trim().to_string())
+        .collect(),
+    )
+  };
+  for head in ["BoxData", "FormBox", "TagBox"] {
+    if let Some(args) = args_of(head)
+      && let Some(first) = args.first()
+    {
+      return inset_box_content_to_expr(first);
+    }
+  }
+  if let Some(args) = args_of("StyleBox")
+    && let Some(first) = args.first()
+  {
+    let mut parts = vec![inset_box_content_to_expr(first)];
+    parts.extend(
+      args[1..]
+        .iter()
+        .filter(|a| !a.starts_with("StripOnInput"))
+        .cloned(),
+    );
+    return format!("Style[{}]", parts.join(", "));
+  }
+  extract_cell_content(s)
 }
 
 /// Render a stored `GraphicsBox[…]` output that draws directly with vector
@@ -7914,6 +7982,24 @@ Cell["Chapter 2", "Chapter"]
         "StyleBox[{PointBox[{0, 0}]}, RGBColor[1, 0, 0], StripOnInput -> False]"
       ),
       "{RGBColor[1, 0, 0], {Point[{0, 0}]}}"
+    );
+  }
+
+  #[test]
+  fn test_box_source_to_graphics_expr_inset_box_to_inset() {
+    // An `Epilog` label stored as typeset boxes inside a `Graphics3DBox`
+    // must become an evaluable `Inset` of the styled expression.
+    assert_eq!(
+      box_source_to_graphics_expr(
+        r#"Graphics3DBox[{SphereBox[{0, 0, 0}, 1]}, Epilog->InsetBox[BoxData[FormBox[StyleBox["\"\[DownArrow]\"", 24, Bold, GrayLevel[0], StripOnInput -> False], TraditionalForm]], {0.45, 0.625}]]"#
+      ),
+      "Graphics3D[{Sphere[{0, 0, 0}, 1]}, Epilog->Inset[Style[\"\u{2193}\", 24, Bold, GrayLevel[0]], {0.45, 0.625}]]"
+    );
+    assert_eq!(
+      box_source_to_graphics_expr(
+        r#"InsetBox[SubscriptBox["\"CO\"", "2"], {1, 2}]"#
+      ),
+      "Inset[Subscript[\"CO\", 2], {1, 2}]"
     );
   }
 
