@@ -1313,6 +1313,7 @@ pub fn try_replace_top(
       continue;
     };
     let (pat_expr, condition) = extract_pattern_and_condition(pattern);
+    let pat_expr = canonical_pattern(&pat_expr);
     if contains_pattern(&pat_expr) {
       if let Some(result) = try_ast_pattern_replace_single(
         expr,
@@ -5035,6 +5036,9 @@ fn canonicalize_pattern(pattern: &Expr) -> Expr {
     )
   }
 
+  if let Some(symbolic) = rendered_graphics_pattern(pattern) {
+    return canonicalize_pattern(&symbolic);
+  }
   match pattern {
     Expr::FunctionCall { name, args }
       if name == "HoldPattern" && args.len() == 1 =>
@@ -5112,6 +5116,17 @@ fn canonicalize_pattern(pattern: &Expr) -> Expr {
   }
 }
 
+/// The call a pattern like `Graphics3D[g_, opts___]` was written as.
+/// `Graphics3D` evaluates its arguments into a rendering, but a rendering
+/// whose remembered symbolic form holds patterns is a pattern for that form.
+fn rendered_graphics_pattern(pattern: &Expr) -> Option<Expr> {
+  if !matches!(pattern, Expr::Graphics { .. }) {
+    return None;
+  }
+  crate::evaluator::part_extraction::graphics_symbolic_form(pattern)
+    .filter(contains_pattern)
+}
+
 /// Does `pattern` contain anything `canonicalize_pattern` would rewrite?
 /// Checked first so the common case avoids rebuilding the whole tree.
 fn needs_canonicalization(pattern: &Expr) -> bool {
@@ -5138,6 +5153,7 @@ fn needs_canonicalization(pattern: &Expr) -> bool {
       needs_canonicalization(left) || needs_canonicalization(right)
     }
     Expr::UnaryOp { operand, .. } => needs_canonicalization(operand),
+    Expr::Graphics { .. } => rendered_graphics_pattern(pattern).is_some(),
     _ => false,
   }
 }
@@ -5571,6 +5587,18 @@ fn match_pattern_impl(
         };
       return match_pattern_impl(&call(func_name, operands), pattern);
     }
+  }
+  // A rendered graphic stands for its symbolic `Graphics3D[prims, opts]`
+  // form (the one `Part` reaches), so a pattern spelled as that call
+  // (`Graphics3D[g_, opts___]`) matches against it and binds its parts.
+  if let Expr::FunctionCall { name: pat_name, .. } = pattern
+    && (pat_name == "Graphics" || pat_name == "Graphics3D")
+    && matches!(expr, Expr::Graphics { .. })
+    && let Some(symbolic) =
+      crate::evaluator::part_extraction::graphics_symbolic_form(expr)
+    && matches!(&symbolic, Expr::FunctionCall { name, .. } if name == pat_name)
+  {
+    return match_pattern_impl(&symbolic, pattern);
   }
   // HoldPattern[p] is transparent to pattern matching: it only prevents
   // evaluation of the wrapped expression when parsed, and the matcher

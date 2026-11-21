@@ -16,9 +16,16 @@
 
 use super::*;
 
-/// Split a `Polygon`/`Triangle` first argument into its outer boundary and
-/// hole boundaries. Returns `None` when the argument is not a rule, i.e.
-/// for an ordinary hole-free polygon.
+/// Split a `Polygon`/`Triangle` first argument into faces, each an outer
+/// boundary with its hole boundaries. Returns `None` when the argument is
+/// not a rule, i.e. for an ordinary hole-free polygon.
+///
+/// Both rule forms are accepted:
+/// - `outer -> holes`: one face, where `holes` is a single ring `{q…}` or
+///   a list of rings `{{q…}, …}`;
+/// - `{outer1, outer2, …} -> {holes1, holes2, …}`: one face per outer
+///   boundary, paired by position with its holes spec (again a single ring
+///   or a list of rings).
 ///
 /// `points_of` extracts a coordinate list of the caller's dimensionality
 /// (2D for `Graphics`, 3D for `Graphics3D`), so the same shape analysis
@@ -26,7 +33,7 @@ use super::*;
 pub fn split_holes<P, T>(
   arg: &Expr,
   points_of: &P,
-) -> Option<(Vec<T>, Vec<Vec<T>>)>
+) -> Option<Vec<(Vec<T>, Vec<Vec<T>>)>>
 where
   P: Fn(&Expr) -> Option<Vec<T>>,
 {
@@ -37,19 +44,39 @@ where
   else {
     return None;
   };
-  let outer = points_of(pattern)?;
-  // `outer -> {{q…}, …}`: every element of the right side is a hole.
-  // `outer -> {q…}`: the right side is one hole. The two are told apart by
-  // whether the right side parses as a coordinate list itself.
-  let holes = if let Some(single) = points_of(replacement) {
-    vec![single]
-  } else {
-    let Expr::List(items) = replacement.as_ref() else {
-      return None;
-    };
-    items.iter().filter_map(points_of).collect()
+  if let Some(outer) = points_of(pattern) {
+    return Some(vec![(outer, holes_of(replacement, points_of)?)]);
+  }
+  // `{outer…} -> {holes…}`: several faces, each with its own holes.
+  let (Expr::List(outers), Expr::List(hole_specs)) =
+    (pattern.as_ref(), replacement.as_ref())
+  else {
+    return None;
   };
-  Some((outer, holes))
+  if outers.is_empty() || outers.len() != hole_specs.len() {
+    return None;
+  }
+  outers
+    .iter()
+    .zip(hole_specs.iter())
+    .map(|(outer, spec)| Some((points_of(outer)?, holes_of(spec, points_of)?)))
+    .collect()
+}
+
+/// The hole rings of one face: `{q…}` is one hole, `{{q…}, …}` several.
+/// The two are told apart by whether the spec parses as a coordinate list
+/// itself.
+fn holes_of<P, T>(spec: &Expr, points_of: &P) -> Option<Vec<Vec<T>>>
+where
+  P: Fn(&Expr) -> Option<Vec<T>>,
+{
+  if let Some(single) = points_of(spec) {
+    return Some(vec![single]);
+  }
+  let Expr::List(items) = spec else {
+    return None;
+  };
+  Some(items.iter().filter_map(points_of).collect())
 }
 
 /// Signed area of a closed 2D ring (positive when counterclockwise).
@@ -324,32 +351,53 @@ pub fn triangulate_with_holes(
 }
 
 /// A vertex of a self-intersecting polygon's arrangement: it lies on the
-/// polygon's edge `edge` (from corner `edge` to the next corner), a
-/// fraction `t` of the way along it, so a caller can place it in its own
-/// space (in 3D, between the two corners it was flattened from).
+/// edge from corner `from` to corner `to` (indices into the caller's
+/// vertex list), a fraction `t` of the way along it, so a caller can place
+/// it in its own space (in 3D, between the two corners it was flattened
+/// from).
 #[derive(Clone, Copy, Debug)]
 pub struct EdgePoint {
-  pub edge: usize,
+  pub from: usize,
+  pub to: usize,
   pub t: f64,
 }
 
-/// The pieces of a self-intersecting polygon that the even-odd rule fills.
+/// The pieces of a set of crossing rings that the even-odd rule fills.
 ///
-/// The polygon's edges are cut wherever they cross one another, the plane
-/// regions bounded by those pieces are traced, and the regions an odd
-/// number of edges away from the outside are kept. A pentagram comes back
-/// as its five tips, without the pentagon in the middle — exactly what
-/// `Graphics` draws for it with SVG's `evenodd` fill.
+/// `rings` lists the boundaries (an outline, or an outline followed by its
+/// holes) as indices into `pts`. Their edges are cut wherever they cross
+/// one another, the plane regions bounded by those pieces are traced, and
+/// the regions an odd number of edges away from the outside are kept. A
+/// pentagram comes back as its five tips, without the pentagon in the
+/// middle, and a hole that reaches past its outline (`Polygon[outer ->
+/// hole]`) leaves the outline's remainder plus the hole's protruding
+/// parts — exactly what `Graphics` draws for them with SVG's `evenodd`
+/// fill.
 ///
-/// Returns the arrangement's vertices (first the polygon's own corners,
-/// then the crossing points) and the kept regions as counterclockwise
-/// rings of indices into them, or `None` when no two edges cross, so the
-/// polygon is simple and needs none of this.
+/// Returns the arrangement's vertices (first the corners in `pts`, then
+/// the crossing points) and the kept regions, as rings of indices into
+/// them, or `None` when no two edges cross, so the rings are
+/// simple and disjoint and need none of this.
 pub fn even_odd_regions(
   pts: &[(f64, f64)],
-) -> Option<(Vec<((f64, f64), EdgePoint)>, Vec<Vec<usize>>)> {
-  let n = pts.len();
-  if n < 4 {
+  rings: &[Vec<usize>],
+) -> Option<(Vec<((f64, f64), EdgePoint)>, Vec<EvenOddRegion>)> {
+  // Every ring's edges, with repeated (closing) corners dropped. Each edge
+  // also records whether it neighbors the next one in its ring.
+  let mut edges: Vec<(usize, usize)> = Vec::new();
+  let mut ring_of: Vec<(usize, usize)> = Vec::new();
+  for ring in rings {
+    let ring = close_ring(pts, ring);
+    if ring.len() < 3 {
+      continue;
+    }
+    let first = edges.len();
+    for i in 0..ring.len() {
+      edges.push((ring[i], ring[(i + 1) % ring.len()]));
+      ring_of.push((first, ring.len()));
+    }
+  }
+  if edges.len() < 4 {
     return None;
   }
   let scale = pts
@@ -360,11 +408,22 @@ pub fn even_odd_regions(
   let mut verts: Vec<((f64, f64), EdgePoint)> = pts
     .iter()
     .enumerate()
-    .map(|(i, &p)| (p, EdgePoint { edge: i, t: 0.0 }))
+    .map(|(i, &p)| {
+      (
+        p,
+        EdgePoint {
+          from: i,
+          to: i,
+          t: 0.0,
+        },
+      )
+    })
     .collect();
   // The points along each edge, as (fraction, vertex index).
-  let mut along: Vec<Vec<(f64, usize)>> =
-    (0..n).map(|i| vec![(0.0, i), (1.0, (i + 1) % n)]).collect();
+  let mut along: Vec<Vec<(f64, usize)>> = edges
+    .iter()
+    .map(|&(a, b)| vec![(0.0, a), (1.0, b)])
+    .collect();
   let find_or_add =
     |verts: &mut Vec<((f64, f64), EdgePoint)>, p: (f64, f64), at: EdgePoint| {
       if let Some(k) = verts
@@ -378,14 +437,18 @@ pub fn even_odd_regions(
       }
     };
   let mut crossed = false;
-  for i in 0..n {
-    let (a, b) = (pts[i], pts[(i + 1) % n]);
-    for j in i + 1..n {
-      // Neighboring edges share a corner and cannot cross properly.
-      if j == i + 1 || (i == 0 && j == n - 1) {
+  for i in 0..edges.len() {
+    let (a, b) = (pts[edges[i].0], pts[edges[i].1]);
+    for j in i + 1..edges.len() {
+      // Neighboring edges of one ring share a corner and cannot cross
+      // properly.
+      let (first, len) = ring_of[i];
+      if ring_of[j].0 == first
+        && (j == i + 1 || (i == first && j == first + len - 1))
+      {
         continue;
       }
-      let (c, d) = (pts[j], pts[(j + 1) % n]);
+      let (c, d) = (pts[edges[j].0], pts[edges[j].1]);
       let r = (b.0 - a.0, b.1 - a.1);
       let s = (d.0 - c.0, d.1 - c.1);
       let denom = r.0 * s.1 - r.1 * s.0;
@@ -400,7 +463,12 @@ pub fn even_odd_regions(
       }
       crossed = true;
       let p = (a.0 + t * r.0, a.1 + t * r.1);
-      let k = find_or_add(&mut verts, p, EdgePoint { edge: i, t });
+      let at = EdgePoint {
+        from: edges[i].0,
+        to: edges[i].1,
+        t,
+      };
+      let k = find_or_add(&mut verts, p, at);
       along[i].push((t, k));
       along[j].push((u, k));
     }
@@ -429,8 +497,23 @@ pub fn even_odd_regions(
   }
   // Trace every region with it on the left: arriving at `v` from `u`, the
   // region continues along the first piece clockwise from `v -> u`.
+  let point_in_ring = |probe: (f64, f64), flat: &[(f64, f64)]| {
+    let mut odd = false;
+    for i in 0..flat.len() {
+      let (p, q) = (flat[i], flat[(i + 1) % flat.len()]);
+      if (p.1 > probe.1) != (q.1 > probe.1)
+        && probe.0 < p.0 + (probe.1 - p.1) / (q.1 - p.1) * (q.0 - p.0)
+      {
+        odd = !odd;
+      }
+    }
+    odd
+  };
   let mut used = std::collections::HashSet::new();
-  let mut regions = Vec::new();
+  // Counterclockwise faces as (ring, area, kept by the even-odd rule),
+  // and the clockwise outsides of the arrangement's separate pieces.
+  let mut faces: Vec<(Vec<usize>, f64, bool)> = Vec::new();
+  let mut outsides: Vec<Vec<usize>> = Vec::new();
   for start in 0..verts.len() {
     for &first in &neighbors[start] {
       if used.contains(&(start, first)) {
@@ -445,11 +528,14 @@ pub fn even_odd_regions(
         let next = list[(back + list.len() - 1) % list.len()];
         (u, v) = (v, next);
       }
+      if ring.len() < 3 {
+        continue;
+      }
       let flat: Vec<(f64, f64)> = ring.iter().map(|&k| verts[k].0).collect();
-      // Clockwise rings trace the outside of the whole arrangement.
-      if ring.len() < 3
-        || signed_area(&flat, &(0..flat.len()).collect::<Vec<_>>()) <= 0.0
-      {
+      let area = signed_area(&flat, &(0..flat.len()).collect::<Vec<_>>());
+      // Clockwise rings trace the outside of a piece of the arrangement.
+      if area <= 0.0 {
+        outsides.push(ring);
         continue;
       }
       // Probe just inside the region, off the middle of its first side.
@@ -461,25 +547,68 @@ pub fn even_odd_regions(
         f64::midpoint(a.1, b.1) + (b.0 - a.0) / len * step,
       );
       let mut odd = false;
-      for i in 0..n {
-        let (p, q) = (pts[i], pts[(i + 1) % n]);
+      for &(p, q) in &edges {
+        let (p, q) = (pts[p], pts[q]);
         if (p.1 > probe.1) != (q.1 > probe.1)
           && probe.0 < p.0 + (probe.1 - p.1) / (q.1 - p.1) * (q.0 - p.0)
         {
           odd = !odd;
         }
       }
-      if odd {
-        regions.push(ring);
-      }
+      faces.push((ring, area, odd));
     }
   }
+  // A piece lying wholly inside a face (a hole that crosses nothing, next
+  // to one that does) is cut out of the smallest face around it.
+  let mut regions: Vec<EvenOddRegion> = faces
+    .iter()
+    .map(|(ring, _, _)| EvenOddRegion {
+      outer: ring.clone(),
+      holes: Vec::new(),
+    })
+    .collect();
+  for outside in outsides {
+    let probe = verts[outside[0]].0;
+    let around = faces
+      .iter()
+      .enumerate()
+      .filter(|(_, (ring, _, _))| !ring.contains(&outside[0]))
+      .filter(|(_, (ring, _, _))| {
+        let flat: Vec<(f64, f64)> = ring.iter().map(|&k| verts[k].0).collect();
+        point_in_ring(probe, &flat)
+      })
+      .min_by(|a, b| a.1.1.total_cmp(&b.1.1))
+      .map(|(i, _)| i);
+    if let Some(i) = around {
+      regions[i].holes.push(outside);
+    }
+  }
+  let regions = regions
+    .into_iter()
+    .zip(&faces)
+    .filter(|(_, (_, _, kept))| *kept)
+    .map(|(region, _)| region)
+    .collect();
   Some((verts, regions))
+}
+
+/// One region the even-odd rule fills: a counterclockwise outline and the
+/// boundaries of the separate pieces of the arrangement lying inside it,
+/// all as indices into the arrangement's vertices.
+#[derive(Clone, Debug)]
+pub struct EvenOddRegion {
+  pub outer: Vec<usize>,
+  pub holes: Vec<Vec<usize>>,
 }
 
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  /// One ring through all of `pts`, in order.
+  fn whole(pts: &[(f64, f64)]) -> Vec<usize> {
+    (0..pts.len()).collect()
+  }
 
   /// Five corners of a regular pentagon, visited in pentagram order.
   fn pentagram() -> Vec<(f64, f64)> {
@@ -493,24 +622,49 @@ mod tests {
   }
 
   #[test]
+  fn split_holes_pairs_listed_outers_with_their_holes() {
+    use crate::functions::graphics::expr_to_point_list;
+    let arg = crate::interpret_to_expr(
+      "{{{0, 0}, {4, 0}, {4, 4}}, {{5, 0}, {9, 0}, {9, 4}}} -> \
+       {{{1, 1}, {2, 1}, {2, 2}}, {{{6, 1}, {7, 1}, {7, 2}}, {{8, 1}, {8.5, 1}, {8.5, 2}}}}",
+    )
+    .unwrap();
+    let faces = split_holes(&arg, &expr_to_point_list).unwrap();
+    assert_eq!(faces.len(), 2);
+    assert_eq!(faces[0].0[1], (4.0, 0.0));
+    assert_eq!(faces[0].1.len(), 1);
+    assert_eq!(faces[1].0[0], (5.0, 0.0));
+    assert_eq!(faces[1].1.len(), 2);
+    // Mismatched outer/holes counts are not a valid spec.
+    let bad = crate::interpret_to_expr(
+      "{{{0, 0}, {4, 0}, {4, 4}}} -> {{{1, 1}, {2, 1}, {2, 2}}, {{1, 1}, {2, 1}, {2, 2}}}",
+    )
+    .unwrap();
+    assert!(split_holes(&bad, &expr_to_point_list).is_none());
+  }
+
+  #[test]
   fn even_odd_regions_of_a_pentagram_are_its_tips() {
     let pts = pentagram();
-    let (verts, regions) = even_odd_regions(&pts).unwrap();
+    let (verts, regions) = even_odd_regions(&pts, &[whole(&pts)]).unwrap();
     // Five corners plus the five points where the chords cross.
     assert_eq!(verts.len(), 10);
     // The five tips are kept; the pentagon in the middle, covered twice,
     // is not.
     assert_eq!(regions.len(), 5);
-    assert!(regions.iter().all(|r| r.len() == 3));
+    assert!(
+      regions
+        .iter()
+        .all(|r| r.outer.len() == 3 && r.holes.is_empty())
+    );
     let center_hit = regions.iter().any(|r| {
-      let flat: Vec<(f64, f64)> = r.iter().map(|&k| verts[k].0).collect();
+      let flat: Vec<(f64, f64)> = r.outer.iter().map(|&k| verts[k].0).collect();
       point_in_triangle((0.0, 0.0), flat[0], flat[1], flat[2])
     });
     assert!(!center_hit);
     // Every crossing point lies on the edge it reports, where it says.
     for (p, at) in &verts {
-      let a = pts[at.edge];
-      let b = pts[(at.edge + 1) % pts.len()];
+      let (a, b) = (pts[at.from], pts[at.to]);
       let q = (a.0 + at.t * (b.0 - a.0), a.1 + at.t * (b.1 - a.1));
       assert!((p.0 - q.0).abs() < 1e-12 && (p.1 - q.1).abs() < 1e-12);
     }
@@ -519,14 +673,14 @@ mod tests {
   #[test]
   fn even_odd_regions_of_a_bow_tie_are_its_two_triangles() {
     let pts = vec![(0.0, 0.0), (2.0, 2.0), (2.0, 0.0), (0.0, 2.0)];
-    let (_, regions) = even_odd_regions(&pts).unwrap();
+    let (_, regions) = even_odd_regions(&pts, &[whole(&pts)]).unwrap();
     assert_eq!(regions.len(), 2);
   }
 
   #[test]
   fn even_odd_regions_skip_simple_polygons() {
     let square = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
-    assert!(even_odd_regions(&square).is_none());
+    assert!(even_odd_regions(&square, &[whole(&square)]).is_none());
     let notch = vec![
       (0.0, 0.0),
       (3.0, 0.0),
@@ -537,7 +691,88 @@ mod tests {
       (3.0, 3.0),
       (0.0, 3.0),
     ];
-    assert!(even_odd_regions(&notch).is_none());
+    assert!(even_odd_regions(&notch, &[whole(&notch)]).is_none());
+  }
+
+  /// Total area the even-odd regions fill, with each region triangulated
+  /// around the pieces lying inside it.
+  fn even_odd_area(pts: &[(f64, f64)], rings: &[Vec<usize>]) -> Option<f64> {
+    let (verts, regions) = even_odd_regions(pts, rings)?;
+    let flat: Vec<(f64, f64)> = verts.iter().map(|(p, _)| *p).collect();
+    Some(
+      regions
+        .iter()
+        .map(|r| {
+          area(&flat, &triangulate_with_holes(&flat, &r.outer, &r.holes))
+        })
+        .sum(),
+    )
+  }
+
+  #[test]
+  fn even_odd_regions_of_a_hole_reaching_past_its_outline() {
+    // A 4x4 square whose 2x2 hole sticks 1 unit out of its right side:
+    // the square keeps 16 - 2 = 14, and the protruding half of the hole
+    // (covered once) is filled as well.
+    let pts = vec![
+      (0.0, 0.0),
+      (4.0, 0.0),
+      (4.0, 4.0),
+      (0.0, 4.0),
+      (3.0, 1.0),
+      (5.0, 1.0),
+      (5.0, 3.0),
+      (3.0, 3.0),
+    ];
+    let total =
+      even_odd_area(&pts, &[vec![0, 1, 2, 3], vec![4, 5, 6, 7]]).unwrap();
+    assert!((total - 16.0).abs() < 1e-9, "{total}");
+    // A closed ring (repeating its first corner) gives the same result.
+    let total =
+      even_odd_area(&pts, &[vec![0, 1, 2, 3, 0], vec![4, 5, 6, 7, 4]]).unwrap();
+    assert!((total - 16.0).abs() < 1e-9, "{total}");
+  }
+
+  #[test]
+  fn even_odd_regions_keep_a_separate_hole_cut_out() {
+    // One hole crosses the square's right side; a second one lies wholly
+    // inside the square and must stay cut out of the region around it.
+    let pts = vec![
+      (0.0, 0.0),
+      (10.0, 0.0),
+      (10.0, 10.0),
+      (0.0, 10.0),
+      (9.0, 4.0),
+      (11.0, 4.0),
+      (11.0, 6.0),
+      (9.0, 6.0),
+      (2.0, 2.0),
+      (4.0, 2.0),
+      (4.0, 4.0),
+      (2.0, 4.0),
+    ];
+    let rings = [vec![0, 1, 2, 3], vec![4, 5, 6, 7], vec![8, 9, 10, 11]];
+    let total = even_odd_area(&pts, &rings).unwrap();
+    // 100 - 2 (inner half of the crossing hole) + 2 (its outer half)
+    // - 4 (the separate hole).
+    assert!((total - 96.0).abs() < 1e-9, "{total}");
+  }
+
+  #[test]
+  fn even_odd_regions_skip_holes_inside_their_outline() {
+    let pts = vec![
+      (0.0, 0.0),
+      (4.0, 0.0),
+      (4.0, 4.0),
+      (0.0, 4.0),
+      (1.0, 1.0),
+      (3.0, 1.0),
+      (3.0, 3.0),
+      (1.0, 3.0),
+    ];
+    assert!(
+      even_odd_regions(&pts, &[vec![0, 1, 2, 3], vec![4, 5, 6, 7]]).is_none()
+    );
   }
 
   fn area(pts: &[(f64, f64)], tris: &HoledTriangulation) -> f64 {
