@@ -16405,6 +16405,20 @@ mod typeset_boxes_regressions {
     );
   }
 
+  /// A `Grid` in TraditionalForm boxes is the tagged grid box, as in
+  /// StandardForm. Regression: it was boxed as a call around a
+  /// parenthesized matrix, `Grid[(GridBox[…])]`.
+  #[test]
+  fn traditional_boxes_of_grid_are_a_tagged_grid_box() {
+    clear_state();
+    assert_eq!(
+      interpret("ToBoxes[Grid[{{a, x^2}, {3, b}}], TraditionalForm]").unwrap(),
+      "FormBox[TagBox[GridBox[{{a, SuperscriptBox[x, 2]}, {3, b}}, \
+       AutoDelete -> False, GridBoxItemSize -> {Columns -> {{Automatic}}, \
+       Rows -> {{Automatic}}}], Grid], TraditionalForm]"
+    );
+  }
+
   /// TraditionalForm sets a positive rational coefficient of a sum (or of a
   /// power of one) as a fraction in front of it; a monomial still goes over
   /// one bar.
@@ -16492,4 +16506,27 @@ mod to_string_infix_operators_2d {
       "z = f[-3.3 g[x]]"
     );
   }
+}
+
+/// A `Row` part laid out over several lines (a fraction) is set beside the
+/// other parts on its baseline. Its lines used to be glued onto the first
+/// part, so `Row[{x, 14/3}]` read `x14` over a bar over `3`.
+#[test]
+fn to_string_row_sets_multiline_parts_on_the_baseline() {
+  clear_state();
+  assert_eq!(
+    interpret("ToString[Row[{x, 14/3}]]").unwrap(),
+    " 14\nx--\n 3"
+  );
+  // A fraction a display wrapper leaves exact, behind a separator.
+  assert_eq!(
+    interpret(r#"ToString[Row[{"m", NumberForm[14/3, {3, 2}]}, " = "]]"#)
+      .unwrap(),
+    "    14\nm = --\n    3"
+  );
+  // A superscript keeps its exponent above the baseline.
+  assert_eq!(
+    interpret(r#"ToString[Row[{a, x^2, 1/2}, " "]]"#).unwrap(),
+    "   2 1\na x  -\n     2"
+  );
 }

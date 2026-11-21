@@ -601,7 +601,7 @@ fn real_part_solution(eqns: &Expr, sol: &Expr) -> Option<Expr> {
       let substituted = point
         .iter()
         .fold(term, |e, (var, v)| substitute_expr(&e, var, v));
-      let Some(value) = quietly(|| {
+      let Some(value) = crate::quietly(|| {
         crate::evaluator::evaluate_function_call_ast("N", &[substituted])
       })
       .ok()
@@ -926,7 +926,7 @@ fn numerically_violates(eqns: &Expr, solution: &Expr) -> bool {
       let substituted = point
         .iter()
         .fold(side.clone(), |e, (var, v)| substitute_expr(&e, var, v));
-      quietly(|| {
+      crate::quietly(|| {
         crate::evaluator::evaluate_function_call_ast("N", &[substituted])
       })
       .ok()
@@ -3220,6 +3220,23 @@ fn contains_inequality_call(e: &Expr) -> bool {
 }
 
 pub fn solve_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
+  // In a list, a `True` constrains nothing and a `False` rules out
+  // everything: `Solve[{True}]` is `{{}}`, `Solve[{x == 1, True}, x]` solves
+  // `x == 1` (equations like `0 == 0` evaluate to `True` before Solve sees
+  // them).
+  if let Some(Expr::List(items)) = args.first() {
+    let is = |e: &Expr, v: &str| matches!(e, Expr::Identifier(s) if s == v);
+    if items.iter().any(|e| is(e, "False")) {
+      return Ok(Expr::List(vec![].into()));
+    }
+    if items.iter().any(|e| is(e, "True")) {
+      let kept: Vec<Expr> =
+        items.iter().filter(|e| !is(e, "True")).cloned().collect();
+      let mut new_args = args.to_vec();
+      new_args[0] = Expr::List(kept.into());
+      return solve_ast(&new_args);
+    }
+  }
   // An empty equation list asserts nothing: it is `True`, solved by the one
   // empty substitution (`Solve[{}, x]` is `{{}}`).
   if matches!(args.first(), Some(Expr::List(items)) if items.is_empty()) {
@@ -4399,7 +4416,8 @@ fn solve_real_exp_log_inexact(args: &[Expr]) -> Option<Expr> {
   let eval_at = |x: f64| -> Option<f64> {
     let substituted = substitute_expr(&residual, var, &Expr::Real(x));
     let evaled =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+        .ok()?;
     try_eval_to_f64(&evaled).filter(|v| v.is_finite())
   };
   const SAMPLES: usize = 6000;
@@ -4540,10 +4558,12 @@ fn solve_real_exp_log_inexact(args: &[Expr]) -> Option<Expr> {
     )
     .ok()?;
     for _ in 0..3 {
-      let Ok(fx) = quietly(|| n40(substitute_expr(&exact, var, &x))) else {
+      let Ok(fx) = crate::quietly(|| n40(substitute_expr(&exact, var, &x)))
+      else {
         break;
       };
-      let Ok(dfx) = quietly(|| n40(substitute_expr(&derivative, var, &x)))
+      let Ok(dfx) =
+        crate::quietly(|| n40(substitute_expr(&derivative, var, &x)))
       else {
         break;
       };
@@ -6832,23 +6852,6 @@ fn solve_core(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
       if s == "False" {
         return Ok(Expr::List(vec![].into()));
-      }
-    }
-    // In a list, a `True` constrains nothing and a `False` rules out
-    // everything: `Solve[{True}]` is `{{}}`, `Solve[{x == 1, True}]` solves
-    // `x == 1`.
-    if let Expr::List(items) = &args[0] {
-      let is = |e: &Expr, v: &str| matches!(e, Expr::Identifier(s) if s == v);
-      if items.iter().any(|e| is(e, "False")) {
-        return Ok(Expr::List(vec![].into()));
-      }
-      if items.iter().any(|e| is(e, "True")) {
-        let kept: Vec<Expr> =
-          items.iter().filter(|e| !is(e, "True")).cloned().collect();
-        if kept.is_empty() {
-          return Ok(Expr::List(vec![Expr::List(vec![].into())].into()));
-        }
-        return solve_ast(&[Expr::List(kept.into())]);
       }
     }
     return match auto_detect_solve_vars(&args[0]) {
@@ -10813,7 +10816,7 @@ fn try_solve_inexact_trig(eq: &Expr, var: &str) -> Option<Expr> {
   ) {
     return None;
   }
-  let roots = quietly(|| {
+  let roots = crate::quietly(|| {
     solve_ast(&[
       Expr::Comparison {
         operands: vec![polynomial, Expr::Integer(0)],
@@ -12094,7 +12097,7 @@ fn try_solve_through_undefined_function(
     return None;
   }
   let values =
-    quietly(|| solve_ast(&[substituted, placeholder.clone()])).ok()?;
+    crate::quietly(|| solve_ast(&[substituted, placeholder.clone()])).ok()?;
   let Expr::List(ref values) = values else {
     return None;
   };
@@ -12108,7 +12111,7 @@ fn try_solve_through_undefined_function(
     };
     let (inner, inverse_value) =
       undefined_function_inverse(&atom, replacement, var)?;
-    let solved = quietly(|| {
+    let solved = crate::quietly(|| {
       solve_ast(&[
         Expr::Comparison {
           operands: vec![inner, inverse_value],
@@ -12485,7 +12488,7 @@ fn try_solve_by_radical_norms(
     operands: vec![f, Expr::Integer(0)],
     operators: vec![ComparisonOp::Equal],
   };
-  let solved = quietly(|| solve_ast(&[reduced, id_expr(var)])).ok()?;
+  let solved = crate::quietly(|| solve_ast(&[reduced, id_expr(var)])).ok()?;
   let Expr::List(ref candidates) = solved else {
     return None;
   };
@@ -12538,7 +12541,8 @@ fn try_nsolve_numeric_search(args: &[Expr]) -> Option<Expr> {
   let eval_at = |x: f64| -> Option<f64> {
     let substituted = substitute_expr(&residual, var, &Expr::Real(x));
     let evaled =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+        .ok()?;
     try_eval_to_f64(&evaled).filter(|v| v.is_finite())
   };
 
@@ -12720,14 +12724,15 @@ fn try_nsolve_bracketed(args: &[Expr]) -> Option<Expr> {
   let eval_at = |x: f64| -> Option<f64> {
     let substituted = substitute_expr(&residual, &var, &Expr::Real(x));
     let evaled =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()?;
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+        .ok()?;
     try_eval_to_f64(&evaled).filter(|v| v.is_finite())
   };
   let admissible = |x: f64| {
     constraints.iter().all(|c| {
       let substituted = substitute_expr(c, &var, &Expr::Real(x));
       matches!(
-        quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
+        crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
         Ok(Expr::Identifier(ref t)) if t == "True"
       )
     })
@@ -12924,7 +12929,8 @@ fn try_nsolve_numeric_system(args: &[Expr]) -> Option<Expr> {
           e = substitute_expr(&e, v, &Expr::Real(*x));
         }
         let value =
-          quietly(|| crate::evaluator::evaluate_expr_to_expr(&e)).ok()?;
+          crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&e))
+            .ok()?;
         try_eval_to_f64(&value).filter(|v| v.is_finite())
       })
       .collect()
@@ -13306,7 +13312,7 @@ fn drop_failing_system_solutions(args: &[Expr], result: Expr) -> Expr {
           crate::syntax::substitute_variable(&e, var, value)
         });
         matches!(
-          quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
+          crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)),
           Ok(Expr::Identifier(ref f)) if f == "False"
         )
       })
@@ -13344,7 +13350,8 @@ fn equation_holds_at(equation: &Expr, var: &str, value: &Expr) -> Option<bool> {
   };
   let at_value = |side: &Expr| {
     let substituted = crate::syntax::substitute_variable(side, var, value);
-    quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted)).ok()
+    crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&substituted))
+      .ok()
   };
   let left = at_value(&lhs)?;
   let right = at_value(&rhs)?;
@@ -14194,6 +14201,29 @@ fn root_ast_uncached(args: &[Expr]) -> Result<Expr, InterpreterError> {
     max_power_int(base, var_name)
   };
   let mut factored_roots: Option<Vec<Expr>> = None;
+  // A sparse integer polynomial of high degree keeps its canonical form:
+  // factoring the dense polynomial takes time cubic in the degree.
+  if matches!(
+    max_power_int(&expanded_poly, var_name),
+    Some(d) if d > super::sparse_roots::SPARSE_ROOT_MIN_DEGREE as i128
+  ) && super::sparse_roots::sparse_integer_terms(&expanded_poly, var_name)
+    .is_some_and(|t| super::sparse_roots::is_high_degree_sparse(&t))
+    && let Some(p) = primitive_root_polynomial(&expanded_poly, var_name)
+  {
+    let body = crate::evaluator::evaluate_expr_to_expr(
+      &crate::syntax::substitute_variable(&p, var_name, &Expr::Slot(1)),
+    )?;
+    return Ok(call(
+      "Root",
+      vec![
+        Expr::Function {
+          body: Box::new(body),
+        },
+        args[1].clone(),
+        Expr::Integer(0),
+      ],
+    ));
+  }
   if matches!(max_power_int(&expanded_poly, var_name), Some(d) if d >= 3) {
     let factors = crate::functions::polynomial_ast::factor_ast(
       std::slice::from_ref(&expanded_poly),
@@ -15170,7 +15200,7 @@ pub fn find_root_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // an unusable symbolic derivative drops through to the numerical branch.
     let symbolic_fpx = deriv_expr
       .as_ref()
-      .and_then(|d| quietly(|| find_root_eval_at(d, &var, x)).ok())
+      .and_then(|d| crate::quietly(|| find_root_eval_at(d, &var, x)).ok())
       .filter(|v| v.is_finite());
     let fpx = if let Some(fpx) = symbolic_fpx {
       fpx
@@ -15902,23 +15932,6 @@ fn find_root_eval_at(
   }
 }
 
-/// Run `probe` with every message it emits discarded.
-///
-/// FindRoot's symbolic derivative is speculative: when it does not reduce to a
-/// number the iteration falls back to a difference quotient, so whatever the
-/// attempt complained about on the way (`D::ivar` from differentiating a
-/// user function at an already-substituted point, a division by zero in a
-/// branch that is never used, …) is internal bookkeeping. wolframscript
-/// reports none of it, so neither does Woxi.
-fn quietly<T>(probe: impl FnOnce() -> T) -> T {
-  let snapshot = crate::snapshot_warnings();
-  crate::push_quiet();
-  let result = probe();
-  crate::pop_quiet();
-  crate::restore_warnings(snapshot);
-  result
-}
-
 /// Parse a number from an expression for FindRoot starting point.
 fn find_root_eval_number(expr: &Expr) -> Result<f64, InterpreterError> {
   match expr {
@@ -16423,7 +16436,7 @@ fn find_root_multivariate(
         substitute_expr(&e, v, &Expr::Real(*x0))
       });
     if let Ok(Expr::List(ref values)) =
-      quietly(|| crate::evaluator::evaluate_expr_to_expr(&at_start))
+      crate::quietly(|| crate::evaluator::evaluate_expr_to_expr(&at_start))
       && values.len() == n
     {
       let black_box = black_box.clone();
@@ -16585,7 +16598,7 @@ fn find_root_multivariate(
     for (i, row) in jac.iter().enumerate() {
       for (j, dij) in row.iter().enumerate() {
         let entry = match dij {
-          Some(d) => quietly(|| find_root_eval_multivar_at(d, bindings))
+          Some(d) => crate::quietly(|| find_root_eval_multivar_at(d, bindings))
             .ok()
             .filter(|v| v.is_finite()),
           None => None,
@@ -18613,7 +18626,7 @@ fn minimize_find_critical_points_numerical(
   f: &Expr,
   var: &str,
 ) -> Result<Vec<Expr>, InterpreterError> {
-  quietly(|| minimize_find_critical_points_newton(f, var))
+  crate::quietly(|| minimize_find_critical_points_newton(f, var))
 }
 
 fn minimize_find_critical_points_newton(
@@ -20101,7 +20114,8 @@ fn minimize_constrained_1d(
   for &cx in &candidates {
     // A bound can be a singular point of the objective; its value there
     // just loses the comparison.
-    let fx = quietly(|| find_root_eval_at(f, var, cx)).unwrap_or(f64::INFINITY);
+    let fx =
+      crate::quietly(|| find_root_eval_at(f, var, cx)).unwrap_or(f64::INFINITY);
     if fx < best_f {
       best_f = fx;
       best_x_f64 = cx;
@@ -22103,7 +22117,7 @@ fn find_minimum_inner(
   {
     let sign = if maximize { -1.0 } else { 1.0 };
     let objective = |x: f64| {
-      quietly(|| find_root_eval_at(f, var, x))
+      crate::quietly(|| find_root_eval_at(f, var, x))
         .ok()
         .filter(|v| v.is_finite())
         .map_or(f64::INFINITY, |v| sign * v)
@@ -22735,7 +22749,66 @@ fn is_expr_zero(e: &Expr) -> bool {
 /// Whether an elimination entry is zero in value (see
 /// `helpers::is_exact_numeric_zero`).
 fn is_entry_zero(e: &Expr) -> bool {
-  is_expr_zero(e) || super::helpers::is_exact_numeric_zero(e)
+  is_expr_zero(e)
+    || super::helpers::is_exact_numeric_zero(e)
+    || is_symbolic_rational_zero(e)
+}
+
+/// Whether `e` has a sum as a denominator (`a/(1 - a)`): a rational
+/// function of the parameters rather than a polynomial in them.
+fn has_sum_denominator(e: &Expr) -> bool {
+  let is_sum = |e: &Expr| {
+    matches!(
+      e,
+      Expr::BinaryOp {
+        op: BinaryOperator::Plus | BinaryOperator::Minus,
+        ..
+      }
+    ) || matches!(e, Expr::FunctionCall { name, .. } if name == "Plus")
+  };
+  match e {
+    Expr::BinaryOp { op, left, right } => {
+      let den = match op {
+        BinaryOperator::Power if matches!(right.as_ref(), Expr::Integer(n) if *n < 0) => {
+          is_sum(left)
+        }
+        BinaryOperator::Divide => is_sum(right),
+        _ => false,
+      };
+      den || has_sum_denominator(left) || has_sum_denominator(right)
+    }
+    Expr::FunctionCall { name, args } => {
+      (name == "Power"
+        && args.len() == 2
+        && matches!(&args[1], Expr::Integer(n) if *n < 0)
+        && is_sum(&args[0]))
+        || args.iter().any(has_sum_denominator)
+    }
+    Expr::UnaryOp { operand, .. } => has_sum_denominator(operand),
+    _ => false,
+  }
+}
+
+/// Whether a symbolic entry is a sum of rational terms that cancels to zero
+/// (`a/(1 - a) + a/(a - 1)`). Such an entry, taken as a pivot, would make a
+/// singular system look regular and lose its parametric solutions.
+fn is_symbolic_rational_zero(e: &Expr) -> bool {
+  if matches!(
+    e,
+    Expr::Integer(_)
+      | Expr::BigInteger(_)
+      | Expr::Real(_)
+      | Expr::BigFloat(..)
+      | Expr::Identifier(_)
+      | Expr::String(_)
+  ) || crate::syntax::contains_inexact(e)
+    || crate::functions::predicate_ast::is_numeric_q(e)
+  {
+    return false;
+  }
+  let together = crate::helpers::call1("Together", e.clone());
+  crate::evaluator::evaluate_expr_to_expr(&together)
+    .is_ok_and(|t| is_expr_zero(&t))
 }
 
 /// Evaluate and simplify an expression (double pass for compound simplifications).
@@ -23228,6 +23301,28 @@ pub(super) fn solve_linear_symbolic(
   let nrows = matrix.len();
   let ncols = n + 1;
 
+  // Coefficients that are rational functions of the parameters are kept
+  // brought together during the elimination: the fraction-free updates
+  // otherwise spread each entry term by term over ever larger products of
+  // denominators, and the entries swell beyond what can be simplified.
+  let rational_mode = matrix.iter().flatten().any(has_sum_denominator);
+  let together_entry = |e: Expr| -> Expr {
+    let together = crate::helpers::call1("Together", e.clone());
+    crate::evaluator::evaluate_expr_to_expr(&together).unwrap_or(e)
+  };
+  let normalize = |e: Expr| -> Expr {
+    if rational_mode && has_sum_denominator(&e) {
+      together_entry(e)
+    } else {
+      e
+    }
+  };
+  if rational_mode {
+    for entry in matrix.iter_mut().flatten() {
+      *entry = normalize(std::mem::replace(entry, Expr::Integer(0)));
+    }
+  }
+
   // Gauss-Jordan elimination, trying the columns in `col_order` for pivots.
   // Each pivot row is normalized so its pivot is 1; returns the reduced
   // matrix and its `(row, col)` pivots.
@@ -23255,6 +23350,20 @@ pub(super) fn solve_linear_symbolic(
         matrix.swap(pivot_row, swap_row);
       }
       pivot_cols.push((pivot_row, col));
+      // Over the field of rational functions the pivot row is scaled to a
+      // unit pivot first, so every update below is `row - factor * pivot
+      // row` brought together: the fraction-free update multiplies each row
+      // by the pivot instead, and without dividing that back out the
+      // degrees of the entries double with every pivot.
+      if rational_mode && !matches!(matrix[pivot_row][col], Expr::Integer(1)) {
+        let pivot = matrix[pivot_row][col].clone();
+        for j in 0..ncols {
+          if !is_expr_zero(&matrix[pivot_row][j]) {
+            matrix[pivot_row][j] =
+              together_entry(div2(matrix[pivot_row][j].clone(), pivot.clone()));
+          }
+        }
+      }
       let pivot = matrix[pivot_row][col].clone();
 
       for row in 0..nrows {
@@ -23266,9 +23375,20 @@ pub(super) fn solve_linear_symbolic(
           matrix[row][col] = Expr::Integer(0);
         } else {
           for j in 0..ncols {
-            let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
-            let t2 = eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
-            matrix[row][j] = eval_entry(minus2(t1, t2));
+            matrix[row][j] = if rational_mode {
+              // Brought together directly: the term-by-term evaluation of
+              // the products is the expensive part here and is undone by
+              // `Together` anyway.
+              together_entry(minus2(
+                matrix[row][j].clone(),
+                multiply_exprs(&factor, &matrix[pivot_row][j]),
+              ))
+            } else {
+              let t1 = eval_entry(multiply_exprs(&pivot, &matrix[row][j]));
+              let t2 =
+                eval_entry(multiply_exprs(&factor, &matrix[pivot_row][j]));
+              eval_entry(minus2(t1, t2))
+            };
           }
         }
       }
@@ -23280,7 +23400,8 @@ pub(super) fn solve_linear_symbolic(
         for j in 0..ncols {
           let entry = matrix[row][j].clone();
           if !is_expr_zero(&entry) {
-            matrix[row][j] = eval_entry(solve_divide(&entry, &pivot));
+            matrix[row][j] =
+              normalize(eval_entry(solve_divide(&entry, &pivot)));
           }
         }
       }

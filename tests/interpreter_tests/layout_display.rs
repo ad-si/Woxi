@@ -1812,6 +1812,60 @@ fn text_sets_layouts_in_proportional_face() {
 }
 
 #[test]
+fn dynamic_text_item_keeps_proportional_face() {
+  // A held `Dynamic[…]` whose current value is a `Text[…]` item (the
+  // status line of a quiz: `Dynamic[If[ok, Text[…], Text[…]]]`) is set in
+  // the proportional text face like a bare `Text[…]`, in a `Column` and a
+  // `Row` alike.
+  for layout in ["Column", "Row"] {
+    clear_state();
+    let svg = interpret(&format!(
+      "a = 1; b = 2; ExportString[{layout}[{{Dynamic[If[a == b, \
+       Text[Style[\"same\"]], Text[Style[\"different\"]]]], \
+       Graphics[Circle[]]}}], \"SVG\"]"
+    ))
+    .unwrap();
+    assert!(svg.contains(">different<"), "{layout}: {svg}");
+    let families = text_families(&svg);
+    assert!(
+      !families.is_empty()
+        && families
+          .iter()
+          .all(|f| *f == "Atkinson Hyperlegible Next, sans-serif"),
+      "{layout}: {families:?}"
+    );
+  }
+  // A notebook-style host (Woxi Studio) draws the layout result itself.
+  for layout in ["Column", "Row"] {
+    clear_state();
+    let res = woxi::interpret_with_stdout(&format!(
+      "a = 1; b = 2; {layout}[{{Dynamic[If[a == b, Text[Style[\"same\"]], \
+       Text[Style[\"different\"]]]], Graphics[Circle[]]}}]"
+    ))
+    .unwrap();
+    let svg = res.graphics.expect("layout drawn as a picture");
+    assert!(svg.contains(">different<"), "{layout}: {svg}");
+    let families = text_families(&svg);
+    assert!(
+      !families.is_empty() && families.iter().all(|f| f.contains("sans-serif")),
+      "{layout}: {families:?}"
+    );
+  }
+  // A `Dynamic` showing a bare string keeps the monospace output face.
+  clear_state();
+  let svg = interpret(
+    "a = 1; ExportString[Column[{Dynamic[If[a == 1, \"yes\", \"no\"]], \
+     Graphics[Circle[]]}], \"SVG\"]",
+  )
+  .unwrap();
+  let families = text_families(&svg);
+  assert!(
+    !families.is_empty() && families.iter().all(|f| f.contains("Mono")),
+    "{families:?}"
+  );
+}
+
+#[test]
 fn text_row_parts_sit_at_proportional_widths() {
   // The parts of a `Row` set in the default proportional face are spaced
   // by that face's glyph advances, not the monospace grid, so a short

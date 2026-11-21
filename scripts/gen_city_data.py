@@ -2,11 +2,13 @@
 """Build resources/cities.tsv.gz, the world-cities table behind CityData.
 
 Source: GeoNames (https://www.geonames.org), licensed CC BY 4.0
-(https://creativecommons.org/licenses/by/4.0/). Files: cities15000.zip,
+(https://creativecommons.org/licenses/by/4.0/). Files: cities500.zip,
 admin1CodesASCII.txt and countryInfo.txt from
 https://download.geonames.org/export/dump/.
 
-Keeps the cities with at least MIN_POPULATION people. Names are written the
+Keeps the cities with at least MIN_POPULATION people, and in the countries
+of COUNTRY_MIN_POPULATION (whose towns the Wolfram Language knows down to
+small places) the cities with at least that many people. Names are written the
 way the Wolfram Language spells city entities: the ASCII name with its
 spaces and punctuation removed (`{"NewYork", "NewYork", "UnitedStates"}`),
 the country under its WL entity name (scripts/country_data_entities.tsv).
@@ -30,6 +32,7 @@ OUT = ROOT / "resources" / "cities.tsv.gz"
 COUNTRIES = ROOT / "scripts" / "country_data_entities.tsv"
 BASE = "https://download.geonames.org/export/dump/"
 MIN_POPULATION = 100_000
+COUNTRY_MIN_POPULATION = {"UnitedStates": 500}
 
 
 def fetch(name):
@@ -58,13 +61,14 @@ def main():
     for line in fetch("admin1CodesASCII.txt").decode().splitlines():
         f = line.split("\t")
         admin1[f[0]] = f[2]
-    raw = zipfile.ZipFile(io.BytesIO(fetch("cities15000.zip")))
+    raw = zipfile.ZipFile(io.BytesIO(fetch("cities500.zip")))
     rows = []
-    for line in raw.read("cities15000.txt").decode().splitlines():
+    for line in raw.read("cities500.txt").decode().splitlines():
         f = line.split("\t")
         population = int(f[14] or 0)
         country = iso2_to_entity.get(f[8])
-        if population < MIN_POPULATION or not country:
+        if not country or population < COUNTRY_MIN_POPULATION.get(
+                country, MIN_POPULATION):
             continue
         region = camel(admin1.get(f"{f[8]}.{f[10]}", ""))
         rows.append((country, -population, "\t".join([
@@ -82,8 +86,9 @@ def main():
         seen.add(key)
         unique.append(row)
     rows = unique
-    body = ("# Source: GeoNames cities15000 (CC BY 4.0), cities with at least "
-            f"{MIN_POPULATION} people. "
+    limits = ", ".join(f"{c} {n}" for c, n in COUNTRY_MIN_POPULATION.items())
+    body = ("# Source: GeoNames cities500 (CC BY 4.0), cities with at least "
+            f"{MIN_POPULATION} people (at least {limits}). "
             "Regenerate with scripts/gen_city_data.py\n"
             + "\n".join(r for *_, r in rows) + "\n")
     with open(OUT, "wb") as out, gzip.GzipFile(
