@@ -2690,14 +2690,16 @@ mod tests {
 
     #[test]
     fn fraction_cell_takes_the_styled_grid_size() {
-      // A quotient cell typeset as a built-up fraction is set at the styled
-      // grid's size, like the text cells beside it, not at the default 14.
+      // A quotient cell typeset as a built-up fraction is set from the
+      // styled grid's size, like the text cells beside it, not from the
+      // default 14: at 0.75 of it, as a grid item sits one script level
+      // deep.
       for code in [
         "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
         "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
       ] {
         let svg = svg_of(code);
-        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(svg.contains("font-size=\"6.8\""), "{code}: {svg}");
         assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
       }
     }
