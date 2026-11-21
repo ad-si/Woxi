@@ -829,6 +829,22 @@ pub fn dispatch_calculus_functions(
     "NDSolve" if args.len() >= 3 => {
       return Some(crate::functions::ode_ast::ndsolve_ast(args));
     }
+    "NDSolve`ProcessEquations" => {
+      return Some(crate::functions::ode_ast::ndsolve_process_equations_ast(
+        args,
+      ));
+    }
+    "NDSolve`Reinitialize" => {
+      return Some(crate::functions::ode_ast::ndsolve_reinitialize_ast(args));
+    }
+    "NDSolve`Iterate" => {
+      return Some(crate::functions::ode_ast::ndsolve_iterate_ast(args));
+    }
+    "NDSolve`ProcessSolutions" => {
+      return Some(crate::functions::ode_ast::ndsolve_process_solutions_ast(
+        args,
+      ));
+    }
     "ParametricNDSolve" | "ParametricNDSolveValue" if args.len() >= 4 => {
       if let Some(result) = parametric_ndsolve(name, args) {
         return Some(Ok(result));
@@ -1693,6 +1709,9 @@ fn inverse_laplace_transform(
   if let Some(result) = inverse_laplace_time_shift(&normalized, s, t)? {
     return Ok(result);
   }
+  if let Some(result) = inverse_laplace_shifted_sum(&normalized, s, t)? {
+    return Ok(result);
+  }
   if let Some(result) = inverse_laplace_inner(&normalized, s, t) {
     crate::evaluator::evaluate_expr_to_expr(&result)
   } else if let Some(result) = inverse_laplace_inexact(&normalized, s, t)? {
@@ -1742,6 +1761,59 @@ fn inverse_laplace_inexact(
     seen.push(format!("{exact:?}"));
   }
   Ok(None)
+}
+
+/// Linearity over a sum with time-shifted terms, which the term-wise rules
+/// of `inverse_laplace_inner` don't cover:
+/// `1/s - E^(-2 s)/s` → `1 - HeavisideTheta[-2 + t]`. Each shifted term is
+/// transformed on its own (by the second shift theorem), the unshifted
+/// terms together, so a rational part keeps its combined closed form.
+fn inverse_laplace_shifted_sum(
+  expr: &Expr,
+  s: &str,
+  t: &str,
+) -> Result<Option<Expr>, InterpreterError> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return Ok(None);
+  };
+  if name != "Plus" {
+    return Ok(None);
+  }
+  let is_shift = |f: &Expr| match as_func_args(f) {
+    Some(("Power", pa)) if pa.len() == 2 => {
+      matches!(pa[0], Expr::Constant(n) | Expr::Identifier(n) if n == "E")
+        && depends_on(pa[1], s)
+    }
+    _ => false,
+  };
+  let has_shift = |term: &Expr| match as_func_args(term) {
+    Some(("Times", fa)) => fa.iter().any(|f| is_shift(f)),
+    _ => is_shift(term),
+  };
+  let (shifted, unshifted): (Vec<Expr>, Vec<Expr>) =
+    args.iter().cloned().partition(|term| has_shift(term));
+  if shifted.is_empty() {
+    return Ok(None);
+  }
+  let s_id = id_expr(s);
+  let t_id = id_expr(t);
+  let is_unevaluated = |e: &Expr| matches!(e, Expr::FunctionCall { name, .. } if name == "InverseLaplaceTransform");
+  let mut parts = Vec::with_capacity(shifted.len() + 1);
+  if !unshifted.is_empty() {
+    let part = inverse_laplace_transform(&plus(unshifted), &s_id, &t_id)?;
+    if is_unevaluated(&part) {
+      return Ok(None);
+    }
+    parts.push(part);
+  }
+  for term in &shifted {
+    let part = inverse_laplace_transform(term, &s_id, &t_id)?;
+    if is_unevaluated(&part) {
+      return Ok(None);
+    }
+    parts.push(part);
+  }
+  crate::evaluator::evaluate_expr_to_expr(&plus(parts)).map(Some)
 }
 
 /// The second shift theorem: `E^(-a s) G(s)` with `a > 0` transforms to
@@ -2291,7 +2363,50 @@ fn inverse_laplace_inner(expr: &Expr, s: &str, t: &str) -> Option<Expr> {
     return Some(result);
   }
 
+  // A rational function with symbolic coefficients (`1/(s (s^2 + a^2))`,
+  // `1/(s (s^2 + Pi^2))`): split it with Apart and invert the terms, each
+  // of which matches one of the single-pole shapes above.
+  if let Some(result) = inverse_laplace_symbolic_apart(expr, s, t) {
+    return Some(result);
+  }
+
   None
+}
+
+/// Inverse transform of a rational function in `s` with symbolic
+/// coefficients, term by term off its `Apart` decomposition. `None` when
+/// `Apart` leaves the expression in one piece or a term has no rule.
+fn inverse_laplace_symbolic_apart(
+  expr: &Expr,
+  s: &str,
+  t: &str,
+) -> Option<Expr> {
+  let s_id = id_expr(s);
+  let combined =
+    crate::functions::together_ast(std::slice::from_ref(expr)).ok()?;
+  let num =
+    crate::functions::numerator_ast(std::slice::from_ref(&combined)).ok()?;
+  let den = crate::functions::denominator_ast(&[combined]).ok()?;
+  if !crate::functions::polynomial_ast::is_polynomial(&num, s)
+    || !crate::functions::polynomial_ast::is_polynomial(&den, s)
+    || !depends_on(&den, s)
+  {
+    return None;
+  }
+  let decomposed =
+    crate::functions::polynomial_ast::apart_ast(&[expr.clone(), s_id]).ok()?;
+  let decomposed = crate::evaluator::evaluate_expr_to_expr(&decomposed).ok()?;
+  let Expr::FunctionCall { name, args } = &decomposed else {
+    return None;
+  };
+  if name != "Plus" {
+    return None;
+  }
+  let mut inverted = Vec::with_capacity(args.len());
+  for term in args {
+    inverted.push(inverse_laplace_inner(term, s, t)?);
+  }
+  Some(plus(inverted))
 }
 
 /// Exact inversion of a proper rational function `P(s)/Q(s)` whose

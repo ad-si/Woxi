@@ -106,6 +106,48 @@ mod slice_contour_plot3d {
     );
   }
 
+  // The discrete color bar shows the plot's own band colors, one per band,
+  // between the contour levels.
+  #[test]
+  fn plot_legend_lists_band_colors() {
+    assert_eq!(
+      interpret(
+        "g = SliceContourPlot3D[x, z == 0.5, {x, 0, 1}, {y, 0, 1}, \
+         {z, 0, 1}, Contours -> {0.25, 0.5, 0.75}, ColorFunction -> Hue, \
+         PlotPoints -> 3, PlotLegends -> Automatic]; g[[2]]"
+      )
+      .unwrap(),
+      "Placed[BarLegend[{{Hue[1/5], Hue[2/5], Hue[3/5], Hue[4/5]}, \
+       {0., 1.}}, {0.25, 0.5, 0.75}], After]"
+    );
+    let svg = interpret("ExportString[g, \"SVG\"]").unwrap();
+    // Hue[1/5] … Hue[4/5], once each as a legend band.
+    for fill in [
+      "rgb(204,255,0)",
+      "rgb(0,255,102)",
+      "rgb(0,102,255)",
+      "rgb(204,0,255)",
+    ] {
+      assert!(svg.contains(&format!("fill=\"{fill}\"")), "{fill}");
+    }
+  }
+
+  // A continuous bar of a function color takes rescaled values, like the
+  // plot does.
+  #[test]
+  fn density_plot_legend_rescales_color_function() {
+    assert_eq!(
+      interpret(
+        "SliceDensityPlot3D[10 x, z == 0.5, {x, 0, 1}, {y, 0, 1}, \
+         {z, 0, 1}, ColorFunction -> Hue, PlotPoints -> 3, \
+         PlotLegends -> Automatic][[2]]"
+      )
+      .unwrap(),
+      "Placed[BarLegend[{Hue, {0., 10.}}, ColorFunctionScaling -> True], \
+       After]"
+    );
+  }
+
   // `Contours -> n` splits the slice into n + 1 bands, band k of them
   // colored by the color function at k/(n + 2).
   #[test]
