@@ -63308,6 +63308,52 @@ mod list_plot_wl15_ranges {
     assert_eq!(svg.matches("stroke=\"#FF0000\"").count(), 3 + 5, "{svg}");
   }
 
+  /// Under `ImageSize -> {w, h}` a picture of another shape is letterboxed;
+  /// its grid lines run across the plot range only, not into the empty room
+  /// beside it. Regression: horizontal lines spanned the whole image width
+  /// (and vertical ones its whole height in a tall box).
+  #[test]
+  fn grid_lines_stay_within_a_letterboxed_plot_range() {
+    let line_coords = |svg: &str| -> Vec<(f64, f64, f64, f64)> {
+      svg
+        .lines()
+        .filter(|l| l.starts_with("<line "))
+        .map(|l| {
+          let c = |name: &str| -> f64 {
+            l.split(&format!(" {name}=\""))
+              .nth(1)
+              .and_then(|t| t.split('"').next())
+              .and_then(|v| v.parse().ok())
+              .unwrap()
+          };
+          (c("x1"), c("y1"), c("x2"), c("y2"))
+        })
+        .collect()
+    };
+    // Wide box: the square range sits centered, 50 px of room either side.
+    let wide = export_svg(
+      "Graphics[Disk[], PlotRange -> 2, ImageSize -> {300, 200}, \
+       GridLines -> {{-1, 1}, {-1, 1}}]",
+    );
+    let lines = line_coords(&wide);
+    assert_eq!(lines.len(), 4, "{wide}");
+    for (x1, y1, x2, y2) in lines {
+      assert!(x1 >= 49.0 && x2 <= 250.0, "{wide}");
+      assert!(y1 >= 0.0 && y2 <= 200.0, "{wide}");
+    }
+    // Tall box: the room is above and below the range instead.
+    let tall = export_svg(
+      "Graphics[Disk[], PlotRange -> 2, ImageSize -> {200, 300}, \
+       GridLines -> {{-1, 1}, {-1, 1}}]",
+    );
+    let lines = line_coords(&tall);
+    assert_eq!(lines.len(), 4, "{tall}");
+    for (x1, y1, x2, y2) in lines {
+      assert!(y1 >= 49.0 && y2 <= 250.0, "{tall}");
+      assert!(x1 >= 0.0 && x2 <= 200.0, "{tall}");
+    }
+  }
+
   #[test]
   fn directive_entries_of_plot_style_are_per_dataset() {
     // A lone dataset takes the first Directive; bare directives combine.
