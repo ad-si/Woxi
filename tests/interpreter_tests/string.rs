@@ -9209,6 +9209,21 @@ mod longest_ordered_sequence_tests {
 mod string_count_patterns {
   use woxi::interpret;
 
+  /// A literal pattern with few matches in a long text is found by jumping
+  /// from match to match, not by restarting the search at every character
+  /// (which took tens of seconds on a megabyte of SVG).
+  #[test]
+  fn sparse_matches_in_long_text_are_fast() {
+    let start = std::time::Instant::now();
+    let result = interpret(
+      "s = StringJoin[Table[\"<line x=1/>\", 100000]]; \
+       StringCount[s <> \"<text>\" <> s <> \"<text>\", \"<text\"]",
+    )
+    .unwrap();
+    assert_eq!(result, "2");
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+  }
+
   // The empty pattern matches at every character boundary
   // (differential fuzzer, seed 8863040114037283151;
   // wolframscript-verified).

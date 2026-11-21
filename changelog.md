@@ -2,6 +2,10 @@
 
 # Unreleased
 
+- A `Pane[…, {w, h}]` of numeric size around a `Text`-wrapped table (or
+    inside `Text`) is drawn as its full `w`×`h` box with the table aligned
+    inside, so a Manipulate body sized this way no longer shrinks to the
+    table or changes size as its controls move.
 - A `TransformationFunction` applied to a geometric region (`Cylinder`,
     `Sphere`, `Ball`, `Disk`, `Circle`, `Cone`, `Line`, `Polygon`, …) maps the
     region's points and keeps the primitive, so a rotated `Cylinder` is drawn.
@@ -12,6 +16,8 @@
     `SkewNormalDistribution[μ, σ, α]`.
 - Plot labels keep runs of spaces (`Row[{x, ",", "    ", y}]` as a
     `FrameLabel`) instead of collapsing them to one blank in the SVG.
+- `Graphics3D` `Text` labels and plot labels keep the blanks padding their
+    text (`Text["  axis", pos]`) instead of SVG dropping them.
     3D plot labels keep them too.
 - `ParametricPlot3D` honors the first of a repeated option, as Wolfram does,
     so `PlotStyle -> {Tube[r]}, …, PlotStyle -> s` draws the curve as a tube.

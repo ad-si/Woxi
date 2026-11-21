@@ -13788,8 +13788,21 @@ fn render_frame(
           svg.push_str(&picture);
           continue;
         }
-        svg.push_str(&format!(
-          "<text x=\"{x:.2}\" y=\"{anchor_y:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"middle\">{label}</text>\n",
+        // Below the bottom edge the block hangs from its first line;
+        // above the top edge it stands on its last.
+        let lines = label.split('\n').count() as f64;
+        let first_baseline = if i == 0 {
+          anchor_y
+        } else {
+          anchor_y - (lines - 1.0) * line_pitch(tick_font)
+        };
+        svg.push_str(&frame_tick_label(
+          x,
+          first_baseline,
+          "middle",
+          label,
+          tick_label_fill,
+          tick_font,
         ));
       }
     }
@@ -13855,13 +13868,50 @@ fn render_frame(
           svg.push_str(&picture);
           continue;
         }
-        svg.push_str(&format!(
-          "<text x=\"{anchor_x:.2}\" y=\"{:.2}\" fill=\"{tick_label_fill}\" font-size=\"{tick_font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">{label}</text>\n",
-          y + center_to_baseline(tick_font),
+        // A multi-line label is centered on its tick as a block.
+        let lines = label.split('\n').count() as f64;
+        svg.push_str(&frame_tick_label(
+          anchor_x,
+          y + center_to_baseline(tick_font)
+            - (lines - 1.0) * line_pitch(tick_font) / 2.0,
+          anchor,
+          label,
+          tick_label_fill,
+          tick_font,
         ));
       }
     }
   }
+}
+
+/// One frame tick label whose first line has its baseline at `y`. A label
+/// with newlines (`"Mean\noutcome"`) is stacked one line per `<tspan>`,
+/// the way Wolfram draws it, instead of running together on one line.
+fn frame_tick_label(
+  x: f64,
+  y: f64,
+  anchor: &str,
+  label: &str,
+  fill: &str,
+  font: f64,
+) -> String {
+  let open = format!(
+    "<text x=\"{x:.2}\" y=\"{y:.2}\" fill=\"{fill}\" font-size=\"{font}\" font-family=\"sans-serif\" text-anchor=\"{anchor}\">"
+  );
+  if !label.contains('\n') {
+    return format!("{open}{label}</text>\n");
+  }
+  let pitch = line_pitch(font);
+  let mut out = open;
+  for (i, line) in label.split('\n').enumerate() {
+    let dy = if i == 0 { 0.0 } else { pitch };
+    out.push_str(&format!(
+      "<tspan x=\"{x:.2}\" dy=\"{dy:.2}\">{}</tspan>",
+      tspan_line(line)
+    ));
+  }
+  out.push_str("</text>\n");
+  out
 }
 
 /// Wolfram's grid lines: mid gray, 0.2 points wide, under whatever
@@ -18621,6 +18671,44 @@ pub(crate) fn in_text_face(content: &Expr) -> Expr {
     }
     _ => call("Style", vec![content.clone(), family]),
   }
+}
+
+/// `Style[…[Text[expr]]…]` or `TraditionalForm[Text[expr]]` (any chain of
+/// `Style`, `TraditionalForm` and `StandardForm` wrappers around a one-argument
+/// `Text`) rewritten as `Text[wrappers[expr]]`, so the text face covers the
+/// styled content. `None` when `expr` is no such chain.
+pub(crate) fn hoist_text_display(expr: &Expr) -> Option<Expr> {
+  let Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  let is_wrapper = (name == "Style" && !args.is_empty())
+    || ((name == "TraditionalForm" || name == "StandardForm")
+      && args.len() == 1);
+  if !is_wrapper {
+    return None;
+  }
+  let inner = match &args[0] {
+    Expr::FunctionCall {
+      name: text,
+      args: text_args,
+    } if text == "Text" && text_args.len() == 1 => text_args[0].clone(),
+    other => match &hoist_text_display(other)? {
+      Expr::FunctionCall {
+        args: text_args, ..
+      } => text_args[0].clone(),
+      _ => return None,
+    },
+  };
+  let mut new_args = args.clone();
+  new_args[0] = inner;
+  Some(Expr::FunctionCall {
+    name: "Text".to_string(),
+    args: vec![Expr::FunctionCall {
+      name: name.clone(),
+      args: new_args,
+    }]
+    .into(),
+  })
 }
 
 /// Whether a layout item is a plain-text `Text[expr]` display, possibly
@@ -23778,6 +23866,14 @@ pub fn boxes_to_svg(expr: &Expr) -> String {
           );
         }
         let over_svg = boxes_to_svg(&args[1]);
+        // An accent (`^`, `~`, `.`, `→`) over a plain-text base is drawn as
+        // its combining mark on the base (`T̂`), not as a superscript beside
+        // it; markup or entities in the base keep the superscript fallback.
+        if !base_svg.contains(['<', '&'])
+          && combining_accent(over_svg.trim(), true).is_some()
+        {
+          return accent_text(&base_svg, &over_svg, true);
+        }
         format!(
           "{base_svg}<tspan baseline-shift=\"super\" font-size=\"70%\">{over_svg}</tspan>"
         )
@@ -27482,6 +27578,26 @@ pub fn show_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   Ok(call("Legended", vec![shown, legend]))
 }
 
+/// A plot's legend entries, each paired with the index of the series it
+/// labels: the entries a previous `Show` merged, else the explicit labels
+/// of its `PlotLegends` option.
+fn plot_source_legends(ps: &crate::syntax::PlotSource) -> Vec<(usize, String)> {
+  if !ps.legends.is_empty() {
+    return ps.legends.clone();
+  }
+  ps.options
+    .iter()
+    .find_map(|o| match option_name_value(o) {
+      Some(("PlotLegends", value)) => {
+        let (labels, _, _, _) =
+          crate::functions::plot::parse_plot_legends(&value);
+        Some(labels.into_iter().enumerate().collect())
+      }
+      _ => None,
+    })
+    .unwrap_or_default()
+}
+
 /// `Show` of symbolic `Graphics[…]` (or `Graphics3D[…]`) expressions, the
 /// way Wolfram builds the result: `Show[g]` of an option-free `g` is `g`;
 /// otherwise the
@@ -28047,6 +28163,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // A plot without any curve (every function `Null`) has no data to
     // contribute to the combined ranges — unless nothing else does either.
     let any_curves = plot_sources.iter().any(|ps| !ps.series.is_empty());
+    // Every plot keeps its legend entries, keyed by the merged index of
+    // the series each one labels: `Show` of two plots with `PlotLegends`
+    // shows both legends, as Wolfram does for the `Legended` plots.
+    let mut legends: Vec<(usize, String)> = Vec::new();
+    let mut legend_sources = 0;
     for ps in &plot_sources {
       if any_curves && ps.series.is_empty() {
         continue;
@@ -28054,6 +28175,11 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       // A curve-to-curve fill names its partner by index within its own
       // plot; in the merged list that plot's curves start further on.
       let offset = all_series.len();
+      let own_legends = plot_source_legends(ps);
+      if !own_legends.is_empty() {
+        legend_sources += 1;
+        legends.extend(own_legends.into_iter().map(|(i, l)| (offset + i, l)));
+      }
       let shift = |f: &mut crate::syntax::SeriesFilling| {
         if let crate::syntax::SeriesFilling::Series(j) = f {
           *j += offset;
@@ -28222,6 +28348,16 @@ fn show_graphics(args: &[Expr]) -> Result<Expr, InterpreterError> {
       aspect_ratio: plot_sources[0].aspect_ratio,
       settles_all_range: plot_sources[0].settles_all_range,
       data_x_range,
+      // A legend of the first plot alone stays in its options (with its
+      // styling); entries from several plots, or a later one, are listed.
+      legends: if legend_sources > 1
+        || (legend_sources == 1
+          && plot_source_legends(&plot_sources[0]).is_empty())
+      {
+        legends
+      } else {
+        Vec::new()
+      },
       // The reported range is the first plot's too (or spans them all).
       plot_range: all_range.or_else(|| {
         plot_sources
@@ -30503,10 +30639,6 @@ fn item_style_entry_directives(entry: &Expr, out: &mut Vec<Expr>) {
   }
 }
 
-/// The entry a per-position `Grid` spec list gives (1-based) position `pos`
-/// of `n`: `{s1, s2, …}` names only the first positions, while
-/// `{s1, …, {r1, r2, …}, e1, …}` cycles the inner list over the positions
-/// between the explicit leading and trailing entries.
 /// Split an `ItemSize` value into its width and height specs. A list of
 /// two or more entries is read as `{w, h, …}` (entries past the height
 /// are ignored, as Wolfram does), so `{6, 1, 1}` fixes every column at 6
@@ -30549,19 +30681,41 @@ fn number_form_display_line(name: &str, formatted: &str) -> String {
   }
 }
 
-fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {
-  let Some(rep_at) = items.iter().position(|e| matches!(e, Expr::List(_)))
+/// Split a per-position `Grid` spec `{s1, …, {c1, c2, …}, e1, …}` into its
+/// leading entries, the cycled list and the trailing entries. The *last*
+/// nested list is the cycle; a nested list before it contributes its
+/// members as further leading entries, so `{{False}, {True, False}}` starts
+/// with `False` and cycles `{True, False}` from the second position on.
+fn split_cyclic_spec(items: &[Expr]) -> (Vec<&Expr>, &[Expr], &[Expr]) {
+  let Some(rep_at) = items.iter().rposition(|e| matches!(e, Expr::List(_)))
   else {
+    return (items.iter().collect(), &[], &[]);
+  };
+  let mut start = Vec::new();
+  for item in &items[..rep_at] {
+    match item {
+      Expr::List(members) => start.extend(members.iter()),
+      other => start.push(other),
+    }
+  }
+  let Expr::List(repeat) = &items[rep_at] else {
+    unreachable!("rposition found a list")
+  };
+  (start, repeat, &items[rep_at + 1..])
+}
+
+/// The entry a per-position `Grid` spec list gives (1-based) position `pos`
+/// of `n`: `{s1, s2, …}` names only the first positions, while
+/// `{s1, …, {r1, r2, …}, e1, …}` cycles the inner list over the positions
+/// between the explicit leading and trailing entries.
+fn grid_spec_entry_at(items: &[Expr], pos: usize, n: usize) -> Option<&Expr> {
+  if !items.iter().any(|e| matches!(e, Expr::List(_))) {
     return items.get(pos.checked_sub(1)?);
-  };
+  }
   let idx = pos.checked_sub(1)?;
-  let (start, rest) = items.split_at(rep_at);
-  let Expr::List(repeat) = &rest[0] else {
-    return None;
-  };
-  let end = &rest[1..];
+  let (start, repeat, end) = split_cyclic_spec(items);
   if idx < start.len() {
-    return start.get(idx);
+    return start.get(idx).copied();
   }
   if !end.is_empty() && idx + end.len() >= n {
     return end.get(idx + end.len() - n);
@@ -30798,12 +30952,24 @@ fn grid_style_directives(style: &GridStyle) -> Vec<Expr> {
 /// and family, just like the plain text cells beside it: the nested grid is
 /// wrapped in the same `Style` so it is drawn whole in that style (its own
 /// `BaseStyle` still takes precedence). Without this the nested grid's text
-/// fell back to the default 14pt black.
+/// fell back to the default 14pt black. A `Row` or `Column` cell drawn as
+/// a picture of its own (one holding a nested grid, say) inherits the style
+/// the same way; a text-only one is set by the grid's own text pass, which
+/// already applies the style.
 fn nested_grid_cell_in_grid_style(cell: &Expr, style: &GridStyle) -> Expr {
-  if !matches!(cell, Expr::FunctionCall { name, args }
-    if (name == "Grid" || name == "TextGrid")
-      && matches!(args.first(), Some(Expr::List(_))))
-  {
+  let nested = match cell {
+    Expr::FunctionCall { name, args }
+      if matches!(args.first(), Some(Expr::List(_))) =>
+    {
+      match name.as_str() {
+        "Grid" | "TextGrid" => true,
+        "Row" | "Column" => grid_cell_graphic(cell).is_some(),
+        _ => false,
+      }
+    }
+    _ => false,
+  };
+  if !nested {
     return cell.clone();
   }
   let mut directives = grid_style_directives(style);
@@ -31374,18 +31540,12 @@ fn grid_svg_styled_internal_reporting(
                   };
                   if has_nested {
                     *has_rep_flag = true;
-                    let mut before_repeat = true;
-                    for p in positions {
-                      if let Expr::List(rep_items) = p {
-                        before_repeat = false;
-                        *repeating =
-                          rep_items.iter().map(parse_divider_entry).collect();
-                      } else if before_repeat {
-                        explicit_start.push(parse_divider_entry(p));
-                      } else {
-                        explicit_end.push(parse_divider_entry(p));
-                      }
-                    }
+                    let (start, repeat, end) = split_cyclic_spec(positions);
+                    explicit_start
+                      .extend(start.into_iter().map(parse_divider_entry));
+                    *repeating =
+                      repeat.iter().map(parse_divider_entry).collect();
+                    explicit_end.extend(end.iter().map(parse_divider_entry));
                   } else {
                     *target_dividers =
                       positions.iter().map(parse_divider_entry).collect();
@@ -31437,18 +31597,11 @@ fn grid_svg_styled_internal_reporting(
                 row_cols.iter().any(|c| matches!(c, Expr::List(_)));
               if has_nested {
                 row_bg_has_repeating = true;
-                let mut before_repeat = true;
-                for c in row_cols {
-                  if let Expr::List(repeat_items) = c {
-                    before_repeat = false;
-                    row_bg_repeating =
-                      repeat_items.iter().map(parse_bg_color).collect();
-                  } else if before_repeat {
-                    row_bg_explicit_start.push(parse_bg_color(c));
-                  } else {
-                    row_bg_explicit_end.push(parse_bg_color(c));
-                  }
-                }
+                let (start, repeat, end) = split_cyclic_spec(row_cols);
+                row_bg_explicit_start
+                  .extend(start.into_iter().map(parse_bg_color));
+                row_bg_repeating = repeat.iter().map(parse_bg_color).collect();
+                row_bg_explicit_end.extend(end.iter().map(parse_bg_color));
               } else {
                 (row_backgrounds, row_bg_indexed) =
                   parse_bg_spec_list(row_cols);
@@ -37922,13 +38075,24 @@ fn nested_layout_svg(expr: &Expr) -> Option<String> {
 /// Render `Column[{expr1, expr2, ...}]` as an SVG with items stacked vertically.
 /// Optionally accepts an alignment argument (Left, Center, Right); defaults to Left.
 pub fn column_to_svg(args: &[Expr]) -> Option<String> {
+  column_to_svg_with_text_items(args, None)
+}
+
+/// [`column_to_svg`] for a column whose items were already drawn as
+/// pictures: `text_items[i]` tells whether item `i` was text (a string, or
+/// a `Row` of them) before it was drawn, so an explicit spacing is still
+/// measured between its lines rather than its padded box.
+pub fn column_to_svg_with_text_items(
+  args: &[Expr],
+  text_items: Option<&[bool]>,
+) -> Option<String> {
   if let Some(styled) = base_style_pushed_args("Column", args) {
-    return column_to_svg(&styled);
+    return column_to_svg_with_text_items(&styled, text_items);
   }
   if let Some(grid_args) = column_as_grid_args(args) {
     return grid_svg_with_gaps(&grid_args, &[]).ok();
   }
-  let svg = column_layout_svg(args)?;
+  let svg = column_layout_svg(args, text_items)?;
   Some(decorate_layout_svg(svg, args.get(1..).unwrap_or(&[])))
 }
 
@@ -38139,7 +38303,10 @@ fn fixed_size_pane_svg(item: &Expr) -> Option<String> {
   svg.starts_with("<svg").then_some(svg)
 }
 
-fn column_layout_svg(args: &[Expr]) -> Option<String> {
+fn column_layout_svg(
+  args: &[Expr],
+  text_items: Option<&[bool]>,
+) -> Option<String> {
   if args.is_empty() {
     return None;
   }
@@ -38193,17 +38360,12 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       .filter(|(k, _)| *k == "Spacings")
       .and_then(|(_, v)| expr_to_f64(v))
   });
-  let spacing_ems: f64 = if let Some(s) = spacing_option {
-    s
-  } else if args.len() >= 3 {
-    match &args[2] {
-      Expr::Integer(n) => *n as f64,
-      Expr::Real(f) => *f,
-      _ => 0.0,
-    }
-  } else {
-    0.0
-  };
+  let explicit_spacing: Option<f64> =
+    spacing_option.or_else(|| match args.get(2) {
+      Some(Expr::Integer(n)) => Some(*n as f64),
+      Some(Expr::Real(f)) => Some(*f),
+      _ => None,
+    });
 
   // `ItemSize -> w` or `{w, h}`: every item is `w` ems wide and at least
   // `h` lines tall, as in a one-column `Grid`.
@@ -38224,7 +38386,6 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
   let font_size: f64 = 14.0;
   let pad_x: f64 = 12.0;
   let pad_y: f64 = 8.0;
-  let gap = spacing_ems * font_size;
 
   let frame_all = args[1..].iter().filter_map(option_kv).any(|(k, v)| {
     k == "Frame" && matches!(v, Expr::Identifier(s) if s == "All")
@@ -38239,6 +38400,10 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
       svg: String,
       width: f64,
       height: f64,
+      /// A picture (graphic, image or sized pane) fills its box; a laid-out
+      /// nested row or grid of text carries the same blank margin around
+      /// its lines as a text item.
+      picture: bool,
     },
     /// The item, and whether it is a plain `Text[…]` display (set in the
     /// proportional text face rather than the column's monospace default).
@@ -38256,6 +38421,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
           svg,
           width: w,
           height: h,
+          picture: true,
         };
       }
       let resolved = resolve_display_item(item);
@@ -38266,6 +38432,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             svg: svg.clone(),
             width: w,
             height: h,
+            picture: true,
           }
         }
         // A raster image is a picture, drawn at its own size like any other
@@ -38278,6 +38445,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
             svg,
             width: w,
             height: h,
+            picture: true,
           }
         }
         _ => match nested_layout_svg(&resolved)
@@ -38290,6 +38458,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
               svg,
               width: w,
               height: h,
+              picture: false,
             }
           }
           None => Cell::Text(resolved, is_text_display_item(item)),
@@ -38376,6 +38545,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
           svg,
           width: w,
           height: h,
+          picture: true,
         }
       }
       _ => cell,
@@ -38402,9 +38572,30 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
     })
     .collect();
 
+  // The gap below each item but the last. Without an explicit spacing the
+  // items sit right against each other, each text line in its padded box.
+  // An explicit spacing of `s` (`Column[list, alignment, s]` or
+  // `Spacings -> s`) is `s` ems between the items' contents, as in
+  // Wolfram, which sets a line of text 0.93 em tall: the blank margin a
+  // text box carries beyond that is taken out of the gap, so
+  // `Column[{"a", "b"}, Left, 3]` has its lines 3.93 em apart.
+  let text_margin = pad_y + (1.0 - 0.93) * font_size;
+  let margin = |i: usize| {
+    let text = text_items
+      .and_then(|t| t.get(i).copied())
+      .unwrap_or(!matches!(cells[i], Cell::Svg { picture: true, .. }));
+    if text { text_margin } else { 0.0 }
+  };
   let n = cells.len();
+  let gaps: Vec<f64> = (1..n)
+    .map(|i| {
+      explicit_spacing.map_or(0.0, |s| {
+        s * font_size - f64::midpoint(margin(i - 1), margin(i))
+      })
+    })
+    .collect();
   let total_height: f64 =
-    row_heights.iter().sum::<f64>() + gap * (n.saturating_sub(1) as f64);
+    row_heights.iter().sum::<f64>() + gaps.iter().sum::<f64>();
   let frame_padding = if frame_all { pad_x / 2.0 } else { 0.0 };
   let total_width = col_width + 2.0 * frame_padding;
 
@@ -38502,6 +38693,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         svg: child,
         width: cw,
         height: ch,
+        ..
       } => {
         let x_off: f64 = frame_padding
           + match alignment {
@@ -38521,6 +38713,7 @@ fn column_layout_svg(args: &[Expr]) -> Option<String> {
         svg.push_str("</svg>\n");
       }
     }
+    let gap = gaps.get(i).copied().unwrap_or(0.0);
     y_cursor += h + gap;
     // `Frame -> All` rules a line between every two items, midway through
     // the gap that separates them.
