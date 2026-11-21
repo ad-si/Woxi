@@ -12329,6 +12329,74 @@ mod ndsolve {
     assert_eq!(result, "{True, True, True}");
   }
 
+  /// `DirichletCondition`s added into the equation itself (the finite
+  /// element shorthand next to `NeumannValue` terms) are conditions of
+  /// their own: the heat equation with zero ends decays as
+  /// `Exp[-Pi^2 t] Sin[Pi x]`.
+  #[test]
+  fn pde_summed_dirichlet_conditions_are_split_out() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == D[w[t, x], x, x] + \
+       DirichletCondition[w[t, x] == 0, x == 0] + \
+       DirichletCondition[w[t, x] == 0, x == 1], w[0, x] == Sin[Pi x]}, \
+       w, {t, 0, 0.1}, {x, 0, 1}]; \
+       Round[{u[0.1, 0.5], u[0.1, 0.25]}, 10^-3] == \
+       Round[Exp[-Pi^2 0.1] {1, Sin[Pi/4]}, 10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  /// A `DirichletCondition` on the start of the evolution variable is the
+  /// initial condition, and the solution takes its arguments in the order
+  /// of the unknown's own calls (`w[t, x]`), not with the `NeumannValue`
+  /// variable first.
+  #[test]
+  fn pde_dirichlet_condition_at_start_is_initial_condition() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == D[w[t, x], x, x] + \
+       NeumannValue[0, x == 0] + NeumannValue[0, x == 1] + \
+       DirichletCondition[w[t, x] == Cos[Pi x], t == 0]}, w, {t, 0, 0.1}, \
+       {x, 0, 1}]; {u[\"Domain\"], Round[u[0.1, 0.25], 10^-3] == \
+       Round[Exp[-Pi^2 0.1] Cos[Pi/4], 10^-3]}",
+    )
+    .unwrap();
+    assert_eq!(result, "{{{0., 0.1}, {0., 1.}}, True}");
+  }
+
+  /// A radial Laplacian `(1/r) D[r D[w, r], r]` on a grid through `r == 0`:
+  /// the removable singularity takes its limit `2 w_rr` there, so the
+  /// Bessel mode `BesselJ[0, j r]` decays as `Exp[-j^2 t]`.
+  #[test]
+  fn pde_radial_laplacian_through_axis() {
+    let result = interpret(
+      "j = N[BesselJZero[0, 1]]; u = NDSolveValue[{D[w[t, r], t] == \
+       1/r D[r D[w[t, r], r], r], w[0, r] == BesselJ[0, j r], \
+       w[t, -1] == 0, w[t, 1] == 0}, w, {t, 0, 0.1}, {r, -1, 1}]; \
+       Round[{u[0.1, 0], u[0.1, 0.5]}, 10^-3] == \
+       Round[Exp[-j^2 0.1] {1, BesselJ[0, j/2]}, 10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "True");
+  }
+
+  /// A piecewise diffusion coefficient reads as `D[c D[w, x], x]` (the
+  /// finite element form, `D` of a piecewise constant vanishing): the
+  /// flux stays continuous across the jump, so the steady profile between
+  /// `w == 0` and `w == 1` bends at `x == 1/2` to `w == 9/10` there for
+  /// `c` jumping from 1 to 9.
+  #[test]
+  fn pde_piecewise_coefficient_keeps_flux_continuous() {
+    let result = interpret(
+      "u = NDSolveValue[{D[w[t, x], t] == If[x <= 0.5, 1, 9] \
+       D[w[t, x], x, x], w[0, x] == x, w[t, 0] == 0, w[t, 1] == 1}, w, \
+       {t, 0, 5}, {x, 0, 1}]; Round[{u[5, 0.25], u[5, 0.5], u[5, 0.75]}, \
+       10^-3]",
+    )
+    .unwrap();
+    assert_eq!(result, "{9/20, 9/10, 19/20}");
+  }
+
   /// A counter-current pair: `p` carried from `x == 0`, `q` from `x == 1`
   /// (conditions at both ends of the first variable), so no variable is an
   /// evolution variable and the system is solved as a stationary problem.
@@ -14934,6 +15002,65 @@ mod inverse_laplace_transform {
     assert_eq!(
       interpret("InverseLaplaceTransform[Sqrt[s], s, 1.]").unwrap(),
       "InverseLaplaceTransform[Sqrt[s], s, 1.]"
+    );
+  }
+
+  // A rational function with symbolic coefficients is split with Apart and
+  // inverted term by term.
+  #[test]
+  fn symbolic_coefficients_via_apart() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + a^2)), s, t]").unwrap(),
+      "a^(-2) - Cos[a*t]/a^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s^2 + Pi^2)), s, t]").unwrap(),
+      "Pi^(-2) - Cos[Pi*t]/Pi^2"
+    );
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/(s (s + Pi)), s, t]").unwrap(),
+      "Pi^(-1) - 1/(E^(Pi*t)*Pi)"
+    );
+  }
+
+  // The second shift theorem applies to a symbolic-coefficient rational
+  // factor as well.
+  #[test]
+  fn time_shift_with_symbolic_coefficients() {
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Exp[-2 s]/(s (s^2 + a^2)), s, t] /. \
+         {a -> 3, t -> 5} // Simplify"
+      )
+      .unwrap(),
+      "(1 - Cos[9])/9"
+    );
+  }
+
+  // Linearity over a sum whose terms carry different time shifts:
+  // a finite square wave built from step functions.
+  #[test]
+  fn sum_of_time_shifted_terms() {
+    assert_eq!(
+      interpret("InverseLaplaceTransform[1/s - Exp[-2 s]/s, s, t]").unwrap(),
+      "1 - HeavisideTheta[-2 + t]"
+    );
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/s, {i, 0, 3}], s, t]"
+      )
+      .unwrap(),
+      "1 - HeavisideTheta[-3 + t] + HeavisideTheta[-2 + t] - \
+       HeavisideTheta[-1 + t]"
+    );
+    // Value check of the response to that square wave at t = 5/2.
+    assert_eq!(
+      interpret(
+        "InverseLaplaceTransform[Sum[(-1)^i Exp[-i s]/(s (s^2 + Pi^2)), \
+         {i, 0, 3}], s, t] /. t -> 5/2 // Simplify"
+      )
+      .unwrap(),
+      "Pi^(-2)"
     );
   }
 }

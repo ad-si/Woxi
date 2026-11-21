@@ -988,6 +988,34 @@ mod plus_radical_like_terms {
       "4*Sqrt[2] + 3/Sqrt[7] + Sqrt[3]*x + Sqrt[3]*y"
     );
   }
+
+  // A coefficient merged onto a radical folds into it, as in a product.
+  #[test]
+  fn merged_coefficient_folds_into_radical() {
+    assert_eq!(interpret("x/Sqrt[2] + x/Sqrt[2]").unwrap(), "Sqrt[2]*x");
+    assert_eq!(
+      interpret("y/Sqrt[3] + y/(2 Sqrt[3])").unwrap(),
+      "(Sqrt[3]*y)/2"
+    );
+    assert_eq!(interpret("x/2^(1/3) + x/2^(1/3)").unwrap(), "2^(2/3)*x");
+  }
+
+  // Folding a merged coefficient can make the term a like term of another
+  // one in the sum, which then combines too. Radicals whose exponents
+  // differ by an integer are not like terms of `Plus` (only `Expand`
+  // combines them).
+  #[test]
+  fn folded_coefficient_recombines() {
+    assert_eq!(
+      interpret("c/Sqrt[3] - Sqrt[3] c/4 - c/(4 Sqrt[3])").unwrap(),
+      "0"
+    );
+    assert_eq!(
+      interpret("Sqrt[2] + 1/Sqrt[2]").unwrap(),
+      "1/Sqrt[2] + Sqrt[2]"
+    );
+    assert_eq!(interpret("Sqrt[2] + Sqrt[3]").unwrap(), "Sqrt[2] + Sqrt[3]");
+  }
 }
 
 // A quotient over a sum against a power or product with no sum in it
@@ -7168,6 +7196,16 @@ mod qfactorial {
 
 mod plus_term_ordering {
   use super::*;
+
+  // A sum times other factors against a product of several factors orders
+  // from the last factor, as Sort does.
+  #[test]
+  fn scaled_sum_against_product() {
+    assert_eq!(interpret("(a + b)/x + c/y").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("c/y + (a + b)/x").unwrap(), "(a + b)/x + c/y");
+    assert_eq!(interpret("(a + b)*x + c*y").unwrap(), "(a + b)*x + c*y");
+    assert_eq!(interpret("(a + b)*y + c*x").unwrap(), "c*x + (a + b)*y");
+  }
 
   // Powers of one base with symbolic exponents order by the exponents, and a
   // power of a plain sum with a symbolic exponent orders after the variable

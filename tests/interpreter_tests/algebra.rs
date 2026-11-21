@@ -1735,6 +1735,53 @@ mod simplify {
     assert_eq!(interpret("Simplify[a/x + b/x]").unwrap(), "(a + b)/x");
   }
 
+  // A number built from square roots that equals a rational is reduced to
+  // it, whatever form it comes in.
+  #[test]
+  fn square_radical_numbers_reduce_to_rationals() {
+    assert_eq!(
+      interpret("Simplify[(-6 - 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "-1"
+    );
+    assert_eq!(
+      interpret("Simplify[(6 + 2 Sqrt[5])/(1 + Sqrt[5])^2]").unwrap(),
+      "1"
+    );
+    assert_eq!(
+      interpret("Simplify[1/(1 + Sqrt[2]) + 1/(1 - Sqrt[2])]").unwrap(),
+      "-2"
+    );
+    // Irrational ones keep their form.
+    assert_eq!(
+      interpret("Simplify[Sqrt[2] + Sqrt[3]]").unwrap(),
+      "Sqrt[2] + Sqrt[3]"
+    );
+  }
+
+  // A sum over a quadratic radical denominator is rationalized when that is
+  // simpler.
+  #[test]
+  fn rationalizes_sum_over_radical_denominator() {
+    assert_eq!(
+      interpret("FullSimplify[(1 + Sqrt[5])/(6 + 2 Sqrt[5])]").unwrap(),
+      "(-1 + Sqrt[5])/4"
+    );
+    assert_eq!(
+      interpret("Simplify[(2 + Sqrt[3])/(1 + Sqrt[3])]").unwrap(),
+      "(1 + Sqrt[3])/2"
+    );
+  }
+
+  // The result is evaluated (and simplified) again, so factors that cancel
+  // do and the form of the input does not matter.
+  #[test]
+  fn result_is_reevaluated() {
+    assert_eq!(
+      interpret("FullSimplify[(-2 (-1 - Sqrt[5]))/(1 + Sqrt[5])^2]").unwrap(),
+      interpret("FullSimplify[2/(1 + Sqrt[5])]").unwrap()
+    );
+  }
+
   #[test]
   fn combine_like_denominator_with_extra() {
     assert_eq!(
@@ -3318,6 +3365,36 @@ mod together_integer_denominator_form {
 mod together {
   use super::*;
 
+  // A bare integer numerator cancels against the denominator's content.
+  #[test]
+  fn integer_numerator_cancels_content() {
+    assert_eq!(
+      interpret("Together[(1/2)/(-1/2 + x^2)] === 1/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Together[(-3/2)/(-1/2 + x^2)] === -3/(-1 + 2 x^2)").unwrap(),
+      "True"
+    );
+    assert_eq!(
+      interpret("Inverse[{{1/2, x}, {x, 1}}][[2, 2]] === -1/(-1 + 2 x^2)")
+        .unwrap(),
+      "True"
+    );
+  }
+
+  // The combined fraction is an evaluated expression.
+  #[test]
+  fn result_is_evaluated() {
+    assert_eq!(
+      interpret(
+        "Together[(-1 - Sqrt[5])/(-(1 + Sqrt[5])^2)] === 1/(1 + Sqrt[5])"
+      )
+      .unwrap(),
+      "True"
+    );
+  }
+
   // Combining a sum reads `c^(-1 + n)` as `c^n/c`; a lone power keeps it
   #[test]
   fn integer_exponent_offsets_join_the_denominator() {
@@ -4123,6 +4200,53 @@ mod together {
 
 mod apart {
   use super::*;
+
+  // Nonlinear and repeated factors with symbolic coefficients are split by
+  // undetermined coefficients.
+  #[test]
+  fn apart_symbolic_nonlinear_factors() {
+    assert_eq!(
+      interpret("Apart[1/(s (s^2 + a^2)), s]").unwrap(),
+      "1/(a^2*s) - s/(a^2*(a^2 + s^2))"
+    );
+    assert_eq!(
+      interpret("Apart[1/(s (s^2 + Pi^2)), s]").unwrap(),
+      "1/(Pi^2*s) - s/(Pi^2*(Pi^2 + s^2))"
+    );
+    assert_eq!(
+      interpret("Apart[1/((x^2 + a) (x^2 + b)), x]").unwrap(),
+      "1/((-a + b)*(a + x^2)) + 1/((a - b)*(b + x^2))"
+    );
+  }
+
+  #[test]
+  fn apart_symbolic_repeated_factors() {
+    assert_eq!(
+      interpret("Apart[s/(s + a)^2, s]").unwrap(),
+      "-(a/(a + s)^2) + (a + s)^(-1)"
+    );
+    assert_eq!(
+      interpret("Apart[1/((s + a)^2 (s + b)), s]").unwrap(),
+      "1/((-a + b)*(a + s)^2) - 1/((a - b)^2*(a + s)) + 1/((a - b)^2*(b + s))"
+    );
+  }
+
+  #[test]
+  fn apart_symbolic_improper_fraction() {
+    assert_eq!(
+      interpret("Apart[s^3/(s^2 + a^2), s]").unwrap(),
+      "s - (a^2*s)/(a^2 + s^2)"
+    );
+    assert_eq!(
+      interpret("Apart[(x^2 + 1)/(x^2 + a^2), x]").unwrap(),
+      "1 + (1 - a^2)/(a^2 + x^2)"
+    );
+    // A proper fraction over one irreducible factor is already apart.
+    assert_eq!(
+      interpret("Apart[1/(x^2 + a^2), x]").unwrap(),
+      "(a^2 + x^2)^(-1)"
+    );
+  }
 
   // A polynomial has no denominator to split, but Apart multiplies it out.
   #[test]
@@ -10408,6 +10532,37 @@ mod reduce {
     assert_eq!(
       interpret("Reduce[{x + y == 1, x - y == 2}, {x, y}, Integers]").unwrap(),
       "False"
+    );
+  }
+
+  // A linear system with radical coefficients — the invariance conditions
+  // of a matrix under a 60° rotation, a dependent system — is eliminated
+  // exactly, never dividing by an unrecognized zero coefficient.
+  #[test]
+  fn linear_system_with_radical_coefficients() {
+    assert_eq!(
+      interpret(
+        "With[{m = Array[a, {3, 3}], r = {{1/2, -Sqrt[3]/2, 0}, \
+         {Sqrt[3]/2, 1/2, 0}, {0, 0, 1}}}, \
+         Reduce[m == r.m.Transpose[r], Flatten[m]]]"
+      )
+      .unwrap(),
+      "a[1, 3] == 0 && a[2, 1] == -a[1, 2] && a[2, 2] == a[1, 1] && \
+       a[2, 3] == 0 && a[3, 1] == 0 && a[3, 2] == 0"
+    );
+    assert_eq!(
+      interpret("Reduce[{x + Sqrt[2] y == 1, Sqrt[2] x + 2 y == 0}, {x, y}]")
+        .unwrap(),
+      "False"
+    );
+    assert!(
+      !interpret(
+        "Reduce[{a == (a/2 - (Sqrt[3]*c)/2)/2 - \
+         (Sqrt[3]*(b/2 - (Sqrt[3]*d)/2))/2, d == (Sqrt[3]*((Sqrt[3]*a)/2 \
+         + c/2))/2 + ((Sqrt[3]*b)/2 + d/2)/2}, {a, b, c, d}]"
+      )
+      .unwrap()
+      .contains("Indeterminate")
     );
   }
 

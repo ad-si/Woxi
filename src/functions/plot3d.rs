@@ -175,6 +175,51 @@ impl Default for Camera {
   }
 }
 
+/// The outline of a projected fan triangle's fill, widened by a band of
+/// `overlap` pixels across each internal cut (`boundary[i] == false`) of
+/// its polygon, so the halves of a face overlap and no anti-aliasing seam
+/// traces the cut. Outline edges stay where they are. Near the ends of a
+/// cut the band can leave the polygon, but by at most `overlap` from its
+/// outline, which an outline stroke at least `2 * overlap` wide covers.
+/// Triangles without both kinds of edge — a lone triangle, or a face drawn
+/// without edges, whose outline is unknown — keep their three corners.
+pub(crate) fn widen_across_internal_cuts(
+  corners: [(f64, f64); 3],
+  boundary: [bool; 3],
+  overlap: f64,
+) -> Vec<(f64, f64)> {
+  let signed_area = (corners[1].0 - corners[0].0)
+    * (corners[2].1 - corners[0].1)
+    - (corners[2].0 - corners[0].0) * (corners[1].1 - corners[0].1);
+  if boundary.iter().all(|&b| b)
+    || boundary.iter().all(|&b| !b)
+    || overlap <= 0.0
+    || signed_area.abs() < 1e-9
+  {
+    return corners.to_vec();
+  }
+  let mut out = Vec::with_capacity(7);
+  for i in 0..3 {
+    let (a, b) = (corners[i], corners[(i + 1) % 3]);
+    out.push(a);
+    if boundary[i] {
+      continue;
+    }
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len = dx.hypot(dy);
+    if len < 1e-9 {
+      continue;
+    }
+    // With a positive signed area the corners run counter-clockwise, so
+    // the right-hand normal of each edge points out of the triangle.
+    let sign = signed_area.signum();
+    let (nx, ny) = (sign * dy / len * overlap, -sign * dx / len * overlap);
+    out.push((a.0 + nx, a.1 + ny));
+    out.push((b.0 + nx, b.1 + ny));
+  }
+  out
+}
+
 #[derive(Clone)]
 pub(crate) struct Triangle {
   pub projected: [(f64, f64); 3],
@@ -256,6 +301,28 @@ fn projected_triangles_overlap(
   true
 }
 
+/// How far from a plane a corner may lie and still count as on it, scaled
+/// to the size of the triangles compared. Faces that share an edge often
+/// share it only up to the precision of their data (vertices given to six
+/// digits and then rotated); a fixed tiny tolerance would see such faces
+/// cross each other and cut them into slivers whose outlines show through
+/// the faces in front.
+fn plane_tolerance(points: impl Iterator<Item = Point3D>) -> f64 {
+  let (mut lo, mut hi) = ([f64::INFINITY; 3], [f64::NEG_INFINITY; 3]);
+  for p in points {
+    for (k, c) in [p.x, p.y, p.z].into_iter().enumerate() {
+      lo[k] = lo[k].min(c);
+      hi[k] = hi[k].max(c);
+    }
+  }
+  let size = (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max);
+  if size.is_finite() {
+    (1e-5 * size).max(1e-9)
+  } else {
+    1e-9
+  }
+}
+
 /// Where triangle `t` lies relative to the plane of `plane`, seen from the
 /// viewer: `Some(true)` when wholly behind (or on) it, `Some(false)` when
 /// wholly in front, `None` when it straddles the plane.
@@ -272,7 +339,7 @@ fn side_of_plane(
     n = [-n[0], -n[1], -n[2]];
   }
   // `n` now points toward the viewer.
-  let eps = 1e-9;
+  let eps = plane_tolerance(plane.iter().chain(t.iter()).copied());
   let (mut behind, mut front) = (true, true);
   for v in t {
     let d = n[0] * (v.x - plane[0].x)
@@ -672,6 +739,20 @@ const MAX_PIECES_PER_TRIANGLE: usize = 64;
 /// than the other for `split_interpenetrating` to cut only the smaller one.
 const SPLIT_AREA_RATIO: f64 = 4.0;
 
+/// Largest share of the scene's projected extent (its bounding rectangle on
+/// screen) a triangle may cover and still count as a speck for
+/// `split_interpenetrating`: at the few hundred pixels a 3D picture is
+/// drawn at, one forty-thousandth of it is a couple of square pixels.
+const SPLIT_SPECK_AREA_FRACTION: f64 = 1.0 / 40000.0;
+
+/// Area of a projected (screen-plane) triangle.
+fn projected_triangle_area(t: &[(f64, f64); 3]) -> f64 {
+  0.5
+    * ((t[1].0 - t[0].0) * (t[2].1 - t[0].1)
+      - (t[2].0 - t[0].0) * (t[1].1 - t[0].1))
+      .abs()
+}
+
 /// Area of a triangle in 3-D.
 fn triangle_area(t: &[Point3D; 3]) -> f64 {
   let e1 = [t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z];
@@ -788,7 +869,8 @@ fn clip_polygon_by_plane(
   plane: &[Point3D; 3],
 ) -> (Vec<(Point3D, bool)>, Vec<(Point3D, bool)>) {
   let n = triangle_normal(plane[0], plane[1], plane[2]);
-  let eps = 1e-9;
+  let eps =
+    plane_tolerance(plane.iter().copied().chain(poly.iter().map(|c| c.0)));
   let dist = |p: Point3D| {
     n[0] * (p.x - plane[0].x)
       + n[1] * (p.y - plane[0].y)
@@ -826,6 +908,20 @@ fn clip_polygon_by_plane(
       } else {
         neg.push((m, false));
         pos.push((m, flag));
+      }
+    }
+  }
+  // A cut through an existing corner keeps that corner's flag for the edge
+  // to its next corner, but in a part the next corner is then the cut's
+  // other end. Any edge with both ends on the plane is the cut (an outline
+  // edge lying in the plane leaves nothing on one side to split off), so
+  // it is not part of the outline.
+  for part in [&mut pos, &mut neg] {
+    let m = part.len();
+    for k in 0..m {
+      if dist(part[k].0).abs() <= eps && dist(part[(k + 1) % m].0).abs() <= eps
+      {
+        part[k].1 = false;
       }
     }
   }
@@ -979,6 +1075,25 @@ fn split_interpenetrating(
   }
   let projected: Vec<_> = triangles.iter().map(|t| t.projected).collect();
   let areas: Vec<f64> = verts.iter().map(triangle_area).collect();
+  // Two specks drawn in the wrong order differ by a pixel or two, so they
+  // are left whole. Where many hair-thin tubes meet at a point (the edges
+  // of a unit-distance graph), cutting each of their facets by all the
+  // others' planes more than doubled the scene into ~100,000 slivers,
+  // taking seconds to draw on every redraw of a `Manipulate`.
+  let (mut x_min, mut x_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  let (mut y_min, mut y_max) = (f64::INFINITY, f64::NEG_INFINITY);
+  for &(x, y) in projected.iter().flatten() {
+    x_min = x_min.min(x);
+    x_max = x_max.max(x);
+    y_min = y_min.min(y);
+    y_max = y_max.max(y);
+  }
+  let speck_area =
+    (x_max - x_min) * (y_max - y_min) * SPLIT_SPECK_AREA_FRACTION;
+  let speck: Vec<bool> = projected
+    .iter()
+    .map(|t| projected_triangle_area(t) < speck_area)
+    .collect();
   let mut planes: Vec<Vec<usize>> = vec![Vec::new(); n];
   for_each_overlapping_pair(&projected, |i, j| {
     // Two triangles that each straddle the other's plane without touching
@@ -986,7 +1101,8 @@ fn split_interpenetrating(
     // all their shared screen area, so they need no cut. Cutting them anyway
     // spends a triangle's piece budget before the faces it really passes
     // through get to cut it.
-    if side_of_plane(&verts[i], &verts[j], camera).is_none()
+    if !(speck[i] && speck[j])
+      && side_of_plane(&verts[i], &verts[j], camera).is_none()
       && side_of_plane(&verts[j], &verts[i], camera).is_none()
       && triangles_intersect(&verts[i], &verts[j])
     {
@@ -2068,6 +2184,49 @@ fn compactify_infinite_iterators(args: &[Expr]) -> Option<Vec<Expr>> {
   changed.then_some(new_args)
 }
 
+/// The list of surfaces a non-list `Plot3D` body stands for when it
+/// evaluates to a list. Evaluated with the plot variables symbolic, the
+/// list's elements are the surfaces; a body that only yields a list once
+/// the variables are numbers is probed at `(x, y)` and split into
+/// `Part[body, i]` surfaces. `None` for a body that is a list already or
+/// samples to a single value.
+fn list_valued_surface_body(
+  body: &Expr,
+  xvar: &str,
+  yvar: &str,
+  x: f64,
+  y: f64,
+) -> Option<Expr> {
+  use crate::functions::plot::{
+    eval_body_vars_symbolic, expr_mentions_var, substitute_var,
+  };
+  if matches!(body, Expr::List(_))
+    || !(expr_mentions_var(body, xvar) || expr_mentions_var(body, yvar))
+  {
+    return None;
+  }
+  let evaluated = eval_body_vars_symbolic(body, &[xvar, yvar]);
+  if matches!(&evaluated, Expr::List(items) if !items.is_empty()) {
+    return Some(evaluated);
+  }
+  let at_point = substitute_var(
+    &substitute_var(body, xvar, &Expr::Real(x)),
+    yvar,
+    &Expr::Real(y),
+  );
+  match &evaluate_expr_to_expr(&at_point).ok()? {
+    Expr::List(items) if !items.is_empty() => Some(Expr::List(
+      (1..=items.len())
+        .map(|i| Expr::FunctionCall {
+          name: "Part".to_string(),
+          args: vec![body.clone(), Expr::Integer(i as i128)].into(),
+        })
+        .collect(),
+    )),
+    _ => None,
+  }
+}
+
 pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   if args.len() < 3 {
     return Err(InterpreterError::EvaluationError(
@@ -2090,8 +2249,11 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut svg_height = DEFAULT_SIZE;
   let mut full_width = false;
   let mut mesh_mode = MeshMode::Default;
-  let mut show_axes = true;
+  let mut show_box = true;
   let mut z_clip: Option<(f64, f64)> = None;
+  // `PlotRange -> All` (or `{_, _, All}`) keeps every sampled height; the
+  // automatic vertical range clips outliers off.
+  let mut keep_z_outliers = false;
   let mut plot_style_expr: Option<&Expr> = None;
   let mut axes_labels: [Option<String>; 3] = [None, None, None];
   let mut color_fn = FacetColorFunction::default();
@@ -2197,6 +2359,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           };
         }
         Expr::Identifier(name) if name == "PlotRange" => {
+          keep_z_outliers = plot_range_keeps_z_outliers(replacement);
           // `PlotRange -> {zmin, zmax}` bounds the vertical axis only. The
           // full form `{{xmin, xmax}, {ymin, ymax}, {zmin, zmax}}` bounds
           // all three; the horizontal bounds narrow the plotted domain, so
@@ -2220,8 +2383,8 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         }
         Expr::Identifier(name) if name == "Boxed" => {
           match replacement.as_ref() {
-            Expr::Identifier(s) if s == "False" => show_axes = false,
-            Expr::Identifier(s) if s == "True" => show_axes = true,
+            Expr::Identifier(s) if s == "False" => show_box = false,
+            Expr::Identifier(s) if s == "True" => show_box = true,
             _ => {}
           }
         }
@@ -2244,6 +2407,18 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       }
     }
   }
+
+  // A body that evaluates to a list (`h[x, y]` with `h` returning
+  // `{…, …}`, or `({Re[#], Im[#]} &)[…]`) draws one surface per element,
+  // like an explicit list of functions.
+  let expanded_body = list_valued_surface_body(
+    body,
+    &xvar,
+    &yvar,
+    f64::midpoint(x_min, x_max),
+    f64::midpoint(y_min, y_max),
+  );
+  let body = expanded_body.as_ref().unwrap_or(body);
 
   // Collect function bodies: single function or list of functions
   let bodies: Vec<&Expr> = match body {
@@ -2361,6 +2536,26 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Err(InterpreterError::EvaluationError(
       "Plot3D: function produced no finite values in the given range".into(),
     ));
+  }
+
+  // The automatic vertical range drops outlying heights, as WL's does: a
+  // pole or a jump at the domain's edge is cut off instead of squashing
+  // the rest of the surface into a sliver of the box.
+  if !keep_z_outliers {
+    let region_masks = region_masks.as_ref();
+    let kept = grids.iter().enumerate().flat_map(|(s, grid)| {
+      grid.iter().enumerate().flat_map(move |(i, row)| {
+        row.iter().enumerate().filter_map(move |(j, &z)| {
+          region_masks.is_none_or(|masks| masks[s][i][j]).then_some(z)
+        })
+      })
+    });
+    if let Some((lo, hi)) =
+      crate::functions::plot::list_value_extent(kept, false)
+    {
+      global_z_min = lo;
+      global_z_max = hi;
+    }
   }
 
   // A numeric `Filling` level is part of the picture: the automatic
@@ -3161,7 +3356,7 @@ pub fn plot3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     svg_height,
     full_width,
     mesh_mode,
-    show_axes,
+    show_box,
     box_half,
     &axes_labels,
     !image_height_is_explicit(args),
@@ -3284,7 +3479,7 @@ fn generate_svg(
   svg_height: u32,
   full_width: bool,
   mesh_mode: MeshMode,
-  show_axes: bool,
+  show_box: bool,
   box_ratios: [f64; 3],
   axes_labels: &[Option<String>; 3],
   auto_height: bool,
@@ -3292,6 +3487,13 @@ fn generate_svg(
 ) -> Result<String, InterpreterError> {
   let mut svg_width = svg_width;
   let mut svg_height = svg_height;
+  // `Boxed -> False` hides only the box's edges; the axes go with
+  // `Axes -> False`.
+  let show_axes = !options.iter().any(|o| {
+    matches!(o, Expr::Rule { pattern, replacement }
+      if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Axes")
+        && matches!(replacement.as_ref(), Expr::Identifier(v) if v == "False"))
+  });
   // Find bounding box of all projected points
   let mut px_min = f64::INFINITY;
   let mut px_max = f64::NEG_INFINITY;
@@ -3315,6 +3517,36 @@ fn generate_svg(
     px_max = px_max.max(px);
     py_min = py_min.min(py);
     py_max = py_max.max(py);
+  }
+
+  // Sphere framing (see `plot_spherical_region`): the picture is fitted to
+  // the circle the sphere around the box projects to, exactly as in
+  // `Graphics3D` (see `spherical_region_span`), so its scale no longer
+  // follows the shape of the contents.
+  let sphere_span = (plot_spherical_region(options)
+    && view_angle_option(options).is_none())
+  .then(|| {
+    let radius = box_ratios.iter().map(|r| r * r).sum::<f64>().sqrt();
+    spherical_region_span(
+      radius,
+      camera.perspective.as_ref().map(|p| p.distance),
+    )
+  })
+  .filter(|span| *span > 0.0 && span.is_finite());
+  // The box middle (the origin) projects to the sphere's center.
+  let (sphere_cx, sphere_cy) = project(
+    Point3D {
+      x: 0.0,
+      y: 0.0,
+      z: 0.0,
+    },
+    camera,
+  );
+  if let Some(span) = sphere_span {
+    px_min = px_min.min(sphere_cx - span / 2.0);
+    px_max = px_max.max(sphere_cx + span / 2.0);
+    py_min = py_min.min(sphere_cy - span / 2.0);
+    py_max = py_max.max(sphere_cy + span / 2.0);
   }
 
   let p_width = px_max - px_min;
@@ -3449,6 +3681,11 @@ fn generate_svg(
       }
       _ => (scale, p_cx, p_cy),
     };
+  // The sphere spans the shorter side of the picture, centered on the box.
+  let (scale, p_cx, p_cy) = match sphere_span {
+    Some(span) => (inner_side / span, sphere_cx, sphere_cy),
+    None => (scale, p_cx, p_cy),
+  };
 
   let to_svg = |px: f64, py: f64| -> (f64, f64) {
     let sx = cx + (px - p_cx) * scale;
@@ -3480,7 +3717,7 @@ fn generate_svg(
   // Each of the 12 edges is subdivided into small segments so that per-segment
   // depth sorting produces correct occlusion against the surface.
   const EDGE_SUBDIVISIONS: usize = 20;
-  let box_edges = if show_axes {
+  let box_edges = if show_box {
     let (_, axis_rgb, _, _, _) = crate::functions::plot::plot_theme();
     let axis_color =
       format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
@@ -8333,6 +8570,36 @@ fn view_angle_option(options: &[Expr]) -> Option<f64> {
     }
     _ => None,
   })?
+}
+
+/// The last value a plot's options give the option `name`, evaluated.
+fn plot_option_value(options: &[Expr], name: &str) -> Option<Expr> {
+  options.iter().rev().find_map(|option| match option {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == name) => Some(
+      evaluate_expr_to_expr(replacement)
+        .unwrap_or_else(|_| replacement.as_ref().clone()),
+    ),
+    _ => None,
+  })
+}
+
+/// Whether a surface plot is framed by the sphere around its box, as
+/// `Graphics3D` is: under `SphericalRegion -> True`, and by default inside a
+/// `Manipulate` frame (so the picture keeps its size while a control moves
+/// the contents), unless `SphericalRegion -> False` turns it off.
+fn plot_spherical_region(options: &[Expr]) -> bool {
+  match plot_option_value(options, "SphericalRegion").as_ref() {
+    Some(Expr::Identifier(v)) if v == "True" => true,
+    Some(Expr::Identifier(v)) if v == "False" => false,
+    _ => crate::in_manipulate_frame(),
+  }
 }
 
 fn strip_dynamic(expr: &Expr) -> &Expr {
@@ -14415,12 +14682,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     (mut z3_min, mut z3_max),
   ] = primitives_bounds(&prims);
 
-  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
-  // longest side of the *displayed* box, before the framing padding below,
-  // which Wolfram does not apply to an automatic 3D range.
-  let mut view_box_side =
-    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
-
   // Pad the 3D bounding box by 2% of each side (`PlotRangePadding ->
   // Automatic`, measured on wolframscript's `Graphics3D[Cuboid[]]`).
   if range_padding.is_none() {
@@ -14444,7 +14705,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     y3_max = yh;
     z3_min = zl;
     z3_max = zh;
-    view_box_side = (xh - xl).max(yh - yl).max(zh - zl);
   }
 
   // An explicit `PlotRangePadding` widens (or, when negative, narrows)
@@ -14463,6 +14723,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       **hi = padded_hi;
     }
   }
+
+  // The length Wolfram measures `ViewPoint` (and so `ViewAngle`) in: the
+  // longest side of the *displayed* box, padding included. An automatic
+  // range is padded by 2% per side before it becomes that box, so a scene
+  // under an explicit `ViewAngle` is drawn 1/1.04 of its unpadded size.
+  let view_box_side =
+    (x3_max - x3_min).max(y3_max - y3_min).max(z3_max - z3_min);
 
   // Build box corners
   let box_corners = [
@@ -15419,8 +15686,28 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             d.join(" ")
           ));
         } else if tri.opacity > 0.0 {
+          let corners = [(x0, y0), (x1, y1), (x2, y2)];
+          // An opaque fan triangle reaches a little across the internal
+          // cuts of its polygon, so the two halves of a face overlap there
+          // and no anti-aliasing seam traces the diagonal.
+          // The band may leave the face by up to its own width, which the
+          // solid outline drawn over it covers.
+          let fill = if tri.opacity >= 1.0 && tri.edge_dashing.is_none() {
+            widen_across_internal_cuts(
+              corners,
+              tri.boundary,
+              (edge_width / 2.0).min(0.5),
+            )
+          } else {
+            corners.to_vec()
+          };
+          let points = fill
+            .iter()
+            .map(|(x, y)| format!("{x:.1},{y:.1}"))
+            .collect::<Vec<_>>()
+            .join(" ");
           svg.push_str(&format!(
-            "<polygon points=\"{x0:.1},{y0:.1} {x1:.1},{y1:.1} {x2:.1},{y2:.1}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
+            "<polygon points=\"{points}\" fill=\"{paint}\" stroke=\"{seam_stroke}\" stroke-width=\"0.5\"{opacity_attr}/>\n"
           ));
         }
         // The group's faces are `all_triangles[pos..]`, in order.
@@ -15614,10 +15901,13 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             ));
           }
         }
+        // Blanks padding the label (`"  axis"`) keep their room, as they
+        // do in a 2D `Text`.
+        let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
-           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}>{body}</text>\n",
+           font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
       }
       // Points were drawn in depth order with the lines above.
@@ -15786,6 +16076,18 @@ fn with_prolog_epilog(
 /// `PlotRange -> {zmin, zmax}`: the vertical-axis-only clipping form shared
 /// by every 3D height-field plot (`Plot3D`, `ListPlot3D`) alongside the
 /// full per-axis form `parse_axis_ranges` handles.
+/// Whether a `Plot3D` `PlotRange` asks for every sampled height, outliers
+/// included: `All`, or `All` in the vertical slot of a three-axis spec.
+fn plot_range_keeps_z_outliers(expr: &Expr) -> bool {
+  let val = evaluate_expr_to_expr(expr).unwrap_or_else(|_| expr.clone());
+  let is_all = |e: &Expr| matches!(e, Expr::Identifier(s) if s == "All");
+  match &val {
+    e if is_all(e) => true,
+    Expr::List(items) if items.len() == 3 => is_all(&items[2]),
+    _ => false,
+  }
+}
+
 fn parse_z_only_range(expr: &Expr) -> Option<(f64, f64)> {
   let Expr::List(items) = expr else {
     return None;
@@ -25613,6 +25915,38 @@ mod painter_order_tests {
           }
         }
       }
+    }
+  }
+
+  /// Two crossing triangles too small to see in a much larger scene (the
+  /// facets where hair-thin tubes meet) are left whole: drawing them in the
+  /// wrong order changes a pixel or two, while cutting them multiplied the
+  /// polygons of a many-tube scene. The same pair at full size is cut.
+  #[test]
+  fn crossing_specks_in_a_large_scene_are_not_split() {
+    let camera = Camera {
+      perspective: None,
+      ..Camera::default()
+    };
+    let p = |x: f64, y: f64, z: f64| Point3D { x, y, z };
+    let crossing = |s: f64| {
+      vec![
+        [p(-s, -s, 0.0), p(s, -s, 0.0), p(0.0, s, 0.0)],
+        [p(-s, 0.0, -s), p(s, 0.0, -s), p(0.0, 0.0, s)],
+      ]
+    };
+    // Two distant big faces stretch the scene's extent.
+    let far =
+      |z: f64| [p(-10.0, -10.0, z), p(-9.0, -10.0, z), p(-10.0, -9.0, z)];
+    let far2 = |z: f64| [p(10.0, 10.0, z), p(9.0, 10.0, z), p(10.0, 9.0, z)];
+    for (s, split) in [(0.01, false), (1.0, true)] {
+      let mut verts = crossing(s);
+      verts.push(far(0.0));
+      verts.push(far2(0.0));
+      let mut tris: Vec<Triangle> =
+        verts.iter().map(|v| flat_triangle(*v, &camera)).collect();
+      split_interpenetrating(&mut verts, &mut tris, &camera);
+      assert_eq!(verts.len() > 4, split, "half-size {s}");
     }
   }
 
