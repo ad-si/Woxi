@@ -529,6 +529,16 @@ fn per_contour_styles(
 }
 
 impl DensityContourOptions {
+  /// The size of the frame's tick labels, in points: the `LabelStyle` /
+  /// `BaseStyle` font size, else the default 10.
+  fn tick_font(&self) -> f64 {
+    self
+      .label_style
+      .and_then(|s| s.font_size)
+      .filter(|f| f.is_finite() && *f > 0.0)
+      .unwrap_or(FRAME_TICK_FONT)
+  }
+
   /// The value range sampled `values` span: the full range under
   /// `PlotRange -> All`, otherwise the range with outliers fenced off.
   fn sampled_range(&self, values: &[f64]) -> (f64, f64) {
@@ -649,8 +659,11 @@ fn parse_density_contour_options(
   let mut contour_styles = Vec::new();
   let mut boundary_style = None;
   let mut frame_labels = crate::functions::plot::FrameLabels::default();
+  // `[LabelStyle, BaseStyle]`, combined once every option is read so the
+  // `LabelStyle` wins whichever comes first.
+  let mut label_style_sources: [Option<crate::functions::plot::LabelStyleSpec>;
+    2] = [None, None];
   let mut frame_ticks = crate::functions::plot::FrameEdgeTicks::defaults();
-  let mut label_style = None;
   let mut image_padding = [None; 4];
   let mut frame = true;
   let mut epilog: Vec<Expr> = Vec::new();
@@ -782,6 +795,14 @@ fn parse_density_contour_options(
             None => crate::functions::plot::parse_frame_label(replacement),
           };
         }
+        "LabelStyle" => {
+          label_style_sources[0] =
+            crate::functions::plot::LabelStyleSpec::parse(replacement);
+        }
+        "BaseStyle" => {
+          label_style_sources[1] =
+            crate::functions::plot::LabelStyleSpec::parse(replacement);
+        }
         // `Frame -> None` draws no frame, like `Frame -> False`.
         "Frame" => {
           let val = evaluate_expr_to_expr(replacement)
@@ -791,10 +812,6 @@ fn parse_density_contour_options(
         }
         "FrameTicks" => {
           frame_ticks = crate::functions::plot::parse_frame_ticks(replacement);
-        }
-        "LabelStyle" => {
-          label_style =
-            crate::functions::plot::LabelStyleSpec::parse(replacement);
         }
         "ImagePadding" => {
           image_padding =
@@ -853,8 +870,11 @@ fn parse_density_contour_options(
     contour_styles,
     boundary_style,
     frame_labels,
+    label_style: crate::functions::plot::LabelStyleSpec::layered(
+      label_style_sources[1],
+      label_style_sources[0],
+    ),
     frame_ticks,
-    label_style,
     image_padding,
     frame,
     epilog,
@@ -1212,10 +1232,7 @@ impl FieldFrameLayout {
 
 /// The font size of a field plot's tick and frame labels.
 fn field_label_font(opts: &DensityContourOptions) -> f64 {
-  opts
-    .label_style
-    .and_then(|s| s.font_size)
-    .unwrap_or(FRAME_TICK_FONT)
+  opts.tick_font()
 }
 
 /// WL 15's layout of a density or contour plot: the frame lies
@@ -1475,9 +1492,18 @@ fn push_field_frame(
   let font = layout.tick_font * sf;
   let scale = layout.tick_font / FRAME_TICK_FONT;
   let gap = FRAME_TICK_LABEL_GAP * sf;
+  // A `LabelStyle` weight and slant restyle the tick labels too.
+  let weight = match opts.label_style {
+    Some(s) if s.bold && s.italic => {
+      " font-weight=\"bold\" font-style=\"italic\""
+    }
+    Some(s) if s.bold => " font-weight=\"bold\"",
+    Some(s) if s.italic => " font-style=\"italic\"",
+    _ => "",
+  };
   let mut text = |x: f64, y: f64, anchor: &str, label: &str| {
     out.push_str(&format!(
-      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\" fill=\"{label_fill}\">{label}</text>\n"
+      "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"{anchor}\" font-family=\"sans-serif\" font-size=\"{font:.0}\"{weight} fill=\"{label_fill}\">{label}</text>\n"
     ));
   };
   for (v, label) in &bottom.labels {

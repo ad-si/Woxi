@@ -27920,6 +27920,67 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    // Regression: the field plots ignored `LabelStyle`, so their tick
+    // labels and `FrameLabel`s stayed small and gray.
+    #[test]
+    fn field_plots_honor_label_style() {
+      for plot in [
+        "ContourPlot[x y, {x, -1, 1}, {y, -1, 1}",
+        "DensityPlot[x y, {x, -1, 1}, {y, -1, 1}",
+        "StreamPlot[{x, y}, {x, -1, 1}, {y, -1, 1}",
+        "VectorPlot[{x, y}, {x, -1, 1}, {y, -1, 1}",
+      ] {
+        let svg = export_svg(&format!(
+          "{plot}, FrameLabel -> {{a, b}}, \
+             LabelStyle -> Directive[Red, Bold, 14]]"
+        ));
+        let texts: Vec<&str> = svg
+          .split("<text")
+          .skip(1)
+          .map(|t| &t[..t.find('>').unwrap()])
+          .collect();
+        assert!(!texts.is_empty(), "{plot}: {svg}");
+        for t in &texts {
+          assert!(
+            t.contains("fill=\"rgb(255,0,0)\"")
+              || t.contains("fill=\"#FF0000\""),
+            "{plot}: every label must be red: {t}"
+          );
+          assert!(t.contains("font-size=\"140\""), "{plot}: {t}");
+          assert!(t.contains("font-weight=\"bold\""), "{plot}: {t}");
+        }
+        assert!(svg.contains(">a<") && svg.contains(">b<"), "{plot}");
+      }
+    }
+
+    // `BaseStyle` styles the frame text too, and a `LabelStyle` setting
+    // the same property wins whichever option comes first.
+    #[test]
+    fn field_plot_label_style_layers_over_base_style() {
+      let svg = export_svg(
+        "StreamPlot[{x, y}, {x, -1, 1}, {y, -1, 1}, \
+           LabelStyle -> Blue, BaseStyle -> {Red, 12}]",
+      );
+      let tick = svg.split("<text").nth(1).expect(&svg);
+      assert!(tick.contains("font-size=\"120\""), "{tick}");
+      assert!(tick.contains("rgb(0,0,255)"), "{tick}");
+    }
+
+    // A larger `LabelStyle` font widens the room the y tick labels take,
+    // so the frame starts further right.
+    #[test]
+    fn field_plot_label_style_size_widens_the_tick_room() {
+      let frame_x = |code: &str| -> f64 {
+        let svg = export_svg(code);
+        let attr = svg.split("data-plot-frame=\"").nth(1).expect(&svg);
+        attr.split(' ').nth(4).unwrap().parse().unwrap()
+      };
+      let plain = frame_x("DensityPlot[x y, {x, -1, 1}, {y, -1, 1}]");
+      let large =
+        frame_x("DensityPlot[x y, {x, -1, 1}, {y, -1, 1}, LabelStyle -> 20]");
+      assert!(large > plain, "{large} <= {plain}");
+    }
+
     #[test]
     fn stream_plot_epilog_and_stream_style() {
       // As in Wolfram, the default speed coloring wins over a
