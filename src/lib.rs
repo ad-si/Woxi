@@ -1539,6 +1539,19 @@ pub fn get_captured_graphics() -> Option<String> {
 /// for all three shapes). Recurse into the selected pane's content (or the
 /// first one, absent a usable `sel` or a match) and promote its picture the
 /// same way.
+/// A `BarLegend[…]`, possibly `Placed[…]` (a plot's `PlotLegends` color bar).
+fn is_bar_legend(legend: &syntax::Expr) -> bool {
+  match legend {
+    syntax::Expr::FunctionCall { name, args }
+      if name == "Placed" && !args.is_empty() =>
+    {
+      is_bar_legend(&args[0])
+    }
+    syntax::Expr::FunctionCall { name, .. } => name == "BarLegend",
+    _ => false,
+  }
+}
+
 fn promote_result_graphics(expr: &syntax::Expr) {
   if let syntax::Expr::Graphics { svg, .. } = expr {
     if get_captured_graphics().as_deref() != Some(svg.as_str()) {
@@ -1553,6 +1566,23 @@ fn promote_result_graphics(expr: &syntax::Expr) {
     && args.len() == 2
     && matches!(&args[1], syntax::Expr::Identifier(n) if n == "None")
   {
+    promote_result_graphics(&args[0]);
+    return;
+  }
+  // `Legended[g, BarLegend[…]]` (what `PlotLegends` gives a plot) shows the
+  // color bar beside `g`; the picture captured while `g` was drawn lacks
+  // it, so capture the composed one.
+  if let syntax::Expr::FunctionCall { name, args } = expr
+    && name == "Legended"
+    && args.len() == 2
+    && matches!(&args[0], syntax::Expr::Graphics { .. })
+    && is_bar_legend(&args[1])
+  {
+    let svg = evaluator::expr_to_svg(expr);
+    if svg.starts_with("<svg") {
+      capture_graphics(&svg);
+      return;
+    }
     promote_result_graphics(&args[0]);
     return;
   }
@@ -3792,6 +3822,29 @@ fn wraps_a_raster_image(expr: &syntax::Expr) -> bool {
 /// render it as SVG and return `-Graphics-`. Grid/TextGrid stay symbolic
 /// during evaluation so that part-assignment works; rendering only happens
 /// at the output stage.  Also unwraps TraditionalForm[Grid[…]] wrappers.
+/// A table drawn out of a `Pane[content, {w, h}]` (also under `Text`)
+/// still takes up the pane's whole `w`×`h` box, placed in it by the pane's
+/// `Alignment`, as in a notebook: the table alone would shrink the area a
+/// Manipulate reserved for it and drop the centering. Anything else is
+/// returned as drawn.
+fn keep_fixed_pane_box(
+  source: &syntax::Expr,
+  rendered: syntax::Expr,
+) -> syntax::Expr {
+  let Some((w, h, align, shrink)) = pane_fixed_size(source) else {
+    return rendered;
+  };
+  let auto_sized = functions::graphics::pane_picture_is_auto_sized(&rendered);
+  let syntax::Expr::Graphics { svg, .. } = &rendered else {
+    return rendered;
+  };
+  // The boxed picture replaces the bare table the cell would show.
+  remove_captured_graphics(svg);
+  graphics_result(functions::graphics::clip_svg_to_pane_box(
+    svg, w, h, align, auto_sized, shrink,
+  ))
+}
+
 fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
   match &expr {
     // `Text[Grid[…]]`/`Text[TextGrid[…]]` — the Demonstrations idiom for a
@@ -3835,8 +3888,12 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
       {
         return graphics_result(svg);
       }
-      match render_grid_if_needed(content) {
-        graphics @ syntax::Expr::Graphics { .. } => graphics,
+      match functions::graphics::with_text_display_grids(|| {
+        render_grid_if_needed(content)
+      }) {
+        graphics @ syntax::Expr::Graphics { .. } => {
+          keep_fixed_pane_box(&expr, graphics)
+        }
         _ => expr,
       }
     }
@@ -3866,7 +3923,7 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         content = inner;
       }
       content.clone()
-    } // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane only
+    } // `Pane[Text[Grid[…]], size]` (also `Panel`/`Framed`): the pane
     // sizes the table `Text` marks for drawing. A pane around a bare
     // `Grid` of plain text stays textual, so only look through to `Text`.
     syntax::Expr::FunctionCall { name, args }
@@ -3877,7 +3934,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
         ) =>
     {
       match render_grid_if_needed(args[0].clone()) {
-        graphics @ syntax::Expr::Graphics { .. } => graphics,
+        graphics @ syntax::Expr::Graphics { .. } => {
+          keep_fixed_pane_box(&expr, graphics)
+        }
         _ => expr,
       }
     }
@@ -3899,16 +3958,9 @@ fn render_grid_if_needed(expr: syntax::Expr) -> syntax::Expr {
           if (inner == "Grid" || inner == "TextGrid") && !inner_args.is_empty()
         ) =>
     {
-      if let syntax::Expr::FunctionCall {
-        args: grid_args, ..
-      } = &args[0]
-      {
-        match functions::graphics::grid_ast(grid_args) {
-          Ok(result) => result,
-          Err(_) => expr,
-        }
-      } else {
-        expr
+      match functions::graphics::traditional_form_grid_ast(&args[0]) {
+        Ok(result) => result,
+        Err(_) => expr,
       }
     }
     // Style[Grid[...], directives...] — propagate style into grid
@@ -4896,7 +4948,11 @@ fn render_interactive_pane_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if !is_pane {
     return expr;
   }
-  let svg = evaluator::dispatch::io_functions::expr_to_svg(&expr);
+  // Plot-frame markers let a pane whose content names no `PlotRange`
+  // (`ClickPane[Dynamic[board], …]`) still map clicks to coordinates.
+  let svg = functions::graphics::with_plot_frame_markers(|| {
+    evaluator::dispatch::io_functions::expr_to_svg(&expr)
+  });
   if svg.starts_with("<svg") {
     graphics_result(functions::graphics::with_click_pane_marker(svg, &expr))
   } else {
@@ -4939,13 +4995,17 @@ fn render_inline_display_wrapper(expr: &syntax::Expr) -> syntax::Expr {
     // A picture is drawn from the content set in the text face, so the
     // text of a layout inside (`Text[Row[{"Depth = ", x, " m"}]]`) is
     // proportional too.
-    let in_face = render_inline_display_wrapper(
-      &functions::graphics::in_text_face(&args[0]),
-    );
+    let in_face = functions::graphics::with_text_display_grids(|| {
+      render_inline_display_wrapper(&functions::graphics::in_text_face(
+        &args[0],
+      ))
+    });
     if matches!(in_face, syntax::Expr::Graphics { .. }) {
       return in_face;
     }
-    let inner = render_inline_display_wrapper(&args[0]);
+    let inner = functions::graphics::with_text_display_grids(|| {
+      render_inline_display_wrapper(&args[0])
+    });
     return match inner {
       // A text row (`Text[Style[Row[…], 14]]`) that the inner pass drew as
       // a picture is drawn again with `Text` on each item, so its text is
@@ -5185,7 +5245,9 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
     .and_then(|(w, _, align, _)| {
       evaluator::dispatch::io_functions::wrap_pane_text(&expr, w, 14.0).map(
         |lines| {
-          evaluator::dispatch::io_functions::align_pane_lines(lines, align)
+          evaluator::dispatch::io_functions::align_pane_lines(
+            &expr, lines, align,
+          )
         },
       )
     })
@@ -6106,6 +6168,23 @@ fn composed_layout_svg(expr: &syntax::Expr) -> Option<String> {
   svg.starts_with("<svg").then_some(svg)
 }
 
+/// The picture of a `Legended[graphic, legend]` around a single graphic
+/// whose legend can be drawn: the graphic with the legend set beside it.
+/// `None` when there is no such legend to add.
+fn legended_picture_svg(expr: &syntax::Expr) -> Option<String> {
+  let syntax::Expr::FunctionCall { name, args } = expr else {
+    return None;
+  };
+  if name != "Legended" || args.len() != 2 {
+    return None;
+  }
+  let syntax::Expr::Graphics { svg: plot, .. } = &args[0] else {
+    return None;
+  };
+  let svg = evaluator::expr_to_svg(expr);
+  (svg.starts_with("<svg") && svg != *plot).then_some(svg)
+}
+
 /// The SVG an already-evaluated graphics item carries on itself — from
 /// `Expr::Graphics { svg, .. }`, peeling a `Style[…]` wrapper first. `None`
 /// for the bare `-Graphics-`/`-Image-` text placeholder, which carries no
@@ -6150,6 +6229,14 @@ fn render_graphics_list_if_needed(expr: syntax::Expr) -> syntax::Expr {
   if let Some(composed) = composed_layout_svg(inner) {
     clear_captured_graphics();
     return graphics_result(composed);
+  }
+  // A legend around a single picture keeps its symbolic echo
+  // (`Legended[-Graphics-, …]`), but the picture a notebook shows is the
+  // plot with its legend set beside or below it.
+  if let Some(svg) = legended_picture_svg(inner) {
+    clear_captured_graphics();
+    capture_graphics(&text_in_view(svg));
+    return expr;
   }
 
   // A list (or nested lists) of pictures that carry their own renderings is

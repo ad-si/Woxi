@@ -5137,6 +5137,11 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // (the size, weight and color) instead of being flattened to its content.
   let is_standard_form = args.len() == 2
     && matches!(&args[1], Expr::Identifier(f) if f == "StandardForm");
+  // Every form that typesets into boxes (TeXForm, TraditionalForm,
+  // StandardForm) skips the 2D-OutputForm text intercepts below, so e.g.
+  // `ToString[Subscript[x, 2], StandardForm]` reaches the box path and is
+  // `\!\(\*SubscriptBox[x, 2]\)` rather than the two-line text "x\n 2".
+  let typesets = is_tex_form || is_standard_form;
 
   // TableForm[matrix] — render as an aligned text grid (left-aligned columns
   // padded to the widest cell, three-space separators, blank line between rows).
@@ -5146,7 +5151,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "TableForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5163,7 +5168,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Grid"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = table_form_to_string(&inner_args[0])
   {
@@ -5178,7 +5183,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "MatrixForm"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 1
     && let Some(rendered) = matrix_form_to_string(&inner_args[0])
   {
@@ -5193,8 +5198,8 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     name,
     args: inner_args,
   } = &args[0]
-    && ((name == "Column" && !is_input_form && !is_tex_form)
-      || (name == "ColumnForm" && !is_tex_form))
+    && ((name == "Column" && !is_input_form && !typesets)
+      || (name == "ColumnForm" && !typesets))
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5237,7 +5242,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && (name == "Subscript" || name == "Superscript")
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && inner_args.len() == 2
   {
     let base_str = to_string_default_form(&inner_args[0]);
@@ -5263,8 +5268,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Style"
     && !is_input_form
-    && !is_tex_form
-    && !is_standard_form
+    && !typesets
     && !inner_args.is_empty()
   {
     let mut recursed = args.to_vec();
@@ -5282,7 +5286,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Row"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Expr::List(items) = &inner_args[0]
   {
@@ -5317,7 +5321,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } = &args[0]
     && name == "Quantity"
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && let Some(rendered) = quantity_to_text(inner_args, false)
   {
     return Ok(Expr::String(rendered));
@@ -5327,7 +5331,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
   // are spelled out too: `{1 meter, 2 feet}`.
   if let Expr::List(items) = &args[0]
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && items.iter().any(contains_quantity)
   {
     let parts: Vec<String> = items
@@ -5357,7 +5361,7 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
       "NumberForm" | "PaddedForm" | "AccountingForm"
     )
     && !is_input_form
-    && !is_tex_form
+    && !typesets
     && !inner_args.is_empty()
     && let Some(rendered) = number_form_family_to_string(name, inner_args)
   {
@@ -5551,10 +5555,14 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // Use Unicode box markers (like StandardForm) so that:
     // - OutputForm renders as DisplayForm[FormBox[..., TraditionalForm]]
     // - InputForm renders as \!\(\*FormBox[..., TraditionalForm]\)
-    return Ok(Expr::String(traditional_form_box_escape(
-      &inner_args[0],
-      true,
-    )));
+    // Outside InputForm, machine reals typeset at the 6 significant digits
+    // the FrontEnd shows — the same as `ToString[expr, TraditionalForm]`.
+    let inner = if is_input_form {
+      inner_args[0].clone()
+    } else {
+      truncate_machine_reals_for_to_string(&inner_args[0])
+    };
+    return Ok(Expr::String(traditional_form_box_escape(&inner, true)));
   }
 
   // If the expression is TeXForm[inner], produce TeX representation.
@@ -5966,6 +5974,21 @@ fn truncate_machine_reals_for_to_string(expr: &Expr) -> Expr {
         .map(truncate_machine_reals_for_to_string)
         .collect(),
     ),
+    // A number-display form already fixes the digits it shows
+    // (`NumberForm[x, 9]` keeps nine), so its number is left untouched.
+    Expr::FunctionCall { name, .. }
+      if matches!(
+        name.as_str(),
+        "NumberForm"
+          | "ScientificForm"
+          | "EngineeringForm"
+          | "PaddedForm"
+          | "AccountingForm"
+          | "DecimalForm"
+      ) =>
+    {
+      expr.clone()
+    }
     Expr::FunctionCall { name, args } => Expr::FunctionCall {
       name: name.clone(),
       args: args
@@ -9490,6 +9513,20 @@ fn strip_box_markup(chars: &[char], keep_punct_quotes: bool) -> String {
         out.push('"');
         out.extend(&chars[i + 1..close]);
         out.push('"');
+        i = close + 1;
+        continue;
+      }
+      // A group holding only spaces (`\(\ \)`, the blank base a
+      // `SuperscriptBox` hangs a prefix script on) is a space token, not
+      // nothing: stripped bare, the box would lose its base and the gap
+      // it typesets.
+      BOX_OPEN
+        if !in_box_text
+          && let Some(close) = matching_box_close(chars, i)
+          && close > i + 1
+          && chars[i + 1..close].iter().all(|&c| c == ' ') =>
+      {
+        out.push_str("\" \"");
         i = close + 1;
         continue;
       }
@@ -17784,9 +17821,12 @@ pub(crate) struct NumberFormOptions {
   lpad: String,
   /// `NumberPadding[[2]]` — fills the fraction past its significant digits.
   rpad: String,
-  /// `NumberSigns -> {neg, pos}`, when given: a prefix replacing the default
-  /// sign (and, for AccountingForm, the parentheses).
-  signs: Option<(String, String)>,
+  /// `NumberSigns -> {neg, pos}` as `(prefix, suffix)` pairs. A plain
+  /// string is a prefix with an empty suffix; the defaults are `{"-", ""}`,
+  /// or `{{"(", ")"}, ""}` for AccountingForm. The widest prefix sets the
+  /// sign column and the widest suffix the closing column of a padded field.
+  neg_sign: (String, String),
+  pos_sign: (String, String),
   /// `SignPadding` — True puts the sign before the padding, False (the
   /// default) keeps it next to the digits.
   sign_padding: bool,
@@ -17927,7 +17967,12 @@ pub(crate) fn number_form_options(
     block: None,
     lpad: if head == "PaddedForm" { " " } else { "" }.to_string(),
     rpad: if head == "AccountingForm" { "" } else { "0" }.to_string(),
-    signs: None,
+    neg_sign: if head == "AccountingForm" {
+      ("(".to_string(), ")".to_string())
+    } else {
+      ("-".to_string(), String::new())
+    },
+    pos_sign: (String::new(), String::new()),
     sign_padding: false,
     suppress_exponent: exponent_function_suppresses(args),
   };
@@ -17988,11 +18033,21 @@ pub(crate) fn number_form_options(
         _ => {}
       },
       "NumberSigns" => {
+        // Each sign is a prefix string or a `{prefix, suffix}` pair.
+        let sign_pair = |e: &Expr| match e {
+          Expr::String(s) => Some((s.clone(), String::new())),
+          Expr::List(pair) if pair.len() == 2 => {
+            Some((text(&pair[0])?, text(&pair[1])?))
+          }
+          _ => None,
+        };
         if let Expr::List(signs) = replacement.as_ref()
           && signs.len() == 2
-          && let (Some(neg), Some(pos)) = (text(&signs[0]), text(&signs[1]))
+          && let (Some(neg), Some(pos)) =
+            (sign_pair(&signs[0]), sign_pair(&signs[1]))
         {
-          opts.signs = Some((neg, pos));
+          opts.neg_sign = neg;
+          opts.pos_sign = pos;
         }
       }
       "SignPadding" => {
@@ -18095,21 +18150,33 @@ fn number_form_family_scalar(
     Some((ip, fp)) => (ip.to_string(), fp.to_string(), true),
     None => (body.clone(), String::new(), false),
   };
-  // AccountingForm brackets a negative value; the closing bracket sits right
-  // after the significant fractional digits, before any padding.
-  let close = if head == "AccountingForm" && neg && opts.signs.is_none() {
-    ")"
-  } else {
-    ""
-  };
+  // The sign's prefix leads the digits; its suffix (AccountingForm's
+  // closing bracket) sits right after the significant fractional digits,
+  // before any padding.
+  let (sign, close) = if neg { &opts.neg_sign } else { &opts.pos_sign };
+  let (sign, close) = (sign.clone(), close.as_str());
+  // A padded field reserves as many columns for the sign (and for its
+  // suffix) as the widest of the negative and positive ones needs.
+  let sign_cols = opts
+    .neg_sign
+    .0
+    .chars()
+    .count()
+    .max(opts.pos_sign.0.chars().count());
+  let close_cols = opts
+    .neg_sign
+    .1
+    .chars()
+    .count()
+    .max(opts.pos_sign.1.chars().count());
   // Past the value's significant fractional digits the right NumberPadding
   // string fills the remaining slots, so an empty one suppresses the trailing
-  // zeros that the fixed rendering produced. AccountingForm keeps one extra
-  // slot for the closing bracket.
+  // zeros that the fixed rendering produced. A sign suffix keeps extra slots
+  // for itself (AccountingForm's closing bracket).
   let mut fill = String::new();
   // An integer ignores the fractional spec entirely: no point, no padding.
   if let Some((_, f)) = fixed.filter(|_| !is_integer) {
-    let slots = f as usize + usize::from(head == "AccountingForm");
+    let slots = f as usize + close_cols;
     // A scientific mantissa keeps all `f` decimals (`1.000 × 10^-7`).
     let keep = if exp.is_some() {
       frac_digits.chars().count()
@@ -18137,21 +18204,6 @@ fn number_form_family_scalar(
     frac_digits = group_digits_from_left(&frac_digits, b, &opts.frac_sep);
   }
 
-  let sign = match &opts.signs {
-    Some((n, p)) => {
-      if neg {
-        n.clone()
-      } else {
-        p.clone()
-      }
-    }
-    None => match (head, neg) {
-      ("AccountingForm", true) => "(".to_string(),
-      (_, true) => "-".to_string(),
-      _ => String::new(),
-    },
-  };
-
   // In scientific notation the 2D form is assembled straight from the
   // mantissa, which PaddedForm[x, {n, f}] still pads to its n digit
   // columns plus a sign and a point column ("  1.94 × 10^-23").
@@ -18164,7 +18216,8 @@ fn number_form_family_scalar(
     if head == "PaddedForm"
       && let Some((n, _)) = fixed
     {
-      mantissa = pad_left(&mantissa, n.max(0) as usize + 2, &opts.lpad);
+      mantissa =
+        pad_left(&mantissa, n.max(0) as usize + sign_cols + 1, &opts.lpad);
     }
     return Some(sci_parts_to_2d_string(&mantissa, Some(e)));
   }
@@ -18191,7 +18244,7 @@ fn number_form_family_scalar(
         (n - f).max(0) as usize
       };
       (
-        digits + 1 + digit_block_separators(digits, opts.block),
+        digits + sign_cols + digit_block_separators(digits, opts.block),
         int_body.clone(),
       )
     }
@@ -18200,7 +18253,7 @@ fn number_form_family_scalar(
       let has_point = had_point && !is_integer;
       (
         digits
-          + 1
+          + sign_cols
           + usize::from(has_point)
           + digit_block_separators(digits, opts.block),
         format!("{int_body}{tail}"),
@@ -18211,9 +18264,9 @@ fn number_form_family_scalar(
     }
   };
 
-  // A value wider than the requested field widens it, but a column is always
-  // reserved for the sign.
-  let field = field.max(padded_part.chars().count() + 1);
+  // A value wider than the requested field widens it, but the sign columns
+  // stay reserved.
+  let field = field.max(padded_part.chars().count() + sign_cols);
   // With SignPadding the sign leads the padding; by default it stays next to
   // the digits, so the padding fills the columns before it.
   let padded = if opts.sign_padding && !sign.is_empty() {

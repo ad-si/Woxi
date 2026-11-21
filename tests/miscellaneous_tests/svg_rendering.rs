@@ -2690,14 +2690,16 @@ mod tests {
 
     #[test]
     fn fraction_cell_takes_the_styled_grid_size() {
-      // A quotient cell typeset as a built-up fraction is set at the styled
-      // grid's size, like the text cells beside it, not at the default 14.
+      // A quotient cell typeset as a built-up fraction is set from the
+      // styled grid's size, like the text cells beside it, not from the
+      // default 14: at 0.75 of it, as a grid item sits one script level
+      // deep.
       for code in [
         "Style[Grid[{{\"ab\"/\"cd\", \"x\"}}], 9]",
         "Style[Grid[{{a/b, \"x\"}}], \"Label\"]",
       ] {
         let svg = svg_of(code);
-        assert!(svg.contains("font-size=\"9.0\""), "{code}: {svg}");
+        assert!(svg.contains("font-size=\"6.8\""), "{code}: {svg}");
         assert!(!svg.contains("font-size=\"14"), "{code}: {svg}");
       }
     }
@@ -2751,6 +2753,47 @@ mod tests {
         .next()
         .expect("text c");
       assert!(c_x > 206.0, "third column starts after the span: {svg}");
+    }
+
+    #[test]
+    fn grid_trailing_span_in_a_short_row_reaches_the_last_column() {
+      // A row shorter than the grid that ends in `SpanFromLeft` keeps
+      // spanning to the grid's last column: the wide picture is centered
+      // over all three columns, which keep their natural widths.
+      let svg = svg_of(
+        "Grid[{{Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100], \
+         Graphics[Disk[], ImageSize -> 100]}, \
+         {Graphics[Rectangle[{0, 0}, {3, 1}], ImageSize -> 250], \
+         SpanFromLeft}}]",
+      );
+      let xs: Vec<f64> = svg
+        .split("<svg x=\"")
+        .skip(1)
+        .map(|chunk| chunk.split('"').next().unwrap().parse().unwrap())
+        .collect();
+      assert_eq!(xs.len(), 4, "{svg}");
+      // The three disks sit in equally wide columns.
+      assert!(
+        ((xs[1] - xs[0]) - (xs[2] - xs[1])).abs() < 0.5,
+        "columns stay even: {svg}"
+      );
+      // The spanned picture is centered across the whole grid.
+      let total_w = picture_width(&svg);
+      assert!(
+        (xs[3] + 125.0 - total_w / 2.0).abs() < 1.0,
+        "picture centered across all columns: {svg}"
+      );
+    }
+
+    /// The width of the outermost `<svg>`.
+    fn picture_width(svg: &str) -> f64 {
+      svg
+        .split("width=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .expect("svg width")
     }
 
     /// The `y` of the nested `<svg>` with the given `width`.
@@ -3357,6 +3400,66 @@ mod tests {
          ImageSize -> 200]",
       );
       assert!(svg.contains("stroke-width=\"3.0\""), "{svg}");
+    }
+
+    #[test]
+    fn thick_3d_line_is_two_pixels_wide() {
+      // `Thick` is `Thickness[Large]`, a 2-pixel stroke in 3D as in 2D,
+      // whatever the picture's size.
+      for code in [
+        "Graphics3D[{Thick, Line[{{0, 0, 0}, {1, 1, 1}}]}, ImageSize -> 400]",
+        "Graphics3D[{Thickness[Large], Line[{{0, 0, 0}, {1, 1, 1}}]}]",
+        "ParametricPlot3D[{Cos[t], Sin[t], t}, {t, 0, 2 Pi}, \
+         PlotStyle -> {Blue, Thick}]",
+      ] {
+        let svg = svg_of(code);
+        assert!(svg.contains("stroke-width=\"2.0\""), "{code}: {svg}");
+        assert!(!svg.contains("stroke-width=\"3.0\""), "{code}: {svg}");
+      }
+    }
+
+    #[test]
+    fn large_styled_3d_axes_labels_stay_inside_the_picture() {
+      // A label set in a large font (`Style[…, Large]`) is fitted into the
+      // picture at its own size, not at the default label size, so the
+      // vertical axis's label on the left edge is not cut off. (Under
+      // `SphericalRegion -> True` it still is: see `conformance_gaps.md`.)
+      {
+        let region = "False";
+        let svg = svg_of(&format!(
+          "Graphics3D[Sphere[], Axes -> True, ImageSize -> 400, \
+         SphericalRegion -> {region}, \
+         AxesLabel -> {{Style[\"x\", Large], Style[\"y\", Large], \
+         Style[\"zzz\", Large, Bold]}}]",
+        ));
+        let width: f64 = svg
+          .split("width=\"")
+          .nth(1)
+          .and_then(|s| s.split('"').next())
+          .and_then(|s| s.parse().ok())
+          .unwrap();
+        let label = svg
+          .split("<text ")
+          .find(|t| t.contains(">zzz<"))
+          .unwrap_or_else(|| panic!("no z label: {svg}"));
+        let attr = |name: &str| -> f64 {
+          label
+            .split(&format!(" {name}=\""))
+            .nth(1)
+            .or_else(|| label.split(&format!("{name}=\"")).nth(1))
+            .and_then(|s| s.split('"').next())
+            .and_then(|s| s.parse().ok())
+            .unwrap()
+        };
+        let x = attr("x");
+        // Three Large (24 px) characters are about 40 px wide, so a centered
+        // label needs its anchor at least 20 px from either edge.
+        let half = 3.0 * 24.0 * 0.56 / 2.0;
+        assert!(
+          x - half >= 0.0 && x + half <= width,
+          "z label at x = {x} spills out of the {width} px picture: {svg}"
+        );
+      }
     }
 
     #[test]
@@ -5816,14 +5919,17 @@ mod grid_item_style_tests {
     )
     .unwrap();
     assert!(!svg.contains("monospace"), "{svg}");
-    let inner = svg.split("<svg").nth(2).unwrap();
-    let width: f64 = inner
-      .split("width=\"")
-      .nth(1)
-      .and_then(|w| w.split('"').next())
-      .and_then(|w| w.parse().ok())
-      .unwrap();
-    assert!(width <= 512.0, "{width}: {svg}");
+    // The block is drawn into the pane either directly or as a nested
+    // picture; a nested one must about fit the pane's width.
+    if let Some(inner) = svg.split("<svg").nth(2) {
+      let width: f64 = inner
+        .split("width=\"")
+        .nth(1)
+        .and_then(|w| w.split('"').next())
+        .and_then(|w| w.parse().ok())
+        .unwrap();
+      assert!(width <= 512.0, "{width}: {svg}");
+    }
     assert!(svg.matches("<text ").count() >= 2, "{svg}");
   }
 
@@ -5937,5 +6043,30 @@ mod grid_item_style_tests {
       (opts.font_resolver.select_fallback)('A', &[base], &mut opts.fontdb)
         .unwrap();
     assert!(opts.fontdb.face(chosen).unwrap().weight.0 < 600);
+  }
+
+  /// Tick labels with an integer part of five or more digits are split
+  /// into blocks of three by a thin space (U+2009), as Wolfram sets them
+  /// (`100 000`), on every kind of axis; shorter ones stay whole.
+  #[test]
+  fn long_tick_labels_are_set_in_digit_blocks() {
+    for code in [
+      r#"ExportString[Plot[x, {x, 0, 200000}, Frame -> True], "SVG"]"#,
+      r#"ExportString[ListPlot[{{0, 0}, {200000, 1}}], "SVG"]"#,
+      r#"ExportString[Graphics[Line[{{0, 0}, {200000, 100000}}],
+        Frame -> True], "SVG"]"#,
+      r#"ExportString[Graphics[Line[{{0, 0}, {200000, 100000}}],
+        Axes -> True], "SVG"]"#,
+    ] {
+      let svg = woxi::interpret(code).expect("interpret should succeed");
+      assert!(svg.contains("100\u{2009}000"), "{code}: {svg}");
+      assert!(!svg.contains("100000<"), "{code}: {svg}");
+    }
+    // Four-digit labels are not grouped; five-digit ones are.
+    let svg =
+      woxi::interpret(r#"ExportString[Plot[x, {x, 0, 12345.6}], "SVG"]"#)
+        .expect("interpret should succeed");
+    assert!(svg.contains(">8000<"), "{svg}");
+    assert!(svg.contains("10\u{2009}000"), "{svg}");
   }
 }

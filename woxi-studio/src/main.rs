@@ -4384,9 +4384,9 @@ const SETTER_BAR_MAX_CHOICES: usize = 5;
 /// How wide, in characters summed over every label, a SetterBar of at most
 /// [`SETTER_BAR_MAX_CHOICES`] choices may be. Past this the row of buttons no
 /// longer fits the control panel and Wolfram falls back to a PopupMenu. The
-/// sampled Demonstrations bracket it: five figure names totaling 55
+/// sampled Demonstrations bracket it: three plot-selector phrases totaling 67
 /// characters are a bar, five error descriptions totaling 72 are a dropdown.
-const SETTER_BAR_MAX_ROW_CHARS: usize = 64;
+const SETTER_BAR_MAX_ROW_CHARS: usize = 69;
 
 /// Maximum number of *compact* choices — every label at most
 /// [`SETTER_BAR_COMPACT_LABEL_CHARS`] wide, i.e. numbers or single letters —
@@ -4469,6 +4469,7 @@ fn discrete_checkbox_state(
 /// | 4       | `prisoners dilemma`, …              |    57 | SetterBar  |
 /// | 5       | `2, 3, 4, 5, 6`                     |     5 | SetterBar  |
 /// | 5       | `quadrilateral` … `right triangle`  |    55 | SetterBar  |
+/// | 3       | three plot-selector phrases         |    67 | SetterBar  |
 /// | 8       | `-3` … `4`                          |    16 | SetterBar  |
 /// | 9       | `2` … `10`                          |    10 | PopupMenu  |
 /// | 5       | `u(y)`, `error in approximating …`  |    72 | PopupMenu  |
@@ -4789,6 +4790,7 @@ fn render_manipulate_widget<'a>(
         step,
         current,
         is_real,
+        exact_value,
         orientation,
         reversed,
         ..
@@ -4818,10 +4820,23 @@ fn render_manipulate_widget<'a>(
             Message::Noop
           }
         };
-        let value_widget = text(format_slider_value(*current, *is_real))
-          .size(11)
-          .font(Font::MONOSPACE)
-          .width(iced::Length::Fixed(72.0));
+        // An exact value (`-7/6` on a `1/6`-step slider) reads as a
+        // stacked fraction, the way the FrontEnd typesets it.
+        let value_widget: Element<Message> =
+          match state.continuous_value_icon(ctrl) {
+            Some(icon) => container(
+              svg::Svg::new(icon.handle)
+                .width(iced::Length::Fixed(icon.width))
+                .height(iced::Length::Fixed(icon.height)),
+            )
+            .width(iced::Length::Fixed(72.0))
+            .into(),
+            None => text(slider_value_text(*current, *is_real, *exact_value))
+              .size(11)
+              .font(Font::MONOSPACE)
+              .width(iced::Length::Fixed(72.0))
+              .into(),
+          };
         let control_row =
           if *orientation == manipulate::ControlOrientation::Vertical {
             let mut s =
@@ -5785,6 +5800,15 @@ fn is_text_table(rows: &[Vec<woxi::functions::graphics::DisplayNode>]) -> bool {
     })
 }
 
+/// Transpose a display grid's rows into columns, padding the columns of a
+/// short (ragged) row with `None` so every column has one slot per row.
+fn grid_columns<T>(rows: &[Vec<T>]) -> Vec<Vec<Option<&T>>> {
+  let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+  (0..width)
+    .map(|c| rows.iter().map(|row| row.get(c)).collect())
+    .collect()
+}
+
 /// Recursively render a Manipulate display-element widget tree into iced.
 /// Interactive checkboxes emit `ManipulateDisplayToggled` with the write-back
 /// assignment (`<target> = <on|off>`) to apply on toggle.
@@ -5821,15 +5845,21 @@ fn render_display_node<'a>(
       r.into()
     }
     DisplayNode::Grid(rows) => {
-      let mut col = Column::new().spacing(2);
-      for row_cells in rows {
-        let mut r = Row::new().spacing(2).align_y(Center);
-        for cell in row_cells {
-          r = r.push(render_display_node(cell_idx, cell));
+      // Wolfram lines a grid's cells up in columns, each cell centered in
+      // its column (the default `Alignment -> Center`), so the grid is laid
+      // out column by column rather than as independent rows.
+      let mut grid = Row::new().spacing(6);
+      for column_cells in grid_columns(rows) {
+        let mut col = Column::new().spacing(2).align_x(Center);
+        for cell in column_cells {
+          col = col.push(match cell {
+            Some(cell) => render_display_node(cell_idx, cell),
+            None => text(" ").size(12).into(),
+          });
         }
-        col = col.push(r);
+        grid = grid.push(col);
       }
-      col.into()
+      grid.into()
     }
     DisplayNode::Column(children) => {
       let mut col = Column::new().spacing(4);
@@ -6307,6 +6337,19 @@ fn format_slider_value(v: f64, is_real: bool) -> String {
   } else {
     s
   }
+}
+
+/// The slider readout, showing the exact initial value (`π/2`) while the
+/// slider still sits on it, as Wolfram does, and the decimal otherwise.
+fn slider_value_text(
+  current: f64,
+  is_real: bool,
+  exact_value: Option<f64>,
+) -> String {
+  exact_value
+    .filter(|v| *v == current)
+    .and_then(woxi::functions::graphics::format_exact_slider_label)
+    .unwrap_or_else(|| format_slider_value(current, is_real))
 }
 
 fn format_manipulate_number(v: f64) -> String {
@@ -9036,6 +9079,27 @@ mod tests {
     assert_eq!(format_slider_value(100_000.0, true), "100\u{2009}000.");
     assert_eq!(format_slider_value(12345.5, false), "12\u{2009}345.5");
     assert_eq!(format_slider_value(-0.125, false), "-0.125");
+  }
+
+  #[test]
+  fn slider_value_text_shows_exact_initial_value() {
+    use super::slider_value_text;
+    use std::f64::consts::PI;
+    // Still on the exact initial value: typeset exactly, as Wolfram does.
+    assert_eq!(slider_value_text(PI / 2.0, false, Some(PI / 2.0)), "π/2");
+    assert_eq!(slider_value_text(PI / 2.0, true, Some(PI / 2.0)), "π/2");
+    assert_eq!(
+      slider_value_text(3.0 * PI / 4.0, false, Some(3.0 * PI / 4.0)),
+      "3π/4"
+    );
+    assert_eq!(slider_value_text(2.0 * PI, false, Some(2.0 * PI)), "2π");
+    assert_eq!(slider_value_text(-PI / 3.0, false, Some(-PI / 3.0)), "-π/3");
+    assert_eq!(slider_value_text(1.0 / 3.0, false, Some(1.0 / 3.0)), "1/3");
+    // Integers keep the plain readout.
+    assert_eq!(slider_value_text(5.0, false, Some(5.0)), "5");
+    // Once moved off it (or with no exact initial value) the decimal shows.
+    assert_eq!(slider_value_text(2.0, true, Some(PI / 2.0)), "2.");
+    assert_eq!(slider_value_text(PI / 2.0, true, None), "1.571");
   }
 
   /// A Manipulate's helper variables written with Gothic letters
@@ -12459,6 +12523,43 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
       (0.0..=50.0).contains(&current),
       "the Trigger must stay within its dynamic bound, got {current}"
     );
+  }
+
+  /// A popup menu whose bare choices are pictures (`{shape, {Graphics[…],
+  /// Graphics[…]}, ControlType -> PopupMenu}`) shows each picture, as
+  /// Wolfram does, instead of its `Graphics[…]` InputForm text.
+  #[test]
+  fn popup_menu_of_bare_graphics_choices_shows_pictures() {
+    let expr = woxi::interpret_to_expr(
+      "Manipulate[Length[shape], \
+       {{shape, Graphics[{Rectangle[]}], \"shape\"}, \
+       {Graphics[{Rectangle[]}], Graphics[{Circle[{0, 0}, 1]}], \
+       Graphics3D[{Sphere[]}]}, ControlType -> PopupMenu}, \
+       {n, {1, 2}}]",
+    )
+    .unwrap();
+    let state = manipulate::ManipulateState::from_expr(&expr).unwrap();
+    match &state.controls[..] {
+      [
+        manipulate::ControlState::Discrete {
+          value_label_svgs: shapes,
+          popup: true,
+          ..
+        },
+        manipulate::ControlState::Discrete {
+          value_label_svgs: plain,
+          ..
+        },
+      ] => {
+        assert_eq!(shapes.len(), 3);
+        assert!(
+          shapes.iter().all(Option::is_some),
+          "every picture choice carries its rendered icon"
+        );
+        assert!(plain.iter().all(Option::is_none), "numbers stay text");
+      }
+      other => panic!("unexpected controls: {other:?}"),
+    }
   }
 
   #[test]
@@ -18317,6 +18418,28 @@ p \\[LessEqual] \\!\\(\\*SubscriptBox[\\(p\\), \\(0\\)]\\)\"}]}, \
       .collect()
   }
 
+  /// A display grid is drawn column by column so its cells line up, as
+  /// Wolfram's `Grid` does: the label column `{"volume", "surface area"}`
+  /// and the value column stay together, and a short row leaves an empty
+  /// slot instead of shifting later rows' cells into the wrong column.
+  #[test]
+  fn grid_columns_transposes_rows_and_pads_ragged_ones() {
+    let rows = vec![vec!["volume", "24.02"], vec!["surface area", "40.26"]];
+    assert_eq!(
+      grid_columns(&rows),
+      vec![
+        vec![Some(&"volume"), Some(&"surface area")],
+        vec![Some(&"24.02"), Some(&"40.26")],
+      ]
+    );
+    let ragged = vec![vec!["a"], vec!["b", "c"]];
+    assert_eq!(
+      grid_columns(&ragged),
+      vec![vec![Some(&"a"), Some(&"b")], vec![None, Some(&"c")]]
+    );
+    assert!(grid_columns::<&str>(&[]).is_empty());
+  }
+
   #[test]
   fn popup_menu_state_selects_nothing_when_current_matches_no_choice() {
     // A live value outside the choice list (or `popup_node`'s own fallback
@@ -23827,6 +23950,14 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`k$$ = 1, $CellContext`kind$$ = \"li
       "rectangle",
       "right triangle",
     ]));
+    // Three phrases totaling 68 characters (just under the 72 that overflow
+    // into a dropdown) still fit as a bar, as in a process-control
+    // Demonstration whose three plot choices total 67.
+    assert!(bar(&[
+      "product concentration",
+      "feed rate adjustment",
+      "condenser outflow heat duty",
+    ]));
 
     // Past five, short labels keep the bar...
     assert!(bar(&["-3", "-2", "-1", "1", "2", "3", "4"]));
@@ -25479,6 +25610,73 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`ctrl$$ = 1, $CellContext`P$$ = 760}
       pressure_view,
       render(&widget),
       "the Switch must render a different picture for the other choice"
+    );
+  }
+
+  /// Checked a randomly-sampled Wolfram Demonstrations Project notebook (a
+  /// fractal arrangement of 3D polyhedra) against Woxi Studio's Manipulate
+  /// pipeline. Its shape: an `Initialization` builds `GraphicsComplex`es
+  /// from `PolyhedronData[name, "VertexCoordinates"]` and `"FaceIndices"`,
+  /// one wrapped in `Rotate[…, Pi, {0, 0, 1}]`; the body `Scale`s and
+  /// `Translate`s copies of them onto a solid's vertices and draws them in
+  /// a `Graphics3D` with `ViewPoint`/`ViewAngle`, toggling extra parts with
+  /// `If[flag, part]`. A reversed-range slider (`{{g, 4, …}, 4, 1}`) and two
+  /// `{True, False}` checkboxes with numbered `ControlPlacement -> n` drive
+  /// it, the checkboxes laid out side by side by a custom
+  /// `Row[{Manipulate`Place[1], Spacer[…], Manipulate`Place[2]}]`.
+  ///
+  /// This is a self-authored, construct-equivalent example — not the
+  /// notebook's own code, which is copyrighted. It doubles as a regression
+  /// test for the `Place` row, whose checkboxes used to land on separate
+  /// lines instead of sharing one.
+  #[test]
+  fn demonstration_polyhedra_fractal_place_row_shares_one_line() {
+    let nb_src = r##"Notebook[{
+Cell[CellGroupData[{
+Cell[BoxData["Manipulate[
+ Module[{small, ring},
+  small = Scale[cube, 1/2^g {1, 1, 1}, {0, 0, 0}];
+  ring = Map[Translate[small, #] &, 2 octv];
+  Graphics3D[{{Orange, oct}, {Cyan, ring}, If[showCube, {Red, cube}], If[showRing, Scale[{Green, ring}, 0.5 {1, 1, 1}, {0, 0, 0}]]},
+   PlotRange -> 3, SphericalRegion -> True, Boxed -> False, ViewPoint -> {0, 0, 10}, ViewAngle -> 0.2, ImageSize -> {300, 260}]],
+ {{g, 4, \"shrink cubes\"}, 4, 1, Appearance -> \"Labeled\"},
+ {{showCube, False, \"show cube\"}, {True, False}, ControlPlacement -> 1},
+ {{showRing, False, \"show ring\"}, {True, False}, ControlPlacement -> 2},
+ Row[{Manipulate`Place[1], Spacer[40], Manipulate`Place[2]}],
+ TrackedSymbols -> {g, showCube, showRing}, ControlPlacement -> Top,
+ Initialization :> (
+  cube = GraphicsComplex[PolyhedronData[\"Cube\", \"VertexCoordinates\"], Polygon[PolyhedronData[\"Cube\", \"FaceIndices\"]]];
+  octv = PolyhedronData[\"Octahedron\", \"VertexCoordinates\"];
+  oct = {Rotate[GraphicsComplex[octv, Polygon[PolyhedronData[\"Octahedron\", \"FaceIndices\"]]], Pi, {0, 0, 1}]})]"], "Input"],
+Cell[BoxData["DynamicModuleBox[{$CellContext`g$$ = 4, $CellContext`showCube$$ = False, $CellContext`showRing$$ = False}, DynamicBox[\[Ellipsis]]]"], "Output"]
+}, Open]]
+}]"##;
+    let nb = woxi::notebook::parse_notebook(nb_src).unwrap();
+    let editors = WoxiStudio::editors_from_notebook(&nb);
+    let widget = editors
+      .into_iter()
+      .find_map(|e| e.manipulate_state)
+      .expect("the Manipulate must instantiate on load");
+    assert!(
+      widget.error.is_none(),
+      "body must evaluate cleanly: {:?}",
+      widget.error
+    );
+    assert!(
+      widget.graphics_handle.is_some(),
+      "the scaled and translated polyhedra must draw"
+    );
+    let rows: Vec<(&str, bool)> = widget
+      .controls
+      .iter()
+      .enumerate()
+      .filter(|(_, c)| !c.name().is_empty())
+      .map(|(i, c)| (c.name(), widget.joins_previous_control(i)))
+      .collect();
+    assert_eq!(
+      rows,
+      vec![("g", false), ("showCube", false), ("showRing", true)],
+      "the Place row must put both checkboxes on one line"
     );
   }
 
@@ -36548,6 +36746,20 @@ mod slideshow_tests {
     let expr = woxi::interpret_to_expr(code).unwrap();
     manipulate::ManipulateState::from_expr(&expr)
       .expect("SlideView must build a widget")
+  }
+
+  /// A slider stepping by `1/6` binds exact rationals, so its readout is a
+  /// typeset fraction rather than the rounded decimal `-1.167`; an integer
+  /// value on the same slider stays a text readout.
+  #[test]
+  fn rational_step_slider_reads_a_typeset_fraction() {
+    let mut state =
+      slide_view_state("Manipulate[q, {{q, -7/6}, -10, 10, 1/6}]");
+    let ctrl = state.controls[0].clone();
+    assert!(state.continuous_value_icon(&ctrl).is_some());
+    assert!(state.slide_continuous(0, -3.0));
+    let ctrl = state.controls[0].clone();
+    assert!(state.continuous_value_icon(&ctrl).is_none());
   }
 
   #[test]

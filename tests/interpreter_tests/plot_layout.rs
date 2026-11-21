@@ -1489,6 +1489,31 @@ mod typeset_labels {
     assert!(!svg.contains("font-style=\"italic\" xml:space=\"preserve\">A<"));
   }
 
+  // A `TraditionalForm` label raises its exponents instead of flattening
+  // `x^n` to the run `xn`, and keeps the size of its `Style` wrapper.
+  #[test]
+  fn text_traditional_form_power_label_raises_exponent() {
+    let svg = svg_of("Graphics[Text[Style[TraditionalForm[x^n], 16], {0, 0}]]");
+    assert!(!svg.contains(">xn</text>"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+    assert!(
+      svg.contains("font-size=\"16.0\" stroke=\"none\" font-style=\"italic\" xml:space=\"preserve\">x</text>"),
+      "{svg}"
+    );
+    assert!(svg.contains("font-size=\"11.2\""), "{svg}");
+    let svg = svg_of("Graphics[Text[TraditionalForm[4^n (a b)^n], {0, 0}]]");
+    assert!(!svg.contains(">4n"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+  }
+
+  // A `TraditionalForm` quotient stacks as a fraction.
+  #[test]
+  fn text_traditional_form_quotient_label_stacks() {
+    let svg = svg_of("Graphics[Text[TraditionalForm[x/y], {0, 0}]]");
+    assert!(!svg.contains(">xy</text>"), "{svg}");
+    assert!(svg.contains("<svg x="), "{svg}");
+  }
+
   #[test]
   fn text_quotient_label_stacks() {
     let svg = svg_of("Graphics[Text[a^2/b, {0, 0}]]");
@@ -1534,5 +1559,51 @@ mod typeset_labels {
       svg[start..end].parse::<f64>().unwrap()
     };
     assert!((translate(&plain) - translate(&styled)).abs() < 1.0);
+  }
+}
+
+/// Regression: a per-series `PlotStyle` entry that is a directive list
+/// holding a color (`{Opacity[a], Gray}`) was read as that one color, so
+/// the curve lost its opacity (and any other directive in the list).
+mod plot_style_directive_lists {
+  use super::*;
+
+  /// The `opacity` of every curve (`<polyline>`) in order.
+  fn curve_opacities(svg: &str) -> Vec<String> {
+    svg
+      .split("<polyline ")
+      .skip(1)
+      .map(|t| {
+        let start = t.find("opacity=\"").unwrap() + "opacity=\"".len();
+        t[start..start + t[start..].find('"').unwrap()].to_string()
+      })
+      .collect()
+  }
+
+  #[test]
+  fn plot_keeps_opacity_beside_color() {
+    let svg = svg_of(
+      "Plot[{Sin[x], Cos[x]}, {x, 0, 1}, \
+       PlotStyle -> {{Opacity[0.3], Gray}, {Red, Opacity[0.5]}}]",
+    );
+    assert_eq!(curve_opacities(&svg), ["0.3", "0.5"], "{svg}");
+    assert!(svg.contains("stroke=\"#808080\""), "{svg}");
+    assert!(svg.contains("stroke=\"#FF0000\""), "{svg}");
+  }
+
+  #[test]
+  fn parametric_plot_keeps_opacity_beside_color() {
+    let svg = svg_of(
+      "ParametricPlot[{{Cos[t], Sin[t]}, {2 Cos[t], Sin[t]}}, {t, 0, 2 Pi}, \
+       PlotStyle -> {{Opacity[0.025], Gray}, {Opacity[0.025], Gray}}]",
+    );
+    assert_eq!(curve_opacities(&svg), ["0.025", "0.025"], "{svg}");
+  }
+
+  #[test]
+  fn single_series_list_keeps_opacity() {
+    let svg =
+      svg_of("Plot[Sin[x], {x, 0, 1}, PlotStyle -> {Red, Opacity[0.5]}]");
+    assert_eq!(curve_opacities(&svg), ["0.5"], "{svg}");
   }
 }

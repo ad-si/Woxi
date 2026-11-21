@@ -192,6 +192,12 @@ impl AxisTicks {
 /// A rough width for a tick label's markup: its visible characters at
 /// ~0.6 em each.
 fn label_width(markup: &str) -> f64 {
+  // A typeset picture (a stacked fraction) is as wide as it was laid out.
+  if let Some((w, _)) =
+    crate::functions::graphics::axes_label_picture_size(markup)
+  {
+    return w * AXIS_TICK_FONT / crate::functions::plot_padding::TICK_FONT;
+  }
   let mut visible = 0usize;
   let mut in_tag = false;
   let mut in_entity = false;
@@ -349,6 +355,16 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           continue;
         }
         // The top of the label sits 3 pt below the axis.
+        if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+          label,
+          (x, axis_y + TICK_LABEL_GAP * sf),
+          (0.5, 0.0),
+          font,
+          &fill,
+        ) {
+          svg.push_str(&picture);
+          continue;
+        }
         svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{:.1}\" text-anchor=\"middle\" \
            font-family=\"sans-serif\" font-size=\"{font:.0}\" \
@@ -382,6 +398,16 @@ pub(crate) fn origin_axes_svg(a: &OriginAxes) -> String {
           && crossing_label_blocked((axis_x - x0) / sf)
           && (y - axis_y).abs() < font * 0.6
         {
+          continue;
+        }
+        if let Some(picture) = crate::functions::plot::tick_label_picture_svg(
+          label,
+          (axis_x - TICK_LABEL_GAP * sf, y),
+          (1.0, 0.5),
+          font,
+          &fill,
+        ) {
+          svg.push_str(&picture);
           continue;
         }
         svg.push_str(&format!(

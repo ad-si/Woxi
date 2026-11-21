@@ -69,6 +69,93 @@ mod solids {
     assert_eq!(polygon_count(&in_cylinder), polygon_count(&cylinder));
   }
 
+  /// How jagged the outline of an SVG's polygons is: the longest edge of
+  /// the convex hull of every point they draw, relative to the hull's mean
+  /// radius. A regular n-gon scores `2 sin(pi/n)`.
+  fn outline_roughness(svg: &str) -> f64 {
+    let mut pts: Vec<(f64, f64)> = svg
+      .split("<polygon points=\"")
+      .skip(1)
+      .filter_map(|s| s.split('"').next())
+      .flat_map(|s| s.split_whitespace())
+      .filter_map(|p| {
+        let (x, y) = p.split_once(',')?;
+        Some((x.parse().ok()?, y.parse().ok()?))
+      })
+      .collect();
+    pts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    pts.dedup();
+    let cross = |o: (f64, f64), a: (f64, f64), b: (f64, f64)| {
+      (a.0 - o.0) * (b.1 - o.1) - (a.1 - o.1) * (b.0 - o.0)
+    };
+    // Andrew's monotone chain: lower hull, then upper hull.
+    let mut hull: Vec<(f64, f64)> = Vec::new();
+    for pass in 0..2 {
+      let start = hull.len();
+      let seq: Vec<(f64, f64)> = if pass == 0 {
+        pts.clone()
+      } else {
+        pts.iter().rev().copied().collect()
+      };
+      for p in seq {
+        while hull.len() >= start + 2
+          && cross(hull[hull.len() - 2], hull[hull.len() - 1], p) <= 0.0
+        {
+          hull.pop();
+        }
+        hull.push(p);
+      }
+      hull.pop();
+    }
+    let n = hull.len() as f64;
+    let cx = hull.iter().map(|p| p.0).sum::<f64>() / n;
+    let cy = hull.iter().map(|p| p.1).sum::<f64>() / n;
+    let r = hull
+      .iter()
+      .map(|p| ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt())
+      .sum::<f64>()
+      / n;
+    let longest = (0..hull.len())
+      .map(|i| {
+        let (a, b) = (hull[i], hull[(i + 1) % hull.len()]);
+        ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+      })
+      .fold(0.0, f64::max);
+    longest / r
+  }
+
+  /// An opaque sphere is tessellated about the line of sight, so its
+  /// outline is its finely divided equator from any view direction — in a
+  /// lone-sphere scene and in one with many spheres. Regression: in a
+  /// scene of a few hundred spheres the larger ones came out as visibly
+  /// jagged 12-gons with saw-toothed intersections, and a lone sphere's
+  /// outline was a slanted cut through its latitude bands.
+  #[test]
+  fn opaque_sphere_outline_is_round_from_any_view() {
+    for view in ["{1.3, -2.4, 2}", "{0, 0, 10}", "{3, -1, 0.5}"] {
+      let lone = svg(&format!(
+        "Graphics3D[Sphere[{{0, 0, 0}}, 1], Boxed -> False, \
+         ViewPoint -> {view}]"
+      ));
+      let rough = outline_roughness(&lone);
+      // A 48-gon scores 0.131; the slanted cut scored 0.18.
+      assert!(
+        rough < 0.15,
+        "{view}: lone sphere outline roughness {rough}"
+      );
+    }
+    // Many spheres: small ones floating in front of a large one stay
+    // inside its outline, which is still round.
+    let crowd = svg(
+      "Graphics3D[{Sphere[{0, 0, 0}, 1], Table[Sphere[1.3 {0.94, -0.31, \
+       0.16} + 0.04 {Mod[i, 7] - 3, Mod[i, 5] - 2, Mod[i, 3] - 1}, 0.05], \
+       {i, 40}]}, Boxed -> False, ViewPoint -> {3, -1, 0.5}]",
+    );
+    let rough = outline_roughness(&crowd);
+    // A 36-gon scores 0.174.
+    assert!(rough < 0.2, "crowded sphere outline roughness {rough}");
+  }
+
   /// Only the part of a sphere poking out of another stays; a see-through
   /// enclosing solid hides nothing.
   #[test]
@@ -1555,6 +1642,54 @@ mod arrows_and_box {
     assert!(head_area(&large) > 6.0 * head_area(&default));
   }
 
+  /// The first point of every arrowhead `<polygon>` after the arrow's
+  /// `<polyline>` (each head's outline starts at its tip).
+  fn head_tips(svg: &str) -> Vec<(f64, f64)> {
+    let after = svg.split("<polyline").nth(1).unwrap();
+    after
+      .split("<polygon points=\"")
+      .skip(1)
+      .map(|pts| {
+        let first = pts.split(' ').next().unwrap();
+        let mut it = first.split(',').map(|v| v.parse::<f64>().unwrap());
+        (it.next().unwrap(), it.next().unwrap())
+      })
+      .collect()
+  }
+
+  // `Arrowheads[{s1, s2, …}]` spreads its heads evenly from tail to tip, and
+  // a negative size turns its head back along the arrow, so `{-s, s}` is a
+  // double-headed 3D arrow sized like `Arrowheads[s]` (rather than one
+  // default-size head at the tip).
+  #[test]
+  fn arrowheads_list_puts_heads_along_3d_arrow() {
+    let arrow = |heads: &str| {
+      svg(&format!(
+        "Graphics3D[{{Arrowheads[{heads}], Arrow[{{{{0, 0, 0}}, {{0, 0, 1}}}}], \
+         Point[{{{{-1, -1, -1}}, {{1, 1, 1}}}}]}}, Boxed -> False]"
+      ))
+    };
+    let single = arrow("0.02");
+    let double = arrow("{-0.02, 0.02}");
+    assert_eq!(head_tips(&single).len(), 1);
+    let tips = head_tips(&double);
+    assert_eq!(tips.len(), 2, "{double}");
+    // The heads keep the size the list gives them, not the default
+    // (a twentieth).
+    let default = head_area(&arrow("0.05"));
+    assert!(head_area(&double) < 0.5 * default, "{double}");
+    // One tip sits at the arrow's head end, the other at its tail end (the
+    // z axis points up the picture, so the tail is lower on screen).
+    let single_tip = head_tips(&single)[0];
+    assert!(
+      tips.iter().any(|t| (t.0 - single_tip.0).abs() < 0.2
+        && (t.1 - single_tip.1).abs() < 0.2)
+    );
+    assert!(tips.iter().any(|t| t.1 > single_tip.1 + 20.0), "{tips:?}");
+    // Three entries put the middle head halfway along.
+    assert_eq!(head_tips(&arrow("{0.02, 0.02, 0.02}")).len(), 3);
+  }
+
   // The head of a 3D line arrow is a cone sized by the scene, not a fixed
   // number of pixels, so it stays about as large on screen however big the
   // scene is.
@@ -1707,6 +1842,28 @@ mod smooth_shading {
     let last_red = colors.iter().rposition(|c| c.0 > c.2).unwrap();
     let first_blue = colors.iter().position(|c| c.2 > c.0).unwrap();
     assert!(last_red < first_blue, "{colors:?}");
+  }
+
+  // A translucent face lying on an opaque one stays beneath it, even when
+  // it is given later: only the opaque face's color shows through.
+  #[test]
+  fn translucent_face_on_opaque_face_stays_beneath() {
+    for (first, second) in [
+      ("Red, ", "Blue, Opacity[0.5], "),
+      ("Blue, Opacity[0.5], ", "Opacity[1], Red, "),
+    ] {
+      let s = svg(&format!(
+        "Graphics3D[{{{first}Polygon[{{{{0, 0, 0}}, {{2, 0, 0}}, \
+         {{2, 2, 0}}, {{0, 2, 0}}}}], {second}Polygon[{{{{0, 0, 0}}, \
+         {{2, 0, 0}}, {{2, 2, 0}}, {{0, 2, 0}}}}]}}, Boxed -> False]"
+      ));
+      let polys: Vec<&str> = s.split("<polygon ").skip(1).collect();
+      assert!(!polys.is_empty(), "{s}");
+      assert!(
+        !polys.last().unwrap().contains("fill-opacity"),
+        "the opaque face must be drawn last: {s}"
+      );
+    }
   }
 }
 
@@ -2054,5 +2211,90 @@ mod box_and_label_options {
       assert!(s.contains("font-size=\"16\""), "no 16pt labels for {expr}");
       assert!(!s.contains("font-size=\"10\""), "10pt ticks left in {expr}");
     }
+  }
+}
+
+/// A "perforated" face is one polygon running round its outline, across a
+/// bridge to an inner copy shrunk toward the center, and round that copy
+/// (`Join[pts, {p1}, inner, {q1}]`). Wolfram fills it with the even-odd
+/// rule, which also settles the two extremes of the shrink factor.
+mod perforated_faces {
+  use super::*;
+
+  /// The corners as a Wolfram list `{{x, y, z}, …}`.
+  fn coords(outline: &[[i64; 3]]) -> String {
+    let pts: Vec<String> = outline
+      .iter()
+      .map(|p| format!("{{{}, {}, {}}}", p[0], p[1], p[2]))
+      .collect();
+    format!("{{{}}}", pts.join(", "))
+  }
+
+  /// The face's corners, then the inner ring `{1 - d, d} . {p, center}`.
+  fn perforated(outline: &[[i64; 3]], d: &str) -> String {
+    let pts = coords(outline);
+    format!(
+      "With[{{pts = {pts}, d = {d}}}, Module[{{inner = Map[{{1 - d, d}} . {{#, Mean[pts]}} &, pts]}}, \
+       Polygon[Join[pts, pts[[{{1}}]], inner, inner[[{{1}}]]]]]]"
+    )
+  }
+
+  const SQUARE: [[i64; 3]; 4] = [[0, 0, 0], [4, 0, 0], [4, 4, 0], [0, 4, 0]];
+  const TRIANGLE: [[i64; 3]; 3] = [[0, 0, 0], [3, 0, 1], [0, 3, 2]];
+
+  fn scene(prims: &str) -> String {
+    svg(&format!("Graphics3D[{{Yellow, {prims}}}, Boxed -> False]"))
+  }
+
+  /// With the inner ring collapsed onto the center (`d = 1`) the hole
+  /// encloses nothing: the face is drawn exactly as the plain polygon,
+  /// without the bridge stroked from a corner to the center.
+  #[test]
+  fn collapsed_hole_draws_the_plain_face() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let plain = format!("Polygon[{}]", coords(outline));
+      for d in ["1", "1.0"] {
+        assert_eq!(
+          scene(&perforated(outline, d)),
+          scene(&plain),
+          "d = {d} for {plain}"
+        );
+      }
+    }
+  }
+
+  /// With the inner ring on the outline itself (`d = 0`) the face is
+  /// enclosed twice, so the even-odd rule leaves it unfilled and only its
+  /// outline is drawn — as `FaceForm[None]` draws it.
+  #[test]
+  fn retraced_outline_leaves_the_face_empty() {
+    for outline in [&SQUARE[..], &TRIANGLE[..]] {
+      let hollow = format!("FaceForm[None], Polygon[{}]", coords(outline));
+      for d in ["0", "0.0"] {
+        let s = scene(&perforated(outline, d));
+        assert_eq!(s, scene(&hollow), "d = {d} for {hollow}");
+        // Any polygon left is an unfilled outline.
+        assert!(
+          s.lines()
+            .filter(|l| l.starts_with("<polygon"))
+            .all(|l| l.contains("fill-opacity=\"0\"")),
+          "face still filled: {s}"
+        );
+        assert!(
+          s.contains("stroke=\"rgb(64,64,64)\""),
+          "outline missing: {s}"
+        );
+      }
+    }
+  }
+
+  /// In between, the inner ring is a hole: the face stays filled but
+  /// takes more pieces than the solid face to go round it.
+  #[test]
+  fn partial_shrink_cuts_a_hole() {
+    let holed = scene(&perforated(&SQUARE, "0.5"));
+    let solid = scene(&perforated(&SQUARE, "1"));
+    assert!(!holed.contains("fill-opacity=\"0\""));
+    assert!(polygon_count(&holed) > polygon_count(&solid));
   }
 }

@@ -64,6 +64,11 @@
     graphics `Show`n with it, so a caption placed at the center of a drawn
     cycle lands there. A graph with explicit `VertexCoordinates` is likewise
     drawn in the caller's coordinates.
+- `Plot3D[…, AxesLabel -> Automatic]` names the two variable axes in
+    `TraditionalForm` (italic letters) and leaves the value axis unlabeled,
+    instead of adding an upright `z` label.
+- Woxi Studio draws the controls of a custom Manipulate layout
+    `Row[{Place[1], Spacer[…], Place[2]}]` side by side on one line.
 
 # 2026-11-08 - 0.4.0
 
