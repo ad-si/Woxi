@@ -1580,6 +1580,15 @@ fn reduce_equation(
     return Ok(solved);
   }
 
+  // A sparse polynomial of high degree over the reals: count its real
+  // roots instead of factoring the dense polynomial.
+  if domain == Some("Reals")
+    && let Some(result) =
+      super::sparse_roots::sparse_reals_reduce(&expanded, var)
+  {
+    return Ok(result);
+  }
+
   // Use the Solve infrastructure to find roots
   let eq_expr = Expr::Comparison {
     operands: vec![lhs.clone(), rhs.clone()],
@@ -4508,6 +4517,12 @@ fn vanishing_denominators(value: &Expr, vars: &[String]) -> Vec<Expr> {
 fn is_in_domain(expr: &Expr, domain: &str) -> bool {
   match domain {
     "Reals" => {
+      // A `Root` object of an integer polynomial is real exactly when its
+      // index is within the count of real roots, which is cheap to find
+      // even for a high degree where evaluating the root is not.
+      if let Some(real) = super::sparse_roots::root_object_is_real(expr) {
+        return real;
+      }
       // No explicit imaginary unit, and no non-real value hiding behind a
       // radical or `Root[...]` object (e.g. `(-1)^(1/3)`).
       !contains_imaginary(expr) && !has_nonzero_imaginary_part(expr)
