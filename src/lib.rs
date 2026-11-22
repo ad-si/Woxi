@@ -4555,6 +4555,22 @@ pub(crate) fn is_3d_list(items: &[syntax::Expr]) -> bool {
     })
 }
 
+/// Whether `TableForm` lays out a third level of `items`: every row is a
+/// non-empty list and at least one cell is itself a list. Those list cells
+/// run down the page as columns of their own (so a one-element `{x}` shows
+/// as a plain `x`), matching Wolfram's nested table layout.
+fn tableform_has_third_level(items: &[syntax::Expr]) -> bool {
+  let rows_are_lists = !items.is_empty()
+    && items
+      .iter()
+      .all(|item| matches!(item, syntax::Expr::List(sub) if !sub.is_empty()));
+  rows_are_lists
+    && items.iter().any(|item| {
+      matches!(item, syntax::Expr::List(sub)
+        if sub.iter().any(|s| matches!(s, syntax::Expr::List(_))))
+    })
+}
+
 /// Compute the `Grid` arguments (data reshaped into rows + forwarded options
 /// like `TableHeadings`) and the group-gap row indices for a
 /// `TableForm[data, opts…]` call's argument list.
@@ -4619,10 +4635,12 @@ pub(crate) fn tableform_layout_args(
     {
       (data.clone(), vec![])
     }
-    syntax::Expr::List(items) if is_3d_list(items) => {
+    syntax::Expr::List(items) if tableform_has_third_level(items) => {
       // 3D list M[dim1][dim2][dim3]:
       // Each block M[i] is transposed (sub-lists become columns),
-      // then blocks are stacked vertically.
+      // then blocks are stacked vertically. A row may mix plain cells with
+      // list cells (`{t, {value}, …}`): only the list cells run down the
+      // block's sub-rows, the plain cells sit on its first sub-row.
       let mut rows: Vec<syntax::Expr> = Vec::new();
       let mut gaps: Vec<usize> = Vec::new();
       for (bi, block) in items.iter().enumerate() {
@@ -4640,7 +4658,8 @@ pub(crate) fn tableform_layout_args(
               }
             })
             .max()
-            .unwrap_or(0);
+            .unwrap_or(0)
+            .max(1);
           for k in 0..dim3 {
             let row: Vec<syntax::Expr> = sub_lists
               .iter()
@@ -4649,14 +4668,22 @@ pub(crate) fn tableform_layout_args(
                   v.get(k)
                     .cloned()
                     .unwrap_or(syntax::Expr::Identifier(String::new()))
-                } else {
+                } else if k == 0 {
                   sl.clone()
+                } else {
+                  syntax::Expr::Identifier(String::new())
                 }
               })
               .collect();
             rows.push(syntax::Expr::List(row.into()));
           }
         }
+      }
+      // When no block runs over more than one sub-row (every list cell holds
+      // a single element) the table is laid out as a plain 2-D one, without
+      // the extra spacing that separates multi-row blocks.
+      if rows.len() == items.len() {
+        gaps.clear();
       }
       (syntax::Expr::List(rows.into()), gaps)
     }

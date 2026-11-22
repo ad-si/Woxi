@@ -7941,6 +7941,19 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
       if (name == "Pane" || name == "Deploy") && !args.is_empty() =>
     {
       let pane_size = pane_fixed_size(args);
+      // A fixed `{width, height}` Pane is a layout box of its own: an
+      // automatically sized picture in it is laid out against the box (and
+      // shrunk to fit it), not at the reduced size of the list, `Grid` or
+      // `Column` the Pane sits in.
+      if name == "Pane"
+        && pane_size.is_some()
+        && crate::functions::container_layout::image_size_multiplier() < 1.0
+      {
+        return crate::functions::container_layout::with_image_size_multiplier(
+          1.0,
+          || expr_to_svg(expr),
+        );
+      }
       let wrapped = match (name.as_str(), pane_size.as_ref()) {
         ("Pane", Some(size)) => pane_size_component(&size[0])
           .and_then(|w| wrap_pane_text(&args[0], w, 14.0))

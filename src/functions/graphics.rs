@@ -42512,10 +42512,15 @@ pub(crate) fn clip_svg_to_pane_box(
   // A graphic that carries its own `viewBox` (a `Plot`, `Graphics`, …) is a
   // scalable picture: the FrontEnd shrinks it to fit the Pane instead of
   // cutting it off, keeping its aspect ratio.
+  // The Pane itself keeps its declared `width` x `height`: the shrunk
+  // picture sits in it where the alignment puts it.
   if let Some(scaled) =
     shrink_scalable_svg(svg, natural_w, natural_h, width, height, auto_sized)
   {
-    return scaled;
+    let (scaled_w, scaled_h) = parse_svg_wh(&scaled);
+    return place_in_pane_box(
+      &scaled, scaled_w, scaled_h, width, height, align,
+    );
   }
   // `ImageSizeAction -> "ShrinkToFit"` scales any oversized content down to
   // the box (keeping its aspect ratio) instead of cutting it off. The
