@@ -17427,6 +17427,30 @@ mod plot3d {
       );
     }
 
+    /// `\[SelectionPlaceholder]` (U+F527) and `\[Placeholder]` (U+F528)
+    /// draw as a filled and an empty square, while the strings keep the
+    /// private-use code points.
+    #[test]
+    fn placeholder_glyphs_are_drawn_as_squares() {
+      let svg = export_svg(
+        r#"Graphics[{Text["\[SelectionPlaceholder]", {0, 0}], Text["\[Placeholder]", {0, 1}]},
+           PlotRange -> {{-1, 1}, {-1, 2}}]"#,
+      );
+      assert!(svg.contains(">\u{25A0}</text>"), "filled square: {svg}");
+      assert!(svg.contains(">\u{25A1}</text>"), "empty square: {svg}");
+      assert!(
+        !svg.contains('\u{F527}') && !svg.contains('\u{F528}'),
+        "private-use code point drawn: {svg}"
+      );
+      assert_eq!(
+        woxi::interpret(
+          r#"ToCharacterCode["\[SelectionPlaceholder]\[Placeholder]"]"#
+        )
+        .unwrap(),
+        "{62759, 62760}"
+      );
+    }
+
     /// `\[Implies]` (U+F523) and its private-use neighbors were drawn as
     /// blank boxes; they now substitute the nearest standard character.
     #[test]
@@ -46968,6 +46992,27 @@ mod manipulate {
         // sorts first (`"rest" + Row[…]` in wolframscript).
         assert_eq!(value_labels[0], "(a1)/(b2)");
         assert_eq!(value_labels[1], "rest + m\u{2081}+");
+      }
+      other => panic!("expected a discrete control, got {other:?}"),
+    }
+  }
+
+  /// A setter whose choice labels pair a number with a colored
+  /// `\[SelectionPlaceholder]` swatch (U+F527) draws the filled square the
+  /// FrontEnd shows, not the blank box of the raw private-use code point.
+  #[test]
+  fn spec_selection_placeholder_labels_draw_filled_square() {
+    let expr = interpret_to_expr(
+      "Manipulate[k, {{k, 1, \"\"}, {1 -> Style[\"1 \\[SelectionPlaceholder]\", \
+       Red], 2 -> Style[\"2 \\[Placeholder]\", Blue]}, ControlType -> \
+       SetterBar}]",
+    )
+    .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("a setter spec");
+    match &spec.controls[0] {
+      ManipulateControl::Discrete { value_labels, .. } => {
+        assert_eq!(value_labels[0], "1 \u{25A0}");
+        assert_eq!(value_labels[1], "2 \u{25A1}");
       }
       other => panic!("expected a discrete control, got {other:?}"),
     }
