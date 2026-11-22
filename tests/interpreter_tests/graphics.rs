@@ -37414,6 +37414,20 @@ mod graphics_grid {
     );
   }
 
+  /// Text given only the generic `sans-serif` family (a `"Label"` style)
+  /// names the same sans face as unset text, keeping the generic fallback;
+  /// rewriting twice changes nothing more.
+  #[test]
+  fn default_text_family_names_the_generic_sans_face() {
+    let svg = "<svg><text font-family=\"sans-serif\">A</text>\
+      <text font-family=\"serif\">B</text></svg>";
+    let out = woxi::with_default_text_family(svg);
+    let expected = "<svg><text font-family=\"Atkinson Hyperlegible Next, \
+       sans-serif\">A</text><text font-family=\"serif\">B</text></svg>";
+    assert_eq!(out, expected);
+    assert_eq!(woxi::with_default_text_family(&out), expected);
+  }
+
   /// A typeset cell — a `Row` quotient stacked as a fraction — is set in
   /// the grid's `BaseStyle` face like the plain text cells, its glyphs
   /// measured in that (narrower, proportional) face, so the stacked
@@ -57834,6 +57848,39 @@ fn test_highlight_graph_draws_the_highlighted_parts_red() {
 
 mod options_of_a_graphic {
   use super::*;
+
+  // A plot keeps the options it shares with `Graphics`, so `Options` reads
+  // them back and `Show` can extend its `Epilog` rather than replace it.
+  #[test]
+  fn options_of_a_plot_include_its_epilog() {
+    assert_eq!(
+      interpret(
+        "Options[Plot[Sin[x], {x, 0, 3}, Epilog -> {Point[{1, 1}]}], Epilog]"
+      )
+      .unwrap(),
+      "{Epilog -> {Point[{1, 1}]}}"
+    );
+    assert_eq!(
+      interpret(
+        "Options[ListPlot[{1, 2, 3}, Epilog -> {Disk[]}, Frame -> True], \
+         Frame]"
+      )
+      .unwrap(),
+      "{Frame -> True}"
+    );
+    assert_eq!(
+      interpret(
+        "g = Plot[x, {x, 0, 1}, Epilog -> {Point[{0, 0}]}]; \
+         Cases[Show[g, Epilog -> Join[Lookup[Options[g, Epilog], Epilog], \
+         {Point[{1, 1}]}]][[2]], _Rule]"
+      )
+      .unwrap(),
+      "{Epilog -> {Point[{0, 0}], Point[{1, 1}]}}"
+    );
+    // A plot given no such options still reports its drawn size.
+    let size = interpret("Options[Plot[x, {x, 0, 1}]]").unwrap();
+    assert!(size.starts_with("{ImageSize -> {360, "), "{size}");
+  }
 
   // `Options[g, opt]` reads the options a graphic was drawn with.
   #[test]

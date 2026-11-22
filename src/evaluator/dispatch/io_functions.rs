@@ -9548,9 +9548,18 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// Add `font-family="Atkinson Hyperlegible Next, sans-serif"` to every
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
-/// the opening tag.
+/// the opening tag. A family given only as the generic `sans-serif` (a
+/// `"Label"` style's text) names the same face, keeping the generic one as
+/// its fallback, so renderers that resolve `sans-serif` to a serif default
+/// still draw it in the sans face.
 pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
+  // Exact-quoted matches keep this idempotent: an already-rewritten value
+  // no longer equals the generic form.
+  let svg = &svg.replace(
+    "font-family=\"sans-serif\"",
+    "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+  );
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
   let mut stack: Vec<bool> = Vec::new();
@@ -9677,19 +9686,15 @@ fn embed_used_fonts(svg: &str) -> String {
   // retained so the mono `[font-family*="Mono"]` CSS selectors below still
   // match. Exact-quoted matches make this idempotent (an already-rewritten
   // value no longer equals the generic form).
-  let body = svg
-    .replace(
-      "font-family=\"sans-serif\"",
-      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
-    )
-    .replace(
-      "font-family=\"monospace\"",
-      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
-    );
+  let body = svg.replace(
+    "font-family=\"monospace\"",
+    "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
+  );
   // A bare `<text>` (a `Graphics` `Text` without `FontFamily`) relies on
   // the stylesheet's inherited default, which viewers that ignore
   // `<style>` replace with their own (serif) face. Bake the default sans
-  // family onto it too, as WL's default graphics font is a sans-serif one.
+  // family onto it too, as WL's default graphics font is a sans-serif one;
+  // this also names the face on text given the generic `sans-serif`.
   let body = with_default_text_family(&body);
   // Named faces may be absent on the machine rendering the export. Preserve
   // the requested face and provide its generic family for that case.

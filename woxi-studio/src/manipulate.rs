@@ -5333,6 +5333,28 @@ mod tests {
   }
 
   /// As part of a scheduled QA routine, Woxi Studio was tested against a
+  /// randomly sampled Wolfram Demonstration notebook whose Manipulate draws
+  /// a plot with arrows in its `Epilog` next to a `Locator` control.
+  /// Regression check: the locator markers are added to the plot's own
+  /// `Epilog` instead of replacing it, so the arrows stay drawn. This is a
+  /// self-authored, construct-equivalent example.
+  #[test]
+  fn locator_markers_keep_a_plots_own_epilog() {
+    let code = r#"Manipulate[
+      Plot[Sin[k x], {x, 0, 3}, Epilog -> {Red, Arrowheads[0.1],
+        Table[Arrow[{{s, 0}, {s, 0.5}}], {s, 1, 2}]}],
+      {k, 1, 2},
+      {{p, {1, 0}}, Locator}
+    ]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state =
+      ManipulateState::from_expr(&expr).expect("build Manipulate widget");
+    let svg = state.current_svg().expect("the plot is drawn");
+    // One filled head per arrow.
+    assert_eq!(svg.matches("<polygon").count(), 2, "{svg}");
+  }
+
+  /// As part of a scheduled QA routine, Woxi Studio was tested against a
   /// randomly sampled Wolfram Demonstration notebook whose Manipulate holds a
   /// list of `Appearance -> None` locators gated by `Enabled -> !flag`, next
   /// to buttons that overwrite the whole point list. Regression check: the
