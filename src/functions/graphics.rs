@@ -26885,6 +26885,28 @@ pub fn estimate_box_display_width(expr: &Expr) -> f64 {
 
 /// Check whether a box-form expression contains a FractionBox anywhere,
 /// which requires extra vertical space in the SVG wrapper.
+/// Whether a box expression holds a two-dimensional box — a stacked
+/// fraction, a radical, a grid, or a script stacked over or under its base —
+/// that only the box layout can draw.
+fn box_is_two_dimensional(expr: &Expr) -> bool {
+  match expr {
+    Expr::FunctionCall { name, args } => {
+      matches!(
+        name.as_str(),
+        "FractionBox"
+          | "SqrtBox"
+          | "RadicalBox"
+          | "GridBox"
+          | "UnderscriptBox"
+          | "UnderoverscriptBox"
+          | "OverscriptBox"
+      ) || args.iter().any(box_is_two_dimensional)
+    }
+    Expr::List(items) => items.iter().any(box_is_two_dimensional),
+    _ => false,
+  }
+}
+
 pub fn box_has_fraction(expr: &Expr) -> bool {
   match expr {
     Expr::FunctionCall { name, .. } if name == "FractionBox" => true,
@@ -30708,6 +30730,20 @@ fn traditional_inline_box_content_svg(
       return None;
     }
     let boxes = crate::strip_number_precision_markers(&boxes);
+    let layout = layout_box(&boxes, size);
+    if layout.width <= 0.0 || layout.height <= 0.0 {
+      return None;
+    }
+    return Some(layout_to_svg(&layout, theme().text_primary));
+  }
+  // `RawBoxes[boxes]` / `DisplayForm[boxes]` show the boxes as they are:
+  // a radical over a stacked fraction (`SqrtBox[FractionBox[…]]`) needs the
+  // box layout, not the one-line text rendering that writes `√a/b`.
+  if is_box_display_wrapper(name, args) {
+    if !box_is_two_dimensional(&args[0]) {
+      return None;
+    }
+    let boxes = crate::strip_number_precision_markers(&args[0]);
     let layout = layout_box(&boxes, size);
     if layout.width <= 0.0 || layout.height <= 0.0 {
       return None;

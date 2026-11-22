@@ -5928,6 +5928,34 @@ mod grid_item_style_tests {
   }
 
   #[test]
+  fn test_grid_raw_boxes_radical_over_fraction_is_stacked() {
+    // A `RawBoxes` cell holding a radical over a stacked fraction is drawn
+    // through the box layout (radical stroke, fraction bar), not written on
+    // one line as `√a/b` under a text overline.
+    let svg = woxi::interpret(
+      r#"ExportString[Grid[{{RawBoxes[RowBox[{SqrtBox[FractionBox["p", "q"]], "+", "s"}]], 1}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(svg.contains("<line"), "missing fraction bar in {svg}");
+    assert!(svg.contains("<path"), "missing radical stroke in {svg}");
+    assert!(!svg.contains("p/q"), "fraction printed inline in {svg}");
+    assert!(!svg.contains("overline"), "radical drawn as text in {svg}");
+    // The same works for `DisplayForm` of a box and for a fraction alone.
+    let frac = woxi::interpret(
+      r#"ExportString[Grid[{{DisplayForm[FractionBox["m", "n"]]}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(frac.contains("<line"), "missing fraction bar in {frac}");
+    assert!(!frac.contains("m/n"), "fraction printed inline in {frac}");
+    // One-line boxes keep their plain text rendering.
+    let plain = woxi::interpret(
+      r#"ExportString[Grid[{{RawBoxes[RowBox[{"u", "+", "v"}]]}}], "SVG"]"#,
+    )
+    .unwrap();
+    assert!(!plain.contains("<line"), "unexpected bar in {plain}");
+  }
+
+  #[test]
   fn test_traditional_form_styled_label_typesets_inline_box_notation() {
     // A styled string with inline `\!\(\*SubscriptBox[…]\)` notation inside
     // `TraditionalForm` draws the subscript, not the escape source.
