@@ -22447,6 +22447,39 @@ Plot[{x^2 - 1, 1 - x^2}, {x, -1, 1}, Filling -> {1 -> {{2}, Blue}}]]",
       );
     }
 
+    // Regression: a per-axis `PlotRange -> {{a, b}, Automatic}` settles its
+    // `Automatic` axis to the plot's own range too, so a marker line below
+    // the curve is clipped instead of stretching the y axis down to it,
+    // while the explicit x range stays as given.
+    #[test]
+    fn show_settles_automatic_axis_of_leading_plot_range() {
+      let svg = export_svg(
+        "Show[Plot[Sin[x], {x, 0, 3}, PlotRange -> {{-1, 4}, Automatic}], \
+         Graphics[{Dashed, Line[{{1, 0}, {1, -1}}]}]]",
+      );
+      assert!(
+        svg.contains(">0.8</text>")
+          && !svg.contains(">-0.5</text>")
+          && !svg.contains(">-1.0</text>"),
+        "Show stretched the automatic y axis to the marker line: {svg}"
+      );
+      assert!(
+        svg.contains(">-1</text>") && svg.contains(">4</text>"),
+        "the explicit x range was not kept: {svg}"
+      );
+      // The same holds for an automatic x axis next to an explicit y one.
+      let svg = export_svg(
+        "Show[Plot[Sin[x], {x, 0, 3}, PlotRange -> {Automatic, {-2, 2}}], \
+         Graphics[Line[{{-5, 0}, {1, -1}}]]]",
+      );
+      assert!(
+        svg.contains(">3.0</text>")
+          && svg.contains(">-2</text>")
+          && !svg.contains(">-4</text>"),
+        "Show stretched the automatic x axis to the marker line: {svg}"
+      );
+    }
+
     // A `PlotRange` given to `Show` itself still spans every layer.
     #[test]
     fn show_own_plot_range_spans_primitives_over_plot() {
