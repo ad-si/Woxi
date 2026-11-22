@@ -6021,8 +6021,11 @@ overlays clickable areas on them.)
 - A `TabView` of controls is flattened — every tab's controls are shown at
   once, since Woxi's control panel is one flat list.
 - A `TabView` in a `Manipulate` body (or any rendered layout) is drawn as
-  just its selected pane: the row of tab labels and the tab frame around the
-  pane are not drawn.
+  its row of tab labels above the selected pane's rounded gray panel, but
+  the labels sit just above the panel rather than overlapping its top edge,
+  and they are not clickable in the picture (the tab is switched from the
+  control panel instead). The exact front-end colors and margins are
+  approximated.
 - One unrecognized control spec makes the **entire** `Manipulate` give up, so a
   single unsupported control takes every other control with it.
 - `Manipulate[…, Initialization :> …]` leaks its definitions into the session.
