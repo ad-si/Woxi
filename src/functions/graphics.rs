@@ -14843,11 +14843,17 @@ fn styled_text_ranges(content: &Expr, text: &str) -> Vec<StyledRange> {
   let mut pos = 0;
   for r in &runs {
     let run: Vec<char> = r.text.chars().collect();
+    let blank = !run.is_empty() && run.iter().all(|&c| c == ' ');
     let mut end = pos + run.len();
     if end > chars.len() || chars[pos..end] != run[..] {
+      // A `Spacer` line of a `Column` is a blank run but an empty line of
+      // the text (see `graphics_text_content`).
+      if blank && chars.get(pos).is_none_or(|&c| c == '\n') {
+        continue;
+      }
       return Vec::new();
     }
-    if !run.is_empty() && run.iter().all(|&c| c == ' ') {
+    if blank {
       while end < chars.len() && chars[end] == ' ' {
         end += 1;
       }
@@ -53748,13 +53754,7 @@ fn manipulate_label_runs_inner(expr: &Expr, italic: bool) -> Vec<LabelRun> {
                 ..Default::default()
               });
             }
-            // A `Spacer` item is a vertical gap: an empty line, as the
-            // label's text has it (see `graphics_text_content`), so the
-            // styled runs of the other lines still line up with that text.
-            if !matches!(p, Expr::FunctionCall { name, .. } if name == "Spacer")
-            {
-              runs.extend(manipulate_label_runs(p, italic));
-            }
+            runs.extend(manipulate_label_runs(p, italic));
             runs
           })
           .collect(),
