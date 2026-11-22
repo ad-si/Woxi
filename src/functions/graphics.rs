@@ -18050,7 +18050,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   };
   // Whether the label room above only covers the sides, leaving the
   // vertical range to grow for labels as usual.
-  let text_overflow_sideways = text_overflow.is_some() && aspect_ratio.is_none();
+  let text_overflow_sideways =
+    text_overflow.is_some() && aspect_ratio.is_none();
   // The width the drawing keeps once labels took their room beside it.
   let drawing_w = match text_overflow {
     Some([l, r, _, _]) => (svg_width as f64 - l - r).max(1.0),

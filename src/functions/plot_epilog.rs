@@ -1503,9 +1503,9 @@ fn is_left_aligned_column(label: &Expr) -> bool {
     Expr::FunctionCall { name, args }
       if name == "Column" && !args.is_empty() =>
     {
-      let positional = args.get(1).filter(|a| {
-        !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
-      });
+      let positional = args
+        .get(1)
+        .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }));
       match positional.or_else(|| option_value(&args[1..], "Alignment")) {
         None => true,
         Some(Expr::Identifier(a)) => a == "Left",

@@ -4826,8 +4826,8 @@ mod graphics {
           PlotRange -> {0, 4}, PlotLabel -> \"title\"]",
       );
       let num = |s: &str, key: &str| -> f64 {
-        let start = s.find(key).unwrap_or_else(|| panic!("{key}: {s}"))
-          + key.len();
+        let start =
+          s.find(key).unwrap_or_else(|| panic!("{key}: {s}")) + key.len();
         s[start..].split('"').next().unwrap().parse().unwrap()
       };
       // The drawing is what the labels leave of the 230 points.
@@ -14955,7 +14955,9 @@ mod plot3d {
         svg[start..end].to_string()
       };
       assert!(label(", Center").contains("text-anchor=\"middle\""));
-      assert!(label(", Alignment -> Center").contains("text-anchor=\"middle\""));
+      assert!(
+        label(", Alignment -> Center").contains("text-anchor=\"middle\"")
+      );
       assert!(label("").contains("text-anchor=\"start\""));
     }
 
