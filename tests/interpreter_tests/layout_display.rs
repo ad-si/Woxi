@@ -2095,11 +2095,10 @@ fn tableform_mixed_row_runs_list_cells_down_the_column() {
   .unwrap();
   let cells = svg_text_cells(&svg);
   let pos = |s: &str| {
-    cells
-      .iter()
-      .find(|c| c.2 == s)
-      .map(|c| (c.0.parse::<f64>().unwrap(), c.1.parse::<f64>().unwrap()))
-      .unwrap_or_else(|| panic!("no cell {s} in {cells:?}"))
+    let Some(c) = cells.iter().find(|c| c.2 == s) else {
+      panic!("no cell {s} in {cells:?}");
+    };
+    (c.0.parse::<f64>().unwrap(), c.1.parse::<f64>().unwrap())
   };
   let (a, b, c, d, e) = (pos("a"), pos("b"), pos("c"), pos("d"), pos("e"));
   // `b` and `c` share a column, `c` below `b`.
