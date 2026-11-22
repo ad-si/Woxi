@@ -2660,6 +2660,39 @@ mod graphics {
       }
     }
 
+    /// The same option-rule directives also style a plot's `Prolog` and
+    /// `Epilog` (`{PointSize -> Large, Point[…]}` used to draw a default
+    /// sized point there).
+    #[test]
+    fn option_rule_acts_as_directive_in_plot_prolog_and_epilog() {
+      for opt in ["Prolog", "Epilog"] {
+        for (rule, directive) in [
+          ("PointSize -> Large", "PointSize[Large]"),
+          ("PointSize -> 0.03", "PointSize[0.03]"),
+          ("AbsolutePointSize -> 9", "AbsolutePointSize[9]"),
+          ("Thickness -> 0.02", "Thickness[0.02]"),
+          ("Opacity -> 0.3", "Opacity[0.3]"),
+        ] {
+          let plot = |d: &str| {
+            export_svg(&format!(
+              "Plot[x, {{x, 0, 1}}, {opt} -> {{{{{d}, Point[{{0.5, 0.2}}], \
+               Line[{{{{0, 1}}, {{1, 0}}}}]}}, Point[{{0.2, 0.5}}]}}]"
+            ))
+          };
+          let with_rule = plot(rule);
+          assert_eq!(with_rule, plot(directive), "{opt}: {rule}");
+          assert_ne!(
+            with_rule,
+            export_svg(&format!(
+              "Plot[x, {{x, 0, 1}}, {opt} -> {{{{Point[{{0.5, 0.2}}], \
+               Line[{{{{0, 1}}, {{1, 0}}}}]}}, Point[{{0.2, 0.5}}]}}]"
+            )),
+            "{opt}: {rule} has an effect"
+          );
+        }
+      }
+    }
+
     #[test]
     fn dashing() {
       insta::assert_snapshot!(export_svg(
