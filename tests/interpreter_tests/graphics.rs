@@ -38462,10 +38462,10 @@ mod graphics_grid {
     let plain = width(&format!(
       "Text@Style[Grid[{{{{\"{text}\"}}}}, Frame -> All], 17]"
     ));
-    let row = width(&format!(
-      "Text@Style[Grid[{{{{Row[{{\"the quick \", Style[\"brown\", Red], \
-       \" fox jumps\"}}]}}}}, Frame -> All], 17]"
-    ));
+    let row = width(
+      "Text@Style[Grid[{{Row[{\"the quick \", Style[\"brown\", Red], \
+       \" fox jumps\"}]}}, Frame -> All], 17]",
+    );
     let column = width(&format!(
       "Text@Style[Grid[{{{{Column[{{\"{text}\", \"short\"}}]}}}}, \
        Frame -> All], 17]"
