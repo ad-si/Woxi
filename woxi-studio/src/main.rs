@@ -11397,11 +11397,20 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("a Setter row should build a ManipulateState");
     assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
-    let svg = state
-      .typeset_output
-      .as_deref()
-      .expect("the textual result is typeset");
-    assert!(state.typeset_handle.is_some());
+    // The fixed-size pane keeps its box, so the typeset formula is drawn
+    // as a picture placed in it.
+    let handle = state
+      .graphics_handle
+      .as_ref()
+      .expect("the formula is typeset in the pane's box");
+    let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+      panic!("in-memory svg expected");
+    };
+    let svg = String::from_utf8_lossy(bytes);
+    assert!(
+      svg.starts_with("<svg width=\"500\" height=\"200\""),
+      "the pane's box: {svg}"
+    );
     assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
     assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");
