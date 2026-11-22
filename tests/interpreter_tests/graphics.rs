@@ -4860,6 +4860,24 @@ mod graphics {
     }
 
     #[test]
+    fn number_form_with_exponent_function_and_fixed_spec_in_label() {
+      // Regression: a `NumberForm[x, {n, f}, ExponentFunction -> f, …]` in
+      // a picture's label was set as the bare number (`-2.`), dropping the
+      // digit spec, the sign options and the exponent.
+      let svg = export_svg(
+        "Graphics[Disk[], PlotLabel -> Row[{\"E = \", NumberForm[-2., {5, 4}, \
+         NumberSigns -> {\"-\", \"+\"}, ExponentFunction -> (# &)]}]]",
+      );
+      assert!(!svg.contains("NumberForm"), "{svg}");
+      assert!(
+        svg.contains(
+          "-2.0000 × 10<tspan baseline-shift=\"super\" font-size=\"70%\">0</tspan>"
+        ),
+        "{svg}"
+      );
+    }
+
+    #[test]
     fn scientific_form_with_exponent_function_in_grid() {
       // Regression: a `ScientificForm[x, ExponentFunction -> f]` cell —
       // alone or wrapped in `NumberForm[…, n]` — printed its raw

@@ -4341,28 +4341,10 @@ fn number_form_exponent_function_to_string(
   let n = if n < 1 { 1 } else { n };
   let neg = v < 0.0;
   let av = v.abs();
-
-  // Normalized mantissa/exponent after rounding to n significant figures
-  // (e.g. 9.99 at n=2 renormalizes to 1.0×10^1, so the exponent is 1).
-  let formatted = format!("{:.*e}", (n - 1) as usize, av);
-  let (_, exp_raw) = formatted.split_once('e')?;
-  let e: i64 = exp_raw.parse().ok()?;
-
-  // Apply the user exponent function to the natural exponent.
-  let applied = crate::functions::list_helpers_ast::apply_func_ast(
-    f,
-    &Expr::Integer(e as i128),
-  )
-  .ok()?;
-  let applied =
-    crate::evaluator::evaluate_expr_to_expr(&applied).unwrap_or(applied);
+  let e = rounded_decimal_exponent(v, n)?;
   // Null suppresses the exponent: fall back to the plain number rendering.
-  if matches!(&applied, Expr::Identifier(s) if s == "Null") {
+  let Some(e_prime) = chosen_exponent(f, e)? else {
     return number_form_render(x, n);
-  }
-  let e_prime = match &applied {
-    Expr::Integer(k) => *k as i64,
-    _ => return None,
   };
 
   // Mantissa at the chosen exponent, keeping n significant figures total.
@@ -4383,6 +4365,111 @@ fn number_form_exponent_function_to_string(
   };
   let exp_opt = if e_prime == 0 { None } else { Some(e_prime) };
   Some(sci_parts_to_2d_string(&mant_final, exp_opt))
+}
+
+/// The base-10 exponent of `v` once rounded to `n` significant figures
+/// (9.99 at n = 2 renormalizes to 1.0×10^1, so the exponent is 1). Zero
+/// has exponent 0.
+fn rounded_decimal_exponent(v: f64, n: i64) -> Option<i64> {
+  if v == 0.0 {
+    return Some(0);
+  }
+  let formatted = format!("{:.*e}", (n.max(1) - 1) as usize, v.abs());
+  formatted.split_once('e')?.1.parse().ok()
+}
+
+/// The exponent an `ExponentFunction` `f` picks for a number whose natural
+/// base-10 exponent is `e`: `Some(Some(k))` for an integer `k`,
+/// `Some(None)` when `f` returns `Null` (no `× 10` factor at all), and
+/// `None` when it returns anything else.
+fn chosen_exponent(f: &Expr, e: i64) -> Option<Option<i64>> {
+  let applied = crate::functions::list_helpers_ast::apply_func_ast(
+    f,
+    &Expr::Integer(e as i128),
+  )
+  .ok()?;
+  let applied =
+    crate::evaluator::evaluate_expr_to_expr(&applied).unwrap_or(applied);
+  match &applied {
+    Expr::Identifier(s) if s == "Null" => Some(None),
+    Expr::Integer(k) => Some(Some(i64::try_from(*k).ok()?)),
+    _ => None,
+  }
+}
+
+/// Render `NumberForm[x, spec, ExponentFunction -> f, opts…]` (and the
+/// `PaddedForm`/`AccountingForm` variants): `f` picks the exponent `e'`
+/// from the natural one, and the mantissa `x / 10^e'` is laid out with the
+/// same digit spec, padding and sign options as a plain number, so
+/// `NumberForm[-2., {5, 4}, NumberSigns -> {"-", "+"}, ExponentFunction ->
+/// (# &)]` reads `-2.0000 × 10^0`. An exponent `f` returns is always shown,
+/// even 0; `Null` writes the number without one. Integers are shown as
+/// they are, and lists thread element-wise.
+fn number_form_exponent_function_family(
+  head: &str,
+  inner: &[Expr],
+) -> Option<String> {
+  let f = inner.iter().find_map(|a| match a {
+    Expr::Rule {
+      pattern,
+      replacement,
+    }
+    | Expr::RuleDelayed {
+      pattern,
+      replacement,
+    } if matches!(pattern.as_ref(), Expr::Identifier(s)
+      if s == "ExponentFunction") =>
+    {
+      Some(replacement.as_ref())
+    }
+    _ => None,
+  })?;
+  let positional: Vec<&Expr> = inner
+    .iter()
+    .filter(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. }))
+    .collect();
+  let (&value, spec) = match positional.as_slice() {
+    [value] => (value, None),
+    [value, spec] => (value, Some(*spec)),
+    _ => return None,
+  };
+  // Significant figures that decide the natural exponent.
+  let digits = match spec {
+    None => 6,
+    Some(Expr::Integer(n)) => i64::try_from(*n).ok()?,
+    Some(Expr::List(parts)) if parts.len() == 2 => {
+      number_form_digit_budget(&parts[0])?
+    }
+    Some(_) => return None,
+  }
+  .clamp(1, 17);
+  let opts = number_form_options(head, inner);
+  render_form_threaded(value, |x| match x {
+    Expr::Integer(i) => Some(i.to_string()),
+    Expr::Real(v) if v.is_finite() => {
+      let e = rounded_decimal_exponent(*v, digits)?;
+      match chosen_exponent(f, e)? {
+        None => {
+          let plain = NumberFormOptions {
+            suppress_exponent: true,
+            ..opts.clone()
+          };
+          number_form_family_scalar(head, x, spec, &plain)
+        }
+        Some(k) => {
+          let mantissa = Expr::Real(v / 10f64.powi(i32::try_from(k).ok()?));
+          let shown = number_form_family_scalar(head, &mantissa, spec, &opts)?;
+          // A mantissa that itself needed an exponent line cannot carry
+          // a second one.
+          if shown.contains('\n') {
+            return None;
+          }
+          Some(sci_parts_to_2d_string(&shown, Some(k)))
+        }
+      }
+    }
+    _ => None,
+  })
 }
 
 /// Horizontally concatenate multi-line text blocks, bottom-aligned: their last
@@ -5418,13 +5505,14 @@ fn to_string_ast_inner(args: &[Expr]) -> Result<Expr, InterpreterError> {
     return Ok(Expr::String(rendered));
   }
 
-  // NumberForm[x, n, ExponentFunction -> f] / ScientificForm[x, n, …] — apply a
-  // custom exponent function that re-expresses the number as mantissa × 10^e'.
+  // ScientificForm[x, n, ExponentFunction -> f] — apply a custom exponent
+  // function that re-expresses the number as mantissa × 10^e'. (NumberForm
+  // with one is handled by `number_form_family_to_string` above.)
   if let Expr::FunctionCall {
     name,
     args: inner_args,
   } = &args[0]
-    && (name == "NumberForm" || name == "ScientificForm")
+    && name == "ScientificForm"
     && !is_input_form
     && let Some(f) = inner_args.iter().find_map(|a| match a {
       Expr::Rule {
@@ -17871,6 +17959,7 @@ fn text_string_render(expr: &Expr) -> Option<String> {
 /// The options shared by the `NumberForm` display family (`NumberForm`,
 /// `PaddedForm`, `AccountingForm`). Parsed once by `number_form_options` so
 /// every head applies them the same way.
+#[derive(Clone)]
 pub(crate) struct NumberFormOptions {
   /// `NumberPoint` — the string standing in for the decimal point.
   point: String,
@@ -18524,7 +18613,13 @@ pub(crate) fn number_form_family_to_string(
         if s == "ExponentFunction"))
   }) && !exponent_function_suppresses(inner));
   if has_custom_format {
-    return number_format_option_to_string(head, inner);
+    if inner.iter().any(|a| {
+      matches!(a, Expr::Rule { pattern, .. } | Expr::RuleDelayed { pattern, .. }
+        if matches!(pattern.as_ref(), Expr::Identifier(s) if s == "NumberFormat"))
+    }) {
+      return number_format_option_to_string(head, inner);
+    }
+    return number_form_exponent_function_family(head, inner);
   }
   let value = positional[0];
   let spec = positional.get(1).copied();

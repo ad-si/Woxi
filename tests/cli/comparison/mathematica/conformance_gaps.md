@@ -194,13 +194,6 @@ woxi eval 'ToString[NumberForm[123456789.]]'            # 123457000.
 Also `NumberForm[1000000.]` (WL `1. × 10^6`) and `NumberForm[1.5*10^-8]`
 (WL `1.5 × 10^-8`). In-range reals — roughly `10^-5 ≤ |x| < 10^6` — agree.
 
-### `NumberForm[x, {n, f}]` with an `ExponentFunction`
-
-`NumberForm[x, {n, f}]` now switches to scientific notation outside
-`10^-5 ≤ |x| < 10^6` (`1.000 × 10^-7`), but the 3-argument form with an
-`ExponentFunction` in Studio ignores the function (`1.×10^-7`) and `ToString`
-prints `0.1 × 10^-6` without padding.
-
 ### A `NumberForm` nested in a list or call shows its head
 
 At the top level a number-display form prints as its formatted number, but
