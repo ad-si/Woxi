@@ -3492,8 +3492,8 @@ mod batch_unevaluated_wrappers_2 {
         .split(' ')
         .map(|p| p.split(',').next().unwrap().parse().unwrap())
         .collect();
-      xs.iter().cloned().fold(f64::MIN, f64::max)
-        - xs.iter().cloned().fold(f64::MAX, f64::min)
+      xs.iter().copied().fold(f64::MIN, f64::max)
+        - xs.iter().copied().fold(f64::MAX, f64::min)
     };
     assert!(width("rgb(50,128,186)") > width("rgb(186,62,50)"), "{bars}");
   }
