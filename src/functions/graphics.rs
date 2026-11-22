@@ -44088,7 +44088,8 @@ pub fn control_visibility_conditions(
       let mut matching = control_visible.iter().filter(|(n, _)| *n == key);
       if is_heading_visibility_key(&key) {
         let nth = seen.entry(key.clone()).or_insert(0);
-        let picked = matching.clone().nth(*nth).or_else(|| matching.last());
+        let picked =
+          matching.clone().nth(*nth).or_else(|| matching.next_back());
         *nth += 1;
         picked.map(|(_, cond)| cond.clone())
       } else {
