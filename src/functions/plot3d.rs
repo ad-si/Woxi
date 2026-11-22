@@ -21547,12 +21547,9 @@ fn contour3d_render(
       group.push(call1("Line", Expr::List(lines.into())));
       content.push(Expr::List(group.into()));
     }
-    // The rims go into the structure too, so a `Show` of the plot keeps
-    // them; the default outline is black.
-    if boundary_style.is_some() && !boundary_world.is_empty() {
-      let directive = boundary_directive
-        .clone()
-        .unwrap_or_else(|| call1("GrayLevel", Expr::Integer(0)));
+    if let Some(directive) = &boundary_directive
+      && !boundary_world.is_empty()
+    {
       let point = |p: &[f64; 3]| Expr::List(p.map(Expr::Real).to_vec().into());
       let lines: Vec<Expr> = boundary_world
         .iter()

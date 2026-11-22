@@ -42549,8 +42549,8 @@ mod contour_plot_3d {
     use super::*;
 
     /// A level surface cut open by the plot box gets its rim outlined in
-    /// black by default (as in Plot3D), both in its own picture and in the
-    /// extracted primitives, so a `Show` of the plot keeps the outline.
+    /// black by default (as in Plot3D). The outline belongs to the plot's
+    /// own picture: the extracted primitives stay free of default lines.
     /// Regression: the rims were only drawn for an explicit
     /// `BoundaryStyle`, so clipped isosurfaces showed no edge at the walls.
     #[test]
@@ -42566,25 +42566,22 @@ mod contour_plot_3d {
           .count()
       };
       assert!(black_lines(&format!("{plot}]")) > 0);
-      assert!(black_lines(&format!("Show[{plot}]]")) > 0);
       assert_eq!(black_lines(&format!("{plot}, BoundaryStyle -> None]")), 0);
       assert_eq!(
-        interpret(&format!(
-          "Count[{plot}], {{_AbsoluteThickness, GrayLevel[0], _Line}}, \
-           Infinity]"
-        ))
-        .unwrap(),
-        "1"
+        black_lines(&format!("{plot}, BoundaryStyle -> Automatic]")),
+        black_lines(&format!("{plot}]"))
+      );
+      assert_eq!(
+        interpret(&format!("Count[{plot}], _Line, Infinity]")).unwrap(),
+        "0"
       );
       // A sphere lying wholly inside the box has no rim to outline.
       assert_eq!(
-        interpret(
-          "Count[ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -2, 2}, \
-           {y, -2, 2}, {z, -2, 2}, Mesh -> None, PlotPoints -> 8, \
-           MaxRecursion -> 0], _Line, Infinity]"
-        )
-        .unwrap(),
-        "0"
+        black_lines(
+          "ContourPlot3D[x^2 + y^2 + z^2 == 1, {x, -2, 2}, {y, -2, 2}, \
+           {z, -2, 2}, Mesh -> None, PlotPoints -> 8, MaxRecursion -> 0]"
+        ),
+        0
       );
     }
 
