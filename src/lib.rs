@@ -5447,6 +5447,20 @@ fn render_visual_display_pipeline(expr: &syntax::Expr) -> syntax::Expr {
   let expr = render_framed_if_needed(expr);
   let expr = render_rotate_if_needed(expr);
   let result = render_highlighted_if_needed(expr);
+  // A table of pictures the pane held (`Pane[Grid[{{graphic, …}}], {w, h}]`)
+  // is composed now, so it takes up the pane's whole box below rather than
+  // being drawn later at its own size. A pane around a plain data table
+  // stays textual.
+  let result = match &result {
+    syntax::Expr::FunctionCall { name, .. }
+      if pane_box.is_some()
+        && matches!(name.as_str(), "Grid" | "TextGrid")
+        && holds_layout_graphic(&result) =>
+    {
+      render_grid_if_needed(result)
+    }
+    _ => result,
+  };
 
   match (pane_box, &result) {
     (Some((w, h, align, shrink)), syntax::Expr::Graphics { svg, .. }) => {
