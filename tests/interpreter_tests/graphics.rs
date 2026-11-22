@@ -4789,6 +4789,26 @@ mod graphics {
       assert_eq!(raster, raster_box);
     }
 
+    /// Regression: a `Spacer` line in a `Column` label dropped the
+    /// italics of every other line, as the label's styled runs (a blank
+    /// run for the spacer) no longer lined up with its text (an empty
+    /// line).
+    #[test]
+    fn column_spacer_line_keeps_other_lines_styled() {
+      let svg = export_svg(
+        "Graphics[Text[Style[Column[{\"a\", Spacer[0], \
+          Row[{Style[\"L\", Italic], \"/\", Style[\"V\", Italic], \" = \", \
+          100}]}, Center], 17], {0, 0}]]",
+      );
+      assert!(
+        svg.contains(
+          "<tspan font-style=\"italic\">L</tspan>/\
+           <tspan font-style=\"italic\">V</tspan> = 100"
+        ),
+        "{svg}"
+      );
+    }
+
     /// A `Spacer[n]` separator in a `Row` is a gap, not its own text.
     #[test]
     fn row_spacer_separator_is_a_gap() {
