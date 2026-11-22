@@ -7164,6 +7164,21 @@ fn wrap_pane_text_at(
   whole_words: bool,
   proportional: bool,
 ) -> Option<Expr> {
+  // A list of typeset matrices re-flows as the row of its items between
+  // braces.
+  if let Expr::List(_) = content
+    && let Some(row) =
+      crate::functions::graphics::list_with_grids_as_row(content)
+  {
+    return wrap_pane_text_at(
+      &row,
+      width,
+      font_size,
+      family,
+      whole_words,
+      proportional,
+    );
+  }
   // A bare string re-flows as the one-piece `Row` of it.
   if let Expr::String(_) = content {
     return wrap_pane_text_at(
@@ -7354,10 +7369,12 @@ fn wrap_pane_text_at(
         .collect();
       let mut styles: Vec<Option<Vec<Expr>>> = Vec::new();
       let mut atoms: Vec<Option<Expr>> = Vec::new();
+      let mut atom_px: Vec<Option<f64>> = Vec::new();
       let mut units: Vec<PaneTextUnit> = Vec::new();
       for item in &items {
         let idx = styles.len();
         if let Some((text, directives)) = pane_row_piece(item) {
+          atom_px.push(None);
           styles.push(directives);
           atoms.push(None);
           units.extend(pane_text_units(&text).into_iter().map(
@@ -7371,6 +7388,15 @@ fn wrap_pane_text_at(
         } else {
           let cols = crate::functions::graphics::estimate_display_width(item)
             .ceil() as usize;
+          // A typeset matrix or table is as wide as its drawn grid (at its
+          // own `Style` size), which its source text says nothing about.
+          atom_px.push(
+            crate::functions::graphics::is_typeset_grid_item(item)
+              .then(|| {
+                crate::functions::graphics::parse_svg_wh(&expr_to_svg(item)).0
+              })
+              .filter(|w| *w > 0.0),
+          );
           styles.push(None);
           atoms.push(Some(item.clone()));
           units.push(PaneTextUnit {
@@ -7408,6 +7434,10 @@ fn wrap_pane_text_at(
         per_line as f64 * mono
       };
       for u in &mut units {
+        if let Some(px) = atom_px[u.idx] {
+          u.width = px;
+          continue;
+        }
         if proportional
           && atoms[u.idx].is_none()
           && u.text.chars().count() == u.cols
@@ -7872,6 +7902,11 @@ fn pane_content_is_column(content: &Expr) -> bool {
 }
 
 pub(crate) fn expr_to_svg(expr: &Expr) -> String {
+  // A list of typeset matrices sets each in two dimensions between the
+  // braces, not as the source text of the list.
+  if let Some(row) = crate::functions::graphics::list_with_grids_as_row(expr) {
+    return expr_to_svg(&row);
+  }
   if let Some(svg) = evaluated_wrapper_svg(expr) {
     return svg;
   }
