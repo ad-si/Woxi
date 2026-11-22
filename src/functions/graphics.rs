@@ -37958,15 +37958,13 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
       // the front end shows it: the row of tab labels above the pane its
       // selector names (the first pane without a selector), framed in a
       // gray panel, rather than the call's source text.
-      "TabView" if peel_tabview => {
-        match crate::tabview_drawn_layout(args) {
-          Some(content) => {
-            current = content;
-            continue;
-          }
-          None => false,
+      "TabView" if peel_tabview => match crate::tabview_drawn_layout(args) {
+        Some(content) => {
+          current = content;
+          continue;
         }
-      }
+        None => false,
+      },
       // `Style[picture, Magnification -> m]` and `Magnify[picture, m]`
       // draw the picture `m` times its size.
       "Style" | "Magnify" => match magnified_picture(&current) {

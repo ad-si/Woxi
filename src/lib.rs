@@ -1764,7 +1764,10 @@ pub(crate) fn tabview_drawn_layout(
               gray(0.93)
             },
           ),
-          rule("FrameMargins", Expr::List(vec![pair(5, 5), pair(1, 1)].into())),
+          rule(
+            "FrameMargins",
+            Expr::List(vec![pair(5, 5), pair(1, 1)].into()),
+          ),
         ],
       )
     })
