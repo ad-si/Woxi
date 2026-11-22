@@ -37954,12 +37954,12 @@ pub fn unwrap_display_wrappers_with(expr: &Expr, peel_tabview: bool) -> Expr {
         current = selected_pane_content(args);
         continue;
       }
-      // `TabView[{label -> pane, …}, sel]` nested in a layout shows the
-      // pane its selector names (the first pane without a selector),
-      // like a top-level `TabView` result does, rather than the call's
-      // source text.
+      // `TabView[{label -> pane, …}, sel]` nested in a layout is drawn as
+      // the front end shows it: the row of tab labels above the pane its
+      // selector names (the first pane without a selector), framed in a
+      // gray panel, rather than the call's source text.
       "TabView" if peel_tabview => {
-        match crate::tabview_selected_content(args) {
+        match crate::tabview_drawn_layout(args) {
           Some(content) => {
             current = content;
             continue;
