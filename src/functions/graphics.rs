@@ -33211,7 +33211,7 @@ fn grid_svg_styled_internal_reporting(
   // rather than being centered on the row.
   let row_multiline: Vec<bool> = rows
     .iter()
-    .map(|row| row.iter().any(|cell| is_multiline_text_cell(cell)))
+    .map(|row| row.iter().any(is_multiline_text_cell))
     .collect();
   let row_anchors: Vec<Option<f64>> = rows
     .iter()
