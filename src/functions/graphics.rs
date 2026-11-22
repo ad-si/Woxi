@@ -38239,14 +38239,15 @@ fn resolve_display_item(expr: &Expr) -> Expr {
 /// one of a bare string.
 fn resolve_display_item_face(expr: &Expr) -> (Expr, bool) {
   let (resolved, shows_text) = resolve_display_item_content(expr);
-  // A `Text[Row[…]]` or `Text[TraditionalForm[…]]` item (either possibly
-  // under `Style`), once its `Dynamic` parts show their values, is set in
+  // A `Text[Row[…]]`, `Text[Column[…]]` or `Text[TraditionalForm[…]]` item
+  // (any of them possibly under `Style`), once its `Dynamic` parts show their values, is set in
   // the text face — as it is on its own — rather than in the monospace face
   // of typeset output.
   let is_row = |e: &Expr| {
     matches!(e, Expr::FunctionCall { name, args }
       if args.len() == 1 && matches!(name.as_str(), "TraditionalForm" | "StandardForm"))
-      || matches!(e, Expr::FunctionCall { name, args } if name == "Row" && !args.is_empty())
+      || matches!(e, Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Row" | "Column") && !args.is_empty())
   };
   if let Expr::FunctionCall { name, args } = expr
     && name == "Text"

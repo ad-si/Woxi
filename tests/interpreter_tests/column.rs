@@ -375,6 +375,25 @@ mod column_visual_mode {
     assert!(!svg.contains("Dynamic"), "{svg}");
   }
 
+  #[test]
+  fn grid_cell_text_styled_column_uses_text_face() {
+    // `Text[Style[Column[…], size]]` in a Grid cell is set in the
+    // proportional text face, as `Text[Column[…]]` and
+    // `Text[Style[Row[…], size]]` are, also when a line mixes strings and
+    // numbers; it used to fall back to the monospace face of typeset output.
+    clear_state();
+    let result = interpret_with_stdout(
+      "Grid[{{Text[Style[Column[{\"\", Row[{\"weight is \", 7, \".\"}]}], \
+       18]], SpanFromLeft}}]",
+    )
+    .unwrap();
+    let svg = result.graphics.unwrap();
+    assert!(svg.contains("weight is"), "{svg}");
+    assert!(svg.contains("font-size=\"18\""), "{svg}");
+    assert!(!svg.contains("monospace"), "{svg}");
+    assert!(svg.contains("sans-serif"), "{svg}");
+  }
+
   /// A `Style` wrapping a layout is inherited by everything inside it, so
   /// `Style[Column[{…}], 65, Hue[…]]` — the shape of a Demonstration's
   /// `Manipulate` body — is a large, colored column. It used to fall back
