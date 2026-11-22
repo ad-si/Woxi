@@ -1496,13 +1496,17 @@ fn render_item(
 }
 
 /// Whether a label is a `Column` whose lines are set flush left — the
-/// default, or an explicit `Alignment -> Left`.
+/// default, or an explicit `Alignment -> Left` (or the positional
+/// alignment of `Column[items, Left]`).
 fn is_left_aligned_column(label: &Expr) -> bool {
   match crate::functions::graphics::strip_style_wrappers(label) {
     Expr::FunctionCall { name, args }
       if name == "Column" && !args.is_empty() =>
     {
-      match option_value(&args[1..], "Alignment") {
+      let positional = args.get(1).filter(|a| {
+        !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })
+      });
+      match positional.or_else(|| option_value(&args[1..], "Alignment")) {
         None => true,
         Some(Expr::Identifier(a)) => a == "Left",
         Some(_) => false,
