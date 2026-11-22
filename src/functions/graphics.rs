@@ -44787,8 +44787,13 @@ pub fn is_animate_call(name: &str, args: &[Expr]) -> bool {
 /// selector variable (`TabView[panes, Dynamic[tab], opts…]`) declared with
 /// `ControlType -> None`, which `extract_manipulate_spec` then promotes into
 /// a visible `SetterBar` of the tab labels — so every tab is reachable.
+/// A `TabView[panes, Dynamic[var], …]` whose `var` no Manipulate
+/// specification declares (a free selector the front end's tab strip sets
+/// on its own) gets the same hidden `ControlType -> None` declaration,
+/// starting on the first pane, while the body keeps its own selector.
 /// Returns the rewritten `Manipulate` arguments, or `None` when no
-/// selector-less `TabView` (with plain, keyless panes) is present.
+/// selector-less `TabView` (with plain, keyless panes) or undeclared
+/// `TabView` selector is present.
 fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
   use std::cell::RefCell;
   fn is_bare(args: &[Expr]) -> bool {
@@ -44803,8 +44808,32 @@ fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
   fn rewrite(
     expr: &Expr,
     taken: &dyn Fn(&str) -> bool,
-    added: &RefCell<Vec<(String, usize)>>,
+    declared: &dyn Fn(&str) -> bool,
+    added: &RefCell<Vec<(String, Vec<Expr>)>>,
   ) -> Expr {
+    if let Expr::FunctionCall { name, args } = expr
+      && name == "TabView"
+      && args.len() >= 2
+      && let Expr::Identifier(var) = unwrap_pane_selector(&args[1])
+      && !declared(var)
+      && !added.borrow().iter().any(|(v, _)| v == var)
+      && let Some(items) = tabview_panes(&args[0])
+      && !items.is_empty()
+    {
+      let keys = items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+          tabview_pane_parts(item)
+            .0
+            .unwrap_or_else(|| Expr::Integer(idx as i128 + 1))
+        })
+        .collect();
+      added.borrow_mut().push((var.clone(), keys));
+      return crate::syntax::map_children(expr, &|e| {
+        rewrite(e, taken, declared, added)
+      });
+    }
     if let Expr::FunctionCall { name, args } = expr
       && name == "TabView"
       && is_bare(args)
@@ -44820,41 +44849,45 @@ fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
         n += 1;
         var = format!("tab{n}");
       }
-      added.borrow_mut().push((var.clone(), count));
+      added.borrow_mut().push((
+        var.clone(),
+        (1..=count as i128).map(Expr::Integer).collect(),
+      ));
       let mut new_args = vec![
-        rewrite(&args[0], taken, added),
+        rewrite(&args[0], taken, declared, added),
         call1("Dynamic", Expr::Identifier(var)),
       ];
-      new_args.extend(args[1..].iter().map(|a| rewrite(a, taken, added)));
+      new_args.extend(
+        args[1..]
+          .iter()
+          .map(|a| rewrite(a, taken, declared, added)),
+      );
       return call("TabView", new_args);
     }
-    crate::syntax::map_children(expr, &|e| rewrite(e, taken, added))
+    crate::syntax::map_children(expr, &|e| rewrite(e, taken, declared, added))
   }
   if args.len() < 2 {
     return None;
   }
   let taken =
     |v: &str| args.iter().any(|a| crate::syntax::mentions_symbol(a, v));
+  let declared =
+    |v: &str| args[1..].iter().any(|a| crate::syntax::mentions_symbol(a, v));
   let added = RefCell::new(Vec::new());
-  let body = rewrite(&args[0], &taken, &added);
+  let body = rewrite(&args[0], &taken, &declared, &added);
   let added = added.into_inner();
   if added.is_empty() {
     return None;
   }
   let specs: Vec<Expr> = added
     .iter()
-    .map(|(var, count)| {
+    .map(|(var, keys)| {
       Expr::List(
         vec![
           Expr::List(
-            vec![Expr::Identifier(var.clone()), Expr::Integer(1)].into(),
+            vec![Expr::Identifier(var.clone()), keys[0].clone()].into(),
           ),
-          Expr::List(
-            (1..=*count as i128)
-              .map(Expr::Integer)
-              .collect::<Vec<_>>()
-              .into(),
-          ),
+          Expr::List(keys.clone().into()),
           rule_expr(id_expr("ControlType"), id_expr("None")),
         ]
         .into(),
@@ -48103,6 +48136,13 @@ fn collect_body_tabview_selectors(expr: &Expr) -> Vec<(String, Vec<Expr>)> {
         }
       }
       Expr::List(items) => {
+        for it in items {
+          walk(it, found);
+        }
+      }
+      // `Module[{…}, setup; TabView[…]]`: the `TabView` is the last
+      // statement of a compound body.
+      Expr::CompoundExpr(items) => {
         for it in items {
           walk(it, found);
         }
