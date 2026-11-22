@@ -9715,10 +9715,13 @@ mod bare_tabview_tests {
     }
     assert!(state.graphics_handle.is_some(), "first tab is the plot");
     let render = |view: i64| {
-      woxi::interpret_with_stdout(&format!("k = 2; view = {view};\n{}", state.body))
-        .expect("the body must render")
-        .graphics
-        .expect("the body must produce a graphic")
+      woxi::interpret_with_stdout(&format!(
+        "k = 2; view = {view};\n{}",
+        state.body
+      ))
+      .expect("the body must render")
+      .graphics
+      .expect("the body must produce a graphic")
     };
     assert_ne!(render(1), render(2), "the tabs must draw different panes");
     if let ControlState::Discrete { current_index, .. } =

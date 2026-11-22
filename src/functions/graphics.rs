@@ -44857,11 +44857,8 @@ fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
         rewrite(&args[0], taken, declared, added),
         call1("Dynamic", Expr::Identifier(var)),
       ];
-      new_args.extend(
-        args[1..]
-          .iter()
-          .map(|a| rewrite(a, taken, declared, added)),
-      );
+      new_args
+        .extend(args[1..].iter().map(|a| rewrite(a, taken, declared, added)));
       return call("TabView", new_args);
     }
     crate::syntax::map_children(expr, &|e| rewrite(e, taken, declared, added))
@@ -44871,8 +44868,11 @@ fn add_selectors_to_bare_tabviews(args: &[Expr]) -> Option<Vec<Expr>> {
   }
   let taken =
     |v: &str| args.iter().any(|a| crate::syntax::mentions_symbol(a, v));
-  let declared =
-    |v: &str| args[1..].iter().any(|a| crate::syntax::mentions_symbol(a, v));
+  let declared = |v: &str| {
+    args[1..]
+      .iter()
+      .any(|a| crate::syntax::mentions_symbol(a, v))
+  };
   let added = RefCell::new(Vec::new());
   let body = rewrite(&args[0], &taken, &declared, &added);
   let added = added.into_inner();
