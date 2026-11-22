@@ -27884,72 +27884,8 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
     if sd.is_scatter
       && let Some(marker) = &sd.marker
     {
-      // `PlotMarkers` glyphs replace the round dots: each is text centered
-      // on its data point, in the marker's own color and size.
-      if let Some((r, g, b)) = marker.color {
-        series_prims.push(call(
-          "RGBColor",
-          vec![
-            Expr::Real(r as f64 / 255.0),
-            Expr::Real(g as f64 / 255.0),
-            Expr::Real(b as f64 / 255.0),
-          ],
-        ));
-      }
-      let outline = crate::functions::plot::glyph_marker_outline(
-        &marker.glyph,
-        marker.size,
-      );
-      if let Some((_, Some(w))) = &outline {
-        series_prims.push(call1("AbsoluteThickness", Expr::Real(*w)));
-      }
-      for &(x, y) in sd
-        .points
-        .iter()
-        .filter(|(x, y)| x.is_finite() && y.is_finite())
-      {
-        // A geometric glyph (`●`, `■`, `▲`, …) is drawn as the shape WL's
-        // font gives it, sized in points around the data point, the way the
-        // plot itself draws it — not as text in whatever font is at hand.
-        if let Some((shape, stroke)) = &outline {
-          let at = |dx: f64, dy: f64| {
-            call(
-              "Offset",
-              vec![
-                Expr::List(vec![Expr::Real(dx), Expr::Real(-dy)].into()),
-                Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-              ],
-            )
-          };
-          series_prims.push(match shape {
-            crate::functions::plot::GlyphOutline::Circle { r, cy } => call(
-              if stroke.is_some() { "Circle" } else { "Disk" },
-              vec![at(0.0, *cy), call1("Offset", Expr::Real(*r))],
-            ),
-            crate::functions::plot::GlyphOutline::Polygon(pts) => {
-              let mut corners: Vec<Expr> =
-                pts.iter().map(|&(dx, dy)| at(dx, dy)).collect();
-              if stroke.is_some() {
-                corners.push(corners[0].clone());
-                call1("Line", Expr::List(corners.into()))
-              } else {
-                call1("Polygon", Expr::List(corners.into()))
-              }
-            }
-          });
-          continue;
-        }
-        series_prims.push(call(
-          "Text",
-          vec![
-            call(
-              "Style",
-              vec![Expr::String(marker.glyph.clone()), Expr::Real(marker.size)],
-            ),
-            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
-          ],
-        ));
-      }
+      // `PlotMarkers` glyphs replace the round dots.
+      push_marker_primitives(&mut series_prims, marker, &sd.points);
     } else if sd.is_scatter {
       series_prims.push(sd.point_size_expr.clone().unwrap_or_else(|| {
         match sd.point_size {
@@ -28085,10 +28021,98 @@ pub fn plot_source_primitives(ps: &crate::syntax::PlotSource) -> Vec<Expr> {
           }
         }
       }
+      // `PlotMarkers` glyphs sit on the data points of a joined series,
+      // over its line, as on the plot drawn alone. Points outside the
+      // y range its line is clipped to carry no marker either.
+      if let Some(marker) = &sd.marker {
+        let (y_lo, y_hi) = (
+          ps.y_range.0.min(ps.y_range.1),
+          ps.y_range.1.max(ps.y_range.0),
+        );
+        let in_range: Vec<(f64, f64)> = sd
+          .points
+          .iter()
+          .copied()
+          .filter(|&(_, y)| y >= y_lo && y <= y_hi)
+          .collect();
+        push_marker_primitives(&mut series_prims, marker, &in_range);
+      }
     }
   }
   fill_layer.extend(series_prims);
   fill_layer
+}
+
+/// Draw the `PlotMarkers` glyph `marker` at each finite point of `points`:
+/// each is centered on its data point, in the marker's own color and size.
+fn push_marker_primitives(
+  prims: &mut Vec<Expr>,
+  marker: &crate::syntax::PlotMarker,
+  points: &[(f64, f64)],
+) {
+  // `PlotMarkers` glyphs replace the round dots: each is text centered
+  // on its data point, in the marker's own color and size.
+  if let Some((r, g, b)) = marker.color {
+    prims.push(call(
+      "RGBColor",
+      vec![
+        Expr::Real(r as f64 / 255.0),
+        Expr::Real(g as f64 / 255.0),
+        Expr::Real(b as f64 / 255.0),
+      ],
+    ));
+  }
+  let outline =
+    crate::functions::plot::glyph_marker_outline(&marker.glyph, marker.size);
+  if let Some((_, Some(w))) = &outline {
+    prims.push(call1("AbsoluteThickness", Expr::Real(*w)));
+  }
+  for &(x, y) in points
+    .iter()
+    .filter(|(x, y)| x.is_finite() && y.is_finite())
+  {
+    // A geometric glyph (`●`, `■`, `▲`, …) is drawn as the shape WL's
+    // font gives it, sized in points around the data point, the way the
+    // plot itself draws it — not as text in whatever font is at hand.
+    if let Some((shape, stroke)) = &outline {
+      let at = |dx: f64, dy: f64| {
+        call(
+          "Offset",
+          vec![
+            Expr::List(vec![Expr::Real(dx), Expr::Real(-dy)].into()),
+            Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+          ],
+        )
+      };
+      prims.push(match shape {
+        crate::functions::plot::GlyphOutline::Circle { r, cy } => call(
+          if stroke.is_some() { "Circle" } else { "Disk" },
+          vec![at(0.0, *cy), call1("Offset", Expr::Real(*r))],
+        ),
+        crate::functions::plot::GlyphOutline::Polygon(pts) => {
+          let mut corners: Vec<Expr> =
+            pts.iter().map(|&(dx, dy)| at(dx, dy)).collect();
+          if stroke.is_some() {
+            corners.push(corners[0].clone());
+            call1("Line", Expr::List(corners.into()))
+          } else {
+            call1("Polygon", Expr::List(corners.into()))
+          }
+        }
+      });
+      continue;
+    }
+    prims.push(call(
+      "Text",
+      vec![
+        call(
+          "Style",
+          vec![Expr::String(marker.glyph.clone()), Expr::Real(marker.size)],
+        ),
+        Expr::List(vec![Expr::Real(x), Expr::Real(y)].into()),
+      ],
+    ));
+  }
 }
 
 /// The `Line` primitives of a chain of runs that continue one another (see
