@@ -30896,6 +30896,14 @@ fn graphic_content_anchor(cell: &Expr, height: f64) -> f64 {
 }
 
 fn grid_cell_graphic(cell: &Expr) -> Option<(String, f64, f64)> {
+  // `TextGrid[…]` is effectively `Text[Grid[…]]`: as an item it is laid out
+  // in the proportional text face, exactly as it is on its own.
+  if let Expr::FunctionCall { name, args } = cell
+    && name == "TextGrid"
+    && !args.is_empty()
+  {
+    return grid_cell_graphic(&call1("Text", call("Grid", args.to_vec())));
+  }
   if let Some(svg) = traditional_inline_box_cell_svg(cell) {
     return parse_svg_dimensions(&svg).map(|d| (svg, d.nat_w, d.nat_h));
   }
