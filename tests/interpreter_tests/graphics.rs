@@ -71702,7 +71702,10 @@ mod text_grid_text_face {
     for (rows, opts) in [
       ("{{\"+2\", 1}, {\"0\", -1}}", ", Frame -> All"),
       ("{{a, -12, \"xyz\"}, {-3, 4, 5}}", ", Dividers -> All"),
-      ("{{\"heading\", SpanFromLeft}, {-1, -2}}", ", Alignment -> Center"),
+      (
+        "{{\"heading\", SpanFromLeft}, {-1, -2}}",
+        ", Alignment -> Center",
+      ),
     ] {
       assert_eq!(
         export_svg(&format!("TextGrid[{rows}{opts}]")),
