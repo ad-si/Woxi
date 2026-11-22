@@ -16112,176 +16112,170 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     emit_edge_run(&mut svg, &sorted_edges[ei..]);
   }
 
-  // Render points and arrows on top (lines are depth-sorted with the
-  // triangles above so surfaces occlude them correctly)
+  // Text labels go on top. Points, and the shafts and heads of arrows,
+  // were drawn in depth order with the lines and faces above, so
+  // surfaces occlude them correctly.
   for prim in &prims {
-    match prim {
-      Primitive3D::Text3D {
-        label,
-        pos,
-        offset,
-        font_size,
-        width_chars,
-        picture,
-        bold,
-        italic,
-        panel,
-        style,
-      } => {
-        let fill_color = if let Some((r, g, b)) = style.color {
-          format!("rgb({r},{g},{b})")
-        } else {
-          default_prim_color.to_string()
-        };
-        // An `Opacity` in force fades the label like any other primitive;
-        // `Opacity[0]` hides it.
-        if style.opacity <= 0.0 {
-          continue;
-        }
-        let opacity_attr = if style.opacity < 1.0 {
-          format!(" opacity=\"{}\"", style.opacity)
-        } else {
-          String::new()
-        };
-        let (px, py) = project(*pos, &camera);
-        let (sx, sy) = to_svg(px, py);
-        if let Some((pic, w, h)) = picture {
-          let x = sx - w / 2.0 - offset.0 * w / 2.0;
-          let y = sy - h / 2.0 + offset.1 * h / 2.0;
-          svg.push_str(&pic.replacen(
-            "<svg ",
-            &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\"{opacity_attr} "),
-            1,
-          ));
-          svg.push('\n');
-          continue;
-        }
-        // The offset names which point of the label's box sits at the
-        // projected point, so the box moves the other way — half its width
-        // per unit across, half its height per unit up (and the vertical
-        // sign flips, SVG counting y downwards).
-        let text_w = *width_chars as f64 * font_size * 0.6;
-        let fraction = crate::functions::graphics::fraction_label_parts(label);
-        let text_h = if fraction.is_some() {
-          // A stacked fraction is about two lines tall.
-          font_size * 2.4
-        } else {
-          font_size * 1.2 * label.split('\n').count() as f64
-        };
-        let x = sx - offset.0 * text_w / 2.0;
-        let y = sy + offset.1 * text_h / 2.0;
-        let mut style_attrs = String::new();
-        if *bold {
-          style_attrs.push_str(" font-weight=\"bold\"");
-        }
-        if *italic {
-          style_attrs.push_str(" font-style=\"italic\"");
-        }
-        // `Background -> color` paints a panel behind the label, hugging
-        // its glyphs, which keeps it legible over the edges it labels.
-        if let Some((r, g, b)) = style.text_background {
-          let panel_w = match fraction {
-            Some(f) => {
-              2.0
-                * crate::functions::graphics::label_fraction_bar_half(
-                  f.num, f.den, *font_size,
-                )
-                + if f.negative {
-                  crate::functions::graphics::label_fraction_minus_width(
-                    *font_size,
-                  )
-                } else {
-                  0.0
-                }
+    let Primitive3D::Text3D {
+      label,
+      pos,
+      offset,
+      font_size,
+      width_chars,
+      picture,
+      bold,
+      italic,
+      panel,
+      style,
+    } = prim
+    else {
+      continue;
+    };
+    let fill_color = if let Some((r, g, b)) = style.color {
+      format!("rgb({r},{g},{b})")
+    } else {
+      default_prim_color.to_string()
+    };
+    // An `Opacity` in force fades the label like any other primitive;
+    // `Opacity[0]` hides it.
+    if style.opacity <= 0.0 {
+      continue;
+    }
+    let opacity_attr = if style.opacity < 1.0 {
+      format!(" opacity=\"{}\"", style.opacity)
+    } else {
+      String::new()
+    };
+    let (px, py) = project(*pos, &camera);
+    let (sx, sy) = to_svg(px, py);
+    if let Some((pic, w, h)) = picture {
+      let x = sx - w / 2.0 - offset.0 * w / 2.0;
+      let y = sy - h / 2.0 + offset.1 * h / 2.0;
+      svg.push_str(&pic.replacen(
+        "<svg ",
+        &format!("<svg x=\"{x:.1}\" y=\"{y:.1}\"{opacity_attr} "),
+        1,
+      ));
+      svg.push('\n');
+      continue;
+    }
+    // The offset names which point of the label's box sits at the
+    // projected point, so the box moves the other way — half its width
+    // per unit across, half its height per unit up (and the vertical
+    // sign flips, SVG counting y downwards).
+    let text_w = *width_chars as f64 * font_size * 0.6;
+    let fraction = crate::functions::graphics::fraction_label_parts(label);
+    let text_h = if fraction.is_some() {
+      // A stacked fraction is about two lines tall.
+      font_size * 2.4
+    } else {
+      font_size * 1.2 * label.split('\n').count() as f64
+    };
+    let x = sx - offset.0 * text_w / 2.0;
+    let y = sy + offset.1 * text_h / 2.0;
+    let mut style_attrs = String::new();
+    if *bold {
+      style_attrs.push_str(" font-weight=\"bold\"");
+    }
+    if *italic {
+      style_attrs.push_str(" font-style=\"italic\"");
+    }
+    // `Background -> color` paints a panel behind the label, hugging
+    // its glyphs, which keeps it legible over the edges it labels.
+    if let Some((r, g, b)) = style.text_background {
+      let panel_w = match fraction {
+        Some(f) => {
+          2.0
+            * crate::functions::graphics::label_fraction_bar_half(
+              f.num, f.den, *font_size,
+            )
+            + if f.negative {
+              crate::functions::graphics::label_fraction_minus_width(*font_size)
+            } else {
+              0.0
             }
-            None => text_w,
-          };
-          svg.push_str(&format!(
+        }
+        None => text_w,
+      };
+      svg.push_str(&format!(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{panel_w:.1}\" height=\"{text_h:.1}\" fill=\"rgb({r},{g},{b})\"/>\n",
             x - panel_w / 2.0,
             y - text_h / 2.0,
           ));
+    }
+    // A `Framed` label sits on its panel, laid out as a 2-D
+    // `Text[Framed[…]]` one is: the panel hugs the glyphs' advance
+    // width, and a border keeps its margin round the text.
+    if !panel.is_empty() {
+      let panel_w = if panel.frame.is_some() {
+        text_w
+      } else {
+        crate::functions::plot_padding::text_width(label, *font_size)
+      };
+      let panel_h = crate::functions::graphics::split_markup_lines(label).len()
+        as f64
+        * font_size;
+      let (fill, fill_opacity) = match panel.background {
+        Some(bg) if bg.a < 1.0 => {
+          (bg.to_svg_rgb(), format!(" fill-opacity=\"{}\"", bg.a))
         }
-        // A `Framed` label sits on its panel, laid out as a 2-D
-        // `Text[Framed[…]]` one is: the panel hugs the glyphs' advance
-        // width, and a border keeps its margin round the text.
-        if !panel.is_empty() {
-          let panel_w = if panel.frame.is_some() {
-            text_w
-          } else {
-            crate::functions::plot_padding::text_width(label, *font_size)
-          };
-          let panel_h = crate::functions::graphics::split_markup_lines(label)
-            .len() as f64
-            * font_size;
-          let (fill, fill_opacity) = match panel.background {
-            Some(bg) if bg.a < 1.0 => {
-              (bg.to_svg_rgb(), format!(" fill-opacity=\"{}\"", bg.a))
-            }
-            Some(bg) => (bg.to_svg_rgb(), String::new()),
-            None => ("none".to_string(), String::new()),
-          };
-          let stroke = match panel.frame {
-            Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
-            None => String::new(),
-          };
-          svg.push_str(&format!(
+        Some(bg) => (bg.to_svg_rgb(), String::new()),
+        None => ("none".to_string(), String::new()),
+      };
+      let stroke = match panel.frame {
+        Some(fc) => format!(" stroke=\"{}\"", fc.to_svg_rgb()),
+        None => String::new(),
+      };
+      svg.push_str(&format!(
             "<rect x=\"{:.1}\" y=\"{:.1}\" width=\"{panel_w:.1}\" height=\"{panel_h:.1}\" fill=\"{fill}\"{fill_opacity}{stroke}/>\n",
             x - panel_w / 2.0,
             y - panel_h / 2.0,
           ));
-        }
-        if let Some(f) = fraction {
-          let text_at = |tx: f64, ty: f64, anchor: &str, markup: &str| {
-            format!(
-              "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
+    }
+    if let Some(f) = fraction {
+      let text_at = |tx: f64, ty: f64, anchor: &str, markup: &str| {
+        format!(
+          "<text x=\"{tx:.1}\" y=\"{ty:.1}\" text-anchor=\"{anchor}\" \
                dominant-baseline=\"middle\" font-family=\"sans-serif\" \
                font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}>{markup}</text>"
-            )
-          };
-          svg.push_str(
-            &crate::functions::graphics::label_stacked_fraction_svg(
-              x,
-              y,
-              f,
-              *font_size,
-              &fill_color,
-              &text_at,
-            ),
-          );
-          svg.push('\n');
-          continue;
-        }
-        let lines = crate::functions::graphics::split_markup_lines(label);
-        let line_height = font_size * 1.2;
-        let mut body = String::new();
-        if lines.len() == 1 {
-          body.push_str(&lines[0]);
-        } else {
-          // The block of lines is centered on the anchor point.
-          let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
-          for (i, line) in lines.iter().enumerate() {
-            let dy = if i == 0 { first_dy } else { line_height };
-            body.push_str(&crate::functions::graphics::stacked_line_tspan(
-              &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
-              "middle",
-              line,
-            ));
-          }
-        }
-        // Blanks padding the label (`"  axis"`) keep their room, as they
-        // do in a 2D `Text`.
-        let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
-        svg.push_str(&format!(
+        )
+      };
+      svg.push_str(&crate::functions::graphics::label_stacked_fraction_svg(
+        x,
+        y,
+        f,
+        *font_size,
+        &fill_color,
+        &text_at,
+      ));
+      svg.push('\n');
+      continue;
+    }
+    let lines = crate::functions::graphics::split_markup_lines(label);
+    let line_height = font_size * 1.2;
+    let mut body = String::new();
+    if lines.len() == 1 {
+      body.push_str(&lines[0]);
+    } else {
+      // The block of lines is centered on the anchor point.
+      let first_dy = -(lines.len() as f64 - 1.0) * line_height / 2.0;
+      for (i, line) in lines.iter().enumerate() {
+        let dy = if i == 0 { first_dy } else { line_height };
+        body.push_str(&crate::functions::graphics::stacked_line_tspan(
+          &format!("x=\"{x:.1}\" dy=\"{dy:.1}\""),
+          "middle",
+          line,
+        ));
+      }
+    }
+    // Blanks padding the label (`"  axis"`) keep their room, as they
+    // do in a 2D `Text`.
+    let preserve_attr = crate::functions::plot::preserve_blanks_attr(&body);
+    svg.push_str(&format!(
           "<text x=\"{x:.1}\" y=\"{y:.1}\" text-anchor=\"middle\" \
            dominant-baseline=\"middle\" font-family=\"sans-serif\" \
            font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
-      }
-      // Points, and the shafts and heads of arrows, were drawn in depth
-      // order with the lines above.
-      _ => {}
-    }
   }
 
   // Axes (with their ticks and labels) go on top of the scene.
