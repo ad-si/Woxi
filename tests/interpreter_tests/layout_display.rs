@@ -1670,6 +1670,29 @@ mod layout_display {
     let (y, h) = (attr(nested, "y"), attr(nested, "height"));
     assert!(y > (row_h - h) / 2.0 + 1.0, "stack centered: {svg}");
   }
+
+  /// Regression: the prime marks of a typeset derivative (`T″(a)`) were
+  /// measured with the generic fallback advance, more than twice their real
+  /// width, leaving a wide gap before the argument's parenthesis.
+  #[test]
+  fn derivative_primes_take_their_own_narrow_width() {
+    for (order, primes) in [(1, "′"), (2, "′′")] {
+      let svg = svg_of(&format!(
+        "Text@TraditionalForm@Grid[{{{{D[T[a], {{a, {order}}}]}}}}]"
+      ));
+      let marks = format!(">{primes}</text>");
+      let at = svg.find(&marks).expect("primes are typeset");
+      let rest = &svg[at..];
+      let open = rest.find("translate(").expect("argument follows") + 10;
+      let x: f64 = rest[open..].split(',').next().unwrap().parse().unwrap();
+      // `T` advances about 7.8; each prime adds about 2.1 at script size.
+      let expected = 7.8 + 2.15 * order as f64;
+      assert!(
+        (x - expected).abs() < 1.0,
+        "order {order}: argument starts at {x}, expected about {expected}"
+      );
+    }
+  }
 }
 
 #[test]

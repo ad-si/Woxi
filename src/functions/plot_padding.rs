@@ -154,6 +154,10 @@ pub(crate) fn atkinson_width_em(c: char) -> f64 {
     ' '..='~' => ATKINSON_ASCII[c as usize - 0x20] as f64 / 1000.0,
     '\u{2212}' => 0.606,
     '\u{00D7}' => 0.532,
+    // The prime marks a derivative typesets (`f′`, `T″`) are narrow ticks,
+    // far slimmer than the generic fallback advance.
+    '\u{2032}' => 0.219,
+    '\u{2033}' | '\u{2034}' => 0.417,
     _ => char_width_em(c),
   }
 }
