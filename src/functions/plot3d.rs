@@ -433,13 +433,19 @@ fn face_grids_option(opts: &[Expr]) -> Vec<(usize, f64, [FaceGridLines; 2])> {
 /// triangle that covers the piece's midpoint on screen without lying in
 /// front of it. Drawn there, the piece shows over every face behind it
 /// and under every face in front of it.
+///
+/// `end_zones[k]`, when given, is the stretch `[lo, hi]` of piece `k`
+/// (as fractions of its length) away from the ends of the line it was cut
+/// from: samples before `lo` or after `hi` lie so close to an end of that
+/// line that a face there only touches it (see `line_draw_bounds`).
 fn line_draw_slots(
   verts: &[[Point3D; 3]],
   tris: &[Triangle],
   segs: &[[Point3D; 2]],
   camera: &Camera,
+  end_zones: Option<&[[f64; 2]]>,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, camera, None)
+  line_draw_bounds(verts, tris, segs, camera, None, end_zones)
     .into_iter()
     .map(|(slot, _)| slot)
     .collect()
@@ -459,7 +465,7 @@ fn outline_draw_slots(
   owners: &[usize],
   camera: &Camera,
 ) -> Vec<usize> {
-  line_draw_bounds(verts, tris, segs, camera, Some(owners))
+  line_draw_bounds(verts, tris, segs, camera, Some(owners), None)
     .into_iter()
     .zip(owners)
     .map(|((slot, first_front), &owner)| slot.min(first_front).max(owner + 1))
@@ -526,6 +532,7 @@ fn line_draw_bounds(
   segs: &[[Point3D; 2]],
   camera: &Camera,
   owners: Option<&[usize]>,
+  end_zones: Option<&[[f64; 2]]>,
 ) -> Vec<(usize, usize)> {
   if tris.is_empty() || verts.len() != tris.len() {
     return vec![(0, usize::MAX); segs.len()];
@@ -600,8 +607,10 @@ fn line_draw_bounds(
       let mut end_slot = 0;
       let mut cap = usize::MAX;
       const SAMPLES: [f64; 5] = [0.02, 0.25, 0.5, 0.75, 0.98];
+      let [zone_lo, zone_hi] = end_zones.map_or([0.0, 1.0], |z| z[n]);
       for (i, t) in SAMPLES.into_iter().enumerate() {
-        let at_end = i == 0 || i == SAMPLES.len() - 1;
+        let at_end =
+          i == 0 || i == SAMPLES.len() - 1 || t < zone_lo || t > zone_hi;
         let m = Point3D {
           x: seg[0].x + t * (seg[1].x - seg[0].x),
           y: seg[0].y + t * (seg[1].y - seg[0].y),
@@ -3941,7 +3950,7 @@ fn generate_svg(
   let mesh_slots = worlds.map(|worlds| {
     let endpoints: Vec<_> =
       sorted_mesh.iter().map(|line| line.endpoints).collect();
-    line_draw_slots(worlds, triangles, &endpoints, camera)
+    line_draw_slots(worlds, triangles, &endpoints, camera, None)
   });
   let mut ordered_slots: Vec<_> = sorted_mesh.drain(..).enumerate().collect();
   ordered_slots.sort_by(|(a, x), (b, y)| match &mesh_slots {
@@ -15380,6 +15389,14 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// its position along it. Translucent pieces of one polyline drawn in
     /// a row are joined back into a single stroke (see `emit_edge_run`).
     piece_of: Option<(usize, usize)>,
+    /// The corners of a 3D `Arrow`'s cone head, filled flat in `color` as
+    /// their projected convex hull. Its `endpoints` run from the center of
+    /// the cone's base to the tip, which places the head in the same draw
+    /// order as a line piece, so an opaque surface in front of it hides it.
+    head_outline: Option<Vec<Point3D>>,
+    /// The part of the piece away from the ends of the segment it was cut
+    /// from (see `line_draw_slots`); `[0, 1]` for a whole edge.
+    end_zone: [f64; 2],
   }
 
   // Build depth-sorted segments: the bounding-box edges plus all Line
@@ -15430,6 +15447,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: t0 * edge_px,
           dot_radius: None,
           piece_of: None,
+          head_outline: None,
+          end_zone: [0.0, 1.0],
         });
       }
     }
@@ -15480,6 +15499,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: 0.0,
               dot_radius: None,
               piece_of: None,
+              head_outline: None,
+              end_zone: [0.0, 1.0],
             });
           }
         }
@@ -15496,16 +15517,80 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     .sqrt();
     let bias = diag * 1e-3;
     const LINE_SUBDIVISIONS: usize = 8;
+    // The on-screen length (px) a long segment's pieces are cut to, and
+    // the most pieces one segment is cut into.
+    const LINE_PIECE_PX: f64 = 4.0;
+    const LINE_MAX_PIECES: usize = 64;
+    // How near an end of a segment (as a fraction of it) a face counts as
+    // only touching the line: a hidden edge meeting the corner of a face
+    // in front of it is not lifted over that face. It equals the stretch
+    // the two end samples of an end piece covered back when every segment
+    // was cut into `LINE_SUBDIVISIONS` pieces, so a short piece cut from
+    // a long segment is placed as its whole segment would be.
+    const LINE_END_REACH: f64 = 0.03;
     let mut polyline_id = 0usize;
+    // The scene box diagonal that a 3D arrowhead's size is a fraction of.
+    let scene_diag = v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
     for prim in &prims {
-      let Primitive3D::Line3D { segments, style } = prim else {
-        continue;
+      // An `Arrow`'s shaft is cut into depth-sorted pieces like a `Line`,
+      // so a surface or solid in front of it hides it as Wolfram does.
+      let (segments, style): (&[Vec<Point3D>], _) = match prim {
+        Primitive3D::Line3D { segments, style } => (segments, style),
+        Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
+          (std::slice::from_ref(points), style)
+        }
+        _ => continue,
       };
       let color = match style.color {
         Some((r, g, b)) => format!("rgb({r},{g},{b})"),
         None => default_prim_color.to_string(),
       };
       let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
+      if let Primitive3D::Arrow3D { points, .. } = prim {
+        // Arrowhead: a cone in the scene, like the head of an
+        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
+        // length as a fraction of the diagonal of the scene's box, so it
+        // foreshortens with the view like the rest of the scene.
+        for (segment, size) in arrow3d_head_anchors(
+          points,
+          arrowhead_fractions(
+            style.arrowheads.as_deref(),
+            Some(svg_width as f64),
+          )
+          .as_deref(),
+        ) {
+          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
+          else {
+            continue;
+          };
+          let tip = head[0];
+          let ring = &head[1..];
+          let n = ring.len() as f64;
+          let base = Point3D {
+            x: ring.iter().map(|p| p.x).sum::<f64>() / n,
+            y: ring.iter().map(|p| p.y).sum::<f64>() / n,
+            z: ring.iter().map(|p| p.z).sum::<f64>() / n,
+          };
+          let mid = Point3D {
+            x: f64::midpoint(base.x, tip.x),
+            y: f64::midpoint(base.y, tip.y),
+            z: f64::midpoint(base.z, tip.z),
+          };
+          sorted_edges.push(SceneEdge {
+            endpoints: [base, tip],
+            depth: depth(mid, &camera) - bias,
+            color: color.clone(),
+            width,
+            opacity: style.opacity,
+            dashing: None,
+            dash_offset: 0.0,
+            dot_radius: None,
+            piece_of: None,
+            head_outline: Some(head),
+            end_zone: [0.0, 1.0],
+          });
+        }
+      }
       for seg in segments {
         polyline_id += 1;
         let mut piece_index = 0;
@@ -15523,9 +15608,21 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           let (apx, apy) = to_svg(project(a, &camera).0, project(a, &camera).1);
           let (bpx, bpy) = to_svg(project(b, &camera).0, project(b, &camera).1);
           let total_px = ((bpx - apx).powi(2) + (bpy - apy).powi(2)).sqrt();
-          for s in 0..LINE_SUBDIVISIONS {
-            let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
-            let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
+          // A segment long on screen (an axis arrow drawn through a
+          // surface) is cut finer, so the pieces in front of and behind a
+          // face meet close to where the line pierces it. The pieces stay
+          // several pixels long: a sliver at the corner of a face cannot
+          // be told from a line touching that corner.
+          let pieces = if total_px.is_finite() {
+            LINE_SUBDIVISIONS
+              .max((total_px / LINE_PIECE_PX).ceil() as usize)
+              .min(LINE_MAX_PIECES)
+          } else {
+            LINE_SUBDIVISIONS
+          };
+          for s in 0..pieces {
+            let t0 = s as f64 / pieces as f64;
+            let t1 = (s + 1) as f64 / pieces as f64;
             let tm = f64::midpoint(t0, t1);
             let lerp = |t: f64| Point3D {
               x: a.x + (b.x - a.x) * t,
@@ -15542,6 +15639,11 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: run_px + t0 * total_px,
               dot_radius: None,
               piece_of: Some((polyline_id, piece_index)),
+              head_outline: None,
+              end_zone: [
+                (LINE_END_REACH - t0) / (t1 - t0),
+                (1.0 - LINE_END_REACH - t0) / (t1 - t0),
+              ],
             });
             piece_index += 1;
           }
@@ -15573,6 +15675,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: 0.0,
           dot_radius: Some(radius),
           piece_of: None,
+          head_outline: None,
+          end_zone: [0.0, 1.0],
         });
       }
     }
@@ -15636,6 +15740,30 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       } else {
         String::new()
       };
+      if let Some(head) = &edge.head_outline {
+        let screen: Vec<(f64, f64, usize)> = head
+          .iter()
+          .enumerate()
+          .map(|(i, p)| {
+            let (px, py) = project(*p, &camera);
+            let (sx, sy) = to_svg(px, py);
+            (sx, sy, i)
+          })
+          .collect();
+        let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
+        if hull.len() >= 3 {
+          let pts: Vec<String> = hull
+            .iter()
+            .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
+            .collect();
+          svg.push_str(&format!(
+            "<polygon points=\"{}\" fill=\"{}\"{opacity_attr}/>\n",
+            pts.join(" "),
+            edge.color
+          ));
+        }
+        return;
+      }
       if let Some(radius) = edge.dot_radius {
         svg.push_str(&format!(
           "<circle cx=\"{ex0:.1}\" cy=\"{ey0:.1}\" r=\"{radius:.2}\" fill=\"{}\"{opacity_attr}/>\n",
@@ -15737,6 +15865,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       &all_triangles,
       &sorted_edges.iter().map(|e| e.endpoints).collect::<Vec<_>>(),
       &camera,
+      Some(&sorted_edges.iter().map(|e| e.end_zone).collect::<Vec<_>>()),
     );
     let mut by_slot: Vec<usize> = (0..sorted_edges.len()).collect();
     by_slot.sort_by_key(|&k| edge_slots[k]);
@@ -16149,73 +16278,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
            font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
       }
-      // Points were drawn in depth order with the lines above.
-      Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
-        let stroke_color = if let Some((r, g, b)) = style.color {
-          format!("rgb({r},{g},{b})")
-        } else {
-          default_prim_color.to_string()
-        };
-        let opacity_attr = if style.opacity < 1.0 {
-          format!(" opacity=\"{}\"", style.opacity)
-        } else {
-          String::new()
-        };
-        let pts: Vec<String> = points
-          .iter()
-          .map(|p| {
-            let (sx, sy) =
-              to_svg(project(*p, &camera).0, project(*p, &camera).1);
-            format!("{sx:.1},{sy:.1}")
-          })
-          .collect();
-        svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
-          pts.join(" "),
-          stroke_color,
-          style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH),
-          opacity_attr
-        ));
-        // Arrowhead: a cone in the scene, like the head of an
-        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
-        // length as a fraction of the diagonal of the scene's box, so it
-        // foreshortens with the view like the rest of the scene.
-        let scene_diag =
-          v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
-        for (segment, size) in arrow3d_head_anchors(
-          points,
-          arrowhead_fractions(
-            style.arrowheads.as_deref(),
-            Some(svg_width as f64),
-          )
-          .as_deref(),
-        ) {
-          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
-          else {
-            continue;
-          };
-          let screen: Vec<(f64, f64, usize)> = head
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-              let (px, py) = project(*p, &camera);
-              let (sx, sy) = to_svg(px, py);
-              (sx, sy, i)
-            })
-            .collect();
-          let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
-          if hull.len() >= 3 {
-            let pts: Vec<String> = hull
-              .iter()
-              .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
-              .collect();
-            svg.push_str(&format!(
-              "<polygon points=\"{}\" fill=\"{stroke_color}\"{opacity_attr}/>\n",
-              pts.join(" ")
-            ));
-          }
-        }
-      }
+      // Points, and the shafts and heads of arrows, were drawn in depth
+      // order with the lines above.
       _ => {}
     }
   }
