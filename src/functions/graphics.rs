@@ -40024,7 +40024,11 @@ fn column_layout_svg(
     .collect();
   let total_height: f64 =
     row_heights.iter().sum::<f64>() + gaps.iter().sum::<f64>();
-  let frame_padding = if frame_all { pad_x / 2.0 } else { 0.0 };
+  // A ruled column keeps the grid's edge offset of 0.28 em between its
+  // items and the frame, as the FrontEnd's `GridBox` does: a 350 pt pane
+  // in `Column[…, Frame -> All]` is framed about 358 pt wide, so it still
+  // fits a 360 pt `Pane` around it.
+  let frame_padding = if frame_all { 0.28 * font_size } else { 0.0 };
   let total_width = col_width + 2.0 * frame_padding;
 
   let svg_w = total_width.ceil() as u32;

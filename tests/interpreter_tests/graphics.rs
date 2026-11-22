@@ -60629,25 +60629,26 @@ fn pane_keeps_its_box_around_a_shrunk_plot() {
 fn framed_column_centers_items_inside_its_frame() {
   // Regression: a `Column` with `Frame -> All` added its frame padding on
   // top of the centered (or right-aligned) offset, pushing the widest item
-  // past the frame's right edge.
+  // past the frame's right edge. The frame sits 0.28 em (3.9 pt) from the
+  // widest item, as in the FrontEnd's `GridBox`.
   let center = export_svg(
     "Column[{Pane[\"a\", {350, 70}], Pane[\"b\", {100, 20}]}, \
      Frame -> All, Alignment -> Center]",
   );
-  assert!(center.starts_with("<svg width=\"362\""), "{center}");
-  assert!(center.contains("<svg x=\"6.0\" y=\"0.0\" width=\"350.0\""));
-  assert!(center.contains("<svg x=\"131.0\" y=\"76.0\" width=\"100.0\""));
+  assert!(center.starts_with("<svg width=\"358\""), "{center}");
+  assert!(center.contains("<svg x=\"3.9\" y=\"0.0\" width=\"350.0\""));
+  assert!(center.contains("<svg x=\"128.9\" y=\"76.0\" width=\"100.0\""));
   let right = export_svg(
     "Column[{Pane[\"a\", {350, 70}], Pane[\"b\", {100, 20}]}, \
      Frame -> All, Alignment -> Right]",
   );
-  assert!(right.contains("<svg x=\"6.0\" y=\"0.0\" width=\"350.0\""));
-  assert!(right.contains("<svg x=\"256.0\" y=\"76.0\" width=\"100.0\""));
+  assert!(right.contains("<svg x=\"3.9\" y=\"0.0\" width=\"350.0\""));
+  assert!(right.contains("<svg x=\"253.9\" y=\"76.0\" width=\"100.0\""));
   let left = export_svg(
     "Column[{Pane[\"a\", {350, 70}], Pane[\"b\", {100, 20}]}, \
      Frame -> All]",
   );
-  assert!(left.contains("<svg x=\"6.0\" y=\"76.0\" width=\"100.0\""));
+  assert!(left.contains("<svg x=\"3.9\" y=\"76.0\" width=\"100.0\""));
 }
 
 #[test]
