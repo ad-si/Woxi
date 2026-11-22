@@ -1348,6 +1348,79 @@ mod ticks {
     }
   }
 
+  /// Every corner of the `<polygon>` fills of an SVG.
+  fn polygon_points(svg: &str) -> Vec<Vec<(f64, f64)>> {
+    svg
+      .lines()
+      .filter(|l| l.starts_with("<polygon points=\""))
+      .map(|l| {
+        l["<polygon points=\"".len()..]
+          .split('"')
+          .next()
+          .unwrap()
+          .split(' ')
+          .map(|p| {
+            let (x, y) = p.split_once(',').unwrap();
+            (x.parse().unwrap(), y.parse().unwrap())
+          })
+          .collect()
+      })
+      .collect()
+  }
+
+  // The facets of a smooth solid drawn without edges have only internal
+  // cuts. Their fills met edge to edge, so at a low resolution the
+  // anti-aliased cuts let what lies behind show through as a lattice of
+  // seams across the surface. Each fill now reaches a little into the
+  // neighbors it shares a cut with, but never past the silhouette.
+  #[test]
+  fn smooth_solid_facets_overlap_across_shared_cuts() {
+    for solid in ["Cylinder[]", "Cone[]", "Sphere[]"] {
+      let opaque = polygon_points(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], {solid}}}, Boxed -> False]"
+      )));
+      // A widened edge adds two corners. Most facets share an edge with a
+      // neighbor; those on the silhouette keep that edge where it is.
+      let widened = opaque.iter().filter(|p| p.len() > 3).count();
+      let rim = opaque
+        .iter()
+        .filter(|p| p.len() == 5 || p.len() == 7)
+        .count();
+      assert!(
+        widened * 2 > opaque.len(),
+        "{solid}: {widened}/{}",
+        opaque.len()
+      );
+      assert!(rim > 0, "{solid}");
+      // An opaque sphere is tessellated about the line of sight, so only
+      // the other solids outline the same facets when nearly opaque.
+      if solid == "Sphere[]" {
+        continue;
+      }
+      // Nearly opaque facets are not widened, and outline the same solid.
+      let plain = polygon_points(&svg(&format!(
+        "Graphics3D[{{EdgeForm[], Opacity[0.999], {solid}}}, Boxed -> False]"
+      )));
+      assert!(plain.iter().all(|p| p.len() == 3), "{solid}");
+      let extent = |polys: &[Vec<(f64, f64)>]| {
+        let pts = polys.iter().flatten();
+        let xs = pts.clone().map(|p| p.0);
+        let ys = pts.map(|p| p.1);
+        [
+          xs.clone().fold(f64::MAX, f64::min),
+          xs.fold(f64::MIN, f64::max),
+          ys.clone().fold(f64::MAX, f64::min),
+          ys.fold(f64::MIN, f64::max),
+        ]
+      };
+      // Each band reaches into the neighboring facet only.
+      let (a, b) = (extent(&opaque), extent(&plain));
+      for k in 0..4 {
+        assert!((a[k] - b[k]).abs() <= 0.11, "{solid}: {a:?} vs {b:?}");
+      }
+    }
+  }
+
   /// The `stroke-width` values of the black `<line>` pieces of an SVG.
   fn black_line_widths(svg: &str) -> Vec<f64> {
     svg
@@ -2485,21 +2558,26 @@ mod internal_cut_seams {
     assert_eq!(polygon_point_counts(&s), vec![3], "{s}");
   }
 
-  /// Overlapping translucent halves would darken the diagonal, and without
-  /// a drawn outline the band could show past the face, so neither widens.
+  /// Overlapping translucent halves would darken the diagonal, so they
+  /// do not widen.
   #[test]
-  fn translucent_or_edgeless_faces_keep_three_corners() {
-    for style in ["Opacity[0.5]", "EdgeForm[]"] {
-      let s = svg(&format!(
-        "Graphics3D[{{{style}, {SQUARE}}}, Boxed -> False]"
-      ));
-      // A translucent face's pieces are filled as one `<path>` instead.
-      let counts = polygon_point_counts(&s);
-      assert!(counts.iter().all(|&n| n == 3), "{style}: {s}");
-      if style == "EdgeForm[]" {
-        assert_eq!(counts, vec![3, 3], "{style}: {s}");
-      }
-    }
+  fn translucent_faces_keep_three_corners() {
+    let s = svg(&format!(
+      "Graphics3D[{{Opacity[0.5], {SQUARE}}}, Boxed -> False]"
+    ));
+    // A translucent face's pieces are filled as one `<path>` instead.
+    let counts = polygon_point_counts(&s);
+    assert!(counts.iter().all(|&n| n == 3), "{s}");
+  }
+
+  /// Without a drawn outline nothing would cover a band leaving a flat
+  /// face, so its halves keep their exact corners.
+  #[test]
+  fn edgeless_flat_faces_keep_three_corners() {
+    let s = svg(&format!(
+      "Graphics3D[{{EdgeForm[], {SQUARE}}}, Boxed -> False]"
+    ));
+    assert_eq!(polygon_point_counts(&s), vec![3, 3], "{s}");
   }
 }
 

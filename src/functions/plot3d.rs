@@ -175,34 +175,54 @@ impl Default for Camera {
   }
 }
 
-/// The outline of a projected fan triangle's fill, widened by a band of
-/// `overlap` pixels across each internal cut (`boundary[i] == false`) of
-/// its polygon, so the halves of a face overlap and no anti-aliasing seam
-/// traces the cut. Outline edges stay where they are. Near the ends of a
+/// The outline of a projected triangle's fill, widened by a band of
+/// `overlap` pixels across internal cuts (`boundary[i] == false`), so
+/// neighboring pieces of one surface overlap and no anti-aliasing seam
+/// lets what lies behind show through along the cut. Outline edges stay
+/// where they are. A triangle with an outline edge (a fan piece of a
+/// polygon) is widened across all its internal cuts: near the ends of a
 /// cut the band can leave the polygon, but by at most `overlap` from its
 /// outline, which an outline stroke at least `2 * overlap` wide covers.
-/// Triangles without both kinds of edge — a lone triangle, or a face drawn
-/// without edges, whose outline is unknown — keep their three corners.
+/// A triangle with no outline edge (a facet of a smooth surface drawn
+/// without edges) has nothing to cover a band leaving the surface:
+/// it is widened only across the cuts another drawn face shares, whose
+/// far corner `neighbors[i]` gives, and only into that face — the band
+/// narrows toward the ends of the cut. Its unshared internal edges lie on
+/// the surface's silhouette and stay where they are.
 pub(crate) fn widen_across_internal_cuts(
   corners: [(f64, f64); 3],
   boundary: [bool; 3],
+  neighbors: [Option<(f64, f64)>; 3],
   overlap: f64,
 ) -> Vec<(f64, f64)> {
   let signed_area = (corners[1].0 - corners[0].0)
     * (corners[2].1 - corners[0].1)
     - (corners[2].0 - corners[0].0) * (corners[1].1 - corners[0].1);
-  if boundary.iter().all(|&b| b)
-    || boundary.iter().all(|&b| !b)
-    || overlap <= 0.0
-    || signed_area.abs() < 1e-9
-  {
+  let outlined = boundary.contains(&true);
+  let widen: [bool; 3] = std::array::from_fn(|i| {
+    !boundary[i] && (outlined || neighbors[i].is_some())
+  });
+  if !widen.contains(&true) || overlap <= 0.0 || signed_area.abs() < 1e-9 {
     return corners.to_vec();
   }
-  let mut out = Vec::with_capacity(7);
+  let mut out = Vec::with_capacity(9);
   for i in 0..3 {
     let (a, b) = (corners[i], corners[(i + 1) % 3]);
     out.push(a);
-    if boundary[i] {
+    if !widen[i] {
+      continue;
+    }
+    if let (false, Some(c)) = (outlined, neighbors[i]) {
+      // Into the neighbor: the band's ends slide along its other edges.
+      let len = (b.0 - a.0).hypot(b.1 - a.1);
+      let height =
+        ((b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)).abs() / len;
+      if len < 1e-9 || height < 1e-9 {
+        continue;
+      }
+      let t = (overlap / height).min(1.0);
+      out.push((a.0 + t * (c.0 - a.0), a.1 + t * (c.1 - a.1)));
+      out.push((b.0 + t * (c.0 - b.0), b.1 + t * (c.1 - b.1)));
       continue;
     }
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
@@ -15810,6 +15830,43 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         svg.push_str(&line);
       }
     };
+    // The internal cuts two opaque faces share: a fill may be widened
+    // across them into the neighbor (see `widen_across_internal_cuts`),
+    // which continues the surface there.
+    let cut_key = |a: (f64, f64), b: (f64, f64)| {
+      let q = |p: (f64, f64)| {
+        ((p.0 * 1e6).round() as i64, (p.1 * 1e6).round() as i64)
+      };
+      let (a, b) = (q(a), q(b));
+      if a <= b { (a, b) } else { (b, a) }
+    };
+    // Each cut maps to the far corners of the faces on it. Only the
+    // smoothly shaded facets of a curved surface take part: a flat face
+    // drawn without edges keeps its exact outline and area.
+    let mut cut_faces: std::collections::HashMap<_, Vec<(f64, f64)>> =
+      std::collections::HashMap::new();
+    for t in all_triangles.iter().filter(|t| {
+      t.opacity >= 1.0 && t.texture.is_none() && t.vertex_colors.is_some()
+    }) {
+      for e in 0..3 {
+        if !t.boundary[e] {
+          let key = cut_key(t.projected[e], t.projected[(e + 1) % 3]);
+          cut_faces
+            .entry(key)
+            .or_default()
+            .push(t.projected[(e + 2) % 3]);
+        }
+      }
+    }
+    // The far corner of the other face on edge `e` of `tri`, if any.
+    let neighbor_corner = |tri: &Triangle, e: usize| {
+      let own = tri.projected[(e + 2) % 3];
+      cut_faces
+        .get(&cut_key(tri.projected[e], tri.projected[(e + 1) % 3]))?
+        .iter()
+        .find(|&&c| c != own)
+        .map(|&(x, y)| to_svg(x, y))
+    };
     for (pos, tri) in all_triangles.iter().enumerate() {
       // Emit the edge segments that belong behind this triangle
       let run_start = ei;
@@ -15926,15 +15983,18 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           ));
         } else if tri.opacity > 0.0 {
           let corners = [(x0, y0), (x1, y1), (x2, y2)];
-          // An opaque fan triangle reaches a little across the internal
-          // cuts of its polygon, so the two halves of a face overlap there
-          // and no anti-aliasing seam traces the diagonal.
+          // An opaque triangle reaches a little across the internal cuts
+          // it shares with its neighbors (the diagonal of a quad face, the
+          // facets of a smooth solid), so the pieces overlap there and no
+          // anti-aliasing seam traces the cut.
           // The band may leave the face by up to its own width, which the
           // solid outline drawn over it covers.
           let fill = if tri.opacity >= 1.0 && tri.edge_dashing.is_none() {
+            let neighbors = std::array::from_fn(|e| neighbor_corner(tri, e));
             widen_across_internal_cuts(
               corners,
               tri.boundary,
+              neighbors,
               (edge_width / 2.0).min(0.5),
             )
           } else {
