@@ -33630,6 +33630,36 @@ ParametricPlot[f[t], {t, 0, 1}]]",
       }
     }
 
+    /// A line `Arrow` is hidden by the solids in front of it like a `Line`:
+    /// it used to be painted over the whole scene, so the axis arrows of a
+    /// puzzle of cubes showed through the cubes resting on them.
+    #[test]
+    fn graphics3d_arrow_is_hidden_by_solid_in_front() {
+      // Whether a face of the cube is drawn after every piece of the red
+      // arrow, i.e. over it.
+      let face_over_arrow = |svg: &str| {
+        let last_red = svg.rfind("rgb(255,0,0)").expect("arrow drawn");
+        svg[last_red..]
+          .lines()
+          .skip(1)
+          .any(|l| l.starts_with("<polygon") && !l.contains("rgb(255,0,0)"))
+      };
+      // An arrow inside an opaque cube: the cube's front faces cover it.
+      let inside = export_svg(
+        "Graphics3D[{Red, Arrow[{{0.2, 0.5, 0.5}, {0.8, 0.5, 0.5}}], \
+         White, Cuboid[{0, 0, 0}, {1, 1, 1}]}]",
+      );
+      assert!(face_over_arrow(&inside), "{inside}");
+      // An arrow along the rim of a face is drawn over the face's outline.
+      let on_rim = export_svg(
+        "Graphics3D[{Polygon[{{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}], \
+         Red, Arrow[{{0, 0, 0}, {1, 0, 0}}]}]",
+      );
+      let outline = on_rim.rfind("rgb(64,64,64)").expect("face outline");
+      let arrow = on_rim.find("rgb(255,0,0)").expect("arrow drawn");
+      assert!(outline < arrow, "{on_rim}");
+    }
+
     #[test]
     fn graphics3d_arrow_honors_thickness() {
       let thin = export_svg("Graphics3D[{Black, Arrow[{{0,0,0}, {1,1,1}}]}]");

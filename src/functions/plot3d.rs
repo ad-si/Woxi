@@ -15362,6 +15362,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let axis_color = format!("rgb({},{},{})", axis_rgb.0, axis_rgb.1, axis_rgb.2);
   let default_prim_color = crate::functions::graphics::theme().text_primary;
 
+  // Pieces each segment of a `Line` or line `Arrow` is cut into for the
+  // depth sorting below.
+  const LINE_SUBDIVISIONS: usize = 8;
   // A depth-sorted line segment interleaved with the surface triangles
   // (painter's algorithm) so lines behind a surface are hidden by it.
   struct SceneEdge {
@@ -15380,6 +15383,15 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     /// its position along it. Translucent pieces of one polyline drawn in
     /// a row are joined back into a single stroke (see `emit_edge_run`).
     piece_of: Option<(usize, usize)>,
+    /// The cone head of a line `Arrow`, as the corners whose projected
+    /// convex hull is filled (see `arrow3d_head_outline`). Its `endpoints`
+    /// run from the center of the cone's base to its tip, so the head is
+    /// placed among the faces like a short piece of line.
+    head: Option<Vec<Point3D>>,
+    /// A piece of a line `Arrow`'s shaft: consecutive pieces drawn in a
+    /// row are joined back into one stroke whatever their opacity, so an
+    /// arrow nothing hides is still a single `<polyline>`.
+    arrow_shaft: bool,
   }
 
   // Build depth-sorted segments: the bounding-box edges plus all Line
@@ -15430,6 +15442,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: t0 * edge_px,
           dot_radius: None,
           piece_of: None,
+          head: None,
+          arrow_shaft: false,
         });
       }
     }
@@ -15480,6 +15494,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: 0.0,
               dot_radius: None,
               piece_of: None,
+              head: None,
+              arrow_shaft: false,
             });
           }
         }
@@ -15495,7 +15511,6 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       + (z3_max - z3_min).powi(2))
     .sqrt();
     let bias = diag * 1e-3;
-    const LINE_SUBDIVISIONS: usize = 8;
     let mut polyline_id = 0usize;
     for prim in &prims {
       let Primitive3D::Line3D { segments, style } = prim else {
@@ -15542,11 +15557,100 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
               dash_offset: run_px + t0 * total_px,
               dot_radius: None,
               piece_of: Some((polyline_id, piece_index)),
+              head: None,
+              arrow_shaft: false,
             });
             piece_index += 1;
           }
           run_px += total_px;
         }
+      }
+    }
+    // Line arrows are hidden by the solids in front of them like any
+    // other line: the shaft is cut into depth-sorted pieces and the cone
+    // head takes its own place in the same order.
+    let scene_diag = diag;
+    for prim in &prims {
+      let Primitive3D::Arrow3D { points, style } = prim else {
+        continue;
+      };
+      if points.len() < 2 {
+        continue;
+      }
+      let color = match style.color {
+        Some((r, g, b)) => format!("rgb({r},{g},{b})"),
+        None => default_prim_color.to_string(),
+      };
+      let width = style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH);
+      polyline_id += 1;
+      let mut piece_index = 0;
+      for pair in points.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        for s in 0..LINE_SUBDIVISIONS {
+          let t0 = s as f64 / LINE_SUBDIVISIONS as f64;
+          let t1 = (s + 1) as f64 / LINE_SUBDIVISIONS as f64;
+          let lerp = |t: f64| Point3D {
+            x: a.x + (b.x - a.x) * t,
+            y: a.y + (b.y - a.y) * t,
+            z: a.z + (b.z - a.z) * t,
+          };
+          sorted_edges.push(SceneEdge {
+            endpoints: [lerp(t0), lerp(t1)],
+            depth: depth(lerp(f64::midpoint(t0, t1)), &camera) - bias,
+            color: color.clone(),
+            width,
+            opacity: style.opacity,
+            dashing: None,
+            dash_offset: 0.0,
+            dot_radius: None,
+            piece_of: Some((polyline_id, piece_index)),
+            head: None,
+            arrow_shaft: true,
+          });
+          piece_index += 1;
+        }
+      }
+      // `Arrowheads[s]` (default a twentieth) is the head's length as a
+      // fraction of the diagonal of the scene's box, so it foreshortens
+      // with the view like the rest of the scene.
+      for (segment, size) in arrow3d_head_anchors(
+        points,
+        arrowhead_fractions(
+          style.arrowheads.as_deref(),
+          Some(svg_width as f64),
+        )
+        .as_deref(),
+      ) {
+        let Some(outline) = arrow3d_head_outline(&segment, size * scene_diag)
+        else {
+          continue;
+        };
+        let tip = outline[0];
+        let ring = &outline[1..];
+        let n = ring.len() as f64;
+        let base = Point3D {
+          x: ring.iter().map(|p| p.x).sum::<f64>() / n,
+          y: ring.iter().map(|p| p.y).sum::<f64>() / n,
+          z: ring.iter().map(|p| p.z).sum::<f64>() / n,
+        };
+        let mid = Point3D {
+          x: f64::midpoint(base.x, tip.x),
+          y: f64::midpoint(base.y, tip.y),
+          z: f64::midpoint(base.z, tip.z),
+        };
+        sorted_edges.push(SceneEdge {
+          endpoints: [base, tip],
+          depth: depth(mid, &camera) - bias,
+          color: color.clone(),
+          width: 0.0,
+          opacity: style.opacity,
+          dashing: None,
+          dash_offset: 0.0,
+          dot_radius: None,
+          piece_of: None,
+          head: Some(outline),
+          arrow_shaft: false,
+        });
       }
     }
     for prim in &prims {
@@ -15573,6 +15677,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           dash_offset: 0.0,
           dot_radius: Some(radius),
           piece_of: None,
+          head: None,
+          arrow_shaft: false,
         });
       }
     }
@@ -15643,6 +15749,30 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         ));
         return;
       }
+      if let Some(head) = &edge.head {
+        let screen: Vec<(f64, f64, usize)> = head
+          .iter()
+          .enumerate()
+          .map(|(i, p)| {
+            let (px, py) = project(*p, &camera);
+            let (sx, sy) = to_svg(px, py);
+            (sx, sy, i)
+          })
+          .collect();
+        let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
+        if hull.len() >= 3 {
+          let pts: Vec<String> = hull
+            .iter()
+            .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
+            .collect();
+          svg.push_str(&format!(
+            "<polygon points=\"{}\" fill=\"{}\"{opacity_attr}/>\n",
+            pts.join(" "),
+            edge.color
+          ));
+        }
+        return;
+      }
       let dash_attr =
         dash3d_attr(edge.dashing.as_ref(), svg_width as f64, edge.dash_offset);
       // A line is drawn as many short depth-sorted pieces. Round caps on
@@ -15659,21 +15789,22 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     // separate elements, every joint between two pieces shows as an
     // anti-aliasing notch where the background bleeds through.
     let emit_edge_run = |svg: &mut String, run: &[&SceneEdge]| {
-      let mut done = vec![false; run.len()];
+      // Arrowheads go last in their slot, over their own shaft.
+      let mut done: Vec<bool> = run.iter().map(|e| e.head.is_some()).collect();
       for i in 0..run.len() {
         if done[i] {
           continue;
         }
         let edge = run[i];
-        let Some((line_id, _)) = edge.piece_of.filter(|_| edge.opacity < 1.0)
-        else {
+        let joins = |e: &SceneEdge| e.opacity < 1.0 || e.arrow_shaft;
+        let Some((line_id, _)) = edge.piece_of.filter(|_| joins(edge)) else {
           emit_edge(svg, edge);
           continue;
         };
         let mut pieces: Vec<usize> = (i..run.len())
           .filter(|&k| {
             !done[k]
-              && run[k].opacity < 1.0
+              && joins(run[k])
               && run[k].piece_of.map(|(id, _)| id) == Some(line_id)
           })
           .collect();
@@ -15692,7 +15823,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
           let chain = &pieces[start..end];
           start = end;
-          if chain.len() == 1 {
+          if chain.len() == 1 && !run[chain[0]].arrow_shaft {
             emit_edge(svg, run[chain[0]]);
             continue;
           }
@@ -15708,6 +15839,42 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             let (x, y) = to_svg(px, py);
             points.push(format!("{x:.1},{y:.1}"));
           }
+          if first.arrow_shaft {
+            // Only the arrow's own corners (and the ends of the chain): the
+            // depth-sorting cuts in between are collinear.
+            let mut corners = Vec::with_capacity(chain.len() + 1);
+            for (n, &k) in chain.iter().enumerate() {
+              let index = run[k].piece_of.map_or(0, |(_, i)| i);
+              if n == 0 {
+                corners.push(run[k].endpoints[0]);
+              }
+              if n + 1 == chain.len()
+                || (index + 1).is_multiple_of(LINE_SUBDIVISIONS)
+              {
+                corners.push(run[k].endpoints[1]);
+              }
+            }
+            let points: Vec<String> = corners
+              .iter()
+              .map(|p| {
+                let (px, py) = project(*p, &camera);
+                let (x, y) = to_svg(px, py);
+                format!("{x:.1},{y:.1}")
+              })
+              .collect();
+            let opacity_attr = if first.opacity < 1.0 {
+              format!(" opacity=\"{}\"", first.opacity)
+            } else {
+              String::new()
+            };
+            svg.push_str(&format!(
+              "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{opacity_attr}/>\n",
+              points.join(" "),
+              first.color,
+              first.width,
+            ));
+            continue;
+          }
           let dash_attr = dash3d_attr(
             first.dashing.as_ref(),
             svg_width as f64,
@@ -15722,6 +15889,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             dash_attr
           ));
         }
+      }
+      for edge in run.iter().filter(|e| e.head.is_some()) {
+        emit_edge(svg, edge);
       }
     };
     let mut ei = 0;
@@ -15816,8 +15986,16 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       while ei < sorted_edges.len() && edge_slots[ei] <= pos {
         ei += 1;
       }
-      emit_edge_run(&mut svg, &sorted_edges[run_start..ei]);
+      // Line arrows go after the outlines of the faces before this one:
+      // an arrow running along a face's edge (an axis drawn along the rim
+      // of a floor) is drawn over that face's own outline.
+      let (arrows, others): (Vec<&SceneEdge>, Vec<&SceneEdge>) = sorted_edges
+        [run_start..ei]
+        .iter()
+        .partition(|e| e.arrow_shaft || e.head.is_some());
+      emit_edge_run(&mut svg, &others);
       flush_outlines(&mut svg, &mut pending_outlines, pos);
+      emit_edge_run(&mut svg, &arrows);
       // Already painted as part of a merged face below.
       if pos < skip_until {
         continue;
@@ -15983,8 +16161,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
     emit_edge_run(&mut svg, &sorted_edges[ei..]);
   }
 
-  // Render points and arrows on top (lines are depth-sorted with the
-  // triangles above so surfaces occlude them correctly)
+  // Render the labels on top (lines, points and line arrows are
+  // depth-sorted with the triangles above so surfaces occlude them)
   for prim in &prims {
     match prim {
       Primitive3D::Text3D {
@@ -16149,73 +16327,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
            font-size=\"{font_size:.1}\" fill=\"{fill_color}\"{style_attrs}{opacity_attr}{preserve_attr}>{body}</text>\n",
         ));
       }
-      // Points were drawn in depth order with the lines above.
-      Primitive3D::Arrow3D { points, style } if points.len() >= 2 => {
-        let stroke_color = if let Some((r, g, b)) = style.color {
-          format!("rgb({r},{g},{b})")
-        } else {
-          default_prim_color.to_string()
-        };
-        let opacity_attr = if style.opacity < 1.0 {
-          format!(" opacity=\"{}\"", style.opacity)
-        } else {
-          String::new()
-        };
-        let pts: Vec<String> = points
-          .iter()
-          .map(|p| {
-            let (sx, sy) =
-              to_svg(project(*p, &camera).0, project(*p, &camera).1);
-            format!("{sx:.1},{sy:.1}")
-          })
-          .collect();
-        svg.push_str(&format!(
-          "<polyline points=\"{}\" fill=\"none\" stroke=\"{}\" stroke-width=\"{}\"{}/>\n",
-          pts.join(" "),
-          stroke_color,
-          style.thickness.unwrap_or(DEFAULT_LINE_3D_WIDTH),
-          opacity_attr
-        ));
-        // Arrowhead: a cone in the scene, like the head of an
-        // `Arrow[Tube[…]]`. `Arrowheads[s]` (default a twentieth) is its
-        // length as a fraction of the diagonal of the scene's box, so it
-        // foreshortens with the view like the rest of the scene.
-        let scene_diag =
-          v_len([x3_max - x3_min, y3_max - y3_min, z3_max - z3_min]);
-        for (segment, size) in arrow3d_head_anchors(
-          points,
-          arrowhead_fractions(
-            style.arrowheads.as_deref(),
-            Some(svg_width as f64),
-          )
-          .as_deref(),
-        ) {
-          let Some(head) = arrow3d_head_outline(&segment, size * scene_diag)
-          else {
-            continue;
-          };
-          let screen: Vec<(f64, f64, usize)> = head
-            .iter()
-            .enumerate()
-            .map(|(i, p)| {
-              let (px, py) = project(*p, &camera);
-              let (sx, sy) = to_svg(px, py);
-              (sx, sy, i)
-            })
-            .collect();
-          let hull = crate::functions::convex_hull::convex_hull_ccw(&screen);
-          if hull.len() >= 3 {
-            let pts: Vec<String> = hull
-              .iter()
-              .map(|&i| format!("{:.1},{:.1}", screen[i].0, screen[i].1))
-              .collect();
-            svg.push_str(&format!(
-              "<polygon points=\"{}\" fill=\"{stroke_color}\"{opacity_attr}/>\n",
-              pts.join(" ")
-            ));
-          }
-        }
-      }
+      // Points and line arrows were drawn in depth order with the lines
+      // above.
       _ => {}
     }
   }
