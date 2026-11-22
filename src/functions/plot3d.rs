@@ -10059,7 +10059,7 @@ fn collect_3d_primitives(
                   hi[k] = hi[k].max(c);
                 }
               }
-              let diag = SCENE_ARROW_EXTENT.get().unwrap_or_else(|| {
+              let diag = SCENE_DIAGONAL.get().unwrap_or_else(|| {
                 v_len([hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]])
               });
               // The head at the tip: the last entry of an `Arrowheads` list.
@@ -10468,7 +10468,11 @@ fn collect_3d_primitives(
                   vec![r; pts.len()]
                 }
               }
+            } else if let Some(diag) = SCENE_DIAGONAL.get() {
+              vec![diag * DEFAULT_TUBE_RADIUS_FRACTION; pts.len()]
             } else {
+              // Before the scene's box is measured (the first collection
+              // pass), a thin tube around the curve stands in.
               let extent = pts
                 .iter()
                 .flat_map(|a| {
@@ -12343,9 +12347,10 @@ fn scene_image_width() -> f64 {
 thread_local! {
   /// Diagonal of the box of the `Graphics3D` currently being collected (its
   /// explicit `PlotRange`, else the extent of its contents), which an
-  /// `Arrowheads[s]` size on an `Arrow[Tube[…]]` is a fraction of. `None`
-  /// until the box is known: a first collection pass measures it.
-  static SCENE_ARROW_EXTENT: std::cell::Cell<Option<f64>> =
+  /// `Arrowheads[s]` size on an `Arrow[Tube[…]]` and the default radius of a
+  /// `Tube` are fractions of. `None` until the box is known: a first
+  /// collection pass measures it.
+  static SCENE_DIAGONAL: std::cell::Cell<Option<f64>> =
     const { std::cell::Cell::new(None) };
 }
 
@@ -12461,6 +12466,31 @@ fn arrow3d_head_outline(points: &[Point3D], len: f64) -> Option<Vec<Point3D>> {
     });
   }
   Some(out)
+}
+
+/// Default radius of a `Tube` given none, as a fraction of the diagonal of
+/// the scene's box. Two Demonstration snapshots (an icosahedron of tubes
+/// about 11 units across, a tube curve in a box with a 31.7-unit diagonal)
+/// both measure about 0.0035 of the diagonal, so the radius follows the
+/// whole scene rather than the tube's own curve: every edge of a
+/// wireframe of separate two-point tubes is drawn equally thick.
+const DEFAULT_TUBE_RADIUS_FRACTION: f64 = 0.0035;
+
+/// True when a 3D scene holds a `Tube` without a radius of its own, whose
+/// default radius is sized by the box of the whole scene.
+fn contains_default_radius_tube(expr: &Expr) -> bool {
+  match expr {
+    Expr::List(items) => items.iter().any(contains_default_radius_tube),
+    Expr::FunctionCall { name, args } => {
+      ((name == "Tube" || name == "TubeBox")
+        && !args
+          .iter()
+          .skip(1)
+          .any(|a| !matches!(a, Expr::Rule { .. } | Expr::RuleDelayed { .. })))
+        || args.iter().any(contains_default_radius_tube)
+    }
+    _ => false,
+  }
 }
 
 /// True when a 3D scene holds an `Arrow[Tube[…]]`, whose solid head is
@@ -13991,16 +14021,17 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   } else {
     svg_width as f64
   });
-  SCENE_ARROW_EXTENT.set(None);
+  SCENE_DIAGONAL.set(None);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
 
-  // Solid `Arrow[Tube[…]]` heads are sized by the scene's box, so once the
-  // first pass has measured it the scene is collected again.
-  if contains_tube_arrow(&content) {
+  // Solid `Arrow[Tube[…]]` heads and the default `Tube` radius are sized by
+  // the scene's box, so once the first pass has measured it the scene is
+  // collected again.
+  if contains_tube_arrow(&content) || contains_default_radius_tube(&content) {
     let b = plot_range.unwrap_or_else(|| primitives_bounds(&prims));
     let diag = v_len([b[0].1 - b[0].0, b[1].1 - b[1].0, b[2].1 - b[2].0]);
     if diag.is_finite() && diag > 0.0 {
-      SCENE_ARROW_EXTENT.set(Some(diag));
+      SCENE_DIAGONAL.set(Some(diag));
       prims.clear();
       style3d = StyleState3D::default();
       collect_3d_primitives(&content, &mut style3d, &mut prims);
@@ -26546,6 +26577,8 @@ pub fn absolute_plot_range_3d(g: &Expr) -> Option<[(f64, f64); 3]> {
   let content = evaluate_expr_to_expr(&content).ok()?;
   let mut prims = Vec::new();
   let mut style3d = StyleState3D::default();
+  // A box measured for an earlier picture must not size this scene's tubes.
+  SCENE_DIAGONAL.set(None);
   collect_3d_primitives(&content, &mut style3d, &mut prims);
   let bounds = primitives_bounds(&prims);
   bounds

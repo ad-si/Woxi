@@ -5936,9 +5936,13 @@ would match that snapshot, but the widened span matches the other
 snapshots listed under "Sphere framing of an unboxed box at a fixed
 `ImageSize`" better, so the framing is
 unchanged. The same snapshot's `Tube[BSplineCurve[…]]` with no radius
-(a curve 24 units long) is drawn with a radius of about 0.11, where Woxi
-uses 1/100 of the curve's extent (0.24); the rule behind Wolfram's default
-radius is unknown.
+(a curve 24 units long) is drawn with a radius of about 0.11, about 0.0035
+of the scene box's 31.7-unit diagonal. A second Demonstration's tube
+icosahedron (separate radius-less two-point tubes in a scene about 11 units
+across) measures the same fraction, so Woxi now sizes a radius-less `Tube`
+as 0.0035 of the diagonal of the scene's box. Whether that is Wolfram's
+exact rule (rather than, say, a fraction of the picture) is unverified with
+wolframscript.
 
 ### 3D tick step on an exact unit `PlotRange`
 
