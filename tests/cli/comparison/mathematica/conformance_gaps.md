@@ -9370,6 +9370,10 @@ has no magnification slot). `ImageSize -> Small` (a named size) is not kept.
 and `HorizontalGauge`) return WL's internal styled gauge Graphics
 (`LightDarkSwitched`, nested `Style`, `Scaled` ticks); Woxi draws its own
 primitives, so their Graphics expressions and `Cases` over them differ.
+The linear gauges' `GaugeMarkers -> "BarMarker"` (parallel bars from the
+start of the scale, one strip per value) and `GaugeLabels` placement (a
+text beside the scale, `Placed[label, side]` picking the side) approximate
+WL's look rather than reproduce its geometry.
 `GraphPlot` and `LayeredGraphPlot` coordinates come from WL's
 spring-electrical and layered layouts and are **not reproducible** point
 for point.

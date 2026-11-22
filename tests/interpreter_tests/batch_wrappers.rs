@@ -3418,6 +3418,122 @@ mod batch_unevaluated_wrappers_2 {
       "-Graphics-"
     );
   }
+  /// Regression: a reversed range `{max, min}` drew no ticks or labels.
+  #[test]
+  fn horizontal_gauge_reversed_range_draws_its_scale() {
+    let svg = interpret(
+      "ExportString[HorizontalGauge[-300, {500, -1000}, ScaleDivisions -> {10, 10}], \"SVG\"]",
+    )
+    .unwrap();
+    for l in ["-1000", "-600", "-200", "0", "400"] {
+      assert!(svg.contains(&format!(">{l}</text>")), "{l}: {svg}");
+    }
+    // The scale runs from 500 on the left to -1000 on the right.
+    let x_of = |l: &str| -> f64 {
+      let i = svg.find(&format!(">{l}</text>")).unwrap();
+      let tag = &svg[svg[..i].rfind("<text").unwrap()..i];
+      tag
+        .split("x=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap()
+    };
+    assert!(x_of("400") < x_of("-1000"), "{svg}");
+  }
+
+  /// Regression: values that came out of `/. sol` as one-element lists
+  /// (`{x}`) were dropped instead of getting a marker.
+  #[test]
+  fn horizontal_gauge_flattens_nested_values() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    assert_eq!(
+      svg("HorizontalGauge[{2, {5}, {8}}, {0, 10}]"),
+      svg("HorizontalGauge[{2, 5, 8}, {0, 10}]")
+    );
+  }
+
+  /// `GaugeMarkers -> "BarMarker"` fills a bar from the start of the scale
+  /// to each value instead of drawing triangular pointers.
+  #[test]
+  fn horizontal_gauge_bar_marker() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let bars =
+      svg("HorizontalGauge[{3, 7}, {0, 10}, GaugeMarkers -> \"BarMarker\"]");
+    let pointers = svg("HorizontalGauge[{3, 7}, {0, 10}]");
+    assert_ne!(bars, pointers);
+    // Each bar is a four-cornered polygon in its series color.
+    for color in ["rgb(186,62,50)", "rgb(50,128,186)"] {
+      let polygon = bars
+        .split("<polygon")
+        .skip(1)
+        .find(|p| p.contains(color))
+        .unwrap_or_else(|| panic!("{color}: {bars}"));
+      let points = polygon.split("points=\"").nth(1).unwrap();
+      let points = points.split('"').next().unwrap();
+      assert_eq!(points.split(' ').count(), 4, "{polygon}");
+    }
+    // The longer value draws the longer bar.
+    let width = |color: &str| -> f64 {
+      let polygon = bars
+        .split("<polygon")
+        .skip(1)
+        .find(|p| p.contains(color))
+        .unwrap();
+      let points = polygon.split("points=\"").nth(1).unwrap();
+      let xs: Vec<f64> = points
+        .split('"')
+        .next()
+        .unwrap()
+        .split(' ')
+        .map(|p| p.split(',').next().unwrap().parse().unwrap())
+        .collect();
+      xs.iter().cloned().fold(f64::MIN, f64::max)
+        - xs.iter().cloned().fold(f64::MAX, f64::min)
+    };
+    assert!(width("rgb(50,128,186)") > width("rgb(186,62,50)"), "{bars}");
+  }
+
+  /// `GaugeLabels` shows its label beside a linear gauge's scale: below by
+  /// default, above with `Placed[…, Top]`.
+  #[test]
+  fn linear_gauge_labels() {
+    let svg = |code: &str| {
+      interpret(&format!("ExportString[{code}, \"SVG\"]")).unwrap()
+    };
+    let y_of = |svg: &str, l: &str| -> f64 {
+      let i = svg.find(&format!(">{l}</text>")).unwrap();
+      let tag = &svg[svg[..i].rfind("<text").unwrap()..i];
+      tag
+        .split(" y=\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap()
+    };
+    let below = svg("HorizontalGauge[4, {0, 10}, GaugeLabels -> \"speed\"]");
+    let above =
+      svg("HorizontalGauge[4, {0, 10}, GaugeLabels -> Placed[\"speed\", Top]]");
+    assert!(y_of(&below, "speed") > y_of(&below, "10"), "{below}");
+    assert!(y_of(&above, "speed") < y_of(&above, "10"), "{above}");
+    // Styled pieces keep their colors.
+    let styled = svg(
+      "HorizontalGauge[4, {0, 10}, GaugeLabels -> Placed[Row[{Style[\"a\", Red], Style[\"b\", Blue]}], Top]]",
+    );
+    assert!(styled.contains("rgb(255,0,0)"), "{styled}");
+    assert!(styled.contains("rgb(0,0,255)"), "{styled}");
+    // `None` shows nothing; `"Value"` shows the value.
+    assert_eq!(
+      svg("HorizontalGauge[4, {0, 10}, GaugeLabels -> None]"),
+      svg("HorizontalGauge[4, {0, 10}]")
+    );
+    let value = svg("VerticalGauge[4.5, {0, 10}, GaugeLabels -> \"Value\"]");
+    assert!(value.contains(">4.5</text>"), "{value}");
+  }
   #[test]
   fn color_replace() {
     assert_eq!(interpret("ColorReplace[x]").unwrap(), "ColorReplace[x]");
