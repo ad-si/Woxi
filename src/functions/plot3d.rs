@@ -4494,9 +4494,9 @@ fn draw_axes_on_box_with_ticks(
     (z_origin, z_end, z_range, false), // z always runs from floor to ceiling
   ];
 
-  // An unboxed scene with an explicit `AxesOrigin` draws its three axes
-  // crossing at that point, each running the full extent of its range,
-  // instead of along the edges of the box.
+  // An explicit `AxesOrigin` draws the three axes crossing at that point
+  // (inside the box, when one is drawn), each running the full extent of
+  // its range, instead of along the edges of the box.
   let axes: [(Point3D, Point3D, (f64, f64), bool); 3] = match crossing {
     Some(at) => {
       // Data value -> normalized box coordinate along one axis.
@@ -13913,8 +13913,9 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
           }
         }
         "AxesOrigin" => {
-          // `{x, y, z}` where the axes cross; `Automatic` (or anything
-          // non-numeric) leaves that coordinate at the box's low end.
+          // `{x, y, z}` where the axes cross, inside the box when one is
+          // drawn; `Automatic` (or anything non-numeric) leaves that
+          // coordinate at the box's low end.
           if let Expr::List(items) = replacement.as_ref()
             && items.len() == 3
           {
@@ -13924,7 +13925,8 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
                 &evaluate_expr_to_expr(item).unwrap_or_else(|_| item.clone()),
               );
             }
-            axes_origin = Some(at);
+            // An all-`Automatic` origin keeps the axes on the box edges.
+            axes_origin = at.iter().any(Option::is_some).then_some(at);
           }
         }
         "Axes" => match replacement.as_ref() {
@@ -15171,7 +15173,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         (z3_min / axis_scale[2], z3_max / axis_scale[2]),
         &axes_labels,
         &tick_spec,
-        axes_origin.as_ref().filter(|_| !show_box),
+        axes_origin.as_ref(),
         axes_edge.as_ref(),
         &axes_look,
       )
@@ -16234,7 +16236,7 @@ pub fn graphics3d_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       (z3_min / axis_scale[2], z3_max / axis_scale[2]),
       &axes_labels,
       &tick_spec,
-      axes_origin.as_ref().filter(|_| !show_box),
+      axes_origin.as_ref(),
       axes_edge.as_ref(),
       &axes_look,
     );
