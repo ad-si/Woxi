@@ -32110,7 +32110,7 @@ fn text_display_cell_width(
     }
   }
   if !plain(cell) {
-    return None;
+    return text_display_layout_cell_width(cell, default_style, font_size);
   }
   let markup = expr_to_svg_markup(cell);
   if markup.contains('<') || markup.contains('\n') {
@@ -32131,6 +32131,126 @@ fn text_display_cell_width(
     1.0
   };
   Some(layout.max(drawn) * weight)
+}
+
+/// [`text_display_cell_width`] for a cell laid out from plain text pieces:
+/// a `Row[{…}]` of strings, numbers and their `Style`/`NumberForm` wrappers
+/// (`Row[{"serves ", Style[NumberForm[x, {3, 1}], Red], " years."}]`) sets
+/// as one run of text, as wide as its widest line, and a `Column[{…}]` of
+/// such items (or a multi-line string) is as wide as its widest item.
+/// `None` for anything else.
+fn text_display_layout_cell_width(
+  cell: &Expr,
+  default_style: &GridStyle,
+  font_size: f64,
+) -> Option<f64> {
+  /// The text markup of a plain item, or of a `Row` of them joined.
+  fn run_markup(e: &Expr) -> Option<String> {
+    match e {
+      Expr::String(s) if !s.contains("\\!") => Some(expr_to_svg_markup(e)),
+      Expr::Integer(_) | Expr::Real(_) => Some(expr_to_svg_markup(e)),
+      Expr::FunctionCall { name, args }
+        if matches!(name.as_str(), "Style" | "NumberForm")
+          && !args.is_empty() =>
+      {
+        run_markup(&args[0])?;
+        Some(expr_to_svg_markup(e))
+      }
+      Expr::FunctionCall { name, args } if name == "Row" && args.len() == 1 => {
+        let Expr::List(items) = &args[0] else {
+          return None;
+        };
+        items.iter().map(run_markup).collect()
+      }
+      _ => None,
+    }
+  }
+  // Only color spans may mark the text up: a span that resizes or
+  // re-weights its glyphs is not measured by the plain text widths.
+  fn only_color_spans(markup: &str) -> bool {
+    markup.match_indices('<').all(|(i, _)| {
+      let tag =
+        &markup[i..markup[i..].find('>').map_or(markup.len(), |e| i + e)];
+      (tag.starts_with("<tspan") || tag.starts_with("</tspan"))
+        && !tag.contains("font-size")
+        && !tag.contains("font-weight")
+        && !tag.contains("font-family")
+    })
+  }
+  let run_width = |markup: &str| -> Option<f64> {
+    if !only_color_spans(markup) {
+      return None;
+    }
+    // The text of a span may carry on across a line break, so the lines
+    // are measured on the text with its tags removed.
+    let text: String = {
+      let mut out = String::new();
+      let mut in_tag = false;
+      for c in markup.chars() {
+        match c {
+          '<' => in_tag = true,
+          '>' if in_tag => in_tag = false,
+          _ if !in_tag => out.push(c),
+          _ => {}
+        }
+      }
+      out
+    };
+    text
+      .split('\n')
+      .map(|line| {
+        let layout =
+          crate::functions::plot_padding::text_width(line, font_size);
+        let (_, drawn) =
+          crate::functions::plot_padding::exported_text_extent(line, font_size);
+        layout.max(drawn)
+      })
+      .reduce(f64::max)
+  };
+  // The cell's own `Style` (its size is applied by the caller) wraps the
+  // layout that is measured.
+  let mut layout = cell;
+  while let Expr::FunctionCall { name, args } = layout
+    && name == "Style"
+    && !args.is_empty()
+  {
+    layout = &args[0];
+  }
+  let width = match layout {
+    // A multi-line string (a `Column` cell is laid out as one) is as wide
+    // as its widest line.
+    Expr::String(text) if text.contains('\n') && !text.contains("\\!") => text
+      .split('\n')
+      .map(|line| run_width(&expr_to_svg_markup(&Expr::String(line.into()))))
+      .collect::<Option<Vec<f64>>>()?
+      .into_iter()
+      .fold(0.0, f64::max),
+    Expr::FunctionCall { name, .. } if name == "Row" => {
+      run_width(&run_markup(layout)?)?
+    }
+    Expr::FunctionCall { name, args }
+      if name == "Column" && args.len() == 1 =>
+    {
+      let Expr::List(items) = &args[0] else {
+        return None;
+      };
+      items
+        .iter()
+        .map(|item| run_width(&run_markup(item)?))
+        .collect::<Option<Vec<f64>>>()?
+        .into_iter()
+        .fold(0.0, f64::max)
+    }
+    _ => return None,
+  };
+  let bold = extract_cell_style(cell).font_weight == "bold"
+    || default_style.font_weight == Some("bold");
+  let weight = if bold {
+    crate::functions::plot_padding::BOLD_WIDTH_SCALE
+  } else {
+    1.0
+  };
+  Some(width * weight)
 }
 
 thread_local! {

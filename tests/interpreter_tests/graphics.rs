@@ -38424,6 +38424,63 @@ mod graphics_grid {
     );
   }
 
+  /// `Text@Style[Column[{Grid[…], Row[{…}]}], size]` sets the whole
+  /// column in the proportional text face: a `Row` line under the grid is
+  /// not drawn in the monospace face a bare `Column`'s `Row` gets.
+  #[test]
+  fn styled_text_column_row_uses_text_face() {
+    clear_state();
+    let svg = interpret_with_stdout(
+      "Text@Style[Column[{Grid[{{\"left\", \"right\"}}, Frame -> All], \
+       Row[{\"a line of text below\"}]}], 15]",
+    )
+    .unwrap()
+    .graphics
+    .unwrap();
+    let row_text = svg
+      .split("<text")
+      .find(|t| t.contains(">a line of text below<"))
+      .unwrap_or_else(|| panic!("row text missing: {svg}"));
+    assert!(!row_text.contains("monospace"), "{svg}");
+    assert!(row_text.contains("sans-serif"), "{svg}");
+  }
+
+  /// In a `Text` display a grid cell built from text pieces — a `Row` of
+  /// strings and styled numbers, or a `Column` of them — is measured in the
+  /// proportional text face like a plain string cell, not at the wider
+  /// monospace advance.
+  #[test]
+  fn text_display_grid_measures_row_and_column_cells_proportionally() {
+    clear_state();
+    let width = |code: &str| -> f64 {
+      let svg = interpret_with_stdout(code).unwrap().graphics.unwrap();
+      let start = svg.find("width=\"").unwrap() + 7;
+      let end = start + svg[start..].find('"').unwrap();
+      svg[start..end].parse().unwrap()
+    };
+    let text = "the quick brown fox jumps";
+    let plain = width(&format!(
+      "Text@Style[Grid[{{{{\"{text}\"}}}}, Frame -> All], 17]"
+    ));
+    let row = width(&format!(
+      "Text@Style[Grid[{{{{Row[{{\"the quick \", Style[\"brown\", Red], \
+       \" fox jumps\"}}]}}}}, Frame -> All], 17]"
+    ));
+    let column = width(&format!(
+      "Text@Style[Grid[{{{{Column[{{\"{text}\", \"short\"}}]}}}}, \
+       Frame -> All], 17]"
+    ));
+    let mono = width(&format!(
+      "Style[Grid[{{{{Row[{{\"{text}\"}}]}}}}, Frame -> All], 17]"
+    ));
+    assert!((row - plain).abs() < 2.0, "row {row} vs plain {plain}");
+    assert!(
+      (column - plain).abs() < 2.0,
+      "column {column} vs plain {plain}"
+    );
+    assert!(row < mono, "row {row} should be narrower than {mono}");
+  }
+
   /// The same `Style`-through-`Text`/`Pane` path for a `TextGrid`, exercising
   /// both the new `TextGrid` arm and a `SpanFromLeft` placeholder: pushing
   /// the outer directives into each cell (rather than reusing the styled
