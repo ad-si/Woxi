@@ -37414,6 +37414,24 @@ mod graphics_grid {
     );
   }
 
+  /// Text (or a group) that names only the generic `sans-serif` family gets
+  /// the default sans face put in front of it, so a host whose own generic
+  /// sans face differs still draws Wolfram's graphics face.
+  #[test]
+  fn default_text_family_names_face_before_generic_sans() {
+    let svg = "<svg><text font-family=\"sans-serif\" x=\"1\">A</text>\
+      <g font-family=\"sans-serif\"><text>B</text></g>\
+      <text font-family=\"serif\">C</text></svg>";
+    let out = woxi::with_default_text_family(svg);
+    assert_eq!(
+      out,
+      "<svg><text font-family=\"Atkinson Hyperlegible Next, sans-serif\" \
+       x=\"1\">A</text><g font-family=\"Atkinson Hyperlegible Next, \
+       sans-serif\"><text>B</text></g><text font-family=\"serif\">C</text>\
+       </svg>"
+    );
+  }
+
   /// A typeset cell — a `Row` quotient stacked as a fraction — is set in
   /// the grid's `BaseStyle` face like the plain text cells, its glyphs
   /// measured in that (narrower, proportional) face, so the stacked

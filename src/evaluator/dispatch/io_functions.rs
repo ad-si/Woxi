@@ -9549,8 +9549,11 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
 /// the opening tag.
+/// An element that names only the generic `sans-serif` family gets the
+/// default face put in front of it as well.
 pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
+  const GENERIC_SANS: &str = " font-family=\"sans-serif\"";
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
   let mut stack: Vec<bool> = Vec::new();
@@ -9592,7 +9595,13 @@ pub fn with_default_text_family(svg: &str) -> String {
     }
     let has_family = tag.contains("font-family=");
     let inherited = stack.iter().any(|&f| f);
-    if name == "text" && !has_family && !inherited {
+    // A bare generic `sans-serif` family is resolved by the host renderer,
+    // which may pick any sans face; name the default face before it.
+    if let Some(at) = tag.find(GENERIC_SANS) {
+      out.push_str(&svg[copied..start + at]);
+      out.push_str(ATTR);
+      copied = start + at + GENERIC_SANS.len();
+    } else if name == "text" && !has_family && !inherited {
       let close_at = if tag.ends_with("/>") { end - 1 } else { end };
       out.push_str(&svg[copied..close_at]);
       out.push_str(ATTR);
