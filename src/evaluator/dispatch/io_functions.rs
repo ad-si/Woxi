@@ -7098,6 +7098,18 @@ fn pane_text_units(text: &str) -> Vec<(String, usize)> {
   units
 }
 
+/// The width in points `expr` is drawn at when it lays out as a picture of
+/// its own (a `Column`, a typeset fraction), or `None` for plain text,
+/// whose width the caller measures glyph by glyph.
+fn drawn_width(expr: &Expr) -> Option<f64> {
+  let svg = expr_to_svg(expr);
+  if !svg.starts_with("<svg") {
+    return None;
+  }
+  let (w, _) = crate::functions::graphics::parse_svg_wh(&svg);
+  (w > 0.0).then_some(w)
+}
+
 /// About how many characters a linear-syntax box shows: its text with the
 /// escapes, box heads, brackets, separators and quotes left out.
 fn linear_syntax_shown_len(source: &str) -> usize {
@@ -7408,6 +7420,15 @@ fn wrap_pane_text_at(
         per_line as f64 * mono
       };
       for u in &mut units {
+        // An item that is no plain text is as wide as it is drawn: a
+        // typeset fraction or a column is much narrower than the
+        // characters of its expression.
+        if let Some(atom) = &atoms[u.idx]
+          && let Some(drawn) = drawn_width(atom)
+        {
+          u.width = drawn;
+          continue;
+        }
         if proportional
           && atoms[u.idx].is_none()
           && u.text.chars().count() == u.cols
@@ -9548,9 +9569,12 @@ font-style: normal; src: url(\"{data_url}\") format(\"truetype\"); }}\n"
 /// Add `font-family="Atkinson Hyperlegible Next, sans-serif"` to every
 /// `<text>` element that neither sets a family itself nor inherits one from
 /// an enclosing `<g>`/`<svg>`/`<text>`. The attribute goes at the end of
-/// the opening tag.
+/// the opening tag. A bare generic `font-family="sans-serif"` (a styled
+/// graphics label) names the same face, so it gets the bundled family too
+/// rather than whatever sans-serif face the renderer picks.
 pub fn with_default_text_family(svg: &str) -> String {
   const ATTR: &str = " font-family=\"Atkinson Hyperlegible Next, sans-serif\"";
+  let svg = &svg.replace(" font-family=\"sans-serif\"", ATTR);
   let mut out = String::with_capacity(svg.len());
   // One entry per open container element: whether it sets a family.
   let mut stack: Vec<bool> = Vec::new();

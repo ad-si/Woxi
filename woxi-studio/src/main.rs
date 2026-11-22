@@ -11397,11 +11397,21 @@ Cell[BoxData["DynamicModuleBox[{$CellContext`r$$ = 1}, \"\\[Ellipsis]\"]"], "Out
     let state = manipulate::ManipulateState::from_expr(&expr)
       .expect("a Setter row should build a ManipulateState");
     assert!(state.error.is_none(), "clean evaluation: {:?}", state.error);
-    let svg = state
-      .typeset_output
-      .as_deref()
-      .expect("the textual result is typeset");
-    assert!(state.typeset_handle.is_some());
+    // The sized pane draws its typeset formula as the widget's picture; a
+    // textual result would be typeset on its own instead.
+    let svg = match (&state.typeset_output, &state.graphics_handle) {
+      (Some(svg), _) => {
+        assert!(state.typeset_handle.is_some());
+        svg.clone()
+      }
+      (None, Some(handle)) => {
+        let iced::advanced::svg::Data::Bytes(bytes) = handle.data() else {
+          panic!("in-memory svg expected");
+        };
+        String::from_utf8_lossy(bytes).into_owned()
+      }
+      (None, None) => panic!("the formula is drawn"),
+    };
     assert!(!svg.contains(">Infix<"), "no echoed call: {svg}");
     assert!(!svg.contains(">TraditionalForm<"), "no echoed form: {svg}");
     assert!(svg.contains(">+<"), "the operator is drawn: {svg}");

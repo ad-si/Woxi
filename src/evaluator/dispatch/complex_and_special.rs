@@ -7864,6 +7864,18 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
   if let Some(boxed) = root_approximation_box(name, args) {
     return boxed;
   }
+  // A number format around a `Style` or `Text` typesets as that wrapper
+  // around the formatted number, keeping its color and weight.
+  if let Some(hoisted) =
+    crate::functions::graphics::hoist_style_out_of_number_form(
+      &Expr::FunctionCall {
+        name: name.to_string(),
+        args: args.to_vec().into(),
+      },
+    )
+  {
+    return tf(&hoisted);
+  }
   match name {
     // `RawBoxes[boxes]` is already typeset: its boxes are used as they are.
     // `DisplayForm[boxes]` shows its boxes typeset, just like `RawBoxes`:
@@ -7958,6 +7970,26 @@ fn tf_call(name: &str, args: &[Expr]) -> Expr {
       if padded_form_box(name, args).is_some() =>
     {
       padded_form_box(name, args).unwrap()
+    }
+    // A number-display form whose digit specification is no digit count
+    // (`PaddedForm[1, Text[3]]`, what mapping a styling function over
+    // `PaddedForm[1, 3]` makes) cannot format its number, so it typesets
+    // just the number.
+    "NumberForm" | "ScientificForm" | "EngineeringForm" | "PaddedForm"
+    | "AccountingForm"
+      if args.len() >= 2
+        && is_number_expr(&args[0])
+        && !matches!(
+          &args[1],
+          Expr::Integer(_)
+            | Expr::List(_)
+            | Expr::Rule { .. }
+            | Expr::RuleDelayed { .. }
+        )
+        && !matches!(&args[1], Expr::Identifier(s)
+          if matches!(s.as_str(), "Infinity" | "Automatic")) =>
+    {
+      tf(&args[0])
     }
     // A number-display form around another one (`NumberForm[NumberForm[x, 3],
     // {3, 2}]`, what a helper `nf[n_] := NumberForm[n, {3, 2}]` makes of an

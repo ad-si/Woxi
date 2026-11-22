@@ -45799,6 +45799,57 @@ mod manipulate {
     }
   }
 
+  // A third corner bound is the step of a 2D control: a dragged point
+  // snaps to the grid it spans from the minimum corner, so a unit step
+  // binds an exact integer pair, and a fractional step a pair of reals.
+  #[test]
+  fn spec_slider2d_step_snaps_dragged_point() {
+    let snapped = |spec: &str, point: &str| {
+      let expr = interpret_to_expr(&format!("Manipulate[v, {spec}]")).unwrap();
+      let spec =
+        extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+      let ManipulateControl::Slider2D { write_callback, .. } =
+        &spec.controls[0]
+      else {
+        panic!("expected Slider2D, got {:?}", spec.controls[0]);
+      };
+      let cb = write_callback.as_deref().expect("a step callback");
+      woxi::functions::graphics::apply_manipulate_callback(&[], cb, point, "v")
+        .expect("the callback stores a point")
+    };
+    assert_eq!(
+      snapped(
+        "{{v, {987, 610}, \"a, b\"}, {3, 2}, {1000, 1000}, {1, 1}}",
+        "{512.37, 200.6}"
+      ),
+      "{512, 201}"
+    );
+    assert_eq!(
+      snapped("{{v, {0, 0}}, {1, 1}, {9, 9}, {2, 3}}", "{4.2, 5.9}"),
+      "{5, 7}"
+    );
+    assert_eq!(
+      snapped("{{v, {0, 0}}, {0, 0}, {1, 1}, {0.25, 0.5}}", "{0.3, 0.7}"),
+      "{0.25, 0.5}"
+    );
+  }
+
+  // Without a step the dragged point is stored as it is.
+  #[test]
+  fn spec_slider2d_without_step_has_no_callback() {
+    let expr =
+      interpret_to_expr("Manipulate[v, {{v, {1, 1}}, {0, 0}, {5, 5}}]")
+        .unwrap();
+    let spec = extract_manipulate_spec(&expr).expect("well-formed Manipulate");
+    assert!(matches!(
+      &spec.controls[0],
+      ManipulateControl::Slider2D {
+        write_callback: None,
+        ..
+      }
+    ));
+  }
+
   // A bare Locator moves over the picture the body draws, so the body's
   // explicit PlotRange bounds the pad instead of a box padded around the
   // start point.

@@ -22624,9 +22624,9 @@ fn style_form_name_as_wrapper(expr: &Expr) -> Option<Expr> {
   })
 }
 
-/// A number format around a `Style` typesets as the style around the
-/// formatted number: `NumberForm[Style[x, Red], {4, 2}]` draws `x` to two
-/// decimals in red. `None` for anything else.
+/// A number format around a `Style` (or a one-argument `Text`) typesets as
+/// that wrapper around the formatted number: `NumberForm[Style[x, Red],
+/// {4, 2}]` draws `x` to two decimals in red. `None` for anything else.
 pub(crate) fn hoist_style_out_of_number_form(expr: &Expr) -> Option<Expr> {
   let Expr::FunctionCall { name, args } = expr else {
     return None;
@@ -22648,6 +22648,22 @@ pub(crate) fn hoist_style_out_of_number_form(expr: &Expr) -> Option<Expr> {
   else {
     return None;
   };
+  // `Text[expr]` typesets as `expr` itself, so a number format around it
+  // formats the wrapped number: `PaddedForm[Text[Style[1, Blue]], 3]`
+  // draws a padded blue `1`, not the flattened `Text[1]`.
+  if style == "Text" && style_args.len() == 1 {
+    return Some(Expr::FunctionCall {
+      name: "Text".to_string(),
+      args: vec![Expr::FunctionCall {
+        name: name.clone(),
+        args: std::iter::once(style_args[0].clone())
+          .chain(args[1..].iter().cloned())
+          .collect::<Vec<_>>()
+          .into(),
+      }]
+      .into(),
+    });
+  }
   if style != "Style" || style_args.is_empty() {
     return None;
   }
@@ -23958,6 +23974,11 @@ fn factorial_operand_parenthesized(expr: &Expr) -> bool {
 /// accounting for superscript sizing (exponents rendered at ~70% width).
 /// Recursively mirrors `expr_to_svg_markup` structure.
 pub fn estimate_display_width(expr: &Expr) -> f64 {
+  // Measure the same normalized form `expr_to_svg_markup` draws (a number
+  // format hoisted out of its `Style`/`Text`), not the raw wrapper text.
+  if let Some(styled) = normalize_display_style(expr) {
+    return estimate_display_width(&styled);
+  }
   if let Some((base, exp)) = as_power(expr) {
     // `Subscript[x, i]^k` stacks the exponent over the index.
     if let Expr::FunctionCall { name, args } = base
@@ -30720,10 +30741,16 @@ fn traditional_inline_box_content_svg(
   {
     return standard_fraction_cell_svg(styled.unwrap_or(content), size);
   }
+  // The style wrappers around the form (`Style[TraditionalForm[1], Blue,
+  // Bold]`) are typeset with it, so their color and weight reach the text.
+  let body = match styled {
+    Some(outer) => restyle_innermost(outer, content, &args[0]),
+    None => args[0].clone(),
+  };
   let boxes = if name == "StandardForm" {
-    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&args[0])
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form(&body)
   } else {
-    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(&args[0])
+    crate::evaluator::dispatch::complex_and_special::expr_to_box_form_traditional(&body)
   };
   let source = crate::syntax::expr_to_string(&boxes);
   // A two-dimensional box — a stacked fraction, a radical, a binomial's
@@ -30753,6 +30780,25 @@ fn traditional_inline_box_content_svg(
     return None;
   }
   Some(layout_to_svg(&layout, theme().text_primary))
+}
+
+/// `outer`, a run of style wrappers whose innermost content is `inner`,
+/// with that content replaced by `replacement`.
+fn restyle_innermost(outer: &Expr, inner: &Expr, replacement: &Expr) -> Expr {
+  if std::ptr::eq(outer, inner) {
+    return replacement.clone();
+  }
+  match outer {
+    Expr::FunctionCall { name, args } if !args.is_empty() => {
+      let mut new_args = args.to_vec();
+      new_args[0] = restyle_innermost(&args[0], inner, replacement);
+      Expr::FunctionCall {
+        name: name.clone(),
+        args: new_args.into(),
+      }
+    }
+    _ => replacement.clone(),
+  }
 }
 
 /// The rendered SVG of a grid cell that is a graphic, and its natural
@@ -47779,6 +47825,36 @@ fn collect_display_locator_pane_vars(
   found
 }
 
+/// The write-back callback of a 2D control with a step: it stores the
+/// candidate point `#` snapped to the `step` grid that starts at the
+/// `origin` corner, in each coordinate `min + Round[c - min, step]`.
+fn slider2d_step_callback(
+  name: &str,
+  origin: (f64, f64),
+  step: (f64, f64),
+) -> String {
+  let num = |v: f64| {
+    if v.fract() == 0.0 && v.abs() < 1e15 {
+      format!("{}", v as i64)
+    } else {
+      format!("{v:?}")
+    }
+  };
+  let axis = |k: usize, min: f64, step: f64| {
+    format!(
+      "{} + Round[#[[{k}]] - ({}), {}]",
+      num(min),
+      num(min),
+      num(step)
+    )
+  };
+  format!(
+    "({name} = {{{}, {}}}) &",
+    axis(1, origin.0, step.0),
+    axis(2, origin.1, step.1)
+  )
+}
+
 /// Whether `expr` is a `Slider2D[…]` call.
 fn is_slider2d_call(expr: &Expr) -> bool {
   matches!(expr, Expr::FunctionCall { name, .. } if name == "Slider2D")
@@ -55770,6 +55846,15 @@ fn parse_manipulate_control(
         Some((a, b)) => (a, b),
         None => (x_min, y_min),
       };
+    // A third bound is the step (`{{u, …}, {3, 2}, {1000, 1000}, {1, 1}}`):
+    // a dragged point snaps to the grid it spans from the minimum corner,
+    // so a unit step binds an integer pair, as in Wolfram.
+    let step = bounds.get(2).and_then(|b| {
+      list2_f64(b).or_else(|| eval_manipulate_bound(b).map(|(v, _)| (v, v)))
+    });
+    let write_callback = step
+      .filter(|(sx, sy)| *sx > 0.0 && *sy > 0.0)
+      .map(|(sx, sy)| slider2d_step_callback(&name, (x_min, y_min), (sx, sy)));
     return Some(ParsedControl::Visible {
       control: ManipulateControl::Slider2D {
         name,
@@ -55780,7 +55865,7 @@ fn parse_manipulate_control(
         x_initial,
         y_initial,
         label,
-        write_callback: None,
+        write_callback,
         real: false,
         exact_initial: false,
       },
