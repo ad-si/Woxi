@@ -44045,6 +44045,59 @@ pub fn heading_visibility_key(label: &str) -> String {
   format!("\u{1}heading:{label}")
 }
 
+/// Whether `key` is the `control_visible` key of a static text row.
+fn is_heading_visibility_key(key: &str) -> bool {
+  key.starts_with("\u{1}heading:")
+}
+
+/// File the visibility condition `cond` under `key`. A variable declared in
+/// several panes is a single control, so its conditions are joined with
+/// `||`. A text row, however, becomes one row per occurrence (the same
+/// "amplitude" caption heading two panes yields two rows), so every
+/// occurrence keeps its own entry, matched up by position in
+/// [`control_visibility_conditions`].
+fn add_visibility_condition(
+  out: &mut Vec<(String, String)>,
+  key: String,
+  cond: &str,
+) {
+  if !is_heading_visibility_key(&key)
+    && let Some((_, existing)) = out.iter_mut().find(|(n, _)| *n == key)
+  {
+    *existing = format!("{existing} || {cond}");
+    return;
+  }
+  out.push((key, cond.to_string()));
+}
+
+/// The visibility condition of each of `controls` (parallel to it), looked
+/// up in `control_visible` by [`ManipulateControl::visibility_key`]. The
+/// n-th text row with a given label takes the n-th condition filed under
+/// that label (or the last one when there are fewer), so equally captioned
+/// rows of different panes each follow their own pane.
+pub fn control_visibility_conditions(
+  controls: &[ManipulateControl],
+  control_visible: &[(String, String)],
+) -> Vec<Option<String>> {
+  let mut seen: std::collections::HashMap<String, usize> =
+    std::collections::HashMap::new();
+  controls
+    .iter()
+    .map(|c| {
+      let key = c.visibility_key();
+      let mut matching = control_visible.iter().filter(|(n, _)| *n == key);
+      if is_heading_visibility_key(&key) {
+        let nth = seen.entry(key.clone()).or_insert(0);
+        let picked = matching.clone().nth(*nth).or_else(|| matching.last());
+        *nth += 1;
+        picked.map(|(_, cond)| cond.clone())
+      } else {
+        matching.next().map(|(_, cond)| cond.clone())
+      }
+    })
+    .collect()
+}
+
 /// The `control_visible` key of a button labeled `label` that runs
 /// `action`. Like a heading, a button binds no variable, so it is filed under
 /// what tells it apart from the other buttons of the panel.
@@ -50711,10 +50764,7 @@ fn collect_pane_visibility(
         None => own,
       };
       for var in pane_control_variables(branch, place_map) {
-        match out.iter_mut().find(|(n, _)| *n == var) {
-          Some((_, existing)) => *existing = format!("{existing} || {own}"),
-          None => out.push((var, own.clone())),
-        }
+        add_visibility_condition(out, var, &own);
       }
     }
     return;
@@ -50792,10 +50842,7 @@ fn collect_pane_visibility(
       continue;
     }
     for var in pane_control_variables(replacement, place_map) {
-      match out.iter_mut().find(|(n, _)| *n == var) {
-        Some((_, existing)) => *existing = format!("{existing} || {cond}"),
-        None => out.push((var, cond.clone())),
-      }
+      add_visibility_condition(out, var, &cond);
     }
   }
 }
@@ -58157,7 +58204,11 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
   // the name-keyed `control_enabled` list — it binds no variable, so
   // `c.name()` is always `""` and a name lookup could never find it (and
   // would collide across buttons that each have their own condition).
-  for (c, part) in spec.controls.iter().zip(ctrl_parts.iter_mut()) {
+  let visible_conds =
+    control_visibility_conditions(&spec.controls, &spec.control_visible);
+  for (i, (c, part)) in
+    spec.controls.iter().zip(ctrl_parts.iter_mut()).enumerate()
+  {
     let button_enabled = match c {
       ManipulateControl::Button { enabled, .. } => enabled.as_deref(),
       _ => None,
@@ -58179,10 +58230,7 @@ pub fn manipulate_spec_to_json(spec: &ManipulateSpec) -> String {
     // A control belonging to a `PaneSelector` pane rides along with the
     // condition under which its pane is on screen, so the frontend can hide
     // the rows of the panes the selector is not showing.
-    if let Some((_, cond)) = spec
-      .control_visible
-      .iter()
-      .find(|(n, _)| *n == c.visibility_key())
+    if let Some(cond) = &visible_conds[i]
       && part.ends_with('}')
     {
       let field =
@@ -61496,6 +61544,38 @@ mod manipulate_dynamic_control_list_tests {
     let s = spec("Manipulate[x, Dynamic[{Control[{{x, 0}, -1, 1}]}]]");
     assert_eq!(names(&s), vec!["x"]);
     assert_eq!(s.displays, [] as [std::string::String; 0]);
+  }
+
+  /// Two panes of a `PaneSelector` that share a caption (`"gain"` heading
+  /// each pane's sliders) yield one text row per pane, and each row follows
+  /// its own pane instead of both being shown whichever pane is selected.
+  #[test]
+  fn equally_captioned_pane_headings_follow_their_own_pane() {
+    let s = spec(
+      "Manipulate[{u, v}, {{side, 1, \"\"}, {1 -> \"left\", 2 -> \"right\"}}, \
+       PaneSelector[{1 -> Column[{Style[\"gain\", Bold], \
+       Control[{{u, 1}, 0, 5}]}], 2 -> Column[{Style[\"gain\", Bold], \
+       Control[{{v, 2}, 0, 5}]}]}, Dynamic[side]]]",
+    );
+    let conds = control_visibility_conditions(&s.controls, &s.control_visible);
+    let headings: Vec<&Option<String>> = s
+      .controls
+      .iter()
+      .zip(&conds)
+      .filter(|(c, _)| matches!(c, ManipulateControl::Heading { .. }))
+      .map(|(_, cond)| cond)
+      .collect();
+    assert_eq!(headings.len(), 2, "one caption row per pane: {conds:?}");
+    let first = headings[0].as_deref().expect("first caption has a pane");
+    let second = headings[1].as_deref().expect("second caption has a pane");
+    assert!(
+      first.contains("== (1)") && !first.contains("== (2)"),
+      "first caption follows pane 1: {first}"
+    );
+    assert!(
+      second.contains("== (2)") && !second.contains("== (1)"),
+      "second caption follows pane 2: {second}"
+    );
   }
 
   /// `Dynamic[Switch[mode, …]]` choosing between control groups behaves
