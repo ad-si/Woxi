@@ -28,9 +28,20 @@ pub struct LabelIcon {
 
 /// An iced `svg` handle for an SVG Woxi rendered. iced draws it with its own
 /// usvg options, whose default family is a serif face, so text that names no
-/// family first gets the sans-serif face Wolfram sets graphics text in.
+/// family first gets the sans-serif face Wolfram sets graphics text in. A
+/// text that names only a generic family (a `"Label"` style is plain
+/// `sans-serif`) gets the bundled face of that kind, as an export does.
 pub fn text_svg_handle(svg: &str) -> svg::Handle {
-  svg::Handle::from_memory(woxi::with_default_text_family(svg).into_bytes())
+  let svg = svg
+    .replace(
+      "font-family=\"sans-serif\"",
+      "font-family=\"Atkinson Hyperlegible Next, sans-serif\"",
+    )
+    .replace(
+      "font-family=\"monospace\"",
+      "font-family=\"Atkinson Hyperlegible Mono, monospace\"",
+    );
+  svg::Handle::from_memory(woxi::with_default_text_family(&svg).into_bytes())
 }
 
 impl LabelIcon {
@@ -7759,6 +7770,23 @@ mod tests {
     assert!(!dump.contains('^'), "{dump}");
     assert!(dump.contains("label: \"rate m³/s\""), "{dump}");
     assert!(dump.contains("label: \"1/k²\""), "{dump}");
+  }
+
+  /// A setter choice captioned with a plain typeset fraction
+  /// (`\!\(\*FractionBox[\(1\), \(x\)]\)`) reads `1/x` as written, not
+  /// the OutputForm of the reciprocal `x^(-1)`; a compound side is
+  /// parenthesized.
+  #[test]
+  fn setter_label_keeps_plain_reciprocal_fraction() {
+    let code = r#"Manipulate[r, {{r, p, "pick"}, {p -> "f(\!\(\*FractionBox[\(1\), \(x\)]\))", q -> "\!\(\*FractionBox[\(a + b\), \(c\)]\)", s -> "\!\(\*FractionBox[\(x\), \(y\)]\)"}, ControlType -> SetterBar}]"#;
+    let expr = woxi::interpret_to_expr(code).expect("parse Manipulate expr");
+    let state = ManipulateState::from_expr(&expr).expect("widget should build");
+    let dump = format!("{:?}", state.controls);
+    assert!(!dump.contains('^'), "{dump}");
+    assert!(
+      dump.contains(r#"value_labels: ["f(1/x)", "(a + b)/c", "x/y"]"#),
+      "{dump}"
+    );
   }
 
   /// A caption can apply a compound head to an argument —

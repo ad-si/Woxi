@@ -5517,7 +5517,7 @@ mod tests {
       // … and the left-aligned line the row factor moved to.
       let four = svg.find(">4</text>").expect("row factor drawn");
       let line_y =
-        y_after(&svg[svg[..four].rfind("<svg x=\"0.0\"").unwrap()..]);
+        y_after(&svg[svg[..four].rfind("<svg x=\"6.0\"").unwrap()..]);
       assert!(line_y > six_y + 30.0, "{svg}");
     }
 
