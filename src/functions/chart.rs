@@ -279,6 +279,11 @@ pub(crate) struct StyledLabel {
   /// (`Row[{Graphics[…], "text", …}]`). Empty for an ordinary label; when
   /// set, the renderer lays the segments out side by side.
   pub segments: Vec<LabelSegment>,
+  /// The lines of a stacked title line up at their left edges inside a
+  /// block that is itself centered, the way a `Column` (whose default
+  /// `Alignment` is `Left`) sets them. `false` centers every line on its
+  /// own, as a `Grid` does.
+  pub left_aligned: bool,
 }
 
 /// The box `Framed[…]` draws around a title or one line of it.
@@ -520,6 +525,19 @@ impl StyledLabel {
       .collect()
   }
 
+  /// The width of the widest line of this label, each line measured at
+  /// the size [`Self::line_font_sizes`] gives it (same units as `base`).
+  pub(crate) fn widest_line_width(&self, base: f64, scale: f64) -> f64 {
+    let sizes = self.line_font_sizes(base, scale);
+    std::iter::once(self.svg())
+      .chain(self.extra_lines.iter().cloned())
+      .zip(sizes)
+      .map(|(line, size)| {
+        crate::functions::plot_padding::text_width(&line, size)
+      })
+      .fold(0.0, f64::max)
+  }
+
   /// The baseline-to-baseline distance from each line to the next: the
   /// usual `1.2` line pitch taken over the two lines' mean size, so a
   /// label whose lines share one size keeps that size's plain pitch while
@@ -697,6 +715,7 @@ pub(crate) fn parse_style_directive_args(
   let mut italic = false;
   let mut color = None;
   let mut font_size = None;
+  let mut named = None;
   // A list of directives applies each of them in turn, so
   // `Style[expr, {Orange, 18}]` is the same as `Style[expr, Orange, 18]`.
   fn flatten_directives<'a>(args: &'a [Expr], out: &mut Vec<&'a Expr>) {
@@ -744,6 +763,16 @@ pub(crate) fn parse_style_directive_args(
         }
         _ => {}
       },
+      // A named style (`"Label"`, `"Section"`, …) is the base the other
+      // directives refine: its size and color apply only where no explicit
+      // one is given, wherever that one is written.
+      Expr::String(name) => {
+        if let Some((size, rgb)) =
+          crate::functions::graphics::named_style_appearance(name)
+        {
+          named = Some((size, rgb));
+        }
+      }
       _ => {
         if let Some(c) = parse_color(arg) {
           color = Some(c);
@@ -751,6 +780,18 @@ pub(crate) fn parse_style_directive_args(
           font_size = Some(f);
         }
       }
+    }
+  }
+  if let Some((size, rgb)) = named {
+    font_size = font_size.or(Some(size));
+    if color.is_none()
+      && let Some((r, g, b)) = rgb
+    {
+      color = Some(Color::new(
+        f64::from(r) / 255.0,
+        f64::from(g) / 255.0,
+        f64::from(b) / 255.0,
+      ));
     }
   }
   (bold, italic, color, font_size)
@@ -873,7 +914,40 @@ fn stacked_picture_label(expr: &Expr) -> Option<StyledLabel> {
     frame: None,
     line_frames: Vec::new(),
     segments,
+    left_aligned: false,
   })
+}
+
+/// Whether a stacked title is a `Column` whose lines line up at the left:
+/// its default `Alignment` is `Left`, and a second argument
+/// (`Column[{…}, Center]`) or an `Alignment -> …` option overrides it.
+fn column_aligns_left(expr: &Expr) -> bool {
+  let Expr::FunctionCall { name, args } = expr else {
+    return false;
+  };
+  if name != "Column" {
+    return false;
+  }
+  let mut alignment = None;
+  for arg in &args[1..] {
+    match arg {
+      Expr::Rule {
+        pattern,
+        replacement,
+      } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "Alignment") =>
+      {
+        alignment = Some(replacement.as_ref());
+      }
+      Expr::Rule { .. } | Expr::RuleDelayed { .. } => {}
+      other if alignment.is_none() => alignment = Some(other),
+      _ => {}
+    }
+  }
+  match alignment {
+    None => true,
+    Some(Expr::Identifier(a)) => a == "Left",
+    Some(_) => false,
+  }
 }
 
 /// Parse a plain string or `Style["text", Bold, Italic, color, size]` into a `StyledLabel`.
@@ -965,6 +1039,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames,
       segments: Vec::new(),
+      left_aligned: column_aligns_left(expr),
     });
   }
   if let Expr::FunctionCall { name, args } = expr
@@ -1026,6 +1101,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
+        left_aligned: false,
       });
     }
   }
@@ -1051,6 +1127,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments: Vec::new(),
+        left_aligned: false,
       })
     }
     Expr::String(s) => Some(StyledLabel {
@@ -1064,6 +1141,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
+      left_aligned: false,
     }),
     // `Null` typesets as nothing — a label variable left unset, or an
     // option default of `Null`, must not print the word "Null".
@@ -1082,6 +1160,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
       frame: None,
       line_frames: Vec::new(),
       segments: Vec::new(),
+      left_aligned: false,
     }),
     Expr::FunctionCall { name, args }
       if name == "Style" && !args.is_empty() =>
@@ -1141,6 +1220,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
         frame: None,
         line_frames: Vec::new(),
         segments,
+        left_aligned: false,
       })
     }
     // Any other expression (`Row[{"a: ", val}]`, a number, …) labels the
@@ -1185,6 +1265,7 @@ pub(crate) fn parse_styled_label(expr: &Expr) -> Option<StyledLabel> {
           frame: None,
           line_frames: Vec::new(),
           segments,
+          left_aligned: false,
         })
       }
     }

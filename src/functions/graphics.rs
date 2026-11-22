@@ -2968,7 +2968,9 @@ fn apply_directive(expr: &Expr, style: &mut StyleState) -> bool {
 /// The font size and color a named style carries in Wolfram's default
 /// stylesheet — `Style[expr, "Section"]` is large and orange, `"Label"`
 /// small and black. Measured from wolframscript's own rendering.
-fn named_style_appearance(name: &str) -> Option<(f64, Option<(u8, u8, u8)>)> {
+pub(crate) fn named_style_appearance(
+  name: &str,
+) -> Option<(f64, Option<(u8, u8, u8)>)> {
   Some(match name {
     "Title" => (44.0, Some((204, 12, 2))),
     "Subtitle" => (24.0, Some((89, 89, 89))),
@@ -17520,6 +17522,8 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
   let mut half_open_range: [Option<HalfOpenBounds>; 2] = [None, None];
   let mut background: Option<Color> = None;
   let mut plot_label: Option<Vec<String>> = None;
+  // Whether the title's lines line up at the left (a `Column` title).
+  let mut plot_label_left = false;
   // A `PlotLabel` holding a two-dimensional layout (a matrix), typeset as
   // a picture with its natural width and height.
   let mut plot_label_picture: Option<(String, f64, f64)> = None;
@@ -17670,6 +17674,9 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
             other => {
               let lines = expr_to_svg_markup_lines(other);
               if lines.iter().any(|l| !l.is_empty()) {
+                plot_label_left = lines.len() > 1
+                  && crate::functions::chart::parse_styled_label(other)
+                    .is_some_and(|sl| sl.left_aligned);
                 plot_label = Some(lines);
               }
             }
@@ -18802,8 +18809,29 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
       Some([.., top]) => (margin_top - top - decorations.title).max(0.0),
       None => title_shift,
     };
+    // A `Column` title lines its rows up at their left edges, the block
+    // as a whole centered over the picture.
+    let (tx, anchor) = if plot_label_left {
+      let w = lines
+        .iter()
+        .map(|l| {
+          crate::functions::plot_padding::text_width(
+            l,
+            markup_max_font_size(l).unwrap_or(title_size),
+          )
+        })
+        .fold(0.0, f64::max);
+      let w = if title_attrs.contains("bold") {
+        w * crate::functions::plot_padding::BOLD_WIDTH_SCALE
+      } else {
+        w
+      };
+      (cx - w / 2.0, "start")
+    } else {
+      (cx, "middle")
+    };
     svg.push_str(&format!(
-      "<text x=\"{cx:.1}\" y=\"{:.2}\" text-anchor=\"middle\" \
+      "<text x=\"{tx:.1}\" y=\"{:.2}\" text-anchor=\"{anchor}\" \
        font-family=\"sans-serif\" font-size=\"{title_size}\"{title_attrs} \
        fill=\"{}\" xml:space=\"preserve\">",
       title_top + ascent(glyph_size),
@@ -18814,7 +18842,7 @@ pub fn graphics_ast(args: &[Expr]) -> Result<Expr, InterpreterError> {
         svg.push_str(line);
       } else {
         svg.push_str(&format!(
-          "<tspan x=\"{cx:.1}\" dy=\"{:.2}\">{}</tspan>",
+          "<tspan x=\"{tx:.1}\" dy=\"{:.2}\">{}</tspan>",
           line_pitch(title_size),
           tspan_line(line)
         ));
