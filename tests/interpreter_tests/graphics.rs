@@ -6039,8 +6039,7 @@ mod graphics {
             .find(|p| p.contains("stroke=\"#3D99CC\""))
             .and_then(|p| p.split("points=\"").nth(1))
             .and_then(|p| p.split('"').next())
-            .map(str::to_string)
-            .unwrap_or_else(|| panic!("no curve in {svg}"))
+            .map_or_else(|| panic!("no curve in {svg}"), str::to_string)
         };
         let opts = "PlotRange -> {0, 5}, PlotRangePadding -> {Automatic, 1}";
         assert_eq!(
