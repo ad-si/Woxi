@@ -7886,6 +7886,14 @@ pub(crate) fn expr_to_svg(expr: &Expr) -> String {
     return expr_to_svg(&image);
   }
   match expr {
+    // `TextGrid[…]` is effectively `Text[Grid[…]]`: its cells are set in
+    // the proportional text face, so a column of `-1`s is only as wide as
+    // that face's narrow minus and digit rather than two monospace advances.
+    Expr::FunctionCall { name, args }
+      if name == "TextGrid" && !args.is_empty() =>
+    {
+      expr_to_svg(&call1("Text", call("Grid", args.to_vec())))
+    }
     // `picture -> picture` is typeset as the pictures around an arrow.
     Expr::Rule {
       pattern,
