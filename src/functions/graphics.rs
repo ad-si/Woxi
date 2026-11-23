@@ -38549,6 +38549,47 @@ pub(crate) fn style_pushed_into_layout(
     );
     return Some(call(name.as_str(), new_args));
   }
+  // `Style[Underoverscript[base, under, over], 20]`: the base takes the
+  // directives as they are, and the limits take them with every type size
+  // scaled down to script size (10pt scripts on 14pt text), so the stack
+  // keeps its proportions at any size.
+  if name == "Underoverscript" && args.len() == 3 {
+    let script_directives: Vec<Expr> = directives
+      .iter()
+      .map(|d| match d {
+        Expr::Integer(_) | Expr::Real(_) => expr_to_f64(d)
+          .filter(|s| *s > 0.0)
+          .map_or_else(|| d.clone(), |s| Expr::Real(s * 10.0 / 14.0)),
+        Expr::Rule {
+          pattern,
+          replacement,
+        } if matches!(pattern.as_ref(), Expr::Identifier(n) if n == "FontSize") => {
+          expr_to_f64(replacement).filter(|s| *s > 0.0).map_or_else(
+            || d.clone(),
+            |s| Expr::Rule {
+              pattern: pattern.clone(),
+              replacement: Box::new(Expr::Real(s * 10.0 / 14.0)),
+            },
+          )
+        }
+        _ => d.clone(),
+      })
+      .collect();
+    let styled = |e: &Expr, ds: &[Expr]| {
+      call(
+        "Style",
+        std::iter::once(e.clone()).chain(ds.iter().cloned()).collect(),
+      )
+    };
+    return Some(call(
+      name.as_str(),
+      vec![
+        styled(&args[0], directives),
+        styled(&args[1], &script_directives),
+        styled(&args[2], &script_directives),
+      ],
+    ));
+  }
   if !matches!(name.as_str(), "Row" | "Column" | "Grid" | "TextGrid")
     || args.is_empty()
   {
