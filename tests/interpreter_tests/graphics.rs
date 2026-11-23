@@ -16061,6 +16061,34 @@ mod plot3d {
       );
     }
 
+    // On a framed `Graphics`, `FrameTicks -> {None, Automatic}` labels only
+    // the vertical (left) edge and `{Automatic, None}` only the bottom one,
+    // the same `{xspec, yspec}` reading as on plots.
+    #[test]
+    fn graphics_frame_ticks_symbol_pair_is_x_then_y() {
+      let labels = |ticks: &str| -> Vec<String> {
+        export_svg(&format!(
+          "Graphics[Rectangle[{{1, 0}}, {{2, 5}}], PlotRange -> {{{{0, 3}}, \
+           {{0, 10}}}}, Frame -> True, FrameTicks -> {ticks}]"
+        ))
+        .split("<text ")
+        .skip(1)
+        .filter_map(|t| {
+          Some(t.split_once('>')?.1.split('<').next()?.to_string())
+        })
+        .collect()
+      };
+      let y_only = labels("{None, Automatic}");
+      assert!(y_only.iter().any(|l| l == "10"), "{y_only:?}");
+      assert!(
+        !y_only.iter().any(|l| l == "0.5" || l == "1.5"),
+        "{y_only:?}"
+      );
+      let x_only = labels("{Automatic, None}");
+      assert!(x_only.iter().any(|l| l == "1.5"), "{x_only:?}");
+      assert!(!x_only.iter().any(|l| l == "10"), "{x_only:?}");
+    }
+
     // `FrameTicks -> {xspec, yspec}` keeps the ticks of one axis only, and
     // the nested `{{left, right}, {bottom, top}}` form says the same per
     // edge.
@@ -23702,6 +23730,101 @@ ParametricPlot[f[t], {t, 0, 1}]]",
         4,
         "got: {single}"
       );
+    }
+
+    /// `SpanFromLeft` in a `Grid` title merges a cell with the ones to its
+    /// right: the marker is not printed, the merged cell is centered across
+    /// the whole span, and no `Dividers -> All` rule crosses it.
+    #[test]
+    fn plot_label_grid_span_from_left_merges_cells() {
+      let svg = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Grid[{{\"heading\", \
+         SpanFromLeft, SpanFromLeft}, {1, 2, 3}}, Dividers -> All, \
+         ItemSize -> 6]]",
+      );
+      assert!(!svg.contains("SpanFromLeft"), "got: {svg}");
+      let x_of = |text: &str| -> f64 {
+        let before = svg.split(&format!(">{text}</text>")).next().unwrap();
+        let tag = before.rsplit("<text ").next().unwrap();
+        tag
+          .split("x=\"")
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      // The heading sits over the middle column.
+      assert!((x_of("heading") - x_of("2")).abs() < 0.01, "got: {svg}");
+      let lines: Vec<&str> = svg
+        .split("<line ")
+        .skip(1)
+        .filter(|l| l.contains("stroke=\"currentColor\""))
+        .collect();
+      // Three rows of rules across (top, middle, bottom) and four column
+      // rules, of which the two inner ones stop below the heading.
+      let attr = |l: &str, k: &str| -> f64 {
+        l.split(&format!("{k}=\""))
+          .nth(1)
+          .and_then(|v| v.split('"').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      let vertical: Vec<&&str> = lines
+        .iter()
+        .filter(|l| attr(l, "x1") == attr(l, "x2"))
+        .collect();
+      assert_eq!(vertical.len(), 4, "got: {svg}");
+      assert_eq!(lines.len() - vertical.len(), 3, "got: {svg}");
+      let short = vertical.iter().filter(|l| attr(l, "y1") > 1.0).count();
+      assert_eq!(short, 2, "got: {svg}");
+    }
+
+    /// `Background -> {colspec, rowspec}` shades the rows of a `Grid` title:
+    /// a list of colors colors the first rows in turn and leaves the rest
+    /// unshaded, and even a single-column grid is drawn as a table.
+    #[test]
+    fn plot_label_grid_background_shades_rows() {
+      let svg = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Grid[{{\"a\"}, {\"b\"}, \
+         {\"c\"}}, Background -> {None, {Red, Blue}}]]",
+      );
+      assert!(svg.contains("fill=\"rgb(255,0,0)\""), "got: {svg}");
+      assert!(svg.contains("fill=\"rgb(0,0,255)\""), "got: {svg}");
+      let shaded = svg
+        .split("<rect ")
+        .skip(1)
+        .filter(|r| r.contains("rgb(255,0,0)") || r.contains("rgb(0,0,255)"))
+        .count();
+      assert_eq!(shaded, 2, "got: {svg}");
+      // A cyclic spec `{{c1, c2}}` shades every row.
+      let cyclic = export_svg(
+        "Graphics[Point[{0, 0}], PlotLabel -> Grid[{{\"a\", 1}, {\"b\", 2}, \
+         {\"c\", 3}}, Background -> {None, {{Red, Blue}}}]]",
+      );
+      assert_eq!(cyclic.matches("fill=\"rgb(255,0,0)\"").count(), 2);
+      assert_eq!(cyclic.matches("fill=\"rgb(0,0,255)\"").count(), 1);
+    }
+
+    /// `ItemSize -> {{w, …}, …}` makes each column of a `Grid` title at
+    /// least `w` ems wide.
+    #[test]
+    fn plot_label_grid_item_size_widens_columns() {
+      let width = |opts: &str| -> f64 {
+        let svg = export_svg(&format!(
+          "Graphics[Point[{{0, 0}}], PlotLabel -> Grid[{{{{1, 2}}}}{opts}]]"
+        ));
+        let label =
+          svg.split("<svg ").nth(2).unwrap_or_else(|| panic!("{svg}"));
+        label
+          .split("viewBox=\"0 0 ")
+          .nth(1)
+          .and_then(|v| v.split(' ').next())
+          .and_then(|v| v.parse().ok())
+          .unwrap()
+      };
+      let plain = width("");
+      let sized = width(", ItemSize -> {{6, 6}, Automatic}");
+      assert!(sized > plain + 50.0, "{plain} vs {sized}");
     }
 
     /// A `Text[Grid[…]]` title is laid out as the grid it wraps, with its
